@@ -40,8 +40,6 @@
  */
 namespace rock::frik_hand_world_authority
 {
-    using RebaseDriver = hand_world_claim_registry_policy::RebaseDriver;
-
     struct RawHandSample
     {
         // The root flattened hand bone as rendered (refNode plus palm blend).
@@ -59,8 +57,6 @@ namespace rock::frik_hand_world_authority
         // A native recoil kick reached FRIK's hand target this frame: skip
         // relation calibration, the composed kick is not a relation.
         bool recoilKickThisFrame = false;
-        // Skeleton ready and no scope/config state that suspends FRIK's solve.
-        bool fallbackObservationAllowed = false;
     };
 
     // ---- Scheduler (ROCKMain) ----
@@ -91,7 +87,7 @@ namespace rock::frik_hand_world_authority
 
     // ---- Publication (bridge) ----
 
-    [[nodiscard]] bool publish(const char* tag, bool isLeft, const RE::NiTransform& worldTarget, int priority, RebaseDriver driver);
+    [[nodiscard]] bool publish(const char* tag, bool isLeft, const RE::NiTransform& worldTarget, int priority);
     [[nodiscard]] bool clear(const char* tag, bool isLeft);
 
     [[nodiscard]] bool hasActiveClaim(bool isLeft);

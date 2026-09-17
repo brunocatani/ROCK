@@ -213,9 +213,9 @@ namespace rock::runtime_state
     void updateFrame(const RuntimeFrameInput& input)
     {
         if (!s_frameMenuSample.valid) {
-            // FRIK's FrameBegin phase begins frame timing before the snapshot; this
-            // fail-closed path only protects an out-of-order caller from
-            // silently reusing a stale frame identity.
+            // FRIK's FrameBegin phase begins frame timing before any other
+            // phase; this fail-closed path only protects an out-of-order
+            // caller from silently reusing a stale frame identity.
             (void)beginFrameTiming(false);
         }
 

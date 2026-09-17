@@ -241,6 +241,17 @@ namespace rock
             weaponNode,
             currentWeaponGenerationKey);
 
+        // The publisher resets every update and reconstructs the native pose
+        // before collision/recoil presentation. Seed aim while this exact
+        // frame and weapon still own it, including persistent primary carry.
+        // Sampling rendered roots later can be blocked for the whole hold.
+        if (_recoil.rightBaseValid) {
+            (void)captureRightNativeWeaponAimFrame(weaponNode,
+                currentWeaponGenerationKey, currentEquippedWeaponOwnershipKey,
+                weaponCollision.getCurrentEquippedWeaponInstanceContentKey(),
+                &_recoil.rightWeaponBase);
+        }
+
         refreshNaturalHandInWandFrames();
         refreshAuthoredSupportRightMirror();
 
@@ -272,12 +283,6 @@ namespace rock
                 stableFrameInput.primaryGripInput.released = false;
             }
         }
-        const auto primaryReleaseDecision = equipped_weapon_manual_ownership_policy::debouncePrimaryGripRelease(
-            _firing.primaryReleaseDebounce,
-            stableFrameInput.primaryGripInput.held);
-        stableFrameInput.primaryGripInput.held = primaryReleaseDecision.retained;
-        stableFrameInput.primaryGripInput.released = primaryReleaseDecision.releaseConfirmed;
-
         // A closed logical grip ends that hand's refused-release episode so
         // the next refusal logs again.
         if (stableFrameInput.primaryGripInput.held) {
@@ -287,15 +292,6 @@ namespace rock
                                   stableFrameInput.rightGripHeld) {
             _gripReleaseRetainedLogged[isSupportHandLeft() ? 1u : 0u] = false;
         }
-
-        recordGripFailureFrame(
-            weaponNode,
-            frameInput,
-            stableFrameInput,
-            dt,
-            weaponCollision.getCurrentObservedEquippedWeaponFormID(),
-            currentWeaponGenerationKey,
-            currentEquippedWeaponOwnershipKey);
 
         if (isManualOwnershipActive() &&
             !reconcileCollisionGeneration(
@@ -314,16 +310,23 @@ namespace rock
         }
 
         /*
-         * Left-firing feed-forward pre-write: at this point weaponNode->world
-         * is not the carried pose (observed about 180 degrees off under
-         * LArm_Hand). Every world<->weapon-local conversion below (part-grip
-         * captures, mesh grab points, promotion distances, the two-hand solver
-         * base) would silently mix real-space palm/contact points with that
-         * frame, and the two-hand solver keeps its roll, rendering the weapon
-         * upside down while both hands hold. Publishing the canonical
+         * Left-firing feed-forward pre-write: while ROCK owns the weapon node
+         * (left-firing topology), FRIK's earlier skeleton pass has already
+         * rewritten the node to its OFFHAND GLUE pose, so at this point
+         * weaponNode->world is glue space, not the real carried pose. Every
+         * world<->weapon-local conversion below (part-grip captures, mesh
+         * grab points, promotion distances, the two-hand solver base) would
+         * silently mix real-space palm/contact points with that glue frame -
+         * the round-4 corrupted captures. Publishing the canonical
          * feed-forward pose FIRST makes the node a real-space basis for all
-         * existing math; the state handlers below re-publish their final
-         * solved pose. The pre-write is a basis, not the rendered frame.
+         * existing math with no per-call-site special cases; the state
+         * handlers below re-publish their final solved pose as before.
+         * Right-firing reads FRIK's authored carry and is untouched.
+         * (PhysicsInteraction additionally publishes this before the frame's
+         * weapon interaction probes - see the header note.) The pre-write is
+         * a basis, not the rendered frame: it never updates the rendered
+         * weapon record that visual returns, the part-carry handoff, and the
+         * seat overlay read.
          */
         (void)publishLeftFiringFeedForwardWeaponPose(weaponNode);
 
@@ -479,9 +482,9 @@ namespace rock
                 .sourceRoot = weaponNode,
                 .weaponGenerationKey = currentWeaponGenerationKey,
                 .acquisitionSource =
-                    handoffAcquisitionAvailable ?
-                        WeaponInteractionAcquisitionSource::FiringGripZone :
-                        WeaponInteractionAcquisitionSource::AuthoredSeat,
+                    authoredSeatAcquisitionAvailable ?
+                        WeaponInteractionAcquisitionSource::AuthoredSeat :
+                        WeaponInteractionAcquisitionSource::FiringGripZone,
             };
         }
         const bool supportTouchingSupport =
@@ -503,8 +506,7 @@ namespace rock
                     authoredActivationStateMatches &&
                     authoredCapabilityAllowsIndicator,
                 .activationSpatialPass =
-                    authoredActivation.activationSpatialPass &&
-                    !handoffAcquisitionAvailable,
+                    authoredActivation.activationSpatialPass,
                 .supportGripAllowed = supportRuntimeState.supportGripAllowed,
                 .providerPartAuthorityActive =
                     supportRuntimeState.providerPartAuthority.active,
@@ -515,6 +517,73 @@ namespace rock
         authoredIndicatorWeaponWorldValid =
             authoredActivationStateMatches &&
             isInvertibleTransform(authoredIndicatorWeaponWorld);
+
+        const bool supportOwned = partGrip(supportHandIsLeft).active && !partGrip(supportHandIsLeft).attachOnly;
+        const bool freeSupportIndicator = !supportHandHoldingObject && !partGrip(supportHandIsLeft).active &&
+            (handoffAcquisitionAvailable || authored_weapon_grip_activation_policy::evaluateIndicator(authoredIndicatorInput).visible);
+        const auto releaseIntent = equipped_weapon_manual_ownership_policy::resolvePrimaryReleaseIntent(
+            _firing.primaryReleaseIntent, {
+                .ownershipKey = currentEquippedWeaponOwnershipKey,
+                .firingHandIsLeft = isFiringHandLeft(),
+                .logicalHeld = stableFrameInput.primaryGripInput.held,
+                .logicalReleased = stableFrameInput.primaryGripInput.released,
+                .supportGripActive = supportOwned,
+                .freeSupportIndicatorActive = freeSupportIndicator,
+                .primaryOwned = _session.state != TwoHandedState::PartCarry,
+            });
+        if (stableFrameInput.primaryGripInput.released) {
+            ROCK_LOG_INFO(Weapon,
+                "Weapon grip intent: owner={:016X} primary={} mode={} release={} supportOwned={} freeSupportIndicator={}",
+                currentEquippedWeaponOwnershipKey, firingHandName(),
+                equipped_weapon_toggle_grab_policy::modeName(frameInput.weaponGrabMode),
+                releaseIntent.blockedBySupportHover ? "consumed-support-priority" : "accepted",
+                supportOwned, freeSupportIndicator);
+        }
+        if (releaseIntent.blockedBySupportHover) {
+            // Reconcile the toggle latch as retained. The rejected gesture
+            // cannot turn into a delayed detach when the offhand leaves.
+            if (isFiringHandLeft()) _gripReleaseRetained.left = true;
+            else _gripReleaseRetained.right = true;
+        }
+        const auto primaryReleaseDecision = equipped_weapon_manual_ownership_policy::debouncePrimaryGripRelease(
+            _firing.primaryReleaseDebounce, releaseIntent.retained);
+        stableFrameInput.primaryGripInput.held = primaryReleaseDecision.retained;
+        stableFrameInput.primaryGripInput.released = primaryReleaseDecision.releaseConfirmed;
+
+        recordGripFailureFrame(
+            weaponNode,
+            frameInput,
+            stableFrameInput,
+            dt,
+            weaponCollision.getCurrentObservedEquippedWeaponFormID(),
+            currentWeaponGenerationKey,
+            currentEquippedWeaponOwnershipKey);
+
+        const auto tryReleasedPrimaryHandoff = [&]() {
+            if (!handlingSettings.ambidextrousHandoffEnabled || !primaryGripInput.released || !supportOwned) return false;
+            const char* reason = "not-attempted";
+            const auto result = tryPromoteSupportGripToFiringGrip(_session.weaponNode, dt, reason);
+            if (result == weapon_support_authority_policy::FiringGripPromotionResult::Promoted) return true;
+            if (result == weapon_support_authority_policy::FiringGripPromotionResult::Blocked) {
+                // This gesture selected the firing station. Missing pose data
+                // must not reinterpret it as a drop or replay it after the
+                // support hand leaves. Retain ownership and require a fresh
+                // release, reconciling both hold and toggle input modes.
+                _firing.primaryReleaseIntent.pending = false;
+                _firing.primaryReleaseDebounce = {};
+                (isFiringHandLeft() ? _gripReleaseRetained.left : _gripReleaseRetained.right) = true;
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                    "Primary release handoff blocked: hand={} reason={} action=retain-grips generation={:016X} cleanIntent={} collisionPresentation={} weaponReturn={} scopeOpen={} rootRebase={}",
+                    firingHandName(), reason, _session.weaponGenerationKey,
+                    _recoil.rightBaseValid, _visuals.weaponCollisionHandPresentationFromPreviousFrame[1],
+                    _visuals.returningWeapon.localTransition.active, _scope.menuOpenThisFrame,
+                    _scope.safeHandFrames[1].rootRebaseActive);
+                updateGripping(_session.weaponNode, dt);
+                return true;
+            }
+            ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "Primary release handoff not applied: hand={} reason={}; evaluating detach policy", firingHandName(), reason);
+            return false;
+        };
 
         switch (_session.state) {
         case TwoHandedState::Inactive:
@@ -552,8 +621,6 @@ namespace rock
             break;
 
         case TwoHandedState::Gripping:
-            _support.gripAgeSeconds +=
-                std::isfinite(dt) && dt > 0.0f ? dt : 0.0f;
             if (!_session.weaponNode) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing authority because active weapon source root is unavailable");
                 transitionToInactive(false);
@@ -634,33 +701,9 @@ namespace rock
                     }
                     transitionToInactive(ownsWeaponTransform());
                 }
-            } else if ((handlingSettings.primaryDetachEnabled || handlingSettings.ambidextrousHandoffEnabled) && !primaryGripInput.held &&
-                       equipped_weapon_manual_ownership_policy::shouldDeferPrimaryReleaseActionForFreshSupportGrip(_support.gripAgeSeconds)) {
-                /*
-                 * The firing-grip release confirmed while the support grab is
-                 * only a few frames old: same physical gesture or a
-                 * grab-synchronized grip flicker, never an independent
-                 * release. Hold the two-handed grip unchanged; a re-pressed
-                 * grip resumes normally, and promotion/detach run below once
-                 * the grab has aged. leftGripHeld/rightGripHeld in the log
-                 * discriminate a physical flicker (both pipelines open) from
-                 * an input-path divergence (normal pipeline still held).
-                 */
-                if (!_support.freshGripDeferLogged) {
-                    _support.freshGripDeferLogged = true;
-                    ROCK_LOG_INFO(Weapon,
-                        "TwoHandedGrip: deferring firing-grip release action while support grip is fresh age={:.3f}s firingHand={} leftGripHeld={} rightGripHeld={}",
-                        _support.gripAgeSeconds,
-                        firingHandName(),
-                        stableFrameInput.leftGripHeld ? "yes" : "no",
-                        stableFrameInput.rightGripHeld ? "yes" : "no");
-                }
-                updateGripping(_session.weaponNode, dt);
-            } else if (handlingSettings.ambidextrousHandoffEnabled && !primaryGripInput.held && tryPromoteSupportGripToFiringGrip(_session.weaponNode, dt)) {
-                // The support hand was wrapped over the firing grip when the
-                // firing hand opened: it takes over the SAME weapon-relative
-                // grip in place (seamless hand switch, pistol shooting-cup
-                // flow). State is PrimaryOnly under the new firing hand.
+            } else if (tryReleasedPrimaryHandoff()) {
+                // A firing-station handoff owns this release even if its
+                // preparation failed. Distant support reaches detach below.
             } else if (handlingSettings.primaryDetachEnabled &&
                        !primaryGripInput.held) {
                 if (weapon_support_authority_policy::
@@ -782,6 +825,8 @@ namespace rock
 
     void TwoHandedGrip::reset()
     {
+        _confirmedEquippedOwnershipKey = 0;
+        _confirmedEquippedGripGenerationKey = 0;
         clearOneHandRecoilClaim();
         _recoil.equippedIdentity = {};
         _recoil.rightBaseValid = false;
@@ -877,14 +922,13 @@ namespace rock
         _partCarry.gripSeparationWorld = 0.0f;
         _firing.primaryGripLocal = {};
         _support.lockedGripSeparationWorld = 0.0f;
-        _support.gripAgeSeconds = 0.0f;
-        _support.freshGripDeferLogged = false;
         _session.authorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
         _hasSolvedWeaponTransform = false;
         _session.weaponNode = nullptr;
         _session.weaponGenerationKey = 0;
         _session.equippedWeaponOwnershipKey = 0;
         _firing.primaryReleaseDebounce = {};
+        _firing.primaryReleaseIntent = {};
         _firing.persistentCarryActive = false;
         _firing.persistentCarryDetachArmed = false;
         _firing.persistentCarryInputAcquisitionPending = false;
@@ -1041,8 +1085,6 @@ namespace rock
         _partCarry.gripSeparationWorld = 0.0f;
         _firing.primaryGripLocal = {};
         _support.lockedGripSeparationWorld = 0.0f;
-        _support.gripAgeSeconds = 0.0f;
-        _support.freshGripDeferLogged = false;
         _session.authorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
         _hasSolvedWeaponTransform = weaponReturnActive || (publishRestoredWeaponTransform && restoredWeaponTransformAvailable);
         if (weaponReturnActive && _visuals.hasLastRenderedWeaponWorld) {
@@ -1057,6 +1099,7 @@ namespace rock
         _session.weaponGenerationKey = 0;
         _session.equippedWeaponOwnershipKey = 0;
         _firing.primaryReleaseDebounce = {};
+        _firing.primaryReleaseIntent = {};
         _firing.persistentCarryActive = false;
         _firing.persistentCarryDetachArmed = false;
         _firing.persistentCarryInputAcquisitionPending = false;
@@ -1104,6 +1147,7 @@ namespace rock
         clearPrimaryDetachVisualAuthority(isFiringHandLeft());
         _visuals.primaryHandLerp = {};
         _firing.primaryReleaseDebounce = {};
+        _firing.primaryReleaseIntent = {};
         if (_firing.persistentCarryActive) {
             _firing.persistentCarryDetachArmed = false;
         }

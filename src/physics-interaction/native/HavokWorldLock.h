@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 
 #include "RE/Havok/hknpWorld.h"
 
@@ -56,6 +57,7 @@ namespace rock::havok_world_lock
 
             static REL::Relocation<detail::BSReadWriteLockFn_t> lockForRead{ REL::Offset(offsets::kFunc_BSReadWriteLock_LockForRead) };
             _lock = reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(world) + offsets::kHknpWorld_AccessLock);
+            performance_profiler::ScopedTimer waitTimer(performance_profiler::Scope::NativeWorldReadWait);
             lockForRead(_lock);
         }
 

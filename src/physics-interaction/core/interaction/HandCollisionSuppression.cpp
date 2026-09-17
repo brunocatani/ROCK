@@ -686,13 +686,14 @@ namespace rock
             return;
         }
 
-        auto cacheMutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
-
         if (_suppression.nativePlayerRefreshFrames > 0) {
             --_suppression.nativePlayerRefreshFrames;
             return;
         }
         _suppression.nativePlayerRefreshFrames = 30;
+
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::NativePlayerRefresh);
+        auto cacheMutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
 
         struct NativePlayerBodyScanContext
         {

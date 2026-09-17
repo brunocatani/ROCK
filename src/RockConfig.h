@@ -27,6 +27,7 @@
 #include "config/ConfigurationStore.h"
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
+#include "physics-interaction/input/BareFistGesturePolicy.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
 #include "physics-interaction/weapon/GripZoneIndicatorPolicy.h"
 
@@ -87,11 +88,11 @@ namespace rock
         // physical hand currently occupies the firing grip.
         bool rockDetachEitherHand = true;
         bool rockFiringGripDetachPosePreservationEnabled = true;
-        // Whether the last carrying hand may drop the weapon by letting go.
+        // Whether the last equipped grip transfers the weapon into a retained loose grab.
         // With false that grip is retained under either input mode.
         bool rockAutoDrop = false;
-        // Tap to grab and tap again to release equipped-weapon grips.
-        bool rockToggleGrab = true;
+        // 1: toggle both grips; 2: toggle firing only; 3: hold both grips.
+        int rockWeaponGrabMode = 1;
         // Allow dynamic support grabs beyond authored grips. False preserves
         // authored-grip preference and the existing missing-pose fallback.
         bool rockGrabAnywhereOnWeapon = false;
@@ -170,6 +171,8 @@ namespace rock
          * rendered hand through one-way visual authority.
          */
         bool rockEnableVanillaMelee = true;
+        bool rockRockyModeEnabled = true;
+        float rockRockyModeHoldSeconds = bare_fist_gesture::kDefaultHoldSeconds;
         bool rockNativeCharacterControllerObjectContactFilterEnabled = true;
 
         bool rockHighlightEnabled = true;

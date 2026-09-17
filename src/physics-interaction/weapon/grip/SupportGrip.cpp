@@ -40,6 +40,25 @@ namespace rock
             return false;
         }
 
+        return tryResolveAuthoredActivationAxes(_firing.rightCanonicalHandWeaponLocal,
+            weaponWorld, handTopology, outSupportSideAxisWorld, outDownAxisWorld, outReferenceAxisWorld);
+    }
+
+    bool TwoHandedGrip::tryResolveAuthoredActivationAxes(
+        const RE::NiTransform& rightHandWeaponLocal,
+        const RE::NiTransform& weaponWorld,
+        const authored_weapon_grip_activation_policy::HandTopology handTopology,
+        RE::NiPoint3& outSupportSideAxisWorld,
+        RE::NiPoint3& outDownAxisWorld,
+        RE::NiPoint3& outReferenceAxisWorld)
+    {
+        outSupportSideAxisWorld = {};
+        outDownAxisWorld = {};
+        outReferenceAxisWorld = {};
+        if (!isInvertibleTransform(weaponWorld) || !isFiniteTransform(rightHandWeaponLocal) ||
+            handTopology == authored_weapon_grip_activation_policy::HandTopology::Invalid) {
+            return false;
+        }
         const auto normalizeVector = [](const RE::NiPoint3& input,
                                          RE::NiPoint3& output) {
             output = {};
@@ -73,7 +92,7 @@ namespace rock
         const RE::NiTransform rightFiringHandWorld =
             transform_math::composeTransforms(
                 weaponWorld,
-                _firing.rightCanonicalHandWeaponLocal);
+                rightHandWeaponLocal);
         if (!isFiniteTransform(rightFiringHandWorld)) {
             return false;
         }
@@ -1193,8 +1212,6 @@ namespace rock
             immersive_weapon_policy::DetachAuthority::None;
         _support.rotationBlend = 0.0f;
         _gripLogCounter = 0;
-        _support.gripAgeSeconds = 0.0f;
-        _support.freshGripDeferLogged = false;
 
         const char* supportBaselineName = "inactive";
         if (dynamicBaselineActive) {
@@ -1472,10 +1489,11 @@ namespace rock
             _session.weaponGenerationKey = 0;
             _weaponNodeLocalBaseline = currentWeaponNode->local;
             _hasWeaponNodeLocalBaseline = true;
-            return rebindLeftCarryFramesToWeapon(
+            return rebindCarryFramesToWeapon(
                 currentWeaponNode,
                 0,
                 currentEquippedWeaponOwnershipKey,
+                weaponCollision.getCurrentEquippedWeaponInstanceContentKey(),
                 false);
         }
 
@@ -1507,10 +1525,11 @@ namespace rock
         }
 
         if ((generationChanged || weaponRootChanged) &&
-            !rebindLeftCarryFramesToWeapon(
+            !rebindCarryFramesToWeapon(
                 currentWeaponNode,
                 currentWeaponGenerationKey,
                 currentEquippedWeaponOwnershipKey,
+                weaponCollision.getCurrentEquippedWeaponInstanceContentKey(),
                 true)) {
             return false;
         }
@@ -2979,7 +2998,6 @@ namespace rock
                 });
         firing_grip_reattach_zone_policy::ZoneInput handoffInput{};
         bool supportPalmInsideHandoffZone = false;
-        bool authoredSeatInsideHandoffZone = false;
         const bool firingGripZoneAcquisition = decision.acquisitionSource ==
             WeaponInteractionAcquisitionSource::FiringGripZone;
         if (ambidextrousHandoffCaptureContext &&
@@ -2993,13 +3011,7 @@ namespace rock
             handoffInput.palmWorld = { palmPos.x, palmPos.y, palmPos.z };
             supportPalmInsideHandoffZone =
                 firing_grip_reattach_zone_policy::evaluateZone(handoffInput).inside;
-            if (authoredSupportFrameValid) {
-                const auto seatWorld = transform_math::localPointToWorld(
-                    weaponNode->world, authoredSupportPalmWeaponLocal);
-                handoffInput.palmWorld = { seatWorld.x, seatWorld.y, seatWorld.z };
-                authoredSeatInsideHandoffZone =
-                    firing_grip_reattach_zone_policy::evaluateZone(handoffInput).inside;
-            }
+
         }
         if (firingGripZoneAcquisition && !supportPalmInsideHandoffZone) {
             ROCK_LOG_SAMPLE_DEBUG(Weapon, 1000,
@@ -3026,8 +3038,6 @@ namespace rock
                                 useAuthoredSupportGrip,
                             .supportPalmInsideHandoffZone =
                                 supportPalmInsideHandoffZone,
-                            .authoredSeatInsideHandoffZone =
-                                authoredSeatInsideHandoffZone,
                         });
         if (_handlingSettings.authoredOnlySupportGrabsEnabled &&
             !providerPartAuthority.active) {

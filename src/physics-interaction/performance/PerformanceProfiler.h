@@ -23,13 +23,17 @@ namespace rock::performance_profiler
         InteractionUpdate,
         EquippedWeaponInteraction,
         InteractionFinalize,
-        HandPresentation,
+        RenderedHandCapture,
         ProviderPublication,
         HandColliderUpdate,
         BodyColliderUpdate,
         GeneratedColliderPhysicsFlush,
         WeaponCollision,
         WeaponCollisionTransforms,
+        WeaponContactProbe,
+        WeaponEmitterRefresh,
+        WeaponIdentityRead,
+        WeaponVisualObservation,
         GeneratedBodyContactRegistry,
         WeaponColliderBuild,
         WeaponColliderCreate,
@@ -49,6 +53,8 @@ namespace rock::performance_profiler
         DebugOverlayRender,
         ContactResolve,
         NativeContactCallback,
+        NativeMeleeCallback,
+        NativeMeleeDispatch,
         GrabAcquisitionBodyScan,
         GrabAcquisitionActivePrep,
         GrabMeshExtraction,
@@ -58,6 +64,26 @@ namespace rock::performance_profiler
         GrabAuthorityAfterSolveDiagnostics,
         GrabNearbyDampingRestore,
         GrabNearbyDampingRestoreBodySearch,
+        FramePrelude,
+        FrameBeginPreparation,
+        HandFrameResolve,
+        HandBoneCapture,
+        BodyBoneCapture,
+        FingerBoneCapture,
+        SelectionHitProcessing,
+        PhysicsSystemBodyScan,
+        NativePlayerRefresh,
+        NativePlayerPairFilter,
+        HeldSceneWriter,
+        ProviderFrameDispatch,
+        ProviderFrameConsumer,
+        ProviderAnimationDispatch,
+        ProviderAnimationConsumer,
+        NativeWorldReadWait,
+        CallbackQuiescenceWait,
+        NearbyDampingWait,
+        NativeIdleGripHarvest,
+        UnattributedMemoryQueries,
         Count
     };
 
@@ -81,6 +107,10 @@ namespace rock::performance_profiler
         GrabAcquisitionCacheMiss,
         GrabAcquisitionCacheInvalidated,
         GrabNearbyDampingRestoreFailed,
+        NativeMeleeRockPartnerDropped,
+        NativeMeleeDecodeFailed,
+        NativeReadRangeRejected,
+        NativeWriteRangeRejected,
         Count
     };
 
@@ -103,6 +133,10 @@ namespace rock::performance_profiler
         EquippedWeaponFingerPoseSelectedTriangles,
         EquippedWeaponFingerPoseSpatialNodeVisits,
         EquippedWeaponFingerPoseTriangleTests,
+        NativeMeleeCallbacksPerFrame,
+        RenderedSkeletonBones,
+        ControllerSkeletonBones,
+        SelectionRawHits,
         Count
     };
 
@@ -111,6 +145,7 @@ namespace rock::performance_profiler
     using OverlayLines = std::array<std::array<char, kOverlayLineLength>, kOverlayMaxLines>;
 
     void refreshSettings(bool enabled, int logIntervalFrames, int warmupFrames, bool overlayTextEnabled) noexcept;
+    bool enabled() noexcept;
     void beginFrame() noexcept;
     void endFrame() noexcept;
     void addEventCount(Scope scope, std::uint64_t count = 1) noexcept;
@@ -118,6 +153,20 @@ namespace rock::performance_profiler
     void observeValue(ValueMetric metric, std::uint64_t value) noexcept;
     bool overlayTextEnabled() noexcept;
     std::uint32_t copyOverlayLines(OverlayLines& outLines) noexcept;
+
+    enum class MemoryQueryKind : std::uint8_t { Read, Write, Execute };
+
+    struct MemoryQuerySample
+    {
+        std::uint64_t startTicks{ 0 };
+        Scope scope{ Scope::UnattributedMemoryQueries };
+        bool active{ false };
+    };
+
+    // One of every 64 queries on each calling thread is timed. All admitted
+    // queries are counted; no per-query allocation, logging, or shared lock.
+    MemoryQuerySample beginMemoryQuery() noexcept;
+    void endMemoryQuery(MemoryQuerySample sample, MemoryQueryKind kind, bool apiSucceeded) noexcept;
 
     class ScopedTimer
     {
@@ -136,6 +185,9 @@ namespace rock::performance_profiler
         Scope _scope{ Scope::Count };
         std::uint64_t _startTicks{ 0 };
         bool _active{ false };
+        // Attribution is a value, never a pointer to a stack timer: a native
+        // SEH recovery can bypass C++ unwinding. Normal scopes restore the parent.
+        Scope _parentScope{ Scope::UnattributedMemoryQueries };
     };
 
     class FrameScope

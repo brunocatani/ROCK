@@ -1,23 +1,16 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 
 #include "api/FRIKApiV2.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "rock_support/Fo4VrRuntime.h"
 
-/*
- * Null-checked wrapper over FRIK API v2 (v2.3). Every ROCK call into FRIK
- * goes through here so the table lookups, hand mapping and lifecycle rules
- * live in one place.
- *
- * Since v2.3 FRIK logs a hand pose or hand transform only when the claim
- * starts and ends, and re-setting a tag you hold updates it in place, so
- * there is no publish dedupe on this side any more.
- */
 namespace rock::frik_visual_authority
 {
     using Hand = frik::api::FRIKApiV2::Hand;
@@ -40,6 +33,87 @@ namespace rock::frik_visual_authority
 
     namespace detail
     {
+        constexpr std::size_t kCachedHandPosePublicationCount = 8;
+        constexpr std::size_t kCachedHandPoseTagCapacity = 64;
+
+        struct CachedHandPosePublication
+        {
+            std::array<char, kCachedHandPoseTagCapacity> tag{};
+            std::size_t tagLength = 0;
+            Hand hand = Hand::Left;
+            int priority = 0;
+            HandPoseData pose{};
+            bool valid = false;
+        };
+
+        struct CachedFingerLocalTransformPublication
+        {
+            std::array<char, kCachedHandPoseTagCapacity> tag{};
+            std::size_t tagLength = 0;
+            Hand hand = Hand::Left;
+            int priority = 0;
+            FingerLocalTransformOverride transforms{};
+            bool valid = false;
+        };
+
+        inline std::array<CachedHandPosePublication, kCachedHandPosePublicationCount> g_cachedHandPosePublications{};
+        inline std::array<CachedFingerLocalTransformPublication, kCachedHandPosePublicationCount> g_cachedFingerLocalTransformPublications{};
+        inline std::size_t g_nextCachedHandPosePublication = 0;
+        inline std::size_t g_nextCachedFingerLocalTransformPublication = 0;
+
+        [[nodiscard]] inline bool makeCacheableTagView(const char* tag, std::string_view& outTag)
+        {
+            if (!tag) {
+                return false;
+            }
+
+            outTag = std::string_view(tag);
+            return !outTag.empty() && outTag.size() < kCachedHandPoseTagCapacity;
+        }
+
+        [[nodiscard]] inline std::string_view cachedTagView(const CachedHandPosePublication& entry)
+        {
+            return std::string_view(entry.tag.data(), entry.tagLength);
+        }
+
+        [[nodiscard]] inline std::string_view cachedTagView(const CachedFingerLocalTransformPublication& entry)
+        {
+            return std::string_view(entry.tag.data(), entry.tagLength);
+        }
+
+        [[nodiscard]] inline bool sameFingerPoseData(
+            const frik::api::FRIKApiV2::FingerPoseData& lhs,
+            const frik::api::FRIKApiV2::FingerPoseData& rhs)
+        {
+            return lhs.prox == rhs.prox &&
+                   lhs.mid == rhs.mid &&
+                   lhs.dist == rhs.dist &&
+                   lhs.splay == rhs.splay;
+        }
+
+        [[nodiscard]] inline bool sameHandPoseData(const HandPoseData& lhs, const HandPoseData& rhs)
+        {
+            return sameFingerPoseData(lhs.thumb, rhs.thumb) &&
+                   sameFingerPoseData(lhs.index, rhs.index) &&
+                   sameFingerPoseData(lhs.middle, rhs.middle) &&
+                   sameFingerPoseData(lhs.ring, rhs.ring) &&
+                   sameFingerPoseData(lhs.pinky, rhs.pinky) &&
+                   lhs.palmPitch == rhs.palmPitch &&
+                   lhs.palmYaw == rhs.palmYaw;
+        }
+
+        [[nodiscard]] inline bool sameNiTransform(const RE::NiTransform& lhs, const RE::NiTransform& rhs)
+        {
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    if (lhs.rotate.entry[row][column] != rhs.rotate.entry[row][column]) {
+                        return false;
+                    }
+                }
+            }
+            return lhs.translate.x == rhs.translate.x && lhs.translate.y == rhs.translate.y && lhs.translate.z == rhs.translate.z && lhs.scale == rhs.scale;
+        }
+
         [[nodiscard]] inline bool isFiniteNiTransform(
             const RE::NiTransform& transform)
         {
@@ -56,6 +130,156 @@ namespace rock::frik_visual_authority
                    std::isfinite(transform.translate.z) &&
                    std::isfinite(transform.scale) &&
                    std::abs(transform.scale) > 0.000001f;
+        }
+
+        [[nodiscard]] inline bool sameFingerLocalTransforms(const FingerLocalTransformOverride& lhs, const FingerLocalTransformOverride& rhs)
+        {
+            if (lhs.enabledMask != rhs.enabledMask) {
+                return false;
+            }
+            for (std::size_t index = 0; index < std::size(lhs.localTransforms); ++index) {
+                const std::uint16_t bit = static_cast<std::uint16_t>(1U << index);
+                if ((lhs.enabledMask & bit) != 0 && !sameNiTransform(lhs.localTransforms[index], rhs.localTransforms[index])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        [[nodiscard]] inline CachedHandPosePublication* findCachedHandPosePublication(std::string_view tag, Hand hand)
+        {
+            for (auto& entry : g_cachedHandPosePublications) {
+                if (entry.valid && entry.hand == hand && cachedTagView(entry) == tag) {
+                    return &entry;
+                }
+            }
+            return nullptr;
+        }
+
+        [[nodiscard]] inline CachedFingerLocalTransformPublication* findCachedFingerLocalTransformPublication(std::string_view tag, Hand hand)
+        {
+            for (auto& entry : g_cachedFingerLocalTransformPublications) {
+                if (entry.valid && entry.hand == hand && cachedTagView(entry) == tag) {
+                    return &entry;
+                }
+            }
+            return nullptr;
+        }
+
+        inline void invalidateCachedHandPosePublication(const char* tag, Hand hand)
+        {
+            std::string_view tagView;
+            if (!makeCacheableTagView(tag, tagView)) {
+                return;
+            }
+
+            if (auto* entry = findCachedHandPosePublication(tagView, hand)) {
+                entry->valid = false;
+            }
+        }
+
+        inline void invalidateCachedFingerLocalTransformPublication(const char* tag, Hand hand)
+        {
+            std::string_view tagView;
+            if (!makeCacheableTagView(tag, tagView)) {
+                return;
+            }
+
+            if (auto* entry = findCachedFingerLocalTransformPublication(tagView, hand)) {
+                entry->valid = false;
+            }
+        }
+
+        inline void rememberCachedHandPosePublication(std::string_view tag, Hand hand, const HandPoseData& handPose, int priority)
+        {
+            auto* entry = findCachedHandPosePublication(tag, hand);
+            if (!entry) {
+                for (auto& candidate : g_cachedHandPosePublications) {
+                    if (!candidate.valid) {
+                        entry = &candidate;
+                        break;
+                    }
+                }
+            }
+            if (!entry) {
+                entry = &g_cachedHandPosePublications[g_nextCachedHandPosePublication % g_cachedHandPosePublications.size()];
+                ++g_nextCachedHandPosePublication;
+            }
+
+            entry->tag.fill('\0');
+            std::copy(tag.begin(), tag.end(), entry->tag.begin());
+            entry->tagLength = tag.size();
+            entry->hand = hand;
+            entry->priority = priority;
+            entry->pose = handPose;
+            entry->valid = true;
+        }
+
+        inline void rememberCachedFingerLocalTransformPublication(std::string_view tag,
+            Hand hand, const FingerLocalTransformOverride& transforms,
+            int priority)
+        {
+            auto* entry = findCachedFingerLocalTransformPublication(tag, hand);
+            if (!entry) {
+                for (auto& candidate : g_cachedFingerLocalTransformPublications) {
+                    if (!candidate.valid) {
+                        entry = &candidate;
+                        break;
+                    }
+                }
+            }
+            if (!entry) {
+                entry = &g_cachedFingerLocalTransformPublications[g_nextCachedFingerLocalTransformPublication % g_cachedFingerLocalTransformPublications.size()];
+                ++g_nextCachedFingerLocalTransformPublication;
+            }
+
+            entry->tag.fill('\0');
+            std::copy(tag.begin(), tag.end(), entry->tag.begin());
+            entry->tagLength = tag.size();
+            entry->hand = hand;
+            entry->priority = priority;
+            entry->transforms = transforms;
+            entry->valid = true;
+        }
+
+        [[nodiscard]] inline bool cachedHandPosePublicationStillActive(
+            const frik::api::FRIKApiV2* frikApi,
+            const char* tag,
+            Hand hand)
+        {
+            return frikApi &&
+                   frikApi->getHandPoseSetTagState &&
+                   frikApi->getHandPoseSetTagState(tag, hand) == HandPoseTagState::Active;
+        }
+
+        [[nodiscard]] inline bool shouldSkipCachedHandPosePublication(
+            const frik::api::FRIKApiV2* frikApi,
+            const char* tag,
+            Hand hand,
+            const HandPoseData& handPose,
+            int priority,
+            std::string_view& outTagView)
+        {
+            if (!makeCacheableTagView(tag, outTagView)) {
+                return false;
+            }
+
+            const auto* entry = findCachedHandPosePublication(outTagView, hand);
+            return entry &&
+                   entry->priority == priority &&
+                   sameHandPoseData(entry->pose, handPose) && cachedHandPosePublicationStillActive(frikApi, tag, hand);
+        }
+
+        [[nodiscard]] inline bool shouldSkipCachedFingerLocalTransformPublication(const frik::api::FRIKApiV2* frikApi, const char* tag, Hand hand,
+            const FingerLocalTransformOverride& transforms, int priority, std::string_view& outTagView)
+        {
+            if (!makeCacheableTagView(tag, outTagView)) {
+                return false;
+            }
+
+            const auto* entry = findCachedFingerLocalTransformPublication(outTagView, hand);
+            return entry && entry->priority == priority && sameFingerLocalTransforms(entry->transforms, transforms) &&
+                   cachedHandPosePublicationStillActive(frikApi, tag, hand);
         }
     }
 
@@ -131,8 +355,6 @@ namespace rock::frik_visual_authority
         return isLeft ? Hand::Left : Hand::Right;
     }
 
-    using RebaseDriver = frik_hand_world_authority::RebaseDriver;
-
     /*
      * Physical side of an API hand. Primary/Offhand follow the game's
      * left-handed mode setting; false when that setting is unavailable.
@@ -161,23 +383,6 @@ namespace rock::frik_visual_authority
         }
     }
 
-    /*
-     * Rebase drivers name the controller chain a claim is expressed against.
-     * FRIK v2.3 solves a claim in the frame it is published, so the driver is
-     * only recorded with the claim; the helpers stay so owners keep declaring
-     * their intent.
-     */
-    [[nodiscard]] inline RebaseDriver ownHandDriver(Hand hand)
-    {
-        bool isLeft = false;
-        return tryResolveHandIsLeft(hand, isLeft) ? hand_world_claim_registry_policy::driverForHand(isLeft) : RebaseDriver::Static;
-    }
-
-    [[nodiscard]] inline RebaseDriver physicalHandDriver(bool isLeft)
-    {
-        return isLeft ? RebaseDriver::LeftHand : RebaseDriver::RightHand;
-    }
-
     [[nodiscard]] inline bool isAvailable()
     {
         return api() != nullptr;
@@ -195,10 +400,10 @@ namespace rock::frik_visual_authority
         return frikApi && (frikApi->isConfigOpen() || frikApi->isWristPipboyOpen());
     }
 
-    // ---- Hand poses ----
-
     [[nodiscard]] inline bool clearHandPose(const char* tag, Hand hand)
     {
+        detail::invalidateCachedHandPosePublication(tag, hand);
+        detail::invalidateCachedFingerLocalTransformPublication(tag, hand);
         auto* frikApi = api();
         return frikApi && frikApi->clearHandPose && frikApi->clearHandPose(tag, hand);
     }
@@ -214,58 +419,53 @@ namespace rock::frik_visual_authority
     [[nodiscard]] inline bool setHandPoseCustom(const char* tag, Hand hand, const HandPoseData& handPose, int priority)
     {
         auto* frikApi = api();
-        return frikApi && frikApi->setHandPoseCustom && frikApi->setHandPoseCustom(tag, hand, handPose, priority);
+        if (!frikApi || !frikApi->setHandPoseCustom) {
+            detail::invalidateCachedHandPosePublication(tag, hand);
+            return false;
+        }
+
+        std::string_view tagView;
+        if (detail::shouldSkipCachedHandPosePublication(frikApi, tag, hand, handPose, priority, tagView)) {
+            return true;
+        }
+
+        const bool published = frikApi->setHandPoseCustom(tag, hand, handPose, priority);
+        if (published) {
+            // Updating the scalar pose replaces hFRIK's tagged entry and
+            // clears any local-transform payload previously attached to it.
+            detail::invalidateCachedFingerLocalTransformPublication(tag, hand);
+            if (!tagView.empty()) {
+                detail::rememberCachedHandPosePublication(tagView, hand, handPose, priority);
+            }
+        } else if (!published) {
+            detail::invalidateCachedHandPosePublication(tag, hand);
+            detail::invalidateCachedFingerLocalTransformPublication(tag, hand);
+        }
+        return published;
     }
 
     [[nodiscard]] inline bool setHandPose(const char* tag, Hand hand, HandPoseKind handPose, int priority)
     {
+        detail::invalidateCachedHandPosePublication(tag, hand);
+        detail::invalidateCachedFingerLocalTransformPublication(tag, hand);
         auto* frikApi = api();
         return frikApi && frikApi->setHandPose && frikApi->setHandPose(tag, hand, handPose, priority);
     }
 
     /*
-     * Since v2.3 the per-bone locals survive a later setHandPose* update of
-     * the same tag, so an owner may publish them in either order.
+     * Hand world claims go through the hand world authority service: they are
+     * published inside FRIK's AfterArmSolve phase and FRIK re-solves the
+     * claimed hand in the same frame. False means the claim is not held
+     * anywhere (gate closed, FRIK rejected it, or FRIK fell back to the
+     * tracked hand for it); the caller runs its failure reaction.
      */
-    [[nodiscard]] inline bool setHandPoseCustomLocalTransforms(
-        const char* tag,
-        Hand hand,
-        const FingerLocalTransformOverride* overrideData,
-        int priority)
-    {
-        auto* frikApi = api();
-        return frikApi && frikApi->setHandPoseCustomLocalTransforms && overrideData &&
-            frikApi->setHandPoseCustomLocalTransforms(tag, hand, overrideData, priority);
-    }
-
-    [[nodiscard]] inline bool getHandPoseLocalTransformsForPose(
-        Hand hand,
-        const HandPoseData& handPose,
-        FingerLocalTransformOverride* outTransforms)
-    {
-        auto* frikApi = api();
-        return frikApi &&
-            frikApi->getHandPoseLocalTransformsForPose &&
-            frikApi->getHandPoseLocalTransformsForPose(hand, handPose, outTransforms);
-    }
-
-    // ---- Hand world claims ----
-
-    /*
-     * Hand world claims go through the hand world authority service, which
-     * mirrors them for ROCK's own readers. FRIK solves a claim published from
-     * BeforeArmSolve in the same frame and re-solves one published from
-     * AfterArmSolve before the frame continues. False means the claim is not
-     * held anywhere (FRIK rejected it, or FRIK reported the target unreachable
-     * last frame); the caller runs its failure reaction.
-     */
-    [[nodiscard]] inline bool publishHandWorld(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority, RebaseDriver driver)
+    [[nodiscard]] inline bool publishHandWorld(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority)
     {
         bool isLeft = false;
         if (!tryResolveHandIsLeft(hand, isLeft)) {
             return false;
         }
-        return frik_hand_world_authority::publish(tag, isLeft, worldTarget, priority, driver);
+        return frik_hand_world_authority::publish(tag, isLeft, worldTarget, priority);
     }
 
     [[nodiscard]] inline bool clearHandWorld(const char* tag, Hand hand)
@@ -291,7 +491,42 @@ namespace rock::frik_visual_authority
         return frik_hand_world_authority::tryGetPublishedHandWorld(isLeft, outWorld, excludedTag);
     }
 
-    // ---- Blockers ----
+    [[nodiscard]] inline bool setHandPoseCustomLocalTransforms(
+        const char* tag,
+        Hand hand,
+        const FingerLocalTransformOverride* overrideData,
+        int priority)
+    {
+        auto* frikApi = api();
+        if (!frikApi || !frikApi->setHandPoseCustomLocalTransforms || !overrideData) {
+            detail::invalidateCachedFingerLocalTransformPublication(tag, hand);
+            return false;
+        }
+
+        std::string_view tagView;
+        if (detail::shouldSkipCachedFingerLocalTransformPublication(frikApi, tag, hand, *overrideData, priority, tagView)) {
+            return true;
+        }
+
+        const bool published = frikApi->setHandPoseCustomLocalTransforms(tag, hand, overrideData, priority);
+        if (published && !tagView.empty()) {
+            detail::rememberCachedFingerLocalTransformPublication(tagView, hand, *overrideData, priority);
+        } else if (!published) {
+            detail::invalidateCachedFingerLocalTransformPublication(tag, hand);
+        }
+        return published;
+    }
+
+    [[nodiscard]] inline bool getHandPoseLocalTransformsForPose(
+        Hand hand,
+        const HandPoseData& handPose,
+        FingerLocalTransformOverride* outTransforms)
+    {
+        auto* frikApi = api();
+        return frikApi &&
+            frikApi->getHandPoseLocalTransformsForPose &&
+            frikApi->getHandPoseLocalTransformsForPose(hand, handPose, outTransforms);
+    }
 
     [[nodiscard]] inline bool blockOffHandWeaponGripping(const char* tag, bool block)
     {
@@ -314,9 +549,9 @@ namespace rock::frik_visual_authority
     }
 
     /*
-     * Since v2.3 this is a pure write blocker: while blocked FRIK writes
-     * nothing to the primary weapon node (no offsets, no per-frame re-glue)
-     * and no longer changes which hand the node is parented under.
+     * Since FRIK API v2.3 this is a pure write blocker: while blocked FRIK
+     * writes nothing to the primary weapon node (no offsets, no per-frame
+     * re-glue) and no longer changes which hand the node is parented under.
      */
     [[nodiscard]] inline bool blockPrimaryWeaponNodeOwnership(const char* tag, bool block)
     {
@@ -329,6 +564,28 @@ namespace rock::frik_visual_authority
         auto* frikApi = api();
         return frikApi && frikApi->blockPrimaryWeaponNodeOwnership != nullptr;
     }
+
+    [[nodiscard]] inline bool registerWeaponHandRecoilController(
+        const char* tag,
+        WeaponHandRecoilController controller,
+        void* userData,
+        int priority)
+    {
+        auto* frikApi = api();
+        return frikApi &&
+            frikApi->registerWeaponHandRecoilController &&
+            frikApi->registerWeaponHandRecoilController(tag, controller, userData, priority);
+    }
+
+    [[nodiscard]] inline bool unregisterWeaponHandRecoilController(const char* tag)
+    {
+        auto* frikApi = api();
+        return frikApi &&
+            frikApi->unregisterWeaponHandRecoilController &&
+            frikApi->unregisterWeaponHandRecoilController(tag);
+    }
+
+    // ---- Weapon node ownership (v2.3) ----
 
     /*
      * Parent the primary weapon node under a hand (left carry). FRIK does the
@@ -363,28 +620,6 @@ namespace rock::frik_visual_authority
     {
         auto* frikApi = api();
         return frikApi && frikApi->setOffHandGripping && frikApi->setOffHandGripping(tag, active, supportHand, supportWorld);
-    }
-
-    // ---- Recoil ----
-
-    [[nodiscard]] inline bool registerWeaponHandRecoilController(
-        const char* tag,
-        WeaponHandRecoilController controller,
-        void* userData,
-        int priority)
-    {
-        auto* frikApi = api();
-        return frikApi &&
-            frikApi->registerWeaponHandRecoilController &&
-            frikApi->registerWeaponHandRecoilController(tag, controller, userData, priority);
-    }
-
-    [[nodiscard]] inline bool unregisterWeaponHandRecoilController(const char* tag)
-    {
-        auto* frikApi = api();
-        return frikApi &&
-            frikApi->unregisterWeaponHandRecoilController &&
-            frikApi->unregisterWeaponHandRecoilController(tag);
     }
 
     // ---- Frame phases (v2.3) ----
@@ -428,6 +663,7 @@ namespace rock::frik_visual_authority
         return tryGetTrackedHandTransform(hand, TrackedHandKind::FirstPersonHand, outWorld);
     }
 
+    // A bone of the flattened first-person tree: final after AfterWorldFinal, the previous frame before that.
     [[nodiscard]] inline bool tryGetBoneWorldTransform(const char* boneName, RE::NiTransform& outWorld)
     {
         outWorld = {};
@@ -439,9 +675,11 @@ namespace rock::frik_visual_authority
         return detail::isFiniteNiTransform(outWorld);
     }
 
-    // Read the last completed visual hand, including claims and palm blend.
-    // Before FRIK's world final the flattened tree still holds that completed
-    // presentation; FirstPersonHand can instead contain the native re-glue.
+    /*
+     * The last completed visual hand, claims and palm blend included. Read
+     * before FRIK's world final it is the previous frame's presentation;
+     * FirstPersonHand can instead hold the native re-glue at that point.
+     */
     [[nodiscard]] inline bool tryGetPresentedHandWorldTransform(const bool isLeft, RE::NiTransform& outWorld)
     {
         return tryGetBoneWorldTransform(isLeft ? "LArm_Hand" : "RArm_Hand", outWorld);
@@ -475,6 +713,7 @@ namespace rock::frik_visual_authority
         return frikApi && frikApi->getSkeletonGeneration ? frikApi->getSkeletonGeneration() : 0u;
     }
 
+    // FRIK's debounced power armor state; flips only together with the skeleton generation.
     [[nodiscard]] inline bool isInPowerArmor()
     {
         auto* frikApi = api();
@@ -503,10 +742,5 @@ namespace rock::frik_visual_authority
     {
         auto* frikApi = api();
         return frikApi && frikApi->isLookingThroughScope && frikApi->isLookingThroughScope();
-    }
-
-    // Kept for callers that reset per-skeleton caches; the bridge holds none since v2.3.
-    inline void resetPresentedHandNodeCache()
-    {
     }
 }

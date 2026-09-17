@@ -67,6 +67,7 @@ namespace rock::authored_weapon_grip_library
         bool hasSupportRelation{ false };
         bool hasRightPositionOnlyHandWeaponLocal{ false };
         bool usedVariantFallback{ false };
+        bool vanillaPipePose{ false };
         const char* reason{ "notEvaluated" };
     };
 
@@ -102,7 +103,11 @@ namespace rock::authored_weapon_grip_library
 
     [[nodiscard]] bool publishResolvedVariant(const RE::TESObjectWEAP* weapon, WeaponVariantIdentity variant, bool inPowerArmor,
         const RE::NiTransform& rightHandWeaponLocal, std::uint64_t captureSequence, CaptureSource source,
-        const FiringFingerPose* rightFiringFingerPose = nullptr);
+        const FiringFingerPose* rightFiringFingerPose = nullptr, bool vanillaPipePose = false);
+
+    // Apply only to a physical-right consumer copy. Stored poses and left
+    // firing/support consumers retain the original animation data.
+    void applyPipeDefaultOffset(LookupResult& result, bool isLeft) noexcept;
 
     /*
      * Attach the physical-hand relation measured from the final

@@ -14,26 +14,6 @@
 #include <cstddef>
 #include <string_view>
 
-namespace rock::native_weapon_aim_policy
-{
-    struct Identity
-    {
-        const void* weaponNode = nullptr;
-        std::uint64_t ownershipKey = 0;
-        std::uint64_t instanceContentKey = 0;
-    };
-
-    // Collision generation is deliberately absent: rebuilding bodies does
-    // not change a captured aim basis for the same equipped model/content.
-    [[nodiscard]] constexpr bool canRebind(const Identity& captured, const Identity& current) noexcept
-    {
-        return captured.weaponNode && captured.ownershipKey != 0 && captured.instanceContentKey != 0 &&
-               captured.weaponNode == current.weaponNode &&
-               captured.ownershipKey == current.ownershipKey &&
-               captured.instanceContentKey == current.instanceContentKey;
-    }
-}
-
 namespace rock::weapon_authority_lifecycle_policy
 {
     /*

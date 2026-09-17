@@ -32,27 +32,9 @@ namespace rock::hand_world_claim_registry_policy
     // orthonormal basis is not a pose FRIK may render (it stretches the arm).
     inline constexpr double kMaxTargetRotationError = 0.05;
 
-    /*
-     * The controller chain a claim is expressed against, declared by its
-     * owner. Under API v2.3 FRIK solves a claim in the frame it is published,
-     * so the driver no longer moves a target and is only recorded with the
-     * claim. Static claims (a hand latched to a surface) follow no chain.
-     */
-    enum class RebaseDriver : std::uint8_t
-    {
-        Static,
-        RightHand,
-        LeftHand,
-    };
-
     [[nodiscard]] constexpr std::size_t handIndex(const bool isLeft) noexcept
     {
         return isLeft ? 1u : 0u;
-    }
-
-    [[nodiscard]] constexpr RebaseDriver driverForHand(const bool isLeft) noexcept
-    {
-        return isLeft ? RebaseDriver::LeftHand : RebaseDriver::RightHand;
     }
 
     struct DriverSample
@@ -62,26 +44,15 @@ namespace rock::hand_world_claim_registry_policy
     };
 
     /*
-     * This frame's sample of both driver chains, taken before ROCK's update.
-     * sequence is the frame sequence that took it; zero means none yet.
+     * This frame's sample of both controller hands (FRIK's tracked weapon
+     * offset targets), taken before ROCK's update; the input driver readers
+     * use it. sequence is the frame sequence that took it; zero means none yet.
      */
     struct DriverFrame
     {
         std::uint64_t sequence = 0;
         std::array<DriverSample, 2> hands{};
     };
-
-    [[nodiscard]] inline const DriverSample* sampleForDriver(const DriverFrame& frame, const RebaseDriver driver) noexcept
-    {
-        switch (driver) {
-        case RebaseDriver::RightHand:
-            return &frame.hands[handIndex(false)];
-        case RebaseDriver::LeftHand:
-            return &frame.hands[handIndex(true)];
-        default:
-            return nullptr;
-        }
-    }
 
     struct Claim
     {
@@ -90,8 +61,6 @@ namespace rock::hand_world_claim_registry_policy
         bool isLeft = false;
         int priority = 0;
         RE::NiTransform target{};
-        RebaseDriver driver = RebaseDriver::Static;
-        DriverSample driverAtPublish{};
         // Mirrors FRIK's registration sequence: the highest wins a priority tie.
         std::uint64_t publishOrder = 0;
         // FRIK reports the target unreachable; the owner's publishes fail until it follows the claim again.
@@ -204,17 +173,14 @@ namespace rock::hand_world_claim_registry_policy
      * its publishOrder, matching FRIK's rule since API v2.3: the newest
      * registration wins a priority tie and a republish keeps its place (clear
      * and set again to claim the tie). Its unreachable report survives, since
-     * owners republish every frame and the episode spans frames. The driver
-     * sample is the frame's driver at publish.
+     * owners republish every frame and the episode spans frames.
      */
     [[nodiscard]] inline CommitResult commit(
         Registry& registry,
         const std::string_view tag,
         const bool isLeft,
         const int priority,
-        const RE::NiTransform& target,
-        const RebaseDriver driver,
-        const DriverSample& driverAtPublish) noexcept
+        const RE::NiTransform& target) noexcept
     {
         if (!isRegistrableTag(tag)) {
             return CommitResult::InvalidTag;
@@ -243,8 +209,6 @@ namespace rock::hand_world_claim_registry_policy
         claim->isLeft = isLeft;
         claim->priority = priority;
         claim->target = target;
-        claim->driver = driver;
-        claim->driverAtPublish = driver == RebaseDriver::Static ? DriverSample{} : driverAtPublish;
         if (inserted) {
             claim->publishOrder = registry.nextPublishOrder++;
             claim->fallbackReported = false;

@@ -7,6 +7,7 @@
 #include "physics-interaction/native/HeldScenePresentation.h"
 
 #include "physics-interaction/native/BodyCollisionControl.h"
+#include "physics-interaction/weapon/WeaponSupport.h"
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/debug/DebugMath.h"
@@ -33,6 +34,7 @@
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
+#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/object/SkinnedBodyResolver.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
@@ -856,22 +858,23 @@ namespace rock
                        frik_visual_authority::HandPoseKind::HoldingGun;
         }
 
-        bool publishLooseWeaponPrimaryAttachHandPose(bool isLeft, RE::TESObjectREFR* refr)
+        bool publishLooseWeaponPrimaryAttachHandPose(bool isLeft, RE::TESObjectREFR* refr, bool supportGrip)
         {
             const auto* weapon = looseWeaponFormFromRef(refr);
             auto* weaponRoot = refr ? refr->Get3D() : nullptr;
             if (weapon && weaponRoot) {
                 const auto authored = authored_weapon_grip_library::find(weapon, weaponRoot, f4vr::isInPowerArmor());
-                if (authored.found && authored.rightFiringFingerPose.complete()) {
+                const auto& fingers = supportGrip ? authored.supportFingerPose : authored.rightFiringFingerPose;
+                if (authored.found && (!supportGrip || authored.hasSupportRelation) && fingers.complete()) {
                     frik_visual_authority::FingerLocalTransformOverride exactRightPose{};
-                    exactRightPose.enabledMask = authored.rightFiringFingerPose.enabledMask;
-                    for (std::size_t index = 0; index < authored.rightFiringFingerPose.localTransforms.size(); ++index) {
-                        exactRightPose.localTransforms[index] = authored.rightFiringFingerPose.localTransforms[index];
+                    exactRightPose.enabledMask = fingers.enabledMask;
+                    for (std::size_t index = 0; index < fingers.localTransforms.size(); ++index) {
+                        exactRightPose.localTransforms[index] = fingers.localTransforms[index];
                     }
 
                     frik_visual_authority::FingerLocalTransformOverride exactPose = exactRightPose;
                     const bool exactPoseReady =
-                        !isLeft ||
+                        (supportGrip == isLeft) ||
                         hand_finger_mirror_math::mirrorFingerLocalsAcrossHands<RE::NiTransform>(
                             std::span<const RE::NiTransform>(exactRightPose.localTransforms),
                             std::span<RE::NiTransform>(exactPose.localTransforms));
@@ -885,8 +888,8 @@ namespace rock
                         const bool localsPublished =
                             scalarPublished && frik_visual_authority::setHandPoseCustomLocalTransforms(tag, handFromBool(isLeft), &exactPose, priority);
                         if (localsPublished) {
-                            ROCK_LOG_INFO(Hand, "{} hand loose weapon attach: applying exact native-idle firing pose source={} mask=0x{:04X}", isLeft ? "left" : "right",
-                                authored.reason, exactPose.enabledMask);
+                            ROCK_LOG_INFO(Hand, "{} hand loose weapon attach: applying exact native-idle {} pose source={} mask=0x{:04X}", isLeft ? "left" : "right",
+                                supportGrip ? "support" : "firing", authored.reason, exactPose.enabledMask);
                             return true;
                         }
 
@@ -908,6 +911,7 @@ namespace rock
         struct LooseWeaponPrimaryAttachFrame
         {
             bool valid = false;
+            bool supportGrip = false;
             RE::NiTransform desiredRootWorld{};
             bool sourceVisible = false;
             RE::NiTransform desiredObjectWorld{};
@@ -1009,15 +1013,15 @@ namespace rock
             const RE::NiPoint3& grabPivotAWorld,
             const RE::NiTransform& handWorldAtGrab,
             bool savedGrabOffsetAttachValid,
-            const RE::NiTransform& savedGrabOffsetRootWorld)
+            const RE::NiTransform& savedGrabOffsetRootWorld,
+            const loose_weapon_grip_zone::NearGrab* nearGrip)
         {
             LooseWeaponPrimaryAttachFrame frame{};
-            /*
-             * Ordinary close grabs keep their mesh hold. Immersive aid may
-             * supply a mandatory authored pose on any acquisition path.
-             * Weapon firing-grip transitions still use the grip-zone path.
-             */
-            if (!grabbedFromPullCatch && !selection.forcedArrival && !savedGrabOffsetAttachValid) {
+            // Near authored seats are optional. Outside them, retain the
+            // ordinary mesh capture; pull/force arrivals keep the firing hold.
+            const bool closeGrab = !grabbedFromPullCatch && !selection.forcedArrival;
+            const bool nearAuthored = closeGrab && looseWeaponGrab && !savedGrabOffsetAttachValid && nearGrip;
+            if (closeGrab && !nearAuthored && !savedGrabOffsetAttachValid) {
                 frame.reason = "closeGrabFreeHold";
                 return frame;
             }
@@ -1065,12 +1069,16 @@ namespace rock
                 RE::NiTransform handWorld{};
                 RE::NiTransform handWeaponLocal{};
                 const char* holdReason = "canonicalHoldUnavailable";
-                const bool haveDesiredRoot = loose_weapon_grip_zone::tryResolveLooseWeaponFiringHandHold(
-                    isLeft,
-                    selection.refr,
-                    handWorld,
-                    handWeaponLocal,
-                    &holdReason);
+                bool haveDesiredRoot = nearAuthored;
+                if (nearAuthored) {
+                    handWorld = nearGrip->handWorld;
+                    handWeaponLocal = nearGrip->handWeaponLocal;
+                    frame.supportGrip = nearGrip->role == loose_weapon_authored_grab_policy::Role::Support;
+                    holdReason = frame.supportGrip ? "authoredCloseSupportGrip" : "authoredCloseFiringGrip";
+                } else {
+                    haveDesiredRoot = loose_weapon_grip_zone::tryResolveLooseWeaponFiringHandHold(
+                        isLeft, selection.refr, handWorld, handWeaponLocal, &holdReason);
+                }
                 if (haveDesiredRoot) {
                     frame.desiredRootWorld = multiplyTransforms(
                         handWorld,
@@ -1103,6 +1111,11 @@ namespace rock
 
             frame.desiredRootWorld.scale =
                 rootNode && std::isfinite(rootNode->world.scale) && rootNode->world.scale > 0.0001f ? rootNode->world.scale : 1.0f;
+            if (nearAuthored) {
+                const auto seatLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(nearGrip->handWeaponLocal, isLeft);
+                frame.desiredRootWorld.translate = {};
+                frame.desiredRootWorld.translate = grabPivotAWorld - transform_math::localPointToWorld(frame.desiredRootWorld, seatLocal);
+            }
             if (!isFiniteNiTransform(frame.desiredRootWorld)) {
                 frame.reason = "nonFiniteDesiredRoot";
                 return frame;
@@ -4602,8 +4615,7 @@ namespace rock
                 GRAB_EXTERNAL_HAND_TAG,
                 handFromBool(isLeft),
                 adjustedHandTransform,
-                GRAB_EXTERNAL_HAND_PRIORITY,
-                frik_visual_authority::physicalHandDriver(isLeft));
+                GRAB_EXTERNAL_HAND_PRIORITY);
         }
 
         void clearGrabExternalHandWorldTransform(bool isLeft)
@@ -4617,8 +4629,7 @@ namespace rock
                 GRAB_RETURN_HAND_TAG,
                 handFromBool(isLeft),
                 handTransform,
-                GRAB_RETURN_HAND_PRIORITY,
-                frik_visual_authority::physicalHandDriver(isLeft));
+                GRAB_RETURN_HAND_PRIORITY);
         }
 
         void clearGrabReturnHandWorldTransform(bool isLeft)
@@ -8592,6 +8603,8 @@ namespace rock
     {
         RE::NiTransform desiredObjectWorld{};
         RE::NiTransform desiredBodyWorld{};
+        RE::NiTransform authoredHandWeaponLocal{};
+        bool hasAuthoredHandRelation = false;
         GrabPivotAuthoritySource resolvedAuthoritySource = GrabPivotAuthoritySource::None;
         const char* resolvedAuthorityReason = "notResolved";
     };
@@ -8650,6 +8663,9 @@ namespace rock
         auto* collidableNode = input.collidableNode;
         const bool grabbedFromPullCatch = input.grabbedFromPullCatch;
         const bool looseWeaponGrab = input.looseWeaponGrab;
+        loose_weapon_grip_zone::NearGrab nearGrip{};
+        const bool nearAuthored = looseWeaponGrab && !grabbedFromPullCatch && !sel.forcedArrival &&
+            loose_weapon_grip_zone::tryResolveNearGrab(_isLeft, sel.refr, nearGrip);
         const RE::NiPoint3 canonicalPivotNormalWorld = input.canonicalPivotNormalWorld;
         auto& desiredObjectWorld = outCapture.desiredObjectWorld;
         auto& desiredBodyWorld = outCapture.desiredBodyWorld;
@@ -8702,7 +8718,7 @@ namespace rock
                         .interiorDirectionValid = false,
                         .source = grabPointMode,
                     });
-                    if (pinchPocketCandidate.valid) {
+                    if (!nearAuthored && pinchPocketCandidate.valid) {
                         gripArea = grab_three_phase::buildObjectGripArea(grab_three_phase::GripAreaInput{
                             .objectBodyWorld = grabBodyWorldAtGrab,
                             .contactSeedWorld = pinchPocketCandidate.surfaceHit.position,
@@ -8758,11 +8774,12 @@ namespace rock
                         .behindPalmToleranceGameUnits = g_rockConfig.rockGrabSurfaceBehindPalmToleranceGameUnits,
                     });
 
-                    const bool usingPinchPocket = pinchPocketCandidate.valid && gripArea.valid;
-                    const bool captureAccepted = usingPinchPocket || (pocket.valid && gripArea.valid && phaseDecision.accepted);
+                    const bool usingPinchPocket = !nearAuthored && pinchPocketCandidate.valid && gripArea.valid;
+                    const bool captureAccepted = usingPinchPocket || (pocket.valid && gripArea.valid && (nearAuthored || phaseDecision.accepted));
                     if (captureAccepted) {
                         _grabObjectGripAtGrab = gripArea;
-                        _grabAcquisitionPhase = usingPinchPocket ? grab_three_phase::AcquisitionPhase::TouchHeld : phaseDecision.phase;
+                        _grabAcquisitionPhase = nearAuthored ? grab_three_phase::AcquisitionPhase::NearConverging :
+                            (usingPinchPocket ? grab_three_phase::AcquisitionPhase::TouchHeld : phaseDecision.phase);
                         if (usingPinchPocket) {
                             _grabObjectGripAtGrab.source = "pinchPocket";
                             _grabObjectGripAtGrab.fallbackReason = pinchPocketCandidate.decision.reason;
@@ -9102,8 +9119,14 @@ namespace rock
                             grabPivotAWorld,
                             handWorldTransform,
                             savedGrabOffsetAttachValid,
-                            savedGrabOffsetRootWorld);
+                            savedGrabOffsetRootWorld,
+                            nearAuthored ? &nearGrip : nullptr);
                         looseWeaponPrimaryAttachReason = looseWeaponPrimaryAttachFrame.reason;
+                        if (nearAuthored && !looseWeaponPrimaryAttachFrame.valid) {
+                            ROCK_LOG_WARN(Hand, "{} hand authored loose seat rejected ref={:08X} reason={}",
+                                handName(), sel.refr ? sel.refr->GetFormID() : 0, looseWeaponPrimaryAttachReason);
+                            return abortCapture();
+                        }
                         if (looseWeaponPrimaryAttachFrame.valid) {
                             desiredObjectWorld = looseWeaponPrimaryAttachFrame.desiredObjectWorld;
                             desiredBodyWorld = looseWeaponPrimaryAttachFrame.desiredBodyWorld;
@@ -9139,6 +9162,15 @@ namespace rock
                             resolvedAuthorityPivotSourceForFreeze = grab_authority_frame_math::GrabAuthorityPivotSource::LooseWeaponPrimaryAttach;
                             resolvedAuthorityPivotReasonForFreeze = looseWeaponPrimaryAttachFrame.reason;
                             looseWeaponPrimaryAttachApplied = true;
+                            _grabFrame.authoredLooseWeaponSupportGrip = looseWeaponPrimaryAttachFrame.supportGrip;
+                            outCapture.hasAuthoredHandRelation = nearAuthored;
+                            if (nearAuthored) {
+                                outCapture.authoredHandWeaponLocal = nearGrip.handWeaponLocal;
+                            }
+                            ROCK_LOG_INFO(Hand, "{} hand loose authored grab ref={:08X} role={} source={}",
+                                handName(), sel.refr ? sel.refr->GetFormID() : 0,
+                                looseWeaponPrimaryAttachFrame.supportGrip ? "support" : "firing",
+                                looseWeaponPrimaryAttachFrame.reason);
                             looseWeaponPrimaryAttachSourceVisible = looseWeaponPrimaryAttachFrame.sourceVisible;
                         }
                         /*
@@ -9932,6 +9964,10 @@ namespace rock
         auto& desiredBodyWorld = seatCapture.desiredBodyWorld;
         const auto resolvedAuthorityPivotSourceForFreeze = seatCapture.resolvedAuthoritySource;
         const auto* resolvedAuthorityPivotReasonForFreeze = seatCapture.resolvedAuthorityReason;
+        const auto visualHandObjectLocal = seatCapture.hasAuthoredHandRelation ?
+            transform_math::composeTransforms(bodyFrame.objectToBody,
+                transform_math::composeTransforms(transform_math::invertTransform(rootBodyLocalAtGrab),
+                    seatCapture.authoredHandWeaponLocal)) : transform_math::makeIdentityTransform<RE::NiTransform>();
         const bool palmPocketMeshAvailable = pivotEvidence.palmPocketMeshAvailable;
         const auto objectBodyId = input.objectBodyId;
         const auto grabTraceId = input.traceId;
@@ -9950,12 +9986,14 @@ namespace rock
                         .ownerBodyLocal = ownerBodyLocalAtGrab,
                         .desiredObjectWorld = desiredObjectWorld,
                         .desiredBodyWorld = desiredBodyWorld,
+                        .visualHandObjectLocal = visualHandObjectLocal,
                         .pivotAWorld = grabPivotAWorld,
                         .gripPointWorld = grabGripPoint,
                         .visualNormalWorld = frozenVisualNormalWorld,
                         .source = resolvedAuthorityPivotSourceForFreeze,
                         .hasDesiredObjectWorld = true,
                         .hasDesiredBodyWorld = true,
+                        .hasVisualHandObjectLocal = seatCapture.hasAuthoredHandRelation,
                         .visualNormalValid = lengthSquared(frozenVisualNormalWorld) > 0.000001f,
                     });
                 if (!frozenAuthorityFrame.valid) {
@@ -10650,7 +10688,9 @@ namespace rock
         const bool meshGrabFound = surface.meshGrabFound;
         const char* grabPointMode = surface.pointMode;
         const char* grabFallbackReason = surface.fallbackReason;
-        _grabAcquisition = {};
+        _grabOffsetAcquisition = {};
+        _grabOffsetMaximumGripError = 0.0f;
+        _grabOffsetMaximumRotationError = 0.0f;
             if (grab_target::isRagdoll(sel.targetKind) &&
                 (!surface.surfaceHit.valid || !surface.surfaceHit.sourceShape ||
                     surface.surfaceHit.sourceNode != _grabFrame.heldNode)) {
@@ -10708,38 +10748,42 @@ namespace rock
 
                 const char* driveReason = joiningPeerHeldObject ? "joining-peer-held-loose-object" : "ordinary-dynamic-loose-object";
                 RE::NiTransform initialProxyWorld = proxyFrameWorldAtGrab;
-                RE::NiPoint3 initialPivotWorld = grabPivotAWorld;
-                bool acquisitionReady = true;
-                if (!joiningPeerHeldObject && sel.targetKind == grab_target::Kind::LooseObject &&
+                RE::NiPoint3 initialConstraintPivotWorld = grabPivotAWorld;
+                if (!joiningPeerHeldObject &&
+                    sel.targetKind == grab_target::Kind::LooseObject &&
                     (_grabFrame.syntheticLooseWeaponPrimaryAttach || sel.forcedArrival)) {
-                    acquisitionReady = _grabAcquisition.begin(proxyFrameWorldAtGrab,
-                        _grabFrame.authority.bodyWorldAtGrab, _grabFrame.proxyAuthorityBodyHandSpace,
-                        _grabFrame.authority.pivotBConstraintLocalGame);
-                    if (acquisitionReady && _grabAcquisition.pending) {
-                        initialProxyWorld = _grabAcquisition.sample(proxyFrameWorldAtGrab,
-                            _grabFrame.proxyAuthorityBodyHandSpace, _grabFrame.authority.pivotBConstraintLocalGame, 0.0f);
-                        initialPivotWorld = generatedProxyLocalPointToWorld(initialProxyWorld,
+                    _grabOffsetAcquisition = grab_offset_acquisition::begin(
+                        proxyFrameWorldAtGrab, _grabFrame.authority.bodyWorldAtGrab,
+                        _grabFrame.proxyAuthorityBodyHandSpace, _grabFrame.authority.pivotBConstraintLocalGame);
+                    if (_grabOffsetAcquisition.active) {
+                        initialProxyWorld = grab_offset_acquisition::advance(_grabOffsetAcquisition,
+                            proxyFrameWorldAtGrab, _grabFrame.proxyAuthorityBodyHandSpace,
+                            _grabFrame.authority.pivotBConstraintLocalGame, 0.0f);
+                        initialConstraintPivotWorld = generatedProxyLocalPointToWorld(initialProxyWorld,
                             _grabFrame.authority.pivotAHandBodyLocalGame);
-                        acquisitionReady = isFiniteNiTransform(initialProxyWorld) && initialProxyWorld.scale > 0.0f;
-                        // The joint starts satisfied. Move its target toward the
-                        // current hand with full motor support, rather than sagging
-                        // under a second force ramp during the same transition.
+                        // The initial constraint is already satisfied. Ramp its
+                        // target, not its force budget, to avoid letting the
+                        // body sag while a second startup fade is running.
                         _grabFrame.fadeInGrabConstraint = false;
-                        _grabFrame.motorFadeReason = "coordinatedGripAcquisition";
+                        _grabFrame.motorFadeReason = "offsetAcquisitionTarget";
+                        const auto initialGrip = transform_math::localPointToWorld(
+                            _grabFrame.authority.bodyWorldAtGrab, _grabFrame.authority.pivotBConstraintLocalGame);
                         ROCK_LOG_INFO(Hand,
-                            "{} GRIP_ACQUIRE begin trace={} duration={:.3f}s rotation={:.2f}deg source={}",
-                            handName(), _grabFrame.traceId, _grabAcquisition.durationSeconds,
-                            grab_acquisition::rotationDegrees(_grabFrame.authority.bodyWorldAtGrab, initialDesiredBodyWorld),
-                            grabFallbackReason);
+                            "{} OFFSET_ACQUIRE begin trace={} ref={:08X} source={} gripCorrection={:.3f}gu rotationCorrection={:.3f}deg duration={:.3f}s",
+                            handName(), _grabFrame.traceId, sel.refr ? sel.refr->GetFormID() : 0,
+                            grabFallbackReason, pointDistanceGameUnits(initialGrip, grabPivotAWorld),
+                            grab_offset_acquisition::rotationAngleRadians(_grabFrame.authority.bodyWorldAtGrab.rotate,
+                                initialDesiredBodyWorld.rotate) * 57.295779513f,
+                            _grabOffsetAcquisition.durationSeconds);
                     }
                 }
-                if (!acquisitionReady || !createProxyConstraintGrabDrive(
+                if (!createProxyConstraintGrabDrive(
                         bhkWorld,
                         world,
                         objectBodyId,
                         initialProxyWorld,
                         handWorldTransform,
-                        initialPivotWorld,
+                        initialConstraintPivotWorld,
                         tau,
                         damping,
                         maxForce,
@@ -10764,7 +10808,6 @@ namespace rock
 
             const bool driveCreated = _activeConstraint.isValid() && _grabAuthorityProxy.isValid();
             if (!driveCreated) {
-                _grabAcquisition = {};
                 ROCK_LOG_ERROR(Hand, "{} hand GRAB FAILED: proxy-constraint dynamic grab creation failed", handName());
                 destroyGrabAuthorityProxy(bhkWorld);
                 clearGrabExternalHandWorldTransform(_isLeft);
@@ -10936,7 +10979,7 @@ namespace rock
                         "{} hand loose weapon attach: applying savedGrabOffset finger pose",
                         handName());
                 } else {
-                    _grabFingerPosePublished = publishLooseWeaponPrimaryAttachHandPose(_isLeft, sel.refr);
+                    _grabFingerPosePublished = publishLooseWeaponPrimaryAttachHandPose(_isLeft, sel.refr, _grabFrame.authoredLooseWeaponSupportGrip);
                     if (!_grabFingerPosePublished) {
                         ROCK_LOG_WARN(Hand, "{} hand loose weapon attach: failed to publish FRIK weapon hand pose", handName());
                     }
@@ -11974,6 +12017,16 @@ namespace rock
         clearPullCatchIntent(grabbedFromPullCatch ? "pullCatchGrabbed" : "grabbed");
 
         ROCK_LOG_INFO(Hand, "{} hand grab success -> HeldInit: bodyId={}", handName(), objectBodyId.value);
+        if (sel.equippedWeaponTransfer && rootNode) {
+            const auto desiredRoot = transform_math::composeTransforms(
+                _grabFrame.authority.desiredBodyWorldAtGrab, transform_math::invertTransform(_grabFrame.rootBodyLocal));
+            vanilla_weapon_alignment_telemetry::recordTransferPose(sel.refr ? sel.refr->GetFormID() : 0,
+                _isLeft, "commit", rootNode->world, handWorldTransform,
+                &proxyPreparation.proxyFrameWorldAtGrab, &desiredRoot);
+            _grabFrame.transferPoseTracePending = true;
+        }
+        vanilla_weapon_alignment_telemetry::recordLooseGrab(
+            _savedObjectState.refr, _isLeft, _grabFrame.traceId, handWorldTransform);
         return true;
     }
 
@@ -12184,6 +12237,11 @@ namespace rock
         }
 
         if (!_savedObjectState.refr || _savedObjectState.refr->IsDeleted() || _savedObjectState.refr->IsDisabled()) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand held reference invalid: grab={} ref={:08X} missing={} deleted={} disabled={}",
+                handName(), _grabFrame.traceId, _savedObjectState.refr ? _savedObjectState.refr->GetFormID() : 0,
+                !_savedObjectState.refr, _savedObjectState.refr && _savedObjectState.refr->IsDeleted(),
+                _savedObjectState.refr && _savedObjectState.refr->IsDisabled());
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
             return false;
         }
@@ -12234,13 +12292,129 @@ namespace rock
         bool heldMotorContactSoftening = false;
     };
 
+    bool Hand::coordinateLooseObjectProxy(RE::hknpWorld* world, Hand* peer,
+        const RE::NiTransform* peerHandWorld, RE::NiTransform& proxyWorld)
+    {
+        const bool sameObject = isHolding() && peer && peerHandWorld && peer->isHolding() &&
+            getHeldRef() && getHeldRef() == peer->getHeldRef();
+        const bool sameBody = sameObject && _savedObjectState.bodyId.value == peer->_savedObjectState.bodyId.value;
+        // Detached pieces can retain the same actor ref without sharing a
+        // rigid root. Only two grips on the same ragdoll body may share a pivot.
+        const bool sameAssembly = sameObject && (sameBody ||
+            (!grab_target::isRagdoll(_savedObjectState.targetKind) && !grab_target::isRagdoll(peer->_savedObjectState.targetKind)));
+        const bool shared = sameAssembly && held_object_drive_policy::canShareTwoHandPivot(
+            _heldDriveDecision.mode, peer->_heldDriveDecision.mode, sameBody,
+            isHoldingLooseWeapon() && peer->isHoldingLooseWeapon());
+        const auto finishOldPair = [](Hand& hand, std::uint64_t peerTrace) {
+            auto& frame = hand._grabFrame;
+            if (frame.looseObjectSharedPeerTrace && frame.looseObjectSharedPeerTrace != peerTrace) {
+                // Weapons return to the remaining hand's captured solo grip,
+                // like equipped support release. Props retain their shared pose.
+                const bool preserveSharedPose = !hand.isHoldingLooseWeapon();
+                frame.looseObjectSoloProxyCorrection = preserveSharedPose ? frame.looseObjectSharedProxyCorrection :
+                    transform_math::makeIdentityTransform<RE::NiTransform>();
+                frame.hasLooseObjectSoloProxyCorrection = preserveSharedPose;
+                frame.looseObjectSharedPeerTrace = 0;
+                ROCK_LOG_INFO(Hand, "{} hand loose two-hand pivot ended; {}", hand.handName(),
+                    preserveSharedPose ? "preserving remaining grip" : "restoring solo weapon grip");
+            }
+        };
+        const auto correctedProxy = [](const Hand& hand, RE::NiTransform proxy) {
+            if (hand._grabFrame.hasLooseObjectSoloProxyCorrection) {
+                proxy.rotate = transform_math::transposeRotation(proxy.rotate);
+                proxy = transform_math::composeTransforms(proxy, hand._grabFrame.looseObjectSoloProxyCorrection);
+                proxy.rotate = transform_math::transposeRotation(proxy.rotate);
+            }
+            return proxy;
+        };
+        finishOldPair(*this, shared ? peer->_grabFrame.traceId : 0);
+        if (!shared) {
+            proxyWorld = correctedProxy(*this, proxyWorld);
+            return isFiniteNiTransform(proxyWorld);
+        }
+        finishOldPair(*peer, _grabFrame.traceId);
+        RE::NiTransform peerProxy{};
+        const char* peerSource = "unavailable";
+        if (!peer->resolveGrabAuthorityProxyFrame(world, *peerHandWorld, nullptr, peerProxy,
+                peerSource, GrabAuthorityProxyFramePolicy::PreferQueuedPalmTarget)) {
+            ROCK_LOG_WARN(Hand, "Loose two-hand pivot missing peer palm source={}", peerSource);
+            return false;
+        }
+        // A firing seat owns the pivot. For two arbitrary mesh seats, keep
+        // the first grab as the pivot until that hand releases.
+        const auto firingSeat = [](const Hand& hand) {
+            return hand._grabFrame.syntheticLooseWeaponPrimaryAttach && !hand._grabFrame.authoredLooseWeaponSupportGrip;
+        };
+        const bool thisPrimary = firingSeat(*this) != firingSeat(*peer) ? firingSeat(*this) :
+            _grabFrame.traceId < peer->_grabFrame.traceId;
+        const Hand& primary = thisPrimary ? *this : *peer;
+        const Hand& support = thisPrimary ? *peer : *this;
+        const auto primaryProxy = correctedProxy(primary, thisPrimary ? proxyWorld : peerProxy);
+        const auto supportProxy = correctedProxy(support, thisPrimary ? peerProxy : proxyWorld);
+        // One driven body is its own common frame, including two seats on a
+        // jointed object's same part. Different rigid bodies use the assembly
+        // root; independent articulated parts keep their existing joint motion.
+        const auto primaryBodyLocal = sameBody ? transform_math::makeIdentityTransform<RE::NiTransform>() : primary._grabFrame.rootBodyLocal;
+        const auto supportBodyLocal = sameBody ? transform_math::makeIdentityTransform<RE::NiTransform>() : support._grabFrame.rootBodyLocal;
+        const auto primaryBody = grab_frame_math::objectFromGeneratedProxyLocalSpace(
+            primaryProxy, primary._grabFrame.proxyAuthorityBodyHandSpace);
+        const auto root = transform_math::composeTransforms(primaryBody,
+            transform_math::invertTransform(primaryBodyLocal));
+        const auto primaryLocal = transform_math::localPointToWorld(primaryBodyLocal,
+            primary.activeProxyConstraintPivotBLocalGame());
+        const auto supportLocal = transform_math::localPointToWorld(supportBodyLocal,
+            support.activeProxyConstraintPivotBLocalGame());
+        const auto primaryTarget = generatedProxyLocalPointToWorld(primaryProxy,
+            primary._grabFrame.authority.pivotAHandBodyLocalGame);
+        const auto supportTarget = generatedProxyLocalPointToWorld(supportProxy,
+            support._grabFrame.authority.pivotAHandBodyLocalGame);
+        const auto supportBase = transform_math::localPointToWorld(root, supportLocal);
+        const float separation = pointDistanceGameUnits(transform_math::localPointToWorld(root, primaryLocal), supportBase);
+        const auto lockedSupport = makeLockedSupportGripTarget(primaryTarget, supportTarget, supportBase, separation, 0.001f);
+        const auto solved = solveTwoHandedWeaponTransformFrikPivot(WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3>{
+            .weaponWorldTransform = root,
+            .primaryGripLocal = primaryLocal,
+            .supportGripLocal = supportLocal,
+            .primaryTargetWorld = primaryTarget,
+            .supportTargetWorld = lockedSupport,
+        });
+        // Coincident seats cannot define an aim axis. Both constraints then
+        // share the primary carry target until separation defines that axis.
+        if (!solved.solved) {
+            ROCK_LOG_SAMPLE_WARN(Hand, 1000, "Loose two-hand pivot degenerate axis: separation={:.4f}; sharing primary target", separation);
+        }
+        const auto sharedRoot = solved.solved ? solved.weaponWorldTransform : root;
+        const auto sharedBody = transform_math::composeTransforms(sharedRoot, thisPrimary ? primaryBodyLocal : supportBodyLocal);
+        const auto targetProxy = grab_frame_math::generatedProxyFromObjectWorld(sharedBody, _grabFrame.proxyAuthorityBodyHandSpace);
+        if (!isFiniteNiTransform(targetProxy) || targetProxy.scale <= 0.0001f) {
+            return false;
+        }
+        auto physicalNi = proxyWorld;
+        physicalNi.rotate = transform_math::transposeRotation(physicalNi.rotate);
+        auto targetNi = targetProxy;
+        targetNi.rotate = transform_math::transposeRotation(targetNi.rotate);
+        _grabFrame.looseObjectSharedProxyCorrection = transform_math::composeTransforms(
+            transform_math::invertTransform(physicalNi), targetNi);
+        if (!_grabFrame.looseObjectSharedPeerTrace) {
+            _grabFrame.looseObjectVisualTraceElapsed = 0.5f;
+            ROCK_LOG_INFO(Hand, "{} hand loose two-hand pivot started ref={:08X} primary={} separation={:.3f}",
+                handName(), getHeldRef()->GetFormID(), primary.handName(), separation);
+        }
+        _grabFrame.looseObjectSharedPeerTrace = peer->_grabFrame.traceId;
+        _grabFrame.looseObjectSharedPrimaryIsLeft = primary._isLeft;
+        proxyWorld = targetProxy;
+        return true;
+    }
+
     bool Hand::updateHeldDrive(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float deltaTime,
         float forceFadeInTime,
         float tauMin,
         const GrabReleaseContext& releaseContext,
-        HeldDriveUpdate& update)
+        HeldDriveUpdate& update,
+        Hand* peerHand,
+        const RE::NiTransform* peerHandWorld)
     {
         update.proxyAuthorityWorld = handWorldTransform;
         update.hasProxyAuthorityFrame = resolveGrabAuthorityProxyFrame(
@@ -12259,22 +12433,32 @@ namespace rock
             return false;
         }
 
-        if (_grabAcquisition.pending) {
-            const bool targetWasComplete = _grabAcquisition.targetComplete();
-            // This target uses the controller palm sampled in AfterArmSolve.
-            // No previous-frame hand claim or deferred presentation drives it.
-            update.proxyAuthorityWorld = _grabAcquisition.sample(update.proxyAuthorityWorld,
-                _grabFrame.proxyAuthorityBodyHandSpace, _grabFrame.authority.pivotBConstraintLocalGame,
-                held_object_physics_math::shouldQueueGrabAuthorityTargetForDelta(deltaTime) ? deltaTime : 0.0f);
-            update.proxyAuthoritySource = "coordinatedGripAcquisition";
-            if (!isFiniteNiTransform(update.proxyAuthorityWorld) || update.proxyAuthorityWorld.scale <= 0.0f) {
-                ROCK_LOG_WARN(Hand, "{} hand release: invalid acquisition target trace={}", handName(), _grabFrame.traceId);
+        if (!coordinateLooseObjectProxy(world, peerHand, peerHandWorld, update.proxyAuthorityWorld)) {
+            ROCK_LOG_WARN(Hand, "{} hand release: shared object pivot target unavailable", handName());
+            releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
+            return false;
+        }
+        if (_grabFrame.looseObjectSharedPeerTrace) {
+            update.proxyAuthoritySource = "sharedLooseObjectPalmPivot";
+            if (_grabOffsetAcquisition.active) {
+                ROCK_LOG_INFO(Hand, "{} OFFSET_ACQUIRE ended trace={} reason=shared-grip", handName(), _grabFrame.traceId);
+                _grabOffsetAcquisition = {};
+            }
+        }
+        const bool advancingOffset = _grabOffsetAcquisition.active;
+        if (advancingOffset) {
+            // Both endpoints ride the current physical hand frame. The fixed
+            // body-local grip follows a straight segment while rotation uses
+            // the same fraction; no offset is applied around the body origin.
+            const float acquisitionDelta = held_object_physics_math::shouldQueueGrabAuthorityTargetForDelta(deltaTime) ? deltaTime : 0.0f;
+            update.proxyAuthorityWorld = grab_offset_acquisition::advance(_grabOffsetAcquisition,
+                update.proxyAuthorityWorld, _grabFrame.proxyAuthorityBodyHandSpace,
+                _grabFrame.authority.pivotBConstraintLocalGame, acquisitionDelta);
+            update.proxyAuthoritySource = "offsetAcquisitionGripPath";
+            if (!isFiniteNiTransform(update.proxyAuthorityWorld)) {
+                ROCK_LOG_WARN(Hand, "{} hand release: invalid offset acquisition target trace={}", handName(), _grabFrame.traceId);
                 releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
                 return false;
-            }
-            if (!targetWasComplete && _grabAcquisition.targetComplete()) {
-                ROCK_LOG_INFO(Hand, "{} GRIP_ACQUIRE target-complete trace={}; awaiting solved grip and rotation",
-                    handName(), _grabFrame.traceId);
             }
         }
         update.desiredObjectWorld =
@@ -12306,13 +12490,23 @@ namespace rock
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
             return false;
         }
-        if (_grabAcquisition.pending) {
-            const float solvedAngle = grab_acquisition::rotationDegrees(update.solvedBodyWorld, update.desiredBodyWorld);
-            if (_grabAcquisition.finishIfSettled(update.pivotTrackingErrorGameUnits, solvedAngle,
-                    g_rockConfig.rockGrabTouchAcquireDistanceGameUnits)) {
-                ROCK_LOG_INFO(Hand, "{} GRIP_ACQUIRE settled trace={} gripError={:.3f}gu rotationError={:.2f}deg",
-                    handName(), _grabFrame.traceId, update.pivotTrackingErrorGameUnits, solvedAngle);
+        if (advancingOffset) {
+            _grabOffsetMaximumGripError = (std::max)(_grabOffsetMaximumGripError, update.pivotTrackingErrorGameUnits);
+            _grabOffsetMaximumRotationError = (std::max)(_grabOffsetMaximumRotationError, update.grabRotationErrorDegrees);
+            if (!_grabOffsetAcquisition.active) {
+                ROCK_LOG_INFO(Hand,
+                    "{} OFFSET_ACQUIRE target-complete trace={} gripError={:.3f}gu rotationError={:.3f}deg maxGripError={:.3f}gu maxRotationError={:.3f}deg",
+                    handName(), _grabFrame.traceId, update.pivotTrackingErrorGameUnits, update.grabRotationErrorDegrees,
+                    _grabOffsetMaximumGripError, _grabOffsetMaximumRotationError);
             }
+        }
+        if (_grabFrame.transferPoseTracePending) {
+            _grabFrame.transferPoseTracePending = false;
+            const auto rootFromBody = transform_math::invertTransform(_grabFrame.rootBodyLocal);
+            const auto root = transform_math::composeTransforms(update.solvedBodyWorld, rootFromBody);
+            const auto desiredRoot = transform_math::composeTransforms(update.desiredBodyWorld, rootFromBody);
+            vanilla_weapon_alignment_telemetry::recordTransferPose(getHeldRef() ? getHeldRef()->GetFormID() : 0,
+                _isLeft, "first-drive", root, handWorldTransform, &update.proxyAuthorityWorld, &desiredRoot);
         }
         if (held_object_physics_math::instantDeviationExceeded(
                 update.pivotTrackingErrorGameUnits, g_rockConfig.rockGrabMaxDeviation)) {
@@ -12553,7 +12747,6 @@ namespace rock
         const auto visualPublishDecision = grab_motion_controller::evaluateVisualHandPublishGate(
             grab_motion_controller::VisualHandPublishInput{
                 .hasTelemetryCapture = _grabFrame.hasTelemetryCapture,
-                .acquisitionPending = _grabAcquisition.pending,
                 .touchHeldPhase = _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld,
                 .acquisitionVisualEligible = acquisitionVisualEligible,
                 .hasPivotTrackingError = hasPivotTrackingError,
@@ -12566,8 +12759,21 @@ namespace rock
                 .contactPatchSampleCount = _grabFrame.contactPatchSampleCount,
                 .contactSupportShape = heldAngularAuthority.contactSupportShape,
             });
+        if (_grabFrame.looseObjectSharedPeerTrace && (g_rockConfig.rockDebugGrabFrameLogging ||
+                (_heldObjectIsLooseWeapon && g_rockConfig.rockDebugWeaponOmodDumpEnabled))) {
+            _grabFrame.looseObjectVisualTraceElapsed += (std::max)(0.0f, deltaTime);
+            if (_grabFrame.looseObjectVisualTraceElapsed >= 0.5f) {
+                _grabFrame.looseObjectVisualTraceElapsed = 0.0f;
+                ROCK_LOG_INFO(Hand, "Shared grip seat: grab={} hand={} primary={} phase={} publish={} gate={} settled={} acquisition={} tracking={:.3f} relationT=({:.3f},{:.3f},{:.3f}) presented={}",
+                    _grabFrame.traceId, handName(), _grabFrame.looseObjectSharedPrimaryIsLeft ? "left" : "right",
+                    grab_three_phase::phaseName(_grabAcquisitionPhase), visualPublishDecision.apply, visualPublishDecision.reason,
+                    _grabFrame.seat.hasSettledVisualHandRelation, _grabOffsetAcquisition.active, pivotTrackingErrorGameUnits,
+                    _grabFrame.rawHandSpace.translate.x, _grabFrame.rawHandSpace.translate.y, _grabFrame.rawHandSpace.translate.z,
+                    driveUpdate.hasPresentedBodyWorld);
+            }
+        }
         if (_grabFrame.hasTelemetryCapture &&
-            visualPublishDecision.apply) {
+            !_grabOffsetAcquisition.active && visualPublishDecision.apply) {
             RE::NiTransform heldVisualNodeWorld{};
             bool hasHeldVisualNodeWorld = false;
             bool heldVisualNodeFromPresentedPose = false;
@@ -12781,9 +12987,6 @@ namespace rock
         const HeldDriveUpdate& driveUpdate,
         bool convergingAcquisitionPhase)
     {
-        // A moving acquisition target may already have zero motor error while
-        // still far from the final hand seat. It cannot promote/reacquire yet.
-        if (_grabAcquisition.pending) return;
         const auto& desiredObjectWorld = driveUpdate.desiredObjectWorld;
         const auto& desiredBodyWorld = driveUpdate.desiredBodyWorld;
         const auto& proxyAuthorityWorld = driveUpdate.proxyAuthorityWorld;
@@ -12821,7 +13024,7 @@ namespace rock
                 handName());
         }
 
-        if (convergingAcquisitionPhase && _grabObjectGripAtGrab.valid) {
+        if (convergingAcquisitionPhase && !_grabOffsetAcquisition.active && _grabObjectGripAtGrab.valid) {
             const auto previousAcquisitionPhase = _grabAcquisitionPhase;
             RE::NiTransform grabBodyWorld{};
             const bool hasGrabBody = tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, grabBodyWorld);
@@ -13794,7 +13997,9 @@ namespace rock
         float forceFadeInTime,
         float tauMin,
         const BodyBoneColliderSet* bodyBoneColliders,
-        const GrabReleaseContext& releaseContext)
+        const GrabReleaseContext& releaseContext,
+        Hand* peerHand,
+        const RE::NiTransform* peerHandWorld)
     {
         if (!isHolding() || !world)
             return;
@@ -13829,7 +14034,9 @@ namespace rock
                 forceFadeInTime,
                 tauMin,
                 releaseContext,
-                driveUpdate)) {
+                driveUpdate,
+                peerHand,
+                peerHandWorld)) {
             return;
         }
         bool convergingAcquisitionPhase = false;
@@ -15215,7 +15422,8 @@ namespace rock
     GrabReleaseOutcome Hand::releaseGrabbedObject(
         RE::hknpWorld* world,
         GrabReleaseCollisionRestoreMode collisionRestoreMode,
-        const GrabReleaseContext& releaseContext)
+        const GrabReleaseContext& releaseContext,
+        const std::source_location& caller)
     {
         GrabReleaseOutcome outcome{};
         outcome.finalObjectRelease = releaseContext.finalObjectRelease;
@@ -15251,15 +15459,19 @@ namespace rock
                 _heldObjectIsLooseWeapon ? "yes" : "no");
         }
 
+        const std::string_view callerPath{ caller.file_name() };
+        const auto separator = callerPath.find_last_of("/\\");
+        const auto callerFile = separator == std::string_view::npos ? callerPath : callerPath.substr(separator + 1);
         ROCK_LOG_INFO(Hand,
-            "{} hand RELEASE: bodyId={} constraintId={} proxyBody={} finalObjectRelease={} disposition={} reason={}",
+            "{} hand RELEASE: bodyId={} constraintId={} proxyBody={} finalObjectRelease={} disposition={} reason={} grab={} caller={}:{}",
             handName(),
             _savedObjectState.bodyId.value,
             _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu,
             _grabAuthorityProxy.isValid() ? _grabAuthorityProxy.getBodyId().value : INVALID_BODY_ID,
             releaseContext.finalObjectRelease ? "yes" : "no",
             releaseDispositionName(releaseContext.disposition),
-            releaseContext.reason ? releaseContext.reason : "none");
+            releaseContext.reason ? releaseContext.reason : "none",
+            _grabFrame.traceId, callerFile, caller.line());
 
         nearby_grab_damping::restoreNearbyGrabDamping(world, _nearbyGrabDamping);
 
@@ -15570,7 +15782,7 @@ namespace rock
         clearGrabAuthorityProxyRuntime();
         _heldBodyIds.clear();
         _grabFrame.clear();
-        _grabAcquisition = {};
+        _grabOffsetAcquisition = {};
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         _grabObjectGripAtGrab = {};
         _heldDriveDecision = {};

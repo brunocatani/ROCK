@@ -1,4 +1,5 @@
 #include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/NativeMemory.h"
@@ -446,6 +447,7 @@ namespace rock::havok_runtime
         void* userData)
     {
         PhysicsSystemBodyScanResult result{};
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::PhysicsSystemBodyScan);
         if (!visitor || maxBodies == 0) {
             result.status = PhysicsSystemBodyScanStatus::InvalidArguments;
             return result;

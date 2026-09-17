@@ -1,6 +1,7 @@
 #pragma once
 
 #include "api/ROCKProviderApi.h"
+#include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
 #include "physics-interaction/weapon/immersive/ImmersiveWeaponPolicy.h"
 
 namespace rock
@@ -9,9 +10,9 @@ namespace rock
     {
         bool ambidextrousHandoffEnabled{ false };
         bool authoredOnlySupportGrabsEnabled{ true };
-        bool toggleGrabEnabled{ false };
+        equipped_weapon_toggle_grab_policy::Mode weaponGrabMode{ equipped_weapon_toggle_grab_policy::Mode::HoldBoth };
         bool equippedWeaponShoulderStashEnabled{ false };
-        // Whether the last hand carrying the weapon may drop it by letting go.
+        // Whether releasing the last equipped grip transfers it to a retained loose grab.
         // With false that grip is retained; releases are honored only while
         // the other hand still carries the weapon.
         bool lastGripReleaseDropEnabled{ true };
@@ -37,7 +38,7 @@ namespace rock
         bool preserveWeaponPoseOnDetach{ false };
         bool ambidextrousHandoffEnabled{ false };
         bool authoredOnlySupportGrabsEnabled{ true };
-        bool toggleGrabEnabled{ false };
+        equipped_weapon_toggle_grab_policy::Mode weaponGrabMode{ equipped_weapon_toggle_grab_policy::Mode::HoldBoth };
         bool lastGripReleaseDropEnabled{ true };
         bool gripZoneEquipEnabled{ false };
         bool gripZoneHoverHapticsEnabled{ false };
@@ -85,7 +86,7 @@ namespace rock
             rockBaseline.authoredOnlySupportGrabsEnabled;
         // Toggle grab is a ROCK input preference. A handling-provider lease
         // can add weapon capabilities, but it cannot replace this input mode.
-        settings.toggleGrabEnabled = rockBaseline.toggleGrabEnabled;
+        settings.weaponGrabMode = rockBaseline.weaponGrabMode;
         // Like toggle grab, the last-grip drop is a ROCK release preference
         // that applies under either detach authority; a handling-provider
         // lease cannot re-enable dropping for the player's last carrying hand.
@@ -197,7 +198,7 @@ namespace rock
         const EquippedWeaponHandlingSettings& previous,
         const EquippedWeaponHandlingSettings& current) noexcept
     {
-        if (previous.toggleGrabEnabled != current.toggleGrabEnabled) {
+        if (previous.weaponGrabMode != current.weaponGrabMode) {
             return true;
         }
 

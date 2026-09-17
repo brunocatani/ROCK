@@ -4,6 +4,7 @@
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
 #include "physics-interaction/input/NativeVatsInputSuppressionPolicy.h"
+#include "physics-interaction/input/BareFistGesturePolicy.h"
 #include "physics-interaction/input/NativeGrenadeThrowRuntime.h"
 #include "physics-interaction/input/VatsGrenadeGesturePolicy.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
@@ -211,6 +212,14 @@ namespace rock::input_remap_runtime
         };
 
         std::atomic<std::uint64_t> s_nextControllerSampleSequence{ 1 };
+        // Each sample publishes just this gesture's buttons, rearm and time
+        // together. Do not reconstruct this from independently loaded fields.
+        std::atomic<std::uint64_t> s_bareFistSamples[2]{};
+        std::atomic<std::uint64_t> s_bareFistCycle{ 2 }; // initially release to rearm
+        std::atomic<std::uint64_t> s_bareFistAdmissionUntil{ 0 };
+        std::atomic<bool> s_bareFistDrawOwned{ false };
+        std::atomic<bool> s_bareFistReady{ false };
+        std::atomic<std::uint64_t> s_bareFistDrawCycle{ 0 };
         std::atomic<std::uint64_t> s_nextLogicalJumpSequence{ 1 };
 
         std::array<ControllerTracker, 2> s_controllers;
@@ -567,6 +576,46 @@ namespace rock::input_remap_runtime
                        provider::RockProviderHand::Left);
         }
 
+        struct BareFistButtons
+        {
+            bool fresh{ false };
+            bool held{ false };
+            bool released{ false };
+        };
+
+        [[nodiscard]] BareFistButtons readBareFistButtons()
+        {
+            const auto left = s_bareFistSamples[0].load(std::memory_order_acquire);
+            const auto right = s_bareFistSamples[1].load(std::memory_order_acquire);
+            const auto now = GetTickCount64();
+            const auto fresh = [now](std::uint64_t sample) {
+                const auto tick = sample >> 3;
+                return tick != 0 && now >= tick &&
+                    now - tick <= bare_fist_gesture::kMaximumSampleAgeMilliseconds;
+            };
+            const bool samplesFresh = fresh(left) && fresh(right);
+            return { samplesFresh,
+                samplesFresh && (left & 7u) == 3u && (right & 7u) == 3u,
+                samplesFresh && (left & 3u) == 0 && (right & 3u) == 0 };
+        }
+
+        void observeBareFistCapture(bool interrupted)
+        {
+            const auto buttons = readBareFistButtons();
+            const bool eligible = buttons.held &&
+                GetTickCount64() < s_bareFistAdmissionUntil.load(std::memory_order_acquire) &&
+                s_gameplayInputAllowed.load(std::memory_order_acquire) && !isInputBlockingMenuActive() &&
+                (currentProviderHandInputSuppressionFlagsAtDispatch() &
+                    (static_cast<std::uint32_t>(provider::RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord) |
+                     static_cast<std::uint32_t>(provider::RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput))) == 0;
+            auto cycle = s_bareFistCycle.load(std::memory_order_acquire);
+            const auto next = bare_fist_gesture::observe(
+                cycle, eligible, buttons.held, buttons.released, interrupted);
+            // One bounded attempt. A competing cancellation must win; the
+            // next physical sample can capture a subsequent fresh cycle.
+            if (next != cycle) s_bareFistCycle.compare_exchange_strong(cycle, next, std::memory_order_acq_rel);
+        }
+
         [[nodiscard]] bool isAnyProviderOpenVrGameInputSuppressedAtDispatch()
         {
             // Native menus own input immediately, including before the next
@@ -887,6 +936,15 @@ namespace rock::input_remap_runtime
                     tracker.rearmPressedMask.fetch_and(~releasedFromRearm, std::memory_order_acq_rel);
                 }
             }
+            const bool capturedByUi = (uiCapturedButtons(hand == input_remap_policy::Hand::Left) &
+                bare_fist_gesture::kButtons) != 0;
+            const bool rearm = capturedByUi || inputBlockingMenuActive ||
+                (tracker.rearmPressedMask.load(std::memory_order_acquire) & bare_fist_gesture::kButtons) != 0;
+            const auto fistBits = ((rawPressed & (1ull << 2)) ? 1ull : 0ull) |
+                ((rawPressed & (1ull << 33)) ? 2ull : 0ull) | (rearm ? 4ull : 0ull);
+            s_bareFistSamples[controllerIndex(hand)].store(
+                (GetTickCount64() << 3) | fistBits, std::memory_order_release);
+            observeBareFistCapture((rawTransition.releasedEdges & bare_fist_gesture::kButtons) != 0);
         }
 
         bool hookedGetControllerState(
@@ -894,6 +952,13 @@ namespace rock::input_remap_runtime
         {
             const void* callerAddress = _ReturnAddress();
             const bool result = s_originalGetControllerState ? s_originalGetControllerState(system, controllerDeviceIndex, controllerState, controllerStateSize) : false;
+            if (!result) {
+                input_remap_policy::Hand hand{};
+                if (resolveControllerHand(controllerDeviceIndex, hand)) {
+                    s_bareFistSamples[controllerIndex(hand)].store(0, std::memory_order_release);
+                    cancelBareFistInput();
+                }
+            }
             if (result) {
                 captureControllerState(controllerDeviceIndex, controllerState, controllerStateSize);
                 input_remap_policy::Hand hand{};
@@ -923,6 +988,13 @@ namespace rock::input_remap_runtime
             const bool result = s_originalGetControllerStateWithPose ?
                                     s_originalGetControllerStateWithPose(system, origin, controllerDeviceIndex, controllerState, controllerStateSize, trackedDevicePose) :
                                     false;
+            if (!result || (trackedDevicePose && (!trackedDevicePose->bPoseIsValid || !trackedDevicePose->bDeviceIsConnected))) {
+                input_remap_policy::Hand hand{};
+                if (resolveControllerHand(controllerDeviceIndex, hand)) {
+                    s_bareFistSamples[controllerIndex(hand)].store(0, std::memory_order_release);
+                    cancelBareFistInput();
+                }
+            }
             if (result) {
                 captureControllerState(controllerDeviceIndex, controllerState, controllerStateSize);
                 input_remap_policy::Hand hand{};
@@ -946,8 +1018,8 @@ namespace rock::input_remap_runtime
          * and sends its haptic pulses (weapon fire rumble) there. Retarget
          * game-originated pulses aimed at the RIGHT wand to the LEFT wand so
          * the rumble lands in the hand actually holding the weapon. ROCK,
-         * FRIK and the configurator address PHYSICAL hands with their own
-         * pulses and pass through untouched.
+         * FRIK, Immersive Flashlight and the configurator address PHYSICAL
+         * hands with their own pulses and pass through untouched.
          */
         void hookedTriggerHapticPulse(vr::IVRSystem* system, vr::TrackedDeviceIndex_t controllerDeviceIndex, std::uint32_t axisId, unsigned short durationMicroSec)
         {
@@ -956,6 +1028,7 @@ namespace rock::input_remap_runtime
             if (shouldRemapLeftHandFireTriggerForGame() &&
                 !isCallerModule(callerAddress, L"ROCK.dll") &&
                 !isCallerModule(callerAddress, L"FRIK.dll") &&
+                !isCallerModule(callerAddress, L"ImmersiveFlashlightVR.dll") &&
                 !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
                 input_remap_policy::Hand hand{};
                 if (resolveControllerHand(controllerDeviceIndex, hand) && hand == input_remap_policy::Hand::Right) {
@@ -1165,16 +1238,39 @@ namespace rock::input_remap_runtime
             }
         }
 
+        void traceNativeWeaponInputGate(const char* gate, const RE::InputEvent* event,
+            const input_remap_policy::NativeActionSuppressionInput& input,
+            bool suppressed, bool providerSuppressed = false)
+        {
+            if (!input.eventMatched || !logger::isDebugEnabled()) return;
+            const auto* button = event ? event->As<RE::ButtonEvent>() : nullptr;
+            if (!button || (!button->QJustPressed() &&
+                (button->QPressed() || button->QHeldDownSecs() < 0.0f))) return;
+            ROCK_LOG_DEBUG(Input,
+                "NATIVE-WEAPON-INPUT gate={} suppressed={} provider={} primary={} pressed={} drawn={} heldWeapon={} firingGrip={} detached={} shoulder={} realMelee={} meleeSuppression={} gameplay={} menu={}",
+                gate, suppressed, providerSuppressed, input.primaryHandEvent,
+                button->QJustPressed(), input.weaponDrawn, input.eventHandHeldWeapon,
+                input.equippedWeaponFiringGripInputActive, input.equippedWeaponPrimaryDetached,
+                input.equippedWeaponShoulderSheathActive, input.realMeleeWeaponEquipped,
+                input.nativeMeleeSuppressionActive, input.gameplayInputAllowed, input.menuInputActive);
+        }
+
         [[nodiscard]] bool shouldSuppressNativeGripReadyAction(const RE::InputEvent* event)
         {
-            return input_remap_policy::shouldSuppressNativeGripReadyAction(
-                makeNativeActionSuppressionInput(true, eventNameMatches(event, kNativeEventWandGrip)));
+            const auto input = makeNativeActionSuppressionInput(
+                true, event, eventNameMatches(event, kNativeEventWandGrip));
+            const bool suppressed = input_remap_policy::shouldSuppressNativeGripReadyAction(input);
+            traceNativeWeaponInputGate("ready-grip", event, input, suppressed);
+            return suppressed;
         }
 
         [[nodiscard]] bool shouldSuppressNativeGripReloadAction(const RE::InputEvent* event)
         {
-            return input_remap_policy::shouldSuppressNativeGripReloadAction(
-                makeNativeActionSuppressionInput(true, event, eventNameMatches(event, kNativeEventWandGrip)));
+            const auto input = makeNativeActionSuppressionInput(
+                true, event, eventNameMatches(event, kNativeEventWandGrip));
+            const bool suppressed = input_remap_policy::shouldSuppressNativeGripReloadAction(input);
+            traceNativeWeaponInputGate("reload-grip", event, input, suppressed);
+            return suppressed;
         }
 
         [[nodiscard]] bool shouldSuppressNativeFavoritesAction(const RE::InputEvent* event)
@@ -1184,18 +1280,26 @@ namespace rock::input_remap_runtime
                     eventNameMatches(event, kNativeEventWandThumbClick)));
         }
 
-        [[nodiscard]] bool shouldSuppressNativeTriggerActionEvent(const RE::InputEvent* event)
+        [[nodiscard]] bool shouldSuppressNativeTriggerActionEvent(const RE::InputEvent* event, const char* gate)
         {
+            if (eventNameMatches(event, kNativeEventWandTrigger) && ownsBareFistInput()) {
+                // Native attack bookkeeping must see the real release. The
+                // ready/light handlers still skip this gesture, and the hit
+                // gates have already revoked unarmed damage permission.
+                const auto* button = event ? event->As<RE::ButtonEvent>() : nullptr;
+                if (button && !button->QPressed()) return false;
+                return !isBareFistDrawPermitted() || !s_bareFistReady.load(std::memory_order_acquire);
+            }
             // Conditional chord leases are evaluated against the raw sample
             // before the consumer's next frame callback can publish ownership.
-            if (eventNameMatches(event, kNativeEventWandTrigger) &&
+            const bool providerSuppressed = eventNameMatches(event, kNativeEventWandTrigger) &&
                 isProviderOpenVrGameInputSuppressed(isSecondaryWandInputEvent(event) ?
-                    input_remap_policy::Hand::Left : input_remap_policy::Hand::Right)) return true;
-            return input_remap_policy::shouldSuppressNativeTriggerAction(
-                makeNativeActionSuppressionInput(
-                    true,
-                    event,
-                    eventNameMatches(event, kNativeEventWandTrigger)));
+                    input_remap_policy::Hand::Left : input_remap_policy::Hand::Right);
+            const auto input = makeNativeActionSuppressionInput(
+                true, event, eventNameMatches(event, kNativeEventWandTrigger));
+            const bool suppressed = providerSuppressed || input_remap_policy::shouldSuppressNativeTriggerAction(input);
+            traceNativeWeaponInputGate(gate, event, input, suppressed, providerSuppressed);
+            return suppressed;
         }
 
         [[nodiscard]] bool shouldSuppressLegacyPipboyTriggerOpenEvent(const RE::InputEvent* event)
@@ -1532,6 +1636,12 @@ namespace rock::input_remap_runtime
 
         void hookedReadyWeaponEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)
         {
+            if (ownsBareFistInput() &&
+                (eventNameMatches(inputEvent, kNativeEventWandTrigger) || eventNameMatches(inputEvent, kNativeEventWandGrip))) {
+                // Skip only ReadyWeapon: a qualified fist trigger still
+                // belongs to AttackBlock later in the same dispatch chain.
+                return;
+            }
             if (isAnyProviderOpenVrGameInputSuppressed()) {
                 markInputEventStopped(inputEvent);
                 ROCK_LOG_SAMPLE_DEBUG(Input,
@@ -1556,7 +1666,7 @@ namespace rock::input_remap_runtime
                 return;
             }
 
-            if (shouldSuppressNativeTriggerActionEvent(inputEvent)) {
+            if (shouldSuppressNativeTriggerActionEvent(inputEvent, "ready-trigger")) {
                 markInputEventStopped(inputEvent);
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
@@ -2014,6 +2124,7 @@ namespace rock::input_remap_runtime
 
         void hookedPipboyEventHandler(void* handler, RE::InputEvent* inputEvent)
         {
+            if (ownsBareFistInput() && eventNameMatches(inputEvent, kNativeEventWandTrigger)) return;
             if (decideAndTracePipboyOpenSuppression(inputEvent)) {
                 markInputEventStopped(inputEvent);
                 return;
@@ -2026,6 +2137,9 @@ namespace rock::input_remap_runtime
 
         void hookedPipboyLightEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)
         {
+            if (ownsBareFistInput() && eventNameMatches(inputEvent, kNativeEventWandTrigger)) {
+                return;
+            }
             if (isAnyProviderOpenVrGameInputSuppressed()) {
                 markInputEventStopped(inputEvent);
                 return;
@@ -2387,6 +2501,76 @@ namespace rock::input_remap_runtime
         return s_hooksInstalled.load(std::memory_order_acquire);
     }
 
+    bool bareFistHooksReady()
+    {
+        return isInputRemapHookInstalled() &&
+            s_readyWeaponEventHookInstalled.load(std::memory_order_acquire) &&
+            s_pipboyLightEventHookInstalled.load(std::memory_order_acquire) &&
+            s_meleeThrowEventHookInstalled.load(std::memory_order_acquire);
+    }
+
+    void cancelBareFistInput()
+    {
+        s_bareFistReady.store(false, std::memory_order_release);
+        // Preserve the cycle identity while latching cancellation through all
+        // four releases. Fetch-or cannot overwrite a concurrent new capture.
+        s_bareFistCycle.fetch_or(2u, std::memory_order_acq_rel);
+    }
+
+    void setBareFistAdmission(bool allowed)
+    {
+        s_bareFistAdmissionUntil.store(allowed ?
+            GetTickCount64() + bare_fist_gesture::kMaximumSampleAgeMilliseconds : 0,
+            std::memory_order_release);
+        if (!allowed) cancelBareFistInput();
+    }
+
+    std::uint64_t bareFistInputCycle()
+    {
+        return s_bareFistCycle.load(std::memory_order_acquire);
+    }
+
+    bool ownsBareFistInput()
+    {
+        return (bareFistInputCycle() & 1u) != 0;
+    }
+
+    bool bareFistChordValid()
+    {
+        return bare_fist_gesture::capture(bareFistInputCycle()) == bare_fist_gesture::Capture::Holding &&
+            readBareFistButtons().held && s_gameplayInputAllowed.load(std::memory_order_acquire) &&
+            !isInputBlockingMenuActive() &&
+            GetTickCount64() < s_bareFistAdmissionUntil.load(std::memory_order_acquire);
+    }
+
+    void setBareFistDrawState(std::uint64_t cycle, bool owned, bool ready)
+    {
+        if (!ready) s_bareFistReady.store(false, std::memory_order_release);
+        s_bareFistDrawCycle.store(cycle, std::memory_order_release);
+        s_bareFistDrawOwned.store(owned, std::memory_order_release);
+        s_bareFistReady.store(ready, std::memory_order_release);
+    }
+
+    bool isBareFistDrawPermitted()
+    {
+        const auto cycle = s_bareFistDrawCycle.load(std::memory_order_acquire);
+        // VR impact callbacks can run outside the frame thread. This query
+        // reads publications only; it must not enter UI/FRIK/provider APIs.
+        return s_bareFistDrawOwned.load(std::memory_order_acquire) &&
+            bare_fist_gesture::capture(cycle) == bare_fist_gesture::Capture::Holding &&
+            cycle == bareFistInputCycle() && readBareFistButtons().held &&
+            s_gameplayInputAllowed.load(std::memory_order_acquire) &&
+            GetTickCount64() < s_bareFistAdmissionUntil.load(std::memory_order_acquire) &&
+            cycle == bareFistInputCycle();
+    }
+
+    bool isBareFistMeleeSuppressed()
+    {
+        // Called only for a player without a real equipped weapon. A script
+        // or delayed native draw must not create an unqualified damage window.
+        return !s_bareFistReady.load(std::memory_order_acquire) || !isBareFistDrawPermitted();
+    }
+
     void configurePipboyInput()
     {
         // Initialization and explicit config reload only. FRIK owns this
@@ -2436,6 +2620,7 @@ namespace rock::input_remap_runtime
                 wristOpen ? "opened" : "closed", pipboyRouteName(currentPipboyRoute()));
         }
         if (!allowed) {
+            setBareFistAdmission(false);
             native_grenade_throw_runtime::cancel();
             if (s_logicalJumpHeld.load(std::memory_order_acquire)) {
                 s_logicalJumpReleaseToRearm.store(
@@ -2625,13 +2810,12 @@ namespace rock::input_remap_runtime
 
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event)
     {
-        return shouldSuppressNativeTriggerActionEvent(event);
+        return shouldSuppressNativeTriggerActionEvent(event, "attack-trigger");
     }
 
     bool isNativePipboyInputSuppressionActive()
     {
-        // Only a provider lease claims native flashlight input; hand engagement does not.
-        return isAnyProviderOpenVrGameInputSuppressed();
+        return ownsBareFistInput() || isAnyProviderOpenVrGameInputSuppressed();
     }
 
     bool isPipboyMenuOpen()

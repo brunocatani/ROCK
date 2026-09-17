@@ -185,6 +185,7 @@ namespace rock
                 return true;
             };
             auto clearProviderReleaseInputState = [&]() {
+                _forceGrab.retainedWeaponGrabs[isLeft ? 1u : 0u] = {};
                 grab_input_intent_policy::reset(_grabInput.intentStates[isLeft ? 1u : 0u]);
                 peer_held_join_retry_policy::reset(_grabInput.peerHeldJoinRetryStates[isLeft ? 1u : 0u]);
                 shoulder_stash::resetRuntime(_grabInput.shoulderStashStates[isLeft ? 1u : 0u]);

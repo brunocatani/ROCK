@@ -82,8 +82,7 @@ namespace rock
                         PRIMARY_GRIP_TAG,
                         frik_visual_authority::Hand::Left,
                         presentedHandWorld,
-                        GRIP_HAND_POSE_PRIORITY,
-                        frik_visual_authority::RebaseDriver::LeftHand)) {
+                        GRIP_HAND_POSE_PRIORITY)) {
                 _hasSolvedWeaponTransform = false;
                 ROCK_LOG_WARN(
                     Weapon,
@@ -451,7 +450,6 @@ namespace rock
 
     void TwoHandedGrip::syncFiringHandWeaponNodeOwnership(RE::NiNode* weaponNode)
     {
-        (void)weaponNode;
         const bool wantLeftFiringCarry = usesLeftFiringCarry() &&
             (_session.state == TwoHandedState::Gripping || _session.state == TwoHandedState::PrimaryOnly);
 
@@ -494,14 +492,13 @@ namespace rock
         }
     }
 
-    void TwoHandedGrip::releaseFiringHandWeaponNodeOwnership(RE::NiNode* weaponNode)
+    void TwoHandedGrip::releaseFiringHandWeaponNodeOwnership(RE::NiNode* /*weaponNode*/)
     {
-        (void)weaponNode;
         if (_leftCarry.weaponNodeReparented) {
             // FRIK restores the game's parent hand in its next skeleton pass.
             (void)frik_visual_authority::clearWeaponNodeParentHand(WEAPON_NODE_OWNERSHIP_TAG);
             _leftCarry.weaponNodeReparented = false;
-            ROCK_LOG_INFO(Weapon, "TwoHandedGrip: equipped weapon node parent request cleared; FRIK restores RArm_Hand");
+            ROCK_LOG_INFO(Weapon, "TwoHandedGrip: equipped weapon node parent request cleared; FRIK restores the game's parent hand");
         }
 
         if (_leftCarry.weaponNodeOwnershipBlockEngaged) {
@@ -511,20 +508,26 @@ namespace rock
         }
     }
 
-    bool TwoHandedGrip::rebindLeftCarryFramesToWeapon(
+    bool TwoHandedGrip::rebindCarryFramesToWeapon(
         RE::NiNode* currentWeaponNode,
         const std::uint64_t targetWeaponGenerationKey,
         const std::uint64_t currentEquippedWeaponOwnershipKey,
+        const std::uint64_t currentInstanceContentKey,
         const bool logMissingAimFrame)
     {
-        if (usesNativeRightCarry()) {
-            return true;
-        }
-        if (!_firing.rightNativeWeaponAimFrame.valid ||
-            _firing.rightNativeWeaponAimFrame.weaponOwnershipKey !=
-                currentEquippedWeaponOwnershipKey ||
-            !isFiniteTransform(
-                _firing.rightNativeWeaponAimFrame.weaponInWandOrientation)) {
+        if (!equipped_weapon_manual_ownership_policy::canRebindNativeAim({
+                .nativeRightCarry = usesNativeRightCarry(),
+                .frameValid = _firing.rightNativeWeaponAimFrame.valid &&
+                    isFiniteTransform(_firing.rightNativeWeaponAimFrame.weaponInWandOrientation),
+                .capturedOwnershipKey = _firing.rightNativeWeaponAimFrame.weaponOwnershipKey,
+                .currentOwnershipKey = currentEquippedWeaponOwnershipKey,
+                .capturedInstanceContentKey = _firing.rightNativeWeaponAimFrame.weaponInstanceContentKey,
+                .currentInstanceContentKey = currentInstanceContentKey,
+                .sameRoot = _firing.rightNativeWeaponAimFrame.weaponNodeIdentity == currentWeaponNode,
+            })) {
+            // Native right carry remains usable before its first aim sample.
+            // Left carry needs the captured orientation and must fail closed.
+            if (usesNativeRightCarry()) return true;
             if (logMissingAimFrame) {
                 ROCK_LOG_WARN(
                     Weapon,
@@ -534,6 +537,9 @@ namespace rock
             }
             return false;
         }
+        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: native aim rebound hand={} generation={:016X}->{:016X} ownership={:016X}",
+            firingHandName(), _firing.rightNativeWeaponAimFrame.weaponGenerationKey,
+            targetWeaponGenerationKey, currentEquippedWeaponOwnershipKey);
         _firing.rightNativeWeaponAimFrame.weaponNodeIdentity =
             currentWeaponNode;
         _firing.rightNativeWeaponAimFrame.weaponGenerationKey =

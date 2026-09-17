@@ -11,6 +11,7 @@
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/MinigunFiringGripPolicy.h"
+#include "physics-interaction/weapon/PipeFiringGripPolicy.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 
@@ -251,6 +252,10 @@ namespace rock
 
         const std::uint64_t currentWeaponKey =
             input.weaponNode ? input.weaponOwnershipKey : 0;
+        const auto pipeOffset = pipe_firing_grip_policy::isPipe(_weaponFormId) && !input.rockFiringHandIsLeft ?
+            frik_weapon_offset_cache::findPrimaryWeaponOffset(input.weapon, input.weaponNode) : frik_weapon_offset_cache::LookupResult{};
+        const bool promotedPipeCalibration = pipeOffset.found && pipeOffset.source == frik_weapon_offset_cache::OffsetSource::CustomFile &&
+            pipe_firing_grip_policy::isPromotedCalibration(_weaponFormId, input.rockFiringHandIsLeft, pipeOffset.offset);
         RE::NiTransform compiledMinigunFiringHandInWeapon{};
         const bool compiledMinigunFiringSeat =
             minigun_firing_grip_policy::usesCompiledFiringSeat(
@@ -299,13 +304,15 @@ namespace rock
                     frik_weapon_offset_cache::findCustomGripOverride(input.weapon, input.weaponNode);
                 _customFrikOffsetOverrideActive =
                     customFrikOffset.found &&
-                    !compiledMinigunFiringSeat;
+                    !compiledMinigunFiringSeat && !promotedPipeCalibration;
                 if (customFrikOffset.found) {
                     if (compiledMinigunFiringSeat) {
                         ROCK_LOG_INFO(Animation,
                             "Minigun custom hFRIK weapon offset promoted to compiled authored firing seat weaponKey=0x{:X} source={}",
                             currentWeaponKey,
                             customFrikOffset.reason);
+                    } else if (promotedPipeCalibration) {
+                        ROCK_LOG_INFO(Animation, "Saved pipe calibration promoted to compiled default weaponKey=0x{:X}", currentWeaponKey);
                     } else {
                         ROCK_LOG_INFO(Animation,
                             "Authored primary firing grip yielded to custom hFRIK weapon offset weaponKey=0x{:X} source={}",
@@ -333,7 +340,7 @@ namespace rock
                 frik_weapon_offset_cache::findCustomGripOverride(input.weapon, input.weaponNode);
             _customFrikOffsetOverrideActive =
                 customFrikOffset.found &&
-                !compiledMinigunFiringSeat;
+                !compiledMinigunFiringSeat && !promotedPipeCalibration;
             if (_customFrikOffsetOverrideActive != previousCustomOverride) {
                 ROCK_LOG_INFO(Animation,
                     "Authored primary firing grip custom hFRIK override {} weaponKey=0x{:X} cacheRevision={} source={}",
@@ -375,6 +382,9 @@ namespace rock
             return;
         }
         auto authoredLookup = authored_weapon_grip_library::findResolvedVariant(input.weapon, variant, input.inPowerArmor);
+        authored_weapon_grip_library::applyPipeDefaultOffset(authoredLookup, input.rockFiringHandIsLeft);
+        vanilla_weapon_alignment_telemetry::recordAuthoredSelection(
+            input, variant, authoredLookup, modelDisplacement, compiledMinigunFiringSeat);
         if (authoredLookup.found) {
             authoredLookup.rightHandWeaponLocal = vanilla_weapon_grip_frame::translateGrip(authoredLookup.rightHandWeaponLocal, modelDisplacement);
             if (authoredLookup.hasSupportRelation) {

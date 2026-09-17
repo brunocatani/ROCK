@@ -52,6 +52,7 @@ namespace rock::weapon_equip_transfer
         RemoveItemFailed,
         DroppedReferenceUnavailable,
         Dropped,
+        PreviousWeaponRestoreResetUnavailable,
     };
 
     struct EquipInput
@@ -135,4 +136,6 @@ namespace rock::weapon_equip_transfer
     [[nodiscard]] const char* dropReasonName(DropReason reason) noexcept;
     [[nodiscard]] EquipResult transferHeldWeaponToPlayerAndEquip(EquipInput input) noexcept;
     [[nodiscard]] EquippedDropResult dropEquippedWeaponFromPlayer(const EquippedDropInput& input) noexcept;
+    // Frame-thread only. Changes selection, never removes an inventory item.
+    [[nodiscard]] bool replaceHolsteredWeaponWithUnarmed() noexcept;
 }

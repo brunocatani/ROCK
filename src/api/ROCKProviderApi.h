@@ -100,8 +100,11 @@ namespace rock::provider
     {
         None = 0,
         Touching = 1u << 0,
+        // Effective occupancy: loose hold, weapon grip/native carry, or touch grab.
         Holding = 1u << 1,
         PhysicsDisabled = 1u << 2,
+        // State is known independently of hand-transform availability.
+        Valid = 1u << 3,
     };
 
     enum class RockProviderHandFrameFlagV1 : std::uint32_t
@@ -558,6 +561,9 @@ namespace rock::provider
         LeftFiringInfrastructureAvailable = 1u << 3,
         ManualOwnershipActive = 1u << 4,
         PartCarryActive = 1u << 5,
+        // Effective firing-grip occupancy, including native right-hand carry
+        // after inventory/holster equip without an explicit ROCK grip.
+        // Clear during PartCarry and when WeaponPresent is clear.
         FiringGripOccupied = 1u << 6,
         WeaponPresent = 1u << 7,
     };
@@ -916,6 +922,7 @@ namespace rock::provider
         Selecting = 2,
         Pulling = 3,
         Catching = 4,
+        // Includes native equipped carry and attachment-only weapon grips.
         Holding = 5,
         Releasing = 6,
         StashCandidate = 7,
@@ -930,6 +937,7 @@ namespace rock::provider
         Offhand = 1u << 2,
         LooseObject = 1u << 3,
         LooseWeapon = 1u << 4,
+        // Effective firing-grip occupancy, independent of ROCK capture state.
         FiringGrip = 1u << 5,
         PartGrip = 1u << 6,
         PartCarry = 1u << 7,
@@ -947,6 +955,10 @@ namespace rock::provider
         DynamicOtherHandContact = 1u << 19,
         DynamicWeaponContact = 1u << 20,
         DynamicWeaponPairSuppressed = 1u << 21,
+        // Occupancy provenance; these do not grant manipulation authority.
+        NativeWeaponCarry = 1u << 22,
+        RockGripActive = 1u << 23,
+        AttachOnly = 1u << 24,
     };
 
     enum class RockProviderEventKindV1 : std::uint32_t
@@ -1003,11 +1015,13 @@ namespace rock::provider
         RecoveryExhausted = 7,
         ProviderLost = 8,
         Shutdown = 9,
+        IntentionalShoulderSheathe = 10,
     };
 
     enum class RockProviderEquippedWeaponStateFlagV1 : std::uint32_t
     {
         None = 0,
+        // Current observation is available; check WeaponPresent separately.
         Valid = 1u << 0,
         IdentityPending = 1u << 1,
         DrawPending = 1u << 2,
@@ -1016,6 +1030,19 @@ namespace rock::provider
         HandPoseHandoffComplete = 1u << 5,
         RecoveryExhausted = 1u << 6,
         TransitionActive = 1u << 7,
+        WeaponPresent = 1u << 8,
+        WeaponDrawn = 1u << 9,
+        // NativeRenderable/HandPoseHandoffComplete describe the latest current
+        // weapon observation, not the retained transition terminal result.
+        PresentationKnown = 1u << 10,
+        // Equipped identity can exist while holstered. WeaponPresent matches
+        // handling-state WeaponPresent: drawn with a resolved weapon root.
+        WeaponEquipped = 1u << 11,
+        // Bipod mode is enabled and the physical right-stick click belongs to
+        // a current weapon/surface contact, an active latch, or its release
+        // this frame. False when bBipodMode is off. Consumers must reject the
+        // complete opening gesture, not replay its release when this clears.
+        BipodInputReserved = 1u << 12,
     };
 
     enum class RockProviderExternalContactFlagV1 : std::uint32_t
@@ -1156,6 +1183,10 @@ namespace rock::provider
         PrimaryPalmAnchor = 1u << 2,
         TransformValid = 1u << 3,
         InPowerArmor = 1u << 4,
+        // Enabled means lifecycle-allowed and a readable, unsuppressed filter.
+        LifecycleAllowed = 1u << 5,
+        FilterKnown = 1u << 6,
+        CollisionSuppressed = 1u << 7,
     };
 
     enum class RockProviderHandCollisionAvailabilityFlagV1 : std::uint32_t
@@ -1173,6 +1204,8 @@ namespace rock::provider
         DynamicWeaponContact = 1u << 9,
         DynamicWeaponPairSuppressed = 1u << 10,
         DynamicPairFilterReady = 1u << 11,
+        FilterKnown = 1u << 12,
+        CollisionSuppressed = 1u << 13,
     };
 
     enum class RockProviderInputAvailabilityReasonV1 : std::uint32_t
@@ -1256,6 +1289,8 @@ namespace rock::provider
         StateSequenceValid = 1u << 4,
         CollisionGenerationValid = 1u << 5,
         EquippedTransitionSequenceValid = 1u << 6,
+        RightHandTransformValid = 1u << 7,
+        LeftHandTransformValid = 1u << 8,
     };
 
     enum class RockProviderFrameStateChangeFlagV1 : std::uint32_t
@@ -1728,6 +1763,8 @@ namespace rock::provider
      */
     struct RockProviderWeaponPartGripStateV1
     {
+        // Captured ROCK grip details only. Native carry can occupy the hand
+        // while active is zero; use getHandInteractionStateV1 for occupancy.
         std::uint32_t size{ sizeof(RockProviderWeaponPartGripStateV1) };
         std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
         RockProviderHand hand{ RockProviderHand::None };
@@ -2427,7 +2464,8 @@ namespace rock::provider
         RockProviderHandInteractionPhaseV1 phase{ RockProviderHandInteractionPhaseV1::Idle };
         RockProviderBodyContactTargetKind targetKind{ RockProviderBodyContactTargetKind::Unknown };
         std::uint32_t flags{ 0 };
-        // TouchGrab states zero-extend referenceNativeHandle here; zero means unavailable.
+        // TouchGrab: zero-extended referenceNativeHandle. Weapon: generation
+        // key. Interpret only with targetKind; zero means unavailable.
         std::uint64_t reservedTargetIdentity{ 0 };
         std::uint32_t targetFormId{ 0 };
         // For TouchGrab, always identifies the target, including global world surfaces.
@@ -2501,7 +2539,15 @@ namespace rock::provider
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[7]{};
+        // Current weapon fields above never contain a historical identity.
+        // Transition identity exists only while TransitionActive; terminal
+        // identity/source describe terminalResult even during a newer transition.
+        std::uint32_t transitionWeaponFormId{ 0 };
+        std::uint32_t terminalWeaponFormId{ 0 };
+        RockProviderEquippedWeaponTransitionSourceV1 terminalSource{
+            RockProviderEquippedWeaponTransitionSourceV1::Unknown
+        };
+        std::uint32_t reserved[4]{};
     };
 
     struct RockProviderExternalContactRecordV1
@@ -2769,7 +2815,9 @@ namespace rock::provider
         // reserved[1] = contacted dynamic-twin slot mask for the weapon proxy.
         // reserved[2] = stable dynamic interaction collision layer (48/52).
         // reserved[3] = active exact hand/weapon pair-suppression lease count.
-        std::uint32_t reserved[6]{};
+        std::uint32_t reserved[4]{};
+        std::uint32_t collisionEnabledBodyCount{ 0 };
+        std::uint32_t filterKnownBodyCount{ 0 };
     };
 
     struct RockProviderHandInputSuppressionStateV1
@@ -3023,6 +3071,8 @@ namespace rock::provider
 
         std::uint32_t(ROCK_PROVIDER_CALL* getVersion)();
         const char*(ROCK_PROVIDER_CALL* getModVersion)();
+        // Matches frame.providerReady. Skeleton, transform and write permission
+        // are independently qualified by the frame's flags.
         bool(ROCK_PROVIDER_CALL* isProviderReady)();
         std::uint64_t(ROCK_PROVIDER_CALL* registerFrameCallback)(RockProviderFrameCallback callback, void* userData);
         bool(ROCK_PROVIDER_CALL* unregisterFrameCallback)(std::uint64_t callbackToken);
@@ -3044,6 +3094,8 @@ namespace rock::provider
         std::uint32_t(ROCK_PROVIDER_CALL* getBodyContactSnapshotV1)(RockProviderBodyContactV1* outContacts, std::uint32_t maxContacts);
         RockProviderHand(ROCK_PROVIDER_CALL* getPrimaryHandV1)();
         RockProviderHand(ROCK_PROVIDER_CALL* getOffhandHandV1)();
+        // False if this hand's raw transform is unavailable. Supported output
+        // storage is cleared on failure, retaining the caller's size/version.
         bool(ROCK_PROVIDER_CALL* getHandFrameV1)(RockProviderHand hand, RockProviderHandFrameV1* outFrame);
         RockProviderResultV1(ROCK_PROVIDER_CALL* registerConsumerV1)(
             const RockProviderConsumerRegistrationV1* registration,
@@ -3091,12 +3143,12 @@ namespace rock::provider
         bool(ROCK_PROVIDER_CALL* getWeaponPartGripStateV1)(RockProviderHand hand, RockProviderWeaponPartGripStateV1* outState);
         bool(ROCK_PROVIDER_CALL* getRawWandButtonStateV1)(RockProviderHand hand, std::uint32_t buttonId, RockProviderRawWandButtonStateV1* outState);
         /*
-         * True while a provider suppression lease blocks native game input,
-         * including the pipboy-hand trigger's flashlight hold. Holding an
-         * object or supporting a weapon does not suppress the flashlight.
-         * Consumers that repurpose the trigger should treat it as
-         * exclusively theirs only while this reads true; otherwise a hold may
-         * still toggle the flashlight. While ROCK input remapping is enabled,
+         * True while a provider input lease or ROCK's held bare-fist gesture
+         * suppresses the native flashlight hold. Ordinary object holding and
+         * weapon support do not suppress it. This observation does not grant
+         * trigger ownership: respect effective hand-input suppression flags
+         * and acquire the consumer's own lease before repurposing input.
+         * While ROCK input remapping is enabled,
          * the legacy trigger-release Pip-Boy open is always moved to a short
          * release of the native Pause button and is not represented here.
          */
@@ -3133,6 +3185,10 @@ namespace rock::provider
             const RockProviderEquippedWeaponHandlingRequestV1* request);
         RockProviderResultV1(ROCK_PROVIDER_CALL* clearEquippedWeaponHandlingAuthorityV1)(
             std::uint64_t ownerToken);
+        // Query on the game thread. Check success and WeaponPresent before
+        // interpreting FiringGripOccupied: no weapon or a failed query means
+        // neither attached nor detached. currentFiringHand names the firing
+        // role, which can move between physical hands during a handoff.
         bool(ROCK_PROVIDER_CALL* getEquippedWeaponHandlingStateV1)(
             RockProviderEquippedWeaponHandlingStateV1* outState);
         RockProviderResultV1(ROCK_PROVIDER_CALL* publishDebugOverlayV1)(
@@ -4127,9 +4183,12 @@ namespace rock::provider
             if ((state.flags & static_cast<std::uint32_t>(RockProviderHandInteractionFlagV1::Valid)) == 0) {
                 return RockProviderResultV1::NotReady;
             }
-            // HeldObject includes HeldInit/Catching and stash/consume candidates;
-            // phase == Holding alone would miss those still-held references.
-            const bool held = state.targetKind == RockProviderBodyContactTargetKind::HeldObject ||
+            // Release snapshots retain the old target for event history. Only
+            // active hold/capture phases resolve that identity as a held REFR.
+            using Phase = RockProviderHandInteractionPhaseV1;
+            const bool heldPhase = state.phase == Phase::Holding || state.phase == Phase::Catching ||
+                state.phase == Phase::StashCandidate || state.phase == Phase::ConsumeCandidate;
+            const bool held = (state.targetKind == RockProviderBodyContactTargetKind::HeldObject && heldPhase) ||
                 (state.phase == RockProviderHandInteractionPhaseV1::Holding &&
                     (state.flags & static_cast<std::uint32_t>(RockProviderHandInteractionFlagV1::TouchGrab)) != 0);
             if (!held || state.targetFormId == 0) {

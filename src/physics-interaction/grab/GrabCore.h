@@ -776,6 +776,16 @@ namespace rock
         bool hasFingerEvidencePoint = false;
         bool activeGrabPointUsesMultiFingerEvidence = false;
         bool syntheticLooseWeaponPrimaryAttach = false;
+        bool authoredLooseWeaponSupportGrip = false;
+        // Game-frame-only carry corrections. Frozen constraint/visual seats
+        // remain immutable; both proxies receive the same two-hand root target.
+        RE::NiTransform looseObjectSoloProxyCorrection{};
+        RE::NiTransform looseObjectSharedProxyCorrection{};
+        std::uint64_t looseObjectSharedPeerTrace = 0;
+        bool looseObjectSharedPrimaryIsLeft = false;
+        float looseObjectVisualTraceElapsed = 0.0f;
+        bool transferPoseTracePending = false;
+        bool hasLooseObjectSoloProxyCorrection = false;
         bool hasTelemetryCapture = false;
         bool fingerPoseAimValid = false;
         bool fadeInGrabConstraint = false;
@@ -839,6 +849,14 @@ namespace rock
             hasFingerEvidencePoint = false;
             activeGrabPointUsesMultiFingerEvidence = false;
             syntheticLooseWeaponPrimaryAttach = false;
+            authoredLooseWeaponSupportGrip = false;
+            looseObjectSoloProxyCorrection = {};
+            looseObjectSharedProxyCorrection = {};
+            looseObjectSharedPeerTrace = 0;
+            looseObjectSharedPrimaryIsLeft = false;
+            looseObjectVisualTraceElapsed = 0.0f;
+            transferPoseTracePending = false;
+            hasLooseObjectSoloProxyCorrection = false;
             hasTelemetryCapture = false;
             fingerPoseAimValid = false;
             fadeInGrabConstraint = false;
@@ -977,6 +995,16 @@ namespace rock::grab_frame_math
 
         result.scale = proxyWorld.scale * objectProxyLocal.scale;
         return result;
+    }
+
+    // Inverse of objectFromGeneratedProxyLocalSpace. Proxy rotations store
+    // native column axes; object and relation transforms store Ni row axes.
+    template <class Transform>
+    inline Transform generatedProxyFromObjectWorld(const Transform& objectWorld, const Transform& objectProxyLocal)
+    {
+        Transform proxy = transform_math::composeTransforms(objectWorld, transform_math::invertTransform(objectProxyLocal));
+        proxy.rotate = transform_math::transposeRotation(proxy.rotate);
+        return proxy;
     }
 
     template <class Transform, class Vector>
@@ -1188,12 +1216,14 @@ namespace rock::grab_authority_frame_math
         Transform ownerBodyLocal{};
         Transform desiredObjectWorld{};
         Transform desiredBodyWorld{};
+        Transform visualHandObjectLocal{};
         Vector pivotAWorld{};
         Vector gripPointWorld{};
         Vector visualNormalWorld{};
         GrabAuthorityPivotSource source = GrabAuthorityPivotSource::None;
         bool hasDesiredObjectWorld = false;
         bool hasDesiredBodyWorld = false;
+        bool hasVisualHandObjectLocal = false;
         bool visualNormalValid = false;
     };
 
@@ -1250,6 +1280,8 @@ namespace rock::grab_authority_frame_math
             !isFiniteTransform(input.objectWorld) ||
             !isFiniteTransform(input.bodyWorld) ||
             !isFiniteTransform(input.constraintBodyWorld) ||
+            (input.hasVisualHandObjectLocal && (!isFiniteTransform(input.visualHandObjectLocal) ||
+                input.visualHandObjectLocal.scale <= 0.0001f)) ||
             !isFiniteVector(input.pivotAWorld) ||
             !isFiniteVector(input.gripPointWorld)) {
             return frozen;
@@ -1322,7 +1354,10 @@ namespace rock::grab_authority_frame_math
             input.proxyWorld,
             frozen.desiredObjectWorld,
             input.pivotAWorld);
-        frozen.rawHandSpace = splitFrame.rawHandSpace;
+        // Authored seats define the visual wrist in object space. Keep the
+        // physical proxy and its motor relation independent of that pose.
+        frozen.rawHandSpace = input.hasVisualHandObjectLocal ?
+            transform_math::invertTransform(input.visualHandObjectLocal) : splitFrame.rawHandSpace;
         frozen.handBodyToRawHandAtGrab = splitFrame.handBodyToRawHandAtGrab;
         frozen.pivotAHandBodyLocalGame = splitFrame.pivotAHandBodyLocal;
         frozen.proxyAuthorityHandSpace =

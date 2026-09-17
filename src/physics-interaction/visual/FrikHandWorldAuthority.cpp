@@ -329,7 +329,7 @@ namespace rock::frik_hand_world_authority
         return true;
     }
 
-    bool publish(const char* tag, const bool isLeft, const RE::NiTransform& requestedTarget, const int priority, const RebaseDriver driver)
+    bool publish(const char* tag, const bool isLeft, const RE::NiTransform& requestedTarget, const int priority)
     {
         if (!tag) {
             return false;
@@ -361,17 +361,7 @@ namespace rock::frik_hand_world_authority
         }
         ++g_service.probes.publishes;
 
-        // This frame's driver sample is recorded with the claim.
-        DriverSample driverAtPublish{};
-        if (driver != RebaseDriver::Static && g_service.driverFrame.sequence != 0 &&
-            g_service.driverFrame.sequence == g_service.rockFrameSequence) {
-            if (const DriverSample* sample = registry_policy::sampleForDriver(g_service.driverFrame, driver)) {
-                driverAtPublish = *sample;
-            }
-        }
-
-        const auto result = registry_policy::commit(
-            g_service.registry, tagView, isLeft, priority, worldTarget, driver, driverAtPublish);
+        const auto result = registry_policy::commit(g_service.registry, tagView, isLeft, priority, worldTarget);
         switch (result) {
         case registry_policy::CommitResult::Inserted:
             return true;
@@ -509,6 +499,17 @@ namespace rock::frik_hand_world_authority
 
             if (!firstResolveThisFrame) {
                 continue;
+            }
+            // The scope-edge guard (noteScopeEdge) is a backstop for the native
+            // tree reset; say when it engaged so a guard that hides a real
+            // input fault stays visible.
+            if (input.firstPersonInputCorrected && !input.claimConsumed &&
+                state.result.source == isolation_policy::RawHandSource::Reconstructed &&
+                g_service.scopeEdgeFramesRemaining == kScopeEdgeGuardFrames) {
+                ROCK_LOG_DEBUG(Hand,
+                    "HandWorldAuthority scope-edge guard reconstructed the {} hand for {} frames",
+                    handName(isLeft),
+                    kScopeEdgeGuardFrames);
             }
             auto& probes = g_service.probes;
             if (state.chainTransport.active) {

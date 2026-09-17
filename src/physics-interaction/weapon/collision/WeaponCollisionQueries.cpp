@@ -1016,6 +1016,7 @@ namespace rock
 
     void WeaponCollision::updateWeaponEmitterSnapshot(RE::NiAVObject* weaponNode, std::uint64_t equippedWeaponKey)
     {
+        performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponEmitterRefresh);
         const std::uint64_t weaponGenerationKey = getCurrentWeaponGenerationKey();
         if (!weaponNode || equippedWeaponKey == 0 || weaponGenerationKey == 0 || _identity.cachedWeaponKey != equippedWeaponKey) {
             clearWeaponEmitterSnapshot();
@@ -1035,15 +1036,56 @@ namespace rock
             snapshot.weaponRootAddress != reinterpret_cast<std::uintptr_t>(weaponNode);
         if (discoveryRequired) {
             snapshot = buildWeaponEmitterSnapshot(weaponNode, equippedWeaponKey, weaponGenerationKey, rootSetKey);
-        } else {
+            for (auto& path : _emitterPaths) { path.transform.clear(); path.effect.clear(); }
+        }
+        std::array<RE::NiAVObject*, 4> roots{};
+        std::size_t rootCount = 0;
+        visitGeneratedWeaponMeshRootCandidates(weaponNode, [&](const WeaponMeshRootCandidate& candidate) {
+            roots[rootCount++] = candidate.root;
+        });
+        bool pathsValid = !discoveryRequired;
+        for (std::size_t i = 0; i < snapshot.count; ++i) {
+            auto& descriptor = snapshot.emitters[i];
+            const auto& path = _emitterPaths[i];
+            descriptor.active = false;
+            descriptor.visible = false;
+            auto* transform = path.transformRoot < rootCount ? path.transform.resolve(roots[path.transformRoot]) : nullptr;
+            if (transform && reinterpret_cast<std::uintptr_t>(transform) == descriptor.transformNodeAddress) {
+                descriptor.visible = weaponEmitterNodeEffectivelyVisible(transform);
+                (void)updateWeaponEmitterTransform(descriptor, transform, weaponNode);
+            } else {
+                pathsValid = false;
+            }
+            if (descriptor.effectNodeAddress != 0) {
+                auto* effect = path.effectRoot < rootCount ? path.effect.resolve(roots[path.effectRoot]) : nullptr;
+                if (effect && reinterpret_cast<std::uintptr_t>(effect) == descriptor.effectNodeAddress)
+                    descriptor.active = weaponEmitterNodeEffectivelyVisible(effect);
+                else
+                    pathsValid = false;
+            }
+        }
+        if (!pathsValid && snapshot.count != 0) {
+            // A changed path gets one bounded rediscovery pass for the whole
+            // snapshot. No stored address is dereferenced, even during recovery.
+            for (auto& path : _emitterPaths) { path.transform.clear(); path.effect.clear(); }
             for (std::size_t i = 0; i < snapshot.count; ++i) {
                 snapshot.emitters[i].active = false;
                 snapshot.emitters[i].visible = false;
             }
-            visitGeneratedWeaponMeshRootCandidates(weaponNode, [&](const WeaponMeshRootCandidate& candidate) {
+            for (std::size_t root = 0; root < rootCount; ++root) {
+                auto remember = [&](std::size_t i, bool transform, RE::NiAVObject* node) {
+                    auto& path = _emitterPaths[i];
+                    if (transform) {
+                        path.transform.capture(roots[root], node);
+                        path.transformRoot = root;
+                    } else {
+                        path.effect.capture(roots[root], node);
+                        path.effectRoot = root;
+                    }
+                };
                 std::uint32_t visitedNodes = 0;
-                refreshWeaponEmittersRecursive(candidate.root, weaponNode, 0, visitedNodes, snapshot);
-            });
+                refreshWeaponEmittersRecursive(roots[root], weaponNode, 0, visitedNodes, snapshot, remember);
+            }
         }
 
         std::scoped_lock lock(_evidence.mutex);
@@ -1052,6 +1094,7 @@ namespace rock
 
     void WeaponCollision::clearWeaponEmitterSnapshot()
     {
+        for (auto& path : _emitterPaths) { path.transform.clear(); path.effect.clear(); }
         std::scoped_lock lock(_evidence.mutex);
         _evidence.emitters = {};
     }
@@ -1163,6 +1206,7 @@ namespace rock
         float probeRadiusGame,
         WeaponInteractionContact& outContact) const
     {
+        performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponContactProbe);
         outContact = {};
         const std::uint64_t currentGeneration = getCurrentWeaponGenerationKey();
         const auto pointFinite = [](const RE::NiPoint3& point) {
@@ -1249,27 +1293,14 @@ namespace rock
             }
 
             ++boundsCandidateCount;
-            float minimumSurfaceDistanceSquaredLocal =
-                (std::numeric_limits<float>::infinity)();
-            for (const auto& triangle : localTriangles) {
-                if (!pointFinite(triangle.v0) ||
-                    !pointFinite(triangle.v1) ||
-                    !pointFinite(triangle.v2)) {
-                    continue;
-                }
-                float surfaceDistanceSquaredLocal =
-                    (std::numeric_limits<float>::infinity)();
-                (void)closestPointOnTriangleToPoint(
-                    probeLocal,
-                    triangle,
-                    surfaceDistanceSquaredLocal);
-                if (std::isfinite(surfaceDistanceSquaredLocal) &&
-                    surfaceDistanceSquaredLocal >= 0.0f) {
-                    minimumSurfaceDistanceSquaredLocal = (std::min)(
-                        minimumSurfaceDistanceSquaredLocal,
-                        surfaceDistanceSquaredLocal);
-                }
-            }
+            const auto& index = useSourceFrame ? instance.generatedSourceTriangleIndex : instance.generatedTriangleIndex;
+            const float minimumSurfaceDistanceSquaredLocal = index.nearestDistanceSquared(
+                localTriangles, probeLocal, localRadius * localRadius,
+                [](const RE::NiPoint3& point, const TriangleData& triangle) {
+                    float distanceSquared = (std::numeric_limits<float>::infinity)();
+                    (void)closestPointOnTriangleToPoint(point, triangle, distanceSquared);
+                    return distanceSquared;
+                });
             if (!std::isfinite(minimumSurfaceDistanceSquaredLocal) ||
                 !weapon_interaction_probe_math::isWithinProbeRadiusSquared(
                     minimumSurfaceDistanceSquaredLocal,

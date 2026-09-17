@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/EquipVisualBridge.h"
+#include "physics-interaction/weapon/PipeFiringGripPolicy.h"
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
 
 #include <algorithm>
@@ -231,7 +232,8 @@ namespace rock
             frik_weapon_offset_cache::findPrimaryWeaponOffset(input.weapon, model);
         const bool customFrikOffsetPresent =
             frikLookup.found &&
-            frikLookup.source == frik_weapon_offset_cache::OffsetSource::CustomFile;
+            frikLookup.source == frik_weapon_offset_cache::OffsetSource::CustomFile &&
+            !pipe_firing_grip_policy::isPromotedCalibration(input.weaponFormID, input.isLeftHand, frikLookup.offset);
         const auto authoredLookup =
             !customFrikOffsetPresent && input.weapon ?
                 authored_weapon_grip_library::find(input.weapon, model, f4vr::isInPowerArmor()) :

@@ -28,6 +28,7 @@ namespace rock
 
     bool PhysicsInteraction::refreshHandBoneCache()
     {
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::HandFrameResolve);
         const bool resolved = _handBoneCache.resolve();
         if (resolved) {
             _diagnostics.handCacheResolveLogCounter = 0;
@@ -39,10 +40,10 @@ namespace rock
 
         /*
          * Isolate the controller hand once per frame, before any consumer
-         * reads it. While a ROCK claim was solved this frame the root
-         * flattened bone is ROCK's own previous target, not the controller;
-         * the service reconstructs the controller hand from FRIK's untouched
-         * first-person hand node. It also watches for FRIK's silent fallback.
+         * reads it. While a ROCK claim was solved this frame the rendered
+         * hand bone is ROCK's own target, not the controller; the service
+         * reconstructs the controller hand from FRIK's first-person hand
+         * input. FRIK's solve result marks an unreachable claim.
          */
         frik_hand_world_authority::FrameHandSamples samples{};
         const auto sampleHand = [this, resolved](bool isLeft, frik_hand_world_authority::RawHandSample& outSample) {
@@ -60,12 +61,6 @@ namespace rock
         samples.recoilKickThisFrame = kickSequence != _observedNativeRecoilKickSequence;
         _observedNativeRecoilKickSequence = kickSequence;
 
-        const auto& runtime = runtime_state::currentFrame();
-        samples.fallbackObservationAllowed =
-            resolved &&
-            runtime.localSkeletonReady &&
-            !runtime.localScopeMenuOpen &&
-            !runtime.compatibilityConfigBlocking;
         frik_hand_world_authority::resolveRawHands(samples);
 
         return resolved;
@@ -73,7 +68,7 @@ namespace rock
 
     void PhysicsInteraction::captureRenderedHands()
     {
-        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::HandPresentation);
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::RenderedHandCapture);
         // The bone array was rebuilt by FRIK's world final: both hands' rendered
         // flattened bones and their nodes are this frame's final values.
         const bool resolved = _handBoneCache.resolve();
@@ -142,12 +137,9 @@ namespace rock
 
         auto sampleHand = [&](bool isLeft) {
             auto& state = _diagnostics.rawHandParityStates[isLeft ? 1 : 0];
-            const auto handEnum = handFromBool(isLeft);
             const auto localTransform = _handBoneCache.getWorldTransform(isLeft);
             RE::NiTransform apiTransform{};
-            if (!frik_visual_authority::tryGetHandWorldTransform(
-                    handEnum,
-                    apiTransform)) {
+            if (!frik_visual_authority::tryGetPresentedHandWorldTransform(isLeft, apiTransform)) {
                 state = {};
                 return;
             }
@@ -246,6 +238,16 @@ namespace rock
     {
         // Unconditional: a presented node is always handed back, whatever changed during the frame.
         _twoHandedGrip.restoreFrikWeaponOffsetAfterRockFrame();
+    }
+
+    void PhysicsInteraction::finalizeFrikWeaponOwnershipForFrame()
+    {
+        _twoHandedGrip.finalizeFrikWeaponOwnershipForFrame();
+    }
+
+    void PhysicsInteraction::syncFrikOffHandGripReport()
+    {
+        _twoHandedGrip.syncFrikOffHandGripReport();
     }
 
     void PhysicsInteraction::publishDebugRenderFrame()
@@ -463,6 +465,9 @@ namespace rock
 
     void PhysicsInteraction::update()
     {
+        auto cancelInterruptedFists = F4SE::stl::scope_exit([this] {
+            cancelBareFistMode("interaction-frame-interrupted");
+        });
         _frame.debugOverlayFrameIndex = 0;
         ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
 
@@ -559,13 +564,17 @@ namespace rock
                         restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, true);
                         if (_rightHand.isHolding()) {
                             auto* r = _rightHand.getHeldRef();
-                            _rightHand.releaseGrabbedObject(hknpMenu, GrabReleaseCollisionRestoreMode::Delayed, makeGrabReleaseContext(_rightHand, false));
+                            auto release = makeGrabReleaseContext(_rightHand, false);
+                            release.reason = "blocking-menu-opened";
+                            _rightHand.releaseGrabbedObject(hknpMenu, GrabReleaseCollisionRestoreMode::Delayed, release);
                             if (r)
                                 releaseObject(r, PhysicsObjectClaimOwner::RightHand);
                         }
                         if (_leftHand.isHolding()) {
                             auto* r = _leftHand.getHeldRef();
-                            _leftHand.releaseGrabbedObject(hknpMenu, GrabReleaseCollisionRestoreMode::Delayed, makeGrabReleaseContext(_leftHand, true));
+                            auto release = makeGrabReleaseContext(_leftHand, true);
+                            release.reason = "blocking-menu-opened";
+                            _leftHand.releaseGrabbedObject(hknpMenu, GrabReleaseCollisionRestoreMode::Delayed, release);
                             if (r)
                                 releaseObject(r, PhysicsObjectClaimOwner::LeftHand);
                         }
@@ -773,6 +782,7 @@ namespace rock
                 primaryGrabHeld ? "yes" : "no",
                 _equipped.pendingPrimaryOnlyGripStart.pending ? "yes" : "no");
         }
+        updateBareFistMode(frame);
         enforceNoBareFistState(forceBareFistRecheck);
 
         if (_layers.registered &&
@@ -878,6 +888,10 @@ namespace rock
 
         const auto equippedWeaponFrame = updateEquippedWeaponFrame(frame, bhk, hknp);
         finalizeInteractionFrame(frame, bhk, hknp, equippedWeaponFrame);
+        if (input_remap_runtime::ownsBareFistInput() && !bareFistHandsAvailable(frame)) {
+            cancelBareFistMode("hand-owner-changed");
+        }
+        cancelInterruptedFists.release();
     }
 
     void PhysicsInteraction::dispatchPhysicsMessage(std::uint32_t msgType, bool isLeft, RE::TESObjectREFR* refr, std::uint32_t formID, std::uint32_t layer)

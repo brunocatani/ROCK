@@ -97,6 +97,9 @@ namespace rock
 
     void EquippedWeaponTransitionCoordinator::update(const FrameInput& input)
     {
+        _presentationKnown = false;
+        _presentationWeaponFormID = 0;
+        _nativeRenderable = false;
         if (!input.localSkeletonReady) {
             if (_active || _observationInitialized || _requestCurrentPending) {
                 abandonSceneGraph();
@@ -223,6 +226,17 @@ namespace rock
             _menuEntryCaptured = false;
         }
 
+        // Observe current presentation even after the transition watchdog
+        // completes. Reuse the same bounded weapon observation for recovery.
+        auto visual = equipped_weapon_visual_state::Snapshot{};
+        if (current.valid() && input.visualAuthorityAvailable && (_active || input.localSkeletonReady) &&
+            !input.menuBlocking && !input.compatibilityBlocking) {
+            visual = equipped_weapon_visual_state::observe(current.formID,
+                _active ? _supersededNativeInstanceNode : 0, &_visualCache);
+            _presentationWeaponFormID = current.formID;
+            _presentationKnown = input.localSkeletonReady;
+            _nativeRenderable = visual.exactInstance && visual.ancestorPathVisible && visual.instanceLocallyVisible;
+        }
         if (!_active) {
             return;
         }
@@ -264,9 +278,6 @@ namespace rock
             return;
         }
 
-        auto visual = equipped_weapon_visual_state::observe(
-            _boundIdentity.formID,
-            _supersededNativeInstanceNode);
         if (input.nativeWeaponAnimationActive) {
             // Reload/bolt owners deliberately replace or hide the same Weapon
             // graph. Yield both the exact-child cull and the temporary hand
@@ -620,6 +631,10 @@ namespace rock
 
     void EquippedWeaponTransitionCoordinator::shutdown()
     {
+        _visualCache = {};
+        _presentationKnown = false;
+        _presentationWeaponFormID = 0;
+        _nativeRenderable = false;
         if (_active) {
             _lastTerminalWeaponFormID = _boundIdentity.valid() ?
                 _boundIdentity.formID :
@@ -651,6 +666,10 @@ namespace rock
 
     void EquippedWeaponTransitionCoordinator::abandonSceneGraph()
     {
+        _visualCache = {};
+        _presentationKnown = false;
+        _presentationWeaponFormID = 0;
+        _nativeRenderable = false;
         if (_active) {
             _lastTerminalWeaponFormID = _boundIdentity.valid() ?
                 _boundIdentity.formID :
@@ -717,6 +736,7 @@ namespace rock
         if (!identity.valid()) {
             return;
         }
+        _visualCache = {};
         const bool completesSuppressedHeldDraw =
             _waitingForExpectedIdentity &&
             (source == Source::HeldTriggerEquip ||
@@ -877,10 +897,14 @@ namespace rock
             !_waitingForExpectedIdentity &&
             !_policyState.nativeHandoffObserved;
         snapshot.bridgePresented = _bridge.isModelPresented();
-        snapshot.nativeRenderable = _policyState.nativeHandoffObserved;
+        snapshot.presentationKnown = _presentationKnown;
+        snapshot.presentationWeaponFormID = _presentationWeaponFormID;
+        snapshot.nativeRenderable = _presentationKnown && _nativeRenderable;
         snapshot.handPoseHandoffComplete =
-            _policyState.nativeHandoffObserved &&
+            snapshot.nativeRenderable &&
             !_bridge.isHandPoseHandoffActive();
+        snapshot.terminalWeaponFormID = _lastTerminalWeaponFormID;
+        snapshot.terminalSource = _lastTerminalSource;
         snapshot.recoveryExhausted =
             _drawExhaustionLogged || _repairExhaustionLogged ||
             (!_active &&

@@ -1,4 +1,5 @@
 #include "physics-interaction/hand/HandBoneColliderSet.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 
 #include "physics-interaction/hand/Hand.h"
 #include "physics-interaction/debug/DebugMath.h"
@@ -372,6 +373,7 @@ namespace rock
         const RE::NiTransform& rollAuthorityWorld,
         BoneFrameLookup& outLookup)
     {
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::HandBoneCapture);
         outLookup = {};
         DirectSkeletonBoneSnapshot snapshot{};
         if (!_reader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,

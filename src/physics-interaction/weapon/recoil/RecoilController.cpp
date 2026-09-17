@@ -260,8 +260,7 @@ namespace rock
         // controller-derived base never contains the preceding frame's recoil.
         if (scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(_scope.menuOpenThisFrame)) {
             if (!frik_visual_authority::publishHandWorld(ONE_HAND_RECOIL_TAG,
-                    frik_visual_authority::Hand::Right, handTarget, GRIP_HAND_POSE_PRIORITY,
-                    frik_visual_authority::RebaseDriver::RightHand)) {
+                    frik_visual_authority::Hand::Right, handTarget, GRIP_HAND_POSE_PRIORITY)) {
                 ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Weapon recoil: right firing-hand publication failed");
                 return;
             }

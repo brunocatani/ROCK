@@ -1,5 +1,6 @@
 #include "physics-interaction/weapon/WeaponCollisionInternal.h"
 #include "physics-interaction/weapon/WeaponGapDecomposition.h"
+#include "physics-interaction/core/RockRuntimeState.h"
 
 #include <chrono>
 
@@ -516,7 +517,7 @@ namespace rock
         std::uint32_t* outFormID,
         std::uint64_t* outInstanceContentKey) const
     {
-        const auto identity = readEquippedWeaponGenerationIdentity();
+        const auto identity = getEquippedWeaponClassification();
         const auto identityKey = weapon_generation_identity_policy::makeEquippedWeaponIdentityKey(identity);
         if (outIdentityKey) {
             *outIdentityKey = identityKey;
@@ -539,7 +540,22 @@ namespace rock
 
     weapon_generation_identity_policy::EquippedWeaponGenerationIdentity WeaponCollision::getEquippedWeaponClassification() const
     {
-        return readEquippedWeaponGenerationIdentity();
+        const auto frame = runtime_state::currentFrame().frameIndex;
+        const auto* item = f4vr::getEquippedWeaponItem();
+        const auto* data = item && item->data ? static_cast<RE::EquippedWeaponData*>(item->data.get()) : nullptr;
+        const auto& cached = _identity.frameClassification;
+        if (!_identity.classificationValid || frame == 0 || _identity.classificationFrame != frame ||
+            cached.formAddress != reinterpret_cast<std::uintptr_t>(item ? item->item.object : nullptr) ||
+            cached.instanceDataAddress != reinterpret_cast<std::uintptr_t>(item ? item->item.instanceData.get() : nullptr) ||
+            cached.equippedDataAddress != reinterpret_cast<std::uintptr_t>(data) ||
+            cached.equippedObjectAddress != reinterpret_cast<std::uintptr_t>(data ? data->fireNode : nullptr) ||
+            _drive.workbenchExitRebuildRequested.load(std::memory_order_acquire)) {
+            performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponIdentityRead);
+            _identity.frameClassification = readEquippedWeaponGenerationIdentity();
+            _identity.classificationFrame = frame;
+            _identity.classificationValid = true;
+        }
+        return _identity.frameClassification;
     }
 
     std::uint64_t WeaponCollision::getWeaponVisualCompositionKey(RE::NiAVObject* weaponNode, WeaponVisualKeyStats& stats) const
@@ -1538,6 +1554,8 @@ namespace rock
             instance.generatedLocalTrianglesGame = source.localTrianglesGame;
             instance.generatedSourceLocalPointsGame = source.sourceLocalPointsGame;
             instance.generatedSourceLocalTrianglesGame = source.sourceLocalTrianglesGame;
+            instance.generatedTriangleIndex.build(instance.generatedLocalTrianglesGame);
+            instance.generatedSourceTriangleIndex.build(instance.generatedSourceLocalTrianglesGame);
             instance.generatedPointCount = static_cast<std::uint32_t>(
                 (std::min)(source.localPointsGame.size(), static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())));
             instance.generatedSourceGroupId = source.sourceGroupId;

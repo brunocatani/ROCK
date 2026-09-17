@@ -1,4 +1,5 @@
 #include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 
 #include <algorithm>
 #include <array>
@@ -167,7 +168,13 @@ namespace rock
                 return false;
             }
         }
-        return captureFromCachedTree(outSnapshot, space);
+        const bool captured = captureFromCachedTree(outSnapshot, space);
+        if (captured) {
+            performance_profiler::observeValue(space == SkeletonBoneCaptureSpace::Rendered ?
+                performance_profiler::ValueMetric::RenderedSkeletonBones : performance_profiler::ValueMetric::ControllerSkeletonBones,
+                outSnapshot.bones.size());
+        }
+        return captured;
     }
 
     bool DirectSkeletonBoneReader::rebuildTreeCache(void* skeleton, void* boneTree, SkeletonBoneSnapshotSource source, DebugSkeletonBoneMode mode, bool inPowerArmor)

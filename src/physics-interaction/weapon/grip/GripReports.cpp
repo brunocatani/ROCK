@@ -4,6 +4,30 @@
 
 namespace rock
 {
+    void TwoHandedGrip::observeEquippedOwnership(std::uint64_t ownershipKey, std::uint64_t gripGenerationKey)
+    {
+        // A session can also have been started since the previous observation.
+        // Validate that session against the item even when the observed key
+        // stayed zero; no active session can substitute for inventory identity.
+        if (_session.state != TwoHandedState::Inactive &&
+            (isManualOwnershipActive() || _confirmedEquippedOwnershipKey != ownershipKey) &&
+            _session.equippedWeaponOwnershipKey != ownershipKey) {
+            transitionToInactive(false);
+        }
+        if (_confirmedEquippedOwnershipKey != ownershipKey) {
+            ROCK_LOG_INFO(Weapon, "Equipped grip identity: owner={:016X}->{:016X} firingHand={} grabSession={}",
+                _confirmedEquippedOwnershipKey, ownershipKey, firingHandName(), isManualOwnershipActive());
+        }
+        _confirmedEquippedOwnershipKey = ownershipKey;
+        _confirmedEquippedGripGenerationKey = ownershipKey ? gripGenerationKey : 0;
+    }
+
+    EquippedWeaponGripOccupancy TwoHandedGrip::getGrabInputOccupancy() const noexcept
+    {
+        return equipped_weapon_toggle_grab_policy::forGrabInput(getGripOccupancy(),
+            isManualOwnershipActive() && !isPersistentEquippedCarryInputAcquisitionPending());
+    }
+
     EquippedWeaponGripOccupancy TwoHandedGrip::getGripOccupancy()
         const noexcept
     {
@@ -35,6 +59,13 @@ namespace rock
     {
         outReport = {};
         const bool handHasFiringRole = isFiringHand(isLeft);
+        if (handHasFiringRole && isFiringGripOccupied() && !isManualOwnershipActive()) {
+            // Logical ownership does not invent a captured pose/source node.
+            outReport.kind = weapon_part_grip_report_policy::HandGripKind::FiringGrip;
+            outReport.active = true;
+            outReport.weaponGenerationKey = _confirmedEquippedGripGenerationKey;
+            return;
+        }
         const WeaponPartGrip& grip = partGrip(isLeft);
         const auto kind = weapon_part_grip_report_policy::resolveHandGripKind(
             _session.state == TwoHandedState::Gripping,

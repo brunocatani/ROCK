@@ -107,6 +107,13 @@ namespace rock
         // Game frame only, before early returns, so clicks cannot replay later.
         void updateSurfaceSupportInput();
 
+        // Game-frame observation, published through the provider snapshot.
+        [[nodiscard]] bool surfaceSupportReservesInput(std::uintptr_t weaponNode, std::uint64_t generation) const noexcept
+        {
+            return _surfaceInputReserved && generation != 0 && generation == _frameGenerationKey &&
+                weaponNode != 0 && weaponNode == reinterpret_cast<std::uintptr_t>(_frameWeaponNode);
+        }
+
         // Same game-thread owner as the recoil callback; no cached hand-mode
         // flag can keep the reduced profile alive after this latch releases.
         [[nodiscard]] bool hasLatchedSurfaceSupport(std::uintptr_t weaponNode, std::uint64_t generation) const noexcept
@@ -270,6 +277,8 @@ namespace rock
         havok_compound_shape_builder::DynamicCompoundShape _compoundShape{};
         mutable std::mutex _compoundPoseMutex;
         std::vector<WeaponCollision::CompoundChildPoseSnapshot> _compoundPoseScratch;
+        // Game-thread preparation stays outside the physics publication lock.
+        std::vector<havok_compound_shape_builder::ChildTransform> _preparedCompoundChildTransforms;
         std::vector<havok_compound_shape_builder::ChildTransform> _pendingCompoundChildTransforms;
         std::uint64_t _queuedCompoundPoseSequence{ 0 };
         std::uint64_t _consumedCompoundPoseSequence{ 0 };
@@ -331,6 +340,7 @@ namespace rock
         weapon_surface_support::Toggle _surfaceToggle{};
         weapon_surface_support::State _surfaceSupport{};
         bool _surfaceClickRequested{ false };
+        bool _surfaceInputReserved{ false };
         // Game-thread diagnostic baseline; source/generation changes rebase it.
         RE::NiTransform _previousIntentDriverLocal{};
         dynamic_weapon_collision_policy::VisualIntentSource _previousIntentSource{dynamic_weapon_collision_policy::VisualIntentSource::None};

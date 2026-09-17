@@ -1,6 +1,8 @@
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
 
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
+#include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/NativeMemory.h"
 
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/BGSInventoryItem.h"
@@ -11,6 +13,7 @@
 #include "RE/Bethesda/TESObjectREFRs.h"
 
 #include "rock_support/Fo4VrRuntime.h"
+#include <REL/Relocation.h>
 
 #include <array>
 #include <utility>
@@ -19,12 +22,40 @@ namespace rock::weapon_equip_transfer
 {
     namespace
     {
+        [[nodiscard]] bool clearPreviousWeaponRestore(RE::PlayerCharacter* player) noexcept
+        {
+            // FO4VR 1.2.72: Unequip at 140E745F0 snapshots the player's saved
+            // one-hand items, clears them at 140E7482D, then re-equips each via
+            // 140E7486D -> 140E714A0 -> EquipObject. Intentional ROCK detach
+            // must invalidate that restoration before RemoveItem can unequip.
+            // Use the native destructor/clear routine (140F7CF70), not the
+            // incompatible CommonLib PlayerCharacter::lastOneHandItems layout.
+            constexpr std::array<std::uint8_t, 17> expected{
+                0x48, 0x89, 0x5C, 0x24, 0x18, 0x56, 0x48, 0x83, 0xEC,
+                0x20, 0x48, 0x8D, 0xB1, 0x08, 0x11, 0x00, 0x00,
+            };
+            if (!player || !REL::Module::IsVR() ||
+                REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) return false;
+            const auto address = REL::Offset(0xF7CF70).address();
+            std::array<std::uint8_t, expected.size()> actual{};
+            if (!native_memory::guardedCopyFromMemory(
+                    reinterpret_cast<const void*>(address), actual.data(), actual.size()) ||
+                actual != expected) {
+                ROCK_LOG_WARN(Weapon, "Equipped detach refused: previous-weapon restore reset entry validation failed");
+                return false;
+            }
+            using ClearLastOneHandItems = void (*)(RE::PlayerCharacter*);
+            reinterpret_cast<ClearLastOneHandItems>(address)(player);
+            return true;
+        }
+
         struct InventoryWeaponStack
         {
             bool found = false;
             bool matchedInstanceData = false;
             std::uint32_t stackID = 0;
             std::uint32_t count = 0;
+            std::uintptr_t stackAddress = 0;
             RE::BSTSmartPointer<RE::TBO_InstanceData> instanceData{};
             RE::BGSEquipSlot* equipSlot = nullptr;
         };
@@ -119,6 +150,7 @@ namespace rock::weapon_equip_transfer
                             .found = true,
                             .stackID = stackID,
                             .count = stack->GetCount(),
+                            .stackAddress = reinterpret_cast<std::uintptr_t>(stack),
                             .instanceData = RE::BSTSmartPointer<RE::TBO_InstanceData>{ instanceData },
                             .equipSlot = equipSlot,
                         };
@@ -164,6 +196,7 @@ namespace rock::weapon_equip_transfer
                         .matchedInstanceData = expectedInstanceData && instanceData.get() == expectedInstanceData,
                         .stackID = stackID,
                         .count = stack->GetCount(),
+                        .stackAddress = reinterpret_cast<std::uintptr_t>(stack),
                         .instanceData = instanceData,
                         .equipSlot = weapon->GetEquipSlot(instanceData.get()),
                     };
@@ -249,6 +282,8 @@ namespace rock::weapon_equip_transfer
             return "dropped-reference-unavailable";
         case DropReason::Dropped:
             return "dropped";
+        case DropReason::PreviousWeaponRestoreResetUnavailable:
+            return "previous-weapon-restore-reset-unavailable";
         default:
             return "not-attempted";
         }
@@ -423,9 +458,16 @@ namespace rock::weapon_equip_transfer
             result.weapon,
             stack.instanceData.get());
         result.matchedEquippedStack = equippedStack.found &&
-            equippedStack.stackID == stack.stackID &&
-            (!stack.instanceData ||
-                equippedStack.instanceData.get() == stack.instanceData.get());
+            weapon_inventory_stack_selection_policy::matchesEquippedStack(
+                { stack.stackAddress, reinterpret_cast<std::uintptr_t>(stack.instanceData.get()), stack.count },
+                { equippedStack.stackAddress, reinterpret_cast<std::uintptr_t>(equippedStack.instanceData.get()), equippedStack.count });
+        ROCK_LOG_INFO(Weapon,
+            "Held equip stack validation weapon={:08X} requestedIndex={} equippedIndex={} found={} identityMatch={} requestedNode=0x{:X} equippedNode=0x{:X} requestedInstance=0x{:X} equippedInstance=0x{:X}",
+            result.weapon->formID, stack.stackID, equippedStack.stackID,
+            equippedStack.found, result.matchedEquippedStack,
+            stack.stackAddress, equippedStack.stackAddress,
+            reinterpret_cast<std::uintptr_t>(stack.instanceData.get()),
+            reinterpret_cast<std::uintptr_t>(equippedStack.instanceData.get()));
         if (!result.matchedEquippedStack) {
             result.reason = EquipReason::EquippedStackMismatch;
             return result;
@@ -433,6 +475,44 @@ namespace rock::weapon_equip_transfer
         result.success = true;
         result.reason = EquipReason::ActivateRefThenInstantEquip;
         return result;
+    }
+
+    bool replaceHolsteredWeaponWithUnarmed() noexcept
+    {
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        auto* manager = RE::ActorEquipManager::GetSingleton();
+        if (!player || !manager || f4vr::getNativeWeaponState(player) != 0) return false;
+        const auto equipped = readEquippedWeaponSnapshot();
+        if (!equipped.weapon) return true;
+        const auto stack = findEquippedWeaponStack(player, equipped.weapon, equipped.instanceData);
+        if (!stack.found || !stack.equipSlot ||
+            (equipped.instanceData && stack.instanceData.get() != equipped.instanceData)) {
+            ROCK_LOG_WARN(Weapon, "Bare fists refused: holstered inventory stack unavailable weapon={:08X}", equipped.weapon->GetFormID());
+            return false;
+        }
+        // VR raw witnesses: 140E70280 consumes manager/actor/object/count and
+        // builds the synchronous request to 140E745F0; caller 1409CB31F
+        // independently supplies the same object and stack/slot argument ABI.
+        constexpr std::array<std::uint8_t, 15> expected{
+            0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x18, 0x55,
+            0x57, 0x41, 0x56, 0x48, 0x83, 0xEC, 0x70,
+        };
+        const auto target = REL::Offset(0xE70280).address();
+        std::array<std::uint8_t, expected.size()> actual{};
+        if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(target), actual.data(), actual.size()) ||
+            actual != expected || !clearPreviousWeaponRestore(player)) {
+            ROCK_LOG_WARN(Weapon, "Bare fists refused: native unequip/previous-weapon validation failed");
+            return false;
+        }
+        RE::BGSObjectInstance object(equipped.weapon, stack.instanceData.get());
+        using UnequipObject = bool (*)(RE::ActorEquipManager*, RE::Actor*, const RE::BGSObjectInstance*,
+            std::uint32_t, const RE::BGSEquipSlot*, std::uint32_t, bool, bool, bool, bool, const RE::BGSEquipSlot*);
+        const bool accepted = reinterpret_cast<UnequipObject>(target)(manager, player, &object, 1, stack.equipSlot,
+            stack.stackID, false, true, false, true, nullptr);
+        const auto remaining = readEquippedWeaponSnapshot();
+        ROCK_LOG_INFO(Weapon, "Bare fists equipment replacement: previous={:08X} stack={} accepted={} remaining={:08X}",
+            equipped.weapon->GetFormID(), stack.stackID, accepted, remaining.weapon ? remaining.weapon->GetFormID() : 0);
+        return accepted && !remaining.weapon;
     }
 
     EquippedDropResult dropEquippedWeaponFromPlayer(const EquippedDropInput& input) noexcept
@@ -479,7 +559,17 @@ namespace rock::weapon_equip_transfer
         }
         removeData.stackData.push_back(stack.stackID);
 
+        if (!clearPreviousWeaponRestore(player)) {
+            result.reason = DropReason::PreviousWeaponRestoreResetUnavailable;
+            return result;
+        }
         result.handle = player->RemoveItem(removeData);
+        const auto equippedAfterDrop = readEquippedWeaponSnapshot();
+        ROCK_LOG_INFO(Weapon,
+            "Equipped detach native removal: weapon={:08X} stack={} previousRestoreCleared=yes remainingEquipped={:08X} handleValid={}",
+            result.formID, result.stackID,
+            equippedAfterDrop.weapon ? equippedAfterDrop.weapon->GetFormID() : 0,
+            static_cast<bool>(result.handle));
         if (!result.handle) {
             result.reason = DropReason::RemoveItemFailed;
             return result;

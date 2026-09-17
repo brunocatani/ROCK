@@ -5,7 +5,7 @@
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/grab/GrabCore.h"
-#include "physics-interaction/grab/GrabAcquisition.h"
+#include "physics-interaction/grab/GrabOffsetAcquisition.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabTelemetry.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
@@ -43,6 +43,7 @@
 #include <cstdint>
 #include <limits>
 #include <mutex>
+#include <source_location>
 #include <utility>
 #include <vector>
 
@@ -441,6 +442,7 @@ namespace rock
 
         bool isHolding() const { return isHoldingState(_state); }
         bool isHoldingLooseWeapon() const { return isHolding() && _heldObjectIsLooseWeapon; }
+        bool isHoldingAuthoredSupportGrip() const { return isHoldingLooseWeapon() && _grabFrame.authoredLooseWeaponSupportGrip; }
         RE::TESObjectREFR* getHeldRef() const { return _savedObjectState.refr; }
         const ActiveConstraint& getActiveConstraint() const { return _activeConstraint; }
         const SavedObjectState& getSavedObjectState() const { return _savedObjectState; }
@@ -543,7 +545,9 @@ namespace rock
             float forceFadeInTime,
             float tauMin,
             const BodyBoneColliderSet* bodyBoneColliders,
-            const GrabReleaseContext& releaseContext = {});
+            const GrabReleaseContext& releaseContext = {},
+            Hand* peerHand = nullptr,
+            const RE::NiTransform* peerHandWorld = nullptr);
         void publishHeldBodyScope(RE::hknpWorld* world);
         bool refreshRagdollBodyScope(RE::hknpWorld* world, const GrabReleaseContext& releaseContext);
         bool validateHeldObjectUpdate(RE::hknpWorld* world, const GrabReleaseContext& releaseContext);
@@ -553,7 +557,8 @@ namespace rock
         GrabReleaseOutcome releaseGrabbedObject(
             RE::hknpWorld* world,
             GrabReleaseCollisionRestoreMode collisionRestoreMode = GrabReleaseCollisionRestoreMode::Delayed,
-            const GrabReleaseContext& releaseContext = {});
+            const GrabReleaseContext& releaseContext = {},
+            const std::source_location& caller = std::source_location::current());
         void updateGrabVisualReturn(const RE::NiTransform& trackedHandWorld, float deltaTime);
         void cancelGrabVisualReturn(const char* reason);
         bool isGrabVisualReturnActive() const { return _grabVisualReturn.active; }
@@ -595,7 +600,8 @@ namespace rock
             const RE::NiPoint3& sourcePointWorld,
             std::uint32_t preferredBodyId,
             float maxDistanceGame,
-            bool allowProjectileLayerForExactTarget);
+            bool allowProjectileLayerForExactTarget,
+            bool equippedWeaponTransfer = false);
         void clearActorEquipmentDropHandoff(const char* reason = "cleared");
         void clearPullCatchIntent(const char* reason = "cleared");
         void clearSelectionState(bool rememberDeselect);
@@ -752,13 +758,17 @@ namespace rock
             RE::hknpWorld* world,
             const GrabSharedObjectContext& sharedContext,
             ValidatedGrabSelection& outSelection);
+        bool coordinateLooseObjectProxy(RE::hknpWorld* world, Hand* peer,
+            const RE::NiTransform* peerHandWorld, RE::NiTransform& proxyWorld);
         bool updateHeldDrive(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
             float deltaTime,
             float forceFadeInTime,
             float tauMin,
             const GrabReleaseContext& releaseContext,
-            HeldDriveUpdate& outUpdate);
+            HeldDriveUpdate& outUpdate,
+            Hand* peerHand,
+            const RE::NiTransform* peerHandWorld);
         bool updateHeldVisualPresentation(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
             float deltaTime,
@@ -1346,7 +1356,9 @@ namespace rock
         int _notifCounter = 0;
 
         CanonicalGrabFrame _grabFrame;
-        grab_acquisition::Transition _grabAcquisition;
+        grab_offset_acquisition::Transition<RE::NiTransform> _grabOffsetAcquisition;
+        float _grabOffsetMaximumGripError = 0.0f;
+        float _grabOffsetMaximumRotationError = 0.0f;
         grab_three_phase::AcquisitionPhase _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         grab_three_phase::ObjectGripArea _grabObjectGripAtGrab{};
         held_object_drive_policy::HeldBodySetDriveDecision _heldDriveDecision{};

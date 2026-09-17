@@ -1,4 +1,5 @@
 #include "physics-interaction/native/HeldScenePresentation.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/core/RockRuntimeState.h"
@@ -622,6 +623,7 @@ namespace rock::held_scene_presentation
             RE::hknpWorld* world = nullptr;
             RE::hknpBodyId bodyId{ 0x7FFF'FFFFu };
             Match match{};
+            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::HeldSceneWriter);
             if (!havok_runtime::tryResolveCollisionObjectBody(
                     collisionObject,
                     world,
@@ -631,6 +633,7 @@ namespace rock::held_scene_presentation
                     world,
                     bodyId.value,
                     match)) {
+                profilerTimer.stop();
                 s_originalWriter(collisionObjectRaw, writerInput);
                 return;
             }
@@ -686,6 +689,7 @@ namespace rock::held_scene_presentation
                             bodyId.value,
                             targetTransform,
                             targetWriterInput);
+                        profilerTimer.stop();
                         s_originalWriter(
                             collisionObjectRaw,
                             targetWriterInput);
@@ -712,6 +716,7 @@ namespace rock::held_scene_presentation
                     *nativeRemainderSeconds);
             if (!timing.apply) {
                 logRejectedDecision(match, timing, timing.reason);
+                profilerTimer.stop();
                 s_originalWriter(collisionObjectRaw, writerInput);
                 return;
             }
@@ -737,6 +742,7 @@ namespace rock::held_scene_presentation
                     correctedInput);
             if (!transform.apply) {
                 logRejectedDecision(match, timing, transform.reason);
+                profilerTimer.stop();
                 s_originalWriter(collisionObjectRaw, writerInput);
                 return;
             }
@@ -748,6 +754,7 @@ namespace rock::held_scene_presentation
                 writerInput,
                 correctedInput);
             logSampledApplication(match, timing, transform);
+            profilerTimer.stop();
             s_originalWriter(collisionObjectRaw, correctedInput);
         }
 

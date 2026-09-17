@@ -684,25 +684,27 @@ namespace
      * so provider consumers keep receiving frames and leases keep expiring
      * across loading screens and skeleton rebuilds. BeforeRock, ROCK update,
      * AfterRock, Complete and this frame's provider publication share the one
-     * game-frame timing snapshot taken at FrameBegin.
+     * game-frame timing snapshot taken at FrameBegin. The profiler frame
+     * measures this tick; FrameBeginPreparation and FramePrelude are the
+     * phases outside it.
      */
     void runFrameTick(const bool withSkeletonPhysics)
     {
         s_providerTickedThisFrame = true;
         const auto& frameTiming = game_timing::currentFrameTiming();
 
-        rock::provider::refreshNativeAnimationAuthorityLeasesV1();
-        rock::provider::dispatchAnimationPhaseCallbacksV1(
-            rock::provider::RockProviderAnimationPhaseV1::BeforeRock,
-            frameTiming);
-
         performance_profiler::refreshSettings(
             g_rockConfig.rockPerformanceProfilerEnabled,
             g_rockConfig.rockPerformanceProfilerLogIntervalFrames,
             g_rockConfig.rockPerformanceProfilerWarmupFrames,
             g_rockConfig.rockPerformanceProfilerOverlayText);
-        // Keep final presentation and overlay capture in this measured frame.
         performance_profiler::FrameScope profilerFrame;
+
+        rock::provider::refreshNativeAnimationAuthorityLeasesV1();
+        rock::provider::dispatchAnimationPhaseCallbacksV1(
+            rock::provider::RockProviderAnimationPhaseV1::BeforeRock,
+            frameTiming);
+
         if (withSkeletonPhysics) {
             dynamic_collider_trace::beginFrame(g_rockConfig.rockDebugGrabFrameLogging, s_schedulerSequence);
             updatePhysicsInteractionFrame();
@@ -724,7 +726,7 @@ namespace
             frameTiming);
         // Every claim of this frame is published; FRIK re-solves the claimed
         // hands when the phase returns, before the read-only render snapshot.
-        // FRIK's weapon pass also follows: settle the weapon-node ownership now.
+        // The weapon-node write block is settled here, before FRIK's weapon pass.
         if (withSkeletonPhysics && s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->finalizeFrikWeaponOwnershipForFrame();
             s_physicsInteraction->traceScopeColliderState();
@@ -745,16 +747,25 @@ namespace
 
     /*
      * FrameBegin: the top of FRIK's frame, every frame, skeleton or not, after
-     * the scope enter/exit broadcast. Housekeeping runs here.
+     * the scope enter/exit broadcast. Housekeeping runs here, with the
+     * telemetry captures that precede FRIK's body work.
      */
     void onFrikFrameBegin()
     {
+        performance_profiler::ScopedTimer frameBeginTimer(performance_profiler::Scope::FrameBeginPreparation);
         s_schedulerSequence = nextFrameSequence(s_schedulerSequence);
         s_providerTickedThisFrame = false;
         s_skeletonTickedThisFrame = false;
         // The frame's one timing sample, before the runtime snapshot consumes it.
         (void)runtime_state::beginFrameTiming(input_remap_runtime::isMenuInputActive());
         native_scope_data::beginGameFrame();
+        if (s_pluginLoaded && s_frikAvailable) {
+            vanilla_weapon_alignment_telemetry::capture(
+                vanilla_weapon_alignment_telemetry::Phase::BeforeRockPreFrik, s_schedulerSequence);
+            scope_transition_telemetry::capture(scope_transition_telemetry::Phase::BeforeFrik, s_schedulerSequence);
+            vanilla_weapon_alignment_telemetry::capture(
+                vanilla_weapon_alignment_telemetry::Phase::BeforeFrik, s_schedulerSequence);
+        }
         prepareRuntimeFrame();
     }
 
@@ -789,6 +800,7 @@ namespace
         // Claimed before anything below can throw, so FrameEnd never ticks this frame again.
         s_providerTickedThisFrame = true;
         s_skeletonTickedThisFrame = true;
+        performance_profiler::ScopedTimer preludeTimer(performance_profiler::Scope::FramePrelude);
         frik_hand_world_authority::beginRockFrame(s_schedulerSequence);
         // On every exit from here, a caught exception included: hand FRIK back
         // the weapon local it re-glued, then close the hand authority's frame.
@@ -814,20 +826,24 @@ namespace
             s_physicsInteraction->resolveFrameHands();
         }
         scope_transition_telemetry::capture(scope_transition_telemetry::Phase::AfterFrik, s_schedulerSequence);
+        preludeTimer.stop();
         runFrameTick(true);
     }
 
     /*
      * AfterWeaponPosition: FRIK's weapon offsets, two-handed grip and scope
      * camera are applied (FRIK skips the weapon node while ROCK blocks it).
-     * ROCK latches the weapon local FRIK wrote, which its next frame presents,
-     * and its immersive scope overlay captures FRIK's camera calibration and
-     * publishes the rigid weapon-local scope frame from the final weapon.
+     * ROCK reports its two-handed grip after FRIK's own grip invalidation,
+     * re-applies the presentation scale FRIK's full-local write undid, latches
+     * the weapon local its next frame presents, and its immersive scope
+     * overlay captures FRIK's camera calibration and publishes the rigid
+     * weapon-local scope frame from the final weapon.
      */
     void onFrikAfterWeaponPosition()
     {
         if (s_skeletonTickedThisFrame && s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->syncFrikOffHandGripReport();
+            s_physicsInteraction->normalizeWeaponPresentationScaleAfterFrikWeaponPass();
             s_physicsInteraction->captureFrikWeaponOffsetLatch();
             s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
         }
@@ -941,7 +957,6 @@ namespace
             vanilla_weapon_alignment_telemetry::initialize();
             scope_transition_telemetry::initialize();
             dynamic_collider_trace::initialize();
-            frik_visual_authority::resetPresentedHandNodeCache();
             bumpGeneration(s_skeletonGeneration);
             if (!authored_weapon_grip_capture::installHook()) {
                 logger::error(
@@ -962,7 +977,6 @@ namespace
             vanilla_weapon_alignment_telemetry::shutdown();
             scope_transition_telemetry::shutdown();
             native_scope_shot_diagnostics::shutdown();
-            frik_visual_authority::resetPresentedHandNodeCache();
             frik_hand_world_authority::resetForSkeletonRelease();
             bumpGeneration(s_skeletonGeneration);
             authored_weapon_grip_capture::resetTransientState();
@@ -976,7 +990,7 @@ namespace
             }
             destroyPhysicsInteraction(rock::provider::RockProviderLifecycleReason::SkeletonDestroying);
             dynamic_collider_trace::shutdown();
-            // FRIK runs no frame phase without a skeleton: drop the input state now.
+            // FRIK runs no skeleton phase without a skeleton: drop the input state now.
             clearUnavailableRuntimeInputState();
             break;
 
@@ -1009,9 +1023,10 @@ namespace
             }
 
             /*
-             * FRIK API v2 is append-only since v2.2: initialize(v) proves the
-             * table holds every entry up to v. This build needs v2.3 for frame
-             * phases, body reads, the grip owner and the explicit weapon parent.
+             * FRIK API v2 is append-only since v2.2: initialize() checks the
+             * loaded version and table size against the version this build
+             * compiled with, so success proves every entry this build calls
+             * exists. The error codes are the header's own contract.
              */
             const int frikErr = frik::api::FRIKApiV2::initialize(frik::api::FRIK_API_V2_VERSION);
             if (frikErr != 0) {
@@ -1036,7 +1051,7 @@ namespace
                 case 5:
                     logger::critical(
                         "ROCK: FRIK API v2 initialization FAILED (error 5). "
-                        "Loaded FRIK API v2 table is smaller than v{} requires. Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.",
+                        "Loaded FRIK API v2 table is smaller than API v{} requires. Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.",
                         frik::api::FRIK_API_V2_VERSION);
                     break;
                 default:

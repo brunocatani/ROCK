@@ -425,7 +425,6 @@ namespace rock::offsets
     constexpr std::uintptr_t kFunc_UpdateFirstPersonArm = 0xEF6280;
     constexpr std::uintptr_t kCallsite_UpdateFirstPersonArmPrimaryReturn = 0xEF610D;
     constexpr std::uintptr_t kCallsite_UpdateFirstPersonArmSecondaryReturn = 0xEF6150;
-    constexpr std::uintptr_t kFunc_PlayerPostUpdateAnimationGraphManager = 0xF2F0A0;
 
     /*
      * FO4VR native-scope geometry boundary. Raw-disassembly verified

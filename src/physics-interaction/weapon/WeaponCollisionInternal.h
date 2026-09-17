@@ -2932,12 +2932,14 @@ namespace rock
             return snapshot;
         }
 
+        template <class Remember>
         inline void refreshWeaponEmittersRecursive(
             RE::NiAVObject* node,
             RE::NiAVObject* weaponRoot,
             int depth,
             std::uint32_t& visitedNodes,
-            WeaponEmitterSnapshot& snapshot)
+            WeaponEmitterSnapshot& snapshot,
+            Remember& remember)
         {
             if (!node || depth > 15 || visitedNodes >= 512) {
                 return;
@@ -2950,9 +2952,11 @@ namespace rock
                 if (descriptor.transformNodeAddress == address) {
                     descriptor.visible = weaponEmitterNodeEffectivelyVisible(node);
                     (void)updateWeaponEmitterTransform(descriptor, node, weaponRoot);
+                    remember(i, true, node);
                 }
                 if (descriptor.effectNodeAddress == address) {
                     descriptor.active = weaponEmitterNodeEffectivelyVisible(node);
+                    remember(i, false, node);
                 }
             }
 
@@ -2962,7 +2966,7 @@ namespace rock
             }
             const auto& children = niNode->GetRuntimeData().children;
             for (std::uint16_t i = 0; i < children.capacity(); ++i) {
-                refreshWeaponEmittersRecursive(children[i].get(), weaponRoot, depth + 1, visitedNodes, snapshot);
+                refreshWeaponEmittersRecursive(children[i].get(), weaponRoot, depth + 1, visitedNodes, snapshot, remember);
             }
         }
 

@@ -6,6 +6,7 @@ namespace rock
 {
     void WeaponCollision::init(RE::hknpWorld* world, void* bhkWorld)
     {
+        _identity.classificationValid = false;
         // Cache the Havok context for the generated weapon-collision lifetime.
         _cachedWorld = world;
         _cachedBhkWorld = bhkWorld;
@@ -40,6 +41,7 @@ namespace rock
 
     void WeaponCollision::shutdown()
     {
+        _identity.classificationValid = false;
         if (hasWeaponBody()) {
             ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown destroying generated bodies from cached context");
             destroyWeaponBody(_cachedWorld);
@@ -78,6 +80,7 @@ namespace rock
 
     void WeaponCollision::abandonHavokStateAfterWorldLoss()
     {
+        _identity.classificationValid = false;
         auto structuralMutation = _physicsCallbackGate ?
             _physicsCallbackGate->pauseForMutation() :
             PhysicsCallbackQuiescenceGate::MutationLease{};
@@ -165,6 +168,7 @@ namespace rock
         }
 
         if (world != _cachedWorld) {
+            _identity.classificationValid = false;
             ROCK_LOG_INFO(Weapon, "hknpWorld changed - resetting weapon collision state");
             if (hasWeaponBody()) {
                 destroyWeaponBody(_cachedWorld ? _cachedWorld : world);

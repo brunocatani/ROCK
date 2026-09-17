@@ -70,15 +70,29 @@ namespace rock
             _frikWeaponNode.recoilWrittenThisFrame);
         _frikWeaponNode.recoilWrittenThisFrame = false;
         // Right-firing PrimaryOnly is lifecycle/input ownership only and stays with FRIK.
-        const bool wantsWrites = write_block_policy::shouldHoldWriteBlock(write_block_policy::OwnershipInput{
+        const write_block_policy::OwnershipInput input{
             .framesSinceWrite = _frikWeaponNode.framesSinceWrite,
             .framesSinceRecoilWrite = _frikWeaponNode.framesSinceRecoilWrite,
             .ownsWeaponTransform = ownsWeaponTransform(),
             .weaponReturnActive = isWeaponVisualReturnActive(),
             .leftCarryActive = usesLeftFiringCarry() && isManualOwnershipActive(),
             .oneHandRecoilActive = isOneHandRecoilEnvelopeActive(),
-        });
-        if (wantsWrites) {
+            .authoredPrimaryAlignmentActive = _firing.authoredHandWorldActive,
+        };
+        const auto reason = write_block_policy::holdReason(input);
+        const bool heldByTail =
+            reason == write_block_policy::HoldReason::WriteTail || reason == write_block_policy::HoldReason::RecoilTail;
+        if (heldByTail && reason != _frikWeaponNode.lastHoldReason) {
+            // The tail is a backstop: it says when it acts, so a hold that no
+            // ownership predicate explains is visible in the log.
+            ROCK_LOG_DEBUG(Weapon,
+                "TwoHandedGrip: FRIK weapon-node write block held by {} tail (framesSinceWrite={} framesSinceRecoilWrite={})",
+                write_block_policy::holdReasonName(reason),
+                input.framesSinceWrite,
+                input.framesSinceRecoilWrite);
+        }
+        _frikWeaponNode.lastHoldReason = reason;
+        if (reason != write_block_policy::HoldReason::None) {
             engageFrikWeaponNodeWriteBlock();
         } else {
             releaseFrikWeaponNodeWriteBlock("no-weapon-authority");
@@ -153,15 +167,38 @@ namespace rock
         // A frame that ended without its restore must not leak into this one.
         restoreFrikWeaponOffsetAfterRockFrame();
         auto& presentation = _frikWeaponPresentation;
-        if (!weaponNode ||
-            !presentation_policy::shouldPresent(presentation.latch,
-                presentation_policy::PresentInput{
-                    .identity = frikWeaponIdentity(weaponNode),
-                    .nodeVisible = f4vr::isNodeVisible(weaponNode),
-                    .rockOwnsLivePose = _frikWeaponNode.writeBlockEngaged,
-                })) {
+        const presentation_policy::PresentInput input{
+            .identity = frikWeaponIdentity(weaponNode),
+            .nodeVisible = f4vr::isNodeVisible(weaponNode),
+            .rockOwnsLivePose = _frikWeaponNode.writeBlockEngaged,
+        };
+        if (!weaponNode || !presentation_policy::shouldPresent(presentation.latch, input)) {
+            /*
+             * FRIK re-glued a visible weapon this frame and no latch matches
+             * it, so ROCK's frame reads the node at the glue pose. One such
+             * frame is expected on every weapon change; a run of them means
+             * the latch never captures (identity churn, capture frames with
+             * the node hidden or blocked).
+             */
+            if (weaponNode && input.nodeVisible && input.identity.valid() && !input.rockOwnsLivePose) {
+                if (_frikWeaponNode.glueFramesWithoutLatch != 0xFFFFFFFFu) {
+                    ++_frikWeaponNode.glueFramesWithoutLatch;
+                }
+                if (_frikWeaponNode.glueFramesWithoutLatch > 1) {
+                    ROCK_LOG_SAMPLE_DEBUG(Weapon,
+                        2000,
+                        "TwoHandedGrip: weapon read at glue pose: no presentable FRIK offset latch for {} frames (latchValid={} sameWeapon={} sameParent={})",
+                        _frikWeaponNode.glueFramesWithoutLatch,
+                        presentation.latch.valid,
+                        presentation.latch.valid && presentation.latch.identity.sameWeapon(input.identity),
+                        presentation.latch.identity.parent == input.identity.parent);
+                }
+            } else {
+                _frikWeaponNode.glueFramesWithoutLatch = 0;
+            }
             return;
         }
+        _frikWeaponNode.glueFramesWithoutLatch = 0;
         /*
          * Not an authority write: FRIK keeps the node, the block stays
          * released, and FRIK's weapon pass writes this same local after the
