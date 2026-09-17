@@ -176,7 +176,8 @@ string(REPLACE "/Ob2" "/Ob3" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}
 # test executables or archives. Tests and release packages remain explicit paths,
 # while fast local builds can still copy the plugin into the configured mod root.
 option(POST_BUILD_COPY_PLUGIN "Copy ROCK.dll and ROCK.pdb to configured mod root after building." OFF)
-set(COPY_PLUGIN_BASE_PATH "" CACHE STRING "Semicolon-separated mod roots that contain F4SE/Plugins.")
+# This stable checkout must never overwrite the FRIK 2.3 development mod.
+set(COPY_PLUGIN_BASE_PATH "D:/FO4/mods/ROCK_0.9" CACHE PATH "Fixed MO2 deployment root for ROCK v0.9." FORCE)
 option(ROCK_PACKAGE_RELEASE "Package Release builds into a .7z archive after ROCK is built." ON)
 option(BUILD_ROCK_TESTS "Build ROCK focused regression tests" OFF)
 set(RPS_SDK_ROOT "" CACHE PATH "Path to the independent RPS_SDK repository.")
@@ -184,7 +185,7 @@ set(RPS_SDK_ROOT "" CACHE PATH "Path to the independent RPS_SDK repository.")
 if(RPS_SDK_ROOT STREQUAL "")
   get_filename_component(
     RPS_SDK_ROOT
-    "${ROOT_DIR}/../RPS_SDK"
+    "${WORKSPACE_ROOT}/my_frameworks_and_sdks/RPS_SDK"
     ABSOLUTE
   )
   set(RPS_SDK_ROOT "${RPS_SDK_ROOT}" CACHE PATH "Path to the independent RPS_SDK repository." FORCE)

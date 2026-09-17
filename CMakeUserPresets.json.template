@@ -1,6 +1,6 @@
 // Template for custom CMake user presets.
-// Set "COPY_PLUGIN_BASE_PATH" to your mod folder in MO2 or your Fallout 4 VR Data folder.
-// Support multiple paths separated by semicolons (i.e. "<path1>;<path2>").
+// ROCK v0.9 deployments are fixed to D:/FO4/mods/ROCK_0.9 by CMakeLists.txt.
+// Keep this checkout separate from the regular ROCK development mod.
 // Leave COMMON_LIB_F4VR_PATH empty to use the canonical workspace CommonLibF4VR.
 // Set it only when intentionally overriding that dependency.
 // Rename the file to 'CMakeUserPresets.json' (it is in .gitignore to keep it local to you).
@@ -18,7 +18,7 @@
       "name": "custom",
       "cacheVariables": {
         "POST_BUILD_COPY_PLUGIN": false,
-        "COPY_PLUGIN_BASE_PATH": "[MO2 modlist folder]/mods/[my mod] OR [Fallout 4 VR game path]/Data",
+        "COPY_PLUGIN_BASE_PATH": "D:/FO4/mods/ROCK_0.9",
         "COMMON_LIB_F4VR_PATH": ""
       },
       "inherits": "default"
@@ -27,7 +27,7 @@
       "name": "custom-fast",
       "cacheVariables": {
         "POST_BUILD_COPY_PLUGIN": true,
-        "COPY_PLUGIN_BASE_PATH": "[MO2 modlist folder]/mods/[my mod] OR [Fallout 4 VR game path]/Data",
+        "COPY_PLUGIN_BASE_PATH": "D:/FO4/mods/ROCK_0.9",
         "COMMON_LIB_F4VR_PATH": ""
       },
       "inherits": "fast"
