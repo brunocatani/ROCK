@@ -11,6 +11,7 @@
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/hand/HandFrame.h"
+#include "physics-interaction/hand/HandFingerMirrorMath.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/WeaponGripAuthorityPolicy.h"
@@ -39,11 +40,8 @@ namespace rock::loose_weapon_grip_zone
             RE::NiPoint3 palmWorld{};
             RE::NiPoint3 gripWeaponLocal{};
             RE::NiTransform firingHandWeaponLocal{};
-            RE::NiTransform loosePlacementHandWeaponLocal{};
             bool hasFiringHandWeaponLocal{ false };
-            bool hasLoosePlacementHandWeaponLocal{ false };
             const char* reason{ "notEvaluated" };
-            const char* placementReason{ "notEvaluated" };
         };
 
         std::array<HandZoneState, 2> s_handStates{};
@@ -133,7 +131,8 @@ namespace rock::loose_weapon_grip_zone
             const RE::TESObjectWEAP* weapon,
             RE::NiAVObject* looseRoot,
             HandZoneState& state,
-            RE::NiTransform* outTestedHandWorld = nullptr)
+            RE::NiTransform* outTestedHandWorld = nullptr,
+            bool authoredOnly = false)
         {
             if (!weapon) {
                 state.reason = "missingWeaponForm";
@@ -200,7 +199,9 @@ namespace rock::loose_weapon_grip_zone
             const bool promotedPipeCalibration = authoredLookup.found &&
                 pipe_firing_grip_policy::isPromotedCalibration(weapon->formID, isLeft, frikLookup.offset);
             constexpr bool authoredGripEligible = true;
-            const auto selectedSource = weapon_grip_authority_policy::select(
+            const auto selectedSource = authoredOnly ?
+                (authoredLookup.found ? weapon_grip_authority_policy::Source::AuthoredAnimation :
+                    weapon_grip_authority_policy::Source::None) : weapon_grip_authority_policy::select(
                 weapon_grip_authority_policy::Availability{
                     .frikCustomFile =
                         frikLookup.found &&
@@ -213,8 +214,6 @@ namespace rock::loose_weapon_grip_zone
                 });
 
             RE::NiTransform canonicalHandWeaponLocal{};
-            RE::NiTransform canonicalPlacementHandWeaponLocal{};
-            bool canonicalPlacementResolved = false;
             /*
              * Native carrier: hFRIK's Weapon-node local is authored under
              * RArm_Hand, so the canonical hand frame composed with that offset
@@ -264,61 +263,6 @@ namespace rock::loose_weapon_grip_zone
                 state.gripWeaponLocal =
                     computeGrabLegacyPalmPivotAWorldFromHandBasis(canonicalHandWeaponLocal, false);
                 state.reason = authoredLookup.reason;
-                const char* carrierFailureReason =
-                    "nativeCarrierUnavailable";
-
-                // Loose authored grabs always use the native-carrier solve.
-                // The equipped-only cache must not change their rotation.
-                if (!canonicalPlacementResolved) {
-                    RE::NiTransform attachedRootWorld{};
-                    if (tryResolveAttachedRootWorld(
-                            attachedRootWorld,
-                            carrierFailureReason)) {
-                        const RE::NiTransform positionOnlyWeaponWorld =
-                            authored_weapon_grip_capture_policy::
-                                resolveAuthoredPrimaryWeaponWorldPositionOnly(
-                                    attachedRootWorld,
-                                    state.gripWeaponLocal,
-                                    canonicalPalmWorld,
-                                    [](const RE::NiTransform& transform,
-                                        const RE::NiPoint3& point) {
-                                        return transform_math::localPointToWorld(
-                                            transform,
-                                            point);
-                                    });
-                        canonicalPlacementHandWeaponLocal =
-                            transform_math::composeTransforms(
-                                transform_math::invertTransform(
-                                    positionOnlyWeaponWorld),
-                                canonicalHandWorld);
-                        if (isUsableWorldTransform(
-                                canonicalPlacementHandWeaponLocal)) {
-                            canonicalPlacementResolved = true;
-                            state.placementReason =
-                                "authoredNativeCarrierPositionOnly";
-                        } else {
-                            carrierFailureReason =
-                                "derivedPositionOnlyHoldInvalid";
-                        }
-                    }
-                }
-
-                if (!canonicalPlacementResolved) {
-                    canonicalPlacementHandWeaponLocal =
-                        canonicalHandWeaponLocal;
-                    canonicalPlacementResolved = true;
-                    const bool noFrikOffset =
-                        carrierFailureReason == kLiveWeaponNodeCarrierRejected;
-                    state.placementReason = noFrikOffset ?
-                        "authoredFullRigidNoFrikOffset" :
-                        "authoredFullRigidFallback";
-                    if (!noFrikOffset) {
-                        ROCK_LOG_SAMPLE_WARN(Hand, 1000,
-                            "Authored loose weapon position-only carrier unavailable formID={:08X} source={}; using full authored hold",
-                            weapon->formID,
-                            carrierFailureReason);
-                    }
-                }
             } else if (
                 selectedSource == weapon_grip_authority_policy::Source::FrikCustomFile ||
                 selectedSource == weapon_grip_authority_policy::Source::FrikEmbeddedResource ||
@@ -338,11 +282,7 @@ namespace rock::loose_weapon_grip_zone
                 canonicalHandWeaponLocal = transform_math::composeTransforms(
                     transform_math::invertTransform(attachedRootWorld),
                     canonicalHandWorld);
-                canonicalPlacementHandWeaponLocal =
-                    canonicalHandWeaponLocal;
-                canonicalPlacementResolved = true;
                 state.reason = frikLookup.reason;
-                state.placementReason = "frikFullRigid";
             } else {
                 state.reason = authoredGripEligible ?
                                    authoredLookup.reason :
@@ -351,10 +291,7 @@ namespace rock::loose_weapon_grip_zone
             }
 
             if (!isFinitePoint(state.gripWeaponLocal) ||
-                !isUsableWorldTransform(canonicalHandWeaponLocal) ||
-                !canonicalPlacementResolved ||
-                !isUsableWorldTransform(
-                    canonicalPlacementHandWeaponLocal)) {
+                !isUsableWorldTransform(canonicalHandWeaponLocal)) {
                 state.reason = "nonFiniteCanonicalGrip";
                 return false;
             }
@@ -367,12 +304,7 @@ namespace rock::loose_weapon_grip_zone
 
             if (!isLeft) {
                 state.firingHandWeaponLocal = canonicalHandWeaponLocal;
-                state.loosePlacementHandWeaponLocal =
-                    canonicalPlacementHandWeaponLocal;
                 state.hasFiringHandWeaponLocal = isUsableWorldTransform(state.firingHandWeaponLocal);
-                state.hasLoosePlacementHandWeaponLocal =
-                    isUsableWorldTransform(
-                        state.loosePlacementHandWeaponLocal);
                 if (outTestedHandWorld) {
                     *outTestedHandWorld = canonicalHandWorld;
                 }
@@ -385,13 +317,6 @@ namespace rock::loose_weapon_grip_zone
                         canonicalHandWorld,
                         leftHandWorld,
                         state.firingHandWeaponLocal);
-                    state.hasLoosePlacementHandWeaponLocal =
-                        TwoHandedGrip::tryBuildMirroredLeftFiringHandWeaponLocal(
-                            canonicalPlacementHandWeaponLocal,
-                            state.gripWeaponLocal,
-                            canonicalHandWorld,
-                            leftHandWorld,
-                            state.loosePlacementHandWeaponLocal);
                     if (outTestedHandWorld) {
                         *outTestedHandWorld = leftHandWorld;
                     }
@@ -405,7 +330,8 @@ namespace rock::loose_weapon_grip_zone
             const bool isLeft,
             RE::TESObjectREFR* heldRef,
             HandZoneState& state,
-            RE::NiTransform* outTestedHandWorld = nullptr)
+            RE::NiTransform* outTestedHandWorld = nullptr,
+            bool authoredOnly = false)
         {
             if (!heldRef) {
                 state.reason = "missingWeaponRef";
@@ -418,8 +344,70 @@ namespace rock::loose_weapon_grip_zone
                 weapon,
                 heldRef->Get3D(),
                 state,
-                outTestedHandWorld);
+                outTestedHandWorld,
+                authoredOnly);
         }
+    }
+
+    namespace
+    {
+        bool resolveSupportRelation(bool isLeft, const authored_weapon_grip_library::LookupResult& authored,
+            RE::NiTransform& out)
+        {
+            out = authored.supportHandWeaponLocal;
+            if (!authored.found || !authored.hasSupportRelation || !authored.supportFingerPose.complete() ||
+                !isUsableWorldTransform(out)) return false;
+            if (isLeft) return true;
+            RE::NiTransform leftWorld{}, rightWorld{};
+            auto* nodes = f4vr::getPlayerNodes();
+            return nodes && nodes->SecondaryWandNode && nodes->primaryWandNode &&
+                physicalHandWorld(true, leftWorld) && physicalHandWorld(false, rightWorld) &&
+                isUsableWorldTransform(nodes->SecondaryWandNode->world) && isUsableWorldTransform(nodes->primaryWandNode->world) &&
+                TwoHandedGrip::tryBuildMirroredSupportHandWeaponLocal(authored.supportHandWeaponLocal,
+                    transform_math::composeTransforms(transform_math::invertTransform(nodes->SecondaryWandNode->world), leftWorld),
+                    transform_math::composeTransforms(transform_math::invertTransform(nodes->primaryWandNode->world), rightWorld), out);
+        }
+
+        bool capturePose(bool isLeft, std::uint32_t formId, loose_weapon_authored_grab_policy::Role role,
+            const RE::NiTransform& handLocal, const authored_weapon_grip_library::LookupResult& authored,
+            AuthoredWeaponGripPose& out)
+        {
+            using loose_weapon_authored_grab_policy::Role;
+            out = {};
+            if (!authored.found || role == Role::None) return false;
+            const auto& fingers = role == Role::Support ? authored.supportFingerPose : authored.rightFiringFingerPose;
+            if (!fingers.complete() || (role == Role::Support && !authored.hasSupportRelation)) return false;
+            out.role = role;
+            out.isLeft = isLeft;
+            out.weaponFormId = formId;
+            out.handWeaponLocal = handLocal;
+            out.fingerMask = fingers.enabledMask;
+            out.fingerLocals = fingers.localTransforms;
+            if ((role == Role::Support) != isLeft &&
+                !hand_finger_mirror_math::mirrorFingerLocalsAcrossHands<RE::NiTransform>(
+                    std::span<const RE::NiTransform>(fingers.localTransforms), std::span<RE::NiTransform>(out.fingerLocals))) return false;
+            return out.valid();
+        }
+    }
+
+    bool tryResolveAuthoredGrabPose(bool isLeft, RE::TESObjectREFR* ref,
+        loose_weapon_authored_grab_policy::Role role, AuthoredWeaponGripPose& out)
+    {
+        out = {};
+        auto* base = ref ? ref->GetObjectReference() : nullptr;
+        auto* weapon = base ? base->As<RE::TESObjectWEAP>() : nullptr;
+        auto* root = ref ? ref->Get3D() : nullptr;
+        if (!weapon || !root) return false;
+        const auto authored = authored_weapon_grip_library::find(weapon, root, f4vr::isInPowerArmor());
+        RE::NiTransform local{};
+        if (role == loose_weapon_authored_grab_policy::Role::Support) {
+            if (!resolveSupportRelation(isLeft, authored, local)) return false;
+        } else {
+            HandZoneState firing{};
+            if (!tryResolveGripWorld(isLeft, ref, firing, nullptr, true) || !firing.hasFiringHandWeaponLocal) return false;
+            local = firing.firingHandWeaponLocal;
+        }
+        return capturePose(isLeft, weapon->formID, role, local, authored, out);
     }
 
     void publishPhysicalLeftHandFrame(const CanonicalPrimaryHandFrame& frame)
@@ -427,7 +415,7 @@ namespace rock::loose_weapon_grip_zone
         s_physicalLeftHandFrame = frame;
     }
 
-    bool tryResolveNearGrab(bool isLeft, RE::TESObjectREFR* ref, NearGrab& out)
+    bool tryResolveNearGrab(bool isLeft, RE::TESObjectREFR* ref, NearGrab& out, bool peerHolding)
     {
         namespace activation = authored_weapon_grip_activation_policy;
         namespace selection = loose_weapon_authored_grab_policy;
@@ -454,32 +442,27 @@ namespace rock::loose_weapon_grip_zone
         const auto probeWorld = computeGrabLegacyPalmPivotAWorldFromHandBasis(out.handWorld, isLeft);
         const auto probeLocal = transform_math::worldPointToLocal(root->world, probeWorld);
         HandZoneState firing{};
-        const bool firingResolved = tryResolveGripWorld(isLeft, ref, firing);
+        const bool firingResolved = tryResolveGripWorld(isLeft, ref, firing, nullptr, true);
         const float firingDistance = pointDistance(probeLocal, firing.gripWeaponLocal) * std::fabs(root->world.scale);
-        const bool firingEligible = firingResolved && firing.hasFiringHandWeaponLocal &&
-            firingDistance <= g_rockConfig.rockWeaponInteractionProbeRadius;
-
-        if (firingEligible) {
-            state.indicatorLocal[state.indicatorCount++] = firing.gripWeaponLocal;
-        }
-        RE::NiTransform supportLocal = authored.supportHandWeaponLocal;
-        bool supportResolved = authored.found && authored.hasSupportRelation &&
-            authored.supportFingerPose.complete() && isUsableWorldTransform(supportLocal);
-        if (supportResolved && !isLeft) {
-            RE::NiTransform leftWorld{}, rightWorld{};
-            auto* nodes = f4vr::getPlayerNodes();
-            supportResolved = nodes && nodes->SecondaryWandNode && nodes->primaryWandNode &&
-                physicalHandWorld(true, leftWorld) && physicalHandWorld(false, rightWorld) &&
-                isUsableWorldTransform(nodes->SecondaryWandNode->world) &&
-                isUsableWorldTransform(nodes->primaryWandNode->world);
-            if (supportResolved) {
-                supportResolved = TwoHandedGrip::tryBuildMirroredSupportHandWeaponLocal(
-                    authored.supportHandWeaponLocal,
-                    transform_math::composeTransforms(transform_math::invertTransform(nodes->SecondaryWandNode->world), leftWorld),
-                    transform_math::composeTransforms(transform_math::invertTransform(nodes->primaryWandNode->world), rightWorld),
-                    supportLocal);
-            }
-        }
+        const auto& settings = equipped_weapon_handling_runtime::current();
+        const auto canonicalRightWorld = transform_math::composeTransforms(root->world, authored.rightHandWeaponLocal);
+        const auto lateral = computePalmNormalFromHandBasis(canonicalRightWorld, false);
+        const auto vec = [](const RE::NiPoint3& p) { return activation::Vec3{p.x, p.y, p.z}; };
+        const auto firingZone = firing_grip_reattach_zone_policy::evaluateZone({
+            .gripWorld = vec(firing.gripWorld), .palmWorld = vec(probeWorld), .weaponLeftAxisWorld = vec(lateral),
+            .reachGameUnits = settings.firingGripReattachRadiusGameUnits,
+            .radiusGameUnits = settings.firingGripReattachCylinderRadiusGameUnits,
+        });
+        const bool firingEligible = firingResolved && firing.hasFiringHandWeaponLocal && authored.found &&
+            authored.rightFiringFingerPose.complete() && firingZone.inside;
+        RE::NiTransform supportLocal{};
+        const bool supportResolved = resolveSupportRelation(isLeft, authored, supportLocal);
+        const auto nativeSupportPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(authored.supportHandWeaponLocal, true);
+        out.arrangement = selection::arrangement(authored.found && authored.rightFiringFingerPose.complete(),
+            authored.hasSupportRelation && authored.supportFingerPose.complete(), authored.supportPoseAbsent,
+            pointDistance(nativeSupportPalm, firing.gripWeaponLocal) * std::abs(root->world.scale),
+            settings.firingGripProximitySupportRadiusGameUnits);
+        const bool sharedZone = selection::sharedFiringZone(out.arrangement);
         float supportDistance = 0.0f;
         bool supportEligible = false;
         if (supportResolved) {
@@ -505,11 +488,10 @@ namespace rock::loose_weapon_grip_zone
                 .meleeOrUnarmed = weapon_type_policy::isMelee(weapon->weaponData.type.get()),
             });
             const auto topology = activation::resolveHandTopology(!isLeft, isLeft);
-            debug.valid = TwoHandedGrip::tryResolveAuthoredActivationAxes(
+            debug.valid = !sharedZone && TwoHandedGrip::tryResolveAuthoredActivationAxes(
                 authored.rightHandWeaponLocal, root->world, topology,
                 debug.sideWorld, debug.downWorld, debug.referenceWorld);
-            const auto vec = [](const RE::NiPoint3& p) { return activation::Vec3{p.x, p.y, p.z}; };
-            const auto gate = activation::evaluateDirectionGate({
+            const auto gate = sharedZone ? activation::DirectionGateResult{} : activation::evaluateDirectionGate({
                 .weaponFamily = debug.family,
                 .handTopology = topology,
                 .authoredSeatWorld = vec(debug.seatWorld),
@@ -526,7 +508,7 @@ namespace rock::loose_weapon_grip_zone
             }
             // The visible activation cone is the capture area. Requiring mesh
             // touch here made its indicator promise a seat the grab ignored.
-            supportEligible = debug.valid && gate.spatialPass;
+            supportEligible = sharedZone ? firingEligible : debug.valid && gate.spatialPass;
             debug.eligible = supportEligible;
             const auto indicator = activation::evaluateIndicator({
                 .weaponFamily = debug.family,
@@ -537,23 +519,34 @@ namespace rock::loose_weapon_grip_zone
                 .activationSpatialPass = supportEligible,
                 .supportGripAllowed = true,
             });
-            if (indicator.visible) {
+            if (indicator.visible && !sharedZone) {
                 state.indicatorLocal[state.indicatorCount++] = transform_math::worldPointToLocal(root->world,
                     RE::NiPoint3{indicator.markerWorld.x, indicator.markerWorld.y, indicator.markerWorld.z});
             }
         }
         out.role = selection::select(firingEligible, firingDistance, supportEligible, supportDistance);
+        if (sharedZone && firingEligible) out.role = peerHolding ? selection::Role::Support : selection::Role::Firing;
+        // Indicator ownership follows the selected station; overlapping roles
+        // never produce two markers for the same hand's acquisition.
+        if (out.role == selection::Role::Firing || sharedZone) {
+            state.indicatorCount = 0;
+            if (firingEligible && firingZone.indicatorValid) {
+                state.indicatorLocal[state.indicatorCount++] = transform_math::worldPointToLocal(root->world,
+                    RE::NiPoint3{firingZone.indicatorWorld.x, firingZone.indicatorWorld.y, firingZone.indicatorWorld.z});
+            }
+        }
         if (out.role == selection::Role::None) {
             return false;
         }
-        out.handWeaponLocal = out.role == selection::Role::Support ? supportLocal : firing.firingHandWeaponLocal;
+        // Hover resolves only the zone and role. Capture/mirror all 15 finger
+        // transforms once, when the grab commits through tryResolveAuthoredGrabPose.
         return true;
     }
 
-    void updateNearGrabCandidate(bool isLeft, RE::TESObjectREFR* ref)
+    void updateNearGrabCandidate(bool isLeft, RE::TESObjectREFR* ref, bool peerHolding)
     {
         NearGrab ignored{};
-        (void)tryResolveNearGrab(isLeft, ref, ignored);
+        (void)tryResolveNearGrab(isLeft, ref, ignored, peerHolding);
     }
 
     bool tryGetAuthoredSupportDebug(bool isLeft, AuthoredSupportDebug& out)
@@ -723,45 +716,6 @@ namespace rock::loose_weapon_grip_zone
         return state.valid &&
                state.insideRadius &&
                state.insideSettledSeconds >= settleSeconds;
-    }
-
-    bool tryResolveLooseWeaponFiringHandHold(
-        const bool isLeft,
-        RE::TESObjectREFR* weaponRef,
-        RE::NiTransform& outHandWorld,
-        RE::NiTransform& outHandWeaponLocal,
-        const char** outReason)
-    {
-        if (outReason) {
-            *outReason = "missingWeaponRef";
-        }
-        if (!weaponRef) {
-            return false;
-        }
-
-        HandZoneState scratch{};
-        RE::NiTransform testedHandWorld{};
-        const bool resolved = tryResolveGripWorld(isLeft, weaponRef, scratch, &testedHandWorld);
-        if (outReason) {
-            *outReason = resolved &&
-                    !scratch.hasLoosePlacementHandWeaponLocal ?
-                "mirroredPlacementHoldUnavailable" :
-                scratch.placementReason;
-        }
-        if (!resolved ||
-            !scratch.hasLoosePlacementHandWeaponLocal ||
-            !isUsableWorldTransform(testedHandWorld)) {
-            return false;
-        }
-
-        outHandWorld = testedHandWorld;
-        outHandWeaponLocal = scratch.loosePlacementHandWeaponLocal;
-        ROCK_LOG_INFO(Hand,
-            "{} hand loose weapon placement hold resolved source={} placement={}",
-            isLeft ? "left" : "right",
-            scratch.reason,
-            scratch.placementReason);
-        return true;
     }
 
     bool tryResolveLooseWeaponFiringHandHoldForModel(

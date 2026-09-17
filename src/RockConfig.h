@@ -107,7 +107,6 @@ namespace rock
         // ROCK-native firing-grip handoff. This remains independent from the
         // role-neutral Immersive Weapons detach/drop feature set.
         bool rockAmbidextrousFiringGripEnabled = true;
-        float rockFiringGripPromotionRadius = 5.0f;
         float rockLeftFiringAimYawDegrees = 0.0f;
         float rockLeftFiringAimPitchDegrees = 0.0f;
         float rockLeftFiringAimOffsetXGameUnits = 0.0f;

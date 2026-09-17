@@ -128,34 +128,20 @@ namespace rock::weapon_support_authority_policy
     struct DynamicHandoffGripCaptureInput
     {
         bool normalSupportAcquisition{ false };
-        bool ambidextrousHandoffEnabled{ false };
+        bool supportPoseAbsent{ false };
         bool firingGripProximityAuthorityEnabled{ false };
         bool providerPartAuthorityActive{ false };
         bool authoredCaptureEligible{ false };
         bool supportPalmInsideHandoffZone{ false };
     };
 
-    [[nodiscard]] inline constexpr float firingGripCaptureReach(
-        const bool acquiredThroughFiringGripZone,
-        const float reattachReach,
-        const float supportPromotionReach) noexcept
-    {
-        return acquiredThroughFiringGripZone ? reattachReach : supportPromotionReach;
-    }
-
-    /*
-     * Support-pose selection must not remove the separate dynamic ambidextrous
-     * handoff station at the firing grip. This bypass exists only during a
-     * two-hand acquisition with the live support palm inside the
-     * lateral cylinders. Exact provider authority remains ahead of it. A
-     * usable authored support seat always wins an overlapping handoff station;
-     * grabbing support does not express intent to change the firing hand.
-     */
+    // Dynamic support at the shared station is allowed only when native
+    // animation sampling proves the authored support branch is absent.
     [[nodiscard]] inline constexpr bool shouldCaptureDynamicHandoffGrip(
         const DynamicHandoffGripCaptureInput& input) noexcept
     {
         if (!input.normalSupportAcquisition ||
-            !input.ambidextrousHandoffEnabled ||
+            !input.supportPoseAbsent ||
             !input.firingGripProximityAuthorityEnabled ||
             input.providerPartAuthorityActive ||
             !input.supportPalmInsideHandoffZone) {
@@ -557,15 +543,11 @@ namespace rock::weapon_two_handed_grip_math
     {
         EndSupportOnly = 0,
         KeepPrimaryOwnership = 1,
-        DropEquippedWeapon = 2,
     };
 
     struct SupportReleaseOwnershipInput
     {
         bool firingGripOwnershipEnabled{ false };
-        bool primaryDetachEnabled{ false };
-        bool primaryGripHeld{ false };
-        bool lastGripReleaseDropEnabled{ true };
     };
 
     /*
@@ -661,14 +643,9 @@ namespace rock::weapon_two_handed_grip_math
             return SupportReleaseManualAction::EndSupportOnly;
         }
 
-        // An open firing grip left alone by the support release would drop
-        // the weapon; with the last-grip drop disabled it keeps the weapon.
-        if (input.primaryGripHeld || !input.primaryDetachEnabled ||
-            !input.lastGripReleaseDropEnabled) {
-            return SupportReleaseManualAction::KeepPrimaryOwnership;
-        }
-
-        return SupportReleaseManualAction::DropEquippedWeapon;
+        // This event starts with two attached hands. Release support first;
+        // a separate last-hand gesture may transfer the remaining firing grip.
+        return SupportReleaseManualAction::KeepPrimaryOwnership;
     }
 
     /*
@@ -681,9 +658,10 @@ namespace rock::weapon_two_handed_grip_math
     [[nodiscard]] inline constexpr bool canReleaseCarryGrip(
         bool gripCarries,
         bool peerGripCarries,
-        bool lastGripReleaseDropEnabled) noexcept
+        bool lastGripReleaseDropEnabled,
+        bool releaseRequiresNewHold = false) noexcept
     {
-        return !gripCarries || peerGripCarries || lastGripReleaseDropEnabled;
+        return !gripCarries || (!releaseRequiresNewHold && (peerGripCarries || lastGripReleaseDropEnabled));
     }
 
     /*

@@ -116,5 +116,18 @@ int main()
         return collectBoneChainToRoot(2, badParents, chain) == 0;
     }());
 
+    // A common spine track does not constitute an offhand pose. An exclusive
+    // arm track does; malformed mapping or skeleton data remains unqualified.
+    constexpr std::array<std::int16_t, 6> armParents{ -1, 0, 1, 1, 2, 3 };
+    constexpr std::array<std::int16_t, 4> primaryTracks{ 0, 1, 2, 4 };
+    constexpr std::array<std::int16_t, 5> bothArmTracks{ 0, 1, 2, 4, 3 };
+    static_assert(supportBranchHasAnimation(4, 5, armParents, 4, primaryTracks) == false);
+    static_assert(supportBranchHasAnimation(4, 5, armParents, 5, bothArmTracks) == true);
+    static_assert(supportBranchHasAnimation(4, 5, armParents, 6, {}) == true);
+    static_assert(!supportBranchHasAnimation(4, 5, armParents, 5, primaryTracks).has_value());
+    static_assert(!supportBranchHasAnimation(4, 6, armParents, 4, primaryTracks).has_value());
+    static_assert(!supportBranchHasAnimation(4, 5, armParents, 0, {}).has_value());
+    constexpr std::array<std::int16_t, 6> cyclicArm{ -1, 0, 1, 5, 2, 3 };
+    static_assert(!supportBranchHasAnimation(4, 5, cyclicArm, 6, {}).has_value());
     return 0;
 }

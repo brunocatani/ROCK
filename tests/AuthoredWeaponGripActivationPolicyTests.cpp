@@ -490,9 +490,26 @@ int main()
         looseGripsPass &= loose::select(true, std::numeric_limits<float>::quiet_NaN(), true, 1.0f) == Role::Support;
         looseGripsPass &= loose::select(false, 0.0f, true, std::numeric_limits<float>::infinity()) == Role::None;
         looseGripsPass &= loose::select(true, -1.0f, false, 0.0f) == Role::None;
-        if (!looseGripsPass) {
-            return 1;
+        using Layout = loose::Arrangement;
+        looseGripsPass &= loose::arrangement(true, true, false, 4.0f, 8.0f) == Layout::Close;
+        looseGripsPass &= loose::arrangement(true, true, false, 20.0f, 8.0f) == Layout::Separated;
+        looseGripsPass &= loose::arrangement(true, false, true, 0.0f, 8.0f) == Layout::OneHanded;
+        looseGripsPass &= loose::arrangement(true, false, false, 0.0f, 8.0f) == Layout::Pending;
+        looseGripsPass &= loose::arrangement(false, false, true, 0.0f, 8.0f) == Layout::Pending;
+        for (const auto layout : { Layout::Close, Layout::OneHanded }) {
+            looseGripsPass &= loose::acquisitionRole(true, false, Role::None, layout, false, Role::Support) == Role::Firing;
+            looseGripsPass &= loose::acquisitionRole(true, false, Role::None, layout, true, Role::Firing) == Role::Support;
+            looseGripsPass &= loose::acquisitionRole(true, false, Role::None, layout, false, Role::None) == Role::None;
         }
+        for (const auto layout : { Layout::Close, Layout::OneHanded, Layout::Separated, Layout::Pending }) {
+            // A near reach, pull, or forced arrival always takes firing unless
+            // an equipped transfer carries an explicit former support role.
+            looseGripsPass &= loose::acquisitionRole(false, false, Role::None, layout, false, Role::Support) == Role::Firing;
+            looseGripsPass &= loose::acquisitionRole(false, true, Role::Support, layout, false, Role::Firing) == Role::Support;
+            looseGripsPass &= loose::acquisitionRole(false, true, Role::None, layout, false, Role::Firing) == Role::None;
+        }
+        looseGripsPass &= loose::acquisitionRole(true, false, Role::None, Layout::Separated, false, Role::Support) == Role::Support;
+        if (!looseGripsPass) return 1;
     }
 
     return 0;

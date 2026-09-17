@@ -520,7 +520,8 @@ namespace rock
             float proportionalRecovery,
             float constantRecovery,
             const BodyBoneColliderSet* bodyBoneColliders,
-            const GrabSharedObjectContext& sharedContext = {});
+            const GrabSharedObjectContext& sharedContext = {},
+            const AuthoredWeaponGripPose* transferPose = nullptr);
 
         bool acquirePeerHeldCloseSelection(RE::bhkWorld* bhkWorld,
             RE::hknpWorld* hknpWorld,

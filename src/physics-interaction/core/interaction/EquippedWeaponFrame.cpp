@@ -1116,7 +1116,7 @@ namespace rock
                 firingGripDecision.gripAttachHapticIntensity;
             effectiveHandlingSettings.firingGripDetachHapticIntensity =
                 firingGripDecision.gripDetachHapticIntensity;
-            const TwoHandedGripUpdateResult gripUpdateResult =
+            TwoHandedGripUpdateResult gripUpdateResult =
                 _twoHandedGrip.update(
                     weaponNode,
                     leftWeaponContact,
@@ -1297,6 +1297,10 @@ namespace rock
             }
             const auto equippedWeaponDropRequest = _twoHandedGrip.consumeEquippedWeaponDropRequest();
             if (equippedWeaponDropRequest.requested) {
+                bool transferCommitted = false;
+                // Keep the old scene alive until its presentation authorities
+                // are cleared after the synchronous inventory mutation.
+                RE::NiPointer<RE::NiNode> transferSourceNode(weaponNode);
                 const auto sourceHand = equippedWeaponDropRequest.sourceHand;
                 const bool sourceHandKnown = sourceHand == equipped_weapon_drop_policy::SourceHand::Right ||
                                               sourceHand == equipped_weapon_drop_policy::SourceHand::Left;
@@ -1310,8 +1314,6 @@ namespace rock
                         dropLoc.x,
                         dropLoc.y,
                         dropLoc.z);
-                    _equipped.pendingPrimaryOnlyGripStart = {};
-                    clearEquippedWeaponFiringGripInputState();
                 } else {
                     const bool stashCommitSelected =
                         nativeShoulderSheathSelected ||
@@ -1323,7 +1325,8 @@ namespace rock
                     const auto transferHandIndex = transferIsLeft ? 1u : 0u;
                     Hand& transferHand = transferIsLeft ? _leftHand : _rightHand;
                     const auto& transferInput = transferIsLeft ? frame.left : frame.right;
-                    const bool dropHandoffAvailable = sourceHandKnown && hasAvailableEquippedWeaponDropHandoff() &&
+                    const bool dropHandoffAvailable = sourceHandKnown && equippedWeaponDropRequest.pose.valid() &&
+                        equippedWeaponDropRequest.pose.weaponFormId == observedEquippedWeaponFormID && hasAvailableEquippedWeaponDropHandoff() &&
                         (forceGrabHandBlockerMask(transferHand, transferIsLeft, transferInput.disabled, true) &
                             ~static_cast<std::uint32_t>(force_grab_policy::HandBlocker::EquippedWeapon)) == 0;
                     if (physicalDropRequested && !dropHandoffAvailable) {
@@ -1366,6 +1369,7 @@ namespace rock
                                 equipped_weapon_drop_policy::sourceHandName(sourceHand));
                             f4vr::showNotification("ROCK: Cannot drop weapon - release pose is not ready.");
                         } else {
+                            _twoHandedGrip.prepareEquippedWeaponDropCommit();
                             const auto dropResult = weapon_equip_transfer::dropEquippedWeaponFromPlayer(weapon_equip_transfer::EquippedDropInput{
                                 .dropLoc = releaseLoc,
                                 .dropRot = releaseRot,
@@ -1378,6 +1382,7 @@ namespace rock
                                     .droppedReferenceUnavailable =
                                         dropResult.reason == weapon_equip_transfer::DropReason::DroppedReferenceUnavailable,
                                 });
+                            transferCommitted = dropCommitted;
                             if (dropCommitted) {
                                 enforceNoBareFistState(true);
                                 /*
@@ -1398,6 +1403,7 @@ namespace rock
                                     .targetHandle = dropResult.handle,
                                     .inventoryTransfer = true,
                                     .equippedWeaponTransfer = true,
+                                    .weaponGripPose = equippedWeaponDropRequest.pose,
                                     .maxDistanceGame = 96.0f,
                                 };
                                 _forceGrab.retainedWeaponGrabs[transferHandIndex] = {
@@ -1441,8 +1447,20 @@ namespace rock
                             }
                         }
                     }
+                    transferCommitted = transferCommitted || stashCommitSelected;
+                }
+                _twoHandedGrip.completeEquippedWeaponDrop(equippedWeaponDropRequest, transferCommitted);
+                gripUpdateResult.after = _twoHandedGrip.getGripOccupancy();
+                if (transferCommitted) {
                     _equipped.pendingPrimaryOnlyGripStart = {};
                     clearEquippedWeaponFiringGripInputState();
+                } else {
+                    (void)equipped_weapon_toggle_grab_policy::reconcile(_equipped.toggleGrabState,
+                        _equipped.handlingSettings.weaponGrabMode, currentEquippedWeaponOwnershipKey,
+                        _twoHandedGrip.getGrabInputOccupancy(), {
+                            .left = sourceHand == equipped_weapon_drop_policy::SourceHand::Left,
+                            .right = sourceHand == equipped_weapon_drop_policy::SourceHand::Right,
+                        });
                 }
             }
             updateEquippedWeaponReleaseCapture(weaponNode);
@@ -1988,8 +2006,6 @@ namespace rock
                 g_rockConfig.rockFiringGripReattachCylinderRadiusGameUnits,
             .firingGripProximitySupportRadiusGameUnits =
                 g_rockConfig.rockFiringGripProximitySupportRadius,
-            .firingGripPromotionRadiusGameUnits =
-                g_rockConfig.rockFiringGripPromotionRadius,
             .leftFiringAimYawDegrees =
                 g_rockConfig.rockLeftFiringAimYawDegrees,
             .leftFiringAimPitchDegrees =

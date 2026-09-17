@@ -7,6 +7,7 @@
 
 #include "api/ROCKProviderApi.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
+#include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
 
 namespace rock
 {
@@ -42,6 +43,7 @@ namespace rock
         // Internal B-hold draws share transfer/rollback, without an API owner.
         bool grenadeQuickDraw{ false };
         bool equippedWeaponTransfer{ false };
+        AuthoredWeaponGripPose weaponGripPose{};
         std::uint32_t preferredBodyId{ 0x7FFF'FFFF };
         float maxDistanceGame{ 0.0f };
         bool hasSourcePointOverride{ false };

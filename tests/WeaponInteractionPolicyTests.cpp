@@ -2831,7 +2831,6 @@ int main()
         },
         .firingGripReattachCylinderRadiusGameUnits = 2.5f,
         .firingGripProximitySupportRadiusGameUnits = 7.0f,
-        .firingGripPromotionRadiusGameUnits = 5.5f,
         .leftFiringAimYawDegrees = 1.5f,
         .leftFiringAimPitchDegrees = -2.5f,
         .leftFiringAimOffsetXGameUnits = 0.5f,
@@ -2936,9 +2935,6 @@ int main()
             DetachedFiringHandPartGrabSelection::Standard);
     ok &= expectTrue("base ROCK owns equipped-weapon shoulder stash",
         coreWeaponHandling.equippedWeaponShoulderStashEnabled);
-    ok &= expectNear("base ROCK owns firing-grip promotion tuning",
-        coreWeaponHandling.firingGripPromotionRadiusGameUnits,
-        5.5f);
     ok &= expectNear("base ROCK owns left firing aim yaw",
         coreWeaponHandling.leftFiringAimYawDegrees,
         1.5f);
@@ -3027,9 +3023,9 @@ int main()
     ok &= expectNear("an active owner supplies proximity tuning",
         externalHandling.firingGripProximitySupportRadiusGameUnits,
         8.0f);
-    ok &= expectNear("an active owner supplies handoff promotion tuning",
-        externalHandling.firingGripPromotionRadiusGameUnits,
-        9.0f);
+    ok &= expectNear("legacy promotion tuning cannot change the shared station reach",
+        externalHandling.firingGripReattachRadiusGameUnits,
+        externalWeaponHandling.firingGripReattachRadiusGameUnits);
     ok &= expectNear("an active owner supplies left firing aim tuning",
         externalHandling.leftFiringAimYawDegrees,
         -4.0f);
@@ -3502,17 +3498,12 @@ int main()
     using rock::weapon_support_authority_policy::shouldCaptureDynamicHandoffGrip;
     {
         namespace zone = rock::firing_grip_reattach_zone_policy;
-        using rock::weapon_support_authority_policy::firingGripCaptureReach;
         const rock::WeaponInteractionRuntimeState normal{};
         const rock::WeaponInteractionContact noContact{};
         ok &= expectEqual("normal support still needs its existing acquisition route",
             rock::routeWeaponInteraction(noContact, normal).kind,
             rock::WeaponInteractionKind::None);
-        const float reach = firingGripCaptureReach(true, 10.0f, 5.0f);
-        ok &= expectNear("direct handoff retains reattachment reach through capture and promotion",
-            reach, 10.0f);
-        ok &= expectNear("ordinary support promotion keeps its existing reach",
-            firingGripCaptureReach(false, 10.0f, 5.0f), 5.0f);
+        constexpr float reach = 10.0f;
         for (const float side : { -1.0f, 1.0f }) {
             for (const float distance : { 7.76f, 10.0f }) {
                 const auto inside = zone::evaluateZone({
@@ -3559,14 +3550,14 @@ int main()
             rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver));
     const DynamicHandoffGripCaptureInput dynamicHandoffGrip{
         .normalSupportAcquisition = true,
-        .ambidextrousHandoffEnabled = true,
+        .supportPoseAbsent = true,
         .firingGripProximityAuthorityEnabled = true,
         .providerPartAuthorityActive = false,
         .authoredCaptureEligible = false,
         .supportPalmInsideHandoffZone = true,
     };
     ok &= expectTrue(
-        "firing-grip station restores dynamic ambidextrous handoff",
+        "confirmed one-handed animation permits dynamic support at the shared station",
         shouldCaptureDynamicHandoffGrip(dynamicHandoffGrip));
     {
         namespace zone = rock::firing_grip_reattach_zone_policy;
@@ -3637,9 +3628,9 @@ int main()
     }
     {
         auto input = dynamicHandoffGrip;
-        input.ambidextrousHandoffEnabled = false;
+        input.supportPoseAbsent = false;
         ok &= expectFalse(
-            "disabled ambidextrous mode cannot create a handoff station",
+            "missing or invalid data cannot authorize dynamic support",
             shouldCaptureDynamicHandoffGrip(input));
     }
     {
@@ -3676,39 +3667,11 @@ int main()
         isBetterProbeCandidate(
             ProbeCandidateRank{ .distanceSquaredGame = 0.0f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 62 },
             ProbeCandidateRank{ .distanceSquaredGame = 0.0f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 62 }));
-    ok &= expectEqual("support release keeps realistic primary ownership while its grip is held",
-        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{
-            .firingGripOwnershipEnabled = true,
-            .primaryDetachEnabled = true,
-            .primaryGripHeld = true,
-        }),
+    ok &= expectEqual("releasing support from a two-hand hold retains the firing hand",
+        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{ .firingGripOwnershipEnabled = true }),
         SupportReleaseManualAction::KeepPrimaryOwnership);
-    ok &= expectEqual("support release drops realistically detached weapon when primary grip is open",
-        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{
-            .firingGripOwnershipEnabled = true,
-            .primaryDetachEnabled = true,
-            .primaryGripHeld = false,
-        }),
-        SupportReleaseManualAction::DropEquippedWeapon);
-    ok &= expectEqual("support release preserves ambidextrous firing ownership without realistic detach",
-        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{
-            .firingGripOwnershipEnabled = true,
-            .primaryDetachEnabled = false,
-            .primaryGripHeld = false,
-        }),
-        SupportReleaseManualAction::KeepPrimaryOwnership);
-    ok &= expectEqual("support release ends support when firing-grip ownership is disabled",
-        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{}),
-        SupportReleaseManualAction::EndSupportOnly);
-    ok &= expectEqual("support release keeps an open detaching firing grip when the last-grip drop is disabled",
-        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{
-            .firingGripOwnershipEnabled = true,
-            .primaryDetachEnabled = true,
-            .primaryGripHeld = false,
-            .lastGripReleaseDropEnabled = false,
-        }),
-        SupportReleaseManualAction::KeepPrimaryOwnership);
-
+    ok &= expectEqual("without manual firing ownership support release ends only support",
+        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{}), SupportReleaseManualAction::EndSupportOnly);
     using rock::weapon_two_handed_grip_math::canReleaseCarryGrip;
     ok &= expectTrue("a carry grip releases while its peer still carries",
         canReleaseCarryGrip(true, true, false));
@@ -3716,6 +3679,10 @@ int main()
         canReleaseCarryGrip(true, false, true));
     ok &= expectFalse("the last carry grip is retained when the last-grip drop is disabled",
         canReleaseCarryGrip(true, false, false));
+    ok &= expectFalse("a refused simultaneous release cannot become a delayed auto-drop",
+        canReleaseCarryGrip(true, false, true, true));
+    ok &= expectTrue("a fresh hold clears refusal before a later last-hand release",
+        canReleaseCarryGrip(true, false, true, false));
     ok &= expectTrue("attach-only glue releases regardless of the last-grip drop",
         canReleaseCarryGrip(false, false, false));
 
@@ -4199,14 +4166,12 @@ int main()
     ok &= expectFalse("equipped instance change does not drop the newly equipped weapon", manualDecision.dropRequested);
 
     using namespace rock::equipped_weapon_drop_policy;
-    ok &= expectEqual("right-primary support release drops from left hand",
-        sourceForSupportRelease(false, false), SourceHand::Left);
-    ok &= expectEqual("right-primary same-frame primary release drops from right hand",
-        sourceForSupportRelease(true, false), SourceHand::Right);
-    ok &= expectEqual("left-primary support release drops from right hand",
-        sourceForSupportRelease(false, true), SourceHand::Right);
-    ok &= expectEqual("left-primary same-frame primary release drops from left hand",
-        sourceForSupportRelease(true, true), SourceHand::Left);
+    static_assert(canStartAutoDrop(true, false, false));
+    static_assert(canStartAutoDrop(false, true, false));
+    static_assert(!canStartAutoDrop(true, true, false));
+    static_assert(!canStartAutoDrop(false, false, false));
+    static_assert(!canStartAutoDrop(true, false, true));
+    static_assert(!canStartAutoDrop(false, true, true));
     ok &= expectTrue("ROCK shoulder stash is available without realistic detach",
         equippedWeaponShoulderStashAvailable(true));
     ok &= expectFalse("ROCK shoulder stash setting remains authoritative",

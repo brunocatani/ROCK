@@ -447,12 +447,6 @@ namespace rock
         }
 
         if (manualDecision.dropRequested) {
-            beginHandVisualReturn(isFiringHandLeft(), "primary-only-drop");
-            if (_handlingSettings.detachAuthority ==
-                immersive_weapon_policy::DetachAuthority::
-                    IntegratedImmersive) {
-                recordFiringGripDetachedHaptic();
-            }
             requestEquippedWeaponDrop("primary-only-grip-released",
                 isFiringHandLeft() ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right);
             return;
@@ -682,12 +676,23 @@ namespace rock
         const bool authoredProviderAuthorityActive,
         const bool authoredAttachOnlyAuthorityActive)
     {
-        if (!weaponNode ||
-            !handWeaponContact.valid ||
-            !weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(
-                handWeaponContact.weaponGenerationKey,
-                _session.weaponGenerationKey)) {
-            return false;
+        const bool coreAuthoredStation = !authoredProviderAuthorityActive && !authoredAttachOnlyAuthorityActive;
+        if (!weaponNode || weaponNode != _session.weaponNode ||
+            (!coreAuthoredStation && (!handWeaponContact.valid ||
+                !weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(
+                    handWeaponContact.weaponGenerationKey, _session.weaponGenerationKey)))) return false;
+        if (coreAuthoredStation) {
+            firing_grip_reattach_zone_policy::ZoneInput zoneInput{};
+            firing_grip_reattach_zone_policy::ZoneResult zone{};
+            if (!tryBuildFiringGripZoneInput(weaponNode, _session.weaponGenerationKey,
+                    _session.equippedWeaponOwnershipKey, _handlingSettings.firingGripReattachRadiusGameUnits, zoneInput) ||
+                !tryEvaluateFiringGripZoneForHand(handIsLeft, zoneInput, zone) || !zone.inside) return false;
+            provider::RockProviderWeaponPartTargetQueryV1 query{};
+            query.weaponGenerationKey = _session.weaponGenerationKey;
+            query.bodyId = weapon_part_runtime::kInvalidBodyId;
+            provider::RockProviderWeaponPartTargetResolutionV1 resolution{};
+            (void)provider::resolveWeaponPartTargetV1(query, resolution);
+            if (resolution.whitelistActive) return false;
         }
 
         RE::NiTransform handTransform{};
@@ -706,13 +711,14 @@ namespace rock
             authored_weapon_grip_capture_policy::shouldUseAuthoredFiringGripProbe(
                 authored_weapon_grip_capture_policy::AuthoredFiringGripProbeInput{
                     .proximityProbeAcquisition =
-                        handWeaponContact.acquisitionSource ==
+                        coreAuthoredStation || handWeaponContact.acquisitionSource ==
                         WeaponInteractionAcquisitionSource::ProximityProbe,
                     .providerAuthorityActive = authoredProviderAuthorityActive,
                     .attachOnly = authoredAttachOnlyAuthorityActive,
                     .authoredCanonicalAvailable =
                         authoredProbeCanonicalAvailable,
                 });
+        if (coreAuthoredStation && !useAuthoredProbeCanonical) return false;
         if (!useAuthoredProbeCanonical &&
             !firingGripContactMatchesCapturedGrip(
                 weaponNode,
@@ -1807,11 +1813,12 @@ namespace rock
         }
 
         const WeaponPartGrip& supportGrip = partGrip(supportHandIsLeft);
-        // Pose selection (provider/authored/dynamic) and current transform
-        // authority (visual-only/full) are orthogonal to handoff capability.
-        // AttachOnly glue alone cannot inherit the firing grip. The cylinder
-        // gate below keeps every other promotable grip tied to the firing grip.
-        if (!supportGrip.active || supportGrip.attachOnly) {
+        // Core support may promote only from the acquired firing station.
+        // Explicit provider carry grips retain their cylinder-tested contract;
+        // provider AttachOnly can never inherit firing authority.
+        const bool coreFiringStation = supportGrip.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone;
+        if (!supportGrip.active || supportGrip.attachOnly ||
+            (!coreFiringStation && !supportGrip.providerPartAuthority.active)) {
             outReason = "support-grip-not-promotable";
             return Result::NotApplicable;
         }
@@ -1824,16 +1831,16 @@ namespace rock
         // weapon; takeover applies only when it actually occupies the firing
         // station. Use the captured grip point, not the offset palm of a cup.
         firing_grip_reattach_zone_policy::ZoneInput promotionInput{};
-        const float reach = weapon_support_authority_policy::firingGripCaptureReach(
-            supportGrip.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone,
-            _handlingSettings.firingGripReattachRadiusGameUnits,
-            _handlingSettings.firingGripPromotionRadiusGameUnits);
+        const float reach = _handlingSettings.firingGripReattachRadiusGameUnits;
         if (!tryBuildFiringGripZoneInput(weaponNode, _session.weaponGenerationKey,
                 _session.equippedWeaponOwnershipKey, reach, promotionInput)) {
             outReason = "firing-zone-unavailable";
             return Result::Blocked;
         }
-        const auto supportGripWorld = resolvePartGripWorld(supportGrip, weaponNode);
+        // The shared station is latched at acquisition. A pistol's authored
+        // cup is deliberately offset from that station and must not redefine it.
+        const auto supportGripWorld = coreFiringStation ?
+            weaponLocalToWorld(_firing.rightCanonicalGripWeaponLocal, weaponNode) : resolvePartGripWorld(supportGrip, weaponNode);
         promotionInput.palmWorld = {supportGripWorld.x, supportGripWorld.y, supportGripWorld.z};
         if (!weapon_support_authority_policy::canPromoteSupportGripToFiringGrip(supportGrip.active,
                 supportGrip.attachOnly, firing_grip_reattach_zone_policy::evaluateZone(promotionInput).inside)) {

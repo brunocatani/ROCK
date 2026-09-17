@@ -2282,7 +2282,7 @@
 
         if (drawAuthoredSupportGripDebug) {
             AuthoredSupportGripDebugSnapshot snapshot{};
-            if (_twoHandedGrip.getAuthoredSupportGripDebugSnapshot(snapshot)) {
+            if (_twoHandedGrip.getAuthoredSupportGripDebugSnapshot(snapshot) && !snapshot.sharedFiringZone) {
                 // YELLOW cross: the final authored palm seat and center of the
                 // touch-substitution radius. BLUE cross: the live palm touch
                 // probe expressed in that same current Weapon frame. Wrist/

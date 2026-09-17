@@ -422,14 +422,6 @@ namespace rock
             AMBIDEXTROUS_FIRING_SECTION,
             "bAmbidextrousFiringGripEnabled",
             rockAmbidextrousFiringGripEnabled);
-        rockFiringGripPromotionRadius = readClampedFloat(
-            ini,
-            AMBIDEXTROUS_FIRING_SECTION,
-            "fFiringGripPromotionRadius",
-            rockFiringGripPromotionRadius,
-            5.0f,
-            0.25f,
-            30.0f);
         rockLeftFiringAimYawDegrees = readClampedFloat(
             ini,
             AMBIDEXTROUS_FIRING_SECTION,

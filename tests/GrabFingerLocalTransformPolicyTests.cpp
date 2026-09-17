@@ -1,5 +1,6 @@
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
 
 #include <array>
 #include <cmath>
@@ -278,6 +279,27 @@ static bool testCommandedFingerCorrectionFrame()
 int main()
 {
     bool ok = true;
+    {
+        rock::AuthoredWeaponGripPose pose{};
+        ok &= expectBool("empty authored transfer pose fails closed", pose.valid(), false);
+        pose.role = rock::loose_weapon_authored_grab_policy::Role::Support;
+        pose.weaponFormId = 0x1234;
+        pose.isLeft = true;
+        pose.fingerMask = 0x7FFF;
+        pose.handWeaponLocal = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+        pose.fingerLocals.fill(pose.handWeaponLocal);
+        ok &= expectBool("complete authored support transfer pose is valid", pose.valid(), true);
+        const auto snapshot = pose;
+        pose.fingerMask = 0x3FFF;
+        ok &= expectBool("partial authored fingers reject transfer", pose.valid(), false);
+        ok &= expectBool("transfer snapshot owns an independent value copy", snapshot.valid(), true);
+        pose = snapshot;
+        pose.handWeaponLocal.rotate.entry[1] = {};
+        ok &= expectBool("singular authored hand relation rejects transfer", pose.valid(), false);
+        pose = snapshot;
+        pose.fingerLocals[14].translate.x = std::numeric_limits<float>::quiet_NaN();
+        ok &= expectBool("nonfinite authored finger rejects transfer", pose.valid(), false);
+    }
     ok &= testCommandedFingerCorrectionFrame();
     using namespace rock::grab_finger_local_transform_math;
     using namespace rock::grab_finger_pose_runtime;

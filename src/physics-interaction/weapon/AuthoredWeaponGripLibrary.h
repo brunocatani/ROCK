@@ -65,6 +65,7 @@ namespace rock::authored_weapon_grip_library
         CaptureSource source{ CaptureSource::Unknown };
         CaptureSource supportSource{ CaptureSource::Unknown };
         bool hasSupportRelation{ false };
+        bool supportPoseAbsent{ false };
         bool hasRightPositionOnlyHandWeaponLocal{ false };
         bool usedVariantFallback{ false };
         bool vanillaPipePose{ false };
@@ -137,6 +138,10 @@ namespace rock::authored_weapon_grip_library
         const RE::NiTransform& supportHandWeaponLocal,
         const FiringFingerPose& supportFingerPose,
         std::uint64_t supportCaptureSequence,
+        CaptureSource source);
+
+    [[nodiscard]] bool publishSupportAbsence(const RE::TESObjectWEAP* weapon,
+        WeaponVariantIdentity variant, bool inPowerArmor, std::uint64_t captureSequence,
         CaptureSource source);
 
     // Resolve the raw animation relation into this model's registration frame.

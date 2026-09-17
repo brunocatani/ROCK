@@ -325,7 +325,8 @@ namespace rock
                 g_rockConfig.rockGrabLinearProportionalRecovery,
                 g_rockConfig.rockGrabLinearConstantRecovery,
                 &_bodyBoneColliders,
-                sharedContext);
+                sharedContext,
+                commit.equippedWeaponTransfer ? &commit.weaponGripPose : nullptr);
             if (!grabbed) {
                 hand.clearSelectionState(false);
                 commit.phase = PendingForceGrabCommitPhase::WaitingForSettle;

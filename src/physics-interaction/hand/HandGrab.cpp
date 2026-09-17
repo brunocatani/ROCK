@@ -856,67 +856,34 @@ namespace rock
                    weapon->weaponData.type == RE::WEAPON_TYPE::kMine;
         }
 
-        frik_visual_authority::HandPoseKind looseWeaponPrimaryAttachPoseKind(const RE::TESObjectWEAP* weapon)
-        {
-            return weapon && weapon_type_policy::isMelee(weapon->weaponData.type.get()) ?
-                       frik_visual_authority::HandPoseKind::HoldingMelee :
-                       frik_visual_authority::HandPoseKind::HoldingGun;
-        }
-
-        bool publishLooseWeaponPrimaryAttachHandPose(bool isLeft, RE::TESObjectREFR* refr, bool supportGrip)
+        bool publishLooseWeaponPrimaryAttachHandPose(bool isLeft, RE::TESObjectREFR* refr,
+            const AuthoredWeaponGripPose& pose)
         {
             const auto* weapon = looseWeaponFormFromRef(refr);
-            auto* weaponRoot = refr ? refr->Get3D() : nullptr;
-            if (weapon && weaponRoot) {
-                const auto authored = authored_weapon_grip_library::find(weapon, weaponRoot, f4vr::isInPowerArmor());
-                const auto& fingers = supportGrip ? authored.supportFingerPose : authored.rightFiringFingerPose;
-                if (authored.found && (!supportGrip || authored.hasSupportRelation) && fingers.complete()) {
-                    frik_visual_authority::FingerLocalTransformOverride exactRightPose{};
-                    exactRightPose.enabledMask = fingers.enabledMask;
-                    for (std::size_t index = 0; index < fingers.localTransforms.size(); ++index) {
-                        exactRightPose.localTransforms[index] = fingers.localTransforms[index];
-                    }
-
-                    frik_visual_authority::FingerLocalTransformOverride exactPose = exactRightPose;
-                    const bool exactPoseReady =
-                        (supportGrip == isLeft) ||
-                        hand_finger_mirror_math::mirrorFingerLocalsAcrossHands<RE::NiTransform>(
-                            std::span<const RE::NiTransform>(exactRightPose.localTransforms),
-                            std::span<RE::NiTransform>(exactPose.localTransforms));
-                    if (exactPoseReady) {
-                        constexpr const char* tag = "ROCK_Grab";
-                        constexpr int priority = 100;
-                        const char* blockTag = isLeft ? "ROCK_GrabPrimaryPoseLeft" : "ROCK_GrabPrimaryPoseRight";
-                        const bool blockedNativePose = frik_visual_authority::blockPrimaryHandWeaponPose(blockTag, true);
-                        const bool scalarPublished =
-                            blockedNativePose && frik_visual_authority::setHandPoseCustom(tag, handFromBool(isLeft), frik_visual_authority::HandPoseData{}, priority);
-                        const bool localsPublished =
-                            scalarPublished && frik_visual_authority::setHandPoseCustomLocalTransforms(tag, handFromBool(isLeft), &exactPose, priority);
-                        if (localsPublished) {
-                            ROCK_LOG_INFO(Hand, "{} hand loose weapon attach: applying exact native-idle {} pose source={} mask=0x{:04X}", isLeft ? "left" : "right",
-                                supportGrip ? "support" : "firing", authored.reason, exactPose.enabledMask);
-                            return true;
-                        }
-
-                        (void)frik_visual_authority::clearHandPose(tag, handFromBool(isLeft));
-                        if (blockedNativePose) {
-                            (void)frik_visual_authority::blockPrimaryHandWeaponPose(blockTag, false);
-                        }
-                    }
-                }
+            if (!pose.valid() || !weapon || pose.isLeft != isLeft || pose.weaponFormId != weapon->formID) return false;
+            frik_visual_authority::FingerLocalTransformOverride exact{};
+            exact.enabledMask = pose.fingerMask;
+            std::copy(pose.fingerLocals.begin(), pose.fingerLocals.end(), std::begin(exact.localTransforms));
+            constexpr const char* tag = "ROCK_Grab";
+            constexpr int priority = 100;
+            const char* blockTag = isLeft ? "ROCK_GrabPrimaryPoseLeft" : "ROCK_GrabPrimaryPoseRight";
+            const bool blocked = frik_visual_authority::blockPrimaryHandWeaponPose(blockTag, true);
+            const bool scalar = blocked && frik_visual_authority::setHandPoseCustom(
+                tag, handFromBool(isLeft), frik_visual_authority::HandPoseData{}, priority);
+            if (scalar && frik_visual_authority::setHandPoseCustomLocalTransforms(tag, handFromBool(isLeft), &exact, priority)) {
+                ROCK_LOG_INFO(Hand, "{} loose authored pose published role={} form={:08X}",
+                    isLeft ? "left" : "right", static_cast<unsigned>(pose.role), pose.weaponFormId);
+                return true;
             }
-
-            return frik_visual_authority::setHandPose(
-                "ROCK_Grab",
-                handFromBool(isLeft),
-                looseWeaponPrimaryAttachPoseKind(weapon),
-                100);
+            (void)frik_visual_authority::clearHandPose(tag, handFromBool(isLeft));
+            if (blocked) (void)frik_visual_authority::blockPrimaryHandWeaponPose(blockTag, false);
+            return false;
         }
-
         struct LooseWeaponPrimaryAttachFrame
         {
             bool valid = false;
             bool supportGrip = false;
+            AuthoredWeaponGripPose pose{};
             RE::NiTransform desiredRootWorld{};
             bool sourceVisible = false;
             RE::NiTransform desiredObjectWorld{};
@@ -1016,18 +983,16 @@ namespace rock
             const RE::NiTransform& objectToBodyAtGrab,
             const RE::NiTransform& grabBodyWorldAtGrab,
             const RE::NiPoint3& grabPivotAWorld,
-            const RE::NiTransform& handWorldAtGrab,
             bool savedGrabOffsetAttachValid,
             const RE::NiTransform& savedGrabOffsetRootWorld,
             const loose_weapon_grip_zone::NearGrab* nearGrip)
         {
             LooseWeaponPrimaryAttachFrame frame{};
-            // Near authored seats are optional. Outside them, retain the
-            // ordinary mesh capture; pull/force arrivals keep the firing hold.
-            const bool closeGrab = !grabbedFromPullCatch && !selection.forcedArrival;
-            const bool nearAuthored = closeGrab && looseWeaponGrab && !savedGrabOffsetAttachValid && nearGrip;
-            if (closeGrab && !nearAuthored && !savedGrabOffsetAttachValid) {
-                frame.reason = "closeGrabFreeHold";
+            // The acquisition policy has already selected exact authored
+            // placement or a real touching mesh grip.
+            const bool nearAuthored = looseWeaponGrab && nearGrip && nearGrip->pose.valid();
+            if (!nearAuthored && !savedGrabOffsetAttachValid) {
+                frame.reason = "dynamicTouchHold";
                 return frame;
             }
 
@@ -1046,8 +1011,8 @@ namespace rock
                     return frame;
                 }
                 /*
-                 * Only non-throwable programmatic loose-weapon arrivals snap to a
-                 * canonical attach pose. Grenades, mines, and Molotov variants are
+                 * Non-throwable weapons use the selected authored relation.
+                 * Grenades, mines, and Molotov variants are
                  * hand-thrown objects: force-grab and pull-catch commits keep the
                  * normal mesh/body relation so the object is translated into the
                  * pocket without forcing a root rotation from FRIK or the live hand.
@@ -1063,61 +1028,19 @@ namespace rock
                     return frame;
                 }
 
-                /*
-                 * Both firing hands use the same weapon-relative authority resolver.
-                 * It enforces custom hFRIK > learned authored > embedded hFRIK and
-                 * performs no filesystem work on this grab path. Explicit hFRIK
-                 * keeps its complete correction. Authored loose placement always
-                 * derives from the native carrier, so a prior equip cannot replace
-                 * the first-grab weapon orientation.
-                 */
-                RE::NiTransform handWorld{};
-                RE::NiTransform handWeaponLocal{};
-                const char* holdReason = "canonicalHoldUnavailable";
-                bool haveDesiredRoot = nearAuthored;
-                if (nearAuthored) {
-                    handWorld = nearGrip->handWorld;
-                    handWeaponLocal = nearGrip->handWeaponLocal;
-                    frame.supportGrip = nearGrip->role == loose_weapon_authored_grab_policy::Role::Support;
-                    holdReason = frame.supportGrip ? "authoredCloseSupportGrip" : "authoredCloseFiringGrip";
-                } else {
-                    haveDesiredRoot = loose_weapon_grip_zone::tryResolveLooseWeaponFiringHandHold(
-                        isLeft, selection.refr, handWorld, handWeaponLocal, &holdReason);
-                }
-                if (haveDesiredRoot) {
-                    frame.desiredRootWorld = multiplyTransforms(
-                        handWorld,
-                        transform_math::invertTransform(handWeaponLocal));
-                    frame.sourceVisible = false;
-                    frame.reason = holdReason;
-                } else if (!selection.forcedArrival) {
-                    frame.reason = holdReason;
-                    return frame;
-                }
-
-                if (!haveDesiredRoot) {
-                    /*
-                     * Palm-anchored fallback for non-throwable forced arrivals
-                     * without a usable FRIK offset: root axes follow the live hand
-                     * basis and the root origin sits on the hand grab pivot. Any
-                     * fixed choice is correct here -- the goal is a deterministic
-                     * commit pose, not a per-weapon tuned grip.
-                     */
-                    if (!isFiniteNiTransform(handWorldAtGrab)) {
-                        frame.reason = "nonFiniteHandWorld";
-                        return frame;
-                    }
-                    frame.desiredRootWorld.rotate = handWorldAtGrab.rotate;
-                    frame.desiredRootWorld.translate = grabPivotAWorld;
-                    frame.sourceVisible = false;
-                    frame.reason = "forcedArrivalPalmPose";
-                }
+                // Move the weapon to the physical hand using the selected
+                // authored relation, including the complete finger pose.
+                frame.pose = nearGrip->pose;
+                frame.supportGrip = frame.pose.role == loose_weapon_authored_grab_policy::Role::Support;
+                frame.desiredRootWorld = multiplyTransforms(nearGrip->handWorld,
+                    transform_math::invertTransform(frame.pose.handWeaponLocal));
+                frame.reason = frame.supportGrip ? "authoredSupportGrip" : "authoredFiringGrip";
             }
 
             frame.desiredRootWorld.scale =
                 rootNode && std::isfinite(rootNode->world.scale) && rootNode->world.scale > 0.0001f ? rootNode->world.scale : 1.0f;
             if (nearAuthored) {
-                const auto seatLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(nearGrip->handWeaponLocal, isLeft);
+                const auto seatLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(nearGrip->pose.handWeaponLocal, isLeft);
                 frame.desiredRootWorld.translate = {};
                 frame.desiredRootWorld.translate = grabPivotAWorld - transform_math::localPointToWorld(frame.desiredRootWorld, seatLocal);
             }
@@ -8704,6 +8627,8 @@ namespace rock
         RE::hknpBodyId objectBodyId{};
         bool grabbedFromPullCatch = false;
         bool looseWeaponGrab = false;
+        bool joiningPeerHeldObject = false;
+        const AuthoredWeaponGripPose* transferPose = nullptr;
         RE::NiPoint3 canonicalPivotNormalWorld{};
         GrabRollbackAction rollback{};
     };
@@ -8773,8 +8698,36 @@ namespace rock
         const bool grabbedFromPullCatch = input.grabbedFromPullCatch;
         const bool looseWeaponGrab = input.looseWeaponGrab;
         loose_weapon_grip_zone::NearGrab nearGrip{};
-        const bool nearAuthored = looseWeaponGrab && !grabbedFromPullCatch && !sel.forcedArrival &&
-            loose_weapon_grip_zone::tryResolveNearGrab(_isLeft, sel.refr, nearGrip);
+        const auto pocketAtAcquisition = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
+            proxyAuthorityFrameWorldAtGrab, _isLeft, grabPivotAWorld,
+            g_rockConfig.rockGrabPocketDepthGameUnits, g_rockConfig.rockGrabPocketRadiusGameUnits);
+        const auto pocketDelta = grabGripPoint - pocketAtAcquisition.palmCenterWorld;
+        const bool touchingPocket = pocketAtAcquisition.valid && semanticContacts.count != 0 &&
+            pointDistanceGameUnits(grabGripPoint, pocketAtAcquisition.palmCenterWorld) <= pocketAtAcquisition.pocketRadiusGameUnits &&
+            dot(pocketDelta, pocketAtAcquisition.palmNormalWorld) >= -g_rockConfig.rockGrabSurfaceBehindPalmToleranceGameUnits;
+        const bool authoredWeapon = looseWeaponGrab && !isThrowableLooseWeapon(selectedLooseWeaponForm(sel));
+        bool requireAuthoredPose = false;
+        bool nearAuthored = false;
+        if (authoredWeapon) {
+            namespace policy = loose_weapon_authored_grab_policy;
+            (void)loose_weapon_grip_zone::tryResolveNearGrab(_isLeft, sel.refr, nearGrip, input.joiningPeerHeldObject);
+            const auto role = policy::acquisitionRole(touchingPocket && !grabbedFromPullCatch && !sel.forcedArrival,
+                input.transferPose != nullptr, input.transferPose ? input.transferPose->role : policy::Role::None,
+                nearGrip.arrangement, input.joiningPeerHeldObject, nearGrip.role);
+            const bool dynamicOffhand = role == policy::Role::Support && input.joiningPeerHeldObject &&
+                nearGrip.arrangement == policy::Arrangement::OneHanded && !input.transferPose;
+            requireAuthoredPose = (role != policy::Role::None || input.transferPose != nullptr) && !dynamicOffhand;
+            nearGrip.role = role;
+            nearGrip.handWorld = handWorldTransform;
+            if (input.transferPose) {
+                nearGrip.pose = *input.transferPose;
+                const auto* weapon = selectedLooseWeaponForm(sel);
+                nearAuthored = nearGrip.pose.valid() && weapon && nearGrip.pose.weaponFormId == weapon->formID &&
+                    nearGrip.pose.isLeft == _isLeft;
+            } else if (requireAuthoredPose) {
+                nearAuthored = loose_weapon_grip_zone::tryResolveAuthoredGrabPose(_isLeft, sel.refr, role, nearGrip.pose);
+            }
+        }
         const RE::NiPoint3 canonicalPivotNormalWorld = input.canonicalPivotNormalWorld;
         auto& desiredObjectWorld = outCapture.desiredObjectWorld;
         auto& desiredBodyWorld = outCapture.desiredBodyWorld;
@@ -8795,6 +8748,11 @@ namespace rock
             return false;
         };
                 desiredObjectWorld = objectWorldTransform;
+                if (requireAuthoredPose && !nearAuthored) {
+                    ROCK_LOG_SAMPLE_WARN(Hand, 1000, "{} authored weapon grab deferred: pose unavailable ref={:08X} role={} transfer={}",
+                        handName(), sel.refr ? sel.refr->GetFormID() : 0, static_cast<unsigned>(nearGrip.role), input.transferPose != nullptr);
+                    return abortCapture();
+                }
                 desiredBodyWorld = grabBodyWorldAtGrab;
                 bool looseWeaponPrimaryAttachApplied = false;
                 bool looseWeaponPrimaryAttachSourceVisible = false;
@@ -8810,12 +8768,7 @@ namespace rock
                  * pocket or an authorable support group may create the frozen frame.
                  */
                 {
-                    auto pocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
-                        proxyAuthorityFrameWorldAtGrab,
-                        _isLeft,
-                        grabPivotAWorld,
-                        g_rockConfig.rockGrabPocketDepthGameUnits,
-                        g_rockConfig.rockGrabPocketRadiusGameUnits);
+                    auto pocket = pocketAtAcquisition;
                     auto gripArea = grab_three_phase::buildObjectGripArea(grab_three_phase::GripAreaInput{
                         .objectBodyWorld = grabBodyWorldAtGrab,
                         .contactSeedWorld = grabGripPoint,
@@ -9196,7 +9149,7 @@ namespace rock
                         if (fixedAidPose) {
                             savedGrabOffset = immersive_aid::stimpakPose(_isLeft);
                             hasSavedGrabOffset = true;
-                        } else if (programmaticArrival &&
+                        } else if (programmaticArrival && !authoredWeapon &&
                             saved_grab_offset::participatesInSavedGrabOffsets(
                                 looseWeaponGrab,
                                 isThrowableLooseWeapon(selectedLooseWeaponForm(sel)))) {
@@ -9226,7 +9179,6 @@ namespace rock
                             objectToBodyAtGrab,
                             grabBodyWorldAtGrab,
                             grabPivotAWorld,
-                            handWorldTransform,
                             savedGrabOffsetAttachValid,
                             savedGrabOffsetRootWorld,
                             nearAuthored ? &nearGrip : nullptr);
@@ -9272,9 +9224,10 @@ namespace rock
                             resolvedAuthorityPivotReasonForFreeze = looseWeaponPrimaryAttachFrame.reason;
                             looseWeaponPrimaryAttachApplied = true;
                             _grabFrame.authoredLooseWeaponSupportGrip = looseWeaponPrimaryAttachFrame.supportGrip;
+                            _grabFrame.authoredWeaponPose = looseWeaponPrimaryAttachFrame.pose;
                             outCapture.hasAuthoredHandRelation = nearAuthored;
                             if (nearAuthored) {
-                                outCapture.authoredHandWeaponLocal = nearGrip.handWeaponLocal;
+                                outCapture.authoredHandWeaponLocal = nearGrip.pose.handWeaponLocal;
                             }
                             ROCK_LOG_INFO(Hand, "{} hand loose authored grab ref={:08X} role={} source={}",
                                 handName(), sel.refr ? sel.refr->GetFormID() : 0,
@@ -9855,6 +9808,8 @@ namespace rock
                         _grabFrame.pivotAuthority.normalTrusted = pivotAuthorityNormalTrusted;
                         _grabFrame.pivotAuthority.positionConfidence = pivotAuthorityPositionConfidence;
                         _grabFrame.syntheticLooseWeaponPrimaryAttach = looseWeaponPrimaryAttachApplied;
+                        _grabFrame.authoredWeaponArrangement = authoredWeapon ? nearGrip.arrangement :
+                            loose_weapon_authored_grab_policy::Arrangement::Pending;
                         if (looseWeaponPrimaryAttachApplied) {
                             _grabFrame.seat.hasSettledVisualHandRelation = false;
                         }
@@ -10767,7 +10722,11 @@ namespace rock
         _grabOffsetAcquisition = {};
         _grabOffsetMaximumGripError = 0.0f;
         _grabOffsetMaximumRotationError = 0.0f;
-            if (grab_target::isRagdoll(sel.targetKind) &&
+        const bool authoredPoseReady = !_grabFrame.authoredWeaponPose.valid() ||
+            publishLooseWeaponPrimaryAttachHandPose(_isLeft, sel.refr, _grabFrame.authoredWeaponPose);
+            if (!authoredPoseReady) {
+                ROCK_LOG_WARN(Hand, "{} authored weapon pose rejected before constraint commit", handName());
+            } else if (grab_target::isRagdoll(sel.targetKind) &&
                 (!surface.surfaceHit.valid || !surface.surfaceHit.sourceShape ||
                     surface.surfaceHit.sourceNode != _grabFrame.heldNode)) {
                 // Pocket refinement can choose another surface after primary
@@ -10884,6 +10843,11 @@ namespace rock
 
             const bool driveCreated = _activeConstraint.isValid() && _grabAuthorityProxy.isValid();
             if (!driveCreated) {
+                if (_grabFrame.authoredWeaponPose.valid()) {
+                    (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
+                    (void)frik_visual_authority::blockPrimaryHandWeaponPose(
+                        _isLeft ? "ROCK_GrabPrimaryPoseLeft" : "ROCK_GrabPrimaryPoseRight", false);
+                }
                 ROCK_LOG_ERROR(Hand, "{} hand GRAB FAILED: proxy-constraint dynamic grab creation failed", handName());
                 destroyGrabAuthorityProxy(bhkWorld);
                 clearGrabExternalHandWorldTransform(_isLeft);
@@ -11032,7 +10996,9 @@ namespace rock
                 const bool hasSavedGrabFingerPose = (fixedAidPose || g_rockConfig.rockGrabMeshFingerPoseEnabled) &&
                     hasSavedGrabOffset &&
                     tryBuildSavedGrabOffsetFingerPose(savedGrabOffset, savedGrabFingerPose);
-                if (hasSavedGrabFingerPose) {
+                if (_grabFrame.authoredWeaponPose.valid()) {
+                    _grabFingerPosePublished = authoredPoseReady;
+                } else if (hasSavedGrabFingerPose) {
                     /*
                      * Reuse the same saved offset that established the object
                      * attach. This synthetic attach has no mesh contact
@@ -11055,7 +11021,7 @@ namespace rock
                         "{} hand loose weapon attach: applying savedGrabOffset finger pose",
                         handName());
                 } else {
-                    _grabFingerPosePublished = publishLooseWeaponPrimaryAttachHandPose(_isLeft, sel.refr, _grabFrame.authoredLooseWeaponSupportGrip);
+                    _grabFingerPosePublished = publishLooseWeaponPrimaryAttachHandPose(_isLeft, sel.refr, _grabFrame.authoredWeaponPose);
                     if (!_grabFingerPosePublished) {
                         ROCK_LOG_WARN(Hand, "{} hand loose weapon attach: failed to publish FRIK weapon hand pose", handName());
                     }
@@ -11210,7 +11176,8 @@ namespace rock
         float proportionalRecovery,
         float constantRecovery,
         const BodyBoneColliderSet* bodyBoneColliders,
-        const GrabSharedObjectContext& sharedContext)
+        const GrabSharedObjectContext& sharedContext,
+        const AuthoredWeaponGripPose* transferPose)
     {
         ValidatedGrabSelection validatedSelection{};
         if (!validateSelectedGrab(world, sharedContext, validatedSelection)) {
@@ -12015,6 +11982,8 @@ namespace rock
                 .objectBodyId = objectBodyId,
                 .grabbedFromPullCatch = grabbedFromPullCatch,
                 .looseWeaponGrab = looseWeaponGrab,
+                .joiningPeerHeldObject = joiningPeerHeldObject,
+                .transferPose = transferPose,
                 .canonicalPivotNormalWorld = canonicalPivotNormalWorld,
                 .rollback = seatRollback,
             };
@@ -12451,7 +12420,10 @@ namespace rock
         const auto supportBase = transform_math::localPointToWorld(root, supportLocal);
         const float separation = pointDistanceGameUnits(transform_math::localPointToWorld(root, primaryLocal), supportBase);
         const auto lockedSupport = makeLockedSupportGripTarget(primaryTarget, supportTarget, supportBase, separation, 0.001f);
-        const auto solved = solveTwoHandedWeaponTransformFrikPivot(WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3>{
+        const bool sharedFiringStation = loose_weapon_authored_grab_policy::sharedFiringZone(primary._grabFrame.authoredWeaponArrangement) ||
+            loose_weapon_authored_grab_policy::sharedFiringZone(support._grabFrame.authoredWeaponArrangement);
+        const auto solved = sharedFiringStation ? WeaponTwoHandedSolverResult<RE::NiTransform>{} :
+            solveTwoHandedWeaponTransformFrikPivot(WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3>{
             .weaponWorldTransform = root,
             .primaryGripLocal = primaryLocal,
             .supportGripLocal = supportLocal,
@@ -12460,7 +12432,7 @@ namespace rock
         });
         // Coincident seats cannot define an aim axis. Both constraints then
         // share the primary carry target until separation defines that axis.
-        if (!solved.solved) {
+        if (!sharedFiringStation && !solved.solved) {
             ROCK_LOG_SAMPLE_WARN(Hand, 1000, "Loose two-hand pivot degenerate axis: separation={:.4f}; sharing primary target", separation);
         }
         const auto sharedRoot = solved.solved ? solved.weaponWorldTransform : root;

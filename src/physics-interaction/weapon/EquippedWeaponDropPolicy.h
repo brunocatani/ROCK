@@ -29,14 +29,10 @@ namespace rock::equipped_weapon_drop_policy
         return "none";
     }
 
-    [[nodiscard]] inline constexpr SourceHand sourceForSupportRelease(
-        const bool primaryReleasedThisFrame,
-        const bool firingHandIsLeft) noexcept
+    [[nodiscard]] inline constexpr bool canStartAutoDrop(bool leftAttached, bool rightAttached,
+        bool freeFiringStationHovered) noexcept
     {
-        const bool sourceHandIsLeft = primaryReleasedThisFrame ?
-            firingHandIsLeft :
-            !firingHandIsLeft;
-        return sourceHandIsLeft ? SourceHand::Left : SourceHand::Right;
+        return leftAttached != rightAttached && !freeFiringStationHovered;
     }
 
     [[nodiscard]] inline constexpr bool equippedWeaponShoulderStashAvailable(

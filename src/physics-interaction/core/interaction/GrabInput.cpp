@@ -1383,7 +1383,9 @@ namespace rock
         // Evaluate both physical hands independently, including a support-only
         // first grab. Cold native sampling is already driven by this candidate.
         loose_weapon_grip_zone::updateNearGrabCandidate(isLeft,
-            input_remap_runtime::isMenuInputActive() ? nullptr : nativeIdleGripCandidate.get());
+            input_remap_runtime::isMenuInputActive() ? nullptr : nativeIdleGripCandidate.get(),
+            nativeIdleGripCandidate && (isLeft ? _rightHand : _leftHand).isHolding() &&
+                (isLeft ? _rightHand : _leftHand).getHeldRef() == nativeIdleGripCandidate.get());
         native_idle_grip_preharvest::observeCandidate(std::move(nativeIdleGripCandidate));
 
         const bool heldWeaponEquipOwnershipEligible =
