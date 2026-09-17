@@ -150,24 +150,28 @@ int main()
     ownerMismatch.ownerMatchesResolvedBody = false;
     decision = evaluateObject(ownerMismatch);
     ok &= expectFalse("owner mismatch rejected", decision.accept);
+    ok &= expectFalse("owner mismatch is not retried", decision.retryable);
     ok &= expectReason("owner mismatch reason", decision.reason, "ownerMismatch");
 
     auto missingSnapshot = validInput(bounds(5.0f, 4.0f, 2.0f));
     missingSnapshot.hasFingerSnapshot = false;
     decision = evaluateObject(missingSnapshot);
     ok &= expectFalse("missing finger snapshot rejected", decision.accept);
+    ok &= expectTrue("missing finger snapshot can recover", decision.retryable);
     ok &= expectReason("missing finger snapshot reason", decision.reason, "missingFingerSnapshot");
 
     auto gapTooWide = validInput(bounds(5.0f, 4.0f, 2.0f));
     gapTooWide.thumbIndexGapGameUnits = 20.0f;
     decision = evaluateObject(gapTooWide);
     ok &= expectFalse("wide thumb-index gap rejected", decision.accept);
+    ok &= expectTrue("finger gap can recover as hand moves", decision.retryable);
     ok &= expectReason("wide thumb-index gap reason", decision.reason, "fingerGapRejected");
 
     auto surfaceTooFar = validInput(bounds(5.0f, 4.0f, 2.0f));
     surfaceTooFar.pocketToSurfaceDistanceGameUnits = 12.0f;
     decision = evaluateObject(surfaceTooFar);
     ok &= expectFalse("far surface rejected", decision.accept);
+    ok &= expectTrue("surface distance can recover as hand moves", decision.retryable);
     ok &= expectReason("far surface reason", decision.reason, "surfaceTooFarFromPocket");
 
     auto noMesh = validInput(MeshExtentMetrics{});

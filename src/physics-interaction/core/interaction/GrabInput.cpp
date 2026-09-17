@@ -575,6 +575,7 @@ namespace rock
             }
         }
         if (handInput.disabled) {
+            grab_input_intent_policy::reset(inputIntentState);
             _touchGrabRuntime.releaseHand(
                 isLeft,
                 frame.bhkWorld,
@@ -1050,6 +1051,16 @@ namespace rock
             hand.hasSelection() &&
             selection_state_policy::canProcessSelectedState(hand.getState());
         const bool pullCatchPressCandidate = !hand.isHolding() && hand.hasPendingPullCatchCommit();
+        const auto closeRetryTarget = [&]() -> grab_input_intent_policy::Target {
+            if (!selectedPressCandidate || pullCatchPressCandidate || peerHeldCloseSelectionReady) {
+                return {};
+            }
+            const auto& selection = hand.getSelection();
+            if (selection.isFarSelection || selection.targetKind != grab_target::Kind::LooseObject || !selection.refr) {
+                return {};
+            }
+            return { selection.refr->GetFormID(), selection.bodyId.value };
+        }();
         const auto intentDecision = grab_input_intent_policy::update(
             inputIntentState,
             grab_input_intent_policy::RawButtonState{
@@ -1064,7 +1075,7 @@ namespace rock
                 .enabled = g_rockConfig.rockGrabInputIntentStateEnabled,
                 .leewaySeconds = g_rockConfig.rockGrabInputLeewaySeconds,
                 .forceSeconds = g_rockConfig.rockGrabInputForceSeconds,
-            });
+            }, closeRetryTarget);
         grabInput.held = intentDecision.held;
         grabInput.pressed = intentDecision.pressed;
         grabInput.released = intentDecision.released;
@@ -1262,7 +1273,7 @@ namespace rock
             const auto sharedContext = makeGrabSharedObjectContext(hand, isLeft);
             const bool grabbedFromPullCatchCommit = hand.hasPendingPullCatchCommit();
             prepareDynamicWorldCarCollisionForGrab(frame.bhkWorld, hknp, hand.getSelection().refr);
-            bool grabbed = hand.grabSelectedObject(hknp,
+            const auto grabResult = hand.grabSelectedObject(hknp,
                 transform,
                 g_rockConfig.rockGrabLinearTau,
                 g_rockConfig.rockGrabLinearDamping,
@@ -1271,6 +1282,16 @@ namespace rock
                 g_rockConfig.rockGrabLinearConstantRecovery,
                 &_bodyBoneColliders,
                 sharedContext);
+
+            const bool grabbed = grabResult == GrabAttemptResult::Grabbed;
+            if (grabResult == GrabAttemptResult::ContactUnavailable &&
+                g_rockConfig.rockGrabInputIntentStateEnabled &&
+                rawGrabInput.held && !rawGrabInput.released && closeRetryTarget.valid()) {
+                grab_input_intent_policy::retainContactRetry(inputIntentState, closeRetryTarget);
+                ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
+                    "{} hand retained close grab intent after contact refusal: formID={:08X} body={}",
+                    hand.handName(), closeRetryTarget.formId, closeRetryTarget.bodyId);
+            }
 
             if (grabbed) {
                 if (sharedContext.joiningPeerHeldObject) {
@@ -2334,6 +2355,7 @@ namespace rock
             input_remap_runtime::setProviderOpenVrGameInputSuppressed(false, false);
             input_remap_runtime::setProviderOpenVrGameInputSuppressed(true, false);
             _grabInput.heldWeaponTriggerEquipIntents = {};
+            _grabInput.intentStates = {};
             clearGameplayCandidatesForHand(_rightHand, false);
             clearGameplayCandidatesForHand(_leftHand, true);
             return;
@@ -2363,6 +2385,7 @@ namespace rock
             providerGeneration,
             collisionGeneration);
         if (frame.menuBlocked) {
+            _grabInput.intentStates = {};
             _touchGrabRuntime.releaseAll(
                 frame.bhkWorld,
                 frame.hknpWorld,

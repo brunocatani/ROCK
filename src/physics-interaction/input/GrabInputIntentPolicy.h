@@ -20,6 +20,7 @@ namespace rock::grab_input_intent_policy
         Leeway,
         Blocked,
         Force,
+        Retry,
     };
 
     struct Config
@@ -36,12 +37,27 @@ namespace rock::grab_input_intent_policy
         bool released = false;
     };
 
+    struct Target
+    {
+        std::uint32_t formId = 0;
+        std::uint32_t bodyId = 0x7FFF'FFFF;
+
+        [[nodiscard]] constexpr bool valid() const noexcept
+        {
+            return formId != 0 && bodyId != 0x7FFF'FFFF;
+        }
+
+        bool operator==(const Target&) const = default;
+    };
+
     struct RuntimeState
     {
         State state = State::Idle;
         float leewayRemainingSeconds = 0.0f;
         float forceRemainingSeconds = 0.0f;
         bool pendingPress = false;
+        Target retryTarget{};
+        float retryDelaySeconds = 0.0f;
     };
 
     struct Decision
@@ -66,6 +82,8 @@ namespace rock::grab_input_intent_policy
             return "Blocked";
         case State::Force:
             return "Force";
+        case State::Retry:
+            return "Retry";
         }
         return "Unknown";
     }
@@ -80,7 +98,19 @@ namespace rock::grab_input_intent_policy
         state = {};
     }
 
-    [[nodiscard]] inline Decision update(RuntimeState& state, const RawButtonState& raw, bool pressConsumerReady, bool resetIntent, float deltaSeconds, const Config& config)
+    // A contact refusal can resolve as the hand moves. Retain only the target
+    // identity, never an engine pointer; throttle mesh work without expiring intent.
+    inline void retainContactRetry(RuntimeState& state, Target target)
+    {
+        reset(state);
+        if (target.valid()) {
+            state.state = State::Retry;
+            state.retryTarget = target;
+            state.retryDelaySeconds = 0.05f;
+        }
+    }
+
+    [[nodiscard]] inline Decision update(RuntimeState& state, const RawButtonState& raw, bool pressConsumerReady, bool resetIntent, float deltaSeconds, const Config& config, Target selectedTarget = {})
     {
         Decision decision{};
         decision.held = raw.held;
@@ -106,10 +136,33 @@ namespace rock::grab_input_intent_policy
         }
 
         if (raw.pressed) {
+            reset(state);
             state.pendingPress = true;
             state.state = State::Leeway;
             state.leewayRemainingSeconds = leewaySeconds;
             state.forceRemainingSeconds = forceSeconds;
+        }
+
+        if (state.retryTarget.valid()) {
+            if (selectedTarget != state.retryTarget || !pressConsumerReady) {
+                reset(state);
+                state.state = State::Blocked;
+                decision.state = state.state;
+                decision.reason = "retryTargetLost";
+                return decision;
+            }
+            state.retryDelaySeconds = (std::max)(0.0f, state.retryDelaySeconds - dt);
+            decision.pressed = state.retryDelaySeconds <= 0.0f;
+            decision.syntheticPressed = decision.pressed;
+            decision.pendingPress = true;
+            decision.state = State::Retry;
+            decision.reason = decision.pressed ? "retryContact" : "waitingToRetryContact";
+            if (decision.pressed) {
+                // The attempt must explicitly retain a recoverable refusal.
+                reset(state);
+                state.state = State::Blocked;
+            }
+            return decision;
         }
 
         if (!state.pendingPress) {

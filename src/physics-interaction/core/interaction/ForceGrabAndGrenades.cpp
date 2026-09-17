@@ -325,7 +325,7 @@ namespace rock
                 g_rockConfig.rockGrabLinearProportionalRecovery,
                 g_rockConfig.rockGrabLinearConstantRecovery,
                 &_bodyBoneColliders,
-                sharedContext);
+                sharedContext) == GrabAttemptResult::Grabbed;
             if (!grabbed) {
                 hand.clearSelectionState(false);
                 commit.phase = PendingForceGrabCommitPhase::WaitingForSettle;

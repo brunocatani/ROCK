@@ -51,6 +51,13 @@ namespace rock
 {
     class BodyBoneColliderSet;
 
+    enum class GrabAttemptResult : std::uint8_t
+    {
+        Rejected,
+        ContactUnavailable,
+        Grabbed,
+    };
+
     constexpr std::uint32_t ROCK_HAND_LAYER = 43;
 
     constexpr std::uint32_t INVALID_BODY_ID = 0x7FFF'FFFF;
@@ -511,7 +518,7 @@ namespace rock
             return true;
         }
 
-        bool grabSelectedObject(RE::hknpWorld* world,
+        GrabAttemptResult grabSelectedObject(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
             float tau,
             float damping,

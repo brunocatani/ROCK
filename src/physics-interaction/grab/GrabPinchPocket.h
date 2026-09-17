@@ -76,6 +76,7 @@ namespace rock::grab_pinch_pocket_policy
         bool accept = false;
         bool compactObject = false;
         bool thinRod = false;
+        bool retryable = false;
     };
 
     struct StablePinchFingerPose
@@ -257,6 +258,7 @@ namespace rock::grab_pinch_pocket_policy
         }
         if (!input.hasFingerSnapshot) {
             decision.reason = "missingFingerSnapshot";
+            decision.retryable = true;
             return decision;
         }
         if (!input.mesh.valid) {
@@ -288,15 +290,18 @@ namespace rock::grab_pinch_pocket_policy
             input.thumbIndexGapGameUnits < config.minFingerGapGameUnits ||
             input.thumbIndexGapGameUnits > config.maxFingerGapGameUnits) {
             decision.reason = "fingerGapRejected";
+            decision.retryable = true;
             return decision;
         }
         if (!input.hasPinchSurface) {
             decision.reason = "noPinchSurface";
+            decision.retryable = true;
             return decision;
         }
         if (!std::isfinite(input.pocketToSurfaceDistanceGameUnits) ||
             input.pocketToSurfaceDistanceGameUnits > config.maxPocketDistanceGameUnits) {
             decision.reason = "surfaceTooFarFromPocket";
+            decision.retryable = true;
             return decision;
         }
 

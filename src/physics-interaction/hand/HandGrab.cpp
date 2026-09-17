@@ -8230,7 +8230,7 @@ namespace rock
             }
 
             if (!pinchPocketCandidate.valid && multiFingerEvidenceEnabled && !contactEvidenceDecision.accept) {
-                ROCK_LOG_WARN(Hand,
+                ROCK_LOG_SAMPLE_WARN(Hand, g_rockConfig.rockLogSampleMilliseconds,
                     "{} hand GRAB failed: contact evidence rejected '{}' formID={:08X}; "
                     "mode={} level={} groups={} semanticGroups={} probeGroups={} candidates={} meshHits={} rejectOwner={} rejectDistance={} reason={} selectionFar={}",
                     handName(),
@@ -11131,7 +11131,7 @@ namespace rock
         return true;
     }
 
-    bool Hand::grabSelectedObject(RE::hknpWorld* world,
+    GrabAttemptResult Hand::grabSelectedObject(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float tau,
         float damping,
@@ -11143,7 +11143,7 @@ namespace rock
     {
         ValidatedGrabSelection validatedSelection{};
         if (!validateSelectedGrab(world, sharedContext, validatedSelection)) {
-            return false;
+            return GrabAttemptResult::Rejected;
         }
 
         const auto& sel = _currentSelection;
@@ -11334,7 +11334,7 @@ namespace rock
             _heldBodyIdsCount.store(0, std::memory_order_release);
             grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
+            return GrabAttemptResult::Rejected;
         }
         const auto& grabAuthorityPivotAWorld = proxyPreparation.grabAuthorityPivotAWorld;
         const auto& palmPocketPivotAWorld = proxyPreparation.palmPocketPivotAWorld;
@@ -11420,7 +11420,7 @@ namespace rock
         if (!prepareGrabMeshCapture(handWorldTransform, validatedSelection, grabTraceId, objName, meshCaptureSetup)) {
             grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
+            return GrabAttemptResult::Rejected;
         }
         auto* collidableNode = meshCaptureSetup.collidableNode;
         auto* meshSourceNode = meshCaptureSetup.meshSourceNode;
@@ -11443,7 +11443,7 @@ namespace rock
                 ROCK_LOG_WARN(Hand, "{} ragdoll surface rejected: selected body={} topology={}", handName(), sel.bodyId.value, selectedComponent.reason);
                 grabPreparationTransaction.rollback();
                 clearGrabExternalHandWorldTransform(_isLeft);
-                return false;
+                return GrabAttemptResult::Rejected;
             }
             std::unordered_map<RE::NiAVObject*, RE::NiAVObject*> ownerCache;
             auto resolveOwner = [&](RE::NiAVObject* node) {
@@ -11527,7 +11527,7 @@ namespace rock
                 grabFallbackReason);
             grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
+            return grabSurfaceTriangles.empty() ? GrabAttemptResult::Rejected : GrabAttemptResult::ContactUnavailable;
         };
 
         const bool hasMeshSurfaceContact =
@@ -11547,7 +11547,7 @@ namespace rock
             multiFingerEvidenceEnabled &&
             grabContactQualityMode == grab_contact_evidence_policy::GrabContactQualityMode::HybridEvidence;
         if (contactSourcePolicy.failWithoutMesh && !handPocketOnlyGrab) {
-            ROCK_LOG_WARN(Hand,
+            ROCK_LOG_SAMPLE_WARN(Hand, g_rockConfig.rockLogSampleMilliseconds,
                 "{} hand GRAB failed: mesh contact required for '{}' formID={:08X}; collision point was not used as pivot "
                 "meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} totalTris={} reason={}",
                 handName(),
@@ -11561,7 +11561,7 @@ namespace rock
                 contactSourcePolicy.reason);
             grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
+            return grabSurfaceTriangles.empty() ? GrabAttemptResult::Rejected : GrabAttemptResult::ContactUnavailable;
         }
 
         GrabBodyResolution bodyResolution{};
@@ -11605,7 +11605,7 @@ namespace rock
                 activeLifecycle.hasIncompleteNativeScan() ? "yes" : "no");
             grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
+            return GrabAttemptResult::Rejected;
         }
 
         ROCK_LOG_DEBUG(Hand,
@@ -11645,7 +11645,7 @@ namespace rock
                 primaryChoiceTarget.z);
             grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
+            return GrabAttemptResult::Rejected;
         }
 
         /*
@@ -11690,7 +11690,7 @@ namespace rock
                 resolvedBodyCapture)) {
             grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
+            return GrabAttemptResult::Rejected;
         }
         objectBodyId = resolvedBodyCapture.bodyId;
         collidableNode = resolvedBodyCapture.collidableNode;
@@ -11735,7 +11735,7 @@ namespace rock
         const char*& contactPatchPivotAuthorityReason = pivotEvidence.contactPatchAuthorityReason;
 
         if (!meshGrabFound && !sel.hasHitPoint && !handPocketOnlyGrab) {
-            ROCK_LOG_WARN(Hand,
+            ROCK_LOG_SAMPLE_WARN(Hand, g_rockConfig.rockLogSampleMilliseconds,
                 "{} hand GRAB failed: no object-side contact point for '{}' formID={:08X}; object origin/COM fallback is not valid dynamic grab authority reason={} meshNode='{}' ownerNode='{}' rootNode='{}'",
                 handName(),
                 objName,
@@ -11746,7 +11746,7 @@ namespace rock
                 nodeDebugName(rootNode));
             grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
+            return grabSurfaceTriangles.empty() ? GrabAttemptResult::Rejected : GrabAttemptResult::ContactUnavailable;
         }
 
         const RuntimePinchPocketCandidate pinchPocketCandidate = buildRuntimePinchPocketCandidate(
@@ -11803,7 +11803,7 @@ namespace rock
                 sel.refr ? sel.refr->GetFormID() : 0);
             grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
+            return pinchPocketCandidate.decision.retryable ? GrabAttemptResult::ContactUnavailable : GrabAttemptResult::Rejected;
         }
         if (handPocketOnlyGrab &&
             !pinchPocketCandidate.valid &&
@@ -11829,7 +11829,7 @@ namespace rock
             grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
             _savedObjectState.clear();
-            return false;
+            return grabSurfaceTriangles.empty() ? GrabAttemptResult::Rejected : GrabAttemptResult::ContactUnavailable;
         }
         auto& palmSeatPointWorld = fingerEvidence.palmSeatPointWorld;
         auto& fingerEvidencePointWorld = fingerEvidence.fingerEvidencePointWorld;
@@ -11911,7 +11911,7 @@ namespace rock
                 if (bodyFrameCapture.clearExternalOnFailure) {
                     clearGrabExternalHandWorldTransform(_isLeft);
                 }
-                return false;
+                return GrabAttemptResult::Rejected;
             }
             grabFingerPoseMeshTriangles = std::move(bodyFrameCapture.fingerPoseMeshTriangles);
             grabFingerPoseLocalMeshTriangles = std::move(bodyFrameCapture.fingerPoseLocalMeshTriangles);
@@ -11945,7 +11945,7 @@ namespace rock
             };
             GrabSeatCaptureResult seatCapture{};
             if (!resolveGrabSeatCapture(world, seatCaptureInput, seatCapture)) {
-                return false;
+                return GrabAttemptResult::Rejected;
             }
 
             GrabFrozenCommitInput frozenCommitInput{
@@ -11962,7 +11962,7 @@ namespace rock
                 .rollback = seatRollback,
             };
             if (!commitFrozenGrabAuthority(frozenCommitInput)) {
-                return false;
+                return GrabAttemptResult::Rejected;
             }
 
             const GrabPostFreezeInput postFreezeInput{
@@ -12013,7 +12013,7 @@ namespace rock
             .rollback = constraintRollback,
         };
         if (!commitGrabConstraintAndPose(world, constraintCommitInput)) {
-            return false;
+            return GrabAttemptResult::Rejected;
         }
 
         grabPreparationTransaction.commit();
@@ -12032,7 +12032,7 @@ namespace rock
         }
         vanilla_weapon_alignment_telemetry::recordLooseGrab(
             _savedObjectState.refr, _isLeft, _grabFrame.traceId, handWorldTransform);
-        return true;
+        return GrabAttemptResult::Grabbed;
     }
 
     Hand::HeldHandMotionSample Hand::recordHeldControllerMotionSample(
