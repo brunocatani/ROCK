@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/VectorMath.h"
+#include "physics-interaction/grab/GrabPinchPocket.h"
 
 /*
  * Grab core policy is grouped here to keep object preparation, lifecycle, canonical frames, frame math, interaction decisions, and pull motion together.
@@ -649,6 +650,7 @@ namespace rock
         RE::NiPoint3 palmSeatPointWorldAtGrab{};
         RE::NiPoint3 pinchPocketWorldAtGrab{};
         RE::NiPoint3 pinchAxisWorldAtGrab{ 1.0f, 0.0f, 0.0f };
+        grab_pinch_pocket_policy::StablePinchFingerPose pinchFingerPose{};
         GrabSeatDiagnostics diagnostics{};
         GrabSeatMode mode = GrabSeatMode::None;
         float lastPivotReacquireLocalDeltaGameUnits = 0.0f;

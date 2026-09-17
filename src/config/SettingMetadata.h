@@ -274,7 +274,6 @@ namespace rock::config
         { "PhysicsInteraction", "fGrabPinchMaxFingerGapGameUnits", "10. Grab Contact Evidence", "", configuration_api::Group::Developer },
         { "PhysicsInteraction", "fGrabPinchThumbIndexMaxOpenValue", "10. Grab Contact Evidence", "", configuration_api::Group::Developer },
         { "PhysicsInteraction", "fGrabPinchOtherFingerCurlValue", "10. Grab Contact Evidence", "", configuration_api::Group::Developer },
-        { "PhysicsInteraction", "fGrabPinchSurfaceInsetGameUnits", "10. Grab Contact Evidence", "", configuration_api::Group::Developer },
         { "PhysicsInteraction", "fGrabPinchDetectionDirectionHandspaceX", "10. Grab Contact Evidence", "Pinch detection direction is authored in ROCK hand space: X=fingers, Y=palm depth, Z=signed cross-palm.", configuration_api::Group::Developer },
         { "PhysicsInteraction", "fGrabPinchDetectionDirectionHandspaceY", "10. Grab Contact Evidence", "", configuration_api::Group::Developer },
         { "PhysicsInteraction", "fGrabPinchDetectionDirectionHandspaceZ", "10. Grab Contact Evidence", "", configuration_api::Group::Developer },

@@ -254,6 +254,9 @@ namespace rock::root_flattened_finger_skeleton_runtime
     struct FingerChain
     {
         std::array<RE::NiPoint3, 3> points{};
+        RE::NiPoint3 tipSegmentCenterWorld{};
+        RE::NiPoint3 tipDirectionWorld{};
+        bool tipGeometryValid = false;
         bool valid = false;
     };
 

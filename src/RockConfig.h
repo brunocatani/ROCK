@@ -435,7 +435,6 @@ namespace rock
         float rockGrabPinchMaxFingerGapGameUnits = 12.0f;
         float rockGrabPinchThumbIndexMaxOpenValue = 0.45f;
         float rockGrabPinchOtherFingerCurlValue = 0.20f;
-        float rockGrabPinchSurfaceInsetGameUnits = 0.5f;
         RE::NiPoint3 rockGrabPinchDetectionDirectionHandspace = RE::NiPoint3(1.0f, 0.0f, 0.0f);
         float rockGrabPinchDetectionAxisBlend = 0.65f;
         bool rockGrabHandLerpEnabled = true;

@@ -1,4 +1,7 @@
 #include "physics-interaction/grab/GrabPinchPocket.h"
+#include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/TransformMath.h"
+#include "RE/NetImmerse/NiTransform.h"
 
 #include <cmath>
 #include <array>
@@ -76,6 +79,65 @@ int main()
     using namespace rock::grab_pinch_pocket_policy;
 
     bool ok = true;
+
+    {
+        using namespace rock::hand_bone_collider_geometry_math;
+        BoneColliderFrameInput<RE::NiTransform, RE::NiPoint3> input{};
+        input.previous = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+        input.start = input.previous;
+        input.previous.translate = { 1.0f, 0.0f, 0.0f };
+        input.start.translate = { 3.0f, 0.0f, 0.0f };
+        input.extrapolateFromPrevious = true;
+        input.extrapolateAlongStartBoneAxis = true;
+        // The distal joint bends independently of the middle-to-distal bone.
+        input.start.rotate.entry[0][0] = 0.0f;
+        input.start.rotate.entry[0][1] = 1.0f;
+        input.start.rotate.entry[1][0] = -1.0f;
+        input.start.rotate.entry[1][1] = 0.0f;
+        const auto segment = buildSegmentColliderFrame(input);
+        RE::NiPoint3 tip{};
+        ok &= expectTrue("distal collider endpoint is available", colliderTipEndpoint(
+            segment.transform.translate, segment.xAxis, segment.length, 0.1f, tip));
+        ok &= expectNear("tip follows distal bend instead of middle bone", tip.x, 3.0f);
+        ok &= expectNear("tip reaches the collider end including convex skin", tip.y, 1.4f);
+        const auto frame = makeFingerFrame(RE::NiPoint3{ 0.0f, 2.0f, 0.0f }, tip);
+        ok &= expectNear("pocket centers the terminal endpoints", frame.center.x, 1.5f);
+        ok &= expectNear("pocket moves with distal bend", frame.center.y, 1.7f);
+        const auto ray = detectionDirection(frame, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }, 1.0f);
+        ok &= expectNear("ray follows current fingertip axis", ray.x, frame.axis.x);
+        ok &= expectNear("ray follows current fingertip closure", ray.y, frame.axis.y);
+        ok &= expectFalse("missing collider dimensions cannot supply a tip", colliderTipEndpoint(
+            segment.transform.translate, segment.xAxis, 0.0f, 0.1f, tip));
+        ok &= expectFalse("coincident endpoints have no pinch axis", makeFingerFrame({}, {}).valid);
+    }
+
+    {
+        auto evaluate = [](float thickness, float opening) {
+            ClosureSample sample{};
+            sample.fingers = makeFingerFrame(
+                { 0.0f, opening * 2.0f, 0.0f }, { opening * 4.0f, opening * 2.0f, 0.0f });
+            sample.thicknessGameUnits = thickness;
+            Config config{};
+            config.thumbIndexMaxOpenValue = opening;
+            sample.pose = buildStablePinchFingerPose(config, 0.05f);
+            return sample;
+        };
+        const auto smallObjectFit = solveClosure(0.05f, 1.0f, [&](float opening) { return evaluate(1.0f, opening); });
+        const auto largeObjectFit = solveClosure(0.05f, 1.0f, [&](float opening) { return evaluate(3.0f, opening); });
+        ok &= expectTrue("small and large objects find closure poses", smallObjectFit.valid && smallObjectFit.bracketed && largeObjectFit.valid && largeObjectFit.bracketed);
+        ok &= expectNear("small object closes farther", smallObjectFit.sample.opening, 0.25f, 0.001f);
+        ok &= expectNear("large object retains wider closure", largeObjectFit.sample.opening, 0.75f, 0.001f);
+        ok &= expectNear("small-object seat follows solved fingertips", smallObjectFit.sample.fingers.center.y, 0.5f, 0.002f);
+        ok &= expectNear("large-object seat follows solved fingertips", largeObjectFit.sample.fingers.center.y, 1.5f, 0.002f);
+        ok &= expectNear("stored finger command matches seat solve", smallObjectFit.sample.pose.values[0], smallObjectFit.sample.opening);
+        const auto limited = solveClosure(0.05f, 0.45f, [&](float opening) { return evaluate(3.0f, opening); });
+        ok &= expectTrue("curl limit is reported without a new grab veto", limited.valid && !limited.bracketed);
+        ok &= expectNear("unreachable thickness uses closest permitted pose", limited.sample.opening, 0.45f);
+        const auto missing = solveClosure(0.05f, 1.0f, [&](float opening) {
+            return opening < 0.9f ? ClosureSample{} : evaluate(1.0f, opening);
+        });
+        ok &= expectFalse("provider loss cannot publish a partial closure", missing.valid);
+    }
 
     const auto longRodBounds = bounds(30.0f, 1.5f, 2.0f);
     ok &= expectNear("total bounding volume includes long dimension", longRodBounds.boundsVolumeCubicGameUnits, 90.0f);

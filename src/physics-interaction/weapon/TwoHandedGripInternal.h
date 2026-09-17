@@ -205,9 +205,6 @@ namespace rock
                     .otherFingerCurlValue =
                         g_rockConfig.
                             rockGrabPinchOtherFingerCurlValue,
-                    .surfaceInsetGameUnits =
-                        g_rockConfig.
-                            rockGrabPinchSurfaceInsetGameUnits,
                     .detectionDirectionHandspace =
                         g_rockConfig.
                             rockGrabPinchDetectionDirectionHandspace,

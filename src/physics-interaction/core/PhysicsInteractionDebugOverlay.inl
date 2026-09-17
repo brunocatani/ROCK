@@ -1451,12 +1451,7 @@
                     return;
                 }
 
-                const RE::NiPoint3 pinchAxis =
-                    grab_pinch_pocket_policy::normalizeOrFallback(handInput.indexPadWorld - handInput.thumbPadWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
-                const float axisBlend =
-                    std::clamp(g_rockConfig.rockGrabPinchDetectionAxisBlend, 0.0f, 1.0f);
-                const RE::NiPoint3 pinchDetection =
-                    grab_pinch_pocket_policy::normalizeOrFallback(pinchAxis * axisBlend + handInput.pinchDirectionWorld * (1.0f - axisBlend), pinchAxis);
+                const RE::NiPoint3 pinchDetection = handInput.pinchDirectionWorld;
                 const float directionLength =
                     (std::max)(g_rockConfig.rockGrabPinchMaxPocketDistanceGameUnits, selection_query_policy::kNearCastDistanceGameUnits);
 

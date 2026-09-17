@@ -1404,13 +1404,7 @@ namespace rock
             grab_pinch_pocket_policy::kDefaultOtherFingerCurlValue,
             0.0f,
             1.0f);
-        rockGrabPinchSurfaceInsetGameUnits = readClampedFloat(ini,
-            SECTION,
-            "fGrabPinchSurfaceInsetGameUnits",
-            rockGrabPinchSurfaceInsetGameUnits,
-            grab_pinch_pocket_policy::kDefaultSurfaceInsetGameUnits,
-            0.0f,
-            8.0f);
+
         readVec3("fGrabPinchDetectionDirectionHandspaceX",
             "fGrabPinchDetectionDirectionHandspaceY",
             "fGrabPinchDetectionDirectionHandspaceZ",
