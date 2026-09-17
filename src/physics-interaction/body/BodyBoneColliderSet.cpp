@@ -1,4 +1,5 @@
 #include "physics-interaction/body/BodyBoneColliderSet.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -693,6 +694,7 @@ namespace rock
 
     bool BodyBoneColliderSet::captureBoneSnapshot(DirectSkeletonBoneSnapshot& outSnapshot)
     {
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::BodyBoneCapture);
         // Body colliders collide where the body draws, so the whole snapshot
         // stays rendered; the forearm twin handed to the dynamic hand compound
         // is carried to the controller hand on its own below.

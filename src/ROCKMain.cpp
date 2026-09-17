@@ -671,6 +671,7 @@ namespace
      */
     void onOuterFrameHook(const std::uint64_t rcx)
     {
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::OuterFramePreparation);
         s_schedulerSequence = main_loop_hook_policy::nextSchedulerSequence(s_schedulerSequence);
         if (s_pluginLoaded && s_frikAvailable) {
             vanilla_weapon_alignment_telemetry::capture(
@@ -681,6 +682,7 @@ namespace
                 vanilla_weapon_alignment_telemetry::Phase::BeforeFrik, s_schedulerSequence);
         }
         if (s_frikChainGameLoopFunc) {
+            profilerTimer.stop();
             s_frikChainGameLoopFunc(rcx);
         }
     }
@@ -839,6 +841,15 @@ namespace
             s_originalGameLoopFunc(rcx);
         }
 
+        performance_profiler::refreshSettings(
+            g_rockConfig.rockPerformanceProfilerEnabled,
+            g_rockConfig.rockPerformanceProfilerLogIntervalFrames,
+            g_rockConfig.rockPerformanceProfilerWarmupFrames,
+            g_rockConfig.rockPerformanceProfilerOverlayText);
+        // Include ROCK's hand resolution and BeforeRock dispatch, while leaving
+        // the original engine update outside ROCK's frame measurement.
+        performance_profiler::FrameScope profilerFrame;
+        performance_profiler::ScopedTimer preludeTimer(performance_profiler::Scope::FramePrelude);
         ensureOuterFrameHook();
         verifyOuterFrameHook();
         vanilla_weapon_alignment_telemetry::capture(
@@ -866,13 +877,7 @@ namespace
             s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
         }
 
-        performance_profiler::refreshSettings(
-            g_rockConfig.rockPerformanceProfilerEnabled,
-            g_rockConfig.rockPerformanceProfilerLogIntervalFrames,
-            g_rockConfig.rockPerformanceProfilerWarmupFrames,
-            g_rockConfig.rockPerformanceProfilerOverlayText);
-        // Keep final presentation and overlay capture in this measured frame.
-        performance_profiler::FrameScope profilerFrame;
+        preludeTimer.stop();
         dynamic_collider_trace::beginFrame(g_rockConfig.rockDebugGrabFrameLogging, s_schedulerSequence);
         onFrameUpdate();
         native_scope_shot_diagnostics::beginFrame();

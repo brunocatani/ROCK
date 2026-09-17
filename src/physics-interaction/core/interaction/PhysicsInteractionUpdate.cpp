@@ -28,6 +28,7 @@ namespace rock
 
     bool PhysicsInteraction::refreshHandBoneCache()
     {
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::HandFrameResolve);
         const bool resolved = _handBoneCache.resolve();
         if (resolved) {
             _diagnostics.handCacheResolveLogCounter = 0;

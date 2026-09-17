@@ -7,6 +7,7 @@
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripCacheFormat.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripCacheStore.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
@@ -1188,7 +1189,10 @@ namespace rock::native_idle_grip_preharvest
                 return false;
             }
             MEMORY_BASIC_INFORMATION memoryInfo{};
-            if (VirtualQuery(address, &memoryInfo, sizeof(memoryInfo)) == 0 || memoryInfo.State != MEM_COMMIT || (memoryInfo.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0) {
+            const auto sample = performance_profiler::beginMemoryQuery();
+            const auto queried = VirtualQuery(address, &memoryInfo, sizeof(memoryInfo));
+            performance_profiler::endMemoryQuery(sample, performance_profiler::MemoryQueryKind::Execute, queried != 0);
+            if (queried == 0 || memoryInfo.State != MEM_COMMIT || (memoryInfo.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0) {
                 return false;
             }
             const DWORD protection = memoryInfo.Protect & 0xFF;
@@ -2264,6 +2268,7 @@ namespace rock::native_idle_grip_preharvest
 
     void observeCandidate(RE::NiPointer<RE::TESObjectREFR> candidate) noexcept
     {
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::NativeIdleGripHarvest);
         auto& state = runtime();
         if (!claimOrValidateThread(state)) {
             return;
@@ -2289,6 +2294,7 @@ namespace rock::native_idle_grip_preharvest
         RE::TBO_InstanceData* instanceData,
         const std::uint64_t instanceContentKey) noexcept
     {
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::NativeIdleGripHarvest);
         auto& state = runtime();
         if (!claimOrValidateThread(state)) {
             return;

@@ -1,4 +1,5 @@
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/HavokOffsets.h"
@@ -59,6 +60,7 @@ namespace rock::native_player_collision
         int filterPairs(void* filter, RE::hknpWorld* world, BodyPair* pairs, int count) noexcept
         {
             const int admitted = s_original(filter, world, pairs, count);
+            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::NativePlayerPairFilter);
             auto lease = s_gate.tryEnterCallback();
             if (!lease || !world || world != s_snapshot.world || s_snapshot.count == 0 ||
                 !pairs || admitted <= 0 || admitted > count) {

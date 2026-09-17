@@ -1,4 +1,5 @@
 #include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 
 /*
  * Runtime lookup is intentionally kept outside the header so pure math tests
@@ -91,6 +92,7 @@ namespace rock::root_flattened_finger_skeleton_runtime
 
     bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot, std::string* outMissingBoneName)
     {
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::FingerBoneCapture);
         DirectSkeletonBoneSnapshot boneSnapshot{};
         if (!rootFlattenedFingerReader().capture(
                 skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,

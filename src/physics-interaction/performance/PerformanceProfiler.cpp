@@ -19,6 +19,7 @@
 #include <spdlog/pattern_formatter.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/spdlog.h>
+#include <F4SE/Logger.h>
 
 namespace rock::performance_profiler
 {
@@ -30,6 +31,11 @@ namespace rock::performance_profiler
             std::atomic<std::uint64_t> maxTicks{ 0 };
             std::atomic<std::uint64_t> samples{ 0 };
             std::atomic<std::uint64_t> events{ 0 };
+            std::array<std::atomic<std::uint64_t>, 3> memoryQueries{};
+            std::atomic<std::uint64_t> memoryQueryFailures{ 0 };
+            std::atomic<std::uint64_t> memoryQueryTimedSamples{ 0 };
+            std::atomic<std::uint64_t> memoryQueryTotalTicks{ 0 };
+            std::atomic<std::uint64_t> memoryQueryMaxTicks{ 0 };
         };
 
         struct CounterAccum
@@ -58,6 +64,10 @@ namespace rock::performance_profiler
         std::array<CounterAccum, static_cast<std::size_t>(Counter::Count)> s_counterAccum;
         std::array<ValueAccum, static_cast<std::size_t>(ValueMetric::Count)> s_valueAccum;
         Settings s_settings;
+        // All native/game/render threads merge into the existing atomic window.
+        // TLS retains only a scope ID and sampling phase, never engine pointers.
+        thread_local Scope t_memoryQueryScope = Scope::UnattributedMemoryQueries;
+        thread_local std::uint32_t t_memoryQuerySequence = 0;
         LARGE_INTEGER s_frequency{};
         std::atomic<bool> s_frequencyReady{ false };
         std::mutex s_overlayMutex;
@@ -173,6 +183,26 @@ namespace rock::performance_profiler
                 return "grabNearbyDampingRestore";
             case Scope::GrabNearbyDampingRestoreBodySearch:
                 return "grabNearbyDampingRestoreBodySearch";
+            case Scope::FramePrelude: return "framePrelude";
+            case Scope::OuterFramePreparation: return "outerFramePreparation";
+            case Scope::HandFrameResolve: return "handFrameResolve";
+            case Scope::HandBoneCapture: return "handBoneCapture";
+            case Scope::BodyBoneCapture: return "bodyBoneCapture";
+            case Scope::FingerBoneCapture: return "fingerBoneCapture";
+            case Scope::SelectionHitProcessing: return "selectionHitProcessing";
+            case Scope::PhysicsSystemBodyScan: return "physicsSystemBodyScan";
+            case Scope::NativePlayerRefresh: return "nativePlayerRefresh";
+            case Scope::NativePlayerPairFilter: return "nativePlayerPairFilter";
+            case Scope::HeldSceneWriter: return "heldSceneWriter";
+            case Scope::ProviderFrameDispatch: return "providerFrameDispatch";
+            case Scope::ProviderFrameConsumer: return "providerFrameConsumer";
+            case Scope::ProviderAnimationDispatch: return "providerAnimationDispatch";
+            case Scope::ProviderAnimationConsumer: return "providerAnimationConsumer";
+            case Scope::NativeWorldReadWait: return "nativeWorldReadWait";
+            case Scope::CallbackQuiescenceWait: return "callbackQuiescenceWait";
+            case Scope::NearbyDampingWait: return "nearbyDampingWait";
+            case Scope::NativeIdleGripHarvest: return "nativeIdleGripHarvest";
+            case Scope::UnattributedMemoryQueries: return "unattributedMemoryQueries";
             case Scope::Count:
                 break;
             }
@@ -222,6 +252,8 @@ namespace rock::performance_profiler
                 return "nativeMeleeRockPartnerDropped";
             case Counter::NativeMeleeDecodeFailed:
                 return "nativeMeleeDecodeFailed";
+            case Counter::NativeReadRangeRejected: return "nativeReadRangeRejected";
+            case Counter::NativeWriteRangeRejected: return "nativeWriteRangeRejected";
             case Counter::Count:
                 break;
             }
@@ -267,6 +299,9 @@ namespace rock::performance_profiler
                 return "equippedWeaponFingerPoseTriangleTests";
             case ValueMetric::NativeMeleeCallbacksPerFrame:
                 return "nativeMeleeCallbacksPerFrame";
+            case ValueMetric::RenderedSkeletonBones: return "renderedSkeletonBones";
+            case ValueMetric::ControllerSkeletonBones: return "controllerSkeletonBones";
+            case ValueMetric::SelectionRawHits: return "selectionRawHits";
             case ValueMetric::Count:
                 break;
             }
@@ -343,6 +378,11 @@ namespace rock::performance_profiler
                 slot.maxTicks.store(0, std::memory_order_release);
                 slot.samples.store(0, std::memory_order_release);
                 slot.events.store(0, std::memory_order_release);
+                for (auto& count : slot.memoryQueries) count.store(0, std::memory_order_relaxed);
+                slot.memoryQueryFailures.store(0, std::memory_order_relaxed);
+                slot.memoryQueryTimedSamples.store(0, std::memory_order_relaxed);
+                slot.memoryQueryTotalTicks.store(0, std::memory_order_relaxed);
+                slot.memoryQueryMaxTicks.store(0, std::memory_order_relaxed);
             }
         }
 
@@ -388,6 +428,15 @@ namespace rock::performance_profiler
             atomicMax(slot.maxTicks, ticks);
         }
 
+        struct MemoryQueryTotals
+        {
+            std::array<std::uint64_t, 3> calls{};
+            std::uint64_t apiFailures{ 0 };
+            std::uint64_t timedSamples{ 0 };
+            std::uint64_t totalTicks{ 0 };
+            std::uint64_t maxTicks{ 0 };
+        };
+
         struct ScopeSnapshot
         {
             Scope scope{ Scope::Count };
@@ -395,8 +444,15 @@ namespace rock::performance_profiler
             std::uint64_t maxTicks{ 0 };
             std::uint64_t samples{ 0 };
             std::uint64_t events{ 0 };
+            MemoryQueryTotals memory{};
 
-            [[nodiscard]] bool hasData() const noexcept { return samples > 0 || events > 0; }
+            // Concurrent queries can straddle the individual atomic exchanges
+            // at a window boundary. Retain timing/failure-only tails as well.
+            [[nodiscard]] bool hasQueries() const noexcept
+            {
+                return memory.calls[0] || memory.calls[1] || memory.calls[2] || memory.apiFailures || memory.timedSamples;
+            }
+            [[nodiscard]] bool hasData() const noexcept { return samples > 0 || events > 0 || hasQueries(); }
             [[nodiscard]] double totalMs() const noexcept { return ticksToMilliseconds(totalTicks); }
             [[nodiscard]] double maxMs() const noexcept { return ticksToMilliseconds(maxTicks); }
             [[nodiscard]] double avgMs() const noexcept { return samples > 0 ? totalMs() / static_cast<double>(samples) : 0.0; }
@@ -596,7 +652,7 @@ namespace rock::performance_profiler
                             snapshot.droppedSnapshotsBeforeThis);
                     }
 
-                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes", snapshot.frames);
+                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=2 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64", snapshot.frames, GetCurrentProcessId());
                     for (const auto& item : snapshot.scopes) {
                         if (!item.hasData()) {
                             continue;
@@ -609,6 +665,16 @@ namespace rock::performance_profiler
                             item.totalMs(),
                             item.samples,
                             item.events);
+                        if (item.hasQueries()) {
+                            const auto& query = item.memory;
+                            logger->info(
+                                "[ROCK::Performance] Profiler memory {}: readQueries={} writeQueries={} executeQueries={} apiFailures={} timedQueries={} sampledAvgUs={:.3f} sampledMaxUs={:.3f} sampledTotalUs={:.3f}",
+                                scopeName(item.scope), query.calls[0], query.calls[1], query.calls[2], query.apiFailures,
+                                query.timedSamples,
+                                query.timedSamples ? ticksToMilliseconds(query.totalTicks) * 1000.0 / static_cast<double>(query.timedSamples) : 0.0,
+                                ticksToMilliseconds(query.maxTicks) * 1000.0,
+                                ticksToMilliseconds(query.totalTicks) * 1000.0);
+                        }
                     }
 
                     for (const auto& item : snapshot.counters) {
@@ -697,6 +763,15 @@ namespace rock::performance_profiler
                     .maxTicks = slot.maxTicks.exchange(0, std::memory_order_acq_rel),
                     .samples = slot.samples.exchange(0, std::memory_order_acq_rel),
                     .events = slot.events.exchange(0, std::memory_order_acq_rel),
+                    .memory = {
+                        .calls = { slot.memoryQueries[0].exchange(0, std::memory_order_acq_rel),
+                            slot.memoryQueries[1].exchange(0, std::memory_order_acq_rel),
+                            slot.memoryQueries[2].exchange(0, std::memory_order_acq_rel) },
+                        .apiFailures = slot.memoryQueryFailures.exchange(0, std::memory_order_acq_rel),
+                        .timedSamples = slot.memoryQueryTimedSamples.exchange(0, std::memory_order_acq_rel),
+                        .totalTicks = slot.memoryQueryTotalTicks.exchange(0, std::memory_order_acq_rel),
+                        .maxTicks = slot.memoryQueryMaxTicks.exchange(0, std::memory_order_acq_rel),
+                    },
                 };
             }
             return snapshot;
@@ -912,6 +987,28 @@ namespace rock::performance_profiler
         return s_overlayLineCount;
     }
 
+    MemoryQuerySample beginMemoryQuery() noexcept
+    {
+        if (!enabled()) return {};
+        const bool timed = (t_memoryQuerySequence++ & 63u) == 0;
+        return { timed ? queryPerformanceTicks() : 0, t_memoryQueryScope, true };
+    }
+
+    void endMemoryQuery(MemoryQuerySample sample, MemoryQueryKind kind, bool apiSucceeded) noexcept
+    {
+        if (!sample.active) return;
+        const auto endTicks = sample.startTicks ? queryPerformanceTicks() : 0;
+        auto& slot = accumFor(sample.scope);
+        slot.memoryQueries[static_cast<std::size_t>(kind)].fetch_add(1, std::memory_order_relaxed);
+        if (!apiSucceeded) slot.memoryQueryFailures.fetch_add(1, std::memory_order_relaxed);
+        if (sample.startTicks && endTicks >= sample.startTicks) {
+            const auto ticks = endTicks - sample.startTicks;
+            slot.memoryQueryTimedSamples.fetch_add(1, std::memory_order_relaxed);
+            slot.memoryQueryTotalTicks.fetch_add(ticks, std::memory_order_relaxed);
+            atomicMax(slot.memoryQueryMaxTicks, ticks);
+        }
+    }
+
     ScopedTimer::ScopedTimer(Scope scope) noexcept :
         _scope(scope)
     {
@@ -920,7 +1017,8 @@ namespace rock::performance_profiler
         }
 
         _startTicks = queryPerformanceTicks();
-        _active = _startTicks != 0;
+        _parentScope = std::exchange(t_memoryQueryScope, _scope);
+        _active = true;
     }
 
     ScopedTimer::~ScopedTimer()
@@ -935,9 +1033,10 @@ namespace rock::performance_profiler
         }
 
         const auto endTicks = queryPerformanceTicks();
-        if (endTicks > _startTicks) {
+        if (_startTicks && endTicks > _startTicks) {
             recordTicks(_scope, endTicks - _startTicks);
         }
+        t_memoryQueryScope = _parentScope;
         _active = false;
     }
 

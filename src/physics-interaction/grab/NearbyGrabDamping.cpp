@@ -191,6 +191,7 @@ namespace rock::nearby_grab_damping
                 auto leaseIt = findLeaseLocked(world, motionId);
                 if (leaseIt != g_motionDampingLeases.end()) {
                     if (leaseIt->restoreInProgress) {
+                        performance_profiler::ScopedTimer waitTimer(performance_profiler::Scope::NearbyDampingWait);
                         g_motionDampingChanged.wait(lock);
                         continue;
                     }
@@ -212,7 +213,10 @@ namespace rock::nearby_grab_damping
                     return true;
                 }
 
-                g_motionDampingChanged.wait(lock);
+                {
+                    performance_profiler::ScopedTimer waitTimer(performance_profiler::Scope::NearbyDampingWait);
+                    g_motionDampingChanged.wait(lock);
+                }
             }
         }
 
@@ -376,7 +380,10 @@ namespace rock::nearby_grab_damping
                         break;
                     }
 
-                    g_motionDampingChanged.wait(lock);
+                    {
+                        performance_profiler::ScopedTimer waitTimer(performance_profiler::Scope::NearbyDampingWait);
+                        g_motionDampingChanged.wait(lock);
+                    }
                 }
             }
 
@@ -727,7 +734,10 @@ namespace rock::nearby_grab_damping
                 }
 
                 while (leaseIt->restoreInProgress) {
-                    g_motionDampingChanged.wait(lock);
+                    {
+                        performance_profiler::ScopedTimer waitTimer(performance_profiler::Scope::NearbyDampingWait);
+                        g_motionDampingChanged.wait(lock);
+                    }
                     leaseIt = findLeaseLocked(world, motionState.motionId);
                     if (leaseIt == g_motionDampingLeases.end()) {
                         motionState.active = false;

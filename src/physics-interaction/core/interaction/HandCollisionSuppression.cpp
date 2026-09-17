@@ -692,6 +692,7 @@ namespace rock
         }
         _suppression.nativePlayerRefreshFrames = 30;
 
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::NativePlayerRefresh);
         auto cacheMutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
 
         struct NativePlayerBodyScanContext

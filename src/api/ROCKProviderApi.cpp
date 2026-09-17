@@ -5,6 +5,7 @@
 #include "api/ProviderLeasePolicy.h"
 #include "api/ProviderStatePolicy.h"
 #include "api/TouchGrabRegistry.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 
 #include <array>
 #include <atomic>
@@ -5688,6 +5689,7 @@ namespace rock::provider
 
     void dispatchFrameCallbacks(rock::PhysicsInteraction& pi)
     {
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::ProviderFrameDispatch);
         RockProviderFrameSnapshot snapshot{};
         snapshot.frameIndex = s_nextFrameIndex.fetch_add(1, std::memory_order_acq_rel);
         pi.fillProviderFrameSnapshot(snapshot);
@@ -6012,6 +6014,7 @@ namespace rock::provider
             if (slot.callback) {
                 FrameCallbackInvocationResult callbackResult{};
                 try {
+                    performance_profiler::ScopedTimer consumerTimer(performance_profiler::Scope::ProviderFrameConsumer);
                     callbackResult = invokeFrameCallbackSafely(
                         slot.callback,
                         &snapshot,
@@ -6083,6 +6086,7 @@ namespace rock::provider
         const RockProviderAnimationPhaseV1 phase,
         const game_frame_timing_policy::GameFrameTiming& timing)
     {
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::ProviderAnimationDispatch);
         if (!claimOrValidateAnimationOwnerThread()) {
             if (!s_animationThreadMismatchLogged.exchange(
                     true,
@@ -6175,6 +6179,7 @@ namespace rock::provider
 
             bool callbackHealthy = true;
             try {
+                performance_profiler::ScopedTimer consumerTimer(performance_profiler::Scope::ProviderAnimationConsumer);
                 callbackHealthy = invokeAnimationPhaseCallbackSafely(
                     slot.callback,
                     &context,

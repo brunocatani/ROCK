@@ -1,4 +1,5 @@
 #include "physics-interaction/object/ObjectDetection.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 #include "physics-interaction/grab/GrabInteractionPolicy.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
@@ -525,6 +526,9 @@ namespace rock
             int& outDuplicateBodies,
             bool logRejectTelemetry)
         {
+            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::SelectionHitProcessing);
+            performance_profiler::observeValue(performance_profiler::ValueMetric::SelectionRawHits,
+                static_cast<std::uint64_t>((std::max)(0, collector.hits._size)));
             SelectedObject result;
             std::array<RankedSelectionCandidate, selection_query_policy::kMaxShapeCastPrecisionCandidates> rankedCandidates{};
             std::size_t rankedCandidateCount = 0;
