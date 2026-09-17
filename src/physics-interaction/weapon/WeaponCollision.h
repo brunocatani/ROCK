@@ -232,6 +232,7 @@ namespace rock
         void update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, float dt, bool weaponDrawn);
 
         void requestWorkbenchExitRebuild();
+        void requestRebuildForReplacedSources();
 
         bool hasWeaponBody() const;
 
@@ -401,6 +402,15 @@ namespace rock
             const RE::hknpShape* shape{ nullptr };
             RE::NiAVObject* driveNode{ nullptr };
             RE::NiAVObject* sourceNode{ nullptr };
+            /*
+             * The engine can replace the equipped model under the same Weapon
+             * node (a Pip-Boy redraw does), which frees the nodes the raw
+             * pointers above name. These references keep them alive until the
+             * body is cleared; a node detached from the model has no parent,
+             * so the walks that resolve it fail instead of reading freed memory.
+             */
+            RE::NiPointer<RE::NiAVObject> driveNodeRef;
+            RE::NiPointer<RE::NiAVObject> sourceNodeRef;
             std::string sourceName;
             std::string driveRootName;
             std::string sourceRootName;
