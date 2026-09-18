@@ -260,7 +260,7 @@ namespace rock
         }
 
         [[nodiscard]] provider::TouchGrabMotionClassV1 classifyMotion(
-            const havok_runtime::BodySnapshot& snapshot)
+            const havok_runtime::BodyIdentitySnapshot& snapshot)
         {
             if (!snapshot.valid || !snapshot.body) {
                 return provider::TouchGrabMotionClassV1::Other;
@@ -822,7 +822,7 @@ namespace rock
 
         const RE::hknpBodyId bodyId{ contact.otherBodyId };
         const auto snapshot =
-            havok_runtime::snapshotBody(hknpWorld, bodyId);
+            havok_runtime::snapshotBodyIdentity(hknpWorld, bodyId);
         const auto motionClass = classifyMotion(snapshot);
         _lastAttemptReport.failure = AttemptFailure::SnapshotUnavailable;
         _lastAttemptReport.motionClass = motionClass;
@@ -1212,7 +1212,7 @@ namespace rock
             active.collisionObject->SetMotionType(
                 RE::hknpMotionPropertiesId::Preset::DYNAMIC);
         }
-        const auto dynamicSnapshot = havok_runtime::snapshotBody(
+        const auto dynamicSnapshot = havok_runtime::snapshotBodyIdentity(
             world,
             RE::hknpBodyId{ active.bodyId });
         if (!dynamicSnapshot.valid ||
@@ -1644,7 +1644,7 @@ namespace rock
                 }
             }
 
-            const auto bodySnapshot = havok_runtime::snapshotBody(
+            const auto bodySnapshot = havok_runtime::snapshotBodyIdentity(
                 hknpWorld,
                 RE::hknpBodyId{ active.bodyId });
             if (!bodySnapshot.valid ||
@@ -2086,7 +2086,7 @@ namespace rock
                     FixedAnchor &&
             active.collisionObject &&
             active.bodyId != kInvalidId) {
-            const auto snapshot = havok_runtime::snapshotBody(
+            const auto snapshot = havok_runtime::snapshotBodyIdentity(
                 world,
                 RE::hknpBodyId{ active.bodyId });
             if (snapshot.valid &&

@@ -352,6 +352,7 @@ namespace rock
         instance.generatedSourceLocalMinGame = {};
         instance.generatedSourceLocalMaxGame = {};
         instance.geometry.reset();
+        instance.indices.reset();
         instance.generatedPointCount = 0;
         instance.generatedSourceGroupId = 0;
         instance.semantic = {};
@@ -421,7 +422,7 @@ namespace rock
         }
         {
             std::scoped_lock lock(_evidence.mutex);
-            _evidence.profileDescriptors.clear();
+            _evidence.profileDescriptors.reset();
             _evidence.emitters = {};
             _evidence.sightAnchor = {};
             _evidence.composition = {};
@@ -456,6 +457,7 @@ namespace rock
         nativeScopeSightAnchorSnapshot.nativeScopeOverlayIndex = manualScopeTarget.overlayIndex;
         nativeScopeSightAnchorSnapshot.manualDirectTransitionRequired =
             manualScopeTarget.directTransitionRequired;
+        auto publishedEvidence = std::make_shared<const WeaponEvidenceSnapshot::Records>(std::move(evidenceSnapshot));
         std::uint32_t count = 0;
         beginWeaponBodyPublication();
         _published.count.store(0, std::memory_order_release);
@@ -468,7 +470,7 @@ namespace rock
         _published.setKey.store(_identity.cachedBodySetKey, std::memory_order_release);
         {
             std::scoped_lock lock(_evidence.mutex);
-            _evidence.profileDescriptors = std::move(evidenceSnapshot);
+            _evidence.profileDescriptors = std::move(publishedEvidence);
             _evidence.sightAnchor = nativeScopeSightAnchorSnapshot;
             _evidence.composition = weaponCompositionSnapshot;
         }

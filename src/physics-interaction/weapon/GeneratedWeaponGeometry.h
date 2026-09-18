@@ -13,6 +13,12 @@ namespace rock
     {
         std::vector<TriangleData> localTrianglesGame;
         std::vector<TriangleData> sourceLocalTrianglesGame;
+    };
+
+    // Built once per retained mesh after source admission, before publication.
+    // Kept separate so rejected geometry never pays for acceleration storage.
+    struct GeneratedWeaponMeshIndices
+    {
         WeaponTriangleIndex localIndex;
         WeaponTriangleIndex sourceIndex;
     };

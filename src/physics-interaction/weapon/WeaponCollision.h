@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/weapon/GeneratedWeaponGeometry.h"
+#include "physics-interaction/weapon/WeaponEvidenceSnapshot.h"
 
 #include <array>
 #include <atomic>
@@ -291,18 +292,13 @@ namespace rock
 
         bool tryGetWeaponContactDebugInfo(std::uint32_t bodyId, WeaponInteractionDebugInfo& outInfo) const;
 
-        std::vector<WeaponCollisionProfileEvidenceDescriptor> getProfileEvidenceDescriptors() const;
+        WeaponEvidenceSnapshot getProfileEvidenceDescriptors() const;
 
         WeaponEmitterSnapshot getWeaponEmitterSnapshot() const;
 
         NativeScopeSightAnchorSnapshot getNativeScopeSightAnchorSnapshot() const;
 
         WeaponCompositionSnapshot getWeaponCompositionSnapshot() const;
-
-        bool tryGetProfileEvidenceDescriptorForBodyId(
-            std::uint32_t bodyId,
-            WeaponCollisionProfileEvidenceDescriptor& outDescriptor,
-            RE::NiAVObject*& outSourceNode) const;
 
         std::uint64_t getCurrentEquippedWeaponGenerationKey() const { return _identity.cachedWeaponKey; }
 
@@ -372,6 +368,7 @@ namespace rock
         struct GeneratedHullSource
         {
             std::shared_ptr<const GeneratedWeaponHullGeometry> geometry;
+            std::shared_ptr<const GeneratedWeaponMeshIndices> indices;
             RE::NiPoint3 localCenterGame{};
             RE::NiPoint3 sourceLocalCenterGame{};
             RE::NiPoint3 localMinGame{};
@@ -420,6 +417,7 @@ namespace rock
             RE::NiPoint3 generatedSourceLocalMinGame{};
             RE::NiPoint3 generatedSourceLocalMaxGame{};
             std::shared_ptr<const GeneratedWeaponHullGeometry> geometry;
+            std::shared_ptr<const GeneratedWeaponMeshIndices> indices;
             std::uint32_t generatedPointCount{ 0 };
             std::uintptr_t generatedSourceGroupId{ 0 };
             WeaponPartClassification semantic{};
@@ -737,7 +735,7 @@ namespace rock
         struct EvidenceSnapshotState
         {
             mutable std::mutex mutex;
-            std::vector<WeaponCollisionProfileEvidenceDescriptor> profileDescriptors;
+            std::shared_ptr<const WeaponEvidenceSnapshot::Records> profileDescriptors;
             WeaponEmitterSnapshot emitters{};
             NativeScopeSightAnchorSnapshot sightAnchor{};
             WeaponCompositionSnapshot composition{};

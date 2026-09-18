@@ -2616,21 +2616,11 @@ namespace rock
             selection_query_policy::kNearDetectionRangeGameUnits) +
                                  (std::max)(selection_query_policy::kNearCastRadiusGameUnits, g_rockConfig.rockGrabTouchAcquireDistanceGameUnits);
 
-        std::vector<std::uint32_t> candidateBodyIds;
-        candidateBodyIds.reserve(peerHeldBodyIds.size() + 1);
-        auto appendUniqueBody = [&](std::uint32_t bodyId) {
-            if (bodyId == INVALID_BODY_ID) {
-                return;
-            }
-            if (std::find(candidateBodyIds.begin(), candidateBodyIds.end(), bodyId) == candidateBodyIds.end()) {
-                candidateBodyIds.push_back(bodyId);
-            }
-        };
-        appendUniqueBody(peerSavedObjectState.bodyId.value);
-        for (const auto bodyId : peerHeldBodyIds) {
-            appendUniqueBody(bodyId);
-        }
-        if (candidateBodyIds.empty()) {
+        const auto primaryBodyId = peerSavedObjectState.bodyId.value;
+        const bool hasCandidate = primaryBodyId != INVALID_BODY_ID ||
+            std::any_of(peerHeldBodyIds.begin(), peerHeldBodyIds.end(),
+                [](std::uint32_t id) { return id != INVALID_BODY_ID; });
+        if (!hasCandidate) {
             return refuse("no-peer-held-bodies");
         }
 
@@ -2641,7 +2631,12 @@ namespace rock
         auto toNiPoint = [](const hand_semantic_contact_state::SemanticContactVector& value) {
             return RE::NiPoint3{ value.x, value.y, value.z };
         };
-        for (const auto bodyId : candidateBodyIds) {
+        for (std::size_t candidateIndex = 0; candidateIndex <= peerHeldBodyIds.size(); ++candidateIndex) {
+            const auto bodyId = candidateIndex == 0 ? primaryBodyId : peerHeldBodyIds[candidateIndex - 1];
+            if (bodyId == INVALID_BODY_ID) continue;
+            if (candidateIndex != 0 && (bodyId == primaryBodyId ||
+                    std::find(peerHeldBodyIds.begin(), peerHeldBodyIds.begin() + candidateIndex - 1, bodyId) !=
+                        peerHeldBodyIds.begin() + candidateIndex - 1)) continue;
             RE::NiTransform bodyWorld{};
             if (!havok_runtime::tryGetBodyArrayWorldTransform(hknpWorld, RE::hknpBodyId{ bodyId }, bodyWorld) &&
                 !tryResolveLiveBodyWorldTransform(hknpWorld, RE::hknpBodyId{ bodyId }, bodyWorld)) {

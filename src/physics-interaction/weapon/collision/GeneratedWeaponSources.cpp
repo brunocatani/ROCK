@@ -964,6 +964,22 @@ namespace rock
             logGeneratedSourceInventory("body-capacity-exact", outSources);
         }
 
+        std::unordered_map<const GeneratedWeaponMeshGeometry*, std::shared_ptr<const GeneratedWeaponMeshIndices>> retainedIndices;
+        retainedIndices.reserve(outSources.size());
+        for (auto& source : outSources) {
+            const auto* mesh = source.geometry->mesh.get();
+            auto [it, inserted] = retainedIndices.try_emplace(mesh);
+            if (inserted) {
+                auto indices = std::make_shared<GeneratedWeaponMeshIndices>();
+                indices->localIndex.build(mesh->localTrianglesGame);
+                co_yield 0;
+                indices->sourceIndex.build(mesh->sourceLocalTrianglesGame);
+                co_yield 0;
+                it->second = std::move(indices);
+            }
+            source.indices = it->second;
+        }
+
         assignCollisionSoundMaterials(packageDriveRoot, outSources);
 
         for (std::size_t i = 0; i < outSources.size(); ++i) {
@@ -1316,10 +1332,6 @@ namespace rock
                     auto prepared = std::make_shared<GeneratedWeaponMeshGeometry>();
                     prepared->localTrianglesGame = std::move(localTriangles);
                     prepared->sourceLocalTrianglesGame = std::move(sourceLocalTriangles);
-                    prepared->localIndex.build(prepared->localTrianglesGame);
-                    co_yield 0;
-                    prepared->sourceIndex.build(prepared->sourceLocalTrianglesGame);
-                    co_yield 0;
                     mesh = std::move(prepared);
                 }
                 auto geometry = std::make_shared<GeneratedWeaponHullGeometry>();
@@ -1561,6 +1573,7 @@ namespace rock
             instance.generatedSourceLocalMinGame = source.sourceLocalMinGame;
             instance.generatedSourceLocalMaxGame = source.sourceLocalMaxGame;
             instance.geometry = source.geometry;
+            instance.indices = source.indices;
             instance.generatedPointCount = static_cast<std::uint32_t>(
                 (std::min)(source.geometry->localPointsGame.size(), static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())));
             instance.generatedSourceGroupId = source.sourceGroupId;

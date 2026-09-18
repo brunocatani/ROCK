@@ -26,27 +26,33 @@ namespace rock::nearby_grab_damping
         template <class Enumerate, class Validate>
         Result find(std::uint32_t motion, Enumerate&& enumerate, Validate&& validate)
         {
-            bool justCompleted = false;
             if (!_built) {
                 if (std::none_of(_entries.begin(), _entries.begin() + _count,
                         [&](const Entry& entry) { return entry.motion == motion; })) return {};
                 _built = true;
                 std::sort(_entries.begin(), _entries.begin() + _count,
                     [](const Entry& a, const Entry& b) { return a.motion < b.motion; });
-                std::size_t found = 0;
-                justCompleted = enumerate([&](std::uint32_t candidateMotion, std::uint32_t body) {
-                    if (auto* entry = lookup(candidateMotion); entry && entry->body == invalidBody) {
-                        entry->body = body;
-                        ++found;
-                    }
-                    return found == _count;
-                });
             }
-            const auto* entry = lookup(motion);
-            if (!entry) return {};
-            if (entry->body == invalidBody) return { invalidBody, justCompleted };
-            if (validate(entry->body, motion)) return { entry->body, false };
-            return {}; // Retirement/recycling requires a new native search.
+            auto* requested = lookup(motion);
+            if (!requested) return {}; // Capacity overflow uses the caller's native search.
+            if (requested->body != invalidBody && validate(requested->body, motion))
+                return { requested->body, false };
+            requested->body = invalidBody;
+
+            // Stop for this restore, not for unrelated leases with valid preferred
+            // bodies. Other observed IDs are only opportunistic positive hints.
+            const bool completed = enumerate([&](std::uint32_t candidateMotion, std::uint32_t body) {
+                if (candidateMotion == motion) {
+                    if (!validate(body, motion)) return false;
+                    requested->body = body;
+                    return true;
+                }
+                if (auto* entry = lookup(candidateMotion); entry && entry->body == invalidBody)
+                    entry->body = body;
+                return false;
+            });
+            if (requested->body != invalidBody) return { requested->body, false };
+            return { invalidBody, completed }; // Never cache absence between native mutations.
         }
 
     private:

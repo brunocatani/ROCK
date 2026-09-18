@@ -4,6 +4,7 @@
 #include "physics-interaction/grab/NearbyGrabDamping.h"
 #include "physics-interaction/native/PhysicsSystemBodyScanCache.h"
 #include "physics-interaction/weapon/GeneratedWeaponGeometry.h"
+#include "physics-interaction/weapon/WeaponEvidenceSnapshot.h"
 
 #include <cassert>
 #include <cstdio>
@@ -104,25 +105,52 @@ namespace
         using namespace rock::nearby_grab_damping;
         MotionBodySearchBatch batch;
         batch.add(8); batch.add(9); batch.add(10); batch.add(8);
-        unsigned scans = 0;
+        unsigned scans = 0, slots = 0;
+        std::map<std::uint32_t, std::uint32_t> live{ { 10, 8 }, { 9000, 9 } };
         const auto enumerate = [&](auto&& observe) {
             ++scans;
-            observe(8, 30); observe(8, 31); observe(9, 40);
+            for (std::uint32_t id = 0; id <= 9000; ++id) {
+                ++slots;
+                const auto it = live.find(id);
+                if (it != live.end() && observe(it->second, id)) break;
+            }
             return true;
         };
-        const auto valid = [](std::uint32_t body, std::uint32_t motion) { return (body == 30 && motion == 8) || (body == 40 && motion == 9); };
-        assert(batch.find(8, enumerate, valid).bodyId == 30);
-        assert(batch.find(9, enumerate, valid).bodyId == 40);
-        assert(scans == 1);
-        assert(!batch.find(10, enumerate, valid).freshAbsence); // Old absence is never proof.
-        assert(batch.find(8, enumerate, [](auto, auto) { return false; }).bodyId == MotionBodySearchBatch::invalidBody);
+        const auto valid = [&](std::uint32_t body, std::uint32_t motion) {
+            const auto it = live.find(body);
+            return it != live.end() && it->second == motion;
+        };
+        assert(batch.find(8, enumerate, valid).bodyId == 10);
+        assert(scans == 1 && slots == 11); // B's valid preferred body must not extend A's scan.
+        assert(batch.find(8, enumerate, valid).bodyId == 10 && scans == 1);
+        assert(batch.find(9, enumerate, valid).bodyId == 9000 && scans == 2);
+        // Recycling a positive hint requires a fresh search and skips invalid candidates.
+        live[10] = 7; live[15] = 8; live[20] = 8;
+        assert(batch.find(8, enumerate, [&](auto body, auto motion) {
+            return body != 15 && valid(body, motion);
+        }).bodyId == 20);
+        assert(batch.find(10, enumerate, valid).freshAbsence);
+        const auto oldScans = scans;
+        live[30] = 10;
+        assert(batch.find(10, enumerate, valid).bodyId == 30 && scans == oldScans + 1);
+        MotionBodySearchBatch hints;
+        hints.add(8); hints.add(9);
+        assert(hints.find(9, enumerate, valid).bodyId == 9000);
+        const auto hintScans = scans;
+        assert(hints.find(8, enumerate, valid).bodyId == 15 && scans == hintScans);
         MotionBodySearchBatch missing;
-        missing.add(10);
-        assert(missing.find(10, enumerate, valid).freshAbsence);
-        assert(!missing.find(10, enumerate, valid).freshAbsence);
+        missing.add(11);
+        assert(missing.find(11, enumerate, valid).freshAbsence);
+        const auto absentScans = scans;
+        assert(missing.find(11, enumerate, valid).freshAbsence && scans == absentScans + 1);
         MotionBodySearchBatch failed;
         failed.add(10);
         assert(!failed.find(10, [](auto&&) { return false; }, valid).freshAbsence);
+        MotionBodySearchBatch full;
+        for (unsigned motion = 1; motion <= 129; ++motion) full.add(motion);
+        const auto fullScans = scans;
+        assert(!full.find(129, enumerate, valid).freshAbsence && scans == fullScans);
+        std::printf("Demand-driven damping search: 11 slots instead of 9001; live hints and fresh absence verified\n");
 
         PureDampingCandidateSet candidates;
         candidates.add({ .bodyId = 1, .motionId = 8, .accepted = true });
@@ -148,6 +176,35 @@ namespace
         assert(visited == 100 && bodies.diagnostics.duplicateMotionSkips == 100);
     }
 
+    void evidenceOwnership()
+    {
+        using rock::WeaponEvidenceSnapshot;
+        WeaponEvidenceSnapshot empty;
+        assert(empty.size() == 0 && empty.find(1) == nullptr);
+        auto records = std::make_shared<WeaponEvidenceSnapshot::Records>();
+        records->resize(4);
+        (*records)[0].bodyId = 8; // Invalid records must not shadow the first valid match.
+        (*records)[1].valid = true; (*records)[1].bodyId = 8;
+        (*records)[1].weaponGenerationKey = 100;
+        (*records)[1].sourceName = "scope";
+        (*records)[1].localMeshPointsGame.resize(1000);
+        (*records)[1].pointCount = 1000;
+        (*records)[2] = (*records)[1]; (*records)[2].sourceName = "second";
+        (*records)[3].valid = true; (*records)[3].bodyId = 0x7FFF'FFFF;
+        WeaponEvidenceSnapshot publication{ records };
+        const auto retained = publication;
+        const auto* found = retained.find(8);
+        assert(found == &(*records)[1] && found->sourceName == "scope");
+        assert(found->pointCount == found->localMeshPointsGame.size());
+        assert(retained.find(0x7FFF'FFFF) == nullptr && retained.find(9) == nullptr);
+        const auto* points = found->localMeshPointsGame.data();
+        publication = WeaponEvidenceSnapshot{ std::make_shared<const WeaponEvidenceSnapshot::Records>() };
+        records.reset();
+        assert(publication.size() == 0 && retained.size() == 4);
+        assert(retained.find(8) == found && found->localMeshPointsGame.data() == points);
+        assert(found->weaponGenerationKey == 100);
+    }
+
     void scanAndGeometryOwnership()
     {
         using rock::havok_runtime::PhysicsSystemBodyScanCache;
@@ -165,7 +222,8 @@ namespace
 
         auto mesh = std::make_shared<rock::GeneratedWeaponMeshGeometry>();
         mesh->localTrianglesGame.push_back({});
-        mesh->localIndex.build(mesh->localTrianglesGame);
+        rock::GeneratedWeaponMeshIndices indices;
+        indices.localIndex.build(mesh->localTrianglesGame);
         auto hull = std::make_shared<rock::GeneratedWeaponHullGeometry>();
         hull->mesh = mesh;
         hull->localPointsGame.push_back({ 1, 2, 3 });
@@ -188,4 +246,5 @@ int main()
     exactMeshContacts();
     dampingAndMotionEnumeration();
     scanAndGeometryOwnership();
+    evidenceOwnership();
 }

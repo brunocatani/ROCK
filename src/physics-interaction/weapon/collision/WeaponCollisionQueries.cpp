@@ -1142,7 +1142,7 @@ namespace rock
     }
 
 
-    std::vector<WeaponCollisionProfileEvidenceDescriptor> WeaponCollision::getProfileEvidenceDescriptors() const
+    WeaponEvidenceSnapshot WeaponCollision::getProfileEvidenceDescriptors() const
     {
         for (int attempt = 0; attempt < 4; ++attempt) {
             const std::uint64_t startVersion = _published.version.load(std::memory_order_acquire);
@@ -1150,7 +1150,7 @@ namespace rock
                 continue;
             }
 
-            std::vector<WeaponCollisionProfileEvidenceDescriptor> descriptors;
+            std::shared_ptr<const WeaponEvidenceSnapshot::Records> descriptors;
             {
                 std::scoped_lock lock(_evidence.mutex);
                 descriptors = _evidence.profileDescriptors;
@@ -1158,7 +1158,7 @@ namespace rock
 
             const std::uint64_t endVersion = _published.version.load(std::memory_order_acquire);
             if (startVersion == endVersion && (endVersion & 1u) == 0) {
-                return descriptors;
+                return WeaponEvidenceSnapshot{ std::move(descriptors) };
             }
         }
 
@@ -1217,31 +1217,6 @@ namespace rock
         return {};
     }
 
-    bool WeaponCollision::tryGetProfileEvidenceDescriptorForBodyId(
-        std::uint32_t bodyId,
-        WeaponCollisionProfileEvidenceDescriptor& outDescriptor,
-        RE::NiAVObject*& outSourceNode) const
-    {
-        outDescriptor = {};
-        outSourceNode = nullptr;
-        if (bodyId == INVALID_BODY_ID) {
-            return false;
-        }
-
-        const auto descriptors = getProfileEvidenceDescriptors();
-        for (const auto& descriptor : descriptors) {
-            if (!descriptor.valid || descriptor.bodyId != bodyId) {
-                continue;
-            }
-
-            outDescriptor = descriptor;
-            outSourceNode = reinterpret_cast<RE::NiAVObject*>(descriptor.sourceRootAddress);
-            return true;
-        }
-
-        return false;
-    }
-
     bool WeaponCollision::tryFindInteractionContactNearPoint(
         const RE::NiAVObject* weaponNode,
         const RE::NiPoint3& probeWorldPoint,
@@ -1270,7 +1245,7 @@ namespace rock
         const RE::NiAVObject* packageDriveRoot = weaponNode;
 
         for (const auto& instance : activeWeaponBodies()) {
-            if (!instance.body.isValid() || !instance.geometry) {
+            if (!instance.body.isValid() || !instance.geometry || !instance.indices) {
                 continue;
             }
 
@@ -1335,7 +1310,7 @@ namespace rock
             }
 
             ++boundsCandidateCount;
-            const auto& index = useSourceFrame ? instance.geometry->mesh->sourceIndex : instance.geometry->mesh->localIndex;
+            const auto& index = useSourceFrame ? instance.indices->sourceIndex : instance.indices->localIndex;
             const float minimumSurfaceDistanceSquaredLocal = index.nearestDistanceSquared(
                 localTriangles, probeLocal, localRadius * localRadius,
                 [](const RE::NiPoint3& point, const TriangleData& triangle) {
