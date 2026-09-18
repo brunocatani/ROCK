@@ -305,6 +305,7 @@ if(BUILD_ROCK_TESTS)
 
   add_executable(ROCKWeaponInteractionPolicyTests
     "${ROOT_DIR}/tests/WeaponInteractionPolicyTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/hand/HandInteractionStateMachine.cpp"
   )
   target_compile_features(ROCKWeaponInteractionPolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKWeaponInteractionPolicyTests PRIVATE ${SOURCE_DIR})
