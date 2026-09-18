@@ -1344,12 +1344,12 @@ namespace rock
                             finiteNiTransform(_drop.releaseCapture.weaponWorld)) {
                             releaseWeaponWorld = _drop.releaseCapture.weaponWorld;
                             releaseLoc = _drop.releaseCapture.weaponWorld.translate;
-                            releaseRot = transform_math::matrixToEulerRadians<RE::NiMatrix3, RE::NiPoint3>(_drop.releaseCapture.weaponWorld.rotate);
+                            releaseRot = transform_math::matrixToReferenceEulerRadians<RE::NiMatrix3, RE::NiPoint3>(_drop.releaseCapture.weaponWorld.rotate);
                             hasReleaseRot = true;
                         } else if (weaponNode && finiteNiTransform(weaponNode->world)) {
                             releaseWeaponWorld = weaponNode->world;
                             releaseLoc = weaponNode->world.translate;
-                            releaseRot = transform_math::matrixToEulerRadians<RE::NiMatrix3, RE::NiPoint3>(weaponNode->world.rotate);
+                            releaseRot = transform_math::matrixToReferenceEulerRadians<RE::NiMatrix3, RE::NiPoint3>(weaponNode->world.rotate);
                             hasReleaseRot = true;
                         }
                         const std::size_t releaseHandIndex = equipped_weapon_drop_policy::isLeft(sourceHand) ? 1u : 0u;
