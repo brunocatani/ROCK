@@ -80,6 +80,11 @@ namespace rock::equipped_weapon_toggle_grab_policy
             return firingGripActive || partGripActive;
         }
 
+        [[nodiscard]] constexpr bool carriesWeapon() const noexcept
+        {
+            return firingGripActive || (partGripActive && !partGripAttachOnly);
+        }
+
         [[nodiscard]] constexpr bool usesToggleGrab(const Mode weaponGrabMode) const noexcept
         {
             return usesToggleForRole(weaponGrabMode, firingGripActive) && !(partGripActive && partGripAttachOnly);

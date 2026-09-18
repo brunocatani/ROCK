@@ -123,6 +123,38 @@ int main()
     ok &= expectFalse("loose keyframed non-physical transfer should allow incomplete root restore skip",
         shouldSkipIncompleteScanRootRestore(keyframedTransfer, 2));
 
+    for (const auto disposition : { GrabReleaseDisposition::PendingInventoryTransfer, GrabReleaseDisposition::PendingConsumeTransfer }) {
+        const auto intent = releaseIntentFromDisposition(disposition);
+        ok &= expectTrue("unconfirmed native transfer remains pending", intent == BodyReleaseIntent::PendingTransfer);
+        ok &= expectTrue("pending drop activates even without a velocity snapshot", shouldActivateReleasedBodies(disposition));
+        const auto pending = keyframedSnapshot.restorePlanForRelease(
+            releaseRestorePolicyForTargetKind(grab_target::Kind::LooseObject), grab_target::Kind::LooseObject, intent);
+        ok &= expectFalse("pending pickup cannot return converted body to keyframed motion", pending.entries.front().restoreMotion);
+        ok &= expectFalse("pending pickup cannot restore an inactive collision filter", pending.entries.front().restoreFilter);
+        ok &= expectTrue("pending pickup has no native keyframe restoration commands", keyframedSnapshot.makeMotionRestoreCommands(pending).empty());
+        ok &= expectTrue("incomplete pending scan preserves world physics", shouldSkipIncompleteScanRootRestore(pending, 2));
+        ok &= expectTrue("pending converted state equals a rejected transfer's physical drop",
+            pending.entries.front().restoreMotion == keyframedPhysicalDrop.entries.front().restoreMotion &&
+            pending.entries.front().restoreFilter == keyframedPhysicalDrop.entries.front().restoreFilter);
+        // Preservation must not depend on throw history: a native pickup can
+        // fail immediately after acquisition, before a velocity sample exists.
+        const auto pendingDynamic = dynamicSnapshot.restorePlanForRelease(
+            releaseRestorePolicyForTargetKind(grab_target::Kind::LooseObject), grab_target::Kind::LooseObject, intent);
+        ok &= expectTrue("pending dynamic bodies avoid coarse property reset", shouldSkipIncompleteScanRootRestore(pendingDynamic, 5));
+        const auto pendingActor = dynamicSnapshot.restorePlanForRelease(
+            releaseRestorePolicyForTargetKind(grab_target::Kind::DeadActorBody), grab_target::Kind::DeadActorBody, intent);
+        ok &= expectTrue("actor restoration is unaffected by pending transfer", pendingActor.entries.front().restoreMotion && pendingActor.entries.front().restoreFilter);
+    }
+    ok &= expectFalse("confirmed native ownership must not reactivate world bodies", shouldActivateReleasedBodies(GrabReleaseDisposition::TransferToInventory));
+    ok &= expectFalse("ownership handoff is not a physical drop", shouldActivateReleasedBodies(GrabReleaseDisposition::OwnershipHandoff));
+    ok &= expectTrue("ordinary drop activation is preserved", shouldActivateReleasedBodies(GrabReleaseDisposition::PhysicalDrop));
+    ok &= expectTrue("confirmed inventory transfer keeps native restoration", releaseIntentFromDisposition(
+        GrabReleaseDisposition::TransferToInventory) == BodyReleaseIntent::NonPhysicalTransfer);
+    ok &= expectTrue("normal drop keeps physical intent", releaseIntentFromDisposition(
+        GrabReleaseDisposition::PhysicalDrop) == BodyReleaseIntent::PhysicalDrop);
+    ok &= expectTrue("ownership handoff remains separate", releaseIntentFromDisposition(
+        GrabReleaseDisposition::OwnershipHandoff) == BodyReleaseIntent::OwnershipHandoff);
+
     const auto keyframedFailure = keyframedSnapshot.restorePlanForFailure();
     ok &= expectTrue("failed keyframed prep should restore filter", keyframedFailure.entries.front().restoreFilter);
     ok &= expectTrue("failed keyframed prep should restore motion", keyframedFailure.entries.front().restoreMotion);
@@ -146,6 +178,10 @@ int main()
         grab_target::Kind::LooseObject,
         BodyReleaseIntent::PhysicalDrop);
     ok &= expectTrue("loose static physical drop should still restore motion", staticPhysicalDrop.entries.front().restoreMotion);
+
+    const auto staticPending = staticSnapshot.restorePlanForRelease(
+        releaseRestorePolicyForTargetKind(grab_target::Kind::LooseObject), grab_target::Kind::LooseObject, BodyReleaseIntent::PendingTransfer);
+    ok &= expectTrue("pending transfer preserves static/system-owned restoration", staticPending.entries.front().restoreMotion);
 
     return ok ? 0 : 1;
 }

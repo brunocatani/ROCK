@@ -64,6 +64,13 @@ namespace rock::force_grab_policy
         return blockerMask(input) == 0;
     }
 
+    // An equipped grip may use its own weapon's occupancy, but must respect
+    // every reservation that would stop an ordinary grab on that physical hand.
+    [[nodiscard]] inline constexpr bool availableForEquippedGrip(std::uint32_t blockers) noexcept
+    {
+        return (blockers & ~static_cast<std::uint32_t>(HandBlocker::EquippedWeapon)) == 0;
+    }
+
     /*
      * Part grips are physical occupancy regardless of role. The firing hand is
      * otherwise occupied while an equipped weapon is present, except during

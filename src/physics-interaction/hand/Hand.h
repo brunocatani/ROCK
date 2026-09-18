@@ -279,15 +279,6 @@ namespace rock
         Immediate
     };
 
-    enum class GrabReleaseDisposition : std::uint8_t
-    {
-        PhysicalDrop,
-        PendingInventoryTransfer,
-        TransferToInventory,
-        PendingConsumeTransfer,
-        OwnershipHandoff,
-    };
-
     struct GrabSharedObjectContext
     {
         bool joiningPeerHeldObject = false;

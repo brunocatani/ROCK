@@ -82,6 +82,7 @@ namespace rock::active_grab_body_lifecycle
         PhysicalDrop,
         NonPhysicalTransfer,
         OwnershipHandoff,
+        PendingTransfer,
     };
 
     inline constexpr const char* releaseIntentName(BodyReleaseIntent intent) noexcept
@@ -93,6 +94,8 @@ namespace rock::active_grab_body_lifecycle
             return "physical-drop";
         case BodyReleaseIntent::NonPhysicalTransfer:
             return "non-physical-transfer";
+        case BodyReleaseIntent::PendingTransfer:
+            return "pending-transfer";
         case BodyReleaseIntent::OwnershipHandoff:
             return "ownership-handoff";
         }
@@ -221,9 +224,12 @@ namespace rock::active_grab_body_lifecycle
         }
     }
 
-    inline constexpr bool isLooseObjectPhysicalDrop(grab_target::Kind targetKind, BodyReleaseIntent intent) noexcept
+    inline constexpr bool keepsLooseObjectInWorld(grab_target::Kind targetKind, BodyReleaseIntent intent) noexcept
     {
-        return targetKind == grab_target::Kind::LooseObject && intent == BodyReleaseIntent::PhysicalDrop;
+        // Pending pickup may still fail. Keep the same motion/filter contract
+        // as a physical drop until native transfer consumes the world object.
+        return targetKind == grab_target::Kind::LooseObject &&
+            (intent == BodyReleaseIntent::PhysicalDrop || intent == BodyReleaseIntent::PendingTransfer);
     }
 
     inline bool shouldPreserveConvertedMotionOnRelease(
@@ -231,7 +237,7 @@ namespace rock::active_grab_body_lifecycle
         grab_target::Kind targetKind,
         BodyReleaseIntent intent) noexcept
     {
-        return isLooseObjectPhysicalDrop(targetKind, intent) &&
+        return keepsLooseObjectInWorld(targetKind, intent) &&
                record.originalStateKnown &&
                record.motionChangedByRock &&
                record.originalMotionType == physics_body_classifier::BodyMotionType::Keyframed;
@@ -413,10 +419,10 @@ namespace rock::active_grab_body_lifecycle
              * explicit restore-all paths still put every captured filter back;
              * protected non-physical release restores filters only for system-owned
              * non-dynamic bodies whose motion ownership is also returned to the engine.
-             * A successful physical drop of a converted keyframed loose object is
-             * player-owned physical state now, so ROCK preserves dynamic motion and
-             * the matching active filter instead of returning the object to floating
-             * keyframed state.
+             * A physical drop or pending transfer of a converted keyframed loose
+             * object still belongs to the world. Preserve dynamic motion and the
+             * matching active filter; a rejected pickup must not leave it floating
+             * or non-colliding. Successful pickup consumes that world body.
              */
             BodyRestorePlan plan{};
             plan.reason = reason;
@@ -494,7 +500,7 @@ namespace rock::active_grab_body_lifecycle
 
     inline bool shouldSkipIncompleteScanRootRestore(const BodyRestorePlan& plan, std::uint16_t originalMotionPropsId) noexcept
     {
-        if (plan.reason != BodyRestoreReason::Release || !isLooseObjectPhysicalDrop(plan.targetKind, plan.intent)) {
+        if (plan.reason != BodyRestoreReason::Release || !keepsLooseObjectInWorld(plan.targetKind, plan.intent)) {
             return false;
         }
 
@@ -510,6 +516,42 @@ namespace rock::active_grab_body_lifecycle
         }
 
         return physics_body_classifier::motionTypeFromMotionPropertiesId(originalMotionPropsId) == physics_body_classifier::BodyMotionType::Keyframed;
+    }
+}
+
+namespace rock
+{
+    enum class GrabReleaseDisposition : std::uint8_t
+    {
+        PhysicalDrop,
+        PendingInventoryTransfer,
+        TransferToInventory,
+        PendingConsumeTransfer,
+        OwnershipHandoff,
+    };
+
+    inline constexpr active_grab_body_lifecycle::BodyReleaseIntent releaseIntentFromDisposition(GrabReleaseDisposition disposition) noexcept
+    {
+        using active_grab_body_lifecycle::BodyReleaseIntent;
+        switch (disposition) {
+        case GrabReleaseDisposition::PhysicalDrop:
+            return BodyReleaseIntent::PhysicalDrop;
+        case GrabReleaseDisposition::OwnershipHandoff:
+            return BodyReleaseIntent::OwnershipHandoff;
+        case GrabReleaseDisposition::PendingInventoryTransfer:
+        case GrabReleaseDisposition::PendingConsumeTransfer:
+            return BodyReleaseIntent::PendingTransfer;
+        case GrabReleaseDisposition::TransferToInventory:
+            return BodyReleaseIntent::NonPhysicalTransfer;
+        }
+        return BodyReleaseIntent::NonPhysicalTransfer;
+    }
+
+    inline constexpr bool shouldActivateReleasedBodies(GrabReleaseDisposition disposition) noexcept
+    {
+        const auto intent = releaseIntentFromDisposition(disposition);
+        return intent == active_grab_body_lifecycle::BodyReleaseIntent::PhysicalDrop ||
+            intent == active_grab_body_lifecycle::BodyReleaseIntent::PendingTransfer;
     }
 }
 

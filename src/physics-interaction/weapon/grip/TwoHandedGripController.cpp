@@ -396,6 +396,8 @@ namespace rock
             decision.kind == WeaponInteractionKind::SupportGrip;
         const bool supportGripHeld = supportHandIsLeft ? stableFrameInput.leftGripHeld : stableFrameInput.rightGripHeld;
         const bool supportHandHoldingObject = supportHandIsLeft ? stableFrameInput.leftHandHoldingObject : stableFrameInput.rightHandHoldingObject;
+        const bool supportHandAvailableForAcquisition = supportHandIsLeft ?
+            stableFrameInput.leftHandAvailableForAcquisition : stableFrameInput.rightHandAvailableForAcquisition;
         const EquippedWeaponPrimaryGripInput& primaryGripInput = stableFrameInput.primaryGripInput;
 
         const auto& authoredActivation =
@@ -419,7 +421,7 @@ namespace rock
                 authored_support_grab_policy::Capability::Usable;
         const auto arrangement = authoredGripArrangement(weaponNode, currentWeaponGenerationKey);
         const bool sharedFiringZone = loose_weapon_authored_grab_policy::sharedFiringZone(arrangement);
-        const bool authoredSeatAcquisitionAvailable = !sharedFiringZone &&
+        const bool authoredSeatAcquisitionAvailable = supportHandAvailableForAcquisition && !sharedFiringZone &&
             authoredActivationStateMatches &&
             authoredActivation.activationSpatialPass &&
             authoredCapabilityAllowsIndicator &&
@@ -454,7 +456,7 @@ namespace rock
             (void)provider::resolveWeaponPartTargetV1(handoffPartQuery, handoffPartResolution);
         }
         const bool handoffAcquisitionAvailable =
-            handoffZoneEvaluated && !partGrip(supportHandIsLeft).active &&
+            supportHandAvailableForAcquisition && handoffZoneEvaluated && !partGrip(supportHandIsLeft).active &&
             !supportHandHoldingObject && canAcquireFiringGripHandoff(
                 handoffZone.inside, supportRuntimeState,
                 handoffPartResolution.whitelistActive != 0);
@@ -488,8 +490,8 @@ namespace rock
                         WeaponInteractionAcquisitionSource::AuthoredSeat,
             };
         }
-        const bool supportTouchingSupport =
-            routedSupportTouching || authoredSeatAcquisitionAvailable || handoffAcquisitionAvailable;
+        const bool supportTouchingSupport = supportHandAvailableForAcquisition &&
+            (routedSupportTouching || authoredSeatAcquisitionAvailable || handoffAcquisitionAvailable);
         RE::NiNode* interactionWeaponNode =
             (handoffAcquisitionAvailable || authoredSeatAcquisitionAvailable) ?
             weaponNode :
@@ -508,7 +510,7 @@ namespace rock
                     authoredCapabilityAllowsIndicator,
                 .activationSpatialPass =
                     authoredActivation.activationSpatialPass && !sharedFiringZone && !handoffAcquisitionAvailable,
-                .supportGripAllowed = supportRuntimeState.supportGripAllowed,
+                .supportGripAllowed = supportHandAvailableForAcquisition && supportRuntimeState.supportGripAllowed,
                 .providerPartAuthorityActive =
                     supportRuntimeState.providerPartAuthority.active,
                 .supportHandHoldingObject = supportHandHoldingObject,

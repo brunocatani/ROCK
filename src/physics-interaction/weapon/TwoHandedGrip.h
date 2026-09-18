@@ -95,6 +95,10 @@ namespace rock
         bool rightGripHeld{ false };
         bool leftHandHoldingObject{ false };
         bool rightHandHoldingObject{ false };
+        // New acquisitions respect loose grabs, touch grabs, pulls, pending
+        // commands and disabled hands. Existing grips keep their release path.
+        bool leftHandAvailableForAcquisition{ false };
+        bool rightHandAvailableForAcquisition{ false };
         bool leftReattachEligible{ false };
         bool rightReattachEligible{ false };
         // Menu-open state and renderer-request state are deliberately separate.
