@@ -2824,12 +2824,13 @@ namespace rock
     void Hand::updateCollisionTransform(
         RE::hknpWorld* world,
         const RE::NiTransform& rollAuthorityWorld,
-        float deltaTime)
+        float deltaTime,
+        const DirectSkeletonBoneSnapshot& colliderBones)
     {
         if (!hasCollisionBody() || !world)
             return;
 
-        _boneColliders.update(world, _isLeft, rollAuthorityWorld, _handBody, deltaTime);
+        _boneColliders.update(world, _isLeft, rollAuthorityWorld, _handBody, deltaTime, colliderBones);
     }
 
     void Hand::flushPendingCollisionPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)

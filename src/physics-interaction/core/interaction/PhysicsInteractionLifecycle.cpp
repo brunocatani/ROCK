@@ -214,7 +214,7 @@ namespace rock
             for (std::uint32_t i = 0; i < count; ++i) {
                 const std::uint32_t bodyId = hand.getHandColliderBodyIdAtomic(i);
                 HandColliderBodyMetadata metadata{};
-                if (!hand.tryGetHandColliderMetadata(bodyId, metadata) || !metadata.valid) {
+                if (!hand.tryGetHandColliderMetadataAtIndex(i, bodyId, metadata) || !metadata.valid) {
                     continue;
                 }
 
@@ -243,10 +243,12 @@ namespace rock
         addHandEntries(_rightHand, false);
         addHandEntries(_leftHand, true);
 
-        const auto weaponSnapshot = _weaponCollision.getWeaponBodySnapshotAtomic();
-        for (std::uint32_t i = 0; i < weaponSnapshot.count && i < MAX_WEAPON_COLLISION_BODIES; ++i) {
-            WeaponInteractionContact contact{};
-            if (!_weaponCollision.tryGetWeaponContactAtomic(weaponSnapshot.bodyIds[i], contact) || !contact.valid) {
+        std::array<WeaponCollision::WeaponContactState, MAX_WEAPON_COLLISION_BODIES> weaponStates{};
+        const auto weaponCount = _weaponCollision.copyWeaponContactStatesAtomic(weaponStates);
+        for (std::size_t i = 0; i < weaponCount; ++i) {
+            const auto& state = weaponStates[i];
+            const auto& contact = state.contact;
+            if (!contact.valid) {
                 continue;
             }
 
@@ -261,15 +263,11 @@ namespace rock
             entry.gripPose = static_cast<std::uint32_t>(contact.fallbackGripPose);
             entry.generationKey = contact.weaponGenerationKey;
 
-            float sampledVelocityHavok[4]{};
-            if (_weaponCollision.tryGetWeaponBodySampledVelocityAtomic(contact.bodyId, sampledVelocityHavok) &&
-                std::isfinite(sampledVelocityHavok[0]) &&
-                std::isfinite(sampledVelocityHavok[1]) &&
-                std::isfinite(sampledVelocityHavok[2])) {
+            if (state.hasSampledVelocity) {
                 entry.flags |= kFlagSampledVelocity;
-                entry.sampledVelocityHavokX = sampledVelocityHavok[0];
-                entry.sampledVelocityHavokY = sampledVelocityHavok[1];
-                entry.sampledVelocityHavokZ = sampledVelocityHavok[2];
+                entry.sampledVelocityHavokX = state.sampledVelocityHavok[0];
+                entry.sampledVelocityHavokY = state.sampledVelocityHavok[1];
+                entry.sampledVelocityHavokZ = state.sampledVelocityHavok[2];
             }
             addEntry(entry);
         }
@@ -278,7 +276,7 @@ namespace rock
         for (std::uint32_t i = 0; i < bodyCount; ++i) {
             const std::uint32_t bodyId = _bodyBoneColliders.getBodyIdAtomic(i);
             BodyBoneColliderMetadata metadata{};
-            if (!_bodyBoneColliders.tryGetBodyMetadataAtomic(bodyId, metadata) || !metadata.valid) {
+            if (!_bodyBoneColliders.tryGetBodyMetadataAtIndexAtomic(i, bodyId, metadata) || !metadata.valid) {
                 continue;
             }
 
@@ -330,8 +328,9 @@ namespace rock
             _lifecycle.bodyBoneColliderCreateRetryFrames = 120;
         }
 
-        _rightHand.updateCollisionTransform(hknp, getInteractionHandTransform(false), 0.011f);
-        _leftHand.updateCollisionTransform(hknp, getInteractionHandTransform(true), 0.011f);
+        captureHandColliderBones();
+        _rightHand.updateCollisionTransform(hknp, getInteractionHandTransform(false), 0.011f, _handColliderBoneSnapshot);
+        _leftHand.updateCollisionTransform(hknp, getInteractionHandTransform(true), 0.011f, _handColliderBoneSnapshot);
         _bodyBoneColliders.update(hknp, 0.011f);
         _contacts.bodyRuntime.reset();
         markGeneratedBodiesRebuilt(bhk, hknp);
@@ -496,8 +495,9 @@ namespace rock
         ROCK_LOG_INFO(Init, "hFRIK off-hand weapon gripping disabled; ROCK is the sole off-hand weapon authority");
 
         {
-            _rightHand.updateCollisionTransform(hknp, getInteractionHandTransform(false), 0.011f);
-            _leftHand.updateCollisionTransform(hknp, getInteractionHandTransform(true), 0.011f);
+            captureHandColliderBones();
+            _rightHand.updateCollisionTransform(hknp, getInteractionHandTransform(false), 0.011f, _handColliderBoneSnapshot);
+            _leftHand.updateCollisionTransform(hknp, getInteractionHandTransform(true), 0.011f, _handColliderBoneSnapshot);
             _bodyBoneColliders.update(hknp, 0.011f);
             ROCK_LOG_INFO(Init, "Initial bone-derived hand collider transforms updated");
         }
@@ -705,6 +705,8 @@ namespace rock
         _frame.hasPrevPositions = false;
         _diagnostics.heldMassLogCounter = 0;
         _handBoneCache.reset();
+        _handColliderBoneReader.resetCache();
+        _handColliderBoneSnapshot = {};
         _diagnostics.handCacheResolveLogCounter = 0;
         _diagnostics.paritySummaryCounter = 0;
         _diagnostics.parityEnabledLogged = false;

@@ -810,7 +810,7 @@ namespace rock
             return false;
         }
 
-        DirectSkeletonBoneSnapshot snapshot{};
+        auto& snapshot = _snapshot;
         if (!captureBoneSnapshot(snapshot)) {
             ROCK_LOG_WARN(Body, "Body bone colliders not created: root flattened skeleton snapshot unavailable");
             return false;
@@ -918,6 +918,7 @@ namespace rock
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
         _reader.resetCache();
+        _snapshot = {};
     }
 
     void BodyBoneColliderSet::reset()
@@ -944,6 +945,7 @@ namespace rock
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
         _reader.resetCache();
+        _snapshot = {};
     }
 
     void BodyBoneColliderSet::update(RE::hknpWorld* world, float deltaTime)
@@ -958,7 +960,7 @@ namespace rock
             return;
         }
 
-        DirectSkeletonBoneSnapshot snapshot{};
+        auto& snapshot = _snapshot;
         if (!captureBoneSnapshot(snapshot)) {
             return;
         }
@@ -1238,17 +1240,28 @@ namespace rock
                 continue;
             }
 
-            outMetadata.valid = true;
-            outMetadata.inPowerArmor = _powerArmorAtomic[i].load(std::memory_order_acquire) != 0;
-            outMetadata.bodyId = bodyId;
-            outMetadata.role = static_cast<BoneColliderRole>(_rolesAtomic[i].load(std::memory_order_acquire));
-            outMetadata.zone = static_cast<body_zone::BodyZoneKind>(_zonesAtomic[i].load(std::memory_order_acquire));
-            outMetadata.side = static_cast<body_zone::BodyZoneSide>(_sidesAtomic[i].load(std::memory_order_acquire));
-            outMetadata.descriptorIndex = _descriptorIndicesAtomic[i].load(std::memory_order_acquire);
-            outMetadata.lengthGameUnits = _lengthsGameAtomic[i].load(std::memory_order_acquire);
-            outMetadata.radiusGameUnits = _radiiGameAtomic[i].load(std::memory_order_acquire);
-            return true;
+            return tryGetBodyMetadataAtIndexAtomic(i, bodyId, outMetadata);
         }
         return false;
+    }
+
+    bool BodyBoneColliderSet::tryGetBodyMetadataAtIndexAtomic(std::uint32_t i,
+        std::uint32_t bodyId, BodyBoneColliderMetadata& outMetadata) const
+    {
+        outMetadata = {};
+        if (i >= _bodyIdsAtomic.size() || i >= _bodyCountAtomic.load(std::memory_order_acquire) ||
+            bodyId == kInvalidBodyBoneColliderBodyId || _bodyIdsAtomic[i].load(std::memory_order_acquire) != bodyId) {
+            return false;
+        }
+        outMetadata.valid = true;
+        outMetadata.inPowerArmor = _powerArmorAtomic[i].load(std::memory_order_acquire) != 0;
+        outMetadata.bodyId = bodyId;
+        outMetadata.role = static_cast<BoneColliderRole>(_rolesAtomic[i].load(std::memory_order_acquire));
+        outMetadata.zone = static_cast<body_zone::BodyZoneKind>(_zonesAtomic[i].load(std::memory_order_acquire));
+        outMetadata.side = static_cast<body_zone::BodyZoneSide>(_sidesAtomic[i].load(std::memory_order_acquire));
+        outMetadata.descriptorIndex = _descriptorIndicesAtomic[i].load(std::memory_order_acquire);
+        outMetadata.lengthGameUnits = _lengthsGameAtomic[i].load(std::memory_order_acquire);
+        outMetadata.radiusGameUnits = _radiiGameAtomic[i].load(std::memory_order_acquire);
+        return true;
     }
 }

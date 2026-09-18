@@ -23,6 +23,7 @@
 #include "REL/Relocation.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -499,17 +500,18 @@ namespace rock::havok_runtime
         }
 
         const std::int32_t count = (std::min)(bodyCount, static_cast<std::int32_t>(maxBodies));
-        if (!pointerRangeLooksReadable(bodyIds, sizeof(std::uint32_t) * static_cast<std::size_t>(count))) {
+        // Every current visitor only reads/collects IDs. Copy this operation's
+        // complete bounded list under one guarded range check before visiting;
+        // no native array pointer or validation result survives the scan.
+        std::array<std::uint32_t, kMaxReasonablePhysicsSystemBodies> copiedBodyIds;
+        if (!native_memory::guardedCopyFromMemory(bodyIds, copiedBodyIds.data(),
+                sizeof(std::uint32_t) * static_cast<std::size_t>(count))) {
             result.status = PhysicsSystemBodyScanStatus::UnreadableBodyIds;
             return result;
         }
 
         for (std::int32_t i = 0; i < count; ++i) {
-            std::uint32_t bodyId = body_frame::kInvalidBodyId;
-            if (!tryReadValue(bodyIds + i, bodyId)) {
-                result.status = PhysicsSystemBodyScanStatus::UnreadableBodyIds;
-                return result;
-            }
+            const std::uint32_t bodyId = copiedBodyIds[static_cast<std::size_t>(i)];
             if (bodyId == body_frame::kInvalidBodyId || bodyId > 0x000F'FFFF) {
                 ++result.skippedInvalidBodies;
                 continue;

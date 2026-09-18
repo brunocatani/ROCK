@@ -52,7 +52,8 @@ namespace rock
             bool isLeft,
             const RE::NiTransform& rollAuthorityWorld,
             BethesdaPhysicsBody& palmAnchorBody,
-            float deltaTime);
+            float deltaTime,
+            const DirectSkeletonBoneSnapshot& colliderBones);
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing, BethesdaPhysicsBody& palmAnchorBody);
 
         bool hasBodies() const { return _created; }
@@ -60,6 +61,7 @@ namespace rock
         std::uint32_t getBodyIdAtomic(std::size_t index) const;
         bool isColliderBodyIdAtomic(std::uint32_t bodyId) const;
         bool tryGetBodyMetadataAtomic(std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const;
+        bool tryGetBodyMetadataAtIndexAtomic(std::uint32_t index, std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const;
         bool tryGetBodyRoleAtomic(std::uint32_t bodyId, hand_collider_semantics::HandColliderRole& outRole) const;
         bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const;
         // Main-thread debug publication only. Returns the exact pending target
@@ -138,6 +140,8 @@ namespace rock
             bool isLeft,
             const RE::NiTransform& rollAuthorityWorld,
             BoneFrameLookup& outLookup);
+        bool makeBoneLookup(const DirectSkeletonBoneSnapshot& snapshot, bool isLeft,
+            const RE::NiTransform& rollAuthorityWorld, BoneFrameLookup& outLookup);
         bool makeRoleFrame(const BoneFrameLookup& lookup, bool isLeft, hand_collider_semantics::HandColliderRole role, RoleFrameResult& outFrame) const;
         RE::hknpShape* buildShapeForRole(const RoleFrameResult& frame, hand_collider_semantics::HandColliderRole role,
             RE::NiPoint3* outPalmHalfExtents = nullptr) const;

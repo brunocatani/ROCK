@@ -453,17 +453,7 @@ namespace rock
                     continue;
                 }
 
-                candidate.valid = true;
-                candidate.bodyId = bodyId;
-                candidate.partKind = static_cast<WeaponPartKind>(_published.partKinds[i].load(std::memory_order_acquire));
-                candidate.reloadRole = static_cast<WeaponReloadRole>(_published.reloadRoles[i].load(std::memory_order_acquire));
-                candidate.supportGripRole = static_cast<WeaponSupportGripRole>(_published.supportRoles[i].load(std::memory_order_acquire));
-                candidate.socketRole = static_cast<WeaponSocketRole>(_published.socketRoles[i].load(std::memory_order_acquire));
-                candidate.actionRole = static_cast<WeaponActionRole>(_published.actionRoles[i].load(std::memory_order_acquire));
-                candidate.fallbackGripPose = static_cast<WeaponGripPoseId>(_published.gripPoses[i].load(std::memory_order_acquire));
-                candidate.interactionRoot = reinterpret_cast<RE::NiAVObject*>(_published.interactionRoots[i].load(std::memory_order_acquire));
-                candidate.sourceRoot = reinterpret_cast<RE::NiAVObject*>(_published.sourceRoots[i].load(std::memory_order_acquire));
-                candidate.weaponGenerationKey = _published.generationKeys[i].load(std::memory_order_acquire);
+                candidate = readPublishedContact(i);
                 found = true;
                 break;
             }
@@ -477,6 +467,58 @@ namespace rock
             }
         }
         return false;
+    }
+
+    WeaponInteractionContact WeaponCollision::readPublishedContact(std::uint32_t i) const
+    {
+        // Only called inside a version-checked read with a validated index.
+        WeaponInteractionContact contact{};
+        contact.bodyId = _published.ids[i].load(std::memory_order_acquire);
+        contact.valid = contact.bodyId != INVALID_BODY_ID;
+        contact.partKind = static_cast<WeaponPartKind>(_published.partKinds[i].load(std::memory_order_acquire));
+        contact.reloadRole = static_cast<WeaponReloadRole>(_published.reloadRoles[i].load(std::memory_order_acquire));
+        contact.supportGripRole = static_cast<WeaponSupportGripRole>(_published.supportRoles[i].load(std::memory_order_acquire));
+        contact.socketRole = static_cast<WeaponSocketRole>(_published.socketRoles[i].load(std::memory_order_acquire));
+        contact.actionRole = static_cast<WeaponActionRole>(_published.actionRoles[i].load(std::memory_order_acquire));
+        contact.fallbackGripPose = static_cast<WeaponGripPoseId>(_published.gripPoses[i].load(std::memory_order_acquire));
+        contact.interactionRoot = reinterpret_cast<RE::NiAVObject*>(_published.interactionRoots[i].load(std::memory_order_acquire));
+        contact.sourceRoot = reinterpret_cast<RE::NiAVObject*>(_published.sourceRoots[i].load(std::memory_order_acquire));
+        contact.weaponGenerationKey = _published.generationKeys[i].load(std::memory_order_acquire);
+        return contact;
+    }
+
+    std::size_t WeaponCollision::copyWeaponContactStatesAtomic(std::span<WeaponContactState> outStates) const
+    {
+        for (int attempt = 0; attempt < 4; ++attempt) {
+            const auto startVersion = _published.version.load(std::memory_order_acquire);
+            if ((startVersion & 1u) != 0) {
+                continue;
+            }
+            const auto count = (std::min)(_published.count.load(std::memory_order_acquire),
+                static_cast<std::uint32_t>(MAX_WEAPON_BODIES));
+            if (count > outStates.size()) {
+                return 0;
+            }
+            for (std::uint32_t i = 0; i < count; ++i) {
+                auto& state = outStates[i];
+                state = {};
+                state.contact = readPublishedContact(i);
+                if (_published.sampledVelocityValid[i].load(std::memory_order_acquire) != 0) {
+                    const float vx = _published.sampledVelocityHavokX[i].load(std::memory_order_acquire);
+                    const float vy = _published.sampledVelocityHavokY[i].load(std::memory_order_acquire);
+                    const float vz = _published.sampledVelocityHavokZ[i].load(std::memory_order_acquire);
+                    if (std::isfinite(vx) && std::isfinite(vy) && std::isfinite(vz)) {
+                        state.hasSampledVelocity = true;
+                        state.sampledVelocityHavok = { vx, vy, vz, 0.0f };
+                    }
+                }
+            }
+            const auto endVersion = _published.version.load(std::memory_order_acquire);
+            if (startVersion == endVersion && (endVersion & 1u) == 0) {
+                return count;
+            }
+        }
+        return 0;
     }
 
     bool WeaponCollision::tryGetWeaponBodySampledVelocityAtomic(std::uint32_t bodyId, float* outVelocityHavok) const

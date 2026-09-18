@@ -142,7 +142,7 @@ namespace rock
         bool resolve()
         {
             // Rendered on purpose: this cache is the controller-hand isolation's input.
-            DirectSkeletonBoneSnapshot snapshot{};
+            auto& snapshot = _snapshot;
             if (!_reader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                     skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
                     SkeletonBoneCaptureSpace::Rendered,
@@ -186,6 +186,7 @@ namespace rock
         {
             clearResolvedState();
             _reader.resetCache();
+            _snapshot = {};
         }
 
         [[nodiscard]] bool isReady() const { return _ready && _skeleton && _boneTree; }
@@ -253,6 +254,7 @@ namespace rock
         }
 
         DirectSkeletonBoneReader _reader;
+        DirectSkeletonBoneSnapshot _snapshot;
         const void* _skeleton = nullptr;
         const void* _boneTree = nullptr;
         bool _inPowerArmor = false;

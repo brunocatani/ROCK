@@ -536,6 +536,16 @@ namespace rock
         _suppression.leftDropSuppressed.store(false, std::memory_order_release);
     }
 
+    void PhysicsInteraction::captureHandColliderBones()
+    {
+        performance_profiler::ScopedTimer captureTimer(performance_profiler::Scope::HandBoneCapture);
+        (void)_handColliderBoneReader.capture(
+            skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+            skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+            SkeletonBoneCaptureSpace::Controller,
+            _handColliderBoneSnapshot);
+    }
+
     void PhysicsInteraction::updateHandCollisions(const PhysicsFrameContext& frame)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::HandColliderUpdate);
@@ -571,11 +581,19 @@ namespace rock
         updateWeaponSupportCollisionSuppression(world, frame.deltaSeconds);
         updateEquippedWeaponPostDropCollisionSuppression(world, frame.deltaSeconds);
 
+        if (frame.right.disabled && frame.left.disabled) {
+            return;
+        }
+        captureHandColliderBones();
+        // An invalid capture still reaches each owner's drive-failure/rebuild
+        // handling; makeBoneLookup rejects it before any pose is queued.
+        // Neither collider update writes the skeleton or hand-chain transport.
+        // Both sides therefore consume the same freshly copied controller pose.
         if (!frame.right.disabled) {
-            _rightHand.updateCollisionTransform(world, frame.right.rawHandWorld, frame.deltaSeconds);
+            _rightHand.updateCollisionTransform(world, frame.right.rawHandWorld, frame.deltaSeconds, _handColliderBoneSnapshot);
         }
         if (!frame.left.disabled) {
-            _leftHand.updateCollisionTransform(world, frame.left.rawHandWorld, frame.deltaSeconds);
+            _leftHand.updateCollisionTransform(world, frame.left.rawHandWorld, frame.deltaSeconds, _handColliderBoneSnapshot);
         }
     }
 

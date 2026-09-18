@@ -58,6 +58,28 @@ int main()
     assert(memory::tryReadValue(reinterpret_cast<const std::uint32_t*>(pages), copied));
     assert(copied == value && queries[0] == 1 && queries[1] == 1 && rejected == 0);
 
+    // The physics-system scanner now copies its IDs before visiting them.
+    // Compare complete contents and actual OS-query counts with the old
+    // range-check-plus-per-element-read pattern, including invalid-ID values.
+    auto* bodyIds = reinterpret_cast<std::uint32_t*>(pages);
+    std::array<std::uint32_t, 256> individualIds{};
+    std::array<std::uint32_t, 256> batchIds{};
+    for (std::size_t i = 0; i < individualIds.size(); ++i) {
+        bodyIds[i] = i % 7 == 0 ? 0x7FFF'FFFFu : static_cast<std::uint32_t>(i * 3);
+    }
+    reset();
+    assert(memory::pointerRangeLooksReadable(bodyIds, sizeof(individualIds)));
+    for (std::size_t i = 0; i < individualIds.size(); ++i) {
+        assert(memory::tryReadValue(bodyIds + i, individualIds[i]));
+    }
+    assert(queries[0] == 257);
+    reset();
+    assert(memory::guardedCopyFromMemory(bodyIds, batchIds.data(), sizeof(batchIds)));
+    assert(batchIds == individualIds && queries[0] == 1 && rejected == 0);
+    // Restore the fixture used by the remaining cross-page tests.
+    std::memset(pages, 0x5A, pageSize);
+    std::memcpy(pages, &value, sizeof(value));
+
     DWORD previous = 0;
     assert(VirtualProtect(pages + pageSize, pageSize, PAGE_READONLY, &previous));
     reset();
@@ -72,6 +94,10 @@ int main()
     reset();
     assert(!memory::pointerRangeLooksReadable(pages + pageSize * 2, 1));
     assert(queries[0] == 1 && rejected == 1 && apiFailures == 0);
+    batchIds.fill(0xABCDu);
+    const auto untouchedIds = batchIds;
+    assert(!memory::guardedCopyFromMemory(pages + pageSize * 2 - 16, batchIds.data(), sizeof(batchIds)));
+    assert(batchIds == untouchedIds); // Reject the full scan before any IDs can be visited.
     assert(VirtualProtect(pages + pageSize * 2, pageSize, PAGE_READWRITE | PAGE_GUARD, &previous));
     assert(!memory::pointerRangeLooksReadable(pages + pageSize * 2, 1));
     MEMORY_BASIC_INFORMATION region{};

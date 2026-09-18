@@ -22,8 +22,8 @@
 #include <cfloat>
 #include <cstddef>
 #include <cmath>
+#include <memory_resource>
 #include <unordered_map>
-#include <unordered_set>
 
 namespace rock
 {
@@ -534,8 +534,12 @@ namespace rock
             std::size_t rankedCandidateCount = 0;
             int loggedRejectTelemetry = 0;
             const char* queryName = isFarSelection ? "far" : "near";
-            std::unordered_set<std::uint32_t> seenBodyIds;
-            std::unordered_map<std::uint32_t, RE::TESObjectREFR*> refByBodyId;
+            // One query owns the scratch and its non-owning reference pointers.
+            // Dense queries may grow through the standard upstream allocator;
+            // there is no hit cap or change to hit order/precision ranking.
+            std::array<std::byte, 4096> queryStorage;
+            std::pmr::monotonic_buffer_resource queryMemory(queryStorage.data(), queryStorage.size());
+            std::pmr::unordered_map<std::uint32_t, RE::TESObjectREFR*> refByBodyId{ &queryMemory };
 
             auto* hits = collector.hits._data;
             const int numHits = collector.hits._size;
@@ -551,17 +555,13 @@ namespace rock
                     continue;
                 }
 
-                if (!seenBodyIds.insert(hitBodyId.value).second) {
+                const auto [cachedRef, inserted] = refByBodyId.try_emplace(hitBodyId.value, nullptr);
+                if (inserted) {
+                    cachedRef->second = resolveBodyToRef(bhkWorld, hknpWorld, hitBodyId);
+                } else {
                     ++outDuplicateBodies;
                 }
-
-                RE::TESObjectREFR* ref = nullptr;
-                if (const auto cachedRef = refByBodyId.find(hitBodyId.value); cachedRef != refByBodyId.end()) {
-                    ref = cachedRef->second;
-                } else {
-                    ref = resolveBodyToRef(bhkWorld, hknpWorld, hitBodyId);
-                    refByBodyId.emplace(hitBodyId.value, ref);
-                }
+                auto* ref = cachedRef->second;
                 if (!ref) {
                     ++outRejectedNoRef;
                     if (logRejectTelemetry) {
