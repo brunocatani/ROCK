@@ -4,6 +4,8 @@
 #include "physics-interaction/hand/DynamicHandTwinTargets.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/hand/SkeletonBoneNameIndex.h"
+#include "physics-interaction/collision/ColliderTuning.h"
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
@@ -92,6 +94,7 @@ namespace rock
         };
 
         bool captureBoneSnapshot(DirectSkeletonBoneSnapshot& outSnapshot);
+        std::uint64_t refreshTuning(bool powerArmor);
         RE::hknpShape* buildShapeForFrame(const DescriptorFrameResult& frame) const;
         bool createBodyForDescriptor(
             RE::hknpWorld* world,
@@ -107,6 +110,11 @@ namespace rock
         void clearAtomicBodyIds();
 
         DirectSkeletonBoneReader _reader;
+        SkeletonBoneNameIndex _boneNameIndex;
+        collider_tuning::BodyProfile _tuning;
+        std::uint64_t _tuningConfigRevision = 0;
+        bool _tuningPowerArmor = false;
+        bool _tuningReady = false;
         DirectSkeletonBoneSnapshot _snapshot;
         std::array<BodyInstance, kBodyBoneColliderBodyCount> _bodies{};
         RE::hknpWorld* _cachedWorld = nullptr;

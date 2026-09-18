@@ -52,7 +52,7 @@ namespace rock
         using namespace dynamic_weapon_collision_policy;
         if (!_enabledAtomic.load(std::memory_order_acquire) || world != _createdWorld ||
             !_created || !isFinitePoint(pointGame)) return;
-        const auto other = havok_runtime::snapshotBody(world, RE::hknpBodyId{ otherBodyId });
+        const auto other = havok_runtime::snapshotBodyIdentity(world, RE::hknpBodyId{ otherBodyId });
         if (!other.valid || !other.body || other.motionIndex != 0 || !other.body->shape ||
             !collision_layer_policy::isWorldSurfaceLayer(
                 other.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK)) return;
@@ -84,7 +84,7 @@ namespace rock
     {
         if (!contact.valid || contact.world != reinterpret_cast<std::uintptr_t>(_frameWorld) ||
             contact.generation != _frameGenerationKey) return false;
-        const auto other = havok_runtime::snapshotBody(_frameWorld, RE::hknpBodyId{ contact.surfaceBodyId });
+        const auto other = havok_runtime::snapshotBodyIdentity(_frameWorld, RE::hknpBodyId{ contact.surfaceBodyId });
         return other.valid && other.body && other.motionIndex == 0 &&
             reinterpret_cast<std::uintptr_t>(other.body->shape) == contact.shape &&
             reinterpret_cast<std::uintptr_t>(other.collisionObject) == contact.collisionObject &&

@@ -2171,7 +2171,7 @@ namespace rock
                 continue;
             }
             HandColliderBodyMetadata metadata{};
-            if (!tryGetHandColliderMetadata(bodyId, metadata) || !metadata.valid) {
+            if (!tryGetHandColliderMetadataAtIndex(i, bodyId, metadata) || !metadata.valid) {
                 continue;
             }
             if (metadata.role == role) {

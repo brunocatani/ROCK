@@ -191,6 +191,7 @@ namespace rock
             return false;
         }
 
+        ++_topologyRevision;
         _cachedBones.clear();
         _cachedMissingRequiredBones.clear();
         _cachedSkeleton = skeleton;
@@ -320,6 +321,8 @@ namespace rock
         };
 
         outSnapshot.valid = true;
+        outSnapshot.topologyOwner = this;
+        outSnapshot.topologyRevision = _topologyRevision;
         outSnapshot.inPowerArmor = _cachedInPowerArmor;
         outSnapshot.mode = _cachedMode;
         outSnapshot.source = _cachedSource;

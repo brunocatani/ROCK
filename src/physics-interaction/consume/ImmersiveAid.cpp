@@ -68,7 +68,7 @@ namespace rock::immersive_aid
             BodyBoneColliderMetadata metadata{};
             const auto bodyId = bodyColliders.getBodyIdAtomic(index);
             RE::NiTransform bodyWorld{};
-            if (!bodyColliders.tryGetBodyMetadataAtomic(bodyId, metadata) || !metadata.valid ||
+            if (!bodyColliders.tryGetBodyMetadataAtIndexAtomic(index, bodyId, metadata) || !metadata.valid ||
                 !eligibleBodyZone(metadata.zone, isLeft) ||
                 !std::isfinite(metadata.lengthGameUnits) || metadata.lengthGameUnits <= 0.0f ||
                 !std::isfinite(metadata.radiusGameUnits) || metadata.radiusGameUnits <= 0.0f ||

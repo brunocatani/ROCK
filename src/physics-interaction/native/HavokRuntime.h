@@ -37,6 +37,18 @@ namespace rock::havok_runtime
     inline constexpr std::uint32_t kMaxContactSignalPoints = 4;
     inline constexpr std::uint32_t kMaxMotionPropertiesSnapshotRecords = 16;
 
+    // Non-owning view for the current native call only. Pair identity and
+    // surface filtering need no motion or scene-owner traversal.
+    struct BodyIdentitySnapshot
+    {
+        bool valid = false;
+        RE::hknpBodyId bodyId{ body_frame::kInvalidBodyId };
+        std::uint32_t motionIndex{ body_frame::kFreeMotionIndex };
+        std::uint32_t collisionFilterInfo = 0;
+        RE::hknpBody* body = nullptr;
+        RE::NiCollisionObject* collisionObject = nullptr;
+    };
+
     struct BodySnapshot
     {
         bool valid = false;
@@ -143,6 +155,7 @@ namespace rock::havok_runtime
     RE::hknpMotion* getMotion(RE::hknpWorld* world, std::uint32_t motionIndex);
     RE::hknpMotion* getBodyMotion(RE::hknpWorld* world, RE::hknpBodyId bodyId);
     BodySnapshot snapshotBody(RE::hknpWorld* world, RE::hknpBodyId bodyId);
+    BodyIdentitySnapshot snapshotBodyIdentity(RE::hknpWorld* world, RE::hknpBodyId bodyId);
 
     RE::hknpWorld* getHknpWorldFromBhk(RE::bhkWorld* bhkWorld);
     RE::bhkPhysicsSystem* getPhysicsSystemFromCollisionObject(RE::NiCollisionObject* collisionObject);

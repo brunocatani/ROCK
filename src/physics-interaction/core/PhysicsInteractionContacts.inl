@@ -232,22 +232,24 @@
         if (appliedCount > 0) {
             _contacts.dynamicPushCooldownUntil[cooldownKey] =
                 _contacts.dynamicPushElapsedSeconds + (std::max)(0.0f, g_rockConfig.rockDynamicPushCooldownSeconds);
-            auto* baseObj = targetRef->GetObjectReference();
-            auto objName = baseObj ? RE::TESFullName::GetFullName(*baseObj, false) : std::string_view{};
-            const std::string nameStr = objName.empty() ? std::string("(unnamed)") : std::string(objName);
-            ROCK_LOG_SAMPLE_DEBUG(Hand,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "{} dynamic push applied: '{}' formID={:08X} targetBody={} layer={} acceptedBodies={} uniqueMotions={} impulse=({:.3f},{:.3f},{:.3f})",
-                sourceName,
-                nameStr,
-                targetRef->GetFormID(),
-                targetBodyId,
-                targetRecord->collisionLayer,
-                bodySet.acceptedCount(),
-                appliedCount,
-                push.impulse.x,
-                push.impulse.y,
-                push.impulse.z);
+            if (logger::isDebugEnabled()) {
+                auto* baseObj = targetRef->GetObjectReference();
+                auto objName = baseObj ? RE::TESFullName::GetFullName(*baseObj, false) : std::string_view{};
+                const std::string nameStr = objName.empty() ? std::string("(unnamed)") : std::string(objName);
+                ROCK_LOG_SAMPLE_DEBUG(Hand,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "{} dynamic push applied: '{}' formID={:08X} targetBody={} layer={} acceptedBodies={} uniqueMotions={} impulse=({:.3f},{:.3f},{:.3f})",
+                    sourceName,
+                    nameStr,
+                    targetRef->GetFormID(),
+                    targetBodyId,
+                    targetRecord->collisionLayer,
+                    bodySet.acceptedCount(),
+                    appliedCount,
+                    push.impulse.x,
+                    push.impulse.y,
+                    push.impulse.z);
+            }
         }
     }
 
@@ -264,12 +266,14 @@
 
         auto* ref = resolveBodyToRef(bhk, hknp, bodyId);
         if (ref) {
-            auto* baseObj = ref->GetObjectReference();
-            const char* typeName = baseObj ? baseObj->GetFormTypeString() : "???";
-            auto objName = baseObj ? RE::TESFullName::GetFullName(*baseObj, false) : std::string_view{};
-            const std::string nameStr = objName.empty() ? std::string("(unnamed)") : std::string(objName);
+            if (logger::isDebugEnabled()) {
+                auto* baseObj = ref->GetObjectReference();
+                const char* typeName = baseObj ? baseObj->GetFormTypeString() : "???";
+                auto objName = baseObj ? RE::TESFullName::GetFullName(*baseObj, false) : std::string_view{};
+                const std::string nameStr = objName.empty() ? std::string("(unnamed)") : std::string(objName);
 
-            ROCK_LOG_DEBUG(Hand, "{} hand touched [{}] '{}' formID={:08X} body={} layer={}", handName, typeName, nameStr, ref->GetFormID(), bodyId.value, layer);
+                ROCK_LOG_DEBUG(Hand, "{} hand touched [{}] '{}' formID={:08X} body={} layer={}", handName, typeName, nameStr, ref->GetFormID(), bodyId.value, layer);
+            }
 
             bool isLeft = (std::string_view(handName) == "Left");
             auto& hand = isLeft ? _leftHand : _rightHand;

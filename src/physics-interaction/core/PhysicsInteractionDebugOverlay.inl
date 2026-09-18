@@ -4157,7 +4157,7 @@
 
                     BodyBoneColliderMetadata metadata{};
                     const auto role =
-                        _bodyBoneColliders.tryGetBodyMetadataAtomic(bodyId, metadata) ? bodyOverlayRoleFor(metadata.role) : debug::BodyOverlayRole::BodyTorsoSegment;
+                        _bodyBoneColliders.tryGetBodyMetadataAtIndexAtomic(i, bodyId, metadata) ? bodyOverlayRoleFor(metadata.role) : debug::BodyOverlayRole::BodyTorsoSegment;
                     RE::NiTransform currentTarget{};
                     const bool hasCurrentTarget =
                         drawColliderPhaseDiagnostics &&

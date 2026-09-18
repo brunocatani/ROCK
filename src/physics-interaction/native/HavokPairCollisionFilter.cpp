@@ -232,10 +232,10 @@ namespace rock
             if (normalized.bodyB < normalized.bodyA) {
                 std::swap(normalized.bodyA, normalized.bodyB);
             }
-            const auto snapshotA = havok_runtime::snapshotBody(
+            const auto snapshotA = havok_runtime::snapshotBodyIdentity(
                 world,
                 RE::hknpBodyId{ normalized.bodyA });
-            const auto snapshotB = havok_runtime::snapshotBody(
+            const auto snapshotB = havok_runtime::snapshotBodyIdentity(
                 world,
                 RE::hknpBodyId{ normalized.bodyB });
             if (!snapshotA.valid || !snapshotB.valid ||
