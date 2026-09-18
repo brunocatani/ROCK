@@ -66,6 +66,10 @@ int main()
     copied.topologyOwner = &ownerB;
     std::swap(copied.bones[1], copied.bones[4]);
     verifyLookup(index, copied);
+    // A narrowed capture can retain reader/revision and count but change output membership.
+    copied.payload = SkeletonBoneCapturePayload::HandRootsWithSceneNodes;
+    std::swap(copied.bones[0], copied.bones[4]);
+    verifyLookup(index, copied);
     copied.valid = false;
     assert(!index.bind(copied).find("Palm"));
     copied.valid = true;

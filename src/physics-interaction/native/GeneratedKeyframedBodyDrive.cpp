@@ -162,21 +162,17 @@ namespace rock
 
         void captureTargetAndBodyTelemetry(
             RE::hknpWorld* world,
-            BethesdaPhysicsBody& body,
+            const RE::hknpBody& liveBody,
             const RE::NiTransform& target,
             const RE::hkTransformf& targetHavok,
             GeneratedKeyframedBodyDriveResult& result,
             RE::NiTransform* outLiveTransform = nullptr)
         {
             fillTargetTelemetry(target, targetHavok, result);
-            body_frame::BodyFrameSource frameSource = body_frame::BodyFrameSource::Fallback;
-            std::uint32_t motionIndex = body_frame::kFreeMotionIndex;
-            RE::NiTransform liveTransform{};
-            if (tryResolveLiveBodyWorldTransform(world, body.getBodyId(), liveTransform, &frameSource, &motionIndex)) {
-                if (outLiveTransform) {
-                    *outLiveTransform = liveTransform;
-                }
-                fillLiveBodyTelemetry(liveTransform, frameSource, motionIndex, target, result);
+            const auto live = havok_runtime::resolveLiveBodyWorldTransform(world, liveBody);
+            if (live.valid) {
+                if (outLiveTransform) *outLiveTransform = live.transform;
+                fillLiveBodyTelemetry(live.transform, live.source, live.motionIndex, target, result);
             }
         }
 
@@ -579,7 +575,7 @@ namespace rock
         RE::NiTransform target = requestedTarget;
         RE::hkTransformf targetHavok = makeHavokTransform(target);
         RE::NiTransform liveTransform{};
-        captureTargetAndBodyTelemetry(world, body, target, targetHavok, result, &liveTransform);
+        captureTargetAndBodyTelemetry(world, *liveBody, target, targetHavok, result, &liveTransform);
         result.uncappedRequiredLinearVelocityHavok = result.requiredLinearVelocityHavok;
         result.uncappedRequiredAngularVelocityRadians = result.requiredAngularVelocityRadians;
 

@@ -41,9 +41,9 @@ namespace rock
                     .sourceLocalCenter = source.sourceLocalCenterGame,
                     .sourceLocalMin = source.sourceLocalMinGame,
                     .sourceLocalMax = source.sourceLocalMaxGame,
-                    .sourceLocalTriangles = source.sourceLocalTrianglesGame,
-                    .sourceLocalPointCount = source.sourceLocalPointsGame.size(),
-                    .sourceLocalTriangleCount = source.sourceLocalTrianglesGame.size(),
+                    .mesh = source.geometry->mesh,
+                    .sourceLocalPointCount = source.geometry->sourceLocalPointsGame.size(),
+                    .sourceLocalTriangleCount = source.geometry->mesh->sourceLocalTrianglesGame.size(),
                     .sourceNodeScale = source.sourceNodeScale,
                 });
             }
@@ -155,17 +155,17 @@ namespace rock
                     reinterpret_cast<std::uintptr_t>(current.driveRoot);
             row.triangleCountStable =
                 baseline->sourceLocalTriangleCount ==
-                    current.sourceLocalTrianglesGame.size();
+                    current.geometry->mesh->sourceLocalTrianglesGame.size();
             row.dedupPointCountStable =
                 baseline->sourceLocalPointCount ==
-                current.sourceLocalPointsGame.size();
+                current.geometry->sourceLocalPointsGame.size();
             if (row.triangleCountStable &&
-                baseline->sourceLocalTriangles.size() == current.sourceLocalTrianglesGame.size()) {
+                baseline->mesh->sourceLocalTrianglesGame.size() == current.geometry->mesh->sourceLocalTrianglesGame.size()) {
                 for (std::size_t triangleIndex = 0;
-                     triangleIndex < current.sourceLocalTrianglesGame.size();
+                     triangleIndex < current.geometry->mesh->sourceLocalTrianglesGame.size();
                      ++triangleIndex) {
-                    const auto& authoritativeTriangle = baseline->sourceLocalTriangles[triangleIndex];
-                    const auto& currentTriangle = current.sourceLocalTrianglesGame[triangleIndex];
+                    const auto& authoritativeTriangle = baseline->mesh->sourceLocalTrianglesGame[triangleIndex];
+                    const auto& currentTriangle = current.geometry->mesh->sourceLocalTrianglesGame[triangleIndex];
                     row.maximumSourceTriangleVertexDeltaGame = (std::max)({
                         row.maximumSourceTriangleVertexDeltaGame,
                         pointDistance(authoritativeTriangle.v0, currentTriangle.v0),
@@ -298,9 +298,9 @@ namespace rock
                 row.sourcePointerStable ? "yes" : "no",
                 row.rootPointerStable ? "yes" : "no",
                 row.baseline->sourceLocalPointCount,
-                row.current->sourceLocalPointsGame.size(),
+                row.current->geometry->sourceLocalPointsGame.size(),
                 row.baseline->sourceLocalTriangleCount,
-                row.current->sourceLocalTrianglesGame.size(),
+                row.current->geometry->mesh->sourceLocalTrianglesGame.size(),
                 row.sourceGeometryStable ? "yes" : "no",
                 row.sourceScaleStable ? "yes" : "no",
                 row.weaponCenterDeltaGame,

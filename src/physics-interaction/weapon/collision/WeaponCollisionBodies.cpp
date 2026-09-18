@@ -351,12 +351,7 @@ namespace rock
         instance.generatedLocalMaxGame = {};
         instance.generatedSourceLocalMinGame = {};
         instance.generatedSourceLocalMaxGame = {};
-        instance.generatedLocalPointsGame.clear();
-        instance.generatedLocalTrianglesGame.clear();
-        instance.generatedSourceLocalPointsGame.clear();
-        instance.generatedSourceLocalTrianglesGame.clear();
-        instance.generatedTriangleIndex.clear();
-        instance.generatedSourceTriangleIndex.clear();
+        instance.geometry.reset();
         instance.generatedPointCount = 0;
         instance.generatedSourceGroupId = 0;
         instance.semantic = {};

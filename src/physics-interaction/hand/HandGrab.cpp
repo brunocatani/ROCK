@@ -698,10 +698,10 @@ namespace rock
             const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet,
             bool incompleteNativeScan)
         {
-            const auto uniqueMotionRecords = preparedBodySet.uniqueAcceptedMotionRecords();
+            const auto uniqueMotionCount = preparedBodySet.forEachUniqueAcceptedMotion([](const auto&) {});
             return held_object_drive_policy::evaluateHeldBodySetDrive(held_object_drive_policy::HeldBodySetDriveInput{
                 .acceptedBodyCount = static_cast<std::uint32_t>(preparedBodySet.acceptedCount()),
-                .uniqueMotionCount = static_cast<std::uint32_t>(uniqueMotionRecords.size()),
+                .uniqueMotionCount = static_cast<std::uint32_t>(uniqueMotionCount),
                 .rejectedFixedOrNonDynamicCount =
                     bodySetRejectCount(preparedBodySet, physics_body_classifier::BodyRejectReason::StaticMotion) +
                     bodySetRejectCount(preparedBodySet, physics_body_classifier::BodyRejectReason::NotDynamicAfterActivePrep),
@@ -5370,9 +5370,10 @@ namespace rock
     }
 
     bool Hand::getHeldBodyContactMesh(RE::hknpWorld* world,
-        std::span<const GrabLocalTriangle>& triangles, RE::NiTransform& meshWorld) const
+        std::span<const GrabLocalTriangle>& triangles, RE::NiTransform& meshWorld, const HeldContactMeshCache*& cache) const
     {
         triangles = {};
+        cache = nullptr;
         RE::NiTransform bodyWorld{};
         if (!world || !isHolding() || !_savedObjectState.isValid() || _grabFrame.localMeshTriangles.empty() ||
             !tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, bodyWorld)) {
@@ -5383,6 +5384,8 @@ namespace rock
             return false;
         }
         triangles = _grabFrame.localMeshTriangles;
+        _grabFrame.contactMeshCache.prepare(triangles);
+        cache = &_grabFrame.contactMeshCache;
         return true;
     }
 
@@ -8539,6 +8542,7 @@ namespace rock
                     }
                 }
                 _grabFrame.localMeshTriangles.clear();
+                _grabFrame.contactMeshCache.clear();
                 _grabFrame.fingerPoseLocalMeshTriangles.clear();
                 _grabFrame.gripEvidence.gripEvidenceLocal = selectedGripPointLocal;
                 _grabFrame.gripEvidence.gripNormalLocal = grabSurfaceHit.valid ? transform_math::worldVectorToLocal(objectWorldTransform, grabSurfaceHit.normal) : RE::NiPoint3{};
@@ -8597,6 +8601,7 @@ namespace rock
                 _grabFrame.hasMeshPoseData = false;
                 if (!grabLocalMeshTriangles.empty()) {
                     _grabFrame.localMeshTriangles = grabLocalMeshTriangles;
+                    _grabFrame.contactMeshCache.clear();
                 }
                 if (!grabFingerPoseLocalMeshTriangles.empty()) {
                     _grabFrame.fingerPoseLocalMeshTriangles = grabFingerPoseLocalMeshTriangles;

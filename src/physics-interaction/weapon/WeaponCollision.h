@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/weapon/GeneratedWeaponGeometry.h"
+
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -369,12 +371,7 @@ namespace rock
 
         struct GeneratedHullSource
         {
-            std::vector<RE::NiPoint3> localPointsGame;
-            std::vector<TriangleData> localTrianglesGame;
-            std::vector<RE::NiPoint3> sourceLocalPointsGame;
-            std::vector<TriangleData> sourceLocalTrianglesGame;
-            // Children use the source node's local frame, like sourceLocalPointsGame.
-            std::vector<std::vector<RE::NiPoint3>> childLocalPointCloudsGame;
+            std::shared_ptr<const GeneratedWeaponHullGeometry> geometry;
             RE::NiPoint3 localCenterGame{};
             RE::NiPoint3 sourceLocalCenterGame{};
             RE::NiPoint3 localMinGame{};
@@ -422,12 +419,7 @@ namespace rock
             RE::NiPoint3 generatedLocalMaxGame{};
             RE::NiPoint3 generatedSourceLocalMinGame{};
             RE::NiPoint3 generatedSourceLocalMaxGame{};
-            std::vector<RE::NiPoint3> generatedLocalPointsGame{};
-            std::vector<TriangleData> generatedLocalTrianglesGame{};
-            std::vector<RE::NiPoint3> generatedSourceLocalPointsGame{};
-            std::vector<TriangleData> generatedSourceLocalTrianglesGame{};
-            WeaponTriangleIndex generatedTriangleIndex;
-            WeaponTriangleIndex generatedSourceTriangleIndex;
+            std::shared_ptr<const GeneratedWeaponHullGeometry> geometry;
             std::uint32_t generatedPointCount{ 0 };
             std::uintptr_t generatedSourceGroupId{ 0 };
             WeaponPartClassification semantic{};
@@ -465,7 +457,7 @@ namespace rock
             std::uint64_t ownershipKey{ 0 };
             std::uint64_t visualKey{ 0 };
             std::uintptr_t weaponRootAddress{ 0 };
-            std::vector<GeneratedHullSource> sources;
+            std::shared_ptr<const std::vector<GeneratedHullSource>> sources;
             weapon_generated_source_completeness_policy::GeneratedSourceCompleteness summary{};
         };
 
@@ -479,7 +471,7 @@ namespace rock
             RE::NiPoint3 sourceLocalCenter{};
             RE::NiPoint3 sourceLocalMin{};
             RE::NiPoint3 sourceLocalMax{};
-            std::vector<TriangleData> sourceLocalTriangles;
+            std::shared_ptr<const GeneratedWeaponMeshGeometry> mesh;
             std::size_t sourceLocalPointCount{ 0 };
             std::size_t sourceLocalTriangleCount{ 0 };
             float sourceNodeScale{ 1.0f };
@@ -512,7 +504,7 @@ namespace rock
             std::uint32_t visibleTriShapeCount{ 0 };
             std::size_t nextSourceIndex{ 0 };
             std::size_t createdCount{ 0 };
-            std::vector<GeneratedHullSource> sources;
+            std::shared_ptr<const std::vector<GeneratedHullSource>> sources;
             weapon_generated_source_completeness_policy::GeneratedSourceCompleteness summary{};
         };
 
@@ -621,7 +613,7 @@ namespace rock
             std::uint64_t ownershipKey,
             std::uint64_t visualKey,
             const RE::NiAVObject* weaponRoot,
-            std::vector<GeneratedHullSource> sources,
+            std::shared_ptr<const std::vector<GeneratedHullSource>> sources,
             const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& summary);
         void clearPendingGeneratedWeaponBuild(RE::hknpWorld* world, bool destroyTargetBank);
         bool beginPendingGeneratedWeaponBuild(std::uint64_t equippedKey,
@@ -633,7 +625,7 @@ namespace rock
             const WeaponVisualKeyStats& visualKeyStats,
             bool replacingExisting,
             bool driveRequestedRebuild,
-            std::vector<GeneratedHullSource> sources,
+            std::shared_ptr<const std::vector<GeneratedHullSource>> sources,
             const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& summary);
         bool advancePendingGeneratedWeaponBuild(RE::hknpWorld* world);
         bool pendingGeneratedWeaponBuildMatches(

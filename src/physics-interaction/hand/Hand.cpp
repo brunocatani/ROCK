@@ -2423,34 +2423,36 @@ namespace rock
                 refreshSelectionHighlight(_currentSelection);
             }
         } else if (best.isValid()) {
-            auto* baseObj = best.refr->GetObjectReference();
-            const char* typeName = baseObj ? baseObj->GetFormTypeString() : "???";
+            if (logger::isDebugEnabled()) {
+                auto* baseObj = best.refr->GetObjectReference();
+                const char* typeName = baseObj ? baseObj->GetFormTypeString() : "???";
 
-            auto objName = baseObj ? RE::TESFullName::GetFullName(*baseObj, false) : std::string_view{};
-            const std::string nameStr = objName.empty() ? std::string("(unnamed)") : std::string(objName);
+                auto objName = baseObj ? RE::TESFullName::GetFullName(*baseObj, false) : std::string_view{};
+                const std::string nameStr = objName.empty() ? std::string("(unnamed)") : std::string(objName);
 
-            if (_currentSelection.isValid()) {
-                ROCK_LOG_DEBUG(Hand,
-                    "{} hand switched -> {} [{}] '{}' formID={:08X} dist={:.1f} signedAlong={:.1f} lateral={:.1f}",
-                    handName(),
-                    best.isFarSelection ? "far" : "near",
-                    typeName,
-                    nameStr,
-                    best.refr->GetFormID(),
-                    best.distance,
-                    best.signedAlongDistance,
-                    best.lateralDistance);
-            } else {
-                ROCK_LOG_DEBUG(Hand,
-                    "{} hand selected {} [{}] '{}' formID={:08X} dist={:.1f} signedAlong={:.1f} lateral={:.1f}",
-                    handName(),
-                    best.isFarSelection ? "far" : "near",
-                    typeName,
-                    nameStr,
-                    best.refr->GetFormID(),
-                    best.distance,
-                    best.signedAlongDistance,
-                    best.lateralDistance);
+                if (_currentSelection.isValid()) {
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} hand switched -> {} [{}] '{}' formID={:08X} dist={:.1f} signedAlong={:.1f} lateral={:.1f}",
+                        handName(),
+                        best.isFarSelection ? "far" : "near",
+                        typeName,
+                        nameStr,
+                        best.refr->GetFormID(),
+                        best.distance,
+                        best.signedAlongDistance,
+                        best.lateralDistance);
+                } else {
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} hand selected {} [{}] '{}' formID={:08X} dist={:.1f} signedAlong={:.1f} lateral={:.1f}",
+                        handName(),
+                        best.isFarSelection ? "far" : "near",
+                        typeName,
+                        nameStr,
+                        best.refr->GetFormID(),
+                        best.distance,
+                        best.signedAlongDistance,
+                        best.lateralDistance);
+                }
             }
 
             stopSelectionHighlight();

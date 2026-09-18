@@ -31,6 +31,12 @@ namespace rock
         Controller,
     };
 
+    enum class SkeletonBoneCapturePayload : std::uint8_t
+    {
+        FlattenedTransforms,
+        HandRootsWithSceneNodes,
+    };
+
     struct DirectSkeletonBoneEntry
     {
         std::string name;
@@ -54,6 +60,7 @@ namespace rock
         skeleton_bone_debug_math::DebugSkeletonBoneMode mode = skeleton_bone_debug_math::DebugSkeletonBoneMode::Off;
         skeleton_bone_debug_math::SkeletonBoneSnapshotSource source = skeleton_bone_debug_math::SkeletonBoneSnapshotSource::None;
         SkeletonBoneCaptureSpace space = SkeletonBoneCaptureSpace::Rendered;
+        SkeletonBoneCapturePayload payload = SkeletonBoneCapturePayload::FlattenedTransforms;
         const void* skeleton = nullptr;
         const void* boneTree = nullptr;
         int totalBoneCount = 0;
@@ -62,6 +69,8 @@ namespace rock
         std::vector<std::string> missingRequiredBones;
     };
 
+    class SkeletonBoneNameIndex;
+
     class DirectSkeletonBoneReader
     {
     public:
@@ -69,7 +78,8 @@ namespace rock
             skeleton_bone_debug_math::DebugSkeletonBoneMode mode,
             skeleton_bone_debug_math::DebugSkeletonBoneSource source,
             SkeletonBoneCaptureSpace space,
-            DirectSkeletonBoneSnapshot& outSnapshot);
+            DirectSkeletonBoneSnapshot& outSnapshot,
+            SkeletonBoneCapturePayload payload = SkeletonBoneCapturePayload::FlattenedTransforms);
         /*
          * Re-solve one cached arm (upper arm and twists, forearm bones, hand,
          * fingers) so the hand takes handDelta exactly and the elbow follows
@@ -107,7 +117,7 @@ namespace rock
             skeleton_bone_debug_math::DebugSkeletonBoneMode mode,
             bool inPowerArmor);
 
-        bool captureFromCachedTree(DirectSkeletonBoneSnapshot& outSnapshot, SkeletonBoneCaptureSpace space);
+        bool captureFromCachedTree(DirectSkeletonBoneSnapshot& outSnapshot, SkeletonBoneCaptureSpace space, SkeletonBoneCapturePayload payload);
 
         const void* _cachedSkeleton = nullptr;
         void* _cachedBoneTree = nullptr;
@@ -149,7 +159,7 @@ namespace rock
             if (!_reader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                     skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
                     SkeletonBoneCaptureSpace::Rendered,
-                    snapshot)) {
+                    snapshot, SkeletonBoneCapturePayload::HandRootsWithSceneNodes)) {
                 clearResolvedState();
                 return false;
             }
@@ -431,7 +441,8 @@ namespace rock::root_flattened_finger_skeleton_runtime
         const DirectSkeletonBoneSnapshot& boneSnapshot,
         bool isLeft,
         Snapshot& outSnapshot,
-        std::string* outMissingBoneName = nullptr);
+        std::string* outMissingBoneName = nullptr,
+        SkeletonBoneNameIndex* nameIndex = nullptr);
     bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot, std::string* outMissingBoneName = nullptr);
 }
 

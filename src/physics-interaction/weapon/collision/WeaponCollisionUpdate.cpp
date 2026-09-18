@@ -1,5 +1,7 @@
 #include "physics-interaction/weapon/WeaponCollisionInternal.h"
 
+#include <bit>
+
 // Frame update and Havok drive: init/shutdown, world-loss handling, the per-frame update, source-transform body updates, and drive flushing.
 
 namespace rock
@@ -423,7 +425,7 @@ namespace rock
                         }
                 }
 
-                std::vector<GeneratedHullSource> generatedSources;
+                std::shared_ptr<const std::vector<GeneratedHullSource>> generatedSources;
                 weapon_generated_source_completeness_policy::GeneratedSourceCompleteness generatedSummary{};
                 std::size_t generatedCount = 0;
                 bool usedCachedSources = false;
@@ -435,7 +437,7 @@ namespace rock
                         weaponNode)) {
                     generatedSources = _sources.cache.sources;
                     generatedSummary = _sources.cache.summary;
-                    generatedCount = generatedSources.size();
+                    generatedCount = generatedSources->size();
                     usedCachedSources = true;
                     ROCK_LOG_DEBUG(Weapon,
                         "Generated weapon mesh source cache hit key={:016X} visualKey={:016X} sources={}",
@@ -443,6 +445,7 @@ namespace rock
                         observedVisualKey,
                         generatedCount);
                 } else {
+                    std::vector<GeneratedHullSource> preparedSources;
                     if (_sources.preserveGaps) {
                         if (!_sources.preparation) {
                             try {
@@ -460,24 +463,25 @@ namespace rock
                             }
                             return;
                         }
-                        generatedSources = std::move(_sources.preparation->sources);
+                        preparedSources = std::move(_sources.preparation->sources);
                         _sources.preparation.reset();
-                        generatedCount = generatedSources.size();
+                        generatedCount = preparedSources.size();
                     } else {
                         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponColliderBuild);
-                        generatedCount = findGeneratedWeaponShapeSources(weaponNode, observedKey, generatedSources);
+                        generatedCount = findGeneratedWeaponShapeSources(weaponNode, observedKey, preparedSources);
                     }
                     recordGeneratedRecaptureDiagnostic(
                         observedKey,
                         observedIdentityKey,
                         observedOwnershipKey,
                         observedFormID,
-                        generatedSources);
-                    generatedSummary = summarizeGeneratedSources(generatedSources);
+                        preparedSources);
+                    generatedSummary = summarizeGeneratedSources(preparedSources);
+                    generatedSources = std::make_shared<const std::vector<GeneratedHullSource>>(std::move(preparedSources));
                 }
 
-                const bool hasBuildableSource = std::any_of(generatedSources.begin(), generatedSources.end(), [](const GeneratedHullSource& source) {
-                    return pointCloudCanBuildHull(source.localPointsGame);
+                const bool hasBuildableSource = std::any_of(generatedSources->begin(), generatedSources->end(), [](const GeneratedHullSource& source) {
+                    return pointCloudCanBuildHull(source.geometry->localPointsGame);
                 });
 
                 if (!hasBuildableSource || generatedCount == 0 || generatedSummary.signature == 0) {
@@ -659,6 +663,21 @@ namespace rock
         (void)drivenSourceNodes;
         (void)drivenSourceNodeCount;
 
+        struct SourceTransform { const RE::NiAVObject* node = nullptr; RE::NiTransform world{}; bool valid = false; };
+        std::array<SourceTransform, std::bit_ceil(MAX_WEAPON_BODIES * 2)> sources{};
+        const auto resolveSource = [&](const RE::NiAVObject* node, RE::NiTransform& out) {
+            if (!node) return false;
+            const auto address = reinterpret_cast<std::uintptr_t>(node);
+            auto slot = ((address >> 4) ^ (address >> 16)) & (sources.size() - 1);
+            while (sources[slot].node && sources[slot].node != node) slot = (slot + 1) & (sources.size() - 1);
+            auto& source = sources[slot];
+            if (!source.node) {
+                source.node = node;
+                source.valid = tryResolveDescendantWorldTransform(packageDriveNode, packageWorld, node, source.world);
+            }
+            out = source.world;
+            return source.valid;
+        };
         for (std::size_t i = 0; i < bank.size(); ++i) {
             auto& instance = bank[i];
             if (!instance.body.isValid()) {
@@ -666,12 +685,7 @@ namespace rock
             }
 
             RE::NiTransform sourceWorld{};
-            const bool useSourceNode = instance.sourceNode &&
-                tryResolveDescendantWorldTransform(
-                    packageDriveNode,
-                    packageWorld,
-                    instance.sourceNode,
-                    sourceWorld);
+            const bool useSourceNode = resolveSource(instance.sourceNode, sourceWorld);
             const RE::NiTransform& driveWorld = useSourceNode ? sourceWorld : packageWorld;
             const RE::NiPoint3& centerGame = useSourceNode ? instance.generatedSourceLocalCenterGame : instance.generatedLocalCenterGame;
             const RE::NiTransform generatedTransform = makeGeneratedBodyWorldTransform(driveWorld, centerGame);

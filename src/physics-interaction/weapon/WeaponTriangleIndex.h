@@ -71,6 +71,39 @@ namespace rock
             return best;
         }
 
+        template <class Triangles, class Predicate>
+        bool anyTriangleOverlappingBounds(const Triangles& triangles, const RE::NiPoint3& minimum,
+            const RE::NiPoint3& maximum, Predicate&& predicate, QueryStats* stats = nullptr) const
+        {
+            if (_nodes.empty()) return false;
+            std::array<std::uint32_t, 64> stack{};
+            std::size_t count = 1;
+            while (count != 0) {
+                const auto& node = _nodes[stack[--count]];
+                if (stats) ++stats->nodes;
+                // Widen rejection bounds for the float exact-contact predicate's
+                // rounding at edges. Extra candidates never change its result.
+                const float magnitude = (std::max)({ std::abs(node.min.x), std::abs(node.min.y), std::abs(node.min.z),
+                    std::abs(node.max.x), std::abs(node.max.y), std::abs(node.max.z),
+                    std::abs(minimum.x), std::abs(minimum.y), std::abs(minimum.z),
+                    std::abs(maximum.x), std::abs(maximum.y), std::abs(maximum.z) });
+                const float padding = 0.001f + magnitude * 0.00001f;
+                if (maximum.x + padding < node.min.x || minimum.x - padding > node.max.x ||
+                    maximum.y + padding < node.min.y || minimum.y - padding > node.max.y ||
+                    maximum.z + padding < node.min.z || minimum.z - padding > node.max.z) continue;
+                if (node.count != 0) {
+                    for (std::uint32_t i = node.begin; i < node.begin + node.count; ++i) {
+                        if (stats) ++stats->triangles;
+                        if (predicate(triangles[_indices[i]])) return true;
+                    }
+                } else {
+                    stack[count++] = node.right;
+                    stack[count++] = node.left;
+                }
+            }
+            return false;
+        }
+
     private:
         struct Node
         {

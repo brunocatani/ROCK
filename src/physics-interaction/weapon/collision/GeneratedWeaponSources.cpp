@@ -88,14 +88,14 @@ namespace rock
             weapon_visual_composition_policy::mixValue(signature, static_cast<std::uint32_t>(source.semantic.supportGripRole));
             weapon_visual_composition_policy::mixValue(signature, static_cast<std::uint32_t>(source.semantic.socketRole));
             weapon_visual_composition_policy::mixValue(signature, static_cast<std::uint32_t>(source.semantic.actionRole));
-            weapon_visual_composition_policy::mixValue(signature, source.childLocalPointCloudsGame.size());
+            weapon_visual_composition_policy::mixValue(signature, source.geometry->childLocalPointCloudsGame.size());
             mixQuantizedPoint(geometryHash, source.localCenterGame, kGeometryHashQuantizationScale);
             mixQuantizedPoint(geometryHash, source.localMinGame, kGeometryHashQuantizationScale);
             mixQuantizedPoint(geometryHash, source.localMaxGame, kGeometryHashQuantizationScale);
             summary.boundsExtentScore += extentScoreForBounds(source.localMinGame, source.localMaxGame);
 
-            summary.pointCount += source.localPointsGame.size();
-            summary.childClusterCount += source.childLocalPointCloudsGame.size();
+            summary.pointCount += source.geometry->localPointsGame.size();
+            summary.childClusterCount += source.geometry->childLocalPointCloudsGame.size();
             summary.semanticPartMask |= partMask(source.semantic.partKind);
             const bool transientReloadSource = isTransientReloadPart(source.semantic.partKind);
             if (transientReloadSource) {
@@ -103,15 +103,15 @@ namespace rock
             } else {
                 hasDurableGeometry = true;
                 ++summary.durableSourceCount;
-                summary.durableChildClusterCount += source.childLocalPointCloudsGame.size();
-                summary.durablePointCount += source.localPointsGame.size();
+                summary.durableChildClusterCount += source.geometry->childLocalPointCloudsGame.size();
+                summary.durablePointCount += source.geometry->localPointsGame.size();
                 summary.durableBoundsExtentScore += extentScoreForBounds(source.localMinGame, source.localMaxGame);
                 weapon_visual_composition_policy::mixString(durableGeometryHash, source.sourceName);
                 weapon_visual_composition_policy::mixValue(durableGeometryHash, reinterpret_cast<std::uintptr_t>(source.driveRoot));
                 weapon_visual_composition_policy::mixValue(durableGeometryHash, reinterpret_cast<std::uintptr_t>(source.sourceRoot));
                 weapon_visual_composition_policy::mixValue(durableGeometryHash, source.sourceGroupId);
                 weapon_visual_composition_policy::mixValue(durableGeometryHash, static_cast<std::uint32_t>(source.semantic.partKind));
-                weapon_visual_composition_policy::mixValue(durableGeometryHash, source.childLocalPointCloudsGame.size());
+                weapon_visual_composition_policy::mixValue(durableGeometryHash, source.geometry->childLocalPointCloudsGame.size());
                 mixQuantizedPoint(durableGeometryHash, source.localCenterGame, kGeometryHashQuantizationScale);
                 mixQuantizedPoint(durableGeometryHash, source.localMinGame, kGeometryHashQuantizationScale);
                 mixQuantizedPoint(durableGeometryHash, source.localMaxGame, kGeometryHashQuantizationScale);
@@ -121,19 +121,19 @@ namespace rock
                 ++summary.gameplayCriticalCount;
             }
 
-            for (std::size_t i = 0; i < source.localPointsGame.size(); i += kGeometryPointSampleStride) {
-                mixQuantizedPoint(geometryHash, source.localPointsGame[i], kGeometryHashQuantizationScale);
+            for (std::size_t i = 0; i < source.geometry->localPointsGame.size(); i += kGeometryPointSampleStride) {
+                mixQuantizedPoint(geometryHash, source.geometry->localPointsGame[i], kGeometryHashQuantizationScale);
                 if (!transientReloadSource) {
-                    mixQuantizedPoint(durableGeometryHash, source.localPointsGame[i], kGeometryHashQuantizationScale);
+                    mixQuantizedPoint(durableGeometryHash, source.geometry->localPointsGame[i], kGeometryHashQuantizationScale);
                 }
             }
-            if (!source.localPointsGame.empty()) {
-                mixQuantizedPoint(geometryHash, source.localPointsGame.back(), kGeometryHashQuantizationScale);
+            if (!source.geometry->localPointsGame.empty()) {
+                mixQuantizedPoint(geometryHash, source.geometry->localPointsGame.back(), kGeometryHashQuantizationScale);
                 if (!transientReloadSource) {
-                    mixQuantizedPoint(durableGeometryHash, source.localPointsGame.back(), kGeometryHashQuantizationScale);
+                    mixQuantizedPoint(durableGeometryHash, source.geometry->localPointsGame.back(), kGeometryHashQuantizationScale);
                 }
             }
-            for (const auto& child : source.childLocalPointCloudsGame) {
+            for (const auto& child : source.geometry->childLocalPointCloudsGame) {
                 weapon_visual_composition_policy::mixValue(geometryHash, child.size());
                 const auto childBounds = pointCloudBounds(child);
                 mixQuantizedPoint(geometryHash, childBounds.min, kGeometryHashQuantizationScale);
@@ -276,7 +276,7 @@ namespace rock
                _sources.cache.ownershipKey == ownershipKey &&
                _sources.cache.visualKey == visualKey &&
                _sources.cache.weaponRootAddress == reinterpret_cast<std::uintptr_t>(weaponRoot) &&
-               !_sources.cache.sources.empty() &&
+               _sources.cache.sources && !_sources.cache.sources->empty() &&
                _sources.cache.summary.signature != 0;
     }
 
@@ -284,11 +284,11 @@ namespace rock
         std::uint64_t ownershipKey,
         std::uint64_t visualKey,
         const RE::NiAVObject* weaponRoot,
-        std::vector<GeneratedHullSource> sources,
+        std::shared_ptr<const std::vector<GeneratedHullSource>> sources,
         const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& summary)
     {
         if (equippedKey == 0 || ownershipKey == 0 || visualKey == 0 || !weaponRoot ||
-            sources.empty() || summary.signature == 0) {
+            !sources || sources->empty() || summary.signature == 0) {
             clearGeneratedSourceCache();
             return;
         }
@@ -324,11 +324,11 @@ namespace rock
         const WeaponVisualKeyStats& visualKeyStats,
         bool replacingExisting,
         bool driveRequestedRebuild,
-        std::vector<GeneratedHullSource> sources,
+        std::shared_ptr<const std::vector<GeneratedHullSource>> sources,
         const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& summary)
     {
         if (equippedKey == 0 || ownershipKey == 0 || !weaponRoot || weaponFormID == 0 ||
-            sources.empty() || summary.signature == 0) {
+            !sources || sources->empty() || summary.signature == 0) {
             return false;
         }
 
@@ -379,21 +379,21 @@ namespace rock
                 performance_profiler::Scope::WeaponGapColliderCreate : performance_profiler::Scope::WeaponColliderCreate);
             pending.createdCount += createGeneratedWeaponBodiesInBankSlice(
                 world,
-                pending.sources,
+                *pending.sources,
                 targetBank,
                 GeneratedWeaponBodyCreateOptions{ .collisionEnabledOnCreate = false },
                 pending.nextSourceIndex,
                 GENERATED_WEAPON_BODY_CREATION_BATCH);
         }
 
-        if (pending.nextSourceIndex < pending.sources.size()) {
+        if (pending.nextSourceIndex < pending.sources->size()) {
             ROCK_LOG_SAMPLE_DEBUG(Weapon,
                 g_rockConfig.rockLogSampleMilliseconds,
                 "Generated weapon collision staged create pending key={:016X} created={} nextSource={}/{} batch={}",
                 pending.equippedKey,
                 pending.createdCount,
                 pending.nextSourceIndex,
-                pending.sources.size(),
+                pending.sources->size(),
                 GENERATED_WEAPON_BODY_CREATION_BATCH);
             return false;
         }
@@ -402,7 +402,7 @@ namespace rock
             ROCK_LOG_WARN(Weapon,
                 "Generated weapon staged creation failed - no bodies created key={:016X} sources={}",
                 pending.equippedKey,
-                pending.sources.size());
+                pending.sources->size());
             const bool replacingExisting = pending.replacingExisting;
             clearPendingGeneratedWeaponBuild(world, true);
             if (!replacingExisting) {
@@ -420,7 +420,7 @@ namespace rock
         }
 
         const auto equippedKey = pending.equippedKey;
-        const auto sourceCount = pending.sources.size();
+        const auto sourceCount = pending.sources->size();
         const auto createdCount = pending.createdCount;
         const auto visualRootCount = pending.visualRootCount;
         const auto visibleTriShapeCount = pending.visibleTriShapeCount;
@@ -477,9 +477,9 @@ namespace rock
         performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponBuildTransientReloadSources, summary.transientReloadSourceCount);
         performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponBuildBodyCount, finalBodyCount);
         std::size_t convexCount = 0, pointCount = 0;
-        for (const auto& source : pending.sources) {
-            convexCount += source.childLocalPointCloudsGame.empty() ? 1 : source.childLocalPointCloudsGame.size();
-            pointCount += source.localPointsGame.size();
+        for (const auto& source : *pending.sources) {
+            convexCount += source.geometry->childLocalPointCloudsGame.empty() ? 1 : source.geometry->childLocalPointCloudsGame.size();
+            pointCount += source.geometry->localPointsGame.size();
         }
         performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponBuildGapMode, _sources.preserveGaps ? 1 : 0);
         performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponBuildConvexes, convexCount);
@@ -873,7 +873,7 @@ namespace rock
         }
 
         auto generatedSourceConvexCount = [](const GeneratedHullSource& source) {
-            return source.childLocalPointCloudsGame.empty() ? std::size_t{ 1 } : source.childLocalPointCloudsGame.size();
+            return source.geometry->childLocalPointCloudsGame.empty() ? std::size_t{ 1 } : source.geometry->childLocalPointCloudsGame.size();
         };
 
         auto generatedSourceSemanticMask = [](const std::vector<GeneratedHullSource>& sources) {
@@ -919,8 +919,8 @@ namespace rock
                     safeNodeName(source.sourceRoot),
                     generatedWeaponPartKindName(source.semantic.partKind),
                     static_cast<int>(source.semantic.partKind),
-                    source.localPointsGame.size(),
-                    source.childLocalPointCloudsGame.size(),
+                    source.geometry->localPointsGame.size(),
+                    source.geometry->childLocalPointCloudsGame.size(),
                     generatedSourceConvexCount(source),
                     source.sourceGroupId,
                     source.localMinGame.x,
@@ -943,7 +943,7 @@ namespace rock
                     source.localCenterGame,
                     source.localMinGame,
                     source.localMaxGame,
-                    source.localPointsGame.size(),
+                    source.geometry->localPointsGame.size(),
                     source.semantic));
             }
 
@@ -989,7 +989,7 @@ namespace rock
                 source.sourceName,
                 safeNodeName(source.driveRoot),
                 safeNodeName(source.sourceRoot),
-                source.localPointsGame.size(),
+                source.geometry->localPointsGame.size(),
                 source.collisionSoundMaterialId,
                 source.localCenterGame.x,
                 source.localCenterGame.y,
@@ -1303,6 +1303,7 @@ namespace rock
                     clusterSet.supportFitRepairPoints,
                     clusterSet.supportFitValidationDirections);
             }
+            std::shared_ptr<const GeneratedWeaponMeshGeometry> mesh;
             for (std::size_t clusterIndex = 0; clusterIndex < clusters.size(); ++clusterIndex) {
                 auto cluster = compoundChildren.empty() ?
                     weapon_collision_geometry_math::limitPointCloud(std::move(clusters[clusterIndex]), MAX_CONVEX_HULL_POINTS) :
@@ -1311,13 +1312,25 @@ namespace rock
                     continue;
                 }
 
+                if (!mesh) {
+                    auto prepared = std::make_shared<GeneratedWeaponMeshGeometry>();
+                    prepared->localTrianglesGame = std::move(localTriangles);
+                    prepared->sourceLocalTrianglesGame = std::move(sourceLocalTriangles);
+                    prepared->localIndex.build(prepared->localTrianglesGame);
+                    co_yield 0;
+                    prepared->sourceIndex.build(prepared->sourceLocalTrianglesGame);
+                    co_yield 0;
+                    mesh = std::move(prepared);
+                }
+                auto geometry = std::make_shared<GeneratedWeaponHullGeometry>();
+                geometry->mesh = mesh;
                 GeneratedHullSource source;
                 source.localCenterGame = weapon_collision_geometry_math::pointCenter(cluster);
-                source.sourceLocalPointsGame.reserve(cluster.size());
+                geometry->sourceLocalPointsGame.reserve(cluster.size());
                 for (const auto& point : cluster) {
                     if (quantum.tick()) { co_yield 0; }
                     if (sourceInWeaponAvailable) {
-                        source.sourceLocalPointsGame.push_back(
+                        geometry->sourceLocalPointsGame.push_back(
                             transform_math::worldPointToLocal(sourceInWeapon, point));
                     } else {
                         const RE::NiPoint3 pointWorld = weapon_collision_geometry_math::localPointToWorld(
@@ -1325,34 +1338,33 @@ namespace rock
                             weaponRootTransform.translate,
                             weaponRootTransform.scale,
                             point);
-                        source.sourceLocalPointsGame.push_back(weapon_collision_geometry_math::worldPointToLocal(
+                        geometry->sourceLocalPointsGame.push_back(weapon_collision_geometry_math::worldPointToLocal(
                             capturedSourceWorld.rotate,
                             capturedSourceWorld.translate,
                             capturedSourceWorld.scale,
                             pointWorld));
                     }
                 }
-                source.sourceLocalCenterGame = weapon_collision_geometry_math::pointCenter(source.sourceLocalPointsGame);
+                source.sourceLocalCenterGame = weapon_collision_geometry_math::pointCenter(geometry->sourceLocalPointsGame);
                 // All children move rigidly with this TriShape. Bake them in
                 // exactly the same source-local frame/scale as the simple hull.
                 if (!compoundChildren.empty()) {
                     std::size_t offset = 0;
                     for (const auto& child : compoundChildren) {
-                        source.childLocalPointCloudsGame.emplace_back(
-                            source.sourceLocalPointsGame.begin() + offset,
-                            source.sourceLocalPointsGame.begin() + offset + child.size());
+                        geometry->childLocalPointCloudsGame.emplace_back(
+                            geometry->sourceLocalPointsGame.begin() + offset,
+                            geometry->sourceLocalPointsGame.begin() + offset + child.size());
                         offset += child.size();
                     }
                 }
                 const auto bounds = pointCloudBounds(cluster);
-                const auto sourceBounds = pointCloudBounds(source.sourceLocalPointsGame);
+                const auto sourceBounds = pointCloudBounds(geometry->sourceLocalPointsGame);
                 source.localMinGame = bounds.min;
                 source.localMaxGame = bounds.max;
                 source.sourceLocalMinGame = sourceBounds.min;
                 source.sourceLocalMaxGame = sourceBounds.max;
-                source.localPointsGame = std::move(cluster);
-                source.localTrianglesGame = localTriangles;
-                source.sourceLocalTrianglesGame = sourceLocalTriangles;
+                geometry->localPointsGame = std::move(cluster);
+                source.geometry = std::move(geometry);
                 source.driveRoot = sourceRoot;
                 source.sourceRoot = node;
                 source.sourceInWeapon = sourceInWeapon;
@@ -1366,7 +1378,7 @@ namespace rock
                 }
                 source.semantic = sourceSemantic;
                 ROCK_LOG_TRACE(Weapon, "{}generated mesh source '{}': points={} center=({:.2f},{:.2f},{:.2f})", std::string(depth * 2, ' '), source.sourceName,
-                    source.localPointsGame.size(), source.localCenterGame.x, source.localCenterGame.y, source.localCenterGame.z);
+                    source.geometry->localPointsGame.size(), source.localCenterGame.x, source.localCenterGame.y, source.localCenterGame.z);
                 outSources.push_back(std::move(source));
             }
             co_return;
@@ -1458,9 +1470,9 @@ namespace rock
                 return shape;
             };
 
-            if (source.childLocalPointCloudsGame.size() <= 1) {
-                const bool useSourceLocal = !source.sourceLocalPointsGame.empty();
-                const auto& sourcePoints = useSourceLocal ? source.sourceLocalPointsGame : source.localPointsGame;
+            if (source.geometry->childLocalPointCloudsGame.size() <= 1) {
+                const bool useSourceLocal = !source.geometry->sourceLocalPointsGame.empty();
+                const auto& sourcePoints = useSourceLocal ? source.geometry->sourceLocalPointsGame : source.geometry->localPointsGame;
                 const auto& sourceCenter = useSourceLocal ? source.sourceLocalCenterGame : source.localCenterGame;
                 const float sourceScale = useSourceLocal ? source.sourceNodeScale : 1.0f;
                 auto centeredHavokPoints = makeCenteredHavokPointCloud(sourcePoints, sourceCenter, sourceScale);
@@ -1472,10 +1484,10 @@ namespace rock
 
             std::vector<std::unique_ptr<RE::hknpShape, havok_compound_shape_builder::HavokShapeRelease>> childShapes;
             std::vector<havok_compound_shape_builder::CompoundChild> children;
-            childShapes.reserve(source.childLocalPointCloudsGame.size());
-            children.reserve(source.childLocalPointCloudsGame.size());
+            childShapes.reserve(source.geometry->childLocalPointCloudsGame.size());
+            children.reserve(source.geometry->childLocalPointCloudsGame.size());
 
-            for (const auto& childLocalPointsGame : source.childLocalPointCloudsGame) {
+            for (const auto& childLocalPointsGame : source.geometry->childLocalPointCloudsGame) {
                 if (!pointCloudCanBuildHull(childLocalPointsGame, source.sourceNodeScale)) {
                     return nullptr;
                 }
@@ -1510,13 +1522,13 @@ namespace rock
         while (nextSourceIndex < sources.size() && createdCount < MAX_WEAPON_BODIES && attemptedThisFrame < maxSourceAttemptsThisFrame) {
             // Count native convex builds, not compound bodies: an eight-child
             // source consumes the complete eight-hull slice, never eight times it.
-            const auto cost = (std::max)(std::size_t{ 1 }, sources[nextSourceIndex].childLocalPointCloudsGame.size());
+            const auto cost = (std::max)(std::size_t{ 1 }, sources[nextSourceIndex].geometry->childLocalPointCloudsGame.size());
             if (cost > maxSourceAttemptsThisFrame - attemptedThisFrame) { break; }
             const std::size_t sourceIndex = nextSourceIndex++;
             attemptedThisFrame += cost;
             const auto& source = sources[sourceIndex];
-            const bool useSourceLocal = !source.sourceLocalPointsGame.empty();
-            const auto& shapePoints = useSourceLocal ? source.sourceLocalPointsGame : source.localPointsGame;
+            const bool useSourceLocal = !source.geometry->sourceLocalPointsGame.empty();
+            const auto& shapePoints = useSourceLocal ? source.geometry->sourceLocalPointsGame : source.geometry->localPointsGame;
             const float shapePointScale = useSourceLocal ? source.sourceNodeScale : 1.0f;
             if (!pointCloudCanBuildHull(shapePoints, shapePointScale)) {
                 ROCK_LOG_DEBUG(Weapon,
@@ -1548,14 +1560,9 @@ namespace rock
             instance.generatedLocalMaxGame = source.localMaxGame;
             instance.generatedSourceLocalMinGame = source.sourceLocalMinGame;
             instance.generatedSourceLocalMaxGame = source.sourceLocalMaxGame;
-            instance.generatedLocalPointsGame = source.localPointsGame;
-            instance.generatedLocalTrianglesGame = source.localTrianglesGame;
-            instance.generatedSourceLocalPointsGame = source.sourceLocalPointsGame;
-            instance.generatedSourceLocalTrianglesGame = source.sourceLocalTrianglesGame;
-            instance.generatedTriangleIndex.build(instance.generatedLocalTrianglesGame);
-            instance.generatedSourceTriangleIndex.build(instance.generatedSourceLocalTrianglesGame);
+            instance.geometry = source.geometry;
             instance.generatedPointCount = static_cast<std::uint32_t>(
-                (std::min)(source.localPointsGame.size(), static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())));
+                (std::min)(source.geometry->localPointsGame.size(), static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())));
             instance.generatedSourceGroupId = source.sourceGroupId;
             instance.semantic = source.semantic;
             instance.ownsShapeRef = true;
@@ -1605,8 +1612,8 @@ namespace rock
             ROCK_LOG_DEBUG(Weapon,
                 "Generated weapon mesh collision body created: meshIndex={} bodyId={} source='{}' driveRoot='{}' sourceRoot='{}' partKind={} supportRole={} reloadRole={} points={} children={} soundMaterial=0x{:08X} center=({:.2f},{:.2f},{:.2f}) layer=44",
                 createdCount, instance.body.getBodyId().value, source.sourceName, safeNodeName(source.driveRoot), safeNodeName(source.sourceRoot), static_cast<int>(source.semantic.partKind),
-                static_cast<int>(source.semantic.supportGripRole), static_cast<int>(source.semantic.reloadRole), source.localPointsGame.size(),
-                source.childLocalPointCloudsGame.size(), source.collisionSoundMaterialId,
+                static_cast<int>(source.semantic.supportGripRole), static_cast<int>(source.semantic.reloadRole), source.geometry->localPointsGame.size(),
+                source.geometry->childLocalPointCloudsGame.size(), source.collisionSoundMaterialId,
                 source.localCenterGame.x, source.localCenterGame.y, source.localCenterGame.z);
             ++createdCount;
             ++createdThisFrame;

@@ -1,5 +1,6 @@
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/hand/SkeletonBoneNameIndex.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 
 /*
@@ -18,11 +19,12 @@ namespace rock::root_flattened_finger_skeleton_runtime
 {
     namespace
     {
-        DirectSkeletonBoneReader& rootFlattenedFingerReader()
+        struct FingerCaptureScratch
         {
-            static DirectSkeletonBoneReader reader;
-            return reader;
-        }
+            DirectSkeletonBoneReader reader;
+            DirectSkeletonBoneSnapshot bones;
+            SkeletonBoneNameIndex names;
+        };
 
         const DirectSkeletonBoneEntry* findSnapshotBone(const DirectSkeletonBoneSnapshot& snapshot, std::string_view name)
         {
@@ -39,7 +41,8 @@ namespace rock::root_flattened_finger_skeleton_runtime
         const DirectSkeletonBoneSnapshot& boneSnapshot,
         bool isLeft,
         Snapshot& outSnapshot,
-        std::string* outMissingBoneName)
+        std::string* outMissingBoneName,
+        SkeletonBoneNameIndex* nameIndex)
     {
         outSnapshot = Snapshot{};
         if (outMissingBoneName) {
@@ -52,9 +55,11 @@ namespace rock::root_flattened_finger_skeleton_runtime
             return false;
         }
 
-        const auto* handNode = findSnapshotBone(
-            boneSnapshot,
-            isLeft ? "LArm_Hand" : "RArm_Hand");
+        const auto indexed = nameIndex ? nameIndex->bind(boneSnapshot) : SkeletonBoneNameIndex::View{ boneSnapshot, {} };
+        const auto findBone = [&](std::string_view name) {
+            return nameIndex ? indexed.find(name) : findSnapshotBone(boneSnapshot, name);
+        };
+        const auto* handNode = findBone(isLeft ? "LArm_Hand" : "RArm_Hand");
         if (!handNode) {
             if (outMissingBoneName) {
                 *outMissingBoneName = isLeft ? "LArm_Hand" : "RArm_Hand";
@@ -76,7 +81,7 @@ namespace rock::root_flattened_finger_skeleton_runtime
             for (std::size_t segment = 0; segment < chain.points.size(); ++segment) {
                 const char* name = fingerBoneName(isLeft, finger, segment);
                 const auto* node = name ?
-                    findSnapshotBone(boneSnapshot, name) :
+                    findBone(name) :
                     nullptr;
                 if (!node) {
                     if (outMissingBoneName) {
@@ -103,8 +108,11 @@ namespace rock::root_flattened_finger_skeleton_runtime
     bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot, std::string* outMissingBoneName)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::FingerBoneCapture);
-        DirectSkeletonBoneSnapshot boneSnapshot{};
-        if (!rootFlattenedFingerReader().capture(
+        // No engine calls or callbacks occur between capture and copying the compact result.
+        // Each calling thread owns its scratch; transforms are freshly captured on every call.
+        thread_local FingerCaptureScratch scratch;
+        auto& boneSnapshot = scratch.bones;
+        if (!scratch.reader.capture(
                 skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                 skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
                 SkeletonBoneCaptureSpace::Controller,
@@ -119,6 +127,6 @@ namespace rock::root_flattened_finger_skeleton_runtime
             boneSnapshot,
             isLeft,
             outSnapshot,
-            outMissingBoneName);
+            outMissingBoneName, &scratch.names);
     }
 }
