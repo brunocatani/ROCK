@@ -111,7 +111,7 @@ namespace rock::weapon_equip_transfer
     struct EquippedDropInput
     {
         RE::NiPoint3 dropLoc{};
-        // Reference Euler radians (nifskope convention) for the spawned ref.
+        // Native reference Euler radians: stored rotation = Rz(z)*Ry(y)*Rx(x).
         RE::NiPoint3 dropRot{};
         bool hasDropLoc{ false };
         bool hasDropRot{ false };
