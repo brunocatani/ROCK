@@ -6,7 +6,7 @@ namespace rock::bare_fist_gesture
 {
     inline constexpr std::uint64_t kButtons = (1ull << 2) | (1ull << 33);
     inline constexpr std::uint64_t kMaximumSampleAgeMilliseconds = 100;
-    inline constexpr float kDefaultHoldSeconds = 1.0f;
+    inline constexpr float kDefaultHoldSeconds = 0.30f;
     inline constexpr float kMinimumHoldSeconds = 0.1f;
     inline constexpr float kMaximumHoldSeconds = 10.0f;
     inline constexpr float kDrawTimeoutSeconds = 2.0f;
