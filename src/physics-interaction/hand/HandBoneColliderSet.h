@@ -2,6 +2,8 @@
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/hand/SkeletonBoneNameIndex.h"
+#include "physics-interaction/collision/ColliderTuning.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/hand/DynamicHandTwinTargets.h"
@@ -143,6 +145,7 @@ namespace rock
         bool makeBoneLookup(const DirectSkeletonBoneSnapshot& snapshot, bool isLeft,
             const RE::NiTransform& rollAuthorityWorld, BoneFrameLookup& outLookup);
         bool makeRoleFrame(const BoneFrameLookup& lookup, bool isLeft, hand_collider_semantics::HandColliderRole role, RoleFrameResult& outFrame) const;
+        std::uint64_t refreshTuning(bool powerArmor);
         RE::hknpShape* buildShapeForRole(const RoleFrameResult& frame, hand_collider_semantics::HandColliderRole role,
             RE::NiPoint3* outPalmHalfExtents = nullptr) const;
         bool createBodyForRole(RE::hknpWorld* world, void* bhkWorld, bool isLeft, hand_collider_semantics::HandColliderRole role, const RoleFrameResult& frame, BodyInstance& instance);
@@ -154,6 +157,11 @@ namespace rock
         void clearAtomicBodyIds();
 
         DirectSkeletonBoneReader _reader;
+        SkeletonBoneNameIndex _boneNameIndex;
+        collider_tuning::HandProfile _tuning;
+        std::uint64_t _tuningConfigRevision = 0;
+        bool _tuningPowerArmor = false;
+        bool _tuningReady = false;
         std::array<BodyInstance, MAX_SEGMENT_BODIES> _bodies{};
         RE::hknpWorld* _cachedWorld = nullptr;
         void* _cachedBhkWorld = nullptr;

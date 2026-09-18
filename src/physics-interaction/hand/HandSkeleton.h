@@ -46,6 +46,8 @@ namespace rock
 
     struct DirectSkeletonBoneSnapshot
     {
+        const void* topologyOwner = nullptr; // Reader identity only; never dereferenced.
+        std::uint64_t topologyRevision = 0;
         bool valid = false;
         bool inPowerArmor = false;
         skeleton_bone_debug_math::DebugSkeletonBoneMode mode = skeleton_bone_debug_math::DebugSkeletonBoneMode::Off;
@@ -97,6 +99,7 @@ namespace rock
         bool _missingSourceLogged = false;
         int _cachedRequiredResolvedCount = 0;
         std::vector<CachedBone> _cachedBones;
+        std::uint64_t _topologyRevision = 0;
         std::vector<std::string> _cachedMissingRequiredBones;
     };
 }

@@ -275,9 +275,9 @@ namespace rock::havok_runtime
         return getMotion(world, body->motionIndex);
     }
 
-    BodySnapshot snapshotBody(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+    BodyIdentitySnapshot snapshotBodyIdentity(RE::hknpWorld* world, RE::hknpBodyId bodyId)
     {
-        BodySnapshot snapshot{};
+        BodyIdentitySnapshot snapshot{};
         snapshot.bodyId = bodyId;
 
         auto* body = getBody(world, bodyId);
@@ -289,9 +289,23 @@ namespace rock::havok_runtime
         snapshot.body = body;
         snapshot.motionIndex = body->motionIndex;
         snapshot.collisionFilterInfo = body->collisionFilterInfo;
-        snapshot.motion = getMotion(world, body->motionIndex);
         snapshot.collisionObject = getCollisionObjectFromBody(body);
-        snapshot.ownerNode = getOwnerNodeFromCollisionObject(snapshot.collisionObject);
+        return snapshot;
+    }
+
+    BodySnapshot snapshotBody(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+    {
+        const auto identity = snapshotBodyIdentity(world, bodyId);
+        BodySnapshot snapshot{};
+        snapshot.bodyId = bodyId;
+        if (!identity.valid) return snapshot;
+        snapshot.valid = true;
+        snapshot.body = identity.body;
+        snapshot.motionIndex = identity.motionIndex;
+        snapshot.collisionFilterInfo = identity.collisionFilterInfo;
+        snapshot.motion = getMotion(world, identity.motionIndex);
+        snapshot.collisionObject = identity.collisionObject;
+        snapshot.ownerNode = getOwnerNodeFromCollisionObject(identity.collisionObject);
         return snapshot;
     }
 
