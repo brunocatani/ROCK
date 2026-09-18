@@ -1675,22 +1675,40 @@ static bool testAccessoryClassification()
 
 int main()
 {
-    bool ok = true;
-
-    {
-        using namespace rock::native_weapon_aim_policy;
-        int firstNode = 0;
-        int replacementNode = 0;
-        const Identity captured{ &firstNode, 41, 73 };
-        ok &= expectTrue("collision-only rebuild preserves native aim", canRebind(captured, captured));
-        ok &= expectTrue("a replacement model cannot inherit native aim", !canRebind(captured, { &replacementNode, 41, 73 }));
-        ok &= expectTrue("a different equipped instance cannot inherit native aim", !canRebind(captured, { &firstNode, 42, 73 }));
-        ok &= expectTrue("changed weapon content cannot inherit native aim", !canRebind(captured, { &firstNode, 41, 74 }));
-        ok &= expectTrue("unknown captured content cannot be rebound", !canRebind({ &firstNode, 41, 0 }, captured));
-        ok &= expectTrue("unknown current content cannot be rebound", !canRebind(captured, { &firstNode, 41, 0 }));
-        ok &= expectTrue("missing model cannot be rebound", !canRebind({ nullptr, 41, 73 }, { nullptr, 41, 73 }));
-        ok &= expectTrue("missing equipped identity cannot be rebound", !canRebind({ &firstNode, 0, 73 }, { &firstNode, 0, 73 }));
+    using WeaponGrabMode = rock::equipped_weapon_toggle_grab_policy::Mode;
+    namespace grab_modes = rock::equipped_weapon_toggle_grab_policy;
+    for (const auto mode : { WeaponGrabMode::ToggleBoth, WeaponGrabMode::ToggleFiringOnly, WeaponGrabMode::HoldBoth }) {
+        for (const bool firing : { false, true }) {
+            grab_modes::TransferReleaseState transfer{};
+            transfer.observe(mode, firing, { .held = true, .pressed = true });
+            if (transfer.releaseRequested) return 96;
+            transfer.observe(mode, firing, { .released = true });
+            if (transfer.releaseRequested == grab_modes::usesToggleForRole(mode, firing)) return 97;
+            transfer.observe(mode, firing, { .held = true, .pressed = true });
+            if (transfer.releaseRequested != grab_modes::usesToggleForRole(mode, firing)) return 98;
+            transfer.observe(mode, firing, { .held = true });
+            if (transfer.releaseRequested != grab_modes::usesToggleForRole(mode, firing)) return 99;
+        }
+        for (const bool firingIsLeft : { false, true }) {
+            grab_modes::GripOccupancy pair{};
+            (firingIsLeft ? pair.left : pair.right).firingGripActive = true;
+            (firingIsLeft ? pair.right : pair.left).partGripActive = true;
+            grab_modes::RuntimeState state{};
+            grab_modes::adoptTransferredGrips(state, mode, 123, pair);
+            const auto held = grab_modes::prepare(state, {
+                .weaponGrabMode = mode, .inputAllowed = true, .weaponOwnershipKey = 123,
+                .occupancy = pair, .left = { .held = true }, .right = { .held = true },
+            });
+            if (!held.left.held || !held.right.held || held.left.pressed || held.right.pressed) return 94;
+            const auto opened = grab_modes::prepare(state, {
+                .weaponGrabMode = mode, .inputAllowed = true, .weaponOwnershipKey = 123,
+                .occupancy = pair, .left = { .released = true }, .right = { .released = true },
+            });
+            if (opened.left.held != grab_modes::usesToggleForRole(mode, firingIsLeft) ||
+                opened.right.held != grab_modes::usesToggleForRole(mode, !firingIsLeft)) return 95;
+        }
     }
+    bool ok = true;
 
     ok &= testRecoilProfiles();
 
@@ -2781,7 +2799,7 @@ int main()
     const rock::RockEquippedWeaponHandlingBaseline coreWeaponHandlingBaseline{
         .ambidextrousHandoffEnabled = true,
         .authoredOnlySupportGrabsEnabled = true,
-        .toggleGrabEnabled = true,
+        .weaponGrabMode = WeaponGrabMode::ToggleBoth,
         .equippedWeaponShoulderStashEnabled = true,
         .lastGripReleaseDropEnabled = false,
         .immersiveWeapon = {
@@ -2794,7 +2812,6 @@ int main()
         },
         .firingGripReattachCylinderRadiusGameUnits = 2.5f,
         .firingGripProximitySupportRadiusGameUnits = 7.0f,
-        .firingGripPromotionRadiusGameUnits = 5.5f,
         .leftFiringAimYawDegrees = 1.5f,
         .leftFiringAimPitchDegrees = -2.5f,
         .leftFiringAimOffsetXGameUnits = 0.5f,
@@ -2819,7 +2836,7 @@ int main()
     ok &= expectTrue("base ROCK enables authored-only support acquisition",
         coreWeaponHandling.authoredOnlySupportGrabsEnabled);
     ok &= expectTrue("base ROCK enables configured equipped-weapon toggle grab",
-        coreWeaponHandling.toggleGrabEnabled);
+        coreWeaponHandling.weaponGrabMode == WeaponGrabMode::ToggleBoth);
     ok &= expectFalse("base ROCK applies the configured last-grip drop preference",
         coreWeaponHandling.lastGripReleaseDropEnabled);
     ok &= expectFalse("base ROCK shoulder stash never enables physical detach",
@@ -2899,12 +2916,12 @@ int main()
             DetachedFiringHandPartGrabSelection::Standard);
     ok &= expectTrue("base ROCK owns equipped-weapon shoulder stash",
         coreWeaponHandling.equippedWeaponShoulderStashEnabled);
-    ok &= expectNear("base ROCK owns firing-grip promotion tuning",
-        coreWeaponHandling.firingGripPromotionRadiusGameUnits,
-        5.5f);
-    ok &= expectNear("base ROCK owns left firing aim yaw",
+    ok &= expectNear("ROCK yaw tuning adds to the calibrated left firing baseline",
         coreWeaponHandling.leftFiringAimYawDegrees,
-        1.5f);
+        10.5f);
+    ok &= expectNear("zero ROCK yaw tuning retains the calibrated left firing aim",
+        rock::makeEquippedWeaponHandlingSettings({}, nullptr).leftFiringAimYawDegrees,
+        9.0f);
     ok &= expectNear("base ROCK owns left firing aim pitch",
         coreWeaponHandling.leftFiringAimPitchDegrees,
         -2.5f);
@@ -2956,7 +2973,7 @@ int main()
     ok &= expectTrue("an addon lease cannot suppress ROCK shoulder stash",
         externalHandling.equippedWeaponShoulderStashEnabled);
     ok &= expectTrue("an addon lease cannot suppress ROCK toggle grab",
-        externalHandling.toggleGrabEnabled);
+        externalHandling.weaponGrabMode == WeaponGrabMode::ToggleBoth);
     ok &= expectFalse("an addon lease cannot re-enable the last-grip drop",
         externalHandling.lastGripReleaseDropEnabled);
     ok &= expectTrue("an addon handling lease cannot suppress authored-only support",
@@ -2990,9 +3007,9 @@ int main()
     ok &= expectNear("an active owner supplies proximity tuning",
         externalHandling.firingGripProximitySupportRadiusGameUnits,
         8.0f);
-    ok &= expectNear("an active owner supplies handoff promotion tuning",
-        externalHandling.firingGripPromotionRadiusGameUnits,
-        9.0f);
+    ok &= expectNear("legacy promotion tuning cannot change the shared station reach",
+        externalHandling.firingGripReattachRadiusGameUnits,
+        externalWeaponHandling.firingGripReattachRadiusGameUnits);
     ok &= expectNear("an active owner supplies left firing aim tuning",
         externalHandling.leftFiringAimYawDegrees,
         -4.0f);
@@ -3095,7 +3112,7 @@ int main()
         providerDetach.gripDetachHapticIntensity,
         0.50f);
     auto holdToGrabHandling = coreWeaponHandling;
-    holdToGrabHandling.toggleGrabEnabled = false;
+    holdToGrabHandling.weaponGrabMode = WeaponGrabMode::HoldBoth;
     ok &= expectTrue("changing equipped-weapon grab input mode reconciles live grips",
         rock::requiresEquippedWeaponHandlingModeReconcile(
             coreWeaponHandling,
@@ -3104,7 +3121,7 @@ int main()
     {
         toggle_grab::RuntimeState toggleState{};
         toggle_grab::Input toggleInput{
-            .toggleGrabEnabled = true,
+            .weaponGrabMode = WeaponGrabMode::ToggleBoth,
             .inputAllowed = true,
             .weaponOwnershipKey = 0x1234u,
             .occupancy = {},
@@ -3130,7 +3147,7 @@ int main()
 
         const auto toggleAcquisition = toggle_grab::reconcile(
             toggleState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             toggleInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .left = { .partGripActive = true }, .right = { .partGripActive = true } },
             toggle_grab::GripReleaseRetention{});
@@ -3160,7 +3177,7 @@ int main()
 
         static_cast<void>(toggle_grab::reconcile(
             toggleState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             toggleInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .left = { .partGripActive = true }, .right = { .partGripActive = true } },
             toggle_grab::GripReleaseRetention{}));
@@ -3172,7 +3189,7 @@ int main()
 
         static_cast<void>(toggle_grab::reconcile(
             toggleState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             toggleInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .left = { .partGripActive = false }, .right = { .partGripActive = true } },
             toggle_grab::GripReleaseRetention{}));
@@ -3193,7 +3210,7 @@ int main()
             toggleState.hands[toggle_grab::handIndex(false)],
             toggle_grab::HandState::Latched);
 
-        toggleInput.toggleGrabEnabled = false;
+        toggleInput.weaponGrabMode = WeaponGrabMode::HoldBoth;
         toggleInput.right = { .held = false, .released = true };
         toggleDecision = toggle_grab::prepare(toggleState, toggleInput);
         ok &= expectTrue("disabled toggle mode passes physical release input",
@@ -3211,7 +3228,7 @@ int main()
     {
         toggle_grab::RuntimeState retainedState{};
         toggle_grab::Input retainedInput{
-            .toggleGrabEnabled = true,
+            .weaponGrabMode = WeaponGrabMode::ToggleBoth,
             .inputAllowed = true,
             .weaponOwnershipKey = 0x1235u,
             .occupancy = {},
@@ -3225,7 +3242,7 @@ int main()
         auto retainedDecision = toggle_grab::prepare(retainedState, retainedInput);
         static_cast<void>(toggle_grab::reconcile(
             retainedState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             retainedInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .right = { .partGripActive = true } },
             toggle_grab::GripReleaseRetention{}));
@@ -3236,7 +3253,7 @@ int main()
             !retainedDecision.right.held && retainedDecision.right.released);
         static_cast<void>(toggle_grab::reconcile(
             retainedState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             retainedInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .right = { .partGripActive = true } },
             toggle_grab::GripReleaseRetention{}));
@@ -3245,7 +3262,7 @@ int main()
             toggle_grab::HandState::ReleasePending);
         static_cast<void>(toggle_grab::reconcile(
             retainedState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             retainedInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .right = { .partGripActive = true } },
             toggle_grab::GripReleaseRetention{ .right = true }));
@@ -3267,7 +3284,7 @@ int main()
                 retainedDecision.rightReleasePressConsumed);
         static_cast<void>(toggle_grab::reconcile(
             retainedState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             retainedInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .right = { .partGripActive = false } },
             toggle_grab::GripReleaseRetention{ .right = true }));
@@ -3276,11 +3293,12 @@ int main()
             toggle_grab::HandState::BlockedUntilRelease);
     }
 
-    for (const bool toggleEnabled : { false, true }) {
+    for (const auto mode : { WeaponGrabMode::ToggleFiringOnly, WeaponGrabMode::ToggleBoth }) {
+        const bool toggleEnabled = mode == WeaponGrabMode::ToggleBoth;
         for (const bool firingIsLeft : { false, true }) {
             toggle_grab::RuntimeState state{ .weaponOwnershipKey = 0x1236u };
             toggle_grab::Input input{
-                .toggleGrabEnabled = toggleEnabled,
+                .weaponGrabMode = mode,
                 .inputAllowed = true,
                 .weaponOwnershipKey = state.weaponOwnershipKey,
             };
@@ -3295,13 +3313,13 @@ int main()
                 return firingIsLeft ? decision.right : decision.left;
             };
             const auto reconcile = [&](const toggle_grab::GripReleaseRetention& retention = {}) {
-                return toggle_grab::reconcile(state, toggleEnabled,
+                return toggle_grab::reconcile(state, mode,
                     input.weaponOwnershipKey, input.occupancy, retention);
             };
 
             firing = { .firingGripActive = true };
             auto decision = toggle_grab::prepare(state, input);
-            ok &= expectTrue("either firing hand latches without a physical hold in both modes",
+            ok &= expectTrue("either firing hand latches without a physical hold in both firing-toggle modes",
                 firingDecision(decision).held);
 
             supportButton = { .held = true, .pressed = true };
@@ -3337,20 +3355,20 @@ int main()
                 attachAcquired.leftGripAcquired || attachAcquired.rightGripAcquired);
             supportButton = { .released = true };
             decision = toggle_grab::prepare(state, input);
-            ok &= expectTrue("reload part releases on button-up in either global mode",
+            ok &= expectTrue("reload part releases on button-up in either firing-toggle mode",
                 !supportDecision(decision).held && supportDecision(decision).released);
 
             support = {};
             firingButton = { .held = true, .pressed = true };
             decision = toggle_grab::prepare(state, input);
-            ok &= expectTrue("firing squeeze explicitly requests release in either global mode",
+            ok &= expectTrue("firing squeeze explicitly requests release in either firing-toggle mode",
                 !firingDecision(decision).held && firingDecision(decision).released);
             toggle_grab::GripReleaseRetention retention{};
             (firingIsLeft ? retention.left : retention.right) = true;
             static_cast<void>(reconcile(retention));
             firingButton = { .released = true };
             decision = toggle_grab::prepare(state, input);
-            ok &= expectTrue("auto-drop refusal relatches firing grip in either global mode",
+            ok &= expectTrue("auto-drop refusal relatches firing grip in either firing-toggle mode",
                 firingDecision(decision).held && !firingDecision(decision).released);
 
             support = { .partGripActive = true };
@@ -3437,27 +3455,22 @@ int main()
             false,
             true));
     ok &= expectTrue("active support may attempt handoff regardless of authored or dynamic pose selection",
-        canPromoteSupportGripToFiringGrip(true, false));
+        canPromoteSupportGripToFiringGrip(true, false, true));
     ok &= expectFalse("inactive support cannot attempt handoff",
-        canPromoteSupportGripToFiringGrip(false, false));
+        canPromoteSupportGripToFiringGrip(false, false, true));
     ok &= expectFalse("AttachOnly support never inherits firing-grip ownership",
-        canPromoteSupportGripToFiringGrip(true, true));
+        canPromoteSupportGripToFiringGrip(true, true, true));
 
     using rock::weapon_support_authority_policy::DynamicHandoffGripCaptureInput;
     using rock::weapon_support_authority_policy::shouldCaptureDynamicHandoffGrip;
     {
         namespace zone = rock::firing_grip_reattach_zone_policy;
-        using rock::weapon_support_authority_policy::firingGripCaptureReach;
         const rock::WeaponInteractionRuntimeState normal{};
         const rock::WeaponInteractionContact noContact{};
         ok &= expectEqual("normal support still needs its existing acquisition route",
             rock::routeWeaponInteraction(noContact, normal).kind,
             rock::WeaponInteractionKind::None);
-        const float reach = firingGripCaptureReach(true, 10.0f, 5.0f);
-        ok &= expectNear("direct handoff retains reattachment reach through capture and promotion",
-            reach, 10.0f);
-        ok &= expectNear("ordinary support promotion keeps its existing reach",
-            firingGripCaptureReach(false, 10.0f, 5.0f), 5.0f);
+        constexpr float reach = 10.0f;
         for (const float side : { -1.0f, 1.0f }) {
             for (const float distance : { 7.76f, 10.0f }) {
                 const auto inside = zone::evaluateZone({
@@ -3499,15 +3512,14 @@ int main()
     }
     const DynamicHandoffGripCaptureInput dynamicHandoffGrip{
         .normalSupportAcquisition = true,
-        .ambidextrousHandoffEnabled = true,
+        .supportPoseAbsent = true,
         .firingGripProximityAuthorityEnabled = true,
         .providerPartAuthorityActive = false,
         .authoredCaptureEligible = false,
         .supportPalmInsideHandoffZone = true,
-        .authoredSeatInsideHandoffZone = false,
     };
     ok &= expectTrue(
-        "firing-grip station restores dynamic ambidextrous handoff",
+        "confirmed one-handed animation permits dynamic support at the shared station",
         shouldCaptureDynamicHandoffGrip(dynamicHandoffGrip));
     {
         namespace zone = rock::firing_grip_reattach_zone_policy;
@@ -3538,21 +3550,19 @@ int main()
         }
         input.supportPalmInsideHandoffZone = true;
         input.authoredCaptureEligible = true;
-        input.authoredSeatInsideHandoffZone = evaluateHandoff({ 0.0f, 3.0f, 0.0f }).inside;
-        ok &= expectTrue("an authored seat inside the old sphere but outside the cylinder does not steal handoff",
+        ok &= expectFalse("eligible authored support wins an overlapping firing-hand station",
             shouldCaptureDynamicHandoffGrip(input));
     }
     {
         auto input = dynamicHandoffGrip;
         input.authoredCaptureEligible = true;
-        ok &= expectTrue(
-            "authored support away from firing grip cannot steal dynamic handoff",
+        ok &= expectFalse(
+            "eligible authored support wins regardless of its distance from the firing seat",
             shouldCaptureDynamicHandoffGrip(input));
     }
     {
         auto input = dynamicHandoffGrip;
         input.authoredCaptureEligible = true;
-        input.authoredSeatInsideHandoffZone = true;
         ok &= expectFalse(
             "authored firing-grip seat remains preferred for pistols",
             shouldCaptureDynamicHandoffGrip(input));
@@ -3580,9 +3590,9 @@ int main()
     }
     {
         auto input = dynamicHandoffGrip;
-        input.ambidextrousHandoffEnabled = false;
+        input.supportPoseAbsent = false;
         ok &= expectFalse(
-            "disabled ambidextrous mode cannot create a handoff station",
+            "missing or invalid data cannot authorize dynamic support",
             shouldCaptureDynamicHandoffGrip(input));
     }
     {
@@ -3619,39 +3629,11 @@ int main()
         isBetterProbeCandidate(
             ProbeCandidateRank{ .distanceSquaredGame = 0.0f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 62 },
             ProbeCandidateRank{ .distanceSquaredGame = 0.0f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 62 }));
-    ok &= expectEqual("support release keeps realistic primary ownership while its grip is held",
-        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{
-            .firingGripOwnershipEnabled = true,
-            .primaryDetachEnabled = true,
-            .primaryGripHeld = true,
-        }),
+    ok &= expectEqual("releasing support from a two-hand hold retains the firing hand",
+        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{ .firingGripOwnershipEnabled = true }),
         SupportReleaseManualAction::KeepPrimaryOwnership);
-    ok &= expectEqual("support release drops realistically detached weapon when primary grip is open",
-        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{
-            .firingGripOwnershipEnabled = true,
-            .primaryDetachEnabled = true,
-            .primaryGripHeld = false,
-        }),
-        SupportReleaseManualAction::DropEquippedWeapon);
-    ok &= expectEqual("support release preserves ambidextrous firing ownership without realistic detach",
-        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{
-            .firingGripOwnershipEnabled = true,
-            .primaryDetachEnabled = false,
-            .primaryGripHeld = false,
-        }),
-        SupportReleaseManualAction::KeepPrimaryOwnership);
-    ok &= expectEqual("support release ends support when firing-grip ownership is disabled",
-        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{}),
-        SupportReleaseManualAction::EndSupportOnly);
-    ok &= expectEqual("support release keeps an open detaching firing grip when the last-grip drop is disabled",
-        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{
-            .firingGripOwnershipEnabled = true,
-            .primaryDetachEnabled = true,
-            .primaryGripHeld = false,
-            .lastGripReleaseDropEnabled = false,
-        }),
-        SupportReleaseManualAction::KeepPrimaryOwnership);
-
+    ok &= expectEqual("without manual firing ownership support release ends only support",
+        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{}), SupportReleaseManualAction::EndSupportOnly);
     using rock::weapon_two_handed_grip_math::canReleaseCarryGrip;
     ok &= expectTrue("a carry grip releases while its peer still carries",
         canReleaseCarryGrip(true, true, false));
@@ -3659,6 +3641,10 @@ int main()
         canReleaseCarryGrip(true, false, true));
     ok &= expectFalse("the last carry grip is retained when the last-grip drop is disabled",
         canReleaseCarryGrip(true, false, false));
+    ok &= expectFalse("a refused simultaneous release cannot become a delayed auto-drop",
+        canReleaseCarryGrip(true, false, true, true));
+    ok &= expectTrue("a fresh hold clears refusal before a later last-hand release",
+        canReleaseCarryGrip(true, false, true, false));
     ok &= expectTrue("attach-only glue releases regardless of the last-grip drop",
         canReleaseCarryGrip(false, false, false));
 
@@ -4030,16 +4016,19 @@ int main()
     ok &= expectFalse("stable open primary samples release firing grip", primaryReleaseDecision.retained);
     ok &= expectTrue("stable open primary samples confirm release", primaryReleaseDecision.releaseConfirmed);
 
-    ok &= expectTrue("release confirmed on a just-captured support grip is deferred",
-        shouldDeferPrimaryReleaseActionForFreshSupportGrip(0.0f));
-    // The confirm debounce is a publication count; the defer window must
-    // outlast it at the slowest supported rate (2 frames at 45 FPS).
-    ok &= expectTrue("release confirmed on the earliest confirmable frame after a grab is deferred",
-        shouldDeferPrimaryReleaseActionForFreshSupportGrip(static_cast<float>(kPrimaryReleaseConfirmFrames) / 45.0f));
-    ok &= expectTrue("release confirmed at the defer window edge is still deferred",
-        shouldDeferPrimaryReleaseActionForFreshSupportGrip(kFreshSupportGripPrimaryReleaseDeferSeconds));
-    ok &= expectFalse("release confirmed on an aged support grip acts normally",
-        shouldDeferPrimaryReleaseActionForFreshSupportGrip(kFreshSupportGripPrimaryReleaseDeferSeconds + 0.001f));
+    PrimaryReleaseIntentState releaseIntent{};
+    auto release = resolvePrimaryReleaseIntent(releaseIntent, {
+        .ownershipKey = 7, .logicalReleased = true, .freeSupportIndicatorActive = true,
+    });
+    ok &= expectTrue("hover consumes release without a delayed detach", release.retained && release.blockedBySupportHover);
+    release = resolvePrimaryReleaseIntent(releaseIntent, { .ownershipKey = 7 });
+    ok &= expectTrue("leaving support hover cannot replay the refused release", release.retained);
+    release = resolvePrimaryReleaseIntent(releaseIntent, {
+        .ownershipKey = 7, .logicalReleased = true, .supportGripActive = true,
+    });
+    ok &= expectFalse("a new release with acquired support permits handoff", release.retained);
+    release = resolvePrimaryReleaseIntent(releaseIntent, { .ownershipKey = 8 });
+    ok &= expectTrue("weapon identity change clears a pending release", release.retained);
 
     RuntimeState manualState{};
     auto manualDecision = update(manualState,
@@ -4096,14 +4085,12 @@ int main()
     ok &= expectFalse("equipped instance change does not drop the newly equipped weapon", manualDecision.dropRequested);
 
     using namespace rock::equipped_weapon_drop_policy;
-    ok &= expectEqual("right-primary support release drops from left hand",
-        sourceForSupportRelease(false, false), SourceHand::Left);
-    ok &= expectEqual("right-primary same-frame primary release drops from right hand",
-        sourceForSupportRelease(true, false), SourceHand::Right);
-    ok &= expectEqual("left-primary support release drops from right hand",
-        sourceForSupportRelease(false, true), SourceHand::Right);
-    ok &= expectEqual("left-primary same-frame primary release drops from left hand",
-        sourceForSupportRelease(true, true), SourceHand::Left);
+    static_assert(canStartAutoDrop(true, false, false));
+    static_assert(canStartAutoDrop(false, true, false));
+    static_assert(!canStartAutoDrop(true, true, false));
+    static_assert(!canStartAutoDrop(false, false, false));
+    static_assert(!canStartAutoDrop(true, false, true));
+    static_assert(!canStartAutoDrop(false, true, true));
     ok &= expectTrue("ROCK shoulder stash is available without realistic detach",
         equippedWeaponShoulderStashAvailable(true));
     ok &= expectFalse("ROCK shoulder stash setting remains authoritative",

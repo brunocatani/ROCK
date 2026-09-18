@@ -19,7 +19,6 @@ namespace rock
         immersive_weapon_policy::Config immersiveWeapon{};
         float firingGripReattachCylinderRadiusGameUnits{ 2.0f };
         float firingGripProximitySupportRadiusGameUnits{ 6.0f };
-        float firingGripPromotionRadiusGameUnits{ 5.0f };
         float leftFiringAimYawDegrees{ 0.0f };
         float leftFiringAimPitchDegrees{ 0.0f };
         float leftFiringAimOffsetXGameUnits{ 0.0f };
@@ -55,7 +54,6 @@ namespace rock
         float firingGripAttachHapticIntensity{ 0.85f };
         float firingGripDetachHapticIntensity{ 0.30f };
         float supportGripHapticIntensity{ 0.50f };
-        float firingGripPromotionRadiusGameUnits{ 5.0f };
         float leftFiringAimYawDegrees{ 0.0f };
         float leftFiringAimPitchDegrees{ 0.0f };
         float leftFiringAimOffsetXGameUnits{ 0.0f };
@@ -104,10 +102,10 @@ namespace rock
         // radius; an active handling owner may replace only that tuning value.
         settings.firingGripProximitySupportRadiusGameUnits =
             rockBaseline.firingGripProximitySupportRadiusGameUnits;
-        settings.firingGripPromotionRadiusGameUnits =
-            rockBaseline.firingGripPromotionRadiusGameUnits;
+        // ROCK's user yaw is an adjustment beyond the calibrated left aim.
+        // An external handling owner still supplies its absolute correction below.
         settings.leftFiringAimYawDegrees =
-            rockBaseline.leftFiringAimYawDegrees;
+            9.0f + rockBaseline.leftFiringAimYawDegrees;
         settings.leftFiringAimPitchDegrees =
             rockBaseline.leftFiringAimPitchDegrees;
         settings.leftFiringAimOffsetXGameUnits =
@@ -159,7 +157,6 @@ namespace rock
         settings.firingGripAttachHapticIntensity = request->firingGripAttachHapticIntensity;
         settings.firingGripDetachHapticIntensity = request->firingGripDetachHapticIntensity;
         settings.supportGripHapticIntensity = request->supportGripHapticIntensity;
-        settings.firingGripPromotionRadiusGameUnits = request->firingGripPromotionRadiusGameUnits;
         settings.leftFiringAimYawDegrees = request->leftFiringAimYawDegrees;
         settings.leftFiringAimPitchDegrees = request->leftFiringAimPitchDegrees;
         settings.leftFiringAimOffsetXGameUnits = request->leftFiringAimOffsetGameUnits[0];

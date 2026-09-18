@@ -42,6 +42,7 @@ namespace rock::authored_weapon_grip_library
             bool inPowerArmor{ false };
             bool instanceContentKnown{ false };
             bool hasSupportRelation{ false };
+            bool supportPoseAbsent{ false };
             bool hasRightPositionOnlyHandWeaponLocal{ false };
             bool occupied{ false };
             bool vanillaPipePose{ false };
@@ -150,6 +151,7 @@ namespace rock::authored_weapon_grip_library
                 .source = entry.source,
                 .supportSource = entry.supportSource,
                 .hasSupportRelation = entry.hasSupportRelation,
+                .supportPoseAbsent = entry.supportPoseAbsent,
                 .hasRightPositionOnlyHandWeaponLocal =
                     entry.hasRightPositionOnlyHandWeaponLocal,
                 .usedVariantFallback = usedVariantFallback,
@@ -255,7 +257,7 @@ namespace rock::authored_weapon_grip_library
             // to one capture instance: the same idle republished from a new
             // source (live -> preharvest -> disk cache) keeps it. A
             // materially different canonical invalidates it.
-            if (destination->hasSupportRelation &&
+            if ((destination->hasSupportRelation || destination->supportPoseAbsent) &&
                 !authored_weapon_grip_authority_policy::
                     handRelationValueMatches(
                         destination->rightHandWeaponLocal,
@@ -265,6 +267,7 @@ namespace rock::authored_weapon_grip_library
                 destination->supportCaptureSequence = 0;
                 destination->supportSource = CaptureSource::Unknown;
                 destination->hasSupportRelation = false;
+                destination->supportPoseAbsent = false;
             }
         }
         destination->rightHandWeaponLocal = rightHandWeaponLocal;
@@ -343,7 +346,8 @@ namespace rock::authored_weapon_grip_library
             }
             // A live equipped-graph capture is a per-frame read that can
             // land mid-blend; it never displaces the clip-sampled relation.
-            if (!authored_weapon_grip_authority_policy::shouldAcceptPublication(
+            if ((entry.supportPoseAbsent && !isNativeIdleAuthority(source)) ||
+                !authored_weapon_grip_authority_policy::shouldAcceptPublication(
                     entry.hasSupportRelation,
                     publicationAuthority(entry.supportSource),
                     publicationAuthority(source))) {
@@ -365,6 +369,7 @@ namespace rock::authored_weapon_grip_library
             entry.supportCaptureSequence = supportCaptureSequence;
             entry.supportSource = source;
             entry.hasSupportRelation = true;
+            entry.supportPoseAbsent = false;
             ROCK_LOG_INFO(Animation,
                 "{} authored support relation formID={:08X} pGripVariant={:016X} instanceContent={:016X} powerArmor={} capture={} source={} supportHandT=({:.3f},{:.3f},{:.3f})",
                 firstRelation ? "Learned" : "Updated",
@@ -377,6 +382,24 @@ namespace rock::authored_weapon_grip_library
                 supportHandWeaponLocal.translate.x,
                 supportHandWeaponLocal.translate.y,
                 supportHandWeaponLocal.translate.z);
+            return true;
+        }
+        return false;
+    }
+
+    bool publishSupportAbsence(const RE::TESObjectWEAP* weapon, WeaponVariantIdentity variant,
+        bool inPowerArmor, std::uint64_t captureSequence, CaptureSource source)
+    {
+        if (!weapon || !captureSequence || !isNativeIdleAuthority(source)) return false;
+        for (auto& entry : s_entries) {
+            if (!sameIdentity(entry, weapon->formID, variant, inPowerArmor) ||
+                entry.captureSequence != captureSequence) continue;
+            entry.hasSupportRelation = false;
+            entry.supportPoseAbsent = true;
+            entry.supportHandWeaponLocal = {};
+            entry.supportFingerPose = {};
+            entry.supportCaptureSequence = captureSequence;
+            entry.supportSource = source;
             return true;
         }
         return false;

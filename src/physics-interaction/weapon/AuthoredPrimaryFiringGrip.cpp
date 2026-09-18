@@ -356,6 +356,12 @@ namespace rock
             authoredLookup.supportCaptureSequence != 0 &&
             authoredLookup.supportFingerPose.complete();
         const auto publishLibraryAuthoredSupportCandidate = [&]() {
+            if (harvestedRelationAvailable && authoredLookup.supportPoseAbsent &&
+                authored_weapon_grip_library::isNativeIdleAuthority(authoredLookup.source)) {
+                _stableAuthoredSupportGrip = {};
+                return weaponAuthority.setAuthoredSupportGripAbsent(input.weaponNode,
+                    input.weaponGenerationKey, authoredLookup.captureSequence);
+            }
             if (!librarySupportAuthoritative ||
                 !input.weaponNode ||
                 input.weaponGenerationKey == 0) {

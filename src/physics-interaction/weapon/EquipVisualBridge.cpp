@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/EquipVisualBridge.h"
+#include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
 
 #include <algorithm>
@@ -239,7 +240,12 @@ namespace rock
                 resolvedHandWeaponLocal,
                 &targetReason) &&
             isFiniteTransform(resolvedHandWeaponLocal);
-        if (_hasFiringHandWeaponLocal) {
+        _pairedGrips = input.pairedGrips && input.pairedGrips->valid() ? *input.pairedGrips : weapon_grip_transfer::Pair{};
+        if (_pairedGrips.valid()) {
+            _firingHandWeaponLocal = _pairedGrips.primary.handWeaponLocal;
+            _hasFiringHandWeaponLocal = true;
+            targetReason = "capturedPairedHold";
+        } else if (_hasFiringHandWeaponLocal) {
             _firingHandWeaponLocal = resolvedHandWeaponLocal;
         } else if (
             input.hasFiringHandWeaponLocal &&
@@ -267,7 +273,12 @@ namespace rock
         _nativeCarrierWasUsable = false;
         _active = true;
 
-        if (authoredLookup.found &&
+        if (_pairedGrips.valid()) {
+            _handPosePayloadAvailable = true;
+            _handPoseHandoffActive = true;
+            if (!publishHandPoseHandoff() || !publishPairedHandWorld(model, false))
+                clearHandPoseHandoff("paired-initial-publish-failed", false, false);
+        } else if (authoredLookup.found &&
             authored_weapon_grip_library::isNativeIdleAuthority(authoredLookup.source) &&
             buildPhysicalHandFingerPose(
                 _isLeftHand,
@@ -319,8 +330,47 @@ namespace rock
         return true;
     }
 
+    bool EquipVisualBridge::publishPairedHandWorld(RE::NiAVObject* model, bool equippedModel)
+    {
+        if (!_pairedGrips.valid() || !model || !isFiniteTransform(model->world)) return false;
+        RE::NiPoint3 displacement{};
+        if (equippedModel) {
+            if (!vanilla_weapon_grip_frame::resolveModelTranslation(_weaponFormID, model, displacement)) return false;
+            displacement -= _pairedGrips.sourceModelTranslation;
+        }
+        for (const bool primary : { true, false }) {
+            const bool isLeft = primary ? _isLeftHand : !_isLeftHand;
+            auto local = (primary ? _pairedGrips.primary : _pairedGrips.support).handWeaponLocal;
+            local.translate += displacement;
+            if (!frik_visual_authority::publishHandWorld(kHandPoseHandoffTag, handFromBool(isLeft),
+                    transform_math::composeTransforms(model->world, local), kHandPoseHandoffPriority)) return false;
+        }
+        return true;
+    }
+
     bool EquipVisualBridge::publishHandPoseHandoff()
     {
+        if (_handPoseHandoffActive && _pairedGrips.valid()) {
+            for (const bool primary : { true, false }) {
+                const bool isLeft = primary ? _isLeftHand : !_isLeftHand;
+                const auto& pose = primary ? _pairedGrips.primary : _pairedGrips.support;
+                auto& blocked = primary ? _handPoseBlockEngaged : _pairedSupportBlockEngaged;
+                if (!blocked) {
+                    if (!frik_visual_authority::blockPrimaryHandWeaponPose(isLeft ? kLeftHandPoseBlockTag : kRightHandPoseBlockTag, true)) return false;
+                    blocked = true;
+                }
+                if (!frik_visual_authority::setHandPoseCustom(kHandPoseHandoffTag, handFromBool(isLeft),
+                        frik_visual_authority::makeHandPoseDataFromJointValues(pose.fingerValues), kHandPoseHandoffPriority)) return false;
+                if (pose.fingerMask) {
+                    frik_visual_authority::FingerLocalTransformOverride locals{};
+                    locals.enabledMask = pose.fingerMask;
+                    std::copy(pose.fingerLocals.begin(), pose.fingerLocals.end(), std::begin(locals.localTransforms));
+                    if (!frik_visual_authority::setHandPoseCustomLocalTransforms(kHandPoseHandoffTag, handFromBool(isLeft),
+                            &locals, kHandPoseHandoffPriority)) return false;
+                }
+            }
+            return true;
+        }
         if (!_handPoseHandoffActive ||
             _handoffFingerLocalTransformMask != authored_weapon_grip_library::kCompleteFiringFingerMask) {
             return false;
@@ -420,7 +470,8 @@ namespace rock
             // during sheath/drop/throw to resurrect an equip-only phantom.
             clearModel("presentation-ended", _parent != nullptr);
             if (_handPoseHandoffActive) {
-                if (!publishHandPoseHandoff()) {
+                if (!publishHandPoseHandoff() || (_pairedGrips.valid() && input.nativeVisual &&
+                        input.nativeVisual->weaponRoot && !publishPairedHandWorld(input.nativeVisual->weaponRoot, true))) {
                     clearHandPoseHandoff("native-handoff-republish-failed", true, false);
                 }
             }
@@ -495,7 +546,7 @@ namespace rock
             RE::NiTransform desiredWorld = transform_math::composeTransforms(handNode->world, _modelInHandLocal);
             RE::NiTransform blendTarget{};
             bool haveBlendTarget = false;
-            if (_hasFiringHandWeaponLocal) {
+            if (!_pairedGrips.valid() && _hasFiringHandWeaponLocal) {
                 if (_hasPhysicalHandInWandLocal) {
                     const RE::NiTransform physicalHandWorld =
                         transform_math::composeTransforms(
@@ -549,7 +600,7 @@ namespace rock
                         _nativeCarrierTraceLogged = true;
                     }
                 }
-            } else if (nativePositionOnlyCarrierAvailable) {
+            } else if (!_pairedGrips.valid() && nativePositionOnlyCarrierAvailable) {
                 blendTarget = nativeCarrierWorld;
                 haveBlendTarget = true;
             }
@@ -564,6 +615,8 @@ namespace rock
 
             model->local = transform_math::composeTransforms(transform_math::invertTransform(_parent->world), desiredWorld);
             f4vr::updateDown(model, true);
+            if (_handPoseHandoffActive && _pairedGrips.valid() && !publishPairedHandWorld(model, false))
+                clearHandPoseHandoff("paired-world-publish-failed", true, false);
         }
 
         if (_handPoseHandoffActive) {
@@ -640,6 +693,9 @@ namespace rock
         }
 
         clearHandPoseHandoff(reason ? reason : "equipped-pose-acquired", true, false);
+        // Once both equipped owners have adopted (or cancelled) the transfer,
+        // the remaining model lease must not resurrect either captured hand.
+        if (_pairedGrips.valid()) _handPosePayloadAvailable = false;
     }
 
     void EquipVisualBridge::clearModel(const char* reason, const bool detachFromParent)
@@ -683,9 +739,17 @@ namespace rock
                 reason ? reason : "unknown", _weaponFormID, _isLeftHand ? "left" : "right", _elapsedSeconds);
         }
 
+        if (_pairedGrips.valid() || _pairedSupportBlockEngaged) {
+            (void)frik_visual_authority::clearHandPose(kHandPoseHandoffTag, handFromBool(!_isLeftHand));
+            (void)frik_visual_authority::clearHandWorld(kHandPoseHandoffTag, handFromBool(!_isLeftHand));
+            if (_pairedSupportBlockEngaged)
+                (void)frik_visual_authority::blockPrimaryHandWeaponPose(_isLeftHand ? kRightHandPoseBlockTag : kLeftHandPoseBlockTag, false);
+        }
+        _pairedSupportBlockEngaged = false;
         _handPoseHandoffActive = false;
         _handPoseBlockEngaged = false;
         if (discardPayload) {
+            _pairedGrips = {};
             _handoffFingerLocalTransforms = {};
             _handoffFingerLocalTransformMask = 0;
             _handPosePayloadAvailable = false;

@@ -132,5 +132,18 @@ int main()
     supportGhostMask.checksum = calculateChecksum(supportGhostMask);
     ok &= expect(!validRecord(supportGhostMask), "support finger mask without support flag accepted");
 
+    auto absent = source;
+    absent.supportAbsent = true;
+    absent.checksum = calculateChecksum(absent);
+    CacheRecord absentParsed{};
+    ok &= expect(validRecord(absent) && parse(serialize(absent), absentParsed, &error) &&
+        absentParsed.supportAbsent && !absentParsed.supportValid,
+        "confirmed missing support animation did not survive cache round trip");
+    auto contradictory = withSupport;
+    contradictory.supportAbsent = true;
+    contradictory.checksum = calculateChecksum(contradictory);
+    ok &= expect(!validRecord(contradictory), "cache accepted both a support pose and its absence");
+    absent.supportAbsent = false;
+    ok &= expect(absent.checksum != calculateChecksum(absent), "support absence is not covered by checksum");
     return ok ? 0 : 1;
 }

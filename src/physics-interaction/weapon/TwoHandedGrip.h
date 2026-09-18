@@ -1,4 +1,6 @@
 #pragma once
+#include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
+#include "physics-interaction/weapon/WeaponGripTransfer.h"
 
 #include <atomic>
 #include <array>
@@ -122,8 +124,7 @@ namespace rock
     using EquippedWeaponHandGripOccupancy = equipped_weapon_toggle_grab_policy::HandGripOccupancy;
     using EquippedWeaponGripOccupancy = equipped_weapon_toggle_grab_policy::GripOccupancy;
 
-    // Hands whose open-hand release was refused during this update because
-    // they are the weapon's last carrier and the last-grip drop is disabled.
+    // Hands whose release was refused by the carry or transfer policy this frame.
     struct EquippedWeaponGripReleaseRetention
     {
         bool left{ false };
@@ -247,6 +248,7 @@ namespace rock
         bool effectiveEquipSlotUsesInstanceData{ false };
         bool classifierSupported{ false };
         bool canonicalAxesValid{ false };
+        bool sharedFiringZone{ false };
         bool directionUsedLastStableSample{ false };
         bool radialPass{ false };
         bool directionPass{ false };
@@ -410,6 +412,7 @@ namespace rock
     {
         bool requested{ false };
         equipped_weapon_drop_policy::SourceHand sourceHand{ equipped_weapon_drop_policy::SourceHand::None };
+        AuthoredWeaponGripPose pose{};
     };
 
     /*
@@ -625,6 +628,7 @@ namespace rock
          * changes an already-active grip.
          */
         void clearAuthoredSupportGripCandidate();
+        bool setAuthoredSupportGripAbsent(RE::NiNode* weaponNode, std::uint64_t generation, std::uint64_t capture);
         [[nodiscard]] authored_support_grab_policy::
             LeftFiringTakeoverReadiness
             getLeftFiringTakeoverReadiness(
@@ -932,7 +936,8 @@ namespace rock
             const RE::NiTransform& rightHandWorld,
             const RE::NiTransform& leftHandWorld,
             RE::NiTransform& outHandWeaponLocal,
-            bool logDiagnostic = false);
+            bool logDiagnostic = false,
+            bool applyGripCalibration = true);
 
         /*
          * Publishes the left-firing canonical carry pose (firing hand o
@@ -958,6 +963,10 @@ namespace rock
         bool republishPartCarryWeaponTransform(RE::NiNode* weaponNode);
 
         EquippedWeaponManualDropRequest consumeEquippedWeaponDropRequest();
+        bool beginTransferredTwoHandGrip(RE::NiNode* weaponNode, std::uint64_t generation,
+            std::uint64_t ownership, const weapon_grip_transfer::Pair& grips, const char** failure);
+        void prepareEquippedWeaponDropCommit();
+        void completeEquippedWeaponDrop(const EquippedWeaponManualDropRequest& request, bool committed);
 
         /*
          * Per-hand grip report for the provider API. Always succeeds; an idle
@@ -1230,7 +1239,11 @@ namespace rock
          */
         struct WeaponPartGrip
         {
+            // Loose captures have root-local seats even when the pose is dynamic.
+            bool transferredLooseGrip{ false };
             bool active{ false };
+            // A refused open-hand release needs a new hold before it may recur.
+            bool releaseRequiresNewHold{ false };
             RE::NiPoint3 gripLocal{};
             RE::NiPoint3 grabNormalWorld{};
             RE::NiPoint3 normalLocal{};
@@ -1247,6 +1260,7 @@ namespace rock
             WeaponPartKind partKind{ WeaponPartKind::Other };
             WeaponProviderPartAuthority providerPartAuthority{};
             bool authoredSupportGrip{ false };
+            loose_weapon_authored_grab_policy::Role authoredRole{ loose_weapon_authored_grab_policy::Role::None };
             WeaponInteractionAcquisitionSource acquisitionSource{
                 WeaponInteractionAcquisitionSource::None };
             // Both authored support topologies keep axis aiming and the
@@ -1305,6 +1319,7 @@ namespace rock
             std::uint64_t captureSequence{ 0 };
             bool rightMirrorValid{ false };
             bool valid{ false };
+            bool poseAbsent{ false };
         };
 
         /*
@@ -1443,7 +1458,10 @@ namespace rock
         // Marks a refused last-carrier release for this update and logs the
         // first refusal of each open-hand episode.
         void recordGripReleaseRetained(bool isLeft, const char* reason);
-        void requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand);
+        bool requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand);
+        bool captureDropGripPose(bool isLeft, AuthoredWeaponGripPose& out) const;
+        [[nodiscard]] loose_weapon_authored_grab_policy::Arrangement authoredGripArrangement(
+            RE::NiNode* weaponNode, std::uint64_t generation) const;
 
         void updatePrimaryOnlyGrip(
             RE::NiNode* weaponNode,
@@ -1551,7 +1569,8 @@ namespace rock
             const RE::NiTransform& leftHandWorld,
             RE::NiTransform& outHandWeaponLocal,
             bool applyHandlingTrim,
-            bool logDiagnostic);
+            bool logDiagnostic,
+            bool applyGripCalibration = true);
 
         // Hand frame composed from the wand and the cached natural
         // bone-in-wand map (orientation only). Transient-free input for the
@@ -1996,6 +2015,7 @@ namespace rock
         // reattach-hover witness.
         struct FiringGripState
         {
+            weapon_grip_transfer::HandGrip transferredPrimaryGrip{};
             // Canonical right-hand firing hold, keyed by node identity,
             // collision generation, and equipped ownership; see
             // rememberRightFiringHandCanonicalFrame().

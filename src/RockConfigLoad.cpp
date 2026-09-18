@@ -422,14 +422,6 @@ namespace rock
             AMBIDEXTROUS_FIRING_SECTION,
             "bAmbidextrousFiringGripEnabled",
             rockAmbidextrousFiringGripEnabled);
-        rockFiringGripPromotionRadius = readClampedFloat(
-            ini,
-            AMBIDEXTROUS_FIRING_SECTION,
-            "fFiringGripPromotionRadius",
-            rockFiringGripPromotionRadius,
-            5.0f,
-            0.25f,
-            30.0f);
         rockLeftFiringAimYawDegrees = readClampedFloat(
             ini,
             AMBIDEXTROUS_FIRING_SECTION,
@@ -471,6 +463,18 @@ namespace rock
             -15.0f,
             15.0f);
         rockWeaponCollisionBlocksProjectiles = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksProjectiles", rockWeaponCollisionBlocksProjectiles);
+        rockLeftFiringGripOffsetGameUnits.x = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+            "fLeftFiringGripOffsetXGameUnits", rockLeftFiringGripOffsetGameUnits.x, 0.0f, -15.0f, 15.0f);
+        rockLeftFiringGripOffsetGameUnits.y = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+            "fLeftFiringGripOffsetYGameUnits", rockLeftFiringGripOffsetGameUnits.y, 0.0f, -15.0f, 15.0f);
+        rockLeftFiringGripOffsetGameUnits.z = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+            "fLeftFiringGripOffsetZGameUnits", rockLeftFiringGripOffsetGameUnits.z, 0.0f, -15.0f, 15.0f);
+        rockRightSupportGripOffsetGameUnits.x = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+            "fRightSupportGripOffsetXGameUnits", rockRightSupportGripOffsetGameUnits.x, 0.0f, -15.0f, 15.0f);
+        rockRightSupportGripOffsetGameUnits.y = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+            "fRightSupportGripOffsetYGameUnits", rockRightSupportGripOffsetGameUnits.y, 0.0f, -15.0f, 15.0f);
+        rockRightSupportGripOffsetGameUnits.z = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+            "fRightSupportGripOffsetZGameUnits", rockRightSupportGripOffsetGameUnits.z, 0.0f, -15.0f, 15.0f);
         rockWeaponCollisionBlocksSpells = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksSpells", rockWeaponCollisionBlocksSpells);
         rockWeaponCollisionPreserveGaps = ini.GetBoolValue(SECTION, "bWeaponCollisionPreserveGaps", rockWeaponCollisionPreserveGaps);
         rockWeaponCollisionVisualStabilizationSeconds =

@@ -573,6 +573,8 @@ namespace rock
          */
         struct PendingEquippedWeaponPrimaryOnlyGripStart
         {
+            weapon_grip_transfer::Pair pairedGrips{};
+            std::array<equipped_weapon_toggle_grab_policy::TransferReleaseState, 2> pairedRelease{};
             bool pending{ false };
             bool isLeft{ false };
             // Zero means "the current weapon" (menu reconciliation). Held

@@ -114,7 +114,9 @@ namespace rock
             self->clearOneHandRecoilClaim();
         }
         const bool ownedCarry = directRight || (self->isManualOwnershipActive() &&
-            (context.fullTwoHanded || (self->usesLeftFiringCarry() &&
+            (context.fullTwoHanded ||
+                (self->_session.state == TwoHandedState::Gripping && self->_firing.transferredPrimaryGrip.valid()) ||
+                (self->usesLeftFiringCarry() &&
                 self->_leftCarry.weaponNodeOwnershipBlockEngaged)));
         if (!ownedCarry && (context.profile == Profile::OneHand || context.profile == Profile::FullTwoHand)) {
             return decline();
@@ -191,7 +193,9 @@ namespace rock
         const auto context = recoilSampleIdentity(handedMode->GetBinary());
         const bool directRight = canUseRightOneHandRecoil();
         const bool managedCarry = isManualOwnershipActive() &&
-            (context.fullTwoHanded || (usesLeftFiringCarry() && _leftCarry.weaponNodeOwnershipBlockEngaged));
+            (context.fullTwoHanded ||
+                (_session.state == TwoHandedState::Gripping && _firing.transferredPrimaryGrip.valid()) ||
+                (usesLeftFiringCarry() && _leftCarry.weaponNodeOwnershipBlockEngaged));
         if (!directRight && !managedCarry) {
             _recoil.ticket.invalidate();
             return false;

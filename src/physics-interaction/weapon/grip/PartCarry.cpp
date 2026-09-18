@@ -369,7 +369,8 @@ namespace rock
             }
         }
 
-        bool lastReleaseWasSupportHand = true;
+        const bool twoHandsAttached = partGrip(true).active && partGrip(false).active;
+        const bool allowLastHandDrop = _handlingSettings.lastGripReleaseDropEnabled && !twoHandsAttached;
 
         /*
          * Open-hand releases are evaluated support hand first, so a same-frame
@@ -383,6 +384,8 @@ namespace rock
 
         WeaponPartGrip& supportGrip = partGrip(supportHandIsLeft);
         WeaponPartGrip& freeHandGrip = partGrip(firingHandIsLeft);
+        if (supportGripHeld) supportGrip.releaseRequiresNewHold = false;
+        if (frameInput.primaryGripInput.held) freeHandGrip.releaseRequiresNewHold = false;
         if (supportGrip.active) {
             if (!providerPartAuthorityStillCurrent(supportGrip, currentWeaponGenerationKey) || !supportRuntimeState.supportGripAllowed) {
                 /*
@@ -398,9 +401,13 @@ namespace rock
                 if (weapon_two_handed_grip_math::canReleaseCarryGrip(
                         gripCarries(supportGrip),
                         gripCarries(freeHandGrip),
-                        _handlingSettings.lastGripReleaseDropEnabled)) {
+                        allowLastHandDrop, supportGrip.releaseRequiresNewHold)) {
+                    if (gripCarries(supportGrip) && !freeHandGrip.active) {
+                        (void)requestEquippedWeaponDrop("support-carry-released",
+                            supportHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right);
+                        return;
+                    }
                     releasePartGrip(supportHandIsLeft, "support-grip-released", true);
-                    lastReleaseWasSupportHand = true;
                 } else {
                     recordGripReleaseRetained(supportHandIsLeft, "part-carry-last-carrier");
                 }
@@ -410,14 +417,17 @@ namespace rock
         if (freeHandGrip.active) {
             if (!providerPartAuthorityStillCurrent(freeHandGrip, currentWeaponGenerationKey)) {
                 releasePartGrip(firingHandIsLeft, "provider-part-authority-lost");
-                lastReleaseWasSupportHand = false;
             } else if (!weapon_two_handed_grip_math::shouldContinueSupportGrip(frameInput.primaryGripInput.held, firingHandHoldingObject)) {
                 if (weapon_two_handed_grip_math::canReleaseCarryGrip(
                         gripCarries(freeHandGrip),
                         gripCarries(supportGrip),
-                        _handlingSettings.lastGripReleaseDropEnabled)) {
+                        allowLastHandDrop, freeHandGrip.releaseRequiresNewHold)) {
+                    if (gripCarries(freeHandGrip) && !supportGrip.active) {
+                        (void)requestEquippedWeaponDrop("part-carry-released",
+                            firingHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right);
+                        return;
+                    }
                     releasePartGrip(firingHandIsLeft, "free-hand-grip-released", true);
-                    lastReleaseWasSupportHand = false;
                 } else {
                     recordGripReleaseRetained(firingHandIsLeft, "part-carry-last-carrier");
                 }
@@ -548,33 +558,13 @@ namespace rock
             }
         }
 
-        /*
-         * Only carry-authority grips can hold the weapon. When the last carry
-         * grip releases, a remaining AttachOnly glue cannot inherit pivot
-         * authority (never upgrade), so it releases with the carry and the
-         * normal manual-drop request proceeds (fail closed).
-         */
+        // Player last-hand releases were handled while their pose still
+        // existed. Revoked carry authority returns to native ownership;
+        // provider AttachOnly grips cannot inherit it or cause an auto-drop.
         if (!gripCarries(supportGrip) && !gripCarries(freeHandGrip)) {
             releasePartGrip(supportHandIsLeft, "carry-authority-lost", true);
             releasePartGrip(firingHandIsLeft, "carry-authority-lost", true);
-            if (!_handlingSettings.lastGripReleaseDropEnabled) {
-                /*
-                 * Player releases of the last carrier are refused above, so
-                 * this is a provider revocation or an attach-only remainder.
-                 * Without a carrier and without a drop, the weapon returns to
-                 * FRIK-native carry like a revoked support grip.
-                 */
-                ROCK_LOG_INFO(Weapon,
-                    "TwoHandedGrip: part-carry lost every carry grip without a player release; returning to native carry because the last-grip drop is disabled generation={:016X}",
-                    _session.weaponGenerationKey);
-                transitionToInactive(false);
-                return;
-            }
-            requestEquippedWeaponDrop(
-                "part-carry-all-grips-released",
-                lastReleaseWasSupportHand ?
-                    (supportHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right) :
-                    (firingHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right));
+            transitionToInactive(false);
             return;
         }
 

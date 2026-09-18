@@ -4,6 +4,7 @@
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
 #include "physics-interaction/weapon/LooseWeaponAuthoredGrabPolicy.h"
+#include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h"
 
 namespace RE
@@ -64,11 +65,10 @@ namespace rock::loose_weapon_grip_zone
     struct NearGrab
     {
         loose_weapon_authored_grab_policy::Role role{ loose_weapon_authored_grab_policy::Role::None };
+        loose_weapon_authored_grab_policy::Arrangement arrangement{ loose_weapon_authored_grab_policy::Arrangement::Pending };
         RE::NiTransform handWorld{};
-        // Authored relation for hand/finger presentation, independent of the
-        // physical relation used to place the weapon at ROCK's controller aim.
-        RE::NiTransform handWeaponLocal{};
-        RE::NiTransform placementHandWeaponLocal{};
+        AuthoredWeaponGripPose pose{};
+        bool handWorldValid{ false };
     };
 
     struct AuthoredSupportDebug
@@ -86,8 +86,10 @@ namespace rock::loose_weapon_grip_zone
 
     // Frame-thread only. Reprojects both seats from the current loose root;
     // never borrows equipped ownership or retains scene pointers.
-    bool tryResolveNearGrab(bool isLeft, RE::TESObjectREFR* ref, NearGrab& out);
-    void updateNearGrabCandidate(bool isLeft, RE::TESObjectREFR* ref);
+    bool tryResolveNearGrab(bool isLeft, RE::TESObjectREFR* ref, NearGrab& out, bool peerHolding = false);
+    bool tryResolveAuthoredGrabPose(bool isLeft, RE::TESObjectREFR* ref,
+        loose_weapon_authored_grab_policy::Role role, AuthoredWeaponGripPose& out);
+    void updateNearGrabCandidate(bool isLeft, RE::TESObjectREFR* ref, bool peerHolding);
     bool tryGetAuthoredSupportDebug(bool isLeft, AuthoredSupportDebug& out);
     std::size_t collectIndicators(bool isLeft, RE::TESObjectREFR* ref, std::span<RE::NiPoint3> positions);
 
@@ -124,24 +126,7 @@ namespace rock::loose_weapon_grip_zone
         RE::NiTransform& outHandWeaponLocal,
         RE::NiPoint3& outFiringGripWeaponLocal);
 
-    /*
-     * Stateless one-shot resolver of the loose weapon PLACEMENT hold. For an
-     * authored grip this always derives the position-only hold from the
-     * ROCK controller basis. It does not depend on a previous equip or a
-     * provider offset; missing authored data leaves the grip unavailable. The other hand
-     * receives the matching mirrored hold. Weapon world = hand world o
-     * inverse(hold). Used by pull-catch and force-grab commit; frame-thread
-     * only.
-     */
-    bool tryResolveLooseWeaponFiringHandHold(
-        bool isLeft,
-        RE::TESObjectREFR* weaponRef,
-        RE::NiTransform& outHandWorld,
-        RE::NiTransform& outHandWeaponLocal,
-        const char** outReason);
-
-    // Same resolver for a detached world model during loose-to-equipped
-    // visual handoff. No reference lifetime is retained.
+    // ROCK controller-placement relation for a detached model during equip.
     bool tryResolveLooseWeaponFiringHandHoldForModel(
         bool isLeft,
         const RE::TESObjectWEAP* weapon,

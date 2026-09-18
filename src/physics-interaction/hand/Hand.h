@@ -5,6 +5,7 @@
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/grab/GrabCore.h"
+#include "physics-interaction/weapon/WeaponGripTransfer.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabOffsetAcquisition.h"
 #include "physics-interaction/grab/GrabFinger.h"
@@ -454,6 +455,9 @@ namespace rock
         bool isHolding() const { return isHoldingState(_state); }
         bool isHoldingLooseWeapon() const { return isHolding() && _heldObjectIsLooseWeapon; }
         bool isHoldingAuthoredSupportGrip() const { return isHoldingLooseWeapon() && _grabFrame.authoredLooseWeaponSupportGrip; }
+        bool isHoldingFiringGrip() const { return isHoldingLooseWeapon() && _grabFrame.syntheticLooseWeaponPrimaryAttach && !_grabFrame.authoredLooseWeaponSupportGrip; }
+        bool captureWeaponGripTransfer(weapon_grip_transfer::HandGrip& out) const;
+        loose_weapon_authored_grab_policy::Arrangement heldWeaponArrangement() const { return _grabFrame.authoredWeaponArrangement; }
         RE::TESObjectREFR* getHeldRef() const { return _savedObjectState.refr; }
         const ActiveConstraint& getActiveConstraint() const { return _activeConstraint; }
         const SavedObjectState& getSavedObjectState() const { return _savedObjectState; }
@@ -530,7 +534,8 @@ namespace rock
             float proportionalRecovery,
             float constantRecovery,
             const BodyBoneColliderSet* bodyBoneColliders,
-            const GrabSharedObjectContext& sharedContext = {});
+            const GrabSharedObjectContext& sharedContext = {},
+            const AuthoredWeaponGripPose* transferPose = nullptr);
 
         bool acquirePeerHeldCloseSelection(RE::bhkWorld* bhkWorld,
             RE::hknpWorld* hknpWorld,

@@ -108,6 +108,7 @@ namespace rock
         {
             return _bridge.isHandPoseHandoffActive();
         }
+        [[nodiscard]] bool hasPairedHandPoseHandoff() const noexcept { return _bridge.hasPairedHandPoseHandoff(); }
         [[nodiscard]] bool handPoseHandoffIsLeft() const noexcept
         {
             return _bridge.handPoseHandoffIsLeft();

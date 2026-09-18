@@ -16,7 +16,7 @@ namespace
     const rock::config::Setting& find(const rock::config::ConfigurationStore& store, std::string_view key)
     {
         for (const auto& setting : store.settings()) if (setting.key == key) return setting;
-        throw std::runtime_error("Missing compiled setting");
+        throw std::runtime_error("Missing compiled setting: " + std::string(key));
     }
 
     void verifyReference(const CSimpleIniA& reference,
@@ -85,6 +85,22 @@ int main(int argc, char** argv)
             require(!other.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr), "example option belongs to both files");
         }
         require(store.load(true), "first-run load failed");
+        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fLeftFiringGripOffsetYGameUnits", "0.25"),
+            "left firing relative placement write failed");
+        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fRightSupportGripOffsetZGameUnits", "-0.5"),
+            "right support relative placement write failed");
+        require(store.load(false), "relative grip placement reload failed");
+        CSimpleIniA gripPlacementValues;
+        store.appendLoadedValues(gripPlacementValues);
+        const auto gripPlacement = rock::RockConfig::parseValues(gripPlacementValues);
+        require(gripPlacement.rockLeftFiringGripOffsetGameUnits == RE::NiPoint3(0.0f, 0.25f, 0.0f) &&
+            gripPlacement.rockRightSupportGripOffsetGameUnits == RE::NiPoint3(0.0f, 0.0f, -0.5f),
+            "relative firing and support placement must remain independent across reload");
+        require(gripPlacement.rockLeftFiringAimOffsetYGameUnits == 0.0f && gripPlacement.rockLeftFiringAimYawDegrees == 0.0f,
+            "relative grip placement must not change whole-carry position or aim");
+        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fLeftFiringGripOffsetYGameUnits", "0"), "left placement reset failed");
+        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fRightSupportGripOffsetZGameUnits", "0"), "right placement reset failed");
+        require(store.load(false), "relative grip placement reset reload failed");
         require(find(store, "bEnableImmersiveScopes").value == "true", "immersive scopes must default on");
         for (const bool enabled : { false, true }) {
             require(store.setValue(Group::Consumer, "NativeScopes", "bEnableImmersiveScopes", enabled ? "true" : "false"),

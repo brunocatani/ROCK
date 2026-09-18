@@ -62,6 +62,7 @@ namespace rock::authored_support_grab_policy
         CanonicalAxesUnavailable,
         CompleteFingerPoseUnavailable,
         CaptureUnavailableAfterQualification,
+        NoAuthoredSupportPose,
     };
 
     enum class LeftFiringTakeoverReadiness : std::uint8_t
@@ -86,6 +87,7 @@ namespace rock::authored_support_grab_policy
         std::uint64_t authoredGenerationKey{ 0 };
         bool capabilityIdentityCurrent{ false };
         Capability capability{ Capability::Pending };
+        bool supportPoseAbsent{ false };
         bool mirroredCandidateAvailable{ false };
     };
 
@@ -103,7 +105,7 @@ namespace rock::authored_support_grab_policy
         if (!input.capabilityIdentityCurrent) {
             return LeftFiringTakeoverReadiness::AwaitingCapability;
         }
-        if (input.capability == Capability::Unavailable) {
+        if (input.capability == Capability::Unavailable && input.supportPoseAbsent) {
             return LeftFiringTakeoverReadiness::ReadyWithDynamicFallback;
         }
         if (input.capability == Capability::Usable &&
@@ -156,6 +158,7 @@ namespace rock::authored_support_grab_policy
         bool weaponFamilySupported{ false };
         bool canonicalAxesValid{ false };
         bool completeFingerPose{ false };
+        bool supportPoseAbsent{ false };
     };
 
     struct CapabilityObservation
@@ -178,6 +181,9 @@ namespace rock::authored_support_grab_policy
                 .capability = Capability::Pending,
                 .reason = CapabilityReason::AwaitingIdentity,
             };
+        }
+        if (input.supportPoseAbsent) {
+            return {Capability::Unavailable, CapabilityReason::NoAuthoredSupportPose};
         }
         // Captured authored data is authoritative immediately. Generated
         // collision never qualifies or rejects the canonical pose or mirror.
@@ -272,6 +278,7 @@ namespace rock::authored_support_grab_policy
         bool dynamicHandoffCaptureEligible{ false };
         bool authoredCaptureEligible{ false };
         Capability capability{ Capability::Pending };
+        bool supportPoseAbsent{ false };
     };
 
     struct SelectionDecision
@@ -313,7 +320,7 @@ namespace rock::authored_support_grab_policy
                 .reason = SelectionReason::ModeDisabled,
             };
         }
-        if (input.capability == Capability::Unavailable) {
+        if (input.capability == Capability::Unavailable && input.supportPoseAbsent) {
             return {
                 .selection = Selection::DynamicFallback,
                 .reason = SelectionReason::AuthoredCapabilityUnavailable,
@@ -376,6 +383,8 @@ namespace rock::authored_support_grab_policy
             return "complete-finger-pose-unavailable";
         case CapabilityReason::CaptureUnavailableAfterQualification:
             return "capture-unavailable-after-qualification";
+        case CapabilityReason::NoAuthoredSupportPose:
+            return "no-authored-support-pose";
         }
         return "unknown";
     }

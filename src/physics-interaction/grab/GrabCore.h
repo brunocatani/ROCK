@@ -1,4 +1,5 @@
 #pragma once
+#include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
 
 #include "physics-interaction/VectorMath.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
@@ -779,6 +780,8 @@ namespace rock
         bool activeGrabPointUsesMultiFingerEvidence = false;
         bool syntheticLooseWeaponPrimaryAttach = false;
         bool authoredLooseWeaponSupportGrip = false;
+        AuthoredWeaponGripPose authoredWeaponPose{};
+        loose_weapon_authored_grab_policy::Arrangement authoredWeaponArrangement{ loose_weapon_authored_grab_policy::Arrangement::Pending };
         // Game-frame-only carry corrections. Frozen constraint/visual seats
         // remain immutable; both proxies receive the same two-hand root target.
         RE::NiTransform looseObjectSoloProxyCorrection{};
@@ -852,6 +855,8 @@ namespace rock
             activeGrabPointUsesMultiFingerEvidence = false;
             syntheticLooseWeaponPrimaryAttach = false;
             authoredLooseWeaponSupportGrip = false;
+            authoredWeaponPose = {};
+            authoredWeaponArrangement = loose_weapon_authored_grab_policy::Arrangement::Pending;
             looseObjectSoloProxyCorrection = {};
             looseObjectSharedProxyCorrection = {};
             looseObjectSharedPeerTrace = 0;

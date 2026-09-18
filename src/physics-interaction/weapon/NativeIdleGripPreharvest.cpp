@@ -288,6 +288,7 @@ namespace rock::native_idle_grip_preharvest
         {
             None,
             NotAttempted,
+            NoSupportAnimation,
             SupportHandBoneUnavailable,
             BoneChainInvalid,
             BoneLocalUnavailable,
@@ -615,6 +616,8 @@ namespace rock::native_idle_grip_preharvest
                 return "none";
             case SupportExtractionFailure::NotAttempted:
                 return "notAttempted";
+            case SupportExtractionFailure::NoSupportAnimation:
+                return "noSupportAnimation";
             case SupportExtractionFailure::SupportHandBoneUnavailable:
                 return "supportHandBoneUnavailable";
             case SupportExtractionFailure::BoneChainInvalid:
@@ -956,6 +959,9 @@ namespace rock::native_idle_grip_preharvest
                 return false;
             }
 
+            if (record.supportAbsent && !authored_weapon_grip_library::publishSupportAbsence(
+                    job.weapon, job.variant, job.inPowerArmor, captureSequence,
+                    authored_weapon_grip_library::CaptureSource::PersistedNativeIdle)) return false;
             if (record.supportValid) {
                 RE::NiTransform supportHandInWeapon{};
                 authored_weapon_grip_library::FiringFingerPose supportFingers{};
@@ -1020,6 +1026,7 @@ namespace rock::native_idle_grip_preharvest
                 record.rightFiringFingerLocals[index] = persistTransform(fingers.localTransforms[index]);
             }
             record.rightFiringFingerMask = fingers.enabledMask;
+            record.supportAbsent = diagnostics.supportFailure == SupportExtractionFailure::NoSupportAnimation;
             if (support.valid && diagnostics.supportStableForPersistence && support.fingerPose.complete()) {
                 record.supportHandWeaponLocal = persistTransform(support.handInWeapon);
                 for (std::size_t index = 0; index < support.fingerPose.localTransforms.size(); ++index) {
@@ -1378,6 +1385,11 @@ namespace rock::native_idle_grip_preharvest
                 return SupportExtractionFailure::SupportHandBoneUnavailable;
             }
             const int supportHandBoneIndex = static_cast<int>(supportHandRaw);
+
+            const auto authoredBranch = native_idle_grip_preharvest_policy::supportBranchHasAnimation(
+                primaryHandBoneIndex, supportHandBoneIndex, parentIndices, transformTrackCount, mapping);
+            if (!authoredBranch.has_value()) return SupportExtractionFailure::BoneChainInvalid;
+            if (!*authoredBranch) return SupportExtractionFailure::NoSupportAnimation;
 
             std::array<int, native_idle_grip_preharvest_policy::kMaxBoneChainLength> chain{};
             const auto composeModel = [&](const int leafBoneIndex, RE::NiTransform& outModel, int& outRootBoneIndex) {
@@ -2050,6 +2062,12 @@ namespace rock::native_idle_grip_preharvest
             }
 
             bool supportPublished = false;
+            if (extractionDiagnostics.supportFailure == SupportExtractionFailure::NoSupportAnimation &&
+                !authored_weapon_grip_library::publishSupportAbsence(job.weapon, job.variant, job.inPowerArmor,
+                    captureSequence, authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest)) {
+                failJob(state, "authoredGripLibraryRejectedSupportAbsence");
+                return true;
+            }
             if (supportSample.valid) {
                 const std::uint64_t supportCaptureSequence = kPreharvestCaptureSequenceDomain | (++state.nextCaptureSequence);
                 supportPublished = authored_weapon_grip_library::publishSupportRelation(job.weapon, job.variant, job.inPowerArmor, supportSample.handInWeapon,
