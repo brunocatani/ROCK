@@ -1,6 +1,7 @@
 #include "RockConfig.h"
 #include "config/SettingMetadata.h"
 #include <chrono>
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -162,7 +163,7 @@ int main(int argc, char** argv)
         CSimpleIniA compiled;
         rock::RockConfig::buildCompiledDefaults(compiled);
         require(compiled.GetBoolValue("PhysicsInteraction", "bRockyModeEnabled", false), "Rocky mode default must preserve enabled behavior");
-        require(compiled.GetDoubleValue("PhysicsInteraction", "fRockyModeHoldSeconds", 0) == 1.0, "Rocky mode default must preserve one-second qualification");
+        require(std::fabs(compiled.GetDoubleValue("PhysicsInteraction", "fRockyModeHoldSeconds", 0) - 0.30) < 0.000001, "Rocky mode default must use 0.30-second qualification");
         {
             CSimpleIniA rocky;
             rocky.SetBoolValue("PhysicsInteraction", "bRockyModeEnabled", false);
@@ -177,7 +178,7 @@ int main(int argc, char** argv)
             require(rock::RockConfig::parseValues(rocky).rockRockyModeHoldSeconds == 10.0f,
                 "Rocky mode timer must respect the supported maximum");
             rocky.SetValue("PhysicsInteraction", "fRockyModeHoldSeconds", "nan");
-            require(rock::RockConfig::parseValues(rocky).rockRockyModeHoldSeconds == 1.0f,
+            require(rock::RockConfig::parseValues(rocky).rockRockyModeHoldSeconds == 0.30f,
                 "Rocky mode non-finite timer must recover to its default");
         }
         require(compiled.GetLongValue("ImmersiveWeapons", "iWeaponGrabMode", 0) == 1, "weapon grab mode default must preserve toggle both");

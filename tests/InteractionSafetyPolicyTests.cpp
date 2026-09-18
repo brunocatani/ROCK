@@ -67,8 +67,8 @@ int main()
         cycle = observe(cycle, true, true, false, false);
         State state{};
         ok &= expectEqual("capture starts qualification without draw", update(state, {cycle, true, false, 0.1f}), Action::None);
-        ok &= expectEqual("short fist hold does not draw", update(state, {cycle, true, false, 0.9f}), Action::None);
-        ok &= expectEqual("full second draws fists once", update(state, {cycle, true, false, 0.11f}), Action::Draw);
+        ok &= expectEqual("short fist hold does not draw", update(state, {cycle, true, false, 0.29f}), Action::None);
+        ok &= expectEqual("0.30-second hold draws fists once", update(state, {cycle, true, false, 0.02f}), Action::Draw);
         ok &= expectEqual("drawing waits for native readiness", update(state, {cycle, true, false, 0.1f}), Action::None);
         ok &= expectEqual("unobserved draw has no active fists", state.phase, Phase::Drawing);
         static_cast<void>(update(state, {cycle, true, true, 0.1f}));
