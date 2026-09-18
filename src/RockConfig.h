@@ -112,6 +112,8 @@ namespace rock
         float rockLeftFiringAimOffsetXGameUnits = 0.0f;
         float rockLeftFiringAimOffsetYGameUnits = 0.0f;
         float rockLeftFiringAimOffsetZGameUnits = 0.0f;
+        RE::NiPoint3 rockLeftFiringGripOffsetGameUnits{ 0.0f, 0.0f, 0.0f };
+        RE::NiPoint3 rockRightSupportGripOffsetGameUnits{ 0.0f, 0.0f, 0.0f };
         bool rockWeaponCollisionBlocksProjectiles = false;
         bool rockWeaponCollisionBlocksSpells = false;
         // A/B comparison: original support hulls or bounded gap-preserving compounds.

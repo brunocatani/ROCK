@@ -3,6 +3,8 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
 #include "physics-interaction/weapon/WeaponGripTransfer.h"
 #include "physics-interaction/weapon/WeaponAimDiagnosticMath.h"
+#include "physics-interaction/weapon/WeaponGripCalibration.h"
+#include "physics-interaction/weapon/WeaponAuthority.h"
 
 #include <array>
 #include <cmath>
@@ -393,6 +395,45 @@ int main()
         ok &= expectBool("collapsed controller frame hides diagnostic rays", aim::measure(controller, barrelWorld, controller).valid, false);
         barrelWorld.rotate.entry[1].x = (std::numeric_limits<float>::quiet_NaN)();
         ok &= expectBool("nonfinite barrel frame hides diagnostic rays", aim::measure(identity, barrelWorld, identity).valid, false);
+    }
+    {
+        const auto identity = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+        auto handInWeapon = identity;
+        handInWeapon.rotate.entry[0] = { 0.0f, 1.0f, 0.0f, 0.0f };
+        handInWeapon.rotate.entry[1] = { -1.0f, 0.0f, 0.0f, 0.0f };
+        handInWeapon.translate = { 4.0f, -6.0f, 2.0f };
+        handInWeapon.scale = 2.0f;
+        const RE::NiPoint3 grip{ 1.0f, 3.0f, -2.0f };
+        const RE::NiPoint3 tuning{ 1.0f, 2.0f, 3.0f };
+        const auto delta = rock::weapon_grip_calibration::offsetInWeapon(handInWeapon, tuning, true);
+        ok &= expectFloat("grip tuning follows hand Y through rotated weapon", delta.x, -4.0f);
+        ok &= expectFloat("grip tuning follows fingers through rotated weapon", delta.y, 2.0f);
+        ok &= expectFloat("grip tuning uses authored cross-palm sign and scale", delta.z, -6.0f);
+        const auto shifted = rock::weapon_grip_calibration::shiftedHand(handInWeapon, tuning, true);
+        const auto shiftedGrip = grip + delta;
+        const auto oldGripInHand = rock::transform_math::worldPointToLocal(handInWeapon, grip);
+        const auto newGripInHand = rock::transform_math::worldPointToLocal(shifted, shiftedGrip);
+        ok &= expectFloat("calibrated firing point keeps physical hand X anchor", newGripInHand.x, oldGripInHand.x);
+        ok &= expectFloat("calibrated firing point keeps physical hand Y anchor", newGripInHand.y, oldGripInHand.y);
+        ok &= expectFloat("calibrated firing point keeps physical hand Z anchor", newGripInHand.z, oldGripInHand.z);
+        auto weapon = identity;
+        weapon.translate = { 20.0f, 30.0f, 40.0f };
+        weapon.rotate = handInWeapon.rotate;
+        weapon.scale = 1.5f;
+        const auto oldHandWorld = rock::transform_math::composeTransforms(weapon, handInWeapon);
+        const auto targetPalm = rock::transform_math::localPointToWorld(oldHandWorld, newGripInHand);
+        const auto movedWeapon = rock::left_firing_position_only_math::resolveWeaponWorldPositionOnly(
+            identity, weapon, weapon, shiftedGrip, targetPalm);
+        const auto newHandWorld = rock::transform_math::composeTransforms(movedWeapon, shifted);
+        ok &= expectFloat("relative grip tuning leaves firing hand world X fixed", newHandWorld.translate.x, oldHandWorld.translate.x);
+        ok &= expectFloat("relative grip tuning leaves firing hand world Y fixed", newHandWorld.translate.y, oldHandWorld.translate.y);
+        ok &= expectFloat("relative grip tuning leaves firing hand world Z fixed", newHandWorld.translate.z, oldHandWorld.translate.z);
+        ok &= expectBool("relative grip tuning moves the weapon", movedWeapon.translate != weapon.translate, true);
+        ok &= expectFloat("relative grip tuning preserves weapon orientation", movedWeapon.rotate.entry[0].y, weapon.rotate.entry[0].y);
+        const auto neutral = rock::weapon_grip_calibration::shiftedHand(handInWeapon, RE::NiPoint3{}, false);
+        ok &= expectBool("zero support tuning preserves the original grip", neutral.translate == handInWeapon.translate, true);
+        const auto support = rock::weapon_grip_calibration::shiftedHand(handInWeapon, tuning, false);
+        ok &= expectFloat("right support uses its own hand-local calibration", support.translate.y, handInWeapon.translate.y + 2.0f);
     }
     ok &= testCommandedFingerCorrectionFrame();
     using namespace rock::grab_finger_local_transform_math;

@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/WeaponGripCalibration.h"
 
 // Firing-hand grip: canonical right frame, native aim-frame capture, left/right mirroring, authored primary firing grip canonical and finger pose, reattach, support-to-firing promotion, and PrimaryOnly (persistent equipped carry) sessions.
 
@@ -80,7 +81,9 @@ namespace rock
             return reject("mirrored-firing-frame-unavailable");
         }
 
-        outFiringGripWeaponLocal = _firing.rightCanonicalGripWeaponLocal;
+        outFiringGripWeaponLocal = _firing.rightCanonicalGripWeaponLocal +
+            weapon_grip_calibration::offsetInWeapon(outFiringHandWeaponLocal,
+                g_rockConfig.rockLeftFiringGripOffsetGameUnits, true);
         return true;
     }
 
@@ -789,6 +792,11 @@ namespace rock
             setFiringHand(handIsLeft, "firing-grip-reattach-other-hand");
         }
         _firing.hasPrimaryHandWeaponLocal = true;
+        if (usedCanonicalHold) {
+            _firing.primaryGripLocal = _firing.rightCanonicalGripWeaponLocal;
+            if (handIsLeft) _firing.primaryGripLocal += weapon_grip_calibration::offsetInWeapon(
+                _firing.primaryHandWeaponLocal, g_rockConfig.rockLeftFiringGripOffsetGameUnits, true);
+        }
         rememberRightFiringHandCanonicalFrame(_firing.rightCanonicalInstanceContentKey);
         _session.firingGripSequence = ++_session.gripCaptureSequence;
         _visuals.primaryHandLerp = {};
@@ -1806,7 +1814,8 @@ namespace rock
                 transformOffsetLength(boneInLeftWand));
         }
 
-        outHandWeaponLocal = mirroredHandWeaponLocal;
+        outHandWeaponLocal = weapon_grip_calibration::shiftedHand(mirroredHandWeaponLocal,
+            g_rockConfig.rockLeftFiringGripOffsetGameUnits, true);
         return true;
     }
 
@@ -1882,12 +1891,12 @@ namespace rock
          * The identity checks above validate the current canonical.
          */
         RE::NiTransform newFiringHandWeaponLocal{};
+        RE::NiPoint3 newFiringGripWeaponLocal = _firing.rightCanonicalGripWeaponLocal;
         const char* holdSource = nullptr;
         if (supportHandIsLeft) {
-            RE::NiPoint3 capturedFiringGrip{};
             const char* captureFailure = nullptr;
             if (!tryBuildCurrentLeftFiringGripCapture(weaponNode, _session.weaponGenerationKey,
-                    _session.equippedWeaponOwnershipKey, newFiringHandWeaponLocal, capturedFiringGrip, &captureFailure)) {
+                    _session.equippedWeaponOwnershipKey, newFiringHandWeaponLocal, newFiringGripWeaponLocal, &captureFailure)) {
                 outReason = captureFailure ? captureFailure : "firing-mirror-unavailable";
                 return Result::Blocked;
             }
@@ -1931,6 +1940,7 @@ namespace rock
         }
 
         _firing.primaryHandWeaponLocal = newFiringHandWeaponLocal;
+        _firing.primaryGripLocal = newFiringGripWeaponLocal;
         _firing.hasPrimaryHandWeaponLocal = true;
         rememberRightFiringHandCanonicalFrame(_firing.rightCanonicalInstanceContentKey);
         if (usesLeftFiringCarry() &&

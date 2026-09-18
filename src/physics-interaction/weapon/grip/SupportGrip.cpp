@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
 #include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
+#include "physics-interaction/weapon/WeaponGripCalibration.h"
 
 // Support-hand grip: authored capability qualification and selection, dynamic
 // acquisition, the capture transaction (capturePartGrip, whose finger solve
@@ -2721,7 +2722,10 @@ namespace rock
                     kCompleteFingerLocalTransformMask) {
                 return false;
             }
-            outHandWeaponLocal = candidate.rightHandWeaponLocal;
+            // Keep the cached mirror uncalibrated. Each new grab consumes the
+            // current setting once, and active captures remain stable.
+            outHandWeaponLocal = weapon_grip_calibration::shiftedHand(candidate.rightHandWeaponLocal,
+                g_rockConfig.rockRightSupportGripOffsetGameUnits, false);
             outFingerLocalTransforms = candidate.rightFingerLocalTransforms;
             outFingerLocalTransformMask = candidate.rightFingerLocalTransformMask;
         }
@@ -3008,6 +3012,8 @@ namespace rock
                 return authored_support_grab_policy::Selection::Reject;
             }
             grip.gripLocal = _firing.rightCanonicalGripWeaponLocal;
+            if (isLeft) grip.gripLocal += weapon_grip_calibration::offsetInWeapon(
+                grip.handWeaponLocal, g_rockConfig.rockLeftFiringGripOffsetGameUnits, true);
             grip.attachmentRoot = weaponNode;
             grip.hasHandWeaponLocal = true;
             grip.authoredSupportGrip = true;

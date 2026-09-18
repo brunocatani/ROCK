@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
+#include "physics-interaction/weapon/WeaponGripCalibration.h"
 #include "physics-interaction/weapon/PipeFiringGripPolicy.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 
@@ -360,12 +361,15 @@ namespace rock::loose_weapon_grip_zone
             if (isLeft) return true;
             RE::NiTransform leftWorld{}, rightWorld{};
             auto* nodes = f4vr::getPlayerNodes();
-            return nodes && nodes->SecondaryWandNode && nodes->primaryWandNode &&
+            const bool mirrored = nodes && nodes->SecondaryWandNode && nodes->primaryWandNode &&
                 physicalHandWorld(true, leftWorld) && physicalHandWorld(false, rightWorld) &&
                 isUsableWorldTransform(nodes->SecondaryWandNode->world) && isUsableWorldTransform(nodes->primaryWandNode->world) &&
                 TwoHandedGrip::tryBuildMirroredSupportHandWeaponLocal(authored.supportHandWeaponLocal,
                     transform_math::composeTransforms(transform_math::invertTransform(nodes->SecondaryWandNode->world), leftWorld),
                     transform_math::composeTransforms(transform_math::invertTransform(nodes->primaryWandNode->world), rightWorld), out);
+            if (mirrored) out = weapon_grip_calibration::shiftedHand(out,
+                g_rockConfig.rockRightSupportGripOffsetGameUnits, false);
+            return mirrored;
         }
 
         bool capturePose(bool isLeft, std::uint32_t formId, loose_weapon_authored_grab_policy::Role role,
@@ -757,6 +761,8 @@ namespace rock::loose_weapon_grip_zone
         }
         outHandWeaponLocal = state.firingHandWeaponLocal;
         outFiringGripWeaponLocal = state.gripWeaponLocal;
+        if (isLeft) outFiringGripWeaponLocal += weapon_grip_calibration::offsetInWeapon(
+            outHandWeaponLocal, g_rockConfig.rockLeftFiringGripOffsetGameUnits, true);
         return true;
     }
 

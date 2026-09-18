@@ -1452,7 +1452,7 @@
                     const char* gripRole = !loose || looseHand.isHoldingFiringGrip() ? "firing" :
                         (looseHand.isHoldingAuthoredSupportGrip() ? "support" : "dynamic");
                     ROCK_LOG_SAMPLE_INFO(Weapon, 500,
-                        "WEAPON_AIM frame={} form={:08X} mode={} hand={} role={} supportHeld={} axis={} wandYaw={:.3f} wandPitch={:.3f} handAngle={:.3f} barrelInWand=({:.5f},{:.5f},{:.5f}) barrelInHand=({:.6f},{:.6f},{:.6f}) handInWandRows=({:.6f},{:.6f},{:.6f};{:.6f},{:.6f},{:.6f};{:.6f},{:.6f},{:.6f}) Rvalid={} Lvalid={} RseatDelta=({:.4f},{:.4f},{:.4f}) LseatDelta=({:.4f},{:.4f},{:.4f}) RpalmWeapon=({:.4f},{:.4f},{:.4f}) LpalmWeapon=({:.4f},{:.4f},{:.4f}) trim=({:.3f},{:.3f}) offset=({:.3f},{:.3f},{:.3f})",
+                        "WEAPON_AIM frame={} form={:08X} mode={} hand={} role={} supportHeld={} axis={} wandYaw={:.3f} wandPitch={:.3f} handAngle={:.3f} barrelInWand=({:.5f},{:.5f},{:.5f}) barrelInHand=({:.6f},{:.6f},{:.6f}) handInWandRows=({:.6f},{:.6f},{:.6f};{:.6f},{:.6f},{:.6f};{:.6f},{:.6f},{:.6f}) Rvalid={} Lvalid={} RseatDelta=({:.4f},{:.4f},{:.4f}) LseatDelta=({:.4f},{:.4f},{:.4f}) RpalmWeapon=({:.4f},{:.4f},{:.4f}) LpalmWeapon=({:.4f},{:.4f},{:.4f}) trim=({:.3f},{:.3f}) offset=({:.3f},{:.3f},{:.3f}) firingGripOffset=({:.3f},{:.3f},{:.3f}) supportGripOffset=({:.3f},{:.3f},{:.3f})",
                         frame.gameFrameIndex, formID, loose ? "loose" : "equipped", firingIsLeft ? "left" : "right", gripRole, supportHeld, axisSource,
                         aim.yawDegrees, aim.pitchDegrees, aim.divergenceDegrees,
                         aim.barrelInController.x, aim.barrelInController.y, aim.barrelInController.z,
@@ -1464,7 +1464,9 @@
                         rightSeatInRaw.x, rightSeatInRaw.y, rightSeatInRaw.z, leftSeatInRaw.x, leftSeatInRaw.y, leftSeatInRaw.z,
                         rightPalmInWeapon.x, rightPalmInWeapon.y, rightPalmInWeapon.z, leftPalmInWeapon.x, leftPalmInWeapon.y, leftPalmInWeapon.z,
                         g_rockConfig.rockLeftFiringAimYawDegrees, g_rockConfig.rockLeftFiringAimPitchDegrees,
-                        g_rockConfig.rockLeftFiringAimOffsetXGameUnits, g_rockConfig.rockLeftFiringAimOffsetYGameUnits, g_rockConfig.rockLeftFiringAimOffsetZGameUnits);
+                        g_rockConfig.rockLeftFiringAimOffsetXGameUnits, g_rockConfig.rockLeftFiringAimOffsetYGameUnits, g_rockConfig.rockLeftFiringAimOffsetZGameUnits,
+                        g_rockConfig.rockLeftFiringGripOffsetGameUnits.x, g_rockConfig.rockLeftFiringGripOffsetGameUnits.y, g_rockConfig.rockLeftFiringGripOffsetGameUnits.z,
+                        g_rockConfig.rockRightSupportGripOffsetGameUnits.x, g_rockConfig.rockRightSupportGripOffsetGameUnits.y, g_rockConfig.rockRightSupportGripOffsetGameUnits.z);
                 }
             }
         }
