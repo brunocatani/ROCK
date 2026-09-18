@@ -9,6 +9,7 @@
 #include "physics-interaction/input/VatsGrenadeGesturePolicy.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/core/PhysicsHooks.h"
+#include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "RockConfig.h"
@@ -41,6 +42,7 @@
 #include <intrin.h>
 #include <optional>
 #include <string_view>
+#include <utility>
 
 namespace rock::input_remap_runtime
 {
@@ -119,7 +121,8 @@ namespace rock::input_remap_runtime
          * the VR flashlight: its HandleEvent at slot offset +0x58 fires the
          * light toggle (0xDAF090 on the global at 0x5B279E0) once per hold
          * when heldDownSecs passes the same threshold global (0x3844EA0) the
-         * flat path uses, latched by this+0x28 until release. Verified
+         * flat path uses, latched by this+0x28 until the next fresh press
+         * (release does not clear it). Verified
          * 2026-07-04 from raw disassembly after live traces showed the
          * PipboyHandler hook suppressing opens while the light still fired -
          * the light-on-hold path inside PipboyHandler is flat-game only.
@@ -128,6 +131,17 @@ namespace rock::input_remap_runtime
          */
         constexpr std::uintptr_t kPipboyLightHandlerHandleEventFunctionOffset = 0x0FC9170;
         constexpr std::uintptr_t kPipboyLightHandlerHandleEventVTableSlotOffset = 0x2D8A2A0;
+        /*
+         * FO4VR 1.2.72, raw disassembly reverified 2026-09-17:
+         * PlayerControls construction (0xFC2F69..0xFC2F80) stores the light
+         * handler at +0x318. Query 0xFC1C40 reads its +0x28 hold latch;
+         * 0xFC918F clears it on press and 0xFC920A sets it after a hold.
+         * PipboyHandler's sole call to that query at 0x132707D vetoes opening.
+         * Y is an independent button: waive this veto only in its synchronous
+         * native release call, without resetting the real trigger's latch.
+         */
+        constexpr std::uintptr_t kPipboyLightHoldQueryFunctionOffset = 0x0FC1C40;
+        constexpr std::uintptr_t kPipboyLightHoldQueryCallSiteOffset = 0x132707D;
         /*
          * FO4VR's ActivateHandler resolves the wand's current "pick ref" (what it is pointing
          * at/reaching for) from one of these two per-wand handle globals before dispatching
@@ -187,6 +201,7 @@ namespace rock::input_remap_runtime
         using FavoritesInputEventHandler_t = void (*)(void*, RE::InputEvent*);
         // Verified PipboyHandler slot-11 signature: (this, event) only; no cursor/unk tail like the PlayerControls handlers.
         using PipboyInputEventHandler_t = void (*)(void*, RE::InputEvent*);
+        using PipboyLightHoldQuery_t = bool (*)(void*);
         using MenuOpenInputEventHandler_t = void (*)(void*, RE::InputEvent*);
         using NativeVatsVansDecision_t = void (*)(RE::ButtonEvent*);
         using NativeJumpShouldHandleEvent_t = bool (*)(
@@ -238,6 +253,9 @@ namespace rock::input_remap_runtime
         // thread; these gesture states are never read from worker callbacks.
         manual_scope_input_policy::RuntimeState s_manualScopeInputState{};
         pipboy_pause_gesture_policy::RuntimeState s_pipboyPauseGestureState{};
+        // Call-scoped on the dispatching input thread, never published to
+        // controller polling threads. Scope exit restores nested dispatches.
+        thread_local bool t_explicitNativePipboyTap = false;
         vats_grenade_gesture_policy::RuntimeState s_vatsGrenadeGestureState{};
         // Native input publishes one edge; the interaction frame owns inventory.
         std::atomic<bool> s_pendingGrenadeQuickDrawHoldRequest{ false };
@@ -289,6 +307,7 @@ namespace rock::input_remap_runtime
         NativeInputEventHandler_t s_originalMeleeThrowEventHandler = nullptr;
         FavoritesInputEventHandler_t s_originalFavoritesEventHandler = nullptr;
         PipboyInputEventHandler_t s_originalPipboyEventHandler = nullptr;
+        PipboyLightHoldQuery_t s_originalPipboyLightHoldQuery = nullptr;
         NativeInputEventHandler_t s_originalPipboyLightEventHandler = nullptr;
         MenuOpenInputEventHandler_t s_originalMenuOpenEventHandler = nullptr;
         NativeVatsVansDecision_t s_originalNativeVatsVansDecision = nullptr;
@@ -1847,10 +1866,10 @@ namespace rock::input_remap_runtime
         [[nodiscard]] bool dispatchNativePipboyTap(RE::ButtonEvent& event)
         {
             auto* pipboyHandler = resolvePipboyHandlerFromMenuControls();
-            if (!pipboyHandler || !s_originalPipboyEventHandler) {
+            if (!pipboyHandler || !s_originalPipboyEventHandler || !s_originalPipboyLightHoldQuery) {
                 ROCK_LOG_SAMPLE_WARN(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "Cannot route Pause tap to Pip-Boy: native PipboyHandler unavailable");
+                    "Cannot route Pause tap to Pip-Boy: native handler or flashlight-veto hook unavailable");
                 return false;
             }
 
@@ -1873,7 +1892,13 @@ namespace rock::input_remap_runtime
             event.value = 0.0f;
             event.heldDownSecs = (std::max)(originalHeldDownSecs, 0.001f);
             event.handled = RE::InputEvent::HANDLED_RESULT::kUnhandled;
-            s_originalPipboyEventHandler(pipboyHandler, &event);
+            {
+                const bool previousExplicitTap = std::exchange(t_explicitNativePipboyTap, true);
+                const auto restoreExplicitTap = F4SE::stl::scope_exit([previousExplicitTap] {
+                    t_explicitNativePipboyTap = previousExplicitTap;
+                });
+                s_originalPipboyEventHandler(pipboyHandler, &event);
+            }
 
             const auto releaseHandled = event.handled;
             event.strUserEvent = originalUserEvent;
@@ -2150,6 +2175,22 @@ namespace rock::input_remap_runtime
             }
         }
 
+        bool hookedPipboyLightHoldQuery(void* playerControls)
+        {
+            if (!playerControls || !s_originalPipboyLightHoldQuery) {
+                ROCK_LOG_SAMPLE_WARN(Input, 1000,
+                    "Pip-Boy opening blocked: flashlight-hold query or native controls unavailable");
+                return true;
+            }
+            const bool flashlightHoldUsed = s_originalPipboyLightHoldQuery(playerControls);
+            if (flashlightHoldUsed && t_explicitNativePipboyTap) {
+                ROCK_LOG_SAMPLE_INFO(Input, 1000,
+                    "Pip-Boy Y ignored native flashlight-hold veto; trigger hold state preserved");
+                return false;
+            }
+            return flashlightHoldUsed;
+        }
+
         template <class HandlerT>
         bool installNativeActionVTableHook(
             std::uintptr_t slotOffset, std::uintptr_t expectedFunctionOffset, HandlerT hook, HandlerT& original, std::atomic<bool>& installedFlag, const char* label)
@@ -2249,8 +2290,56 @@ namespace rock::input_remap_runtime
                 "MeleeThrowHandler::HandleEvent suppression");
         }
 
+        bool installPipboyLightHoldQueryHook()
+        {
+            // Installation runs on the frame thread before input dispatch.
+            // A signature mismatch is permanent for this process, not a
+            // transient dependency to retry and log every frame.
+            static bool attempted = false;
+            if (attempted) {
+                return s_originalPipboyLightHoldQuery != nullptr;
+            }
+            attempted = true;
+
+            // Exact CALL, TEST AL,AL and conditional branch from the verified
+            // unpacked VR image. Also verify the read-only query body before
+            // allowing ROCK to reinterpret its result.
+            constexpr std::array<std::uint8_t, 13> expectedCall{
+                0xE8, 0xBE, 0xAB, 0xC9, 0xFF, 0x84, 0xC0,
+                0x0F, 0x85, 0x98, 0x00, 0x00, 0x00,
+            };
+            constexpr std::array<std::uint8_t, 17> expectedQuery{
+                0x48, 0x8B, 0x81, 0x18, 0x03, 0x00, 0x00,
+                0x48, 0x85, 0xC0, 0x74, 0x05, 0x0F, 0xB6, 0x40, 0x28, 0xC3,
+            };
+            const auto callSite = REL::Offset(kPipboyLightHoldQueryCallSiteOffset).address();
+            const auto query = REL::Offset(kPipboyLightHoldQueryFunctionOffset).address();
+            std::array<std::uint8_t, expectedCall.size()> actualCall{};
+            std::array<std::uint8_t, expectedQuery.size()> actualQuery{};
+            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(callSite), actualCall.data(), actualCall.size()) ||
+                actualCall != expectedCall ||
+                !native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(query), actualQuery.data(), actualQuery.size()) ||
+                actualQuery != expectedQuery) {
+                ROCK_LOG_ERROR(Input,
+                    "Pip-Boy flashlight-veto hook validation failed: callsite=0x{:X} query=0x{:X}; Y native dispatch disabled",
+                    callSite, query);
+                return false;
+            }
+
+            auto& trampoline = F4SE::GetTrampoline();
+            const auto original = trampoline.write_call<5>(callSite, &hookedPipboyLightHoldQuery);
+            s_originalPipboyLightHoldQuery = reinterpret_cast<PipboyLightHoldQuery_t>(original);
+            if (!s_originalPipboyLightHoldQuery) {
+                ROCK_LOG_ERROR(Input, "Pip-Boy flashlight-veto hook returned a null original target");
+                return false;
+            }
+            ROCK_LOG_INFO(Input, "Installed explicit-Y Pip-Boy flashlight-veto hook at 0x{:X}; original=0x{:X}", callSite, original);
+            return true;
+        }
+
         bool installPipboyPauseArbitrationHooks()
         {
+            const bool lightVetoHookReady = installPipboyLightHoldQueryHook();
             const bool openHookReady = installNativeActionVTableHook(kPipboyHandlerHandleEventVTableSlotOffset,
                 kPipboyHandlerHandleEventFunctionOffset,
                 &hookedPipboyEventHandler,
@@ -2269,7 +2358,7 @@ namespace rock::input_remap_runtime
                 s_originalMenuOpenEventHandler,
                 s_menuOpenEventHookInstalled,
                 "MenuOpenHandler::HandleButtonEvent Pip-Boy/Pause arbitration");
-            return openHookReady && lightHookReady && menuOpenHookReady;
+            return lightVetoHookReady && openHookReady && lightHookReady && menuOpenHookReady;
         }
 
         bool installNativeVatsVansInputSuppressionHook()
