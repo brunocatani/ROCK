@@ -53,6 +53,22 @@ namespace rock::equipped_weapon_toggle_grab_policy
         bool released{ false };
     };
 
+    struct TransferReleaseState
+    {
+        bool buttonReleased{ false };
+        bool releaseRequested{ false };
+
+        constexpr void observe(Mode mode, bool firingGrip, const ButtonState& physical) noexcept
+        {
+            if (!usesToggleForRole(mode, firingGrip)) {
+                releaseRequested = !physical.held;
+                return;
+            }
+            buttonReleased = buttonReleased || physical.released || (!physical.held && !physical.pressed);
+            releaseRequested = releaseRequested || (buttonReleased && physical.pressed);
+        }
+    };
+
     struct HandGripOccupancy
     {
         bool firingGripActive{ false };
@@ -275,6 +291,21 @@ namespace rock::equipped_weapon_toggle_grab_policy
                 state = HandState::Open;
             }
             return false;
+        }
+    }
+
+    // Both grips already existed on the loose reference. Transfer their
+    // logical occupancy without interpreting a held button as another press.
+    inline constexpr void adoptTransferredGrips(RuntimeState& state, Mode mode,
+        std::uint64_t ownership, const GripOccupancy& occupancy) noexcept
+    {
+        state = {};
+        state.weaponOwnershipKey = ownership;
+        if (!ownership) return;
+        for (const bool isLeft : { false, true }) {
+            const auto& hand = isLeft ? occupancy.left : occupancy.right;
+            state.hands[handIndex(isLeft)] = hand.weaponEngaged() && hand.usesToggleGrab(mode) ?
+                HandState::Latched : HandState::Open;
         }
     }
 

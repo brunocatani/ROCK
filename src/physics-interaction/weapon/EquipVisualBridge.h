@@ -5,6 +5,7 @@
 #include "RE/NetImmerse/NiSmartPointer.h"
 
 #include "physics-interaction/weapon/EquippedWeaponVisualState.h"
+#include "physics-interaction/weapon/WeaponGripTransfer.h"
 
 #include <array>
 #include <chrono>
@@ -65,6 +66,7 @@ namespace rock
             // name. This is deliberately not the temporary loose reference ID.
             std::uint32_t weaponFormID = 0;
             bool isLeftHand = false;
+            const weapon_grip_transfer::Pair* pairedGrips = nullptr; // Copied by begin().
             // Weapon base form for the shared loose-grip authority resolver;
             // the captured worldModel supplies the matching stock variant.
             RE::TESObjectWEAP* weapon = nullptr;
@@ -140,6 +142,7 @@ namespace rock
         [[nodiscard]] bool ownsNativeInstanceCull(const RE::NiAVObject* node) const noexcept;
         [[nodiscard]] bool isHandPoseHandoffActive() const noexcept { return _handPoseHandoffActive; }
         [[nodiscard]] bool handPoseHandoffIsLeft() const noexcept { return _isLeftHand; }
+        [[nodiscard]] bool hasPairedHandPoseHandoff() const noexcept { return _pairedGrips.valid(); }
         [[nodiscard]] std::uint32_t weaponBaseFormID() const noexcept { return _weaponFormID; }
 
         // Called only after the equipped exact-pose publisher has positively
@@ -152,6 +155,7 @@ namespace rock
         // the model is still parented or the world root is unavailable.
         bool tryAttachToWorldRoot();
         bool publishHandPoseHandoff();
+        bool publishPairedHandWorld(RE::NiAVObject* model, bool equippedModel);
         void synchronizeNativeInstanceCull(
             const equipped_weapon_visual_state::Snapshot* nativeVisual,
             bool bridgePresented);
@@ -163,6 +167,8 @@ namespace rock
             float deltaSeconds,
             bool presentedForLogging);
 
+        weapon_grip_transfer::Pair _pairedGrips{};
+        bool _pairedSupportBlockEngaged = false;
         RE::NiPointer<RE::NiAVObject> _model;
         RE::NiPointer<RE::NiAVObject> _culledNativeInstance;
         // Non-owning; validated each frame against _model->parent before use.

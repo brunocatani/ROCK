@@ -1,5 +1,6 @@
 #pragma once
 #include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
+#include "physics-interaction/weapon/WeaponGripTransfer.h"
 
 #include <atomic>
 #include <array>
@@ -966,6 +967,8 @@ namespace rock
         bool republishPartCarryWeaponTransform(RE::NiNode* weaponNode);
 
         EquippedWeaponManualDropRequest consumeEquippedWeaponDropRequest();
+        bool beginTransferredTwoHandGrip(RE::NiNode* weaponNode, std::uint64_t generation,
+            std::uint64_t ownership, const weapon_grip_transfer::Pair& grips, const char** failure);
         void prepareEquippedWeaponDropCommit();
         void completeEquippedWeaponDrop(const EquippedWeaponManualDropRequest& request, bool committed);
 
@@ -1232,6 +1235,8 @@ namespace rock
          */
         struct WeaponPartGrip
         {
+            // Loose captures have root-local seats even when the pose is dynamic.
+            bool transferredLooseGrip{ false };
             bool active{ false };
             // A refused open-hand release needs a new hold before it may recur.
             bool releaseRequiresNewHold{ false };
@@ -1992,6 +1997,7 @@ namespace rock
         // reattach-hover witness.
         struct FiringGripState
         {
+            weapon_grip_transfer::HandGrip transferredPrimaryGrip{};
             // Canonical right-hand firing hold, keyed by node identity,
             // collision generation, and equipped ownership; see
             // rememberRightFiringHandCanonicalFrame().

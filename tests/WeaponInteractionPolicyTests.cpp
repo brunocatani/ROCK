@@ -1678,6 +1678,37 @@ int main()
 {
     using WeaponGrabMode = rock::equipped_weapon_toggle_grab_policy::Mode;
     namespace grab_modes = rock::equipped_weapon_toggle_grab_policy;
+    for (const auto mode : { WeaponGrabMode::ToggleBoth, WeaponGrabMode::ToggleFiringOnly, WeaponGrabMode::HoldBoth }) {
+        for (const bool firing : { false, true }) {
+            grab_modes::TransferReleaseState transfer{};
+            transfer.observe(mode, firing, { .held = true, .pressed = true });
+            if (transfer.releaseRequested) return 96;
+            transfer.observe(mode, firing, { .released = true });
+            if (transfer.releaseRequested == grab_modes::usesToggleForRole(mode, firing)) return 97;
+            transfer.observe(mode, firing, { .held = true, .pressed = true });
+            if (transfer.releaseRequested != grab_modes::usesToggleForRole(mode, firing)) return 98;
+            transfer.observe(mode, firing, { .held = true });
+            if (transfer.releaseRequested != grab_modes::usesToggleForRole(mode, firing)) return 99;
+        }
+        for (const bool firingIsLeft : { false, true }) {
+            grab_modes::GripOccupancy pair{};
+            (firingIsLeft ? pair.left : pair.right).firingGripActive = true;
+            (firingIsLeft ? pair.right : pair.left).partGripActive = true;
+            grab_modes::RuntimeState state{};
+            grab_modes::adoptTransferredGrips(state, mode, 123, pair);
+            const auto held = grab_modes::prepare(state, {
+                .weaponGrabMode = mode, .inputAllowed = true, .weaponOwnershipKey = 123,
+                .occupancy = pair, .left = { .held = true }, .right = { .held = true },
+            });
+            if (!held.left.held || !held.right.held || held.left.pressed || held.right.pressed) return 94;
+            const auto opened = grab_modes::prepare(state, {
+                .weaponGrabMode = mode, .inputAllowed = true, .weaponOwnershipKey = 123,
+                .occupancy = pair, .left = { .released = true }, .right = { .released = true },
+            });
+            if (opened.left.held != grab_modes::usesToggleForRole(mode, firingIsLeft) ||
+                opened.right.held != grab_modes::usesToggleForRole(mode, !firingIsLeft)) return 95;
+        }
+    }
     static_assert(grab_modes::fromSetting(1) == WeaponGrabMode::ToggleBoth);
     static_assert(grab_modes::fromSetting(2) == WeaponGrabMode::ToggleFiringOnly);
     static_assert(grab_modes::fromSetting(3) == WeaponGrabMode::HoldBoth);

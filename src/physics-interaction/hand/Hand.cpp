@@ -1389,6 +1389,32 @@ namespace rock
         return true;
     }
 
+    bool Hand::captureWeaponGripTransfer(weapon_grip_transfer::HandGrip& out) const
+    {
+        out = {};
+        if (!isHoldingLooseWeapon() || !getHeldRef() || !getHeldRef()->Get3D() ||
+            !_activeConstraint.isValid() || !_grabFrame.hasTelemetryCapture) return false;
+        out.handWeaponLocal = weapon_grip_transfer::handInWeapon(_grabFrame.rootBodyLocal,
+            _grabFrame.authority.bodyLocal, _grabFrame.rawHandSpace);
+        out.gripWeaponLocal = transform_math::localPointToWorld(_grabFrame.rootBodyLocal,
+            _grabFrame.authority.pivotBBodyLocalGame);
+        if (_grabFrame.authoredWeaponPose.valid()) {
+            out.authoredRole = _grabFrame.authoredWeaponPose.role;
+            out.fingerLocals = _grabFrame.authoredWeaponPose.fingerLocals;
+            out.fingerMask = _grabFrame.authoredWeaponPose.fingerMask;
+            out.hasFingerPose = true;
+        } else if (_hasGrabFingerPose && _grabFingerPose.solved) {
+            out.fingerValues = _hasGrabFingerJointPose ? _grabFingerJointPose :
+                grab_finger_pose_math::expandFingerCurlsToJointValues(_grabFingerPose.values);
+            out.hasFingerPose = true;
+            if (_hasGrabFingerLocalTransforms) {
+                out.fingerLocals = _grabFingerLocalTransforms;
+                out.fingerMask = _grabFingerLocalTransformMask;
+            }
+        }
+        return out.valid();
+    }
+
     bool Hand::tryGetLiveGrabFingerPoseSnapshot(GrabFingerPoseSnapshot& outSnapshot) const
     {
         outSnapshot = {};

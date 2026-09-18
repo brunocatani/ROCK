@@ -62,7 +62,8 @@ namespace rock
         // Equip data remains authoritative while menus temporarily hide or
         // detach the weapon's 3D node.
         const bool equippedWeaponPresent = currentEquippedWeaponOccupiesHand();
-        const bool equippedWeaponOccupiesHand = force_grab_policy::equippedWeaponOccupiesHand(
+        const bool equippedWeaponOccupiesHand = _equipped.pendingPrimaryOnlyGripStart.pairedGrips.valid() ||
+            force_grab_policy::equippedWeaponOccupiesHand(
             isLeft,
             equippedWeaponPresent,
             _twoHandedGrip.isPartCarryActive(),

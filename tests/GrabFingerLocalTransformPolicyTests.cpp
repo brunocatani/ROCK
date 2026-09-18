@@ -1,6 +1,7 @@
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
+#include "physics-interaction/weapon/WeaponGripTransfer.h"
 
 #include <array>
 #include <cmath>
@@ -299,6 +300,47 @@ int main()
         pose = snapshot;
         pose.fingerLocals[14].translate.x = std::numeric_limits<float>::quiet_NaN();
         ok &= expectBool("nonfinite authored finger rejects transfer", pose.valid(), false);
+    }
+    {
+        namespace transfer = rock::weapon_grip_transfer;
+        const auto identity = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+        transfer::Pair pair{};
+        ok &= expectBool("empty paired grip cannot transfer", pair.valid(), false);
+        pair.weaponFormID = 0x1234;
+        pair.primary.handWeaponLocal = identity;
+        pair.support.handWeaponLocal = identity;
+        pair.primary.hasFingerPose = true;
+        pair.support.hasFingerPose = true;
+        pair.support.gripWeaponLocal = { 0.0f, 20.0f, 0.0f };
+        ok &= expectBool("dynamic curls can transfer without authored bone locals", pair.valid(), true);
+        const auto captured = pair;
+        pair.support.fingerMask = 1;
+        pair.support.fingerLocals[0] = identity;
+        ok &= expectBool("partial dynamic finger locals remain supported", pair.valid(), true);
+        pair.support.fingerLocals[0].scale = 0.0f;
+        ok &= expectBool("invalid peer fingers reject the whole paired transfer", pair.valid(), false);
+        ok &= expectBool("captured pair survives source cleanup independently", captured.valid(), true);
+        pair = captured;
+        pair.primary.handWeaponLocal.rotate.entry[1] = {};
+        ok &= expectBool("singular primary capture rejects paired equip", pair.valid(), false);
+
+        auto bodyInWeapon = identity;
+        bodyInWeapon.rotate.entry[0] = { 0.0f, 1.0f, 0.0f, 0.0f };
+        bodyInWeapon.rotate.entry[1] = { -1.0f, 0.0f, 0.0f, 0.0f };
+        bodyInWeapon.translate = { 8.0f, 2.0f, -1.0f };
+        auto bodyInObject = identity;
+        bodyInObject.translate = { 3.0f, 1.0f, 0.0f };
+        auto objectInHand = identity;
+        objectInHand.translate = { 0.0f, -4.0f, 0.0f };
+        const auto local = transfer::handInWeapon(bodyInWeapon, bodyInObject, objectInHand);
+        ok &= expectFloat("nested held body transfers wrist X", local.translate.x, 5.0f);
+        ok &= expectFloat("nested held body transfers wrist Y", local.translate.y, -1.0f);
+        ok &= expectFloat("nested held body transfers wrist Z", local.translate.z, -1.0f);
+        ok &= expectFloat("nested held body transfers wrist rotation", local.rotate.entry[0].y, 1.0f);
+        static_assert(transfer::requesterIsPrimary(true, false, 9, 2));
+        static_assert(!transfer::requesterIsPrimary(false, true, 2, 9));
+        static_assert(transfer::requesterIsPrimary(false, false, 2, 9));
+        static_assert(!transfer::requesterIsPrimary(true, true, 9, 2));
     }
     ok &= testCommandedFingerCorrectionFrame();
     using namespace rock::grab_finger_local_transform_math;

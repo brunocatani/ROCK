@@ -2,6 +2,7 @@
 #include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
 #include "physics-interaction/consume/ImmersiveAid.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
+#include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
 
 // Grab input pipeline: hand preludes, touch grab, grab intent and commit, and per-frame grab input update.
 
@@ -622,7 +623,8 @@ namespace rock
         // same item authority as force grab, sampled for each hand after any
         // earlier hand's equip/transfer instead of caching scene occupancy.
         const bool equippedWeaponPresent = currentEquippedWeaponOccupiesHand();
-        if (!weapon_two_handed_grip_math::canProcessNormalGrabInput(
+        if (_equipped.pendingPrimaryOnlyGripStart.pairedGrips.valid() ||
+            !weapon_two_handed_grip_math::canProcessNormalGrabInput(
                 handIsFiringHand,
                 equippedWeaponPresent,
                 _twoHandedGrip.isHandPartGripping(isLeft),
@@ -1305,11 +1307,11 @@ namespace rock
             return grabbed;
         };
         auto dispatchHeldObjectEventByFormID =
-            [&](GrabEventType type, RE::TESObjectREFR* refr, std::uint32_t formID, std::uint32_t primaryBodyId) {
+            [&](GrabEventType type, RE::TESObjectREFR* refr, std::uint32_t formID, std::uint32_t primaryBodyId, bool eventIsLeft) {
                 GrabEventData eventData{};
                 eventData.type = type;
                 eventData.sourceKind = GrabEventSourceKind::HeldObject;
-                eventData.isLeft = isLeft;
+                eventData.isLeft = eventIsLeft;
                 eventData.refr = refr;
                 eventData.formID = formID != 0 ? formID : (refr ? refr->GetFormID() : 0);
                 eventData.primaryBodyId = primaryBodyId;
@@ -1477,15 +1479,6 @@ namespace rock
                 const auto transitionReason = triggeredByInput ?
                     held_weapon_instant_transition::RequestReason::SameHandTrigger :
                     held_weapon_instant_transition::RequestReason::GripZoneSettle;
-                if (peerHoldingSameObject) {
-                    ROCK_LOG_WARN(Hand,
-                        "{} hand {} held weapon equip blocked: peer hand still holding formID={:08X}",
-                        hand.handName(),
-                        logAction ? logAction : "requested",
-                        heldRefForGameplay ? heldRefForGameplay->GetFormID() : 0u);
-                    return true;
-                }
-
                 auto* player = RE::PlayerCharacter::GetSingleton();
                 const std::uint32_t nativeStateBeforeEquip =
                     f4vr::getNativeWeaponState(player);
@@ -1528,22 +1521,57 @@ namespace rock
                     return true;
                 }
 
+                bool equipIsLeft = isLeft;
+                weapon_grip_transfer::Pair pairedGrips{};
+                if (peerHoldingSameObject) {
+                    const bool requesterPrimary = weapon_grip_transfer::requesterIsPrimary(
+                        hand.isHoldingFiringGrip(), peer.isHoldingFiringGrip(), hand.heldGrabIdentity(), peer.heldGrabIdentity());
+                    equipIsLeft = requesterPrimary ? isLeft : !isLeft;
+                    const auto& primary = equipIsLeft ? _leftHand : _rightHand;
+                    const auto& support = equipIsLeft ? _rightHand : _leftHand;
+                    const auto* base = heldRefForGameplay ? heldRefForGameplay->GetObjectReference() : nullptr;
+                    pairedGrips.weaponFormID = base ? base->GetFormID() : 0;
+                    pairedGrips.firingHandIsLeft = equipIsLeft;
+                    pairedGrips.arrangement = primary.heldWeaponArrangement();
+                    if (!equipped_weapon_manual_ownership_policy::firingGripOwnershipEnabled(firingGripModes) ||
+                        !primary.captureWeaponGripTransfer(pairedGrips.primary) || !support.captureWeaponGripTransfer(pairedGrips.support) ||
+                        !vanilla_weapon_grip_frame::resolveModelTranslation(pairedGrips.weaponFormID,
+                            heldRefForGameplay->Get3D(), pairedGrips.sourceModelTranslation) || !pairedGrips.valid() ||
+                        !TwoHandedGrip::canBeginPrimaryOnlyGripForHand(equipIsLeft)) {
+                        ROCK_LOG_SAMPLE_WARN(Hand, 1000, "Paired held equip deferred: grip capture or equipped ownership unavailable ref={:08X}",
+                            heldRefForGameplay ? heldRefForGameplay->GetFormID() : 0);
+                        return true;
+                    }
+                    ROCK_LOG_INFO(Hand, "Paired held equip captured ref={:08X} triggerHand={} firingHand={} roles=({},{})",
+                        heldRefForGameplay->GetFormID(), isLeft ? "left" : "right", equipIsLeft ? "left" : "right",
+                        static_cast<unsigned>(pairedGrips.primary.authoredRole), static_cast<unsigned>(pairedGrips.support.authoredRole));
+                }
+                Hand& equipHand = equipIsLeft ? _leftHand : _rightHand;
+                Hand& supportHand = equipIsLeft ? _rightHand : _leftHand;
+                const auto& equipHandInput = equipIsLeft ? frame.left : frame.right;
+                const bool equipOwnershipEligible = equipped_weapon_manual_ownership_policy::shouldStartHeldWeaponEquipOwnership({
+                    .modes = firingGripModes, .handIsLeft = equipIsLeft, .holdingLooseWeapon = equipHand.isHoldingLooseWeapon() });
                 PendingEquippedWeaponPrimaryOnlyGripStart pendingGripStart{};
-                pendingGripStart.pending = heldWeaponEquipOwnershipEligible;
-                pendingGripStart.isLeft = isLeft;
+                pendingGripStart.pending = pairedGrips.valid() || equipOwnershipEligible;
+                pendingGripStart.pairedGrips = pairedGrips;
+                pendingGripStart.isLeft = equipIsLeft;
                 pendingGripStart.toggleAcquisitionCommitted =
                     pendingGripStart.pending;
                 const bool handCarryAvailable =
-                    TwoHandedGrip::canBeginPrimaryOnlyGripForHand(isLeft);
-                const bool capturedLooseHold = pendingGripStart.pending &&
+                    TwoHandedGrip::canBeginPrimaryOnlyGripForHand(equipIsLeft);
+                const bool capturedLooseHold = pairedGrips.valid() || (pendingGripStart.pending &&
                     handCarryAvailable &&
                     loose_weapon_grip_zone::tryGetFiringHandWeaponLocal(
-                        isLeft,
+                        equipIsLeft,
                         pendingGripStart.firingHandWeaponLocal,
-                        pendingGripStart.firingGripWeaponLocal);
+                        pendingGripStart.firingGripWeaponLocal));
+                if (pairedGrips.valid()) {
+                    pendingGripStart.firingHandWeaponLocal = pairedGrips.primary.handWeaponLocal;
+                    pendingGripStart.firingGripWeaponLocal = pairedGrips.primary.gripWeaponLocal;
+                }
                 pendingGripStart.hasFiringHandWeaponLocal = capturedLooseHold;
                 pendingGripStart.hasFiringGripWeaponLocal = capturedLooseHold;
-                if (isLeft && !capturedLooseHold) {
+                if (equipIsLeft && !capturedLooseHold) {
                     ROCK_LOG_SAMPLE_WARN(
                         Hand,
                         g_rockConfig.rockLogSampleMilliseconds,
@@ -1565,8 +1593,8 @@ namespace rock
                     return !grabInput.released;
                 }
 
-                hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, frame.deltaSeconds);
-                auto* heldRef = hand.getHeldRef();
+                equipHand.captureHeldReleaseMotion(hknp, equipHandInput.rawHandWorld, frame.deltaSeconds);
+                auto* heldRef = equipHand.getHeldRef();
                 const auto previousEquippedWeaponFormID =
                     currentEquippedWeaponFormId();
                 const auto previousNativeInstanceNode =
@@ -1574,19 +1602,30 @@ namespace rock
                     equipped_weapon_visual_state::observe(
                         previousEquippedWeaponFormID).exactInstance :
                     nullptr;
-                hand.stopSelectionHighlight();
-                Hand& peerHandForVisualState = isLeft ? _rightHand : _leftHand;
+                equipHand.stopSelectionHighlight();
+                Hand& peerHandForVisualState = equipIsLeft ? _rightHand : _leftHand;
                 if (heldRef && peerHandForVisualState.hasSelection() && peerHandForVisualState.getSelection().refr == heldRef) {
                     peerHandForVisualState.clearSelectionState(false);
                 }
                 std::uint32_t heldFormID = heldRef ? heldRef->GetFormID() : 0u;
-                const std::uint32_t primaryBodyId = hand.getSavedObjectState().bodyId.value;
-                auto releaseContext = makeGrabReleaseContext(hand, isLeft);
+                const std::uint32_t primaryBodyId = equipHand.getSavedObjectState().bodyId.value;
+                const auto supportBodyId = peerHoldingSameObject ? supportHand.getSavedObjectState().bodyId.value : 0;
+                if (peerHoldingSameObject) {
+                    auto supportRelease = makeGrabReleaseContext(supportHand, !equipIsLeft);
+                    supportRelease.disposition = GrabReleaseDisposition::PendingInventoryTransfer;
+                    supportRelease.reason = "paired-held-weapon-equip";
+                    supportHand.stopSelectionHighlight();
+                    (void)supportHand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, supportRelease);
+                    releaseObject(heldRef, claimOwnerForHand(!equipIsLeft));
+                    input_remap_runtime::setHandHeldWeapon(!equipIsLeft, false);
+                    clearGameplayCandidatesForHand(supportHand, !equipIsLeft);
+                }
+                auto releaseContext = makeGrabReleaseContext(equipHand, equipIsLeft);
                 releaseContext.disposition = GrabReleaseDisposition::PendingInventoryTransfer;
                 releaseContext.reason = requestReason ? requestReason : "held-weapon-equip";
-                auto releaseOutcome = hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
+                auto releaseOutcome = equipHand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
                 if (heldRef) {
-                    releaseObject(heldRef, claimOwnerForHand(isLeft));
+                    releaseObject(heldRef, claimOwnerForHand(equipIsLeft));
                 }
 
                 const auto equipResult = weapon_equip_transfer::transferHeldWeaponToPlayerAndEquip(weapon_equip_transfer::EquipInput{
@@ -1619,7 +1658,8 @@ namespace rock
                         EquipVisualBridge::BeginInput{
                         .worldModel = equipResult.detachedWorldModel,
                         .weaponFormID = equipResult.weapon ? equipResult.weapon->formID : equipResult.observedEquippedFormID,
-                        .isLeftHand = isLeft,
+                        .isLeftHand = equipIsLeft,
+                        .pairedGrips = pairedGrips.valid() ? &pairedGrips : nullptr,
                         .weapon = equipResult.weapon,
                         .hasFiringHandWeaponLocal = pendingGripStart.hasFiringHandWeaponLocal,
                         .firingHandWeaponLocal = pendingGripStart.firingHandWeaponLocal,
@@ -1632,11 +1672,15 @@ namespace rock
                 }
 
                 auto* postEquipRef = equipResult.untransferredRef.get();
-                dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, postEquipRef, heldFormID, 0);
+                dispatchPhysicsMessage(kPhysMsg_OnRelease, equipIsLeft, postEquipRef, heldFormID, 0);
                 if (!equipResult.success && !equipResult.transferredToInventory) {
-                    hand.applyReleaseVelocitySnapshot(hknp, releaseOutcome.velocity);
+                    equipHand.applyReleaseVelocitySnapshot(hknp, releaseOutcome.velocity);
                 }
-                dispatchHeldObjectEventByFormID(GrabEventType::Released, postEquipRef, heldFormID, primaryBodyId);
+                dispatchHeldObjectEventByFormID(GrabEventType::Released, postEquipRef, heldFormID, primaryBodyId, equipIsLeft);
+                if (peerHoldingSameObject) {
+                    dispatchPhysicsMessage(kPhysMsg_OnRelease, !equipIsLeft, postEquipRef, heldFormID, 0);
+                    dispatchHeldObjectEventByFormID(GrabEventType::Released, postEquipRef, heldFormID, supportBodyId, !equipIsLeft);
+                }
                 const bool physicalCarryPendingArmed =
                     equipResult.success && pendingGripStart.pending;
                 if (physicalCarryPendingArmed) {
@@ -1652,10 +1696,10 @@ namespace rock
                     pendingGripStart.remainingSeconds = 10.0f;
                     pendingGripStart.source =
                         equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource::HeldWeaponEquip;
-                    // The bridge above consumes the loose-model grip. Equipped
-                    // left carry must acquire its own canonical frame: the loose
-                    // relation already includes aim trim and cannot be reused.
-                    if (isLeft) {
+                    // A solo left carry reacquires its canonical seat. A paired
+                    // transfer retains both visual seats; its native aim frame
+                    // remains separately owned by the equipped carry solver.
+                    if (equipIsLeft && !pairedGrips.valid()) {
                         pendingGripStart.hasFiringHandWeaponLocal = false;
                         pendingGripStart.hasFiringGripWeaponLocal = false;
                     }
@@ -1664,7 +1708,7 @@ namespace rock
                 const auto& actionTrace = equipResult.instantTransition.actionTrace;
                 ROCK_LOG_INFO(Hand,
                     "{} hand {} held weapon equip formID={:08X} weapon='{}' success={} managerAccepted={} committed={} equippedStackMatch={} equipReason={} requestReason={} transition={} readiness={} count={} stack={} stackEvidence={} stacks={}->{} mutations={} instanceMatch={} requestedInstance={:#x} observedInstance={:#x} transferred={} observedEquipped={:08X} equipIndex={} weaponState={}({})->{}({}) traceCount={} traceSheathe={} traceDraw={} traceFaults=0x{:02X} nativeInstance={} nativeAncestorsVisible={} nativeLocalVisible={} immediateEquip={} visualBridge={} physicalCarryPending={} physicalCarryHand={}",
-                    hand.handName(),
+                    equipHand.handName(),
                     logAction ? logAction : "requested",
                     heldFormID,
                     equipResult.weapon ? RE::TESFullName::GetFullName(*equipResult.weapon, false) : "unknown",
@@ -1714,9 +1758,9 @@ namespace rock
                     equipResult.usedImmediateEquip ? "yes" : "no",
                     equipBridgeStarted ? "yes" : "no",
                     physicalCarryPendingArmed ? "yes" : "no",
-                    physicalCarryPendingArmed ? (isLeft ? "left" : "right") : "none");
-                input_remap_runtime::setHandHeldWeapon(isLeft, false);
-                clearGameplayCandidatesForHand(hand, isLeft);
+                    physicalCarryPendingArmed ? (equipIsLeft ? "left" : "right") : "none");
+                input_remap_runtime::setHandHeldWeapon(equipIsLeft, false);
+                clearGameplayCandidatesForHand(equipHand, equipIsLeft);
                 return true;
             };
 
@@ -1891,7 +1935,7 @@ namespace rock
                         if (failedBeforeOwnershipTransfer) {
                             hand.applyReleaseVelocitySnapshot(hknp, releaseOutcome.velocity);
                         }
-                        dispatchHeldObjectEventByFormID(GrabEventType::Released, postConsumeRef, heldFormID, primaryBodyId);
+                        dispatchHeldObjectEventByFormID(GrabEventType::Released, postConsumeRef, heldFormID, primaryBodyId, isLeft);
                     }
                     ROCK_LOG_INFO(Hand,
                         "{} hand {} formID={:08X} success={} consumeReason={} count={} confidence={:.2f} distance={:.1f} speed={:.1f}",
@@ -1938,7 +1982,7 @@ namespace rock
                         showShoulderStashCollectedNotification(transferResult, heldFormID);
                     } else {
                         hand.applyReleaseVelocitySnapshot(hknp, releaseOutcome.velocity);
-                        dispatchHeldObjectEventByFormID(GrabEventType::Released, postTransferRef, heldFormID, primaryBodyId);
+                        dispatchHeldObjectEventByFormID(GrabEventType::Released, postTransferRef, heldFormID, primaryBodyId, isLeft);
                     }
                     ROCK_LOG_INFO(Hand,
                         "{} hand shoulder stash release formID={:08X} success={} transferReason={} stashSource={} zone={} count={} confidence={:.2f} speed={:.1f}",

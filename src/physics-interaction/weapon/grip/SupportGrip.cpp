@@ -1,5 +1,6 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
+#include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
 
 // Support-hand grip: authored capability qualification and selection, dynamic
 // acquisition, the capture transaction (capturePartGrip, whose finger solve
@@ -12,6 +13,73 @@
 
 namespace rock
 {
+    bool TwoHandedGrip::beginTransferredTwoHandGrip(RE::NiNode* weaponNode, std::uint64_t generation,
+        std::uint64_t ownership, const weapon_grip_transfer::Pair& captured, const char** failure)
+    {
+        const auto reject = [&](const char* reason) { if (failure) *failure = reason; return false; };
+        if (!weaponNode || !generation || !ownership || !captured.valid()) return reject("paired-transfer-invalid");
+        if (isManualOwnershipActive()) return reject("grip-session-already-active");
+        if (_session.state != TwoHandedState::Inactive) transitionToInactive(false);
+        auto grips = captured;
+        RE::NiPoint3 targetTranslation{};
+        if (!vanilla_weapon_grip_frame::resolveModelTranslation(grips.weaponFormID, weaponNode, targetTranslation))
+            return reject("paired-model-registration-unavailable");
+        const auto displacement = targetTranslation - grips.sourceModelTranslation;
+        for (auto* grip : { &grips.primary, &grips.support }) {
+            grip->handWeaponLocal.translate += displacement;
+            grip->gripWeaponLocal += displacement;
+        }
+        if (!beginPrimaryOnlyGrip(weaponNode, generation, ownership, grips.firingHandIsLeft,
+                &grips.primary.handWeaponLocal, &grips.primary.gripWeaponLocal, true, false, failure)) return false;
+        if (!blockFrikPrimaryWeaponPose()) {
+            transitionToInactive(false);
+            return reject("paired-pose-blocker-unavailable");
+        }
+        _firing.primaryHandWeaponLocal = grips.primary.handWeaponLocal;
+        _firing.hasPrimaryHandWeaponLocal = true;
+        _firing.primaryGripLocal = grips.primary.gripWeaponLocal;
+        _firing.primaryGripConfidence = 1.0f;
+        _firing.transferredPrimaryGrip = grips.primary;
+        const bool supportIsLeft = !grips.firingHandIsLeft;
+        auto& support = partGrip(supportIsLeft);
+        support = {};
+        support.active = true;
+        support.transferredLooseGrip = true;
+        support.attachmentRoot = weaponNode;
+        support.weaponGenerationKey = generation;
+        support.gripSequence = ++_session.gripCaptureSequence;
+        support.gripLocal = grips.support.gripWeaponLocal;
+        support.handWeaponLocal = grips.support.handWeaponLocal;
+        support.hasHandWeaponLocal = true;
+        support.authoredRole = grips.support.authoredRole;
+        support.authoredSupportGrip = grips.support.authoredRole != loose_weapon_authored_grab_policy::Role::None;
+        support.disableAuthoredSupportNormalTwist = true;
+        support.normalLocal = computePalmNormalFromHandBasis(grips.support.handWeaponLocal, supportIsLeft);
+        support.fingerPose = grips.support.fingerValues;
+        support.hasFingerPose = true;
+        support.fingerLocalTransforms = grips.support.fingerLocals;
+        support.fingerLocalTransformMask = grips.support.fingerMask;
+        support.hasFingerLocalTransforms = grips.support.fingerMask != 0;
+        const auto delta = grips.support.gripWeaponLocal - grips.primary.gripWeaponLocal;
+        _support.lockedGripSeparationWorld = std::sqrt(dot(delta, delta)) * std::abs(weaponNode->world.scale);
+        const bool firingStation = loose_weapon_authored_grab_policy::sharedFiringZone(grips.arrangement) ||
+            grips.support.authoredRole == loose_weapon_authored_grab_policy::Role::Firing;
+        support.acquisitionSource = firingStation ? WeaponInteractionAcquisitionSource::FiringGripZone :
+            (support.authoredSupportGrip ? WeaponInteractionAcquisitionSource::AuthoredSeat : WeaponInteractionAcquisitionSource::PhysicalContact);
+        _session.authorityMode = firingStation ? weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport :
+            weapon_support_authority_policy::resolveFiringGripProximityAuthorityMode(
+                _support.lockedGripSeparationWorld, _handlingSettings.firingGripProximitySupportRadiusGameUnits);
+        _support.rotationBlend = 1.0f;
+        _session.state = TwoHandedState::Gripping;
+        clearAllVisualReturns("paired-equip-transfer", false, true);
+        ROCK_LOG_INFO(Weapon, "Paired equipped grip adopted form={:08X} firingHand={} separation={:.3f} primaryLocal=({:.3f},{:.3f},{:.3f}) supportLocal=({:.3f},{:.3f},{:.3f}) masks=({:04X},{:04X})",
+            grips.weaponFormID, grips.firingHandIsLeft ? "left" : "right", _support.lockedGripSeparationWorld,
+            grips.primary.gripWeaponLocal.x, grips.primary.gripWeaponLocal.y, grips.primary.gripWeaponLocal.z,
+            grips.support.gripWeaponLocal.x, grips.support.gripWeaponLocal.y, grips.support.gripWeaponLocal.z,
+            grips.primary.fingerMask, grips.support.fingerMask);
+        return true;
+    }
+
     bool TwoHandedGrip::tryResolveAuthoredSupportActivationAxes(
         RE::NiNode* weaponNode,
         const RE::NiTransform& weaponWorld,
@@ -1360,10 +1428,10 @@ namespace rock
             return true;
         }
 
-        if (grip.authoredSupportGrip) {
-            // Authored grips are weapon-root-local pose data. A generated-body
+        if (grip.authoredSupportGrip || grip.transferredLooseGrip) {
+            // Authored and transferred grips are weapon-root-local data. A generated-body
             // rebuild changes only the collision generation; it cannot revoke
-            // or relocate the authored seat that is already being held.
+            // or relocate the seat that is already being held.
             grip.weaponGenerationKey = currentWeaponGenerationKey;
             grip.contactBodyId = 0x7FFF'FFFFu;
             grip.attachmentRoot = _session.weaponNode;
@@ -2304,12 +2372,30 @@ namespace rock
     void TwoHandedGrip::updateVisualOnlySupportGrip(RE::NiNode* weaponNode, float dt)
     {
         const bool supportHandIsLeft = isSupportHandLeft();
+        const bool transferredRightGrip = usesNativeRightCarry() && _firing.transferredPrimaryGrip.valid();
+        RE::NiTransform transferredWeaponWorld{};
 
         if (usesLeftFiringCarry()) {
             // Visual-only support never steers aim, but with a LEFT firing
             // hand the weapon itself must still be ROCK-carried (FRIK's glue
             // is blocked); the shooting-cup right hand stays visual-only.
             if (!solveLeftFiringWeaponCarry(weaponNode, dt)) {
+                return;
+            }
+        } else if (transferredRightGrip) {
+            RE::NiTransform physicalHand{}, driver{};
+            if (!weaponNode || !tryResolvePhysicalHandFrame(false, physicalHand, driver)) {
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Paired equipped grip lost physical firing-hand frame");
+                transitionToInactive(false);
+                return;
+            }
+            // Keep native aim; move the captured primary point onto the physical
+            // palm. The support hand follows its retained seat without steering.
+            transferredWeaponWorld = weaponNode->world;
+            transferredWeaponWorld.translate += computeGrabLegacyPalmPivotAWorldFromHandBasis(physicalHand, false) -
+                transform_math::localPointToWorld(transferredWeaponWorld, _firing.primaryGripLocal);
+            if (!applyWeaponVisualAuthority(weaponNode, transferredWeaponWorld)) {
+                transitionToInactive(false);
                 return;
             }
         }
@@ -2319,7 +2405,7 @@ namespace rock
 
         RE::NiTransform supportTransform{};
         const RE::NiTransform* liveSupportTransform = tryGetSolverHandTransform(supportHandIsLeft, supportTransform) ? &supportTransform : nullptr;
-        if (!applyLockedHandVisualAuthority(weaponNode, false, true, dt, nullptr, liveSupportTransform)) {
+        if (!applyLockedHandVisualAuthority(weaponNode, transferredRightGrip, true, dt, nullptr, liveSupportTransform)) {
             _hasSolvedWeaponTransform = false;
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing visual-only support grip because ROCK support hand authority failed");
             logGripFailureIncident(
@@ -2327,9 +2413,13 @@ namespace rock
             transitionToInactive(false);
             return;
         }
+        if (transferredRightGrip && !applyWeaponVisualAuthority(weaponNode, transferredWeaponWorld)) {
+            transitionToInactive(false);
+            return;
+        }
 
         _lastSolvedWeaponTransform = weaponNode ? weaponNode->world : RE::NiTransform{};
-        _hasSolvedWeaponTransform = usesLeftFiringCarry() && _hasSolvedWeaponTransform;
+        _hasSolvedWeaponTransform = transferredRightGrip || (usesLeftFiringCarry() && _hasSolvedWeaponTransform);
 
         if (weaponNode && ++_gripLogCounter >= 90) {
             _gripLogCounter = 0;

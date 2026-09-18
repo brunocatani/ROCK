@@ -818,6 +818,7 @@ namespace rock
         clearAllVisualReturns("reset", false, true);
         clearNativeScopeOverlayAuthority(true);
         _equippedWeaponDropRequest = {};
+        _firing.transferredPrimaryGrip = {};
         _hapticEvents = {};
         _gripReleaseRetained = {};
         _gripReleaseRetainedLogged = {};
@@ -912,8 +913,9 @@ namespace rock
 
     bool TwoHandedGrip::ownsWeaponTransform() const
     {
-        return (_session.state == TwoHandedState::Gripping || _session.state == TwoHandedState::PartCarry) &&
-               weapon_support_authority_policy::supportGripOwnsWeaponTransform(_session.authorityMode);
+        return (_session.state == TwoHandedState::Gripping && _firing.transferredPrimaryGrip.valid()) ||
+               ((_session.state == TwoHandedState::Gripping || _session.state == TwoHandedState::PartCarry) &&
+                   weapon_support_authority_policy::supportGripOwnsWeaponTransform(_session.authorityMode));
     }
 
     bool TwoHandedGrip::blocksAuthoredPrimaryGripWeaponAlignment() const
@@ -1008,6 +1010,7 @@ namespace rock
 
     void TwoHandedGrip::transitionToInactive(bool publishRestoredWeaponTransform)
     {
+        _firing.transferredPrimaryGrip = {};
         clearDynamicSupportAcquisition(
             "transition-to-inactive",
             true);
@@ -1104,6 +1107,7 @@ namespace rock
             return;
         }
 
+        _firing.transferredPrimaryGrip = {};
         // Drop the old hand's role-tagged FRIK publications; the new hand's
         // grip-frame capture and pose publication are owned by the caller.
         clearPrimaryGripFingerPose(isFiringHandLeft());

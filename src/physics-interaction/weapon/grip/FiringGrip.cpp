@@ -403,6 +403,7 @@ namespace rock
             _firing.hasPrimaryHandWeaponLocal = false;
         }
         _visuals.primaryHandLerp = {};
+        _firing.transferredPrimaryGrip = {};
         _session.state = TwoHandedState::PrimaryOnly;
 
         ROCK_LOG_INFO(Weapon,
@@ -783,6 +784,7 @@ namespace rock
 
         // Validated: commit. A takeover by the other hand flips the firing
         // role only after its complete normalized hold is ready.
+        _firing.transferredPrimaryGrip = {};
         if (!isFiringHand(handIsLeft)) {
             setFiringHand(handIsLeft, "firing-grip-reattach-other-hand");
         }
@@ -919,6 +921,8 @@ namespace rock
         const bool targetHandHoldingObject =
             isLeft ? _firing.leftHandHoldingObjectForPose : _firing.rightHandHoldingObjectForPose;
         const bool firingHandDetached = _session.state == TwoHandedState::PartCarry;
+        const bool transferred = _session.state == TwoHandedState::Gripping && isFiringHand(isLeft) &&
+            _firing.transferredPrimaryGrip.valid();
         if (firingHandDetached && _firing.authoredFingerPosePublished) {
             // Fail closed: a detached firing hand never keeps a grip pose,
             // whichever hand published it.
@@ -928,13 +932,15 @@ namespace rock
             !authored_weapon_grip_capture_policy::shouldPublishAuthoredFiringFingerPose(
                 targetHandHoldingObject,
                 firingHandDetached) ||
-            _firing.rightCanonicalSource != RightFiringCanonicalSource::AuthoredAnimation) {
+            (!transferred && _firing.rightCanonicalSource != RightFiringCanonicalSource::AuthoredAnimation)) {
             return false;
         }
 
-        const auto& transforms = isLeft ? _firing.leftFingerLocalTransforms : _firing.rightFingerLocalTransforms;
-        const std::uint16_t mask = isLeft ? _firing.leftFingerLocalTransformMask : _firing.rightFingerLocalTransformMask;
-        if (mask != authored_weapon_grip_library::kCompleteFiringFingerMask) {
+        const auto& transforms = transferred ? _firing.transferredPrimaryGrip.fingerLocals :
+            (isLeft ? _firing.leftFingerLocalTransforms : _firing.rightFingerLocalTransforms);
+        const std::uint16_t mask = transferred ? _firing.transferredPrimaryGrip.fingerMask :
+            (isLeft ? _firing.leftFingerLocalTransformMask : _firing.rightFingerLocalTransformMask);
+        if (!transferred && mask != authored_weapon_grip_library::kCompleteFiringFingerMask) {
             return false;
         }
 
@@ -954,7 +960,9 @@ namespace rock
 
         const auto hand = handFromBool(isLeft);
         _firing.publishedFingerPoseIsLeft = isLeft;
-        if (!frik_visual_authority::setHandPoseCustom(PRIMARY_GRIP_TAG, hand, frik_visual_authority::HandPoseData{}, GRIP_HAND_POSE_PRIORITY)) {
+        const auto fingerPose = transferred ? frik_visual_authority::makeHandPoseDataFromJointValues(
+            _firing.transferredPrimaryGrip.fingerValues) : frik_visual_authority::HandPoseData{};
+        if (!frik_visual_authority::setHandPoseCustom(PRIMARY_GRIP_TAG, hand, fingerPose, GRIP_HAND_POSE_PRIORITY)) {
             ROCK_LOG_SAMPLE_WARN(Animation, 2000,
                 "Authored finger publication rejected stage=custom-pose hand={} ownership={:016X} capture={}",
                 isLeft ? "left" : "right", _firing.rightCanonicalOwnershipKey, _firing.rightCanonicalCaptureSequence);
@@ -967,7 +975,7 @@ namespace rock
         for (std::size_t index = 0; index < transforms.size(); ++index) {
             overrideData.localTransforms[index] = transforms[index];
         }
-        if (!frik_visual_authority::setHandPoseCustomLocalTransforms(PRIMARY_GRIP_TAG, hand, &overrideData, GRIP_HAND_POSE_PRIORITY)) {
+        if (mask && !frik_visual_authority::setHandPoseCustomLocalTransforms(PRIMARY_GRIP_TAG, hand, &overrideData, GRIP_HAND_POSE_PRIORITY)) {
             ROCK_LOG_SAMPLE_WARN(Animation, 2000,
                 "Authored finger publication rejected stage=finger-locals hand={} ownership={:016X} capture={} mask=0x{:04X}",
                 isLeft ? "left" : "right", _firing.rightCanonicalOwnershipKey, _firing.rightCanonicalCaptureSequence, mask);
