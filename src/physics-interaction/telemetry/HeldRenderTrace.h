@@ -15,6 +15,9 @@ namespace rock::held_render_trace
     {
         return frame != 0 && frame % 120 < 12;
     }
+    // Physics callbacks borrow only the atomically published frame identity;
+    // they must not read the mutable game-thread runtime frame for diagnostics.
+    [[nodiscard]] std::uint64_t sampledFrame() noexcept;
     void install(); // bootstrap only, before active rendering
     void initialize();
     void shutdown() noexcept;

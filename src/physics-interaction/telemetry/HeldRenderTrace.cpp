@@ -61,6 +61,7 @@ namespace rock::held_render_trace
         Worker original = nullptr; // installed once, lives for the process
         OpaqueWorker originalOpaque = nullptr;
         std::atomic<std::uint64_t> failedPassReads{ 0 };
+        std::atomic<std::uint64_t> opaqueCalls{ 0 }, opaqueMatches{ 0 };
         bool attempted = false;
         std::atomic_flag queueGate = ATOMIC_FLAG_INIT;
         std::array<Sample, kCapacity> queue;
@@ -147,10 +148,12 @@ namespace rock::held_render_trace
             bool matched = false;
             if (activeEpoch.load(std::memory_order_acquire) && sampleFrame(currentPhase.load(std::memory_order_acquire) >> 2) &&
                 (targets[0].trace.load(std::memory_order_relaxed) || targets[1].trace.load(std::memory_order_relaxed))) {
+                opaqueCalls.fetch_add(1, std::memory_order_relaxed);
                 if (!readPassGeometry(pass, geometry)) failedPassReads.fetch_add(1, std::memory_order_relaxed);
                 else matched = beginSample(reinterpret_cast<std::uintptr_t>(&geometry->world), 1, sample);
             }
             if (matched) {
+                opaqueMatches.fetch_add(1, std::memory_order_relaxed);
                 if (native_memory::tryReadValue(&geometry->world, sample.input)) sample.valid |= 1u;
                 if (native_memory::tryReadValue(&geometry->previousWorld, sample.previous)) sample.valid |= 16u;
                 if (native_memory::tryReadField(technique, 0x40, sample.mode)) sample.valid |= 32u;
@@ -203,8 +206,15 @@ namespace rock::held_render_trace
         LARGE_INTEGER frequency{};
         QueryPerformanceFrequency(&frequency);
         activeEpoch.store(++nextEpoch, std::memory_order_release);
-        dynamic_collider_trace::write("RENDER_HELD start version=2 epoch={} qpcFrequency={} workerRva={:X} opaqueRva={:X} worker={} opaque={} shapesPerHand={} buffer={} burst=12/120 observational=true",
+        dynamic_collider_trace::write("RENDER_HELD start version=3 epoch={} qpcFrequency={} workerRva={:X} opaqueRva={:X} worker={} opaque={} shapesPerHand={} buffer={} burst=12/120 solverWitness=true observational=true",
             nextEpoch, frequency.QuadPart, kWorkerRva, kOpaqueRva, original != nullptr, originalOpaque != nullptr, kShapesPerHand, kCapacity);
+    }
+
+    std::uint64_t sampledFrame() noexcept
+    {
+        if (!activeEpoch.load(std::memory_order_acquire)) return 0;
+        const auto frame = currentPhase.load(std::memory_order_acquire) >> 2;
+        return sampleFrame(frame) ? frame : 0;
     }
 
     void clearHand(bool isLeft) noexcept
@@ -284,8 +294,9 @@ namespace rock::held_render_trace
             }
         }
         if (frame % 300 == 0 && phase == Phase::AfterWorldFinal) {
-            dynamic_collider_trace::write("RENDER_HELD status frame={} dropped={} failedPassReads={}", frame,
-                dropped.load(std::memory_order_relaxed), failedPassReads.load(std::memory_order_relaxed));
+            dynamic_collider_trace::write("RENDER_HELD status frame={} dropped={} failedPassReads={} opaqueCalls={} opaqueMatches={}", frame,
+                dropped.load(std::memory_order_relaxed), failedPassReads.load(std::memory_order_relaxed),
+                opaqueCalls.load(std::memory_order_relaxed), opaqueMatches.load(std::memory_order_relaxed));
         }
     }
 }

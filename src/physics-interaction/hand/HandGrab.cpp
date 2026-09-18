@@ -6,6 +6,7 @@
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/telemetry/HeldRenderTrace.h"
+#include "physics-interaction/telemetry/DynamicColliderTrace.h"
 
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
@@ -14754,6 +14755,23 @@ namespace rock
                     ++_grabAuthorityProxyFlushSequence;
                     flushSequence = _grabAuthorityProxyFlushSequence;
                     queuedSequence = _grabAuthorityProxyQueuedSequence;
+                    const auto diagnosticFrame = dynamic_collider_trace::presentationEnabled() ? held_render_trace::sampledFrame() : 0;
+                    if (diagnosticFrame && angularDriveOk) {
+                        const auto mass = readHeldBodyMassSummary(world, _savedObjectState.bodyId, _heldBodyIds,
+                            _heldDriveDecision.includeConnectedMass);
+                        dynamic_collider_trace::write(
+                            "HELD_SOLVER pre frame={} trace={} hand={} queued={} flush={} step={} solve={} substep={}/{} dt={:.6f} sourceDt={:.6f} rawDt={:.6f} remainder={:.6f} target=({:.4f},{:.4f},{:.4f}) proxyBefore=({:.4f},{:.4f},{:.4f}) proxyValid={} requiredV={:.4f}/{:.4f} limitAlpha={:.5f} teleported={} probe={} mass={:.5f} contact={} tauL={:.5f} dampL={:.5f} forceL={:.3f} tauA={:.5f} dampA={:.5f} forceA={:.3f}",
+                            diagnosticFrame, _grabFrame.traceId, _isLeft ? "left" : "right", queuedSequence, flushSequence,
+                            timing.stepSequence, timing.solveSequence, timing.substepIndex, timing.substepCount, driveDelta,
+                            pending.deltaTime, timing.rawDeltaSeconds, timing.remainderDeltaSeconds,
+                            pending.proxyWorld.translate.x, pending.proxyWorld.translate.y, pending.proxyWorld.translate.z,
+                            proxyReadbackBetween.translate.x, proxyReadbackBetween.translate.y, proxyReadbackBetween.translate.z,
+                            proxyReadbackBetweenOk, proxyDriveResult.uncappedRequiredLinearVelocityHavok,
+                            proxyDriveResult.uncappedRequiredAngularVelocityRadians, proxyDriveResult.targetLimitAlpha,
+                            proxyDriveResult.teleported, _ragdollAngularProbePreSolve.valid, mass.motorMass(), pending.heldBodyColliding,
+                            _activeConstraint.linearMotor->tau, _activeConstraint.linearMotor->damping, _activeConstraint.linearMotor->maxForce,
+                            _activeConstraint.angularMotor->tau, _activeConstraint.angularMotor->damping, _activeConstraint.angularMotor->maxForce);
+                    }
                     ++_grabAuthorityProxyLogCounter;
                     if (flushSequence <= 16 || _grabAuthorityProxyLogCounter >= 45 ||
                         !proxyReadbackBetweenOk ||
@@ -14925,12 +14943,14 @@ namespace rock
 
         const bool shouldSampleForAnomaly = g_rockConfig.rockDebugGrabAfterSolveAnomalySampling &&
                                             (afterSolveSequence <= 16u || (afterSolveSequence % 30u) == 0u);
+        const bool legacyDiagnostics = debugGrabFrameLogging || timelineTraceLogging || shouldSampleForAnomaly;
+        const auto diagnosticFrame = dynamic_collider_trace::presentationEnabled() ? held_render_trace::sampledFrame() : 0;
         /*
          * After-solve readback is diagnostic only. Keeping it behind explicit
          * grab diagnostics avoids paying body readback, constraint atom, and
          * basis math costs during normal two-hand held-object gameplay.
          */
-        if (!debugGrabFrameLogging && !timelineTraceLogging && !shouldSampleForAnomaly) {
+        if (!legacyDiagnostics && !diagnosticFrame) {
             return;
         }
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAuthorityAfterSolveDiagnostics);
@@ -15024,6 +15044,33 @@ namespace rock
             gripTargetErrorGameUnits = pointDistanceGameUnits(liveGripWorld, targetGripWorld);
             gripLiveProxyErrorGameUnits = pointDistanceGameUnits(liveGripWorld, liveProxyGripWorld);
         }
+
+        if (diagnosticFrame) {
+            RE::NiPoint3 linearVelocity{}, angularVelocity{};
+            const auto* motion = havok_runtime::getBodyMotion(world, objectBodyId);
+            if (motion) {
+                linearVelocity = { motion->linearVelocity.x, motion->linearVelocity.y, motion->linearVelocity.z };
+                angularVelocity = { motion->angularVelocity.x, motion->angularVelocity.y, motion->angularVelocity.z };
+            }
+            const auto& probe = ragdollAngularProbePreSolve;
+            dynamic_collider_trace::write(
+                "HELD_SOLVER post frame={} trace={} hand={} queued={} flush={} step={} solve={} substep={}/{} dt={:.6f} proxyValid={} bodyValid={} motionValid={} probeValid={} probeFlush={} proxyError={:.5f}gu/{:.5f}deg bodyError={:.5f}gu/{:.5f}deg gripError={:.5f}gu beforeError={:.5f}deg beforeGrip={:.5f}gu solverTargetError={:.5f}deg atomDelta={:.6f}/{:.6f}/{:.6f} pivotDelta={:.6f} lever={:.5f} torqueDot={:.5f} beforeAng=({:.5f},{:.5f},{:.5f}) afterAng=({:.5f},{:.5f},{:.5f}) afterLin=({:.5f},{:.5f},{:.5f}) body=({:.4f},{:.4f},{:.4f}) proxy=({:.4f},{:.4f},{:.4f})",
+                diagnosticFrame, probe.traceId, _isLeft ? "left" : "right", queuedSequence, flushSequence,
+                timing.stepSequence, timing.solveSequence, timing.substepIndex, timing.substepCount, timing.substepDeltaSeconds,
+                proxyOk, objectOk, motion != nullptr, probe.valid, probe.flushSequence,
+                proxyTargetPositionErrorGameUnits, proxyTargetRotationErrorDegrees,
+                objectTargetPositionErrorGameUnits, objectTargetRotationErrorDegrees, gripTargetErrorGameUnits,
+                probe.beforeErrorDegrees, probe.beforeGripErrorGameUnits, probe.solverEffectiveBodyDeltaDegrees,
+                probe.transformARawMaxDelta, probe.transformBRawMaxDelta, probe.targetBRcaRawMaxDelta,
+                probe.pivotBRelationDeltaGameUnits, probe.pivotLeverGameUnits, probe.linearTorqueAxisDotRequired,
+                probe.angularVelocityBeforeRadians.x, probe.angularVelocityBeforeRadians.y, probe.angularVelocityBeforeRadians.z,
+                angularVelocity.x, angularVelocity.y, angularVelocity.z, linearVelocity.x, linearVelocity.y, linearVelocity.z,
+                objectReadback.translate.x, objectReadback.translate.y, objectReadback.translate.z,
+                proxyReadback.translate.x, proxyReadback.translate.y, proxyReadback.translate.z);
+        }
+        // The sampled asynchronous witness must not enable the older synchronous
+        // anomaly/timeline logs just because a skeleton overlay is active.
+        if (!legacyDiagnostics) return;
 
         /*
          * Per-substep POST-SOLVE ripple probe (2026-07-13 stutter hunt): every
