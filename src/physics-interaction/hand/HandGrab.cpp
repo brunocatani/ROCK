@@ -12599,6 +12599,13 @@ namespace rock
             return false;
         }
 
+        // A free loose reference owns the whole model, including branches
+        // outside its selected collision owner (e.g. a bottle's opaque mesh).
+        // Actor/gore and fixed mechanical scopes retain their per-body path.
+        const bool presentReferenceRoot = _heldObjectIsLooseWeapon ||
+            (_savedObjectState.targetKind == grab_target::Kind::LooseObject &&
+                _heldDriveDecision.mode != held_object_drive_policy::HeldBodySetDriveMode::FixedAttached &&
+                _heldDriveDecision.mode != held_object_drive_policy::HeldBodySetDriveMode::IncompleteNativeScan);
         const auto presentation = held_scene_presentation::publishTargetTransport(
             _isLeft,
             world,
@@ -12606,7 +12613,7 @@ namespace rock
             _grabFrame.traceId,
             update.desiredBodyWorld,
             update.solvedBodyWorld,
-            _heldObjectIsLooseWeapon && _savedObjectState.refr ? _savedObjectState.refr->Get3D() : nullptr,
+            presentReferenceRoot && _savedObjectState.refr ? _savedObjectState.refr->Get3D() : nullptr,
             _grabFrame.rootBodyLocal);
         update.hasPresentedBodyWorld = presentation.applied;
         update.presentedBodyWorld = presentation.presentedBodyWorld;

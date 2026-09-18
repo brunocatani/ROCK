@@ -837,7 +837,7 @@ namespace rock::held_scene_presentation
         std::uint64_t traceId,
         const RE::NiTransform& targetBodyWorld,
         const RE::NiTransform& solvedBodyWorld,
-        RE::NiAVObject* looseWeaponRoot,
+        RE::NiAVObject* referenceRoot,
         const RE::NiTransform& bodyInRoot) noexcept
     {
         const std::size_t handIndex = isLeft ? 1u : 0u;
@@ -954,10 +954,10 @@ namespace rock::held_scene_presentation
             }
         }
         std::size_t scenePoseCount = registration.count;
-        if (!failure && looseWeaponRoot && !held_scene_presentation_policy::appendAssemblyRootPose(
-                scenePoses.data(), scenePoseCount, scenePoses.size(), looseWeaponRoot,
+        if (!failure && referenceRoot && !held_scene_presentation_policy::appendAssemblyRootPose(
+                scenePoses.data(), scenePoseCount, scenePoses.size(), referenceRoot,
                 decision.presentedWorld, bodyInRoot)) {
-            failure = "loose-root-or-body-ancestry-invalid";
+            failure = "reference-root-or-body-ancestry-invalid";
         }
         if (!failure && !held_scene_presentation_policy::prepareScenePoses(scenePoses.data(), scenePoseCount)) {
             failure = "scene-hierarchy-or-alias-conflict";
@@ -976,28 +976,29 @@ namespace rock::held_scene_presentation
             return {};
         }
         if (selected.isLeft == isLeft) {
-            // Absolute writes in ancestor order: refreshing a parent cannot
-            // overwrite a child's final pose. Mesh-only descendants follow their
-            // owner, and aliases are written once. No Havok state is changed.
-            const auto rootBefore = looseWeaponRoot ? looseWeaponRoot->world : RE::NiTransform{};
+            // Commit all owner locals first; native geometry updates then see
+            // the complete assembly, including mesh-only sibling branches.
+            const auto rootBefore = referenceRoot ? referenceRoot->world : RE::NiTransform{};
             held_scene_presentation_policy::applyScenePoses(scenePoses.data(), scenePoseCount,
-                [looseWeaponRoot](RE::NiAVObject* node) noexcept {
-                    if (looseWeaponRoot) {
-                        // Include native geometry/skin world-data refresh for
-                        // weapon branches beyond the collision owner's subtree.
+                [](RE::NiAVObject* node) noexcept { f4vr::updateTransformsDown(node, false); },
+                [referenceRoot](RE::NiAVObject* node) noexcept {
+                    if (referenceRoot) {
+                        // FO4VR BSGeometry::UpdateWorldData (0x1C31C10) also
+                        // sets the shader's transform-changed flag. Direct
+                        // NiTransform writes alone omit that notification.
                         f4vr::updateDown(node, true);
                     } else {
                         f4vr::updateTransformsDown(node, false);
                     }
                 });
-            if (logBodies && looseWeaponRoot) {
+            if (logBodies && referenceRoot) {
                 ROCK_LOG_INFO(HeldScenePresentation,
                     "HELD_SCENE_ROOT trace={} frame={} hand={} root='{}' bodyOwners={} scenePoses={} advance={:.3f}gu/{:.3f}deg output=({:.3f},{:.3f},{:.3f})",
-                    traceId, frameIndex, isLeft ? "left" : "right", looseWeaponRoot->name.c_str(),
+                    traceId, frameIndex, isLeft ? "left" : "right", referenceRoot->name.c_str(),
                     registration.count, scenePoseCount,
-                    held_scene_presentation_policy::pointDistance(rootBefore.translate, looseWeaponRoot->world.translate),
-                    held_scene_presentation_policy::matrixRotationDeltaDegrees(rootBefore.rotate, looseWeaponRoot->world.rotate),
-                    looseWeaponRoot->world.translate.x, looseWeaponRoot->world.translate.y, looseWeaponRoot->world.translate.z);
+                    held_scene_presentation_policy::pointDistance(rootBefore.translate, referenceRoot->world.translate),
+                    held_scene_presentation_policy::matrixRotationDeltaDegrees(rootBefore.rotate, referenceRoot->world.rotate),
+                    referenceRoot->world.translate.x, referenceRoot->world.translate.y, referenceRoot->world.translate.z);
             }
         }
         if (logBodies) {
