@@ -44,6 +44,7 @@ const ApiV1& table() noexcept {
         &getPresentedHandPoseV1,
         &getSample,
         &getHeadPose,
+        &getRoles,
     };
     return value;
 }
