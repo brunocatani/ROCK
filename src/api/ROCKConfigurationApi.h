@@ -25,6 +25,8 @@ namespace rock::configuration_api
     // on the game task thread, outside physics/input callbacks. Visitor strings
     // are borrowed for that callback only. A successful write is applied by
     // ROCK's next configuration reload; revision changes after application.
+    // Sections are presentation labels. setValue identifies the option by its
+    // case-insensitive key and owning Group, regardless of the supplied section.
     struct ApiV1
     {
         std::uint32_t version;

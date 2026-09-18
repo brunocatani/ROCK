@@ -4,6 +4,8 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <map>
+#include <set>
 
 namespace
 {
@@ -17,6 +19,119 @@ namespace
     {
         for (const auto& setting : store.settings()) if (setting.key == key) return setting;
         throw std::runtime_error("Missing compiled setting: " + std::string(key));
+    }
+
+    void decorativeSectionChecks(const std::filesystem::path& directory, const CSimpleIniA& compiled)
+    {
+        using namespace rock::config;
+        namespace fs = std::filesystem;
+        fs::create_directories(directory);
+        ConfigurationStore store(directory, compiled);
+        const auto write = [&](Group group, const std::string& text) {
+            std::ofstream file(store.path(group), std::ios::binary | std::ios::trunc);
+            file << text;
+            require(file.good(), "cannot write decorative-section fixture");
+        };
+        const auto runtime = [&] {
+            CSimpleIniA combined;
+            store.appendLoadedValues(combined);
+            return rock::RockConfig::parseValues(combined);
+        };
+        std::set<CSimpleIniA::Entry, CSimpleIniA::Entry::KeyOrder> uniqueKeys;
+        std::map<std::string, std::string> expected;
+        CSimpleIniA canonical;
+        std::array<std::string, 2> flat, labelled;
+        std::array<std::size_t, 2> counts{};
+        for (const auto& setting : store.settings()) {
+            require(uniqueKeys.emplace(setting.key.c_str()).second,
+                "decorative sections require globally unique case-insensitive setting names");
+            const auto group = setting.group == Group::Consumer ? 0u : 1u;
+            const std::string value = setting.type == ValueType::Boolean ? (setting.defaultValue == "true" ? "false" : "true") :
+                setting.type == ValueType::Integer ? (setting.defaultValue == "7" ? "8" : "7") :
+                setting.type == ValueType::Float ? "0.625" : "custom-value";
+            expected.emplace(setting.key, value);
+            canonical.SetValue(setting.section.c_str(), setting.key.c_str(), value.c_str());
+            std::string key = setting.key;
+            if (counts[group] % 2 == 0)
+                for (auto& c : key) if (c >= 'a' && c <= 'z') c -= 'a' - 'A';
+            const auto line = key + " = " + value + "\n";
+            flat[group] += line;
+            // Initial keys have no header; later groups repeat in nonalphabetic order.
+            if (counts[group] % 7 == 3)
+                labelled[group] += counts[group] % 2 == 0 ? "[Alpha notes]\n" : "[Zulu notes]\n";
+            labelled[group] += line;
+            ++counts[group];
+        }
+        for (const auto& files : { flat, labelled }) {
+            write(Group::Consumer, files[0]);
+            write(Group::Developer, files[1]);
+            require(store.load(false), "section-independent load failed");
+            for (const auto& setting : store.settings())
+                require(setting.specified && setting.value == expected.at(setting.key),
+                    "a known key was lost or changed outside its catalog section");
+            require(runtime() == rock::RockConfig::parseValues(canonical),
+                "decorative labels changed parsed runtime values");
+            require(bytes(store.path(Group::Consumer)) == files[0] && bytes(store.path(Group::Developer)) == files[1],
+                "loading decorative sections rewrote a user file");
+        }
+        const auto revision = store.revision();
+        write(Group::Consumer, flat[0]);
+        write(Group::Developer, flat[1]);
+        require(store.load(false) && store.revision() == revision,
+            "moving unchanged keys between labels caused a semantic reload");
+
+        // Section names cannot redirect an option into the other owning file.
+        write(Group::Consumer, "[Debug]\nbPerformanceProfilerEnabled=true\n");
+        write(Group::Developer, "[Logging]\niLogLevel=0\n");
+        require(store.load(false), "wrong-file fixture failed to load");
+        require(!find(store, "bPerformanceProfilerEnabled").specified && runtime().rockLogLevel == 2,
+            "decorative sections broke consumer/developer ownership");
+        require(settingGroup("Any label", "BPERFORMANCEPROFILERENABLED") == Group::Developer,
+            "key-only ownership lookup still depends on a section or spelling case");
+
+        write(Group::Developer,
+            "bPerformanceProfilerEnabled=false\n"
+            "[Zulu]\nbPerformanceProfilerEnabled=true\n"
+            "[Alpha]\nbPerformanceProfilerEnabled=false\n"
+            "[Zulu]\n; My selected profiler value\nBPERFORMANCEPROFILERENABLED=true\n"
+            "iPerformanceProfilerLogIntervalFrames=450\n"
+            "[Alpha]\niPerformanceProfilerLogIntervalFrames=600\niPerformanceProfilerLogIntervalFrames=750\n"
+            "bDebugShowColliders=false\n; My local note\nsUserNote=keep me\n");
+        require(store.load(false), "duplicate fixture failed to load");
+        require(runtime().rockPerformanceProfilerEnabled && runtime().rockPerformanceProfilerLogIntervalFrames == 750,
+            "last physical occurrence did not win across repeated headers/keys");
+        require(store.setValue(Group::Developer, "Unrelated menu label", "BDEBUGSHOWHANDAXES", "true"),
+            "case-insensitive key-only menu edit failed");
+        require(store.load(false) && runtime().rockPerformanceProfilerEnabled &&
+                runtime().rockPerformanceProfilerLogIntervalFrames == 750,
+            "organizing an unrelated edit resurrected a shadowed value");
+        require(find(store, "bDebugShowColliders").specified && !runtime().rockDebugShowColliders,
+            "an unrelated explicit developer default was pruned");
+        const auto organized = bytes(store.path(Group::Developer));
+        require(organized.find("; My selected profiler value") != std::string::npos &&
+                organized.find("; My local note") != std::string::npos && organized.find("keep me") != std::string::npos,
+            "writing discarded the effective option comment or an unknown entry");
+        require(store.setValue(Group::Developer, "Another label", "iperformanceprofilerlogintervalframes", "900"),
+            "editing a previously duplicated key failed");
+        require(store.load(false) && runtime().rockPerformanceProfilerLogIntervalFrames == 900,
+            "an older duplicate overrode the menu edit");
+        require(store.setValue(Group::Developer, "Anything", "bPerformanceProfilerEnabled", "false"),
+            "resetting a misplaced key failed");
+        require(store.load(false) && !runtime().rockPerformanceProfilerEnabled &&
+                !find(store, "bPerformanceProfilerEnabled").specified,
+            "reset left a stale profiler override in another section");
+
+        write(Group::Developer, "bPerformanceProfilerEnabled=true\n[One]\nbPerformanceProfilerEnabled=true\n[Two]\nBPERFORMANCEPROFILERENABLED=true\n");
+        require(store.setValue(Group::Developer, "", "bPerformanceProfilerEnabled", "false"),
+            "global reset of repeated keys failed");
+        require(!fs::exists(store.path(Group::Developer)), "reset did not delete an empty developer file");
+        // This is the production profiler's formerly ignored placement.
+        write(Group::Developer, "[PhysicsInteraction]\nbPerformanceProfilerEnabled=true\niPerformanceProfilerLogIntervalFrames=300\niPerformanceProfilerWarmupFrames=120\nbPerformanceProfilerOverlayText=false\n");
+        require(store.load(false), "production-layout profiler reload failed");
+        const auto profiler = runtime();
+        require(profiler.rockPerformanceProfilerEnabled && profiler.rockPerformanceProfilerLogIntervalFrames == 300 &&
+                profiler.rockPerformanceProfilerWarmupFrames == 120 && !profiler.rockPerformanceProfilerOverlayText,
+            "the real misplaced profiler configuration still does not activate");
     }
 
     void verifyReference(const CSimpleIniA& reference,
@@ -53,6 +168,7 @@ int main(int argc, char** argv)
         const auto directory = fs::temp_directory_path() /
             ("ROCK-configuration-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
         struct Cleanup { fs::path path; ~Cleanup() { std::error_code ec; fs::remove_all(path, ec); } } cleanup{ directory };
+        decorativeSectionChecks(directory / "decorative", compiled);
         ConfigurationStore store(directory, compiled);
         CSimpleIniA consumerExample;
         CSimpleIniA developerExample;
