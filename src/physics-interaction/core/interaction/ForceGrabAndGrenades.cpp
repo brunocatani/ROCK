@@ -238,6 +238,10 @@ namespace rock
                 continue;
             }
 
+            if (commit.phase == PendingForceGrabCommitPhase::EquippedSlotReleaseFailed) {
+                abandon("equipped weapon slot was not released", provider::RockProviderInteractionFailureV1::HandBusy, targetRef);
+                continue;
+            }
             if (commit.phase == PendingForceGrabCommitPhase::NativePlacementFailed) {
                 abandon("native weapon placement failed", provider::RockProviderInteractionFailureV1::TargetUnavailable, targetRef);
                 continue;

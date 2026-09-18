@@ -1443,7 +1443,9 @@ namespace rock
                                 _forceGrab.pendingCommits[transferHandIndex] = PendingForceGrabCommit{
                                     .active = true,
                                     .isLeft = transferIsLeft,
-                                    .phase = PendingForceGrabCommitPhase::WaitingForNativePlacement,
+                                    .phase = dropResult.equippedSlotReleased ?
+                                        PendingForceGrabCommitPhase::WaitingForNativePlacement :
+                                        PendingForceGrabCommitPhase::EquippedSlotReleaseFailed,
                                     .targetHandle = dropResult.handle,
                                     .inventoryTransfer = true,
                                     .equippedWeaponTransfer = true,
@@ -1457,11 +1459,13 @@ namespace rock
                                     dropResult.droppedFormID, transferIsLeft, "release",
                                     releaseGeometry.capturedWeaponWorld,
                                     (transferIsLeft ? frame.left : frame.right).rawHandWorld);
-                                armEquippedWeaponNativeHandoff(
-                                    dropResult.handle,
-                                    dropResult.droppedFormID,
-                                    sourceHand,
-                                    releaseGeometry);
+                                if (dropResult.equippedSlotReleased) {
+                                    armEquippedWeaponNativeHandoff(
+                                        dropResult.handle,
+                                        dropResult.droppedFormID,
+                                        sourceHand,
+                                        releaseGeometry);
+                                }
                             }
                             if (dropCommitted) {
                                 ROCK_LOG_INFO(Weapon,
