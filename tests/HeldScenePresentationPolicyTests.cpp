@@ -184,6 +184,59 @@ int main()
     ok &= expect("a physics-owned reference root must retain its independent body pose",
         appendAssemblyRootPose(rootOwned, rootOwnedCount, 2, &weaponRoot, presentedReceiver, receiver.local) && rootOwnedCount == 1);
 
+    // Ordinary props may use a child collision owner and a separate visible
+    // branch, beneath a rotated/scaled reference parent.
+    Node propParent{}, propRoot{&propParent}, propBody{&propRoot}, propMesh{&propRoot};
+    propParent.world = rotatedTarget;
+    propParent.world.translate = { 40.0f, -12.0f, 6.0f };
+    propParent.world.scale = 2.0f;
+    propRoot.local.translate.x = 5.0f;
+    propRoot.local.scale = 0.75f;
+    propRoot.world = rock::transform_math::composeTransforms(propParent.world, propRoot.local);
+    propBody.local.translate.y = 4.0f;
+    propBody.world = rock::transform_math::composeTransforms(propRoot.world, propBody.local);
+    propMesh.local.translate.z = 3.0f;
+    propMesh.world = rock::transform_math::composeTransforms(propRoot.world, propMesh.local);
+    const auto parentBefore = propParent.world;
+    const auto meshBefore = propMesh.world;
+    const auto bodyInPropRoot = propBody.local;
+    auto presentedPropBody = propBody.world;
+    presentedPropBody.translate.x += 3.0f;
+    Pose propPoses[2]{{&propBody, presentedPropBody}};
+    std::size_t propPoseCount = 1;
+    ok &= expect("ordinary prop root must cover a mesh sibling of its collision owner",
+        appendAssemblyRootPose(propPoses, propPoseCount, 2, &propRoot, presentedPropBody, bodyInPropRoot) &&
+        propPoseCount == 2 && prepareScenePoses(propPoses, propPoseCount));
+    applyScenePoses(propPoses, propPoseCount, [&](Node* node) {
+        node->world = rock::transform_math::composeTransforms(node->parent->world, node->local);
+        if (node == &propRoot) {
+            propBody.world = rock::transform_math::composeTransforms(propRoot.world, propBody.local);
+            propMesh.world = rock::transform_math::composeTransforms(propRoot.world, propMesh.local);
+        }
+    });
+    ok &= expect("prop body and mesh must advance together through native-style world refresh",
+        pointDistance(propBody.world.translate, presentedPropBody.translate) < 0.0001f &&
+        near(propMesh.world.translate.x, meshBefore.translate.x + 3.0f) &&
+        near(propMesh.world.translate.y, meshBefore.translate.y) && near(propMesh.world.translate.z, meshBefore.translate.z) &&
+        near(propMesh.world.scale, meshBefore.scale) && near(propRoot.world.scale, 1.5f) &&
+        near(propRoot.local.scale, 0.75f) && pointDistance(parentBefore.translate, propParent.world.translate) == 0.0f);
+
+    // A leaf geometry can itself be the reference root and collision owner;
+    // it still requires a self refresh even though there are no descendants.
+    Node leafOwner{};
+    leafOwner.world.scale = 1.5f;
+    auto leafTarget = currentTarget;
+    leafTarget.scale = leafOwner.world.scale;
+    Pose leafPoses[2]{{&leafOwner, leafTarget}};
+    std::size_t leafCount = 1;
+    ok &= expect("geometry-owned root must not be inserted twice",
+        appendAssemblyRootPose(leafPoses, leafCount, 2, &leafOwner, leafTarget, previousTarget) &&
+        leafCount == 1 && prepareScenePoses(leafPoses, leafCount));
+    int leafRefreshes = 0;
+    applyScenePoses(leafPoses, leafCount, [&](Node* node) { ++leafRefreshes; node->world = node->local; });
+    ok &= expect("leaf owner must refresh itself and retain its scale",
+        leafRefreshes == 1 && near(leafOwner.world.translate.x, 3.0f) && near(leafOwner.world.scale, 1.5f));
+
     ok &= expect("earlier grab must own all shared parts, including when left updates second",
         preferEarlierTrace(4, 8) && !preferEarlierTrace(8, 4));
     ok &= expect("release must transfer ownership to the remaining registration",

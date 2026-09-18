@@ -237,7 +237,7 @@ namespace rock::held_scene_presentation_policy
         bool duplicate = false;
     };
 
-    // Loose weapons have mesh-only branches beside their collision owners.
+    // Loose references can have mesh-only branches beside their collision owners.
     // Present the reference root first, then retain each body's independent
     // solved pose. The captured root/body relation never uses last frame's
     // presented node as a new physics input.

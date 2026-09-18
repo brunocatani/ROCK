@@ -835,7 +835,7 @@ namespace rock::held_scene_presentation
         std::uint64_t traceId,
         const RE::NiTransform& targetBodyWorld,
         const RE::NiTransform& solvedBodyWorld,
-        RE::NiAVObject* looseWeaponRoot,
+        RE::NiAVObject* looseObjectRoot,
         const RE::NiTransform& bodyInRoot) noexcept
     {
         const std::size_t handIndex = isLeft ? 1u : 0u;
@@ -952,8 +952,8 @@ namespace rock::held_scene_presentation
             }
         }
         std::size_t scenePoseCount = registration.count;
-        if (!failure && looseWeaponRoot && !held_scene_presentation_policy::appendAssemblyRootPose(
-                scenePoses.data(), scenePoseCount, scenePoses.size(), looseWeaponRoot,
+        if (!failure && looseObjectRoot && !held_scene_presentation_policy::appendAssemblyRootPose(
+                scenePoses.data(), scenePoseCount, scenePoses.size(), looseObjectRoot,
                 decision.presentedWorld, bodyInRoot)) {
             failure = "loose-root-or-body-ancestry-invalid";
         }
@@ -977,25 +977,42 @@ namespace rock::held_scene_presentation
             // Absolute writes in ancestor order: refreshing a parent cannot
             // overwrite a child's final pose. Mesh-only descendants follow their
             // owner, and aliases are written once. No Havok state is changed.
-            const auto rootBefore = looseWeaponRoot ? looseWeaponRoot->world : RE::NiTransform{};
+            const auto rootBefore = looseObjectRoot ? looseObjectRoot->world : RE::NiTransform{};
             held_scene_presentation_policy::applyScenePoses(scenePoses.data(), scenePoseCount,
-                [looseWeaponRoot](RE::NiAVObject* node) noexcept {
-                    if (looseWeaponRoot) {
-                        // Include native geometry/skin world-data refresh for
-                        // weapon branches beyond the collision owner's subtree.
+                [looseObjectRoot](RE::NiAVObject* node) noexcept {
+                    if (looseObjectRoot) {
+                        // Writing world matrices alone skips the native geometry
+                        // refresh. Props need the same complete update as weapons,
+                        // including when the collision owner is itself geometry.
                         f4vr::updateDown(node, true);
                     } else {
                         f4vr::updateTransformsDown(node, false);
                     }
                 });
-            if (logBodies && looseWeaponRoot) {
+            if (logBodies && looseObjectRoot) {
+                // Reuse the once-per-grab / debug-sampled assembly witness. Read
+                // back every final owner after the native refresh to distinguish
+                // missing root coverage from a refresh overwriting a body pose.
+                float maximumPositionError = 0.0f;
+                float maximumRotationError = 0.0f;
+                bool finalPosesFinite = true;
+                for (std::size_t index = 0; index < scenePoseCount; ++index) {
+                    const auto& pose = scenePoses[index];
+                    if (pose.duplicate) continue;
+                    finalPosesFinite &= held_scene_presentation_policy::finiteTransform(pose.node->world);
+                    maximumPositionError = (std::max)(maximumPositionError,
+                        held_scene_presentation_policy::pointDistance(pose.world.translate, pose.node->world.translate));
+                    maximumRotationError = (std::max)(maximumRotationError,
+                        held_scene_presentation_policy::matrixRotationDeltaDegrees(pose.world.rotate, pose.node->world.rotate));
+                }
                 ROCK_LOG_INFO(HeldScenePresentation,
-                    "HELD_SCENE_ROOT trace={} frame={} hand={} root='{}' bodyOwners={} scenePoses={} advance={:.3f}gu/{:.3f}deg output=({:.3f},{:.3f},{:.3f})",
-                    traceId, frameIndex, isLeft ? "left" : "right", looseWeaponRoot->name.c_str(),
-                    registration.count, scenePoseCount,
-                    held_scene_presentation_policy::pointDistance(rootBefore.translate, looseWeaponRoot->world.translate),
-                    held_scene_presentation_policy::matrixRotationDeltaDegrees(rootBefore.rotate, looseWeaponRoot->world.rotate),
-                    looseWeaponRoot->world.translate.x, looseWeaponRoot->world.translate.y, looseWeaponRoot->world.translate.z);
+                    "HELD_SCENE_ROOT trace={} frame={} hand={} root='{}' bodyOwners={} scenePoses={} refresh=native-world-data finite={} maxPoseError={:.4f}gu/{:.3f}deg advance={:.3f}gu/{:.3f}deg output=({:.3f},{:.3f},{:.3f})",
+                    traceId, frameIndex, isLeft ? "left" : "right", looseObjectRoot->name.c_str(),
+                    registration.count, scenePoseCount, finalPosesFinite,
+                    maximumPositionError, maximumRotationError,
+                    held_scene_presentation_policy::pointDistance(rootBefore.translate, looseObjectRoot->world.translate),
+                    held_scene_presentation_policy::matrixRotationDeltaDegrees(rootBefore.rotate, looseObjectRoot->world.rotate),
+                    looseObjectRoot->world.translate.x, looseObjectRoot->world.translate.y, looseObjectRoot->world.translate.z);
             }
         }
         if (logBodies) {

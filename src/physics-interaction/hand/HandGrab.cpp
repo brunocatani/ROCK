@@ -12577,6 +12577,9 @@ namespace rock
             return false;
         }
 
+        // Every loose reference owns its complete visual assembly, including
+        // ordinary props. Ragdolls/gore and mechanical targets retain their
+        // registered body subtrees: their reference root may contain unheld parts.
         const auto presentation = held_scene_presentation::publishTargetTransport(
             _isLeft,
             world,
@@ -12584,7 +12587,8 @@ namespace rock
             _grabFrame.traceId,
             update.desiredBodyWorld,
             update.solvedBodyWorld,
-            _heldObjectIsLooseWeapon && _savedObjectState.refr ? _savedObjectState.refr->Get3D() : nullptr,
+            _savedObjectState.targetKind == grab_target::Kind::LooseObject && _savedObjectState.refr ?
+                _savedObjectState.refr->Get3D() : nullptr,
             _grabFrame.rootBodyLocal);
         update.hasPresentedBodyWorld = presentation.applied;
         update.presentedBodyWorld = presentation.presentedBodyWorld;
