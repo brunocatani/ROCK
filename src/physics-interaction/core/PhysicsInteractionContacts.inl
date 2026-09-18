@@ -117,6 +117,33 @@
             return;
         }
 
+        // Eligibility does not depend on the target's body-tree scan. Reject
+        // cooling-down/stationary contacts before enumerating that tree, using
+        // the same impulse policy for ordinary objects and point pushes.
+        const auto* sourceMotion = havok_runtime::getBodyMotion(hknp, RE::hknpBodyId{ sourceBodyId });
+        if (!sourceMotion) {
+            return;
+        }
+        const RE::NiPoint3 sourceVelocityHavok{ sourceMotion->linearVelocity.x, sourceMotion->linearVelocity.y, sourceMotion->linearVelocity.z };
+        const std::uint64_t cooldownKey = (static_cast<std::uint64_t>(sourceBodyId) << 32) | targetBodyId;
+        const auto cooldown = _contacts.dynamicPushCooldownUntil.find(cooldownKey);
+        const float cooldownRemaining = cooldown == _contacts.dynamicPushCooldownUntil.end() ? 0.0f :
+            (std::max)(0.0f, cooldown->second - _contacts.dynamicPushElapsedSeconds);
+        const auto push = push_assist::computePushImpulse(push_assist::PushAssistInput<RE::NiPoint3>{
+            .enabled = g_rockConfig.rockDynamicPushAssistEnabled,
+            .sourceVelocity = sourceVelocityHavok,
+            .minSpeed = g_rockConfig.rockDynamicPushMinSpeed,
+            .maxImpulse = g_rockConfig.rockDynamicPushMaxImpulse,
+            .layerMultiplier = 1.0f,
+            .cooldownRemainingSeconds = cooldownRemaining,
+        });
+        if (!push.apply) {
+            ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
+                "{} dynamic push skipped before body scan: reason={} sourceBody={} targetBody={}",
+                sourceName, pushAssistSkipReasonName(push.skipReason), sourceBodyId, targetBodyId);
+            return;
+        }
+
         const auto target = havok_runtime::snapshotBody(hknp, RE::hknpBodyId{targetBodyId});
         const auto* base = targetRef->GetObjectReference();
         const bool bodyContact = target.valid && ((base && base->Is(RE::ENUM_FORM_ID::kNPC_)) ||
@@ -124,22 +151,9 @@
         if (bodyContact) {
             if (!contact.hasPoint || !target.body ||
                 physics_body_classifier::motionTypeFromBodyFlags(target.body->flags) != physics_body_classifier::BodyMotionType::Dynamic) return;
-            const auto* sourceMotion = havok_runtime::getBodyMotion(hknp, RE::hknpBodyId{sourceBodyId});
-            if (!sourceMotion) return;
-            const std::uint64_t key = (std::uint64_t(sourceBodyId) << 32) | targetBodyId;
-            const auto cooldown = _contacts.dynamicPushCooldownUntil.find(key);
-            const float remaining = cooldown == _contacts.dynamicPushCooldownUntil.end() ? 0.0f :
-                (std::max)(0.0f, cooldown->second - _contacts.dynamicPushElapsedSeconds);
-            const auto push = push_assist::computePushImpulse(push_assist::PushAssistInput<RE::NiPoint3>{
-                .enabled = g_rockConfig.rockDynamicPushAssistEnabled,
-                .sourceVelocity = {sourceMotion->linearVelocity.x, sourceMotion->linearVelocity.y, sourceMotion->linearVelocity.z},
-                .minSpeed = g_rockConfig.rockDynamicPushMinSpeed,
-                .maxImpulse = g_rockConfig.rockDynamicPushMaxImpulse,
-                .layerMultiplier = 1.0f, .cooldownRemainingSeconds = remaining});
-            if (!push.apply) return;
             const bool applied = push_assist::applyPointImpulse(hknp, targetBodyId, contact.owner, push.impulse,
                 RE::NiPoint3{contact.point[0], contact.point[1], contact.point[2]});
-            if (applied) _contacts.dynamicPushCooldownUntil[key] = _contacts.dynamicPushElapsedSeconds +
+            if (applied) _contacts.dynamicPushCooldownUntil[cooldownKey] = _contacts.dynamicPushElapsedSeconds +
                 (std::max)(0.0f, g_rockConfig.rockDynamicPushCooldownSeconds);
             ROCK_LOG_SAMPLE_INFO(Hand, 2000, "{} body point push: source={} target={} owner=0x{:X} applied={} pointHk=({:.3f},{:.3f},{:.3f})",
                 sourceName, sourceBodyId, targetBodyId, contact.owner, applied, contact.point[0], contact.point[1], contact.point[2]);
@@ -201,42 +215,6 @@
                 "{} dynamic push skipped: accepted target body {} produced no unique motion bodies",
                 sourceName,
                 targetBodyId);
-            return;
-        }
-
-        auto* sourceMotion = havok_runtime::getBodyMotion(hknp, RE::hknpBodyId{ sourceBodyId });
-        if (!sourceMotion) {
-            return;
-        }
-
-        const RE::NiPoint3 sourceVelocityHavok{ sourceMotion->linearVelocity.x, sourceMotion->linearVelocity.y, sourceMotion->linearVelocity.z };
-        const std::uint64_t cooldownKey = (static_cast<std::uint64_t>(sourceBodyId) << 32) | targetBodyId;
-        float cooldownRemaining = 0.0f;
-        if (const auto it = _contacts.dynamicPushCooldownUntil.find(cooldownKey); it != _contacts.dynamicPushCooldownUntil.end() && it->second > _contacts.dynamicPushElapsedSeconds) {
-            cooldownRemaining = it->second - _contacts.dynamicPushElapsedSeconds;
-        }
-
-        const push_assist::PushAssistInput<RE::NiPoint3> pushInput{
-            .enabled = g_rockConfig.rockDynamicPushAssistEnabled,
-            .sourceVelocity = sourceVelocityHavok,
-            .minSpeed = g_rockConfig.rockDynamicPushMinSpeed,
-            .maxImpulse = g_rockConfig.rockDynamicPushMaxImpulse,
-            .layerMultiplier = 1.0f,
-            .cooldownRemainingSeconds = cooldownRemaining,
-        };
-        const auto push = push_assist::computePushImpulse(pushInput);
-        if (!push.apply) {
-            ROCK_LOG_SAMPLE_DEBUG(Hand,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "{} dynamic push skipped: reason={} speed=({:.3f},{:.3f},{:.3f}) targetBody={} layer={} acceptedBodies={}",
-                sourceName,
-                pushAssistSkipReasonName(push.skipReason),
-                sourceVelocityHavok.x,
-                sourceVelocityHavok.y,
-                sourceVelocityHavok.z,
-                targetBodyId,
-                targetRecord->collisionLayer,
-                bodySet.acceptedCount());
             return;
         }
 

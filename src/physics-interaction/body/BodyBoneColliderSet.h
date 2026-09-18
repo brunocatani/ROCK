@@ -67,6 +67,7 @@ namespace rock
         std::uint32_t copyGrabSuppressionArmBodyIdsAtomic(bool isLeft, std::uint32_t* outBodyIds, std::size_t maxBodyIds) const;
         bool isColliderBodyIdAtomic(std::uint32_t bodyId) const;
         bool tryGetBodyMetadataAtomic(std::uint32_t bodyId, BodyBoneColliderMetadata& outMetadata) const;
+        bool tryGetBodyMetadataAtIndexAtomic(std::uint32_t index, std::uint32_t bodyId, BodyBoneColliderMetadata& outMetadata) const;
         bool tryGetBodyRoleAtomic(std::uint32_t bodyId, skeleton_bone_debug_math::BoneColliderRole& outRole) const;
         // Main-thread debug publication only. Returns the exact pending target
         // that the next generated-body physics callback will consume.
@@ -106,6 +107,7 @@ namespace rock
         void clearAtomicBodyIds();
 
         DirectSkeletonBoneReader _reader;
+        DirectSkeletonBoneSnapshot _snapshot;
         std::array<BodyInstance, kBodyBoneColliderBodyCount> _bodies{};
         RE::hknpWorld* _cachedWorld = nullptr;
         void* _cachedBhkWorld = nullptr;

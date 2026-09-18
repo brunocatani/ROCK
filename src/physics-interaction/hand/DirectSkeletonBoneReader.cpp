@@ -124,17 +124,21 @@ namespace rock
         const SkeletonBoneCaptureSpace space,
         DirectSkeletonBoneSnapshot& outSnapshot)
     {
-        outSnapshot = DirectSkeletonBoneSnapshot{};
+        // Reuse copied storage, but replace every transform and validity bit.
+        // Controller transport below always starts from this capture's array.
+        outSnapshot.valid = false;
         mode = skeleton_bone_debug_math::sanitizeDebugSkeletonBoneMode(static_cast<int>(mode));
         source = skeleton_bone_debug_math::sanitizeDebugSkeletonBoneSource(static_cast<int>(source));
         if (mode == DebugSkeletonBoneMode::Off) {
             resetCache();
+            outSnapshot = {};
             return false;
         }
 
         const bool inPowerArmor = f4vr::isInPowerArmor();
         const ResolvedTreeSource resolved = resolveTreeSource(source);
         if (!validTree(resolved.tree)) {
+            outSnapshot = {};
             if (!_missingSourceLogged || _cachedSource != resolved.source) {
                 ROCK_LOG_WARN(Hand,
                     "Direct skeleton bone reader source unavailable: source={} skeleton={} tree={} mode={}",
@@ -164,6 +168,7 @@ namespace rock
             _cachedInPowerArmor != inPowerArmor) {
             if (!rebuildTreeCache(resolved.skeleton, resolved.tree, resolved.source, mode, inPowerArmor)) {
                 resetCache();
+                outSnapshot = {};
                 return false;
             }
         }
@@ -172,6 +177,8 @@ namespace rock
             performance_profiler::observeValue(space == SkeletonBoneCaptureSpace::Rendered ?
                 performance_profiler::ValueMetric::RenderedSkeletonBones : performance_profiler::ValueMetric::ControllerSkeletonBones,
                 outSnapshot.bones.size());
+        } else {
+            outSnapshot = {};
         }
         return captured;
     }
@@ -293,29 +300,31 @@ namespace rock
         outSnapshot.totalBoneCount = _cachedTotalBoneCount;
         outSnapshot.requiredResolvedCount = _cachedRequiredResolvedCount;
         outSnapshot.missingRequiredBones = _cachedMissingRequiredBones;
-        outSnapshot.bones.reserve(_cachedBones.size());
+        outSnapshot.bones.resize(_cachedBones.size());
+        std::size_t capturedCount = 0;
 
         for (const auto& cached : _cachedBones) {
             if (cached.treeIndex < 0 || cached.treeIndex >= tree->numTransforms) {
                 continue;
             }
 
-            DirectSkeletonBoneEntry entry{
-                .name = cached.name,
-                .treeIndex = cached.treeIndex,
-                .parentTreeIndex = cached.parentTreeIndex,
-                .drawableParentSnapshotIndex = cached.drawableParentSnapshotIndex,
-                .world = tree->transforms[cached.treeIndex].world,
-                .included = cached.included,
-            };
+            auto& entry = outSnapshot.bones[capturedCount++];
+            entry.name = cached.name;
+            entry.treeIndex = cached.treeIndex;
+            entry.parentTreeIndex = cached.parentTreeIndex;
+            entry.drawableParentSnapshotIndex = cached.drawableParentSnapshotIndex;
+            entry.world = tree->transforms[cached.treeIndex].world;
+            entry.included = cached.included;
+            entry.nodeWorld = {};
+            entry.nodeWorldValid = false;
             // refNode is an engine scene pointer the tree owns; a guarded copy
             // keeps a torn tree from faulting the frame.
             if (const RE::NiNode* refNode = tree->transforms[cached.treeIndex].refNode) {
                 entry.nodeWorldValid = native_memory::tryReadValue(&refNode->world, entry.nodeWorld);
             }
-            outSnapshot.bones.push_back(std::move(entry));
         }
 
+        outSnapshot.bones.resize(capturedCount);
         if (space == SkeletonBoneCaptureSpace::Controller) {
             namespace transport = rendered_bone_transport_policy;
             for (const bool isLeft : { false, true }) {

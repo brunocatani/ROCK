@@ -72,6 +72,13 @@ namespace rock
             std::array<std::uint32_t, MAX_WEAPON_COLLISION_BODIES> bodyIds{};
         };
 
+        struct WeaponContactState
+        {
+            WeaponInteractionContact contact{};
+            bool hasSampledVelocity{ false };
+            std::array<float, 4> sampledVelocityHavok{};
+        };
+
         struct ReleaseGeometrySnapshot
         {
             float leverGameUnits{ 0.0f };
@@ -263,6 +270,8 @@ namespace rock
         std::uint32_t getWeaponBodyIdAtomic(std::size_t index) const;
 
         WeaponBodySnapshot getWeaponBodySnapshotAtomic() const;
+        // Copies one coherent publication; callers consume it immediately.
+        std::size_t copyWeaponContactStatesAtomic(std::span<WeaponContactState> outStates) const;
         // Main-thread presentation query; the output contains current positions only.
         std::size_t collectAttachOnlyGripIndicators(
             const RE::NiAVObject* currentWeaponRoot,
@@ -353,6 +362,7 @@ namespace rock
         void serviceRetiredWeaponBodies(RE::hknpWorld* currentWorld, std::uint32_t completedPhysicsSteps = 1);
 
     private:
+        WeaponInteractionContact readPublishedContact(std::uint32_t index) const;
         static constexpr std::uint32_t INVALID_BODY_ID = 0x7FFF'FFFF;
         static constexpr std::size_t MAX_WEAPON_BODIES = MAX_WEAPON_COLLISION_BODIES;
         static constexpr std::uint32_t RETIRED_GENERATED_WEAPON_BODY_GRACE_STEPS = 8;

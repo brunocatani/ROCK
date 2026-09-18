@@ -336,6 +336,14 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKCharacterProxyFaultPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKCharacterProxyFaultPolicyTests)
 
+  add_executable(ROCKNativeMemoryTests
+    "${ROOT_DIR}/tests/NativeMemoryTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/native/NativeMemory.cpp"
+  )
+  target_compile_features(ROCKNativeMemoryTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKNativeMemoryTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKNativeMemoryTests)
+
   add_executable(ROCKHavokRefCountTests "${ROOT_DIR}/tests/HavokRefCountTests.cpp")
   target_compile_features(ROCKHavokRefCountTests PRIVATE cxx_std_23)
   target_include_directories(ROCKHavokRefCountTests PRIVATE ${SOURCE_DIR})

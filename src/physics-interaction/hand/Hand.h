@@ -696,6 +696,7 @@ namespace rock
         std::uint32_t getHandColliderBodyIdAtomic(std::size_t index) const { return _boneColliders.getBodyIdAtomic(index); }
         bool isHandColliderBodyId(std::uint32_t bodyId) const { return _boneColliders.isColliderBodyIdAtomic(bodyId); }
         bool tryGetHandColliderMetadata(std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const { return _boneColliders.tryGetBodyMetadataAtomic(bodyId, outMetadata); }
+        bool tryGetHandColliderMetadataAtIndex(std::uint32_t index, std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const { return _boneColliders.tryGetBodyMetadataAtIndexAtomic(index, bodyId, outMetadata); }
         bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const { return _boneColliders.tryGetPalmAnchorTarget(outTarget); }
         bool tryGetHandColliderTargetForDebug(std::uint32_t bodyId, RE::NiTransform& outTarget) const { return _boneColliders.tryGetBodyTargetForDebug(bodyId, outTarget); }
         const dynamic_hand_twin::TwinTargets& dynamicTwinTargets() const { return _boneColliders.dynamicTwinTargets(); }
@@ -740,7 +741,8 @@ namespace rock
         void updateCollisionTransform(
             RE::hknpWorld* world,
             const RE::NiTransform& rollAuthorityWorld,
-            float deltaTime);
+            float deltaTime,
+            const DirectSkeletonBoneSnapshot& colliderBones);
 
         void flushPendingCollisionPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void flushPendingCustomGrabAuthority(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);

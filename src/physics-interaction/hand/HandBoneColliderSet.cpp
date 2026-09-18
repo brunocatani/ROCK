@@ -383,6 +383,17 @@ namespace rock
             return false;
         }
 
+        return makeBoneLookup(snapshot, isLeft, rollAuthorityWorld, outLookup);
+    }
+
+    bool HandBoneColliderSet::makeBoneLookup(const DirectSkeletonBoneSnapshot& snapshot,
+        bool isLeft, const RE::NiTransform& rollAuthorityWorld, BoneFrameLookup& outLookup)
+    {
+        outLookup = {};
+        if (!snapshot.valid || snapshot.space != SkeletonBoneCaptureSpace::Controller ||
+            snapshot.source != skeleton_bone_debug_math::SkeletonBoneSnapshotSource::GameRootFlattenedBoneTree) {
+            return false;
+        }
         _lastCapturedSkeleton = snapshot.skeleton;
         _lastCapturedBoneTree = snapshot.boneTree;
         _lastCapturedPowerArmor = snapshot.inPowerArmor;
@@ -881,7 +892,8 @@ namespace rock
         bool isLeft,
         const RE::NiTransform& rollAuthorityWorld,
         BethesdaPhysicsBody& palmAnchorBody,
-        float deltaTime)
+        float deltaTime,
+        const DirectSkeletonBoneSnapshot& colliderBones)
     {
         if (!world || !_created || !palmAnchorBody.isValid()) {
             return;
@@ -903,7 +915,7 @@ namespace rock
         }
 
         BoneFrameLookup lookup{};
-        if (!captureBoneLookup(isLeft, rollAuthorityWorld, lookup)) {
+        if (!makeBoneLookup(colliderBones, isLeft, rollAuthorityWorld, lookup)) {
             return;
         }
 
@@ -1241,27 +1253,38 @@ namespace rock
             if (_bodyIdsAtomic[i].load(std::memory_order_acquire) != bodyId) {
                 continue;
             }
-            outMetadata.valid = true;
-            outMetadata.isLeft = _isLeftAtomic.load(std::memory_order_acquire) != 0;
-            outMetadata.bodyId = bodyId;
-            outMetadata.role = static_cast<HandColliderRole>(_rolesAtomic[i].load(std::memory_order_acquire));
-            outMetadata.finger = static_cast<HandFinger>(_fingersAtomic[i].load(std::memory_order_acquire));
-            outMetadata.segment = static_cast<HandFingerSegment>(_segmentsAtomic[i].load(std::memory_order_acquire));
-            outMetadata.primaryPalmAnchor = _primaryAnchorAtomic[i].load(std::memory_order_acquire) != 0;
-            if (_sampledVelocityValidAtomic[i].load(std::memory_order_acquire) != 0) {
-                const float vx = _sampledVelocityHavokXAtomic[i].load(std::memory_order_acquire);
-                const float vy = _sampledVelocityHavokYAtomic[i].load(std::memory_order_acquire);
-                const float vz = _sampledVelocityHavokZAtomic[i].load(std::memory_order_acquire);
-                if (std::isfinite(vx) && std::isfinite(vy) && std::isfinite(vz)) {
-                    outMetadata.hasSampledLinearVelocityHavok = true;
-                    outMetadata.sampledLinearVelocityHavok[0] = vx;
-                    outMetadata.sampledLinearVelocityHavok[1] = vy;
-                    outMetadata.sampledLinearVelocityHavok[2] = vz;
-                    outMetadata.sampledLinearVelocityHavok[3] = 0.0f;
-                }
-            }
-            return true;
+            return tryGetBodyMetadataAtIndexAtomic(i, bodyId, outMetadata);
         }
         return false;
+    }
+
+    bool HandBoneColliderSet::tryGetBodyMetadataAtIndexAtomic(std::uint32_t i,
+        std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const
+    {
+        outMetadata = {};
+        if (i >= _bodyIdsAtomic.size() || i >= _bodyCountAtomic.load(std::memory_order_acquire) ||
+            bodyId == hand_collider_semantics::kInvalidBodyId || _bodyIdsAtomic[i].load(std::memory_order_acquire) != bodyId) {
+            return false;
+        }
+        outMetadata.valid = true;
+        outMetadata.isLeft = _isLeftAtomic.load(std::memory_order_acquire) != 0;
+        outMetadata.bodyId = bodyId;
+        outMetadata.role = static_cast<HandColliderRole>(_rolesAtomic[i].load(std::memory_order_acquire));
+        outMetadata.finger = static_cast<HandFinger>(_fingersAtomic[i].load(std::memory_order_acquire));
+        outMetadata.segment = static_cast<HandFingerSegment>(_segmentsAtomic[i].load(std::memory_order_acquire));
+        outMetadata.primaryPalmAnchor = _primaryAnchorAtomic[i].load(std::memory_order_acquire) != 0;
+        if (_sampledVelocityValidAtomic[i].load(std::memory_order_acquire) != 0) {
+            const float vx = _sampledVelocityHavokXAtomic[i].load(std::memory_order_acquire);
+            const float vy = _sampledVelocityHavokYAtomic[i].load(std::memory_order_acquire);
+            const float vz = _sampledVelocityHavokZAtomic[i].load(std::memory_order_acquire);
+            if (std::isfinite(vx) && std::isfinite(vy) && std::isfinite(vz)) {
+                outMetadata.hasSampledLinearVelocityHavok = true;
+                outMetadata.sampledLinearVelocityHavok[0] = vx;
+                outMetadata.sampledLinearVelocityHavok[1] = vy;
+                outMetadata.sampledLinearVelocityHavok[2] = vz;
+                outMetadata.sampledLinearVelocityHavok[3] = 0.0f;
+            }
+        }
+        return true;
     }
 }

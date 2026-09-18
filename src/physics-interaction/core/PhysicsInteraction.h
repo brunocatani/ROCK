@@ -310,6 +310,7 @@ namespace rock
         void destroyHandCollisions(void* bhkWorld);
 
         void updateHandCollisions(const PhysicsFrameContext& frame);
+        void captureHandColliderBones();
 
         bool createBodyBoneCollisions(RE::hknpWorld* world, void* bhkWorld);
 
@@ -1036,6 +1037,10 @@ namespace rock
 
         // ---- Long-lived subsystem objects ----
         HandBoneCache _handBoneCache;
+        // Game-thread scratch, recaptured immediately before the two collider
+        // updates. Never shared with rendered-space body or presentation reads.
+        DirectSkeletonBoneReader _handColliderBoneReader;
+        DirectSkeletonBoneSnapshot _handColliderBoneSnapshot;
         HandFrameResolver _handFrameResolver;
         // Last native recoil kick the FRIK recoil controller saw; a change
         // marks a frame whose rendered hand carries a composed kick.
