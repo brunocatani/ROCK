@@ -118,6 +118,8 @@ namespace rock::debug
     enum class MarkerOverlayRole : std::uint8_t
     {
         RightGrabAnchor,
+        WeaponAimController,
+        WeaponAimBarrel,
         LeftGrabAnchor,
         RightPalmNormal,
         LeftPalmNormal,

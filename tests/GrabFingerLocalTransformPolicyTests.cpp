@@ -2,6 +2,7 @@
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
 #include "physics-interaction/weapon/WeaponGripTransfer.h"
+#include "physics-interaction/weapon/WeaponAimDiagnosticMath.h"
 
 #include <array>
 #include <cmath>
@@ -341,6 +342,45 @@ int main()
         static_assert(!transfer::requesterIsPrimary(false, true, 2, 9));
         static_assert(transfer::requesterIsPrimary(false, false, 2, 9));
         static_assert(!transfer::requesterIsPrimary(true, true, 9, 2));
+    }
+    {
+        namespace aim = rock::weapon_aim_diagnostic;
+        const auto identity = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+        auto yaw = identity, pitch = identity;
+        constexpr float radians = 0.017453292519943295769f;
+        yaw.rotate.entry[0] = { std::cos(10.0f * radians), -std::sin(10.0f * radians), 0.0f, 0.0f };
+        yaw.rotate.entry[1] = { std::sin(10.0f * radians), std::cos(10.0f * radians), 0.0f, 0.0f };
+        pitch.rotate.entry[1] = { 0.0f, std::cos(5.0f * radians), std::sin(5.0f * radians), 0.0f };
+        pitch.rotate.entry[2] = { 0.0f, -std::sin(5.0f * radians), std::cos(5.0f * radians), 0.0f };
+        const auto barrelLocal = rock::transform_math::composeTransforms(yaw, pitch);
+        const auto sample = aim::measure(identity, barrelLocal, identity);
+        ok &= expectBool("aim diagnostic accepts finite frames", sample.valid, true);
+        ok &= expectFloat("aim diagnostic distinguishes positive lateral angle", sample.yawDegrees, 10.0f);
+        ok &= expectFloat("aim diagnostic distinguishes positive elevation", sample.pitchDegrees, 5.0f);
+        auto forwardAlongHand = identity;
+        forwardAlongHand.rotate.entry[0] = { 0.0f, -1.0f, 0.0f, 0.0f };
+        forwardAlongHand.rotate.entry[1] = { 1.0f, 0.0f, 0.0f, 0.0f };
+        const auto handAligned = aim::measure(identity, forwardAlongHand, identity);
+        ok &= expectFloat("ray divergence compares physical finger-forward with barrel", handAligned.divergenceDegrees, 0.0f);
+        ok &= expectFloat("wand basis angle remains independent of hand-forward", handAligned.yawDegrees, 90.0f);
+        auto controller = yaw;
+        controller.translate = { 100.0f, -50.0f, 30.0f };
+        controller.scale = 1.7f;
+        auto barrelWorld = rock::transform_math::composeTransforms(controller, barrelLocal);
+        const auto moved = aim::measure(controller, barrelWorld, controller);
+        ok &= expectFloat("aim yaw is independent of world motion and scale", moved.yawDegrees, sample.yawDegrees);
+        ok &= expectFloat("aim pitch is independent of world motion and scale", moved.pitchDegrees, sample.pitchDegrees);
+        auto mirrored = barrelLocal;
+        for (int row = 0; row < 3; ++row)
+            for (int col = 0; col < 3; ++col)
+                mirrored.rotate.entry[row][col] *= (row == 0 ? -1.0f : 1.0f) * (col == 0 ? -1.0f : 1.0f);
+        const auto left = aim::measure(identity, mirrored, identity);
+        ok &= expectFloat("lateral reflection reverses diagnostic yaw", left.yawDegrees, -10.0f);
+        ok &= expectFloat("lateral reflection preserves diagnostic elevation", left.pitchDegrees, 5.0f);
+        controller.scale = 0.0f;
+        ok &= expectBool("collapsed controller frame hides diagnostic rays", aim::measure(controller, barrelWorld, controller).valid, false);
+        barrelWorld.rotate.entry[1].x = (std::numeric_limits<float>::quiet_NaN)();
+        ok &= expectBool("nonfinite barrel frame hides diagnostic rays", aim::measure(identity, barrelWorld, identity).valid, false);
     }
     ok &= testCommandedFingerCorrectionFrame();
     using namespace rock::grab_finger_local_transform_math;

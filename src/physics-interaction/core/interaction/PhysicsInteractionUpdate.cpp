@@ -1,5 +1,6 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
+#include "physics-interaction/weapon/WeaponAimDiagnosticMath.h"
 
 // Per-frame orchestration: update(), interaction frame finalization, hand transform sampling, physics substep callbacks, held-mass slowdown, and the frame/debug-overlay implementation includes.
 

@@ -42,6 +42,7 @@ namespace rock::debug_visualization_policy
         bool grabTransformTelemetryText{ false };
         bool videoSyncMarker{ false };
         bool weaponAuthority{ false };
+        bool weaponAimRays{ false };
         bool looseWeaponGripZones{ false };
         bool authoredGripActivationZones{ false };
         bool nativeScopeActivation{ false };
@@ -89,6 +90,7 @@ namespace rock::debug_visualization_policy
         bool grabTransformTelemetryText{ false };
         bool videoSyncMarker{ false };
         bool weaponAuthority{ false };
+        bool weaponAimRays{ false };
         bool looseWeaponGripZones{ false };
         bool authoredGripActivationZones{ false };
         bool nativeScopeActivation{ false };
@@ -155,6 +157,7 @@ namespace rock::debug_visualization_policy
                 telemetry && input.grabTransformTelemetryText,
             .videoSyncMarker = input.videoSyncMarker,
             .weaponAuthority = input.weaponAuthority,
+            .weaponAimRays = input.weaponAimRays,
             .looseWeaponGripZones = input.looseWeaponGripZones,
             .authoredGripActivationZones =
                 input.authoredGripActivationZones,

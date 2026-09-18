@@ -210,6 +210,7 @@ namespace rock
         bool rockDebugNativeScopeShotAlignment = false;
         bool rockDebugDrawAuthoredGripActivationZones = false;
         bool rockDebugDrawWeaponAuthority = false;
+        bool rockDebugDrawWeaponAimRays = false;
         bool rockDebugGripFailureTelemetry = false;
         bool rockDebugDrawLooseWeaponGripZones = false;
         bool rockDebugDrawDynamicWeaponColliders = false;

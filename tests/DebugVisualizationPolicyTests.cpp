@@ -98,6 +98,9 @@ namespace
         .grabContactPatch = true,
     });
     static_assert(unrelatedGenericVisuals.handAxes);
+    static_assert(!resolve({}).weaponAimRays);
+    static_assert(resolve({ .weaponAimRays = true }).weaponAimRays);
+    static_assert(colliderChildrenDisabled(resolve({ .weaponAimRays = true })));
     static_assert(unrelatedGenericVisuals.grabPivots);
     static_assert(unrelatedGenericVisuals.grabContactPatch);
     static_assert(!unrelatedGenericVisuals.weaponAuthority);

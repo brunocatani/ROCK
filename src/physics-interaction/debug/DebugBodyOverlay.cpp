@@ -2720,6 +2720,12 @@ namespace rock::debug
             color[3] = 1.0f;
 
             switch (role) {
+            case MarkerOverlayRole::WeaponAimController:
+                color[0] = 0.05f; color[1] = 1.0f; color[2] = 1.0f;
+                break;
+            case MarkerOverlayRole::WeaponAimBarrel:
+                color[0] = 1.0f; color[1] = 0.45f; color[2] = 0.05f;
+                break;
             case MarkerOverlayRole::RightGrabAnchor:
                 color[0] = 0.35f;
                 color[1] = 1.0f;

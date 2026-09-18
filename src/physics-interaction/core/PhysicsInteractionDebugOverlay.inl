@@ -432,6 +432,7 @@
                 g_rockConfig.rockDebugGrabTransformTelemetryText,
             .videoSyncMarker = g_rockConfig.rockDebugVideoSyncMarker,
             .weaponAuthority = g_rockConfig.rockDebugDrawWeaponAuthority,
+            .weaponAimRays = g_rockConfig.rockDebugDrawWeaponAimRays,
             .looseWeaponGripZones =
                 g_rockConfig.rockDebugDrawLooseWeaponGripZones,
             .authoredGripActivationZones =
@@ -559,7 +560,7 @@
         if (!drawAnyRockColliderBodies && !drawTargetColliders && !drawHandAxes && !drawGrabPivots && !drawFingerProbes &&
             !drawFingerSweptArc && !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal &&
             !drawGrabContactPatch && !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay &&
-            !drawWeaponAuthorityDebug && !drawLooseWeaponGripZones && !drawNativeScopeActivation && !drawNativeScopeShots && !drawGrabSupportFrame && !drawWorldOriginDiagnostics &&
+            !drawWeaponAuthorityDebug && !visualization.weaponAimRays && !drawLooseWeaponGripZones && !drawNativeScopeActivation && !drawNativeScopeShots && !drawGrabSupportFrame && !drawWorldOriginDiagnostics &&
             !drawDynamicHandColliders && !drawDynamicWeaponColliders && !drawAuthoredSupportGripDebug && !drawProviderOverlay && !drawVideoSyncMarker) {
             debug::ClearFrame();
             return;
@@ -579,12 +580,12 @@
         frame.drawMarkers = drawGrabPivots || drawFingerProbes || drawFingerSweptArc || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton ||
             drawGrabPocketNormal || drawGrabContactPatch || drawGrabForceTorque || drawHandBoneContacts || drawGrabAuthorityProxy || drawGrabTransformTelemetryAxes ||
             drawWeaponAuthorityDebug || drawLooseWeaponGripZones || drawNativeScopeActivation || drawGrabSupportFrame || drawWorldOriginDiagnostics || drawDynamicHandColliders ||
-            drawAuthoredSupportGripDebug;
+            drawAuthoredSupportGripDebug || visualization.weaponAimRays;
         frame.drawSkeleton = drawSkeletonBones;
         frame.drawColoredLines = providerOverlay && providerOverlay->lineCount > 0;
         frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawFingerSweptArcText || drawPerformanceProfilerOverlay ||
             drawDynamicHandColliders || drawDynamicWeaponColliders || drawNativeScopeActivation ||
-            drawAuthoredSupportGripDebug || drawVideoSyncMarker || drawGrabAuthorityProxy ||
+            drawAuthoredSupportGripDebug || visualization.weaponAimRays || drawVideoSyncMarker || drawGrabAuthorityProxy ||
             (providerOverlay && providerOverlay->textCount > 0);
         if (providerOverlay) {
             frame.coloredLineEntries = providerOverlay->lines.data();
@@ -1376,6 +1377,89 @@
                 if (drawHandAxes) {
                     addAxisTransform(rawHand, debug::AxisOverlayRole::LeftHandRaw, rawHand.translate, false);
                     addAxisBody(_leftHand.getCollisionBodyId(), debug::AxisOverlayRole::LeftHandBody, rawHand.translate, true);
+                }
+            }
+        }
+
+        if (visualization.weaponAimRays) {
+            bool firingIsLeft = _twoHandedGrip.isFiringHandLeft();
+            RE::NiAVObject* weaponRoot = f4vr::IsWeaponDrawn() && !_twoHandedGrip.isPartCarryActive() ?
+                resolveEquippedWeaponInteractionNode() : nullptr;
+            std::uint32_t formID = weaponRoot ? currentEquippedWeaponFormId() : 0;
+            bool loose = false;
+            const bool leftLoose = _leftHand.isHoldingLooseWeapon();
+            const bool rightLoose = _rightHand.isHoldingLooseWeapon();
+            if (leftLoose || rightLoose) {
+                loose = true;
+                firingIsLeft = leftLoose && (!rightLoose || weapon_grip_transfer::requesterIsPrimary(
+                    _leftHand.isHoldingFiringGrip(), _rightHand.isHoldingFiringGrip(),
+                    _leftHand.heldGrabIdentity(), _rightHand.heldGrabIdentity()));
+                const auto& hand = firingIsLeft ? _leftHand : _rightHand;
+                auto* reference = hand.getHeldRef();
+                weaponRoot = reference ? reference->Get3D() : nullptr;
+                auto* base = reference ? reference->GetObjectReference() : nullptr;
+                formID = base ? base->GetFormID() : 0;
+            }
+            auto* nodes = f4vr::getPlayerNodes();
+            auto* wand = nodes ? (firingIsLeft ? nodes->SecondaryWandNode : nodes->primaryWandNode) : nullptr;
+            if (weaponRoot && wand && !(firingIsLeft ? leftDisabled : rightDisabled)) {
+                auto* barrel = loose ? f4vr::findNode(weaponRoot, "ProjectileNode", 12) : getEquippedProjectileNode();
+                if (!barrel && loose) barrel = f4vr::findNode(weaponRoot, "P-ProjectileNode", 12);
+                // A native node is usable only inside the exact displayed weapon.
+                auto* ancestor = barrel;
+                for (unsigned depth = 0; ancestor && ancestor != weaponRoot && depth < 128; ++depth) ancestor = ancestor->parent;
+                if (ancestor != weaponRoot) barrel = nullptr;
+                const char* axisSource = barrel ? "projectile" : "root-axis";
+                if (!barrel) barrel = weaponRoot;
+                const auto& physicalHand = firingIsLeft ? context.left.rawHandWorld : context.right.rawHandWorld;
+                const auto aim = weapon_aim_diagnostic::measure(wand->world, barrel->world, physicalHand);
+                if (aim.valid) {
+                    constexpr float rayLength = 120.0f;
+                    const auto palm = computeGrabLegacyPalmPivotAWorldFromHandBasis(physicalHand, firingIsLeft);
+                    addMarkerRay(debug::MarkerOverlayRole::WeaponAimController, palm,
+                        palm + aim.handForward * rayLength, 0.6f);
+                    addMarkerRay(debug::MarkerOverlayRole::WeaponAimBarrel, barrel->world.translate,
+                        barrel->world.translate + aim.barrelForward * rayLength, 0.6f);
+                    constexpr float labelColor[]{ 1.0f, 1.0f, 1.0f, 0.95f };
+                    addTextLineSized(barrel->world.translate + RE::NiPoint3{ 0.0f, 0.0f, 5.0f }, 0.65f, labelColor,
+                        "%s %s %s  wandYaw %+.2f pitch %+.2f handAngle %.2f", firingIsLeft ? "L" : "R",
+                        loose ? "loose" : "equipped", axisSource, aim.yawDegrees, aim.pitchDegrees, aim.divergenceDegrees);
+
+                    // Sample numeric evidence only while the requested overlay is
+                    // enabled. All transforms are read after final hand/weapon
+                    // presentation; no diagnostic becomes a calibration input.
+                    RE::NiPoint3 rightSeatInRaw{}, leftSeatInRaw{}, rightPalmInWeapon{}, leftPalmInWeapon{};
+                    bool rightValid = false, leftValid = false;
+                    const auto captureHand = [&](bool isLeft, RE::NiPoint3& seatInRaw, RE::NiPoint3& palmInWeapon) {
+                        RE::NiTransform presented{};
+                        const auto& handInput = isLeft ? context.left : context.right;
+                        const auto& raw = handInput.rawHandWorld;
+                        if (handInput.disabled || !frik_hand_world_authority::tryGetPresentedHandWorld(isLeft, presented) ||
+                            !weapon_aim_diagnostic::finiteFrame(raw) || !weapon_aim_diagnostic::finiteFrame(presented) ||
+                            !weapon_aim_diagnostic::finiteFrame(weaponRoot->world)) return false;
+                        const auto palm = computeGrabLegacyPalmPivotAWorldFromHandBasis(presented, isLeft);
+                        const auto rawPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(raw, isLeft);
+                        seatInRaw = transform_math::localVectorToWorld(transform_math::invertTransform(raw), palm - rawPalm);
+                        palmInWeapon = transform_math::worldPointToLocal(weaponRoot->world, palm);
+                        return true;
+                    };
+                    rightValid = captureHand(false, rightSeatInRaw, rightPalmInWeapon);
+                    leftValid = captureHand(true, leftSeatInRaw, leftPalmInWeapon);
+                    const bool supportHeld = loose ?
+                        (leftLoose && rightLoose && _leftHand.getHeldRef() == _rightHand.getHeldRef()) :
+                        _twoHandedGrip.isHandPartGripping(!firingIsLeft);
+                    const auto& looseHand = firingIsLeft ? _leftHand : _rightHand;
+                    const char* gripRole = !loose || looseHand.isHoldingFiringGrip() ? "firing" :
+                        (looseHand.isHoldingAuthoredSupportGrip() ? "support" : "dynamic");
+                    ROCK_LOG_SAMPLE_INFO(Weapon, 500,
+                        "WEAPON_AIM frame={} form={:08X} mode={} hand={} role={} supportHeld={} axis={} wandYaw={:.3f} wandPitch={:.3f} handAngle={:.3f} barrelInWand=({:.5f},{:.5f},{:.5f}) Rvalid={} Lvalid={} RseatDelta=({:.4f},{:.4f},{:.4f}) LseatDelta=({:.4f},{:.4f},{:.4f}) RpalmWeapon=({:.4f},{:.4f},{:.4f}) LpalmWeapon=({:.4f},{:.4f},{:.4f}) trim=({:.3f},{:.3f}) offset=({:.3f},{:.3f},{:.3f})",
+                        frame.gameFrameIndex, formID, loose ? "loose" : "equipped", firingIsLeft ? "left" : "right", gripRole, supportHeld, axisSource,
+                        aim.yawDegrees, aim.pitchDegrees, aim.divergenceDegrees,
+                        aim.barrelInController.x, aim.barrelInController.y, aim.barrelInController.z, rightValid, leftValid,
+                        rightSeatInRaw.x, rightSeatInRaw.y, rightSeatInRaw.z, leftSeatInRaw.x, leftSeatInRaw.y, leftSeatInRaw.z,
+                        rightPalmInWeapon.x, rightPalmInWeapon.y, rightPalmInWeapon.z, leftPalmInWeapon.x, leftPalmInWeapon.y, leftPalmInWeapon.z,
+                        g_rockConfig.rockLeftFiringAimYawDegrees, g_rockConfig.rockLeftFiringAimPitchDegrees,
+                        g_rockConfig.rockLeftFiringAimOffsetXGameUnits, g_rockConfig.rockLeftFiringAimOffsetYGameUnits, g_rockConfig.rockLeftFiringAimOffsetZGameUnits);
                 }
             }
         }
