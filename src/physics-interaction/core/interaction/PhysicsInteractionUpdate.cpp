@@ -1,5 +1,6 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
+#include "physics-interaction/telemetry/DynamicColliderTrace.h"
 
 // Per-frame orchestration: update(), interaction frame finalization, hand transform sampling, physics substep callbacks, held-mass slowdown, and the frame/debug-overlay implementation includes.
 
@@ -86,6 +87,70 @@ namespace rock
         frik_hand_world_authority::captureRenderedFrame(samples);
         if (g_rockConfig.rockDebugGrabFrameLogging) {
             _dynamicWeaponCollision.tracePresentedWeapon(resolveEquippedWeaponInteractionNode(), runtime_state::currentFrame().frameIndex);
+        }
+    }
+
+    void PhysicsInteraction::traceHeldPresentationPhase(const char* phase)
+    {
+        const auto& runtime = runtime_state::currentFrame();
+        // Before the next ROCK tick, the owner still contains the engine's
+        // late scene write for the preceding publication. Pair it with that
+        // frame's after-rock / after-world-final samples.
+        const bool beforeRock = std::string_view(phase) == "before-rock";
+        const auto presentationFrame = runtime.frameIndex > 0 ? runtime.frameIndex - (beforeRock ? 1u : 0u) : 0;
+        if (!dynamic_collider_trace::presentationEnabled() ||
+            presentationFrame == 0 || presentationFrame % 30 != 0 ||
+            !_lifecycle.initialized.load(std::memory_order_acquire) || !runtime.localSkeletonReady) return;
+        auto* bhk = getPlayerBhkWorld();
+        auto* world = bhk ? getHknpWorld(bhk) : nullptr;
+        if (!world || world != _lifecycle.cachedHknpWorld || bhk != _lifecycle.cachedBhkWorld) return;
+
+        // Borrow scene nodes only in this game-thread callback. The logs carry
+        // values from the same phase, including the actual physics target age.
+        for (Hand* hand : { &_rightHand, &_leftHand }) {
+            if (!hand->isHolding()) continue;
+            const bool left = hand->isLeft();
+            GrabPresentationNodeDebugSnapshot nodes{};
+            GrabAuthorityProxyClockDebugSnapshot clock{};
+            GrabOverlayPointProbeSample applied{};
+            const bool nodesValid = hand->getGrabPresentationNodeDebugSnapshot(nodes);
+            const bool clockValid = hand->tryGetGrabAuthorityProxyClockDebugSnapshot(world, clock);
+            const bool appliedValid = hand->tryGetGrabOverlayPointProbeSample(world, applied);
+            RE::NiTransform raw{}, claim{}, presented{}, solved{};
+            const bool rawValid = frik_hand_world_authority::tryGetRawHandWorld(left, raw);
+            const bool claimValid = frik_hand_world_authority::tryGetPublishedHandWorld(left, claim);
+            const bool presentationValid = appliedValid && held_scene_presentation::tryGetPresentedBodyWorld(
+                world, applied.objectBodyId.value, presentationFrame, presented);
+            const bool solvedValid = appliedValid && havok_runtime::tryGetBodyArrayWorldTransform(world, applied.objectBodyId, solved);
+            frik_visual_authority::ArmChainTransforms arm{};
+            const bool wristValid = frik_visual_authority::tryGetArmChain(frik_visual_authority::handFromBool(left), arm) &&
+                (arm.validMask & (1u << 6)) != 0;
+            dynamic_collider_trace::write(
+                "HELD_PHASE phase={} frame={} presentationFrame={} trace={} hand={} body={} moving={} room=({:.3f},{:.3f},{:.3f}) roomStep=({:.3f},{:.3f},{:.3f}) nodes={} clock={} queued={} applied={} flush={} raw={} claim={} wrist={} presented={} solved={} contact={}",
+                phase, runtime.frameIndex, presentationFrame, nodes.traceId, left ? "left" : "right", applied.objectBodyId.value,
+                runtime.playerSpace.moving, runtime.playerSpace.world.translate.x, runtime.playerSpace.world.translate.y, runtime.playerSpace.world.translate.z,
+                runtime.playerSpace.deltaGameUnits.x, runtime.playerSpace.deltaGameUnits.y, runtime.playerSpace.deltaGameUnits.z,
+                nodesValid, clockValid, clock.queuedSequence, clock.hasAppliedTarget, clock.flushSequence,
+                rawValid, claimValid, wristValid, presentationValid, solvedValid, hand->isHeldBodyColliding());
+            const auto pose = [&](const char* label, bool valid, const RE::NiTransform& value) {
+                if (!valid) return;
+                const auto& t = value.translate;
+                const auto& r = value.rotate.entry;
+                dynamic_collider_trace::write(
+                    "HELD_PHASE_POSE phase={} frame={} trace={} hand={} label={} T=({:.4f},{:.4f},{:.4f}) S={:.6f} R=({:.6f},{:.6f},{:.6f};{:.6f},{:.6f},{:.6f};{:.6f},{:.6f},{:.6f})",
+                    phase, runtime.frameIndex, nodes.traceId, left ? "left" : "right", label, t.x, t.y, t.z, value.scale,
+                    r[0][0], r[0][1], r[0][2], r[1][0], r[1][1], r[1][2], r[2][0], r[2][1], r[2][2]);
+            };
+            pose("raw", rawValid, raw);
+            pose("claim", claimValid, claim);
+            pose("wrist", wristValid, arm.hand);
+            pose("queued-proxy", clockValid && clock.hasQueuedTarget, clock.queuedProxyTargetWorld);
+            pose("applied-proxy", clockValid && clock.hasAppliedTarget, clock.appliedProxyTargetWorld);
+            pose("presented-body", presentationValid, presented);
+            pose("solved-body", solvedValid, solved);
+            pose("owner", nodes.collisionOwner.valid, nodes.collisionOwner.world);
+            pose("root", nodes.referenceRoot.valid, nodes.referenceRoot.world);
+            pose("mesh", nodes.visibleGeometry.valid, nodes.visibleGeometry.world);
         }
     }
 

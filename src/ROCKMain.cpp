@@ -736,6 +736,7 @@ namespace
             return;
         }
         if (s_physicsInteraction) {
+            s_physicsInteraction->traceHeldPresentationPhase("after-rock");
             s_physicsInteraction->publishGripZoneIndicatorRenderFrame(
                 runtime_state::currentFrame().frameIndex);
         }
@@ -814,6 +815,7 @@ namespace
             vanilla_weapon_alignment_telemetry::Phase::AfterFrik, s_schedulerSequence);
         if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->resolveFrameHands();
+            s_physicsInteraction->traceHeldPresentationPhase("before-rock");
         }
         scope_transition_telemetry::capture(scope_transition_telemetry::Phase::AfterFrik, s_schedulerSequence);
         preludeTimer.stop();
@@ -842,6 +844,7 @@ namespace
     {
         if (s_skeletonTickedThisFrame && s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->captureRenderedHands();
+            s_physicsInteraction->traceHeldPresentationPhase("after-world-final");
             s_physicsInteraction->publishDebugRenderFrame();
             dynamic_collider_trace::capturePresentedHands(runtime_state::currentFrame().frameIndex);
             vanilla_weapon_alignment_telemetry::capture(

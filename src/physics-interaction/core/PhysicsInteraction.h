@@ -271,6 +271,7 @@ namespace rock
          * frame's controller-hand isolation and chain transport.
          */
         void captureRenderedHands();
+        void traceHeldPresentationPhase(const char* phase);
         void publishDebugRenderFrame();
 
     private:
