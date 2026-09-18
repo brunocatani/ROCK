@@ -2,6 +2,9 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <string>
+
+#include <windows.h>
 
 #include "api/FRIKApiV2.h"
 #define ROCK_API_EXPORTS
@@ -174,6 +177,7 @@ namespace
     }
 
     void destroyPhysicsInteraction(rock::provider::RockProviderLifecycleReason reason);
+    void reconcileNativeScopeGeometryOwnership();
 
     void ensurePhysicsInteractionForReadySkeleton(const runtime_state::RuntimeFrameSnapshot& runtime)
     {
@@ -304,7 +308,7 @@ namespace
 
         const bool immersiveScopesWereEnabled = g_rockConfig.rockEnableImmersiveScopes;
         g_rockConfig.processPendingConfigReload();
-        native_scope_data::setEnabled(g_rockConfig.rockEnableImmersiveScopes);
+        reconcileNativeScopeGeometryOwnership();
         if (immersiveScopesWereEnabled != g_rockConfig.rockEnableImmersiveScopes) {
             if (!g_rockConfig.rockEnableImmersiveScopes && s_physicsInteraction) {
                 s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
@@ -395,6 +399,22 @@ namespace
 
     using NativeScopeStateTransitionFunc = void (*)(RE::PlayerCharacter*, bool);
     NativeScopeStateTransitionFunc s_originalNativeScopeStateTransition = nullptr;
+    /*
+     * The native scope geometry decision site is shared ground: a scope mod
+     * can gate activation there too. ROCK claims it only while immersive
+     * scopes are on, since with them off the wrapper would only pass the
+     * native verdict through. The claim waits for the config, is retried
+     * when the setting turns on, and is never handed back.
+     */
+    enum class NativeScopeGeometryHook : std::uint8_t
+    {
+        Unclaimed,
+        Claimed,
+        Unavailable,
+    };
+    NativeScopeGeometryHook s_nativeScopeGeometryHook = NativeScopeGeometryHook::Unclaimed;
+    bool s_immersiveScopesForcedOffLogged = false;
+    bool s_nativeScopeHookLeftUninstalledLogged = false;
     bool s_manualScopeDirectTransitionActive = false;
     std::uint64_t s_manualScopeConfiguredWeaponGeneration = 0;
     std::uint32_t s_manualScopeConfiguredOverlayIndex = 0;
@@ -508,6 +528,9 @@ namespace
 
     void applyManualScopeTransition(RE::PlayerCharacter* player, bool requested)
     {
+        if (!s_originalNativeScopeStateTransition) {
+            return;
+        }
         // One observation per hold edge. The renderer can open even if the
         // aiming setter returns early or another plugin replaces its vtable
         // entry; distinguish these before changing native UI ownership.
@@ -620,7 +643,36 @@ namespace
                    generation, overlay, direct, weaponIdentity, instanceIdentity) && direct;
     }
 
-    bool hookNativeScopeGeometryDecision()
+    // Name of the loaded module containing an address, for the log; empty when none.
+    std::string moduleNameAtAddress(const std::uintptr_t address)
+    {
+        HMODULE module = nullptr;
+        if (!GetModuleHandleExW(
+                GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                reinterpret_cast<LPCWSTR>(address),
+                &module) ||
+            !module) {
+            return {};
+        }
+        char path[MAX_PATH]{};
+        const auto length = GetModuleFileNameA(module, path, MAX_PATH);
+        if (length == 0) {
+            return {};
+        }
+        const std::string full(path, length);
+        const auto slash = full.find_last_of("\\/");
+        return slash == std::string::npos ? full : full.substr(slash + 1);
+    }
+
+    bool installNativeScopeDataHooks()
+    {
+        // Off until the geometry decision site is claimed: these hooks pass
+        // the native behaviour through while disabled.
+        native_scope_data::setEnabled(false);
+        return native_scope_data::install(&isManualScopeEligibleForNative);
+    }
+
+    bool claimNativeScopeGeometryDecision()
     {
         REL::Relocation<std::uintptr_t> callSite{ REL::Offset(rock::offsets::kHookSite_NativeScopeGeometryDecision) };
         const auto callSiteAddress = callSite.address();
@@ -634,7 +686,9 @@ namespace
         const auto decodedTarget = callSiteAddress + 5u + relativeTarget;
         const auto expectedTarget = REL::Offset(rock::offsets::kFunc_NativeScopeStateTransition).address();
         if (decodedTarget != expectedTarget) {
-            logger::critical("ROCK: Native scope geometry hook validation failed at 0x{:X}: target 0x{:X}, expected 0x{:X}.", callSiteAddress, decodedTarget, expectedTarget);
+            const auto holder = moduleNameAtAddress(decodedTarget);
+            logger::critical("ROCK: Native scope geometry hook validation failed at 0x{:X}: target 0x{:X}, expected 0x{:X}{}{}.",
+                callSiteAddress, decodedTarget, expectedTarget, holder.empty() ? "" : "; the site is held by ", holder);
             return false;
         }
 
@@ -647,10 +701,6 @@ namespace
             return false;
         }
 
-        native_scope_data::setEnabled(g_rockConfig.rockEnableImmersiveScopes);
-        if (!native_scope_data::install(&isManualScopeEligibleForNative)) {
-            return false;
-        }
         auto& trampoline = F4SE::GetTrampoline();
         const auto original = trampoline.write_call<5>(callSiteAddress, &onNativeScopeGeometryDecision);
         s_originalNativeScopeStateTransition = reinterpret_cast<NativeScopeStateTransitionFunc>(original);
@@ -670,6 +720,37 @@ namespace
 
         logger::info("ROCK: Native scope geometry/fade hook installed at 0x{:X}, original 0x{:X}.", callSiteAddress, original);
         return true;
+    }
+
+    /*
+     * Runs once the config is loaded and after every reload. Claims the
+     * geometry decision site the first time immersive scopes are on; when the
+     * claim fails, the setting is forced off for the session so every reader
+     * of it agrees with the hooks that are actually in place.
+     */
+    void reconcileNativeScopeGeometryOwnership()
+    {
+        if (g_rockConfig.rockEnableImmersiveScopes &&
+            s_nativeScopeGeometryHook == NativeScopeGeometryHook::Unclaimed) {
+            s_nativeScopeGeometryHook = claimNativeScopeGeometryDecision() ?
+                NativeScopeGeometryHook::Claimed :
+                NativeScopeGeometryHook::Unavailable;
+        }
+        if (g_rockConfig.rockEnableImmersiveScopes &&
+            s_nativeScopeGeometryHook != NativeScopeGeometryHook::Claimed) {
+            g_rockConfig.rockEnableImmersiveScopes = false;
+            if (!s_immersiveScopesForcedOffLogged) {
+                s_immersiveScopesForcedOffLogged = true;
+                logger::warn("ROCK: Immersive scopes forced off for this session: the native scope geometry decision site is not available.");
+            }
+        }
+        if (!g_rockConfig.rockEnableImmersiveScopes &&
+            s_nativeScopeGeometryHook == NativeScopeGeometryHook::Unclaimed &&
+            !s_nativeScopeHookLeftUninstalledLogged) {
+            s_nativeScopeHookLeftUninstalledLogged = true;
+            logger::info("ROCK: Native scope geometry hook left uninstalled: immersive scopes are off, the site stays free for other mods until the setting turns on.");
+        }
+        native_scope_data::setEnabled(g_rockConfig.rockEnableImmersiveScopes);
     }
 
     // The provider tick ran or began this frame (AfterArmSolve, or FrameEnd without a skeleton).
@@ -1092,6 +1173,7 @@ namespace
             rock::held_render_trace::install();
             runtime_state::initialize();
             (void)native_scope_shot_diagnostics::install();
+            reconcileNativeScopeGeometryOwnership();
             logger::info("ROCK: Config loaded.");
             rock::input_remap_runtime::installInputRemapHooks();
             rock::debug::Install();
@@ -1233,8 +1315,8 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
         logger::warn("ROCK: Weapon draw/sheath animation acceleration unavailable; native timing remains unchanged.");
     }
 
-    logger::info("ROCK: Install native scope geometry hook...");
-    if (!hookNativeScopeGeometryDecision()) {
+    logger::info("ROCK: Install native scope data hooks...");
+    if (!installNativeScopeDataHooks()) {
         return false;
     }
 
