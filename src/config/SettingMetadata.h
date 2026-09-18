@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/ROCKConfigurationApi.h"
+#include "api/ConfigurationRuntimeTypes.h"
 #include <string_view>
 
 namespace rock::config

@@ -5,7 +5,7 @@
 #include "RE/Bethesda/BSPointerHandle.h"
 #include "RE/NetImmerse/NiPoint.h"
 
-#include "api/ROCKProviderApi.h"
+#include "api/ProviderRuntimeTypes.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
 

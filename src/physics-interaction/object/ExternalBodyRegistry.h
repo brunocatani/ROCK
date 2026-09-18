@@ -5,7 +5,7 @@
 #include <cmath>
 #include <cstdint>
 
-#include "api/ROCKProviderApi.h"
+#include "api/ProviderRuntimeTypes.h"
 
 namespace rock
 {
@@ -300,6 +300,7 @@ namespace rock
                 if (evictedScopeIndex < _scopes.size() &&
                     _scopes[evictedScopeIndex].scopeToken != 0) {
                     ++_scopes[evictedScopeIndex].overwrittenCount;
+                    _scopes[evictedScopeIndex].latestOverwrittenSequence = _contacts[_contactHead].record.sequence;
                 }
                 _contacts[_contactHead] = slot;
                 _contactHead = (_contactHead + 1) % kMaxContacts;
@@ -343,17 +344,16 @@ namespace rock
             outState.overwrittenCount = overwrittenContactCount(
                 parentOwnerToken,
                 scopeToken);
-            const bool gapBeforeRetained =
-                afterSequence != 0 &&
-                outState.oldestRetainedSequence != 0 &&
-                afterSequence < outState.oldestRetainedSequence &&
-                outState.oldestRetainedSequence - afterSequence > 1;
-            const bool allRequestedRecordsOverwritten =
-                afterSequence != 0 &&
-                outState.oldestRetainedSequence == 0 &&
-                outState.latestEmittedSequence > afterSequence &&
-                outState.overwrittenCount != 0;
-            if (gapBeforeRetained || allRequestedRecordsOverwritten) {
+            // Sequence gaps also contain contacts belonging to other owners or
+            // scopes. Only an evicted matching record proves loss for this cursor.
+            std::uint64_t latestOverwritten = 0;
+            for (const auto& scope : _scopes) {
+                if (scope.parentOwnerToken == parentOwnerToken &&
+                    (scopeToken == 0 || scope.scopeToken == scopeToken)) {
+                    latestOverwritten = (std::max)(latestOverwritten, scope.latestOverwrittenSequence);
+                }
+            }
+            if (afterSequence != 0 && latestOverwritten > afterSequence) {
                 outState.flags |= static_cast<std::uint32_t>(
                     ::rock::provider::RockProviderExternalContactStreamFlagV1::GapBeforeFirstCopied);
             }
@@ -395,6 +395,7 @@ namespace rock
             std::uint64_t scopeToken{ 0 };
             std::uint64_t latestEmittedSequence{ 0 };
             std::uint64_t overwrittenCount{ 0 };
+            std::uint64_t latestOverwrittenSequence{ 0 };
         };
 
         struct BodySlot

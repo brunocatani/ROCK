@@ -1,3 +1,5 @@
+#include "api/EventStreams.h"
+#include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
 #include "physics-interaction/weapon/WeaponAimDiagnosticMath.h"
@@ -872,11 +874,9 @@ namespace rock
 
     void PhysicsInteraction::dispatchPhysicsMessage(std::uint32_t msgType, bool isLeft, RE::TESObjectREFR* refr, std::uint32_t formID, std::uint32_t layer)
     {
-        PhysicsEventData data{ isLeft, refr, formID, layer };
-
-        if (auto* m = ::rock::getROCKMessaging()) {
-            m->Dispatch(msgType, &data, sizeof(data), nullptr);
-        }
+        auto sample=provider::runtime::sample();
+        sample.frameIndex=_frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
+        provider::events::publishPhysics(msgType,isLeft,formID,layer,sample);
     }
 
     void PhysicsInteraction::onGeneratedColliderPhysicsSubstep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)

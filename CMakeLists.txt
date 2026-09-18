@@ -200,6 +200,7 @@ if(RPS_SDK_ROOT STREQUAL "")
   set(RPS_SDK_ROOT "${RPS_SDK_ROOT}" CACHE PATH "Path to the independent RPS_SDK repository." FORCE)
 endif()
 set(ROCK_PUBLIC_SDK_DIR "${RPS_SDK_ROOT}/SDK/ROCK")
+include_directories("${ROCK_PUBLIC_SDK_DIR}/include")
 target_include_directories(${PROJECT_NAME} PRIVATE "${RPS_SDK_ROOT}/SDK/UI/include")
 
 if(BUILD_ROCK_TESTS OR ROCK_PACKAGE_RELEASE)
@@ -1058,11 +1059,20 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKProviderColliderVisualizationRuntimeTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKProviderColliderVisualizationRuntimeTests)
 
+  add_executable(ROCKModularEventStreamTests "${ROOT_DIR}/tests/ModularEventStreamTests.cpp")
+  target_compile_features(ROCKModularEventStreamTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKModularEventStreamTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKModularEventStreamTests)
+
+  add_executable(ROCKModularExportsTests "${ROOT_DIR}/tests/ModularExportsTests.cpp")
+  target_compile_features(ROCKModularExportsTests PRIVATE cxx_std_23)
+  target_compile_options(ROCKModularExportsTests PRIVATE /UNDEBUG)
+
   add_executable(ROCKProviderApiAbiTests
     "${ROOT_DIR}/tests/ProviderApiAbiTests.cpp"
   )
   target_compile_features(ROCKProviderApiAbiTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKProviderApiAbiTests PRIVATE ${SOURCE_DIR})
+  target_include_directories(ROCKProviderApiAbiTests PRIVATE ${SOURCE_DIR} "${RPS_SDK_ROOT}/tests")
   add_rock_test(ROCKProviderApiAbiTests)
 
   add_executable(ROCKProviderStatePolicyTests "${ROOT_DIR}/tests/ProviderStatePolicyTests.cpp")

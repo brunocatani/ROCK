@@ -49,7 +49,8 @@
 #include "physics-interaction/weapon/WeaponDebug.h"
 #include "physics-interaction/weapon/BareFistGuardPolicy.h"
 #include "physics-interaction/input/BareFistGesturePolicy.h"
-#include "api/ROCKProviderApi.h"
+#include "api/ProviderRuntimeTypes.h"
+#include "api/WeaponSourceCatalog.h"
 
 namespace RE
 {
@@ -170,6 +171,13 @@ namespace rock
             return _weaponContact.left.partKind.load(std::memory_order_acquire);
         }
         bool tryGetRootFlattenedHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
+        void refreshProviderWeaponSources();
+        api::Status queryProviderWeaponSourcePose(std::uint64_t generation,std::uint64_t key,provider::WeaponSourcePose&) const;
+        std::uintptr_t resolveProviderWeaponSource(std::uint64_t generation, std::uint64_t key) const;
+        std::uint64_t providerWeaponSourceKey(std::uint64_t generation, std::uintptr_t node) const;
+        std::uint64_t providerWeaponSourceKeyForBody(std::uint64_t generation, std::uint32_t body) const;
+        api::Status copyProviderWeaponSources(std::uint64_t generation,std::uint32_t offset, provider::WeaponSourceRecord*, std::uint32_t capacity, std::uint32_t& copied, std::uint32_t& total) const;
+        std::uintptr_t resolveProviderWeaponSourceName(std::uint64_t generation, const char* name) const;
         void fillProviderFrameSnapshot(::rock::provider::RockProviderFrameSnapshot& outSnapshot) const;
         bool isProviderWeaponBodyCurrentV1(
             std::uint64_t weaponGenerationKey,
@@ -259,6 +267,7 @@ namespace rock
         void publishDebugRenderFrame();
 
     private:
+        provider::WeaponSourceCatalog _providerSources{};
         struct EquippedWeaponNativeHandoff;
 
         bool validateCriticalOffsets() const;

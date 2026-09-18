@@ -361,6 +361,25 @@ void testCursorSurvivesProviderLoss()
     assert(state.flags == 0);
 }
 
+void testOtherOwnersDoNotCreateCursorLoss()
+{
+    using namespace rock;
+    using namespace rock::provider;
+    auto registry=std::make_unique<ExternalBodyRegistry>();
+    auto a=body(10,400); auto b=body(20,500);
+    assert(registry->registerBodiesForScope(1,10,&a,1));
+    assert(registry->registerBodiesForScope(2,20,&b,1));
+    assert(registry->recordContactV1(contact(30,400,1)));
+    RockProviderExternalContactRecordV1 row{};
+    RockProviderExternalContactStreamStateV1 state{};
+    assert(registry->copyContactsSinceV1(1,10,0,&row,1,state)==1);
+    const auto cursor=row.sequence;
+    for (std::uint64_t frame=2;frame<12;++frame) assert(registry->recordContactV1(contact(30,500,frame)));
+    assert(registry->recordContactV1(contact(30,400,12)));
+    assert(registry->copyContactsSinceV1(1,10,cursor,&row,1,state)==1);
+    assert(state.flags==0 && state.overwrittenCount==0);
+}
+
 int main()
 {
     testValidationAndScopeOwnership();
@@ -368,5 +387,6 @@ int main()
     testContactPolicyAndScopedLossAccounting();
     testCapacityFailureIsTransactional();
     testCursorSurvivesProviderLoss();
+    testOtherOwnersDoNotCreateCursorLoss();
     return 0;
 }

@@ -108,7 +108,7 @@ namespace rock
 
 #include <cstdint>
 
-#include "api/ROCKProviderApi.h"
+#include "api/ProviderRuntimeTypes.h"
 
 namespace rock
 {
