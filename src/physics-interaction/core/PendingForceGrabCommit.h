@@ -18,6 +18,7 @@ namespace rock
         AcquireAndCommitExactTarget = 2,
         WaitingForNativePlacement = 3,
         NativePlacementFailed = 4,
+        EquippedSlotReleaseFailed = 5,
     };
 
     /*

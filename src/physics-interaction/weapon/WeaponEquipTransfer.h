@@ -53,6 +53,7 @@ namespace rock::weapon_equip_transfer
         DroppedReferenceUnavailable,
         Dropped,
         PreviousWeaponRestoreResetUnavailable,
+        UnequipUnavailable,
     };
 
     struct EquipInput
@@ -121,6 +122,9 @@ namespace rock::weapon_equip_transfer
     {
         bool attempted{ false };
         bool success{ false };
+        // A valid drop still owns cleanup/rollback if native duplicate
+        // unequip fails. Only an empty equipped slot admits the loose grab.
+        bool equippedSlotReleased{ false };
         bool matchedInstanceData{ false };
         DropReason reason{ DropReason::NotAttempted };
         std::int32_t count{ 1 };
