@@ -432,9 +432,18 @@ namespace rock
 
     void TwoHandedGrip::reconcileDeferredScopeHandAuthority(RE::NiNode* weaponNode)
     {
-        if (_scope.menuOpenThisFrame || !frik_visual_authority::isAvailable()) {
+        if (!frik_visual_authority::isAvailable()) {
             return;
         }
+        /*
+         * The deferral keeps hFRIK from restoring the tracked arm between two
+         * ROCK roles while the ScopeMenu is open. A hand no role wants any
+         * more has no next role to wait for, and a scope provider can keep
+         * the vanilla ScopeMenu open long after the player stops aiming, so
+         * such a hand is released now; hands with a live role still wait for
+         * the menu to close.
+         */
+        const bool scopeMenuOpen = _scope.menuOpenThisFrame;
 
         const auto pendingBefore = _scope.deferredHandAuthorityClears;
         if (pendingBefore[0] == 0 && pendingBefore[1] == 0) {
@@ -464,6 +473,9 @@ namespace rock
         for (const bool isLeft : { true, false }) {
             const std::size_t index = isLeft ? 0u : 1u;
             const auto desiredRoles = scope_safe_hand_frame_math::desiredRolesForHand(ownership, isLeft);
+            if (scopeMenuOpen && desiredRoles != 0) {
+                continue;
+            }
             for (const auto role : roles) {
                 if (!scope_safe_hand_frame_math::hasRole(_scope.deferredHandAuthorityClears[index], role)) {
                     continue;

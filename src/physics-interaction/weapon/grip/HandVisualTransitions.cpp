@@ -129,14 +129,28 @@ namespace rock
 
     void TwoHandedGrip::updateHandVisualReturns(const float dt)
     {
-        if (_scope.menuOpenThisFrame) {
-            return;
-        }
+        // A return that starts at the grip pose pins the hand there until it
+        // advances, and a scope provider can hold the vanilla ScopeMenu open
+        // long after the player stops aiming. Under FRIK API v2.3 the scoped
+        // solver hand frame is a valid target, so a hand no role wants keeps
+        // returning while the menu is open.
+        const scope_safe_hand_frame_math::DesiredHandAuthorityInput ownership{
+            .gripping = _session.state == TwoHandedState::Gripping,
+            .primaryHandAuthorityEnabled =
+                weapon_support_authority_policy::supportGripAppliesPrimaryHandAuthority(_session.authorityMode),
+            .firingHandIsLeft = isFiringHandLeft(),
+            .leftPartGripActive = partGrip(true).active,
+            .rightPartGripActive = partGrip(false).active,
+        };
 
         for (const bool isLeft : { true, false }) {
             const std::size_t index = isLeft ? 0u : 1u;
             auto& state = _visuals.returningHands[index].transition;
             if (!state.active) {
+                continue;
+            }
+            if (_scope.menuOpenThisFrame &&
+                scope_safe_hand_frame_math::desiredRolesForHand(ownership, isLeft) != 0) {
                 continue;
             }
 
