@@ -144,6 +144,9 @@ namespace rock
         out.visibleGeometryParent = sampleNode(
             visibleGeometry ? visibleGeometry->parent : nullptr);
         out.traceId = _grabFrame.traceId;
+        out.targetKind = _savedObjectState.targetKind;
+        out.driveMode = _heldDriveDecision.mode;
+        out.looseWeapon = _heldObjectIsLooseWeapon;
         return out.collisionOwner.valid || out.referenceRoot.valid ||
                out.visibleGeometry.valid || out.visibleGeometryParent.valid;
     }

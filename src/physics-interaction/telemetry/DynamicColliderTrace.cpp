@@ -45,7 +45,7 @@ namespace rock::dynamic_collider_trace
             next->log->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
             next->log->set_error_handler([](const std::string&) { suppressAfterError(); });
             writerFailed.store(false, std::memory_order_relaxed);
-            next->log->info("COLLIDER_TRACE start version=3 pid={} build={} {} sourceStride=4 heldPhaseStride=30 observational=true positions=game-units velocities=havok-units-per-second peerKind=1:hand,2:weapon,3:world",
+            next->log->info("COLLIDER_TRACE start version=4 pid={} build={} {} sourceStride=4 heldPhaseBurst=12/120 observational=true positions=game-units velocities=havok-units-per-second peerKind=1:hand,2:weapon,3:world",
                 GetCurrentProcessId(), __DATE__, __TIME__);
             next->log->flush();
             session = std::move(next);

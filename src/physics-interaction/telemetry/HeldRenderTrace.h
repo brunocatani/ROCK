@@ -9,6 +9,12 @@ namespace RE { class NiAVObject; }
 namespace rock::held_render_trace
 {
     enum class Phase : std::uint8_t { FrameBegin, BeforeRock, AfterRock, AfterWorldFinal };
+    // Consecutive samples expose alternating-frame errors without dense logging
+    // for the entire run. The phase and renderer witnesses use the same window.
+    [[nodiscard]] inline constexpr bool sampleFrame(std::uint64_t frame) noexcept
+    {
+        return frame != 0 && frame % 120 < 12;
+    }
     void install(); // bootstrap only, before active rendering
     void initialize();
     void shutdown() noexcept;

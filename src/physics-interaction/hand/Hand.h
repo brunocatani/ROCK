@@ -142,6 +142,9 @@ namespace rock
         GrabPresentationNodeDebugPose visibleGeometry{};
         GrabPresentationNodeDebugPose visibleGeometryParent{};
         std::uint64_t traceId = 0;
+        grab_target::Kind targetKind = grab_target::Kind::None;
+        held_object_drive_policy::HeldBodySetDriveMode driveMode{};
+        bool looseWeapon = false;
     };
 
     struct GrabContactPatchDebugSnapshot

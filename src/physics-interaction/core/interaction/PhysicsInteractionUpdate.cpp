@@ -103,7 +103,7 @@ namespace rock
             runtime.frameIndex);
         const auto presentationFrame = runtime.frameIndex > 0 ? runtime.frameIndex - (beforeRock ? 1u : 0u) : 0;
         if (!dynamic_collider_trace::presentationEnabled() ||
-            presentationFrame == 0 || presentationFrame % 30 != 0 ||
+            !held_render_trace::sampleFrame(presentationFrame) ||
             !_lifecycle.initialized.load(std::memory_order_acquire) || !runtime.localSkeletonReady) return;
         auto* bhk = getPlayerBhkWorld();
         auto* world = bhk ? getHknpWorld(bhk) : nullptr;
@@ -130,12 +130,13 @@ namespace rock
             const bool wristValid = frik_visual_authority::tryGetArmChain(frik_visual_authority::handFromBool(left), arm) &&
                 (arm.validMask & (1u << 6)) != 0;
             dynamic_collider_trace::write(
-                "HELD_PHASE phase={} frame={} presentationFrame={} trace={} hand={} body={} moving={} room=({:.3f},{:.3f},{:.3f}) roomStep=({:.3f},{:.3f},{:.3f}) nodes={} clock={} queued={} applied={} flush={} raw={} claim={} wrist={} presented={} solved={} contact={}",
+                "HELD_PHASE phase={} frame={} presentationFrame={} trace={} hand={} body={} moving={} room=({:.3f},{:.3f},{:.3f}) roomStep=({:.3f},{:.3f},{:.3f}) nodes={} clock={} queued={} applied={} flush={} raw={} claim={} wrist={} presented={} solved={} contact={} kind={} drive={} looseWeapon={}",
                 phase, runtime.frameIndex, presentationFrame, nodes.traceId, left ? "left" : "right", applied.objectBodyId.value,
                 runtime.playerSpace.moving, runtime.playerSpace.world.translate.x, runtime.playerSpace.world.translate.y, runtime.playerSpace.world.translate.z,
                 runtime.playerSpace.deltaGameUnits.x, runtime.playerSpace.deltaGameUnits.y, runtime.playerSpace.deltaGameUnits.z,
                 nodesValid, clockValid, clock.queuedSequence, clock.hasAppliedTarget, clock.flushSequence,
-                rawValid, claimValid, wristValid, presentationValid, solvedValid, hand->isHeldBodyColliding());
+                rawValid, claimValid, wristValid, presentationValid, solvedValid, hand->isHeldBodyColliding(),
+                grab_target::name(nodes.targetKind), held_object_drive_policy::modeName(nodes.driveMode), nodes.looseWeapon);
             const auto pose = [&](const char* label, bool valid, const RE::NiTransform& value) {
                 if (!valid) return;
                 const auto& t = value.translate;
@@ -154,6 +155,7 @@ namespace rock
             pose("solved-body", solvedValid, solved);
             pose("owner", nodes.collisionOwner.valid, nodes.collisionOwner.world);
             pose("root", nodes.referenceRoot.valid, nodes.referenceRoot.world);
+            pose("root-previous", nodes.referenceRoot.valid, nodes.referenceRoot.previousWorld);
             pose("mesh", nodes.visibleGeometry.valid, nodes.visibleGeometry.world);
         }
     }
