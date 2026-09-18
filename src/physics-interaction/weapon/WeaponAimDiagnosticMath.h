@@ -11,6 +11,8 @@ namespace rock::weapon_aim_diagnostic
     struct Sample
     {
         RE::NiPoint3 handForward{}, barrelForward{}, barrelInController{};
+        RE::NiPoint3 barrelInHand{};
+        RE::NiMatrix3 handInControllerRotation{};
         float yawDegrees{ 0.0f }, pitchDegrees{ 0.0f }, divergenceDegrees{ 0.0f };
         bool valid{ false };
     };
@@ -48,6 +50,14 @@ namespace rock::weapon_aim_diagnostic
         result.barrelInController = transform_math::localVectorToWorld(
             transform_math::invertTransform(controller), result.barrelForward);
         if (!normalize(result.barrelInController)) return result;
+        // The total hand/barrel angle alone cannot distinguish palm-depth
+        // tilt from lateral tilt. Preserve the signed direction and the basis
+        // needed to map an anatomical correction back into controller space.
+        result.barrelInHand = transform_math::localVectorToWorld(
+            transform_math::invertTransform(physicalHand), result.barrelForward);
+        if (!normalize(result.barrelInHand)) return result;
+        result.handInControllerRotation = transform_math::composeTransforms(
+            transform_math::invertTransform(controller), physicalHand).rotate;
         constexpr float degrees = 57.2957795131f;
         const auto& direction = result.barrelInController;
         result.yawDegrees = std::atan2(direction.x, direction.y) * degrees;

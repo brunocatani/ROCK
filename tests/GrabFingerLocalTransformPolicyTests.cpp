@@ -357,6 +357,9 @@ int main()
         ok &= expectBool("aim diagnostic accepts finite frames", sample.valid, true);
         ok &= expectFloat("aim diagnostic distinguishes positive lateral angle", sample.yawDegrees, 10.0f);
         ok &= expectFloat("aim diagnostic distinguishes positive elevation", sample.pitchDegrees, 5.0f);
+        ok &= expectFloat("signed hand direction retains lateral component", sample.barrelInHand.z, std::sin(5.0f * radians));
+        ok &= expectFloat("signed hand direction retains palm-depth component", sample.barrelInHand.y,
+            std::cos(10.0f * radians) * std::cos(5.0f * radians));
         auto forwardAlongHand = identity;
         forwardAlongHand.rotate.entry[0] = { 0.0f, -1.0f, 0.0f, 0.0f };
         forwardAlongHand.rotate.entry[1] = { 1.0f, 0.0f, 0.0f, 0.0f };
@@ -370,6 +373,15 @@ int main()
         const auto moved = aim::measure(controller, barrelWorld, controller);
         ok &= expectFloat("aim yaw is independent of world motion and scale", moved.yawDegrees, sample.yawDegrees);
         ok &= expectFloat("aim pitch is independent of world motion and scale", moved.pitchDegrees, sample.pitchDegrees);
+        ok &= expectFloat("signed hand direction ignores common world motion", moved.barrelInHand.z, sample.barrelInHand.z);
+        const auto rotatedWrist = aim::measure(controller, barrelWorld,
+            rock::transform_math::composeTransforms(controller, pitch));
+        auto handInController = identity;
+        handInController.rotate = rotatedWrist.handInControllerRotation;
+        const auto reconstructedDirection = rock::transform_math::localVectorToWorld(handInController, rotatedWrist.barrelInHand);
+        ok &= expectFloat("signed hand evidence maps back to controller X", reconstructedDirection.x, rotatedWrist.barrelInController.x);
+        ok &= expectFloat("signed hand evidence maps back to controller Y", reconstructedDirection.y, rotatedWrist.barrelInController.y);
+        ok &= expectFloat("signed hand evidence maps back to controller Z", reconstructedDirection.z, rotatedWrist.barrelInController.z);
         auto mirrored = barrelLocal;
         for (int row = 0; row < 3; ++row)
             for (int col = 0; col < 3; ++col)

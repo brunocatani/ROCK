@@ -1452,10 +1452,15 @@
                     const char* gripRole = !loose || looseHand.isHoldingFiringGrip() ? "firing" :
                         (looseHand.isHoldingAuthoredSupportGrip() ? "support" : "dynamic");
                     ROCK_LOG_SAMPLE_INFO(Weapon, 500,
-                        "WEAPON_AIM frame={} form={:08X} mode={} hand={} role={} supportHeld={} axis={} wandYaw={:.3f} wandPitch={:.3f} handAngle={:.3f} barrelInWand=({:.5f},{:.5f},{:.5f}) Rvalid={} Lvalid={} RseatDelta=({:.4f},{:.4f},{:.4f}) LseatDelta=({:.4f},{:.4f},{:.4f}) RpalmWeapon=({:.4f},{:.4f},{:.4f}) LpalmWeapon=({:.4f},{:.4f},{:.4f}) trim=({:.3f},{:.3f}) offset=({:.3f},{:.3f},{:.3f})",
+                        "WEAPON_AIM frame={} form={:08X} mode={} hand={} role={} supportHeld={} axis={} wandYaw={:.3f} wandPitch={:.3f} handAngle={:.3f} barrelInWand=({:.5f},{:.5f},{:.5f}) barrelInHand=({:.6f},{:.6f},{:.6f}) handInWandRows=({:.6f},{:.6f},{:.6f};{:.6f},{:.6f},{:.6f};{:.6f},{:.6f},{:.6f}) Rvalid={} Lvalid={} RseatDelta=({:.4f},{:.4f},{:.4f}) LseatDelta=({:.4f},{:.4f},{:.4f}) RpalmWeapon=({:.4f},{:.4f},{:.4f}) LpalmWeapon=({:.4f},{:.4f},{:.4f}) trim=({:.3f},{:.3f}) offset=({:.3f},{:.3f},{:.3f})",
                         frame.gameFrameIndex, formID, loose ? "loose" : "equipped", firingIsLeft ? "left" : "right", gripRole, supportHeld, axisSource,
                         aim.yawDegrees, aim.pitchDegrees, aim.divergenceDegrees,
-                        aim.barrelInController.x, aim.barrelInController.y, aim.barrelInController.z, rightValid, leftValid,
+                        aim.barrelInController.x, aim.barrelInController.y, aim.barrelInController.z,
+                        aim.barrelInHand.x, aim.barrelInHand.y, aim.barrelInHand.z,
+                        aim.handInControllerRotation.entry[0].x, aim.handInControllerRotation.entry[0].y, aim.handInControllerRotation.entry[0].z,
+                        aim.handInControllerRotation.entry[1].x, aim.handInControllerRotation.entry[1].y, aim.handInControllerRotation.entry[1].z,
+                        aim.handInControllerRotation.entry[2].x, aim.handInControllerRotation.entry[2].y, aim.handInControllerRotation.entry[2].z,
+                        rightValid, leftValid,
                         rightSeatInRaw.x, rightSeatInRaw.y, rightSeatInRaw.z, leftSeatInRaw.x, leftSeatInRaw.y, leftSeatInRaw.z,
                         rightPalmInWeapon.x, rightPalmInWeapon.y, rightPalmInWeapon.z, leftPalmInWeapon.x, leftPalmInWeapon.y, leftPalmInWeapon.z,
                         g_rockConfig.rockLeftFiringAimYawDegrees, g_rockConfig.rockLeftFiringAimPitchDegrees,
