@@ -1,5 +1,6 @@
 #include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
+#include "physics-interaction/telemetry/HeldRenderTrace.h"
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/core/RockRuntimeState.h"
@@ -824,6 +825,7 @@ namespace rock::held_scene_presentation
 
     void clearHeldBodies(bool isLeft) noexcept
     {
+        held_render_trace::clearHand(isLeft);
         Registration empty{};
         publishHeldBodies(isLeft, empty);
     }

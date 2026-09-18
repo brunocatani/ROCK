@@ -30,6 +30,7 @@
 #include "physics-interaction/native/WeaponActionTrace.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/telemetry/DynamicColliderTrace.h"
+#include "physics-interaction/telemetry/HeldRenderTrace.h"
 #include "physics-interaction/timing/RockGameTiming.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -767,6 +768,7 @@ namespace
                 vanilla_weapon_alignment_telemetry::Phase::BeforeFrik, s_schedulerSequence);
         }
         prepareRuntimeFrame();
+        held_render_trace::recordPhase(held_render_trace::Phase::FrameBegin, runtime_state::currentFrame().frameIndex);
     }
 
     /*
@@ -1087,6 +1089,7 @@ namespace
                 logger::warn(
                     "ROCK: Held-body scene presentation hook is unavailable; native presentation remains unchanged.");
             }
+            rock::held_render_trace::install();
             runtime_state::initialize();
             (void)native_scope_shot_diagnostics::install();
             logger::info("ROCK: Config loaded.");

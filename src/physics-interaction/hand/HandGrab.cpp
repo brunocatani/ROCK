@@ -5,6 +5,7 @@
 #include "physics-interaction/body/BodyBoneColliderSet.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
+#include "physics-interaction/telemetry/HeldRenderTrace.h"
 
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
@@ -12244,6 +12245,8 @@ namespace rock
         held_scene_presentation::publishHeldBodies(
             _isLeft,
             sceneRegistration);
+        held_render_trace::registerRoot(_isLeft, sceneRegistration.traceId,
+            _savedObjectState.refr ? _savedObjectState.refr->Get3D() : nullptr);
         if (sceneRegistration.count == 0) {
             ROCK_LOG_WARN(Hand,
                 "{} hand GRAB could not publish held-body scene presentation identity: trace={} heldBodies={}",

@@ -1,4 +1,5 @@
 #include "physics-interaction/telemetry/DynamicColliderTrace.h"
+#include "physics-interaction/telemetry/HeldRenderTrace.h"
 
 #include "RockConfig.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
@@ -44,12 +45,13 @@ namespace rock::dynamic_collider_trace
             next->log->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
             next->log->set_error_handler([](const std::string&) { suppressAfterError(); });
             writerFailed.store(false, std::memory_order_relaxed);
-            next->log->info("COLLIDER_TRACE start version=2 pid={} build={} {} sourceStride=4 heldPhaseStride=30 observational=true positions=game-units velocities=havok-units-per-second peerKind=1:hand,2:weapon,3:world",
+            next->log->info("COLLIDER_TRACE start version=3 pid={} build={} {} sourceStride=4 heldPhaseStride=30 observational=true positions=game-units velocities=havok-units-per-second peerKind=1:hand,2:weapon,3:world",
                 GetCurrentProcessId(), __DATE__, __TIME__);
             next->log->flush();
             session = std::move(next);
             recording.store(g_rockConfig.rockDebugGrabFrameLogging, std::memory_order_release);
             presentationRecording.store(true, std::memory_order_release);
+            held_render_trace::initialize();
         } catch (...) {
             suppressAfterError();
             try { logger::error("ROCK: Collider trace initialization failed."); } catch (...) {}
@@ -58,6 +60,7 @@ namespace rock::dynamic_collider_trace
 
     void shutdown() noexcept
     {
+        held_render_trace::shutdown();
         recording.store(false, std::memory_order_release);
         presentationRecording.store(false, std::memory_order_release);
         if (!session) return;

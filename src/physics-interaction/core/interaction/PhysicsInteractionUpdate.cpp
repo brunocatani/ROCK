@@ -1,6 +1,7 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
 #include "physics-interaction/telemetry/DynamicColliderTrace.h"
+#include "physics-interaction/telemetry/HeldRenderTrace.h"
 
 // Per-frame orchestration: update(), interaction frame finalization, hand transform sampling, physics substep callbacks, held-mass slowdown, and the frame/debug-overlay implementation includes.
 
@@ -97,6 +98,9 @@ namespace rock
         // late scene write for the preceding publication. Pair it with that
         // frame's after-rock / after-world-final samples.
         const bool beforeRock = std::string_view(phase) == "before-rock";
+        held_render_trace::recordPhase(beforeRock ? held_render_trace::Phase::BeforeRock :
+            std::string_view(phase) == "after-rock" ? held_render_trace::Phase::AfterRock : held_render_trace::Phase::AfterWorldFinal,
+            runtime.frameIndex);
         const auto presentationFrame = runtime.frameIndex > 0 ? runtime.frameIndex - (beforeRock ? 1u : 0u) : 0;
         if (!dynamic_collider_trace::presentationEnabled() ||
             presentationFrame == 0 || presentationFrame % 30 != 0 ||
