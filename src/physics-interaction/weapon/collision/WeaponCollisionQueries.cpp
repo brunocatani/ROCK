@@ -26,7 +26,7 @@ namespace rock
             if (count == outPositions.size() || count == markedSources.size()) {
                 break;
             }
-            if (!instance.body.isValid() || !instance.sourceNode) {
+            if (!instance.body.isValid() || !instance.geometry || !instance.sourceNode) {
                 continue;
             }
             // Registration alone is not a hover. Only the exact body selected
@@ -89,7 +89,7 @@ namespace rock
         };
         bool sampled = false;
         for (const auto& instance : activeWeaponBodies()) {
-            if (!instance.body.isValid() || !finitePoint(instance.generatedLocalMinGame) || !finitePoint(instance.generatedLocalMaxGame)) {
+            if (!instance.body.isValid() || !instance.geometry || !finitePoint(instance.generatedLocalMinGame) || !finitePoint(instance.generatedLocalMaxGame)) {
                 continue;
             }
             if (instance.generatedLocalMaxGame.x < instance.generatedLocalMinGame.x ||
@@ -169,7 +169,7 @@ namespace rock
         bool sampledPoint = false;
         std::uint32_t sourceIndex = 0;
         for (const auto& instance : bank) {
-            if (!instance.body.isValid()) {
+            if (!instance.body.isValid() || !instance.geometry) {
                 continue;
             }
 
@@ -177,7 +177,7 @@ namespace rock
             if (!instance.shape) {
                 return fail(CompoundGeometrySnapshotFailure::MissingShape, sourceIndex, bodyId);
             }
-            const auto& points = instance.generatedLocalPointsGame;
+            const auto& points = instance.geometry->localPointsGame;
             if (points.empty()) {
                 return fail(CompoundGeometrySnapshotFailure::MissingPointCloud, sourceIndex, bodyId);
             }
@@ -302,7 +302,7 @@ namespace rock
         }
 
         for (const auto& instance : bank) {
-            if (!instance.body.isValid()) {
+            if (!instance.body.isValid() || !instance.geometry) {
                 continue;
             }
             if (outChildCount >= outChildren.size() ||
@@ -370,11 +370,11 @@ namespace rock
         };
 
         for (const auto& instance : bank) {
-            if (!instance.body.isValid()) {
+            if (!instance.body.isValid() || !instance.geometry) {
                 continue;
             }
-            if (!instance.generatedLocalPointsGame.empty()) {
-                for (const auto& point : instance.generatedLocalPointsGame) {
+            if (!instance.geometry->localPointsGame.empty()) {
+                for (const auto& point : instance.geometry->localPointsGame) {
                     sampleLocalPoint(point);
                 }
                 continue;
@@ -408,7 +408,7 @@ namespace rock
         }
 
         for (const auto& instance : activeWeaponBodies()) {
-            if (!instance.body.isValid() ||
+            if (!instance.body.isValid() || !instance.geometry ||
                 instance.body.getBodyId().value != bodyId) {
                 continue;
             }
@@ -586,7 +586,7 @@ namespace rock
         }
 
         for (const auto& instance : activeWeaponBodies()) {
-            if (!instance.body.isValid() || instance.body.getBodyId().value != bodyId) {
+            if (!instance.body.isValid() || !instance.geometry || instance.body.getBodyId().value != bodyId) {
                 continue;
             }
 
@@ -605,8 +605,8 @@ namespace rock
         SupportGripEvidenceView& outView) const
     {
         outView = {};
-        if (!instance.body.isValid() ||
-            instance.generatedLocalTrianglesGame.empty()) {
+        if (!instance.body.isValid() || !instance.geometry ||
+            instance.geometry->mesh->localTrianglesGame.empty()) {
             return false;
         }
 
@@ -632,9 +632,9 @@ namespace rock
 
         const auto& localTriangles =
             sourceNodeCurrent &&
-                !instance.generatedSourceLocalTrianglesGame.empty() ?
-            instance.generatedSourceLocalTrianglesGame :
-            instance.generatedLocalTrianglesGame;
+                !instance.geometry->mesh->sourceLocalTrianglesGame.empty() ?
+            instance.geometry->mesh->sourceLocalTrianglesGame :
+            instance.geometry->mesh->localTrianglesGame;
         if (localTriangles.empty() ||
             !std::isfinite(localToWorld.scale) ||
             std::abs(localToWorld.scale) <= 0.000001f) {
@@ -669,7 +669,7 @@ namespace rock
         }
 
         for (const auto& instance : activeWeaponBodies()) {
-            if (!instance.body.isValid() ||
+            if (!instance.body.isValid() || !instance.geometry ||
                 instance.body.getBodyId().value != bodyId) {
                 continue;
             }
@@ -789,7 +789,7 @@ namespace rock
          * bank once, and retains the true nearest witness per supplied point.
          */
         for (const auto& instance : activeWeaponBodies()) {
-            if (!instance.body.isValid()) {
+            if (!instance.body.isValid() || !instance.geometry) {
                 continue;
             }
 
@@ -802,14 +802,14 @@ namespace rock
                     surfaceWorld);
             const bool useSourceFrame =
                 sourceNodeCurrent &&
-                !instance.generatedSourceLocalTrianglesGame.empty();
+                !instance.geometry->mesh->sourceLocalTrianglesGame.empty();
             if (!useSourceFrame) {
                 surfaceWorld = currentWeaponRoot->world;
             }
             const auto& localTriangles =
                 useSourceFrame ?
-                instance.generatedSourceLocalTrianglesGame :
-                instance.generatedLocalTrianglesGame;
+                instance.geometry->mesh->sourceLocalTrianglesGame :
+                instance.geometry->mesh->localTrianglesGame;
             const RE::NiPoint3& boundsMin =
                 useSourceFrame ?
                 instance.generatedSourceLocalMinGame :
@@ -960,7 +960,7 @@ namespace rock
 
         RE::NiAVObject* packageDriveRoot = resolvePackageDriveNode(bank, nullptr);
         for (const auto& instance : bank) {
-            if (!instance.body.isValid()) {
+            if (!instance.body.isValid() || !instance.geometry) {
                 continue;
             }
 
@@ -980,7 +980,7 @@ namespace rock
                 .max = makeWeaponEvidencePoint(instance.generatedLocalMaxGame.x, instance.generatedLocalMaxGame.y, instance.generatedLocalMaxGame.z),
                 .valid = true,
             };
-            descriptor.localMeshPointsGame = copyLocalPoints(instance.generatedLocalPointsGame);
+            descriptor.localMeshPointsGame = copyLocalPoints(instance.geometry->localPointsGame);
             descriptor.pointCount = instance.generatedPointCount;
             if (instance.semantic.attachPointFormId != 0) {
                 const auto omodIt = omodByAttachPointFormId.find(instance.semantic.attachPointFormId);
@@ -1142,7 +1142,7 @@ namespace rock
     }
 
 
-    std::vector<WeaponCollisionProfileEvidenceDescriptor> WeaponCollision::getProfileEvidenceDescriptors() const
+    WeaponEvidenceSnapshot WeaponCollision::getProfileEvidenceDescriptors() const
     {
         for (int attempt = 0; attempt < 4; ++attempt) {
             const std::uint64_t startVersion = _published.version.load(std::memory_order_acquire);
@@ -1150,7 +1150,7 @@ namespace rock
                 continue;
             }
 
-            std::vector<WeaponCollisionProfileEvidenceDescriptor> descriptors;
+            std::shared_ptr<const WeaponEvidenceSnapshot::Records> descriptors;
             {
                 std::scoped_lock lock(_evidence.mutex);
                 descriptors = _evidence.profileDescriptors;
@@ -1158,7 +1158,7 @@ namespace rock
 
             const std::uint64_t endVersion = _published.version.load(std::memory_order_acquire);
             if (startVersion == endVersion && (endVersion & 1u) == 0) {
-                return descriptors;
+                return WeaponEvidenceSnapshot{ std::move(descriptors) };
             }
         }
 
@@ -1217,31 +1217,6 @@ namespace rock
         return {};
     }
 
-    bool WeaponCollision::tryGetProfileEvidenceDescriptorForBodyId(
-        std::uint32_t bodyId,
-        WeaponCollisionProfileEvidenceDescriptor& outDescriptor,
-        RE::NiAVObject*& outSourceNode) const
-    {
-        outDescriptor = {};
-        outSourceNode = nullptr;
-        if (bodyId == INVALID_BODY_ID) {
-            return false;
-        }
-
-        const auto descriptors = getProfileEvidenceDescriptors();
-        for (const auto& descriptor : descriptors) {
-            if (!descriptor.valid || descriptor.bodyId != bodyId) {
-                continue;
-            }
-
-            outDescriptor = descriptor;
-            outSourceNode = reinterpret_cast<RE::NiAVObject*>(descriptor.sourceRootAddress);
-            return true;
-        }
-
-        return false;
-    }
-
     bool WeaponCollision::tryFindInteractionContactNearPoint(
         const RE::NiAVObject* weaponNode,
         const RE::NiPoint3& probeWorldPoint,
@@ -1270,7 +1245,7 @@ namespace rock
         const RE::NiAVObject* packageDriveRoot = weaponNode;
 
         for (const auto& instance : activeWeaponBodies()) {
-            if (!instance.body.isValid()) {
+            if (!instance.body.isValid() || !instance.geometry || !instance.indices) {
                 continue;
             }
 
@@ -1286,14 +1261,14 @@ namespace rock
             }
             const bool useSourceFrame =
                 sourceNodeCurrent &&
-                !instance.generatedSourceLocalTrianglesGame.empty();
+                !instance.geometry->mesh->sourceLocalTrianglesGame.empty();
             if (!useSourceFrame) {
                 probeWorld = packageDriveRoot->world;
             }
             const auto& localTriangles =
                 useSourceFrame ?
-                instance.generatedSourceLocalTrianglesGame :
-                instance.generatedLocalTrianglesGame;
+                instance.geometry->mesh->sourceLocalTrianglesGame :
+                instance.geometry->mesh->localTrianglesGame;
             const RE::NiPoint3& boundsMin =
                 useSourceFrame ?
                 instance.generatedSourceLocalMinGame :
@@ -1335,7 +1310,7 @@ namespace rock
             }
 
             ++boundsCandidateCount;
-            const auto& index = useSourceFrame ? instance.generatedSourceTriangleIndex : instance.generatedTriangleIndex;
+            const auto& index = useSourceFrame ? instance.indices->sourceIndex : instance.indices->localIndex;
             const float minimumSurfaceDistanceSquaredLocal = index.nearestDistanceSquared(
                 localTriangles, probeLocal, localRadius * localRadius,
                 [](const RE::NiPoint3& point, const TriangleData& triangle) {

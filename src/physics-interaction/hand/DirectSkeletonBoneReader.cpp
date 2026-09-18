@@ -122,7 +122,8 @@ namespace rock
         DebugSkeletonBoneMode mode,
         DebugSkeletonBoneSource source,
         const SkeletonBoneCaptureSpace space,
-        DirectSkeletonBoneSnapshot& outSnapshot)
+        DirectSkeletonBoneSnapshot& outSnapshot,
+        const SkeletonBoneCapturePayload payload)
     {
         // Reuse copied storage, but replace every transform and validity bit.
         // Controller transport below always starts from this capture's array.
@@ -172,7 +173,7 @@ namespace rock
                 return false;
             }
         }
-        const bool captured = captureFromCachedTree(outSnapshot, space);
+        const bool captured = captureFromCachedTree(outSnapshot, space, payload);
         if (captured) {
             performance_profiler::observeValue(space == SkeletonBoneCaptureSpace::Rendered ?
                 performance_profiler::ValueMetric::RenderedSkeletonBones : performance_profiler::ValueMetric::ControllerSkeletonBones,
@@ -283,7 +284,7 @@ namespace rock
         return !_cachedBones.empty();
     }
 
-    bool DirectSkeletonBoneReader::captureFromCachedTree(DirectSkeletonBoneSnapshot& outSnapshot, const SkeletonBoneCaptureSpace space)
+    bool DirectSkeletonBoneReader::captureFromCachedTree(DirectSkeletonBoneSnapshot& outSnapshot, const SkeletonBoneCaptureSpace space, const SkeletonBoneCapturePayload payload)
     {
         auto* tree = static_cast<BSFlattenedBoneTree*>(_cachedBoneTree);
         if (!validTree(tree)) {
@@ -298,15 +299,22 @@ namespace rock
         outSnapshot.mode = _cachedMode;
         outSnapshot.source = _cachedSource;
         outSnapshot.space = space;
+        outSnapshot.payload = payload;
         outSnapshot.skeleton = _cachedSkeleton;
         outSnapshot.boneTree = _cachedBoneTree;
         outSnapshot.totalBoneCount = _cachedTotalBoneCount;
         outSnapshot.requiredResolvedCount = _cachedRequiredResolvedCount;
         outSnapshot.missingRequiredBones = _cachedMissingRequiredBones;
-        outSnapshot.bones.resize(_cachedBones.size());
+        const bool handRootsOnly = payload == SkeletonBoneCapturePayload::HandRootsWithSceneNodes;
+        outSnapshot.bones.resize(handRootsOnly ? 2 : _cachedBones.size());
         std::size_t capturedCount = 0;
 
         for (const auto& cached : _cachedBones) {
+            // Keep full arm topology for presentation; only narrow this copied output.
+            if (handRootsOnly && (cached.name != "RArm_Hand" && cached.name != "LArm_Hand")) continue;
+            if (handRootsOnly && std::any_of(outSnapshot.bones.begin(), outSnapshot.bones.begin() + capturedCount,
+                    [&](const auto& entry) { return entry.name == cached.name; })) continue;
+            if (handRootsOnly && capturedCount == outSnapshot.bones.size()) break;
             if (cached.treeIndex < 0 || cached.treeIndex >= tree->numTransforms) {
                 continue;
             }
@@ -315,15 +323,17 @@ namespace rock
             entry.name = cached.name;
             entry.treeIndex = cached.treeIndex;
             entry.parentTreeIndex = cached.parentTreeIndex;
-            entry.drawableParentSnapshotIndex = cached.drawableParentSnapshotIndex;
+            entry.drawableParentSnapshotIndex = handRootsOnly ? -1 : cached.drawableParentSnapshotIndex;
             entry.world = tree->transforms[cached.treeIndex].world;
             entry.included = cached.included;
             entry.nodeWorld = {};
             entry.nodeWorldValid = false;
             // refNode is an engine scene pointer the tree owns; a guarded copy
             // keeps a torn tree from faulting the frame.
-            if (const RE::NiNode* refNode = tree->transforms[cached.treeIndex].refNode) {
-                entry.nodeWorldValid = native_memory::tryReadValue(&refNode->world, entry.nodeWorld);
+            if (handRootsOnly) {
+                if (const RE::NiNode* refNode = tree->transforms[cached.treeIndex].refNode) {
+                    entry.nodeWorldValid = native_memory::tryReadValue(&refNode->world, entry.nodeWorld);
+                }
             }
         }
 

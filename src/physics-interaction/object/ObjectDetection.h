@@ -22,6 +22,7 @@
 #include "RE/NetImmerse/NiSmartPointer.h"
 
 #include <cstdint>
+#include <optional>
 
 namespace rock
 {
@@ -225,7 +226,8 @@ namespace rock
         bool isFarSelection = false,
         RE::NiAVObject* hitNode = nullptr,
         const RE::NiPoint3& hitPointWorld = {},
-        bool hasHitPoint = false);
+        bool hasHitPoint = false,
+        std::optional<RE::TESBoundObject*> knownBaseForm = std::nullopt);
 
     RE::TESObjectREFR* resolveBodyToRef(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::hknpBodyId bodyId);
 

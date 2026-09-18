@@ -464,7 +464,7 @@ namespace rock
         const active_grab_body_lifecycle::BodyLifecycleSnapshot& getActiveGrabLifecycle() const { return _activeGrabLifecycle; }
         bool tryGetHeldObjectGrabPivotWorld(RE::hknpWorld* world, RE::NiPoint3& outPivotWorld) const;
         // Frame-local view of the cached mesh, paired with its live physics transform.
-        bool getHeldBodyContactMesh(RE::hknpWorld* world, std::span<const GrabLocalTriangle>& triangles, RE::NiTransform& meshWorld) const;
+        bool getHeldBodyContactMesh(RE::hknpWorld* world, std::span<const GrabLocalTriangle>& triangles, RE::NiTransform& meshWorld, const HeldContactMeshCache*& cache) const;
         std::uint64_t heldGrabIdentity() const { return isHolding() ? _grabFrame.traceId : 0; }
         bool getGrabPivotDebugSnapshot(RE::hknpWorld* world, GrabPivotDebugSnapshot& out) const;
         bool getGrabPocketNormalDebugSnapshot(RE::hknpWorld* world, GrabPocketNormalDebugSnapshot& out) const;

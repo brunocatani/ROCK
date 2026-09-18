@@ -1442,7 +1442,8 @@ namespace rock
             return true;
         }
 
-        WeaponCollisionProfileEvidenceDescriptor bestDescriptor{};
+        const auto evidence = weaponCollision.getProfileEvidenceDescriptors();
+        const WeaponCollisionProfileEvidenceDescriptor* bestDescriptor = nullptr;
         RE::NiAVObject* bestSourceNode = nullptr;
         int bestScore = 0;
         float bestDistanceSquared = (std::numeric_limits<float>::max)();
@@ -1469,27 +1470,26 @@ namespace rock
         const auto bodyCount = weaponCollision.getWeaponBodyCount();
         for (std::uint32_t i = 0; i < bodyCount; ++i) {
             const auto bodyId = weaponCollision.getWeaponBodyIdAtomic(i);
-            WeaponCollisionProfileEvidenceDescriptor descriptor{};
-            RE::NiAVObject* sourceNode = nullptr;
-            if (!weaponCollision.tryGetProfileEvidenceDescriptorForBodyId(bodyId, descriptor, sourceNode) ||
-                !descriptor.valid || descriptor.weaponGenerationKey != currentWeaponGenerationKey) {
+            const auto* descriptor = evidence.find(bodyId);
+            if (!descriptor || descriptor->weaponGenerationKey != currentWeaponGenerationKey) {
                 continue;
             }
 
+            auto* sourceNode = reinterpret_cast<RE::NiAVObject*>(descriptor->sourceRootAddress);
             const bool sourcePointerMatches = sourceNode && sourceNode == grip.attachmentRoot;
-            const bool sourceNameMatches = !capturedSourceName.empty() && descriptor.sourceName == capturedSourceName;
-            if ((!sourcePointerMatches && !sourceNameMatches) || descriptor.semantic.partKind != grip.partKind) {
+            const bool sourceNameMatches = !capturedSourceName.empty() && descriptor->sourceName == capturedSourceName;
+            if ((!sourcePointerMatches && !sourceNameMatches) || descriptor->semantic.partKind != grip.partKind) {
                 continue;
             }
-            if (grip.omodFormId != 0 && descriptor.omodFormId != grip.omodFormId) {
+            if (grip.omodFormId != 0 && descriptor->omodFormId != grip.omodFormId) {
                 continue;
             }
-            if (grip.attachPointFormId != 0 && descriptor.semantic.attachPointFormId != grip.attachPointFormId) {
+            if (grip.attachPointFormId != 0 && descriptor->semantic.attachPointFormId != grip.attachPointFormId) {
                 continue;
             }
 
             const int score = sourcePointerMatches ? 2 : 1;
-            const float distanceSquared = distanceSquaredToBounds(descriptor.localBoundsGame);
+            const float distanceSquared = distanceSquaredToBounds(descriptor->localBoundsGame);
             constexpr float kDistanceTieEpsilon = 0.0001f;
             if (score > bestScore ||
                 (score == bestScore && distanceSquared + kDistanceTieEpsilon < bestDistanceSquared)) {
@@ -1524,25 +1524,25 @@ namespace rock
         // generation. The game-thread reconciliation step recaptures it from
         // current transforms only after the new generation is eligible.
         grip.supportInputBaseline = {};
-        grip.contactBodyId = bestDescriptor.bodyId;
+        grip.contactBodyId = bestDescriptor->bodyId;
         grip.attachmentRoot = grip.authoredSupportGrip ?
             _session.weaponNode :
             (bestSourceNode ? bestSourceNode : grip.attachmentRoot);
-        grip.partKind = bestDescriptor.semantic.partKind;
-        grip.reloadRole = bestDescriptor.semantic.reloadRole;
-        grip.supportRole = bestDescriptor.semantic.supportGripRole;
-        grip.socketRole = bestDescriptor.semantic.socketRole;
-        grip.actionRole = bestDescriptor.semantic.actionRole;
-        grip.omodFormId = bestDescriptor.omodFormId;
-        grip.attachPointFormId = bestDescriptor.semantic.attachPointFormId;
-        grip.classificationSource = bestDescriptor.semantic.classificationSource;
-        const auto copyLength = (std::min)(bestDescriptor.sourceName.size(), grip.sourceName.size() - 1);
-        std::memcpy(grip.sourceName.data(), bestDescriptor.sourceName.data(), copyLength);
+        grip.partKind = bestDescriptor->semantic.partKind;
+        grip.reloadRole = bestDescriptor->semantic.reloadRole;
+        grip.supportRole = bestDescriptor->semantic.supportGripRole;
+        grip.socketRole = bestDescriptor->semantic.socketRole;
+        grip.actionRole = bestDescriptor->semantic.actionRole;
+        grip.omodFormId = bestDescriptor->omodFormId;
+        grip.attachPointFormId = bestDescriptor->semantic.attachPointFormId;
+        grip.classificationSource = bestDescriptor->semantic.classificationSource;
+        const auto copyLength = (std::min)(bestDescriptor->sourceName.size(), grip.sourceName.size() - 1);
+        std::memcpy(grip.sourceName.data(), bestDescriptor->sourceName.data(), copyLength);
         grip.sourceName[copyLength] = '\0';
 
         if (grip.providerPartAuthority.active) {
             grip.providerPartAuthority.weaponGenerationKey = currentWeaponGenerationKey;
-            grip.providerPartAuthority.bodyId = bestDescriptor.bodyId;
+            grip.providerPartAuthority.bodyId = bestDescriptor->bodyId;
             grip.providerPartAuthority.sourceRoot = reinterpret_cast<std::uintptr_t>(bestSourceNode);
             grip.providerPartAuthority.partKind = static_cast<std::uint32_t>(grip.partKind);
             grip.providerPartAuthority.reloadRole = static_cast<std::uint32_t>(grip.reloadRole);
@@ -2989,16 +2989,16 @@ namespace rock
             // The routing decision carries no support role or authored source
             // name; both come from the evidence descriptor keyed by the
             // contact body, matching the provider target-query construction.
-            WeaponCollisionProfileEvidenceDescriptor descriptor{};
-            RE::NiAVObject* descriptorSourceNode = nullptr;
-            if (weaponCollision.tryGetProfileEvidenceDescriptorForBodyId(decision.bodyId, descriptor, descriptorSourceNode) &&
-                descriptor.weaponGenerationKey == decision.weaponGenerationKey) {
-                grip.supportRole = descriptor.semantic.supportGripRole;
-                grip.omodFormId = descriptor.omodFormId;
-                grip.attachPointFormId = descriptor.semantic.attachPointFormId;
-                grip.classificationSource = descriptor.semantic.classificationSource;
-                const std::size_t copyLength = (std::min)(descriptor.sourceName.size(), grip.sourceName.size() - 1);
-                std::memcpy(grip.sourceName.data(), descriptor.sourceName.data(), copyLength);
+            const auto evidence = weaponCollision.getProfileEvidenceDescriptors();
+            const auto* descriptor = evidence.find(decision.bodyId);
+            if (descriptor &&
+                descriptor->weaponGenerationKey == decision.weaponGenerationKey) {
+                grip.supportRole = descriptor->semantic.supportGripRole;
+                grip.omodFormId = descriptor->omodFormId;
+                grip.attachPointFormId = descriptor->semantic.attachPointFormId;
+                grip.classificationSource = descriptor->semantic.classificationSource;
+                const std::size_t copyLength = (std::min)(descriptor->sourceName.size(), grip.sourceName.size() - 1);
+                std::memcpy(grip.sourceName.data(), descriptor->sourceName.data(), copyLength);
                 grip.sourceName[copyLength] = '\0';
             } else if (grip.providerPartAuthority.active) {
                 grip.supportRole = static_cast<WeaponSupportGripRole>(grip.providerPartAuthority.supportRole);

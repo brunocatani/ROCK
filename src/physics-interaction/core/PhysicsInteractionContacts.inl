@@ -208,25 +208,15 @@
                 static_cast<int>(targetRecord->motionType));
         }
 
-        const auto uniqueMotionRecords = bodySet.uniqueAcceptedMotionRecords();
-        if (uniqueMotionRecords.empty()) {
-            ROCK_LOG_SAMPLE_DEBUG(Hand,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "{} dynamic push skipped: accepted target body {} produced no unique motion bodies",
-                sourceName,
-                targetBodyId);
-            return;
-        }
-
         std::uint32_t appliedCount = 0;
-        for (const auto* record : uniqueMotionRecords) {
-            if (!record) {
-                continue;
-            }
-            physics_recursive_wrappers::activateBody(hknp, record->bodyId);
-            if (push_assist::applyLinearImpulse(record->collisionObject, push.impulse)) {
-                ++appliedCount;
-            }
+        const auto uniqueMotionCount = bodySet.forEachUniqueAcceptedMotion([&](const auto& record) {
+            physics_recursive_wrappers::activateBody(hknp, record.bodyId);
+            if (push_assist::applyLinearImpulse(record.collisionObject, push.impulse)) ++appliedCount;
+        });
+        if (uniqueMotionCount == 0) {
+            ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
+                "{} dynamic push skipped: accepted target body {} produced no unique motion bodies", sourceName, targetBodyId);
+            return;
         }
 
         if (appliedCount > 0) {
@@ -557,10 +547,6 @@
             bodyIdA == bodyIdB) {
             return;
         }
-        if (!havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdA }) ||
-            !havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdB })) {
-            return;
-        }
 
         DynamicHandCollisionRuntime::DynamicBodyContactSource
             dynamicBodySourceA{};
@@ -580,6 +566,12 @@
             _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
         const bool bodyBIsDynamicWeapon =
             _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
+        if (!bodyAIsDynamicHand && !bodyBIsDynamicHand && !bodyAIsDynamicWeapon && !bodyBIsDynamicWeapon) return;
+        // ID-only admission precedes native reads; accepted events retain all body checks.
+        if (!havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdA }) ||
+            !havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdB })) {
+            return;
+        }
         const bool solvedChildContact =
             manifoldPointCount > 0 && manifoldPointCount <= 4;
         if (solvedChildContact && bodyAIsDynamicHand) {
@@ -609,15 +601,9 @@
         dynamic_hand_surface_contact_state::ContactSource dynamicHandSourceA{};
         dynamic_hand_surface_contact_state::ContactSource dynamicHandSourceB{};
         const bool bodyAIsDynamicHandSurfaceSource =
-            _dynamicHandCollision.tryClassifySurfaceContactSourceAtomic(
-                bodyIdA,
-                shapeKeyA,
-                dynamicHandSourceA);
+            _dynamicHandCollision.classifySurfaceContactSource(dynamicBodySourceA, dynamicHandSourceA);
         const bool bodyBIsDynamicHandSurfaceSource =
-            _dynamicHandCollision.tryClassifySurfaceContactSourceAtomic(
-                bodyIdB,
-                shapeKeyB,
-                dynamicHandSourceB);
+            _dynamicHandCollision.classifySurfaceContactSource(dynamicBodySourceB, dynamicHandSourceB);
         if (solvedChildContact &&
             bodyAIsDynamicHandSurfaceSource !=
             bodyBIsDynamicHandSurfaceSource) {
@@ -718,10 +704,6 @@
             return;
         }
 
-        if (!havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdA }) ||
-            !havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdB })) {
-            return;
-        }
 
         havok_runtime::ContactSignalPointResult rawContactPoint{};
         bool rawContactPointEvaluated = false;
@@ -753,31 +735,6 @@
             _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
         const bool bodyBIsDynamicWeaponProxy =
             _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
-        if (bodyAIsDynamicWeaponProxy != bodyBIsDynamicWeaponProxy) {
-            const std::uint32_t proxyBodyId =
-                bodyAIsDynamicWeaponProxy ? bodyIdA : bodyIdB;
-            const std::uint32_t otherBodyId =
-                bodyAIsDynamicWeaponProxy ? bodyIdB : bodyIdA;
-            std::uint32_t otherFilterInfo = 0;
-            const bool otherLayerRead = havok_runtime::tryReadFilterInfo(
-                world,
-                RE::hknpBodyId{ otherBodyId },
-                otherFilterInfo);
-            const std::uint32_t otherLayer =
-                otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
-            const bool rawContactPointValid =
-                otherLayerRead &&
-                collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(otherLayer) &&
-                ensureRawContactPoint();
-            _dynamicWeaponCollision.recordObstacleContactCallback(
-                world,
-                proxyBodyId,
-                otherBodyId,
-                otherLayerRead,
-                otherLayer,
-                bodyAIsDynamicWeaponProxy,
-                rawContactPointValid ? &rawContactPoint : nullptr);
-        }
 
         const auto rightId = _rightHand.getCollisionBodyId().value;
         const auto leftId = _leftHand.getCollisionBodyId().value;
@@ -895,8 +852,6 @@
         const bool bodyBIsRight = bodyBRight.valid;
         const bool bodyAIsLeft = bodyALeft.valid;
         const bool bodyBIsLeft = bodyBLeft.valid;
-        const bool bodyAIsExternal = ::rock::provider::isExternalBodyId(bodyIdA);
-        const bool bodyBIsExternal = ::rock::provider::isExternalBodyId(bodyIdB);
         const bool bodyAIsRightHeld = _rightHand.isHeldBodyId(bodyIdA);
         const bool bodyBIsRightHeld = _rightHand.isHeldBodyId(bodyIdB);
         const bool bodyAIsLeftHeld = _leftHand.isHeldBodyId(bodyIdA);
@@ -919,6 +874,39 @@
             }
             return false;
         };
+
+        if (!bodyAIsRockSource && !bodyBIsRockSource &&
+            !bodyAIsDynamicWeaponProxy && !bodyBIsDynamicWeaponProxy &&
+            !looseGrenadeImpactBodyIsWatched(bodyIdA) && !looseGrenadeImpactBodyIsWatched(bodyIdB)) return;
+        if (!havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdA }) ||
+            !havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdB })) {
+            return;
+        }
+        if (bodyAIsDynamicWeaponProxy != bodyBIsDynamicWeaponProxy) {
+            const std::uint32_t proxyBodyId =
+                bodyAIsDynamicWeaponProxy ? bodyIdA : bodyIdB;
+            const std::uint32_t otherBodyId =
+                bodyAIsDynamicWeaponProxy ? bodyIdB : bodyIdA;
+            std::uint32_t otherFilterInfo = 0;
+            const bool otherLayerRead = havok_runtime::tryReadFilterInfo(
+                world,
+                RE::hknpBodyId{ otherBodyId },
+                otherFilterInfo);
+            const std::uint32_t otherLayer =
+                otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+            const bool rawContactPointValid =
+                otherLayerRead &&
+                collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(otherLayer) &&
+                ensureRawContactPoint();
+            _dynamicWeaponCollision.recordObstacleContactCallback(
+                world,
+                proxyBodyId,
+                otherBodyId,
+                otherLayerRead,
+                otherLayer,
+                bodyAIsDynamicWeaponProxy,
+                rawContactPointValid ? &rawContactPoint : nullptr);
+        }
 
         auto recordLooseGrenadeImpactIfArmed = [&]() {
             auto tryRecord = [&](std::uint32_t watchedBodyId,
@@ -961,6 +949,9 @@
             })) {
             return;
         }
+
+        const bool bodyAIsExternal = ::rock::provider::isExternalBodyId(bodyIdA);
+        const bool bodyBIsExternal = ::rock::provider::isExternalBodyId(bodyIdB);
 
         auto readBodyFilterInfo = [world](std::uint32_t bodyId) {
             std::uint32_t filterInfo = 0;

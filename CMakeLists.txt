@@ -104,6 +104,15 @@ add_library(${PROJECT_NAME} SHARED
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 target_compile_definitions(${PROJECT_NAME} PRIVATE _UNICODE F4VR_WITH_OPENVR=1)
 
+# Optimize across ROCK translation units in Release without changing the SDK,
+# floating-point model or minimum CPU ISA. The toolchain must support this path.
+include(CheckIPOSupported)
+check_ipo_supported(RESULT ROCK_IPO_SUPPORTED OUTPUT ROCK_IPO_ERROR LANGUAGES CXX)
+if(NOT ROCK_IPO_SUPPORTED)
+  message(FATAL_ERROR "ROCK Release IPO is unavailable: ${ROCK_IPO_ERROR}")
+endif()
+set_property(TARGET ${PROJECT_NAME} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+
 target_include_directories(${PROJECT_NAME}
   PRIVATE
     ${BUILD_DIR}/include
@@ -166,7 +175,7 @@ target_compile_options(${PROJECT_NAME}
 target_link_options(${PROJECT_NAME}
   PRIVATE
     "$<$<CONFIG:DEBUG>:/INCREMENTAL;/OPT:NOREF;/OPT:NOICF>"
-    "$<$<CONFIG:RELEASE>:/INCREMENTAL:NO;/OPT:REF;/OPT:ICF;/DEBUG:FULL>"
+    "$<$<CONFIG:RELEASE>:/INCREMENTAL:NO;/OPT:REF;/OPT:ICF;/DEBUG:FULL;/CGTHREADS:2>"
 )
 
 string(REPLACE "/Ob2" "/Ob3" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
@@ -582,6 +591,11 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKColliderLookupAndTuningTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKColliderLookupAndTuningTests)
 
+  add_executable(ROCKCpuWorkReductionTests "${ROOT_DIR}/tests/CpuWorkReductionTests.cpp")
+  target_compile_features(ROCKCpuWorkReductionTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKCpuWorkReductionTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKCpuWorkReductionTests)
+
   add_executable(ROCKHknpBodyFramePolicyTests
     "${ROOT_DIR}/tests/HknpBodyFramePolicyTests.cpp"
   )
@@ -864,6 +878,7 @@ if(BUILD_ROCK_TESTS)
 
   set(ROCK_COMMONLIB_TEST_TARGETS
     ROCKColliderLookupAndTuningTests
+    ROCKCpuWorkReductionTests
     ROCKGrabInputIntentPolicyTests
     ROCKInputRemapPolicyTests
     ROCKWeaponInteractionPolicyTests

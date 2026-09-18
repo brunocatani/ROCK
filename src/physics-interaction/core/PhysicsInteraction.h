@@ -14,6 +14,7 @@
 #include "physics-interaction/body/BodyContactRuntime.h"
 #include "physics-interaction/hand/Hand.h"
 #include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/hand/SkeletonBoneNameIndex.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/grab/GrabEvent.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
@@ -939,6 +940,8 @@ namespace rock
                 results{};
             std::uint32_t resultCount{ 0 };
             mutable DirectSkeletonBoneReader presentedPoseReader{};
+            mutable DirectSkeletonBoneSnapshot presentedPoseSnapshot{};
+            mutable SkeletonBoneNameIndex presentedPoseNames{};
         };
 
         // State owned by the HandCollisionSuppression module: per-hand

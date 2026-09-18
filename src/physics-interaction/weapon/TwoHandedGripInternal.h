@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/hand/SkeletonBoneNameIndex.h"
+
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 
 #include "api/ROCKProviderApiInternal.h"
@@ -1404,6 +1406,8 @@ namespace rock
             std::array<std::vector<RankedSupportGripTriangle>,
                 kSupportGripFingerLaneCount + 1>
                 rankings;
+            DirectSkeletonBoneSnapshot capturedBones;
+            SkeletonBoneNameIndex capturedBoneNames;
             std::vector<TriangleData> localTriangles;
             std::vector<TriangleData> worldTriangles;
             grab_finger_pose_runtime::FingerPoseTriangleSpatialIndex spatialIndex;

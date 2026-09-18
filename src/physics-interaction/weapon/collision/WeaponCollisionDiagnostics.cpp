@@ -41,9 +41,9 @@ namespace rock
                     .sourceLocalCenter = source.sourceLocalCenterGame,
                     .sourceLocalMin = source.sourceLocalMinGame,
                     .sourceLocalMax = source.sourceLocalMaxGame,
-                    .sourceLocalTriangles = source.sourceLocalTrianglesGame,
-                    .sourceLocalPointCount = source.sourceLocalPointsGame.size(),
-                    .sourceLocalTriangleCount = source.sourceLocalTrianglesGame.size(),
+                    .mesh = source.geometry->mesh,
+                    .sourceLocalPointCount = source.geometry->sourceLocalPointsGame.size(),
+                    .sourceLocalTriangleCount = source.geometry->mesh->sourceLocalTrianglesGame.size(),
                     .sourceNodeScale = source.sourceNodeScale,
                 });
             }
@@ -90,8 +90,18 @@ namespace rock
             bool sourceScaleStable{ false };
         };
 
+        const bool traceEnabled = logger::isTraceEnabled();
         std::vector<DriftRow> driftRows;
-        driftRows.reserve(sources.size());
+        if (traceEnabled) driftRows.reserve(sources.size());
+        bool allSourcesStable = true;
+        struct MeshDelta
+        {
+            const GeneratedWeaponMeshGeometry* baseline = nullptr;
+            const GeneratedWeaponMeshGeometry* current = nullptr;
+            float maximum = 0.0f;
+        };
+        std::array<MeshDelta, MAX_WEAPON_BODIES> meshDeltas{};
+        std::size_t meshDeltaCount = 0;
         std::size_t matchedSourceCount = 0;
         std::size_t sameSourcePointerCount = 0;
         std::size_t treeReplacementCount = 0;
@@ -155,23 +165,35 @@ namespace rock
                     reinterpret_cast<std::uintptr_t>(current.driveRoot);
             row.triangleCountStable =
                 baseline->sourceLocalTriangleCount ==
-                    current.sourceLocalTrianglesGame.size();
+                    current.geometry->mesh->sourceLocalTrianglesGame.size();
             row.dedupPointCountStable =
                 baseline->sourceLocalPointCount ==
-                current.sourceLocalPointsGame.size();
+                current.geometry->sourceLocalPointsGame.size();
             if (row.triangleCountStable &&
-                baseline->sourceLocalTriangles.size() == current.sourceLocalTrianglesGame.size()) {
-                for (std::size_t triangleIndex = 0;
-                     triangleIndex < current.sourceLocalTrianglesGame.size();
-                     ++triangleIndex) {
-                    const auto& authoritativeTriangle = baseline->sourceLocalTriangles[triangleIndex];
-                    const auto& currentTriangle = current.sourceLocalTrianglesGame[triangleIndex];
-                    row.maximumSourceTriangleVertexDeltaGame = (std::max)({
-                        row.maximumSourceTriangleVertexDeltaGame,
-                        pointDistance(authoritativeTriangle.v0, currentTriangle.v0),
-                        pointDistance(authoritativeTriangle.v1, currentTriangle.v1),
-                        pointDistance(authoritativeTriangle.v2, currentTriangle.v2),
-                    });
+                baseline->mesh->sourceLocalTrianglesGame.size() == current.geometry->mesh->sourceLocalTrianglesGame.size()) {
+                const auto deltaEnd = meshDeltas.begin() + meshDeltaCount;
+                const auto cached = std::find_if(meshDeltas.begin(), deltaEnd, [&](const MeshDelta& delta) {
+                    return delta.baseline == baseline->mesh.get() && delta.current == current.geometry->mesh.get();
+                });
+                if (cached != deltaEnd) {
+                    row.maximumSourceTriangleVertexDeltaGame = cached->maximum;
+                } else {
+                    for (std::size_t triangleIndex = 0;
+                         triangleIndex < current.geometry->mesh->sourceLocalTrianglesGame.size();
+                         ++triangleIndex) {
+                        const auto& authoritativeTriangle = baseline->mesh->sourceLocalTrianglesGame[triangleIndex];
+                        const auto& currentTriangle = current.geometry->mesh->sourceLocalTrianglesGame[triangleIndex];
+                        row.maximumSourceTriangleVertexDeltaGame = (std::max)({
+                            row.maximumSourceTriangleVertexDeltaGame,
+                            pointDistance(authoritativeTriangle.v0, currentTriangle.v0),
+                            pointDistance(authoritativeTriangle.v1, currentTriangle.v1),
+                            pointDistance(authoritativeTriangle.v2, currentTriangle.v2),
+                        });
+                    }
+                    if (meshDeltaCount < meshDeltas.size()) {
+                        meshDeltas[meshDeltaCount++] = { baseline->mesh.get(), current.geometry->mesh.get(),
+                            row.maximumSourceTriangleVertexDeltaGame };
+                    }
                 }
             } else {
                 row.maximumSourceTriangleVertexDeltaGame =
@@ -214,7 +236,9 @@ namespace rock
                 maximumWeaponCenterDeltaGame = row.weaponCenterDeltaGame;
                 maximumWeaponCenterDeltaSource = current.sourceName.c_str();
             }
-            driftRows.push_back(row);
+            allSourcesStable = allSourcesStable && row.sourcePointerStable && row.rootPointerStable &&
+                row.sourceGeometryStable && row.sourceScaleStable;
+            if (traceEnabled) driftRows.push_back(row);
         }
 
         const std::size_t unmatchedBaselineCount =
@@ -241,14 +265,7 @@ namespace rock
             sourceGeometryDriftCount == 0 &&
             matchedSourceCount == sources.size() &&
             matchedSourceCount == _diagnostics.generatedRecapture.sources.size() &&
-            std::all_of(
-                driftRows.begin(),
-                driftRows.end(),
-                [](const DriftRow& row) {
-                    return row.baseline && row.current &&
-                           row.sourcePointerStable && row.rootPointerStable &&
-                           row.sourceGeometryStable && row.sourceScaleStable;
-                });
+            allSourcesStable;
 
         ++_diagnostics.generatedRecapture.comparisonSequence;
         _diagnostics.generatedRecapture.sawUndrawnInterval = false;
@@ -272,6 +289,8 @@ namespace rock
             maximumWeaponCenterDeltaSource,
             maximumSourceCenterDeltaGame,
             maximumSourceTriangleVertexDeltaGame);
+
+        if (!traceEnabled) return;
 
         std::sort(
             driftRows.begin(),
@@ -298,9 +317,9 @@ namespace rock
                 row.sourcePointerStable ? "yes" : "no",
                 row.rootPointerStable ? "yes" : "no",
                 row.baseline->sourceLocalPointCount,
-                row.current->sourceLocalPointsGame.size(),
+                row.current->geometry->sourceLocalPointsGame.size(),
                 row.baseline->sourceLocalTriangleCount,
-                row.current->sourceLocalTrianglesGame.size(),
+                row.current->geometry->mesh->sourceLocalTrianglesGame.size(),
                 row.sourceGeometryStable ? "yes" : "no",
                 row.sourceScaleStable ? "yes" : "no",
                 row.weaponCenterDeltaGame,

@@ -26,14 +26,27 @@ namespace rock
         {
             clear();
             _indices.reserve(triangles.size());
+            // Temporary value-only build data: 48 bytes per source triangle,
+            // released before publication. Bounds and double-precision centroids
+            // are computed once, preserving the previous split axis and tie rule.
+            std::vector<TriangleBuildData> prepared;
+            prepared.reserve(triangles.size());
             for (std::size_t i = 0; i < triangles.size(); ++i) {
                 const auto& t = triangles[i];
-                if (finite(t.v0) && finite(t.v1) && finite(t.v2))
-                    _indices.push_back(static_cast<std::uint32_t>(i));
+                auto& data = prepared.emplace_back();
+                if (!finite(t.v0) || !finite(t.v1) || !finite(t.v2)) continue;
+                _indices.push_back(static_cast<std::uint32_t>(i));
+                data.min = data.max = t.v0;
+                for (const auto& p : { t.v1, t.v2 }) {
+                    data.min = { (std::min)(data.min.x, p.x), (std::min)(data.min.y, p.y), (std::min)(data.min.z, p.z) };
+                    data.max = { (std::max)(data.max.x, p.x), (std::max)(data.max.y, p.y), (std::max)(data.max.z, p.z) };
+                }
+                for (int axis = 0; axis < 3; ++axis)
+                    data.center[axis] = (static_cast<double>(component(t.v0, axis)) + component(t.v1, axis) + component(t.v2, axis)) / 3.0;
             }
             if (!_indices.empty()) {
                 _nodes.reserve(_indices.size() / 2 + 1);
-                buildNode(triangles, 0, static_cast<std::uint32_t>(_indices.size()));
+                buildNode(prepared, 0, static_cast<std::uint32_t>(_indices.size()));
             }
         }
 
@@ -71,11 +84,49 @@ namespace rock
             return best;
         }
 
+        template <class Triangles, class Predicate>
+        bool anyTriangleOverlappingBounds(const Triangles& triangles, const RE::NiPoint3& minimum,
+            const RE::NiPoint3& maximum, Predicate&& predicate, QueryStats* stats = nullptr) const
+        {
+            if (_nodes.empty()) return false;
+            std::array<std::uint32_t, 64> stack{};
+            std::size_t count = 1;
+            while (count != 0) {
+                const auto& node = _nodes[stack[--count]];
+                if (stats) ++stats->nodes;
+                // Widen rejection bounds for the float exact-contact predicate's
+                // rounding at edges. Extra candidates never change its result.
+                const float magnitude = (std::max)({ std::abs(node.min.x), std::abs(node.min.y), std::abs(node.min.z),
+                    std::abs(node.max.x), std::abs(node.max.y), std::abs(node.max.z),
+                    std::abs(minimum.x), std::abs(minimum.y), std::abs(minimum.z),
+                    std::abs(maximum.x), std::abs(maximum.y), std::abs(maximum.z) });
+                const float padding = 0.001f + magnitude * 0.00001f;
+                if (maximum.x + padding < node.min.x || minimum.x - padding > node.max.x ||
+                    maximum.y + padding < node.min.y || minimum.y - padding > node.max.y ||
+                    maximum.z + padding < node.min.z || minimum.z - padding > node.max.z) continue;
+                if (node.count != 0) {
+                    for (std::uint32_t i = node.begin; i < node.begin + node.count; ++i) {
+                        if (stats) ++stats->triangles;
+                        if (predicate(triangles[_indices[i]])) return true;
+                    }
+                } else {
+                    stack[count++] = node.right;
+                    stack[count++] = node.left;
+                }
+            }
+            return false;
+        }
+
     private:
         struct Node
         {
             RE::NiPoint3 min{}, max{};
             std::uint32_t begin = 0, count = 0, left = 0, right = 0;
+        };
+        struct TriangleBuildData
+        {
+            RE::NiPoint3 min{}, max{};
+            std::array<double, 3> center{};
         };
         std::vector<Node> _nodes;
         std::vector<std::uint32_t> _indices;
@@ -90,17 +141,15 @@ namespace rock
             return x * x + y * y + z * z;
         }
 
-        template <class Triangles>
-        std::uint32_t buildNode(const Triangles& triangles, std::uint32_t begin, std::uint32_t count)
+        std::uint32_t buildNode(const std::vector<TriangleBuildData>& prepared, std::uint32_t begin, std::uint32_t count)
         {
             Node node{};
-            node.min = node.max = triangles[_indices[begin]].v0;
-            for (std::uint32_t i = begin; i < begin + count; ++i) {
-                const auto& t = triangles[_indices[i]];
-                for (const auto& p : { t.v0, t.v1, t.v2 }) {
-                    node.min = { (std::min)(node.min.x, p.x), (std::min)(node.min.y, p.y), (std::min)(node.min.z, p.z) };
-                    node.max = { (std::max)(node.max.x, p.x), (std::max)(node.max.y, p.y), (std::max)(node.max.z, p.z) };
-                }
+            node.min = prepared[_indices[begin]].min;
+            node.max = prepared[_indices[begin]].max;
+            for (std::uint32_t i = begin + 1; i < begin + count; ++i) {
+                const auto& data = prepared[_indices[i]];
+                node.min = { (std::min)(node.min.x, data.min.x), (std::min)(node.min.y, data.min.y), (std::min)(node.min.z, data.min.z) };
+                node.max = { (std::max)(node.max.x, data.max.x), (std::max)(node.max.y, data.max.y), (std::max)(node.max.z, data.max.z) };
             }
             const auto index = static_cast<std::uint32_t>(_nodes.size());
             _nodes.push_back(node);
@@ -114,15 +163,11 @@ namespace rock
             const auto middle = begin + count / 2;
             std::nth_element(_indices.begin() + begin, _indices.begin() + middle, _indices.begin() + begin + count,
                 [&](std::uint32_t a, std::uint32_t b) {
-                    const auto center = [&](std::uint32_t i) {
-                        const auto& t = triangles[i];
-                        return (static_cast<double>(component(t.v0, axis)) + component(t.v1, axis) + component(t.v2, axis)) / 3.0;
-                    };
-                    const double ca = center(a), cb = center(b);
+                    const double ca = prepared[a].center[axis], cb = prepared[b].center[axis];
                     return ca == cb ? a < b : ca < cb;
                 });
-            const auto left = buildNode(triangles, begin, middle - begin);
-            const auto right = buildNode(triangles, middle, begin + count - middle);
+            const auto left = buildNode(prepared, begin, middle - begin);
+            const auto right = buildNode(prepared, middle, begin + count - middle);
             _nodes[index].left = left;
             _nodes[index].right = right;
             return index;

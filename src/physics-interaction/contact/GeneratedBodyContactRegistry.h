@@ -83,6 +83,8 @@ namespace rock::generated_body_contact_registry
             for (auto& slot : _slots) {
                 storeSlot(slot, Entry{});
             }
+            _lastPublishedCount = 0;
+            _orderedInputCount = 0;
             endPublication();
         }
 
@@ -98,28 +100,37 @@ namespace rock::generated_body_contact_registry
                 sorted[sortedCount++] = entries[i];
             }
 
-            std::sort(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(sortedCount), [](const Entry& lhs, const Entry& rhs) {
-                return lhs.bodyId < rhs.bodyId;
-            });
+            bool membershipChanged = sortedCount != _orderedInputCount;
+            for (std::size_t i = 0; i < sortedCount; ++i) {
+                membershipChanged = membershipChanged || _inputBodyIds[i] != sorted[i].bodyId;
+                _inputBodyIds[i] = sorted[i].bodyId;
+            }
+            if (membershipChanged) {
+                for (std::size_t i = 0; i < sortedCount; ++i) _order[i] = i;
+                std::sort(_order.begin(), _order.begin() + sortedCount,
+                    [&](std::size_t lhs, std::size_t rhs) { return sorted[lhs].bodyId < sorted[rhs].bodyId; });
+                _orderedInputCount = sortedCount;
+            }
 
             beginPublication();
             std::size_t publishedCount = 0;
             for (std::size_t i = 0; i < sortedCount;) {
                 std::size_t next = i + 1;
-                while (next < sortedCount && sorted[next].bodyId == sorted[i].bodyId) {
+                while (next < sortedCount && sorted[_order[next]].bodyId == sorted[_order[i]].bodyId) {
                     ++next;
                 }
 
                 if (next == i + 1 && publishedCount < Capacity) {
-                    storeSlot(_slots[publishedCount], sorted[i]);
+                    storeSlot(_slots[publishedCount], sorted[_order[i]]);
                     ++publishedCount;
                 }
                 i = next;
             }
 
-            for (std::size_t i = publishedCount; i < Capacity; ++i) {
+            for (std::size_t i = publishedCount; i < _lastPublishedCount; ++i) {
                 storeSlot(_slots[i], Entry{});
             }
+            _lastPublishedCount = publishedCount;
             _count.store(static_cast<std::uint32_t>(publishedCount), std::memory_order_release);
             endPublication();
         }
@@ -260,6 +271,12 @@ namespace rock::generated_body_contact_registry
             return classification;
         }
 
+        // Only the existing publication owner accesses ordering bookkeeping.
+        // Readers continue using atomic slots, count and the publication version.
+        std::array<std::size_t, Capacity> _order{};
+        std::array<std::uint32_t, Capacity> _inputBodyIds{};
+        std::size_t _orderedInputCount = 0;
+        std::size_t _lastPublishedCount = 0;
         std::array<AtomicSlot, Capacity> _slots{};
         std::atomic<std::uint32_t> _count{ 0 };
         std::atomic<std::uint64_t> _publicationVersion{ 0 };

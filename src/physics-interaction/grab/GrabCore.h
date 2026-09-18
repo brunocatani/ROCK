@@ -3,6 +3,7 @@
 
 #include "physics-interaction/VectorMath.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
+#include "physics-interaction/grab/HeldContactMeshCache.h"
 
 /*
  * Grab core policy is grouped here to keep object preparation, lifecycle, canonical frames, frame math, interaction decisions, and pull motion together.
@@ -765,6 +766,7 @@ namespace rock
         const char* motorFadeReason = "none";
         ImmutableGrabCaptureTelemetry captureTelemetry{};
         std::vector<GrabLocalTriangle> localMeshTriangles;
+        mutable HeldContactMeshCache contactMeshCache;
         std::vector<GrabLocalTriangle> fingerPoseLocalMeshTriangles;
         RE::NiAVObject* heldNode = nullptr;
         GrabGripEvidenceState gripEvidence{};
@@ -840,6 +842,7 @@ namespace rock
             motorFadeReason = "none";
             captureTelemetry.clear();
             localMeshTriangles.clear();
+            contactMeshCache.clear();
             fingerPoseLocalMeshTriangles.clear();
             heldNode = nullptr;
             gripEvidence = GrabGripEvidenceState{};

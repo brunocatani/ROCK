@@ -3,6 +3,7 @@
 
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/PhysicsSystemBodyScanCache.h"
 #include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
@@ -338,43 +339,40 @@ namespace rock::havok_runtime
         return *reinterpret_cast<RE::hknpWorld**>(reinterpret_cast<std::uintptr_t>(bhkWorld) + offsets::kBhkWorld_HknpWorldPtr);
     }
 
+    namespace
+    {
+        bool readSystemOwnership(RE::NiCollisionObject* collisionObject,
+            RE::bhkPhysicsSystem*& system, RE::hknpPhysicsSystemInstance*& instance)
+        {
+            system = nullptr;
+            instance = nullptr;
+            std::array<std::byte, offsets::kCollisionObject_PhysSystemPtr + sizeof(void*)> wrapper{};
+            if (!native_memory::guardedCopyFromMemory(collisionObject, wrapper.data(), wrapper.size())) return false;
+            std::memcpy(&system, wrapper.data() + offsets::kCollisionObject_PhysSystemPtr, sizeof(system));
+            // Copy bytes, never construct/copy an owning native C++ object.
+            std::array<std::byte, sizeof(RE::bhkPhysicsSystem)> bytes{};
+            if (!native_memory::guardedCopyFromMemory(system, bytes.data(), bytes.size())) {
+                system = nullptr;
+                return false;
+            }
+            std::memcpy(&instance, bytes.data() + offsetof(RE::bhkPhysicsSystem, instance), sizeof(instance));
+            return true;
+        }
+    }
+
     RE::bhkPhysicsSystem* getPhysicsSystemFromCollisionObject(RE::NiCollisionObject* collisionObject)
     {
-        /*
-         * NiCollisionObject -> bhkPhysicsSystem is a native ownership edge used
-         * by object scanning and held-body capture. Keeping the offset read here
-         * lets higher-level systems enumerate body ids without learning the
-         * collision-object wrapper layout.
-         */
-        if (!collisionObject) {
-            return nullptr;
-        }
-
-        if (!pointerRangeLooksReadable(collisionObject, offsets::kCollisionObject_PhysSystemPtr + sizeof(void*))) {
-            return nullptr;
-        }
-
-        void* field = nullptr;
-        if (!tryReadField(collisionObject, offsets::kCollisionObject_PhysSystemPtr, field)) {
-            return nullptr;
-        }
-        if (!pointerRangeLooksReadable(field, sizeof(RE::bhkPhysicsSystem))) {
-            return nullptr;
-        }
-
-        return reinterpret_cast<RE::bhkPhysicsSystem*>(field);
+        RE::bhkPhysicsSystem* system = nullptr;
+        RE::hknpPhysicsSystemInstance* instance = nullptr;
+        return readSystemOwnership(collisionObject, system, instance) ? system : nullptr;
     }
 
     void* getPhysicsSystemInstance(RE::bhkPhysicsSystem* physicsSystem)
     {
-        if (!pointerRangeLooksReadable(physicsSystem, sizeof(RE::bhkPhysicsSystem))) {
-            return nullptr;
-        }
-
+        std::array<std::byte, sizeof(RE::bhkPhysicsSystem)> bytes{};
+        if (!native_memory::guardedCopyFromMemory(physicsSystem, bytes.data(), bytes.size())) return nullptr;
         RE::hknpPhysicsSystemInstance* instance = nullptr;
-        if (!tryReadValue(&physicsSystem->instance, instance)) {
-            return nullptr;
-        }
+        std::memcpy(&instance, bytes.data() + offsetof(RE::bhkPhysicsSystem, instance), sizeof(instance));
         return pointerRangeLooksReadable(instance, sizeof(RE::hknpPhysicsSystemInstance)) ? instance : nullptr;
     }
 
@@ -386,22 +384,21 @@ namespace rock::havok_runtime
         outWorld = nullptr;
         outBodyId = RE::hknpBodyId{ body_frame::kInvalidBodyId };
 
-        auto* physicsSystem = getPhysicsSystemFromCollisionObject(collisionObject);
-        auto* instance = static_cast<RE::hknpPhysicsSystemInstance*>(
-            getPhysicsSystemInstance(physicsSystem));
-        if (!physicsSystem || !instance) {
+        RE::bhkPhysicsSystem* physicsSystem = nullptr;
+        RE::hknpPhysicsSystemInstance* instance = nullptr;
+        RE::hknpPhysicsSystemInstance header{};
+        if (!readSystemOwnership(collisionObject, physicsSystem, instance) ||
+            !native_memory::tryReadValue(instance, header)) {
             return false;
         }
 
         std::int32_t systemBodyIndex = -1;
-        std::int32_t bodyCount = 0;
-        RE::hknpWorld* world = nullptr;
+        const auto bodyCount = header.bodyCount;
+        auto* world = header.world;
         if (!tryReadField(
                 collisionObject,
                 offsets::kCollisionObject_SystemBodyIndex,
                 systemBodyIndex) ||
-            !tryReadValue(&instance->bodyCount, bodyCount) ||
-            !tryReadValue(&instance->world, world) ||
             !world || systemBodyIndex < 0 || systemBodyIndex >= bodyCount) {
             return false;
         }
@@ -459,7 +456,8 @@ namespace rock::havok_runtime
         RE::hknpWorld* expectedWorld,
         std::uint32_t maxBodies,
         bool (*visitor)(std::uint32_t bodyId, void* userData),
-        void* userData)
+        void* userData,
+        PhysicsSystemBodyScanCache* transactionCache)
     {
         PhysicsSystemBodyScanResult result{};
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::PhysicsSystemBodyScan);
@@ -468,27 +466,20 @@ namespace rock::havok_runtime
             return result;
         }
 
-        auto* physicsSystem = getPhysicsSystemFromCollisionObject(collisionObject);
-        if (!physicsSystem) {
+        RE::bhkPhysicsSystem* physicsSystem = nullptr;
+        RE::hknpPhysicsSystemInstance* instance = nullptr;
+        if (!readSystemOwnership(collisionObject, physicsSystem, instance)) {
             result.status = PhysicsSystemBodyScanStatus::MissingPhysicsSystem;
             return result;
         }
-
-        auto* instance = static_cast<RE::hknpPhysicsSystemInstance*>(getPhysicsSystemInstance(physicsSystem));
-        if (!instance) {
+        RE::hknpPhysicsSystemInstance header{};
+        if (!native_memory::tryReadValue(instance, header)) {
             result.status = PhysicsSystemBodyScanStatus::MissingInstance;
             return result;
         }
-
-        RE::hknpWorld* instanceWorld = nullptr;
-        std::uint32_t* bodyIds = nullptr;
-        std::int32_t bodyCount = 0;
-        if (!tryReadValue(&instance->world, instanceWorld) ||
-            !tryReadValue(&instance->bodyIds, bodyIds) ||
-            !tryReadValue(&instance->bodyCount, bodyCount)) {
-            result.status = PhysicsSystemBodyScanStatus::MissingInstance;
-            return result;
-        }
+        auto* instanceWorld = header.world;
+        auto* bodyIds = header.bodyIds;
+        const auto bodyCount = header.bodyCount;
 
         if (expectedWorld && instanceWorld != expectedWorld) {
             result.status = PhysicsSystemBodyScanStatus::WorldMismatch;
@@ -518,14 +509,19 @@ namespace rock::havok_runtime
         // complete bounded list under one guarded range check before visiting;
         // no native array pointer or validation result survives the scan.
         std::array<std::uint32_t, kMaxReasonablePhysicsSystemBodies> copiedBodyIds;
-        if (!native_memory::guardedCopyFromMemory(bodyIds, copiedBodyIds.data(),
-                sizeof(std::uint32_t) * static_cast<std::size_t>(count))) {
-            result.status = PhysicsSystemBodyScanStatus::UnreadableBodyIds;
-            return result;
+        const PhysicsSystemBodyScanCache::Key cacheKey{ physicsSystem, instance, instanceWorld, bodyIds, bodyCount };
+        auto ids = transactionCache ? transactionCache->find(cacheKey, count) : std::span<const std::uint32_t>{};
+        if (ids.empty()) {
+            if (!native_memory::guardedCopyFromMemory(bodyIds, copiedBodyIds.data(), sizeof(std::uint32_t) * count)) {
+                result.status = PhysicsSystemBodyScanStatus::UnreadableBodyIds;
+                return result;
+            }
+            ids = { copiedBodyIds.data(), static_cast<std::size_t>(count) };
+            if (transactionCache) transactionCache->remember(cacheKey, ids);
         }
 
         for (std::int32_t i = 0; i < count; ++i) {
-            const std::uint32_t bodyId = copiedBodyIds[static_cast<std::size_t>(i)];
+            const std::uint32_t bodyId = ids[static_cast<std::size_t>(i)];
             if (bodyId == body_frame::kInvalidBodyId || bodyId > 0x000F'FFFF) {
                 ++result.skippedInvalidBodies;
                 continue;
@@ -687,24 +683,23 @@ namespace rock::havok_runtime
         return true;
     }
 
-    ResolvedBodyWorldTransform resolveLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+    ResolvedBodyWorldTransform resolveLiveBodyWorldTransform(RE::hknpWorld* world, const RE::hknpBody& body)
     {
         ResolvedBodyWorldTransform result{};
-        result.transform = transform_math::makeIdentityTransform<RE::NiTransform>();
-
-        auto* body = getBody(world, bodyId);
-        if (!body) {
-            return result;
-        }
-
-        result.motionIndex = body->motionIndex;
-        const RE::NiTransform bodyTransform = bodyArrayWorldTransform(*body);
-
+        result.motionIndex = body.motionIndex;
         RE::NiTransform motionTransform{};
-        const bool hasMotionTransform = tryGetMotionWorldTransform(world, *body, motionTransform);
+        const bool hasMotionTransform = tryGetMotionWorldTransform(world, body, motionTransform);
         result.source = body_frame::chooseLiveBodyFrameSource(true, hasMotionTransform);
-        result.transform = result.source == body_frame::BodyFrameSource::MotionCenterOfMass ? motionTransform : bodyTransform;
+        result.transform = result.source == body_frame::BodyFrameSource::MotionCenterOfMass ? motionTransform : bodyArrayWorldTransform(body);
         result.valid = result.source != body_frame::BodyFrameSource::Fallback;
+        return result;
+    }
+
+    ResolvedBodyWorldTransform resolveLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+    {
+        if (const auto* body = getBody(world, bodyId)) return resolveLiveBodyWorldTransform(world, *body);
+        ResolvedBodyWorldTransform result{};
+        result.transform = transform_math::makeIdentityTransform<RE::NiTransform>();
         return result;
     }
 

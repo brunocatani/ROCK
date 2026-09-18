@@ -685,52 +685,29 @@ namespace rock
         }
     }
 
-    bool DynamicHandCollisionRuntime::tryClassifySurfaceContactSourceAtomic(
-        const std::uint32_t bodyId,
-        const std::uint32_t shapeKey,
-        dynamic_hand_surface_contact_state::ContactSource& outSource) const noexcept
+    bool DynamicHandCollisionRuntime::classifySurfaceContactSource(
+        const DynamicBodyContactSource& bodySource,
+        dynamic_hand_surface_contact_state::ContactSource& outSource) noexcept
     {
         outSource = {};
-        if (bodyId == hand_semantic_contact_state::kInvalidBodyId) {
-            return false;
-        }
-
-        for (std::size_t hand = 0; hand < _hands.size(); ++hand) {
-            const auto& handState = _hands[hand];
-            if (handState.bodies[0].bodyIdAtomic.load(
-                    std::memory_order_acquire) != bodyId) {
-                continue;
-            }
-            const auto childIndex =
-                handState.compoundShape.tryResolveChildIndex(shapeKey);
-            if (!childIndex || *childIndex >= kBodiesPerHand ||
-                !dynamic_hand_collision_telemetry::
-                    isSurfaceGrabSourceSlot(*childIndex)) {
-                return false;
-            }
-            const std::size_t slot = *childIndex;
-            const bool palm = slot == kPalmSlot;
-            const std::size_t fingerIndex =
-                dynamic_hand_collision_telemetry::
-                    fingerIndexForBodyIndex(slot);
-            const auto finger = palm ?
-                hand_collider_semantics::HandFinger::None :
-                static_cast<hand_collider_semantics::HandFinger>(fingerIndex);
-            const auto segment = palm ?
-                hand_collider_semantics::HandFingerSegment::None :
-                hand_collider_semantics::HandFingerSegment::Tip;
-            outSource.valid = true;
-            outSource.isLeft = hand == 1;
-            outSource.slot = palm ? 0u : fingerIndex + 1u;
-            outSource.role = palm ?
-                hand_collider_semantics::HandColliderRole::PalmAnchor :
-                hand_collider_semantics::roleForFingerSegment(finger, segment);
-            outSource.finger = finger;
-            outSource.segment = segment;
-            outSource.bodyId = bodyId;
-            return true;
-        }
-        return false;
+        if (!bodySource.valid || bodySource.slot >= kBodiesPerHand ||
+            !dynamic_hand_collision_telemetry::isSurfaceGrabSourceSlot(bodySource.slot)) return false;
+        const std::size_t slot = bodySource.slot;
+        const bool palm = slot == kPalmSlot;
+        const std::size_t fingerIndex = dynamic_hand_collision_telemetry::fingerIndexForBodyIndex(slot);
+        const auto finger = palm ? hand_collider_semantics::HandFinger::None :
+            static_cast<hand_collider_semantics::HandFinger>(fingerIndex);
+        const auto segment = palm ? hand_collider_semantics::HandFingerSegment::None :
+            hand_collider_semantics::HandFingerSegment::Tip;
+        outSource.valid = true;
+        outSource.isLeft = bodySource.isLeft;
+        outSource.slot = palm ? 0u : fingerIndex + 1u;
+        outSource.role = palm ? hand_collider_semantics::HandColliderRole::PalmAnchor :
+            hand_collider_semantics::roleForFingerSegment(finger, segment);
+        outSource.finger = finger;
+        outSource.segment = segment;
+        outSource.bodyId = bodySource.bodyId;
+        return true;
     }
 
     void DynamicHandCollisionRuntime::recordSurfaceContactCallback(
@@ -2160,10 +2137,6 @@ namespace rock
              */
             if (handSlots.surfaceLatch.active) {
                 auto& latch = handSlots.surfaceLatch;
-                const auto targetSnapshot = havok_runtime::snapshotBody(
-                    frame.hknpWorld,
-                    RE::hknpBodyId{ latch.targetBodyId });
-                RE::NiTransform targetWorld{};
                 bool animatedTargetValid = true;
                 RE::NiTransform animatedWorld{};
                 if (latch.animatedReferenceFormId != 0) {
@@ -2175,14 +2148,19 @@ namespace rock
                         reference_interaction::pointTransform(ref, latch.animatedPoint, animatedWorld);
                     if (!animatedTargetValid) endSurfaceLatch(isLeft);
                 }
-                if (targetSnapshot.valid &&
-                    animatedTargetValid && latch.active &&
+                // Resolve after reference/animation helpers: no borrowed native body
+                // spans those calls, and identity gates all motion readback.
+                const auto targetSnapshot = animatedTargetValid && latch.active ?
+                    havok_runtime::snapshotBodyIdentity(frame.hknpWorld, RE::hknpBodyId{ latch.targetBodyId }) :
+                    havok_runtime::BodyIdentitySnapshot{};
+                const bool targetMatches = targetSnapshot.valid &&
                     targetSnapshot.body == latch.targetBodyIdentity &&
-                    targetSnapshot.collisionObject == latch.targetCollisionIdentity &&
-                    havok_runtime::tryResolveLiveBodyWorldTransform(
-                        frame.hknpWorld,
-                        RE::hknpBodyId{ latch.targetBodyId },
-                        targetWorld) &&
+                    targetSnapshot.collisionObject == latch.targetCollisionIdentity;
+                const auto liveTarget = targetMatches ?
+                    havok_runtime::resolveLiveBodyWorldTransform(frame.hknpWorld, *targetSnapshot.body) :
+                    havok_runtime::ResolvedBodyWorldTransform{};
+                RE::NiTransform targetWorld = liveTarget.transform;
+                if (targetMatches && liveTarget.valid &&
                     isFiniteTransform(targetWorld)) {
                     if (latch.animatedReferenceFormId != 0) targetWorld = animatedWorld;
                     latch.lastHandWorld = transform_math::composeTransforms(

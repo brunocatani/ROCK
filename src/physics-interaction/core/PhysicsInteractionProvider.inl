@@ -521,13 +521,13 @@
 
     std::uint32_t PhysicsInteraction::getProviderWeaponEvidenceDetailPointCountV1(std::uint32_t bodyId) const
     {
-        WeaponCollisionProfileEvidenceDescriptor descriptor{};
-        RE::NiAVObject* sourceNode = nullptr;
-        if (!_weaponCollision.tryGetProfileEvidenceDescriptorForBodyId(bodyId, descriptor, sourceNode)) {
+        const auto evidence = _weaponCollision.getProfileEvidenceDescriptors();
+        const auto* descriptor = evidence.find(bodyId);
+        if (!descriptor) {
             return 0;
         }
 
-        return descriptor.pointCount;
+        return descriptor->pointCount;
     }
 
     std::uint32_t PhysicsInteraction::copyProviderWeaponEvidenceDetailPointsV1(
@@ -539,15 +539,15 @@
             return 0;
         }
 
-        WeaponCollisionProfileEvidenceDescriptor descriptor{};
-        RE::NiAVObject* sourceNode = nullptr;
-        if (!_weaponCollision.tryGetProfileEvidenceDescriptorForBodyId(bodyId, descriptor, sourceNode)) {
+        const auto evidence = _weaponCollision.getProfileEvidenceDescriptors();
+        const auto* descriptor = evidence.find(bodyId);
+        if (!descriptor) {
             return 0;
         }
 
-        const std::uint32_t copied = (std::min)(maxPoints, static_cast<std::uint32_t>(descriptor.localMeshPointsGame.size()));
+        const std::uint32_t copied = (std::min)(maxPoints, static_cast<std::uint32_t>(descriptor->localMeshPointsGame.size()));
         for (std::uint32_t i = 0; i < copied; ++i) {
-            outPoints[i] = makeProviderPoint(descriptor.localMeshPointsGame[i]);
+            outPoints[i] = makeProviderPoint(descriptor->localMeshPointsGame[i]);
         }
 
         return copied;
@@ -1352,28 +1352,17 @@
             static_cast<std::uint32_t>(Flag::HandWorldValid);
         fillProviderTransform(handWorld, outPose.handWorld);
 
-        DirectSkeletonBoneSnapshot skeleton{};
+        auto& skeleton = _providerDrives.presentedPoseSnapshot;
         if (_providerDrives.presentedPoseReader.capture(
                 skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                 skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
                 SkeletonBoneCaptureSpace::Rendered,
                 skeleton)) {
-            const auto findBone = [&skeleton](const char* name) ->
-                const DirectSkeletonBoneEntry* {
-                if (!name) {
-                    return nullptr;
-                }
-                for (const auto& bone : skeleton.bones) {
-                    if (bone.name == name) {
-                        return &bone;
-                    }
-                }
-                return nullptr;
-            };
+            const auto bones = _providerDrives.presentedPoseNames.bind(skeleton);
             for (std::size_t finger = 0; finger < 5; ++finger) {
                 for (std::size_t segment = 0; segment < 3; ++segment) {
                     const auto poseIndex = finger * 3 + segment;
-                    const auto* bone = findBone(
+                    const auto* bone = bones.find(
                         root_flattened_finger_skeleton_runtime::fingerBoneName(
                             isLeft,
                             finger,
@@ -1554,7 +1543,7 @@
                  ++i) {
                 const auto bodyId = hand.getHandColliderBodyIdAtomic(i);
                 HandColliderBodyMetadata metadata{};
-                if (!hand.tryGetHandColliderMetadata(bodyId, metadata)) {
+                if (!hand.tryGetHandColliderMetadataAtIndex(i, bodyId, metadata)) {
                     continue;
                 }
                 auto& out = outDescriptors[copied++];
@@ -1594,8 +1583,8 @@
              ++i) {
             const auto bodyId = _bodyBoneColliders.getBodyIdAtomic(i);
             BodyBoneColliderMetadata metadata{};
-            if (!_bodyBoneColliders.tryGetBodyMetadataAtomic(
-                    bodyId,
+            if (!_bodyBoneColliders.tryGetBodyMetadataAtIndexAtomic(
+                    i, bodyId,
                     metadata)) {
                 continue;
             }

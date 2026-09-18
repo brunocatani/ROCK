@@ -318,7 +318,8 @@ namespace rock
         bool isFarSelection,
         RE::NiAVObject* hitNode,
         const RE::NiPoint3& hitPointWorld,
-        bool hasHitPoint)
+        bool hasHitPoint,
+        std::optional<RE::TESBoundObject*> knownBaseForm)
     {
         if (!ref) {
             return { .kind = grab_target::Kind::None, .reason = "null-ref", .grabbable = false };
@@ -336,7 +337,7 @@ namespace rock
             return { .kind = grab_target::Kind::None, .reason = "reserved-by-other-hand", .grabbable = false };
         }
 
-        auto* baseForm = ref->GetObjectReference();
+        auto* baseForm = knownBaseForm ? *knownBaseForm : ref->GetObjectReference();
         if (!baseForm) {
             return { .kind = grab_target::Kind::None, .reason = "missing-base-form", .grabbable = false };
         }
@@ -539,7 +540,14 @@ namespace rock
             // there is no hit cap or change to hit order/precision ranking.
             std::array<std::byte, 4096> queryStorage;
             std::pmr::monotonic_buffer_resource queryMemory(queryStorage.data(), queryStorage.size());
-            std::pmr::unordered_map<std::uint32_t, RE::TESObjectREFR*> refByBodyId{ &queryMemory };
+            struct QueryBodyMetadata
+            {
+                RE::TESObjectREFR* ref = nullptr;
+                RE::NiAVObject* hitNode = nullptr;
+                RE::TESBoundObject* baseForm = nullptr;
+                bool metadataRead = false;
+            };
+            std::pmr::unordered_map<std::uint32_t, QueryBodyMetadata> refByBodyId{ &queryMemory };
 
             auto* hits = collector.hits._data;
             const int numHits = collector.hits._size;
@@ -555,18 +563,27 @@ namespace rock
                     continue;
                 }
 
-                const auto [cachedRef, inserted] = refByBodyId.try_emplace(hitBodyId.value, nullptr);
+                const auto [cachedRef, inserted] = refByBodyId.try_emplace(hitBodyId.value);
                 if (inserted) {
-                    cachedRef->second = resolveBodyToRef(bhkWorld, hknpWorld, hitBodyId);
+                    cachedRef->second.ref = resolveBodyToRef(bhkWorld, hknpWorld, hitBodyId);
                 } else {
                     ++outDuplicateBodies;
                 }
-                auto* ref = cachedRef->second;
+                auto& metadata = cachedRef->second;
+                auto* ref = metadata.ref;
+                const auto readMetadata = [&]() {
+                    if (!metadata.metadataRead) {
+                        auto* collision = RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId);
+                        metadata.hitNode = collision ? collision->sceneObject : nullptr;
+                        metadata.baseForm = ref ? ref->GetObjectReference() : nullptr;
+                        metadata.metadataRead = true;
+                    }
+                };
                 if (!ref) {
                     ++outRejectedNoRef;
                     if (logRejectTelemetry) {
-                        auto* collObj = RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId);
-                        auto* hitNode = collObj ? collObj->sceneObject : nullptr;
+                        readMetadata();
+                        auto* hitNode = metadata.hitNode;
                         logSelectionRejectTelemetry(queryName, "no-ref", i, nullptr, hitNode, hknpWorld, hitBodyId, nullptr, "no-ref", isFarSelection, 0.0f, 0.0f, -1.0f,
                             loggedRejectTelemetry);
                     }
@@ -576,8 +593,8 @@ namespace rock
                 if (isFarSelection && otherHandContext.allowsSharedHeldReference(ref)) {
                     ++outRejectedNotGrabbable;
                     if (logRejectTelemetry) {
-                        auto* collObj = RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId);
-                        auto* hitNode = collObj ? collObj->sceneObject : nullptr;
+                        readMetadata();
+                        auto* hitNode = metadata.hitNode;
                         logSelectionRejectTelemetry(queryName, "shared-held-far", i, ref, hitNode, hknpWorld, hitBodyId, nullptr, "shared-held-far", isFarSelection, 0.0f, 0.0f, -1.0f,
                             loggedRejectTelemetry);
                     }
@@ -585,10 +602,10 @@ namespace rock
                 }
 
                 const RE::NiPoint3 hitPoint = hkVectorToNiPoint(hit.position);
-                auto* collObj = RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId);
-                auto* hitNode = collObj ? collObj->sceneObject : nullptr;
-                auto* baseForm = ref->GetObjectReference();
-                const auto classification = classifySelectionGrabTarget(ref, hknpWorld, hitBodyId, otherHandContext, isFarSelection, hitNode, hitPoint, true);
+                readMetadata();
+                auto* hitNode = metadata.hitNode;
+                auto* baseForm = metadata.baseForm;
+                const auto classification = classifySelectionGrabTarget(ref, hknpWorld, hitBodyId, otherHandContext, isFarSelection, hitNode, hitPoint, true, baseForm);
                 if (!classification.grabbable) {
                     ++outRejectedNotGrabbable;
                     if (logRejectTelemetry) {

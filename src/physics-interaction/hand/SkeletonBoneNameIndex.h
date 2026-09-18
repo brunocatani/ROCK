@@ -36,7 +36,7 @@ namespace rock
                 return { snapshot, _indices };
             }
             if (!snapshot.topologyOwner || _owner != snapshot.topologyOwner ||
-                _revision != snapshot.topologyRevision || _indices.size() != snapshot.bones.size()) {
+                _revision != snapshot.topologyRevision || _payload != snapshot.payload || _indices.size() != snapshot.bones.size()) {
                 _indices.resize(snapshot.bones.size());
                 std::iota(_indices.begin(), _indices.end(), std::size_t{ 0 });
                 std::sort(_indices.begin(), _indices.end(), [&](std::size_t a, std::size_t b) {
@@ -47,6 +47,7 @@ namespace rock
                 });
                 _owner = snapshot.topologyOwner;
                 _revision = snapshot.topologyRevision;
+                _payload = snapshot.payload;
             }
             return { snapshot, _indices };
         }
@@ -54,6 +55,7 @@ namespace rock
     private:
         const void* _owner = nullptr; // Identity only; never dereferenced.
         std::uint64_t _revision = 0;
+        SkeletonBoneCapturePayload _payload = SkeletonBoneCapturePayload::FlattenedTransforms;
         std::vector<std::size_t> _indices;
     };
 }

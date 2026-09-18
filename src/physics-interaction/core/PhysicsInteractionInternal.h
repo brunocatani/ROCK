@@ -1157,12 +1157,12 @@ namespace rock
             query.socketRole = static_cast<std::uint32_t>(contact.socketRole);
             query.actionRole = static_cast<std::uint32_t>(contact.actionRole);
             query.sourceRoot = reinterpret_cast<std::uintptr_t>(contact.sourceRoot);
-            WeaponCollisionProfileEvidenceDescriptor descriptor{};
-            RE::NiAVObject* sourceNode = nullptr;
-            if (weaponCollision.tryGetProfileEvidenceDescriptorForBodyId(contact.bodyId, descriptor, sourceNode) &&
-                descriptor.weaponGenerationKey == contact.weaponGenerationKey) {
-                query.sourceRoot = descriptor.sourceRootAddress;
-                copyProviderString(query.sourceName, sizeof(query.sourceName), descriptor.sourceName);
+            const auto evidence = weaponCollision.getProfileEvidenceDescriptors();
+            const auto* descriptor = evidence.find(contact.bodyId);
+            if (descriptor &&
+                descriptor->weaponGenerationKey == contact.weaponGenerationKey) {
+                query.sourceRoot = descriptor->sourceRootAddress;
+                copyProviderString(query.sourceName, sizeof(query.sourceName), descriptor->sourceName);
             }
             return query;
         }

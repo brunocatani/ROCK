@@ -32,10 +32,11 @@ namespace rock::immersive_aid
         mouth_consume::Decision decision{};
         std::span<const GrabLocalTriangle> triangles;
         RE::NiTransform meshWorld{};
+        const HeldContactMeshCache* meshCache = nullptr;
         // Full mesh coverage, bounded work; never subsample away the needle.
-        constexpr std::size_t kMaxContactTriangles = 16384;
+        constexpr std::size_t kMaxContactTriangles = HeldContactMeshCache::maximumTriangles;
         if (!world || !bodyColliders.hasBodies() || bodyColliders.isRebuildPendingAtomic() ||
-            !hand.getHeldBodyContactMesh(world, triangles, meshWorld) || triangles.size() > kMaxContactTriangles ||
+            !hand.getHeldBodyContactMesh(world, triangles, meshWorld, meshCache) || triangles.size() > kMaxContactTriangles ||
             !timing.valid || timing.discontinuity || timing.menuPaused) {
             if (triangles.size() > kMaxContactTriangles) {
                 ROCK_LOG_SAMPLE_WARN(Hand, 5000, "Immersive aid contact unavailable: mesh has {} triangles (limit {})",
@@ -45,22 +46,12 @@ namespace rock::immersive_aid
             return decision;
         }
 
-        RE::NiPoint3 minimum{ std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
-        RE::NiPoint3 maximum{ -minimum.x, -minimum.y, -minimum.z };
-        for (const auto& triangle : triangles) {
-            for (const auto& vertex : { triangle.v0, triangle.v1, triangle.v2 }) {
-                if (!mouth_consume::finitePoint(vertex)) {
-                    mouth_consume::resetRuntime(state);
-                    return decision;
-                }
-                minimum.x = (std::min)(minimum.x, vertex.x);
-                minimum.y = (std::min)(minimum.y, vertex.y);
-                minimum.z = (std::min)(minimum.z, vertex.z);
-                maximum.x = (std::max)(maximum.x, vertex.x);
-                maximum.y = (std::max)(maximum.y, vertex.y);
-                maximum.z = (std::max)(maximum.z, vertex.z);
-            }
+        if (!meshCache || !meshCache->valid) {
+            mouth_consume::resetRuntime(state);
+            return decision;
         }
+        const auto& minimum = meshCache->minimum;
+        const auto& maximum = meshCache->maximum;
 
         auto zone = body_zone::BodyZoneKind::Unknown;
         const auto count = (std::min)(bodyColliders.getBodyCount(), static_cast<std::uint32_t>(kBodyBoneColliderBodyCount));
@@ -83,7 +74,7 @@ namespace rock::immersive_aid
             const auto b = transform_math::worldPointToLocal(meshWorld,
                 transform_math::localPointToWorld(bodyWorld, RE::NiPoint3{ halfLength, 0.0f, 0.0f }));
             const float radius = metadata.radiusGameUnits * std::abs(bodyWorld.scale / meshWorld.scale);
-            if (capsuleTouchesMesh(triangles, minimum, maximum, a, b, radius)) {
+            if (capsuleTouchesMesh(triangles, minimum, maximum, a, b, radius, meshCache->indexed ? &meshCache->index : nullptr)) {
                 zone = metadata.zone;
                 decision.mouthCenterGame = bodyWorld.translate;
                 break;
