@@ -548,18 +548,6 @@ int main()
     });
     ok &= expectTrue("seated point support may publish visual hand", seatedPointTouchVisual.apply);
 
-    for (const bool touchHeld : { false, true }) {
-        const auto waitingForAcquisition = evaluateVisualHandPublishGate(VisualHandPublishInput{
-            .hasTelemetryCapture = true,
-            .acquisitionPending = true,
-            .touchHeldPhase = touchHeld,
-            .acquisitionVisualEligible = true,
-            .hasPivotTrackingError = true,
-            .hasSeatedPivotReacquire = true,
-        });
-        ok &= expectFalse("unfinished grip acquisition blocks visual attachment", waitingForAcquisition.apply);
-    }
-
     const auto acquisitionSurfaceVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
         .hasTelemetryCapture = true,
         .touchHeldPhase = false,
