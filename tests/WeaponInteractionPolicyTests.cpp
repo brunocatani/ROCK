@@ -2,6 +2,7 @@
 #include "physics-interaction/collision/ContactPipelinePolicy.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/hand/HandLifecycle.h"
+#include "physics-interaction/hand/HandInteractionStateMachine.h"
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
@@ -1674,6 +1675,48 @@ static bool testAccessoryClassification()
     return ok;
 }
 
+bool testSelectionCleanupKeepsHeldOwnership()
+{
+    using rock::HandInteractionEvent;
+    using rock::HandState;
+    using rock::HandTransitionEffect;
+    bool ok = true;
+    for (const auto state : { HandState::HeldInit, HandState::HeldBody,
+             HandState::StashCandidate, HandState::ConsumeCandidate }) {
+        const auto clear = rock::evaluateHandTransition({ .current = state, .event = HandInteractionEvent::ClearSelection });
+        ok &= expectFalse("selection cleanup cannot cancel a physical hold", clear.accepted);
+        ok &= expectEqual("held state survives selection cleanup", clear.next, state);
+        ok &= expectEqual("rejected cleanup has no side effects", clear.effects, 0u);
+
+        // Regression: the paired equip path used to invalidate the support
+        // state, making releaseGrabbedObject return without releasing its pose
+        // or constraint. A selection clear must leave normal release possible.
+        ok &= expectTrue("physical hold remains eligible for release", rock::isHoldingState(clear.next));
+        const auto release = rock::evaluateHandTransition({ .current = clear.next, .event = HandInteractionEvent::ReleaseRequested });
+        ok &= expectTrue("held release remains accepted", release.accepted);
+        ok &= expectEqual("held release finishes idle", release.next, HandState::Idle);
+        const auto required = rock::transitionEffectMask(HandTransitionEffect::ReleaseHeld,
+            HandTransitionEffect::ClearHeldRuntime, HandTransitionEffect::ClearFingerPose);
+        ok &= expectEqual("held release retains native and pose cleanup", release.effects & required, required);
+    }
+    for (const auto state : { HandState::GrabFromOtherHand, HandState::SelectedTwoHand, HandState::HeldTwoHanded }) {
+        const auto clear = rock::evaluateHandTransition({ .current = state, .event = HandInteractionEvent::ClearSelection });
+        ok &= expectFalse("selection cleanup cannot discard another hand owner", clear.accepted);
+        ok &= expectEqual("other hand ownership survives selection cleanup", clear.next, state);
+        ok &= expectEqual("other hand cleanup has no side effects", clear.effects, 0u);
+    }
+    for (const auto state : { HandState::Idle, HandState::SelectedClose, HandState::SelectedFar,
+             HandState::SelectionLocked, HandState::PreGrabItem, HandState::PrePullItem,
+             HandState::Pulled, HandState::GrabExternal, HandState::LootOtherHand }) {
+        const auto clear = rock::evaluateHandTransition({ .current = state, .event = HandInteractionEvent::ClearSelection });
+        ok &= expectTrue("selection and pending acquisition remain cancellable", clear.accepted);
+        ok &= expectEqual("selection cleanup finishes idle", clear.next, HandState::Idle);
+        ok &= expectEqual("selection cleanup never claims to release a hold",
+            clear.effects & rock::transitionEffectMask(HandTransitionEffect::ReleaseHeld), 0u);
+    }
+    return ok;
+}
+
 int main()
 {
     using WeaponGrabMode = rock::equipped_weapon_toggle_grab_policy::Mode;
@@ -1757,6 +1800,8 @@ int main()
     }
 
     bool ok = true;
+
+    ok &= testSelectionCleanupKeepsHeldOwnership();
 
     ok &= testRecoilProfiles();
 

@@ -85,6 +85,16 @@ namespace rock
             }
             break;
 
+        case HandInteractionEvent::ClearSelection:
+            // Selection cleanup cannot release native grab ownership. Keep a
+            // held hand eligible for releaseGrabbedObject until that cleanup runs.
+            if (current == HandState::Idle || (isReleaseCandidateState(current) && !isHoldingState(current))) {
+                return accept(HandState::Idle,
+                    transitionEffectMask(HandTransitionEffect::ClearSelection, HandTransitionEffect::RestorePulledCollision),
+                    "clearSelection");
+            }
+            break;
+
         case HandInteractionEvent::LockFarSelection:
             if (current == HandState::SelectedFar) {
                 return accept(HandState::SelectionLocked, transitionEffectMask(HandTransitionEffect::LockSelection), "lockFarSelection");

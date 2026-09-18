@@ -142,6 +142,8 @@ namespace rock
                 return "SelectionFoundFar";
             case HandInteractionEvent::SelectionLost:
                 return "SelectionLost";
+            case HandInteractionEvent::ClearSelection:
+                return "ClearSelection";
             case HandInteractionEvent::LockFarSelection:
                 return "LockFarSelection";
             case HandInteractionEvent::BeginPreGrabItem:
@@ -2213,6 +2215,9 @@ namespace rock
 
     void Hand::clearSelectionState(bool rememberDeselect)
     {
+        if (!applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::ClearSelection }).accepted) {
+            return;
+        }
         stopSelectionHighlight();
         clearSelectedCloseFingerPose();
         if (rememberDeselect) {
@@ -2228,11 +2233,6 @@ namespace rock
         _lastSelectedCloseOrigin = {};
         _hasLastSelectedCloseOrigin = false;
         _selectedCloseHandSpeedMetersPerSecond = 0.0f;
-        const auto event =
-            (_state == HandState::SelectedClose || _state == HandState::SelectedFar) ? HandInteractionEvent::SelectionLost :
-            (_state == HandState::Idle) ? HandInteractionEvent::Initialize :
-                                          HandInteractionEvent::ObjectInvalidated;
-        applyTransition(HandTransitionRequest{ .event = event });
         _selectionHoldSeconds = 0.0f;
     }
 

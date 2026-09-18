@@ -1603,10 +1603,6 @@ namespace rock
                         previousEquippedWeaponFormID).exactInstance :
                     nullptr;
                 equipHand.stopSelectionHighlight();
-                Hand& peerHandForVisualState = equipIsLeft ? _rightHand : _leftHand;
-                if (heldRef && peerHandForVisualState.hasSelection() && peerHandForVisualState.getSelection().refr == heldRef) {
-                    peerHandForVisualState.clearSelectionState(false);
-                }
                 std::uint32_t heldFormID = heldRef ? heldRef->GetFormID() : 0u;
                 const std::uint32_t primaryBodyId = equipHand.getSavedObjectState().bodyId.value;
                 const auto supportBodyId = peerHoldingSameObject ? supportHand.getSavedObjectState().bodyId.value : 0;
@@ -1615,10 +1611,20 @@ namespace rock
                     supportRelease.disposition = GrabReleaseDisposition::PendingInventoryTransfer;
                     supportRelease.reason = "paired-held-weapon-equip";
                     supportHand.stopSelectionHighlight();
-                    (void)supportHand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, supportRelease);
+                    const auto supportOutcome = supportHand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, supportRelease);
+                    if (!supportOutcome.released) {
+                        ROCK_LOG_ERROR(Hand, "Paired held equip blocked: support hand did not release ref={:08X} hand={} state={}",
+                            heldFormID, supportHand.handName(), static_cast<unsigned>(supportHand.getState()));
+                        return true;
+                    }
                     releaseObject(heldRef, claimOwnerForHand(!equipIsLeft));
                     input_remap_runtime::setHandHeldWeapon(!equipIsLeft, false);
                     clearGameplayCandidatesForHand(supportHand, !equipIsLeft);
+                }
+                // A shared hold must release its constraint and pose before
+                // selection cleanup or native inventory transfer can retire it.
+                if (heldRef && supportHand.hasSelection() && supportHand.getSelection().refr == heldRef) {
+                    supportHand.clearSelectionState(false);
                 }
                 auto releaseContext = makeGrabReleaseContext(equipHand, equipIsLeft);
                 releaseContext.disposition = GrabReleaseDisposition::PendingInventoryTransfer;
