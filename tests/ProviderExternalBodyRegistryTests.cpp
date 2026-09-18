@@ -336,11 +336,37 @@ namespace
     }
 }
 
+void testCursorSurvivesProviderLoss()
+{
+    using namespace rock;
+    using namespace rock::provider;
+    constexpr std::uint64_t owner = 0xA040;
+    constexpr std::uint64_t scope = 0xB040;
+    auto registry = std::make_unique<ExternalBodyRegistry>();
+    auto registration = body(scope, 400);
+    assert(registry->registerBodiesForScope(owner, scope, &registration, 1));
+    assert(registry->recordContactV1(contact(30, 400, 100)));
+    RockProviderExternalContactRecordV1 row{};
+    RockProviderExternalContactStreamStateV1 state{};
+    assert(registry->copyContactsSinceV1(owner, scope, 0, &row, 1, state) == 1);
+    const auto cursor = state.lastCopiedSequence;
+    registry->clearAll();
+    assert(registry->copyContactsSinceV1(owner, scope, cursor, &row, 1, state) == 0);
+    ++registration.generation;
+    assert(registry->registerBodiesForScope(owner, scope, &registration, 1));
+    assert(registry->recordContactV1(contact(30, 400, 200)));
+    assert(registry->copyContactsSinceV1(owner, scope, cursor, &row, 1, state) == 1);
+    assert(row.sequence > cursor && row.bodyGeneration == registration.generation);
+    assert(row.frameIndex == 200);
+    assert(state.flags == 0);
+}
+
 int main()
 {
     testValidationAndScopeOwnership();
     testContactDemultiplexingAndRefresh();
     testContactPolicyAndScopedLossAccounting();
     testCapacityFailureIsTransactional();
+    testCursorSurvivesProviderLoss();
     return 0;
 }

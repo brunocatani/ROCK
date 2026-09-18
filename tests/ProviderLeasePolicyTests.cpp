@@ -1,4 +1,5 @@
 #include "api/ProviderLeasePolicy.h"
+#include "api/ProviderFrameClock.h"
 
 #include <cassert>
 #include <cstdint>
@@ -30,6 +31,27 @@ int main()
     assert(isActive(maximumFrame - 1, maximumFrame));
     assert(!isActive(maximumFrame, maximumFrame));
     assert(!isActive(0, 0));
+
+    // A default one-frame drive published by the end-of-frame callback must
+    // reach the following update. Public timestamps already name that update,
+    // but its lease retires only at the following provider publication.
+    rock::provider::ProviderFrameClock clock;
+    clock.beginFrame(100);
+    assert(clock.publishFrame() == 100);
+    const auto driveExpiry = exclusiveExpiryFrame(clock.leaseBoundary(), 1);
+    clock.beginFrame(101);
+    assert(clock.current() == 101);
+    assert(isActive(clock.leaseBoundary(), driveExpiry));
+    assert(clock.publishFrame() == 101);
+    assert(!isActive(clock.leaseBoundary(), driveExpiry));
+
+    // Missing provider frames and provider recreation never invent a second
+    // counter or rewind timestamps; a second lifecycle publication can reuse
+    // this frame identity without consuming another lease frame.
+    clock.beginFrame(120);
+    assert(clock.current() == 120 && clock.leaseBoundary() == 101);
+    assert(clock.publishFrame() == 120);
+    assert(clock.publishFrame() == 120);
 
     return 0;
 }

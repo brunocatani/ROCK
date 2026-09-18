@@ -1201,7 +1201,7 @@
             }
 
             body_contact_runtime::BodyContactRecord record{};
-            record.frame = _contacts.handActivity.currentFrame();
+            record.frame = _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
             record.elapsedSeconds = _contacts.handActivity.currentElapsedSeconds();
             record.bodyId = contactRoute.sourceBodyId;
             record.targetBodyId = contactRoute.targetBodyId;

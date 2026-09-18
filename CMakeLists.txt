@@ -1070,6 +1070,11 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKProviderStatePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKProviderStatePolicyTests)
 
+  add_executable(ROCKProviderInstanceAccessTests "${ROOT_DIR}/tests/ProviderInstanceAccessTests.cpp")
+  target_compile_features(ROCKProviderInstanceAccessTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKProviderInstanceAccessTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKProviderInstanceAccessTests)
+
   add_executable(ROCKProviderApiNegotiationTests
     "${ROOT_DIR}/tests/ProviderApiNegotiationTests.cpp"
   )

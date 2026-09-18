@@ -220,7 +220,6 @@ namespace rock::runtime_state
         }
 
         RuntimeFrameSnapshot next{};
-        next.frameIndex = s_snapshot.frameIndex + 1;
         next.playerAvailable = hasPlayer();
         next.weaponDrawn = sampleWeaponDrawn();
         next.inputMenuBlocking = s_frameMenuSample.inputMenuBlocking;
@@ -229,6 +228,7 @@ namespace rock::runtime_state
         next.localGameStopped = s_frameMenuSample.gameStopped;
         next.localMenuBlocking = next.localGameStopped || next.inputMenuBlocking;
         next.timing = game_timing::currentFrameTiming();
+        next.frameIndex = next.timing.sequence;
         /*
          * Convenience copy of the sanitized measured delta. Zero for an
          * unmeasurable frame — every consumer holds on zero elapsed time; a

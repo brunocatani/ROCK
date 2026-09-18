@@ -83,6 +83,12 @@ namespace rock::provider
     inline constexpr std::uint16_t ROCK_PROVIDER_ALL_FINGER_LOCAL_TRANSFORMS_V1 = 0x7FFFu;
 
     /*
+     * Public frameIndex/acceptedFrame/committedFrame/appliedFrame and animation
+     * phase frames use the same monotonic game-frame clock, including across
+     * provider recreation. Lifecycle callbacks can share a frame index; use
+     * state/event sequences to distinguish changes within that frame.
+     * Lease fences use the most recent provider snapshot frame and retire at
+     * the next publication boundary, after ROCK consumes that update's drives.
      * Every V1 lease uses the same exclusive expiry fence. A publication made
      * at frame F with leaseFrames N is active while currentFrame < F + N and
      * expires at F + N. Zero is invalid; values above the published family
@@ -1950,8 +1956,9 @@ namespace rock::provider
 
     /*
      * Frame-local value snapshot of FO4VR's native player character controller.
-     * The optional penetration query is bounded and runs only when explicitly
-     * requested. No engine pointer or retained runtime identity crosses the ABI.
+     * CheckPenetration is a reserved, ignored V1 flag. PenetrationChecked and
+     * Penetrating are never reported; their absence proves no clearance.
+     * No engine pointer or retained runtime identity crosses the ABI.
      */
     struct RockProviderPlayerControllerStateV1
     {
@@ -2585,6 +2592,8 @@ namespace rock::provider
     {
         std::uint32_t size{ sizeof(RockProviderExternalContactStreamStateV1) };
         std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        // The sequence domain survives provider loss and scope replacement.
+        // Retained evidence is cleared on loss; cursors need not be rewound.
         std::uint64_t oldestRetainedSequence{ 0 };
         std::uint64_t latestEmittedSequence{ 0 };
         std::uint64_t firstCopiedSequence{ 0 };
@@ -3392,6 +3401,8 @@ namespace rock::provider
 
         // Animation-owner thread (normally an owner frame callback) only.
         // TargetDetails capability; observes either hand regardless of owner.
+        // Embedded handState is the published interaction snapshot, including
+        // its frame identity, sequences and release history.
         RockProviderResultV1(ROCK_PROVIDER_CALL* getHandTargetDetailsV1)(
             std::uint64_t ownerToken, RockProviderHand hand,
             RockProviderHandTargetDetailsV1* outDetails);

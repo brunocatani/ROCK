@@ -3,6 +3,8 @@
 #include "api/ProviderColliderVisualizationRuntime.h"
 #include "api/ProviderDebugOverlayRuntime.h"
 #include "api/ProviderLeasePolicy.h"
+#include "api/ProviderInstanceAccess.h"
+#include "api/ProviderFrameClock.h"
 #include "api/ProviderStatePolicy.h"
 #include "api/TouchGrabRegistry.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
@@ -137,8 +139,8 @@ namespace
         void* userData{ nullptr };
     };
 
-    std::atomic<PhysicsInteraction*> s_physicsInteraction{ nullptr };
-    std::atomic<std::uint64_t> s_nextFrameIndex{ 1 };
+    ProviderInstanceAccess s_physicsInteraction;
+    ProviderFrameClock s_frameClock;
     std::atomic<std::uint64_t> s_nextCallbackToken{ 1 };
     std::mutex s_callbackMutex;
     std::array<CallbackSlot, 16> s_callbacks{};
@@ -438,7 +440,6 @@ namespace
     std::array<AnimationPhaseCallbackSlot, ROCK_PROVIDER_MAX_ANIMATION_PHASE_CALLBACKS_V1>
         s_animationPhaseCallbacks{};
     std::atomic<std::uint64_t> s_nextAnimationPhaseCallbackToken{ 1 };
-    std::atomic<std::uint64_t> s_nextAnimationPhaseFrameIndex{ 1 };
     std::atomic<std::uint64_t> s_activeAnimationPhaseFrameIndex{ 0 };
     std::atomic<std::uint32_t> s_animationOwnerThreadId{ 0 };
     std::atomic<bool> s_animationThreadMismatchLogged{ false };
@@ -517,7 +518,8 @@ namespace
 
     bool ROCK_PROVIDER_CALL apiIsProviderReady()
     {
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         return pi && pi->isProviderReady();
     }
 
@@ -1168,10 +1170,14 @@ namespace
         }
     }
 
+    std::uint64_t currentGameFrameIndex()
+    {
+        return s_frameClock.current();
+    }
+
     std::uint64_t currentProviderFrameIndex()
     {
-        const auto nextFrameIndex = s_nextFrameIndex.load(std::memory_order_acquire);
-        return nextFrameIndex > 0 ? nextFrameIndex - 1 : 0;
+        return s_frameClock.leaseBoundary();
     }
 
     void publishProviderEvent(RockProviderEventV1 event)
@@ -1179,7 +1185,7 @@ namespace
         event.size = sizeof(RockProviderEventV1);
         event.version = ROCK_PROVIDER_API_VERSION;
         if (event.frameIndex == 0) {
-            event.frameIndex = currentProviderFrameIndex();
+            event.frameIndex = currentGameFrameIndex();
         }
         if (s_generationStateAvailable.load(std::memory_order_acquire)) {
             if (event.worldGeneration == 0) {
@@ -1821,7 +1827,7 @@ namespace
             RockProviderCommandStageV1::Terminal :
             RockProviderCommandStageV1::Queued;
         result.failureStage = failure;
-        result.acceptedFrame = currentProviderFrameIndex();
+        result.acceptedFrame = currentGameFrameIndex();
         if (result.stage == RockProviderCommandStageV1::Terminal) {
             result.frameIndex = result.acceptedFrame;
         }
@@ -1837,7 +1843,7 @@ namespace
                 const auto merged = interaction_command_policy::mergeResultHistory(
                     slot.result,
                     result,
-                    currentProviderFrameIndex());
+                    currentGameFrameIndex());
                 slot.result = merged;
                 if (!wasTerminal &&
                     interaction_command_policy::isTerminal(merged.state)) {
@@ -1873,7 +1879,7 @@ namespace
             if (interaction_command_policy::isTerminal(storedResult.state)) {
                 storedResult.stage = RockProviderCommandStageV1::Terminal;
                 if (storedResult.frameIndex == 0) {
-                    storedResult.frameIndex = currentProviderFrameIndex();
+                    storedResult.frameIndex = currentGameFrameIndex();
                 }
                 if (storedResult.state ==
                         RockProviderInteractionCommandStateV1::Succeeded &&
@@ -1997,6 +2003,15 @@ namespace
         clearNativeAnimationRuntimePublicationForOwner(ownerToken);
         provider_debug_overlay::clear(ownerToken);
         provider_collider_visualization::clear(ownerToken);
+        // Completed PA commands have already left the queue and scope registry.
+        // Retire their hand attachments too, preserving the consumer's event
+        // access and any manually attached peer hand.
+        {
+            const auto access = s_physicsInteraction.borrow();
+            if (auto* pi = access.get()) {
+                pi->releaseProviderPowerArmorGrabs(ownerToken);
+            }
+        }
         publishAuthorityLostEvent(
             ownerToken,
             RockProviderAuthorityKindV1::Unknown,
@@ -2605,7 +2620,7 @@ namespace
         outResolution->priority = resolution.priority;
         outResolution->winningOwnerToken = resolution.ownerToken;
         outResolution->weaponGenerationKey = query->weaponGenerationKey;
-        outResolution->frameIndex = currentProviderFrameIndex();
+        outResolution->frameIndex = currentGameFrameIndex();
         return RockProviderResultV1::Ok;
     }
 
@@ -2629,7 +2644,8 @@ namespace
         if (!onAnimationOwnerThread()) {
             return RockProviderResultV1::WrongThread;
         }
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return RockProviderResultV1::NotReady;
         }
@@ -2659,7 +2675,8 @@ namespace
         if (!onAnimationOwnerThread()) {
             return RockProviderResultV1::WrongThread;
         }
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return RockProviderResultV1::NotReady;
         }
@@ -2692,7 +2709,8 @@ namespace
         if (requireAnimationThread && !onAnimationOwnerThread()) {
             return RockProviderResultV1::WrongThread;
         }
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return RockProviderResultV1::NotReady;
         }
@@ -2745,7 +2763,8 @@ namespace
         if (ownerResult != RockProviderResultV1::Ok) {
             return ownerResult;
         }
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return RockProviderResultV1::NotReady;
         }
@@ -2787,7 +2806,7 @@ namespace
             },
             true);
         if (result == RockProviderResultV1::Ok) {
-            outPose->frameIndex = currentProviderFrameIndex();
+            outPose->frameIndex = currentGameFrameIndex();
             outPose->presentationSequence =
                 s_activeAnimationPhaseFrameIndex.load(std::memory_order_acquire);
         }
@@ -2817,7 +2836,8 @@ namespace
         if (!onAnimationOwnerThread()) {
             return RockProviderResultV1::WrongThread;
         }
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return RockProviderResultV1::NotReady;
         }
@@ -2849,7 +2869,8 @@ namespace
         if (!onAnimationOwnerThread()) {
             return RockProviderResultV1::WrongThread;
         }
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return RockProviderResultV1::NotReady;
         }
@@ -2890,7 +2911,8 @@ namespace
 
     RockProviderResultV1 validateInteractionCommandProviderReady()
     {
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return RockProviderResultV1::NotReady;
         }
@@ -3544,7 +3566,8 @@ namespace
             }
         }
 
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         return pi && pi->isInitialized() &&
                pi->queryProviderEquippedWeaponGripStateV1(*outState);
     }
@@ -4095,7 +4118,8 @@ namespace
             outState->size != sizeof(RockProviderEquippedWeaponHandlingStateV1)) {
             return false;
         }
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized() ||
             !pi->queryProviderEquippedWeaponHandlingStateV1(*outState)) {
             return false;
@@ -4166,10 +4190,16 @@ namespace
         const auto permission = validateReadCapability(ownerToken, RockProviderConsumerCapabilityV1::TargetDetails);
         if (permission != RockProviderResultV1::Ok) return permission;
         if (!onAnimationOwnerThread()) return RockProviderResultV1::WrongThread;
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
-        if (!apiIsProviderReady() || !pi) return RockProviderResultV1::NotReady;
-        pi->getProviderHandTargetDetailsV1(hand == RockProviderHand::Left, *out);
-        out->handState.frameIndex = currentProviderFrameIndex();
+        RockProviderHandInteractionStateV1 handState{};
+        {
+            std::scoped_lock lock(s_snapshotMutex);
+            if (!s_hasSnapshot || !s_lastSnapshot.providerReady) return RockProviderResultV1::NotReady;
+            handState = s_lastHandInteractionStates[hand == RockProviderHand::Left ? 1u : 0u];
+        }
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
+        if (!pi || !pi->isProviderReady()) return RockProviderResultV1::NotReady;
+        pi->getProviderHandTargetDetailsV1(handState, *out);
         out->reference.frameIndex = out->handState.frameIndex;
         return RockProviderResultV1::Ok;
     }
@@ -4184,7 +4214,7 @@ namespace
         const auto valid = validateTargetQuery(ownerToken, query, RockProviderConsumerCapabilityV1::TargetDetails);
         if (valid != RockProviderResultV1::Ok) return valid;
         if (!rock::reference_interaction::describe(rock::reference_interaction::resolveQuery(*query), *out, query->furnitureMarkerIndex)) return RockProviderResultV1::TargetUnavailable;
-        out->frameIndex = currentProviderFrameIndex();
+        out->frameIndex = currentGameFrameIndex();
         out->worldGeneration = s_currentWorldGeneration.load(std::memory_order_acquire);
         return RockProviderResultV1::Ok;
     }
@@ -4199,7 +4229,7 @@ namespace
         const auto valid = validateTargetQuery(ownerToken, query, RockProviderConsumerCapabilityV1::PowerArmor);
         if (valid != RockProviderResultV1::Ok) return valid;
         if (!rock::reference_interaction::describePowerArmor(rock::reference_interaction::resolveQuery(*query), *out, query->furnitureMarkerIndex)) return RockProviderResultV1::TargetUnavailable;
-        out->touchedReference.frameIndex = out->frameReference.frameIndex = currentProviderFrameIndex();
+        out->touchedReference.frameIndex = out->frameReference.frameIndex = currentGameFrameIndex();
         out->touchedReference.worldGeneration = out->frameReference.worldGeneration = s_currentWorldGeneration.load(std::memory_order_acquire);
         return RockProviderResultV1::Ok;
     }
@@ -4279,12 +4309,13 @@ namespace
             return RockProviderResultV1::NotReady;
         }
 
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return RockProviderResultV1::NotReady;
         }
 
-        const auto frameIndex = currentProviderFrameIndex();
+        const auto frameIndex = currentGameFrameIndex();
         {
             std::scoped_lock lock(s_consumerMutex);
             auto* slot = findConsumerSlotLocked(ownerToken);
@@ -4348,7 +4379,8 @@ namespace
         if (!apiIsProviderReady()) {
             return RockProviderResultV1::NotReady;
         }
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         if (!pi) {
             return RockProviderResultV1::NotReady;
         }
@@ -4636,7 +4668,8 @@ namespace
             return false;
         }
 
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return false;
         }
@@ -4651,7 +4684,8 @@ namespace
             return false;
         }
 
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return false;
         }
@@ -4661,7 +4695,8 @@ namespace
 
     std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEvidenceDetailCountV1()
     {
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return 0;
         }
@@ -4673,7 +4708,8 @@ namespace
         RockProviderWeaponEvidenceDetailV1* outDetails,
         std::uint32_t maxDetails)
     {
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return 0;
         }
@@ -4683,7 +4719,8 @@ namespace
 
     std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEvidenceDetailPointCountV1(std::uint32_t bodyId)
     {
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return 0;
         }
@@ -4696,7 +4733,8 @@ namespace
         RockProviderPoint3* outPoints,
         std::uint32_t maxPoints)
     {
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return 0;
         }
@@ -4708,7 +4746,8 @@ namespace
         RockProviderBodyContactV1* outContacts,
         std::uint32_t maxContacts)
     {
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return 0;
         }
@@ -5338,7 +5377,8 @@ namespace
 
     std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEmitterCountV1()
     {
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return 0;
         }
@@ -5349,7 +5389,8 @@ namespace
         RockProviderWeaponEmitterV1* outEmitters,
         std::uint32_t maxEmitters)
     {
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return 0;
         }
@@ -5684,14 +5725,14 @@ namespace rock::provider
 
     void setPhysicsInteractionInstance(rock::PhysicsInteraction* pi)
     {
-        s_physicsInteraction.store(pi, std::memory_order_release);
+        s_physicsInteraction.publish(pi);
     }
 
     void dispatchFrameCallbacks(rock::PhysicsInteraction& pi)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::ProviderFrameDispatch);
         RockProviderFrameSnapshot snapshot{};
-        snapshot.frameIndex = s_nextFrameIndex.fetch_add(1, std::memory_order_acq_rel);
+        snapshot.frameIndex = s_frameClock.publishFrame();
         pi.fillProviderFrameSnapshot(snapshot);
         snapshot.externalBodyCount = currentExternalBodyCount();
 
@@ -6101,14 +6142,10 @@ namespace rock::provider
             s_activeAnimationPhaseFrameIndex.load(std::memory_order_acquire);
         const bool startingAnimationFrame = phaseFrameIndex == 0;
         if (phaseFrameIndex == 0) {
-            phaseFrameIndex = s_nextAnimationPhaseFrameIndex.fetch_add(
-                1,
-                std::memory_order_acq_rel);
-            if (phaseFrameIndex == 0) {
-                phaseFrameIndex = s_nextAnimationPhaseFrameIndex.fetch_add(
-                    1,
-                    std::memory_order_acq_rel);
-            }
+            // The measured game clock owns public frame identity, including
+            // frames without a provider and lifecycle callbacks between frames.
+            phaseFrameIndex = timing.sequence;
+            s_frameClock.beginFrame(phaseFrameIndex);
             s_activeAnimationPhaseFrameIndex.store(
                 phaseFrameIndex,
                 std::memory_order_release);
@@ -6445,7 +6482,7 @@ namespace rock::provider
                     resultSlot.result.commandId == outCommand.commandId) {
                     resultSlot.result.stage =
                         RockProviderCommandStageV1::Committed;
-                    resultSlot.result.committedFrame = currentProviderFrameIndex();
+                    resultSlot.result.committedFrame = currentGameFrameIndex();
                     break;
                 }
             }
@@ -6497,7 +6534,7 @@ namespace rock::provider
                 terminal.failure = failure;
                 terminal.failureStage = failure;
                 terminal.stage = RockProviderCommandStageV1::Terminal;
-                terminal.frameIndex = currentProviderFrameIndex();
+                terminal.frameIndex = currentGameFrameIndex();
                 storeInteractionResultLocked(terminal);
             }
         }
@@ -6609,7 +6646,7 @@ namespace rock::provider
                 continue;
             }
             slot.result.stage = stage;
-            const auto frameIndex = currentProviderFrameIndex();
+            const auto frameIndex = currentGameFrameIndex();
             if (stage == RockProviderCommandStageV1::Committed &&
                 slot.result.committedFrame == 0) {
                 slot.result.committedFrame = frameIndex;
@@ -6791,7 +6828,7 @@ namespace rock::provider
             ownerToken,
             scopeToken,
             state,
-            currentProviderFrameIndex());
+            currentGameFrameIndex());
     }
 
     void acknowledgeTouchGrabYieldV1(

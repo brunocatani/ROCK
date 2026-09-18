@@ -172,7 +172,8 @@ namespace rock
             _bodyCount = 0;
             _contactCount = 0;
             _contactHead = 0;
-            _nextContactSequence = 1;
+            // Registrations survive provider loss. Keep their cursor domain
+            // monotonic even though all retained contact evidence is retired.
         }
 
         [[nodiscard]] bool containsBody(const std::uint32_t bodyId) const

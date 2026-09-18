@@ -193,7 +193,9 @@ namespace rock
         bool queryProviderWorldRaycastV1(
             const ::rock::provider::RockProviderWorldRaycastRequestV1& request,
             ::rock::provider::RockProviderWorldRaycastResultV1& outResult) const;
-        bool getProviderHandTargetDetailsV1(bool isLeft,
+        void releaseProviderPowerArmorGrabs(std::uint64_t ownerToken);
+        bool getProviderHandTargetDetailsV1(
+            const ::rock::provider::RockProviderHandInteractionStateV1& handState,
             ::rock::provider::RockProviderHandTargetDetailsV1& outDetails) const;
         std::uint32_t copyProviderBodyContacts(
             ::rock::provider::RockProviderBodyContactV1* outContacts,
