@@ -102,8 +102,10 @@ namespace rock
         // radius; an active handling owner may replace only that tuning value.
         settings.firingGripProximitySupportRadiusGameUnits =
             rockBaseline.firingGripProximitySupportRadiusGameUnits;
+        // ROCK's user yaw is an adjustment beyond the calibrated left aim.
+        // An external handling owner still supplies its absolute correction below.
         settings.leftFiringAimYawDegrees =
-            rockBaseline.leftFiringAimYawDegrees;
+            9.0f + rockBaseline.leftFiringAimYawDegrees;
         settings.leftFiringAimPitchDegrees =
             rockBaseline.leftFiringAimPitchDegrees;
         settings.leftFiringAimOffsetXGameUnits =

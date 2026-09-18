@@ -2966,9 +2966,12 @@ int main()
             DetachedFiringHandPartGrabSelection::Standard);
     ok &= expectTrue("base ROCK owns equipped-weapon shoulder stash",
         coreWeaponHandling.equippedWeaponShoulderStashEnabled);
-    ok &= expectNear("base ROCK owns left firing aim yaw",
+    ok &= expectNear("ROCK yaw tuning adds to the calibrated left firing baseline",
         coreWeaponHandling.leftFiringAimYawDegrees,
-        1.5f);
+        10.5f);
+    ok &= expectNear("zero ROCK yaw tuning retains the calibrated left firing aim",
+        rock::makeEquippedWeaponHandlingSettings({}, nullptr).leftFiringAimYawDegrees,
+        9.0f);
     ok &= expectNear("base ROCK owns left firing aim pitch",
         coreWeaponHandling.leftFiringAimPitchDegrees,
         -2.5f);

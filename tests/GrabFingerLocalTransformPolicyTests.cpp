@@ -406,7 +406,7 @@ int main()
         const RE::NiPoint3 grip{ 1.0f, 3.0f, -2.0f };
         const RE::NiPoint3 tuning{ 1.0f, 2.0f, 3.0f };
         const auto delta = rock::weapon_grip_calibration::offsetInWeapon(handInWeapon, tuning, true);
-        ok &= expectFloat("grip tuning follows hand Y through rotated weapon", delta.x, -4.0f);
+        ok &= expectFloat("grip tuning adds to calibrated hand Y through rotated weapon", delta.x, -5.2f);
         ok &= expectFloat("grip tuning follows fingers through rotated weapon", delta.y, 2.0f);
         ok &= expectFloat("grip tuning uses authored cross-palm sign and scale", delta.z, -6.0f);
         const auto shifted = rock::weapon_grip_calibration::shiftedHand(handInWeapon, tuning, true);
@@ -430,10 +430,18 @@ int main()
         ok &= expectFloat("relative grip tuning leaves firing hand world Z fixed", newHandWorld.translate.z, oldHandWorld.translate.z);
         ok &= expectBool("relative grip tuning moves the weapon", movedWeapon.translate != weapon.translate, true);
         ok &= expectFloat("relative grip tuning preserves weapon orientation", movedWeapon.rotate.entry[0].y, weapon.rotate.entry[0].y);
-        const auto neutral = rock::weapon_grip_calibration::shiftedHand(handInWeapon, RE::NiPoint3{}, false);
-        ok &= expectBool("zero support tuning preserves the original grip", neutral.translate == handInWeapon.translate, true);
+        const auto zeroFiring = rock::weapon_grip_calibration::shiftedHand(handInWeapon, RE::NiPoint3{}, true);
+        ok &= expectFloat("zero firing tuning retains calibrated palm-depth correction", zeroFiring.translate.x, handInWeapon.translate.x - 1.2f);
+        ok &= expectFloat("firing calibration does not shift the finger axis", zeroFiring.translate.y, handInWeapon.translate.y);
+        const auto zeroSupport = rock::weapon_grip_calibration::shiftedHand(handInWeapon, RE::NiPoint3{}, false);
+        ok &= expectFloat("zero support tuning retains calibrated finger-axis correction", zeroSupport.translate.y, handInWeapon.translate.y - 1.8f);
+        ok &= expectFloat("support calibration does not shift palm depth", zeroSupport.translate.x, handInWeapon.translate.x);
+        const auto cancelledFiring = rock::weapon_grip_calibration::shiftedHand(handInWeapon, RE::NiPoint3{ 0.0f, -0.6f, 0.0f }, true);
+        const auto cancelledSupport = rock::weapon_grip_calibration::shiftedHand(handInWeapon, RE::NiPoint3{ 0.9f, 0.0f, 0.0f }, false);
+        ok &= expectBool("firing tuning can cancel its baseline once", cancelledFiring.translate == handInWeapon.translate, true);
+        ok &= expectBool("support tuning can cancel its baseline once", cancelledSupport.translate == handInWeapon.translate, true);
         const auto support = rock::weapon_grip_calibration::shiftedHand(handInWeapon, tuning, false);
-        ok &= expectFloat("right support uses its own hand-local calibration", support.translate.y, handInWeapon.translate.y + 2.0f);
+        ok &= expectFloat("right support tuning adds to its own hand-local calibration", support.translate.y, handInWeapon.translate.y + 0.2f);
     }
     ok &= testCommandedFingerCorrectionFrame();
     using namespace rock::grab_finger_local_transform_math;
