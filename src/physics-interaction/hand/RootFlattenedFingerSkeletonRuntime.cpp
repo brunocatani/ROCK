@@ -100,14 +100,14 @@ namespace rock::root_flattened_finger_skeleton_runtime
         return true;
     }
 
-    bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot, std::string* outMissingBoneName)
+    bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot, std::string* outMissingBoneName, SkeletonBoneCaptureSpace space)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::FingerBoneCapture);
         DirectSkeletonBoneSnapshot boneSnapshot{};
         if (!rootFlattenedFingerReader().capture(
                 skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                 skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
-                SkeletonBoneCaptureSpace::Controller,
+                space,
                 boneSnapshot)) {
             outSnapshot = Snapshot{};
             if (outMissingBoneName) {

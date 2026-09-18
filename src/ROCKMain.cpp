@@ -736,12 +736,10 @@ namespace
             return;
         }
         if (s_physicsInteraction) {
-            s_physicsInteraction->publishDebugRenderFrame();
             s_physicsInteraction->publishGripZoneIndicatorRenderFrame(
                 runtime_state::currentFrame().frameIndex);
         }
         scope_transition_telemetry::capture(scope_transition_telemetry::Phase::AfterRock, s_schedulerSequence);
-        dynamic_collider_trace::capturePresentedHands(runtime_state::currentFrame().frameIndex);
         vanilla_weapon_alignment_telemetry::capture(
             vanilla_weapon_alignment_telemetry::Phase::AfterRock, s_schedulerSequence);
     }
@@ -844,6 +842,8 @@ namespace
     {
         if (s_skeletonTickedThisFrame && s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->captureRenderedHands();
+            s_physicsInteraction->publishDebugRenderFrame();
+            dynamic_collider_trace::capturePresentedHands(runtime_state::currentFrame().frameIndex);
             vanilla_weapon_alignment_telemetry::capture(
                 vanilla_weapon_alignment_telemetry::Phase::AfterWorldFinal, s_schedulerSequence);
         }

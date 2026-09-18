@@ -2644,10 +2644,10 @@ namespace rock
                 if (line >= kDenseTraceLines && (line - kDenseTraceLines) % 30 != 0) {
                     return;
                 }
-                frik_hand_world_authority::HandChainTransport transport{};
-                (void)frik_hand_world_authority::tryGetHandChainTransport(isLeft, transport);
                 RE::NiTransform rendered{};
                 const bool renderedValid = frik_hand_world_authority::tryGetPresentedHandWorld(isLeft, rendered);
+                const auto transport = rendered_bone_transport_policy::makeHandTransport(
+                    handInput.rawHandWorld, true, rendered, renderedValid);
                 const auto& palm = handTelemetry.twins[kPalmSlot];
                 ROCK_LOG_DEBUG(Hand,
                     "DYNHAND hand={} line={} claim={} src={} xport={}({:.2f}gu,{:.2f}deg) raw=({:.1f},{:.1f},{:.1f}) rendered=({:.1f},{:.1f},{:.1f}) palmTarget=({:.1f},{:.1f},{:.1f}) palmReq=({:.1f},{:.1f},{:.1f}) palmLive=({:.1f},{:.1f},{:.1f}) palmContact={} contacts={} combined={:.2f} applied={:.2f} visual={} latch={} owned={} authority={}",

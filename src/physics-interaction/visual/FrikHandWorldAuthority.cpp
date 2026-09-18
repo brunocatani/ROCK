@@ -33,13 +33,11 @@ namespace rock::frik_hand_world_authority
         {
             isolation_policy::RelationState relation{};
             isolation_policy::FrameResult result{};
-            // The last final render of the flattened hand bone (refNode plus palm blend).
-            RE::NiTransform presentedHandWorld{};
-            bool presentedHandValid = false;
             // The body hand node FRIK's solver wrote this frame.
             RE::NiTransform renderedHandNodeWorld{};
             bool renderedHandNodeValid = false;
-            transport_policy::HandTransport chainTransport{};
+            RE::NiTransform sampledArrayWorld{};
+            bool sampledArrayValid = false;
         };
 
         /*
@@ -285,6 +283,25 @@ namespace rock::frik_hand_world_authority
             rendered.solveState = frik_visual_authority::getHandSolveResult(
                 frik_visual_authority::handFromBool(isLeft), rendered.solvedWrist);
             rendered.frameIndex = g_service.rockFrameIndex;
+            if ((debugEnabled() || g_rockConfig.rockDebugShowSkeletonBoneVisualizer ||
+                    g_rockConfig.rockDebugShowRootFlattenedFingerSkeletonMarkers) && g_service.rockFrameIndex % 120 == 0) {
+                const auto& state = g_service.isolation[hand];
+                RE::NiTransform claimed{};
+                const bool hasClaim = tryGetPublishedHandWorld(isLeft, claimed);
+                const auto& raw = state.result.rawHandWorld;
+                const RE::NiPoint3 earlyDelta = state.sampledArrayWorld.translate - raw.translate;
+                const RE::NiPoint3 finalDelta = rendered.flattenedWorld.translate - raw.translate;
+                ROCK_LOG_INFO(Hand,
+                    "HAND_FRAME seq={} hand={} raw={} earlyArray={} earlyNode={} finalArray={} finalNode={} claim={} solve={} earlyArrayMinusRaw=({:.3f},{:.3f},{:.3f}) finalArrayMinusRaw=({:.3f},{:.3f},{:.3f}) earlyArrayToRawR={:.3f} finalArrayToRawR={:.3f} finalNodeToClaim={:.3f}gu/{:.3f}deg scales=({:.6f},{:.6f},{:.6f})",
+                    g_service.rockFrameSequence, handName(isLeft), state.result.valid, state.sampledArrayValid,
+                    state.renderedHandNodeValid, rendered.flattenedValid, rendered.nodeValid, hasClaim, solveStateName(rendered.solveState),
+                    earlyDelta.x, earlyDelta.y, earlyDelta.z, finalDelta.x, finalDelta.y, finalDelta.z,
+                    state.sampledArrayValid && state.result.valid ? isolation_policy::rotationDegrees(state.sampledArrayWorld, raw) : -1.0f,
+                    rendered.flattenedValid && state.result.valid ? isolation_policy::rotationDegrees(rendered.flattenedWorld, raw) : -1.0f,
+                    hasClaim && rendered.nodeValid ? isolation_policy::translationGameUnits(rendered.nodeWorld, claimed) : -1.0f,
+                    hasClaim && rendered.nodeValid ? isolation_policy::rotationDegrees(rendered.nodeWorld, claimed) : -1.0f,
+                    raw.scale, state.sampledArrayWorld.scale, rendered.flattenedWorld.scale);
+            }
         }
     }
 
@@ -306,9 +323,8 @@ namespace rock::frik_hand_world_authority
             g_service.consumedTargets[hand] = registry_policy::snapshotConsumedTarget(g_service.registry, isLeft);
             auto& state = g_service.isolation[hand];
             state.result = {};
-            state.presentedHandValid = false;
             state.renderedHandNodeValid = false;
-            state.chainTransport = {};
+            state.sampledArrayValid = false;
         }
     }
 
@@ -454,20 +470,22 @@ namespace rock::frik_hand_world_authority
 
             /*
              * The rendered hand is the last final frame's flattened bone: at
-             * AfterArmSolve the bone array has not been rebuilt for this frame
-             * yet. The body hand node is live (this frame's solve). The
+             * AfterArmSolve the live bone array may have been rebuilt before
+             * IK and is not that final render. The body hand node is live. The
              * isolation policy measures the palm blend as flattened versus
              * node in the same frame, so the node is carried through the palm
              * blend latched at the last world final to make a matching pair.
              */
-            state.presentedHandWorld = rendered.flattenedValid ? rendered.flattenedWorld : sample.flattenedHandWorld;
-            state.presentedHandValid = rendered.flattenedValid || sample.flattenedHandValid;
             if (firstResolveThisFrame) {
                 state.renderedHandNodeWorld = sample.bodyHandNodeWorld;
                 state.renderedHandNodeValid = sample.bodyHandNodeValid;
+                state.sampledArrayWorld = sample.flattenedHandWorld;
+                state.sampledArrayValid = sample.flattenedHandValid;
             }
-            RE::NiTransform flattenedNow = sample.flattenedHandWorld;
-            bool flattenedNowValid = sample.flattenedHandValid;
+            // Before the first final capture there is no palm blend yet. Use
+            // the current solved node, never the unfinished array as input.
+            RE::NiTransform flattenedNow = sample.bodyHandNodeWorld;
+            bool flattenedNowValid = sample.bodyHandNodeValid;
             if (sample.bodyHandNodeValid && rendered.palmBlendValid) {
                 const RE::NiTransform synthesized = transform_math::composeTransforms(sample.bodyHandNodeWorld, rendered.palmBlend);
                 if (registry_policy::isFiniteTransform(synthesized)) {
@@ -490,13 +508,6 @@ namespace rock::frik_hand_world_authority
             input.claimConsumed = g_service.claimConsumedThisFrame[hand];
             input.calibrationAllowed = !recoilKickThisFrame && !input.firstPersonInputCorrected;
             state.result = isolation_policy::resolveFrame(state.relation, input);
-            // Carry the last rendered chain to this frame's controller hand.
-            state.chainTransport = transport_policy::makeHandTransport(
-                state.result.rawHandWorld,
-                state.result.valid,
-                state.presentedHandWorld,
-                state.presentedHandValid);
-
             if (!firstResolveThisFrame) {
                 continue;
             }
@@ -512,13 +523,15 @@ namespace rock::frik_hand_world_authority
                     kScopeEdgeGuardFrames);
             }
             auto& probes = g_service.probes;
-            if (state.chainTransport.active) {
+            const auto sampledTransport = transport_policy::makeHandTransport(
+                state.result.rawHandWorld, state.result.valid, sample.flattenedHandWorld, sample.flattenedHandValid);
+            if (sampledTransport.active) {
                 ++probes.transportActiveFrames[hand];
                 probes.transportTranslationMax[hand] = (std::max)(probes.transportTranslationMax[hand],
-                    isolation_policy::translationGameUnits(state.result.rawHandWorld, state.presentedHandWorld));
+                    isolation_policy::translationGameUnits(state.result.rawHandWorld, sample.flattenedHandWorld));
                 probes.transportRotationMax[hand] = (std::max)(probes.transportRotationMax[hand],
-                    isolation_policy::rotationDegrees(state.result.rawHandWorld, state.presentedHandWorld));
-            } else if (input.claimConsumed) {
+                    isolation_policy::rotationDegrees(state.result.rawHandWorld, sample.flattenedHandWorld));
+            } else if (input.claimConsumed && (!state.result.valid || !sample.flattenedHandValid)) {
                 ++probes.claimedFramesWithoutTransport[hand];
             }
             switch (state.result.source) {
@@ -580,12 +593,12 @@ namespace rock::frik_hand_world_authority
 
     bool tryGetPresentedHandWorld(const bool isLeft, RE::NiTransform& outWorld)
     {
-        const auto& state = g_service.isolation[handIndex(isLeft)];
-        if (!state.presentedHandValid) {
+        const auto& rendered = g_service.rendered[handIndex(isLeft)];
+        if (!rendered.flattenedValid) {
             outWorld = {};
             return false;
         }
-        outWorld = state.presentedHandWorld;
+        outWorld = rendered.flattenedWorld;
         return true;
     }
 
@@ -601,17 +614,6 @@ namespace rock::frik_hand_world_authority
         default:
             return "none";
         }
-    }
-
-    bool tryGetHandChainTransport(const bool isLeft, HandChainTransport& outTransport)
-    {
-        outTransport = g_service.isolation[handIndex(isLeft)].chainTransport;
-        return outTransport.active;
-    }
-
-    RE::NiTransform transportHandChainWorld(const bool isLeft, const RE::NiTransform& renderedWorld)
-    {
-        return transport_policy::transportWorld(g_service.isolation[handIndex(isLeft)].chainTransport, renderedWorld);
     }
 
     void endRockFrame()

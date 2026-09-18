@@ -30,10 +30,9 @@
  *      the controller hand (TrackedHandIsolationPolicy) from the API's
  *      first-person hand and the live body hand node.
  *
- * At AfterArmSolve the flattened bone array still holds the previous frame's
- * final render; the controller-space transport carries that rendered chain
- * to this frame's controller hand for every consumer that measures against
- * the controller.
+ * At AfterArmSolve the live flattened array is not final and may already have
+ * been rebuilt from pre-IK nodes. Each bone reader must transport its snapshot
+ * from that snapshot's own wrist, never from the latched final-render wrist.
  *
  * Single owner, game thread only. Explicitly reset on skeleton release and
  * session change.
@@ -42,7 +41,7 @@ namespace rock::frik_hand_world_authority
 {
     struct RawHandSample
     {
-        // The root flattened hand bone as rendered (refNode plus palm blend).
+        // The sampled root flattened hand; rendered only at AfterWorldFinal.
         RE::NiTransform flattenedHandWorld{};
         bool flattenedHandValid = false;
         // The body hand node FRIK's solver wrote (the flattened bone's refNode).
@@ -106,17 +105,6 @@ namespace rock::frik_hand_world_authority
     [[nodiscard]] bool tryGetPresentedHandWorld(bool isLeft, RE::NiTransform& outWorld);
     [[nodiscard]] const char* rawHandSourceName(bool isLeft);
     [[nodiscard]] bool hasCalibratedRawHandFrame(bool isLeft);
-
-    /*
-     * The rigid delta that carries the rendered hand chain (forearm, hand,
-     * fingers) of the last final frame to this frame's isolated controller
-     * hand. Inactive on claim-free frames and whenever the isolation has no
-     * result. Computed once per resolve so every consumer moves the chain by
-     * the same delta.
-     */
-    using HandChainTransport = rendered_bone_transport_policy::HandTransport;
-    [[nodiscard]] bool tryGetHandChainTransport(bool isLeft, HandChainTransport& outTransport);
-    [[nodiscard]] RE::NiTransform transportHandChainWorld(bool isLeft, const RE::NiTransform& renderedWorld);
 
     // Last call of ROCK's frame: remembers this frame's targets for the next frame's trace.
     void endRockFrame();

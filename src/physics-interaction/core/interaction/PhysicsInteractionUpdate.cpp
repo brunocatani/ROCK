@@ -252,8 +252,8 @@ namespace rock
             native_scope_shot_diagnostics::clearPresentation();
             return;
         }
-        // All provider animation callbacks and claimed-hand presentation have
-        // completed. Re-sample the live skeleton here on the main thread;
+        // AfterWorldFinal: provider animation, FRIK's claim re-solve and its
+        // flattened bone rebuild have completed. Re-sample on the main thread;
         // PublishFrame copies values before the render thread consumes them.
         if (g_rockConfig.rockDebugNativeScopeShotAlignment) {
             auto* weapon = resolveEquippedWeaponInteractionNode();

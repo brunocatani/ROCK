@@ -2,7 +2,6 @@
 #include "physics-interaction/performance/PerformanceProfiler.h"
 
 #include <algorithm>
-#include <array>
 #include <string_view>
 #include <unordered_set>
 #include <utility>
@@ -229,7 +228,6 @@ namespace rock
                 .treeIndex = i,
                 .parentTreeIndex = parentIndices[static_cast<std::size_t>(i)],
                 .drawableParentSnapshotIndex = -1,
-                .chainSide = rendered_bone_transport_policy::chainSideForBone(name),
                 .included = true,
             });
         }
@@ -285,31 +283,6 @@ namespace rock
             return false;
         }
 
-        /*
-         * Controller space carries each hand chain by the hand world
-         * authority's per-frame transport (isolated controller root versus
-         * rendered root). On claim-free frames it is inactive; without an
-         * isolation result the bones stay rendered, which the authority
-         * counts as a claimed frame without transport.
-         */
-        namespace transport_policy = rendered_bone_transport_policy;
-        std::array<transport_policy::HandTransport, 2> transports{};
-        if (space == SkeletonBoneCaptureSpace::Controller) {
-            for (std::size_t hand = 0; hand < transports.size(); ++hand) {
-                (void)frik_hand_world_authority::tryGetHandChainTransport(hand == 1, transports[hand]);
-            }
-        }
-        const auto transportFor = [&transports](const transport_policy::HandChainSide side) -> const transport_policy::HandTransport* {
-            switch (side) {
-            case transport_policy::HandChainSide::Right:
-                return &transports[0];
-            case transport_policy::HandChainSide::Left:
-                return &transports[1];
-            default:
-                return nullptr;
-            }
-        };
-
         outSnapshot.valid = true;
         outSnapshot.inPowerArmor = _cachedInPowerArmor;
         outSnapshot.mode = _cachedMode;
@@ -340,15 +313,24 @@ namespace rock
             if (const RE::NiNode* refNode = tree->transforms[cached.treeIndex].refNode) {
                 entry.nodeWorldValid = native_memory::tryReadValue(&refNode->world, entry.nodeWorld);
             }
-            if (const transport_policy::HandTransport* transport = transportFor(cached.chainSide); transport && transport->active) {
-                entry.world = transport_policy::transportWorld(*transport, entry.world);
-                if (entry.nodeWorldValid) {
-                    entry.nodeWorld = transport_policy::transportWorld(*transport, entry.nodeWorld);
-                }
-            }
             outSnapshot.bones.push_back(std::move(entry));
         }
 
+        if (space == SkeletonBoneCaptureSpace::Controller) {
+            namespace transport = rendered_bone_transport_policy;
+            for (const bool isLeft : { false, true }) {
+                RE::NiTransform controllerRoot{};
+                if (!frik_hand_world_authority::tryGetRawHandWorld(isLeft, controllerRoot) ||
+                    !transport::transportSnapshotHand(outSnapshot.bones,
+                        isLeft ? transport::HandChainSide::Left : transport::HandChainSide::Right,
+                        controllerRoot)) {
+                    ROCK_LOG_SAMPLE_WARN(Hand, 5000,
+                        "Controller skeleton capture rejected: {} hand input or sampled bone chain unavailable", isLeft ? "left" : "right");
+                    outSnapshot = {};
+                    return false;
+                }
+            }
+        }
         outSnapshot.valid = !outSnapshot.bones.empty();
         return outSnapshot.valid;
     }

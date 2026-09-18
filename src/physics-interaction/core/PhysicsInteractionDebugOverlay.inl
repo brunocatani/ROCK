@@ -1584,7 +1584,7 @@
                 }
 
                 root_flattened_finger_skeleton_runtime::Snapshot snapshot{};
-                if (!root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(isLeft, snapshot)) {
+                if (!root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(isLeft, snapshot, nullptr, SkeletonBoneCaptureSpace::Rendered)) {
                     return;
                 }
 
@@ -2166,7 +2166,7 @@
 
                 if (drawFingerSweptArcLiveSkeleton) {
                     root_flattened_finger_skeleton_runtime::Snapshot liveSkeleton{};
-                    if (root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(hand.isLeft(), liveSkeleton)) {
+                    if (root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(hand.isLeft(), liveSkeleton, nullptr, SkeletonBoneCaptureSpace::Rendered)) {
                         for (const auto& finger : liveSkeleton.fingers) {
                             if (!finger.valid) {
                                 continue;

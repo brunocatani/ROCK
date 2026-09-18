@@ -19,10 +19,9 @@
 namespace rock
 {
     /*
-     * Rendered: the root flattened tree as FRIK left it, its solve to a ROCK
-     * claim included. Controller: each hand chain (forearm, hand, fingers)
-     * carried to the isolated controller hand, which is what every consumer
-     * measuring against the controller read before FRIK API v2 deferred claims.
+     * Rendered: the live root flattened array, final only after WorldFinal.
+     * Controller: each sampled hand chain (forearm, hand, fingers) carried
+     * from that array's own wrist to the isolated controller hand.
      */
     enum class SkeletonBoneCaptureSpace : std::uint8_t
     {
@@ -37,8 +36,9 @@ namespace rock
         int parentTreeIndex = -1;
         int drawableParentSnapshotIndex = -1;
         RE::NiTransform world{};
-        // The bone's refNode world: the scene node the array was synced from
-        // (FRIK's arm solve writes it), before FRIK's palm blend on the array.
+        // Independent live refNode world, always in scene space. Arm IK writes
+        // it before the flattened array is final; controller transport must
+        // not apply the array's delta to this already updated scene node.
         RE::NiTransform nodeWorld{};
         bool nodeWorldValid = false;
         bool included = false;
@@ -76,7 +76,6 @@ namespace rock
             int treeIndex = -1;
             int parentTreeIndex = -1;
             int drawableParentSnapshotIndex = -1;
-            rendered_bone_transport_policy::HandChainSide chainSide = rendered_bone_transport_policy::HandChainSide::None;
             bool included = false;
         };
 
@@ -392,7 +391,8 @@ namespace rock::root_flattened_finger_skeleton_runtime
         bool isLeft,
         Snapshot& outSnapshot,
         std::string* outMissingBoneName = nullptr);
-    bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot, std::string* outMissingBoneName = nullptr);
+    bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot, std::string* outMissingBoneName = nullptr,
+        SkeletonBoneCaptureSpace space = SkeletonBoneCaptureSpace::Controller);
 }
 
 // ---- HandFrameResolver.h ----

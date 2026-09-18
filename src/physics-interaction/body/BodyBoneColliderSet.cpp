@@ -650,8 +650,15 @@ namespace rock
             // The twin belongs to the dynamic hand compound, which is built in
             // controller space: carry it with the hand chain so its shape and
             // its palm and finger twins share one frame under a ROCK claim.
+            RE::NiTransform controllerRoot{};
+            if (!frik_hand_world_authority::tryGetRawHandWorld(isLeft, controllerRoot) ||
+                !tracked_hand_isolation_policy::isFiniteTransform(input.end)) {
+                return;
+            }
+            const auto transport = rendered_bone_transport_policy::makeHandTransport(
+                controllerRoot, true, input.end, true);
             slot.valid = true;
-            slot.target = frik_hand_world_authority::transportHandChainWorld(isLeft, mergedFrame.transform);
+            slot.target = rendered_bone_transport_policy::transportWorld(transport, mergedFrame.transform);
             slot.length = mergedFrame.length;
             slot.radius = mergedFrame.radius;
             slot.convexRadius = mergedFrame.convexRadius;
