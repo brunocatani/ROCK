@@ -183,6 +183,7 @@ const ApiV1& table() noexcept {
         &copySources,
         &copyEvents,
         &querySourcePose,
+        &querySourcePath,
     };
     return value;
 }

@@ -102,4 +102,5 @@ namespace rock::provider::runtime {
     void deferRevoke(std::uint64_t owner);
     rock::api::Status querySourcePose(std::uint64_t generation,std::uint64_t key,WeaponSourcePose&);
     void reportBoundaryFailure(std::uint64_t owner,rock::api::InterfaceId) noexcept;
+    rock::api::Status querySourcePath(std::uint64_t generation,std::uint64_t key,std::uint64_t&,std::uint32_t&);
 }

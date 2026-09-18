@@ -58,3 +58,9 @@ Status ROCK_CALL querySourcePose(OwnerToken owner,std::uint64_t generation,std::
         return Status::Ok;
     });
 }
+
+Status ROCK_CALL querySourcePath(OwnerToken owner,std::uint64_t generation,std::uint64_t key,std::uint64_t* parentKey,std::uint32_t* childIndex) noexcept {
+    if (!parentKey || !childIndex) return Status::InvalidArgument;
+    *parentKey=0; *childIndex=0;
+    return invoke(owner,kInterfaceId,1,true,[&]() { return provider::runtime::querySourcePath(generation,key,*parentKey,*childIndex); });
+}

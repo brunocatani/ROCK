@@ -39,7 +39,7 @@ extern "C" __declspec(dllexport) rock::api::Status ROCK_CALL ROCKAPI_QueryInterf
         InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::Grab,1,0,sizeof(grab::ApiV1),1,0,0,&grab::table()},
         InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::Touch,1,0,sizeof(touch::ApiV1),1,0,0,&touch::table()},
         InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::Weapon,1,0,sizeof(weapon::ApiV1),1,0,0,&weapon::table()},
-        InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::WeaponParts,1,0,sizeof(weaponparts::ApiV1),1,0,0,&weaponparts::table()},
+        InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::WeaponParts,1,weaponparts::kMinor,sizeof(weaponparts::ApiV1),1,0,0,&weaponparts::table()},
         InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::Animation,1,0,sizeof(animation::ApiV1),1,0,0,&animation::table()},
         InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::Input,1,0,sizeof(input::ApiV1),1,0,0,&input::table()},
         InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::References,1,0,sizeof(references::ApiV1),1,0,0,&references::table()},

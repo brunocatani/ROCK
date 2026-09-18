@@ -3344,23 +3344,23 @@ namespace rock::provider::runtime {
 namespace rock::provider::runtime {
     std::uintptr_t resolveSourceKey(std::uint64_t generation,std::uint64_t key) {
         const auto access=s_physicsInteraction.borrow();
-        auto* pi=access.get(); return pi?pi->resolveProviderWeaponSource(generation,key):0;
+        auto* pi=access.get(); if (pi) pi->refreshProviderWeaponSources(); return pi?pi->resolveProviderWeaponSource(generation,key):0;
     }
     std::uint64_t sourceKey(std::uint64_t generation,std::uintptr_t node) {
         const auto access=s_physicsInteraction.borrow();
-        auto* pi=access.get(); return pi?pi->providerWeaponSourceKey(generation,node):0;
+        auto* pi=access.get(); if (pi) pi->refreshProviderWeaponSources(); return pi?pi->providerWeaponSourceKey(generation,node):0;
     }
     std::uint64_t sourceKeyForBody(std::uint64_t generation,std::uint32_t body) {
         const auto access=s_physicsInteraction.borrow();
-        auto* pi=access.get(); return pi?pi->providerWeaponSourceKeyForBody(generation,body):0;
+        auto* pi=access.get(); if (pi) pi->refreshProviderWeaponSources(); return pi?pi->providerWeaponSourceKeyForBody(generation,body):0;
     }
     std::uintptr_t resolveSourceName(std::uint64_t generation,const char* name) {
         const auto access=s_physicsInteraction.borrow();
-        auto* pi=access.get(); return pi?pi->resolveProviderWeaponSourceName(generation,name):0;
+        auto* pi=access.get(); if (pi) pi->refreshProviderWeaponSources(); return pi?pi->resolveProviderWeaponSourceName(generation,name):0;
     }
     rock::api::Status copySources(std::uint64_t generation,std::uint32_t offset,rock::provider::WeaponSourceRecord* output,std::uint32_t capacity,std::uint32_t& copied,std::uint32_t& total) {
         const auto access=s_physicsInteraction.borrow();
-        auto* pi=access.get(); return pi?pi->copyProviderWeaponSources(generation,offset,output,capacity,copied,total):rock::api::Status::NotReady;
+        auto* pi=access.get(); if (pi) pi->refreshProviderWeaponSources(); return pi?pi->copyProviderWeaponSources(generation,offset,output,capacity,copied,total):rock::api::Status::NotReady;
     }
 }
 
@@ -3395,5 +3395,14 @@ namespace rock::provider::runtime {
         const auto bit=1u<<(id<32?id:0);
         if (reported.fetch_or(bit,std::memory_order_relaxed)&bit) return;
         try { logger::error("ROCK interface {} failed at the DLL boundary for owner {:016X}",id,owner); } catch (...) {}
+    }
+}
+
+namespace rock::provider::runtime {
+    rock::api::Status querySourcePath(std::uint64_t generation,std::uint64_t key,std::uint64_t& parentKey,std::uint32_t& childIndex) {
+        const auto access=s_physicsInteraction.borrow(); auto* pi=access.get();
+        if (!pi) return rock::api::Status::NotReady;
+        pi->refreshProviderWeaponSources();
+        return pi->queryProviderWeaponSourcePath(generation,key,parentKey,childIndex);
     }
 }

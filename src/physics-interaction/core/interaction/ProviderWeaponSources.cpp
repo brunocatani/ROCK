@@ -112,3 +112,23 @@ api::Status PhysicsInteraction::queryProviderWeaponSourcePose(std::uint64_t gene
     return api::Status::Ok;
 }
 }
+
+namespace rock {
+api::Status PhysicsInteraction::queryProviderWeaponSourcePath(std::uint64_t generation,std::uint64_t key,std::uint64_t& parentKey,std::uint32_t& childIndex) const {
+    parentKey=0; childIndex=0;
+    auto* node=reinterpret_cast<RE::NiAVObject*>(resolveProviderWeaponSource(generation,key));
+    if (!node) return api::Status::GenerationMismatch;
+    if (node==_providerSources.root) return api::Status::Ok;
+    auto* parent=node->parent;
+    if (!parent) return api::Status::TargetUnavailable;
+    for (std::uint32_t i=0;i<_providerSources.count;++i) if (_providerSources.entries[i].node==parent) {
+        const auto keyOfParent=_providerSources.entries[i].value.sourceKey;
+        auto& children=parent->GetRuntimeData().children;
+        for (decltype(children.size()) index=0;index<children.size();++index) if (children[index].get()==node) {
+            parentKey=keyOfParent; childIndex=index; return api::Status::Ok;
+        }
+        return api::Status::TargetUnavailable;
+    }
+    return api::Status::TargetUnavailable;
+}
+}
