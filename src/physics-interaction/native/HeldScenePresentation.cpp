@@ -1,6 +1,7 @@
 #include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/telemetry/HeldRenderTrace.h"
+#include "physics-interaction/weapon/WeaponSceneTraversal.h"
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/core/RockRuntimeState.h"
@@ -962,6 +963,13 @@ namespace rock::held_scene_presentation
         if (!failure && !held_scene_presentation_policy::prepareScenePoses(scenePoses.data(), scenePoseCount)) {
             failure = "scene-hierarchy-or-alias-conflict";
         }
+        std::array<held_scene_presentation_policy::SceneHistoryPose<RE::NiAVObject, RE::NiTransform>, 512> sceneHistory{};
+        std::size_t historyCount = 0;
+        if (!failure && !held_scene_presentation_policy::captureSceneHistory(scenePoses.data(), scenePoseCount,
+                sceneHistory.data(), sceneHistory.size(), historyCount,
+                [](RE::NiAVObject* root, auto&& visitor) { return weapon_scene::visitScene(root, visitor); })) {
+            failure = "scene-history-incomplete-or-invalid";
+        }
         if (failure) {
             clearTargetTransportPublication(handIndex);
             ROCK_LOG_SAMPLE_WARN(HeldScenePresentation, 1000,
@@ -991,6 +999,12 @@ namespace rock::held_scene_presentation
                         f4vr::updateTransformsDown(node, false);
                     }
                 });
+            // Native 0x1C23740 snapshots world -> previousWorld before it
+            // computes world; BSGeometry 0x1C31C10 calls it. The raw owner
+            // writes above have already advanced world, so restore the actual
+            // prior presented pose for roots, independent parts and geometry.
+            // Native scene writer 0x1E06B00 only writes local/world, not history.
+            held_scene_presentation_policy::commitSceneHistory(sceneHistory.data(), historyCount);
             if (logBodies && referenceRoot) {
                 ROCK_LOG_INFO(HeldScenePresentation,
                     "HELD_SCENE_ROOT trace={} frame={} hand={} root='{}' bodyOwners={} scenePoses={} advance={:.3f}gu/{:.3f}deg output=({:.3f},{:.3f},{:.3f})",

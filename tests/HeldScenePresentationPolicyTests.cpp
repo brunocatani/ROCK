@@ -111,6 +111,7 @@ int main()
         Node* parent = nullptr;
         RE::NiTransform world = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
         RE::NiTransform local = world;
+        RE::NiTransform previousWorld = world;
     };
     Node root{}, child{&root}, sibling{};
     using Pose = ScenePose<Node, RE::NiTransform>;
@@ -225,12 +226,37 @@ int main()
             labelMesh.world = rock::transform_math::composeTransforms(bottleRoot.world, labelMesh.local);
         }
     };
+    const auto visitBottle = [&](Node* rootNode, auto&& visit) {
+        struct Result { bool truncated = false; } result;
+        if (rootNode == &bottleRoot) {
+            for (auto* node : { &bottleRoot, &neck, &bottleBody, &labelMesh }) {
+                if (!visit(node)) { result.truncated = true; break; }
+            }
+        } else {
+            result.truncated = !visit(rootNode);
+        }
+        return result;
+    };
+    using History = SceneHistoryPose<Node, RE::NiTransform>;
+    History bottleHistory[4]{};
+    std::size_t historyCount = 0;
+    bottleBody.previousWorld.translate.x = -500.0f;
+    ok &= expect("history must capture every branch before any presentation writes",
+        captureSceneHistory(bottlePoses, bottlePoseCount, bottleHistory, 4, historyCount, visitBottle) && historyCount == 4);
     applyScenePoses(bottlePoses, bottlePoseCount, updateBottle, [&](Node* node) {
         ++bottleRefreshes;
+        // Model native UpdateWorldData: each refresh rolls the already-updated
+        // current transform into previousWorld, destroying its frame history.
+        visitBottle(node, [](Node* part) { part->previousWorld = part->world; return true; });
         updateBottle(node);
         cachedLabel = labelMesh.world;
         cachedBody = bottleBody.world;
     });
+    commitSceneHistory(bottleHistory, historyCount);
+    ok &= expect("native refresh must retain last frame's history for owners and mesh-only branches",
+        near(bottleRoot.previousWorld.translate.x, 0.0f) && near(neck.previousWorld.translate.z, 1.0f) &&
+        near(bottleBody.previousWorld.translate.x, 0.0f) && near(bottleBody.previousWorld.translate.z, 1.6f) &&
+        near(labelMesh.previousWorld.translate.x, 0.0f) && near(labelMesh.previousWorld.translate.y, 2.0f));
     ok &= expect("all bottle branches and native geometry caches must share the current movement step",
         bottleRefreshes == 1 && near(bottleRoot.world.translate.x, 5.0f) &&
         near(cachedLabel.translate.x, 5.0f) && near(cachedLabel.translate.y, 2.0f) &&
@@ -240,6 +266,19 @@ int main()
     updateBottle(&bottleRoot);
     ok &= expect("the later native parent update must retain the same presented pose",
         near(bottleBody.world.translate.x, 5.0f) && near(labelMesh.world.translate.x, 5.0f));
+
+    for (std::size_t i = 0; i < bottlePoseCount; ++i) bottlePoses[i].world.translate.x += 4.0f;
+    ok &= expect("the next frame must capture the preceding presentation, not stale native history",
+        captureSceneHistory(bottlePoses, bottlePoseCount, bottleHistory, 4, historyCount, visitBottle));
+    // Ordinary-object direct writes never advance previousWorld themselves.
+    applyScenePoses(bottlePoses, bottlePoseCount, updateBottle, updateBottle);
+    commitSceneHistory(bottleHistory, historyCount);
+    ok &= expect("direct and native refresh paths must both advance history exactly one presented frame",
+        near(bottleBody.world.translate.x, 9.0f) && near(bottleBody.previousWorld.translate.x, 5.0f) &&
+        near(labelMesh.world.translate.x, 9.0f) && near(labelMesh.previousWorld.translate.x, 5.0f));
+    ok &= expect("incomplete history must reject without modifying scene transforms",
+        !captureSceneHistory(bottlePoses, bottlePoseCount, bottleHistory, 3, historyCount, visitBottle) &&
+        historyCount == 0 && near(bottleBody.world.translate.x, 9.0f) && near(bottleBody.previousWorld.translate.x, 5.0f));
 
     ok &= expect("earlier grab must own all shared parts, including when left updates second",
         preferEarlierTrace(4, 8) && !preferEarlierTrace(8, 4));

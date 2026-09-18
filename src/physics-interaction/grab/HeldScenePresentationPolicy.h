@@ -340,6 +340,50 @@ namespace rock::held_scene_presentation_policy
         }
     }
 
+    template <class Node, class Transform>
+    struct SceneHistoryPose
+    {
+        Node* node = nullptr;
+        Transform world{};
+    };
+
+    // Snapshot the last presented pose before any owner or intermediate parent
+    // is advanced. Native world updates roll world into previousWorld on every
+    // call, so their history is not usable after an already-presented subtree
+    // has been refreshed. The snapshots live only for this presentation batch.
+    template <class Node, class Transform, class VisitSubtree>
+    inline bool captureSceneHistory(const ScenePose<Node, Transform>* poses, std::size_t count,
+        SceneHistoryPose<Node, Transform>* history, std::size_t capacity, std::size_t& historyCount,
+        VisitSubtree visitSubtree) noexcept
+    {
+        historyCount = 0;
+        for (std::size_t index = 0; index < count; ++index) {
+            if (poses[index].duplicate || !poses[index].refreshRoot) continue;
+            bool complete = true;
+            const auto traversal = visitSubtree(poses[index].node, [&](Node* node) {
+                if (!node || historyCount == capacity || !finiteTransform(node->world)) {
+                    complete = false;
+                    return false;
+                }
+                history[historyCount++] = {node, node->world};
+                return true;
+            });
+            if (!complete || traversal.truncated) {
+                historyCount = 0;
+                return false;
+            }
+        }
+        return true;
+    }
+
+    template <class Node, class Transform>
+    inline void commitSceneHistory(const SceneHistoryPose<Node, Transform>* history, std::size_t count) noexcept
+    {
+        for (std::size_t index = 0; index < count; ++index) {
+            history[index].node->previousWorld = history[index].world;
+        }
+    }
+
     enum class RejectReason
     {
         None,
