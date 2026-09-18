@@ -29,10 +29,10 @@ namespace rock::equipped_weapon_drop_policy
         return "none";
     }
 
-    [[nodiscard]] inline constexpr bool canStartAutoDrop(bool leftAttached, bool rightAttached,
+    [[nodiscard]] inline constexpr bool canStartAutoDrop(bool leftCarries, bool rightCarries,
         bool freeFiringStationHovered) noexcept
     {
-        return leftAttached != rightAttached && !freeFiringStationHovered;
+        return leftCarries != rightCarries && !freeFiringStationHovered;
     }
 
     [[nodiscard]] inline constexpr bool equippedWeaponShoulderStashAvailable(

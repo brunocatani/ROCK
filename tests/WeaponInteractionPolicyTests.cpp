@@ -3752,6 +3752,36 @@ int main()
     ok &= expectEqual("without manual firing ownership support release ends only support",
         resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{}), SupportReleaseManualAction::EndSupportOnly);
     using rock::weapon_two_handed_grip_math::canReleaseCarryGrip;
+    {
+        using HandGrip = rock::equipped_weapon_toggle_grab_policy::HandGripOccupancy;
+        using rock::equipped_weapon_drop_policy::canStartAutoDrop;
+        const HandGrip carryingPart{ .partGripActive = true };
+        const HandGrip visualPart{ .partGripActive = true, .partGripAttachOnly = true };
+        const HandGrip firing{ .firingGripActive = true };
+        ok &= expectTrue("attach-only still occupies the hand", visualPart.weaponEngaged());
+        ok &= expectFalse("attach-only does not carry the weapon", visualPart.carriesWeapon());
+        for (const auto carrier : { carryingPart, firing }) {
+            for (const bool carrierIsLeft : { false, true }) {
+                const auto left = carrierIsLeft ? carrier : visualPart;
+                const auto right = carrierIsLeft ? visualPart : carrier;
+                const bool allowed = canStartAutoDrop(left.carriesWeapon(), right.carriesWeapon(), false);
+                ok &= expectTrue("visual peer permits last-carrier transfer on either hand", allowed);
+                ok &= expectTrue("real carrier releases with visual peer", canReleaseCarryGrip(
+                    carrier.carriesWeapon(), visualPart.carriesWeapon(), allowed));
+                ok &= expectFalse("disabled last-grip release still retains real carrier", canReleaseCarryGrip(
+                    carrier.carriesWeapon(), visualPart.carriesWeapon(), false));
+                ok &= expectFalse("refused release still requires a new hold", canReleaseCarryGrip(
+                    carrier.carriesWeapon(), visualPart.carriesWeapon(), allowed, true));
+                ok &= expectFalse("firing-station hover still prevents transfer", canStartAutoDrop(
+                    left.carriesWeapon(), right.carriesWeapon(), true));
+            }
+        }
+        const bool simultaneousDrop = canStartAutoDrop(carryingPart.carriesWeapon(), carryingPart.carriesWeapon(), false);
+        ok &= expectFalse("two real carriers cannot trigger the last-hand drop", simultaneousDrop);
+        ok &= expectTrue("first of two real carriers can release", canReleaseCarryGrip(true, true, simultaneousDrop));
+        ok &= expectFalse("same-frame second release retains the remaining real carrier", canReleaseCarryGrip(true, false, simultaneousDrop));
+        ok &= expectFalse("two visual grips never create a carrier", canStartAutoDrop(visualPart.carriesWeapon(), visualPart.carriesWeapon(), false));
+    }
     ok &= expectTrue("a carry grip releases while its peer still carries",
         canReleaseCarryGrip(true, true, false));
     ok &= expectTrue("the last carry grip releases when the last-grip drop is enabled",

@@ -165,22 +165,6 @@ namespace rock
             return "unknown";
         }
 
-        active_grab_body_lifecycle::BodyReleaseIntent releaseIntentFromDisposition(GrabReleaseDisposition disposition) noexcept
-        {
-            using active_grab_body_lifecycle::BodyReleaseIntent;
-            switch (disposition) {
-            case GrabReleaseDisposition::PhysicalDrop:
-                return BodyReleaseIntent::PhysicalDrop;
-            case GrabReleaseDisposition::OwnershipHandoff:
-                return BodyReleaseIntent::OwnershipHandoff;
-            case GrabReleaseDisposition::PendingInventoryTransfer:
-            case GrabReleaseDisposition::TransferToInventory:
-            case GrabReleaseDisposition::PendingConsumeTransfer:
-                return BodyReleaseIntent::NonPhysicalTransfer;
-            }
-            return BodyReleaseIntent::NonPhysicalTransfer;
-        }
-
         RE::NiPoint3 getMatrixColumn(const RE::NiMatrix3& matrix, int column) { return RE::NiPoint3(matrix.entry[0][column], matrix.entry[1][column], matrix.entry[2][column]); }
 
         RE::NiPoint3 getMatrixRow(const RE::NiMatrix3& matrix, int row) { return RE::NiPoint3(matrix.entry[row][0], matrix.entry[row][1], matrix.entry[row][2]); }
@@ -15804,7 +15788,9 @@ namespace rock
                     releaseContext.finalObjectRelease ? "yes" : "no");
             }
 
-            if (releaseContext.finalObjectRelease && releaseContext.disposition == GrabReleaseDisposition::PhysicalDrop) {
+            // A pending pickup still owns a loose world object. Wake it even
+            // without throw history, so rejection leaves an ordinary drop.
+            if (releaseContext.finalObjectRelease && shouldActivateReleasedBodies(releaseContext.disposition)) {
                 const auto releaseActivation = activateHeldObjectBodySet(world, _savedObjectState.bodyId.value, _heldBodyIds);
                 if (releaseActivation.failedActivationCount > 0) {
                     ROCK_LOG_WARN(Hand,

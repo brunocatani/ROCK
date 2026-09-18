@@ -185,6 +185,10 @@ namespace rock
     {
         performance_profiler::ScopedTimer equippedFrameTimer(performance_profiler::Scope::EquippedWeaponInteraction);
         const auto& runtime = runtime_state::currentFrame();
+        const bool leftHandAvailableForAcquisition = force_grab_policy::availableForEquippedGrip(
+            forceGrabHandBlockerMask(_leftHand, true, frame.left.disabled, true));
+        const bool rightHandAvailableForAcquisition = force_grab_policy::availableForEquippedGrip(
+            forceGrabHandBlockerMask(_rightHand, false, frame.right.disabled, true));
         weapon_recoil_policy::WeaponEvidence recoilWeapon{};
 
         RE::NiNode* weaponNode = resolveEquippedWeaponInteractionNode();
@@ -649,9 +653,9 @@ namespace rock
                     contact.bodyId : weapon_part_runtime::kInvalidBodyId;
             };
             _equipped.partIndicatorBodyIds = {
-                frame.left.disabled ? weapon_part_runtime::kInvalidBodyId :
+                !leftHandAvailableForAcquisition ? weapon_part_runtime::kInvalidBodyId :
                     indicatorBodyId(leftWeaponContact, providerInteractionState),
-                frame.right.disabled ? weapon_part_runtime::kInvalidBodyId :
+                !rightHandAvailableForAcquisition ? weapon_part_runtime::kInvalidBodyId :
                     indicatorBodyId(rightWeaponContact, rightHandInteractionState),
             };
             _equipped.partIndicatorFrame = runtime.frameIndex;
@@ -815,7 +819,12 @@ namespace rock
             bool pairedGripStartedThisFrame = false;
             const auto pairedRelease = pendingPrimaryStart.pairedRelease;
             bool nativeFiringGripTransfer = false;
-            if (firingGripOwnershipFeatureAvailable && !inputBlockingMenuActive && !_twoHandedGrip.isManualOwnershipActive()) {
+            const bool firingHandAvailableForAcquisition = firingHandIsLeft ?
+                leftHandAvailableForAcquisition : rightHandAvailableForAcquisition;
+            const bool pairedHandsAvailable = !pendingPrimaryStart.pairedGrips.valid() ||
+                (leftHandAvailableForAcquisition && rightHandAvailableForAcquisition);
+            if (firingGripOwnershipFeatureAvailable && !inputBlockingMenuActive &&
+                firingHandAvailableForAcquisition && pairedHandsAvailable && !_twoHandedGrip.isManualOwnershipActive()) {
                 const auto& primaryState = readPrimaryGrabState();
                 if (_equipped.pendingPrimaryOnlyGripStart.pending &&
                     !primaryState.held &&
@@ -995,13 +1004,13 @@ namespace rock
             bool leftReattachEligible = false;
             bool rightReattachEligible = false;
             if (_twoHandedGrip.isPartCarryActive() && primaryDetachFeatureAvailable) {
-                leftReattachEligible = weapon_two_handed_grip_math::canAttemptFiringGripReattach(
+                leftReattachEligible = leftHandAvailableForAcquisition && weapon_two_handed_grip_math::canAttemptFiringGripReattach(
                     weapon_two_handed_grip_math::FiringGripReattachInput{
                         .partCarryActive = true,
                         .menuInputActive = inputBlockingMenuActive,
                         .handHoldingObject = _leftHand.isHolding(),
                     });
-                rightReattachEligible = weapon_two_handed_grip_math::canAttemptFiringGripReattach(
+                rightReattachEligible = rightHandAvailableForAcquisition && weapon_two_handed_grip_math::canAttemptFiringGripReattach(
                     weapon_two_handed_grip_math::FiringGripReattachInput{
                         .partCarryActive = true,
                         .menuInputActive = inputBlockingMenuActive,
@@ -1101,6 +1110,8 @@ namespace rock
                 .rightGripHeld = !pairedGripPending && rightGripHeld,
                 .leftHandHoldingObject = leftHandHoldingObject,
                 .rightHandHoldingObject = _rightHand.isHolding(),
+                .leftHandAvailableForAcquisition = leftHandAvailableForAcquisition,
+                .rightHandAvailableForAcquisition = rightHandAvailableForAcquisition,
                 .leftReattachEligible = leftReattachEligible,
                 .rightReattachEligible = rightReattachEligible,
                 .scopeMenuOpen = runtime.localScopeMenuOpen,

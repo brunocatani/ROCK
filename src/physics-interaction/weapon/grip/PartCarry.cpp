@@ -213,6 +213,10 @@ namespace rock
         const bool supportGripHeld = supportHandIsLeft ? frameInput.leftGripHeld : frameInput.rightGripHeld;
         const bool supportHandHoldingObject = supportHandIsLeft ? frameInput.leftHandHoldingObject : frameInput.rightHandHoldingObject;
         const bool firingHandHoldingObject = firingHandIsLeft ? frameInput.leftHandHoldingObject : frameInput.rightHandHoldingObject;
+        const bool supportHandAvailableForAcquisition = supportHandIsLeft ?
+            frameInput.leftHandAvailableForAcquisition : frameInput.rightHandAvailableForAcquisition;
+        const bool firingHandAvailableForAcquisition = firingHandIsLeft ?
+            frameInput.leftHandAvailableForAcquisition : frameInput.rightHandAvailableForAcquisition;
         const bool authoredProviderAuthorityActive =
             leftRuntimeState.providerPartAuthority.active ||
             rightRuntimeState.providerPartAuthority.active;
@@ -369,8 +373,10 @@ namespace rock
             }
         }
 
-        const bool twoHandsAttached = partGrip(true).active && partGrip(false).active;
-        const bool allowLastHandDrop = _handlingSettings.lastGripReleaseDropEnabled && !twoHandsAttached;
+        const auto occupancy = getGripOccupancy();
+        const bool allowLastHandDrop = _handlingSettings.lastGripReleaseDropEnabled &&
+            equipped_weapon_drop_policy::canStartAutoDrop(
+                occupancy.left.carriesWeapon(), occupancy.right.carriesWeapon(), false);
 
         /*
          * Open-hand releases are evaluated support hand first, so a same-frame
@@ -402,7 +408,7 @@ namespace rock
                         gripCarries(supportGrip),
                         gripCarries(freeHandGrip),
                         allowLastHandDrop, supportGrip.releaseRequiresNewHold)) {
-                    if (gripCarries(supportGrip) && !freeHandGrip.active) {
+                    if (gripCarries(supportGrip) && !gripCarries(freeHandGrip)) {
                         (void)requestEquippedWeaponDrop("support-carry-released",
                             supportHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right);
                         return;
@@ -422,7 +428,7 @@ namespace rock
                         gripCarries(freeHandGrip),
                         gripCarries(supportGrip),
                         allowLastHandDrop, freeHandGrip.releaseRequiresNewHold)) {
-                    if (gripCarries(freeHandGrip) && !supportGrip.active) {
+                    if (gripCarries(freeHandGrip) && !gripCarries(supportGrip)) {
                         (void)requestEquippedWeaponDrop("part-carry-released",
                             firingHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right);
                         return;
@@ -470,7 +476,7 @@ namespace rock
             }
         }
 
-        if (!freeHandGrip.active && frameInput.primaryGripInput.pressed) {
+        if (!freeHandGrip.active && firingHandAvailableForAcquisition && frameInput.primaryGripInput.pressed) {
             const WeaponInteractionDecision freeHandDecision = routeWeaponInteraction(firingHandContact, firingRuntimeState);
             if (weapon_two_handed_grip_math::canStartFreeHandPartGrip(
                     freeHandDecision.kind == WeaponInteractionKind::SupportGrip,
@@ -530,7 +536,7 @@ namespace rock
             }
         }
 
-        if (!supportGrip.active) {
+        if (!supportGrip.active && supportHandAvailableForAcquisition) {
             const WeaponInteractionDecision supportDecision = routeWeaponInteraction(supportHandContact, supportRuntimeState);
             if (supportDecision.kind == WeaponInteractionKind::SupportGrip &&
                 weapon_two_handed_grip_math::canStartSupportGrip(true, supportGripHeld, supportHandHoldingObject)) {

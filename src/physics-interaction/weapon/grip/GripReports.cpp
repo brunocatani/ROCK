@@ -190,15 +190,15 @@ namespace rock
         AuthoredWeaponGripPose pose{};
         const bool isLeft = equipped_weapon_drop_policy::isLeft(sourceHand);
         if (sourceHand == equipped_weapon_drop_policy::SourceHand::None ||
-            !equipped_weapon_drop_policy::canStartAutoDrop(occupied.left.weaponEngaged(),
-                occupied.right.weaponEngaged(), _firing.reattachHoverInsideZone) ||
+            !equipped_weapon_drop_policy::canStartAutoDrop(occupied.left.carriesWeapon(),
+                occupied.right.carriesWeapon(), _firing.reattachHoverInsideZone) ||
             !captureDropGripPose(isLeft, pose)) {
             recordGripReleaseRetained(isLeft, "auto-drop-pose-occupancy-or-zone-unavailable");
             _firing.primaryReleaseIntent.pending = false;
             _firing.primaryReleaseDebounce = {};
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
-                "Auto drop retained: hand={} bothHands={} authoredPose={} freeFiringStationHovered={} generation={:016X}",
-                isLeft ? "left" : "right", occupied.left.weaponEngaged() && occupied.right.weaponEngaged(),
+                "Auto drop retained: hand={} bothCarriers={} authoredPose={} freeFiringStationHovered={} generation={:016X}",
+                isLeft ? "left" : "right", occupied.left.carriesWeapon() && occupied.right.carriesWeapon(),
                 pose.valid(), _firing.reattachHoverInsideZone, _session.weaponGenerationKey);
             return false;
         }
