@@ -321,16 +321,13 @@ namespace rock
             returnState.lastTargetLocal,
             hand_visual_lerp_math::kEquippedWeaponReturnConfig);
         returnState.localTransition.durationInitialized = true;
-        if (!moveWeaponPresentationRigidly(_session.weaponNode, startWorld)) {
-            ROCK_LOG_SAMPLE_WARN(
-                Weapon,
-                2000,
-                "TwoHandedGrip: weapon return rejected an invalid presentation subtree");
+        // The grip solver stops publishing on this release frame; the normal
+        // return update has already run. Publish the initial return pose now
+        // so collision authority retains its target and any latched bipod.
+        if (!applyWeaponVisualAuthority(_session.weaponNode, startWorld, _session.weaponGenerationKey)) {
             return;
         }
         _visuals.returningWeapon = returnState;
-        _visuals.lastRenderedWeaponWorld = _session.weaponNode->world;
-        _visuals.hasLastRenderedWeaponWorld = true;
         ROCK_LOG_DEBUG(Weapon,
             "TwoHandedGrip: weapon return started reason={} target={} distance={:.2f}gu angle={:.1f}deg duration={:.3f}s",
             reason ? reason : "unknown",
