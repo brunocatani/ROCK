@@ -1,6 +1,7 @@
 #pragma once
 #include "WeaponSourceCatalog.h"
 #include "ProviderRuntimeTypes.h"
+#include "OwnerBindingPolicy.h"
 
 namespace rock::provider::runtime {
     const char* ROCK_PROVIDER_CALL apiGetModVersion();
@@ -90,7 +91,8 @@ namespace rock::provider::runtime {
     RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryReferenceInteractionV1(std::uint64_t ownerToken, const RockProviderReferenceQueryV1* query, RockProviderReferenceInteractionV1* outState);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryPowerArmorTargetV1(std::uint64_t ownerToken, const RockProviderReferenceQueryV1* query, RockProviderPowerArmorTargetV1* outTarget);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestPowerArmorGrabV1(std::uint64_t ownerToken, const RockProviderPowerArmorGrabRequestV1* request, std::uint64_t* outCommandId);
-    rock::api::Status authorize(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t permission, bool requireThread = true);
+    rock::api::Status authorize(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t permission, bool requireThread = true,
+        OwnerAccess access = OwnerAccess::Existing);
     rock::api::Status bind(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t major, std::uint32_t permissions);
     rock::api::SampleV1 sample();
     void revoke(std::uint64_t owner);

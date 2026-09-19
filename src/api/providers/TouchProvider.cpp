@@ -1,15 +1,15 @@
 #include "TouchMarshalling.h"
 #include <ROCK/Discovery.h>
-#include "api/EventStreams.h"
+#include "EventBoundary.h"
 
 namespace rock::api::touch {
 namespace {
 using namespace boundary;
 Status ROCK_CALL setTouchGrabTargetsForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken, const TouchGrabTargetV1* targets, std::uint32_t targetCount) noexcept {
-    if (targetCount > 256) return Status::CapacityFull;
+    if (targetCount > kMaxTargets) return Status::CapacityFull;
     return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
         if (targetCount && !targets) return Status::InvalidArgument;
-        std::array<provider::RockProviderTouchGrabTargetV1, 256> native_targets{};
+        std::array<provider::RockProviderTouchGrabTargetV1, kMaxTargets> native_targets{};
         for (std::uint32_t i=0; i<targetCount; ++i) {
             if (const auto s = checkInput(targets+i); s != Status::Ok) return s;
             convert(native_targets[i], targets[i]);
@@ -25,13 +25,13 @@ Status ROCK_CALL clearTouchGrabTargetsForScopeV1(std::uint64_t ownerToken, std::
     });
 }
 Status ROCK_CALL copyTouchGrabStatesForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken, TouchGrabStateV1* outStates, std::uint32_t maxStates, std::uint32_t* outStateCount) noexcept {
-    if (maxStates > 256) return Status::CapacityFull;
+    if (maxStates > kMaxTargets) return Status::CapacityFull;
     if (maxStates && !outStates) return Status::InvalidArgument;
     for (std::uint32_t i=0;i<maxStates;++i) if (const auto status=checkOutput(outStates+i); status!=Status::Ok) return status;
     if (!outStateCount) return Status::InvalidArgument;
     *outStateCount = {};
     return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        std::array<provider::RockProviderTouchGrabStateV1, 256> native_outStates{};
+        std::array<provider::RockProviderTouchGrabStateV1, kMaxTargets> native_outStates{};
         const auto result = provider::runtime::apiCopyTouchGrabStatesForScopeV1(ownerToken, scopeToken, native_outStates.data(), maxStates, outStateCount);
         for (std::uint32_t i=0; i<std::min<std::uint32_t>(maxStates, *outStateCount); ++i) convert(outStates[i], native_outStates[i]);
         return static_cast<Status>(result);

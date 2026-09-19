@@ -1,10 +1,5 @@
 Status ROCK_CALL getSample(OwnerToken owner, SampleV1* outSample) noexcept {
-    if (!outSample) return Status::InvalidArgument;
-    *outSample = {};
-    return invoke(owner, kInterfaceId, 1, false, [&]() {
-        *outSample = provider::runtime::sample();
-        return Status::Ok;
-    });
+    return boundary::readSample(owner, kInterfaceId, outSample);
 }
 
 Status ROCK_CALL requestInventoryGrab(OwnerToken owner, const InventoryGrabRequestV1* request, std::uint64_t* command) noexcept {
@@ -24,17 +19,12 @@ Status ROCK_CALL requestInventoryGrab(OwnerToken owner, const InventoryGrabReque
 }
 
 Status ROCK_CALL copyEvents(OwnerToken owner,std::uint64_t after,EventV1* events,std::uint32_t capacity,StreamV1* state) noexcept {
-    if (!state) return Status::InvalidArgument;
-    *state={};
-    if (capacity && !events) return Status::InvalidArgument;
-    if (capacity>256) return Status::CapacityFull;
-    for (std::uint32_t i=0;i<capacity;++i) if (const auto status=checkOutput(events+i);status!=Status::Ok) return status;
-    return invoke(owner,kInterfaceId,1,false,[&]() { return provider::events::copy(owner,after,events,capacity,*state); });
+    return boundary::copyEventStream(owner,kInterfaceId,after,events,capacity,kEventCapacityPerOwner,state);
 }
 
 Status ROCK_CALL setEventCallback(OwnerToken owner,EventCallbackV1 callback,void* user) noexcept {
     if (!callback) return Status::InvalidArgument;
-    return invoke(owner,kInterfaceId,1,true,[&]() { return provider::events::setGrabCallback(owner,callback,user); });
+    return invoke(owner,kInterfaceId,1,true,[&]() { return provider::events::setGrabCallback(owner,callback,user); },provider::OwnerAccess::Active);
 }
 Status ROCK_CALL clearEventCallback(OwnerToken owner) noexcept {
     return invoke(owner,kInterfaceId,1,true,[&]() { provider::events::clearGrabCallback(owner); return Status::Ok; });

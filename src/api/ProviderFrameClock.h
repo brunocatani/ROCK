@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <ROCK/Core.h>
 
 namespace rock::provider
 {
@@ -10,6 +11,14 @@ namespace rock::provider
     class ProviderFrameClock
     {
     public:
+        std::uint64_t beginPhase(api::core::AnimationPhaseV1 phase, std::uint64_t gameFrame) noexcept
+        {
+            // Native graph observations can occur between Complete and BeforeRock.
+            // Only the measured game-loop entry advances the provider clock.
+            if (phase == api::core::AnimationPhaseV1::BeforeRock) beginFrame(gameFrame);
+            return phase == api::core::AnimationPhaseV1::NativeGraphOutput ? gameFrame : current();
+        }
+
         void beginFrame(std::uint64_t gameFrame) noexcept
         {
             _current.store(gameFrame, std::memory_order_release);

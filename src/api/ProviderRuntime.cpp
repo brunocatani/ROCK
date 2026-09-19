@@ -1,3 +1,4 @@
+#include "api/InterfaceNegotiation.h"
 #include "ProviderRuntimeServices.h"
 #include "OwnerBindingPolicy.h"
 #include "EventStreams.h"
@@ -2594,18 +2595,10 @@ namespace rock::provider
         }
 
         drainDeferredRevocations();
-        std::uint64_t phaseFrameIndex =
-            s_activeAnimationPhaseFrameIndex.load(std::memory_order_acquire);
-        const bool startingAnimationFrame = phaseFrameIndex == 0;
-        if (phaseFrameIndex == 0) {
-            // The measured game clock owns public frame identity, including
-            // frames without a provider and lifecycle callbacks between frames.
-            phaseFrameIndex = timing.sequence;
-            s_frameClock.beginFrame(phaseFrameIndex);
-            s_activeAnimationPhaseFrameIndex.store(
-                phaseFrameIndex,
-                std::memory_order_release);
-        }
+        const auto phaseFrameIndex = s_frameClock.beginPhase(
+            static_cast<api::core::AnimationPhaseV1>(phase), timing.sequence);
+        s_activeAnimationPhaseFrameIndex.store(phaseFrameIndex, std::memory_order_release);
+        const bool startingAnimationFrame = phase == RockProviderAnimationPhaseV1::BeforeRock;
 
         if (startingAnimationFrame) {
             std::scoped_lock lock(s_handVisualAuthorityMutex);
@@ -3301,7 +3294,7 @@ namespace rock::provider
 }
 
 namespace rock::provider::runtime {
-    rock::api::Status authorize(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t permission, bool requireThread) {
+    rock::api::Status authorize(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t permission, bool requireThread, OwnerAccess access) {
         using rock::api::Status;
         if (events::inSynchronousCallback()) return Status::Busy;
         const auto id=static_cast<std::uint32_t>(family);
@@ -3310,8 +3303,8 @@ namespace rock::provider::runtime {
             std::scoped_lock lock(s_consumerMutex);
             const auto* slot=findConsumerSlotLocked(owner);
             if (!slot) return Status::OwnerNotRegistered;
-            if (slot->revoked && permission!=1 && permission!=0) return Status::OwnerRevoked;
-            if ((slot->interfaces[id-1].permissions & permission)!=permission) return Status::PermissionDenied;
+            const auto status = authorizeBinding(slot->interfaces[id-1], slot->revoked, permission, access);
+            if (status != Status::Ok) return status;
         }
         if (requireThread && !onAnimationOwnerThread() && !(id==1 && (permission==0 || permission==4) && s_animationOwnerThreadId.load(std::memory_order_acquire)==0)) return Status::WrongThread;
         return Status::Ok;
@@ -3321,8 +3314,9 @@ namespace rock::provider::runtime {
         if (events::inSynchronousCallback()) return Status::Busy;
         const auto id=static_cast<std::uint32_t>(family);
         if (id<1 || id>13) return Status::UnknownInterface;
-        if (major!=1) return Status::UnsupportedMajor;
-        const auto supported=id==1?5u:(id==2 || id==10)?1u:3u;
+        const auto* registration = api::discovery::findRegistration(api::discovery::registeredInterfaces(), family, major);
+        if (!registration) return Status::UnsupportedMajor;
+        const auto supported = registration->permissions;
         if (!permissions || (permissions & ~supported)) return Status::InvalidArgument;
         std::scoped_lock lock(s_consumerMutex);
         auto* slot=findConsumerSlotLocked(owner);

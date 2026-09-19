@@ -19,15 +19,15 @@ namespace {
 #endif
     }
 
-    OwnedEventStream<api::core::EventV1> coreEvents;
-    OwnedEventStream<api::collision::EventV1> collisionEvents;
-    OwnedEventStream<api::grab::EventV1> grabEvents;
-    OwnedEventStream<api::touch::EventV1> touchEvents;
-    OwnedEventStream<api::weapon::EventV1> weaponEvents;
-    OwnedEventStream<api::weaponparts::EventV1> weaponpartsEvents;
-    OwnedEventStream<api::animation::EventV1> animationEvents;
-    OwnedEventStream<api::input::EventV1> inputEvents;
-    OwnedEventStream<api::diagnostics::EventV1> diagnosticsEvents;
+    OwnedEventStream<api::core::EventV1,api::core::kEventCapacityPerOwner,api::core::kMaxOwners> coreEvents;
+    OwnedEventStream<api::collision::EventV1,api::collision::kEventCapacityPerOwner,api::core::kMaxOwners> collisionEvents;
+    OwnedEventStream<api::grab::EventV1,api::grab::kEventCapacityPerOwner,api::core::kMaxOwners> grabEvents;
+    OwnedEventStream<api::touch::EventV1,api::touch::kEventCapacityPerOwner,api::core::kMaxOwners> touchEvents;
+    OwnedEventStream<api::weapon::EventV1,api::weapon::kEventCapacityPerOwner,api::core::kMaxOwners> weaponEvents;
+    OwnedEventStream<api::weaponparts::EventV1,api::weaponparts::kEventCapacityPerOwner,api::core::kMaxOwners> weaponpartsEvents;
+    OwnedEventStream<api::animation::EventV1,api::animation::kEventCapacityPerOwner,api::core::kMaxOwners> animationEvents;
+    OwnedEventStream<api::input::EventV1,api::input::kEventCapacityPerOwner,api::core::kMaxOwners> inputEvents;
+    OwnedEventStream<api::diagnostics::EventV1,api::diagnostics::kEventCapacityPerOwner,api::core::kMaxOwners> diagnosticsEvents;
     template<class Event> void stamp(Event& value,const api::SampleV1& sample) {
         value.frameIndex=sample.frameIndex; value.worldGeneration=sample.worldGeneration;
         value.skeletonGeneration=sample.skeletonGeneration; value.providerGeneration=sample.providerGeneration;
@@ -117,7 +117,7 @@ void publish(const RockProviderEventV1& source) {
     }
     case RockProviderEventKindV1::GrabStateChanged: {
         api::grab::EventV1 event{}; stamp(event,sample); event.kind=100; event.hand=static_cast<api::Hand>(source.hand);
-        event.formId=source.formId; event.subjectSequence=source.subjectSequence; event.phase=source.data[0];
+        event.formId=source.formId; event.subjectSequence=source.subjectSequence; event.phase=source.result;
         event.primaryBodyId=source.data[1]; event.flags=source.data[2]; grabEvents.publish(event); break;
     }
     case RockProviderEventKindV1::InteractionCommandTerminal: {

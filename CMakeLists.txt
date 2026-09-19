@@ -1087,10 +1087,25 @@ if(BUILD_ROCK_TESTS)
 
   add_executable(ROCKProviderApiNegotiationTests
     "${ROOT_DIR}/tests/ProviderApiNegotiationTests.cpp"
+    "${ROOT_DIR}/tests/ModularTestTables.cpp"
+    "${SOURCE_DIR}/api/Discovery.cpp"
   )
   target_compile_features(ROCKProviderApiNegotiationTests PRIVATE cxx_std_23)
   target_include_directories(ROCKProviderApiNegotiationTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKProviderApiNegotiationTests)
+
+  add_executable(ROCKModularMarshallingTests "${ROOT_DIR}/tests/ModularMarshallingTests.cpp")
+  target_compile_features(ROCKModularMarshallingTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKModularMarshallingTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKModularMarshallingTests)
+
+  add_executable(ROCKModularEventDeliveryTests
+    "${ROOT_DIR}/tests/ModularEventDeliveryTests.cpp"
+    "${SOURCE_DIR}/api/EventStreams.cpp")
+  target_compile_features(ROCKModularEventDeliveryTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKModularEventDeliveryTests PRIVATE ${SOURCE_DIR})
+  target_compile_definitions(ROCKModularEventDeliveryTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  add_rock_test(ROCKModularEventDeliveryTests)
 
   add_executable(ROCKProviderHandItemClientTests
     "${ROOT_DIR}/tests/ProviderHandItemClientTests.cpp"

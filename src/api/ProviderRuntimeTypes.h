@@ -3,6 +3,14 @@
 #include <cstdint>
 #include <type_traits>
 #include <ROCK/Core.h>
+#include <ROCK/Animation.h>
+#include <ROCK/Collision.h>
+#include <ROCK/Diagnostics.h>
+#include <ROCK/Grab.h>
+#include <ROCK/Input.h>
+#include <ROCK/Touch.h>
+#include <ROCK/Weapon.h>
+#include <ROCK/WeaponParts.h>
 #define ROCK_PROVIDER_CALL __cdecl
 
 // Private runtime representation; never installed or returned across the DLL boundary.
@@ -13,49 +21,49 @@ namespace rock::provider {
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_BODIES = 8;
     // Evidence describes the complete classified weapon-part catalog and is
     // independent from the compact body array embedded in frame snapshots.
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1 = 100;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_POINTS_PER_DETAIL_V1 = 252;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1 = api::weaponparts::kMaxEvidenceDetails;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_POINTS_PER_DETAIL_V1 = api::weaponparts::kMaxEvidencePoints;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EVIDENCE_NAME = 64;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_BODIES_V1 = 2048;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_CONTACTS_V1 = 512;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_BODY_CONTACTS_V1 = 128;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_FRAME_CALLBACKS_V1 = 16;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_CONSUMERS_V1 = 64;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1 = 32;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_COMPLETED_INTERACTION_COMMANDS_V1 = 64;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_INPUT_SUPPRESSIONS_V1 = 32;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_INPUT_SUPPRESSION_LEASE_FRAMES_V1 = 120;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1 = 128;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1 = 64;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_DRIVE_LEASE_FRAMES_V1 = 120;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EMITTERS_V1 = 32;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_NATIVE_ANIMATION_AUTHORITY_LEASE_FRAMES_V1 = 1200;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_ANIMATION_PHASE_CALLBACKS_V1 = 16;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_VISUAL_AUTHORITY_LEASE_FRAMES_V1 = 120;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_NATIVE_ANIMATION_RUNTIME_LEASE_FRAMES_V1 = 120;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EQUIPPED_WEAPON_HANDLING_LEASE_FRAMES_V1 = 120;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_PUBLICATION_LEASE_FRAMES_V1 = 120;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_PUBLISHERS_V1 = 8;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_LINES_PER_PUBLISHER_V1 = 1024;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_TEXT_PER_PUBLISHER_V1 = 16;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_LINES_V1 = 2048;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_TEXT_V1 = 64;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_BODIES_V1 = api::collision::kMaxExternalBodies;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_CONTACTS_V1 = api::collision::kMaxExternalContacts;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_BODY_CONTACTS_V1 = api::collision::kMaxBodyContacts;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_FRAME_CALLBACKS_V1 = api::core::kMaxFrameCallbacks;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_CONSUMERS_V1 = api::core::kMaxOwners;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1 = api::grab::kMaxQueuedCommands;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_COMPLETED_INTERACTION_COMMANDS_V1 = api::grab::kMaxCommandResults;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_INPUT_SUPPRESSIONS_V1 = api::input::kMaxSuppressions;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_INPUT_SUPPRESSION_LEASE_FRAMES_V1 = api::input::kMaxSuppressionLeaseFrames;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1 = api::weaponparts::kMaxTargets;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1 = api::weaponparts::kMaxDrives;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_DRIVE_LEASE_FRAMES_V1 = api::weaponparts::kMaxDriveLeaseFrames;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EMITTERS_V1 = api::weapon::kMaxEmitters;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_NATIVE_ANIMATION_AUTHORITY_LEASE_FRAMES_V1 = api::animation::kMaxNativeAuthorityLeaseFrames;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_ANIMATION_PHASE_CALLBACKS_V1 = api::core::kMaxPhaseCallbacks;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_VISUAL_AUTHORITY_LEASE_FRAMES_V1 = api::animation::kMaxHandVisualLeaseFrames;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_NATIVE_ANIMATION_RUNTIME_LEASE_FRAMES_V1 = api::animation::kMaxRuntimePublicationLeaseFrames;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EQUIPPED_WEAPON_HANDLING_LEASE_FRAMES_V1 = api::weapon::kMaxHandlingLeaseFrames;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_PUBLICATION_LEASE_FRAMES_V1 = api::diagnostics::kMaxLeaseFrames;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_PUBLISHERS_V1 = api::diagnostics::kMaxOverlayPublishers;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_LINES_PER_PUBLISHER_V1 = api::diagnostics::kMaxLinesPerPublisher;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_TEXT_PER_PUBLISHER_V1 = api::diagnostics::kMaxTextPerPublisher;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_LINES_V1 = api::diagnostics::kMaxCombinedLines;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_TEXT_V1 = api::diagnostics::kMaxCombinedText;
     inline constexpr std::uint32_t ROCK_PROVIDER_DEBUG_OVERLAY_TEXT_CAPACITY_V1 = 128;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_COLLIDER_VISUALIZATION_OVERRIDE_LEASE_FRAMES_V1 = 120;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_COLLIDER_VISUALIZATION_OVERRIDE_LEASE_FRAMES_V1 = api::diagnostics::kMaxLeaseFrames;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_PROVIDER_EVENTS_V1 = 256;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_SCOPES_V1 = 256;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_SCOPES_V1 = api::collision::kMaxExternalScopes;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_HELD_BODIES_V1 = 8;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_COMPOSITION_ENTRIES_V1 = 64;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_SEMANTIC_HAND_CONTACTS_V1 = 20;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_PLAYER_COLLIDER_DESCRIPTORS_V1 = 96;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_POSES_V1 = 128;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_DRIVE_RESULTS_V1 = 64;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_OFFHAND_RESERVATION_LEASE_FRAMES_V1 = 120;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGETS_V1 = 256;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_TOUCH_GRAB_SCOPES_V1 = 64;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGET_LEASE_FRAMES_V1 = 120;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WORLD_RAYCASTS_PER_OWNER_PER_FRAME_V1 = 8;
-    inline constexpr float ROCK_PROVIDER_MAX_WORLD_RAYCAST_DISTANCE_GAME_V1 = 8192.0f;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_COMPOSITION_ENTRIES_V1 = api::weapon::kMaxCompositionEntries;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_SEMANTIC_HAND_CONTACTS_V1 = api::collision::kMaxSemanticContacts;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_PLAYER_COLLIDER_DESCRIPTORS_V1 = api::collision::kMaxColliderDescriptors;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_POSES_V1 = api::weaponparts::kMaxPoses;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_DRIVE_RESULTS_V1 = api::weaponparts::kMaxDrives;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_OFFHAND_RESERVATION_LEASE_FRAMES_V1 = api::grab::kMaxReservationLeaseFrames;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGETS_V1 = api::touch::kMaxTargets;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_TOUCH_GRAB_SCOPES_V1 = api::touch::kMaxScopes;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGET_LEASE_FRAMES_V1 = api::touch::kMaxLeaseFrames;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WORLD_RAYCASTS_PER_OWNER_PER_FRAME_V1 = api::collision::kMaxRaycastsPerOwnerPerFrame;
+    inline constexpr float ROCK_PROVIDER_MAX_WORLD_RAYCAST_DISTANCE_GAME_V1 = api::collision::kMaxRaycastDistanceGame;
     inline constexpr std::uint16_t ROCK_PROVIDER_ALL_FINGER_LOCAL_TRANSFORMS_V1 = 0x7FFFu;
 
     /*

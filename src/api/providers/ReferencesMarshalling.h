@@ -47,11 +47,13 @@ namespace rock::api::boundary {
         out.frameIndex = static_cast<decltype(out.frameIndex)>(in.frameIndex);
     }
     inline void convert(rock::api::references::PowerArmorPointPoseV1& out, const rock::provider::RockProviderPowerArmorPointPoseV1& in) {
+        out.point = static_cast<decltype(out.point)>(in.point);
         out.valid = static_cast<decltype(out.valid)>(in.valid);
         convert(out.world, in.world);
         convert(out.frameLocal, in.frameLocal);
     }
     inline void convert(rock::provider::RockProviderPowerArmorPointPoseV1& out, const rock::api::references::PowerArmorPointPoseV1& in) {
+        out.point = static_cast<decltype(out.point)>(in.point);
         out.valid = static_cast<decltype(out.valid)>(in.valid);
         convert(out.world, in.world);
         convert(out.frameLocal, in.frameLocal);

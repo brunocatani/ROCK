@@ -1,6 +1,6 @@
 #include "WeaponPartsMarshalling.h"
 #include <ROCK/Discovery.h>
-#include "api/EventStreams.h"
+#include "EventBoundary.h"
 
 namespace rock::api::weaponparts {
 namespace {
@@ -40,11 +40,11 @@ Status ROCK_CALL getWeaponEvidenceDetailCountV1(OwnerToken ownerToken, std::uint
 Status ROCK_CALL copyWeaponEvidenceDetailsV1(OwnerToken ownerToken, WeaponEvidenceDetailV1* outDetails, std::uint32_t maxDetails, std::uint32_t* outCopied) noexcept {
     if (!outCopied) return Status::InvalidArgument;
     *outCopied = {};
-    if (maxDetails > 100) return Status::CapacityFull;
+    if (maxDetails > kMaxEvidenceDetails) return Status::CapacityFull;
     if (maxDetails && !outDetails) return Status::InvalidArgument;
     for (std::uint32_t i=0;i<maxDetails;++i) if (const auto status=checkOutput(outDetails+i); status!=Status::Ok) return status;
     return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        std::array<provider::RockProviderWeaponEvidenceDetailV1, 100> native_outDetails{};
+        std::array<provider::RockProviderWeaponEvidenceDetailV1, kMaxEvidenceDetails> native_outDetails{};
         *outCopied = static_cast<std::uint32_t>(provider::runtime::apiCopyWeaponEvidenceDetailsV1(native_outDetails.data(), maxDetails));
         for (std::uint32_t i=0; i<std::min<std::uint32_t>(maxDetails, *outCopied); ++i) convert(outDetails[i], native_outDetails[i]);
         return Status::Ok;
@@ -61,20 +61,20 @@ Status ROCK_CALL getWeaponEvidenceDetailPointCountV1(OwnerToken ownerToken, std:
 Status ROCK_CALL copyWeaponEvidenceDetailPointsV1(OwnerToken ownerToken, std::uint32_t bodyId, Point3* outPoints, std::uint32_t maxPoints, std::uint32_t* outCopied) noexcept {
     if (!outCopied) return Status::InvalidArgument;
     *outCopied = {};
-    if (maxPoints > 252) return Status::CapacityFull;
+    if (maxPoints > kMaxEvidencePoints) return Status::CapacityFull;
     if (maxPoints && !outPoints) return Status::InvalidArgument;
     return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        std::array<provider::RockProviderPoint3, 252> native_outPoints{};
+        std::array<provider::RockProviderPoint3, kMaxEvidencePoints> native_outPoints{};
         *outCopied = static_cast<std::uint32_t>(provider::runtime::apiCopyWeaponEvidenceDetailPointsV1(bodyId, native_outPoints.data(), maxPoints));
         for (std::uint32_t i=0; i<std::min<std::uint32_t>(maxPoints, *outCopied); ++i) convert(outPoints[i], native_outPoints[i]);
         return Status::Ok;
     });
 }
 Status ROCK_CALL setWeaponPartTargetsV1(std::uint64_t ownerToken, const WeaponPartTargetV1* targets, std::uint32_t targetCount) noexcept {
-    if (targetCount > 128) return Status::CapacityFull;
+    if (targetCount > kMaxTargets) return Status::CapacityFull;
     return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
         if (targetCount && !targets) return Status::InvalidArgument;
-        std::array<provider::RockProviderWeaponPartTargetV1, 128> native_targets{};
+        std::array<provider::RockProviderWeaponPartTargetV1, kMaxTargets> native_targets{};
         for (std::uint32_t i=0; i<targetCount; ++i) {
             if (const auto s = checkInput(targets+i); s != Status::Ok) return s;
             convert(native_targets[i], targets[i]);
@@ -92,10 +92,10 @@ Status ROCK_CALL clearWeaponPartTargetsV1(std::uint64_t ownerToken) noexcept {
     });
 }
 Status ROCK_CALL setWeaponPartDriveTargetsV1(std::uint64_t ownerToken, const WeaponPartDriveTargetV1* targets, std::uint32_t targetCount) noexcept {
-    if (targetCount > 64) return Status::CapacityFull;
+    if (targetCount > kMaxDrives) return Status::CapacityFull;
     return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
         if (targetCount && !targets) return Status::InvalidArgument;
-        std::array<provider::RockProviderWeaponPartDriveTargetV1, 64> native_targets{};
+        std::array<provider::RockProviderWeaponPartDriveTargetV1, kMaxDrives> native_targets{};
         for (std::uint32_t i=0; i<targetCount; ++i) {
             if (const auto s = checkInput(targets+i); s != Status::Ok) return s;
             convert(native_targets[i], targets[i]);
@@ -136,26 +136,26 @@ Status ROCK_CALL queryWeaponPartTargetResolutionV1(std::uint64_t ownerToken, con
     });
 }
 Status ROCK_CALL copyWeaponPartPoseSnapshotV1(std::uint64_t ownerToken, WeaponPartPoseV1* outParts, std::uint32_t maxParts, std::uint32_t* outPartCount) noexcept {
-    if (maxParts > 128) return Status::CapacityFull;
+    if (maxParts > kMaxPoses) return Status::CapacityFull;
     if (maxParts && !outParts) return Status::InvalidArgument;
     for (std::uint32_t i=0;i<maxParts;++i) if (const auto status=checkOutput(outParts+i); status!=Status::Ok) return status;
     if (!outPartCount) return Status::InvalidArgument;
     *outPartCount = {};
     return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        std::array<provider::RockProviderWeaponPartPoseV1, 128> native_outParts{};
+        std::array<provider::RockProviderWeaponPartPoseV1, kMaxPoses> native_outParts{};
         const auto result = provider::runtime::apiCopyWeaponPartPoseSnapshotV1(ownerToken, native_outParts.data(), maxParts, outPartCount);
         for (std::uint32_t i=0; i<std::min<std::uint32_t>(maxParts, *outPartCount); ++i) convert(outParts[i], native_outParts[i]);
         return static_cast<Status>(result);
     });
 }
 Status ROCK_CALL copyWeaponPartDriveApplicationResultsV1(std::uint64_t ownerToken, WeaponPartDriveApplicationResultV1* outResults, std::uint32_t maxResults, std::uint32_t* outResultCount) noexcept {
-    if (maxResults > 64) return Status::CapacityFull;
+    if (maxResults > kMaxDrives) return Status::CapacityFull;
     if (maxResults && !outResults) return Status::InvalidArgument;
     for (std::uint32_t i=0;i<maxResults;++i) if (const auto status=checkOutput(outResults+i); status!=Status::Ok) return status;
     if (!outResultCount) return Status::InvalidArgument;
     *outResultCount = {};
     return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        std::array<provider::RockProviderWeaponPartDriveApplicationResultV1, 64> native_outResults{};
+        std::array<provider::RockProviderWeaponPartDriveApplicationResultV1, kMaxDrives> native_outResults{};
         const auto result = provider::runtime::apiCopyWeaponPartDriveApplicationResultsV1(ownerToken, native_outResults.data(), maxResults, outResultCount);
         for (std::uint32_t i=0; i<std::min<std::uint32_t>(maxResults, *outResultCount); ++i) convert(outResults[i], native_outResults[i]);
         return static_cast<Status>(result);

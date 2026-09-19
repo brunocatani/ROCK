@@ -28,24 +28,30 @@ namespace rock::api::playercontroller { const ApiV1& table() noexcept; }
 namespace rock::api::diagnostics { const ApiV1& table() noexcept; }
 namespace rock::api::configuration { const ApiV1& table() noexcept; }
 
+namespace rock::api::discovery {
+std::span<const RegisteredInterface> registeredInterfaces() noexcept {
+    static const std::array entries{
+        registration(core::table(), core::kSupportedPermissions),
+        registration(hands::table(), hands::kSupportedPermissions),
+        registration(collision::table(), collision::kSupportedPermissions),
+        registration(grab::table(), grab::kSupportedPermissions),
+        registration(touch::table(), touch::kSupportedPermissions),
+        registration(weapon::table(), weapon::kSupportedPermissions),
+        registration(weaponparts::table(), weaponparts::kSupportedPermissions),
+        registration(animation::table(), animation::kSupportedPermissions),
+        registration(input::table(), input::kSupportedPermissions),
+        registration(references::table(), references::kSupportedPermissions),
+        registration(playercontroller::table(), playercontroller::kSupportedPermissions),
+        registration(diagnostics::table(), diagnostics::kSupportedPermissions),
+        registration(configuration::table(), configuration::kSupportedPermissions),
+    };
+    return entries;
+}
+}
+
 extern "C" __declspec(dllexport) rock::api::Status ROCK_CALL ROCKAPI_QueryInterfaceV1(
     rock::api::InterfaceId id, std::uint32_t exactMajor, std::uint32_t minimumMinor,
     std::uint32_t minimumTableBytes, const rock::api::InterfaceDescriptorV1** output) noexcept {
-    using namespace rock::api;
-    static const std::array descriptors{
-        InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::Core,1,0,sizeof(core::ApiV1),1,0,0,&core::table()},
-        InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::Hands,1,0,sizeof(hands::ApiV1),1,0,0,&hands::table()},
-        InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::Collision,1,0,sizeof(collision::ApiV1),1,0,0,&collision::table()},
-        InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::Grab,1,0,sizeof(grab::ApiV1),1,0,0,&grab::table()},
-        InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::Touch,1,0,sizeof(touch::ApiV1),1,0,0,&touch::table()},
-        InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::Weapon,1,0,sizeof(weapon::ApiV1),1,0,0,&weapon::table()},
-        InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::WeaponParts,1,weaponparts::kMinor,sizeof(weaponparts::ApiV1),1,0,0,&weaponparts::table()},
-        InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::Animation,1,0,sizeof(animation::ApiV1),1,0,0,&animation::table()},
-        InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::Input,1,0,sizeof(input::ApiV1),1,0,0,&input::table()},
-        InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::References,1,0,sizeof(references::ApiV1),1,0,0,&references::table()},
-        InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::PlayerController,1,0,sizeof(playercontroller::ApiV1),1,0,0,&playercontroller::table()},
-        InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::Diagnostics,1,0,sizeof(diagnostics::ApiV1),1,0,0,&diagnostics::table()},
-        InterfaceDescriptorV1{sizeof(InterfaceDescriptorV1),InterfaceId::Configuration,1,0,sizeof(configuration::ApiV1),1,0,0,&configuration::table()},
-    };
-    return discovery::query(descriptors,id,exactMajor,minimumMinor,minimumTableBytes,output);
+    return rock::api::discovery::query(rock::api::discovery::registeredInterfaces(),
+        id, exactMajor, minimumMinor, minimumTableBytes, output);
 }

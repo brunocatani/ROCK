@@ -3,9 +3,10 @@
 #include <algorithm>
 #include <array>
 namespace rock::api::boundary {
-    template<class F> Status invoke(OwnerToken owner, InterfaceId family, std::uint32_t permission, bool gameThread, F&& operation) noexcept {
+    template<class F> Status invoke(OwnerToken owner, InterfaceId family, std::uint32_t permission, bool gameThread, F&& operation,
+        provider::OwnerAccess access = provider::OwnerAccess::Existing) noexcept {
         try {
-            const auto status = provider::runtime::authorize(owner, family, permission, gameThread);
+            const auto status = provider::runtime::authorize(owner, family, permission, gameThread, access);
             if (status != Status::Ok) return status;
             return operation();
         } catch (...) { provider::runtime::reportBoundaryFailure(owner,family); return Status::InternalError; }
@@ -21,4 +22,13 @@ namespace rock::api::boundary {
         if (status == Status::Ok) *value = {};
         return status;
     }
+    inline Status readSample(OwnerToken owner, InterfaceId family, SampleV1* output) noexcept {
+        if (!output) return Status::InvalidArgument;
+        *output = {};
+        return invoke(owner, family, 1, false, [&]() {
+            *output = provider::runtime::sample();
+            return Status::Ok;
+        });
+    }
+
 }

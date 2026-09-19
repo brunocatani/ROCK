@@ -1,6 +1,6 @@
 #include "WeaponMarshalling.h"
 #include <ROCK/Discovery.h>
-#include "api/EventStreams.h"
+#include "EventBoundary.h"
 
 namespace rock::api::weapon {
 namespace {
@@ -41,11 +41,11 @@ Status ROCK_CALL getWeaponEmitterCountV1(OwnerToken ownerToken, std::uint32_t* o
 Status ROCK_CALL copyWeaponEmittersV1(OwnerToken ownerToken, WeaponEmitterV1* outEmitters, std::uint32_t maxEmitters, std::uint32_t* outCopied) noexcept {
     if (!outCopied) return Status::InvalidArgument;
     *outCopied = {};
-    if (maxEmitters > 32) return Status::CapacityFull;
+    if (maxEmitters > kMaxEmitters) return Status::CapacityFull;
     if (maxEmitters && !outEmitters) return Status::InvalidArgument;
     for (std::uint32_t i=0;i<maxEmitters;++i) if (const auto status=checkOutput(outEmitters+i); status!=Status::Ok) return status;
     return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        std::array<provider::RockProviderWeaponEmitterV1, 32> native_outEmitters{};
+        std::array<provider::RockProviderWeaponEmitterV1, kMaxEmitters> native_outEmitters{};
         *outCopied = static_cast<std::uint32_t>(provider::runtime::apiCopyWeaponEmittersV1(native_outEmitters.data(), maxEmitters));
         for (std::uint32_t i=0; i<std::min<std::uint32_t>(maxEmitters, *outCopied); ++i) convert(outEmitters[i], native_outEmitters[i]);
         return Status::Ok;
@@ -113,13 +113,13 @@ Status ROCK_CALL getWeaponCompositionStateV1(std::uint64_t ownerToken, WeaponCom
     });
 }
 Status ROCK_CALL copyWeaponCompositionEntriesV1(std::uint64_t ownerToken, WeaponCompositionEntryV1* outEntries, std::uint32_t maxEntries, std::uint32_t* outEntryCount) noexcept {
-    if (maxEntries > 64) return Status::CapacityFull;
+    if (maxEntries > kMaxCompositionEntries) return Status::CapacityFull;
     if (maxEntries && !outEntries) return Status::InvalidArgument;
     for (std::uint32_t i=0;i<maxEntries;++i) if (const auto status=checkOutput(outEntries+i); status!=Status::Ok) return status;
     if (!outEntryCount) return Status::InvalidArgument;
     *outEntryCount = {};
     return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        std::array<provider::RockProviderWeaponCompositionEntryV1, 64> native_outEntries{};
+        std::array<provider::RockProviderWeaponCompositionEntryV1, kMaxCompositionEntries> native_outEntries{};
         const auto result = provider::runtime::apiCopyWeaponCompositionEntriesV1(ownerToken, native_outEntries.data(), maxEntries, outEntryCount);
         for (std::uint32_t i=0; i<std::min<std::uint32_t>(maxEntries, *outEntryCount); ++i) convert(outEntries[i], native_outEntries[i]);
         return static_cast<Status>(result);

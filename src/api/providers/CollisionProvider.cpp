@@ -1,6 +1,6 @@
 #include "CollisionMarshalling.h"
 #include <ROCK/Discovery.h>
-#include "api/EventStreams.h"
+#include "EventBoundary.h"
 
 namespace rock::api::collision {
 namespace {
@@ -14,21 +14,21 @@ Status ROCK_CALL clearExternalBodies(std::uint64_t ownerToken) noexcept {
 Status ROCK_CALL getBodyContactSnapshotV1(OwnerToken ownerToken, BodyContactV1* outContacts, std::uint32_t maxContacts, std::uint32_t* outCopied) noexcept {
     if (!outCopied) return Status::InvalidArgument;
     *outCopied = {};
-    if (maxContacts > 128) return Status::CapacityFull;
+    if (maxContacts > kMaxBodyContacts) return Status::CapacityFull;
     if (maxContacts && !outContacts) return Status::InvalidArgument;
     for (std::uint32_t i=0;i<maxContacts;++i) if (const auto status=checkOutput(outContacts+i); status!=Status::Ok) return status;
     return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        std::array<provider::RockProviderBodyContactV1, 128> native_outContacts{};
+        std::array<provider::RockProviderBodyContactV1, kMaxBodyContacts> native_outContacts{};
         *outCopied = static_cast<std::uint32_t>(provider::runtime::apiGetBodyContactSnapshotV1(native_outContacts.data(), maxContacts));
         for (std::uint32_t i=0; i<std::min<std::uint32_t>(maxContacts, *outCopied); ++i) convert(outContacts[i], native_outContacts[i]);
         return Status::Ok;
     });
 }
 Status ROCK_CALL registerExternalBodiesForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken, const ExternalBodyRegistration* bodies, std::uint32_t bodyCount) noexcept {
-    if (bodyCount > 2048) return Status::CapacityFull;
+    if (bodyCount > kMaxExternalBodies) return Status::CapacityFull;
     return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
         if (bodyCount && !bodies) return Status::InvalidArgument;
-        std::array<provider::RockProviderExternalBodyRegistration, 2048> native_bodies{};
+        std::array<provider::RockProviderExternalBodyRegistration, kMaxExternalBodies> native_bodies{};
         for (std::uint32_t i=0; i<bodyCount; ++i) {
             if (const auto s = checkInput(bodies+i); s != Status::Ok) return s;
             convert(native_bodies[i], bodies[i]);
@@ -46,12 +46,12 @@ Status ROCK_CALL clearExternalBodiesForScopeV1(std::uint64_t ownerToken, std::ui
     });
 }
 Status ROCK_CALL copyExternalContactsSinceV1(std::uint64_t ownerToken, std::uint64_t scopeToken, std::uint64_t afterSequence, ExternalContactRecordV1* outContacts, std::uint32_t maxContacts, ExternalContactStreamStateV1* outStreamState) noexcept {
-    if (maxContacts > 512) return Status::CapacityFull;
+    if (maxContacts > kMaxExternalContacts) return Status::CapacityFull;
     if (maxContacts && !outContacts) return Status::InvalidArgument;
     for (std::uint32_t i=0;i<maxContacts;++i) if (const auto status=checkOutput(outContacts+i); status!=Status::Ok) return status;
     if (const auto s = checkOutput(outStreamState); s != Status::Ok) return s;
     return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        std::array<provider::RockProviderExternalContactRecordV1, 512> native_outContacts{};
+        std::array<provider::RockProviderExternalContactRecordV1, kMaxExternalContacts> native_outContacts{};
         provider::RockProviderExternalContactStreamStateV1 native_outStreamState{};
         const auto result = provider::runtime::apiCopyExternalContactsSinceV1(ownerToken, scopeToken, afterSequence, native_outContacts.data(), maxContacts, &native_outStreamState);
         for (std::uint32_t i=0; i<std::min<std::uint32_t>(maxContacts, native_outStreamState.copiedCount); ++i) convert(outContacts[i], native_outContacts[i]);
@@ -60,27 +60,27 @@ Status ROCK_CALL copyExternalContactsSinceV1(std::uint64_t ownerToken, std::uint
     });
 }
 Status ROCK_CALL copySemanticHandContactsV1(std::uint64_t ownerToken, Hand hand, std::uint32_t maxFramesSinceContact, SemanticHandContactV1* outContacts, std::uint32_t maxContacts, std::uint32_t* outContactCount) noexcept {
-    if (maxContacts > 20) return Status::CapacityFull;
+    if (maxContacts > kMaxSemanticContacts) return Status::CapacityFull;
     if (maxContacts && !outContacts) return Status::InvalidArgument;
     for (std::uint32_t i=0;i<maxContacts;++i) if (const auto status=checkOutput(outContacts+i); status!=Status::Ok) return status;
     if (!outContactCount) return Status::InvalidArgument;
     *outContactCount = {};
     if (hand!=Hand::Right && hand!=Hand::Left) return Status::InvalidArgument;
     return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        std::array<provider::RockProviderSemanticHandContactV1, 20> native_outContacts{};
+        std::array<provider::RockProviderSemanticHandContactV1, kMaxSemanticContacts> native_outContacts{};
         const auto result = provider::runtime::apiCopySemanticHandContactsV1(ownerToken, static_cast<provider::RockProviderHand>(hand), maxFramesSinceContact, native_outContacts.data(), maxContacts, outContactCount);
         for (std::uint32_t i=0; i<std::min<std::uint32_t>(maxContacts, *outContactCount); ++i) convert(outContacts[i], native_outContacts[i]);
         return static_cast<Status>(result);
     });
 }
 Status ROCK_CALL copyPlayerColliderDescriptorsV1(std::uint64_t ownerToken, PlayerColliderDescriptorV1* outDescriptors, std::uint32_t maxDescriptors, std::uint32_t* outDescriptorCount) noexcept {
-    if (maxDescriptors > 96) return Status::CapacityFull;
+    if (maxDescriptors > kMaxColliderDescriptors) return Status::CapacityFull;
     if (maxDescriptors && !outDescriptors) return Status::InvalidArgument;
     for (std::uint32_t i=0;i<maxDescriptors;++i) if (const auto status=checkOutput(outDescriptors+i); status!=Status::Ok) return status;
     if (!outDescriptorCount) return Status::InvalidArgument;
     *outDescriptorCount = {};
     return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        std::array<provider::RockProviderPlayerColliderDescriptorV1, 96> native_outDescriptors{};
+        std::array<provider::RockProviderPlayerColliderDescriptorV1, kMaxColliderDescriptors> native_outDescriptors{};
         const auto result = provider::runtime::apiCopyPlayerColliderDescriptorsV1(ownerToken, native_outDescriptors.data(), maxDescriptors, outDescriptorCount);
         for (std::uint32_t i=0; i<std::min<std::uint32_t>(maxDescriptors, *outDescriptorCount); ++i) convert(outDescriptors[i], native_outDescriptors[i]);
         return static_cast<Status>(result);

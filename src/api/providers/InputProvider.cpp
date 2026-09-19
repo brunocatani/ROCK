@@ -1,6 +1,6 @@
 #include "InputMarshalling.h"
 #include <ROCK/Discovery.h>
-#include "api/EventStreams.h"
+#include "EventBoundary.h"
 
 namespace rock::api::input {
 namespace {
