@@ -289,7 +289,7 @@ namespace rock::shoulder_stash
             for (std::uint32_t i = 0; i < bodyCount; ++i) {
                 const auto bodyId = input.bodyColliders->getBodyIdAtomic(i);
                 BodyBoneColliderMetadata metadata{};
-                if (!input.bodyColliders->tryGetBodyMetadataAtomic(bodyId, metadata) || !metadata.valid || !isShoulderZone(metadata.zone)) {
+                if (!input.bodyColliders->tryGetBodyMetadataAtIndexAtomic(i, bodyId, metadata) || !metadata.valid || !isShoulderZone(metadata.zone)) {
                     continue;
                 }
 

@@ -403,9 +403,9 @@ namespace rock
         std::uint32_t attachPointFormId{ 0 };
         std::uint64_t weaponGenerationKey{ 0 };
         /*
-         * Frame-to-frame identity tokens only. Refresh compares them with
-         * addresses encountered during a fresh bounded traversal and never
-         * dereferences a retained address. Rebuild-time part classification
+           * Frame-to-frame identity tokens only. Refresh follows validated
+           * child-slot paths from live roots (rediscovering changed paths by
+           * bounded traversal), never dereferencing a retained address. Rebuild-time part classification
          * may dereference ownerRootAddress only from a just-collected local
          * snapshot while the same main-thread tree traversal is still active.
          */

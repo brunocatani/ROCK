@@ -31,6 +31,7 @@ namespace rock
 
     void PhysicsInteraction::clearPendingForceGrabCommits()
     {
+        _forceGrab.retainedWeaponGrabs = {};
         for (auto& commit : _forceGrab.pendingCommits) {
             if (!commit.active) continue;
             if (provider::isInteractionCommandActiveV1(commit.providerResultTemplate.ownerToken,commit.providerResultTemplate.commandId)) {
@@ -60,8 +61,9 @@ namespace rock
             state == HandState::Idle || state == HandState::SelectedClose || state == HandState::SelectedFar;
         // Equip data remains authoritative while menus temporarily hide or
         // detach the weapon's 3D node.
-        const bool equippedWeaponPresent = currentEquippedWeaponFormId() != 0;
-        const bool equippedWeaponOccupiesHand = force_grab_policy::equippedWeaponOccupiesHand(
+        const bool equippedWeaponPresent = currentEquippedWeaponOccupiesHand();
+        const bool equippedWeaponOccupiesHand = _equipped.pendingPrimaryOnlyGripStart.pairedGrips.valid() ||
+            force_grab_policy::equippedWeaponOccupiesHand(
             isLeft,
             equippedWeaponPresent,
             _twoHandedGrip.isPartCarryActive(),
@@ -77,6 +79,7 @@ namespace rock
             .pendingForceGrab = includePendingCommit && _forceGrab.pendingCommits[isLeft ? 1u : 0u].active,
             .equippedWeaponOccupiesHand = equippedWeaponOccupiesHand,
             .touchGrabActive = _touchGrabRuntime.isHandActive(isLeft),
+            .inputReserved = input_remap_runtime::ownsBareFistInput(),
         });
     }
 
@@ -120,7 +123,7 @@ namespace rock
     void PhysicsInteraction::pruneInactiveProviderForceGrabCommits()
     {
         for (auto& commit : _forceGrab.pendingCommits) {
-            if (commit.active && !commit.grenadeQuickDraw &&
+            if (commit.active && !commit.internallyOwned() &&
                 !provider::isInteractionCommandActiveV1(
                     commit.providerResultTemplate.ownerToken,
                     commit.providerResultTemplate.commandId)) {
@@ -187,8 +190,17 @@ namespace rock
                                RE::TESObjectREFR*) {
                 commit.providerResultTemplate.state = provider::RockProviderInteractionCommandStateV1::Rejected;
                 commit.providerResultTemplate.failure = providerFailure;
-                if (!commit.grenadeQuickDraw) {
+                if (!commit.internallyOwned()) {
                     provider::completeInteractionCommandV1(commit.providerResultTemplate);
+                }
+                if (commit.equippedWeaponTransfer) {
+                    for (auto& handoff : _drop.nativeHandoffs) {
+                        if (handoff.active && handoff.handle == commit.targetHandle) {
+                            reportEquippedWeaponPlacementFailure(handoff, reason);
+                            handoff = {};
+                        }
+                    }
+                    _forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u] = {};
                 }
                 rollbackInventoryTransfer(commit);
                 ROCK_LOG_WARN(Hand,
@@ -198,7 +210,7 @@ namespace rock
                 commit = {};
             };
 
-            if (!commit.grenadeQuickDraw && !provider::isInteractionCommandActiveV1(
+            if (!commit.internallyOwned() && !provider::isInteractionCommandActiveV1(
                     commit.providerResultTemplate.ownerToken,
                     commit.providerResultTemplate.commandId)) {
                 ROCK_LOG_INFO(Hand,
@@ -223,6 +235,21 @@ namespace rock
             }
             if (targetRef->IsDeleted() || targetRef->IsDisabled()) {
                 abandon("target ref disappeared", provider::RockProviderInteractionFailureV1::TargetUnavailable, targetRef);
+                continue;
+            }
+
+            if (commit.phase == PendingForceGrabCommitPhase::EquippedSlotReleaseFailed) {
+                abandon("equipped weapon slot was not released", provider::RockProviderInteractionFailureV1::HandBusy, targetRef);
+                continue;
+            }
+            if (commit.phase == PendingForceGrabCommitPhase::NativePlacementFailed) {
+                abandon("native weapon placement failed", provider::RockProviderInteractionFailureV1::TargetUnavailable, targetRef);
+                continue;
+            }
+            if (commit.phase == PendingForceGrabCommitPhase::WaitingForNativePlacement) {
+                if (timedOut) {
+                    abandon("native weapon placement timed out", provider::RockProviderInteractionFailureV1::TargetUnavailable, targetRef);
+                }
                 continue;
             }
 
@@ -258,7 +285,8 @@ namespace rock
                     commit.maxDistanceGame,
                     commit.inventoryTransfer &&
                         commit.targetIsLooseThrowable &&
-                        loose_grenade_runtime::isThrowableRef(targetRef))) {
+                        loose_grenade_runtime::isThrowableRef(targetRef),
+                    commit.equippedWeaponTransfer)) {
                 commit.phase = PendingForceGrabCommitPhase::WaitingForSettle;
                 if (timedOut) {
                     abandon("failed to resolve physics body", provider::RockProviderInteractionFailureV1::TargetBodyMissing, targetRef);
@@ -302,7 +330,8 @@ namespace rock
                 g_rockConfig.rockGrabLinearProportionalRecovery,
                 g_rockConfig.rockGrabLinearConstantRecovery,
                 &_bodyBoneColliders,
-                sharedContext);
+                sharedContext,
+                commit.equippedWeaponTransfer ? &commit.weaponGripPose : nullptr) == GrabAttemptResult::Grabbed;
             if (!grabbed) {
                 hand.clearSelectionState(false);
                 commit.phase = PendingForceGrabCommitPhase::WaitingForSettle;
@@ -327,7 +356,7 @@ namespace rock
             commit.providerResultTemplate.targetBodyId = primaryBodyId;
             commit.providerResultTemplate.state = provider::RockProviderInteractionCommandStateV1::Succeeded;
             commit.providerResultTemplate.failure = provider::RockProviderInteractionFailureV1::None;
-            if (!commit.grenadeQuickDraw && !provider::completeInteractionCommandV1(commit.providerResultTemplate)) {
+            if (!commit.internallyOwned() && !provider::completeInteractionCommandV1(commit.providerResultTemplate)) {
                 /*
                  * Owner/provider loss can race the final main-thread
                  * commit. Do not publish or retain a grab whose command
@@ -346,6 +375,14 @@ namespace rock
                 continue;
             }
 
+            if (commit.equippedWeaponTransfer) {
+                _forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u].grabIdentity = hand.heldGrabIdentity();
+                ROCK_LOG_INFO(Weapon,
+                    "Equipped weapon acquired as retained loose grab: hand={} ref={:08X} body={} grab={} handleMatches={} inputState={}",
+                    commit.isLeft ? "left" : "right", heldRef->GetFormID(), primaryBodyId, hand.heldGrabIdentity(),
+                    heldRef->GetHandle() == commit.targetHandle,
+                    static_cast<unsigned>(_forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u].inputState));
+            }
             claimObject(heldRef, claimOwnerForHand(commit.isLeft));
             dispatchPhysicsMessage(kPhysMsg_OnGrab, commit.isLeft, heldRef, heldRef ? heldRef->GetFormID() : 0, 0);
             dispatchGrabCommittedEvent(commit.isLeft, heldRef, primaryBodyId, frame.hknpWorld);

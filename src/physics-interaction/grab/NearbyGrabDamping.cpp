@@ -1,4 +1,6 @@
 #include "physics-interaction/grab/NearbyGrabDamping.h"
+#include "physics-interaction/grab/MotionBodySearchBatch.h"
+#include "physics-interaction/native/HavokWorldLock.h"
 
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
@@ -21,6 +23,7 @@
 #include <cmath>
 #include <cstring>
 #include <mutex>
+#include <optional>
 #include <unordered_set>
 #include <utility>
 #include <windows.h>
@@ -38,11 +41,13 @@ namespace rock::nearby_grab_damping
         inline constexpr std::uint16_t kInvalidMotionPropertiesId = INVALID_MOTION_PROPERTIES_ID;
         inline constexpr std::size_t kMaxCachedDampedProperties = 128;
 
-        struct MotionPropertiesRecord
+        // Native library insertion reads this whole record with aligned SIMD loads.
+        struct alignas(16) MotionPropertiesRecord
         {
             std::array<std::uint8_t, offsets::kMotionProperties_RecordSize> bytes{};
         };
         static_assert(sizeof(MotionPropertiesRecord) == offsets::kMotionProperties_RecordSize);
+        static_assert(alignof(MotionPropertiesRecord) == 16);
 
         struct BodyMotionState
         {
@@ -191,6 +196,7 @@ namespace rock::nearby_grab_damping
                 auto leaseIt = findLeaseLocked(world, motionId);
                 if (leaseIt != g_motionDampingLeases.end()) {
                     if (leaseIt->restoreInProgress) {
+                        performance_profiler::ScopedTimer waitTimer(performance_profiler::Scope::NearbyDampingWait);
                         g_motionDampingChanged.wait(lock);
                         continue;
                     }
@@ -212,7 +218,10 @@ namespace rock::nearby_grab_damping
                     return true;
                 }
 
-                g_motionDampingChanged.wait(lock);
+                {
+                    performance_profiler::ScopedTimer waitTimer(performance_profiler::Scope::NearbyDampingWait);
+                    g_motionDampingChanged.wait(lock);
+                }
             }
         }
 
@@ -376,7 +385,10 @@ namespace rock::nearby_grab_damping
                         break;
                     }
 
-                    g_motionDampingChanged.wait(lock);
+                    {
+                        performance_profiler::ScopedTimer waitTimer(performance_profiler::Scope::NearbyDampingWait);
+                        g_motionDampingChanged.wait(lock);
+                    }
                 }
             }
 
@@ -455,7 +467,8 @@ namespace rock::nearby_grab_damping
             std::uint32_t motionId,
             std::uint32_t& outBodyId,
             BodyMotionState& outState,
-            bool& outSearchCompleted)
+            bool& outSearchCompleted,
+            MotionBodySearchBatch& batch)
         {
             outBodyId = INVALID_BODY_ID;
             outState = {};
@@ -468,6 +481,28 @@ namespace rock::nearby_grab_damping
                 outBodyId = preferredBodyId;
                 return true;
             }
+
+            const auto cached = batch.find(motionId, [&](auto&& observe) {
+                performance_profiler::ScopedTimer timer(performance_profiler::Scope::GrabNearbyDampingRestoreBodySearch);
+                havok_world_lock::ScopedWorldReadLock readLock(world);
+                std::uint32_t highWater = 0;
+                if (!tryReadWorldBodyHighWaterMark(world, highWater)) return false;
+                std::uint32_t examined = 0;
+                for (std::uint32_t id = 0; id <= highWater; ++id) {
+                    ++examined;
+                    if (!havok_runtime::bodySlotCanBeRead(id, highWater)) continue;
+                    if (const auto* body = havok_runtime::getBody(world, RE::hknpBodyId{ id }); body && observe(body->motionIndex, id)) break;
+                }
+                performance_profiler::addEventCount(performance_profiler::Scope::GrabNearbyDampingRestoreBodySearch, examined);
+                return true;
+            }, [&](std::uint32_t id, std::uint32_t motion) {
+                return tryReadCurrentBodyMotionState(world, id, outState) && outState.motionId == motion;
+            });
+            if (cached.bodyId != MotionBodySearchBatch::invalidBody) {
+                outBodyId = cached.bodyId;
+                return true;
+            }
+            if (cached.freshAbsence) { outSearchCompleted = true; return false; }
 
             std::uint32_t highWaterMark = 0;
             if (!tryReadWorldBodyHighWaterMark(world, highWaterMark)) {
@@ -610,7 +645,7 @@ namespace rock::nearby_grab_damping
             return true;
         }
 
-        LeaseRestoreAttempt attemptFinalLeaseRestore(RE::hknpWorld* world, const MotionDampingLeaseEntry& lease)
+        LeaseRestoreAttempt attemptFinalLeaseRestore(RE::hknpWorld* world, const MotionDampingLeaseEntry& lease, MotionBodySearchBatch& batch)
         {
             performance_profiler::ScopedTimer restoreTimer(performance_profiler::Scope::GrabNearbyDampingRestore);
             LeaseRestoreAttempt attempt{};
@@ -619,7 +654,7 @@ namespace rock::nearby_grab_damping
             std::uint32_t restoreBodyId = INVALID_BODY_ID;
             BodyMotionState current{};
             bool bodySearchCompleted = false;
-            const bool bodyFound = tryFindLiveBodyForMotion(world, lease.representativeBodyId, lease.motionId, restoreBodyId, current, bodySearchCompleted);
+            const bool bodyFound = tryFindLiveBodyForMotion(world, lease.representativeBodyId, lease.motionId, restoreBodyId, current, bodySearchCompleted, batch);
             const auto decision = decideFinalLeaseRestore(FinalLeaseRestoreDecisionInput{
                 .bodyFound = bodyFound,
                 .bodySearchCompleted = world && bodySearchCompleted,
@@ -679,6 +714,7 @@ namespace rock::nearby_grab_damping
                 return aggregate;
             }
 
+            std::optional<MotionBodySearchBatch> batch;
             for (;;) {
                 MotionDampingLeaseEntry leaseSnapshot{};
                 {
@@ -690,11 +726,19 @@ namespace rock::nearby_grab_damping
                         return aggregate;
                     }
 
+                    // The common no-pending-work path takes only the original lock
+                    // and never initializes search scratch.
+                    if (!batch) {
+                        batch.emplace();
+                        for (const auto& lease : g_motionDampingLeases) {
+                            if (lease.world == world && lease.ownerTokens.empty() && !lease.restoreInProgress) batch->add(lease.motionId);
+                        }
+                    }
                     leaseIt->restoreInProgress = true;
                     leaseSnapshot = *leaseIt;
                 }
 
-                const auto attempt = attemptFinalLeaseRestore(world, leaseSnapshot);
+                const auto attempt = attemptFinalLeaseRestore(world, leaseSnapshot, *batch);
                 commitFinalLeaseRestoreAttempt(leaseSnapshot, attempt.completed);
                 aggregate.finalLease = aggregate.finalLease || attempt.result.finalLease;
                 aggregate.restoredOriginal = aggregate.restoredOriginal || attempt.result.restoredOriginal;
@@ -709,7 +753,7 @@ namespace rock::nearby_grab_damping
             }
         }
 
-        LeaseReleaseResult releaseMotionDampingLease(RE::hknpWorld* world, SavedNearbyMotionDamping& motionState)
+        LeaseReleaseResult releaseMotionDampingLease(RE::hknpWorld* world, SavedNearbyMotionDamping& motionState, MotionBodySearchBatch& batch)
         {
             LeaseReleaseResult result{};
             if (!world || !motionState.active || motionState.leaseToken == 0 || motionState.motionId == 0) {
@@ -727,7 +771,10 @@ namespace rock::nearby_grab_damping
                 }
 
                 while (leaseIt->restoreInProgress) {
-                    g_motionDampingChanged.wait(lock);
+                    {
+                        performance_profiler::ScopedTimer waitTimer(performance_profiler::Scope::NearbyDampingWait);
+                        g_motionDampingChanged.wait(lock);
+                    }
                     leaseIt = findLeaseLocked(world, motionState.motionId);
                     if (leaseIt == g_motionDampingLeases.end()) {
                         motionState.active = false;
@@ -755,7 +802,7 @@ namespace rock::nearby_grab_damping
             }
 
             if (shouldRestoreFinalLease) {
-                const auto attempt = attemptFinalLeaseRestore(world, leaseSnapshot);
+                const auto attempt = attemptFinalLeaseRestore(world, leaseSnapshot, batch);
                 result.finalLease = attempt.result.finalLease;
                 result.restoredOriginal = attempt.result.restoredOriginal;
                 result.alreadyOriginal = attempt.result.alreadyOriginal;
@@ -770,22 +817,13 @@ namespace rock::nearby_grab_damping
         }
 
         void appendUniqueMotionRecords(const object_physics_body_set::ObjectPhysicsBodySet& bodySet,
-            PureDampingCandidateSet& candidates,
-            std::unordered_set<std::uint32_t>& seenMotionIds)
+            PureDampingCandidateSet& candidates)
         {
-            for (const auto* record : bodySet.uniqueAcceptedMotionRecords()) {
-                if (!record || record->bodyId == INVALID_BODY_ID || record->motionId == 0) {
-                    continue;
-                }
-
-                if (!seenMotionIds.insert(record->motionId).second) {
-                    candidates.add(PureDampingCandidate{ .bodyId = record->bodyId, .motionId = record->motionId, .accepted = true });
-                    continue;
-                }
-
-                candidates.add(PureDampingCandidate{ .bodyId = record->bodyId, .motionId = record->motionId, .accepted = true });
-            }
+            bodySet.forEachUniqueAcceptedMotion([&](const auto& record) {
+                candidates.add(PureDampingCandidate{ .bodyId = record.bodyId, .motionId = record.motionId, .accepted = true });
+            });
         }
+
     }
 
     NearbyGrabDampingState beginNearbyGrabDamping(RE::bhkWorld* bhkWorld,
@@ -848,7 +886,6 @@ namespace rock::nearby_grab_damping
 
         PureDampingCandidateSet candidates;
         std::unordered_set<RE::TESObjectREFR*> scannedRefs;
-        std::unordered_set<std::uint32_t> seenMotionIds;
         std::uint32_t rejectedHeldBodies = 0;
         std::uint32_t rejectedRefs = 0;
 
@@ -873,7 +910,7 @@ namespace rock::nearby_grab_damping
             options.mode = physics_body_classifier::InteractionMode::PassivePush;
             options.heldBySameHand = &heldBodyIds;
             auto bodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, hknpWorld, ref, options);
-            appendUniqueMotionRecords(bodySet, candidates, seenMotionIds);
+            appendUniqueMotionRecords(bodySet, candidates);
         }
 
         state.leaseToken = nextLeaseToken();
@@ -950,9 +987,11 @@ namespace rock::nearby_grab_damping
         std::uint32_t restoreFailed = 0;
         std::uint32_t motionGone = 0;
         if (targetWorld) {
+            MotionBodySearchBatch batch;
+            for (const auto& motion : state.motions) if (motion.active) batch.add(motion.motionId);
             for (auto& motionState : state.motions) {
                 if (motionState.active) {
-                    const auto result = releaseMotionDampingLease(targetWorld, motionState);
+                    const auto result = releaseMotionDampingLease(targetWorld, motionState, batch);
                     if (result.released) {
                         ++released;
                     }

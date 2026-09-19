@@ -6,7 +6,8 @@
 
 namespace rock::dynamic_collider_trace
 {
-    // Provisioned at skeleton-ready when bDebugGrabFrameLogging is enabled.
+    // Provisioned at skeleton-ready for grab-frame logging or skeleton overlays.
+    // Overlays enable only the sampled held-presentation trace, not dense physics.
     // Game/physics callers submit sampled values only; the bounded async writer
     // owns disk I/O. Shutdown follows physics callback quiescence.
     void initialize() noexcept;
@@ -14,6 +15,7 @@ namespace rock::dynamic_collider_trace
     void beginFrame(bool enabled, std::uint64_t frame) noexcept;
     void capturePresentedHands(std::uint64_t frame) noexcept;
     [[nodiscard]] bool enabled() noexcept;
+    [[nodiscard]] bool presentationEnabled() noexcept;
     [[nodiscard]] bool sample(std::uint64_t sequence) noexcept;
     [[nodiscard]] spdlog::logger* activeLogger() noexcept;
     void suppressAfterError() noexcept;

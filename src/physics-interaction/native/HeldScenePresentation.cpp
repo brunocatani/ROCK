@@ -1,4 +1,7 @@
 #include "physics-interaction/native/HeldScenePresentation.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
+#include "physics-interaction/telemetry/HeldRenderTrace.h"
+#include "physics-interaction/weapon/WeaponSceneTraversal.h"
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/core/RockRuntimeState.h"
@@ -622,6 +625,7 @@ namespace rock::held_scene_presentation
             RE::hknpWorld* world = nullptr;
             RE::hknpBodyId bodyId{ 0x7FFF'FFFFu };
             Match match{};
+            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::HeldSceneWriter);
             if (!havok_runtime::tryResolveCollisionObjectBody(
                     collisionObject,
                     world,
@@ -631,6 +635,7 @@ namespace rock::held_scene_presentation
                     world,
                     bodyId.value,
                     match)) {
+                profilerTimer.stop();
                 s_originalWriter(collisionObjectRaw, writerInput);
                 return;
             }
@@ -686,6 +691,7 @@ namespace rock::held_scene_presentation
                             bodyId.value,
                             targetTransform,
                             targetWriterInput);
+                        profilerTimer.stop();
                         s_originalWriter(
                             collisionObjectRaw,
                             targetWriterInput);
@@ -712,6 +718,7 @@ namespace rock::held_scene_presentation
                     *nativeRemainderSeconds);
             if (!timing.apply) {
                 logRejectedDecision(match, timing, timing.reason);
+                profilerTimer.stop();
                 s_originalWriter(collisionObjectRaw, writerInput);
                 return;
             }
@@ -737,6 +744,7 @@ namespace rock::held_scene_presentation
                     correctedInput);
             if (!transform.apply) {
                 logRejectedDecision(match, timing, transform.reason);
+                profilerTimer.stop();
                 s_originalWriter(collisionObjectRaw, writerInput);
                 return;
             }
@@ -748,6 +756,7 @@ namespace rock::held_scene_presentation
                 writerInput,
                 correctedInput);
             logSampledApplication(match, timing, transform);
+            profilerTimer.stop();
             s_originalWriter(collisionObjectRaw, correctedInput);
         }
 
@@ -817,6 +826,7 @@ namespace rock::held_scene_presentation
 
     void clearHeldBodies(bool isLeft) noexcept
     {
+        held_render_trace::clearHand(isLeft);
         Registration empty{};
         publishHeldBodies(isLeft, empty);
     }
@@ -828,7 +838,7 @@ namespace rock::held_scene_presentation
         std::uint64_t traceId,
         const RE::NiTransform& targetBodyWorld,
         const RE::NiTransform& solvedBodyWorld,
-        RE::NiAVObject* looseWeaponRoot,
+        RE::NiAVObject* referenceRoot,
         const RE::NiTransform& bodyInRoot) noexcept
     {
         const std::size_t handIndex = isLeft ? 1u : 0u;
@@ -945,13 +955,20 @@ namespace rock::held_scene_presentation
             }
         }
         std::size_t scenePoseCount = registration.count;
-        if (!failure && looseWeaponRoot && !held_scene_presentation_policy::appendAssemblyRootPose(
-                scenePoses.data(), scenePoseCount, scenePoses.size(), looseWeaponRoot,
+        if (!failure && referenceRoot && !held_scene_presentation_policy::appendAssemblyRootPose(
+                scenePoses.data(), scenePoseCount, scenePoses.size(), referenceRoot,
                 decision.presentedWorld, bodyInRoot)) {
-            failure = "loose-root-or-body-ancestry-invalid";
+            failure = "reference-root-or-body-ancestry-invalid";
         }
         if (!failure && !held_scene_presentation_policy::prepareScenePoses(scenePoses.data(), scenePoseCount)) {
             failure = "scene-hierarchy-or-alias-conflict";
+        }
+        std::array<held_scene_presentation_policy::SceneHistoryPose<RE::NiAVObject, RE::NiTransform>, 512> sceneHistory{};
+        std::size_t historyCount = 0;
+        if (!failure && !held_scene_presentation_policy::captureSceneHistory(scenePoses.data(), scenePoseCount,
+                sceneHistory.data(), sceneHistory.size(), historyCount,
+                [](RE::NiAVObject* root, auto&& visitor) { return weapon_scene::visitScene(root, visitor); })) {
+            failure = "scene-history-incomplete-or-invalid";
         }
         if (failure) {
             clearTargetTransportPublication(handIndex);
@@ -967,28 +984,35 @@ namespace rock::held_scene_presentation
             return {};
         }
         if (selected.isLeft == isLeft) {
-            // Absolute writes in ancestor order: refreshing a parent cannot
-            // overwrite a child's final pose. Mesh-only descendants follow their
-            // owner, and aliases are written once. No Havok state is changed.
-            const auto rootBefore = looseWeaponRoot ? looseWeaponRoot->world : RE::NiTransform{};
+            // Commit all owner locals first; native geometry updates then see
+            // the complete assembly, including mesh-only sibling branches.
+            const auto rootBefore = referenceRoot ? referenceRoot->world : RE::NiTransform{};
             held_scene_presentation_policy::applyScenePoses(scenePoses.data(), scenePoseCount,
-                [looseWeaponRoot](RE::NiAVObject* node) noexcept {
-                    if (looseWeaponRoot) {
-                        // Include native geometry/skin world-data refresh for
-                        // weapon branches beyond the collision owner's subtree.
+                [](RE::NiAVObject* node) noexcept { f4vr::updateTransformsDown(node, false); },
+                [referenceRoot](RE::NiAVObject* node) noexcept {
+                    if (referenceRoot) {
+                        // FO4VR BSGeometry::UpdateWorldData (0x1C31C10) also
+                        // sets the shader's transform-changed flag. Direct
+                        // NiTransform writes alone omit that notification.
                         f4vr::updateDown(node, true);
                     } else {
                         f4vr::updateTransformsDown(node, false);
                     }
                 });
-            if (logBodies && looseWeaponRoot) {
+            // Native 0x1C23740 snapshots world -> previousWorld before it
+            // computes world; BSGeometry 0x1C31C10 calls it. The raw owner
+            // writes above have already advanced world, so restore the actual
+            // prior presented pose for roots, independent parts and geometry.
+            // Native scene writer 0x1E06B00 only writes local/world, not history.
+            held_scene_presentation_policy::commitSceneHistory(sceneHistory.data(), historyCount);
+            if (logBodies && referenceRoot) {
                 ROCK_LOG_INFO(HeldScenePresentation,
                     "HELD_SCENE_ROOT trace={} frame={} hand={} root='{}' bodyOwners={} scenePoses={} advance={:.3f}gu/{:.3f}deg output=({:.3f},{:.3f},{:.3f})",
-                    traceId, frameIndex, isLeft ? "left" : "right", looseWeaponRoot->name.c_str(),
+                    traceId, frameIndex, isLeft ? "left" : "right", referenceRoot->name.c_str(),
                     registration.count, scenePoseCount,
-                    held_scene_presentation_policy::pointDistance(rootBefore.translate, looseWeaponRoot->world.translate),
-                    held_scene_presentation_policy::matrixRotationDeltaDegrees(rootBefore.rotate, looseWeaponRoot->world.rotate),
-                    looseWeaponRoot->world.translate.x, looseWeaponRoot->world.translate.y, looseWeaponRoot->world.translate.z);
+                    held_scene_presentation_policy::pointDistance(rootBefore.translate, referenceRoot->world.translate),
+                    held_scene_presentation_policy::matrixRotationDeltaDegrees(rootBefore.rotate, referenceRoot->world.rotate),
+                    referenceRoot->world.translate.x, referenceRoot->world.translate.y, referenceRoot->world.translate.z);
             }
         }
         if (logBodies) {

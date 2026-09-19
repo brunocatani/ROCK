@@ -24,6 +24,13 @@
 
 namespace rock::weapon_support_authority_policy
 {
+    enum class FiringGripPromotionResult
+    {
+        NotApplicable,
+        Blocked,
+        Promoted,
+    };
+
     enum class WeaponSupportAuthorityMode
     {
         FullTwoHandedSolver = 0,
@@ -106,7 +113,8 @@ namespace rock::weapon_support_authority_policy
 
     inline constexpr bool canPromoteSupportGripToFiringGrip(
         bool supportGripActive,
-        bool attachOnly)
+        bool attachOnly,
+        bool insideFiringZone)
     {
         // Authored versus dynamic is pose selection, while VisualOnlySupport
         // controls transform authority before a handoff. Neither changes an
@@ -114,49 +122,33 @@ namespace rock::weapon_support_authority_policy
         // contract that may never inherit firing-grip ownership; promotion is
         // still independently gated by ambidextrous mode, infrastructure, and
         // firing-grip cylinder at the call site.
-        return supportGripActive && !attachOnly;
+        return supportGripActive && !attachOnly && insideFiringZone;
     }
 
     struct DynamicHandoffGripCaptureInput
     {
         bool normalSupportAcquisition{ false };
-        bool ambidextrousHandoffEnabled{ false };
+        bool supportPoseAbsent{ false };
         bool firingGripProximityAuthorityEnabled{ false };
         bool providerPartAuthorityActive{ false };
         bool authoredCaptureEligible{ false };
         bool supportPalmInsideHandoffZone{ false };
-        bool authoredSeatInsideHandoffZone{ false };
     };
 
-    [[nodiscard]] inline constexpr float firingGripCaptureReach(
-        const bool acquiredThroughFiringGripZone,
-        const float reattachReach,
-        const float supportPromotionReach) noexcept
-    {
-        return acquiredThroughFiringGripZone ? reattachReach : supportPromotionReach;
-    }
-
-    /*
-     * Support-pose selection must not remove the separate dynamic ambidextrous
-     * handoff station at the firing grip. This bypass exists only during a
-     * two-hand acquisition with the live support palm inside the
-     * lateral cylinders. Exact provider authority remains ahead of it. If a
-     * usable authored seat is itself inside that same zone (the common pistol
-     * case), retain the authored seat instead of replacing it with dynamic.
-     */
+    // Dynamic support at the shared station is allowed only when native
+    // animation sampling proves the authored support branch is absent.
     [[nodiscard]] inline constexpr bool shouldCaptureDynamicHandoffGrip(
         const DynamicHandoffGripCaptureInput& input) noexcept
     {
         if (!input.normalSupportAcquisition ||
-            !input.ambidextrousHandoffEnabled ||
+            !input.supportPoseAbsent ||
             !input.firingGripProximityAuthorityEnabled ||
             input.providerPartAuthorityActive ||
             !input.supportPalmInsideHandoffZone) {
             return false;
         }
 
-        return !input.authoredCaptureEligible ||
-               !input.authoredSeatInsideHandoffZone;
+        return !input.authoredCaptureEligible;
     }
 
     template <class Transform>
@@ -355,8 +347,8 @@ namespace rock::equipped_weapon_manual_ownership_policy
             return true;
         }
 
-        // Firing grips always latch. The next press is an explicit logical
-        // release, including carries created by a non-detach ownership source.
+        // Input already reflects the selected mode: toggle press or physical
+        // button-up. The last equipped grip uses the shared loose transfer.
         return primaryGripHeld;
     }
 
@@ -402,32 +394,87 @@ namespace rock::equipped_weapon_manual_ownership_policy
                (!collisionGenerationRequired || currentCollisionGenerationKey != 0);
     }
 
-    /*
-     * A firing-grip release that confirms while the support grab is only
-     * moments old is part of the SAME physical gesture (reach-over
-     * takeover) or a grab-synchronized grip flicker - never an independent,
-     * deliberate release. Acting on it immediately let a fresh offhand grab
-     * steal the firing role one frame after capture (left-firing round-4
-     * break, 2026-07-12). This is an elapsed-time contract (the human
-     * gesture window does not shrink at higher frame rates), tuned to the
-     * historically documented 110 ms: it outlasts short grip click flickers
-     * while staying imperceptible for deliberate takeovers.
-     */
-    inline constexpr float kFreshSupportGripPrimaryReleaseDeferSeconds = 0.110f;
-    /*
-     * The release-confirm debounce stays a consecutive-publication count
-     * (grip evidence arrives once per frame), so the defer window must
-     * outlast it at the SLOWEST supported game rate (45 FPS) or a
-     * grab-synchronized release acts on its first confirmable frame.
-     */
-    static_assert(
-        kFreshSupportGripPrimaryReleaseDeferSeconds >
-            static_cast<float>(kPrimaryReleaseConfirmFrames) / 45.0f,
-        "defer window must outlast the release-confirm debounce at every supported rate");
-
-    [[nodiscard]] inline constexpr bool shouldDeferPrimaryReleaseActionForFreshSupportGrip(float supportGripAgeSeconds) noexcept
+    struct NativeAimRebindInput
     {
-        return supportGripAgeSeconds <= kFreshSupportGripPrimaryReleaseDeferSeconds;
+        bool nativeRightCarry{ false };
+        bool frameValid{ false };
+        std::uint64_t capturedOwnershipKey{ 0 };
+        std::uint64_t currentOwnershipKey{ 0 };
+        // Equipped instance content (mods) at capture and now. A zero captured
+        // key means the aim was sampled before the content was known
+        // (PrimaryOnly at generation 0) and rebinds on ownership alone.
+        std::uint64_t capturedInstanceContentKey{ 0 };
+        std::uint64_t currentInstanceContentKey{ 0 };
+        bool sameRoot{ false };
+    };
+
+    [[nodiscard]] inline constexpr bool canCaptureNativeAim(
+        bool nativeCarry, bool weaponReturnActive, bool scopeAllowsCapture,
+        bool collisionPresentationActive, bool cleanIntentAvailable) noexcept
+    {
+        return nativeCarry && !weaponReturnActive && scopeAllowsCapture &&
+            (!collisionPresentationActive || cleanIntentAvailable);
+    }
+
+    [[nodiscard]] inline constexpr bool canRebindNativeAim(const NativeAimRebindInput& input) noexcept
+    {
+        return input.frameValid && input.currentOwnershipKey != 0 &&
+            input.capturedOwnershipKey == input.currentOwnershipKey &&
+            (input.capturedInstanceContentKey == 0 ||
+                input.capturedInstanceContentKey == input.currentInstanceContentKey) &&
+            (!input.nativeRightCarry || input.sameRoot);
+    }
+
+    struct PrimaryReleaseIntentState
+    {
+        std::uint64_t ownershipKey{ 0 };
+        bool firingHandIsLeft{ false };
+        bool pending{ false };
+    };
+
+    struct PrimaryReleaseIntentInput
+    {
+        std::uint64_t ownershipKey{ 0 };
+        bool firingHandIsLeft{ false };
+        bool logicalHeld{ false };
+        bool logicalReleased{ false };
+        bool supportGripActive{ false };
+        bool freeSupportIndicatorActive{ false };
+        bool primaryOwned{ true };
+    };
+
+    struct PrimaryReleaseIntentDecision
+    {
+        bool retained{ true };
+        bool blockedBySupportHover{ false };
+    };
+
+    [[nodiscard]] inline constexpr PrimaryReleaseIntentDecision resolvePrimaryReleaseIntent(
+        PrimaryReleaseIntentState& state, const PrimaryReleaseIntentInput& input) noexcept
+    {
+        if (state.ownershipKey != input.ownershipKey || state.firingHandIsLeft != input.firingHandIsLeft) {
+            state = {input.ownershipKey, input.firingHandIsLeft, false};
+        }
+        // Native equipped carry is ownership even before the first squeeze.
+        // An open input level alone must never manufacture a release/handoff.
+        if (!input.ownershipKey) {
+            state = {};
+            return {};
+        }
+        if (!input.primaryOwned) {
+            state.pending = false;
+            return {.retained = input.logicalHeld};
+        }
+        if (input.logicalReleased) {
+            if (!input.supportGripActive && input.freeSupportIndicatorActive) {
+                state.pending = false;
+                return {.retained = true, .blockedBySupportHover = true};
+            }
+            state.pending = true;
+        } else if (input.logicalHeld) {
+            state.pending = false;
+        }
+        return {.retained = !state.pending};
     }
 
     [[nodiscard]] inline constexpr GripReleaseDebounceDecision debouncePrimaryGripRelease(
@@ -503,15 +550,11 @@ namespace rock::weapon_two_handed_grip_math
     {
         EndSupportOnly = 0,
         KeepPrimaryOwnership = 1,
-        DropEquippedWeapon = 2,
     };
 
     struct SupportReleaseOwnershipInput
     {
         bool firingGripOwnershipEnabled{ false };
-        bool primaryDetachEnabled{ false };
-        bool primaryGripHeld{ false };
-        bool lastGripReleaseDropEnabled{ true };
     };
 
     /*
@@ -607,14 +650,9 @@ namespace rock::weapon_two_handed_grip_math
             return SupportReleaseManualAction::EndSupportOnly;
         }
 
-        // An open firing grip left alone by the support release would drop
-        // the weapon; with the last-grip drop disabled it keeps the weapon.
-        if (input.primaryGripHeld || !input.primaryDetachEnabled ||
-            !input.lastGripReleaseDropEnabled) {
-            return SupportReleaseManualAction::KeepPrimaryOwnership;
-        }
-
-        return SupportReleaseManualAction::DropEquippedWeapon;
+        // This event starts with two attached hands. Release support first;
+        // a separate last-hand gesture may transfer the remaining firing grip.
+        return SupportReleaseManualAction::KeepPrimaryOwnership;
     }
 
     /*
@@ -627,9 +665,10 @@ namespace rock::weapon_two_handed_grip_math
     [[nodiscard]] inline constexpr bool canReleaseCarryGrip(
         bool gripCarries,
         bool peerGripCarries,
-        bool lastGripReleaseDropEnabled) noexcept
+        bool lastGripReleaseDropEnabled,
+        bool releaseRequiresNewHold = false) noexcept
     {
-        return !gripCarries || peerGripCarries || lastGripReleaseDropEnabled;
+        return !gripCarries || (!releaseRequiresNewHold && (peerGripCarries || lastGripReleaseDropEnabled));
     }
 
     /*

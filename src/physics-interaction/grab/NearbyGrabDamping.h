@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cmath>
 #include <unordered_set>
+#include <span>
 #include <vector>
 
 namespace RE
@@ -65,50 +66,17 @@ namespace rock::nearby_grab_damping
     public:
         void add(const PureDampingCandidate& candidate)
         {
-            if (candidate.bodyId == INVALID_BODY_ID || candidate.motionId == 0 || candidate.heldBySameHand || !candidate.accepted) {
-                return;
-            }
-            _records.push_back(candidate);
+            if (candidate.bodyId == INVALID_BODY_ID || candidate.motionId == 0 || candidate.heldBySameHand || !candidate.accepted) return;
+            if (_motionIds.insert(candidate.motionId).second) _bodyIds.push_back(candidate.bodyId);
+            else ++_duplicateMotionSkips;
         }
-
-        std::vector<std::uint32_t> uniqueAcceptedMotionBodyIds() const
-        {
-            std::vector<std::uint32_t> result;
-            std::unordered_set<std::uint32_t> seenMotionIds;
-            result.reserve(_records.size());
-            for (const auto& record : _records) {
-                if (!record.accepted || record.heldBySameHand || record.bodyId == INVALID_BODY_ID || record.motionId == 0) {
-                    continue;
-                }
-                if (seenMotionIds.insert(record.motionId).second) {
-                    result.push_back(record.bodyId);
-                }
-            }
-            return result;
-        }
-
-        std::uint32_t duplicateMotionSkips() const
-        {
-            std::uint32_t skips = 0;
-            std::unordered_set<std::uint32_t> seenMotionIds;
-            for (const auto& record : _records) {
-                if (!record.accepted || record.heldBySameHand || record.bodyId == INVALID_BODY_ID || record.motionId == 0) {
-                    continue;
-                }
-                if (!seenMotionIds.insert(record.motionId).second) {
-                    ++skips;
-                }
-            }
-            return skips;
-        }
-
-        bool containsBodyId(std::uint32_t bodyId) const
-        {
-            return std::any_of(_records.begin(), _records.end(), [&](const PureDampingCandidate& record) { return record.bodyId == bodyId; });
-        }
+        std::span<const std::uint32_t> uniqueAcceptedMotionBodyIds() const { return _bodyIds; }
+        std::uint32_t duplicateMotionSkips() const { return _duplicateMotionSkips; }
 
     private:
-        std::vector<PureDampingCandidate> _records;
+        std::unordered_set<std::uint32_t> _motionIds;
+        std::vector<std::uint32_t> _bodyIds;
+        std::uint32_t _duplicateMotionSkips = 0;
     };
 
     struct SavedNearbyMotionDamping

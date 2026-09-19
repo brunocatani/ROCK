@@ -117,6 +117,33 @@
             return;
         }
 
+        // Eligibility does not depend on the target's body-tree scan. Reject
+        // cooling-down/stationary contacts before enumerating that tree, using
+        // the same impulse policy for ordinary objects and point pushes.
+        const auto* sourceMotion = havok_runtime::getBodyMotion(hknp, RE::hknpBodyId{ sourceBodyId });
+        if (!sourceMotion) {
+            return;
+        }
+        const RE::NiPoint3 sourceVelocityHavok{ sourceMotion->linearVelocity.x, sourceMotion->linearVelocity.y, sourceMotion->linearVelocity.z };
+        const std::uint64_t cooldownKey = (static_cast<std::uint64_t>(sourceBodyId) << 32) | targetBodyId;
+        const auto cooldown = _contacts.dynamicPushCooldownUntil.find(cooldownKey);
+        const float cooldownRemaining = cooldown == _contacts.dynamicPushCooldownUntil.end() ? 0.0f :
+            (std::max)(0.0f, cooldown->second - _contacts.dynamicPushElapsedSeconds);
+        const auto push = push_assist::computePushImpulse(push_assist::PushAssistInput<RE::NiPoint3>{
+            .enabled = g_rockConfig.rockDynamicPushAssistEnabled,
+            .sourceVelocity = sourceVelocityHavok,
+            .minSpeed = g_rockConfig.rockDynamicPushMinSpeed,
+            .maxImpulse = g_rockConfig.rockDynamicPushMaxImpulse,
+            .layerMultiplier = 1.0f,
+            .cooldownRemainingSeconds = cooldownRemaining,
+        });
+        if (!push.apply) {
+            ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
+                "{} dynamic push skipped before body scan: reason={} sourceBody={} targetBody={}",
+                sourceName, pushAssistSkipReasonName(push.skipReason), sourceBodyId, targetBodyId);
+            return;
+        }
+
         const auto target = havok_runtime::snapshotBody(hknp, RE::hknpBodyId{targetBodyId});
         const auto* base = targetRef->GetObjectReference();
         const bool bodyContact = target.valid && ((base && base->Is(RE::ENUM_FORM_ID::kNPC_)) ||
@@ -124,22 +151,9 @@
         if (bodyContact) {
             if (!contact.hasPoint || !target.body ||
                 physics_body_classifier::motionTypeFromBodyFlags(target.body->flags) != physics_body_classifier::BodyMotionType::Dynamic) return;
-            const auto* sourceMotion = havok_runtime::getBodyMotion(hknp, RE::hknpBodyId{sourceBodyId});
-            if (!sourceMotion) return;
-            const std::uint64_t key = (std::uint64_t(sourceBodyId) << 32) | targetBodyId;
-            const auto cooldown = _contacts.dynamicPushCooldownUntil.find(key);
-            const float remaining = cooldown == _contacts.dynamicPushCooldownUntil.end() ? 0.0f :
-                (std::max)(0.0f, cooldown->second - _contacts.dynamicPushElapsedSeconds);
-            const auto push = push_assist::computePushImpulse(push_assist::PushAssistInput<RE::NiPoint3>{
-                .enabled = g_rockConfig.rockDynamicPushAssistEnabled,
-                .sourceVelocity = {sourceMotion->linearVelocity.x, sourceMotion->linearVelocity.y, sourceMotion->linearVelocity.z},
-                .minSpeed = g_rockConfig.rockDynamicPushMinSpeed,
-                .maxImpulse = g_rockConfig.rockDynamicPushMaxImpulse,
-                .layerMultiplier = 1.0f, .cooldownRemainingSeconds = remaining});
-            if (!push.apply) return;
             const bool applied = push_assist::applyPointImpulse(hknp, targetBodyId, contact.owner, push.impulse,
                 RE::NiPoint3{contact.point[0], contact.point[1], contact.point[2]});
-            if (applied) _contacts.dynamicPushCooldownUntil[key] = _contacts.dynamicPushElapsedSeconds +
+            if (applied) _contacts.dynamicPushCooldownUntil[cooldownKey] = _contacts.dynamicPushElapsedSeconds +
                 (std::max)(0.0f, g_rockConfig.rockDynamicPushCooldownSeconds);
             ROCK_LOG_SAMPLE_INFO(Hand, 2000, "{} body point push: source={} target={} owner=0x{:X} applied={} pointHk=({:.3f},{:.3f},{:.3f})",
                 sourceName, sourceBodyId, targetBodyId, contact.owner, applied, contact.point[0], contact.point[1], contact.point[2]);
@@ -194,82 +208,38 @@
                 static_cast<int>(targetRecord->motionType));
         }
 
-        const auto uniqueMotionRecords = bodySet.uniqueAcceptedMotionRecords();
-        if (uniqueMotionRecords.empty()) {
-            ROCK_LOG_SAMPLE_DEBUG(Hand,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "{} dynamic push skipped: accepted target body {} produced no unique motion bodies",
-                sourceName,
-                targetBodyId);
-            return;
-        }
-
-        auto* sourceMotion = havok_runtime::getBodyMotion(hknp, RE::hknpBodyId{ sourceBodyId });
-        if (!sourceMotion) {
-            return;
-        }
-
-        const RE::NiPoint3 sourceVelocityHavok{ sourceMotion->linearVelocity.x, sourceMotion->linearVelocity.y, sourceMotion->linearVelocity.z };
-        const std::uint64_t cooldownKey = (static_cast<std::uint64_t>(sourceBodyId) << 32) | targetBodyId;
-        float cooldownRemaining = 0.0f;
-        if (const auto it = _contacts.dynamicPushCooldownUntil.find(cooldownKey); it != _contacts.dynamicPushCooldownUntil.end() && it->second > _contacts.dynamicPushElapsedSeconds) {
-            cooldownRemaining = it->second - _contacts.dynamicPushElapsedSeconds;
-        }
-
-        const push_assist::PushAssistInput<RE::NiPoint3> pushInput{
-            .enabled = g_rockConfig.rockDynamicPushAssistEnabled,
-            .sourceVelocity = sourceVelocityHavok,
-            .minSpeed = g_rockConfig.rockDynamicPushMinSpeed,
-            .maxImpulse = g_rockConfig.rockDynamicPushMaxImpulse,
-            .layerMultiplier = 1.0f,
-            .cooldownRemainingSeconds = cooldownRemaining,
-        };
-        const auto push = push_assist::computePushImpulse(pushInput);
-        if (!push.apply) {
-            ROCK_LOG_SAMPLE_DEBUG(Hand,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "{} dynamic push skipped: reason={} speed=({:.3f},{:.3f},{:.3f}) targetBody={} layer={} acceptedBodies={}",
-                sourceName,
-                pushAssistSkipReasonName(push.skipReason),
-                sourceVelocityHavok.x,
-                sourceVelocityHavok.y,
-                sourceVelocityHavok.z,
-                targetBodyId,
-                targetRecord->collisionLayer,
-                bodySet.acceptedCount());
-            return;
-        }
-
         std::uint32_t appliedCount = 0;
-        for (const auto* record : uniqueMotionRecords) {
-            if (!record) {
-                continue;
-            }
-            physics_recursive_wrappers::activateBody(hknp, record->bodyId);
-            if (push_assist::applyLinearImpulse(record->collisionObject, push.impulse)) {
-                ++appliedCount;
-            }
+        const auto uniqueMotionCount = bodySet.forEachUniqueAcceptedMotion([&](const auto& record) {
+            physics_recursive_wrappers::activateBody(hknp, record.bodyId);
+            if (push_assist::applyLinearImpulse(record.collisionObject, push.impulse)) ++appliedCount;
+        });
+        if (uniqueMotionCount == 0) {
+            ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
+                "{} dynamic push skipped: accepted target body {} produced no unique motion bodies", sourceName, targetBodyId);
+            return;
         }
 
         if (appliedCount > 0) {
             _contacts.dynamicPushCooldownUntil[cooldownKey] =
                 _contacts.dynamicPushElapsedSeconds + (std::max)(0.0f, g_rockConfig.rockDynamicPushCooldownSeconds);
-            auto* baseObj = targetRef->GetObjectReference();
-            auto objName = baseObj ? RE::TESFullName::GetFullName(*baseObj, false) : std::string_view{};
-            const std::string nameStr = objName.empty() ? std::string("(unnamed)") : std::string(objName);
-            ROCK_LOG_SAMPLE_DEBUG(Hand,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "{} dynamic push applied: '{}' formID={:08X} targetBody={} layer={} acceptedBodies={} uniqueMotions={} impulse=({:.3f},{:.3f},{:.3f})",
-                sourceName,
-                nameStr,
-                targetRef->GetFormID(),
-                targetBodyId,
-                targetRecord->collisionLayer,
-                bodySet.acceptedCount(),
-                appliedCount,
-                push.impulse.x,
-                push.impulse.y,
-                push.impulse.z);
+            if (logger::isDebugEnabled()) {
+                auto* baseObj = targetRef->GetObjectReference();
+                auto objName = baseObj ? RE::TESFullName::GetFullName(*baseObj, false) : std::string_view{};
+                const std::string nameStr = objName.empty() ? std::string("(unnamed)") : std::string(objName);
+                ROCK_LOG_SAMPLE_DEBUG(Hand,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "{} dynamic push applied: '{}' formID={:08X} targetBody={} layer={} acceptedBodies={} uniqueMotions={} impulse=({:.3f},{:.3f},{:.3f})",
+                    sourceName,
+                    nameStr,
+                    targetRef->GetFormID(),
+                    targetBodyId,
+                    targetRecord->collisionLayer,
+                    bodySet.acceptedCount(),
+                    appliedCount,
+                    push.impulse.x,
+                    push.impulse.y,
+                    push.impulse.z);
+            }
         }
     }
 
@@ -286,12 +256,14 @@
 
         auto* ref = resolveBodyToRef(bhk, hknp, bodyId);
         if (ref) {
-            auto* baseObj = ref->GetObjectReference();
-            const char* typeName = baseObj ? baseObj->GetFormTypeString() : "???";
-            auto objName = baseObj ? RE::TESFullName::GetFullName(*baseObj, false) : std::string_view{};
-            const std::string nameStr = objName.empty() ? std::string("(unnamed)") : std::string(objName);
+            if (logger::isDebugEnabled()) {
+                auto* baseObj = ref->GetObjectReference();
+                const char* typeName = baseObj ? baseObj->GetFormTypeString() : "???";
+                auto objName = baseObj ? RE::TESFullName::GetFullName(*baseObj, false) : std::string_view{};
+                const std::string nameStr = objName.empty() ? std::string("(unnamed)") : std::string(objName);
 
-            ROCK_LOG_DEBUG(Hand, "{} hand touched [{}] '{}' formID={:08X} body={} layer={}", handName, typeName, nameStr, ref->GetFormID(), bodyId.value, layer);
+                ROCK_LOG_DEBUG(Hand, "{} hand touched [{}] '{}' formID={:08X} body={} layer={}", handName, typeName, nameStr, ref->GetFormID(), bodyId.value, layer);
+            }
 
             bool isLeft = (std::string_view(handName) == "Left");
             auto& hand = isLeft ? _leftHand : _rightHand;
@@ -575,10 +547,6 @@
             bodyIdA == bodyIdB) {
             return;
         }
-        if (!havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdA }) ||
-            !havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdB })) {
-            return;
-        }
 
         DynamicHandCollisionRuntime::DynamicBodyContactSource
             dynamicBodySourceA{};
@@ -598,6 +566,12 @@
             _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
         const bool bodyBIsDynamicWeapon =
             _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
+        if (!bodyAIsDynamicHand && !bodyBIsDynamicHand && !bodyAIsDynamicWeapon && !bodyBIsDynamicWeapon) return;
+        // ID-only admission precedes native reads; accepted events retain all body checks.
+        if (!havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdA }) ||
+            !havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdB })) {
+            return;
+        }
         const bool solvedChildContact =
             manifoldPointCount > 0 && manifoldPointCount <= 4;
         if (solvedChildContact && bodyAIsDynamicHand) {
@@ -627,15 +601,9 @@
         dynamic_hand_surface_contact_state::ContactSource dynamicHandSourceA{};
         dynamic_hand_surface_contact_state::ContactSource dynamicHandSourceB{};
         const bool bodyAIsDynamicHandSurfaceSource =
-            _dynamicHandCollision.tryClassifySurfaceContactSourceAtomic(
-                bodyIdA,
-                shapeKeyA,
-                dynamicHandSourceA);
+            _dynamicHandCollision.classifySurfaceContactSource(dynamicBodySourceA, dynamicHandSourceA);
         const bool bodyBIsDynamicHandSurfaceSource =
-            _dynamicHandCollision.tryClassifySurfaceContactSourceAtomic(
-                bodyIdB,
-                shapeKeyB,
-                dynamicHandSourceB);
+            _dynamicHandCollision.classifySurfaceContactSource(dynamicBodySourceB, dynamicHandSourceB);
         if (solvedChildContact &&
             bodyAIsDynamicHandSurfaceSource !=
             bodyBIsDynamicHandSurfaceSource) {
@@ -736,10 +704,6 @@
             return;
         }
 
-        if (!havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdA }) ||
-            !havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdB })) {
-            return;
-        }
 
         havok_runtime::ContactSignalPointResult rawContactPoint{};
         bool rawContactPointEvaluated = false;
@@ -771,31 +735,6 @@
             _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
         const bool bodyBIsDynamicWeaponProxy =
             _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
-        if (bodyAIsDynamicWeaponProxy != bodyBIsDynamicWeaponProxy) {
-            const std::uint32_t proxyBodyId =
-                bodyAIsDynamicWeaponProxy ? bodyIdA : bodyIdB;
-            const std::uint32_t otherBodyId =
-                bodyAIsDynamicWeaponProxy ? bodyIdB : bodyIdA;
-            std::uint32_t otherFilterInfo = 0;
-            const bool otherLayerRead = havok_runtime::tryReadFilterInfo(
-                world,
-                RE::hknpBodyId{ otherBodyId },
-                otherFilterInfo);
-            const std::uint32_t otherLayer =
-                otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
-            const bool rawContactPointValid =
-                otherLayerRead &&
-                collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(otherLayer) &&
-                ensureRawContactPoint();
-            _dynamicWeaponCollision.recordObstacleContactCallback(
-                world,
-                proxyBodyId,
-                otherBodyId,
-                otherLayerRead,
-                otherLayer,
-                bodyAIsDynamicWeaponProxy,
-                rawContactPointValid ? &rawContactPoint : nullptr);
-        }
 
         const auto rightId = _rightHand.getCollisionBodyId().value;
         const auto leftId = _leftHand.getCollisionBodyId().value;
@@ -913,8 +852,6 @@
         const bool bodyBIsRight = bodyBRight.valid;
         const bool bodyAIsLeft = bodyALeft.valid;
         const bool bodyBIsLeft = bodyBLeft.valid;
-        const bool bodyAIsExternal = ::rock::provider::isExternalBodyId(bodyIdA);
-        const bool bodyBIsExternal = ::rock::provider::isExternalBodyId(bodyIdB);
         const bool bodyAIsRightHeld = _rightHand.isHeldBodyId(bodyIdA);
         const bool bodyBIsRightHeld = _rightHand.isHeldBodyId(bodyIdB);
         const bool bodyAIsLeftHeld = _leftHand.isHeldBodyId(bodyIdA);
@@ -937,6 +874,39 @@
             }
             return false;
         };
+
+        if (!bodyAIsRockSource && !bodyBIsRockSource &&
+            !bodyAIsDynamicWeaponProxy && !bodyBIsDynamicWeaponProxy &&
+            !looseGrenadeImpactBodyIsWatched(bodyIdA) && !looseGrenadeImpactBodyIsWatched(bodyIdB)) return;
+        if (!havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdA }) ||
+            !havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdB })) {
+            return;
+        }
+        if (bodyAIsDynamicWeaponProxy != bodyBIsDynamicWeaponProxy) {
+            const std::uint32_t proxyBodyId =
+                bodyAIsDynamicWeaponProxy ? bodyIdA : bodyIdB;
+            const std::uint32_t otherBodyId =
+                bodyAIsDynamicWeaponProxy ? bodyIdB : bodyIdA;
+            std::uint32_t otherFilterInfo = 0;
+            const bool otherLayerRead = havok_runtime::tryReadFilterInfo(
+                world,
+                RE::hknpBodyId{ otherBodyId },
+                otherFilterInfo);
+            const std::uint32_t otherLayer =
+                otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+            const bool rawContactPointValid =
+                otherLayerRead &&
+                collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(otherLayer) &&
+                ensureRawContactPoint();
+            _dynamicWeaponCollision.recordObstacleContactCallback(
+                world,
+                proxyBodyId,
+                otherBodyId,
+                otherLayerRead,
+                otherLayer,
+                bodyAIsDynamicWeaponProxy,
+                rawContactPointValid ? &rawContactPoint : nullptr);
+        }
 
         auto recordLooseGrenadeImpactIfArmed = [&]() {
             auto tryRecord = [&](std::uint32_t watchedBodyId,
@@ -979,6 +949,9 @@
             })) {
             return;
         }
+
+        const bool bodyAIsExternal = ::rock::provider::isExternalBodyId(bodyIdA);
+        const bool bodyBIsExternal = ::rock::provider::isExternalBodyId(bodyIdB);
 
         auto readBodyFilterInfo = [world](std::uint32_t bodyId) {
             std::uint32_t filterInfo = 0;
@@ -1228,7 +1201,7 @@
             }
 
             body_contact_runtime::BodyContactRecord record{};
-            record.frame = _contacts.handActivity.currentFrame();
+            record.frame = _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
             record.elapsedSeconds = _contacts.handActivity.currentElapsedSeconds();
             record.bodyId = contactRoute.sourceBodyId;
             record.targetBodyId = contactRoute.targetBodyId;

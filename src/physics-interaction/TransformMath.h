@@ -323,6 +323,29 @@ namespace rock::transform_math
         return result;
     }
 
+    // Native reference Euler radians reconstruct the stored matrix as Rz*Ry*Rx.
+    // The XYZ extractor above gives a different pose for combined rotations.
+    // Confirmed against equipped-drop request/loose-root telemetry; keep this
+    // conversion at the reference-spawn boundary, outside Ni/body composition.
+    template <class Matrix, class Vector>
+    inline Vector matrixToReferenceEulerRadians(const Matrix& matrix)
+    {
+        const double horizontal = std::hypot(
+            static_cast<double>(matrix.entry[0][0]),
+            static_cast<double>(matrix.entry[1][0]));
+        const double pitch = std::atan2(-static_cast<double>(matrix.entry[2][0]), horizontal);
+        if (horizontal > 0.000001) {
+            return detail::makeVector<Vector>(
+                std::atan2(static_cast<double>(matrix.entry[2][1]), static_cast<double>(matrix.entry[2][2])),
+                pitch,
+                std::atan2(static_cast<double>(matrix.entry[1][0]), static_cast<double>(matrix.entry[0][0])));
+        }
+        // At either vertical pole, choose zero roll and retain the combined
+        // yaw/roll orientation. atan2 avoids asin losing near-pole precision.
+        return detail::makeVector<Vector>(0.0, pitch,
+            std::atan2(-static_cast<double>(matrix.entry[0][1]), static_cast<double>(matrix.entry[1][1])));
+    }
+
     /*
      * FO4VR hknp BODY slots store the three local axes as 4-float blocks:
      * [0,1,2], [4,5,6], [8,9,10]. ROCK's grab-space NiTransform helpers also

@@ -213,14 +213,13 @@ namespace rock::runtime_state
     void updateFrame(const RuntimeFrameInput& input)
     {
         if (!s_frameMenuSample.valid) {
-            // The game-loop hook begins frame timing before any phase; this
-            // fail-closed path only protects an out-of-order caller from
-            // silently reusing a stale frame identity.
+            // FRIK's FrameBegin phase begins frame timing before any other
+            // phase; this fail-closed path only protects an out-of-order
+            // caller from silently reusing a stale frame identity.
             (void)beginFrameTiming(false);
         }
 
         RuntimeFrameSnapshot next{};
-        next.frameIndex = s_snapshot.frameIndex + 1;
         next.playerAvailable = hasPlayer();
         next.weaponDrawn = sampleWeaponDrawn();
         next.inputMenuBlocking = s_frameMenuSample.inputMenuBlocking;
@@ -229,6 +228,7 @@ namespace rock::runtime_state
         next.localGameStopped = s_frameMenuSample.gameStopped;
         next.localMenuBlocking = next.localGameStopped || next.inputMenuBlocking;
         next.timing = game_timing::currentFrameTiming();
+        next.frameIndex = next.timing.sequence;
         /*
          * Convenience copy of the sanitized measured delta. Zero for an
          * unmeasurable frame — every consumer holds on zero elapsed time; a

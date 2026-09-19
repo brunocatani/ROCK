@@ -659,11 +659,12 @@ namespace rock::scope_safe_hand_frame_math
             maxDriverMissGraceFrames);
     }
 
-    [[nodiscard]] inline constexpr bool shouldPublishLockedHandVisualAuthority(bool scopeMenuOpen)
+    [[nodiscard]] inline constexpr bool shouldPublishLockedHandVisualAuthority([[maybe_unused]] bool scopeMenuOpen)
     {
-        // hFRIK's hands are deliberately hidden in this state, and its arm IK
-        // rejects the collapsed skeleton. Weapon/camera authority still runs.
-        return !scopeMenuOpen;
+        // Since FRIK API v2.3 FRIK culls the body geometry while scoped instead
+        // of collapsing the root, so the arm IK keeps solving and hand
+        // authority keeps publishing through the scope edge.
+        return true;
     }
 
     enum class HandAuthorityRole : std::uint8_t

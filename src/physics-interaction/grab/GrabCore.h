@@ -1,6 +1,9 @@
 #pragma once
+#include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
 
 #include "physics-interaction/VectorMath.h"
+#include "physics-interaction/grab/GrabPinchPocket.h"
+#include "physics-interaction/grab/HeldContactMeshCache.h"
 
 /*
  * Grab core policy is grouped here to keep object preparation, lifecycle, canonical frames, frame math, interaction decisions, and pull motion together.
@@ -79,6 +82,7 @@ namespace rock::active_grab_body_lifecycle
         PhysicalDrop,
         NonPhysicalTransfer,
         OwnershipHandoff,
+        PendingTransfer,
     };
 
     inline constexpr const char* releaseIntentName(BodyReleaseIntent intent) noexcept
@@ -90,6 +94,8 @@ namespace rock::active_grab_body_lifecycle
             return "physical-drop";
         case BodyReleaseIntent::NonPhysicalTransfer:
             return "non-physical-transfer";
+        case BodyReleaseIntent::PendingTransfer:
+            return "pending-transfer";
         case BodyReleaseIntent::OwnershipHandoff:
             return "ownership-handoff";
         }
@@ -218,9 +224,12 @@ namespace rock::active_grab_body_lifecycle
         }
     }
 
-    inline constexpr bool isLooseObjectPhysicalDrop(grab_target::Kind targetKind, BodyReleaseIntent intent) noexcept
+    inline constexpr bool keepsLooseObjectInWorld(grab_target::Kind targetKind, BodyReleaseIntent intent) noexcept
     {
-        return targetKind == grab_target::Kind::LooseObject && intent == BodyReleaseIntent::PhysicalDrop;
+        // Pending pickup may still fail. Keep the same motion/filter contract
+        // as a physical drop until native transfer consumes the world object.
+        return targetKind == grab_target::Kind::LooseObject &&
+            (intent == BodyReleaseIntent::PhysicalDrop || intent == BodyReleaseIntent::PendingTransfer);
     }
 
     inline bool shouldPreserveConvertedMotionOnRelease(
@@ -228,7 +237,7 @@ namespace rock::active_grab_body_lifecycle
         grab_target::Kind targetKind,
         BodyReleaseIntent intent) noexcept
     {
-        return isLooseObjectPhysicalDrop(targetKind, intent) &&
+        return keepsLooseObjectInWorld(targetKind, intent) &&
                record.originalStateKnown &&
                record.motionChangedByRock &&
                record.originalMotionType == physics_body_classifier::BodyMotionType::Keyframed;
@@ -410,10 +419,10 @@ namespace rock::active_grab_body_lifecycle
              * explicit restore-all paths still put every captured filter back;
              * protected non-physical release restores filters only for system-owned
              * non-dynamic bodies whose motion ownership is also returned to the engine.
-             * A successful physical drop of a converted keyframed loose object is
-             * player-owned physical state now, so ROCK preserves dynamic motion and
-             * the matching active filter instead of returning the object to floating
-             * keyframed state.
+             * A physical drop or pending transfer of a converted keyframed loose
+             * object still belongs to the world. Preserve dynamic motion and the
+             * matching active filter; a rejected pickup must not leave it floating
+             * or non-colliding. Successful pickup consumes that world body.
              */
             BodyRestorePlan plan{};
             plan.reason = reason;
@@ -491,7 +500,7 @@ namespace rock::active_grab_body_lifecycle
 
     inline bool shouldSkipIncompleteScanRootRestore(const BodyRestorePlan& plan, std::uint16_t originalMotionPropsId) noexcept
     {
-        if (plan.reason != BodyRestoreReason::Release || !isLooseObjectPhysicalDrop(plan.targetKind, plan.intent)) {
+        if (plan.reason != BodyRestoreReason::Release || !keepsLooseObjectInWorld(plan.targetKind, plan.intent)) {
             return false;
         }
 
@@ -507,6 +516,42 @@ namespace rock::active_grab_body_lifecycle
         }
 
         return physics_body_classifier::motionTypeFromMotionPropertiesId(originalMotionPropsId) == physics_body_classifier::BodyMotionType::Keyframed;
+    }
+}
+
+namespace rock
+{
+    enum class GrabReleaseDisposition : std::uint8_t
+    {
+        PhysicalDrop,
+        PendingInventoryTransfer,
+        TransferToInventory,
+        PendingConsumeTransfer,
+        OwnershipHandoff,
+    };
+
+    inline constexpr active_grab_body_lifecycle::BodyReleaseIntent releaseIntentFromDisposition(GrabReleaseDisposition disposition) noexcept
+    {
+        using active_grab_body_lifecycle::BodyReleaseIntent;
+        switch (disposition) {
+        case GrabReleaseDisposition::PhysicalDrop:
+            return BodyReleaseIntent::PhysicalDrop;
+        case GrabReleaseDisposition::OwnershipHandoff:
+            return BodyReleaseIntent::OwnershipHandoff;
+        case GrabReleaseDisposition::PendingInventoryTransfer:
+        case GrabReleaseDisposition::PendingConsumeTransfer:
+            return BodyReleaseIntent::PendingTransfer;
+        case GrabReleaseDisposition::TransferToInventory:
+            return BodyReleaseIntent::NonPhysicalTransfer;
+        }
+        return BodyReleaseIntent::NonPhysicalTransfer;
+    }
+
+    inline constexpr bool shouldActivateReleasedBodies(GrabReleaseDisposition disposition) noexcept
+    {
+        const auto intent = releaseIntentFromDisposition(disposition);
+        return intent == active_grab_body_lifecycle::BodyReleaseIntent::PhysicalDrop ||
+            intent == active_grab_body_lifecycle::BodyReleaseIntent::PendingTransfer;
     }
 }
 
@@ -649,6 +694,7 @@ namespace rock
         RE::NiPoint3 palmSeatPointWorldAtGrab{};
         RE::NiPoint3 pinchPocketWorldAtGrab{};
         RE::NiPoint3 pinchAxisWorldAtGrab{ 1.0f, 0.0f, 0.0f };
+        grab_pinch_pocket_policy::StablePinchFingerPose pinchFingerPose{};
         GrabSeatDiagnostics diagnostics{};
         GrabSeatMode mode = GrabSeatMode::None;
         float lastPivotReacquireLocalDeltaGameUnits = 0.0f;
@@ -762,6 +808,7 @@ namespace rock
         const char* motorFadeReason = "none";
         ImmutableGrabCaptureTelemetry captureTelemetry{};
         std::vector<GrabLocalTriangle> localMeshTriangles;
+        mutable HeldContactMeshCache contactMeshCache;
         std::vector<GrabLocalTriangle> fingerPoseLocalMeshTriangles;
         RE::NiAVObject* heldNode = nullptr;
         GrabGripEvidenceState gripEvidence{};
@@ -776,6 +823,18 @@ namespace rock
         bool hasFingerEvidencePoint = false;
         bool activeGrabPointUsesMultiFingerEvidence = false;
         bool syntheticLooseWeaponPrimaryAttach = false;
+        bool authoredLooseWeaponSupportGrip = false;
+        AuthoredWeaponGripPose authoredWeaponPose{};
+        loose_weapon_authored_grab_policy::Arrangement authoredWeaponArrangement{ loose_weapon_authored_grab_policy::Arrangement::Pending };
+        // Game-frame-only carry corrections. Frozen constraint/visual seats
+        // remain immutable; both proxies receive the same two-hand root target.
+        RE::NiTransform looseObjectSoloProxyCorrection{};
+        RE::NiTransform looseObjectSharedProxyCorrection{};
+        std::uint64_t looseObjectSharedPeerTrace = 0;
+        bool looseObjectSharedPrimaryIsLeft = false;
+        float looseObjectVisualTraceElapsed = 0.0f;
+        bool transferPoseTracePending = false;
+        bool hasLooseObjectSoloProxyCorrection = false;
         bool hasTelemetryCapture = false;
         bool fingerPoseAimValid = false;
         bool fadeInGrabConstraint = false;
@@ -825,6 +884,7 @@ namespace rock
             motorFadeReason = "none";
             captureTelemetry.clear();
             localMeshTriangles.clear();
+            contactMeshCache.clear();
             fingerPoseLocalMeshTriangles.clear();
             heldNode = nullptr;
             gripEvidence = GrabGripEvidenceState{};
@@ -839,6 +899,16 @@ namespace rock
             hasFingerEvidencePoint = false;
             activeGrabPointUsesMultiFingerEvidence = false;
             syntheticLooseWeaponPrimaryAttach = false;
+            authoredLooseWeaponSupportGrip = false;
+            authoredWeaponPose = {};
+            authoredWeaponArrangement = loose_weapon_authored_grab_policy::Arrangement::Pending;
+            looseObjectSoloProxyCorrection = {};
+            looseObjectSharedProxyCorrection = {};
+            looseObjectSharedPeerTrace = 0;
+            looseObjectSharedPrimaryIsLeft = false;
+            looseObjectVisualTraceElapsed = 0.0f;
+            transferPoseTracePending = false;
+            hasLooseObjectSoloProxyCorrection = false;
             hasTelemetryCapture = false;
             fingerPoseAimValid = false;
             fadeInGrabConstraint = false;
@@ -977,6 +1047,16 @@ namespace rock::grab_frame_math
 
         result.scale = proxyWorld.scale * objectProxyLocal.scale;
         return result;
+    }
+
+    // Inverse of objectFromGeneratedProxyLocalSpace. Proxy rotations store
+    // native column axes; object and relation transforms store Ni row axes.
+    template <class Transform>
+    inline Transform generatedProxyFromObjectWorld(const Transform& objectWorld, const Transform& objectProxyLocal)
+    {
+        Transform proxy = transform_math::composeTransforms(objectWorld, transform_math::invertTransform(objectProxyLocal));
+        proxy.rotate = transform_math::transposeRotation(proxy.rotate);
+        return proxy;
     }
 
     template <class Transform, class Vector>
@@ -1188,12 +1268,14 @@ namespace rock::grab_authority_frame_math
         Transform ownerBodyLocal{};
         Transform desiredObjectWorld{};
         Transform desiredBodyWorld{};
+        Transform visualHandObjectLocal{};
         Vector pivotAWorld{};
         Vector gripPointWorld{};
         Vector visualNormalWorld{};
         GrabAuthorityPivotSource source = GrabAuthorityPivotSource::None;
         bool hasDesiredObjectWorld = false;
         bool hasDesiredBodyWorld = false;
+        bool hasVisualHandObjectLocal = false;
         bool visualNormalValid = false;
     };
 
@@ -1250,6 +1332,8 @@ namespace rock::grab_authority_frame_math
             !isFiniteTransform(input.objectWorld) ||
             !isFiniteTransform(input.bodyWorld) ||
             !isFiniteTransform(input.constraintBodyWorld) ||
+            (input.hasVisualHandObjectLocal && (!isFiniteTransform(input.visualHandObjectLocal) ||
+                input.visualHandObjectLocal.scale <= 0.0001f)) ||
             !isFiniteVector(input.pivotAWorld) ||
             !isFiniteVector(input.gripPointWorld)) {
             return frozen;
@@ -1322,7 +1406,10 @@ namespace rock::grab_authority_frame_math
             input.proxyWorld,
             frozen.desiredObjectWorld,
             input.pivotAWorld);
-        frozen.rawHandSpace = splitFrame.rawHandSpace;
+        // Authored seats define the visual wrist in object space. Keep the
+        // physical proxy and its motor relation independent of that pose.
+        frozen.rawHandSpace = input.hasVisualHandObjectLocal ?
+            transform_math::invertTransform(input.visualHandObjectLocal) : splitFrame.rawHandSpace;
         frozen.handBodyToRawHandAtGrab = splitFrame.handBodyToRawHandAtGrab;
         frozen.pivotAHandBodyLocalGame = splitFrame.pivotAHandBodyLocal;
         frozen.proxyAuthorityHandSpace =

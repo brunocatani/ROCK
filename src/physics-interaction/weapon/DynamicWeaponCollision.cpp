@@ -489,6 +489,7 @@ namespace rock
         FrameResult result{};
         result.requestedWeaponWorld = _frameRequestedWeaponWorld;
         result.resolvedWeaponWorld = _frameRequestedWeaponWorld;
+        _compoundSourcesUnavailable = false;
 
         const bool frameMatches =
             _frameAcceptingIntent &&
@@ -805,9 +806,8 @@ namespace rock
             return false;
         }
 
-        std::scoped_lock poseLock(_compoundPoseMutex);
         if (_compoundPoseScratch.size() != _createdCompoundChildCount ||
-            _pendingCompoundChildTransforms.size() != _createdCompoundChildCount) {
+            _preparedCompoundChildTransforms.size() != _createdCompoundChildCount) {
             return false;
         }
 
@@ -826,10 +826,14 @@ namespace rock
                     _compoundPoseScratch[i].shapeInWeapon,
                     _createdCenterWeaponLocal,
                     weaponScale,
-                    _pendingCompoundChildTransforms[i])) {
+                    _preparedCompoundChildTransforms[i])) {
                 return false;
             }
         }
+        std::scoped_lock poseLock(_compoundPoseMutex);
+        if (_pendingCompoundChildTransforms == _preparedCompoundChildTransforms) return true;
+        std::copy(_preparedCompoundChildTransforms.begin(), _preparedCompoundChildTransforms.end(),
+            _pendingCompoundChildTransforms.begin());
         ++_queuedCompoundPoseSequence;
         return true;
     }
@@ -878,6 +882,9 @@ namespace rock
             !compoundGeometry.valid ||
             compoundGeometry.generationKey != bounds.generationKey ||
             compoundGeometry.generationKey != _frameGenerationKey) {
+            _compoundSourcesUnavailable =
+                compoundGeometry.failure == WeaponCollision::CompoundGeometrySnapshotFailure::SourceTransformUnavailable &&
+                compoundGeometry.generationKey == _frameGenerationKey;
             ROCK_LOG_SAMPLE_WARN(
                 Weapon,
                 1000,
@@ -1054,6 +1061,7 @@ namespace rock
         {
             std::scoped_lock poseLock(_compoundPoseMutex);
             _compoundPoseScratch.resize(compoundGeometry.children.size());
+            _preparedCompoundChildTransforms.resize(compoundGeometry.children.size());
             _pendingCompoundChildTransforms.resize(compoundGeometry.children.size());
             for (std::size_t i = 0; i < compoundGeometry.children.size(); ++i) {
                 _compoundPoseScratch[i].shapeInWeapon = compoundGeometry.children[i].shapeInWeapon;
@@ -1718,6 +1726,7 @@ namespace rock
         {
             std::scoped_lock poseLock(_compoundPoseMutex);
             _compoundPoseScratch.clear();
+            _preparedCompoundChildTransforms.clear();
             _pendingCompoundChildTransforms.clear();
             _queuedCompoundPoseSequence = 0;
             _consumedCompoundPoseSequence = 0;
@@ -1786,6 +1795,7 @@ namespace rock
 
     void DynamicWeaponCollisionRuntime::retireAll(void* bhkWorld, const bool preserveSurfaceSupport)
     {
+        _surfaceInputReserved = false;
         auto structuralMutation = _physicsCallbackGate ?
             _physicsCallbackGate->pauseForMutation() :
             PhysicsCallbackQuiescenceGate::MutationLease{};
@@ -1811,6 +1821,7 @@ namespace rock
         clearLocalProxyStateLocked();
         _surfaceSupport = {};
         _enabledAtomic.store(false, std::memory_order_release);
+        _surfaceInputReserved = false;
         _frameAcceptingIntent = false;
         _frameHasIntent = false;
         _frameIndex = 0;

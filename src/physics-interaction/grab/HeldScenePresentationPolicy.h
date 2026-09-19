@@ -235,9 +235,10 @@ namespace rock::held_scene_presentation_policy
         Transform world{};
         std::size_t depth = 0;
         bool duplicate = false;
+        bool refreshRoot = true;
     };
 
-    // Loose weapons have mesh-only branches beside their collision owners.
+    // Loose references can have mesh-only branches beside their collision owners.
     // Present the reference root first, then retain each body's independent
     // solved pose. The captured root/body relation never uses last frame's
     // presented node as a new physics input.
@@ -275,6 +276,7 @@ namespace rock::held_scene_presentation_policy
             auto& pose = poses[index];
             pose.depth = 0;
             pose.duplicate = false;
+            pose.refreshRoot = true;
             if (!pose.node || !finiteTransform(pose.world)) {
                 return false;
             }
@@ -299,12 +301,25 @@ namespace rock::held_scene_presentation_policy
         std::sort(poses, poses + count, [](const auto& first, const auto& second) {
             return first.depth < second.depth;
         });
+        for (std::size_t index = 0; index < count; ++index) {
+            auto& pose = poses[index];
+            // An ancestor's native refresh covers this subtree after every
+            // owner local has been assigned. Parent walks were bounded above.
+            for (auto* parent = pose.node->parent; parent && pose.refreshRoot; parent = parent->parent) {
+                for (std::size_t prior = 0; prior < index; ++prior) {
+                    if (!poses[prior].duplicate && poses[prior].node == parent) {
+                        pose.refreshRoot = false;
+                        break;
+                    }
+                }
+            }
+        }
         return true;
     }
 
-    template <class Node, class Transform, class RefreshSubtree>
+    template <class Node, class Transform, class UpdateTransforms, class RefreshSubtree>
     inline void applyScenePoses(
-        const ScenePose<Node, Transform>* poses, std::size_t count, RefreshSubtree refreshSubtree) noexcept
+        const ScenePose<Node, Transform>* poses, std::size_t count, UpdateTransforms updateTransforms, RefreshSubtree refreshSubtree) noexcept
     {
         for (std::size_t index = 0; index < count; ++index) {
             const auto& pose = poses[index];
@@ -315,7 +330,57 @@ namespace rock::held_scene_presentation_policy
             node->world = pose.world;
             node->local = node->parent ? transform_math::composeTransforms(
                 transform_math::invertTransform(node->parent->world), pose.world) : pose.world;
-            refreshSubtree(node);
+            // Intermediate non-owner parents must follow an updated ancestor
+            // before the next owner's local is derived. This pass changes only
+            // transforms; geometry/skin notification follows the complete batch.
+            updateTransforms(node);
+        }
+        for (std::size_t index = 0; index < count; ++index) {
+            if (!poses[index].duplicate && poses[index].refreshRoot) refreshSubtree(poses[index].node);
+        }
+    }
+
+    template <class Node, class Transform>
+    struct SceneHistoryPose
+    {
+        Node* node = nullptr;
+        Transform world{};
+    };
+
+    // Snapshot the last presented pose before any owner or intermediate parent
+    // is advanced. Native world updates roll world into previousWorld on every
+    // call, so their history is not usable after an already-presented subtree
+    // has been refreshed. The snapshots live only for this presentation batch.
+    template <class Node, class Transform, class VisitSubtree>
+    inline bool captureSceneHistory(const ScenePose<Node, Transform>* poses, std::size_t count,
+        SceneHistoryPose<Node, Transform>* history, std::size_t capacity, std::size_t& historyCount,
+        VisitSubtree visitSubtree) noexcept
+    {
+        historyCount = 0;
+        for (std::size_t index = 0; index < count; ++index) {
+            if (poses[index].duplicate || !poses[index].refreshRoot) continue;
+            bool complete = true;
+            const auto traversal = visitSubtree(poses[index].node, [&](Node* node) {
+                if (!node || historyCount == capacity || !finiteTransform(node->world)) {
+                    complete = false;
+                    return false;
+                }
+                history[historyCount++] = {node, node->world};
+                return true;
+            });
+            if (!complete || traversal.truncated) {
+                historyCount = 0;
+                return false;
+            }
+        }
+        return true;
+    }
+
+    template <class Node, class Transform>
+    inline void commitSceneHistory(const SceneHistoryPose<Node, Transform>* history, std::size_t count) noexcept
+    {
+        for (std::size_t index = 0; index < count; ++index) {
+            history[index].node->previousWorld = history[index].world;
         }
     }
 

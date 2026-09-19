@@ -5,8 +5,9 @@
 #include "RE/Bethesda/BSPointerHandle.h"
 #include "RE/NetImmerse/NiPoint.h"
 
-#include "api/ROCKProviderApi.h"
+#include "api/ProviderRuntimeTypes.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
+#include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
 
 namespace rock
 {
@@ -15,6 +16,9 @@ namespace rock
         WaitingForReference = 0,
         WaitingForSettle = 1,
         AcquireAndCommitExactTarget = 2,
+        WaitingForNativePlacement = 3,
+        NativePlacementFailed = 4,
+        EquippedSlotReleaseFailed = 5,
     };
 
     /*
@@ -39,6 +43,8 @@ namespace rock
         bool inventoryTransfer{ false };
         // Internal B-hold draws share transfer/rollback, without an API owner.
         bool grenadeQuickDraw{ false };
+        bool equippedWeaponTransfer{ false };
+        AuthoredWeaponGripPose weaponGripPose{};
         std::uint32_t preferredBodyId{ 0x7FFF'FFFF };
         float maxDistanceGame{ 0.0f };
         bool hasSourcePointOverride{ false };
@@ -50,5 +56,10 @@ namespace rock
         // ProviderForceGrabCommand bookkeeping: pre-filled with request identity;
         // only .state/.failure/.targetBodyId are mutated when the commit resolves.
         provider::RockProviderInteractionCommandResultV1 providerResultTemplate{};
+
+        [[nodiscard]] bool internallyOwned() const noexcept
+        {
+            return grenadeQuickDraw || equippedWeaponTransfer;
+        }
     };
 }

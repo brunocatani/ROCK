@@ -6,7 +6,6 @@
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
-#include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
@@ -170,7 +169,6 @@ namespace rock
         _lastSuspensionReason = {};
         _lastSuspensionLogMs = 0;
         _reportPoseSuspension = false;
-        _frikOffsetCacheRevision = 0;
         _captureSequenceFloor = 0;
         _supportCaptureSequenceFloor = 0;
         clearStableAuthoredSupportGripSnapshot();
@@ -185,7 +183,6 @@ namespace rock
         _canonicalPublishFailureLogged = false;
         _libraryPublishFailureLogged = false;
         _positionOnlyHoldPublishFailureLogged = false;
-        _customFrikOffsetOverrideActive = false;
         _supportCaptureFailureReasonLogged = 0;
         _supportCaptureFailureMaskLogged = 0;
         _supportCaptureFailureLogged = false;
@@ -292,28 +289,6 @@ namespace rock
             _mirroredFingerPoseValid = false;
             _fingerMirrorFailureLogged = false;
 
-            _customFrikOffsetOverrideActive = false;
-            _frikOffsetCacheRevision = frik_weapon_offset_cache::currentRevision();
-            if (input.weapon && input.weaponNode) {
-                const auto customFrikOffset =
-                    frik_weapon_offset_cache::findCustomGripOverride(input.weapon, input.weaponNode);
-                _customFrikOffsetOverrideActive =
-                    customFrikOffset.found &&
-                    !compiledMinigunFiringSeat;
-                if (customFrikOffset.found) {
-                    if (compiledMinigunFiringSeat) {
-                        ROCK_LOG_INFO(Animation,
-                            "Minigun custom hFRIK weapon offset promoted to compiled authored firing seat weaponKey=0x{:X} source={}",
-                            currentWeaponKey,
-                            customFrikOffset.reason);
-                    } else {
-                        ROCK_LOG_INFO(Animation,
-                            "Authored primary firing grip yielded to custom hFRIK weapon offset weaponKey=0x{:X} source={}",
-                            currentWeaponKey,
-                            customFrikOffset.reason);
-                    }
-                }
-            }
             /*
              * Continue when the exact weapon library already has a native-
              * idle relation. Returning here exposed one native/hFRIK frame on
@@ -322,43 +297,6 @@ namespace rock
              * below, while the library lookup is independently keyed by the
              * new weapon node, ownership, and variant.
              */
-        }
-
-        const auto frikOffsetCacheRevision = frik_weapon_offset_cache::currentRevision();
-        if (frikOffsetCacheRevision != _frikOffsetCacheRevision) {
-            const bool previousCustomOverride = _customFrikOffsetOverrideActive;
-            _frikOffsetCacheRevision = frikOffsetCacheRevision;
-
-            const auto customFrikOffset =
-                frik_weapon_offset_cache::findCustomGripOverride(input.weapon, input.weaponNode);
-            _customFrikOffsetOverrideActive =
-                customFrikOffset.found &&
-                !compiledMinigunFiringSeat;
-            if (_customFrikOffsetOverrideActive != previousCustomOverride) {
-                ROCK_LOG_INFO(Animation,
-                    "Authored primary firing grip custom hFRIK override {} weaponKey=0x{:X} cacheRevision={} source={}",
-                    _customFrikOffsetOverrideActive ? "activated" : "released",
-                    currentWeaponKey,
-                    frikOffsetCacheRevision,
-                    customFrikOffset.reason);
-
-                weaponAuthority.clearAuthoredPrimaryFiringGripCanonical(
-                    "custom-frik-weapon-offset-change");
-                _captureSequenceFloor = captureStatus.captureSequence;
-                _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
-                _liveSupportWitness = {};
-                clearStableAuthoredSupportGripSnapshot();
-                endSession("custom-frik-weapon-offset-change");
-                return;
-            }
-        }
-
-        if (_customFrikOffsetOverrideActive) {
-            weaponAuthority.clearAuthoredPrimaryFiringGripCanonical(
-                "custom-frik-weapon-offset");
-            clearStableAuthoredSupportGripSnapshot();
-            endSession("custom-frik-weapon-offset");
-            return;
         }
 
         const auto variant = authored_weapon_grip_library::identifyWeaponVariant(
@@ -375,6 +313,9 @@ namespace rock
             return;
         }
         auto authoredLookup = authored_weapon_grip_library::findResolvedVariant(input.weapon, variant, input.inPowerArmor);
+        authored_weapon_grip_library::applyPipeDefaultOffset(authoredLookup, input.rockFiringHandIsLeft);
+        vanilla_weapon_alignment_telemetry::recordAuthoredSelection(
+            input, variant, authoredLookup, modelDisplacement, compiledMinigunFiringSeat);
         if (authoredLookup.found) {
             authoredLookup.rightHandWeaponLocal = vanilla_weapon_grip_frame::translateGrip(authoredLookup.rightHandWeaponLocal, modelDisplacement);
             if (authoredLookup.hasSupportRelation) {
@@ -415,6 +356,12 @@ namespace rock
             authoredLookup.supportCaptureSequence != 0 &&
             authoredLookup.supportFingerPose.complete();
         const auto publishLibraryAuthoredSupportCandidate = [&]() {
+            if (harvestedRelationAvailable && authoredLookup.supportPoseAbsent &&
+                authored_weapon_grip_library::isNativeIdleAuthority(authoredLookup.source)) {
+                _stableAuthoredSupportGrip = {};
+                return weaponAuthority.setAuthoredSupportGripAbsent(input.weaponNode,
+                    input.weaponGenerationKey, authoredLookup.captureSequence);
+            }
             if (!librarySupportAuthoritative ||
                 !input.weaponNode ||
                 input.weaponGenerationKey == 0) {
@@ -953,7 +900,7 @@ namespace rock
             return;
         }
 
-        const RE::NiTransform liveWeaponWorld = input.weaponNode->world;
+        RE::NiTransform liveWeaponWorld{};
         RE::NiTransform trackedHandWorld{};
         // ROCK owns the presented right hand, so controller intent must come
         // from the physical driver frame. Reading the presented hand here
@@ -964,7 +911,8 @@ namespace rock
             endSession("physical-hand-frame-unavailable");
             return;
         }
-        if (!finiteTransform(liveWeaponWorld) || !finiteTransform(trackedHandWorld)) {
+        if (!weaponAuthority.tryGetRightWeaponAimWorld(input.weaponNode->world.scale, liveWeaponWorld) ||
+            !finiteTransform(trackedHandWorld)) {
             weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             endSession("live-transform-invalid");
             return;
@@ -1173,15 +1121,23 @@ namespace rock
             computeGrabLegacyPalmPivotAWorldFromHandBasis(
                 rightPositionOnlyHandWeaponLocal,
                 false);
-        constexpr float kMaximumPositionOnlyHoldGripErrorGameUnits = 0.01f;
+        // Float rounding of the world coordinates the pivot went through
+        // (AuthoredWeaponGripCapturePolicy.h); the identity itself is exact.
+        const float positionOnlyHoldGripErrorTolerance =
+            authored_weapon_grip_capture_policy::positionOnlyHoldGripErrorTolerance(
+                (std::max)({ std::fabs(solvedWeaponWorld.translate.x),
+                    std::fabs(solvedWeaponWorld.translate.y),
+                    std::fabs(solvedWeaponWorld.translate.z),
+                    std::fabs(trackedHandWorld.translate.x),
+                    std::fabs(trackedHandWorld.translate.y),
+                    std::fabs(trackedHandWorld.translate.z) }));
         const float positionOnlyHoldGripError = pointDistance(
             cachedPositionOnlyGripWeaponLocal,
             authoredGripWeaponLocal);
         const bool positionOnlyHoldValid =
             finiteTransform(rightPositionOnlyHandWeaponLocal) &&
             std::isfinite(positionOnlyHoldGripError) &&
-            positionOnlyHoldGripError <=
-                kMaximumPositionOnlyHoldGripErrorGameUnits;
+            positionOnlyHoldGripError <= positionOnlyHoldGripErrorTolerance;
         const bool positionOnlyHoldPublished =
             compiledMinigunFiringSeat ||
             (authoredLibraryEntryAvailable &&
@@ -1190,17 +1146,17 @@ namespace rock
                     input.weapon,
                     input.inPowerArmor,
                     resolvedCaptureSequence,
-                    frik_weapon_offset_cache::currentRevision(),
                     rightPositionOnlyHandWeaponLocal));
         if (!positionOnlyHoldPublished) {
             if (!_positionOnlyHoldPublishFailureLogged) {
                 ROCK_LOG_WARN(Animation,
-                    "Authored position-only loose hold publication failed weaponKey=0x{:X} capture={} entry={} valid={} gripError={:.4f}gu",
+                    "Authored position-only loose hold publication failed weaponKey=0x{:X} capture={} entry={} valid={} gripError={:.4f}gu tolerance={:.4f}gu",
                     currentWeaponKey,
                     resolvedCaptureSequence,
                     authoredLibraryEntryAvailable ? "yes" : "no",
                     positionOnlyHoldValid ? "yes" : "no",
-                    positionOnlyHoldGripError);
+                    positionOnlyHoldGripError,
+                    positionOnlyHoldGripErrorTolerance);
                 _positionOnlyHoldPublishFailureLogged = true;
             }
         } else {

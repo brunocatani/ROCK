@@ -45,11 +45,15 @@ namespace rock::authored_weapon_grip_capture
         bool valid{ false };
     };
 
-    // Installs ROCK's validated UpdateFirstPersonArm grip capture and the one
-    // shared native graph-output coordinator used by grip capture and provider
-    // callbacks. Reload/bolt capture, application, WeaponFire, and
-    // ReloadStateChange behavior remain animation-addon responsibilities.
+    // Installs ROCK's validated UpdateFirstPersonArm grip capture. The native
+    // graph-output point is FRIK's NativeGraphOutput frame phase (API v2.3),
+    // forwarded by ROCKMain to onNativeGraphOutput. Reload/bolt capture,
+    // application, WeaponFire, and ReloadStateChange behavior remain
+    // animation-addon responsibilities.
     [[nodiscard]] bool installHook();
+    // FRIK's NativeGraphOutput phase: dispatch the ROCK V1 graph-output phase
+    // to provider consumers, then capture the authored support-grip pose.
+    void onNativeGraphOutput();
     [[nodiscard]] bool isHookInstalled();
     void setEnabled(bool enabled);
     void resetTransientState();
@@ -64,6 +68,10 @@ namespace rock::authored_weapon_grip_capture
         const RE::NiNode* expectedWeaponNode,
         RE::NiTransform& outAuthoredPrimaryHandInWeapon,
         std::uint64_t& outCaptureSequence);
+    // Pre-presentation graph-local Weapon scale; never reads the final visible
+    // weapon scale or a persisted pose. Borrowed node identity is checked now.
+    [[nodiscard]] bool tryGetAnimationWeaponScale(const RE::NiNode* expectedWeaponNode,
+        std::uint32_t expectedFormId, float& outScale);
     [[nodiscard]] bool tryResolveAuthoredSupportGrip(
         const RE::NiNode* expectedWeaponNode,
         RE::NiTransform& outSupportHandInWeapon,

@@ -2,8 +2,8 @@
 
 /*
  * Internal dynamic-hand collision telemetry contract. This is deliberately
- * separate from ROCKProviderApi.h: ROCK remains on provider API V1 and a later
- * API addition can copy the stable, engine-agnostic subset without exposing
+ * separate from the modular public provider records: public readbacks copy
+ * the stable, engine-agnostic subset without exposing
  * runtime objects, pointers, or thread-owned state.
  *
  * The runtime publishes one fixed-capacity snapshot per main frame. All vector

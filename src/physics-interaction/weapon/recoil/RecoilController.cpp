@@ -114,7 +114,9 @@ namespace rock
             self->clearOneHandRecoilClaim();
         }
         const bool ownedCarry = directRight || (self->isManualOwnershipActive() &&
-            (context.fullTwoHanded || (self->usesLeftFiringCarry() &&
+            (context.fullTwoHanded ||
+                (self->_session.state == TwoHandedState::Gripping && self->_firing.transferredPrimaryGrip.valid()) ||
+                (self->usesLeftFiringCarry() &&
                 self->_leftCarry.weaponNodeOwnershipBlockEngaged)));
         if (!ownedCarry && (context.profile == Profile::OneHand || context.profile == Profile::FullTwoHand)) {
             return decline();
@@ -191,7 +193,9 @@ namespace rock
         const auto context = recoilSampleIdentity(handedMode->GetBinary());
         const bool directRight = canUseRightOneHandRecoil();
         const bool managedCarry = isManualOwnershipActive() &&
-            (context.fullTwoHanded || (usesLeftFiringCarry() && _leftCarry.weaponNodeOwnershipBlockEngaged));
+            (context.fullTwoHanded ||
+                (_session.state == TwoHandedState::Gripping && _firing.transferredPrimaryGrip.valid()) ||
+                (usesLeftFiringCarry() && _leftCarry.weaponNodeOwnershipBlockEngaged));
         if (!directRight && !managedCarry) {
             _recoil.ticket.invalidate();
             return false;
@@ -212,6 +216,14 @@ namespace rock
             !isWeaponVisualReturnActive() && !isHandVisualReturnActive(false) &&
             _recoil.rightBaseValid && _recoil.equippedIdentity.weaponNode != 0 &&
             _recoil.equippedIdentity.equippedOwnership != 0;
+    }
+
+    bool TwoHandedGrip::isOneHandRecoilEnvelopeActive() const noexcept
+    {
+        // Gated on the path itself, so a kick flag left over from a holster, a
+        // grip or a disabled setting never holds FRIK's weapon-node write block.
+        return canUseRightOneHandRecoil() &&
+            (_recoil.controlledKickActive || _recoil.rightNeedsNeutralFrame);
     }
 
     void TwoHandedGrip::clearOneHandRecoilClaim()
@@ -252,8 +264,7 @@ namespace rock
         // controller-derived base never contains the preceding frame's recoil.
         if (scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(_scope.menuOpenThisFrame)) {
             if (!frik_visual_authority::publishHandWorld(ONE_HAND_RECOIL_TAG,
-                    frik_visual_authority::Hand::Right, handTarget, GRIP_HAND_POSE_PRIORITY,
-                    frik_visual_authority::RebaseDriver::RightHand)) {
+                    frik_visual_authority::Hand::Right, handTarget, GRIP_HAND_POSE_PRIORITY)) {
                 ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Weapon recoil: right firing-hand publication failed");
                 return;
             }
@@ -264,6 +275,7 @@ namespace rock
             clearOneHandRecoilClaim();
             return;
         }
+        noteFrikRecoilWeaponNodeWrite();
         traceRecoilPresentation("one-hand-right");
         _recoil.rightNeedsNeutralFrame = _recoil.controlledKickActive;
         recordPublishedHandWorld(false, handTarget);

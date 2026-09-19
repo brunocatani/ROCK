@@ -9,14 +9,12 @@
 #include "RE/NetImmerse/NiTransform.h"
 
 /*
- * Controller-space transport of the rendered hand chains under FRIK API v2.
+ * Controller-space transport of sampled hand chains under FRIK API v2.3.
  *
- * FRIK solves the whole arm to a ROCK claim, so on a claimed frame every bone
- * of that hand in the root flattened tree (forearm, hand, fingers) is ROCK's
- * previous target, not the controller. TrackedHandIsolationPolicy recovers the
- * hand root; consumers that measure against the controller (hand colliders and
- * their palm anchor, grab and support-grip fingers, finger chains) need the
- * rest of the chain where the tracked solve would have put it.
+ * The live flattened array can be rebuilt before arm IK and differs from
+ * both the current scene nodes and the last final render. Its own sampled
+ * wrist must be the source of the delta; a last-frame wrist cannot transport
+ * this array. TrackedHandIsolationPolicy supplies the destination hand root.
  *
  * FRIK's hand pose lives in locals below the hand root, so carrying the root
  * and everything under it by the rigid delta between the isolated controller
@@ -86,7 +84,8 @@ namespace rock::rendered_bone_transport_policy
         // carries float rounding of the world coordinate (thousandths of a unit
         // at 46000 gu), which would read as motion.
         if (isolation::translationGameUnits(controllerRoot, renderedRoot) <= kIdentityTranslationEpsilonGameUnits &&
-            isolation::rotationDegrees(controllerRoot, renderedRoot) <= kIdentityRotationEpsilonDegrees) {
+            isolation::rotationDegrees(controllerRoot, renderedRoot) <= kIdentityRotationEpsilonDegrees &&
+            std::fabs(controllerRoot.scale - renderedRoot.scale) <= 0.000001f) {
             return transport;
         }
         const RE::NiTransform delta = transform_math::composeTransforms(
@@ -106,6 +105,33 @@ namespace rock::rendered_bone_transport_policy
             return renderedWorld;
         }
         return transform_math::composeTransforms(transport.delta, transform_math::orthonormalizedTransform(renderedWorld));
+    }
+
+    // Move only array worlds. refNode worlds are independent, current scene
+    // samples and must never receive a delta derived from the flattened array.
+    // Validate the whole chain before changing any entry.
+    template <class Bones>
+    [[nodiscard]] inline bool transportSnapshotHand(
+        Bones& bones, HandChainSide side, const RE::NiTransform& controllerRoot) noexcept
+    {
+        if (side == HandChainSide::None || !tracked_hand_isolation_policy::isFiniteTransform(controllerRoot)) {
+            return false;
+        }
+        const std::string_view handName = side == HandChainSide::Left ? "LArm_Hand" : "RArm_Hand";
+        const RE::NiTransform* sourceRoot = nullptr;
+        for (const auto& bone : bones) {
+            if (chainSideForBone(bone.name) != side) continue;
+            if (!tracked_hand_isolation_policy::isFiniteTransform(bone.world)) return false;
+            if (bone.name == handName) sourceRoot = &bone.world;
+        }
+        if (!sourceRoot) return false;
+        const auto transport = makeHandTransport(controllerRoot, true, *sourceRoot, true);
+        for (auto& bone : bones) {
+            if (chainSideForBone(bone.name) == side) {
+                bone.world = transportWorld(transport, bone.world);
+            }
+        }
+        return true;
     }
 
     /*

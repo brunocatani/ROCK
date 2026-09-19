@@ -359,10 +359,12 @@ namespace rock
             IMMERSIVE_WEAPONS_SECTION,
             "bAutoDrop",
             rockAutoDrop);
-        rockToggleGrab = ini.GetBoolValue(
-            IMMERSIVE_WEAPONS_SECTION,
-            "bToggleGrab",
-            rockToggleGrab);
+        rockWeaponGrabMode = static_cast<int>(ini.GetLongValue(
+            IMMERSIVE_WEAPONS_SECTION, "iWeaponGrabMode", rockWeaponGrabMode));
+        if (rockWeaponGrabMode < 1 || rockWeaponGrabMode > 3) {
+            ROCK_LOG_WARN(Config, "Invalid iWeaponGrabMode={} -- using 1", rockWeaponGrabMode);
+            rockWeaponGrabMode = 1;
+        }
         rockGrabAnywhereOnWeapon = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION,
             "bGrabAnywhereOnWeapon",
@@ -420,14 +422,6 @@ namespace rock
             AMBIDEXTROUS_FIRING_SECTION,
             "bAmbidextrousFiringGripEnabled",
             rockAmbidextrousFiringGripEnabled);
-        rockFiringGripPromotionRadius = readClampedFloat(
-            ini,
-            AMBIDEXTROUS_FIRING_SECTION,
-            "fFiringGripPromotionRadius",
-            rockFiringGripPromotionRadius,
-            5.0f,
-            0.25f,
-            30.0f);
         rockLeftFiringAimYawDegrees = readClampedFloat(
             ini,
             AMBIDEXTROUS_FIRING_SECTION,
@@ -469,6 +463,18 @@ namespace rock
             -15.0f,
             15.0f);
         rockWeaponCollisionBlocksProjectiles = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksProjectiles", rockWeaponCollisionBlocksProjectiles);
+        rockLeftFiringGripOffsetGameUnits.x = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+            "fLeftFiringGripOffsetXGameUnits", rockLeftFiringGripOffsetGameUnits.x, 0.0f, -15.0f, 15.0f);
+        rockLeftFiringGripOffsetGameUnits.y = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+            "fLeftFiringGripOffsetYGameUnits", rockLeftFiringGripOffsetGameUnits.y, 0.0f, -15.0f, 15.0f);
+        rockLeftFiringGripOffsetGameUnits.z = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+            "fLeftFiringGripOffsetZGameUnits", rockLeftFiringGripOffsetGameUnits.z, 0.0f, -15.0f, 15.0f);
+        rockRightSupportGripOffsetGameUnits.x = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+            "fRightSupportGripOffsetXGameUnits", rockRightSupportGripOffsetGameUnits.x, 0.0f, -15.0f, 15.0f);
+        rockRightSupportGripOffsetGameUnits.y = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+            "fRightSupportGripOffsetYGameUnits", rockRightSupportGripOffsetGameUnits.y, 0.0f, -15.0f, 15.0f);
+        rockRightSupportGripOffsetGameUnits.z = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
+            "fRightSupportGripOffsetZGameUnits", rockRightSupportGripOffsetGameUnits.z, 0.0f, -15.0f, 15.0f);
         rockWeaponCollisionBlocksSpells = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksSpells", rockWeaponCollisionBlocksSpells);
         rockWeaponCollisionPreserveGaps = ini.GetBoolValue(SECTION, "bWeaponCollisionPreserveGaps", rockWeaponCollisionPreserveGaps);
         rockWeaponCollisionVisualStabilizationSeconds =
@@ -658,6 +664,10 @@ namespace rock
             180.0f);
 
         rockEnableVanillaMelee = ini.GetBoolValue(SECTION, "bEnableVanillaMelee", rockEnableVanillaMelee);
+        rockRockyModeEnabled = ini.GetBoolValue(SECTION, "bRockyModeEnabled", rockRockyModeEnabled);
+        rockRockyModeHoldSeconds = readClampedFloat(ini, SECTION, "fRockyModeHoldSeconds",
+            rockRockyModeHoldSeconds, bare_fist_gesture::kDefaultHoldSeconds,
+            bare_fist_gesture::kMinimumHoldSeconds, bare_fist_gesture::kMaximumHoldSeconds);
         rockNativeCharacterControllerObjectContactFilterEnabled = ini.GetBoolValue(
             SECTION, "bNativeCharacterControllerObjectContactFilterEnabled", rockNativeCharacterControllerObjectContactFilterEnabled);
 
@@ -1353,27 +1363,13 @@ namespace rock
                 0.0556f;
         rockGrabPinchPocketEnabled = ini.GetBoolValue(SECTION, "bGrabPinchPocketEnabled", rockGrabPinchPocketEnabled);
         rockGrabPinchCloseSelectionEnabled = ini.GetBoolValue(SECTION, "bGrabPinchCloseSelectionEnabled", rockGrabPinchCloseSelectionEnabled);
-        rockGrabPinchCompactMaxExtentGameUnits = readClampedFloat(ini,
+        rockGrabPinchMaxVolumeCubicGameUnits = readClampedFloat(ini,
             SECTION,
-            "fGrabPinchCompactMaxExtentGameUnits",
-            rockGrabPinchCompactMaxExtentGameUnits,
-            grab_pinch_pocket_policy::kDefaultCompactMaxExtentGameUnits,
-            1.0f,
-            grab_pinch_pocket_policy::kDefaultCompactMaxExtentGameUnits);
-        rockGrabPinchThinRodMaxLengthGameUnits = readClampedFloat(ini,
-            SECTION,
-            "fGrabPinchThinRodMaxLengthGameUnits",
-            rockGrabPinchThinRodMaxLengthGameUnits,
-            grab_pinch_pocket_policy::kDefaultThinRodMaxLengthGameUnits,
-            1.0f,
-            120.0f);
-        rockGrabPinchThinRodMaxCrossSectionGameUnits = readClampedFloat(ini,
-            SECTION,
-            "fGrabPinchThinRodMaxCrossSectionGameUnits",
-            rockGrabPinchThinRodMaxCrossSectionGameUnits,
-            grab_pinch_pocket_policy::kDefaultThinRodMaxCrossSectionGameUnits,
-            0.1f,
-            40.0f);
+            "fGrabPinchMaxVolumeCubicGameUnits",
+            rockGrabPinchMaxVolumeCubicGameUnits,
+            grab_pinch_pocket_policy::kDefaultMaxVolumeCubicGameUnits,
+            0.001f,
+            grab_pinch_pocket_policy::kMaxVolumeCubicGameUnits);
         rockGrabPinchMaxPocketDistanceGameUnits = readClampedFloat(ini,
             SECTION,
             "fGrabPinchMaxPocketDistanceGameUnits",
@@ -1412,13 +1408,7 @@ namespace rock
             grab_pinch_pocket_policy::kDefaultOtherFingerCurlValue,
             0.0f,
             1.0f);
-        rockGrabPinchSurfaceInsetGameUnits = readClampedFloat(ini,
-            SECTION,
-            "fGrabPinchSurfaceInsetGameUnits",
-            rockGrabPinchSurfaceInsetGameUnits,
-            grab_pinch_pocket_policy::kDefaultSurfaceInsetGameUnits,
-            0.0f,
-            8.0f);
+
         readVec3("fGrabPinchDetectionDirectionHandspaceX",
             "fGrabPinchDetectionDirectionHandspaceY",
             "fGrabPinchDetectionDirectionHandspaceZ",

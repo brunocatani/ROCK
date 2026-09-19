@@ -8,10 +8,9 @@
 
 namespace rock::authored_weapon_grip_cache
 {
-    // v3: the support relation is sampled from the idle clip by the
-    // preharvest. v2 records carried a live-capture mirror that could hold a
-    // mid-blend pose; they are rejected and re-harvested once.
-    inline constexpr std::uint32_t kFormatVersion = 3;
+    // v4 records distinguish an absent animated support arm from failed capture.
+    // Older records may contain reference-only support poses and are reharvested.
+    inline constexpr std::uint32_t kFormatVersion = 4;
     // v2 rebuilds records whose weapon ID could be corrupted by the old
     // unconditional light-plugin index removal, including Fallout4.esm forms.
     inline constexpr std::uint32_t kPoseAlgorithmVersion = 2;
@@ -86,6 +85,7 @@ namespace rock::authored_weapon_grip_cache
         std::array<PersistedTransform, kFiringFingerCount> supportFingerLocals{};
         std::uint16_t supportFingerMask{ 0 };
         bool supportValid{ false };
+        bool supportAbsent{ false };
         std::string idleClipPath;
         std::uint64_t requestedSubgraphIdentifier{ 0 };
         std::uint64_t bindingSubgraphIdentifier{ 0 };

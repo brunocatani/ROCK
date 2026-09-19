@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/ROCKConfigurationApi.h"
+#include "api/ConfigurationRuntimeTypes.h"
 #include <SimpleIni.h>
 #include <filesystem>
 #include <span>
@@ -33,6 +33,9 @@ namespace rock::config
 
     // Owned by RockConfig on the game thread. Only this owner writes ROCK's
     // settings; menus obtain the compiled catalog through the configuration API.
+    // INI sections are labels. Case-insensitive keys identify settings within
+    // their owning file; the last physical occurrence wins. Loading never writes.
+    // Explicit writes retain effective values under the catalog's display labels.
     class ConfigurationStore
     {
     public:

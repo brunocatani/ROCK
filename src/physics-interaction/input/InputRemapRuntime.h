@@ -9,6 +9,18 @@ namespace RE
 
 namespace rock::input_remap_runtime
 {
+    // Admission/readiness are published by the interaction frame owner.
+    // Physical capture and cancellation happen before native event dispatch.
+    void setBareFistAdmission(bool allowed);
+    void cancelBareFistInput();
+    [[nodiscard]] std::uint64_t bareFistInputCycle();
+    [[nodiscard]] bool ownsBareFistInput();
+    [[nodiscard]] bool bareFistChordValid();
+    [[nodiscard]] bool bareFistHooksReady();
+    void setBareFistDrawState(std::uint64_t cycle, bool owned, bool ready);
+    [[nodiscard]] bool isBareFistDrawPermitted();
+    [[nodiscard]] bool isBareFistMeleeSuppressed();
+
     enum class RawButtonAvailabilityReason : std::uint32_t
     {
         Available = 0,

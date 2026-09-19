@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/ROCKProviderApi.h"
+#include "api/ProviderRuntimeTypes.h"
 
 #include "physics-interaction/hand/DynamicHandCollisionFeedbackPolicy.h"
 #include "physics-interaction/hand/DynamicHandSurfaceContactState.h"
@@ -131,10 +131,9 @@ namespace rock
             bool otherIsHand,
             bool otherIsWeapon) noexcept;
 
-        [[nodiscard]] bool tryClassifySurfaceContactSourceAtomic(
-            std::uint32_t bodyId,
-            std::uint32_t shapeKey,
-            dynamic_hand_surface_contact_state::ContactSource& outSource) const noexcept;
+        [[nodiscard]] static bool classifySurfaceContactSource(
+            const DynamicBodyContactSource& bodySource,
+            dynamic_hand_surface_contact_state::ContactSource& outSource) noexcept;
         void recordSurfaceContactCallback(
             const dynamic_hand_surface_contact_state::ContactSource& source,
             std::uint32_t otherBodyId,

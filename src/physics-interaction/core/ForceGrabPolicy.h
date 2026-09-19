@@ -22,6 +22,7 @@ namespace rock::force_grab_policy
         PendingForceGrab = 1u << 5,
         EquippedWeapon = 1u << 6,
         TouchGrab = 1u << 7,
+        InputReserved = 1u << 8,
     };
 
     struct HandAvailabilityInput
@@ -34,6 +35,7 @@ namespace rock::force_grab_policy
         bool pendingForceGrab{ false };
         bool equippedWeaponOccupiesHand{ false };
         bool touchGrabActive{ false };
+        bool inputReserved{ false };
     };
 
     [[nodiscard]] inline constexpr std::uint32_t blockerMask(const HandAvailabilityInput& input) noexcept
@@ -53,12 +55,20 @@ namespace rock::force_grab_policy
         add(input.pendingForceGrab, HandBlocker::PendingForceGrab);
         add(input.equippedWeaponOccupiesHand, HandBlocker::EquippedWeapon);
         add(input.touchGrabActive, HandBlocker::TouchGrab);
+        add(input.inputReserved, HandBlocker::InputReserved);
         return result;
     }
 
     [[nodiscard]] inline constexpr bool isAvailable(const HandAvailabilityInput& input) noexcept
     {
         return blockerMask(input) == 0;
+    }
+
+    // An equipped grip may use its own weapon's occupancy, but must respect
+    // every reservation that would stop an ordinary grab on that physical hand.
+    [[nodiscard]] inline constexpr bool availableForEquippedGrip(std::uint32_t blockers) noexcept
+    {
+        return (blockers & ~static_cast<std::uint32_t>(HandBlocker::EquippedWeapon)) == 0;
     }
 
     /*

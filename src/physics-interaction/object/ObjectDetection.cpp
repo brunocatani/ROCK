@@ -1,4 +1,5 @@
 #include "physics-interaction/object/ObjectDetection.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 #include "physics-interaction/grab/GrabInteractionPolicy.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
@@ -21,8 +22,8 @@
 #include <cfloat>
 #include <cstddef>
 #include <cmath>
+#include <memory_resource>
 #include <unordered_map>
-#include <unordered_set>
 
 namespace rock
 {
@@ -317,7 +318,8 @@ namespace rock
         bool isFarSelection,
         RE::NiAVObject* hitNode,
         const RE::NiPoint3& hitPointWorld,
-        bool hasHitPoint)
+        bool hasHitPoint,
+        std::optional<RE::TESBoundObject*> knownBaseForm)
     {
         if (!ref) {
             return { .kind = grab_target::Kind::None, .reason = "null-ref", .grabbable = false };
@@ -335,7 +337,7 @@ namespace rock
             return { .kind = grab_target::Kind::None, .reason = "reserved-by-other-hand", .grabbable = false };
         }
 
-        auto* baseForm = ref->GetObjectReference();
+        auto* baseForm = knownBaseForm ? *knownBaseForm : ref->GetObjectReference();
         if (!baseForm) {
             return { .kind = grab_target::Kind::None, .reason = "missing-base-form", .grabbable = false };
         }
@@ -525,13 +527,27 @@ namespace rock
             int& outDuplicateBodies,
             bool logRejectTelemetry)
         {
+            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::SelectionHitProcessing);
+            performance_profiler::observeValue(performance_profiler::ValueMetric::SelectionRawHits,
+                static_cast<std::uint64_t>((std::max)(0, collector.hits._size)));
             SelectedObject result;
             std::array<RankedSelectionCandidate, selection_query_policy::kMaxShapeCastPrecisionCandidates> rankedCandidates{};
             std::size_t rankedCandidateCount = 0;
             int loggedRejectTelemetry = 0;
             const char* queryName = isFarSelection ? "far" : "near";
-            std::unordered_set<std::uint32_t> seenBodyIds;
-            std::unordered_map<std::uint32_t, RE::TESObjectREFR*> refByBodyId;
+            // One query owns the scratch and its non-owning reference pointers.
+            // Dense queries may grow through the standard upstream allocator;
+            // there is no hit cap or change to hit order/precision ranking.
+            std::array<std::byte, 4096> queryStorage;
+            std::pmr::monotonic_buffer_resource queryMemory(queryStorage.data(), queryStorage.size());
+            struct QueryBodyMetadata
+            {
+                RE::TESObjectREFR* ref = nullptr;
+                RE::NiAVObject* hitNode = nullptr;
+                RE::TESBoundObject* baseForm = nullptr;
+                bool metadataRead = false;
+            };
+            std::pmr::unordered_map<std::uint32_t, QueryBodyMetadata> refByBodyId{ &queryMemory };
 
             auto* hits = collector.hits._data;
             const int numHits = collector.hits._size;
@@ -547,22 +563,27 @@ namespace rock
                     continue;
                 }
 
-                if (!seenBodyIds.insert(hitBodyId.value).second) {
+                const auto [cachedRef, inserted] = refByBodyId.try_emplace(hitBodyId.value);
+                if (inserted) {
+                    cachedRef->second.ref = resolveBodyToRef(bhkWorld, hknpWorld, hitBodyId);
+                } else {
                     ++outDuplicateBodies;
                 }
-
-                RE::TESObjectREFR* ref = nullptr;
-                if (const auto cachedRef = refByBodyId.find(hitBodyId.value); cachedRef != refByBodyId.end()) {
-                    ref = cachedRef->second;
-                } else {
-                    ref = resolveBodyToRef(bhkWorld, hknpWorld, hitBodyId);
-                    refByBodyId.emplace(hitBodyId.value, ref);
-                }
+                auto& metadata = cachedRef->second;
+                auto* ref = metadata.ref;
+                const auto readMetadata = [&]() {
+                    if (!metadata.metadataRead) {
+                        auto* collision = RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId);
+                        metadata.hitNode = collision ? collision->sceneObject : nullptr;
+                        metadata.baseForm = ref ? ref->GetObjectReference() : nullptr;
+                        metadata.metadataRead = true;
+                    }
+                };
                 if (!ref) {
                     ++outRejectedNoRef;
                     if (logRejectTelemetry) {
-                        auto* collObj = RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId);
-                        auto* hitNode = collObj ? collObj->sceneObject : nullptr;
+                        readMetadata();
+                        auto* hitNode = metadata.hitNode;
                         logSelectionRejectTelemetry(queryName, "no-ref", i, nullptr, hitNode, hknpWorld, hitBodyId, nullptr, "no-ref", isFarSelection, 0.0f, 0.0f, -1.0f,
                             loggedRejectTelemetry);
                     }
@@ -572,8 +593,8 @@ namespace rock
                 if (isFarSelection && otherHandContext.allowsSharedHeldReference(ref)) {
                     ++outRejectedNotGrabbable;
                     if (logRejectTelemetry) {
-                        auto* collObj = RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId);
-                        auto* hitNode = collObj ? collObj->sceneObject : nullptr;
+                        readMetadata();
+                        auto* hitNode = metadata.hitNode;
                         logSelectionRejectTelemetry(queryName, "shared-held-far", i, ref, hitNode, hknpWorld, hitBodyId, nullptr, "shared-held-far", isFarSelection, 0.0f, 0.0f, -1.0f,
                             loggedRejectTelemetry);
                     }
@@ -581,10 +602,10 @@ namespace rock
                 }
 
                 const RE::NiPoint3 hitPoint = hkVectorToNiPoint(hit.position);
-                auto* collObj = RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId);
-                auto* hitNode = collObj ? collObj->sceneObject : nullptr;
-                auto* baseForm = ref->GetObjectReference();
-                const auto classification = classifySelectionGrabTarget(ref, hknpWorld, hitBodyId, otherHandContext, isFarSelection, hitNode, hitPoint, true);
+                readMetadata();
+                auto* hitNode = metadata.hitNode;
+                auto* baseForm = metadata.baseForm;
+                const auto classification = classifySelectionGrabTarget(ref, hknpWorld, hitBodyId, otherHandContext, isFarSelection, hitNode, hitPoint, true, baseForm);
                 if (!classification.grabbable) {
                     ++outRejectedNotGrabbable;
                     if (logRejectTelemetry) {

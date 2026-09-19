@@ -146,8 +146,6 @@ namespace rock
     using DriveToKeyFrame_t = std::uint8_t (*)(void*, const void*, float);
     using SetTransform_t = std::uint8_t (*)(void*, const void*);
     using SetVelocity_t = std::uint8_t (*)(void*, const float*, const float*);
-    using ApplyImpulse_t = std::uint8_t (*)(void*, const float*);
-    using ApplyPointImpulse_t = std::uint8_t (*)(void*, const float*, const float*);
     using SetMass_t = void (*)(void*, float);
     using GetCOM_t = std::uint8_t (*)(void*, float*);
     using GetFilterInfo_t = std::uint32_t* (*)(void*, std::uint32_t*);
@@ -1146,8 +1144,11 @@ namespace rock
     {
         if (!isValid())
             return false;
+        // The native setter uses aligned SIMD loads; callers only promise floats.
+        alignas(16) const float linear[4] = { linVel[0], linVel[1], linVel[2], linVel[3] };
+        alignas(16) const float angular[4] = { angVel[0], angVel[1], angVel[2], angVel[3] };
         static REL::Relocation<SetVelocity_t> setVel{ REL::Offset(offsets::kFunc_CollisionObject_SetVelocity) };
-        return setVel(_collisionObject, linVel, angVel) != 0;
+        return setVel(_collisionObject, linear, angular) != 0;
     }
 
     void BethesdaPhysicsBody::setMotionType(BethesdaMotionType type)
@@ -1175,22 +1176,6 @@ namespace rock
             return;
         static REL::Relocation<SetMass_t> setM{ REL::Offset(offsets::kFunc_CollisionObject_SetMass) };
         setM(_collisionObject, mass);
-    }
-
-    bool BethesdaPhysicsBody::applyLinearImpulse(const float* impulse)
-    {
-        if (!isValid())
-            return false;
-        static REL::Relocation<ApplyImpulse_t> apply{ REL::Offset(offsets::kFunc_CollisionObject_ApplyLinearImpulse) };
-        return apply(_collisionObject, impulse) != 0;
-    }
-
-    bool BethesdaPhysicsBody::applyPointImpulse(const float* impulse, const float* worldPoint)
-    {
-        if (!isValid())
-            return false;
-        static REL::Relocation<ApplyPointImpulse_t> apply{ REL::Offset(offsets::kFunc_CollisionObject_ApplyPointImpulse) };
-        return apply(_collisionObject, impulse, worldPoint) != 0;
     }
 
     bool BethesdaPhysicsBody::getCenterOfMassWorld(float& outX, float& outY, float& outZ)

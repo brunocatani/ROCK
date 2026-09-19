@@ -83,7 +83,7 @@ if (-not (Test-Path -LiteralPath $selectorPath -PathType Leaf)) {
         $failures.Add('CMake changes must fail closed to the complete regression suite.')
     }
     Require-Contains $fullPlan.SdkBuildTargets 'ROCKSDKExamplePlugins' 'Full validation must explicitly include the separate SDK build lane.'
-    $apiPlan = Get-TestPlan 'src/api/ROCKApi.h'
+    $apiPlan = Get-TestPlan 'src/api/Discovery.cpp'
     Require-Contains $apiPlan.SdkBuildTargets 'ROCKSDKExamplePlugins' 'A public API change must build SDK consumers.'
     Require-Contains $apiPlan.SdkTests 'RpsSdkRockContractTests' 'A public API change must select SDK publication contracts.'
     if (@($fullPlan.SourceTests).Count -lt 1) {

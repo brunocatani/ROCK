@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <optional>
 #include <string_view>
 
 namespace rock::native_idle_grip_preharvest_policy
@@ -263,5 +264,24 @@ namespace rock::native_idle_grip_preharvest_policy
             current = parentIndices[static_cast<std::size_t>(current)];
         }
         return length;
+    }
+
+    // Common animated ancestors (spine/root) do not author an offhand grip.
+    [[nodiscard]] constexpr std::optional<bool> supportBranchHasAnimation(int primaryHand,
+        int supportHand, std::span<const std::int16_t> parents, int trackCount,
+        std::span<const std::int16_t> mapping) noexcept
+    {
+        std::array<int, kMaxBoneChainLength> primary{}, support{};
+        const auto primaryCount = collectBoneChainToRoot(primaryHand, parents, primary);
+        const auto supportCount = collectBoneChainToRoot(supportHand, parents, support);
+        if (!primaryCount || !supportCount || primary[primaryCount - 1] != support[supportCount - 1] ||
+            trackCount <= 0 || (!mapping.empty() && mapping.size() < static_cast<std::size_t>(trackCount))) return {};
+        for (std::size_t i = 0; i < supportCount; ++i) {
+            for (std::size_t j = 0; j < primaryCount; ++j) {
+                if (support[i] == primary[j]) return false;
+            }
+            if (findTransformTrackForBone(support[i], trackCount, mapping) >= 0) return true;
+        }
+        return {};
     }
 }

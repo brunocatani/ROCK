@@ -63,6 +63,7 @@ namespace rock::havok_compound_shape_builder
         float y = 0.0f;
         float z = 0.0f;
         float w = 0.0f;
+        bool operator==(const Vector4&) const = default;
     };
 
     struct alignas(16) ChildTransform
@@ -73,6 +74,7 @@ namespace rock::havok_compound_shape_builder
         Vector4 translation{ 0.0f, 0.0f, 0.0f, 1.0f };
         Vector4 scale{ 1.0f, 1.0f, 1.0f, 1.0f };
         int scaleMode = 0;
+        bool operator==(const ChildTransform&) const = default;
     };
 
     struct CompoundChild

@@ -122,10 +122,6 @@ namespace rock
 
         void setMass(float mass);
 
-        bool applyLinearImpulse(const float* impulse);
-
-        bool applyPointImpulse(const float* impulse, const float* worldPoint);
-
         bool getCenterOfMassWorld(float& outX, float& outY, float& outZ);
 
         std::uint32_t getCollisionFilterInfo();

@@ -53,6 +53,30 @@ int main()
     using namespace rock::provider::interaction_command_policy;
 
     bool ok = true;
+    // Equipped acquisition ignores only its own weapon occupancy. Surface
+    // grabs, far pulls and pending commands retain the same hand reservation.
+    for (const bool weaponPresent : { false, true }) {
+        HandAvailabilityInput input{};
+        input.equippedWeaponOccupiesHand = weaponPresent;
+        ok &= expectTrue("open hand can acquire an equipped grip", availableForEquippedGrip(blockerMask(input)));
+        for (auto member : { &HandAvailabilityInput::disabled, &HandAvailabilityInput::holding,
+                 &HandAvailabilityInput::activePullCatch, &HandAvailabilityInput::actorEquipmentHandoff,
+                 &HandAvailabilityInput::pendingForceGrab, &HandAvailabilityInput::touchGrabActive,
+                 &HandAvailabilityInput::inputReserved }) {
+            input.*member = true;
+            ok &= expectFalse("existing reservation prevents weapon acquisition", availableForEquippedGrip(blockerMask(input)));
+            input.*member = false;
+        }
+        input.openInteractionState = false;
+        ok &= expectFalse("locked or pulling hand cannot acquire weapon grip", availableForEquippedGrip(blockerMask(input)));
+        input.touchGrabActive = true;
+        input.pendingForceGrab = true;
+        input.openInteractionState = true;
+        input.touchGrabActive = false;
+        ok &= expectFalse("ending touch grab does not clear pending command reservation", availableForEquippedGrip(blockerMask(input)));
+        input.pendingForceGrab = false;
+        ok &= expectTrue("completed reservations allow new weapon acquisition", availableForEquippedGrip(blockerMask(input)));
+    }
     const HandAvailabilityInput freeHand{};
     const HandAvailabilityInput blockedHand{ .holding = true };
 

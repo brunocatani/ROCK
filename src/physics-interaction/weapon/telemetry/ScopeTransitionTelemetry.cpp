@@ -5,7 +5,7 @@
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/visual/FrikHandWorldAuthority.h"
+#include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
 #include "physics-interaction/TransformMath.h"
 #include "RockConfig.h"
 #include "rock_support/Fo4VrRuntime.h"
@@ -94,36 +94,6 @@ namespace rock::scope_transition_telemetry
                 sequence(), phase, firstPerson, reinterpret_cast<std::uintptr_t>(root), traversal.visited, emitted, mask, traversal.truncated);
         }
 
-        void dampening(const char* phase, const frik_hand_world_authority::ScopeDampenTrace& d)
-        {
-            write("SCT dampen frame={} phase={} driverSequence={} observedSequence={} runtimeFrameObserved={} runtimeMenuSnapshot={} menuUsed={} enabled={} factors=({:.3f},{:.3f}) cameraValid=({},{}) cameraNow=({:.4f},{:.4f},{:.4f}) cameraPrevious=({:.4f},{:.4f},{:.4f})",
-                sequence(), phase, d.driverSequence, d.observedSequence, d.runtimeFrameObserved, d.runtimeMenuSnapshot, d.menuUsed, d.enabled,
-                d.translationFactor, d.rotationFactor, d.cameraNowValid, d.cameraPreviousValid,
-                d.cameraNow.x, d.cameraNow.y, d.cameraNow.z, d.cameraPrevious.x, d.cameraPrevious.y, d.cameraPrevious.z);
-            for (std::size_t i = 0; i < 2; ++i) {
-                const bool left = i == hand_world_claim_registry_policy::handIndex(true);
-                const auto& camera = d.historyCamera[i];
-                const auto movement = d.cameraNow - camera;
-                const bool historyKnown = d.historySequence[i] != 0 && d.historySequence[i] <= sequence();
-                write("SCT prediction frame={} phase={} hand={} mode={} errorValid={} errorGameUnits={:.4f} errorDegrees={:.4f}",
-                    sequence(), phase, left ? "left" : "right", dampened_driver_prediction_policy::predictionModeName(d.predictionMode[i]),
-                    d.predictionErrorValid[i], d.predictionTranslationError[i], d.predictionRotationError[i]);
-                write("SCT input frame={} phase={} hand={} isolated={} recoveryMask={} relationInputValid={}",
-                    sequence(), phase, left ? "left" : "right", d.inputIsolated[i], d.recoveryMask, d.firstPersonInput[i].valid);
-                write("SCT history frame={} phase={} hand={} historySequence={} ageKnown={} ageFrames={} cameraValid={} origin=({:.4f},{:.4f},{:.4f}) accumulatedCamera=({:.4f},{:.4f},{:.4f})",
-                    sequence(), phase, left ? "left" : "right", d.historySequence[i], historyKnown,
-                    historyKnown ? sequence() - d.historySequence[i] : 0, d.historyCameraValid[i] && d.cameraNowValid,
-                    camera.x, camera.y, camera.z, movement.x, movement.y, movement.z);
-                pose(phase, left ? "raw-left" : "raw-right", d.raw[i].world, d.raw[i].valid);
-                pose(phase, left ? "effective-driver-left" : "effective-driver-right", d.driver[i].world, d.driver[i].valid);
-                pose(phase, left ? "native-driver-left" : "native-driver-right", d.nativeDriver[i].world, d.nativeDriver[i].valid);
-                pose(phase, left ? "input-fp-left" : "input-fp-right", d.firstPersonInput[i].world, d.firstPersonInput[i].valid);
-                pose(phase, left ? "history-left" : "history-right", d.history[i].world, d.history[i].valid);
-                pose(phase, left ? "cached-presented-left" : "cached-presented-right", d.presented[i].world, d.presented[i].valid);
-                pose(phase, left ? "consumed-left" : "consumed-right", d.consumed[i].target, d.consumed[i].valid);
-                pose(phase, left ? "claimed-left" : "claimed-right", d.claimed[i].target, d.claimed[i].valid);
-            }
-        }
     }
 
     void onMenuEvent(bool open) noexcept
@@ -191,8 +161,7 @@ namespace rock::scope_transition_telemetry
             const bool rendererValid = native_memory::tryReadField(
                 reinterpret_cast<const void*>(REL::Offset(offsets::kData_NativeScopeRendererState).address()), 3, renderer);
             const policy::Signals signals{ menuEvent.load(std::memory_order_acquire),
-                input_remap_runtime::isManualScopeActivationRequested(), rendererValid, renderer != 0,
-                frik_hand_world_authority::scopeInputRecoveryMask() };
+                input_remap_runtime::isManualScopeActivationRequested(), rendererValid, renderer != 0, 0 };
             const bool wasCapped = session->window.capped;
             if (!session->window.observe(schedulerSequence, static_cast<unsigned>(phase), signals)) {
                 if (!wasCapped && session->window.capped) session->log->warn("SCT burst capped frame={} edge={}; waiting for quiet gap", schedulerSequence, session->window.edge);
@@ -223,16 +192,6 @@ namespace rock::scope_transition_telemetry
             node(label, "left-driver", nodes ? nodes->SecondaryMeleeWeaponOffsetNode2 : nullptr);
             scene(label, f4vr::getFirstPersonSkeleton(), true);
             scene(label, f4vr::getRootNode(), false);
-            if (phase == Phase::AfterFrik && (session->window.phaseMask & 1) == 0) {
-                // A UI event can arrive inside FRIK's pass, after the pre
-                // scene opportunity. Retain the actual predictor inputs even
-                // on that edge; never invent a pre-event scene transform.
-                const auto input = frik_hand_world_authority::scopeDampenTraceBeforeFrik();
-                const bool inputCurrent = input.driverSequence == sequence();
-                write("SCT late-edge frame={} beforeSceneCaptured=false predictorInputRetained={}", sequence(), inputCurrent);
-                if (inputCurrent) dampening("prediction-input-before-rebase", input);
-            }
-            dampening(label, frik_hand_world_authority::scopeDampenTrace());
             if (phase == Phase::AfterRock) session->log->flush(); // Queued, no disk wait on the game thread.
         } catch (...) { suppressAfterError(); }
     }

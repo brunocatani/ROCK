@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <string_view>
 
 #include "api/FRIKApiV2.h"
@@ -22,6 +23,13 @@ namespace rock::frik_visual_authority
     using RecoilSample = frik::api::FRIKApiV2::RecoilSample;
     using RecoilResponse = frik::api::FRIKApiV2::RecoilResponse;
     using WeaponHandRecoilController = frik::api::FRIKApiV2::WeaponHandRecoilController;
+    using FramePhase = frik::api::FRIKApiV2::FramePhase;
+    using FrameCallback = frik::api::FRIKApiV2::FrameCallback;
+    using TrackedHandKind = frik::api::FRIKApiV2::TrackedHandKind;
+    using ArmChainTransforms = frik::api::FRIKApiV2::ArmChainTransforms;
+    using HandSolveState = frik::api::FRIKApiV2::HandSolveState;
+    using ScopeCapability = frik::api::FRIKApiV2::ScopeCapability;
+    using SkeletonLifecycleData = frik::api::FRIKApiV2::SkeletonLifecycleData;
 
     namespace detail
     {
@@ -52,17 +60,6 @@ namespace rock::frik_visual_authority
         inline std::array<CachedFingerLocalTransformPublication, kCachedHandPosePublicationCount> g_cachedFingerLocalTransformPublications{};
         inline std::size_t g_nextCachedHandPosePublication = 0;
         inline std::size_t g_nextCachedFingerLocalTransformPublication = 0;
-
-        struct PresentedHandNodeCache
-        {
-            // Non-owning game scene pointers. FRIK lifecycle messages reset
-            // this cache before the first-person skeleton can be destroyed.
-            RE::NiNode* skeleton = nullptr;
-            RE::NiNode* rightHand = nullptr;
-            RE::NiNode* leftHand = nullptr;
-        };
-
-        inline PresentedHandNodeCache g_presentedHandNodeCache{};
 
         [[nodiscard]] inline bool makeCacheableTagView(const char* tag, std::string_view& outTag)
         {
@@ -358,8 +355,6 @@ namespace rock::frik_visual_authority
         return isLeft ? Hand::Left : Hand::Right;
     }
 
-    using RebaseDriver = frik_hand_world_authority::RebaseDriver;
-
     /*
      * Physical side of an API hand. Primary/Offhand follow the game's
      * left-handed mode setting; false when that setting is unavailable.
@@ -386,30 +381,6 @@ namespace rock::frik_visual_authority
         default:
             return false;
         }
-    }
-
-    /*
-     * Rebase drivers for hand world claims. A claim that follows the hand it
-     * is published for (grab, return blend, dynamic hand, provider) uses its
-     * own controller chain; a claim attached to the equipped weapon (support
-     * grip, collision pulse) follows the firing hand's chain; a claim latched
-     * to the world stays static.
-     */
-    [[nodiscard]] inline RebaseDriver ownHandDriver(Hand hand)
-    {
-        bool isLeft = false;
-        return tryResolveHandIsLeft(hand, isLeft) ? hand_world_claim_registry_policy::driverForHand(isLeft) : RebaseDriver::Static;
-    }
-
-    [[nodiscard]] inline RebaseDriver physicalHandDriver(bool isLeft)
-    {
-        return isLeft ? RebaseDriver::LeftHand : RebaseDriver::RightHand;
-    }
-
-    // The hand's wand translation plus the turn of the axis from the other hand's wand (see RebaseDriver).
-    [[nodiscard]] inline RebaseDriver physicalHandAimAxisDriver(bool isLeft)
-    {
-        return hand_world_claim_registry_policy::aimAxisDriverForHand(isLeft);
     }
 
     [[nodiscard]] inline bool isAvailable()
@@ -482,19 +453,19 @@ namespace rock::frik_visual_authority
     }
 
     /*
-     * Hand world claims go through the hand world authority service: FRIK
-     * consumes them one frame later, and the service rebases them before
-     * FRIK's next frame by the driver's motion. False means the claim is not
-     * held anywhere (gate closed, FRIK rejected it, or FRIK fell back to the
+     * Hand world claims go through the hand world authority service: they are
+     * published inside FRIK's AfterArmSolve phase and FRIK re-solves the
+     * claimed hand in the same frame. False means the claim is not held
+     * anywhere (gate closed, FRIK rejected it, or FRIK fell back to the
      * tracked hand for it); the caller runs its failure reaction.
      */
-    [[nodiscard]] inline bool publishHandWorld(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority, RebaseDriver driver)
+    [[nodiscard]] inline bool publishHandWorld(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority)
     {
         bool isLeft = false;
         if (!tryResolveHandIsLeft(hand, isLeft)) {
             return false;
         }
-        return frik_hand_world_authority::publish(tag, isLeft, worldTarget, priority, driver);
+        return frik_hand_world_authority::publish(tag, isLeft, worldTarget, priority);
     }
 
     [[nodiscard]] inline bool clearHandWorld(const char* tag, Hand hand)
@@ -577,6 +548,11 @@ namespace rock::frik_visual_authority
         return frikApi && frikApi->blockPrimaryHandWeaponPose != nullptr;
     }
 
+    /*
+     * Since FRIK API v2.3 this is a pure write blocker: while blocked FRIK
+     * writes nothing to the primary weapon node (no offsets, no per-frame
+     * re-glue) and no longer changes which hand the node is parented under.
+     */
     [[nodiscard]] inline bool blockPrimaryWeaponNodeOwnership(const char* tag, bool block)
     {
         auto* frikApi = api();
@@ -609,48 +585,162 @@ namespace rock::frik_visual_authority
             frikApi->unregisterWeaponHandRecoilController(tag);
     }
 
-    inline void resetPresentedHandNodeCache()
+    // ---- Weapon node ownership (v2.3) ----
+
+    /*
+     * Parent the primary weapon node under a hand (left carry). FRIK does the
+     * reparent plus its bookkeeping (first-person arm source, off-side hand
+     * pose copy, recoil hand) and restores the game's setting when the tag
+     * clears or the skeleton rebuilds.
+     */
+    [[nodiscard]] inline bool setWeaponNodeParentHand(const char* tag, Hand hand)
     {
-        detail::g_presentedHandNodeCache = {};
+        auto* frikApi = api();
+        return frikApi && frikApi->setWeaponNodeParentHand && frikApi->setWeaponNodeParentHand(tag, hand);
     }
 
-    [[nodiscard]] inline bool tryGetHandWorldTransform(
-        Hand hand,
-        RE::NiTransform& outWorld)
+    [[nodiscard]] inline bool clearWeaponNodeParentHand(const char* tag)
+    {
+        auto* frikApi = api();
+        return frikApi && frikApi->clearWeaponNodeParentHand && frikApi->clearWeaponNodeParentHand(tag);
+    }
+
+    [[nodiscard]] inline bool canSetWeaponNodeParentHand()
+    {
+        auto* frikApi = api();
+        return frikApi && frikApi->setWeaponNodeParentHand != nullptr && frikApi->clearWeaponNodeParentHand != nullptr;
+    }
+
+    /*
+     * Report or drop a two-handed grip on the current weapon so FRIK's
+     * Pip-Boy guards and isOffHandGrippingWeapon see it. FRIK drops the grip
+     * on a drawn weapon change and on skeleton release.
+     */
+    [[nodiscard]] inline bool setOffHandGripping(const char* tag, bool active, Hand supportHand, const RE::NiTransform* supportWorld)
+    {
+        auto* frikApi = api();
+        return frikApi && frikApi->setOffHandGripping && frikApi->setOffHandGripping(tag, active, supportHand, supportWorld);
+    }
+
+    // ---- Frame phases (v2.3) ----
+
+    [[nodiscard]] inline bool registerFrameCallback(const char* tag, FramePhase phase, FrameCallback callback, void* userData, int priority)
+    {
+        auto* frikApi = api();
+        return frikApi && frikApi->registerFrameCallback &&
+            frikApi->registerFrameCallback(tag, static_cast<std::uint32_t>(phase), callback, userData, priority);
+    }
+
+    [[nodiscard]] inline bool unregisterFrameCallback(const char* tag)
+    {
+        auto* frikApi = api();
+        return frikApi && frikApi->unregisterFrameCallback && frikApi->unregisterFrameCallback(tag);
+    }
+
+    // ---- Body reads (v2.3) ----
+
+    /*
+     * A tracked input of a hand as FRIK uses it this frame. Current from
+     * BeforeArmSolve on; before that phase it holds the previous frame.
+     */
+    [[nodiscard]] inline bool tryGetTrackedHandTransform(Hand hand, TrackedHandKind kind, RE::NiTransform& outWorld)
     {
         outWorld = {};
-        if (!isSkeletonReadyHint()) {
-            resetPresentedHandNodeCache();
+        auto* frikApi = api();
+        if (!frikApi || !frikApi->getTrackedHandTransform || !frikApi->getTrackedHandTransform(hand, kind, &outWorld)) {
+            outWorld = {};
             return false;
         }
+        return detail::isFiniteNiTransform(outWorld);
+    }
 
-        bool isLeft = false;
-        if (!tryResolveHandIsLeft(hand, isLeft)) {
-            return false;
-        }
+    /*
+     * The first-person hand FRIK solves the body arm to when no claim is
+     * published: the controller hand, dampening and native kick included.
+     */
+    [[nodiscard]] inline bool tryGetHandWorldTransform(Hand hand, RE::NiTransform& outWorld)
+    {
+        return tryGetTrackedHandTransform(hand, TrackedHandKind::FirstPersonHand, outWorld);
+    }
 
-        auto* const skeleton = f4vr::getFirstPersonSkeleton();
-        auto& cache = detail::g_presentedHandNodeCache;
-        if (!skeleton) {
-            resetPresentedHandNodeCache();
+    // A bone of the flattened first-person tree: final after AfterWorldFinal, the previous frame before that.
+    [[nodiscard]] inline bool tryGetBoneWorldTransform(const char* boneName, RE::NiTransform& outWorld)
+    {
+        outWorld = {};
+        auto* frikApi = api();
+        if (!frikApi || !frikApi->getBoneWorldTransform || !boneName || !frikApi->getBoneWorldTransform(boneName, &outWorld)) {
+            outWorld = {};
             return false;
         }
-        if (cache.skeleton != skeleton) {
-            cache = {};
-            cache.skeleton = skeleton;
-        }
-        if (!cache.rightHand) {
-            cache.rightHand = f4vr::findNode(skeleton, "RArm_Hand");
-        }
-        if (!cache.leftHand) {
-            cache.leftHand = f4vr::findNode(skeleton, "LArm_Hand");
-        }
+        return detail::isFiniteNiTransform(outWorld);
+    }
 
-        const auto* const handNode = isLeft ? cache.leftHand : cache.rightHand;
-        if (!handNode || !detail::isFiniteNiTransform(handNode->world)) {
-            return false;
+    /*
+     * The last completed visual hand, claims and palm blend included. Read
+     * before FRIK's world final it is the previous frame's presentation;
+     * FirstPersonHand can instead hold the native re-glue at that point.
+     */
+    [[nodiscard]] inline bool tryGetPresentedHandWorldTransform(const bool isLeft, RE::NiTransform& outWorld)
+    {
+        return tryGetBoneWorldTransform(isLeft ? "LArm_Hand" : "RArm_Hand", outWorld);
+    }
+
+    // Live arm chain nodes for a hand: valid after AfterArmSolve, final after AfterWorldFinal.
+    [[nodiscard]] inline bool tryGetArmChain(Hand hand, ArmChainTransforms& outChain)
+    {
+        outChain = {};
+        outChain.structSize = sizeof(ArmChainTransforms);
+        auto* frikApi = api();
+        return frikApi && frikApi->getArmChain && frikApi->getArmChain(hand, &outChain);
+    }
+
+    // How a hand was solved this frame; latched once the frame's world transforms are final.
+    [[nodiscard]] inline HandSolveState getHandSolveResult(Hand hand, RE::NiTransform& outWrist)
+    {
+        outWrist = {};
+        auto* frikApi = api();
+        if (!frikApi || !frikApi->getHandSolveResult) {
+            return HandSolveState::SkeletonNotReady;
         }
-        outWorld = handNode->world;
-        return true;
+        return frikApi->getHandSolveResult(hand, &outWrist);
+    }
+
+    // ---- Lifecycle and scope (v2.2) ----
+
+    [[nodiscard]] inline std::uint32_t getSkeletonGeneration()
+    {
+        auto* frikApi = api();
+        return frikApi && frikApi->getSkeletonGeneration ? frikApi->getSkeletonGeneration() : 0u;
+    }
+
+    // FRIK's debounced power armor state; flips only together with the skeleton generation.
+    [[nodiscard]] inline bool isInPowerArmor()
+    {
+        auto* frikApi = api();
+        return frikApi && frikApi->isInPowerArmor && frikApi->isInPowerArmor();
+    }
+
+    [[nodiscard]] inline bool canReportPowerArmor()
+    {
+        auto* frikApi = api();
+        return frikApi && frikApi->isInPowerArmor != nullptr;
+    }
+
+    [[nodiscard]] inline bool setScopeProvider(const char* tag, std::uint32_t capabilities)
+    {
+        auto* frikApi = api();
+        return frikApi && frikApi->setScopeProvider && frikApi->setScopeProvider(tag, capabilities);
+    }
+
+    [[nodiscard]] inline bool clearScopeProvider(const char* tag)
+    {
+        auto* frikApi = api();
+        return frikApi && frikApi->clearScopeProvider && frikApi->clearScopeProvider(tag);
+    }
+
+    [[nodiscard]] inline bool isLookingThroughScope()
+    {
+        auto* frikApi = api();
+        return frikApi && frikApi->isLookingThroughScope && frikApi->isLookingThroughScope();
     }
 }

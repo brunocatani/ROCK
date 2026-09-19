@@ -135,7 +135,16 @@ namespace rock::fo4vr
         const RE::Actor* actor) noexcept;
     [[nodiscard]] bool IsWeaponDrawn() noexcept;
     [[nodiscard]] bool isMeleeWeaponEquipped() noexcept;
+    /*
+     * The current skeleton's power armor state. Reads the skeleton
+     * provider's debounced state when one is installed (FRIK v2.2 flips it
+     * only together with the skeleton generation); otherwise the game's
+     * transient biped keyword detection.
+     */
     [[nodiscard]] bool isInPowerArmor() noexcept;
+    [[nodiscard]] bool isInPowerArmorFromBiped() noexcept;
+    using PowerArmorStateProvider = bool (*)() noexcept;
+    void setPowerArmorStateProvider(PowerArmorStateProvider provider) noexcept;
     [[nodiscard]] bool isExplodableCar(const RE::TESBoundObject* baseForm) noexcept;
     [[nodiscard]] RE::Setting* getIniSetting(const char* name) noexcept;
 

@@ -49,6 +49,10 @@ namespace rock
             bool nativeRenderable{ false };
             bool handPoseHandoffComplete{ false };
             bool recoveryExhausted{ false };
+            std::uint32_t terminalWeaponFormID{ 0 };
+            Source terminalSource{ Source::ObservedEquip };
+            std::uint32_t presentationWeaponFormID{ 0 };
+            bool presentationKnown{ false };
         };
 
         struct FrameInput
@@ -104,6 +108,7 @@ namespace rock
         {
             return _bridge.isHandPoseHandoffActive();
         }
+        [[nodiscard]] bool hasPairedHandPoseHandoff() const noexcept { return _bridge.hasPairedHandPoseHandoff(); }
         [[nodiscard]] bool handPoseHandoffIsLeft() const noexcept
         {
             return _bridge.handPoseHandoffIsLeft();
@@ -144,6 +149,7 @@ namespace rock
             bool releaseSceneGraph);
 
         EquipVisualBridge _bridge;
+        equipped_weapon_visual_state::ObservationCache _visualCache;
         equipped_weapon_transition_policy::State _policyState{};
         Identity _observedIdentity{};
         Identity _boundIdentity{};
@@ -177,5 +183,8 @@ namespace rock
         std::uint32_t _lastTerminalWeaponFormID{ 0 };
         Source _lastTerminalSource{ Source::ObservedEquip };
         TerminalResult _lastTerminalResult{ TerminalResult::None };
+        std::uint32_t _presentationWeaponFormID{ 0 };
+        bool _presentationKnown{ false };
+        bool _nativeRenderable{ false };
     };
 }

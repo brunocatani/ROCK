@@ -27,6 +27,7 @@
 #include "config/ConfigurationStore.h"
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
+#include "physics-interaction/input/BareFistGesturePolicy.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
 #include "physics-interaction/weapon/GripZoneIndicatorPolicy.h"
 
@@ -87,11 +88,11 @@ namespace rock
         // physical hand currently occupies the firing grip.
         bool rockDetachEitherHand = true;
         bool rockFiringGripDetachPosePreservationEnabled = true;
-        // Whether the last carrying hand may drop the weapon by letting go.
+        // Whether the last equipped grip transfers the weapon into a retained loose grab.
         // With false that grip is retained under either input mode.
         bool rockAutoDrop = false;
-        // Tap to grab and tap again to release equipped-weapon grips.
-        bool rockToggleGrab = true;
+        // 1: toggle both grips; 2: toggle firing only; 3: hold both grips.
+        int rockWeaponGrabMode = 1;
         // Allow dynamic support grabs beyond authored grips. False preserves
         // authored-grip preference and the existing missing-pose fallback.
         bool rockGrabAnywhereOnWeapon = false;
@@ -106,12 +107,13 @@ namespace rock
         // ROCK-native firing-grip handoff. This remains independent from the
         // role-neutral Immersive Weapons detach/drop feature set.
         bool rockAmbidextrousFiringGripEnabled = true;
-        float rockFiringGripPromotionRadius = 5.0f;
         float rockLeftFiringAimYawDegrees = 0.0f;
         float rockLeftFiringAimPitchDegrees = 0.0f;
         float rockLeftFiringAimOffsetXGameUnits = 0.0f;
         float rockLeftFiringAimOffsetYGameUnits = 0.0f;
         float rockLeftFiringAimOffsetZGameUnits = 0.0f;
+        RE::NiPoint3 rockLeftFiringGripOffsetGameUnits{ 0.0f, 0.0f, 0.0f };
+        RE::NiPoint3 rockRightSupportGripOffsetGameUnits{ 0.0f, 0.0f, 0.0f };
         bool rockWeaponCollisionBlocksProjectiles = false;
         bool rockWeaponCollisionBlocksSpells = false;
         // A/B comparison: original support hulls or bounded gap-preserving compounds.
@@ -170,6 +172,8 @@ namespace rock
          * rendered hand through one-way visual authority.
          */
         bool rockEnableVanillaMelee = true;
+        bool rockRockyModeEnabled = true;
+        float rockRockyModeHoldSeconds = bare_fist_gesture::kDefaultHoldSeconds;
         bool rockNativeCharacterControllerObjectContactFilterEnabled = true;
 
         bool rockHighlightEnabled = true;
@@ -426,15 +430,12 @@ namespace rock
         float rockGrabOppositionContactMaxAgeSeconds = 0.0556f;
         bool rockGrabPinchPocketEnabled = true;
         bool rockGrabPinchCloseSelectionEnabled = true;
-        float rockGrabPinchCompactMaxExtentGameUnits = 10.0f;
-        float rockGrabPinchThinRodMaxLengthGameUnits = 18.0f;
-        float rockGrabPinchThinRodMaxCrossSectionGameUnits = 4.0f;
+        float rockGrabPinchMaxVolumeCubicGameUnits = 100.0f;
         float rockGrabPinchMaxPocketDistanceGameUnits = 8.0f;
         float rockGrabPinchMinFingerGapGameUnits = 1.0f;
         float rockGrabPinchMaxFingerGapGameUnits = 12.0f;
         float rockGrabPinchThumbIndexMaxOpenValue = 0.45f;
         float rockGrabPinchOtherFingerCurlValue = 0.20f;
-        float rockGrabPinchSurfaceInsetGameUnits = 0.5f;
         RE::NiPoint3 rockGrabPinchDetectionDirectionHandspace = RE::NiPoint3(1.0f, 0.0f, 0.0f);
         float rockGrabPinchDetectionAxisBlend = 0.65f;
         bool rockGrabHandLerpEnabled = true;

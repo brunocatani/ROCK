@@ -2,6 +2,8 @@
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/hand/SkeletonBoneNameIndex.h"
+#include "physics-interaction/collision/ColliderTuning.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/hand/DynamicHandTwinTargets.h"
@@ -52,7 +54,8 @@ namespace rock
             bool isLeft,
             const RE::NiTransform& rollAuthorityWorld,
             BethesdaPhysicsBody& palmAnchorBody,
-            float deltaTime);
+            float deltaTime,
+            const DirectSkeletonBoneSnapshot& colliderBones);
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing, BethesdaPhysicsBody& palmAnchorBody);
 
         bool hasBodies() const { return _created; }
@@ -60,6 +63,7 @@ namespace rock
         std::uint32_t getBodyIdAtomic(std::size_t index) const;
         bool isColliderBodyIdAtomic(std::uint32_t bodyId) const;
         bool tryGetBodyMetadataAtomic(std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const;
+        bool tryGetBodyMetadataAtIndexAtomic(std::uint32_t index, std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const;
         bool tryGetBodyRoleAtomic(std::uint32_t bodyId, hand_collider_semantics::HandColliderRole& outRole) const;
         bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const;
         // Main-thread debug publication only. Returns the exact pending target
@@ -138,7 +142,10 @@ namespace rock
             bool isLeft,
             const RE::NiTransform& rollAuthorityWorld,
             BoneFrameLookup& outLookup);
+        bool makeBoneLookup(const DirectSkeletonBoneSnapshot& snapshot, bool isLeft,
+            const RE::NiTransform& rollAuthorityWorld, BoneFrameLookup& outLookup);
         bool makeRoleFrame(const BoneFrameLookup& lookup, bool isLeft, hand_collider_semantics::HandColliderRole role, RoleFrameResult& outFrame) const;
+        std::uint64_t refreshTuning(bool powerArmor);
         RE::hknpShape* buildShapeForRole(const RoleFrameResult& frame, hand_collider_semantics::HandColliderRole role,
             RE::NiPoint3* outPalmHalfExtents = nullptr) const;
         bool createBodyForRole(RE::hknpWorld* world, void* bhkWorld, bool isLeft, hand_collider_semantics::HandColliderRole role, const RoleFrameResult& frame, BodyInstance& instance);
@@ -150,6 +157,11 @@ namespace rock
         void clearAtomicBodyIds();
 
         DirectSkeletonBoneReader _reader;
+        SkeletonBoneNameIndex _boneNameIndex;
+        collider_tuning::HandProfile _tuning;
+        std::uint64_t _tuningConfigRevision = 0;
+        bool _tuningPowerArmor = false;
+        bool _tuningReady = false;
         std::array<BodyInstance, MAX_SEGMENT_BODIES> _bodies{};
         RE::hknpWorld* _cachedWorld = nullptr;
         void* _cachedBhkWorld = nullptr;

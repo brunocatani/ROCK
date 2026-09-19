@@ -104,6 +104,15 @@ add_library(${PROJECT_NAME} SHARED
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 target_compile_definitions(${PROJECT_NAME} PRIVATE _UNICODE F4VR_WITH_OPENVR=1)
 
+# Optimize across ROCK translation units in Release without changing the SDK,
+# floating-point model or minimum CPU ISA. The toolchain must support this path.
+include(CheckIPOSupported)
+check_ipo_supported(RESULT ROCK_IPO_SUPPORTED OUTPUT ROCK_IPO_ERROR LANGUAGES CXX)
+if(NOT ROCK_IPO_SUPPORTED)
+  message(FATAL_ERROR "ROCK Release IPO is unavailable: ${ROCK_IPO_ERROR}")
+endif()
+set_property(TARGET ${PROJECT_NAME} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+
 target_include_directories(${PROJECT_NAME}
   PRIVATE
     ${BUILD_DIR}/include
@@ -166,7 +175,7 @@ target_compile_options(${PROJECT_NAME}
 target_link_options(${PROJECT_NAME}
   PRIVATE
     "$<$<CONFIG:DEBUG>:/INCREMENTAL;/OPT:NOREF;/OPT:NOICF>"
-    "$<$<CONFIG:RELEASE>:/INCREMENTAL:NO;/OPT:REF;/OPT:ICF;/DEBUG:FULL>"
+    "$<$<CONFIG:RELEASE>:/INCREMENTAL:NO;/OPT:REF;/OPT:ICF;/DEBUG:FULL;/CGTHREADS:2>"
 )
 
 string(REPLACE "/Ob2" "/Ob3" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
@@ -190,14 +199,15 @@ if(RPS_SDK_ROOT STREQUAL "")
   set(RPS_SDK_ROOT "${RPS_SDK_ROOT}" CACHE PATH "Path to the independent RPS_SDK repository." FORCE)
 endif()
 set(ROCK_PUBLIC_SDK_DIR "${RPS_SDK_ROOT}/SDK/ROCK")
+include_directories("${ROCK_PUBLIC_SDK_DIR}/include")
 target_include_directories(${PROJECT_NAME} PRIVATE "${RPS_SDK_ROOT}/SDK/UI/include")
 
 if(BUILD_ROCK_TESTS OR ROCK_PACKAGE_RELEASE)
   foreach(ROCK_REQUIRED_SDK_PATH IN ITEMS
       "${RPS_SDK_ROOT}/CMakeLists.txt"
       "${RPS_SDK_ROOT}/tests/RockSdkContractTests.ps1"
-      "${ROCK_PUBLIC_SDK_DIR}/include/ROCKProviderApi.h"
-      "${ROCK_PUBLIC_SDK_DIR}/include/ROCKApi.h"
+      "${ROCK_PUBLIC_SDK_DIR}/include/ROCK/Discovery.h"
+      "${ROCK_PUBLIC_SDK_DIR}/include/ROCK/Client.h"
       "${ROCK_PUBLIC_SDK_DIR}/examples/CMakeLists.txt")
     if(NOT EXISTS "${ROCK_REQUIRED_SDK_PATH}")
       message(FATAL_ERROR
@@ -296,6 +306,7 @@ if(BUILD_ROCK_TESTS)
 
   add_executable(ROCKWeaponInteractionPolicyTests
     "${ROOT_DIR}/tests/WeaponInteractionPolicyTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/hand/HandInteractionStateMachine.cpp"
   )
   target_compile_features(ROCKWeaponInteractionPolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKWeaponInteractionPolicyTests PRIVATE ${SOURCE_DIR})
@@ -335,6 +346,14 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKCharacterProxyFaultPolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKCharacterProxyFaultPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKCharacterProxyFaultPolicyTests)
+
+  add_executable(ROCKNativeMemoryTests
+    "${ROOT_DIR}/tests/NativeMemoryTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/native/NativeMemory.cpp"
+  )
+  target_compile_features(ROCKNativeMemoryTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKNativeMemoryTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKNativeMemoryTests)
 
   add_executable(ROCKHavokRefCountTests "${ROOT_DIR}/tests/HavokRefCountTests.cpp")
   target_compile_features(ROCKHavokRefCountTests PRIVATE cxx_std_23)
@@ -565,6 +584,19 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKHandColliderFramePolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKHandColliderFramePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKHandColliderFramePolicyTests)
+
+  add_executable(ROCKColliderLookupAndTuningTests
+    "${ROOT_DIR}/tests/ColliderLookupAndTuningTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/collision/ColliderTuning.cpp"
+  )
+  target_compile_features(ROCKColliderLookupAndTuningTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKColliderLookupAndTuningTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKColliderLookupAndTuningTests)
+
+  add_executable(ROCKCpuWorkReductionTests "${ROOT_DIR}/tests/CpuWorkReductionTests.cpp")
+  target_compile_features(ROCKCpuWorkReductionTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKCpuWorkReductionTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKCpuWorkReductionTests)
 
   add_executable(ROCKHknpBodyFramePolicyTests
     "${ROOT_DIR}/tests/HknpBodyFramePolicyTests.cpp"
@@ -813,13 +845,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKHandWorldClaimRegistryPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKHandWorldClaimRegistryPolicyTests)
 
-  add_executable(ROCKDampenedDriverPredictionPolicyTests
-    "${ROOT_DIR}/tests/DampenedDriverPredictionPolicyTests.cpp"
-  )
-  target_compile_features(ROCKDampenedDriverPredictionPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKDampenedDriverPredictionPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKDampenedDriverPredictionPolicyTests)
-
   add_executable(ROCKTrackedHandIsolationPolicyTests
     "${ROOT_DIR}/tests/TrackedHandIsolationPolicyTests.cpp"
   )
@@ -834,14 +859,28 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKRenderedBoneTransportPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKRenderedBoneTransportPolicyTests)
 
-  add_executable(ROCKArmPresentationPolicyTests
-    "${ROOT_DIR}/tests/ArmPresentationPolicyTests.cpp"
+  add_executable(ROCKWeaponNodeWriteBlockPolicyTests
+    "${ROOT_DIR}/tests/WeaponNodeWriteBlockPolicyTests.cpp"
   )
-  target_compile_features(ROCKArmPresentationPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKArmPresentationPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKArmPresentationPolicyTests)
+  target_compile_features(ROCKWeaponNodeWriteBlockPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWeaponNodeWriteBlockPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKWeaponNodeWriteBlockPolicyTests)
+
+  add_executable(ROCKWeaponAimBasisTests
+    "${ROOT_DIR}/tests/WeaponAimBasisTests.cpp"
+  )
+  target_compile_features(ROCKWeaponAimBasisTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWeaponAimBasisTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKWeaponAimBasisTests)
+
+  add_executable(ROCKFrikPresentedHandTests "${ROOT_DIR}/tests/FrikPresentedHandTests.cpp")
+  target_compile_features(ROCKFrikPresentedHandTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKFrikPresentedHandTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKFrikPresentedHandTests)
 
   set(ROCK_COMMONLIB_TEST_TARGETS
+    ROCKColliderLookupAndTuningTests
+    ROCKCpuWorkReductionTests
     ROCKGrabInputIntentPolicyTests
     ROCKInputRemapPolicyTests
     ROCKWeaponInteractionPolicyTests
@@ -907,10 +946,10 @@ if(BUILD_ROCK_TESTS)
     ROCKDynamicWeaponCollisionPolicyTests
     ROCKWeaponSurfaceSupportTests
     ROCKHandWorldClaimRegistryPolicyTests
-    ROCKDampenedDriverPredictionPolicyTests
     ROCKTrackedHandIsolationPolicyTests
     ROCKRenderedBoneTransportPolicyTests
-    ROCKArmPresentationPolicyTests
+    ROCKWeaponAimBasisTests
+    ROCKFrikPresentedHandTests
   )
   # Every policy executable uses the same CommonLib-heavy precompiled header and
   # config stub. Build those once, then reuse the PCH artifact and support library
@@ -1008,19 +1047,48 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKProviderColliderVisualizationRuntimeTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKProviderColliderVisualizationRuntimeTests)
 
+  add_executable(ROCKModularEventStreamTests "${ROOT_DIR}/tests/ModularEventStreamTests.cpp")
+  target_compile_features(ROCKModularEventStreamTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKModularEventStreamTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKModularEventStreamTests)
+
+  add_executable(ROCKModularExportsTests "${ROOT_DIR}/tests/ModularExportsTests.cpp")
+  target_compile_features(ROCKModularExportsTests PRIVATE cxx_std_23)
+  target_compile_options(ROCKModularExportsTests PRIVATE /UNDEBUG)
+
   add_executable(ROCKProviderApiAbiTests
     "${ROOT_DIR}/tests/ProviderApiAbiTests.cpp"
   )
   target_compile_features(ROCKProviderApiAbiTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKProviderApiAbiTests PRIVATE ${SOURCE_DIR})
+  target_include_directories(ROCKProviderApiAbiTests PRIVATE ${SOURCE_DIR} "${RPS_SDK_ROOT}/tests")
   add_rock_test(ROCKProviderApiAbiTests)
+
+  add_executable(ROCKProviderInstanceAccessTests "${ROOT_DIR}/tests/ProviderInstanceAccessTests.cpp")
+  target_compile_features(ROCKProviderInstanceAccessTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKProviderInstanceAccessTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKProviderInstanceAccessTests)
 
   add_executable(ROCKProviderApiNegotiationTests
     "${ROOT_DIR}/tests/ProviderApiNegotiationTests.cpp"
+    "${ROOT_DIR}/tests/ModularTestTables.cpp"
+    "${SOURCE_DIR}/api/Discovery.cpp"
   )
   target_compile_features(ROCKProviderApiNegotiationTests PRIVATE cxx_std_23)
   target_include_directories(ROCKProviderApiNegotiationTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKProviderApiNegotiationTests)
+
+  add_executable(ROCKModularMarshallingTests "${ROOT_DIR}/tests/ModularMarshallingTests.cpp")
+  target_compile_features(ROCKModularMarshallingTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKModularMarshallingTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKModularMarshallingTests)
+
+  add_executable(ROCKModularEventDeliveryTests
+    "${ROOT_DIR}/tests/ModularEventDeliveryTests.cpp"
+    "${SOURCE_DIR}/api/EventStreams.cpp")
+  target_compile_features(ROCKModularEventDeliveryTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKModularEventDeliveryTests PRIVATE ${SOURCE_DIR})
+  target_compile_definitions(ROCKModularEventDeliveryTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  add_rock_test(ROCKModularEventDeliveryTests)
 
   add_executable(ROCKProviderHandItemClientTests
     "${ROOT_DIR}/tests/ProviderHandItemClientTests.cpp"
@@ -1110,13 +1178,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKDebugOverlayShaderCompileTests PRIVATE ${SOURCE_DIR})
   target_link_libraries(ROCKDebugOverlayShaderCompileTests PRIVATE d3dcompiler.lib)
   add_rock_test(ROCKDebugOverlayShaderCompileTests)
-
-  add_executable(ROCKMainLoopHookPolicyTests
-    "${ROOT_DIR}/tests/MainLoopHookPolicyTests.cpp"
-  )
-  target_compile_features(ROCKMainLoopHookPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKMainLoopHookPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKMainLoopHookPolicyTests)
 
   add_executable(ROCKWeaponTelemetryTraversalTests "${ROOT_DIR}/tests/WeaponTelemetryTraversalTests.cpp")
   target_compile_features(ROCKWeaponTelemetryTraversalTests PRIVATE cxx_std_23)

@@ -54,7 +54,7 @@ namespace rock::held_scene_presentation
         std::uint64_t traceId,
         const RE::NiTransform& targetBodyWorld,
         const RE::NiTransform& solvedBodyWorld,
-        RE::NiAVObject* looseWeaponRoot,
+        RE::NiAVObject* referenceRoot,
         const RE::NiTransform& bodyInRoot) noexcept;
     // Copies the selected hand's immutable pose only for this exact frame.
     // No scene pointer crosses into the overlay render thread.

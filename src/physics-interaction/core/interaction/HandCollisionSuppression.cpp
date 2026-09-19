@@ -1,4 +1,5 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/native/HavokWorldLock.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
 
 // Hand and native-player collision suppression: contact evidence ownership, dominant-weapon and weapon-support hand suppression, post-drop suppression, and native player physical-pair ownership.
@@ -536,6 +537,16 @@ namespace rock
         _suppression.leftDropSuppressed.store(false, std::memory_order_release);
     }
 
+    void PhysicsInteraction::captureHandColliderBones()
+    {
+        performance_profiler::ScopedTimer captureTimer(performance_profiler::Scope::HandBoneCapture);
+        (void)_handColliderBoneReader.capture(
+            skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+            skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+            SkeletonBoneCaptureSpace::Controller,
+            _handColliderBoneSnapshot);
+    }
+
     void PhysicsInteraction::updateHandCollisions(const PhysicsFrameContext& frame)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::HandColliderUpdate);
@@ -571,11 +582,19 @@ namespace rock
         updateWeaponSupportCollisionSuppression(world, frame.deltaSeconds);
         updateEquippedWeaponPostDropCollisionSuppression(world, frame.deltaSeconds);
 
+        if (frame.right.disabled && frame.left.disabled) {
+            return;
+        }
+        captureHandColliderBones();
+        // An invalid capture still reaches each owner's drive-failure/rebuild
+        // handling; makeBoneLookup rejects it before any pose is queued.
+        // Neither collider update writes the skeleton or hand-chain transport.
+        // Both sides therefore consume the same freshly copied controller pose.
         if (!frame.right.disabled) {
-            _rightHand.updateCollisionTransform(world, frame.right.rawHandWorld, frame.deltaSeconds);
+            _rightHand.updateCollisionTransform(world, frame.right.rawHandWorld, frame.deltaSeconds, _handColliderBoneSnapshot);
         }
         if (!frame.left.disabled) {
-            _leftHand.updateCollisionTransform(world, frame.left.rawHandWorld, frame.deltaSeconds);
+            _leftHand.updateCollisionTransform(world, frame.left.rawHandWorld, frame.deltaSeconds, _handColliderBoneSnapshot);
         }
     }
 
@@ -649,10 +668,10 @@ namespace rock
         }
         // Unresolved ownership is accepted only with positive player-tree
         // ancestry, never merely because reference resolution failed.
-        const auto snapshot = havok_runtime::snapshotBody(hknp, RE::hknpBodyId{ bodyId });
+        const auto snapshot = havok_runtime::snapshotBodyIdentity(hknp, RE::hknpBodyId{ bodyId });
         auto* firstPerson = f4vr::getFirstPersonSkeleton();
         auto* thirdPerson = f4vr::getWorldRootNode();
-        auto* node = snapshot.ownerNode;
+        auto* node = havok_runtime::getOwnerNodeFromCollisionObject(snapshot.collisionObject);
         for (unsigned depth = 0; node && depth < 64; ++depth) {
             if (node == firstPerson || node == thirdPerson) {
                 return true;
@@ -686,13 +705,14 @@ namespace rock
             return;
         }
 
-        auto cacheMutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
-
         if (_suppression.nativePlayerRefreshFrames > 0) {
             --_suppression.nativePlayerRefreshFrames;
             return;
         }
         _suppression.nativePlayerRefreshFrames = 30;
+
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::NativePlayerRefresh);
+        auto cacheMutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
 
         struct NativePlayerBodyScanContext
         {
@@ -709,6 +729,19 @@ namespace rock
             std::array<DynamicWorldCarTarget, DynamicWorldCarCollisionRuntime::kMaxTrackedTargets> nearbyCars{};
             std::uint32_t nearbyCarCount = 0;
             bool nearbyCarOverflow = false;
+            std::array<std::uint32_t, 512> visited{};
+
+            bool alreadyVisited(std::uint32_t bodyId)
+            {
+                const auto key = bodyId + 1u; // Scanner admits only IDs <= 0xFFFFF.
+                std::size_t slot = (bodyId * 2654435761u) & (visited.size() - 1);
+                for (std::size_t probe = 0; probe < visited.size(); ++probe) {
+                    if (visited[slot] == key) return true;
+                    if (visited[slot] == 0) { visited[slot] = key; return false; }
+                    slot = (slot + 1) & (visited.size() - 1);
+                }
+                return false; // Full scratch never prevents discovery.
+            }
 
             bool contains(std::uint32_t bodyId) const
             {
@@ -722,6 +755,7 @@ namespace rock
 
             void append(std::uint32_t bodyId)
             {
+                if (alreadyVisited(bodyId)) return;
                 appendNearbyCar(bodyId);
                 if (!self || !self->isNativePlayerCollisionBody(bhk, hknp, bodyId) || contains(bodyId)) {
                     return;
@@ -820,13 +854,17 @@ namespace rock
             }
         };
 
-        if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-            if (player->currentProcess && player->currentProcess->middleHigh && player->currentProcess->middleHigh->poseBound) {
-                scanCollisionObject(player->currentProcess->middleHigh->poseBound.get());
+        {
+            // Freeze membership only during discovery; car synchronization below can mutate it.
+            havok_world_lock::ScopedWorldReadLock readLock(hknp);
+            if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                if (player->currentProcess && player->currentProcess->middleHigh && player->currentProcess->middleHigh->poseBound) {
+                    scanCollisionObject(player->currentProcess->middleHigh->poseBound.get());
+                }
             }
+            scanNode(scanNode, f4vr::getFirstPersonSkeleton(), 64);
+            scanNode(scanNode, f4vr::getWorldRootNode(), 64);
         }
-        scanNode(scanNode, f4vr::getFirstPersonSkeleton(), 64);
-        scanNode(scanNode, f4vr::getWorldRootNode(), 64);
 
         if (scanContext.playerPositionValid) {
             _dynamicWorldCarCollision.synchronizeNearbyTargets(
@@ -855,11 +893,12 @@ namespace rock
         std::array<native_player_collision::BodyIdentity, native_player_collision::kMaximumPlayerBodies> bodies{};
         std::size_t count = 0;
         for (std::uint32_t i = 0; i < scanContext.bodyCount; ++i) {
-            const auto body = havok_runtime::snapshotBody(hknp, RE::hknpBodyId{ scanContext.bodyIds[i] });
-            if (body.valid && body.collisionObject && body.ownerNode) {
+            const auto body = havok_runtime::snapshotBodyIdentity(hknp, RE::hknpBodyId{ scanContext.bodyIds[i] });
+            auto* ownerNode = body.valid ? havok_runtime::getOwnerNodeFromCollisionObject(body.collisionObject) : nullptr;
+            if (body.valid && body.collisionObject && ownerNode) {
                 bodies[count++] = { body.bodyId.value, body.motionIndex,
                     reinterpret_cast<std::uintptr_t>(body.collisionObject),
-                    reinterpret_cast<std::uintptr_t>(body.ownerNode) };
+                    reinterpret_cast<std::uintptr_t>(ownerNode) };
             }
         }
         native_player_collision::publish(hknp, { bodies.data(), count });

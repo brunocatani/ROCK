@@ -1,4 +1,5 @@
 #include "physics-interaction/telemetry/DynamicColliderTrace.h"
+#include "physics-interaction/telemetry/HeldRenderTrace.h"
 
 #include "RockConfig.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
@@ -26,12 +27,14 @@ namespace rock::dynamic_collider_trace
         // Lifecycle changes are game-thread-only, outside active physics callbacks.
         std::unique_ptr<Session> session;
         std::atomic<bool> recording{ false };
+        std::atomic<bool> presentationRecording{ false };
         std::atomic<bool> writerFailed{ false };
     }
 
     void initialize() noexcept
     {
-        if (session || !g_rockConfig.rockDebugGrabFrameLogging) return;
+        if (session || (!g_rockConfig.rockDebugGrabFrameLogging && !g_rockConfig.rockDebugShowSkeletonBoneVisualizer &&
+                !g_rockConfig.rockDebugShowRootFlattenedFingerSkeletonMarkers)) return;
         try {
             auto next = std::make_unique<Session>();
             const auto path = resources::getPathInDocuments("/My Games/Fallout4VR/F4SE/ROCK_ColliderTrace.log");
@@ -42,11 +45,13 @@ namespace rock::dynamic_collider_trace
             next->log->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
             next->log->set_error_handler([](const std::string&) { suppressAfterError(); });
             writerFailed.store(false, std::memory_order_relaxed);
-            next->log->info("COLLIDER_TRACE start version=1 pid={} build={} {} sourceStride=4 observational=true positions=game-units velocities=havok-units-per-second peerKind=1:hand,2:weapon,3:world",
+            next->log->info("COLLIDER_TRACE start version=4 pid={} build={} {} sourceStride=4 heldPhaseBurst=12/120 observational=true positions=game-units velocities=havok-units-per-second peerKind=1:hand,2:weapon,3:world",
                 GetCurrentProcessId(), __DATE__, __TIME__);
             next->log->flush();
             session = std::move(next);
-            recording.store(true, std::memory_order_release);
+            recording.store(g_rockConfig.rockDebugGrabFrameLogging, std::memory_order_release);
+            presentationRecording.store(true, std::memory_order_release);
+            held_render_trace::initialize();
         } catch (...) {
             suppressAfterError();
             try { logger::error("ROCK: Collider trace initialization failed."); } catch (...) {}
@@ -55,7 +60,9 @@ namespace rock::dynamic_collider_trace
 
     void shutdown() noexcept
     {
+        held_render_trace::shutdown();
         recording.store(false, std::memory_order_release);
+        presentationRecording.store(false, std::memory_order_release);
         if (!session) return;
         try {
             session->log->info("COLLIDER_TRACE end overruns={} writerFailed={}",
@@ -70,14 +77,17 @@ namespace rock::dynamic_collider_trace
     void beginFrame(bool requested, std::uint64_t frame) noexcept
     {
         recording.store(requested && session && !writerFailed.load(std::memory_order_relaxed), std::memory_order_release);
-        if (!enabled() || frame % 300 != 0) return;
+        presentationRecording.store((requested || g_rockConfig.rockDebugShowSkeletonBoneVisualizer ||
+            g_rockConfig.rockDebugShowRootFlattenedFingerSkeletonMarkers) && session && !writerFailed.load(std::memory_order_relaxed), std::memory_order_release);
+        if (!presentationEnabled() || frame % 300 != 0) return;
         write("COLLIDER_TRACE heartbeat frame={} overruns={}", frame, session->pool->overrun_counter());
         try { session->log->flush(); } catch (...) { suppressAfterError(); }
     }
 
     bool enabled() noexcept { return recording.load(std::memory_order_acquire); }
+    bool presentationEnabled() noexcept { return presentationRecording.load(std::memory_order_acquire); }
     bool sample(std::uint64_t sequence) noexcept { return enabled() && sequence != 0 && sequence % 4 == 0; }
-    spdlog::logger* activeLogger() noexcept { return enabled() ? session->log.get() : nullptr; }
+    spdlog::logger* activeLogger() noexcept { return presentationEnabled() ? session->log.get() : nullptr; }
     void capturePresentedHands(std::uint64_t frame) noexcept
     {
         if (!sample(frame)) return;
@@ -97,5 +107,6 @@ namespace rock::dynamic_collider_trace
     {
         writerFailed.store(true, std::memory_order_relaxed);
         recording.store(false, std::memory_order_release);
+        presentationRecording.store(false, std::memory_order_release);
     }
 }

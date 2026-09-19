@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/performance/PerformanceProfiler.h"
+
 #include <atomic>
 #include <cstdint>
 #include <utility>
@@ -142,6 +144,8 @@ namespace rock
         void waitForCallbacks()
         {
             std::uint32_t active = _callbacksInFlight.load(std::memory_order_acquire);
+            if (active == 0) return;
+            performance_profiler::ScopedTimer waitTimer(performance_profiler::Scope::CallbackQuiescenceWait);
             while (active != 0) {
                 _callbacksInFlight.wait(active, std::memory_order_acquire);
                 active = _callbacksInFlight.load(std::memory_order_acquire);

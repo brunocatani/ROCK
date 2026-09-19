@@ -31,7 +31,7 @@ namespace rock
          * must describe the same pre-authority hand, not two scene reads split
          * by grip publication.
          */
-        DirectSkeletonBoneSnapshot capturedFingerBoneSnapshot{};
+        auto& capturedFingerBoneSnapshot = fingerScratch.capturedBones;
         const bool capturedFingerBoneSnapshotValid =
             rootFlattenedTwoHandedReader().capture(
                 skeleton_bone_debug_math::DebugSkeletonBoneMode::
@@ -48,7 +48,7 @@ namespace rock
                 buildFingerSkeletonSnapshot(
                     capturedFingerBoneSnapshot,
                     isLeft,
-                    capturedFingerSnapshot);
+                    capturedFingerSnapshot, nullptr, &fingerScratch.capturedBoneNames);
         SupportGripFingerReferenceSet fingerReferenceSet{};
         fingerReferenceSet.seatPointWorld = gripWorldPoint;
         fingerReferenceSet.seatPointValid =

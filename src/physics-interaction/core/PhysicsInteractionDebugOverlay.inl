@@ -1451,12 +1451,7 @@
                     return;
                 }
 
-                const RE::NiPoint3 pinchAxis =
-                    grab_pinch_pocket_policy::normalizeOrFallback(handInput.indexPadWorld - handInput.thumbPadWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
-                const float axisBlend =
-                    std::clamp(g_rockConfig.rockGrabPinchDetectionAxisBlend, 0.0f, 1.0f);
-                const RE::NiPoint3 pinchDetection =
-                    grab_pinch_pocket_policy::normalizeOrFallback(pinchAxis * axisBlend + handInput.pinchDirectionWorld * (1.0f - axisBlend), pinchAxis);
+                const RE::NiPoint3 pinchDetection = handInput.pinchDirectionWorld;
                 const float directionLength =
                     (std::max)(g_rockConfig.rockGrabPinchMaxPocketDistanceGameUnits, selection_query_policy::kNearCastDistanceGameUnits);
 
@@ -1522,16 +1517,10 @@
                         if (frik_visual_authority::isAvailable()) {
                             RE::NiTransform rightHandWorld{};
                             RE::NiTransform leftHandWorld{};
-                            if (frik_visual_authority::
-                                    tryGetHandWorldTransform(
-                                        frik_visual_authority::Hand::Right,
-                                        rightHandWorld)) {
+                            if (frik_visual_authority::tryGetPresentedHandWorldTransform(false, rightHandWorld)) {
                                 rightHandScale = rightHandWorld.scale;
                             }
-                            if (frik_visual_authority::
-                                    tryGetHandWorldTransform(
-                                        frik_visual_authority::Hand::Left,
-                                        leftHandWorld)) {
+                            if (frik_visual_authority::tryGetPresentedHandWorldTransform(true, leftHandWorld)) {
                                 leftHandScale = leftHandWorld.scale;
                             }
                         }
@@ -1595,7 +1584,7 @@
                 }
 
                 root_flattened_finger_skeleton_runtime::Snapshot snapshot{};
-                if (!root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(isLeft, snapshot)) {
+                if (!root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(isLeft, snapshot, nullptr, SkeletonBoneCaptureSpace::Rendered)) {
                     return;
                 }
 
@@ -2177,7 +2166,7 @@
 
                 if (drawFingerSweptArcLiveSkeleton) {
                     root_flattened_finger_skeleton_runtime::Snapshot liveSkeleton{};
-                    if (root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(hand.isLeft(), liveSkeleton)) {
+                    if (root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(hand.isLeft(), liveSkeleton, nullptr, SkeletonBoneCaptureSpace::Rendered)) {
                         for (const auto& finger : liveSkeleton.fingers) {
                             if (!finger.valid) {
                                 continue;
@@ -2287,7 +2276,7 @@
 
         if (drawAuthoredSupportGripDebug) {
             AuthoredSupportGripDebugSnapshot snapshot{};
-            if (_twoHandedGrip.getAuthoredSupportGripDebugSnapshot(snapshot)) {
+            if (_twoHandedGrip.getAuthoredSupportGripDebugSnapshot(snapshot) && !snapshot.sharedFiringZone) {
                 // YELLOW cross: the final authored palm seat and center of the
                 // touch-substitution radius. BLUE cross: the live palm touch
                 // probe expressed in that same current Weapon frame. Wrist/
@@ -2865,15 +2854,9 @@
                     RE::NiTransform appliedRight{};
                     RE::NiTransform appliedLeft{};
                     const bool rightAppliedValid =
-                        frik_visual_authority::
-                            tryGetHandWorldTransform(
-                                frik_visual_authority::Hand::Right,
-                                appliedRight);
+                        frik_visual_authority::tryGetPresentedHandWorldTransform(false, appliedRight);
                     const bool leftAppliedValid =
-                        frik_visual_authority::
-                            tryGetHandWorldTransform(
-                                frik_visual_authority::Hand::Left,
-                                appliedLeft);
+                        frik_visual_authority::tryGetPresentedHandWorldTransform(true, appliedLeft);
                     if (rightAppliedValid) {
                         addAxisTransform(appliedRight, debug::AxisOverlayRole::RightFrikAppliedHand, snapshot.rightRequestedHandWorld.translate, true);
                         addMarkerLine(debug::MarkerOverlayRole::RightWeaponAuthorityMismatch, snapshot.rightRequestedHandWorld.translate, appliedRight.translate);
@@ -2890,6 +2873,52 @@
                         ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip authority mismatch: right={:.2f}gu left={:.2f}gu",
                             pointDistance(snapshot.rightRequestedHandWorld.translate, appliedRight.translate),
                             pointDistance(snapshot.leftRequestedHandWorld.translate, appliedLeft.translate));
+                    }
+                }
+            }
+        }
+
+        if (drawAuthoredGripActivationZones) {
+            // Each physical hand owns a separate loose support cone. Both
+            // remain available before either hand has acquired the weapon.
+            for (const bool isLeft : {false, true}) {
+                loose_weapon_grip_zone::AuthoredSupportDebug seat{};
+                if (!loose_weapon_grip_zone::tryGetAuthoredSupportDebug(isLeft, seat)) {
+                    continue;
+                }
+                namespace activation = authored_weapon_grip_activation_policy;
+                const auto dimensions = activation::resolveActivationBoundaryDimensions(seat.radius);
+                if (!dimensions.valid || (seat.family != activation::WeaponFamily::OneHandGun &&
+                    seat.family != activation::WeaponFamily::TwoHandGun)) {
+                    continue;
+                }
+                const auto role = seat.eligible ? debug::MarkerOverlayRole::AuthoredGripActivationPass :
+                    debug::MarkerOverlayRole::AuthoredGripActivationFail;
+                addMarkerPoint(role, seat.seatWorld, 2.0f);
+                addMarkerLine(role, seat.seatWorld, seat.probeWorld);
+                // Rifle activation is the same side-to-down swept cone as the
+                // equipped gate. Draw its endpoints and bisector for readback.
+                const int coneCount = seat.family == activation::WeaponFamily::TwoHandGun ? 3 : 1;
+                for (int cone = 0; cone < coneCount; ++cone) {
+                    const float angle = static_cast<float>(cone) * std::numbers::pi_v<float> / 4.0f;
+                    const float c = std::cos(angle), sn = std::sin(angle);
+                    const RE::NiPoint3 axis = seat.sideWorld * c + seat.downWorld * sn;
+                    const RE::NiPoint3 tangent = seat.downWorld * c - seat.sideWorld * sn;
+                    constexpr std::size_t segments = 12;
+                    std::array<RE::NiPoint3, segments> rim{};
+                    for (std::size_t segment = 0; segment < segments; ++segment) {
+                        const float phase = static_cast<float>(segment) * 2.0f * std::numbers::pi_v<float> / segments;
+                        rim[segment] = seat.seatWorld + axis * dimensions.axialGameUnits +
+                            tangent * (std::cos(phase) * dimensions.rimRadiusGameUnits) +
+                            seat.referenceWorld * (std::sin(phase) * dimensions.rimRadiusGameUnits);
+                    }
+                    for (std::size_t segment = 0; segment < segments; ++segment) {
+                        addMarkerLine(debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
+                            rim[segment], rim[(segment + 1) % segments]);
+                        if (segment % 3 == 0) {
+                            addMarkerLine(debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
+                                seat.seatWorld, rim[segment]);
+                        }
                     }
                 }
             }
@@ -4025,7 +4054,7 @@
 
                     BodyBoneColliderMetadata metadata{};
                     const auto role =
-                        _bodyBoneColliders.tryGetBodyMetadataAtomic(bodyId, metadata) ? bodyOverlayRoleFor(metadata.role) : debug::BodyOverlayRole::BodyTorsoSegment;
+                        _bodyBoneColliders.tryGetBodyMetadataAtIndexAtomic(i, bodyId, metadata) ? bodyOverlayRoleFor(metadata.role) : debug::BodyOverlayRole::BodyTorsoSegment;
                     RE::NiTransform currentTarget{};
                     const bool hasCurrentTarget =
                         drawColliderPhaseDiagnostics &&

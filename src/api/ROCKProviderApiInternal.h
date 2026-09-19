@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/ROCKProviderApi.h"
+#include "api/ProviderRuntimeTypes.h"
 #include "api/TouchGrabRegistry.h"
 #include "physics-interaction/timing/GameFrameTimingPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRuntime.h"

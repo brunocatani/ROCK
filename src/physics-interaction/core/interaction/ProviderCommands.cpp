@@ -185,6 +185,7 @@ namespace rock
                 return true;
             };
             auto clearProviderReleaseInputState = [&]() {
+                _forceGrab.retainedWeaponGrabs[isLeft ? 1u : 0u] = {};
                 grab_input_intent_policy::reset(_grabInput.intentStates[isLeft ? 1u : 0u]);
                 peer_held_join_retry_policy::reset(_grabInput.peerHeldJoinRetryStates[isLeft ? 1u : 0u]);
                 shoulder_stash::resetRuntime(_grabInput.shoulderStashStates[isLeft ? 1u : 0u]);
@@ -519,12 +520,10 @@ namespace rock
             }
 
             if ((drive.flags & static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchBodyId)) != 0 && drive.bodyId != INVALID_CONTACT_BODY_ID) {
-                WeaponCollisionProfileEvidenceDescriptor descriptor{};
-                RE::NiAVObject* sourceNode = nullptr;
-                if (_weaponCollision.tryGetProfileEvidenceDescriptorForBodyId(drive.bodyId, descriptor, sourceNode) &&
-                    sourceNode &&
-                    descriptor.weaponGenerationKey == currentWeaponGenerationKey &&
-                    acceptResolvedNode(sourceNode)) {
+                const auto* descriptor = evidenceDescriptors.find(drive.bodyId);
+                if (descriptor && descriptor->sourceRootAddress != 0 &&
+                    descriptor->weaponGenerationKey == currentWeaponGenerationKey &&
+                    acceptResolvedNode(reinterpret_cast<RE::NiAVObject*>(descriptor->sourceRootAddress))) {
                 } else {
                     return nullptr;
                 }

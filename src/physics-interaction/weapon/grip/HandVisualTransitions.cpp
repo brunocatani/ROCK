@@ -84,13 +84,6 @@ namespace rock
             weapon_support_authority_policy::supportGripAppliesPrimaryHandAuthority(_session.authorityMode);
     }
 
-    frik_visual_authority::RebaseDriver TwoHandedGrip::weaponSeatDriver(const bool seatHandIsLeft) const
-    {
-        return weaponSeatFollowsCarrier(seatHandIsLeft) ?
-            frik_visual_authority::physicalHandDriver(weaponCarrierIsLeft()) :
-            frik_visual_authority::physicalHandAimAxisDriver(seatHandIsLeft);
-    }
-
     void TwoHandedGrip::recordPublishedHandWorld(const bool isLeft, const RE::NiTransform& appliedWorld)
     {
         if (!isUsableHandAuthorityTransform(appliedWorld)) {
@@ -118,8 +111,7 @@ namespace rock
                 RETURN_HAND_TAG,
                 handFromBool(isLeft),
                 state.start,
-                RETURN_HAND_VISUAL_PRIORITY,
-                frik_visual_authority::physicalHandDriver(isLeft))) {
+                RETURN_HAND_VISUAL_PRIORITY)) {
             state.clear();
             (void)frik_visual_authority::clearHandWorld(RETURN_HAND_TAG, handFromBool(isLeft));
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: hand return start failed hand={}", isLeft ? "left" : "right");
@@ -137,14 +129,28 @@ namespace rock
 
     void TwoHandedGrip::updateHandVisualReturns(const float dt)
     {
-        if (_scope.menuOpenThisFrame) {
-            return;
-        }
+        // A return that starts at the grip pose pins the hand there until it
+        // advances, and a scope provider can hold the vanilla ScopeMenu open
+        // long after the player stops aiming. Under FRIK API v2.3 the scoped
+        // solver hand frame is a valid target, so a hand no role wants keeps
+        // returning while the menu is open.
+        const scope_safe_hand_frame_math::DesiredHandAuthorityInput ownership{
+            .gripping = _session.state == TwoHandedState::Gripping,
+            .primaryHandAuthorityEnabled =
+                weapon_support_authority_policy::supportGripAppliesPrimaryHandAuthority(_session.authorityMode),
+            .firingHandIsLeft = isFiringHandLeft(),
+            .leftPartGripActive = partGrip(true).active,
+            .rightPartGripActive = partGrip(false).active,
+        };
 
         for (const bool isLeft : { true, false }) {
             const std::size_t index = isLeft ? 0u : 1u;
             auto& state = _visuals.returningHands[index].transition;
             if (!state.active) {
+                continue;
+            }
+            if (_scope.menuOpenThisFrame &&
+                scope_safe_hand_frame_math::desiredRolesForHand(ownership, isLeft) != 0) {
                 continue;
             }
 
@@ -188,8 +194,7 @@ namespace rock
                         RETURN_HAND_TAG,
                         handFromBool(isLeft),
                         transform,
-                        RETURN_HAND_VISUAL_PRIORITY,
-                        frik_visual_authority::physicalHandDriver(isLeft));
+                        RETURN_HAND_VISUAL_PRIORITY);
                 });
             if (result.timingInitializedThisFrame) {
                 ROCK_LOG_DEBUG(Weapon,
@@ -256,11 +261,18 @@ namespace rock
         }
 
         RE::NiNode* nativeParent = _session.weaponNode->parent;
-        if (_leftCarry.weaponNodeReparented) {
-            nativeParent = resolveFirstPersonHandNode(false);
-            if (!nativeParent) {
-                return;
+        const bool awaitingParentRestore = _leftCarry.weaponNodeReparented;
+        // The parent the carry leaves the node under until FRIK restores the game's hand.
+        RE::NiNode* const carryParent = awaitingParentRestore ? _session.weaponNode->parent : nullptr;
+        if (awaitingParentRestore) {
+            // FRIK restores the game's own handedness setting, not the right hand.
+            bool gameLeftHanded = false;
+            if (!frik_visual_authority::tryResolveHandIsLeft(frik_visual_authority::Hand::Primary, gameLeftHanded)) {
+                ROCK_LOG_SAMPLE_WARN(Weapon,
+                    5000,
+                    "TwoHandedGrip: bLeftHandedMode:VR unavailable; the weapon return assumes FRIK restores the right-hand parent");
             }
+            nativeParent = resolveFirstPersonHandNode(gameLeftHanded);
         }
         if (!nativeParent) {
             return;
@@ -272,20 +284,15 @@ namespace rock
         }
 
         /*
-         * blockPrimaryWeaponNodeOwnership is hFRIK's external LEFT-carry
-         * topology switch, not a transform-write-only blocker. Retaining it
-         * here makes hFRIK reparent the weapon back under LArm_Hand on the next
-         * frame, which invalidates this right-parent-local return and snaps the
-         * weapon immediately. Release left-carry topology before beginning the
-         * overlay. ROCK runs after hFRIK and republishes the interpolated node
-         * every frame, so hFRIK's earlier native write cannot reach rendering;
-         * at the exact endpoint both writers already agree on the baseline.
+         * Release the left-carry parent request before beginning the overlay:
+         * FRIK restores the game's parent hand in its next skeleton pass,
+         * before this return's first advance, so the parent-local return
+         * below lands on the restored parent. The return writes world
+         * transforms, so the frames the node still hangs under the carry
+         * parent render the same pose. The weapon-node write block stays held
+         * for the return (finalizeFrikWeaponOwnershipForFrame).
          */
         releaseFiringHandWeaponNodeOwnership(_session.weaponNode);
-        if (_session.weaponNode->parent != nativeParent) {
-            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: weapon return skipped because native right-hand parenting could not be restored");
-            return;
-        }
 
         RE::NiTransform returnTargetLocal = _weaponNodeLocalBaseline;
         const bool followsAuthoredPrimaryGrip =
@@ -307,22 +314,20 @@ namespace rock
         returnState.lastTargetLocal = returnTargetLocal;
         returnState.retainPrimaryPoseBlocker = usesLeftFiringCarry();
         returnState.followsAuthoredPrimaryGrip = followsAuthoredPrimaryGrip;
+        returnState.carryParent = carryParent;
         returnState.localTransition.begin(startLocal);
         returnState.localTransition.durationSeconds = hand_visual_lerp_math::computeVisualReturnDuration(
             startLocal,
             returnState.lastTargetLocal,
             hand_visual_lerp_math::kEquippedWeaponReturnConfig);
         returnState.localTransition.durationInitialized = true;
-        if (!moveWeaponPresentationRigidly(_session.weaponNode, startWorld)) {
-            ROCK_LOG_SAMPLE_WARN(
-                Weapon,
-                2000,
-                "TwoHandedGrip: weapon return rejected an invalid presentation subtree");
+        // The grip solver stops publishing on this release frame; the normal
+        // return update has already run. Publish the initial return pose now
+        // so collision authority retains its target and any latched bipod.
+        if (!applyWeaponVisualAuthority(_session.weaponNode, startWorld, _session.weaponGenerationKey)) {
             return;
         }
         _visuals.returningWeapon = returnState;
-        _visuals.lastRenderedWeaponWorld = _session.weaponNode->world;
-        _visuals.hasLastRenderedWeaponWorld = true;
         ROCK_LOG_DEBUG(Weapon,
             "TwoHandedGrip: weapon return started reason={} target={} distance={:.2f}gu angle={:.1f}deg duration={:.3f}s",
             reason ? reason : "unknown",
@@ -342,6 +347,12 @@ namespace rock
         if (!state.localTransition.active) {
             return;
         }
+        // After a left carry FRIK restores the game's parent hand in its next
+        // skeleton pass; until then the node legitimately hangs under the
+        // parent the carry left it with. Any other parent ends the return.
+        const bool parentChanged = currentWeaponNode &&
+            currentWeaponNode->parent != state.nativeParent &&
+            !(state.carryParent && currentWeaponNode->parent == state.carryParent);
         if (!runtime_state::isLocalSkeletonReady() ||
             !currentWeaponNode ||
             currentWeaponNode != state.weaponNode ||
@@ -349,9 +360,21 @@ namespace rock
             currentEquippedWeaponOwnershipKey != state.equippedWeaponOwnershipKey ||
             !state.nativeParent ||
             !isFiniteTransform(state.nativeParent->world) ||
-            currentWeaponNode->parent != state.nativeParent) {
+            parentChanged) {
             clearAllVisualReturns("weapon-identity-or-parent-changed", true, true);
             return;
+        }
+        if (state.carryParent && currentWeaponNode->parent == state.carryParent) {
+            if (state.framesUnderCarryParent != 0xFF) {
+                ++state.framesUnderCarryParent;
+            }
+            if (state.framesUnderCarryParent >= 3) {
+                // Diagnostic only: FRIK restores the parent within two frames.
+                ROCK_LOG_SAMPLE_DEBUG(Weapon,
+                    2000,
+                    "TwoHandedGrip: weapon return still under carry parent after {} frames",
+                    state.framesUnderCarryParent);
+            }
         }
 
         RE::NiTransform targetLocal = state.nativeBaselineLocal;
@@ -808,6 +831,8 @@ namespace rock
                 NativeScopeCameraWriteSource::WeaponVisualAuthority, scopeCameraFollow, scopeCameraResult,
                 scopeTargetReady ? _scope.anchorSource : native_scope_sight_anchor_policy::AnchorSource::None);
         }
+        // FRIK's re-glue and weapon pass must skip this node from now on.
+        noteFrikWeaponNodeWrite();
         return true;
     }
 
@@ -868,8 +893,7 @@ namespace rock
     bool TwoHandedGrip::applyWeaponCollisionResolvedAuthority(
         RE::NiNode* weaponNode,
         const RE::NiTransform& resolvedWeaponWorld,
-        const std::uint64_t authorityGenerationKey,
-        const bool worldAnchored)
+        const std::uint64_t authorityGenerationKey)
     {
         if (!weaponNode ||
             !isFiniteTransform(weaponNode->world) ||
@@ -954,8 +978,7 @@ namespace rock
                         WEAPON_COLLISION_HAND_TAG,
                         hand,
                         pulse.targetWorld,
-                        WEAPON_COLLISION_HAND_PRIORITY,
-                        worldAnchored ? frik_visual_authority::RebaseDriver::Static : weaponSeatDriver(pulse.isLeft));
+                        WEAPON_COLLISION_HAND_PRIORITY);
                 /*
                  * Retain the high-priority result through rendering. Clearing
                  * it here synchronously reselects the live priority-100 firing
@@ -1054,8 +1077,7 @@ namespace rock
                 PRIMARY_GRIP_TAG,
                 handFromBool(isFiringHandLeft()),
                 appliedFiringHandWorld,
-                GRIP_HAND_POSE_PRIORITY,
-                weaponSeatDriver(isFiringHandLeft()));
+                GRIP_HAND_POSE_PRIORITY);
         recordLockedHandAuthorityAttempt(
             isFiringHandLeft(),
             LockedHandAuthorityRole::PrimaryGrip,
@@ -1111,8 +1133,7 @@ namespace rock
                 SUPPORT_GRIP_TAG,
                 handFromBool(isLeft),
                 appliedHandWorld,
-                GRIP_HAND_POSE_PRIORITY,
-                weaponSeatDriver(isLeft));
+                GRIP_HAND_POSE_PRIORITY);
         recordLockedHandAuthorityAttempt(
             isLeft,
             LockedHandAuthorityRole::SupportGrip,

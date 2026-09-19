@@ -67,6 +67,7 @@ int main()
     static_assert([=] {
         auto input = pendingLeftTakeover;
         input.capability = Capability::Unavailable;
+        input.supportPoseAbsent = true;
         const auto readiness =
             resolveLeftFiringTakeoverReadiness(input);
         return readiness ==
@@ -196,7 +197,24 @@ int main()
     static_assert(select(SelectionInput{
         .modeEnabled = true,
         .capability = Capability::Unavailable,
+        .supportPoseAbsent = true,
     }).selection == Selection::DynamicFallback);
+    static_assert(select(SelectionInput{
+        .modeEnabled = true,
+        .capability = Capability::Unavailable,
+    }).selection == Selection::Reject);
+    static_assert([=] {
+        auto input = pendingLeftTakeover;
+        input.capability = Capability::Unavailable;
+        return !leftFiringTakeoverReady(resolveLeftFiringTakeoverReadiness(input));
+    }());
+    static_assert([] {
+        auto input = usableInput;
+        input.supportPoseAbsent = true;
+        input.candidatePublished = false;
+        const auto result = observeCapability(input);
+        return result.capability == Capability::Unavailable && result.reason == CapabilityReason::NoAuthoredSupportPose;
+    }());
     static_assert([] {
         constexpr auto result = select(SelectionInput{
             .modeEnabled = true,

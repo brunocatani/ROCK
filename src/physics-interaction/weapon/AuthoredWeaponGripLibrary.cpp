@@ -2,6 +2,8 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
+#include "physics-interaction/weapon/PipeFiringGripPolicy.h"
+#include "physics-interaction/TransformMath.h"
 
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -34,15 +36,16 @@ namespace rock::authored_weapon_grip_library
             FiringFingerPose supportFingerPose{};
             std::uint64_t supportCaptureSequence{ 0 };
             std::uint64_t captureSequence{ 0 };
-            std::uint64_t positionOnlyFrikOffsetRevision{ 0 };
             std::uint64_t publicationOrdinal{ 0 };
             CaptureSource source{ CaptureSource::Unknown };
             CaptureSource supportSource{ CaptureSource::Unknown };
             bool inPowerArmor{ false };
             bool instanceContentKnown{ false };
             bool hasSupportRelation{ false };
+            bool supportPoseAbsent{ false };
             bool hasRightPositionOnlyHandWeaponLocal{ false };
             bool occupied{ false };
+            bool vanillaPipePose{ false };
         };
 
         std::array<Entry, kCapacity> s_entries{};
@@ -145,14 +148,14 @@ namespace rock::authored_weapon_grip_library
                 .supportFingerPose = entry.supportFingerPose,
                 .supportCaptureSequence = entry.supportCaptureSequence,
                 .captureSequence = entry.captureSequence,
-                .positionOnlyFrikOffsetRevision =
-                    entry.positionOnlyFrikOffsetRevision,
                 .source = entry.source,
                 .supportSource = entry.supportSource,
                 .hasSupportRelation = entry.hasSupportRelation,
+                .supportPoseAbsent = entry.supportPoseAbsent,
                 .hasRightPositionOnlyHandWeaponLocal =
                     entry.hasRightPositionOnlyHandWeaponLocal,
                 .usedVariantFallback = usedVariantFallback,
+                .vanillaPipePose = entry.vanillaPipePose,
                 .reason = usedVariantFallback ? "authoredAnimationFormFallback" : "authoredAnimationExactVariant",
             };
         }
@@ -189,7 +192,7 @@ namespace rock::authored_weapon_grip_library
 
     bool publishResolvedVariant(const RE::TESObjectWEAP* weapon, const WeaponVariantIdentity variant, const bool inPowerArmor,
         const RE::NiTransform& rightHandWeaponLocal, const std::uint64_t captureSequence, const CaptureSource source,
-        const FiringFingerPose* rightFiringFingerPose)
+        const FiringFingerPose* rightFiringFingerPose, const bool vanillaPipePose)
     {
         const std::uint32_t weaponFormId = weapon ? weapon->formID : 0;
         const bool validFingerPose = rightFiringFingerPose && validCompleteFingerPose(*rightFiringFingerPose);
@@ -249,13 +252,12 @@ namespace rock::authored_weapon_grip_library
 
         if (destination->captureSequence != captureSequence) {
             destination->rightPositionOnlyHandWeaponLocal = {};
-            destination->positionOnlyFrikOffsetRevision = 0;
             destination->hasRightPositionOnlyHandWeaponLocal = false;
             // The paired support relation belongs to the authored pose, not
             // to one capture instance: the same idle republished from a new
             // source (live -> preharvest -> disk cache) keeps it. A
             // materially different canonical invalidates it.
-            if (destination->hasSupportRelation &&
+            if ((destination->hasSupportRelation || destination->supportPoseAbsent) &&
                 !authored_weapon_grip_authority_policy::
                     handRelationValueMatches(
                         destination->rightHandWeaponLocal,
@@ -265,6 +267,7 @@ namespace rock::authored_weapon_grip_library
                 destination->supportCaptureSequence = 0;
                 destination->supportSource = CaptureSource::Unknown;
                 destination->hasSupportRelation = false;
+                destination->supportPoseAbsent = false;
             }
         }
         destination->rightHandWeaponLocal = rightHandWeaponLocal;
@@ -272,6 +275,7 @@ namespace rock::authored_weapon_grip_library
         destination->captureSequence = captureSequence;
         destination->publicationOrdinal = ++s_publicationOrdinal;
         destination->source = source;
+        destination->vanillaPipePose = vanillaPipePose && source == CaptureSource::NativeIdlePreharvest;
 
         if (newIdentity || isNativeIdleAuthority(source)) {
             ROCK_LOG_INFO(Animation,
@@ -292,12 +296,10 @@ namespace rock::authored_weapon_grip_library
         const RE::TESObjectWEAP* weapon,
         const bool inPowerArmor,
         const std::uint64_t authoredCaptureSequence,
-        const std::uint64_t frikOffsetRevision,
         const RE::NiTransform& rightPositionOnlyHandWeaponLocal)
     {
         const std::uint32_t weaponFormId = weapon ? weapon->formID : 0;
         if (weaponFormId == 0 || authoredCaptureSequence == 0 ||
-            frikOffsetRevision == 0 ||
             !finiteTransform(rightPositionOnlyHandWeaponLocal)) {
             return false;
         }
@@ -312,7 +314,6 @@ namespace rock::authored_weapon_grip_library
 
             entry.rightPositionOnlyHandWeaponLocal =
                 rightPositionOnlyHandWeaponLocal;
-            entry.positionOnlyFrikOffsetRevision = frikOffsetRevision;
             entry.hasRightPositionOnlyHandWeaponLocal = true;
             return true;
         }
@@ -345,7 +346,8 @@ namespace rock::authored_weapon_grip_library
             }
             // A live equipped-graph capture is a per-frame read that can
             // land mid-blend; it never displaces the clip-sampled relation.
-            if (!authored_weapon_grip_authority_policy::shouldAcceptPublication(
+            if ((entry.supportPoseAbsent && !isNativeIdleAuthority(source)) ||
+                !authored_weapon_grip_authority_policy::shouldAcceptPublication(
                     entry.hasSupportRelation,
                     publicationAuthority(entry.supportSource),
                     publicationAuthority(source))) {
@@ -367,6 +369,7 @@ namespace rock::authored_weapon_grip_library
             entry.supportCaptureSequence = supportCaptureSequence;
             entry.supportSource = source;
             entry.hasSupportRelation = true;
+            entry.supportPoseAbsent = false;
             ROCK_LOG_INFO(Animation,
                 "{} authored support relation formID={:08X} pGripVariant={:016X} instanceContent={:016X} powerArmor={} capture={} source={} supportHandT=({:.3f},{:.3f},{:.3f})",
                 firstRelation ? "Learned" : "Updated",
@@ -382,6 +385,34 @@ namespace rock::authored_weapon_grip_library
             return true;
         }
         return false;
+    }
+
+    bool publishSupportAbsence(const RE::TESObjectWEAP* weapon, WeaponVariantIdentity variant,
+        bool inPowerArmor, std::uint64_t captureSequence, CaptureSource source)
+    {
+        if (!weapon || !captureSequence || !isNativeIdleAuthority(source)) return false;
+        for (auto& entry : s_entries) {
+            if (!sameIdentity(entry, weapon->formID, variant, inPowerArmor) ||
+                entry.captureSequence != captureSequence) continue;
+            entry.hasSupportRelation = false;
+            entry.supportPoseAbsent = true;
+            entry.supportHandWeaponLocal = {};
+            entry.supportFingerPose = {};
+            entry.supportCaptureSequence = captureSequence;
+            entry.supportSource = source;
+            return true;
+        }
+        return false;
+    }
+
+    void applyPipeDefaultOffset(LookupResult& result, const bool isLeft) noexcept
+    {
+        if (!pipe_firing_grip_policy::useCompiledDefault(result.found, isLeft, result.vanillaPipePose)) return;
+        // FRIK stores Weapon-in-Hand; authored consumers need Hand-in-Weapon.
+        const auto handInWeapon = transform_math::invertTransform(pipe_firing_grip_policy::weaponInHand<RE::NiTransform>());
+        if (!finiteTransform(handInWeapon)) return;
+        result.rightHandWeaponLocal = handInWeapon;
+        result.reason = "compiledPipeCalibratedOffset";
     }
 
     LookupResult find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, const bool inPowerArmor)
