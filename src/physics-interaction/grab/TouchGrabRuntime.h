@@ -185,6 +185,10 @@ namespace rock
             std::uint32_t providerGeneration,
             std::uint32_t collisionGeneration);
 
+        void releaseCommandOwner(std::uint64_t ownerToken,
+            RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
+            std::uint32_t collisionGeneration);
+
         void releaseHand(
             bool isLeft,
             RE::bhkWorld* bhkWorld,

@@ -654,14 +654,22 @@
         return static_cast<std::uint32_t>(copied);
     }
 
-    bool PhysicsInteraction::getProviderHandTargetDetailsV1(const bool isLeft,
+    void PhysicsInteraction::releaseProviderPowerArmorGrabs(const std::uint64_t ownerToken)
+    {
+        auto* bhkWorld = getPlayerBhkWorld();
+        auto* world = bhkWorld ? getHknpWorld(bhkWorld) : nullptr;
+        _touchGrabRuntime.releaseCommandOwner(ownerToken, bhkWorld, world,
+            _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire));
+    }
+
+    bool PhysicsInteraction::getProviderHandTargetDetailsV1(
+        const ::rock::provider::RockProviderHandInteractionStateV1& handState,
         ::rock::provider::RockProviderHandTargetDetailsV1& out) const
     {
         using Flag = provider::RockProviderTargetDetailFlagV1;
         out = {};
-        std::array<provider::RockProviderHandInteractionStateV1, 2> states{};
-        fillProviderHandInteractionStates(states);
-        out.handState = states[isLeft ? 1u : 0u];
+        const bool isLeft = handState.hand == provider::RockProviderHand::Left;
+        out.handState = handState;
         TouchGrabRuntime::HandReport touch{};
         if (_touchGrabRuntime.getHandReport(isLeft, touch)) {
             if (touch.hasSurfaceAnchor) {

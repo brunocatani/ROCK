@@ -1,224 +1,71 @@
-#include "api/ROCKProviderApi.h"
-
+#include "api/InterfaceNegotiation.h"
+#include "api/OwnerBindingPolicy.h"
+#include <array>
 #include <cassert>
-#include <cstddef>
-#include <cstdint>
-#include <cstring>
+#include "ModularTestTables.h"
+int main() {
+    using namespace rock::api;
+    constexpr std::uint64_t coreTable=1, collision1=2, collision2=3, grabTable=4;
+    const std::array<discovery::RegisteredInterface,4> descriptors{
+        discovery::RegisteredInterface{{40,InterfaceId::Core,1,0,8,1,0,0,&coreTable},5},
+        discovery::RegisteredInterface{{40,InterfaceId::Collision,1,2,8,1,0,0,&collision1},3},
+        discovery::RegisteredInterface{{40,InterfaceId::Collision,2,0,8,1,0,0,&collision2},1},
+        discovery::RegisteredInterface{{40,InterfaceId::Grab,1,0,8,1,0,0,&grabTable},3}
+    };
+    const InterfaceDescriptorV1* result=nullptr;
+    const auto query=[&](InterfaceId id,std::uint32_t major,std::uint32_t minor=0,std::uint32_t bytes=8) {
+        result=&descriptors[0].descriptor;
+        const auto status=discovery::query(descriptors,id,major,minor,bytes,&result);
+        if (status!=Status::Ok) assert(!result);
+        return status;
+    };
+    assert(query(InterfaceId::Collision,2)==Status::Ok && result->table==&collision2);
+    assert(query(InterfaceId::Grab,1)==Status::Ok && result->table==&grabTable);
+    assert(query(InterfaceId::Core,1)==Status::Ok && result->table==&coreTable);
+    assert(query(InterfaceId::Collision,1,2)==Status::Ok && result->table==&collision1);
+    assert(query(InterfaceId::Collision,1,3)==Status::UnsupportedMinor);
+    assert(query(InterfaceId::Collision,3)==Status::UnsupportedMajor);
+    assert(query(InterfaceId::Hands,1)==Status::UnknownInterface);
+    assert(query(InterfaceId::Core,1,0,16)==Status::TableTooSmall);
+    assert(query(InterfaceId::Core,0)==Status::InvalidArgument);
+    assert(discovery::query(descriptors,InterfaceId::Core,1,0,8,nullptr)==Status::InvalidArgument);
+    const auto* collision2Registration=discovery::findRegistration(descriptors,InterfaceId::Collision,2);
+    assert(collision2Registration && collision2Registration->permissions==1);
+    assert(!discovery::findRegistration(descriptors,InterfaceId::Collision,3));
 
-namespace
-{
-    using namespace rock::provider;
-
-    std::uint32_t g_baseCalls{ 0 };
-    std::uint32_t g_extendedCalls{ 0 };
-    std::uint32_t g_reportedTableBytes{ 0 };
-    std::uint32_t g_reportedFeatureBits{ 0 };
-    std::uint32_t g_reportedFeatureBits2{ 0 };
-    std::uint32_t g_baseReturnedBytes{ sizeof(RockProviderLimitsV1) };
-
-    bool ROCK_PROVIDER_CALL fakeGetProviderLimitsV1(
-        RockProviderLimitsV1* outLimits)
-    {
-        ++g_baseCalls;
-        assert(outLimits);
-        assert(outLimits->size == sizeof(RockProviderLimitsV1));
-
-        RockProviderLimitsV1 limits{};
-        limits.featureBits = g_reportedFeatureBits;
-        limits.maxFrameCallbacks = 16;
-        limits.providerApiByteSize = g_reportedTableBytes;
-        const auto copyBytes = g_baseReturnedBytes < sizeof(limits) ?
-            g_baseReturnedBytes :
-            static_cast<std::uint32_t>(sizeof(limits));
-        std::memcpy(outLimits, &limits, copyBytes);
-        outLimits->size = copyBytes;
-        return true;
-    }
-
-    bool ROCK_PROVIDER_CALL fakeGetProviderLimitsExtV1(
-        RockProviderLimitsExtV1* outLimits)
-    {
-        ++g_extendedCalls;
-        assert(outLimits);
-        assert(outLimits->size == sizeof(RockProviderLimitsExtV1));
-
-        RockProviderLimitsExtV1 limits{};
-        limits.featureBits2 = g_reportedFeatureBits2;
-        limits.providerApiByteSize = g_reportedTableBytes;
-        limits.maxExternalScopes = ROCK_PROVIDER_MAX_EXTERNAL_SCOPES_V1;
-        limits.maxTouchGrabTargets =
-            ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGETS_V1;
-        limits.maxTouchGrabScopes =
-            ROCK_PROVIDER_MAX_TOUCH_GRAB_SCOPES_V1;
-        limits.maxTouchGrabTargetLeaseFrames =
-            ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGET_LEASE_FRAMES_V1;
-        std::memcpy(outLimits, &limits, sizeof(limits));
-        return true;
-    }
-
-    void resetClientState()
-    {
-        RockProviderApi::inst = nullptr;
-        RockProviderApi::negotiatedApiVersion = 0;
-        RockProviderApi::negotiatedTableByteSize = 0;
-        RockProviderApi::negotiatedFeatureBits = 0;
-        RockProviderApi::negotiatedFeatureBits2 = 0;
-        g_baseCalls = 0;
-        g_extendedCalls = 0;
-        g_reportedTableBytes = 0;
-        g_reportedFeatureBits = static_cast<std::uint32_t>(
-            RockProviderFeatureBitV1::FrameCallbacks);
-        g_reportedFeatureBits2 = 0;
-        g_baseReturnedBytes = sizeof(RockProviderLimitsV1);
-    }
-}
-
-int main()
-{
-    using namespace rock::provider;
-
-    RockProviderApi table{};
-    table.getProviderLimitsV1 = &fakeGetProviderLimitsV1;
-    table.getProviderLimitsExtV1 = &fakeGetProviderLimitsExtV1;
-
-    resetClientState();
-    RockProviderLimitsV1 baseLimits{};
-    RockProviderLimitsExtV1 extendedLimits{};
-    assert(!queryProviderLimitsV1(baseLimits));
-    assert(!queryProviderLimitsExtV1(extendedLimits));
-
-    RockProviderApi::inst = &table;
-    RockProviderApi::negotiatedApiVersion = ROCK_PROVIDER_API_VERSION;
-    RockProviderApi::negotiatedTableByteSize =
-        static_cast<std::uint32_t>(
-            offsetof(RockProviderApi, getProviderLimitsV1));
-    assert(!queryProviderLimitsV1(baseLimits));
-    assert(g_baseCalls == 0);
-
-    RockProviderApi::negotiatedTableByteSize =
-        ROCK_PROVIDER_API_V1_PRESENTED_HAND_FRAMES_TABLE_BYTES;
-    g_reportedTableBytes =
-        ROCK_PROVIDER_API_V1_PRESENTED_HAND_FRAMES_TABLE_BYTES;
-    g_baseReturnedBytes = static_cast<std::uint32_t>(
-        offsetof(RockProviderLimitsV1, providerApiByteSize) +
-        sizeof(RockProviderLimitsV1::providerApiByteSize));
-    std::memset(&baseLimits, 0xCD, sizeof(baseLimits));
-    assert(queryProviderLimitsV1(baseLimits));
-    assert(g_baseCalls == 1);
-    assert(baseLimits.size == g_baseReturnedBytes);
-    assert(baseLimits.maxFrameCallbacks == 16);
-    assert(baseLimits.providerApiByteSize == g_reportedTableBytes);
-    assert(baseLimits.maxWeaponEmitters == 0);
-    assert(!queryProviderLimitsExtV1(extendedLimits));
-    assert(g_extendedCalls == 0);
-
-    const auto allNewFeatureBits =
-        static_cast<std::uint32_t>(RockProviderFeatureBit2V1::ExtendedLimits) |
-        static_cast<std::uint32_t>(RockProviderFeatureBit2V1::OwnerFrameCallbacks) |
-        static_cast<std::uint32_t>(RockProviderFeatureBit2V1::OffhandReservationLeases) |
-        static_cast<std::uint32_t>(
-            RockProviderFeatureBit2V1::NativeVatsVansInputSuppression);
-    RockProviderApi::negotiatedTableByteSize = sizeof(RockProviderApi);
-    RockProviderApi::negotiatedFeatureBits =
-        static_cast<std::uint32_t>(
-            RockProviderFeatureBitV1::EquippedWeaponHandRequest) |
-        static_cast<std::uint32_t>(
-            RockProviderFeatureBitV1::ColliderVisualizationOverride);
-    RockProviderApi::negotiatedFeatureBits2 = allNewFeatureBits;
-    g_reportedTableBytes = sizeof(RockProviderApi);
-    g_reportedFeatureBits =
-        static_cast<std::uint32_t>(
-            RockProviderFeatureBitV1::EquippedWeaponHandRequest) |
-        static_cast<std::uint32_t>(
-            RockProviderFeatureBitV1::ColliderVisualizationOverride);
-    g_reportedFeatureBits2 = allNewFeatureBits;
-    g_baseReturnedBytes = sizeof(RockProviderLimitsV1);
-    assert(queryProviderLimitsExtV1(extendedLimits));
-    assert(g_extendedCalls == 1);
-    assert(extendedLimits.size == sizeof(RockProviderLimitsExtV1));
-    assert(extendedLimits.providerApiByteSize == sizeof(RockProviderApi));
-    assert(extendedLimits.maxExternalScopes ==
-           ROCK_PROVIDER_MAX_EXTERNAL_SCOPES_V1);
-    assert(extendedLimits.maxTouchGrabTargets ==
-           ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGETS_V1);
-    assert(extendedLimits.maxTouchGrabScopes ==
-           ROCK_PROVIDER_MAX_TOUCH_GRAB_SCOPES_V1);
-    assert(extendedLimits.maxTouchGrabTargetLeaseFrames ==
-           ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGET_LEASE_FRAMES_V1);
-    assert(supportsExtendedLimitsV1());
-    assert(supportsOwnerFrameCallbacksV1());
-    assert(supportsOffhandReservationLeasesV1());
-    assert(supportsNativeVatsVansInputSuppressionV1());
-    assert(supportsEquippedWeaponHandRequestV1());
-    assert(supportsColliderVisualizationOverrideV1());
-    assert(supportsLogicalInputActionStateV1());
-    assert(supportsPlayerControllerStateV1());
-    assert(supportsPlayerControllerJumpV1());
-
-    g_reportedFeatureBits = 0;
-    assert(!supportsEquippedWeaponHandRequestV1());
-    g_reportedFeatureBits =
-        static_cast<std::uint32_t>(
-            RockProviderFeatureBitV1::EquippedWeaponHandRequest);
-    g_reportedTableBytes =
-        ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HAND_REQUEST_TABLE_BYTES - 1;
-    assert(!supportsEquippedWeaponHandRequestV1());
-    g_reportedTableBytes = sizeof(RockProviderApi);
-
-    g_reportedFeatureBits &=
-        ~static_cast<std::uint32_t>(
-            RockProviderFeatureBitV1::ColliderVisualizationOverride);
-    assert(!supportsColliderVisualizationOverrideV1());
-    g_reportedFeatureBits |=
-        static_cast<std::uint32_t>(
-            RockProviderFeatureBitV1::ColliderVisualizationOverride);
-    g_reportedTableBytes =
-        ROCK_PROVIDER_API_V1_COLLIDER_VISUALIZATION_OVERRIDE_TABLE_BYTES - 1;
-    assert(!supportsColliderVisualizationOverrideV1());
-    g_reportedTableBytes = sizeof(RockProviderApi);
-
-    RockProviderApi::negotiatedTableByteSize =
-        ROCK_PROVIDER_API_V1_PLAYER_CONTROLLER_JUMP_TABLE_BYTES - 1;
-    assert(!supportsPlayerControllerJumpV1());
-    assert(supportsPlayerControllerStateV1());
-    RockProviderApi::negotiatedTableByteSize = sizeof(RockProviderApi);
-
-    RockProviderApi::negotiatedFeatureBits2 &=
-        ~static_cast<std::uint32_t>(
-            RockProviderFeatureBit2V1::NativeVatsVansInputSuppression);
-    assert(!supportsNativeVatsVansInputSuppressionV1());
-    RockProviderApi::negotiatedFeatureBits2 = allNewFeatureBits;
-    RockProviderApi::negotiatedTableByteSize =
-        ROCK_PROVIDER_API_V1_HAND_INPUT_SUPPRESSION_TABLE_BYTES - 1;
-    assert(!supportsNativeVatsVansInputSuppressionV1());
-    RockProviderApi::negotiatedTableByteSize = sizeof(RockProviderApi);
-
-    RockProviderApi::negotiatedFeatureBits2 &=
-        ~static_cast<std::uint32_t>(
-            RockProviderFeatureBit2V1::OffhandReservationLeases);
-    assert(!supportsOffhandReservationLeasesV1());
-    RockProviderApi::negotiatedFeatureBits2 = allNewFeatureBits;
-    RockProviderApi::negotiatedTableByteSize =
-        ROCK_PROVIDER_API_V1_OFFHAND_RESERVATION_LEASES_TABLE_BYTES - 1;
-    assert(!supportsOffhandReservationLeasesV1());
-
-    RockProviderApi::negotiatedTableByteSize = 0;
-    g_reportedTableBytes =
-        ROCK_PROVIDER_API_V1_EXTENDED_LIMITS_TABLE_BYTES - 1;
-    g_baseCalls = 0;
-    g_extendedCalls = 0;
-    assert(!queryProviderLimitsExtV1(extendedLimits));
-    assert(g_baseCalls == 1);
-    assert(g_extendedCalls == 0);
-
-    g_reportedTableBytes = sizeof(RockProviderApi);
-    g_reportedFeatureBits2 = allNewFeatureBits;
-    assert(queryProviderLimitsExtV1(extendedLimits));
-    assert(g_baseCalls == 2);
-    assert(g_extendedCalls == 1);
-    assert(supportsOffhandReservationLeasesV1());
-    assert(supportsNativeVatsVansInputSuppressionV1());
-
-    resetClientState();
-    return 0;
+    // Exercise the production descriptor list/export, not just synthetic metadata.
+    const auto verify=[]<class Table>(const Table& table,std::uint32_t permissions) {
+        const InterfaceDescriptorV1* descriptor{};
+        assert(ROCKAPI_QueryInterfaceV1(Table::interfaceId,Table::majorVersion,Table::minorVersion,sizeof(Table),&descriptor)==Status::Ok);
+        assert(descriptor && descriptor->table==&table && descriptor->tableByteSize==sizeof(Table));
+        assert(descriptor->major==Table::majorVersion && descriptor->minor==Table::minorVersion);
+        assert(descriptor->requiredCoreMajor==core::kMajor && descriptor->requiredCoreMinor==core::kMinor);
+        const auto* entry=discovery::findRegistration(discovery::registeredInterfaces(),Table::interfaceId,Table::majorVersion);
+        assert(entry && entry->permissions==permissions);
+        assert(ROCKAPI_QueryInterfaceV1(Table::interfaceId,Table::majorVersion,Table::minorVersion+1,sizeof(Table),&descriptor)==Status::UnsupportedMinor);
+        assert(!descriptor);
+        assert(ROCKAPI_QueryInterfaceV1(Table::interfaceId,Table::majorVersion,0,sizeof(Table)+1,&descriptor)==Status::TableTooSmall);
+        assert(!descriptor);
+    };
+    verify(core::table(),core::kSupportedPermissions);
+    verify(hands::table(),hands::kSupportedPermissions);
+    verify(collision::table(),collision::kSupportedPermissions);
+    verify(grab::table(),grab::kSupportedPermissions);
+    verify(touch::table(),touch::kSupportedPermissions);
+    verify(weapon::table(),weapon::kSupportedPermissions);
+    verify(weaponparts::table(),weaponparts::kSupportedPermissions);
+    verify(animation::table(),animation::kSupportedPermissions);
+    verify(input::table(),input::kSupportedPermissions);
+    verify(references::table(),references::kSupportedPermissions);
+    verify(playercontroller::table(),playercontroller::kSupportedPermissions);
+    verify(diagnostics::table(),diagnostics::kSupportedPermissions);
+    verify(configuration::table(),configuration::kSupportedPermissions);
+    rock::provider::InterfaceBinding collision{},grabbing{};
+    assert(rock::provider::bindInterface(collision,2,1,3)==Status::Ok);
+    assert(rock::provider::bindInterface(grabbing,1,3,3)==Status::Ok);
+    assert(rock::provider::bindInterface(collision,1,1,3)==Status::Busy);
+    assert(collision.major==2 && grabbing.major==1);
+    assert(rock::provider::bindInterface(collision,2,3,3)==Status::Ok);
+    assert(rock::provider::bindInterface(collision,2,1,3)==Status::Busy);
+    assert(rock::provider::bindInterface(collision,2,7,3)==Status::InvalidArgument);
 }

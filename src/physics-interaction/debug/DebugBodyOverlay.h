@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "api/ROCKProviderApi.h"
+#include "api/ProviderRuntimeTypes.h"
 #include "physics-interaction/weapon/WeaponTypes.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/hand/HandColliderTypes.h"

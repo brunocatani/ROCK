@@ -199,14 +199,15 @@ if(RPS_SDK_ROOT STREQUAL "")
   set(RPS_SDK_ROOT "${RPS_SDK_ROOT}" CACHE PATH "Path to the independent RPS_SDK repository." FORCE)
 endif()
 set(ROCK_PUBLIC_SDK_DIR "${RPS_SDK_ROOT}/SDK/ROCK")
+include_directories("${ROCK_PUBLIC_SDK_DIR}/include")
 target_include_directories(${PROJECT_NAME} PRIVATE "${RPS_SDK_ROOT}/SDK/UI/include")
 
 if(BUILD_ROCK_TESTS OR ROCK_PACKAGE_RELEASE)
   foreach(ROCK_REQUIRED_SDK_PATH IN ITEMS
       "${RPS_SDK_ROOT}/CMakeLists.txt"
       "${RPS_SDK_ROOT}/tests/RockSdkContractTests.ps1"
-      "${ROCK_PUBLIC_SDK_DIR}/include/ROCKProviderApi.h"
-      "${ROCK_PUBLIC_SDK_DIR}/include/ROCKApi.h"
+      "${ROCK_PUBLIC_SDK_DIR}/include/ROCK/Discovery.h"
+      "${ROCK_PUBLIC_SDK_DIR}/include/ROCK/Client.h"
       "${ROCK_PUBLIC_SDK_DIR}/examples/CMakeLists.txt")
     if(NOT EXISTS "${ROCK_REQUIRED_SDK_PATH}")
       message(FATAL_ERROR
@@ -1046,19 +1047,48 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKProviderColliderVisualizationRuntimeTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKProviderColliderVisualizationRuntimeTests)
 
+  add_executable(ROCKModularEventStreamTests "${ROOT_DIR}/tests/ModularEventStreamTests.cpp")
+  target_compile_features(ROCKModularEventStreamTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKModularEventStreamTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKModularEventStreamTests)
+
+  add_executable(ROCKModularExportsTests "${ROOT_DIR}/tests/ModularExportsTests.cpp")
+  target_compile_features(ROCKModularExportsTests PRIVATE cxx_std_23)
+  target_compile_options(ROCKModularExportsTests PRIVATE /UNDEBUG)
+
   add_executable(ROCKProviderApiAbiTests
     "${ROOT_DIR}/tests/ProviderApiAbiTests.cpp"
   )
   target_compile_features(ROCKProviderApiAbiTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKProviderApiAbiTests PRIVATE ${SOURCE_DIR})
+  target_include_directories(ROCKProviderApiAbiTests PRIVATE ${SOURCE_DIR} "${RPS_SDK_ROOT}/tests")
   add_rock_test(ROCKProviderApiAbiTests)
+
+  add_executable(ROCKProviderInstanceAccessTests "${ROOT_DIR}/tests/ProviderInstanceAccessTests.cpp")
+  target_compile_features(ROCKProviderInstanceAccessTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKProviderInstanceAccessTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKProviderInstanceAccessTests)
 
   add_executable(ROCKProviderApiNegotiationTests
     "${ROOT_DIR}/tests/ProviderApiNegotiationTests.cpp"
+    "${ROOT_DIR}/tests/ModularTestTables.cpp"
+    "${SOURCE_DIR}/api/Discovery.cpp"
   )
   target_compile_features(ROCKProviderApiNegotiationTests PRIVATE cxx_std_23)
   target_include_directories(ROCKProviderApiNegotiationTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKProviderApiNegotiationTests)
+
+  add_executable(ROCKModularMarshallingTests "${ROOT_DIR}/tests/ModularMarshallingTests.cpp")
+  target_compile_features(ROCKModularMarshallingTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKModularMarshallingTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKModularMarshallingTests)
+
+  add_executable(ROCKModularEventDeliveryTests
+    "${ROOT_DIR}/tests/ModularEventDeliveryTests.cpp"
+    "${SOURCE_DIR}/api/EventStreams.cpp")
+  target_compile_features(ROCKModularEventDeliveryTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKModularEventDeliveryTests PRIVATE ${SOURCE_DIR})
+  target_compile_definitions(ROCKModularEventDeliveryTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  add_rock_test(ROCKModularEventDeliveryTests)
 
   add_executable(ROCKProviderHandItemClientTests
     "${ROOT_DIR}/tests/ProviderHandItemClientTests.cpp"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/ROCKConfigurationApi.h"
+#include "api/ConfigurationRuntimeTypes.h"
 #include <SimpleIni.h>
 #include <filesystem>
 #include <span>

@@ -1947,6 +1947,25 @@ namespace rock
         }
     }
 
+    void TouchGrabRuntime::releaseCommandOwner(const std::uint64_t ownerToken,
+        RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
+        const std::uint32_t collisionGeneration)
+    {
+        if (ownerToken == 0) return;
+        for (const bool isLeft : {false, true}) {
+            const auto* target = findTargetForHand(isLeft);
+            if (!target) continue;
+            for (const auto& hand : target->hands) {
+                if (hand.active && hand.isLeft == isLeft && hand.commandOwnerToken == ownerToken) {
+                    releaseHand(isLeft, bhkWorld, hknpWorld,
+                        provider::RockProviderTouchGrabReleaseReasonV1::OwnerYield,
+                        collisionGeneration);
+                    break;
+                }
+            }
+        }
+    }
+
     void TouchGrabRuntime::releaseHand(
         const bool isLeft,
         RE::bhkWorld* bhkWorld,

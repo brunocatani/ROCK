@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/ROCKProviderApi.h"
+#include "api/ProviderRuntimeTypes.h"
 #include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
 #include "physics-interaction/weapon/immersive/ImmersiveWeaponPolicy.h"
 
