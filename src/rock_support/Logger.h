@@ -48,6 +48,14 @@ namespace rock::logger::internal
     inline constexpr std::string_view kRawLoggerName{ "RAW" };
     inline constexpr std::string_view kDefaultPattern{ "%Y-%m-%d %H:%M:%S.%e [%l] %v" };
     inline constexpr auto kFlushOnLevel = spdlog::level::err;
+    /*
+     * ROCK.log is block buffered: at the default policy a line only reaches
+     * disk once the 4 KB stdio block fills, so the tail of every log ends
+     * mid-line and a freeze or a hard kill loses whatever ROCK wrote last.
+     * The developer key flushes each line instead, which costs a write per
+     * line and is why it stays off for players.
+     */
+    inline bool flushImmediate = false;
     inline constexpr std::size_t kSampleThrottleSlotCount = 512;
 
     inline std::shared_ptr<spdlog::logger> loggerInstance;
@@ -142,11 +150,12 @@ namespace rock::logger::internal
 
     inline void applyFlushPolicy()
     {
+        const auto flushLevel = flushImmediate ? spdlog::level::trace : kFlushOnLevel;
         if (loggerInstance) {
-            loggerInstance->flush_on(kFlushOnLevel);
+            loggerInstance->flush_on(flushLevel);
         }
         if (rawLoggerInstance) {
-            rawLoggerInstance->flush_on(kFlushOnLevel);
+            rawLoggerInstance->flush_on(flushLevel);
         }
     }
 
@@ -319,6 +328,16 @@ namespace rock::logger
                 internal::loggerInstance->set_formatter(std::make_unique<internal::HybridFormatter>());
             }
         }
+    }
+
+    inline void setFlushImmediate(const bool requested)
+    {
+        if (internal::flushImmediate == requested) {
+            return;
+        }
+        internal::flushImmediate = requested;
+        internal::applyFlushPolicy();
+        info("Set log flush immediate = {}", requested ? "true" : "false");
     }
 }
 

@@ -56,6 +56,7 @@ namespace rock
         int rockLogLevel = 2;
         std::string rockLogPattern = "%Y-%m-%d %H:%M:%S.%e [%l] %v";
         int rockLogSampleMilliseconds = 2000;
+        bool rockLogFlushImmediate = false;
         /*
          * Clock-domain note: the remaining *Frames diagnostic settings below
          * (profiler warmup/report windows, dump/audit/log intervals) are
