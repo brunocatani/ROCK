@@ -673,6 +673,47 @@ namespace rock::scope_safe_hand_frame_math
                (manualScopeActivationRequested && manualOwnershipActive && driverFrameAuthorityWasActive);
     }
 
+    /*
+     * Driver-frame authority prefers the cached driver relation over the
+     * visible root while the ScopeMenu is open, so a scoped sample cannot
+     * replace a good driver-to-hand calibration. A hand that holds no
+     * relation has no calibration to protect, and the only capture that
+     * creates one runs in the root branch this refusal closes, so a
+     * provider holding the vanilla ScopeMenu open after an interruption
+     * cleared the cache pins that hand unavailable for the whole hold.
+     * Seed such a hand from the isolated controller hand, and only while
+     * that frame is a calibrated, uncontaminated source: never from ROCK's
+     * own rendered output. Refreshes still wait for the menu to close.
+     */
+    [[nodiscard]] inline constexpr bool canSampleScopeRootHand(
+        bool driverFrameAuthorityActive,
+        bool hasDriverToHandLocal,
+        bool rawHandFrameCalibrated)
+    {
+        return !driverFrameAuthorityActive ||
+               (!hasDriverToHandLocal && rawHandFrameCalibrated);
+    }
+
+    /*
+     * The animation graph restores the first-person arms to their unplaced
+     * player-relative pose every frame and re-places them within it, on the
+     * order of 1e5 game units from the controller. A calibrated raw hand
+     * frame does not bound that: the isolation relation is measured once
+     * and kept, so a later unplaced sample still reads as calibrated. A
+     * scoped seed is the one sample that becomes a cached relation and is
+     * never re-taken while the menu is held, so an implausible one latches
+     * for the whole hold instead of failing for a frame. Bound it against
+     * the driver it will be expressed relative to: a placed hand sits about
+     * 9-11 units from its controller.
+     */
+    inline constexpr float kMaxScopeSeedHandToDriverGameUnits = 50.0f;
+
+    [[nodiscard]] inline constexpr bool isPlausibleScopeSeedHand(float handToDriverGameUnits)
+    {
+        return handToDriverGameUnits >= 0.0f &&
+               handToDriverGameUnits <= kMaxScopeSeedHandToDriverGameUnits;
+    }
+
     [[nodiscard]] inline constexpr bool shouldStartRootRebase(
         bool manualScopeActivationRequested,
         bool driverFrameAuthorityStoppedThisFrame,
@@ -700,6 +741,17 @@ namespace rock::scope_safe_hand_frame_math
         }
         if (reconstructedHandValid) {
             return ResolutionMode::DriverReconstructed;
+        }
+        /*
+         * Scoped callers only offer a root sample for a hand with no driver
+         * relation to reconstruct from, so there is no calibration here for
+         * it to replace. Take it ahead of the frozen last-known pose: the
+         * root branch is the only place the relation is captured, and
+         * deferring would freeze the hand for the grace window and land
+         * back here every fourth frame.
+         */
+        if (rootHandValid) {
+            return ResolutionMode::RootFlattened;
         }
         return hasLastHandWorld && consecutiveDriverMissFrames < maxDriverMissGraceFrames ?
                    ResolutionMode::LastKnown :
