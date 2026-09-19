@@ -79,5 +79,18 @@ int main()
     assert(phases.beginPhase(Phase::BeforeRock,42)==42);
     assert(phases.publishFrame()==42);
 
+    // FRIK 2.3 can initialize the provider during FrameBegin, before BeforeRock.
+    // Those events need the new frame while the previous publication's drive
+    // still remains available to the upcoming physics/animation update.
+    const auto earlyFrameLease = exclusiveExpiryFrame(phases.leaseBoundary(), 1);
+    phases.beginFrame(43);
+    assert(phases.current() == 43 && phases.leaseBoundary() == 42);
+    assert(isActive(phases.leaseBoundary(), earlyFrameLease));
+    assert(phases.beginPhase(Phase::NativeGraphOutput, 43) == 43);
+    assert(phases.beginPhase(Phase::BeforeRock, 43) == 43);
+    assert(phases.leaseBoundary() == 42);
+    assert(phases.publishFrame() == 43);
+    assert(!isActive(phases.leaseBoundary(), earlyFrameLease));
+
     return 0;
 }

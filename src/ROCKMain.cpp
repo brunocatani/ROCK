@@ -838,8 +838,10 @@ namespace
         s_schedulerSequence = nextFrameSequence(s_schedulerSequence);
         s_providerTickedThisFrame = false;
         s_skeletonTickedThisFrame = false;
-        // The frame's one timing sample, before the runtime snapshot consumes it.
-        (void)runtime_state::beginFrameTiming(input_remap_runtime::isMenuInputActive());
+        // Initialization/shutdown in prepareRuntimeFrame can publish events
+        // before AfterArmSolve dispatches BeforeRock. Stamp this measured frame.
+        const auto& frameTiming = runtime_state::beginFrameTiming(input_remap_runtime::isMenuInputActive());
+        rock::provider::beginGameFrame(frameTiming.sequence);
         native_scope_data::beginGameFrame();
         if (s_pluginLoaded && s_frikAvailable) {
             vanilla_weapon_alignment_telemetry::capture(

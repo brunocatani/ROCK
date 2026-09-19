@@ -13,6 +13,7 @@ Status ROCK_CALL copySources(OwnerToken owner,std::uint64_t generation,SourceV1*
     if (capacity && !output) return Status::InvalidArgument;
     for (std::uint32_t i=0;i<capacity;++i) if (const auto status=boundary::checkOutput(output+i); status!=Status::Ok) return status;
     return invoke(owner,kInterfaceId,1,true,[&]() {
+        provider::runtime::refreshSources();
         std::array<provider::WeaponSourceRecord,64> records{};
         std::uint32_t chunkCount=0;
         auto status=provider::runtime::copySources(generation,0,records.data(),0,chunkCount,*total);

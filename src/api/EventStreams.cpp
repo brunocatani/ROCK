@@ -33,17 +33,17 @@ namespace {
         value.skeletonGeneration=sample.skeletonGeneration; value.providerGeneration=sample.providerGeneration;
     }
 }
-void bind(api::OwnerToken owner,api::InterfaceId id) { switch(id) {
-    case api::InterfaceId::Core: coreEvents.bind(owner); break;
-    case api::InterfaceId::Collision: collisionEvents.bind(owner); break;
-    case api::InterfaceId::Grab: grabEvents.bind(owner); break;
-    case api::InterfaceId::Touch: touchEvents.bind(owner); break;
-    case api::InterfaceId::Weapon: weaponEvents.bind(owner); break;
-    case api::InterfaceId::WeaponParts: weaponpartsEvents.bind(owner); break;
-    case api::InterfaceId::Animation: animationEvents.bind(owner); break;
-    case api::InterfaceId::Input: inputEvents.bind(owner); break;
-    case api::InterfaceId::Diagnostics: diagnosticsEvents.bind(owner); break;
-    default: break; } }
+api::Status bind(api::OwnerToken owner,api::InterfaceId id) { switch(id) {
+    case api::InterfaceId::Core: return coreEvents.bind(owner);
+    case api::InterfaceId::Collision: return collisionEvents.bind(owner);
+    case api::InterfaceId::Grab: return grabEvents.bind(owner);
+    case api::InterfaceId::Touch: return touchEvents.bind(owner);
+    case api::InterfaceId::Weapon: return weaponEvents.bind(owner);
+    case api::InterfaceId::WeaponParts: return weaponpartsEvents.bind(owner);
+    case api::InterfaceId::Animation: return animationEvents.bind(owner);
+    case api::InterfaceId::Input: return inputEvents.bind(owner);
+    case api::InterfaceId::Diagnostics: return diagnosticsEvents.bind(owner);
+    default: return api::Status::Ok; } }
 void remove(api::OwnerToken owner) {
     clearGrabCallback(owner);
     coreEvents.remove(owner);

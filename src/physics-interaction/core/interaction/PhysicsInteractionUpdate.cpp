@@ -951,13 +951,6 @@ namespace rock
         cancelInterruptedFists.release();
     }
 
-    void PhysicsInteraction::dispatchPhysicsMessage(std::uint32_t msgType, bool isLeft, RE::TESObjectREFR*, std::uint32_t formID, std::uint32_t layer)
-    {
-        auto sample=provider::runtime::sample();
-        sample.frameIndex=_frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
-        provider::events::publishPhysics(msgType,isLeft,formID,layer,sample);
-    }
-
     void PhysicsInteraction::onGeneratedColliderPhysicsSubstep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
         auto* self = static_cast<PhysicsInteraction*>(userData);

@@ -11,7 +11,7 @@
 #include <ROCK/Input.h>
 #include <ROCK/Diagnostics.h>
 namespace rock::provider::events {
-    void bind(api::OwnerToken,api::InterfaceId);
+    api::Status bind(api::OwnerToken,api::InterfaceId);
     void remove(api::OwnerToken);
     void publish(const RockProviderEventV1&);
     void publishGrab(const rock::GrabEventData&, const api::SampleV1&);

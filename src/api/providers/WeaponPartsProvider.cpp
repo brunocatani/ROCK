@@ -20,6 +20,7 @@ template<class T> Status validateSourceSelector(T& target) {
 Status ROCK_CALL queryWeaponContactAtPoint(OwnerToken ownerToken, const WeaponContactQuery* query, WeaponContactResult* outResult) noexcept {
     if (const auto s = checkOutput(outResult); s != Status::Ok) return s;
     return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
+        provider::runtime::refreshSources();
         if (const auto s = checkInput(query); s != Status::Ok) return s;
         provider::RockProviderWeaponContactQuery native_query{};
         convert(native_query, *query);
@@ -44,6 +45,7 @@ Status ROCK_CALL copyWeaponEvidenceDetailsV1(OwnerToken ownerToken, WeaponEviden
     if (maxDetails && !outDetails) return Status::InvalidArgument;
     for (std::uint32_t i=0;i<maxDetails;++i) if (const auto status=checkOutput(outDetails+i); status!=Status::Ok) return status;
     return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
+        provider::runtime::refreshSources();
         std::array<provider::RockProviderWeaponEvidenceDetailV1, kMaxEvidenceDetails> native_outDetails{};
         *outCopied = static_cast<std::uint32_t>(provider::runtime::apiCopyWeaponEvidenceDetailsV1(native_outDetails.data(), maxDetails));
         for (std::uint32_t i=0; i<std::min<std::uint32_t>(maxDetails, *outCopied); ++i) convert(outDetails[i], native_outDetails[i]);
@@ -73,6 +75,7 @@ Status ROCK_CALL copyWeaponEvidenceDetailPointsV1(OwnerToken ownerToken, std::ui
 Status ROCK_CALL setWeaponPartTargetsV1(std::uint64_t ownerToken, const WeaponPartTargetV1* targets, std::uint32_t targetCount) noexcept {
     if (targetCount > kMaxTargets) return Status::CapacityFull;
     return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
+        provider::runtime::refreshSources();
         if (targetCount && !targets) return Status::InvalidArgument;
         std::array<provider::RockProviderWeaponPartTargetV1, kMaxTargets> native_targets{};
         for (std::uint32_t i=0; i<targetCount; ++i) {
@@ -94,6 +97,7 @@ Status ROCK_CALL clearWeaponPartTargetsV1(std::uint64_t ownerToken) noexcept {
 Status ROCK_CALL setWeaponPartDriveTargetsV1(std::uint64_t ownerToken, const WeaponPartDriveTargetV1* targets, std::uint32_t targetCount) noexcept {
     if (targetCount > kMaxDrives) return Status::CapacityFull;
     return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
+        provider::runtime::refreshSources();
         if (targetCount && !targets) return Status::InvalidArgument;
         std::array<provider::RockProviderWeaponPartDriveTargetV1, kMaxDrives> native_targets{};
         for (std::uint32_t i=0; i<targetCount; ++i) {
@@ -116,6 +120,7 @@ Status ROCK_CALL getWeaponPartGripStateV1(OwnerToken ownerToken, Hand hand, Weap
     if (const auto s = checkOutput(outState); s != Status::Ok) return s;
     if (hand!=Hand::Right && hand!=Hand::Left) return Status::InvalidArgument;
     return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
+        provider::runtime::refreshSources();
         provider::RockProviderWeaponPartGripStateV1 native_outState{};
         const auto result = provider::runtime::apiGetWeaponPartGripStateV1(static_cast<provider::RockProviderHand>(hand), &native_outState);
         convert(*outState, native_outState);
@@ -125,6 +130,7 @@ Status ROCK_CALL getWeaponPartGripStateV1(OwnerToken ownerToken, Hand hand, Weap
 Status ROCK_CALL queryWeaponPartTargetResolutionV1(std::uint64_t ownerToken, const WeaponPartResolutionQueryV1* query, WeaponPartResolutionResultV1* outResolution) noexcept {
     if (const auto s = checkOutput(outResolution); s != Status::Ok) return s;
     return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
+        provider::runtime::refreshSources();
         if (const auto s = checkInput(query); s != Status::Ok) return s;
         provider::RockProviderWeaponPartResolutionQueryV1 native_query{};
         convert(native_query, *query);
@@ -142,6 +148,7 @@ Status ROCK_CALL copyWeaponPartPoseSnapshotV1(std::uint64_t ownerToken, WeaponPa
     if (!outPartCount) return Status::InvalidArgument;
     *outPartCount = {};
     return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
+        provider::runtime::refreshSources();
         std::array<provider::RockProviderWeaponPartPoseV1, kMaxPoses> native_outParts{};
         const auto result = provider::runtime::apiCopyWeaponPartPoseSnapshotV1(ownerToken, native_outParts.data(), maxParts, outPartCount);
         for (std::uint32_t i=0; i<std::min<std::uint32_t>(maxParts, *outPartCount); ++i) convert(outParts[i], native_outParts[i]);
@@ -155,6 +162,7 @@ Status ROCK_CALL copyWeaponPartDriveApplicationResultsV1(std::uint64_t ownerToke
     if (!outResultCount) return Status::InvalidArgument;
     *outResultCount = {};
     return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
+        provider::runtime::refreshSources();
         std::array<provider::RockProviderWeaponPartDriveApplicationResultV1, kMaxDrives> native_outResults{};
         const auto result = provider::runtime::apiCopyWeaponPartDriveApplicationResultsV1(ownerToken, native_outResults.data(), maxResults, outResultCount);
         for (std::uint32_t i=0; i<std::min<std::uint32_t>(maxResults, *outResultCount); ++i) convert(outResults[i], native_outResults[i]);

@@ -18,10 +18,12 @@ namespace rock::provider {
         std::array<Slot,Owners> _slots{};
         mutable std::mutex _mutex;
     public:
-        void bind(api::OwnerToken owner) {
+        api::Status bind(api::OwnerToken owner) {
+            if (!owner) return api::Status::InvalidArgument;
             std::scoped_lock lock(_mutex);
-            for (const auto& slot:_slots) if (slot.owner==owner) return;
-            for (auto& slot:_slots) if (!slot.owner) { slot.owner=owner; slot.next=1; slot.count=0; return; }
+            for (const auto& slot:_slots) if (slot.owner==owner) return api::Status::Ok;
+            for (auto& slot:_slots) if (!slot.owner) { slot.owner=owner; slot.next=1; slot.count=0; return api::Status::Ok; }
+            return api::Status::CapacityFull;
         }
         void remove(api::OwnerToken owner) {
             std::scoped_lock lock(_mutex);

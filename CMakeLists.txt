@@ -1090,6 +1090,20 @@ if(BUILD_ROCK_TESTS)
   target_compile_definitions(ROCKModularEventDeliveryTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   add_rock_test(ROCKModularEventDeliveryTests)
 
+  add_executable(ROCKProviderRegistrationTests "${ROOT_DIR}/tests/ProviderRegistrationTests.cpp")
+  target_compile_features(ROCKProviderRegistrationTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKProviderRegistrationTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKProviderRegistrationTests)
+
+  add_executable(ROCKProviderWeaponSourceTests
+    "${ROOT_DIR}/tests/ProviderWeaponSourceTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/core/interaction/ProviderWeaponSources.cpp"
+    "${SOURCE_DIR}/api/EventStreams.cpp")
+  target_compile_features(ROCKProviderWeaponSourceTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKProviderWeaponSourceTests PRIVATE "${ROOT_DIR}/tests/fixtures/weapon_sources" ${SOURCE_DIR})
+  target_compile_definitions(ROCKProviderWeaponSourceTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  add_rock_test(ROCKProviderWeaponSourceTests)
+
   add_executable(ROCKProviderHandItemClientTests
     "${ROOT_DIR}/tests/ProviderHandItemClientTests.cpp"
   )

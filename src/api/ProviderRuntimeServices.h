@@ -4,6 +4,7 @@
 #include "OwnerBindingPolicy.h"
 
 namespace rock::provider::runtime {
+    std::uint64_t currentGameFrameIndex(); // Atomic game clock, including pre-publication lifecycle events.
     const char* ROCK_PROVIDER_CALL apiGetModVersion();
     bool ROCK_PROVIDER_CALL apiIsProviderReady();
     bool ROCK_PROVIDER_CALL apiGetFrameSnapshot(RockProviderFrameSnapshot* outSnapshot);
@@ -96,6 +97,7 @@ namespace rock::provider::runtime {
     rock::api::Status bind(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t major, std::uint32_t permissions);
     rock::api::SampleV1 sample();
     void revoke(std::uint64_t owner);
+    void refreshSources(); // Once per WeaponParts batch before key conversion.
     std::uintptr_t resolveSourceKey(std::uint64_t generation, std::uint64_t key);
     std::uint64_t sourceKey(std::uint64_t generation, std::uintptr_t node);
     std::uint64_t sourceKeyForBody(std::uint64_t generation, std::uint32_t body);

@@ -166,21 +166,7 @@ namespace rock
         }
     }
 
-    void PhysicsInteraction::dispatchGrabEvent(GrabEventData eventData)
-    {
-        eventData.size = sizeof(GrabEventData);
-        eventData.version = ROCK_GRAB_EVENT_VERSION;
-        if (eventData.refr && eventData.formID == 0) {
-            eventData.formID = eventData.refr->GetFormID();
-        }
-        eventData.frameIndex = ++_grabEvents.frameCounter;
-
-        handleGrabEventHaptics(eventData);
-
-        auto sample=provider::runtime::sample();
-        sample.frameIndex=_frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
-        provider::events::publishGrab(eventData,sample);
-    }
+    #include "ProviderEventDispatch.inl"
 
     void PhysicsInteraction::dispatchSimpleGrabEvent(
         GrabEventType type,

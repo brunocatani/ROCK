@@ -14,7 +14,8 @@ namespace rock::provider
         std::uint64_t beginPhase(api::core::AnimationPhaseV1 phase, std::uint64_t gameFrame) noexcept
         {
             // Native graph observations can occur between Complete and BeforeRock.
-            // Only the measured game-loop entry advances the provider clock.
+            // BeforeRock repeats the measured frame established at FRIK FrameBegin;
+            // native graph observations never advance the clock or retire leases.
             if (phase == api::core::AnimationPhaseV1::BeforeRock) beginFrame(gameFrame);
             return phase == api::core::AnimationPhaseV1::NativeGraphOutput ? gameFrame : current();
         }

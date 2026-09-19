@@ -71,7 +71,11 @@
             slot.token = nextConsumerToken();
             slot.grantedCapabilities = grantedCapabilities;
             slot.interfaces[0] = {1,1};
-            events::bind(slot.token, rock::api::InterfaceId::Core);
+            const auto eventStatus=events::bind(slot.token, rock::api::InterfaceId::Core);
+            if (eventStatus!=rock::api::Status::Ok) {
+                slot={};
+                return static_cast<RockProviderResultV1>(eventStatus);
+            }
             slot.providerGeneration = providerGeneration;
             std::memcpy(slot.modName, registration->modName, modNameLength);
 
@@ -105,6 +109,9 @@
             if (!slot) {
                 return RockProviderResultV1::OwnerNotRegistered;
             }
+            // Registration can run concurrently. Retire all event slots before
+            // this owner slot becomes available to another registration.
+            events::remove(ownerToken);
             *slot = {};
             clearInteractionCommandsForOwnerLocked(ownerToken, RockProviderInteractionFailureV1::OwnerNotRegistered);
             clearHandInputSuppressionsForOwnerLocked(
@@ -156,7 +163,6 @@
         provider_collider_visualization::clear(ownerToken);
 
         { const auto access=s_physicsInteraction.borrow(); if (auto* pi=access.get()) pi->releaseProviderPowerArmorGrabs(ownerToken); }
-        events::remove(ownerToken);
         return RockProviderResultV1::Ok;
     }
 

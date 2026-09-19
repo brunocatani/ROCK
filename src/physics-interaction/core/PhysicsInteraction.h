@@ -50,7 +50,7 @@
 #include "physics-interaction/weapon/BareFistGuardPolicy.h"
 #include "physics-interaction/input/BareFistGesturePolicy.h"
 #include "api/ProviderRuntimeTypes.h"
-#include "api/WeaponSourceCatalog.h"
+#include "api/WeaponSourceCatalogRuntime.h"
 
 namespace RE
 {
@@ -513,6 +513,7 @@ namespace rock
         void unsubscribeContactEvents(RE::hknpWorld* liveWorld);
 
         void dispatchPhysicsMessage(std::uint32_t msgType, bool isLeft, RE::TESObjectREFR* refr = nullptr, std::uint32_t formID = 0, std::uint32_t layer = 0);
+        api::SampleV1 providerEventSample() const;
         void dispatchGrabEvent(GrabEventData eventData);
         void dispatchSimpleGrabEvent(
             GrabEventType type,

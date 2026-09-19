@@ -668,6 +668,7 @@ namespace rock
         _feedbackHaptics.reset();
         _equipped.transition.shutdown();
         _weaponCollision.shutdown();
+        _providerSources.clear();
         _bodyBoneColliders.reset();
         _generatedBodyStepDrive.reset();
         _frame.completedPhysicsSolveSequence.store(0, std::memory_order_release);
