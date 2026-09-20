@@ -758,14 +758,15 @@ namespace rock
         };
 
         /*
-         * Physical-left firing already owns the weapon transform through
+         * Physical-left firing and support-only carry own the weapon transform through
          * TwoHandedGrip, so the right-controller inverse alignment below must
          * stay disabled. The harvested right canonical remains the exact
          * finger source; bind either its normal wrist or the compiled minigun
          * firing seat to the stable equipped identity. The authored support
          * relation remains independent and unchanged.
          */
-        if (input.rockFiringHandIsLeft) {
+        const bool supportOnlyCarry = weaponAuthority.isPartCarryActive();
+        if (input.rockFiringHandIsLeft || supportOnlyCarry) {
             const bool canonicalReady =
                 input.runtimeInitialized &&
                 input.visualAuthorityAvailable &&
@@ -790,10 +791,10 @@ namespace rock
                         rightFingerPose,
                         leftFingerPose)) {
                     _canonicalPublishFailureLogged = false;
-                    (void)weaponAuthority.publishAuthoredPrimaryFiringGripFingerPose(true);
+                    if (!supportOnlyCarry) (void)weaponAuthority.publishAuthoredPrimaryFiringGripFingerPose(true);
                 } else if (!_canonicalPublishFailureLogged) {
                     ROCK_LOG_WARN(Animation,
-                        "Authored primary firing grip could not bind physical-left canonical weaponKey=0x{:X} generation=0x{:X} capture={}",
+                        "Authored primary firing grip could not bind manual-carry canonical weaponKey=0x{:X} generation=0x{:X} capture={}",
                         currentWeaponKey,
                         input.weaponGenerationKey,
                         authoredLookup.captureSequence);
@@ -835,7 +836,7 @@ namespace rock
                 if (!stableSupportPublished) {
                     const auto& stable = _stableAuthoredSupportGrip;
                     ROCK_LOG_SAMPLE_WARN(Animation, 2000,
-                        "Authored physical-right support snapshot unavailable weaponKey=0x{:X} generation=0x{:X} canonical={} stable=(valid={} nodeMatch={} ownership=0x{:X} generation=0x{:X} canonical={} support={})",
+                        "Authored manual-carry support snapshot unavailable weaponKey=0x{:X} generation=0x{:X} canonical={} stable=(valid={} nodeMatch={} ownership=0x{:X} generation=0x{:X} canonical={} support={})",
                         currentWeaponKey,
                         input.weaponGenerationKey,
                         authoredLookup.captureSequence,
@@ -847,7 +848,7 @@ namespace rock
                         stable.supportCaptureSequence);
                 }
             }
-            endSession("physical-left-firing-canonical-only");
+            endSession(supportOnlyCarry ? "support-carry-canonical-only" : "physical-left-firing-canonical-only");
             return;
         }
 

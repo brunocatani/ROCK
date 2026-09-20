@@ -54,6 +54,15 @@ namespace rock
         grip.handWeaponLocal.translate += displacement;
         grip.gripWeaponLocal += displacement;
         if (!grip.valid()) return reject("support-target-frame-invalid");
+        RE::NiTransform driverWorld{};
+        if (!frik_hand_world_authority::tryGetInputDriverWorld(captured.isLeft, driverWorld) ||
+            !isInvertibleTransform(driverWorld)) return reject("support-input-driver-unavailable");
+        driverWorld.rotate = orthonormalizeStoredRotation(driverWorld.rotate);
+        const auto weaponInDriver = captured.registeredWeaponInDriver(targetTranslation);
+        const auto handInDriver = transform_math::composeTransforms(weaponInDriver, grip.handWeaponLocal);
+        const auto weaponWorld = transform_math::composeTransforms(driverWorld, weaponInDriver);
+        if (!isInvertibleTransform(weaponInDriver) || !isInvertibleTransform(handInDriver) ||
+            !isInvertibleTransform(weaponWorld)) return reject("support-placement-frame-invalid");
         if (_session.state != TwoHandedState::Inactive) transitionToInactive(false);
         if (!blockFrikPrimaryWeaponPose()) return reject("support-pose-blocker-unavailable");
 
@@ -66,15 +75,28 @@ namespace rock
         _weaponNodeLocalBaseline = weaponNode->local;
         _hasWeaponNodeLocalBaseline = true;
         adoptTransferredSupportGrip(captured.isLeft, weaponNode, generation, grip);
-        partGrip(captured.isLeft).acquisitionSource = WeaponInteractionAcquisitionSource::AuthoredSeat;
+        auto& support = partGrip(captured.isLeft);
+        support.acquisitionSource = WeaponInteractionAcquisitionSource::AuthoredSeat;
+        support.supportInputBaseline = {
+            .inputToGripTargetLocal = handInDriver,
+            .inputToWeaponLocal = weaponInDriver,
+            .weaponWorldAtCapture = weaponWorld,
+            .weaponGenerationKey = generation,
+            .equippedWeaponOwnershipKey = ownership,
+            .gripSequence = support.gripSequence,
+            .supportHandIsLeft = captured.isLeft,
+            .kind = SupportInputBaselineKind::PartCarry,
+            .active = true,
+            .firstPublicationPending = true,
+        };
         _partCarry.pivotIsLeft = captured.isLeft;
         _partCarry.detachAuthority = _handlingSettings.detachAuthority;
         _partCarry.gripSeparationWorld = 0.0f;
         _support.rotationBlend = 1.0f;
         _session.state = TwoHandedState::PartCarry;
         clearAllVisualReturns("support-equip-transfer", false, true);
-        ROCK_LOG_INFO(Weapon, "Authored support equipped grip adopted form={:08X} hand={} firingGrip=vacant",
-            captured.weaponFormID, captured.isLeft ? "left" : "right");
+        ROCK_LOG_INFO(Weapon, "Authored support equipped grip adopted form={:08X} hand={} firingGrip=vacant placement=captured-driver generation={:016X} ownership={:016X}",
+            captured.weaponFormID, captured.isLeft ? "left" : "right", generation, ownership);
         return true;
     }
 
@@ -1479,10 +1501,18 @@ namespace rock
             // Authored and transferred grips are weapon-root-local data. A generated-body
             // rebuild changes only the collision generation; it cannot revoke
             // or relocate the seat that is already being held.
+            const bool preserveTransferredCarry = grip.transferredLooseGrip && grip.supportInputBaseline.active &&
+                grip.supportInputBaseline.kind == SupportInputBaselineKind::PartCarry;
+            if (preserveTransferredCarry && (grip.attachmentRoot != _session.weaponNode ||
+                    !isPartCarryInputBaselineActive(grip.supportInputBaseline.supportHandIsLeft, grip))) return false;
             grip.weaponGenerationKey = currentWeaponGenerationKey;
             grip.contactBodyId = 0x7FFF'FFFFu;
             grip.attachmentRoot = _session.weaponNode;
-            grip.supportInputBaseline = {};
+            if (preserveTransferredCarry) {
+                grip.supportInputBaseline.weaponGenerationKey = currentWeaponGenerationKey;
+            } else {
+                grip.supportInputBaseline = {};
+            }
             return true;
         }
 

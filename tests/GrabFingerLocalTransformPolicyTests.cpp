@@ -420,6 +420,8 @@ int main()
         support.grip.authoredRole = rock::loose_weapon_authored_grab_policy::Role::Support;
         support.grip.fingerMask = 0x7FFFu;
         support.grip.fingerLocals.fill(identity);
+        ok &= expectBool("support equip requires the captured physical placement", support.valid(), false);
+        support.weaponInDriver = identity;
         ok &= expectBool("authored support equips without a firing grip", support.valid(), true);
         support.isLeft = false;
         ok &= expectBool("mirrored right support equips without a firing grip", support.valid(), true);
@@ -432,6 +434,51 @@ int main()
         support = authoredSupport;
         support.sourceModelTranslation.x = std::numeric_limits<float>::quiet_NaN();
         ok &= expectBool("invalid model registration rejects support transfer", support.valid(), false);
+        support = authoredSupport;
+        support.weaponInDriver->rotate.entry[1] = {};
+        ok &= expectBool("singular physical placement rejects support transfer", support.valid(), false);
+        support = authoredSupport;
+        support.weaponInDriver->translate.z = std::numeric_limits<float>::quiet_NaN();
+        ok &= expectBool("nonfinite physical placement rejects support transfer", support.valid(), false);
+
+        support = authoredSupport;
+        support.weaponInDriver->rotate.entry[0] = { 0.0f, 1.0f, 0.0f, 0.0f };
+        support.weaponInDriver->rotate.entry[1] = { -1.0f, 0.0f, 0.0f, 0.0f };
+        support.weaponInDriver->translate = { 8.0f, 2.0f, -1.0f };
+        support.sourceModelTranslation = { 1.0f, 2.0f, 3.0f };
+        const RE::NiPoint3 targetModelTranslation{ 7.0f, -4.0f, 5.0f };
+        auto driverWorld = identity;
+        driverWorld.rotate.entry[1] = { 0.0f, 0.0f, 1.0f, 0.0f };
+        driverWorld.rotate.entry[2] = { 0.0f, -1.0f, 0.0f, 0.0f };
+        driverWorld.translate = { 100.0f, -40.0f, 16.0f };
+        const auto sourceWeaponWorld = rock::transform_math::composeTransforms(driverWorld, *support.weaponInDriver);
+        const auto registeredPlacement = support.registeredWeaponInDriver(targetModelTranslation);
+        const auto equippedWeaponWorld = rock::transform_math::composeTransforms(driverWorld, registeredPlacement);
+        auto registeredHand = support.grip.handWeaponLocal;
+        registeredHand.translate += targetModelTranslation - support.sourceModelTranslation;
+        const auto sourceHandWorld = rock::transform_math::composeTransforms(sourceWeaponWorld, support.grip.handWeaponLocal);
+        const auto equippedHandWorld = rock::transform_math::composeTransforms(equippedWeaponWorld, registeredHand);
+        ok &= expectPointClose("support model registration preserves the authored wrist in world space",
+            equippedHandWorld.translate, sourceHandWorld.translate);
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                ok &= expectFloat("support equip preserves loose weapon rotation",
+                    equippedWeaponWorld.rotate.entry[row][column], sourceWeaponWorld.rotate.entry[row][column]);
+                ok &= expectFloat("support equip preserves authored wrist rotation",
+                    equippedHandWorld.rotate.entry[row][column], sourceHandWorld.rotate.entry[row][column]);
+            }
+        }
+        auto driverMovement = identity;
+        driverMovement.rotate = support.weaponInDriver->rotate;
+        driverMovement.translate = { 3.0f, 7.0f, -2.0f };
+        const auto movedDriverWorld = rock::transform_math::composeTransforms(driverMovement, driverWorld);
+        const auto movedEquippedWorld = rock::transform_math::composeTransforms(movedDriverWorld, registeredPlacement);
+        const auto expectedMovedWorld = rock::transform_math::composeTransforms(driverMovement, equippedWeaponWorld);
+        ok &= expectPointClose("support carry follows controller movement without reseating", movedEquippedWorld.translate, expectedMovedWorld.translate);
+        for (int row = 0; row < 3; ++row)
+            for (int column = 0; column < 3; ++column)
+                ok &= expectFloat("support carry follows controller rotation without authored realignment",
+                    movedEquippedWorld.rotate.entry[row][column], expectedMovedWorld.rotate.entry[row][column]);
         pair = captured;
         pair.primary.handWeaponLocal.rotate.entry[1] = {};
         ok &= expectBool("singular primary capture rejects paired equip", pair.valid(), false);

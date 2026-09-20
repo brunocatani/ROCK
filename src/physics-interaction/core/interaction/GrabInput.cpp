@@ -1682,16 +1682,21 @@ namespace rock
                 RE::NiTransform looseHandWorld{};
                 if (supportEquipRequested) {
                     AuthoredWeaponGripPose authored{};
+                    RE::NiTransform driverWorld{};
                     auto& support = pendingGripStart.supportGrip;
                     support.isLeft = equipIsLeft;
-                    if (!loose_weapon_grip_zone::tryResolveAuthoredGrabPose(equipIsLeft, heldRef,
+                    if (!frik_hand_world_authority::tryGetInputDriverWorld(equipIsLeft, driverWorld) ||
+                        !weapon_grip_transfer::validFrame(driverWorld) ||
+                        !loose_weapon_grip_zone::tryResolveAuthoredGrabPose(equipIsLeft, heldRef,
                             loose_weapon_authored_grab_policy::Role::Support, authored) ||
                         !vanilla_weapon_grip_frame::resolveModelTranslation(authored.weaponFormId,
                             heldRef->Get3D(), support.sourceModelTranslation)) {
-                        ROCK_LOG_SAMPLE_WARN(Hand, 1000, "Support held equip deferred: authored support pose unavailable hand={}", hand.handName());
+                        ROCK_LOG_SAMPLE_WARN(Hand, 1000, "Support held equip deferred: authored support pose or physical driver unavailable hand={}", hand.handName());
                         return false;
                     }
                     support.weaponFormID = authored.weaponFormId;
+                    support.weaponInDriver = transform_math::composeTransforms(
+                        transform_math::invertTransform(driverWorld), heldRef->Get3D()->world);
                     singleGrip.handWeaponLocal = authored.handWeaponLocal;
                     singleGrip.gripWeaponLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(authored.handWeaponLocal, equipIsLeft);
                     singleGrip.fingerLocals = authored.fingerLocals;

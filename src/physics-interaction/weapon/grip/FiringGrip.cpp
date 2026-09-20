@@ -541,7 +541,9 @@ namespace rock
                 weaponOwnershipKey)) {
             if (_session.state == TwoHandedState::PartCarry) {
                 ROCK_LOG_SAMPLE_WARN(Weapon, g_rockConfig.rockLogSampleMilliseconds,
-                    "TwoHandedGrip: firing-grip zone unavailable reason=noCurrentCanonicalRightHold");
+                    "TwoHandedGrip: firing-grip zone unavailable reason=noCurrentCanonicalRightHold nodeMatch={} generation={:016X}/{:016X} ownership={:016X}/{:016X} captured={}",
+                    _firing.rightCanonicalWeaponNode == weaponNode, _firing.rightCanonicalGenerationKey, weaponGenerationKey,
+                    _firing.rightCanonicalOwnershipKey, weaponOwnershipKey, _firing.hasRightCanonicalHandWeaponLocal);
             }
             return false;
         }

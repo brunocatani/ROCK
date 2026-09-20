@@ -274,8 +274,8 @@ namespace rock
             _firingHandWeaponLocal = {};
         }
 
-        if (input.supportOnly && (!_capturedGrips.primary.valid() || !_hasPhysicalHandInWandLocal)) {
-            ROCK_LOG_WARN(Weapon, "EquipVisualBridge support begin rejected: model registration or physical hand unavailable form={:08X}", input.weaponFormID);
+        if (input.supportOnly && !_capturedGrips.primary.valid()) {
+            ROCK_LOG_WARN(Weapon, "EquipVisualBridge support begin rejected: model registration unavailable form={:08X}", input.weaponFormID);
             return false;
         }
 
@@ -572,14 +572,9 @@ namespace rock
             RE::NiTransform desiredWorld = transform_math::composeTransforms(handNode->world, _modelInHandLocal);
             RE::NiTransform blendTarget{};
             bool haveBlendTarget = false;
-            if (_supportOnly && _hasPhysicalHandInWandLocal) {
-                // A support equip seats through the authored support relation;
-                // the firing-point alignment below would move it to the handle.
-                const auto physicalHandWorld = transform_math::composeTransforms(handNode->world, _physicalHandInWandLocal);
-                blendTarget = transform_math::composeTransforms(physicalHandWorld,
-                    transform_math::invertTransform(_capturedGrips.primary.handWeaponLocal));
-                haveBlendTarget = isFiniteTransform(blendTarget);
-            } else if (!_supportOnly && !_capturedGrips.valid() && _hasFiringHandWeaponLocal) {
+            // Support-only equips retain the captured wand-to-model relation;
+            // the authored wrist controls hand presentation, never weapon aim.
+            if (!_supportOnly && !_capturedGrips.valid() && _hasFiringHandWeaponLocal) {
                 if (_hasPhysicalHandInWandLocal) {
                     const RE::NiTransform physicalHandWorld =
                         transform_math::composeTransforms(
