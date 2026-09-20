@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
+#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/WeaponSceneTraversal.h"
 #include "physics-interaction/weapon/WeaponAimBasis.h"
 #include "physics-interaction/weapon/telemetry/NativeScopeShotPolicy.h"
@@ -75,6 +76,10 @@ namespace rock::vanilla_weapon_alignment_telemetry
             std::uint64_t nextTransferTrace{};
             std::array<TransferTrace, 2> transfers{};
             std::array<TransferSourceFrame, 2> lastTransferSource{};
+            // Scope hand presentation investigation: four frames at each edge,
+            // using the existing diagnostic gate and bounded async writer.
+            std::uint64_t scopeHandEdgeFrame{};
+            bool scopeHandStateKnown{}, scopeHandOpen{};
         };
         std::unique_ptr<Session> session;
         // Lifecycle and phase capture share the game thread. Native animation
@@ -150,6 +155,42 @@ namespace rock::vanilla_weapon_alignment_telemetry
         bool sampling()
         {
             return session && session->sampling && g_rockConfig.rockDebugWeaponOmodDumpEnabled;
+        }
+
+        void recordScopeHandEdge(Phase phase, std::uint64_t frame)
+        {
+            if (frame == 0 || (phase != Phase::AfterFrik && phase != Phase::AfterRock && phase != Phase::AfterWorldFinal)) return;
+            const bool open = frik_visual_authority::isLookingThroughScope();
+            if (session->scopeHandStateKnown && session->scopeHandOpen != open) {
+                session->scopeHandEdgeFrame = frame;
+            }
+            session->scopeHandStateKnown = true;
+            session->scopeHandOpen = open;
+            if (session->scopeHandEdgeFrame == 0 || frame < session->scopeHandEdgeFrame || frame - session->scopeHandEdgeFrame >= 4) return;
+            namespace registry = hand_world_claim_registry_policy;
+            for (const bool isLeft : { false, true }) {
+                const auto hand = frik_visual_authority::handFromBool(isLeft);
+                RE::NiTransform tracked{}, input{}, claim{}, rendered{}, solved{};
+                frik_visual_authority::ArmChainTransforms chain{};
+                const bool trackedValid = frik_visual_authority::tryGetTrackedHandTransform(
+                    hand, frik_visual_authority::TrackedHandKind::FirstPersonHand, tracked);
+                const bool inputValid = frik_hand_world_authority::tryGetRawHandWorld(isLeft, input);
+                const bool claimValid = frik_hand_world_authority::tryGetPublishedHandWorld(isLeft, claim);
+                const bool renderedValid = frik_hand_world_authority::tryGetPresentedHandWorld(isLeft, rendered);
+                const bool wristValid = frik_visual_authority::tryGetArmChain(hand, chain) && (chain.validMask & (1u << 6)) != 0;
+                const auto solve = frik_visual_authority::getHandSolveResult(hand, solved);
+                session->log->info(
+                    "SCOPE_HAND_EDGE frame={} phase={} age={} open={} hand={} recovery={} tracked={} input={} claim={} wrist={} rendered={} solve={} inputT=({:.3f},{:.3f},{:.3f}) claimT=({:.3f},{:.3f},{:.3f}) wristT=({:.3f},{:.3f},{:.3f}) renderedT=({:.3f},{:.3f},{:.3f}) inputNative={:.3f}gu/{:.3f}deg wristClaim={:.3f}gu/{:.3f}deg",
+                    frame, phaseName(phase), frame - session->scopeHandEdgeFrame, open, isLeft ? "left" : "right",
+                    frik_hand_world_authority::scopeInputRecoveryMask(), trackedValid, inputValid, claimValid, wristValid, renderedValid,
+                    static_cast<unsigned>(solve), input.translate.x, input.translate.y, input.translate.z,
+                    claim.translate.x, claim.translate.y, claim.translate.z, chain.hand.translate.x, chain.hand.translate.y,
+                    chain.hand.translate.z, rendered.translate.x, rendered.translate.y, rendered.translate.z,
+                    inputValid && trackedValid ? registry::translationDeltaGameUnits(input, tracked) : -1.0f,
+                    inputValid && trackedValid ? registry::rotationDeltaDegrees(input, tracked) : -1.0f,
+                    wristValid && claimValid ? registry::translationDeltaGameUnits(chain.hand, claim) : -1.0f,
+                    wristValid && claimValid ? registry::rotationDeltaDegrees(chain.hand, claim) : -1.0f);
+            }
         }
 
         void transform(const char* phase, std::string_view label, const RE::NiTransform& value)
@@ -251,6 +292,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
             session->sampling = false;
             return;
         }
+        recordScopeHandEdge(phase, schedulerSequence);
         auto* equipped = f4vr::getEquippedWeaponItem();
         const std::uint32_t formId = equipped && equipped->item.object ? equipped->item.object->formID : 0;
         if (phase == Phase::BeforeRockPreFrik) session->scopeFrame = 0;

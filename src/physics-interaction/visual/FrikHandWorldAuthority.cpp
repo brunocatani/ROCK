@@ -33,7 +33,10 @@ namespace rock::frik_hand_world_authority
 
         constexpr std::uint32_t kProbeSummaryFrames = 600;
         constexpr const char* kScopeRecoveryTag = "ROCK_ScopeInputRecovery";
-        constexpr int kScopeRecoveryPriority = -1000;
+        // The API rejects negative priorities. Zero is the lowest accepted
+        // priority; actual grip/collision owners retain their higher priority.
+        constexpr int kScopeRecoveryPriority = 0;
+        static_assert(kScopeRecoveryPriority >= 0);
 
         struct IsolationState
         {

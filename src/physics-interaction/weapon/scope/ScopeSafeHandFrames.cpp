@@ -39,17 +39,18 @@ namespace rock
                 scope_transition_telemetry::sequence(), _scope.menuOpenThisFrame, _scope.manualActivationRequested,
                 driverFrameAuthorityWasActive, _scope.driverFrameAuthorityActive, isManualOwnershipActive(),
                 _scope.deferredHandAuthorityClears[0], _scope.deferredHandAuthorityClears[1]);
-            // Never resume a pre-menu visual interpolation after hFRIK restores
-            // its visible body. The weapon solver itself remains continuous.
-            resetLockedHandVisualLerp();
+            // FRIK 2.3 keeps solving the arms while scoped. A menu edge does
+            // not acquire a new grip: preserve its interpolation state so a
+            // seated hand cannot jump back to controller intent and re-seat.
             ROCK_LOG_INFO(Weapon,
-                "TwoHandedGrip: native scope hand-frame menu={} solver={} leftCache={} rightCache={}",
+                "TwoHandedGrip: native scope hand-frame menu={} solver={} leftCache={} rightCache={} gripAlpha=({:.3f},{:.3f},{:.3f})",
                 _scope.menuOpenThisFrame ? "open" : "closed",
                 _scope.driverFrameAuthorityActive ?
                     (_scope.menuOpenThisFrame ? "frik-driver" : "frik-driver-latched") :
                     "root-flattened",
                 _scope.safeHandFrames[0].hasDriverToHandLocal ? "ready" : "missing",
-                _scope.safeHandFrames[1].hasDriverToHandLocal ? "ready" : "missing");
+                _scope.safeHandFrames[1].hasDriverToHandLocal ? "ready" : "missing",
+                _visuals.primaryHandLerp.lastAlpha, partGrip(true).visualLerp.lastAlpha, partGrip(false).visualLerp.lastAlpha);
         }
 
         // Central game delta; an unmeasurable frame holds the rebase
