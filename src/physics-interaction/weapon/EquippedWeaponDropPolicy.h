@@ -27,6 +27,13 @@ namespace rock::equipped_weapon_drop_policy
         Left,
     };
 
+    [[nodiscard]] inline constexpr bool captureOwnerCurrent(bool manual, bool sourceIsLeft,
+        std::uint64_t confirmed, std::uint64_t sessionOwner, std::uint64_t generation, bool nativeCanonicalCurrent) noexcept
+    {
+        return confirmed != 0 && generation != 0 &&
+            (manual ? sessionOwner == confirmed : (!sourceIsLeft && nativeCanonicalCurrent));
+    }
+
     [[nodiscard]] inline constexpr bool isLeft(SourceHand hand) noexcept
     {
         return hand == SourceHand::Left;
@@ -49,6 +56,14 @@ namespace rock::equipped_weapon_drop_policy
         bool freeFiringStationHovered) noexcept
     {
         return leftCarries != rightCarries && !freeFiringStationHovered;
+    }
+
+    [[nodiscard]] inline constexpr SourceHand simultaneousReleaseSource(bool enabled,
+        bool leftCarries, bool rightCarries, bool leftReleased, bool rightReleased,
+        bool firingOccupied, bool firingLeft, bool pivotLeft) noexcept
+    {
+        if (!enabled || !leftCarries || !rightCarries || !leftReleased || !rightReleased) return SourceHand::None;
+        return (firingOccupied ? firingLeft : pivotLeft) ? SourceHand::Left : SourceHand::Right;
     }
 
     [[nodiscard]] inline constexpr bool equippedWeaponShoulderStashAvailable(

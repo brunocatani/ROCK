@@ -43,6 +43,7 @@ namespace rock
         RE::ObjectRefHandle targetHandle{};
         bool targetIsLooseThrowable{ false };
         bool inventoryTransfer{ false };
+        std::uint64_t weaponTransferSequence{ 0 }; // Zero for standalone/provider drops.
         // Internal B-hold draws share transfer/rollback, without an API owner.
         bool grenadeQuickDraw{ false };
         // Capture the mode at release so a hot reload cannot change an in-flight drop.

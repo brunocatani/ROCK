@@ -276,6 +276,7 @@ namespace rock
         {
             input_remap_runtime::setEquippedWeaponFiringGripInputActive(false);
             input_remap_runtime::setEquippedWeaponPrimaryDetached(false);
+            input_remap_runtime::setEquippedWeaponLeftHandFiringActive(false);
         }
 
         [[nodiscard]] inline float pointLength(const RE::NiPoint3& value)

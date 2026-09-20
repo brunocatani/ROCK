@@ -694,7 +694,7 @@ namespace rock
             _equipped.menuReconcilePending = true;
             if (_lifecycle.initialized) {
                 _twoHandedGrip.reset();
-                _equipped.pendingPrimaryOnlyGripStart = {};
+                _equipped.transition.pendingGrip() = {};
                 clearEquippedWeaponFiringGripInputState();
                 auto* bhkMenu = getPlayerBhkWorld();
                 if (bhkMenu) {
@@ -734,7 +734,7 @@ namespace rock
             }
             debug::ClearFrame();
             clearEquippedWeaponFiringGripInputState();
-            _equipped.pendingPrimaryOnlyGripStart = {};
+            _equipped.transition.pendingGrip() = {};
             auto* snapshotBhk = getPlayerBhkWorld();
             auto* snapshotHknp = snapshotBhk ? getHknpWorld(snapshotBhk) : nullptr;
             if (snapshotBhk && snapshotHknp) {
@@ -782,7 +782,7 @@ namespace rock
             _lifecycle.cachedHknpWorld = nullptr;
             observeLifecycleFrame(bhk, nullptr, ::rock::provider::RockProviderLifecycleReason::WorldUnavailable);
             _twoHandedGrip.reset();
-            _equipped.pendingPrimaryOnlyGripStart = {};
+            _equipped.transition.pendingGrip() = {};
             clearEquippedWeaponFiringGripInputState();
             debug::ClearFrame();
             restoreHeldMassMovementSlowdown("world-unavailable");
@@ -822,7 +822,7 @@ namespace rock
             restoreHandCollisionAfterEquippedWeaponDrop(hknp, false);
             restoreHandCollisionAfterEquippedWeaponDrop(hknp, true);
             _twoHandedGrip.reset();
-            _equipped.pendingPrimaryOnlyGripStart = {};
+            _equipped.transition.pendingGrip() = {};
             clearEquippedWeaponFiringGripInputState();
             _contacts.bodyRuntime.reset();
             clearLeftWeaponContact();
@@ -870,7 +870,7 @@ namespace rock
                     _lifecycle.stableFrameCountAtomic.load(std::memory_order_acquire));
                 debug::ClearFrame();
                 _twoHandedGrip.reset();
-                _equipped.pendingPrimaryOnlyGripStart = {};
+                _equipped.transition.pendingGrip() = {};
                 clearEquippedWeaponFiringGripInputState();
                 _grabInput.shoulderStashStates = {};
                 _grabInput.mouthConsumeStates = {};
@@ -892,7 +892,7 @@ namespace rock
                 _lifecycle.stableFrameCountAtomic.load(std::memory_order_acquire));
             debug::ClearFrame();
             _twoHandedGrip.reset();
-            _equipped.pendingPrimaryOnlyGripStart = {};
+            _equipped.transition.pendingGrip() = {};
             clearEquippedWeaponFiringGripInputState();
             _grabInput.shoulderStashStates = {};
             _grabInput.mouthConsumeStates = {};
@@ -902,7 +902,8 @@ namespace rock
         }
 
         const bool forceBareFistRecheck = _equipped.menuReconcilePending;
-        if (_equipped.menuReconcilePending) {
+        if (_equipped.menuReconcilePending && !_equipped.transition.pendingGrip().menuResume &&
+            !_equipped.transition.heldTransfer().active()) {
             const bool firingHandIsLeft =
                 _twoHandedGrip.isFiringGripOccupied() &&
                 _twoHandedGrip.isFiringHandLeft();
@@ -912,7 +913,7 @@ namespace rock
             const bool primaryGrabHeld = input_remap_runtime::isRawButtonPhysicallyHeld(
                 firingHandIsLeft,
                 input_remap_policy::kGrabButtonId);
-            _equipped.pendingPrimaryOnlyGripStart = PendingEquippedWeaponPrimaryOnlyGripStart{
+            _equipped.transition.pendingGrip() = PendingEquippedWeaponPrimaryOnlyGripStart{
                 .pending = detachDecision.primaryDetachEnabled &&
                     primaryGrabHeld,
                 .isLeft = firingHandIsLeft,
@@ -923,8 +924,9 @@ namespace rock
             ROCK_LOG_DEBUG(Weapon,
                 "Equipped weapon ownership reconciled after menu: primaryGrabHeld={} pendingPrimaryOnlyStart={}",
                 primaryGrabHeld ? "yes" : "no",
-                _equipped.pendingPrimaryOnlyGripStart.pending ? "yes" : "no");
+                _equipped.transition.pendingGrip().pending ? "yes" : "no");
         }
+        _equipped.menuReconcilePending = false;
         updateBareFistMode(frame);
         enforceNoBareFistState(forceBareFistRecheck);
 

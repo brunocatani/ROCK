@@ -442,6 +442,14 @@ namespace rock
             kHandPoseHandoffPriority);
     }
 
+    bool EquipVisualBridge::presentationLeaseWouldExpire(float deltaSeconds) const noexcept
+    {
+        if (!_active) return false;
+        const auto wall = std::chrono::duration<float>(std::chrono::steady_clock::now() - _presentationLeaseStartedAt).count();
+        return equip_visual_bridge_policy::presentationLeaseExpired(
+            (std::max)(_lifetimeSeconds + (std::max)(0.0f, deltaSeconds), wall), _presentationLeaseSeconds);
+    }
+
     bool EquipVisualBridge::advancePresentationLeaseImpl(
         const float deltaSeconds,
         const bool presentedForLogging)

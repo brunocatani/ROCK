@@ -3831,10 +3831,14 @@ int main()
                     left.carriesWeapon(), right.carriesWeapon(), true));
             }
         }
-        const bool simultaneousDrop = canStartAutoDrop(carryingPart.carriesWeapon(), carryingPart.carriesWeapon(), false);
-        ok &= expectFalse("two real carriers cannot trigger the last-hand drop", simultaneousDrop);
-        ok &= expectTrue("first of two real carriers can release", canReleaseCarryGrip(true, true, simultaneousDrop));
-        ok &= expectFalse("same-frame second release retains the remaining real carrier", canReleaseCarryGrip(true, false, simultaneousDrop));
+        using rock::equipped_weapon_drop_policy::simultaneousReleaseSource;
+        using rock::equipped_weapon_drop_policy::SourceHand;
+        ok &= expectEqual("simultaneous releases select the firing carrier once",
+            simultaneousReleaseSource(true, true, true, true, true, true, false, true), SourceHand::Right);
+        ok &= expectEqual("simultaneous part releases select the current pivot",
+            simultaneousReleaseSource(true, true, true, true, true, false, false, true), SourceHand::Left);
+        ok &= expectEqual("drop off preserves a simultaneous carrier",
+            simultaneousReleaseSource(false, true, true, true, true, true, false, true), SourceHand::None);
         ok &= expectFalse("two visual grips never create a carrier", canStartAutoDrop(visualPart.carriesWeapon(), visualPart.carriesWeapon(), false));
     }
     ok &= expectTrue("a carry grip releases while its peer still carries",

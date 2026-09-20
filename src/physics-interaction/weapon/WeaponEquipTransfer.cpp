@@ -526,6 +526,31 @@ namespace rock::weapon_equip_transfer
         return accepted && !remaining.weapon;
     }
 
+    bool canRecoverHeldEquip() noexcept
+    {
+        return RE::PlayerCharacter::GetSingleton() && RE::ActorEquipManager::GetSingleton() && validatedUnequipObject();
+    }
+
+    bool unequipExactCurrentWeapon(const std::uint32_t formID, const std::uintptr_t instanceData) noexcept
+    {
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        auto* manager = RE::ActorEquipManager::GetSingleton();
+        const auto equipped = readEquippedWeaponSnapshot();
+        if (!equipped.weapon) return true;
+        if (!player || !manager || equipped.weapon->GetFormID() != formID ||
+            reinterpret_cast<std::uintptr_t>(equipped.instanceData) != instanceData) return false;
+        const auto stack = findEquippedWeaponStack(player, equipped.weapon, equipped.instanceData);
+        const auto unequip = validatedUnequipObject();
+        if (!stack.found || !stack.equipSlot || !stack.count || !unequip ||
+            stack.instanceData.get() != equipped.instanceData || !clearPreviousWeaponRestore(player)) return false;
+        RE::BGSObjectInstance object(equipped.weapon, stack.instanceData.get());
+        const bool accepted = unequip(manager, player, &object, 1, stack.equipSlot, stack.stackID, false, true, false, true, nullptr);
+        const auto remaining = readEquippedWeaponSnapshot();
+        ROCK_LOG_INFO(Weapon, "Held transfer recovery unequip form={:08X} instance={:#x} accepted={} remaining={:08X}",
+            formID, instanceData, accepted, remaining.weapon ? remaining.weapon->GetFormID() : 0u);
+        return !remaining.weapon;
+    }
+
     EquippedDropResult dropEquippedWeaponFromPlayer(const EquippedDropInput& input) noexcept
     {
         EquippedDropResult result{};

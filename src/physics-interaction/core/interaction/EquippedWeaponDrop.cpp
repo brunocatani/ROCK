@@ -89,6 +89,11 @@ namespace rock
                             dropResult.reason == weapon_equip_transfer::DropReason::DroppedReferenceUnavailable,
                     });
                 transferCommitted = dropCommitted;
+                const auto& transfer = _equipped.transition.heldTransfer();
+                const bool replacementDrop = dropCommitted && transfer.phase == held_weapon_transfer::Phase::AwaitEquip &&
+                    transfer.request.retainOutgoing && !transfer.outgoingRemoved &&
+                    transfer.request.previousForm == observedEquippedWeaponFormID && transfer.request.isLeft != transferIsLeft;
+                if (replacementDrop) _equipped.transition.recordOutgoingRemoval(dropResult.droppedFormID);
                 if (dropCommitted) {
                     enforceNoBareFistState(true);
                     /*
@@ -110,6 +115,7 @@ namespace rock
                             PendingForceGrabCommitPhase::EquippedSlotReleaseFailed,
                         .targetHandle = dropResult.handle,
                         .inventoryTransfer = true,
+                        .weaponTransferSequence = replacementDrop ? transfer.sequence : 0,
                         .equippedWeaponDropMode = mode,
                         .weaponGripPose = request.pose,
                         .maxDistanceGame = 96.0f,

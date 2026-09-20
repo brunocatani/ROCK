@@ -715,6 +715,11 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKEquippedWeaponTransitionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKEquippedWeaponTransitionPolicyTests)
 
+  add_executable(ROCKHeldWeaponTransferSequenceTests "${ROOT_DIR}/tests/HeldWeaponTransferSequenceTests.cpp")
+  target_compile_features(ROCKHeldWeaponTransferSequenceTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKHeldWeaponTransferSequenceTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKHeldWeaponTransferSequenceTests)
+
   add_executable(ROCKHeldWeaponInstantTransitionPolicyTests
     "${ROOT_DIR}/tests/HeldWeaponInstantTransitionPolicyTests.cpp"
   )
@@ -945,6 +950,7 @@ if(BUILD_ROCK_TESTS)
     ROCKNativeMeleeSuppressionPolicyTests
     ROCKNativeGrabHapticSuppressionPolicyTests
     ROCKEquippedWeaponTransitionPolicyTests
+    ROCKHeldWeaponTransferSequenceTests
     ROCKHeldWeaponInstantTransitionPolicyTests
     ROCKWeaponTransitionAnimationAccelerationPolicyTests
     ROCKWeaponInventoryStackSelectionPolicyTests

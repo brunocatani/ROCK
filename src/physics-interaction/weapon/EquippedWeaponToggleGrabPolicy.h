@@ -57,11 +57,14 @@ namespace rock::equipped_weapon_toggle_grab_policy
     {
         bool buttonReleased{ false };
         bool releaseRequested{ false };
+        bool holdObserved{ false };
 
-        constexpr void observe(Mode mode, bool firingGrip, const ButtonState& physical) noexcept
+        constexpr void observe(Mode mode, bool firingGrip, const ButtonState& physical, bool retainUntilFirstHold = false) noexcept
         {
             if (!usesToggleForRole(mode, firingGrip)) {
-                releaseRequested = !physical.held;
+                holdObserved = holdObserved || physical.held;
+                releaseRequested = retainUntilFirstHold ?
+                    releaseRequested || (holdObserved && !physical.held) : !physical.held;
                 return;
             }
             buttonReleased = buttonReleased || physical.released || (!physical.held && !physical.pressed);
@@ -100,9 +103,10 @@ namespace rock::equipped_weapon_toggle_grab_policy
     // Actual drawn-item identity owns the firing grip before any grab input.
     // A stale scene node or old grab session cannot establish this ownership.
     [[nodiscard]] inline constexpr bool confirmedFiringGripOccupied(
-        std::uint64_t confirmedOwnershipKey, std::uint64_t sessionOwnershipKey, bool partCarryActive) noexcept
+        std::uint64_t confirmedOwnershipKey, std::uint64_t sessionOwnershipKey, bool partCarryActive,
+        bool acquisitionPending = false, bool manualOwnership = false) noexcept
     {
-        return confirmedOwnershipKey != 0 &&
+        return confirmedOwnershipKey != 0 && (!acquisitionPending || manualOwnership) &&
             !(partCarryActive && sessionOwnershipKey == confirmedOwnershipKey);
     }
 

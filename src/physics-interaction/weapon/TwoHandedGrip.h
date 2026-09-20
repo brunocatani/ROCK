@@ -509,7 +509,7 @@ namespace rock
             getGripOccupancy() const noexcept;
         [[nodiscard]] EquippedWeaponGripOccupancy getGrabInputOccupancy() const noexcept;
         // Publish only identity read from the actual drawn inventory item.
-        void observeEquippedOwnership(std::uint64_t ownershipKey, std::uint64_t gripGenerationKey);
+        void observeEquippedOwnership(std::uint64_t ownershipKey, std::uint64_t gripGenerationKey, bool acquisitionPending);
 
         [[nodiscard]] AuthoredSupportGripIndicatorFrame
             getAuthoredSupportGripIndicatorFrame() const noexcept
@@ -709,7 +709,8 @@ namespace rock
         bool isFiringGripOccupied() const
         {
             return equipped_weapon_toggle_grab_policy::confirmedFiringGripOccupied(
-                _confirmedEquippedOwnershipKey, _session.equippedWeaponOwnershipKey, isPartCarryActive());
+                _confirmedEquippedOwnershipKey, _session.equippedWeaponOwnershipKey, isPartCarryActive(),
+                _equippedGripAcquisitionPending, isManualOwnershipActive());
         }
 
         /*
@@ -967,12 +968,15 @@ namespace rock
          */
         bool republishPartCarryWeaponTransform(RE::NiNode* weaponNode);
 
-        bool requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand, float dt);
+        bool requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand, float dt, bool allCarriersReleased = false);
         EquippedWeaponManualDropRequest consumeEquippedWeaponDropRequest();
         bool beginTransferredTwoHandGrip(RE::NiNode* weaponNode, std::uint64_t generation,
             std::uint64_t ownership, const weapon_grip_transfer::Pair& grips, const char** failure);
         bool beginTransferredSupportGrip(RE::NiNode* weaponNode, std::uint64_t generation,
-            std::uint64_t ownership, const weapon_grip_transfer::Support& grip, const char** failure);
+            std::uint64_t ownership, const weapon_grip_transfer::Support& grip, const char** failure,
+            const weapon_grip_transfer::Support* second = nullptr);
+        bool captureMenuCarry(weapon_grip_transfer::HandGrip& firing, weapon_grip_transfer::Pair& paired,
+            weapon_grip_transfer::Support& support, weapon_grip_transfer::Support& second, bool& carrierLeft) const;
         void prepareEquippedWeaponDropCommit();
         void completeEquippedWeaponDrop(const EquippedWeaponManualDropRequest& request, bool committed);
 
@@ -2336,6 +2340,7 @@ namespace rock
         // Value-only equipped identity, independent of the grab-session state.
         std::uint64_t _confirmedEquippedOwnershipKey{ 0 };
         std::uint64_t _confirmedEquippedGripGenerationKey{ 0 };
+        bool _equippedGripAcquisitionPending{ false }; // Frame input from the transfer coordinator.
         GripSession _session{};
         FiringGripState _firing{};
         SupportGripState _support{};

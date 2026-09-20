@@ -3,6 +3,11 @@
 #include "physics-interaction/weapon/EquipVisualBridge.h"
 #include "physics-interaction/weapon/EquippedWeaponTransitionPolicy.h"
 
+#include "physics-interaction/weapon/HeldWeaponTransferPolicy.h"
+#include "physics-interaction/weapon/grip/LeftCarryReadiness.h"
+#include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
+#include "physics-interaction/weapon/WeaponSupport.h"
+
 #include <chrono>
 #include <cstdint>
 
@@ -11,6 +16,40 @@ namespace rock
     class EquippedWeaponTransitionCoordinator
     {
     public:
+        struct PendingGrip
+        {
+            weapon_grip_transfer::Pair pairedGrips{};
+            weapon_grip_transfer::Support supportGrip{};
+            weapon_grip_transfer::Support secondSupportGrip{};
+            bool menuResume{ false };
+            std::array<equipped_weapon_toggle_grab_policy::TransferReleaseState, 2> pairedRelease{};
+            bool pending{ false };
+            // Originating carrier; a support-only transfer leaves the opposite firing station vacant.
+            bool isLeft{ false };
+            // Zero means "the current weapon" (menu reconciliation). Held
+            // equip requests bind these fields to the accepted target and its
+            // pre-request baseline so a cloned instance may be recognized
+            // without ever starting manual ownership on an old same-base gun.
+            std::uint32_t targetWeaponFormID{ 0 };
+            std::uintptr_t targetWeaponInstanceData{ 0 };
+            std::uint32_t previousWeaponFormID{ 0 };
+            std::uintptr_t previousWeaponInstanceData{ 0 };
+            float remainingSeconds{ 0.0f };
+            equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource source{
+                equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource::GripInput
+            };
+            // A toggle acquisition is a committed logical grab even after the
+            // physical button opens while left takeover waits for the final
+            // generation-bound authored-support verdict.
+            bool toggleAcquisitionCommitted{ false };
+            left_carry_readiness::TakeoverWitness takeoverWitness{};
+            const char* lastStartFailureReason{ nullptr }; // Static diagnostic reason; never an engine pointer.
+            bool hasFiringHandWeaponLocal{ false };
+            RE::NiTransform firingHandWeaponLocal{};
+            bool hasFiringGripWeaponLocal{ false };
+            RE::NiPoint3 firingGripWeaponLocal{};
+        };
+
         enum class Source : std::uint8_t
         {
             ObservedEquip,
@@ -94,6 +133,26 @@ namespace rock
             std::uintptr_t previousNativeInstanceNode{ 0 };
         };
 
+        [[nodiscard]] PendingGrip& pendingGrip() noexcept { return _pendingGrip; }
+        [[nodiscard]] const PendingGrip& pendingGrip() const noexcept { return _pendingGrip; }
+        [[nodiscard]] const held_weapon_transfer::State& heldTransfer() const noexcept { return _heldTransfer; }
+        bool beginHeldRequest(const held_weapon_transfer::Request& request);
+        void cancelHeldRequest(const char* reason, held_weapon_transfer::Outcome outcome = held_weapon_transfer::Outcome::Failed);
+        void recordOutgoingRemoval(std::uint32_t reference);
+        void recordOutgoingResult(std::uint64_t sequence, bool succeeded);
+        void recordInventoryCommit(std::uint32_t form, std::uintptr_t instance, bool accepted, std::uintptr_t observedInstance);
+        void recordGripAcquired(std::uint32_t form, std::uintptr_t instance, bool left, held_weapon_transfer::Role role);
+        void recordGripPresentation();
+        void validateHeldSource(bool held, std::uint32_t reference, std::uint64_t grab,
+            std::uint32_t world, std::uint32_t skeleton);
+        void suspendMenuGrip(const PendingGrip& grip, std::uint32_t world, std::uint32_t skeleton);
+        void resumeMenuGrip(std::uint32_t world, std::uint32_t skeleton);
+        [[nodiscard]] bool observedItemMatches(std::uint32_t form, std::uintptr_t instance) const noexcept
+        {
+            return _observationInitialized && held_weapon_transfer::sameMenuItem(_observedIdentity.formID,
+                _observedIdentity.instanceData, form, instance);
+        }
+
         bool beginHeldTransition(
             const ExpectedIdentity& expected,
             Source source,
@@ -156,6 +215,21 @@ namespace rock
             const char* reason,
             bool releaseSceneGraph);
 
+        void traceHeldTransfer(const char* event) const;
+        void updateHeldRecovery();
+        void releasePendingNativeCull(bool restore);
+        held_weapon_transfer::State _heldTransfer{};
+        PendingGrip _pendingGrip{};
+        PendingGrip _menuGrip{};
+        bool _menuGripSaved{ false };
+        std::uint32_t _menuWorld{ 0 };
+        std::uint32_t _menuSkeleton{ 0 };
+        RE::NiPointer<RE::NiAVObject> _pendingNativeCull{};
+        float _heldWaitSeconds{ 0.0f };
+        bool _heldBridgeStarted{ false };
+        std::uint8_t _heldRecoveryAttempts{ 0 };
+        bool _heldRecoveryHolsterRequested{ false };
+        const char* _heldFailureReason{ nullptr };
         EquipVisualBridge _bridge;
         equipped_weapon_visual_state::ObservationCache _visualCache;
         equipped_weapon_transition_policy::State _policyState{};

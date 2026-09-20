@@ -400,6 +400,7 @@ namespace rock
         void serviceLooseGrenadeQuickDraw(const PhysicsFrameContext& frame);
         void servicePendingForceGrabCommits(const PhysicsFrameContext& frame);
         void clearPendingForceGrabCommits();
+        void cancelEquippedWeaponTransfersForMenu();
         void updateSavedGrabOffsetGesture(const PhysicsFrameContext& frame);
         void saveGrabOffsetForHand(Hand& hand, bool isLeft, RE::hknpWorld* hknpWorld);
         void armEquippedWeaponNativeHandoff(
@@ -597,38 +598,7 @@ namespace rock
          * inventory transfer, so the physical hand and its weapon-local frame
          * are retained by value until the equipped node becomes observable.
          */
-        struct PendingEquippedWeaponPrimaryOnlyGripStart
-        {
-            weapon_grip_transfer::Pair pairedGrips{};
-            weapon_grip_transfer::Support supportGrip{};
-            std::array<equipped_weapon_toggle_grab_policy::TransferReleaseState, 2> pairedRelease{};
-            bool pending{ false };
-            // Originating carrier; a support-only transfer leaves the opposite firing station vacant.
-            bool isLeft{ false };
-            // Zero means "the current weapon" (menu reconciliation). Held
-            // equip requests bind these fields to the accepted target and its
-            // pre-request baseline so a cloned instance may be recognized
-            // without ever starting manual ownership on an old same-base gun.
-            std::uint32_t targetWeaponFormID{ 0 };
-            std::uintptr_t targetWeaponInstanceData{ 0 };
-            std::uint32_t previousWeaponFormID{ 0 };
-            std::uintptr_t previousWeaponInstanceData{ 0 };
-            float remainingSeconds{ 0.0f };
-            equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource source{
-                equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource::GripInput
-            };
-            // A toggle acquisition is a committed logical grab even after the
-            // physical button opens while left takeover waits for the final
-            // generation-bound authored-support verdict.
-            bool toggleAcquisitionCommitted{ false };
-            bool toggleAcquisitionReleased{ false };
-            left_carry_readiness::TakeoverWitness takeoverWitness{};
-            const char* lastStartFailureReason{ nullptr }; // Static diagnostic reason; never an engine pointer.
-            bool hasFiringHandWeaponLocal{ false };
-            RE::NiTransform firingHandWeaponLocal{};
-            bool hasFiringGripWeaponLocal{ false };
-            RE::NiPoint3 firingGripWeaponLocal{};
-        };
+        using PendingEquippedWeaponPrimaryOnlyGripStart = EquippedWeaponTransitionCoordinator::PendingGrip;
 
         struct ArmedLooseGrenadeFuseState
         {
@@ -881,7 +851,6 @@ namespace rock
             std::array<bool, 2> toggleGrabReleasePressConsumedThisFrame{};
             std::array<virtual_holsters::HandState, 2> holsterInputStates{};
             std::array<bool, 2> holsterInputConsumedThisFrame{};
-            PendingEquippedWeaponPrimaryOnlyGripStart pendingPrimaryOnlyGripStart{};
             std::array<weapon_interaction_acquisition_policy::State, 2> weaponInteractionAcquisitionStates{};
             // Left/right candidates from the actual grab probes, valid only for
             // this frame and weapon generation. No scene pointers cross phases.

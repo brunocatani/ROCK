@@ -380,6 +380,7 @@ namespace
         {
             performance_profiler::ScopedTimer timer(performance_profiler::Scope::InteractionUpdate);
             s_physicsInteraction->update();
+            input_remap_runtime::publishWeaponTriggerRouting();
         }
         {
             performance_profiler::ScopedTimer timer(performance_profiler::Scope::ProviderPublication);

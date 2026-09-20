@@ -142,4 +142,7 @@ namespace rock::weapon_equip_transfer
     [[nodiscard]] EquippedDropResult dropEquippedWeaponFromPlayer(const EquippedDropInput& input) noexcept;
     // Frame-thread only. Changes selection, never removes an inventory item.
     [[nodiscard]] bool replaceHolsteredWeaponWithUnarmed() noexcept;
+    // Exact-current compensation after a held equip; never removes an item.
+    [[nodiscard]] bool unequipExactCurrentWeapon(std::uint32_t formID, std::uintptr_t instanceData) noexcept;
+    [[nodiscard]] bool canRecoverHeldEquip() noexcept;
 }

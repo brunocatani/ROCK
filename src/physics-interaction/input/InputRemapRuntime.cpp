@@ -1,3 +1,4 @@
+#include "physics-interaction/input/WeaponTriggerRouting.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "RPSUIInputApi.h"
 
@@ -241,14 +242,18 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_gameplayInputAllowed{ false };
         std::atomic<bool> s_weaponDrawn{ false };
         std::atomic<bool> s_realMeleeWeaponEquipped{ false };
-        std::array<std::atomic<bool>, 2> s_handHeldWeapon{};
+        weapon_trigger_routing::Snapshot s_pendingWeaponRouting{}; // Interaction thread only.
+        std::atomic<std::uint32_t> s_weaponRouting{ 0 };
+        std::atomic<std::uint32_t> s_equipTriggerReleaseMask{ 0 };
+        [[nodiscard]] weapon_trigger_routing::Snapshot weaponRouting() noexcept
+        {
+            return weapon_trigger_routing::Snapshot::unpack(s_weaponRouting.load(std::memory_order_acquire));
+        }
         std::array<std::atomic<bool>, 2> s_handInteractionEngaged{};
         std::array<std::atomic<std::uint32_t>, 2> s_heldObjectFormId{};
         std::array<std::atomic<bool>, 2> s_pendingSavedGrabOffsetRequest{};
         std::atomic<bool> s_equippedWeaponFiringGripInputActive{ false };
-        std::atomic<bool> s_equippedWeaponPrimaryDetached{ false };
         std::atomic<bool> s_equippedWeaponShoulderSheathActive{ false };
-        std::atomic<bool> s_equippedWeaponLeftHandFiringActive{ false };
         // MenuControls dispatches ButtonEvents serially on the frame/input
         // thread; these gesture states are never read from worker callbacks.
         manual_scope_input_policy::RuntimeState s_manualScopeInputState{};
@@ -739,7 +744,7 @@ namespace rock::input_remap_runtime
          */
         [[nodiscard]] bool shouldRemapLeftHandFireTriggerForGame()
         {
-            return s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire) &&
+            return weaponRouting().leftFiring &&
                 s_gameplayInputAllowed.load(std::memory_order_acquire) &&
                 !isInputBlockingMenuActive();
         }
@@ -1228,7 +1233,7 @@ namespace rock::input_remap_runtime
                 .eventHandHeldWeapon = false,
                 .primaryHandEvent = false,
                 .equippedWeaponFiringGripInputActive = s_equippedWeaponFiringGripInputActive.load(std::memory_order_acquire),
-                .equippedWeaponPrimaryDetached = s_equippedWeaponPrimaryDetached.load(std::memory_order_acquire),
+                .equippedWeaponPrimaryDetached = weaponRouting().detached,
                 .equippedWeaponShoulderSheathActive = s_equippedWeaponShoulderSheathActive.load(std::memory_order_acquire),
                 .realMeleeWeaponEquipped = s_realMeleeWeaponEquipped.load(std::memory_order_acquire),
                 .nativeMeleeSuppressionActive = isNativeMeleeSuppressionActive(),
@@ -1241,12 +1246,18 @@ namespace rock::input_remap_runtime
         {
             auto input = makeNativeActionSuppressionInput(suppressionEnabled, eventMatched);
             input.primaryHandEvent = isPrimaryWandInputEvent(event);
-            // ROCK owns controller identity: FO4VR's primary wand is the
-            // physical right controller and the secondary wand is the
-            // physical left controller. The game's native handedness setting
-            // must never remap ROCK input ownership.
-            const bool eventHandIsLeft = !input.primaryHandEvent;
-            input.eventHandHeldWeapon = s_handHeldWeapon[eventHandIsLeft ? 0u : 1u].load(std::memory_order_acquire);
+            const auto routing = weaponRouting();
+            const bool trigger = eventNameMatches(event, kNativeEventWandTrigger);
+            input = input_remap_policy::routeWeaponInput(input, routing, input.primaryHandEvent, trigger);
+            if (trigger) {
+                const auto mask = input.triggerSourceIsLeft ? 2u : 1u;
+                // The raw tracker precedes the remap. Never interpret the
+                // synthetic primary trigger as a new physical firing gesture.
+                if (!isRawButtonPhysicallyHeld(input.triggerSourceIsLeft, input_remap_policy::kOpenVrSteamVrTriggerButtonId)) {
+                    s_equipTriggerReleaseMask.fetch_and(~mask, std::memory_order_acq_rel);
+                }
+                input.triggerAwaitingRelease = (s_equipTriggerReleaseMask.load(std::memory_order_acquire) & mask) != 0;
+            }
             return input;
         }
 
@@ -1261,13 +1272,22 @@ namespace rock::input_remap_runtime
             const input_remap_policy::NativeActionSuppressionInput& input,
             bool suppressed, bool providerSuppressed = false)
         {
-            if (!input.eventMatched || !logger::isDebugEnabled()) return;
+            if (!input.eventMatched) return;
             const auto* button = event ? event->As<RE::ButtonEvent>() : nullptr;
             if (!button || (!button->QJustPressed() &&
                 (button->QPressed() || button->QHeldDownSecs() < 0.0f))) return;
+            if (button->QJustPressed() && std::string_view(gate) == "attack-trigger") {
+                ROCK_LOG_SAMPLE_INFO(Input, 250,
+                    "Weapon trigger admission primary={} physicalSource={} suppressed={} provider={} drawn={} sourceLoose={} detached={} transfer={} awaitingRelease={}",
+                    input.primaryHandEvent, input.triggerSourceIsLeft ? "left" : "right", suppressed, providerSuppressed,
+                    input.weaponDrawn, input.eventHandHeldWeapon, input.equippedWeaponPrimaryDetached,
+                    input.weaponTransferPending, input.triggerAwaitingRelease);
+            }
+            if (!logger::isDebugEnabled()) return;
             ROCK_LOG_DEBUG(Input,
-                "NATIVE-WEAPON-INPUT gate={} suppressed={} provider={} primary={} pressed={} drawn={} heldWeapon={} firingGrip={} detached={} shoulder={} realMelee={} meleeSuppression={} gameplay={} menu={}",
+                "NATIVE-WEAPON-INPUT gate={} suppressed={} provider={} primary={} sourceLeft={} transfer={} awaitRelease={} pressed={} drawn={} heldWeapon={} firingGrip={} detached={} shoulder={} realMelee={} meleeSuppression={} gameplay={} menu={}",
                 gate, suppressed, providerSuppressed, input.primaryHandEvent,
+                input.triggerSourceIsLeft, input.weaponTransferPending, input.triggerAwaitingRelease,
                 button->QJustPressed(), input.weaponDrawn, input.eventHandHeldWeapon,
                 input.equippedWeaponFiringGripInputActive, input.equippedWeaponPrimaryDetached,
                 input.equippedWeaponShoulderSheathActive, input.realMeleeWeaponEquipped,
@@ -1311,11 +1331,15 @@ namespace rock::input_remap_runtime
             }
             // Conditional chord leases are evaluated against the raw sample
             // before the consumer's next frame callback can publish ownership.
-            const bool providerSuppressed = eventNameMatches(event, kNativeEventWandTrigger) &&
-                isProviderOpenVrGameInputSuppressed(isSecondaryWandInputEvent(event) ?
-                    input_remap_policy::Hand::Left : input_remap_policy::Hand::Right);
             const auto input = makeNativeActionSuppressionInput(
                 true, event, eventNameMatches(event, kNativeEventWandTrigger));
+            const bool providerSuppressed = input.eventMatched &&
+                isProviderOpenVrGameInputSuppressed(input.triggerSourceIsLeft ?
+                    input_remap_policy::Hand::Left : input_remap_policy::Hand::Right);
+            // A consumed equip press must still deliver its release to native
+            // attack bookkeeping. No new attack can originate from button-up.
+            const auto* button = event ? event->As<RE::ButtonEvent>() : nullptr;
+            if (input.eventMatched && button && !button->QPressed()) return false;
             const bool suppressed = providerSuppressed || input_remap_policy::shouldSuppressNativeTriggerAction(input);
             traceNativeWeaponInputGate(gate, event, input, suppressed, providerSuppressed);
             return suppressed;
@@ -1350,7 +1374,7 @@ namespace rock::input_remap_runtime
              */
             const bool primaryHandEvent = eventMatched && isPrimaryWandInputEvent(event);
             constexpr bool primaryHandIsLeft = false;
-            const bool firingHandIsLeft = s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire);
+            const bool firingHandIsLeft = weaponRouting().leftFiring;
             const bool firingHandIsPrimaryHand = firingHandIsLeft == primaryHandIsLeft;
             const bool route = input_remap_policy::shouldRouteFiringHandActivateReload(input_remap_policy::NativeActivateReloadInput{
                 .remapEnabled = true,
@@ -1381,7 +1405,7 @@ namespace rock::input_remap_runtime
             const bool eventMatched = isActivateReloadEvent(event);
             const bool primaryHandEvent = eventMatched && isPrimaryWandInputEvent(event);
             constexpr bool primaryHandIsLeft = false;
-            const bool firingHandIsLeft = s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire);
+            const bool firingHandIsLeft = weaponRouting().leftFiring;
             return input_remap_policy::shouldDeferFiringHandActivateForManualScope(input_remap_policy::ManualScopeActivateInput{
                 .rawInputCaptureAvailable = s_hooksInstalled.load(std::memory_order_acquire),
                 .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
@@ -1716,7 +1740,7 @@ namespace rock::input_remap_runtime
                 classifyActivateTarget(primaryHandEvent) : ActivateTarget::Unavailable;
             bool nativeActivation = target == ActivateTarget::NativeActivation;
             if (g_rockConfig.rockEnableImmersiveScopes && gameplayActivation && primaryHandEvent && weaponDrawn &&
-                !s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire) &&
+                !weaponRouting().leftFiring &&
                 s_hooksInstalled.load(std::memory_order_acquire)) {
                 const auto* button = inputEvent->As<RE::ButtonEvent>();
                 if (button && button->QJustPressed()) {
@@ -1733,7 +1757,7 @@ namespace rock::input_remap_runtime
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
                     "Deferred native firing-hand activate/use event to manual scope/reload hold arbitration hand={}",
-                    s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire) ? "left-X" : "right-A");
+                    weaponRouting().leftFiring ? "left-X" : "right-A");
                 return;
             }
 
@@ -1749,7 +1773,7 @@ namespace rock::input_remap_runtime
                     ROCK_LOG_SAMPLE_DEBUG(Input,
                         g_rockConfig.rockLogSampleMilliseconds,
                         "Routed native firing-hand activate/use input to equipped weapon reload hand={}",
-                        s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire) ? "left-X" : "right-A");
+                        weaponRouting().leftFiring ? "left-X" : "right-A");
                 }
                 return;
             }
@@ -2746,7 +2770,7 @@ namespace rock::input_remap_runtime
 
     void setHandHeldWeapon(const bool isLeft, const bool heldWeapon)
     {
-        s_handHeldWeapon[isLeft ? 0u : 1u].store(heldWeapon, std::memory_order_release);
+        (isLeft ? s_pendingWeaponRouting.leftLoose : s_pendingWeaponRouting.rightLoose) = heldWeapon;
     }
 
     void setHandInteractionEngaged(bool isLeft, bool engaged)
@@ -2766,7 +2790,7 @@ namespace rock::input_remap_runtime
 
     void setEquippedWeaponPrimaryDetached(bool detached)
     {
-        s_equippedWeaponPrimaryDetached.store(detached, std::memory_order_release);
+        s_pendingWeaponRouting.detached = detached;
     }
 
     void setEquippedWeaponShoulderSheathActive(bool active)
@@ -2776,7 +2800,8 @@ namespace rock::input_remap_runtime
 
     void setEquippedWeaponLeftHandFiringActive(bool active)
     {
-        const bool previous = s_equippedWeaponLeftHandFiringActive.exchange(active, std::memory_order_acq_rel);
+        const bool previous = s_pendingWeaponRouting.leftFiring;
+        s_pendingWeaponRouting.leftFiring = active;
         if (previous != active) {
             blockManualScopeInputUntilRelease();
             ROCK_LOG_INFO(Input, "Left-hand fire trigger remap {}", active ? "ENGAGED" : "released");
@@ -2787,6 +2812,29 @@ namespace rock::input_remap_runtime
     {
         return isProviderOpenVrGameInputSuppressed(
             isLeft ? input_remap_policy::Hand::Left : input_remap_policy::Hand::Right);
+    }
+
+    void setWeaponTransferPending(const bool pending)
+    {
+        s_pendingWeaponRouting.transferPending = pending;
+        // Admission closes attack immediately; reopening happens only when
+        // the complete physical ownership snapshot is published.
+        if (pending) s_weaponRouting.fetch_or(16u, std::memory_order_release);
+    }
+
+    void blockWeaponTriggerUntilRelease(const bool isLeft)
+    {
+        s_equipTriggerReleaseMask.fetch_or(isLeft ? 2u : 1u, std::memory_order_acq_rel);
+    }
+
+    void publishWeaponTriggerRouting()
+    {
+        s_weaponRouting.store(s_pendingWeaponRouting.pack(), std::memory_order_release);
+        for (const bool left : { false, true }) {
+            if (!isRawButtonPhysicallyHeld(left, input_remap_policy::kOpenVrSteamVrTriggerButtonId)) {
+                s_equipTriggerReleaseMask.fetch_and(~(left ? 2u : 1u), std::memory_order_acq_rel);
+            }
+        }
     }
 
     void setProviderOpenVrGameInputSuppressed(bool isLeft, bool suppressed)
@@ -2830,7 +2878,7 @@ namespace rock::input_remap_runtime
             blockManualScopeInputUntilRelease();
             return;
         }
-        const bool firingHandIsLeft = s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire);
+        const bool firingHandIsLeft = weaponRouting().leftFiring;
         const bool gameplayAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire);
         const bool menuActive = isInputBlockingMenuActive();
         const bool weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire);

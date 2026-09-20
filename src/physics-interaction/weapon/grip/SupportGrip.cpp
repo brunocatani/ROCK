@@ -40,11 +40,13 @@ namespace rock
     }
 
     bool TwoHandedGrip::beginTransferredSupportGrip(RE::NiNode* weaponNode, std::uint64_t generation,
-        std::uint64_t ownership, const weapon_grip_transfer::Support& captured, const char** failure)
+        std::uint64_t ownership, const weapon_grip_transfer::Support& captured, const char** failure,
+        const weapon_grip_transfer::Support* second)
     {
         if (failure) *failure = nullptr;
         const auto reject = [&](const char* reason) { if (failure) *failure = reason; return false; };
-        if (!weaponNode || !generation || !ownership || !captured.valid()) return reject("support-transfer-invalid");
+        if (!weaponNode || !generation || !ownership || !captured.validCarry() ||
+            (second && (!second->validCarry() || second->isLeft == captured.isLeft || second->weaponFormID != captured.weaponFormID))) return reject("support-transfer-invalid");
         if (isManualOwnershipActive()) return reject("grip-session-already-active");
         RE::NiPoint3 targetTranslation{};
         if (!vanilla_weapon_grip_frame::resolveModelTranslation(captured.weaponFormID, weaponNode, targetTranslation))
@@ -76,7 +78,7 @@ namespace rock
         _hasWeaponNodeLocalBaseline = true;
         adoptTransferredSupportGrip(captured.isLeft, weaponNode, generation, grip);
         auto& support = partGrip(captured.isLeft);
-        support.acquisitionSource = WeaponInteractionAcquisitionSource::AuthoredSeat;
+        support.acquisitionSource = support.authoredSupportGrip ? WeaponInteractionAcquisitionSource::AuthoredSeat : WeaponInteractionAcquisitionSource::PhysicalContact;
         support.supportInputBaseline = {
             .inputToGripTargetLocal = handInDriver,
             .inputToWeaponLocal = weaponInDriver,
@@ -94,10 +96,78 @@ namespace rock
         _partCarry.gripSeparationWorld = 0.0f;
         _support.rotationBlend = 1.0f;
         _session.state = TwoHandedState::PartCarry;
+        if (second) {
+            auto secondGrip = second->grip;
+            secondGrip.handWeaponLocal.translate += targetTranslation - second->sourceModelTranslation;
+            secondGrip.gripWeaponLocal += targetTranslation - second->sourceModelTranslation;
+            adoptTransferredSupportGrip(second->isLeft, weaponNode, generation, secondGrip);
+            const auto separation = secondGrip.gripWeaponLocal - grip.gripWeaponLocal;
+            _partCarry.gripSeparationWorld = std::sqrt(dot(separation, separation)) * std::abs(weaponNode->world.scale);
+        }
         clearAllVisualReturns("support-equip-transfer", false, true);
         ROCK_LOG_INFO(Weapon, "Authored support equipped grip adopted form={:08X} hand={} firingGrip=vacant placement=captured-driver generation={:016X} ownership={:016X}",
             captured.weaponFormID, captured.isLeft ? "left" : "right", generation, ownership);
         return true;
+    }
+
+    bool TwoHandedGrip::captureMenuCarry(weapon_grip_transfer::HandGrip& firing, weapon_grip_transfer::Pair& paired,
+        weapon_grip_transfer::Support& support, weapon_grip_transfer::Support& second, bool& carrierLeft) const
+    {
+        firing = {}; paired = {}; support = {}; second = {};
+        auto* node = isManualOwnershipActive() ? _session.weaponNode : _firing.rightCanonicalWeaponNode;
+        if (!node || !_confirmedEquippedOwnershipKey) return false;
+        const auto form = _recoil.weaponEvidence.formID;
+        RE::NiPoint3 translation{};
+        if (!vanilla_weapon_grip_frame::resolveModelTranslation(form, node, translation)) return false;
+        const auto capturePart = [&](bool left, weapon_grip_transfer::HandGrip& out) {
+            const auto& part = partGrip(left);
+            if (!part.active || part.attachOnly || part.providerPartAuthority.active || !part.hasFingerPose) return false;
+            out.handWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(node->world), resolvePartGripHandWorld(part, node));
+            out.gripWeaponLocal = worldToWeaponLocal(resolvePartGripWorld(part, node), node);
+            out.fingerValues = part.fingerPose;
+            out.fingerLocals = part.fingerLocalTransforms;
+            out.fingerMask = part.fingerLocalTransformMask;
+            out.authoredRole = part.authoredRole;
+            out.hasFingerPose = true;
+            return out.valid();
+        };
+        const auto captureSupport = [&](bool left, weapon_grip_transfer::Support& out) {
+            RE::NiTransform driver{};
+            if (!capturePart(left, out.grip) || !frik_hand_world_authority::tryGetInputDriverWorld(left, driver) || !isInvertibleTransform(driver)) return false;
+            out.weaponFormID = form;
+            out.isLeft = left;
+            out.sourceModelTranslation = translation;
+            out.weaponInDriver = transform_math::composeTransforms(transform_math::invertTransform(driver), node->world);
+            return out.validCarry();
+        };
+        if (isPartCarryActive()) {
+            carrierLeft = _partCarry.pivotIsLeft;
+            if (!captureSupport(carrierLeft, support)) return false;
+            if (isHandPartCarryGripping(!carrierLeft) && !captureSupport(!carrierLeft, second)) return false;
+            return true;
+        }
+        carrierLeft = isFiringHandLeft();
+        if (_firing.transferredPrimaryGrip.valid()) firing = _firing.transferredPrimaryGrip;
+        else {
+            AuthoredWeaponGripPose pose{};
+            if (!captureDropGripPose(carrierLeft, pose)) return false;
+            firing.handWeaponLocal = pose.handWeaponLocal;
+            firing.gripWeaponLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(pose.handWeaponLocal, carrierLeft);
+            firing.fingerLocals = pose.fingerLocals;
+            firing.fingerMask = pose.fingerMask;
+            firing.hasFingerPose = true;
+            firing.authoredRole = loose_weapon_authored_grab_policy::Role::Firing;
+        }
+        if (isHandPartCarryGripping(!carrierLeft)) {
+            paired.primary = firing;
+            paired.weaponFormID = form;
+            paired.firingHandIsLeft = carrierLeft;
+            paired.sourceModelTranslation = translation;
+            paired.arrangement = loose_weapon_authored_grab_policy::Arrangement::Separated;
+            if (!capturePart(!carrierLeft, paired.support)) return false;
+            return paired.valid();
+        }
+        return firing.valid();
     }
 
     bool TwoHandedGrip::beginTransferredTwoHandGrip(RE::NiNode* weaponNode, std::uint64_t generation,

@@ -530,7 +530,7 @@ namespace rock
         _frame.completedPhysicsSolveSequence.store(0, std::memory_order_release);
         _drop.nativeHandoffs = {};
         clearLooseGrenadeRuntimeState();
-        _equipped.pendingPrimaryOnlyGripStart = {};
+        _equipped.transition.pendingGrip() = {};
         _equipped.handlingSettings = {};
         _equipped.handlingModeInitialized = false;
         _equipped.handlingModeReconcilePending = false;
@@ -662,7 +662,7 @@ namespace rock
         clearEquippedWeaponShoulderSheath("physics-shutdown");
         _suppression.nativeGrenadeLeases.clearTracking();
         _twoHandedGrip.reset();
-        _equipped.pendingPrimaryOnlyGripStart = {};
+        _equipped.transition.pendingGrip() = {};
         clearPendingForceGrabCommits();
         clearLooseGrenadeRuntimeState();
         clearEquippedWeaponFiringGripInputState();

@@ -548,6 +548,20 @@ namespace rock
             if (isFiringHandLeft()) _gripReleaseRetained.left = true;
             else _gripReleaseRetained.right = true;
         }
+        const auto releaseOccupancy = getGripOccupancy();
+        const bool leftRelease = isFiringHandLeft() && !isPartCarryActive() ? !releaseIntent.retained : !stableFrameInput.leftGripHeld;
+        const bool rightRelease = !isFiringHandLeft() && !isPartCarryActive() ? !releaseIntent.retained : !stableFrameInput.rightGripHeld;
+        const auto simultaneousSource = equipped_weapon_drop_policy::simultaneousReleaseSource(
+            _handlingSettings.lastGripReleaseDropEnabled,
+            releaseOccupancy.left.carriesWeapon(), releaseOccupancy.right.carriesWeapon(), leftRelease, rightRelease,
+            isFiringGripOccupied(), isFiringHandLeft(), _partCarry.pivotIsLeft);
+        if (simultaneousSource != equipped_weapon_drop_policy::SourceHand::None) {
+            // Capture once while both pre-release authorities still exist.
+            // Per-hand release processing must not retain a synthetic last carrier.
+            if (_session.state == TwoHandedState::Gripping) updateGripping(_session.weaponNode, dt);
+            (void)requestEquippedWeaponDrop("simultaneous-carrier-release", simultaneousSource, dt, true);
+            return finishUpdate();
+        }
         const auto primaryReleaseDecision = equipped_weapon_manual_ownership_policy::debouncePrimaryGripRelease(
             _firing.primaryReleaseDebounce, releaseIntent.retained);
         stableFrameInput.primaryGripInput.held = primaryReleaseDecision.retained;
@@ -800,6 +814,7 @@ namespace rock
     {
         _confirmedEquippedOwnershipKey = 0;
         _confirmedEquippedGripGenerationKey = 0;
+        _equippedGripAcquisitionPending = false;
         clearOneHandRecoilClaim();
         _recoil.equippedIdentity = {};
         _recoil.rightBaseValid = false;

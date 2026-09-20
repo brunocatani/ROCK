@@ -84,10 +84,18 @@ namespace rock::weapon_grip_transfer
 
         [[nodiscard]] bool valid() const noexcept
         {
-            return weaponFormID != 0 && grip.valid() && weaponInDriver && validFrame(*weaponInDriver) && grip.fingerMask == 0x7FFFu &&
+            return validCarry() && grip.fingerMask == 0x7FFFu &&
                 grip.authoredRole == loose_weapon_authored_grab_policy::Role::Support &&
                 std::isfinite(sourceModelTranslation.x) && std::isfinite(sourceModelTranslation.y) &&
                 std::isfinite(sourceModelTranslation.z);
+        }
+
+        // Menu restoration also carries a previously acquired dynamic part
+        // pose. Authored loose support admission continues to require valid().
+        [[nodiscard]] bool validCarry() const noexcept
+        {
+            return weaponFormID != 0 && grip.valid() && weaponInDriver && validFrame(*weaponInDriver) &&
+                std::isfinite(sourceModelTranslation.x) && std::isfinite(sourceModelTranslation.y) && std::isfinite(sourceModelTranslation.z);
         }
 
         [[nodiscard]] RE::NiTransform registeredWeaponInDriver(const RE::NiPoint3& targetModelTranslation) const

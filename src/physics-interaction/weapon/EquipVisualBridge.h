@@ -142,6 +142,7 @@ namespace rock
         void abandonSceneGraph();
 
         [[nodiscard]] bool isActive() const noexcept { return _active; }
+        [[nodiscard]] bool presentationLeaseWouldExpire(float deltaSeconds) const noexcept;
         [[nodiscard]] bool hasVisualModel() const noexcept { return _model != nullptr; }
         [[nodiscard]] bool isModelPresented() const noexcept { return _modelPresented; }
         [[nodiscard]] bool ownsNativeInstanceCull(const RE::NiAVObject* node) const noexcept;

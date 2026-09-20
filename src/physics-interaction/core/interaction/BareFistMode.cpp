@@ -9,7 +9,7 @@ namespace rock
         if (!frame.worldReady || frame.menuBlocked || frame.reloadBoundaryActive ||
             frame.left.disabled || frame.right.disabled ||
             _equipped.transition.getPublicSnapshot().active ||
-            _equipped.pendingPrimaryOnlyGripStart.pending ||
+            _equipped.transition.pendingGrip().pending ||
             provider::currentNativeAnimationAuthorityFlagsV1() != 0) return false;
         const auto grips = _twoHandedGrip.getGripOccupancy();
         if (grips.left.weaponEngaged() || grips.right.weaponEngaged()) return false;
@@ -89,7 +89,7 @@ namespace rock
                     g_rockConfig.rockEnableVanillaMelee, nativeState, weaponForm,
                     static_cast<unsigned>(_leftHand.getState()), static_cast<unsigned>(_rightHand.getState()),
                     _touchGrabRuntime.isHandActive(true), _touchGrabRuntime.isHandActive(false),
-                    _equipped.transition.getPublicSnapshot().active, _equipped.pendingPrimaryOnlyGripStart.pending,
+                    _equipped.transition.getPublicSnapshot().active, _equipped.transition.pendingGrip().pending,
                     frame.menuBlocked || runtime.compatibilityConfigBlocking, runtime.localSkeletonReady,
                     input_remap_runtime::bareFistHooksReady(), areNativeMeleeHooksInstalled());
             }

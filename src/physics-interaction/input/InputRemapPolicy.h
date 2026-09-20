@@ -1,4 +1,5 @@
 #pragma once
+#include "physics-interaction/input/WeaponTriggerRouting.h"
 
 #include <cstdint>
 #include <string_view>
@@ -86,7 +87,21 @@ namespace rock::input_remap_policy
         bool takeEquipHandEngaged{ false };
         bool takeEquipTargetEligible{ false };
         bool eventMatched{ false };
+        bool triggerSourceIsLeft{ false };
+        bool weaponTransferPending{ false };
+        bool triggerAwaitingRelease{ false };
     };
+
+    [[nodiscard]] constexpr NativeActionSuppressionInput routeWeaponInput(NativeActionSuppressionInput input,
+        const weapon_trigger_routing::Snapshot& routing, bool nativePrimary, bool trigger) noexcept
+    {
+        input.primaryHandEvent = nativePrimary;
+        input.triggerSourceIsLeft = routing.physicalSourceIsLeft(nativePrimary, trigger);
+        input.eventHandHeldWeapon = routing.holdsLoose(input.triggerSourceIsLeft);
+        input.equippedWeaponPrimaryDetached = routing.detached;
+        input.weaponTransferPending = trigger && routing.transferPending;
+        return input;
+    }
 
     struct LegacyPipboyTriggerOpenInput
     {
@@ -216,6 +231,8 @@ namespace rock::input_remap_policy
 
     [[nodiscard]] constexpr bool shouldSuppressNativeTriggerAction(const NativeActionSuppressionInput& input)
     {
+        if (input.eventMatched && input.gameplayInputAllowed && !input.menuInputActive &&
+            (input.weaponTransferPending || input.triggerAwaitingRelease)) return true;
         if (shouldAllowNativeRealMeleeInput(input)) {
             return false;
         }
