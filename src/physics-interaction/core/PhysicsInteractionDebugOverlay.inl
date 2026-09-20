@@ -3900,12 +3900,11 @@
                             addTextLineSized(twin.liveBodyWorldGame,
                                 1.45f,
                                 handColor,
-                                "%s %s RES=%.2f GAP=%.2f IKx=%.2f V=%.1f",
+                                "%s %s RES=%.2f GAP=%.2f V=%.1f",
                                 handSample.isLeft ? "L" : "R",
                                 dynamic_hand_collision_telemetry::roleCode(twin.role),
                                 twin.solverResidualGameUnits,
                                 twin.requestedGapGameUnits,
-                                twin.handTargetResponseScale,
                                 twin.approachSpeedGameUnitsPerSecond);
                         }
                     }

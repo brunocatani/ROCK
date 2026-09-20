@@ -1,55 +1,61 @@
 #pragma once
 
 /*
- * Render-authority mapping for dynamic forearm contacts. FRIK consumes a hand
- * target, not a forearm target: translating the hand target moves a point on
- * the forearm by only part of that amount. The radial shoulder-to-point ratio
- * is the local rigid-arm lever approximation, so its inverse maps a blocked
- * forearm displacement back into the hand-target displacement needed to keep
- * that point out of the surface.
+ * All semantic children belong to one hand compound. Their solver deviations
+ * already measure its displacement from controller intent, including forearm
+ * contacts. Applying an additional IK leverage gain overcorrects the hand and
+ * makes it move away from a surface as the controller presses farther into it.
  */
 
-#include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
 
 namespace rock::dynamic_hand_collision_kinematics
 {
-    inline constexpr float kMinimumHandTargetResponseScale = 1.0f;
-    inline constexpr float kMaximumHandTargetResponseScale = 2.5f;
-
-    template <class Vector>
-    [[nodiscard]] inline float distance(const Vector& lhs, const Vector& rhs) noexcept
+    // Preserve the existing bounded half-space projection: contacts sharing a
+    // surface collapse to one correction; contacts around a corner compose.
+    template <class Vector, std::size_t SlotCount>
+    [[nodiscard]] inline Vector combineTwinDeviations(
+        const std::array<Vector, SlotCount>& deviations,
+        const std::array<bool, SlotCount>& deviationValid) noexcept
     {
-        const float x = lhs.x - rhs.x;
-        const float y = lhs.y - rhs.y;
-        const float z = lhs.z - rhs.z;
-        const float lengthSquared = x * x + y * y + z * z;
-        return std::isfinite(lengthSquared) && lengthSquared >= 0.0f ? std::sqrt(lengthSquared) : 0.0f;
-    }
-
-    template <class Vector>
-    [[nodiscard]] inline float forearmHandTargetResponseScale(
-        const Vector& shoulderWorld,
-        const Vector& handWorld,
-        const Vector& forearmCenterWorld) noexcept
-    {
-        constexpr float kMinimumReachGameUnits = 0.25f;
-        const float handReach = distance(handWorld, shoulderWorld);
-        const float forearmReach = distance(forearmCenterWorld, shoulderWorld);
-        if (handReach < kMinimumReachGameUnits || forearmReach < kMinimumReachGameUnits) {
-            return kMinimumHandTargetResponseScale;
+        constexpr float kTinyDeviation = 1.0e-4f;
+        Vector combined{};
+        for (int pass = 0; pass < 3; ++pass) {
+            bool changed = false;
+            for (std::size_t i = 0; i < deviations.size(); ++i) {
+                const auto& deviation = deviations[i];
+                if (!deviationValid[i] || !std::isfinite(deviation.x) ||
+                    !std::isfinite(deviation.y) || !std::isfinite(deviation.z)) {
+                    continue;
+                }
+                const float length = std::sqrt(
+                    deviation.x * deviation.x +
+                    deviation.y * deviation.y +
+                    deviation.z * deviation.z);
+                if (!std::isfinite(length) || length <= kTinyDeviation) {
+                    continue;
+                }
+                const Vector direction{
+                    deviation.x / length,
+                    deviation.y / length,
+                    deviation.z / length,
+                };
+                const float needed =
+                    length - (combined.x * direction.x + combined.y * direction.y + combined.z * direction.z);
+                if (needed <= kTinyDeviation) {
+                    continue;
+                }
+                combined.x += direction.x * needed;
+                combined.y += direction.y * needed;
+                combined.z += direction.z * needed;
+                changed = true;
+            }
+            if (!changed) {
+                break;
+            }
         }
-
-        const float scale = handReach / forearmReach;
-        return std::isfinite(scale) ?
-                   std::clamp(scale, kMinimumHandTargetResponseScale, kMaximumHandTargetResponseScale) :
-                   kMinimumHandTargetResponseScale;
-    }
-
-    [[nodiscard]] inline float sanitizeHandTargetResponseScale(float scale) noexcept
-    {
-        return std::isfinite(scale) ?
-                   std::clamp(scale, kMinimumHandTargetResponseScale, kMaximumHandTargetResponseScale) :
-                   kMinimumHandTargetResponseScale;
+        return combined;
     }
 }

@@ -164,7 +164,6 @@ namespace rock::dynamic_hand_collision_telemetry
         RE::NiPoint3 solverResidualWorldGame{};
         RE::NiPoint3 requestedGapWorldGame{};
         RE::NiPoint3 contactDeviationWorldGame{};
-        RE::NiPoint3 handTargetCorrectionWorldGame{};
         RE::NiPoint3 targetVelocityWorldGameUnitsPerSecond{};
 
         float lengthGameUnits = 0.0f;
@@ -173,8 +172,6 @@ namespace rock::dynamic_hand_collision_telemetry
         float solverResidualGameUnits = 0.0f;
         float requestedGapGameUnits = 0.0f;
         float contactDeviationGameUnits = 0.0f;
-        float handTargetCorrectionGameUnits = 0.0f;
-        float handTargetResponseScale = 1.0f;
         float approachSpeedGameUnitsPerSecond = 0.0f;
         float physicsDeltaSeconds = 0.0f;
 

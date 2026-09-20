@@ -4,7 +4,6 @@
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
-#include "physics-interaction/hand/DynamicHandCollisionKinematics.h"
 #include "physics-interaction/hand/Hand.h"
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
 #include "physics-interaction/native/HavokMaterialRegistry.h"
@@ -243,15 +242,12 @@ namespace rock
                 return;
             }
 
-            const std::string_view shoulderBone = isLeft ? "LArm_UpperArm" : "RArm_UpperArm";
             const std::string_view forearmStartBone = isLeft ? "LArm_ForeArm1" : "RArm_ForeArm1";
             const std::string_view handBone = isLeft ? "LArm_Hand" : "RArm_Hand";
-            RE::NiTransform shoulder{};
             hand_bone_collider_geometry_math::BoneColliderFrameInput<RE::NiTransform, RE::NiPoint3> input{};
             input.radius = std::max({ sources[0].radius, sources[1].radius, sources[2].radius });
             input.convexRadius = std::max({ sources[0].convexRadius, sources[1].convexRadius, sources[2].convexRadius });
-            if (!findSnapshotBone(bonesByName, shoulderBone, shoulder) ||
-                !findSnapshotBone(bonesByName, forearmStartBone, input.start) ||
+            if (!findSnapshotBone(bonesByName, forearmStartBone, input.start) ||
                 !findSnapshotBone(bonesByName, handBone, input.end)) {
                 return;
             }
@@ -286,10 +282,6 @@ namespace rock
             slot.length = mergedFrame.length;
             slot.radius = mergedFrame.radius;
             slot.convexRadius = mergedFrame.convexRadius;
-            slot.handTargetResponseScale = dynamic_hand_collision_kinematics::forearmHandTargetResponseScale(
-                shoulder.translate,
-                input.end.translate,
-                mergedFrame.transform.translate);
         }
 
         void publishMergedForearmTwinTargets(

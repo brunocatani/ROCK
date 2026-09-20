@@ -366,55 +366,6 @@ namespace rock
         }
 
         /*
-         * Rigid-hand combination of per-body deviations: each twin's deviation
-         * is a half-space push-out for its own contacts, so the minimal hand
-         * correction satisfying all of them is the sequential projection over
-         * the set (same math family the 6e41044 manifold solver validated).
-         * Overlapping deviations from one shared surface collapse instead of
-         * double-counting; corner deviations from different directions compose.
-         */
-        RE::NiPoint3 combineTwinDeviations(
-            const std::array<RE::NiPoint3, DynamicHandCollisionRuntime::kBodiesPerHand>& deviations,
-            const std::array<bool, DynamicHandCollisionRuntime::kBodiesPerHand>& deviationValid)
-        {
-            constexpr float kTinyDeviation = 1.0e-4f;
-            RE::NiPoint3 combined{};
-            for (int pass = 0; pass < 3; ++pass) {
-                bool changed = false;
-                for (std::size_t i = 0; i < deviations.size(); ++i) {
-                    if (!deviationValid[i] || !isFinitePoint(deviations[i])) {
-                        continue;
-                    }
-                    const float length = std::sqrt(
-                        deviations[i].x * deviations[i].x +
-                        deviations[i].y * deviations[i].y +
-                        deviations[i].z * deviations[i].z);
-                    if (!std::isfinite(length) || length <= kTinyDeviation) {
-                        continue;
-                    }
-                    const RE::NiPoint3 direction{
-                        deviations[i].x / length,
-                        deviations[i].y / length,
-                        deviations[i].z / length,
-                    };
-                    const float needed =
-                        length - (combined.x * direction.x + combined.y * direction.y + combined.z * direction.z);
-                    if (needed <= kTinyDeviation) {
-                        continue;
-                    }
-                    combined.x += direction.x * needed;
-                    combined.y += direction.y * needed;
-                    combined.z += direction.z * needed;
-                    changed = true;
-                }
-                if (!changed) {
-                    break;
-                }
-            }
-            return combined;
-        }
-
-        /*
          * Exponential visual release. Active contacts can bypass this filter
          * and remain locked to the current solver result. A lost contact claim
          * decays through it instead of returning to the controller in one
@@ -2219,10 +2170,6 @@ namespace rock
                 twinTelemetry.radiusGameUnits = twinFrame->radius;
                 twinTelemetry.convexRadiusGameUnits =
                     twinFrame->convexRadius;
-                twinTelemetry.handTargetResponseScale =
-                    dynamic_hand_collision_kinematics::
-                        sanitizeHandTargetResponseScale(
-                            twinFrame->handTargetResponseScale);
                 driveTargets[bodyIndex] =
                     handSlots.surfaceLatch.active &&
                         handSlots.surfaceLatch.
@@ -2341,19 +2288,8 @@ namespace rock
                     twinTelemetry.requestedGapWorldGame;
                 twinTelemetry.contactDeviationGameUnits =
                     twinTelemetry.requestedGapGameUnits;
-                twinTelemetry.handTargetCorrectionWorldGame = {
-                    twinTelemetry.contactDeviationWorldGame.x *
-                        twinTelemetry.handTargetResponseScale,
-                    twinTelemetry.contactDeviationWorldGame.y *
-                        twinTelemetry.handTargetResponseScale,
-                    twinTelemetry.contactDeviationWorldGame.z *
-                        twinTelemetry.handTargetResponseScale,
-                };
-                twinTelemetry.handTargetCorrectionGameUnits =
-                    pointLength(
-                        twinTelemetry.handTargetCorrectionWorldGame);
                 deviations[bodyIndex] =
-                    twinTelemetry.handTargetCorrectionWorldGame;
+                    twinTelemetry.contactDeviationWorldGame;
                 deviationValid[bodyIndex] = true;
                 handTelemetry.contactMask |=
                     1u << static_cast<std::uint32_t>(bodyIndex);
@@ -2418,8 +2354,8 @@ namespace rock
                 deviationValid[bodyIndex] =
                     rigidPrimary || unresolvedLegacyTip;
             }
-            const RE::NiPoint3 combined =
-                handTelemetry.anyContact ? combineTwinDeviations(deviations, deviationValid) : RE::NiPoint3{};
+            const RE::NiPoint3 combined = handTelemetry.anyContact ?
+                dynamic_hand_collision_kinematics::combineTwinDeviations(deviations, deviationValid) : RE::NiPoint3{};
             handTelemetry.combinedContactDeviationWorldGame = combined;
             handTelemetry.combinedContactDeviationGameUnits = pointLength(combined);
 
