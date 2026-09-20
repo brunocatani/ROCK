@@ -390,6 +390,7 @@ namespace rock
         void updateGrabInput(const PhysicsFrameContext& frame);
         void processProviderInteractionCommands(const PhysicsFrameContext& frame);
         std::uint32_t forceGrabHandBlockerMask(const Hand& hand, bool isLeft, bool handDisabled, bool includePendingCommit) const;
+        bool equippedWeaponFiringHandForGrabIsLeft() const;
         bool canHandAcceptForceGrab(const Hand& hand, bool isLeft, bool handDisabled) const;
         bool handHoldsLooseGrenade(const Hand& hand) const;
         bool hasActiveLooseGrenadeCommit() const;

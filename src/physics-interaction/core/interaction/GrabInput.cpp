@@ -620,7 +620,8 @@ namespace rock
 
         const bool heldWeaponEquipTriggerPressedEdge =
             !providerSuppressesHeldWeaponTriggerEquip && readHeldWeaponEquipTriggerPressedEdge(isLeft);
-        const bool handIsFiringHand = isLeft == _twoHandedGrip.isFiringHandLeft();
+        const bool firingHandIsLeft = equippedWeaponFiringHandForGrabIsLeft();
+        const bool handIsFiringHand = isLeft == firingHandIsLeft;
         // The skeleton's Weapon node/drawn flag can outlive unequip. Use the
         // same item authority as force grab, sampled for each hand after any
         // earlier hand's equip/transfer instead of caching scene occupancy.
@@ -666,6 +667,15 @@ namespace rock
                 ROCK_LOG_DEBUG(Hand, "{} hand: cleared pull/locked selection because normal grab input is suppressed", hand.handName());
             }
             return false;
+        }
+
+        if (hand.isHolding() && !handIsFiringHand &&
+            firingHandIsLeft != _twoHandedGrip.isFiringHandLeft()) {
+            ROCK_LOG_SAMPLE_INFO(Weapon, 1000,
+                "Held object preserved through pending equipped hand transfer: hand={} ref={:08X} target={:08X} firingHand={}->{}",
+                hand.handName(), hand.getHeldRef() ? hand.getHeldRef()->GetFormID() : 0u,
+                _equipped.pendingPrimaryOnlyGripStart.targetWeaponFormID,
+                _twoHandedGrip.isFiringHandLeft() ? "left" : "right", firingHandIsLeft ? "left" : "right");
         }
 
         /*

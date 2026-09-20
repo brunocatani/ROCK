@@ -51,6 +51,25 @@ namespace rock
         clearLooseGrenadeImpactWatches();
     }
 
+    bool PhysicsInteraction::equippedWeaponFiringHandForGrabIsLeft() const
+    {
+        const auto& pending = _equipped.pendingPrimaryOnlyGripStart;
+        const bool currentIsLeft = _twoHandedGrip.isFiringHandLeft();
+        if (!pending.pending) return currentIsLeft;
+        auto* weapon = currentEquippedWeaponForm();
+        return equipped_weapon_transition_policy::resolveFiringHandIsLeft(
+            currentIsLeft, weapon ? weapon->GetFormID() : 0u,
+            reinterpret_cast<std::uintptr_t>(currentEquippedWeaponInstanceData(weapon)),
+            {
+                .pending = pending.pending,
+                .isLeft = pending.isLeft,
+                .formID = pending.targetWeaponFormID,
+                .instanceData = pending.targetWeaponInstanceData,
+                .previousFormID = pending.previousWeaponFormID,
+                .previousInstanceData = pending.previousWeaponInstanceData,
+            });
+    }
+
     std::uint32_t PhysicsInteraction::forceGrabHandBlockerMask(
         const Hand& hand,
         bool isLeft,
@@ -68,7 +87,7 @@ namespace rock
             isLeft,
             equippedWeaponPresent,
             _twoHandedGrip.isPartCarryActive(),
-            _twoHandedGrip.isFiringHandLeft(),
+            equippedWeaponFiringHandForGrabIsLeft(),
             _twoHandedGrip.isHandPartGripping(isLeft));
 
         return force_grab_policy::blockerMask(force_grab_policy::HandAvailabilityInput{

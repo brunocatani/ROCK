@@ -1,7 +1,9 @@
 #include "physics-interaction/weapon/EquippedWeaponTransitionPolicy.h"
 #include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
+#include "physics-interaction/core/ForceGrabPolicy.h"
 
 #include <cstdio>
+#include <initializer_list>
 
 namespace
 {
@@ -43,6 +45,40 @@ int main()
         matchesExpectedIdentity(0x1234, 0x3333, 0x1234, 0x2222, 0x1234, 0x1111));
     ok &= expect("another weapon form must never satisfy the target",
         !matchesExpectedIdentity(0x5678, 0x3333, 0x1234, 0x2222, 0x1234, 0x1111));
+
+    FiringHandReservation reservation{
+        .pending = true,
+        .isLeft = true,
+        .formID = 0x1234,
+        .instanceData = 0x2222,
+        .previousFormID = 0x1234,
+        .previousInstanceData = 0x1111,
+    };
+    for (const bool requestedLeft : { false, true }) {
+        reservation.isLeft = requestedLeft;
+        const bool firingLeft = resolveFiringHandIsLeft(!requestedLeft, 0x1234, 0x2222, reservation);
+        ok &= expect("accepted equip must reserve its requested hand before grip adoption",
+            firingLeft == requestedLeft);
+        ok &= expect("native draw during hand transfer must leave the outgoing weapon's hand free",
+            !rock::force_grab_policy::equippedWeaponOccupiesHand(
+                !requestedLeft, true, false, firingLeft, false));
+        ok &= expect("pending equip must still block another grab in its receiving hand",
+            rock::force_grab_policy::equippedWeaponOccupiesHand(
+                requestedLeft, true, false, firingLeft, false));
+    }
+    ok &= expect("same-base old instance cannot redirect occupancy to a pending hand",
+        !resolveFiringHandIsLeft(false, 0x1234, 0x1111, reservation));
+    ok &= expect("accepted native instance clone preserves the requested hand reservation",
+        resolveFiringHandIsLeft(false, 0x1234, 0x3333, reservation));
+    ok &= expect("another equipped weapon invalidates a pending hand reservation",
+        !resolveFiringHandIsLeft(false, 0x5678, 0x2222, reservation));
+    ok &= expect("an empty equipped slot cannot reserve a pending firing hand",
+        !resolveFiringHandIsLeft(false, 0, 0, reservation));
+    reservation.pending = false;
+    ok &= expect("cancelled or expired equip returns occupancy to the live firing hand",
+        !resolveFiringHandIsLeft(false, 0x1234, 0x2222, reservation));
+    ok &= expect("completed left-hand adoption keeps its live occupancy",
+        resolveFiringHandIsLeft(true, 0x1234, 0x2222, reservation));
 
     State transitionState{};
     const auto drawing = advance(transitionState, FrameInput{
