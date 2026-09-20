@@ -760,14 +760,16 @@ namespace rock
 
         /*
          * Physical-left firing and support-only carry own the weapon transform through
-         * TwoHandedGrip, so the right-controller inverse alignment below must
-         * stay disabled. The harvested right canonical remains the exact
+         * TwoHandedGrip. A pending left firing transfer also needs this canonical
+         * before it can acquire ownership, even when the right hand holds the
+         * outgoing loose weapon. Keep right-controller alignment disabled in
+         * all three cases. The harvested right canonical remains the exact
          * finger source; bind either its normal wrist or the compiled minigun
          * firing seat to the stable equipped identity. The authored support
          * relation remains independent and unchanged.
          */
         const bool supportOnlyCarry = weaponAuthority.isPartCarryActive();
-        if (input.rockFiringHandIsLeft || supportOnlyCarry) {
+        if (input.rockFiringHandIsLeft || supportOnlyCarry || input.pendingLeftFiringGrip) {
             const bool canonicalReady =
                 input.runtimeInitialized &&
                 input.visualAuthorityAvailable &&
@@ -775,12 +777,22 @@ namespace rock
                 !input.menuBlocking &&
                 !input.compatibilityBlocking &&
                 input.weaponDrawn &&
-                input.weaponVisible &&
+                (input.weaponVisible || input.equippedWeaponTransitionActive) &&
                 currentWeaponKey != 0 &&
                 input.weaponGenerationKey != 0 &&
                 harvestedRelationAvailable &&
                 rightFingerPose &&
                 leftFingerPose;
+            if (input.pendingLeftFiringGrip) {
+                ROCK_LOG_SAMPLE_INFO(Weapon, 1000,
+                    "Pending left firing canonical formID={:08X} ownership={:016X} generation={:016X} ready={} rightHolding={} drawn={} visible={} transition={} harvested={} fingers=({},{}) runtime=({},{},{}) blocked=({},{})",
+                    _weaponFormId, currentWeaponKey, input.weaponGenerationKey,
+                    canonicalReady, input.primaryHandHoldingObject, input.weaponDrawn,
+                    input.weaponVisible, input.equippedWeaponTransitionActive, harvestedRelationAvailable,
+                    rightFingerPose != nullptr, leftFingerPose != nullptr,
+                    input.runtimeInitialized, input.visualAuthorityAvailable, input.localSkeletonReady,
+                    input.menuBlocking, input.compatibilityBlocking);
+            }
             if (canonicalReady) {
                 if (weaponAuthority.setAuthoredPrimaryFiringGripCanonical(
                         input.weaponNode,
@@ -792,7 +804,9 @@ namespace rock
                         rightFingerPose,
                         leftFingerPose)) {
                     _canonicalPublishFailureLogged = false;
-                    if (!supportOnlyCarry) (void)weaponAuthority.publishAuthoredPrimaryFiringGripFingerPose(true);
+                    if (input.rockFiringHandIsLeft && !supportOnlyCarry) {
+                        (void)weaponAuthority.publishAuthoredPrimaryFiringGripFingerPose(true);
+                    }
                 } else if (!_canonicalPublishFailureLogged) {
                     ROCK_LOG_WARN(Animation,
                         "Authored primary firing grip could not bind manual-carry canonical weaponKey=0x{:X} generation=0x{:X} capture={}",
@@ -849,7 +863,8 @@ namespace rock
                         stable.supportCaptureSequence);
                 }
             }
-            endSession(supportOnlyCarry ? "support-carry-canonical-only" : "physical-left-firing-canonical-only");
+            endSession(supportOnlyCarry ? "support-carry-canonical-only" :
+                input.pendingLeftFiringGrip ? "pending-left-firing-canonical-only" : "physical-left-firing-canonical-only");
             return;
         }
 

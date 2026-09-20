@@ -39,6 +39,7 @@ namespace rock
         bool equippedWeaponTransitionActive{ false };
         bool primaryHandHoldingObject{ false };
         bool rockFiringHandIsLeft{ false };
+        bool pendingLeftFiringGrip{ false };
         bool inPowerArmor{ false };
     };
 

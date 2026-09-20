@@ -932,9 +932,9 @@ namespace rock
                         _equipped.pendingPrimaryOnlyGripStart;
                     if (pendingStart.takeoverWitness.observe(
                             leftTakeoverReadiness)) {
-                        ROCK_LOG_DEBUG(
+                        ROCK_LOG_WARN(
                             Weapon,
-                            "Left firing-grip start waiting weapon='{}' formID={:08X} authored support readiness={} collisionGeneration={:016X} authoredGeneration={:016X} ownership={:016X}",
+                            "Left firing-grip start waiting weapon='{}' formID={:08X} authored support readiness={} collisionGeneration={:016X} authoredGeneration={:016X} ownership={:016X} firingCapture={} rightHolding={}",
                             observedEquippedWeapon ? RE::TESFullName::GetFullName(*observedEquippedWeapon, false) : "unknown",
                             pendingStart.targetWeaponFormID,
                             authored_support_grab_policy::
@@ -942,7 +942,9 @@ namespace rock
                                     leftTakeoverReadiness),
                             currentWeaponGenerationKey,
                             currentAuthoredGripGenerationKey,
-                            currentEquippedWeaponOwnershipKey);
+                            currentEquippedWeaponOwnershipKey,
+                            pendingStart.hasFiringHandWeaponLocal && pendingStart.hasFiringGripWeaponLocal,
+                            _rightHand.isHolding());
                     }
                 } else if (primaryOnlyStartRequested) {
                     const char* startFailureReason = nullptr;
@@ -1899,6 +1901,17 @@ namespace rock
 
         _twoHandedGrip.beginAuthoredPrimaryFiringGripFrame();
         const auto* equippedInstance = currentEquippedWeaponInstanceData(equippedWeapon);
+        const auto& pendingGrip = _equipped.pendingPrimaryOnlyGripStart;
+        // Prepare the accepted left firing seat before acquisition. Waiting
+        // for the live firing role would require right-hand alignment first,
+        // which an outgoing loose weapon correctly prevents.
+        const bool pendingLeftFiringGrip = pendingGrip.pending && pendingGrip.isLeft &&
+            !pendingGrip.supportGrip.valid() &&
+            equipped_weapon_transition_policy::matchesExpectedIdentity(
+                equippedWeapon ? equippedWeapon->formID : 0u,
+                reinterpret_cast<std::uintptr_t>(equippedInstance),
+                pendingGrip.targetWeaponFormID, pendingGrip.targetWeaponInstanceData,
+                pendingGrip.previousWeaponFormID, pendingGrip.previousWeaponInstanceData);
         const auto* effectiveWeaponData = equippedInstance ?
             static_cast<const RE::TESObjectWEAP::InstanceData*>(equippedInstance) :
             equippedWeapon ? &equippedWeapon->weaponData : nullptr;
@@ -1933,6 +1946,7 @@ namespace rock
                 equippedWeaponTransitionActive,
             .primaryHandHoldingObject = rightHandHoldingObject,
             .rockFiringHandIsLeft = _twoHandedGrip.isFiringHandLeft(),
+            .pendingLeftFiringGrip = pendingLeftFiringGrip,
             .inPowerArmor = f4vr::isInPowerArmor(),
         }, _twoHandedGrip);
         _twoHandedGrip.finishAuthoredPrimaryFiringGripFrame();
