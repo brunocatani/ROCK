@@ -228,6 +228,19 @@ int main(int argc, char** argv)
         require(store.load(false), "laser recoil reset reload failed");
         require(find(store, "iWeaponDropMode").type == ValueType::Integer &&
             find(store, "iWeaponDropMode").value == "1", "weapon drop must default to off");
+        require(find(store, "bKeepPreviousWeaponInHandOnEquip").value == "false",
+            "previous weapon retention must be opt-in");
+        for (const auto* enabled : { "true", "false" }) {
+            require(store.setValue(Group::Consumer, "ImmersiveWeapons", "bKeepPreviousWeaponInHandOnEquip", enabled),
+                "previous weapon retention write failed");
+            require(store.load(false), "previous weapon retention reload failed");
+            CSimpleIniA swapValues;
+            store.appendLoadedValues(swapValues);
+            const auto swapConfig = rock::RockConfig::parseValues(swapValues);
+            require(swapConfig.rockKeepPreviousWeaponInHandOnEquip == (enabled[0] == 't') &&
+                swapConfig.rockWeaponDropMode == 1 && swapConfig.rockWeaponGrabMode == 1,
+                "retention reload must remain independent of weapon drop and grab modes");
+        }
         require(!store.setValue(Group::Consumer, "ImmersiveWeapons", "bAutoDrop", "true"),
             "removed auto-drop boolean must not remain writable");
         for (const auto* mode : { "1", "2", "3" }) {

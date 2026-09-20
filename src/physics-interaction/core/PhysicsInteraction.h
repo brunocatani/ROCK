@@ -407,6 +407,8 @@ namespace rock
             const WeaponCollision::ReleaseGeometrySnapshot& releaseGeometry);
         bool hasAvailableEquippedWeaponDropHandoff() const;
         void serviceEquippedWeaponNativeHandoff(const PhysicsFrameContext& frame);
+        bool dropEquippedWeaponToWorld(const PhysicsFrameContext& frame,
+            const EquippedWeaponManualDropRequest& request, equipped_weapon_drop_policy::Mode mode);
         void updateEquippedWeaponDropVisuals(const PhysicsFrameContext& frame);
         void finishEquippedWeaponHandPoseHandoff();
         void serviceEquippedWeaponNativeTransaction(
@@ -583,6 +585,8 @@ namespace rock
         {
             bool pending{ false };
             std::uint32_t formID{ 0 };
+            // Zero only while a same-frame selection is awaiting its first grab.
+            std::uint64_t grabIdentity{ 0 };
             float remainingSeconds{ 0.0f };
         };
 

@@ -5,6 +5,169 @@
 
 namespace rock
 {
+    bool PhysicsInteraction::dropEquippedWeaponToWorld(const PhysicsFrameContext& frame,
+        const EquippedWeaponManualDropRequest& request, equipped_weapon_drop_policy::Mode mode)
+    {
+        if (!frame.worldReady || !frame.hknpWorld || frame.menuBlocked ||
+            mode == equipped_weapon_drop_policy::Mode::Off) return false;
+        auto* hknp = frame.hknpWorld;
+        auto* weaponNode = resolveEquippedWeaponInteractionNode();
+        const auto observedEquippedWeaponFormID = currentEquippedWeaponFormId();
+        const auto sourceHand = request.sourceHand;
+        const bool sourceHandKnown = sourceHand == equipped_weapon_drop_policy::SourceHand::Right ||
+            sourceHand == equipped_weapon_drop_policy::SourceHand::Left;
+        const auto dropLoc = equipped_weapon_drop_policy::isLeft(sourceHand) ?
+            frame.left.grabAnchorWorld : frame.right.grabAnchorWorld;
+        bool transferCommitted = false;
+        const bool transferIsLeft = equipped_weapon_drop_policy::isLeft(sourceHand);
+        const auto transferHandIndex = transferIsLeft ? 1u : 0u;
+        Hand& transferHand = transferIsLeft ? _leftHand : _rightHand;
+        const auto& transferInput = transferIsLeft ? frame.left : frame.right;
+        const bool dropHandoffAvailable = sourceHandKnown && request.pose.valid() &&
+            request.pose.weaponFormId == observedEquippedWeaponFormID && hasAvailableEquippedWeaponDropHandoff() &&
+            (forceGrabHandBlockerMask(transferHand, transferIsLeft, transferInput.disabled, true) &
+                ~static_cast<std::uint32_t>(force_grab_policy::HandBlocker::EquippedWeapon)) == 0;
+        if (!dropHandoffAvailable) {
+            ROCK_LOG_WARN(Weapon,
+                "Equipped weapon transfer blocked: source hand unavailable or native handoff capacity exhausted capacity={}",
+                _drop.nativeHandoffs.size());
+            f4vr::showNotification("ROCK: Cannot take weapon - hand or transfer queue is busy.");
+        }
+        if (dropHandoffAvailable) {
+            // Preserve the equipped pose while the native loose bodies
+            // appear. Toggle Drop then seats the exact reference using
+            // the same authored weapon resolver as a far-grab catch.
+            RE::NiPoint3 releaseLoc = dropLoc;
+            RE::NiPoint3 releaseRot{};
+            const auto& releaseWeaponWorld = request.weaponWorld;
+            const bool hasReleaseRot = finiteNiTransform(releaseWeaponWorld);
+            if (hasReleaseRot) {
+                releaseLoc = releaseWeaponWorld.translate;
+                releaseRot = transform_math::matrixToReferenceEulerRadians<RE::NiMatrix3, RE::NiPoint3>(releaseWeaponWorld.rotate);
+            }
+            const std::size_t releaseHandIndex = equipped_weapon_drop_policy::isLeft(sourceHand) ? 1u : 0u;
+            const auto& releaseHandInput = releaseHandIndex == 1u ? frame.left : frame.right;
+            const RE::NiPoint3 releaseGripWorld = releaseHandInput.grabAnchorWorld;
+            // Capture the native placement basis before retiring the
+            // generated equipped representation.
+            const auto releaseGeometry = hasReleaseRot ?
+                                             _weaponCollision.getCurrentWeaponReleaseGeometry(releaseGripWorld, releaseWeaponWorld) :
+                                             WeaponCollision::ReleaseGeometrySnapshot{};
+            if (!releaseGeometry.hasCapturedWeaponWorld) {
+                ROCK_LOG_WARN(Weapon,
+                    "Equipped weapon physical drop blocked because no finite frozen release pose is available: sourceHand={}",
+                    equipped_weapon_drop_policy::sourceHandName(sourceHand));
+                f4vr::showNotification("ROCK: Cannot drop weapon - release pose is not ready.");
+            } else {
+                const bool toggleDrop = mode ==
+                    equipped_weapon_drop_policy::Mode::ToggleDrop;
+                const auto sourceVisual = toggleDrop ?
+                    equipped_weapon_visual_state::observe(observedEquippedWeaponFormID) :
+                    equipped_weapon_visual_state::Snapshot{};
+                RE::NiPointer<RE::NiAVObject> dropVisualModel(
+                    sourceVisual.ancestorPathVisible && sourceVisual.instanceLocallyVisible ?
+                        sourceVisual.exactInstance : nullptr);
+                const auto dropVisualInWeapon = dropVisualModel ?
+                    transform_math::composeTransforms(transform_math::invertTransform(releaseWeaponWorld),
+                        dropVisualModel->world) : RE::NiTransform{};
+                if (toggleDrop) {
+                    vanilla_weapon_alignment_telemetry::beginTransferTrace(
+                        vanilla_weapon_alignment_telemetry::TransferKind::ToggleDrop,
+                        transferIsLeft, observedEquippedWeaponFormID, weaponNode);
+                }
+                _twoHandedGrip.prepareEquippedWeaponDropCommit();
+                const auto dropResult = weapon_equip_transfer::dropEquippedWeaponFromPlayer(weapon_equip_transfer::EquippedDropInput{
+                    .dropLoc = releaseLoc,
+                    .dropRot = releaseRot,
+                    .hasDropLoc = true,
+                    .hasDropRot = true,
+                });
+                const bool dropCommitted = equipped_weapon_drop_policy::physicalDropCommitted(
+                    equipped_weapon_drop_policy::PhysicalDropCommitInput{
+                        .dropSucceeded = dropResult.success,
+                        .droppedReferenceUnavailable =
+                            dropResult.reason == weapon_equip_transfer::DropReason::DroppedReferenceUnavailable,
+                    });
+                transferCommitted = dropCommitted;
+                if (dropCommitted) {
+                    enforceNoBareFistState(true);
+                    /*
+                     * RemoveItem creates the native layer-5 weapon at
+                     * the last layer-44 equipped-collider pose. Retire
+                     * ROCK's generated representation in this same
+                     * transaction so no physics step can solve the two
+                     * coincident weapon body sets before the native
+                     * handoff takes ownership.
+                     */
+                    _weaponCollision.destroyWeaponBody(hknp);
+                }
+                if (dropCommitted && dropResult.handle) {
+                    _forceGrab.pendingCommits[transferHandIndex] = PendingForceGrabCommit{
+                        .active = true,
+                        .isLeft = transferIsLeft,
+                        .phase = dropResult.equippedSlotReleased ?
+                            PendingForceGrabCommitPhase::WaitingForNativePlacement :
+                            PendingForceGrabCommitPhase::EquippedSlotReleaseFailed,
+                        .targetHandle = dropResult.handle,
+                        .inventoryTransfer = true,
+                        .equippedWeaponDropMode = mode,
+                        .weaponGripPose = request.pose,
+                        .maxDistanceGame = 96.0f,
+                    };
+                    if (_forceGrab.pendingCommits[transferHandIndex].equippedWeaponDropMode ==
+                        equipped_weapon_drop_policy::Mode::ToggleDrop) {
+                        _forceGrab.retainedWeaponGrabs[transferHandIndex] = {
+                            .inputState = transferred_weapon_grab_policy::State::AwaitInitialRelease,
+                        };
+                    }
+                    vanilla_weapon_alignment_telemetry::recordTransferPose(
+                        dropResult.droppedFormID, transferIsLeft, "release",
+                        releaseGeometry.capturedWeaponWorld,
+                        (transferIsLeft ? frame.left : frame.right).rawHandWorld);
+                    if (dropResult.equippedSlotReleased) {
+                        if (toggleDrop) {
+                            _drop.visuals[transferHandIndex].begin(std::move(dropVisualModel),
+                                dropVisualInWeapon, request.pose, dropResult.droppedFormID);
+                        }
+                        armEquippedWeaponNativeHandoff(
+                            dropResult.handle,
+                            dropResult.droppedFormID,
+                            sourceHand,
+                            releaseGeometry);
+                    }
+                }
+                if (dropCommitted) {
+                    ROCK_LOG_INFO(Weapon,
+                        "Equipped weapon drop queued mode={} formID={:08X} dropped={:08X} reference={} sourceHand={} dropLoc=({:.1f},{:.1f},{:.1f}) lever={:.1f}gu stack={} instanceMatch={}",
+                        static_cast<int>(mode),
+                        dropResult.formID,
+                        dropResult.droppedFormID,
+                        dropResult.success ? "ready" : "pending",
+                        equipped_weapon_drop_policy::sourceHandName(sourceHand),
+                        releaseLoc.x,
+                        releaseLoc.y,
+                        releaseLoc.z,
+                        releaseGeometry.leverGameUnits,
+                        dropResult.stackID,
+                        dropResult.matchedInstanceData ? "yes" : "no");
+                } else {
+                    ROCK_LOG_WARN(Weapon,
+                        "Equipped weapon manual release drop failed formID={:08X} reason={} sourceHand={} attempted={} stack={} instanceMatch={}",
+                        dropResult.formID,
+                        weapon_equip_transfer::dropReasonName(dropResult.reason),
+                        equipped_weapon_drop_policy::sourceHandName(sourceHand),
+                        dropResult.attempted ? "yes" : "no",
+                        dropResult.stackID,
+                        dropResult.matchedInstanceData ? "yes" : "no");
+                }
+                if (sourceHandKnown && dropCommitted) {
+                    suppressHandCollisionAfterEquippedWeaponDrop(hknp, sourceHand);
+                }
+            }
+        }
+        return transferCommitted;
+    }
+
     void PhysicsInteraction::updateEquippedWeaponDropVisuals(const PhysicsFrameContext& frame)
     {
         for (std::size_t index = 0; index < _drop.visuals.size(); ++index) {

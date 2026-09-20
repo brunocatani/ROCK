@@ -967,6 +967,7 @@ namespace rock
          */
         bool republishPartCarryWeaponTransform(RE::NiNode* weaponNode);
 
+        bool requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand, float dt);
         EquippedWeaponManualDropRequest consumeEquippedWeaponDropRequest();
         bool beginTransferredTwoHandGrip(RE::NiNode* weaponNode, std::uint64_t generation,
             std::uint64_t ownership, const weapon_grip_transfer::Pair& grips, const char** failure);
@@ -1465,7 +1466,6 @@ namespace rock
         // Marks a refused last-carrier release for this update and logs the
         // first refusal of each open-hand episode.
         void recordGripReleaseRetained(bool isLeft, const char* reason);
-        bool requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand, float dt);
         bool captureDropGripPose(bool isLeft, AuthoredWeaponGripPose& out) const;
         [[nodiscard]] loose_weapon_authored_grab_policy::Arrangement authoredGripArrangement(
             RE::NiNode* weaponNode, std::uint64_t generation) const;

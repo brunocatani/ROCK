@@ -964,7 +964,9 @@ namespace rock
 
         if (triggerEquipIntent.pending) {
             triggerEquipIntent.remainingSeconds -= (std::max)(0.0f, frame.deltaSeconds);
-            if (triggerEquipIntent.remainingSeconds <= 0.0f) {
+            if (triggerEquipIntent.remainingSeconds <= 0.0f ||
+                (triggerEquipIntent.grabIdentity != 0 &&
+                    (!hand.isHolding() || triggerEquipIntent.grabIdentity != hand.heldGrabIdentity()))) {
                 triggerEquipIntent = {};
             }
         }
@@ -1507,25 +1509,29 @@ namespace rock
                 if (!held_weapon_equip_state_policy::canBeginEquip(nativeStateBeforeEquip)) {
                     const bool triggerIntentRearmed =
                         held_weapon_equip_state_policy::shouldRearmTrigger(nativeStateBeforeEquip, triggeredByInput) &&
-                        heldRefForGameplay;
+                        heldRefForGameplay && !grabInput.released;
                     if (triggerIntentRearmed) {
                         triggerEquipIntent = HeldWeaponTriggerEquipIntent{
                             .pending = true,
                             .formID = heldRefForGameplay->GetFormID(),
+                            .grabIdentity = hand.heldGrabIdentity(),
                             .remainingSeconds = 0.35f,
                         };
                     }
                     ROCK_LOG_SAMPLE_WARN(
                         Hand,
                         g_rockConfig.rockLogSampleMilliseconds,
-                        "{} hand {} held weapon equip deferred/blocked before release formID={:08X} weaponState={}({}) triggerIntentRearmed={}",
+                        "{} hand {} held weapon equip deferred/blocked before release formID={:08X} weaponState={}({}) triggerIntentRearmed={} heldUpdate=continue",
                         hand.handName(),
                         logAction ? logAction : "requested",
                         heldRefForGameplay ? heldRefForGameplay->GetFormID() : 0u,
                         nativeStateBeforeEquip,
                         held_weapon_equip_state_policy::nativeWeaponStateName(nativeStateBeforeEquip),
                         triggerIntentRearmed ? "yes" : "no");
-                    return true;
+                    // Native readiness gates inventory mutation, not the held
+                    // object's drive or release input. Keep following the moving
+                    // hand until the existing equip bridge takes over.
+                    return false;
                 }
 
                 const auto instantReadiness =
@@ -1540,7 +1546,7 @@ namespace rock
                         heldRefForGameplay ? heldRefForGameplay->GetFormID() : 0u,
                         held_weapon_instant_transition::readinessReasonName(
                             instantReadiness.reason));
-                    return true;
+                    return false;
                 }
 
                 bool equipIsLeft = isLeft;
@@ -1562,7 +1568,7 @@ namespace rock
                         !TwoHandedGrip::canBeginPrimaryOnlyGripForHand(equipIsLeft)) {
                         ROCK_LOG_SAMPLE_WARN(Hand, 1000, "Paired held equip deferred: grip capture or equipped ownership unavailable ref={:08X}",
                             heldRefForGameplay ? heldRefForGameplay->GetFormID() : 0);
-                        return true;
+                        return false;
                     }
                     ROCK_LOG_INFO(Hand, "Paired held equip captured ref={:08X} triggerHand={} firingHand={} roles=({},{})",
                         heldRefForGameplay->GetFormID(), isLeft ? "left" : "right", equipIsLeft ? "left" : "right",
@@ -1610,9 +1616,7 @@ namespace rock
                         rawGrabInput.held ? "yes" : "no",
                         handCarryAvailable ? "yes" : "no",
                         pendingGripStart.hasFiringHandWeaponLocal ? "yes" : "no");
-                    // A rejected equip still owes the loose hand its release
-                    // when trigger and grip-release arrived together.
-                    return !grabInput.released;
+                    return false;
                 }
 
                 auto* heldRef = equipHand.getHeldRef();
@@ -1679,6 +1683,55 @@ namespace rock
                     equipped_weapon_visual_state::observe(
                         previousEquippedWeaponFormID).exactInstance :
                     nullptr;
+                if (triggeredByInput && g_rockConfig.rockKeepPreviousWeaponInHandOnEquip &&
+                    !peerHoldingSameObject && currentEquippedWeaponOccupiesHand()) {
+                    const bool retainedIsLeft = !equipIsLeft;
+                    const auto occupancy = _twoHandedGrip.getGripOccupancy();
+                    const bool retainedHandCarries = retainedIsLeft ?
+                        occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon();
+                    const bool receivingHandCarries = equipIsLeft ?
+                        occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon();
+                    const auto sourceHand = retainedIsLeft ?
+                        equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right;
+                    if (!retainedHandCarries || receivingHandCarries ||
+                        !_twoHandedGrip.requestEquippedWeaponDrop("trigger-equip-retention", sourceHand, frame.deltaSeconds)) {
+                        ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                            "Trigger equip retained both weapons: previous={:08X} hand={} carry={} receivingCarry={} drop pose unavailable",
+                            previousEquippedWeaponFormID, retainedIsLeft ? "left" : "right",
+                            retainedHandCarries, receivingHandCarries);
+                        return true;
+                    }
+                    const auto dropRequest = _twoHandedGrip.consumeEquippedWeaponDropRequest();
+                    // Keep the old scene alive through cleanup of its grip authorities.
+                    RE::NiPointer<RE::NiNode> transferSourceNode(resolveEquippedWeaponInteractionNode());
+                    const bool dropped = dropEquippedWeaponToWorld(frame, dropRequest,
+                        equipped_weapon_drop_policy::Mode::ToggleDrop);
+                    _twoHandedGrip.completeEquippedWeaponDrop(dropRequest, dropped);
+                    if (dropped) {
+                        _equipped.pendingPrimaryOnlyGripStart = {};
+                        clearEquippedWeaponFiringGripInputState();
+                    }
+                    const auto& retainedTransfer = _forceGrab.pendingCommits[retainedIsLeft ? 1u : 0u];
+                    if (!dropped || !retainedTransfer.active ||
+                        retainedTransfer.phase != PendingForceGrabCommitPhase::WaitingForNativePlacement) {
+                        // The incoming weapon still owns its loose grab. A committed
+                        // but failed outgoing transfer retains the usual rollback.
+                        return true;
+                    }
+                    ROCK_LOG_INFO(Weapon,
+                        "Trigger equip keeping previous weapon in hand: previous={:08X} retainedHand={} incoming={:08X} equipHand={}",
+                        previousEquippedWeaponFormID, retainedIsLeft ? "left" : "right",
+                        heldRef ? heldRef->GetFormID() : 0u, equipIsLeft ? "left" : "right");
+                    if (!held_weapon_equip_state_policy::canBeginEquip(f4vr::getNativeWeaponState(player))) {
+                        triggerEquipIntent = HeldWeaponTriggerEquipIntent{
+                            .pending = true,
+                            .formID = heldRef ? heldRef->GetFormID() : 0u,
+                            .grabIdentity = equipHand.heldGrabIdentity(),
+                            .remainingSeconds = 0.35f,
+                        };
+                        return true;
+                    }
+                }
                 equipHand.stopSelectionHighlight();
                 std::uint32_t heldFormID = heldRef ? heldRef->GetFormID() : 0u;
                 const std::uint32_t primaryBodyId = equipHand.getSavedObjectState().bodyId.value;
@@ -1982,6 +2035,7 @@ namespace rock
             const bool injectionCommit = injectionMode && consumeEligibility.eligible &&
                 consumeDecision.confirmedForCommit && hand.getState() == HandState::ConsumeCandidate;
             if (grabInput.released || injectionCommit) {
+                triggerEquipIntent = {};
                 ROCK_LOG_INFO(Hand,
                     "Held release input: hand={} grab={} physical=({},{},{}) logical=({},{},{}) injection={}",
                     isLeft ? "left" : "right", hand.heldGrabIdentity(),
@@ -2112,7 +2166,16 @@ namespace rock
                     makeGrabReleaseContext(hand, isLeft),
                     isLeft ? &_rightHand : &_leftHand,
                     &(isLeft ? frame.right : frame.left).rawHandWorld);
+                if (triggerEquipIntent.pending) {
+                    // Existing opt-in, bounded transfer telemetry shows the
+                    // live hand/model relationship during native readiness waits.
+                    const auto* currentHeldRef = hand.getHeldRef();
+                    vanilla_weapon_alignment_telemetry::recordTransferTrace(
+                        vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip,
+                        isLeft, "equip-wait-held-update", currentHeldRef ? currentHeldRef->Get3D() : nullptr);
+                }
                 if (heldRef && !hand.isHolding()) {
+                    triggerEquipIntent = {};
                     ROCK_LOG_WARN(Hand, "Held update ended grab without an input release: hand={} ref={:08X}",
                         isLeft ? "left" : "right", heldFormID);
                     releaseObject(heldRef, claimOwnerForHand(isLeft));
