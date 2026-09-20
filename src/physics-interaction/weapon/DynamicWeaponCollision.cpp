@@ -1699,6 +1699,18 @@ namespace rock
         _physicsDriveTeleported = false;
     }
 
+    void DynamicWeaponCollisionRuntime::refreshCollisionFilter(RE::hknpWorld* world)
+    {
+        auto mutation = _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
+        if (_created && _createdWorld == world && !_body.refreshCollisionFilter(world)) {
+            _rebuildRequestedAtomic.store(true, std::memory_order_release);
+            ROCK_LOG_WARN(Weapon, "Dynamic weapon collision filter refresh failed: body={}",
+                _body.getBodyId().value);
+        }
+    }
+
     bool DynamicWeaponCollisionRuntime::isProxyBodyIdAtomic(const std::uint32_t bodyId) const
     {
         return bodyId != kInvalidBodyId && _bodyIdAtomic.load(std::memory_order_acquire) == bodyId;

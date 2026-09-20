@@ -731,8 +731,8 @@
          * generated-body contact registry: it is solver/visual feedback, not
          * hand, gameplay, or provider contact evidence. Capture only a real
          * proxy-vs-obstacle callback before the ordinary registry prefilter can
-         * discard this pair. Obstacles are static world surfaces or bodies that
-         * the car runtime has explicitly moved onto a dedicated car-only row.
+         * discard this pair. Obstacle eligibility includes native NPC layer 33;
+         * the experimental matrix policy controls whether those pairs collide.
          */
         const bool bodyAIsDynamicWeaponProxy =
             _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);

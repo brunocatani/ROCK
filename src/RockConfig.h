@@ -119,6 +119,7 @@ namespace rock
         RE::NiPoint3 rockRightSupportGripOffsetGameUnits{ 0.0f, 0.0f, 0.0f };
         bool rockWeaponCollisionBlocksProjectiles = false;
         bool rockWeaponCollisionBlocksSpells = false;
+        bool npcDynamicCollisions = false;
         float rockWeaponShellCollisionGraceMs = shell_casing_grace::kDefaultMilliseconds;
         // A/B comparison: original support hulls or bounded gap-preserving compounds.
         bool rockWeaponCollisionPreserveGaps = true;

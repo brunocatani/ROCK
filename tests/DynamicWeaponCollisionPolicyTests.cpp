@@ -2,6 +2,7 @@
 #include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/collision/ImpactAudioPolicy.h"
+#include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
 
 #include <cmath>
 #include <cstdio>
@@ -176,7 +177,8 @@ int main()
     constexpr auto dynamicWeaponMask = rock::collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
     for (std::uint32_t layer = 0; layer < rock::collision_layer_policy::FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
         const bool enabled = rock::collision_layer_policy::maskEnablesLayer(dynamicWeaponMask, layer);
-        const bool expected = rock::collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(layer);
+        const bool expected = rock::collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(layer) &&
+            layer != rock::collision_layer_policy::FO4_LAYER_BIPED_NO_CC;
         if (enabled != expected) {
             std::printf("dynamic weapon layer mismatch at row %u expected=%d actual=%d\n", layer, expected ? 1 : 0, enabled ? 1 : 0);
             ok = false;
@@ -225,6 +227,19 @@ int main()
     ok &= rock::collision_layer_policy::maskEnablesLayer(
         dynamicWeaponMask,
         rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
+
+    {
+        using namespace rock::collision_layer_policy;
+        constexpr auto npcBit = layerBitOrZero(FO4_LAYER_BIPED_NO_CC);
+        ok &= (buildRockDynamicHandProxyExpectedMask(false, true) ^ rightHandMask) == npcBit;
+        ok &= (buildRockDynamicHandProxyExpectedMask(true, true) ^ leftHandMask) == npcBit;
+        ok &= (buildRockDynamicWeaponProxyExpectedMask(true) ^ dynamicWeaponMask) == npcBit;
+        ok &= isDynamicWeaponProxySolverObstacleLayer(FO4_LAYER_BIPED_NO_CC);
+        ok &= isDynamicWeaponProxyObstacleLayer(FO4_LAYER_BIPED_NO_CC);
+        ok &= !isDynamicHandProxySurfaceLayer(FO4_LAYER_BIPED_NO_CC);
+        ok &= !isWorldSurfaceLayer(FO4_LAYER_BIPED_NO_CC);
+        ok &= !maskEnablesLayer(rock::global_surface_grab_policy::allowedLayerMask(), FO4_LAYER_BIPED_NO_CC);
+    }
 
     const auto geometry = makeBoundingBoxGeometry(
         RE::NiPoint3{ -10.0f, -2.0f, -1.0f },

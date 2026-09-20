@@ -1170,6 +1170,25 @@ namespace rock
         havok_runtime::setFilterInfo(world, _bodyId, filterInfo, rebuildMode);
     }
 
+    bool BethesdaPhysicsBody::refreshCollisionFilter(RE::hknpWorld* world)
+    {
+        if (!isValid() || !world || nativeWorldFromPhysicsSystem(_physicsSystem) != world) {
+            return false;
+        }
+        const auto body = havok_runtime::snapshotBody(world, _bodyId);
+        if (!body.valid || body.collisionObject != _collisionObject) {
+            return false;
+        }
+        // The native filter setter skips unchanged filterInfo. A matrix-only
+        // edit therefore needs the same explicit cache rebuild used by the
+        // native player pair filter; do not toggle body flags to force it.
+        using RebuildBodyCaches = void (*)(RE::hknpWorld*, std::uint32_t);
+        static REL::Relocation<RebuildBodyCaches> rebuild{
+            REL::Offset(offsets::kFunc_RebuildBodyCollisionCaches) };
+        rebuild(world, _bodyId.value);
+        return true;
+    }
+
     void BethesdaPhysicsBody::setMass(float mass)
     {
         if (!isValid())

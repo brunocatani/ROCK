@@ -201,6 +201,25 @@ int main(int argc, char** argv)
             require(!other.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr), "example option belongs to both files");
         }
         require(store.load(true), "first-run load failed");
+        require(find(store, "npcDynamicCollisions").type == ValueType::Boolean &&
+            find(store, "npcDynamicCollisions").group == Group::Developer &&
+            !rock::RockConfig::parseValues(missingOptions).npcDynamicCollisions,
+            "NPC dynamic collisions must be a developer boolean defaulting off");
+        require(store.setValue(Group::Developer, "PhysicsInteraction", "npcDynamicCollisions", "true"),
+            "experimental NPC collision enable failed");
+        require(store.load(false), "experimental NPC collision reload failed");
+        CSimpleIniA npcValues;
+        store.appendLoadedValues(npcValues);
+        require(rock::RockConfig::parseValues(npcValues).npcDynamicCollisions,
+            "experimental NPC collision override did not reach runtime");
+        require(store.setValue(Group::Developer, "PhysicsInteraction", "npcDynamicCollisions", "false"),
+            "experimental NPC collision reset failed");
+        require(store.load(false), "experimental NPC collision reset reload failed");
+        CSimpleIniA resetNpcValues;
+        store.appendLoadedValues(resetNpcValues);
+        require(!rock::RockConfig::parseValues(resetNpcValues).npcDynamicCollisions &&
+            !fs::exists(store.path(Group::Developer)),
+            "reset must restore NPC collisions off and remove the sole developer override");
         require(find(store, "fLaserRecoilPercent").type == ValueType::Float &&
             rock::RockConfig::parseValues(missingOptions).rockLaserRecoilPercent == 100.0f,
             "laser recoil must default to the bipod profile strength");

@@ -944,12 +944,12 @@ namespace rock
             const auto desiredBodyMask = collision_layer_policy::buildRockBodyExpectedMask();
             const auto desiredDynamicRightHandProxyMask =
                 collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-                    false);
+                    false, g_rockConfig.npcDynamicCollisions);
             const auto desiredDynamicLeftHandProxyMask =
                 collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-                    true);
+                    true, g_rockConfig.npcDynamicCollisions);
             const auto desiredDynamicWeaponProxyMask =
-                collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
+                collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask(g_rockConfig.npcDynamicCollisions);
             if (!collision_layer_policy::matrixLayerMaskMatches(_layers.expectedHandMask, desiredHandMask) ||
                 !collision_layer_policy::matrixLayerMaskMatches(_layers.expectedWeaponMask, desiredWeaponMask) ||
                 !collision_layer_policy::matrixLayerMaskMatches(_layers.expectedReloadMask, desiredReloadMask) ||
@@ -997,7 +997,8 @@ namespace rock
                     !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWorldCarLargeClutterMask, _layers.expectedDynamicWorldCarLargeClutterMask);
                 const bool actorToolPairsDrifted =
                     _layers.expectedHandMask != 0 && _layers.expectedWeaponMask != 0 &&
-                    !collision_layer_policy::rockToolActorPairsMatch(matrix, _layers.expectedHandMask, _layers.expectedWeaponMask);
+                    (!collision_layer_policy::rockToolActorPairsMatch(matrix, _layers.expectedHandMask, _layers.expectedWeaponMask) ||
+                        !collision_layer_policy::rockDynamicNpcPairsMatch(matrix, g_rockConfig.npcDynamicCollisions));
                 const bool bodyPairsDrifted = _layers.expectedBodyMask != 0 && !collision_layer_policy::rockBodyManagedPairsMatch(matrix, _layers.expectedBodyMask);
                 if (handMaskDrifted || weaponMaskDrifted || reloadMaskDrifted || bodyMaskDrifted || dynamicHandProxyMaskDrifted || dynamicLeftHandProxyMaskDrifted || dynamicWeaponProxyMaskDrifted ||
                     dynamicWorldCarClutterMaskDrifted || dynamicWorldCarLargeClutterMaskDrifted || actorToolPairsDrifted || bodyPairsDrifted) {

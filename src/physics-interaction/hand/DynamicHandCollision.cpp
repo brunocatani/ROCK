@@ -1842,6 +1842,22 @@ namespace rock
             suppressCollision ? "suspended for" : "resumed on");
     }
 
+    void DynamicHandCollisionRuntime::refreshCollisionFilters(RE::hknpWorld* world)
+    {
+        auto mutation = _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
+        for (auto& hand : _hands) {
+            auto& owner = hand.bodies[0];
+            if (owner.created && owner.createdWorld == world &&
+                !owner.body.refreshCollisionFilter(world)) {
+                owner.rebuildRequestedAtomic.store(true, std::memory_order_release);
+                ROCK_LOG_WARN(Hand, "Dynamic hand collision filter refresh failed: body={}",
+                    owner.body.getBodyId().value);
+            }
+        }
+    }
+
     void DynamicHandCollisionRuntime::retireAll(void* bhkWorld)
     {
         auto structuralMutation = _physicsCallbackGate ?

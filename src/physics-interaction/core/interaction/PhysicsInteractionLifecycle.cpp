@@ -778,11 +778,19 @@ namespace rock
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER, matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER]);
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::FO4_LAYER_CHARCONTROLLER, matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER]);
 
+        const bool npcPairsChanged =
+            !collision_layer_policy::rockDynamicNpcPairsMatch(matrix, g_rockConfig.npcDynamicCollisions);
+        auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
         collision_layer_policy::applyRockGeneratedLayerPolicies(
             matrix,
             g_rockConfig.rockHandCollisionStaticWorldEnabled,
             g_rockConfig.rockWeaponCollisionBlocksProjectiles,
-            g_rockConfig.rockWeaponCollisionBlocksSpells);
+            g_rockConfig.rockWeaponCollisionBlocksSpells,
+            g_rockConfig.npcDynamicCollisions);
+        if (npcPairsChanged) {
+            _dynamicHandCollision.refreshCollisionFilters(world);
+            _dynamicWeaponCollision.refreshCollisionFilter(world);
+        }
         _layers.expectedHandMask = collision_layer_policy::buildRockHandExpectedMask(true, g_rockConfig.rockHandCollisionStaticWorldEnabled);
         _layers.expectedWeaponMask =
             collision_layer_policy::buildRockWeaponExpectedMask(
@@ -797,12 +805,12 @@ namespace rock
         _layers.expectedBodyMask = collision_layer_policy::buildRockBodyExpectedMask();
         _layers.expectedDynamicHandProxyMask =
             collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-                false);
+                false, g_rockConfig.npcDynamicCollisions);
         _layers.expectedDynamicLeftHandProxyMask =
             collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-                true);
+                true, g_rockConfig.npcDynamicCollisions);
         _layers.expectedDynamicWeaponProxyMask =
-            collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
+            collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask(g_rockConfig.npcDynamicCollisions);
         _layers.expectedDynamicWorldCarClutterMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER];
         _layers.expectedDynamicWorldCarLargeClutterMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER];
         _layers.registered = true;
@@ -898,10 +906,11 @@ namespace rock
             g_rockConfig.rockWeaponCollisionBlocksSpells ? "enabled" : "disabled");
         ROCK_LOG_INFO(
             Config,
-            "Registered dynamic weapon proxy layer={} worldOnlyMask=0x{:016X}",
+            "Registered dynamic weapon proxy layer={} obstacleMask=0x{:016X} npcDynamicCollisions={}",
             collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY,
             collision_layer_policy::matrixAddressableMask(
-                _layers.expectedDynamicWeaponProxyMask));
+                _layers.expectedDynamicWeaponProxyMask),
+            g_rockConfig.npcDynamicCollisions ? "enabled" : "disabled");
     }
 
     bool PhysicsInteraction::createHandCollisions(RE::hknpWorld* world, void* bhkWorld)

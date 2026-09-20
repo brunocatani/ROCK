@@ -177,6 +177,7 @@ namespace rock
             const RE::NiPoint3* contactPointGame);
 
         void retireAll(void* bhkWorld, bool preserveSurfaceSupport = false);
+        void refreshCollisionFilter(RE::hknpWorld* world);
         void abandonHavokStateAfterWorldLoss();
 
         [[nodiscard]] RE::hknpBodyId proxyBodyIdForDebug() const;

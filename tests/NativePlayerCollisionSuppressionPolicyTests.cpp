@@ -214,15 +214,32 @@ int main()
         matrix[i] = 0xB2978EBA769DC523ull ^ (i * 0x9E3779B97F4A7C15ull);
     }
     const auto original = matrix;
-    applyRockGeneratedLayerPolicies(matrix.data(), true, false, false);
-    for (std::uint32_t a = 0; a < FO4_LAYER_VANILLA_CONFIGURED_COUNT; ++a) {
-        for (std::uint32_t b = 0; b < FO4_LAYER_VANILLA_CONFIGURED_COUNT; ++b) {
-            if (!isRockOwnedMatrixLayer(a) && !isRockOwnedMatrixLayer(b)) {
-                ok &= expect("generated registration preserves native-to-native matrix bits",
-                    maskEnablesLayer(matrix[a], b) == maskEnablesLayer(original[a], b));
+    for (const bool npcDynamicCollisions : { false, true, false }) {
+        applyRockGeneratedLayerPolicies(matrix.data(), true, false, false, npcDynamicCollisions);
+        ok &= expect("NPC dynamic collision toggles all three pairs symmetrically",
+            rockDynamicNpcPairsMatch(matrix.data(), npcDynamicCollisions));
+        for (const auto layer : { ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY,
+                ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, ROCK_LAYER_DYNAMIC_WEAPON_PROXY }) {
+            ok &= expect("native player remains excluded from experimental dynamic contacts",
+                suppressPhysicalPair(true, false, FO4_LAYER_BIPED_NO_CC, layer));
+            ok &= expect("NPC dynamic contacts remain admitted by the player filter",
+                !suppressPhysicalPair(false, false, FO4_LAYER_BIPED_NO_CC, layer));
+            for (const auto excluded : { FO4_LAYER_BIPED, FO4_LAYER_DEADBIP, FO4_LAYER_CHARCONTROLLER }) {
+                ok &= expect("experiment does not admit other native actor layers",
+                    layerPairSymmetricMatches(matrix.data(), layer, excluded, false));
+            }
+        }
+        for (std::uint32_t a = 0; a < FO4_LAYER_VANILLA_CONFIGURED_COUNT; ++a) {
+            for (std::uint32_t b = 0; b < FO4_LAYER_VANILLA_CONFIGURED_COUNT; ++b) {
+                if (!isRockOwnedMatrixLayer(a) && !isRockOwnedMatrixLayer(b)) {
+                    ok &= expect("generated registration preserves native-to-native matrix bits",
+                        maskEnablesLayer(matrix[a], b) == maskEnablesLayer(original[a], b));
+                }
             }
         }
     }
+    matrix[FO4_LAYER_BIPED_NO_CC] = withLayer(matrix[FO4_LAYER_BIPED_NO_CC], ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
+    ok &= expect("NPC row-only drift is detected", !rockDynamicNpcPairsMatch(matrix.data(), false));
 
     const BodyIdentity player{ 27, 8, 0x100000, 0x200000 };
     ok &= expect("live body identity matches", matchesLiveBody(player, player));

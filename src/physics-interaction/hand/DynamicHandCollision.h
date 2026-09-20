@@ -53,11 +53,9 @@ namespace rock
      * keyframed colliders are driven with. A fixed-surface latch captures one
      * solved-pose readback, then drives both twins and rendering from immutable
      * target-local relationships so no render-to-physics feedback loop exists.
-     * The twins are not ordinary gameplay contact evidence and collide only
-     * with static world-surface layers plus the dedicated rows used by
-     * explicitly identified car bodies. Palm/fingertip callbacks publish into
-     * a separate bounded channel consumed exclusively by provider-registered
-     * fixed-surface grabs.
+     * The twins provide solver response against world surfaces, dedicated car
+     * rows, peer dynamic colliders, and optionally native NPC layer 33.
+     * NPC contacts do not enter the separate palm/fingertip surface-grab channel.
      *
      * Threading: updateFrame runs on the main game thread; the drive flush runs
      * on the physics step thread and publishes fixed per-body telemetry through
@@ -102,6 +100,7 @@ namespace rock
             RE::hknpWorld* world,
             const havok_physics_timing::PhysicsTimingSample& timing);
         void retireAll(void* bhkWorld);
+        void refreshCollisionFilters(RE::hknpWorld* world);
         void reset();
         // Main-thread snapshot/event access. Future provider adapters must copy
         // from here on the main thread rather than retain runtime-owned state.
