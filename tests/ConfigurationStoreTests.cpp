@@ -201,6 +201,31 @@ int main(int argc, char** argv)
             require(!other.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr), "example option belongs to both files");
         }
         require(store.load(true), "first-run load failed");
+        require(find(store, "iWeaponDropMode").type == ValueType::Integer &&
+            find(store, "iWeaponDropMode").value == "1", "weapon drop must default to off");
+        require(!store.setValue(Group::Consumer, "ImmersiveWeapons", "bAutoDrop", "true"),
+            "removed auto-drop boolean must not remain writable");
+        for (const auto* mode : { "1", "2", "3" }) {
+            require(store.setValue(Group::Consumer, "ImmersiveWeapons", "iWeaponDropMode", mode),
+                "weapon drop mode write failed");
+            require(store.load(false), "weapon drop mode reload failed");
+            CSimpleIniA dropValues;
+            store.appendLoadedValues(dropValues);
+            const auto dropConfig = rock::RockConfig::parseValues(dropValues);
+            require(dropConfig.rockWeaponDropMode == mode[0] - '0',
+                "weapon drop mode did not reach runtime configuration");
+            require(dropConfig.rockWeaponGrabMode == 1,
+                "weapon drop mode must not change the grip release gesture");
+        }
+        for (const auto* invalid : { "-1", "0", "4", "invalid" }) {
+            CSimpleIniA dropValues;
+            dropValues.SetValue("ImmersiveWeapons", "iWeaponDropMode", invalid);
+            require(rock::RockConfig::parseValues(dropValues).rockWeaponDropMode == 1,
+                "invalid weapon drop mode must fall back to off");
+        }
+        require(store.setValue(Group::Consumer, "ImmersiveWeapons", "iWeaponDropMode", "1"),
+            "weapon drop mode reset failed");
+        require(store.load(false), "weapon drop mode reset reload failed");
         require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fLeftFiringGripOffsetYGameUnits", "0.25"),
             "left firing relative placement write failed");
         require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fRightSupportGripOffsetZGameUnits", "-0.5"),

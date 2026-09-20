@@ -193,7 +193,7 @@ namespace rock
                 if (!commit.internallyOwned()) {
                     provider::completeInteractionCommandV1(commit.providerResultTemplate);
                 }
-                if (commit.equippedWeaponTransfer) {
+                if (commit.isEquippedWeaponTransfer()) {
                     for (auto& handoff : _drop.nativeHandoffs) {
                         if (handoff.active && handoff.handle == commit.targetHandle) {
                             reportEquippedWeaponPlacementFailure(handoff, reason);
@@ -253,6 +253,16 @@ namespace rock
                 continue;
             }
 
+            // Auto Drop shares the placement/failure transaction, but leaves the
+            // native loose weapon in the world without acquiring or retaining it.
+            if (commit.equippedWeaponDropMode == equipped_weapon_drop_policy::Mode::AutoDrop) {
+                ROCK_LOG_INFO(Weapon,
+                    "Equipped weapon auto drop completed without force grab: hand={} ref={:08X}",
+                    commit.isLeft ? "left" : "right", targetRef->GetFormID());
+                commit = {};
+                continue;
+            }
+
             if (commit.phase == PendingForceGrabCommitPhase::WaitingForReference) {
                 if (commit.inventoryTransfer) {
                     commit.providerResultTemplate.targetFormId = targetRef->GetFormID();
@@ -286,7 +296,7 @@ namespace rock
                     commit.inventoryTransfer &&
                         commit.targetIsLooseThrowable &&
                         loose_grenade_runtime::isThrowableRef(targetRef),
-                    commit.equippedWeaponTransfer)) {
+                    commit.isEquippedWeaponTransfer())) {
                 commit.phase = PendingForceGrabCommitPhase::WaitingForSettle;
                 if (timedOut) {
                     abandon("failed to resolve physics body", provider::RockProviderInteractionFailureV1::TargetBodyMissing, targetRef);
@@ -331,7 +341,7 @@ namespace rock
                 g_rockConfig.rockGrabLinearConstantRecovery,
                 &_bodyBoneColliders,
                 sharedContext,
-                commit.equippedWeaponTransfer ? &commit.weaponGripPose : nullptr) == GrabAttemptResult::Grabbed;
+                commit.isEquippedWeaponTransfer() ? &commit.weaponGripPose : nullptr) == GrabAttemptResult::Grabbed;
             if (!grabbed) {
                 hand.clearSelectionState(false);
                 commit.phase = PendingForceGrabCommitPhase::WaitingForSettle;
@@ -375,7 +385,7 @@ namespace rock
                 continue;
             }
 
-            if (commit.equippedWeaponTransfer) {
+            if (commit.isEquippedWeaponTransfer()) {
                 _forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u].grabIdentity = hand.heldGrabIdentity();
                 ROCK_LOG_INFO(Weapon,
                     "Equipped weapon acquired as retained loose grab: hand={} ref={:08X} body={} grab={} handleMatches={} inputState={}",

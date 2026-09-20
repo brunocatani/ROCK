@@ -355,10 +355,12 @@ namespace rock
                 IMMERSIVE_WEAPONS_SECTION,
                 "bFiringGripDetachPosePreservationEnabled",
                 rockFiringGripDetachPosePreservationEnabled);
-        rockAutoDrop = ini.GetBoolValue(
-            IMMERSIVE_WEAPONS_SECTION,
-            "bAutoDrop",
-            rockAutoDrop);
+        rockWeaponDropMode = static_cast<int>(ini.GetLongValue(
+            IMMERSIVE_WEAPONS_SECTION, "iWeaponDropMode", rockWeaponDropMode));
+        if (rockWeaponDropMode < 1 || rockWeaponDropMode > 3) {
+            ROCK_LOG_WARN(Config, "Invalid iWeaponDropMode={} -- using 1", rockWeaponDropMode);
+            rockWeaponDropMode = 1;
+        }
         rockWeaponGrabMode = static_cast<int>(ini.GetLongValue(
             IMMERSIVE_WEAPONS_SECTION, "iWeaponGrabMode", rockWeaponGrabMode));
         if (rockWeaponGrabMode < 1 || rockWeaponGrabMode > 3) {

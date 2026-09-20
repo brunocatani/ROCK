@@ -471,7 +471,7 @@ namespace rock
         auto& retainedWeapon = _forceGrab.retainedWeaponGrabs[handIndex];
         const auto& pendingTransfer = _forceGrab.pendingCommits[handIndex];
         const bool retainedWeaponInput = transferred_weapon_grab_policy::ownsInput(
-            pendingTransfer.active && pendingTransfer.equippedWeaponTransfer,
+            pendingTransfer.active && pendingTransfer.isEquippedWeaponTransfer(),
             retainedWeapon.grabIdentity, hand.heldGrabIdentity());
         if (retainedWeapon.grabIdentity != 0 && !retainedWeaponInput) {
             ROCK_LOG_INFO(Weapon,

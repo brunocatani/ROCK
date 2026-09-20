@@ -1,6 +1,6 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 
-// Equipped-to-loose native placement before the shared force-grab commit.
+// Shared native placement for equipped-to-loose Toggle Drop and Auto Drop.
 
 namespace rock
 {
@@ -76,7 +76,7 @@ namespace rock
             .progressSolveSequence = _frame.completedPhysicsSolveSequence.load(std::memory_order_acquire),
         };
         ROCK_LOG_INFO(Weapon,
-            "Equipped weapon native handoff armed for force grab: ref={:08X} hand={}",
+            "Equipped weapon native drop placement armed: ref={:08X} hand={}",
             droppedFormId, equipped_weapon_drop_policy::sourceHandName(sourceHand));
     }
 
@@ -125,7 +125,7 @@ namespace rock
         };
         const auto endHandoff = [&](const char* reason, bool warn, bool ready = false) {
             for (auto& commit : _forceGrab.pendingCommits) {
-                if (commit.active && commit.equippedWeaponTransfer && commit.targetHandle == handoff.handle) {
+                if (commit.active && commit.isEquippedWeaponTransfer() && commit.targetHandle == handoff.handle) {
                     commit.phase = ready ? PendingForceGrabCommitPhase::AcquireAndCommitExactTarget :
                                            PendingForceGrabCommitPhase::NativePlacementFailed;
                 }
@@ -567,15 +567,15 @@ namespace rock
             handoff.bodySnapshotCount = 0;
             handoff.progressSolveSequence = completedSolveSequence;
             ROCK_LOG_DEBUG(Weapon,
-                "Equipped weapon drop native generation changed before hand acquisition; restarting placement: dropped={:08X} restart={}",
+                "Equipped weapon drop native generation changed before placement completed; restarting placement: dropped={:08X} restart={}",
                 handoff.droppedFormId,
                 handoff.identityRestartCount);
             return;
         }
 
         handoff.waitReason = "settled-velocity-clear";
-        // This is a transfer into a held object, never a throw. Clear the
-        // native spawn/contact velocity before the shared force-grab commit.
+        // Both drop modes share native placement and clear spawn/contact
+        // velocity. Toggle Drop continues into the retained grab afterward.
         const RE::hkVector4f zeroVelocity{};
         for (std::size_t i = 0; i < uniqueMotionRecordCount; ++i) {
             const auto* record = uniqueMotionRecords[i];
@@ -589,7 +589,7 @@ namespace rock
             }
         }
         ROCK_LOG_INFO(Weapon,
-            "Equipped weapon native placement ready for force grab: ref={:08X} bodies={} motions={} elapsed={:.3f}s",
+            "Equipped weapon native drop placement ready: ref={:08X} bodies={} motions={} elapsed={:.3f}s",
             handoff.droppedFormId, acceptedRecordCount, uniqueMotionRecordCount, handoff.elapsedSeconds);
         endHandoff("native-placement-ready", false, true);
     }

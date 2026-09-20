@@ -8,6 +8,7 @@
 #include "api/ProviderRuntimeTypes.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
+#include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 
 namespace rock
 {
@@ -22,9 +23,10 @@ namespace rock
     };
 
     /*
-     * Deferred state for provider world grabs and inventory transfers: both
-     * target an object and must attach it to the hand, but freezing the
-     * grab-authority relation on the same tick reads whatever hand transform
+     * Deferred state for provider world grabs and inventory transfers.
+     * Auto Drop finishes after native placement; other requests attach the
+     * target to the hand. Freezing the grab-authority relation on the same
+     * tick reads whatever hand transform
      * happens to exist that instant. This carries the request across the
      * settle delay (fForceGrabAttachSettleSeconds) so the eventual commit
      * reads a genuinely live hand pose. A saved grab offset, if any exists
@@ -43,7 +45,8 @@ namespace rock
         bool inventoryTransfer{ false };
         // Internal B-hold draws share transfer/rollback, without an API owner.
         bool grenadeQuickDraw{ false };
-        bool equippedWeaponTransfer{ false };
+        // Capture the mode at release so a hot reload cannot change an in-flight drop.
+        equipped_weapon_drop_policy::Mode equippedWeaponDropMode{ equipped_weapon_drop_policy::Mode::Off };
         AuthoredWeaponGripPose weaponGripPose{};
         std::uint32_t preferredBodyId{ 0x7FFF'FFFF };
         float maxDistanceGame{ 0.0f };
@@ -57,9 +60,14 @@ namespace rock
         // only .state/.failure/.targetBodyId are mutated when the commit resolves.
         provider::RockProviderInteractionCommandResultV1 providerResultTemplate{};
 
+        [[nodiscard]] bool isEquippedWeaponTransfer() const noexcept
+        {
+            return equippedWeaponDropMode != equipped_weapon_drop_policy::Mode::Off;
+        }
+
         [[nodiscard]] bool internallyOwned() const noexcept
         {
-            return grenadeQuickDraw || equippedWeaponTransfer;
+            return grenadeQuickDraw || isEquippedWeaponTransfer();
         }
     };
 }

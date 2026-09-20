@@ -4,6 +4,22 @@
 
 namespace rock::equipped_weapon_drop_policy
 {
+    enum class Mode : std::uint8_t
+    {
+        Off = 1,
+        ToggleDrop = 2,
+        AutoDrop = 3,
+    };
+
+    [[nodiscard]] inline constexpr Mode fromSetting(int value) noexcept
+    {
+        switch (value) {
+        case 2: return Mode::ToggleDrop;
+        case 3: return Mode::AutoDrop;
+        default: return Mode::Off;
+        }
+    }
+
     enum class SourceHand : std::uint8_t
     {
         None = 0,

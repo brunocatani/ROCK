@@ -1381,7 +1381,7 @@ namespace rock
                     }
                     if (physicalDropRequested && dropHandoffAvailable) {
                         // Preserve the equipped pose while the native loose bodies
-                        // appear. Force grab then seats the exact reference using
+                        // appear. Toggle Drop then seats the exact reference using
                         // the same authored weapon resolver as a far-grab catch.
                         RE::NiPoint3 releaseLoc = dropLoc;
                         RE::NiPoint3 releaseRot{};
@@ -1448,13 +1448,16 @@ namespace rock
                                         PendingForceGrabCommitPhase::EquippedSlotReleaseFailed,
                                     .targetHandle = dropResult.handle,
                                     .inventoryTransfer = true,
-                                    .equippedWeaponTransfer = true,
+                                    .equippedWeaponDropMode = equipped_weapon_drop_policy::fromSetting(g_rockConfig.rockWeaponDropMode),
                                     .weaponGripPose = equippedWeaponDropRequest.pose,
                                     .maxDistanceGame = 96.0f,
                                 };
-                                _forceGrab.retainedWeaponGrabs[transferHandIndex] = {
-                                    .inputState = transferred_weapon_grab_policy::State::AwaitInitialRelease,
-                                };
+                                if (_forceGrab.pendingCommits[transferHandIndex].equippedWeaponDropMode ==
+                                    equipped_weapon_drop_policy::Mode::ToggleDrop) {
+                                    _forceGrab.retainedWeaponGrabs[transferHandIndex] = {
+                                        .inputState = transferred_weapon_grab_policy::State::AwaitInitialRelease,
+                                    };
+                                }
                                 vanilla_weapon_alignment_telemetry::recordTransferPose(
                                     dropResult.droppedFormID, transferIsLeft, "release",
                                     releaseGeometry.capturedWeaponWorld,
@@ -1469,7 +1472,8 @@ namespace rock
                             }
                             if (dropCommitted) {
                                 ROCK_LOG_INFO(Weapon,
-                                    "Equipped weapon transfer to retained loose grab queued formID={:08X} dropped={:08X} reference={} sourceHand={} dropLoc=({:.1f},{:.1f},{:.1f}) lever={:.1f}gu stack={} instanceMatch={}",
+                                    "Equipped weapon drop queued mode={} formID={:08X} dropped={:08X} reference={} sourceHand={} dropLoc=({:.1f},{:.1f},{:.1f}) lever={:.1f}gu stack={} instanceMatch={}",
+                                    g_rockConfig.rockWeaponDropMode,
                                     dropResult.formID,
                                     dropResult.droppedFormID,
                                     dropResult.success ? "ready" : "pending",
@@ -2058,7 +2062,7 @@ namespace rock
                 g_rockConfig.rockEquippedWeaponShoulderStashEnabled &&
                 !virtualHolstersLoaded,
             .lastGripReleaseDropEnabled =
-                g_rockConfig.rockAutoDrop,
+                equipped_weapon_drop_policy::fromSetting(g_rockConfig.rockWeaponDropMode) != equipped_weapon_drop_policy::Mode::Off,
             .immersiveWeapon = {
                 .firingGripDetachEnabled =
                     g_rockConfig.

@@ -12,7 +12,8 @@ namespace rock
         bool authoredOnlySupportGrabsEnabled{ true };
         equipped_weapon_toggle_grab_policy::Mode weaponGrabMode{ equipped_weapon_toggle_grab_policy::Mode::HoldBoth };
         bool equippedWeaponShoulderStashEnabled{ false };
-        // Whether releasing the last equipped grip transfers it to a retained loose grab.
+        // Whether releasing the last equipped grip drops it into the world.
+        // Weapon Drop Mode decides whether the loose weapon is then grabbed.
         // With false that grip is retained; releases are honored only while
         // the other hand still carries the weapon.
         bool lastGripReleaseDropEnabled{ true };
