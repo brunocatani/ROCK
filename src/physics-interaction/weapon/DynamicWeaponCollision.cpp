@@ -214,8 +214,9 @@ namespace rock
             };
         }
 
-        void updateWeaponGripConstraintContactTau(
+        void updateWeaponGripConstraintContactResponse(
             ActiveConstraint& constraint,
+            const GrabConstraintMotorTuning& baseTuning,
             const bool contactActive,
             const float deltaTime)
         {
@@ -224,14 +225,10 @@ namespace rock
             }
 
             const float baseLinearTau = grab_motion_controller::safePositive(
-                scaleFiniteValue(
-                    g_rockConfig.rockGrabLinearTau,
-                    g_rockConfig.rockGrabLooseWeaponSharedConstraintLinearTauMultiplier),
+                baseTuning.linearTau,
                 0.03f);
             const float baseAngularTau = grab_motion_controller::safePositive(
-                scaleFiniteValue(
-                    g_rockConfig.rockGrabAngularTau,
-                    g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularTauMultiplier),
+                baseTuning.angularTau,
                 baseLinearTau);
             const float collisionTau = grab_motion_controller::safePositive(
                 scaleFiniteValue(
@@ -251,6 +248,18 @@ namespace rock
                 angularTarget,
                 g_rockConfig.rockGrabTauLerpSpeed,
                 deltaTime);
+            const auto linearRecovery = dynamic_weapon_collision_policy::resolveContactMotorRecovery(
+                grab_motion_controller::safePositive(baseTuning.linearDamping, 0.8f),
+                grab_motion_controller::safePositive(baseTuning.linearConstantRecovery, 1.0f),
+                baseLinearTau, collisionTau, constraint.linearMotor->tau, contactActive);
+            const auto angularRecovery = dynamic_weapon_collision_policy::resolveContactMotorRecovery(
+                grab_motion_controller::safePositive(baseTuning.angularDamping, 0.8f),
+                grab_motion_controller::safePositive(baseTuning.angularConstantRecovery, 1.0f),
+                baseAngularTau, collisionTau, constraint.angularMotor->tau, contactActive);
+            constraint.linearMotor->damping = linearRecovery.damping;
+            constraint.linearMotor->constantRecoveryVelocity = linearRecovery.constantRecoveryVelocity;
+            constraint.angularMotor->damping = angularRecovery.damping;
+            constraint.angularMotor->constantRecoveryVelocity = angularRecovery.constantRecoveryVelocity;
             constraint.currentTau = constraint.linearMotor->tau;
         }
 
@@ -1261,12 +1270,12 @@ namespace rock
             return;
         }
 
-        // The hidden authority remains exact, while active world contact uses
-        // the same shared-authority motor policy as ROCK's loose held weapons.
-        // Only tau changes; targets, recovery velocities, and force limits stay
-        // owned by the existing grip constraint.
-        updateWeaponGripConstraintContactTau(
+        // Keep the exact aiming target and existing force budgets. Only the
+        // equipped weapon's contact recovery profile changes; loose grabs and
+        // hand collision do not use this response.
+        updateWeaponGripConstraintContactResponse(
             _authorityConstraint,
+            buildWeaponGripConstraintTuning(_createdMass),
             _contactRetentionSeconds > 0.0f,
             driveResult.driveDeltaSeconds);
 
@@ -1579,6 +1588,13 @@ namespace rock
                 -1.0f;
             const auto* linearMotor = _authorityConstraint.linearMotor;
             const auto* angularMotor = _authorityConstraint.angularMotor;
+            const auto liveMotion = havok_runtime::snapshotBody(world, _body.getBodyId());
+            float angularSpeedRadiansPerSecond = -1.0f;
+            if (liveMotion.valid && liveMotion.motion) {
+                const auto velocity = liveMotion.motion->angularVelocity;
+                const float speedSquared = velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z;
+                if (std::isfinite(speedSquared)) angularSpeedRadiansPerSecond = std::sqrt(speedSquared);
+            }
             float requestedRotation[4]{}, liveRotation[4]{}, authorityRotation[4]{};
             transform_math::niRowsToHavokQuaternion(_physicsRequestedTarget.rotate, requestedRotation);
             transform_math::niRowsToHavokQuaternion(liveBodyWorld.rotate, liveRotation);
@@ -1587,7 +1603,7 @@ namespace rock
             }
 
             dynamic_collider_trace::write(
-                "DWC_MOTOR source={} solve={} body={} contact={} newCallback={} retention={:.6f}s intentStep=({:.3f}gu,{:.2f}deg) signedPress={:.3f}gu contactError=({:.2f}gu,{:.2f}deg) authority(read/error)={}/({:.3f}gu,{:.2f}deg) tau=({:.4f},{:.4f}) damping=({:.4f},{:.4f}) recovery=({:.2f}/{:.2f},{:.2f}/{:.2f}) force=({:.1f},{:.1f}) requestedQ=({:.6f},{:.6f},{:.6f},{:.6f}) authorityQ=({:.6f},{:.6f},{:.6f},{:.6f}) liveQ=({:.6f},{:.6f},{:.6f},{:.6f})",
+                "DWC_MOTOR source={} solve={} body={} contact={} newCallback={} retention={:.6f}s intentStep=({:.3f}gu,{:.2f}deg) signedPress={:.3f}gu contactError=({:.2f}gu,{:.2f}deg) authority(read/error)={}/({:.3f}gu,{:.2f}deg) tau=({:.4f},{:.4f}) damping=({:.4f},{:.4f}) recovery=({:.2f}/{:.2f},{:.2f}/{:.2f}) force=({:.1f},{:.1f}) angularSpeedRad={:.5f} requestedQ=({:.6f},{:.6f},{:.6f},{:.6f}) authorityQ=({:.6f},{:.6f},{:.6f},{:.6f}) liveQ=({:.6f},{:.6f},{:.6f},{:.6f})",
                 _physicsSourceSequence, solveSequence, _body.getBodyId().value,
                 snapshot.contactActive,
                 newMatchingContact,
@@ -1610,6 +1626,7 @@ namespace rock
                 angularMotor ? angularMotor->constantRecoveryVelocity : -1.0f,
                 linearMotor ? linearMotor->maxForce : -1.0f,
                 angularMotor ? angularMotor->maxForce : -1.0f,
+                angularSpeedRadiansPerSecond,
                 requestedRotation[0], requestedRotation[1], requestedRotation[2], requestedRotation[3],
                 authorityRotation[0], authorityRotation[1], authorityRotation[2], authorityRotation[3],
                 liveRotation[0], liveRotation[1], liveRotation[2], liveRotation[3]);

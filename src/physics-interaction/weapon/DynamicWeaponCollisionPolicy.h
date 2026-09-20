@@ -29,6 +29,38 @@ namespace rock::dynamic_weapon_collision_policy
     // a visual delay or permission to retain a pose after body retirement.
     inline constexpr float kContactRetentionSeconds = 3.0f / 90.0f;
 
+    struct ContactMotorRecovery
+    {
+        float damping;
+        float constantRecoveryVelocity;
+    };
+
+    [[nodiscard]] inline ContactMotorRecovery resolveContactMotorRecovery(
+        float baseDamping,
+        float baseConstantRecoveryVelocity,
+        float baseTau,
+        float contactTau,
+        float currentTau,
+        bool contactActive)
+    {
+        // Reuse the existing motor-strength transition for both entry and
+        // release; a separate contact filter would add another response clock.
+        const float tauRange = contactTau - baseTau;
+        const float blend = std::abs(tauRange) > 0.000001f ?
+            std::clamp((currentTau - baseTau) / tauRange, 0.0f, 1.0f) :
+            (contactActive ? 1.0f : 0.0f);
+
+        // FO4VR 0x141AFD71D-0x141AFD77C adds constantRecovery * dt
+        // to proportional error recovery, up to the entire remaining error.
+        // For a blocked barrel this keeps commanding abrupt small corrections
+        // at a long lever. Contact uses proportional recovery with full native
+        // velocity damping; free tracking restores the caller's exact profile.
+        return {
+            baseDamping + ((std::max)(baseDamping, 1.0f) - baseDamping) * blend,
+            baseConstantRecoveryVelocity * (1.0f - blend),
+        };
+    }
+
     [[nodiscard]] inline float advanceContactRetention(
         float remainingSeconds,
         bool observedContact,

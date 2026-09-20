@@ -49,6 +49,40 @@ int main()
     using namespace rock::dynamic_weapon_collision_policy;
     bool ok = true;
 
+    const auto freeRecovery = resolveContactMotorRecovery(0.8f, 1.0f, 0.03f, 0.01f, 0.03f, false);
+    ok &= expectNear("free aim preserves damping", freeRecovery.damping, 0.8f);
+    ok &= expectNear("free aim preserves recovery", freeRecovery.constantRecoveryVelocity, 1.0f);
+    const auto blockedRecovery = resolveContactMotorRecovery(0.8f, 1.0f, 0.03f, 0.01f, 0.01f, true);
+    ok &= expectNear("blocked weapon damps relative velocity", blockedRecovery.damping, 1.0f);
+    ok &= expectNear("blocked weapon has no constant recovery kick", blockedRecovery.constantRecoveryVelocity, 0.0f, 0.0f);
+    const auto enteringRecovery = resolveContactMotorRecovery(0.8f, 1.0f, 0.03f, 0.01f, 0.02f, true);
+    const auto leavingRecovery = resolveContactMotorRecovery(0.8f, 1.0f, 0.03f, 0.01f, 0.02f, false);
+    ok &= expectNear("contact entry blends damping", enteringRecovery.damping, 0.9f);
+    ok &= expectNear("contact entry blends recovery", enteringRecovery.constantRecoveryVelocity, 0.5f);
+    ok &= expectNear("release does not snap damping", leavingRecovery.damping, enteringRecovery.damping);
+    ok &= expectNear("release does not snap recovery", leavingRecovery.constantRecoveryVelocity, enteringRecovery.constantRecoveryVelocity);
+    const auto tunedRecovery = resolveContactMotorRecovery(1.2f, 0.4f, 0.03f, 0.01f, 0.01f, true);
+    ok &= expectNear("stronger supplied damping is preserved", tunedRecovery.damping, 1.2f);
+    const auto equalTauContact = resolveContactMotorRecovery(0.8f, 1.0f, 0.03f, 0.03f, 0.03f, true);
+    const auto equalTauFree = resolveContactMotorRecovery(0.8f, 1.0f, 0.03f, 0.03f, 0.03f, false);
+    ok &= expectNear("equal tau still admits contact recovery", equalTauContact.constantRecoveryVelocity, 0.0f);
+    ok &= expectNear("equal tau restores free recovery", equalTauFree.constantRecoveryVelocity, 1.0f);
+
+    // Fixed target, small angular error: the verified native position motor
+    // requests min(error/dt, proportional*error + constant) recovery speed.
+    // Contact must approach zero proportionally instead of closing each tiny
+    // lever disturbance in one step. Free aim keeps its measured old response.
+    for (const float hz : {60.0f, 90.0f, 180.0f, 270.0f}) {
+        constexpr float angularError = 0.001f;
+        constexpr float proportionalRecovery = 2.0f;
+        const float freeSpeed = (std::min)(angularError * hz,
+            proportionalRecovery * angularError + freeRecovery.constantRecoveryVelocity);
+        const float contactSpeed = (std::min)(angularError * hz,
+            proportionalRecovery * angularError + blockedRecovery.constantRecoveryVelocity);
+        ok &= expectNear("free angular correction remains responsive", freeSpeed, angularError * hz);
+        ok &= expectNear("contact recovery is proportional across step rates", contactSpeed, 0.002f);
+    }
+
     const auto postSolveTiming = [](float deltaSeconds) {
         auto timing = rock::havok_physics_timing::makeTimingSample(
             deltaSeconds, deltaSeconds, 0.0f, deltaSeconds, 1);
