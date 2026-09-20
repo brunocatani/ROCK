@@ -12,6 +12,7 @@
 #include "physics-interaction/native/CharacterControllerRuntime.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
+#include "physics-interaction/native/HavokPhysicsTiming.h"
 #include "physics-interaction/native/NativeGrabHapticSuppressionPolicy.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
@@ -318,6 +319,7 @@ namespace rock
                 return;
             }
 
+            havok_physics_timing::captureTimeMultiplier();
             g_originalBhkWorldSetDeltaTime(rawDeltaSeconds);
 
             if (!g_rockConfig.rockHavokTimingFixEnabled && !performance_profiler::enabled()) {
@@ -1737,6 +1739,7 @@ namespace rock
         }
 
         REL::Relocation<std::uintptr_t> hookCallSite{ REL::Offset(kHookSite_BhkWorldSetDeltaTimeMainCall) };
+        havok_physics_timing::initializeTimeMultiplierSampling();
         auto& trampoline = F4SE::GetTrampoline();
         const auto original = trampoline.write_call<5>(hookCallSite.address(), &hookedBhkWorldSetDeltaTime);
         g_originalBhkWorldSetDeltaTime = reinterpret_cast<BhkWorldSetDeltaTime_t>(original);

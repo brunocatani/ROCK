@@ -65,11 +65,14 @@ namespace rock::dynamic_weapon_collision_policy
         float remainingSeconds,
         bool observedContact,
         bool teleported,
-        const havok_physics_timing::PhysicsTimingSample& timing)
+        const havok_physics_timing::PhysicsTimingSample& timing,
+        float inverseTimeScale = 1.0f)
     {
         if (teleported || !timing.valid || timing.usedFallback ||
             timing.phase != havok_physics_timing::PhysicsStepPhase::SubstepPostSolve ||
-            !havok_physics_timing::isUsableDelta(timing.substepDeltaSeconds)) {
+            !havok_physics_timing::isUsableDelta(timing.substepDeltaSeconds) ||
+            !std::isfinite(inverseTimeScale) || inverseTimeScale <= 0.0f ||
+            !havok_physics_timing::isUsableDelta(timing.substepDeltaSeconds * inverseTimeScale)) {
             return 0.0f;
         }
         if (observedContact) {
@@ -77,7 +80,7 @@ namespace rock::dynamic_weapon_collision_policy
         }
         const float remaining = std::isfinite(remainingSeconds) ?
             std::clamp(remainingSeconds, 0.0f, kContactRetentionSeconds) : 0.0f;
-        const float next = remaining - timing.substepDeltaSeconds;
+        const float next = remaining - timing.substepDeltaSeconds * inverseTimeScale;
         // Float subtraction must not buy one extra solve at the deadline.
         return next > 0.000001f ? next : 0.0f;
     }

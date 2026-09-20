@@ -201,6 +201,20 @@ int main(int argc, char** argv)
             require(!other.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr), "example option belongs to both files");
         }
         require(store.load(true), "first-run load failed");
+        require(find(store, "bVatsPhysicsFixes").group == Group::Developer &&
+            find(store, "bVatsPhysicsFixes").type == ValueType::Boolean &&
+            rock::RockConfig::parseValues(missingOptions).rockVatsPhysicsFixes,
+            "VATS physics fixes must default on in the developer catalog");
+        require(store.setValue(Group::Developer, "PhysicsInteraction", "bVatsPhysicsFixes", "false") && store.load(false),
+            "VATS physics fixes disable/reload failed");
+        CSimpleIniA vatsValues;
+        store.appendLoadedValues(vatsValues);
+        require(!rock::RockConfig::parseValues(vatsValues).rockVatsPhysicsFixes,
+            "VATS physics fixes override did not reach runtime");
+        require(store.setValue(Group::Developer, "PhysicsInteraction", "bVatsPhysicsFixes", "true") && store.load(false),
+            "VATS physics fixes reset/reload failed");
+        require(!find(store, "bVatsPhysicsFixes").specified,
+            "resetting VATS physics fixes retained the default override");
         require(find(store, "npcDynamicCollisions").type == ValueType::Boolean &&
             find(store, "npcDynamicCollisions").group == Group::Developer &&
             !rock::RockConfig::parseValues(missingOptions).npcDynamicCollisions,

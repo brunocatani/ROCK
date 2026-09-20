@@ -1,8 +1,12 @@
+#include "RE/Havok/hknpCollisionQueryCollector.h"
+#include "RE/NetImmerse/NiAVObject.h"
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/collision/ImpactAudioPolicy.h"
 #include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
+#include "physics-interaction/weapon/WeaponPhysicsTimeScale.h"
+#include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 
 #include <cmath>
 #include <cstdio>
@@ -45,6 +49,76 @@ namespace
         result.entry[2][2] = 1.0f;
         return result;
     }
+
+    bool vatsTimeScaleChecks()
+    {
+        using namespace rock;
+        using namespace havok_physics_timing;
+        using namespace weapon_physics_time_scale;
+        bool ok = true;
+        for (float hz : {45.0f, 90.0f, 120.0f}) {
+            for (unsigned substeps : {1u, 2u, 3u}) {
+                const float realDt = 1.0f / hz / substeps;
+                const auto normalLimit = generated_keyframed_body_drive_math::computeTargetVelocityLimit(
+                    20.0f, 1.0f, realDt, 1.0f / 70.0f, 15.0f, 35.0f);
+                for (float multiplier : {1.0f, 0.5f, 0.1f, 0.04f}) {
+                    const float physicsDt = realDt * multiplier;
+                    auto timing = makeTimingSample(physicsDt * substeps, physicsDt, 0.0f,
+                        physicsDt * substeps, substeps, multiplier);
+                    timing.phase = PhysicsStepPhase::SubstepPreCollide;
+                    const auto scale = resolve(true, timing);
+                    ok &= scale.valid;
+                    ok &= expectNear("slow-motion response uses measured real elapsed time", scale.responseDeltaSeconds, realDt);
+                    const auto limit = generated_keyframed_body_drive_math::computeTargetVelocityLimit(
+                        20.0f, 1.0f, physicsDt, 1.0f / 70.0f, 15.0f * scale.velocity, 35.0f * scale.velocity);
+                    ok &= expectNear("translation and rotation budgets preserve allowed movement", limit.alpha, normalLimit.alpha);
+                    // Integrate the force-limited acceleration over the actual
+                    // simulation step; equal real elapsed time must move equally.
+                    ok &= expectNear("force-limited displacement survives time scaling",
+                        0.5f * 1500.0f * scale.force / 2.0f * physicsDt * physicsDt,
+                        0.5f * 1500.0f / 2.0f * realDt * realDt);
+                    const float error = 0.15f;
+                    const float normalRecovery = (std::min)(error / realDt, 2.0f * error + 1.0f);
+                    const float slowRecovery = (std::min)(error / physicsDt,
+                        (2.0f * error + 1.0f) * scale.velocity);
+                    ok &= expectNear("native motor recovery closes equal error per real step",
+                        slowRecovery * physicsDt, normalRecovery * realDt);
+                    timing.phase = PhysicsStepPhase::SubstepPostSolve;
+                    const float retained = dynamic_weapon_collision_policy::advanceContactRetention(
+                        0.03f, false, false, timing, scale.velocity);
+                    ok &= expectNear("contact grace does not linger in slow motion", retained,
+                        (std::max)(0.0f, 0.03f - realDt));
+                    const auto disabled = resolve(false, timing);
+                    ok &= disabled.valid && disabled.velocity == 1.0f && disabled.force == 1.0f;
+                    ok &= expectNear("disabled keeps the native response clock", disabled.responseDeltaSeconds, physicsDt);
+                }
+            }
+        }
+        float velocity = 3.0f;
+        float previous = 1.0f;
+        for (float next : {2.0f, 10.0f, 25.0f, 25.0f, 10.0f, 1.0f, 1.0f}) {
+            velocity *= velocityRebase(previous, next);
+            ok &= expectNear("entry exit and steady steps preserve real velocity", velocity / next, 3.0f);
+            previous = next;
+        }
+        ok &= expectNear("hot disable removes compensation exactly once", velocityRebase(25.0f, 1.0f), 0.04f);
+        const float q[4]{0.0f, 0.0f, std::sqrt(0.5f), std::sqrt(0.5f)};
+        RE::NiPoint3 angular{};
+        ok &= rebaseWorldAngularVelocity(q, RE::NiPoint3{2.0f, 0.0f, 0.0f}, 0.04f, angular);
+        ok &= expectPoint("native setter receives world omega for a rotated weapon", angular, RE::NiPoint3{0.0f, 0.08f, 0.0f});
+        auto timing = makeTimingSample(0.011f, 0.011f, 0.0f, 0.011f, 1);
+        for (float bad : {0.0f, -1.0f, std::numeric_limits<float>::quiet_NaN(),
+                 std::numeric_limits<float>::infinity(), std::numeric_limits<float>::min()}) {
+            timing.timeMultiplier = bad;
+            ok &= !resolve(true, timing).valid;
+            ok &= resolve(false, timing).valid;
+        }
+        timing.timeMultiplier = 2.0f;
+        ok &= resolve(true, timing).velocity == 1.0f;
+        timing.usedFallback = true;
+        ok &= !resolve(true, timing).valid && !resolve(false, timing).valid;
+        return ok;
+    }
 }
 
 int main()
@@ -64,7 +138,7 @@ int main()
     static_assert(!muteShellPair(ROCK_LAYER_DYNAMIC_WEAPON_PROXY, FO4_LAYER_STATIC));
     static_assert(!muteShellPair(ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, FO4_LAYER_STATIC));
     using namespace rock::dynamic_weapon_collision_policy;
-    bool ok = true;
+    bool ok = vatsTimeScaleChecks();
 
     const auto freeRecovery = resolveContactMotorRecovery(0.8f, 1.0f, 0.03f, 0.01f, 0.03f, false);
     ok &= expectNear("free aim preserves damping", freeRecovery.damping, 0.8f);

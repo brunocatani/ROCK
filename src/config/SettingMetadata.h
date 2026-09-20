@@ -454,6 +454,7 @@ namespace rock::config
         { "PhysicsInteraction", "fDebugSkeletonBonePointSize", "17. Skeleton Debug", "", configuration_api::Group::Developer },
         { "PhysicsInteraction", "fDebugSkeletonBoneAxisLength", "17. Skeleton Debug", "", configuration_api::Group::Developer },
         { "PhysicsInteraction", "bHavokTimingFixEnabled", "18. Physics Timing", "Stabilizes FO4VR physics timing when rendering falls below the reference rate.", configuration_api::Group::Developer },
+        { "PhysicsInteraction", "bVatsPhysicsFixes", "18. Physics Timing", "VATS Physics Fixes\nPreserves equipped-weapon handling speed during VATS and other game slow motion.\nCompensates the weapon drive and constraint while keeping dynamic collision.\nChanges apply at the next physics step; false restores uncompensated handling.", configuration_api::Group::Developer },
         { "PhysicsInteraction", "fHavokTimingFixMinPhysicsFrameRate", "18. Physics Timing", "", configuration_api::Group::Developer },
         { "PhysicsInteraction", "iHavokTimingFixMaxSubsteps", "18. Physics Timing", "", configuration_api::Group::Developer },
     };

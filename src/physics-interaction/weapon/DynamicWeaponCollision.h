@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/weapon/WeaponPhysicsTimeScale.h"
+
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/native/HavokCompoundShapeBuilder.h"
@@ -294,6 +296,9 @@ namespace rock
         RE::NiPoint3 _createdHalfExtentsWeaponLocal{};
         float _createdWeaponScale{ 1.0f };
         float _createdMass{ 0.0f };
+        // Owned by pre-collide/post-solve callbacks; cleared under quiescence
+        // on retirement. Generated bodies never transfer this state to drops.
+        weapon_physics_time_scale::HandlingScale _handlingScale{};
         std::uint32_t _createdCompoundChildCount{ 0 };
         // Structural mutations own this pivot; callbacks read it under their
         // quiescence lease. Free carry uses the existing weapon-root pivot.

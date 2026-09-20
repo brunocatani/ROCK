@@ -40,6 +40,7 @@ namespace rock
         bool operator==(const RockConfigValues&) const = default;
 
         bool rockHavokTimingFixEnabled = true;
+        bool rockVatsPhysicsFixes = true;
         float rockHavokTimingFixMinPhysicsFrameRate = havok_timing_fix_policy::kDefaultMinPhysicsFrameRate;
         int rockHavokTimingFixMaxSubsteps = havok_timing_fix_policy::kDefaultMaxSubsteps;
 

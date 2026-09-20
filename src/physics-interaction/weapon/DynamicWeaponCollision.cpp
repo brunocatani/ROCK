@@ -225,7 +225,7 @@ namespace rock
             ActiveConstraint& constraint,
             const GrabConstraintMotorTuning& baseTuning,
             const bool contactActive,
-            const float deltaTime)
+            const weapon_physics_time_scale::HandlingScale& timeScale)
         {
             if (!constraint.linearMotor || !constraint.angularMotor) {
                 return;
@@ -249,12 +249,12 @@ namespace rock
                 constraint.linearMotor->tau,
                 linearTarget,
                 g_rockConfig.rockGrabTauLerpSpeed,
-                deltaTime);
+                timeScale.responseDeltaSeconds);
             constraint.angularMotor->tau = grab_motion_controller::advanceToward(
                 constraint.angularMotor->tau,
                 angularTarget,
                 g_rockConfig.rockGrabTauLerpSpeed,
-                deltaTime);
+                timeScale.responseDeltaSeconds);
             const auto linearRecovery = dynamic_weapon_collision_policy::resolveContactMotorRecovery(
                 grab_motion_controller::safePositive(baseTuning.linearDamping, 0.8f),
                 grab_motion_controller::safePositive(baseTuning.linearConstantRecovery, 1.0f),
@@ -264,10 +264,57 @@ namespace rock
                 grab_motion_controller::safePositive(baseTuning.angularConstantRecovery, 1.0f),
                 baseAngularTau, collisionTau, constraint.angularMotor->tau, contactActive);
             constraint.linearMotor->damping = linearRecovery.damping;
-            constraint.linearMotor->constantRecoveryVelocity = linearRecovery.constantRecoveryVelocity;
+            constraint.linearMotor->constantRecoveryVelocity = linearRecovery.constantRecoveryVelocity * timeScale.velocity;
             constraint.angularMotor->damping = angularRecovery.damping;
-            constraint.angularMotor->constantRecoveryVelocity = angularRecovery.constantRecoveryVelocity;
+            constraint.angularMotor->constantRecoveryVelocity = angularRecovery.constantRecoveryVelocity * timeScale.velocity;
+            // FO4VR 141AFD739..141AFD749 multiplies both recovery rates by
+            // solver dt. 141AFD998..141AFD9B2 converts force bounds to impulse
+            // bounds. Preserve recovery per real second and acceleration per
+            // real second squared, keeping dimensionless tau/damping intact.
+            constraint.linearMotor->proportionalRecoveryVelocity =
+                grab_motion_controller::safePositive(baseTuning.linearProportionalRecovery, 2.0f) * timeScale.velocity;
+            constraint.angularMotor->proportionalRecoveryVelocity =
+                grab_motion_controller::safePositive(baseTuning.angularProportionalRecovery, 2.0f) * timeScale.velocity;
+            constraint.linearMotor->maxForce = baseTuning.linearMaxForce * timeScale.force;
+            constraint.linearMotor->minForce = -constraint.linearMotor->maxForce;
+            constraint.angularMotor->maxForce = baseTuning.angularMaxForce * timeScale.force;
+            constraint.angularMotor->minForce = -constraint.angularMotor->maxForce;
             constraint.currentTau = constraint.linearMotor->tau;
+            constraint.currentMaxForce = constraint.linearMotor->maxForce;
+            constraint.targetMaxForce = constraint.linearMotor->maxForce;
+        }
+
+        bool rebaseWeaponVelocity(RE::hknpWorld* world, BethesdaPhysicsBody& body, float ratio, const char*& stage)
+        {
+            if (ratio == 1.0f) return true;
+            stage = "ratio";
+            if (!std::isfinite(ratio) || ratio <= 0.0f) return false;
+            stage = "motion-owner";
+            const auto snapshot = havok_runtime::snapshotBody(world, body.getBodyId());
+            if (!snapshot.valid || !snapshot.motion || snapshot.collisionObject != body.getCollisionObject()) {
+                return false;
+            }
+            const auto q = snapshot.motion->orientation;
+            const float quaternion[4]{q.x, q.y, q.z, q.w};
+            const auto linear = snapshot.motion->linearVelocity;
+            const auto angular = snapshot.motion->angularVelocity;
+            // The native setter at 14153A0A8..14153A10F rotates world angular
+            // velocity into the motion's local frame. Invert that rotation
+            // before calling the existing setter; never pass local omega as
+            // world omega. 1417D37D0/1417D3829 independently consume these
+            // linear/angular fields for swept collision bounds.
+            RE::NiPoint3 worldAngular{};
+            stage = "angular-frame";
+            if (!weapon_physics_time_scale::rebaseWorldAngularVelocity(quaternion,
+                    RE::NiPoint3{angular.x, angular.y, angular.z}, ratio, worldAngular)) return false;
+            alignas(16) const float linearWorld[4]{linear.x * ratio, linear.y * ratio, linear.z * ratio, 0.0f};
+            alignas(16) const float angularWorld[4]{worldAngular.x, worldAngular.y, worldAngular.z, 0.0f};
+            stage = "velocity-components";
+            if (!havok_runtime::isFinite3(linearWorld) || !havok_runtime::isFinite3(angularWorld)) return false;
+            // The native writer also refreshes swept bounds and activation.
+            // Do not retain the borrowed motion across this native mutation.
+            stage = "native-velocity-writer";
+            return body.setVelocity(linearWorld, angularWorld);
         }
 
         bool applyWeaponEnvelopeMassProperties(
@@ -1279,6 +1326,30 @@ namespace rock
             return;
         }
 
+        const auto timeScale = weapon_physics_time_scale::resolve(g_rockConfig.rockVatsPhysicsFixes, timing);
+        const auto motorTuning = buildWeaponGripConstraintTuning(_createdMass);
+        if (!timeScale.valid ||
+            !std::isfinite(motorTuning.linearMaxForce * timeScale.force) ||
+            !std::isfinite(motorTuning.angularMaxForce * timeScale.force)) {
+            _droveThisSubstep = false;
+            clearPublishedPhysicsSnapshot();
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                "VATS_PHYSICS drive skipped: body={} multiplier={} physicsDt={} fallback={} stage=timing-or-budget",
+                _body.getBodyId().value, timing.timeMultiplier, timing.substepDeltaSeconds, timing.usedFallback);
+            return;
+        }
+        const float velocityRatio = weapon_physics_time_scale::velocityRebase(_handlingScale.velocity, timeScale.velocity);
+        const char* rebaseStage = "unchanged";
+        if (!rebaseWeaponVelocity(world, _body, velocityRatio, rebaseStage)) {
+            _rebuildRequestedAtomic.store(true, std::memory_order_release);
+            _droveThisSubstep = false;
+            clearPublishedPhysicsSnapshot();
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "VATS_PHYSICS velocity rebase failed: body={} ratio={} stage={}",
+                _body.getBodyId().value, velocityRatio, rebaseStage);
+            return;
+        }
+        _handlingScale = timeScale;
+
         {
             std::scoped_lock poseLock(_compoundPoseMutex);
             if (_queuedCompoundPoseSequence != _consumedCompoundPoseSequence) {
@@ -1317,8 +1388,8 @@ namespace rock
             timing,
             "DynamicWeaponGripAuthority",
             0,
-            dynamic_weapon_collision_policy::kMaximumLinearVelocityHavok,
-            dynamic_weapon_collision_policy::kMaximumAngularVelocityRadiansPerSecond);
+            dynamic_weapon_collision_policy::kMaximumLinearVelocityHavok * timeScale.velocity,
+            dynamic_weapon_collision_policy::kMaximumAngularVelocityRadiansPerSecond * timeScale.velocity);
         if (!driveResult.driven && dynamic_collider_trace::sample(
                 driveResult.sourceSequence != 0 ? driveResult.sourceSequence : timing.stepSequence)) {
             dynamic_collider_trace::writeWeapon(
@@ -1334,14 +1405,13 @@ namespace rock
             return;
         }
 
-        // Keep the exact aiming target and existing force budgets. Only the
-        // equipped weapon's contact recovery profile changes; loose grabs and
-        // hand collision do not use this response.
+        // Real-time weapon response is converted to the actual solver clock.
+        // The native step delta and the colliding body's mass stay unchanged.
         updateWeaponGripConstraintContactResponse(
             _authorityConstraint,
-            buildWeaponGripConstraintTuning(_createdMass),
+            motorTuning,
             _contactRetentionSeconds > 0.0f,
-            driveResult.driveDeltaSeconds);
+            timeScale);
 
         _droveThisSubstep =
             driveResult.driven &&
@@ -1416,7 +1486,7 @@ namespace rock
                 const auto dwell = dynamic_weapon_collision_policy::advanceDivergenceDwell(
                     _divergenceDwellSeconds,
                     requestedGapGameUnits,
-                    driveResult.driveDeltaSeconds);
+                    timeScale.responseDeltaSeconds);
                 _divergenceDwellSeconds = dwell.elapsedSeconds;
                 if (dwell.recoverNow) {
                     // Bound recovery attempts even if the engine rejects a body
@@ -1503,7 +1573,7 @@ namespace rock
             _activeContactOtherBodyId = otherBodyId;
         }
         _contactRetentionSeconds = dynamic_weapon_collision_policy::advanceContactRetention(
-            _contactRetentionSeconds, newMatchingContact, _physicsDriveTeleported, timing);
+            _contactRetentionSeconds, newMatchingContact, _physicsDriveTeleported, timing, _handlingScale.velocity);
 
         PhysicsSnapshot snapshot{};
         snapshot.valid = true;
@@ -1533,7 +1603,7 @@ namespace rock
                 dynamic_weapon_collision_policy::makeContactBodyTargetFromGripAuthority(authority, _createdCenterWeaponLocal, _createdWeaponScale, _authorityPivotWeaponLocal) :
                 RE::NiTransform{};
             dynamic_collider_trace::writeWeapon(
-                "DWC_CLOCK solve: source={} solve={} step={} substep={}/{} generation={:016X} body={} sourceDt={:.6f} sourceAge={:.6f} physicsDt={:.6f} rawDt={:.6f} remainder={:.6f} contact={} teleport={} commandValid={} authorityRead={} limit=({},{},{:.4f}) requested=({:.3f},{:.3f},{:.3f}) commanded=({:.3f},{:.3f},{:.3f}) authority=({:.3f},{:.3f},{:.3f}) contactBody=({:.3f},{:.3f},{:.3f}) limitError=({:.4f}gu,{:.4f}deg) driveError=({:.4f}gu,{:.4f}deg) constraintError=({:.4f}gu,{:.4f}deg)",
+                "DWC_CLOCK solve: source={} solve={} step={} substep={}/{} generation={:016X} body={} sourceDt={:.6f} sourceAge={:.6f} physicsDt={:.6f} rawDt={:.6f} remainder={:.6f} contact={} teleport={} commandValid={} authorityRead={} limit=({},{},{:.4f}) requested=({:.3f},{:.3f},{:.3f}) commanded=({:.3f},{:.3f},{:.3f}) authority=({:.3f},{:.3f},{:.3f}) contactBody=({:.3f},{:.3f},{:.3f}) limitError=({:.4f}gu,{:.4f}deg) driveError=({:.4f}gu,{:.4f}deg) constraintError=({:.4f}gu,{:.4f}deg) timeMultiplier={:.6f} handlingScale=({:.3f},{:.3f}) responseDt={:.6f}",
                 snapshot.sourceSequence, solveSequence, _clockDriveTiming.stepSequence,
                 _clockDriveTiming.substepIndex, _clockDriveTiming.substepCount, snapshot.generationKey, snapshot.bodyId,
                 drive.sourceDeltaSeconds, drive.sourceAgeSeconds, drive.driveDeltaSeconds,
@@ -1549,7 +1619,8 @@ namespace rock
                 authorityReadable && drive.hasCommandedTargetGameTransform ? dynamic_weapon_collision_policy::translationDeltaGameUnits(commanded, authority) : -1.0f,
                 authorityReadable && drive.hasCommandedTargetGameTransform ? dynamic_weapon_collision_policy::rotationDeltaDegrees(commanded, authority) : -1.0f,
                 authorityReadable ? dynamic_weapon_collision_policy::translationDeltaGameUnits(contactAtAuthority, liveBodyWorld) : -1.0f,
-                authorityReadable ? dynamic_weapon_collision_policy::rotationDeltaDegrees(contactAtAuthority, liveBodyWorld) : -1.0f);
+                authorityReadable ? dynamic_weapon_collision_policy::rotationDeltaDegrees(contactAtAuthority, liveBodyWorld) : -1.0f,
+                _clockDriveTiming.timeMultiplier, _handlingScale.velocity, _handlingScale.force, _handlingScale.responseDeltaSeconds);
         }
 
         if (contactEpisodeStarted &&
@@ -1849,6 +1920,7 @@ namespace rock
         _createdHalfExtentsWeaponLocal = {};
         _createdWeaponScale = 1.0f;
         _createdMass = 0.0f;
+        _handlingScale = {};
         _createdCompoundChildCount = 0;
         _createdCompoundPointCount = 0;
         _created = false;
