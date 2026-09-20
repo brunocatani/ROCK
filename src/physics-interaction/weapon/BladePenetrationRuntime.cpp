@@ -286,8 +286,30 @@ namespace rock
                 return true;
             }
             const HavokPairCollisionLeaseSet::DesiredPair pair{ _weaponBodyId, _contact.surfaceBodyId, 0 };
-            const auto result = _pairs.reconcile(_world, &pair, 1);
+            HavokPairCollisionDiagnostics diagnostics{};
+            const auto result = _pairs.reconcile(_world, &pair, 1, &diagnostics);
             if (!result.filterAvailable || result.activePairCount != 1) {
+                // Acquisition already stops after its first failure in this
+                // generation. Keep the detailed trace behind the existing
+                // asynchronous diagnostic switch; the stage is a normal error.
+                ROCK_LOG_WARN(Weapon, "BLADE pair failed: stage={} filterReady={} active={} world=0x{:X} weapon={} target={}",
+                    diagnostics.stage, result.filterAvailable, result.activePairCount,
+                    reinterpret_cast<std::uintptr_t>(_world), _weaponBodyId, _contact.surfaceBodyId);
+                if (dynamic_collider_trace::enabled()) {
+                    dynamic_collider_trace::writeWeapon(
+                        "BLADE_PAIR filter: generation={:016X} stage={} world=0x{:X} filter=0x{:X} vtable(actual/expected)=0x{:X}/0x{:X} type={} reciprocalWorld=0x{:X} added(head/slots/matches)=0x{:X}/{}/{} removed(head/slots/matches)=0x{:X}/{}/{}",
+                        generation, diagnostics.stage, reinterpret_cast<std::uintptr_t>(_world), diagnostics.filter,
+                        diagnostics.ownerVtable, diagnostics.expectedVtable, diagnostics.ownerType, diagnostics.ownerWorld,
+                        diagnostics.addedHead, diagnostics.addedSlots, diagnostics.addedCallbackMatches,
+                        diagnostics.removedHead, diagnostics.removedSlots, diagnostics.removedCallbackMatches);
+                    dynamic_collider_trace::writeWeapon(
+                        "BLADE_PAIR evidence: added(owner/callback/expected)=0x{:X}/0x{:X}/0x{:X} removed(owner/callback/expected)=0x{:X}/0x{:X}/0x{:X} identityChecked={} bodies={}/{} valid={}/{} collisionObjects=0x{:X}/0x{:X} nativeCalled={} nativeCount={}",
+                        diagnostics.lastAddedOwner, diagnostics.lastAddedCallback, diagnostics.expectedAddedCallback,
+                        diagnostics.lastRemovedOwner, diagnostics.lastRemovedCallback, diagnostics.expectedRemovedCallback,
+                        diagnostics.pairIdentityChecked, diagnostics.bodyA, diagnostics.bodyB,
+                        diagnostics.bodyAValid, diagnostics.bodyBValid, diagnostics.collisionObjectA, diagnostics.collisionObjectB,
+                        diagnostics.nativeCallMade, diagnostics.nativeReferenceCount);
+                }
                 release(_world, "pair-filter-unavailable");
                 return true;
             }
