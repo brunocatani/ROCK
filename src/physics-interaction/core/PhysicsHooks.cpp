@@ -59,7 +59,7 @@ namespace rock
         {
             std::atomic<std::uint64_t> playerCallbacks{ 0 }, identityFailures{ 0 }, invalidBuffers{ 0 };
             std::atomic<std::uint64_t> removed{ 0 }, movableStatics{ 0 }, looseWeapons{ 0 }, held{ 0 };
-            std::atomic<std::uint64_t> supportKept{ 0 }, attacksKept{ 0 }, unknownKept{ 0 };
+            std::atomic<std::uint64_t> supportKept{ 0 }, actorsKept{ 0 }, attacksKept{ 0 }, unknownKept{ 0 };
             std::atomic<unsigned> failedProofStage{ 0 }; // 1 listener, 2 controller, 3 reciprocal proxy
         };
         static ProxyContactTrace g_proxyContactTrace;
@@ -83,16 +83,17 @@ namespace rock
             const auto looseWeapons = g_proxyContactTrace.looseWeapons.exchange(0);
             const auto held = g_proxyContactTrace.held.exchange(0);
             const auto support = g_proxyContactTrace.supportKept.exchange(0);
+            const auto actors = g_proxyContactTrace.actorsKept.exchange(0);
             const auto attacks = g_proxyContactTrace.attacksKept.exchange(0);
             const auto unknown = g_proxyContactTrace.unknownKept.exchange(0);
             if (callbacks && !identityReported) {
                 identityReported = true;
                 ROCK_LOG_INFO(CC, "Player controller contact filter active: listener + 16 identity, vtables and reciprocal proxy verified");
             }
-            if (removed || failures || invalid) {
+            if (removed || actors || failures || invalid) {
                 ROCK_LOG_INFO(CC,
-                    "Player controller contact filter: callbacks={} removed={} msttRemoved={} looseWeaponsRemoved={} heldRemoved={} supportKept={} attacksKept={} unknownKept={} invalidBuffers={} identityFailures={} failedProofStage={}",
-                    callbacks, removed, mstt, looseWeapons, held, support, attacks, unknown, invalid, failures,
+                    "Player controller contact filter: callbacks={} removed={} msttRemoved={} looseWeaponsRemoved={} heldRemoved={} supportKept={} actorsKept={} attacksKept={} unknownKept={} invalidBuffers={} identityFailures={} failedProofStage={}",
+                    callbacks, removed, mstt, looseWeapons, held, support, actors, attacks, unknown, invalid, failures,
                     g_proxyContactTrace.failedProofStage.load());
             }
             if (failures) {
@@ -1465,9 +1466,6 @@ namespace rock
             "hover duration");
     }
 
-    using HandleBumpedCharacter_t = void (*)(void*, void*, void*);
-    static HandleBumpedCharacter_t g_originalHandleBumped = nullptr;
-
     static void writeAbsoluteJump(std::uint8_t* target, std::uintptr_t destination)
     {
         target[0] = 0xFF;
@@ -1592,12 +1590,6 @@ namespace rock
         return static_cast<void*>(character_controller_runtime::tryGetPlayerCharacterController());
     }
 
-    bool isPlayerCharacterController(void* controller)
-    {
-        void* playerController = resolvePlayerCharacterController();
-        return controller && playerController && controller == playerController;
-    }
-
     RE::bhkWorld* resolvePlayerBhkWorld()
     {
         auto* player = RE::PlayerCharacter::GetSingleton();
@@ -1704,57 +1696,6 @@ namespace rock
         return true;
     }
 
-    void hookedHandleBumpedCharacter(void* controller, void* bumpedCC, void* contactInfo)
-    {
-        bool originalAttempted = false;
-        if (!PhysicsInteraction::s_hooksEnabled.load(std::memory_order_acquire)) {
-            if (g_originalHandleBumped) {
-                originalAttempted = true;
-                g_originalHandleBumped(controller, bumpedCC, contactInfo);
-            }
-            return;
-        }
-
-        __try {
-            const auto decision = collision_layer_policy::evaluatePlayerCharacterControllerContact(
-                collision_layer_policy::PlayerCharacterControllerContactPolicyInput{
-                    .filterEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled,
-                    .playerController = isPlayerCharacterController(controller),
-                    .targetLayerKnown = bumpedCC != nullptr,
-                    .targetLayer = collision_layer_policy::FO4_LAYER_CHARCONTROLLER,
-                });
-
-            if (decision.suppress) {
-                ROCK_LOG_SAMPLE_DEBUG(Bump,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "Suppressed player HandleBumpedCharacter target={:p} reason={}",
-                    bumpedCC,
-                    decision.reason);
-                return;
-            }
-
-            if (g_originalHandleBumped) {
-                originalAttempted = true;
-                g_originalHandleBumped(controller, bumpedCC, contactInfo);
-            }
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-            static int sehLogCounter = 0;
-            if (sehLogCounter++ % 100 == 0) {
-                logger::error(
-                    "[ROCK::Bump] SEH exception caught on physics thread (count={}) — "
-                    "trampoline or stale pointer issue",
-                    sehLogCounter);
-            }
-            if (!originalAttempted && g_originalHandleBumped) {
-                __try {
-                    originalAttempted = true;
-                    g_originalHandleBumped(controller, bumpedCC, contactInfo);
-                } __except (EXCEPTION_EXECUTE_HANDLER) {
-                }
-            }
-        }
-    }
-
     bool installHavokTimingFixHook()
     {
         static bool installed = false;
@@ -1791,34 +1732,6 @@ namespace rock
             g_rockConfig.rockHavokTimingFixMinPhysicsFrameRate,
             g_rockConfig.rockHavokTimingFixMaxSubsteps);
         return true;
-    }
-
-    void installBumpHook()
-    {
-        static bool installed = false;
-        static bool installAttempted = false;
-        if (installed)
-            return;
-        if (installAttempted)
-            return;
-        installAttempted = true;
-
-        // Ghidra verified HandleBumpedCharacter at 0x141E24980 starts with ordinary
-        // prologue instructions, not an existing branch/call. CommonLib write_branch
-        // cannot derive a callable original from those bytes, so this hook uses an
-        // explicit relocated-entry trampoline and validates the exact whole
-        // instructions before patching.
-        constexpr std::array<std::uint8_t, 15> expectedPrefix{
-            0x48, 0x89, 0x5C, 0x24, 0x08,
-            0x48, 0x89, 0x74, 0x24, 0x18,
-            0x57,
-            0x48, 0x83, 0xEC, 0x70
-        };
-
-        void* original = reinterpret_cast<void*>(g_originalHandleBumped);
-        installed = installEntryTrampolineHook(
-            "HandleBumpedCharacter", offsets::kFunc_HandleBumpedCharacter, expectedPrefix.data(), expectedPrefix.size(), &hookedHandleBumpedCharacter, original);
-        g_originalHandleBumped = reinterpret_cast<HandleBumpedCharacter_t>(original);
     }
 
     void installNativeGrabHook()
@@ -2041,6 +1954,7 @@ namespace rock
             int removedPlayerMovableStaticPairs = 0;
             int removedLooseWeaponPairs = 0;
             int preservedAttackPairs = 0;
+            int preservedActorPairs = 0;
             int preservedPlayerSupportPairs = 0;
             int preservedPlayerCarPairs = 0;
             int preservedUnknownTargetPairs = 0;
@@ -2074,6 +1988,8 @@ namespace rock
                     }
                     if (std::string_view(decision.reason) == "nativeAttack") {
                         ++preservedAttackPairs;
+                    } else if (std::string_view(decision.reason) == "nativeActor") {
+                        ++preservedActorPairs;
                     } else if (std::string_view(decision.reason) == "supportLayer") {
                         ++preservedPlayerSupportPairs;
                     } else if (std::string_view(decision.reason) == "carCollision") {
@@ -2092,6 +2008,7 @@ namespace rock
                 g_proxyContactTrace.held.fetch_add(removedHeldPairs, std::memory_order_relaxed);
                 g_proxyContactTrace.supportKept.fetch_add(preservedPlayerSupportPairs + preservedPlayerCarPairs, std::memory_order_relaxed);
                 g_proxyContactTrace.attacksKept.fetch_add(preservedAttackPairs, std::memory_order_relaxed);
+                g_proxyContactTrace.actorsKept.fetch_add(preservedActorPairs, std::memory_order_relaxed);
                 g_proxyContactTrace.unknownKept.fetch_add(preservedUnknownTargetPairs, std::memory_order_relaxed);
             }
             if (diagnosticsEnabled && filterResult.valid) {
@@ -2153,8 +2070,7 @@ namespace rock
         // Ghidra verified bhkCharProxyController::processConstraintsCallback at
         // 0x141E4B7E0 starts with whole prologue instructions through PUSH R12.
         // This callback owns the generated contact rows ROCK compacts, so it
-        // uses the same fail-closed relocated-entry trampoline as
-        // HandleBumpedCharacter instead of copying unvalidated bytes.
+        // validates the whole prologue before installing its entry trampoline.
         constexpr std::array<std::uint8_t, 14> expectedPrefix{
             0x48, 0x8B, 0xC4,
             0x4C, 0x89, 0x48, 0x20,

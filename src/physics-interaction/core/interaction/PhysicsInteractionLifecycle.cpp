@@ -35,7 +35,6 @@ namespace rock
         clearLooseGrenadeImpactWatches();
 
         native_player_collision::install();
-        installBumpHook();
         installNativeGrabHook();
         /*
          * PAPER is the reload owner. ROCK keeps hand, weapon, and contact

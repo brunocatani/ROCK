@@ -234,9 +234,9 @@ namespace rock::collision_layer_policy
 
     /*
      * Fallout VR's native player character controller must keep authoritative
-     * world support and hard blockers, but its broad contact bubble should not
-     * be the system that imparts impulses to clutter, guns, actors, ragdolls, or
-     * ROCK-generated tool bodies. This policy lives beside the layer constants
+     * world support, actor collision and hard blockers, but its broad contact
+     * bubble should not impart impulses to clutter, loose guns, or ROCK-generated
+     * tool bodies. This policy lives beside the layer constants
      * so hooks can make a per-contact decision without rewriting the global
      * layer matrix or changing ROCK hand/body collider layers.
      */
@@ -280,6 +280,12 @@ namespace rock::collision_layer_policy
         }
         if (!input.targetLayerKnown) {
             return PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "unknownTargetLayer" };
+        }
+        // Keep the engine-admitted NPC movement constraints. Removing these
+        // permits walking through actors even when melee contacts still work.
+        // Native filters still decide which actor/ragdoll pairs exist.
+        if (input.targetLayer == FO4_LAYER_CHARCONTROLLER || isActorOrBipedLayer(input.targetLayer)) {
+            return PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "nativeActor" };
         }
         // Loose weapon references share layer 5 with equipped attack bodies.
         // Only positive loose-object ownership permits push suppression here.

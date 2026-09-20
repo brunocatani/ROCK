@@ -383,8 +383,6 @@ namespace rock::offsets
     constexpr std::uintptr_t kFunc_PrismaticConstraintData_Ctor = 0x19B1350;
     constexpr std::uintptr_t kFunc_PrismaticConstraintData_SetInWorldSpace = 0x19B1520;
 
-    constexpr std::uintptr_t kFunc_HandleBumpedCharacter = 0x1E24980;
-
     constexpr std::uintptr_t kFunc_VRGrabInitiate = 0xF19250;
 
     constexpr std::uintptr_t kFunc_ProcessConstraintsCallback = 0x1E4B7E0;

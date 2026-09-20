@@ -1,8 +1,10 @@
 #include "physics-interaction/collision/NativePlayerCollisionPolicy.h"
+#include "physics-interaction/grab/GrabHeldObject.h"
 
 #include <array>
 
 #include <cstdio>
+#include <cstring>
 
 namespace
 {
@@ -102,6 +104,53 @@ int main()
         !proxyListenerMatchesPlayer(0, 0x10) && !proxyListenerMatchesPlayer(listener, 0));
     ok &= expect("wrapped listener address cannot match a controller",
         !proxyListenerMatchesPlayer(UINTPTR_MAX - 7, 8));
+    for (auto layer : { FO4_LAYER_CHARCONTROLLER, FO4_LAYER_BIPED,
+            FO4_LAYER_BIPED_NO_CC, FO4_LAYER_DEADBIP }) {
+        ok &= expect("player locomotion retains native NPC and ragdoll contacts",
+            !evaluatePlayerCharacterControllerContact({ true, true, true, layer }).suppress);
+    }
+
+    // Exercise the same paired-row compactor as the movement hook with NPCs,
+    // attacks, scenery, loose objects and an independently held body together.
+    for (bool holding : { false, true }) {
+        constexpr std::array layers{ FO4_LAYER_BIPED, FO4_LAYER_CLUTTER,
+            FO4_LAYER_CHARCONTROLLER, FO4_LAYER_DEADBIP, FO4_LAYER_BIPED_NO_CC,
+            FO4_LAYER_WEAPON, FO4_LAYER_WEAPON, FO4_LAYER_STATIC, ROCK_LAYER_HAND,
+            FO4_LAYER_STATIC };
+        constexpr auto stride = rock::held_grab_cc_policy::kGeneratedContactStride;
+        constexpr auto bodyOffset = rock::held_grab_cc_policy::kGeneratedContactBodyIdOffset;
+        alignas(std::uint32_t) std::array<char, stride * layers.size()> contacts{}, constraints{};
+        for (std::uint32_t id = 0; id < layers.size(); ++id) {
+            std::memcpy(contacts.data() + id * stride + bodyOffset, &id, sizeof(id));
+            std::memcpy(constraints.data() + id * stride, &id, sizeof(id));
+        }
+        int contactCount = static_cast<int>(layers.size());
+        int constraintCount = contactCount;
+        const rock::held_grab_cc_policy::GeneratedContactBufferView view{
+            .valid = true, .manifoldEntries = contacts.data(), .constraintEntries = constraints.data(),
+            .manifoldCountPtr = &contactCount, .constraintCountPtr = &constraintCount,
+            .manifoldCount = contactCount, .constraintCount = constraintCount, .pairCount = contactCount,
+        };
+        const auto result = rock::held_grab_cc_policy::filterGeneratedContactBuffers(view,
+            [&](std::uint32_t id) {
+                return (holding && id == 9) || evaluatePlayerCharacterControllerContact({
+                    .filterEnabled = true, .playerController = true, .targetLayerKnown = true,
+                    .targetLayer = layers[id], .targetIsLooseWeapon = id == 6,
+                }).suppress;
+            });
+        constexpr std::array<std::uint32_t, 7> expected{ 0, 2, 3, 4, 5, 7, 9 };
+        const int expectedCount = holding ? 6 : 7;
+        ok &= expect("object filtering preserves NPC, attack and support contacts while holding or empty-handed",
+            result.valid && result.keptPairCount == expectedCount &&
+                contactCount == expectedCount && constraintCount == expectedCount);
+        for (int i = 0; i < expectedCount; ++i) {
+            std::uint32_t contactId = 0, constraintId = 0;
+            std::memcpy(&contactId, contacts.data() + i * stride + bodyOffset, sizeof(contactId));
+            std::memcpy(&constraintId, constraints.data() + i * stride, sizeof(constraintId));
+            ok &= expect("surviving NPC and native contact constraints stay paired and in order",
+                contactId == expected[i] && constraintId == expected[i]);
+        }
+    }
     constexpr std::array attacks{ FO4_LAYER_WEAPON, FO4_LAYER_PROJECTILE,
         FO4_LAYER_SPELL, FO4_LAYER_CONEPROJECTILE, FO4_LAYER_SPELLEXPLOSION };
     for (auto layer : attacks) {

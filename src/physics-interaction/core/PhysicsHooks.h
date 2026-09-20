@@ -4,7 +4,6 @@
 
 namespace rock
 {
-    void installBumpHook();
     bool installHavokTimingFixHook();
     void installNativeGrabHook();
     bool validateNativeMeleeSuppressionHookTargets();
