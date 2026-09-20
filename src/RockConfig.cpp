@@ -3,14 +3,11 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/RockLoggingPolicy.h"
 
-#include <array>
 #include <chrono>
 #include <cstring>
-#include <format>
 
 namespace
 {
-    constexpr auto SECTION = "PhysicsInteraction";
     using rock::configuration_api::Group;
 
     std::filesystem::path resolveConfigDirectory()
@@ -128,35 +125,6 @@ namespace rock
         if (!_store->setValue(group, section, key, value)) {
             error = _store->error();
             ROCK_LOG_WARN(Config, "Cannot persist [{}] {}: {}", section, key, error);
-            return false;
-        }
-        _lastFileEventTicks.store(eventTicks(), std::memory_order_release);
-        _reloadPending.store(true, std::memory_order_release);
-        return true;
-    }
-
-    bool RockConfig::persistPhysicsBool(const char* key, bool value)
-    {
-        if (!key || !key[0]) return false;
-        std::string error;
-        return persistSetting(config::settingGroup(SECTION, key), SECTION, key, value ? "true" : "false", error);
-    }
-
-    bool RockConfig::persistGrabLegacyPalmPivotAHandspace(bool isLeft, const RE::NiPoint3& value)
-    {
-        std::scoped_lock lock(_storeMutex);
-        if (!_store) return false;
-        const std::array values{ std::format("{:.9g}", value.x), std::format("{:.9g}", value.y), std::format("{:.9g}", value.z) };
-        const std::array keys = isLeft ?
-            std::array{ "fLeftGrabLegacyPalmPivotAHandspaceX", "fLeftGrabLegacyPalmPivotAHandspaceY", "fLeftGrabLegacyPalmPivotAHandspaceZ" } :
-            std::array{ "fRightGrabLegacyPalmPivotAHandspaceX", "fRightGrabLegacyPalmPivotAHandspaceY", "fRightGrabLegacyPalmPivotAHandspaceZ" };
-        const std::array changes{
-            config::Change{ SECTION, keys[0], values[0] },
-            config::Change{ SECTION, keys[1], values[1] },
-            config::Change{ SECTION, keys[2], values[2] },
-        };
-        if (!_store->setValues(config::settingGroup(SECTION, keys[0]), changes)) {
-            ROCK_LOG_WARN(Config, "Cannot persist {} palm pivot: {}", isLeft ? "left" : "right", _store->error());
             return false;
         }
         _lastFileEventTicks.store(eventTicks(), std::memory_order_release);

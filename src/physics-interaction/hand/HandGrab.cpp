@@ -7100,6 +7100,7 @@ namespace rock
         bool meshContactOnly,
         GrabSurfaceEvidence& outEvidence)
     {
+        performance_profiler::ScopedTimer timer(performance_profiler::Scope::GrabSurfaceResolution);
         const auto& sel = _currentSelection;
         auto* rootNode = selection.rootNode;
         auto* collidableNode = capture.collidableNode;
@@ -11056,7 +11057,8 @@ namespace rock
                     if (g_rockConfig.rockDebugShowGrabFingerProbes) {
                         std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padEvidence{};
                         (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(publishFingerPose, targetFingerPoseWorldTriangles, targetFingerPoseTargets,
-                            liveFingerSnapshotAtGrab, targetObjectWorld, g_rockConfig.rockGrabMeshFingerPoseEnabled, true, padEvidence, false);
+                            liveFingerSnapshotAtGrab, targetObjectWorld, g_rockConfig.rockGrabMeshFingerPoseEnabled, true, padEvidence, false,
+                            {}, !pinchFingerPose && spatialIndexBuilt ? &_grabFingerTriangleIndex : nullptr);
                         const auto padDebug = makeFingerPadPublishDebug(publishFingerPose, padEvidence);
                         _grabFingerPadProbeStart = padDebug.padProbeStart;
                         _grabFingerPadProbeEnd = padDebug.padProbeEnd;
@@ -11098,6 +11100,7 @@ namespace rock
         const GrabSharedObjectContext& sharedContext,
         const AuthoredWeaponGripPose* transferPose)
     {
+        performance_profiler::ScopedTimer timer(performance_profiler::Scope::GrabAcquisition);
         ValidatedGrabSelection validatedSelection{};
         if (!validateSelectedGrab(world, sharedContext, validatedSelection)) {
             return GrabAttemptResult::Rejected;
@@ -13548,7 +13551,8 @@ namespace rock
                         grab_finger_pose_runtime::useThumbIndexCurveOnlyPose(_grabFingerPose);
                         std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padCaptureEvidence{};
                         (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(_grabFingerPose, touchHeldWorldTriangles, touchHeldFingerPoseTargets, liveFingerSnapshot,
-                            currentNodeWorld, g_rockConfig.rockGrabMeshFingerPoseEnabled, true, padCaptureEvidence, true);
+                            currentNodeWorld, g_rockConfig.rockGrabMeshFingerPoseEnabled, true, padCaptureEvidence, true,
+                            {}, !pinchFingerPose ? &_grabFingerTriangleIndex : nullptr);
                         grab_finger_pose_runtime::captureSurfaceAimObjectLocal(_grabFingerPose, currentNodeWorld);
                         _grabFingerProbeStart = _grabFingerPose.probeStart;
                         _grabFingerProbeEnd = _grabFingerPose.probeEnd;
@@ -13557,7 +13561,8 @@ namespace rock
                         if (g_rockConfig.rockDebugShowGrabFingerProbes) {
                             std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padEvidence{};
                             (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(publishFingerPose, touchHeldWorldTriangles, touchHeldFingerPoseTargets,
-                                liveFingerSnapshot, currentNodeWorld, g_rockConfig.rockGrabMeshFingerPoseEnabled, true, padEvidence, false);
+                                liveFingerSnapshot, currentNodeWorld, g_rockConfig.rockGrabMeshFingerPoseEnabled, true, padEvidence, false,
+                                {}, !pinchFingerPose ? &_grabFingerTriangleIndex : nullptr);
                             const auto padDebug = makeFingerPadPublishDebug(publishFingerPose, padEvidence);
                             _grabFingerPadProbeStart = padDebug.padProbeStart;
                             _grabFingerPadProbeEnd = padDebug.padProbeEnd;

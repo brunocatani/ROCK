@@ -3,6 +3,7 @@
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/ShellCasingGrace.h"
+#include "physics-interaction/performance/PhysicsStepProfile.h"
 #include "RockConfig.h"
 
 #include <REL/Relocation.h>
@@ -31,6 +32,7 @@ namespace rock
     {
         PhysicsCallbackQuiescenceGate gate{};
         PhysicsCallbackQuiescenceGate::CallbackLease wholeUpdateLease{};
+        performance_profiler::PhysicsStepProfile profile{};
     };
 
     struct PhysicsStepDriveCoordinator::NativeStepListener
@@ -64,8 +66,10 @@ namespace rock
                 return;
             }
             auto& callbackState = *listener->callbackState;
+            callbackState.profile.reset();
             callbackState.wholeUpdateLease = callbackState.gate.tryEnterCallback();
             if (callbackState.wholeUpdateLease) {
+                callbackState.profile.beginUpdate();
                 if (auto* owner = listener->owner.load(std::memory_order_acquire)) {
                     owner->onBeforeWholePhysicsUpdate();
                 }
@@ -79,6 +83,7 @@ namespace rock
             }
             if (auto* owner = listener->owner.load(std::memory_order_acquire)) {
                 owner->onBeforeAnyPhysicsStep(substepProgress, substepDeltaSeconds);
+                listener->callbackState->profile.beginCollide();
             }
         }
 
@@ -94,7 +99,9 @@ namespace rock
                 return;
             }
             if (auto* owner = listener->owner.load(std::memory_order_acquire)) {
+                listener->callbackState->profile.endCollide();
                 owner->onBetweenCollideAndSolve(substepProgress, substepDeltaSeconds);
+                listener->callbackState->profile.beginSolve();
             }
         }
 
@@ -104,6 +111,7 @@ namespace rock
                 return;
             }
             if (auto* owner = listener->owner.load(std::memory_order_acquire)) {
+                listener->callbackState->profile.endSolve();
                 owner->onAfterAnyPhysicsStep(substepProgress, substepDeltaSeconds);
             }
         }
@@ -111,6 +119,7 @@ namespace rock
         void afterWhole(PhysicsStepDriveCoordinator::NativeStepListener* listener, std::uint32_t, void*)
         {
             if (listener && listener->callbackState) {
+                listener->callbackState->profile.endUpdate();
                 listener->callbackState->wholeUpdateLease = {};
             }
         }
@@ -195,6 +204,7 @@ namespace rock
         gate.pauseAndWait();
         if (_nativeListener) {
             _nativeListener->owner.store(nullptr, std::memory_order_release);
+            _nativeListener->callbackState->profile.reset();
         }
         shell_casing_grace::abandon();
         _registeredWorld = nullptr;

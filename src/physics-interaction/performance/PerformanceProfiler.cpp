@@ -58,6 +58,7 @@ namespace rock::performance_profiler
             std::atomic<std::uint32_t> warmupFrames{ 120 };
             std::atomic<std::uint64_t> frameIndex{ 0 };
             std::atomic<std::uint64_t> intervalStartFrame{ 0 };
+            std::atomic<std::uint64_t> generation{ 1 };
         };
 
         std::array<ScopeAccum, static_cast<std::size_t>(Scope::Count)> s_accum;
@@ -205,6 +206,14 @@ namespace rock::performance_profiler
             case Scope::NearbyDampingWait: return "nearbyDampingWait";
             case Scope::NativeIdleGripHarvest: return "nativeIdleGripHarvest";
             case Scope::UnattributedMemoryQueries: return "unattributedMemoryQueries";
+            case Scope::GrabAcquisition: return "grabAcquisition";
+            case Scope::GrabSurfaceResolution: return "grabSurfaceResolution";
+            case Scope::GrabFingerSolve: return "grabFingerSolve";
+            case Scope::GrabFingerIndexBuild: return "grabFingerIndexBuild";
+            case Scope::GrabFingerPadProbes: return "grabFingerPadProbes";
+            case Scope::NativePhysicsUpdate: return "nativePhysicsUpdate";
+            case Scope::NativePhysicsCollideInterval: return "nativePhysicsCollideInterval";
+            case Scope::NativePhysicsSolveInterval: return "nativePhysicsSolveInterval";
             case Scope::Count:
                 break;
             }
@@ -256,6 +265,7 @@ namespace rock::performance_profiler
                 return "nativeMeleeDecodeFailed";
             case Counter::NativeReadRangeRejected: return "nativeReadRangeRejected";
             case Counter::NativeWriteRangeRejected: return "nativeWriteRangeRejected";
+            case Counter::PhysicsTimingSubstepsIncreased: return "physicsTimingSubstepsIncreased";
             case Counter::Count:
                 break;
             }
@@ -304,6 +314,15 @@ namespace rock::performance_profiler
             case ValueMetric::RenderedSkeletonBones: return "renderedSkeletonBones";
             case ValueMetric::ControllerSkeletonBones: return "controllerSkeletonBones";
             case ValueMetric::SelectionRawHits: return "selectionRawHits";
+            case ValueMetric::PhysicsOriginalSubsteps: return "physicsOriginalSubsteps";
+            case ValueMetric::PhysicsRequestedSubsteps: return "physicsRequestedSubsteps";
+            case ValueMetric::PhysicsCompletedSubsteps: return "physicsCompletedSubsteps";
+            case ValueMetric::PhysicsRawDeltaMicroseconds: return "physicsRawDeltaMicroseconds";
+            case ValueMetric::GeneratedHandBodies: return "generatedHandBodies";
+            case ValueMetric::GeneratedBodyBodies: return "generatedBodyBodies";
+            case ValueMetric::GeneratedWeaponBodies: return "generatedWeaponBodies";
+            case ValueMetric::FingerPadCandidateTriangles: return "fingerPadCandidateTriangles";
+            case ValueMetric::FingerPadTriangleTests: return "fingerPadTriangleTests";
             case ValueMetric::Count:
                 break;
             }
@@ -420,7 +439,7 @@ namespace rock::performance_profiler
 
         void recordTicks(Scope scope, std::uint64_t ticks) noexcept
         {
-            if (!validScope(scope) || ticks == 0) {
+            if (!validScope(scope)) {
                 return;
             }
 
@@ -654,7 +673,7 @@ namespace rock::performance_profiler
                             snapshot.droppedSnapshotsBeforeThis);
                     }
 
-                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=2 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64", snapshot.frames, GetCurrentProcessId());
+                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall", snapshot.frames, GetCurrentProcessId());
                     for (const auto& item : snapshot.scopes) {
                         if (!item.hasData()) {
                             continue;
@@ -861,6 +880,10 @@ namespace rock::performance_profiler
             s_settings.logIntervalFrames.load(std::memory_order_acquire) != sanitizedInterval ||
             s_settings.warmupFrames.load(std::memory_order_acquire) != sanitizedWarmup;
 
+        if (wasEnabled != enabled || settingsChanged) {
+            s_settings.generation.fetch_add(1, std::memory_order_acq_rel);
+        }
+
         s_settings.logIntervalFrames.store(sanitizedInterval, std::memory_order_release);
         s_settings.warmupFrames.store(sanitizedWarmup, std::memory_order_release);
         s_settings.overlayText.store(overlayTextEnabled, std::memory_order_release);
@@ -1009,6 +1032,26 @@ namespace rock::performance_profiler
             slot.memoryQueryTotalTicks.fetch_add(ticks, std::memory_order_relaxed);
             atomicMax(slot.memoryQueryMaxTicks, ticks);
         }
+    }
+
+    IntervalSample beginInterval() noexcept
+    {
+        if (!enabled()) return {};
+        const auto generation = s_settings.generation.load(std::memory_order_acquire);
+        return { queryPerformanceTicks(), generation };
+    }
+
+    bool endInterval(Scope scope, IntervalSample& sample) noexcept
+    {
+        const auto completed = std::exchange(sample, {});
+        if (!completed.startTicks || !enabled() || !validScope(scope) ||
+            completed.generation != s_settings.generation.load(std::memory_order_acquire)) return false;
+        const auto endTicks = queryPerformanceTicks();
+        // A completed interval shorter than one clock tick still represents a
+        // real callback pair and must count toward completed physics substeps.
+        if (endTicks < completed.startTicks) return false;
+        recordTicks(scope, endTicks - completed.startTicks);
+        return true;
     }
 
     ScopedTimer::ScopedTimer(Scope scope) noexcept :

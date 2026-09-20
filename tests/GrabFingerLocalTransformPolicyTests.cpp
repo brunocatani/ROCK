@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <limits>
+#include <random>
 #include <vector>
 
 namespace
@@ -279,9 +280,93 @@ static bool testCommandedFingerCorrectionFrame()
     return ok;
 }
 
+bool testIndexedFingerPadProbes()
+{
+    using namespace rock;
+    using namespace grab_finger_pose_runtime;
+    const auto equalPoint = [](const RE::NiPoint3& a, const RE::NiPoint3& b) {
+        return a.x == b.x && a.y == b.y && a.z == b.z;
+    };
+    const auto equalEvidence = [&](const FingerPadSurfaceEvidence& a, const FingerPadSurfaceEvidence& b) {
+        return equalPoint(a.startWorld, b.startWorld) && equalPoint(a.endWorld, b.endWorld) &&
+            equalPoint(a.hitPointWorld, b.hitPointWorld) && equalPoint(a.hitNormalWorld, b.hitNormalWorld) &&
+            a.distanceGameUnits == b.distanceGameUnits && a.quality == b.quality && a.hit == b.hit &&
+            a.fromClosestSurface == b.fromClosestSurface && a.padMayBeInsideSurface == b.padMayBeInsideSurface;
+    };
+    std::mt19937 random(81239);
+    std::uniform_real_distribution<float> coordinate(-100.0f, 100.0f);
+    std::uniform_real_distribution<float> unit(-1.0f, 1.0f);
+    std::vector<TriangleData> local;
+    for (int i = 0; i < 2048; ++i) {
+        const RE::NiPoint3 p{ coordinate(random), coordinate(random), coordinate(random) };
+        local.push_back({ p, p + RE::NiPoint3{ 2.0f, 0.0f, 0.0f }, p + RE::NiPoint3{ 0.0f, 2.0f, 0.5f } });
+    }
+    // Duplicate and reversed faces exercise source-order ties. Degenerate and
+    // non-finite inputs exercise the same finite-input admission as the caller.
+    local[14] = local[13];
+    local[15] = { local[13].v0, local[13].v2, local[13].v1 };
+    local[32] = {};
+    local[33].v0.x = std::numeric_limits<float>::quiet_NaN();
+    FingerPoseTriangleSpatialIndex index;
+    if (!index.buildFromLocalTriangles(local)) return false;
+    std::uint64_t linearTests = 0, indexedTests = 0;
+    int compared = 0;
+    for (const float scale : { 1.0f, 0.1f, 3.0f, -2.0f }) {
+        auto world = transform_math::makeIdentityTransform<RE::NiTransform>();
+        world.scale = scale;
+        world.translate = { 12000.0f, -23000.0f, 9000.0f };
+        world.rotate.entry[0][0] = 0.8f;
+        world.rotate.entry[0][1] = 0.6f;
+        world.rotate.entry[1][0] = -0.6f;
+        world.rotate.entry[1][1] = 0.8f;
+        world.rotate.entry[2][0] = 0.0001f; // finite authored basis drift
+        std::vector<TriangleData> triangles;
+        rebuildBoundedWorldTriangles(local, world, triangles);
+        if (triangles.size() != index.triangleCount()) return false;
+        for (int query = 0; query < 160; ++query) {
+            const auto& triangle = triangles[(query * 13) % triangles.size()];
+            const auto point = query < 120 ? triangle.v0 + RE::NiPoint3{ unit(random), unit(random), unit(random) } :
+                transform_math::localPointToWorld(world, RE::NiPoint3{ coordinate(random), coordinate(random), coordinate(random) });
+            const RE::NiPoint3 direction{ unit(random), unit(random), unit(random) };
+            const RE::NiPoint3 preferred{ unit(random), unit(random), unit(random) };
+            FingerPadProbeOptions options;
+            options.probeRadiusGameUnits = 0.1f + std::abs(unit(random));
+            options.probeDistanceGameUnits = 0.2f + 12.0f * std::abs(unit(random));
+            options.closestSurfaceMaxDistanceGameUnits = 0.2f + 5.0f * std::abs(unit(random));
+            FingerPoseSpatialQueryStats linearStats{}, indexedStats{};
+            const auto baseline = solveFingerPadSurfaceEvidenceFromTriangles(triangles, point, direction, preferred, query % 2 != 0,
+                options, nullptr, nullptr, &linearStats);
+            const auto accelerated = solveFingerPadSurfaceEvidenceFromTriangles(triangles, point, direction, preferred, query % 2 != 0,
+                options, &index, &world, &indexedStats);
+            if (!equalEvidence(baseline, accelerated)) {
+                std::printf("Indexed finger pad mismatch scale=%f query=%d\n", scale, query);
+                return false;
+            }
+            linearTests += linearStats.triangleTests;
+            indexedTests += indexedStats.triangleTests;
+            ++compared;
+        }
+    }
+    // Exact tangent, coincident surfaces, capsule-only contact and clear misses.
+    local = { { {0, 0, 0}, {4, 0, 0}, {0, 4, 0} },
+        { {0, 0, 0}, {0, 4, 0}, {4, 0, 0} } };
+    index.buildFromLocalTriangles(local);
+    const auto identity = transform_math::makeIdentityTransform<RE::NiTransform>();
+    for (const auto point : { RE::NiPoint3{1, 1, 1}, RE::NiPoint3{1, 1, 0}, RE::NiPoint3{4.5f, 0, 1}, RE::NiPoint3{100, 100, 100} }) {
+        const auto baseline = solveFingerPadSurfaceEvidenceFromTriangles(local, point, {0, 0, -1}, {}, false);
+        const auto accelerated = solveFingerPadSurfaceEvidenceFromTriangles(local, point, {0, 0, -1}, {}, false, {}, &index, &identity);
+        if (!equalEvidence(baseline, accelerated)) return false;
+    }
+    index.clear();
+    if (index.buildFromLocalTriangles(std::vector<TriangleData>{})) return false;
+    std::printf("Finger pad parity: %d randomized queries, %llu linear vs %llu indexed triangle tests\n",
+        compared, static_cast<unsigned long long>(linearTests), static_cast<unsigned long long>(indexedTests));
+    return indexedTests < linearTests / 3;
+}
+
 int main()
 {
-    bool ok = true;
+    bool ok = testIndexedFingerPadProbes();
     {
         rock::AuthoredWeaponGripPose pose{};
         ok &= expectBool("empty authored transfer pose fails closed", pose.valid(), false);

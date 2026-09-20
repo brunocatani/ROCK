@@ -318,7 +318,7 @@ namespace rock
 
             g_originalBhkWorldSetDeltaTime(rawDeltaSeconds);
 
-            if (!g_rockConfig.rockHavokTimingFixEnabled) {
+            if (!g_rockConfig.rockHavokTimingFixEnabled && !performance_profiler::enabled()) {
                 return;
             }
 
@@ -328,6 +328,15 @@ namespace rock
                 readBhkWorldFloatGlobal(offsets::kData_BhkWorldSubstepDeltaSeconds, rawDeltaSeconds);
             const auto oldSubstepCount =
                 readBhkWorldUintGlobal(offsets::kData_BhkWorldSubstepCount, 1);
+            performance_profiler::observeValue(performance_profiler::ValueMetric::PhysicsOriginalSubsteps, oldSubstepCount);
+            if (havok_timing_fix_policy::isUsableDeltaSeconds(rawDeltaSeconds)) {
+                performance_profiler::observeValue(performance_profiler::ValueMetric::PhysicsRawDeltaMicroseconds,
+                    static_cast<std::uint64_t>(rawDeltaSeconds * 1'000'000.0f));
+            }
+            if (!g_rockConfig.rockHavokTimingFixEnabled) {
+                performance_profiler::observeValue(performance_profiler::ValueMetric::PhysicsRequestedSubsteps, oldSubstepCount);
+                return;
+            }
             const auto decision = havok_timing_fix_policy::evaluateTimingFix(havok_timing_fix_policy::TimingFixInput{
                 .rawDeltaSeconds = rawDeltaSeconds,
                 .accumulatedDeltaSeconds = accumulatedDeltaSeconds,
@@ -336,6 +345,7 @@ namespace rock
             });
 
             if (!decision.valid) {
+                performance_profiler::observeValue(performance_profiler::ValueMetric::PhysicsRequestedSubsteps, oldSubstepCount);
                 if (g_rockConfig.rockDebugVerboseLogging || g_rockConfig.rockDebugGrabFrameLogging) {
                     ROCK_LOG_SAMPLE_DEBUG(Physics,
                         g_rockConfig.rockLogSampleMilliseconds,
@@ -363,6 +373,10 @@ namespace rock
                 return;
             }
 
+            performance_profiler::observeValue(performance_profiler::ValueMetric::PhysicsRequestedSubsteps, decision.substepCount);
+            if (decision.substepCount > oldSubstepCount) {
+                performance_profiler::addCounter(performance_profiler::Counter::PhysicsTimingSubstepsIncreased);
+            }
             if (g_rockConfig.rockDebugVerboseLogging || g_rockConfig.rockDebugGrabFrameLogging) {
                 ROCK_LOG_SAMPLE_DEBUG(Physics,
                     g_rockConfig.rockLogSampleMilliseconds,

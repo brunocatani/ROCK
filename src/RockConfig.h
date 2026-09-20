@@ -559,8 +559,6 @@ namespace rock
         void unsubscribeFromConfigChanged(const std::string& key);
         [[nodiscard]] std::filesystem::path getConfigDirectory() const;
 
-        [[nodiscard]] bool persistPhysicsBool(const char* key, bool value);
-        [[nodiscard]] bool persistGrabLegacyPalmPivotAHandspace(bool isLeft, const RE::NiPoint3& value);
 
     private:
         void resetToDefaults();

@@ -8,6 +8,7 @@
 // ---- GrabFingerPoseMath.h ----
 
 #include <array>
+#include <bitset>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -16,6 +17,7 @@
 
 #include "physics-interaction/grab/GeneratedGrabFingerCalibration.h"
 #include "physics-interaction/VectorMath.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 
 namespace rock::grab_finger_pose_math
 {
@@ -2173,6 +2175,7 @@ namespace rock::grab_finger_pose_runtime
         template <class TriangleContainer>
         bool buildFromLocalTriangles(const TriangleContainer& localTriangles)
         {
+            performance_profiler::ScopedTimer timer(performance_profiler::Scope::GrabFingerIndexBuild);
             clear();
             const std::size_t triangleLimit = (std::min)(localTriangles.size(), kMaxFingerPoseCandidateTriangles);
             _triangles.reserve(triangleLimit);
@@ -2189,17 +2192,85 @@ namespace rock::grab_finger_pose_runtime
                 return false;
             }
 
+            // Keep the original float centroid arithmetic, split axes and tie
+            // order. Compute each triangle's bounds/centroid once for the build.
+            std::vector<TriangleBuildData> prepared;
+            prepared.reserve(_triangles.size());
+            for (const auto& triangle : _triangles) {
+                TriangleBuildData data{ triangle.v0, triangle.v0, triangleCentroid(triangle) };
+                expandBounds(data.minimum, data.maximum, triangle.v1);
+                expandBounds(data.minimum, data.maximum, triangle.v2);
+                prepared.push_back(data);
+            }
+
             _triangleIndices.resize(_triangles.size());
             for (std::size_t i = 0; i < _triangleIndices.size(); ++i) {
                 _triangleIndices[i] = static_cast<std::uint32_t>(i);
             }
             _nodes.reserve(_triangles.size() * 2);
-            (void)buildNode(0, static_cast<std::uint32_t>(_triangleIndices.size()));
+            (void)buildNode(prepared, 0, static_cast<std::uint32_t>(_triangleIndices.size()));
             return !_nodes.empty();
         }
 
         [[nodiscard]] bool empty() const { return _nodes.empty(); }
         [[nodiscard]] std::size_t triangleCount() const { return _triangles.size(); }
+
+        using CandidateMask = std::bitset<kMaxFingerPoseCandidateTriangles>;
+
+        // The caller's world triangles must be this index's same finite, bounded
+        // local triangle sequence transformed by objectWorldTransform. Transform
+        // node bounds forward, rather than assuming an exactly orthonormal inverse.
+        // Candidate bits preserve source order, including the pad solver's last tie.
+        CandidateMask collectWorldBoundsCandidates(const RE::NiTransform& objectWorldTransform,
+            const RE::NiPoint3& minimum, const RE::NiPoint3& maximum,
+            FingerPoseSpatialQueryStats* stats = nullptr) const
+        {
+            CandidateMask candidates;
+            if (_nodes.empty()) return candidates;
+            double coefficients[3][3]{};
+            for (int axis = 0; axis < 3; ++axis) {
+                for (int local = 0; local < 3; ++local) {
+                    coefficients[axis][local] = static_cast<double>(objectWorldTransform.rotate.entry[local][axis]) * objectWorldTransform.scale;
+                }
+            }
+            std::array<std::uint32_t, 64> stack{};
+            std::size_t count = 1;
+            while (count != 0) {
+                const auto& node = _nodes[stack[--count]];
+                if (stats) ++stats->nodeVisits;
+                bool outside = false;
+                for (int axis = 0; axis < 3; ++axis) {
+                    double low = axisValue(objectWorldTransform.translate, axis);
+                    double high = low;
+                    double magnitude = std::abs(low);
+                    for (int local = 0; local < 3; ++local) {
+                        const double a = coefficients[axis][local] * axisValue(node.boundsMin, local);
+                        const double b = coefficients[axis][local] * axisValue(node.boundsMax, local);
+                        low += (std::min)(a, b);
+                        high += (std::max)(a, b);
+                        magnitude += (std::max)(std::abs(a), std::abs(b));
+                    }
+                    // Widen only the rejection test for float world-coordinate
+                    // and exact-predicate rounding. Extra candidates cannot alter
+                    // results; non-finite bounds deliberately do not reject.
+                    const double padding = 0.001 + magnitude * 0.00001;
+                    if (std::isfinite(low) && std::isfinite(high) &&
+                        (high + padding < axisValue(minimum, axis) || low - padding > axisValue(maximum, axis))) {
+                        outside = true;
+                        break;
+                    }
+                }
+                if (outside) continue;
+                if (node.isLeaf()) {
+                    for (std::uint32_t i = 0; i < node.count; ++i) candidates.set(_triangleIndices[node.begin + i]);
+                } else {
+                    // Median splits of at most 2048 triangles need < 12 deferred siblings.
+                    stack[count++] = node.right;
+                    stack[count++] = node.left;
+                }
+            }
+            return candidates;
+        }
 
         [[nodiscard]] bool querySphereWorld(const RE::NiTransform& objectWorldTransform, const RE::NiPoint3& centerWorld, float radiusWorld, RE::NiPoint3* outPointWorld,
             RE::NiPoint3* outNormalWorld, FingerPoseSpatialQueryStats* stats = nullptr) const
@@ -2304,6 +2375,11 @@ namespace rock::grab_finger_pose_runtime
         static constexpr std::uint32_t kInvalidIndex = 0xFFFF'FFFFu;
         static constexpr std::uint32_t kLeafTriangleCount = 8;
 
+        struct TriangleBuildData
+        {
+            RE::NiPoint3 minimum{}, maximum{}, centroid{};
+        };
+
         struct Node
         {
             RE::NiPoint3 boundsMin{};
@@ -2341,7 +2417,7 @@ namespace rock::grab_finger_pose_runtime
             return dx * dx + dy * dy + dz * dz;
         }
 
-        std::uint32_t buildNode(std::uint32_t begin, std::uint32_t end)
+        std::uint32_t buildNode(const std::vector<TriangleBuildData>& prepared, std::uint32_t begin, std::uint32_t end)
         {
             const float infinity = std::numeric_limits<float>::infinity();
             Node node{};
@@ -2350,12 +2426,10 @@ namespace rock::grab_finger_pose_runtime
             RE::NiPoint3 centroidMin{ infinity, infinity, infinity };
             RE::NiPoint3 centroidMax{ -infinity, -infinity, -infinity };
             for (std::uint32_t i = begin; i < end; ++i) {
-                const auto& triangle = _triangles[_triangleIndices[i]];
-                expandBounds(node.boundsMin, node.boundsMax, triangle.v0);
-                expandBounds(node.boundsMin, node.boundsMax, triangle.v1);
-                expandBounds(node.boundsMin, node.boundsMax, triangle.v2);
-                const RE::NiPoint3 centroid = triangleCentroid(triangle);
-                expandBounds(centroidMin, centroidMax, centroid);
+                const auto& triangle = prepared[_triangleIndices[i]];
+                expandBounds(node.boundsMin, node.boundsMax, triangle.minimum);
+                expandBounds(node.boundsMin, node.boundsMax, triangle.maximum);
+                expandBounds(centroidMin, centroidMax, triangle.centroid);
             }
 
             const std::uint32_t nodeIndex = static_cast<std::uint32_t>(_nodes.size());
@@ -2371,12 +2445,12 @@ namespace rock::grab_finger_pose_runtime
             const int splitAxis = centroidExtent.x >= centroidExtent.y && centroidExtent.x >= centroidExtent.z ? 0 : (centroidExtent.y >= centroidExtent.z ? 1 : 2);
             const std::uint32_t middle = begin + count / 2;
             std::nth_element(_triangleIndices.begin() + begin, _triangleIndices.begin() + middle, _triangleIndices.begin() + end, [&](std::uint32_t lhs, std::uint32_t rhs) {
-                const float lhsValue = axisValue(triangleCentroid(_triangles[lhs]), splitAxis);
-                const float rhsValue = axisValue(triangleCentroid(_triangles[rhs]), splitAxis);
+                const float lhsValue = axisValue(prepared[lhs].centroid, splitAxis);
+                const float rhsValue = axisValue(prepared[rhs].centroid, splitAxis);
                 return lhsValue == rhsValue ? lhs < rhs : lhsValue < rhsValue;
             });
-            const std::uint32_t left = buildNode(begin, middle);
-            const std::uint32_t right = buildNode(middle, end);
+            const std::uint32_t left = buildNode(prepared, begin, middle);
+            const std::uint32_t right = buildNode(prepared, middle, end);
             _nodes[nodeIndex].left = left;
             _nodes[nodeIndex].right = right;
             return nodeIndex;
@@ -2557,7 +2631,10 @@ namespace rock::grab_finger_pose_runtime
         const RE::NiPoint3& probeDirectionWorld,
         const RE::NiPoint3& preferredSurfaceNormalWorld,
         bool hasPreferredSurfaceNormal,
-        FingerPadProbeOptions options = {})
+        FingerPadProbeOptions options = {},
+        const FingerPoseTriangleSpatialIndex* spatialIndex = nullptr,
+        const RE::NiTransform* spatialObjectWorldTransform = nullptr,
+        FingerPoseSpatialQueryStats* stats = nullptr)
     {
         options = sanitizeFingerPadProbeOptions(options);
         FingerPadSurfaceEvidence result{};
@@ -2566,6 +2643,23 @@ namespace rock::grab_finger_pose_runtime
         result.endWorld = padCenterWorld + probeDirection * options.probeDistanceGameUnits;
         if (triangles.empty() || !isFinitePoint(padCenterWorld) || !isFinitePoint(probeDirection)) {
             return result;
+        }
+
+        const bool indexed = spatialIndex && spatialObjectWorldTransform &&
+            !spatialIndex->empty() && spatialIndex->triangleCount() == triangles.size();
+        FingerPoseTriangleSpatialIndex::CandidateMask candidates;
+        if (indexed) {
+            // Union of the closest-point sphere and the finite capsule probe.
+            const float radius = (std::max)(options.closestSurfaceMaxDistanceGameUnits, options.probeRadiusGameUnits);
+            const auto& end = result.endWorld;
+            candidates = spatialIndex->collectWorldBoundsCandidates(*spatialObjectWorldTransform,
+                { (std::min)(padCenterWorld.x, end.x) - radius, (std::min)(padCenterWorld.y, end.y) - radius, (std::min)(padCenterWorld.z, end.z) - radius },
+                { (std::max)(padCenterWorld.x, end.x) + radius, (std::max)(padCenterWorld.y, end.y) + radius, (std::max)(padCenterWorld.z, end.z) + radius }, stats);
+        }
+        if (performance_profiler::enabled()) {
+            performance_profiler::observeValue(performance_profiler::ValueMetric::FingerPadCandidateTriangles, triangles.size());
+            performance_profiler::observeValue(performance_profiler::ValueMetric::FingerPadTriangleTests,
+                indexed ? candidates.count() : triangles.size());
         }
 
         FingerPadSurfaceEvidence bestClosest{};
@@ -2624,7 +2718,10 @@ namespace rock::grab_finger_pose_runtime
             bestProbeValid = true;
         };
 
-        for (const auto& triangleData : triangles) {
+        for (std::size_t triangleIndex = 0; triangleIndex < triangles.size(); ++triangleIndex) {
+            if (indexed && !candidates.test(triangleIndex)) continue;
+            if (stats) ++stats->triangleTests;
+            const auto& triangleData = triangles[triangleIndex];
             if (!isFinitePoint(triangleData.v0) || !isFinitePoint(triangleData.v1) || !isFinitePoint(triangleData.v2)) {
                 continue;
             }
@@ -2722,8 +2819,10 @@ namespace rock::grab_finger_pose_runtime
         bool grabFingerPosePublished,
         std::array<FingerPadSurfaceEvidence, 5>& outEvidence,
         bool allowSurfaceTargetRefinement = true,
-        FingerPadProbeOptions options = {})
+        FingerPadProbeOptions options = {},
+        const FingerPoseTriangleSpatialIndex* spatialIndex = nullptr)
     {
+        performance_profiler::ScopedTimer timer(performance_profiler::Scope::GrabFingerPadProbes);
         options = sanitizeFingerPadProbeOptions(options);
         outEvidence = {};
         const bool liveSnapshotValid = liveFingerSnapshot.valid;
@@ -2761,7 +2860,7 @@ namespace rock::grab_finger_pose_runtime
                 probeDirection,
                 preferredNormal,
                 hasPreferredNormal,
-                options);
+                options, spatialIndex, &objectWorldTransform);
             outEvidence[finger] = evidence;
             anyProbeLine = anyProbeLine || hasFingerPadProbeLine(evidence);
             if (!evidence.hit) {
@@ -3015,6 +3114,7 @@ namespace rock::grab_finger_pose_runtime
         const RE::NiTransform* spatialObjectWorldTransform = nullptr, FingerSweepDebugCapture* outSweepDebugCapture = nullptr,
         FingerPoseMeshRelation meshRelation = FingerPoseMeshRelation::CurrentMeshRequiresVirtualSeat)
     {
+        performance_profiler::ScopedTimer timer(performance_profiler::Scope::GrabFingerSolve);
         if (outSweepDebugCapture) {
             *outSweepDebugCapture = {};
         }
@@ -4748,7 +4848,7 @@ namespace rock::grab_finger_pose_runtime
                 options.meshFingerPoseEnabled,
                 true,
                 result.padEvidence,
-                true);
+                true, {}, result.spatialIndexBuilt ? &spatialIndex : nullptr);
         }
         captureSurfaceAimObjectLocal(result.pose, frozenMeshWorldTransform);
         return result;

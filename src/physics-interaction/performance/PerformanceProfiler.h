@@ -86,6 +86,14 @@ namespace rock::performance_profiler
         NearbyDampingWait,
         NativeIdleGripHarvest,
         UnattributedMemoryQueries,
+        GrabAcquisition,
+        GrabSurfaceResolution,
+        GrabFingerSolve,
+        GrabFingerIndexBuild,
+        GrabFingerPadProbes,
+        NativePhysicsUpdate,
+        NativePhysicsCollideInterval,
+        NativePhysicsSolveInterval,
         Count
     };
 
@@ -113,6 +121,7 @@ namespace rock::performance_profiler
         NativeMeleeDecodeFailed,
         NativeReadRangeRejected,
         NativeWriteRangeRejected,
+        PhysicsTimingSubstepsIncreased,
         Count
     };
 
@@ -139,6 +148,15 @@ namespace rock::performance_profiler
         RenderedSkeletonBones,
         ControllerSkeletonBones,
         SelectionRawHits,
+        PhysicsOriginalSubsteps,
+        PhysicsRequestedSubsteps,
+        PhysicsCompletedSubsteps,
+        PhysicsRawDeltaMicroseconds,
+        GeneratedHandBodies,
+        GeneratedBodyBodies,
+        GeneratedWeaponBodies,
+        FingerPadCandidateTriangles,
+        FingerPadTriangleTests,
         Count
     };
 
@@ -169,6 +187,17 @@ namespace rock::performance_profiler
     // queries are counted; no per-query allocation, logging, or shared lock.
     MemoryQuerySample beginMemoryQuery() noexcept;
     void endMemoryQuery(MemoryQuerySample sample, MemoryQueryKind kind, bool apiSucceeded) noexcept;
+
+    // Callback-owned wall-time interval. Unlike ScopedTimer, this never changes
+    // thread-local query attribution and may end in a later callback. A settings
+    // reset invalidates pending intervals. End consumes the sample exactly once.
+    struct IntervalSample
+    {
+        std::uint64_t startTicks{ 0 };
+        std::uint64_t generation{ 0 };
+    };
+    IntervalSample beginInterval() noexcept;
+    bool endInterval(Scope scope, IntervalSample& sample) noexcept;
 
     class ScopedTimer
     {

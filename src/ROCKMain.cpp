@@ -19,7 +19,6 @@
 #include "physics-interaction/debug/DebugBodyOverlay.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/hand/NativeWandVisualSuppression.h"
-#include "physics-interaction/input/DebugControllerRuntime.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
@@ -350,7 +349,6 @@ namespace
             !runtime.compatibilityConfigBlocking;
         input_remap_runtime::setWeaponDrawn(runtime.weaponDrawn);
         input_remap_runtime::setGameplayInputAllowed(gameplayInputAllowed);
-        debug_controller_runtime::update(gameplayInputAllowed, runtime.deltaSeconds);
 
         ensurePhysicsInteractionForReadySkeleton(runtime);
     }

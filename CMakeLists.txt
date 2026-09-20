@@ -971,6 +971,7 @@ if(BUILD_ROCK_TESTS)
   # instead of paying that cost independently for every focused test target.
   add_library(ROCKPolicyTestSupport STATIC
     "${ROOT_DIR}/tests/RockConfigPolicyStub.cpp"
+    "${ROOT_DIR}/tests/PerformanceProfilerPolicyStub.cpp"
   )
   target_compile_features(ROCKPolicyTestSupport PUBLIC cxx_std_23)
   target_include_directories(ROCKPolicyTestSupport
@@ -995,6 +996,15 @@ if(BUILD_ROCK_TESTS)
   if(TARGET xbyak::xbyak)
     target_link_libraries(ROCKPolicyTestSupport PUBLIC xbyak::xbyak)
   endif()
+
+  add_executable(ROCKPerformanceProfilerTests
+    "${ROOT_DIR}/tests/PerformanceProfilerTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/performance/PerformanceProfiler.cpp"
+  )
+  target_compile_features(ROCKPerformanceProfilerTests PRIVATE cxx_std_23)
+  target_compile_definitions(ROCKPerformanceProfilerTests PRIVATE ROCK_PROFILER_TEST_DIR="${BUILD_DIR}/profiler-fixture/Fallout4VR/F4SE")
+  list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKPerformanceProfilerTests)
+  add_rock_test(ROCKPerformanceProfilerTests)
 
   add_executable(ROCKConfigurationStoreTests
     "${ROOT_DIR}/tests/ConfigurationStoreTests.cpp"

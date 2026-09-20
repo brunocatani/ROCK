@@ -1078,6 +1078,12 @@ namespace rock
         _weaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicWeaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicHandCollision.flushPendingPhysicsDrive(world, timing);
+        if (performance_profiler::enabled()) {
+            performance_profiler::observeValue(performance_profiler::ValueMetric::GeneratedHandBodies,
+                _rightHand.getHandColliderBodyCount() + _leftHand.getHandColliderBodyCount());
+            performance_profiler::observeValue(performance_profiler::ValueMetric::GeneratedBodyBodies, _bodyBoneColliders.getBodyCount());
+            performance_profiler::observeValue(performance_profiler::ValueMetric::GeneratedWeaponBodies, _weaponCollision.getWeaponBodyCount());
+        }
         const auto gameFrameIndex = _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
         const auto gameDeltaSeconds = _frame.palmClockGameDeltaSeconds.load(std::memory_order_acquire);
         logPalmClockSampleForHand("physics-after-collider-drive", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
