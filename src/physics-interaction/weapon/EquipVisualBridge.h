@@ -117,6 +117,7 @@ namespace rock
         // loose model immediately while allowing the independent temporary
         // hand-pose payload to survive until its equipped owner acquires it.
         void update(const UpdateInput& input);
+        void tracePresentation(const char* phase) const;
 
         // Advances only the hard presentation lease while the coordinator is
         // mutation-blocked by a menu, compatibility owner, or unavailable

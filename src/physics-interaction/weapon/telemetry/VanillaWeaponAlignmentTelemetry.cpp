@@ -27,6 +27,21 @@ namespace rock::vanilla_weapon_alignment_telemetry
 {
     namespace
     {
+        struct TransferSourceFrame
+        {
+            std::uint64_t frame{};
+            std::uintptr_t model{}; // Comparison only; never dereferenced.
+            RE::NiTransform modelWorld{}, handWorld{};
+            bool handValid{};
+        };
+        struct TransferTrace
+        {
+            std::uint64_t id{}, startFrame{}, terminalFrame{}, targetFrame{};
+            TransferKind kind{};
+            std::uint32_t sourceId{};
+            std::uintptr_t targetModel{};
+            RE::NiTransform targetWorld{};
+        };
         // Investigation owner: ROCK weapon presentation. Remove this targeted
         // capture once 10mm scale, SMG translation and pipe rotation are qualified.
         // Existing bDebugWeaponOmodDump gates it and defaults to false. Enable
@@ -55,6 +70,11 @@ namespace rock::vanilla_weapon_alignment_telemetry
             std::uint32_t scopeFormId{ 0 };
             std::uintptr_t scopeWeaponIdentity{ 0 }, scopeCameraIdentity{ 0 };
             RE::NiTransform scopeCameraWeaponLocal{};
+            // Owner: moving weapon transfer investigation. Remove when both
+            // transfer directions are qualified. No new gate, worker or scene lease.
+            std::uint64_t nextTransferTrace{};
+            std::array<TransferTrace, 2> transfers{};
+            std::array<TransferSourceFrame, 2> lastTransferSource{};
         };
         std::unique_ptr<Session> session;
         // Lifecycle and phase capture share the game thread. Native animation
@@ -201,7 +221,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
             next->log = std::make_shared<spdlog::async_logger>("ROCK_WeaponAlignment", sink,
                 next->pool, spdlog::async_overflow_policy::overrun_oldest);
             next->log->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
-            next->log->info("VWA start version=10 authoredSources=unknown:0,live:1,persisted:2,preharvest:3 pid={} build={} {} forms=00004822,0015B043,00024F55,0014831A,0014831B,000DF42E,00171B2B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-rock-pre-frik,before-frik,after-frik,after-rock nativeMask=graph-entry:1,graph-exit:2,primary-entry:4,primary-exit:8,support-entry:16,support-exit:32 nativeThread=game-only looseGrabMinMs=250 sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16 aimWritesPerIdentity=48 aimJumpDegrees=5 aimJumpMinMs=250 cycleStride=8 cycleStages=after-frik,after-weapon-solve,after-rock,after-world-final scopeDirectionMinMs=250 scopeAxes=camera-X,weapon-Y invalidAngle=-1",
+            next->log->info("VWA start version=11 authoredSources=unknown:0,live:1,persisted:2,preharvest:3 pid={} build={} {} forms=00004822,0015B043,00024F55,0014831A,0014831B,000DF42E,00171B2B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-rock-pre-frik,before-frik,after-frik,after-rock nativeMask=graph-entry:1,graph-exit:2,primary-entry:4,primary-exit:8,support-entry:16,support-exit:32 nativeThread=game-only looseGrabMinMs=250 sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16 aimWritesPerIdentity=48 aimJumpDegrees=5 aimJumpMinMs=250 cycleStride=8 cycleStages=after-frik,after-weapon-solve,after-rock,after-world-final scopeDirectionMinMs=250 scopeAxes=camera-X,weapon-Y invalidAngle=-1 transferFrames=8 transferTerminalFrames=3",
                 GetCurrentProcessId(), __DATE__, __TIME__);
             next->log->flush();
             session = std::move(next);
@@ -527,6 +547,89 @@ namespace rock::vanilla_weapon_alignment_telemetry
             session->log->flush();
         } catch (...) {
             ++session->captureFailures;
+        }
+    }
+
+    void beginTransferTrace(TransferKind kind, bool isLeft, std::uint32_t sourceId,
+        const RE::NiAVObject* source) noexcept
+    {
+        if (!captureThread || !session || !g_rockConfig.rockDebugWeaponOmodDumpEnabled) return;
+        try {
+            const auto frame = runtime_state::currentFrame().frameIndex;
+            auto& trace = session->transfers[isLeft ? 1u : 0u];
+            trace = { .id = ++session->nextTransferTrace, .startFrame = frame, .kind = kind, .sourceId = sourceId };
+            const auto& previous = session->lastTransferSource[isLeft ? 1u : 0u];
+            const bool previousMatches = source && previous.model == reinterpret_cast<std::uintptr_t>(source) && previous.frame < frame;
+            session->log->info("TRANSFER begin trace={} kind={} hand={} source={:08X} frame={} previousFrame={} previousSourceMatches={}",
+                trace.id, kind == TransferKind::ToggleDrop ? "toggle-drop" : "held-equip", isLeft ? "left" : "right",
+                sourceId, frame, previous.frame, previousMatches);
+            if (previousMatches) {
+                transform("transfer-previous-final", "source", previous.modelWorld);
+                if (previous.handValid) transform("transfer-previous-final", "physical-hand", previous.handWorld);
+            }
+            recordTransferTrace(kind, isLeft, "request", source);
+        } catch (...) { ++session->captureFailures; }
+    }
+
+    void recordTransferTrace(TransferKind kind, bool isLeft, const char* stage,
+        const RE::NiAVObject* model, const RE::NiTransform* target, bool terminal) noexcept
+    {
+        if (!captureThread || !session || !g_rockConfig.rockDebugWeaponOmodDumpEnabled) return;
+        auto& trace = session->transfers[isLeft ? 1u : 0u];
+        if (trace.id == 0 || trace.kind != kind) return;
+        const auto& runtime = runtime_state::currentFrame();
+        const auto frame = runtime.frameIndex;
+        if (frame < trace.startFrame) return;
+        if (terminal) trace.terminalFrame = frame;
+        if (target && model) {
+            trace.targetWorld = *target;
+            trace.targetModel = reinterpret_cast<std::uintptr_t>(model);
+            trace.targetFrame = frame;
+        }
+        if (!terminal && frame - trace.startFrame >= 8 &&
+            (trace.terminalFrame == 0 || frame < trace.terminalFrame || frame - trace.terminalFrame >= 3)) return;
+        try {
+            RE::NiTransform physical{}, claim{};
+            const bool physicalValid = frik_hand_world_authority::tryGetRawHandWorld(isLeft, physical);
+            const bool claimValid = frik_hand_world_authority::tryGetPublishedHandWorld(isLeft, claim);
+            auto* nodes = f4vr::getPlayerNodes();
+            const auto* wand = nodes ? (isLeft ? nodes->SecondaryWandNode : nodes->primaryWandNode) : nullptr;
+            const bool targetMatches = model && trace.targetModel == reinterpret_cast<std::uintptr_t>(model) && trace.targetFrame != 0;
+            const auto error = targetMatches ? model->world.translate - trace.targetWorld.translate : RE::NiPoint3{};
+            session->log->info("TRANSFER frame trace={} kind={} hand={} source={:08X} frame={} age={} phase={} model={:X} parent={:X} parentName='{}' visible={} physical={} claim={} wand={} targetMatches={} targetFrame={} error=({:.5f},{:.5f},{:.5f}) roomValid={} roomStep=({:.5f},{:.5f},{:.5f}) overruns={}",
+                trace.id, kind == TransferKind::ToggleDrop ? "toggle-drop" : "held-equip", isLeft ? "left" : "right",
+                trace.sourceId, frame, frame - trace.startFrame, stage, reinterpret_cast<std::uintptr_t>(model),
+                reinterpret_cast<std::uintptr_t>(model ? model->parent : nullptr), nodeName(model ? model->parent : nullptr),
+                model && !model->GetAppCulled(), physicalValid, claimValid, wand != nullptr, targetMatches, trace.targetFrame,
+                error.x, error.y, error.z, runtime.playerSpace.valid,
+                runtime.playerSpace.deltaGameUnits.x, runtime.playerSpace.deltaGameUnits.y, runtime.playerSpace.deltaGameUnits.z,
+                session->pool->overrun_counter());
+            if (model) {
+                transform(stage, "model-world", model->world);
+                transform(stage, "model-previous-world", model->previousWorld);
+            }
+            if (physicalValid) transform(stage, "physical-hand", physical);
+            if (claimValid) transform(stage, "claimed-hand", claim);
+            if (wand) transform(stage, "wand-world", wand->world);
+            if (targetMatches) transform(stage, "target-world", trace.targetWorld);
+        } catch (...) { ++session->captureFailures; }
+    }
+
+    void captureTransferFrame(bool isLeft, const RE::NiAVObject* looseRoot,
+        const RE::NiAVObject* equippedRoot) noexcept
+    {
+        if (!captureThread || !session || !g_rockConfig.rockDebugWeaponOmodDumpEnabled) return;
+        const auto index = isLeft ? 1u : 0u;
+        const auto kind = session->transfers[index].kind;
+        if (looseRoot) recordTransferTrace(kind, isLeft, "final-loose", looseRoot);
+        if (equippedRoot) recordTransferTrace(kind, isLeft, "final-equipped", equippedRoot);
+        auto& last = session->lastTransferSource[index];
+        last = {};
+        if (const auto* source = looseRoot ? looseRoot : equippedRoot) {
+            last.frame = runtime_state::currentFrame().frameIndex;
+            last.model = reinterpret_cast<std::uintptr_t>(source);
+            last.modelWorld = source->world;
+            last.handValid = frik_hand_world_authority::tryGetRawHandWorld(isLeft, last.handWorld);
         }
     }
 

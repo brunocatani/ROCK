@@ -14,6 +14,7 @@
 #include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
+#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock
@@ -488,6 +489,12 @@ namespace rock
 
         auto* model = _model.get();
         if (model && !_parent) {
+            if (model->parent) {
+                tracePresentation("equip-wait-native-detach");
+                vanilla_weapon_alignment_telemetry::recordTransferTrace(
+                    vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip, _isLeftHand,
+                    "equip-wait-native-instance", input.nativeVisual ? input.nativeVisual->exactInstance : nullptr);
+            }
             /*
              * Before ActivateRef's removal has completed, the retained graph
              * is still visible under its original parent. Once it becomes an
@@ -615,6 +622,9 @@ namespace rock
 
             model->local = transform_math::composeTransforms(transform_math::invertTransform(_parent->world), desiredWorld);
             f4vr::updateDown(model, true);
+            vanilla_weapon_alignment_telemetry::recordTransferTrace(
+                vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip, _isLeftHand,
+                "equip-visual-write", model, &desiredWorld);
             if (_handPoseHandoffActive && _pairedGrips.valid() && !publishPairedHandWorld(model, false))
                 clearHandPoseHandoff("paired-world-publish-failed", true, false);
         }
@@ -701,6 +711,12 @@ namespace rock
     void EquipVisualBridge::clearModel(const char* reason, const bool detachFromParent)
     {
         auto* model = _model.get();
+        // Abandonment passes false and may refer to an already lost scene.
+        if (model && detachFromParent) {
+            vanilla_weapon_alignment_telemetry::recordTransferTrace(
+                vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip, _isLeftHand,
+                reason, model, nullptr, true);
+        }
         if (detachFromParent && model && _parent && model->parent == _parent) {
             RE::NiPointer<RE::NiAVObject> detached;
             _parent->DetachChild(model, detached);
@@ -716,6 +732,12 @@ namespace rock
         _modelInHandLocal = {};
         _physicalHandInWandLocal = {};
         _modelPresented = false;
+    }
+
+    void EquipVisualBridge::tracePresentation(const char* phase) const
+    {
+        if (_model) vanilla_weapon_alignment_telemetry::recordTransferTrace(
+            vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip, _isLeftHand, phase, _model.get());
     }
 
     void EquipVisualBridge::clearHandPoseHandoff(

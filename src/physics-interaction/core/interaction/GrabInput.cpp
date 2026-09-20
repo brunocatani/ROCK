@@ -3,6 +3,7 @@
 #include "physics-interaction/consume/ImmersiveAid.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
+#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 
 // Grab input pipeline: hand preludes, touch grab, grab intent and commit, and per-frame grab input update.
 
@@ -1616,6 +1617,9 @@ namespace rock
 
                 equipHand.captureHeldReleaseMotion(hknp, equipHandInput.rawHandWorld, frame.timing);
                 auto* heldRef = equipHand.getHeldRef();
+                vanilla_weapon_alignment_telemetry::beginTransferTrace(
+                    vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip,
+                    equipIsLeft, heldRef ? heldRef->GetFormID() : 0, heldRef ? heldRef->Get3D() : nullptr);
                 const auto previousEquippedWeaponFormID =
                     currentEquippedWeaponFormId();
                 const auto previousNativeInstanceNode =

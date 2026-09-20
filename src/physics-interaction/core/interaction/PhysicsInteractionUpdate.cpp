@@ -2,6 +2,7 @@
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
+#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/telemetry/DynamicColliderTrace.h"
 #include "physics-interaction/telemetry/HeldRenderTrace.h"
 
@@ -168,6 +169,19 @@ namespace rock
         held_render_trace::recordPhase(beforeRock ? held_render_trace::Phase::BeforeRock :
             std::string_view(phase) == "after-rock" ? held_render_trace::Phase::AfterRock : held_render_trace::Phase::AfterWorldFinal,
             runtime.frameIndex);
+        if (g_rockConfig.rockDebugWeaponOmodDumpEnabled && runtime.localSkeletonReady &&
+            _lifecycle.initialized.load(std::memory_order_acquire)) {
+            _equipped.transition.traceVisualPresentation(phase);
+            for (const auto& visual : _drop.visuals) visual.tracePresentation(phase);
+            if (std::string_view(phase) == "after-world-final") {
+                const auto* equippedRoot = resolveEquippedWeaponInteractionNode();
+                for (const auto* hand : { &_rightHand, &_leftHand }) {
+                    const auto* ref = hand->isHolding() ? hand->getHeldRef() : nullptr;
+                    vanilla_weapon_alignment_telemetry::captureTransferFrame(hand->isLeft(),
+                        ref ? ref->Get3D() : nullptr, equippedRoot);
+                }
+            }
+        }
         const auto presentationFrame = runtime.frameIndex > 0 ? runtime.frameIndex - (beforeRock ? 1u : 0u) : 0;
         if (!dynamic_collider_trace::presentationEnabled() ||
             !held_render_trace::sampleFrame(presentationFrame) ||

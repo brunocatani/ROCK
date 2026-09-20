@@ -1416,6 +1416,11 @@ namespace rock
                             const auto dropVisualInWeapon = dropVisualModel ?
                                 transform_math::composeTransforms(transform_math::invertTransform(releaseWeaponWorld),
                                     dropVisualModel->world) : RE::NiTransform{};
+                            if (toggleDrop) {
+                                vanilla_weapon_alignment_telemetry::beginTransferTrace(
+                                    vanilla_weapon_alignment_telemetry::TransferKind::ToggleDrop,
+                                    transferIsLeft, observedEquippedWeaponFormID, weaponNode);
+                            }
                             _twoHandedGrip.prepareEquippedWeaponDropCommit();
                             const auto dropResult = weapon_equip_transfer::dropEquippedWeaponFromPlayer(weapon_equip_transfer::EquippedDropInput{
                                 .dropLoc = releaseLoc,

@@ -11986,6 +11986,9 @@ namespace rock
         if (sel.equippedWeaponTransfer && rootNode) {
             const auto desiredRoot = transform_math::composeTransforms(
                 _grabFrame.authority.desiredBodyWorldAtGrab, transform_math::invertTransform(_grabFrame.rootBodyLocal));
+            vanilla_weapon_alignment_telemetry::recordTransferTrace(
+                vanilla_weapon_alignment_telemetry::TransferKind::ToggleDrop, _isLeft,
+                "loose-grab-commit", rootNode, &desiredRoot);
             vanilla_weapon_alignment_telemetry::recordTransferPose(sel.refr ? sel.refr->GetFormID() : 0,
                 _isLeft, "commit", rootNode->world, handWorldTransform,
                 &proxyPreparation.proxyFrameWorldAtGrab, &desiredRoot);

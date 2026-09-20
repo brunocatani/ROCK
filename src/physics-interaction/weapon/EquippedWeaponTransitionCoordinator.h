@@ -100,6 +100,7 @@ namespace rock
             const EquipVisualBridge::BeginInput& bridgeInput);
         void requestCurrentWeaponReconcile(Source source) noexcept;
         void update(const FrameInput& input);
+        void traceVisualPresentation(const char* phase) const { _bridge.tracePresentation(phase); }
         void shutdown();
         void abandonSceneGraph();
         [[nodiscard]] PublicSnapshot getPublicSnapshot() const noexcept;

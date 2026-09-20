@@ -5,6 +5,7 @@
 #include "physics-interaction/grab/HeldScenePresentationPolicy.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/EquippedWeaponVisualState.h"
+#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock
@@ -68,7 +69,13 @@ namespace rock
         }
         if (!_parent) {
             // Asynchronous native removal still owns this scene until detach.
-            if (_model->parent) return;
+            if (_model->parent) {
+                tracePresentation("drop-wait-native-detach");
+                vanilla_weapon_alignment_telemetry::recordTransferTrace(
+                    vanilla_weapon_alignment_telemetry::TransferKind::ToggleDrop, _grip.isLeft,
+                    "drop-wait-loose-model", looseRoot);
+                return;
+            }
             if (!stripDetachedCollision(_model.get())) {
                 ROCK_LOG_WARN(Weapon, "Toggle drop visual rejected: ref={:08X} subtree exceeds presentation bound", _referenceId);
                 release("model-too-large");
@@ -95,6 +102,9 @@ namespace rock
         _model->local = modelLocal;
         equipped_weapon_visual_state::setLocallyVisible(_model.get(), true);
         f4vr::updateDown(_model.get(), true);
+        vanilla_weapon_alignment_telemetry::recordTransferTrace(
+            vanilla_weapon_alignment_telemetry::TransferKind::ToggleDrop, _grip.isLeft,
+            "drop-visual-write", _model.get(), &modelWorld);
 
         if (_hiddenLooseRoot.get() != looseRoot) {
             restoreLooseVisibility();
@@ -133,6 +143,7 @@ namespace rock
 
     void EquippedWeaponDropVisual::prepareGrab()
     {
+        tracePresentation("drop-before-grab");
         // Exact-reference acquisition must inspect the unmodified loose scene.
         // A retry can resume presentation at the end of the same update.
         restoreLooseVisibility();
@@ -157,6 +168,11 @@ namespace rock
 
     void EquippedWeaponDropVisual::clear(const char* reason, bool sceneAvailable)
     {
+        if (sceneAvailable && _model) {
+            vanilla_weapon_alignment_telemetry::recordTransferTrace(
+                vanilla_weapon_alignment_telemetry::TransferKind::ToggleDrop, _grip.isLeft,
+                reason, _model.get(), nullptr, true);
+        }
         yieldHandPose();
         if (sceneAvailable) {
             restoreLooseVisibility();
@@ -176,5 +192,11 @@ namespace rock
         _presentedFrames = 0;
         _looseRootWasVisible = false;
         _handPoseOwned = false;
+    }
+
+    void EquippedWeaponDropVisual::tracePresentation(const char* phase) const
+    {
+        if (_model) vanilla_weapon_alignment_telemetry::recordTransferTrace(
+            vanilla_weapon_alignment_telemetry::TransferKind::ToggleDrop, _grip.isLeft, phase, _model.get());
     }
 }

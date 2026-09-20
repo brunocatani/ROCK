@@ -15,6 +15,18 @@ namespace rock::vanilla_weapon_alignment_telemetry
 {
     enum class Phase { BeforeRockPreFrik, BeforeFrik, AfterFrik, AfterWeaponSolve, AfterRock, AfterWorldFinal };
     enum class NativePhase { GraphEntry, GraphExit, PrimaryArmEntry, PrimaryArmExit, SupportArmEntry, SupportArmExit };
+    enum class TransferKind { ToggleDrop, HeldEquip };
+
+    // Existing diagnostic gate/writer. Eight consecutive frames at admission
+    // and three at visual handoff distinguish native detach, pose age and catch-up.
+    // Scene nodes are borrowed for this call; stored witnesses contain values only.
+    void beginTransferTrace(TransferKind kind, bool isLeft, std::uint32_t sourceId,
+        const RE::NiAVObject* source) noexcept;
+    void recordTransferTrace(TransferKind kind, bool isLeft, const char* stage,
+        const RE::NiAVObject* model, const RE::NiTransform* target = nullptr,
+        bool terminal = false) noexcept;
+    void captureTransferFrame(bool isLeft, const RE::NiAVObject* looseRoot,
+        const RE::NiAVObject* equippedRoot) noexcept;
 
     // Borrowed only for the synchronous capture; the async logger receives
     // formatted values, never these references or the scene pointer.
