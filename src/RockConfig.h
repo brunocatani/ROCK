@@ -9,6 +9,7 @@
 #include <unordered_map>
 
 #include "RE/NetImmerse/NiPoint.h"
+#include "physics-interaction/native/ShellCasingGracePolicy.h"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -116,6 +117,7 @@ namespace rock
         RE::NiPoint3 rockRightSupportGripOffsetGameUnits{ 0.0f, 0.0f, 0.0f };
         bool rockWeaponCollisionBlocksProjectiles = false;
         bool rockWeaponCollisionBlocksSpells = false;
+        float rockWeaponShellCollisionGraceMs = shell_casing_grace::kDefaultMilliseconds;
         // A/B comparison: original support hulls or bounded gap-preserving compounds.
         bool rockWeaponCollisionPreserveGaps = true;
         // Elapsed stable-witness window before a generation-driven weapon

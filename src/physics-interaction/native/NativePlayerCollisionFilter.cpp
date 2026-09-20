@@ -6,6 +6,7 @@
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
+#include "physics-interaction/native/ShellCasingGrace.h"
 
 #include <REL/Relocation.h>
 #include <RE/Bethesda/TESObjectREFRs.h>
@@ -59,8 +60,10 @@ namespace rock::native_player_collision
 
         int filterPairs(void* filter, RE::hknpWorld* world, BodyPair* pairs, int count) noexcept
         {
-            const int admitted = s_original(filter, world, pairs, count);
+            const int nativeAdmitted = s_original(filter, world, pairs, count);
             performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::NativePlayerPairFilter);
+            const int admitted = nativeAdmitted > 0 && nativeAdmitted <= count ?
+                shell_casing_grace::filterPairs(world, pairs, nativeAdmitted) : nativeAdmitted;
             auto lease = s_gate.tryEnterCallback();
             if (!lease || !world || world != s_snapshot.world || s_snapshot.count == 0 ||
                 !pairs || admitted <= 0 || admitted > count) {
@@ -198,6 +201,7 @@ namespace rock::native_player_collision
             return false;
         }
         s_installed = true;
+        shell_casing_grace::install();
         ROCK_LOG_INFO(Init, "Native player contact filter installed: simulation pairs only; native body filters and ray/shape query slots preserved");
         return true;
     }

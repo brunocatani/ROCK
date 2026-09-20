@@ -2,6 +2,8 @@
 
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/ShellCasingGrace.h"
+#include "RockConfig.h"
 
 #include <REL/Relocation.h>
 
@@ -173,6 +175,8 @@ namespace rock
         auto& gate = callbackGate();
         gate.pauseAndWait();
         _registeredWorld = hknpWorld;
+        shell_casing_grace::prepareFrame(hknpWorld, g_rockConfig.rockWeaponShellCollisionGraceMs,
+            _elapsedSimulatedSeconds, _solveSequence);
         ++_registrationSequence;
         if (_nativeListener) {
             _nativeListener->vtable = &kStepListenerVTable;
@@ -192,6 +196,7 @@ namespace rock
         if (_nativeListener) {
             _nativeListener->owner.store(nullptr, std::memory_order_release);
         }
+        shell_casing_grace::abandon();
         _registeredWorld = nullptr;
         _lastTimingSample = {};
         _lastSubstepTimingSample = {};
@@ -248,6 +253,7 @@ namespace rock
         stampTimingIdentity(timing);
         _lastSubstepTimingSample = timing;
         ++_currentSubstepIndex;
+        shell_casing_grace::beforeCollide(_registeredWorld, timing);
 
         if (!_substepPreCollideCallback || !_registeredWorld) {
             return;
@@ -295,6 +301,7 @@ namespace rock
         }
         stampTimingIdentity(timing);
         _solveSequenceAtomic.store(_solveSequence, std::memory_order_release);
+        shell_casing_grace::afterSolve(_registeredWorld, timing);
         _elapsedSimulatedAtomic.store(_elapsedSimulatedSeconds, std::memory_order_release);
         _fallbackSampleCountAtomic.store(_fallbackSampleCount, std::memory_order_release);
         _substepDeltaSecondsAtomic.store(timing.substepDeltaSeconds, std::memory_order_release);

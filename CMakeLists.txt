@@ -689,6 +689,11 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKNativePlayerCollisionSuppressionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKNativePlayerCollisionSuppressionPolicyTests)
 
+  add_executable(ROCKShellCasingGracePolicyTests "${ROOT_DIR}/tests/ShellCasingGracePolicyTests.cpp")
+  target_compile_features(ROCKShellCasingGracePolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKShellCasingGracePolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKShellCasingGracePolicyTests)
+
   add_executable(ROCKNativeMeleeSuppressionPolicyTests
     "${ROOT_DIR}/tests/NativeMeleeSuppressionPolicyTests.cpp"
   )

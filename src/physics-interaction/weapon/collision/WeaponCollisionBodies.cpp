@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/WeaponCollisionInternal.h"
+#include "physics-interaction/native/ShellCasingGrace.h"
 
 // Weapon body banks: lifecycle, retirement, collision enablement, atomic body-id publication, drive queueing, and retired-body servicing.
 
@@ -373,6 +374,9 @@ namespace rock
     {
         const std::uint64_t version = _published.version.load(std::memory_order_relaxed);
         _published.version.store((version | 1ull) + 1ull, std::memory_order_release);
+        const auto snapshot = getWeaponBodySnapshotAtomic();
+        shell_casing_grace::publishWeapon(_identity.cachedFormID, snapshot.generationKey,
+            std::span(snapshot.bodyIds).first(snapshot.count));
     }
 
     void WeaponCollision::clearAtomicBodyIds()
