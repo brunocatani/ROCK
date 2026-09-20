@@ -238,6 +238,7 @@ namespace rock::performance_profiler
             case Scope::MeshSkinnedExtraction: return "meshSkinnedExtraction";
             case Scope::MeshPointQuery: return "meshPointQuery";
             case Scope::MeshDirectionalQuery: return "meshDirectionalQuery";
+            case Scope::GrabMeshQueryIndexBuild: return "grabMeshQueryIndexBuild";
             case Scope::Count:
                 break;
             }
@@ -357,6 +358,9 @@ namespace rock::performance_profiler
             case ValueMetric::GrabMeshPayloadBytes: return "grabMeshPayloadBytes";
             case ValueMetric::MeshPointQueryTriangles: return "meshPointQueryTriangles";
             case ValueMetric::MeshDirectionalQueryTriangles: return "meshDirectionalQueryTriangles";
+            case ValueMetric::MeshPointQueryTriangleTests: return "meshPointQueryTriangleTests";
+            case ValueMetric::GrabTriangleSelectionTests: return "grabTriangleSelectionTests";
+            case ValueMetric::MeshStaticVerticesTransformed: return "meshStaticVerticesTransformed";
             case ValueMetric::Count:
                 break;
             }
@@ -707,7 +711,7 @@ namespace rock::performance_profiler
                             snapshot.droppedSnapshotsBeforeThis);
                     }
 
-                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1", snapshot.frames, GetCurrentProcessId());
+                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1 grabMeshQueries=1", snapshot.frames, GetCurrentProcessId());
                     for (const auto& item : snapshot.scopes) {
                         if (!item.hasData()) {
                             continue;
@@ -1112,7 +1116,8 @@ namespace rock::performance_profiler
         }
 
         const auto endTicks = queryPerformanceTicks();
-        if (_startTicks && endTicks > _startTicks) {
+        // Cached queries can finish within one clock tick and still count.
+        if (_startTicks && endTicks >= _startTicks) {
             recordTicks(_scope, endTicks - _startTicks);
         }
         t_memoryQueryScope = _parentScope;

@@ -118,6 +118,194 @@ namespace rock
         bool hasSkinInfluences = false;
     };
 
+    // Owned by one acquisition. Rebuild after filtering/replacing its surface
+    // vector; neither this index nor its query scratch survives the acquisition.
+    // Contiguous leaves preserve source order (including equal-distance hits)
+    // and build in linear time without sorting the full visual mesh.
+    class GrabSurfaceQueryIndex
+    {
+    public:
+        struct RankedTriangle
+        {
+            float distanceSquared;
+            std::size_t index;
+        };
+
+        void build(const std::vector<GrabSurfaceTriangleData>& triangles)
+        {
+            performance_profiler::ScopedTimer timer(performance_profiler::Scope::GrabMeshQueryIndexBuild);
+            _source = triangles.data();
+            _size = triangles.size();
+            _nodes.clear();
+            _nearest.clear();
+            _cachedCount = 0;
+            if (_size > 2048) {
+                _nodes.reserve((_size / kLeafSize + 1) * 4);
+                buildNode(triangles, 0, _size);
+            }
+        }
+
+        template <class Limit, class Visit>
+        std::size_t visit(const std::vector<GrabSurfaceTriangleData>& triangles,
+            const RE::NiPoint3& point, Limit&& limitSquared, Visit&& visitor, bool nearestFirst = false) const
+        {
+            std::size_t tested = 0;
+            if (_source != triangles.data() || _size != triangles.size() || _nodes.empty() || !finite(point)) {
+                for (std::size_t i = 0; i < triangles.size(); ++i) {
+                    visitor(i);
+                    ++tested;
+                }
+                return tested;
+            }
+            if (nearestFirst) {
+                // Balanced range splits bound the stack by the address width.
+                std::array<std::size_t, std::numeric_limits<std::size_t>::digits> stack{};
+                std::size_t pending = 1;
+                while (pending) {
+                    const auto n = stack[--pending];
+                    const auto& node = _nodes[n];
+                    if (distanceSquared(node, point) > limitSquared()) continue;
+                    if (node.end - node.begin <= kLeafSize) {
+                        for (auto i = node.begin; i < node.end; ++i) { visitor(i); ++tested; }
+                    } else {
+                        auto nearNode = n + 1;
+                        auto farNode = _nodes[nearNode].escape;
+                        if (distanceSquared(_nodes[farNode], point) < distanceSquared(_nodes[nearNode], point)) std::swap(nearNode, farNode);
+                        stack[pending++] = farNode;
+                        stack[pending++] = nearNode;
+                    }
+                }
+                return tested;
+            }
+            for (std::size_t n = 0; n < _nodes.size();) {
+                const auto& node = _nodes[n];
+                if (distanceSquared(node, point) > limitSquared()) {
+                    n = node.escape;
+                } else if (node.end - node.begin <= kLeafSize) {
+                    for (auto i = node.begin; i < node.end; ++i) {
+                        visitor(i);
+                        ++tested;
+                    }
+                    ++n;
+                } else {
+                    ++n;
+                }
+            }
+            return tested;
+        }
+
+        const std::vector<RankedTriangle>& nearest(const std::vector<GrabSurfaceTriangleData>& triangles,
+            const RE::NiPoint3& point, std::size_t count) const
+        {
+            performance_profiler::ScopedTimer timer(performance_profiler::Scope::GrabTriangleSelection);
+            if (_cachedSource == triangles.data() && _cachedSize == triangles.size() && _cachedCount == count &&
+                point.x == _cachedPoint.x && point.y == _cachedPoint.y && point.z == _cachedPoint.z && !_nearest.empty()) {
+                performance_profiler::observeValue(performance_profiler::ValueMetric::GrabTriangleSelectionTests, 0);
+                return _nearest;
+            }
+            _nearest.clear();
+            _cachedCount = count;
+            _cachedPoint = point;
+            _cachedSource = triangles.data();
+            _cachedSize = triangles.size();
+            count = (std::min)(count, triangles.size());
+            if (count == 0) return _nearest;
+            _nearest.reserve(count);
+            const auto tested = visit(triangles, point,
+                [&] { return _nearest.size() == count ? _nearest.front().distanceSquared : std::numeric_limits<float>::infinity(); },
+                [&](std::size_t i) {
+                    const auto& triangle = triangles[i].triangle;
+                    const RE::NiPoint3 centroid = (triangle.v0 + triangle.v1 + triangle.v2) * (1.0f / 3.0f);
+                    const RankedTriangle candidate{
+                        (std::min)({ vector_math::lengthSquared(centroid - point), vector_math::lengthSquared(triangle.v0 - point),
+                            vector_math::lengthSquared(triangle.v1 - point), vector_math::lengthSquared(triangle.v2 - point) }), i };
+                    if (_nearest.size() < count) {
+                        _nearest.push_back(candidate);
+                        std::push_heap(_nearest.begin(), _nearest.end(), less);
+                    } else if (less(candidate, _nearest.front())) {
+                        std::pop_heap(_nearest.begin(), _nearest.end(), less);
+                        _nearest.back() = candidate;
+                        std::push_heap(_nearest.begin(), _nearest.end(), less);
+                    }
+                }, true);
+            std::sort_heap(_nearest.begin(), _nearest.end(), less);
+            performance_profiler::observeValue(performance_profiler::ValueMetric::GrabTriangleSelectionTests, tested);
+            return _nearest;
+        }
+
+    private:
+        static constexpr std::size_t kLeafSize = 16;
+        struct Node
+        {
+            RE::NiPoint3 low{ INFINITY, INFINITY, INFINITY };
+            RE::NiPoint3 high{ -INFINITY, -INFINITY, -INFINITY };
+            std::size_t begin = 0, end = 0, escape = 0;
+        };
+
+        static bool finite(const RE::NiPoint3& p) { return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z); }
+        static bool less(const RankedTriangle& a, const RankedTriangle& b)
+        {
+            return a.distanceSquared == b.distanceSquared ? a.index < b.index : a.distanceSquared < b.distanceSquared;
+        }
+        static void extend(Node& node, const RE::NiPoint3& p)
+        {
+            if (!finite(p)) {
+                node.low = { -INFINITY, -INFINITY, -INFINITY };
+                node.high = { INFINITY, INFINITY, INFINITY };
+                return;
+            }
+            node.low = { (std::min)(node.low.x, p.x), (std::min)(node.low.y, p.y), (std::min)(node.low.z, p.z) };
+            node.high = { (std::max)(node.high.x, p.x), (std::max)(node.high.y, p.y), (std::max)(node.high.z, p.z) };
+        }
+        std::size_t buildNode(const std::vector<GrabSurfaceTriangleData>& triangles, std::size_t begin, std::size_t end)
+        {
+            const auto index = _nodes.size();
+            _nodes.emplace_back();
+            Node node;
+            node.begin = begin;
+            node.end = end;
+            if (end - begin <= kLeafSize) {
+                for (auto i = begin; i < end; ++i) {
+                    const auto& t = triangles[i].triangle;
+                    extend(node, t.v0); extend(node, t.v1); extend(node, t.v2);
+                }
+            } else {
+                const auto middle = begin + (end - begin) / 2;
+                const auto left = buildNode(triangles, begin, middle);
+                const auto right = buildNode(triangles, middle, end);
+                extend(node, _nodes[left].low); extend(node, _nodes[left].high);
+                extend(node, _nodes[right].low); extend(node, _nodes[right].high);
+            }
+            node.escape = _nodes.size();
+            _nodes[index] = node;
+            return index;
+        }
+        static double distanceSquared(const Node& node, const RE::NiPoint3& point)
+        {
+            // Outward padding covers float interpolation/centroid rounding at
+            // world-coordinate magnitudes. Prune only strictly outside so ties
+            // and inclusive distance thresholds still reach the exact predicate.
+            const auto axis = [](float p, float lo, float hi) {
+                const double scale = (std::max)({ 1.0, std::abs(static_cast<double>(p)),
+                    std::abs(static_cast<double>(lo)), std::abs(static_cast<double>(hi)) });
+                const double padding = 32.0 * std::numeric_limits<float>::epsilon() * scale;
+                return (std::max)({ 0.0, static_cast<double>(lo) - p - padding, static_cast<double>(p) - hi - padding });
+            };
+            const auto x = axis(point.x, node.low.x, node.high.x);
+            const auto y = axis(point.y, node.low.y, node.high.y);
+            const auto z = axis(point.z, node.low.z, node.high.z);
+            return x * x + y * y + z * z;
+        }
+        const GrabSurfaceTriangleData* _source = nullptr;
+        std::size_t _size = 0;
+        std::vector<Node> _nodes;
+        mutable std::vector<RankedTriangle> _nearest;
+        mutable RE::NiPoint3 _cachedPoint{};
+        mutable std::size_t _cachedCount = 0;
+        mutable const GrabSurfaceTriangleData* _cachedSource = nullptr;
+        mutable std::size_t _cachedSize = 0;
+    };
+
     struct GrabSurfaceHit
     {
         RE::NiPoint3 position{};
@@ -525,6 +713,59 @@ namespace rock
         return true;
     }
 
+    // The caller validates the buffers and visibility mask. Cache only vertices
+    // referenced by admitted triangles; hidden/invalid triangles still do no work.
+    inline int appendStaticMeshTriangles(const TriShapeRawGeometry& geometry,
+        const std::uint8_t* vertices, std::uint32_t stride, std::uint32_t positionOffset, bool fullPrecision,
+        const std::vector<std::uint8_t>& visibleTriangles, const RE::NiTransform& worldTransform,
+        RE::BSTriShape* sourceShape, std::vector<TriangleData>& outTriangles,
+        std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles,
+        std::vector<TriangleData>* outLocalTriangles)
+    {
+        struct Vertex { RE::NiPoint3 local{}, world{}; bool ready = false; };
+        std::vector<Vertex> cache(geometry.numVertices);
+        std::size_t transformed = 0;
+        const auto vertex = [&](std::uint16_t index) -> const Vertex& {
+            auto& value = cache[index];
+            if (!value.ready) {
+                value.local = readVertexPosition(vertices + index * stride, positionOffset, fullPrecision);
+                value.world = transformPoint(worldTransform, value.local);
+                value.ready = true;
+                ++transformed;
+            }
+            return value;
+        };
+        const auto visibleCount = visibleTriangles.empty() ? geometry.numTriangles :
+            static_cast<std::size_t>(std::count_if(visibleTriangles.begin(), visibleTriangles.end(), [](auto value) { return value != 0; }));
+        const auto reserveAppend = [visibleCount](auto& output) {
+            const auto required = output.size() + visibleCount;
+            if (required > output.capacity()) output.reserve((std::max)(required, output.capacity() * 2));
+        };
+        int added = 0;
+        for (std::uint32_t i = 0; i < geometry.numTriangles; ++i) {
+            if (!visibleTriangles.empty() && !visibleTriangles[i]) continue;
+            const auto i0 = geometry.triangles[i * 3];
+            const auto i1 = geometry.triangles[i * 3 + 1];
+            const auto i2 = geometry.triangles[i * 3 + 2];
+            if (i0 >= geometry.numVertices || i1 >= geometry.numVertices || i2 >= geometry.numVertices) continue;
+            if (added == 0) {
+                reserveAppend(outTriangles);
+                if (outSurfaceTriangles) reserveAppend(*outSurfaceTriangles);
+                if (outLocalTriangles) reserveAppend(*outLocalTriangles);
+            }
+            const auto& v0 = vertex(i0);
+            const auto& v1 = vertex(i1);
+            const auto& v2 = vertex(i2);
+            const TriangleData triangle{ v0.world, v1.world, v2.world };
+            outTriangles.push_back(triangle);
+            if (outLocalTriangles) outLocalTriangles->push_back({ v0.local, v1.local, v2.local });
+            appendSurfaceTriangle(outSurfaceTriangles, triangle, sourceShape, i, GrabSurfaceSourceKind::Static);
+            ++added;
+        }
+        performance_profiler::observeValue(performance_profiler::ValueMetric::MeshStaticVerticesTransformed, transformed);
+        return added;
+    }
+
     inline int extractTrianglesFromTriShape(
         RE::BSTriShape* triShape,
         std::vector<TriangleData>& outTriangles,
@@ -559,31 +800,8 @@ namespace rock
 
         std::vector<std::uint8_t> visibleTriangles;
         if (!readVisibleTriangles(triShape, geometry.numTriangles, visibleTriangles)) return 0;
-        int added = 0;
-        for (std::uint32_t i = 0; i < geometry.numTriangles; i++) {
-            if (!visibleTriangles.empty() && !visibleTriangles[i]) continue;
-            std::uint16_t i0 = geometry.triangles[i * 3 + 0];
-            std::uint16_t i1 = geometry.triangles[i * 3 + 1];
-            std::uint16_t i2 = geometry.triangles[i * 3 + 2];
-
-            if (i0 >= geometry.numVertices || i1 >= geometry.numVertices || i2 >= geometry.numVertices)
-                continue;
-
-            TriangleData localTriangle;
-            localTriangle.v0 = readVertexPosition(verts + i0 * vtxStride, posOffset, fullPrecision);
-            localTriangle.v1 = readVertexPosition(verts + i1 * vtxStride, posOffset, fullPrecision);
-            localTriangle.v2 = readVertexPosition(verts + i2 * vtxStride, posOffset, fullPrecision);
-
-            TriangleData worldTriangle = localTriangle;
-            worldTriangle.applyTransform(worldTransform);
-            outTriangles.push_back(worldTriangle);
-            if (outLocalTriangles) {
-                outLocalTriangles->push_back(localTriangle);
-            }
-            appendSurfaceTriangle(outSurfaceTriangles, worldTriangle, triShape, i, GrabSurfaceSourceKind::Static);
-            added++;
-        }
-        return added;
+        return appendStaticMeshTriangles(geometry, verts, vtxStride, posOffset, fullPrecision,
+            visibleTriangles, worldTransform, triShape, outTriangles, outSurfaceTriangles, outLocalTriangles);
     }
 
     inline bool isSkinned(RE::BSTriShape* triShape)
@@ -1565,7 +1783,8 @@ namespace rock
         const RE::NiPoint3& expectedNormal,
         float maxDistanceGameUnits,
         float maxNormalAngleDegrees,
-        GrabSurfaceHit& outResult)
+        GrabSurfaceHit& outResult,
+        const GrabSurfaceQueryIndex* queryIndex = nullptr)
     {
         performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::MeshPointQuery);
         const RE::NiPoint3 expected = normalize(expectedNormal);
@@ -1581,31 +1800,39 @@ namespace rock
         RE::NiPoint3 bestNormal{};
 
         performance_profiler::observeValue(performance_profiler::ValueMetric::MeshPointQueryTriangles, triangles.size());
-        for (int i = 0; i < static_cast<int>(triangles.size()); ++i) {
+        const auto testTriangle = [&](std::size_t i) {
             const auto& surfaceTriangle = triangles[i];
             const auto& tri = surfaceTriangle.triangle;
             RE::NiPoint3 triNormal = normalize(cross(sub(tri.v1, tri.v0), sub(tri.v2, tri.v0)));
             if (dot(triNormal, triNormal) <= 0.0f) {
-                continue;
+                return;
             }
             if (dot(triNormal, expected) < 0.0f) {
                 triNormal = RE::NiPoint3{ -triNormal.x, -triNormal.y, -triNormal.z };
             }
             if (dot(triNormal, expected) < minNormalDot) {
-                continue;
+                return;
             }
 
             float distSq = 0.0f;
             const RE::NiPoint3 candidate = closestPointOnTriangleToPoint(point, tri, distSq);
             if (distSq > maxDistSq || distSq >= bestDistSq) {
-                continue;
+                return;
             }
 
             bestDistSq = distSq;
-            bestIdx = i;
+            bestIdx = static_cast<int>(i);
             bestPoint = candidate;
             bestNormal = triNormal;
+        };
+        std::size_t tested = triangles.size();
+        if (queryIndex) {
+            tested = queryIndex->visit(triangles, point,
+                [&] { return (std::min)(maxDistSq, bestDistSq); }, testTriangle);
+        } else {
+            for (std::size_t i = 0; i < triangles.size(); ++i) testTriangle(i);
         }
+        performance_profiler::observeValue(performance_profiler::ValueMetric::MeshPointQueryTriangleTests, tested);
 
         if (bestIdx < 0) {
             return false;
@@ -1631,7 +1858,8 @@ namespace rock
         const RE::NiPoint3& point,
         const RE::NiPoint3& preferredNormal,
         float maxDistanceGameUnits,
-        GrabSurfaceHit& outResult)
+        GrabSurfaceHit& outResult,
+        const GrabSurfaceQueryIndex* queryIndex = nullptr)
     {
         performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::MeshPointQuery);
         if (maxDistanceGameUnits < 0.0f || !std::isfinite(maxDistanceGameUnits)) {
@@ -1649,12 +1877,12 @@ namespace rock
         float bestLateral = 0.0f;
 
         performance_profiler::observeValue(performance_profiler::ValueMetric::MeshPointQueryTriangles, triangles.size());
-        for (int i = 0; i < static_cast<int>(triangles.size()); ++i) {
+        const auto testTriangle = [&](std::size_t i) {
             const auto& surfaceTriangle = triangles[i];
             const auto& tri = surfaceTriangle.triangle;
             RE::NiPoint3 triNormal = normalize(cross(sub(tri.v1, tri.v0), sub(tri.v2, tri.v0)));
             if (dot(triNormal, triNormal) <= 0.0f) {
-                continue;
+                return;
             }
             if (hasPreferredNormal && dot(triNormal, preferred) < 0.0f) {
                 triNormal = RE::NiPoint3{ -triNormal.x, -triNormal.y, -triNormal.z };
@@ -1663,7 +1891,7 @@ namespace rock
             float distSq = 0.0f;
             const RE::NiPoint3 candidate = closestPointOnTriangleToPoint(point, tri, distSq);
             if (distSq > maxDistSq || distSq >= bestDistSq) {
-                continue;
+                return;
             }
 
             float signedAlong = 0.0f;
@@ -1677,12 +1905,20 @@ namespace rock
             }
 
             bestDistSq = distSq;
-            bestIdx = i;
+            bestIdx = static_cast<int>(i);
             bestPoint = candidate;
             bestNormal = triNormal;
             bestSignedAlong = signedAlong;
             bestLateral = lateral;
+        };
+        std::size_t tested = triangles.size();
+        if (queryIndex) {
+            tested = queryIndex->visit(triangles, point,
+                [&] { return (std::min)(maxDistSq, bestDistSq); }, testTriangle);
+        } else {
+            for (std::size_t i = 0; i < triangles.size(); ++i) testTriangle(i);
         }
+        performance_profiler::observeValue(performance_profiler::ValueMetric::MeshPointQueryTriangleTests, tested);
 
         if (bestIdx < 0) {
             return false;

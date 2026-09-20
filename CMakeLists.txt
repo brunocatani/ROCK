@@ -997,6 +997,11 @@ if(BUILD_ROCK_TESTS)
     target_link_libraries(ROCKPolicyTestSupport PUBLIC xbyak::xbyak)
   endif()
 
+  add_executable(ROCKGrabMeshQueryTests "${ROOT_DIR}/tests/GrabMeshQueryTests.cpp")
+  target_compile_features(ROCKGrabMeshQueryTests PRIVATE cxx_std_23)
+  list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKGrabMeshQueryTests)
+  add_rock_test(ROCKGrabMeshQueryTests)
+
   add_executable(ROCKPerformanceProfilerTests
     "${ROOT_DIR}/tests/PerformanceProfilerTests.cpp"
     "${SOURCE_DIR}/physics-interaction/performance/PerformanceProfiler.cpp"

@@ -41,6 +41,11 @@ namespace
         requireScope("grabContactPatch", 1);
         requireScope("meshPointQuery", 2);
         requireScope("meshDirectionalQuery", 1);
+        requireScope("grabMeshQueryIndexBuild", 1);
+        requireScope("grabTriangleSelection", 2);
+        assert(text.find("Profiler value meshPointQueryTriangleTests: avg=64.00 max=64 samples=2") != std::string::npos);
+        assert(text.find("Profiler value grabTriangleSelectionTests: avg=32.00 max=64 samples=2") != std::string::npos);
+        assert(text.find("Profiler value meshStaticVerticesTransformed: avg=3.00 max=3 samples=1") != std::string::npos);
         assert(text.find("Profiler value meshPointQueryTriangles: avg=64.00 max=64 samples=2") != std::string::npos);
         assert(text.find("Profiler value meshDirectionalQueryTriangles: avg=64.00 max=64 samples=1") != std::string::npos);
         assert(text.find("Profiler counter grabAcquisitionPeerHeld: count=1") != std::string::npos);
@@ -99,10 +104,23 @@ int main()
         for (auto& surface : triangles) {
             surface.triangle = { {0, 0, 0}, {4, 0, 0}, {0, 4, 0} };
         }
+        rock::GrabSurfaceQueryIndex index;
+        index.build(triangles);
+        assert(index.nearest(triangles, {1, 1, 1}, 4).size() == 4);
+        assert(index.nearest(triangles, {1, 1, 1}, 4).size() == 4);
+        std::array<RE::NiPoint3, 3> vertices{{ {0, 0, 0}, {4, 0, 0}, {0, 4, 0} }};
+        std::array<std::uint16_t, 6> indices{0, 1, 2, 0, 2, 1};
+        rock::TriShapeRawGeometry geometry;
+        geometry.numVertices = 3;
+        geometry.numTriangles = 2;
+        geometry.triangles = indices.data();
+        std::vector<rock::TriangleData> extracted;
+        assert(rock::appendStaticMeshTriangles(geometry, reinterpret_cast<const std::uint8_t*>(vertices.data()),
+            sizeof(RE::NiPoint3), 0, true, {}, RE::NiTransform{}, nullptr, extracted, nullptr, nullptr) == 2);
         rock::GrabSurfaceHit hit{};
         assert(rock::findClosestGrabSurfaceHitToPoint(triangles, {1, 1, 1}, {0, 0, 1}, 2.0f, 45.0f, hit));
         assert(hit.valid && hit.triangleIndex == 0 && hit.position.z == 0.0f);
-        assert(rock::findClosestGrabSurfaceHitToPointPositionOnly(triangles, {1, 1, 1}, {0, 0, 1}, 2.0f, hit));
+        assert(rock::findClosestGrabSurfaceHitToPointPositionOnly(triangles, {1, 1, 1}, {0, 0, 1}, 2.0f, hit, &index));
         assert(hit.valid && hit.triangleIndex == 0 && hit.position.z == 0.0f);
         assert(rock::findClosestGrabSurfaceHit(triangles, {1, 1, 1}, {0, 0, -1}, 1.0f, 1.0f, hit));
         assert(hit.valid && hit.triangleIndex == 0 && hit.position.z == 0.0f);

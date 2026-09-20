@@ -118,6 +118,7 @@ namespace rock::performance_profiler
         MeshSkinnedExtraction,
         MeshPointQuery,
         MeshDirectionalQuery,
+        GrabMeshQueryIndexBuild,
         Count
     };
 
@@ -191,6 +192,9 @@ namespace rock::performance_profiler
         GrabMeshPayloadBytes,
         MeshPointQueryTriangles,
         MeshDirectionalQueryTriangles,
+        MeshPointQueryTriangleTests,
+        GrabTriangleSelectionTests,
+        MeshStaticVerticesTransformed,
         Count
     };
 
