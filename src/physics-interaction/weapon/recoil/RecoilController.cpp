@@ -57,8 +57,9 @@ namespace rock
         default: identity.familyPercent = weapon_recoil_policy::selectHoldPercent(identity.oneHanded,
             g_rockConfig.rockDefaultOneHandRecoilPercent, g_rockConfig.rockDefaultTwoHandRecoilPercent); break;
         }
-        if (identity.profile == weapon_recoil_policy::Profile::PowerArmor ||
-            identity.profile == weapon_recoil_policy::Profile::Bipod) {
+        if (identity.profile == weapon_recoil_policy::Profile::Bipod ||
+            (identity.profile == weapon_recoil_policy::Profile::PowerArmor &&
+                identity.family != weapon_recoil_policy::Family::Laser)) {
             identity.familyPercent = 100.0f;
         }
         return identity;

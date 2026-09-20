@@ -112,17 +112,18 @@ namespace rock::weapon_recoil_policy
     }
 
     // Percent has already been validated by ROCK's central INI loader.
-    // Armor and a latched bipod are umbrella overrides. Neither inherits a
-    // family/hand multiplier; bipod is always 10% of the native kick.
+    // A latched bipod is always 10% of the native kick. Armor retains its
+    // fixed profile for non-lasers; lasers use their own strength in armor.
     [[nodiscard]] inline constexpr ProfileGains effectiveGains(
         const Family family, const Profile profile, const float percent) noexcept
     {
-        if (profile == Profile::PowerArmor || profile == Profile::Bipod) {
+        if (profile == Profile::Bipod ||
+            (profile == Profile::PowerArmor && family != Family::Laser)) {
             return gainsFor(profile);
         }
-        // Lasers share the armor attenuation for every hold, without stacking
+        // Lasers share the bipod attenuation for every hold, without stacking
         // the close-support or pistol/rifle/heavy multipliers on top of it.
-        const auto base = family == Family::Laser ? kPowerArmor : gainsFor(profile);
+        const auto base = family == Family::Laser ? kBipod : gainsFor(profile);
         const float multiplier = percent * 0.01f;
         return { base.translation * multiplier, base.rotation * multiplier };
     }

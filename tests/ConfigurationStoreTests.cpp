@@ -203,7 +203,7 @@ int main(int argc, char** argv)
         require(store.load(true), "first-run load failed");
         require(find(store, "fLaserRecoilPercent").type == ValueType::Float &&
             rock::RockConfig::parseValues(missingOptions).rockLaserRecoilPercent == 100.0f,
-            "laser recoil must default to the power-armor profile strength");
+            "laser recoil must default to the bipod profile strength");
         for (const auto* percent : { "0", "50", "100", "300" }) {
             require(store.setValue(Group::Consumer, "ImmersiveWeapons", "fLaserRecoilPercent", percent),
                 "laser recoil strength write failed");

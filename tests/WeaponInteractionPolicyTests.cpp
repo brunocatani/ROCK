@@ -249,26 +249,25 @@ static bool testRecoilProfiles()
         ok &= expectTrue("zero percent suppresses both kick components", off.translation == 0.0f && off.rotation == 0.0f);
         ok &= expectTrue("100 percent preserves the hold profile", normal.translation == base.translation && normal.rotation == base.rotation);
         ok &= expectTrue("200 percent doubles both hold gains", doubleKick.translation == base.translation * 2.0f && doubleKick.rotation == base.rotation * 2.0f);
+    }
+    for (const auto profile : { Profile::OneHand, Profile::FullTwoHand, Profile::CloseSupport, Profile::PowerArmor }) {
         const auto laser = effectiveGains(Family::Laser, profile, 100.0f);
         const auto laserOff = effectiveGains(Family::Laser, profile, 0.0f);
         const auto laserDouble = effectiveGains(Family::Laser, profile, 200.0f);
-        ok &= expectTrue("laser default matches armor independently of hold",
-            laser.translation == kPowerArmor.translation && laser.rotation == kPowerArmor.rotation);
+        ok &= expectTrue("laser default matches bipod independently of hold and armor",
+            laser.translation == kBipod.translation && laser.rotation == kBipod.rotation);
         ok &= expectTrue("laser strength can suppress both recoil components",
             laserOff.translation == 0.0f && laserOff.rotation == 0.0f);
-        ok &= expectTrue("laser strength scales the armor profile once",
-            laserDouble.translation == 2.0f * kPowerArmor.translation && laserDouble.rotation == 2.0f * kPowerArmor.rotation);
+        ok &= expectTrue("laser strength scales the bipod profile once",
+            laserDouble.translation == 2.0f * kBipod.translation && laserDouble.rotation == 2.0f * kBipod.rotation);
     }
     for (const float percent : { 0.0f, 100.0f, 200.0f }) {
         const auto armorGains = effectiveGains(Family::Default, Profile::PowerArmor, percent);
         ok &= expectTrue("armor umbrella ignores weapon percentages",
             armorGains.translation == kPowerArmor.translation && armorGains.rotation == kPowerArmor.rotation);
-        for (const auto profile : { Profile::PowerArmor, Profile::Bipod }) {
-            const auto laser = effectiveGains(Family::Laser, profile, percent);
-            const auto base = gainsFor(profile);
-            ok &= expectTrue("armor and bipod override laser strength without stacking reductions",
-                laser.translation == base.translation && laser.rotation == base.rotation);
-        }
+        const auto laser = effectiveGains(Family::Laser, Profile::Bipod, percent);
+        ok &= expectTrue("latched bipod overrides laser strength without stacking reductions",
+            laser.translation == kBipod.translation && laser.rotation == kBipod.rotation);
     }
     ok &= expectTrue("one-hand percentage is a direct override, not stacked on family tuning",
         selectHoldPercent(true, 300.0f, 200.0f) == 300.0f);
@@ -317,12 +316,6 @@ static bool testRecoilProfiles()
     expected.translate = { 4.5f, -1.8f, 0.9f };
     expected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 18.0f);
     ok &= expectTransformNear("armor starts with the requested attenuation", armor, expected);
-    for (const auto profile : { Profile::OneHand, Profile::FullTwoHand, Profile::CloseSupport, Profile::PowerArmor }) {
-        TestTransform laser{};
-        ok &= expectTrue("laser default builds a valid controlled kick",
-            tryBuildControlledKick(shot, effectiveGains(Family::Laser, profile, 100.0f), laser));
-        ok &= expectTransformNear("laser kick matches power armor", laser, armor);
-    }
     TestTransform bipod{};
     ok &= expectTrue("bipod builds a rigid reduced kick",
         tryBuildControlledKick(shot, effectiveGains(Family::Default, Profile::Bipod, 300.0f), bipod));
@@ -330,6 +323,12 @@ static bool testRecoilProfiles()
     bipodExpected.translate = { 1.0f, -0.4f, 0.2f };
     bipodExpected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 6.0f);
     ok &= expectTransformNear("bipod applies ten percent of native translation and angle", bipod, bipodExpected);
+    for (const auto profile : { Profile::OneHand, Profile::FullTwoHand, Profile::CloseSupport, Profile::PowerArmor, Profile::Bipod }) {
+        TestTransform laser{};
+        ok &= expectTrue("laser default builds a valid controlled kick",
+            tryBuildControlledKick(shot, effectiveGains(Family::Laser, profile, 100.0f), laser));
+        ok &= expectTransformNear("laser kick matches bipod in every hold and armor state", laser, bipod);
+    }
     auto independentlyTunedSupport = kCloseSupport;
     independentlyTunedSupport.translation = 0.2f;
     independentlyTunedSupport.rotation = 0.1f;
