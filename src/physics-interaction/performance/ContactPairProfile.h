@@ -11,7 +11,7 @@ namespace rock::performance_profiler
     enum class ContactStage : std::uint8_t
     {
         SimulationInput, SimulationNative, SimulationKept, Manifold, Impulse,
-        PlayerMeleeDropped, OtherMeleeDropped, PlayerMeleeForwarded, OtherMeleeForwarded, Count
+        PlayerMeleeDropped, OtherMeleeDropped, PlayerMeleeForwarded, OtherMeleeForwarded, NativeWeaponSelfRejected, Count
     };
 
     inline constexpr std::uint32_t kUnknownContactDetail = 0xFFFF'FFFFu;

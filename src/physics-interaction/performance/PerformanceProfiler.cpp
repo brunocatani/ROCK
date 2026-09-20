@@ -304,6 +304,9 @@ namespace rock::performance_profiler
             case Counter::GrabAcquisitionPeerHeld: return "grabAcquisitionPeerHeld";
             case Counter::GrabAcquisitionEquippedTransfer: return "grabAcquisitionEquippedTransfer";
             case Counter::GrabAcquisitionSucceeded: return "grabAcquisitionSucceeded";
+            case Counter::NativeWeaponSelfPairsRejected: return "nativeWeaponSelfPairsRejected";
+            case Counter::NativeWeaponOwnerUnresolved: return "nativeWeaponOwnerUnresolved";
+            case Counter::NativeWeaponOwnerResolvedOther: return "nativeWeaponOwnerResolvedOther";
             case Counter::ContactPairBatchTruncated: return "contactPairBatchTruncated";
             case Counter::Count:
                 break;
@@ -730,7 +733,7 @@ namespace rock::performance_profiler
                             snapshot.droppedSnapshotsBeforeThis);
                     }
 
-                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1 grabMeshQueries=1 contactPairs=1", snapshot.frames, GetCurrentProcessId());
+                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1 grabMeshQueries=1 contactPairs=1 nativeWeaponSelfFilter=1", snapshot.frames, GetCurrentProcessId());
                     for (const auto& item : snapshot.scopes) {
                         if (!item.hasData()) {
                             continue;
@@ -783,10 +786,10 @@ namespace rock::performance_profiler
                             const auto& row = table.entries[i];
                             const auto& p = row.pair;
                             const auto& c = row.counts;
-                            logger->info("[ROCK::Performance] Profiler contact{}: world=0x{:X} bodies={}/{} layers={}/{} shapeKeys=0x{:08X}/0x{:08X} frames={}-{} layerChanged={} simulationInput={} simulationNative={} simulationKept={} manifolds={} impulses={} playerMeleeDropped={} otherMeleeDropped={} playerMeleeForwarded={} otherMeleeForwarded={}",
+                            logger->info("[ROCK::Performance] Profiler contact{}: world=0x{:X} bodies={}/{} layers={}/{} shapeKeys=0x{:08X}/0x{:08X} frames={}-{} layerChanged={} simulationInput={} simulationNative={} simulationKept={} manifolds={} impulses={} playerMeleeDropped={} otherMeleeDropped={} playerMeleeForwarded={} otherMeleeForwarded={} nativeWeaponSelfRejected={}",
                                 kind, p.world, p.bodyA, p.bodyB, p.layerA, p.layerB, p.shapeA, p.shapeB,
                                 row.firstFrame, row.lastFrame, row.layerChanged,
-                                c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8]);
+                                c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9]);
                         }
                     };
                     writePairs(snapshot.pairs, "Pair");

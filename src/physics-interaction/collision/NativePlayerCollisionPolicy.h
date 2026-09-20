@@ -61,6 +61,22 @@ namespace rock::native_player_collision
                        (playerB && layerA == collision_layer_policy::FO4_LAYER_WEAPON)));
     }
 
+    inline constexpr bool isNativeWeaponSelfContactCandidate(std::uint32_t layerA, std::uint32_t layerB)
+    {
+        using namespace collision_layer_policy;
+        return (layerA == FO4_LAYER_WEAPON && isRockGeneratedColliderLayer(layerB)) ||
+               (layerB == FO4_LAYER_WEAPON && isRockGeneratedColliderLayer(layerA));
+    }
+
+    // Native equipped-weapon contacts against generated player geometry duplicate
+    // ROCK's physical response. Positive player ownership is required; NPC attacks,
+    // dropped weapons, world/NPC targets and unknown owners retain native admission.
+    inline constexpr bool suppressNativeWeaponSelfContact(std::uint32_t layerA, std::uint32_t layerB,
+        bool weaponOwnedByPlayer)
+    {
+        return weaponOwnedByPlayer && isNativeWeaponSelfContactCandidate(layerA, layerB);
+    }
+
     struct BodyPair
     {
         std::uint32_t bodyA;

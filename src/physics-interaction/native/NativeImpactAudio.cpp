@@ -103,8 +103,8 @@ namespace rock::native_impact_audio
                 !havok_runtime::tryReadFilterInfo(world, { context.bodies[1] }, filterB)) return false;
             context.layers[0] = filterA & collision_layer_policy::FO4_LAYER_FILTER_MASK;
             context.layers[1] = filterB & collision_layer_policy::FO4_LAYER_FILTER_MASK;
-            context.generated = impact_audio_policy::isGeneratedColliderLayer(context.layers[0]) ||
-                impact_audio_policy::isGeneratedColliderLayer(context.layers[1]);
+            context.generated = collision_layer_policy::isRockGeneratedColliderLayer(context.layers[0]) ||
+                collision_layer_policy::isRockGeneratedColliderLayer(context.layers[1]);
             return true;
         }
 

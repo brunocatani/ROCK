@@ -114,6 +114,15 @@ namespace rock::collision_layer_policy
     inline constexpr std::uint32_t FO4_LAYER_LAST_CONFIGURED = FO4_LAYER_LAST_VANILLA_CONFIGURED;
     inline constexpr std::uint32_t FO4_LAYER_MAX_CONFIGURED = FO4_LAYER_LAST_CONFIGURED;
 
+    // Generated player tools/proxies only: the tagged car rows are real world
+    // objects and must remain eligible for native weapon hits and sound.
+    inline constexpr bool isRockGeneratedColliderLayer(std::uint32_t layer)
+    {
+        return layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON ||
+               layer == ROCK_LAYER_BODY || layer == ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY ||
+               layer == ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY || layer == ROCK_LAYER_DYNAMIC_WEAPON_PROXY;
+    }
+
     inline constexpr bool isRockOwnedReusableLayer(std::uint32_t layer)
     {
         return layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON || layer == ROCK_LAYER_BODY;

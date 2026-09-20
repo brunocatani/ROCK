@@ -11,6 +11,7 @@
 
 #include <REL/Relocation.h>
 #include <RE/Bethesda/TESObjectREFRs.h>
+#include <RE/Bethesda/PlayerCharacter.h>
 #include <Windows.h>
 
 #include <algorithm>
@@ -59,6 +60,71 @@ namespace rock::native_player_collision
             return found != end && found->bodyId == id ? &*found : nullptr;
         }
 
+        enum class WeaponOwner : std::uint8_t { Unknown, Player, Other };
+
+        WeaponOwner resolveWeaponOwner(const havok_runtime::BodySnapshot& body) noexcept
+        {
+            if (!body.valid || !body.ownerNode || !body.collisionObject) return WeaponOwner::Unknown;
+            // Same callback-local native ownership resolver as isLooseWeaponBody.
+            // 1403F0925..31 resolves an attached WEAP through its parent;
+            // 14062669D..AB independently resolves a collision owner through it.
+            __try {
+                auto* player = RE::PlayerCharacter::GetSingleton();
+                if (!player) return WeaponOwner::Unknown;
+                auto* owner = RE::TESObjectREFR::FindReferenceFor3D(body.ownerNode);
+                if (!owner) return WeaponOwner::Unknown;
+                return owner == player ? WeaponOwner::Player : WeaponOwner::Other;
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                return WeaponOwner::Unknown;
+            }
+        }
+
+        struct WeaponOwnerBatch
+        {
+            struct Entry { BodyIdentity body{}; WeaponOwner owner = WeaponOwner::Unknown; };
+            std::array<Entry, 16> entries{};
+            std::size_t count = 0;
+
+            WeaponOwner resolve(const havok_runtime::BodySnapshot& body) noexcept
+            {
+                const auto live = identity(body);
+                for (std::size_t i = 0; i < count; ++i) {
+                    if (matchesLiveBody(entries[i].body, live)) return entries[i].owner;
+                }
+                const auto owner = resolveWeaponOwner(body);
+                // Values live for this filter invocation only. Capacity limits
+                // memoization, never admission; overflow resolves normally.
+                if (count < entries.size()) entries[count++] = { live, owner };
+                if (owner == WeaponOwner::Unknown) performance_profiler::addCounter(
+                    performance_profiler::Counter::NativeWeaponOwnerUnresolved);
+                else if (owner == WeaponOwner::Other) performance_profiler::addCounter(
+                    performance_profiler::Counter::NativeWeaponOwnerResolvedOther);
+                return owner;
+            }
+        };
+
+        bool rejectNativeWeaponSelfPair(RE::hknpWorld* world, const BodyPair& pair, WeaponOwnerBatch& owners)
+        {
+            using namespace collision_layer_policy;
+            std::uint32_t filterA = 0, filterB = 0;
+            if (!havok_runtime::tryReadFilterInfo(world, {pair.bodyA}, filterA) ||
+                !havok_runtime::tryReadFilterInfo(world, {pair.bodyB}, filterB)) return false;
+            const auto layerA = filterA & FO4_LAYER_FILTER_MASK;
+            const auto layerB = filterB & FO4_LAYER_FILTER_MASK;
+            if (!isNativeWeaponSelfContactCandidate(layerA, layerB)) return false;
+            const auto weaponId = layerA == FO4_LAYER_WEAPON ? pair.bodyA : pair.bodyB;
+            const auto weapon = havok_runtime::snapshotBody(world, {weaponId});
+            if (!weapon.valid || (weapon.collisionFilterInfo & FO4_LAYER_FILTER_MASK) != FO4_LAYER_WEAPON ||
+                !suppressNativeWeaponSelfContact(layerA, layerB, owners.resolve(weapon) == WeaponOwner::Player)) return false;
+
+            performance_profiler::addCounter(performance_profiler::Counter::NativeWeaponSelfPairsRejected);
+            performance_profiler::observeContactPair({
+                .world = reinterpret_cast<std::uintptr_t>(world), .bodyA = pair.bodyA, .bodyB = pair.bodyB,
+                .layerA = layerA, .layerB = layerB,
+            }, performance_profiler::ContactStage::NativeWeaponSelfRejected);
+            return true;
+        }
+
         void profilePairs(RE::hknpWorld* world, const BodyPair* pairs, int count,
             performance_profiler::ContactStage stage, performance_profiler::ValueMetric metric) noexcept
         {
@@ -102,13 +168,17 @@ namespace rock::native_player_collision
                 return admitted;
             }
 
+            WeaponOwnerBatch weaponOwners;
             std::uint64_t preserved = 0;
             std::uint64_t stale = 0;
             const int kept = filterPhysicalPairs(pairs, admitted, [&](const BodyPair& pair) {
                 const auto* expectedA = findPlayerBody(s_snapshot, pair.bodyA);
                 const auto* expectedB = findPlayerBody(s_snapshot, pair.bodyB);
                 if (!expectedA && !expectedB) {
-                    return false;
+                    // Reject only positively owned duplicates in the native
+                    // admitted prefix, before child contacts/solver work. Keep
+                    // the late VRMeleeImpact guard for event-only bypass paths.
+                    return rejectNativeWeaponSelfPair(world, pair, weaponOwners);
                 }
                 const auto a = havok_runtime::snapshotBody(world, RE::hknpBodyId{ pair.bodyA });
                 const auto b = havok_runtime::snapshotBody(world, RE::hknpBodyId{ pair.bodyB });

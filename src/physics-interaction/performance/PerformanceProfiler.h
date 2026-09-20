@@ -158,6 +158,9 @@ namespace rock::performance_profiler
         GrabAcquisitionEquippedTransfer,
         GrabAcquisitionSucceeded,
         ContactPairBatchTruncated,
+        NativeWeaponSelfPairsRejected,
+        NativeWeaponOwnerUnresolved,
+        NativeWeaponOwnerResolvedOther,
         Count
     };
 

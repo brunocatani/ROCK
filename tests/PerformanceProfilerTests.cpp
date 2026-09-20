@@ -48,7 +48,9 @@ namespace
         requireScope("nativeImpactDispatch", 30);
         requireScope("nativeImpactConsumer", 30);
         requireScope("nativeImpactPlayPair", 30);
-        assert(text.find("contactPairs=1") != std::string::npos);
+        assert(text.find("contactPairs=1 nativeWeaponSelfFilter=1") != std::string::npos);
+        assert(text.find("otherMeleeForwarded=0 nativeWeaponSelfRejected=30") != std::string::npos);
+        assert(text.find("Profiler counter nativeWeaponSelfPairsRejected: count=30") != std::string::npos);
         assert(text.find("bodies=42/700 layers=5/51 shapeKeys=0xFFFFFFFF/0xFFFFFFFF frames=1-30 layerChanged=false simulationInput=30 simulationNative=0 simulationKept=0 manifolds=30 impulses=0 playerMeleeDropped=30") != std::string::npos);
         assert(text.find("bodies=42/700 layers=5/51 shapeKeys=0xFFFFFFFF/0x12000000 frames=1-30 layerChanged=false simulationInput=0 simulationNative=0 simulationKept=0 manifolds=30") != std::string::npos);
         assert(text.find("bodies=888/999") == std::string::npos);
@@ -142,6 +144,8 @@ int main()
     for (int frame = 0; frame < 30; ++frame) {
         beginFrame();
         observeContactPair({.world=123, .bodyA=42, .bodyB=700}, ContactStage::SimulationInput);
+        observeContactPair({.world=123, .bodyA=42, .bodyB=700, .layerA=5, .layerB=51}, ContactStage::NativeWeaponSelfRejected);
+        addCounter(Counter::NativeWeaponSelfPairsRejected);
         observeContactPair({.world=123, .bodyA=700, .bodyB=42, .shapeA=0x12000000, .layerA=51, .layerB=5}, ContactStage::Manifold);
         observeContactPair({.world=123, .bodyA=700, .bodyB=42, .layerA=51, .layerB=5}, ContactStage::PlayerMeleeDropped);
         {

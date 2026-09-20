@@ -1,6 +1,7 @@
 #include "physics-interaction/collision/NativePlayerCollisionPolicy.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 
+#include <algorithm>
 #include <array>
 
 #include <cstdio>
@@ -206,6 +207,49 @@ int main()
     }
     ok &= expect("player's own native bodies do not collide with one another",
         suppressPhysicalPair(true, true, FO4_LAYER_BIPED, FO4_LAYER_BIPED));
+
+    // Only the player's native weapon representation is redundant with these
+    // generated colliders. The same layer-5 body can also be an NPC attack or
+    // loose weapon, so layer numbers alone cannot authorize suppression.
+    constexpr std::array generatedPlayerLayers{ ROCK_LAYER_HAND, ROCK_LAYER_WEAPON, ROCK_LAYER_BODY,
+        ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, ROCK_LAYER_DYNAMIC_WEAPON_PROXY };
+    for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
+        const bool generated = std::find(generatedPlayerLayers.begin(), generatedPlayerLayers.end(), layer) != generatedPlayerLayers.end();
+        ok &= expect("owned native weapon removes only generated self contacts",
+            suppressNativeWeaponSelfContact(FO4_LAYER_WEAPON, layer, true) == generated);
+        ok &= expect("native weapon self filtering is symmetric",
+            suppressNativeWeaponSelfContact(layer, FO4_LAYER_WEAPON, true) == generated);
+        ok &= expect("NPC, dropped and unresolved native weapon owners are preserved",
+            !suppressNativeWeaponSelfContact(FO4_LAYER_WEAPON, layer, false) &&
+            !suppressNativeWeaponSelfContact(layer, FO4_LAYER_WEAPON, false));
+        ok &= expect("generated collider classification excludes tagged world cars",
+            isRockGeneratedColliderLayer(layer) == generated);
+        ok &= expect("ownership evidence cannot suppress a non-weapon pair",
+            !suppressNativeWeaponSelfContact(FO4_LAYER_BIPED, layer, true));
+    }
+    std::array<BodyPair, 10> meleePairs{{ {100, 700}, {701, 100}, {101, 700}, {100, 702},
+        {100, 703}, {100, 704}, {102, 701}, {100, 705}, {700, 701}, {999, 999} }};
+    const auto meleeLayer = [](std::uint32_t id) {
+        switch (id) {
+        case 700: return ROCK_LAYER_DYNAMIC_WEAPON_PROXY;
+        case 701: return ROCK_LAYER_HAND;
+        case 702: return FO4_LAYER_BIPED_NO_CC;
+        case 703: return FO4_LAYER_STATIC;
+        case 704: return ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER;
+        default: return FO4_LAYER_WEAPON;
+        }
+    };
+    const int meleeKept = filterPhysicalPairs(meleePairs.data(), 9, [&](const BodyPair& pair) {
+        return suppressNativeWeaponSelfContact(meleeLayer(pair.bodyA), meleeLayer(pair.bodyB),
+            pair.bodyA == 100 || pair.bodyB == 100);
+    });
+    constexpr std::array<BodyPair, 7> expectedMelee{{ {101, 700}, {100, 702}, {100, 703}, {100, 704},
+        {102, 701}, {100, 705}, {700, 701} }};
+    ok &= expect("self filtering preserves NPC damage, world impacts, cars, loose weapons and ROCK blocking", meleeKept == expectedMelee.size());
+    for (std::size_t i = 0; i < expectedMelee.size(); ++i) {
+        ok &= expect("remaining melee pairs preserve order", meleePairs[i].bodyA == expectedMelee[i].bodyA && meleePairs[i].bodyB == expectedMelee[i].bodyB);
+    }
+    ok &= expect("self filtering leaves unadmitted native tail untouched", meleePairs[9].bodyA == 999 && meleePairs[9].bodyB == 999);
 
     // Registration may alter ROCK rows, never the native actor/attack/scenery
     // matrix that also governs NPCs. Check every native-to-native pair.
