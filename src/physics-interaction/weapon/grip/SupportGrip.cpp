@@ -1342,13 +1342,9 @@ namespace rock
                    supportGrip.authoredSupportGrip &&
                    !supportGrip.providerPartAuthority.active &&
                    !supportGrip.attachOnly) {
-            /*
-             * Authored support keeps its established independent hand-seat
-             * interpolation. Publish one exact alpha-zero weapon frame now so
-             * its position and axis-aim corrections begin from the firing-hand
-             * carry instead of appearing one frame later as an authority
-             * refresh.
-             */
+            // Retain the pose already published by carry or its return. A
+            // re-grab may interrupt either return before it reaches aim.
+            armWeaponPoseHandoffBlend("authored-support-acquired");
             updateFullWeaponAuthorityGrip(weaponNode, 0.0f);
         }
     }
@@ -1869,21 +1865,11 @@ namespace rock
                 calibratedSupportTransform,
                 supportHandIsLeft);
 
-        const RE::NiPoint3 currentSupportWorld = resolvePartGripWorld(supportGrip, weaponNode);
-        const RE::NiPoint3 currentPrimaryGripWorld = transform_math::localPointToWorld(weaponNode->world, _firing.primaryGripLocal);
-        const float currentGripSeparationWorld = std::sqrt(dot(sub(currentSupportWorld, currentPrimaryGripWorld), sub(currentSupportWorld, currentPrimaryGripWorld)));
-        const float lockedGripSeparationWorld = supportGrip.hasSourceFrames ? currentGripSeparationWorld : _support.lockedGripSeparationWorld;
         const RE::NiPoint3 supportGripLocal = resolvePartGripWeaponLocal(supportGrip, weaponNode);
-        const RE::NiPoint3 lockedSupportControllerTarget = makeLockedSupportGripTarget(
-            primaryController,
-            supportController,
-            currentSupportWorld,
-            lockedGripSeparationWorld,
-            0.001f);
-
         WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3> solverInput{};
         solverInput.weaponWorldTransform = weaponNode->world;
-        if (supportGrip.authoredSupportGrip || supportGrip.transferredLooseGrip) {
+        const bool controllerAimRequired = supportGrip.authoredSupportGrip || supportGrip.transferredLooseGrip;
+        if (controllerAimRequired) {
             const auto* nodes = f4vr::getPlayerNodes();
             const auto* wand = nodes ? (primaryHandIsLeft ? nodes->SecondaryWandNode : nodes->primaryWandNode) : nullptr;
             // The axis-only authored solve preserves the input frame's roll.
@@ -1897,6 +1883,23 @@ namespace rock
                 return;
             }
         }
+        // Both ends of acquisition must use this solver's frame. FRIK's
+        // AfterArmSolve Weapon pose is intermediate; using its support seat
+        // here leaks graph/previous-grip rotation into the blend at alpha 0.
+        const RE::NiPoint3 currentSupportWorld = controllerAimRequired ?
+            makePrimaryAnchoredSupportGripTarget(solverInput.weaponWorldTransform,
+                _firing.primaryGripLocal, supportGripLocal, primaryController) :
+            resolvePartGripWorld(supportGrip, weaponNode);
+        const RE::NiPoint3 currentPrimaryGripWorld = controllerAimRequired ? primaryController :
+            transform_math::localPointToWorld(weaponNode->world, _firing.primaryGripLocal);
+        const float currentGripSeparationWorld = weaponSolverLength(sub(currentSupportWorld, currentPrimaryGripWorld));
+        const float lockedGripSeparationWorld = supportGrip.hasSourceFrames ? currentGripSeparationWorld : _support.lockedGripSeparationWorld;
+        const RE::NiPoint3 lockedSupportControllerTarget = makeLockedSupportGripTarget(
+            primaryController,
+            supportController,
+            currentSupportWorld,
+            lockedGripSeparationWorld,
+            0.001f);
         solverInput.primaryGripLocal = _firing.primaryGripLocal;
         solverInput.supportGripLocal = supportGripLocal;
         solverInput.primaryTargetWorld = primaryController;

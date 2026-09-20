@@ -357,7 +357,12 @@ namespace rock
             RE::NiTransform nativeWeaponLocalBaseline = weaponNode->local;
             if (_visuals.returningWeapon.localTransition.active && _visuals.returningWeapon.weaponNode == weaponNode) {
                 nativeWeaponLocalBaseline = _visuals.returningWeapon.nativeBaselineLocal;
-                clearWeaponVisualReturn("new-primary-acquisition", true, true);
+                // Right-primary acquisition changes input ownership only.
+                // Its in-flight return already lands on the authored carry;
+                // cancelling it exposes the intermediate node for one frame.
+                if (!usesNativeRightCarry()) {
+                    clearWeaponVisualReturn("new-primary-acquisition", true, true);
+                }
             }
             _session.weaponNode = weaponNode;
             _session.weaponGenerationKey = currentWeaponGenerationKey;

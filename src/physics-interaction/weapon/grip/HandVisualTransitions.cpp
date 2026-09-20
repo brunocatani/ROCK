@@ -347,6 +347,10 @@ namespace rock
         if (!state.localTransition.active) {
             return;
         }
+        // Native intent was sampled before this return publishes. It cannot
+        // become a one-hand recoil base on the frame the return completes;
+        // authored carry supplies a fresh base on the following frame.
+        _recoil.rightBaseValid = false;
         // After a left carry FRIK restores the game's parent hand in its next
         // skeleton pass; until then the node legitimately hangs under the
         // parent the carry left it with. Any other parent ends the return.
@@ -630,23 +634,15 @@ namespace rock
             return false;
         }
 
-        /*
-         * The native reference must be the LIVE weapon local: hFRIK
-         * republishes the native Weapon transform earlier in this same frame,
-         * before ROCK writes, and the resumed session realigns from that live
-         * pose. The grab-time _weaponNodeLocalBaseline is stale here - it
-         * carries the session's own palm shift and, for grabs committed around
-         * ScopeMenu, the scope-driven local - so a return targeted at it lands
-         * away from the session pose and the weapon snaps on completion.
-         */
+        // Use the same controller aim as AuthoredPrimaryFiringGripRuntime.
+        // At AfterArmSolve the node can contain graph output or our previous
+        // return, carried through FRIK's arm update. Neither is the endpoint
+        // that authored carry will publish when this transition completes.
         if (weaponNode->parent != nativeParent) {
             return false;
         }
-        const RE::NiTransform nativeWeaponWorld =
-            transform_math::composeTransforms(
-                nativeParent->world,
-                weaponNode->local);
-        if (!isFiniteTransform(nativeWeaponWorld)) {
+        RE::NiTransform nativeWeaponWorld{};
+        if (!tryGetRightWeaponAimWorld(weaponNode->world.scale, nativeWeaponWorld)) {
             return false;
         }
         const RE::NiPoint3 trackedPalmWorld =

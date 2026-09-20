@@ -948,6 +948,20 @@ namespace rock
         return weaponSolverSub(vector, weaponSolverScale(planeNormal, normalDot));
     }
 
+    // The zero-correction support seat shares the solver's aim and primary
+    // pivot. A scene-node sample from another frame phase is not this seat.
+    template <class Transform, class Vector>
+    inline Vector makePrimaryAnchoredSupportGripTarget(
+        const Transform& weaponAimWorld,
+        const Vector& primaryGripLocal,
+        const Vector& supportGripLocal,
+        const Vector& primaryTargetWorld)
+    {
+        return weaponSolverAdd(primaryTargetWorld,
+            transform_math::localVectorToWorld(weaponAimWorld,
+                weaponSolverSub(supportGripLocal, primaryGripLocal)));
+    }
+
     template <class Vector>
     inline Vector makeLockedSupportGripTarget(
         const Vector& primaryTargetWorld,
