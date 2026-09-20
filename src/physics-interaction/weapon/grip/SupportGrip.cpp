@@ -15,6 +15,69 @@
 
 namespace rock
 {
+    void TwoHandedGrip::adoptTransferredSupportGrip(bool isLeft, RE::NiNode* weaponNode,
+        std::uint64_t generation, const weapon_grip_transfer::HandGrip& captured)
+    {
+        auto& support = partGrip(isLeft);
+        support = {};
+        support.active = true;
+        support.transferredLooseGrip = true;
+        support.attachmentRoot = weaponNode;
+        support.weaponGenerationKey = generation;
+        support.gripSequence = ++_session.gripCaptureSequence;
+        support.gripLocal = captured.gripWeaponLocal;
+        support.handWeaponLocal = captured.handWeaponLocal;
+        support.hasHandWeaponLocal = true;
+        support.authoredRole = captured.authoredRole;
+        support.authoredSupportGrip = captured.authoredRole != loose_weapon_authored_grab_policy::Role::None;
+        support.disableAuthoredSupportNormalTwist = true;
+        support.normalLocal = computePalmNormalFromHandBasis(captured.handWeaponLocal, isLeft);
+        support.fingerPose = captured.fingerValues;
+        support.hasFingerPose = true;
+        support.fingerLocalTransforms = captured.fingerLocals;
+        support.fingerLocalTransformMask = captured.fingerMask;
+        support.hasFingerLocalTransforms = captured.fingerMask != 0;
+    }
+
+    bool TwoHandedGrip::beginTransferredSupportGrip(RE::NiNode* weaponNode, std::uint64_t generation,
+        std::uint64_t ownership, const weapon_grip_transfer::Support& captured, const char** failure)
+    {
+        if (failure) *failure = nullptr;
+        const auto reject = [&](const char* reason) { if (failure) *failure = reason; return false; };
+        if (!weaponNode || !generation || !ownership || !captured.valid()) return reject("support-transfer-invalid");
+        if (isManualOwnershipActive()) return reject("grip-session-already-active");
+        RE::NiPoint3 targetTranslation{};
+        if (!vanilla_weapon_grip_frame::resolveModelTranslation(captured.weaponFormID, weaponNode, targetTranslation))
+            return reject("support-model-registration-unavailable");
+        auto grip = captured.grip;
+        const auto displacement = targetTranslation - captured.sourceModelTranslation;
+        grip.handWeaponLocal.translate += displacement;
+        grip.gripWeaponLocal += displacement;
+        if (!grip.valid()) return reject("support-target-frame-invalid");
+        if (_session.state != TwoHandedState::Inactive) transitionToInactive(false);
+        if (!blockFrikPrimaryWeaponPose()) return reject("support-pose-blocker-unavailable");
+
+        // Only the support station crosses the inventory boundary. Starting a
+        // primary-only session here would invent a firing grip on the free hand.
+        setFiringHand(!captured.isLeft, "support-equip-transfer");
+        _session.weaponNode = weaponNode;
+        _session.weaponGenerationKey = generation;
+        _session.equippedWeaponOwnershipKey = ownership;
+        _weaponNodeLocalBaseline = weaponNode->local;
+        _hasWeaponNodeLocalBaseline = true;
+        adoptTransferredSupportGrip(captured.isLeft, weaponNode, generation, grip);
+        partGrip(captured.isLeft).acquisitionSource = WeaponInteractionAcquisitionSource::AuthoredSeat;
+        _partCarry.pivotIsLeft = captured.isLeft;
+        _partCarry.detachAuthority = _handlingSettings.detachAuthority;
+        _partCarry.gripSeparationWorld = 0.0f;
+        _support.rotationBlend = 1.0f;
+        _session.state = TwoHandedState::PartCarry;
+        clearAllVisualReturns("support-equip-transfer", false, true);
+        ROCK_LOG_INFO(Weapon, "Authored support equipped grip adopted form={:08X} hand={} firingGrip=vacant",
+            captured.weaponFormID, captured.isLeft ? "left" : "right");
+        return true;
+    }
+
     bool TwoHandedGrip::beginTransferredTwoHandGrip(RE::NiNode* weaponNode, std::uint64_t generation,
         std::uint64_t ownership, const weapon_grip_transfer::Pair& captured, const char** failure)
     {
@@ -43,25 +106,8 @@ namespace rock
         _firing.primaryGripConfidence = 1.0f;
         _firing.transferredPrimaryGrip = grips.primary;
         const bool supportIsLeft = !grips.firingHandIsLeft;
+        adoptTransferredSupportGrip(supportIsLeft, weaponNode, generation, grips.support);
         auto& support = partGrip(supportIsLeft);
-        support = {};
-        support.active = true;
-        support.transferredLooseGrip = true;
-        support.attachmentRoot = weaponNode;
-        support.weaponGenerationKey = generation;
-        support.gripSequence = ++_session.gripCaptureSequence;
-        support.gripLocal = grips.support.gripWeaponLocal;
-        support.handWeaponLocal = grips.support.handWeaponLocal;
-        support.hasHandWeaponLocal = true;
-        support.authoredRole = grips.support.authoredRole;
-        support.authoredSupportGrip = grips.support.authoredRole != loose_weapon_authored_grab_policy::Role::None;
-        support.disableAuthoredSupportNormalTwist = true;
-        support.normalLocal = computePalmNormalFromHandBasis(grips.support.handWeaponLocal, supportIsLeft);
-        support.fingerPose = grips.support.fingerValues;
-        support.hasFingerPose = true;
-        support.fingerLocalTransforms = grips.support.fingerLocals;
-        support.fingerLocalTransformMask = grips.support.fingerMask;
-        support.hasFingerLocalTransforms = grips.support.fingerMask != 0;
         const auto delta = grips.support.gripWeaponLocal - grips.primary.gripWeaponLocal;
         _support.lockedGripSeparationWorld = std::sqrt(dot(delta, delta)) * std::abs(weaponNode->world.scale);
         const bool firingStation = loose_weapon_authored_grab_policy::sharedFiringZone(grips.arrangement) ||

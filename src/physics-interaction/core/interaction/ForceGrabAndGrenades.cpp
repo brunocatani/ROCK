@@ -83,12 +83,13 @@ namespace rock
         // detach the weapon's 3D node.
         const bool equippedWeaponPresent = currentEquippedWeaponOccupiesHand();
         const bool equippedWeaponOccupiesHand = _equipped.pendingPrimaryOnlyGripStart.pairedGrips.valid() ||
+            (_equipped.pendingPrimaryOnlyGripStart.supportGrip.valid() ? isLeft == _equipped.pendingPrimaryOnlyGripStart.isLeft :
             force_grab_policy::equippedWeaponOccupiesHand(
             isLeft,
             equippedWeaponPresent,
             _twoHandedGrip.isPartCarryActive(),
             equippedWeaponFiringHandForGrabIsLeft(),
-            _twoHandedGrip.isHandPartGripping(isLeft));
+            _twoHandedGrip.isHandPartGripping(isLeft)));
 
         return force_grab_policy::blockerMask(force_grab_policy::HandAvailabilityInput{
             .disabled = handDisabled,

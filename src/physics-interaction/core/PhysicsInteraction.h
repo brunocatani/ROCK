@@ -599,8 +599,10 @@ namespace rock
         struct PendingEquippedWeaponPrimaryOnlyGripStart
         {
             weapon_grip_transfer::Pair pairedGrips{};
+            weapon_grip_transfer::Support supportGrip{};
             std::array<equipped_weapon_toggle_grab_policy::TransferReleaseState, 2> pairedRelease{};
             bool pending{ false };
+            // Originating carrier; a support-only transfer leaves the opposite firing station vacant.
             bool isLeft{ false };
             // Zero means "the current weapon" (menu reconciliation). Held
             // equip requests bind these fields to the accepted target and its

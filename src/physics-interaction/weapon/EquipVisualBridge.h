@@ -68,6 +68,7 @@ namespace rock
             const weapon_grip_transfer::Pair* pairedGrips = nullptr; // Copied by begin().
             // Current loose wrist/fingers, captured before releasing hand authority.
             const weapon_grip_transfer::HandGrip* singleGrip = nullptr;
+            bool supportOnly = false;
             // Weapon base form for the shared loose-grip authority resolver;
             // the captured worldModel supplies the matching stock variant.
             RE::TESObjectWEAP* weapon = nullptr;
@@ -145,6 +146,7 @@ namespace rock
         [[nodiscard]] bool isHandPoseHandoffActive() const noexcept { return _handPoseHandoffActive; }
         [[nodiscard]] bool handPoseHandoffIsLeft() const noexcept { return _isLeftHand; }
         [[nodiscard]] bool hasPairedHandPoseHandoff() const noexcept { return _capturedGrips.valid(); }
+        [[nodiscard]] bool hasSupportOnlyHandPoseHandoff() const noexcept { return _supportOnly; }
         [[nodiscard]] bool hasCapturedHandPoseHandoff() const noexcept
         {
             return _handPoseHandoffActive && _capturedGrips.primary.valid();
@@ -177,6 +179,7 @@ namespace rock
 
         // Primary may be valid on its own; Pair::valid() still means two hands.
         weapon_grip_transfer::Pair _capturedGrips{};
+        bool _supportOnly = false;
         bool _pairedSupportBlockEngaged = false;
         RE::NiPointer<RE::NiAVObject> _model;
         RE::NiPointer<RE::NiAVObject> _culledNativeInstance;

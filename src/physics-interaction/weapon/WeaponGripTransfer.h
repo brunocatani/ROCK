@@ -68,6 +68,23 @@ namespace rock::weapon_grip_transfer
         }
     };
 
+    // A lone support grip equips without acquiring the vacant firing station.
+    struct Support
+    {
+        HandGrip grip{};
+        RE::NiPoint3 sourceModelTranslation{};
+        std::uint32_t weaponFormID{ 0 };
+        bool isLeft{ false };
+
+        [[nodiscard]] bool valid() const noexcept
+        {
+            return weaponFormID != 0 && grip.valid() && grip.fingerMask == 0x7FFFu &&
+                grip.authoredRole == loose_weapon_authored_grab_policy::Role::Support &&
+                std::isfinite(sourceModelTranslation.x) && std::isfinite(sourceModelTranslation.y) &&
+                std::isfinite(sourceModelTranslation.z);
+        }
+    };
+
     // Match the loose shared-pivot owner: a firing station wins; otherwise the
     // first grab remains primary. Triggering with the support hand cannot swap it.
     [[nodiscard]] constexpr bool requesterIsPrimary(bool requesterFiring, bool peerFiring,

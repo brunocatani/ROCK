@@ -1789,6 +1789,28 @@ int main()
             if (opened.left.held != grab_modes::usesToggleForRole(mode, firingIsLeft) ||
                 opened.right.held != grab_modes::usesToggleForRole(mode, !firingIsLeft)) return 95;
         }
+        for (const bool supportIsLeft : { false, true }) {
+            grab_modes::GripOccupancy supportOnly{};
+            (supportIsLeft ? supportOnly.left : supportOnly.right).partGripActive = true;
+            grab_modes::RuntimeState state{};
+            grab_modes::adoptTransferredGrips(state, mode, 123, supportOnly);
+            const auto opened = grab_modes::prepare(state, {
+                .weaponGrabMode = mode, .inputAllowed = true, .weaponOwnershipKey = 123,
+                .occupancy = supportOnly,
+                .left = { .released = supportIsLeft }, .right = { .released = !supportIsLeft },
+            });
+            const auto& support = supportIsLeft ? opened.left : opened.right;
+            const auto& freeHand = supportIsLeft ? opened.right : opened.left;
+            if (support.held != grab_modes::usesToggleForRole(mode, false) || freeHand.held || freeHand.pressed) return 100;
+            const auto pressed = grab_modes::prepare(state, {
+                .weaponGrabMode = mode, .inputAllowed = true, .weaponOwnershipKey = 123,
+                .occupancy = supportOnly,
+                .left = { .held = supportIsLeft, .pressed = supportIsLeft },
+                .right = { .held = !supportIsLeft, .pressed = !supportIsLeft },
+            });
+            const auto& nextSupport = supportIsLeft ? pressed.left : pressed.right;
+            if (nextSupport.released != grab_modes::usesToggleForRole(mode, false)) return 101;
+        }
     }
     bool ok = true;
 

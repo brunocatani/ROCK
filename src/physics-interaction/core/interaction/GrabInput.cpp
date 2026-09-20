@@ -626,12 +626,14 @@ namespace rock
         // same item authority as force grab, sampled for each hand after any
         // earlier hand's equip/transfer instead of caching scene occupancy.
         const bool equippedWeaponPresent = currentEquippedWeaponOccupiesHand();
+        const bool supportTransferPending = _equipped.pendingPrimaryOnlyGripStart.supportGrip.valid();
         if (_equipped.pendingPrimaryOnlyGripStart.pairedGrips.valid() ||
+            (supportTransferPending ? isLeft == _equipped.pendingPrimaryOnlyGripStart.isLeft :
             !weapon_two_handed_grip_math::canProcessNormalGrabInput(
                 handIsFiringHand,
                 equippedWeaponPresent,
                 _twoHandedGrip.isHandPartGripping(isLeft),
-                _twoHandedGrip.isPartCarryActive() && !_twoHandedGrip.isHandPartGripping(isLeft))) {
+                _twoHandedGrip.isPartCarryActive() && !_twoHandedGrip.isHandPartGripping(isLeft)))) {
             grab_input_intent_policy::reset(inputIntentState);
             cancelPeerHeldJoinRetry("normal-grab-suppressed", true);
             clearGameplayCandidatesForHand(hand, isLeft);
@@ -1560,6 +1562,14 @@ namespace rock
                 }
 
                 bool equipIsLeft = isLeft;
+                const bool supportEquipRequested = triggeredByInput && !peerHoldingSameObject && hand.isHoldingAuthoredSupportGrip();
+                if (supportEquipRequested &&
+                    (!resolveEquippedWeaponDetachDecision(_equipped.handlingSettings).primaryDetachEnabled ||
+                        !frik_visual_authority::canBlockPrimaryHandWeaponPose() ||
+                        !TwoHandedGrip::canBeginPrimaryOnlyGripForHand(!isLeft))) {
+                    ROCK_LOG_SAMPLE_WARN(Hand, 1000, "Support held equip deferred: support-only carry unavailable hand={}", hand.handName());
+                    return false;
+                }
                 weapon_grip_transfer::Pair pairedGrips{};
                 if (peerHoldingSameObject) {
                     const bool requesterPrimary = weapon_grip_transfer::requesterIsPrimary(
@@ -1590,14 +1600,14 @@ namespace rock
                 const bool equipOwnershipEligible = equipped_weapon_manual_ownership_policy::shouldStartHeldWeaponEquipOwnership({
                     .modes = firingGripModes, .handIsLeft = equipIsLeft, .holdingLooseWeapon = equipHand.isHoldingLooseWeapon() });
                 PendingEquippedWeaponPrimaryOnlyGripStart pendingGripStart{};
-                pendingGripStart.pending = pairedGrips.valid() || equipOwnershipEligible;
+                pendingGripStart.pending = supportEquipRequested || pairedGrips.valid() || equipOwnershipEligible;
                 pendingGripStart.pairedGrips = pairedGrips;
                 pendingGripStart.isLeft = equipIsLeft;
                 pendingGripStart.toggleAcquisitionCommitted =
-                    pendingGripStart.pending;
+                    pendingGripStart.pending && !supportEquipRequested;
                 const bool handCarryAvailable =
                     TwoHandedGrip::canBeginPrimaryOnlyGripForHand(equipIsLeft);
-                const bool capturedLooseHold = pairedGrips.valid() || (pendingGripStart.pending &&
+                const bool capturedLooseHold = pairedGrips.valid() || (!supportEquipRequested && pendingGripStart.pending &&
                     handCarryAvailable &&
                     loose_weapon_grip_zone::tryGetFiringHandWeaponLocal(
                         equipIsLeft,
@@ -1609,7 +1619,7 @@ namespace rock
                 }
                 pendingGripStart.hasFiringHandWeaponLocal = capturedLooseHold;
                 pendingGripStart.hasFiringGripWeaponLocal = capturedLooseHold;
-                if (equipIsLeft && !capturedLooseHold) {
+                if (equipIsLeft && !supportEquipRequested && !capturedLooseHold) {
                     ROCK_LOG_SAMPLE_WARN(
                         Hand,
                         g_rockConfig.rockLogSampleMilliseconds,
@@ -1670,7 +1680,30 @@ namespace rock
                 heldRef = equipHand.getHeldRef();
                 weapon_grip_transfer::HandGrip singleGrip{};
                 RE::NiTransform looseHandWorld{};
-                if (!pairedGrips.valid() && equipHand.captureWeaponGripTransfer(singleGrip)) {
+                if (supportEquipRequested) {
+                    AuthoredWeaponGripPose authored{};
+                    auto& support = pendingGripStart.supportGrip;
+                    support.isLeft = equipIsLeft;
+                    if (!loose_weapon_grip_zone::tryResolveAuthoredGrabPose(equipIsLeft, heldRef,
+                            loose_weapon_authored_grab_policy::Role::Support, authored) ||
+                        !vanilla_weapon_grip_frame::resolveModelTranslation(authored.weaponFormId,
+                            heldRef->Get3D(), support.sourceModelTranslation)) {
+                        ROCK_LOG_SAMPLE_WARN(Hand, 1000, "Support held equip deferred: authored support pose unavailable hand={}", hand.handName());
+                        return false;
+                    }
+                    support.weaponFormID = authored.weaponFormId;
+                    singleGrip.handWeaponLocal = authored.handWeaponLocal;
+                    singleGrip.gripWeaponLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(authored.handWeaponLocal, equipIsLeft);
+                    singleGrip.fingerLocals = authored.fingerLocals;
+                    singleGrip.fingerMask = authored.fingerMask;
+                    singleGrip.authoredRole = authored.role;
+                    singleGrip.hasFingerPose = true;
+                    support.grip = singleGrip;
+                    if (!support.valid()) return false;
+                    pendingGripStart.pairedRelease[equipped_weapon_toggle_grab_policy::handIndex(equipIsLeft)].observe(
+                        _equipped.handlingSettings.weaponGrabMode, false,
+                        { .held = rawGrabInput.held, .pressed = rawGrabInput.pressed, .released = rawGrabInput.released });
+                } else if (!pairedGrips.valid() && equipHand.captureWeaponGripTransfer(singleGrip)) {
                     // Preserve the wrist actually presented by the loose grab,
                     // including a saved/altered hold, before release clears its tag.
                     if (heldRef && heldRef->Get3D() &&
@@ -1807,6 +1840,7 @@ namespace rock
                         .isLeftHand = equipIsLeft,
                         .pairedGrips = pairedGrips.valid() ? &pairedGrips : nullptr,
                         .singleGrip = singleGrip.valid() ? &singleGrip : nullptr,
+                        .supportOnly = supportEquipRequested,
                         .weapon = equipResult.weapon,
                         .hasFiringHandWeaponLocal = pendingGripStart.hasFiringHandWeaponLocal,
                         .firingHandWeaponLocal = pendingGripStart.firingHandWeaponLocal,
@@ -1850,7 +1884,7 @@ namespace rock
                     // A solo left carry reacquires its canonical seat. A paired
                     // transfer retains both visual seats; its native aim frame
                     // remains separately owned by the equipped carry solver.
-                    if (equipIsLeft && !pairedGrips.valid()) {
+                    if (equipIsLeft && !pairedGrips.valid() && !supportEquipRequested) {
                         pendingGripStart.hasFiringHandWeaponLocal = false;
                         pendingGripStart.hasFiringGripWeaponLocal = false;
                     }

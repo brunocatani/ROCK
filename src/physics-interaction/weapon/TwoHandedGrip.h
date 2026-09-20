@@ -971,6 +971,8 @@ namespace rock
         EquippedWeaponManualDropRequest consumeEquippedWeaponDropRequest();
         bool beginTransferredTwoHandGrip(RE::NiNode* weaponNode, std::uint64_t generation,
             std::uint64_t ownership, const weapon_grip_transfer::Pair& grips, const char** failure);
+        bool beginTransferredSupportGrip(RE::NiNode* weaponNode, std::uint64_t generation,
+            std::uint64_t ownership, const weapon_grip_transfer::Support& grip, const char** failure);
         void prepareEquippedWeaponDropCommit();
         void completeEquippedWeaponDrop(const EquippedWeaponManualDropRequest& request, bool committed);
 
@@ -1358,6 +1360,8 @@ namespace rock
         };
 
         WeaponPartGrip& partGrip(bool isLeft) { return _support.partGrips[isLeft ? 0u : 1u]; }
+        void adoptTransferredSupportGrip(bool isLeft, RE::NiNode* weaponNode, std::uint64_t generation,
+            const weapon_grip_transfer::HandGrip& captured);
         const WeaponPartGrip& partGrip(bool isLeft) const { return _support.partGrips[isLeft ? 0u : 1u]; }
 
         /*

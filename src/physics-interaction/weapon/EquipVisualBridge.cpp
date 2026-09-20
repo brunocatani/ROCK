@@ -188,6 +188,11 @@ namespace rock
         }
 
         auto* model = input.worldModel.get();
+        if (input.supportOnly && (!input.singleGrip || !input.singleGrip->valid() ||
+                input.singleGrip->authoredRole != loose_weapon_authored_grab_policy::Role::Support)) {
+            ROCK_LOG_WARN(Weapon, "EquipVisualBridge support begin rejected: authored support capture unavailable");
+            return false;
+        }
         if (!model || input.weaponFormID == 0) {
             ROCK_LOG_INFO(Weapon, "EquipVisualBridge begin skipped: model={} formID={:08X}",
                 model ? "yes" : "no", input.weaponFormID);
@@ -233,6 +238,7 @@ namespace rock
         RE::NiTransform resolvedHandWeaponLocal{};
         const char* targetReason = "canonicalHoldUnavailable";
         _hasFiringHandWeaponLocal =
+            !input.supportOnly &&
             loose_weapon_grip_zone::tryResolveLooseWeaponFiringHandHoldForModel(
                 input.isLeftHand,
                 input.weapon,
@@ -268,7 +274,13 @@ namespace rock
             _firingHandWeaponLocal = {};
         }
 
+        if (input.supportOnly && (!_capturedGrips.primary.valid() || !_hasPhysicalHandInWandLocal)) {
+            ROCK_LOG_WARN(Weapon, "EquipVisualBridge support begin rejected: model registration or physical hand unavailable form={:08X}", input.weaponFormID);
+            return false;
+        }
+
         _model = input.worldModel;
+        _supportOnly = input.supportOnly;
         _weaponFormID = input.weaponFormID;
         _isLeftHand = input.isLeftHand;
         _elapsedSeconds = 0.0f;
@@ -560,7 +572,14 @@ namespace rock
             RE::NiTransform desiredWorld = transform_math::composeTransforms(handNode->world, _modelInHandLocal);
             RE::NiTransform blendTarget{};
             bool haveBlendTarget = false;
-            if (!_capturedGrips.valid() && _hasFiringHandWeaponLocal) {
+            if (_supportOnly && _hasPhysicalHandInWandLocal) {
+                // A support equip seats through the authored support relation;
+                // the firing-point alignment below would move it to the handle.
+                const auto physicalHandWorld = transform_math::composeTransforms(handNode->world, _physicalHandInWandLocal);
+                blendTarget = transform_math::composeTransforms(physicalHandWorld,
+                    transform_math::invertTransform(_capturedGrips.primary.handWeaponLocal));
+                haveBlendTarget = isFiniteTransform(blendTarget);
+            } else if (!_supportOnly && !_capturedGrips.valid() && _hasFiringHandWeaponLocal) {
                 if (_hasPhysicalHandInWandLocal) {
                     const RE::NiTransform physicalHandWorld =
                         transform_math::composeTransforms(
@@ -614,7 +633,7 @@ namespace rock
                         _nativeCarrierTraceLogged = true;
                     }
                 }
-            } else if (!_capturedGrips.valid() && nativePositionOnlyCarrierAvailable) {
+            } else if (!_supportOnly && !_capturedGrips.valid() && nativePositionOnlyCarrierAvailable) {
                 blendTarget = nativeCarrierWorld;
                 haveBlendTarget = true;
             }
@@ -823,6 +842,7 @@ namespace rock
         _presentationLeaseStartedAt = {};
         _weaponFormID = 0;
         _isLeftHand = false;
+        _supportOnly = false;
         _modelPresented = false;
         _nativeCarrierTraceLogged = false;
         _nativeCarrierWasUsable = false;
