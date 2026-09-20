@@ -8263,8 +8263,8 @@ namespace rock
         }
 
         _grabStartTime = 0.0f;
-        _grabConvergeStableInsidePocketSeconds = 0.0f;
         _heldObjectUpdateFrame = 0;
+        _grabConvergeStableInsidePocketSeconds = 0.0f;
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
     }
 
@@ -11985,9 +11985,6 @@ namespace rock
 
         ROCK_LOG_INFO(Hand, "{} hand grab success -> HeldInit: bodyId={}", handName(), objectBodyId.value);
         if (sel.equippedWeaponTransfer && rootNode) {
-            const auto desiredRoot = transform_math::composeTransforms(
-                _grabFrame.authority.desiredBodyWorldAtGrab, transform_math::invertTransform(_grabFrame.rootBodyLocal));
-            vanilla_weapon_alignment_telemetry::recordTransferTrace(
             // Seed presentation from the constraint's initial physical target.
             // The same-frame held update can then carry the measured body pose
             // onto the queued hand target instead of discarding its first sample.
@@ -11996,6 +11993,9 @@ namespace rock
             (void)held_scene_presentation::publishTargetTransport(_isLeft, world, objectBodyId.value,
                 _grabFrame.traceId, initialTarget, _grabFrame.authority.bodyWorldAtGrab,
                 rootNode, _grabFrame.rootBodyLocal);
+            const auto desiredRoot = transform_math::composeTransforms(
+                _grabFrame.authority.desiredBodyWorldAtGrab, transform_math::invertTransform(_grabFrame.rootBodyLocal));
+            vanilla_weapon_alignment_telemetry::recordTransferTrace(
                 vanilla_weapon_alignment_telemetry::TransferKind::ToggleDrop, _isLeft,
                 "loose-grab-commit", rootNode, &desiredRoot);
             vanilla_weapon_alignment_telemetry::recordTransferPose(sel.refr ? sel.refr->GetFormID() : 0,
@@ -12529,9 +12529,6 @@ namespace rock
             _grabFrame.rootBodyLocal);
         update.hasPresentedBodyWorld = presentation.applied;
         update.presentedBodyWorld = presentation.presentedBodyWorld;
-
-        update.heldBodyColliding = isHeldBodyColliding();
-        const auto heldContactSnapshot = readHeldBodyContactSnapshot();
         if (traceTransferPresentation && presentation.applied && _savedObjectState.refr) {
             const auto presentedRoot = transform_math::composeTransforms(presentation.presentedBodyWorld,
                 transform_math::invertTransform(_grabFrame.rootBodyLocal));
@@ -12539,6 +12536,9 @@ namespace rock
                 vanilla_weapon_alignment_telemetry::TransferKind::ToggleDrop, _isLeft,
                 "first-held-presentation", _savedObjectState.refr->Get3D(), &presentedRoot);
         }
+
+        update.heldBodyColliding = isHeldBodyColliding();
+        const auto heldContactSnapshot = readHeldBodyContactSnapshot();
         update.heldMotorContactSoftening = update.heldBodyColliding;
         update.heldMotorContactReason = update.heldBodyColliding ? "legacy-recent-contact" : "no-recent-contact";
         if (heldContactSnapshot.recent) {
@@ -14009,17 +14009,17 @@ namespace rock
     {
         if (!isHolding() || !world)
             return;
-        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabHeldObjectUpdate);
-        if (!validateHeldObjectUpdate(world, releaseContext)) {
-            return;
-        }
-
         // A transfer may refresh the assembly after its owning hand already
         // ran earlier in the bilateral input pass. Never tick timers or consume
         // presentation history twice; a new grab resets this frame identity.
         const auto frame = runtime_state::currentFrame().frameIndex;
         if (frame != 0 && _heldObjectUpdateFrame == frame) return;
         _heldObjectUpdateFrame = frame;
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabHeldObjectUpdate);
+        if (!validateHeldObjectUpdate(world, releaseContext)) {
+            return;
+        }
+
         nearby_grab_damping::tickNearbyGrabDamping(world, _nearbyGrabDamping, deltaTime);
 
         suppressHandCollisionForGrab(world, bodyBoneColliders);
