@@ -12015,6 +12015,7 @@ namespace rock
         clearPullCatchIntent(grabbedFromPullCatch ? "pullCatchGrabbed" : "grabbed");
 
         ROCK_LOG_INFO(Hand, "{} hand grab success -> HeldInit: bodyId={}", handName(), objectBodyId.value);
+        _grabFrame.equippedWeaponTransfer = sel.equippedWeaponTransfer;
         if (sel.equippedWeaponTransfer && rootNode) {
             // Seed presentation from the constraint's initial physical target.
             // The same-frame held update can then carry the measured body pose
@@ -12809,8 +12810,12 @@ namespace rock
                     driveUpdate.hasPresentedBodyWorld);
             }
         }
+        // A transferred grip already owns the hand. Its small constraint-seat
+        // correction must carry that hand with the presented weapon, rather than
+        // returning the arm to the controller until acquisition finishes.
+        const bool preserveTransferredHand = _grabFrame.equippedWeaponTransfer && _grabFrame.authoredWeaponPose.valid();
         if (_grabFrame.hasTelemetryCapture &&
-            !_grabOffsetAcquisition.active && visualPublishDecision.apply) {
+            (!_grabOffsetAcquisition.active || preserveTransferredHand) && visualPublishDecision.apply) {
             RE::NiTransform heldVisualNodeWorld{};
             bool hasHeldVisualNodeWorld = false;
             bool heldVisualNodeFromPresentedPose = false;
@@ -12853,7 +12858,7 @@ namespace rock
                 targetVisualHandWorld.scale = handWorldTransform.scale;
 
                 RE::NiTransform nextVisualHandWorld = targetVisualHandWorld;
-                const bool smoothVisualHand = hand_visual_lerp_math::shouldSmoothHeldObjectRelativeHand(
+                const bool smoothVisualHand = !preserveTransferredHand && hand_visual_lerp_math::shouldSmoothHeldObjectRelativeHand(
                     g_rockConfig.rockGrabHandLerpEnabled,
                     _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld,
                     visualPublishDecision.acquisition);
@@ -12936,6 +12941,8 @@ namespace rock
                     _lastPublishedGrabVisualHandTransform = _grabVisualHandTransform;
                     _hasLastPublishedGrabVisualHandTransform = true;
                     clearGrabVisualReturn("active-grab-authority-acquired", false);
+                    if (!_grabOffsetAcquisition.active && _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld)
+                        _grabFrame.equippedWeaponTransfer = false;
                 }
                 if (g_rockConfig.rockDebugGrabFrameLogging) {
                     logHeldRenderClockProbe(

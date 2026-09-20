@@ -155,6 +155,8 @@ namespace rock
         // acquired the same physical hand. The lower-priority bridge pose is
         // then removed without disturbing the equipped publisher's tag.
         void completeHandPoseHandoff(const char* reason);
+        // End-of-frame only: require an accepted replacement target for each hand.
+        void tryCompleteHandPoseHandoff();
 
     private:
         // Attach the (already orphaned) model under the world root; false when

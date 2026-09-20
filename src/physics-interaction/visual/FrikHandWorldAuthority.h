@@ -107,6 +107,9 @@ namespace rock::frik_hand_world_authority
     [[nodiscard]] bool tryGetPublishedHandWorld(bool isLeft, RE::NiTransform& outWorld,
         const char* excludedTag = nullptr, int maximumPriority = (std::numeric_limits<int>::max)());
 
+    // Value-only selected claim; never lends a registry entry to a caller.
+    [[nodiscard]] bool tryGetPublishedHandClaim(bool isLeft, hand_world_claim_registry_policy::Claim& outClaim);
+
     // ---- Raw hand isolation (PhysicsInteraction, once per frame) ----
 
     void resolveRawHands(const FrameHandSamples& samples);

@@ -2045,12 +2045,21 @@ namespace rock
             } else if (_equipped.transition.hasPairedHandPoseHandoff() &&
                 !_equipped.pendingPrimaryOnlyGripStart.pairedGrips.valid() && !pairedSupportOwned) {
                 _equipped.transition.completeHandPoseHandoff("paired-transfer-ended");
-            } else if (_twoHandedGrip.hasPublishedAuthoredPrimaryFiringGripFingerPose(handoffHandIsLeft) &&
-                _twoHandedGrip.hasVisualAuthorityForHand(handoffHandIsLeft) &&
-                !_twoHandedGrip.isHandVisualReturnActive(handoffHandIsLeft) &&
-                (!_equipped.transition.hasPairedHandPoseHandoff() || pairedSupportOwned)) {
-                _equipped.transition.completeHandPoseHandoff("equipped-authored-pose-acquired");
             }
+        }
+    }
+
+    void PhysicsInteraction::finishEquippedWeaponHandPoseHandoff()
+    {
+        if (!_equipped.transition.isHandPoseHandoffActive()) return;
+        const bool handIsLeft = _equipped.transition.handPoseHandoffIsLeft();
+        const bool pairedSupportOwned = !_twoHandedGrip.isPartCarryActive() &&
+            _twoHandedGrip.isHandPartGripping(!handIsLeft);
+        if (_twoHandedGrip.hasPublishedAuthoredPrimaryFiringGripFingerPose(handIsLeft) &&
+            _twoHandedGrip.hasVisualAuthorityForHand(handIsLeft) &&
+            !_twoHandedGrip.isHandVisualReturnActive(handIsLeft) &&
+            (!_equipped.transition.hasPairedHandPoseHandoff() || pairedSupportOwned)) {
+            _equipped.transition.tryCompleteHandPoseHandoff();
         }
     }
 

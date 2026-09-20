@@ -593,6 +593,9 @@ namespace rock
 
         updateNativeGrenadeCollisionSuppression(hknp, 0.0f);
         ::rock::provider::dispatchFrameCallbacks(*this);
+        // Equip identity/grip reconciliation can clear the early authored pose.
+        // Yield the bridge only after every hand owner has finished this frame.
+        finishEquippedWeaponHandPoseHandoff();
         // Final pose publication consumes this completed decision frame and
         // registers the callback only after all collider targets are committed.
         _frame.poseFrameIndex = frame.timing.sequence;

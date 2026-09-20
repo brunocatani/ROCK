@@ -703,6 +703,18 @@ namespace rock
         clear("world-loss", false, false);
     }
 
+    void EquipVisualBridge::tryCompleteHandPoseHandoff()
+    {
+        if (!_handPoseHandoffActive) return;
+        for (const bool primary : { true, false }) {
+            if (!primary && !_capturedGrips.valid()) break;
+            hand_world_claim_registry_policy::Claim replacement{};
+            if (!frik_hand_world_authority::tryGetPublishedHandClaim(primary ? _isLeftHand : !_isLeftHand, replacement) ||
+                replacement.priority <= kHandPoseHandoffPriority || replacement.fallbackReported) return;
+        }
+        completeHandPoseHandoff("equipped-authored-pose-acquired");
+    }
+
     void EquipVisualBridge::completeHandPoseHandoff(const char* reason)
     {
         if (!_handPoseHandoffActive && !_handPoseBlockEngaged) {

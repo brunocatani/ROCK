@@ -32,8 +32,8 @@ namespace rock::vanilla_weapon_alignment_telemetry
         {
             std::uint64_t frame{};
             std::uintptr_t model{}; // Comparison only; never dereferenced.
-            RE::NiTransform modelWorld{}, handWorld{};
-            bool handValid{};
+            RE::NiTransform modelWorld{}, handWorld{}, renderedHandWorld{};
+            bool handValid{}, renderedHandValid{};
         };
         struct TransferTrace
         {
@@ -262,7 +262,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
             next->log = std::make_shared<spdlog::async_logger>("ROCK_WeaponAlignment", sink,
                 next->pool, spdlog::async_overflow_policy::overrun_oldest);
             next->log->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
-            next->log->info("VWA start version=11 authoredSources=unknown:0,live:1,persisted:2,preharvest:3 pid={} build={} {} forms=00004822,0015B043,00024F55,0014831A,0014831B,000DF42E,00171B2B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-rock-pre-frik,before-frik,after-frik,after-rock nativeMask=graph-entry:1,graph-exit:2,primary-entry:4,primary-exit:8,support-entry:16,support-exit:32 nativeThread=game-only looseGrabMinMs=250 sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16 aimWritesPerIdentity=48 aimJumpDegrees=5 aimJumpMinMs=250 cycleStride=8 cycleStages=after-frik,after-weapon-solve,after-rock,after-world-final scopeDirectionMinMs=250 scopeAxes=camera-X,weapon-Y invalidAngle=-1 transferFrames=8 transferTerminalFrames=3",
+            next->log->info("VWA start version=12 authoredSources=unknown:0,live:1,persisted:2,preharvest:3 pid={} build={} {} forms=00004822,0015B043,00024F55,0014831A,0014831B,000DF42E,00171B2B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-rock-pre-frik,before-frik,after-frik,after-rock nativeMask=graph-entry:1,graph-exit:2,primary-entry:4,primary-exit:8,support-entry:16,support-exit:32 nativeThread=game-only looseGrabMinMs=250 sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16 aimWritesPerIdentity=48 aimJumpDegrees=5 aimJumpMinMs=250 cycleStride=8 cycleStages=after-frik,after-weapon-solve,after-rock,after-world-final scopeDirectionMinMs=250 scopeAxes=camera-X,weapon-Y invalidAngle=-1 transferFrames=16 transferTerminalFrames=3 transferIK=owner,solve,arm,rendered",
                 GetCurrentProcessId(), __DATE__, __TIME__);
             next->log->flush();
             session = std::move(next);
@@ -608,6 +608,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
             if (previousMatches) {
                 transform("transfer-previous-final", "source", previous.modelWorld);
                 if (previous.handValid) transform("transfer-previous-final", "physical-hand", previous.handWorld);
+                if (previous.renderedHandValid) transform("transfer-previous-final", "rendered-hand", previous.renderedHandWorld);
             }
             recordTransferTrace(kind, isLeft, "request", source);
         } catch (...) { ++session->captureFailures; }
@@ -628,12 +629,14 @@ namespace rock::vanilla_weapon_alignment_telemetry
             trace.targetModel = reinterpret_cast<std::uintptr_t>(model);
             trace.targetFrame = frame;
         }
-        if (!terminal && frame - trace.startFrame >= 8 &&
+        if (!terminal && frame - trace.startFrame >= 16 &&
             (trace.terminalFrame == 0 || frame < trace.terminalFrame || frame - trace.terminalFrame >= 3)) return;
         try {
             RE::NiTransform physical{}, claim{};
             const bool physicalValid = frik_hand_world_authority::tryGetRawHandWorld(isLeft, physical);
-            const bool claimValid = frik_hand_world_authority::tryGetPublishedHandWorld(isLeft, claim);
+            hand_world_claim_registry_policy::Claim claimSnapshot{};
+            const bool claimValid = frik_hand_world_authority::tryGetPublishedHandClaim(isLeft, claimSnapshot);
+            if (claimValid) claim = claimSnapshot.target;
             auto* nodes = f4vr::getPlayerNodes();
             const auto* wand = nodes ? (isLeft ? nodes->SecondaryWandNode : nodes->primaryWandNode) : nullptr;
             const bool targetMatches = model && trace.targetModel == reinterpret_cast<std::uintptr_t>(model) && trace.targetFrame != 0;
@@ -654,6 +657,25 @@ namespace rock::vanilla_weapon_alignment_telemetry
             if (claimValid) transform(stage, "claimed-hand", claim);
             if (wand) transform(stage, "wand-world", wand->world);
             if (targetMatches) transform(stage, "target-world", trace.targetWorld);
+            if (std::string_view(stage) == "request" || std::string_view(stage) == "after-rock" ||
+                std::string_view(stage) == "final-hand") {
+                frik_visual_authority::ArmChainTransforms arm{};
+                const auto hand = frik_visual_authority::handFromBool(isLeft);
+                const bool armValid = frik_visual_authority::tryGetArmChain(hand, arm);
+                RE::NiTransform solved{}, rendered{};
+                const auto solve = frik_visual_authority::getHandSolveResult(hand, solved);
+                const bool renderedValid = std::string_view(stage) == "final-hand" &&
+                    frik_hand_world_authority::tryGetPresentedHandWorld(isLeft, rendered);
+                session->log->info("TRANSFER ik trace={} frame={} hand={} phase={} owner='{}' priority={} fallback={} solve={} armMask={:X} rendered={}",
+                    trace.id, frame, isLeft ? "left" : "right", stage,
+                    claimValid ? claimSnapshot.tag.data() : "none", claimSnapshot.priority,
+                    claimSnapshot.fallbackReported, static_cast<unsigned>(solve), armValid ? arm.validMask : 0, renderedValid);
+                if (armValid && (arm.validMask & (1u << 1))) transform(stage, "upper-arm", arm.upperArm);
+                if (armValid && (arm.validMask & (1u << 3))) transform(stage, "forearm", arm.forearm1);
+                if (armValid && (arm.validMask & (1u << 6))) transform(stage, "hand-node", arm.hand);
+                if (renderedValid) transform(stage, "rendered-hand", rendered);
+                if (solve != frik_visual_authority::HandSolveState::SkeletonNotReady) transform(stage, "solved-wrist", solved);
+            }
         } catch (...) { ++session->captureFailures; }
     }
 
@@ -663,6 +685,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
         if (!captureThread || !session || !g_rockConfig.rockDebugWeaponOmodDumpEnabled) return;
         const auto index = isLeft ? 1u : 0u;
         const auto kind = session->transfers[index].kind;
+        recordTransferTrace(kind, isLeft, "final-hand", nullptr);
         if (looseRoot) recordTransferTrace(kind, isLeft, "final-loose", looseRoot);
         if (equippedRoot) recordTransferTrace(kind, isLeft, "final-equipped", equippedRoot);
         auto& last = session->lastTransferSource[index];
@@ -672,6 +695,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
             last.model = reinterpret_cast<std::uintptr_t>(source);
             last.modelWorld = source->world;
             last.handValid = frik_hand_world_authority::tryGetRawHandWorld(isLeft, last.handWorld);
+            last.renderedHandValid = frik_hand_world_authority::tryGetPresentedHandWorld(isLeft, last.renderedHandWorld);
         }
     }
 

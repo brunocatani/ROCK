@@ -17,7 +17,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
     enum class NativePhase { GraphEntry, GraphExit, PrimaryArmEntry, PrimaryArmExit, SupportArmEntry, SupportArmExit };
     enum class TransferKind { ToggleDrop, HeldEquip };
 
-    // Existing diagnostic gate/writer. Eight consecutive frames at admission
+    // Existing diagnostic gate/writer. Sixteen consecutive frames at admission
     // and three at visual handoff distinguish native detach, pose age and catch-up.
     // Scene nodes are borrowed for this call; stored witnesses contain values only.
     void beginTransferTrace(TransferKind kind, bool isLeft, std::uint32_t sourceId,

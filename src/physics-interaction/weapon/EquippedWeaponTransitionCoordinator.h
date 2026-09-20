@@ -123,6 +123,7 @@ namespace rock
         {
             _bridge.completeHandPoseHandoff(reason);
         }
+        void tryCompleteHandPoseHandoff() { _bridge.tryCompleteHandPoseHandoff(); }
 
     private:
         struct Identity

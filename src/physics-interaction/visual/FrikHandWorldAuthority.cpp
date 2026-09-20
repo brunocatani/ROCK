@@ -549,6 +549,15 @@ namespace rock::frik_hand_world_authority
         return true;
     }
 
+    bool tryGetPublishedHandClaim(const bool isLeft, registry_policy::Claim& outClaim)
+    {
+        outClaim = {};
+        const auto* best = registry_policy::winner(g_service.registry, isLeft);
+        if (!best) return false;
+        outClaim = *best;
+        return true;
+    }
+
     void resolveRawHands(const FrameHandSamples& samples)
     {
         // Called once from the frame entry (before the scope sync and provider

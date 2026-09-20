@@ -67,6 +67,20 @@ namespace rock
             abandonSceneGraph();
             return;
         }
+        const auto weaponWorld = transform_math::composeTransforms(physicalHandWorld,
+            transform_math::invertTransform(_grip.placementHandWeaponLocal));
+        if (!held_scene_presentation_policy::finiteTransform(physicalHandWorld) ||
+            !held_scene_presentation_policy::finiteTransform(weaponWorld)) {
+            release("invalid-pose");
+            return;
+        }
+        // Native detachment gates scene reuse, not the hand target. The equipped
+        // grip has already released its IK ownership on this first drop frame.
+        if (!publishHandPose(weaponWorld)) {
+            ROCK_LOG_WARN(Weapon, "Toggle drop visual rejected: ref={:08X} hand pose unavailable", _referenceId);
+            release("hand-pose-unavailable");
+            return;
+        }
         if (!_parent) {
             // Asynchronous native removal still owns this scene until detach.
             if (_model->parent) {
@@ -89,13 +103,10 @@ namespace rock
             release("model-reparented");
             return;
         }
-        const auto weaponWorld = transform_math::composeTransforms(physicalHandWorld,
-            transform_math::invertTransform(_grip.placementHandWeaponLocal));
         const auto modelWorld = transform_math::composeTransforms(weaponWorld, _modelInWeapon);
         const auto modelLocal = transform_math::composeTransforms(
             transform_math::invertTransform(worldRoot->world), modelWorld);
-        if (!held_scene_presentation_policy::finiteTransform(physicalHandWorld) ||
-            !held_scene_presentation_policy::finiteTransform(modelLocal)) {
+        if (!held_scene_presentation_policy::finiteTransform(modelLocal)) {
             release("invalid-pose");
             return;
         }
@@ -115,6 +126,11 @@ namespace rock
         }
         if (_hiddenLooseRoot) equipped_weapon_visual_state::setLocallyVisible(_hiddenLooseRoot.get(), false);
 
+        ++_presentedFrames;
+    }
+
+    bool EquippedWeaponDropVisual::publishHandPose(const RE::NiTransform& weaponWorld)
+    {
         const auto hand = _grip.isLeft ? frik_visual_authority::Hand::Left : frik_visual_authority::Hand::Right;
         frik_visual_authority::FingerLocalTransformOverride fingers{};
         fingers.enabledMask = _grip.fingerMask;
@@ -122,15 +138,10 @@ namespace rock
             fingers.localTransforms[index] = _grip.fingerLocals[index];
         // This tag is removed before the loose grab publishes its own pose.
         _handPoseOwned = true;
-        if (!frik_visual_authority::setHandPoseCustom(kPoseTag, hand, {}, kPosePriority) ||
-            !frik_visual_authority::setHandPoseCustomLocalTransforms(kPoseTag, hand, &fingers, kPosePriority) ||
-            !frik_visual_authority::publishHandWorld(kPoseTag, hand,
-                transform_math::composeTransforms(weaponWorld, _grip.handWeaponLocal), kPosePriority)) {
-            ROCK_LOG_WARN(Weapon, "Toggle drop visual rejected: ref={:08X} hand pose unavailable", _referenceId);
-            release("hand-pose-unavailable");
-            return;
-        }
-        ++_presentedFrames;
+        return frik_visual_authority::setHandPoseCustom(kPoseTag, hand, {}, kPosePriority) &&
+            frik_visual_authority::setHandPoseCustomLocalTransforms(kPoseTag, hand, &fingers, kPosePriority) &&
+            frik_visual_authority::publishHandWorld(kPoseTag, hand,
+                transform_math::composeTransforms(weaponWorld, _grip.handWeaponLocal), kPosePriority);
     }
 
     void EquippedWeaponDropVisual::restoreLooseVisibility()

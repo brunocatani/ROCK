@@ -30,6 +30,7 @@ namespace rock
     private:
         void clear(const char* reason, bool sceneAvailable);
         void restoreLooseVisibility();
+        bool publishHandPose(const RE::NiTransform& weaponWorld);
         void yieldHandPose();
 
         RE::NiPointer<RE::NiAVObject> _model;

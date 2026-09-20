@@ -408,6 +408,7 @@ namespace rock
         bool hasAvailableEquippedWeaponDropHandoff() const;
         void serviceEquippedWeaponNativeHandoff(const PhysicsFrameContext& frame);
         void updateEquippedWeaponDropVisuals(const PhysicsFrameContext& frame);
+        void finishEquippedWeaponHandPoseHandoff();
         void serviceEquippedWeaponNativeTransaction(
             EquippedWeaponNativeHandoff& handoff,
             const PhysicsFrameContext& frame);

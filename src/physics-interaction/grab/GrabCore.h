@@ -834,6 +834,7 @@ namespace rock
         bool looseObjectSharedPrimaryIsLeft = false;
         float looseObjectVisualTraceElapsed = 0.0f;
         bool transferPoseTracePending = false;
+        bool equippedWeaponTransfer = false;
         bool hasLooseObjectSoloProxyCorrection = false;
         bool hasTelemetryCapture = false;
         bool fingerPoseAimValid = false;
@@ -908,6 +909,7 @@ namespace rock
             looseObjectSharedPrimaryIsLeft = false;
             looseObjectVisualTraceElapsed = 0.0f;
             transferPoseTracePending = false;
+            equippedWeaponTransfer = false;
             hasLooseObjectSoloProxyCorrection = false;
             hasTelemetryCapture = false;
             fingerPoseAimValid = false;
