@@ -308,7 +308,7 @@ namespace rock
         float rockDynamicPushMaxImpulse = 2.0f;
         float rockDynamicPushCooldownSeconds = 0.08f;
 
-        float rockGrabLinearTau = 0.03f;
+        float rockGrabLinearTau = 0.1f;
         float rockGrabLinearDamping = 0.8f;
         float rockGrabLinearProportionalRecovery = 2.0f;
         float rockGrabLinearConstantRecovery = 1.0f;
@@ -320,14 +320,11 @@ namespace rock
 
         float rockGrabConstraintMaxForce = 2000.0f;
         float rockGrabMaxForceToMassRatio = 500.0f;
+        float rockGrabFreeLinearAcceleration = 1000.0f;
+        float rockGrabFreeAngularAcceleration = 6000.0f;
         float rockForceGrabAttachSettleSeconds = 0.10f;
         bool rockGrabEffectiveMotorMassFloorEnabled = true;
         float rockGrabEffectiveMotorMassFloor = 2.0f;
-        bool rockGrabPhysicsRateForceScalingEnabled = false;
-        float rockGrabPhysicsRateReferenceHz = 90.0f;
-        float rockGrabPhysicsRateForceScaleExponent = 0.5f;
-        float rockGrabPhysicsRateMinForceScale = 0.75f;
-        float rockGrabPhysicsRateMaxForceScale = 1.35f;
         float rockGrabForceFadeInTime = 0.1f;
         RE::NiPoint3 rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.5f, -1.0f, 0.0f);
         RE::NiPoint3 rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.5f, -1.0f, 0.0f);

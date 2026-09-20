@@ -126,6 +126,17 @@ namespace rock
         }
     }
 
+    struct GrabMotorBodyProperties
+    {
+        float mass = 0.0f;
+        float maximumInertia = 0.0f;
+        float gripRadiusHavok = 0.0f;
+        bool valid = false;
+    };
+
+    GrabMotorBodyProperties readGrabMotorBodyProperties(RE::hknpWorld* world,
+        RE::hknpBodyId bodyId, const RE::NiPoint3& pivotBodyLocalGame);
+
     struct ActiveConstraint
     {
         std::uint32_t constraintId = 0x7FFF'FFFF;
@@ -137,6 +148,7 @@ namespace rock
         float currentMaxForce = 0.0f;
         float targetMaxForce = 0.0f;
         grab_motor_telemetry::State motorTelemetry{};
+        GrabMotorBodyProperties motorBodyProperties{};
 
         bool isValid() const { return constraintId != 0x7FFF'FFFF && constraintData != nullptr; }
         bool usesRagdollAngularMotorAtom() const { return angularAuthority == GrabAngularAuthority::HknpRagdollMotorAtom; }
@@ -152,6 +164,7 @@ namespace rock
             currentMaxForce = 0.0f;
             targetMaxForce = 0.0f;
             motorTelemetry = {};
+            motorBodyProperties = {};
         }
     };
 

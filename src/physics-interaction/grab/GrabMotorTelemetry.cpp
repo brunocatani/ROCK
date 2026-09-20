@@ -100,12 +100,12 @@ namespace rock::grab_motor_telemetry
                             ownerName(cmd.owner), cmd.tag, constraint.constraintId, cmd.bodyA, cmd.bodyB,
                             state.invalid, state.failure, state.elapsed, cmd.source, cmd.beforeSolve);
                     } else {
-                        log->info("MOTOR_LOAD owner={} tag={:016X} constraint={} bodies={}/{} samples={} invalid={} failure={} windowDt={:.6f} peakGrip={:.4f}gu peakRotation={:.4f}deg peakNetUtil={} nearNetLimitSeconds={} peakGripSolve={} source={} solverDt={:.6f} steps={}/{} mass={:.5f} invInertiaMass={} limits={} tau={} damping={} proportional={} constant={} impulse={} recoveryState={} averageEffort={} netUtil={} enabledAxes=0x{:02X} atPeakRotation={:.4f}deg proxyError={:.5f}gu commandContact={} contact={} teleported={} beforeLinear={} afterLinear={} beforeAngularLocal={} afterAngularLocal={}",
+                        log->info("MOTOR_LOAD owner={} tag={:016X} constraint={} bodies={}/{} samples={} invalid={} failure={} windowDt={:.6f} peakGrip={:.4f}gu peakRotation={:.4f}deg peakNetUtil={} nearNetLimitSeconds={} peakGripSolve={} source={} solverDt={:.6f} steps={}/{} mass={:.5f} maxInertia={:.6f} gripRadiusHk={:.6f} invInertiaMass={} limits={} tau={} damping={} proportional={} constant={} impulse={} recoveryState={} averageEffort={} netUtil={} enabledAxes=0x{:02X} atPeakRotation={:.4f}deg proxyError={:.5f}gu commandContact={} contact={} teleported={} beforeLinear={} afterLinear={} beforeAngularLocal={} afterAngularLocal={}",
                         ownerName(cmd.owner), cmd.tag, constraint.constraintId, cmd.bodyA, cmd.bodyB,
                         state.samples, state.invalid, state.failure, state.elapsed,
                         peak.gripError, state.peakRotation, state.peakUtilization, state.nearLimitSeconds,
                         peak.solve, cmd.source, peak.solverSeconds, peak.solverSteps, peak.microSteps,
-                        cmd.mass, cmd.inverseInertiaMass, cmd.limits, cmd.tau, cmd.damping,
+                        cmd.mass, cmd.maximumInertia, cmd.gripRadiusHavok, cmd.inverseInertiaMass, cmd.limits, cmd.tau, cmd.damping,
                         cmd.proportional, cmd.constant, peak.load.impulse, peak.load.recoveryState,
                         peak.load.averageEffort, peak.load.netUtilization, peak.load.enabledAxes,
                         peak.rotationError, peak.proxyError, cmd.contact, peak.contact, peak.teleported,
@@ -166,6 +166,8 @@ namespace rock::grab_motor_telemetry
         cmd.tag = tag;
         cmd.owner = owner;
         cmd.mass = mass;
+        cmd.maximumInertia = constraint.motorBodyProperties.maximumInertia;
+        cmd.gripRadiusHavok = constraint.motorBodyProperties.gripRadiusHavok;
         cmd.contact = contact;
         if (!havok_physics_timing::tryGetDriveDeltaSeconds(timing, cmd.seconds)) {
             cmd.failure = "command-timing";

@@ -221,14 +221,15 @@ namespace rock
             };
         }
 
-        void updateWeaponGripConstraintContactResponse(
+        bool updateWeaponGripConstraintContactResponse(
             ActiveConstraint& constraint,
             const GrabConstraintMotorTuning& baseTuning,
+            const GrabMotorBodyProperties& properties,
             const bool contactActive,
             const weapon_physics_time_scale::HandlingScale& timeScale)
         {
             if (!constraint.linearMotor || !constraint.angularMotor) {
-                return;
+                return false;
             }
 
             const float baseLinearTau = grab_motion_controller::safePositive(
@@ -242,19 +243,34 @@ namespace rock
                     g_rockConfig.rockGrabTauMin,
                     g_rockConfig.rockGrabLooseWeaponSharedConstraintCollisionTauMultiplier),
                 baseLinearTau);
-            const float linearTarget = contactActive ? collisionTau : baseLinearTau;
-            const float angularTarget = contactActive ? collisionTau : baseAngularTau;
-
-            constraint.linearMotor->tau = grab_motion_controller::advanceToward(
-                constraint.linearMotor->tau,
-                linearTarget,
-                g_rockConfig.rockGrabTauLerpSpeed,
-                timeScale.responseDeltaSeconds);
-            constraint.angularMotor->tau = grab_motion_controller::advanceToward(
-                constraint.angularMotor->tau,
-                angularTarget,
-                g_rockConfig.rockGrabTauLerpSpeed,
-                timeScale.responseDeltaSeconds);
+            const auto input = grab_motion_controller::MotorInput{
+                .heldBodyColliding = contactActive,
+                .baseLinearTau = baseLinearTau,
+                .baseAngularTau = baseAngularTau,
+                .collisionTau = collisionTau,
+                .currentLinearTau = constraint.linearMotor->tau,
+                .currentAngularTau = constraint.angularMotor->tau,
+                .tauLerpSpeed = g_rockConfig.rockGrabTauLerpSpeed,
+                .deltaTime = timeScale.responseDeltaSeconds,
+                .physicsDeltaSeconds = timeScale.responseDeltaSeconds / timeScale.velocity,
+                .baseMaxForce = baseTuning.linearMaxForce,
+                .angularForceMultiplier = g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularForceMultiplier,
+                .mass = properties.mass,
+                .maximumInertia = properties.valid ? properties.maximumInertia : 0.0f,
+                .gripRadiusHavok = properties.gripRadiusHavok,
+                .freeLinearAcceleration = g_rockConfig.rockGrabFreeLinearAcceleration,
+                .freeAngularAcceleration = g_rockConfig.rockGrabFreeAngularAcceleration,
+                .forceToMassRatio = g_rockConfig.rockGrabMaxForceToMassRatio,
+                .effectiveMotorMassFloorEnabled = g_rockConfig.rockGrabEffectiveMotorMassFloorEnabled,
+                .effectiveMotorMassFloor = g_rockConfig.rockGrabEffectiveMotorMassFloor,
+                .fadeInEnabled = false,
+            };
+            grab_motion_controller::HeldAuthorityState authority{};
+            authority.softenForContact = contactActive;
+            const auto output = grab_motion_controller::solveMotorTargetsWithAuthority(input, authority);
+            if (!output.valid) return false;
+            constraint.linearMotor->tau = output.linearTau;
+            constraint.angularMotor->tau = output.angularTau;
             const auto linearRecovery = dynamic_weapon_collision_policy::resolveContactMotorRecovery(
                 grab_motion_controller::safePositive(baseTuning.linearDamping, 0.8f),
                 grab_motion_controller::safePositive(baseTuning.linearConstantRecovery, 1.0f),
@@ -275,13 +291,14 @@ namespace rock
                 grab_motion_controller::safePositive(baseTuning.linearProportionalRecovery, 2.0f) * timeScale.velocity;
             constraint.angularMotor->proportionalRecoveryVelocity =
                 grab_motion_controller::safePositive(baseTuning.angularProportionalRecovery, 2.0f) * timeScale.velocity;
-            constraint.linearMotor->maxForce = baseTuning.linearMaxForce * timeScale.force;
+            constraint.linearMotor->maxForce = output.linearMaxForce * timeScale.force;
             constraint.linearMotor->minForce = -constraint.linearMotor->maxForce;
-            constraint.angularMotor->maxForce = baseTuning.angularMaxForce * timeScale.force;
+            constraint.angularMotor->maxForce = output.angularMaxForce * timeScale.force;
             constraint.angularMotor->minForce = -constraint.angularMotor->maxForce;
             constraint.currentTau = constraint.linearMotor->tau;
             constraint.currentMaxForce = constraint.linearMotor->maxForce;
             constraint.targetMaxForce = constraint.linearMotor->maxForce;
+            return true;
         }
 
         bool rebaseWeaponVelocity(RE::hknpWorld* world, BethesdaPhysicsBody& body, float ratio, const char*& stage)
@@ -1405,13 +1422,31 @@ namespace rock
             return;
         }
 
-        // Real-time weapon response is converted to the actual solver clock.
-        // The native step delta and the colliding body's mass stay unchanged.
-        updateWeaponGripConstraintContactResponse(
+        // Use the actual constraint pivot and live COM properties. The shared
+        // free/contact budget is converted to the weapon's solver clock once.
+        const RE::NiPoint3 pivotBodyLocalGame{
+            (_authorityPivotWeaponLocal.x - _createdCenterWeaponLocal.x) * _createdWeaponScale,
+            (_authorityPivotWeaponLocal.y - _createdCenterWeaponLocal.y) * _createdWeaponScale,
+            (_authorityPivotWeaponLocal.z - _createdCenterWeaponLocal.z) * _createdWeaponScale,
+        };
+        _authorityConstraint.motorBodyProperties = readGrabMotorBodyProperties(world, _body.getBodyId(), pivotBodyLocalGame);
+        if (!updateWeaponGripConstraintContactResponse(
             _authorityConstraint,
             motorTuning,
+            _authorityConstraint.motorBodyProperties,
             _contactRetentionSeconds > 0.0f,
-            timeScale);
+            timeScale)) {
+            if (_authorityConstraint.linearMotor)
+                _authorityConstraint.linearMotor->minForce = _authorityConstraint.linearMotor->maxForce = 0.0f;
+            if (_authorityConstraint.angularMotor)
+                _authorityConstraint.angularMotor->minForce = _authorityConstraint.angularMotor->maxForce = 0.0f;
+            _rebuildRequestedAtomic.store(true, std::memory_order_release);
+            _droveThisSubstep = false;
+            clearPublishedPhysicsSnapshot();
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Dynamic weapon motor properties unavailable; rebuild requested body={}",
+                _body.getBodyId().value);
+            return;
+        }
 
         _droveThisSubstep =
             driveResult.driven &&
@@ -1521,7 +1556,7 @@ namespace rock
             grab_motor_telemetry::capture(world, _authorityConstraint,
                 _authorityProxy.getBodyId().value, _body.getBodyId().value, timing,
                 _physicsSourceSequence, _createdGenerationKey, grab_motor_telemetry::Owner::Weapon,
-                _createdMass, _contactRetentionSeconds > 0.0f);
+                _authorityConstraint.motorBodyProperties.mass, _contactRetentionSeconds > 0.0f);
         }
     }
 

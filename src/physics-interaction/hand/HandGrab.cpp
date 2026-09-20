@@ -5882,7 +5882,7 @@ namespace rock
                std::isfinite(outPivotWorld.z);
     }
 
-    void Hand::updateConstraintGrabDriveMotors(RE::hknpWorld* world,
+    bool Hand::updateConstraintGrabDriveMotors(RE::hknpWorld* world,
         float deltaTime,
         float forceFadeInTime,
         float tauMin,
@@ -5891,7 +5891,7 @@ namespace rock
         const grab_motion_controller::HeldAuthorityState& heldAuthority)
     {
         if (!_activeConstraint.isValid() || !_activeConstraint.linearMotor || !_activeConstraint.angularMotor) {
-            return;
+            return false;
         }
 
         const float looseLinearTauMultiplier =
@@ -5919,6 +5919,9 @@ namespace rock
             _savedObjectState.bodyId,
             _heldBodyIds,
             _heldDriveDecision.includeConnectedMass);
+        _activeConstraint.motorBodyProperties = readGrabMotorBodyProperties(
+            world, _savedObjectState.bodyId, activeProxyConstraintPivotBLocalGame());
+        const auto& properties = _activeConstraint.motorBodyProperties;
         const auto motorInput = grab_motion_controller::MotorInput{
             .heldBodyColliding = heldBodyColliding,
             .baseLinearTau = scaleDriveValue(g_rockConfig.rockGrabLinearTau, looseLinearTauMultiplier),
@@ -5928,16 +5931,15 @@ namespace rock
             .currentAngularTau = _activeConstraint.angularMotor->tau,
             .tauLerpSpeed = g_rockConfig.rockGrabTauLerpSpeed,
             .deltaTime = deltaTime,
-            .physicsRateForceScalingEnabled = g_rockConfig.rockGrabPhysicsRateForceScalingEnabled,
             .physicsDeltaSeconds = deltaTime,
-            .physicsRateReferenceHz = g_rockConfig.rockGrabPhysicsRateReferenceHz,
-            .physicsRateForceScaleExponent = g_rockConfig.rockGrabPhysicsRateForceScaleExponent,
-            .physicsRateMinForceScale = g_rockConfig.rockGrabPhysicsRateMinForceScale,
-            .physicsRateMaxForceScale = g_rockConfig.rockGrabPhysicsRateMaxForceScale,
             .baseMaxForce = sharedBaseMaxForce,
             .authorityForceScale = authorityForceScale,
             .angularForceMultiplier = looseAngularForceMultiplier,
             .mass = massSummary.motorMass(),
+            .maximumInertia = properties.valid ? properties.maximumInertia : 0.0f,
+            .gripRadiusHavok = properties.gripRadiusHavok,
+            .freeLinearAcceleration = g_rockConfig.rockGrabFreeLinearAcceleration,
+            .freeAngularAcceleration = g_rockConfig.rockGrabFreeAngularAcceleration,
             .forceToMassRatio = g_rockConfig.rockGrabMaxForceToMassRatio,
             .effectiveMotorMassFloorEnabled = g_rockConfig.rockGrabEffectiveMotorMassFloorEnabled,
             .effectiveMotorMassFloor = g_rockConfig.rockGrabEffectiveMotorMassFloor,
@@ -5946,8 +5948,14 @@ namespace rock
             .fadeDuration = forceFadeInTime,
         };
         const auto output = grab_motion_controller::solveMotorTargetsWithAuthority(motorInput, heldAuthority);
+        if (!output.valid) {
+            _activeConstraint.linearMotor->minForce = _activeConstraint.linearMotor->maxForce = 0.0f;
+            _activeConstraint.angularMotor->minForce = _activeConstraint.angularMotor->maxForce = 0.0f;
+            ROCK_LOG_SAMPLE_WARN(Hand, 1000, "{} grab motor properties unavailable; release queued body={}",
+                handName(), _savedObjectState.bodyId.value);
+            return false;
+        }
         _lastGrabPhysicsHz.store(output.physicsHz, std::memory_order_relaxed);
-        _lastGrabPhysicsRateForceScale.store(output.physicsRateForceScale, std::memory_order_relaxed);
 
         _activeConstraint.linearMotor->tau = output.linearTau;
         _activeConstraint.linearMotor->damping = scaleDriveValue(g_rockConfig.rockGrabLinearDamping, looseLinearDampingMultiplier);
@@ -5971,6 +5979,7 @@ namespace rock
         _activeConstraint.currentTau = output.linearTau;
         _activeConstraint.currentMaxForce = output.linearMaxForce;
         _activeConstraint.targetMaxForce = output.linearMaxForce;
+        return true;
     }
 
     void Hand::queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
@@ -13938,11 +13947,10 @@ namespace rock
 
             const std::uint32_t heldFormId = _savedObjectState.refr ? _savedObjectState.refr->GetFormID() : 0;
             const float lastGrabPhysicsHz = _lastGrabPhysicsHz.load(std::memory_order_relaxed);
-            const float lastGrabPhysicsRateForceScale = _lastGrabPhysicsRateForceScale.load(std::memory_order_relaxed);
 
             ROCK_LOG_DEBUG(Hand,
                 "{} HELD dynamic: drive={} bodyDriveMode={} linearScope={} angularScope={} massScope={} looseWeapon={} formID={:08X} constraint={} queued={} flushed={} failedFlushes={} lastDt={:.6f} proxyFrame={}/{} "
-                "phase={} posePublished={} fade={:.2f}/{} reason={} colliding={} motorContact={} contactReason={} forceBudget={:.2f} physHz={:.1f} forceScale={:.3f} longLever={:.1f}gu pivotTrack={:.1f}gu avgTrack={:.1f}gu rotErr={:.1f}deg bDist={:.1f}gu objVel={:.3f} "
+                "phase={} posePublished={} fade={:.2f}/{} reason={} colliding={} motorContact={} contactReason={} forceBudget={:.2f} physHz={:.1f} longLever={:.1f}gu pivotTrack={:.1f}gu avgTrack={:.1f}gu rotErr={:.1f}deg bDist={:.1f}gu objVel={:.3f} "
                 "paW=({:.1f},{:.1f},{:.1f}) pbW=({:.1f},{:.1f},{:.1f}) "
                 "targetBody=({:.1f},{:.1f},{:.1f}) objW=({:.1f},{:.1f},{:.1f})",
                 handName(),
@@ -13970,7 +13978,6 @@ namespace rock
                 heldMotorContactReason,
                 authorityForceScale,
                 lastGrabPhysicsHz,
-                lastGrabPhysicsRateForceScale,
                 _grabFrame.pivotAuthority.longLeverGameUnits,
                 pivotErrGame,
                 averageGrabDeviationGameUnits,
@@ -14241,7 +14248,7 @@ namespace rock
                     const auto pendingHeldAuthority = evaluateRuntimeHeldAuthority(
                         _grabFrame,
                         pending.heldBodyColliding);
-                    updateConstraintGrabDriveMotors(
+                    const bool motorsReady = updateConstraintGrabDriveMotors(
                         world,
                         driveDelta,
                         pending.forceFadeInTime,
@@ -14250,6 +14257,7 @@ namespace rock
                         pending.heldBodyColliding,
                         pendingHeldAuthority);
                     angularDriveOk =
+                        motorsReady &&
                         _activeConstraint.isValid() &&
                         _activeConstraint.usesRagdollAngularMotorAtom() &&
                         _activeConstraint.linearMotor &&
@@ -14540,9 +14548,8 @@ namespace rock
                             };
                             if (grabTimelineTraceEnabled() && shouldLogGrabTimelineSequence(_grabFrame.traceTargetWriteSequence)) {
                                 const float lastGrabPhysicsHz = _lastGrabPhysicsHz.load(std::memory_order_relaxed);
-                                const float lastGrabPhysicsRateForceScale = _lastGrabPhysicsRateForceScale.load(std::memory_order_relaxed);
                                 ROCK_LOG_INFO(Hand,
-                                    "{} GRAB_TRACE stage=pre_solve trace={} writeSeq={} flushNext={} queued={} substep={}/{} constraint={} proxyBody={} objBody={} bodyA={} beforeErr={:.2f}deg gripBefore={:.2f}gu pivotLever={:.2f}gu linTorque={:.3f}gu2 linTorqueDotReq={:.2f} reqAxis=({:.3f},{:.3f},{:.3f}) reqAxisProxy=({:.3f},{:.3f},{:.3f}) forceA={:.0f} forceL={:.0f} physHz={:.1f} forceScale={:.3f} tau={:.3f} damp={:.2f} targetToHiggsRelation={:.2f}deg transformBFrozenDelta={:.2f}deg pivotBRelationDelta={:.3f}gu bRcaRowsErr={:.2f}deg bRcaColsErr={:.2f}deg pivotARoundTrip={:.3f}gu",
+                                    "{} GRAB_TRACE stage=pre_solve trace={} writeSeq={} flushNext={} queued={} substep={}/{} constraint={} proxyBody={} objBody={} bodyA={} beforeErr={:.2f}deg gripBefore={:.2f}gu pivotLever={:.2f}gu linTorque={:.3f}gu2 linTorqueDotReq={:.2f} reqAxis=({:.3f},{:.3f},{:.3f}) reqAxisProxy=({:.3f},{:.3f},{:.3f}) forceA={:.0f} forceL={:.0f} physHz={:.1f} tau={:.3f} damp={:.2f} targetToHiggsRelation={:.2f}deg transformBFrozenDelta={:.2f}deg pivotBRelationDelta={:.3f}gu bRcaRowsErr={:.2f}deg bRcaColsErr={:.2f}deg pivotARoundTrip={:.3f}gu",
                                     handName(),
                                     _grabFrame.traceId,
                                     _grabFrame.traceTargetWriteSequence,
@@ -14568,7 +14575,6 @@ namespace rock
                                     _ragdollAngularProbePreSolve.angularMotorMaxForce,
                                     _ragdollAngularProbePreSolve.linearMotorMaxForce,
                                     lastGrabPhysicsHz,
-                                    lastGrabPhysicsRateForceScale,
                                     _ragdollAngularProbePreSolve.angularMotorTau,
                                     _ragdollAngularProbePreSolve.angularMotorDamping,
                                     _ragdollAngularProbePreSolve.targetToHiggsRelationDegrees,

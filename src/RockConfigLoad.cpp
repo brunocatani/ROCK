@@ -44,10 +44,6 @@ namespace
     constexpr float kDefaultGrabLongObjectReferenceLeverGameUnits = 24.0f;
     constexpr float kDefaultGrabLongObjectMinAngularScale = 0.35f;
     constexpr float kDefaultGrabEffectiveMotorMassFloor = 2.0f;
-    constexpr float kDefaultGrabPhysicsRateReferenceHz = 90.0f;
-    constexpr float kDefaultGrabPhysicsRateForceScaleExponent = 0.5f;
-    constexpr float kDefaultGrabPhysicsRateMinForceScale = 0.75f;
-    constexpr float kDefaultGrabPhysicsRateMaxForceScale = 1.35f;
     constexpr float kDefaultGrabPositionOnlyAngularScale = 0.55f;
     constexpr float kDefaultGrabSmallObjectReferenceLeverGameUnits = 12.0f;
     constexpr float kDefaultGrabSmallObjectAngularScale = 0.65f;
@@ -976,6 +972,10 @@ namespace rock
 
         rockGrabConstraintMaxForce = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabConstraintMaxForce", rockGrabConstraintMaxForce));
         rockGrabMaxForceToMassRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxForceToMassRatio", rockGrabMaxForceToMassRatio));
+        rockGrabFreeLinearAcceleration = readClampedFloat(ini, SECTION, "fGrabFreeLinearAcceleration",
+            rockGrabFreeLinearAcceleration, 1000.0f, 1.0f, 10000.0f);
+        rockGrabFreeAngularAcceleration = readClampedFloat(ini, SECTION, "fGrabFreeAngularAcceleration",
+            rockGrabFreeAngularAcceleration, 6000.0f, 1.0f, 60000.0f);
         rockForceGrabAttachSettleSeconds = readClampedFloat(ini,
             SECTION,
             "fForceGrabAttachSettleSeconds",
@@ -992,37 +992,6 @@ namespace rock
             kDefaultGrabEffectiveMotorMassFloor,
             0.0f,
             100.0f);
-        rockGrabPhysicsRateForceScalingEnabled =
-            ini.GetBoolValue(SECTION, "bGrabPhysicsRateForceScalingEnabled", rockGrabPhysicsRateForceScalingEnabled);
-        rockGrabPhysicsRateReferenceHz = readClampedFloat(ini,
-            SECTION,
-            "fGrabPhysicsRateReferenceHz",
-            rockGrabPhysicsRateReferenceHz,
-            kDefaultGrabPhysicsRateReferenceHz,
-            1.0f,
-            240.0f);
-        rockGrabPhysicsRateForceScaleExponent = readClampedFloat(ini,
-            SECTION,
-            "fGrabPhysicsRateForceScaleExponent",
-            rockGrabPhysicsRateForceScaleExponent,
-            kDefaultGrabPhysicsRateForceScaleExponent,
-            0.0f,
-            2.0f);
-        rockGrabPhysicsRateMinForceScale = readClampedFloat(ini,
-            SECTION,
-            "fGrabPhysicsRateMinForceScale",
-            rockGrabPhysicsRateMinForceScale,
-            kDefaultGrabPhysicsRateMinForceScale,
-            0.1f,
-            2.0f);
-        rockGrabPhysicsRateMaxForceScale = readClampedFloat(ini,
-            SECTION,
-            "fGrabPhysicsRateMaxForceScale",
-            rockGrabPhysicsRateMaxForceScale,
-            kDefaultGrabPhysicsRateMaxForceScale,
-            rockGrabPhysicsRateMinForceScale,
-            3.0f);
-
         rockGrabForceFadeInTime = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabForceFadeInTime", rockGrabForceFadeInTime));
         rockRightGrabAuthorityProxyOffsetGameUnits.x =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fRightGrabAuthorityProxyOffsetXGameUnits", rockRightGrabAuthorityProxyOffsetGameUnits.x));

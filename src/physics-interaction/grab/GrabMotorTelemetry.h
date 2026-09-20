@@ -22,6 +22,7 @@ namespace rock::grab_motor_telemetry
         std::array<float, 4> inverseInertiaMass{};
         std::array<float, 3> beforeLinear{}, beforeAngular{};
         float mass = 0.0f, seconds = 0.0f;
+        float maximumInertia = 0.0f, gripRadiusHavok = 0.0f;
         bool contact = false;
         bool pending = false;
         const char* failure = "no-command";

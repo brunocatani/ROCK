@@ -416,14 +416,12 @@ namespace rock
         struct GrabClockTelemetry
         {
             float physicsHz = 0.0f;
-            float physicsRateForceScale = 1.0f;
             float sourceIntervalSeconds = 0.0f;
         };
         GrabClockTelemetry getGrabClockTelemetry() const
         {
             return GrabClockTelemetry{
                 .physicsHz = _lastGrabPhysicsHz.load(std::memory_order_relaxed),
-                .physicsRateForceScale = _lastGrabPhysicsRateForceScale.load(std::memory_order_relaxed),
                 .sourceIntervalSeconds = _lastGrabSourceIntervalSeconds.load(std::memory_order_relaxed),
             };
         }
@@ -934,7 +932,7 @@ namespace rock
         bool resolveActiveGrabAuthorityPivotAWorld(
             const RE::NiTransform& proxyWorldTransform,
             RE::NiPoint3& outPivotWorld) const;
-        void updateConstraintGrabDriveMotors(RE::hknpWorld* world,
+        bool updateConstraintGrabDriveMotors(RE::hknpWorld* world,
             float deltaTime,
             float forceFadeInTime,
             float tauMin,
@@ -1251,7 +1249,6 @@ namespace rock
         ActiveConstraint _activeConstraint;
         // Zero until a measured physics delta produced a rate (telemetry).
         std::atomic<float> _lastGrabPhysicsHz{ 0.0f };
-        std::atomic<float> _lastGrabPhysicsRateForceScale{ 1.0f };
         // Grab source-clock telemetry mirrors published by the physics-side
         // flush for the game-thread timing report.
         std::atomic<float> _lastGrabSourceIntervalSeconds{ 0.0f };

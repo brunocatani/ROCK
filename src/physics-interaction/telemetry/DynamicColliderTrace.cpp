@@ -57,9 +57,9 @@ namespace rock::dynamic_collider_trace
             next->weaponLog->set_error_handler([](const std::string&) { suppressAfterError(); });
             writerFailed.store(false, std::memory_order_relaxed);
             next->motorLayoutVerified = grab_motor_telemetry::verifyLayout();
-            next->log->info("MOTOR_LOAD start version=1 layoutVerified={} interval=0.1-simulation-seconds axes=angular012,linear012 utilization=net-impulse/(limit*solver-dt) nearLimit=0.95 recoveryState=native-not-impulse observational=true",
+            next->log->info("MOTOR_LOAD start version=2 layoutVerified={} interval=0.1-simulation-seconds axes=angular012,linear012 utilization=net-impulse/(limit*solver-dt) nearLimit=0.95 recoveryState=native-not-impulse observational=true",
                 next->motorLayoutVerified);
-            next->weaponLog->info("MOTOR_LOAD start version=1 layoutVerified={} interval=0.1-simulation-seconds axes=angular012,linear012 utilization=net-impulse/(limit*solver-dt) nearLimit=0.95 recoveryState=native-not-impulse observational=true",
+            next->weaponLog->info("MOTOR_LOAD start version=2 layoutVerified={} interval=0.1-simulation-seconds axes=angular012,linear012 utilization=net-impulse/(limit*solver-dt) nearLimit=0.95 recoveryState=native-not-impulse observational=true",
                 next->motorLayoutVerified);
             next->log->info("COLLIDER_TRACE start version=5 pid={} build={} {} sourceStride=4 weaponBurst=12/120 heldPhaseBurst=12/120 observational=true positions=game-units rotations=quaternion-xyzw velocities=havok-units-per-second peerKind=1:hand,2:weapon,3:world",
                 GetCurrentProcessId(), __DATE__, __TIME__);
