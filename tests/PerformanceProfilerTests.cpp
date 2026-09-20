@@ -1,5 +1,6 @@
 #include "physics-interaction/performance/PhysicsStepProfile.h"
 #include "physics-interaction/grab/MeshGrab.h"
+#include "physics-interaction/performance/ContactPairProfile.h"
 #include <F4SE/Logger.h>
 
 #include <cassert>
@@ -43,6 +44,14 @@ namespace
         requireScope("meshDirectionalQuery", 1);
         requireScope("grabMeshQueryIndexBuild", 1);
         requireScope("grabTriangleSelection", 2);
+        requireScope("nativeImpactListener", 30);
+        requireScope("nativeImpactDispatch", 30);
+        requireScope("nativeImpactConsumer", 30);
+        requireScope("nativeImpactPlayPair", 30);
+        assert(text.find("contactPairs=1") != std::string::npos);
+        assert(text.find("bodies=42/700 layers=5/51 shapeKeys=0xFFFFFFFF/0xFFFFFFFF frames=1-30 layerChanged=false simulationInput=30 simulationNative=0 simulationKept=0 manifolds=30 impulses=0 playerMeleeDropped=30") != std::string::npos);
+        assert(text.find("bodies=42/700 layers=5/51 shapeKeys=0xFFFFFFFF/0x12000000 frames=1-30 layerChanged=false simulationInput=0 simulationNative=0 simulationKept=0 manifolds=30") != std::string::npos);
+        assert(text.find("bodies=888/999") == std::string::npos);
         assert(text.find("Profiler value meshPointQueryTriangleTests: avg=64.00 max=64 samples=2") != std::string::npos);
         assert(text.find("Profiler value grabTriangleSelectionTests: avg=32.00 max=64 samples=2") != std::string::npos);
         assert(text.find("Profiler value meshStaticVerticesTransformed: avg=3.00 max=3 samples=1") != std::string::npos);
@@ -64,6 +73,8 @@ int main()
     std::atexit(verifyOutput);
     assert(beginInterval().startTicks == 0);
     refreshSettings(true, 30, 0, false);
+    beginFrame();
+    observeContactPair({.world=1, .bodyA=888, .bodyB=999}, ContactStage::Manifold);
     auto stale = beginInterval();
     refreshSettings(false, 30, 0, false);
     refreshSettings(true, 30, 0, false);
@@ -130,6 +141,15 @@ int main()
 
     for (int frame = 0; frame < 30; ++frame) {
         beginFrame();
+        observeContactPair({.world=123, .bodyA=42, .bodyB=700}, ContactStage::SimulationInput);
+        observeContactPair({.world=123, .bodyA=700, .bodyB=42, .shapeA=0x12000000, .layerA=51, .layerB=5}, ContactStage::Manifold);
+        observeContactPair({.world=123, .bodyA=700, .bodyB=42, .layerA=51, .layerB=5}, ContactStage::PlayerMeleeDropped);
+        {
+            ScopedTimer listener(Scope::NativeImpactListener);
+            ScopedTimer dispatch(Scope::NativeImpactDispatch);
+            ScopedTimer consumer(Scope::NativeImpactConsumer);
+            ScopedTimer pair(Scope::NativeImpactPlayPair);
+        }
         {
             ScopedTimer outer(Scope::RuntimePreparation);
             profile.beginUpdate();

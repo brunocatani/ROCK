@@ -997,6 +997,11 @@ if(BUILD_ROCK_TESTS)
     target_link_libraries(ROCKPolicyTestSupport PUBLIC xbyak::xbyak)
   endif()
 
+  add_executable(ROCKContactPairProfileTests "${ROOT_DIR}/tests/ContactPairProfileTests.cpp")
+  target_compile_features(ROCKContactPairProfileTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKContactPairProfileTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKContactPairProfileTests)
+
   add_executable(ROCKGrabMeshQueryTests "${ROOT_DIR}/tests/GrabMeshQueryTests.cpp")
   target_compile_features(ROCKGrabMeshQueryTests PRIVATE cxx_std_23)
   list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKGrabMeshQueryTests)

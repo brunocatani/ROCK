@@ -1,5 +1,6 @@
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
+#include "physics-interaction/performance/ContactPairProfile.h"
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/HavokOffsets.h"
@@ -58,15 +59,46 @@ namespace rock::native_player_collision
             return found != end && found->bodyId == id ? &*found : nullptr;
         }
 
+        void profilePairs(RE::hknpWorld* world, const BodyPair* pairs, int count,
+            performance_profiler::ContactStage stage, performance_profiler::ValueMetric metric) noexcept
+        {
+            if (!performance_profiler::enabled() || !world || count < 0) return;
+            performance_profiler::ScopedTimer timer(performance_profiler::Scope::NativePairProfileBatch);
+            performance_profiler::observeValue(metric, static_cast<std::uint64_t>(count));
+            if (!pairs || count == 0) return;
+            // Bound diagnostic work even if an engine batch is unusually large.
+            // This truncates evidence only; the original filter sees every pair.
+            constexpr int maxProfiledPairs = 4096;
+            const int sampled = (std::min)(count, maxProfiledPairs);
+            if (count > sampled) performance_profiler::addCounter(
+                performance_profiler::Counter::ContactPairBatchTruncated, count - sampled);
+            for (int i = 0; i < sampled; ++i) {
+                performance_profiler::observeContactPair({
+                    .world = reinterpret_cast<std::uintptr_t>(world),
+                    .bodyA = pairs[i].bodyA, .bodyB = pairs[i].bodyB,
+                }, stage);
+            }
+        }
+
         int filterPairs(void* filter, RE::hknpWorld* world, BodyPair* pairs, int count) noexcept
         {
-            const int nativeAdmitted = s_original(filter, world, pairs, count);
+            profilePairs(world, pairs, count, performance_profiler::ContactStage::SimulationInput,
+                performance_profiler::ValueMetric::SimulationPairsInput);
+            int nativeAdmitted = 0;
+            {
+                performance_profiler::ScopedTimer nativeTimer(performance_profiler::Scope::NativeSimulationPairFilter);
+                nativeAdmitted = s_original(filter, world, pairs, count);
+            }
+            if (nativeAdmitted >= 0 && nativeAdmitted <= count) profilePairs(world, pairs, nativeAdmitted,
+                performance_profiler::ContactStage::SimulationNative, performance_profiler::ValueMetric::SimulationPairsNative);
             performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::NativePlayerPairFilter);
             const int admitted = nativeAdmitted > 0 && nativeAdmitted <= count ?
                 shell_casing_grace::filterPairs(world, pairs, nativeAdmitted) : nativeAdmitted;
             auto lease = s_gate.tryEnterCallback();
             if (!lease || !world || world != s_snapshot.world || s_snapshot.count == 0 ||
                 !pairs || admitted <= 0 || admitted > count) {
+                if (admitted >= 0 && admitted <= count) profilePairs(world, pairs, admitted,
+                    performance_profiler::ContactStage::SimulationKept, performance_profiler::ValueMetric::SimulationPairsKept);
                 return admitted;
             }
 
@@ -103,6 +135,8 @@ namespace rock::native_player_collision
             s_removedPairs.fetch_add(admitted - kept, std::memory_order_relaxed);
             s_preservedPlayerPairs.fetch_add(preserved, std::memory_order_relaxed);
             s_staleIdentities.fetch_add(stale, std::memory_order_relaxed);
+            profilePairs(world, pairs, kept, performance_profiler::ContactStage::SimulationKept,
+                performance_profiler::ValueMetric::SimulationPairsKept);
             return kept;
         }
 

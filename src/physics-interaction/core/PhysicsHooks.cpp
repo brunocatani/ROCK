@@ -15,6 +15,7 @@
 #include "physics-interaction/native/NativeGrabHapticSuppressionPolicy.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
+#include "physics-interaction/performance/ContactPairProfile.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -966,7 +967,8 @@ namespace rock
         // validates the allocation bound, body identity, and live motion slot.
         // Never cache an event, world, or body pointer between callbacks.
         MeleeContactDecodeStage readMeleeContactPartner(
-            const void* contactEvent, const void* collisionEvent, std::uint32_t& filterInfo) noexcept
+            const void* contactEvent, const void* collisionEvent, std::uint32_t& filterInfo,
+            performance_profiler::ContactPair* profilePair) noexcept
         {
             filterInfo = 0;
             auto stage = MeleeContactDecodeStage::EventBuffers;
@@ -994,6 +996,19 @@ namespace rock
                 stage = MeleeContactDecodeStage::PartnerBody;
                 if (!readMeleeBodyFilter(world, otherId, filterInfo)) {
                     return stage;
+                }
+                stage = MeleeContactDecodeStage::Complete;
+                // Optional evidence must never change native forwarding on a read fault.
+                if (profilePair) {
+                    profilePair->world = reinterpret_cast<std::uintptr_t>(world);
+                    profilePair->bodyB = otherId;
+                    profilePair->layerB = filterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+                    std::memcpy(&profilePair->bodyA,
+                        static_cast<const char*>(collisionEvent) + 0x08 + ourIndex * sizeof(otherId), sizeof(otherId));
+                    std::uint32_t sourceFilter = 0;
+                    if (readMeleeBodyFilter(world, profilePair->bodyA, sourceFilter)) {
+                        profilePair->layerA = sourceFilter & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+                    }
                 }
                 return MeleeContactDecodeStage::Complete;
             } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -1130,7 +1145,9 @@ namespace rock
              * the cooldown. Undecodable events pass through unchanged.
              */
             std::uint32_t partnerFilter = 0;
-            const auto decodeStage = readMeleeContactPartner(contactEvent, collisionEvent, partnerFilter);
+            performance_profiler::ContactPair profilePair{};
+            const bool profiling = performance_profiler::enabled();
+            const auto decodeStage = readMeleeContactPartner(contactEvent, collisionEvent, partnerFilter, profiling ? &profilePair : nullptr);
             if (decodeStage != MeleeContactDecodeStage::Complete) {
                 g_meleeDecodeFailureStage.store(decodeStage, std::memory_order_relaxed);
                 g_meleeDecodeFailures.fetch_add(1, std::memory_order_relaxed);
@@ -1138,10 +1155,16 @@ namespace rock
             } else if (collision_layer_policy::isRockOwnedMatrixLayer(
                            partnerFilter & collision_layer_policy::FO4_LAYER_FILTER_MASK)) {
                 performance_profiler::addCounter(performance_profiler::Counter::NativeMeleeRockPartnerDropped);
+                if (profiling) performance_profiler::observeContactPair(profilePair, input.actorIsPlayer ?
+                    performance_profiler::ContactStage::PlayerMeleeDropped : performance_profiler::ContactStage::OtherMeleeDropped);
                 return;
             }
 
             if (g_originalVrMeleeImpactCallback) {
+                if (profiling && decodeStage == MeleeContactDecodeStage::Complete) {
+                    performance_profiler::observeContactPair(profilePair, input.actorIsPlayer ?
+                        performance_profiler::ContactStage::PlayerMeleeForwarded : performance_profiler::ContactStage::OtherMeleeForwarded);
+                }
                 performance_profiler::ScopedTimer nativeTimer(performance_profiler::Scope::NativeMeleeDispatch);
                 g_originalVrMeleeImpactCallback(actor, contactEvent, collisionEvent);
             }

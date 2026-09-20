@@ -1,4 +1,5 @@
 #include "physics-interaction/performance/PerformanceProfiler.h"
+#include "physics-interaction/performance/ContactPairProfile.h"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -65,6 +66,8 @@ namespace rock::performance_profiler
         std::array<CounterAccum, static_cast<std::size_t>(Counter::Count)> s_counterAccum;
         std::array<ValueAccum, static_cast<std::size_t>(ValueMetric::Count)> s_valueAccum;
         Settings s_settings;
+        ContactPairTable<128> s_contactPairs;
+        ContactPairTable<512> s_contactChildren;
         // All native/game/render threads merge into the existing atomic window.
         // TLS retains only a scope ID and sampling phase, never engine pointers.
         thread_local Scope t_memoryQueryScope = Scope::UnattributedMemoryQueries;
@@ -239,6 +242,13 @@ namespace rock::performance_profiler
             case Scope::MeshPointQuery: return "meshPointQuery";
             case Scope::MeshDirectionalQuery: return "meshDirectionalQuery";
             case Scope::GrabMeshQueryIndexBuild: return "grabMeshQueryIndexBuild";
+            case Scope::NativePairProfileBatch: return "nativePairProfileBatch";
+            case Scope::NativeSimulationPairFilter: return "nativeSimulationPairFilter";
+            case Scope::NativeImpactListener: return "nativeImpactListener";
+            case Scope::NativeImpactDispatch: return "nativeImpactDispatch";
+            case Scope::NativeImpactConsumer: return "nativeImpactConsumer";
+            case Scope::NativeImpactPlayPair: return "nativeImpactPlayPair";
+            case Scope::NativeImpactManifoldTrace: return "nativeImpactManifoldTrace";
             case Scope::Count:
                 break;
             }
@@ -294,6 +304,7 @@ namespace rock::performance_profiler
             case Counter::GrabAcquisitionPeerHeld: return "grabAcquisitionPeerHeld";
             case Counter::GrabAcquisitionEquippedTransfer: return "grabAcquisitionEquippedTransfer";
             case Counter::GrabAcquisitionSucceeded: return "grabAcquisitionSucceeded";
+            case Counter::ContactPairBatchTruncated: return "contactPairBatchTruncated";
             case Counter::Count:
                 break;
             }
@@ -361,6 +372,9 @@ namespace rock::performance_profiler
             case ValueMetric::MeshPointQueryTriangleTests: return "meshPointQueryTriangleTests";
             case ValueMetric::GrabTriangleSelectionTests: return "grabTriangleSelectionTests";
             case ValueMetric::MeshStaticVerticesTransformed: return "meshStaticVerticesTransformed";
+            case ValueMetric::SimulationPairsInput: return "simulationPairsInput";
+            case ValueMetric::SimulationPairsNative: return "simulationPairsNative";
+            case ValueMetric::SimulationPairsKept: return "simulationPairsKept";
             case ValueMetric::Count:
                 break;
             }
@@ -447,6 +461,9 @@ namespace rock::performance_profiler
 
         void clearCounterAccumulators() noexcept
         {
+            const auto generation = s_settings.generation.load(std::memory_order_acquire);
+            (void)s_contactPairs.take(generation);
+            (void)s_contactChildren.take(generation);
             for (auto& slot : s_counterAccum) {
                 slot.count.store(0, std::memory_order_release);
             }
@@ -541,6 +558,8 @@ namespace rock::performance_profiler
             std::array<ScopeSnapshot, static_cast<std::size_t>(Scope::Count)> scopes{};
             std::array<CounterSnapshot, static_cast<std::size_t>(Counter::Count)> counters{};
             std::array<ValueSnapshot, static_cast<std::size_t>(ValueMetric::Count)> values{};
+            ContactPairTable<128>::Snapshot pairs{};
+            ContactPairTable<512>::Snapshot children{};
             std::uint64_t frames{ 0 };
             std::uint64_t droppedSnapshotsBeforeThis{ 0 };
         };
@@ -711,7 +730,7 @@ namespace rock::performance_profiler
                             snapshot.droppedSnapshotsBeforeThis);
                     }
 
-                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1 grabMeshQueries=1", snapshot.frames, GetCurrentProcessId());
+                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1 grabMeshQueries=1 contactPairs=1", snapshot.frames, GetCurrentProcessId());
                     for (const auto& item : snapshot.scopes) {
                         if (!item.hasData()) {
                             continue;
@@ -754,6 +773,24 @@ namespace rock::performance_profiler
                             item.max,
                             item.samples);
                     }
+
+                    const auto writePairs = [&](const auto& table, const char* kind) {
+                        if (table.size || table.dropped || table.carriedBuckets) {
+                            logger->info("[ROCK::Performance] Profiler contactTable {}: entries={} dropped={} carriedBuckets={}",
+                                kind, table.size, table.dropped, table.carriedBuckets);
+                        }
+                        for (std::size_t i = 0; i < table.size; ++i) {
+                            const auto& row = table.entries[i];
+                            const auto& p = row.pair;
+                            const auto& c = row.counts;
+                            logger->info("[ROCK::Performance] Profiler contact{}: world=0x{:X} bodies={}/{} layers={}/{} shapeKeys=0x{:08X}/0x{:08X} frames={}-{} layerChanged={} simulationInput={} simulationNative={} simulationKept={} manifolds={} impulses={} playerMeleeDropped={} otherMeleeDropped={} playerMeleeForwarded={} otherMeleeForwarded={}",
+                                kind, p.world, p.bodyA, p.bodyB, p.layerA, p.layerB, p.shapeA, p.shapeB,
+                                row.firstFrame, row.lastFrame, row.layerChanged,
+                                c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8]);
+                        }
+                    };
+                    writePairs(snapshot.pairs, "Pair");
+                    writePairs(snapshot.children, "Child");
 
                     flushIfDue();
                 } catch (...) {
@@ -904,6 +941,8 @@ namespace rock::performance_profiler
                 .scopes = snapshot,
                 .counters = counterSnapshot,
                 .values = valueSnapshot,
+                .pairs = s_contactPairs.take(s_settings.generation.load(std::memory_order_acquire)),
+                .children = s_contactChildren.take(s_settings.generation.load(std::memory_order_acquire)),
                 .frames = frames,
             });
         }
@@ -1020,6 +1059,19 @@ namespace rock::performance_profiler
             return;
         }
         accumFor(counter).count.fetch_add(count, std::memory_order_relaxed);
+    }
+
+    void observeContactPair(ContactPair pair, ContactStage stage) noexcept
+    {
+        if (!enabled()) return;
+        const auto generation = s_settings.generation.load(std::memory_order_acquire);
+        const auto frame = s_settings.frameIndex.load(std::memory_order_acquire);
+        if (frame <= s_settings.warmupFrames.load(std::memory_order_acquire)) return;
+        if (pair.shapeA != kUnknownContactDetail || pair.shapeB != kUnknownContactDetail) {
+            s_contactChildren.record(pair, stage, frame, generation);
+        }
+        pair.shapeA = pair.shapeB = kUnknownContactDetail;
+        s_contactPairs.record(pair, stage, frame, generation);
     }
 
     void observeValue(ValueMetric metric, std::uint64_t value) noexcept

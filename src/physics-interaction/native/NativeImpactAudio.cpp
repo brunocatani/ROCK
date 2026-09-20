@@ -1,4 +1,6 @@
 #include "physics-interaction/native/NativeImpactAudio.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
+#include "physics-interaction/performance/ContactPairProfile.h"
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/collision/ImpactAudioPolicy.h"
@@ -108,6 +110,7 @@ namespace rock::native_impact_audio
 
         bool onPlayPair(void* material, void* otherMaterial, const SoundEvent* event) noexcept
         {
+            performance_profiler::ScopedTimer timer(performance_profiler::Scope::NativeImpactPlayPair);
             const bool accepted = originalPlayPair(material, otherMaterial, event);
             if (currentContact && currentContact->generated) {
                 ++currentContact->pairCalls;
@@ -118,6 +121,7 @@ namespace rock::native_impact_audio
 
         std::uint32_t onConsumer(void* manager, const SoundEvent* event, void* source) noexcept
         {
+            performance_profiler::ScopedTimer timer(performance_profiler::Scope::NativeImpactConsumer);
             if (active && currentContact && currentContact->generated) {
                 currentContact->dispatched = true;
                 if (event) currentContact->sound = *event;
@@ -133,23 +137,33 @@ namespace rock::native_impact_audio
 
         void onListener(void* listener, RE::hknpWorld** worldHolder, const void* event) noexcept
         {
+            performance_profiler::ScopedTimer timer(performance_profiler::Scope::NativeImpactListener);
+            const auto dispatch = [&] {
+                performance_profiler::ScopedTimer nativeTimer(performance_profiler::Scope::NativeImpactDispatch);
+                originalListener(listener, worldHolder, event);
+            };
             ContactContext context{};
             if (!active || !worldHolder || !*worldHolder ||
                 !native_memory::tryReadField(event, 0x08, context.bodies) ||
                 !readPair(*worldHolder, context) || !context.generated) {
                 // Clear an outer generated context during nested native events.
                 ContactScope scope(context);
-                originalListener(listener, worldHolder, event);
+                dispatch();
                 return;
             }
             ContactScope scope(context);
+            performance_profiler::observeContactPair({
+                .world = reinterpret_cast<std::uintptr_t>(*worldHolder),
+                .bodyA = context.bodies[0], .bodyB = context.bodies[1],
+                .layerA = context.layers[0], .layerB = context.layers[1],
+            }, performance_profiler::ContactStage::Impulse);
             auto& route = routes[routeFor(context)];
             const bool tracing = dynamic_collider_trace::enabled();
             const auto count = tracing ? route.impulses.fetch_add(1, std::memory_order_relaxed) + 1 : 0;
             const bool record = tracing && sample(route.nextImpulseMs);
             std::array<float, 4> impulses{};
             const bool weightsRead = record && native_memory::tryReadField(event, 0x30, impulses);
-            originalListener(listener, worldHolder, event);
+            dispatch();
             if (record) {
                 dynamic_collider_trace::writeWeapon(
                     "IMPACT_AUDIO impulse: bodies={}/{} layers={}/{} impulses={} manifolds={} weightsRead={} weights=({:.4f},{:.4f},{:.4f},{:.4f}) dispatched={} shellMuted={} materials=0x{:08X}/0x{:08X} severity={:.4f} pairCalls={} acceptedPairs={}",
@@ -211,11 +225,19 @@ namespace rock::native_impact_audio
     void observeManifold(RE::hknpWorld* world, std::uint32_t bodyA,
         std::uint32_t bodyB, std::uint32_t shapeKeyA, std::uint32_t shapeKeyB) noexcept
     {
-        if (!active || !dynamic_collider_trace::enabled()) return;
+        const bool tracing = dynamic_collider_trace::enabled();
+        if (!active || (!tracing && !performance_profiler::enabled())) return;
+        performance_profiler::ScopedTimer timer(performance_profiler::Scope::NativeImpactManifoldTrace);
         ContactContext context{};
         context.bodies[0] = bodyA;
         context.bodies[1] = bodyB;
         if (!readPair(world, context) || !context.generated) return;
+        performance_profiler::observeContactPair({
+            .world = reinterpret_cast<std::uintptr_t>(world),
+            .bodyA = bodyA, .bodyB = bodyB, .shapeA = shapeKeyA, .shapeB = shapeKeyB,
+            .layerA = context.layers[0], .layerB = context.layers[1],
+        }, performance_profiler::ContactStage::Manifold);
+        if (!tracing) return;
         auto& route = routes[routeFor(context)];
         const auto count = route.manifolds.fetch_add(1, std::memory_order_relaxed) + 1;
         if (!sample(route.nextManifoldMs)) return;

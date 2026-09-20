@@ -119,6 +119,13 @@ namespace rock::performance_profiler
         MeshPointQuery,
         MeshDirectionalQuery,
         GrabMeshQueryIndexBuild,
+        NativeSimulationPairFilter,
+        NativePairProfileBatch,
+        NativeImpactListener,
+        NativeImpactDispatch,
+        NativeImpactConsumer,
+        NativeImpactPlayPair,
+        NativeImpactManifoldTrace,
         Count
     };
 
@@ -150,6 +157,7 @@ namespace rock::performance_profiler
         GrabAcquisitionPeerHeld,
         GrabAcquisitionEquippedTransfer,
         GrabAcquisitionSucceeded,
+        ContactPairBatchTruncated,
         Count
     };
 
@@ -195,6 +203,9 @@ namespace rock::performance_profiler
         MeshPointQueryTriangleTests,
         GrabTriangleSelectionTests,
         MeshStaticVerticesTransformed,
+        SimulationPairsInput,
+        SimulationPairsNative,
+        SimulationPairsKept,
         Count
     };
 
@@ -209,6 +220,10 @@ namespace rock::performance_profiler
     void addEventCount(Scope scope, std::uint64_t count = 1) noexcept;
     void addCounter(Counter counter, std::uint64_t count = 1) noexcept;
     void observeValue(ValueMetric metric, std::uint64_t value) noexcept;
+    struct ContactPair;
+    enum class ContactStage : std::uint8_t;
+    // Diagnostic values only; ownership and collision decisions stay with callers.
+    void observeContactPair(ContactPair pair, ContactStage stage) noexcept;
     bool overlayTextEnabled() noexcept;
     std::uint32_t copyOverlayLines(OverlayLines& outLines) noexcept;
 
