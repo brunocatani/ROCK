@@ -125,6 +125,10 @@ namespace rock
             _bridge.completeHandPoseHandoff(reason);
         }
         void tryCompleteHandPoseHandoff() { _bridge.tryCompleteHandPoseHandoff(); }
+        void synchronizeEquippedPresentation(RE::NiNode* weaponNode, std::uint32_t formID)
+        {
+            if (formID == _bridge.weaponBaseFormID()) _bridge.synchronizeEquippedPresentation(weaponNode);
+        }
 
     private:
         struct Identity

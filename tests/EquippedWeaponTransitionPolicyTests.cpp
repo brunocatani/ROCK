@@ -127,6 +127,25 @@ int main()
             !holsteredAfterHandoff.handoffBridgeToNative &&
             holsteredAfterHandoff.repair == RepairAction::None);
 
+    State waitingForGrip{};
+    auto pendingGrip = nativeVisible;
+    pendingGrip.gripHandoffPending = true;
+    for (int frame = 0; frame < 8; ++frame) {
+        const auto decision = advance(waitingForGrip, pendingGrip);
+        ok &= expect("visible native geometry cannot split the weapon and hand handoff",
+            decision.presentBridgeModel && !decision.handoffBridgeToNative && !waitingForGrip.nativeHandoffObserved);
+    }
+    pendingGrip.gripHandoffPending = false;
+    const auto acquiredGrip = advance(waitingForGrip, pendingGrip);
+    ok &= expect("accepted equipped grips allow the stable native model to take over immediately",
+        acquiredGrip.handoffBridgeToNative && !acquiredGrip.presentBridgeModel && waitingForGrip.nativeHandoffObserved);
+
+    State expiredBridge{};
+    pendingGrip.gripHandoffPending = false;
+    pendingGrip.bridgeModelAvailable = false;
+    for (int frame = 0; frame < 3; ++frame) (void)advance(expiredBridge, pendingGrip);
+    ok &= expect("bridge lease expiry does not block native presentation", expiredBridge.nativeHandoffObserved);
+
     const auto lateDetachOne = advance(stableState, FrameInput{
         .drawRecoveryElapsedSeconds = 0.0f,
         .mutationAllowed = true,

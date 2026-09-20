@@ -356,6 +356,7 @@ namespace rock
                 .nativeAncestorPathVisible = visual.ancestorPathVisible,
                 .nativeInstanceLocallyVisible = visual.instanceLocallyVisible,
                 .bridgeOwnsNativeInstanceCull = bridgeOwnsCull,
+                .gripHandoffPending = _bridge.isHandPoseHandoffActive(),
             });
 
         using NativeWeaponState =

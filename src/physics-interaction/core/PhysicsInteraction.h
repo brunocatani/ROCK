@@ -126,6 +126,7 @@ namespace rock
          * where the render and the next frame's latch both see it.
          */
         void normalizeWeaponPresentationScaleAfterFrikWeaponPass();
+        void synchronizeEquipVisualBridgeAfterFrikWeaponPass();
         void traceScopeColliderState() const;
 
         [[nodiscard]] bool tryGetManualScopePresentationTarget(

@@ -336,6 +336,22 @@ namespace rock::native_scope_camera_follow_math
 
 namespace rock::native_scope_overlay_follow_math
 {
+    // FRIK 0.79 WeaponPositionAdjuster seeds this camera-local basis before
+    // aligning it to the carried weapon. ScopeParent retains its native
+    // controller frame; calibrating against the already aimed camera bakes
+    // the first two-hand/carry rotation into the overlay for the whole equip.
+    template <class Transform>
+    [[nodiscard]] inline Transform resolveUnsteeredCameraWorld(
+        const Transform& cameraParentWorld, const Transform& cameraLocal)
+    {
+        Transform baseline = cameraLocal;
+        baseline.rotate = {};
+        baseline.rotate.entry[2][0] = 1.0f;
+        baseline.rotate.entry[0][1] = 1.0f;
+        baseline.rotate.entry[1][2] = 1.0f;
+        return transform_math::composeTransforms(cameraParentWorld, baseline);
+    }
+
     /*
      * FO4VR attaches world_scope.nif beneath ScopeParent, not beneath the
      * native activation camera. Bethesda's camera-to-model translation was

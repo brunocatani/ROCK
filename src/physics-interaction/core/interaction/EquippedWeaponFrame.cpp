@@ -1832,6 +1832,17 @@ namespace rock
         }
     }
 
+    void PhysicsInteraction::synchronizeEquipVisualBridgeAfterFrikWeaponPass()
+    {
+        const auto& runtime = runtime_state::currentFrame();
+        if (!_lifecycle.initialized.load(std::memory_order_acquire) || !runtime.visualAuthorityAvailable ||
+            !runtime.localSkeletonReady || runtime.localMenuBlocking || runtime.compatibilityConfigBlocking) return;
+        // The native Weapon may still be hidden by draw animation or the
+        // bridge itself. Its accepted grip solve nevertheless owns both hands.
+        _equipped.transition.synchronizeEquippedPresentation(
+            resolveEquippedWeaponInteractionNode(), currentEquippedWeaponFormId());
+    }
+
     void PhysicsInteraction::updateAuthoredPrimaryFiringGrip()
     {
         const auto& runtime = runtime_state::currentFrame();

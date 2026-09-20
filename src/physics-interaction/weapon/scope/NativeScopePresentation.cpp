@@ -234,7 +234,9 @@ namespace rock
 
         const auto* playerNodes = f4vr::getPlayerNodes();
         auto* scopeParent = playerNodes ? playerNodes->ScopeParentNode : nullptr;
-        if (!scopeParent || !scopeParent->parent || !isFiniteTransform(scopeParent->local) ||
+        auto* scopeCamera = playerNodes ? playerNodes->primaryWeaponScopeCamera : nullptr;
+        if (!scopeCamera || !scopeCamera->parent || !isFiniteTransform(scopeCamera->local) ||
+            !scopeParent || !scopeParent->parent || !isFiniteTransform(scopeParent->local) ||
             std::abs(scopeParent->parent->world.scale) <= 0.0001f) {
             return false;
         }
@@ -271,9 +273,14 @@ namespace rock
         if (!tryGetComposedNodeWorld(scopeModelRoot, nativeScopeModelRootWorld)) {
             return false;
         }
+        RE::NiTransform cameraParentWorld{};
+        if (!tryGetComposedNodeWorld(scopeCamera->parent, cameraParentWorld)) return false;
+        const auto unsteeredCameraWorld = native_scope_overlay_follow_math::resolveUnsteeredCameraWorld(
+            cameraParentWorld, scopeCamera->local);
+        if (!isFiniteTransform(unsteeredCameraWorld) || std::abs(unsteeredCameraWorld.scale) <= 0.0001f) return false;
         const RE::NiTransform modelRootCalibrationInCameraLocal =
             native_scope_overlay_follow_math::captureModelRootCalibrationInCameraLocal(
-                nativeCameraWorld,
+                unsteeredCameraWorld,
                 nativeScopeModelRootWorld);
         if (!isFiniteTransform(modelRootCalibrationInCameraLocal) ||
             std::abs(modelRootCalibrationInCameraLocal.scale) <= 0.0001f) {
@@ -291,8 +298,8 @@ namespace rock
             .valid = true,
             .hasAppliedLocal = false,
         };
-        ROCK_LOG_DEBUG(Weapon,
-            "TwoHandedGrip: native scope overlay calibrated generation={:016X} modelRootLocal=({:.2f},{:.2f},{:.2f}) cameraCalibrationScale={:.3f} nativeParentLocal=({:.2f},{:.2f},{:.2f})",
+        ROCK_LOG_INFO(Weapon,
+            "TwoHandedGrip: native scope overlay calibrated generation={:016X} modelRootLocal=({:.2f},{:.2f},{:.2f}) cameraCalibrationScale={:.3f} nativeParentLocal=({:.2f},{:.2f},{:.2f}) basis=unsteered-camera excludedAim={:.2f}deg",
             currentWeaponGenerationKey,
             scopeModelRoot->local.translate.x,
             scopeModelRoot->local.translate.y,
@@ -300,7 +307,9 @@ namespace rock
             modelRootCalibrationInCameraLocal.scale,
             scopeParent->local.translate.x,
             scopeParent->local.translate.y,
-            scopeParent->local.translate.z);
+            scopeParent->local.translate.z,
+            weapon_support_acquisition_math::rotationDistanceRadians(
+                unsteeredCameraWorld.rotate, nativeCameraWorld.rotate) * RADIANS_TO_DEGREES);
         return true;
     }
 

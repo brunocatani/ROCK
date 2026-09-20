@@ -4,6 +4,7 @@
 #include "physics-interaction/hand/HandInteractionStateMachine.h"
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
+#include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
 #include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
 #include "physics-interaction/weapon/FiringGripReattachZonePolicy.h"
@@ -2450,6 +2451,39 @@ int main()
         const TestTransform nativeScopeModelRootWorld = rock::transform_math::composeTransforms(
             scopeBefore,
             nativeModelRootInCameraLocal);
+
+        auto bridgeBase = rock::transform_math::makeIdentityTransform<TestTransform>();
+        const TestVector3 primaryGrip{ 1.0f, -2.0f, 3.0f };
+        const TestVector3 supportGrip{ 1.0f, 18.0f, 3.0f };
+        const auto stillBridge = rock::equip_visual_bridge_policy::solvePairedBridge(
+            bridgeBase, primaryGrip, supportGrip, supportGrip);
+        ok &= expectTrue("paired bridge starts with its captured loose pose", stillBridge.solved);
+        ok &= expectTransformNear("unchanged controllers cannot snap the bridge", stillBridge.weaponWorldTransform, bridgeBase);
+        const auto movedBridge = rock::equip_visual_bridge_policy::solvePairedBridge(
+            bridgeBase, primaryGrip, supportGrip, TestVector3{ 21.0f, -2.0f, 3.0f });
+        ok &= expectTrue("support-controller motion steers the bridge before equipped adoption", movedBridge.solved);
+        const auto primaryAfter = rock::transform_math::localPointToWorld(movedBridge.weaponWorldTransform, primaryGrip);
+        const auto supportAfter = rock::transform_math::localPointToWorld(movedBridge.weaponWorldTransform, supportGrip);
+        ok &= expectNear("paired bridge keeps firing pivot x", primaryAfter.x, primaryGrip.x);
+        ok &= expectNear("paired bridge keeps firing pivot y", primaryAfter.y, primaryGrip.y);
+        ok &= expectNear("paired bridge follows support x", supportAfter.x, 21.0f);
+        ok &= expectNear("paired bridge follows support y", supportAfter.y, -2.0f);
+        const auto coincidentBridge = rock::equip_visual_bridge_policy::solvePairedBridge(
+            bridgeBase, primaryGrip, primaryGrip, supportGrip);
+        ok &= expectFalse("coincident seats do not invent a two-hand aim axis", coincidentBridge.solved);
+        const TestVector3 sourceRegistration{ 0.0f, 2.0f, 0.0f };
+        const TestVector3 equippedRegistration{ 0.0f, 10.0f, 0.0f };
+        auto registeredGrip = rock::transform_math::makeIdentityTransform<TestTransform>();
+        registeredGrip.translate = { 1.0f, 6.0f, 3.0f };
+        auto looseGrip = registeredGrip;
+        looseGrip.translate.y -= 8.0f;
+        for (const auto& equippedWorld : handModeWeaponFrames) {
+            const auto bridgeWorld = rock::equip_visual_bridge_policy::registeredLooseWorld(
+                equippedWorld, sourceRegistration, equippedRegistration);
+            ok &= expectTransformNear("loose and equipped grips coincide after full-pose registration",
+                rock::transform_math::composeTransforms(bridgeWorld, looseGrip),
+                rock::transform_math::composeTransforms(equippedWorld, registeredGrip));
+        }
         const TestTransform modelRootCalibration =
             rock::native_scope_overlay_follow_math::captureModelRootCalibrationInCameraLocal(
                 scopeBefore,
@@ -2469,6 +2503,24 @@ int main()
         const TestTransform zeroFineTune =
             rock::native_scope_overlay_follow_math::makeModelRootFineTuneLocal<TestTransform>(
                 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+
+        // First calibration must be independent of whether the gun was
+        // already carried in two hands when its native overlay appeared.
+        auto cameraParent = weaponBefore;
+        auto cameraLocal = rock::transform_math::makeIdentityTransform<TestTransform>();
+        cameraLocal.scale = 0.75f;
+        const auto unsteered = rock::native_scope_overlay_follow_math::resolveUnsteeredCameraWorld(cameraParent, cameraLocal);
+        const auto nativeOverlay = rock::transform_math::composeTransforms(unsteered, nativeModelRootInCameraLocal);
+        for (float angle : { 0.0f, 37.0f, -81.0f, 165.0f }) {
+            cameraLocal.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, angle);
+            const auto baseline = rock::native_scope_overlay_follow_math::resolveUnsteeredCameraWorld(cameraParent, cameraLocal);
+            const auto calibration = rock::native_scope_overlay_follow_math::captureModelRootCalibrationInCameraLocal(baseline, nativeOverlay);
+            ok &= expectTransformNear("first-equip scope calibration excludes two-hand steering", calibration, modelRootCalibration);
+            const auto aimedOverlay = rock::native_scope_overlay_follow_math::resolveScopeModelRootWorld(
+                anchoredScopeAfter, calibration, zeroFineTune);
+            const auto expectedOverlay = rock::transform_math::composeTransforms(anchoredScopeAfter, modelRootCalibration);
+            ok &= expectTransformNear("scope housing follows final aim after paired equip", aimedOverlay, expectedOverlay);
+        }
         const TestTransform targetScopeModelRoot =
             rock::native_scope_overlay_follow_math::resolveScopeModelRootWorld(
                 anchoredScopeAfter,

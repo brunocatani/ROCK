@@ -32,8 +32,10 @@ namespace rock
      * (node named "Weapon %s (%08X)").
      *
      * The bridge re-attaches that orphaned model under the world root, glues
-     * it to the equipping hand's wand transform and blends it toward the pose
-     * the weapon will actually stabilize at. Once the exact native instance
+     * it to the captured controller relation, retaining the support hand's
+     * steering for paired grips. When the equipped hands accept ownership,
+     * the bridge follows their current-frame weapon solve through the visual
+     * gap. Once the exact native instance
      * is stable, model ownership is released terminally. Native attach repair
      * remains available after handoff, but it can never re-present the loose
      * model during a later sheath, unequip, drop, throw, or animation. Every
@@ -159,6 +161,9 @@ namespace rock
         void completeHandPoseHandoff(const char* reason);
         // End-of-frame only: require an accepted replacement target for each hand.
         void tryCompleteHandPoseHandoff();
+        // AfterWeaponPosition only: the accepted equipped owner has completed
+        // this frame's weapon solve, including provider presentation scale.
+        void synchronizeEquippedPresentation(RE::NiNode* weaponNode);
 
     private:
         // Attach the (already orphaned) model under the world root; false when
@@ -187,6 +192,8 @@ namespace rock
         RE::NiNode* _parent = nullptr;
         RE::NiTransform _modelInHandLocal{};
         RE::NiTransform _physicalHandInWandLocal{};
+        RE::NiPoint3 _supportGripInWandLocal{};
+        bool _followEquippedPose = false;
         // Canonical loose-to-equipped hold (see BeginInput). Re-resolved at
         // begin() against the live filewatch-published hFRIK cache so the
         // bridge obeys the same priority as pull seating and grip-zone equip.

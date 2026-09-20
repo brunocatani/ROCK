@@ -923,6 +923,7 @@ namespace
         if (s_skeletonTickedThisFrame && s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->syncFrikOffHandGripReport();
             s_physicsInteraction->normalizeWeaponPresentationScaleAfterFrikWeaponPass();
+            s_physicsInteraction->synchronizeEquipVisualBridgeAfterFrikWeaponPass();
             s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
         }
     }
