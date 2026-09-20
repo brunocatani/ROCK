@@ -1841,7 +1841,10 @@ namespace rock
             tryGetSolverHandTransform(supportHandIsLeft, supportTransform);
         if (!primaryTransformAvailable || !supportTransformAvailable) {
             _hasSolvedWeaponTransform = false;
-            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing support grip because authoritative hand transforms are unavailable");
+            ROCK_LOG_WARN(Weapon,
+                "TwoHandedGrip: clearing support grip because authoritative hand transforms are unavailable frame={} primaryHand={} primaryAvailable={} supportAvailable={} authored={} transferred={}",
+                runtime_state::currentFrame().frameIndex, firingHandName(), primaryTransformAvailable, supportTransformAvailable,
+                supportGrip.authoredSupportGrip, supportGrip.transferredLooseGrip);
             logGripFailureIncident("authoritative-hand-frame-unavailable");
             transitionToInactive(false);
             return;
@@ -3073,13 +3076,23 @@ namespace rock
         // captured offset-to-hand relation feeds that motion into our target.
         // The shared hand service already isolates the current physical hand
         // from our claims and native recoil; use that single authority here.
-        if (!frik_hand_world_authority::hasCalibratedRawHandFrame(isLeft) ||
-            !frik_hand_world_authority::tryGetInputDriverWorld(isLeft, outDriverWorld) ||
-            !frik_hand_world_authority::tryGetRawHandWorld(isLeft, outHandWorld)) {
+        const bool calibrated = frik_hand_world_authority::hasCalibratedRawHandFrame(isLeft);
+        const bool driverAvailable = frik_hand_world_authority::tryGetInputDriverWorld(isLeft, outDriverWorld);
+        const bool rawAvailable = frik_hand_world_authority::tryGetRawHandWorld(isLeft, outHandWorld);
+        const bool rawUsable = rawAvailable && isUsableHandAuthorityTransform(outHandWorld);
+        const bool driverFinite = driverAvailable && isFiniteTransform(outDriverWorld);
+        if (!calibrated || !driverAvailable || !rawAvailable || !rawUsable || !driverFinite) {
+            if (logger::isWarnEnabled() &&
+                logger::internal::shouldEmitSample(isLeft ? "hand-input-physical-left" : "hand-input-physical-right", 2000)) {
+                ROCK_LOG_WARN(Weapon,
+                    "HAND_INPUT_PHYSICAL frame={} hand={} calibrated={} driverAvailable={} rawAvailable={} rawUsable={} driverFinite={} rawSource={} rawScale={:.8f} driverScale={:.8f} state={} generation={:016X}",
+                    runtime_state::currentFrame().frameIndex, isLeft ? "left" : "right", calibrated,
+                    driverAvailable, rawAvailable, rawUsable, driverFinite, frik_hand_world_authority::rawHandSourceName(isLeft),
+                    outHandWorld.scale, outDriverWorld.scale, twoHandedStateDiagnosticName(_session.state), _session.weaponGenerationKey);
+            }
             return false;
         }
-        return isUsableHandAuthorityTransform(outHandWorld) &&
-               isFiniteTransform(outDriverWorld);
+        return true;
     }
 
     bool TwoHandedGrip::tryGetPhysicalHandWorld(

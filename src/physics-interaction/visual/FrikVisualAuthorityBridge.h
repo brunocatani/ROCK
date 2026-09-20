@@ -645,15 +645,24 @@ namespace rock::frik_visual_authority
      * A tracked input of a hand as FRIK uses it this frame. Current from
      * BeforeArmSolve on; before that phase it holds the previous frame.
      */
-    [[nodiscard]] inline bool tryGetTrackedHandTransform(Hand hand, TrackedHandKind kind, RE::NiTransform& outWorld)
+    [[nodiscard]] inline bool tryGetTrackedHandTransform(Hand hand, TrackedHandKind kind, RE::NiTransform& outWorld,
+        const char** failure = nullptr)
     {
         outWorld = {};
+        if (failure) *failure = "none";
         auto* frikApi = api();
-        if (!frikApi || !frikApi->getTrackedHandTransform || !frikApi->getTrackedHandTransform(hand, kind, &outWorld)) {
+        if (!frikApi || !frikApi->getTrackedHandTransform) {
+            if (failure) *failure = frikApi ? "tracked-input-api-unavailable" : "frik-api-unavailable";
+            return false;
+        }
+        if (!frikApi->getTrackedHandTransform(hand, kind, &outWorld)) {
+            if (failure) *failure = "tracked-input-rejected";
             outWorld = {};
             return false;
         }
-        return detail::isFiniteNiTransform(outWorld);
+        const bool valid = detail::isFiniteNiTransform(outWorld);
+        if (!valid && failure) *failure = "tracked-input-invalid-transform";
+        return valid;
     }
 
     /*

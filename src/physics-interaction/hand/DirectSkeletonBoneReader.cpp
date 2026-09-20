@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 
@@ -355,13 +356,20 @@ namespace rock
         snapshot.space = SkeletonBoneCaptureSpace::Controller;
         for (const bool isLeft : { false, true }) {
             RE::NiTransform root{};
-            if (frik_hand_world_authority::tryGetRawHandWorld(isLeft, root) &&
+            std::string_view rejectedSource = "raw-hand-unavailable";
+            const bool rawAvailable = frik_hand_world_authority::tryGetRawHandWorld(isLeft, root);
+            if (rawAvailable &&
                 transport::transportSnapshotHand(snapshot.bones,
-                    isLeft ? transport::HandChainSide::Left : transport::HandChainSide::Right, root)) {
+                    isLeft ? transport::HandChainSide::Left : transport::HandChainSide::Right, root, &rejectedSource)) {
                 snapshot.controllerHandsValid[isLeft ? 1u : 0u] = true;
-            } else {
-                ROCK_LOG_SAMPLE_WARN(Hand, 5000,
-                    "Controller skeleton capture rejected: {} hand input or sampled bone chain unavailable", isLeft ? "left" : "right");
+            } else if (logger::isWarnEnabled() &&
+                logger::internal::shouldEmitSample(isLeft ? "hand-input-chain-left" : "hand-input-chain-right", 2000)) {
+                ROCK_LOG_WARN(Hand,
+                    "Controller skeleton capture rejected: frame={} hand={} rejectedSource='{}' rawAvailable={} rawSource={} calibrated={} bones={} topology={} payload={}",
+                    runtime_state::currentFrame().frameIndex, isLeft ? "left" : "right", rejectedSource,
+                    rawAvailable, frik_hand_world_authority::rawHandSourceName(isLeft),
+                    frik_hand_world_authority::hasCalibratedRawHandFrame(isLeft), snapshot.bones.size(),
+                    snapshot.topologyRevision, static_cast<unsigned>(snapshot.payload));
             }
         }
         snapshot.valid = snapshot.controllerHandsValid[0] || snapshot.controllerHandsValid[1];

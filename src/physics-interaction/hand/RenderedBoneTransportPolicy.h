@@ -117,19 +117,29 @@ namespace rock::rendered_bone_transport_policy
     // Validate the whole chain before changing any entry.
     template <class Bones>
     [[nodiscard]] inline bool transportSnapshotHand(
-        Bones& bones, HandChainSide side, const RE::NiTransform& controllerRoot) noexcept
+        Bones& bones, HandChainSide side, const RE::NiTransform& controllerRoot,
+        std::string_view* rejectedSource = nullptr) noexcept
     {
+        // The optional diagnostic borrows a bone name only until the caller logs it.
+        if (rejectedSource) *rejectedSource = {};
         if (side == HandChainSide::None || !tracked_hand_isolation_policy::isFiniteTransform(controllerRoot)) {
+            if (rejectedSource) *rejectedSource = side == HandChainSide::None ? "hand-side" : "controller-root";
             return false;
         }
         const std::string_view handName = side == HandChainSide::Left ? "LArm_Hand" : "RArm_Hand";
         const RE::NiTransform* sourceRoot = nullptr;
         for (const auto& bone : bones) {
             if (chainSideForBone(bone.name) != side) continue;
-            if (!tracked_hand_isolation_policy::isFiniteTransform(bone.world)) return false;
+            if (!tracked_hand_isolation_policy::isFiniteTransform(bone.world)) {
+                if (rejectedSource) *rejectedSource = bone.name;
+                return false;
+            }
             if (bone.name == handName) sourceRoot = &bone.world;
         }
-        if (!sourceRoot) return false;
+        if (!sourceRoot) {
+            if (rejectedSource) *rejectedSource = "sampled-wrist-missing";
+            return false;
+        }
         const auto transport = makeHandTransport(controllerRoot, true, *sourceRoot, true);
         for (auto& bone : bones) {
             if (chainSideForBone(bone.name) == side) {

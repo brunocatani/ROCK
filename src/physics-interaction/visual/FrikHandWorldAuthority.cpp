@@ -151,12 +151,16 @@ namespace rock::frik_hand_world_authority
             }
         }
 
-        [[nodiscard]] DriverSample sampleTrackedHand(const bool isLeft, const TrackedHandKind kind)
+        [[nodiscard]] DriverSample sampleTrackedHand(const bool isLeft, const TrackedHandKind kind,
+            const char** failure = nullptr)
         {
             DriverSample sample{};
             RE::NiTransform world{};
-            if (!frik_visual_authority::tryGetTrackedHandTransform(frik_visual_authority::handFromBool(isLeft), kind, world) ||
-                !registry_policy::isFiniteTransform(world)) {
+            if (!frik_visual_authority::tryGetTrackedHandTransform(frik_visual_authority::handFromBool(isLeft), kind, world, failure)) {
+                return sample;
+            }
+            if (!registry_policy::isFiniteTransform(world)) {
+                if (failure) *failure = "driver-sample-invalid-transform";
                 return sample;
             }
             sample.world = world;
@@ -205,8 +209,10 @@ namespace rock::frik_hand_world_authority
                 std::isfinite(cameraPosition.y) && std::isfinite(cameraPosition.z);
             for (std::size_t hand = 0; hand < 2; ++hand) {
                 const bool isLeft = hand == handIndex(true);
-                const auto nativeDriver = sampleTrackedHand(isLeft, TrackedHandKind::WeaponOffset);
-                const auto nativeHand = sampleTrackedHand(isLeft, TrackedHandKind::FirstPersonHand);
+                const char* driverFailure = "none";
+                const char* handFailure = "none";
+                const auto nativeDriver = sampleTrackedHand(isLeft, TrackedHandKind::WeaponOffset, &driverFailure);
+                const auto nativeHand = sampleTrackedHand(isLeft, TrackedHandKind::FirstPersonHand, &handFailure);
                 auto& state = g_service.scopeInputs[hand];
                 const bool wasRecovering = state.recovering;
                 const bool needsRaw = (scoped && g_service.scopeDamping.valid &&
@@ -217,6 +223,13 @@ namespace rock::frik_hand_world_authority
                     raw, nativeDriver, nativeHand, cameraPosition, cameraValid);
                 frame.hands[hand] = result.driver;
                 g_service.firstPersonInput[hand] = result.hand;
+                if ((!nativeDriver.valid || !nativeHand.valid) && logger::isWarnEnabled() &&
+                    logger::internal::shouldEmitSample(isLeft ? "hand-input-native-left" : "hand-input-native-right", 2000)) {
+                    ROCK_LOG_WARN(Hand,
+                        "HAND_INPUT_NATIVE seq={} hand={} driver={} firstPerson={} resolvedDriver={} resolvedHand={} scoped={} corrected={} recovering={}",
+                        sequence, handName(isLeft), driverFailure, handFailure, result.driver.valid, result.hand.valid,
+                        scoped, result.corrected, state.recovering);
+                }
                 g_service.scopeRecoveryWrists[hand] = {};
                 if (wasRecovering != state.recovering) {
                     ROCK_LOG_INFO(Hand,
@@ -617,6 +630,21 @@ namespace rock::frik_hand_world_authority
             input.claimConsumed = g_service.claimConsumedThisFrame[hand];
             input.calibrationAllowed = !recoilKickThisFrame && !input.firstPersonInputCorrected;
             state.result = isolation_policy::resolveFrame(state.relation, input, debugEnabled());
+            // Include later resolves: the body tree can fail after the first
+            // sample of the frame, before the weapon consumes this result.
+            if (!state.result.valid && logger::isWarnEnabled() &&
+                logger::internal::shouldEmitSample(isLeft ? "hand-input-isolation-left" : "hand-input-isolation-right", 2000)) {
+                ROCK_LOG_WARN(Hand,
+                    "HAND_INPUT_ISOLATION seq={} hand={} firstResolve={} source={} driverSeq={} driverValid={} firstPerson(valid/finite/scale)={}/{}/{:.8f} body(valid/finite/scale)={}/{}/{:.8f} flattened(valid/finite/scale)={}/{}/{:.8f} sampledArrayValid={} palmBlendValid={} relation(valid/accepted/rejected)={}/{}/{} claimConsumed={} calibrationAllowed={} corrected={} recoil={}",
+                    g_service.rockFrameSequence, handName(isLeft), firstResolveThisFrame, rawHandSourceName(isLeft),
+                    g_service.driverFrame.sequence, g_service.driverFrame.hands[hand].valid,
+                    input.firstPersonHandValid, isolation_policy::isFiniteTransform(input.firstPersonHandWorld), input.firstPersonHandWorld.scale,
+                    input.bodyHandNodeValid, isolation_policy::isFiniteTransform(input.bodyHandNodeWorld), input.bodyHandNodeWorld.scale,
+                    input.flattenedHandValid, isolation_policy::isFiniteTransform(input.flattenedHandWorld), input.flattenedHandWorld.scale,
+                    sample.flattenedHandValid, rendered.palmBlendValid, state.relation.valid,
+                    state.relation.acceptedSamples, state.relation.rejectedSamples, input.claimConsumed,
+                    input.calibrationAllowed, input.firstPersonInputCorrected, recoilKickThisFrame);
+            }
             g_service.scopeRecoveryWrists[hand] = {};
             if (g_service.scopeResults[hand].corrected && state.result.valid && state.relation.valid) {
                 const auto wrist = transform_math::composeTransforms(input.firstPersonHandWorld, state.relation.firstPersonToBodyHand);
@@ -656,13 +684,6 @@ namespace rock::frik_hand_world_authority
                 break;
             case isolation_policy::RawHandSource::FlattenedContaminated:
                 ++probes.contaminatedFrames[hand];
-                ROCK_LOG_SAMPLE_WARN(Hand,
-                    5000,
-                    "HandWorldAuthority {} hand: controller reconstruction unavailable (first-person hand {}, body node {}, relation {}); interaction input disabled",
-                    handName(isLeft),
-                    input.firstPersonHandValid ? "ok" : "missing",
-                    input.bodyHandNodeValid ? "ok" : "missing",
-                    state.relation.valid ? "ok" : "uncalibrated");
                 break;
             case isolation_policy::RawHandSource::Unavailable:
                 ++probes.unavailableFrames[hand];
