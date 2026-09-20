@@ -459,6 +459,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGrabMotionControllerPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGrabMotionControllerPolicyTests)
 
+  add_executable(ROCKGrabMotorLoadPolicyTests
+    "${ROOT_DIR}/tests/GrabMotorLoadPolicyTests.cpp"
+  )
+  target_compile_features(ROCKGrabMotorLoadPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKGrabMotorLoadPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKGrabMotorLoadPolicyTests)
+
   add_executable(ROCKGrabAuthorityFramePolicyTests
     "${ROOT_DIR}/tests/GrabAuthorityFramePolicyTests.cpp"
   )
@@ -919,6 +926,7 @@ if(BUILD_ROCK_TESTS)
     ROCKRuntimeStatePolicyTests
     ROCKGrabPivotAuthorityPolicyTests
     ROCKGrabMotionControllerPolicyTests
+    ROCKGrabMotorLoadPolicyTests
     ROCKGrabAuthorityFramePolicyTests
     ROCKTransformMathDoublePrecisionPolicyTests
     ROCKGrabThreePhasePolicyTests

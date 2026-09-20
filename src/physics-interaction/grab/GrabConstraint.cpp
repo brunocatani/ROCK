@@ -586,6 +586,7 @@ namespace rock
 
     void destroyGrabConstraint(RE::hknpWorld* world, ActiveConstraint& constraint)
     {
+        grab_motor_telemetry::finish(constraint);
         if (!constraint.isValid())
             return;
 

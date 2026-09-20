@@ -1,5 +1,6 @@
 #include "physics-interaction/telemetry/DynamicColliderTrace.h"
 #include "physics-interaction/telemetry/HeldRenderTrace.h"
+#include "physics-interaction/grab/GrabMotorTelemetry.h"
 
 #include "RockConfig.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
@@ -24,6 +25,7 @@ namespace rock::dynamic_collider_trace
             std::shared_ptr<spdlog::details::thread_pool> pool;
             std::shared_ptr<spdlog::async_logger> log;
             std::shared_ptr<spdlog::async_logger> weaponLog;
+            bool motorLayoutVerified = false;
         };
         // Lifecycle changes are game-thread-only, outside active physics callbacks.
         std::unique_ptr<Session> session;
@@ -54,6 +56,11 @@ namespace rock::dynamic_collider_trace
             next->weaponLog->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
             next->weaponLog->set_error_handler([](const std::string&) { suppressAfterError(); });
             writerFailed.store(false, std::memory_order_relaxed);
+            next->motorLayoutVerified = grab_motor_telemetry::verifyLayout();
+            next->log->info("MOTOR_LOAD start version=1 layoutVerified={} interval=0.1-simulation-seconds axes=angular012,linear012 utilization=net-impulse/(limit*solver-dt) nearLimit=0.95 recoveryState=native-not-impulse observational=true",
+                next->motorLayoutVerified);
+            next->weaponLog->info("MOTOR_LOAD start version=1 layoutVerified={} interval=0.1-simulation-seconds axes=angular012,linear012 utilization=net-impulse/(limit*solver-dt) nearLimit=0.95 recoveryState=native-not-impulse observational=true",
+                next->motorLayoutVerified);
             next->log->info("COLLIDER_TRACE start version=5 pid={} build={} {} sourceStride=4 weaponBurst=12/120 heldPhaseBurst=12/120 observational=true positions=game-units rotations=quaternion-xyzw velocities=havok-units-per-second peerKind=1:hand,2:weapon,3:world",
                 GetCurrentProcessId(), __DATE__, __TIME__);
             next->log->flush();
@@ -103,6 +110,7 @@ namespace rock::dynamic_collider_trace
     }
 
     bool enabled() noexcept { return recording.load(std::memory_order_acquire); }
+    bool motorOutputEnabled() noexcept { return enabled() && session->motorLayoutVerified; }
     bool presentationEnabled() noexcept { return presentationRecording.load(std::memory_order_acquire); }
     bool sample(std::uint64_t sequence) noexcept { return enabled() && sequence != 0 && sequence % 4 == 0; }
     spdlog::logger* activeLogger() noexcept { return presentationEnabled() ? session->log.get() : nullptr; }

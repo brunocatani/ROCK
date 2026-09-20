@@ -1517,6 +1517,12 @@ namespace rock
         if (_physicsDriveTeleported) {
             _contactRetentionSeconds = 0.0f;
         }
+        if (_droveThisSubstep) {
+            grab_motor_telemetry::capture(world, _authorityConstraint,
+                _authorityProxy.getBodyId().value, _body.getBodyId().value, timing,
+                _physicsSourceSequence, _createdGenerationKey, grab_motor_telemetry::Owner::Weapon,
+                _createdMass, _contactRetentionSeconds > 0.0f);
+        }
     }
 
     void DynamicWeaponCollisionRuntime::samplePostSolve(RE::hknpWorld* world, const std::uint64_t solveSequence,
@@ -1591,6 +1597,22 @@ namespace rock
         snapshot.requestedProxyBodyWorld = _physicsRequestedTarget;
         snapshot.liveProxyBodyWorld = liveBodyWorld;
         publishPhysicsSnapshot(snapshot);
+
+        if (dynamic_collider_trace::motorOutputEnabled()) {
+            RE::NiTransform authority{};
+            const bool readable = havok_runtime::tryResolveLiveBodyWorldTransform(
+                world, _authorityProxy.getBodyId(), authority);
+            const auto grip = dynamic_weapon_collision_policy::evaluateGripRecovery(
+                liveBodyWorld, _physicsRequestedAuthorityTarget, _createdCenterWeaponLocal,
+                _createdWeaponScale, _gripRecoveryDistanceGameUnitsAtomic.load(std::memory_order_relaxed),
+                _authorityPivotWeaponLocal);
+            grab_motor_telemetry::record(world, _authorityConstraint, timing,
+                grip.distanceGameUnits,
+                dynamic_weapon_collision_policy::rotationDeltaDegrees(_physicsRequestedTarget, liveBodyWorld),
+                readable ? dynamic_weapon_collision_policy::translationDeltaGameUnits(
+                    _physicsRequestedAuthorityTarget, authority) : -1.0f,
+                snapshot.contactActive, snapshot.teleported);
+        }
 
         if (weaponClockTraceEnabled(snapshot.sourceSequence) && _clockDriveResult.sourceSequence == snapshot.sourceSequence) {
             const auto& drive = _clockDriveResult;

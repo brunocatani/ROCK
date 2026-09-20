@@ -14684,6 +14684,15 @@ namespace rock
                     ++_grabAuthorityProxyFlushSequence;
                     flushSequence = _grabAuthorityProxyFlushSequence;
                     queuedSequence = _grabAuthorityProxyQueuedSequence;
+                    if (angularDriveOk && dynamic_collider_trace::motorOutputEnabled()) {
+                        const auto mass = readHeldBodyMassSummary(world, _savedObjectState.bodyId, _heldBodyIds,
+                            _heldDriveDecision.includeConnectedMass);
+                        grab_motor_telemetry::capture(world, _activeConstraint,
+                            _grabAuthorityProxy.getBodyId().value, _savedObjectState.bodyId.value, timing,
+                            flushSequence, _grabFrame.traceId,
+                            _isLeft ? grab_motor_telemetry::Owner::LeftHand : grab_motor_telemetry::Owner::RightHand,
+                            mass.motorMass(), pending.heldBodyColliding);
+                    }
                     const auto diagnosticFrame = dynamic_collider_trace::presentationEnabled() ? held_render_trace::sampledFrame() : 0;
                     if (diagnosticFrame && angularDriveOk) {
                         const auto mass = readHeldBodyMassSummary(world, _savedObjectState.bodyId, _heldBodyIds,
@@ -14984,6 +14993,14 @@ namespace rock
             const RE::NiPoint3 liveProxyGripWorld = transform_math::localPointToWorld(desiredBodyFromLiveProxy, pivotBConstraintLocalGame);
             gripTargetErrorGameUnits = pointDistanceGameUnits(liveGripWorld, targetGripWorld);
             gripLiveProxyErrorGameUnits = pointDistanceGameUnits(liveGripWorld, liveProxyGripWorld);
+        }
+
+        if (dynamic_collider_trace::motorOutputEnabled()) {
+            const bool colliding = isHeldBodyColliding();
+            std::scoped_lock lock(_grabAuthorityProxyMutex);
+            grab_motor_telemetry::record(world, _activeConstraint, timing,
+                gripTargetErrorGameUnits, objectTargetRotationErrorDegrees,
+                proxyTargetPositionErrorGameUnits, colliding);
         }
 
         if (diagnosticFrame) {

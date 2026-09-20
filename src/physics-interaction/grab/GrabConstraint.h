@@ -3,6 +3,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/object/GrabTargetKind.h"
+#include "physics-interaction/grab/GrabMotorTelemetry.h"
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/Havok/hknpConstraintCinfo.h"
@@ -135,6 +136,7 @@ namespace rock
         float currentTau = 0.0f;
         float currentMaxForce = 0.0f;
         float targetMaxForce = 0.0f;
+        grab_motor_telemetry::State motorTelemetry{};
 
         bool isValid() const { return constraintId != 0x7FFF'FFFF && constraintData != nullptr; }
         bool usesRagdollAngularMotorAtom() const { return angularAuthority == GrabAngularAuthority::HknpRagdollMotorAtom; }
@@ -149,6 +151,7 @@ namespace rock
             currentTau = 0.0f;
             currentMaxForce = 0.0f;
             targetMaxForce = 0.0f;
+            motorTelemetry = {};
         }
     };
 
