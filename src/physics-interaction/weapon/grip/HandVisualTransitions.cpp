@@ -940,13 +940,17 @@ namespace rock
              * the frame), not the rendered bone: under FRIK API v2 the bone
              * still shows last frame's target. A hand without a claim is the
              * controller hand.
+             * Only lower-layer grip targets are inputs. PAPER's animation is
+             * already anchored to the resolved weapon; reframing it again
+             * subtracts controller movement from a stationary bipod pose.
              */
             RE::NiTransform requestedHandWorld{};
             const bool requestedHandValid =
                 frik_visual_authority::tryGetPublishedHandWorld(
                     handFromBool(pulse.isLeft),
                     requestedHandWorld,
-                    WEAPON_COLLISION_HAND_TAG) ||
+                    WEAPON_COLLISION_HAND_TAG,
+                    WEAPON_COLLISION_HAND_PRIORITY - 1) ||
                 tryGetRootFlattenedHandBoneTransform(
                     pulse.isLeft,
                     requestedHandWorld);

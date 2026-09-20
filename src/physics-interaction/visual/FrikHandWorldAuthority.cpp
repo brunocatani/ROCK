@@ -426,23 +426,12 @@ namespace rock::frik_hand_world_authority
         return g_service.claimConsumedThisFrame[handIndex(isLeft)];
     }
 
-    bool tryGetPublishedHandWorld(const bool isLeft, RE::NiTransform& outWorld, const char* excludedTag)
+    bool tryGetPublishedHandWorld(const bool isLeft, RE::NiTransform& outWorld,
+        const char* excludedTag, const int maximumPriority)
     {
         outWorld = {};
-        const registry_policy::Claim* best = nullptr;
         const std::string_view excluded = excludedTag ? std::string_view(excludedTag) : std::string_view{};
-        for (const auto& claim : g_service.registry.claims) {
-            if (!claim.valid || claim.isLeft != isLeft) {
-                continue;
-            }
-            if (!excluded.empty() && registry_policy::tagView(claim) == excluded) {
-                continue;
-            }
-            if (!best || claim.priority > best->priority ||
-                (claim.priority == best->priority && claim.publishOrder > best->publishOrder)) {
-                best = &claim;
-            }
-        }
+        const auto* best = registry_policy::winner(g_service.registry, isLeft, excluded, maximumPriority);
         if (!best) {
             return false;
         }

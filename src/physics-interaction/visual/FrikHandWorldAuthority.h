@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 
 #include "physics-interaction/hand/RenderedBoneTransportPolicy.h"
 #include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
@@ -93,10 +94,11 @@ namespace rock::frik_hand_world_authority
     [[nodiscard]] bool wasClaimConsumedThisFrame(bool isLeft);
 
     /*
-     * The target FRIK solves this hand to (highest priority, newest publish),
-     * optionally ignoring one tag.
+     * The selected target (highest priority, newest registration), optionally
+     * excluding a tag and claims above an input layer's priority ceiling.
      */
-    [[nodiscard]] bool tryGetPublishedHandWorld(bool isLeft, RE::NiTransform& outWorld, const char* excludedTag = nullptr);
+    [[nodiscard]] bool tryGetPublishedHandWorld(bool isLeft, RE::NiTransform& outWorld,
+        const char* excludedTag = nullptr, int maximumPriority = (std::numeric_limits<int>::max)());
 
     // ---- Raw hand isolation (PhysicsInteraction, once per frame) ----
 

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string_view>
 
 #include "api/FRIKApiV2.h"
@@ -479,16 +480,17 @@ namespace rock::frik_visual_authority
 
     /*
      * The target FRIK currently solves this hand to, from ROCK's own claim
-     * registry (no scene read), optionally ignoring one tag.
+     * registry (no scene read), optionally filtering the tag and priority.
      */
-    [[nodiscard]] inline bool tryGetPublishedHandWorld(Hand hand, RE::NiTransform& outWorld, const char* excludedTag = nullptr)
+    [[nodiscard]] inline bool tryGetPublishedHandWorld(Hand hand, RE::NiTransform& outWorld,
+        const char* excludedTag = nullptr, int maximumPriority = (std::numeric_limits<int>::max)())
     {
         bool isLeft = false;
         if (!tryResolveHandIsLeft(hand, isLeft)) {
             outWorld = {};
             return false;
         }
-        return frik_hand_world_authority::tryGetPublishedHandWorld(isLeft, outWorld, excludedTag);
+        return frik_hand_world_authority::tryGetPublishedHandWorld(isLeft, outWorld, excludedTag, maximumPriority);
     }
 
     [[nodiscard]] inline bool setHandPoseCustomLocalTransforms(

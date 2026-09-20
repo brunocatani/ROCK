@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
+#include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 
 #include <cmath>
@@ -464,6 +465,43 @@ int main()
         rotationDeltaDegrees(reframedHandWeaponLocal, requestedHandWeaponLocal),
         0.0f,
         0.05f);
+
+    // A stationary bipod weapon and an advancing controller. Reframing the
+    // already-braced animation target would move it in the opposite direction.
+    // Use the grip layer as collision input; the animation must keep ownership
+    // even when collision clears and re-registers its claim each frame.
+    {
+        namespace claims = rock::hand_world_claim_registry_policy;
+        claims::Registry registry{};
+        const auto braced = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+        auto animated = braced;
+        animated.translate.x = 7.0f;
+        (void)claims::commit(registry, "animation", false, 120, animated);
+        for (const float forward : { 0.0f, 10.0f, -10.0f, 30.0f }) {
+            auto intent = braced;
+            intent.translate.x = forward;
+            auto grip = intent;
+            grip.translate.x += 2.0f;
+            (void)claims::commit(registry, "grip", false, 100, grip);
+            (void)claims::remove(registry, "collision", false);
+            const auto* input = claims::winner(registry, false, "collision", 109);
+            if (!input) {
+                ok = false;
+                continue;
+            }
+            const auto collision = reframeAttachedHand(intent, braced, input->target);
+            ok &= expectNear("braced grip does not inherit inverse controller displacement", collision.translate.x, 2.0f);
+            (void)claims::commit(registry, "collision", false, 110, collision);
+            (void)claims::commit(registry, "animation", false, 120, animated);
+            const auto* finalHand = claims::winner(registry, false);
+            ok &= finalHand && claims::tagView(*finalHand) == "animation";
+            if (finalHand) ok &= expectPoint("animation stays at the bolt while controller moves", finalHand->target.translate, animated.translate);
+        }
+        (void)claims::remove(registry, "animation", false);
+        const auto* released = claims::winner(registry, false);
+        ok &= released && claims::tagView(*released) == "collision";
+        if (released) ok &= expectNear("animation release returns to the corrected grip", released->target.translate.x, 2.0f);
+    }
 
     return ok ? 0 : 1;
 }

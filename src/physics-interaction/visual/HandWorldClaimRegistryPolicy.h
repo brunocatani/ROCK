@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <string_view>
 
 #include "physics-interaction/TransformMath.h"
@@ -249,14 +250,18 @@ namespace rock::hand_world_claim_registry_policy
     }
 
     /*
-     * The claim FRIK solves the hand to: highest priority, then most recently
-     * published (FRIK ExternalAuthority::getHandWorldTransform).
+     * Highest priority, then newest registration. A lower presentation layer
+     * can select only its input claims without feeding a higher layer's
+     * already-corrected output back through its own transform.
      */
-    [[nodiscard]] inline const Claim* winner(const Registry& registry, const bool isLeft) noexcept
+    [[nodiscard]] inline const Claim* winner(const Registry& registry, const bool isLeft,
+        const std::string_view excludedTag = {},
+        const int maximumPriority = (std::numeric_limits<int>::max)()) noexcept
     {
         const Claim* best = nullptr;
         for (const auto& claim : registry.claims) {
-            if (!claim.valid || claim.isLeft != isLeft) {
+            if (!claim.valid || claim.isLeft != isLeft || claim.priority > maximumPriority ||
+                (!excludedTag.empty() && tagView(claim) == excludedTag)) {
                 continue;
             }
             if (!best || claim.priority > best->priority ||

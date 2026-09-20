@@ -89,6 +89,21 @@ int main()
         ok &= expectTrue("re-registered A is newer than B", top && claimB && top->publishOrder > claimB->publishOrder);
     }
 
+    // Selecting the input to a presentation layer must not consume that
+    // layer's own output or another hand's higher-priority animation.
+    {
+        Registry registry{};
+        (void)commit(registry, "grip", false, 100, translated(1, 0, 0));
+        (void)commit(registry, "collision", false, 110, translated(2, 0, 0));
+        (void)commit(registry, "animation", false, 120, translated(3, 0, 0));
+        (void)commit(registry, "other-hand", true, 100, translated(4, 0, 0));
+        const auto* input = winner(registry, false, "collision", 109);
+        ok &= expectTrue("collision input is the right grip", input && tagView(*input) == "grip");
+        ok &= expectTrue("unfiltered presentation remains animation", tagView(*winner(registry, false)) == "animation");
+        ok &= expectTrue("excluded tag remains excluded", winner(registry, false, "grip", 109) == nullptr);
+        ok &= expectTrue("absent lower layer has no input", winner(registry, false, {}, 99) == nullptr);
+    }
+
     // Validation and capacity.
     {
         Registry registry{};
