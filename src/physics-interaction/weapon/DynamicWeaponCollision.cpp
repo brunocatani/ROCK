@@ -30,7 +30,12 @@ namespace rock
     {
         constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFFu;
         constexpr std::uint32_t kDynamicWeaponCollisionGroup = 0x000Du;
-        constexpr std::uint32_t kRaiseManifoldProcessedEvents = 0x40u;
+        // FO4VR 141551F00 installs the contact-impulse creator at bundle+18;
+        // 14154BB41..14154BB51 registers it for body flag 0x80, and its
+        // 1418012D0 solver callback emits key-3 events consumed by native audio.
+        // The separate 0x40/key-2 opt-in only reports ongoing manifold contact.
+        // Both flags belong to this generated body's lifetime, including rebuilds.
+        constexpr std::uint32_t kRequiredContactEventFlags = 0x40u | 0x80u;
         constexpr std::uint32_t kRebuildBodyCollisionState = 0u;
 
         [[nodiscard]] bool dynamicWeaponDebugEnabled()
@@ -1097,23 +1102,23 @@ namespace rock
 
         const auto proxyBodyId = _body.getBodyId();
         _bodyIdAtomic.store(proxyBodyId.value, std::memory_order_release);
-        const bool processedManifoldFlagEnabled = havok_runtime::enableBodyFlags(
+        const bool contactEventFlagsEnabled = havok_runtime::enableBodyFlags(
             frame.hknpWorld,
             proxyBodyId.value,
-            kRaiseManifoldProcessedEvents,
+            kRequiredContactEventFlags,
             kRebuildBodyCollisionState);
         const auto flaggedBody = havok_runtime::snapshotBody(frame.hknpWorld, proxyBodyId);
-        const bool processedManifoldFlagPublished =
-            processedManifoldFlagEnabled &&
+        const bool contactEventFlagsPublished =
+            contactEventFlagsEnabled &&
             flaggedBody.valid &&
             flaggedBody.body &&
-            (flaggedBody.body->flags & kRaiseManifoldProcessedEvents) == kRaiseManifoldProcessedEvents;
-        if (!processedManifoldFlagPublished) {
+            (flaggedBody.body->flags & kRequiredContactEventFlags) == kRequiredContactEventFlags;
+        if (!contactEventFlagsPublished) {
             ROCK_LOG_ERROR(
                 Weapon,
-                "Dynamic weapon compound {} failed processed-manifold event opt-in: enabled={} readable={} flags=0x{:08X}",
+                "Dynamic weapon compound {} failed manifold/impact event opt-in: enabled={} readable={} flags=0x{:08X}",
                 proxyBodyId.value,
-                processedManifoldFlagEnabled,
+                contactEventFlagsEnabled,
                 flaggedBody.valid && flaggedBody.body,
                 flaggedBody.body ? flaggedBody.body->flags : 0u);
             _bodyIdAtomic.store(kInvalidBodyId, std::memory_order_release);
