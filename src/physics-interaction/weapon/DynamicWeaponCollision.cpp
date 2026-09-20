@@ -30,7 +30,6 @@ namespace rock
         constexpr std::uint32_t kDynamicWeaponCollisionGroup = 0x000Du;
         constexpr std::uint32_t kRaiseManifoldProcessedEvents = 0x40u;
         constexpr std::uint32_t kRebuildBodyCollisionState = 0u;
-        constexpr std::uint32_t kContactGraceSolves = 3;
 
         [[nodiscard]] bool dynamicWeaponDebugEnabled()
         {
@@ -38,11 +37,13 @@ namespace rock
                    g_rockConfig.rockDebugDrawDynamicWeaponColliders;
         }
 
-        // Continuous samples on one in four source updates. Gate on the exact
-        // consumed source so the solve and game-frame rows can be joined.
+        // Add a short full-rate burst to the sparse background samples so
+        // contact oscillation cannot hide between every fourth source update.
+        // All phases use the consumed source identity for correlation.
         bool weaponClockTraceEnabled(std::uint64_t sourceSequence)
         {
-            return dynamic_collider_trace::sample(sourceSequence);
+            return dynamic_collider_trace::enabled() && sourceSequence != 0 &&
+                (sourceSequence % 4 == 0 || sourceSequence % 120 < 12);
         }
 
         const char* compoundSnapshotFailureName(const WeaponCollision::CompoundGeometrySnapshotFailure failure)
@@ -698,7 +699,7 @@ namespace rock
             _debugSnapshot.contactActive = true;
             _debugSnapshot.otherBodyId = snapshot.otherBodyId;
             _debugSnapshot.otherLayer = snapshot.otherLayer;
-            _debugSnapshot.contactGraceSolves = snapshot.contactGraceSolves;
+            _debugSnapshot.contactRetentionSeconds = snapshot.contactRetentionSeconds;
             _debugSnapshot.solveSequence = snapshot.solveSequence;
             _debugSnapshot.liveWeaponWorld = sampledLiveWeaponWorld;
             _debugSnapshot.resolvedWeaponWorld = resolvedWeaponWorld;
@@ -752,6 +753,9 @@ namespace rock
         if (weaponClockTraceEnabled(snapshot.sourceSequence)) {
             _clockPresentationFrame = _frameIndex;
             _clockExpectedWeaponWorld = result.resolvedWeaponWorld;
+            float intentRotation[4]{}, resolvedRotation[4]{};
+            transform_math::niRowsToHavokQuaternion(_frameRequestedWeaponWorld.rotate, intentRotation);
+            transform_math::niRowsToHavokQuaternion(result.resolvedWeaponWorld.rotate, resolvedRotation);
             dynamic_collider_trace::write(
                 "DWC_INTENT frame={} generation={:016X} source={} sameSource={} driverValid={} driver=({:.3f},{:.3f},{:.3f}) weaponInDriver=({:.3f},{:.3f},{:.3f}) localStep=({:.4f}gu,{:.4f}deg)",
                 _frameIndex, _frameGenerationKey, dynamic_weapon_collision_policy::visualIntentSourceName(_frameIntentSource),
@@ -762,14 +766,16 @@ namespace rock
                 intentDriverLocal.translate.x, intentDriverLocal.translate.y, intentDriverLocal.translate.z,
                 driverLocalStep, driverLocalRotationStep);
             dynamic_collider_trace::write(
-                "DWC_CLOCK game: frame={} queued={} source={} solve={} generation={:016X} body={} dt={:.6f} contact={} apply={} intent=({:.3f},{:.3f},{:.3f}) sampledIntent=({:.3f},{:.3f},{:.3f}) sampledLive=({:.3f},{:.3f},{:.3f}) resolved=({:.3f},{:.3f},{:.3f}) correction=({:.4f}gu,{:.4f}deg)",
+                "DWC_CLOCK game: frame={} queued={} source={} solve={} generation={:016X} body={} dt={:.6f} contact={} apply={} intent=({:.3f},{:.3f},{:.3f}) sampledIntent=({:.3f},{:.3f},{:.3f}) sampledLive=({:.3f},{:.3f},{:.3f}) resolved=({:.3f},{:.3f},{:.3f}) correction=({:.4f}gu,{:.4f}deg) intentQ=({:.6f},{:.6f},{:.6f},{:.6f}) resolvedQ=({:.6f},{:.6f},{:.6f},{:.6f})",
                 _frameIndex, queueResult.queuedSequence, snapshot.sourceSequence, snapshot.solveSequence,
                 snapshot.generationKey, snapshot.bodyId, frame.deltaSeconds, snapshot.contactActive, result.applyVisualCorrection,
                 _frameRequestedWeaponWorld.translate.x, _frameRequestedWeaponWorld.translate.y, _frameRequestedWeaponWorld.translate.z,
                 sampledRequestedWeaponWorld.translate.x, sampledRequestedWeaponWorld.translate.y, sampledRequestedWeaponWorld.translate.z,
                 sampledLiveWeaponWorld.translate.x, sampledLiveWeaponWorld.translate.y, sampledLiveWeaponWorld.translate.z,
                 result.resolvedWeaponWorld.translate.x, result.resolvedWeaponWorld.translate.y, result.resolvedWeaponWorld.translate.z,
-                result.translationCorrectionGameUnits, result.rotationCorrectionDegrees);
+                result.translationCorrectionGameUnits, result.rotationCorrectionDegrees,
+                intentRotation[0], intentRotation[1], intentRotation[2], intentRotation[3],
+                resolvedRotation[0], resolvedRotation[1], resolvedRotation[2], resolvedRotation[3]);
         }
         return result;
     }
@@ -1261,7 +1267,7 @@ namespace rock
         // owned by the existing grip constraint.
         updateWeaponGripConstraintContactTau(
             _authorityConstraint,
-            _contactGraceSolves > 0,
+            _contactRetentionSeconds > 0.0f,
             driveResult.driveDeltaSeconds);
 
         _droveThisSubstep =
@@ -1366,11 +1372,12 @@ namespace rock
         _physicsDriveTeleported = driveResult.teleported || contactBodyRecovered;
         _clockSourceJumpCount += driveResult.teleported && driveResult.sourceJumpPlacement ? 1u : 0u;
         if (_physicsDriveTeleported) {
-            _contactGraceSolves = 0;
+            _contactRetentionSeconds = 0.0f;
         }
     }
 
-    void DynamicWeaponCollisionRuntime::samplePostSolve(RE::hknpWorld* world, const std::uint64_t solveSequence)
+    void DynamicWeaponCollisionRuntime::samplePostSolve(RE::hknpWorld* world, const std::uint64_t solveSequence,
+        const havok_physics_timing::PhysicsTimingSample& timing)
     {
         if (!_enabledAtomic.load(std::memory_order_acquire) || !world || !_created || _createdWorld != world ||
             !_body.isValid() || !_droveThisSubstep || !_physicsRequestedTargetValid) {
@@ -1381,7 +1388,7 @@ namespace rock
         RE::NiTransform liveBodyWorld{};
         if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, _body.getBodyId(), liveBodyWorld) ||
             !dynamic_weapon_collision_policy::isFiniteTransform(liveBodyWorld)) {
-            _contactGraceSolves = 0;
+            _contactRetentionSeconds = 0.0f;
             clearPublishedPhysicsSnapshot();
             return;
         }
@@ -1401,12 +1408,12 @@ namespace rock
                 contactProxy == _body.getBodyId().value &&
                 collision_layer_policy::isDynamicWeaponProxyObstacleLayer(otherLayer);
         }
-        const bool contactWasActive = _contactGraceSolves > 0;
+        const bool contactWasActive = _contactRetentionSeconds > 0.0f;
         if (weaponClockTraceEnabled(_physicsSourceSequence)) {
             dynamic_collider_trace::write(
-                "DWC_CONTACT source={} solve={} body={} callbacks={} lastPeer={} layer={} freshWorldContact={} graceBefore={} sourceJumps={} gripResets={} divergenceResets={} dwell={:.4f} tau=({:.5f},{:.5f})",
+                "DWC_CONTACT source={} solve={} body={} callbacks={} lastPeer={} layer={} freshWorldContact={} retentionBefore={:.6f}s physicsDt={:.6f} sourceJumps={} gripResets={} divergenceResets={} dwell={:.4f} tau=({:.5f},{:.5f})",
                 _physicsSourceSequence, solveSequence, _body.getBodyId().value, contactSequence,
-                otherBodyId, otherLayer, newMatchingContact, _contactGraceSolves,
+                otherBodyId, otherLayer, newMatchingContact, _contactRetentionSeconds, timing.substepDeltaSeconds,
                 _clockSourceJumpCount, _clockGripResetCount, _clockDivergenceResetCount, _divergenceDwellSeconds,
                 _authorityConstraint.linearMotor ? _authorityConstraint.linearMotor->tau : -1.0f,
                 _authorityConstraint.angularMotor ? _authorityConstraint.angularMotor->tau : -1.0f);
@@ -1418,23 +1425,18 @@ namespace rock
             ++_contactEpisode;
             _activeContactOtherBodyId = otherBodyId;
         }
-        if (_physicsDriveTeleported) {
-            _contactGraceSolves = 0;
-        } else if (newMatchingContact) {
-            _contactGraceSolves = kContactGraceSolves;
-        } else if (_contactGraceSolves > 0) {
-            --_contactGraceSolves;
-        }
+        _contactRetentionSeconds = dynamic_weapon_collision_policy::advanceContactRetention(
+            _contactRetentionSeconds, newMatchingContact, _physicsDriveTeleported, timing);
 
         PhysicsSnapshot snapshot{};
         snapshot.valid = true;
-        snapshot.contactActive = _contactGraceSolves > 0;
+        snapshot.contactActive = _contactRetentionSeconds > 0.0f;
         snapshot.teleported = _physicsDriveTeleported;
         snapshot.world = reinterpret_cast<std::uintptr_t>(world);
         snapshot.bodyId = _body.getBodyId().value;
         snapshot.otherBodyId = newMatchingContact ? otherBodyId : _snapshotOtherBodyIdAtomic.load(std::memory_order_relaxed);
         snapshot.otherLayer = newMatchingContact ? otherLayer : _snapshotOtherLayerAtomic.load(std::memory_order_relaxed);
-        snapshot.contactGraceSolves = _contactGraceSolves;
+        snapshot.contactRetentionSeconds = _contactRetentionSeconds;
         snapshot.generationKey = _createdGenerationKey;
         snapshot.solveSequence = solveSequence;
         snapshot.sourceSequence = _physicsSourceSequence;
@@ -1536,7 +1538,7 @@ namespace rock
             publishContactDiagnosticSnapshot(diagnostic);
         }
 
-        if (dynamicWeaponDebugEnabled()) {
+        if (weaponClockTraceEnabled(_physicsSourceSequence)) {
             const float requestedStepTranslation = _physicsPreviousRequestedTargetValid ?
                 dynamic_weapon_collision_policy::translationDeltaGameUnits(
                     _physicsPreviousRequestedTarget,
@@ -1577,13 +1579,19 @@ namespace rock
                 -1.0f;
             const auto* linearMotor = _authorityConstraint.linearMotor;
             const auto* angularMotor = _authorityConstraint.angularMotor;
+            float requestedRotation[4]{}, liveRotation[4]{}, authorityRotation[4]{};
+            transform_math::niRowsToHavokQuaternion(_physicsRequestedTarget.rotate, requestedRotation);
+            transform_math::niRowsToHavokQuaternion(liveBodyWorld.rotate, liveRotation);
+            if (authorityReadable) {
+                transform_math::niRowsToHavokQuaternion(liveAuthorityWorld.rotate, authorityRotation);
+            }
 
-            ROCK_LOG_SAMPLE_INFO(
-                Weapon,
-                500,
-                "DWC motor trace: contact={} newCallback={} intentStep=({:.3f}gu,{:.2f}deg) signedPress={:.3f}gu contactError=({:.2f}gu,{:.2f}deg) authority(read/error)={}/({:.3f}gu,{:.2f}deg) tau=({:.4f},{:.4f}) recovery=({:.2f}/{:.2f},{:.2f}/{:.2f}) force=({:.1f},{:.1f})",
+            dynamic_collider_trace::write(
+                "DWC_MOTOR source={} solve={} body={} contact={} newCallback={} retention={:.6f}s intentStep=({:.3f}gu,{:.2f}deg) signedPress={:.3f}gu contactError=({:.2f}gu,{:.2f}deg) authority(read/error)={}/({:.3f}gu,{:.2f}deg) tau=({:.4f},{:.4f}) damping=({:.4f},{:.4f}) recovery=({:.2f}/{:.2f},{:.2f}/{:.2f}) force=({:.1f},{:.1f}) requestedQ=({:.6f},{:.6f},{:.6f},{:.6f}) authorityQ=({:.6f},{:.6f},{:.6f},{:.6f}) liveQ=({:.6f},{:.6f},{:.6f},{:.6f})",
+                _physicsSourceSequence, solveSequence, _body.getBodyId().value,
                 snapshot.contactActive,
                 newMatchingContact,
+                _contactRetentionSeconds,
                 requestedStepTranslation,
                 requestedStepRotation,
                 signedPressStep,
@@ -1594,12 +1602,17 @@ namespace rock
                 authorityRotationError,
                 linearMotor ? linearMotor->tau : -1.0f,
                 angularMotor ? angularMotor->tau : -1.0f,
+                linearMotor ? linearMotor->damping : -1.0f,
+                angularMotor ? angularMotor->damping : -1.0f,
                 linearMotor ? linearMotor->proportionalRecoveryVelocity : -1.0f,
                 linearMotor ? linearMotor->constantRecoveryVelocity : -1.0f,
                 angularMotor ? angularMotor->proportionalRecoveryVelocity : -1.0f,
                 angularMotor ? angularMotor->constantRecoveryVelocity : -1.0f,
                 linearMotor ? linearMotor->maxForce : -1.0f,
-                angularMotor ? angularMotor->maxForce : -1.0f);
+                angularMotor ? angularMotor->maxForce : -1.0f,
+                requestedRotation[0], requestedRotation[1], requestedRotation[2], requestedRotation[3],
+                authorityRotation[0], authorityRotation[1], authorityRotation[2], authorityRotation[3],
+                liveRotation[0], liveRotation[1], liveRotation[2], liveRotation[3]);
         }
         _physicsPreviousRequestedTarget = _physicsRequestedTarget;
         _physicsPreviousRequestedTargetValid = true;
@@ -1761,7 +1774,7 @@ namespace rock
         _previousIntentGeneration = 0;
         _previousIntentSource = dynamic_weapon_collision_policy::VisualIntentSource::None;
         _divergenceDwellSeconds = 0.0f;
-        _contactGraceSolves = 0;
+        _contactRetentionSeconds = 0.0f;
         _consumedContactSequence = 0;
         _contactEpisode = 0;
         _reportedContactEpisode = 0;
@@ -1936,7 +1949,7 @@ namespace rock
         _snapshotBodyIdAtomic.store(snapshot.bodyId, std::memory_order_relaxed);
         _snapshotOtherBodyIdAtomic.store(snapshot.otherBodyId, std::memory_order_relaxed);
         _snapshotOtherLayerAtomic.store(snapshot.otherLayer, std::memory_order_relaxed);
-        _snapshotContactGraceAtomic.store(snapshot.contactGraceSolves, std::memory_order_relaxed);
+        _snapshotContactRetentionSecondsAtomic.store(snapshot.contactRetentionSeconds, std::memory_order_relaxed);
         _snapshotGenerationKeyAtomic.store(snapshot.generationKey, std::memory_order_relaxed);
         _snapshotSolveSequenceAtomic.store(snapshot.solveSequence, std::memory_order_relaxed);
         _snapshotSourceSequenceAtomic.store(snapshot.sourceSequence, std::memory_order_relaxed);
@@ -1967,7 +1980,7 @@ namespace rock
             candidate.bodyId = _snapshotBodyIdAtomic.load(std::memory_order_relaxed);
             candidate.otherBodyId = _snapshotOtherBodyIdAtomic.load(std::memory_order_relaxed);
             candidate.otherLayer = _snapshotOtherLayerAtomic.load(std::memory_order_relaxed);
-            candidate.contactGraceSolves = _snapshotContactGraceAtomic.load(std::memory_order_relaxed);
+            candidate.contactRetentionSeconds = _snapshotContactRetentionSecondsAtomic.load(std::memory_order_relaxed);
             candidate.generationKey = _snapshotGenerationKeyAtomic.load(std::memory_order_relaxed);
             candidate.solveSequence = _snapshotSolveSequenceAtomic.load(std::memory_order_relaxed);
             candidate.sourceSequence = _snapshotSourceSequenceAtomic.load(std::memory_order_relaxed);

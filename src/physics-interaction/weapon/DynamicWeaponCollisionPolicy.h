@@ -2,6 +2,7 @@
 
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/VectorMath.h"
+#include "physics-interaction/native/HavokPhysicsTiming.h"
 
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
@@ -22,6 +23,32 @@ namespace rock::dynamic_weapon_collision_policy
     inline constexpr float kMinimumBoundingBoxHalfExtentGameUnits = 0.25f;
     inline constexpr float kFallbackWeaponMass = 2.0f;
     inline constexpr float kMaximumWeaponMass = 50.0f;
+
+    // Preserve the former three-solve grace at 90 Hz without shortening it
+    // when Havok subdivides a frame. This is contact evidence retention, not
+    // a visual delay or permission to retain a pose after body retirement.
+    inline constexpr float kContactRetentionSeconds = 3.0f / 90.0f;
+
+    [[nodiscard]] inline float advanceContactRetention(
+        float remainingSeconds,
+        bool observedContact,
+        bool teleported,
+        const havok_physics_timing::PhysicsTimingSample& timing)
+    {
+        if (teleported || !timing.valid || timing.usedFallback ||
+            timing.phase != havok_physics_timing::PhysicsStepPhase::SubstepPostSolve ||
+            !havok_physics_timing::isUsableDelta(timing.substepDeltaSeconds)) {
+            return 0.0f;
+        }
+        if (observedContact) {
+            return kContactRetentionSeconds;
+        }
+        const float remaining = std::isfinite(remainingSeconds) ?
+            std::clamp(remainingSeconds, 0.0f, kContactRetentionSeconds) : 0.0f;
+        const float next = remaining - timing.substepDeltaSeconds;
+        // Float subtraction must not buy one extra solve at the deadline.
+        return next > 0.000001f ? next : 0.0f;
+    }
 
     enum class VisualIntentSource
     {

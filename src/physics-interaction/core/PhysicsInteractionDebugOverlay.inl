@@ -3957,11 +3957,11 @@
                         labelAnchor,
                         1.7f,
                         proxyColor,
-                        "gripPivot=%.2fgu yield=%.2fdeg layer=%u grace=%u visual=%s solve=%llu",
+                        "gripPivot=%.2fgu yield=%.2fdeg layer=%u retention=%.1fms visual=%s solve=%llu",
                         snapshot.translationCorrectionGameUnits,
                         snapshot.rotationCorrectionDegrees,
                         snapshot.otherLayer,
-                        snapshot.contactGraceSolves,
+                        snapshot.contactRetentionSeconds * 1000.0f,
                         snapshot.visualCorrectionActive ? "ACTIVE" : "IDLE",
                         static_cast<unsigned long long>(
                             snapshot.solveSequence));

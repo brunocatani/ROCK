@@ -49,6 +49,59 @@ int main()
     using namespace rock::dynamic_weapon_collision_policy;
     bool ok = true;
 
+    const auto postSolveTiming = [](float deltaSeconds) {
+        auto timing = rock::havok_physics_timing::makeTimingSample(
+            deltaSeconds, deltaSeconds, 0.0f, deltaSeconds, 1);
+        timing.phase = rock::havok_physics_timing::PhysicsStepPhase::SubstepPostSolve;
+        return timing;
+    };
+    // Losing callbacks for the same elapsed time must produce the same
+    // motor contact state, regardless of render rate or substep count.
+    for (const int hz : {60, 90, 120, 180, 270}) {
+        const auto timing = postSolveTiming(1.0f / static_cast<float>(hz));
+        float retained = advanceContactRetention(0.0f, true, false, timing);
+        const int solvesUntilExpiry = hz / 30;
+        for (int solve = 1; solve <= solvesUntilExpiry; ++solve) {
+            retained = advanceContactRetention(retained, false, false, timing);
+            if ((retained > 0.0f) != (solve < solvesUntilExpiry)) {
+                std::printf("weapon contact expiry mismatch hz=%d solve=%d remaining=%.8f\n", hz, solve, retained);
+                ok = false;
+            }
+        }
+    }
+    const auto timing90 = postSolveTiming(1.0f / 90.0f);
+    float retained = advanceContactRetention(0.0f, true, false, timing90);
+    retained = advanceContactRetention(retained, false, false, timing90);
+    ok &= expectNear("fresh callback renews measured retention",
+        advanceContactRetention(retained, true, false, timing90), kContactRetentionSeconds);
+    for (int solve = 0; solve < 2; ++solve) {
+        retained = advanceContactRetention(retained, false, false, postSolveTiming(1.0f / 180.0f));
+    }
+    for (int solve = 0; solve < 3; ++solve) {
+        retained = advanceContactRetention(retained, false, false, postSolveTiming(1.0f / 270.0f));
+    }
+    ok &= expectNear("rate changes preserve the contact deadline", retained, 0.0f, 0.0f);
+    ok &= expectNear("teleport clears even fresh contact",
+        advanceContactRetention(kContactRetentionSeconds, true, true, timing90), 0.0f, 0.0f);
+    ok &= expectNear("long measured step expires contact",
+        advanceContactRetention(kContactRetentionSeconds, false, false, postSolveTiming(0.1f)), 0.0f, 0.0f);
+    auto invalidTiming = timing90;
+    invalidTiming.usedFallback = true;
+    ok &= expectNear("fallback timing cannot retain contact",
+        advanceContactRetention(kContactRetentionSeconds, true, false, invalidTiming), 0.0f, 0.0f);
+    invalidTiming = timing90;
+    invalidTiming.valid = false;
+    ok &= expectNear("invalid timing cannot retain contact",
+        advanceContactRetention(kContactRetentionSeconds, true, false, invalidTiming), 0.0f, 0.0f);
+    invalidTiming = timing90;
+    invalidTiming.phase = rock::havok_physics_timing::PhysicsStepPhase::SubstepPreCollide;
+    ok &= expectNear("unsolved callback cannot refresh contact",
+        advanceContactRetention(kContactRetentionSeconds, true, false, invalidTiming), 0.0f, 0.0f);
+    invalidTiming = timing90;
+    invalidTiming.substepDeltaSeconds = (std::numeric_limits<float>::quiet_NaN)();
+    ok &= expectNear("unmeasured delta cannot retain contact",
+        advanceContactRetention(kContactRetentionSeconds, true, false, invalidTiming), 0.0f, 0.0f);
+
     const auto belowDivergence = advanceDivergenceDwell(
         0.2f,
         kDivergenceTeleportDistanceGameUnits,
