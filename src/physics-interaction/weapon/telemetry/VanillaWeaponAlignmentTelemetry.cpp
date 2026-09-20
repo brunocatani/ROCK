@@ -518,7 +518,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
             std::string_view caller = capture.caller ? capture.caller : "unknown";
             const auto separator = caller.find_last_of("/\\");
             if (separator != std::string_view::npos) caller.remove_prefix(separator + 1);
-            session->log->info("VWA aim-write seq={} frame={} form={:08X} caller={}:{} generation={:016X} ownership={:016X} instance={:016X} identityChanged={} previousValid={} source=rock-controller-basis inputSource={} intentSource={} gripState={} authoredRefreshed={} writeBlocked={} deltaDegrees={:.5f} inputDeltaDegrees={:.5f} burstRemaining={}",
+            session->log->info("VWA aim-write seq={} frame={} form={:08X} caller={}:{} generation={:016X} ownership={:016X} instance={:016X} identityChanged={} previousValid={} source=rock-weapon-aim inputSource={} intentSource={} gripState={} authoredRefreshed={} writeBlocked={} deltaDegrees={:.5f} inputDeltaDegrees={:.5f} burstRemaining={}",
                 session->sequence, runtime_state::currentFrame().frameIndex, capture.weaponFormId,
                 caller, capture.callerLine, capture.generation, capture.ownership, capture.instanceContent,
                 capture.identityChanged, capture.previousValid,

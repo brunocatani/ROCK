@@ -14,6 +14,8 @@
 #include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
+#include "physics-interaction/weapon/WeaponAimBasis.h"
+#include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -292,6 +294,7 @@ namespace rock
         _model = input.worldModel;
         _supportOnly = input.supportOnly;
         _weaponFormID = input.weaponFormID;
+        _meleeWeapon = input.weapon && weapon_type_policy::isEquippedMelee(input.weapon->weaponData.type.get());
         _isLeftHand = input.isLeftHand;
         _elapsedSeconds = 0.0f;
         _lifetimeSeconds = 0.0f;
@@ -575,7 +578,11 @@ namespace rock
             } else {
                 nativePositionOnlyCarrierAvailable =
                     _hasFiringHandWeaponLocal && _hasPhysicalHandInWandLocal &&
-                    TwoHandedGrip::tryGetRightWeaponAimWorld(_model->world.scale, nativeCarrierWorld);
+                    (_meleeWeapon ?
+                        weapon_aim_basis::tryResolveMeleeWorld(
+                            transform_math::composeTransforms(handNode->world, _physicalHandInWandLocal),
+                            _firingHandWeaponLocal, _model->world.scale, nativeCarrierWorld) :
+                        TwoHandedGrip::tryGetRightWeaponAimWorld(_model->world.scale, nativeCarrierWorld));
             }
             if (_isLeftHand &&
                 nativePositionOnlyCarrierAvailable &&
@@ -892,6 +899,7 @@ namespace rock
         _lifetimeSeconds = 0.0f;
         _presentationLeaseStartedAt = {};
         _weaponFormID = 0;
+        _meleeWeapon = false;
         _isLeftHand = false;
         _supportOnly = false;
         _modelPresented = false;

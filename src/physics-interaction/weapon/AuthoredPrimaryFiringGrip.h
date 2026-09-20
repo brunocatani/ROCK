@@ -25,6 +25,7 @@ namespace rock
         std::uint64_t weaponInstanceContentKey{ 0 };
         std::uint64_t weaponKeywordFlags{ 0 };
         bool weaponInstanceContentKnown{ false };
+        bool meleeWeapon{ false };
         bool runtimeInitialized{ false };
         bool visualAuthorityAvailable{ false };
         bool localSkeletonReady{ false };

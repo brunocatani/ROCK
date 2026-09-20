@@ -1280,7 +1280,19 @@ namespace rock
             return false;
         }
 
-        const RE::NiTransform weaponInRightWand = weapon_aim_basis::weaponInController();
+        RE::NiTransform weaponInRightWand = weapon_aim_basis::weaponInController();
+        const bool meleeWeapon = _recoil.weaponEvidence.resolved && _recoil.weaponEvidence.sizeClass == WeaponSizeClass::Melee;
+        if (meleeWeapon) {
+            RE::NiTransform naturalHandWorld{}, meleeWorld{};
+            if (!hasRightFiringHandCanonicalFrame(weaponNode, currentWeaponGenerationKey, currentEquippedWeaponOwnershipKey) ||
+                _firing.rightCanonicalSource != RightFiringCanonicalSource::AuthoredAnimation ||
+                !tryResolveNaturalWandHandOrientationFrame(false, naturalHandWorld) ||
+                !weapon_aim_basis::tryResolveMeleeWorld(naturalHandWorld,
+                    _firing.rightCanonicalHandWeaponLocal, 1.0f, meleeWorld)) return false;
+            weaponInRightWand = transform_math::composeTransforms(transform_math::invertTransform(rightWand->world), meleeWorld);
+            weaponInRightWand.translate = {};
+            weaponInRightWand.scale = 1.0f;
+        }
 
         const bool identityChanged =
             !_firing.rightNativeWeaponAimFrame.valid ||
@@ -1337,7 +1349,7 @@ namespace rock
                 barrelInRightWand.x,
                 barrelInRightWand.y,
                 barrelInRightWand.z,
-                "rock-controller-basis");
+                meleeWeapon ? "authored-melee-hand" : "rock-controller-basis");
         }
         return true;
     }

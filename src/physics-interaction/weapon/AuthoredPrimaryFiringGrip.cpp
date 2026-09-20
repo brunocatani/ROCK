@@ -7,6 +7,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
+#include "physics-interaction/weapon/WeaponAimBasis.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/MinigunFiringGripPolicy.h"
@@ -971,6 +972,16 @@ namespace rock
             return;
         }
 
+        if (input.meleeWeapon) {
+            if (!weapon_aim_basis::tryResolveMeleeWorld(trackedHandWorld,
+                    authoredPrimaryHandInWeapon, input.weaponNode->world.scale, liveWeaponWorld)) {
+                weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
+                endSession("melee-authored-aim-invalid");
+                return;
+            }
+            currentAuthoredHandWorld = transform_math::composeTransforms(liveWeaponWorld, authoredPrimaryHandInWeapon);
+        }
+
         /*
          * Plausibility gate: a mid-equip/mid-rebuild weapon node can sit
          * thousands of units from the hand for a few frames (observed
@@ -1024,9 +1035,8 @@ namespace rock
             harvestedRelationAvailable ? "native-idle" : "live-equipped",
             authoredPrimaryHandInWeapon, trackedHandWorld, solvedWeaponWorld);
 
-        // The authored wrist correction belongs to the presented hand: the
-        // weapon keeps its native rotation while the right hand seats at the
-        // authored grip on that weapon frame.
+        // Firearms retain controller aim; melee rotates the authored grip
+        // onto the physical wrist. Both present the hand at the same seat.
         const RE::NiTransform solvedFiringHandWorld =
             transform_math::composeTransforms(
                 solvedWeaponWorld,
@@ -1229,7 +1239,7 @@ namespace rock
             ROCK_LOG_INFO(Animation,
                 "Authored primary firing grip weapon alignment active weaponKey=0x{:X} generation=0x{:X} capture={} source={} exactFingerPose={} handMismatch={:.3f}gu "
                 "weaponCorrection={:.3f}gu originalWeaponT=({:.3f},{:.3f},{:.3f}) alignedWeaponT=({:.3f},{:.3f},{:.3f}) alignedLocalT=({:.3f},{:.3f},{:.3f}) "
-                "mode=position-only primaryHand=weapon-relative-authored physicalLeftSource=authored-seat-plus-native-weapon-aim",
+                "mode={} primaryHand=weapon-relative-authored physicalLeftSource=authored-seat-plus-weapon-aim",
                 currentWeaponKey,
                 input.weaponGenerationKey,
                 resolvedCaptureSequence,
@@ -1249,7 +1259,8 @@ namespace rock
                 input.weaponNode->world.translate.z,
                 input.weaponNode->local.translate.x,
                 input.weaponNode->local.translate.y,
-                input.weaponNode->local.translate.z);
+                input.weaponNode->local.translate.z,
+                input.meleeWeapon ? "authored-melee" : "position-only");
             _sessionLogged = true;
         }
     }

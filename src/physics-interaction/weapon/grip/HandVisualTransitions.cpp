@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/WeaponAimBasis.h"
 
 // Hand and weapon visual transitions: visual returns, locked-hand visuals, grip hand pose publication, weapon visual/collision-resolved authority application, and FRIK primary pose blocking.
 
@@ -686,7 +687,12 @@ namespace rock
             return false;
         }
         RE::NiTransform nativeWeaponWorld{};
-        if (!tryGetRightWeaponAimWorld(weaponNode->world.scale, nativeWeaponWorld)) {
+        const bool meleeWeapon = _recoil.weaponEvidence.resolved && _recoil.weaponEvidence.sizeClass == WeaponSizeClass::Melee;
+        const bool aimAvailable = meleeWeapon ?
+            weapon_aim_basis::tryResolveMeleeWorld(trackedRightHandWorld, _firing.rightCanonicalHandWeaponLocal,
+                weaponNode->world.scale, nativeWeaponWorld) :
+            tryGetRightWeaponAimWorld(weaponNode->world.scale, nativeWeaponWorld);
+        if (!aimAvailable) {
             return false;
         }
         const RE::NiPoint3 trackedPalmWorld =

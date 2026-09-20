@@ -7,7 +7,7 @@
 
 namespace rock::weapon_aim_basis
 {
-    // ROCK's controller-to-weapon basis. The native pre-FRIK driver samples
+    // ROCK's firearm controller-to-weapon basis. The native pre-FRIK driver samples
     // from 2026-09-17 agree on a 59-degree pitch across weapons and world
     // orientations. Grip translation and fingers come from the weapon's
     // authored animation, never from a provider offset or presented node.
@@ -48,5 +48,38 @@ namespace rock::weapon_aim_basis
         result = transform_math::composeTransforms(controllerWorld, weaponInController());
         result.scale = weaponScale;
         return true;
+    }
+
+    // Melee models have no shared barrel axis. Preserve the authored wrist
+    // relation by rotating the weapon onto the physical hand, rather than
+    // bending the presented wrist onto the firearm aim. Palm seating remains
+    // the caller's responsibility, including non-unit presentation scales.
+    [[nodiscard]] inline bool tryResolveMeleeWorld(
+        const RE::NiTransform& physicalHandWorld,
+        const RE::NiTransform& authoredHandWeaponLocal,
+        const float weaponScale,
+        RE::NiTransform& result) noexcept
+    {
+        result = {};
+        const auto usable = [](const RE::NiTransform& transform) {
+            if (!std::isfinite(transform.scale) || transform.scale <= 0.000001f ||
+                !std::isfinite(transform.translate.x) ||
+                !std::isfinite(transform.translate.y) ||
+                !std::isfinite(transform.translate.z)) return false;
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    if (!std::isfinite(transform.rotate.entry[row][column])) return false;
+                }
+            }
+            return true;
+        };
+        if (!std::isfinite(weaponScale) || weaponScale <= 0.0f ||
+            !usable(physicalHandWorld) || !usable(authoredHandWeaponLocal)) return false;
+
+        result = transform_math::composeTransforms(
+            physicalHandWorld, transform_math::invertTransform(authoredHandWeaponLocal));
+        result.translate = physicalHandWorld.translate;
+        result.scale = weaponScale;
+        return usable(result);
     }
 }

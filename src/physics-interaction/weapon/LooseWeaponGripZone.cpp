@@ -2,6 +2,7 @@
 #include "physics-interaction/weapon/WeaponGripCalibration.h"
 #include "physics-interaction/weapon/PipeFiringGripPolicy.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
+#include "physics-interaction/weapon/WeaponAimBasis.h"
 
 #include <array>
 #include <cmath>
@@ -194,7 +195,11 @@ namespace rock::loose_weapon_grip_zone
             state.gripWeaponLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(canonicalHandWeaponLocal, false);
             state.reason = authoredLookup.reason;
             RE::NiTransform aimWorld{};
-            if (!TwoHandedGrip::tryGetRightWeaponAimWorld(looseRoot->world.scale, aimWorld)) {
+            const bool meleeWeapon = weapon_type_policy::isEquippedMelee(weapon->weaponData.type.get());
+            const bool aimAvailable = meleeWeapon ?
+                weapon_aim_basis::tryResolveMeleeWorld(canonicalHandWorld, canonicalHandWeaponLocal, looseRoot->world.scale, aimWorld) :
+                TwoHandedGrip::tryGetRightWeaponAimWorld(looseRoot->world.scale, aimWorld);
+            if (!aimAvailable) {
                 state.reason = "rockWeaponAimUnavailable";
                 return false;
             }
@@ -206,7 +211,7 @@ namespace rock::loose_weapon_grip_zone
                     });
             const RE::NiTransform canonicalPlacementHandWeaponLocal = transform_math::composeTransforms(
                 transform_math::invertTransform(positionOnlyWeaponWorld), canonicalHandWorld);
-            state.placementReason = "authoredRockControllerPositionOnly";
+            state.placementReason = meleeWeapon ? "authoredMeleePhysicalHand" : "authoredRockControllerPositionOnly";
 
             if (!isFinitePoint(state.gripWeaponLocal) ||
                 !isUsableWorldTransform(canonicalHandWeaponLocal) ||

@@ -2,6 +2,7 @@
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
+#include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/telemetry/ScopeTransitionTelemetry.h"
 
 // Equipped-weapon frame: transitions, the per-frame equipped weapon update, authored primary grip runtime, handling settings, and shoulder sheath/retrieve.
@@ -1897,6 +1898,10 @@ namespace rock
             equippedGenerationMatchesForm ? _weaponCollision.getCurrentEquippedWeaponInstanceContentKey() : 0);
 
         _twoHandedGrip.beginAuthoredPrimaryFiringGripFrame();
+        const auto* equippedInstance = currentEquippedWeaponInstanceData(equippedWeapon);
+        const auto* effectiveWeaponData = equippedInstance ?
+            static_cast<const RE::TESObjectWEAP::InstanceData*>(equippedInstance) :
+            equippedWeapon ? &equippedWeapon->weaponData : nullptr;
         _equipped.authoredPrimaryFiringGrip.update(AuthoredPrimaryFiringGripFrameInput{
             .weaponNode = weaponNode,
             .weapon = equippedWeapon,
@@ -1905,6 +1910,9 @@ namespace rock
             .weaponInstanceContentKey = equippedGenerationMatchesForm ? _weaponCollision.getCurrentEquippedWeaponInstanceContentKey() : 0,
             .weaponKeywordFlags = weaponKeywordFlags,
             .weaponInstanceContentKnown = equippedGenerationMatchesForm,
+            .meleeWeapon = (effectiveWeaponData && weapon_type_policy::isEquippedMelee(effectiveWeaponData->type.get())) ||
+                (equippedWeapon && weaponClassification.formID == equippedWeapon->formID &&
+                    weaponClassification.classificationResolved && weaponClassification.sizeClass == WeaponSizeClass::Melee),
             .runtimeInitialized = _lifecycle.initialized.load(std::memory_order_acquire),
             .visualAuthorityAvailable = runtime.visualAuthorityAvailable,
             .localSkeletonReady = runtime.localSkeletonReady,

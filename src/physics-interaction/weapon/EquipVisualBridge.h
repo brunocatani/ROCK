@@ -214,6 +214,7 @@ namespace rock
         float _presentationLeaseSeconds = 1.0f;
         std::chrono::steady_clock::time_point _presentationLeaseStartedAt{};
         std::uint32_t _weaponFormID = 0;
+        bool _meleeWeapon = false;
         bool _isLeftHand = false;
         bool _modelPresented = false;
         bool _culledNativeInstanceWasVisible = false;

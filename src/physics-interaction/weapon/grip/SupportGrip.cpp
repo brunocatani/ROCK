@@ -1953,8 +1953,12 @@ namespace rock
             // The axis-only authored solve preserves the input frame's roll.
             // A cycling Weapon root contains graph motion at AfterArmSolve;
             // seed from ROCK's controller basis, never that animated root.
-            if (!wand || !weapon_aim_basis::tryResolveWorld(
-                    wand->world, weaponNode->world.scale, solverInput.weaponWorldTransform)) {
+            const bool meleeWeapon = _recoil.weaponEvidence.resolved && _recoil.weaponEvidence.sizeClass == WeaponSizeClass::Melee;
+            const bool aimAvailable = meleeWeapon ?
+                (_firing.hasPrimaryHandWeaponLocal && weapon_aim_basis::tryResolveMeleeWorld(
+                    calibratedPrimaryTransform, _firing.primaryHandWeaponLocal, weaponNode->world.scale, solverInput.weaponWorldTransform)) :
+                (wand && weapon_aim_basis::tryResolveWorld(wand->world, weaponNode->world.scale, solverInput.weaponWorldTransform));
+            if (!aimAvailable) {
                 _hasSolvedWeaponTransform = false;
                 logGripFailureIncident("authored-controller-aim-unavailable");
                 transitionToInactive(false);
@@ -2488,8 +2492,13 @@ namespace rock
             }
         } else if (transferredRightGrip) {
             RE::NiTransform physicalHand{}, driver{};
-            if (!weaponNode || !tryResolvePhysicalHandFrame(false, physicalHand, driver) ||
-                !tryGetRightWeaponAimWorld(weaponNode->world.scale, transferredWeaponWorld)) {
+            const bool meleeWeapon = _recoil.weaponEvidence.resolved && _recoil.weaponEvidence.sizeClass == WeaponSizeClass::Melee;
+            const bool aimAvailable = weaponNode && tryResolvePhysicalHandFrame(false, physicalHand, driver) &&
+                (meleeWeapon ?
+                    (_firing.hasPrimaryHandWeaponLocal && weapon_aim_basis::tryResolveMeleeWorld(
+                        physicalHand, _firing.primaryHandWeaponLocal, weaponNode->world.scale, transferredWeaponWorld)) :
+                    tryGetRightWeaponAimWorld(weaponNode->world.scale, transferredWeaponWorld));
+            if (!aimAvailable) {
                 ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Paired equipped grip lost physical firing-hand frame");
                 transitionToInactive(false);
                 return;

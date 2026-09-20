@@ -116,12 +116,72 @@ namespace
         ok &= expect("release completion equals resumed authored carry", complete && samePose(returned, resumed));
         return ok;
     }
+
+    bool checkMeleeAim()
+    {
+        using namespace rock;
+        bool ok = true;
+        // Two authored model conventions: a blade along +Y must stand up,
+        // while a glove pointing along +X must face forward in hand space.
+        for (const bool glove : { false, true }) {
+            auto grip = transform_math::makeIdentityTransform<RE::NiTransform>();
+            grip.rotate = weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>(
+                glove ? RE::NiPoint3{ 0, 0, 1 } : RE::NiPoint3{ 1, 0, 0 },
+                -1.5707963267948966f);
+            grip.translate = { 5.4f, -0.4f, -1.6f };
+            const RE::NiPoint3 modelDirection = glove ? RE::NiPoint3{ 1, 0, 0 } : RE::NiPoint3{ 0, 1, 0 };
+            const RE::NiPoint3 handDirection = glove ? RE::NiPoint3{ 0, 1, 0 } : RE::NiPoint3{ 0, 0, 1 };
+            const RE::NiPoint3 palmInHand{ 0.8f, -0.7f, -2.6f };
+            const auto gripPoint = transform_math::localPointToWorld(grip, palmInHand);
+            for (const float scale : { 0.865347f, 1.0f, 1.2f }) {
+                for (const float turn : { 0.0f, 1.3f }) {
+                    auto hand = transform_math::makeIdentityTransform<RE::NiTransform>();
+                    hand.rotate = weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>(RE::NiPoint3{ 0, 0, 1 }, turn);
+                    hand.translate = { 1858.5f, -341.8f, 103.5f };
+                    RE::NiTransform aim{};
+                    ok &= expect("authored melee aim resolves", weapon_aim_basis::tryResolveMeleeWorld(hand, grip, scale, aim));
+                    const auto palm = transform_math::localPointToWorld(hand, palmInHand);
+                    const auto seated = authored_weapon_grip_capture_policy::resolveAuthoredPrimaryWeaponWorldPositionOnly(
+                        aim, gripPoint, palm, [](const auto& t, const auto& p) { return transform_math::localPointToWorld(t, p); });
+                    const auto actualPalm = transform_math::localPointToWorld(seated, gripPoint);
+                    ok &= expect("melee palm remains seated at every model scale",
+                        weaponSolverLength(weaponSolverSub(actualPalm, palm)) < 0.001f && seated.scale == scale);
+                    const auto direction = transform_math::rotateLocalVectorToWorld(seated.rotate, modelDirection);
+                    const auto expectedDirection = transform_math::rotateLocalVectorToWorld(hand.rotate, handDirection);
+                    ok &= expect("blade stays upright and glove stays forward as the hand turns",
+                        weaponSolverLength(weaponSolverSub(direction, expectedDirection)) < 0.0001f);
+                    const auto presentedHand = transform_math::composeTransforms(seated, grip);
+                    ok &= expect("melee grip cannot bend the physical wrist",
+                        hand_visual_lerp_math::rotationDistanceDegrees(hand, presentedHand) < 0.05f);
+
+                    // Loose placement and the equipped return reconstruct the
+                    // same weapon orientation from the same physical hand.
+                    const auto placement = transform_math::composeTransforms(transform_math::invertTransform(seated), hand);
+                    const auto loose = transform_math::composeTransforms(hand, transform_math::invertTransform(placement));
+                    ok &= expect("melee pickup and equipped placement agree", samePose(loose, seated));
+                }
+            }
+        }
+        auto hand = transform_math::makeIdentityTransform<RE::NiTransform>();
+        auto grip = hand;
+        RE::NiTransform result{};
+        ok &= expect("invalid melee scale fails closed", !weapon_aim_basis::tryResolveMeleeWorld(hand, grip, 0.0f, result));
+        grip.scale = 0.0f;
+        ok &= expect("singular authored grip fails closed", !weapon_aim_basis::tryResolveMeleeWorld(hand, grip, 1.0f, result));
+        grip = hand;
+        grip.rotate.entry[1][0] = std::numeric_limits<float>::quiet_NaN();
+        ok &= expect("invalid authored rotation fails closed", !weapon_aim_basis::tryResolveMeleeWorld(hand, grip, 1.0f, result));
+        grip = hand;
+        hand.rotate.entry[0][1] = std::numeric_limits<float>::quiet_NaN();
+        ok &= expect("invalid physical hand fails closed", !weapon_aim_basis::tryResolveMeleeWorld(hand, grip, 1.0f, result));
+        return ok;
+    }
 }
 
 int main()
 {
     using namespace rock;
-    bool ok = true;
+    bool ok = checkMeleeAim();
     RE::NiTransform controller{};
     controller.scale = 1.0f;
     controller.translate = { -335.86664f, -341.83038f, 107.02197f };
