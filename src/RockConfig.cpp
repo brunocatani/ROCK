@@ -36,11 +36,14 @@ namespace rock
     void RockConfig::load()
     {
         try {
-            if (!_store) {
-                CSimpleIniA defaults;
-                buildCompiledDefaults(defaults);
-                _store = std::make_unique<config::ConfigurationStore>(resolveConfigDirectory(), defaults);
-                resetToDefaults();
+            {
+                std::scoped_lock lock(_storeMutex);
+                if (!_store) {
+                    CSimpleIniA defaults;
+                    buildCompiledDefaults(defaults);
+                    _store = std::make_unique<config::ConfigurationStore>(resolveConfigDirectory(), defaults);
+                    resetToDefaults();
+                }
             }
             ROCK_LOG_INFO(Config, "Loading ROCK configuration from: {}", _store->directory().string());
             (void)loadStore(true);
@@ -52,6 +55,13 @@ namespace rock
 
     bool RockConfig::loadStore(bool createConsumer)
     {
+        // Do not stall the runtime frame behind an API visitor or INI edit.
+        // Keep the existing pending reload until the configuration task finishes.
+        std::unique_lock lock(_storeMutex, std::try_to_lock);
+        if (!lock.owns_lock()) {
+            _reloadPending.store(true, std::memory_order_release);
+            return false;
+        }
         if (!_store || !_store->load(createConsumer)) {
             ROCK_LOG_WARN(Config, "Configuration reload failed; retaining current values: {}",
                 _store ? _store->error() : "configuration is not initialized");
@@ -64,6 +74,7 @@ namespace rock
         static_cast<RockConfigValues&>(*this) = parseValues(combined);
         logger::setLogLevelAndPattern(rockLogLevel, rockLogPattern);
         _configRevision.store(_store->revision(), std::memory_order_release);
+        lock.unlock(); // Subscribers may inspect the newly applied catalog.
         ROCK_LOG_INFO(Config, "ROCK configuration applied (revision={}, logLevel={} {})",
             configRevision(), rockLogLevel, logging_policy::logLevelName(rockLogLevel));
         for (const auto& [key, subscriber] : _onConfigChangedSubscribers) subscriber(key);
@@ -85,11 +96,13 @@ namespace rock
 
     std::filesystem::path RockConfig::getConfigDirectory() const
     {
+        std::scoped_lock lock(_storeMutex);
         return _store ? _store->directory() : resolveConfigDirectory();
     }
 
     bool RockConfig::visitSettings(Group group, configuration_api::VisitorV1 visitor, void* context) const
     {
+        std::scoped_lock lock(_storeMutex);
         if (!_store || !visitor || configRevision() == 0) return false;
         if (group != Group::Consumer && group != Group::Developer) return false;
         for (const auto& setting : _store->settings()) {
@@ -107,6 +120,7 @@ namespace rock
     bool RockConfig::persistSetting(Group group, const char* section, const char* key,
         const char* value, std::string& error)
     {
+        std::scoped_lock lock(_storeMutex);
         if (!_store || !section || !key || !value) {
             error = "ROCK configuration is unavailable";
             return false;
@@ -130,6 +144,7 @@ namespace rock
 
     bool RockConfig::persistGrabLegacyPalmPivotAHandspace(bool isLeft, const RE::NiPoint3& value)
     {
+        std::scoped_lock lock(_storeMutex);
         if (!_store) return false;
         const std::array values{ std::format("{:.9g}", value.x), std::format("{:.9g}", value.y), std::format("{:.9g}", value.z) };
         const std::array keys = isLeft ?

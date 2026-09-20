@@ -991,6 +991,19 @@ if(BUILD_ROCK_TESTS)
   list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKConfigurationStoreTests)
   add_rock_test(ROCKConfigurationStoreTests)
 
+  add_executable(ROCKConfigurationProviderTests
+    "${ROOT_DIR}/tests/ConfigurationProviderTests.cpp"
+    "${SOURCE_DIR}/api/providers/ConfigurationProvider.cpp"
+    "${SOURCE_DIR}/RockConfig.cpp"
+    "${SOURCE_DIR}/RockConfigLoad.cpp"
+    "${SOURCE_DIR}/config/ConfigurationStore.cpp"
+  )
+  target_compile_features(ROCKConfigurationProviderTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKConfigurationProviderTests PRIVATE ${SOURCE_DIR})
+  target_precompile_headers(ROCKConfigurationProviderTests PRIVATE "${ROOT_DIR}/tests/CommonLibPolicyPCH.h" <F4SE/Logger.h>)
+  target_link_libraries(ROCKConfigurationProviderTests PRIVATE CommonLibF4::CommonLibF4 spdlog::spdlog)
+  add_rock_test(ROCKConfigurationProviderTests)
+
   foreach(ROCK_COMMONLIB_TEST_TARGET IN LISTS ROCK_COMMONLIB_TEST_TARGETS)
     target_precompile_headers(${ROCK_COMMONLIB_TEST_TARGET} REUSE_FROM ROCKPolicyTestSupport)
     target_link_libraries(${ROCK_COMMONLIB_TEST_TARGET} PRIVATE ROCKPolicyTestSupport)

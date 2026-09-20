@@ -31,8 +31,8 @@ namespace rock::config
 
     struct Change { std::string_view section, key, value; };
 
-    // Owned by RockConfig on the game thread. Only this owner writes ROCK's
-    // settings; menus obtain the compiled catalog through the configuration API.
+    // Owned and serialized by RockConfig. Configuration tasks save/visit through
+    // that owner; only its runtime reload applies the catalog to live settings.
     // INI sections are labels. Case-insensitive keys identify settings within
     // their owning file; the last physical occurrence wins. Loading never writes.
     // Explicit writes retain effective values under the catalog's display labels.

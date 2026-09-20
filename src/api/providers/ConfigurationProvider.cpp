@@ -33,7 +33,9 @@ namespace {
     }
     Status ROCK_CALL visit(OwnerToken owner, Group group, VisitorV1 visitor, void* user) noexcept {
         if (!visitor) return Status::InvalidArgument;
-        return boundary::invoke(owner,kInterfaceId,1,true,[&]() {
+        // Configuration tasks are not FRIK animation callbacks. RockConfig
+        // serializes catalog access; borrowed visitors still forbid reentry.
+        return boundary::invoke(owner,kInterfaceId,1,false,[&]() {
             VisitContext context{visitor,user};
             const bool available=g_rockConfig.visitSettings(static_cast<configuration_api::Group>(group),visitSetting,&context);
             if (context.fault) { provider::runtime::revoke(owner); return Status::OwnerRevoked; }
@@ -44,7 +46,7 @@ namespace {
         const char* key, const char* value, char* error, std::uint32_t capacity) noexcept {
         if (error && capacity) error[0]='\0';
         if ((capacity && !error) || !section || !key || !value) return Status::InvalidArgument;
-        return boundary::invoke(owner,kInterfaceId,2,true,[&]() {
+        return boundary::invoke(owner,kInterfaceId,2,false,[&]() {
             std::string message;
             const bool saved=g_rockConfig.persistSetting(static_cast<configuration_api::Group>(group),section,key,value,message);
             if (error && capacity) {

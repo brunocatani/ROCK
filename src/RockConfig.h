@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -570,6 +571,10 @@ namespace rock
 
         void startFileWatch();
 
+        // Configuration tasks may visit/save concurrently with a runtime reload.
+        // Only load/reload applies live values on the runtime owner. API writes
+        // persist under this lock and request that owner's normal reload.
+        mutable std::mutex _storeMutex;
         std::unique_ptr<config::ConfigurationStore> _store;
         std::unique_ptr<filewatch::FileWatch<std::string>> _fileWatch;
         std::unordered_map<std::string, std::function<void(const std::string&)>> _onConfigChangedSubscribers;
