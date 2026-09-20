@@ -2,7 +2,6 @@
 #include "physics-interaction/weapon/WeaponGripCalibration.h"
 #include "physics-interaction/weapon/PipeFiringGripPolicy.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
-#include "physics-interaction/weapon/WeaponAimBasis.h"
 
 #include <array>
 #include <cmath>
@@ -197,7 +196,7 @@ namespace rock::loose_weapon_grip_zone
             RE::NiTransform aimWorld{};
             const bool meleeWeapon = weapon_type_policy::isEquippedMelee(weapon->weaponData.type.get());
             const bool aimAvailable = meleeWeapon ?
-                weapon_aim_basis::tryResolveMeleeWorld(canonicalHandWorld, canonicalHandWeaponLocal, looseRoot->world.scale, aimWorld) :
+                TwoHandedGrip::tryGetMeleeWeaponAimWorld(false, canonicalHandWorld, canonicalHandWeaponLocal, looseRoot->world.scale, aimWorld) :
                 TwoHandedGrip::tryGetRightWeaponAimWorld(looseRoot->world.scale, aimWorld);
             if (!aimAvailable) {
                 state.reason = "rockWeaponAimUnavailable";

@@ -234,6 +234,23 @@ int main(int argc, char** argv)
         require(!rock::RockConfig::parseValues(resetNpcValues).npcDynamicCollisions &&
             !fs::exists(store.path(Group::Developer)),
             "reset must restore NPC collisions off and remove the sole developer override");
+        require(find(store, "fMeleeGripPitchDegrees").group == Group::Consumer &&
+            find(store, "fMeleeGripPitchDegrees").type == ValueType::Float,
+            "melee pitch must be a consumer float");
+        for (const auto* angle : { "15", "-30", "0" }) {
+            require(store.setValue(Group::Consumer, "ImmersiveWeapons", "fMeleeGripPitchDegrees", angle) && store.load(false),
+                "melee pitch edit/reload failed");
+            CSimpleIniA values;
+            store.appendLoadedValues(values);
+            require(rock::RockConfig::parseValues(values).rockMeleeGripPitchDegrees == std::stof(angle),
+                "melee pitch did not reach runtime");
+        }
+        for (const auto& [value, expected] : { std::pair{ "-181", -180.0f }, { "181", 180.0f }, { "nan", 0.0f } }) {
+            CSimpleIniA values;
+            values.SetValue("ImmersiveWeapons", "fMeleeGripPitchDegrees", value);
+            require(rock::RockConfig::parseValues(values).rockMeleeGripPitchDegrees == expected,
+                "invalid melee pitch was not bounded safely");
+        }
         require(find(store, "fLaserRecoilPercent").type == ValueType::Float &&
             rock::RockConfig::parseValues(missingOptions).rockLaserRecoilPercent == 100.0f,
             "laser recoil must default to the bipod profile strength");

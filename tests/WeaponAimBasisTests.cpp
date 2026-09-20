@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/WeaponAimBasis.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
+#include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/hand/HandVisual.h"
 
 #include <cstdio>
@@ -117,6 +118,83 @@ namespace
         return ok;
     }
 
+    bool checkMeleePitch()
+    {
+        using namespace rock;
+        bool ok = true;
+        const auto identity = transform_math::makeIdentityTransform<RE::NiTransform>();
+        auto grip = identity;
+        grip.rotate = weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>(
+            RE::NiPoint3{ 0, 0, 1 }, 0.4f);
+        grip.translate = { 4.0f, -1.0f, 2.0f };
+        const RE::NiPoint3 palmInHand{ 6.0f, -2.0f, -0.2f };
+        const auto gripPoint = transform_math::localPointToWorld(grip, palmInHand);
+        for (const float turn : { 0.0f, 1.3f }) {
+            auto controller = identity;
+            controller.rotate = weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>(
+                RE::NiPoint3{ 0, 0, 1 }, turn);
+            controller.translate = { -9500.0f, 6200.0f, 600.0f };
+            controller.scale = 1.2f;
+            auto wrist = identity;
+            wrist.rotate = weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>(
+                RE::NiPoint3{ 0, 1, 0 }, 0.6f);
+            wrist.translate = { 1, -3, 5 };
+            auto hand = transform_math::composeTransforms(controller, wrist);
+            hand.scale = 1.0f;
+            const auto palm = transform_math::localPointToWorld(hand, palmInHand);
+            const auto upInWeapon = transform_math::rotateLocalVectorToWorld(grip.rotate,
+                transform_math::rotateWorldVectorToLocal(wrist.rotate, RE::NiPoint3{ 0, 1, 0 }));
+            for (const float scale : { 0.865347f, 1.0f, 1.2f }) {
+                // A change back to zero must use the untouched physical hand,
+                // never accumulate a correction on the last rendered pose.
+                for (const float pitch : { 15.0f, -30.0f, 0.0f, 15.0f }) {
+                    RE::NiTransform aim{}, base{};
+                    ok &= expect("melee pitch resolves", weapon_aim_basis::tryResolveMeleeWorld(
+                        hand, grip, controller, scale, pitch, aim));
+                    ok &= expect("uncorrected melee resolves", weapon_aim_basis::tryResolveMeleeWorld(hand, grip, scale, base));
+                    if (pitch == 0.0f) ok &= expect("zero exactly restores original aim", samePose(aim, base));
+                    const auto seated = authored_weapon_grip_capture_policy::resolveAuthoredPrimaryWeaponWorldPositionOnly(
+                        aim, gripPoint, palm, [](const auto& t, const auto& p) { return transform_math::localPointToWorld(t, p); });
+                    const auto presentedHand = transform_math::composeTransforms(seated, grip);
+                    ok &= expect("pitch pins both weapon grip and presented palm",
+                        weaponSolverLength(weaponSolverSub(transform_math::localPointToWorld(seated, gripPoint), palm)) < 0.002f &&
+                        weaponSolverLength(weaponSolverSub(transform_math::localPointToWorld(presentedHand, palmInHand), palm)) < 0.002f);
+                    ok &= expect("hand and weapon rotate together by the requested angle",
+                        std::fabs(hand_visual_lerp_math::rotationDistanceDegrees(hand, presentedHand) - std::fabs(pitch)) < 0.05f &&
+                        seated.scale == scale);
+                    const auto direction = transform_math::rotateWorldVectorToLocal(controller.rotate,
+                        transform_math::rotateLocalVectorToWorld(seated.rotate, upInWeapon));
+                    const float radians = pitch * 0.017453292519943295769f;
+                    ok &= expect("forward tilt follows controller orientation",
+                        near(direction.x, 0.0f) && near(direction.y, std::cos(radians)) && near(direction.z, -std::sin(radians)));
+
+                    auto rotationOnlyController = controller;
+                    rotationOnlyController.translate = {};
+                    rotationOnlyController.scale = 1.0f;
+                    const auto baseInWand = transform_math::composeTransforms(
+                        transform_math::invertTransform(rotationOnlyController), base);
+                    const auto pitchTrim = weapon_aim_basis::meleePitchInController(pitch);
+                    const auto right = transform_math::composeTransforms(pitchTrim, baseInWand);
+                    const auto left = transform_math::composeTransforms(pitchTrim,
+                        left_firing_position_only_math::mirrorRightWeaponInWandOrientation(baseInWand));
+                    const auto mirroredRight = left_firing_position_only_math::mirrorRightWeaponInWandOrientation(right);
+                    for (int row = 0; row < 3; ++row)
+                        for (int col = 0; col < 3; ++col)
+                            ok &= expect("same pitch survives left hand mirroring exactly once",
+                                near(left.rotate.entry[row][col], mirroredRight.rotate.entry[row][col]));
+                }
+            }
+        }
+        RE::NiTransform result{};
+        ok &= expect("non-finite pitch fails closed", !weapon_aim_basis::tryResolveMeleeWorld(
+            identity, grip, identity, 1.0f, std::numeric_limits<float>::quiet_NaN(), result));
+        auto invalid = identity;
+        invalid.rotate.entry[0][0] = std::numeric_limits<float>::infinity();
+        ok &= expect("invalid pitch carrier fails closed", !weapon_aim_basis::tryResolveMeleeWorld(
+            identity, grip, invalid, 1.0f, 15.0f, result));
+        return ok;
+    }
+
     bool checkMeleeAim()
     {
         using namespace rock;
@@ -182,6 +260,7 @@ int main()
 {
     using namespace rock;
     bool ok = checkMeleeAim();
+    ok &= checkMeleePitch();
     RE::NiTransform controller{};
     controller.scale = 1.0f;
     controller.translate = { -335.86664f, -341.83038f, 107.02197f };

@@ -1153,6 +1153,19 @@ namespace rock
             weapon_aim_basis::tryResolveWorld(nodes->primaryWandNode->world, weaponScale, outWorld);
     }
 
+    bool TwoHandedGrip::tryGetMeleeWeaponAimWorld(const bool isLeft,
+        const RE::NiTransform& physicalHandWorld,
+        const RE::NiTransform& authoredHandWeaponLocal,
+        const float weaponScale, RE::NiTransform& outWorld)
+    {
+        outWorld = {};
+        const auto* nodes = f4vr::getPlayerNodes();
+        const auto* wand = nodes ? (isLeft ? nodes->SecondaryWandNode : nodes->primaryWandNode) : nullptr;
+        return wand && weapon_aim_basis::tryResolveMeleeWorld(
+            physicalHandWorld, authoredHandWeaponLocal, wand->world,
+            weaponScale, g_rockConfig.rockMeleeGripPitchDegrees, outWorld);
+    }
+
     bool TwoHandedGrip::tryGetAuthoredPrimaryTrackedFiringHandWorld(
         RE::NiTransform& outHandWorld) const
     {
@@ -1284,6 +1297,9 @@ namespace rock
         const bool meleeWeapon = _recoil.weaponEvidence.resolved && _recoil.weaponEvidence.sizeClass == WeaponSizeClass::Melee;
         if (meleeWeapon) {
             RE::NiTransform naturalHandWorld{}, meleeWorld{};
+            // Cache the uncorrected authored basis. Left carry applies the
+            // current user pitch at solve time, so hot reload never compounds
+            // a captured correction or requires another right-hand capture.
             if (!hasRightFiringHandCanonicalFrame(weaponNode, currentWeaponGenerationKey, currentEquippedWeaponOwnershipKey) ||
                 _firing.rightCanonicalSource != RightFiringCanonicalSource::AuthoredAnimation ||
                 !tryResolveNaturalWandHandOrientationFrame(false, naturalHandWorld) ||

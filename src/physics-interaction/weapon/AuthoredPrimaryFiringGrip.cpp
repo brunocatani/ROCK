@@ -7,7 +7,6 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
-#include "physics-interaction/weapon/WeaponAimBasis.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/MinigunFiringGripPolicy.h"
@@ -988,7 +987,7 @@ namespace rock
         }
 
         if (input.meleeWeapon) {
-            if (!weapon_aim_basis::tryResolveMeleeWorld(trackedHandWorld,
+            if (!TwoHandedGrip::tryGetMeleeWeaponAimWorld(false, trackedHandWorld,
                     authoredPrimaryHandInWeapon, input.weaponNode->world.scale, liveWeaponWorld)) {
                 weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
                 endSession("melee-authored-aim-invalid");
@@ -1051,7 +1050,8 @@ namespace rock
             authoredPrimaryHandInWeapon, trackedHandWorld, solvedWeaponWorld);
 
         // Firearms retain controller aim; melee rotates the authored grip
-        // onto the physical wrist. Both present the hand at the same seat.
+        // onto the physical wrist plus the user's pitch. Both present the
+        // hand at the same palm seat without changing its authored relation.
         const RE::NiTransform solvedFiringHandWorld =
             transform_math::composeTransforms(
                 solvedWeaponWorld,

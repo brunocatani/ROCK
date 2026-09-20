@@ -2028,7 +2028,7 @@ namespace rock
             // seed from ROCK's controller basis, never that animated root.
             const bool meleeWeapon = _recoil.weaponEvidence.resolved && _recoil.weaponEvidence.sizeClass == WeaponSizeClass::Melee;
             const bool aimAvailable = meleeWeapon ?
-                (_firing.hasPrimaryHandWeaponLocal && weapon_aim_basis::tryResolveMeleeWorld(
+                (_firing.hasPrimaryHandWeaponLocal && tryGetMeleeWeaponAimWorld(primaryHandIsLeft,
                     calibratedPrimaryTransform, _firing.primaryHandWeaponLocal, weaponNode->world.scale, solverInput.weaponWorldTransform)) :
                 (wand && weapon_aim_basis::tryResolveWorld(wand->world, weaponNode->world.scale, solverInput.weaponWorldTransform));
             if (!aimAvailable) {
@@ -2568,7 +2568,7 @@ namespace rock
             const bool meleeWeapon = _recoil.weaponEvidence.resolved && _recoil.weaponEvidence.sizeClass == WeaponSizeClass::Melee;
             const bool aimAvailable = weaponNode && tryResolvePhysicalHandFrame(false, physicalHand, driver) &&
                 (meleeWeapon ?
-                    (_firing.hasPrimaryHandWeaponLocal && weapon_aim_basis::tryResolveMeleeWorld(
+                    (_firing.hasPrimaryHandWeaponLocal && tryGetMeleeWeaponAimWorld(false,
                         physicalHand, _firing.primaryHandWeaponLocal, weaponNode->world.scale, transferredWeaponWorld)) :
                     tryGetRightWeaponAimWorld(weaponNode->world.scale, transferredWeaponWorld));
             if (!aimAvailable) {

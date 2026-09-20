@@ -370,6 +370,9 @@ namespace rock
             IMMERSIVE_WEAPONS_SECTION,
             "bGrabAnywhereOnWeapon",
             rockGrabAnywhereOnWeapon);
+        rockMeleeGripPitchDegrees = readClampedFloat(
+            ini, IMMERSIVE_WEAPONS_SECTION, "fMeleeGripPitchDegrees",
+            rockMeleeGripPitchDegrees, 0.0f, -180.0f, 180.0f);
         rockFiringGripReattachRadiusGameUnits = readClampedFloat(
             ini,
             IMMERSIVE_WEAPONS_SECTION,

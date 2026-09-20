@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
 
 #include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
+#include "physics-interaction/weapon/WeaponAimBasis.h"
 
 // Left-firing equipped carry: position-only carry solve, weapon node ownership/reparenting, feed-forward weapon publish, and owned recoil delivery.
 
@@ -301,6 +302,11 @@ namespace rock
                 mirrorRightWeaponInWandOrientation(
                     _firing.rightNativeWeaponAimFrame.
                         weaponInWandOrientation);
+        if (_recoil.weaponEvidence.resolved && _recoil.weaponEvidence.sizeClass == WeaponSizeClass::Melee) {
+            leftWeaponInWand = transform_math::composeTransforms(
+                weapon_aim_basis::meleePitchInController(g_rockConfig.rockMeleeGripPitchDegrees),
+                leftWeaponInWand);
+        }
         const RE::NiTransform aimTrim =
             makeLeftFiringWandAimTrim(_handlingSettings);
         leftWeaponInWand = transform_math::composeTransforms(

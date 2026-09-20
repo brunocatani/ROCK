@@ -562,6 +562,10 @@ namespace rock
          * presented hand back as solver input.
          */
         static bool tryGetRightWeaponAimWorld(float weaponScale, RE::NiTransform& outWorld);
+        static bool tryGetMeleeWeaponAimWorld(bool isLeft,
+            const RE::NiTransform& physicalHandWorld,
+            const RE::NiTransform& authoredHandWeaponLocal,
+            float weaponScale, RE::NiTransform& outWorld);
         bool tryGetAuthoredPrimaryTrackedFiringHandWorld(
             RE::NiTransform& outHandWorld) const;
 

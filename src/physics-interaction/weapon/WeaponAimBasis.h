@@ -7,6 +7,21 @@
 
 namespace rock::weapon_aim_basis
 {
+    // Controller-local pitch, shared by both physical hands. Positive tilts
+    // controller +Y toward forward -Z. This is orientation only: every caller
+    // seats the authored grip on the unchanged physical palm afterwards.
+    [[nodiscard]] inline RE::NiTransform meleePitchInController(const float degrees) noexcept
+    {
+        auto result = transform_math::makeIdentityTransform<RE::NiTransform>();
+        const float radians = degrees * 0.017453292519943295769f;
+        const float cosine = std::cos(radians);
+        const float sine = std::sin(radians);
+        result.rotate.entry[1][1] = result.rotate.entry[2][2] = cosine;
+        result.rotate.entry[1][2] = -sine;
+        result.rotate.entry[2][1] = sine;
+        return result;
+    }
+
     // ROCK's firearm controller-to-weapon basis. The native pre-FRIK driver samples
     // from 2026-09-17 agree on a 59-degree pitch across weapons and world
     // orientations. Grip translation and fingers come from the weapon's
@@ -81,5 +96,40 @@ namespace rock::weapon_aim_basis
         result.translate = physicalHandWorld.translate;
         result.scale = weaponScale;
         return usable(result);
+    }
+
+    [[nodiscard]] inline bool tryResolveMeleeWorld(
+        const RE::NiTransform& physicalHandWorld,
+        const RE::NiTransform& authoredHandWeaponLocal,
+        const RE::NiTransform& controllerWorld,
+        const float weaponScale,
+        const float pitchDegrees,
+        RE::NiTransform& result) noexcept
+    {
+        if (!std::isfinite(pitchDegrees) ||
+            !tryResolveMeleeWorld(physicalHandWorld, authoredHandWeaponLocal, weaponScale, result)) {
+            result = {};
+            return false;
+        }
+        if (pitchDegrees == 0.0f) return true;
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                if (!std::isfinite(controllerWorld.rotate.entry[row][column])) {
+                    result = {};
+                    return false;
+                }
+            }
+        }
+        // Conjugate only rotation. Controller/wrist origins and scales must
+        // not introduce a translation or become a different rotation pivot.
+        auto controller = transform_math::makeIdentityTransform<RE::NiTransform>();
+        controller.rotate = controllerWorld.rotate;
+        auto aim = transform_math::makeIdentityTransform<RE::NiTransform>();
+        aim.rotate = result.rotate;
+        const auto inController = transform_math::composeTransforms(
+            transform_math::invertTransform(controller), aim);
+        result.rotate = transform_math::composeTransforms(controller,
+            transform_math::composeTransforms(meleePitchInController(pitchDegrees), inController)).rotate;
+        return true;
     }
 }

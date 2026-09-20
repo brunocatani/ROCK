@@ -14,7 +14,6 @@
 #include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
-#include "physics-interaction/weapon/WeaponAimBasis.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "rock_support/Fo4VrRuntime.h"
@@ -587,7 +586,7 @@ namespace rock
                 nativePositionOnlyCarrierAvailable =
                     _hasFiringHandWeaponLocal && _hasPhysicalHandInWandLocal &&
                     (_meleeWeapon ?
-                        weapon_aim_basis::tryResolveMeleeWorld(
+                        TwoHandedGrip::tryGetMeleeWeaponAimWorld(false,
                             transform_math::composeTransforms(handNode->world, _physicalHandInWandLocal),
                             _firingHandWeaponLocal, _model->world.scale, nativeCarrierWorld) :
                         TwoHandedGrip::tryGetRightWeaponAimWorld(_model->world.scale, nativeCarrierWorld));
