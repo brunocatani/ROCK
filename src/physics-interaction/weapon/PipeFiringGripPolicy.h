@@ -10,7 +10,7 @@ namespace rock::pipe_firing_grip_policy
 {
     using Transform = authored_weapon_grip_cache::PersistedTransform;
     // User calibration from Pipe.json, 2026-09-14 23:07. FRIK's
-    // Weapon-in-Hand convention; canonical for both vanilla pipe firing hands.
+    // Weapon-in-Hand convention; canonical for the shared pipe firing poses.
     inline constexpr Transform kWeaponInHand{
         { -0.122000001f, 0.99000001f, 0.0689999983f, 0.986999989f, 0.114f, 0.108999997f, 0.100000001f, 0.0810000002f, -0.991999984f },
         { 10.3997459f, -1.45530391f, -6.33630705f },
@@ -26,7 +26,8 @@ namespace rock::pipe_firing_grip_policy
 
     // Original FO4VR idle samples captured 2026-09-14. These are identity
     // witnesses only, not replacement poses. Compare the full right-hand pose
-    // so a replacement using the same filename can supply its own grip.
+    // regardless of weapon ID or clip filename, so copied animations qualify
+    // while replacements with a different pose supply their own grip.
     inline constexpr std::array<VanillaPose, 4> kVanillaPoses{{
         { "Actors/Character/_1stPerson/Animations/PipeRifle/WPNIdleReady.hkx",
           { { -0.00433182716f, 0.702639163f, -0.711533308f, 0.998639166f, 0.0400210619f, 0.0334412754f, 0.0519735515f, -0.710420132f, -0.701856375f }, { 2.08685541f, -9.78134632f, 2.11661911f }, 1.0f }, {{
@@ -102,11 +103,6 @@ namespace rock::pipe_firing_grip_policy
         }} },
     }};
 
-    [[nodiscard]] constexpr bool isPipe(std::uint32_t form) noexcept
-    {
-        return form == 0x00024F55 || form == 0x0014831A || form == 0x0014831B;
-    }
-
     [[nodiscard]] constexpr bool sameClip(std::string_view a, std::string_view b) noexcept
     {
         const auto normalize = [](char c) { return c == '\\' ? '/' : c >= 'A' && c <= 'Z' ? char(c + ('a' - 'A')) : c; };
@@ -116,34 +112,51 @@ namespace rock::pipe_firing_grip_policy
         return true;
     }
 
+    [[nodiscard]] constexpr bool isKnownClip(std::string_view clip) noexcept
+    {
+        for (const auto& pose : kVanillaPoses)
+            if (sameClip(clip, pose.clip)) return true;
+        return sameClip(clip, "Actors/Character/_1stPerson/Animations/Syringer/WPNIdleReady.hkx");
+    }
+
     template <class T>
     [[nodiscard]] bool matches(const T& actual, const Transform& expected) noexcept
     {
-        // Export precision only, not a visual similarity threshold.
-        const auto same = [](float a, float b) { return std::isfinite(a) && std::abs(a - b) <= 0.00001f; };
-        if (!same(actual.scale, expected.scale) ||
-            !same(actual.translate.x, expected.translate[0]) ||
-            !same(actual.translate.y, expected.translate[1]) ||
-            !same(actual.translate.z, expected.translate[2])) return false;
+        // The Syringer's shared pose differs by up to 0.000092 game units
+        // after sampling. Allow that translation precision, not visual
+        // similarity; rotation and scale retain the original strict limit.
+        const auto same = [](float a, float b, float tolerance) { return std::isfinite(a) && std::abs(a - b) <= tolerance; };
+        if (!same(actual.scale, expected.scale, 0.00001f) ||
+            !same(actual.translate.x, expected.translate[0], 0.0001f) ||
+            !same(actual.translate.y, expected.translate[1], 0.0001f) ||
+            !same(actual.translate.z, expected.translate[2], 0.0001f)) return false;
         for (int r = 0; r < 3; ++r)
             for (int c = 0; c < 3; ++c)
-                if (!same(actual.rotate.entry[r][c], expected.rotate[r * 3 + c])) return false;
+                if (!same(actual.rotate.entry[r][c], expected.rotate[r * 3 + c], 0.00001f)) return false;
         return true;
     }
 
     template <class T, class Fingers>
-    [[nodiscard]] bool recognizesVanilla(std::uint32_t form, std::string_view clip,
-        const T& hand, const Fingers& fingers) noexcept
+    [[nodiscard]] bool recognizesVanilla(const T& hand, const Fingers& fingers) noexcept
     {
-        if (!isPipe(form) || fingers.enabledMask != 0x7FFF) return false;
+        if (fingers.enabledMask != 0x7FFF) return false;
         for (const auto& pose : kVanillaPoses) {
-            if (!sameClip(clip, pose.clip) || !matches(hand, pose.hand)) continue;
+            if (!matches(hand, pose.hand)) continue;
             bool matchingFingers = true;
             for (std::size_t i = 0; i < pose.fingers.size(); ++i)
                 matchingFingers = matchingFingers && matches(fingers.localTransforms[i], pose.fingers[i]);
             if (matchingFingers) return true;
         }
         return false;
+    }
+
+    template <class T, class Fingers>
+    [[nodiscard]] bool requiresFreshSample(std::string_view clip, const T& hand, const Fingers& fingers) noexcept
+    {
+        // Paths in the disk key cannot detect replaced animation contents.
+        // Recheck known paths even when the cached replacement did not match,
+        // and copied poses even when their mod uses a different filename.
+        return isKnownClip(clip) || recognizesVanilla(hand, fingers);
     }
 
     [[nodiscard]] constexpr bool useCompiledDefault(bool found, bool vanillaPose) noexcept

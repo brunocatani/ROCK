@@ -947,6 +947,10 @@ namespace rock::native_idle_grip_preharvest
                 return false;
             }
 
+            if (pipe_firing_grip_policy::requiresFreshSample(record.idleClipPath, handInWeapon, fingers)) {
+                return false;
+            }
+
             const std::uint64_t captureSequence = kPreharvestCaptureSequenceDomain | (++state.nextCaptureSequence);
             if (!authored_weapon_grip_library::publishResolvedVariant(
                     job.weapon,
@@ -2050,8 +2054,8 @@ namespace rock::native_idle_grip_preharvest
             }
             const std::uint64_t captureSequence = kPreharvestCaptureSequenceDomain | (++state.nextCaptureSequence);
             const bool vanillaPipePose = pipe_firing_grip_policy::recognizesVanilla(
-                job.weaponFormId, clipPath.data(), handInWeapon, rightFiringFingerPose);
-            if (pipe_firing_grip_policy::isPipe(job.weaponFormId)) {
+                handInWeapon, rightFiringFingerPose);
+            if (vanillaPipePose || pipe_firing_grip_policy::isKnownClip(clipPath.data())) {
                 ROCK_LOG_INFO(Animation, "Pipe firing grip selection form={:08X} variant={:016X} correction={} source=fresh-native-idle subgraph={:016X} clip={}",
                     job.weaponFormId, job.variant.key, vanillaPipePose ? "compiled-calibration" : "authored-passthrough", subgraphIdentifier, clipPath.data());
             }
@@ -2250,11 +2254,7 @@ namespace rock::native_idle_grip_preharvest
                         state.job.inPowerArmor, static_cast<unsigned>(state.job.origin), i, graphProjects.size(), count < graphProjects.size(), graphProjects[static_cast<decltype(graphProjects)::size_type>(i)].c_str());
             }
 
-            // Disk identity hashes project paths, not replacement clip contents.
-            // Re-sample this correction family once per session so installing or
-            // removing an animation replacement cannot reuse stale pose data.
-            const bool freshPipePose = pipe_firing_grip_policy::isPipe(state.job.weaponFormId);
-            if (!freshPipePose && hydrateCachedPose(state)) {
+            if (hydrateCachedPose(state)) {
                 if (!g_rockConfig.rockDebugWeaponOmodDumpEnabled) {
                     releaseJob(state);
                     return;

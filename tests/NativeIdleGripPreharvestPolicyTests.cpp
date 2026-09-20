@@ -1,6 +1,115 @@
 #include "physics-interaction/weapon/NativeIdleGripPreharvestPolicy.h"
+#include "physics-interaction/weapon/PipeFiringGripPolicy.h"
 
 #include <array>
+#include <iostream>
+#include <limits>
+
+namespace
+{
+    using PersistedTransform = rock::authored_weapon_grip_cache::PersistedTransform;
+
+    struct SampleTransform
+    {
+        struct { float entry[3][3]{}; } rotate;
+        struct { float x{}, y{}, z{}; } translate;
+        float scale{ 1.0f };
+
+        SampleTransform() = default;
+        explicit SampleTransform(const PersistedTransform& source)
+        {
+            for (std::size_t r = 0; r < 3; ++r)
+                for (std::size_t c = 0; c < 3; ++c)
+                    rotate.entry[r][c] = source.rotate[r * 3 + c];
+            translate = { source.translate[0], source.translate[1], source.translate[2] };
+            scale = source.scale;
+        }
+    };
+
+    struct SampleFingers
+    {
+        std::array<SampleTransform, 15> localTransforms{};
+        std::uint16_t enabledMask{ 0x7FFF };
+    };
+
+    bool checkPipePoseSelection()
+    {
+        using namespace rock::pipe_firing_grip_policy;
+        bool ok = true;
+        const auto check = [&ok](bool condition, const char* message) {
+            if (!condition) std::cerr << message << '\n';
+            ok &= condition;
+        };
+        for (const auto& pose : kVanillaPoses) {
+            SampleFingers fingers{};
+            for (std::size_t i = 0; i < fingers.localTransforms.size(); ++i)
+                fingers.localTransforms[i] = SampleTransform{ pose.fingers[i] };
+            check(recognizesVanilla(SampleTransform{ pose.hand }, fingers), "existing pipe pose lost its correction");
+        }
+
+        // Native Syringer idle capture, 2026-09-20: same pipe-rifle pose,
+        // independent clip path and sampling roundoff in hand/finger locals.
+        constexpr std::array<PersistedTransform, 16> syringerPose{{
+            { { -0.00433158875f, 0.702639639f, -0.711532652f, 0.998639047f, 0.0400214195f, 0.0334417224f, 0.0519739389f, -0.710419416f, -0.701856613f }, { 2.08679962f, -9.78137493f, 2.116606f }, 1.0f },
+            { { 0.625230908f, -0.582359731f, -0.519560933f, -0.770904839f, -0.357097268f, -0.527434707f, 0.121622935f, 0.730300426f, -0.672212124f }, { 1.58291626f, -1.26266479f, -1.85335541f }, 1.0f },
+            { { 0.731590867f, -0.681743979f, 1.41930968E-07f, 0.681743979f, 0.731590867f, -3.60496614E-07f, 1.41930968E-07f, 3.60496614E-07f, 1.0f }, { 3.56959915f, 0.0f, 0.0f }, 1.0f },
+            { { 0.954619527f, -0.297828108f, -3.10334997E-07f, 0.297828108f, 0.954619527f, 5.82259005E-08f, 2.78910534E-07f, -1.48010059E-07f, 1.0f }, { 2.40181732f, 0.0f, 0.0f }, 1.0f },
+            { { 0.968315899f, 0.0758484975f, 0.237931341f, -0.106018625f, 0.987495899f, 0.116669938f, -0.226106972f, -0.13819851f, 0.964249372f }, { 7.50128937f, 0.430534363f, -2.277771f }, 1.0f },
+            { { 0.930351973f, -0.366667718f, 0.000126815081f, 0.366667658f, 0.930351973f, 0.000238042514f, -0.000205265154f, -0.000174964327f, 0.99999994f }, { 3.01819611f, 0.0f, 0.0f }, 1.0f },
+            { { 0.845665336f, -0.533713579f, 3.94246911E-07f, 0.533713579f, 0.845665336f, 8.89588762E-07f, -8.08186485E-07f, -5.41879501E-07f, 1.0f }, { 1.85023499f, 0.0f, 0.0f }, 1.0f },
+            { { 0.425145268f, -0.901880383f, 0.0765716657f, 0.883396268f, 0.431876898f, 0.18191573f, -0.197135776f, -0.00969750434f, 0.980328262f }, { 7.59570312f, 0.621257782f, -0.457489014f }, 1.0f },
+            { { 0.617354751f, -0.786684811f, -3.81397854E-07f, 0.786684811f, 0.617354751f, -7.48905677E-07f, 8.24610538E-07f, 1.6230058E-07f, 1.0f }, { 3.0916481f, 0.0f, 0.0f }, 1.0f },
+            { { 0.482070148f, -0.876132667f, -3.96584852E-07f, 0.876132667f, 0.482070148f, 3.194817E-07f, -8.87266367E-08f, -5.01473494E-07f, 1.0f }, { 2.18797684f, 0.0f, 0.0f }, 1.0f },
+            { { 0.228204489f, -0.973165631f, -0.0295165926f, 0.915212393f, 0.204075515f, 0.347475678f, -0.33212781f, -0.106309466f, 0.937224329f }, { 7.46389771f, 0.350522995f, 1.43872833f }, 1.0f },
+            { { 0.854495645f, -0.519458592f, -4.2184837E-07f, 0.519458592f, 0.854495645f, -9.2478183E-07f, 8.40853374E-07f, 5.71089345E-07f, 1.0f }, { 2.66441536f, 0.0f, 0.0f }, 1.0f },
+            { { 0.551069736f, -0.834459245f, -1.3203163E-08f, 0.834459245f, 0.551069736f, -2.2707286E-07f, 1.96758904E-07f, 1.14115487E-07f, 1.0f }, { 1.89974594f, 0.0f, 0.0f }, 1.0f },
+            { { 0.294671595f, -0.951470673f, -0.0887271464f, 0.8906793f, 0.239827454f, 0.386229962f, -0.346207201f, -0.19283846f, 0.918125212f }, { 6.63713074f, -0.357089996f, 3.01842499f }, 1.0f },
+            { { 0.813540816f, -0.581507862f, -3.53911673E-07f, 0.581507862f, 0.813540816f, -5.55549889E-07f, 6.10978191E-07f, 2.46160084E-07f, 1.0f }, { 2.23826027f, 0.0f, 0.0f }, 1.0f },
+            { { 0.64481926f, -0.764335215f, -4.19130401E-07f, 0.764335215f, 0.64481926f, 1.89202854E-06f, -1.17588024E-06f, -1.54037264E-06f, 1.0f }, { 1.665905f, 0.0f, 0.0f }, 1.0f },
+        }};
+        SampleTransform hand{ syringerPose[0] };
+        SampleFingers fingers{};
+        for (std::size_t i = 0; i < fingers.localTransforms.size(); ++i)
+            fingers.localTransforms[i] = SampleTransform{ syringerPose[i + 1] };
+        constexpr auto syringerClip = "actors\\character\\_1stperson\\animations\\syringer\\WPNIDLEready.HKX";
+        constexpr auto copiedClip = "Actors/Character/_1stPerson/Animations/ModdedWeapon/CopiedIdle.hkx";
+        check(recognizesVanilla(hand, fingers), "recorded Syringer pose did not qualify");
+        check(requiresFreshSample(syringerClip, hand, fingers), "Syringer cache skipped fresh qualification");
+        check(requiresFreshSample(copiedClip, hand, fingers), "renamed shared pose skipped fresh qualification");
+
+        auto shiftedHand = hand;
+        shiftedHand.translate.x += 0.001f;
+        check(!recognizesVanilla(shiftedHand, fingers), "different hand position received pipe correction");
+        check(requiresFreshSample(kVanillaPoses[0].clip, shiftedHand, fingers), "pipe replacement cache skipped refresh");
+        check(requiresFreshSample(syringerClip, shiftedHand, fingers), "Syringer replacement cache skipped refresh");
+        check(!requiresFreshSample(copiedClip, shiftedHand, fingers), "unrelated custom pose lost cache reuse");
+        shiftedHand = hand;
+        shiftedHand.rotate.entry[0][0] += 0.001f;
+        check(!recognizesVanilla(shiftedHand, fingers), "different hand rotation received pipe correction");
+        shiftedHand = hand;
+        shiftedHand.scale += 0.001f;
+        check(!recognizesVanilla(shiftedHand, fingers), "different hand scale received pipe correction");
+        shiftedHand = hand;
+        shiftedHand.translate.x = std::numeric_limits<float>::quiet_NaN();
+        check(!recognizesVanilla(shiftedHand, fingers), "nonfinite hand received pipe correction");
+
+        for (std::size_t i = 0; i < fingers.localTransforms.size(); ++i) {
+            auto changed = fingers;
+            changed.enabledMask &= ~(1u << i);
+            check(!recognizesVanilla(hand, changed), "incomplete finger pose received pipe correction");
+            changed = fingers;
+            changed.localTransforms[i].translate.x += 0.001f;
+            check(!recognizesVanilla(hand, changed), "changed finger position received pipe correction");
+            changed = fingers;
+            changed.localTransforms[i].rotate.entry[0][0] += 0.001f;
+            check(!recognizesVanilla(hand, changed), "changed finger rotation received pipe correction");
+            changed = fingers;
+            changed.localTransforms[i].scale = std::numeric_limits<float>::infinity();
+            check(!recognizesVanilla(hand, changed), "nonfinite finger received pipe correction");
+        }
+        return ok;
+    }
+}
 
 int main()
 {
@@ -129,5 +238,5 @@ int main()
     static_assert(!supportBranchHasAnimation(4, 5, armParents, 0, {}).has_value());
     constexpr std::array<std::int16_t, 6> cyclicArm{ -1, 0, 1, 5, 2, 3 };
     static_assert(!supportBranchHasAnimation(4, 5, cyclicArm, 6, {}).has_value());
-    return 0;
+    return checkPipePoseSelection() ? 0 : 1;
 }
