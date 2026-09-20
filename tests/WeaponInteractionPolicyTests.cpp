@@ -6,6 +6,7 @@
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
+#include "physics-interaction/weapon/AuthoredSupportGrabPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
 #include "physics-interaction/weapon/FiringGripReattachZonePolicy.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
@@ -3191,6 +3192,34 @@ int main()
             coreWeaponHandling,
             externalHandling));
     auto authoredOnlyDisabledHandling = coreWeaponHandling;
+    for (const auto type : { TestWeaponType::kHandToHand, TestWeaponType::kOneHandSword,
+             TestWeaponType::kOneHandDagger, TestWeaponType::kOneHandAxe, TestWeaponType::kOneHandMace,
+             TestWeaponType::kTwoHandSword, TestWeaponType::kTwoHandAxe, TestWeaponType::kGun }) {
+        auto baseline = coreWeaponHandlingBaseline;
+        baseline.meleeWeapon = rock::weapon_type_policy::isEquippedMelee(type);
+        for (const bool restricted : { false, true }) {
+            baseline.authoredOnlySupportGrabsEnabled = restricted;
+            for (const bool provider : { false, true }) {
+                const auto handling = rock::makeEquippedWeaponHandlingSettings(
+                    baseline, provider ? &externalWeaponHandling : nullptr);
+                const bool shouldRestrict = restricted && type == TestWeaponType::kGun;
+                ok &= expectTrue("melee always bypasses authored restrictions; firearms follow the setting",
+                    handling.authoredOnlySupportGrabsEnabled == shouldRestrict);
+                const auto selection = rock::authored_support_grab_policy::select({
+                    .modeEnabled = handling.authoredOnlySupportGrabsEnabled,
+                    .capability = rock::authored_support_grab_policy::Capability::Pending,
+                });
+                ok &= expectTrue("melee can dynamically acquire without waiting for an authored pose",
+                    rock::authored_support_grab_policy::captured(selection.selection) == !shouldRestrict);
+                const auto detachedSelection = rock::immersive_weapon_policy::resolveDetachedFiringHandPartGrab({
+                    .partCarryAuthority = rock::immersive_weapon_policy::DetachAuthority::IntegratedImmersive,
+                    .authoredOnlySupportGrabsEnabled = handling.authoredOnlySupportGrabsEnabled,
+                });
+                ok &= expectTrue("melee detached firing hand may dynamically grab another part",
+                    (detachedSelection == rock::immersive_weapon_policy::DetachedFiringHandPartGrabSelection::Standard) == !shouldRestrict);
+            }
+        }
+    }
     authoredOnlyDisabledHandling.authoredOnlySupportGrabsEnabled = false;
     ok &= expectFalse("authored-only hot reload applies to the next acquisition",
         rock::requiresEquippedWeaponHandlingModeReconcile(

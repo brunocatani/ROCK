@@ -10,6 +10,7 @@ namespace rock
     {
         bool ambidextrousHandoffEnabled{ false };
         bool authoredOnlySupportGrabsEnabled{ true };
+        bool meleeWeapon{ false };
         equipped_weapon_toggle_grab_policy::Mode weaponGrabMode{ equipped_weapon_toggle_grab_policy::Mode::HoldBoth };
         bool equippedWeaponShoulderStashEnabled{ false };
         // Whether releasing the last equipped grip drops it into the world.
@@ -78,11 +79,11 @@ namespace rock
         settings.primaryDetachEnabled = false;
         settings.ambidextrousHandoffEnabled =
             rockBaseline.ambidextrousHandoffEnabled;
-        // This is a ROCK-local acquisition preference. Provider equipped-
-        // weapon handling authority cannot disable it; an exact matched
-        // weapon-part target is the narrower, explicit override at capture.
+        // Melee always permits dynamic support acquisition, on either hand
+        // and after firing-grip detach. Providers cannot replace this policy;
+        // exact matched weapon-part targets retain their priority at capture.
         settings.authoredOnlySupportGrabsEnabled =
-            rockBaseline.authoredOnlySupportGrabsEnabled;
+            rockBaseline.authoredOnlySupportGrabsEnabled && !rockBaseline.meleeWeapon;
         // Toggle grab is a ROCK input preference. A handling-provider lease
         // can add weapon capabilities, but it cannot replace this input mode.
         settings.weaponGrabMode = rockBaseline.weaponGrabMode;

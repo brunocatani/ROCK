@@ -2043,11 +2043,14 @@ namespace rock
         ::rock::provider::RockProviderEquippedWeaponHandlingRequestV1 request{};
         const bool externalAuthorityActive =
             ::rock::provider::getEquippedWeaponHandlingAuthorityV1(request);
+        const auto weaponClassification = _weaponCollision.getEquippedWeaponClassification();
         const RockEquippedWeaponHandlingBaseline rockBaseline{
             .ambidextrousHandoffEnabled =
                 g_rockConfig.rockAmbidextrousFiringGripEnabled,
             .authoredOnlySupportGrabsEnabled =
                 !g_rockConfig.rockGrabAnywhereOnWeapon,
+            .meleeWeapon = weaponClassification.classificationResolved &&
+                weaponClassification.sizeClass == WeaponSizeClass::Melee,
             .weaponGrabMode =
                 equipped_weapon_toggle_grab_policy::fromSetting(g_rockConfig.rockWeaponGrabMode),
             .equippedWeaponShoulderStashEnabled =
