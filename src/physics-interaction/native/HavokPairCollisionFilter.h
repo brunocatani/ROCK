@@ -12,9 +12,11 @@ namespace RE
 namespace rock
 {
     /*
-     * Fixed-capacity, physics-thread-only ownership of native counted
+     * Fixed-capacity, serialized ownership of native counted
      * hknpPairCollisionFilter entries. The service never retains transient
      * body pointers; collision-object identities only guard body-ID reuse.
+     * Reconcile on the physics owner, or on the game thread while that owner's
+     * PhysicsCallbackQuiescenceGate is held for a structural mutation.
      */
     template <std::size_t MaximumPairs, std::size_t OwnerGroupCount>
     class BasicHavokPairCollisionLeaseSet

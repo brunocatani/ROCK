@@ -599,6 +599,12 @@ namespace rock
         result.proxyActive = true;
         updateSurfaceSupport(frame, primaryGripWeaponLocal);
         if (!_authorityConstraint.isValid() || _rebuildRequestedAtomic.load(std::memory_order_acquire)) return result;
+        if (!_bladePenetration.update(frame, weaponCollision, weaponNode, _body,
+                _createdCenterWeaponLocal, weaponGenerationKey, _physicsCallbackGate,
+                _frameRequestedWeaponWorld, _surfaceSupport.ownsPose())) {
+            retireAll(frame.bhkWorld);
+            return result;
+        }
         result.surfaceSupportOwnsPose = _surfaceSupport.ownsPose();
         result.requestedWeaponWorld = _frameRequestedWeaponWorld;
         result.resolvedWeaponWorld = _frameRequestedWeaponWorld;
@@ -740,7 +746,8 @@ namespace rock
             snapshot.liveProxyBodyWorld,
             _createdCenterWeaponLocal,
             snapshot.weaponScale);
-        const RE::NiTransform resolvedWeaponWorld = dynamic_weapon_collision_policy::resolveCurrentIntentFromSample(
+        const RE::NiTransform resolvedWeaponWorld = _bladePenetration.active() ? _bladePenetration.presentation() :
+            dynamic_weapon_collision_policy::resolveCurrentIntentFromSample(
             snapshot.requestedProxyBodyWorld,
             snapshot.liveProxyBodyWorld,
             _createdCenterWeaponLocal,
@@ -1367,6 +1374,12 @@ namespace rock
         }
         _handlingScale = timeScale;
 
+        if (!_bladePenetration.prePhysics(world, timing)) {
+            _droveThisSubstep = false;
+            clearPublishedPhysicsSnapshot();
+            return;
+        }
+
         {
             std::scoped_lock poseLock(_compoundPoseMutex);
             if (_queuedCompoundPoseSequence != _consumedCompoundPoseSequence) {
@@ -1434,7 +1447,7 @@ namespace rock
             _authorityConstraint,
             motorTuning,
             _authorityConstraint.motorBodyProperties,
-            _contactRetentionSeconds > 0.0f,
+            _contactRetentionSeconds > 0.0f || _bladePenetration.active(),
             timeScale)) {
             if (_authorityConstraint.linearMotor)
                 _authorityConstraint.linearMotor->minForce = _authorityConstraint.linearMotor->maxForce = 0.0f;
@@ -1477,7 +1490,7 @@ namespace rock
                     liveContactBodyWorld,
                     _physicsRequestedTarget) :
                 0.0f;
-            const auto gripRecovery = hasLiveContactBody ?
+            const auto gripRecovery = hasLiveContactBody && !_bladePenetration.active() ?
                 dynamic_weapon_collision_policy::evaluateGripRecovery(
                     liveContactBodyWorld,
                     _physicsRequestedAuthorityTarget,
@@ -1517,7 +1530,7 @@ namespace rock
                             std::memory_order_relaxed));
                     return;
                 }
-            } else {
+            } else if (!_bladePenetration.active()) {
                 const auto dwell = dynamic_weapon_collision_policy::advanceDivergenceDwell(
                     _divergenceDwellSeconds,
                     requestedGapGameUnits,
@@ -1909,6 +1922,9 @@ namespace rock
         if (contactPointGame && collision_layer_policy::isWorldSurfaceLayer(otherLayer)) {
             recordSurfaceSupportContact(world, otherBodyId, *contactPointGame);
         }
+        if (contactPointGame) {
+            _bladePenetration.recordContact(world, proxyBodyId, otherBodyId, otherLayer, *contactPointGame);
+        }
         _contactWorldAtomic.store(reinterpret_cast<std::uintptr_t>(world), std::memory_order_relaxed);
         _contactProxyBodyIdAtomic.store(proxyBodyId, std::memory_order_relaxed);
         _contactOtherBodyIdAtomic.store(otherBodyId, std::memory_order_relaxed);
@@ -1926,6 +1942,7 @@ namespace rock
             bhkWorld &&
             bhkWorld == _createdBhkWorld;
         if (liveOwnerMatches) {
+            _bladePenetration.retire(_createdWorld, bhkWorld);
             destroyGrabConstraint(_createdWorld, _authorityConstraint);
             if (_body.isValid()) {
                 _body.retireDeferred(bhkWorld);
@@ -1934,6 +1951,7 @@ namespace rock
                 _authorityProxy.retireDeferred(bhkWorld);
             }
         } else {
+            _bladePenetration.retire(nullptr, nullptr);
             destroyGrabConstraint(nullptr, _authorityConstraint);
             if (_created && (_body.isValid() || _authorityProxy.isValid())) {
                 ROCK_LOG_WARN(
@@ -2054,6 +2072,7 @@ namespace rock
         const auto bodyId = _bodyIdAtomic.exchange(kInvalidBodyId, std::memory_order_acq_rel);
         const auto authorityBodyId = _authorityProxy.isValid() ? _authorityProxy.getBodyId().value : kInvalidBodyId;
         const auto constraintId = _authorityConstraint.constraintId;
+        _bladePenetration.retire(nullptr, nullptr);
         destroyGrabConstraint(nullptr, _authorityConstraint);
         _body.reset();
         _authorityProxy.reset();
