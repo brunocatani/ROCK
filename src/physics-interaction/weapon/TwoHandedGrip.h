@@ -386,7 +386,7 @@ namespace rock
         RE::NiTransform nativeCameraLocal{};
         RE::NiTransform lastAppliedCameraLocal{};
         bool hasAppliedLocal{ false };
-        // Immutable native axis/scale calibration captured before ROCK writes.
+        // Immutable native axis/scale calibration captured at AfterWeaponPosition.
         RE::NiTransform nativeCameraWeaponLocal{};
         // Resolved anchor plus any fallback-only weapon-axis correction.
         RE::NiTransform cameraWeaponLocal{};
@@ -1890,7 +1890,7 @@ namespace rock
         void clearNativeScopeRigidFrame(bool restoreNativeLocal = false);
         void clearImmersiveScopePresentation();
         bool rebuildNativeScopeRigidFrameTarget();
-        bool captureNativeScopeRigidFrame(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, RE::NiNode* scopeCamera, const RE::NiTransform& nativeCameraWorld);
+        bool capturePostFrikNativeScopeRigidFrame(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, RE::NiNode* scopeCamera, const RE::NiTransform& nativeCameraWorld);
         bool captureNativeScopeOverlayCalibration(const RE::NiTransform& nativeCameraWorld, std::uint64_t currentWeaponGenerationKey);
         bool applyNativeScopeOverlayTarget(const RE::NiTransform& correctedCameraWorld, std::uint64_t currentWeaponGenerationKey);
         void refreshNativeScopeAnchor(

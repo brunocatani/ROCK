@@ -50,6 +50,11 @@ namespace rock::vanilla_weapon_alignment_telemetry
     void recordNative(NativePhase phase, const RE::NiAVObject* weapon = nullptr,
         const RE::NiAVObject* offset = nullptr) noexcept;
     void recordNativeAimCapture(const NativeAimCapture& capture) noexcept;
+    // Post-FRIK calibration and its same-frame final camera direction. Uses
+    // the existing weapon diagnostic gate/writer, including modded weapons.
+    void recordScopeCalibration(const RE::NiAVObject* weapon, const RE::NiAVObject* camera,
+        std::uint64_t generation, std::uint32_t formId, const RE::NiTransform& nativeCameraWorld,
+        const RE::NiTransform& cameraWeaponLocal, bool newlyCaptured) noexcept;
     void recordLooseGrab(RE::TESObjectREFR* ref, bool isLeft, std::uint64_t grabIdentity,
         const RE::NiTransform& handWorld) noexcept;
     // Transition boundaries only, including modded weapons. Captures value

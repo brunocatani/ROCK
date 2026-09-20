@@ -3,6 +3,7 @@
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/weapon/WeaponSceneTraversal.h"
 #include "physics-interaction/weapon/WeaponAimBasis.h"
+#include "physics-interaction/weapon/telemetry/NativeScopeShotPolicy.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "api/ROCKProviderApiInternal.h"
 
@@ -46,11 +47,64 @@ namespace rock::vanilla_weapon_alignment_telemetry
             std::array<std::chrono::steady_clock::time_point, 2> lastLooseSample{};
             std::uint32_t aimCapturesRemaining{ 0 };
             std::chrono::steady_clock::time_point lastAimJump{};
+            // Scope-direction investigation: remove after the capture-phase
+            // repair is qualified. Values/identity tokens only, no held nodes.
+            std::chrono::steady_clock::time_point lastScopeSample{};
+            std::uint64_t scopeFrame{ 0 };
+            std::uint64_t scopeGeneration{ 0 };
+            std::uint32_t scopeFormId{ 0 };
+            std::uintptr_t scopeWeaponIdentity{ 0 }, scopeCameraIdentity{ 0 };
+            RE::NiTransform scopeCameraWeaponLocal{};
         };
         std::unique_ptr<Session> session;
         // Lifecycle and phase capture share the game thread. Native animation
         // workers see false in their own TLS and never read the session pointer.
         thread_local bool captureThread = false;
+
+        native_scope_shot_policy::Ray scopeAxis(const RE::NiTransform& world, unsigned axis) noexcept
+        {
+            const auto& row = world.rotate.entry[axis];
+            return native_scope_shot_policy::ray(
+                { world.translate.x, world.translate.y, world.translate.z }, { row[0], row[1], row[2] });
+        }
+
+        void recordFinalScopeDirection(std::uint32_t formId) noexcept
+        {
+            const auto frame = runtime_state::currentFrame().frameIndex;
+            if (session->scopeFrame == 0 || session->scopeFrame != frame) return;
+            session->scopeFrame = 0;
+            try {
+                const auto* weapon = f4vr::getWeaponNode();
+                const auto* nodes = f4vr::getPlayerNodes();
+                const auto* camera = nodes ? nodes->primaryWeaponScopeCamera : nullptr;
+                const bool sameIdentity = weapon && camera && formId == session->scopeFormId &&
+                    reinterpret_cast<std::uintptr_t>(weapon) == session->scopeWeaponIdentity &&
+                    reinterpret_cast<std::uintptr_t>(camera) == session->scopeCameraIdentity;
+                if (!sameIdentity) {
+                    session->log->info("SCOPE_DIRECTION phase=after-world-final frame={} generation={:016X} identityChanged=true form={:08X}->{:08X}",
+                        frame, session->scopeGeneration, session->scopeFormId, formId);
+                    return;
+                }
+                const auto expected = transform_math::composeTransforms(weapon->world, session->scopeCameraWeaponLocal);
+                const auto composed = camera->parent ?
+                    transform_math::composeTransforms(camera->parent->world, camera->local) : camera->local;
+                const auto weaponRay = scopeAxis(weapon->world, 1);
+                const auto cameraRay = scopeAxis(camera->world, 0);
+                const auto targetRay = scopeAxis(expected, 0);
+                const auto composedRay = scopeAxis(composed, 0);
+                session->log->info("SCOPE_DIRECTION phase=after-world-final frame={} generation={:016X} form={:08X} menuOpen={} cameraWeaponDeg={:.4f} targetWeaponDeg={:.4f} cameraTargetDeg={:.4f} worldComposedDeg={:.4f} weaponForward=({:.5f},{:.5f},{:.5f}) cameraForward=({:.5f},{:.5f},{:.5f}) overruns={} captureFailures={}",
+                    frame, session->scopeGeneration, formId, runtime_state::currentFrame().localScopeMenuOpen,
+                    native_scope_shot_policy::angleDegrees(cameraRay, weaponRay),
+                    native_scope_shot_policy::angleDegrees(targetRay, weaponRay),
+                    native_scope_shot_policy::angleDegrees(cameraRay, targetRay),
+                    native_scope_shot_policy::angleDegrees(cameraRay, composedRay),
+                    weaponRay.direction.x, weaponRay.direction.y, weaponRay.direction.z,
+                    cameraRay.direction.x, cameraRay.direction.y, cameraRay.direction.z,
+                    session->pool->overrun_counter(), session->captureFailures);
+            } catch (...) {
+                ++session->captureFailures;
+            }
+        }
 
         bool targeted(std::uint32_t formId)
         {
@@ -147,7 +201,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
             next->log = std::make_shared<spdlog::async_logger>("ROCK_WeaponAlignment", sink,
                 next->pool, spdlog::async_overflow_policy::overrun_oldest);
             next->log->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
-            next->log->info("VWA start version=9 authoredSources=unknown:0,live:1,persisted:2,preharvest:3 pid={} build={} {} forms=00004822,0015B043,00024F55,0014831A,0014831B,000DF42E,00171B2B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-rock-pre-frik,before-frik,after-frik,after-rock nativeMask=graph-entry:1,graph-exit:2,primary-entry:4,primary-exit:8,support-entry:16,support-exit:32 nativeThread=game-only looseGrabMinMs=250 sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16 aimWritesPerIdentity=48 aimJumpDegrees=5 aimJumpMinMs=250 cycleStride=8 cycleStages=after-frik,after-weapon-solve,after-rock,after-world-final",
+            next->log->info("VWA start version=10 authoredSources=unknown:0,live:1,persisted:2,preharvest:3 pid={} build={} {} forms=00004822,0015B043,00024F55,0014831A,0014831B,000DF42E,00171B2B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-rock-pre-frik,before-frik,after-frik,after-rock nativeMask=graph-entry:1,graph-exit:2,primary-entry:4,primary-exit:8,support-entry:16,support-exit:32 nativeThread=game-only looseGrabMinMs=250 sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16 aimWritesPerIdentity=48 aimJumpDegrees=5 aimJumpMinMs=250 cycleStride=8 cycleStages=after-frik,after-weapon-solve,after-rock,after-world-final scopeDirectionMinMs=250 scopeAxes=camera-X,weapon-Y invalidAngle=-1",
                 GetCurrentProcessId(), __DATE__, __TIME__);
             next->log->flush();
             session = std::move(next);
@@ -179,6 +233,8 @@ namespace rock::vanilla_weapon_alignment_telemetry
         }
         auto* equipped = f4vr::getEquippedWeaponItem();
         const std::uint32_t formId = equipped && equipped->item.object ? equipped->item.object->formID : 0;
+        if (phase == Phase::BeforeRockPreFrik) session->scopeFrame = 0;
+        if (phase == Phase::AfterWorldFinal) recordFinalScopeDirection(formId);
         // Investigation owner: ROCK/PAPER cycle integration. Compare the
         // solver output, PAPER's publication, and FRIK's later world final.
         // Authority selects the weapon, so a changed mod load index cannot
@@ -415,6 +471,39 @@ namespace rock::vanilla_weapon_alignment_telemetry
             if (capture.weapon && capture.weapon->parent) {
                 transform("aim-write", "weapon-parent-world", capture.weapon->parent->world);
             }
+        } catch (...) {
+            ++session->captureFailures;
+        }
+    }
+
+    void recordScopeCalibration(const RE::NiAVObject* weapon, const RE::NiAVObject* camera,
+        std::uint64_t generation, std::uint32_t formId, const RE::NiTransform& nativeCameraWorld,
+        const RE::NiTransform& cameraWeaponLocal, bool newlyCaptured) noexcept
+    {
+        if (!captureThread || !session || !g_rockConfig.rockDebugWeaponOmodDumpEnabled || !weapon || !camera) return;
+        if (!newlyCaptured && !runtime_state::currentFrame().localScopeMenuOpen) return;
+        const auto now = std::chrono::steady_clock::now();
+        if (now - session->lastScopeSample < std::chrono::milliseconds(250)) return;
+        session->lastScopeSample = now;
+        session->scopeFrame = runtime_state::currentFrame().frameIndex;
+        session->scopeGeneration = generation;
+        session->scopeFormId = formId;
+        session->scopeWeaponIdentity = reinterpret_cast<std::uintptr_t>(weapon);
+        session->scopeCameraIdentity = reinterpret_cast<std::uintptr_t>(camera);
+        session->scopeCameraWeaponLocal = cameraWeaponLocal;
+        try {
+            const auto target = transform_math::composeTransforms(weapon->world, cameraWeaponLocal);
+            const auto weaponRay = scopeAxis(weapon->world, 1);
+            const auto nativeRay = scopeAxis(nativeCameraWorld, 0);
+            const auto targetRay = scopeAxis(target, 0);
+            session->log->info("SCOPE_DIRECTION phase=after-weapon-position frame={} generation={:016X} form={:08X} captured={} menuOpen={} nativeWeaponDeg={:.4f} targetWeaponDeg={:.4f} nativeTargetDeg={:.4f} weaponForward=({:.5f},{:.5f},{:.5f}) nativeForward=({:.5f},{:.5f},{:.5f}) targetForward=({:.5f},{:.5f},{:.5f})",
+                session->scopeFrame, generation, formId, newlyCaptured, runtime_state::currentFrame().localScopeMenuOpen,
+                native_scope_shot_policy::angleDegrees(nativeRay, weaponRay),
+                native_scope_shot_policy::angleDegrees(targetRay, weaponRay),
+                native_scope_shot_policy::angleDegrees(nativeRay, targetRay),
+                weaponRay.direction.x, weaponRay.direction.y, weaponRay.direction.z,
+                nativeRay.direction.x, nativeRay.direction.y, nativeRay.direction.z,
+                targetRay.direction.x, targetRay.direction.y, targetRay.direction.z);
         } catch (...) {
             ++session->captureFailures;
         }

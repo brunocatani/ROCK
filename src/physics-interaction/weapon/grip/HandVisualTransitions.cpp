@@ -757,15 +757,11 @@ namespace rock
             g_rockConfig.rockEnableImmersiveScopes && _scope.anchorValid &&
             _scope.anchorWeaponNode == weaponNode && _scope.anchorGenerationKey == effectiveGenerationKey;
 
-        // Capture hFRIK's engine-specific camera axis only before changing the
-        // weapon. Once captured, every hand mode resolves the same immutable
-        // generation-bound weapon-local scope frame.
-        const NativeScopeCameraFollowCapture scopeCameraFollow = g_rockConfig.rockEnableImmersiveScopes ?
+        // This solve runs before FRIK aligns its scope camera. Only reuse the
+        // calibration captured at AfterWeaponPosition; an early capture would
+        // freeze a camera/weapon relationship from different frame phases.
+        const NativeScopeCameraFollowCapture scopeCameraFollow = scopeAnchorMatchesAuthority ?
             captureNativeScopeCameraFollow(weaponNode) : NativeScopeCameraFollowCapture{};
-        if (scopeAnchorMatchesAuthority && scopeCameraFollow.valid) {
-            (void)captureNativeScopeRigidFrame(weaponNode, effectiveGenerationKey, scopeCameraFollow.camera, scopeCameraFollow.cameraWorldBefore);
-            (void)captureNativeScopeOverlayCalibration(scopeCameraFollow.cameraWorldBefore, effectiveGenerationKey);
-        }
 
         if (!moveWeaponPresentationRigidly(weaponNode, solvedWeaponWorld)) {
             ROCK_LOG_SAMPLE_WARN(
@@ -775,7 +771,7 @@ namespace rock
             return false;
         }
 
-        const bool rigidFrameMatchesAuthority = _scope.rigidFrame.valid && _scope.rigidFrame.weaponGenerationKey == effectiveGenerationKey &&
+        const bool rigidFrameMatchesAuthority = scopeAnchorMatchesAuthority && _scope.rigidFrame.valid && _scope.rigidFrame.weaponGenerationKey == effectiveGenerationKey &&
             _scope.rigidFrame.weaponNodeIdentity == weaponNode && _scope.rigidFrame.scopeCameraIdentity == scopeCameraFollow.camera;
         const bool scopeTargetReady =
             rigidFrameMatchesAuthority &&
