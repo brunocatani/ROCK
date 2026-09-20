@@ -58,7 +58,7 @@ namespace rock::weapon_recoil_policy
         }
     }
 
-    enum class Family : std::uint8_t { Default, Pistol, Rifle, Shotgun, Heavy };
+    enum class Family : std::uint8_t { Default, Pistol, Rifle, Shotgun, Heavy, Laser };
 
     struct WeaponEvidence
     {
@@ -73,6 +73,13 @@ namespace rock::weapon_recoil_policy
     {
         if (!weapon.resolved || weapon.sizeClass == WeaponSizeClass::Melee) {
             return Family::Default;
+        }
+        // Effective instance keywords cover grip conversions and laser variants
+        // without treating plasma damage or a laser-sight attachment as a laser.
+        if (hasWeaponKeywordFlag(weapon.keywordFlags, WeaponKeywordFlag::Laser) ||
+            hasWeaponKeywordFlag(weapon.keywordFlags, WeaponKeywordFlag::LaserMusket) ||
+            hasWeaponKeywordFlag(weapon.keywordFlags, WeaponKeywordFlag::GatlingLaser)) {
+            return Family::Laser;
         }
         if (weapon.sizeClass == WeaponSizeClass::Heavy) {
             return Family::Heavy;
@@ -90,6 +97,7 @@ namespace rock::weapon_recoil_policy
         case Family::Rifle: return "rifle";
         case Family::Shotgun: return "shotgun";
         case Family::Heavy: return "heavy";
+        case Family::Laser: return "laser";
         default: return "default";
         }
     }
@@ -106,12 +114,15 @@ namespace rock::weapon_recoil_policy
     // Percent has already been validated by ROCK's central INI loader.
     // Armor and a latched bipod are umbrella overrides. Neither inherits a
     // family/hand multiplier; bipod is always 10% of the native kick.
-    [[nodiscard]] inline constexpr ProfileGains effectiveGains(const Profile profile, const float percent) noexcept
+    [[nodiscard]] inline constexpr ProfileGains effectiveGains(
+        const Family family, const Profile profile, const float percent) noexcept
     {
-        const auto base = gainsFor(profile);
         if (profile == Profile::PowerArmor || profile == Profile::Bipod) {
-            return base;
+            return gainsFor(profile);
         }
+        // Lasers share the armor attenuation for every hold, without stacking
+        // the close-support or pistol/rifle/heavy multipliers on top of it.
+        const auto base = family == Family::Laser ? kPowerArmor : gainsFor(profile);
         const float multiplier = percent * 0.01f;
         return { base.translation * multiplier, base.rotation * multiplier };
     }

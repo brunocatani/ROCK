@@ -10,7 +10,7 @@ namespace rock
             return;
         }
         const auto identity = transform_math::makeIdentityTransform<RE::NiTransform>();
-        const auto gains = weapon_recoil_policy::effectiveGains(context.profile, context.familyPercent);
+        const auto gains = weapon_recoil_policy::effectiveGains(context.family, context.profile, context.familyPercent);
         ROCK_LOG_SAMPLE_INFO(Weapon, 250,
             "Weapon recoil: form={:08X} family={} resolved={} classSource={} keywords={:016X} profile={} hold={} percent={:.1f} gains=({:.3f},{:.3f}) firingHand={} nativePrimary={} delivery={} handMask={} sample={} generation={:016X} nativeT={:.4f} controlledT={:.4f} nativeR={:.4f} controlledR={:.4f}",
             context.formID, weapon_recoil_policy::name(context.family), _recoil.weaponEvidence.resolved,

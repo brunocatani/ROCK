@@ -165,7 +165,7 @@ static bool testRecoilProfiles()
         }
     }
     for (const float percent : { 0.0f, 80.0f, 100.0f, 292.1f, 300.0f }) {
-        const auto bipodGains = effectiveGains(Profile::Bipod, percent);
+        const auto bipodGains = effectiveGains(Family::Default, Profile::Bipod, percent);
         ok &= expectTrue("bipod gains are ten percent regardless of weapon tuning",
             bipodGains.translation == 0.10f && bipodGains.rotation == 0.10f);
     }
@@ -221,20 +221,54 @@ static bool testRecoilProfiles()
     evidence.sizeClass = rock::WeaponSizeClass::Rifle;
     evidence.keywordFlags = flags(rock::WeaponKeywordFlag::Rifle) | flags(rock::WeaponKeywordFlag::Laser) |
         flags(rock::WeaponKeywordFlag::Automatic);
-    ok &= expectTrue("laser automatic rifle selects one family only", classifyFamily(evidence) == Family::Rifle);
+    ok &= expectTrue("laser automatic rifle selects laser recoil", classifyFamily(evidence) == Family::Laser);
+    for (const auto laser : { rock::WeaponKeywordFlag::Laser, rock::WeaponKeywordFlag::LaserMusket,
+             rock::WeaponKeywordFlag::GatlingLaser }) {
+        for (const auto size : { rock::WeaponSizeClass::Pistol, rock::WeaponSizeClass::Rifle, rock::WeaponSizeClass::Heavy }) {
+            evidence.keywordFlags = flags(laser) | flags(rock::WeaponKeywordFlag::Shotgun);
+            evidence.sizeClass = size;
+            ok &= expectTrue("laser family wins over grip, shotgun, and heavy classification",
+                classifyFamily(evidence) == Family::Laser);
+        }
+    }
+    evidence.resolved = false;
+    ok &= expectTrue("unresolved laser evidence remains default", classifyFamily(evidence) == Family::Default);
+    evidence.resolved = true;
+    evidence.sizeClass = rock::WeaponSizeClass::Melee;
+    ok &= expectTrue("melee does not select laser recoil", classifyFamily(evidence) == Family::Default);
+    evidence.sizeClass = rock::WeaponSizeClass::Rifle;
+    for (const auto other : { rock::WeaponKeywordFlag::Plasma, rock::WeaponKeywordFlag::Ballistic }) {
+        evidence.keywordFlags = flags(other) | flags(rock::WeaponKeywordFlag::Rifle);
+        ok &= expectTrue("non-laser guns retain rifle recoil", classifyFamily(evidence) == Family::Rifle);
+    }
     for (const auto profile : { Profile::OneHand, Profile::FullTwoHand, Profile::CloseSupport }) {
-        const auto off = effectiveGains(profile, 0.0f);
-        const auto normal = effectiveGains(profile, 100.0f);
-        const auto doubleKick = effectiveGains(profile, 200.0f);
+        const auto off = effectiveGains(Family::Default, profile, 0.0f);
+        const auto normal = effectiveGains(Family::Default, profile, 100.0f);
+        const auto doubleKick = effectiveGains(Family::Default, profile, 200.0f);
         const auto base = gainsFor(profile);
         ok &= expectTrue("zero percent suppresses both kick components", off.translation == 0.0f && off.rotation == 0.0f);
         ok &= expectTrue("100 percent preserves the hold profile", normal.translation == base.translation && normal.rotation == base.rotation);
         ok &= expectTrue("200 percent doubles both hold gains", doubleKick.translation == base.translation * 2.0f && doubleKick.rotation == base.rotation * 2.0f);
+        const auto laser = effectiveGains(Family::Laser, profile, 100.0f);
+        const auto laserOff = effectiveGains(Family::Laser, profile, 0.0f);
+        const auto laserDouble = effectiveGains(Family::Laser, profile, 200.0f);
+        ok &= expectTrue("laser default matches armor independently of hold",
+            laser.translation == kPowerArmor.translation && laser.rotation == kPowerArmor.rotation);
+        ok &= expectTrue("laser strength can suppress both recoil components",
+            laserOff.translation == 0.0f && laserOff.rotation == 0.0f);
+        ok &= expectTrue("laser strength scales the armor profile once",
+            laserDouble.translation == 2.0f * kPowerArmor.translation && laserDouble.rotation == 2.0f * kPowerArmor.rotation);
     }
     for (const float percent : { 0.0f, 100.0f, 200.0f }) {
-        const auto armorGains = effectiveGains(Profile::PowerArmor, percent);
+        const auto armorGains = effectiveGains(Family::Default, Profile::PowerArmor, percent);
         ok &= expectTrue("armor umbrella ignores weapon percentages",
             armorGains.translation == kPowerArmor.translation && armorGains.rotation == kPowerArmor.rotation);
+        for (const auto profile : { Profile::PowerArmor, Profile::Bipod }) {
+            const auto laser = effectiveGains(Family::Laser, profile, percent);
+            const auto base = gainsFor(profile);
+            ok &= expectTrue("armor and bipod override laser strength without stacking reductions",
+                laser.translation == base.translation && laser.rotation == base.rotation);
+        }
     }
     ok &= expectTrue("one-hand percentage is a direct override, not stacked on family tuning",
         selectHoldPercent(true, 300.0f, 200.0f) == 300.0f);
@@ -242,14 +276,14 @@ static bool testRecoilProfiles()
     ok &= expectTrue("two-hand retains custom high tuning", selectHoldPercent(false, 300.0f, 200.0f) == 200.0f);
     for (const auto profile : { Profile::FullTwoHand, Profile::CloseSupport }) {
         for (const float currentPercent : { 50.0f, 100.0f, 200.0f }) {
-            const auto before = effectiveGains(profile, currentPercent);
-            const auto after = effectiveGains(profile, selectHoldPercent(false, 300.0f, currentPercent));
+            const auto before = effectiveGains(Family::Default, profile, currentPercent);
+            const auto after = effectiveGains(Family::Default, profile, selectHoldPercent(false, 300.0f, currentPercent));
             ok &= expectTrue("two-hand full and close profiles preserve today's response",
                 before.translation == after.translation && before.rotation == after.rotation);
         }
     }
     for (const bool oneHanded : { false, true }) {
-        const auto unchangedArmor = effectiveGains(Profile::PowerArmor, selectHoldPercent(oneHanded, 300.0f, 200.0f));
+        const auto unchangedArmor = effectiveGains(Family::Default, Profile::PowerArmor, selectHoldPercent(oneHanded, 300.0f, 200.0f));
         ok &= expectTrue("power armor ignores either hold's percentage",
             unchangedArmor.translation == kPowerArmor.translation && unchangedArmor.rotation == kPowerArmor.rotation);
     }
@@ -260,20 +294,20 @@ static bool testRecoilProfiles()
     modestShot.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 20.0f);
     TestTransform tripleKick{};
     ok &= expectTrue("300 percent builds a valid three-times impulse",
-        tryBuildControlledKick(modestShot, effectiveGains(Profile::OneHand, selectHoldPercent(true, 300.0f, 200.0f)), tripleKick));
+        tryBuildControlledKick(modestShot, effectiveGains(Family::Default, Profile::OneHand, selectHoldPercent(true, 300.0f, 200.0f)), tripleKick));
     auto tripleExpected = rock::transform_math::makeIdentityTransform<TestTransform>();
     tripleExpected.translate = { 30.0f, -12.0f, 6.0f };
     tripleExpected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 60.0f);
     ok &= expectTransformNear("one hand gets 300 percent rather than 600 percent", tripleKick, tripleExpected);
     TestTransform amplified{};
     ok &= expectTrue("200 percent produces a rigid amplified transform",
-        tryBuildControlledKick(shot, effectiveGains(Profile::OneHand, 200.0f), amplified));
+        tryBuildControlledKick(shot, effectiveGains(Family::Default, Profile::OneHand, 200.0f), amplified));
     auto doubleExpected = rock::transform_math::makeIdentityTransform<TestTransform>();
     doubleExpected.translate = { 20.0f, -8.0f, 4.0f };
     doubleExpected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 120.0f);
     ok &= expectTransformNear("200 percent doubles translation and angular displacement", amplified, doubleExpected);
     ok &= expectTrue("zero percent accepts and neutralizes native recoil",
-        tryBuildControlledKick(shot, effectiveGains(Profile::OneHand, 0.0f), amplified));
+        tryBuildControlledKick(shot, effectiveGains(Family::Default, Profile::OneHand, 0.0f), amplified));
     ok &= expectTransformNear("zero percent produces identity rather than native fallback", amplified,
         rock::transform_math::makeIdentityTransform<TestTransform>());
     TestTransform armor{};
@@ -283,9 +317,15 @@ static bool testRecoilProfiles()
     expected.translate = { 4.5f, -1.8f, 0.9f };
     expected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 18.0f);
     ok &= expectTransformNear("armor starts with the requested attenuation", armor, expected);
+    for (const auto profile : { Profile::OneHand, Profile::FullTwoHand, Profile::CloseSupport, Profile::PowerArmor }) {
+        TestTransform laser{};
+        ok &= expectTrue("laser default builds a valid controlled kick",
+            tryBuildControlledKick(shot, effectiveGains(Family::Laser, profile, 100.0f), laser));
+        ok &= expectTransformNear("laser kick matches power armor", laser, armor);
+    }
     TestTransform bipod{};
     ok &= expectTrue("bipod builds a rigid reduced kick",
-        tryBuildControlledKick(shot, effectiveGains(Profile::Bipod, 300.0f), bipod));
+        tryBuildControlledKick(shot, effectiveGains(Family::Default, Profile::Bipod, 300.0f), bipod));
     auto bipodExpected = rock::transform_math::makeIdentityTransform<TestTransform>();
     bipodExpected.translate = { 1.0f, -0.4f, 0.2f };
     bipodExpected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 6.0f);

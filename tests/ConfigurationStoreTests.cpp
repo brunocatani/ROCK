@@ -201,6 +201,31 @@ int main(int argc, char** argv)
             require(!other.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr), "example option belongs to both files");
         }
         require(store.load(true), "first-run load failed");
+        require(find(store, "fLaserRecoilPercent").type == ValueType::Float &&
+            rock::RockConfig::parseValues(missingOptions).rockLaserRecoilPercent == 100.0f,
+            "laser recoil must default to the power-armor profile strength");
+        for (const auto* percent : { "0", "50", "100", "300" }) {
+            require(store.setValue(Group::Consumer, "ImmersiveWeapons", "fLaserRecoilPercent", percent),
+                "laser recoil strength write failed");
+            require(store.load(false), "laser recoil reload failed");
+            CSimpleIniA recoilValues;
+            store.appendLoadedValues(recoilValues);
+            const auto recoilConfig = rock::RockConfig::parseValues(recoilValues);
+            require(recoilConfig.rockLaserRecoilPercent == std::stof(percent),
+                "laser recoil setting did not reach runtime configuration");
+            require(recoilConfig.rockRifleOneHandRecoilPercent == 300.0f &&
+                recoilConfig.rockRifleTwoHandRecoilPercent == 80.0f,
+                "laser tuning changed ordinary rifle recoil");
+        }
+        for (const auto& [value, expected] : { std::pair{ "-1", 0.0f }, { "301", 300.0f }, { "nan", 100.0f } }) {
+            CSimpleIniA recoilValues;
+            recoilValues.SetValue("ImmersiveWeapons", "fLaserRecoilPercent", value);
+            require(rock::RockConfig::parseValues(recoilValues).rockLaserRecoilPercent == expected,
+                "invalid laser recoil strength was not bounded safely");
+        }
+        require(store.setValue(Group::Consumer, "ImmersiveWeapons", "fLaserRecoilPercent", "100"),
+            "laser recoil strength reset failed");
+        require(store.load(false), "laser recoil reset reload failed");
         require(find(store, "iWeaponDropMode").type == ValueType::Integer &&
             find(store, "iWeaponDropMode").value == "1", "weapon drop must default to off");
         require(!store.setValue(Group::Consumer, "ImmersiveWeapons", "bAutoDrop", "true"),

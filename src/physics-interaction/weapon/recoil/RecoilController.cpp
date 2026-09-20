@@ -45,6 +45,7 @@ namespace rock
         identity.oneHanded = _session.state != TwoHandedState::Gripping &&
             _session.state != TwoHandedState::PartCarry;
         switch (identity.family) {
+        case weapon_recoil_policy::Family::Laser: identity.familyPercent = g_rockConfig.rockLaserRecoilPercent; break;
         case weapon_recoil_policy::Family::Pistol: identity.familyPercent = weapon_recoil_policy::selectHoldPercent(identity.oneHanded,
             g_rockConfig.rockPistolOneHandRecoilPercent, g_rockConfig.rockPistolTwoHandRecoilPercent); break;
         case weapon_recoil_policy::Family::Rifle: identity.familyPercent = weapon_recoil_policy::selectHoldPercent(identity.oneHanded,
@@ -118,13 +119,16 @@ namespace rock
                 (self->_session.state == TwoHandedState::Gripping && self->_firing.transferredPrimaryGrip.valid()) ||
                 (self->usesLeftFiringCarry() &&
                 self->_leftCarry.weaponNodeOwnershipBlockEngaged)));
-        if (!ownedCarry && (context.profile == Profile::OneHand || context.profile == Profile::FullTwoHand)) {
+        // Like armor, the laser profile also controls FRIK's native hand path
+        // when ROCK does not currently own a weapon presentation target.
+        if (!ownedCarry && context.family != Family::Laser &&
+            (context.profile == Profile::OneHand || context.profile == Profile::FullTwoHand)) {
             return decline();
         }
 
         RE::NiTransform controlled{};
         if (!weapon_recoil_authority_math::tryBuildControlledKick(
-                sample->nativeKickLocal, effectiveGains(context.profile, context.familyPercent), controlled)) {
+                sample->nativeKickLocal, effectiveGains(context.family, context.profile, context.familyPercent), controlled)) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Weapon recoil: invalid native sample; controlled delivery declined");
             return decline();
         }
