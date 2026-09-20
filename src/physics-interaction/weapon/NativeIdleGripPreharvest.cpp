@@ -2052,7 +2052,7 @@ namespace rock::native_idle_grip_preharvest
             const bool vanillaPipePose = pipe_firing_grip_policy::recognizesVanilla(
                 job.weaponFormId, clipPath.data(), handInWeapon, rightFiringFingerPose);
             if (pipe_firing_grip_policy::isPipe(job.weaponFormId)) {
-                ROCK_LOG_INFO(Animation, "Pipe right grip selection form={:08X} variant={:016X} correction={} source=fresh-native-idle subgraph={:016X} clip={}",
+                ROCK_LOG_INFO(Animation, "Pipe firing grip selection form={:08X} variant={:016X} correction={} source=fresh-native-idle subgraph={:016X} clip={}",
                     job.weaponFormId, job.variant.key, vanillaPipePose ? "compiled-calibration" : "authored-passthrough", subgraphIdentifier, clipPath.data());
             }
             if (!authored_weapon_grip_library::publishResolvedVariant(job.weapon, job.variant, job.inPowerArmor, handInWeapon, captureSequence,

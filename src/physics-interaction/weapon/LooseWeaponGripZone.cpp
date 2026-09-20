@@ -184,7 +184,7 @@ namespace rock::loose_weapon_grip_zone
 
             auto authoredLookup = authored_weapon_grip_library::find(
                 weapon, looseRoot, f4vr::isInPowerArmor());
-            authored_weapon_grip_library::applyPipeDefaultOffset(authoredLookup, isLeft);
+            authored_weapon_grip_library::applyPipeDefaultOffset(authoredLookup);
             if (!authoredLookup.found) {
                 state.reason = authoredLookup.reason;
                 return false;

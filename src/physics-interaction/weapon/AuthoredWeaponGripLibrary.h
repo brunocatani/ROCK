@@ -105,9 +105,9 @@ namespace rock::authored_weapon_grip_library
         const RE::NiTransform& rightHandWeaponLocal, std::uint64_t captureSequence, CaptureSource source,
         const FiringFingerPose* rightFiringFingerPose = nullptr, bool vanillaPipePose = false);
 
-    // Apply only to a physical-right consumer copy. Stored poses and left
-    // firing/support consumers retain the original animation data.
-    void applyPipeDefaultOffset(LookupResult& result, bool isLeft) noexcept;
+    // Calibrate the canonical firing relation before either hand consumes it
+    // or mirrors it. Stored poses, fingers and support relations stay authored.
+    void applyPipeDefaultOffset(LookupResult& result) noexcept;
 
     /*
      * Attach the physical-hand relation measured from the final

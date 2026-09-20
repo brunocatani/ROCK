@@ -313,7 +313,7 @@ namespace rock
             return;
         }
         auto authoredLookup = authored_weapon_grip_library::findResolvedVariant(input.weapon, variant, input.inPowerArmor);
-        authored_weapon_grip_library::applyPipeDefaultOffset(authoredLookup, input.rockFiringHandIsLeft);
+        authored_weapon_grip_library::applyPipeDefaultOffset(authoredLookup);
         vanilla_weapon_alignment_telemetry::recordAuthoredSelection(
             input, variant, authoredLookup, modelDisplacement, compiledMinigunFiringSeat);
         if (authoredLookup.found) {

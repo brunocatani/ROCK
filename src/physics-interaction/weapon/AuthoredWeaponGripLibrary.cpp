@@ -405,9 +405,9 @@ namespace rock::authored_weapon_grip_library
         return false;
     }
 
-    void applyPipeDefaultOffset(LookupResult& result, const bool isLeft) noexcept
+    void applyPipeDefaultOffset(LookupResult& result) noexcept
     {
-        if (!pipe_firing_grip_policy::useCompiledDefault(result.found, isLeft, result.vanillaPipePose)) return;
+        if (!pipe_firing_grip_policy::useCompiledDefault(result.found, result.vanillaPipePose)) return;
         // FRIK stores Weapon-in-Hand; authored consumers need Hand-in-Weapon.
         const auto handInWeapon = transform_math::invertTransform(pipe_firing_grip_policy::weaponInHand<RE::NiTransform>());
         if (!finiteTransform(handInWeapon)) return;

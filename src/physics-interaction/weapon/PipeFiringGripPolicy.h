@@ -10,7 +10,7 @@ namespace rock::pipe_firing_grip_policy
 {
     using Transform = authored_weapon_grip_cache::PersistedTransform;
     // User calibration from Pipe.json, 2026-09-14 23:07. FRIK's
-    // Weapon-in-Hand convention; shared by the vanilla pipe right-hand defaults.
+    // Weapon-in-Hand convention; canonical for both vanilla pipe firing hands.
     inline constexpr Transform kWeaponInHand{
         { -0.122000001f, 0.99000001f, 0.0689999983f, 0.986999989f, 0.114f, 0.108999997f, 0.100000001f, 0.0810000002f, -0.991999984f },
         { 10.3997459f, -1.45530391f, -6.33630705f },
@@ -146,9 +146,9 @@ namespace rock::pipe_firing_grip_policy
         return false;
     }
 
-    [[nodiscard]] constexpr bool useCompiledDefault(bool found, bool isLeft, bool vanillaPose) noexcept
+    [[nodiscard]] constexpr bool useCompiledDefault(bool found, bool vanillaPose) noexcept
     {
-        return found && !isLeft && vanillaPose;
+        return found && vanillaPose;
     }
 
     template <class T>
