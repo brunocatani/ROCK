@@ -23,6 +23,7 @@ namespace rock::dynamic_collider_trace
             // The worker receives formatted messages, never engine pointers.
             std::shared_ptr<spdlog::details::thread_pool> pool;
             std::shared_ptr<spdlog::async_logger> log;
+            std::shared_ptr<spdlog::async_logger> weaponLog;
         };
         // Lifecycle changes are game-thread-only, outside active physics callbacks.
         std::unique_ptr<Session> session;
@@ -44,10 +45,21 @@ namespace rock::dynamic_collider_trace
                 spdlog::async_overflow_policy::overrun_oldest);
             next->log->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
             next->log->set_error_handler([](const std::string&) { suppressAfterError(); });
+            // Dense hand traffic must not evict an earlier weapon-contact
+            // reproduction from the same session. Reuse the existing worker.
+            const auto weaponPath = resources::getPathInDocuments("/My Games/Fallout4VR/F4SE/ROCK_WeaponContact.log");
+            auto weaponSink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(weaponPath, 10 * 1024 * 1024, 5, true);
+            next->weaponLog = std::make_shared<spdlog::async_logger>("ROCK_WeaponContact", weaponSink, next->pool,
+                spdlog::async_overflow_policy::overrun_oldest);
+            next->weaponLog->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
+            next->weaponLog->set_error_handler([](const std::string&) { suppressAfterError(); });
             writerFailed.store(false, std::memory_order_relaxed);
             next->log->info("COLLIDER_TRACE start version=5 pid={} build={} {} sourceStride=4 weaponBurst=12/120 heldPhaseBurst=12/120 observational=true positions=game-units rotations=quaternion-xyzw velocities=havok-units-per-second peerKind=1:hand,2:weapon,3:world",
                 GetCurrentProcessId(), __DATE__, __TIME__);
             next->log->flush();
+            next->weaponLog->info("WEAPON_CONTACT_TRACE start version=1 pid={} build={} {} sourceStride=4 weaponBurst=12/120 leverBaselineStride=120 observational=true positions=game-units rotations=quaternion-xyzw",
+                GetCurrentProcessId(), __DATE__, __TIME__);
+            next->weaponLog->flush();
             session = std::move(next);
             recording.store(g_rockConfig.rockDebugGrabFrameLogging, std::memory_order_release);
             presentationRecording.store(true, std::memory_order_release);
@@ -68,6 +80,9 @@ namespace rock::dynamic_collider_trace
             session->log->info("COLLIDER_TRACE end overruns={} writerFailed={}",
                 session->pool->overrun_counter(), writerFailed.load(std::memory_order_relaxed));
             session->log->flush();
+            session->weaponLog->info("WEAPON_CONTACT_TRACE end overruns={} writerFailed={}",
+                session->pool->overrun_counter(), writerFailed.load(std::memory_order_relaxed));
+            session->weaponLog->flush();
         } catch (...) {
             try { logger::error("ROCK: Collider trace final status failed."); } catch (...) {}
         }
@@ -81,13 +96,17 @@ namespace rock::dynamic_collider_trace
             g_rockConfig.rockDebugShowRootFlattenedFingerSkeletonMarkers) && session && !writerFailed.load(std::memory_order_relaxed), std::memory_order_release);
         if (!presentationEnabled() || frame % 300 != 0) return;
         write("COLLIDER_TRACE heartbeat frame={} overruns={}", frame, session->pool->overrun_counter());
-        try { session->log->flush(); } catch (...) { suppressAfterError(); }
+        try {
+            session->log->flush();
+            session->weaponLog->flush();
+        } catch (...) { suppressAfterError(); }
     }
 
     bool enabled() noexcept { return recording.load(std::memory_order_acquire); }
     bool presentationEnabled() noexcept { return presentationRecording.load(std::memory_order_acquire); }
     bool sample(std::uint64_t sequence) noexcept { return enabled() && sequence != 0 && sequence % 4 == 0; }
     spdlog::logger* activeLogger() noexcept { return presentationEnabled() ? session->log.get() : nullptr; }
+    spdlog::logger* activeWeaponLogger() noexcept { return enabled() ? session->weaponLog.get() : nullptr; }
     void capturePresentedHands(std::uint64_t frame) noexcept
     {
         if (!sample(frame)) return;

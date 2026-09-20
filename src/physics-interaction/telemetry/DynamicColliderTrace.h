@@ -18,12 +18,23 @@ namespace rock::dynamic_collider_trace
     [[nodiscard]] bool presentationEnabled() noexcept;
     [[nodiscard]] bool sample(std::uint64_t sequence) noexcept;
     [[nodiscard]] spdlog::logger* activeLogger() noexcept;
+    [[nodiscard]] spdlog::logger* activeWeaponLogger() noexcept;
     void suppressAfterError() noexcept;
 
     template<class... Args>
     void write(spdlog::format_string_t<Args...> format, Args&&... args) noexcept
     {
         if (auto* log = activeLogger()) {
+            try { log->info(format, std::forward<Args>(args)...); }
+            catch (...) { suppressAfterError(); }
+        }
+    }
+
+    // Independent file retention, shared bounded queue and writer lifetime.
+    template<class... Args>
+    void writeWeapon(spdlog::format_string_t<Args...> format, Args&&... args) noexcept
+    {
+        if (auto* log = activeWeaponLogger()) {
             try { log->info(format, std::forward<Args>(args)...); }
             catch (...) { suppressAfterError(); }
         }

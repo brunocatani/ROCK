@@ -515,7 +515,7 @@ namespace rock
             !frame.menuBlocked;
         if (!frameMatches || !ensureProxyBody(frame, weaponCollision, _frameRequestedWeaponWorld)) {
             if (dynamic_collider_trace::sample(_frameIndex)) {
-                dynamic_collider_trace::write(
+                dynamic_collider_trace::writeWeapon(
                     "DWC_CLOCK unavailable: frame={} generation={:016X} acceptsIntent={} hasIntent={} frameMatches={} writesAllowed={} worldReady={} menuBlocked={} created={}",
                     _frameIndex, _frameGenerationKey, _frameAcceptingIntent, _frameHasIntent,
                     frameMatches, physicsWritesAllowed, frame.worldReady, frame.menuBlocked, _created);
@@ -654,7 +654,7 @@ namespace rock
 
         if (!snapshotCurrent) {
             if (dynamic_collider_trace::sample(sourceBeforeFinal)) {
-                dynamic_collider_trace::write(
+                dynamic_collider_trace::writeWeapon(
                     "DWC_CLOCK gate: frame={} sourceBeforeFinal={} source={} generation={:016X} body={} readable={} valid={} identity={} teleported={}",
                     _frameIndex, sourceBeforeFinal, snapshot.sourceSequence, _frameGenerationKey,
                     _body.getBodyId().value, snapshotReadable, snapshot.valid, snapshotIdentityCurrent, snapshot.teleported);
@@ -748,7 +748,7 @@ namespace rock
             float intentRotation[4]{}, resolvedRotation[4]{};
             transform_math::niRowsToHavokQuaternion(_frameRequestedWeaponWorld.rotate, intentRotation);
             transform_math::niRowsToHavokQuaternion(result.resolvedWeaponWorld.rotate, resolvedRotation);
-            dynamic_collider_trace::write(
+            dynamic_collider_trace::writeWeapon(
                 "DWC_INTENT frame={} generation={:016X} source={} sameSource={} driverValid={} driver=({:.3f},{:.3f},{:.3f}) weaponInDriver=({:.3f},{:.3f},{:.3f}) localStep=({:.4f}gu,{:.4f}deg)",
                 _frameIndex, _frameGenerationKey, dynamic_weapon_collision_policy::visualIntentSourceName(_frameIntentSource),
                 sameIntentSource, driverLocalValid,
@@ -757,7 +757,7 @@ namespace rock
                 _frameIntentDriverValid ? _frameIntentDriverWorld.translate.z : 0.0f,
                 intentDriverLocal.translate.x, intentDriverLocal.translate.y, intentDriverLocal.translate.z,
                 driverLocalStep, driverLocalRotationStep);
-            dynamic_collider_trace::write(
+            dynamic_collider_trace::writeWeapon(
                 "DWC_CLOCK game: frame={} sourceBeforeFinal={} source={} solve={} generation={:016X} body={} dt={:.6f} contact={} apply={} intent=({:.3f},{:.3f},{:.3f}) sampledIntent=({:.3f},{:.3f},{:.3f}) sampledLive=({:.3f},{:.3f},{:.3f}) resolved=({:.3f},{:.3f},{:.3f}) correction=({:.4f}gu,{:.4f}deg) intentQ=({:.6f},{:.6f},{:.6f},{:.6f}) resolvedQ=({:.6f},{:.6f},{:.6f},{:.6f})",
                 _frameIndex, sourceBeforeFinal, snapshot.sourceSequence, snapshot.solveSequence,
                 snapshot.generationKey, snapshot.bodyId, frame.deltaSeconds, snapshot.contactActive, result.applyVisualCorrection,
@@ -799,7 +799,7 @@ namespace rock
                 float requestedQ[4]{}, actualQ[4]{};
                 transform_math::niRowsToHavokQuaternion(requested.rotate, requestedQ);
                 transform_math::niRowsToHavokQuaternion(actual.rotate, actualQ);
-                dynamic_collider_trace::write(
+                dynamic_collider_trace::writeWeapon(
                     "DWC_LEVER stage={} frame={} source={} solve={} generation={:016X} body={} latched={} contact={} pointValid={} gripValid={} peer={} pointAgeMs={} pivotLocal=({:.4f},{:.4f},{:.4f}) gripLocal=({:.4f},{:.4f},{:.4f}) pointLocal=({:.4f},{:.4f},{:.4f}) targetPivot=({:.4f},{:.4f},{:.4f}) pivotError=({:.4f},{:.4f},{:.4f}) targetPoint=({:.4f},{:.4f},{:.4f}) pointError=({:.4f},{:.4f},{:.4f}) angularPointError=({:.4f},{:.4f},{:.4f}) targetGrip=({:.4f},{:.4f},{:.4f}) actualGrip=({:.4f},{:.4f},{:.4f}) targetQ=({:.7f},{:.7f},{:.7f},{:.7f}) actualQ=({:.7f},{:.7f},{:.7f},{:.7f})",
                     stage, _frameIndex, snapshot.sourceSequence, snapshot.solveSequence, snapshot.generationKey, snapshot.bodyId,
                     latched, snapshot.contactActive, pointValid, gripValid, contactIdentity ? contact.surfaceBodyId : kInvalidBodyId,
@@ -812,8 +812,12 @@ namespace rock
                     requestedGrip.x, requestedGrip.y, requestedGrip.z, actualGrip.x, actualGrip.y, actualGrip.z,
                     requestedQ[0], requestedQ[1], requestedQ[2], requestedQ[3], actualQ[0], actualQ[1], actualQ[2], actualQ[3]);
             };
-            traceLever("physics", sampledRequestedWeaponWorld, sampledLiveWeaponWorld);
-            traceLever("presentation", _frameRequestedWeaponWorld, result.resolvedWeaponWorld);
+            // Keep contact detail and a sparse free-space baseline. Repeated
+            // idle lever rows otherwise consume retention needed by the test.
+            if (snapshot.contactActive || _surfaceSupport.ownsPose() || pointValid || snapshot.sourceSequence % 120 == 0) {
+                traceLever("physics", sampledRequestedWeaponWorld, sampledLiveWeaponWorld);
+                traceLever("presentation", _frameRequestedWeaponWorld, result.resolvedWeaponWorld);
+            }
         }
         return result;
     }
@@ -827,12 +831,12 @@ namespace rock
         _clockPresentationFrame = 0;
         if (!weaponNode || weaponNode != _frameWeaponNode ||
             !dynamic_weapon_collision_policy::isFiniteTransform(weaponNode->world)) {
-            dynamic_collider_trace::write("DWC_CLOCK frame-end: frame={} generation={:016X} readable=false", frameIndex, _frameGenerationKey);
+            dynamic_collider_trace::writeWeapon("DWC_CLOCK frame-end: frame={} generation={:016X} readable=false", frameIndex, _frameGenerationKey);
             return;
         }
         const auto& actual = weaponNode->world;
         const auto& room = runtime_state::currentFrame().playerSpace.world.translate;
-        dynamic_collider_trace::write(
+        dynamic_collider_trace::writeWeapon(
             "DWC_CLOCK frame-end: frame={} generation={:016X} readable=true weapon=({:.3f},{:.3f},{:.3f}) room=({:.3f},{:.3f},{:.3f}) presentationError=({:.4f}gu,{:.4f}deg)",
             frameIndex, _frameGenerationKey, actual.translate.x, actual.translate.y, actual.translate.z,
             room.x, room.y, room.z,
@@ -860,7 +864,7 @@ namespace rock
             dynamic_weapon_collision_policy::kDivergenceTeleportDistanceGameUnits);
         if (!queued.queued) _rebuildRequestedAtomic.store(true, std::memory_order_release);
         if (weaponClockTraceEnabled(queued.queuedSequence)) {
-            dynamic_collider_trace::write("DWC_FINAL frame={} queued={} generation={:016X} children={} target=({:.4f},{:.4f},{:.4f})",
+            dynamic_collider_trace::writeWeapon("DWC_FINAL frame={} queued={} generation={:016X} children={} target=({:.4f},{:.4f},{:.4f})",
                 frame.timing.sequence, queued.queuedSequence, generation, _createdCompoundChildCount,
                 target.translate.x, target.translate.y, target.translate.z);
         }
@@ -1312,7 +1316,7 @@ namespace rock
             dynamic_weapon_collision_policy::kMaximumAngularVelocityRadiansPerSecond);
         if (!driveResult.driven && dynamic_collider_trace::sample(
                 driveResult.sourceSequence != 0 ? driveResult.sourceSequence : timing.stepSequence)) {
-            dynamic_collider_trace::write(
+            dynamic_collider_trace::writeWeapon(
                 "DWC_CLOCK drive-skipped: source={} step={} body={} invalidTiming={} stale={} missingBody={} identityMismatch={} placementFailed={} nativeFailed={}",
                 driveResult.sourceSequence, timing.stepSequence, _body.getBodyId().value,
                 driveResult.skippedInvalidTiming, driveResult.skippedStale, driveResult.missingBody,
@@ -1474,7 +1478,7 @@ namespace rock
         }
         const bool contactWasActive = _contactRetentionSeconds > 0.0f;
         if (weaponClockTraceEnabled(_physicsSourceSequence)) {
-            dynamic_collider_trace::write(
+            dynamic_collider_trace::writeWeapon(
                 "DWC_CONTACT source={} solve={} body={} callbacks={} lastPeer={} layer={} freshWorldContact={} retentionBefore={:.6f}s physicsDt={:.6f} sourceJumps={} gripResets={} divergenceResets={} dwell={:.4f} tau=({:.5f},{:.5f}) damping=({:.5f},{:.5f}) constantRecovery=({:.5f},{:.5f})",
                 _physicsSourceSequence, solveSequence, _body.getBodyId().value, contactSequence,
                 otherBodyId, otherLayer, newMatchingContact, _contactRetentionSeconds, timing.substepDeltaSeconds,
@@ -1523,7 +1527,7 @@ namespace rock
             const auto contactAtAuthority = authorityReadable ?
                 dynamic_weapon_collision_policy::makeContactBodyTargetFromGripAuthority(authority, _createdCenterWeaponLocal, _createdWeaponScale, _authorityPivotWeaponLocal) :
                 RE::NiTransform{};
-            dynamic_collider_trace::write(
+            dynamic_collider_trace::writeWeapon(
                 "DWC_CLOCK solve: source={} solve={} step={} substep={}/{} generation={:016X} body={} sourceDt={:.6f} sourceAge={:.6f} physicsDt={:.6f} rawDt={:.6f} remainder={:.6f} contact={} teleport={} commandValid={} authorityRead={} limit=({},{},{:.4f}) requested=({:.3f},{:.3f},{:.3f}) commanded=({:.3f},{:.3f},{:.3f}) authority=({:.3f},{:.3f},{:.3f}) contactBody=({:.3f},{:.3f},{:.3f}) limitError=({:.4f}gu,{:.4f}deg) driveError=({:.4f}gu,{:.4f}deg) constraintError=({:.4f}gu,{:.4f}deg)",
                 snapshot.sourceSequence, solveSequence, _clockDriveTiming.stepSequence,
                 _clockDriveTiming.substepIndex, _clockDriveTiming.substepCount, snapshot.generationKey, snapshot.bodyId,
@@ -1661,7 +1665,7 @@ namespace rock
                 transform_math::niRowsToHavokQuaternion(liveAuthorityWorld.rotate, authorityRotation);
             }
 
-            dynamic_collider_trace::write(
+            dynamic_collider_trace::writeWeapon(
                 "DWC_MOTOR source={} solve={} body={} contact={} newCallback={} retention={:.6f}s intentStep=({:.3f}gu,{:.2f}deg) signedPress={:.3f}gu contactError=({:.2f}gu,{:.2f}deg) authority(read/error)={}/({:.3f}gu,{:.2f}deg) tau=({:.4f},{:.4f}) damping=({:.4f},{:.4f}) recovery=({:.2f}/{:.2f},{:.2f}/{:.2f}) force=({:.1f},{:.1f}) angularSpeedRad={:.5f} requestedQ=({:.6f},{:.6f},{:.6f},{:.6f}) authorityQ=({:.6f},{:.6f},{:.6f},{:.6f}) liveQ=({:.6f},{:.6f},{:.6f},{:.6f})",
                 _physicsSourceSequence, solveSequence, _body.getBodyId().value,
                 snapshot.contactActive,
