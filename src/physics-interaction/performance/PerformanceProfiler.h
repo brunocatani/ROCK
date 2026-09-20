@@ -94,6 +94,30 @@ namespace rock::performance_profiler
         NativePhysicsUpdate,
         NativePhysicsCollideInterval,
         NativePhysicsSolveInterval,
+        GrabSelectionValidation,
+        GrabBodyPreparation,
+        GrabProxyPreparation,
+        GrabMeshCapturePreparation,
+        GrabBodyResolution,
+        GrabResolvedBodyCapture,
+        GrabPivotEvidence,
+        GrabContactPatch,
+        GrabPinchPocket,
+        GrabFingerEvidence,
+        GrabCommitPreparation,
+        GrabBodyFrameCapture,
+        GrabSeatCapture,
+        GrabGripSupport,
+        GrabFrozenCommit,
+        GrabPostFreeze,
+        GrabConstraintCommit,
+        GrabLocalTriangleCapture,
+        GrabTriangleSelection,
+        MeshStaticExtraction,
+        MeshDynamicExtraction,
+        MeshSkinnedExtraction,
+        MeshPointQuery,
+        MeshDirectionalQuery,
         Count
     };
 
@@ -122,6 +146,9 @@ namespace rock::performance_profiler
         NativeReadRangeRejected,
         NativeWriteRangeRejected,
         PhysicsTimingSubstepsIncreased,
+        GrabAcquisitionPeerHeld,
+        GrabAcquisitionEquippedTransfer,
+        GrabAcquisitionSucceeded,
         Count
     };
 
@@ -157,6 +184,13 @@ namespace rock::performance_profiler
         GeneratedWeaponBodies,
         FingerPadCandidateTriangles,
         FingerPadTriangleTests,
+        GrabMeshStaticTriangles,
+        GrabMeshDynamicTriangles,
+        GrabMeshSkinnedTriangles,
+        GrabMeshCaptureAttempts,
+        GrabMeshPayloadBytes,
+        MeshPointQueryTriangles,
+        MeshDirectionalQueryTriangles,
         Count
     };
 

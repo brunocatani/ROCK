@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/VectorMath.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/grab/SkinnedSurfaceMath.h"
@@ -390,6 +391,7 @@ namespace rock
         std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles = nullptr,
         std::vector<TriangleData>* outLocalTriangles = nullptr)
     {
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::MeshDynamicExtraction);
         [[maybe_unused]] const char* shapeName = triShape->name.c_str() ? triShape->name.c_str() : "(null)";
 
         TriShapeRawGeometry geometry;
@@ -533,6 +535,7 @@ namespace rock
             return extractTrianglesFromDynamicTriShape(triShape, outTriangles, outSurfaceTriangles, outLocalTriangles);
         }
 
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::MeshStaticExtraction);
         TriShapeRawGeometry geometry;
         if (!readTriShapeRawGeometry(triShape, geometry))
             return 0;
@@ -599,6 +602,7 @@ namespace rock
         bool allowPositionOnlySkinnedSurface = false,
         std::vector<TriangleData>* outLocalTriangles = nullptr)
     {
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::MeshSkinnedExtraction);
         [[maybe_unused]] const char* shapeName = triShape->name.c_str() ? triShape->name.c_str() : "(null)";
         const bool dynamicSkinned = isDynamicTriShape(triShape);
 
@@ -1489,6 +1493,7 @@ namespace rock
         float behindPalmToleranceGameUnits = 0.0f,
         int* outRejectedBehindPalm = nullptr)
     {
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::MeshDirectionalQuery);
         float bestDist = 1e30f;
         int bestIdx = -1;
         RE::NiPoint3 bestPos;
@@ -1496,6 +1501,7 @@ namespace rock
         float bestLateral = 0.0f;
         const float behindTolerance = std::max(0.0f, std::isfinite(behindPalmToleranceGameUnits) ? behindPalmToleranceGameUnits : 0.0f);
 
+        performance_profiler::observeValue(performance_profiler::ValueMetric::MeshDirectionalQueryTriangles, triangles.size());
         for (int i = 0; i < static_cast<int>(triangles.size()); i++) {
             const auto& surfaceTriangle = triangles[i];
             const auto& tri = surfaceTriangle.triangle;
@@ -1561,6 +1567,7 @@ namespace rock
         float maxNormalAngleDegrees,
         GrabSurfaceHit& outResult)
     {
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::MeshPointQuery);
         const RE::NiPoint3 expected = normalize(expectedNormal);
         if (dot(expected, expected) <= 0.0f || maxDistanceGameUnits < 0.0f) {
             return false;
@@ -1573,6 +1580,7 @@ namespace rock
         RE::NiPoint3 bestPoint{};
         RE::NiPoint3 bestNormal{};
 
+        performance_profiler::observeValue(performance_profiler::ValueMetric::MeshPointQueryTriangles, triangles.size());
         for (int i = 0; i < static_cast<int>(triangles.size()); ++i) {
             const auto& surfaceTriangle = triangles[i];
             const auto& tri = surfaceTriangle.triangle;
@@ -1625,6 +1633,7 @@ namespace rock
         float maxDistanceGameUnits,
         GrabSurfaceHit& outResult)
     {
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::MeshPointQuery);
         if (maxDistanceGameUnits < 0.0f || !std::isfinite(maxDistanceGameUnits)) {
             return false;
         }
@@ -1639,6 +1648,7 @@ namespace rock
         float bestSignedAlong = 0.0f;
         float bestLateral = 0.0f;
 
+        performance_profiler::observeValue(performance_profiler::ValueMetric::MeshPointQueryTriangles, triangles.size());
         for (int i = 0; i < static_cast<int>(triangles.size()); ++i) {
             const auto& surfaceTriangle = triangles[i];
             const auto& tri = surfaceTriangle.triangle;

@@ -1,4 +1,5 @@
 #include "physics-interaction/performance/PhysicsStepProfile.h"
+#include "physics-interaction/grab/MeshGrab.h"
 #include <F4SE/Logger.h>
 
 #include <cassert>
@@ -37,6 +38,12 @@ namespace
         requireScope("nativePhysicsSolveInterval", 60);
         requireScope("runtimePreparation", 30);
         requireScope("grabFingerIndexBuild", 1);
+        requireScope("grabContactPatch", 1);
+        requireScope("meshPointQuery", 2);
+        requireScope("meshDirectionalQuery", 1);
+        assert(text.find("Profiler value meshPointQueryTriangles: avg=64.00 max=64 samples=2") != std::string::npos);
+        assert(text.find("Profiler value meshDirectionalQueryTriangles: avg=64.00 max=64 samples=1") != std::string::npos);
+        assert(text.find("Profiler counter grabAcquisitionPeerHeld: count=1") != std::string::npos);
         assert(text.find("Profiler value physicsCompletedSubsteps: avg=2.00 max=2 samples=30") != std::string::npos);
         assert(text.find("Profiler memory runtimePreparation: readQueries=30") != std::string::npos);
         assert(text.find("Profiler grabSurfaceResolution:") == std::string::npos);
@@ -85,6 +92,24 @@ int main()
     profile.reset();
     profile.endCollide();
     profile.endUpdate();
+
+    {
+        ScopedTimer acquisitionStage(Scope::GrabContactPatch);
+        std::vector<rock::GrabSurfaceTriangleData> triangles(64);
+        for (auto& surface : triangles) {
+            surface.triangle = { {0, 0, 0}, {4, 0, 0}, {0, 4, 0} };
+        }
+        rock::GrabSurfaceHit hit{};
+        assert(rock::findClosestGrabSurfaceHitToPoint(triangles, {1, 1, 1}, {0, 0, 1}, 2.0f, 45.0f, hit));
+        assert(hit.valid && hit.triangleIndex == 0 && hit.position.z == 0.0f);
+        assert(rock::findClosestGrabSurfaceHitToPointPositionOnly(triangles, {1, 1, 1}, {0, 0, 1}, 2.0f, hit));
+        assert(hit.valid && hit.triangleIndex == 0 && hit.position.z == 0.0f);
+        assert(rock::findClosestGrabSurfaceHit(triangles, {1, 1, 1}, {0, 0, -1}, 1.0f, 1.0f, hit));
+        assert(hit.valid && hit.triangleIndex == 0 && hit.position.z == 0.0f);
+        assert(beginMemoryQuery().scope == Scope::GrabContactPatch);
+        addCounter(Counter::GrabAcquisitionPeerHeld);
+    }
+
     for (int frame = 0; frame < 30; ++frame) {
         beginFrame();
         {

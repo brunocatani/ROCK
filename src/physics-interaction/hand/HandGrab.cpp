@@ -1472,6 +1472,7 @@ namespace rock
             bool handPocketOnlyGrab,
             bool looseWeaponGrab)
         {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabPinchPocket);
             RuntimePinchPocketCandidate candidate{};
             const auto config = currentPinchPocketConfig();
             candidate.meshExtents = grab_pinch_pocket_policy::computeMeshExtents(localMeshTriangles, objectWorldTransform.scale);
@@ -1801,6 +1802,7 @@ namespace rock
             const RE::NiPoint3& acrossPalmAxisWorld,
             float longObjectLeverGameUnits)
         {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabGripSupport);
             RuntimeGripSupportModel support{};
             const RE::NiPoint3 palmNormal = normalizeOrZero(palmNormalWorld);
             const RE::NiPoint3 fingerAxis = normalizeOrZero(fingerAxisWorld);
@@ -2274,6 +2276,7 @@ namespace rock
             float objectLeverEstimateGameUnits,
             const std::vector<GrabSurfaceTriangleData>& surfaceTriangles)
         {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabContactPatch);
             RuntimeGrabContactPatch result{};
             if (!world || resolvedBodyId == INVALID_BODY_ID) {
                 result.patch.fallbackReason = "invalidWorldOrBody";
@@ -2965,6 +2968,7 @@ namespace rock
 
         std::vector<GrabLocalTriangle> cacheTrianglesInLocalSpace(const std::vector<TriangleData>& worldTriangles, const RE::NiTransform& nodeWorld)
         {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabLocalTriangleCapture);
             std::vector<GrabLocalTriangle> localTriangles;
             localTriangles.reserve(worldTriangles.size());
             for (const auto& triangle : worldTriangles) {
@@ -3040,6 +3044,7 @@ namespace rock
             const RE::NiPoint3& centerWorld,
             std::size_t maxTriangles)
         {
+            performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabTriangleSelection);
             if (sourceTriangles.size() <= maxTriangles || maxTriangles == 0 || !grab_three_phase::isFinite(centerWorld)) {
                 return sourceTriangles;
             }
@@ -6640,6 +6645,7 @@ namespace rock
         const GrabSharedObjectContext& sharedContext,
         ValidatedGrabSelection& outSelection)
     {
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabSelectionValidation);
         outSelection = {};
         if (!hasSelection() || !world) {
             return false;
@@ -6740,6 +6746,7 @@ namespace rock
         const ValidatedGrabSelection& selection,
         GrabBodyPreparation& outPreparation)
     {
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabBodyPreparation);
         outPreparation = {};
         const auto& selectedObject = _currentSelection;
         outPreparation.scanOptions = makeActiveGrabBodyScanOptions(selectedObject);
@@ -6843,6 +6850,7 @@ namespace rock
         const RE::NiTransform& handWorldTransform,
         GrabProxyPreparation& outPreparation)
     {
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabProxyPreparation);
         outPreparation = {};
         outPreparation.handBodyWorldAtGrab = getLiveBodyWorldTransform(world, _handBody.getBodyId());
         outPreparation.proxyFrameWorldAtGrab = outPreparation.handBodyWorldAtGrab;
@@ -6882,6 +6890,7 @@ namespace rock
         const std::string& objectName,
         GrabMeshCaptureSetup& outSetup)
     {
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabMeshCapturePreparation);
         outSetup = {};
         const auto& selectedObject = _currentSelection;
         outSetup.collidableNode = selectedObject.hitNode ? selectedObject.hitNode : selection.rootNode;
@@ -7024,6 +7033,12 @@ namespace rock
         performance_profiler::observeValue(
             performance_profiler::ValueMetric::GrabMeshTriangles,
             outExtraction.stats.totalTriangles());
+        performance_profiler::observeValue(performance_profiler::ValueMetric::GrabMeshStaticTriangles, outExtraction.stats.staticTriangles);
+        performance_profiler::observeValue(performance_profiler::ValueMetric::GrabMeshDynamicTriangles, outExtraction.stats.dynamicTriangles);
+        performance_profiler::observeValue(performance_profiler::ValueMetric::GrabMeshSkinnedTriangles, outExtraction.stats.skinnedTriangles);
+        performance_profiler::observeValue(performance_profiler::ValueMetric::GrabMeshCaptureAttempts, attemptCount);
+        performance_profiler::observeValue(performance_profiler::ValueMetric::GrabMeshPayloadBytes,
+            outExtraction.meshTriangles.size() * sizeof(TriangleData) + outExtraction.surfaceTriangles.size() * sizeof(GrabSurfaceTriangleData));
 
         RE::BSTriShape* firstTriShape = outExtraction.meshSourceNode->IsTriShape();
         if (!firstTriShape) {
@@ -7349,6 +7364,7 @@ namespace rock
         GrabSurfaceEvidence& surface,
         GrabBodyResolution& outResolution)
     {
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabBodyResolution);
         outResolution = {};
         const auto& selectedObject = _currentSelection;
         outResolution.primaryChoiceTarget = surface.meshGrabFound ?
@@ -7498,6 +7514,7 @@ namespace rock
         const std::string& objectName,
         ResolvedGrabBodyCapture& outCapture)
     {
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabResolvedBodyCapture);
         outCapture = {};
         outCapture.bodyId = RE::hknpBodyId{ resolution.primaryChoice.bodyId };
         outCapture.collidableNode = meshCapture.collidableNode;
@@ -7591,6 +7608,7 @@ namespace rock
         GrabBodyResolution& bodyResolution,
         GrabPivotEvidence& outEvidence)
     {
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabPivotEvidence);
         outEvidence = {};
         const auto& sel = _currentSelection;
         const bool handPocketOnlyGrab = selection.handPocketOnlyGrab;
@@ -7980,6 +7998,7 @@ namespace rock
         const GrabPivotEvidence& pivotEvidence,
         GrabFingerEvidence& outEvidence)
     {
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabFingerEvidence);
         outEvidence = {};
         const auto& proxy = *input.proxy;
         const auto& mesh = *input.mesh;
@@ -8211,6 +8230,7 @@ namespace rock
 
     void Hand::beginResolvedGrabCommit(const GrabCommitPreparationInput& input)
     {
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabCommitPreparation);
         const auto& handWorldTransform = *input.handWorldTransform;
         auto* collidableNode = input.collidableNode;
         auto objectBodyId = input.objectBodyId;
@@ -8313,6 +8333,7 @@ namespace rock
         const GrabBodyFrameCaptureInput& input,
         GrabBodyFrameCapture& outCapture)
     {
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabBodyFrameCapture);
         outCapture = {};
         const auto& handWorldTransform = *input.handWorldTransform;
         const auto& proxy = *input.proxy;
@@ -8566,6 +8587,7 @@ namespace rock
         const GrabSeatCaptureInput& input,
         GrabSeatCaptureResult& outCapture)
     {
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabSeatCapture);
         outCapture = {};
         const auto& proxy = *input.proxy;
         const auto& meshCapture = *input.meshCapture;
@@ -9898,6 +9920,7 @@ namespace rock
 
     bool Hand::commitFrozenGrabAuthority(const GrabFrozenCommitInput& input)
     {
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabFrozenCommit);
         const auto& handWorldTransform = *input.handWorldTransform;
         const auto& proxy = *input.proxy;
         const auto& meshCapture = *input.meshCapture;
@@ -10303,6 +10326,7 @@ namespace rock
         RE::hknpWorld* world,
         const GrabPostFreezeInput& input)
     {
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabPostFreeze);
         const auto& handWorldTransform = *input.handWorldTransform;
         const auto& proxy = *input.proxy;
         const auto& meshCapture = *input.meshCapture;
@@ -10614,6 +10638,7 @@ namespace rock
         RE::hknpWorld* world,
         const GrabConstraintCommitInput& input)
     {
+        performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabConstraintCommit);
         const auto& handWorldTransform = *input.handWorldTransform;
         const auto& proxy = *input.proxy;
         const auto& meshCapture = *input.meshCapture;
@@ -11109,6 +11134,8 @@ namespace rock
         const auto& sel = _currentSelection;
         const auto selectedRef = validatedSelection.retainedRef;
         const bool joiningPeerHeldObject = validatedSelection.joiningPeerHeldObject;
+        if (joiningPeerHeldObject) performance_profiler::addCounter(performance_profiler::Counter::GrabAcquisitionPeerHeld);
+        if (sel.equippedWeaponTransfer) performance_profiler::addCounter(performance_profiler::Counter::GrabAcquisitionEquippedTransfer);
         const bool grabbedFromPullCatch = validatedSelection.grabbedFromPullCatch;
         const bool looseWeaponGrab = validatedSelection.looseWeaponGrab;
         const bool handPocketOnlyGrab = validatedSelection.handPocketOnlyGrab;
@@ -11982,6 +12009,7 @@ namespace rock
         }
 
         grabPreparationTransaction.commit();
+        performance_profiler::addCounter(performance_profiler::Counter::GrabAcquisitionSucceeded);
         applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::GrabCommitSucceeded });
         clearPullRuntimeState();
         clearPullCatchIntent(grabbedFromPullCatch ? "pullCatchGrabbed" : "grabbed");

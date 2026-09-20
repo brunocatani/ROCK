@@ -214,6 +214,30 @@ namespace rock::performance_profiler
             case Scope::NativePhysicsUpdate: return "nativePhysicsUpdate";
             case Scope::NativePhysicsCollideInterval: return "nativePhysicsCollideInterval";
             case Scope::NativePhysicsSolveInterval: return "nativePhysicsSolveInterval";
+            case Scope::GrabSelectionValidation: return "grabSelectionValidation";
+            case Scope::GrabBodyPreparation: return "grabBodyPreparation";
+            case Scope::GrabProxyPreparation: return "grabProxyPreparation";
+            case Scope::GrabMeshCapturePreparation: return "grabMeshCapturePreparation";
+            case Scope::GrabBodyResolution: return "grabBodyResolution";
+            case Scope::GrabResolvedBodyCapture: return "grabResolvedBodyCapture";
+            case Scope::GrabPivotEvidence: return "grabPivotEvidence";
+            case Scope::GrabContactPatch: return "grabContactPatch";
+            case Scope::GrabPinchPocket: return "grabPinchPocket";
+            case Scope::GrabFingerEvidence: return "grabFingerEvidence";
+            case Scope::GrabCommitPreparation: return "grabCommitPreparation";
+            case Scope::GrabBodyFrameCapture: return "grabBodyFrameCapture";
+            case Scope::GrabSeatCapture: return "grabSeatCapture";
+            case Scope::GrabGripSupport: return "grabGripSupport";
+            case Scope::GrabFrozenCommit: return "grabFrozenCommit";
+            case Scope::GrabPostFreeze: return "grabPostFreeze";
+            case Scope::GrabConstraintCommit: return "grabConstraintCommit";
+            case Scope::GrabLocalTriangleCapture: return "grabLocalTriangleCapture";
+            case Scope::GrabTriangleSelection: return "grabTriangleSelection";
+            case Scope::MeshStaticExtraction: return "meshStaticExtraction";
+            case Scope::MeshDynamicExtraction: return "meshDynamicExtraction";
+            case Scope::MeshSkinnedExtraction: return "meshSkinnedExtraction";
+            case Scope::MeshPointQuery: return "meshPointQuery";
+            case Scope::MeshDirectionalQuery: return "meshDirectionalQuery";
             case Scope::Count:
                 break;
             }
@@ -266,6 +290,9 @@ namespace rock::performance_profiler
             case Counter::NativeReadRangeRejected: return "nativeReadRangeRejected";
             case Counter::NativeWriteRangeRejected: return "nativeWriteRangeRejected";
             case Counter::PhysicsTimingSubstepsIncreased: return "physicsTimingSubstepsIncreased";
+            case Counter::GrabAcquisitionPeerHeld: return "grabAcquisitionPeerHeld";
+            case Counter::GrabAcquisitionEquippedTransfer: return "grabAcquisitionEquippedTransfer";
+            case Counter::GrabAcquisitionSucceeded: return "grabAcquisitionSucceeded";
             case Counter::Count:
                 break;
             }
@@ -323,6 +350,13 @@ namespace rock::performance_profiler
             case ValueMetric::GeneratedWeaponBodies: return "generatedWeaponBodies";
             case ValueMetric::FingerPadCandidateTriangles: return "fingerPadCandidateTriangles";
             case ValueMetric::FingerPadTriangleTests: return "fingerPadTriangleTests";
+            case ValueMetric::GrabMeshStaticTriangles: return "grabMeshStaticTriangles";
+            case ValueMetric::GrabMeshDynamicTriangles: return "grabMeshDynamicTriangles";
+            case ValueMetric::GrabMeshSkinnedTriangles: return "grabMeshSkinnedTriangles";
+            case ValueMetric::GrabMeshCaptureAttempts: return "grabMeshCaptureAttempts";
+            case ValueMetric::GrabMeshPayloadBytes: return "grabMeshPayloadBytes";
+            case ValueMetric::MeshPointQueryTriangles: return "meshPointQueryTriangles";
+            case ValueMetric::MeshDirectionalQueryTriangles: return "meshDirectionalQueryTriangles";
             case ValueMetric::Count:
                 break;
             }
@@ -673,7 +707,7 @@ namespace rock::performance_profiler
                             snapshot.droppedSnapshotsBeforeThis);
                     }
 
-                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall", snapshot.frames, GetCurrentProcessId());
+                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1", snapshot.frames, GetCurrentProcessId());
                     for (const auto& item : snapshot.scopes) {
                         if (!item.hasData()) {
                             continue;
