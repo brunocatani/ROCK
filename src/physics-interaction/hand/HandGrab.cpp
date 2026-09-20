@@ -12782,6 +12782,7 @@ namespace rock
             _grabFrame,
             heldMotorContactSoftening);
         const auto& heldAngularAuthority = heldAuthority.angular;
+        const bool preserveTransferredHand = _grabFrame.equippedWeaponTransfer && _grabFrame.authoredWeaponPose.valid();
         const auto visualPublishDecision = grab_motion_controller::evaluateVisualHandPublishGate(
             grab_motion_controller::VisualHandPublishInput{
                 .hasTelemetryCapture = _grabFrame.hasTelemetryCapture,
@@ -12793,10 +12794,18 @@ namespace rock
                 .pivotAuthorityNormalTrusted = _grabFrame.pivotAuthority.normalTrusted,
                 .hasSeatedPivotReacquire = _grabFrame.seat.hasPivotReacquire || _grabFrame.seat.hasSettledVisualHandRelation,
                 .requiresSettledVisualRelation = _grabFrame.seat.requiresSettledVisualHandRelation,
+                .transferredAuthoredGrip = preserveTransferredHand,
                 .multiFingerContactGroupCount = _grabFrame.multiFingerContactGroupCount,
                 .contactPatchSampleCount = _grabFrame.contactPatchSampleCount,
                 .contactSupportShape = heldAngularAuthority.contactSupportShape,
             });
+        if (g_rockConfig.rockDebugWeaponOmodDumpEnabled) {
+            vanilla_weapon_alignment_telemetry::recordTransferGrabGate(_isLeft, _grabFrame.traceId,
+                grab_three_phase::phaseName(_grabAcquisitionPhase), visualPublishDecision.reason,
+                _grabFrame.equippedWeaponTransfer, _grabFrame.authoredWeaponPose.valid(), _grabOffsetAcquisition.active,
+                _grabFrame.seat.hasPivotReacquire || _grabFrame.seat.hasSettledVisualHandRelation,
+                driveUpdate.hasPresentedBodyWorld, visualPublishDecision.apply);
+        }
         if (_grabFrame.looseObjectSharedPeerTrace && (g_rockConfig.rockDebugGrabFrameLogging ||
                 (_heldObjectIsLooseWeapon && g_rockConfig.rockDebugWeaponOmodDumpEnabled))) {
             _grabFrame.looseObjectVisualTraceElapsed += (std::max)(0.0f, deltaTime);
@@ -12813,7 +12822,6 @@ namespace rock
         // A transferred grip already owns the hand. Its small constraint-seat
         // correction must carry that hand with the presented weapon, rather than
         // returning the arm to the controller until acquisition finishes.
-        const bool preserveTransferredHand = _grabFrame.equippedWeaponTransfer && _grabFrame.authoredWeaponPose.valid();
         if (_grabFrame.hasTelemetryCapture &&
             (!_grabOffsetAcquisition.active || preserveTransferredHand) && visualPublishDecision.apply) {
             RE::NiTransform heldVisualNodeWorld{};

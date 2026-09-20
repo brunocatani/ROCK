@@ -504,6 +504,28 @@ int main()
     ok &= expectFalse("seated palm pocket promotion ignores non-weak authority", seatedNotWeak.promotePivot);
     ok &= expectReason("seated palm pocket non-weak reason", seatedNotWeak.reason, "seatedPalmPocketPromotionNotWeakMesh");
 
+    // A transferred authored hold must keep its hand target during the new
+    // body's seat acquisition, including contact, without enabling ordinary
+    // unseated grabs or allowing missing physical evidence.
+    VisualHandPublishInput transferredGrip{
+        .hasTelemetryCapture = true,
+        .hasPivotTrackingError = true,
+        .motorContactSoftening = true,
+        .requiresSettledVisualRelation = true,
+        .transferredAuthoredGrip = true,
+    };
+    const auto transferredVisual = evaluateVisualHandPublishGate(transferredGrip);
+    ok &= expectTrue("transferred grip retains visual authority before settling", transferredVisual.apply);
+    ok &= expectFalse("transferred grip does not restart hand acquisition", transferredVisual.acquisition);
+    transferredGrip.hasTelemetryCapture = false;
+    ok &= expectFalse("transferred grip still requires a frozen relation", evaluateVisualHandPublishGate(transferredGrip).apply);
+    transferredGrip.hasTelemetryCapture = true;
+    transferredGrip.hasPivotTrackingError = false;
+    ok &= expectFalse("transferred grip still requires live body tracking", evaluateVisualHandPublishGate(transferredGrip).apply);
+    transferredGrip.hasPivotTrackingError = true;
+    transferredGrip.transferredAuthoredGrip = false;
+    ok &= expectFalse("ordinary unseated grab remains gated", evaluateVisualHandPublishGate(transferredGrip).apply);
+
     const auto touchHeldSurfaceVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
         .hasTelemetryCapture = true,
         .touchHeldPhase = true,

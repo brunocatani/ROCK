@@ -27,6 +27,8 @@ namespace rock::vanilla_weapon_alignment_telemetry
         bool terminal = false) noexcept;
     void captureTransferFrame(bool isLeft, const RE::NiAVObject* looseRoot,
         const RE::NiAVObject* equippedRoot) noexcept;
+    void recordTransferGrabGate(bool isLeft, std::uint64_t grabId, const char* phase, const char* reason,
+        bool transferred, bool authoredPose, bool offsetActive, bool settled, bool presented, bool publish) noexcept;
 
     // Borrowed only for the synchronous capture; the async logger receives
     // formatted values, never these references or the scene pointer.

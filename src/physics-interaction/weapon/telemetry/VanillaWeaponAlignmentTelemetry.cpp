@@ -679,6 +679,20 @@ namespace rock::vanilla_weapon_alignment_telemetry
         } catch (...) { ++session->captureFailures; }
     }
 
+    void recordTransferGrabGate(bool isLeft, std::uint64_t grabId, const char* phase, const char* reason,
+        bool transferred, bool authoredPose, bool offsetActive, bool settled, bool presented, bool publish) noexcept
+    {
+        if (!captureThread || !session || !g_rockConfig.rockDebugWeaponOmodDumpEnabled) return;
+        const auto& trace = session->transfers[isLeft ? 1u : 0u];
+        const auto frame = runtime_state::currentFrame().frameIndex;
+        if (!trace.id || trace.kind != TransferKind::ToggleDrop || frame < trace.startFrame || frame - trace.startFrame >= 16) return;
+        try {
+            session->log->info("TRANSFER grab-gate trace={} frame={} hand={} grab={} phase={} gate={} transferred={} authored={} offset={} settled={} presented={} publish={}",
+                trace.id, frame, isLeft ? "left" : "right", grabId, phase, reason,
+                transferred, authoredPose, offsetActive, settled, presented, publish);
+        } catch (...) { ++session->captureFailures; }
+    }
+
     void captureTransferFrame(bool isLeft, const RE::NiAVObject* looseRoot,
         const RE::NiAVObject* equippedRoot) noexcept
     {

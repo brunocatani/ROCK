@@ -542,6 +542,7 @@ namespace rock::grab_motion_controller
         bool pivotAuthorityNormalTrusted = false;
         bool hasSeatedPivotReacquire = false;
         bool requiresSettledVisualRelation = false;
+        bool transferredAuthoredGrip = false;
         std::uint32_t multiFingerContactGroupCount = 0;
         std::uint32_t contactPatchSampleCount = 0;
         ContactSupportShape contactSupportShape = ContactSupportShape::Unknown;
@@ -593,6 +594,14 @@ namespace rock::grab_motion_controller
         }
         if (!input.hasPivotTrackingError) {
             decision.reason = "missingPivotTracking";
+            return decision;
+        }
+        // An equipped-to-loose transfer continues a held grip. Its authored
+        // hand relation is already valid while the new physics seat converges;
+        // new-grab contact/settling gates must not release that rendered hand.
+        if (input.transferredAuthoredGrip) {
+            decision.apply = true;
+            decision.reason = "transferredAuthoredGripAccepted";
             return decision;
         }
         if (!input.touchHeldPhase && !input.acquisitionVisualEligible) {
