@@ -31,6 +31,7 @@ namespace rock
 
     void PhysicsInteraction::clearPendingForceGrabCommits()
     {
+        for (auto& visual : _drop.visuals) visual.release("pending-grabs-cleared");
         _forceGrab.retainedWeaponGrabs = {};
         for (auto& commit : _forceGrab.pendingCommits) {
             if (!commit.active) continue;
@@ -194,6 +195,7 @@ namespace rock
                     provider::completeInteractionCommandV1(commit.providerResultTemplate);
                 }
                 if (commit.isEquippedWeaponTransfer()) {
+                    _drop.visuals[commit.isLeft ? 1u : 0u].release(reason);
                     for (auto& handoff : _drop.nativeHandoffs) {
                         if (handoff.active && handoff.handle == commit.targetHandle) {
                             reportEquippedWeaponPlacementFailure(handoff, reason);
@@ -283,6 +285,7 @@ namespace rock
                 }
             }
 
+            if (commit.isEquippedWeaponTransfer()) _drop.visuals[commit.isLeft ? 1u : 0u].prepareGrab();
             if (hand.hasSelection()) {
                 hand.clearSelectionState(false);
             }
@@ -386,6 +389,7 @@ namespace rock
             }
 
             if (commit.isEquippedWeaponTransfer()) {
+                _drop.visuals[commit.isLeft ? 1u : 0u].release("exact-loose-grab-committed");
                 _forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u].grabIdentity = hand.heldGrabIdentity();
                 ROCK_LOG_INFO(Weapon,
                     "Equipped weapon acquired as retained loose grab: hand={} ref={:08X} body={} grab={} handleMatches={} inputState={}",

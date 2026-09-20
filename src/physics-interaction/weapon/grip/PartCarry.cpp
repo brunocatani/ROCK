@@ -410,7 +410,7 @@ namespace rock
                         allowLastHandDrop, supportGrip.releaseRequiresNewHold)) {
                     if (gripCarries(supportGrip) && !gripCarries(freeHandGrip)) {
                         (void)requestEquippedWeaponDrop("support-carry-released",
-                            supportHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right);
+                            supportHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right, dt);
                         return;
                     }
                     releasePartGrip(supportHandIsLeft, "support-grip-released", true);
@@ -430,7 +430,7 @@ namespace rock
                         allowLastHandDrop, freeHandGrip.releaseRequiresNewHold)) {
                     if (gripCarries(freeHandGrip) && !gripCarries(supportGrip)) {
                         (void)requestEquippedWeaponDrop("part-carry-released",
-                            firingHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right);
+                            firingHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right, dt);
                         return;
                     }
                     releasePartGrip(firingHandIsLeft, "free-hand-grip-released", true);

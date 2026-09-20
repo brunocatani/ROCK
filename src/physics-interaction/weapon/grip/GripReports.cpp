@@ -186,7 +186,7 @@ namespace rock
         return out.valid();
     }
 
-    bool TwoHandedGrip::requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand)
+    bool TwoHandedGrip::requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand, float dt)
     {
         if (_equippedWeaponDropRequest.requested) {
             return true;
@@ -195,9 +195,18 @@ namespace rock
         const auto occupied = getGripOccupancy();
         AuthoredWeaponGripPose pose{};
         const bool isLeft = equipped_weapon_drop_policy::isLeft(sourceHand);
+        // Release branches run before their normal carry solve. Finish that
+        // solve once while the grip still owns the weapon, then capture the
+        // weapon and physical hand on the same frame before native reparenting.
+        const bool singleCarrier = sourceHand != equipped_weapon_drop_policy::SourceHand::None &&
+            equipped_weapon_drop_policy::canStartAutoDrop(occupied.left.carriesWeapon(),
+                occupied.right.carriesWeapon(), _firing.reattachHoverInsideZone);
+        const bool releasePoseReady = singleCarrier && _session.weaponNode &&
+            (_session.state == TwoHandedState::PartCarry ?
+                solvePartCarryWeaponAuthority(_session.weaponNode, dt) :
+                (!usesLeftFiringCarry() || solveLeftFiringWeaponCarry(_session.weaponNode, dt)));
         if (sourceHand == equipped_weapon_drop_policy::SourceHand::None ||
-            !equipped_weapon_drop_policy::canStartAutoDrop(occupied.left.carriesWeapon(),
-                occupied.right.carriesWeapon(), _firing.reattachHoverInsideZone) ||
+            !releasePoseReady ||
             !captureDropGripPose(isLeft, pose)) {
             recordGripReleaseRetained(isLeft, "auto-drop-pose-occupancy-or-zone-unavailable");
             _firing.primaryReleaseIntent.pending = false;
@@ -213,6 +222,7 @@ namespace rock
             .requested = true,
             .sourceHand = sourceHand,
             .pose = pose,
+            .weaponWorld = _session.weaponNode->world,
         };
         ROCK_LOG_INFO(Weapon,
             "TwoHandedGrip: equipped weapon drop requested reason={} sourceHand={} generation={:016X} detachSource={}",

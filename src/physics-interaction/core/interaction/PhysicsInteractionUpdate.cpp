@@ -597,6 +597,10 @@ namespace rock
         _equipped.toggleGrabReleasePressConsumedThisFrame = {};
         _equipped.holsterInputConsumedThisFrame = {};
         const auto& runtime = runtime_state::currentFrame();
+        if (!runtime.visualAuthorityAvailable || !runtime.localSkeletonReady ||
+            runtime.localMenuBlocking || runtime.compatibilityConfigBlocking) {
+            for (auto& visual : _drop.visuals) visual.release("interaction-interrupted");
+        }
         if (!_suppression.nativeGrenadeLeases.empty()) {
             auto* bhk = getPlayerBhkWorld();
             auto* world = bhk ? getHknpWorld(bhk) : nullptr;

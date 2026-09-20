@@ -180,6 +180,10 @@ namespace rock
         _lifecycle.stableFrameCountAtomic.store(_lifecycle.state.stableFrameCount, std::memory_order_release);
         _lifecycle.hknpWorldAtomic.store(nullptr, std::memory_order_release);
         _frame.completedPhysicsSolveSequence.store(0, std::memory_order_release);
+        for (auto& visual : _drop.visuals) {
+            if (generatedWorldStillLive) visual.release("generated-bodies-invalidated");
+            else visual.abandonSceneGraph();
+        }
         _drop.nativeHandoffs = {};
         _grabInput.shoulderStashStates = {};
         _grabInput.mouthConsumeStates = {};

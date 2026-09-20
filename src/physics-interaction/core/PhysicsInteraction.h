@@ -38,6 +38,7 @@
 #include "physics-interaction/weapon/AuthoredPrimaryFiringGrip.h"
 #include "physics-interaction/weapon/EquippedWeaponDropMomentum.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
+#include "physics-interaction/weapon/EquippedWeaponDropVisual.h"
 #include "physics-interaction/weapon/EquippedWeaponShoulderCoordinator.h"
 #include "physics-interaction/weapon/EquippedWeaponTransitionCoordinator.h"
 #include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
@@ -399,7 +400,6 @@ namespace rock
         void clearPendingForceGrabCommits();
         void updateSavedGrabOffsetGesture(const PhysicsFrameContext& frame);
         void saveGrabOffsetForHand(Hand& hand, bool isLeft, RE::hknpWorld* hknpWorld);
-        void updateEquippedWeaponReleaseCapture(RE::NiNode* weaponNode);
         void armEquippedWeaponNativeHandoff(
             const RE::ObjectRefHandle& handle,
             std::uint32_t droppedFormId,
@@ -407,6 +407,7 @@ namespace rock
             const WeaponCollision::ReleaseGeometrySnapshot& releaseGeometry);
         bool hasAvailableEquippedWeaponDropHandoff() const;
         void serviceEquippedWeaponNativeHandoff(const PhysicsFrameContext& frame);
+        void updateEquippedWeaponDropVisuals(const PhysicsFrameContext& frame);
         void serviceEquippedWeaponNativeTransaction(
             EquippedWeaponNativeHandoff& handoff,
             const PhysicsFrameContext& frame);
@@ -629,18 +630,6 @@ namespace rock
             float remainingSeconds{ 0.0f };
             std::uint32_t impactBodyId{ INVALID_CONTACT_BODY_ID };
             bool releasedSinceArming{ false };
-        };
-
-        /*
-         * Release capture for manually carried equipped weapons: the last
-         * ROCK-visible weapon pose (captured one frame ahead of the release,
-         * because the release transition restores the node to the FRIK hand
-         * baseline before the transfer request is consumed).
-         */
-        struct EquippedWeaponReleaseCapture
-        {
-            bool hasWeaponWorld{ false };
-            RE::NiTransform weaponWorld{};
         };
 
         enum class EquippedWeaponDropHandoffStage : std::uint8_t
@@ -896,7 +885,7 @@ namespace rock
         // State owned by the EquippedWeaponDrop module.
         struct EquippedWeaponDropState
         {
-            EquippedWeaponReleaseCapture releaseCapture{};
+            std::array<EquippedWeaponDropVisual, 2> visuals{};
             std::array<EquippedWeaponNativeHandoff, kEquippedWeaponDropHandoffCapacity> nativeHandoffs{};
         };
 

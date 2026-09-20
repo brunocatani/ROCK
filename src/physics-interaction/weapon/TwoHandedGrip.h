@@ -417,6 +417,7 @@ namespace rock
         bool requested{ false };
         equipped_weapon_drop_policy::SourceHand sourceHand{ equipped_weapon_drop_policy::SourceHand::None };
         AuthoredWeaponGripPose pose{};
+        RE::NiTransform weaponWorld{};
     };
 
     /*
@@ -1462,7 +1463,7 @@ namespace rock
         // Marks a refused last-carrier release for this update and logs the
         // first refusal of each open-hand episode.
         void recordGripReleaseRetained(bool isLeft, const char* reason);
-        bool requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand);
+        bool requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand, float dt);
         bool captureDropGripPose(bool isLeft, AuthoredWeaponGripPose& out) const;
         [[nodiscard]] loose_weapon_authored_grab_policy::Arrangement authoredGripArrangement(
             RE::NiNode* weaponNode, std::uint64_t generation) const;

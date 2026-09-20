@@ -2492,6 +2492,7 @@ namespace rock
         serviceLooseGrenadeQuickDraw(frame);
         serviceEquippedWeaponNativeHandoff(frame);
         servicePendingForceGrabCommits(frame);
+        updateEquippedWeaponDropVisuals(frame);
         updateSavedGrabOffsetGesture(frame);
         updateLooseGrenadeFuses(frame);
         publishHandInputOwnership(_rightHand, false);

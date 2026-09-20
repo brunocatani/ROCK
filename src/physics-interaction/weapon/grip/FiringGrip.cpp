@@ -465,7 +465,7 @@ namespace rock
 
         if (manualDecision.dropRequested) {
             requestEquippedWeaponDrop("primary-only-grip-released",
-                isFiringHandLeft() ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right);
+                isFiringHandLeft() ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right, dt);
             return;
         }
 

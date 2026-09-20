@@ -1385,19 +1385,11 @@ namespace rock
                         // the same authored weapon resolver as a far-grab catch.
                         RE::NiPoint3 releaseLoc = dropLoc;
                         RE::NiPoint3 releaseRot{};
-                        RE::NiTransform releaseWeaponWorld{};
-                        bool hasReleaseRot = false;
-                        if (_drop.releaseCapture.hasWeaponWorld &&
-                            finiteNiTransform(_drop.releaseCapture.weaponWorld)) {
-                            releaseWeaponWorld = _drop.releaseCapture.weaponWorld;
-                            releaseLoc = _drop.releaseCapture.weaponWorld.translate;
-                            releaseRot = transform_math::matrixToReferenceEulerRadians<RE::NiMatrix3, RE::NiPoint3>(_drop.releaseCapture.weaponWorld.rotate);
-                            hasReleaseRot = true;
-                        } else if (weaponNode && finiteNiTransform(weaponNode->world)) {
-                            releaseWeaponWorld = weaponNode->world;
-                            releaseLoc = weaponNode->world.translate;
-                            releaseRot = transform_math::matrixToReferenceEulerRadians<RE::NiMatrix3, RE::NiPoint3>(weaponNode->world.rotate);
-                            hasReleaseRot = true;
+                        const auto& releaseWeaponWorld = equippedWeaponDropRequest.weaponWorld;
+                        const bool hasReleaseRot = finiteNiTransform(releaseWeaponWorld);
+                        if (hasReleaseRot) {
+                            releaseLoc = releaseWeaponWorld.translate;
+                            releaseRot = transform_math::matrixToReferenceEulerRadians<RE::NiMatrix3, RE::NiPoint3>(releaseWeaponWorld.rotate);
                         }
                         const std::size_t releaseHandIndex = equipped_weapon_drop_policy::isLeft(sourceHand) ? 1u : 0u;
                         const auto& releaseHandInput = releaseHandIndex == 1u ? frame.left : frame.right;
@@ -1413,6 +1405,17 @@ namespace rock
                                 equipped_weapon_drop_policy::sourceHandName(sourceHand));
                             f4vr::showNotification("ROCK: Cannot drop weapon - release pose is not ready.");
                         } else {
+                            const bool toggleDrop = equipped_weapon_drop_policy::fromSetting(g_rockConfig.rockWeaponDropMode) ==
+                                equipped_weapon_drop_policy::Mode::ToggleDrop;
+                            const auto sourceVisual = toggleDrop ?
+                                equipped_weapon_visual_state::observe(observedEquippedWeaponFormID) :
+                                equipped_weapon_visual_state::Snapshot{};
+                            RE::NiPointer<RE::NiAVObject> dropVisualModel(
+                                sourceVisual.ancestorPathVisible && sourceVisual.instanceLocallyVisible ?
+                                    sourceVisual.exactInstance : nullptr);
+                            const auto dropVisualInWeapon = dropVisualModel ?
+                                transform_math::composeTransforms(transform_math::invertTransform(releaseWeaponWorld),
+                                    dropVisualModel->world) : RE::NiTransform{};
                             _twoHandedGrip.prepareEquippedWeaponDropCommit();
                             const auto dropResult = weapon_equip_transfer::dropEquippedWeaponFromPlayer(weapon_equip_transfer::EquippedDropInput{
                                 .dropLoc = releaseLoc,
@@ -1463,6 +1466,10 @@ namespace rock
                                     releaseGeometry.capturedWeaponWorld,
                                     (transferIsLeft ? frame.left : frame.right).rawHandWorld);
                                 if (dropResult.equippedSlotReleased) {
+                                    if (toggleDrop) {
+                                        _drop.visuals[transferHandIndex].begin(std::move(dropVisualModel),
+                                            dropVisualInWeapon, equippedWeaponDropRequest.pose, dropResult.droppedFormID);
+                                    }
                                     armEquippedWeaponNativeHandoff(
                                         dropResult.handle,
                                         dropResult.droppedFormID,
@@ -1515,7 +1522,6 @@ namespace rock
                         });
                 }
             }
-            updateEquippedWeaponReleaseCapture(weaponNode);
             const bool weaponSupportGripActive =
                 gripUpdateResult.after.left.partGripActive;
             const input_remap_policy::EquippedWeaponFiringGripInputGate updatedFiringGripInputGate{

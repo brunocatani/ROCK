@@ -4,29 +4,25 @@
 
 namespace rock
 {
-    void PhysicsInteraction::updateEquippedWeaponReleaseCapture(RE::NiNode* weaponNode)
+    void PhysicsInteraction::updateEquippedWeaponDropVisuals(const PhysicsFrameContext& frame)
     {
-        auto& capture = _drop.releaseCapture;
-        if (!_twoHandedGrip.isManualOwnershipActive()) {
-            capture = {};
-            return;
+        for (std::size_t index = 0; index < _drop.visuals.size(); ++index) {
+            auto& visual = _drop.visuals[index];
+            if (!visual.active()) continue;
+            const auto& commit = _forceGrab.pendingCommits[index];
+            const auto& input = index == 1 ? frame.left : frame.right;
+            const auto& hand = index == 1 ? _leftHand : _rightHand;
+            RE::NiTransform handWorld{};
+            const auto reference = commit.targetHandle.get();
+            if (!commit.active || commit.equippedWeaponDropMode != equipped_weapon_drop_policy::Mode::ToggleDrop ||
+                frame.menuBlocked || !frame.worldReady ||
+                !canHandAcceptForceGrab(hand, index == 1, input.disabled) ||
+                !_twoHandedGrip.tryGetPhysicalHandWorld(index == 1, handWorld)) {
+                visual.release("handoff-finished-or-hand-unavailable");
+                continue;
+            }
+            visual.update(handWorld, reference ? reference->Get3D() : nullptr);
         }
-
-        /*
-         * Prefer the transform ROCK published this frame (part-carry and
-         * two-handed solves own the weapon node); the live node world is the
-         * FRIK/game-final pose otherwise (primary-only carry).
-         */
-        RE::NiTransform solvedWeaponWorld{};
-        if (_twoHandedGrip.getSolvedWeaponTransform(solvedWeaponWorld) && finiteNiTransform(solvedWeaponWorld)) {
-            capture.weaponWorld = solvedWeaponWorld;
-            capture.hasWeaponWorld = true;
-        } else if (weaponNode && finiteNiTransform(weaponNode->world)) {
-            capture.weaponWorld = weaponNode->world;
-            capture.hasWeaponWorld = true;
-        }
-
-
     }
 
     bool PhysicsInteraction::hasAvailableEquippedWeaponDropHandoff() const
