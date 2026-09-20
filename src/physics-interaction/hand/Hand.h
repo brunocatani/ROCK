@@ -565,6 +565,7 @@ namespace rock
         {
             return _boneColliders.finalizePose(world, _isLeft, rawHand, _handBody, deltaTime, bones);
         }
+        void invalidateCollisionPose(RE::hknpWorld* world) { _boneColliders.invalidatePose(world, _handBody); }
         void applyReleaseVelocitySnapshot(RE::hknpWorld* world, const GrabReleaseOutcome::VelocitySnapshot& snapshot) const;
 
         GrabReleaseOutcome releaseGrabbedObject(
@@ -1441,11 +1442,18 @@ namespace rock
         release_velocity::History<RE::NiPoint3> _controllerReleaseHistory;
         release_velocity::History<RE::NiPoint3> _objectReleaseHistory;
         std::uint64_t _releaseControllerFrame = 0; // Game thread only.
-        // The post-solve callback publishes progress; the game thread samples
-        // each completed solve at most once, even with repeated release probes.
-        std::atomic<std::uint64_t> _releaseSolveSequence{ 0 };
-        RE::NiPoint3 _lastHeldObjectLocalLinearVelocityHavok{};
-        bool _hasLastHeldObjectLocalLinearVelocityHavok = false;
+        // Physics writes and the game thread copies under the existing proxy
+        // mutex. Identity, velocity and capture time belong to one solve.
+        struct ReleaseObjectSample
+        {
+            RE::hknpWorld* world = nullptr; // Identity only, never dereferenced by readback.
+            std::uint32_t bodyId = INVALID_BODY_ID;
+            std::uint64_t grabTrace = 0;
+            std::uint64_t solve = 0;
+            double capturedAt = 0.0;
+            RE::NiPoint3 velocity{};
+        } _releaseObjectSample;
+        double _releaseObjectNotBefore = 0.0; // Game thread rebase boundary.
         RE::NiTransform _previousHeldRawHandWorld{};
         RE::NiPoint3 _previousHeldHandPositionHavok{};
         RE::NiPoint3 _lastHeldHandPositionHavok{};

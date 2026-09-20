@@ -207,6 +207,21 @@ int main()
         ok &= expectSameTransform("rejected chain leaves wrist unchanged", bones[0].world, renderedRoot);
     }
 
+    {
+        auto unused = renderedFinger;
+        unused.translate.x = std::numeric_limits<float>::quiet_NaN();
+        std::array<BoneSample, 3> bones{{
+            { "RArm_Hand", renderedRoot, renderedRoot },
+            { "RArm_Finger23", renderedFinger, renderedFinger },
+            { "RArm_FingerAttachment", unused, unused },
+        }};
+        const auto target = yawed(30.0f, 20.0f, -10.0f, 50.0f);
+        ok &= expectTrue("full-body helpers do not invalidate the standard hand chain",
+            transportSnapshotHand(bones, HandChainSide::Right, target));
+        ok &= expectSameTransform("shared-capture wrist reaches controller", bones[0].world, target);
+        ok &= expectTrue("optional helper is not transported", std::isnan(bones[2].world.translate.x));
+    }
+
     if (!ok) {
         std::printf("RenderedBoneTransportPolicyTests FAILED\n");
         return 1;

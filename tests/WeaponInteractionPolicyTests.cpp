@@ -1796,6 +1796,20 @@ int main()
         grenade = registry.acquire(body, CollisionSuppressionOwner::NativeGrenadeThrow, 0x35);
         restored = registry.release(body, CollisionSuppressionOwner::NativeGrenadeThrow, grenade.filterAfter);
         ok &= expectTrue("standalone grenade protection restores collision", restored.bodyFullyReleased && restored.filterAfter == 0x35);
+        grab = registry.acquire(body, CollisionSuppressionOwner::Grab, 0x35);
+        const auto missingPose = registry.acquire(body, CollisionSuppressionOwner::InvalidFinalPose, grab.filterAfter);
+        restored = registry.release(body, CollisionSuppressionOwner::Grab, missingPose.filterAfter);
+        ok &= expectTrue("release of a constrained palm cannot enable collision while its pose is missing",
+            !restored.bodyFullyReleased && (restored.filterAfter & kSuppressionNoCollideBit));
+        restored = registry.release(body, CollisionSuppressionOwner::InvalidFinalPose, restored.filterAfter);
+        ok &= expectTrue("pose recovery restores collision after the other owner has released",
+            restored.bodyFullyReleased && restored.filterAfter == 0x35);
+        const auto missingOnly = registry.acquire(body, CollisionSuppressionOwner::InvalidFinalPose, 0x35);
+        grab = registry.acquire(body, CollisionSuppressionOwner::Grab, missingOnly.filterAfter);
+        restored = registry.release(body, CollisionSuppressionOwner::InvalidFinalPose, grab.filterAfter);
+        ok &= expectTrue("pose recovery preserves a continuing grab's collision suppression",
+            !restored.bodyFullyReleased && (restored.filterAfter & kSuppressionNoCollideBit));
+        (void)registry.release(body, CollisionSuppressionOwner::Grab, restored.filterAfter);
         DelayedRestoreTimer grace;
         ok &= expectTrue("grenade release starts the collision grace period", grace.begin(body, 1, 0.5f));
         ok &= expectFalse("grenade collision stays off inside the grace period", grace.advance(true, 0.4f));

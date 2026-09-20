@@ -5,6 +5,7 @@
 
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
+#include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 
 #include "RE/NetImmerse/NiTransform.h"
 
@@ -54,7 +55,11 @@ namespace rock::rendered_bone_transport_policy
             return HandChainSide::None;
         }
         const std::string_view tail = name.substr(5);
-        if (tail == "Hand" || tail == "ForeArm1" || tail == "ForeArm2" || tail == "ForeArm3" || tail.starts_with("Finger")) {
+        // A shared full-body capture also contains optional attachment/helper
+        // bones. Preserve the original hand-only capture's admitted chain.
+        const bool finger = tail.starts_with("Finger") && skeleton_bone_debug_math::containsExact(
+            skeleton_bone_debug_math::kRequiredFingerBoneNames, name);
+        if (tail == "Hand" || tail == "ForeArm1" || tail == "ForeArm2" || tail == "ForeArm3" || finger) {
             return side;
         }
         return HandChainSide::None;

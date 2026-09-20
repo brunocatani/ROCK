@@ -6,12 +6,25 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <chrono>
 
 namespace rock::release_velocity
 {
     // Preserve the former five samples at 90 Hz, with the same peak policy,
     // while making the retention interval independent of game/physics cadence.
     inline constexpr double kRetentionSeconds = 5.0 / 90.0;
+
+    inline double sampleTimeSeconds() noexcept
+    {
+        return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+    [[nodiscard]] inline bool usablePhysicsSample(std::uint64_t source, double capturedAt,
+        double notBefore, double now) noexcept
+    {
+        return source != 0 && std::isfinite(capturedAt) && std::isfinite(now) &&
+            capturedAt >= notBefore && now >= capturedAt && now - capturedAt < kRetentionSeconds;
+    }
 
     struct SampleAdmission { bool duplicate{}; bool rebase{}; float deltaSeconds{}; };
     [[nodiscard]] inline SampleAdmission admitControllerSample(std::uint64_t previousFrame,

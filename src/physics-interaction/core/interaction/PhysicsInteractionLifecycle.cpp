@@ -1,4 +1,5 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
 
 // PhysicsInteraction lifecycle: construction, init/shutdown, skeleton and provider lifecycle notes, generated-body lifecycle, collision layer registration, hand/body collision creation, and world accessors. Includes the provider API surface (PhysicsInteractionProvider.inl).
@@ -701,6 +702,8 @@ namespace rock
         _handBoneCache.reset();
         _handColliderBoneReader.resetCache();
         _handColliderBoneSnapshot = {};
+        _finalPoseBoneReader.resetCache();
+        _finalPoseBoneSnapshot = {};
         _diagnostics.handCacheResolveLogCounter = 0;
         _diagnostics.paritySummaryCounter = 0;
         _diagnostics.parityEnabledLogged = false;
@@ -951,6 +954,8 @@ namespace rock
         _leftHand.destroyCollision(bhkWorld);
         _handColliderBoneReader.resetCache();
         _handColliderBoneSnapshot = {};
+        _finalPoseBoneReader.resetCache();
+        _finalPoseBoneSnapshot = {};
         _lifecycle.handColliderCreateRetryFrames = 0;
     }
 

@@ -324,6 +324,9 @@ namespace rock
             {
                 std::array<RE::NiPoint3,
                     hand_collider_semantics::kHandFingerRoleCount>
+                    baselineCentersInHand{};
+                std::array<RE::NiPoint3,
+                    hand_collider_semantics::kHandFingerRoleCount>
                     closingProbeTravelInHand{};
                 std::array<RE::NiPoint3,
                     hand_collider_semantics::kHandFingerRoleCount>

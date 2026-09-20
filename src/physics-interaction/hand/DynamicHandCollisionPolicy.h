@@ -25,7 +25,6 @@ namespace rock::dynamic_hand_collision_policy
     inline constexpr float kSurfaceFingerMaximumDeflectionOpenUnits = 0.85f;
     inline constexpr float kSurfaceFingerMinimumHelpfulTravelGameUnits = 0.01f;
     inline constexpr float kSurfaceFingerDirectionSwitchHysteresisFraction = 0.10f;
-    inline constexpr float kSurfaceFingerSmoothingSpeed = 30.0f;
     inline constexpr float kSurfaceFingerReleaseDelaySeconds = 0.12f;
 
     static_assert(kVisualPriority >= 0 && kVisualPriority <= 99);

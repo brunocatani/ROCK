@@ -834,6 +834,7 @@ namespace
             g_rockConfig.rockPerformanceProfilerOverlayText);
         performance_profiler::beginFrame();
         performance_profiler::ScopedTimer frameBeginTimer(performance_profiler::Scope::FrameBeginPreparation);
+        if (s_physicsInteraction) s_physicsInteraction->discardUnfinishedFramePose();
         s_schedulerSequence = nextFrameSequence(s_schedulerSequence);
         s_providerTickedThisFrame = false;
         s_skeletonTickedThisFrame = false;
@@ -865,6 +866,7 @@ namespace
      */
     void onFrikFrameEnd()
     {
+        if (s_physicsInteraction) s_physicsInteraction->discardUnfinishedFramePose();
         if (!s_providerTickedThisFrame) {
             runFrameTick(false);
         }

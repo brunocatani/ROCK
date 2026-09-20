@@ -292,35 +292,12 @@ namespace rock::surface_finger_collision_policy
         return result;
     }
 
-    [[nodiscard]] inline std::array<float, kFingerCount> advanceOpenValues(
-        const std::array<float, kFingerCount>& current,
-        const std::array<float, kFingerCount>& target,
-        const float smoothingSpeed,
-        const float deltaSeconds) noexcept
+    // The solver works from its captured baseline. Add back only the relief
+    // observed in the applied geometry, not the requested curl; otherwise the
+    // target relaxes as soon as its own correction starts to work.
+    [[nodiscard]] inline float baselineBlockedDepth(float remainingDepth, float achievedTravel) noexcept
     {
-        const float speed = std::isfinite(smoothingSpeed) ?
-            std::max(0.0f, smoothingSpeed) : 0.0f;
-        // Unmeasurable frames advance no smoothing (alpha 0 holds the
-        // current pose), never a fabricated nominal step.
-        const float dt = std::clamp(
-            std::isfinite(deltaSeconds) ? deltaSeconds : 0.0f,
-            0.0f,
-            0.1f);
-        const float alpha = speed > 0.0f ?
-            std::clamp(1.0f - std::exp(-speed * dt), 0.0f, 1.0f) : 1.0f;
-
-        std::array<float, kFingerCount> next{};
-        for (std::size_t finger = 0; finger < kFingerCount; ++finger) {
-            const float from = std::clamp(
-                std::isfinite(current[finger]) ? current[finger] : 1.0f,
-                0.0f,
-                1.0f);
-            const float to = std::clamp(
-                std::isfinite(target[finger]) ? target[finger] : 1.0f,
-                0.0f,
-                1.0f);
-            next[finger] = from + (to - from) * alpha;
-        }
-        return next;
+        if (!std::isfinite(remainingDepth) || remainingDepth <= 0.0f) return 0.0f;
+        return std::max(0.0f, remainingDepth + (std::isfinite(achievedTravel) ? achievedTravel : 0.0f));
     }
 }

@@ -4149,79 +4149,6 @@ namespace rock
             return result;
         }
 
-        struct HeldMotionCompensationResult
-        {
-            RE::NiPoint3 primaryLocalLinearVelocity{};
-            bool hasPrimaryVelocity = false;
-        };
-
-        HeldMotionCompensationResult applyHeldMotionCompensation(RE::hknpWorld* world,
-            RE::hknpBodyId primaryBodyId,
-            const std::vector<std::uint32_t>& heldBodyIds,
-            bool includeConnectedBodies = true)
-        {
-            HeldMotionCompensationResult result{};
-            if (!world) {
-                return result;
-            }
-
-            constexpr std::size_t kMaxSampledMotionSlots = 96;
-            std::array<std::uint32_t, kMaxSampledMotionSlots> sampledMotionSlots{};
-            std::size_t sampledMotionSlotCount = 0;
-
-            auto motionSlotAlreadySampled = [&sampledMotionSlots, &sampledMotionSlotCount](std::uint32_t motionIndex) {
-                for (std::size_t i = 0; i < sampledMotionSlotCount; ++i) {
-                    if (sampledMotionSlots[i] == motionIndex) {
-                        return true;
-                    }
-                }
-                return false;
-            };
-
-            auto sampleBody = [&](std::uint32_t bodyId) {
-                if (bodyId == INVALID_BODY_ID) {
-                    return;
-                }
-
-                auto* body = havok_runtime::getBody(world, RE::hknpBodyId{ bodyId });
-                if (!body) {
-                    return;
-                }
-
-                const std::uint32_t motionIndex = body->motionIndex;
-                if (!body_frame::hasUsableMotionIndex(motionIndex) || motionSlotAlreadySampled(motionIndex)) {
-                    return;
-                }
-
-                if (sampledMotionSlotCount >= sampledMotionSlots.size()) {
-                    return;
-                }
-
-                auto* motion = havok_runtime::getMotion(world, motionIndex);
-                if (!motion) {
-                    return;
-                }
-
-                sampledMotionSlots[sampledMotionSlotCount++] = motionIndex;
-
-                const RE::NiPoint3 localLinearVelocity{ motion->linearVelocity.x, motion->linearVelocity.y, motion->linearVelocity.z };
-
-                if (bodyId == primaryBodyId.value) {
-                    result.primaryLocalLinearVelocity = localLinearVelocity;
-                    result.hasPrimaryVelocity = true;
-                }
-            };
-
-            sampleBody(primaryBodyId.value);
-            if (includeConnectedBodies) {
-                for (const auto bodyId : heldBodyIds) {
-                    sampleBody(bodyId);
-                }
-            }
-
-            return result;
-        }
-
         void setHeldVelocity(RE::hknpWorld* world,
             RE::hknpBodyId primaryBodyId,
             const std::vector<std::uint32_t>& heldBodyIds,
@@ -5298,6 +5225,7 @@ namespace rock
 
     void Hand::clearGrabAuthorityProxyRuntimeLocked()
     {
+        _releaseObjectSample = {};
         _grabAuthorityProxyBhkWorld = nullptr;
         _grabAuthorityProxyHknpWorld = nullptr;
         _grabAuthorityPivotAProxyLocalGame = {};
@@ -10430,9 +10358,8 @@ namespace rock
                 }
                 _controllerReleaseHistory.clear();
                 _objectReleaseHistory.clear();
+                _releaseObjectNotBefore = release_velocity::sampleTimeSeconds();
                 _releaseControllerFrame = 0;
-                _lastHeldObjectLocalLinearVelocityHavok = {};
-                _hasLastHeldObjectLocalLinearVelocityHavok = false;
                 _previousHeldRawHandWorld = {};
                 _previousHeldHandPositionHavok = {};
                 _lastHeldHandPositionHavok = {};
@@ -12084,6 +12011,7 @@ namespace rock
             }
             _controllerReleaseHistory.clear();
             _objectReleaseHistory.clear();
+            _releaseObjectNotBefore = release_velocity::sampleTimeSeconds();
             _hasPreviousHeldRawHandWorld = false;
         }
         const float deltaTime = admission.deltaSeconds;
@@ -12113,18 +12041,17 @@ namespace rock
     void Hand::recordHeldObjectVelocitySample(RE::hknpWorld* world)
     {
         const auto& timing = runtime_state::currentFrame().timing;
-        const auto solve = _releaseSolveSequence.load(std::memory_order_acquire);
-        if (!timing.valid || timing.discontinuity || timing.menuPaused || !_objectReleaseHistory.needsSource(solve)) return;
-        const auto compensationResult = applyHeldMotionCompensation(
-            world,
-            _savedObjectState.bodyId,
-            _heldBodyIds,
-            _heldDriveDecision.includeConnectedLinearVelocity);
-        if (compensationResult.hasPrimaryVelocity && solve == _releaseSolveSequence.load(std::memory_order_acquire)) {
-            _objectReleaseHistory.append(solve, timing.elapsedGameSeconds, compensationResult.primaryLocalLinearVelocity);
-            _lastHeldObjectLocalLinearVelocityHavok = compensationResult.primaryLocalLinearVelocity;
-            _hasLastHeldObjectLocalLinearVelocityHavok = true;
+        if (!timing.valid || timing.discontinuity || timing.menuPaused) return;
+        ReleaseObjectSample sample{};
+        {
+            std::scoped_lock lock(_grabAuthorityProxyMutex);
+            sample = _releaseObjectSample;
         }
+        if (sample.world != world || sample.bodyId != _savedObjectState.bodyId.value ||
+            sample.grabTrace != _grabFrame.traceId || !_objectReleaseHistory.needsSource(sample.solve) ||
+            !release_velocity::usablePhysicsSample(sample.solve, sample.capturedAt,
+                _releaseObjectNotBefore, release_velocity::sampleTimeSeconds())) return;
+        _objectReleaseHistory.append(sample.solve, sample.capturedAt, sample.velocity);
     }
 
     void Hand::captureHeldReleaseMotion(
@@ -14868,7 +14795,6 @@ namespace rock
 
     void Hand::observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
-        _releaseSolveSequence.store(timing.valid && !timing.usedFallback ? timing.solveSequence : 0, std::memory_order_release);
         if (!world) {
             return;
         }
@@ -14894,8 +14820,20 @@ namespace rock
             const bool hasAuthority = _grabAuthorityProxy.isValid() &&
                                       _grabAuthorityProxyHknpWorld == world &&
                                       _hasLastAppliedGrabAuthorityProxyWorld;
+            _releaseObjectSample = {};
             if (!hasAuthority) {
                 return;
+            }
+
+            if (timing.valid && !timing.usedFallback) {
+                const auto* body = havok_runtime::getBody(world, _savedObjectState.bodyId);
+                const auto* motion = body && body_frame::hasUsableMotionIndex(body->motionIndex) ?
+                    havok_runtime::getMotion(world, body->motionIndex) : nullptr;
+                if (motion) {
+                    _releaseObjectSample = { world, _savedObjectState.bodyId.value, _grabFrame.traceId,
+                        timing.solveSequence, release_velocity::sampleTimeSeconds(),
+                        { motion->linearVelocity.x, motion->linearVelocity.y, motion->linearVelocity.z } };
+                }
             }
 
             proxyBodyId = _grabAuthorityProxy.getBodyId();
@@ -15582,7 +15520,7 @@ namespace rock
         nearby_grab_damping::restoreNearbyGrabDamping(world, _nearbyGrabDamping);
 
         const auto releaseTime = runtime_state::currentFrame().timing.elapsedGameSeconds;
-        const auto objectHistory = _objectReleaseHistory.peaks(releaseTime);
+        const auto objectHistory = _objectReleaseHistory.peaks(release_velocity::sampleTimeSeconds());
         const auto handHistory = _controllerReleaseHistory.peaks(releaseTime);
         const bool captureReleaseVelocity =
             !grab_target::isRagdoll(_savedObjectState.targetKind) &&
@@ -15921,9 +15859,8 @@ namespace rock
         _hasGrabFingerPose = false;
         _controllerReleaseHistory.clear();
         _objectReleaseHistory.clear();
+        _releaseObjectNotBefore = release_velocity::sampleTimeSeconds();
         _releaseControllerFrame = 0;
-        _lastHeldObjectLocalLinearVelocityHavok = {};
-        _hasLastHeldObjectLocalLinearVelocityHavok = false;
         _previousHeldRawHandWorld = {};
         _previousHeldHandPositionHavok = {};
         _lastHeldHandPositionHavok = {};

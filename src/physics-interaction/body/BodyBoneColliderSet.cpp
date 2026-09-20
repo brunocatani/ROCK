@@ -546,6 +546,7 @@ namespace rock
         clearAtomicBodyIds();
         for (auto& instance : _bodies) {
             if (instance.body.isValid()) {
+                releaseGeneratedColliderPoseSuppression(_cachedWorld, instance.body);
                 instance.body.retireDeferred(bhkWorld ? bhkWorld : _cachedBhkWorld);
             }
             clearInstance(instance, true);
@@ -631,19 +632,29 @@ namespace rock
         updatePose(snapshot, deltaTime, false);
     }
 
-    bool BodyBoneColliderSet::finalizePose(RE::hknpWorld* world, float deltaTime)
+    void BodyBoneColliderSet::invalidatePose(RE::hknpWorld* world)
     {
-        if (!_created || world != _cachedWorld || !captureBoneSnapshot(_snapshot) ||
-            _snapshot.skeleton != _cachedSkeleton || _snapshot.boneTree != _cachedBoneTree ||
-            _snapshot.inPowerArmor != _cachedPowerArmor) return false;
-        updatePose(_snapshot, deltaTime, true);
-        return true;
+        if (!_created || !world || world != _cachedWorld) return;
+        for (auto& instance : _bodies) invalidateGeneratedColliderPose(world, instance.body, instance.driveState);
+        _dynamicForearmTwinTargets = {};
     }
 
-    void BodyBoneColliderSet::updatePose(const DirectSkeletonBoneSnapshot& snapshot, float deltaTime, bool publishTargets)
+    bool BodyBoneColliderSet::finalizePose(RE::hknpWorld* world, float deltaTime, const DirectSkeletonBoneSnapshot& snapshot)
     {
+        if (!_created || world != _cachedWorld || !snapshot.valid || snapshot.space != SkeletonBoneCaptureSpace::Rendered ||
+            snapshot.skeleton != _cachedSkeleton || snapshot.boneTree != _cachedBoneTree ||
+            snapshot.inPowerArmor != _cachedPowerArmor) {
+            invalidatePose(world);
+            return false;
+        }
+        return updatePose(snapshot, deltaTime, true);
+    }
+
+    bool BodyBoneColliderSet::updatePose(const DirectSkeletonBoneSnapshot& snapshot, float deltaTime, bool publishTargets)
+    {
+        bool complete = true;
         const auto& descriptors = bodyDescriptorsForPowerArmor(snapshot.inPowerArmor);
-        const auto bonesByName = _boneNameIndex.bind(snapshot);
+        const auto bonesByName = (publishTargets ? _finalBoneNameIndex : _boneNameIndex).bind(snapshot);
         dynamic_hand_twin::ForearmTwinTargets forearmTwinTargets{};
         ForearmTwinMergeSources forearmTwinMergeSources{};
         for (auto& instance : _bodies) {
@@ -656,6 +667,9 @@ namespace rock
             if (makeDescriptorFrame(bonesByName, descriptor, snapshot.inPowerArmor, _tuning.descriptors[instance.descriptorIndex], frame)) {
                 collectForearmTwinMergeSource(forearmTwinMergeSources, descriptor, frame);
                 if (publishTargets) queueBodyTarget(instance.body, frame.transform, deltaTime, instance.driveState);
+            } else {
+                complete = false;
+                if (publishTargets) invalidateGeneratedColliderPose(_cachedWorld, instance.body, instance.driveState);
             }
         }
         publishMergedForearmTwinTargets(
@@ -669,6 +683,7 @@ namespace rock
         forearmTwinTargets.updateCounter = _dynamicForearmTwinTargets.updateCounter + 1;
         forearmTwinTargets.geometryGeneration = _dynamicForearmGeometryGeneration;
         _dynamicForearmTwinTargets = forearmTwinTargets;
+        return complete;
     }
 
     void BodyBoneColliderSet::flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
@@ -704,6 +719,7 @@ namespace rock
         }
 
         queueGeneratedKeyframedBodyTarget(driveState, target, sourceDeltaSeconds, 1000.0f);
+        restoreGeneratedColliderPoseAfterDrive(_cachedWorld, body, driveState);
     }
 
     bool BodyBoneColliderSet::tryGetBodyTargetForDebug(

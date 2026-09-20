@@ -93,10 +93,27 @@ namespace rock
         }
     }
 
+    void PhysicsInteraction::discardUnfinishedFramePose()
+    {
+        const auto pending = std::exchange(_frame.poseFrameIndex, 0);
+        if (!pending || !_lifecycle.initialized.load(std::memory_order_acquire)) return;
+        auto* bhk = getPlayerBhkWorld();
+        auto* world = bhk ? getHknpWorld(bhk) : nullptr;
+        if (!bhk || bhk != _lifecycle.cachedBhkWorld || !world || world != _lifecycle.cachedHknpWorld ||
+            !physicsWritesAllowedForWorld(world)) return;
+        auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
+        _bodyBoneColliders.invalidatePose(world);
+        _rightHand.invalidateCollisionPose(world);
+        _leftHand.invalidateCollisionPose(world);
+        _dynamicHandCollision.retireAll(bhk);
+        _dynamicWeaponCollision.retireAll(bhk);
+        ROCK_LOG_SAMPLE_WARN(Physics, 1000, "Collision pose publication interrupted frame={}; old collider targets invalidated", pending);
+    }
+
     void PhysicsInteraction::finalizeFramePose()
     {
         const auto& runtime = runtime_state::currentFrame();
-        const auto sourceFrame = std::exchange(_frame.poseFrameIndex, 0);
+        const auto sourceFrame = _frame.poseFrameIndex;
         if (sourceFrame == 0 || sourceFrame != runtime.frameIndex ||
             !_lifecycle.initialized.load(std::memory_order_acquire) || !runtime.localSkeletonReady ||
             runtime.localMenuBlocking || runtime.compatibilityConfigBlocking) return;
@@ -110,15 +127,18 @@ namespace rock
         {
             auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
             auto frame = buildFrameContext(bhk, world);
-            const bool bodyPoseValid = _bodyBoneColliders.finalizePose(world, frame.deltaSeconds);
+            const bool bodyPoseValid = _bodyBoneColliders.finalizePose(world, frame.deltaSeconds, _finalPoseBoneSnapshot);
             // Presented poses already copied this final array. Transport that
             // same snapshot once; do not reread or blend animation phases.
-            const bool handPoseValid = transportControllerHands(_handColliderBoneSnapshot);
+            const bool handPoseValid = transportControllerHands(_finalPoseBoneSnapshot);
             for (const bool isLeft : { false, true }) {
                 auto& input = isLeft ? frame.left : frame.right;
                 auto& hand = isLeft ? _leftHand : _rightHand;
-                if (!handPoseValid || (!input.disabled && !hand.finalizeCollisionPose(world, input.rawHandWorld,
-                        frame.deltaSeconds, _handColliderBoneSnapshot))) input.disabled = true;
+                if (!handPoseValid || input.disabled) {
+                    hand.invalidateCollisionPose(world);
+                    input.disabled = true;
+                } else if (!hand.finalizeCollisionPose(world, input.rawHandWorld,
+                        frame.deltaSeconds, _finalPoseBoneSnapshot)) input.disabled = true;
             }
             if (!bodyPoseValid) { frame.right.disabled = true; frame.left.disabled = true; }
             if (!bodyPoseValid || !handPoseValid) {
@@ -134,6 +154,7 @@ namespace rock
                     frame, _weaponCollision.getCurrentWeaponGenerationKey());
             }
         }
+        _frame.poseFrameIndex = 0;
         _generatedBodyStepDrive.registerForNextStep(bhk, world);
     }
 

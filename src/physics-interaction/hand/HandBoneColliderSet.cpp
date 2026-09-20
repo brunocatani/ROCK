@@ -168,7 +168,7 @@ namespace rock
     }
 
     bool HandBoneColliderSet::makeBoneLookup(const DirectSkeletonBoneSnapshot& snapshot,
-        bool isLeft, const RE::NiTransform& rollAuthorityWorld, BoneFrameLookup& outLookup)
+        bool isLeft, const RE::NiTransform& rollAuthorityWorld, BoneFrameLookup& outLookup, bool finalPose)
     {
         outLookup = {};
         if (!snapshot.valid || snapshot.space != SkeletonBoneCaptureSpace::Controller ||
@@ -179,7 +179,7 @@ namespace rock
         _lastCapturedSkeleton = snapshot.skeleton;
         _lastCapturedBoneTree = snapshot.boneTree;
         _lastCapturedPowerArmor = snapshot.inPowerArmor;
-        const auto bonesByName = _boneNameIndex.bind(snapshot);
+        const auto bonesByName = (finalPose ? _finalBoneNameIndex : _boneNameIndex).bind(snapshot);
 
         if (!findSnapshotBone(bonesByName, isLeft ? "LArm_Hand" : "RArm_Hand", outLookup.hand)) {
             ROCK_LOG_WARN(Hand, "{} hand bone colliders disabled: missing hand bone", isLeft ? "Left" : "Right");
@@ -613,12 +613,14 @@ namespace rock
         clearAtomicBodyIds();
         for (auto& instance : _bodies) {
             if (instance.body.isValid()) {
+                releaseGeneratedColliderPoseSuppression(_cachedWorld, instance.body);
                 instance.body.retireDeferred(bhkWorld ? bhkWorld : _cachedBhkWorld);
             }
             clearInstance(instance, true);
         }
 
         if (palmAnchorBody.isValid()) {
+            releaseGeneratedColliderPoseSuppression(_cachedWorld, palmAnchorBody);
             palmAnchorBody.retireDeferred(bhkWorld ? bhkWorld : _cachedBhkWorld);
         }
 
@@ -730,22 +732,39 @@ namespace rock
         updatePose(lookup, isLeft, palmAnchorBody, deltaTime, false);
     }
 
+    void HandBoneColliderSet::invalidatePose(RE::hknpWorld* world, BethesdaPhysicsBody& palmAnchorBody)
+    {
+        if (!_created || !world || world != _cachedWorld) return;
+        invalidateGeneratedColliderPose(world, palmAnchorBody, _palmAnchorDriveState);
+        publishSampledVelocityAtomic(_palmAnchorPublicationIndex, {});
+        for (auto& instance : _bodies) {
+            invalidateGeneratedColliderPose(world, instance.body, instance.driveState);
+            publishSampledVelocityAtomic(instance.publicationIndex, {});
+        }
+        _hasLatestPalmAnchorTarget = false;
+        _dynamicTwinTargets = {};
+        _segmentFrames = {};
+    }
+
     bool HandBoneColliderSet::finalizePose(RE::hknpWorld* world, bool isLeft,
         const RE::NiTransform& rawHand, BethesdaPhysicsBody& palmAnchorBody,
         float deltaTime, const DirectSkeletonBoneSnapshot& bones)
     {
         BoneFrameLookup lookup{};
         if (!_created || world != _cachedWorld || !palmAnchorBody.isValid() ||
-            !makeBoneLookup(bones, isLeft, rawHand, lookup) ||
+            !makeBoneLookup(bones, isLeft, rawHand, lookup, true) ||
             bones.skeleton != _cachedSkeleton || bones.boneTree != _cachedBoneTree ||
-            bones.inPowerArmor != _cachedPowerArmor) return false;
-        updatePose(lookup, isLeft, palmAnchorBody, deltaTime, true);
-        return true;
+            bones.inPowerArmor != _cachedPowerArmor) {
+            invalidatePose(world, palmAnchorBody);
+            return false;
+        }
+        return updatePose(lookup, isLeft, palmAnchorBody, deltaTime, true);
     }
 
-    void HandBoneColliderSet::updatePose(const BoneFrameLookup& lookup, bool isLeft,
+    bool HandBoneColliderSet::updatePose(const BoneFrameLookup& lookup, bool isLeft,
         BethesdaPhysicsBody& palmAnchorBody, float deltaTime, bool publishTargets)
     {
+        bool complete = true;
         dynamic_hand_twin::TwinTargets twinTargets{};
         auto publishTwinSlot = [](dynamic_hand_twin::TwinSlotFrame& slot, const RoleFrameResult& frame) {
             slot.valid = true;
@@ -761,6 +780,13 @@ namespace rock
             _hasLatestPalmAnchorTarget = true;
             publishTwinSlot(twinTargets.palm, anchorFrame);
             if (publishTargets) queueBodyTarget(palmAnchorBody, anchorFrame.transform, deltaTime, _palmAnchorDriveState, _palmAnchorPublicationIndex);
+        } else {
+            complete = false;
+            _hasLatestPalmAnchorTarget = false;
+            if (publishTargets) {
+                invalidateGeneratedColliderPose(_cachedWorld, palmAnchorBody, _palmAnchorDriveState);
+                publishSampledVelocityAtomic(_palmAnchorPublicationIndex, {});
+            }
         }
 
         PublishedSegmentFrames segmentFrames{};
@@ -792,6 +818,12 @@ namespace rock
                     published.palmHalfExtents = instance.palmHalfExtents;
                 }
                 if (publishTargets) queueBodyTarget(instance.body, frame.transform, deltaTime, instance.driveState, instance.publicationIndex);
+            } else {
+                complete = false;
+                if (publishTargets) {
+                    invalidateGeneratedColliderPose(_cachedWorld, instance.body, instance.driveState);
+                    publishSampledVelocityAtomic(instance.publicationIndex, {});
+                }
             }
         }
         _segmentFrames = segmentFrames;
@@ -802,6 +834,7 @@ namespace rock
         twinTargets.updateCounter = _dynamicTwinTargets.updateCounter + 1;
         twinTargets.geometryGeneration = _dynamicTwinGeometryGeneration;
         _dynamicTwinTargets = twinTargets;
+        return complete;
     }
 
     void HandBoneColliderSet::flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing, BethesdaPhysicsBody& palmAnchorBody)
@@ -850,6 +883,7 @@ namespace rock
 
         const auto queueResult = queueGeneratedKeyframedBodyTarget(driveState, target, sourceDeltaSeconds, 1000.0f);
         publishSampledVelocityAtomic(publicationIndex, queueResult);
+        restoreGeneratedColliderPoseAfterDrive(_cachedWorld, body, driveState);
     }
 
     bool HandBoneColliderSet::tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const

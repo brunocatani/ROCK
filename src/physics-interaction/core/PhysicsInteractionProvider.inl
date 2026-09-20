@@ -1339,7 +1339,8 @@
 
     bool PhysicsInteraction::queryProviderPresentedHandPoseV1(
         const ::rock::provider::RockProviderHand hand,
-        ::rock::provider::RockProviderPresentedHandPoseV1& outPose) const
+        ::rock::provider::RockProviderPresentedHandPoseV1& outPose,
+        ::rock::provider::RockProviderFrameSnapshot* outMetadata) const
     {
         outPose = {};
         if (hand != provider::RockProviderHand::Left && hand != provider::RockProviderHand::Right) return false;
@@ -1349,6 +1350,7 @@
             captured.skeletonGeneration != _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire) ||
             captured.providerGeneration != _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire)) return false;
         outPose = captured;
+        if (outMetadata) *outMetadata = _providerDrives.presentedMetadata;
         return true;
     }
 
@@ -1356,19 +1358,24 @@
     {
         using Flag = ::rock::provider::RockProviderPresentedHandPoseFlagV1;
         _providerDrives.presentedPoses = {};
-        _handColliderBoneSnapshot.valid = false;
+        _providerDrives.presentedMetadata = {};
+        _finalPoseBoneSnapshot.valid = false;
         if (!frik_visual_authority::isAvailable() ||
             !frik_visual_authority::isSkeletonReadyHint()) {
             return;
         }
-        auto& skeleton = _handColliderBoneSnapshot;
-        if (!_handColliderBoneReader.capture(
-                skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+        auto& skeleton = _finalPoseBoneSnapshot;
+        if (!_finalPoseBoneReader.capture(
+                skeleton_bone_debug_math::DebugSkeletonBoneMode::AllFlattenedBones,
                 skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
                 SkeletonBoneCaptureSpace::Rendered, skeleton)) {
             return;
         }
         const auto bones = _providerDrives.presentedPoseNames.bind(skeleton);
+        // Freeze the control publication paired with this capture. An early
+        // query next frame must not join an old pose to new interaction state.
+        if (!provider::runtime::apiGetFrameSnapshot(&_providerDrives.presentedMetadata) ||
+            _providerDrives.presentedMetadata.frameIndex != runtime_state::currentFrame().frameIndex) return;
         for (const bool isLeft : { false, true }) {
             auto& outPose = _providerDrives.presentedPoses[isLeft ? 1u : 0u];
             const auto* wrist = bones.find(isLeft ? "LArm_Hand" : "RArm_Hand");

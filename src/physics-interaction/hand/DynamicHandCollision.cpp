@@ -1556,6 +1556,8 @@ namespace rock
                 if (!twin.valid || !isFiniteTransform(twin.target)) {
                     return false;
                 }
+                candidate.baselineCentersInHand[linearIndex] =
+                    transform_math::worldPointToLocal(rawHandWorld, twin.target.translate);
                 candidate.closingProbeTravelInHand[linearIndex] =
                     transform_math::worldVectorToLocal(
                         rawHandWorld,
@@ -1629,6 +1631,7 @@ namespace rock
         }
 
         auto& response = handSlots.surfaceFingerResponse;
+        bool hasMeasuredFingerDepth = false;
         std::array<std::array<
                        surface_finger_collision_policy::SegmentContact,
                        surface_finger_collision_policy::kSegmentCount>,
@@ -1651,6 +1654,7 @@ namespace rock
                 }
                 const float inverseDepth =
                     1.0f / twin.contactDeviationGameUnits;
+                hasMeasuredFingerDepth = true;
                 const RE::NiPoint3 safeDirection{
                     twin.contactDeviationWorldGame.x * inverseDepth,
                     twin.contactDeviationWorldGame.y * inverseDepth,
@@ -1668,10 +1672,16 @@ namespace rock
                     transform_math::localVectorToWorld(
                         rawHandWorld,
                         response.openingProbeTravelInHand[linearIndex]);
+                const auto& applied = handTwins.fingers[finger][segment];
+                const auto baselineCenter = transform_math::localPointToWorld(
+                    rawHandWorld, response.baselineCentersInHand[linearIndex]);
+                const float achievedTravel = applied.valid ?
+                    dotPoints(applied.target.translate - baselineCenter, safeDirection) : 0.0f;
                 contacts[finger][segment] =
                     surface_finger_collision_policy::SegmentContact{
                         .blockedDepthGameUnits =
-                            twin.contactDeviationGameUnits,
+                            surface_finger_collision_policy::baselineBlockedDepth(
+                                twin.contactDeviationGameUnits, achievedTravel),
                         .closingProbeTravelGameUnits =
                             dotPoints(
                                 closingProbeTravelWorld,
@@ -1709,25 +1719,11 @@ namespace rock
         const auto previousDirections = response.lastDirections;
         response.lastDirections = solve.directions;
         const auto& targetOpenValues = anyFingerContact ?
-            solve.targetOpenValues :
+            (hasMeasuredFingerDepth ? solve.targetOpenValues : response.currentOpenValues) :
             response.baselineOpenValues;
-        constexpr std::uint32_t kFingerSlotMask =
-            ((1u << static_cast<std::uint32_t>(kFirstForearmSlot)) - 1u) &
-            ~((1u << static_cast<std::uint32_t>(
-                   dynamic_hand_collision_telemetry::kFirstFingerSlot)) - 1u);
-        const bool dynamicInteractionFingerContact =
-            ((handTelemetry.otherHandContactMask |
-                 handTelemetry.weaponContactMask) &
-                kFingerSlotMask) != 0;
-        response.currentOpenValues =
-            surface_finger_collision_policy::advanceOpenValues(
-                response.currentOpenValues,
-                targetOpenValues,
-                dynamicInteractionFingerContact ?
-                    0.0f :
-                    dynamic_hand_collision_policy::
-                        kSurfaceFingerSmoothingSpeed,
-                deltaSeconds);
+        // FRIK already eases the applied joints. A second filter here delays
+        // contact relief; publish intent and measure its actual applied pose.
+        response.currentOpenValues = targetOpenValues;
         if (response.lastDirections != previousDirections) {
             ROCK_LOG_SAMPLE_DEBUG(
                 Hand,
@@ -2403,9 +2399,10 @@ namespace rock
 
             /*
              * Palm and forearm preserve the established rigid-hand response.
-             * A fingertip also preserves that legacy path whenever anatomical
-             * flexion/extension is unavailable or would move the segment
-             * farther into the surface. Base/middle phalanxes are finger-only
+             * A helpful curl is intent, not resolved penetration. Keep the
+             * measured fingertip residual until physics observes relief from
+             * the applied joints, including at anatomical limits or while
+             * FRIK is still blending. Base/middle phalanxes are finger-only
              * probes: adding them must not multiply whole-hand pushout.
              */
             for (std::size_t bodyIndex = 0;
@@ -2417,10 +2414,7 @@ namespace rock
                 const bool rigidPrimary = bodyIndex == kPalmSlot ||
                                           bodyIndex >= kFirstForearmSlot;
                 const bool unresolvedLegacyTip =
-                    dynamic_hand_collision_telemetry::isFingerTipSlot(
-                        bodyIndex) &&
-                    (helpfulFingerSlotMask &
-                        (1u << static_cast<std::uint32_t>(bodyIndex))) == 0;
+                    dynamic_hand_collision_telemetry::isFingerTipSlot(bodyIndex);
                 deviationValid[bodyIndex] =
                     rigidPrimary || unresolvedLegacyTip;
             }

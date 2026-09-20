@@ -256,7 +256,8 @@ namespace rock
             ::rock::provider::RockProviderAuthoredGripPoseV1& outPose) const;
         bool queryProviderPresentedHandPoseV1(
             ::rock::provider::RockProviderHand hand,
-            ::rock::provider::RockProviderPresentedHandPoseV1& outPose) const;
+            ::rock::provider::RockProviderPresentedHandPoseV1& outPose,
+            ::rock::provider::RockProviderFrameSnapshot* outMetadata = nullptr) const;
         std::uint32_t copyProviderSemanticHandContactsV1(
             ::rock::provider::RockProviderHand hand,
             std::uint32_t maxFramesSinceContact,
@@ -284,6 +285,7 @@ namespace rock
          */
         void captureRenderedHands();
         void finalizeFramePose();
+        void discardUnfinishedFramePose();
         void captureProviderPresentedHandPoses();
         void traceHeldPresentationPhase(const char* phase);
         void publishDebugRenderFrame();
@@ -955,6 +957,7 @@ namespace rock
             std::uint32_t resultCount{ 0 };
             SkeletonBoneNameIndex presentedPoseNames{};
             std::array<::rock::provider::RockProviderPresentedHandPoseV1, 2> presentedPoses{};
+            ::rock::provider::RockProviderFrameSnapshot presentedMetadata{};
         };
 
         // State owned by the HandCollisionSuppression module: per-hand
@@ -1058,6 +1061,10 @@ namespace rock
         // updates. Never shared with rendered-space body or presentation reads.
         DirectSkeletonBoneReader _handColliderBoneReader;
         DirectSkeletonBoneSnapshot _handColliderBoneSnapshot;
+        // A separate cache keeps early hand-only and final full-body topology
+        // stable. API readback and both collider owners share this final copy.
+        DirectSkeletonBoneReader _finalPoseBoneReader;
+        DirectSkeletonBoneSnapshot _finalPoseBoneSnapshot;
         HandFrameResolver _handFrameResolver;
         // Last native recoil kick the FRIK recoil controller saw; a change
         // marks a frame whose rendered hand carries a composed kick.

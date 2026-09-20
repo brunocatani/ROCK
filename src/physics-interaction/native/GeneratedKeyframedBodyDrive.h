@@ -366,6 +366,7 @@ namespace rock
         bool hasPreviousTarget = false;
         bool pendingTeleport = false;
         bool hasSampledLinearVelocityHavok = false;
+        bool finalPoseSuppressed = false;
     };
 
     [[nodiscard]] inline bool hasGeneratedKeyframedBodyDriveTargetUnlocked(const GeneratedKeyframedBodyDriveState& state)
@@ -511,6 +512,11 @@ namespace rock
     };
 
     void clearGeneratedKeyframedBodyDriveState(GeneratedKeyframedBodyDriveState& state);
+    // Game thread under the callback mutation gate. Missing poses retain
+    // bodies/constraints, but suppress collision and discard all old targets.
+    void invalidateGeneratedColliderPose(RE::hknpWorld* world, BethesdaPhysicsBody& body, GeneratedKeyframedBodyDriveState& state);
+    void restoreGeneratedColliderPoseAfterDrive(RE::hknpWorld* world, BethesdaPhysicsBody& body, GeneratedKeyframedBodyDriveState& state);
+    bool releaseGeneratedColliderPoseSuppression(RE::hknpWorld* world, BethesdaPhysicsBody& body);
     void initializeGeneratedKeyframedBodyDriveState(GeneratedKeyframedBodyDriveState& state, const RE::NiTransform& target);
     GeneratedKeyframedBodyDriveQueueResult queueGeneratedKeyframedBodyTarget(
         GeneratedKeyframedBodyDriveState& state,

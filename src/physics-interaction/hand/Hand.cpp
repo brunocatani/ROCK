@@ -328,9 +328,8 @@ namespace rock
         _selectedCloseHandSpeedMetersPerSecond = 0.0f;
         _controllerReleaseHistory.clear();
         _objectReleaseHistory.clear();
+        _releaseObjectNotBefore = release_velocity::sampleTimeSeconds();
         _releaseControllerFrame = 0;
-        _lastHeldObjectLocalLinearVelocityHavok = {};
-        _hasLastHeldObjectLocalLinearVelocityHavok = false;
         _previousHeldRawHandWorld = {};
         _previousHeldHandPositionHavok = {};
         _lastHeldHandPositionHavok = {};
@@ -421,8 +420,6 @@ namespace rock
         _hasGrabFingerLocalTransforms = false;
         _grabFingerLocalTransformFinalizePending = false;
         _hasGrabFingerPose = false;
-        _lastHeldObjectLocalLinearVelocityHavok = {};
-        _hasLastHeldObjectLocalLinearVelocityHavok = false;
         _previousHeldRawHandWorld = {};
         _previousHeldHandPositionHavok = {};
         _lastHeldHandPositionHavok = {};

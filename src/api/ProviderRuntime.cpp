@@ -2646,7 +2646,7 @@ namespace rock::provider
             context.flags |= static_cast<std::uint32_t>(
                 RockProviderAnimationPhaseContextFlagV1::ConfigBlocking);
         }
-        if (runtime.visualAuthorityAvailable && runtime.localSkeletonReady &&
+        if (!s_presentedReadbackPhase && runtime.visualAuthorityAvailable && runtime.localSkeletonReady &&
             !runtime.localMenuBlocking &&
             !runtime.compatibilityConfigBlocking) {
             context.flags |= static_cast<std::uint32_t>(

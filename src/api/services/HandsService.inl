@@ -87,7 +87,8 @@
         const auto access = s_physicsInteraction.borrow();
         auto* pi = access.get();
         RockProviderPresentedHandPoseV1 pose{};
-        if (!pi || !pi->isInitialized() || !pi->queryProviderPresentedHandPoseV1(hand, pose)) {
+        RockProviderFrameSnapshot snapshot{};
+        if (!pi || !pi->isInitialized() || !pi->queryProviderPresentedHandPoseV1(hand, pose, &snapshot)) {
             return false;
         }
         const auto& providerTransform = pose.handWorld;
@@ -96,13 +97,6 @@
         }
 
         const auto requestedSize = outFrame->size;
-        RockProviderFrameSnapshot snapshot{};
-        {
-            std::scoped_lock lock(s_snapshotMutex);
-            if (s_hasSnapshot) {
-                snapshot = s_lastSnapshot;
-            }
-        }
         RockProviderHandFrameV1 frame{};
         frame.hand = hand;
         frame.flags = static_cast<std::uint32_t>(

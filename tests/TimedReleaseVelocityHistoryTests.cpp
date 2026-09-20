@@ -37,6 +37,14 @@ int main()
     }
     History<Point> history;
     assert(!history.needsSource(0));
+    assert(usablePhysicsSample(12, 10.0, 9.9, 10.01));
+    assert(!usablePhysicsSample(12, 10.0, 10.005, 10.01)); // pre-rebase solve
+    assert(!usablePhysicsSample(12, 10.0, 9.9, 10.1)); // observed too late
+    assert(!usablePhysicsSample(12, 10.0, 9.9, 9.9)); // invalid clock ordering
+    history.append(12, 10.0, {10, 0, 0});
+    history.clear();
+    assert(history.needsSource(12));
+    assert(!usablePhysicsSample(12, 10.0, 10.005, 10.01)); // clear cannot resurrect it
     history.append(1, 0.0, {});
     history.append(2, 1.0 / 90.0, {9, 0, 0});
     history.append(3, 2.0 / 90.0, {});
