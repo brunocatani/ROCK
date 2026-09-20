@@ -928,13 +928,10 @@ namespace rock
     RE::NiTransform
     TwoHandedGrip::resolveDynamicSupportAcquisitionHandTarget(
         const RE::NiTransform& targetWorld,
-        const bool primaryHand,
         LockedHandVisualLerpState& visualState)
     {
         const RE::NiTransform& startWorld =
-            primaryHand ?
-                _support.dynamicAcquisition.primaryStartWorld :
-                _support.dynamicAcquisition.supportStartWorld;
+            _support.dynamicAcquisition.supportStartWorld;
         visualState.initialized = true;
         visualState.startWorld = startWorld;
         visualState.elapsedSeconds =
@@ -1275,6 +1272,10 @@ namespace rock
             "new-two-hand-acquisition",
             true);
         resetLockedHandVisualLerp();
+        // The firing hand already occupies its seat. Only the arriving
+        // support hand acquires a pose; the firing hand rides the weapon's
+        // blend directly, without a second interpolation away from its grip.
+        _visuals.primaryHandLerp.initialized = true;
         clearPrimaryGripFingerPose(primaryHandIsLeft);
         clearPrimaryGripWorldAuthority(primaryHandIsLeft);
         /*
@@ -1332,7 +1333,8 @@ namespace rock
             /*
              * Capture and first publication are one transaction. dt=0 keeps
              * alpha exactly zero while publishing the frozen finger pose, the
-             * pivot-preserving one-hand weapon frame, and both live hand roots
+             * pivot-preserving one-hand weapon frame, the seated firing hand,
+             * and the live support hand root
              * before this update returns to PhysicsInteraction.
              */
             updateFullWeaponAuthorityGrip(weaponNode, 0.0f);
@@ -2160,7 +2162,7 @@ namespace rock
             transitionToInactive(false);
             return;
         }
-        if (usesLeftFiringCarry() && applyPrimaryHandAuthority &&
+        if (applyPrimaryHandAuthority &&
             !applyWeaponVisualAuthority(
                 weaponNode,
                 appliedWeaponWorld,
@@ -2169,9 +2171,9 @@ namespace rock
             _hasSolvedWeaponTransform = false;
             ROCK_LOG_WARN(
                 Weapon,
-                "TwoHandedGrip: clearing support grip because final left position-only weapon publication failed");
+                "TwoHandedGrip: clearing support grip because final weapon publication after hand authority failed");
             logGripFailureIncident(
-                "final-left-weapon-publication-failed");
+                "final-weapon-publication-failed");
             transitionToInactive(false);
             return;
         }

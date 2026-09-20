@@ -1073,8 +1073,10 @@ namespace rock
             std::uint64_t equippedWeaponOwnershipKey{ 0 };
             RE::NiTransform nativeBaselineLocal{};
             RE::NiTransform lastTargetLocal{};
+            RE::NiTransform firingHandWeaponLocal{};
             bool retainPrimaryPoseBlocker{ false };
             bool followsAuthoredPrimaryGrip{ false };
+            bool keepFiringHandAttached{ false };
             // The parent the left carry left the node under. FRIK restores the
             // game's parent hand in its next skeleton pass after the parent
             // request clears; until then the node legitimately hangs here.
@@ -1850,13 +1852,15 @@ namespace rock
             const WeaponPartGrip& supportGrip) const;
         RE::NiTransform resolveDynamicSupportAcquisitionHandTarget(
             const RE::NiTransform& targetWorld,
-            bool primaryHand,
             LockedHandVisualLerpState& visualState);
         void recordPublishedHandWorld(bool isLeft, const RE::NiTransform& appliedWorld);
         void beginHandVisualReturn(bool isLeft, const char* reason);
         void updateHandVisualReturns(float dt);
         void clearHandVisualReturn(bool isLeft, const char* reason, bool logCancellation);
-        void beginWeaponVisualReturn(const char* reason);
+        void beginWeaponVisualReturn(const char* reason, bool keepFiringHandAttached = false);
+        bool applyWeaponReturnVisualAuthority(
+            const ReturningWeaponVisualState& state,
+            const RE::NiTransform& weaponWorld);
         void updateWeaponVisualReturn(
             RE::NiNode* currentWeaponNode,
             std::uint64_t currentWeaponGenerationKey,

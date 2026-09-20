@@ -244,7 +244,7 @@ namespace rock
         clearHandVisualReturn(isLeft, reason, true);
     }
 
-    void TwoHandedGrip::beginWeaponVisualReturn(const char* reason)
+    void TwoHandedGrip::beginWeaponVisualReturn(const char* reason, const bool keepFiringHandAttached)
     {
         if (!hand_visual_lerp_math::kEquippedWeaponReturnEnabled ||
             _visuals.returningWeapon.localTransition.active ||
@@ -314,6 +314,12 @@ namespace rock
         returnState.lastTargetLocal = returnTargetLocal;
         returnState.retainPrimaryPoseBlocker = usesLeftFiringCarry();
         returnState.followsAuthoredPrimaryGrip = followsAuthoredPrimaryGrip;
+        returnState.keepFiringHandAttached = keepFiringHandAttached &&
+            usesNativeRightCarry() && _firing.hasPrimaryHandWeaponLocal &&
+            isFiniteTransform(_firing.primaryHandWeaponLocal);
+        if (returnState.keepFiringHandAttached) {
+            returnState.firingHandWeaponLocal = _firing.primaryHandWeaponLocal;
+        }
         returnState.carryParent = carryParent;
         returnState.localTransition.begin(startLocal);
         returnState.localTransition.durationSeconds = hand_visual_lerp_math::computeVisualReturnDuration(
@@ -324,7 +330,7 @@ namespace rock
         // The grip solver stops publishing on this release frame; the normal
         // return update has already run. Publish the initial return pose now
         // so collision authority retains its target and any latched bipod.
-        if (!applyWeaponVisualAuthority(_session.weaponNode, startWorld, _session.weaponGenerationKey)) {
+        if (!applyWeaponReturnVisualAuthority(returnState, startWorld)) {
             return;
         }
         _visuals.returningWeapon = returnState;
@@ -335,6 +341,43 @@ namespace rock
             hand_visual_lerp_math::distanceGameUnits(startLocal.translate, returnState.lastTargetLocal.translate),
             hand_visual_lerp_math::rotationDistanceDegrees(startLocal, returnState.lastTargetLocal),
             _visuals.returningWeapon.localTransition.durationSeconds);
+    }
+
+    bool TwoHandedGrip::applyWeaponReturnVisualAuthority(
+        const ReturningWeaponVisualState& state,
+        const RE::NiTransform& weaponWorld)
+    {
+        if (state.keepFiringHandAttached) {
+            const RE::NiTransform handWorld = transform_math::composeTransforms(
+                weaponWorld, state.firingHandWeaponLocal);
+            if (!isUsableHandAuthorityTransform(handWorld) ||
+                !frik_visual_authority::publishHandWorld(
+                    PRIMARY_GRIP_TAG, handFromBool(false), handWorld,
+                    GRIP_HAND_POSE_PRIORITY)) {
+                clearPrimaryGripWorldAuthority(false);
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                    "TwoHandedGrip: firing hand could not follow weapon return");
+                return false;
+            }
+            // Retain the seat through the completed return's render frame.
+            // The next authored-primary frame replaces it or clears it via
+            // finishAuthoredPrimaryFiringGripFrame when native carry resumes.
+            _firing.authoredHandWorldActive = true;
+            _firing.authoredHandWorldRefreshed = true;
+            recordScopeHandAuthorityPublication(
+                scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip, false);
+            clearHandVisualReturn(false, "firing-hand-follows-weapon-return", false);
+            recordPublishedHandWorld(false, handWorld);
+        }
+        // Either hand's synchronous arm solve can move the weapon through
+        // its parent. Publish the common weapon pose after the hand claim.
+        if (!applyWeaponVisualAuthority(state.weaponNode, weaponWorld, state.weaponGenerationKey)) {
+            if (state.keepFiringHandAttached) {
+                clearPrimaryGripWorldAuthority(false);
+            }
+            return false;
+        }
+        return true;
     }
 
     void TwoHandedGrip::updateWeaponVisualReturn(
@@ -408,15 +451,12 @@ namespace rock
             [](const RE::NiTransform& transform) {
                 return isFiniteTransform(transform);
             },
-            [this, currentWeaponNode, &state](const RE::NiTransform& transform) {
+            [this, &state](const RE::NiTransform& transform) {
                 const RE::NiTransform returnedWeaponWorld =
                     transform_math::composeTransforms(
                         state.nativeParent->world,
                         transform);
-                return applyWeaponVisualAuthority(
-                    currentWeaponNode,
-                    returnedWeaponWorld,
-                    state.weaponGenerationKey);
+                return applyWeaponReturnVisualAuthority(state, returnedWeaponWorld);
             });
         if (result.status == hand_visual_lerp_math::VisualReturnDriveStatus::InvalidTransform) {
             clearWeaponVisualReturn("non-finite-return-transform", true, true);
@@ -431,7 +471,7 @@ namespace rock
         if (result.status == hand_visual_lerp_math::VisualReturnDriveStatus::Completed) {
             const float completedDuration = result.durationSeconds;
             const bool preserveAuthoredPrimaryPose =
-                state.followsAuthoredPrimaryGrip;
+                state.followsAuthoredPrimaryGrip || state.keepFiringHandAttached;
             clearWeaponVisualReturn(
                 "completed",
                 false,
@@ -451,8 +491,12 @@ namespace rock
         const bool retainedPrimaryPoseBlocker = _visuals.returningWeapon.retainPrimaryPoseBlocker;
         const bool retainedAuthoredPrimaryPose =
             _visuals.returningWeapon.followsAuthoredPrimaryGrip;
+        const bool keptFiringHandAttached = _visuals.returningWeapon.keepFiringHandAttached;
         RE::NiNode* returnNode = _visuals.returningWeapon.weaponNode;
         _visuals.returningWeapon = {};
+        if (keptFiringHandAttached && !preserveAuthoredPrimaryPose) {
+            clearPrimaryGripWorldAuthority(false);
+        }
         if (restoreBlockers) {
             releaseFiringHandWeaponNodeOwnership(returnNode);
             if (retainedPrimaryPoseBlocker) {
@@ -679,7 +723,8 @@ namespace rock
          * Authored, provider-owned, and visual-only support paths retain their
          * independent external-hand transition. Normal dynamic full-authority
          * acquisition is intercepted by resolveDynamicSupportAcquisitionHandTarget
-         * so both hands share the pivot-preserving weapon correction alpha.
+         * so the support hand shares the weapon correction alpha. An already
+         * seated firing hand has a completed lerp and rides that weapon pose.
          */
         if (!g_rockConfig.rockWeaponSupportGripHandLerpEnabled) {
             state = {};
@@ -1052,16 +1097,7 @@ namespace rock
             returningHand.active && isUsableHandAuthorityTransform(returningHand.lastApplied) ?
             &returningHand.lastApplied :
             liveHandWorld;
-        const bool synchronizedDynamicAcquisition =
-            dynamicSupportAcquisitionMatches(
-                isSupportHandLeft(),
-                supportPartGrip());
         const RE::NiTransform appliedFiringHandWorld =
-            synchronizedDynamicAcquisition ?
-            resolveDynamicSupportAcquisitionHandTarget(
-                firingHandWorld,
-                true,
-                _visuals.primaryHandLerp) :
             resolveLockedHandVisualTarget(
                 firingHandWorld,
                 acquisitionStart,
@@ -1117,7 +1153,6 @@ namespace rock
             synchronizedDynamicAcquisition ?
             resolveDynamicSupportAcquisitionHandTarget(
                 partGripHandWorld,
-                false,
                 grip.visualLerp) :
             resolveLockedHandVisualTarget(
                 partGripHandWorld,

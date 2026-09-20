@@ -664,7 +664,7 @@ namespace rock
                     if (ownsWeaponTransform()) {
                         beginHandVisualReturn(isFiringHandLeft(), "two-hand-primary-return-to-native-carry");
                         if (usesNativeRightCarry()) {
-                            beginWeaponVisualReturn("support-released-primary-held");
+                            beginWeaponVisualReturn("support-released-primary-held", true);
                         }
                     }
                     if (usesLeftFiringCarry() && ownsWeaponTransform()) {
@@ -688,7 +688,7 @@ namespace rock
                     beginHandVisualReturn(supportHandIsLeft, "support-released");
                     beginHandVisualReturn(isFiringHandLeft(), "primary-authority-cleared");
                     if (ownsWeaponTransform()) {
-                        beginWeaponVisualReturn("support-released");
+                        beginWeaponVisualReturn("support-released", usesNativeRightCarry());
                     }
                     transitionToInactive(ownsWeaponTransform());
                 }
@@ -1029,7 +1029,9 @@ namespace rock
             isFiringHandLeft(),
             weaponReturnActive &&
                 _visuals.returningWeapon.followsAuthoredPrimaryGrip);
-        clearPrimaryGripWorldAuthority(isFiringHandLeft());
+        if (!weaponReturnActive || !_visuals.returningWeapon.keepFiringHandAttached) {
+            clearPrimaryGripWorldAuthority(isFiringHandLeft());
+        }
         clearPrimaryDetachVisualAuthority(isFiringHandLeft());
         clearSupportGripPose(true);
         clearSupportGripPose(false);

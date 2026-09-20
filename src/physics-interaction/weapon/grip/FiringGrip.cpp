@@ -386,7 +386,10 @@ namespace rock
             primaryHandIsLeft,
             _visuals.returningWeapon.localTransition.active &&
                 _visuals.returningWeapon.followsAuthoredPrimaryGrip);
-        clearPrimaryGripWorldAuthority(primaryHandIsLeft);
+        if (!_visuals.returningWeapon.localTransition.active ||
+            !_visuals.returningWeapon.keepFiringHandAttached) {
+            clearPrimaryGripWorldAuthority(primaryHandIsLeft);
+        }
         clearSupportGripPose(supportHandIsLeft);
         clearSupportGripPose(primaryHandIsLeft);
         clearPrimaryDetachVisualAuthority(primaryHandIsLeft);
