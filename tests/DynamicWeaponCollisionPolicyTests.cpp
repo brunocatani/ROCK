@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
+#include "physics-interaction/collision/ImpactAudioPolicy.h"
 
 #include <cmath>
 #include <cstdio>
@@ -47,6 +48,20 @@ namespace
 
 int main()
 {
+    using namespace rock::collision_layer_policy;
+    using rock::impact_audio_policy::muteShellPair;
+    static_assert(muteShellPair(FO4_LAYER_SHELLCASING, ROCK_LAYER_DYNAMIC_WEAPON_PROXY));
+    static_assert(muteShellPair(ROCK_LAYER_WEAPON, FO4_LAYER_SHELLCASING));
+    static_assert(muteShellPair(FO4_LAYER_SHELLCASING, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY));
+    static_assert(muteShellPair(ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, FO4_LAYER_SHELLCASING));
+    static_assert(muteShellPair(FO4_LAYER_SHELLCASING, ROCK_LAYER_HAND));
+    static_assert(muteShellPair(ROCK_LAYER_BODY, FO4_LAYER_SHELLCASING));
+    static_assert(!muteShellPair(FO4_LAYER_SHELLCASING, FO4_LAYER_STATIC));
+    static_assert(!muteShellPair(FO4_LAYER_SHELLCASING, FO4_LAYER_CLUTTER));
+    static_assert(!muteShellPair(FO4_LAYER_SHELLCASING, ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER));
+    static_assert(!muteShellPair(FO4_LAYER_SHELLCASING, ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER));
+    static_assert(!muteShellPair(ROCK_LAYER_DYNAMIC_WEAPON_PROXY, FO4_LAYER_STATIC));
+    static_assert(!muteShellPair(ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, FO4_LAYER_STATIC));
     using namespace rock::dynamic_weapon_collision_policy;
     bool ok = true;
 

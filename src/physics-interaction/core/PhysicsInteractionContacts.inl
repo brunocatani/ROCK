@@ -574,6 +574,9 @@
         }
         const bool solvedChildContact =
             manifoldPointCount > 0 && manifoldPointCount <= 4;
+        if (solvedChildContact) {
+            native_impact_audio::observeManifold(world, bodyIdA, bodyIdB, shapeKeyA, shapeKeyB);
+        }
         if (solvedChildContact && bodyAIsDynamicHand) {
             _dynamicHandCollision.recordDynamicBodyContactCallback(
                 dynamicBodySourceA,

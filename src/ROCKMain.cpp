@@ -30,6 +30,7 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/NativeRagdollSafety.h"
 #include "physics-interaction/native/NativeShapeCastSafety.h"
+#include "physics-interaction/native/NativeImpactAudio.h"
 #include "physics-interaction/native/WeaponActionTrace.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/telemetry/DynamicColliderTrace.h"
@@ -1295,6 +1296,10 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
 
     logger::info("ROCK: Allocate trampoline (2048 bytes)...");
     F4SE::AllocTrampoline(2048);
+
+    if (!rock::native_impact_audio::install()) {
+        logger::error("ROCK: Impact audio filtering is unavailable; native audio remains unchanged.");
+    }
 
     logger::info("ROCK: Install native shape-cast safety...");
     if (!rock::native_shape_cast_safety::install()) {

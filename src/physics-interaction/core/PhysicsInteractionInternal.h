@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/core/PhysicsInteraction.h"
+#include "physics-interaction/native/NativeImpactAudio.h"
 
 
 #include "api/ProviderColliderVisualizationRuntime.h"
