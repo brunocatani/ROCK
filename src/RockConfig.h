@@ -357,8 +357,6 @@ namespace rock
         float rockGrabMaxDeviationTime = 2.0f;
         float rockThrowVelocityMultiplier = 1.5f;
         bool rockGrabControllerDerivedThrowVelocityEnabled = true;
-        float rockGrabThrowObjectVelocityBlend = 0.35f;
-        float rockGrabThrowTangentialVelocityScale = 1.0f;
         float rockGrabThrowMaxVelocityHavok = 12.0f;
         float rockGrabThrowAngularVelocityScale = 1.0f;
         float rockGrabThrowMaxAngularVelocityRadiansPerSecond = 18.0f;

@@ -1,4 +1,5 @@
 #include "physics-interaction/grab/GrabMotionController.h"
+#include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabInertiaPolicy.h"
 #include "physics-interaction/grab/HeldMassMovement.h"
@@ -770,6 +771,48 @@ int main()
         computeLongObjectAngularSpeedScale(true, 200.0f, 24.0f, 0.35f),
         0.35f,
         0.001f);
+
+    {
+        using namespace rock::grab_held_response;
+        ReleaseVelocityInput<Vec3> input{
+            .hasHandLocalVelocity = true,
+            .hasObjectLocalVelocity = true,
+            .handLocalVelocityHavok = { 0.0f, 4.0f, 0.0f },
+            .objectLocalVelocityHavok = { 3.0f, 2.0f, -1.0f },
+        };
+        const auto forward = composeControllerReleaseVelocity(input);
+        ok &= expectNear("forward swing has no sideways motor drift", forward.x, 0.0f, 0.001f);
+        ok &= expectNear("forward throw uses movement speed once", forward.y, 6.0f, 0.001f);
+        ok &= expectNear("forward swing has no vertical motor drift", forward.z, 0.0f, 0.001f);
+
+        input.handLocalVelocityHavok = { -4.0f, 0.0f, 0.0f };
+        const auto sideways = composeControllerReleaseVelocity(input);
+        ok &= expectNear("sideways swing follows sideways movement", sideways.x, -6.0f, 0.001f);
+        ok &= expectNear("sideways swing ignores forward object motion", sideways.y, 0.0f, 0.001f);
+
+        input.handLocalVelocityHavok = {};
+        const auto drop = composeControllerReleaseVelocity(input);
+        ok &= expectNear("stationary hand drops without object drift", length(drop), 0.0f, 0.001f);
+        const auto spin = composeControllerReleaseAngularVelocity(ReleaseAngularVelocityInput<Vec3>{
+            .hasHandAngularVelocity = true,
+            .handAngularVelocityRadiansPerSecond = { 0.0f, 0.0f, 5.0f },
+        });
+        ok &= expectNear("wrist rotation still supplies spin", spin.z, 5.0f, 0.001f);
+
+        input.handLocalVelocityHavok = { 12.0f, 16.0f, 0.0f };
+        const auto capped = composeControllerReleaseVelocity(input);
+        ok &= expectNear("speed cap preserves movement direction x", capped.x, 7.2f, 0.001f);
+        ok &= expectNear("speed cap preserves movement direction y", capped.y, 9.6f, 0.001f);
+
+        input.hasHandLocalVelocity = false;
+        const auto objectOnly = composeControllerReleaseVelocity(input);
+        ok &= expectNear("unavailable hand retains object momentum x", objectOnly.x, 4.5f, 0.001f);
+        ok &= expectNear("unavailable hand retains object momentum y", objectOnly.y, 3.0f, 0.001f);
+        input.hasHandLocalVelocity = true;
+        input.controllerDerivedEnabled = false;
+        const auto controllerDisabled = composeControllerReleaseVelocity(input);
+        ok &= expectNear("disabled controller mode retains object momentum", controllerDisabled.x, objectOnly.x, 0.001f);
+    }
 
     const rock::held_mass_movement::Config movementConfig{};
     ok &= expectNear("held mass movement scales by mass",

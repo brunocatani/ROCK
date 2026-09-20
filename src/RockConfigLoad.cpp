@@ -38,8 +38,6 @@ namespace
     constexpr float kDefaultGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = 1.0f;
     constexpr float kMaxMouthConsumeHmdOffsetGameUnits = 120.0f;
     const RE::NiPoint3 kDefaultMouthConsumeHmdOffsetGameUnits{ 0.0f, 7.0f, -7.0f };
-    constexpr float kDefaultGrabThrowObjectVelocityBlend = 0.35f;
-    constexpr float kDefaultGrabThrowTangentialVelocityScale = 1.0f;
     constexpr float kDefaultGrabThrowMaxVelocityHavok = 12.0f;
     constexpr float kDefaultGrabThrowAngularVelocityScale = 1.0f;
     constexpr float kDefaultGrabThrowMaxAngularVelocityRadiansPerSecond = 18.0f;
@@ -1172,18 +1170,6 @@ namespace rock
         rockThrowVelocityMultiplier = static_cast<float>(ini.GetDoubleValue(SECTION, "fThrowVelocityMultiplier", rockThrowVelocityMultiplier));
         rockGrabControllerDerivedThrowVelocityEnabled =
             ini.GetBoolValue(SECTION, "bGrabControllerDerivedThrowVelocityEnabled", rockGrabControllerDerivedThrowVelocityEnabled);
-        rockGrabThrowObjectVelocityBlend =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabThrowObjectVelocityBlend", rockGrabThrowObjectVelocityBlend));
-        rockGrabThrowObjectVelocityBlend = std::clamp(
-            std::isfinite(rockGrabThrowObjectVelocityBlend) ? rockGrabThrowObjectVelocityBlend : kDefaultGrabThrowObjectVelocityBlend,
-            0.0f,
-            1.0f);
-        rockGrabThrowTangentialVelocityScale =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabThrowTangentialVelocityScale", rockGrabThrowTangentialVelocityScale));
-        rockGrabThrowTangentialVelocityScale = std::clamp(
-            std::isfinite(rockGrabThrowTangentialVelocityScale) ? rockGrabThrowTangentialVelocityScale : kDefaultGrabThrowTangentialVelocityScale,
-            0.0f,
-            2.0f);
         rockGrabThrowMaxVelocityHavok = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabThrowMaxVelocityHavok", rockGrabThrowMaxVelocityHavok));
         rockGrabThrowMaxVelocityHavok = std::clamp(
             std::isfinite(rockGrabThrowMaxVelocityHavok) ? rockGrabThrowMaxVelocityHavok : kDefaultGrabThrowMaxVelocityHavok,

@@ -15537,12 +15537,8 @@ namespace rock
             const RE::NiPoint3 handLocalReleaseVelocity = handHistory.linear;
             const RE::NiPoint3 handAngularVelocity = handHistory.angular;
 
-            RE::NiPoint3 tangentialVelocityHavok{};
-            bool hasTangentialVelocity = false;
             RE::NiPoint3 releaseLeverOriginHavok = _lastHeldHandPositionHavok;
             bool hasReleaseLeverOrigin = _hasLastHeldHandPositionHavok;
-            RE::NiPoint3 releaseCenterOfMassHavok{};
-            bool hasReleaseCenterOfMass = false;
             RE::NiTransform releaseBodyWorld{};
             bool hasReleaseBodyWorld = false;
             if (tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, releaseBodyWorld)) {
@@ -15551,32 +15547,16 @@ namespace rock
                     gamePointToHavokPoint(transform_math::localPointToWorld(releaseBodyWorld, activeProxyConstraintPivotBLocalGame()));
                 hasReleaseLeverOrigin = true;
             }
-            if (hasReleaseLeverOrigin && lengthSquared(handAngularVelocity) > 0.000001f) {
-                float comX = 0.0f;
-                float comY = 0.0f;
-                float comZ = 0.0f;
-                if (havok_runtime::getBodyCOMWorld(world, _savedObjectState.bodyId, comX, comY, comZ)) {
-                    releaseCenterOfMassHavok = RE::NiPoint3{ comX, comY, comZ };
-                    hasReleaseCenterOfMass = true;
-                    tangentialVelocityHavok = grab_held_response::computeTangentialVelocityFromAngularSwing(
-                        handAngularVelocity,
-                        releaseLeverOriginHavok,
-                        releaseCenterOfMassHavok);
-                    hasTangentialVelocity = lengthSquared(tangentialVelocityHavok) > 0.000001f;
-                }
-            }
 
+            // Both histories contain world-space movement, including player
+            // translation. Do not rotate the velocity by the hand's facing.
             const RE::NiPoint3 releaseVelocity =
                 grab_held_response::composeControllerReleaseVelocity(grab_held_response::ReleaseVelocityInput<RE::NiPoint3>{
                     .controllerDerivedEnabled = g_rockConfig.rockGrabControllerDerivedThrowVelocityEnabled,
                     .hasHandLocalVelocity = handHistory.count > 0,
                     .hasObjectLocalVelocity = objectHistory.count > 0,
-                    .hasTangentialVelocity = hasTangentialVelocity,
                     .handLocalVelocityHavok = handLocalReleaseVelocity,
                     .objectLocalVelocityHavok = objectLocalReleaseVelocity,
-                    .tangentialVelocityHavok = tangentialVelocityHavok,
-                    .objectVelocityBlend = g_rockConfig.rockGrabThrowObjectVelocityBlend,
-                    .tangentialVelocityScale = g_rockConfig.rockGrabThrowTangentialVelocityScale,
                     .throwMultiplier = g_rockConfig.rockThrowVelocityMultiplier,
                     .maxVelocityHavok = g_rockConfig.rockGrabThrowMaxVelocityHavok,
                 });
@@ -15607,16 +15587,11 @@ namespace rock
                 releaseAuthority.releaseAngularVelocityScale,
                 releaseLongObjectAngularScale);
             if ((angularAuthority.axisLimited || angularAuthority.weakPivotTwistScale < 0.999f) && hasReleaseLeverOrigin) {
-                if (!hasReleaseCenterOfMass) {
-                    float comX = 0.0f;
-                    float comY = 0.0f;
-                    float comZ = 0.0f;
-                    if (havok_runtime::getBodyCOMWorld(world, _savedObjectState.bodyId, comX, comY, comZ)) {
-                        releaseCenterOfMassHavok = RE::NiPoint3{ comX, comY, comZ };
-                        hasReleaseCenterOfMass = true;
-                    }
-                }
-                if (hasReleaseCenterOfMass) {
+                float comX = 0.0f;
+                float comY = 0.0f;
+                float comZ = 0.0f;
+                if (havok_runtime::getBodyCOMWorld(world, _savedObjectState.bodyId, comX, comY, comZ)) {
+                    const RE::NiPoint3 releaseCenterOfMassHavok{ comX, comY, comZ };
                     RE::NiPoint3 releaseContactNormalWorld{};
                     if (_grabFrame.pivotAuthority.normalTrusted && hasReleaseBodyWorld) {
                         const RE::NiTransform releaseNodeWorld =
@@ -15661,7 +15636,7 @@ namespace rock
                     _heldDriveDecision.includeConnectedAngularVelocity);
             }
             ROCK_LOG_DEBUG(Hand,
-                "{} hand RELEASE VELOCITY: applied={} driveMode={} linearScope={} angularScope={} authority={} shape={} angularScale={:.2f} angularCap={:.3f} longScale={:.2f} handLocal=({:.3f},{:.3f},{:.3f}) objectLocal=({:.3f},{:.3f},{:.3f}) tangent=({:.3f},{:.3f},{:.3f}) angularRaw=({:.3f},{:.3f},{:.3f}) angularFinal=({:.3f},{:.3f},{:.3f}) final=({:.3f},{:.3f},{:.3f}) lever=({:.3f},{:.3f},{:.3f}) objectHistory={} handHistory={} multiplier={:.2f}",
+                "{} hand RELEASE VELOCITY: applied={} driveMode={} linearScope={} angularScope={} authority={} shape={} angularScale={:.2f} angularCap={:.3f} longScale={:.2f} handLocal=({:.3f},{:.3f},{:.3f}) objectLocal=({:.3f},{:.3f},{:.3f}) angularRaw=({:.3f},{:.3f},{:.3f}) angularFinal=({:.3f},{:.3f},{:.3f}) final=({:.3f},{:.3f},{:.3f}) lever=({:.3f},{:.3f},{:.3f}) objectHistory={} handHistory={} multiplier={:.2f}",
                 handName(),
                 applyReleaseVelocity ? "yes" : "no",
                 held_object_drive_policy::modeName(_heldDriveDecision.mode),
@@ -15678,9 +15653,6 @@ namespace rock
                 objectLocalReleaseVelocity.x,
                 objectLocalReleaseVelocity.y,
                 objectLocalReleaseVelocity.z,
-                tangentialVelocityHavok.x,
-                tangentialVelocityHavok.y,
-                tangentialVelocityHavok.z,
                 handAngularVelocity.x,
                 handAngularVelocity.y,
                 handAngularVelocity.z,
