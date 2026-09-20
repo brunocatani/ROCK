@@ -3,7 +3,7 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
 #include "physics-interaction/weapon/WeaponGripTransfer.h"
 #include "physics-interaction/weapon/WeaponGripCalibration.h"
-#include "physics-interaction/weapon/LeftFiringPositionOnlyMath.h"
+#include "physics-interaction/weapon/WeaponAuthority.h"
 
 #include <array>
 #include <cmath>
