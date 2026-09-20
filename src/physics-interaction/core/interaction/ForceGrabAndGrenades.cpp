@@ -366,6 +366,20 @@ namespace rock
                 continue;
             }
 
+            if (commit.isEquippedWeaponTransfer()) {
+                // Input edges remain suppressed for this acquisition frame, but
+                // the new owner must drive and present now before the bridge exits.
+                hand.updateHeldObject(frame.hknpWorld, handInput.rawHandWorld, frame.deltaSeconds,
+                    g_rockConfig.rockGrabForceFadeInTime, g_rockConfig.rockGrabTauMin,
+                    &_bodyBoneColliders, makeGrabReleaseContext(hand, commit.isLeft),
+                    commit.isLeft ? &_rightHand : &_leftHand,
+                    &(commit.isLeft ? frame.right : frame.left).rawHandWorld);
+                if (!hand.isHolding() || hand.getHeldRef() != targetRef) {
+                    abandon("first held update rejected the transfer", provider::RockProviderInteractionFailureV1::TargetUnavailable, targetRef);
+                    continue;
+                }
+            }
+
             commit.providerResultTemplate.targetBodyId = primaryBodyId;
             commit.providerResultTemplate.state = provider::RockProviderInteractionCommandStateV1::Succeeded;
             commit.providerResultTemplate.failure = provider::RockProviderInteractionFailureV1::None;

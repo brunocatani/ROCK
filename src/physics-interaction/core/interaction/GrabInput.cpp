@@ -1615,11 +1615,44 @@ namespace rock
                     return !grabInput.released;
                 }
 
-                equipHand.captureHeldReleaseMotion(hknp, equipHandInput.rawHandWorld, frame.timing);
                 auto* heldRef = equipHand.getHeldRef();
                 vanilla_weapon_alignment_telemetry::beginTransferTrace(
                     vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip,
                     equipIsLeft, heldRef ? heldRef->GetFormID() : 0, heldRef ? heldRef->Get3D() : nullptr);
+                const auto refreshTransferHand = [&](bool left) {
+                    Hand& carryingHand = left ? _leftHand : _rightHand;
+                    const auto reference = carryingHand.getSavedObjectState().retainedRef;
+                    if (!reference || !carryingHand.isHolding()) return false;
+                    carryingHand.updateHeldObject(hknp, (left ? frame.left : frame.right).rawHandWorld,
+                        frame.deltaSeconds, g_rockConfig.rockGrabForceFadeInTime, g_rockConfig.rockGrabTauMin,
+                        &_bodyBoneColliders, makeGrabReleaseContext(carryingHand, left),
+                        left ? &_rightHand : &_leftHand, &(left ? frame.right : frame.left).rawHandWorld);
+                    if (carryingHand.isHolding() && carryingHand.getHeldRef() == reference.get()) return true;
+                    if (!carryingHand.isHolding()) {
+                        ROCK_LOG_WARN(Hand, "Held equip cancelled by current-frame hold validation: hand={} ref={:08X}",
+                            left ? "left" : "right", reference->GetFormID());
+                        releaseObject(reference.get(), claimOwnerForHand(left));
+                        dispatchPhysicsMessage(kPhysMsg_OnRelease, left, reference.get(), reference->GetFormID(), 0);
+                        dispatchSimpleGrabEvent(GrabEventType::Released, left, reference.get());
+                        clearGameplayCandidatesForHand(carryingHand, left);
+                    }
+                    return false;
+                };
+                // Equip bypasses the normal held-update branch below. Advance
+                // the outgoing presentation before pickup or bridge-local capture.
+                if (peerHoldingSameObject) {
+                    const bool leftFirst = held_scene_presentation::leftOwnsSharedAssembly();
+                    const bool firstReady = refreshTransferHand(leftFirst);
+                    const bool secondReady = refreshTransferHand(!leftFirst);
+                    if (!firstReady || !secondReady) return true;
+                } else if (!refreshTransferHand(equipIsLeft)) {
+                    return true;
+                }
+                heldRef = equipHand.getHeldRef();
+                vanilla_weapon_alignment_telemetry::recordTransferTrace(
+                    vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip,
+                    equipIsLeft, "equip-source-refreshed", heldRef ? heldRef->Get3D() : nullptr);
+                equipHand.captureHeldReleaseMotion(hknp, equipHandInput.rawHandWorld, frame.timing);
                 const auto previousEquippedWeaponFormID =
                     currentEquippedWeaponFormId();
                 const auto previousNativeInstanceNode =

@@ -1369,6 +1369,7 @@ namespace rock
         SavedObjectState _savedObjectState;
         active_grab_body_lifecycle::BodyLifecycleSnapshot _activeGrabLifecycle;
         float _grabStartTime = 0.0f;
+        std::uint64_t _heldObjectUpdateFrame = 0;
         int _heldLogCounter = 0;
         int _notifCounter = 0;
 

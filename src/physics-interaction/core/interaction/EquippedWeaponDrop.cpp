@@ -1,4 +1,5 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 
 // Shared native placement for equipped-to-loose Toggle Drop and Auto Drop.
 
@@ -398,6 +399,29 @@ namespace rock
 
         if (handoff.stage == EquippedWeaponDropHandoffStage::ResolvingBodies) {
             handoff.waitReason = "body-identity";
+            auto placementWorld = handoff.releaseWeaponWorld;
+            // Toggle Drop remains carried while native bodies are published.
+            // Place those bodies on the discovery frame's hand, not the older
+            // release frame. Auto Drop has already released and stays in world space.
+            for (const auto& commit : _forceGrab.pendingCommits) {
+                if (!commit.active || commit.targetHandle != handoff.handle ||
+                    commit.equippedWeaponDropMode != equipped_weapon_drop_policy::Mode::ToggleDrop) continue;
+                RE::NiTransform handWorld{};
+                if (!commit.weaponGripPose.valid() || !_twoHandedGrip.tryGetPhysicalHandWorld(commit.isLeft, handWorld)) {
+                    endHandoff("native-placement-hand-unavailable", true);
+                    return;
+                }
+                placementWorld = transform_math::composeTransforms(handWorld,
+                    transform_math::invertTransform(commit.weaponGripPose.placementHandWeaponLocal));
+                if (!finiteNiTransform(placementWorld)) {
+                    endHandoff("native-placement-hand-invalid", true);
+                    return;
+                }
+                vanilla_weapon_alignment_telemetry::recordTransferTrace(
+                    vanilla_weapon_alignment_telemetry::TransferKind::ToggleDrop, commit.isLeft,
+                    "native-placement-target", droppedRoot, &placementWorld);
+                break;
+            }
             std::array<EquippedWeaponDropBodySnapshot, kEquippedWeaponDropBodySnapshotCapacity>
                 capturedIdentities{};
             std::size_t sharedSystemOwners = 0;
@@ -457,7 +481,7 @@ namespace rock
                     currentRootInverse,
                     currentBodyWorld);
                 const auto targetBodyWorld = transform_math::composeTransforms(
-                    handoff.releaseWeaponWorld,
+                    placementWorld,
                     rootToBody);
                 if (!finiteNiTransform(rootToBody) ||
                     !finiteNiTransform(targetBodyWorld)) {
@@ -536,7 +560,7 @@ namespace rock
             handoff.stage = EquippedWeaponDropHandoffStage::WaitingForSettleStep;
             handoff.waitReason = "completed-physics-solve";
             ROCK_LOG_INFO(Weapon,
-                "Equipped weapon drop native bodies placed at frozen release pose; waiting one solve: dropped={:08X} scanned={} bodies={} motions={} collisionEnabled=yes solveSeq={} restarts={} sharedSystemOwners={}",
+                "Equipped weapon drop native bodies placed at handoff pose; waiting one solve: dropped={:08X} scanned={} bodies={} motions={} collisionEnabled=yes solveSeq={} restarts={} sharedSystemOwners={}",
                 handoff.droppedFormId,
                 bodySet.records.size(),
                 acceptedRecordCount,

@@ -647,8 +647,8 @@ namespace rock
         /*
          * Deferred native-drop transaction. RemoveItem can publish the ref and
          * body tree asynchronously, so ROCK first resolves exact-ref bodies,
-         * enables collision, places every native motion at the frozen visual
-         * release pose with zero velocity, and waits for one completed native
+         * enables collision, places every native motion at the mode's placement
+         * pose with zero velocity, and waits for one completed native
          * solve before the exact-reference force grab takes ownership. The
          * held-object release path owns any later throw momentum.
          */
