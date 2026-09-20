@@ -147,24 +147,25 @@ namespace
             for (const float scale : { 0.865347f, 1.0f, 1.2f }) {
                 // A change back to zero must use the untouched physical hand,
                 // never accumulate a correction on the last rendered pose.
-                for (const float pitch : { 15.0f, -30.0f, 0.0f, 15.0f }) {
+                for (const float pitch : { 0.0f, 15.0f, -45.0f, -30.0f, 0.0f, 15.0f }) {
+                    const float effectivePitch = 30.0f + pitch;
                     RE::NiTransform aim{}, base{};
                     ok &= expect("melee pitch resolves", weapon_aim_basis::tryResolveMeleeWorld(
                         hand, grip, controller, scale, pitch, aim));
                     ok &= expect("uncorrected melee resolves", weapon_aim_basis::tryResolveMeleeWorld(hand, grip, scale, base));
-                    if (pitch == 0.0f) ok &= expect("zero exactly restores original aim", samePose(aim, base));
+                    if (pitch == -30.0f) ok &= expect("minus thirty cancels the baseline and restores original aim", samePose(aim, base));
                     const auto seated = authored_weapon_grip_capture_policy::resolveAuthoredPrimaryWeaponWorldPositionOnly(
                         aim, gripPoint, palm, [](const auto& t, const auto& p) { return transform_math::localPointToWorld(t, p); });
                     const auto presentedHand = transform_math::composeTransforms(seated, grip);
                     ok &= expect("pitch pins both weapon grip and presented palm",
                         weaponSolverLength(weaponSolverSub(transform_math::localPointToWorld(seated, gripPoint), palm)) < 0.002f &&
                         weaponSolverLength(weaponSolverSub(transform_math::localPointToWorld(presentedHand, palmInHand), palm)) < 0.002f);
-                    ok &= expect("hand and weapon rotate together by the requested angle",
-                        std::fabs(hand_visual_lerp_math::rotationDistanceDegrees(hand, presentedHand) - std::fabs(pitch)) < 0.05f &&
+                    ok &= expect("hand and weapon rotate together by thirty degrees plus the adjustment",
+                        std::fabs(hand_visual_lerp_math::rotationDistanceDegrees(hand, presentedHand) - std::fabs(effectivePitch)) < 0.05f &&
                         seated.scale == scale);
                     const auto direction = transform_math::rotateWorldVectorToLocal(controller.rotate,
                         transform_math::rotateLocalVectorToWorld(seated.rotate, upInWeapon));
-                    const float radians = pitch * 0.017453292519943295769f;
+                    const float radians = effectivePitch * 0.017453292519943295769f;
                     ok &= expect("forward tilt follows controller orientation",
                         near(direction.x, 0.0f) && near(direction.y, std::cos(radians)) && near(direction.z, -std::sin(radians)));
 

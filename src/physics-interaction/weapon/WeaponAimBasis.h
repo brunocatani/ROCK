@@ -7,13 +7,15 @@
 
 namespace rock::weapon_aim_basis
 {
-    // Controller-local pitch, shared by both physical hands. Positive tilts
-    // controller +Y toward forward -Z. This is orientation only: every caller
+    inline constexpr float kMeleeBasePitchDegrees = 30.0f;
+
+    // Controller-local pitch, shared by both physical hands. Zero adjustment
+    // keeps the calibrated 30-degree forward tilt (+Y toward -Z). Every caller
     // seats the authored grip on the unchanged physical palm afterwards.
-    [[nodiscard]] inline RE::NiTransform meleePitchInController(const float degrees) noexcept
+    [[nodiscard]] inline RE::NiTransform meleePitchInController(const float adjustmentDegrees) noexcept
     {
         auto result = transform_math::makeIdentityTransform<RE::NiTransform>();
-        const float radians = degrees * 0.017453292519943295769f;
+        const float radians = (kMeleeBasePitchDegrees + adjustmentDegrees) * 0.017453292519943295769f;
         const float cosine = std::cos(radians);
         const float sine = std::sin(radians);
         result.rotate.entry[1][1] = result.rotate.entry[2][2] = cosine;
@@ -103,15 +105,15 @@ namespace rock::weapon_aim_basis
         const RE::NiTransform& authoredHandWeaponLocal,
         const RE::NiTransform& controllerWorld,
         const float weaponScale,
-        const float pitchDegrees,
+        const float pitchAdjustmentDegrees,
         RE::NiTransform& result) noexcept
     {
-        if (!std::isfinite(pitchDegrees) ||
+        if (!std::isfinite(pitchAdjustmentDegrees) ||
             !tryResolveMeleeWorld(physicalHandWorld, authoredHandWeaponLocal, weaponScale, result)) {
             result = {};
             return false;
         }
-        if (pitchDegrees == 0.0f) return true;
+        if (pitchAdjustmentDegrees == -kMeleeBasePitchDegrees) return true;
         for (int row = 0; row < 3; ++row) {
             for (int column = 0; column < 3; ++column) {
                 if (!std::isfinite(controllerWorld.rotate.entry[row][column])) {
@@ -129,7 +131,7 @@ namespace rock::weapon_aim_basis
         const auto inController = transform_math::composeTransforms(
             transform_math::invertTransform(controller), aim);
         result.rotate = transform_math::composeTransforms(controller,
-            transform_math::composeTransforms(meleePitchInController(pitchDegrees), inController)).rotate;
+            transform_math::composeTransforms(meleePitchInController(pitchAdjustmentDegrees), inController)).rotate;
         return true;
     }
 }
