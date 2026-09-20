@@ -2046,6 +2046,8 @@ namespace rock
                 !_equipped.pendingPrimaryOnlyGripStart.pairedGrips.valid() && !pairedSupportOwned) {
                 _equipped.transition.completeHandPoseHandoff("paired-transfer-ended");
             } else if (_twoHandedGrip.hasPublishedAuthoredPrimaryFiringGripFingerPose(handoffHandIsLeft) &&
+                _twoHandedGrip.hasVisualAuthorityForHand(handoffHandIsLeft) &&
+                !_twoHandedGrip.isHandVisualReturnActive(handoffHandIsLeft) &&
                 (!_equipped.transition.hasPairedHandPoseHandoff() || pairedSupportOwned)) {
                 _equipped.transition.completeHandPoseHandoff("equipped-authored-pose-acquired");
             }

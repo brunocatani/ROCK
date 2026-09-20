@@ -1649,6 +1649,20 @@ namespace rock
                     return true;
                 }
                 heldRef = equipHand.getHeldRef();
+                weapon_grip_transfer::HandGrip singleGrip{};
+                RE::NiTransform looseHandWorld{};
+                if (!pairedGrips.valid() && equipHand.captureWeaponGripTransfer(singleGrip)) {
+                    // Preserve the wrist actually presented by the loose grab,
+                    // including a saved/altered hold, before release clears its tag.
+                    if (heldRef && heldRef->Get3D() &&
+                        frik_hand_world_authority::tryGetPublishedHandWorld(equipIsLeft, looseHandWorld)) {
+                        singleGrip.handWeaponLocal = transform_math::composeTransforms(
+                            transform_math::invertTransform(heldRef->Get3D()->world), looseHandWorld);
+                        if (!singleGrip.valid()) singleGrip = {};
+                    } else {
+                        singleGrip = {};
+                    }
+                }
                 vanilla_weapon_alignment_telemetry::recordTransferTrace(
                     vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip,
                     equipIsLeft, "equip-source-refreshed", heldRef ? heldRef->Get3D() : nullptr);
@@ -1724,12 +1738,17 @@ namespace rock
                         .weaponFormID = equipResult.weapon ? equipResult.weapon->formID : equipResult.observedEquippedFormID,
                         .isLeftHand = equipIsLeft,
                         .pairedGrips = pairedGrips.valid() ? &pairedGrips : nullptr,
+                        .singleGrip = singleGrip.valid() ? &singleGrip : nullptr,
                         .weapon = equipResult.weapon,
                         .hasFiringHandWeaponLocal = pendingGripStart.hasFiringHandWeaponLocal,
                         .firingHandWeaponLocal = pendingGripStart.firingHandWeaponLocal,
                         .timeoutSeconds = _equipped.handlingSettings.equipVisualBridgeTimeoutSeconds,
                         .blendSeconds = _equipped.handlingSettings.equipVisualBridgeBlendSeconds,
                     });
+                    if (equipBridgeStarted && _equipped.transition.hasCapturedHandPoseHandoff()) {
+                        equipHand.cancelGrabVisualReturn("equip-pose-handoff");
+                        if (pairedGrips.valid()) supportHand.cancelGrabVisualReturn("paired-equip-pose-handoff");
+                    }
                 }
                 if (heldFormID == 0 && equipResult.formID != 0) {
                     heldFormID = equipResult.formID;

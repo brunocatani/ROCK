@@ -41,7 +41,8 @@ namespace rock
      * scene references and pose authority.
      *
      * Blend target. begin() re-runs the shared loose-grip identity resolver
-     * to recover the authored firing point and hand-pose payload. The retained
+     * to recover the authored firing point. A captured loose wrist/finger pose
+     * stays bound to the model until the equipped hand owns both; the retained
      * loose model already carries the separate position-only placement hold;
      * update() uses ROCK's controller aim or the solved left carry and
      * translates only the authored firing point. A first-ever weapon never borrows another
@@ -65,6 +66,8 @@ namespace rock
             std::uint32_t weaponFormID = 0;
             bool isLeftHand = false;
             const weapon_grip_transfer::Pair* pairedGrips = nullptr; // Copied by begin().
+            // Current loose wrist/fingers, captured before releasing hand authority.
+            const weapon_grip_transfer::HandGrip* singleGrip = nullptr;
             // Weapon base form for the shared loose-grip authority resolver;
             // the captured worldModel supplies the matching stock variant.
             RE::TESObjectWEAP* weapon = nullptr;
@@ -141,7 +144,11 @@ namespace rock
         [[nodiscard]] bool ownsNativeInstanceCull(const RE::NiAVObject* node) const noexcept;
         [[nodiscard]] bool isHandPoseHandoffActive() const noexcept { return _handPoseHandoffActive; }
         [[nodiscard]] bool handPoseHandoffIsLeft() const noexcept { return _isLeftHand; }
-        [[nodiscard]] bool hasPairedHandPoseHandoff() const noexcept { return _pairedGrips.valid(); }
+        [[nodiscard]] bool hasPairedHandPoseHandoff() const noexcept { return _capturedGrips.valid(); }
+        [[nodiscard]] bool hasCapturedHandPoseHandoff() const noexcept
+        {
+            return _handPoseHandoffActive && _capturedGrips.primary.valid();
+        }
         [[nodiscard]] std::uint32_t weaponBaseFormID() const noexcept { return _weaponFormID; }
 
         // Called only after the equipped exact-pose publisher has positively
@@ -154,7 +161,7 @@ namespace rock
         // the model is still parented or the world root is unavailable.
         bool tryAttachToWorldRoot();
         bool publishHandPoseHandoff();
-        bool publishPairedHandWorld(RE::NiAVObject* model, bool equippedModel);
+        bool publishCapturedHandWorld(RE::NiAVObject* model, bool equippedModel);
         void synchronizeNativeInstanceCull(
             const equipped_weapon_visual_state::Snapshot* nativeVisual,
             bool bridgePresented);
@@ -166,7 +173,8 @@ namespace rock
             float deltaSeconds,
             bool presentedForLogging);
 
-        weapon_grip_transfer::Pair _pairedGrips{};
+        // Primary may be valid on its own; Pair::valid() still means two hands.
+        weapon_grip_transfer::Pair _capturedGrips{};
         bool _pairedSupportBlockEngaged = false;
         RE::NiPointer<RE::NiAVObject> _model;
         RE::NiPointer<RE::NiAVObject> _culledNativeInstance;
@@ -197,7 +205,6 @@ namespace rock
         bool _isLeftHand = false;
         bool _modelPresented = false;
         bool _culledNativeInstanceWasVisible = false;
-        bool _handPosePayloadAvailable = false;
         bool _handPoseHandoffActive = false;
         bool _handPoseBlockEngaged = false;
         bool _nativeCarrierTraceLogged = false;
