@@ -220,7 +220,7 @@ namespace rock::tracked_hand_isolation_policy
      * as a transpose here and rendered again next frame squares the drift
      * every frame until the hand stretches and flies off.
      */
-    [[nodiscard]] inline FrameResult resolveFrame(RelationState& state, const FrameInput& rawInput) noexcept
+    [[nodiscard]] inline FrameResult resolveFrame(RelationState& state, const FrameInput& rawInput, bool measureProbe = true) noexcept
     {
         FrameInput input = rawInput;
         input.firstPersonHandWorld = transform_math::orthonormalizedTransform(rawInput.firstPersonHandWorld);
@@ -244,7 +244,7 @@ namespace rock::tracked_hand_isolation_policy
                 (void)calibrateRelation(state, input.firstPersonHandWorld, input.bodyHandNodeWorld);
             }
             RE::NiTransform reconstructed{};
-            if (result.valid && reconstruct(state, input, reconstructed)) {
+            if (measureProbe && result.valid && reconstruct(state, input, reconstructed)) {
                 result.probeValid = true;
                 result.probeTranslationGameUnits = translationGameUnits(reconstructed, input.flattenedHandWorld);
                 result.probeRotationDegrees = rotationDegrees(reconstructed, input.flattenedHandWorld);
@@ -258,9 +258,9 @@ namespace rock::tracked_hand_isolation_policy
             return result;
         }
         if (input.flattenedHandValid && isFiniteTransform(input.flattenedHandWorld)) {
-            result.rawHandWorld = input.flattenedHandWorld;
+            // Keep the diagnostic provenance, but never admit our own claimed
+            // output as controller input when reconstruction is unavailable.
             result.source = RawHandSource::FlattenedContaminated;
-            result.valid = true;
         }
         return result;
     }

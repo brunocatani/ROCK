@@ -66,6 +66,8 @@ namespace rock::performance_profiler
         GrabNearbyDampingRestoreBodySearch,
         FramePrelude,
         FrameBeginPreparation,
+        WeaponPresentation,
+        FinalPresentation,
         HandFrameResolve,
         HandBoneCapture,
         BodyBoneCapture,
@@ -190,18 +192,4 @@ namespace rock::performance_profiler
         Scope _parentScope{ Scope::UnattributedMemoryQueries };
     };
 
-    class FrameScope
-    {
-    public:
-        FrameScope() noexcept;
-        ~FrameScope();
-
-        FrameScope(const FrameScope&) = delete;
-        FrameScope& operator=(const FrameScope&) = delete;
-        FrameScope(FrameScope&&) = delete;
-        FrameScope& operator=(FrameScope&&) = delete;
-
-    private:
-        ScopedTimer _timer;
-    };
 }

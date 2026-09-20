@@ -84,14 +84,13 @@
             return false;
         }
 
-        RE::NiTransform presentedWorld{};
-        if (!frik_visual_authority::tryGetPresentedHandWorldTransform(
-                hand == RockProviderHand::Left,
-                presentedWorld)) {
+        const auto access = s_physicsInteraction.borrow();
+        auto* pi = access.get();
+        RockProviderPresentedHandPoseV1 pose{};
+        if (!pi || !pi->isInitialized() || !pi->queryProviderPresentedHandPoseV1(hand, pose)) {
             return false;
         }
-        const auto providerTransform =
-            toProviderTransform(presentedWorld);
+        const auto& providerTransform = pose.handWorld;
         if (!finiteProviderTransform(providerTransform)) {
             return false;
         }
@@ -125,10 +124,10 @@
         frame.transform = providerTransform;
         frame.state = hand == RockProviderHand::Left ? snapshot.leftHandState : snapshot.rightHandState;
         frame.bodyId = hand == RockProviderHand::Left ? snapshot.leftHandBodyId : snapshot.rightHandBodyId;
-        frame.frameIndex = snapshot.frameIndex;
-        frame.worldGeneration = snapshot.worldGeneration;
-        frame.skeletonGeneration = snapshot.skeletonGeneration;
-        frame.providerGeneration = snapshot.providerGeneration;
+        frame.frameIndex = pose.frameIndex;
+        frame.worldGeneration = pose.worldGeneration;
+        frame.skeletonGeneration = pose.skeletonGeneration;
+        frame.providerGeneration = pose.providerGeneration;
         frame.collisionGeneration = snapshot.collisionGeneration;
         frame.stateSequence = snapshot.stateSequence;
         const auto copySize = (std::min<std::size_t>)(
@@ -156,10 +155,5 @@
                 return pi.queryProviderPresentedHandPoseV1(hand, pose);
             },
             true);
-        if (result == RockProviderResultV1::Ok) {
-            outPose->frameIndex = currentGameFrameIndex();
-            outPose->presentationSequence =
-                s_activeAnimationPhaseFrameIndex.load(std::memory_order_acquire);
-        }
         return result;
     }

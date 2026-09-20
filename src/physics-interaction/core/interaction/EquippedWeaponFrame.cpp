@@ -260,14 +260,14 @@ namespace rock
         if (rightPartGripActive) {
             suppressHandCollisionForWeaponSupport(hknp, false);
         }
-        logPalmClockSampleForHand("game-after-hand-collider-queue",
+        logPalmClockSampleForHand("game-after-hand-collider-prepare",
             _rightHand,
             hknp,
             frame.right.disabled ? nullptr : &frame.right.rawHandWorld,
             runtime.frameIndex,
             frame.deltaSeconds,
             nullptr);
-        logPalmClockSampleForHand("game-after-hand-collider-queue",
+        logPalmClockSampleForHand("game-after-hand-collider-prepare",
             _leftHand,
             hknp,
             frame.left.disabled ? nullptr : &frame.left.rawHandWorld,
@@ -1742,15 +1742,7 @@ namespace rock
                         dynamicWeaponFrame.rotationCorrectionDegrees);
                 }
             }
-            if (weaponNode) {
-                performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponCollisionTransforms);
-                _weaponCollision.updateBodiesFromCurrentSourceTransforms(
-                    hknp,
-                    weaponNode,
-                    frame.deltaSeconds,
-                    drivenSourceNodes.data(),
-                    drivenSourceNodeCount);
-            }
+            // Final source transforms are queued after all animation/FRIK writers.
             if (f4vr::isNodeVisible(weaponNode)) {
                 applyFinalWeaponMuzzleAuthority();
             }

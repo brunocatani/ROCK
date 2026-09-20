@@ -93,6 +93,50 @@ namespace rock
         }
     }
 
+    void PhysicsInteraction::finalizeFramePose()
+    {
+        const auto& runtime = runtime_state::currentFrame();
+        const auto sourceFrame = std::exchange(_frame.poseFrameIndex, 0);
+        if (sourceFrame == 0 || sourceFrame != runtime.frameIndex ||
+            !_lifecycle.initialized.load(std::memory_order_acquire) || !runtime.localSkeletonReady ||
+            runtime.localMenuBlocking || runtime.compatibilityConfigBlocking) return;
+        auto* bhk = getPlayerBhkWorld();
+        auto* world = bhk ? getHknpWorld(bhk) : nullptr;
+        if (!bhk || bhk != _lifecycle.cachedBhkWorld || !world || world != _lifecycle.cachedHknpWorld ||
+            !physicsWritesAllowedForWorld(world)) return;
+
+        // No native callback can consume half of this final pose publication.
+        // The existing mutation gate resumes on every exit, including faults.
+        {
+            auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
+            auto frame = buildFrameContext(bhk, world);
+            const bool bodyPoseValid = _bodyBoneColliders.finalizePose(world, frame.deltaSeconds);
+            // Presented poses already copied this final array. Transport that
+            // same snapshot once; do not reread or blend animation phases.
+            const bool handPoseValid = transportControllerHands(_handColliderBoneSnapshot);
+            for (const bool isLeft : { false, true }) {
+                auto& input = isLeft ? frame.left : frame.right;
+                auto& hand = isLeft ? _leftHand : _rightHand;
+                if (!handPoseValid || (!input.disabled && !hand.finalizeCollisionPose(world, input.rawHandWorld,
+                        frame.deltaSeconds, _handColliderBoneSnapshot))) input.disabled = true;
+            }
+            if (!bodyPoseValid) { frame.right.disabled = true; frame.left.disabled = true; }
+            if (!bodyPoseValid || !handPoseValid) {
+                ROCK_LOG_SAMPLE_WARN(Hand, 2000,
+                    "Final collision pose unavailable frame={} body={} hands={}; invalid targets were not published",
+                    runtime.frameIndex, bodyPoseValid, handPoseValid);
+            }
+            _dynamicHandCollision.finalizePose(frame, _rightHand, _leftHand, _bodyBoneColliders);
+            if (auto* weapon = resolveEquippedWeaponInteractionNode()) {
+                performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponCollisionTransforms);
+                _weaponCollision.updateBodiesFromCurrentSourceTransforms(world, weapon, frame.deltaSeconds, nullptr, 0);
+                _dynamicWeaponCollision.finalizeCompoundPose(_weaponCollision, weapon,
+                    frame, _weaponCollision.getCurrentWeaponGenerationKey());
+            }
+        }
+        _generatedBodyStepDrive.registerForNextStep(bhk, world);
+    }
+
     void PhysicsInteraction::traceHeldPresentationPhase(const char* phase)
     {
         const auto& runtime = runtime_state::currentFrame();
@@ -342,7 +386,6 @@ namespace rock
 
     void PhysicsInteraction::finalizeInteractionFrame(
         const PhysicsFrameContext& frame,
-        RE::bhkWorld* bhk,
         RE::hknpWorld* hknp,
         const EquippedWeaponFrameResult& equippedWeaponFrame)
     {
@@ -515,9 +558,9 @@ namespace rock
 
         updateNativeGrenadeCollisionSuppression(hknp, 0.0f);
         ::rock::provider::dispatchFrameCallbacks(*this);
-        // Publish callback ownership only after every main-thread collider
-        // mutation and target update for this frame has committed.
-        _generatedBodyStepDrive.registerForNextStep(bhk, hknp);
+        // Final pose publication consumes this completed decision frame and
+        // registers the callback only after all collider targets are committed.
+        _frame.poseFrameIndex = frame.timing.sequence;
     }
 
     void PhysicsInteraction::update()
@@ -526,6 +569,7 @@ namespace rock
             cancelBareFistMode("interaction-frame-interrupted");
         });
         _frame.debugOverlayFrameIndex = 0;
+        _frame.poseFrameIndex = 0;
         ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
 
         _equipped.shoulderGestureConsumedThisFrame = {};
@@ -944,7 +988,7 @@ namespace rock
         }
 
         const auto equippedWeaponFrame = updateEquippedWeaponFrame(frame, bhk, hknp);
-        finalizeInteractionFrame(frame, bhk, hknp, equippedWeaponFrame);
+        finalizeInteractionFrame(frame, hknp, equippedWeaponFrame);
         if (input_remap_runtime::ownsBareFistInput() && !bareFistHandsAvailable(frame)) {
             cancelBareFistMode("hand-owner-changed");
         }

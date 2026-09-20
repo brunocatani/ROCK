@@ -83,6 +83,8 @@ namespace rock
             bool rightVisualReturnActive,
             bool leftVisualReturnActive);
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
+        void finalizePose(const PhysicsFrameContext& frame, const Hand& rightHand,
+            const Hand& leftHand, const BodyBoneColliderSet& bodyBoneColliders);
         /*
          * Post-solve deviation sampling (physics step thread, after-solve
          * phase). Two-stage measurement against the SAME substep's targets:
@@ -383,6 +385,7 @@ namespace rock
             // Diagnostics only. Peer ID/kind is one atomic witness, not ownership.
             std::atomic<std::uint64_t> tracePeer{ 0x7FFF'FFFFu };
             std::uint64_t traceQueuedSequence = 0; // game thread
+            std::uint64_t poseFrame = 0; // Early decision awaiting final articulation.
             std::uint64_t traceSourceSequence = 0; // physics thread
             std::uint64_t traceSourceJumpCount = 0;
             std::uint64_t traceDivergenceCount = 0;

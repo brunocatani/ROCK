@@ -765,21 +765,16 @@ namespace
      * so provider consumers keep receiving frames and leases keep expiring
      * across loading screens and skeleton rebuilds. BeforeRock, ROCK update,
      * AfterRock, Complete and this frame's provider publication share the one
-     * game-frame timing snapshot taken at FrameBegin. The profiler frame
-     * measures this tick; FrameBeginPreparation and FramePrelude are the
-     * phases outside it.
+     * game-frame timing snapshot taken at FrameBegin. FrameUpdate measures
+     * this control tick; preparation and final presentation have separate
+     * timers, and FrameEnd closes the combined reporting interval.
      */
     void runFrameTick(const bool withSkeletonPhysics)
     {
         s_providerTickedThisFrame = true;
         const auto& frameTiming = game_timing::currentFrameTiming();
 
-        performance_profiler::refreshSettings(
-            g_rockConfig.rockPerformanceProfilerEnabled,
-            g_rockConfig.rockPerformanceProfilerLogIntervalFrames,
-            g_rockConfig.rockPerformanceProfilerWarmupFrames,
-            g_rockConfig.rockPerformanceProfilerOverlayText);
-        performance_profiler::FrameScope profilerFrame;
+        performance_profiler::ScopedTimer profilerTick(performance_profiler::Scope::FrameUpdate);
 
         rock::provider::refreshNativeAnimationAuthorityLeasesV1();
         rock::provider::dispatchAnimationPhaseCallbacksV1(
@@ -819,8 +814,6 @@ namespace
         }
         if (s_physicsInteraction) {
             s_physicsInteraction->traceHeldPresentationPhase("after-rock");
-            s_physicsInteraction->publishGripZoneIndicatorRenderFrame(
-                runtime_state::currentFrame().frameIndex);
         }
         scope_transition_telemetry::capture(scope_transition_telemetry::Phase::AfterRock, s_schedulerSequence);
         vanilla_weapon_alignment_telemetry::capture(
@@ -834,6 +827,12 @@ namespace
      */
     void onFrikFrameBegin()
     {
+        performance_profiler::refreshSettings(
+            g_rockConfig.rockPerformanceProfilerEnabled,
+            g_rockConfig.rockPerformanceProfilerLogIntervalFrames,
+            g_rockConfig.rockPerformanceProfilerWarmupFrames,
+            g_rockConfig.rockPerformanceProfilerOverlayText);
+        performance_profiler::beginFrame();
         performance_profiler::ScopedTimer frameBeginTimer(performance_profiler::Scope::FrameBeginPreparation);
         s_schedulerSequence = nextFrameSequence(s_schedulerSequence);
         s_providerTickedThisFrame = false;
@@ -869,6 +868,7 @@ namespace
         if (!s_providerTickedThisFrame) {
             runFrameTick(false);
         }
+        performance_profiler::endFrame();
     }
 
     /*
@@ -917,6 +917,7 @@ namespace
      */
     void onFrikAfterWeaponPosition()
     {
+        performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponPresentation);
         if (s_skeletonTickedThisFrame && s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->syncFrikOffHandGripReport();
             s_physicsInteraction->normalizeWeaponPresentationScaleAfterFrikWeaponPass();
@@ -927,8 +928,16 @@ namespace
     // AfterWorldFinal: every bone world transform is final. Latch what was rendered.
     void onFrikAfterWorldFinal()
     {
+        performance_profiler::ScopedTimer timer(performance_profiler::Scope::FinalPresentation);
         if (s_skeletonTickedThisFrame && s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->captureRenderedHands();
+            s_physicsInteraction->captureProviderPresentedHandPoses();
+            s_physicsInteraction->finalizeFramePose();
+            rock::provider::dispatchAnimationPhaseCallbacksV1(
+                rock::provider::RockProviderAnimationPhaseV1::Presented,
+                game_timing::currentFrameTiming());
+            if (!s_physicsInteraction) return;
+            s_physicsInteraction->publishGripZoneIndicatorRenderFrame(runtime_state::currentFrame().frameIndex);
             s_physicsInteraction->traceHeldPresentationPhase("after-world-final");
             s_physicsInteraction->publishDebugRenderFrame();
             dynamic_collider_trace::capturePresentedHands(runtime_state::currentFrame().frameIndex);

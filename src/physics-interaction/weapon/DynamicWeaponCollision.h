@@ -154,6 +154,8 @@ namespace rock
             const havok_physics_timing::PhysicsTimingSample& timing);
         void samplePostSolve(RE::hknpWorld* world, std::uint64_t solveSequence,
             const havok_physics_timing::PhysicsTimingSample& timing);
+        void finalizeCompoundPose(const WeaponCollision& weaponCollision, RE::NiNode* weaponNode,
+            const PhysicsFrameContext& frame, std::uint64_t generation);
         // Game-thread witness after the final claimed-hand presentation.
         void tracePresentedWeapon(RE::NiNode* weaponNode, std::uint64_t frameIndex);
 

@@ -1341,75 +1341,90 @@
         const ::rock::provider::RockProviderHand hand,
         ::rock::provider::RockProviderPresentedHandPoseV1& outPose) const
     {
-        using Flag = ::rock::provider::RockProviderPresentedHandPoseFlagV1;
         outPose = {};
-        const bool isLeft =
-            hand == ::rock::provider::RockProviderHand::Left;
+        if (hand != provider::RockProviderHand::Left && hand != provider::RockProviderHand::Right) return false;
+        const auto& captured = _providerDrives.presentedPoses[hand == provider::RockProviderHand::Left ? 1u : 0u];
+        if (!frik_visual_authority::isSkeletonReadyHint() || captured.frameIndex == 0 ||
+            captured.worldGeneration != _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire) ||
+            captured.skeletonGeneration != _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire) ||
+            captured.providerGeneration != _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire)) return false;
+        outPose = captured;
+        return true;
+    }
+
+    void PhysicsInteraction::captureProviderPresentedHandPoses()
+    {
+        using Flag = ::rock::provider::RockProviderPresentedHandPoseFlagV1;
+        _providerDrives.presentedPoses = {};
+        _handColliderBoneSnapshot.valid = false;
         if (!frik_visual_authority::isAvailable() ||
             !frik_visual_authority::isSkeletonReadyHint()) {
-            return false;
+            return;
         }
-        RE::NiTransform handWorld{};
-        if (!frik_visual_authority::tryGetPresentedHandWorldTransform(isLeft, handWorld) ||
-            !finiteNiTransform(handWorld)) {
-            return false;
-        }
-        outPose.hand = hand;
-        outPose.flags =
-            static_cast<std::uint32_t>(Flag::Valid) |
-            static_cast<std::uint32_t>(Flag::HandWorldValid);
-        fillProviderTransform(handWorld, outPose.handWorld);
-
-        auto& skeleton = _providerDrives.presentedPoseSnapshot;
-        if (_providerDrives.presentedPoseReader.capture(
+        auto& skeleton = _handColliderBoneSnapshot;
+        if (!_handColliderBoneReader.capture(
                 skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                 skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
-                SkeletonBoneCaptureSpace::Rendered,
-                skeleton)) {
-            const auto bones = _providerDrives.presentedPoseNames.bind(skeleton);
-            for (std::size_t finger = 0; finger < 5; ++finger) {
-                for (std::size_t segment = 0; segment < 3; ++segment) {
-                    const auto poseIndex = finger * 3 + segment;
-                    const auto* bone = bones.find(
-                        root_flattened_finger_skeleton_runtime::fingerBoneName(
-                            isLeft,
-                            finger,
-                            segment));
-                    if (!bone || bone->drawableParentSnapshotIndex < 0 ||
-                        static_cast<std::size_t>(
-                            bone->drawableParentSnapshotIndex) >=
-                            skeleton.bones.size()) {
-                        continue;
+                SkeletonBoneCaptureSpace::Rendered, skeleton)) {
+            return;
+        }
+        const auto bones = _providerDrives.presentedPoseNames.bind(skeleton);
+        for (const bool isLeft : { false, true }) {
+            auto& outPose = _providerDrives.presentedPoses[isLeft ? 1u : 0u];
+            const auto* wrist = bones.find(isLeft ? "LArm_Hand" : "RArm_Hand");
+            if (!wrist || !finiteNiTransform(wrist->world)) continue;
+            outPose.hand = isLeft ? provider::RockProviderHand::Left : provider::RockProviderHand::Right;
+            outPose.flags =
+                static_cast<std::uint32_t>(Flag::Valid) |
+                static_cast<std::uint32_t>(Flag::HandWorldValid);
+            fillProviderTransform(wrist->world, outPose.handWorld);
+
+            {
+                for (std::size_t finger = 0; finger < 5; ++finger) {
+                    for (std::size_t segment = 0; segment < 3; ++segment) {
+                        const auto poseIndex = finger * 3 + segment;
+                        const auto* bone = bones.find(
+                            root_flattened_finger_skeleton_runtime::fingerBoneName(
+                                isLeft,
+                                finger,
+                                segment));
+                        if (!bone || bone->drawableParentSnapshotIndex < 0 ||
+                            static_cast<std::size_t>(
+                                bone->drawableParentSnapshotIndex) >=
+                                skeleton.bones.size()) {
+                            continue;
+                        }
+                        const auto& parent = skeleton.bones[
+                            static_cast<std::size_t>(
+                                bone->drawableParentSnapshotIndex)];
+                        const auto local = transform_math::composeTransforms(
+                            transform_math::invertTransform(parent.world),
+                            bone->world);
+                        if (!finiteNiTransform(local)) {
+                            continue;
+                        }
+                        fillProviderTransform(
+                            local,
+                            outPose.fingerLocalTransforms[poseIndex]);
+                        outPose.fingerLocalTransformMask |=
+                            static_cast<std::uint16_t>(1u << poseIndex);
                     }
-                    const auto& parent = skeleton.bones[
-                        static_cast<std::size_t>(
-                            bone->drawableParentSnapshotIndex)];
-                    const auto local = transform_math::composeTransforms(
-                        transform_math::invertTransform(parent.world),
-                        bone->world);
-                    if (!finiteNiTransform(local)) {
-                        continue;
-                    }
-                    fillProviderTransform(
-                        local,
-                        outPose.fingerLocalTransforms[poseIndex]);
-                    outPose.fingerLocalTransformMask |=
-                        static_cast<std::uint16_t>(1u << poseIndex);
+                }
+                if (outPose.fingerLocalTransformMask != 0) {
+                    outPose.flags |=
+                        static_cast<std::uint32_t>(Flag::FingerLocalsValid) |
+                        static_cast<std::uint32_t>(Flag::RootFlattenedReadback);
                 }
             }
-            if (outPose.fingerLocalTransformMask != 0) {
-                outPose.flags |=
-                    static_cast<std::uint32_t>(Flag::FingerLocalsValid) |
-                    static_cast<std::uint32_t>(Flag::RootFlattenedReadback);
-            }
+            outPose.worldGeneration =
+                _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
+            outPose.skeletonGeneration =
+                _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
+            outPose.providerGeneration =
+                _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
+            outPose.frameIndex = runtime_state::currentFrame().frameIndex;
+            outPose.presentationSequence = outPose.frameIndex;
         }
-        outPose.worldGeneration =
-            _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
-        outPose.skeletonGeneration =
-            _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
-        outPose.providerGeneration =
-            _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
-        return true;
     }
 
     std::uint32_t PhysicsInteraction::copyProviderSemanticHandContactsV1(

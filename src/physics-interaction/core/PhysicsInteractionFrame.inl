@@ -37,14 +37,15 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
     auto buildHandInput = [&](bool isLeft, Hand& hand) {
         HandFrameInput input{};
         input.isLeft = isLeft;
-        const bool rootHandReady = _handBoneCache.isReady();
+        const bool rootHandReady = _handBoneCache.isReady() &&
+            frik_hand_world_authority::tryGetRawHandWorld(isLeft, input.rawHandWorld);
         input.disabled = (isLeft ? s_leftHandDisabled.load(std::memory_order_acquire) : s_rightHandDisabled.load(std::memory_order_acquire)) || !rootHandReady;
         if (!rootHandReady) {
             return input;
         }
 
-        input.rawHandWorld = getInteractionHandTransform(isLeft);
-        input.handNode = getInteractionHandNode(isLeft);
+        // The resolver intentionally exposes no scene node. Keep the validity
+        // of this exact controller sample through every consumer's admission.
         input.grabAnchorWorld = input.rawHandWorld.translate;
         RE::NiTransform closeSelectionBasisWorld = input.rawHandWorld;
         if (frame.worldReady) {

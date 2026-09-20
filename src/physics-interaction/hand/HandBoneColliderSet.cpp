@@ -172,6 +172,7 @@ namespace rock
     {
         outLookup = {};
         if (!snapshot.valid || snapshot.space != SkeletonBoneCaptureSpace::Controller ||
+            !snapshot.controllerHandsValid[isLeft ? 1u : 0u] ||
             snapshot.source != skeleton_bone_debug_math::SkeletonBoneSnapshotSource::GameRootFlattenedBoneTree) {
             return false;
         }
@@ -726,6 +727,25 @@ namespace rock
             }
         }
 
+        updatePose(lookup, isLeft, palmAnchorBody, deltaTime, false);
+    }
+
+    bool HandBoneColliderSet::finalizePose(RE::hknpWorld* world, bool isLeft,
+        const RE::NiTransform& rawHand, BethesdaPhysicsBody& palmAnchorBody,
+        float deltaTime, const DirectSkeletonBoneSnapshot& bones)
+    {
+        BoneFrameLookup lookup{};
+        if (!_created || world != _cachedWorld || !palmAnchorBody.isValid() ||
+            !makeBoneLookup(bones, isLeft, rawHand, lookup) ||
+            bones.skeleton != _cachedSkeleton || bones.boneTree != _cachedBoneTree ||
+            bones.inPowerArmor != _cachedPowerArmor) return false;
+        updatePose(lookup, isLeft, palmAnchorBody, deltaTime, true);
+        return true;
+    }
+
+    void HandBoneColliderSet::updatePose(const BoneFrameLookup& lookup, bool isLeft,
+        BethesdaPhysicsBody& palmAnchorBody, float deltaTime, bool publishTargets)
+    {
         dynamic_hand_twin::TwinTargets twinTargets{};
         auto publishTwinSlot = [](dynamic_hand_twin::TwinSlotFrame& slot, const RoleFrameResult& frame) {
             slot.valid = true;
@@ -740,7 +760,7 @@ namespace rock
             _latestPalmAnchorTarget = anchorFrame.transform;
             _hasLatestPalmAnchorTarget = true;
             publishTwinSlot(twinTargets.palm, anchorFrame);
-            queueBodyTarget(palmAnchorBody, anchorFrame.transform, deltaTime, _palmAnchorDriveState, _palmAnchorPublicationIndex);
+            if (publishTargets) queueBodyTarget(palmAnchorBody, anchorFrame.transform, deltaTime, _palmAnchorDriveState, _palmAnchorPublicationIndex);
         }
 
         PublishedSegmentFrames segmentFrames{};
@@ -771,7 +791,7 @@ namespace rock
                     published.convexRadius = frame.convexRadius;
                     published.palmHalfExtents = instance.palmHalfExtents;
                 }
-                queueBodyTarget(instance.body, frame.transform, deltaTime, instance.driveState, instance.publicationIndex);
+                if (publishTargets) queueBodyTarget(instance.body, frame.transform, deltaTime, instance.driveState, instance.publicationIndex);
             }
         }
         _segmentFrames = segmentFrames;

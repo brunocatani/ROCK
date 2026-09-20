@@ -48,7 +48,8 @@ namespace rock::root_flattened_finger_skeleton_runtime
         if (outMissingBoneName) {
             outMissingBoneName->clear();
         }
-        if (!boneSnapshot.valid) {
+        if (!boneSnapshot.valid || (boneSnapshot.space == SkeletonBoneCaptureSpace::Controller &&
+                !boneSnapshot.controllerHandsValid[isLeft ? 1u : 0u])) {
             if (outMissingBoneName) {
                 *outMissingBoneName = "rootFlattenedBoneTree";
             }

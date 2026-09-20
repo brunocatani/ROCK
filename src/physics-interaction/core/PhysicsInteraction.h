@@ -283,6 +283,8 @@ namespace rock
          * frame's controller-hand isolation and chain transport.
          */
         void captureRenderedHands();
+        void finalizeFramePose();
+        void captureProviderPresentedHandPoses();
         void traceHeldPresentationPhase(const char* phase);
         void publishDebugRenderFrame();
 
@@ -349,7 +351,6 @@ namespace rock
         struct EquippedWeaponFrameResult;
         EquippedWeaponFrameResult updateEquippedWeaponFrame(const PhysicsFrameContext& frame, RE::bhkWorld* bhk, RE::hknpWorld* hknp);
         void finalizeInteractionFrame(const PhysicsFrameContext& frame,
-            RE::bhkWorld* bhk,
             RE::hknpWorld* hknp,
             const EquippedWeaponFrameResult& equippedWeaponFrame);
         void prepareDynamicWorldCarCollisionForGrab(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::TESObjectREFR* ref);
@@ -952,9 +953,8 @@ namespace rock
                 ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVE_RESULTS_V1>
                 results{};
             std::uint32_t resultCount{ 0 };
-            mutable DirectSkeletonBoneReader presentedPoseReader{};
-            mutable DirectSkeletonBoneSnapshot presentedPoseSnapshot{};
-            mutable SkeletonBoneNameIndex presentedPoseNames{};
+            SkeletonBoneNameIndex presentedPoseNames{};
+            std::array<::rock::provider::RockProviderPresentedHandPoseV1, 2> presentedPoses{};
         };
 
         // State owned by the HandCollisionSuppression module: per-hand
@@ -993,6 +993,7 @@ namespace rock
         {
             // Main-thread eligibility only; never retain frame-local engine pointers.
             std::uint64_t debugOverlayFrameIndex = 0;
+            std::uint64_t poseFrameIndex = 0;
             // Central sanitized game delta captured each update; zero until
             // the first frame is measured.
             float deltaTime = 0.0f;

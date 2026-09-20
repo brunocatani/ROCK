@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cmath>
 #include <vector>
+#include <utility>
 
 namespace rock
 {
@@ -525,20 +526,6 @@ namespace rock
             return result;
         }
 
-        if (!queueCompoundChildTransforms(
-                weaponCollision,
-                weaponNode,
-                std::abs(_frameRequestedWeaponWorld.scale))) {
-            _rebuildRequestedAtomic.store(true, std::memory_order_release);
-            ROCK_LOG_SAMPLE_WARN(
-                Weapon,
-                1000,
-                "Dynamic weapon live compound pose rejected: generation={:016X} children={}",
-                _createdGenerationKey,
-                _createdCompoundChildCount);
-            return result;
-        }
-
         result.proxyActive = true;
         updateSurfaceSupport(frame, primaryGripWeaponLocal);
         if (!_authorityConstraint.isValid() || _rebuildRequestedAtomic.load(std::memory_order_acquire)) return result;
@@ -548,15 +535,10 @@ namespace rock
         // Support still publishes when resting contact has no fresh residual,
         // or while the rebound pivot awaits its first post-solve sample.
         result.applyVisualCorrection = result.surfaceSupportOwnsPose;
-        const RE::NiTransform requestedAuthorityTarget =
-            dynamic_weapon_collision_policy::makeGripAuthorityTarget(_frameRequestedWeaponWorld, _authorityPivotWeaponLocal);
-        const auto queueResult = queueGeneratedKeyframedBodyTarget(
-            _authorityDriveState,
-            requestedAuthorityTarget,
-            frame.deltaSeconds,
-            dynamic_weapon_collision_policy::kDivergenceTeleportDistanceGameUnits);
-        if (!queueResult.queued) {
-            _rebuildRequestedAtomic.store(true, std::memory_order_release);
+        std::uint64_t sourceBeforeFinal = 0;
+        if (dynamic_collider_trace::enabled()) {
+            std::scoped_lock lock(_authorityDriveState.mutex);
+            sourceBeforeFinal = _authorityDriveState.queuedSequence;
         }
 
         PhysicsSnapshot snapshot{};
@@ -670,10 +652,10 @@ namespace rock
         };
 
         if (!snapshotCurrent) {
-            if (dynamic_collider_trace::sample(queueResult.queuedSequence)) {
+            if (dynamic_collider_trace::sample(sourceBeforeFinal)) {
                 dynamic_collider_trace::write(
-                    "DWC_CLOCK gate: frame={} queued={} source={} generation={:016X} body={} readable={} valid={} identity={} teleported={}",
-                    _frameIndex, queueResult.queuedSequence, snapshot.sourceSequence, _frameGenerationKey,
+                    "DWC_CLOCK gate: frame={} sourceBeforeFinal={} source={} generation={:016X} body={} readable={} valid={} identity={} teleported={}",
+                    _frameIndex, sourceBeforeFinal, snapshot.sourceSequence, _frameGenerationKey,
                     _body.getBodyId().value, snapshotReadable, snapshot.valid, snapshotIdentityCurrent, snapshot.teleported);
             }
             logPipelineStage("snapshot-gate");
@@ -775,8 +757,8 @@ namespace rock
                 intentDriverLocal.translate.x, intentDriverLocal.translate.y, intentDriverLocal.translate.z,
                 driverLocalStep, driverLocalRotationStep);
             dynamic_collider_trace::write(
-                "DWC_CLOCK game: frame={} queued={} source={} solve={} generation={:016X} body={} dt={:.6f} contact={} apply={} intent=({:.3f},{:.3f},{:.3f}) sampledIntent=({:.3f},{:.3f},{:.3f}) sampledLive=({:.3f},{:.3f},{:.3f}) resolved=({:.3f},{:.3f},{:.3f}) correction=({:.4f}gu,{:.4f}deg) intentQ=({:.6f},{:.6f},{:.6f},{:.6f}) resolvedQ=({:.6f},{:.6f},{:.6f},{:.6f})",
-                _frameIndex, queueResult.queuedSequence, snapshot.sourceSequence, snapshot.solveSequence,
+                "DWC_CLOCK game: frame={} sourceBeforeFinal={} source={} solve={} generation={:016X} body={} dt={:.6f} contact={} apply={} intent=({:.3f},{:.3f},{:.3f}) sampledIntent=({:.3f},{:.3f},{:.3f}) sampledLive=({:.3f},{:.3f},{:.3f}) resolved=({:.3f},{:.3f},{:.3f}) correction=({:.4f}gu,{:.4f}deg) intentQ=({:.6f},{:.6f},{:.6f},{:.6f}) resolvedQ=({:.6f},{:.6f},{:.6f},{:.6f})",
+                _frameIndex, sourceBeforeFinal, snapshot.sourceSequence, snapshot.solveSequence,
                 snapshot.generationKey, snapshot.bodyId, frame.deltaSeconds, snapshot.contactActive, result.applyVisualCorrection,
                 _frameRequestedWeaponWorld.translate.x, _frameRequestedWeaponWorld.translate.y, _frameRequestedWeaponWorld.translate.z,
                 sampledRequestedWeaponWorld.translate.x, sampledRequestedWeaponWorld.translate.y, sampledRequestedWeaponWorld.translate.z,
@@ -809,6 +791,32 @@ namespace rock
             room.x, room.y, room.z,
             dynamic_weapon_collision_policy::translationDeltaGameUnits(actual, _clockExpectedWeaponWorld),
             dynamic_weapon_collision_policy::rotationDeltaDegrees(actual, _clockExpectedWeaponWorld));
+    }
+
+    void DynamicWeaponCollisionRuntime::finalizeCompoundPose(const WeaponCollision& weaponCollision,
+        RE::NiNode* weaponNode, const PhysicsFrameContext& frame, std::uint64_t generation)
+    {
+        const bool hasIntent = std::exchange(_frameHasIntent, false);
+        if (!_created || !hasIntent || _frameIndex != frame.timing.sequence || _createdWorld != frame.hknpWorld ||
+            _frameWeaponNode != weaponNode || _createdGenerationKey != generation) return;
+        // Only articulation is read back. The free-space root intent remains
+        // independent of the collision-corrected rendered weapon.
+        if (!queueCompoundChildTransforms(weaponCollision, weaponNode, std::abs(_frameRequestedWeaponWorld.scale))) {
+            _rebuildRequestedAtomic.store(true, std::memory_order_release);
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                "Dynamic weapon final compound pose rejected: generation={:016X} children={}",
+                generation, _createdCompoundChildCount);
+            return;
+        }
+        const auto target = dynamic_weapon_collision_policy::makeGripAuthorityTarget(_frameRequestedWeaponWorld, _authorityPivotWeaponLocal);
+        const auto queued = queueGeneratedKeyframedBodyTarget(_authorityDriveState, target, frame.deltaSeconds,
+            dynamic_weapon_collision_policy::kDivergenceTeleportDistanceGameUnits);
+        if (!queued.queued) _rebuildRequestedAtomic.store(true, std::memory_order_release);
+        if (weaponClockTraceEnabled(queued.queuedSequence)) {
+            dynamic_collider_trace::write("DWC_FINAL frame={} queued={} generation={:016X} children={} target=({:.4f},{:.4f},{:.4f})",
+                frame.timing.sequence, queued.queuedSequence, generation, _createdCompoundChildCount,
+                target.translate.x, target.translate.y, target.translate.z);
+        }
     }
 
     bool DynamicWeaponCollisionRuntime::queueCompoundChildTransforms(

@@ -414,6 +414,7 @@ namespace rock::provider {
         AfterRock = 2,
         Complete = 3,
         NativeGraphOutput = 4,
+        Presented = 5,
     };
 
     enum class RockProviderAnimationPhaseContextFlagV1 : std::uint32_t

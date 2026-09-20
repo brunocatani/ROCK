@@ -138,6 +138,9 @@
         if (!onAnimationOwnerThread()) {
             return RockProviderResultV1::WrongThread;
         }
+        if (s_presentedReadbackPhase) {
+            return RockProviderResultV1::NotReady;
+        }
         if (request->size != sizeof(RockProviderHandVisualAuthorityRequestV1)) {
             return RockProviderResultV1::InvalidSize;
         }

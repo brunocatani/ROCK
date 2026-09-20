@@ -878,6 +878,16 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKFrikPresentedHandTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKFrikPresentedHandTests)
 
+  add_executable(ROCKPresentedPoseServiceTests "${ROOT_DIR}/tests/PresentedPoseServiceTests.cpp")
+  target_compile_features(ROCKPresentedPoseServiceTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKPresentedPoseServiceTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKPresentedPoseServiceTests)
+
+  add_executable(ROCKTimedReleaseVelocityHistoryTests "${ROOT_DIR}/tests/TimedReleaseVelocityHistoryTests.cpp")
+  target_compile_features(ROCKTimedReleaseVelocityHistoryTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKTimedReleaseVelocityHistoryTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKTimedReleaseVelocityHistoryTests)
+
   set(ROCK_COMMONLIB_TEST_TARGETS
     ROCKColliderLookupAndTuningTests
     ROCKCpuWorkReductionTests

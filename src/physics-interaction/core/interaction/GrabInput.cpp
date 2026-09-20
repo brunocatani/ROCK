@@ -1614,7 +1614,7 @@ namespace rock
                     return !grabInput.released;
                 }
 
-                equipHand.captureHeldReleaseMotion(hknp, equipHandInput.rawHandWorld, frame.deltaSeconds);
+                equipHand.captureHeldReleaseMotion(hknp, equipHandInput.rawHandWorld, frame.timing);
                 auto* heldRef = equipHand.getHeldRef();
                 const auto previousEquippedWeaponFormID =
                     currentEquippedWeaponFormId();
@@ -1926,7 +1926,7 @@ namespace rock
                     isLeft ? "left" : "right", hand.heldGrabIdentity(),
                     rawGrabInput.held, rawGrabInput.pressed, rawGrabInput.released,
                     grabInput.held, grabInput.pressed, grabInput.released, injectionCommit);
-                hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, frame.deltaSeconds);
+                hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, frame.timing);
                 auto* heldRef = hand.getHeldRef();
                 std::uint32_t heldFormID = heldRef ? heldRef->GetFormID() : 0u;
                 if (consumeEligibility.eligible && consumeDecision.confirmedForCommit && hand.getState() == HandState::ConsumeCandidate) {

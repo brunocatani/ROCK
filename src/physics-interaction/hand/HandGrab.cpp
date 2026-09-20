@@ -10428,13 +10428,9 @@ namespace rock
                 } else {
                     _grabFrame.motorFadeReason = "none";
                 }
-                _heldLocalLinearVelocityHistory = {};
-                _heldLocalLinearVelocityHistoryCount = 0;
-                _heldLocalLinearVelocityHistoryNext = 0;
-                _heldLocalHandVelocityHistory = {};
-                _heldHandAngularVelocityHistory = {};
-                _heldHandVelocityHistoryCount = 0;
-                _heldHandVelocityHistoryNext = 0;
+                _controllerReleaseHistory.clear();
+                _objectReleaseHistory.clear();
+                _releaseControllerFrame = 0;
                 _lastHeldObjectLocalLinearVelocityHavok = {};
                 _hasLastHeldObjectLocalLinearVelocityHavok = false;
                 _previousHeldRawHandWorld = {};
@@ -12075,9 +12071,22 @@ namespace rock
 
     Hand::HeldHandMotionSample Hand::recordHeldControllerMotionSample(
         const RE::NiTransform& handWorldTransform,
-        float deltaTime)
+        const game_frame_timing_policy::GameFrameTiming& timing)
     {
         HeldHandMotionSample handMotion{};
+        const auto admission = release_velocity::admitControllerSample(_releaseControllerFrame, timing);
+        if (admission.duplicate) return handMotion;
+        _releaseControllerFrame = timing.sequence;
+        if (admission.rebase) {
+            if (_hasPreviousHeldRawHandWorld && timing.discontinuity && timing.valid) {
+                ROCK_LOG_SAMPLE_WARN(Hand, 1000, "{} throw history rebased after timing discontinuity rawDt={:.4f}",
+                    handName(), timing.rawDeltaSeconds);
+            }
+            _controllerReleaseHistory.clear();
+            _objectReleaseHistory.clear();
+            _hasPreviousHeldRawHandWorld = false;
+        }
+        const float deltaTime = admission.deltaSeconds;
         const bool usableDeltaTime = std::isfinite(deltaTime) && deltaTime > 0.000001f;
         const RE::NiPoint3 currentHandPositionHavok = gamePointToHavokPoint(handWorldTransform.translate);
         _lastHeldHandPositionHavok = currentHandPositionHavok;
@@ -12091,12 +12100,8 @@ namespace rock
                 angularVelocityFromRotationDelta(_previousHeldRawHandWorld.rotate, handWorldTransform.rotate, deltaTime);
             handMotion.hasAngularVelocity = lengthSquared(handMotion.angularVelocityRadiansPerSecond) > 0.000001f;
 
-            _heldLocalHandVelocityHistory[_heldHandVelocityHistoryNext] = handMotion.localLinearVelocityHavok;
-            _heldHandAngularVelocityHistory[_heldHandVelocityHistoryNext] = handMotion.angularVelocityRadiansPerSecond;
-            _heldHandVelocityHistoryNext = (_heldHandVelocityHistoryNext + 1) % _heldLocalHandVelocityHistory.size();
-            if (_heldHandVelocityHistoryCount < _heldLocalHandVelocityHistory.size()) {
-                ++_heldHandVelocityHistoryCount;
-            }
+            _controllerReleaseHistory.append(timing.sequence, timing.elapsedGameSeconds,
+                handMotion.localLinearVelocityHavok, handMotion.angularVelocityRadiansPerSecond);
         }
 
         _previousHeldRawHandWorld = handWorldTransform;
@@ -12107,17 +12112,16 @@ namespace rock
 
     void Hand::recordHeldObjectVelocitySample(RE::hknpWorld* world)
     {
+        const auto& timing = runtime_state::currentFrame().timing;
+        const auto solve = _releaseSolveSequence.load(std::memory_order_acquire);
+        if (!timing.valid || timing.discontinuity || timing.menuPaused || !_objectReleaseHistory.needsSource(solve)) return;
         const auto compensationResult = applyHeldMotionCompensation(
             world,
             _savedObjectState.bodyId,
             _heldBodyIds,
             _heldDriveDecision.includeConnectedLinearVelocity);
-        if (compensationResult.hasPrimaryVelocity) {
-            _heldLocalLinearVelocityHistory[_heldLocalLinearVelocityHistoryNext] = compensationResult.primaryLocalLinearVelocity;
-            _heldLocalLinearVelocityHistoryNext = (_heldLocalLinearVelocityHistoryNext + 1) % _heldLocalLinearVelocityHistory.size();
-            if (_heldLocalLinearVelocityHistoryCount < _heldLocalLinearVelocityHistory.size()) {
-                ++_heldLocalLinearVelocityHistoryCount;
-            }
+        if (compensationResult.hasPrimaryVelocity && solve == _releaseSolveSequence.load(std::memory_order_acquire)) {
+            _objectReleaseHistory.append(solve, timing.elapsedGameSeconds, compensationResult.primaryLocalLinearVelocity);
             _lastHeldObjectLocalLinearVelocityHavok = compensationResult.primaryLocalLinearVelocity;
             _hasLastHeldObjectLocalLinearVelocityHavok = true;
         }
@@ -12126,13 +12130,13 @@ namespace rock
     void Hand::captureHeldReleaseMotion(
         RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
-        float deltaTime)
+        const game_frame_timing_policy::GameFrameTiming& timing)
     {
         if (!isHolding() || !world) {
             return;
         }
 
-        recordHeldControllerMotionSample(handWorldTransform, deltaTime);
+        recordHeldControllerMotionSample(handWorldTransform, timing);
         recordHeldObjectVelocitySample(world);
     }
 
@@ -14072,7 +14076,7 @@ namespace rock
 
         _grabStartTime += held_object_physics_math::finitePositiveOrZero(deltaTime);
 
-        const HeldHandMotionSample handMotion = recordHeldControllerMotionSample(handWorldTransform, deltaTime);
+        const HeldHandMotionSample handMotion = recordHeldControllerMotionSample(handWorldTransform, runtime_state::currentFrame().timing);
         (void)handMotion;
 
         /*
@@ -14864,6 +14868,7 @@ namespace rock
 
     void Hand::observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
+        _releaseSolveSequence.store(timing.valid && !timing.usedFallback ? timing.solveSequence : 0, std::memory_order_release);
         if (!world) {
             return;
         }
@@ -15576,37 +15581,20 @@ namespace rock
 
         nearby_grab_damping::restoreNearbyGrabDamping(world, _nearbyGrabDamping);
 
+        const auto releaseTime = runtime_state::currentFrame().timing.elapsedGameSeconds;
+        const auto objectHistory = _objectReleaseHistory.peaks(releaseTime);
+        const auto handHistory = _controllerReleaseHistory.peaks(releaseTime);
         const bool captureReleaseVelocity =
             !grab_target::isRagdoll(_savedObjectState.targetKind) &&
             (releaseContext.disposition == GrabReleaseDisposition::PhysicalDrop ||
                 releaseContext.disposition == GrabReleaseDisposition::PendingInventoryTransfer ||
                 releaseContext.disposition == GrabReleaseDisposition::PendingConsumeTransfer) &&
             releaseContext.applyCapturedReleaseVelocity &&
-            releaseContext.finalObjectRelease && world && (_heldLocalLinearVelocityHistoryCount > 0 || _heldHandVelocityHistoryCount > 0);
+            releaseContext.finalObjectRelease && world && (objectHistory.count > 0 || handHistory.count > 0);
         if (captureReleaseVelocity) {
-            std::array<RE::NiPoint3, GRAB_RELEASE_VELOCITY_HISTORY> orderedObjectHistory{};
-            const std::size_t historySize = _heldLocalLinearVelocityHistory.size();
-            const std::size_t firstIndex = (_heldLocalLinearVelocityHistoryNext + historySize - _heldLocalLinearVelocityHistoryCount) % historySize;
-            for (std::size_t i = 0; i < _heldLocalLinearVelocityHistoryCount; ++i) {
-                orderedObjectHistory[i] = _heldLocalLinearVelocityHistory[(firstIndex + i) % historySize];
-            }
-
-            std::array<RE::NiPoint3, GRAB_RELEASE_VELOCITY_HISTORY> orderedHandHistory{};
-            std::array<RE::NiPoint3, GRAB_RELEASE_VELOCITY_HISTORY> orderedAngularHistory{};
-            const std::size_t handHistorySize = _heldLocalHandVelocityHistory.size();
-            const std::size_t firstHandIndex = (_heldHandVelocityHistoryNext + handHistorySize - _heldHandVelocityHistoryCount) % handHistorySize;
-            for (std::size_t i = 0; i < _heldHandVelocityHistoryCount; ++i) {
-                const std::size_t sourceIndex = (firstHandIndex + i) % handHistorySize;
-                orderedHandHistory[i] = _heldLocalHandVelocityHistory[sourceIndex];
-                orderedAngularHistory[i] = _heldHandAngularVelocityHistory[sourceIndex];
-            }
-
-            const RE::NiPoint3 objectLocalReleaseVelocity =
-                held_object_physics_math::maxMagnitudeVelocity(orderedObjectHistory, _heldLocalLinearVelocityHistoryCount);
-            const RE::NiPoint3 handLocalReleaseVelocity =
-                held_object_physics_math::maxMagnitudeVelocity(orderedHandHistory, _heldHandVelocityHistoryCount);
-            const RE::NiPoint3 handAngularVelocity =
-                held_object_physics_math::maxMagnitudeVelocity(orderedAngularHistory, _heldHandVelocityHistoryCount);
+            const RE::NiPoint3 objectLocalReleaseVelocity = objectHistory.linear;
+            const RE::NiPoint3 handLocalReleaseVelocity = handHistory.linear;
+            const RE::NiPoint3 handAngularVelocity = handHistory.angular;
 
             RE::NiPoint3 tangentialVelocityHavok{};
             bool hasTangentialVelocity = false;
@@ -15640,8 +15628,8 @@ namespace rock
             const RE::NiPoint3 releaseVelocity =
                 grab_held_response::composeControllerReleaseVelocity(grab_held_response::ReleaseVelocityInput<RE::NiPoint3>{
                     .controllerDerivedEnabled = g_rockConfig.rockGrabControllerDerivedThrowVelocityEnabled,
-                    .hasHandLocalVelocity = _heldHandVelocityHistoryCount > 0,
-                    .hasObjectLocalVelocity = _heldLocalLinearVelocityHistoryCount > 0,
+                    .hasHandLocalVelocity = handHistory.count > 0,
+                    .hasObjectLocalVelocity = objectHistory.count > 0,
                     .hasTangentialVelocity = hasTangentialVelocity,
                     .handLocalVelocityHavok = handLocalReleaseVelocity,
                     .objectLocalVelocityHavok = objectLocalReleaseVelocity,
@@ -15654,7 +15642,7 @@ namespace rock
             const RE::NiPoint3 rawReleaseAngularVelocity =
                 grab_held_response::composeControllerReleaseAngularVelocity(grab_held_response::ReleaseAngularVelocityInput<RE::NiPoint3>{
                     .controllerDerivedEnabled = g_rockConfig.rockGrabControllerDerivedThrowVelocityEnabled,
-                    .hasHandAngularVelocity = _heldHandVelocityHistoryCount > 0,
+                    .hasHandAngularVelocity = handHistory.count > 0,
                     .handAngularVelocityRadiansPerSecond = handAngularVelocity,
                     .angularVelocityScale = g_rockConfig.rockGrabThrowAngularVelocityScale,
                     .maxAngularVelocityRadiansPerSecond = g_rockConfig.rockGrabThrowMaxAngularVelocityRadiansPerSecond,
@@ -15764,8 +15752,8 @@ namespace rock
                 releaseLeverOriginHavok.x,
                 releaseLeverOriginHavok.y,
                 releaseLeverOriginHavok.z,
-                _heldLocalLinearVelocityHistoryCount,
-                _heldHandVelocityHistoryCount,
+                objectHistory.count,
+                handHistory.count,
                 g_rockConfig.rockThrowVelocityMultiplier);
         }
 
@@ -15931,13 +15919,9 @@ namespace rock
         _hasGrabFingerLocalTransforms = false;
         _grabFingerLocalTransformFinalizePending = false;
         _hasGrabFingerPose = false;
-        _heldLocalLinearVelocityHistory = {};
-        _heldLocalLinearVelocityHistoryCount = 0;
-        _heldLocalLinearVelocityHistoryNext = 0;
-        _heldLocalHandVelocityHistory = {};
-        _heldHandAngularVelocityHistory = {};
-        _heldHandVelocityHistoryCount = 0;
-        _heldHandVelocityHistoryNext = 0;
+        _controllerReleaseHistory.clear();
+        _objectReleaseHistory.clear();
+        _releaseControllerFrame = 0;
         _lastHeldObjectLocalLinearVelocityHavok = {};
         _hasLastHeldObjectLocalLinearVelocityHavok = false;
         _previousHeldRawHandWorld = {};

@@ -72,6 +72,8 @@ int main()
     assert(phases.publishFrame()==41);
     assert(!isActive(phases.leaseBoundary(),pendingDrive));
     assert(phases.beginPhase(Phase::Complete,41)==41);
+    assert(phases.beginPhase(Phase::Presented,41)==41);
+    assert(phases.current()==41 && phases.leaseBoundary()==41);
     // An observation does not advance the clock even if called with a later
     // sequence; the next measured BeforeRock owns that transition.
     assert(phases.beginPhase(Phase::NativeGraphOutput,42)==42);

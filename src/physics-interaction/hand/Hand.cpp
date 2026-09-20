@@ -326,13 +326,9 @@ namespace rock
         _lastSelectedCloseOrigin = {};
         _hasLastSelectedCloseOrigin = false;
         _selectedCloseHandSpeedMetersPerSecond = 0.0f;
-        _heldLocalLinearVelocityHistory = {};
-        _heldLocalLinearVelocityHistoryCount = 0;
-        _heldLocalLinearVelocityHistoryNext = 0;
-        _heldLocalHandVelocityHistory = {};
-        _heldHandAngularVelocityHistory = {};
-        _heldHandVelocityHistoryCount = 0;
-        _heldHandVelocityHistoryNext = 0;
+        _controllerReleaseHistory.clear();
+        _objectReleaseHistory.clear();
+        _releaseControllerFrame = 0;
         _lastHeldObjectLocalLinearVelocityHavok = {};
         _hasLastHeldObjectLocalLinearVelocityHavok = false;
         _previousHeldRawHandWorld = {};
@@ -425,10 +421,6 @@ namespace rock
         _hasGrabFingerLocalTransforms = false;
         _grabFingerLocalTransformFinalizePending = false;
         _hasGrabFingerPose = false;
-        _heldLocalHandVelocityHistory = {};
-        _heldHandAngularVelocityHistory = {};
-        _heldHandVelocityHistoryCount = 0;
-        _heldHandVelocityHistoryNext = 0;
         _lastHeldObjectLocalLinearVelocityHavok = {};
         _hasLastHeldObjectLocalLinearVelocityHavok = false;
         _previousHeldRawHandWorld = {};

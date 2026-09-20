@@ -507,7 +507,7 @@ namespace rock::frik_hand_world_authority
             input.flattenedHandValid = flattenedNowValid;
             input.claimConsumed = g_service.claimConsumedThisFrame[hand];
             input.calibrationAllowed = !recoilKickThisFrame && !input.firstPersonInputCorrected;
-            state.result = isolation_policy::resolveFrame(state.relation, input);
+            state.result = isolation_policy::resolveFrame(state.relation, input, debugEnabled());
             if (!firstResolveThisFrame) {
                 continue;
             }
@@ -523,16 +523,18 @@ namespace rock::frik_hand_world_authority
                     kScopeEdgeGuardFrames);
             }
             auto& probes = g_service.probes;
-            const auto sampledTransport = transport_policy::makeHandTransport(
-                state.result.rawHandWorld, state.result.valid, sample.flattenedHandWorld, sample.flattenedHandValid);
-            if (sampledTransport.active) {
-                ++probes.transportActiveFrames[hand];
-                probes.transportTranslationMax[hand] = (std::max)(probes.transportTranslationMax[hand],
-                    isolation_policy::translationGameUnits(state.result.rawHandWorld, sample.flattenedHandWorld));
-                probes.transportRotationMax[hand] = (std::max)(probes.transportRotationMax[hand],
-                    isolation_policy::rotationDegrees(state.result.rawHandWorld, sample.flattenedHandWorld));
-            } else if (input.claimConsumed && (!state.result.valid || !sample.flattenedHandValid)) {
-                ++probes.claimedFramesWithoutTransport[hand];
+            if (debugEnabled()) {
+                const auto sampledTransport = transport_policy::makeHandTransport(
+                    state.result.rawHandWorld, state.result.valid, sample.flattenedHandWorld, sample.flattenedHandValid);
+                if (sampledTransport.active) {
+                    ++probes.transportActiveFrames[hand];
+                    probes.transportTranslationMax[hand] = (std::max)(probes.transportTranslationMax[hand],
+                        isolation_policy::translationGameUnits(state.result.rawHandWorld, sample.flattenedHandWorld));
+                    probes.transportRotationMax[hand] = (std::max)(probes.transportRotationMax[hand],
+                        isolation_policy::rotationDegrees(state.result.rawHandWorld, sample.flattenedHandWorld));
+                } else if (input.claimConsumed && (!state.result.valid || !sample.flattenedHandValid)) {
+                    ++probes.claimedFramesWithoutTransport[hand];
+                }
             }
             switch (state.result.source) {
             case isolation_policy::RawHandSource::Reconstructed:
@@ -542,7 +544,7 @@ namespace rock::frik_hand_world_authority
                 ++probes.contaminatedFrames[hand];
                 ROCK_LOG_SAMPLE_WARN(Hand,
                     5000,
-                    "HandWorldAuthority {} hand: a claim was rendered but the controller hand could not be reconstructed (first-person hand {}, body node {}, relation {}); using the rendered bone",
+                    "HandWorldAuthority {} hand: controller reconstruction unavailable (first-person hand {}, body node {}, relation {}); interaction input disabled",
                     handName(isLeft),
                     input.firstPersonHandValid ? "ok" : "missing",
                     input.bodyHandNodeValid ? "ok" : "missing",

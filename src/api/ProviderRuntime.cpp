@@ -372,6 +372,7 @@ namespace rock::provider::runtime
         s_animationPhaseCallbacks{};
     std::atomic<std::uint64_t> s_nextAnimationPhaseCallbackToken{ 1 };
     std::atomic<std::uint64_t> s_activeAnimationPhaseFrameIndex{ 0 };
+    thread_local bool s_presentedReadbackPhase = false;
     std::atomic<std::uint32_t> s_animationOwnerThreadId{ 0 };
     std::atomic<bool> s_animationThreadMismatchLogged{ false };
 
@@ -2599,6 +2600,10 @@ namespace rock::provider
             return;
         }
 
+        const bool previousReadbackPhase = std::exchange(s_presentedReadbackPhase, phase == RockProviderAnimationPhaseV1::Presented);
+        const auto restoreReadbackPhase = F4SE::stl::scope_exit([previousReadbackPhase] {
+            s_presentedReadbackPhase = previousReadbackPhase;
+        });
         drainDeferredRevocations();
         const auto phaseFrameIndex = s_frameClock.beginPhase(
             static_cast<api::core::AnimationPhaseV1>(phase), timing.sequence);
@@ -2689,7 +2694,7 @@ namespace rock::provider
             clearOwnerStateAfterCallbackFault(slot.ownerToken);
         }
 
-        if (phase == RockProviderAnimationPhaseV1::Complete) {
+        if (phase == RockProviderAnimationPhaseV1::Complete || phase == RockProviderAnimationPhaseV1::Presented) {
             s_activeAnimationPhaseFrameIndex.store(0, std::memory_order_release);
         }
     }

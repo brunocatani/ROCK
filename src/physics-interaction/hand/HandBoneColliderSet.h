@@ -57,6 +57,8 @@ namespace rock
             float deltaTime,
             const DirectSkeletonBoneSnapshot& colliderBones);
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing, BethesdaPhysicsBody& palmAnchorBody);
+        bool finalizePose(RE::hknpWorld* world, bool isLeft, const RE::NiTransform& rawHand,
+            BethesdaPhysicsBody& palmAnchorBody, float deltaTime, const DirectSkeletonBoneSnapshot& bones);
 
         bool hasBodies() const { return _created; }
         std::uint32_t getBodyCount() const { return _bodyCountAtomic.load(std::memory_order_acquire); }
@@ -145,6 +147,8 @@ namespace rock
         bool makeBoneLookup(const DirectSkeletonBoneSnapshot& snapshot, bool isLeft,
             const RE::NiTransform& rollAuthorityWorld, BoneFrameLookup& outLookup);
         bool makeRoleFrame(const BoneFrameLookup& lookup, bool isLeft, hand_collider_semantics::HandColliderRole role, RoleFrameResult& outFrame) const;
+        void updatePose(const BoneFrameLookup& lookup, bool isLeft, BethesdaPhysicsBody& palmAnchorBody,
+            float deltaTime, bool publishTargets);
         std::uint64_t refreshTuning(bool powerArmor);
         RE::hknpShape* buildShapeForRole(const RoleFrameResult& frame, hand_collider_semantics::HandColliderRole role,
             RE::NiPoint3* outPalmHalfExtents = nullptr) const;

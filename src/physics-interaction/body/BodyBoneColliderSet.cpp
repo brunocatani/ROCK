@@ -628,6 +628,20 @@ namespace rock
             return;
         }
 
+        updatePose(snapshot, deltaTime, false);
+    }
+
+    bool BodyBoneColliderSet::finalizePose(RE::hknpWorld* world, float deltaTime)
+    {
+        if (!_created || world != _cachedWorld || !captureBoneSnapshot(_snapshot) ||
+            _snapshot.skeleton != _cachedSkeleton || _snapshot.boneTree != _cachedBoneTree ||
+            _snapshot.inPowerArmor != _cachedPowerArmor) return false;
+        updatePose(_snapshot, deltaTime, true);
+        return true;
+    }
+
+    void BodyBoneColliderSet::updatePose(const DirectSkeletonBoneSnapshot& snapshot, float deltaTime, bool publishTargets)
+    {
         const auto& descriptors = bodyDescriptorsForPowerArmor(snapshot.inPowerArmor);
         const auto bonesByName = _boneNameIndex.bind(snapshot);
         dynamic_hand_twin::ForearmTwinTargets forearmTwinTargets{};
@@ -641,7 +655,7 @@ namespace rock
             DescriptorFrameResult frame{};
             if (makeDescriptorFrame(bonesByName, descriptor, snapshot.inPowerArmor, _tuning.descriptors[instance.descriptorIndex], frame)) {
                 collectForearmTwinMergeSource(forearmTwinMergeSources, descriptor, frame);
-                queueBodyTarget(instance.body, frame.transform, deltaTime, instance.driveState);
+                if (publishTargets) queueBodyTarget(instance.body, frame.transform, deltaTime, instance.driveState);
             }
         }
         publishMergedForearmTwinTargets(

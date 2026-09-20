@@ -185,6 +185,8 @@ namespace rock::performance_profiler
                 return "grabNearbyDampingRestoreBodySearch";
             case Scope::FramePrelude: return "framePrelude";
             case Scope::FrameBeginPreparation: return "frameBeginPreparation";
+            case Scope::WeaponPresentation: return "weaponPresentation";
+            case Scope::FinalPresentation: return "finalPresentation";
             case Scope::HandFrameResolve: return "handFrameResolve";
             case Scope::HandBoneCapture: return "handBoneCapture";
             case Scope::BodyBoneCapture: return "bodyBoneCapture";
@@ -1040,15 +1042,4 @@ namespace rock::performance_profiler
         _active = false;
     }
 
-    FrameScope::FrameScope() noexcept :
-        _timer(Scope::FrameUpdate)
-    {
-        beginFrame();
-    }
-
-    FrameScope::~FrameScope()
-    {
-        _timer.stop();
-        endFrame();
-    }
 }

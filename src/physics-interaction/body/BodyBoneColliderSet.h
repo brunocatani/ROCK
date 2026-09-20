@@ -61,6 +61,7 @@ namespace rock
         void destroy(void* bhkWorld);
         void reset();
         void update(RE::hknpWorld* world, float deltaTime);
+        bool finalizePose(RE::hknpWorld* world, float deltaTime);
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
 
         bool hasBodies() const { return _created; }
@@ -94,6 +95,7 @@ namespace rock
         };
 
         bool captureBoneSnapshot(DirectSkeletonBoneSnapshot& outSnapshot);
+        void updatePose(const DirectSkeletonBoneSnapshot& snapshot, float deltaTime, bool publishTargets);
         std::uint64_t refreshTuning(bool powerArmor);
         RE::hknpShape* buildShapeForFrame(const DescriptorFrameResult& frame) const;
         bool createBodyForDescriptor(

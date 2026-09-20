@@ -8,6 +8,7 @@
 // ---- DirectSkeletonBoneReader.h ----
 
 #include <cstdint>
+#include <array>
 #include <string>
 #include <vector>
 
@@ -60,6 +61,7 @@ namespace rock
         skeleton_bone_debug_math::SkeletonBoneSnapshotSource source = skeleton_bone_debug_math::SkeletonBoneSnapshotSource::None;
         SkeletonBoneCaptureSpace space = SkeletonBoneCaptureSpace::Rendered;
         SkeletonBoneCapturePayload payload = SkeletonBoneCapturePayload::FlattenedTransforms;
+        std::array<bool, 2> controllerHandsValid{};
         const void* skeleton = nullptr;
         const void* boneTree = nullptr;
         int totalBoneCount = 0;
@@ -69,6 +71,8 @@ namespace rock
     };
 
     class SkeletonBoneNameIndex;
+    // Converts this copied array once, using its own wrists as the source.
+    bool transportControllerHands(DirectSkeletonBoneSnapshot& snapshot);
 
     class DirectSkeletonBoneReader
     {

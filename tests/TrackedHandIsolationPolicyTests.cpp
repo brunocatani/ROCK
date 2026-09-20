@@ -147,7 +147,7 @@ int main()
         ok &= expectFalse("claimed frame has no probe", result.probeValid);
     }
 
-    // Claimed frame without a relation or without the first-person hand degrades to the contaminated bone.
+    // Claimed output cannot become independent controller input on a missing-input frame.
     {
         RelationState empty{};
         const FrameInput input{
@@ -160,10 +160,18 @@ int main()
             .claimConsumed = true,
         };
         ok &= expectEnum("no relation degrades", resolveFrame(empty, input).source, RawHandSource::FlattenedContaminated);
+        ok &= expectFalse("uncalibrated claimed output is unavailable", resolveFrame(empty, input).valid);
 
         FrameInput noFirstPerson = input;
         noFirstPerson.firstPersonHandValid = false;
         ok &= expectEnum("no first-person hand degrades", resolveFrame(state, noFirstPerson).source, RawHandSource::FlattenedContaminated);
+        ok &= expectFalse("missing controller cannot drive a claimed pose", resolveFrame(state, noFirstPerson).valid);
+        auto freePeer = input;
+        freePeer.claimConsumed = false;
+        auto peerRelation = state;
+        const auto unprobed = resolveFrame(peerRelation, freePeer, false);
+        ok &= expectTrue("valid peer remains available without diagnostic work", unprobed.valid);
+        ok &= expectFalse("disabled diagnostics do not compute residual", unprobed.probeValid);
 
         FrameInput nothing = input;
         nothing.flattenedHandValid = false;

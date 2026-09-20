@@ -2107,6 +2107,7 @@ namespace rock
             const std::size_t index = handIndex(isLeft);
             auto& handSlots = _hands[index];
             auto& handTelemetry = telemetry.hands[index];
+            handSlots.poseFrame = 0;
             handTelemetry.isLeft = isLeft;
             handTelemetry.handDisabled = handInput.disabled;
             handTelemetry.visualAuthorityAvailable = frik_visual_authority::isAvailable();
@@ -2254,11 +2255,7 @@ namespace rock
                     twinFrames,
                     compoundRootTarget,
                     driveTargets,
-                    geometryGeneration) ||
-                !queueCompoundPose(
-                    handSlots,
-                    compoundRootTarget,
-                    driveTargets)) {
+                    geometryGeneration)) {
                 if (handSlots.bodies[0].created &&
                     !_transitionCollisionSuppressed) {
                     retireHand(handSlots, frame.bhkWorld, isLeft);
@@ -2273,12 +2270,9 @@ namespace rock
             }
 
             auto& compoundOwner = handSlots.bodies[0];
-            const auto queued = queueGeneratedKeyframedBodyTarget(
-                compoundOwner.driveState,
-                compoundRootTarget,
-                frame.deltaSeconds,
-                dynamic_hand_collision_policy::kDivergenceTeleportDistanceGameUnits);
-            handSlots.traceQueuedSequence = queued.queuedSequence;
+            // Decisions use current tracking and the preceding solver result.
+            // Publish one physical target only after this frame's fingers exist.
+            handSlots.poseFrame = frame.timing.sequence;
 
             for (std::size_t bodyIndex = 0;
                  bodyIndex < kBodiesPerHand;
@@ -2666,6 +2660,49 @@ namespace rock
         telemetry.transitionCollisionSuppressed =
             _transitionCollisionSuppressed;
         _telemetrySnapshot = telemetry;
+    }
+
+    void DynamicHandCollisionRuntime::finalizePose(const PhysicsFrameContext& frame,
+        const Hand& rightHand, const Hand& leftHand, const BodyBoneColliderSet& bodyBoneColliders)
+    {
+        for (const bool isLeft : { false, true }) {
+            auto& slots = _hands[handIndex(isLeft)];
+            auto& owner = slots.bodies[0];
+            const auto sourceFrame = std::exchange(slots.poseFrame, 0);
+            const auto& input = isLeft ? frame.left : frame.right;
+            if (!owner.created) continue;
+            if (input.disabled || sourceFrame != frame.timing.sequence || owner.createdWorld != frame.hknpWorld) {
+                retireHand(slots, frame.bhkWorld, isLeft);
+                continue;
+            }
+            const auto& hand = isLeft ? leftHand : rightHand;
+            std::array<RE::NiTransform, kBodiesPerHand> targets{};
+            bool valid = true;
+            for (std::size_t i = 0; i < kBodiesPerHand; ++i) {
+                const auto* twin = twinFrameForSlot(hand.dynamicTwinTargets(),
+                    bodyBoneColliders.dynamicForearmTwinTargets(), isLeft, i);
+                if (!twin || !twin->valid || !isFiniteTransform(twin->target)) { valid = false; break; }
+                targets[i] = slots.surfaceLatch.active && slots.surfaceLatch.proxyRelationshipValid[i] ?
+                    slots.surfaceLatch.lastProxyWorld[i] : twin->target;
+            }
+            if (!valid || !queueCompoundPose(slots, targets[kPalmSlot], targets)) {
+                retireHand(slots, frame.bhkWorld, isLeft);
+                continue;
+            }
+            const auto queued = queueGeneratedKeyframedBodyTarget(owner.driveState, targets[kPalmSlot],
+                frame.deltaSeconds, dynamic_hand_collision_policy::kDivergenceTeleportDistanceGameUnits);
+            slots.traceQueuedSequence = queued.queuedSequence;
+            if (dynamic_collider_trace::sample(queued.queuedSequence)) {
+                const auto& root = targets[kPalmSlot].translate;
+                dynamic_collider_trace::write("DHC_FINAL frame={} hand={} queued={} target=({:.4f},{:.4f},{:.4f})",
+                    frame.timing.sequence, isLeft ? "left" : "right", queued.queuedSequence, root.x, root.y, root.z);
+            }
+            auto& telemetry = _telemetrySnapshot.hands[handIndex(isLeft)];
+            for (std::size_t i = 0; i < kBodiesPerHand; ++i) {
+                telemetry.twins[i].publishedTargetWorld = targets[i];
+                telemetry.twins[i].publishedTargetValid = true;
+            }
+        }
     }
 
     void DynamicHandCollisionRuntime::flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)

@@ -15,6 +15,7 @@
 #include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/grab/GrabMotionController.h"
+#include "physics-interaction/grab/TimedReleaseVelocityHistory.h"
 #include "physics-interaction/grab/SavedGrabCaptureFormat.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/hand/HandBoneColliderSet.h"
@@ -558,7 +559,12 @@ namespace rock
         void publishHeldBodyScope(RE::hknpWorld* world);
         bool refreshRagdollBodyScope(RE::hknpWorld* world, const GrabReleaseContext& releaseContext);
         bool validateHeldObjectUpdate(RE::hknpWorld* world, const GrabReleaseContext& releaseContext);
-        void captureHeldReleaseMotion(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float deltaTime);
+        void captureHeldReleaseMotion(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, const game_frame_timing_policy::GameFrameTiming& timing);
+        bool finalizeCollisionPose(RE::hknpWorld* world, const RE::NiTransform& rawHand,
+            float deltaTime, const DirectSkeletonBoneSnapshot& bones)
+        {
+            return _boneColliders.finalizePose(world, _isLeft, rawHand, _handBody, deltaTime, bones);
+        }
         void applyReleaseVelocitySnapshot(RE::hknpWorld* world, const GrabReleaseOutcome::VelocitySnapshot& snapshot) const;
 
         GrabReleaseOutcome releaseGrabbedObject(
@@ -1238,7 +1244,7 @@ namespace rock
             bool hasAngularVelocity = false;
         };
 
-        HeldHandMotionSample recordHeldControllerMotionSample(const RE::NiTransform& handWorldTransform, float deltaTime);
+        HeldHandMotionSample recordHeldControllerMotionSample(const RE::NiTransform& handWorldTransform, const game_frame_timing_policy::GameFrameTiming& timing);
         void recordHeldObjectVelocitySample(RE::hknpWorld* world);
 
         ActiveConstraint _activeConstraint;
@@ -1432,14 +1438,12 @@ namespace rock
         bool _hasLastSelectedCloseOrigin = false;
         float _selectedCloseHandSpeedMetersPerSecond = 0.0f;
 
-        static constexpr std::size_t GRAB_RELEASE_VELOCITY_HISTORY = 5;
-        std::array<RE::NiPoint3, GRAB_RELEASE_VELOCITY_HISTORY> _heldLocalLinearVelocityHistory{};
-        std::size_t _heldLocalLinearVelocityHistoryCount = 0;
-        std::size_t _heldLocalLinearVelocityHistoryNext = 0;
-        std::array<RE::NiPoint3, GRAB_RELEASE_VELOCITY_HISTORY> _heldLocalHandVelocityHistory{};
-        std::array<RE::NiPoint3, GRAB_RELEASE_VELOCITY_HISTORY> _heldHandAngularVelocityHistory{};
-        std::size_t _heldHandVelocityHistoryCount = 0;
-        std::size_t _heldHandVelocityHistoryNext = 0;
+        release_velocity::History<RE::NiPoint3> _controllerReleaseHistory;
+        release_velocity::History<RE::NiPoint3> _objectReleaseHistory;
+        std::uint64_t _releaseControllerFrame = 0; // Game thread only.
+        // The post-solve callback publishes progress; the game thread samples
+        // each completed solve at most once, even with repeated release probes.
+        std::atomic<std::uint64_t> _releaseSolveSequence{ 0 };
         RE::NiPoint3 _lastHeldObjectLocalLinearVelocityHavok{};
         bool _hasLastHeldObjectLocalLinearVelocityHavok = false;
         RE::NiTransform _previousHeldRawHandWorld{};

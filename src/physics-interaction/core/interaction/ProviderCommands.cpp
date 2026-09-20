@@ -272,7 +272,7 @@ namespace rock
                 }
 
                 if (isThrownDropCommand && !applyRequestedVelocity) {
-                    hand.captureHeldReleaseMotion(frame.hknpWorld, handInput.rawHandWorld, frame.deltaSeconds);
+                    hand.captureHeldReleaseMotion(frame.hknpWorld, handInput.rawHandWorld, frame.timing);
                 }
 
                 const std::uint32_t flags = isThrownDropCommand ? command.thrownDrop.flags : command.forceRelease.flags;

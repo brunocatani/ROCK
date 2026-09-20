@@ -338,22 +338,33 @@ namespace rock
         }
 
         outSnapshot.bones.resize(capturedCount);
+        outSnapshot.controllerHandsValid = {};
         if (space == SkeletonBoneCaptureSpace::Controller) {
-            namespace transport = rendered_bone_transport_policy;
-            for (const bool isLeft : { false, true }) {
-                RE::NiTransform controllerRoot{};
-                if (!frik_hand_world_authority::tryGetRawHandWorld(isLeft, controllerRoot) ||
-                    !transport::transportSnapshotHand(outSnapshot.bones,
-                        isLeft ? transport::HandChainSide::Left : transport::HandChainSide::Right,
-                        controllerRoot)) {
-                    ROCK_LOG_SAMPLE_WARN(Hand, 5000,
-                        "Controller skeleton capture rejected: {} hand input or sampled bone chain unavailable", isLeft ? "left" : "right");
-                    outSnapshot = {};
-                    return false;
-                }
-            }
+            outSnapshot.space = SkeletonBoneCaptureSpace::Rendered;
+            return transportControllerHands(outSnapshot);
         }
         outSnapshot.valid = !outSnapshot.bones.empty();
         return outSnapshot.valid;
+    }
+
+    bool transportControllerHands(DirectSkeletonBoneSnapshot& snapshot)
+    {
+        if (!snapshot.valid || snapshot.space != SkeletonBoneCaptureSpace::Rendered) return false;
+        namespace transport = rendered_bone_transport_policy;
+        snapshot.controllerHandsValid = {};
+        snapshot.space = SkeletonBoneCaptureSpace::Controller;
+        for (const bool isLeft : { false, true }) {
+            RE::NiTransform root{};
+            if (frik_hand_world_authority::tryGetRawHandWorld(isLeft, root) &&
+                transport::transportSnapshotHand(snapshot.bones,
+                    isLeft ? transport::HandChainSide::Left : transport::HandChainSide::Right, root)) {
+                snapshot.controllerHandsValid[isLeft ? 1u : 0u] = true;
+            } else {
+                ROCK_LOG_SAMPLE_WARN(Hand, 5000,
+                    "Controller skeleton capture rejected: {} hand input or sampled bone chain unavailable", isLeft ? "left" : "right");
+            }
+        }
+        snapshot.valid = snapshot.controllerHandsValid[0] || snapshot.controllerHandsValid[1];
+        return snapshot.valid;
     }
 }
