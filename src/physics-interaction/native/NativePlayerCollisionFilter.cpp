@@ -37,12 +37,18 @@ namespace rock::native_player_collision
         // original native filter returns. No native lock is taken under this gate.
         PhysicsCallbackQuiescenceGate s_gate;
         Snapshot s_snapshot;
+        // Independent game-thread publisher and physics-worker read gate.
+        // Player-body refresh must never bypass an active blade exception;
+        // only blade publication pauses this gate and rebuilds its two bodies.
+        PhysicsCallbackQuiescenceGate s_bladeGate;
+        BladeCollisionPair s_bladePair;
         FilterPairs s_original{ nullptr };
         bool s_installed{ false };
         std::atomic<std::uint64_t> s_removedPairs{ 0 };
         std::atomic<std::uint64_t> s_preservedPlayerPairs{ 0 };
         std::atomic<std::uint64_t> s_staleIdentities{ 0 };
         std::atomic<std::uint64_t> s_unresolvedWeaponOwners{ 0 };
+        std::atomic<std::uint64_t> s_bladeRejectedPairs{ 0 };
         std::uint64_t s_nextReportMs{ 0 };
 
         BodyIdentity identity(const havok_runtime::BodySnapshot& body)
@@ -146,6 +152,24 @@ namespace rock::native_player_collision
             }
         }
 
+        int filterBladePairs(RE::hknpWorld* world, BodyPair* pairs, int count) noexcept
+        {
+            auto lease = s_bladeGate.tryEnterCallback();
+            if (!lease || !world || reinterpret_cast<std::uintptr_t>(world) != s_bladePair.world || !pairs || count <= 0)
+                return count;
+            const int kept = filterPhysicalPairs(pairs, count, [&](const BodyPair& pair) {
+                if (!s_bladePair.matchesIds(pair)) return false;
+                const auto a = havok_runtime::snapshotBody(world, RE::hknpBodyId{ pair.bodyA });
+                const auto b = havok_runtime::snapshotBody(world, RE::hknpBodyId{ pair.bodyB });
+                return a.valid && b.valid && s_bladePair.suppresses(reinterpret_cast<std::uintptr_t>(world),
+                    identity(a), identity(b),
+                    a.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK,
+                    b.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK);
+            });
+            if (kept != count) s_bladeRejectedPairs.fetch_add(count - kept, std::memory_order_relaxed);
+            return kept;
+        }
+
         int filterPairs(void* filter, RE::hknpWorld* world, BodyPair* pairs, int count) noexcept
         {
             profilePairs(world, pairs, count, performance_profiler::ContactStage::SimulationInput,
@@ -158,8 +182,9 @@ namespace rock::native_player_collision
             if (nativeAdmitted >= 0 && nativeAdmitted <= count) profilePairs(world, pairs, nativeAdmitted,
                 performance_profiler::ContactStage::SimulationNative, performance_profiler::ValueMetric::SimulationPairsNative);
             performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::NativePlayerPairFilter);
-            const int admitted = nativeAdmitted > 0 && nativeAdmitted <= count ?
+            int admitted = nativeAdmitted > 0 && nativeAdmitted <= count ?
                 shell_casing_grace::filterPairs(world, pairs, nativeAdmitted) : nativeAdmitted;
+            if (admitted > 0 && admitted <= count) admitted = filterBladePairs(world, pairs, admitted);
             auto lease = s_gate.tryEnterCallback();
             if (!lease || !world || world != s_snapshot.world || s_snapshot.count == 0 ||
                 !pairs || admitted <= 0 || admitted > count) {
@@ -210,29 +235,30 @@ namespace rock::native_player_collision
             return kept;
         }
 
-        void invalidatePublishedBodies(const Snapshot& before, const Snapshot& after)
+        void invalidateBodyIfCurrent(RE::hknpWorld* world, const BodyIdentity& body)
         {
             static REL::Relocation<RebuildBodyCaches> rebuild{
                 REL::Offset(offsets::kFunc_RebuildBodyCollisionCaches) };
-            const auto invalidate = [&](const BodyIdentity& body) {
-                const auto live = havok_runtime::snapshotBody(after.world, RE::hknpBodyId{ body.bodyId });
-                if (live.valid && matchesLiveBody(body, identity(live))) {
-                    // Native setter and counted-pair mutations use this exact
-                    // routine. Publication rebuilds the protected set, including
-                    // pairs admitted while its read gate was briefly paused.
-                    // Body collision filter bits never change.
-                    rebuild(after.world, body.bodyId);
-                }
-            };
+            const auto live = havok_runtime::snapshotBody(world, RE::hknpBodyId{ body.bodyId });
+            if (live.valid && matchesLiveBody(body, identity(live))) {
+                // Rebuild after publication, outside the read gates, so callbacks can
+                // consume the new rule. Native pair mutations use this same
+                // routine; no body filter bits or query filters are changed.
+                rebuild(world, body.bodyId);
+            }
+        }
+
+        void invalidatePublishedBodies(const Snapshot& before, const Snapshot& after)
+        {
             if (before.world == after.world) {
                 for (std::size_t i = 0; i < before.count; ++i) {
-                    invalidate(before.bodies[i]);
+                    invalidateBodyIfCurrent(after.world, before.bodies[i]);
                 }
             }
             for (std::size_t i = 0; i < after.count; ++i) {
                 const auto* previous = before.world == after.world ? findPlayerBody(before, after.bodies[i].bodyId) : nullptr;
                 if (!previous || *previous != after.bodies[i]) {
-                    invalidate(after.bodies[i]);
+                    invalidateBodyIfCurrent(after.world, after.bodies[i]);
                 }
             }
         }
@@ -358,5 +384,77 @@ namespace rock::native_player_collision
     {
         s_gate.pauseAndWait();
         s_snapshot = {};
+        s_bladeGate.pauseAndWait();
+        s_bladePair = {};
+        s_bladeRejectedPairs.store(0, std::memory_order_relaxed);
+    }
+
+    bool publishBladePair(RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody)
+    {
+        if (!s_installed || !world) {
+            ROCK_LOG_WARN(Weapon, "BLADE simulation pair rejected: stage=hook-or-world-unavailable installed={}", s_installed);
+            return false;
+        }
+        const auto weapon = havok_runtime::snapshotBody(world, RE::hknpBodyId{ weaponBody });
+        const auto target = havok_runtime::snapshotBody(world, RE::hknpBodyId{ targetBody });
+        const BladeCollisionPair next{ reinterpret_cast<std::uintptr_t>(world), identity(weapon), identity(target) };
+        if (!weapon.valid || !target.valid || !next.suppresses(next.world, next.weapon, next.target,
+                weapon.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK,
+                target.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK)) {
+            ROCK_LOG_WARN(Weapon, "BLADE simulation pair rejected: stage=body-identity-or-layer weapon={} target={} valid={}/{} objects=0x{:X}/0x{:X} nodes=0x{:X}/0x{:X} filters=0x{:X}/0x{:X}",
+                weaponBody, targetBody, weapon.valid, target.valid, next.weapon.collisionObject, next.target.collisionObject,
+                next.weapon.ownerNode, next.target.ownerNode, weapon.collisionFilterInfo, target.collisionFilterInfo);
+            return false;
+        }
+        // Only this game's equipped-blade owner may publish. A second request
+        // cannot silently replace another live exception or a recycled body.
+        if (s_bladePair.valid()) {
+            const bool same = s_bladePair.world == next.world && s_bladePair.weapon == next.weapon && s_bladePair.target == next.target;
+            if (!same) ROCK_LOG_WARN(Weapon, "BLADE simulation pair rejected: stage=previous-pair-still-owned");
+            return same;
+        }
+        {
+            auto mutation = s_bladeGate.pauseForMutation();
+            s_bladeRejectedPairs.store(0, std::memory_order_relaxed);
+            s_bladePair = next;
+        }
+        s_bladeGate.resumeCallbacks();
+        invalidateBodyIfCurrent(world, next.weapon);
+        invalidateBodyIfCurrent(world, next.target);
+        ROCK_LOG_INFO(Weapon, "BLADE simulation pair published: weapon={} target={} world=0x{:X}", weaponBody, targetBody, next.world);
+        return true;
+    }
+
+    bool hasBladePair(RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody) noexcept
+    {
+        if (!s_installed || !s_bladePair.valid() || s_bladePair.world != reinterpret_cast<std::uintptr_t>(world) ||
+            s_bladePair.weapon.bodyId != weaponBody || s_bladePair.target.bodyId != targetBody) return false;
+        const auto weapon = havok_runtime::snapshotBody(world, RE::hknpBodyId{ weaponBody });
+        const auto target = havok_runtime::snapshotBody(world, RE::hknpBodyId{ targetBody });
+        return weapon.valid && target.valid && s_bladePair.suppresses(reinterpret_cast<std::uintptr_t>(world),
+            identity(weapon), identity(target),
+            weapon.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK,
+            target.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK);
+    }
+
+    std::uint64_t bladePairRejectedCount() noexcept
+    {
+        return s_bladeRejectedPairs.load(std::memory_order_relaxed);
+    }
+
+    void clearBladePair(RE::hknpWorld* liveWorld)
+    {
+        const auto previous = s_bladePair;
+        if (!previous.valid()) return;
+        std::uint64_t rejectedPairs = 0;
+        s_bladeGate.pauseAndWait();
+        s_bladePair = {};
+        rejectedPairs = s_bladeRejectedPairs.exchange(0, std::memory_order_relaxed);
+        if (liveWorld && previous.world == reinterpret_cast<std::uintptr_t>(liveWorld)) {
+            invalidateBodyIfCurrent(liveWorld, previous.weapon);
+            invalidateBodyIfCurrent(liveWorld, previous.target);
+        }
+        ROCK_LOG_INFO(Weapon, "BLADE simulation pair cleared: weapon={} target={} rejectedPairs={}",
+            previous.weapon.bodyId, previous.target.bodyId, rejectedPairs);
     }
 }

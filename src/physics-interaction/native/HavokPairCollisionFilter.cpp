@@ -17,12 +17,6 @@ namespace rock
         constexpr std::size_t kMaximumSignalSlots = 64;
         constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFFu;
 
-        bool rejected(HavokPairCollisionDiagnostics* diagnostics, const char* stage) noexcept
-        {
-            if (diagnostics) diagnostics->stage = stage;
-            return false;
-        }
-
         [[nodiscard]] std::uintptr_t constraintFilterVtable() noexcept
         {
             static REL::Relocation<std::uintptr_t> address{
@@ -49,49 +43,35 @@ namespace rock
 
         [[nodiscard]] bool filterOwnerMatches(
             const void* owner,
-            RE::hknpWorld* world,
-            HavokPairCollisionDiagnostics* diagnostics) noexcept
+            RE::hknpWorld* world) noexcept
         {
             std::uintptr_t vtable = 0;
             std::uint8_t type = 0;
             RE::hknpWorld* reciprocalWorld = nullptr;
-            if (diagnostics) {
-                diagnostics->filter = reinterpret_cast<std::uintptr_t>(owner);
-                diagnostics->expectedVtable = constraintFilterVtable();
-                diagnostics->ownerVtable = 0;
-                diagnostics->ownerType = 0xFF;
-                diagnostics->ownerWorld = 0;
-            }
-            if (!owner || !world) return rejected(diagnostics, "owner-missing");
-            if (!native_memory::tryReadField(owner, 0, vtable)) return rejected(diagnostics, "owner-vtable-unreadable");
-            if (diagnostics) diagnostics->ownerVtable = vtable;
-            if (vtable != constraintFilterVtable()) return rejected(diagnostics, "owner-vtable-mismatch");
-            if (!native_memory::tryReadField(owner, offsets::kConstraintCollisionFilter_Type, type))
-                return rejected(diagnostics, "owner-type-unreadable");
-            if (diagnostics) diagnostics->ownerType = type;
-            if (type != 1) return rejected(diagnostics, "owner-type-mismatch");
-            if (!native_memory::tryReadField(owner, offsets::kConstraintCollisionFilter_World, reciprocalWorld))
-                return rejected(diagnostics, "owner-world-unreadable");
-            if (diagnostics) diagnostics->ownerWorld = reinterpret_cast<std::uintptr_t>(reciprocalWorld);
-            if (reciprocalWorld != world) return rejected(diagnostics, "owner-world-mismatch");
-            return true;
+            return owner && world &&
+                   native_memory::tryReadField(owner, 0, vtable) &&
+                   vtable == constraintFilterVtable() &&
+                   native_memory::tryReadField(
+                       owner,
+                       offsets::kConstraintCollisionFilter_Type,
+                       type) &&
+                   type == 1 &&
+                   native_memory::tryReadField(
+                       owner,
+                       offsets::kConstraintCollisionFilter_World,
+                       reciprocalWorld) &&
+                   reciprocalWorld == world;
         }
 
         [[nodiscard]] bool signalContainsOwner(
             RE::hknpWorld* world,
             std::uintptr_t signalOffset,
             std::uintptr_t expectedCallback,
-            const void* expectedOwner,
-            HavokPairCollisionDiagnostics* diagnostics) noexcept
+            const void* expectedOwner) noexcept
         {
             std::uintptr_t tagged = 0;
             if (!native_memory::tryReadField(world, signalOffset, tagged)) {
-                return rejected(diagnostics, "removed-head-unreadable");
-            }
-            if (diagnostics) {
-                diagnostics->removedHead = tagged;
-                diagnostics->removedSlots = 0;
-                diagnostics->removedCallbackMatches = 0;
+                return false;
             }
 
             std::uintptr_t previous = 0;
@@ -100,7 +80,7 @@ namespace rock
                  ++visited) {
                 const std::uintptr_t slotAddress = tagged & ~kSignalTagMask;
                 if (!slotAddress || slotAddress == previous) {
-                    return rejected(diagnostics, slotAddress ? "removed-slot-cycle" : "removed-head-empty");
+                    return false;
                 }
                 const auto* slot = reinterpret_cast<const void*>(slotAddress);
                 std::uintptr_t nextTagged = 0;
@@ -118,13 +98,7 @@ namespace rock
                         slot,
                         offsets::kSignalSlot_Callback,
                         callback)) {
-                    return rejected(diagnostics, "removed-slot-unreadable");
-                }
-                if (diagnostics) {
-                    ++diagnostics->removedSlots;
-                    diagnostics->lastRemovedCallback = callback;
-                    diagnostics->lastRemovedOwner = reinterpret_cast<std::uintptr_t>(owner);
-                    if (callback == expectedCallback) ++diagnostics->removedCallbackMatches;
+                    return false;
                 }
                 if (owner == expectedOwner && callback == expectedCallback) {
                     return true;
@@ -132,35 +106,22 @@ namespace rock
                 previous = slotAddress;
                 tagged = nextTagged;
                 if ((tagged & ~kSignalTagMask) == 0) {
-                    return rejected(diagnostics, "removed-owner-callback-not-found");
+                    return false;
                 }
             }
-            return rejected(diagnostics, "removed-slot-limit");
+            return false;
         }
 
         [[nodiscard]] void* findConstraintPairFilter(
-            RE::hknpWorld* world,
-            HavokPairCollisionDiagnostics* diagnostics) noexcept
+            RE::hknpWorld* world) noexcept
         {
             std::uintptr_t tagged = 0;
-            if (diagnostics) {
-                diagnostics->expectedVtable = constraintFilterVtable();
-                diagnostics->expectedAddedCallback = constraintAddedCallback();
-                diagnostics->expectedRemovedCallback = constraintRemovedCallback();
-            }
             if (!world ||
                 !native_memory::tryReadField(
                     world,
                     offsets::kHknpWorld_ConstraintAddedSignal,
                     tagged)) {
-                rejected(diagnostics, "added-head-unreadable");
                 return nullptr;
-            }
-            if (diagnostics) {
-                diagnostics->stage = (tagged & ~kSignalTagMask) ? "added-callback-not-found" : "added-head-empty";
-                diagnostics->addedHead = tagged;
-                diagnostics->addedSlots = 0;
-                diagnostics->addedCallbackMatches = 0;
             }
 
             void* candidate = nullptr;
@@ -170,7 +131,6 @@ namespace rock
                  ++visited) {
                 const std::uintptr_t slotAddress = tagged & ~kSignalTagMask;
                 if (!slotAddress || slotAddress == previous) {
-                    if (slotAddress && !candidate) rejected(diagnostics, "added-slot-cycle");
                     break;
                 }
                 const auto* slot = reinterpret_cast<const void*>(slotAddress);
@@ -189,26 +149,17 @@ namespace rock
                         slot,
                         offsets::kSignalSlot_Callback,
                         callback)) {
-                    rejected(diagnostics, "added-slot-unreadable");
                     return nullptr;
-                }
-                if (diagnostics) {
-                    ++diagnostics->addedSlots;
-                    diagnostics->lastAddedCallback = callback;
-                    diagnostics->lastAddedOwner = reinterpret_cast<std::uintptr_t>(owner);
-                    if (callback == constraintAddedCallback()) ++diagnostics->addedCallbackMatches;
                 }
 
                 if (callback == constraintAddedCallback() &&
-                    filterOwnerMatches(owner, world, diagnostics) &&
+                    filterOwnerMatches(owner, world) &&
                     signalContainsOwner(
                         world,
                         offsets::kHknpWorld_ConstraintRemovedSignal,
                         constraintRemovedCallback(),
-                        owner,
-                        diagnostics)) {
+                        owner)) {
                     if (candidate && candidate != owner) {
-                        rejected(diagnostics, "multiple-filter-owners");
                         return nullptr;
                     }
                     candidate = owner;
@@ -219,8 +170,6 @@ namespace rock
                 if ((tagged & ~kSignalTagMask) == 0) {
                     break;
                 }
-                if (visited + 1 == kMaximumSignalSlots && !candidate)
-                    rejected(diagnostics, "added-slot-limit");
             }
             return candidate;
         }
@@ -229,25 +178,20 @@ namespace rock
 
     template <std::size_t MaximumPairs, std::size_t OwnerGroupCount>
     bool BasicHavokPairCollisionLeaseSet<MaximumPairs, OwnerGroupCount>::filterIdentityMatches(
-        RE::hknpWorld* world, HavokPairCollisionDiagnostics* diagnostics) const noexcept
+        RE::hknpWorld* world) const noexcept
     {
-        return _world == world && filterOwnerMatches(_filter, world, diagnostics);
+        return _world == world && filterOwnerMatches(_filter, world);
     }
 
     template <std::size_t MaximumPairs, std::size_t OwnerGroupCount>
     bool BasicHavokPairCollisionLeaseSet<MaximumPairs, OwnerGroupCount>::resolveFilter(
-        RE::hknpWorld* world, HavokPairCollisionDiagnostics* diagnostics) noexcept
+        RE::hknpWorld* world) noexcept
     {
-        if (filterIdentityMatches(world, diagnostics)) {
-            if (diagnostics) diagnostics->stage = "cached-filter-ready";
+        if (filterIdentityMatches(world)) {
             return true;
         }
-        _filter = findConstraintPairFilter(world, diagnostics);
+        _filter = findConstraintPairFilter(world);
         _world = _filter ? world : nullptr;
-        if (_filter && diagnostics) {
-            diagnostics->stage = "filter-ready";
-            diagnostics->filter = reinterpret_cast<std::uintptr_t>(_filter);
-        }
         return _filter != nullptr;
     }
 
@@ -256,20 +200,17 @@ namespace rock
     BasicHavokPairCollisionLeaseSet<MaximumPairs, OwnerGroupCount>::reconcile(
         RE::hknpWorld* world,
         const DesiredPair* desiredPairs,
-        const std::size_t desiredPairCount,
-        HavokPairCollisionDiagnostics* diagnostics) noexcept
+        const std::size_t desiredPairCount) noexcept
     {
-        if (diagnostics) *diagnostics = {};
         ReconcileResult result{};
         if (!world) {
-            rejected(diagnostics, "no-world");
             abandonWorld();
             return result;
         }
         if (_world && _world != world) {
             abandonWorld();
         }
-        if (!resolveFilter(world, diagnostics)) {
+        if (!resolveFilter(world)) {
             return result;
         }
         result.filterAvailable = true;
@@ -282,15 +223,10 @@ namespace rock
              desiredPairs && index < boundedDesiredCount;
              ++index) {
             DesiredPair normalized = desiredPairs[index];
-            if (diagnostics) {
-                diagnostics->bodyA = normalized.bodyA;
-                diagnostics->bodyB = normalized.bodyB;
-            }
             if (normalized.bodyA == kInvalidBodyId ||
                 normalized.bodyB == kInvalidBodyId ||
                 normalized.bodyA == normalized.bodyB ||
                 normalized.ownerGroup >= result.activePairsByOwnerGroup.size()) {
-                rejected(diagnostics, "invalid-requested-pair");
                 continue;
             }
             if (normalized.bodyB < normalized.bodyA) {
@@ -302,19 +238,8 @@ namespace rock
             const auto snapshotB = havok_runtime::snapshotBodyIdentity(
                 world,
                 RE::hknpBodyId{ normalized.bodyB });
-            if (diagnostics) {
-                diagnostics->pairIdentityChecked = true;
-                diagnostics->bodyA = normalized.bodyA;
-                diagnostics->bodyB = normalized.bodyB;
-                diagnostics->bodyAValid = snapshotA.valid;
-                diagnostics->bodyBValid = snapshotB.valid;
-                diagnostics->collisionObjectA = reinterpret_cast<std::uintptr_t>(snapshotA.collisionObject);
-                diagnostics->collisionObjectB = reinterpret_cast<std::uintptr_t>(snapshotB.collisionObject);
-            }
             if (!snapshotA.valid || !snapshotB.valid ||
                 !snapshotA.collisionObject || !snapshotB.collisionObject) {
-                rejected(diagnostics, !snapshotA.valid ? "body-a-invalid" : !snapshotB.valid ? "body-b-invalid" :
-                    !snapshotA.collisionObject ? "body-a-collision-object-missing" : "body-b-collision-object-missing");
                 continue;
             }
             desired[acceptedDesiredCount++] = PairIdentity{
@@ -434,7 +359,6 @@ namespace rock
                 continue;
             }
             if (_activePairCount >= _activePairs.size()) {
-                rejected(diagnostics, "pair-capacity-reached");
                 break;
             }
             const std::uint32_t referenceCount = disablePair(
@@ -442,11 +366,6 @@ namespace rock
                 world,
                 candidate.bodyA,
                 candidate.bodyB);
-            if (diagnostics) {
-                diagnostics->nativeCallMade = true;
-                diagnostics->nativeReferenceCount = referenceCount;
-                diagnostics->stage = referenceCount ? "pair-acquired" : "native-pair-rejected";
-            }
             if (referenceCount == 0) {
                 continue;
             }
@@ -465,7 +384,6 @@ namespace rock
                 ++result.activePairsByOwnerGroup[active.ownerGroup];
             }
         }
-        if (diagnostics && result.activePairCount != 0) diagnostics->stage = "pair-active";
         return result;
     }
 

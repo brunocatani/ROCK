@@ -9,6 +9,7 @@
 #include "physics-interaction/native/HavokRefCount.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/NativePlayerCollisionFilter.h"
 #include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
 #include "physics-interaction/native/ReferenceInteraction.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
@@ -209,6 +210,7 @@ namespace rock
         if (!supported && !_blade.valid && !active()) return true;
         const bool wasActive = active();
         if (wasActive && (!supported || surfaceSupportActive || _physicsFailed.load(std::memory_order_acquire) ||
+                !native_player_collision::hasBladePair(_world, _weaponBodyId, _contact.surfaceBodyId) ||
                 blade_penetration::dot(blade.axisLocal, _blade.axisLocal) < 0.999f ||
                 blade_penetration::dot(difference(blade.tipLocal, _blade.tipLocal), difference(blade.tipLocal, _blade.tipLocal)) > 0.01f)) {
             ROCK_LOG_WARN(Weapon, "BLADE retirement requested: source-or-target-invalid");
@@ -285,34 +287,11 @@ namespace rock
                 ROCK_LOG_WARN(Weapon, "BLADE rejected: slider-creation-failed");
                 return true;
             }
-            const HavokPairCollisionLeaseSet::DesiredPair pair{ _weaponBodyId, _contact.surfaceBodyId, 0 };
-            HavokPairCollisionDiagnostics diagnostics{};
-            const auto result = _pairs.reconcile(_world, &pair, 1, &diagnostics);
-            if (!result.filterAvailable || result.activePairCount != 1) {
-                // Acquisition already stops after its first failure in this
-                // generation. Keep the detailed trace behind the existing
-                // asynchronous diagnostic switch; the stage is a normal error.
-                ROCK_LOG_WARN(Weapon, "BLADE pair failed: stage={} filterReady={} active={} world=0x{:X} weapon={} target={}",
-                    diagnostics.stage, result.filterAvailable, result.activePairCount,
-                    reinterpret_cast<std::uintptr_t>(_world), _weaponBodyId, _contact.surfaceBodyId);
-                if (dynamic_collider_trace::enabled()) {
-                    dynamic_collider_trace::writeWeapon(
-                        "BLADE_PAIR filter: generation={:016X} stage={} world=0x{:X} filter=0x{:X} vtable(actual/expected)=0x{:X}/0x{:X} type={} reciprocalWorld=0x{:X} added(head/slots/matches)=0x{:X}/{}/{} removed(head/slots/matches)=0x{:X}/{}/{}",
-                        generation, diagnostics.stage, reinterpret_cast<std::uintptr_t>(_world), diagnostics.filter,
-                        diagnostics.ownerVtable, diagnostics.expectedVtable, diagnostics.ownerType, diagnostics.ownerWorld,
-                        diagnostics.addedHead, diagnostics.addedSlots, diagnostics.addedCallbackMatches,
-                        diagnostics.removedHead, diagnostics.removedSlots, diagnostics.removedCallbackMatches);
-                    dynamic_collider_trace::writeWeapon(
-                        "BLADE_PAIR evidence: added(owner/callback/expected)=0x{:X}/0x{:X}/0x{:X} removed(owner/callback/expected)=0x{:X}/0x{:X}/0x{:X} identityChecked={} bodies={}/{} valid={}/{} collisionObjects=0x{:X}/0x{:X} nativeCalled={} nativeCount={}",
-                        diagnostics.lastAddedOwner, diagnostics.lastAddedCallback, diagnostics.expectedAddedCallback,
-                        diagnostics.lastRemovedOwner, diagnostics.lastRemovedCallback, diagnostics.expectedRemovedCallback,
-                        diagnostics.pairIdentityChecked, diagnostics.bodyA, diagnostics.bodyB,
-                        diagnostics.bodyAValid, diagnostics.bodyBValid, diagnostics.collisionObjectA, diagnostics.collisionObjectB,
-                        diagnostics.nativeCallMade, diagnostics.nativeReferenceCount);
-                }
-                release(_world, "pair-filter-unavailable");
+            if (!native_player_collision::publishBladePair(_world, _weaponBodyId, _contact.surfaceBodyId)) {
+                release(_world, "simulation-pair-unavailable");
                 return true;
             }
+            _pairPublished = true;
             _entryWeaponInTarget = transform_math::composeTransforms(transform_math::invertTransform(target), physicalWeapon);
             _lastTargetWorld = target;
             _physicsFailed.store(false, std::memory_order_release);
@@ -345,8 +324,9 @@ namespace rock
         const auto now = nowMilliseconds();
         if (dynamic_collider_trace::enabled() && now - _lastContactReport >= 500) {
             _lastContactReport = now;
-            dynamic_collider_trace::writeWeapon("BLADE depth: target={} requested={:.3f} actual={:.3f} maximum={:.3f}gu",
-                _contact.surfaceBodyId, command.requestedDepth, actual.requestedDepth, kMaximumDepthGame);
+            dynamic_collider_trace::writeWeapon("BLADE depth: target={} requested={:.3f} actual={:.3f} maximum={:.3f}gu filteredPairs={}",
+                _contact.surfaceBodyId, command.requestedDepth, actual.requestedDepth, kMaximumDepthGame,
+                native_player_collision::bladePairRejectedCount());
         }
         return true;
     }
@@ -375,8 +355,10 @@ namespace rock
             ROCK_LOG_INFO(Weapon, "BLADE released: target={} reason={}", _contact.surfaceBodyId, reason);
             _constraintId = kInvalidId;
         }
-        if (world && world == _world) (void)_pairs.reconcile(world, nullptr, 0);
-        else _pairs.abandonWorld();
+        if (_pairPublished) {
+            native_player_collision::clearBladePair(world == _world ? world : nullptr);
+            _pairPublished = false;
+        }
         _contact = {};
         _contacts.clear();
         _physicsFailed.store(false, std::memory_order_release);

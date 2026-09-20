@@ -26,6 +26,15 @@ namespace rock::native_player_collision
     // An empty publication restores physical pairs in the supplied live world.
     void publish(RE::hknpWorld* world, std::span<const BodyIdentity> bodies);
 
+    // Single owner: the equipped BladePenetrationRuntime. Game-thread mutation
+    // while its physics callbacks are quiesced. The existing simulation hook
+    // consumes this exact pair even when the native-player body list is empty.
+    bool publishBladePair(RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody);
+    bool hasBladePair(RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody) noexcept;
+    std::uint64_t bladePairRejectedCount() noexcept;
+    // A null liveWorld clears ownership after world loss without native calls.
+    void clearBladePair(RE::hknpWorld* liveWorld);
+
     // Skeleton/world teardown: invalidate the snapshot without touching a world
     // whose lifetime may have ended. No collision bits or pair leases to restore.
     void abandon() noexcept;

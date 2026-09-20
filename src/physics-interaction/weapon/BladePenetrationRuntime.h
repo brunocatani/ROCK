@@ -3,7 +3,6 @@
 #include "physics-interaction/weapon/BladePenetrationPolicy.h"
 #include "physics-interaction/weapon/WeaponSurfaceSupport.h"
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
-#include "physics-interaction/native/HavokPairCollisionFilter.h"
 
 namespace rock
 {
@@ -45,7 +44,7 @@ namespace rock
         weapon_surface_support::ContactChannel _contacts;
         weapon_surface_support::Contact _contact{};
         BethesdaPhysicsBody _anchor;
-        HavokPairCollisionLeaseSet _pairs;
+        bool _pairPublished{ false };
         std::uint32_t _constraintId{ 0x7FFF'FFFFu };
         RE::NiTransform _entryWeaponInTarget{};
         RE::NiTransform _presentation{};

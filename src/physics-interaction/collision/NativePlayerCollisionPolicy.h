@@ -84,6 +84,39 @@ namespace rock::native_player_collision
     };
     static_assert(sizeof(BodyPair) == 8);
 
+    // One equipped blade may overlap one NPC BODY while its insertion guide
+    // owns the weapon. Identity checks prevent a recycled ID inheriting it.
+    struct BladeCollisionPair
+    {
+        std::uintptr_t world{ 0 };
+        BodyIdentity weapon{};
+        BodyIdentity target{};
+
+        bool valid() const
+        {
+            return world != 0 && weapon.bodyId != target.bodyId &&
+                matchesLiveBody(weapon, weapon) && matchesLiveBody(target, target);
+        }
+
+        bool matchesIds(const BodyPair& pair) const
+        {
+            return (pair.bodyA == weapon.bodyId && pair.bodyB == target.bodyId) ||
+                (pair.bodyB == weapon.bodyId && pair.bodyA == target.bodyId);
+        }
+
+        bool suppresses(std::uintptr_t liveWorld, const BodyIdentity& bodyA,
+            const BodyIdentity& bodyB, std::uint32_t layerA, std::uint32_t layerB) const
+        {
+            using namespace collision_layer_policy;
+            if (!valid() || liveWorld != world || !matchesIds({ bodyA.bodyId, bodyB.bodyId })) return false;
+            const bool weaponIsA = bodyA.bodyId == weapon.bodyId;
+            return matchesLiveBody(weapon, weaponIsA ? bodyA : bodyB) &&
+                matchesLiveBody(target, weaponIsA ? bodyB : bodyA) &&
+                (weaponIsA ? layerA : layerB) == ROCK_LAYER_DYNAMIC_WEAPON_PROXY &&
+                (weaponIsA ? layerB : layerA) == FO4_LAYER_BIPED_NO_CC;
+        }
+    };
+
     // Only the engine's admitted simulation-pair prefix is compacted. Query
     // filters never call this function and no body's filter bits are changed.
     template <class ShouldSuppress>

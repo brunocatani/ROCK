@@ -326,5 +326,59 @@ int main()
     ok &= expect("all-suppressed batch becomes empty", filterPhysicalPairs(pairs.data(), kept,
         [](const BodyPair&) { return true; }) == 0);
 
+    const BodyIdentity blade{ 750, 81, 0x12340, 0x56780 };
+    const BodyIdentity torso{ 422, 37, 0x23450, 0x67890 };
+    constexpr std::uintptr_t bladeWorld = 0x90000;
+    const BladeCollisionPair bladePair{ bladeWorld, blade, torso };
+    const auto bladeLayer = ROCK_LAYER_DYNAMIC_WEAPON_PROXY;
+    const auto npcLayer = FO4_LAYER_BIPED_NO_CC;
+    ok &= expect("embedded blade suppresses only its owned NPC pair",
+        bladePair.suppresses(bladeWorld, blade, torso, bladeLayer, npcLayer));
+    ok &= expect("blade exception accepts reversed native pair order",
+        bladePair.suppresses(bladeWorld, torso, blade, npcLayer, bladeLayer));
+    ok &= expect("blade exception cannot cross physics worlds",
+        !bladePair.suppresses(bladeWorld + 1, blade, torso, bladeLayer, npcLayer));
+    auto otherBody = torso;
+    otherBody.bodyId += 1;
+    ok &= expect("another NPC limb keeps its collision",
+        !bladePair.suppresses(bladeWorld, blade, otherBody, bladeLayer, npcLayer));
+    otherBody = torso;
+    otherBody.collisionObject += 0x100;
+    ok &= expect("recycled NPC body ID does not inherit penetration",
+        !bladePair.suppresses(bladeWorld, blade, otherBody, bladeLayer, npcLayer));
+    otherBody = torso;
+    otherBody.ownerNode += 0x100;
+    ok &= expect("replaced NPC scene ownership restores normal collision",
+        !bladePair.suppresses(bladeWorld, blade, otherBody, bladeLayer, npcLayer));
+    otherBody = torso;
+    otherBody.motionIndex += 1;
+    ok &= expect("reassigned NPC motion invalidates the exception",
+        !bladePair.suppresses(bladeWorld, blade, otherBody, bladeLayer, npcLayer));
+    auto otherWeapon = blade;
+    otherWeapon.collisionObject += 0x100;
+    ok &= expect("rebuilt weapon identity cannot inherit an old exception",
+        !bladePair.suppresses(bladeWorld, otherWeapon, torso, bladeLayer, npcLayer));
+    ok &= expect("layer changes preserve scenery and unrelated colliders",
+        !bladePair.suppresses(bladeWorld, blade, torso, bladeLayer, FO4_LAYER_STATIC) &&
+        !bladePair.suppresses(bladeWorld, blade, torso, ROCK_LAYER_HAND, npcLayer));
+    ok &= expect("clearing the published blade pair restores collision",
+        !BladeCollisionPair{}.suppresses(bladeWorld, blade, torso, bladeLayer, npcLayer));
+    auto unknownPair = bladePair;
+    unknownPair.target.ownerNode = 0;
+    ok &= expect("unverified body ownership cannot suppress collision",
+        !unknownPair.suppresses(bladeWorld, blade, torso, bladeLayer, npcLayer));
+    std::array<BodyPair, 6> bladePairs{{ {750, 422}, {422, 750}, {750, 423}, {750, 101}, {751, 422}, {750, 422} }};
+    const auto suppressBlade = [&](const BodyPair& pair) {
+        if (!bladePair.matchesIds(pair)) return false;
+        return pair.bodyA == blade.bodyId ?
+            bladePair.suppresses(bladeWorld, blade, torso, bladeLayer, npcLayer) :
+            bladePair.suppresses(bladeWorld, torso, blade, npcLayer, bladeLayer);
+    };
+    const int bladeKept = filterPhysicalPairs(bladePairs.data(), 5, suppressBlade);
+    ok &= expect("blade filtering retains other limbs, walls and weapons in order",
+        bladeKept == 3 && bladePairs[0].bodyB == 423 && bladePairs[1].bodyB == 101 && bladePairs[2].bodyA == 751);
+    ok &= expect("blade filtering leaves the unadmitted native batch tail untouched",
+        bladePairs[5].bodyA == 750 && bladePairs[5].bodyB == 422);
+
     return ok ? 0 : 1;
 }
