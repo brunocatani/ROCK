@@ -2062,20 +2062,15 @@ namespace rock
             bool rightHandHoldingObjectForPose{ false };
 
             /*
-             * Natural physical hand-bone relations in the raw wand and
-             * hFRIK's damped driver. They are refreshed only while ROCK has
-             * no visual authority for that hand and are deliberately not
-             * weapon-generation keyed so final alignment never consumes
-             * ROCK's previous output.
+             * Natural hand relations in the raw wand, used for opposite-hand
+             * grip mirroring. Refresh from the isolated physical hand while
+             * no visual authority is active. World-space weapon targets read
+             * the shared hand service directly, never a cached native offset.
              */
             RE::NiTransform rightNaturalBoneInWand{};
             RE::NiTransform leftNaturalBoneInWand{};
-            RE::NiTransform rightNaturalBoneInDampedDriver{};
-            RE::NiTransform leftNaturalBoneInDampedDriver{};
             bool hasRightNaturalBoneInWand{ false };
             bool hasLeftNaturalBoneInWand{ false };
-            bool hasRightNaturalBoneInDampedDriver{ false };
-            bool hasLeftNaturalBoneInDampedDriver{ false };
 
             // Captured firing-grip frames on the current weapon.
             RE::NiPoint3 primaryGripLocal{};

@@ -165,7 +165,7 @@ namespace rock
                 const bool preserveAuthoredPhysicalRelation =
                     !isLeft &&
                     _firing.authoredHandWorldActive &&
-                    _firing.hasRightNaturalBoneInDampedDriver;
+                    frik_hand_world_authority::hasCalibratedRawHandFrame(false);
                 if (driverValid && !preserveAuthoredPhysicalRelation) {
                     const RE::NiTransform driverToHandLocal =
                         scope_safe_hand_frame_math::captureDriverToHandLocal(driverFrame.world, resolvedHandWorld);

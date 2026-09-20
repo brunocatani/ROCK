@@ -1,6 +1,7 @@
 #include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
 
 #include <cmath>
+#include <array>
 #include <cstdio>
 
 namespace
@@ -68,6 +69,15 @@ namespace
     {
         return rock::transform_math::composeTransforms(parent, child);
     }
+
+    RE::NiTransform recorded(const std::array<float, 12>& values)
+    {
+        auto t = identity();
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c) t.rotate.entry[r][c] = values[r * 3 + c];
+        t.translate = { values[9], values[10], values[11] };
+        return rock::transform_math::orthonormalizedTransform(t);
+    }
 }
 
 int main()
@@ -87,6 +97,46 @@ int main()
         ok &= expectTrue("qualified controller reconstruction can continue recoil", canDriveExternalPose(startup, raw));
         raw.valid = false;
         ok &= expectFalse("missing controller frame releases recoil", canDriveExternalPose(startup, raw));
+    }
+
+    // Recorded support excursion, 2026-09-19 23:51:06.796 -> 06.885.
+    // The native weapon offset and isolated physical hand are not a rigid
+    // pair. A held weapon must consume the shared hand result even while
+    // its rendered wrist follows a displaced contact-constrained weapon.
+    {
+        const auto offsetA = recorded({
+            0.9819524f, -0.1685165f, 0.0858600f, 0.1407563f, 0.9543747f, 0.2633571f,
+            -0.1263224f, -0.2465187f, 0.9608702f, 272.71869f, -22.62910f, 67.51447f });
+        const auto handA = recorded({
+            0.0149407f, 0.9610964f, 0.2758087f, 0.9792818f, -0.0697772f, 0.1901008f,
+            0.2019504f, 0.2672542f, -0.9422268f, 275.46606f, -23.96057f, 64.06477f });
+        const auto offsetB = recorded({
+            0.9784306f, -0.1782101f, 0.1044733f, 0.1543470f, 0.9668010f, 0.2036490f,
+            -0.1372971f, -0.1831312f, 0.9734539f, 272.87717f, -21.58559f, 68.07898f });
+        const auto handB = recorded({
+            0.0175434f, 0.9597044f, 0.2804634f, 0.9775856f, -0.0753253f, 0.1966025f,
+            0.2098063f, 0.2707278f, -0.9395146f, 275.55124f, -23.81933f, 64.45705f });
+        const auto frozenRelation = compose(rock::transform_math::invertTransform(offsetA), handA);
+        const auto staleHand = compose(offsetB, frozenRelation);
+        ok &= expectTrue("recorded offset reconstruction adds translation", translationGameUnits(staleHand, handB) > 0.65f);
+        ok &= expectTrue("recorded offset reconstruction adds rotation", rotationDegrees(staleHand, handB) > 3.8f);
+        RelationState relation{};
+        relation.firstPersonToBodyHand = identity();
+        relation.valid = true;
+        FrameInput frame{
+            .firstPersonHandWorld = handB,
+            .firstPersonHandValid = true,
+            .bodyHandNodeWorld = staleHand,
+            .bodyHandNodeValid = true,
+            .flattenedHandWorld = staleHand,
+            .flattenedHandValid = true,
+            .claimConsumed = true,
+            .calibrationAllowed = false,
+        };
+        const auto physical = resolveFrame(relation, frame);
+        ok &= expectTrue("current physical frame remains usable under weapon authority", canDriveExternalPose(relation, physical));
+        ok &= expectNear("current physical frame rejects offset displacement", translationGameUnits(physical.rawHandWorld, handB), 0.0f, 0.001f);
+        ok &= expectNear("current physical frame rejects offset rotation", rotationDegrees(physical.rawHandWorld, handB), 0.0f, 0.001f);
     }
 
     // A skeleton with a small solver residual and a body scale: relation calibrates on a free frame.

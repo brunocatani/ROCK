@@ -868,12 +868,8 @@ namespace rock
         _leftCarry.supportReleaseReturn = {};
         _firing.rightNaturalBoneInWand = {};
         _firing.leftNaturalBoneInWand = {};
-        _firing.rightNaturalBoneInDampedDriver = {};
-        _firing.leftNaturalBoneInDampedDriver = {};
         _firing.hasRightNaturalBoneInWand = false;
         _firing.hasLeftNaturalBoneInWand = false;
-        _firing.hasRightNaturalBoneInDampedDriver = false;
-        _firing.hasLeftNaturalBoneInDampedDriver = false;
         _firing.authoredFingerPoseSuppressed = false;
         _firing.leftHandWorldActive = false;
         _firing.leftHandHoldingObjectForPose = false;

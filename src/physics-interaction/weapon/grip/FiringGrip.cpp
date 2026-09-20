@@ -1381,15 +1381,14 @@ namespace rock
         const auto refreshHand = [&](const bool isLeft,
                                      RE::NiNode* wandNode,
                                      RE::NiTransform& outBoneInWand,
-                                     bool& outWandValid,
-                                     RE::NiTransform& outBoneInDampedDriver,
-                                     bool& outDampedDriverValid) {
+                                     bool& outWandValid) {
             if (hasVisualAuthorityForHand(isLeft)) {
                 return;
             }
 
             RE::NiTransform handWorld{};
-            if (!tryGetSolverHandTransform(isLeft, handWorld)) {
+            if (!frik_hand_world_authority::hasCalibratedRawHandFrame(isLeft) ||
+                !frik_hand_world_authority::tryGetRawHandWorld(isLeft, handWorld)) {
                 return;
             }
 
@@ -1415,10 +1414,6 @@ namespace rock
             };
 
             captureRelation(wandNode ? &wandNode->world : nullptr, outBoneInWand, outWandValid);
-            RE::NiTransform inputDriver{};
-            if (frik_hand_world_authority::tryGetInputDriverWorld(isLeft, inputDriver)) {
-                captureRelation(&inputDriver, outBoneInDampedDriver, outDampedDriverValid);
-            }
 
             /*
              * Probe (FRIK API v2.3 port): every loose seat, palm pivot and
@@ -1443,21 +1438,19 @@ namespace rock
                 tracked_hand_isolation_policy::translationGameUnits(handWorld, presentedHand) : -1.0f;
             const float boneInWandDegrees = outWandValid ?
                 tracked_hand_isolation_policy::rotationDegrees(outBoneInWand, identity) : -1.0f;
-            const float boneInDriverDegrees = outDampedDriverValid ?
-                tracked_hand_isolation_policy::rotationDegrees(outBoneInDampedDriver, identity) : -1.0f;
             const char* solverMode = scopeSafeResolutionModeName(
                 _scope.safeHandFrames[isLeft ? 0u : 1u].diagnostic.resolutionMode);
             const char* rawSource = frik_hand_world_authority::rawHandSourceName(isLeft);
             if (isLeft) {
                 ROCK_LOG_SAMPLE_INFO(Weapon, 2000,
-                    "TwoHandedGrip: natural hand frame left solver={} raw={} vsFirstPerson={:.1f}deg/{:.2f}gu vsPresented={:.1f}deg/{:.2f}gu boneInWand={:.1f}deg boneInDriver={:.1f}deg",
+                    "TwoHandedGrip: natural hand frame left solver={} raw={} vsFirstPerson={:.1f}deg/{:.2f}gu vsPresented={:.1f}deg/{:.2f}gu boneInWand={:.1f}deg",
                     solverMode, rawSource, solverVsFirstPersonDegrees, solverVsFirstPersonGameUnits,
-                    solverVsPresentedDegrees, solverVsPresentedGameUnits, boneInWandDegrees, boneInDriverDegrees);
+                    solverVsPresentedDegrees, solverVsPresentedGameUnits, boneInWandDegrees);
             } else {
                 ROCK_LOG_SAMPLE_INFO(Weapon, 2000,
-                    "TwoHandedGrip: natural hand frame right solver={} raw={} vsFirstPerson={:.1f}deg/{:.2f}gu vsPresented={:.1f}deg/{:.2f}gu boneInWand={:.1f}deg boneInDriver={:.1f}deg",
+                    "TwoHandedGrip: natural hand frame right solver={} raw={} vsFirstPerson={:.1f}deg/{:.2f}gu vsPresented={:.1f}deg/{:.2f}gu boneInWand={:.1f}deg",
                     solverMode, rawSource, solverVsFirstPersonDegrees, solverVsFirstPersonGameUnits,
-                    solverVsPresentedDegrees, solverVsPresentedGameUnits, boneInWandDegrees, boneInDriverDegrees);
+                    solverVsPresentedDegrees, solverVsPresentedGameUnits, boneInWandDegrees);
             }
         };
 
@@ -1465,16 +1458,12 @@ namespace rock
             false,
             playerNodes->primaryWandNode,
             _firing.rightNaturalBoneInWand,
-            _firing.hasRightNaturalBoneInWand,
-            _firing.rightNaturalBoneInDampedDriver,
-            _firing.hasRightNaturalBoneInDampedDriver);
+            _firing.hasRightNaturalBoneInWand);
         refreshHand(
             true,
             playerNodes->SecondaryWandNode,
             _firing.leftNaturalBoneInWand,
-            _firing.hasLeftNaturalBoneInWand,
-            _firing.leftNaturalBoneInDampedDriver,
-            _firing.hasLeftNaturalBoneInDampedDriver);
+            _firing.hasLeftNaturalBoneInWand);
     }
 
     void TwoHandedGrip::refreshRightNativeAimFrame(

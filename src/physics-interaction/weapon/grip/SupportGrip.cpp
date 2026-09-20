@@ -2910,21 +2910,17 @@ namespace rock
     {
         outHandWorld = {};
         outDriverWorld = {};
-        const RE::NiTransform& boneInDriver = isLeft ?
-            _firing.leftNaturalBoneInDampedDriver :
-            _firing.rightNaturalBoneInDampedDriver;
-        const bool relationValid = isLeft ?
-            _firing.hasLeftNaturalBoneInDampedDriver :
-            _firing.hasRightNaturalBoneInDampedDriver;
-        if (!relationValid ||
+        // WeaponOffset is an animated native frame, not a rigid hand mount.
+        // FRIK 2.3 can move it independently of the neutral first-person hand
+        // (including restoring native kick after its arm solve). Reusing a
+        // captured offset-to-hand relation feeds that motion into our target.
+        // The shared hand service already isolates the current physical hand
+        // from our claims and native recoil; use that single authority here.
+        if (!frik_hand_world_authority::hasCalibratedRawHandFrame(isLeft) ||
             !frik_hand_world_authority::tryGetInputDriverWorld(isLeft, outDriverWorld) ||
-            !isFiniteTransform(boneInDriver)) {
+            !frik_hand_world_authority::tryGetRawHandWorld(isLeft, outHandWorld)) {
             return false;
         }
-
-        outHandWorld = transform_math::composeTransforms(
-            outDriverWorld,
-            boneInDriver);
         return isUsableHandAuthorityTransform(outHandWorld) &&
                isFiniteTransform(outDriverWorld);
     }
