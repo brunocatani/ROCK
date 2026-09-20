@@ -48,7 +48,7 @@ namespace rock::config
 
         ValueType typeOf(std::string_view key)
         {
-            // This experimental option intentionally uses its requested public name.
+            // This public boolean key has no type prefix.
             if (key == "npcDynamicCollisions") return ValueType::Boolean;
             switch (key.empty() ? '\0' : key.front()) {
             case 'b': return ValueType::Boolean;

@@ -82,9 +82,10 @@ namespace
 
         // Section names cannot redirect an option into the other owning file.
         write(Group::Consumer, "[Debug]\nbPerformanceProfilerEnabled=true\n");
-        write(Group::Developer, "[Logging]\niLogLevel=0\n");
+        write(Group::Developer, "[Logging]\niLogLevel=0\nnpcDynamicCollisions=false\n");
         require(store.load(false), "wrong-file fixture failed to load");
-        require(!find(store, "bPerformanceProfilerEnabled").specified && runtime().rockLogLevel == 2,
+        require(!find(store, "bPerformanceProfilerEnabled").specified && runtime().rockLogLevel == 2 &&
+                !find(store, "npcDynamicCollisions").specified && runtime().npcDynamicCollisions,
             "decorative sections broke consumer/developer ownership");
         require(settingGroup("Any label", "BPERFORMANCEPROFILERENABLED") == Group::Developer,
             "key-only ownership lookup still depends on a section or spelling case");
@@ -216,24 +217,27 @@ int main(int argc, char** argv)
         require(!find(store, "bVatsPhysicsFixes").specified,
             "resetting VATS physics fixes retained the default override");
         require(find(store, "npcDynamicCollisions").type == ValueType::Boolean &&
-            find(store, "npcDynamicCollisions").group == Group::Developer &&
-            !rock::RockConfig::parseValues(missingOptions).npcDynamicCollisions,
-            "NPC dynamic collisions must be a developer boolean defaulting off");
-        require(store.setValue(Group::Developer, "PhysicsInteraction", "npcDynamicCollisions", "true"),
-            "experimental NPC collision enable failed");
-        require(store.load(false), "experimental NPC collision reload failed");
+            find(store, "npcDynamicCollisions").group == Group::Consumer &&
+            rock::RockConfig::parseValues(missingOptions).npcDynamicCollisions,
+            "NPC dynamic collisions must be a consumer boolean defaulting on");
+        require(!store.setValue(Group::Developer, "PhysicsInteraction", "npcDynamicCollisions", "false"),
+            "NPC dynamic collisions must no longer be writable as a developer override");
+        require(store.setValue(Group::Consumer, "PhysicsInteraction", "npcDynamicCollisions", "false"),
+            "NPC collision disable failed");
+        require(store.load(false), "NPC collision reload failed");
         CSimpleIniA npcValues;
         store.appendLoadedValues(npcValues);
-        require(rock::RockConfig::parseValues(npcValues).npcDynamicCollisions,
-            "experimental NPC collision override did not reach runtime");
-        require(store.setValue(Group::Developer, "PhysicsInteraction", "npcDynamicCollisions", "false"),
-            "experimental NPC collision reset failed");
-        require(store.load(false), "experimental NPC collision reset reload failed");
+        require(!rock::RockConfig::parseValues(npcValues).npcDynamicCollisions,
+            "NPC collision consumer value did not reach runtime");
+        require(store.setValue(Group::Consumer, "PhysicsInteraction", "npcDynamicCollisions", "true"),
+            "NPC collision reset failed");
+        require(store.load(false), "NPC collision reset reload failed");
         CSimpleIniA resetNpcValues;
         store.appendLoadedValues(resetNpcValues);
-        require(!rock::RockConfig::parseValues(resetNpcValues).npcDynamicCollisions &&
+        require(rock::RockConfig::parseValues(resetNpcValues).npcDynamicCollisions &&
+            find(store, "npcDynamicCollisions").specified &&
             !fs::exists(store.path(Group::Developer)),
-            "reset must restore NPC collisions off and remove the sole developer override");
+            "reset must retain NPC collisions on in the consumer file without creating developer overrides");
         require(find(store, "fMeleeGripPitchDegrees").group == Group::Consumer &&
             find(store, "fMeleeGripPitchDegrees").type == ValueType::Float,
             "melee pitch must be a consumer float");
@@ -278,6 +282,14 @@ int main(int argc, char** argv)
         require(store.load(false), "laser recoil reset reload failed");
         require(find(store, "iWeaponDropMode").type == ValueType::Integer &&
             find(store, "iWeaponDropMode").value == "1", "weapon drop must default to off");
+        require(find(store, "iWeaponGrabMode").type == ValueType::Integer &&
+            find(store, "iWeaponGrabMode").value == "2", "weapon grab must default to toggling only the firing grip");
+        for (const auto* invalid : { "-1", "0", "4", "invalid" }) {
+            CSimpleIniA grabValues;
+            grabValues.SetValue("ImmersiveWeapons", "iWeaponGrabMode", invalid);
+            require(rock::RockConfig::parseValues(grabValues).rockWeaponGrabMode == 2,
+                "invalid weapon grab mode must fall back to the firing-grip toggle default");
+        }
         require(find(store, "bKeepPreviousWeaponInHandOnEquip").value == "false",
             "previous weapon retention must be opt-in");
         for (const auto* enabled : { "true", "false" }) {
@@ -288,7 +300,7 @@ int main(int argc, char** argv)
             store.appendLoadedValues(swapValues);
             const auto swapConfig = rock::RockConfig::parseValues(swapValues);
             require(swapConfig.rockKeepPreviousWeaponInHandOnEquip == (enabled[0] == 't') &&
-                swapConfig.rockWeaponDropMode == 1 && swapConfig.rockWeaponGrabMode == 1,
+                swapConfig.rockWeaponDropMode == 1 && swapConfig.rockWeaponGrabMode == 2,
                 "retention reload must remain independent of weapon drop and grab modes");
         }
         require(!store.setValue(Group::Consumer, "ImmersiveWeapons", "bAutoDrop", "true"),
@@ -302,7 +314,7 @@ int main(int argc, char** argv)
             const auto dropConfig = rock::RockConfig::parseValues(dropValues);
             require(dropConfig.rockWeaponDropMode == mode[0] - '0',
                 "weapon drop mode did not reach runtime configuration");
-            require(dropConfig.rockWeaponGrabMode == 1,
+            require(dropConfig.rockWeaponGrabMode == 2,
                 "weapon drop mode must not change the grip release gesture");
         }
         for (const auto* invalid : { "-1", "0", "4", "invalid" }) {

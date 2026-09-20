@@ -96,7 +96,7 @@ namespace rock
         int rockWeaponDropMode = 1;
         bool rockKeepPreviousWeaponInHandOnEquip = false;
         // 1: toggle both grips; 2: toggle firing only; 3: hold both grips.
-        int rockWeaponGrabMode = 1;
+        int rockWeaponGrabMode = 2;
         // Allow dynamic support grabs beyond authored grips. False preserves
         // authored-grip preference and the existing missing-pose fallback.
         bool rockGrabAnywhereOnWeapon = false;
@@ -121,7 +121,7 @@ namespace rock
         RE::NiPoint3 rockRightSupportGripOffsetGameUnits{ 0.0f, 0.0f, 0.0f };
         bool rockWeaponCollisionBlocksProjectiles = false;
         bool rockWeaponCollisionBlocksSpells = false;
-        bool npcDynamicCollisions = false;
+        bool npcDynamicCollisions = true;
         float rockWeaponShellCollisionGraceMs = shell_casing_grace::kDefaultMilliseconds;
         // A/B comparison: original support hulls or bounded gap-preserving compounds.
         bool rockWeaponCollisionPreserveGaps = true;
