@@ -19,6 +19,7 @@
 #include "physics-interaction/weapon/WeaponCollision.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <vector>
 #include <utility>
@@ -767,6 +768,52 @@ namespace rock
                 result.translationCorrectionGameUnits, result.rotationCorrectionDegrees,
                 intentRotation[0], intentRotation[1], intentRotation[2], intentRotation[3],
                 resolvedRotation[0], resolvedRotation[1], resolvedRotation[2], resolvedRotation[3]);
+
+            // A rigid weapon rotating about a support point must also move
+            // its root. Separate that lever motion from actual pivot drift
+            // before attributing contact jitter to competing corrections.
+            weapon_surface_support::Contact contact{};
+            const bool latched = _surfaceSupport.latched();
+            const bool contactRead = latched ? (contact = _surfaceSupport.contact, true) : _surfaceContacts.read(contact);
+            const auto now = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+            const bool contactIdentity = contactRead && contact.valid &&
+                contact.world == reinterpret_cast<std::uintptr_t>(_frameWorld) &&
+                contact.generation == _frameGenerationKey && contact.proxyBodyId == snapshot.bodyId &&
+                dynamic_weapon_collision_policy::isFinitePoint(contact.weaponPointLocal);
+            const bool pointValid = contactIdentity && (latched || weapon_surface_support::isFresh(
+                contact, reinterpret_cast<std::uintptr_t>(_frameWorld), _frameGenerationKey, snapshot.bodyId, now));
+            const bool gripValid = primaryGripWeaponLocal && dynamic_weapon_collision_policy::isFinitePoint(*primaryGripWeaponLocal);
+            const RE::NiPoint3 pointLocal = pointValid ? contact.weaponPointLocal : RE::NiPoint3{};
+            const RE::NiPoint3 gripLocal = gripValid ? *primaryGripWeaponLocal : RE::NiPoint3{};
+            const auto traceLever = [&](const char* stage, const RE::NiTransform& requested, const RE::NiTransform& actual) {
+                const auto requestedPivot = transform_math::localPointToWorld(requested, _authorityPivotWeaponLocal);
+                const auto actualPivot = transform_math::localPointToWorld(actual, _authorityPivotWeaponLocal);
+                const auto pivotError = weaponSolverSub(actualPivot, requestedPivot);
+                const auto requestedPoint = transform_math::localPointToWorld(requested, pointLocal);
+                const auto actualPoint = transform_math::localPointToWorld(actual, pointLocal);
+                const auto pointError = weaponSolverSub(actualPoint, requestedPoint);
+                const auto angularPointError = weaponSolverSub(pointError, pivotError);
+                const auto requestedGrip = transform_math::localPointToWorld(requested, gripLocal);
+                const auto actualGrip = transform_math::localPointToWorld(actual, gripLocal);
+                float requestedQ[4]{}, actualQ[4]{};
+                transform_math::niRowsToHavokQuaternion(requested.rotate, requestedQ);
+                transform_math::niRowsToHavokQuaternion(actual.rotate, actualQ);
+                dynamic_collider_trace::write(
+                    "DWC_LEVER stage={} frame={} source={} solve={} generation={:016X} body={} latched={} contact={} pointValid={} gripValid={} peer={} pointAgeMs={} pivotLocal=({:.4f},{:.4f},{:.4f}) gripLocal=({:.4f},{:.4f},{:.4f}) pointLocal=({:.4f},{:.4f},{:.4f}) targetPivot=({:.4f},{:.4f},{:.4f}) pivotError=({:.4f},{:.4f},{:.4f}) targetPoint=({:.4f},{:.4f},{:.4f}) pointError=({:.4f},{:.4f},{:.4f}) angularPointError=({:.4f},{:.4f},{:.4f}) targetGrip=({:.4f},{:.4f},{:.4f}) actualGrip=({:.4f},{:.4f},{:.4f}) targetQ=({:.7f},{:.7f},{:.7f},{:.7f}) actualQ=({:.7f},{:.7f},{:.7f},{:.7f})",
+                    stage, _frameIndex, snapshot.sourceSequence, snapshot.solveSequence, snapshot.generationKey, snapshot.bodyId,
+                    latched, snapshot.contactActive, pointValid, gripValid, contactIdentity ? contact.surfaceBodyId : kInvalidBodyId,
+                    contactIdentity && now >= contact.sampledAtMilliseconds ? now - contact.sampledAtMilliseconds : 0,
+                    _authorityPivotWeaponLocal.x, _authorityPivotWeaponLocal.y, _authorityPivotWeaponLocal.z,
+                    gripLocal.x, gripLocal.y, gripLocal.z, pointLocal.x, pointLocal.y, pointLocal.z,
+                    requestedPivot.x, requestedPivot.y, requestedPivot.z, pivotError.x, pivotError.y, pivotError.z,
+                    requestedPoint.x, requestedPoint.y, requestedPoint.z, pointError.x, pointError.y, pointError.z,
+                    angularPointError.x, angularPointError.y, angularPointError.z,
+                    requestedGrip.x, requestedGrip.y, requestedGrip.z, actualGrip.x, actualGrip.y, actualGrip.z,
+                    requestedQ[0], requestedQ[1], requestedQ[2], requestedQ[3], actualQ[0], actualQ[1], actualQ[2], actualQ[3]);
+            };
+            traceLever("physics", sampledRequestedWeaponWorld, sampledLiveWeaponWorld);
+            traceLever("presentation", _frameRequestedWeaponWorld, result.resolvedWeaponWorld);
         }
         return result;
     }
@@ -1428,12 +1475,16 @@ namespace rock
         const bool contactWasActive = _contactRetentionSeconds > 0.0f;
         if (weaponClockTraceEnabled(_physicsSourceSequence)) {
             dynamic_collider_trace::write(
-                "DWC_CONTACT source={} solve={} body={} callbacks={} lastPeer={} layer={} freshWorldContact={} retentionBefore={:.6f}s physicsDt={:.6f} sourceJumps={} gripResets={} divergenceResets={} dwell={:.4f} tau=({:.5f},{:.5f})",
+                "DWC_CONTACT source={} solve={} body={} callbacks={} lastPeer={} layer={} freshWorldContact={} retentionBefore={:.6f}s physicsDt={:.6f} sourceJumps={} gripResets={} divergenceResets={} dwell={:.4f} tau=({:.5f},{:.5f}) damping=({:.5f},{:.5f}) constantRecovery=({:.5f},{:.5f})",
                 _physicsSourceSequence, solveSequence, _body.getBodyId().value, contactSequence,
                 otherBodyId, otherLayer, newMatchingContact, _contactRetentionSeconds, timing.substepDeltaSeconds,
                 _clockSourceJumpCount, _clockGripResetCount, _clockDivergenceResetCount, _divergenceDwellSeconds,
                 _authorityConstraint.linearMotor ? _authorityConstraint.linearMotor->tau : -1.0f,
-                _authorityConstraint.angularMotor ? _authorityConstraint.angularMotor->tau : -1.0f);
+                _authorityConstraint.angularMotor ? _authorityConstraint.angularMotor->tau : -1.0f,
+                _authorityConstraint.linearMotor ? _authorityConstraint.linearMotor->damping : -1.0f,
+                _authorityConstraint.angularMotor ? _authorityConstraint.angularMotor->damping : -1.0f,
+                _authorityConstraint.linearMotor ? _authorityConstraint.linearMotor->constantRecoveryVelocity : -1.0f,
+                _authorityConstraint.angularMotor ? _authorityConstraint.angularMotor->constantRecoveryVelocity : -1.0f);
         }
         const bool contactEpisodeStarted =
             newMatchingContact &&
