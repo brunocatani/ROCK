@@ -1491,7 +1491,8 @@ namespace rock
                 return tagCollisionSoundMaterial(
                     havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(
                         centeredHavokPoints,
-                        WEAPON_COLLISION_CONVEX_RADIUS_HAVOK));
+                        WEAPON_COLLISION_CONVEX_RADIUS_HAVOK,
+                        havok_convex_shape_builder::ConvexFit::PreserveSharpFeatures));
             }
 
             std::vector<std::unique_ptr<RE::hknpShape, havok_compound_shape_builder::HavokShapeRelease>> childShapes;
@@ -1507,7 +1508,8 @@ namespace rock
                 const auto childCenterGame = weapon_collision_geometry_math::pointCenter(childLocalPointsGame);
                 auto centeredChildHavokPoints = makeCenteredHavokPointCloud(childLocalPointsGame, childCenterGame, source.sourceNodeScale);
                 auto* childShape =
-                    havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(centeredChildHavokPoints, WEAPON_COLLISION_CONVEX_RADIUS_HAVOK);
+                    havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(centeredChildHavokPoints, WEAPON_COLLISION_CONVEX_RADIUS_HAVOK,
+                        havok_convex_shape_builder::ConvexFit::PreserveSharpFeatures);
                 if (!childShape) {
                     ROCK_LOG_WARN(Weapon, "Generated weapon compound source '{}' failed child convex build", source.sourceName);
                     return nullptr;
