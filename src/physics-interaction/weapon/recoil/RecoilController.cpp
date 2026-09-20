@@ -149,6 +149,7 @@ namespace rock
         outResponse->handMask = static_cast<std::uint32_t>(mask);
         outResponse->delivery = Api::RecoilDelivery::Direct;
         outResponse->controlledKickLocal = controlled;
+        frik_hand_world_authority::noteNativeRecoilControlled(true);
 
         if (nativeKick) {
             self->traceRecoilSample(context, sample->nativeKickLocal, controlled, ownedCarry, static_cast<std::uint32_t>(mask));

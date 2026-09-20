@@ -1,4 +1,5 @@
 #include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
+#include "physics-interaction/visual/ScopeHandInputContinuityPolicy.h"
 
 #include <cmath>
 #include <array>
@@ -359,6 +360,87 @@ int main()
         corrected.firstPersonHandValid = true;
         relation.valid = false;
         ok &= expectFalse("missing relation fails closed", resolveFrame(relation, corrected).valid);
+    }
+
+    // Reproduce the scope-exit regression with both arms, long locomotion,
+    // controller movement, and native history frozen at scope entry. The API
+    // driver world can already be recomposed by recoil restoration; the stale
+    // first-person hand is the convergence witness, not that driver world.
+    {
+        namespace continuity = rock::scope_hand_input_continuity_policy;
+        using rock::hand_world_claim_registry_policy::DriverSample;
+        const continuity::Damping damping{ 0.6f, 0.6f, true, false, true };
+        for (const float handOffset : { -12.0f, 12.0f }) {
+            continuity::State scopeState{};
+            const auto handLocal = yawed(12.0f, 1.0f, handOffset, -3.0f);
+            auto raw = yawed(0.0f, 100.0f, handOffset, 0.0f);
+            auto nativeDriver = raw;
+            auto camera = RE::NiPoint3{ 100.0f, 0.0f, 0.0f };
+            std::uint64_t sequence = 1;
+            for (; sequence <= 360; ++sequence) {
+                camera.x += 2.0f;
+                raw.translate.x = camera.x + 20.0f;
+                raw.rotate = yawed(45.0f, 0, 0, 0).rotate;
+                const auto result = continuity::resolve(scopeState, damping, true, sequence,
+                    { raw, true }, { raw, true }, { compose(raw, handLocal), true }, camera, true);
+                ok &= expectFalse("scope keeps provider's chosen damping", result.corrected);
+            }
+            const auto lastScoped = raw;
+            bool recovered = false;
+            for (unsigned frame = 0; frame < 80; ++frame, ++sequence) {
+                camera.x += 2.0f;
+                raw.translate.x += 2.0f;
+                // FRIK's retained old history; independently reproduce the
+                // translation recurrence to make the original jump explicit.
+                nativeDriver.translate.x = raw.translate.x * 0.4f + (nativeDriver.translate.x + 2.0f) * 0.6f;
+                nativeDriver.rotate = rock::hand_visual_lerp_math::quaternionToMatrix<RE::NiMatrix3>(
+                    rock::hand_visual_lerp_math::slerp(rock::hand_visual_lerp_math::matrixToQuaternion(nativeDriver.rotate),
+                        rock::hand_visual_lerp_math::matrixToQuaternion(raw.rotate), 0.4f));
+                const auto nativeHand = compose(nativeDriver, handLocal);
+                const auto result = continuity::resolve(scopeState, damping, false, sequence,
+                    { raw, true }, { raw, true }, { nativeHand, true }, camera, true);
+                const auto expected = compose(raw, handLocal);
+                ok &= expectTrue("recovery supplies a current hand", result.hand.valid);
+                ok &= expectNear("walking hand never returns to scope-entry position",
+                    translationGameUnits(result.hand.world, expected), 0.0f, 0.055f);
+                ok &= expectNear("scope rotation stays current", rotationDegrees(result.hand.world, expected), 0.0f, 0.055f);
+                if (frame == 0) {
+                    ok &= expectTrue("fixture reproduces a large native snap", translationGameUnits(nativeHand, expected) > 400.0f);
+                    ok &= expectTrue("first exit frame is protected", result.corrected);
+                    ok &= expectNear("player motion is not damped", result.driver.world.translate.x - lastScoped.translate.x, 2.0f, 0.001f);
+                }
+                recovered |= !scopeState.recovering;
+            }
+            ok &= expectTrue("native input is handed back after measured convergence", recovered);
+        }
+
+        continuity::State scopeState{};
+        const auto driver = yawed(0, 10, 0, 0);
+        const DriverSample valid{ driver, true };
+        (void)continuity::resolve(scopeState, damping, true, 1, valid, valid, valid, {}, true);
+        auto moved = driver;
+        moved.translate.x = 20.0f;
+        const auto resumed = continuity::resolve(scopeState, damping, false, 2, { moved, true }, valid, valid, {}, true);
+        ok &= expectNear("controller motion still uses configured damping", resumed.driver.world.translate.x, 14.0f, 0.001f);
+        const auto missing = continuity::resolve(scopeState, damping, false, 3, {}, valid, valid, {}, true);
+        ok &= expectFalse("missing current controller fails closed", missing.hand.valid);
+        ok &= expectTrue("missing controller cannot accept stale native pose", missing.corrected);
+        const auto restored = continuity::resolve(scopeState, damping, false, 5, { moved, true }, valid, valid, {}, true);
+        ok &= expectNear("a tracking gap discards filter history", restored.driver.world.translate.x, 20.0f, 0.001f);
+        const auto reopened = continuity::resolve(scopeState, damping, true, 6, { moved, true }, { moved, true }, { moved, true }, {}, true);
+        ok &= expectFalse("scope reentry releases recovery", reopened.corrected || scopeState.recovering);
+        scopeState = {};
+        const auto reset = continuity::resolve(scopeState, damping, false, 7, valid, valid, valid, {}, true);
+        ok &= expectFalse("skeleton reset cannot replay old scope history", reset.corrected);
+
+        for (const auto config : { continuity::Damping{ 0.6f, 0.6f, false, false, true },
+                 continuity::Damping{ 0.6f, 0.6f, true, true, true } }) {
+            scopeState = {};
+            (void)continuity::resolve(scopeState, config, true, 1, valid, valid, valid, {}, true);
+            const auto result = continuity::resolve(scopeState, config, false, 2, { moved, true }, valid, valid, {}, true);
+            ok &= expectFalse("uninterrupted or disabled damping remains provider-owned", result.corrected);
+            ok &= expectNear("ordinary native input preserved", result.hand.world.translate.x, 10.0f, 0.001f);
+        }
     }
 
     if (!ok) {

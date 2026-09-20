@@ -6,6 +6,7 @@
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
+#include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/TransformMath.h"
 #include "RockConfig.h"
 #include "rock_support/Fo4VrRuntime.h"
@@ -161,7 +162,8 @@ namespace rock::scope_transition_telemetry
             const bool rendererValid = native_memory::tryReadField(
                 reinterpret_cast<const void*>(REL::Offset(offsets::kData_NativeScopeRendererState).address()), 3, renderer);
             const policy::Signals signals{ menuEvent.load(std::memory_order_acquire),
-                input_remap_runtime::isManualScopeActivationRequested(), rendererValid, renderer != 0, 0 };
+                input_remap_runtime::isManualScopeActivationRequested(), rendererValid, renderer != 0,
+                frik_hand_world_authority::scopeInputRecoveryMask() };
             const bool wasCapped = session->window.capped;
             if (!session->window.observe(schedulerSequence, static_cast<unsigned>(phase), signals)) {
                 if (!wasCapped && session->window.capped) session->log->warn("SCT burst capped frame={} edge={}; waiting for quiet gap", schedulerSequence, session->window.edge);

@@ -74,6 +74,13 @@ namespace rock::frik_hand_world_authority
      */
     void beginRockFrame(std::uint64_t sequence);
 
+    // Initialization only: the provider's config reader performs disk I/O.
+    void loadScopeDampingConfig();
+    // Reset at FrameBegin; set by ROCK's accepted recoil response before FRIK
+    // builds tracked hands. Raw input must omit the same native kick.
+    void noteNativeRecoilControlled(bool controlled) noexcept;
+    [[nodiscard]] std::uint8_t scopeInputRecoveryMask() noexcept;
+
     // This frame's controller driver (FRIK's dampened weapon offset node).
     [[nodiscard]] bool tryGetInputDriverWorld(bool isLeft, RE::NiTransform& outWorld);
 

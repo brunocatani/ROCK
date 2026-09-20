@@ -4,6 +4,8 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
+#include <cstring>
 #include <string_view>
 
 #include "RockConfig.h"
@@ -12,6 +14,7 @@
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
+#include "physics-interaction/visual/ScopeHandInputContinuityPolicy.h"
 
 namespace rock::frik_hand_world_authority
 {
@@ -20,6 +23,7 @@ namespace rock::frik_hand_world_authority
         namespace registry_policy = hand_world_claim_registry_policy;
         namespace isolation_policy = tracked_hand_isolation_policy;
         namespace transport_policy = rendered_bone_transport_policy;
+        namespace scope_policy = scope_hand_input_continuity_policy;
 
         using registry_policy::DriverFrame;
         using registry_policy::DriverSample;
@@ -28,6 +32,8 @@ namespace rock::frik_hand_world_authority
         using frik_visual_authority::TrackedHandKind;
 
         constexpr std::uint32_t kProbeSummaryFrames = 600;
+        constexpr const char* kScopeRecoveryTag = "ROCK_ScopeInputRecovery";
+        constexpr int kScopeRecoveryPriority = -1000;
 
         struct IsolationState
         {
@@ -87,6 +93,11 @@ namespace rock::frik_hand_world_authority
             DriverFrame driverFrame{};
             // This frame's first-person hand per hand (FRIK's tracked target).
             std::array<DriverSample, 2> firstPersonInput{};
+            scope_policy::Damping scopeDamping{};
+            std::array<scope_policy::State, 2> scopeInputs{};
+            std::array<scope_policy::Result, 2> scopeResults{};
+            std::array<DriverSample, 2> scopeRecoveryWrists{};
+            bool nativeRecoilControlled = false;
             std::array<RenderedHand, 2> rendered{};
             // The winner per hand at the end of the previous ROCK frame, for the trace.
             std::array<registry_policy::ConsumedTarget, 2> lastFrameTargets{};
@@ -150,15 +161,73 @@ namespace rock::frik_hand_world_authority
             return sample;
         }
 
-        // The tracked inputs FRIK used for this frame's arm solve.
+        // Recompose the controller chain without editing any engine node.
+        // FRIK damps world only; its local chain remains current. Match its
+        // recoil neutralizer instead of sampling the restored animated world.
+        [[nodiscard]] DriverSample sampleRawDriver(const bool isLeft)
+        {
+            const auto* nodes = f4vr::getPlayerNodes();
+            const auto* mode = f4vr::getIniSetting("bLeftHandedMode:VR");
+            if (!nodes || !mode) return {};
+            const bool offhand = mode->GetBinary() != isLeft;
+            const RE::NiAVObject* wand = offhand ? nodes->SecondaryWandNode : nodes->primaryWandNode;
+            const RE::NiAVObject* node = offhand ? nodes->SecondaryMeleeWeaponOffsetNode2 : nodes->primaryWeaponOffsetNOde;
+            const auto trackedWand = sampleTrackedHand(isLeft, TrackedHandKind::Wand);
+            if (!wand || !node || !trackedWand.valid) return {};
+            std::array<RE::NiTransform, 16> locals{};
+            std::size_t depth = 0;
+            while (node && node != wand && depth < locals.size()) {
+                locals[depth++] = g_service.nativeRecoilControlled && node == nodes->primaryWeaponKickbackRecoilNode ?
+                    transform_math::makeIdentityTransform<RE::NiTransform>() : node->local;
+                if (!scope_policy::usable(locals[depth - 1])) return {};
+                node = node->parent;
+            }
+            if (node != wand) return {};
+            auto world = transform_math::orthonormalizedTransform(trackedWand.world);
+            while (depth > 0) world = transform_math::composeTransforms(world, locals[--depth]);
+            return { world, scope_policy::usable(world) };
+        }
+
+        // Accept ordinary tracked inputs directly. Scope recovery alone keeps
+        // native first-person presentation separate from controller intent.
         void sampleTrackedInputs(const std::uint64_t sequence)
         {
             DriverFrame frame{};
             frame.sequence = sequence;
+            const bool scoped = frik_visual_authority::isLookingThroughScope();
+            const auto* camera = f4vr::getPlayerCamera();
+            const auto* cameraRoot = camera ? camera->cameraRoot.get() : nullptr;
+            const auto cameraPosition = cameraRoot ? cameraRoot->world.translate : RE::NiPoint3{};
+            const bool cameraValid = cameraRoot && std::isfinite(cameraPosition.x) &&
+                std::isfinite(cameraPosition.y) && std::isfinite(cameraPosition.z);
             for (std::size_t hand = 0; hand < 2; ++hand) {
                 const bool isLeft = hand == handIndex(true);
-                frame.hands[hand] = sampleTrackedHand(isLeft, TrackedHandKind::WeaponOffset);
-                g_service.firstPersonInput[hand] = sampleTrackedHand(isLeft, TrackedHandKind::FirstPersonHand);
+                const auto nativeDriver = sampleTrackedHand(isLeft, TrackedHandKind::WeaponOffset);
+                const auto nativeHand = sampleTrackedHand(isLeft, TrackedHandKind::FirstPersonHand);
+                auto& state = g_service.scopeInputs[hand];
+                const bool wasRecovering = state.recovering;
+                const bool needsRaw = (scoped && g_service.scopeDamping.valid &&
+                    g_service.scopeDamping.enabled && !g_service.scopeDamping.inScope) || state.suspended || state.recovering;
+                const auto raw = needsRaw ? sampleRawDriver(isLeft) : DriverSample{};
+                auto& result = g_service.scopeResults[hand];
+                result = scope_policy::resolve(state, g_service.scopeDamping, scoped, sequence,
+                    raw, nativeDriver, nativeHand, cameraPosition, cameraValid);
+                frame.hands[hand] = result.driver;
+                g_service.firstPersonInput[hand] = result.hand;
+                g_service.scopeRecoveryWrists[hand] = {};
+                if (wasRecovering != state.recovering) {
+                    ROCK_LOG_INFO(Hand,
+                        "Scope input recovery hand={} state={} sequence={} valid={} residual={:.3f}gu/{:.3f}deg native=({:.2f},{:.2f},{:.2f}) input=({:.2f},{:.2f},{:.2f})",
+                        handName(isLeft), state.recovering ? "started" : "finished", sequence, result.hand.valid,
+                        result.residualGameUnits, result.residualDegrees, nativeHand.world.translate.x,
+                        nativeHand.world.translate.y, nativeHand.world.translate.z, result.hand.world.translate.x,
+                        result.hand.world.translate.y, result.hand.world.translate.z);
+                }
+                if (result.corrected && !result.hand.valid) {
+                    ROCK_LOG_SAMPLE_WARN(Hand, 2000,
+                        "Scope input recovery unavailable hand={} raw={} nativeHand={} relation={} camera={}; interaction input disabled",
+                        handName(isLeft), raw.valid, nativeHand.valid, state.relationValid, cameraValid);
+                }
                 if (!frame.hands[hand].valid) {
                     ++g_service.probes.driverSamplesMissing;
                 }
@@ -258,6 +327,44 @@ namespace rock::frik_hand_world_authority
                 probes.driverSamplesMissing);
             probes = {};
         }
+    }
+
+    void loadScopeDampingConfig()
+    {
+        scope_policy::Damping config{};
+        const auto* api = frik_visual_authority::api();
+        if (api && api->getConfigValue) {
+            const auto readFlag = [api](const char* key, bool& value) {
+                std::array<char, 16> text{};
+                api->getConfigValue("Fallout4VRBody", key, text.data(), static_cast<int>(text.size()), "true");
+                value = _stricmp(text.data(), "true") == 0 || std::strcmp(text.data(), "1") == 0;
+                return value || _stricmp(text.data(), "false") == 0 || std::strcmp(text.data(), "0") == 0;
+            };
+            const auto readFactor = [api](const char* key, float& value) {
+                std::array<char, 32> text{};
+                api->getConfigValue("Fallout4VRBody", key, text.data(), static_cast<int>(text.size()), "0.7");
+                char* end = nullptr;
+                value = std::strtof(text.data(), &end);
+                return end != text.data() && *end == '\0' && std::isfinite(value) && value >= 0.0f && value < 1.0f;
+            };
+            config.valid = readFlag("DampenHands", config.enabled) &&
+                readFlag("DampenHandsInVanillaScope", config.inScope) &&
+                readFactor("DampenHandsTranslation", config.translation) && readFactor("DampenHandsRotation", config.rotation);
+        }
+        g_service.scopeDamping = config;
+        ROCK_LOG_INFO(Hand, "Scope input continuity: FRIK damping valid={} enabled={} scoped={} factors={:.3f}/{:.3f}",
+            config.valid, config.enabled, config.inScope, config.translation, config.rotation);
+    }
+
+    void noteNativeRecoilControlled(const bool controlled) noexcept
+    {
+        g_service.nativeRecoilControlled = controlled;
+    }
+
+    std::uint8_t scopeInputRecoveryMask() noexcept
+    {
+        return static_cast<std::uint8_t>((g_service.scopeResults[0].corrected ? 1 : 0) |
+            (g_service.scopeResults[1].corrected ? 2 : 0));
     }
 
     void captureRenderedFrame(const FrameHandSamples& samples)
@@ -489,7 +596,8 @@ namespace rock::frik_hand_world_authority
             // Around a scope edge the first-person tree carries the native
             // scope reset: reconstruct through the last sound relation and
             // never calibrate on it.
-            input.firstPersonInputCorrected = g_service.scopeEdgeFramesRemaining > 0;
+            input.firstPersonInputCorrected = g_service.scopeEdgeFramesRemaining > 0 ||
+                g_service.scopeResults[hand].corrected;
             input.bodyHandNodeWorld = sample.bodyHandNodeWorld;
             input.bodyHandNodeValid = sample.bodyHandNodeValid;
             input.flattenedHandWorld = flattenedNow;
@@ -497,6 +605,11 @@ namespace rock::frik_hand_world_authority
             input.claimConsumed = g_service.claimConsumedThisFrame[hand];
             input.calibrationAllowed = !recoilKickThisFrame && !input.firstPersonInputCorrected;
             state.result = isolation_policy::resolveFrame(state.relation, input, debugEnabled());
+            g_service.scopeRecoveryWrists[hand] = {};
+            if (g_service.scopeResults[hand].corrected && state.result.valid && state.relation.valid) {
+                const auto wrist = transform_math::composeTransforms(input.firstPersonHandWorld, state.relation.firstPersonToBodyHand);
+                g_service.scopeRecoveryWrists[hand] = { wrist, scope_policy::usable(wrist) };
+            }
             if (!firstResolveThisFrame) {
                 continue;
             }
@@ -611,6 +724,21 @@ namespace rock::frik_hand_world_authority
     {
         for (std::size_t hand = 0; hand < 2; ++hand) {
             const bool isLeft = hand == handIndex(true);
+            const auto& wrist = g_service.scopeRecoveryWrists[hand];
+            const auto* otherClaim = registry_policy::winner(g_service.registry, isLeft, kScopeRecoveryTag);
+            RE::NiTransform solved{};
+            const bool externalClaim = !g_service.claimConsumedThisFrame[hand] &&
+                frik_visual_authority::getHandSolveResult(frik_visual_authority::handFromBool(isLeft), solved) != HandSolveState::NoClaim;
+            if (g_service.scopeResults[hand].corrected && wrist.valid && !otherClaim && !externalClaim) {
+                // A free hand needs the same correction as the weapon inputs.
+                // End-of-ROCK publication is still inside AfterArmSolve; FRIK
+                // re-solves it this frame. Grip/collision claims remain owners.
+                if (!publish(kScopeRecoveryTag, isLeft, wrist.world, kScopeRecoveryPriority)) {
+                    ROCK_LOG_SAMPLE_WARN(Hand, 2000, "Scope input recovery hand={} could not publish the corrected wrist", handName(isLeft));
+                }
+            } else if (registry_policy::find(g_service.registry, kScopeRecoveryTag, isLeft)) {
+                (void)clear(kScopeRecoveryTag, isLeft);
+            }
             g_service.lastFrameTargets[hand] = registry_policy::snapshotConsumedTarget(g_service.registry, isLeft);
         }
         if (g_service.scopeEdgeFramesRemaining > 0) {
@@ -629,6 +757,9 @@ namespace rock::frik_hand_world_authority
         g_service.claimConsumedThisFrame = {};
         g_service.consumedTargets = {};
         g_service.lastFrameTargets = {};
+        g_service.scopeInputs = {};
+        g_service.scopeResults = {};
+        g_service.scopeRecoveryWrists = {};
     }
 
     void resetForSkeletonRelease()
@@ -638,6 +769,10 @@ namespace rock::frik_hand_world_authority
         g_service.scopeStateKnown = false;
         g_service.driverFrame = {};
         g_service.firstPersonInput = {};
+        g_service.scopeInputs = {};
+        g_service.scopeResults = {};
+        g_service.scopeRecoveryWrists = {};
+        g_service.nativeRecoilControlled = false;
         g_service.rendered = {};
         registry_policy::clearAll(g_service.registry);
         g_service.claimConsumedThisFrame = {};

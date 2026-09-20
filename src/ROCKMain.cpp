@@ -827,6 +827,7 @@ namespace
      */
     void onFrikFrameBegin()
     {
+        frik_hand_world_authority::noteNativeRecoilControlled(false);
         performance_profiler::refreshSettings(
             g_rockConfig.rockPerformanceProfilerEnabled,
             g_rockConfig.rockPerformanceProfilerLogIntervalFrames,
@@ -1154,6 +1155,7 @@ namespace
             }
 
             logger::info("ROCK: FRIK v{} API v2 (v{}) initialized successfully.", frik::api::FRIKApiV2::inst->getModVersion(), frik::api::FRIKApiV2::inst->getVersion());
+            frik_hand_world_authority::loadScopeDampingConfig();
             if (frik::api::FRIKApiV2::inst->getConfigValue) {
                 // FRIK smooths the first-person hands the weapon and ROCK's hand
                 // seats follow; the session log must say so when seats are read.
