@@ -103,5 +103,43 @@ int main()
     ok &= expectFalse("position-only patch alone is not reliable orientation evidence", decision.accept);
     ok &= expectReason("position-only patch alone reason", decision.reason, "positionOnlyPatchNeedsFingerOrSeat");
 
+    // Exercise actual ancestry/collision traversal, including the modular
+    // single-body layout that cannot resolve a visual owner by ancestry alone.
+    struct Node {
+        Node* parent = nullptr;
+        const void* collisionObject = nullptr;
+    };
+    using rock::grab_contact_source_policy::isSingleBodyOwnerlessVisualBranch;
+    Node root{}, receiver{ &root, &root }, attachment{ &root }, mesh{ &attachment };
+    ok &= expectTrue("single collision owner accepts a visual sibling",
+        isSingleBodyOwnerlessVisualBranch(&root, &receiver, &mesh));
+    Node otherRoot{}, foreignBody{ &otherRoot, &otherRoot }, foreignMesh{ &otherRoot };
+    ok &= expectFalse("foreign body owner cannot authorize this reference",
+        isSingleBodyOwnerlessVisualBranch(&root, &foreignBody, &mesh));
+    ok &= expectFalse("foreign mesh cannot attach to selected body",
+        isSingleBodyOwnerlessVisualBranch(&root, &receiver, &foreignMesh));
+    attachment.collisionObject = &attachment;
+    ok &= expectFalse("an independently colliding attachment is not ownerless",
+        isSingleBodyOwnerlessVisualBranch(&root, &receiver, &mesh));
+    attachment.collisionObject = nullptr;
+    mesh.collisionObject = &mesh;
+    ok &= expectFalse("a colliding surface cannot borrow another body's authority",
+        isSingleBodyOwnerlessVisualBranch(&root, &receiver, &mesh));
+    mesh.collisionObject = nullptr;
+    receiver.collisionObject = nullptr;
+    ok &= expectFalse("missing body collision owner fails closed",
+        isSingleBodyOwnerlessVisualBranch(&root, &receiver, &mesh));
+    receiver.collisionObject = &root;
+    attachment.parent = &mesh;
+    ok &= expectFalse("cyclic visual ancestry terminates without acceptance",
+        isSingleBodyOwnerlessVisualBranch(&root, &receiver, &mesh));
+    attachment.parent = &root;
+    receiver.parent = &receiver;
+    ok &= expectFalse("cyclic body ancestry terminates without acceptance",
+        isSingleBodyOwnerlessVisualBranch(&root, &receiver, &mesh));
+    receiver.parent = &root;
+    ok &= expectFalse("missing reference root fails closed",
+        isSingleBodyOwnerlessVisualBranch(static_cast<Node*>(nullptr), &receiver, &mesh));
+
     return ok ? 0 : 1;
 }

@@ -1058,35 +1058,47 @@ namespace rock
                 return false;
             }
 
-            for (auto* current = node; current; current = current->parent) {
-                if (current == root) {
+            for (unsigned depth = 0; node && depth < 64; ++depth, node = node->parent) {
+                if (node == root) {
                     return true;
                 }
             }
             return false;
         }
 
-        bool acceptsSelectedMultibodyOwnerlessVisualMesh(const SelectedObject& selection,
+        bool acceptsSelectedOwnerlessVisualMesh(const SelectedObject& selection,
             const object_physics_body_set::ObjectPhysicsBodySet& bodySet,
             std::uint32_t resolvedBodyId,
             RE::NiAVObject* surfaceOwnerNode,
             const object_physics_body_set::ObjectPhysicsBodyRecord* surfaceOwnerRecord)
         {
-            /*
-             * Multipart refs can expose visible geometry and hknp collision
-             * owners as sibling nodes under the same selected reference. When
-             * the visible mesh has no accepted collision owner record, the
-             * selected body remains the acquisition authority; a concrete
-             * mismatched owner record still fails closed.
-             */
-            return selection.refr == bodySet.rootRef &&
-                   bodySet.acceptedCount() > 1 &&
-                   resolvedBodyId != object_physics_body_set::INVALID_BODY_ID &&
-                   resolvedBodyId == selection.bodyId.value &&
-                   bodySet.containsAcceptedBody(selection.bodyId.value) &&
-                   surfaceOwnerNode &&
-                   !surfaceOwnerRecord &&
-                   nodeIsOrDescendsFrom(bodySet.rootNode, surfaceOwnerNode);
+            if (!selection.refr || selection.refr != bodySet.rootRef ||
+                resolvedBodyId == object_physics_body_set::INVALID_BODY_ID ||
+                resolvedBodyId != selection.bodyId.value || !surfaceOwnerNode ||
+                surfaceOwnerRecord || !nodeIsOrDescendsFrom(bodySet.rootNode, surfaceOwnerNode)) {
+                return false;
+            }
+            const auto* selectedBody = bodySet.findRecord(resolvedBodyId);
+            if (!selectedBody || !selectedBody->accepted) return false;
+
+            // Preserve the established selected-body authority for multipart refs.
+            if (bodySet.acceptedCount() > 1) return true;
+
+            // Single-body modular weapons can place the handguard/magazine beside
+            // the receiver's collision branch. A seeded body is valid evidence
+            // even when its native system cannot be enumerated (benignScanSkips),
+            // but the seed alone must not stand in for verified reference ownership.
+            if (selection.targetKind != grab_target::Kind::LooseObject ||
+                !looseWeaponFormFromRef(selection.refr) ||
+                selection.refr->Get3D() != bodySet.rootNode || bodySet.records.size() != 1 ||
+                !selectedBody->refResolutionKnown || selectedBody->resolvedRef != selection.refr ||
+                bodySet.diagnostics.scanFailures || bodySet.diagnostics.invalidPhysicsSystems ||
+                bodySet.diagnostics.depthLimitSkips || bodySet.diagnostics.foreignRefBodySkips ||
+                bodySet.diagnostics.unresolvedRefBodySkips) {
+                return false;
+            }
+            return grab_contact_source_policy::isSingleBodyOwnerlessVisualBranch(
+                bodySet.rootNode, selectedBody->owningNode, surfaceOwnerNode);
         }
 
         constexpr const char* kHeldObjectDriveName = "proxyConstraint";
@@ -1509,7 +1521,7 @@ namespace rock
                         const auto* ownerRecord = bodySet.findAcceptedRecordByOwnerNode(surfaceHit.sourceNode);
                         ownerMatchesResolvedBody =
                             (ownerRecord && ownerRecord->bodyId == resolvedBodyId) ||
-                            acceptsSelectedMultibodyOwnerlessVisualMesh(selection,
+                            acceptsSelectedOwnerlessVisualMesh(selection,
                                 bodySet,
                                 resolvedBodyId,
                                 surfaceHit.sourceNode,
@@ -1659,7 +1671,7 @@ namespace rock
 
             const auto* ownerRecord = bodySet.findAcceptedRecordByOwnerNode(hit.sourceNode);
             return (ownerRecord && ownerRecord->bodyId == resolvedBodyId) ||
-                   acceptsSelectedMultibodyOwnerlessVisualMesh(selection,
+                   acceptsSelectedOwnerlessVisualMesh(selection,
                        bodySet,
                        resolvedBodyId,
                        hit.sourceNode,
@@ -2081,6 +2093,7 @@ namespace rock
         }
 
         RuntimeMultiFingerGripContact buildRuntimeMultiFingerGripContact(RE::hknpWorld* world,
+            const SelectedObject& selection,
             const object_physics_body_set::ObjectPhysicsBodySet& bodySet,
             std::uint32_t resolvedBodyId,
             const RE::NiTransform& objectWorldTransform,
@@ -2164,7 +2177,9 @@ namespace rock
                 }
 
                 const auto* ownerRecord = hit.sourceNode ? bodySet.findAcceptedRecordByOwnerNode(hit.sourceNode) : nullptr;
-                if (!ownerRecord || ownerRecord->bodyId != resolvedBodyId) {
+                const bool singleBodyVisualOwner = !ownerRecord && bodySet.records.size() == 1 &&
+                    acceptsSelectedOwnerlessVisualMesh(selection, bodySet, resolvedBodyId, hit.sourceNode, ownerRecord);
+                if ((!ownerRecord || ownerRecord->bodyId != resolvedBodyId) && !singleBodyVisualOwner) {
                     ++result.rejectedOwnerCount;
                     return;
                 }
@@ -2383,7 +2398,7 @@ namespace rock
                                 recoveredMeshHit.sourceNode ? bodySet.findAcceptedRecordByOwnerNode(recoveredMeshHit.sourceNode) : nullptr;
                             meshRecoveredHit =
                                 (recoveredOwnerRecord && recoveredOwnerRecord->bodyId == resolvedBodyId) ||
-                                acceptsSelectedMultibodyOwnerlessVisualMesh(selection,
+                                acceptsSelectedOwnerlessVisualMesh(selection,
                                     bodySet,
                                     resolvedBodyId,
                                     recoveredMeshHit.sourceNode,
@@ -2490,7 +2505,7 @@ namespace rock
                         const auto* snapOwnerRecord = bodySet.findAcceptedRecordByOwnerNode(snapHit.sourceNode);
                         ownerMatches =
                             (snapOwnerRecord && snapOwnerRecord->bodyId == resolvedBodyId) ||
-                            acceptsSelectedMultibodyOwnerlessVisualMesh(selection,
+                            acceptsSelectedOwnerlessVisualMesh(selection,
                                 bodySet,
                                 resolvedBodyId,
                                 snapHit.sourceNode,
@@ -7375,12 +7390,16 @@ namespace rock
             } else {
                 outResolution.surfaceOwnerMatchesResolvedBody =
                     (surfaceOwnerRecord && surfaceOwnerRecord->bodyId == outResolution.primaryChoice.bodyId) ||
-                    acceptsSelectedMultibodyOwnerlessVisualMesh(
+                    acceptsSelectedOwnerlessVisualMesh(
                         selectedObject,
                         preparedBodySet,
                         outResolution.primaryChoice.bodyId,
                         surface.surfaceOwnerNode,
                         surfaceOwnerRecord);
+                if (outResolution.surfaceOwnerMatchesResolvedBody && !surfaceOwnerRecord &&
+                    preparedBodySet.records.size() == 1) {
+                    performance_profiler::addCounter(performance_profiler::Counter::GrabSingleBodyVisualOwnerAccepted);
+                }
             }
             surface.surfaceHit.resolvedOwnerMatchesBody = outResolution.surfaceOwnerMatchesResolvedBody;
         }
@@ -7630,7 +7649,7 @@ namespace rock
                         const auto* ownerRecord = preparedBodySet.findAcceptedRecordByOwnerNode(palmPocketSurfaceHit.sourceNode);
                         ownerMatches =
                             (ownerRecord && ownerRecord->bodyId == objectBodyId.value) ||
-                            acceptsSelectedMultibodyOwnerlessVisualMesh(sel,
+                            acceptsSelectedOwnerlessVisualMesh(sel,
                                 preparedBodySet,
                                 objectBodyId.value,
                                 palmPocketSurfaceHit.sourceNode,
@@ -8024,6 +8043,7 @@ namespace rock
                         grabGripPoint.z);
                 }
                 multiFingerGripRuntime = buildRuntimeMultiFingerGripContact(world,
+                    sel,
                     preparedBodySet,
                     objectBodyId.value,
                     objectWorldTransform,
@@ -11581,9 +11601,12 @@ namespace rock
                 hasMeshSurfaceContact,
                 surfaceOwnerMatchesResolvedBody) &&
             !relaxedArticulatedAuthority) {
-            ROCK_LOG_WARN(Hand,
+            performance_profiler::addCounter(performance_profiler::Counter::GrabMeshOwnerMismatchRejected);
+            const auto* ownerRecord = preparedBodySet.findRecord(primaryChoice.bodyId);
+            ROCK_LOG_SAMPLE_WARN(Hand, g_rockConfig.rockLogSampleMilliseconds,
                 "{} hand GRAB failed: mesh contact owner does not match resolved body for '{}' formID={:08X}; "
-                "selectedBody={} resolvedBody={} sourceNode='{}' sourceKind={} target=({:.1f},{:.1f},{:.1f})",
+                "selectedBody={} resolvedBody={} sourceNode='{}' sourceKind={} target=({:.1f},{:.1f},{:.1f}) "
+                "records={} bodyOwner='{}' ownerRefKnown={} scanFailures={} invalidSystems={} depthSkips={}",
                 handName(),
                 objName,
                 sel.refr->GetFormID(),
@@ -11593,7 +11616,13 @@ namespace rock
                 grabSurfaceSourceKindName(grabSurfaceHit.sourceKind),
                 primaryChoiceTarget.x,
                 primaryChoiceTarget.y,
-                primaryChoiceTarget.z);
+                primaryChoiceTarget.z,
+                preparedBodySet.records.size(),
+                nodeDebugName(ownerRecord ? ownerRecord->owningNode : nullptr),
+                ownerRecord && ownerRecord->refResolutionKnown,
+                preparedBodySet.diagnostics.scanFailures,
+                preparedBodySet.diagnostics.invalidPhysicsSystems,
+                preparedBodySet.diagnostics.depthLimitSkips);
             grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
             return GrabAttemptResult::Rejected;

@@ -157,6 +157,8 @@ namespace rock::performance_profiler
         GrabAcquisitionPeerHeld,
         GrabAcquisitionEquippedTransfer,
         GrabAcquisitionSucceeded,
+        GrabSingleBodyVisualOwnerAccepted,
+        GrabMeshOwnerMismatchRejected,
         ContactPairBatchTruncated,
         NativeWeaponSelfPairsRejected,
         NativeWeaponOwnerUnresolved,

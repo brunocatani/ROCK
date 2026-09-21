@@ -304,6 +304,8 @@ namespace rock::performance_profiler
             case Counter::GrabAcquisitionPeerHeld: return "grabAcquisitionPeerHeld";
             case Counter::GrabAcquisitionEquippedTransfer: return "grabAcquisitionEquippedTransfer";
             case Counter::GrabAcquisitionSucceeded: return "grabAcquisitionSucceeded";
+            case Counter::GrabSingleBodyVisualOwnerAccepted: return "grabSingleBodyVisualOwnerAccepted";
+            case Counter::GrabMeshOwnerMismatchRejected: return "grabMeshOwnerMismatchRejected";
             case Counter::NativeWeaponSelfPairsRejected: return "nativeWeaponSelfPairsRejected";
             case Counter::NativeWeaponOwnerUnresolved: return "nativeWeaponOwnerUnresolved";
             case Counter::NativeWeaponOwnerResolvedOther: return "nativeWeaponOwnerResolvedOther";
@@ -733,7 +735,7 @@ namespace rock::performance_profiler
                             snapshot.droppedSnapshotsBeforeThis);
                     }
 
-                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1 grabMeshQueries=1 contactPairs=1 nativeWeaponSelfFilter=1", snapshot.frames, GetCurrentProcessId());
+                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1 grabMeshQueries=1 contactPairs=1 nativeWeaponSelfFilter=1 grabSingleBodyVisualOwner=1", snapshot.frames, GetCurrentProcessId());
                     for (const auto& item : snapshot.scopes) {
                         if (!item.hasData()) {
                             continue;
