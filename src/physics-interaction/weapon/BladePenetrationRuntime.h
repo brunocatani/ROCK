@@ -19,7 +19,7 @@ namespace rock
             RE::NiNode* weaponNode, BethesdaPhysicsBody& weaponBody,
             const RE::NiPoint3& centerWeaponLocal, std::uint64_t generation,
             PhysicsCallbackQuiescenceGate* gate, RE::NiTransform& requestedWeapon,
-            bool surfaceSupportActive);
+            bool surfaceSupportActive, const RE::NiPoint3* primaryGripWeaponLocal);
         void recordContact(RE::hknpWorld* world, std::uint32_t weaponBody,
             std::uint32_t targetBody, std::uint32_t targetLayer, const RE::NiPoint3& point);
         bool prePhysics(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
@@ -46,6 +46,9 @@ namespace rock
         BethesdaPhysicsBody _anchor;
         bool _pairPublished{ false };
         std::uint32_t _constraintId{ 0x7FFF'FFFFu };
+        // Borrowed from the live constraint; cleared before destruction/world loss.
+        void* _slideData{ nullptr };
+        float _maximumDepthGame{ 0.0f };
         RE::NiTransform _entryWeaponInTarget{};
         RE::NiTransform _presentation{};
         RE::NiTransform _lastTargetWorld{};

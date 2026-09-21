@@ -601,7 +601,7 @@ namespace rock
         if (!_authorityConstraint.isValid() || _rebuildRequestedAtomic.load(std::memory_order_acquire)) return result;
         if (!_bladePenetration.update(frame, weaponCollision, weaponNode, _body,
                 _createdCenterWeaponLocal, weaponGenerationKey, _physicsCallbackGate,
-                _frameRequestedWeaponWorld, _surfaceSupport.ownsPose())) {
+                _frameRequestedWeaponWorld, _surfaceSupport.ownsPose(), primaryGripWeaponLocal)) {
             retireAll(frame.bhkWorld);
             return result;
         }

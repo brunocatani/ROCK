@@ -57,10 +57,23 @@ namespace rock
                 actual == bytes;
         }
 
+        void setSlideDepth(void* data, float maximumDepthGame)
+        {
+            // Constructor 1419B142D and validator 1419B1ABA identify the limits.
+            // Keep both directions open until physical withdrawal releases the
+            // pair. The controller guide supplies the shorter withdrawal stop.
+            const float extent = (std::max)(maximumDepthGame, kWithdrawalClearanceGame + 1.0f) * physics_scale::gameToHavok();
+            const float minimum = -extent;
+            std::memcpy(static_cast<std::byte*>(data) + 0x10C, &minimum, sizeof(minimum));
+            std::memcpy(static_cast<std::byte*>(data) + 0x110, &extent, sizeof(extent));
+        }
+
         std::uint32_t createBladeSlide(RE::hknpWorld* world, std::uint32_t bladeBody,
             std::uint32_t anchorBody, const RE::NiTransform& bladeWorld,
-            const RE::NiTransform& anchorWorld, const RE::NiPoint3& tip, const RE::NiPoint3& axis)
+            const RE::NiTransform& anchorWorld, const RE::NiPoint3& tip, const RE::NiPoint3& axis,
+            float maximumDepthGame, void*& borrowedData)
         {
+            borrowedData = nullptr;
             using Constructor = void* (*)(void*);
             using SetFrames = void (*)(void*, const RE::hkTransformf&, const RE::hkTransformf&,
                 const RE::hkVector4f&, const RE::hkVector4f&);
@@ -82,19 +95,14 @@ namespace rock
                 nativeBodyTransform(anchorWorld), pivot, direction);
             // 141A56EDB and 141A5B0FE read atom+2 as an AXIS INDEX.
             // Preserve constructor axis 0 at +10A; it is not an enable flag.
-            // Constructor 1419B142D and validator 1419B1ABA identify the limits.
-            // A symmetric withdrawal corridor avoids trapping the tip at zero;
-            // normal release happens at -2 gu, before the -5 gu native stop.
-            const float minimum = -kMaximumDepthGame * scale;
-            const float maximum = kMaximumDepthGame * scale;
-            std::memcpy(static_cast<std::byte*>(data) + 0x10C, &minimum, sizeof(minimum));
-            std::memcpy(static_cast<std::byte*>(data) + 0x110, &maximum, sizeof(maximum));
+            setSlideDepth(data, maximumDepthGame);
             RE::hknpConstraintCinfo cinfo{};
             cinfo.constraintData = static_cast<RE::hkpConstraintData*>(data);
             cinfo.bodyIdA = bladeBody;
             cinfo.bodyIdB = anchorBody;
             std::uint32_t id = kInvalidId;
             world->CreateConstraint(&id, cinfo);
+            if (id != kInvalidId) borrowedData = data; // The world now owns its reference.
             havok_ref_count::release(data);
             return id;
         }
@@ -110,14 +118,18 @@ namespace rock
             _sourceTip = {};
             _acquisitionUnavailable = false;
             const auto composition = collision.getWeaponCompositionSnapshot();
-            if (composition.weaponGenerationKey != generation || composition.weaponFormId != kSwitchbladeFormId) return false;
+            const auto weaponFamily = family(composition.weaponFormId);
+            if (composition.weaponGenerationKey != generation || weaponFamily == Family::None) return false;
             const auto evidence = collision.getProfileEvidenceDescriptors();
             if (evidence.size() > 128) return false;
             for (const auto& source : evidence) {
-                if (!source.valid || source.weaponGenerationKey != generation || source.sourceName != "Blade:1") continue;
+                if (!source.valid || source.weaponGenerationKey != generation) continue;
+                const auto* profile = sourceProfile(weaponFamily, source.sourceName);
+                if (!profile) continue;
                 WeaponCollision::SupportGripEvidenceView view{};
                 if (!collision.tryGetSupportGripEvidenceView(source.bodyId, weaponNode, view) || !view.sourceNodeCurrent ||
-                    view.localTriangles.empty() || view.localTriangles.size() > 128) continue;
+                    view.weaponGenerationKey != generation || view.localTriangles.empty() ||
+                    view.localTriangles.size() > 10000) continue;
                 constexpr float largest = (std::numeric_limits<float>::max)();
                 RE::NiPoint3 minimum{ largest, largest, largest }, maximum{ -largest, -largest, -largest };
                 RE::NiPoint3 tip{};
@@ -130,19 +142,14 @@ namespace rock
                         maximum.x = (std::max)(maximum.x, point.x); maximum.y = (std::max)(maximum.y, point.y); maximum.z = (std::max)(maximum.z, point.z);
                     }
                 }
-                // Authored +Y axis, measured with nif_mcp in vanilla Blade.nif
-                // and Blade_1.nif (identical bounds). Replacements/serrated parts
-                // fail closed instead of inheriting an arbitrary melee axis.
-                if (!finite || std::abs(minimum.x + 0.88134766f) > 0.02f || std::abs(maximum.x - 0.85253906f) > 0.02f ||
-                    std::abs(minimum.y + 0.47924805f) > 0.02f || std::abs(maximum.y - 11.3828125f) > 0.02f ||
-                    std::abs(minimum.z + 0.0307312f) > 0.02f || std::abs(maximum.z - 0.11383057f) > 0.02f) continue;
+                if (!finite || !matchesSourceBounds(*profile, minimum, maximum)) continue;
                 if (_sourceBodyId != kInvalidId) { _sourceBodyId = kInvalidId; break; }
                 _sourceBodyId = source.bodyId;
                 _sourceTip = tip;
             }
-            ROCK_LOG_INFO(Weapon, "BLADE profile: form={:08X} generation={:016X} supported={} bladeBody={} tipSource=({:.4f},{:.4f},{:.4f}) axisSource=(0,1,0) maximumDepth={:.2f}gu",
+            ROCK_LOG_INFO(Weapon, "BLADE profile: form={:08X} generation={:016X} supported={} bladeBody={} tipSource=({:.4f},{:.4f},{:.4f}) axisSource=(0,1,0) handClearance={:.3f}m",
                 composition.weaponFormId, generation, _sourceBodyId != kInvalidId, _sourceBodyId,
-                _sourceTip.x, _sourceTip.y, _sourceTip.z, kMaximumDepthGame);
+                _sourceTip.x, _sourceTip.y, _sourceTip.z, kHandClearanceMeters);
         }
         if (_sourceBodyId == kInvalidId) return false;
         WeaponCollision::SupportGripEvidenceView view{};
@@ -200,7 +207,7 @@ namespace rock
     bool BladePenetrationRuntime::update(const PhysicsFrameContext& frame, const WeaponCollision& collision,
         RE::NiNode* weaponNode, BethesdaPhysicsBody& weaponBody, const RE::NiPoint3& centerWeaponLocal,
         const std::uint64_t generation, PhysicsCallbackQuiescenceGate* gate,
-        RE::NiTransform& requestedWeapon, const bool surfaceSupportActive)
+        RE::NiTransform& requestedWeapon, const bool surfaceSupportActive, const RE::NiPoint3* primaryGripWeaponLocal)
     {
         if (!gate) return !active();
         if (_profileGeneration == generation && _sourceBodyId == kInvalidId && !active()) return true;
@@ -209,7 +216,8 @@ namespace rock
         const bool supported = resolveBlade(collision, weaponNode, generation, blade);
         if (!supported && !_blade.valid && !active()) return true;
         const bool wasActive = active();
-        if (wasActive && (!supported || surfaceSupportActive || _physicsFailed.load(std::memory_order_acquire) ||
+        if (wasActive && (frame.hknpWorld != _world || !supported || surfaceSupportActive ||
+                !_slideData || _physicsFailed.load(std::memory_order_acquire) ||
                 !native_player_collision::hasBladePair(_world, _weaponBodyId, _contact.surfaceBodyId) ||
                 blade_penetration::dot(blade.axisLocal, _blade.axisLocal) < 0.999f ||
                 blade_penetration::dot(difference(blade.tipLocal, _blade.tipLocal), difference(blade.tipLocal, _blade.tipLocal)) > 0.01f)) {
@@ -222,6 +230,23 @@ namespace rock
         _weaponScale = requestedWeapon.scale;
         _centerWeaponLocal = centerWeaponLocal;
         if (!_blade.valid || surfaceSupportActive || _acquisitionUnavailable) return true;
+
+        const float maximumDepthGame = primaryGripWeaponLocal ?
+            maximumDepth(_blade, *primaryGripWeaponLocal, _weaponScale, physics_scale::havokToGame()) : 0.0f;
+        if (maximumDepthGame <= 0.0f) {
+            const auto now = nowMilliseconds();
+            if (dynamic_collider_trace::enabled() && now - _lastContactReport >= 1000) {
+                _lastContactReport = now;
+                dynamic_collider_trace::writeWeapon("BLADE unavailable: reason=grip-clearance active={} gripPresent={}",
+                    wasActive, primaryGripWeaponLocal != nullptr);
+            }
+            return !wasActive;
+        }
+        if (wasActive && maximumDepthGame != _maximumDepthGame) {
+            setSlideDepth(_slideData, maximumDepthGame);
+            havok_runtime::activateBody(_world, _weaponBodyId);
+        }
+        _maximumDepthGame = maximumDepthGame;
 
         RE::NiTransform physicalBody{}, target{};
         if (!havok_runtime::tryGetBodyWorldTransform(_world, weaponBody.getBodyId(), physicalBody)) return !wasActive;
@@ -282,7 +307,8 @@ namespace rock
             RE::NiPoint3 axis{};
             if (!axisWorld(_blade, physicalWeapon, axis)) return true;
             const auto tip = transform_math::localPointToWorld(physicalWeapon, _blade.tipLocal);
-            _constraintId = createBladeSlide(_world, _weaponBodyId, _anchor.getBodyId().value, physicalBody, target, tip, axis);
+            _constraintId = createBladeSlide(_world, _weaponBodyId, _anchor.getBodyId().value,
+                physicalBody, target, tip, axis, _maximumDepthGame, _slideData);
             if (!active()) {
                 ROCK_LOG_WARN(Weapon, "BLADE rejected: slider-creation-failed");
                 return true;
@@ -298,14 +324,14 @@ namespace rock
             _acquisitionUnavailable = false;
             havok_runtime::activateBody(_world, _weaponBodyId);
             ROCK_LOG_INFO(Weapon, "BLADE entered: body={} target={} constraint={} tip=({:.3f},{:.3f},{:.3f}) axis=({:.3f},{:.3f},{:.3f}) maximumDepth={:.2f}gu",
-                _weaponBodyId, _contact.surfaceBodyId, _constraintId, tip.x, tip.y, tip.z, axis.x, axis.y, axis.z, kMaximumDepthGame);
+                _weaponBodyId, _contact.surfaceBodyId, _constraintId, tip.x, tip.y, tip.z, axis.x, axis.y, axis.z, _maximumDepthGame);
         } else if (!targetWorld(_world, target)) {
             ROCK_LOG_WARN(Weapon, "BLADE retirement requested: target-lost");
             return false;
         }
 
-        const auto command = guide(_blade, _entryWeaponInTarget, target, requestedWeapon);
-        const auto actual = guide(_blade, _entryWeaponInTarget, target, physicalWeapon);
+        const auto command = guide(_blade, _entryWeaponInTarget, target, requestedWeapon, _maximumDepthGame);
+        const auto actual = guide(_blade, _entryWeaponInTarget, target, physicalWeapon, _maximumDepthGame);
         if (!command.valid || !actual.valid) {
             ROCK_LOG_WARN(Weapon, "BLADE retirement requested: invalid-guide");
             return false;
@@ -325,7 +351,7 @@ namespace rock
         if (dynamic_collider_trace::enabled() && now - _lastContactReport >= 500) {
             _lastContactReport = now;
             dynamic_collider_trace::writeWeapon("BLADE depth: target={} requested={:.3f} actual={:.3f} maximum={:.3f}gu filteredPairs={}",
-                _contact.surfaceBodyId, command.requestedDepth, actual.requestedDepth, kMaximumDepthGame,
+                _contact.surfaceBodyId, command.requestedDepth, actual.requestedDepth, _maximumDepthGame,
                 native_player_collision::bladePairRejectedCount());
         }
         return true;
@@ -350,6 +376,8 @@ namespace rock
 
     void BladePenetrationRuntime::release(RE::hknpWorld* world, const char* reason)
     {
+        _slideData = nullptr;
+        _maximumDepthGame = 0.0f;
         if (active()) {
             if (world && world == _world) world->DestroyConstraints(&_constraintId, 1);
             ROCK_LOG_INFO(Weapon, "BLADE released: target={} reason={}", _contact.surfaceBodyId, reason);
