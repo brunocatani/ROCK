@@ -38,7 +38,7 @@ Requires Windows x64, Visual Studio 2022 with the v143 C++ toolset and Windows S
 | [CommonLibF4VR](https://github.com/ArthurHub/CommonLibF4VR) | FO4VR engine and F4SE declarations; linked directly | `COMMON_LIB_F4VR_PATH` |
 | [RPS SDK](https://github.com/brunocatani/RPS_SDK) | UI input headers, integration examples, ABI checks, and packaged SDK | `RPS_SDK_ROOT` |
 
-The default layout places ROCK and RPS_SDK next to each other under `main_projects/`, with CommonLibF4VR under `libraries_and_tools/` at the workspace root. Set the overrides when using another layout. ROCK owns its runtime support in [src/rock_support](src/rock_support/) and vendors the required OpenVR ABI in [third_party/openvr](third_party/openvr/).
+The workspace places ROCK under `main_projects/ROCK`, RPS SDK under `my_frameworks_and_sdks/RPS_SDK`, and CommonLibF4VR under `libraries_and_tools/CommonLibF4VR`. Set `RPS_SDK_ROOT` to that SDK checkout: current CMake still falls back to the obsolete sibling `../RPS_SDK` location when the override is empty. Set the other overrides for your layout. ROCK owns its runtime support in [src/rock_support](src/rock_support/) and vendors the required OpenVR ABI in [third_party/openvr](third_party/openvr/).
 
 Copy [CMakeUserPresets.json.template](CMakeUserPresets.json.template) to `CMakeUserPresets.json`, remove the opening comment block, and set your dependency paths. Set `COPY_PLUGIN_BASE_PATH` to a dedicated ROCK mod folder. The inherited presets assume vcpkg is at `C:/vcpkg`; override the preset's `VCPKG_ROOT` environment value and `CMAKE_TOOLCHAIN_FILE` together if needed.
 
@@ -85,14 +85,15 @@ The release preset creates a local archive using the independent RPS SDK checkou
 
 Start with the [ROCK SDK guide](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/PublicApi.md) and [minimal consumer example](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/examples/MinimalProviderConsumer.cpp).
 
-ROCK Provider API **V1** uses owner registration, capability grants, feature discovery, provider limits, and queued commands. Consumers should check the required table extent and capabilities before using an interface and follow the SDK's lifetime and cleanup rules.
+ROCK exposes **13 independently negotiated interfaces** through `ROCKAPI_QueryInterfaceV1`: Core, Hands, Collision, Grab, Touch, Weapon, WeaponParts, Animation, Input, References, PlayerController, Diagnostics and Configuration. Register one Core owner, then bind only the permissions each required family supports. All current interfaces are major 1; Hands and WeaponParts are minor 1, the others minor 0.
 
-- [Discovery and capabilities](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/DiscoveryAndCapabilities.md)
-- [Runtime contract](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/RuntimeContract.md)
-- [Power Armor integration](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/FeatureGuide.md#power-armor-and-reference-details)
-- [Configuration API](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/Configuration.md)
+- [Complete callable index](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/ApiIndex.md)
+- [Discovery and permissions](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/DiscoveryAndCapabilities.md)
+- [Runtime, snapshots and callback lifetime](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/RuntimeContract.md)
+- [Migration from the combined provider](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/modular/Migration.md)
+- [Power Armor](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/modular/PowerArmor.md) and [Configuration](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/modular/Configuration.md)
 
-The configuration API is a separate contract exposed through `GetROCKConfigurationApi`. FRIK's skeleton-provider API **V2** is also independent of ROCK Provider V1. SDK example tests check the public headers against ROCK's runtime ABI.
+The old combined provider and `GetROCKConfigurationApi` exports are removed. FRIK API **2.3**, ROCK interface versions and the ROCK DLL version are separate domains. Core `Presented` supplies final same-frame hand observation; `Complete` retains control timing. Only the explicitly documented synchronized snapshot getters support arbitrary task threads; live queries and writes retain their owner-thread restrictions.
 
 ## Source layout
 
