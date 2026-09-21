@@ -164,22 +164,18 @@ int main()
     assert((coherentFinger.helpfulSegmentMask & 0x02u) != 0);
     assert((coherentFinger.helpfulSegmentMask & 0x01u) == 0);
 
-    const std::array<float, policy::kFingerCount> current{
-        1.0f, 1.0f, 1.0f, 1.0f, 1.0f
-    };
-    const std::array<float, policy::kFingerCount> target{
-        0.0f, 0.0f, 0.0f, 0.0f, 0.0f
-    };
-    const auto smoothed =
-        policy::advanceOpenValues(current, target, 30.0f, 1.0f / 90.0f);
-    for (const float value : smoothed) {
-        assert(value > 0.0f && value < 1.0f);
+    // The desired curl stays fixed as the applied pose gradually relieves a
+    // fixed obstruction. Requested but unapplied motion earns no relief.
+    for (const float relief : { 0.0f, 0.05f, 0.1f, 0.15f }) {
+        const auto depth = policy::baselineBlockedDepth(0.2f - relief, relief);
+        assert(nearlyEqual(depth, 0.2f));
+        contacts = {};
+        contacts[1][2] = { depth, 0.2f, 0.0f, true };
+        const auto stable = policy::solve(baseline, contacts, {}, {});
+        assert(nearlyEqual(stable.targetOpenValues[1], baseline[1] - 0.1f));
     }
-    const auto immediate =
-        policy::advanceOpenValues(current, target, 0.0f, 1.0f / 90.0f);
-    for (const float value : immediate) {
-        assert(nearlyEqual(value, 0.0f));
-    }
-
+    assert(nearlyEqual(policy::baselineBlockedDepth(0.2f, 0.0f), 0.2f));
+    assert(nearlyEqual(policy::baselineBlockedDepth(0.2f, -0.1f), 0.1f));
+    assert(policy::baselineBlockedDepth(0.0f, 0.1f) == 0.0f);
     return 0;
 }

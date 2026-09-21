@@ -142,6 +142,8 @@ namespace rock
                 return "SelectionFoundFar";
             case HandInteractionEvent::SelectionLost:
                 return "SelectionLost";
+            case HandInteractionEvent::ClearSelection:
+                return "ClearSelection";
             case HandInteractionEvent::LockFarSelection:
                 return "LockFarSelection";
             case HandInteractionEvent::BeginPreGrabItem:
@@ -280,6 +282,7 @@ namespace rock
         }
         _nearbyGrabDamping.clear();
         _grabFrame.clear();
+        _grabOffsetAcquisition = {};
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         _grabObjectGripAtGrab = {};
         _heldObjectIsLooseWeapon = false;
@@ -323,15 +326,10 @@ namespace rock
         _lastSelectedCloseOrigin = {};
         _hasLastSelectedCloseOrigin = false;
         _selectedCloseHandSpeedMetersPerSecond = 0.0f;
-        _heldLocalLinearVelocityHistory = {};
-        _heldLocalLinearVelocityHistoryCount = 0;
-        _heldLocalLinearVelocityHistoryNext = 0;
-        _heldLocalHandVelocityHistory = {};
-        _heldHandAngularVelocityHistory = {};
-        _heldHandVelocityHistoryCount = 0;
-        _heldHandVelocityHistoryNext = 0;
-        _lastHeldObjectLocalLinearVelocityHavok = {};
-        _hasLastHeldObjectLocalLinearVelocityHavok = false;
+        _controllerReleaseHistory.clear();
+        _objectReleaseHistory.clear();
+        _releaseObjectNotBefore = release_velocity::sampleTimeSeconds();
+        _releaseControllerFrame = 0;
         _previousHeldRawHandWorld = {};
         _previousHeldHandPositionHavok = {};
         _lastHeldHandPositionHavok = {};
@@ -389,6 +387,7 @@ namespace rock
         _isHoldingFlag.store(false, std::memory_order_release);
         _nearbyGrabDamping.clear();
         _grabFrame.clear();
+        _grabOffsetAcquisition = {};
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         _grabObjectGripAtGrab = {};
         _heldObjectIsLooseWeapon = false;
@@ -421,12 +420,6 @@ namespace rock
         _hasGrabFingerLocalTransforms = false;
         _grabFingerLocalTransformFinalizePending = false;
         _hasGrabFingerPose = false;
-        _heldLocalHandVelocityHistory = {};
-        _heldHandAngularVelocityHistory = {};
-        _heldHandVelocityHistoryCount = 0;
-        _heldHandVelocityHistoryNext = 0;
-        _lastHeldObjectLocalLinearVelocityHavok = {};
-        _hasLastHeldObjectLocalLinearVelocityHavok = false;
         _previousHeldRawHandWorld = {};
         _previousHeldHandPositionHavok = {};
         _lastHeldHandPositionHavok = {};
@@ -1122,7 +1115,8 @@ namespace rock
         const RE::NiPoint3& sourcePointWorld,
         std::uint32_t preferredBodyId,
         float maxDistanceGame,
-        bool allowProjectileLayerForExactTarget)
+        bool allowProjectileLayerForExactTarget,
+        bool equippedWeaponTransfer)
     {
         if (!hknpWorld || !targetRef || targetRef->IsDeleted() || targetRef->IsDisabled()) {
             return false;
@@ -1199,6 +1193,7 @@ namespace rock
         selection.hasHitPoint = true;
         selection.hasHitNormal = true;
         selection.forcedArrival = true;
+        selection.equippedWeaponTransfer = equippedWeaponTransfer;
         selection.allowProjectileLayerForExactTarget = allowProjectileLayerForExactTarget;
 
         if (!selection.isValid()) {
@@ -1383,6 +1378,32 @@ namespace rock
 
         outPivotWorld = proxyFrameWorld.translate;
         return true;
+    }
+
+    bool Hand::captureWeaponGripTransfer(weapon_grip_transfer::HandGrip& out) const
+    {
+        out = {};
+        if (!isHoldingLooseWeapon() || !getHeldRef() || !getHeldRef()->Get3D() ||
+            !_activeConstraint.isValid() || !_grabFrame.hasTelemetryCapture) return false;
+        out.handWeaponLocal = weapon_grip_transfer::handInWeapon(_grabFrame.rootBodyLocal,
+            _grabFrame.authority.bodyLocal, _grabFrame.rawHandSpace);
+        out.gripWeaponLocal = transform_math::localPointToWorld(_grabFrame.rootBodyLocal,
+            _grabFrame.authority.pivotBBodyLocalGame);
+        if (_grabFrame.authoredWeaponPose.valid()) {
+            out.authoredRole = _grabFrame.authoredWeaponPose.role;
+            out.fingerLocals = _grabFrame.authoredWeaponPose.fingerLocals;
+            out.fingerMask = _grabFrame.authoredWeaponPose.fingerMask;
+            out.hasFingerPose = true;
+        } else if (_hasGrabFingerPose && _grabFingerPose.solved) {
+            out.fingerValues = _hasGrabFingerJointPose ? _grabFingerJointPose :
+                grab_finger_pose_math::expandFingerCurlsToJointValues(_grabFingerPose.values);
+            out.hasFingerPose = true;
+            if (_hasGrabFingerLocalTransforms) {
+                out.fingerLocals = _grabFingerLocalTransforms;
+                out.fingerMask = _grabFingerLocalTransformMask;
+            }
+        }
+        return out.valid();
     }
 
     bool Hand::tryGetLiveGrabFingerPoseSnapshot(GrabFingerPoseSnapshot& outSnapshot) const
@@ -2141,7 +2162,7 @@ namespace rock
                 continue;
             }
             HandColliderBodyMetadata metadata{};
-            if (!tryGetHandColliderMetadata(bodyId, metadata) || !metadata.valid) {
+            if (!tryGetHandColliderMetadataAtIndex(i, bodyId, metadata) || !metadata.valid) {
                 continue;
             }
             if (metadata.role == role) {
@@ -2183,6 +2204,9 @@ namespace rock
 
     void Hand::clearSelectionState(bool rememberDeselect)
     {
+        if (!applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::ClearSelection }).accepted) {
+            return;
+        }
         stopSelectionHighlight();
         clearSelectedCloseFingerPose();
         if (rememberDeselect) {
@@ -2198,12 +2222,26 @@ namespace rock
         _lastSelectedCloseOrigin = {};
         _hasLastSelectedCloseOrigin = false;
         _selectedCloseHandSpeedMetersPerSecond = 0.0f;
-        const auto event =
-            (_state == HandState::SelectedClose || _state == HandState::SelectedFar) ? HandInteractionEvent::SelectionLost :
-            (_state == HandState::Idle) ? HandInteractionEvent::Initialize :
-                                          HandInteractionEvent::ObjectInvalidated;
-        applyTransition(HandTransitionRequest{ .event = event });
         _selectionHoldSeconds = 0.0f;
+    }
+
+    bool Hand::tryGetPinchFingerFrame(grab_pinch_pocket_policy::FingerFrame& outFrame) const
+    {
+        outFrame = {};
+        root_flattened_finger_skeleton_runtime::Snapshot snapshot{};
+        if (!root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, snapshot)) return false;
+        std::array<RE::NiPoint3, 2> tips{};
+        constexpr auto tipSegment = static_cast<std::size_t>(hand_collider_semantics::HandFingerSegment::Tip);
+        const auto& colliders = _boneColliders.dynamicTwinTargets();
+        for (std::size_t finger = 0; finger < tips.size(); ++finger) {
+            const auto& chain = snapshot.fingers[finger];
+            const auto& collider = colliders.fingers[finger][tipSegment];
+            if (!chain.valid || !chain.tipGeometryValid || !collider.valid ||
+                !grab_pinch_pocket_policy::colliderTipEndpoint(chain.tipSegmentCenterWorld,
+                    chain.tipDirectionWorld, collider.length, collider.convexRadius, tips[finger])) return false;
+        }
+        outFrame = grab_pinch_pocket_policy::makeFingerFrame(tips[0], tips[1]);
+        return outFrame.valid;
     }
 
     void Hand::updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& closeSelectionDirection,
@@ -2250,23 +2288,20 @@ namespace rock
         }
 
         RE::NiPoint3 resolvedPinchOrigin = pinchOrigin;
+        RE::NiPoint3 resolvedPinchDirection = pinchDirection;
         bool resolvedHasPinchOrigin = hasPinchOrigin;
         auto resolvePinchOriginIfNeeded = [&]() {
             if (resolvedHasPinchOrigin) {
                 return true;
             }
 
-            root_flattened_finger_skeleton_runtime::Snapshot fingerSnapshot{};
-            if (!root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, fingerSnapshot) ||
-                !fingerSnapshot.valid ||
-                !fingerSnapshot.fingers[0].valid ||
-                !fingerSnapshot.fingers[1].valid) {
+            grab_pinch_pocket_policy::FingerFrame pinchFrame{};
+            if (!tryGetPinchFingerFrame(pinchFrame)) {
                 return false;
             }
-
-            const RE::NiPoint3 thumbPad = fingerSnapshot.fingers[0].points[2];
-            const RE::NiPoint3 indexPad = fingerSnapshot.fingers[1].points[2];
-            resolvedPinchOrigin = (thumbPad + indexPad) * 0.5f;
+            resolvedPinchOrigin = pinchFrame.center;
+            resolvedPinchDirection = grab_pinch_pocket_policy::detectionDirection(
+                pinchFrame, pinchDirection, g_rockConfig.rockGrabPinchDetectionAxisBlend);
             resolvedHasPinchOrigin = true;
             return true;
         };
@@ -2279,7 +2314,7 @@ namespace rock
             nearCandidate = findCloseObject(bhkWorld,
                 hknpWorld,
                 resolvedPinchOrigin,
-                pinchDirection,
+                resolvedPinchDirection,
                 _isLeft,
                 otherHandContext,
                 _isLeft ? "pinch-near-L" : "pinch-near-R");
@@ -2377,34 +2412,36 @@ namespace rock
                 refreshSelectionHighlight(_currentSelection);
             }
         } else if (best.isValid()) {
-            auto* baseObj = best.refr->GetObjectReference();
-            const char* typeName = baseObj ? baseObj->GetFormTypeString() : "???";
+            if (logger::isDebugEnabled()) {
+                auto* baseObj = best.refr->GetObjectReference();
+                const char* typeName = baseObj ? baseObj->GetFormTypeString() : "???";
 
-            auto objName = baseObj ? RE::TESFullName::GetFullName(*baseObj, false) : std::string_view{};
-            const std::string nameStr = objName.empty() ? std::string("(unnamed)") : std::string(objName);
+                auto objName = baseObj ? RE::TESFullName::GetFullName(*baseObj, false) : std::string_view{};
+                const std::string nameStr = objName.empty() ? std::string("(unnamed)") : std::string(objName);
 
-            if (_currentSelection.isValid()) {
-                ROCK_LOG_DEBUG(Hand,
-                    "{} hand switched -> {} [{}] '{}' formID={:08X} dist={:.1f} signedAlong={:.1f} lateral={:.1f}",
-                    handName(),
-                    best.isFarSelection ? "far" : "near",
-                    typeName,
-                    nameStr,
-                    best.refr->GetFormID(),
-                    best.distance,
-                    best.signedAlongDistance,
-                    best.lateralDistance);
-            } else {
-                ROCK_LOG_DEBUG(Hand,
-                    "{} hand selected {} [{}] '{}' formID={:08X} dist={:.1f} signedAlong={:.1f} lateral={:.1f}",
-                    handName(),
-                    best.isFarSelection ? "far" : "near",
-                    typeName,
-                    nameStr,
-                    best.refr->GetFormID(),
-                    best.distance,
-                    best.signedAlongDistance,
-                    best.lateralDistance);
+                if (_currentSelection.isValid()) {
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} hand switched -> {} [{}] '{}' formID={:08X} dist={:.1f} signedAlong={:.1f} lateral={:.1f}",
+                        handName(),
+                        best.isFarSelection ? "far" : "near",
+                        typeName,
+                        nameStr,
+                        best.refr->GetFormID(),
+                        best.distance,
+                        best.signedAlongDistance,
+                        best.lateralDistance);
+                } else {
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} hand selected {} [{}] '{}' formID={:08X} dist={:.1f} signedAlong={:.1f} lateral={:.1f}",
+                        handName(),
+                        best.isFarSelection ? "far" : "near",
+                        typeName,
+                        nameStr,
+                        best.refr->GetFormID(),
+                        best.distance,
+                        best.signedAlongDistance,
+                        best.lateralDistance);
+                }
             }
 
             stopSelectionHighlight();
@@ -2568,21 +2605,11 @@ namespace rock
             selection_query_policy::kNearDetectionRangeGameUnits) +
                                  (std::max)(selection_query_policy::kNearCastRadiusGameUnits, g_rockConfig.rockGrabTouchAcquireDistanceGameUnits);
 
-        std::vector<std::uint32_t> candidateBodyIds;
-        candidateBodyIds.reserve(peerHeldBodyIds.size() + 1);
-        auto appendUniqueBody = [&](std::uint32_t bodyId) {
-            if (bodyId == INVALID_BODY_ID) {
-                return;
-            }
-            if (std::find(candidateBodyIds.begin(), candidateBodyIds.end(), bodyId) == candidateBodyIds.end()) {
-                candidateBodyIds.push_back(bodyId);
-            }
-        };
-        appendUniqueBody(peerSavedObjectState.bodyId.value);
-        for (const auto bodyId : peerHeldBodyIds) {
-            appendUniqueBody(bodyId);
-        }
-        if (candidateBodyIds.empty()) {
+        const auto primaryBodyId = peerSavedObjectState.bodyId.value;
+        const bool hasCandidate = primaryBodyId != INVALID_BODY_ID ||
+            std::any_of(peerHeldBodyIds.begin(), peerHeldBodyIds.end(),
+                [](std::uint32_t id) { return id != INVALID_BODY_ID; });
+        if (!hasCandidate) {
             return refuse("no-peer-held-bodies");
         }
 
@@ -2593,7 +2620,12 @@ namespace rock
         auto toNiPoint = [](const hand_semantic_contact_state::SemanticContactVector& value) {
             return RE::NiPoint3{ value.x, value.y, value.z };
         };
-        for (const auto bodyId : candidateBodyIds) {
+        for (std::size_t candidateIndex = 0; candidateIndex <= peerHeldBodyIds.size(); ++candidateIndex) {
+            const auto bodyId = candidateIndex == 0 ? primaryBodyId : peerHeldBodyIds[candidateIndex - 1];
+            if (bodyId == INVALID_BODY_ID) continue;
+            if (candidateIndex != 0 && (bodyId == primaryBodyId ||
+                    std::find(peerHeldBodyIds.begin(), peerHeldBodyIds.begin() + candidateIndex - 1, bodyId) !=
+                        peerHeldBodyIds.begin() + candidateIndex - 1)) continue;
             RE::NiTransform bodyWorld{};
             if (!havok_runtime::tryGetBodyArrayWorldTransform(hknpWorld, RE::hknpBodyId{ bodyId }, bodyWorld) &&
                 !tryResolveLiveBodyWorldTransform(hknpWorld, RE::hknpBodyId{ bodyId }, bodyWorld)) {
@@ -2778,12 +2810,13 @@ namespace rock
     void Hand::updateCollisionTransform(
         RE::hknpWorld* world,
         const RE::NiTransform& rollAuthorityWorld,
-        float deltaTime)
+        float deltaTime,
+        const DirectSkeletonBoneSnapshot& colliderBones)
     {
         if (!hasCollisionBody() || !world)
             return;
 
-        _boneColliders.update(world, _isLeft, rollAuthorityWorld, _handBody, deltaTime);
+        _boneColliders.update(world, _isLeft, rollAuthorityWorld, _handBody, deltaTime, colliderBones);
     }
 
     void Hand::flushPendingCollisionPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)

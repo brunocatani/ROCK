@@ -1,4 +1,5 @@
 #include "physics-interaction/grab/GrabCore.h"
+#include "physics-interaction/grab/GrabOffsetAcquisition.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/hand/HandFrame.h"
 
@@ -58,6 +59,77 @@ int main()
     namespace authority = rock::grab_authority_frame_math;
 
     bool ok = true;
+    {
+        namespace acquisition = rock::grab_offset_acquisition;
+        namespace frames = rock::grab_frame_math;
+        namespace math = rock::transform_math;
+        const auto rotationDegrees = [](const auto& a, const auto& b) {
+            return acquisition::rotationAngleRadians(a.rotate, b.rotate) * 57.295779513f;
+        };
+        const auto rotated = [](float radians) {
+            auto result = identityTransform();
+            const float q[4]{ 0.0f, 0.0f, std::sin(radians / 2.0f), std::cos(radians / 2.0f) };
+            result.rotate = math::havokQuaternionToNiRows<RE::NiMatrix3>(q);
+            return result;
+        };
+        auto palm = rotated(0.7f);
+        palm.rotate = math::transposeRotation(palm.rotate);
+        palm.translate = { -76000.0f, 82000.0f, 7700.0f };
+        palm.scale = 1.5f;
+        const RE::NiPoint3 grip{ 8.0f, -3.0f, 5.0f };
+        const RE::NiPoint3 pivotA{ 2.0f, 1.0f, -1.0f };
+        auto seated = rotated(-1.5f);
+        seated.scale = 1.2f;
+        seated.translate = pivotA - math::localPointToWorld(seated, grip);
+        auto initial = rotated(0.6f);
+        initial.scale = 1.2f;
+        initial.translate = { 20.0f, -10.0f, 7.0f };
+        const auto initialWorld = frames::objectFromGeneratedProxyLocalSpace(palm, initial);
+        auto transition = acquisition::begin(palm, initialWorld, seated, grip);
+        ok &= expectTrue("acquisition captures a scaled rotated palm", transition.active);
+        const auto firstProxy = acquisition::advance(transition, palm, seated, grip, 0.0f);
+        const auto firstBody = frames::objectFromGeneratedProxyLocalSpace(firstProxy, seated);
+        ok &= expectPointNear("initial constraint target keeps live body", firstBody.translate, initialWorld.translate, 0.02f);
+        ok &= expectNear("initial target keeps live rotation", rotationDegrees(firstBody, initialWorld), 0.0f, 0.06f);
+        ok &= expectPointNear("fixed pivots meet at initial grip",
+            rock::generatedProxyLocalPointToWorld(firstProxy, pivotA), math::localPointToWorld(firstBody, grip), 0.02f);
+
+        auto movedPalm = rotated(-0.4f);
+        movedPalm.rotate = math::transposeRotation(movedPalm.rotate);
+        movedPalm.translate = palm.translate + RE::NiPoint3{ 10.0f, 20.0f, -5.0f };
+        movedPalm.scale = palm.scale;
+        const auto halfProxy = acquisition::advance(transition, movedPalm, seated, grip, transition.durationSeconds * 0.5f);
+        const auto halfBody = frames::objectFromGeneratedProxyLocalSpace(halfProxy, seated);
+        const auto firstGrip = math::localPointToWorld(initial, grip);
+        const auto lastGrip = math::localPointToWorld(seated, grip);
+        const auto middleGrip = (firstGrip + lastGrip) * 0.5f;
+        ok &= expectPointNear("grip moves on straight segment in current hand space",
+            math::localPointToWorld(halfBody, grip), rock::generatedProxyLocalPointToWorld(movedPalm, middleGrip), 0.03f);
+        const auto halfLocal = frames::objectInGeneratedProxyLocalSpace(movedPalm, halfBody);
+        ok &= expectNear("rotation shares grip progress", rotationDegrees(initial, halfLocal),
+            rotationDegrees(initial, seated) * 0.5f, 0.02f);
+        ok &= expectPointNear("nonzero pivot A stays coherent during acquisition",
+            rock::generatedProxyLocalPointToWorld(halfProxy, pivotA), math::localPointToWorld(halfBody, grip), 0.03f);
+        const float beforePause = transition.elapsedSeconds;
+        (void)acquisition::advance(transition, movedPalm, seated, grip, std::numeric_limits<float>::quiet_NaN());
+        ok &= expectNear("invalid delta does not advance acquisition", transition.elapsedSeconds, beforePause, 0.0f);
+        const auto lastProxy = acquisition::advance(transition, movedPalm, seated, grip, transition.durationSeconds);
+        ok &= expectPointNear("finished target returns exactly to live palm", lastProxy.translate, movedPalm.translate, 0.0f);
+
+        ok &= expectFalse("completed acquisition stops advancing", transition.active);
+        initial.translate = {};
+        initial.translate = pivotA - math::localPointToWorld(initial, grip);
+        transition = acquisition::begin(palm, frames::objectFromGeneratedProxyLocalSpace(palm, initial), seated, grip);
+        ok &= expectTrue("pure rotation begins", transition.active);
+        // Use a representable zero-error capture for the no-op case. The large
+        // world-coordinate round trip above carries float position quantization.
+        const auto origin = identityTransform();
+        transition = acquisition::begin(origin, frames::objectFromGeneratedProxyLocalSpace(origin, seated), seated, grip);
+        ok &= expectFalse("already seated resets acquisition", transition.active);
+        auto invalid = palm;
+        invalid.translate.x = std::numeric_limits<float>::quiet_NaN();
+        ok &= expectFalse("nonfinite capture fails closed", acquisition::begin(invalid, initialWorld, seated, grip).active);
+    }
 
     {
         using Candidate = authority::GrabAuthorityPivotCandidate<RE::NiPoint3>;

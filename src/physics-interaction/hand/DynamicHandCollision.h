@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/ROCKProviderApi.h"
+#include "api/ProviderRuntimeTypes.h"
 
 #include "physics-interaction/hand/DynamicHandCollisionFeedbackPolicy.h"
 #include "physics-interaction/hand/DynamicHandSurfaceContactState.h"
@@ -53,11 +53,9 @@ namespace rock
      * keyframed colliders are driven with. A fixed-surface latch captures one
      * solved-pose readback, then drives both twins and rendering from immutable
      * target-local relationships so no render-to-physics feedback loop exists.
-     * The twins are not ordinary gameplay contact evidence and collide only
-     * with static world-surface layers plus the dedicated rows used by
-     * explicitly identified car bodies. Palm/fingertip callbacks publish into
-     * a separate bounded channel consumed exclusively by provider-registered
-     * fixed-surface grabs.
+     * The twins provide solver response against world surfaces, dedicated car
+     * rows, peer dynamic colliders, and optionally native NPC layer 33.
+     * NPC contacts do not enter the separate palm/fingertip surface-grab channel.
      *
      * Threading: updateFrame runs on the main game thread; the drive flush runs
      * on the physics step thread and publishes fixed per-body telemetry through
@@ -83,6 +81,8 @@ namespace rock
             bool rightVisualReturnActive,
             bool leftVisualReturnActive);
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
+        void finalizePose(const PhysicsFrameContext& frame, const Hand& rightHand,
+            const Hand& leftHand, const BodyBoneColliderSet& bodyBoneColliders);
         /*
          * Post-solve deviation sampling (physics step thread, after-solve
          * phase). Two-stage measurement against the SAME substep's targets:
@@ -100,6 +100,7 @@ namespace rock
             RE::hknpWorld* world,
             const havok_physics_timing::PhysicsTimingSample& timing);
         void retireAll(void* bhkWorld);
+        void refreshCollisionFilters(RE::hknpWorld* world);
         void reset();
         // Main-thread snapshot/event access. Future provider adapters must copy
         // from here on the main thread rather than retain runtime-owned state.
@@ -131,10 +132,9 @@ namespace rock
             bool otherIsHand,
             bool otherIsWeapon) noexcept;
 
-        [[nodiscard]] bool tryClassifySurfaceContactSourceAtomic(
-            std::uint32_t bodyId,
-            std::uint32_t shapeKey,
-            dynamic_hand_surface_contact_state::ContactSource& outSource) const noexcept;
+        [[nodiscard]] static bool classifySurfaceContactSource(
+            const DynamicBodyContactSource& bodySource,
+            dynamic_hand_surface_contact_state::ContactSource& outSource) noexcept;
         void recordSurfaceContactCallback(
             const dynamic_hand_surface_contact_state::ContactSource& source,
             std::uint32_t otherBodyId,
@@ -323,6 +323,9 @@ namespace rock
             {
                 std::array<RE::NiPoint3,
                     hand_collider_semantics::kHandFingerRoleCount>
+                    baselineCentersInHand{};
+                std::array<RE::NiPoint3,
+                    hand_collider_semantics::kHandFingerRoleCount>
                     closingProbeTravelInHand{};
                 std::array<RE::NiPoint3,
                     hand_collider_semantics::kHandFingerRoleCount>
@@ -384,6 +387,7 @@ namespace rock
             // Diagnostics only. Peer ID/kind is one atomic witness, not ownership.
             std::atomic<std::uint64_t> tracePeer{ 0x7FFF'FFFFu };
             std::uint64_t traceQueuedSequence = 0; // game thread
+            std::uint64_t poseFrame = 0; // Early decision awaiting final articulation.
             std::uint64_t traceSourceSequence = 0; // physics thread
             std::uint64_t traceSourceJumpCount = 0;
             std::uint64_t traceDivergenceCount = 0;

@@ -5,6 +5,7 @@
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/PhysicsScale.h"
 #include "RockConfig.h"
 
 #include <algorithm>
@@ -95,6 +96,40 @@ namespace rock
                 "Retired grab constraint payload queue full; intentionally leaking constraint {} payload to avoid native use-after-free",
                 payload.constraintId);
         }
+    }
+
+    GrabMotorBodyProperties readGrabMotorBodyProperties(RE::hknpWorld* world,
+        RE::hknpBodyId bodyId, const RE::NiPoint3& pivotBodyLocalGame)
+    {
+        GrabMotorBodyProperties out{};
+        const auto body = havok_runtime::snapshotBody(world, bodyId);
+        if (!body.valid || !body.body || !body.motion) return out;
+        // The native Jacobian builder (141979EF0) expands these same packed
+        // inverse principal moments; 141A58D83..DDF uses them in angular rows.
+        // Their maximum moment is rotation-invariant, so this shared-capacity
+        // policy requires neither an assumed motor/world axis map nor a rigid
+        // aggregate tensor for articulated body sets.
+        float minimumInverseInertia = std::numeric_limits<float>::max();
+        for (int axis = 0; axis < 3; ++axis) {
+            const float inverse = unpackBfloat16(body.motion->packedInverseInertia[axis]);
+            if (!std::isfinite(inverse) || inverse <= 0.0f) return out;
+            minimumInverseInertia = (std::min)(minimumInverseInertia, inverse);
+        }
+        const float inverseMass = unpackBfloat16(body.motion->packedInverseInertia[3]);
+        if (!std::isfinite(inverseMass) || inverseMass <= 0.0f) return out;
+        const auto bodyWorld = havok_runtime::bodyArrayWorldTransform(*body.body);
+        const auto gripWorld = transform_math::localPointToWorld(bodyWorld, pivotBodyLocalGame);
+        const float scale = physics_scale::gameToHavok();
+        const float x = gripWorld.x * scale - body.motion->position.x;
+        const float y = gripWorld.y * scale - body.motion->position.y;
+        const float z = gripWorld.z * scale - body.motion->position.z;
+        out.mass = 1.0f / inverseMass;
+        out.maximumInertia = 1.0f / minimumInverseInertia;
+        out.gripRadiusHavok = std::sqrt(x*x + y*y + z*z);
+        out.valid = std::isfinite(out.mass) && out.mass > 0.0f &&
+            std::isfinite(out.maximumInertia) && out.maximumInertia > 0.0f &&
+            std::isfinite(out.gripRadiusHavok) && std::isfinite(scale) && scale > 0.0f;
+        return out;
     }
 
     HkPositionMotor* createPositionMotor(float tau, float damping, float proportionalRecoveryVelocity, float constantRecoveryVelocity, float minForce, float maxForce)
@@ -586,6 +621,7 @@ namespace rock
 
     void destroyGrabConstraint(RE::hknpWorld* world, ActiveConstraint& constraint)
     {
+        grab_motor_telemetry::finish(constraint);
         if (!constraint.isValid())
             return;
 

@@ -201,7 +201,22 @@ namespace rock::fo4vr
         });
     }
 
+    namespace
+    {
+        PowerArmorStateProvider s_powerArmorStateProvider = nullptr;
+    }
+
+    void setPowerArmorStateProvider(const PowerArmorStateProvider provider) noexcept
+    {
+        s_powerArmorStateProvider = provider;
+    }
+
     bool isInPowerArmor() noexcept
+    {
+        return s_powerArmorStateProvider ? s_powerArmorStateProvider() : isInPowerArmorFromBiped();
+    }
+
+    bool isInPowerArmorFromBiped() noexcept
     {
         auto* player = getPlayer();
         const auto biped = player ? player->biped.get() : nullptr;

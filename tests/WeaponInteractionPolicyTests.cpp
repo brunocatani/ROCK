@@ -1,9 +1,12 @@
 #include "physics-interaction/collision/ContactPipelinePolicy.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/hand/HandLifecycle.h"
+#include "physics-interaction/hand/HandInteractionStateMachine.h"
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
+#include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
+#include "physics-interaction/weapon/AuthoredSupportGrabPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
 #include "physics-interaction/weapon/FiringGripReattachZonePolicy.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
@@ -146,6 +149,99 @@ namespace
     }
 }
 
+static bool testScopeRollCalibration()
+{
+    namespace scope = rock::native_scope_camera_follow_math;
+    namespace math = rock::transform_math;
+    bool ok = true;
+    auto cameraBasis = math::makeIdentityTransform<TestTransform>();
+    cameraBasis.rotate = {};
+    cameraBasis.rotate.entry[0][1] = 1.0f;
+    cameraBasis.rotate.entry[1][2] = 1.0f;
+    cameraBasis.rotate.entry[2][0] = 1.0f;
+    cameraBasis.scale = 0.75f;
+    const TestVector3 anchor{ 1.2f, 8.0f, 11.0f };
+    auto expectedLocal = cameraBasis;
+    expectedLocal.translate = anchor;
+
+    // The same optical direction can arrive with either sign of controller
+    // twist. Each equip must retain the same camera-to-weapon registration.
+    for (float entryYaw : { -175.0f, -40.0f, 0.0f, 95.0f }) {
+        auto entryWeapon = rock::native_scope_rotation_math::makePitchYawRollLocal<TestTransform>(78.0f, entryYaw, 23.0f);
+        entryWeapon.translate = { -1300.0f, 2300.0f, 800.0f };
+        entryWeapon.scale = 1.2f;
+        for (float entryRoll : { -170.0f, -35.0f, -7.0f, 0.0f, 12.0f, 90.0f, 175.0f }) {
+            auto twist = math::makeIdentityTransform<TestTransform>();
+            twist.rotate = makeAxisAngleRotation(TestVector3{ 1.0f, 0.0f, 0.0f }, entryRoll);
+            const auto nativeLocal = math::composeTransforms(cameraBasis, twist);
+            const auto nativeWorld = math::composeTransforms(entryWeapon, nativeLocal);
+            TestTransform captured{};
+            ok &= expectTrue("scope roll capture accepts either hand's entry orientation",
+                scope::tryCaptureRigidAnchorFrameWeaponLocal(entryWeapon, nativeWorld, anchor, captured));
+            ok &= expectTransformNear("entry pose cannot become permanent scope roll", captured, expectedLocal);
+            ok &= expectNear("roll diagnostic distinguishes aligned-forward twists",
+                scope::weaponLocalCameraRollDegrees(nativeLocal.rotate), entryRoll);
+            ok &= expectNear("retained scope frame has zero relative roll",
+                scope::weaponLocalCameraRollDegrees(captured.rotate), 0.0f);
+            for (float finalCant : { -65.0f, 0.0f, 42.0f }) {
+                auto finalWeapon = rock::native_scope_rotation_math::makePitchYawRollLocal<TestTransform>(-35.0f, 110.0f, finalCant);
+                finalWeapon.translate = { 900.0f, -850.0f, 1100.0f };
+                finalWeapon.scale = 0.8f;
+                const auto camera = scope::resolveRigidAnchorFrameWorld(finalWeapon, captured);
+                ok &= expectTransformNear("scope follows final weapon pose independent of entry",
+                    camera, math::composeTransforms(finalWeapon, expectedLocal));
+                const auto overlay = rock::native_scope_overlay_follow_math::resolveScopeModelRootWorld(
+                    camera, math::invertTransform(cameraBasis), math::makeIdentityTransform<TestTransform>());
+                for (int column = 0; column < 3; ++column) {
+                    ok &= expectNear("intentional weapon cant also cants scope markings",
+                        camera.rotate.entry[1][column], finalWeapon.rotate.entry[2][column]);
+                    ok &= expectNear("optical forward still follows barrel",
+                        camera.rotate.entry[0][column], finalWeapon.rotate.entry[1][column]);
+                    ok &= expectNear("calibrated reticle horizontal follows weapon horizontal",
+                        overlay.rotate.entry[0][column], finalWeapon.rotate.entry[0][column]);
+                    ok &= expectNear("calibrated reticle vertical follows weapon vertical",
+                        overlay.rotate.entry[2][column], finalWeapon.rotate.entry[2][column]);
+                }
+            }
+        }
+    }
+
+    const auto identity = math::makeIdentityTransform<TestTransform>();
+    const auto tiltedCamera = scope::applyWeaponLocalRotationOffset(cameraBasis, 3.0f, -7.0f, 28.0f);
+    TestTransform captured{};
+    ok &= expectTrue("slightly offset optical direction remains usable",
+        scope::tryCaptureRigidAnchorFrameWeaponLocal(identity, tiltedCamera, anchor, captured));
+    for (int column = 0; column < 3; ++column) {
+        ok &= expectNear("roll repair preserves sampled optical direction",
+            captured.rotate.entry[0][column], tiltedCamera.rotate.entry[0][column]);
+    }
+    ok &= expectNear("offset optical direction has no residual twist", scope::weaponLocalCameraRollDegrees(captured.rotate), 0.0f);
+    ok &= expectNear("scope rotation remains orthonormal", static_cast<float>(math::storedRotationOrthonormalityError(captured.rotate)), 0.0f);
+
+    auto invalidCamera = cameraBasis;
+    invalidCamera.rotate.entry[0][1] = 0.0f;
+    ok &= expectFalse("zero optical direction fails closed", scope::tryCaptureRigidAnchorFrameWeaponLocal(identity, invalidCamera, anchor, captured));
+    ok &= expectNear("rejected capture cannot be used as a valid frame", captured.scale, 0.0f);
+    invalidCamera.rotate.entry[0][2] = 1.0f;
+    ok &= expectFalse("weapon-up parallel to forward cannot seed a roll", scope::tryCaptureRigidAnchorFrameWeaponLocal(identity, invalidCamera, anchor, captured));
+    for (float scale : { 0.0f, -1.0f, std::numeric_limits<float>::infinity() }) {
+        auto invalidWeapon = identity;
+        invalidWeapon.scale = scale;
+        ok &= expectFalse("invalid weapon scale cannot seed a scope frame", scope::tryCaptureRigidAnchorFrameWeaponLocal(invalidWeapon, cameraBasis, anchor, captured));
+        invalidCamera = cameraBasis;
+        invalidCamera.scale = scale;
+        ok &= expectFalse("invalid camera scale cannot seed a scope frame", scope::tryCaptureRigidAnchorFrameWeaponLocal(identity, invalidCamera, anchor, captured));
+    }
+    invalidCamera = cameraBasis;
+    invalidCamera.rotate.entry[1][0] = std::numeric_limits<float>::quiet_NaN();
+    ok &= expectFalse("nonfinite native rotation fails closed", scope::tryCaptureRigidAnchorFrameWeaponLocal(identity, invalidCamera, anchor, captured));
+    ok &= expectTrue("invalid diagnostic roll is unknown rather than zero", std::isnan(scope::weaponLocalCameraRollDegrees(invalidCamera.rotate)));
+    auto invalidAnchor = anchor;
+    invalidAnchor.z = std::numeric_limits<float>::infinity();
+    ok &= expectFalse("invalid sight anchor fails closed", scope::tryCaptureRigidAnchorFrameWeaponLocal(identity, cameraBasis, invalidAnchor, captured));
+    return ok;
+}
+
 static bool testRecoilProfiles()
 {
     bool ok = true;
@@ -164,7 +260,7 @@ static bool testRecoilProfiles()
         }
     }
     for (const float percent : { 0.0f, 80.0f, 100.0f, 292.1f, 300.0f }) {
-        const auto bipodGains = effectiveGains(Profile::Bipod, percent);
+        const auto bipodGains = effectiveGains(Family::Default, Profile::Bipod, percent);
         ok &= expectTrue("bipod gains are ten percent regardless of weapon tuning",
             bipodGains.translation == 0.10f && bipodGains.rotation == 0.10f);
     }
@@ -220,20 +316,53 @@ static bool testRecoilProfiles()
     evidence.sizeClass = rock::WeaponSizeClass::Rifle;
     evidence.keywordFlags = flags(rock::WeaponKeywordFlag::Rifle) | flags(rock::WeaponKeywordFlag::Laser) |
         flags(rock::WeaponKeywordFlag::Automatic);
-    ok &= expectTrue("laser automatic rifle selects one family only", classifyFamily(evidence) == Family::Rifle);
+    ok &= expectTrue("laser automatic rifle selects laser recoil", classifyFamily(evidence) == Family::Laser);
+    for (const auto laser : { rock::WeaponKeywordFlag::Laser, rock::WeaponKeywordFlag::LaserMusket,
+             rock::WeaponKeywordFlag::GatlingLaser }) {
+        for (const auto size : { rock::WeaponSizeClass::Pistol, rock::WeaponSizeClass::Rifle, rock::WeaponSizeClass::Heavy }) {
+            evidence.keywordFlags = flags(laser) | flags(rock::WeaponKeywordFlag::Shotgun);
+            evidence.sizeClass = size;
+            ok &= expectTrue("laser family wins over grip, shotgun, and heavy classification",
+                classifyFamily(evidence) == Family::Laser);
+        }
+    }
+    evidence.resolved = false;
+    ok &= expectTrue("unresolved laser evidence remains default", classifyFamily(evidence) == Family::Default);
+    evidence.resolved = true;
+    evidence.sizeClass = rock::WeaponSizeClass::Melee;
+    ok &= expectTrue("melee does not select laser recoil", classifyFamily(evidence) == Family::Default);
+    evidence.sizeClass = rock::WeaponSizeClass::Rifle;
+    for (const auto other : { rock::WeaponKeywordFlag::Plasma, rock::WeaponKeywordFlag::Ballistic }) {
+        evidence.keywordFlags = flags(other) | flags(rock::WeaponKeywordFlag::Rifle);
+        ok &= expectTrue("non-laser guns retain rifle recoil", classifyFamily(evidence) == Family::Rifle);
+    }
     for (const auto profile : { Profile::OneHand, Profile::FullTwoHand, Profile::CloseSupport }) {
-        const auto off = effectiveGains(profile, 0.0f);
-        const auto normal = effectiveGains(profile, 100.0f);
-        const auto doubleKick = effectiveGains(profile, 200.0f);
+        const auto off = effectiveGains(Family::Default, profile, 0.0f);
+        const auto normal = effectiveGains(Family::Default, profile, 100.0f);
+        const auto doubleKick = effectiveGains(Family::Default, profile, 200.0f);
         const auto base = gainsFor(profile);
         ok &= expectTrue("zero percent suppresses both kick components", off.translation == 0.0f && off.rotation == 0.0f);
         ok &= expectTrue("100 percent preserves the hold profile", normal.translation == base.translation && normal.rotation == base.rotation);
         ok &= expectTrue("200 percent doubles both hold gains", doubleKick.translation == base.translation * 2.0f && doubleKick.rotation == base.rotation * 2.0f);
     }
+    for (const auto profile : { Profile::OneHand, Profile::FullTwoHand, Profile::CloseSupport, Profile::PowerArmor }) {
+        const auto laser = effectiveGains(Family::Laser, profile, 100.0f);
+        const auto laserOff = effectiveGains(Family::Laser, profile, 0.0f);
+        const auto laserDouble = effectiveGains(Family::Laser, profile, 200.0f);
+        ok &= expectTrue("laser default matches bipod independently of hold and armor",
+            laser.translation == kBipod.translation && laser.rotation == kBipod.rotation);
+        ok &= expectTrue("laser strength can suppress both recoil components",
+            laserOff.translation == 0.0f && laserOff.rotation == 0.0f);
+        ok &= expectTrue("laser strength scales the bipod profile once",
+            laserDouble.translation == 2.0f * kBipod.translation && laserDouble.rotation == 2.0f * kBipod.rotation);
+    }
     for (const float percent : { 0.0f, 100.0f, 200.0f }) {
-        const auto armorGains = effectiveGains(Profile::PowerArmor, percent);
+        const auto armorGains = effectiveGains(Family::Default, Profile::PowerArmor, percent);
         ok &= expectTrue("armor umbrella ignores weapon percentages",
             armorGains.translation == kPowerArmor.translation && armorGains.rotation == kPowerArmor.rotation);
+        const auto laser = effectiveGains(Family::Laser, Profile::Bipod, percent);
+        ok &= expectTrue("latched bipod overrides laser strength without stacking reductions",
+            laser.translation == kBipod.translation && laser.rotation == kBipod.rotation);
     }
     ok &= expectTrue("one-hand percentage is a direct override, not stacked on family tuning",
         selectHoldPercent(true, 300.0f, 200.0f) == 300.0f);
@@ -241,14 +370,14 @@ static bool testRecoilProfiles()
     ok &= expectTrue("two-hand retains custom high tuning", selectHoldPercent(false, 300.0f, 200.0f) == 200.0f);
     for (const auto profile : { Profile::FullTwoHand, Profile::CloseSupport }) {
         for (const float currentPercent : { 50.0f, 100.0f, 200.0f }) {
-            const auto before = effectiveGains(profile, currentPercent);
-            const auto after = effectiveGains(profile, selectHoldPercent(false, 300.0f, currentPercent));
+            const auto before = effectiveGains(Family::Default, profile, currentPercent);
+            const auto after = effectiveGains(Family::Default, profile, selectHoldPercent(false, 300.0f, currentPercent));
             ok &= expectTrue("two-hand full and close profiles preserve today's response",
                 before.translation == after.translation && before.rotation == after.rotation);
         }
     }
     for (const bool oneHanded : { false, true }) {
-        const auto unchangedArmor = effectiveGains(Profile::PowerArmor, selectHoldPercent(oneHanded, 300.0f, 200.0f));
+        const auto unchangedArmor = effectiveGains(Family::Default, Profile::PowerArmor, selectHoldPercent(oneHanded, 300.0f, 200.0f));
         ok &= expectTrue("power armor ignores either hold's percentage",
             unchangedArmor.translation == kPowerArmor.translation && unchangedArmor.rotation == kPowerArmor.rotation);
     }
@@ -259,20 +388,20 @@ static bool testRecoilProfiles()
     modestShot.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 20.0f);
     TestTransform tripleKick{};
     ok &= expectTrue("300 percent builds a valid three-times impulse",
-        tryBuildControlledKick(modestShot, effectiveGains(Profile::OneHand, selectHoldPercent(true, 300.0f, 200.0f)), tripleKick));
+        tryBuildControlledKick(modestShot, effectiveGains(Family::Default, Profile::OneHand, selectHoldPercent(true, 300.0f, 200.0f)), tripleKick));
     auto tripleExpected = rock::transform_math::makeIdentityTransform<TestTransform>();
     tripleExpected.translate = { 30.0f, -12.0f, 6.0f };
     tripleExpected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 60.0f);
     ok &= expectTransformNear("one hand gets 300 percent rather than 600 percent", tripleKick, tripleExpected);
     TestTransform amplified{};
     ok &= expectTrue("200 percent produces a rigid amplified transform",
-        tryBuildControlledKick(shot, effectiveGains(Profile::OneHand, 200.0f), amplified));
+        tryBuildControlledKick(shot, effectiveGains(Family::Default, Profile::OneHand, 200.0f), amplified));
     auto doubleExpected = rock::transform_math::makeIdentityTransform<TestTransform>();
     doubleExpected.translate = { 20.0f, -8.0f, 4.0f };
     doubleExpected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 120.0f);
     ok &= expectTransformNear("200 percent doubles translation and angular displacement", amplified, doubleExpected);
     ok &= expectTrue("zero percent accepts and neutralizes native recoil",
-        tryBuildControlledKick(shot, effectiveGains(Profile::OneHand, 0.0f), amplified));
+        tryBuildControlledKick(shot, effectiveGains(Family::Default, Profile::OneHand, 0.0f), amplified));
     ok &= expectTransformNear("zero percent produces identity rather than native fallback", amplified,
         rock::transform_math::makeIdentityTransform<TestTransform>());
     TestTransform armor{};
@@ -284,11 +413,17 @@ static bool testRecoilProfiles()
     ok &= expectTransformNear("armor starts with the requested attenuation", armor, expected);
     TestTransform bipod{};
     ok &= expectTrue("bipod builds a rigid reduced kick",
-        tryBuildControlledKick(shot, effectiveGains(Profile::Bipod, 300.0f), bipod));
+        tryBuildControlledKick(shot, effectiveGains(Family::Default, Profile::Bipod, 300.0f), bipod));
     auto bipodExpected = rock::transform_math::makeIdentityTransform<TestTransform>();
     bipodExpected.translate = { 1.0f, -0.4f, 0.2f };
     bipodExpected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 6.0f);
     ok &= expectTransformNear("bipod applies ten percent of native translation and angle", bipod, bipodExpected);
+    for (const auto profile : { Profile::OneHand, Profile::FullTwoHand, Profile::CloseSupport, Profile::PowerArmor, Profile::Bipod }) {
+        TestTransform laser{};
+        ok &= expectTrue("laser default builds a valid controlled kick",
+            tryBuildControlledKick(shot, effectiveGains(Family::Laser, profile, 100.0f), laser));
+        ok &= expectTransformNear("laser kick matches bipod in every hold and armor state", laser, bipod);
+    }
     auto independentlyTunedSupport = kCloseSupport;
     independentlyTunedSupport.translation = 0.2f;
     independentlyTunedSupport.rotation = 0.1f;
@@ -1673,11 +1808,111 @@ static bool testAccessoryClassification()
     return ok;
 }
 
+bool testSelectionCleanupKeepsHeldOwnership()
+{
+    using rock::HandInteractionEvent;
+    using rock::HandState;
+    using rock::HandTransitionEffect;
+    bool ok = true;
+    for (const auto state : { HandState::HeldInit, HandState::HeldBody,
+             HandState::StashCandidate, HandState::ConsumeCandidate }) {
+        const auto clear = rock::evaluateHandTransition({ .current = state, .event = HandInteractionEvent::ClearSelection });
+        ok &= expectFalse("selection cleanup cannot cancel a physical hold", clear.accepted);
+        ok &= expectEqual("held state survives selection cleanup", clear.next, state);
+        ok &= expectEqual("rejected cleanup has no side effects", clear.effects, 0u);
+
+        // Regression: the paired equip path used to invalidate the support
+        // state, making releaseGrabbedObject return without releasing its pose
+        // or constraint. A selection clear must leave normal release possible.
+        ok &= expectTrue("physical hold remains eligible for release", rock::isHoldingState(clear.next));
+        const auto release = rock::evaluateHandTransition({ .current = clear.next, .event = HandInteractionEvent::ReleaseRequested });
+        ok &= expectTrue("held release remains accepted", release.accepted);
+        ok &= expectEqual("held release finishes idle", release.next, HandState::Idle);
+        const auto required = rock::transitionEffectMask(HandTransitionEffect::ReleaseHeld,
+            HandTransitionEffect::ClearHeldRuntime, HandTransitionEffect::ClearFingerPose);
+        ok &= expectEqual("held release retains native and pose cleanup", release.effects & required, required);
+    }
+    for (const auto state : { HandState::GrabFromOtherHand, HandState::SelectedTwoHand, HandState::HeldTwoHanded }) {
+        const auto clear = rock::evaluateHandTransition({ .current = state, .event = HandInteractionEvent::ClearSelection });
+        ok &= expectFalse("selection cleanup cannot discard another hand owner", clear.accepted);
+        ok &= expectEqual("other hand ownership survives selection cleanup", clear.next, state);
+        ok &= expectEqual("other hand cleanup has no side effects", clear.effects, 0u);
+    }
+    for (const auto state : { HandState::Idle, HandState::SelectedClose, HandState::SelectedFar,
+             HandState::SelectionLocked, HandState::PreGrabItem, HandState::PrePullItem,
+             HandState::Pulled, HandState::GrabExternal, HandState::LootOtherHand }) {
+        const auto clear = rock::evaluateHandTransition({ .current = state, .event = HandInteractionEvent::ClearSelection });
+        ok &= expectTrue("selection and pending acquisition remain cancellable", clear.accepted);
+        ok &= expectEqual("selection cleanup finishes idle", clear.next, HandState::Idle);
+        ok &= expectEqual("selection cleanup never claims to release a hold",
+            clear.effects & rock::transitionEffectMask(HandTransitionEffect::ReleaseHeld), 0u);
+    }
+    return ok;
+}
+
 int main()
 {
+    using WeaponGrabMode = rock::equipped_weapon_toggle_grab_policy::Mode;
+    namespace grab_modes = rock::equipped_weapon_toggle_grab_policy;
+    for (const auto mode : { WeaponGrabMode::ToggleBoth, WeaponGrabMode::ToggleFiringOnly, WeaponGrabMode::HoldBoth }) {
+        for (const bool firing : { false, true }) {
+            grab_modes::TransferReleaseState transfer{};
+            transfer.observe(mode, firing, { .held = true, .pressed = true });
+            if (transfer.releaseRequested) return 96;
+            transfer.observe(mode, firing, { .released = true });
+            if (transfer.releaseRequested == grab_modes::usesToggleForRole(mode, firing)) return 97;
+            transfer.observe(mode, firing, { .held = true, .pressed = true });
+            if (transfer.releaseRequested != grab_modes::usesToggleForRole(mode, firing)) return 98;
+            transfer.observe(mode, firing, { .held = true });
+            if (transfer.releaseRequested != grab_modes::usesToggleForRole(mode, firing)) return 99;
+        }
+        for (const bool firingIsLeft : { false, true }) {
+            grab_modes::GripOccupancy pair{};
+            (firingIsLeft ? pair.left : pair.right).firingGripActive = true;
+            (firingIsLeft ? pair.right : pair.left).partGripActive = true;
+            grab_modes::RuntimeState state{};
+            grab_modes::adoptTransferredGrips(state, mode, 123, pair);
+            const auto held = grab_modes::prepare(state, {
+                .weaponGrabMode = mode, .inputAllowed = true, .weaponOwnershipKey = 123,
+                .occupancy = pair, .left = { .held = true }, .right = { .held = true },
+            });
+            if (!held.left.held || !held.right.held || held.left.pressed || held.right.pressed) return 94;
+            const auto opened = grab_modes::prepare(state, {
+                .weaponGrabMode = mode, .inputAllowed = true, .weaponOwnershipKey = 123,
+                .occupancy = pair, .left = { .released = true }, .right = { .released = true },
+            });
+            if (opened.left.held != grab_modes::usesToggleForRole(mode, firingIsLeft) ||
+                opened.right.held != grab_modes::usesToggleForRole(mode, !firingIsLeft)) return 95;
+        }
+        for (const bool supportIsLeft : { false, true }) {
+            grab_modes::GripOccupancy supportOnly{};
+            (supportIsLeft ? supportOnly.left : supportOnly.right).partGripActive = true;
+            grab_modes::RuntimeState state{};
+            grab_modes::adoptTransferredGrips(state, mode, 123, supportOnly);
+            const auto opened = grab_modes::prepare(state, {
+                .weaponGrabMode = mode, .inputAllowed = true, .weaponOwnershipKey = 123,
+                .occupancy = supportOnly,
+                .left = { .released = supportIsLeft }, .right = { .released = !supportIsLeft },
+            });
+            const auto& support = supportIsLeft ? opened.left : opened.right;
+            const auto& freeHand = supportIsLeft ? opened.right : opened.left;
+            if (support.held != grab_modes::usesToggleForRole(mode, false) || freeHand.held || freeHand.pressed) return 100;
+            const auto pressed = grab_modes::prepare(state, {
+                .weaponGrabMode = mode, .inputAllowed = true, .weaponOwnershipKey = 123,
+                .occupancy = supportOnly,
+                .left = { .held = supportIsLeft, .pressed = supportIsLeft },
+                .right = { .held = !supportIsLeft, .pressed = !supportIsLeft },
+            });
+            const auto& nextSupport = supportIsLeft ? pressed.left : pressed.right;
+            if (nextSupport.released != grab_modes::usesToggleForRole(mode, false)) return 101;
+        }
+    }
     bool ok = true;
 
+    ok &= testSelectionCleanupKeepsHeldOwnership();
+
     ok &= testRecoilProfiles();
+    ok &= testScopeRollCalibration();
 
     ok &= testNativeGripFrames();
 
@@ -1718,6 +1953,20 @@ int main()
         grenade = registry.acquire(body, CollisionSuppressionOwner::NativeGrenadeThrow, 0x35);
         restored = registry.release(body, CollisionSuppressionOwner::NativeGrenadeThrow, grenade.filterAfter);
         ok &= expectTrue("standalone grenade protection restores collision", restored.bodyFullyReleased && restored.filterAfter == 0x35);
+        grab = registry.acquire(body, CollisionSuppressionOwner::Grab, 0x35);
+        const auto missingPose = registry.acquire(body, CollisionSuppressionOwner::InvalidFinalPose, grab.filterAfter);
+        restored = registry.release(body, CollisionSuppressionOwner::Grab, missingPose.filterAfter);
+        ok &= expectTrue("release of a constrained palm cannot enable collision while its pose is missing",
+            !restored.bodyFullyReleased && (restored.filterAfter & kSuppressionNoCollideBit));
+        restored = registry.release(body, CollisionSuppressionOwner::InvalidFinalPose, restored.filterAfter);
+        ok &= expectTrue("pose recovery restores collision after the other owner has released",
+            restored.bodyFullyReleased && restored.filterAfter == 0x35);
+        const auto missingOnly = registry.acquire(body, CollisionSuppressionOwner::InvalidFinalPose, 0x35);
+        grab = registry.acquire(body, CollisionSuppressionOwner::Grab, missingOnly.filterAfter);
+        restored = registry.release(body, CollisionSuppressionOwner::InvalidFinalPose, grab.filterAfter);
+        ok &= expectTrue("pose recovery preserves a continuing grab's collision suppression",
+            !restored.bodyFullyReleased && (restored.filterAfter & kSuppressionNoCollideBit));
+        (void)registry.release(body, CollisionSuppressionOwner::Grab, restored.filterAfter);
         DelayedRestoreTimer grace;
         ok &= expectTrue("grenade release starts the collision grace period", grace.begin(body, 1, 0.5f));
         ok &= expectFalse("grenade collision stays off inside the grace period", grace.advance(true, 0.4f));
@@ -2042,6 +2291,10 @@ int main()
         TestTransform weaponBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
         weaponBefore.translate = { 10.0f, 20.0f, 30.0f };
         TestTransform scopeBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
+        scopeBefore.rotate = {};
+        scopeBefore.rotate.entry[0][1] = 1.0f;
+        scopeBefore.rotate.entry[1][2] = 1.0f;
+        scopeBefore.rotate.entry[2][0] = 1.0f;
         scopeBefore.translate = { 12.0f, 24.0f, 35.0f };
         TestTransform weaponAfter = weaponBefore;
         weaponAfter.translate = { 17.0f, 16.0f, 32.0f };
@@ -2145,11 +2398,13 @@ int main()
         ok &= expectFalse("non-finite firing-grip offset fails closed",
             invalidFallbackResolution.valid);
 
-        const TestTransform rigidSightFrameLocal =
-            rock::native_scope_camera_follow_math::captureRigidAnchorFrameWeaponLocal(
+        TestTransform rigidSightFrameLocal{};
+        ok &= expectTrue("native scope captures a complete weapon-relative frame",
+            rock::native_scope_camera_follow_math::tryCaptureRigidAnchorFrameWeaponLocal(
                 weaponBefore,
                 scopeBefore,
-                sightAnchor);
+                sightAnchor,
+                rigidSightFrameLocal));
         const TestTransform anchoredScopeAfter =
             rock::native_scope_camera_follow_math::resolveRigidAnchorFrameWorld(
                 weaponAfter,
@@ -2166,6 +2421,8 @@ int main()
         }
 
         TestTransform fallbackCameraBase = rigidSightFrameLocal;
+        // Isolate weapon-axis offset checks; nonidentity calibration is tested below.
+        fallbackCameraBase.rotate = rock::transform_math::makeIdentityRotation<TestMatrix3>();
         fallbackCameraBase.translate =
             missingGeometryResolution.weaponLocal;
         const TestTransform zeroFallbackRotation =
@@ -2297,6 +2554,39 @@ int main()
         const TestTransform nativeScopeModelRootWorld = rock::transform_math::composeTransforms(
             scopeBefore,
             nativeModelRootInCameraLocal);
+
+        auto bridgeBase = rock::transform_math::makeIdentityTransform<TestTransform>();
+        const TestVector3 primaryGrip{ 1.0f, -2.0f, 3.0f };
+        const TestVector3 supportGrip{ 1.0f, 18.0f, 3.0f };
+        const auto stillBridge = rock::equip_visual_bridge_policy::solvePairedBridge(
+            bridgeBase, primaryGrip, supportGrip, supportGrip);
+        ok &= expectTrue("paired bridge starts with its captured loose pose", stillBridge.solved);
+        ok &= expectTransformNear("unchanged controllers cannot snap the bridge", stillBridge.weaponWorldTransform, bridgeBase);
+        const auto movedBridge = rock::equip_visual_bridge_policy::solvePairedBridge(
+            bridgeBase, primaryGrip, supportGrip, TestVector3{ 21.0f, -2.0f, 3.0f });
+        ok &= expectTrue("support-controller motion steers the bridge before equipped adoption", movedBridge.solved);
+        const auto primaryAfter = rock::transform_math::localPointToWorld(movedBridge.weaponWorldTransform, primaryGrip);
+        const auto supportAfter = rock::transform_math::localPointToWorld(movedBridge.weaponWorldTransform, supportGrip);
+        ok &= expectNear("paired bridge keeps firing pivot x", primaryAfter.x, primaryGrip.x);
+        ok &= expectNear("paired bridge keeps firing pivot y", primaryAfter.y, primaryGrip.y);
+        ok &= expectNear("paired bridge follows support x", supportAfter.x, 21.0f);
+        ok &= expectNear("paired bridge follows support y", supportAfter.y, -2.0f);
+        const auto coincidentBridge = rock::equip_visual_bridge_policy::solvePairedBridge(
+            bridgeBase, primaryGrip, primaryGrip, supportGrip);
+        ok &= expectFalse("coincident seats do not invent a two-hand aim axis", coincidentBridge.solved);
+        const TestVector3 sourceRegistration{ 0.0f, 2.0f, 0.0f };
+        const TestVector3 equippedRegistration{ 0.0f, 10.0f, 0.0f };
+        auto registeredGrip = rock::transform_math::makeIdentityTransform<TestTransform>();
+        registeredGrip.translate = { 1.0f, 6.0f, 3.0f };
+        auto looseGrip = registeredGrip;
+        looseGrip.translate.y -= 8.0f;
+        for (const auto& equippedWorld : handModeWeaponFrames) {
+            const auto bridgeWorld = rock::equip_visual_bridge_policy::registeredLooseWorld(
+                equippedWorld, sourceRegistration, equippedRegistration);
+            ok &= expectTransformNear("loose and equipped grips coincide after full-pose registration",
+                rock::transform_math::composeTransforms(bridgeWorld, looseGrip),
+                rock::transform_math::composeTransforms(equippedWorld, registeredGrip));
+        }
         const TestTransform modelRootCalibration =
             rock::native_scope_overlay_follow_math::captureModelRootCalibrationInCameraLocal(
                 scopeBefore,
@@ -2316,6 +2606,24 @@ int main()
         const TestTransform zeroFineTune =
             rock::native_scope_overlay_follow_math::makeModelRootFineTuneLocal<TestTransform>(
                 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+
+        // First calibration must be independent of whether the gun was
+        // already carried in two hands when its native overlay appeared.
+        auto cameraParent = weaponBefore;
+        auto cameraLocal = rock::transform_math::makeIdentityTransform<TestTransform>();
+        cameraLocal.scale = 0.75f;
+        const auto unsteered = rock::native_scope_overlay_follow_math::resolveUnsteeredCameraWorld(cameraParent, cameraLocal);
+        const auto nativeOverlay = rock::transform_math::composeTransforms(unsteered, nativeModelRootInCameraLocal);
+        for (float angle : { 0.0f, 37.0f, -81.0f, 165.0f }) {
+            cameraLocal.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, angle);
+            const auto baseline = rock::native_scope_overlay_follow_math::resolveUnsteeredCameraWorld(cameraParent, cameraLocal);
+            const auto calibration = rock::native_scope_overlay_follow_math::captureModelRootCalibrationInCameraLocal(baseline, nativeOverlay);
+            ok &= expectTransformNear("first-equip scope calibration excludes two-hand steering", calibration, modelRootCalibration);
+            const auto aimedOverlay = rock::native_scope_overlay_follow_math::resolveScopeModelRootWorld(
+                anchoredScopeAfter, calibration, zeroFineTune);
+            const auto expectedOverlay = rock::transform_math::composeTransforms(anchoredScopeAfter, modelRootCalibration);
+            ok &= expectTransformNear("scope housing follows final aim after paired equip", aimedOverlay, expectedOverlay);
+        }
         const TestTransform targetScopeModelRoot =
             rock::native_scope_overlay_follow_math::resolveScopeModelRootWorld(
                 anchoredScopeAfter,
@@ -2442,8 +2750,6 @@ int main()
             rock::scope_safe_hand_frame_math::shouldStartRootRebase(true, false, true, true));
         ok &= expectFalse("root rebase requires a valid reconstructed or recent scoped hand",
             rock::scope_safe_hand_frame_math::shouldStartRootRebase(true, true, false, false));
-        ok &= expectTrue("locked hand IK publishes outside native scope", rock::scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(false));
-        ok &= expectFalse("locked hand IK is suppressed while native scope hides the body", rock::scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(true));
         ok &= expectTrue("visible stable carry may refresh the right firing canonical", rock::scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(false, false));
         ok &= expectFalse("ScopeMenu cannot overwrite the right firing canonical", rock::scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(true, false));
         ok &= expectFalse("scope-exit hand rebase cannot overwrite the right firing canonical", rock::scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(false, true));
@@ -2768,7 +3074,7 @@ int main()
     const rock::RockEquippedWeaponHandlingBaseline coreWeaponHandlingBaseline{
         .ambidextrousHandoffEnabled = true,
         .authoredOnlySupportGrabsEnabled = true,
-        .toggleGrabEnabled = true,
+        .weaponGrabMode = WeaponGrabMode::ToggleBoth,
         .equippedWeaponShoulderStashEnabled = true,
         .lastGripReleaseDropEnabled = false,
         .immersiveWeapon = {
@@ -2781,7 +3087,6 @@ int main()
         },
         .firingGripReattachCylinderRadiusGameUnits = 2.5f,
         .firingGripProximitySupportRadiusGameUnits = 7.0f,
-        .firingGripPromotionRadiusGameUnits = 5.5f,
         .leftFiringAimYawDegrees = 1.5f,
         .leftFiringAimPitchDegrees = -2.5f,
         .leftFiringAimOffsetXGameUnits = 0.5f,
@@ -2806,7 +3111,7 @@ int main()
     ok &= expectTrue("base ROCK enables authored-only support acquisition",
         coreWeaponHandling.authoredOnlySupportGrabsEnabled);
     ok &= expectTrue("base ROCK enables configured equipped-weapon toggle grab",
-        coreWeaponHandling.toggleGrabEnabled);
+        coreWeaponHandling.weaponGrabMode == WeaponGrabMode::ToggleBoth);
     ok &= expectFalse("base ROCK applies the configured last-grip drop preference",
         coreWeaponHandling.lastGripReleaseDropEnabled);
     ok &= expectFalse("base ROCK shoulder stash never enables physical detach",
@@ -2886,12 +3191,12 @@ int main()
             DetachedFiringHandPartGrabSelection::Standard);
     ok &= expectTrue("base ROCK owns equipped-weapon shoulder stash",
         coreWeaponHandling.equippedWeaponShoulderStashEnabled);
-    ok &= expectNear("base ROCK owns firing-grip promotion tuning",
-        coreWeaponHandling.firingGripPromotionRadiusGameUnits,
-        5.5f);
-    ok &= expectNear("base ROCK owns left firing aim yaw",
+    ok &= expectNear("ROCK yaw tuning adds to the calibrated left firing baseline",
         coreWeaponHandling.leftFiringAimYawDegrees,
-        1.5f);
+        10.5f);
+    ok &= expectNear("zero ROCK yaw tuning retains the calibrated left firing aim",
+        rock::makeEquippedWeaponHandlingSettings({}, nullptr).leftFiringAimYawDegrees,
+        9.0f);
     ok &= expectNear("base ROCK owns left firing aim pitch",
         coreWeaponHandling.leftFiringAimPitchDegrees,
         -2.5f);
@@ -2943,7 +3248,7 @@ int main()
     ok &= expectTrue("an addon lease cannot suppress ROCK shoulder stash",
         externalHandling.equippedWeaponShoulderStashEnabled);
     ok &= expectTrue("an addon lease cannot suppress ROCK toggle grab",
-        externalHandling.toggleGrabEnabled);
+        externalHandling.weaponGrabMode == WeaponGrabMode::ToggleBoth);
     ok &= expectFalse("an addon lease cannot re-enable the last-grip drop",
         externalHandling.lastGripReleaseDropEnabled);
     ok &= expectTrue("an addon handling lease cannot suppress authored-only support",
@@ -2977,9 +3282,9 @@ int main()
     ok &= expectNear("an active owner supplies proximity tuning",
         externalHandling.firingGripProximitySupportRadiusGameUnits,
         8.0f);
-    ok &= expectNear("an active owner supplies handoff promotion tuning",
-        externalHandling.firingGripPromotionRadiusGameUnits,
-        9.0f);
+    ok &= expectNear("legacy promotion tuning cannot change the shared station reach",
+        externalHandling.firingGripReattachRadiusGameUnits,
+        externalWeaponHandling.firingGripReattachRadiusGameUnits);
     ok &= expectNear("an active owner supplies left firing aim tuning",
         externalHandling.leftFiringAimYawDegrees,
         -4.0f);
@@ -2989,6 +3294,34 @@ int main()
             coreWeaponHandling,
             externalHandling));
     auto authoredOnlyDisabledHandling = coreWeaponHandling;
+    for (const auto type : { TestWeaponType::kHandToHand, TestWeaponType::kOneHandSword,
+             TestWeaponType::kOneHandDagger, TestWeaponType::kOneHandAxe, TestWeaponType::kOneHandMace,
+             TestWeaponType::kTwoHandSword, TestWeaponType::kTwoHandAxe, TestWeaponType::kGun }) {
+        auto baseline = coreWeaponHandlingBaseline;
+        baseline.meleeWeapon = rock::weapon_type_policy::isEquippedMelee(type);
+        for (const bool restricted : { false, true }) {
+            baseline.authoredOnlySupportGrabsEnabled = restricted;
+            for (const bool provider : { false, true }) {
+                const auto handling = rock::makeEquippedWeaponHandlingSettings(
+                    baseline, provider ? &externalWeaponHandling : nullptr);
+                const bool shouldRestrict = restricted && type == TestWeaponType::kGun;
+                ok &= expectTrue("melee always bypasses authored restrictions; firearms follow the setting",
+                    handling.authoredOnlySupportGrabsEnabled == shouldRestrict);
+                const auto selection = rock::authored_support_grab_policy::select({
+                    .modeEnabled = handling.authoredOnlySupportGrabsEnabled,
+                    .capability = rock::authored_support_grab_policy::Capability::Pending,
+                });
+                ok &= expectTrue("melee can dynamically acquire without waiting for an authored pose",
+                    rock::authored_support_grab_policy::captured(selection.selection) == !shouldRestrict);
+                const auto detachedSelection = rock::immersive_weapon_policy::resolveDetachedFiringHandPartGrab({
+                    .partCarryAuthority = rock::immersive_weapon_policy::DetachAuthority::IntegratedImmersive,
+                    .authoredOnlySupportGrabsEnabled = handling.authoredOnlySupportGrabsEnabled,
+                });
+                ok &= expectTrue("melee detached firing hand may dynamically grab another part",
+                    (detachedSelection == rock::immersive_weapon_policy::DetachedFiringHandPartGrabSelection::Standard) == !shouldRestrict);
+            }
+        }
+    }
     authoredOnlyDisabledHandling.authoredOnlySupportGrabsEnabled = false;
     ok &= expectFalse("authored-only hot reload applies to the next acquisition",
         rock::requiresEquippedWeaponHandlingModeReconcile(
@@ -3082,7 +3415,7 @@ int main()
         providerDetach.gripDetachHapticIntensity,
         0.50f);
     auto holdToGrabHandling = coreWeaponHandling;
-    holdToGrabHandling.toggleGrabEnabled = false;
+    holdToGrabHandling.weaponGrabMode = WeaponGrabMode::HoldBoth;
     ok &= expectTrue("changing equipped-weapon grab input mode reconciles live grips",
         rock::requiresEquippedWeaponHandlingModeReconcile(
             coreWeaponHandling,
@@ -3091,7 +3424,7 @@ int main()
     {
         toggle_grab::RuntimeState toggleState{};
         toggle_grab::Input toggleInput{
-            .toggleGrabEnabled = true,
+            .weaponGrabMode = WeaponGrabMode::ToggleBoth,
             .inputAllowed = true,
             .weaponOwnershipKey = 0x1234u,
             .occupancy = {},
@@ -3117,7 +3450,7 @@ int main()
 
         const auto toggleAcquisition = toggle_grab::reconcile(
             toggleState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             toggleInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .left = { .partGripActive = true }, .right = { .partGripActive = true } },
             toggle_grab::GripReleaseRetention{});
@@ -3147,7 +3480,7 @@ int main()
 
         static_cast<void>(toggle_grab::reconcile(
             toggleState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             toggleInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .left = { .partGripActive = true }, .right = { .partGripActive = true } },
             toggle_grab::GripReleaseRetention{}));
@@ -3159,7 +3492,7 @@ int main()
 
         static_cast<void>(toggle_grab::reconcile(
             toggleState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             toggleInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .left = { .partGripActive = false }, .right = { .partGripActive = true } },
             toggle_grab::GripReleaseRetention{}));
@@ -3180,7 +3513,7 @@ int main()
             toggleState.hands[toggle_grab::handIndex(false)],
             toggle_grab::HandState::Latched);
 
-        toggleInput.toggleGrabEnabled = false;
+        toggleInput.weaponGrabMode = WeaponGrabMode::HoldBoth;
         toggleInput.right = { .held = false, .released = true };
         toggleDecision = toggle_grab::prepare(toggleState, toggleInput);
         ok &= expectTrue("disabled toggle mode passes physical release input",
@@ -3198,7 +3531,7 @@ int main()
     {
         toggle_grab::RuntimeState retainedState{};
         toggle_grab::Input retainedInput{
-            .toggleGrabEnabled = true,
+            .weaponGrabMode = WeaponGrabMode::ToggleBoth,
             .inputAllowed = true,
             .weaponOwnershipKey = 0x1235u,
             .occupancy = {},
@@ -3212,7 +3545,7 @@ int main()
         auto retainedDecision = toggle_grab::prepare(retainedState, retainedInput);
         static_cast<void>(toggle_grab::reconcile(
             retainedState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             retainedInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .right = { .partGripActive = true } },
             toggle_grab::GripReleaseRetention{}));
@@ -3223,7 +3556,7 @@ int main()
             !retainedDecision.right.held && retainedDecision.right.released);
         static_cast<void>(toggle_grab::reconcile(
             retainedState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             retainedInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .right = { .partGripActive = true } },
             toggle_grab::GripReleaseRetention{}));
@@ -3232,7 +3565,7 @@ int main()
             toggle_grab::HandState::ReleasePending);
         static_cast<void>(toggle_grab::reconcile(
             retainedState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             retainedInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .right = { .partGripActive = true } },
             toggle_grab::GripReleaseRetention{ .right = true }));
@@ -3254,7 +3587,7 @@ int main()
                 retainedDecision.rightReleasePressConsumed);
         static_cast<void>(toggle_grab::reconcile(
             retainedState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             retainedInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .right = { .partGripActive = false } },
             toggle_grab::GripReleaseRetention{ .right = true }));
@@ -3263,11 +3596,12 @@ int main()
             toggle_grab::HandState::BlockedUntilRelease);
     }
 
-    for (const bool toggleEnabled : { false, true }) {
+    for (const auto mode : { WeaponGrabMode::ToggleFiringOnly, WeaponGrabMode::ToggleBoth }) {
+        const bool toggleEnabled = mode == WeaponGrabMode::ToggleBoth;
         for (const bool firingIsLeft : { false, true }) {
             toggle_grab::RuntimeState state{ .weaponOwnershipKey = 0x1236u };
             toggle_grab::Input input{
-                .toggleGrabEnabled = toggleEnabled,
+                .weaponGrabMode = mode,
                 .inputAllowed = true,
                 .weaponOwnershipKey = state.weaponOwnershipKey,
             };
@@ -3282,13 +3616,13 @@ int main()
                 return firingIsLeft ? decision.right : decision.left;
             };
             const auto reconcile = [&](const toggle_grab::GripReleaseRetention& retention = {}) {
-                return toggle_grab::reconcile(state, toggleEnabled,
+                return toggle_grab::reconcile(state, mode,
                     input.weaponOwnershipKey, input.occupancy, retention);
             };
 
             firing = { .firingGripActive = true };
             auto decision = toggle_grab::prepare(state, input);
-            ok &= expectTrue("either firing hand latches without a physical hold in both modes",
+            ok &= expectTrue("either firing hand latches without a physical hold in both firing-toggle modes",
                 firingDecision(decision).held);
 
             supportButton = { .held = true, .pressed = true };
@@ -3324,20 +3658,20 @@ int main()
                 attachAcquired.leftGripAcquired || attachAcquired.rightGripAcquired);
             supportButton = { .released = true };
             decision = toggle_grab::prepare(state, input);
-            ok &= expectTrue("reload part releases on button-up in either global mode",
+            ok &= expectTrue("reload part releases on button-up in either firing-toggle mode",
                 !supportDecision(decision).held && supportDecision(decision).released);
 
             support = {};
             firingButton = { .held = true, .pressed = true };
             decision = toggle_grab::prepare(state, input);
-            ok &= expectTrue("firing squeeze explicitly requests release in either global mode",
+            ok &= expectTrue("firing squeeze explicitly requests release in either firing-toggle mode",
                 !firingDecision(decision).held && firingDecision(decision).released);
             toggle_grab::GripReleaseRetention retention{};
             (firingIsLeft ? retention.left : retention.right) = true;
             static_cast<void>(reconcile(retention));
             firingButton = { .released = true };
             decision = toggle_grab::prepare(state, input);
-            ok &= expectTrue("auto-drop refusal relatches firing grip in either global mode",
+            ok &= expectTrue("auto-drop refusal relatches firing grip in either firing-toggle mode",
                 firingDecision(decision).held && !firingDecision(decision).released);
 
             support = { .partGripActive = true };
@@ -3424,27 +3758,22 @@ int main()
             false,
             true));
     ok &= expectTrue("active support may attempt handoff regardless of authored or dynamic pose selection",
-        canPromoteSupportGripToFiringGrip(true, false));
+        canPromoteSupportGripToFiringGrip(true, false, true));
     ok &= expectFalse("inactive support cannot attempt handoff",
-        canPromoteSupportGripToFiringGrip(false, false));
+        canPromoteSupportGripToFiringGrip(false, false, true));
     ok &= expectFalse("AttachOnly support never inherits firing-grip ownership",
-        canPromoteSupportGripToFiringGrip(true, true));
+        canPromoteSupportGripToFiringGrip(true, true, true));
 
     using rock::weapon_support_authority_policy::DynamicHandoffGripCaptureInput;
     using rock::weapon_support_authority_policy::shouldCaptureDynamicHandoffGrip;
     {
         namespace zone = rock::firing_grip_reattach_zone_policy;
-        using rock::weapon_support_authority_policy::firingGripCaptureReach;
         const rock::WeaponInteractionRuntimeState normal{};
         const rock::WeaponInteractionContact noContact{};
         ok &= expectEqual("normal support still needs its existing acquisition route",
             rock::routeWeaponInteraction(noContact, normal).kind,
             rock::WeaponInteractionKind::None);
-        const float reach = firingGripCaptureReach(true, 10.0f, 5.0f);
-        ok &= expectNear("direct handoff retains reattachment reach through capture and promotion",
-            reach, 10.0f);
-        ok &= expectNear("ordinary support promotion keeps its existing reach",
-            firingGripCaptureReach(false, 10.0f, 5.0f), 5.0f);
+        constexpr float reach = 10.0f;
         for (const float side : { -1.0f, 1.0f }) {
             for (const float distance : { 7.76f, 10.0f }) {
                 const auto inside = zone::evaluateZone({
@@ -3486,15 +3815,14 @@ int main()
     }
     const DynamicHandoffGripCaptureInput dynamicHandoffGrip{
         .normalSupportAcquisition = true,
-        .ambidextrousHandoffEnabled = true,
+        .supportPoseAbsent = true,
         .firingGripProximityAuthorityEnabled = true,
         .providerPartAuthorityActive = false,
         .authoredCaptureEligible = false,
         .supportPalmInsideHandoffZone = true,
-        .authoredSeatInsideHandoffZone = false,
     };
     ok &= expectTrue(
-        "firing-grip station restores dynamic ambidextrous handoff",
+        "confirmed one-handed animation permits dynamic support at the shared station",
         shouldCaptureDynamicHandoffGrip(dynamicHandoffGrip));
     {
         namespace zone = rock::firing_grip_reattach_zone_policy;
@@ -3525,21 +3853,19 @@ int main()
         }
         input.supportPalmInsideHandoffZone = true;
         input.authoredCaptureEligible = true;
-        input.authoredSeatInsideHandoffZone = evaluateHandoff({ 0.0f, 3.0f, 0.0f }).inside;
-        ok &= expectTrue("an authored seat inside the old sphere but outside the cylinder does not steal handoff",
+        ok &= expectFalse("eligible authored support wins an overlapping firing-hand station",
             shouldCaptureDynamicHandoffGrip(input));
     }
     {
         auto input = dynamicHandoffGrip;
         input.authoredCaptureEligible = true;
-        ok &= expectTrue(
-            "authored support away from firing grip cannot steal dynamic handoff",
+        ok &= expectFalse(
+            "eligible authored support wins regardless of its distance from the firing seat",
             shouldCaptureDynamicHandoffGrip(input));
     }
     {
         auto input = dynamicHandoffGrip;
         input.authoredCaptureEligible = true;
-        input.authoredSeatInsideHandoffZone = true;
         ok &= expectFalse(
             "authored firing-grip seat remains preferred for pistols",
             shouldCaptureDynamicHandoffGrip(input));
@@ -3567,9 +3893,9 @@ int main()
     }
     {
         auto input = dynamicHandoffGrip;
-        input.ambidextrousHandoffEnabled = false;
+        input.supportPoseAbsent = false;
         ok &= expectFalse(
-            "disabled ambidextrous mode cannot create a handoff station",
+            "missing or invalid data cannot authorize dynamic support",
             shouldCaptureDynamicHandoffGrip(input));
     }
     {
@@ -3606,46 +3932,56 @@ int main()
         isBetterProbeCandidate(
             ProbeCandidateRank{ .distanceSquaredGame = 0.0f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 62 },
             ProbeCandidateRank{ .distanceSquaredGame = 0.0f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 62 }));
-    ok &= expectEqual("support release keeps realistic primary ownership while its grip is held",
-        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{
-            .firingGripOwnershipEnabled = true,
-            .primaryDetachEnabled = true,
-            .primaryGripHeld = true,
-        }),
+    ok &= expectEqual("releasing support from a two-hand hold retains the firing hand",
+        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{ .firingGripOwnershipEnabled = true }),
         SupportReleaseManualAction::KeepPrimaryOwnership);
-    ok &= expectEqual("support release drops realistically detached weapon when primary grip is open",
-        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{
-            .firingGripOwnershipEnabled = true,
-            .primaryDetachEnabled = true,
-            .primaryGripHeld = false,
-        }),
-        SupportReleaseManualAction::DropEquippedWeapon);
-    ok &= expectEqual("support release preserves ambidextrous firing ownership without realistic detach",
-        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{
-            .firingGripOwnershipEnabled = true,
-            .primaryDetachEnabled = false,
-            .primaryGripHeld = false,
-        }),
-        SupportReleaseManualAction::KeepPrimaryOwnership);
-    ok &= expectEqual("support release ends support when firing-grip ownership is disabled",
-        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{}),
-        SupportReleaseManualAction::EndSupportOnly);
-    ok &= expectEqual("support release keeps an open detaching firing grip when the last-grip drop is disabled",
-        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{
-            .firingGripOwnershipEnabled = true,
-            .primaryDetachEnabled = true,
-            .primaryGripHeld = false,
-            .lastGripReleaseDropEnabled = false,
-        }),
-        SupportReleaseManualAction::KeepPrimaryOwnership);
-
+    ok &= expectEqual("without manual firing ownership support release ends only support",
+        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{}), SupportReleaseManualAction::EndSupportOnly);
     using rock::weapon_two_handed_grip_math::canReleaseCarryGrip;
+    {
+        using HandGrip = rock::equipped_weapon_toggle_grab_policy::HandGripOccupancy;
+        using rock::equipped_weapon_drop_policy::canStartAutoDrop;
+        const HandGrip carryingPart{ .partGripActive = true };
+        const HandGrip visualPart{ .partGripActive = true, .partGripAttachOnly = true };
+        const HandGrip firing{ .firingGripActive = true };
+        ok &= expectTrue("attach-only still occupies the hand", visualPart.weaponEngaged());
+        ok &= expectFalse("attach-only does not carry the weapon", visualPart.carriesWeapon());
+        for (const auto carrier : { carryingPart, firing }) {
+            for (const bool carrierIsLeft : { false, true }) {
+                const auto left = carrierIsLeft ? carrier : visualPart;
+                const auto right = carrierIsLeft ? visualPart : carrier;
+                const bool allowed = canStartAutoDrop(left.carriesWeapon(), right.carriesWeapon(), false);
+                ok &= expectTrue("visual peer permits last-carrier transfer on either hand", allowed);
+                ok &= expectTrue("real carrier releases with visual peer", canReleaseCarryGrip(
+                    carrier.carriesWeapon(), visualPart.carriesWeapon(), allowed));
+                ok &= expectFalse("disabled last-grip release still retains real carrier", canReleaseCarryGrip(
+                    carrier.carriesWeapon(), visualPart.carriesWeapon(), false));
+                ok &= expectFalse("refused release still requires a new hold", canReleaseCarryGrip(
+                    carrier.carriesWeapon(), visualPart.carriesWeapon(), allowed, true));
+                ok &= expectFalse("firing-station hover still prevents transfer", canStartAutoDrop(
+                    left.carriesWeapon(), right.carriesWeapon(), true));
+            }
+        }
+        using rock::equipped_weapon_drop_policy::simultaneousReleaseSource;
+        using rock::equipped_weapon_drop_policy::SourceHand;
+        ok &= expectEqual("simultaneous releases select the firing carrier once",
+            simultaneousReleaseSource(true, true, true, true, true, true, false, true), SourceHand::Right);
+        ok &= expectEqual("simultaneous part releases select the current pivot",
+            simultaneousReleaseSource(true, true, true, true, true, false, false, true), SourceHand::Left);
+        ok &= expectEqual("drop off preserves a simultaneous carrier",
+            simultaneousReleaseSource(false, true, true, true, true, true, false, true), SourceHand::None);
+        ok &= expectFalse("two visual grips never create a carrier", canStartAutoDrop(visualPart.carriesWeapon(), visualPart.carriesWeapon(), false));
+    }
     ok &= expectTrue("a carry grip releases while its peer still carries",
         canReleaseCarryGrip(true, true, false));
     ok &= expectTrue("the last carry grip releases when the last-grip drop is enabled",
         canReleaseCarryGrip(true, false, true));
     ok &= expectFalse("the last carry grip is retained when the last-grip drop is disabled",
         canReleaseCarryGrip(true, false, false));
+    ok &= expectFalse("a refused simultaneous release cannot become a delayed auto-drop",
+        canReleaseCarryGrip(true, false, true, true));
+    ok &= expectTrue("a fresh hold clears refusal before a later last-hand release",
+        canReleaseCarryGrip(true, false, true, false));
     ok &= expectTrue("attach-only glue releases regardless of the last-grip drop",
         canReleaseCarryGrip(false, false, false));
 
@@ -4017,16 +4353,19 @@ int main()
     ok &= expectFalse("stable open primary samples release firing grip", primaryReleaseDecision.retained);
     ok &= expectTrue("stable open primary samples confirm release", primaryReleaseDecision.releaseConfirmed);
 
-    ok &= expectTrue("release confirmed on a just-captured support grip is deferred",
-        shouldDeferPrimaryReleaseActionForFreshSupportGrip(0.0f));
-    // The confirm debounce is a publication count; the defer window must
-    // outlast it at the slowest supported rate (2 frames at 45 FPS).
-    ok &= expectTrue("release confirmed on the earliest confirmable frame after a grab is deferred",
-        shouldDeferPrimaryReleaseActionForFreshSupportGrip(static_cast<float>(kPrimaryReleaseConfirmFrames) / 45.0f));
-    ok &= expectTrue("release confirmed at the defer window edge is still deferred",
-        shouldDeferPrimaryReleaseActionForFreshSupportGrip(kFreshSupportGripPrimaryReleaseDeferSeconds));
-    ok &= expectFalse("release confirmed on an aged support grip acts normally",
-        shouldDeferPrimaryReleaseActionForFreshSupportGrip(kFreshSupportGripPrimaryReleaseDeferSeconds + 0.001f));
+    PrimaryReleaseIntentState releaseIntent{};
+    auto release = resolvePrimaryReleaseIntent(releaseIntent, {
+        .ownershipKey = 7, .logicalReleased = true, .freeSupportIndicatorActive = true,
+    });
+    ok &= expectTrue("hover consumes release without a delayed detach", release.retained && release.blockedBySupportHover);
+    release = resolvePrimaryReleaseIntent(releaseIntent, { .ownershipKey = 7 });
+    ok &= expectTrue("leaving support hover cannot replay the refused release", release.retained);
+    release = resolvePrimaryReleaseIntent(releaseIntent, {
+        .ownershipKey = 7, .logicalReleased = true, .supportGripActive = true,
+    });
+    ok &= expectFalse("a new release with acquired support permits handoff", release.retained);
+    release = resolvePrimaryReleaseIntent(releaseIntent, { .ownershipKey = 8 });
+    ok &= expectTrue("weapon identity change clears a pending release", release.retained);
 
     RuntimeState manualState{};
     auto manualDecision = update(manualState,
@@ -4083,14 +4422,12 @@ int main()
     ok &= expectFalse("equipped instance change does not drop the newly equipped weapon", manualDecision.dropRequested);
 
     using namespace rock::equipped_weapon_drop_policy;
-    ok &= expectEqual("right-primary support release drops from left hand",
-        sourceForSupportRelease(false, false), SourceHand::Left);
-    ok &= expectEqual("right-primary same-frame primary release drops from right hand",
-        sourceForSupportRelease(true, false), SourceHand::Right);
-    ok &= expectEqual("left-primary support release drops from right hand",
-        sourceForSupportRelease(false, true), SourceHand::Right);
-    ok &= expectEqual("left-primary same-frame primary release drops from left hand",
-        sourceForSupportRelease(true, true), SourceHand::Left);
+    static_assert(canStartAutoDrop(true, false, false));
+    static_assert(canStartAutoDrop(false, true, false));
+    static_assert(!canStartAutoDrop(true, true, false));
+    static_assert(!canStartAutoDrop(false, false, false));
+    static_assert(!canStartAutoDrop(true, false, true));
+    static_assert(!canStartAutoDrop(false, true, true));
     ok &= expectTrue("ROCK shoulder stash is available without realistic detach",
         equippedWeaponShoulderStashAvailable(true));
     ok &= expectFalse("ROCK shoulder stash setting remains authoritative",

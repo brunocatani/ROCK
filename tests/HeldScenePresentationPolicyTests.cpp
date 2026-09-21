@@ -111,6 +111,7 @@ int main()
         Node* parent = nullptr;
         RE::NiTransform world = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
         RE::NiTransform local = world;
+        RE::NiTransform previousWorld = world;
     };
     Node root{}, child{&root}, sibling{};
     using Pose = ScenePose<Node, RE::NiTransform>;
@@ -124,16 +125,24 @@ int main()
     }
     ok &= expect("parent must precede child and duplicate owner must be written once",
         rootIndex < childIndex && duplicates == 1);
-    int rootWrites = 0, childWrites = 0;
+    int rootWrites = 0, childWrites = 0, nativeRootRefreshes = 0, nativeChildRefreshes = 0;
     applyScenePoses(scene, 4, [&](Node* node) {
         if (node == &root) {
             ++rootWrites;
             child.world = rock::transform_math::composeTransforms(root.world, child.local);
         }
         if (node == &child) ++childWrites;
+    }, [&](Node* node) {
+        if (node == &root) {
+            ++nativeRootRefreshes;
+            ok &= expect("native refresh must observe the final child pose", near(child.world.translate.x, 3.0f));
+        }
+        if (node == &child) ++nativeChildRefreshes;
     });
     ok &= expect("parent subtree refresh must not overwrite the final child pose",
         rootWrites == 1 && childWrites == 1 && near(child.world.translate.x, 3.0f));
+    ok &= expect("a nested owner needs only its ancestor's final native refresh",
+        nativeRootRefreshes == 1 && nativeChildRefreshes == 0);
     child.world = rock::transform_math::composeTransforms(root.world, child.local);
     ok &= expect("subsequent native parent refresh must retain the corrected child local",
         near(child.world.translate.x, 3.0f));
@@ -159,19 +168,24 @@ int main()
     ok &= expect("loose weapon root must join the body-owner batch",
         appendAssemblyRootPose(weaponPoses, weaponPoseCount, 3, &weaponRoot, presentedReceiver, receiver.local) &&
         weaponPoseCount == 3 && prepareScenePoses(weaponPoses, weaponPoseCount));
+    float cachedMagazineY = 0.0f;
     applyScenePoses(weaponPoses, weaponPoseCount, [&](Node* node) {
         if (node == &weaponRoot) {
             for (auto* part : {&receiver, &slide, &magazine}) {
                 part->world = rock::transform_math::composeTransforms(weaponRoot.world, part->local);
             }
         }
+    }, [&](Node* node) {
+        if (node == &weaponRoot) cachedMagazineY = magazine.world.translate.y;
     });
     ok &= expect("mesh-only sibling slide must advance with the receiver and retain its animation",
         near(weaponRoot.world.translate.x, 3.0f) && near(slide.world.translate.x, 23.0f) &&
         near(slide.world.translate.y, 2.0f) && near(slide.local.translate.x, 20.0f));
     ok &= expect("independent magazine physics must survive the whole-root refresh",
         near(magazine.world.translate.x, 3.0f) && near(magazine.world.translate.y, 1.0f) &&
-        near(magazine.world.translate.z, -5.5f));
+            near(magazine.world.translate.z, -5.5f));
+    ok &= expect("geometry cache must see the final articulated magazine, not the initial parent pass",
+        near(cachedMagazineY, 1.0f));
     const auto repeatedMagazine = rock::transform_math::composeTransforms(weaponRoot.world, magazine.local);
     ok &= expect("a later parent update must retain the magazine pose without double transport",
         near(repeatedMagazine.translate.y, 1.0f) && near(repeatedMagazine.translate.z, -5.5f));
@@ -183,6 +197,88 @@ int main()
     std::size_t rootOwnedCount = 1;
     ok &= expect("a physics-owned reference root must retain its independent body pose",
         appendAssemblyRootPose(rootOwned, rootOwnedCount, 2, &weaponRoot, presentedReceiver, receiver.local) && rootOwnedCount == 1);
+
+    // Nuka-Cola regression: the body lives below the reference root. Moving
+    // only that owner leaves a mesh-only sibling and the root one movement
+    // step behind. An intermediate non-owner parent must also be updated
+    // before deriving the selected owner's new local.
+    Node bottleRoot{}, neck{&bottleRoot}, bottleBody{&neck}, labelMesh{&bottleRoot};
+    neck.local.translate.z = 1.0f;
+    neck.world = neck.local;
+    bottleBody.local.translate.z = 0.6f;
+    bottleBody.world.translate.z = 1.6f;
+    labelMesh.local.translate.y = 2.0f;
+    labelMesh.world = labelMesh.local;
+    const auto bodyInBottleRoot = bottleBody.world;
+    auto presentedBottleBody = bottleBody.world;
+    presentedBottleBody.translate.x = 5.0f;
+    Pose bottlePoses[2]{{&bottleBody, presentedBottleBody}};
+    std::size_t bottlePoseCount = 1;
+    ok &= expect("ordinary reference root must join the presentation batch",
+        appendAssemblyRootPose(bottlePoses, bottlePoseCount, 2, &bottleRoot, presentedBottleBody, bodyInBottleRoot) &&
+        prepareScenePoses(bottlePoses, bottlePoseCount));
+    RE::NiTransform cachedLabel{}, cachedBody{};
+    int bottleRefreshes = 0;
+    const auto updateBottle = [&](Node* node) {
+        if (node == &bottleRoot) {
+            neck.world = rock::transform_math::composeTransforms(bottleRoot.world, neck.local);
+            bottleBody.world = rock::transform_math::composeTransforms(neck.world, bottleBody.local);
+            labelMesh.world = rock::transform_math::composeTransforms(bottleRoot.world, labelMesh.local);
+        }
+    };
+    const auto visitBottle = [&](Node* rootNode, auto&& visit) {
+        struct Result { bool truncated = false; } result;
+        if (rootNode == &bottleRoot) {
+            for (auto* node : { &bottleRoot, &neck, &bottleBody, &labelMesh }) {
+                if (!visit(node)) { result.truncated = true; break; }
+            }
+        } else {
+            result.truncated = !visit(rootNode);
+        }
+        return result;
+    };
+    using History = SceneHistoryPose<Node, RE::NiTransform>;
+    History bottleHistory[4]{};
+    std::size_t historyCount = 0;
+    bottleBody.previousWorld.translate.x = -500.0f;
+    ok &= expect("history must capture every branch before any presentation writes",
+        captureSceneHistory(bottlePoses, bottlePoseCount, bottleHistory, 4, historyCount, visitBottle) && historyCount == 4);
+    applyScenePoses(bottlePoses, bottlePoseCount, updateBottle, [&](Node* node) {
+        ++bottleRefreshes;
+        // Model native UpdateWorldData: each refresh rolls the already-updated
+        // current transform into previousWorld, destroying its frame history.
+        visitBottle(node, [](Node* part) { part->previousWorld = part->world; return true; });
+        updateBottle(node);
+        cachedLabel = labelMesh.world;
+        cachedBody = bottleBody.world;
+    });
+    commitSceneHistory(bottleHistory, historyCount);
+    ok &= expect("native refresh must retain last frame's history for owners and mesh-only branches",
+        near(bottleRoot.previousWorld.translate.x, 0.0f) && near(neck.previousWorld.translate.z, 1.0f) &&
+        near(bottleBody.previousWorld.translate.x, 0.0f) && near(bottleBody.previousWorld.translate.z, 1.6f) &&
+        near(labelMesh.previousWorld.translate.x, 0.0f) && near(labelMesh.previousWorld.translate.y, 2.0f));
+    ok &= expect("all bottle branches and native geometry caches must share the current movement step",
+        bottleRefreshes == 1 && near(bottleRoot.world.translate.x, 5.0f) &&
+        near(cachedLabel.translate.x, 5.0f) && near(cachedLabel.translate.y, 2.0f) &&
+        near(cachedBody.translate.x, 5.0f) && near(cachedBody.translate.z, 1.6f));
+    ok &= expect("intermediate parents must not double-apply movement to the body's local",
+        near(bottleBody.local.translate.x, 0.0f) && near(bottleBody.local.translate.z, 0.6f));
+    updateBottle(&bottleRoot);
+    ok &= expect("the later native parent update must retain the same presented pose",
+        near(bottleBody.world.translate.x, 5.0f) && near(labelMesh.world.translate.x, 5.0f));
+
+    for (std::size_t i = 0; i < bottlePoseCount; ++i) bottlePoses[i].world.translate.x += 4.0f;
+    ok &= expect("the next frame must capture the preceding presentation, not stale native history",
+        captureSceneHistory(bottlePoses, bottlePoseCount, bottleHistory, 4, historyCount, visitBottle));
+    // Ordinary-object direct writes never advance previousWorld themselves.
+    applyScenePoses(bottlePoses, bottlePoseCount, updateBottle, updateBottle);
+    commitSceneHistory(bottleHistory, historyCount);
+    ok &= expect("direct and native refresh paths must both advance history exactly one presented frame",
+        near(bottleBody.world.translate.x, 9.0f) && near(bottleBody.previousWorld.translate.x, 5.0f) &&
+        near(labelMesh.world.translate.x, 9.0f) && near(labelMesh.previousWorld.translate.x, 5.0f));
+    ok &= expect("incomplete history must reject without modifying scene transforms",
+        !captureSceneHistory(bottlePoses, bottlePoseCount, bottleHistory, 3, historyCount, visitBottle) &&
+        historyCount == 0 && near(bottleBody.world.translate.x, 9.0f) && near(bottleBody.previousWorld.translate.x, 5.0f));
 
     ok &= expect("earlier grab must own all shared parts, including when left updates second",
         preferEarlierTrace(4, 8) && !preferEarlierTrace(8, 4));

@@ -58,29 +58,27 @@ namespace rock::grab_motion_controller
     {
         bool heldBodyColliding = false;
 
-        float baseLinearTau = 0.03f;
+        float baseLinearTau = 0.1f;
         float baseAngularTau = 0.03f;
         float collisionTau = 0.01f;
-        float currentLinearTau = 0.03f;
+        float currentLinearTau = 0.1f;
         float currentAngularTau = 0.03f;
         float tauLerpSpeed = 0.5f;
         // Measured game-frame delta; zero (no tau advance) until measured.
         float deltaTime = 0.0f;
-        bool physicsRateForceScalingEnabled = false;
         // Measured physics substep delta; zero means unknown rate and yields
-        // a neutral force scale.
+        // no measured rate.
         float physicsDeltaSeconds = 0.0f;
-        // Named calibration reference: the physics rate the grab force tuning
-        // was authored at. A rate baseline, not a clock fallback.
-        float physicsRateReferenceHz = 90.0f;
-        float physicsRateForceScaleExponent = 0.5f;
-        float physicsRateMinForceScale = 0.75f;
-        float physicsRateMaxForceScale = 1.35f;
 
+        // Contact effort caps; free motion uses mass and inertia below.
         float baseMaxForce = 2000.0f;
         float authorityForceScale = 1.0f;
         float angularForceMultiplier = 1.0f;
         float mass = 0.0f;
+        float maximumInertia = 0.0f;
+        float gripRadiusHavok = 0.0f;
+        float freeLinearAcceleration = 1000.0f;
+        float freeAngularAcceleration = 6000.0f;
         float forceToMassRatio = 500.0f;
         bool effectiveMotorMassFloorEnabled = true;
         float effectiveMotorMassFloor = 2.0f;
@@ -92,14 +90,14 @@ namespace rock::grab_motion_controller
 
     struct MotorOutput
     {
-        float linearTau = 0.03f;
+        bool valid = false;
+        float linearTau = 0.1f;
         float angularTau = 0.03f;
         float linearMaxForce = 0.0f;
         float angularMaxForce = 0.0f;
         float fadeFactor = 1.0f;
         // Zero until a measured physics delta produced a rate.
         float physicsHz = 0.0f;
-        float physicsRateForceScale = 1.0f;
     };
 
     struct AngularAuthorityInput
@@ -221,36 +219,6 @@ namespace rock::grab_motion_controller
 
         const float hz = 1.0f / sanitizedDelta;
         return std::isfinite(hz) && hz > 0.0f ? hz : 0.0f;
-    }
-
-    inline float computePhysicsRateForceScale(
-        bool enabled,
-        float physicsDeltaSeconds,
-        float referenceHz,
-        float exponent,
-        float minScale,
-        float maxScale)
-    {
-        if (!enabled) {
-            return 1.0f;
-        }
-
-        const float sanitizedReferenceHz = safePositive(referenceHz, 90.0f);
-        const float physicsHz = computePhysicsHz(physicsDeltaSeconds);
-        const float sanitizedExponent = (std::isfinite(exponent) && exponent >= 0.0f) ? exponent : 0.5f;
-        const float lowerScale = safePositive((std::min)(minScale, maxScale), 1.0f);
-        const float upperScale = (std::max)(lowerScale, safePositive((std::max)(minScale, maxScale), 1.0f));
-        if (physicsHz <= 0.0f || sanitizedReferenceHz <= 0.0f) {
-            // Unknown physics rate: neutral scale (the calibration point),
-            // never a pretended 90 Hz measurement.
-            return 1.0f;
-        }
-
-        const float scale = std::pow(sanitizedReferenceHz / physicsHz, sanitizedExponent);
-        if (!std::isfinite(scale)) {
-            return 1.0f;
-        }
-        return std::clamp(scale, lowerScale, upperScale);
     }
 
     inline float computeLongObjectAngularSpeedScale(bool enabled, float leverGameUnits, float referenceLeverGameUnits, float minScale)
@@ -542,6 +510,7 @@ namespace rock::grab_motion_controller
         bool pivotAuthorityNormalTrusted = false;
         bool hasSeatedPivotReacquire = false;
         bool requiresSettledVisualRelation = false;
+        bool transferredAuthoredGrip = false;
         std::uint32_t multiFingerContactGroupCount = 0;
         std::uint32_t contactPatchSampleCount = 0;
         ContactSupportShape contactSupportShape = ContactSupportShape::Unknown;
@@ -593,6 +562,14 @@ namespace rock::grab_motion_controller
         }
         if (!input.hasPivotTrackingError) {
             decision.reason = "missingPivotTracking";
+            return decision;
+        }
+        // An equipped-to-loose transfer continues a held grip. Its authored
+        // hand relation is already valid while the new physics seat converges;
+        // new-grab contact/settling gates must not release that rendered hand.
+        if (input.transferredAuthoredGrip) {
+            decision.apply = true;
+            decision.reason = "transferredAuthoredGripAccepted";
             return decision;
         }
         if (!input.touchHeldPhase && !input.acquisitionVisualEligible) {
@@ -689,16 +666,17 @@ namespace rock::grab_motion_controller
     {
         MotorOutput out{};
 
-        const float baseLinearTau = safePositive(input.baseLinearTau, 0.03f);
+        if (!std::isfinite(input.mass) || input.mass <= 0.0f ||
+            !std::isfinite(input.maximumInertia) || input.maximumInertia <= 0.0f ||
+            !std::isfinite(input.gripRadiusHavok) || input.gripRadiusHavok < 0.0f ||
+            !std::isfinite(input.freeLinearAcceleration) || input.freeLinearAcceleration <= 0.0f ||
+            !std::isfinite(input.freeAngularAcceleration) || input.freeAngularAcceleration <= 0.0f) return out;
+        const float baseLinearTau = safePositive(input.baseLinearTau, 0.1f);
         const float baseAngularTau = safePositive(input.baseAngularTau, baseLinearTau);
         const float collisionTau = safePositive(input.collisionTau, baseLinearTau);
 
-        /*
-         * ROCK dynamic grabs keep normal held motors on fixed base tau and one
-         * shared force budget. Patch/contact/lever quality remains available to release safety,
-         * not live motor authority. Tiny or one-point patches must not make the
-         * held object too weak to follow the hand.
-         */
+        // Native tau multiplies recovery demand: higher tau is stronger.
+        // Contact retains its existing softened response and finite force cap.
         const float linearTauTarget = heldAuthority.softenForContact ? collisionTau : baseLinearTau;
         const float angularTauTarget = heldAuthority.softenForContact ? collisionTau : baseAngularTau;
         out.linearTau = advanceToward(input.currentLinearTau, linearTauTarget, input.tauLerpSpeed, input.deltaTime);
@@ -708,22 +686,29 @@ namespace rock::grab_motion_controller
         const float authorityForceScale = std::clamp(safePositive(input.authorityForceScale, 1.0f), 0.05f, 1.0f);
         out.fadeFactor = input.fadeInEnabled ? computeFadeFactor(input.fadeElapsed, input.fadeDuration) : 1.0f;
         out.physicsHz = computePhysicsHz(input.physicsDeltaSeconds);
-        out.physicsRateForceScale = computePhysicsRateForceScale(
-            input.physicsRateForceScalingEnabled,
-            input.physicsDeltaSeconds,
-            input.physicsRateReferenceHz,
-            input.physicsRateForceScaleExponent,
-            input.physicsRateMinForceScale,
-            input.physicsRateMaxForceScale);
         const float motorMass = effectiveMotorMass(
             input.mass,
             input.effectiveMotorMassFloorEnabled,
             input.effectiveMotorMassFloor);
-        const float scaledBaseForce = baseForce * out.physicsRateForceScale;
-        out.linearMaxForce = capForceByMass(scaledBaseForce * out.fadeFactor, motorMass, input.forceToMassRatio) * authorityForceScale;
         const float angularForceMultiplier =
             std::clamp(safePositive(input.angularForceMultiplier, 1.0f), 0.05f, 8.0f);
-        out.angularMaxForce = out.linearMaxForce * angularForceMultiplier;
+        if (heldAuthority.softenForContact) {
+            out.linearMaxForce = capForceByMass(baseForce * out.fadeFactor, motorMass, input.forceToMassRatio) * authorityForceScale;
+            out.angularMaxForce = out.linearMaxForce * angularForceMultiplier;
+        } else {
+            const float freeLinear = motorMass * input.freeLinearAcceleration;
+            // A shared angular motor needs a bound valid for every orientation.
+            // max principal inertia bounds n^T I n. The lever term allows the
+            // angular row to oppose r x F from all three linear rows. These are
+            // CAPACITIES only: the native coupled solver still computes effort.
+            // No parallel-axis torque or feed-forward impulse is applied twice.
+            const float freeAngular = input.maximumInertia * input.freeAngularAcceleration +
+                input.gripRadiusHavok * 1.732050808f * freeLinear;
+            out.linearMaxForce = freeLinear * out.fadeFactor * authorityForceScale;
+            out.angularMaxForce = freeAngular * out.fadeFactor * authorityForceScale;
+        }
+        if (!std::isfinite(out.linearMaxForce) || !std::isfinite(out.angularMaxForce)) return {};
+        out.valid = true;
         return out;
     }
 

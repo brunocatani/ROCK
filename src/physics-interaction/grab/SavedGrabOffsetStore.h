@@ -9,8 +9,7 @@
 /*
  * Disk side of the saved-grab-offset feature: file naming, runtime-formId
  * <-> plugin-local identity conversion, and the write path. Free functions
- * backed by a single process-lifetime store, matching the
- * frik_weapon_offset_cache pattern, so both PhysicsInteraction (save
+ * backed by a single process-lifetime store, so both PhysicsInteraction (save
  * gesture) and Hand::grabSelectedObject (apply on pull-catch/far-grab/
  * force-grab commit) can reach it with no cross-module dependency.
  *

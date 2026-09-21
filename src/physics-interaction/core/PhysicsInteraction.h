@@ -14,6 +14,7 @@
 #include "physics-interaction/body/BodyContactRuntime.h"
 #include "physics-interaction/hand/Hand.h"
 #include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/hand/SkeletonBoneNameIndex.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/grab/GrabEvent.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
@@ -31,11 +32,13 @@
 #include "physics-interaction/core/PhysicsLifecycleState.h"
 #include "physics-interaction/feedback/FeedbackHaptics.h"
 #include "physics-interaction/input/GrabInputIntentPolicy.h"
+#include "physics-interaction/input/TransferredWeaponGrabPolicy.h"
 #include "physics-interaction/native/PhysicsStepDriveCoordinator.h"
 #include "physics-interaction/stash/ShoulderStashDetector.h"
 #include "physics-interaction/weapon/AuthoredPrimaryFiringGrip.h"
 #include "physics-interaction/weapon/EquippedWeaponDropMomentum.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
+#include "physics-interaction/weapon/EquippedWeaponDropVisual.h"
 #include "physics-interaction/weapon/EquippedWeaponShoulderCoordinator.h"
 #include "physics-interaction/weapon/EquippedWeaponTransitionCoordinator.h"
 #include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
@@ -46,7 +49,9 @@
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponDebug.h"
 #include "physics-interaction/weapon/BareFistGuardPolicy.h"
-#include "api/ROCKProviderApi.h"
+#include "physics-interaction/input/BareFistGesturePolicy.h"
+#include "api/ProviderRuntimeTypes.h"
+#include "api/WeaponSourceCatalogRuntime.h"
 
 namespace RE
 {
@@ -103,6 +108,25 @@ namespace rock
         void init();
 
         void synchronizeNativeScopePresentationAfterFrikUpdate();
+
+        /*
+         * FRIK writes its stored weapon offset after ROCK's AfterArmSolve
+         * work. The latch (AfterWeaponPosition) keeps the local FRIK wrote;
+         * present applies it to the Weapon node for ROCK's frame, and restore
+         * hands FRIK back the re-glue local when that frame ends.
+         */
+        // End of ROCK's tick: settle FRIK's weapon-node write block before FRIK's weapon pass.
+        void finalizeFrikWeaponOwnershipForFrame();
+        // AfterWeaponPosition: report the two-handed grip to FRIK after its own grip invalidation.
+        void syncFrikOffHandGripReport();
+        /*
+         * AfterWeaponPosition, before the offset latch: FRIK's weapon pass
+         * writes the whole Weapon local, so the presentation scale baseline
+         * (animation graph scale or unit default) is re-applied after it,
+         * where the render and the next frame's latch both see it.
+         */
+        void normalizeWeaponPresentationScaleAfterFrikWeaponPass();
+        void synchronizeEquipVisualBridgeAfterFrikWeaponPass();
         void traceScopeColliderState() const;
 
         [[nodiscard]] bool tryGetManualScopePresentationTarget(
@@ -122,6 +146,11 @@ namespace rock
         // Observes and repairs native equipped-weapon presentation before any
         // weapon-relative ROCK authority reads the first-person graph.
         void updateEquippedWeaponTransition();
+        // Value-only continuity belongs to this game session, independently
+        // of the scene nodes and Havok bodies retired by shutdown().
+        [[nodiscard]] EquippedWeaponTransitionCoordinator::PendingGrip equippedWeaponContinuity() const;
+        void restoreEquippedWeaponContinuity(const EquippedWeaponTransitionCoordinator::PendingGrip& grip);
+        void captureEquippedWeaponContinuity();
 
         // Runs before the normal ROCK interaction frame so weapon-relative
         // consumers see one authored primary-grip frame. Runtime eligibility
@@ -131,6 +160,13 @@ namespace rock
         void shutdown(::rock::provider::RockProviderLifecycleReason reason = ::rock::provider::RockProviderLifecycleReason::Shutdown);
 
         bool isInitialized() const { return _lifecycle.initialized; }
+        bool isProviderReady() const
+        {
+            return _lifecycle.initialized.load(std::memory_order_acquire) &&
+                ::rock::provider::hasLifecycleFlag(
+                    _lifecycle.flagsAtomic.load(std::memory_order_acquire),
+                    ::rock::provider::RockProviderLifecycleFlag::ProviderReady);
+        }
         void requestWeaponCollisionRebuildAfterWorkbenchExit(const char* sourceMenuName);
         void noteSkeletonLifecycle(std::uint32_t skeletonGeneration, ::rock::provider::RockProviderLifecycleReason reason);
         void noteProviderLifecycle(std::uint32_t providerGeneration, ::rock::provider::RockProviderLifecycleReason reason);
@@ -160,6 +196,14 @@ namespace rock
             return _weaponContact.left.partKind.load(std::memory_order_acquire);
         }
         bool tryGetRootFlattenedHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
+        void refreshProviderWeaponSources();
+        api::Status queryProviderWeaponSourcePath(std::uint64_t generation,std::uint64_t key,std::uint64_t& parentKey,std::uint32_t& childIndex) const;
+        api::Status queryProviderWeaponSourcePose(std::uint64_t generation,std::uint64_t key,provider::WeaponSourcePose&) const;
+        std::uintptr_t resolveProviderWeaponSource(std::uint64_t generation, std::uint64_t key) const;
+        std::uint64_t providerWeaponSourceKey(std::uint64_t generation, std::uintptr_t node) const;
+        std::uint64_t providerWeaponSourceKeyForBody(std::uint64_t generation, std::uint32_t body) const;
+        api::Status copyProviderWeaponSources(std::uint64_t generation,std::uint32_t offset, provider::WeaponSourceRecord*, std::uint32_t capacity, std::uint32_t& copied, std::uint32_t& total) const;
+        std::uintptr_t resolveProviderWeaponSourceName(std::uint64_t generation, const char* name) const;
         void fillProviderFrameSnapshot(::rock::provider::RockProviderFrameSnapshot& outSnapshot) const;
         bool isProviderWeaponBodyCurrentV1(
             std::uint64_t weaponGenerationKey,
@@ -183,7 +227,9 @@ namespace rock
         bool queryProviderWorldRaycastV1(
             const ::rock::provider::RockProviderWorldRaycastRequestV1& request,
             ::rock::provider::RockProviderWorldRaycastResultV1& outResult) const;
-        bool getProviderHandTargetDetailsV1(bool isLeft,
+        void releaseProviderPowerArmorGrabs(std::uint64_t ownerToken);
+        bool getProviderHandTargetDetailsV1(
+            const ::rock::provider::RockProviderHandInteractionStateV1& handState,
             ::rock::provider::RockProviderHandTargetDetailsV1& outDetails) const;
         std::uint32_t copyProviderBodyContacts(
             ::rock::provider::RockProviderBodyContactV1* outContacts,
@@ -217,7 +263,8 @@ namespace rock
             ::rock::provider::RockProviderAuthoredGripPoseV1& outPose) const;
         bool queryProviderPresentedHandPoseV1(
             ::rock::provider::RockProviderHand hand,
-            ::rock::provider::RockProviderPresentedHandPoseV1& outPose) const;
+            ::rock::provider::RockProviderPresentedHandPoseV1& outPose,
+            ::rock::provider::RockProviderFrameSnapshot* outMetadata = nullptr) const;
         std::uint32_t copyProviderSemanticHandContactsV1(
             ::rock::provider::RockProviderHand hand,
             std::uint32_t maxFramesSinceContact,
@@ -232,22 +279,27 @@ namespace rock
 
         /*
          * Resolve this frame's hand bone cache and isolated controller hands.
-         * The inner main-loop hook calls it right after FRIK's frame so the
-         * scope sync and provider callbacks that run before update() read
-         * this frame's hands; update() refreshes again (same inputs).
+         * FRIK's AfterArmSolve phase calls it right after the arm solve so the
+         * provider callbacks that run before update() read this frame's
+         * hands; update() refreshes again (same inputs).
          */
         void resolveFrameHands() { (void)refreshHandBoneCache(); }
 
         /*
-         * End of ROCK's frame, after every claim of the frame was published:
-         * move each claimed hand to this frame's claim and re-solve the arm
-         * behind it, so the hand draws on the seat ROCK computed this frame.
+         * FRIK's AfterWorldFinal phase: the rendered hand bones are final.
+         * Latch them, and FRIK's verdict on each claimed hand, for the next
+         * frame's controller-hand isolation and chain transport.
          */
-        void presentClaimedHands();
+        void captureRenderedHands();
+        void finalizeFramePose();
+        void discardUnfinishedFramePose();
+        void captureProviderPresentedHandPoses();
+        void traceHeldPresentationPhase(const char* phase);
         void publishDebugRenderFrame();
 
     private:
-        struct EquippedWeaponDropMomentumHandoff;
+        provider::WeaponSourceCatalog _providerSources{};
+        struct EquippedWeaponNativeHandoff;
 
         bool validateCriticalOffsets() const;
 
@@ -282,6 +334,7 @@ namespace rock
         void destroyHandCollisions(void* bhkWorld);
 
         void updateHandCollisions(const PhysicsFrameContext& frame);
+        void captureHandColliderBones();
 
         bool createBodyBoneCollisions(RE::hknpWorld* world, void* bhkWorld);
 
@@ -307,7 +360,6 @@ namespace rock
         struct EquippedWeaponFrameResult;
         EquippedWeaponFrameResult updateEquippedWeaponFrame(const PhysicsFrameContext& frame, RE::bhkWorld* bhk, RE::hknpWorld* hknp);
         void finalizeInteractionFrame(const PhysicsFrameContext& frame,
-            RE::bhkWorld* bhk,
             RE::hknpWorld* hknp,
             const EquippedWeaponFrameResult& equippedWeaponFrame);
         void prepareDynamicWorldCarCollisionForGrab(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::TESObjectREFR* ref);
@@ -344,6 +396,7 @@ namespace rock
         void updateGrabInput(const PhysicsFrameContext& frame);
         void processProviderInteractionCommands(const PhysicsFrameContext& frame);
         std::uint32_t forceGrabHandBlockerMask(const Hand& hand, bool isLeft, bool handDisabled, bool includePendingCommit) const;
+        bool equippedWeaponFiringHandForGrabIsLeft() const;
         bool canHandAcceptForceGrab(const Hand& hand, bool isLeft, bool handDisabled) const;
         bool handHoldsLooseGrenade(const Hand& hand) const;
         bool hasActiveLooseGrenadeCommit() const;
@@ -352,24 +405,31 @@ namespace rock
         void serviceLooseGrenadeQuickDraw(const PhysicsFrameContext& frame);
         void servicePendingForceGrabCommits(const PhysicsFrameContext& frame);
         void clearPendingForceGrabCommits();
+        void cancelEquippedWeaponTransfersForMenu();
         void updateSavedGrabOffsetGesture(const PhysicsFrameContext& frame);
         void saveGrabOffsetForHand(Hand& hand, bool isLeft, RE::hknpWorld* hknpWorld);
-        void updateEquippedWeaponReleaseCapture(const PhysicsFrameContext& frame, RE::NiNode* weaponNode);
-        void armEquippedWeaponDropMomentumHandoff(
+        void armEquippedWeaponNativeHandoff(
             const RE::ObjectRefHandle& handle,
             std::uint32_t droppedFormId,
             equipped_weapon_drop_policy::SourceHand sourceHand,
             const WeaponCollision::ReleaseGeometrySnapshot& releaseGeometry);
         bool hasAvailableEquippedWeaponDropHandoff() const;
-        void serviceEquippedWeaponDropMomentumHandoff(const PhysicsFrameContext& frame);
-        void serviceEquippedWeaponDropMomentumTransaction(
-            EquippedWeaponDropMomentumHandoff& handoff,
+        void serviceEquippedWeaponNativeHandoff(const PhysicsFrameContext& frame);
+        bool dropEquippedWeaponToWorld(const PhysicsFrameContext& frame,
+            const EquippedWeaponManualDropRequest& request, equipped_weapon_drop_policy::Mode mode);
+        void updateEquippedWeaponDropVisuals(const PhysicsFrameContext& frame);
+        void finishEquippedWeaponHandPoseHandoff();
+        void serviceEquippedWeaponNativeTransaction(
+            EquippedWeaponNativeHandoff& handoff,
             const PhysicsFrameContext& frame);
         bool armHeldLooseGrenade(Hand& hand, const PhysicsFrameContext& frame);
         void updateLooseGrenadeFuses(const PhysicsFrameContext& frame);
         void clearLooseGrenadeImpactWatches();
         void clearLooseGrenadeRuntimeState();
         void enforceNoBareFistState(bool forceRecheck);
+        void updateBareFistMode(const PhysicsFrameContext& frame);
+        void cancelBareFistMode(const char* reason);
+        [[nodiscard]] bool bareFistHandsAvailable(const PhysicsFrameContext& frame) const;
 
         std::size_t applyProviderWeaponPartDrives(
             RE::NiNode* weaponNode,
@@ -468,6 +528,7 @@ namespace rock
         void unsubscribeContactEvents(RE::hknpWorld* liveWorld);
 
         void dispatchPhysicsMessage(std::uint32_t msgType, bool isLeft, RE::TESObjectREFR* refr = nullptr, std::uint32_t formID = 0, std::uint32_t layer = 0);
+        api::SampleV1 providerEventSample() const;
         void dispatchGrabEvent(GrabEventData eventData);
         void dispatchSimpleGrabEvent(
             GrabEventType type,
@@ -532,6 +593,8 @@ namespace rock
         {
             bool pending{ false };
             std::uint32_t formID{ 0 };
+            // Zero only while a same-frame selection is awaiting its first grab.
+            std::uint64_t grabIdentity{ 0 };
             float remainingSeconds{ 0.0f };
         };
 
@@ -540,34 +603,7 @@ namespace rock
          * inventory transfer, so the physical hand and its weapon-local frame
          * are retained by value until the equipped node becomes observable.
          */
-        struct PendingEquippedWeaponPrimaryOnlyGripStart
-        {
-            bool pending{ false };
-            bool isLeft{ false };
-            // Zero means "the current weapon" (menu reconciliation). Held
-            // equip requests bind these fields to the accepted target and its
-            // pre-request baseline so a cloned instance may be recognized
-            // without ever starting manual ownership on an old same-base gun.
-            std::uint32_t targetWeaponFormID{ 0 };
-            std::uintptr_t targetWeaponInstanceData{ 0 };
-            std::uint32_t previousWeaponFormID{ 0 };
-            std::uintptr_t previousWeaponInstanceData{ 0 };
-            float remainingSeconds{ 0.0f };
-            equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource source{
-                equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource::GripInput
-            };
-            // A toggle acquisition is a committed logical grab even after the
-            // physical button opens while left takeover waits for the final
-            // generation-bound authored-support verdict.
-            bool toggleAcquisitionCommitted{ false };
-            bool toggleAcquisitionReleased{ false };
-            left_carry_readiness::TakeoverWitness takeoverWitness{};
-            const char* lastStartFailureReason{ nullptr }; // Static diagnostic reason; never an engine pointer.
-            bool hasFiringHandWeaponLocal{ false };
-            RE::NiTransform firingHandWeaponLocal{};
-            bool hasFiringGripWeaponLocal{ false };
-            RE::NiPoint3 firingGripWeaponLocal{};
-        };
+        using PendingEquippedWeaponPrimaryOnlyGripStart = EquippedWeaponTransitionCoordinator::PendingGrip;
 
         struct ArmedLooseGrenadeFuseState
         {
@@ -578,22 +614,6 @@ namespace rock
             float remainingSeconds{ 0.0f };
             std::uint32_t impactBodyId{ INVALID_CONTACT_BODY_ID };
             bool releasedSinceArming{ false };
-        };
-
-        /*
-         * Release capture for manually carried equipped weapons: the last
-         * ROCK-visible weapon pose (captured one frame ahead of the release,
-         * because the release transition restores the node to the FRIK hand
-         * baseline before the drop request is consumed) plus per-hand motion
-         * histories for drop momentum. Index 0 = right hand, 1 = left hand.
-         */
-        struct EquippedWeaponReleaseCapture
-        {
-            bool hasWeaponWorld{ false };
-            RE::NiTransform weaponWorld{};
-            std::array<equipped_weapon_drop_momentum::HandMotionHistory<RE::NiPoint3>, 2> handHistories{};
-            std::array<bool, 2> hasPreviousHandWorld{};
-            std::array<RE::NiTransform, 2> previousHandWorld{};
         };
 
         enum class EquippedWeaponDropHandoffStage : std::uint8_t
@@ -611,23 +631,20 @@ namespace rock
         /*
          * Deferred native-drop transaction. RemoveItem can publish the ref and
          * body tree asynchronously, so ROCK first resolves exact-ref bodies,
-         * enables collision, places every native motion at the frozen visual
-         * release pose with zero velocity, and waits for one completed native
-         * solve before applying captured release momentum exactly once. After
-         * that atomic handoff, Bethesda owns the weapon's normal flight.
+         * enables collision, places every native motion at the mode's placement
+         * pose with zero velocity, and waits for one completed native
+         * solve before the exact-reference force grab takes ownership. The
+         * held-object release path owns any later throw momentum.
          */
-        struct EquippedWeaponDropMomentumHandoff
+        struct EquippedWeaponNativeHandoff
         {
             bool active{ false };
-            bool hasReleaseVelocity{ false };
             bool referenceResolvedOnce{ false };
             bool threeDResolvedOnce{ false };
             RE::ObjectRefHandle handle{};
             std::uint32_t droppedFormId{ 0 };
             float elapsedSeconds{ 0.0f };
             std::uint32_t identityRestartCount{ 0 };
-            RE::NiPoint3 linearVelocityHavok{};
-            RE::NiPoint3 angularVelocityRadiansPerSecond{};
             bool hasReleaseWeaponWorld{ false };
             RE::NiTransform releaseWeaponWorld{};
             EquippedWeaponDropHandoffStage stage{ EquippedWeaponDropHandoffStage::ResolvingBodies };
@@ -635,7 +652,25 @@ namespace rock
             std::uint64_t bodyDiscoverySolveSequence{ 0 };
             std::array<EquippedWeaponDropBodySnapshot, kEquippedWeaponDropBodySnapshotCapacity> bodySnapshots{};
             std::size_t bodySnapshotCount{ 0 };
+            // Value-only terminal evidence. waitReason points only to literals;
+            // no scene/body pointers survive the service callback.
+            const char* waitReason{ "not-serviced" };
+            std::uint32_t visitedNodes{ 0 };
+            std::uint32_t collisionObjects{ 0 };
+            std::uint32_t scannedBodies{ 0 };
+            std::uint32_t acceptedBodies{ 0 };
+            std::uint32_t uniqueMotions{ 0 };
+            std::uint32_t scanFailures{ 0 };
+            std::uint32_t invalidSystems{ 0 };
+            std::uint32_t depthSkips{ 0 };
+            std::uint32_t foreignRefSkips{ 0 };
+            std::uint64_t rejectionMask{ 0 };
+            std::uint32_t inspectedBodyId{ 0x7FFFFFFF };
+            std::uint32_t identityProofMask{ 0 };
+            std::uint64_t observedSolveSequence{ 0 };
         };
+
+        void reportEquippedWeaponPlacementFailure(const EquippedWeaponNativeHandoff& handoff, const char* reason) const;
 
         /*
          * Single-consumption snapshot of the firing hand's grab button. The
@@ -805,6 +840,9 @@ namespace rock
             bool handlingModeInitialized{ false };
             bool handlingModeReconcilePending{ false };
             bool menuReconcilePending = false;
+            EquippedWeaponTransitionCoordinator::PendingGrip continuityGrip{};
+            bool gripResumePending{ false };
+            std::array<bool, 2> resumeAwaitingHold{};
             // Dedicated stash detector states for the equipped-weapon carry
             // gesture so dwell/hysteresis never mixes with a loose object
             // held by the same hand.
@@ -821,7 +859,6 @@ namespace rock
             std::array<bool, 2> toggleGrabReleasePressConsumedThisFrame{};
             std::array<virtual_holsters::HandState, 2> holsterInputStates{};
             std::array<bool, 2> holsterInputConsumedThisFrame{};
-            PendingEquippedWeaponPrimaryOnlyGripStart pendingPrimaryOnlyGripStart{};
             std::array<weapon_interaction_acquisition_policy::State, 2> weaponInteractionAcquisitionStates{};
             // Left/right candidates from the actual grab probes, valid only for
             // this frame and weapon generation. No scene pointers cross phases.
@@ -834,8 +871,8 @@ namespace rock
         // State owned by the EquippedWeaponDrop module.
         struct EquippedWeaponDropState
         {
-            EquippedWeaponReleaseCapture releaseCapture{};
-            std::array<EquippedWeaponDropMomentumHandoff, kEquippedWeaponDropHandoffCapacity> momentumHandoffs{};
+            std::array<EquippedWeaponDropVisual, 2> visuals{};
+            std::array<EquippedWeaponNativeHandoff, kEquippedWeaponDropHandoffCapacity> nativeHandoffs{};
         };
 
         // State owned by the GrabInput module: grab intents, the shared
@@ -848,6 +885,10 @@ namespace rock
             std::array<HeldWeaponTriggerEquipIntent, 2> heldWeaponTriggerEquipIntents{};
             SharedGrabButtonFrameState firingHandButtonFrame{};
             bare_fist_guard_policy::RecheckState bareFistGuardState{};
+            bare_fist_gesture::State bareFistGesture{};
+            bool bareFistDrawOwned{ false };
+            bool bareFistHolsterRequested{ false };
+            std::uint32_t bareFistWorldGeneration{ 0 };
             std::array<ProviderHandInputSuppressionRuntimeState, 2> providerHandInputSuppressionStates{};
             std::array<peer_held_join_retry_policy::RuntimeState, 2> peerHeldJoinRetryStates{};
             std::array<mouth_consume::RuntimeState, 2> mouthConsumeStates{};
@@ -857,7 +898,15 @@ namespace rock
         // State owned by the ForceGrabAndGrenades module.
         struct ForceGrabState
         {
+            struct RetainedWeaponGrab
+            {
+                // Native handles belong to pending reference resolution. Once
+                // committed, the Hand's acquisition identity owns retention.
+                std::uint64_t grabIdentity{ 0 };
+                transferred_weapon_grab_policy::State inputState{};
+            };
             std::array<PendingForceGrabCommit, 2> pendingCommits{};
+            std::array<RetainedWeaponGrab, 2> retainedWeaponGrabs{};
             std::array<bool, 2> committedThisFrame{};
             std::array<ArmedLooseGrenadeFuseState, kArmedLooseGrenadeFuseCapacity> grenadeFuses{};
             std::array<std::atomic<std::uint32_t>, kArmedLooseGrenadeFuseCapacity> grenadeImpactBodyIds{};
@@ -881,7 +930,9 @@ namespace rock
                 ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVE_RESULTS_V1>
                 results{};
             std::uint32_t resultCount{ 0 };
-            mutable DirectSkeletonBoneReader presentedPoseReader{};
+            SkeletonBoneNameIndex presentedPoseNames{};
+            std::array<::rock::provider::RockProviderPresentedHandPoseV1, 2> presentedPoses{};
+            ::rock::provider::RockProviderFrameSnapshot presentedMetadata{};
         };
 
         // State owned by the HandCollisionSuppression module: per-hand
@@ -920,6 +971,8 @@ namespace rock
         {
             // Main-thread eligibility only; never retain frame-local engine pointers.
             std::uint64_t debugOverlayFrameIndex = 0;
+            std::uint64_t gripZoneIndicatorFrameIndex = 0;
+            std::uint64_t poseFrameIndex = 0;
             // Central sanitized game delta captured each update; zero until
             // the first frame is measured.
             float deltaTime = 0.0f;
@@ -980,6 +1033,14 @@ namespace rock
 
         // ---- Long-lived subsystem objects ----
         HandBoneCache _handBoneCache;
+        // Game-thread scratch, recaptured immediately before the two collider
+        // updates. Never shared with rendered-space body or presentation reads.
+        DirectSkeletonBoneReader _handColliderBoneReader;
+        DirectSkeletonBoneSnapshot _handColliderBoneSnapshot;
+        // A separate cache keeps early hand-only and final full-body topology
+        // stable. API readback and both collider owners share this final copy.
+        DirectSkeletonBoneReader _finalPoseBoneReader;
+        DirectSkeletonBoneSnapshot _finalPoseBoneSnapshot;
         HandFrameResolver _handFrameResolver;
         // Last native recoil kick the FRIK recoil controller saw; a change
         // marks a frame whose rendered hand carries a composed kick.

@@ -38,6 +38,7 @@ namespace rock::runtime_state
         FrameMenuSample s_frameMenuSample{};
         runtime_state_policy::PlayerSpaceTrackerState s_playerSpaceTracker{};
         DirectSkeletonBoneReader s_skeletonReader;
+        DirectSkeletonBoneSnapshot s_readinessBones;
 
         [[nodiscard]] runtime_state_policy::Vec3 toPolicyVec(const RE::NiPoint3& value)
         {
@@ -162,7 +163,7 @@ namespace rock::runtime_state
                 return runtime_state_policy::evaluateSkeletonReadiness(readinessInput);
             }
 
-            DirectSkeletonBoneSnapshot boneSnapshot{};
+            auto& boneSnapshot = s_readinessBones;
             const bool captured = s_skeletonReader.capture(
                 skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                 skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
@@ -196,6 +197,7 @@ namespace rock::runtime_state
         game_timing::resetForNewSession();
         s_playerSpaceTracker = {};
         s_skeletonReader.resetCache();
+        s_readinessBones = {};
         s_snapshot = {};
         s_frameMenuSample = {};
     }
@@ -213,14 +215,13 @@ namespace rock::runtime_state
     void updateFrame(const RuntimeFrameInput& input)
     {
         if (!s_frameMenuSample.valid) {
-            // The game-loop hook begins frame timing before any phase; this
-            // fail-closed path only protects an out-of-order caller from
-            // silently reusing a stale frame identity.
+            // FRIK's FrameBegin phase begins frame timing before any other
+            // phase; this fail-closed path only protects an out-of-order
+            // caller from silently reusing a stale frame identity.
             (void)beginFrameTiming(false);
         }
 
         RuntimeFrameSnapshot next{};
-        next.frameIndex = s_snapshot.frameIndex + 1;
         next.playerAvailable = hasPlayer();
         next.weaponDrawn = sampleWeaponDrawn();
         next.inputMenuBlocking = s_frameMenuSample.inputMenuBlocking;
@@ -229,6 +230,7 @@ namespace rock::runtime_state
         next.localGameStopped = s_frameMenuSample.gameStopped;
         next.localMenuBlocking = next.localGameStopped || next.inputMenuBlocking;
         next.timing = game_timing::currentFrameTiming();
+        next.frameIndex = next.timing.sequence;
         /*
          * Convenience copy of the sanitized measured delta. Zero for an
          * unmeasurable frame — every consumer holds on zero elapsed time; a

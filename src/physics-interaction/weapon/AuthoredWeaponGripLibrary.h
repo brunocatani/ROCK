@@ -61,12 +61,13 @@ namespace rock::authored_weapon_grip_library
         FiringFingerPose supportFingerPose{};
         std::uint64_t supportCaptureSequence{ 0 };
         std::uint64_t captureSequence{ 0 };
-        std::uint64_t positionOnlyFrikOffsetRevision{ 0 };
         CaptureSource source{ CaptureSource::Unknown };
         CaptureSource supportSource{ CaptureSource::Unknown };
         bool hasSupportRelation{ false };
+        bool supportPoseAbsent{ false };
         bool hasRightPositionOnlyHandWeaponLocal{ false };
         bool usedVariantFallback{ false };
+        bool vanillaPipePose{ false };
         const char* reason{ "notEvaluated" };
     };
 
@@ -102,7 +103,11 @@ namespace rock::authored_weapon_grip_library
 
     [[nodiscard]] bool publishResolvedVariant(const RE::TESObjectWEAP* weapon, WeaponVariantIdentity variant, bool inPowerArmor,
         const RE::NiTransform& rightHandWeaponLocal, std::uint64_t captureSequence, CaptureSource source,
-        const FiringFingerPose* rightFiringFingerPose = nullptr);
+        const FiringFingerPose* rightFiringFingerPose = nullptr, bool vanillaPipePose = false);
+
+    // Calibrate the canonical firing relation before either hand consumes it
+    // or mirrors it. Stored poses, fingers and support relations stay authored.
+    void applyPipeDefaultOffset(LookupResult& result) noexcept;
 
     /*
      * Attach the physical-hand relation measured from the final
@@ -113,7 +118,6 @@ namespace rock::authored_weapon_grip_library
         const RE::TESObjectWEAP* weapon,
         bool inPowerArmor,
         std::uint64_t authoredCaptureSequence,
-        std::uint64_t frikOffsetRevision,
         const RE::NiTransform& rightPositionOnlyHandWeaponLocal);
 
     /*
@@ -132,6 +136,10 @@ namespace rock::authored_weapon_grip_library
         const RE::NiTransform& supportHandWeaponLocal,
         const FiringFingerPose& supportFingerPose,
         std::uint64_t supportCaptureSequence,
+        CaptureSource source);
+
+    [[nodiscard]] bool publishSupportAbsence(const RE::TESObjectWEAP* weapon,
+        WeaponVariantIdentity variant, bool inPowerArmor, std::uint64_t captureSequence,
         CaptureSource source);
 
     // Resolve the raw animation relation into this model's registration frame.

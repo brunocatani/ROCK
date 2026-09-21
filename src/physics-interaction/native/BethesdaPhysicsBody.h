@@ -120,11 +120,10 @@ namespace rock
 
         void setCollisionFilterInfo(std::uint32_t filterInfo, std::uint32_t rebuildMode = 0);
 
+        // Game-thread structural mutation, after changing this body's matrix row.
+        bool refreshCollisionFilter(RE::hknpWorld* world);
+
         void setMass(float mass);
-
-        bool applyLinearImpulse(const float* impulse);
-
-        bool applyPointImpulse(const float* impulse, const float* worldPoint);
 
         bool getCenterOfMassWorld(float& outX, float& outY, float& outZ);
 

@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 
 // Native scope presentation: rigid frame capture/synchronization, overlay calibration and target application, camera follow, and sight anchor refresh.
 
@@ -43,6 +44,7 @@ namespace rock
         _scope.anchorSource = native_scope_sight_anchor_policy::AnchorSource::None;
         _scope.anchorValid = false;
         _scope.fallbackRotationDegrees = {};
+        _scope.rejectedRigidFrameGeneration = 0;
         _scope.cameraDebugSnapshot = {};
         _scope.activationDebugSnapshot = {};
     }
@@ -109,7 +111,7 @@ namespace rock
         };
     }
 
-    bool TwoHandedGrip::captureNativeScopeRigidFrame(RE::NiNode* weaponNode, const std::uint64_t currentWeaponGenerationKey, RE::NiNode* scopeCamera,
+    bool TwoHandedGrip::capturePostFrikNativeScopeRigidFrame(RE::NiNode* weaponNode, const std::uint64_t currentWeaponGenerationKey, RE::NiNode* scopeCamera,
         const RE::NiTransform& nativeCameraWorld)
     {
         if (_scope.rigidFrame.valid && _scope.rigidFrame.weaponGenerationKey == currentWeaponGenerationKey && _scope.rigidFrame.weaponNodeIdentity == weaponNode &&
@@ -118,17 +120,22 @@ namespace rock
         }
 
         clearNativeScopeRigidFrame();
-        if (!weaponNode || currentWeaponGenerationKey == 0 || !_scope.anchorValid || _scope.anchorWeaponNode != weaponNode ||
+        if (!weaponNode || !f4vr::isNodeVisible(weaponNode) || currentWeaponGenerationKey == 0 || !_scope.anchorValid || _scope.anchorWeaponNode != weaponNode ||
             _scope.anchorGenerationKey != currentWeaponGenerationKey || !scopeCamera || !isFiniteTransform(weaponNode->world) || !isFiniteTransform(nativeCameraWorld)) {
             return false;
         }
 
-        const RE::NiTransform nativeCameraWeaponLocal =
-            native_scope_camera_follow_math::captureRigidAnchorFrameWeaponLocal(weaponNode->world, nativeCameraWorld, _scope.anchorWeaponLocal);
-        if (!isFiniteTransform(nativeCameraWeaponLocal) ||
-            std::abs(nativeCameraWeaponLocal.scale) <= 0.0001f) {
+        RE::NiTransform nativeCameraWeaponLocal{};
+        if (!native_scope_camera_follow_math::tryCaptureRigidAnchorFrameWeaponLocal(
+                weaponNode->world, nativeCameraWorld, _scope.anchorWeaponLocal, nativeCameraWeaponLocal)) {
+            if (_scope.rejectedRigidFrameGeneration != currentWeaponGenerationKey) {
+                ROCK_LOG_WARN(Weapon, "TwoHandedGrip: rejected native scope roll calibration generation={:016X} form={:08X}: invalid camera/weapon basis or scale",
+                    currentWeaponGenerationKey, _scope.anchorWeaponFormID);
+                _scope.rejectedRigidFrameGeneration = currentWeaponGenerationKey;
+            }
             return false;
         }
+        _scope.rejectedRigidFrameGeneration = 0;
 
         _scope.rigidFrame = NativeScopeRigidFrameState{
             .weaponGenerationKey = currentWeaponGenerationKey,
@@ -142,9 +149,14 @@ namespace rock
             clearNativeScopeRigidFrame();
             return false;
         }
-        ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: native scope rigid frame captured generation={:016X} cameraLocal=({:.2f},{:.2f},{:.2f}) scale={:.3f}", currentWeaponGenerationKey,
+        const auto sampledLocalRotation = transform_math::multiplyStoredRotations(
+            nativeCameraWorld.rotate, transform_math::transposeRotation(weaponNode->world.rotate));
+        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: native scope rigid frame captured generation={:016X} form={:08X} firingHand={} cameraLocal=({:.2f},{:.2f},{:.2f}) scale={:.3f} nativeRollDeg={:.3f} retainedRollDeg={:.3f}",
+            currentWeaponGenerationKey, _scope.anchorWeaponFormID, firingHandName(),
             _scope.rigidFrame.cameraWeaponLocal.translate.x, _scope.rigidFrame.cameraWeaponLocal.translate.y,
-            _scope.rigidFrame.cameraWeaponLocal.translate.z, _scope.rigidFrame.cameraWeaponLocal.scale);
+            _scope.rigidFrame.cameraWeaponLocal.translate.z, _scope.rigidFrame.cameraWeaponLocal.scale,
+            native_scope_camera_follow_math::weaponLocalCameraRollDegrees(sampledLocalRotation),
+            native_scope_camera_follow_math::weaponLocalCameraRollDegrees(_scope.rigidFrame.cameraWeaponLocal.rotate));
         return true;
     }
 
@@ -169,19 +181,29 @@ namespace rock
 
         /*
          * PlayerCharacter's native scope gate ran earlier in the frame. hFRIK
-         * has now authored its engine-specific camera axis calibration; capture
-         * that calibration once, then publish the complete rigid weapon-local
-         * scope frame before FO4VR's later mono render. ROCK's two-hand solve
-         * republishes this same frame from its final weapon transform below.
+         * has now aligned optical forward; capture that direction and scale
+         * with weapon-relative roll, then publish the complete rigid weapon-local
+         * scope frame before FO4VR's later mono render. Earlier weapon solves
+         * may only reuse this calibration, never create it. FRIK skips camera
+         * alignment for a hidden weapon, so it cannot seed a new calibration.
          */
         const NativeScopeCameraFollowCapture capture = captureNativeScopeCameraFollow(weaponNode);
-        if (!capture.valid || !captureNativeScopeRigidFrame(weaponNode, currentWeaponGenerationKey, capture.camera, capture.cameraWorldBefore)) {
+        const bool newlyCaptured = !_scope.rigidFrame.valid ||
+            _scope.rigidFrame.weaponGenerationKey != currentWeaponGenerationKey ||
+            _scope.rigidFrame.weaponNodeIdentity != weaponNode ||
+            _scope.rigidFrame.scopeCameraIdentity != capture.camera;
+        if (!capture.valid || !capturePostFrikNativeScopeRigidFrame(weaponNode, currentWeaponGenerationKey, capture.camera, capture.cameraWorldBefore)) {
             return;
         }
 
         const bool overlayCalibrationReady = captureNativeScopeOverlayCalibration(capture.cameraWorldBefore, currentWeaponGenerationKey);
         const RE::NiTransform targetCameraWorld = native_scope_camera_follow_math::resolveRigidAnchorFrameWorld(weaponNode->world, _scope.rigidFrame.cameraWeaponLocal);
         const NativeScopeCameraFollowResult result = applyNativeScopeCameraWorldTarget(capture, targetCameraWorld, _scope.rigidFrame);
+        if (result.writeApplied) {
+            vanilla_weapon_alignment_telemetry::recordScopeCalibration(
+                weaponNode, capture.camera, currentWeaponGenerationKey, _scope.anchorWeaponFormID,
+                capture.cameraWorldBefore, _scope.rigidFrame.cameraWeaponLocal, newlyCaptured);
+        }
         if (overlayCalibrationReady && result.targetValid && result.writeApplied) {
             (void)applyNativeScopeOverlayTarget(result.targetCameraWorld, currentWeaponGenerationKey);
         }
@@ -223,7 +245,9 @@ namespace rock
 
         const auto* playerNodes = f4vr::getPlayerNodes();
         auto* scopeParent = playerNodes ? playerNodes->ScopeParentNode : nullptr;
-        if (!scopeParent || !scopeParent->parent || !isFiniteTransform(scopeParent->local) ||
+        auto* scopeCamera = playerNodes ? playerNodes->primaryWeaponScopeCamera : nullptr;
+        if (!scopeCamera || !scopeCamera->parent || !isFiniteTransform(scopeCamera->local) ||
+            !scopeParent || !scopeParent->parent || !isFiniteTransform(scopeParent->local) ||
             std::abs(scopeParent->parent->world.scale) <= 0.0001f) {
             return false;
         }
@@ -260,9 +284,14 @@ namespace rock
         if (!tryGetComposedNodeWorld(scopeModelRoot, nativeScopeModelRootWorld)) {
             return false;
         }
+        RE::NiTransform cameraParentWorld{};
+        if (!tryGetComposedNodeWorld(scopeCamera->parent, cameraParentWorld)) return false;
+        const auto unsteeredCameraWorld = native_scope_overlay_follow_math::resolveUnsteeredCameraWorld(
+            cameraParentWorld, scopeCamera->local);
+        if (!isFiniteTransform(unsteeredCameraWorld) || std::abs(unsteeredCameraWorld.scale) <= 0.0001f) return false;
         const RE::NiTransform modelRootCalibrationInCameraLocal =
             native_scope_overlay_follow_math::captureModelRootCalibrationInCameraLocal(
-                nativeCameraWorld,
+                unsteeredCameraWorld,
                 nativeScopeModelRootWorld);
         if (!isFiniteTransform(modelRootCalibrationInCameraLocal) ||
             std::abs(modelRootCalibrationInCameraLocal.scale) <= 0.0001f) {
@@ -280,8 +309,8 @@ namespace rock
             .valid = true,
             .hasAppliedLocal = false,
         };
-        ROCK_LOG_DEBUG(Weapon,
-            "TwoHandedGrip: native scope overlay calibrated generation={:016X} modelRootLocal=({:.2f},{:.2f},{:.2f}) cameraCalibrationScale={:.3f} nativeParentLocal=({:.2f},{:.2f},{:.2f})",
+        ROCK_LOG_INFO(Weapon,
+            "TwoHandedGrip: native scope overlay calibrated generation={:016X} modelRootLocal=({:.2f},{:.2f},{:.2f}) cameraCalibrationScale={:.3f} nativeParentLocal=({:.2f},{:.2f},{:.2f}) basis=unsteered-camera excludedAim={:.2f}deg",
             currentWeaponGenerationKey,
             scopeModelRoot->local.translate.x,
             scopeModelRoot->local.translate.y,
@@ -289,7 +318,9 @@ namespace rock
             modelRootCalibrationInCameraLocal.scale,
             scopeParent->local.translate.x,
             scopeParent->local.translate.y,
-            scopeParent->local.translate.z);
+            scopeParent->local.translate.z,
+            weapon_support_acquisition_math::rotationDistanceRadians(
+                unsteeredCameraWorld.rotate, nativeCameraWorld.rotate) * RADIANS_TO_DEGREES);
         return true;
     }
 

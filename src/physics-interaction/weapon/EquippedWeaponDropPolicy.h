@@ -4,12 +4,35 @@
 
 namespace rock::equipped_weapon_drop_policy
 {
+    enum class Mode : std::uint8_t
+    {
+        Off = 1,
+        ToggleDrop = 2,
+        AutoDrop = 3,
+    };
+
+    [[nodiscard]] inline constexpr Mode fromSetting(int value) noexcept
+    {
+        switch (value) {
+        case 2: return Mode::ToggleDrop;
+        case 3: return Mode::AutoDrop;
+        default: return Mode::Off;
+        }
+    }
+
     enum class SourceHand : std::uint8_t
     {
         None = 0,
         Right,
         Left,
     };
+
+    [[nodiscard]] inline constexpr bool captureOwnerCurrent(bool manual, bool sourceIsLeft,
+        std::uint64_t confirmed, std::uint64_t sessionOwner, std::uint64_t generation, bool nativeCanonicalCurrent) noexcept
+    {
+        return confirmed != 0 && generation != 0 &&
+            (manual ? sessionOwner == confirmed : (!sourceIsLeft && nativeCanonicalCurrent));
+    }
 
     [[nodiscard]] inline constexpr bool isLeft(SourceHand hand) noexcept
     {
@@ -29,14 +52,18 @@ namespace rock::equipped_weapon_drop_policy
         return "none";
     }
 
-    [[nodiscard]] inline constexpr SourceHand sourceForSupportRelease(
-        const bool primaryReleasedThisFrame,
-        const bool firingHandIsLeft) noexcept
+    [[nodiscard]] inline constexpr bool canStartAutoDrop(bool leftCarries, bool rightCarries,
+        bool freeFiringStationHovered) noexcept
     {
-        const bool sourceHandIsLeft = primaryReleasedThisFrame ?
-            firingHandIsLeft :
-            !firingHandIsLeft;
-        return sourceHandIsLeft ? SourceHand::Left : SourceHand::Right;
+        return leftCarries != rightCarries && !freeFiringStationHovered;
+    }
+
+    [[nodiscard]] inline constexpr SourceHand simultaneousReleaseSource(bool enabled,
+        bool leftCarries, bool rightCarries, bool leftReleased, bool rightReleased,
+        bool firingOccupied, bool firingLeft, bool pivotLeft) noexcept
+    {
+        if (!enabled || !leftCarries || !rightCarries || !leftReleased || !rightReleased) return SourceHand::None;
+        return (firingOccupied ? firingLeft : pivotLeft) ? SourceHand::Left : SourceHand::Right;
     }
 
     [[nodiscard]] inline constexpr bool equippedWeaponShoulderStashAvailable(

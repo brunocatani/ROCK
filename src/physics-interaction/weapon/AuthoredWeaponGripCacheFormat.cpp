@@ -222,6 +222,7 @@ namespace rock::authored_weapon_grip_cache
         }
         mixValue(hash, record.supportFingerMask);
         mixValue(hash, record.supportValid);
+        mixValue(hash, record.supportAbsent);
         mixString(hash, record.idleClipPath);
         mixValue(hash, record.requestedSubgraphIdentifier);
         mixValue(hash, record.bindingSubgraphIdentifier);
@@ -257,6 +258,7 @@ namespace rock::authored_weapon_grip_cache
                 return false;
             }
         }
+        if (record.supportValid && record.supportAbsent) return false;
         if (record.supportValid) {
             if (record.supportFingerMask != kCompleteFiringFingerMask ||
                 !validTransform(record.supportHandWeaponLocal)) {
@@ -324,6 +326,7 @@ namespace rock::authored_weapon_grip_cache
             { "rightFiringFingerLocals", std::move(fingers) },
             { "support", {
                 { "valid", normalized.supportValid },
+                { "absent", normalized.supportAbsent },
                 { "handWeaponLocal", transformToJson(normalized.supportHandWeaponLocal) },
                 { "fingerMask", normalized.supportFingerMask },
                 { "fingerLocals", std::move(supportFingers) },
@@ -408,12 +411,13 @@ namespace rock::authored_weapon_grip_cache
             }
 
             const auto& support = root.at("support");
-            if (!support.is_object() || !support.contains("valid") || !support.contains("handWeaponLocal") ||
+            if (!support.is_object() || !support.contains("valid") || !support.contains("absent") || !support.contains("handWeaponLocal") ||
                 !support.contains("fingerMask") || !support.contains("fingerLocals")) {
                 setError(outError, "recordSupportFieldsMissing");
                 return false;
             }
             parsed.supportValid = support.at("valid").get<bool>();
+            parsed.supportAbsent = support.at("absent").get<bool>();
             parsed.supportFingerMask = support.at("fingerMask").get<std::uint16_t>();
             if (!transformFromJson(support.at("handWeaponLocal"), parsed.supportHandWeaponLocal)) {
                 setError(outError, "recordSupportTransformInvalid");

@@ -1,6 +1,7 @@
 #pragma once
 
-#include "api/ROCKProviderApi.h"
+#include "api/ProviderRuntimeTypes.h"
+#include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
 #include "physics-interaction/weapon/immersive/ImmersiveWeaponPolicy.h"
 
 namespace rock
@@ -9,16 +10,17 @@ namespace rock
     {
         bool ambidextrousHandoffEnabled{ false };
         bool authoredOnlySupportGrabsEnabled{ true };
-        bool toggleGrabEnabled{ false };
+        bool meleeWeapon{ false };
+        equipped_weapon_toggle_grab_policy::Mode weaponGrabMode{ equipped_weapon_toggle_grab_policy::Mode::HoldBoth };
         bool equippedWeaponShoulderStashEnabled{ false };
-        // Whether the last hand carrying the weapon may drop it by letting go.
+        // Whether releasing the last equipped grip drops it into the world.
+        // Weapon Drop Mode decides whether the loose weapon is then grabbed.
         // With false that grip is retained; releases are honored only while
         // the other hand still carries the weapon.
         bool lastGripReleaseDropEnabled{ true };
         immersive_weapon_policy::Config immersiveWeapon{};
         float firingGripReattachCylinderRadiusGameUnits{ 2.0f };
         float firingGripProximitySupportRadiusGameUnits{ 6.0f };
-        float firingGripPromotionRadiusGameUnits{ 5.0f };
         float leftFiringAimYawDegrees{ 0.0f };
         float leftFiringAimPitchDegrees{ 0.0f };
         float leftFiringAimOffsetXGameUnits{ 0.0f };
@@ -37,7 +39,7 @@ namespace rock
         bool preserveWeaponPoseOnDetach{ false };
         bool ambidextrousHandoffEnabled{ false };
         bool authoredOnlySupportGrabsEnabled{ true };
-        bool toggleGrabEnabled{ false };
+        equipped_weapon_toggle_grab_policy::Mode weaponGrabMode{ equipped_weapon_toggle_grab_policy::Mode::HoldBoth };
         bool lastGripReleaseDropEnabled{ true };
         bool gripZoneEquipEnabled{ false };
         bool gripZoneHoverHapticsEnabled{ false };
@@ -54,7 +56,6 @@ namespace rock
         float firingGripAttachHapticIntensity{ 0.85f };
         float firingGripDetachHapticIntensity{ 0.30f };
         float supportGripHapticIntensity{ 0.50f };
-        float firingGripPromotionRadiusGameUnits{ 5.0f };
         float leftFiringAimYawDegrees{ 0.0f };
         float leftFiringAimPitchDegrees{ 0.0f };
         float leftFiringAimOffsetXGameUnits{ 0.0f };
@@ -78,14 +79,14 @@ namespace rock
         settings.primaryDetachEnabled = false;
         settings.ambidextrousHandoffEnabled =
             rockBaseline.ambidextrousHandoffEnabled;
-        // This is a ROCK-local acquisition preference. Provider equipped-
-        // weapon handling authority cannot disable it; an exact matched
-        // weapon-part target is the narrower, explicit override at capture.
+        // Melee always permits dynamic support acquisition, on either hand
+        // and after firing-grip detach. Providers cannot replace this policy;
+        // exact matched weapon-part targets retain their priority at capture.
         settings.authoredOnlySupportGrabsEnabled =
-            rockBaseline.authoredOnlySupportGrabsEnabled;
+            rockBaseline.authoredOnlySupportGrabsEnabled && !rockBaseline.meleeWeapon;
         // Toggle grab is a ROCK input preference. A handling-provider lease
         // can add weapon capabilities, but it cannot replace this input mode.
-        settings.toggleGrabEnabled = rockBaseline.toggleGrabEnabled;
+        settings.weaponGrabMode = rockBaseline.weaponGrabMode;
         // Like toggle grab, the last-grip drop is a ROCK release preference
         // that applies under either detach authority; a handling-provider
         // lease cannot re-enable dropping for the player's last carrying hand.
@@ -103,10 +104,10 @@ namespace rock
         // radius; an active handling owner may replace only that tuning value.
         settings.firingGripProximitySupportRadiusGameUnits =
             rockBaseline.firingGripProximitySupportRadiusGameUnits;
-        settings.firingGripPromotionRadiusGameUnits =
-            rockBaseline.firingGripPromotionRadiusGameUnits;
+        // ROCK's user yaw is an adjustment beyond the calibrated left aim.
+        // An external handling owner still supplies its absolute correction below.
         settings.leftFiringAimYawDegrees =
-            rockBaseline.leftFiringAimYawDegrees;
+            9.0f + rockBaseline.leftFiringAimYawDegrees;
         settings.leftFiringAimPitchDegrees =
             rockBaseline.leftFiringAimPitchDegrees;
         settings.leftFiringAimOffsetXGameUnits =
@@ -158,7 +159,6 @@ namespace rock
         settings.firingGripAttachHapticIntensity = request->firingGripAttachHapticIntensity;
         settings.firingGripDetachHapticIntensity = request->firingGripDetachHapticIntensity;
         settings.supportGripHapticIntensity = request->supportGripHapticIntensity;
-        settings.firingGripPromotionRadiusGameUnits = request->firingGripPromotionRadiusGameUnits;
         settings.leftFiringAimYawDegrees = request->leftFiringAimYawDegrees;
         settings.leftFiringAimPitchDegrees = request->leftFiringAimPitchDegrees;
         settings.leftFiringAimOffsetXGameUnits = request->leftFiringAimOffsetGameUnits[0];
@@ -197,7 +197,7 @@ namespace rock
         const EquippedWeaponHandlingSettings& previous,
         const EquippedWeaponHandlingSettings& current) noexcept
     {
-        if (previous.toggleGrabEnabled != current.toggleGrabEnabled) {
+        if (previous.weaponGrabMode != current.weaponGrabMode) {
             return true;
         }
 

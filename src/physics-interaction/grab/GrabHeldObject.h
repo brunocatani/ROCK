@@ -156,6 +156,19 @@ namespace rock::held_object_drive_policy
         };
     }
 
+    [[nodiscard]] inline constexpr bool canShareTwoHandPivot(
+        HeldBodySetDriveMode firstMode, HeldBodySetDriveMode secondMode,
+        bool sameBody, bool sharedWeaponRoot) noexcept
+    {
+        // Weapons already provide one canonical assembly frame. Other props
+        // can share a root only when both captures establish a rigid assembly;
+        // grabbing separate joints must not freeze their relative motion.
+        const auto rigid = [](HeldBodySetDriveMode mode) {
+            return mode == HeldBodySetDriveMode::SingleDynamic || mode == HeldBodySetDriveMode::ConnectedDynamic;
+        };
+        return sameBody || sharedWeaponRoot || (rigid(firstMode) && rigid(secondMode));
+    }
+
     inline float sanitizeMotorAuthorityScale(float baseScale)
     {
         return std::clamp(std::isfinite(baseScale) && baseScale > 0.0f ? baseScale : 1.0f, 0.05f, 1.0f);
@@ -623,8 +636,8 @@ namespace rock::grab_held_response
     /*
      * ROCK dynamic grab authority uses proxy-backed finite motors for ordinary
      * loose-object holds. These helpers derive bounded release velocity from
-     * controller motion, held-body lag, player motion, and COM-relative angular
-     * swing without making COM a grip pivot or keeping a second drive authority.
+     * measured hand translation and rotation. Solver lag and the grip-to-COM
+     * lever must not steer a throw away from the hand's movement.
      */
     inline float finiteOr(float value, float fallback)
     {
@@ -634,14 +647,6 @@ namespace rock::grab_held_response
     inline float safePositive(float value, float fallback)
     {
         return std::isfinite(value) && value > 0.0f ? value : fallback;
-    }
-
-    inline float clamp01(float value)
-    {
-        if (!std::isfinite(value)) {
-            return 0.0f;
-        }
-        return std::clamp(value, 0.0f, 1.0f);
     }
 
     template <class Vec3>
@@ -661,27 +666,9 @@ namespace rock::grab_held_response
     }
 
     template <class Vec3>
-    inline Vec3 sub(const Vec3& lhs, const Vec3& rhs)
-    {
-        return makeVector<Vec3>(lhs.x - rhs.x, lhs.y - rhs.y, lhs.z - rhs.z);
-    }
-
-    template <class Vec3>
     inline Vec3 scale(const Vec3& value, float scalar)
     {
         return makeVector<Vec3>(value.x * scalar, value.y * scalar, value.z * scalar);
-    }
-
-    template <class Vec3>
-    inline float dot(const Vec3& lhs, const Vec3& rhs)
-    {
-        return vector_math::dot(lhs, rhs);
-    }
-
-    template <class Vec3>
-    inline Vec3 cross(const Vec3& lhs, const Vec3& rhs)
-    {
-        return vector_math::cross(lhs, rhs);
     }
 
     template <class Vec3>
@@ -694,16 +681,6 @@ namespace rock::grab_held_response
     inline float length(const Vec3& value)
     {
         return std::sqrt(lengthSquared(value));
-    }
-
-    template <class Vec3>
-    inline Vec3 normalizeOrZero(const Vec3& value)
-    {
-        const float len = length(value);
-        if (!std::isfinite(len) || len <= 0.000001f) {
-            return Vec3{};
-        }
-        return scale(value, 1.0f / len);
     }
 
     template <class Vec3>
@@ -727,13 +704,9 @@ namespace rock::grab_held_response
         bool controllerDerivedEnabled = true;
         bool hasHandLocalVelocity = false;
         bool hasObjectLocalVelocity = false;
-        bool hasTangentialVelocity = false;
         Vec3 handLocalVelocityHavok{};
         Vec3 objectLocalVelocityHavok{};
         Vec3 playerVelocityHavok{};
-        Vec3 tangentialVelocityHavok{};
-        float objectVelocityBlend = 0.35f;
-        float tangentialVelocityScale = 1.0f;
         float throwMultiplier = 1.5f;
         float maxVelocityHavok = 12.0f;
     };
@@ -753,13 +726,9 @@ namespace rock::grab_held_response
     {
         Vec3 localVelocity{};
         if (input.controllerDerivedEnabled && input.hasHandLocalVelocity) {
+            // Use the measured movement vector intact, including a stationary
+            // hand. Object motor corrections and wrist rotation are not aim.
             localVelocity = input.handLocalVelocityHavok;
-            if (input.hasTangentialVelocity) {
-                localVelocity = add(localVelocity, scale(input.tangentialVelocityHavok, finiteOr(input.tangentialVelocityScale, 1.0f)));
-            }
-            if (input.hasObjectLocalVelocity) {
-                localVelocity = add(localVelocity, scale(input.objectLocalVelocityHavok, clamp01(input.objectVelocityBlend)));
-            }
         } else if (input.hasObjectLocalVelocity) {
             localVelocity = input.objectLocalVelocityHavok;
         }
@@ -783,27 +752,6 @@ namespace rock::grab_held_response
         }
 
         return clampMagnitude(scale(input.handAngularVelocityRadiansPerSecond, scaleFactor), maxAngularVelocity);
-    }
-
-    template <class Vec3>
-    inline Vec3 computeTangentialVelocityFromAngularSwing(
-        const Vec3& angularVelocityRadiansPerSecond,
-        const Vec3& handPositionHavok,
-        const Vec3& centerOfMassHavok)
-    {
-        const float angularSpeed = length(angularVelocityRadiansPerSecond);
-        if (!std::isfinite(angularSpeed) || angularSpeed <= 0.000001f) {
-            return Vec3{};
-        }
-
-        const Vec3 axis = normalizeOrZero(angularVelocityRadiansPerSecond);
-        const Vec3 handToCenter = sub(centerOfMassHavok, handPositionHavok);
-        const Vec3 radial = sub(handToCenter, scale(axis, dot(handToCenter, axis)));
-        if (lengthSquared(radial) <= 0.000001f) {
-            return Vec3{};
-        }
-
-        return scale(cross(axis, radial), angularSpeed);
     }
 }
 

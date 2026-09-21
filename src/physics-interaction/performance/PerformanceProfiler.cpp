@@ -1,4 +1,5 @@
 #include "physics-interaction/performance/PerformanceProfiler.h"
+#include "physics-interaction/performance/ContactPairProfile.h"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -19,6 +20,7 @@
 #include <spdlog/pattern_formatter.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/spdlog.h>
+#include <F4SE/Logger.h>
 
 namespace rock::performance_profiler
 {
@@ -30,6 +32,11 @@ namespace rock::performance_profiler
             std::atomic<std::uint64_t> maxTicks{ 0 };
             std::atomic<std::uint64_t> samples{ 0 };
             std::atomic<std::uint64_t> events{ 0 };
+            std::array<std::atomic<std::uint64_t>, 3> memoryQueries{};
+            std::atomic<std::uint64_t> memoryQueryFailures{ 0 };
+            std::atomic<std::uint64_t> memoryQueryTimedSamples{ 0 };
+            std::atomic<std::uint64_t> memoryQueryTotalTicks{ 0 };
+            std::atomic<std::uint64_t> memoryQueryMaxTicks{ 0 };
         };
 
         struct CounterAccum
@@ -52,12 +59,19 @@ namespace rock::performance_profiler
             std::atomic<std::uint32_t> warmupFrames{ 120 };
             std::atomic<std::uint64_t> frameIndex{ 0 };
             std::atomic<std::uint64_t> intervalStartFrame{ 0 };
+            std::atomic<std::uint64_t> generation{ 1 };
         };
 
         std::array<ScopeAccum, static_cast<std::size_t>(Scope::Count)> s_accum;
         std::array<CounterAccum, static_cast<std::size_t>(Counter::Count)> s_counterAccum;
         std::array<ValueAccum, static_cast<std::size_t>(ValueMetric::Count)> s_valueAccum;
         Settings s_settings;
+        ContactPairTable<128> s_contactPairs;
+        ContactPairTable<512> s_contactChildren;
+        // All native/game/render threads merge into the existing atomic window.
+        // TLS retains only a scope ID and sampling phase, never engine pointers.
+        thread_local Scope t_memoryQueryScope = Scope::UnattributedMemoryQueries;
+        thread_local std::uint32_t t_memoryQuerySequence = 0;
         LARGE_INTEGER s_frequency{};
         std::atomic<bool> s_frequencyReady{ false };
         std::mutex s_overlayMutex;
@@ -91,8 +105,8 @@ namespace rock::performance_profiler
                 return "equippedWeaponInteraction";
             case Scope::InteractionFinalize:
                 return "interactionFinalize";
-            case Scope::HandPresentation:
-                return "handPresentation";
+            case Scope::RenderedHandCapture:
+                return "renderedHandCapture";
             case Scope::ProviderPublication:
                 return "providerPublication";
             case Scope::HandColliderUpdate:
@@ -105,6 +119,14 @@ namespace rock::performance_profiler
                 return "weaponCollision";
             case Scope::WeaponCollisionTransforms:
                 return "weaponCollisionTransforms";
+            case Scope::WeaponContactProbe:
+                return "weaponContactProbe";
+            case Scope::WeaponEmitterRefresh:
+                return "weaponEmitterRefresh";
+            case Scope::WeaponIdentityRead:
+                return "weaponIdentityRead";
+            case Scope::WeaponVisualObservation:
+                return "weaponVisualObservation";
             case Scope::GeneratedBodyContactRegistry:
                 return "generatedBodyRegistry";
             case Scope::WeaponColliderBuild:
@@ -143,6 +165,10 @@ namespace rock::performance_profiler
                 return "contactResolve";
             case Scope::NativeContactCallback:
                 return "nativeContactCallbacks";
+            case Scope::NativeMeleeCallback:
+                return "nativeMeleeCallback";
+            case Scope::NativeMeleeDispatch:
+                return "nativeMeleeDispatch";
             case Scope::GrabAcquisitionBodyScan:
                 return "grabAcquisitionBodyScan";
             case Scope::GrabAcquisitionActivePrep:
@@ -161,6 +187,71 @@ namespace rock::performance_profiler
                 return "grabNearbyDampingRestore";
             case Scope::GrabNearbyDampingRestoreBodySearch:
                 return "grabNearbyDampingRestoreBodySearch";
+            case Scope::FramePrelude: return "framePrelude";
+            case Scope::FrameBeginPreparation: return "frameBeginPreparation";
+            case Scope::WeaponPresentation: return "weaponPresentation";
+            case Scope::FinalPresentation: return "finalPresentation";
+            case Scope::HandFrameResolve: return "handFrameResolve";
+            case Scope::HandBoneCapture: return "handBoneCapture";
+            case Scope::BodyBoneCapture: return "bodyBoneCapture";
+            case Scope::FingerBoneCapture: return "fingerBoneCapture";
+            case Scope::SelectionHitProcessing: return "selectionHitProcessing";
+            case Scope::PhysicsSystemBodyScan: return "physicsSystemBodyScan";
+            case Scope::NativePlayerRefresh: return "nativePlayerRefresh";
+            case Scope::NativePlayerPairFilter: return "nativePlayerPairFilter";
+            case Scope::HeldSceneWriter: return "heldSceneWriter";
+            case Scope::ProviderFrameDispatch: return "providerFrameDispatch";
+            case Scope::ProviderFrameConsumer: return "providerFrameConsumer";
+            case Scope::ProviderAnimationDispatch: return "providerAnimationDispatch";
+            case Scope::ProviderAnimationConsumer: return "providerAnimationConsumer";
+            case Scope::NativeWorldReadWait: return "nativeWorldReadWait";
+            case Scope::CallbackQuiescenceWait: return "callbackQuiescenceWait";
+            case Scope::NearbyDampingWait: return "nearbyDampingWait";
+            case Scope::NativeIdleGripHarvest: return "nativeIdleGripHarvest";
+            case Scope::UnattributedMemoryQueries: return "unattributedMemoryQueries";
+            case Scope::GrabAcquisition: return "grabAcquisition";
+            case Scope::GrabSurfaceResolution: return "grabSurfaceResolution";
+            case Scope::GrabFingerSolve: return "grabFingerSolve";
+            case Scope::GrabFingerIndexBuild: return "grabFingerIndexBuild";
+            case Scope::GrabFingerPadProbes: return "grabFingerPadProbes";
+            case Scope::NativePhysicsUpdate: return "nativePhysicsUpdate";
+            case Scope::NativePhysicsCollideInterval: return "nativePhysicsCollideInterval";
+            case Scope::NativePhysicsSolveInterval: return "nativePhysicsSolveInterval";
+            case Scope::GrabSelectionValidation: return "grabSelectionValidation";
+            case Scope::GrabBodyPreparation: return "grabBodyPreparation";
+            case Scope::GrabProxyPreparation: return "grabProxyPreparation";
+            case Scope::GrabMeshCapturePreparation: return "grabMeshCapturePreparation";
+            case Scope::GrabBodyResolution: return "grabBodyResolution";
+            case Scope::GrabResolvedBodyCapture: return "grabResolvedBodyCapture";
+            case Scope::GrabPivotEvidence: return "grabPivotEvidence";
+            case Scope::GrabContactPatch: return "grabContactPatch";
+            case Scope::GrabPinchPocket: return "grabPinchPocket";
+            case Scope::GrabFingerEvidence: return "grabFingerEvidence";
+            case Scope::GrabCommitPreparation: return "grabCommitPreparation";
+            case Scope::GrabBodyFrameCapture: return "grabBodyFrameCapture";
+            case Scope::GrabSeatCapture: return "grabSeatCapture";
+            case Scope::GrabGripSupport: return "grabGripSupport";
+            case Scope::GrabFrozenCommit: return "grabFrozenCommit";
+            case Scope::GrabPostFreeze: return "grabPostFreeze";
+            case Scope::GrabConstraintCommit: return "grabConstraintCommit";
+            case Scope::GrabLocalTriangleCapture: return "grabLocalTriangleCapture";
+            case Scope::GrabTriangleSelection: return "grabTriangleSelection";
+            case Scope::MeshStaticExtraction: return "meshStaticExtraction";
+            case Scope::MeshDynamicExtraction: return "meshDynamicExtraction";
+            case Scope::MeshSkinnedExtraction: return "meshSkinnedExtraction";
+            case Scope::MeshPointQuery: return "meshPointQuery";
+            case Scope::MeshDirectionalQuery: return "meshDirectionalQuery";
+            case Scope::GrabMeshQueryIndexBuild: return "grabMeshQueryIndexBuild";
+            case Scope::NativePairProfileBatch: return "nativePairProfileBatch";
+            case Scope::NativeSimulationPairFilter: return "nativeSimulationPairFilter";
+            case Scope::NativeImpactListener: return "nativeImpactListener";
+            case Scope::NativeImpactDispatch: return "nativeImpactDispatch";
+            case Scope::NativeImpactConsumer: return "nativeImpactConsumer";
+            case Scope::NativeImpactPlayPair: return "nativeImpactPlayPair";
+            case Scope::NativeImpactManifoldTrace: return "nativeImpactManifoldTrace";
+            case Scope::RagdollComponentRead: return "ragdollComponentRead";
+            case Scope::RagdollBodyRefresh: return "ragdollBodyRefresh";
+            case Scope::GrabContactPatchIndexBuild: return "grabContactPatchIndexBuild";
             case Scope::Count:
                 break;
             }
@@ -206,6 +297,22 @@ namespace rock::performance_profiler
                 return "grabAcquisitionCacheInvalidated";
             case Counter::GrabNearbyDampingRestoreFailed:
                 return "grabNearbyDampingRestoreFailed";
+            case Counter::NativeMeleeRockPartnerDropped:
+                return "nativeMeleeRockPartnerDropped";
+            case Counter::NativeMeleeDecodeFailed:
+                return "nativeMeleeDecodeFailed";
+            case Counter::NativeReadRangeRejected: return "nativeReadRangeRejected";
+            case Counter::NativeWriteRangeRejected: return "nativeWriteRangeRejected";
+            case Counter::PhysicsTimingSubstepsIncreased: return "physicsTimingSubstepsIncreased";
+            case Counter::GrabAcquisitionPeerHeld: return "grabAcquisitionPeerHeld";
+            case Counter::GrabAcquisitionEquippedTransfer: return "grabAcquisitionEquippedTransfer";
+            case Counter::GrabAcquisitionSucceeded: return "grabAcquisitionSucceeded";
+            case Counter::GrabSingleBodyVisualOwnerAccepted: return "grabSingleBodyVisualOwnerAccepted";
+            case Counter::GrabMeshOwnerMismatchRejected: return "grabMeshOwnerMismatchRejected";
+            case Counter::NativeWeaponSelfPairsRejected: return "nativeWeaponSelfPairsRejected";
+            case Counter::NativeWeaponOwnerUnresolved: return "nativeWeaponOwnerUnresolved";
+            case Counter::NativeWeaponOwnerResolvedOther: return "nativeWeaponOwnerResolvedOther";
+            case Counter::ContactPairBatchTruncated: return "contactPairBatchTruncated";
             case Counter::Count:
                 break;
             }
@@ -249,6 +356,40 @@ namespace rock::performance_profiler
                 return "equippedWeaponFingerPoseSpatialNodeVisits";
             case ValueMetric::EquippedWeaponFingerPoseTriangleTests:
                 return "equippedWeaponFingerPoseTriangleTests";
+            case ValueMetric::NativeMeleeCallbacksPerFrame:
+                return "nativeMeleeCallbacksPerFrame";
+            case ValueMetric::RenderedSkeletonBones: return "renderedSkeletonBones";
+            case ValueMetric::ControllerSkeletonBones: return "controllerSkeletonBones";
+            case ValueMetric::SelectionRawHits: return "selectionRawHits";
+            case ValueMetric::PhysicsOriginalSubsteps: return "physicsOriginalSubsteps";
+            case ValueMetric::PhysicsRequestedSubsteps: return "physicsRequestedSubsteps";
+            case ValueMetric::PhysicsCompletedSubsteps: return "physicsCompletedSubsteps";
+            case ValueMetric::PhysicsRawDeltaMicroseconds: return "physicsRawDeltaMicroseconds";
+            case ValueMetric::GeneratedHandBodies: return "generatedHandBodies";
+            case ValueMetric::GeneratedBodyBodies: return "generatedBodyBodies";
+            case ValueMetric::GeneratedWeaponBodies: return "generatedWeaponBodies";
+            case ValueMetric::FingerPadCandidateTriangles: return "fingerPadCandidateTriangles";
+            case ValueMetric::FingerPadTriangleTests: return "fingerPadTriangleTests";
+            case ValueMetric::GrabMeshStaticTriangles: return "grabMeshStaticTriangles";
+            case ValueMetric::GrabMeshDynamicTriangles: return "grabMeshDynamicTriangles";
+            case ValueMetric::GrabMeshSkinnedTriangles: return "grabMeshSkinnedTriangles";
+            case ValueMetric::GrabMeshCaptureAttempts: return "grabMeshCaptureAttempts";
+            case ValueMetric::GrabMeshPayloadBytes: return "grabMeshPayloadBytes";
+            case ValueMetric::MeshPointQueryTriangles: return "meshPointQueryTriangles";
+            case ValueMetric::MeshDirectionalQueryTriangles: return "meshDirectionalQueryTriangles";
+            case ValueMetric::MeshPointQueryTriangleTests: return "meshPointQueryTriangleTests";
+            case ValueMetric::GrabTriangleSelectionTests: return "grabTriangleSelectionTests";
+            case ValueMetric::MeshStaticVerticesTransformed: return "meshStaticVerticesTransformed";
+            case ValueMetric::SimulationPairsInput: return "simulationPairsInput";
+            case ValueMetric::SimulationPairsNative: return "simulationPairsNative";
+            case ValueMetric::SimulationPairsKept: return "simulationPairsKept";
+            case ValueMetric::RagdollSystemBodies: return "ragdollSystemBodies";
+            case ValueMetric::RagdollSystemConstraints: return "ragdollSystemConstraints";
+            case ValueMetric::RagdollConnectedBodies: return "ragdollConnectedBodies";
+            case ValueMetric::MeshSkinnedVerticesSource: return "meshSkinnedVerticesSource";
+            case ValueMetric::MeshSkinnedVerticesEvaluated: return "meshSkinnedVerticesEvaluated";
+            case ValueMetric::MeshSkinnedBonesSource: return "meshSkinnedBonesSource";
+            case ValueMetric::MeshSkinnedBonesEvaluated: return "meshSkinnedBonesEvaluated";
             case ValueMetric::Count:
                 break;
             }
@@ -325,11 +466,19 @@ namespace rock::performance_profiler
                 slot.maxTicks.store(0, std::memory_order_release);
                 slot.samples.store(0, std::memory_order_release);
                 slot.events.store(0, std::memory_order_release);
+                for (auto& count : slot.memoryQueries) count.store(0, std::memory_order_relaxed);
+                slot.memoryQueryFailures.store(0, std::memory_order_relaxed);
+                slot.memoryQueryTimedSamples.store(0, std::memory_order_relaxed);
+                slot.memoryQueryTotalTicks.store(0, std::memory_order_relaxed);
+                slot.memoryQueryMaxTicks.store(0, std::memory_order_relaxed);
             }
         }
 
         void clearCounterAccumulators() noexcept
         {
+            const auto generation = s_settings.generation.load(std::memory_order_acquire);
+            (void)s_contactPairs.take(generation);
+            (void)s_contactChildren.take(generation);
             for (auto& slot : s_counterAccum) {
                 slot.count.store(0, std::memory_order_release);
             }
@@ -360,7 +509,7 @@ namespace rock::performance_profiler
 
         void recordTicks(Scope scope, std::uint64_t ticks) noexcept
         {
-            if (!validScope(scope) || ticks == 0) {
+            if (!validScope(scope)) {
                 return;
             }
 
@@ -370,6 +519,15 @@ namespace rock::performance_profiler
             atomicMax(slot.maxTicks, ticks);
         }
 
+        struct MemoryQueryTotals
+        {
+            std::array<std::uint64_t, 3> calls{};
+            std::uint64_t apiFailures{ 0 };
+            std::uint64_t timedSamples{ 0 };
+            std::uint64_t totalTicks{ 0 };
+            std::uint64_t maxTicks{ 0 };
+        };
+
         struct ScopeSnapshot
         {
             Scope scope{ Scope::Count };
@@ -377,8 +535,15 @@ namespace rock::performance_profiler
             std::uint64_t maxTicks{ 0 };
             std::uint64_t samples{ 0 };
             std::uint64_t events{ 0 };
+            MemoryQueryTotals memory{};
 
-            [[nodiscard]] bool hasData() const noexcept { return samples > 0 || events > 0; }
+            // Concurrent queries can straddle the individual atomic exchanges
+            // at a window boundary. Retain timing/failure-only tails as well.
+            [[nodiscard]] bool hasQueries() const noexcept
+            {
+                return memory.calls[0] || memory.calls[1] || memory.calls[2] || memory.apiFailures || memory.timedSamples;
+            }
+            [[nodiscard]] bool hasData() const noexcept { return samples > 0 || events > 0 || hasQueries(); }
             [[nodiscard]] double totalMs() const noexcept { return ticksToMilliseconds(totalTicks); }
             [[nodiscard]] double maxMs() const noexcept { return ticksToMilliseconds(maxTicks); }
             [[nodiscard]] double avgMs() const noexcept { return samples > 0 ? totalMs() / static_cast<double>(samples) : 0.0; }
@@ -408,6 +573,8 @@ namespace rock::performance_profiler
             std::array<ScopeSnapshot, static_cast<std::size_t>(Scope::Count)> scopes{};
             std::array<CounterSnapshot, static_cast<std::size_t>(Counter::Count)> counters{};
             std::array<ValueSnapshot, static_cast<std::size_t>(ValueMetric::Count)> values{};
+            ContactPairTable<128>::Snapshot pairs{};
+            ContactPairTable<512>::Snapshot children{};
             std::uint64_t frames{ 0 };
             std::uint64_t droppedSnapshotsBeforeThis{ 0 };
         };
@@ -578,7 +745,7 @@ namespace rock::performance_profiler
                             snapshot.droppedSnapshotsBeforeThis);
                     }
 
-                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes", snapshot.frames);
+                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1 grabMeshQueries=1 contactPairs=1 nativeWeaponSelfFilter=1 grabSingleBodyVisualOwner=1 grabRagdollWork=1", snapshot.frames, GetCurrentProcessId());
                     for (const auto& item : snapshot.scopes) {
                         if (!item.hasData()) {
                             continue;
@@ -591,6 +758,16 @@ namespace rock::performance_profiler
                             item.totalMs(),
                             item.samples,
                             item.events);
+                        if (item.hasQueries()) {
+                            const auto& query = item.memory;
+                            logger->info(
+                                "[ROCK::Performance] Profiler memory {}: readQueries={} writeQueries={} executeQueries={} apiFailures={} timedQueries={} sampledAvgUs={:.3f} sampledMaxUs={:.3f} sampledTotalUs={:.3f}",
+                                scopeName(item.scope), query.calls[0], query.calls[1], query.calls[2], query.apiFailures,
+                                query.timedSamples,
+                                query.timedSamples ? ticksToMilliseconds(query.totalTicks) * 1000.0 / static_cast<double>(query.timedSamples) : 0.0,
+                                ticksToMilliseconds(query.maxTicks) * 1000.0,
+                                ticksToMilliseconds(query.totalTicks) * 1000.0);
+                        }
                     }
 
                     for (const auto& item : snapshot.counters) {
@@ -611,6 +788,24 @@ namespace rock::performance_profiler
                             item.max,
                             item.samples);
                     }
+
+                    const auto writePairs = [&](const auto& table, const char* kind) {
+                        if (table.size || table.dropped || table.carriedBuckets) {
+                            logger->info("[ROCK::Performance] Profiler contactTable {}: entries={} dropped={} carriedBuckets={}",
+                                kind, table.size, table.dropped, table.carriedBuckets);
+                        }
+                        for (std::size_t i = 0; i < table.size; ++i) {
+                            const auto& row = table.entries[i];
+                            const auto& p = row.pair;
+                            const auto& c = row.counts;
+                            logger->info("[ROCK::Performance] Profiler contact{}: world=0x{:X} bodies={}/{} layers={}/{} shapeKeys=0x{:08X}/0x{:08X} frames={}-{} layerChanged={} simulationInput={} simulationNative={} simulationKept={} manifolds={} impulses={} playerMeleeDropped={} otherMeleeDropped={} playerMeleeForwarded={} otherMeleeForwarded={} nativeWeaponSelfRejected={}",
+                                kind, p.world, p.bodyA, p.bodyB, p.layerA, p.layerB, p.shapeA, p.shapeB,
+                                row.firstFrame, row.lastFrame, row.layerChanged,
+                                c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9]);
+                        }
+                    };
+                    writePairs(snapshot.pairs, "Pair");
+                    writePairs(snapshot.children, "Child");
 
                     flushIfDue();
                 } catch (...) {
@@ -679,6 +874,15 @@ namespace rock::performance_profiler
                     .maxTicks = slot.maxTicks.exchange(0, std::memory_order_acq_rel),
                     .samples = slot.samples.exchange(0, std::memory_order_acq_rel),
                     .events = slot.events.exchange(0, std::memory_order_acq_rel),
+                    .memory = {
+                        .calls = { slot.memoryQueries[0].exchange(0, std::memory_order_acq_rel),
+                            slot.memoryQueries[1].exchange(0, std::memory_order_acq_rel),
+                            slot.memoryQueries[2].exchange(0, std::memory_order_acq_rel) },
+                        .apiFailures = slot.memoryQueryFailures.exchange(0, std::memory_order_acq_rel),
+                        .timedSamples = slot.memoryQueryTimedSamples.exchange(0, std::memory_order_acq_rel),
+                        .totalTicks = slot.memoryQueryTotalTicks.exchange(0, std::memory_order_acq_rel),
+                        .maxTicks = slot.memoryQueryMaxTicks.exchange(0, std::memory_order_acq_rel),
+                    },
                 };
             }
             return snapshot;
@@ -752,6 +956,8 @@ namespace rock::performance_profiler
                 .scopes = snapshot,
                 .counters = counterSnapshot,
                 .values = valueSnapshot,
+                .pairs = s_contactPairs.take(s_settings.generation.load(std::memory_order_acquire)),
+                .children = s_contactChildren.take(s_settings.generation.load(std::memory_order_acquire)),
                 .frames = frames,
             });
         }
@@ -765,6 +971,10 @@ namespace rock::performance_profiler
         const bool settingsChanged =
             s_settings.logIntervalFrames.load(std::memory_order_acquire) != sanitizedInterval ||
             s_settings.warmupFrames.load(std::memory_order_acquire) != sanitizedWarmup;
+
+        if (wasEnabled != enabled || settingsChanged) {
+            s_settings.generation.fetch_add(1, std::memory_order_acq_rel);
+        }
 
         s_settings.logIntervalFrames.store(sanitizedInterval, std::memory_order_release);
         s_settings.warmupFrames.store(sanitizedWarmup, std::memory_order_release);
@@ -802,6 +1012,11 @@ namespace rock::performance_profiler
             s_settings.intervalStartFrame.store(0, std::memory_order_release);
         }
         s_settings.enabled.store(true, std::memory_order_release);
+    }
+
+    bool enabled() noexcept
+    {
+        return s_settings.enabled.load(std::memory_order_acquire);
     }
 
     void beginFrame() noexcept
@@ -861,6 +1076,19 @@ namespace rock::performance_profiler
         accumFor(counter).count.fetch_add(count, std::memory_order_relaxed);
     }
 
+    void observeContactPair(ContactPair pair, ContactStage stage) noexcept
+    {
+        if (!enabled()) return;
+        const auto generation = s_settings.generation.load(std::memory_order_acquire);
+        const auto frame = s_settings.frameIndex.load(std::memory_order_acquire);
+        if (frame <= s_settings.warmupFrames.load(std::memory_order_acquire)) return;
+        if (pair.shapeA != kUnknownContactDetail || pair.shapeB != kUnknownContactDetail) {
+            s_contactChildren.record(pair, stage, frame, generation);
+        }
+        pair.shapeA = pair.shapeB = kUnknownContactDetail;
+        s_contactPairs.record(pair, stage, frame, generation);
+    }
+
     void observeValue(ValueMetric metric, std::uint64_t value) noexcept
     {
         if (!s_settings.enabled.load(std::memory_order_acquire) || !validValueMetric(metric)) {
@@ -889,6 +1117,48 @@ namespace rock::performance_profiler
         return s_overlayLineCount;
     }
 
+    MemoryQuerySample beginMemoryQuery() noexcept
+    {
+        if (!enabled()) return {};
+        const bool timed = (t_memoryQuerySequence++ & 63u) == 0;
+        return { timed ? queryPerformanceTicks() : 0, t_memoryQueryScope, true };
+    }
+
+    void endMemoryQuery(MemoryQuerySample sample, MemoryQueryKind kind, bool apiSucceeded) noexcept
+    {
+        if (!sample.active) return;
+        const auto endTicks = sample.startTicks ? queryPerformanceTicks() : 0;
+        auto& slot = accumFor(sample.scope);
+        slot.memoryQueries[static_cast<std::size_t>(kind)].fetch_add(1, std::memory_order_relaxed);
+        if (!apiSucceeded) slot.memoryQueryFailures.fetch_add(1, std::memory_order_relaxed);
+        if (sample.startTicks && endTicks >= sample.startTicks) {
+            const auto ticks = endTicks - sample.startTicks;
+            slot.memoryQueryTimedSamples.fetch_add(1, std::memory_order_relaxed);
+            slot.memoryQueryTotalTicks.fetch_add(ticks, std::memory_order_relaxed);
+            atomicMax(slot.memoryQueryMaxTicks, ticks);
+        }
+    }
+
+    IntervalSample beginInterval() noexcept
+    {
+        if (!enabled()) return {};
+        const auto generation = s_settings.generation.load(std::memory_order_acquire);
+        return { queryPerformanceTicks(), generation };
+    }
+
+    bool endInterval(Scope scope, IntervalSample& sample) noexcept
+    {
+        const auto completed = std::exchange(sample, {});
+        if (!completed.startTicks || !enabled() || !validScope(scope) ||
+            completed.generation != s_settings.generation.load(std::memory_order_acquire)) return false;
+        const auto endTicks = queryPerformanceTicks();
+        // A completed interval shorter than one clock tick still represents a
+        // real callback pair and must count toward completed physics substeps.
+        if (endTicks < completed.startTicks) return false;
+        recordTicks(scope, endTicks - completed.startTicks);
+        return true;
+    }
+
     ScopedTimer::ScopedTimer(Scope scope) noexcept :
         _scope(scope)
     {
@@ -897,7 +1167,8 @@ namespace rock::performance_profiler
         }
 
         _startTicks = queryPerformanceTicks();
-        _active = _startTicks != 0;
+        _parentScope = std::exchange(t_memoryQueryScope, _scope);
+        _active = true;
     }
 
     ScopedTimer::~ScopedTimer()
@@ -912,21 +1183,12 @@ namespace rock::performance_profiler
         }
 
         const auto endTicks = queryPerformanceTicks();
-        if (endTicks > _startTicks) {
+        // Cached queries can finish within one clock tick and still count.
+        if (_startTicks && endTicks >= _startTicks) {
             recordTicks(_scope, endTicks - _startTicks);
         }
+        t_memoryQueryScope = _parentScope;
         _active = false;
     }
 
-    FrameScope::FrameScope() noexcept :
-        _timer(Scope::FrameUpdate)
-    {
-        beginFrame();
-    }
-
-    FrameScope::~FrameScope()
-    {
-        _timer.stop();
-        endFrame();
-    }
 }

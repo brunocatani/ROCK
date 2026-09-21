@@ -1,4 +1,6 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/visual/GripZoneIndicators.h"
+#include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
 
 // PhysicsInteraction lifecycle: construction, init/shutdown, skeleton and provider lifecycle notes, generated-body lifecycle, collision layer registration, hand/body collision creation, and world accessors. Includes the provider API surface (PhysicsInteractionProvider.inl).
@@ -34,7 +36,6 @@ namespace rock
         clearLooseGrenadeImpactWatches();
 
         native_player_collision::install();
-        installBumpHook();
         installNativeGrabHook();
         /*
          * PAPER is the reload owner. ROCK keeps hand, weapon, and contact
@@ -179,7 +180,11 @@ namespace rock
         _lifecycle.stableFrameCountAtomic.store(_lifecycle.state.stableFrameCount, std::memory_order_release);
         _lifecycle.hknpWorldAtomic.store(nullptr, std::memory_order_release);
         _frame.completedPhysicsSolveSequence.store(0, std::memory_order_release);
-        _drop.momentumHandoffs = {};
+        for (auto& visual : _drop.visuals) {
+            if (generatedWorldStillLive) visual.release("generated-bodies-invalidated");
+            else visual.abandonSceneGraph();
+        }
+        _drop.nativeHandoffs = {};
         _grabInput.shoulderStashStates = {};
         _grabInput.mouthConsumeStates = {};
         _feedbackHaptics.reset();
@@ -214,7 +219,7 @@ namespace rock
             for (std::uint32_t i = 0; i < count; ++i) {
                 const std::uint32_t bodyId = hand.getHandColliderBodyIdAtomic(i);
                 HandColliderBodyMetadata metadata{};
-                if (!hand.tryGetHandColliderMetadata(bodyId, metadata) || !metadata.valid) {
+                if (!hand.tryGetHandColliderMetadataAtIndex(i, bodyId, metadata) || !metadata.valid) {
                     continue;
                 }
 
@@ -243,10 +248,12 @@ namespace rock
         addHandEntries(_rightHand, false);
         addHandEntries(_leftHand, true);
 
-        const auto weaponSnapshot = _weaponCollision.getWeaponBodySnapshotAtomic();
-        for (std::uint32_t i = 0; i < weaponSnapshot.count && i < MAX_WEAPON_COLLISION_BODIES; ++i) {
-            WeaponInteractionContact contact{};
-            if (!_weaponCollision.tryGetWeaponContactAtomic(weaponSnapshot.bodyIds[i], contact) || !contact.valid) {
+        std::array<WeaponCollision::WeaponContactState, MAX_WEAPON_COLLISION_BODIES> weaponStates{};
+        const auto weaponCount = _weaponCollision.copyWeaponContactStatesAtomic(weaponStates);
+        for (std::size_t i = 0; i < weaponCount; ++i) {
+            const auto& state = weaponStates[i];
+            const auto& contact = state.contact;
+            if (!contact.valid) {
                 continue;
             }
 
@@ -261,15 +268,11 @@ namespace rock
             entry.gripPose = static_cast<std::uint32_t>(contact.fallbackGripPose);
             entry.generationKey = contact.weaponGenerationKey;
 
-            float sampledVelocityHavok[4]{};
-            if (_weaponCollision.tryGetWeaponBodySampledVelocityAtomic(contact.bodyId, sampledVelocityHavok) &&
-                std::isfinite(sampledVelocityHavok[0]) &&
-                std::isfinite(sampledVelocityHavok[1]) &&
-                std::isfinite(sampledVelocityHavok[2])) {
+            if (state.hasSampledVelocity) {
                 entry.flags |= kFlagSampledVelocity;
-                entry.sampledVelocityHavokX = sampledVelocityHavok[0];
-                entry.sampledVelocityHavokY = sampledVelocityHavok[1];
-                entry.sampledVelocityHavokZ = sampledVelocityHavok[2];
+                entry.sampledVelocityHavokX = state.sampledVelocityHavok[0];
+                entry.sampledVelocityHavokY = state.sampledVelocityHavok[1];
+                entry.sampledVelocityHavokZ = state.sampledVelocityHavok[2];
             }
             addEntry(entry);
         }
@@ -278,7 +281,7 @@ namespace rock
         for (std::uint32_t i = 0; i < bodyCount; ++i) {
             const std::uint32_t bodyId = _bodyBoneColliders.getBodyIdAtomic(i);
             BodyBoneColliderMetadata metadata{};
-            if (!_bodyBoneColliders.tryGetBodyMetadataAtomic(bodyId, metadata) || !metadata.valid) {
+            if (!_bodyBoneColliders.tryGetBodyMetadataAtIndexAtomic(i, bodyId, metadata) || !metadata.valid) {
                 continue;
             }
 
@@ -330,8 +333,9 @@ namespace rock
             _lifecycle.bodyBoneColliderCreateRetryFrames = 120;
         }
 
-        _rightHand.updateCollisionTransform(hknp, getInteractionHandTransform(false), 0.011f);
-        _leftHand.updateCollisionTransform(hknp, getInteractionHandTransform(true), 0.011f);
+        captureHandColliderBones();
+        _rightHand.updateCollisionTransform(hknp, getInteractionHandTransform(false), 0.011f, _handColliderBoneSnapshot);
+        _leftHand.updateCollisionTransform(hknp, getInteractionHandTransform(true), 0.011f, _handColliderBoneSnapshot);
         _bodyBoneColliders.update(hknp, 0.011f);
         _contacts.bodyRuntime.reset();
         markGeneratedBodiesRebuilt(bhk, hknp);
@@ -382,13 +386,6 @@ namespace rock
 #include "physics-interaction/core/PhysicsInteractionProvider.inl"
     bool PhysicsInteraction::validateCriticalOffsets() const
     {
-        REL::Relocation hookSite{ REL::Offset(offsets::kHookSite_MainLoop) };
-        auto* hookByte = reinterpret_cast<const std::uint8_t*>(hookSite.address());
-        if (*hookByte != 0xE8 && *hookByte != 0xE9) {
-            ROCK_LOG_ERROR(Init, "Hook site 0x{:X} is not a CALL/JMP instruction (found {:#x})", offsets::kHookSite_MainLoop, *hookByte);
-            return false;
-        }
-
         auto* bhk = getPlayerBhkWorld();
         if (!bhk) {
             ROCK_LOG_SAMPLE_DEBUG(Init, g_rockConfig.rockLogSampleMilliseconds, "No bhkWorld available for offset validation (will retry)");
@@ -496,8 +493,9 @@ namespace rock
         ROCK_LOG_INFO(Init, "hFRIK off-hand weapon gripping disabled; ROCK is the sole off-hand weapon authority");
 
         {
-            _rightHand.updateCollisionTransform(hknp, getInteractionHandTransform(false), 0.011f);
-            _leftHand.updateCollisionTransform(hknp, getInteractionHandTransform(true), 0.011f);
+            captureHandColliderBones();
+            _rightHand.updateCollisionTransform(hknp, getInteractionHandTransform(false), 0.011f, _handColliderBoneSnapshot);
+            _leftHand.updateCollisionTransform(hknp, getInteractionHandTransform(true), 0.011f, _handColliderBoneSnapshot);
             _bodyBoneColliders.update(hknp, 0.011f);
             ROCK_LOG_INFO(Init, "Initial bone-derived hand collider transforms updated");
         }
@@ -531,9 +529,9 @@ namespace rock
         _equipped.shoulderGestureConsumedThisFrame = {};
         _grabInput.bareFistGuardState = {};
         _frame.completedPhysicsSolveSequence.store(0, std::memory_order_release);
-        _drop.momentumHandoffs = {};
+        _drop.nativeHandoffs = {};
         clearLooseGrenadeRuntimeState();
-        _equipped.pendingPrimaryOnlyGripStart = {};
+        _equipped.transition.pendingGrip() = {};
         _equipped.handlingSettings = {};
         _equipped.handlingModeInitialized = false;
         _equipped.handlingModeReconcilePending = false;
@@ -559,7 +557,12 @@ namespace rock
 
     void PhysicsInteraction::shutdown(::rock::provider::RockProviderLifecycleReason reason)
     {
+        _equipped.gripResumePending = _equipped.continuityGrip.pending;
+        cancelBareFistMode("physics-shutdown");
+        _grabInput.bareFistDrawOwned = false;
+        input_remap_runtime::setBareFistDrawState(0, false, false);
         weapon_transition_animation_acceleration::cancel("physics-shutdown");
+        grip_zone_indicators::Clear();
         debug::ShutdownShapePipeline();
         input_remap_runtime::setRealMeleeWeaponEquipped(false);
         equipped_weapon_handling_runtime::reset();
@@ -662,7 +665,7 @@ namespace rock
         clearEquippedWeaponShoulderSheath("physics-shutdown");
         _suppression.nativeGrenadeLeases.clearTracking();
         _twoHandedGrip.reset();
-        _equipped.pendingPrimaryOnlyGripStart = {};
+        _equipped.transition.pendingGrip() = {};
         clearPendingForceGrabCommits();
         clearLooseGrenadeRuntimeState();
         clearEquippedWeaponFiringGripInputState();
@@ -672,10 +675,11 @@ namespace rock
         _feedbackHaptics.reset();
         _equipped.transition.shutdown();
         _weaponCollision.shutdown();
+        _providerSources.clear();
         _bodyBoneColliders.reset();
         _generatedBodyStepDrive.reset();
         _frame.completedPhysicsSolveSequence.store(0, std::memory_order_release);
-        _drop.momentumHandoffs = {};
+        _drop.nativeHandoffs = {};
         markGeneratedBodiesInvalidated();
         collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
         ::rock::provider::clearExternalBodiesForProviderLoss();
@@ -702,6 +706,10 @@ namespace rock
         _frame.hasPrevPositions = false;
         _diagnostics.heldMassLogCounter = 0;
         _handBoneCache.reset();
+        _handColliderBoneReader.resetCache();
+        _handColliderBoneSnapshot = {};
+        _finalPoseBoneReader.resetCache();
+        _finalPoseBoneSnapshot = {};
         _diagnostics.handCacheResolveLogCounter = 0;
         _diagnostics.paritySummaryCounter = 0;
         _diagnostics.parityEnabledLogged = false;
@@ -773,11 +781,19 @@ namespace rock
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER, matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER]);
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::FO4_LAYER_CHARCONTROLLER, matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER]);
 
+        const bool npcPairsChanged =
+            !collision_layer_policy::rockDynamicNpcPairsMatch(matrix, g_rockConfig.npcDynamicCollisions);
+        auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
         collision_layer_policy::applyRockGeneratedLayerPolicies(
             matrix,
             g_rockConfig.rockHandCollisionStaticWorldEnabled,
             g_rockConfig.rockWeaponCollisionBlocksProjectiles,
-            g_rockConfig.rockWeaponCollisionBlocksSpells);
+            g_rockConfig.rockWeaponCollisionBlocksSpells,
+            g_rockConfig.npcDynamicCollisions);
+        if (npcPairsChanged) {
+            _dynamicHandCollision.refreshCollisionFilters(world);
+            _dynamicWeaponCollision.refreshCollisionFilter(world);
+        }
         _layers.expectedHandMask = collision_layer_policy::buildRockHandExpectedMask(true, g_rockConfig.rockHandCollisionStaticWorldEnabled);
         _layers.expectedWeaponMask =
             collision_layer_policy::buildRockWeaponExpectedMask(
@@ -792,12 +808,12 @@ namespace rock
         _layers.expectedBodyMask = collision_layer_policy::buildRockBodyExpectedMask();
         _layers.expectedDynamicHandProxyMask =
             collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-                false);
+                false, g_rockConfig.npcDynamicCollisions);
         _layers.expectedDynamicLeftHandProxyMask =
             collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-                true);
+                true, g_rockConfig.npcDynamicCollisions);
         _layers.expectedDynamicWeaponProxyMask =
-            collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
+            collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask(g_rockConfig.npcDynamicCollisions);
         _layers.expectedDynamicWorldCarClutterMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER];
         _layers.expectedDynamicWorldCarLargeClutterMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER];
         _layers.registered = true;
@@ -893,10 +909,11 @@ namespace rock
             g_rockConfig.rockWeaponCollisionBlocksSpells ? "enabled" : "disabled");
         ROCK_LOG_INFO(
             Config,
-            "Registered dynamic weapon proxy layer={} worldOnlyMask=0x{:016X}",
+            "Registered dynamic weapon proxy layer={} obstacleMask=0x{:016X} npcDynamicCollisions={}",
             collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY,
             collision_layer_policy::matrixAddressableMask(
-                _layers.expectedDynamicWeaponProxyMask));
+                _layers.expectedDynamicWeaponProxyMask),
+            g_rockConfig.npcDynamicCollisions ? "enabled" : "disabled");
     }
 
     bool PhysicsInteraction::createHandCollisions(RE::hknpWorld* world, void* bhkWorld)
@@ -950,6 +967,10 @@ namespace rock
         clearGeneratedBodyContactRegistry();
         _rightHand.destroyCollision(bhkWorld);
         _leftHand.destroyCollision(bhkWorld);
+        _handColliderBoneReader.resetCache();
+        _handColliderBoneSnapshot = {};
+        _finalPoseBoneReader.resetCache();
+        _finalPoseBoneSnapshot = {};
         _lifecycle.handColliderCreateRetryFrames = 0;
     }
 

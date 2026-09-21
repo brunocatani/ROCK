@@ -37,6 +37,18 @@ namespace rock::havok_runtime
     inline constexpr std::uint32_t kMaxContactSignalPoints = 4;
     inline constexpr std::uint32_t kMaxMotionPropertiesSnapshotRecords = 16;
 
+    // Non-owning view for the current native call only. Pair identity and
+    // surface filtering need no motion or scene-owner traversal.
+    struct BodyIdentitySnapshot
+    {
+        bool valid = false;
+        RE::hknpBodyId bodyId{ body_frame::kInvalidBodyId };
+        std::uint32_t motionIndex{ body_frame::kFreeMotionIndex };
+        std::uint32_t collisionFilterInfo = 0;
+        RE::hknpBody* body = nullptr;
+        RE::NiCollisionObject* collisionObject = nullptr;
+    };
+
     struct BodySnapshot
     {
         bool valid = false;
@@ -143,6 +155,7 @@ namespace rock::havok_runtime
     RE::hknpMotion* getMotion(RE::hknpWorld* world, std::uint32_t motionIndex);
     RE::hknpMotion* getBodyMotion(RE::hknpWorld* world, RE::hknpBodyId bodyId);
     BodySnapshot snapshotBody(RE::hknpWorld* world, RE::hknpBodyId bodyId);
+    BodyIdentitySnapshot snapshotBodyIdentity(RE::hknpWorld* world, RE::hknpBodyId bodyId);
 
     RE::hknpWorld* getHknpWorldFromBhk(RE::bhkWorld* bhkWorld);
     RE::bhkPhysicsSystem* getPhysicsSystemFromCollisionObject(RE::NiCollisionObject* collisionObject);
@@ -151,13 +164,15 @@ namespace rock::havok_runtime
         RE::NiCollisionObject* collisionObject,
         RE::hknpWorld*& outWorld,
         RE::hknpBodyId& outBodyId);
+    class PhysicsSystemBodyScanCache;
     const char* physicsSystemBodyScanStatusName(PhysicsSystemBodyScanStatus status);
     PhysicsSystemBodyScanResult forEachPhysicsSystemBodyIdDetailed(
         RE::NiCollisionObject* collisionObject,
         RE::hknpWorld* expectedWorld,
         std::uint32_t maxBodies,
         bool (*visitor)(std::uint32_t bodyId, void* userData),
-        void* userData);
+        void* userData,
+        PhysicsSystemBodyScanCache* transactionCache = nullptr);
     bool forEachPhysicsSystemBodyId(
         RE::NiCollisionObject* collisionObject,
         RE::hknpWorld* expectedWorld,
@@ -179,6 +194,8 @@ namespace rock::havok_runtime
     bool tryGetBodyArrayWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform);
     bool tryGetBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform);
     bool tryGetMotionWorldTransform(RE::hknpWorld* world, const RE::hknpBody& body, RE::NiTransform& outTransform);
+    // The borrowed body must remain valid for this operation; never retain it across native mutation.
+    ResolvedBodyWorldTransform resolveLiveBodyWorldTransform(RE::hknpWorld* world, const RE::hknpBody& body);
     ResolvedBodyWorldTransform resolveLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId);
     bool tryResolveLiveBodyWorldTransform(
         RE::hknpWorld* world,

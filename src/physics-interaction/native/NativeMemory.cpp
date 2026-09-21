@@ -1,4 +1,5 @@
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -37,7 +38,8 @@ namespace rock::native_memory
                    baseProtect == PAGE_EXECUTE_WRITECOPY;
         }
 
-        bool pointerRangeHasPageProtection(const void* ptr, std::size_t byteCount, bool (*allowsProtection)(DWORD))
+        bool pointerRangeHasPageProtection(const void* ptr, std::size_t byteCount, bool (*allowsProtection)(DWORD),
+            performance_profiler::MemoryQueryKind kind)
         {
             if (!ptr || byteCount == 0 || !pointerLooksReadable(ptr)) {
                 return false;
@@ -52,7 +54,10 @@ namespace rock::native_memory
             auto current = start;
             while (current < end) {
                 MEMORY_BASIC_INFORMATION memoryInfo{};
-                if (VirtualQuery(reinterpret_cast<LPCVOID>(current), &memoryInfo, sizeof(memoryInfo)) == 0) {
+                const auto sample = performance_profiler::beginMemoryQuery();
+                const auto queried = VirtualQuery(reinterpret_cast<LPCVOID>(current), &memoryInfo, sizeof(memoryInfo));
+                performance_profiler::endMemoryQuery(sample, kind, queried != 0);
+                if (queried == 0) {
                     return false;
                 }
                 if (memoryInfo.State != MEM_COMMIT || !allowsProtection(memoryInfo.Protect)) {
@@ -79,12 +84,16 @@ namespace rock::native_memory
 
     bool pointerRangeLooksReadable(const void* ptr, std::size_t byteCount)
     {
-        return pointerRangeHasPageProtection(ptr, byteCount, pageProtectAllowsRead);
+        const bool readable = pointerRangeHasPageProtection(ptr, byteCount, pageProtectAllowsRead, performance_profiler::MemoryQueryKind::Read);
+        if (!readable) performance_profiler::addCounter(performance_profiler::Counter::NativeReadRangeRejected);
+        return readable;
     }
 
     bool pointerRangeLooksWritable(void* ptr, std::size_t byteCount)
     {
-        return pointerRangeHasPageProtection(ptr, byteCount, pageProtectAllowsWrite);
+        const bool writable = pointerRangeHasPageProtection(ptr, byteCount, pageProtectAllowsWrite, performance_profiler::MemoryQueryKind::Write);
+        if (!writable) performance_profiler::addCounter(performance_profiler::Counter::NativeWriteRangeRejected);
+        return writable;
     }
 
     bool guardedCopyFromMemory(const void* source, void* target, std::size_t byteCount)

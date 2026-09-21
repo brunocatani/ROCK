@@ -1,10 +1,12 @@
 #pragma once
 
 #include "physics-interaction/core/PhysicsInteraction.h"
+#include "physics-interaction/native/NativeImpactAudio.h"
 
 
 #include "api/ProviderColliderVisualizationRuntime.h"
 #include "api/ProviderDebugOverlayRuntime.h"
+#include "api/ProviderStatePolicy.h"
 #include "api/ROCKProviderApiInternal.h"
 
 #include <algorithm>
@@ -111,6 +113,7 @@
 #include "RockConfig.h"
 #include "RockUtils.h"
 #include "rock_support/Fo4VrRuntime.h"
+#include "rock_support/Fo4VrActorStatePolicy.h"
 #include "rock_support/VRControllers.h"
 #include <windows.h>
 
@@ -273,6 +276,7 @@ namespace rock
         {
             input_remap_runtime::setEquippedWeaponFiringGripInputActive(false);
             input_remap_runtime::setEquippedWeaponPrimaryDetached(false);
+            input_remap_runtime::setEquippedWeaponLeftHandFiringActive(false);
         }
 
         [[nodiscard]] inline float pointLength(const RE::NiPoint3& value)
@@ -1030,6 +1034,13 @@ namespace rock
             return weapon ? weapon->formID : 0;
         }
 
+        inline bool currentEquippedWeaponOccupiesHand()
+        {
+            return fo4vr_actor_state_policy::equippedWeaponOccupiesHand(
+                currentEquippedWeaponFormId() != 0,
+                f4vr::getNativeWeaponState(f4vr::getPlayer()));
+        }
+
         inline void fillProviderTransform(const RE::NiTransform& source, ::rock::provider::RockProviderTransform& target)
         {
             for (int row = 0; row < 3; ++row) {
@@ -1106,20 +1117,14 @@ namespace rock
             return nullptr;
         }
 
-        inline std::uint32_t providerHandStateFlags(const Hand& hand, bool isLeft)
+        inline std::uint32_t providerColliderFlags(RE::hknpWorld* world,
+            std::uint32_t bodyId, bool bodiesCurrent, bool lifecycleAllowed)
         {
-            std::uint32_t flags = 0;
-            if (hand.isTouching()) {
-                flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderHandStateFlag::Touching);
-            }
-            if (hand.isHolding()) {
-                flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderHandStateFlag::Holding);
-            }
-            if (isLeft ? PhysicsInteraction::s_leftHandDisabled.load(std::memory_order_acquire) :
-                         PhysicsInteraction::s_rightHandDisabled.load(std::memory_order_acquire)) {
-                flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderHandStateFlag::PhysicsDisabled);
-            }
-            return flags;
+            std::uint32_t filter = 0;
+            const bool known = bodiesCurrent && world &&
+                body_collision::tryReadFilterInfo(world, RE::hknpBodyId{bodyId}, filter);
+            return provider_state_policy::colliderFlags(lifecycleAllowed, known,
+                (filter & collision_suppression_registry::kSuppressionNoCollideBit) != 0);
         }
 
         inline void copyProviderString(char* target, std::size_t targetSize, const std::string& source)
@@ -1154,12 +1159,12 @@ namespace rock
             query.socketRole = static_cast<std::uint32_t>(contact.socketRole);
             query.actionRole = static_cast<std::uint32_t>(contact.actionRole);
             query.sourceRoot = reinterpret_cast<std::uintptr_t>(contact.sourceRoot);
-            WeaponCollisionProfileEvidenceDescriptor descriptor{};
-            RE::NiAVObject* sourceNode = nullptr;
-            if (weaponCollision.tryGetProfileEvidenceDescriptorForBodyId(contact.bodyId, descriptor, sourceNode) &&
-                descriptor.weaponGenerationKey == contact.weaponGenerationKey) {
-                query.sourceRoot = descriptor.sourceRootAddress;
-                copyProviderString(query.sourceName, sizeof(query.sourceName), descriptor.sourceName);
+            const auto evidence = weaponCollision.getProfileEvidenceDescriptors();
+            const auto* descriptor = evidence.find(contact.bodyId);
+            if (descriptor &&
+                descriptor->weaponGenerationKey == contact.weaponGenerationKey) {
+                query.sourceRoot = descriptor->sourceRootAddress;
+                copyProviderString(query.sourceName, sizeof(query.sourceName), descriptor->sourceName);
             }
             return query;
         }
@@ -1372,7 +1377,7 @@ namespace rock
              * candidate internally, so this handoff should not branch by weapon
              * type or create a separate melee-owned update path.
              */
-            if (!runtime_state::currentFrame().weaponDrawn) {
+            if (!runtime_state::currentFrame().weaponDrawn || !currentEquippedWeaponOccupiesHand()) {
                 return nullptr;
             }
 

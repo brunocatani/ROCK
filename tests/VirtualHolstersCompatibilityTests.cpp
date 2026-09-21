@@ -141,24 +141,24 @@ int main()
         toggleState.hands[toggle::handIndex(false)] = toggle::HandState::ReleasePending;
         vh::HandState holsterState{};
         const toggle::HandGripOccupancy firingGrip{ .firingGripActive = true };
-        auto input = inZone(firingGrip.usesToggleGrab(false));
+        auto input = inZone(firingGrip.usesToggleGrab(toggle::Mode::ToggleFiringOnly));
         const auto holster = vh::advance(holsterState, input);
         auto result = toggle::prepare(toggleState, {
-            .toggleGrabEnabled = false, .inputAllowed = true, .weaponOwnershipKey = 100,
+            .weaponGrabMode = toggle::Mode::ToggleFiringOnly, .inputAllowed = true, .weaponOwnershipKey = 100,
             .occupancy = { .right = { .firingGripActive = true } }, .right = { .held = holster.retainGrip },
         });
         if (holster.consumeInput) {
             result.right = { .held = holster.retainGrip };
         }
         ok &= expect("pending toggle release is closed before grip update", result.right.held && !result.right.released);
-        (void)toggle::reconcile(toggleState, false, 100, { .right = { .firingGripActive = true } }, { .right = holster.retainGrip });
+        (void)toggle::reconcile(toggleState, toggle::Mode::ToggleFiringOnly, 100, { .right = { .firingGripActive = true } }, { .right = holster.retainGrip });
         result = toggle::prepare(toggleState, {
-            .toggleGrabEnabled = false, .inputAllowed = true, .weaponOwnershipKey = 100,
+            .weaponGrabMode = toggle::Mode::ToggleFiringOnly, .inputAllowed = true, .weaponOwnershipKey = 100,
             .occupancy = { .right = { .firingGripActive = true } },
         });
         ok &= expect("refused toggle release stays latched outside sphere", result.right.held);
         result = toggle::prepare(toggleState, {
-            .toggleGrabEnabled = false, .inputAllowed = true, .weaponOwnershipKey = 100,
+            .weaponGrabMode = toggle::Mode::ToggleFiringOnly, .inputAllowed = true, .weaponOwnershipKey = 100,
             .occupancy = { .right = { .firingGripActive = true } }, .right = { .held = true, .pressed = true },
         });
         ok &= expect("later toggle press still releases normally", !result.right.held && result.right.released);

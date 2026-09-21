@@ -1,11 +1,14 @@
 #include "physics-interaction/weapon/WeaponCollisionInternal.h"
 
+#include <bit>
+
 // Frame update and Havok drive: init/shutdown, world-loss handling, the per-frame update, source-transform body updates, and drive flushing.
 
 namespace rock
 {
     void WeaponCollision::init(RE::hknpWorld* world, void* bhkWorld)
     {
+        _identity.classificationValid = false;
         // Cache the Havok context for the generated weapon-collision lifetime.
         _cachedWorld = world;
         _cachedBhkWorld = bhkWorld;
@@ -40,6 +43,7 @@ namespace rock
 
     void WeaponCollision::shutdown()
     {
+        _identity.classificationValid = false;
         if (hasWeaponBody()) {
             ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown destroying generated bodies from cached context");
             destroyWeaponBody(_cachedWorld);
@@ -78,6 +82,7 @@ namespace rock
 
     void WeaponCollision::abandonHavokStateAfterWorldLoss()
     {
+        _identity.classificationValid = false;
         auto structuralMutation = _physicsCallbackGate ?
             _physicsCallbackGate->pauseForMutation() :
             PhysicsCallbackQuiescenceGate::MutationLease{};
@@ -109,6 +114,28 @@ namespace rock
          * this permission into a destroy/recreate cycle.
          */
         _drive.workbenchExitRebuildRequested.store(true, std::memory_order_release);
+    }
+
+    void WeaponCollision::requestRebuildForReplacedSources()
+    {
+        /*
+         * A model replaced under the same Weapon node keeps the equipped
+         * identity, the ownership key and the root, so no scene transition
+         * retires the generated bodies, and every compound snapshot fails on
+         * a source the root no longer contains. Ask the update path for one
+         * rebuild. A request while a replacement is being prepared or staged
+         * would cancel it and start over every frame.
+         */
+        if (!hasWeaponBody() || getCurrentWeaponGenerationKey() == 0 ||
+            _sources.preparation || _sources.pendingBuild.active) {
+            return;
+        }
+        if (_drive.rebuildRequested.exchange(true, std::memory_order_acq_rel)) {
+            return;
+        }
+        ROCK_LOG_WARN(Weapon,
+            "Generated weapon source nodes are no longer under the weapon root; requesting rebuild cachedKey={:016X}",
+            _identity.cachedWeaponKey);
     }
 
     void WeaponCollision::update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, float dt, bool weaponDrawn)
@@ -143,6 +170,7 @@ namespace rock
         }
 
         if (world != _cachedWorld) {
+            _identity.classificationValid = false;
             ROCK_LOG_INFO(Weapon, "hknpWorld changed - resetting weapon collision state");
             if (hasWeaponBody()) {
                 destroyWeaponBody(_cachedWorld ? _cachedWorld : world);
@@ -419,7 +447,7 @@ namespace rock
                         }
                 }
 
-                std::vector<GeneratedHullSource> generatedSources;
+                std::shared_ptr<const std::vector<GeneratedHullSource>> generatedSources;
                 weapon_generated_source_completeness_policy::GeneratedSourceCompleteness generatedSummary{};
                 std::size_t generatedCount = 0;
                 bool usedCachedSources = false;
@@ -431,7 +459,7 @@ namespace rock
                         weaponNode)) {
                     generatedSources = _sources.cache.sources;
                     generatedSummary = _sources.cache.summary;
-                    generatedCount = generatedSources.size();
+                    generatedCount = generatedSources->size();
                     usedCachedSources = true;
                     ROCK_LOG_DEBUG(Weapon,
                         "Generated weapon mesh source cache hit key={:016X} visualKey={:016X} sources={}",
@@ -439,6 +467,7 @@ namespace rock
                         observedVisualKey,
                         generatedCount);
                 } else {
+                    std::vector<GeneratedHullSource> preparedSources;
                     if (_sources.preserveGaps) {
                         if (!_sources.preparation) {
                             try {
@@ -456,24 +485,25 @@ namespace rock
                             }
                             return;
                         }
-                        generatedSources = std::move(_sources.preparation->sources);
+                        preparedSources = std::move(_sources.preparation->sources);
                         _sources.preparation.reset();
-                        generatedCount = generatedSources.size();
+                        generatedCount = preparedSources.size();
                     } else {
                         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponColliderBuild);
-                        generatedCount = findGeneratedWeaponShapeSources(weaponNode, observedKey, generatedSources);
+                        generatedCount = findGeneratedWeaponShapeSources(weaponNode, observedKey, preparedSources);
                     }
                     recordGeneratedRecaptureDiagnostic(
                         observedKey,
                         observedIdentityKey,
                         observedOwnershipKey,
                         observedFormID,
-                        generatedSources);
-                    generatedSummary = summarizeGeneratedSources(generatedSources);
+                        preparedSources);
+                    generatedSummary = summarizeGeneratedSources(preparedSources);
+                    generatedSources = std::make_shared<const std::vector<GeneratedHullSource>>(std::move(preparedSources));
                 }
 
-                const bool hasBuildableSource = std::any_of(generatedSources.begin(), generatedSources.end(), [](const GeneratedHullSource& source) {
-                    return pointCloudCanBuildHull(source.localPointsGame);
+                const bool hasBuildableSource = std::any_of(generatedSources->begin(), generatedSources->end(), [](const GeneratedHullSource& source) {
+                    return pointCloudCanBuildHull(source.geometry->localPointsGame);
                 });
 
                 if (!hasBuildableSource || generatedCount == 0 || generatedSummary.signature == 0) {
@@ -655,6 +685,21 @@ namespace rock
         (void)drivenSourceNodes;
         (void)drivenSourceNodeCount;
 
+        struct SourceTransform { const RE::NiAVObject* node = nullptr; RE::NiTransform world{}; bool valid = false; };
+        std::array<SourceTransform, std::bit_ceil(MAX_WEAPON_BODIES * 2)> sources{};
+        const auto resolveSource = [&](const RE::NiAVObject* node, RE::NiTransform& out) {
+            if (!node) return false;
+            const auto address = reinterpret_cast<std::uintptr_t>(node);
+            auto slot = ((address >> 4) ^ (address >> 16)) & (sources.size() - 1);
+            while (sources[slot].node && sources[slot].node != node) slot = (slot + 1) & (sources.size() - 1);
+            auto& source = sources[slot];
+            if (!source.node) {
+                source.node = node;
+                source.valid = tryResolveDescendantWorldTransform(packageDriveNode, packageWorld, node, source.world);
+            }
+            out = source.world;
+            return source.valid;
+        };
         for (std::size_t i = 0; i < bank.size(); ++i) {
             auto& instance = bank[i];
             if (!instance.body.isValid()) {
@@ -662,12 +707,7 @@ namespace rock
             }
 
             RE::NiTransform sourceWorld{};
-            const bool useSourceNode = instance.sourceNode &&
-                tryResolveDescendantWorldTransform(
-                    packageDriveNode,
-                    packageWorld,
-                    instance.sourceNode,
-                    sourceWorld);
+            const bool useSourceNode = resolveSource(instance.sourceNode, sourceWorld);
             const RE::NiTransform& driveWorld = useSourceNode ? sourceWorld : packageWorld;
             const RE::NiPoint3& centerGame = useSourceNode ? instance.generatedSourceLocalCenterGame : instance.generatedLocalCenterGame;
             const RE::NiTransform generatedTransform = makeGeneratedBodyWorldTransform(driveWorld, centerGame);

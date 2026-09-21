@@ -2,6 +2,7 @@
 #include "physics-interaction/hand/DynamicHandCollisionKinematics.h"
 
 #include <cstdio>
+#include <limits>
 
 namespace
 {
@@ -100,35 +101,47 @@ int main()
     decision = updateContactPulse(state, 6, 2.0f, 0.0f, true, config);
     ok &= expectFalse("below-threshold approach does not pulse", decision.fire);
 
-    using rock::dynamic_hand_collision_kinematics::forearmHandTargetResponseScale;
-    ok &= expectNear("forearm leverage maps three-quarter reach to hand target",
-        forearmHandTargetResponseScale(
-            Vec3{ 0.0f, 0.0f, 0.0f },
-            Vec3{ 12.0f, 0.0f, 0.0f },
-            Vec3{ 9.0f, 0.0f, 0.0f }),
-        4.0f / 3.0f,
-        0.001f);
-    ok &= expectNear("forearm leverage clamps extreme folded-arm gain",
-        forearmHandTargetResponseScale(
-            Vec3{ 0.0f, 0.0f, 0.0f },
-            Vec3{ 12.0f, 0.0f, 0.0f },
-            Vec3{ 2.0f, 0.0f, 0.0f }),
-        2.5f,
-        0.001f);
-    ok &= expectNear("forearm leverage never weakens direct hand response",
-        forearmHandTargetResponseScale(
-            Vec3{ 0.0f, 0.0f, 0.0f },
-            Vec3{ 8.0f, 0.0f, 0.0f },
-            Vec3{ 10.0f, 0.0f, 0.0f }),
-        1.0f,
-        0.001f);
-    ok &= expectNear("forearm leverage fails closed on degenerate arm geometry",
-        forearmHandTargetResponseScale(
-            Vec3{ 0.0f, 0.0f, 0.0f },
-            Vec3{ 0.0f, 0.0f, 0.0f },
-            Vec3{ 5.0f, 0.0f, 0.0f }),
-        1.0f,
-        0.001f);
+    using rock::dynamic_hand_collision_kinematics::combineTwinDeviations;
+    // Palm, fingertip and forearm are children of the same blocked compound.
+    // Increasing controller penetration must leave the presented hand at the
+    // solved surface, regardless of which children reported the contact.
+    constexpr float stoppedHandZ = 30.0f;
+    constexpr std::array<float, 3> childOffsetsZ{ 0.0f, -2.0f, 5.0f };
+    for (const float depth : { 1.0f, 5.0f, 10.0f, 20.0f }) {
+        const float rawHandZ = stoppedHandZ - depth;
+        std::array<Vec3, 3> deviations{};
+        for (std::size_t child = 0; child < deviations.size(); ++child) {
+            const float requestedZ = rawHandZ + childOffsetsZ[child];
+            const float solvedZ = stoppedHandZ + childOffsetsZ[child];
+            deviations[child].z = solvedZ - requestedZ;
+        }
+        for (const auto contacts : {
+                 std::array<bool, 3>{ true, false, false },
+                 std::array<bool, 3>{ false, false, true },
+                 std::array<bool, 3>{ true, true, true } }) {
+            const auto correction = combineTwinDeviations(deviations, contacts);
+            ok &= expectNear("deeper barrier press holds hand at surface",
+                rawHandZ + correction.z, stoppedHandZ, 0.001f);
+            ok &= expectNear("barrier press adds no lateral drift", correction.x, 0.0f, 0.001f);
+            ok &= expectNear("barrier press adds no forward drift", correction.y, 0.0f, 0.001f);
+        }
+    }
+
+    const std::array<Vec3, 3> cornerDeviations{
+        Vec3{ 3.0f, 0.0f, 0.0f }, Vec3{ 0.0f, 0.0f, 4.0f }, Vec3{ 0.0f, 0.0f, 2.0f }
+    };
+    const auto corner = combineTwinDeviations(cornerDeviations, std::array{ true, true, true });
+    ok &= expectNear("corner keeps wall correction", corner.x, 3.0f, 0.001f);
+    ok &= expectNear("shared surface uses deepest correction once", corner.z, 4.0f, 0.001f);
+
+    const auto released = combineTwinDeviations(cornerDeviations, std::array{ false, false, false });
+    ok &= expectNear("released wall no longer contributes", released.x, 0.0f, 0.001f);
+    ok &= expectNear("released floor no longer contributes", released.z, 0.0f, 0.001f);
+
+    const auto invalid = combineTwinDeviations(
+        std::array{ Vec3{ std::numeric_limits<float>::quiet_NaN(), 0.0f, 0.0f }, Vec3{ 0.0f, 0.0f, 4.0f } },
+        std::array{ true, true });
+    ok &= expectNear("invalid contact cannot contaminate other contacts", invalid.z, 4.0f, 0.001f);
 
     return ok ? 0 : 1;
 }

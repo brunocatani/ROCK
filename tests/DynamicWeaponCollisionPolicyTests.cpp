@@ -1,5 +1,12 @@
+#include "RE/Havok/hknpCollisionQueryCollector.h"
+#include "RE/NetImmerse/NiAVObject.h"
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
+#include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
+#include "physics-interaction/collision/ImpactAudioPolicy.h"
+#include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
+#include "physics-interaction/weapon/WeaponPhysicsTimeScale.h"
+#include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 
 #include <cmath>
 #include <cstdio>
@@ -42,12 +49,183 @@ namespace
         result.entry[2][2] = 1.0f;
         return result;
     }
+
+    bool vatsTimeScaleChecks()
+    {
+        using namespace rock;
+        using namespace havok_physics_timing;
+        using namespace weapon_physics_time_scale;
+        bool ok = true;
+        for (float hz : {45.0f, 90.0f, 120.0f}) {
+            for (unsigned substeps : {1u, 2u, 3u}) {
+                const float realDt = 1.0f / hz / substeps;
+                const auto normalLimit = generated_keyframed_body_drive_math::computeTargetVelocityLimit(
+                    20.0f, 1.0f, realDt, 1.0f / 70.0f, 15.0f, 35.0f);
+                for (float multiplier : {1.0f, 0.5f, 0.1f, 0.04f}) {
+                    const float physicsDt = realDt * multiplier;
+                    auto timing = makeTimingSample(physicsDt * substeps, physicsDt, 0.0f,
+                        physicsDt * substeps, substeps, multiplier);
+                    timing.phase = PhysicsStepPhase::SubstepPreCollide;
+                    const auto scale = resolve(true, timing);
+                    ok &= scale.valid;
+                    ok &= expectNear("slow-motion response uses measured real elapsed time", scale.responseDeltaSeconds, realDt);
+                    const auto limit = generated_keyframed_body_drive_math::computeTargetVelocityLimit(
+                        20.0f, 1.0f, physicsDt, 1.0f / 70.0f, 15.0f * scale.velocity, 35.0f * scale.velocity);
+                    ok &= expectNear("translation and rotation budgets preserve allowed movement", limit.alpha, normalLimit.alpha);
+                    // Integrate the force-limited acceleration over the actual
+                    // simulation step; equal real elapsed time must move equally.
+                    ok &= expectNear("force-limited displacement survives time scaling",
+                        0.5f * 1500.0f * scale.force / 2.0f * physicsDt * physicsDt,
+                        0.5f * 1500.0f / 2.0f * realDt * realDt);
+                    const float error = 0.15f;
+                    const float normalRecovery = (std::min)(error / realDt, 2.0f * error + 1.0f);
+                    const float slowRecovery = (std::min)(error / physicsDt,
+                        (2.0f * error + 1.0f) * scale.velocity);
+                    ok &= expectNear("native motor recovery closes equal error per real step",
+                        slowRecovery * physicsDt, normalRecovery * realDt);
+                    timing.phase = PhysicsStepPhase::SubstepPostSolve;
+                    const float retained = dynamic_weapon_collision_policy::advanceContactRetention(
+                        0.03f, false, false, timing, scale.velocity);
+                    ok &= expectNear("contact grace does not linger in slow motion", retained,
+                        (std::max)(0.0f, 0.03f - realDt));
+                    const auto disabled = resolve(false, timing);
+                    ok &= disabled.valid && disabled.velocity == 1.0f && disabled.force == 1.0f;
+                    ok &= expectNear("disabled keeps the native response clock", disabled.responseDeltaSeconds, physicsDt);
+                }
+            }
+        }
+        float velocity = 3.0f;
+        float previous = 1.0f;
+        for (float next : {2.0f, 10.0f, 25.0f, 25.0f, 10.0f, 1.0f, 1.0f}) {
+            velocity *= velocityRebase(previous, next);
+            ok &= expectNear("entry exit and steady steps preserve real velocity", velocity / next, 3.0f);
+            previous = next;
+        }
+        ok &= expectNear("hot disable removes compensation exactly once", velocityRebase(25.0f, 1.0f), 0.04f);
+        const float q[4]{0.0f, 0.0f, std::sqrt(0.5f), std::sqrt(0.5f)};
+        RE::NiPoint3 angular{};
+        ok &= rebaseWorldAngularVelocity(q, RE::NiPoint3{2.0f, 0.0f, 0.0f}, 0.04f, angular);
+        ok &= expectPoint("native setter receives world omega for a rotated weapon", angular, RE::NiPoint3{0.0f, 0.08f, 0.0f});
+        auto timing = makeTimingSample(0.011f, 0.011f, 0.0f, 0.011f, 1);
+        for (float bad : {0.0f, -1.0f, std::numeric_limits<float>::quiet_NaN(),
+                 std::numeric_limits<float>::infinity(), std::numeric_limits<float>::min()}) {
+            timing.timeMultiplier = bad;
+            ok &= !resolve(true, timing).valid;
+            ok &= resolve(false, timing).valid;
+        }
+        timing.timeMultiplier = 2.0f;
+        ok &= resolve(true, timing).velocity == 1.0f;
+        timing.usedFallback = true;
+        ok &= !resolve(true, timing).valid && !resolve(false, timing).valid;
+        return ok;
+    }
 }
 
 int main()
 {
+    using namespace rock::collision_layer_policy;
+    using rock::impact_audio_policy::muteShellPair;
+    static_assert(muteShellPair(FO4_LAYER_SHELLCASING, ROCK_LAYER_DYNAMIC_WEAPON_PROXY));
+    static_assert(muteShellPair(ROCK_LAYER_WEAPON, FO4_LAYER_SHELLCASING));
+    static_assert(muteShellPair(FO4_LAYER_SHELLCASING, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY));
+    static_assert(muteShellPair(ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, FO4_LAYER_SHELLCASING));
+    static_assert(muteShellPair(FO4_LAYER_SHELLCASING, ROCK_LAYER_HAND));
+    static_assert(muteShellPair(ROCK_LAYER_BODY, FO4_LAYER_SHELLCASING));
+    static_assert(!muteShellPair(FO4_LAYER_SHELLCASING, FO4_LAYER_STATIC));
+    static_assert(!muteShellPair(FO4_LAYER_SHELLCASING, FO4_LAYER_CLUTTER));
+    static_assert(!muteShellPair(FO4_LAYER_SHELLCASING, ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER));
+    static_assert(!muteShellPair(FO4_LAYER_SHELLCASING, ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER));
+    static_assert(!muteShellPair(ROCK_LAYER_DYNAMIC_WEAPON_PROXY, FO4_LAYER_STATIC));
+    static_assert(!muteShellPair(ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, FO4_LAYER_STATIC));
     using namespace rock::dynamic_weapon_collision_policy;
-    bool ok = true;
+    bool ok = vatsTimeScaleChecks();
+
+    const auto freeRecovery = resolveContactMotorRecovery(0.8f, 1.0f, 0.03f, 0.01f, 0.03f, false);
+    ok &= expectNear("free aim preserves damping", freeRecovery.damping, 0.8f);
+    ok &= expectNear("free aim preserves recovery", freeRecovery.constantRecoveryVelocity, 1.0f);
+    const auto blockedRecovery = resolveContactMotorRecovery(0.8f, 1.0f, 0.03f, 0.01f, 0.01f, true);
+    ok &= expectNear("blocked weapon damps relative velocity", blockedRecovery.damping, 1.0f);
+    ok &= expectNear("blocked weapon has no constant recovery kick", blockedRecovery.constantRecoveryVelocity, 0.0f, 0.0f);
+    const auto enteringRecovery = resolveContactMotorRecovery(0.8f, 1.0f, 0.03f, 0.01f, 0.02f, true);
+    const auto leavingRecovery = resolveContactMotorRecovery(0.8f, 1.0f, 0.03f, 0.01f, 0.02f, false);
+    ok &= expectNear("contact entry blends damping", enteringRecovery.damping, 0.9f);
+    ok &= expectNear("contact entry blends recovery", enteringRecovery.constantRecoveryVelocity, 0.5f);
+    ok &= expectNear("release does not snap damping", leavingRecovery.damping, enteringRecovery.damping);
+    ok &= expectNear("release does not snap recovery", leavingRecovery.constantRecoveryVelocity, enteringRecovery.constantRecoveryVelocity);
+    const auto tunedRecovery = resolveContactMotorRecovery(1.2f, 0.4f, 0.03f, 0.01f, 0.01f, true);
+    ok &= expectNear("stronger supplied damping is preserved", tunedRecovery.damping, 1.2f);
+    const auto equalTauContact = resolveContactMotorRecovery(0.8f, 1.0f, 0.03f, 0.03f, 0.03f, true);
+    const auto equalTauFree = resolveContactMotorRecovery(0.8f, 1.0f, 0.03f, 0.03f, 0.03f, false);
+    ok &= expectNear("equal tau still admits contact recovery", equalTauContact.constantRecoveryVelocity, 0.0f);
+    ok &= expectNear("equal tau restores free recovery", equalTauFree.constantRecoveryVelocity, 1.0f);
+
+    // Fixed target, small angular error: the verified native position motor
+    // requests min(error/dt, proportional*error + constant) recovery speed.
+    // Contact must approach zero proportionally instead of closing each tiny
+    // lever disturbance in one step. Free aim keeps its measured old response.
+    for (const float hz : {60.0f, 90.0f, 180.0f, 270.0f}) {
+        constexpr float angularError = 0.001f;
+        constexpr float proportionalRecovery = 2.0f;
+        const float freeSpeed = (std::min)(angularError * hz,
+            proportionalRecovery * angularError + freeRecovery.constantRecoveryVelocity);
+        const float contactSpeed = (std::min)(angularError * hz,
+            proportionalRecovery * angularError + blockedRecovery.constantRecoveryVelocity);
+        ok &= expectNear("free angular correction remains responsive", freeSpeed, angularError * hz);
+        ok &= expectNear("contact recovery is proportional across step rates", contactSpeed, 0.002f);
+    }
+
+    const auto postSolveTiming = [](float deltaSeconds) {
+        auto timing = rock::havok_physics_timing::makeTimingSample(
+            deltaSeconds, deltaSeconds, 0.0f, deltaSeconds, 1);
+        timing.phase = rock::havok_physics_timing::PhysicsStepPhase::SubstepPostSolve;
+        return timing;
+    };
+    // Losing callbacks for the same elapsed time must produce the same
+    // motor contact state, regardless of render rate or substep count.
+    for (const int hz : {60, 90, 120, 180, 270}) {
+        const auto timing = postSolveTiming(1.0f / static_cast<float>(hz));
+        float retained = advanceContactRetention(0.0f, true, false, timing);
+        const int solvesUntilExpiry = hz / 30;
+        for (int solve = 1; solve <= solvesUntilExpiry; ++solve) {
+            retained = advanceContactRetention(retained, false, false, timing);
+            if ((retained > 0.0f) != (solve < solvesUntilExpiry)) {
+                std::printf("weapon contact expiry mismatch hz=%d solve=%d remaining=%.8f\n", hz, solve, retained);
+                ok = false;
+            }
+        }
+    }
+    const auto timing90 = postSolveTiming(1.0f / 90.0f);
+    float retained = advanceContactRetention(0.0f, true, false, timing90);
+    retained = advanceContactRetention(retained, false, false, timing90);
+    ok &= expectNear("fresh callback renews measured retention",
+        advanceContactRetention(retained, true, false, timing90), kContactRetentionSeconds);
+    for (int solve = 0; solve < 2; ++solve) {
+        retained = advanceContactRetention(retained, false, false, postSolveTiming(1.0f / 180.0f));
+    }
+    for (int solve = 0; solve < 3; ++solve) {
+        retained = advanceContactRetention(retained, false, false, postSolveTiming(1.0f / 270.0f));
+    }
+    ok &= expectNear("rate changes preserve the contact deadline", retained, 0.0f, 0.0f);
+    ok &= expectNear("teleport clears even fresh contact",
+        advanceContactRetention(kContactRetentionSeconds, true, true, timing90), 0.0f, 0.0f);
+    ok &= expectNear("long measured step expires contact",
+        advanceContactRetention(kContactRetentionSeconds, false, false, postSolveTiming(0.1f)), 0.0f, 0.0f);
+    auto invalidTiming = timing90;
+    invalidTiming.usedFallback = true;
+    ok &= expectNear("fallback timing cannot retain contact",
+        advanceContactRetention(kContactRetentionSeconds, true, false, invalidTiming), 0.0f, 0.0f);
+    invalidTiming = timing90;
+    invalidTiming.valid = false;
+    ok &= expectNear("invalid timing cannot retain contact",
+        advanceContactRetention(kContactRetentionSeconds, true, false, invalidTiming), 0.0f, 0.0f);
+    invalidTiming = timing90;
+    invalidTiming.phase = rock::havok_physics_timing::PhysicsStepPhase::SubstepPreCollide;
+    ok &= expectNear("unsolved callback cannot refresh contact",
+        advanceContactRetention(kContactRetentionSeconds, true, false, invalidTiming), 0.0f, 0.0f);
+    invalidTiming = timing90;
+    invalidTiming.substepDeltaSeconds = (std::numeric_limits<float>::quiet_NaN)();
+    ok &= expectNear("unmeasured delta cannot retain contact",
+        advanceContactRetention(kContactRetentionSeconds, true, false, invalidTiming), 0.0f, 0.0f);
 
     const auto belowDivergence = advanceDivergenceDwell(
         0.2f,
@@ -73,7 +251,8 @@ int main()
     constexpr auto dynamicWeaponMask = rock::collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
     for (std::uint32_t layer = 0; layer < rock::collision_layer_policy::FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
         const bool enabled = rock::collision_layer_policy::maskEnablesLayer(dynamicWeaponMask, layer);
-        const bool expected = rock::collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(layer);
+        const bool expected = rock::collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(layer) &&
+            layer != rock::collision_layer_policy::FO4_LAYER_BIPED_NO_CC;
         if (enabled != expected) {
             std::printf("dynamic weapon layer mismatch at row %u expected=%d actual=%d\n", layer, expected ? 1 : 0, enabled ? 1 : 0);
             ok = false;
@@ -122,6 +301,19 @@ int main()
     ok &= rock::collision_layer_policy::maskEnablesLayer(
         dynamicWeaponMask,
         rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
+
+    {
+        using namespace rock::collision_layer_policy;
+        constexpr auto npcBit = layerBitOrZero(FO4_LAYER_BIPED_NO_CC);
+        ok &= (buildRockDynamicHandProxyExpectedMask(false, true) ^ rightHandMask) == npcBit;
+        ok &= (buildRockDynamicHandProxyExpectedMask(true, true) ^ leftHandMask) == npcBit;
+        ok &= (buildRockDynamicWeaponProxyExpectedMask(true) ^ dynamicWeaponMask) == npcBit;
+        ok &= isDynamicWeaponProxySolverObstacleLayer(FO4_LAYER_BIPED_NO_CC);
+        ok &= isDynamicWeaponProxyObstacleLayer(FO4_LAYER_BIPED_NO_CC);
+        ok &= !isDynamicHandProxySurfaceLayer(FO4_LAYER_BIPED_NO_CC);
+        ok &= !isWorldSurfaceLayer(FO4_LAYER_BIPED_NO_CC);
+        ok &= !maskEnablesLayer(rock::global_surface_grab_policy::allowedLayerMask(), FO4_LAYER_BIPED_NO_CC);
+    }
 
     const auto geometry = makeBoundingBoxGeometry(
         RE::NiPoint3{ -10.0f, -2.0f, -1.0f },
@@ -377,6 +569,43 @@ int main()
         rotationDeltaDegrees(reframedHandWeaponLocal, requestedHandWeaponLocal),
         0.0f,
         0.05f);
+
+    // A stationary bipod weapon and an advancing controller. Reframing the
+    // already-braced animation target would move it in the opposite direction.
+    // Use the grip layer as collision input; the animation must keep ownership
+    // even when collision clears and re-registers its claim each frame.
+    {
+        namespace claims = rock::hand_world_claim_registry_policy;
+        claims::Registry registry{};
+        const auto braced = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+        auto animated = braced;
+        animated.translate.x = 7.0f;
+        (void)claims::commit(registry, "animation", false, 120, animated);
+        for (const float forward : { 0.0f, 10.0f, -10.0f, 30.0f }) {
+            auto intent = braced;
+            intent.translate.x = forward;
+            auto grip = intent;
+            grip.translate.x += 2.0f;
+            (void)claims::commit(registry, "grip", false, 100, grip);
+            (void)claims::remove(registry, "collision", false);
+            const auto* input = claims::winner(registry, false, "collision", 109);
+            if (!input) {
+                ok = false;
+                continue;
+            }
+            const auto collision = reframeAttachedHand(intent, braced, input->target);
+            ok &= expectNear("braced grip does not inherit inverse controller displacement", collision.translate.x, 2.0f);
+            (void)claims::commit(registry, "collision", false, 110, collision);
+            (void)claims::commit(registry, "animation", false, 120, animated);
+            const auto* finalHand = claims::winner(registry, false);
+            ok &= finalHand && claims::tagView(*finalHand) == "animation";
+            if (finalHand) ok &= expectPoint("animation stays at the bolt while controller moves", finalHand->target.translate, animated.translate);
+        }
+        (void)claims::remove(registry, "animation", false);
+        const auto* released = claims::winner(registry, false);
+        ok &= released && claims::tagView(*released) == "collision";
+        if (released) ok &= expectNear("animation release returns to the corrected grip", released->target.translate.x, 2.0f);
+    }
 
     return ok ? 0 : 1;
 }

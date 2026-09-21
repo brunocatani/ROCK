@@ -33,6 +33,9 @@ namespace rock::havok_physics_timing
         float accumulatedDeltaSeconds = 0.0f;
         float simulatedDeltaSeconds = 0.0f;
         float substepProgress = 0.0f;
+        // Latched at the existing SetDeltaTime hook, not sampled again during
+        // substeps. Zero means the native multiplier was not verified/measured.
+        float timeMultiplier = 0.0f;
         std::uint32_t substepCount = 1;
         std::uint32_t substepIndex = 0;
         PhysicsStepPhase phase = PhysicsStepPhase::WholePreStep;
@@ -75,9 +78,11 @@ namespace rock::havok_physics_timing
         float substepDeltaSeconds,
         float remainderDeltaSeconds,
         float accumulatedDeltaSeconds,
-        std::uint32_t substepCount)
+        std::uint32_t substepCount,
+        float timeMultiplier = 1.0f)
     {
         PhysicsTimingSample sample{};
+        sample.timeMultiplier = timeMultiplier;
         sample.rawDeltaSeconds = isUsableDelta(rawDeltaSeconds) ? rawDeltaSeconds : 0.0f;
         sample.substepDeltaSeconds = isUsableDelta(substepDeltaSeconds) ? substepDeltaSeconds : sample.rawDeltaSeconds;
         sample.remainderDeltaSeconds = std::isfinite(remainderDeltaSeconds) ? remainderDeltaSeconds : 0.0f;
@@ -119,6 +124,8 @@ namespace rock::havok_physics_timing
     }
 
     PhysicsTimingSample sampleCurrentTiming();
+    bool initializeTimeMultiplierSampling();
+    void captureTimeMultiplier();
 
     /*
      * Selects the delta that scales drive velocities for this callback and

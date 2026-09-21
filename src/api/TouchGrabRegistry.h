@@ -1,7 +1,7 @@
 #pragma once
 
 #include "api/ProviderLeasePolicy.h"
-#include "api/ROCKProviderApi.h"
+#include "api/ProviderRuntimeTypes.h"
 
 #include <algorithm>
 #include <array>
@@ -260,8 +260,10 @@ namespace rock::provider
             const std::uint64_t ownerToken,
             const std::uint64_t scopeToken,
             const RockProviderTouchGrabStateV1& state,
-            const std::uint64_t frameIndex)
+            const std::uint64_t frameIndex,
+            bool* changed = nullptr)
         {
+            if (changed) *changed=false;
             for (auto& slot : _slots) {
                 if (!slot.active ||
                     slot.ownerToken != ownerToken ||
@@ -271,6 +273,7 @@ namespace rock::provider
                     continue;
                 }
 
+                if (changed) *changed = slot.state.phase!=state.phase || slot.state.releaseReason!=state.releaseReason || slot.state.activeHandMask!=state.activeHandMask;
                 slot.state = state;
                 slot.state.size = sizeof(RockProviderTouchGrabStateV1);
                 slot.state.version = ROCK_PROVIDER_API_VERSION;

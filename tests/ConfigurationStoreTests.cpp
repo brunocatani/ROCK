@@ -4,6 +4,8 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <map>
+#include <set>
 
 namespace
 {
@@ -16,7 +18,121 @@ namespace
     const rock::config::Setting& find(const rock::config::ConfigurationStore& store, std::string_view key)
     {
         for (const auto& setting : store.settings()) if (setting.key == key) return setting;
-        throw std::runtime_error("Missing compiled setting");
+        throw std::runtime_error("Missing compiled setting: " + std::string(key));
+    }
+
+    void decorativeSectionChecks(const std::filesystem::path& directory, const CSimpleIniA& compiled)
+    {
+        using namespace rock::config;
+        namespace fs = std::filesystem;
+        fs::create_directories(directory);
+        ConfigurationStore store(directory, compiled);
+        const auto write = [&](Group group, const std::string& text) {
+            std::ofstream file(store.path(group), std::ios::binary | std::ios::trunc);
+            file << text;
+            require(file.good(), "cannot write decorative-section fixture");
+        };
+        const auto runtime = [&] {
+            CSimpleIniA combined;
+            store.appendLoadedValues(combined);
+            return rock::RockConfig::parseValues(combined);
+        };
+        std::set<CSimpleIniA::Entry, CSimpleIniA::Entry::KeyOrder> uniqueKeys;
+        std::map<std::string, std::string> expected;
+        CSimpleIniA canonical;
+        std::array<std::string, 2> flat, labelled;
+        std::array<std::size_t, 2> counts{};
+        for (const auto& setting : store.settings()) {
+            require(uniqueKeys.emplace(setting.key.c_str()).second,
+                "decorative sections require globally unique case-insensitive setting names");
+            const auto group = setting.group == Group::Consumer ? 0u : 1u;
+            const std::string value = setting.type == ValueType::Boolean ? (setting.defaultValue == "true" ? "false" : "true") :
+                setting.type == ValueType::Integer ? (setting.defaultValue == "7" ? "8" : "7") :
+                setting.type == ValueType::Float ? "0.625" : "custom-value";
+            expected.emplace(setting.key, value);
+            canonical.SetValue(setting.section.c_str(), setting.key.c_str(), value.c_str());
+            std::string key = setting.key;
+            if (counts[group] % 2 == 0)
+                for (auto& c : key) if (c >= 'a' && c <= 'z') c -= 'a' - 'A';
+            const auto line = key + " = " + value + "\n";
+            flat[group] += line;
+            // Initial keys have no header; later groups repeat in nonalphabetic order.
+            if (counts[group] % 7 == 3)
+                labelled[group] += counts[group] % 2 == 0 ? "[Alpha notes]\n" : "[Zulu notes]\n";
+            labelled[group] += line;
+            ++counts[group];
+        }
+        for (const auto& files : { flat, labelled }) {
+            write(Group::Consumer, files[0]);
+            write(Group::Developer, files[1]);
+            require(store.load(false), "section-independent load failed");
+            for (const auto& setting : store.settings())
+                require(setting.specified && setting.value == expected.at(setting.key),
+                    "a known key was lost or changed outside its catalog section");
+            require(runtime() == rock::RockConfig::parseValues(canonical),
+                "decorative labels changed parsed runtime values");
+            require(bytes(store.path(Group::Consumer)) == files[0] && bytes(store.path(Group::Developer)) == files[1],
+                "loading decorative sections rewrote a user file");
+        }
+        const auto revision = store.revision();
+        write(Group::Consumer, flat[0]);
+        write(Group::Developer, flat[1]);
+        require(store.load(false) && store.revision() == revision,
+            "moving unchanged keys between labels caused a semantic reload");
+
+        // Section names cannot redirect an option into the other owning file.
+        write(Group::Consumer, "[Debug]\nbPerformanceProfilerEnabled=true\n");
+        write(Group::Developer, "[Logging]\niLogLevel=0\nnpcDynamicCollisions=false\n");
+        require(store.load(false), "wrong-file fixture failed to load");
+        require(!find(store, "bPerformanceProfilerEnabled").specified && runtime().rockLogLevel == 2 &&
+                !find(store, "npcDynamicCollisions").specified && runtime().npcDynamicCollisions,
+            "decorative sections broke consumer/developer ownership");
+        require(settingGroup("Any label", "BPERFORMANCEPROFILERENABLED") == Group::Developer,
+            "key-only ownership lookup still depends on a section or spelling case");
+
+        write(Group::Developer,
+            "bPerformanceProfilerEnabled=false\n"
+            "[Zulu]\nbPerformanceProfilerEnabled=true\n"
+            "[Alpha]\nbPerformanceProfilerEnabled=false\n"
+            "[Zulu]\n; My selected profiler value\nBPERFORMANCEPROFILERENABLED=true\n"
+            "iPerformanceProfilerLogIntervalFrames=450\n"
+            "[Alpha]\niPerformanceProfilerLogIntervalFrames=600\niPerformanceProfilerLogIntervalFrames=750\n"
+            "bDebugShowColliders=false\n; My local note\nsUserNote=keep me\n");
+        require(store.load(false), "duplicate fixture failed to load");
+        require(runtime().rockPerformanceProfilerEnabled && runtime().rockPerformanceProfilerLogIntervalFrames == 750,
+            "last physical occurrence did not win across repeated headers/keys");
+        require(store.setValue(Group::Developer, "Unrelated menu label", "BDEBUGSHOWHANDAXES", "true"),
+            "case-insensitive key-only menu edit failed");
+        require(store.load(false) && runtime().rockPerformanceProfilerEnabled &&
+                runtime().rockPerformanceProfilerLogIntervalFrames == 750,
+            "organizing an unrelated edit resurrected a shadowed value");
+        require(find(store, "bDebugShowColliders").specified && !runtime().rockDebugShowColliders,
+            "an unrelated explicit developer default was pruned");
+        const auto organized = bytes(store.path(Group::Developer));
+        require(organized.find("; My selected profiler value") != std::string::npos &&
+                organized.find("; My local note") != std::string::npos && organized.find("keep me") != std::string::npos,
+            "writing discarded the effective option comment or an unknown entry");
+        require(store.setValue(Group::Developer, "Another label", "iperformanceprofilerlogintervalframes", "900"),
+            "editing a previously duplicated key failed");
+        require(store.load(false) && runtime().rockPerformanceProfilerLogIntervalFrames == 900,
+            "an older duplicate overrode the menu edit");
+        require(store.setValue(Group::Developer, "Anything", "bPerformanceProfilerEnabled", "false"),
+            "resetting a misplaced key failed");
+        require(store.load(false) && !runtime().rockPerformanceProfilerEnabled &&
+                !find(store, "bPerformanceProfilerEnabled").specified,
+            "reset left a stale profiler override in another section");
+
+        write(Group::Developer, "bPerformanceProfilerEnabled=true\n[One]\nbPerformanceProfilerEnabled=true\n[Two]\nBPERFORMANCEPROFILERENABLED=true\n");
+        require(store.setValue(Group::Developer, "", "bPerformanceProfilerEnabled", "false"),
+            "global reset of repeated keys failed");
+        require(!fs::exists(store.path(Group::Developer)), "reset did not delete an empty developer file");
+        // This is the production profiler's formerly ignored placement.
+        write(Group::Developer, "[PhysicsInteraction]\nbPerformanceProfilerEnabled=true\niPerformanceProfilerLogIntervalFrames=300\niPerformanceProfilerWarmupFrames=120\nbPerformanceProfilerOverlayText=false\n");
+        require(store.load(false), "production-layout profiler reload failed");
+        const auto profiler = runtime();
+        require(profiler.rockPerformanceProfilerEnabled && profiler.rockPerformanceProfilerLogIntervalFrames == 300 &&
+                profiler.rockPerformanceProfilerWarmupFrames == 120 && !profiler.rockPerformanceProfilerOverlayText,
+            "the real misplaced profiler configuration still does not activate");
     }
 
     void verifyReference(const CSimpleIniA& reference,
@@ -53,6 +169,7 @@ int main(int argc, char** argv)
         const auto directory = fs::temp_directory_path() /
             ("ROCK-configuration-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
         struct Cleanup { fs::path path; ~Cleanup() { std::error_code ec; fs::remove_all(path, ec); } } cleanup{ directory };
+        decorativeSectionChecks(directory / "decorative", compiled);
         ConfigurationStore store(directory, compiled);
         CSimpleIniA consumerExample;
         CSimpleIniA developerExample;
@@ -85,6 +202,146 @@ int main(int argc, char** argv)
             require(!other.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr), "example option belongs to both files");
         }
         require(store.load(true), "first-run load failed");
+        require(find(store, "bVatsPhysicsFixes").group == Group::Developer &&
+            find(store, "bVatsPhysicsFixes").type == ValueType::Boolean &&
+            rock::RockConfig::parseValues(missingOptions).rockVatsPhysicsFixes,
+            "VATS physics fixes must default on in the developer catalog");
+        require(store.setValue(Group::Developer, "PhysicsInteraction", "bVatsPhysicsFixes", "false") && store.load(false),
+            "VATS physics fixes disable/reload failed");
+        CSimpleIniA vatsValues;
+        store.appendLoadedValues(vatsValues);
+        require(!rock::RockConfig::parseValues(vatsValues).rockVatsPhysicsFixes,
+            "VATS physics fixes override did not reach runtime");
+        require(store.setValue(Group::Developer, "PhysicsInteraction", "bVatsPhysicsFixes", "true") && store.load(false),
+            "VATS physics fixes reset/reload failed");
+        require(!find(store, "bVatsPhysicsFixes").specified,
+            "resetting VATS physics fixes retained the default override");
+        require(find(store, "npcDynamicCollisions").type == ValueType::Boolean &&
+            find(store, "npcDynamicCollisions").group == Group::Consumer &&
+            rock::RockConfig::parseValues(missingOptions).npcDynamicCollisions,
+            "NPC dynamic collisions must be a consumer boolean defaulting on");
+        require(!store.setValue(Group::Developer, "PhysicsInteraction", "npcDynamicCollisions", "false"),
+            "NPC dynamic collisions must no longer be writable as a developer override");
+        require(store.setValue(Group::Consumer, "PhysicsInteraction", "npcDynamicCollisions", "false"),
+            "NPC collision disable failed");
+        require(store.load(false), "NPC collision reload failed");
+        CSimpleIniA npcValues;
+        store.appendLoadedValues(npcValues);
+        require(!rock::RockConfig::parseValues(npcValues).npcDynamicCollisions,
+            "NPC collision consumer value did not reach runtime");
+        require(store.setValue(Group::Consumer, "PhysicsInteraction", "npcDynamicCollisions", "true"),
+            "NPC collision reset failed");
+        require(store.load(false), "NPC collision reset reload failed");
+        CSimpleIniA resetNpcValues;
+        store.appendLoadedValues(resetNpcValues);
+        require(rock::RockConfig::parseValues(resetNpcValues).npcDynamicCollisions &&
+            find(store, "npcDynamicCollisions").specified &&
+            !fs::exists(store.path(Group::Developer)),
+            "reset must retain NPC collisions on in the consumer file without creating developer overrides");
+        require(find(store, "fMeleeGripPitchDegrees").group == Group::Consumer &&
+            find(store, "fMeleeGripPitchDegrees").type == ValueType::Float,
+            "melee pitch must be a consumer float");
+        for (const auto* angle : { "15", "-30", "0" }) {
+            require(store.setValue(Group::Consumer, "ImmersiveWeapons", "fMeleeGripPitchDegrees", angle) && store.load(false),
+                "melee pitch edit/reload failed");
+            CSimpleIniA values;
+            store.appendLoadedValues(values);
+            require(rock::RockConfig::parseValues(values).rockMeleeGripPitchDegrees == std::stof(angle),
+                "melee pitch did not reach runtime");
+        }
+        for (const auto& [value, expected] : { std::pair{ "-181", -180.0f }, { "181", 180.0f }, { "nan", 0.0f } }) {
+            CSimpleIniA values;
+            values.SetValue("ImmersiveWeapons", "fMeleeGripPitchDegrees", value);
+            require(rock::RockConfig::parseValues(values).rockMeleeGripPitchDegrees == expected,
+                "invalid melee pitch was not bounded safely");
+        }
+        require(find(store, "fLaserRecoilPercent").type == ValueType::Float &&
+            rock::RockConfig::parseValues(missingOptions).rockLaserRecoilPercent == 100.0f,
+            "laser recoil must default to the bipod profile strength");
+        for (const auto* percent : { "0", "50", "100", "300" }) {
+            require(store.setValue(Group::Consumer, "ImmersiveWeapons", "fLaserRecoilPercent", percent),
+                "laser recoil strength write failed");
+            require(store.load(false), "laser recoil reload failed");
+            CSimpleIniA recoilValues;
+            store.appendLoadedValues(recoilValues);
+            const auto recoilConfig = rock::RockConfig::parseValues(recoilValues);
+            require(recoilConfig.rockLaserRecoilPercent == std::stof(percent),
+                "laser recoil setting did not reach runtime configuration");
+            require(recoilConfig.rockRifleOneHandRecoilPercent == 300.0f &&
+                recoilConfig.rockRifleTwoHandRecoilPercent == 80.0f,
+                "laser tuning changed ordinary rifle recoil");
+        }
+        for (const auto& [value, expected] : { std::pair{ "-1", 0.0f }, { "301", 300.0f }, { "nan", 100.0f } }) {
+            CSimpleIniA recoilValues;
+            recoilValues.SetValue("ImmersiveWeapons", "fLaserRecoilPercent", value);
+            require(rock::RockConfig::parseValues(recoilValues).rockLaserRecoilPercent == expected,
+                "invalid laser recoil strength was not bounded safely");
+        }
+        require(store.setValue(Group::Consumer, "ImmersiveWeapons", "fLaserRecoilPercent", "100"),
+            "laser recoil strength reset failed");
+        require(store.load(false), "laser recoil reset reload failed");
+        require(find(store, "iWeaponDropMode").type == ValueType::Integer &&
+            find(store, "iWeaponDropMode").value == "1", "weapon drop must default to off");
+        require(find(store, "iWeaponGrabMode").type == ValueType::Integer &&
+            find(store, "iWeaponGrabMode").value == "2", "weapon grab must default to toggling only the firing grip");
+        for (const auto* invalid : { "-1", "0", "4", "invalid" }) {
+            CSimpleIniA grabValues;
+            grabValues.SetValue("ImmersiveWeapons", "iWeaponGrabMode", invalid);
+            require(rock::RockConfig::parseValues(grabValues).rockWeaponGrabMode == 2,
+                "invalid weapon grab mode must fall back to the firing-grip toggle default");
+        }
+        require(find(store, "bKeepPreviousWeaponInHandOnEquip").value == "false",
+            "previous weapon retention must be opt-in");
+        for (const auto* enabled : { "true", "false" }) {
+            require(store.setValue(Group::Consumer, "ImmersiveWeapons", "bKeepPreviousWeaponInHandOnEquip", enabled),
+                "previous weapon retention write failed");
+            require(store.load(false), "previous weapon retention reload failed");
+            CSimpleIniA swapValues;
+            store.appendLoadedValues(swapValues);
+            const auto swapConfig = rock::RockConfig::parseValues(swapValues);
+            require(swapConfig.rockKeepPreviousWeaponInHandOnEquip == (enabled[0] == 't') &&
+                swapConfig.rockWeaponDropMode == 1 && swapConfig.rockWeaponGrabMode == 2,
+                "retention reload must remain independent of weapon drop and grab modes");
+        }
+        require(!store.setValue(Group::Consumer, "ImmersiveWeapons", "bAutoDrop", "true"),
+            "removed auto-drop boolean must not remain writable");
+        for (const auto* mode : { "1", "2", "3" }) {
+            require(store.setValue(Group::Consumer, "ImmersiveWeapons", "iWeaponDropMode", mode),
+                "weapon drop mode write failed");
+            require(store.load(false), "weapon drop mode reload failed");
+            CSimpleIniA dropValues;
+            store.appendLoadedValues(dropValues);
+            const auto dropConfig = rock::RockConfig::parseValues(dropValues);
+            require(dropConfig.rockWeaponDropMode == mode[0] - '0',
+                "weapon drop mode did not reach runtime configuration");
+            require(dropConfig.rockWeaponGrabMode == 2,
+                "weapon drop mode must not change the grip release gesture");
+        }
+        for (const auto* invalid : { "-1", "0", "4", "invalid" }) {
+            CSimpleIniA dropValues;
+            dropValues.SetValue("ImmersiveWeapons", "iWeaponDropMode", invalid);
+            require(rock::RockConfig::parseValues(dropValues).rockWeaponDropMode == 1,
+                "invalid weapon drop mode must fall back to off");
+        }
+        require(store.setValue(Group::Consumer, "ImmersiveWeapons", "iWeaponDropMode", "1"),
+            "weapon drop mode reset failed");
+        require(store.load(false), "weapon drop mode reset reload failed");
+        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fLeftFiringGripOffsetYGameUnits", "0.25"),
+            "left firing relative placement write failed");
+        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fRightSupportGripOffsetZGameUnits", "-0.5"),
+            "right support relative placement write failed");
+        require(store.load(false), "relative grip placement reload failed");
+        CSimpleIniA gripPlacementValues;
+        store.appendLoadedValues(gripPlacementValues);
+        const auto gripPlacement = rock::RockConfig::parseValues(gripPlacementValues);
+        require(gripPlacement.rockLeftFiringGripOffsetGameUnits == RE::NiPoint3(0.0f, 0.25f, 0.0f) &&
+            gripPlacement.rockRightSupportGripOffsetGameUnits == RE::NiPoint3(0.0f, 0.0f, -0.5f),
+            "relative firing and support placement must remain independent across reload");
+        require(gripPlacement.rockLeftFiringAimOffsetYGameUnits == 0.0f && gripPlacement.rockLeftFiringAimYawDegrees == 0.0f,
+            "relative grip placement must not change whole-carry position or aim");
+        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fLeftFiringGripOffsetYGameUnits", "0"), "left placement reset failed");
+        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fRightSupportGripOffsetZGameUnits", "0"), "right placement reset failed");
+        require(store.load(false), "relative grip placement reset reload failed");
         require(find(store, "bEnableImmersiveScopes").value == "true", "immersive scopes must default on");
         for (const bool enabled : { false, true }) {
             require(store.setValue(Group::Consumer, "NativeScopes", "bEnableImmersiveScopes", enabled ? "true" : "false"),

@@ -82,6 +82,7 @@ namespace rock::equipped_weapon_shoulder
 
     struct HandInput
     {
+        SheathInputMode sheathInputMode{ SheathInputMode::Tap };
         bool disabled{ false };
         bool eligible{ false };
         bool carriesWeapon{ false };
@@ -93,7 +94,6 @@ namespace rock::equipped_weapon_shoulder
     {
         bool enabled{ false };
         bool inputAllowed{ false };
-        SheathInputMode sheathInputMode{ SheathInputMode::Tap };
         bool storedActive{ false };
         bool stashedByLeftHand{ false };
         std::uint64_t weaponOwnershipKey{ 0 };
@@ -389,7 +389,7 @@ namespace rock::equipped_weapon_shoulder
                 }
                 const bool tap = hand.button.pressed;
                 const bool heldPull =
-                    input.sheathInputMode == SheathInputMode::HoldRelease &&
+                    hand.sheathInputMode == SheathInputMode::HoldRelease &&
                     hand.button.held &&
                     hand.detector.confirmed;
                 return tap || heldPull;
@@ -657,7 +657,7 @@ namespace rock::equipped_weapon_shoulder
                     leftGesture : rightGesture;
                 if (!handInput.disabled && handInput.eligible &&
                     gesture.valid && !gesture.blocked) {
-                    if (input.sheathInputMode == SheathInputMode::Tap &&
+                    if (handInput.sheathInputMode == SheathInputMode::Tap &&
                         handInput.button.pressed &&
                         handInput.detector.candidate) {
                         detail::beginAction(
@@ -668,7 +668,7 @@ namespace rock::equipped_weapon_shoulder
                             carryHand,
                             gesture,
                             handInput.detector);
-                    } else if (input.sheathInputMode ==
+                    } else if (handInput.sheathInputMode ==
                                    SheathInputMode::HoldRelease &&
                                handInput.button.held &&
                                handInput.detector.confirmed) {
@@ -690,7 +690,7 @@ namespace rock::equipped_weapon_shoulder
                 gesture.serial == state.armedGestureSerial;
             if (!sameGesture || handInput.disabled ||
                 !handInput.eligible || !handInput.carriesWeapon ||
-                input.sheathInputMode != SheathInputMode::HoldRelease) {
+                handInput.sheathInputMode != SheathInputMode::HoldRelease) {
                 state.phase = Phase::DrawnReady;
                 detail::clearArm(state);
             } else if (handInput.button.released) {

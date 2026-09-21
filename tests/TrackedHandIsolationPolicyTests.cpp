@@ -1,6 +1,8 @@
 #include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
+#include "physics-interaction/visual/ScopeHandInputContinuityPolicy.h"
 
 #include <cmath>
+#include <array>
 #include <cstdio>
 
 namespace
@@ -68,6 +70,15 @@ namespace
     {
         return rock::transform_math::composeTransforms(parent, child);
     }
+
+    RE::NiTransform recorded(const std::array<float, 12>& values)
+    {
+        auto t = identity();
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c) t.rotate.entry[r][c] = values[r * 3 + c];
+        t.translate = { values[9], values[10], values[11] };
+        return rock::transform_math::orthonormalizedTransform(t);
+    }
 }
 
 int main()
@@ -87,6 +98,46 @@ int main()
         ok &= expectTrue("qualified controller reconstruction can continue recoil", canDriveExternalPose(startup, raw));
         raw.valid = false;
         ok &= expectFalse("missing controller frame releases recoil", canDriveExternalPose(startup, raw));
+    }
+
+    // Recorded support excursion, 2026-09-19 23:51:06.796 -> 06.885.
+    // The native weapon offset and isolated physical hand are not a rigid
+    // pair. A held weapon must consume the shared hand result even while
+    // its rendered wrist follows a displaced contact-constrained weapon.
+    {
+        const auto offsetA = recorded({
+            0.9819524f, -0.1685165f, 0.0858600f, 0.1407563f, 0.9543747f, 0.2633571f,
+            -0.1263224f, -0.2465187f, 0.9608702f, 272.71869f, -22.62910f, 67.51447f });
+        const auto handA = recorded({
+            0.0149407f, 0.9610964f, 0.2758087f, 0.9792818f, -0.0697772f, 0.1901008f,
+            0.2019504f, 0.2672542f, -0.9422268f, 275.46606f, -23.96057f, 64.06477f });
+        const auto offsetB = recorded({
+            0.9784306f, -0.1782101f, 0.1044733f, 0.1543470f, 0.9668010f, 0.2036490f,
+            -0.1372971f, -0.1831312f, 0.9734539f, 272.87717f, -21.58559f, 68.07898f });
+        const auto handB = recorded({
+            0.0175434f, 0.9597044f, 0.2804634f, 0.9775856f, -0.0753253f, 0.1966025f,
+            0.2098063f, 0.2707278f, -0.9395146f, 275.55124f, -23.81933f, 64.45705f });
+        const auto frozenRelation = compose(rock::transform_math::invertTransform(offsetA), handA);
+        const auto staleHand = compose(offsetB, frozenRelation);
+        ok &= expectTrue("recorded offset reconstruction adds translation", translationGameUnits(staleHand, handB) > 0.65f);
+        ok &= expectTrue("recorded offset reconstruction adds rotation", rotationDegrees(staleHand, handB) > 3.8f);
+        RelationState relation{};
+        relation.firstPersonToBodyHand = identity();
+        relation.valid = true;
+        FrameInput frame{
+            .firstPersonHandWorld = handB,
+            .firstPersonHandValid = true,
+            .bodyHandNodeWorld = staleHand,
+            .bodyHandNodeValid = true,
+            .flattenedHandWorld = staleHand,
+            .flattenedHandValid = true,
+            .claimConsumed = true,
+            .calibrationAllowed = false,
+        };
+        const auto physical = resolveFrame(relation, frame);
+        ok &= expectTrue("current physical frame remains usable under weapon authority", canDriveExternalPose(relation, physical));
+        ok &= expectNear("current physical frame rejects offset displacement", translationGameUnits(physical.rawHandWorld, handB), 0.0f, 0.001f);
+        ok &= expectNear("current physical frame rejects offset rotation", rotationDegrees(physical.rawHandWorld, handB), 0.0f, 0.001f);
     }
 
     // A skeleton with a small solver residual and a body scale: relation calibrates on a free frame.
@@ -147,7 +198,7 @@ int main()
         ok &= expectFalse("claimed frame has no probe", result.probeValid);
     }
 
-    // Claimed frame without a relation or without the first-person hand degrades to the contaminated bone.
+    // Claimed output cannot become independent controller input on a missing-input frame.
     {
         RelationState empty{};
         const FrameInput input{
@@ -160,10 +211,18 @@ int main()
             .claimConsumed = true,
         };
         ok &= expectEnum("no relation degrades", resolveFrame(empty, input).source, RawHandSource::FlattenedContaminated);
+        ok &= expectFalse("uncalibrated claimed output is unavailable", resolveFrame(empty, input).valid);
 
         FrameInput noFirstPerson = input;
         noFirstPerson.firstPersonHandValid = false;
         ok &= expectEnum("no first-person hand degrades", resolveFrame(state, noFirstPerson).source, RawHandSource::FlattenedContaminated);
+        ok &= expectFalse("missing controller cannot drive a claimed pose", resolveFrame(state, noFirstPerson).valid);
+        auto freePeer = input;
+        freePeer.claimConsumed = false;
+        auto peerRelation = state;
+        const auto unprobed = resolveFrame(peerRelation, freePeer, false);
+        ok &= expectTrue("valid peer remains available without diagnostic work", unprobed.valid);
+        ok &= expectFalse("disabled diagnostics do not compute residual", unprobed.probeValid);
 
         FrameInput nothing = input;
         nothing.flattenedHandValid = false;
@@ -301,6 +360,87 @@ int main()
         corrected.firstPersonHandValid = true;
         relation.valid = false;
         ok &= expectFalse("missing relation fails closed", resolveFrame(relation, corrected).valid);
+    }
+
+    // Reproduce the scope-exit regression with both arms, long locomotion,
+    // controller movement, and native history frozen at scope entry. The API
+    // driver world can already be recomposed by recoil restoration; the stale
+    // first-person hand is the convergence witness, not that driver world.
+    {
+        namespace continuity = rock::scope_hand_input_continuity_policy;
+        using rock::hand_world_claim_registry_policy::DriverSample;
+        const continuity::Damping damping{ 0.6f, 0.6f, true, false, true };
+        for (const float handOffset : { -12.0f, 12.0f }) {
+            continuity::State scopeState{};
+            const auto handLocal = yawed(12.0f, 1.0f, handOffset, -3.0f);
+            auto raw = yawed(0.0f, 100.0f, handOffset, 0.0f);
+            auto nativeDriver = raw;
+            auto camera = RE::NiPoint3{ 100.0f, 0.0f, 0.0f };
+            std::uint64_t sequence = 1;
+            for (; sequence <= 360; ++sequence) {
+                camera.x += 2.0f;
+                raw.translate.x = camera.x + 20.0f;
+                raw.rotate = yawed(45.0f, 0, 0, 0).rotate;
+                const auto result = continuity::resolve(scopeState, damping, true, sequence,
+                    { raw, true }, { raw, true }, { compose(raw, handLocal), true }, camera, true);
+                ok &= expectFalse("scope keeps provider's chosen damping", result.corrected);
+            }
+            const auto lastScoped = raw;
+            bool recovered = false;
+            for (unsigned frame = 0; frame < 80; ++frame, ++sequence) {
+                camera.x += 2.0f;
+                raw.translate.x += 2.0f;
+                // FRIK's retained old history; independently reproduce the
+                // translation recurrence to make the original jump explicit.
+                nativeDriver.translate.x = raw.translate.x * 0.4f + (nativeDriver.translate.x + 2.0f) * 0.6f;
+                nativeDriver.rotate = rock::hand_visual_lerp_math::quaternionToMatrix<RE::NiMatrix3>(
+                    rock::hand_visual_lerp_math::slerp(rock::hand_visual_lerp_math::matrixToQuaternion(nativeDriver.rotate),
+                        rock::hand_visual_lerp_math::matrixToQuaternion(raw.rotate), 0.4f));
+                const auto nativeHand = compose(nativeDriver, handLocal);
+                const auto result = continuity::resolve(scopeState, damping, false, sequence,
+                    { raw, true }, { raw, true }, { nativeHand, true }, camera, true);
+                const auto expected = compose(raw, handLocal);
+                ok &= expectTrue("recovery supplies a current hand", result.hand.valid);
+                ok &= expectNear("walking hand never returns to scope-entry position",
+                    translationGameUnits(result.hand.world, expected), 0.0f, 0.055f);
+                ok &= expectNear("scope rotation stays current", rotationDegrees(result.hand.world, expected), 0.0f, 0.055f);
+                if (frame == 0) {
+                    ok &= expectTrue("fixture reproduces a large native snap", translationGameUnits(nativeHand, expected) > 400.0f);
+                    ok &= expectTrue("first exit frame is protected", result.corrected);
+                    ok &= expectNear("player motion is not damped", result.driver.world.translate.x - lastScoped.translate.x, 2.0f, 0.001f);
+                }
+                recovered |= !scopeState.recovering;
+            }
+            ok &= expectTrue("native input is handed back after measured convergence", recovered);
+        }
+
+        continuity::State scopeState{};
+        const auto driver = yawed(0, 10, 0, 0);
+        const DriverSample valid{ driver, true };
+        (void)continuity::resolve(scopeState, damping, true, 1, valid, valid, valid, {}, true);
+        auto moved = driver;
+        moved.translate.x = 20.0f;
+        const auto resumed = continuity::resolve(scopeState, damping, false, 2, { moved, true }, valid, valid, {}, true);
+        ok &= expectNear("controller motion still uses configured damping", resumed.driver.world.translate.x, 14.0f, 0.001f);
+        const auto missing = continuity::resolve(scopeState, damping, false, 3, {}, valid, valid, {}, true);
+        ok &= expectFalse("missing current controller fails closed", missing.hand.valid);
+        ok &= expectTrue("missing controller cannot accept stale native pose", missing.corrected);
+        const auto restored = continuity::resolve(scopeState, damping, false, 5, { moved, true }, valid, valid, {}, true);
+        ok &= expectNear("a tracking gap discards filter history", restored.driver.world.translate.x, 20.0f, 0.001f);
+        const auto reopened = continuity::resolve(scopeState, damping, true, 6, { moved, true }, { moved, true }, { moved, true }, {}, true);
+        ok &= expectFalse("scope reentry releases recovery", reopened.corrected || scopeState.recovering);
+        scopeState = {};
+        const auto reset = continuity::resolve(scopeState, damping, false, 7, valid, valid, valid, {}, true);
+        ok &= expectFalse("skeleton reset cannot replay old scope history", reset.corrected);
+
+        for (const auto config : { continuity::Damping{ 0.6f, 0.6f, false, false, true },
+                 continuity::Damping{ 0.6f, 0.6f, true, true, true } }) {
+            scopeState = {};
+            (void)continuity::resolve(scopeState, config, true, 1, valid, valid, valid, {}, true);
+            const auto result = continuity::resolve(scopeState, config, false, 2, { moved, true }, valid, valid, {}, true);
+            ok &= expectFalse("uninterrupted or disabled damping remains provider-owned", result.corrected);
+            ok &= expectNear("ordinary native input preserved", result.hand.world.translate.x, 10.0f, 0.001f);
+        }
     }
 
     if (!ok) {

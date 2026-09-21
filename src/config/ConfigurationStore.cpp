@@ -7,6 +7,9 @@
 #include <cmath>
 #include <format>
 #include <optional>
+#include <map>
+#include <set>
+#include <cstring>
 
 namespace rock::config
 {
@@ -45,12 +48,53 @@ namespace rock::config
 
         ValueType typeOf(std::string_view key)
         {
+            // This public boolean key has no type prefix.
+            if (key == "npcDynamicCollisions") return ValueType::Boolean;
             switch (key.empty() ? '\0' : key.front()) {
             case 'b': return ValueType::Boolean;
             case 'i': return ValueType::Integer;
             case 'f': return ValueType::Float;
             default: return ValueType::String;
             }
+        }
+
+        bool sameKey(std::string_view lhs, std::string_view rhs) noexcept
+        {
+            return lhs.size() == rhs.size() &&
+                (lhs.empty() || _strnicmp(lhs.data(), rhs.data(), lhs.size()) == 0);
+        }
+
+        struct IniValue
+        {
+            const char* value;
+            const char* comment;
+            int order;
+        };
+        using KeyIndex = std::map<CSimpleIniA::Entry, IniValue, CSimpleIniA::Entry::KeyOrder>;
+
+        // Borrowed only while the source INI is unchanged. Multi-key parsing
+        // retains physical load order, including repeated section headers.
+        KeyIndex indexKeys(const CSimpleIniA& ini)
+        {
+            KeyIndex result;
+            CSimpleIniA::TNamesDepend sections;
+            ini.GetAllSections(sections);
+            for (const auto& section : sections) {
+                for (const auto& [key, value] : *ini.GetSection(section.pItem)) {
+                    auto [found, inserted] = result.try_emplace(key, IniValue{ value, key.pComment, key.nOrder });
+                    if (!inserted && key.nOrder > found->second.order)
+                        found->second = { value, key.pComment, key.nOrder };
+                }
+            }
+            return result;
+        }
+
+        void removeKey(CSimpleIniA& ini, const char* key)
+        {
+            CSimpleIniA::TNamesDepend sections;
+            ini.GetAllSections(sections);
+            for (const auto& section : sections)
+                ini.Delete(section.pItem, key, true);
         }
 
         bool hasKeys(const CSimpleIniA& ini)
@@ -64,10 +108,10 @@ namespace rock::config
         }
     }
 
-    Group settingGroup(std::string_view section, std::string_view key) noexcept
+    Group settingGroup(std::string_view, std::string_view key) noexcept
     {
         for (const auto& setting : kSettingMetadata) {
-            if (setting.section == section && setting.key == key) return setting.group;
+            if (sameKey(setting.key, key)) return setting.group;
         }
         return Group::Consumer;
     }
@@ -123,6 +167,7 @@ namespace rock::config
         }
         if (!exists) return true;
         ini.SetUnicode(false);
+        ini.SetMultiKey(true);
         if (ini.LoadFile(source.c_str()) < 0) {
             _error = std::format("Cannot read {}", source.string());
             return false;
@@ -183,11 +228,14 @@ namespace rock::config
         CSimpleIniA consumer;
         CSimpleIniA developer;
         if (!readFile(Group::Consumer, consumer) || !readFile(Group::Developer, developer)) return false;
+        const auto consumerKeys = indexKeys(consumer);
+        const auto developerKeys = indexKeys(developer);
         auto updated = _settings;
         bool changed = _revision == 0;
         for (auto& setting : updated) {
-            const auto& source = setting.group == Group::Consumer ? consumer : developer;
-            const char* value = source.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr);
+            const auto& keys = setting.group == Group::Consumer ? consumerKeys : developerKeys;
+            const auto found = keys.find(CSimpleIniA::Entry(setting.key.c_str()));
+            const char* value = found != keys.end() ? found->second.value : nullptr;
             const bool specified = value != nullptr;
             const std::string next = specified ? normalize(setting.type, value).value_or(value) : setting.defaultValue;
             changed |= setting.value != next || setting.specified != specified;
@@ -224,22 +272,31 @@ namespace rock::config
             if (ec) { _error = ec.message(); return false; }
             if (!exists && !materializeConsumerDefaults(current)) return false;
         }
-        for (const auto& [section, key, value] : changes) {
+        for (const auto& change : changes) {
             const auto found = std::find_if(_settings.begin(), _settings.end(), [&](const Setting& setting) {
-                return setting.group == group && setting.section == section && setting.key == key;
+                return setting.group == group && sameKey(setting.key, change.key);
             });
             if (found == _settings.end()) {
                 _error = "Unknown setting or incorrect configuration file";
                 return false;
             }
-            const auto normalized = normalize(found->type, value);
+            const auto normalized = normalize(found->type, change.value);
             if (!normalized) {
                 _error = "Invalid setting value";
                 return false;
             }
-            if (group == Group::Developer && isDefault(*found, *normalized)) {
-                current.Delete(found->section.c_str(), found->key.c_str(), true);
-            } else if (current.SetValue(found->section.c_str(), found->key.c_str(), normalized->c_str(), nullptr, true) < 0) {
+            std::string comment;
+            {
+                const auto keys = indexKeys(current);
+                const auto existing = keys.find(CSimpleIniA::Entry(found->key.c_str()));
+                if (existing != keys.end() && existing->second.comment) comment = existing->second.comment;
+            }
+            // Remove every copy before saving/resetting. An old value under a
+            // different decorative heading must never resurrect an override.
+            removeKey(current, found->key.c_str());
+            if (!(group == Group::Developer && isDefault(*found, *normalized)) &&
+                current.SetValue(found->section.c_str(), found->key.c_str(), normalized->c_str(),
+                    comment.empty() ? nullptr : comment.c_str(), true) < 0) {
                 _error = "Cannot update setting";
                 return false;
             }
@@ -278,24 +335,28 @@ namespace rock::config
             "; New files contain only changed options. Existing entries are preserved.\n"
             "; Resetting an option removes its entry; an empty developer file is removed.\n";
         if (output.LoadData(std::string(header) +
-                "; Missing options use compiled defaults. Section numbers match the wheel menu.\n\n") < 0) {
+                "; Missing options use compiled defaults. Section numbers match the wheel menu.\n"
+                "; Section headers are decorative; key names are case-insensitive within their owning file.\n"
+                "; If a key is repeated, its last occurrence in the file wins.\n\n") < 0) {
             _error = "Cannot prepare configuration header";
             return false;
         }
+        const auto keys = indexKeys(source);
+        std::set<CSimpleIniA::Entry, CSimpleIniA::Entry::KeyOrder> writtenKeys;
+        output.SetMultiKey(true);
         std::string_view previousCategory;
         for (const auto& setting : _settings) {
             if (setting.group != group) continue;
-            const auto* value = source.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr);
-            if (!value) continue;
+            const auto found = keys.find(CSimpleIniA::Entry(setting.key.c_str()));
+            if (found == keys.end()) continue;
+            const auto* value = found->second.value;
 
             std::string comment;
             if (setting.category != previousCategory) {
                 comment = std::format("; === {} ===\n", setting.category);
                 previousCategory = setting.category;
             }
-            const auto* section = source.GetSection(setting.section.c_str());
-            const auto entry = section->find(CSimpleIniA::Entry(setting.key.c_str()));
-            const char* existing = entry != section->end() ? entry->first.pComment : nullptr;
+            const char* existing = found->second.comment;
             if (existing) {
                 // Rebuild only our category banner. Keep authored per-option help.
                 std::string_view remaining(existing);
@@ -323,18 +384,18 @@ namespace rock::config
                 _error = "Cannot organize configuration option";
                 return false;
             }
+            writtenKeys.emplace(setting.key.c_str());
         }
 
-        // Preserve externally added entries; organization must not discard values.
+        // Explicit writes organize recognized settings using their effective
+        // value/comment once. Preserve unknown and other-file entries as data;
+        // copying shadowed recognized keys would reintroduce stale overrides.
         CSimpleIniA::TNamesDepend sections;
         source.GetAllSections(sections);
         for (const auto& section : sections) {
-            CSimpleIniA::TNamesDepend keys;
-            source.GetAllKeys(section.pItem, keys);
-            for (const auto& key : keys) {
-                if (!output.GetValue(section.pItem, key.pItem, nullptr) &&
-                    output.SetValue(section.pItem, key.pItem,
-                        source.GetValue(section.pItem, key.pItem), key.pComment) < 0) {
+            for (const auto& [key, value] : *source.GetSection(section.pItem)) {
+                if (!writtenKeys.contains(key) &&
+                    output.SetValue(section.pItem, key.pItem, value, key.pComment) < 0) {
                     _error = "Cannot preserve external configuration option";
                     return false;
                 }

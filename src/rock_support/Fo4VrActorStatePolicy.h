@@ -29,6 +29,14 @@ namespace rock::fo4vr_actor_state_policy
     inline constexpr std::uint32_t kInvalidWeaponState = 0xFFFFFFFFu;
     inline constexpr std::uint32_t kInvalidGunState = 0xFFFFFFFFu;
 
+    // Equipment identity survives holstering. Only the terminal Sheathed
+    // state frees native carry; drawing, sheathing and unknown states do not.
+    [[nodiscard]] inline constexpr bool equippedWeaponOccupiesHand(
+        bool equipped, std::uint32_t weaponState) noexcept
+    {
+        return equipped && weaponState != 0;
+    }
+
     [[nodiscard]] inline constexpr std::uint32_t decodeWeaponState(
         const std::uint32_t actorStateStorage) noexcept
     {

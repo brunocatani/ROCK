@@ -2,6 +2,9 @@
 
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/ShellCasingGrace.h"
+#include "physics-interaction/performance/PhysicsStepProfile.h"
+#include "RockConfig.h"
 
 #include <REL/Relocation.h>
 
@@ -29,6 +32,7 @@ namespace rock
     {
         PhysicsCallbackQuiescenceGate gate{};
         PhysicsCallbackQuiescenceGate::CallbackLease wholeUpdateLease{};
+        performance_profiler::PhysicsStepProfile profile{};
     };
 
     struct PhysicsStepDriveCoordinator::NativeStepListener
@@ -62,8 +66,10 @@ namespace rock
                 return;
             }
             auto& callbackState = *listener->callbackState;
+            callbackState.profile.reset();
             callbackState.wholeUpdateLease = callbackState.gate.tryEnterCallback();
             if (callbackState.wholeUpdateLease) {
+                callbackState.profile.beginUpdate();
                 if (auto* owner = listener->owner.load(std::memory_order_acquire)) {
                     owner->onBeforeWholePhysicsUpdate();
                 }
@@ -77,6 +83,7 @@ namespace rock
             }
             if (auto* owner = listener->owner.load(std::memory_order_acquire)) {
                 owner->onBeforeAnyPhysicsStep(substepProgress, substepDeltaSeconds);
+                listener->callbackState->profile.beginCollide();
             }
         }
 
@@ -92,7 +99,9 @@ namespace rock
                 return;
             }
             if (auto* owner = listener->owner.load(std::memory_order_acquire)) {
+                listener->callbackState->profile.endCollide();
                 owner->onBetweenCollideAndSolve(substepProgress, substepDeltaSeconds);
+                listener->callbackState->profile.beginSolve();
             }
         }
 
@@ -102,6 +111,7 @@ namespace rock
                 return;
             }
             if (auto* owner = listener->owner.load(std::memory_order_acquire)) {
+                listener->callbackState->profile.endSolve();
                 owner->onAfterAnyPhysicsStep(substepProgress, substepDeltaSeconds);
             }
         }
@@ -109,6 +119,7 @@ namespace rock
         void afterWhole(PhysicsStepDriveCoordinator::NativeStepListener* listener, std::uint32_t, void*)
         {
             if (listener && listener->callbackState) {
+                listener->callbackState->profile.endUpdate();
                 listener->callbackState->wholeUpdateLease = {};
             }
         }
@@ -173,6 +184,8 @@ namespace rock
         auto& gate = callbackGate();
         gate.pauseAndWait();
         _registeredWorld = hknpWorld;
+        shell_casing_grace::prepareFrame(hknpWorld, g_rockConfig.rockWeaponShellCollisionGraceMs,
+            _elapsedSimulatedSeconds, _solveSequence);
         ++_registrationSequence;
         if (_nativeListener) {
             _nativeListener->vtable = &kStepListenerVTable;
@@ -191,7 +204,9 @@ namespace rock
         gate.pauseAndWait();
         if (_nativeListener) {
             _nativeListener->owner.store(nullptr, std::memory_order_release);
+            _nativeListener->callbackState->profile.reset();
         }
+        shell_casing_grace::abandon();
         _registeredWorld = nullptr;
         _lastTimingSample = {};
         _lastSubstepTimingSample = {};
@@ -248,6 +263,7 @@ namespace rock
         stampTimingIdentity(timing);
         _lastSubstepTimingSample = timing;
         ++_currentSubstepIndex;
+        shell_casing_grace::beforeCollide(_registeredWorld, timing);
 
         if (!_substepPreCollideCallback || !_registeredWorld) {
             return;
@@ -295,6 +311,7 @@ namespace rock
         }
         stampTimingIdentity(timing);
         _solveSequenceAtomic.store(_solveSequence, std::memory_order_release);
+        shell_casing_grace::afterSolve(_registeredWorld, timing);
         _elapsedSimulatedAtomic.store(_elapsedSimulatedSeconds, std::memory_order_release);
         _fallbackSampleCountAtomic.store(_fallbackSampleCount, std::memory_order_release);
         _substepDeltaSecondsAtomic.store(timing.substepDeltaSeconds, std::memory_order_release);

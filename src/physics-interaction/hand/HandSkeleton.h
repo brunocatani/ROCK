@@ -8,11 +8,11 @@
 // ---- DirectSkeletonBoneReader.h ----
 
 #include <cstdint>
+#include <array>
 #include <string>
 #include <vector>
 
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
-#include "physics-interaction/hand/ArmPresentationPolicy.h"
 #include "physics-interaction/hand/RenderedBoneTransportPolicy.h"
 
 #include "RE/NetImmerse/NiTransform.h"
@@ -20,15 +20,20 @@
 namespace rock
 {
     /*
-     * Rendered: the root flattened tree as FRIK left it, its solve to a ROCK
-     * claim included. Controller: each hand chain (forearm, hand, fingers)
-     * carried to the isolated controller hand, which is what every consumer
-     * measuring against the controller read before FRIK API v2 deferred claims.
+     * Rendered: the live root flattened array, final only after WorldFinal.
+     * Controller: each sampled hand chain (forearm, hand, fingers) carried
+     * from that array's own wrist to the isolated controller hand.
      */
     enum class SkeletonBoneCaptureSpace : std::uint8_t
     {
         Rendered,
         Controller,
+    };
+
+    enum class SkeletonBoneCapturePayload : std::uint8_t
+    {
+        FlattenedTransforms,
+        HandRootsWithSceneNodes,
     };
 
     struct DirectSkeletonBoneEntry
@@ -38,8 +43,9 @@ namespace rock
         int parentTreeIndex = -1;
         int drawableParentSnapshotIndex = -1;
         RE::NiTransform world{};
-        // The bone's refNode world: the scene node the array was synced from
-        // (FRIK's arm solve writes it), before FRIK's palm blend on the array.
+        // Independent live refNode world, always in scene space. Arm IK writes
+        // it before the flattened array is final; controller transport must
+        // not apply the array's delta to this already updated scene node.
         RE::NiTransform nodeWorld{};
         bool nodeWorldValid = false;
         bool included = false;
@@ -47,11 +53,15 @@ namespace rock
 
     struct DirectSkeletonBoneSnapshot
     {
+        const void* topologyOwner = nullptr; // Reader identity only; never dereferenced.
+        std::uint64_t topologyRevision = 0;
         bool valid = false;
         bool inPowerArmor = false;
         skeleton_bone_debug_math::DebugSkeletonBoneMode mode = skeleton_bone_debug_math::DebugSkeletonBoneMode::Off;
         skeleton_bone_debug_math::SkeletonBoneSnapshotSource source = skeleton_bone_debug_math::SkeletonBoneSnapshotSource::None;
         SkeletonBoneCaptureSpace space = SkeletonBoneCaptureSpace::Rendered;
+        SkeletonBoneCapturePayload payload = SkeletonBoneCapturePayload::FlattenedTransforms;
+        std::array<bool, 2> controllerHandsValid{};
         const void* skeleton = nullptr;
         const void* boneTree = nullptr;
         int totalBoneCount = 0;
@@ -60,6 +70,10 @@ namespace rock
         std::vector<std::string> missingRequiredBones;
     };
 
+    class SkeletonBoneNameIndex;
+    // Converts this copied array once, using its own wrists as the source.
+    bool transportControllerHands(DirectSkeletonBoneSnapshot& snapshot);
+
     class DirectSkeletonBoneReader
     {
     public:
@@ -67,21 +81,8 @@ namespace rock
             skeleton_bone_debug_math::DebugSkeletonBoneMode mode,
             skeleton_bone_debug_math::DebugSkeletonBoneSource source,
             SkeletonBoneCaptureSpace space,
-            DirectSkeletonBoneSnapshot& outSnapshot);
-        /*
-         * Re-solve one cached arm (upper arm and twists, forearm bones, hand,
-         * fingers) so the hand takes handDelta exactly and the elbow follows
-         * with both bone lengths kept (ArmPresentationPolicy), in the tree
-         * and its refNodes. The whole arm is validated before the first
-         * write. False when nothing was written; outElbowMoveGameUnits is how
-         * far the elbow left FRIK's solve, outReachDeficitGameUnits how far
-         * the wrist lay beyond the straight arm.
-         */
-        bool presentCachedArm(
-            rendered_bone_transport_policy::HandChainSide side,
-            const RE::NiTransform& handDelta,
-            float& outElbowMoveGameUnits,
-            float& outReachDeficitGameUnits);
+            DirectSkeletonBoneSnapshot& outSnapshot,
+            SkeletonBoneCapturePayload payload = SkeletonBoneCapturePayload::FlattenedTransforms);
         void resetCache();
 
     private:
@@ -91,10 +92,6 @@ namespace rock
             int treeIndex = -1;
             int parentTreeIndex = -1;
             int drawableParentSnapshotIndex = -1;
-            rendered_bone_transport_policy::HandChainSide chainSide = rendered_bone_transport_policy::HandChainSide::None;
-            // Presentation: which side and segment of the arm the bone belongs to.
-            rendered_bone_transport_policy::HandChainSide armSide = rendered_bone_transport_policy::HandChainSide::None;
-            arm_presentation_policy::ArmSegment armSegment = arm_presentation_policy::ArmSegment::None;
             bool included = false;
         };
 
@@ -105,7 +102,7 @@ namespace rock
             skeleton_bone_debug_math::DebugSkeletonBoneMode mode,
             bool inPowerArmor);
 
-        bool captureFromCachedTree(DirectSkeletonBoneSnapshot& outSnapshot, SkeletonBoneCaptureSpace space);
+        bool captureFromCachedTree(DirectSkeletonBoneSnapshot& outSnapshot, SkeletonBoneCaptureSpace space, SkeletonBoneCapturePayload payload);
 
         const void* _cachedSkeleton = nullptr;
         void* _cachedBoneTree = nullptr;
@@ -116,6 +113,7 @@ namespace rock
         bool _missingSourceLogged = false;
         int _cachedRequiredResolvedCount = 0;
         std::vector<CachedBone> _cachedBones;
+        std::uint64_t _topologyRevision = 0;
         std::vector<std::string> _cachedMissingRequiredBones;
     };
 }
@@ -142,11 +140,11 @@ namespace rock
         bool resolve()
         {
             // Rendered on purpose: this cache is the controller-hand isolation's input.
-            DirectSkeletonBoneSnapshot snapshot{};
+            auto& snapshot = _snapshot;
             if (!_reader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                     skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
                     SkeletonBoneCaptureSpace::Rendered,
-                    snapshot)) {
+                    snapshot, SkeletonBoneCapturePayload::HandRootsWithSceneNodes)) {
                 clearResolvedState();
                 return false;
             }
@@ -186,6 +184,7 @@ namespace rock
         {
             clearResolvedState();
             _reader.resetCache();
+            _snapshot = {};
         }
 
         [[nodiscard]] bool isReady() const { return _ready && _skeleton && _boneTree; }
@@ -204,23 +203,6 @@ namespace rock
             const bool valid = isLeft ? _leftHandNodeWorldValid : _rightHandNodeWorldValid;
             outWorld = valid ? (isLeft ? _leftHandNodeWorld : _rightHandNodeWorld) : RE::NiTransform{};
             return _ready && valid;
-        }
-
-        /*
-         * End of ROCK's frame: move the rendered hand by the change the hand
-         * world authority made to its claim since FRIK consumed it, and
-         * re-solve the arm behind it.
-         */
-        bool presentArm(bool isLeft, const RE::NiTransform& handDelta, float& outElbowMoveGameUnits, float& outReachDeficitGameUnits)
-        {
-            outElbowMoveGameUnits = 0.0f;
-            outReachDeficitGameUnits = 0.0f;
-            return isReady() &&
-                   _reader.presentCachedArm(
-                       isLeft ? rendered_bone_transport_policy::HandChainSide::Left : rendered_bone_transport_policy::HandChainSide::Right,
-                       handDelta,
-                       outElbowMoveGameUnits,
-                       outReachDeficitGameUnits);
         }
 
         [[nodiscard]] const void* getSkeleton() const { return _skeleton; }
@@ -253,6 +235,7 @@ namespace rock
         }
 
         DirectSkeletonBoneReader _reader;
+        DirectSkeletonBoneSnapshot _snapshot;
         const void* _skeleton = nullptr;
         const void* _boneTree = nullptr;
         bool _inPowerArmor = false;
@@ -289,6 +272,9 @@ namespace rock::root_flattened_finger_skeleton_runtime
     struct FingerChain
     {
         std::array<RE::NiPoint3, 3> points{};
+        RE::NiPoint3 tipSegmentCenterWorld{};
+        RE::NiPoint3 tipDirectionWorld{};
+        bool tipGeometryValid = false;
         bool valid = false;
     };
 
@@ -423,8 +409,10 @@ namespace rock::root_flattened_finger_skeleton_runtime
         const DirectSkeletonBoneSnapshot& boneSnapshot,
         bool isLeft,
         Snapshot& outSnapshot,
-        std::string* outMissingBoneName = nullptr);
-    bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot, std::string* outMissingBoneName = nullptr);
+        std::string* outMissingBoneName = nullptr,
+        SkeletonBoneNameIndex* nameIndex = nullptr);
+    bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot, std::string* outMissingBoneName = nullptr,
+        SkeletonBoneCaptureSpace space = SkeletonBoneCaptureSpace::Controller);
 }
 
 // ---- HandFrameResolver.h ----

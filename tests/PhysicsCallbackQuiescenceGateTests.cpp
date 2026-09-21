@@ -7,6 +7,12 @@
 
 using rock::PhysicsCallbackQuiescenceGate;
 
+// Timing is not part of the quiescence contract exercised by this executable.
+namespace rock::performance_profiler {
+    ScopedTimer::ScopedTimer(Scope scope) noexcept : _scope(scope) {}
+    ScopedTimer::~ScopedTimer() = default;
+}
+
 int main()
 {
     using namespace std::chrono_literals;

@@ -1,7 +1,7 @@
 #include <cassert>
 #include <memory>
 
-#include "physics-interaction/debug/DebugOverlaySnapshotPool.h"
+#include "rock_support/ImmutableSnapshotPool.h"
 
 namespace
 {
@@ -13,7 +13,7 @@ namespace
 
 int main()
 {
-    using Pool = rock::debug_overlay_snapshot::SnapshotPool<Snapshot, 2>;
+    using Pool = rock::immutable_snapshot::SnapshotPool<Snapshot, 2>;
     Pool pool;
 
     auto first = pool.acquire();

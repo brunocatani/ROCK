@@ -2,6 +2,7 @@
 
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/VectorMath.h"
+#include "physics-interaction/native/HavokPhysicsTiming.h"
 
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
@@ -22,6 +23,67 @@ namespace rock::dynamic_weapon_collision_policy
     inline constexpr float kMinimumBoundingBoxHalfExtentGameUnits = 0.25f;
     inline constexpr float kFallbackWeaponMass = 2.0f;
     inline constexpr float kMaximumWeaponMass = 50.0f;
+
+    // Preserve the former three-solve grace at 90 Hz without shortening it
+    // when Havok subdivides a frame. This is contact evidence retention, not
+    // a visual delay or permission to retain a pose after body retirement.
+    inline constexpr float kContactRetentionSeconds = 3.0f / 90.0f;
+
+    struct ContactMotorRecovery
+    {
+        float damping;
+        float constantRecoveryVelocity;
+    };
+
+    [[nodiscard]] inline ContactMotorRecovery resolveContactMotorRecovery(
+        float baseDamping,
+        float baseConstantRecoveryVelocity,
+        float baseTau,
+        float contactTau,
+        float currentTau,
+        bool contactActive)
+    {
+        // Reuse the existing motor-strength transition for both entry and
+        // release; a separate contact filter would add another response clock.
+        const float tauRange = contactTau - baseTau;
+        const float blend = std::abs(tauRange) > 0.000001f ?
+            std::clamp((currentTau - baseTau) / tauRange, 0.0f, 1.0f) :
+            (contactActive ? 1.0f : 0.0f);
+
+        // FO4VR 0x141AFD71D-0x141AFD77C adds constantRecovery * dt
+        // to proportional error recovery, up to the entire remaining error.
+        // For a blocked barrel this keeps commanding abrupt small corrections
+        // at a long lever. Contact uses proportional recovery with full native
+        // velocity damping; free tracking restores the caller's exact profile.
+        return {
+            baseDamping + ((std::max)(baseDamping, 1.0f) - baseDamping) * blend,
+            baseConstantRecoveryVelocity * (1.0f - blend),
+        };
+    }
+
+    [[nodiscard]] inline float advanceContactRetention(
+        float remainingSeconds,
+        bool observedContact,
+        bool teleported,
+        const havok_physics_timing::PhysicsTimingSample& timing,
+        float inverseTimeScale = 1.0f)
+    {
+        if (teleported || !timing.valid || timing.usedFallback ||
+            timing.phase != havok_physics_timing::PhysicsStepPhase::SubstepPostSolve ||
+            !havok_physics_timing::isUsableDelta(timing.substepDeltaSeconds) ||
+            !std::isfinite(inverseTimeScale) || inverseTimeScale <= 0.0f ||
+            !havok_physics_timing::isUsableDelta(timing.substepDeltaSeconds * inverseTimeScale)) {
+            return 0.0f;
+        }
+        if (observedContact) {
+            return kContactRetentionSeconds;
+        }
+        const float remaining = std::isfinite(remainingSeconds) ?
+            std::clamp(remainingSeconds, 0.0f, kContactRetentionSeconds) : 0.0f;
+        const float next = remaining - timing.substepDeltaSeconds * inverseTimeScale;
+        // Float subtraction must not buy one extra solve at the deadline.
+        return next > 0.000001f ? next : 0.0f;
+    }
 
     enum class VisualIntentSource
     {

@@ -23,13 +23,17 @@ namespace rock::performance_profiler
         InteractionUpdate,
         EquippedWeaponInteraction,
         InteractionFinalize,
-        HandPresentation,
+        RenderedHandCapture,
         ProviderPublication,
         HandColliderUpdate,
         BodyColliderUpdate,
         GeneratedColliderPhysicsFlush,
         WeaponCollision,
         WeaponCollisionTransforms,
+        WeaponContactProbe,
+        WeaponEmitterRefresh,
+        WeaponIdentityRead,
+        WeaponVisualObservation,
         GeneratedBodyContactRegistry,
         WeaponColliderBuild,
         WeaponColliderCreate,
@@ -49,6 +53,8 @@ namespace rock::performance_profiler
         DebugOverlayRender,
         ContactResolve,
         NativeContactCallback,
+        NativeMeleeCallback,
+        NativeMeleeDispatch,
         GrabAcquisitionBodyScan,
         GrabAcquisitionActivePrep,
         GrabMeshExtraction,
@@ -58,6 +64,71 @@ namespace rock::performance_profiler
         GrabAuthorityAfterSolveDiagnostics,
         GrabNearbyDampingRestore,
         GrabNearbyDampingRestoreBodySearch,
+        FramePrelude,
+        FrameBeginPreparation,
+        WeaponPresentation,
+        FinalPresentation,
+        HandFrameResolve,
+        HandBoneCapture,
+        BodyBoneCapture,
+        FingerBoneCapture,
+        SelectionHitProcessing,
+        PhysicsSystemBodyScan,
+        NativePlayerRefresh,
+        NativePlayerPairFilter,
+        HeldSceneWriter,
+        ProviderFrameDispatch,
+        ProviderFrameConsumer,
+        ProviderAnimationDispatch,
+        ProviderAnimationConsumer,
+        NativeWorldReadWait,
+        CallbackQuiescenceWait,
+        NearbyDampingWait,
+        NativeIdleGripHarvest,
+        UnattributedMemoryQueries,
+        GrabAcquisition,
+        GrabSurfaceResolution,
+        GrabFingerSolve,
+        GrabFingerIndexBuild,
+        GrabFingerPadProbes,
+        NativePhysicsUpdate,
+        NativePhysicsCollideInterval,
+        NativePhysicsSolveInterval,
+        GrabSelectionValidation,
+        GrabBodyPreparation,
+        GrabProxyPreparation,
+        GrabMeshCapturePreparation,
+        GrabBodyResolution,
+        GrabResolvedBodyCapture,
+        GrabPivotEvidence,
+        GrabContactPatch,
+        GrabPinchPocket,
+        GrabFingerEvidence,
+        GrabCommitPreparation,
+        GrabBodyFrameCapture,
+        GrabSeatCapture,
+        GrabGripSupport,
+        GrabFrozenCommit,
+        GrabPostFreeze,
+        GrabConstraintCommit,
+        GrabLocalTriangleCapture,
+        GrabTriangleSelection,
+        MeshStaticExtraction,
+        MeshDynamicExtraction,
+        MeshSkinnedExtraction,
+        MeshPointQuery,
+        MeshDirectionalQuery,
+        GrabMeshQueryIndexBuild,
+        NativeSimulationPairFilter,
+        NativePairProfileBatch,
+        NativeImpactListener,
+        NativeImpactDispatch,
+        NativeImpactConsumer,
+        NativeImpactPlayPair,
+        NativeImpactManifoldTrace,
+        RagdollComponentRead,
+        RagdollBodyRefresh,
+        GrabContactPatchIndexBuild,
         Count
     };
 
@@ -81,6 +152,20 @@ namespace rock::performance_profiler
         GrabAcquisitionCacheMiss,
         GrabAcquisitionCacheInvalidated,
         GrabNearbyDampingRestoreFailed,
+        NativeMeleeRockPartnerDropped,
+        NativeMeleeDecodeFailed,
+        NativeReadRangeRejected,
+        NativeWriteRangeRejected,
+        PhysicsTimingSubstepsIncreased,
+        GrabAcquisitionPeerHeld,
+        GrabAcquisitionEquippedTransfer,
+        GrabAcquisitionSucceeded,
+        GrabSingleBodyVisualOwnerAccepted,
+        GrabMeshOwnerMismatchRejected,
+        ContactPairBatchTruncated,
+        NativeWeaponSelfPairsRejected,
+        NativeWeaponOwnerUnresolved,
+        NativeWeaponOwnerResolvedOther,
         Count
     };
 
@@ -103,6 +188,39 @@ namespace rock::performance_profiler
         EquippedWeaponFingerPoseSelectedTriangles,
         EquippedWeaponFingerPoseSpatialNodeVisits,
         EquippedWeaponFingerPoseTriangleTests,
+        NativeMeleeCallbacksPerFrame,
+        RenderedSkeletonBones,
+        ControllerSkeletonBones,
+        SelectionRawHits,
+        PhysicsOriginalSubsteps,
+        PhysicsRequestedSubsteps,
+        PhysicsCompletedSubsteps,
+        PhysicsRawDeltaMicroseconds,
+        GeneratedHandBodies,
+        GeneratedBodyBodies,
+        GeneratedWeaponBodies,
+        FingerPadCandidateTriangles,
+        FingerPadTriangleTests,
+        GrabMeshStaticTriangles,
+        GrabMeshDynamicTriangles,
+        GrabMeshSkinnedTriangles,
+        GrabMeshCaptureAttempts,
+        GrabMeshPayloadBytes,
+        MeshPointQueryTriangles,
+        MeshDirectionalQueryTriangles,
+        MeshPointQueryTriangleTests,
+        GrabTriangleSelectionTests,
+        MeshStaticVerticesTransformed,
+        SimulationPairsInput,
+        SimulationPairsNative,
+        SimulationPairsKept,
+        RagdollSystemBodies,
+        RagdollSystemConstraints,
+        RagdollConnectedBodies,
+        MeshSkinnedVerticesSource,
+        MeshSkinnedVerticesEvaluated,
+        MeshSkinnedBonesSource,
+        MeshSkinnedBonesEvaluated,
         Count
     };
 
@@ -111,13 +229,43 @@ namespace rock::performance_profiler
     using OverlayLines = std::array<std::array<char, kOverlayLineLength>, kOverlayMaxLines>;
 
     void refreshSettings(bool enabled, int logIntervalFrames, int warmupFrames, bool overlayTextEnabled) noexcept;
+    bool enabled() noexcept;
     void beginFrame() noexcept;
     void endFrame() noexcept;
     void addEventCount(Scope scope, std::uint64_t count = 1) noexcept;
     void addCounter(Counter counter, std::uint64_t count = 1) noexcept;
     void observeValue(ValueMetric metric, std::uint64_t value) noexcept;
+    struct ContactPair;
+    enum class ContactStage : std::uint8_t;
+    // Diagnostic values only; ownership and collision decisions stay with callers.
+    void observeContactPair(ContactPair pair, ContactStage stage) noexcept;
     bool overlayTextEnabled() noexcept;
     std::uint32_t copyOverlayLines(OverlayLines& outLines) noexcept;
+
+    enum class MemoryQueryKind : std::uint8_t { Read, Write, Execute };
+
+    struct MemoryQuerySample
+    {
+        std::uint64_t startTicks{ 0 };
+        Scope scope{ Scope::UnattributedMemoryQueries };
+        bool active{ false };
+    };
+
+    // One of every 64 queries on each calling thread is timed. All admitted
+    // queries are counted; no per-query allocation, logging, or shared lock.
+    MemoryQuerySample beginMemoryQuery() noexcept;
+    void endMemoryQuery(MemoryQuerySample sample, MemoryQueryKind kind, bool apiSucceeded) noexcept;
+
+    // Callback-owned wall-time interval. Unlike ScopedTimer, this never changes
+    // thread-local query attribution and may end in a later callback. A settings
+    // reset invalidates pending intervals. End consumes the sample exactly once.
+    struct IntervalSample
+    {
+        std::uint64_t startTicks{ 0 };
+        std::uint64_t generation{ 0 };
+    };
+    IntervalSample beginInterval() noexcept;
+    bool endInterval(Scope scope, IntervalSample& sample) noexcept;
 
     class ScopedTimer
     {
@@ -136,20 +284,9 @@ namespace rock::performance_profiler
         Scope _scope{ Scope::Count };
         std::uint64_t _startTicks{ 0 };
         bool _active{ false };
+        // Attribution is a value, never a pointer to a stack timer: a native
+        // SEH recovery can bypass C++ unwinding. Normal scopes restore the parent.
+        Scope _parentScope{ Scope::UnattributedMemoryQueries };
     };
 
-    class FrameScope
-    {
-    public:
-        FrameScope() noexcept;
-        ~FrameScope();
-
-        FrameScope(const FrameScope&) = delete;
-        FrameScope& operator=(const FrameScope&) = delete;
-        FrameScope(FrameScope&&) = delete;
-        FrameScope& operator=(FrameScope&&) = delete;
-
-    private:
-        ScopedTimer _timer;
-    };
 }

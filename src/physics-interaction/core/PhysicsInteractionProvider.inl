@@ -4,7 +4,7 @@
     void PhysicsInteraction::fillProviderFrameSnapshot(::rock::provider::RockProviderFrameSnapshot& outSnapshot) const
     {
         const auto& runtime = runtime_state::currentFrame();
-        outSnapshot.providerReady = (_lifecycle.initialized.load(std::memory_order_acquire) && runtime.visualAuthorityAvailable) ? 1u : 0u;
+        outSnapshot.providerReady = isProviderReady() ? 1u : 0u;
         outSnapshot.frikSkeletonReady = runtime.localSkeletonReady ? 1u : 0u;
         outSnapshot.menuBlocking = runtime.localMenuBlocking ? 1u : 0u;
         outSnapshot.configBlocking = runtime.compatibilityConfigBlocking ? 1u : 0u;
@@ -86,17 +86,27 @@
         // Providers get the controller hand ROCK interacts with, not the
         // rendered bone (ROCK's previous claim while a claim is active).
         RE::NiTransform providerHandWorld{};
-        if (_handBoneCache.isReady() && frik_hand_world_authority::tryGetRawHandWorld(false, providerHandWorld)) {
+        if (outSnapshot.providerReady && runtime.localSkeletonReady && _handBoneCache.isReady() && frik_hand_world_authority::tryGetRawHandWorld(false, providerHandWorld) && finiteNiTransform(providerHandWorld)) {
             fillProviderTransform(providerHandWorld, outSnapshot.rightHandTransform);
+            outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
+                ::rock::provider::RockProviderFrameEnrichmentFlagV1::RightHandTransformValid);
         }
-        if (_handBoneCache.isReady() && frik_hand_world_authority::tryGetRawHandWorld(true, providerHandWorld)) {
+        if (outSnapshot.providerReady && runtime.localSkeletonReady && _handBoneCache.isReady() && frik_hand_world_authority::tryGetRawHandWorld(true, providerHandWorld) && finiteNiTransform(providerHandWorld)) {
             fillProviderTransform(providerHandWorld, outSnapshot.leftHandTransform);
+            outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
+                ::rock::provider::RockProviderFrameEnrichmentFlagV1::LeftHandTransformValid);
         }
 
         outSnapshot.rightHandBodyId = _rightHand.getCollisionBodyId().value;
         outSnapshot.leftHandBodyId = _leftHand.getCollisionBodyId().value;
-        outSnapshot.rightHandState = providerHandStateFlags(_rightHand, false);
-        outSnapshot.leftHandState = providerHandStateFlags(_leftHand, true);
+        // Hand state is filled from the normalized interaction publication
+        // in dispatchFrameCallbacks, alongside its sequences and events.
+        // Contact is independent of occupancy: a holding hand may also touch.
+        if (outSnapshot.providerReady && runtime.localSkeletonReady) {
+            using Flag = ::rock::provider::RockProviderHandStateFlag;
+            if (_rightHand.isTouching()) outSnapshot.rightHandState |= static_cast<std::uint32_t>(Flag::Touching);
+            if (_leftHand.isTouching()) outSnapshot.leftHandState |= static_cast<std::uint32_t>(Flag::Touching);
+        }
         outSnapshot.offhandReservation = ::rock::provider::currentOffhandReservation();
     }
 
@@ -413,6 +423,9 @@
             ::rock::provider::RockProviderEquippedWeaponHandlingRuntimeFlagV1;
 
         outState = {};
+        if (!_lifecycle.initialized.load(std::memory_order_acquire) ||
+            !runtime_state::currentFrame().visualAuthorityAvailable ||
+            !runtime_state::currentFrame().localSkeletonReady) return false;
         // The fixed-hand configuration mode was removed; the native right
         // hand is the only default carrier. The ABI field remains.
         outState.fixedFiringHand =
@@ -423,6 +436,8 @@
         outState.weaponGenerationKey =
             _weaponCollision.getCurrentWeaponGenerationKey();
         outState.weaponFormId = currentEquippedWeaponFormId();
+        if (outState.weaponFormId == 0 || outState.weaponFormId !=
+            _weaponCollision.getCurrentObservedEquippedWeaponFormID()) outState.weaponGenerationKey = 0;
 
         const auto setFlag = [&outState](const RuntimeFlag flag) {
             outState.runtimeFlags |= static_cast<std::uint32_t>(flag);
@@ -441,11 +456,15 @@
         if (_twoHandedGrip.isPartCarryActive()) {
             setFlag(RuntimeFlag::PartCarryActive);
         }
-        if (_twoHandedGrip.isFiringGripOccupied()) {
-            setFlag(RuntimeFlag::FiringGripOccupied);
-        }
-        if (resolveEquippedWeaponInteractionNode()) {
+        if (currentEquippedWeaponOccupiesHand() && resolveEquippedWeaponInteractionNode()) {
             setFlag(RuntimeFlag::WeaponPresent);
+            // Inventory/holster equips can remain in Inactive or Touching:
+            // the native right hand still occupies the firing grip. The
+            // internal occupancy predicate counts explicit ROCK grips only;
+            // PartCarry is the state that actually vacates the firing grip.
+            if (provider_state_policy::firingGripOccupied(true, _twoHandedGrip.isPartCarryActive())) {
+                setFlag(RuntimeFlag::FiringGripOccupied);
+            }
         }
         return _lifecycle.initialized.load(std::memory_order_acquire);
     }
@@ -502,13 +521,13 @@
 
     std::uint32_t PhysicsInteraction::getProviderWeaponEvidenceDetailPointCountV1(std::uint32_t bodyId) const
     {
-        WeaponCollisionProfileEvidenceDescriptor descriptor{};
-        RE::NiAVObject* sourceNode = nullptr;
-        if (!_weaponCollision.tryGetProfileEvidenceDescriptorForBodyId(bodyId, descriptor, sourceNode)) {
+        const auto evidence = _weaponCollision.getProfileEvidenceDescriptors();
+        const auto* descriptor = evidence.find(bodyId);
+        if (!descriptor) {
             return 0;
         }
 
-        return descriptor.pointCount;
+        return descriptor->pointCount;
     }
 
     std::uint32_t PhysicsInteraction::copyProviderWeaponEvidenceDetailPointsV1(
@@ -520,15 +539,15 @@
             return 0;
         }
 
-        WeaponCollisionProfileEvidenceDescriptor descriptor{};
-        RE::NiAVObject* sourceNode = nullptr;
-        if (!_weaponCollision.tryGetProfileEvidenceDescriptorForBodyId(bodyId, descriptor, sourceNode)) {
+        const auto evidence = _weaponCollision.getProfileEvidenceDescriptors();
+        const auto* descriptor = evidence.find(bodyId);
+        if (!descriptor) {
             return 0;
         }
 
-        const std::uint32_t copied = (std::min)(maxPoints, static_cast<std::uint32_t>(descriptor.localMeshPointsGame.size()));
+        const std::uint32_t copied = (std::min)(maxPoints, static_cast<std::uint32_t>(descriptor->localMeshPointsGame.size()));
         for (std::uint32_t i = 0; i < copied; ++i) {
-            outPoints[i] = makeProviderPoint(descriptor.localMeshPointsGame[i]);
+            outPoints[i] = makeProviderPoint(descriptor->localMeshPointsGame[i]);
         }
 
         return copied;
@@ -635,14 +654,22 @@
         return static_cast<std::uint32_t>(copied);
     }
 
-    bool PhysicsInteraction::getProviderHandTargetDetailsV1(const bool isLeft,
+    void PhysicsInteraction::releaseProviderPowerArmorGrabs(const std::uint64_t ownerToken)
+    {
+        auto* bhkWorld = getPlayerBhkWorld();
+        auto* world = bhkWorld ? getHknpWorld(bhkWorld) : nullptr;
+        _touchGrabRuntime.releaseCommandOwner(ownerToken, bhkWorld, world,
+            _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire));
+    }
+
+    bool PhysicsInteraction::getProviderHandTargetDetailsV1(
+        const ::rock::provider::RockProviderHandInteractionStateV1& handState,
         ::rock::provider::RockProviderHandTargetDetailsV1& out) const
     {
         using Flag = provider::RockProviderTargetDetailFlagV1;
         out = {};
-        std::array<provider::RockProviderHandInteractionStateV1, 2> states{};
-        fillProviderHandInteractionStates(states);
-        out.handState = states[isLeft ? 1u : 0u];
+        const bool isLeft = handState.hand == provider::RockProviderHand::Left;
+        out.handState = handState;
         TouchGrabRuntime::HandReport touch{};
         if (_touchGrabRuntime.getHandReport(isLeft, touch)) {
             if (touch.hasSurfaceAnchor) {
@@ -729,6 +756,10 @@
         const auto collisionGeneration =
             _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire);
         const bool primaryIsLeft = _twoHandedGrip.isFiringHandLeft();
+        ::rock::provider::RockProviderEquippedWeaponHandlingStateV1 handling{};
+        const bool stateAvailable = queryProviderEquippedWeaponHandlingStateV1(handling);
+        std::array<::rock::provider::RockProviderWeaponPartGripStateV1, 2> grips{};
+        if (stateAvailable) fillProviderWeaponPartGripStates(grips);
 
         for (const bool isLeft : { false, true }) {
             const Hand& hand = isLeft ? _leftHand : _rightHand;
@@ -737,6 +768,11 @@
             state.hand = isLeft ?
                 ::rock::provider::RockProviderHand::Left :
                 ::rock::provider::RockProviderHand::Right;
+            state.worldGeneration = worldGeneration;
+            state.skeletonGeneration = skeletonGeneration;
+            state.providerGeneration = providerGeneration;
+            state.collisionGeneration = collisionGeneration;
+            if (!stateAvailable) continue;
             TouchGrabRuntime::HandReport touchGrabReport{};
             const bool touchGrabActive =
                 _touchGrabRuntime.getHandReport(
@@ -841,27 +877,16 @@
                     Flag::HeldBodyListTruncated);
             }
 
-            HandGripReport gripReport{};
-            _twoHandedGrip.getHandGripReport(isLeft, gripReport);
-            if (gripReport.active) {
-                switch (gripReport.kind) {
-                case weapon_part_grip_report_policy::HandGripKind::FiringGrip:
-                    state.flags |= static_cast<std::uint32_t>(
-                        Flag::FiringGrip);
-                    break;
-                case weapon_part_grip_report_policy::HandGripKind::PartCarry:
-                    state.flags |= static_cast<std::uint32_t>(
-                        Flag::PartCarry);
-                    break;
-                default:
-                    state.flags |= static_cast<std::uint32_t>(Flag::PartGrip);
-                    break;
-                }
-            }
+            provider_state_policy::applyWeaponOccupancy(
+                state, handling, grips[isLeft ? 1u : 0u]);
 
             state.effectiveInputSuppressionFlags =
                 ::rock::provider::currentHandInputSuppressionFlagsV1(
                     state.hand);
+            if (input_remap_runtime::ownsBareFistInput()) {
+                state.effectiveInputSuppressionFlags |= static_cast<std::uint32_t>(
+                    ::rock::provider::RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord);
+            }
             if (state.effectiveInputSuppressionFlags != 0) {
                 state.flags |= static_cast<std::uint32_t>(
                     Flag::InputSuppressed);
@@ -912,41 +937,49 @@
             ::rock::provider::RockProviderEquippedWeaponStateFlagV1;
         outState = {};
         const auto transition = _equipped.transition.getPublicSnapshot();
-        outState.weaponFormId = transition.weaponFormID != 0 ?
-            transition.weaponFormID :
-            currentEquippedWeaponFormId();
+        outState.weaponFormId = currentEquippedWeaponFormId();
+        outState.transitionWeaponFormId = transition.active ? transition.weaponFormID : 0;
+        outState.terminalWeaponFormId = transition.terminalWeaponFormID;
         outState.weaponGenerationKey =
             _weaponCollision.getCurrentWeaponGenerationKey();
         outState.transitionSequence = transition.transitionSequence;
         outState.terminalSequence = transition.terminalSequence;
-        switch (transition.source) {
-        case EquippedWeaponTransitionCoordinator::Source::ObservedEquip:
-            outState.transitionSource =
-                ::rock::provider::RockProviderEquippedWeaponTransitionSourceV1::ObservedEquip;
-            break;
-        case EquippedWeaponTransitionCoordinator::Source::HeldTriggerEquip:
-            outState.transitionSource =
-                ::rock::provider::RockProviderEquippedWeaponTransitionSourceV1::HeldTriggerEquip;
-            break;
-        case EquippedWeaponTransitionCoordinator::Source::HeldGripZoneEquip:
-            outState.transitionSource =
-                ::rock::provider::RockProviderEquippedWeaponTransitionSourceV1::HeldGripZoneEquip;
-            break;
-        case EquippedWeaponTransitionCoordinator::Source::MenuExit:
-            outState.transitionSource =
-                ::rock::provider::RockProviderEquippedWeaponTransitionSourceV1::MenuExit;
-            break;
-        case EquippedWeaponTransitionCoordinator::Source::WorkbenchExit:
-            outState.transitionSource =
-                ::rock::provider::RockProviderEquippedWeaponTransitionSourceV1::WorkbenchExit;
-            break;
+        const auto publicSource = [](EquippedWeaponTransitionCoordinator::Source source) {
+            using Source = ::rock::provider::RockProviderEquippedWeaponTransitionSourceV1;
+            switch (source) {
+            case EquippedWeaponTransitionCoordinator::Source::ObservedEquip: return Source::ObservedEquip;
+            case EquippedWeaponTransitionCoordinator::Source::HeldTriggerEquip: return Source::HeldTriggerEquip;
+            case EquippedWeaponTransitionCoordinator::Source::HeldGripZoneEquip: return Source::HeldGripZoneEquip;
+            case EquippedWeaponTransitionCoordinator::Source::MenuExit: return Source::MenuExit;
+            case EquippedWeaponTransitionCoordinator::Source::WorkbenchExit: return Source::WorkbenchExit;
+            }
+            return Source::Unknown;
+        };
+        if (transition.active) outState.transitionSource = publicSource(transition.source);
+        if (transition.terminalSequence != 0) outState.terminalSource = publicSource(transition.terminalSource);
+        // Internal and public terminal enums have different numeric layouts.
+        using Terminal = ::rock::provider::RockProviderEquippedWeaponTransitionResultV1;
+        using InternalTerminal = EquippedWeaponTransitionCoordinator::TerminalResult;
+        switch (transition.terminalResult) {
+        case InternalTerminal::None: outState.terminalResult = Terminal::None; break;
+        case InternalTerminal::Completed: outState.terminalResult = Terminal::Completed; break;
+        case InternalTerminal::WeaponUnequipped: outState.terminalResult = Terminal::WeaponUnequipped; break;
+        case InternalTerminal::IdentityLost: outState.terminalResult = Terminal::IdentityLost; break;
+        case InternalTerminal::ExpectedIdentityTimeout: outState.terminalResult = Terminal::ExpectedIdentityTimeout; break;
+        case InternalTerminal::NativeAnimationHandoff: outState.terminalResult = Terminal::NativeAnimationHandoff; break;
+        case InternalTerminal::WeaponNoLongerDrawn: outState.terminalResult = Terminal::WeaponNoLongerDrawn; break;
+        case InternalTerminal::IntentionalShoulderSheathe: outState.terminalResult = Terminal::IntentionalShoulderSheathe; break;
+        case InternalTerminal::RecoveryExhausted: outState.terminalResult = Terminal::RecoveryExhausted; break;
+        case InternalTerminal::ProviderLost: outState.terminalResult = Terminal::ProviderLost; break;
+        case InternalTerminal::Shutdown: outState.terminalResult = Terminal::Shutdown; break;
         }
-        outState.terminalResult =
-            static_cast<::rock::provider::RockProviderEquippedWeaponTransitionResultV1>(
-                transition.terminalResult);
-        if (outState.weaponFormId != 0 || outState.weaponGenerationKey != 0) {
+        if (_lifecycle.initialized.load(std::memory_order_acquire) &&
+            runtime_state::currentFrame().visualAuthorityAvailable &&
+            runtime_state::currentFrame().localSkeletonReady) {
             outState.flags |= static_cast<std::uint32_t>(Flag::Valid);
         }
+        if (outState.weaponFormId == 0 || outState.weaponFormId !=
+            _weaponCollision.getCurrentObservedEquippedWeaponFormID()) outState.weaponGenerationKey = 0;
         const auto setFlag = [&outState](const Flag flag, const bool enabled) {
             if (enabled) {
                 outState.flags |= static_cast<std::uint32_t>(flag);
@@ -955,12 +988,23 @@
         setFlag(Flag::IdentityPending, transition.identityPending);
         setFlag(Flag::DrawPending, transition.drawPending);
         setFlag(Flag::BridgePresented, transition.bridgePresented);
-        setFlag(Flag::NativeRenderable, transition.nativeRenderable);
+        const bool presentationKnown = transition.presentationKnown &&
+            transition.presentationWeaponFormID == outState.weaponFormId &&
+            (outState.flags & static_cast<std::uint32_t>(Flag::Valid));
+        setFlag(Flag::NativeRenderable, presentationKnown && transition.nativeRenderable);
         setFlag(
             Flag::HandPoseHandoffComplete,
-            transition.handPoseHandoffComplete);
+            presentationKnown && transition.handPoseHandoffComplete);
         setFlag(Flag::RecoveryExhausted, transition.recoveryExhausted);
         setFlag(Flag::TransitionActive, transition.active);
+        setFlag(Flag::WeaponEquipped, outState.weaponFormId != 0);
+        setFlag(Flag::WeaponPresent, outState.weaponFormId != 0 && resolveEquippedWeaponInteractionNode());
+        setFlag(Flag::WeaponDrawn, outState.weaponFormId != 0 && runtime_state::currentFrame().weaponDrawn);
+        setFlag(Flag::PresentationKnown, presentationKnown);
+        setFlag(Flag::BipodInputReserved, g_rockConfig.rockBipodMode &&
+            (outState.flags & static_cast<std::uint32_t>(Flag::Valid)) &&
+            _dynamicWeaponCollision.surfaceSupportReservesInput(
+                reinterpret_cast<std::uintptr_t>(resolveEquippedWeaponInteractionNode()), outState.weaponGenerationKey));
         outState.worldGeneration =
             _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
         outState.skeletonGeneration =
@@ -1295,91 +1339,99 @@
 
     bool PhysicsInteraction::queryProviderPresentedHandPoseV1(
         const ::rock::provider::RockProviderHand hand,
-        ::rock::provider::RockProviderPresentedHandPoseV1& outPose) const
+        ::rock::provider::RockProviderPresentedHandPoseV1& outPose,
+        ::rock::provider::RockProviderFrameSnapshot* outMetadata) const
+    {
+        outPose = {};
+        if (hand != provider::RockProviderHand::Left && hand != provider::RockProviderHand::Right) return false;
+        const auto& captured = _providerDrives.presentedPoses[hand == provider::RockProviderHand::Left ? 1u : 0u];
+        if (!frik_visual_authority::isSkeletonReadyHint() || captured.frameIndex == 0 ||
+            captured.worldGeneration != _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire) ||
+            captured.skeletonGeneration != _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire) ||
+            captured.providerGeneration != _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire)) return false;
+        outPose = captured;
+        if (outMetadata) *outMetadata = _providerDrives.presentedMetadata;
+        return true;
+    }
+
+    void PhysicsInteraction::captureProviderPresentedHandPoses()
     {
         using Flag = ::rock::provider::RockProviderPresentedHandPoseFlagV1;
-        outPose = {};
-        const bool isLeft =
-            hand == ::rock::provider::RockProviderHand::Left;
+        _providerDrives.presentedPoses = {};
+        _providerDrives.presentedMetadata = {};
+        _finalPoseBoneSnapshot.valid = false;
         if (!frik_visual_authority::isAvailable() ||
             !frik_visual_authority::isSkeletonReadyHint()) {
-            return false;
+            return;
         }
-        RE::NiTransform handWorld{};
-        if (!frik_visual_authority::tryGetHandWorldTransform(
-                isLeft ? frik_visual_authority::Hand::Left :
-                         frik_visual_authority::Hand::Right,
-                handWorld) ||
-            !finiteNiTransform(handWorld)) {
-            return false;
-        }
-        outPose.hand = hand;
-        outPose.flags =
-            static_cast<std::uint32_t>(Flag::Valid) |
-            static_cast<std::uint32_t>(Flag::HandWorldValid);
-        fillProviderTransform(handWorld, outPose.handWorld);
-
-        DirectSkeletonBoneSnapshot skeleton{};
-        if (_providerDrives.presentedPoseReader.capture(
-                skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+        auto& skeleton = _finalPoseBoneSnapshot;
+        if (!_finalPoseBoneReader.capture(
+                skeleton_bone_debug_math::DebugSkeletonBoneMode::AllFlattenedBones,
                 skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
-                SkeletonBoneCaptureSpace::Rendered,
-                skeleton)) {
-            const auto findBone = [&skeleton](const char* name) ->
-                const DirectSkeletonBoneEntry* {
-                if (!name) {
-                    return nullptr;
-                }
-                for (const auto& bone : skeleton.bones) {
-                    if (bone.name == name) {
-                        return &bone;
-                    }
-                }
-                return nullptr;
-            };
-            for (std::size_t finger = 0; finger < 5; ++finger) {
-                for (std::size_t segment = 0; segment < 3; ++segment) {
-                    const auto poseIndex = finger * 3 + segment;
-                    const auto* bone = findBone(
-                        root_flattened_finger_skeleton_runtime::fingerBoneName(
-                            isLeft,
-                            finger,
-                            segment));
-                    if (!bone || bone->drawableParentSnapshotIndex < 0 ||
-                        static_cast<std::size_t>(
-                            bone->drawableParentSnapshotIndex) >=
-                            skeleton.bones.size()) {
-                        continue;
-                    }
-                    const auto& parent = skeleton.bones[
-                        static_cast<std::size_t>(
-                            bone->drawableParentSnapshotIndex)];
-                    const auto local = transform_math::composeTransforms(
-                        transform_math::invertTransform(parent.world),
-                        bone->world);
-                    if (!finiteNiTransform(local)) {
-                        continue;
-                    }
-                    fillProviderTransform(
-                        local,
-                        outPose.fingerLocalTransforms[poseIndex]);
-                    outPose.fingerLocalTransformMask |=
-                        static_cast<std::uint16_t>(1u << poseIndex);
-                }
-            }
-            if (outPose.fingerLocalTransformMask != 0) {
-                outPose.flags |=
-                    static_cast<std::uint32_t>(Flag::FingerLocalsValid) |
-                    static_cast<std::uint32_t>(Flag::RootFlattenedReadback);
-            }
+                SkeletonBoneCaptureSpace::Rendered, skeleton)) {
+            return;
         }
-        outPose.worldGeneration =
-            _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
-        outPose.skeletonGeneration =
-            _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
-        outPose.providerGeneration =
-            _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
-        return true;
+        const auto bones = _providerDrives.presentedPoseNames.bind(skeleton);
+        // Freeze the control publication paired with this capture. An early
+        // query next frame must not join an old pose to new interaction state.
+        if (!provider::runtime::apiGetFrameSnapshot(&_providerDrives.presentedMetadata) ||
+            _providerDrives.presentedMetadata.frameIndex != runtime_state::currentFrame().frameIndex) return;
+        for (const bool isLeft : { false, true }) {
+            auto& outPose = _providerDrives.presentedPoses[isLeft ? 1u : 0u];
+            const auto* wrist = bones.find(isLeft ? "LArm_Hand" : "RArm_Hand");
+            if (!wrist || !finiteNiTransform(wrist->world)) continue;
+            outPose.hand = isLeft ? provider::RockProviderHand::Left : provider::RockProviderHand::Right;
+            outPose.flags =
+                static_cast<std::uint32_t>(Flag::Valid) |
+                static_cast<std::uint32_t>(Flag::HandWorldValid);
+            fillProviderTransform(wrist->world, outPose.handWorld);
+
+            {
+                for (std::size_t finger = 0; finger < 5; ++finger) {
+                    for (std::size_t segment = 0; segment < 3; ++segment) {
+                        const auto poseIndex = finger * 3 + segment;
+                        const auto* bone = bones.find(
+                            root_flattened_finger_skeleton_runtime::fingerBoneName(
+                                isLeft,
+                                finger,
+                                segment));
+                        if (!bone || bone->drawableParentSnapshotIndex < 0 ||
+                            static_cast<std::size_t>(
+                                bone->drawableParentSnapshotIndex) >=
+                                skeleton.bones.size()) {
+                            continue;
+                        }
+                        const auto& parent = skeleton.bones[
+                            static_cast<std::size_t>(
+                                bone->drawableParentSnapshotIndex)];
+                        const auto local = transform_math::composeTransforms(
+                            transform_math::invertTransform(parent.world),
+                            bone->world);
+                        if (!finiteNiTransform(local)) {
+                            continue;
+                        }
+                        fillProviderTransform(
+                            local,
+                            outPose.fingerLocalTransforms[poseIndex]);
+                        outPose.fingerLocalTransformMask |=
+                            static_cast<std::uint16_t>(1u << poseIndex);
+                    }
+                }
+                if (outPose.fingerLocalTransformMask != 0) {
+                    outPose.flags |=
+                        static_cast<std::uint32_t>(Flag::FingerLocalsValid) |
+                        static_cast<std::uint32_t>(Flag::RootFlattenedReadback);
+                }
+            }
+            outPose.worldGeneration =
+                _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
+            outPose.skeletonGeneration =
+                _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
+            outPose.providerGeneration =
+                _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
+            outPose.frameIndex = runtime_state::currentFrame().frameIndex;
+            outPose.presentationSequence = outPose.frameIndex;
+        }
     }
 
     std::uint32_t PhysicsInteraction::copyProviderSemanticHandContactsV1(
@@ -1510,6 +1562,8 @@
             ::rock::provider::hasLifecycleFlag(
                 lifecycleFlags,
                 ::rock::provider::RockProviderLifecycleFlag::PhysicsWriteAllowed);
+        const bool bodiesCurrent = ::rock::provider::hasLifecycleFlag(lifecycleFlags,
+            ::rock::provider::RockProviderLifecycleFlag::GeneratedBodiesValid);
         std::uint32_t copied = 0;
 
         const auto copyHand = [&](const Hand& hand, const bool isLeft) {
@@ -1519,7 +1573,7 @@
                  ++i) {
                 const auto bodyId = hand.getHandColliderBodyIdAtomic(i);
                 HandColliderBodyMetadata metadata{};
-                if (!hand.tryGetHandColliderMetadata(bodyId, metadata)) {
+                if (!hand.tryGetHandColliderMetadataAtIndex(i, bodyId, metadata)) {
                     continue;
                 }
                 auto& out = outDescriptors[copied++];
@@ -1532,10 +1586,10 @@
                 out.bodyId = bodyId;
                 out.role = static_cast<std::uint32_t>(metadata.role);
                 out.descriptorIndex = i;
-                out.flags = static_cast<std::uint32_t>(Flag::Valid);
-                if (enabled) {
-                    out.flags |= static_cast<std::uint32_t>(Flag::Enabled);
-                }
+                const bool handDisabled = isLeft ? s_leftHandDisabled.load(std::memory_order_acquire) :
+                    s_rightHandDisabled.load(std::memory_order_acquire);
+                out.flags = providerColliderFlags(_lifecycle.cachedHknpWorld, bodyId,
+                    bodiesCurrent, enabled && !handDisabled);
                 if (metadata.primaryPalmAnchor) {
                     out.flags |= static_cast<std::uint32_t>(
                         Flag::PrimaryPalmAnchor);
@@ -1559,8 +1613,8 @@
              ++i) {
             const auto bodyId = _bodyBoneColliders.getBodyIdAtomic(i);
             BodyBoneColliderMetadata metadata{};
-            if (!_bodyBoneColliders.tryGetBodyMetadataAtomic(
-                    bodyId,
+            if (!_bodyBoneColliders.tryGetBodyMetadataAtIndexAtomic(
+                    i, bodyId,
                     metadata)) {
                 continue;
             }
@@ -1577,10 +1631,7 @@
             out.descriptorIndex = metadata.descriptorIndex;
             out.lengthGameUnits = metadata.lengthGameUnits;
             out.radiusGameUnits = metadata.radiusGameUnits;
-            out.flags = static_cast<std::uint32_t>(Flag::Valid);
-            if (enabled) {
-                out.flags |= static_cast<std::uint32_t>(Flag::Enabled);
-            }
+            out.flags = providerColliderFlags(_lifecycle.cachedHknpWorld, bodyId, bodiesCurrent, enabled);
             if (metadata.inPowerArmor) {
                 out.flags |= static_cast<std::uint32_t>(
                     Flag::InPowerArmor);
@@ -1606,6 +1657,30 @@
         outState.collisionGeneration =
             _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire);
         outState.handBodyCount = hand.getHandColliderBodyCount();
+        const auto lifecycleFlags = _lifecycle.flagsAtomic.load(std::memory_order_acquire);
+        const bool bodiesCurrent = ::rock::provider::hasLifecycleFlag(lifecycleFlags,
+            ::rock::provider::RockProviderLifecycleFlag::GeneratedBodiesValid);
+        const bool writesAllowed = ::rock::provider::hasLifecycleFlag(lifecycleFlags,
+            ::rock::provider::RockProviderLifecycleFlag::PhysicsWriteAllowed);
+        const bool handDisabled = isLeft ? s_leftHandDisabled.load(std::memory_order_acquire) :
+            s_rightHandDisabled.load(std::memory_order_acquire);
+        if (writesAllowed) outState.flags |= static_cast<std::uint32_t>(Flag::PhysicsWritesAllowed);
+        if (handDisabled) outState.flags |= static_cast<std::uint32_t>(Flag::HandDisabled);
+        if (::rock::provider::hasLifecycleFlag(lifecycleFlags, ::rock::provider::RockProviderLifecycleFlag::MenuBlocking))
+            outState.flags |= static_cast<std::uint32_t>(Flag::MenuSuppressed);
+        using ColliderFlag = ::rock::provider::RockProviderPlayerColliderFlagV1;
+        for (std::uint32_t index = 0; index < outState.handBodyCount; ++index) {
+            const auto flags = providerColliderFlags(_lifecycle.cachedHknpWorld,
+                hand.getHandColliderBodyIdAtomic(index), bodiesCurrent, writesAllowed && !handDisabled);
+            if (flags & static_cast<std::uint32_t>(ColliderFlag::FilterKnown)) ++outState.filterKnownBodyCount;
+            if (flags & static_cast<std::uint32_t>(ColliderFlag::Enabled)) ++outState.collisionEnabledBodyCount;
+            if (flags & static_cast<std::uint32_t>(ColliderFlag::CollisionSuppressed))
+                outState.flags |= static_cast<std::uint32_t>(Flag::CollisionSuppressed);
+        }
+        if (outState.handBodyCount != 0 && outState.filterKnownBodyCount == outState.handBodyCount)
+            outState.flags |= static_cast<std::uint32_t>(Flag::FilterKnown);
+        if (outState.collisionEnabledBodyCount != 0)
+            outState.flags |= static_cast<std::uint32_t>(Flag::CollisionAvailable);
         if (outState.handBodyCount != 0) {
             outState.flags |= static_cast<std::uint32_t>(Flag::BodiesReady);
         }
@@ -1623,21 +1698,9 @@
                 outState.flags |= static_cast<std::uint32_t>(
                     Flag::DynamicTwinsReady);
             }
-            if (telemetry.physicsWritesAllowed) {
-                outState.flags |= static_cast<std::uint32_t>(
-                    Flag::PhysicsWritesAllowed);
-            }
-            if (telemetry.menuBlocked) {
-                outState.flags |= static_cast<std::uint32_t>(
-                    Flag::MenuSuppressed);
-            }
             if (telemetry.transitionCollisionSuppressed) {
                 outState.flags |= static_cast<std::uint32_t>(
                     Flag::TransitionSuppressed);
-            }
-            if (handTelemetry.handDisabled) {
-                outState.flags |= static_cast<std::uint32_t>(
-                    Flag::HandDisabled);
             }
             if (handTelemetry.dynamicInteractionsEnabled) {
                 outState.flags |= static_cast<std::uint32_t>(
@@ -1664,13 +1727,6 @@
             outState.reserved[2] = handTelemetry.dynamicInteractionLayer;
             outState.reserved[3] =
                 handTelemetry.suppressedWeaponPairCount;
-            if (outState.handBodyCount != 0 && telemetry.worldReady &&
-                telemetry.physicsWritesAllowed && !telemetry.menuBlocked &&
-                !telemetry.transitionCollisionSuppressed &&
-                !handTelemetry.handDisabled) {
-                outState.flags |= static_cast<std::uint32_t>(
-                    Flag::CollisionAvailable);
-            }
         }
         outState.worldGeneration =
             _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);

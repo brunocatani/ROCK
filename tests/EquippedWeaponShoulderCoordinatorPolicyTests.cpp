@@ -66,10 +66,11 @@ int main()
         FrameInput input{
             .enabled = true,
             .inputAllowed = true,
-            .sheathInputMode = sheathInputMode,
             .weaponOwnershipKey = 0xAAu,
             .presentation = NativePresentation::StableDrawn,
         };
+        input.right.sheathInputMode = sheathInputMode;
+        input.left.sheathInputMode = sheathInputMode;
         input.right.eligible = true;
         input.right.carriesWeapon = true;
         return input;
@@ -80,12 +81,13 @@ int main()
         FrameInput input{
             .enabled = true,
             .inputAllowed = true,
-            .sheathInputMode = sheathInputMode,
             .storedActive = true,
             .weaponOwnershipKey = 0xAAu,
             .presentation = NativePresentation::StableSheathed,
             .storedZone = BodyZoneKind::RightShoulder,
         };
+        input.right.sheathInputMode = sheathInputMode;
+        input.left.sheathInputMode = sheathInputMode;
         input.right.eligible = true;
         return input;
     };

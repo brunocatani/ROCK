@@ -87,6 +87,41 @@ int main()
     ok &= expectState("explicit reset leaves idle", decision.state, State::Idle);
 
     RuntimeState peerIntentState{};
+    {
+        RuntimeState retry{};
+        const Target target{ 0x1234, 42 };
+        decision = update(retry, { .held = true, .pressed = true }, true, false, 0.01f, config, target);
+        ok &= expectTrue("close grab starts immediately", decision.pressed);
+        retainContactRetry(retry, target);
+        decision = update(retry, { .held = true }, true, false, 0.01f, config, target);
+        ok &= expectFalse("contact retry bounds repeated mesh work", decision.pressed);
+        decision = update(retry, { .held = true }, true, false, 0.05f, config, target);
+        ok &= expectTrue("same held squeeze retries recoverable contact", decision.pressed && decision.syntheticPressed);
+        retainContactRetry(retry, target);
+        decision = update(retry, { .held = true }, true, false, 2.0f, config, target);
+        ok &= expectTrue("same-target intent does not expire", decision.pressed);
+        decision = update(retry, { .held = true }, true, false, 0.1f, config, target);
+        ok &= expectFalse("terminal refusal does not retry without explicit retention", decision.pressed);
+
+        retainContactRetry(retry, target);
+        decision = update(retry, { .held = true }, true, false, 0.1f, config, Target{ 0x5678, 42 });
+        ok &= expectFalse("retry never transfers to another reference", decision.pressed);
+        decision = update(retry, { .held = true }, true, false, 0.1f, config, target);
+        ok &= expectFalse("returning to lost target needs new input", decision.pressed);
+        retainContactRetry(retry, target);
+        decision = update(retry, { .held = true }, true, false, 0.1f, config, Target{ 0x1234, 43 });
+        ok &= expectFalse("replaced body cancels retry", decision.pressed);
+        retainContactRetry(retry, target);
+        decision = update(retry, { .held = true }, false, false, 0.1f, config);
+        ok &= expectFalse("selection loss cancels retry", retry.retryTarget.valid());
+        retainContactRetry(retry, target);
+        decision = update(retry, { .released = true }, true, false, 0.1f, config, target);
+        ok &= expectTrue("retry release passes through immediately", decision.released);
+        ok &= expectFalse("release clears retry", retry.retryTarget.valid());
+        retainContactRetry(retry, target);
+        decision = update(retry, { .held = true }, true, true, 0.1f, config, target);
+        ok &= expectFalse("successful hold or lifecycle reset clears retry", retry.retryTarget.valid());
+    }
     decision = update(peerIntentState, RawButtonState{ .held = true, .pressed = true }, false, false, 1.0f / 90.0f, config);
     ok &= expectFalse("peer-held miss keeps original press pending", decision.pressed);
     decision = update(peerIntentState, RawButtonState{ .held = true }, true, false, 1.0f / 90.0f, config);

@@ -9,6 +9,18 @@ namespace RE
 
 namespace rock::input_remap_runtime
 {
+    // Admission/readiness are published by the interaction frame owner.
+    // Physical capture and cancellation happen before native event dispatch.
+    void setBareFistAdmission(bool allowed);
+    void cancelBareFistInput();
+    [[nodiscard]] std::uint64_t bareFistInputCycle();
+    [[nodiscard]] bool ownsBareFistInput();
+    [[nodiscard]] bool bareFistChordValid();
+    [[nodiscard]] bool bareFistHooksReady();
+    void setBareFistDrawState(std::uint64_t cycle, bool owned, bool ready);
+    [[nodiscard]] bool isBareFistDrawPermitted();
+    [[nodiscard]] bool isBareFistMeleeSuppressed();
+
     enum class RawButtonAvailabilityReason : std::uint32_t
     {
         Available = 0,
@@ -76,6 +88,10 @@ namespace rock::input_remap_runtime
     // OpenVR hooks present the physical left trigger to the game as the
     // primary wand's trigger and blank both physical trigger identities.
     void setEquippedWeaponLeftHandFiringActive(bool active);
+    // Frame-thread staging and one coherent publication to controller hooks.
+    void setWeaponTransferPending(bool pending);
+    void publishWeaponTriggerRouting();
+    void blockWeaponTriggerUntilRelease(bool isLeft);
     void setProviderOpenVrGameInputSuppressed(bool isLeft, bool suppressed);
     bool isProviderOpenVrGameInputSuppressedForHand(bool isLeft);
     // Reads captured physical input only; never queries provider leases.

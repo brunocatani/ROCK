@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <memory_resource>
 #include <unordered_set>
 #include <vector>
 
@@ -326,8 +327,21 @@ namespace rock::object_physics_body_set
         std::size_t acceptedCount() const;
         std::size_t rejectedCount() const;
         std::vector<std::uint32_t> acceptedBodyIds() const;
-        std::vector<std::uint32_t> uniqueAcceptedMotionBodyIds() const;
-        std::vector<const ObjectPhysicsBodyRecord*> uniqueAcceptedMotionRecords() const;
+        template <class Visitor>
+        std::size_t forEachUniqueAcceptedMotion(Visitor&& visitor) const
+        {
+            std::array<std::byte, 2048> storage;
+            std::pmr::monotonic_buffer_resource memory(storage.data(), storage.size());
+            std::pmr::unordered_set<std::uint32_t> seen{ &memory };
+            diagnostics.duplicateMotionSkips = 0;
+            std::size_t count = 0;
+            for (const auto& record : records) {
+                if (!record.accepted) continue;
+                if (seen.insert(record.motionId).second) { visitor(record); ++count; }
+                else ++diagnostics.duplicateMotionSkips;
+            }
+            return count;
+        }
         bool containsAcceptedBody(std::uint32_t bodyId) const;
         const ObjectPhysicsBodyRecord* findRecord(std::uint32_t bodyId) const;
         const ObjectPhysicsBodyRecord* findAcceptedRecordByOwnerNode(RE::NiAVObject* ownerNode) const;

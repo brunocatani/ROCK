@@ -1,4 +1,9 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/WeaponGripCalibration.h"
+
+#include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
+#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
+#include "physics-interaction/weapon/WeaponAimBasis.h"
 
 // Firing-hand grip: canonical right frame, native aim-frame capture, left/right mirroring, authored primary firing grip canonical and finger pose, reattach, support-to-firing promotion, and PrimaryOnly (persistent equipped carry) sessions.
 
@@ -45,7 +50,9 @@ namespace rock
             !captureRightNativeWeaponAimFrame(
                 weaponNode,
                 currentWeaponGenerationKey,
-                currentEquippedWeaponOwnershipKey)) {
+                currentEquippedWeaponOwnershipKey,
+                // The canonical frame checked above belongs to this weapon.
+                _firing.rightCanonicalInstanceContentKey)) {
             return reject("native-right-aim-unavailable");
         }
 
@@ -80,7 +87,9 @@ namespace rock
             return reject("mirrored-firing-frame-unavailable");
         }
 
-        outFiringGripWeaponLocal = _firing.rightCanonicalGripWeaponLocal;
+        outFiringGripWeaponLocal = _firing.rightCanonicalGripWeaponLocal +
+            weapon_grip_calibration::offsetInWeapon(outFiringHandWeaponLocal,
+                g_rockConfig.rockLeftFiringGripOffsetGameUnits, true);
         return true;
     }
 
@@ -226,7 +235,9 @@ namespace rock
                     !captureRightNativeWeaponAimFrame(
                         weaponNode,
                         currentWeaponGenerationKey,
-                        currentEquippedWeaponOwnershipKey)) {
+                        currentEquippedWeaponOwnershipKey,
+                        hasRightFiringHandCanonicalFrame(weaponNode, currentWeaponGenerationKey, currentEquippedWeaponOwnershipKey) ?
+                            _firing.rightCanonicalInstanceContentKey : 0)) {
                     return reject("native-right-aim-unavailable");
                 }
                 resolvedLeftHandWeaponLocal =
@@ -346,7 +357,12 @@ namespace rock
             RE::NiTransform nativeWeaponLocalBaseline = weaponNode->local;
             if (_visuals.returningWeapon.localTransition.active && _visuals.returningWeapon.weaponNode == weaponNode) {
                 nativeWeaponLocalBaseline = _visuals.returningWeapon.nativeBaselineLocal;
-                clearWeaponVisualReturn("new-primary-acquisition", true, true);
+                // Right-primary acquisition changes input ownership only.
+                // Its in-flight return already lands on the authored carry;
+                // cancelling it exposes the intermediate node for one frame.
+                if (!usesNativeRightCarry()) {
+                    clearWeaponVisualReturn("new-primary-acquisition", true, true);
+                }
             }
             _session.weaponNode = weaponNode;
             _session.weaponGenerationKey = currentWeaponGenerationKey;
@@ -370,7 +386,10 @@ namespace rock
             primaryHandIsLeft,
             _visuals.returningWeapon.localTransition.active &&
                 _visuals.returningWeapon.followsAuthoredPrimaryGrip);
-        clearPrimaryGripWorldAuthority(primaryHandIsLeft);
+        if (!_visuals.returningWeapon.localTransition.active ||
+            !_visuals.returningWeapon.keepFiringHandAttached) {
+            clearPrimaryGripWorldAuthority(primaryHandIsLeft);
+        }
         clearSupportGripPose(supportHandIsLeft);
         clearSupportGripPose(primaryHandIsLeft);
         clearPrimaryDetachVisualAuthority(primaryHandIsLeft);
@@ -403,6 +422,7 @@ namespace rock
             _firing.hasPrimaryHandWeaponLocal = false;
         }
         _visuals.primaryHandLerp = {};
+        _firing.transferredPrimaryGrip = {};
         _session.state = TwoHandedState::PrimaryOnly;
 
         ROCK_LOG_INFO(Weapon,
@@ -447,14 +467,8 @@ namespace rock
         }
 
         if (manualDecision.dropRequested) {
-            beginHandVisualReturn(isFiringHandLeft(), "primary-only-drop");
-            if (_handlingSettings.detachAuthority ==
-                immersive_weapon_policy::DetachAuthority::
-                    IntegratedImmersive) {
-                recordFiringGripDetachedHaptic();
-            }
             requestEquippedWeaponDrop("primary-only-grip-released",
-                isFiringHandLeft() ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right);
+                isFiringHandLeft() ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right, dt);
             return;
         }
 
@@ -527,7 +541,9 @@ namespace rock
                 weaponOwnershipKey)) {
             if (_session.state == TwoHandedState::PartCarry) {
                 ROCK_LOG_SAMPLE_WARN(Weapon, g_rockConfig.rockLogSampleMilliseconds,
-                    "TwoHandedGrip: firing-grip zone unavailable reason=noCurrentCanonicalRightHold");
+                    "TwoHandedGrip: firing-grip zone unavailable reason=noCurrentCanonicalRightHold nodeMatch={} generation={:016X}/{:016X} ownership={:016X}/{:016X} captured={}",
+                    _firing.rightCanonicalWeaponNode == weaponNode, _firing.rightCanonicalGenerationKey, weaponGenerationKey,
+                    _firing.rightCanonicalOwnershipKey, weaponOwnershipKey, _firing.hasRightCanonicalHandWeaponLocal);
             }
             return false;
         }
@@ -682,12 +698,23 @@ namespace rock
         const bool authoredProviderAuthorityActive,
         const bool authoredAttachOnlyAuthorityActive)
     {
-        if (!weaponNode ||
-            !handWeaponContact.valid ||
-            !weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(
-                handWeaponContact.weaponGenerationKey,
-                _session.weaponGenerationKey)) {
-            return false;
+        const bool coreAuthoredStation = !authoredProviderAuthorityActive && !authoredAttachOnlyAuthorityActive;
+        if (!weaponNode || weaponNode != _session.weaponNode ||
+            (!coreAuthoredStation && (!handWeaponContact.valid ||
+                !weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(
+                    handWeaponContact.weaponGenerationKey, _session.weaponGenerationKey)))) return false;
+        if (coreAuthoredStation) {
+            firing_grip_reattach_zone_policy::ZoneInput zoneInput{};
+            firing_grip_reattach_zone_policy::ZoneResult zone{};
+            if (!tryBuildFiringGripZoneInput(weaponNode, _session.weaponGenerationKey,
+                    _session.equippedWeaponOwnershipKey, _handlingSettings.firingGripReattachRadiusGameUnits, zoneInput) ||
+                !tryEvaluateFiringGripZoneForHand(handIsLeft, zoneInput, zone) || !zone.inside) return false;
+            provider::RockProviderWeaponPartTargetQueryV1 query{};
+            query.weaponGenerationKey = _session.weaponGenerationKey;
+            query.bodyId = weapon_part_runtime::kInvalidBodyId;
+            provider::RockProviderWeaponPartTargetResolutionV1 resolution{};
+            (void)provider::resolveWeaponPartTargetV1(query, resolution);
+            if (resolution.whitelistActive) return false;
         }
 
         RE::NiTransform handTransform{};
@@ -706,13 +733,14 @@ namespace rock
             authored_weapon_grip_capture_policy::shouldUseAuthoredFiringGripProbe(
                 authored_weapon_grip_capture_policy::AuthoredFiringGripProbeInput{
                     .proximityProbeAcquisition =
-                        handWeaponContact.acquisitionSource ==
+                        coreAuthoredStation || handWeaponContact.acquisitionSource ==
                         WeaponInteractionAcquisitionSource::ProximityProbe,
                     .providerAuthorityActive = authoredProviderAuthorityActive,
                     .attachOnly = authoredAttachOnlyAuthorityActive,
                     .authoredCanonicalAvailable =
                         authoredProbeCanonicalAvailable,
                 });
+        if (coreAuthoredStation && !useAuthoredProbeCanonical) return false;
         if (!useAuthoredProbeCanonical &&
             !firingGripContactMatchesCapturedGrip(
                 weaponNode,
@@ -777,10 +805,16 @@ namespace rock
 
         // Validated: commit. A takeover by the other hand flips the firing
         // role only after its complete normalized hold is ready.
+        _firing.transferredPrimaryGrip = {};
         if (!isFiringHand(handIsLeft)) {
             setFiringHand(handIsLeft, "firing-grip-reattach-other-hand");
         }
         _firing.hasPrimaryHandWeaponLocal = true;
+        if (usedCanonicalHold) {
+            _firing.primaryGripLocal = _firing.rightCanonicalGripWeaponLocal;
+            if (handIsLeft) _firing.primaryGripLocal += weapon_grip_calibration::offsetInWeapon(
+                _firing.primaryHandWeaponLocal, g_rockConfig.rockLeftFiringGripOffsetGameUnits, true);
+        }
         rememberRightFiringHandCanonicalFrame(_firing.rightCanonicalInstanceContentKey);
         _session.firingGripSequence = ++_session.gripCaptureSequence;
         _visuals.primaryHandLerp = {};
@@ -913,6 +947,8 @@ namespace rock
         const bool targetHandHoldingObject =
             isLeft ? _firing.leftHandHoldingObjectForPose : _firing.rightHandHoldingObjectForPose;
         const bool firingHandDetached = _session.state == TwoHandedState::PartCarry;
+        const bool transferred = _session.state == TwoHandedState::Gripping && isFiringHand(isLeft) &&
+            _firing.transferredPrimaryGrip.valid();
         if (firingHandDetached && _firing.authoredFingerPosePublished) {
             // Fail closed: a detached firing hand never keeps a grip pose,
             // whichever hand published it.
@@ -922,13 +958,15 @@ namespace rock
             !authored_weapon_grip_capture_policy::shouldPublishAuthoredFiringFingerPose(
                 targetHandHoldingObject,
                 firingHandDetached) ||
-            _firing.rightCanonicalSource != RightFiringCanonicalSource::AuthoredAnimation) {
+            (!transferred && _firing.rightCanonicalSource != RightFiringCanonicalSource::AuthoredAnimation)) {
             return false;
         }
 
-        const auto& transforms = isLeft ? _firing.leftFingerLocalTransforms : _firing.rightFingerLocalTransforms;
-        const std::uint16_t mask = isLeft ? _firing.leftFingerLocalTransformMask : _firing.rightFingerLocalTransformMask;
-        if (mask != authored_weapon_grip_library::kCompleteFiringFingerMask) {
+        const auto& transforms = transferred ? _firing.transferredPrimaryGrip.fingerLocals :
+            (isLeft ? _firing.leftFingerLocalTransforms : _firing.rightFingerLocalTransforms);
+        const std::uint16_t mask = transferred ? _firing.transferredPrimaryGrip.fingerMask :
+            (isLeft ? _firing.leftFingerLocalTransformMask : _firing.rightFingerLocalTransformMask);
+        if (!transferred && mask != authored_weapon_grip_library::kCompleteFiringFingerMask) {
             return false;
         }
 
@@ -948,7 +986,9 @@ namespace rock
 
         const auto hand = handFromBool(isLeft);
         _firing.publishedFingerPoseIsLeft = isLeft;
-        if (!frik_visual_authority::setHandPoseCustom(PRIMARY_GRIP_TAG, hand, frik_visual_authority::HandPoseData{}, GRIP_HAND_POSE_PRIORITY)) {
+        const auto fingerPose = transferred ? frik_visual_authority::makeHandPoseDataFromJointValues(
+            _firing.transferredPrimaryGrip.fingerValues) : frik_visual_authority::HandPoseData{};
+        if (!frik_visual_authority::setHandPoseCustom(PRIMARY_GRIP_TAG, hand, fingerPose, GRIP_HAND_POSE_PRIORITY)) {
             ROCK_LOG_SAMPLE_WARN(Animation, 2000,
                 "Authored finger publication rejected stage=custom-pose hand={} ownership={:016X} capture={}",
                 isLeft ? "left" : "right", _firing.rightCanonicalOwnershipKey, _firing.rightCanonicalCaptureSequence);
@@ -961,7 +1001,7 @@ namespace rock
         for (std::size_t index = 0; index < transforms.size(); ++index) {
             overrideData.localTransforms[index] = transforms[index];
         }
-        if (!frik_visual_authority::setHandPoseCustomLocalTransforms(PRIMARY_GRIP_TAG, hand, &overrideData, GRIP_HAND_POSE_PRIORITY)) {
+        if (mask && !frik_visual_authority::setHandPoseCustomLocalTransforms(PRIMARY_GRIP_TAG, hand, &overrideData, GRIP_HAND_POSE_PRIORITY)) {
             ROCK_LOG_SAMPLE_WARN(Animation, 2000,
                 "Authored finger publication rejected stage=finger-locals hand={} ownership={:016X} capture={} mask=0x{:04X}",
                 isLeft ? "left" : "right", _firing.rightCanonicalOwnershipKey, _firing.rightCanonicalCaptureSequence, mask);
@@ -1051,8 +1091,7 @@ namespace rock
                 PRIMARY_GRIP_TAG,
                 frik_visual_authority::Hand::Right,
                 solvedFiringHandWorld,
-                GRIP_HAND_POSE_PRIORITY,
-                frik_visual_authority::RebaseDriver::RightHand)) {
+                GRIP_HAND_POSE_PRIORITY)) {
             if (_firing.authoredHandWorldActive) {
                 clearAuthoredPrimaryFiringHandWorldAuthority();
             }
@@ -1106,9 +1145,37 @@ namespace rock
         clearPrimaryGripWorldAuthority(false);
     }
 
+    bool TwoHandedGrip::tryGetRightWeaponAimWorld(const float weaponScale, RE::NiTransform& outWorld)
+    {
+        outWorld = {};
+        const auto* nodes = f4vr::getPlayerNodes();
+        return nodes && nodes->primaryWandNode &&
+            weapon_aim_basis::tryResolveWorld(nodes->primaryWandNode->world, weaponScale, outWorld);
+    }
+
+    bool TwoHandedGrip::tryGetMeleeWeaponAimWorld(const bool isLeft,
+        const RE::NiTransform& physicalHandWorld,
+        const RE::NiTransform& authoredHandWeaponLocal,
+        const float weaponScale, RE::NiTransform& outWorld)
+    {
+        outWorld = {};
+        const auto* nodes = f4vr::getPlayerNodes();
+        const auto* wand = nodes ? (isLeft ? nodes->SecondaryWandNode : nodes->primaryWandNode) : nullptr;
+        return wand && weapon_aim_basis::tryResolveMeleeWorld(
+            physicalHandWorld, authoredHandWeaponLocal, wand->world,
+            weaponScale, g_rockConfig.rockMeleeGripPitchDegrees, outWorld);
+    }
+
     bool TwoHandedGrip::tryGetAuthoredPrimaryTrackedFiringHandWorld(
         RE::NiTransform& outHandWorld) const
     {
+        // A fresh skeleton needs a claim-free calibration before we can
+        // replace its tracked hand. Otherwise our first output prevents the
+        // next frame from reconstructing input and ownership oscillates.
+        if (!frik_hand_world_authority::hasCalibratedRawHandFrame(false)) {
+            outHandWorld = {};
+            return false;
+        }
         RE::NiTransform driverWorld{};
         if (tryResolvePhysicalHandFrame(false, outHandWorld, driverWorld)) {
             return true;
@@ -1181,18 +1248,23 @@ namespace rock
         _firing.hasRightCanonicalHandWeaponLocal = true;
     }
 
-    bool TwoHandedGrip::canCaptureRightNativeWeaponAimFrame() const
+    bool TwoHandedGrip::canCaptureRightNativeWeaponAimFrame(const bool cleanIntentAvailable) const
     {
-        if (usesLeftFiringCarry() || _leftCarry.weaponNodeOwnershipBlockEngaged ||
-            _visuals.returningWeapon.localTransition.active ||
-            _visuals.weaponCollisionHandPresentationFromPreviousFrame[1] ||
-            !scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(
-                _scope.menuOpenThisFrame,
-                _scope.safeHandFrames[1].rootRebaseActive)) {
+        if (!equipped_weapon_manual_ownership_policy::canCaptureNativeAim(
+                !usesLeftFiringCarry() && !_leftCarry.weaponNodeOwnershipBlockEngaged,
+                _visuals.returningWeapon.localTransition.active,
+                scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(
+                    _scope.menuOpenThisFrame,
+                    _scope.safeHandFrames[1].rootRebaseActive),
+                _visuals.weaponCollisionHandPresentationFromPreviousFrame[1],
+                cleanIntentAvailable)) {
             return false;
         }
 
+        // Touching is still native carry: hovering support must not freeze
+        // the aim cache before the first real two-hand grab/collision build.
         if (_session.state == TwoHandedState::Inactive ||
+            _session.state == TwoHandedState::Touching ||
             _session.state == TwoHandedState::PrimaryOnly) {
             return true;
         }
@@ -1204,27 +1276,45 @@ namespace rock
     bool TwoHandedGrip::captureRightNativeWeaponAimFrame(
         RE::NiNode* weaponNode,
         const std::uint64_t currentWeaponGenerationKey,
-        const std::uint64_t currentEquippedWeaponOwnershipKey)
+        const std::uint64_t currentEquippedWeaponOwnershipKey,
+        const std::uint64_t weaponInstanceContentKey,
+        const RE::NiTransform* cleanNativeIntentWorld,
+        const std::source_location captureLocation)
     {
         auto* playerNodes = f4vr::getPlayerNodes();
         RE::NiNode* rightWand =
             playerNodes ? playerNodes->primaryWandNode : nullptr;
-        if (!canCaptureRightNativeWeaponAimFrame() || !weaponNode ||
+        if (!canCaptureRightNativeWeaponAimFrame(cleanNativeIntentWorld != nullptr) || !weaponNode ||
+            currentWeaponGenerationKey == 0 ||
             currentEquippedWeaponOwnershipKey == 0 ||
-            !rightWand || !isFiniteTransform(weaponNode->world) ||
+            !rightWand || !isFiniteTransform(cleanNativeIntentWorld ? *cleanNativeIntentWorld : weaponNode->world) ||
             !isFiniteTransform(rightWand->world)) {
             return false;
         }
 
-        RE::NiTransform weaponInRightWand =
-            transform_math::composeTransforms(
-                transform_math::invertTransform(rightWand->world),
-                weaponNode->world);
-        weaponInRightWand =
-            left_firing_position_only_math::orientationOnly(
-                weaponInRightWand);
-        if (!isFiniteTransform(weaponInRightWand)) {
+        // FRIK applies a requested reparent on its next skeleton pass. The
+        // logical left-carry state can already be clear while this node is
+        // still under the left hand; that pose is not a right-hand baseline.
+        const RE::NiNode* const rightHand = resolveFirstPersonHandNode(false);
+        if (!rightHand || weaponNode->parent != rightHand) {
             return false;
+        }
+
+        RE::NiTransform weaponInRightWand = weapon_aim_basis::weaponInController();
+        const bool meleeWeapon = _recoil.weaponEvidence.resolved && _recoil.weaponEvidence.sizeClass == WeaponSizeClass::Melee;
+        if (meleeWeapon) {
+            RE::NiTransform naturalHandWorld{}, meleeWorld{};
+            // Cache the uncorrected authored basis. Left carry applies the
+            // current user pitch at solve time, so hot reload never compounds
+            // a captured correction or requires another right-hand capture.
+            if (!hasRightFiringHandCanonicalFrame(weaponNode, currentWeaponGenerationKey, currentEquippedWeaponOwnershipKey) ||
+                _firing.rightCanonicalSource != RightFiringCanonicalSource::AuthoredAnimation ||
+                !tryResolveNaturalWandHandOrientationFrame(false, naturalHandWorld) ||
+                !weapon_aim_basis::tryResolveMeleeWorld(naturalHandWorld,
+                    _firing.rightCanonicalHandWeaponLocal, 1.0f, meleeWorld)) return false;
+            weaponInRightWand = transform_math::composeTransforms(transform_math::invertTransform(rightWand->world), meleeWorld);
+            weaponInRightWand.translate = {};
+            weaponInRightWand.scale = 1.0f;
         }
 
         const bool identityChanged =
@@ -1233,12 +1323,39 @@ namespace rock
             _firing.rightNativeWeaponAimFrame.weaponGenerationKey !=
                 currentWeaponGenerationKey ||
             _firing.rightNativeWeaponAimFrame.weaponOwnershipKey !=
-                currentEquippedWeaponOwnershipKey;
+                currentEquippedWeaponOwnershipKey ||
+            _firing.rightNativeWeaponAimFrame.weaponInstanceContentKey !=
+                weaponInstanceContentKey;
+        if (g_rockConfig.rockDebugWeaponOmodDumpEnabled) {
+            // Capture before assignment: same-identity refreshes hid the
+            // orientation change between native aim and left-carry takeover.
+            vanilla_weapon_alignment_telemetry::recordNativeAimCapture({
+                .caller = captureLocation.file_name(),
+                .callerLine = captureLocation.line(),
+                .weaponFormId = _recoil.equippedIdentity.formID,
+                .generation = currentWeaponGenerationKey,
+                .ownership = currentEquippedWeaponOwnershipKey,
+                .instanceContent = weaponInstanceContentKey,
+                .weapon = weaponNode,
+                .wandWorld = rightWand->world,
+                .inputWorld = cleanNativeIntentWorld ? *cleanNativeIntentWorld : weaponNode->world,
+                .previousAim = _firing.rightNativeWeaponAimFrame.weaponInWandOrientation,
+                .nextAim = weaponInRightWand,
+                .previousValid = _firing.rightNativeWeaponAimFrame.valid,
+                .identityChanged = identityChanged,
+                .cleanIntent = cleanNativeIntentWorld != nullptr,
+                .intentSource = static_cast<std::uint32_t>(_recoil.rightBaseSource),
+                .gripState = static_cast<std::uint32_t>(_session.state),
+                .authoredRefreshed = _firing.authoredHandWorldRefreshed,
+                .writeBlocked = _frikWeaponNode.writeBlockEngaged,
+            });
+        }
         _firing.rightNativeWeaponAimFrame = RightNativeWeaponAimFrame{
             .weaponInWandOrientation = weaponInRightWand,
             .weaponNodeIdentity = weaponNode,
             .weaponGenerationKey = currentWeaponGenerationKey,
             .weaponOwnershipKey = currentEquippedWeaponOwnershipKey,
+            .weaponInstanceContentKey = weaponInstanceContentKey,
             .valid = true,
         };
 
@@ -1249,12 +1366,13 @@ namespace rock
                     RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
             ROCK_LOG_INFO(
                 Weapon,
-                "TwoHandedGrip: native right weapon aim captured generation={:016X} ownership={:016X} barrelInRightWand=({:.3f},{:.3f},{:.3f})",
+                "TwoHandedGrip: native right weapon aim captured generation={:016X} ownership={:016X} barrelInRightWand=({:.3f},{:.3f},{:.3f}) source={}",
                 currentWeaponGenerationKey,
                 currentEquippedWeaponOwnershipKey,
                 barrelInRightWand.x,
                 barrelInRightWand.y,
-                barrelInRightWand.z);
+                barrelInRightWand.z,
+                meleeWeapon ? "authored-melee-hand" : "rock-controller-basis");
         }
         return true;
     }
@@ -1275,6 +1393,23 @@ namespace rock
                    _firing.rightNativeWeaponAimFrame.weaponInWandOrientation);
     }
 
+    namespace
+    {
+        const char* scopeSafeResolutionModeName(const scope_safe_hand_frame_math::ResolutionMode mode)
+        {
+            switch (mode) {
+            case scope_safe_hand_frame_math::ResolutionMode::RootFlattened:
+                return "root-flattened";
+            case scope_safe_hand_frame_math::ResolutionMode::DriverReconstructed:
+                return "driver-reconstructed";
+            case scope_safe_hand_frame_math::ResolutionMode::LastKnown:
+                return "last-known";
+            default:
+                return "unavailable";
+            }
+        }
+    }
+
     void TwoHandedGrip::refreshNaturalHandInWandFrames()
     {
         auto* playerNodes = f4vr::getPlayerNodes();
@@ -1286,15 +1421,14 @@ namespace rock
         const auto refreshHand = [&](const bool isLeft,
                                      RE::NiNode* wandNode,
                                      RE::NiTransform& outBoneInWand,
-                                     bool& outWandValid,
-                                     RE::NiTransform& outBoneInDampedDriver,
-                                     bool& outDampedDriverValid) {
+                                     bool& outWandValid) {
             if (hasVisualAuthorityForHand(isLeft)) {
                 return;
             }
 
             RE::NiTransform handWorld{};
-            if (!tryGetSolverHandTransform(isLeft, handWorld)) {
+            if (!frik_hand_world_authority::hasCalibratedRawHandFrame(isLeft) ||
+                !frik_hand_world_authority::tryGetRawHandWorld(isLeft, handWorld)) {
                 return;
             }
 
@@ -1320,9 +1454,43 @@ namespace rock
             };
 
             captureRelation(wandNode ? &wandNode->world : nullptr, outBoneInWand, outWandValid);
-            RE::NiTransform inputDriver{};
-            if (frik_hand_world_authority::tryGetInputDriverWorld(isLeft, inputDriver)) {
-                captureRelation(&inputDriver, outBoneInDampedDriver, outDampedDriverValid);
+
+            /*
+             * Probe (FRIK API v2.3 port): every loose seat, palm pivot and
+             * left-carry mirror derives from this solver hand through the
+             * relations captured here. Compare it with the hand FRIK tracked
+             * this frame and the hand it rendered last frame so a rotated
+             * basis shows up as a number instead of a rotated weapon.
+             */
+            RE::NiTransform firstPersonHand{};
+            RE::NiTransform presentedHand{};
+            const bool firstPersonValid = frik_visual_authority::tryGetHandWorldTransform(
+                frik_visual_authority::handFromBool(isLeft), firstPersonHand);
+            const bool presentedValid = frik_visual_authority::tryGetPresentedHandWorldTransform(isLeft, presentedHand);
+            const RE::NiTransform identity = transform_math::makeIdentityTransform<RE::NiTransform>();
+            const float solverVsFirstPersonDegrees = firstPersonValid ?
+                tracked_hand_isolation_policy::rotationDegrees(handWorld, firstPersonHand) : -1.0f;
+            const float solverVsFirstPersonGameUnits = firstPersonValid ?
+                tracked_hand_isolation_policy::translationGameUnits(handWorld, firstPersonHand) : -1.0f;
+            const float solverVsPresentedDegrees = presentedValid ?
+                tracked_hand_isolation_policy::rotationDegrees(handWorld, presentedHand) : -1.0f;
+            const float solverVsPresentedGameUnits = presentedValid ?
+                tracked_hand_isolation_policy::translationGameUnits(handWorld, presentedHand) : -1.0f;
+            const float boneInWandDegrees = outWandValid ?
+                tracked_hand_isolation_policy::rotationDegrees(outBoneInWand, identity) : -1.0f;
+            const char* solverMode = scopeSafeResolutionModeName(
+                _scope.safeHandFrames[isLeft ? 0u : 1u].diagnostic.resolutionMode);
+            const char* rawSource = frik_hand_world_authority::rawHandSourceName(isLeft);
+            if (isLeft) {
+                ROCK_LOG_SAMPLE_INFO(Weapon, 2000,
+                    "TwoHandedGrip: natural hand frame left solver={} raw={} vsFirstPerson={:.1f}deg/{:.2f}gu vsPresented={:.1f}deg/{:.2f}gu boneInWand={:.1f}deg",
+                    solverMode, rawSource, solverVsFirstPersonDegrees, solverVsFirstPersonGameUnits,
+                    solverVsPresentedDegrees, solverVsPresentedGameUnits, boneInWandDegrees);
+            } else {
+                ROCK_LOG_SAMPLE_INFO(Weapon, 2000,
+                    "TwoHandedGrip: natural hand frame right solver={} raw={} vsFirstPerson={:.1f}deg/{:.2f}gu vsPresented={:.1f}deg/{:.2f}gu boneInWand={:.1f}deg",
+                    solverMode, rawSource, solverVsFirstPersonDegrees, solverVsFirstPersonGameUnits,
+                    solverVsPresentedDegrees, solverVsPresentedGameUnits, boneInWandDegrees);
             }
         };
 
@@ -1330,92 +1498,58 @@ namespace rock
             false,
             playerNodes->primaryWandNode,
             _firing.rightNaturalBoneInWand,
-            _firing.hasRightNaturalBoneInWand,
-            _firing.rightNaturalBoneInDampedDriver,
-            _firing.hasRightNaturalBoneInDampedDriver);
+            _firing.hasRightNaturalBoneInWand);
         refreshHand(
             true,
             playerNodes->SecondaryWandNode,
             _firing.leftNaturalBoneInWand,
-            _firing.hasLeftNaturalBoneInWand,
-            _firing.leftNaturalBoneInDampedDriver,
-            _firing.hasLeftNaturalBoneInDampedDriver);
+            _firing.hasLeftNaturalBoneInWand);
     }
 
-    void TwoHandedGrip::refreshRightNativeCanonicalFrame(
+    void TwoHandedGrip::refreshRightNativeAimFrame(
         RE::NiNode* weaponNode,
         const std::uint64_t currentWeaponGenerationKey,
         const std::uint64_t currentEquippedWeaponOwnershipKey,
         const std::uint64_t weaponInstanceContentKey)
     {
         /*
-         * Passive canonical capture: whenever the equipped weapon rides the
-         * native RIGHT hand (no ROCK transform ownership), the live weapon
-         * pose already carries FRIK's authored per-weapon offsets, so the
-         * canonical right hold and its weapon-in-wand frame can refresh
-         * continuously. Without this, a weapon that was never
-         * right-firing-gripped in the session had no canonical, and a LEFT
-         * takeover fell back to the raw squeeze capture - the per-weapon
-         * offsets (e.g. the UMP's large forward offset) silently missing
-         * from the mirrored left hold ("worked before by coincidence").
+         * A collider rebuild of the same equipped item (workbench exit, scale
+         * change) can precede the first left handoff, and the presentation
+         * guard below then blocks a fresh capture for the whole hold. Keep the
+         * already captured aim for the same node, instance and content; never
+         * carry it across a model, equip or content change.
          */
+        auto& aim = _firing.rightNativeWeaponAimFrame;
+        if (aim.valid && currentWeaponGenerationKey != 0 &&
+            aim.weaponGenerationKey != currentWeaponGenerationKey &&
+            equipped_weapon_manual_ownership_policy::canRebindNativeAim({
+                .nativeRightCarry = true,
+                .frameValid = isFiniteTransform(aim.weaponInWandOrientation),
+                .capturedOwnershipKey = aim.weaponOwnershipKey,
+                .currentOwnershipKey = currentEquippedWeaponOwnershipKey,
+                .capturedInstanceContentKey = aim.weaponInstanceContentKey,
+                .currentInstanceContentKey = weaponInstanceContentKey,
+                .sameRoot = aim.weaponNodeIdentity == weaponNode,
+            })) {
+            ROCK_LOG_INFO(Weapon,
+                "TwoHandedGrip: native right aim preserved across collision rebuild oldGeneration={:016X} newGeneration={:016X} ownership={:016X}",
+                aim.weaponGenerationKey,
+                currentWeaponGenerationKey,
+                currentEquippedWeaponOwnershipKey);
+            aim.weaponGenerationKey = currentWeaponGenerationKey;
+        }
+
+        // The aim basis is ROCK-owned even before a firing grip is acquired.
+        // Authored animation remains the authority for the hand relation;
+        // never derive that relation from a provider-presented weapon node.
         if (_visuals.weaponCollisionHandPresentationFromPreviousFrame[1] ||
             isManualOwnershipActive() || _leftCarry.weaponNodeOwnershipBlockEngaged ||
             _visuals.returningWeapon.localTransition.active ||
-            !scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(_scope.menuOpenThisFrame, _scope.safeHandFrames[1].rootRebaseActive) || !weaponNode ||
-            currentWeaponGenerationKey == 0 || !isFiniteTransform(weaponNode->world)) {
-            return;
-        }
-        auto* playerNodes = f4vr::getPlayerNodes();
-        RE::NiTransform rightHandWorld{};
-        if (!playerNodes || !playerNodes->primaryWandNode ||
-            !isFiniteTransform(playerNodes->primaryWandNode->world) ||
-            !tryGetSolverHandTransform(false, rightHandWorld)) {
-            return;
-        }
-        const RE::NiTransform boneInRightWand = transform_math::composeTransforms(
-            transform_math::invertTransform(playerNodes->primaryWandNode->world), rightHandWorld);
-        // Same wrist-range gate as the mirror's wand-map sampling, plus a
-        // loose weapon-to-hand bound so a mid-equip/mid-teleport frame never
-        // poisons the canonical.
-        constexpr float kMaxBoneToWandDistance = 30.0f;
-        constexpr float kMaxWeaponToHandDistance = 100.0f;
-        const RE::NiPoint3 weaponToHand = sub(weaponNode->world.translate, rightHandWorld.translate);
-        if (!isFiniteTransform(boneInRightWand) ||
-            std::sqrt(dot(boneInRightWand.translate, boneInRightWand.translate)) > kMaxBoneToWandDistance ||
-            std::sqrt(dot(weaponToHand, weaponToHand)) > kMaxWeaponToHandDistance) {
-            return;
-        }
-        const RE::NiTransform canonicalHold = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), rightHandWorld);
-        const RE::NiPoint3 canonicalGrip = worldToWeaponLocal(computeGrabLegacyPalmPivotAWorldFromHandBasis(rightHandWorld, false), weaponNode);
-        if (!isFiniteTransform(canonicalHold) || !std::isfinite(canonicalGrip.x) || !std::isfinite(canonicalGrip.y) || !std::isfinite(canonicalGrip.z)) {
+            !scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(_scope.menuOpenThisFrame, _scope.safeHandFrames[1].rootRebaseActive)) {
             return;
         }
         (void)captureRightNativeWeaponAimFrame(
-            weaponNode,
-            currentWeaponGenerationKey,
-            currentEquippedWeaponOwnershipKey);
-        // The animation capture is a more direct authority than a later
-        // presentation sample. Preserve it for this exact weapon identity,
-        // generation, and ownership.
-        if (hasRightFiringHandCanonicalFrame(
-                weaponNode,
-                currentWeaponGenerationKey,
-                currentEquippedWeaponOwnershipKey) &&
-            _firing.rightCanonicalSource ==
-                RightFiringCanonicalSource::AuthoredAnimation) {
-            return;
-        }
-
-        _firing.rightCanonicalHandWeaponLocal = canonicalHold;
-        _firing.rightCanonicalGripWeaponLocal = canonicalGrip;
-        _firing.rightCanonicalWeaponNode = weaponNode;
-        _firing.rightCanonicalGenerationKey = currentWeaponGenerationKey;
-        _firing.rightCanonicalOwnershipKey = currentEquippedWeaponOwnershipKey;
-        _firing.rightCanonicalInstanceContentKey = weaponInstanceContentKey;
-        _firing.rightCanonicalCaptureSequence = 0;
-        _firing.rightCanonicalSource = RightFiringCanonicalSource::NativeCarry;
-        _firing.hasRightCanonicalHandWeaponLocal = true;
+            weaponNode, currentWeaponGenerationKey, currentEquippedWeaponOwnershipKey, weaponInstanceContentKey);
     }
 
     bool TwoHandedGrip::tryComputeMirroredLeftFiringHandWeaponLocal(
@@ -1501,6 +1635,22 @@ namespace rock
             return false;
         }
 
+        return tryBuildMirroredSupportHandWeaponLocal(leftHandWeaponLocal,
+            _firing.leftNaturalBoneInWand, _firing.rightNaturalBoneInWand, outRightHandWeaponLocal);
+    }
+
+    bool TwoHandedGrip::tryBuildMirroredSupportHandWeaponLocal(
+        const RE::NiTransform& leftHandWeaponLocal,
+        const RE::NiTransform& leftBoneInWand,
+        const RE::NiTransform& rightBoneInWand,
+        RE::NiTransform& outRightHandWeaponLocal)
+    {
+        outRightHandWeaponLocal = {};
+        if (!isFiniteTransform(leftHandWeaponLocal) ||
+            !isFiniteTransform(leftBoneInWand) || !isFiniteTransform(rightBoneInWand)) {
+            return false;
+        }
+
         /*
          * Mirror only ORIENTATION through the physical wand pair. The cached
          * bone-in-wand transforms remove hFRIK's asymmetric hand-bone
@@ -1518,9 +1668,9 @@ namespace rock
             return result;
         };
         const RE::NiTransform leftBoneInWandOrientation =
-            orientationFrame(_firing.leftNaturalBoneInWand);
+            orientationFrame(leftBoneInWand);
         const RE::NiTransform rightBoneInWandOrientation =
-            orientationFrame(_firing.rightNaturalBoneInWand);
+            orientationFrame(rightBoneInWand);
         const RE::NiTransform leftHandWeaponOrientation =
             orientationFrame(leftHandWeaponLocal);
 
@@ -1594,7 +1744,8 @@ namespace rock
         const RE::NiTransform& rightHandWorld,
         const RE::NiTransform& leftHandWorld,
         RE::NiTransform& outHandWeaponLocal,
-        const bool logDiagnostic)
+        const bool logDiagnostic,
+        const bool applyGripCalibration)
     {
         return tryBuildMirroredLeftFiringHandWeaponLocalImpl(
             canonicalRightHandWeaponLocal,
@@ -1603,7 +1754,8 @@ namespace rock
             leftHandWorld,
             outHandWeaponLocal,
             true,
-            logDiagnostic);
+            logDiagnostic,
+            applyGripCalibration);
     }
 
     bool TwoHandedGrip::tryBuildMirroredLeftFiringHandWeaponLocalImpl(
@@ -1613,7 +1765,8 @@ namespace rock
         const RE::NiTransform& leftHandWorld,
         RE::NiTransform& outHandWeaponLocal,
         const bool applyHandlingTrim,
-        const bool logDiagnostic)
+        const bool logDiagnostic,
+        const bool applyGripCalibration)
     {
         const auto& handlingSettings =
             equipped_weapon_handling_runtime::current();
@@ -1768,96 +1921,105 @@ namespace rock
                 transformOffsetLength(boneInLeftWand));
         }
 
-        outHandWeaponLocal = mirroredHandWeaponLocal;
+        outHandWeaponLocal = applyGripCalibration ?
+            weapon_grip_calibration::shiftedHand(mirroredHandWeaponLocal,
+                g_rockConfig.rockLeftFiringGripOffsetGameUnits, true) : mirroredHandWeaponLocal;
         return true;
     }
 
-    bool TwoHandedGrip::tryPromoteSupportGripToFiringGrip(RE::NiNode* weaponNode, const float dt)
+    weapon_support_authority_policy::FiringGripPromotionResult TwoHandedGrip::tryPromoteSupportGripToFiringGrip(
+        RE::NiNode* weaponNode, const float dt, const char*& outReason)
     {
+        using Result = weapon_support_authority_policy::FiringGripPromotionResult;
         const bool supportHandIsLeft = isSupportHandLeft();
-        if (!weaponNode || !_handlingSettings.ambidextrousHandoffEnabled ||
-            !canBeginPrimaryOnlyGripForHand(supportHandIsLeft)) {
-            return false;
+        if (!_handlingSettings.ambidextrousHandoffEnabled) {
+            outReason = "handoff-disabled";
+            return Result::NotApplicable;
         }
 
         const WeaponPartGrip& supportGrip = partGrip(supportHandIsLeft);
-        // Pose selection (provider/authored/dynamic) and current transform
-        // authority (visual-only/full) are orthogonal to handoff capability.
-        // AttachOnly glue alone cannot inherit the firing grip. The cylinder
-        // gate below keeps every other promotable grip tied to the firing grip.
-        if (!weapon_support_authority_policy::canPromoteSupportGripToFiringGrip(
-                supportGrip.active,
-                supportGrip.attachOnly)) {
-            return false;
+        // Core support may promote only from the acquired firing station.
+        // Explicit provider carry grips retain their cylinder-tested contract;
+        // provider AttachOnly can never inherit firing authority.
+        const bool coreFiringStation = supportGrip.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone;
+        if (!supportGrip.active || supportGrip.attachOnly ||
+            (!coreFiringStation && !supportGrip.providerPartAuthority.active)) {
+            outReason = "support-grip-not-promotable";
+            return Result::NotApplicable;
         }
 
-        /*
-         * Promotion uses the support GRIP POINT (where the hand
-         * actually grabbed the weapon), not the palm pivot: a shooting-cup
-         * palm sits a hand-width away from the grip center and the tight
-         * cylinder would decline a seated takeover. The same lateral zone
-         * used for acquisition keeps handguard/foregrip support grips out.
-         */
-        const RE::NiPoint3 supportGripWorld = resolvePartGripWorld(supportGrip, weaponNode);
+        if (!weaponNode) {
+            outReason = "weapon-node-unavailable";
+            return Result::Blocked;
+        }
+        // Releasing a forward support hold leaves that hand carrying the
+        // weapon; takeover applies only when it actually occupies the firing
+        // station. Use the captured grip point, not the offset palm of a cup.
         firing_grip_reattach_zone_policy::ZoneInput promotionInput{};
-        // A grip admitted by the firing-grip cylinders must retain that same
-        // reach through transfer. Ordinary support-grip promotion keeps its
-        // existing tuning and does not change authored support acquisition.
-        const float promotionReach = weapon_support_authority_policy::firingGripCaptureReach(
-            supportGrip.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone,
-            _handlingSettings.firingGripReattachRadiusGameUnits,
-            _handlingSettings.firingGripPromotionRadiusGameUnits);
-        if (!tryBuildFiringGripZoneInput(weaponNode,
-                _session.weaponGenerationKey, _session.equippedWeaponOwnershipKey,
-                promotionReach, promotionInput)) {
-            return false;
+        const float reach = _handlingSettings.firingGripReattachRadiusGameUnits;
+        if (!tryBuildFiringGripZoneInput(weaponNode, _session.weaponGenerationKey,
+                _session.equippedWeaponOwnershipKey, reach, promotionInput)) {
+            outReason = "firing-zone-unavailable";
+            return Result::Blocked;
         }
-        promotionInput.palmWorld = {
-            supportGripWorld.x, supportGripWorld.y, supportGripWorld.z };
-        const auto promotionZone =
-            firing_grip_reattach_zone_policy::evaluateZone(promotionInput);
-        if (!promotionZone.inside) {
-            return false;
+        // The shared station is latched at acquisition. A pistol's authored
+        // cup is deliberately offset from that station and must not redefine it.
+        const auto supportGripWorld = coreFiringStation ?
+            weaponLocalToWorld(_firing.rightCanonicalGripWeaponLocal, weaponNode) : resolvePartGripWorld(supportGrip, weaponNode);
+        promotionInput.palmWorld = {supportGripWorld.x, supportGripWorld.y, supportGripWorld.z};
+        if (!weapon_support_authority_policy::canPromoteSupportGripToFiringGrip(supportGrip.active,
+                supportGrip.attachOnly, firing_grip_reattach_zone_policy::evaluateZone(promotionInput).inside)) {
+            outReason = "support-outside-firing-zone";
+            return Result::NotApplicable;
         }
-
+        if (!canBeginPrimaryOnlyGripForHand(supportHandIsLeft)) {
+            outReason = "receiving-hand-unavailable";
+            return Result::Blocked;
+        }
+        if (!hasRightFiringHandCanonicalFrame(weaponNode,
+                _session.weaponGenerationKey, _session.equippedWeaponOwnershipKey) ||
+            !isUsableHandAuthorityTransform(_firing.rightCanonicalHandWeaponLocal)) {
+            outReason = "canonical-frame-not-current";
+            return Result::Blocked;
+        }
         RE::NiTransform handTransform{};
         if (!tryGetSolverHandTransform(supportHandIsLeft, handTransform)) {
-            return false;
-        }
-
-        // A left firing hand needs FRIK's right-hand weapon pose blocked for
-        // the whole left-firing tenure; abort the promotion if that fails.
-        if (supportHandIsLeft && !blockFrikPrimaryWeaponPose()) {
-            return false;
+            outReason = "receiving-hand-frame-unavailable";
+            return Result::Blocked;
         }
 
         /*
-         * Commit: the support hand takes over the SAME weapon-relative firing
+         * Prepare: the support hand takes over the SAME weapon-relative firing
          * grip in place, forcing the CANONICAL per-hand hold: a LEFT takeover
          * applies the canonical right-hand hold mirrored (authored offsets
          * adapted to the left bone basis), a RIGHT takeover re-takes its
          * canonical native hold directly - the promoted hand's live bone is
          * still part-grip-locked here, so a live capture froze that locked
          * angle and (for the right) poisoned the canonical snapshot below.
-         * The cylinder gate has already validated the current canonical.
+         * The identity checks above validate the current canonical.
          */
         RE::NiTransform newFiringHandWeaponLocal{};
-        bool usedAuthoredCanonical = false;
+        RE::NiPoint3 newFiringGripWeaponLocal = _firing.rightCanonicalGripWeaponLocal;
         const char* holdSource = nullptr;
         if (supportHandIsLeft) {
-            if (!tryComputeMirroredLeftFiringHandWeaponLocal(
-                    newFiringHandWeaponLocal,
-                    &usedAuthoredCanonical)) {
-                restoreFrikPrimaryWeaponPose();
-                return false;
+            const char* captureFailure = nullptr;
+            if (!tryBuildCurrentLeftFiringGripCapture(weaponNode, _session.weaponGenerationKey,
+                    _session.equippedWeaponOwnershipKey, newFiringHandWeaponLocal, newFiringGripWeaponLocal, &captureFailure)) {
+                outReason = captureFailure ? captureFailure : "firing-mirror-unavailable";
+                return Result::Blocked;
             }
-            holdSource = usedAuthoredCanonical ? "authored-mirror" : "native-mirror";
+            holdSource = _firing.rightCanonicalSource == RightFiringCanonicalSource::AuthoredAnimation ?
+                "authored-mirror" : "native-mirror";
         } else {
             newFiringHandWeaponLocal = _firing.rightCanonicalHandWeaponLocal;
-            holdSource = _firing.rightCanonicalSource ==
-                    RightFiringCanonicalSource::AuthoredAnimation ?
-                "authored-canonical" :
-                "native-canonical";
+            holdSource = _firing.rightCanonicalSource == RightFiringCanonicalSource::AuthoredAnimation ?
+                "authored-canonical" : "native-canonical";
+        }
+        // Commit only after the receiving pose is ready. A failed preparation
+        // leaves both grips and native pose ownership intact.
+        if (supportHandIsLeft && !blockFrikPrimaryWeaponPose()) {
+            outReason = "native-pose-block-failed";
+            return Result::Blocked;
         }
         beginHandVisualReturn(isFiringHandLeft(), "ambidextrous-firing-hand-promotion");
         if (_handlingSettings.detachAuthority ==
@@ -1882,27 +2044,24 @@ namespace rock
         if (!transitionToPrimaryOnly(weaponNode, _session.weaponGenerationKey, _session.equippedWeaponOwnershipKey, "firing-grip-hand-promotion")) {
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: firing-grip promotion failed to enter primary-only; clearing authority");
             transitionToInactive(false);
-            return true;
+            return Result::Promoted;
         }
 
         _firing.primaryHandWeaponLocal = newFiringHandWeaponLocal;
+        _firing.primaryGripLocal = newFiringGripWeaponLocal;
         _firing.hasPrimaryHandWeaponLocal = true;
         rememberRightFiringHandCanonicalFrame(_firing.rightCanonicalInstanceContentKey);
         if (usesLeftFiringCarry() &&
             !solveLeftFiringWeaponCarry(weaponNode, dt)) {
-            return true;
+            return Result::Promoted;
         }
         _session.firingGripSequence = ++_session.gripCaptureSequence;
         _visuals.primaryHandLerp = {};
         _hapticEvents.firingGripAttached = true;
         _hapticEvents.firingGripAttachedHandIsLeft = isFiringHandLeft();
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: support hand promoted to firing grip hand={} zoneSide={} along={:.2f} perp={:.2f} hold={}",
-            firingHandName(),
-            firing_grip_reattach_zone_policy::sideName(promotionZone.side),
-            promotionZone.alongAxisGameUnits,
-            promotionZone.perpendicularDistanceGameUnits,
-            holdSource);
-        return true;
+            "TwoHandedGrip: support hand promoted to firing grip hand={} reason=primary-release hold={}",
+            firingHandName(), holdSource);
+        return Result::Promoted;
     }
 }

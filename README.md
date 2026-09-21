@@ -24,7 +24,7 @@ Fallout 4 VR physics and interaction plugin, and the foundation of the ROCK / PA
 ## Runtime requirements
 
 - Fallout 4 VR `1.2.72.0` and [F4SEVR](https://f4se.silverlock.org/).
-- [FRIK v78.2 or newer](https://www.nexusmods.com/fallout4/mods/53464), installed separately.
+- [FRIK 0.79.0 or newer with FRIK API v2.3](https://www.nexusmods.com/fallout4/mods/53464) (frame phases), installed separately. ROCK runs inside FRIK's frame phases and refuses an older API table.
 - [VR Address Library for F4SEVR](https://www.nexusmods.com/fallout4/mods/64879).
 
 The plugin installs to `Data/F4SE/Plugins/ROCK.dll`. The [Nexus page](https://www.nexusmods.com/fallout4/mods/108881) covers controls, compatibility, known issues, and player recommendations. Custom weapon animations are recommended when using [PAPER](https://github.com/brunocatani/PAPER).

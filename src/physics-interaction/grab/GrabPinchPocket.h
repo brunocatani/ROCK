@@ -11,15 +11,13 @@
 
 namespace rock::grab_pinch_pocket_policy
 {
-    inline constexpr float kDefaultCompactMaxExtentGameUnits = 10.0f;
-    inline constexpr float kDefaultThinRodMaxLengthGameUnits = 18.0f;
-    inline constexpr float kDefaultThinRodMaxCrossSectionGameUnits = 4.0f;
+    inline constexpr float kDefaultMaxVolumeCubicGameUnits = 100.0f;
+    inline constexpr float kMaxVolumeCubicGameUnits = 1000000.0f;
     inline constexpr float kDefaultMaxPocketDistanceGameUnits = 8.0f;
     inline constexpr float kDefaultMinFingerGapGameUnits = 1.0f;
     inline constexpr float kDefaultMaxFingerGapGameUnits = 12.0f;
     inline constexpr float kDefaultThumbIndexMaxOpenValue = 0.45f;
     inline constexpr float kDefaultOtherFingerCurlValue = 0.20f;
-    inline constexpr float kDefaultSurfaceInsetGameUnits = 0.5f;
     inline constexpr float kDefaultDetectionDirectionHandspaceX = 1.0f;
     inline constexpr float kDefaultDetectionDirectionHandspaceY = 0.0f;
     inline constexpr float kDefaultDetectionDirectionHandspaceZ = 0.0f;
@@ -28,15 +26,12 @@ namespace rock::grab_pinch_pocket_policy
     struct Config
     {
         bool enabled = true;
-        float compactMaxExtentGameUnits = kDefaultCompactMaxExtentGameUnits;
-        float thinRodMaxLengthGameUnits = kDefaultThinRodMaxLengthGameUnits;
-        float thinRodMaxCrossSectionGameUnits = kDefaultThinRodMaxCrossSectionGameUnits;
+        float maxVolumeCubicGameUnits = kDefaultMaxVolumeCubicGameUnits;
         float maxPocketDistanceGameUnits = kDefaultMaxPocketDistanceGameUnits;
         float minFingerGapGameUnits = kDefaultMinFingerGapGameUnits;
         float maxFingerGapGameUnits = kDefaultMaxFingerGapGameUnits;
         float thumbIndexMaxOpenValue = kDefaultThumbIndexMaxOpenValue;
         float otherFingerCurlValue = kDefaultOtherFingerCurlValue;
-        float surfaceInsetGameUnits = kDefaultSurfaceInsetGameUnits;
         RE::NiPoint3 detectionDirectionHandspace{
             kDefaultDetectionDirectionHandspaceX,
             kDefaultDetectionDirectionHandspaceY,
@@ -52,6 +47,7 @@ namespace rock::grab_pinch_pocket_policy
         float minExtentGameUnits = 0.0f;
         float middleExtentGameUnits = 0.0f;
         float maxExtentGameUnits = 0.0f;
+        float boundsVolumeCubicGameUnits = 0.0f;
         bool valid = false;
     };
 
@@ -74,8 +70,7 @@ namespace rock::grab_pinch_pocket_policy
     {
         const char* reason = "notEvaluated";
         bool accept = false;
-        bool compactObject = false;
-        bool thinRod = false;
+        bool retryable = false;
     };
 
     struct StablePinchFingerPose
@@ -91,9 +86,7 @@ namespace rock::grab_pinch_pocket_policy
 
     [[nodiscard]] inline Config sanitizeConfig(Config config)
     {
-        config.compactMaxExtentGameUnits = std::clamp(finiteOr(config.compactMaxExtentGameUnits, kDefaultCompactMaxExtentGameUnits), 1.0f, 80.0f);
-        config.thinRodMaxLengthGameUnits = std::clamp(finiteOr(config.thinRodMaxLengthGameUnits, kDefaultThinRodMaxLengthGameUnits), 1.0f, 120.0f);
-        config.thinRodMaxCrossSectionGameUnits = std::clamp(finiteOr(config.thinRodMaxCrossSectionGameUnits, kDefaultThinRodMaxCrossSectionGameUnits), 0.1f, 40.0f);
+        config.maxVolumeCubicGameUnits = std::clamp(finiteOr(config.maxVolumeCubicGameUnits, kDefaultMaxVolumeCubicGameUnits), 0.001f, kMaxVolumeCubicGameUnits);
         config.maxPocketDistanceGameUnits = std::clamp(finiteOr(config.maxPocketDistanceGameUnits, kDefaultMaxPocketDistanceGameUnits), 0.1f, 80.0f);
         config.minFingerGapGameUnits = std::clamp(finiteOr(config.minFingerGapGameUnits, kDefaultMinFingerGapGameUnits), 0.0f, 40.0f);
         config.maxFingerGapGameUnits = std::clamp(finiteOr(config.maxFingerGapGameUnits, kDefaultMaxFingerGapGameUnits), 0.1f, 80.0f);
@@ -102,7 +95,6 @@ namespace rock::grab_pinch_pocket_policy
         }
         config.thumbIndexMaxOpenValue = std::clamp(finiteOr(config.thumbIndexMaxOpenValue, kDefaultThumbIndexMaxOpenValue), 0.0f, 1.0f);
         config.otherFingerCurlValue = std::clamp(finiteOr(config.otherFingerCurlValue, kDefaultOtherFingerCurlValue), 0.0f, 1.0f);
-        config.surfaceInsetGameUnits = std::clamp(finiteOr(config.surfaceInsetGameUnits, kDefaultSurfaceInsetGameUnits), 0.0f, 8.0f);
         const float directionLenSq = vector_math::lengthSquared(config.detectionDirectionHandspace);
         if (!std::isfinite(directionLenSq) || directionLenSq <= 0.000001f) {
             config.detectionDirectionHandspace = RE::NiPoint3{
@@ -154,17 +146,50 @@ namespace rock::grab_pinch_pocket_policy
         return RE::NiPoint3{ value.x * invLen, value.y * invLen, value.z * invLen };
     }
 
-    [[nodiscard]] inline RE::NiPoint3 closestPointOnSegment(const RE::NiPoint3& a, const RE::NiPoint3& b, const RE::NiPoint3& point)
+    struct FingerFrame
     {
-        const RE::NiPoint3 ab{ b.x - a.x, b.y - a.y, b.z - a.z };
-        const float abLenSq = lengthSquared(ab);
-        if (!std::isfinite(abLenSq) || abLenSq <= 0.000001f) {
-            return a;
-        }
+        RE::NiPoint3 thumbTip{};
+        RE::NiPoint3 indexTip{};
+        RE::NiPoint3 center{};
+        RE::NiPoint3 axis{};
+        float gapGameUnits = 0.0f;
+        bool valid = false;
+    };
 
-        const RE::NiPoint3 ap{ point.x - a.x, point.y - a.y, point.z - a.z };
-        const float t = std::clamp((ap.x * ab.x + ap.y * ab.y + ap.z * ab.z) / abLenSq, 0.0f, 1.0f);
-        return RE::NiPoint3{ a.x + ab.x * t, a.y + ab.y * t, a.z + ab.z * t };
+    // The generated finger hull ends at half-length, with only the Havok
+    // convex skin extending along its axis. Its radial size is not a tip cap.
+    [[nodiscard]] inline bool colliderTipEndpoint(const RE::NiPoint3& center,
+        const RE::NiPoint3& axis, float length, float convexRadius, RE::NiPoint3& endpoint)
+    {
+        if (!isFinitePoint(center) || !isFinitePoint(axis) ||
+            lengthSquared(axis) <= 0.000001f || !std::isfinite(length) || length <= 0.0f ||
+            !std::isfinite(convexRadius) || convexRadius < 0.0f) {
+            return false;
+        }
+        endpoint = center + normalizeOrFallback(axis, {}) * (length * 0.5f + convexRadius);
+        return isFinitePoint(endpoint);
+    }
+
+    [[nodiscard]] inline FingerFrame makeFingerFrame(const RE::NiPoint3& thumb, const RE::NiPoint3& index)
+    {
+        FingerFrame frame{};
+        if (!isFinitePoint(thumb) || !isFinitePoint(index)) return frame;
+        frame.gapGameUnits = distance(thumb, index);
+        if (!std::isfinite(frame.gapGameUnits) || frame.gapGameUnits <= 0.000001f) return frame;
+        frame.thumbTip = thumb;
+        frame.indexTip = index;
+        frame.center = (thumb + index) * 0.5f;
+        frame.axis = (index - thumb) * (1.0f / frame.gapGameUnits);
+        frame.valid = true;
+        return frame;
+    }
+
+    [[nodiscard]] inline RE::NiPoint3 detectionDirection(const FingerFrame& frame,
+        const RE::NiPoint3& configuredDirection, float axisBlend)
+    {
+        const float blend = std::clamp(finiteOr(axisBlend, kDefaultDetectionAxisBlend), 0.0f, 1.0f);
+        return normalizeOrFallback(frame.axis * blend +
+            normalizeOrFallback(configuredDirection, frame.axis) * (1.0f - blend), frame.axis);
     }
 
     [[nodiscard]] inline MeshExtentMetrics computeMeshExtentsFromBounds(
@@ -173,11 +198,12 @@ namespace rock::grab_pinch_pocket_policy
         float objectScale)
     {
         MeshExtentMetrics metrics{};
-        if (!isFinitePoint(minLocal) || !isFinitePoint(maxLocal)) {
+        if (!isFinitePoint(minLocal) || !isFinitePoint(maxLocal) ||
+            !std::isfinite(objectScale) || objectScale <= 0.0f) {
             return metrics;
         }
 
-        const float scale = std::clamp(finiteOr(objectScale, 1.0f), 0.0001f, 1000.0f);
+        const float scale = objectScale;
         std::array<float, 3> extents{
             std::abs(maxLocal.x - minLocal.x) * scale,
             std::abs(maxLocal.y - minLocal.y) * scale,
@@ -189,10 +215,16 @@ namespace rock::grab_pinch_pocket_policy
         metrics.minExtentGameUnits = extents[0];
         metrics.middleExtentGameUnits = extents[1];
         metrics.maxExtentGameUnits = extents[2];
+        // Object-local enclosing bounds include every captured mesh part.
+        // This is deliberately a bounding-volume estimate: open and hollow
+        // render meshes do not provide a dependable signed solid volume.
+        metrics.boundsVolumeCubicGameUnits = static_cast<float>(
+            static_cast<double>(extents[0]) * extents[1] * extents[2]);
         metrics.valid =
             std::isfinite(metrics.minExtentGameUnits) &&
             std::isfinite(metrics.middleExtentGameUnits) &&
             std::isfinite(metrics.maxExtentGameUnits) &&
+            std::isfinite(metrics.boundsVolumeCubicGameUnits) &&
             metrics.maxExtentGameUnits > 0.0001f;
         return metrics;
     }
@@ -213,9 +245,6 @@ namespace rock::grab_pinch_pocket_policy
         };
 
         auto includePoint = [&](const RE::NiPoint3& point) {
-            if (!isFinitePoint(point)) {
-                return;
-            }
             anyPoint = true;
             minLocal.x = (std::min)(minLocal.x, point.x);
             minLocal.y = (std::min)(minLocal.y, point.y);
@@ -226,6 +255,9 @@ namespace rock::grab_pinch_pocket_policy
         };
 
         for (const auto& triangle : triangles) {
+            if (!isFinitePoint(triangle.v0) || !isFinitePoint(triangle.v1) || !isFinitePoint(triangle.v2)) {
+                return {};
+            }
             includePoint(triangle.v0);
             includePoint(triangle.v1);
             includePoint(triangle.v2);
@@ -257,6 +289,7 @@ namespace rock::grab_pinch_pocket_policy
         }
         if (!input.hasFingerSnapshot) {
             decision.reason = "missingFingerSnapshot";
+            decision.retryable = true;
             return decision;
         }
         if (!input.mesh.valid) {
@@ -264,23 +297,12 @@ namespace rock::grab_pinch_pocket_policy
             return decision;
         }
 
-        /*
-         * Pinchability is about the THINNEST span, not overall size: the thumb
-         * and index pads oppose across the object's smallest extent. A mug or
-         * a can fits the compact max-extent budget but is too thick to hold
-         * between two pads - those must fall through to the palm machinery.
-         * The thin-rod cross-section limit doubles as the pinchable-thickness
-         * bound so coins, cigars, pens, and cards keep passing.
-         */
-        const bool compactBySize = input.mesh.maxExtentGameUnits <= config.compactMaxExtentGameUnits;
-        const bool pinchableThickness = input.mesh.minExtentGameUnits <= config.thinRodMaxCrossSectionGameUnits;
-        decision.compactObject = compactBySize && pinchableThickness;
-        decision.thinRod =
-            input.mesh.maxExtentGameUnits <= config.thinRodMaxLengthGameUnits &&
-            input.mesh.middleExtentGameUnits <= config.thinRodMaxCrossSectionGameUnits &&
-            input.mesh.minExtentGameUnits <= config.thinRodMaxCrossSectionGameUnits;
-        if (!decision.compactObject && !decision.thinRod) {
-            decision.reason = compactBySize && !pinchableThickness ? "compactTooThickToPinch" : "objectTooLarge";
+        if (!std::isfinite(input.mesh.boundsVolumeCubicGameUnits) || input.mesh.boundsVolumeCubicGameUnits < 0.0f) {
+            decision.reason = "invalidObjectVolume";
+            return decision;
+        }
+        if (input.mesh.boundsVolumeCubicGameUnits > config.maxVolumeCubicGameUnits) {
+            decision.reason = "objectVolumeTooLarge";
             return decision;
         }
 
@@ -288,27 +310,24 @@ namespace rock::grab_pinch_pocket_policy
             input.thumbIndexGapGameUnits < config.minFingerGapGameUnits ||
             input.thumbIndexGapGameUnits > config.maxFingerGapGameUnits) {
             decision.reason = "fingerGapRejected";
+            decision.retryable = true;
             return decision;
         }
         if (!input.hasPinchSurface) {
             decision.reason = "noPinchSurface";
+            decision.retryable = true;
             return decision;
         }
         if (!std::isfinite(input.pocketToSurfaceDistanceGameUnits) ||
             input.pocketToSurfaceDistanceGameUnits > config.maxPocketDistanceGameUnits) {
             decision.reason = "surfaceTooFarFromPocket";
+            decision.retryable = true;
             return decision;
         }
 
         decision.accept = true;
-        decision.reason = decision.thinRod && !decision.compactObject ? "pinchThinRod" : "pinchCompact";
+        decision.reason = "pinchObjectVolume";
         return decision;
-    }
-
-    [[nodiscard]] inline float oppositionHalfWidthGameUnits(const MeshExtentMetrics& metrics, float configuredSurfaceInsetGameUnits)
-    {
-        const float thinHalfWidth = std::clamp(finiteOr(metrics.middleExtentGameUnits, 0.0f) * 0.5f, 0.35f, 2.5f);
-        return (std::max)(thinHalfWidth, std::clamp(finiteOr(configuredSurfaceInsetGameUnits, kDefaultSurfaceInsetGameUnits), 0.0f, 8.0f));
     }
 
     [[nodiscard]] inline StablePinchFingerPose buildStableOppositionFingerPose(
@@ -366,5 +385,82 @@ namespace rock::grab_pinch_pocket_policy
             rawConfig,
             minFingerValue,
             1);
+    }
+
+    struct ClosureSample
+    {
+        FingerFrame fingers{};
+        StablePinchFingerPose pose{};
+        float opening = 0.0f;
+        float thicknessGameUnits = 0.0f;
+        float centerOffsetGameUnits = 0.0f;
+    };
+
+    struct ClosureSolution
+    {
+        ClosureSample sample{};
+        float gapErrorGameUnits = 0.0f;
+        bool bracketed = false;
+        bool valid = false;
+    };
+
+    // Capture-time work only. Sample the provider's actual joint poses, then
+    // refine the first gap/thickness crossing. Never feed a rendered hand
+    // already following the object back into its held constraint target.
+    template <class Evaluate>
+    [[nodiscard]] ClosureSolution solveClosure(float minimumOpening, float maximumOpening, Evaluate evaluate)
+    {
+        ClosureSolution solution{};
+        const float minimum = std::clamp(finiteOr(minimumOpening, 0.2f), 0.0f, 1.0f);
+        const float maximum = std::clamp(finiteOr(maximumOpening, minimum), minimum, 1.0f);
+        auto consider = [&](float opening, ClosureSample& sample, float& error) {
+            sample = evaluate(opening);
+            if (!sample.fingers.valid || !std::isfinite(sample.thicknessGameUnits) ||
+                sample.thicknessGameUnits < 0.0f || !std::isfinite(sample.centerOffsetGameUnits)) return false;
+            sample.opening = opening;
+            error = sample.fingers.gapGameUnits - sample.thicknessGameUnits;
+            if (!std::isfinite(error)) return false;
+            if (!solution.valid || std::abs(error) < std::abs(solution.gapErrorGameUnits)) {
+                solution.sample = sample;
+                solution.gapErrorGameUnits = error;
+                solution.valid = true;
+            }
+            return true;
+        };
+        ClosureSample previous{};
+        float previousError = 0.0f;
+        if (!consider(maximum, previous, previousError)) return {};
+        if (previousError == 0.0f) { solution.bracketed = true; return solution; }
+        constexpr int sweepIntervals = 8;
+        for (int step = 1; step <= sweepIntervals; ++step) {
+            const float opening = maximum + (minimum - maximum) * (static_cast<float>(step) / sweepIntervals);
+            ClosureSample current{};
+            float error = 0.0f;
+            if (!consider(opening, current, error)) return {};
+            if (error == 0.0f) { solution.bracketed = true; return solution; }
+            if ((error < 0.0f) != (previousError < 0.0f)) {
+                solution.bracketed = true;
+                float lower = opening;
+                float upper = previous.opening;
+                float lowerError = error;
+                for (int refinement = 0; refinement < 8; ++refinement) {
+                    const float middle = (lower + upper) * 0.5f;
+                    ClosureSample refined{};
+                    float refinedError = 0.0f;
+                    if (!consider(middle, refined, refinedError)) return {};
+                    if (refinedError == 0.0f) return solution;
+                    if ((refinedError < 0.0f) == (lowerError < 0.0f)) {
+                        lower = middle;
+                        lowerError = refinedError;
+                    } else {
+                        upper = middle;
+                    }
+                }
+                return solution;
+            }
+            previous = current;
+            previousError = error;
+        }
+        return solution;
     }
 }

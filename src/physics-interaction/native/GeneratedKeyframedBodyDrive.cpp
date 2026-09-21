@@ -1,4 +1,5 @@
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
+#include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
@@ -162,21 +163,17 @@ namespace rock
 
         void captureTargetAndBodyTelemetry(
             RE::hknpWorld* world,
-            BethesdaPhysicsBody& body,
+            const RE::hknpBody& liveBody,
             const RE::NiTransform& target,
             const RE::hkTransformf& targetHavok,
             GeneratedKeyframedBodyDriveResult& result,
             RE::NiTransform* outLiveTransform = nullptr)
         {
             fillTargetTelemetry(target, targetHavok, result);
-            body_frame::BodyFrameSource frameSource = body_frame::BodyFrameSource::Fallback;
-            std::uint32_t motionIndex = body_frame::kFreeMotionIndex;
-            RE::NiTransform liveTransform{};
-            if (tryResolveLiveBodyWorldTransform(world, body.getBodyId(), liveTransform, &frameSource, &motionIndex)) {
-                if (outLiveTransform) {
-                    *outLiveTransform = liveTransform;
-                }
-                fillLiveBodyTelemetry(liveTransform, frameSource, motionIndex, target, result);
+            const auto live = havok_runtime::resolveLiveBodyWorldTransform(world, liveBody);
+            if (live.valid) {
+                if (outLiveTransform) *outLiveTransform = live.transform;
+                fillLiveBodyTelemetry(live.transform, live.source, live.motionIndex, target, result);
             }
         }
 
@@ -330,7 +327,56 @@ namespace rock
             state.hasPreviousTarget = false;
             state.pendingTeleport = false;
             state.hasSampledLinearVelocityHavok = false;
+            state.finalPoseSuppressed = false;
         }
+    }
+
+    void invalidateGeneratedColliderPose(RE::hknpWorld* world, BethesdaPhysicsBody& body, GeneratedKeyframedBodyDriveState& state)
+    {
+        {
+            std::scoped_lock lock(state.mutex);
+            resetGeneratedKeyframedBodyDriveStateUnlocked(state);
+            state.finalPoseSuppressed = true;
+        }
+        if (!world || !body.isValid()) return;
+        const auto* liveBody = havok_runtime::getBody(world, body.getBodyId());
+        if (!liveBody || !body.getCollisionObject() ||
+            havok_runtime::getCollisionObjectFromBody(liveBody) != body.getCollisionObject()) {
+            ROCK_LOG_SAMPLE_WARN(Physics, 1000, "Missing-pose collider identity unavailable body={}; native state left untouched", body.getBodyId().value);
+            return;
+        }
+        using namespace collision_suppression_registry;
+        (void)globalCollisionSuppressionRegistry().acquire(world, body.getBodyId().value,
+            CollisionSuppressionOwner::InvalidFinalPose, "final-pose-unavailable");
+        alignas(16) const float zero[4]{};
+        if (!body.setVelocity(zero, zero)) {
+            ROCK_LOG_SAMPLE_WARN(Physics, 1000, "Failed to stop collider with missing final pose body={}", body.getBodyId().value);
+        }
+    }
+
+    bool releaseGeneratedColliderPoseSuppression(RE::hknpWorld* world, BethesdaPhysicsBody& body)
+    {
+        if (!world || !body.isValid()) return false;
+        using namespace collision_suppression_registry;
+        auto& registry = globalCollisionSuppressionRegistry();
+        if (registry.hasLease(body.getBodyId().value, CollisionSuppressionOwner::InvalidFinalPose)) {
+            const auto* liveBody = havok_runtime::getBody(world, body.getBodyId());
+            if (!liveBody || !body.getCollisionObject() ||
+                havok_runtime::getCollisionObjectFromBody(liveBody) != body.getCollisionObject()) return false;
+            (void)registry.release(world, body.getBodyId().value,
+                CollisionSuppressionOwner::InvalidFinalPose, "final-pose-restored-or-retired");
+        }
+        return !registry.hasLease(body.getBodyId().value, CollisionSuppressionOwner::InvalidFinalPose);
+    }
+
+    void restoreGeneratedColliderPoseAfterDrive(RE::hknpWorld* world, BethesdaPhysicsBody& body, GeneratedKeyframedBodyDriveState& state)
+    {
+        std::scoped_lock lock(state.mutex);
+        // Invalidation resets consumedSequence. Keep collision suppressed
+        // until a measured native step has driven a new, valid target. Never
+        // destroy or teleport a palm that may still anchor a constraint.
+        if (state.finalPoseSuppressed && state.consumedSequence != 0 &&
+            releaseGeneratedColliderPoseSuppression(world, body)) state.finalPoseSuppressed = false;
     }
 
     void clearGeneratedKeyframedBodyDriveState(GeneratedKeyframedBodyDriveState& state)
@@ -579,7 +625,7 @@ namespace rock
         RE::NiTransform target = requestedTarget;
         RE::hkTransformf targetHavok = makeHavokTransform(target);
         RE::NiTransform liveTransform{};
-        captureTargetAndBodyTelemetry(world, body, target, targetHavok, result, &liveTransform);
+        captureTargetAndBodyTelemetry(world, *liveBody, target, targetHavok, result, &liveTransform);
         result.uncappedRequiredLinearVelocityHavok = result.requiredLinearVelocityHavok;
         result.uncappedRequiredAngularVelocityRadians = result.requiredAngularVelocityRadians;
 

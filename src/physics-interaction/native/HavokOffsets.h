@@ -383,8 +383,6 @@ namespace rock::offsets
     constexpr std::uintptr_t kFunc_PrismaticConstraintData_Ctor = 0x19B1350;
     constexpr std::uintptr_t kFunc_PrismaticConstraintData_SetInWorldSpace = 0x19B1520;
 
-    constexpr std::uintptr_t kFunc_HandleBumpedCharacter = 0x1E24980;
-
     constexpr std::uintptr_t kFunc_VRGrabInitiate = 0xF19250;
 
     constexpr std::uintptr_t kFunc_ProcessConstraintsCallback = 0x1E4B7E0;
@@ -409,8 +407,6 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kData_PlayerActorSingleton = 0x5A38518;
 
-    constexpr std::uintptr_t kHookSite_MainLoop = 0xD8405E;
-
     /*
      * FO4VR's recurring first-person node-chain alignment helper. Blind raw
      * disassembly verification on 2026-07-17 confirmed the entry at
@@ -427,7 +423,6 @@ namespace rock::offsets
     constexpr std::uintptr_t kFunc_UpdateFirstPersonArm = 0xEF6280;
     constexpr std::uintptr_t kCallsite_UpdateFirstPersonArmPrimaryReturn = 0xEF610D;
     constexpr std::uintptr_t kCallsite_UpdateFirstPersonArmSecondaryReturn = 0xEF6150;
-    constexpr std::uintptr_t kFunc_PlayerPostUpdateAnimationGraphManager = 0xF2F0A0;
 
     /*
      * FO4VR native-scope geometry boundary. Raw-disassembly verified

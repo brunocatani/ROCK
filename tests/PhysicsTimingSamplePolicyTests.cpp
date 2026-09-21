@@ -86,6 +86,7 @@ int main()
         wholeStep.stepSequence = 41;
         wholeStep.solveSequence = 82;
         wholeStep.elapsedSimulatedSeconds = 12.5;
+        wholeStep.timeMultiplier = 0.04f;
 
         const auto substep = makeSubstepTimingSample(wholeStep, 0.5f, 1.0f / 90.0f, 1);
         ok &= expectEqualU64("substep inherits step sequence", substep.stepSequence, 41);
@@ -98,6 +99,7 @@ int main()
         ok &= expectEqualU64("phase sample keeps step sequence", postSolve.stepSequence, 41);
         ok &= expectTrue("phase sample post-solve", postSolve.phase == PhysicsStepPhase::SubstepPostSolve);
         ok &= expectNear("phase sample keeps substep delta", postSolve.substepDeltaSeconds, 1.0 / 90.0, 1.0e-9);
+        ok &= expectNear("all solves retain the multiplier sampled with their world update", postSolve.timeMultiplier, 0.04f, 0.0);
     }
 
     // A fallback substep delta poisons derived samples: the fallback flag is

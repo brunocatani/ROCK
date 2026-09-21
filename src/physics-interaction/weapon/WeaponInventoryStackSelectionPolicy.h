@@ -22,6 +22,20 @@ namespace rock::weapon_inventory_stack_selection_policy
         bool complete{ true };
     };
 
+    // Stack IDs are list positions used for the equip request, not persistent
+    // identities across that mutation. Retain exact instance authority; for
+    // base-data stacks require the same live stack node instead.
+    [[nodiscard]] inline constexpr bool matchesEquippedStack(
+        const StackWitness& requested, const StackWitness& equipped) noexcept
+    {
+        if (equipped.count == 0) return false;
+        if (requested.instanceDataAddress != 0) {
+            return equipped.instanceDataAddress == requested.instanceDataAddress;
+        }
+        return equipped.instanceDataAddress == 0 && requested.stackAddress != 0 &&
+            equipped.stackAddress == requested.stackAddress;
+    }
+
     enum class Evidence : std::uint8_t
     {
         None = 0,

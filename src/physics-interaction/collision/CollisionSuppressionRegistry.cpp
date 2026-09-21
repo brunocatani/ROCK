@@ -33,6 +33,8 @@ namespace rock::collision_suppression_registry
                 return "EquippedWeaponDropHand";
             case CollisionSuppressionOwner::NativeGrenadeThrow:
                 return "NativeGrenadeThrow";
+            case CollisionSuppressionOwner::InvalidFinalPose:
+                return "InvalidFinalPose";
             }
             return "Unknown";
         }

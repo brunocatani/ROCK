@@ -5,6 +5,7 @@
 #include "RE/NetImmerse/NiSmartPointer.h"
 
 #include "physics-interaction/weapon/EquippedWeaponVisualState.h"
+#include "physics-interaction/weapon/WeaponGripTransfer.h"
 
 #include <array>
 #include <chrono>
@@ -31,8 +32,10 @@ namespace rock
      * (node named "Weapon %s (%08X)").
      *
      * The bridge re-attaches that orphaned model under the world root, glues
-     * it to the equipping hand's wand transform and blends it toward the pose
-     * the weapon will actually stabilize at. Once the exact native instance
+     * it to the captured controller relation, retaining the support hand's
+     * steering for paired grips. When the equipped hands accept ownership,
+     * the bridge follows their current-frame weapon solve through the visual
+     * gap. Once the exact native instance
      * is stable, model ownership is released terminally. Native attach repair
      * remains available after handoff, but it can never re-present the loose
      * model during a later sheath, unequip, drop, throw, or animation. Every
@@ -40,12 +43,11 @@ namespace rock
      * scene references and pose authority.
      *
      * Blend target. begin() re-runs the shared loose-grip identity resolver
-     * to recover the authored firing point and hand-pose payload. The retained
+     * to recover the authored firing point. A captured loose wrist/finger pose
+     * stays bound to the model until the equipped hand owns both; the retained
      * loose model already carries the separate position-only placement hold;
-     * once the exact native Weapon frame exists, update() uses that frame as
-     * the rotational carrier and translates only the authored firing point.
-     * Custom JSON remains first authority, followed by ROCK-authored data and
-     * embedded hFRIK fallback. A first-ever weapon never borrows another
+     * update() uses ROCK's controller aim or the solved left carry and
+     * translates only the authored firing point. A first-ever weapon never borrows another
      * weapon's cached position-only hold.
      *
      * Lifetime/threading: main-thread only, driven by PhysicsInteraction's
@@ -65,6 +67,10 @@ namespace rock
             // name. This is deliberately not the temporary loose reference ID.
             std::uint32_t weaponFormID = 0;
             bool isLeftHand = false;
+            const weapon_grip_transfer::Pair* pairedGrips = nullptr; // Copied by begin().
+            // Current loose wrist/fingers, captured before releasing hand authority.
+            const weapon_grip_transfer::HandGrip* singleGrip = nullptr;
+            bool supportOnly = false;
             // Weapon base form for the shared loose-grip authority resolver;
             // the captured worldModel supplies the matching stock variant.
             RE::TESObjectWEAP* weapon = nullptr;
@@ -117,6 +123,7 @@ namespace rock
         // loose model immediately while allowing the independent temporary
         // hand-pose payload to survive until its equipped owner acquires it.
         void update(const UpdateInput& input);
+        void tracePresentation(const char* phase) const;
 
         // Advances only the hard presentation lease while the coordinator is
         // mutation-blocked by a menu, compatibility owner, or unavailable
@@ -135,23 +142,36 @@ namespace rock
         void abandonSceneGraph();
 
         [[nodiscard]] bool isActive() const noexcept { return _active; }
+        [[nodiscard]] bool presentationLeaseWouldExpire(float deltaSeconds) const noexcept;
         [[nodiscard]] bool hasVisualModel() const noexcept { return _model != nullptr; }
         [[nodiscard]] bool isModelPresented() const noexcept { return _modelPresented; }
         [[nodiscard]] bool ownsNativeInstanceCull(const RE::NiAVObject* node) const noexcept;
         [[nodiscard]] bool isHandPoseHandoffActive() const noexcept { return _handPoseHandoffActive; }
         [[nodiscard]] bool handPoseHandoffIsLeft() const noexcept { return _isLeftHand; }
+        [[nodiscard]] bool hasPairedHandPoseHandoff() const noexcept { return _capturedGrips.valid(); }
+        [[nodiscard]] bool hasSupportOnlyHandPoseHandoff() const noexcept { return _supportOnly; }
+        [[nodiscard]] bool hasCapturedHandPoseHandoff() const noexcept
+        {
+            return _handPoseHandoffActive && _capturedGrips.primary.valid();
+        }
         [[nodiscard]] std::uint32_t weaponBaseFormID() const noexcept { return _weaponFormID; }
 
         // Called only after the equipped exact-pose publisher has positively
         // acquired the same physical hand. The lower-priority bridge pose is
         // then removed without disturbing the equipped publisher's tag.
         void completeHandPoseHandoff(const char* reason);
+        // End-of-frame only: require an accepted replacement target for each hand.
+        void tryCompleteHandPoseHandoff();
+        // AfterWeaponPosition only: the accepted equipped owner has completed
+        // this frame's weapon solve, including provider presentation scale.
+        void synchronizeEquippedPresentation(RE::NiNode* weaponNode);
 
     private:
         // Attach the (already orphaned) model under the world root; false when
         // the model is still parented or the world root is unavailable.
         bool tryAttachToWorldRoot();
         bool publishHandPoseHandoff();
+        bool publishCapturedHandWorld(RE::NiAVObject* model, bool equippedModel);
         void synchronizeNativeInstanceCull(
             const equipped_weapon_visual_state::Snapshot* nativeVisual,
             bool bridgePresented);
@@ -163,12 +183,18 @@ namespace rock
             float deltaSeconds,
             bool presentedForLogging);
 
+        // Primary may be valid on its own; Pair::valid() still means two hands.
+        weapon_grip_transfer::Pair _capturedGrips{};
+        bool _supportOnly = false;
+        bool _pairedSupportBlockEngaged = false;
         RE::NiPointer<RE::NiAVObject> _model;
         RE::NiPointer<RE::NiAVObject> _culledNativeInstance;
         // Non-owning; validated each frame against _model->parent before use.
         RE::NiNode* _parent = nullptr;
         RE::NiTransform _modelInHandLocal{};
         RE::NiTransform _physicalHandInWandLocal{};
+        RE::NiPoint3 _supportGripInWandLocal{};
+        bool _followEquippedPose = false;
         // Canonical loose-to-equipped hold (see BeginInput). Re-resolved at
         // begin() against the live filewatch-published hFRIK cache so the
         // bridge obeys the same priority as pull seating and grip-zone equip.
@@ -189,10 +215,10 @@ namespace rock
         float _presentationLeaseSeconds = 1.0f;
         std::chrono::steady_clock::time_point _presentationLeaseStartedAt{};
         std::uint32_t _weaponFormID = 0;
+        bool _meleeWeapon = false;
         bool _isLeftHand = false;
         bool _modelPresented = false;
         bool _culledNativeInstanceWasVisible = false;
-        bool _handPosePayloadAvailable = false;
         bool _handPoseHandoffActive = false;
         bool _handPoseBlockEngaged = false;
         bool _nativeCarrierTraceLogged = false;

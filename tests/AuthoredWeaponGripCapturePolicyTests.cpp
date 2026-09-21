@@ -6,6 +6,14 @@ int main()
 {
     using namespace rock::authored_weapon_grip_capture_policy;
 
+    if (resolveWeaponPresentationScale(false, 0.865347f) != 1.0f) return 90;
+    if (resolveWeaponPresentationScale(true, 1.0f) != 1.0f) return 91;
+    if (resolveWeaponPresentationScale(true, 0.75f) != 0.75f) return 92;
+    if (resolveWeaponPresentationScale(true, 1.25f) != 1.25f) return 93;
+    if (resolveWeaponPresentationScale(true, 0.0f) != 0.0f) return 94;
+    if (resolveWeaponPresentationScale(true, std::numeric_limits<float>::quiet_NaN()) != 1.0f) return 95;
+    if (resolveWeaponPresentationScale(true, std::numeric_limits<float>::infinity()) != 1.0f) return 96;
+
     struct AffineTransform
     {
         float scale;
@@ -122,10 +130,36 @@ int main()
         auto input = eligible;
         input.conflictingWeaponTransformAuthorityActive = true;
         const auto decision = evaluateAuthoredPrimaryFiringGrip(input);
-        return decision.action == AuthoredPrimaryAction::Clear &&
+        return decision.action == AuthoredPrimaryAction::RetainPoseOnly &&
                decision.reason ==
                    AuthoredPrimaryDecisionReason::
                        ConflictingWeaponAuthority;
+    }());
+    static_assert([=] {
+        // Every suspension must still release the pose while the two-hand
+        // solver owns weapon transforms.
+        for (int suspension = 0; suspension < 11; ++suspension) {
+            auto input = eligible;
+            input.conflictingWeaponTransformAuthorityActive = true;
+            switch (suspension) {
+            case 0: input.runtimeInitialized = false; break;
+            case 1: input.visualAuthorityAvailable = false; break;
+            case 2: input.localSkeletonReady = false; break;
+            case 3: input.menuBlocking = true; break;
+            case 4: input.compatibilityBlocking = true; break;
+            case 5: input.weaponKeyValid = false; break;
+            case 6: input.nativeReloadAuthorityActive = true; break;
+            case 7: input.primaryHandHoldingObject = true; break;
+            case 8: input.weaponDrawn = false; break;
+            case 9: input.weaponVisible = false; break;
+            case 10: input.rockFiringHandIsLeft = true; break;
+            }
+            if (evaluateAuthoredPrimaryFiringGrip(input).action !=
+                AuthoredPrimaryAction::Clear) {
+                return false;
+            }
+        }
+        return true;
     }());
     static_assert([=] {
         auto input = eligible;
@@ -503,5 +537,11 @@ int main()
     marker = receiver;
     marker.translate.y = std::numeric_limits<float>::quiet_NaN();
     if (frame::registrationAgrees(receiver, marker)) return 76;
+    // Position-only hold tolerance: a floor near the origin, the float rounding of the world coordinate far from it.
+    static_assert(positionOnlyHoldGripErrorTolerance(0.0f) == kPositionOnlyHoldGripErrorFloorGameUnits);
+    static_assert(positionOnlyHoldGripErrorTolerance(100.0f) == kPositionOnlyHoldGripErrorFloorGameUnits);
+    if (positionOnlyHoldGripErrorTolerance(76154.0f) <= 0.0133f) return 77;
+    if (positionOnlyHoldGripErrorTolerance(76154.0f) >= 0.1f) return 78;
+    if (positionOnlyHoldGripErrorTolerance(-76154.0f) != positionOnlyHoldGripErrorTolerance(76154.0f)) return 79;
     return 0;
 }

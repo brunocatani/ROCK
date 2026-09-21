@@ -1,6 +1,7 @@
 #include "physics-interaction/hand/RenderedBoneTransportPolicy.h"
 
 #include <cmath>
+#include <array>
 #include <cstdio>
 #include <limits>
 
@@ -66,8 +67,16 @@ namespace
     {
         bool ok = expectNear(label, isolation::translationGameUnits(actual, expected), 0.0f, 0.002f);
         ok &= expectNear(label, isolation::rotationDegrees(actual, expected), 0.0f, 0.02f);
+        ok &= expectNear(label, actual.scale, expected.scale, 0.00001f);
         return ok;
     }
+
+    struct BoneSample
+    {
+        std::string_view name;
+        RE::NiTransform world;
+        RE::NiTransform nodeWorld;
+    };
 }
 
 int main()
@@ -149,6 +158,68 @@ int main()
         ok &= expectNear("drifted delta translation", isolation::translationGameUnits(active.delta, identity()), 4.0f, 0.05f);
         ok &= expectNear("drifted delta rotation", isolation::rotationDegrees(active.delta, identity()), 0.0f, 0.05f);
         ok &= expectTrue("delta orthonormal", rock::transform_math::storedRotationOrthonormalityError(active.delta.rotate) < 1e-5);
+    }
+
+    // API 2.3 regression: the pre-IK live array is displaced while the saved
+    // final wrist and the current scene node already agree with the input.
+    // Reusing the saved wrist leaves the entire collider chain 4.2 gu away.
+    // Include a rotated/rescaled snapshot and both hands: all local geometry
+    // must survive transport, while current refNodes must not move a second time.
+    for (const bool left : { false, true }) {
+        for (const bool rotated : { false, true }) {
+            const auto target = yawed(40.0f, 10.0f, -25.0f, 70.0f, rotated ? 1.3f : 1.0f);
+            auto sampledRoot = target;
+            sampledRoot.translate.z -= 4.2f;
+            if (rotated) sampledRoot = yawed(-30.0f, 8.0f, -29.0f, 65.8f, 0.9f);
+            const auto sampledFinger = compose(sampledRoot, fingerLocal);
+            std::array<BoneSample, 4> bones{{
+                { left ? "LArm_Hand" : "RArm_Hand", sampledRoot, target },
+                { left ? "LArm_Finger23" : "RArm_Finger23", sampledFinger, compose(target, fingerLocal) },
+                { left ? "LArm_ForeArm1" : "RArm_ForeArm1", compose(sampledRoot, forearmLocal), compose(target, forearmLocal) },
+                { left ? "RArm_Hand" : "LArm_Hand", renderedRoot, renderedRoot },
+            }};
+            const auto oldTransport = makeHandTransport(target, true, target, true);
+            ok &= expectTrue("previous-final transport reproduces offset",
+                isolation::translationGameUnits(transportWorld(oldTransport, sampledRoot), target) >= 4.19f);
+            ok &= expectTrue("sampled chain transported", transportSnapshotHand(bones, left ? HandChainSide::Left : HandChainSide::Right, target));
+            ok &= expectSameTransform("sample wrist reaches current input", bones[0].world, target);
+            ok &= expectSameTransform("finger pivot follows current input", bones[1].world, compose(target, fingerLocal));
+            ok &= expectSameTransform("forearm shares hand frame", bones[2].world, compose(target, forearmLocal));
+            ok &= expectSameTransform("live node is not transported twice", bones[0].nodeWorld, target);
+            ok &= expectSameTransform("live finger node is unchanged", bones[1].nodeWorld, compose(target, fingerLocal));
+            ok &= expectSameTransform("other hand is untouched", bones[3].world, renderedRoot);
+        }
+    }
+    {
+        const auto target = yawed(30.0f, 100.0f, -40.0f, 60.0f, 1.35f);
+        const auto transport = makeHandTransport(target, true, renderedRoot, true);
+        ok &= expectTrue("scale-only transport active", transport.active);
+        ok &= expectSameTransform("scaled finger follows wrist scale", transportWorld(transport, renderedFinger), compose(target, fingerLocal));
+    }
+    {
+        std::array<BoneSample, 2> bones{{
+            { "RArm_Hand", renderedRoot, renderedRoot },
+            { "RArm_Finger23", renderedFinger, renderedFinger },
+        }};
+        ok &= expectTrue("missing opposite wrist rejected", !transportSnapshotHand(bones, HandChainSide::Left, renderedRoot));
+        bones[1].world.translate.x = std::numeric_limits<float>::quiet_NaN();
+        ok &= expectTrue("broken chain rejected", !transportSnapshotHand(bones, HandChainSide::Right, yawed(70.0f, 3.0f, 4.0f, 5.0f)));
+        ok &= expectSameTransform("rejected chain leaves wrist unchanged", bones[0].world, renderedRoot);
+    }
+
+    {
+        auto unused = renderedFinger;
+        unused.translate.x = std::numeric_limits<float>::quiet_NaN();
+        std::array<BoneSample, 3> bones{{
+            { "RArm_Hand", renderedRoot, renderedRoot },
+            { "RArm_Finger23", renderedFinger, renderedFinger },
+            { "RArm_FingerAttachment", unused, unused },
+        }};
+        const auto target = yawed(30.0f, 20.0f, -10.0f, 50.0f);
+        ok &= expectTrue("full-body helpers do not invalidate the standard hand chain",
+            transportSnapshotHand(bones, HandChainSide::Right, target));
+        ok &= expectSameTransform("shared-capture wrist reaches controller", bones[0].world, target);
+        ok &= expectTrue("optional helper is not transported", std::isnan(bones[2].world.translate.x));
     }
 
     if (!ok) {

@@ -48,7 +48,6 @@ int main()
     live.right[0].length = 31.0f;
     live.right[0].radius = 3.5f;
     live.right[0].convexRadius = 0.5f;
-    live.right[0].handTargetResponseScale = 0.75f;
 
     rock::dynamic_hand_twin::applyCanonicalForearmDimensions(live, canonical);
     assert(live.right[0].valid);
@@ -56,7 +55,6 @@ int main()
     assert(live.right[0].length == 18.5f);
     assert(live.right[0].radius == 2.0f);
     assert(live.right[0].convexRadius == 0.25f);
-    assert(live.right[0].handTargetResponseScale == 0.75f);
 
     live.left[0].valid = true;
     rock::dynamic_hand_twin::applyCanonicalForearmDimensions(live, canonical);

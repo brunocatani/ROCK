@@ -27,9 +27,6 @@ namespace rock::dynamic_hand_twin
         float length = 0.0f;
         float radius = 0.0f;
         float convexRadius = 0.0f;
-        // Palm/finger proxies map 1:1 to the hand target. The merged
-        // forearm proxy publishes its pose-derived IK leverage correction.
-        float handTargetResponseScale = 1.0f;
     };
 
     struct TwinTargets
@@ -69,7 +66,7 @@ namespace rock::dynamic_hand_twin
     /*
      * hFRIK changes live forearm node spacing while solving animation/IK.
      * That spacing is pose, not collider topology. Preserve the current rigid
-     * target and response scale, but always publish the dimensions captured by
+     * target, but always publish the dimensions captured by
      * the owning BodyBoneColliderSet generation.
      */
     inline void applyCanonicalSlotDimensions(

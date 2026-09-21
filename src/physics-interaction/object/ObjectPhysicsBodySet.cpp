@@ -7,6 +7,8 @@
 #include <utility>
 
 #include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/HavokWorldLock.h"
+#include "physics-interaction/native/PhysicsSystemBodyScanCache.h"
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
@@ -277,7 +279,8 @@ namespace rock::object_physics_body_set
             int depth,
             const BodySetScanOptions& options,
             ObjectPhysicsBodySet& out,
-            std::unordered_set<std::uint32_t>& seenBodyIds)
+            std::unordered_set<std::uint32_t>& seenBodyIds,
+            havok_runtime::PhysicsSystemBodyScanCache& systems)
         {
             if (!node) {
                 return;
@@ -302,7 +305,7 @@ namespace rock::object_physics_body_set
                     }
                     return appendBodyRecord(*context, rawBodyId, false);
                 };
-                const auto scanResult = havok_runtime::forEachPhysicsSystemBodyIdDetailed(collisionObject, hknpWorld, 256, visitBody, &context);
+                const auto scanResult = havok_runtime::forEachPhysicsSystemBodyIdDetailed(collisionObject, hknpWorld, 256, visitBody, &context, &systems);
                 if (!scanResult.enumerated()) {
                     if (isInvalidPhysicsSystemStatus(scanResult.status)) {
                         ++out.diagnostics.scanFailures;
@@ -333,7 +336,7 @@ namespace rock::object_physics_body_set
             for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
                 auto* child = children[i].get();
                 if (child) {
-                    scanNode(bhkWorld, hknpWorld, rootRef, child, depth - 1, options, out, seenBodyIds);
+                    scanNode(bhkWorld, hknpWorld, rootRef, child, depth - 1, options, out, seenBodyIds, systems);
                 }
             }
         }
@@ -522,44 +525,6 @@ namespace rock::object_physics_body_set
         for (const auto& record : records) {
             if (record.accepted) {
                 result.push_back(record.bodyId);
-            }
-        }
-        return result;
-    }
-
-    std::vector<std::uint32_t> ObjectPhysicsBodySet::uniqueAcceptedMotionBodyIds() const
-    {
-        std::vector<std::uint32_t> result;
-        std::unordered_set<std::uint32_t> seenMotionIds;
-        result.reserve(records.size());
-        diagnostics.duplicateMotionSkips = 0;
-        for (const auto& record : records) {
-            if (!record.accepted) {
-                continue;
-            }
-            if (seenMotionIds.insert(record.motionId).second) {
-                result.push_back(record.bodyId);
-            } else {
-                ++diagnostics.duplicateMotionSkips;
-            }
-        }
-        return result;
-    }
-
-    std::vector<const ObjectPhysicsBodyRecord*> ObjectPhysicsBodySet::uniqueAcceptedMotionRecords() const
-    {
-        std::vector<const ObjectPhysicsBodyRecord*> result;
-        std::unordered_set<std::uint32_t> seenMotionIds;
-        result.reserve(records.size());
-        diagnostics.duplicateMotionSkips = 0;
-        for (const auto& record : records) {
-            if (!record.accepted) {
-                continue;
-            }
-            if (seenMotionIds.insert(record.motionId).second) {
-                result.push_back(&record);
-            } else {
-                ++diagnostics.duplicateMotionSkips;
             }
         }
         return result;
@@ -878,18 +843,22 @@ namespace rock::object_physics_body_set
             return result;
         }
 
+        // This scan only reads; native activation/restoration occurs after it returns.
+        // The lock (or physics-step ownership) fixes system/body membership for ID reuse.
+        havok_world_lock::ScopedWorldReadLock worldReadLock(hknpWorld);
+        havok_runtime::PhysicsSystemBodyScanCache systems;
         std::unordered_set<std::uint32_t> seenBodyIds;
         if (options.seedBodyId != INVALID_BODY_ID) {
             ScanBodyContext seedContext{ bhkWorld, hknpWorld, ref, options.seedHitNode ? options.seedHitNode : result.rootNode, nullptr, &options, &result, &seenBodyIds };
             appendBodyRecord(seedContext, options.seedBodyId, true);
             if (grab_target::isRagdoll(options.targetKind) && options.seedHitNode) {
                 // Detached systems may no longer be under the actor's current 3D.
-                scanNode(bhkWorld, hknpWorld, ref, options.seedHitNode, 0, options, result, seenBodyIds);
+                scanNode(bhkWorld, hknpWorld, ref, options.seedHitNode, 0, options, result, seenBodyIds, systems);
             }
         }
 
         if (options.allowWeaponRefExpansion || !isWeaponReference(ref)) {
-            scanNode(bhkWorld, hknpWorld, ref, result.rootNode, (std::max)(0, options.maxDepth), options, result, seenBodyIds);
+            scanNode(bhkWorld, hknpWorld, ref, result.rootNode, (std::max)(0, options.maxDepth), options, result, seenBodyIds, systems);
         } else {
             ++result.diagnostics.weaponExpansionSkips;
         }

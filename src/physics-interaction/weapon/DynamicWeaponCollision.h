@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/weapon/WeaponPhysicsTimeScale.h"
+
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/native/HavokCompoundShapeBuilder.h"
@@ -7,6 +9,7 @@
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/WeaponSurfaceSupport.h"
+#include "physics-interaction/weapon/BladePenetrationRuntime.h"
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/NetImmerse/NiTransform.h"
@@ -83,7 +86,7 @@ namespace rock
             std::uint32_t constraintId{ 0x7FFF'FFFFu };
             std::uint32_t otherBodyId{ 0x7FFF'FFFFu };
             std::uint32_t otherLayer{ 0 };
-            std::uint32_t contactGraceSolves{ 0 };
+            float contactRetentionSeconds{ 0.0f };
             std::uint64_t generationKey{ 0 };
             std::uint64_t solveSequence{ 0 };
             std::uint64_t proxyPairCallbackSequence{ 0 };
@@ -106,6 +109,13 @@ namespace rock
 
         // Game frame only, before early returns, so clicks cannot replay later.
         void updateSurfaceSupportInput();
+
+        // Game-frame observation, published through the provider snapshot.
+        [[nodiscard]] bool surfaceSupportReservesInput(std::uintptr_t weaponNode, std::uint64_t generation) const noexcept
+        {
+            return _surfaceInputReserved && generation != 0 && generation == _frameGenerationKey &&
+                weaponNode != 0 && weaponNode == reinterpret_cast<std::uintptr_t>(_frameWeaponNode);
+        }
 
         // Same game-thread owner as the recoil callback; no cached hand-mode
         // flag can keep the reduced profile alive after this latch releases.
@@ -139,11 +149,16 @@ namespace rock
             std::uint64_t weaponGenerationKey,
             const WeaponCollision& weaponCollision,
             const RE::NiPoint3* primaryGripWeaponLocal);
+        // This frame's compound snapshot found a generated source the weapon root no longer contains.
+        [[nodiscard]] bool compoundSourcesUnavailable() const { return _compoundSourcesUnavailable; }
 
         void flushPendingPhysicsDrive(
             RE::hknpWorld* world,
             const havok_physics_timing::PhysicsTimingSample& timing);
-        void samplePostSolve(RE::hknpWorld* world, std::uint64_t solveSequence);
+        void samplePostSolve(RE::hknpWorld* world, std::uint64_t solveSequence,
+            const havok_physics_timing::PhysicsTimingSample& timing);
+        void finalizeCompoundPose(const WeaponCollision& weaponCollision, RE::NiNode* weaponNode,
+            const PhysicsFrameContext& frame, std::uint64_t generation);
         // Game-thread witness after the final claimed-hand presentation.
         void tracePresentedWeapon(RE::NiNode* weaponNode, std::uint64_t frameIndex);
 
@@ -165,6 +180,7 @@ namespace rock
             const RE::NiPoint3* contactPointGame);
 
         void retireAll(void* bhkWorld, bool preserveSurfaceSupport = false);
+        void refreshCollisionFilter(RE::hknpWorld* world);
         void abandonHavokStateAfterWorldLoss();
 
         [[nodiscard]] RE::hknpBodyId proxyBodyIdForDebug() const;
@@ -193,7 +209,7 @@ namespace rock
             std::uint32_t bodyId{ 0x7FFF'FFFFu };
             std::uint32_t otherBodyId{ 0x7FFF'FFFFu };
             std::uint32_t otherLayer{ 0 };
-            std::uint32_t contactGraceSolves{ 0 };
+            float contactRetentionSeconds{ 0.0f };
             std::uint64_t generationKey{ 0 };
             std::uint64_t solveSequence{ 0 };
             float weaponScale{ 1.0f };
@@ -265,9 +281,12 @@ namespace rock
         BethesdaPhysicsBody _body{};
         BethesdaPhysicsBody _authorityProxy{};
         ActiveConstraint _authorityConstraint{};
+        BladePenetrationRuntime _bladePenetration;
         havok_compound_shape_builder::DynamicCompoundShape _compoundShape{};
         mutable std::mutex _compoundPoseMutex;
         std::vector<WeaponCollision::CompoundChildPoseSnapshot> _compoundPoseScratch;
+        // Game-thread preparation stays outside the physics publication lock.
+        std::vector<havok_compound_shape_builder::ChildTransform> _preparedCompoundChildTransforms;
         std::vector<havok_compound_shape_builder::ChildTransform> _pendingCompoundChildTransforms;
         std::uint64_t _queuedCompoundPoseSequence{ 0 };
         std::uint64_t _consumedCompoundPoseSequence{ 0 };
@@ -279,6 +298,9 @@ namespace rock
         RE::NiPoint3 _createdHalfExtentsWeaponLocal{};
         float _createdWeaponScale{ 1.0f };
         float _createdMass{ 0.0f };
+        // Owned by pre-collide/post-solve callbacks; cleared under quiescence
+        // on retirement. Generated bodies never transfer this state to drops.
+        weapon_physics_time_scale::HandlingScale _handlingScale{};
         std::uint32_t _createdCompoundChildCount{ 0 };
         // Structural mutations own this pivot; callbacks read it under their
         // quiescence lease. Free carry uses the existing weapon-root pivot.
@@ -305,7 +327,7 @@ namespace rock
         // the contact body is recovered.
         float _divergenceDwellSeconds{ 0.0f };
         std::uint64_t _consumedContactSequence{ 0 };
-        std::uint32_t _contactGraceSolves{ 0 };
+        float _contactRetentionSeconds{ 0.0f };
         std::uint64_t _contactEpisode{ 0 };
         std::uint64_t _reportedContactEpisode{ 0 };
         std::uint64_t _postSolveSamplesSinceCreate{ 0 };
@@ -329,6 +351,7 @@ namespace rock
         weapon_surface_support::Toggle _surfaceToggle{};
         weapon_surface_support::State _surfaceSupport{};
         bool _surfaceClickRequested{ false };
+        bool _surfaceInputReserved{ false };
         // Game-thread diagnostic baseline; source/generation changes rebase it.
         RE::NiTransform _previousIntentDriverLocal{};
         dynamic_weapon_collision_policy::VisualIntentSource _previousIntentSource{dynamic_weapon_collision_policy::VisualIntentSource::None};
@@ -343,6 +366,7 @@ namespace rock
         std::atomic<float> _gripRecoveryDistanceGameUnitsAtomic{ 210.0f };
         std::atomic<std::uint32_t> _bodyIdAtomic{ 0x7FFF'FFFFu };
         std::atomic<bool> _rebuildRequestedAtomic{ false };
+        bool _compoundSourcesUnavailable{ false };
         std::atomic<std::uint64_t> _proxyPairCallbackSequenceAtomic{ 0 };
         std::atomic<std::uint64_t> _obstacleCallbackSequenceAtomic{ 0 };
         std::atomic<std::uint64_t> _rawPointCallbackSequenceAtomic{ 0 };
@@ -369,7 +393,7 @@ namespace rock
         std::atomic<std::uint32_t> _snapshotBodyIdAtomic{ 0x7FFF'FFFFu };
         std::atomic<std::uint32_t> _snapshotOtherBodyIdAtomic{ 0x7FFF'FFFFu };
         std::atomic<std::uint32_t> _snapshotOtherLayerAtomic{ 0 };
-        std::atomic<std::uint32_t> _snapshotContactGraceAtomic{ 0 };
+        std::atomic<float> _snapshotContactRetentionSecondsAtomic{ 0.0f };
         std::atomic<std::uint64_t> _snapshotGenerationKeyAtomic{ 0 };
         std::atomic<std::uint64_t> _snapshotSolveSequenceAtomic{ 0 };
         std::atomic<std::uint64_t> _snapshotSourceSequenceAtomic{ 0 };

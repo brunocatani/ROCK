@@ -1,7 +1,10 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h"
+#include "physics-interaction/weapon/LooseWeaponAuthoredGrabPolicy.h"
 
 #include <cassert>
 #include <cmath>
+#include <initializer_list>
+#include <limits>
 
 using namespace rock::authored_weapon_grip_activation_policy;
 
@@ -456,6 +459,75 @@ int main()
     assert(indicatorChecksPassed);
     if (!indicatorChecksPassed) {
         return 1;
+    }
+
+    {
+        namespace loose = rock::loose_weapon_authored_grab_policy;
+        using Role = loose::Role;
+        // Independent hand topologies on a never-equipped loose rifle:
+        // each physical hand accepts its side and rejects the opposite side.
+        bool looseGripsPass = true;
+        for (bool supportIsLeft : {false, true}) {
+            const auto topology = resolveHandTopology(!supportIsLeft, supportIsLeft);
+            const auto side = orientRightFiringAxisForTopology({-1.0f, 0.0f, 0.0f}, topology);
+            const auto looseDown = orientRightFiringAxisForTopology({0.0f, 0.0f, -1.0f}, topology);
+            DirectionGateInput input{
+                .weaponFamily = WeaponFamily::TwoHandGun,
+                .handTopology = topology,
+                .liveProbeWorld = side,
+                .supportSideAxisWorld = side,
+                .downAxisWorld = looseDown,
+                .radialCapGameUnits = 3.0f,
+            };
+            looseGripsPass &= loose::select(false, 10.0f, evaluateDirectionGate(input).spatialPass, 1.0f) == Role::Support;
+            input.liveProbeWorld = {-side.x, -side.y, -side.z};
+            looseGripsPass &= loose::select(false, 10.0f, evaluateDirectionGate(input).spatialPass, 1.0f) == Role::None;
+        }
+        looseGripsPass &= loose::select(true, 0.5f, true, 1.0f) == Role::Firing;
+        looseGripsPass &= loose::select(true, 1.5f, true, 1.0f) == Role::Support;
+        looseGripsPass &= loose::select(true, 1.0f, true, 1.0f) == Role::Firing;
+        looseGripsPass &= loose::select(false, 0.0f, false, 0.0f) == Role::None;
+        looseGripsPass &= loose::select(true, std::numeric_limits<float>::quiet_NaN(), true, 1.0f) == Role::Support;
+        looseGripsPass &= loose::select(false, 0.0f, true, std::numeric_limits<float>::infinity()) == Role::None;
+        looseGripsPass &= loose::select(true, -1.0f, false, 0.0f) == Role::None;
+        using Layout = loose::Arrangement;
+        looseGripsPass &= loose::arrangement(true, true, false, 4.0f, 8.0f) == Layout::Close;
+        looseGripsPass &= loose::arrangement(true, true, false, 20.0f, 8.0f) == Layout::Separated;
+        looseGripsPass &= loose::arrangement(true, false, true, 0.0f, 8.0f) == Layout::OneHanded;
+        looseGripsPass &= loose::arrangement(true, false, false, 0.0f, 8.0f) == Layout::Pending;
+        looseGripsPass &= loose::arrangement(false, false, true, 0.0f, 8.0f) == Layout::Pending;
+        for (const auto layout : { Layout::Close, Layout::OneHanded }) {
+            looseGripsPass &= loose::acquisitionRole(true, false, Role::None, layout, false, Role::Support) == Role::Firing;
+            looseGripsPass &= loose::acquisitionRole(true, false, Role::None, layout, true, Role::Firing) == Role::Support;
+            looseGripsPass &= loose::acquisitionRole(true, false, Role::None, layout, false, Role::None) == Role::None;
+        }
+        for (const auto layout : { Layout::Close, Layout::OneHanded, Layout::Separated, Layout::Pending }) {
+            // A near reach, pull, or forced arrival always takes firing unless
+            // an equipped transfer carries an explicit former support role.
+            looseGripsPass &= loose::acquisitionRole(false, false, Role::None, layout, false, Role::Support) == Role::Firing;
+            looseGripsPass &= loose::acquisitionRole(false, true, Role::Support, layout, false, Role::Firing) == Role::Support;
+            looseGripsPass &= loose::acquisitionRole(false, true, Role::None, layout, false, Role::Firing) == Role::None;
+        }
+        looseGripsPass &= loose::acquisitionRole(true, false, Role::None, Layout::Separated, false, Role::Support) == Role::Support;
+        // Near acquisition of an already-held weapon must preserve the station:
+        // no semantic palm contact is required to recognize the joining hand.
+        for (const bool touching : { false, true }) {
+            looseGripsPass &= loose::acquisitionRole(touching, false, Role::None, Layout::Separated, true, Role::Support) == Role::Support;
+            // A deliberate second firing-station grab stays at that station;
+            // a mesh grab outside the authored zones remains dynamic.
+            looseGripsPass &= loose::acquisitionRole(touching, false, Role::None, Layout::Separated, true, Role::Firing) == Role::Firing;
+            for (const auto layout : { Layout::Separated, Layout::Close, Layout::OneHanded }) {
+                looseGripsPass &= loose::acquisitionRole(touching, false, Role::None, layout, true, Role::None) == Role::None;
+                looseGripsPass &= loose::acquisitionRole(touching, true, Role::Support, layout, true, Role::Firing) == Role::Support;
+                looseGripsPass &= loose::acquisitionRole(touching, true, Role::Firing, layout, true, Role::Support) == Role::Firing;
+            }
+            for (const auto layout : { Layout::Close, Layout::OneHanded }) {
+                for (const auto zone : { Role::Firing, Role::Support }) {
+                    looseGripsPass &= loose::acquisitionRole(touching, false, Role::None, layout, true, zone) == Role::Support;
+                }
+            }
+        }
+        if (!looseGripsPass) return 1;
     }
 
     return 0;

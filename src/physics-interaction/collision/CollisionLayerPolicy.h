@@ -68,7 +68,8 @@ namespace rock::collision_layer_policy
     inline constexpr std::uint32_t ROCK_LAYER_RELOAD = ROCK_LAYER_HAND;
     /*
      * Dynamic hand proxy bodies live on their own extended row so they collide
-     * only with static world-surface layers and explicitly tagged car bodies.
+     * with static world-surface layers and explicitly tagged car bodies, plus
+     * layer 33 when experimental NPC dynamic collisions are enabled.
      * Native clutter stays excluded: car identity is carried by the dedicated
      * rows below, never inferred from the shared clutter layers in the solver.
      * The proxy is a solver-side visual-stop driver, not ordinary generated
@@ -88,7 +89,8 @@ namespace rock::collision_layer_policy
     inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER = 50;
     /*
      * The dynamic weapon proxy is deliberately limited to solver obstacles:
-     * static world surfaces and explicitly tagged ExplodableCar bodies.
+     * static world surfaces, explicitly tagged ExplodableCar bodies, and
+     * optionally native layer-33 NPC bodies.
      * Layer-44 generated hulls remain the sole weapon contact/evidence path
      * for hands, actors, projectiles, and ordinary dynamic props.
      */
@@ -111,6 +113,15 @@ namespace rock::collision_layer_policy
     inline constexpr std::uint32_t FO4_LAYER_CONFIGURED_COUNT = FO4_LAYER_VANILLA_CONFIGURED_COUNT;
     inline constexpr std::uint32_t FO4_LAYER_LAST_CONFIGURED = FO4_LAYER_LAST_VANILLA_CONFIGURED;
     inline constexpr std::uint32_t FO4_LAYER_MAX_CONFIGURED = FO4_LAYER_LAST_CONFIGURED;
+
+    // Generated player tools/proxies only: the tagged car rows are real world
+    // objects and must remain eligible for native weapon hits and sound.
+    inline constexpr bool isRockGeneratedColliderLayer(std::uint32_t layer)
+    {
+        return layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON ||
+               layer == ROCK_LAYER_BODY || layer == ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY ||
+               layer == ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY || layer == ROCK_LAYER_DYNAMIC_WEAPON_PROXY;
+    }
 
     inline constexpr bool isRockOwnedReusableLayer(std::uint32_t layer)
     {
@@ -204,7 +215,11 @@ namespace rock::collision_layer_policy
 
     inline constexpr bool isDynamicWeaponProxyObstacleLayer(std::uint32_t layer)
     {
-        return isWorldSurfaceLayer(layer) || isDynamicWorldCarLayer(layer);
+        // The matrix owns experimental admission. Once admitted, NPC contact
+        // must reach the same solver/visual response as world contact. Keep
+        // surface-grab and weapon-bracing eligibility separate.
+        return isWorldSurfaceLayer(layer) || isDynamicWorldCarLayer(layer) ||
+               layer == FO4_LAYER_BIPED_NO_CC;
     }
 
     inline constexpr bool isDynamicWeaponProxySolverObstacleLayer(
@@ -234,9 +249,9 @@ namespace rock::collision_layer_policy
 
     /*
      * Fallout VR's native player character controller must keep authoritative
-     * world support and hard blockers, but its broad contact bubble should not
-     * be the system that imparts impulses to clutter, guns, actors, ragdolls, or
-     * ROCK-generated tool bodies. This policy lives beside the layer constants
+     * world support, actor collision and hard blockers, but its broad contact
+     * bubble should not impart impulses to clutter, loose guns, or ROCK-generated
+     * tool bodies. This policy lives beside the layer constants
      * so hooks can make a per-contact decision without rewriting the global
      * layer matrix or changing ROCK hand/body collider layers.
      */
@@ -280,6 +295,12 @@ namespace rock::collision_layer_policy
         }
         if (!input.targetLayerKnown) {
             return PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "unknownTargetLayer" };
+        }
+        // Keep the engine-admitted NPC movement constraints. Removing these
+        // permits walking through actors even when melee contacts still work.
+        // Native filters still decide which actor/ragdoll pairs exist.
+        if (input.targetLayer == FO4_LAYER_CHARCONTROLLER || isActorOrBipedLayer(input.targetLayer)) {
+            return PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "nativeActor" };
         }
         // Loose weapon references share layer 5 with equipped attack bodies.
         // Only positive loose-object ownership permits push suppression here.
@@ -529,6 +550,14 @@ namespace rock::collision_layer_policy
                layerPairEnabledFromRow(matrix, layerB, layerA) == expectedEnabled;
     }
 
+    inline constexpr bool rockDynamicNpcPairsMatch(const std::uint64_t* matrix, bool enabled)
+    {
+        return matrix &&
+               layerPairSymmetricMatches(matrix, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, FO4_LAYER_BIPED_NO_CC, enabled) &&
+               layerPairSymmetricMatches(matrix, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, FO4_LAYER_BIPED_NO_CC, enabled) &&
+               layerPairSymmetricMatches(matrix, ROCK_LAYER_DYNAMIC_WEAPON_PROXY, FO4_LAYER_BIPED_NO_CC, enabled);
+    }
+
     inline constexpr bool rockToolActorPairsMatch(
         const std::uint64_t* matrix,
         std::uint64_t expectedHandMask,
@@ -614,7 +643,8 @@ namespace rock::collision_layer_policy
     }
 
     inline constexpr std::uint64_t buildRockDynamicHandProxyExpectedMask(
-        bool isLeft = false)
+        bool isLeft = false,
+        bool npcDynamicCollisions = false)
     {
         std::uint64_t mask = 0;
         for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
@@ -629,10 +659,14 @@ namespace rock::collision_layer_policy
             isLeft ? ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY :
                      ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
         mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
+        if (npcDynamicCollisions) {
+            mask = withLayer(mask, FO4_LAYER_BIPED_NO_CC);
+        }
         return mask;
     }
 
-    inline constexpr std::uint64_t buildRockDynamicWeaponProxyExpectedMask()
+    inline constexpr std::uint64_t buildRockDynamicWeaponProxyExpectedMask(
+        bool npcDynamicCollisions = false)
     {
         std::uint64_t mask = 0;
         for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
@@ -642,6 +676,9 @@ namespace rock::collision_layer_policy
         }
         mask = withLayer(mask, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY);
         mask = withLayer(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
+        if (npcDynamicCollisions) {
+            mask = withLayer(mask, FO4_LAYER_BIPED_NO_CC);
+        }
         return mask;
     }
 
@@ -687,25 +724,27 @@ namespace rock::collision_layer_policy
     }
 
     inline void applyRockDynamicHandProxyLayerPolicies(
-        std::uint64_t* matrix)
+        std::uint64_t* matrix,
+        bool npcDynamicCollisions = false)
     {
         applyLayerExpectedMask(
             matrix,
             ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY,
-            buildRockDynamicHandProxyExpectedMask(false));
+            buildRockDynamicHandProxyExpectedMask(false, npcDynamicCollisions));
         applyLayerExpectedMask(
             matrix,
             ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY,
-            buildRockDynamicHandProxyExpectedMask(true));
+            buildRockDynamicHandProxyExpectedMask(true, npcDynamicCollisions));
     }
 
     inline void applyRockDynamicWeaponProxyLayerPolicy(
-        std::uint64_t* matrix)
+        std::uint64_t* matrix,
+        bool npcDynamicCollisions = false)
     {
         applyLayerExpectedMask(
             matrix,
             ROCK_LAYER_DYNAMIC_WEAPON_PROXY,
-            buildRockDynamicWeaponProxyExpectedMask());
+            buildRockDynamicWeaponProxyExpectedMask(npcDynamicCollisions));
     }
 
     inline void applyRockDynamicWorldCarLayerPolicies(std::uint64_t* matrix)
@@ -728,7 +767,8 @@ namespace rock::collision_layer_policy
         std::uint64_t* matrix,
         bool handStaticWorld,
         bool weaponBlocksProjectiles,
-        bool weaponBlocksSpells)
+        bool weaponBlocksSpells,
+        bool npcDynamicCollisions = false)
     {
         /*
          * Runtime registration uses one aggregate helper because layer 47 is an
@@ -742,8 +782,8 @@ namespace rock::collision_layer_policy
             buildRockWeaponExpectedMask(weaponBlocksProjectiles, weaponBlocksSpells, true));
         applyRockReloadLayerPolicy(matrix, weaponBlocksProjectiles, weaponBlocksSpells, handStaticWorld);
         applyRockBodyLayerPolicy(matrix);
-        applyRockDynamicHandProxyLayerPolicies(matrix);
-        applyRockDynamicWeaponProxyLayerPolicy(matrix);
+        applyRockDynamicHandProxyLayerPolicies(matrix, npcDynamicCollisions);
+        applyRockDynamicWeaponProxyLayerPolicy(matrix, npcDynamicCollisions);
         applyRockDynamicWorldCarLayerPolicies(matrix);
     }
 }

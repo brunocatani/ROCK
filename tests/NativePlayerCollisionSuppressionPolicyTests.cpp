@@ -1,8 +1,11 @@
 #include "physics-interaction/collision/NativePlayerCollisionPolicy.h"
+#include "physics-interaction/grab/GrabHeldObject.h"
 
+#include <algorithm>
 #include <array>
 
 #include <cstdio>
+#include <cstring>
 
 namespace
 {
@@ -102,6 +105,53 @@ int main()
         !proxyListenerMatchesPlayer(0, 0x10) && !proxyListenerMatchesPlayer(listener, 0));
     ok &= expect("wrapped listener address cannot match a controller",
         !proxyListenerMatchesPlayer(UINTPTR_MAX - 7, 8));
+    for (auto layer : { FO4_LAYER_CHARCONTROLLER, FO4_LAYER_BIPED,
+            FO4_LAYER_BIPED_NO_CC, FO4_LAYER_DEADBIP }) {
+        ok &= expect("player locomotion retains native NPC and ragdoll contacts",
+            !evaluatePlayerCharacterControllerContact({ true, true, true, layer }).suppress);
+    }
+
+    // Exercise the same paired-row compactor as the movement hook with NPCs,
+    // attacks, scenery, loose objects and an independently held body together.
+    for (bool holding : { false, true }) {
+        constexpr std::array layers{ FO4_LAYER_BIPED, FO4_LAYER_CLUTTER,
+            FO4_LAYER_CHARCONTROLLER, FO4_LAYER_DEADBIP, FO4_LAYER_BIPED_NO_CC,
+            FO4_LAYER_WEAPON, FO4_LAYER_WEAPON, FO4_LAYER_STATIC, ROCK_LAYER_HAND,
+            FO4_LAYER_STATIC };
+        constexpr auto stride = rock::held_grab_cc_policy::kGeneratedContactStride;
+        constexpr auto bodyOffset = rock::held_grab_cc_policy::kGeneratedContactBodyIdOffset;
+        alignas(std::uint32_t) std::array<char, stride * layers.size()> contacts{}, constraints{};
+        for (std::uint32_t id = 0; id < layers.size(); ++id) {
+            std::memcpy(contacts.data() + id * stride + bodyOffset, &id, sizeof(id));
+            std::memcpy(constraints.data() + id * stride, &id, sizeof(id));
+        }
+        int contactCount = static_cast<int>(layers.size());
+        int constraintCount = contactCount;
+        const rock::held_grab_cc_policy::GeneratedContactBufferView view{
+            .valid = true, .manifoldEntries = contacts.data(), .constraintEntries = constraints.data(),
+            .manifoldCountPtr = &contactCount, .constraintCountPtr = &constraintCount,
+            .manifoldCount = contactCount, .constraintCount = constraintCount, .pairCount = contactCount,
+        };
+        const auto result = rock::held_grab_cc_policy::filterGeneratedContactBuffers(view,
+            [&](std::uint32_t id) {
+                return (holding && id == 9) || evaluatePlayerCharacterControllerContact({
+                    .filterEnabled = true, .playerController = true, .targetLayerKnown = true,
+                    .targetLayer = layers[id], .targetIsLooseWeapon = id == 6,
+                }).suppress;
+            });
+        constexpr std::array<std::uint32_t, 7> expected{ 0, 2, 3, 4, 5, 7, 9 };
+        const int expectedCount = holding ? 6 : 7;
+        ok &= expect("object filtering preserves NPC, attack and support contacts while holding or empty-handed",
+            result.valid && result.keptPairCount == expectedCount &&
+                contactCount == expectedCount && constraintCount == expectedCount);
+        for (int i = 0; i < expectedCount; ++i) {
+            std::uint32_t contactId = 0, constraintId = 0;
+            std::memcpy(&contactId, contacts.data() + i * stride + bodyOffset, sizeof(contactId));
+            std::memcpy(&constraintId, constraints.data() + i * stride, sizeof(constraintId));
+            ok &= expect("surviving NPC and native contact constraints stay paired and in order",
+                contactId == expected[i] && constraintId == expected[i]);
+        }
+    }
     constexpr std::array attacks{ FO4_LAYER_WEAPON, FO4_LAYER_PROJECTILE,
         FO4_LAYER_SPELL, FO4_LAYER_CONEPROJECTILE, FO4_LAYER_SPELLEXPLOSION };
     for (auto layer : attacks) {
@@ -158,6 +208,49 @@ int main()
     ok &= expect("player's own native bodies do not collide with one another",
         suppressPhysicalPair(true, true, FO4_LAYER_BIPED, FO4_LAYER_BIPED));
 
+    // Only the player's native weapon representation is redundant with these
+    // generated colliders. The same layer-5 body can also be an NPC attack or
+    // loose weapon, so layer numbers alone cannot authorize suppression.
+    constexpr std::array generatedPlayerLayers{ ROCK_LAYER_HAND, ROCK_LAYER_WEAPON, ROCK_LAYER_BODY,
+        ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, ROCK_LAYER_DYNAMIC_WEAPON_PROXY };
+    for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
+        const bool generated = std::find(generatedPlayerLayers.begin(), generatedPlayerLayers.end(), layer) != generatedPlayerLayers.end();
+        ok &= expect("owned native weapon removes only generated self contacts",
+            suppressNativeWeaponSelfContact(FO4_LAYER_WEAPON, layer, true) == generated);
+        ok &= expect("native weapon self filtering is symmetric",
+            suppressNativeWeaponSelfContact(layer, FO4_LAYER_WEAPON, true) == generated);
+        ok &= expect("NPC, dropped and unresolved native weapon owners are preserved",
+            !suppressNativeWeaponSelfContact(FO4_LAYER_WEAPON, layer, false) &&
+            !suppressNativeWeaponSelfContact(layer, FO4_LAYER_WEAPON, false));
+        ok &= expect("generated collider classification excludes tagged world cars",
+            isRockGeneratedColliderLayer(layer) == generated);
+        ok &= expect("ownership evidence cannot suppress a non-weapon pair",
+            !suppressNativeWeaponSelfContact(FO4_LAYER_BIPED, layer, true));
+    }
+    std::array<BodyPair, 10> meleePairs{{ {100, 700}, {701, 100}, {101, 700}, {100, 702},
+        {100, 703}, {100, 704}, {102, 701}, {100, 705}, {700, 701}, {999, 999} }};
+    const auto meleeLayer = [](std::uint32_t id) {
+        switch (id) {
+        case 700: return ROCK_LAYER_DYNAMIC_WEAPON_PROXY;
+        case 701: return ROCK_LAYER_HAND;
+        case 702: return FO4_LAYER_BIPED_NO_CC;
+        case 703: return FO4_LAYER_STATIC;
+        case 704: return ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER;
+        default: return FO4_LAYER_WEAPON;
+        }
+    };
+    const int meleeKept = filterPhysicalPairs(meleePairs.data(), 9, [&](const BodyPair& pair) {
+        return suppressNativeWeaponSelfContact(meleeLayer(pair.bodyA), meleeLayer(pair.bodyB),
+            pair.bodyA == 100 || pair.bodyB == 100);
+    });
+    constexpr std::array<BodyPair, 7> expectedMelee{{ {101, 700}, {100, 702}, {100, 703}, {100, 704},
+        {102, 701}, {100, 705}, {700, 701} }};
+    ok &= expect("self filtering preserves NPC damage, world impacts, cars, loose weapons and ROCK blocking", meleeKept == expectedMelee.size());
+    for (std::size_t i = 0; i < expectedMelee.size(); ++i) {
+        ok &= expect("remaining melee pairs preserve order", meleePairs[i].bodyA == expectedMelee[i].bodyA && meleePairs[i].bodyB == expectedMelee[i].bodyB);
+    }
+    ok &= expect("self filtering leaves unadmitted native tail untouched", meleePairs[9].bodyA == 999 && meleePairs[9].bodyB == 999);
+
     // Registration may alter ROCK rows, never the native actor/attack/scenery
     // matrix that also governs NPCs. Check every native-to-native pair.
     std::array<std::uint64_t, 64> matrix{};
@@ -165,15 +258,32 @@ int main()
         matrix[i] = 0xB2978EBA769DC523ull ^ (i * 0x9E3779B97F4A7C15ull);
     }
     const auto original = matrix;
-    applyRockGeneratedLayerPolicies(matrix.data(), true, false, false);
-    for (std::uint32_t a = 0; a < FO4_LAYER_VANILLA_CONFIGURED_COUNT; ++a) {
-        for (std::uint32_t b = 0; b < FO4_LAYER_VANILLA_CONFIGURED_COUNT; ++b) {
-            if (!isRockOwnedMatrixLayer(a) && !isRockOwnedMatrixLayer(b)) {
-                ok &= expect("generated registration preserves native-to-native matrix bits",
-                    maskEnablesLayer(matrix[a], b) == maskEnablesLayer(original[a], b));
+    for (const bool npcDynamicCollisions : { false, true, false }) {
+        applyRockGeneratedLayerPolicies(matrix.data(), true, false, false, npcDynamicCollisions);
+        ok &= expect("NPC dynamic collision toggles all three pairs symmetrically",
+            rockDynamicNpcPairsMatch(matrix.data(), npcDynamicCollisions));
+        for (const auto layer : { ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY,
+                ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, ROCK_LAYER_DYNAMIC_WEAPON_PROXY }) {
+            ok &= expect("native player remains excluded from experimental dynamic contacts",
+                suppressPhysicalPair(true, false, FO4_LAYER_BIPED_NO_CC, layer));
+            ok &= expect("NPC dynamic contacts remain admitted by the player filter",
+                !suppressPhysicalPair(false, false, FO4_LAYER_BIPED_NO_CC, layer));
+            for (const auto excluded : { FO4_LAYER_BIPED, FO4_LAYER_DEADBIP, FO4_LAYER_CHARCONTROLLER }) {
+                ok &= expect("experiment does not admit other native actor layers",
+                    layerPairSymmetricMatches(matrix.data(), layer, excluded, false));
+            }
+        }
+        for (std::uint32_t a = 0; a < FO4_LAYER_VANILLA_CONFIGURED_COUNT; ++a) {
+            for (std::uint32_t b = 0; b < FO4_LAYER_VANILLA_CONFIGURED_COUNT; ++b) {
+                if (!isRockOwnedMatrixLayer(a) && !isRockOwnedMatrixLayer(b)) {
+                    ok &= expect("generated registration preserves native-to-native matrix bits",
+                        maskEnablesLayer(matrix[a], b) == maskEnablesLayer(original[a], b));
+                }
             }
         }
     }
+    matrix[FO4_LAYER_BIPED_NO_CC] = withLayer(matrix[FO4_LAYER_BIPED_NO_CC], ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
+    ok &= expect("NPC row-only drift is detected", !rockDynamicNpcPairsMatch(matrix.data(), false));
 
     const BodyIdentity player{ 27, 8, 0x100000, 0x200000 };
     ok &= expect("live body identity matches", matchesLiveBody(player, player));
@@ -215,6 +325,60 @@ int main()
         [](const BodyPair&) { return false; }) == kept);
     ok &= expect("all-suppressed batch becomes empty", filterPhysicalPairs(pairs.data(), kept,
         [](const BodyPair&) { return true; }) == 0);
+
+    const BodyIdentity blade{ 750, 81, 0x12340, 0x56780 };
+    const BodyIdentity torso{ 422, 37, 0x23450, 0x67890 };
+    constexpr std::uintptr_t bladeWorld = 0x90000;
+    const BladeCollisionPair bladePair{ bladeWorld, blade, torso };
+    const auto bladeLayer = ROCK_LAYER_DYNAMIC_WEAPON_PROXY;
+    const auto npcLayer = FO4_LAYER_BIPED_NO_CC;
+    ok &= expect("embedded blade suppresses only its owned NPC pair",
+        bladePair.suppresses(bladeWorld, blade, torso, bladeLayer, npcLayer));
+    ok &= expect("blade exception accepts reversed native pair order",
+        bladePair.suppresses(bladeWorld, torso, blade, npcLayer, bladeLayer));
+    ok &= expect("blade exception cannot cross physics worlds",
+        !bladePair.suppresses(bladeWorld + 1, blade, torso, bladeLayer, npcLayer));
+    auto otherBody = torso;
+    otherBody.bodyId += 1;
+    ok &= expect("another NPC limb keeps its collision",
+        !bladePair.suppresses(bladeWorld, blade, otherBody, bladeLayer, npcLayer));
+    otherBody = torso;
+    otherBody.collisionObject += 0x100;
+    ok &= expect("recycled NPC body ID does not inherit penetration",
+        !bladePair.suppresses(bladeWorld, blade, otherBody, bladeLayer, npcLayer));
+    otherBody = torso;
+    otherBody.ownerNode += 0x100;
+    ok &= expect("replaced NPC scene ownership restores normal collision",
+        !bladePair.suppresses(bladeWorld, blade, otherBody, bladeLayer, npcLayer));
+    otherBody = torso;
+    otherBody.motionIndex += 1;
+    ok &= expect("reassigned NPC motion invalidates the exception",
+        !bladePair.suppresses(bladeWorld, blade, otherBody, bladeLayer, npcLayer));
+    auto otherWeapon = blade;
+    otherWeapon.collisionObject += 0x100;
+    ok &= expect("rebuilt weapon identity cannot inherit an old exception",
+        !bladePair.suppresses(bladeWorld, otherWeapon, torso, bladeLayer, npcLayer));
+    ok &= expect("layer changes preserve scenery and unrelated colliders",
+        !bladePair.suppresses(bladeWorld, blade, torso, bladeLayer, FO4_LAYER_STATIC) &&
+        !bladePair.suppresses(bladeWorld, blade, torso, ROCK_LAYER_HAND, npcLayer));
+    ok &= expect("clearing the published blade pair restores collision",
+        !BladeCollisionPair{}.suppresses(bladeWorld, blade, torso, bladeLayer, npcLayer));
+    auto unknownPair = bladePair;
+    unknownPair.target.ownerNode = 0;
+    ok &= expect("unverified body ownership cannot suppress collision",
+        !unknownPair.suppresses(bladeWorld, blade, torso, bladeLayer, npcLayer));
+    std::array<BodyPair, 6> bladePairs{{ {750, 422}, {422, 750}, {750, 423}, {750, 101}, {751, 422}, {750, 422} }};
+    const auto suppressBlade = [&](const BodyPair& pair) {
+        if (!bladePair.matchesIds(pair)) return false;
+        return pair.bodyA == blade.bodyId ?
+            bladePair.suppresses(bladeWorld, blade, torso, bladeLayer, npcLayer) :
+            bladePair.suppresses(bladeWorld, torso, blade, npcLayer, bladeLayer);
+    };
+    const int bladeKept = filterPhysicalPairs(bladePairs.data(), 5, suppressBlade);
+    ok &= expect("blade filtering retains other limbs, walls and weapons in order",
+        bladeKept == 3 && bladePairs[0].bodyB == 423 && bladePairs[1].bodyB == 101 && bladePairs[2].bodyA == 751);
+    ok &= expect("blade filtering leaves the unadmitted native batch tail untouched",
+        bladePairs[5].bodyA == 750 && bladePairs[5].bodyB == 422);
 
     return ok ? 0 : 1;
 }

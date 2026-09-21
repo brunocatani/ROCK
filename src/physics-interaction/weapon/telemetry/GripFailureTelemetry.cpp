@@ -55,7 +55,7 @@ namespace rock
             stableFrameInput.leftHandHoldingObject;
         snapshot.rightHandHoldingObject =
             stableFrameInput.rightHandHoldingObject;
-        snapshot.toggleGrabEnabled = frameInput.toggleGrabEnabled;
+        snapshot.weaponGrabMode = frameInput.weaponGrabMode;
         snapshot.animationBoundaryActive =
             frameInput.animationBoundaryActive;
         snapshot.scopeMenuOpen = frameInput.scopeMenuOpen;
@@ -190,7 +190,7 @@ namespace rock
             supportAuthorityDiagnosticName(current->authorityMode),
             current->firingHandIsLeft ? "left" : "right",
             current->firingHandIsLeft ? "right" : "left",
-            current->toggleGrabEnabled ? "toggle" : "hold",
+            equipped_weapon_toggle_grab_policy::modeName(current->weaponGrabMode),
             current->leftGripHeld,
             current->rightGripHeld,
             current->leftPhysicalGripInput.held,
@@ -358,7 +358,7 @@ namespace rock
                 twoHandedStateDiagnosticName(sample.state),
                 supportAuthorityDiagnosticName(sample.authorityMode),
                 sample.firingHandIsLeft ? "left" : "right",
-                sample.toggleGrabEnabled ? "toggle" : "hold",
+                equipped_weapon_toggle_grab_policy::modeName(sample.weaponGrabMode),
                 sample.leftGripHeld,
                 sample.rightGripHeld,
                 sample.leftPhysicalGripInput.held,

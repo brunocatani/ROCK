@@ -1,5 +1,8 @@
 #pragma once
 
+#include "physics-interaction/weapon/GeneratedWeaponGeometry.h"
+#include "physics-interaction/weapon/WeaponEvidenceSnapshot.h"
+
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -23,6 +26,8 @@
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
+#include "physics-interaction/weapon/WeaponTriangleIndex.h"
+#include "physics-interaction/weapon/WeaponScenePath.h"
 
 #include "RE/Havok/hknpBody.h"
 #include "RE/Havok/hknpBodyCinfo.h"
@@ -68,6 +73,13 @@ namespace rock
             std::uint64_t generationKey{ 0 };
             std::uint32_t count{ 0 };
             std::array<std::uint32_t, MAX_WEAPON_COLLISION_BODIES> bodyIds{};
+        };
+
+        struct WeaponContactState
+        {
+            WeaponInteractionContact contact{};
+            bool hasSampledVelocity{ false };
+            std::array<float, 4> sampledVelocityHavok{};
         };
 
         struct ReleaseGeometrySnapshot
@@ -232,6 +244,7 @@ namespace rock
         void update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, float dt, bool weaponDrawn);
 
         void requestWorkbenchExitRebuild();
+        void requestRebuildForReplacedSources();
 
         bool hasWeaponBody() const;
 
@@ -260,6 +273,8 @@ namespace rock
         std::uint32_t getWeaponBodyIdAtomic(std::size_t index) const;
 
         WeaponBodySnapshot getWeaponBodySnapshotAtomic() const;
+        // Copies one coherent publication; callers consume it immediately.
+        std::size_t copyWeaponContactStatesAtomic(std::span<WeaponContactState> outStates) const;
         // Main-thread presentation query; the output contains current positions only.
         std::size_t collectAttachOnlyGripIndicators(
             const RE::NiAVObject* currentWeaponRoot,
@@ -278,18 +293,13 @@ namespace rock
 
         bool tryGetWeaponContactDebugInfo(std::uint32_t bodyId, WeaponInteractionDebugInfo& outInfo) const;
 
-        std::vector<WeaponCollisionProfileEvidenceDescriptor> getProfileEvidenceDescriptors() const;
+        WeaponEvidenceSnapshot getProfileEvidenceDescriptors() const;
 
         WeaponEmitterSnapshot getWeaponEmitterSnapshot() const;
 
         NativeScopeSightAnchorSnapshot getNativeScopeSightAnchorSnapshot() const;
 
         WeaponCompositionSnapshot getWeaponCompositionSnapshot() const;
-
-        bool tryGetProfileEvidenceDescriptorForBodyId(
-            std::uint32_t bodyId,
-            WeaponCollisionProfileEvidenceDescriptor& outDescriptor,
-            RE::NiAVObject*& outSourceNode) const;
 
         std::uint64_t getCurrentEquippedWeaponGenerationKey() const { return _identity.cachedWeaponKey; }
 
@@ -350,6 +360,7 @@ namespace rock
         void serviceRetiredWeaponBodies(RE::hknpWorld* currentWorld, std::uint32_t completedPhysicsSteps = 1);
 
     private:
+        WeaponInteractionContact readPublishedContact(std::uint32_t index) const;
         static constexpr std::uint32_t INVALID_BODY_ID = 0x7FFF'FFFF;
         static constexpr std::size_t MAX_WEAPON_BODIES = MAX_WEAPON_COLLISION_BODIES;
         static constexpr std::uint32_t RETIRED_GENERATED_WEAPON_BODY_GRACE_STEPS = 8;
@@ -357,12 +368,8 @@ namespace rock
 
         struct GeneratedHullSource
         {
-            std::vector<RE::NiPoint3> localPointsGame;
-            std::vector<TriangleData> localTrianglesGame;
-            std::vector<RE::NiPoint3> sourceLocalPointsGame;
-            std::vector<TriangleData> sourceLocalTrianglesGame;
-            // Children use the source node's local frame, like sourceLocalPointsGame.
-            std::vector<std::vector<RE::NiPoint3>> childLocalPointCloudsGame;
+            std::shared_ptr<const GeneratedWeaponHullGeometry> geometry;
+            std::shared_ptr<const GeneratedWeaponMeshIndices> indices;
             RE::NiPoint3 localCenterGame{};
             RE::NiPoint3 sourceLocalCenterGame{};
             RE::NiPoint3 localMinGame{};
@@ -401,6 +408,15 @@ namespace rock
             const RE::hknpShape* shape{ nullptr };
             RE::NiAVObject* driveNode{ nullptr };
             RE::NiAVObject* sourceNode{ nullptr };
+            /*
+             * The engine can replace the equipped model under the same Weapon
+             * node (a Pip-Boy redraw does), which frees the nodes the raw
+             * pointers above name. These references keep them alive until the
+             * body is cleared; a node detached from the model has no parent,
+             * so the walks that resolve it fail instead of reading freed memory.
+             */
+            RE::NiPointer<RE::NiAVObject> driveNodeRef;
+            RE::NiPointer<RE::NiAVObject> sourceNodeRef;
             std::string sourceName;
             std::string driveRootName;
             std::string sourceRootName;
@@ -410,10 +426,8 @@ namespace rock
             RE::NiPoint3 generatedLocalMaxGame{};
             RE::NiPoint3 generatedSourceLocalMinGame{};
             RE::NiPoint3 generatedSourceLocalMaxGame{};
-            std::vector<RE::NiPoint3> generatedLocalPointsGame{};
-            std::vector<TriangleData> generatedLocalTrianglesGame{};
-            std::vector<RE::NiPoint3> generatedSourceLocalPointsGame{};
-            std::vector<TriangleData> generatedSourceLocalTrianglesGame{};
+            std::shared_ptr<const GeneratedWeaponHullGeometry> geometry;
+            std::shared_ptr<const GeneratedWeaponMeshIndices> indices;
             std::uint32_t generatedPointCount{ 0 };
             std::uintptr_t generatedSourceGroupId{ 0 };
             WeaponPartClassification semantic{};
@@ -451,7 +465,7 @@ namespace rock
             std::uint64_t ownershipKey{ 0 };
             std::uint64_t visualKey{ 0 };
             std::uintptr_t weaponRootAddress{ 0 };
-            std::vector<GeneratedHullSource> sources;
+            std::shared_ptr<const std::vector<GeneratedHullSource>> sources;
             weapon_generated_source_completeness_policy::GeneratedSourceCompleteness summary{};
         };
 
@@ -465,7 +479,7 @@ namespace rock
             RE::NiPoint3 sourceLocalCenter{};
             RE::NiPoint3 sourceLocalMin{};
             RE::NiPoint3 sourceLocalMax{};
-            std::vector<TriangleData> sourceLocalTriangles;
+            std::shared_ptr<const GeneratedWeaponMeshGeometry> mesh;
             std::size_t sourceLocalPointCount{ 0 };
             std::size_t sourceLocalTriangleCount{ 0 };
             float sourceNodeScale{ 1.0f };
@@ -498,7 +512,7 @@ namespace rock
             std::uint32_t visibleTriShapeCount{ 0 };
             std::size_t nextSourceIndex{ 0 };
             std::size_t createdCount{ 0 };
-            std::vector<GeneratedHullSource> sources;
+            std::shared_ptr<const std::vector<GeneratedHullSource>> sources;
             weapon_generated_source_completeness_policy::GeneratedSourceCompleteness summary{};
         };
 
@@ -607,7 +621,7 @@ namespace rock
             std::uint64_t ownershipKey,
             std::uint64_t visualKey,
             const RE::NiAVObject* weaponRoot,
-            std::vector<GeneratedHullSource> sources,
+            std::shared_ptr<const std::vector<GeneratedHullSource>> sources,
             const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& summary);
         void clearPendingGeneratedWeaponBuild(RE::hknpWorld* world, bool destroyTargetBank);
         bool beginPendingGeneratedWeaponBuild(std::uint64_t equippedKey,
@@ -619,7 +633,7 @@ namespace rock
             const WeaponVisualKeyStats& visualKeyStats,
             bool replacingExisting,
             bool driveRequestedRebuild,
-            std::vector<GeneratedHullSource> sources,
+            std::shared_ptr<const std::vector<GeneratedHullSource>> sources,
             const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& summary);
         bool advancePendingGeneratedWeaponBuild(RE::hknpWorld* world);
         bool pendingGeneratedWeaponBuildMatches(
@@ -679,6 +693,11 @@ namespace rock
             // combine with a stable form identity for persisted
             // authored-pose lookups.
             std::uint64_t observedInstanceContentKey{ 0 };
+            // Game-thread, one runtime frame. Cheap pointer witnesses also
+            // invalidate an equip switch that occurs within that frame.
+            mutable weapon_generation_identity_policy::EquippedWeaponGenerationIdentity frameClassification{};
+            mutable std::uint64_t classificationFrame{ 0 };
+            mutable bool classificationValid{ false };
         };
 
         // State owned by the WeaponCollisionBodies module: the live and
@@ -726,7 +745,7 @@ namespace rock
         struct EvidenceSnapshotState
         {
             mutable std::mutex mutex;
-            std::vector<WeaponCollisionProfileEvidenceDescriptor> profileDescriptors;
+            std::shared_ptr<const WeaponEvidenceSnapshot::Records> profileDescriptors;
             WeaponEmitterSnapshot emitters{};
             NativeScopeSightAnchorSnapshot sightAnchor{};
             WeaponCompositionSnapshot composition{};
@@ -786,6 +805,15 @@ namespace rock
         // Default-initialized on purpose; see the struct comment.
         AtomicBodyPublicationState _published;
         EvidenceSnapshotState _evidence;
+        struct EmitterPath
+        {
+            weapon_scene::Path<RE::NiAVObject, 16> transform;
+            weapon_scene::Path<RE::NiAVObject, 16> effect;
+            std::size_t transformRoot = 0;
+            std::size_t effectRoot = 0;
+        };
+        // Game-thread lookup cache; only the value snapshot crosses threads.
+        std::array<EmitterPath, MAX_WEAPON_EMITTERS> _emitterPaths{};
         GeneratedSourceState _sources{};
         DriveControlState _drive{};
         CollisionDiagnosticsState _diagnostics{};

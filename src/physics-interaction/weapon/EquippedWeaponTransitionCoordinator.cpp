@@ -4,6 +4,8 @@
 #include "physics-interaction/weapon/EquippedWeaponVisualState.h"
 #include "physics-interaction/weapon/NativeEquippedWeaponAttach.h"
 #include "physics-interaction/weapon/NativeEquippedWeaponDraw.h"
+#include "physics-interaction/weapon/WeaponEquipTransfer.h"
+#include "physics-interaction/input/InputRemapRuntime.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/Actor.h"
@@ -36,6 +38,183 @@ namespace rock
 
     }
 
+    void EquippedWeaponTransitionCoordinator::traceHeldTransfer(const char* event) const
+    {
+        const auto& t = _heldTransfer;
+        ROCK_LOG_INFO(Weapon, "Weapon transfer seq={} event={} phase={} outcome={} incoming={:08X}/{} hand={} role={} outgoing={:08X} pending={} target={:08X}/{:#x} inventory={} grip={} presentation={} reason={}",
+            t.sequence, event, static_cast<unsigned>(t.phase), static_cast<unsigned>(t.outcome),
+            t.request.reference, t.request.grab, t.request.isLeft ? "left" : "right", static_cast<unsigned>(t.request.role),
+            t.outgoingReference, t.outgoingPending, t.targetForm, t.targetInstance,
+            t.inventoryCommitted, t.gripAcquired, t.presentationAcquired, _heldFailureReason ? _heldFailureReason : "none");
+    }
+
+    bool EquippedWeaponTransitionCoordinator::beginHeldRequest(const held_weapon_transfer::Request& request)
+    {
+        if (!weapon_equip_transfer::canRecoverHeldEquip() || !held_weapon_transfer::admit(_heldTransfer, request)) return false;
+        _heldWaitSeconds = 0.0f;
+        _heldBridgeStarted = false;
+        _heldRecoveryAttempts = 0;
+        _heldRecoveryHolsterRequested = false;
+        _heldFailureReason = nullptr;
+        input_remap_runtime::setWeaponTransferPending(true);
+        input_remap_runtime::blockWeaponTriggerUntilRelease(request.isLeft);
+        traceHeldTransfer("admitted");
+        return true;
+    }
+
+    void EquippedWeaponTransitionCoordinator::cancelHeldRequest(const char* reason, held_weapon_transfer::Outcome outcome)
+    {
+        if (!_heldTransfer.active() || _heldTransfer.phase == held_weapon_transfer::Phase::Recovering) return;
+        _heldFailureReason = reason;
+        held_weapon_transfer::cancel(_heldTransfer, outcome);
+        _pendingGrip = {};
+        if (_heldTransfer.restoringEquippedGrip) releasePendingNativeCull(true);
+        traceHeldTransfer("cancelled");
+        input_remap_runtime::setWeaponTransferPending(_heldTransfer.blocksFire());
+    }
+
+    void EquippedWeaponTransitionCoordinator::recordOutgoingRemoval(std::uint32_t reference)
+    {
+        if (held_weapon_transfer::outgoingRemoved(_heldTransfer, reference)) traceHeldTransfer("outgoing-removed");
+    }
+
+    void EquippedWeaponTransitionCoordinator::recordOutgoingResult(std::uint64_t sequence, bool succeeded)
+    {
+        if (held_weapon_transfer::outgoingFinished(_heldTransfer, sequence, succeeded)) traceHeldTransfer(succeeded ? "outgoing-complete" : "outgoing-recovered-or-failed");
+    }
+
+    void EquippedWeaponTransitionCoordinator::recordInventoryCommit(std::uint32_t form, std::uintptr_t instance,
+        bool accepted, std::uintptr_t observedInstance)
+    {
+        if (held_weapon_transfer::inventoryCommitted(_heldTransfer, form, instance)) {
+            if (accepted) {
+                _heldTransfer.observedInstance = observedInstance;
+                _heldTransfer.identityBound = true;
+            }
+            _heldWaitSeconds = 0.0f;
+            traceHeldTransfer("inventory-committed");
+        }
+    }
+
+    void EquippedWeaponTransitionCoordinator::recordGripAcquired(std::uint32_t form, std::uintptr_t instance,
+        bool left, held_weapon_transfer::Role role)
+    {
+        if (held_weapon_transfer::acquireGrip(_heldTransfer, form, instance, left, role)) {
+            releasePendingNativeCull(true);
+            input_remap_runtime::blockWeaponTriggerUntilRelease(left);
+            traceHeldTransfer("grip-acquired");
+            input_remap_runtime::setWeaponTransferPending(false);
+        }
+    }
+
+    void EquippedWeaponTransitionCoordinator::recordGripPresentation()
+    {
+        if (!_heldTransfer.active() || !_heldTransfer.gripAcquired || _heldTransfer.presentationAcquired) return;
+        held_weapon_transfer::presentationAcquired(_heldTransfer);
+        traceHeldTransfer("presentation-acquired");
+    }
+
+    void EquippedWeaponTransitionCoordinator::validateHeldSource(bool held, std::uint32_t reference, std::uint64_t grab,
+        std::uint32_t world, std::uint32_t skeleton)
+    {
+        if (!_heldTransfer.active()) return;
+        const auto& request = _heldTransfer.request;
+        if (world != request.world || skeleton != request.skeleton) {
+            // No old handles or inventory compensation may cross a lifecycle.
+            traceHeldTransfer("lifecycle-abandoned");
+            abandonSceneGraph();
+        } else if (!held_weapon_transfer::sourceCurrent(_heldTransfer, held, reference, grab, world, skeleton)) {
+            cancelHeldRequest("incoming-grab-ended", held_weapon_transfer::Outcome::Cancelled);
+        }
+    }
+
+    void EquippedWeaponTransitionCoordinator::updateHeldRecovery()
+    {
+        if (_heldTransfer.phase != held_weapon_transfer::Phase::Recovering) return;
+        input_remap_runtime::setWeaponTransferPending(true);
+        const auto current = readCurrentIdentity();
+        if (!_heldTransfer.matchesTarget(current.formID, current.instanceData)) {
+            const bool ownsPresentation = _heldTransfer.matchesTarget(_boundIdentity.formID, _boundIdentity.instanceData) ||
+                (!_boundIdentity.valid() && _expectedIdentity.formID == _heldTransfer.targetForm);
+            held_weapon_transfer::recovered(_heldTransfer);
+            releasePendingNativeCull(true);
+            // A menu or another provider may already own presentation of a
+            // different item. Retiring this request cannot cancel that work.
+            if (ownsPresentation) finish(TerminalResult::IdentityLost, "held-transfer-identity-retired", true);
+            traceHeldTransfer("recovered-or-superseded");
+            input_remap_runtime::setWeaponTransferPending(_heldTransfer.blocksFire());
+            return;
+        }
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (!player) return;
+        auto visual = equipped_weapon_visual_state::observe(current.formID);
+        RE::NiPointer<RE::NiAVObject> exact(visual.exactInstance);
+        _bridge.release("held-transfer-recovery");
+        if (exact && equipped_weapon_visual_state::isLocallyVisible(exact.get())) {
+            if (_pendingNativeCull.get() != exact.get()) releasePendingNativeCull(true);
+            _pendingNativeCull = exact;
+            equipped_weapon_visual_state::setLocallyVisible(exact.get(), false);
+        }
+        const auto state = f4vr::getNativeWeaponState(player);
+        if (_heldRecoveryAttempts == 0 || (state == 0 && _heldRecoveryAttempts == 1)) {
+            ++_heldRecoveryAttempts;
+            if (weapon_equip_transfer::unequipExactCurrentWeapon(current.formID, current.instanceData)) {
+                held_weapon_transfer::recovered(_heldTransfer);
+                releasePendingNativeCull(true);
+                finish(TerminalResult::RecoveryExhausted, "held-transfer-returned-to-inventory", true);
+                traceHeldTransfer("incoming-recovered-to-inventory");
+                input_remap_runtime::setWeaponTransferPending(_heldTransfer.blocksFire());
+                return;
+            }
+        }
+        if (!_heldRecoveryHolsterRequested) {
+            _heldRecoveryHolsterRequested = true;
+            player->DrawWeaponMagicHands(false);
+            ROCK_LOG_ERROR(Weapon, "Weapon transfer seq={} exact unequip failed; holstering target={:08X} and blocking fire until recovery", _heldTransfer.sequence, current.formID);
+        }
+        if (state == 0 && _heldRecoveryAttempts >= 2) {
+            // Native holster is the safe terminal presentation if exact
+            // inventory compensation was refused. Keep the identity-bound
+            // fire guard until an explicit equip supersedes this item.
+            releasePendingNativeCull(true);
+        }
+    }
+
+    void EquippedWeaponTransitionCoordinator::releasePendingNativeCull(bool restore)
+    {
+        if (_pendingNativeCull && restore) equipped_weapon_visual_state::setLocallyVisible(_pendingNativeCull.get(), true);
+        _pendingNativeCull.reset();
+    }
+
+    void EquippedWeaponTransitionCoordinator::resumeMenuGrip(const PendingGrip& grip, std::uint32_t world, std::uint32_t skeleton)
+    {
+        if (!grip.pending) return;
+        const auto current = readCurrentIdentity();
+        if (!held_weapon_transfer::sameMenuItem(grip.targetWeaponFormID, grip.targetWeaponInstanceData,
+                current.formID, current.instanceData)) {
+            ROCK_LOG_INFO(Weapon, "Equipped grip resume cancelled: equipped instance changed saved={:08X}/{:#x} current={:08X}/{:#x}",
+                grip.targetWeaponFormID, grip.targetWeaponInstanceData, current.formID, current.instanceData);
+            return;
+        }
+        if (!held_weapon_transfer::resumeMenu(_heldTransfer, current.formID, current.instanceData,
+                { .world = world, .skeleton = skeleton, .isLeft = grip.isLeft,
+                    .role = grip.supportGrip.validCarry() ? held_weapon_transfer::Role::Support :
+                        grip.pairedGrips.valid() ? held_weapon_transfer::Role::Paired : held_weapon_transfer::Role::Firing })) {
+            ROCK_LOG_WARN(Weapon, "Equipped grip resume rejected: another weapon transfer owns the item form={:08X}", current.formID);
+            return;
+        }
+        _pendingGrip = grip;
+        _pendingGrip.menuResume = true;
+        _pendingGrip.pairedRelease = {};
+        _heldWaitSeconds = 0.0f;
+        _heldBridgeStarted = false;
+        _heldRecoveryAttempts = 0;
+        _heldRecoveryHolsterRequested = false;
+        input_remap_runtime::setWeaponTransferPending(true);
+        traceHeldTransfer("menu-role-restored");
+        if (!_pendingGrip.pending) cancelHeldRequest("menu-carry-capture-unavailable");
+    }
+
     bool EquippedWeaponTransitionCoordinator::beginHeldTransition(
         const ExpectedIdentity& expected,
         const Source source,
@@ -49,6 +228,7 @@ namespace rock
             _bridge.shutdown();
         }
         const bool bridgeStarted = _bridge.begin(bridgeInput);
+        _heldBridgeStarted = bridgeStarted && _heldTransfer.active();
         _expectedIdentity = expected;
         _boundIdentity = {};
         _policyState = {};
@@ -97,6 +277,9 @@ namespace rock
 
     void EquippedWeaponTransitionCoordinator::update(const FrameInput& input)
     {
+        _presentationKnown = false;
+        _presentationWeaponFormID = 0;
+        _nativeRenderable = false;
         if (!input.localSkeletonReady) {
             if (_active || _observationInitialized || _requestCurrentPending) {
                 abandonSceneGraph();
@@ -104,7 +287,35 @@ namespace rock
             return;
         }
 
+        if (_heldTransfer.gripAcquired || !_heldTransfer.active()) releasePendingNativeCull(true);
+
         const auto current = readCurrentIdentity();
+        if (_heldTransfer.active() && !input.gripSuspended) {
+            if (_heldTransfer.phase == held_weapon_transfer::Phase::AwaitEquip && input.menuBlocking) {
+                cancelHeldRequest("menu-before-pickup", held_weapon_transfer::Outcome::Cancelled);
+            }
+            if (!input.menuBlocking && !input.compatibilityBlocking && input.visualAuthorityAvailable) {
+                _heldWaitSeconds += (std::max)(0.0f, input.deltaSeconds);
+                if (_heldTransfer.restoringEquippedGrip && !_heldTransfer.matchesTarget(current.formID, current.instanceData)) {
+                    cancelHeldRequest("resumed-equipped-instance-changed", held_weapon_transfer::Outcome::Cancelled);
+                } else if (!held_weapon_transfer::equippedSourceCurrent(_heldTransfer, current.formID, current.instanceData)) {
+                    cancelHeldRequest("equipped-item-changed-before-pickup", held_weapon_transfer::Outcome::Cancelled);
+                } else if (_heldTransfer.inventoryCommitted && !_heldTransfer.matchesTarget(current.formID, current.instanceData)) {
+                    cancelHeldRequest("incoming-identity-replaced");
+                } else if (_heldTransfer.phase == held_weapon_transfer::Phase::AwaitGrip && !_pendingGrip.pending) {
+                    cancelHeldRequest("requested-grip-cancelled");
+                } else if ((_heldTransfer.phase == held_weapon_transfer::Phase::AwaitEquip && _heldWaitSeconds >= 10.0f) ||
+                    (_heldTransfer.phase == held_weapon_transfer::Phase::AwaitGrip && !_heldTransfer.restoringEquippedGrip &&
+                        (_heldWaitSeconds >= 1.0f || (_heldBridgeStarted && _bridge.presentationLeaseWouldExpire(input.deltaSeconds))))) {
+                    cancelHeldRequest("native-or-grip-readiness-exhausted");
+                }
+                if (_heldTransfer.phase == held_weapon_transfer::Phase::Recovering) {
+                    updateHeldRecovery();
+                    return;
+                }
+            }
+            input_remap_runtime::setWeaponTransferPending(_heldTransfer.blocksFire());
+        }
         const bool currentMatchesIntentionalShoulderSheath =
             input.intentionalShoulderSheathActive &&
             current.valid() &&
@@ -223,6 +434,19 @@ namespace rock
             _menuEntryCaptured = false;
         }
 
+        // Observe current presentation even after the transition watchdog
+        // completes. Reuse the same bounded weapon observation for recovery.
+        auto visual = equipped_weapon_visual_state::Snapshot{};
+        if (current.valid() && input.visualAuthorityAvailable && (_active || input.localSkeletonReady) &&
+            !input.menuBlocking && !input.compatibilityBlocking) {
+            visual = equipped_weapon_visual_state::observe(current.formID,
+                _active ? _supersededNativeInstanceNode : 0, &_visualCache);
+            _presentationWeaponFormID = current.formID;
+            _presentationKnown = input.localSkeletonReady;
+            _nativeRenderable = visual.exactInstance && visual.ancestorPathVisible && visual.instanceLocallyVisible;
+        }
+        if (_heldTransfer.active() && _heldTransfer.gripAcquired && !_bridge.isHandPoseHandoffActive() &&
+            _heldTransfer.matchesTarget(current.formID, current.instanceData) && _nativeRenderable) recordGripPresentation();
         if (!_active) {
             return;
         }
@@ -264,9 +488,6 @@ namespace rock
             return;
         }
 
-        auto visual = equipped_weapon_visual_state::observe(
-            _boundIdentity.formID,
-            _supersededNativeInstanceNode);
         if (input.nativeWeaponAnimationActive) {
             // Reload/bolt owners deliberately replace or hide the same Weapon
             // graph. Yield both the exact-child cull and the temporary hand
@@ -345,6 +566,8 @@ namespace rock
                 .nativeAncestorPathVisible = visual.ancestorPathVisible,
                 .nativeInstanceLocallyVisible = visual.instanceLocallyVisible,
                 .bridgeOwnsNativeInstanceCull = bridgeOwnsCull,
+                .gripHandoffPending = _pendingGrip.pending ||
+                    (_heldTransfer.active() && !_heldTransfer.gripAcquired) || _bridge.isHandPoseHandoffActive(),
             });
 
         using NativeWeaponState =
@@ -610,9 +833,19 @@ namespace rock
                 input.leftCarrySolvedWeaponWorldValid,
             .leftCarrySolvedWeaponWorld = input.leftCarrySolvedWeaponWorld,
         });
+        if (_heldTransfer.phase == held_weapon_transfer::Phase::AwaitGrip && !_bridge.isActive() &&
+            visual.exactInstance && equipped_weapon_visual_state::isLocallyVisible(visual.exactInstance)) {
+            // Native geometry may arrive after the model bridge has gone
+            // (notably menu recovery). Hide only until actual hand acquisition.
+            if (_pendingNativeCull.get() != visual.exactInstance) releasePendingNativeCull(true);
+            _pendingNativeCull.reset(visual.exactInstance);
+            equipped_weapon_visual_state::setLocallyVisible(visual.exactInstance, false);
+            _nativeRenderable = false;
+        }
         if (_activeSeconds >= kTransitionWatchdogSeconds) {
             finish(
-                TerminalResult::Completed,
+                (_pendingGrip.pending || (_heldTransfer.active() && !_heldTransfer.gripAcquired)) ?
+                    TerminalResult::RecoveryExhausted : TerminalResult::Completed,
                 "watchdog-complete",
                 true);
         }
@@ -620,6 +853,16 @@ namespace rock
 
     void EquippedWeaponTransitionCoordinator::shutdown()
     {
+        if (_heldTransfer.active()) traceHeldTransfer("lifecycle-ended");
+        const auto sequence = _heldTransfer.sequence;
+        _heldTransfer = { .sequence = sequence };
+        _pendingGrip = {};
+        releasePendingNativeCull(true);
+        input_remap_runtime::setWeaponTransferPending(false);
+        _visualCache = {};
+        _presentationKnown = false;
+        _presentationWeaponFormID = 0;
+        _nativeRenderable = false;
         if (_active) {
             _lastTerminalWeaponFormID = _boundIdentity.valid() ?
                 _boundIdentity.formID :
@@ -651,6 +894,16 @@ namespace rock
 
     void EquippedWeaponTransitionCoordinator::abandonSceneGraph()
     {
+        if (_heldTransfer.active()) traceHeldTransfer("lifecycle-ended");
+        const auto sequence = _heldTransfer.sequence;
+        _heldTransfer = { .sequence = sequence };
+        _pendingGrip = {};
+        releasePendingNativeCull(false);
+        input_remap_runtime::setWeaponTransferPending(false);
+        _visualCache = {};
+        _presentationKnown = false;
+        _presentationWeaponFormID = 0;
+        _nativeRenderable = false;
         if (_active) {
             _lastTerminalWeaponFormID = _boundIdentity.valid() ?
                 _boundIdentity.formID :
@@ -717,6 +970,7 @@ namespace rock
         if (!identity.valid()) {
             return;
         }
+        _visualCache = {};
         const bool completesSuppressedHeldDraw =
             _waitingForExpectedIdentity &&
             (source == Source::HeldTriggerEquip ||
@@ -877,10 +1131,15 @@ namespace rock
             !_waitingForExpectedIdentity &&
             !_policyState.nativeHandoffObserved;
         snapshot.bridgePresented = _bridge.isModelPresented();
-        snapshot.nativeRenderable = _policyState.nativeHandoffObserved;
+        snapshot.presentationKnown = _presentationKnown;
+        snapshot.presentationWeaponFormID = _presentationWeaponFormID;
+        snapshot.nativeRenderable = _presentationKnown && _nativeRenderable;
         snapshot.handPoseHandoffComplete =
-            _policyState.nativeHandoffObserved &&
+            snapshot.nativeRenderable &&
+            !_pendingGrip.pending && (!_heldTransfer.active() || _heldTransfer.gripAcquired) &&
             !_bridge.isHandPoseHandoffActive();
+        snapshot.terminalWeaponFormID = _lastTerminalWeaponFormID;
+        snapshot.terminalSource = _lastTerminalSource;
         snapshot.recoveryExhausted =
             _drawExhaustionLogged || _repairExhaustionLogged ||
             (!_active &&

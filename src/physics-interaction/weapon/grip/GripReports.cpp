@@ -4,6 +4,31 @@
 
 namespace rock
 {
+    void TwoHandedGrip::observeEquippedOwnership(std::uint64_t ownershipKey, std::uint64_t gripGenerationKey, bool acquisitionPending)
+    {
+        _equippedGripAcquisitionPending = acquisitionPending;
+        // A session can also have been started since the previous observation.
+        // Validate that session against the item even when the observed key
+        // stayed zero; no active session can substitute for inventory identity.
+        if (_session.state != TwoHandedState::Inactive &&
+            (isManualOwnershipActive() || _confirmedEquippedOwnershipKey != ownershipKey) &&
+            _session.equippedWeaponOwnershipKey != ownershipKey) {
+            transitionToInactive(false);
+        }
+        if (_confirmedEquippedOwnershipKey != ownershipKey) {
+            ROCK_LOG_INFO(Weapon, "Equipped grip identity: owner={:016X}->{:016X} firingHand={} grabSession={}",
+                _confirmedEquippedOwnershipKey, ownershipKey, firingHandName(), isManualOwnershipActive());
+        }
+        _confirmedEquippedOwnershipKey = ownershipKey;
+        _confirmedEquippedGripGenerationKey = ownershipKey ? gripGenerationKey : 0;
+    }
+
+    EquippedWeaponGripOccupancy TwoHandedGrip::getGrabInputOccupancy() const noexcept
+    {
+        return equipped_weapon_toggle_grab_policy::forGrabInput(getGripOccupancy(),
+            isManualOwnershipActive() && !isPersistentEquippedCarryInputAcquisitionPending());
+    }
+
     EquippedWeaponGripOccupancy TwoHandedGrip::getGripOccupancy()
         const noexcept
     {
@@ -35,6 +60,13 @@ namespace rock
     {
         outReport = {};
         const bool handHasFiringRole = isFiringHand(isLeft);
+        if (handHasFiringRole && isFiringGripOccupied() && !isManualOwnershipActive()) {
+            // Logical ownership does not invent a captured pose/source node.
+            outReport.kind = weapon_part_grip_report_policy::HandGripKind::FiringGrip;
+            outReport.active = true;
+            outReport.weaponGenerationKey = _confirmedEquippedGripGenerationKey;
+            return;
+        }
         const WeaponPartGrip& grip = partGrip(isLeft);
         const auto kind = weapon_part_grip_report_policy::resolveHandGripKind(
             _session.state == TwoHandedState::Gripping,
@@ -106,13 +138,14 @@ namespace rock
     void TwoHandedGrip::recordGripReleaseRetained(const bool isLeft, const char* reason)
     {
         (isLeft ? _gripReleaseRetained.left : _gripReleaseRetained.right) = true;
+        if (partGrip(isLeft).active) partGrip(isLeft).releaseRequiresNewHold = true;
         bool& logged = _gripReleaseRetainedLogged[isLeft ? 1u : 0u];
         if (logged) {
             return;
         }
         logged = true;
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: open-hand release refused hand={} reason={} generation={:016X} detachSource={} -- last carrier keeps the weapon because the last-grip drop is disabled",
+            "TwoHandedGrip: open-hand release refused hand={} reason={} generation={:016X} detachSource={} -- current grip retained",
             isLeft ? "left" : "right",
             reason ? reason : "unknown",
             _session.weaponGenerationKey,
@@ -120,16 +153,91 @@ namespace rock
                 _handlingSettings.detachAuthority));
     }
 
-    void TwoHandedGrip::requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand)
+    bool TwoHandedGrip::captureDropGripPose(bool isLeft, AuthoredWeaponGripPose& out) const
+    {
+        out = {};
+        const bool manual = isManualOwnershipActive();
+        auto* weaponNode = manual ? _session.weaponNode : _firing.rightCanonicalWeaponNode;
+        const auto generation = manual ? _session.weaponGenerationKey : _confirmedEquippedGripGenerationKey;
+        if (!weaponNode || !equipped_weapon_drop_policy::captureOwnerCurrent(manual, isLeft,
+                _confirmedEquippedOwnershipKey, _session.equippedWeaponOwnershipKey, generation,
+                hasRightFiringHandCanonicalFrame(weaponNode, generation, _confirmedEquippedOwnershipKey))) return false;
+        out.isLeft = isLeft;
+        out.weaponFormId = _recoil.weaponEvidence.formID;
+        const auto& part = partGrip(isLeft);
+        const bool support = _session.state == TwoHandedState::PartCarry && part.active &&
+            part.authoredRole != loose_weapon_authored_grab_policy::Role::Firing;
+        if (support) {
+            out.role = loose_weapon_authored_grab_policy::Role::Support;
+            if (part.authoredSupportGrip && part.hasHandWeaponLocal && part.fingerLocalTransformMask == 0x7FFFu) {
+                out.handWeaponLocal = part.handWeaponLocal;
+                out.fingerLocals = part.fingerLocalTransforms;
+                out.fingerMask = part.fingerLocalTransformMask;
+            } else if (!tryResolveAuthoredSupportGripCandidateForHand(isLeft, _session.weaponNode,
+                    _session.weaponGenerationKey, out.handWeaponLocal, out.fingerLocals, out.fingerMask)) return false;
+        } else {
+            out.role = loose_weapon_authored_grab_policy::Role::Firing;
+            const char* source = nullptr;
+            if (manual) {
+                if (!tryResolveAuthoredFiringHandCanonicalForProbe(isLeft, out.handWeaponLocal, source)) return false;
+            } else {
+                // Native carry already owns the firing hand. Its authored
+                // canonical is current even before a manual grip session exists.
+                if (_firing.rightCanonicalSource != RightFiringCanonicalSource::AuthoredAnimation) return false;
+                out.handWeaponLocal = _firing.rightCanonicalHandWeaponLocal;
+            }
+            out.fingerLocals = isLeft ? _firing.leftFingerLocalTransforms : _firing.rightFingerLocalTransforms;
+            out.fingerMask = isLeft ? _firing.leftFingerLocalTransformMask : _firing.rightFingerLocalTransformMask;
+        }
+        RE::NiTransform physicalHandWorld{}, physicalDriverWorld{};
+        if (!tryResolvePhysicalHandFrame(isLeft, physicalHandWorld, physicalDriverWorld)) return false;
+        // Preserve the controller-to-weapon placement on drop, independently of
+        // the authored wrist/fingers presented by the same-frame provider.
+        out.placementHandWeaponLocal = transform_math::composeTransforms(
+            transform_math::invertTransform(weaponNode->world), physicalHandWorld);
+        return out.valid();
+    }
+
+    bool TwoHandedGrip::requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand, float dt, bool allCarriersReleased)
     {
         if (_equippedWeaponDropRequest.requested) {
-            transitionToInactive(false);
-            return;
+            return true;
+        }
+
+        const auto occupied = getGripOccupancy();
+        AuthoredWeaponGripPose pose{};
+        const bool isLeft = equipped_weapon_drop_policy::isLeft(sourceHand);
+        // Release branches run before their normal carry solve. Finish that
+        // solve once while the grip still owns the weapon, then capture the
+        // weapon and physical hand on the same frame before native reparenting.
+        const bool singleCarrier = sourceHand != equipped_weapon_drop_policy::SourceHand::None &&
+            (allCarriersReleased || equipped_weapon_drop_policy::canStartAutoDrop(occupied.left.carriesWeapon(),
+                occupied.right.carriesWeapon(), _firing.reattachHoverInsideZone));
+        auto* weaponNode = isManualOwnershipActive() ? _session.weaponNode : _firing.rightCanonicalWeaponNode;
+        const bool sourceCarries = isLeft ? occupied.left.carriesWeapon() : occupied.right.carriesWeapon();
+        const bool releasePoseReady = singleCarrier && sourceCarries && weaponNode &&
+            (allCarriersReleased && _session.state == TwoHandedState::Gripping ? true : _session.state == TwoHandedState::PartCarry ?
+                solvePartCarryWeaponAuthority(_session.weaponNode, dt) :
+                (!usesLeftFiringCarry() || solveLeftFiringWeaponCarry(_session.weaponNode, dt)));
+        if (sourceHand == equipped_weapon_drop_policy::SourceHand::None ||
+            !releasePoseReady ||
+            !captureDropGripPose(isLeft, pose)) {
+            recordGripReleaseRetained(isLeft, "auto-drop-pose-occupancy-or-zone-unavailable");
+            if (allCarriersReleased) recordGripReleaseRetained(!isLeft, "simultaneous-drop-pose-unavailable");
+            _firing.primaryReleaseIntent.pending = false;
+            _firing.primaryReleaseDebounce = {};
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                "Auto drop retained: hand={} bothCarriers={} authoredPose={} freeFiringStationHovered={} generation={:016X}",
+                isLeft ? "left" : "right", occupied.left.carriesWeapon() && occupied.right.carriesWeapon(),
+                pose.valid(), _firing.reattachHoverInsideZone, _session.weaponGenerationKey);
+            return false;
         }
 
         _equippedWeaponDropRequest = EquippedWeaponManualDropRequest{
             .requested = true,
             .sourceHand = sourceHand,
+            .pose = pose,
+            .weaponWorld = weaponNode->world,
         };
         ROCK_LOG_INFO(Weapon,
             "TwoHandedGrip: equipped weapon drop requested reason={} sourceHand={} generation={:016X} detachSource={}",
@@ -138,6 +246,25 @@ namespace rock
             _session.weaponGenerationKey,
             immersive_weapon_policy::authorityName(
                 _handlingSettings.detachAuthority));
+        return true;
+    }
+
+    void TwoHandedGrip::prepareEquippedWeaponDropCommit()
+    {
+        // Restore native parenting before RemoveItem can replace the equipped
+        // scene. Keep the captured grip intact until the native result is known.
+        releaseFiringHandWeaponNodeOwnership(_session.weaponNode);
+    }
+
+    void TwoHandedGrip::completeEquippedWeaponDrop(const EquippedWeaponManualDropRequest& request, bool committed)
+    {
+        if (!committed) {
+            recordGripReleaseRetained(equipped_weapon_drop_policy::isLeft(request.sourceHand), "auto-drop-transfer-unavailable");
+            _firing.primaryReleaseIntent.pending = false;
+            _firing.primaryReleaseDebounce = {};
+            return;
+        }
+        recordFiringGripDetachedHaptic();
         clearWeaponVisualReturn("equipped-weapon-drop", true, true);
         transitionToInactive(false);
     }

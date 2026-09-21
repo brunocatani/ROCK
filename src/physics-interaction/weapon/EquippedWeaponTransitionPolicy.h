@@ -70,6 +70,7 @@ namespace rock::equipped_weapon_transition_policy
         bool nativeAncestorPathVisible{ false };
         bool nativeInstanceLocallyVisible{ false };
         bool bridgeOwnsNativeInstanceCull{ false };
+        bool gripHandoffPending{ false };
     };
 
     struct Decision
@@ -126,6 +127,29 @@ namespace rock::equipped_weapon_transition_policy
         // equip from accidentally binding to the old stack.
         return currentFormID != previousFormID ||
                currentInstanceData != previousInstanceData;
+    }
+
+    struct FiringHandReservation
+    {
+        bool pending{ false };
+        bool isLeft{ false };
+        std::uint32_t formID{ 0 };
+        std::uintptr_t instanceData{ 0 };
+        std::uint32_t previousFormID{ 0 };
+        std::uintptr_t previousInstanceData{ 0 };
+    };
+
+    [[nodiscard]] inline constexpr bool resolveFiringHandIsLeft(
+        bool currentFiringHandIsLeft, std::uint32_t currentFormID,
+        std::uintptr_t currentInstanceData, const FiringHandReservation& reservation) noexcept
+    {
+        // Native draw can finish before the requested physical grip is ready.
+        // Reserve its hand only for the accepted weapon identity; an expired
+        // or replaced transfer must not override the live firing role.
+        return reservation.pending && matchesExpectedIdentity(currentFormID, currentInstanceData,
+                   reservation.formID, reservation.instanceData,
+                   reservation.previousFormID, reservation.previousInstanceData) ?
+            reservation.isLeft : currentFiringHandIsLeft;
     }
 
     [[nodiscard]] inline constexpr Decision advance(State& state, const FrameInput& input) noexcept
@@ -298,7 +322,7 @@ namespace rock::equipped_weapon_transition_policy
                 ++state.stableFrames;
             }
 
-            if (state.stableFrames >= kStableFramesBeforeNativeHandoff) {
+            if (state.stableFrames >= kStableFramesBeforeNativeHandoff && !input.gripHandoffPending) {
                 if (!state.nativeHandoffObserved) {
                     state.nativeHandoffObserved = true;
                     decision.handoffBridgeToNative = input.bridgeModelAvailable;

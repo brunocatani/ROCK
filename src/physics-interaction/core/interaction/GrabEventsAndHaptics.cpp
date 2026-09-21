@@ -1,3 +1,5 @@
+#include "api/EventStreams.h"
+#include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 
 // Grab event dispatch and haptic feedback.
@@ -164,21 +166,7 @@ namespace rock
         }
     }
 
-    void PhysicsInteraction::dispatchGrabEvent(GrabEventData eventData)
-    {
-        eventData.size = sizeof(GrabEventData);
-        eventData.version = ROCK_GRAB_EVENT_VERSION;
-        if (eventData.refr && eventData.formID == 0) {
-            eventData.formID = eventData.refr->GetFormID();
-        }
-        eventData.frameIndex = ++_grabEvents.frameCounter;
-
-        handleGrabEventHaptics(eventData);
-
-        if (auto* m = ::rock::getROCKMessaging()) {
-            m->Dispatch(kPhysMsg_OnGrabEvent, &eventData, sizeof(eventData), nullptr);
-        }
-    }
+    #include "ProviderEventDispatch.inl"
 
     void PhysicsInteraction::dispatchSimpleGrabEvent(
         GrabEventType type,

@@ -2,8 +2,8 @@
 
 /*
  * Internal dynamic-hand collision telemetry contract. This is deliberately
- * separate from ROCKProviderApi.h: ROCK remains on provider API V1 and a later
- * API addition can copy the stable, engine-agnostic subset without exposing
+ * separate from the modular public provider records: public readbacks copy
+ * the stable, engine-agnostic subset without exposing
  * runtime objects, pointers, or thread-owned state.
  *
  * The runtime publishes one fixed-capacity snapshot per main frame. All vector
@@ -164,7 +164,6 @@ namespace rock::dynamic_hand_collision_telemetry
         RE::NiPoint3 solverResidualWorldGame{};
         RE::NiPoint3 requestedGapWorldGame{};
         RE::NiPoint3 contactDeviationWorldGame{};
-        RE::NiPoint3 handTargetCorrectionWorldGame{};
         RE::NiPoint3 targetVelocityWorldGameUnitsPerSecond{};
 
         float lengthGameUnits = 0.0f;
@@ -173,8 +172,6 @@ namespace rock::dynamic_hand_collision_telemetry
         float solverResidualGameUnits = 0.0f;
         float requestedGapGameUnits = 0.0f;
         float contactDeviationGameUnits = 0.0f;
-        float handTargetCorrectionGameUnits = 0.0f;
-        float handTargetResponseScale = 1.0f;
         float approachSpeedGameUnitsPerSecond = 0.0f;
         float physicsDeltaSeconds = 0.0f;
 

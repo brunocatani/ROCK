@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "api/ROCKProviderApi.h"
+#include "api/ProviderRuntimeTypes.h"
 #include "physics-interaction/weapon/WeaponTypes.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
@@ -347,16 +347,6 @@ namespace rock::debug
         float color[4]{ 1.0f, 1.0f, 1.0f, 1.0f };
     };
 
-    struct GripZoneIndicatorOverlayFrame
-    {
-        static constexpr std::size_t kCapacity = MAX_WEAPON_COLLISION_BODIES + 4;
-
-        std::array<RE::NiPoint3, kCapacity> positions{};
-        std::uint64_t gameFrameIndex{ 0 };
-        float diameterGameUnits{ 0.0f };
-        std::uint32_t count{ 0 };
-    };
-
     struct BodyOverlayFrame
     {
         RE::hknpWorld* world{ nullptr };
@@ -392,11 +382,6 @@ namespace rock::debug
     void Install();
     bool IsInstalled();
     void PublishFrame(const BodyOverlayFrame& frame);
-    // Final main-thread presentation snapshot, published after all animation
-    // phases and consumed directly by the next OpenVR Submit render pass.
-    void PublishGripZoneIndicators(
-        const GripZoneIndicatorOverlayFrame& frame);
-    void ClearGripZoneIndicators();
     // Physics-step-thread callback. Captures only bounded body matrices for the
     // final substep. The implementation is non-blocking and does no allocation,
     // logging, shape inspection, or rendering work.
@@ -405,6 +390,7 @@ namespace rock::debug
         const havok_physics_timing::PhysicsTimingSample& timing,
         std::uint64_t gameFrameIndex,
         std::uint64_t solveSequence) noexcept;
+    // Clears diagnostics only. Gameplay marker lifetime is owned separately.
     void ClearFrame();
     void ClearShapeCache();
     // Stops and joins the owned CPU shape worker without uninstalling the

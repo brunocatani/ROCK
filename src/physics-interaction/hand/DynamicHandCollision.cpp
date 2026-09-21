@@ -366,55 +366,6 @@ namespace rock
         }
 
         /*
-         * Rigid-hand combination of per-body deviations: each twin's deviation
-         * is a half-space push-out for its own contacts, so the minimal hand
-         * correction satisfying all of them is the sequential projection over
-         * the set (same math family the 6e41044 manifold solver validated).
-         * Overlapping deviations from one shared surface collapse instead of
-         * double-counting; corner deviations from different directions compose.
-         */
-        RE::NiPoint3 combineTwinDeviations(
-            const std::array<RE::NiPoint3, DynamicHandCollisionRuntime::kBodiesPerHand>& deviations,
-            const std::array<bool, DynamicHandCollisionRuntime::kBodiesPerHand>& deviationValid)
-        {
-            constexpr float kTinyDeviation = 1.0e-4f;
-            RE::NiPoint3 combined{};
-            for (int pass = 0; pass < 3; ++pass) {
-                bool changed = false;
-                for (std::size_t i = 0; i < deviations.size(); ++i) {
-                    if (!deviationValid[i] || !isFinitePoint(deviations[i])) {
-                        continue;
-                    }
-                    const float length = std::sqrt(
-                        deviations[i].x * deviations[i].x +
-                        deviations[i].y * deviations[i].y +
-                        deviations[i].z * deviations[i].z);
-                    if (!std::isfinite(length) || length <= kTinyDeviation) {
-                        continue;
-                    }
-                    const RE::NiPoint3 direction{
-                        deviations[i].x / length,
-                        deviations[i].y / length,
-                        deviations[i].z / length,
-                    };
-                    const float needed =
-                        length - (combined.x * direction.x + combined.y * direction.y + combined.z * direction.z);
-                    if (needed <= kTinyDeviation) {
-                        continue;
-                    }
-                    combined.x += direction.x * needed;
-                    combined.y += direction.y * needed;
-                    combined.z += direction.z * needed;
-                    changed = true;
-                }
-                if (!changed) {
-                    break;
-                }
-            }
-            return combined;
-        }
-
-        /*
          * Exponential visual release. Active contacts can bypass this filter
          * and remain locked to the current solver result. A lost contact claim
          * decays through it instead of returning to the controller in one
@@ -685,52 +636,29 @@ namespace rock
         }
     }
 
-    bool DynamicHandCollisionRuntime::tryClassifySurfaceContactSourceAtomic(
-        const std::uint32_t bodyId,
-        const std::uint32_t shapeKey,
-        dynamic_hand_surface_contact_state::ContactSource& outSource) const noexcept
+    bool DynamicHandCollisionRuntime::classifySurfaceContactSource(
+        const DynamicBodyContactSource& bodySource,
+        dynamic_hand_surface_contact_state::ContactSource& outSource) noexcept
     {
         outSource = {};
-        if (bodyId == hand_semantic_contact_state::kInvalidBodyId) {
-            return false;
-        }
-
-        for (std::size_t hand = 0; hand < _hands.size(); ++hand) {
-            const auto& handState = _hands[hand];
-            if (handState.bodies[0].bodyIdAtomic.load(
-                    std::memory_order_acquire) != bodyId) {
-                continue;
-            }
-            const auto childIndex =
-                handState.compoundShape.tryResolveChildIndex(shapeKey);
-            if (!childIndex || *childIndex >= kBodiesPerHand ||
-                !dynamic_hand_collision_telemetry::
-                    isSurfaceGrabSourceSlot(*childIndex)) {
-                return false;
-            }
-            const std::size_t slot = *childIndex;
-            const bool palm = slot == kPalmSlot;
-            const std::size_t fingerIndex =
-                dynamic_hand_collision_telemetry::
-                    fingerIndexForBodyIndex(slot);
-            const auto finger = palm ?
-                hand_collider_semantics::HandFinger::None :
-                static_cast<hand_collider_semantics::HandFinger>(fingerIndex);
-            const auto segment = palm ?
-                hand_collider_semantics::HandFingerSegment::None :
-                hand_collider_semantics::HandFingerSegment::Tip;
-            outSource.valid = true;
-            outSource.isLeft = hand == 1;
-            outSource.slot = palm ? 0u : fingerIndex + 1u;
-            outSource.role = palm ?
-                hand_collider_semantics::HandColliderRole::PalmAnchor :
-                hand_collider_semantics::roleForFingerSegment(finger, segment);
-            outSource.finger = finger;
-            outSource.segment = segment;
-            outSource.bodyId = bodyId;
-            return true;
-        }
-        return false;
+        if (!bodySource.valid || bodySource.slot >= kBodiesPerHand ||
+            !dynamic_hand_collision_telemetry::isSurfaceGrabSourceSlot(bodySource.slot)) return false;
+        const std::size_t slot = bodySource.slot;
+        const bool palm = slot == kPalmSlot;
+        const std::size_t fingerIndex = dynamic_hand_collision_telemetry::fingerIndexForBodyIndex(slot);
+        const auto finger = palm ? hand_collider_semantics::HandFinger::None :
+            static_cast<hand_collider_semantics::HandFinger>(fingerIndex);
+        const auto segment = palm ? hand_collider_semantics::HandFingerSegment::None :
+            hand_collider_semantics::HandFingerSegment::Tip;
+        outSource.valid = true;
+        outSource.isLeft = bodySource.isLeft;
+        outSource.slot = palm ? 0u : fingerIndex + 1u;
+        outSource.role = palm ? hand_collider_semantics::HandColliderRole::PalmAnchor :
+            hand_collider_semantics::roleForFingerSegment(finger, segment);
+        outSource.finger = finger;
+        outSource.segment = segment;
+        outSource.bodyId = bodySource.bodyId;
+        return true;
     }
 
     void DynamicHandCollisionRuntime::recordSurfaceContactCallback(
@@ -1579,6 +1507,8 @@ namespace rock
                 if (!twin.valid || !isFiniteTransform(twin.target)) {
                     return false;
                 }
+                candidate.baselineCentersInHand[linearIndex] =
+                    transform_math::worldPointToLocal(rawHandWorld, twin.target.translate);
                 candidate.closingProbeTravelInHand[linearIndex] =
                     transform_math::worldVectorToLocal(
                         rawHandWorld,
@@ -1652,6 +1582,7 @@ namespace rock
         }
 
         auto& response = handSlots.surfaceFingerResponse;
+        bool hasMeasuredFingerDepth = false;
         std::array<std::array<
                        surface_finger_collision_policy::SegmentContact,
                        surface_finger_collision_policy::kSegmentCount>,
@@ -1674,6 +1605,7 @@ namespace rock
                 }
                 const float inverseDepth =
                     1.0f / twin.contactDeviationGameUnits;
+                hasMeasuredFingerDepth = true;
                 const RE::NiPoint3 safeDirection{
                     twin.contactDeviationWorldGame.x * inverseDepth,
                     twin.contactDeviationWorldGame.y * inverseDepth,
@@ -1691,10 +1623,16 @@ namespace rock
                     transform_math::localVectorToWorld(
                         rawHandWorld,
                         response.openingProbeTravelInHand[linearIndex]);
+                const auto& applied = handTwins.fingers[finger][segment];
+                const auto baselineCenter = transform_math::localPointToWorld(
+                    rawHandWorld, response.baselineCentersInHand[linearIndex]);
+                const float achievedTravel = applied.valid ?
+                    dotPoints(applied.target.translate - baselineCenter, safeDirection) : 0.0f;
                 contacts[finger][segment] =
                     surface_finger_collision_policy::SegmentContact{
                         .blockedDepthGameUnits =
-                            twin.contactDeviationGameUnits,
+                            surface_finger_collision_policy::baselineBlockedDepth(
+                                twin.contactDeviationGameUnits, achievedTravel),
                         .closingProbeTravelGameUnits =
                             dotPoints(
                                 closingProbeTravelWorld,
@@ -1732,25 +1670,11 @@ namespace rock
         const auto previousDirections = response.lastDirections;
         response.lastDirections = solve.directions;
         const auto& targetOpenValues = anyFingerContact ?
-            solve.targetOpenValues :
+            (hasMeasuredFingerDepth ? solve.targetOpenValues : response.currentOpenValues) :
             response.baselineOpenValues;
-        constexpr std::uint32_t kFingerSlotMask =
-            ((1u << static_cast<std::uint32_t>(kFirstForearmSlot)) - 1u) &
-            ~((1u << static_cast<std::uint32_t>(
-                   dynamic_hand_collision_telemetry::kFirstFingerSlot)) - 1u);
-        const bool dynamicInteractionFingerContact =
-            ((handTelemetry.otherHandContactMask |
-                 handTelemetry.weaponContactMask) &
-                kFingerSlotMask) != 0;
-        response.currentOpenValues =
-            surface_finger_collision_policy::advanceOpenValues(
-                response.currentOpenValues,
-                targetOpenValues,
-                dynamicInteractionFingerContact ?
-                    0.0f :
-                    dynamic_hand_collision_policy::
-                        kSurfaceFingerSmoothingSpeed,
-                deltaSeconds);
+        // FRIK already eases the applied joints. A second filter here delays
+        // contact relief; publish intent and measure its actual applied pose.
+        response.currentOpenValues = targetOpenValues;
         if (response.lastDirections != previousDirections) {
             ROCK_LOG_SAMPLE_DEBUG(
                 Hand,
@@ -1916,6 +1840,22 @@ namespace rock
             Hand,
             "Dynamic hand collision animation transition {} retained bodies",
             suppressCollision ? "suspended for" : "resumed on");
+    }
+
+    void DynamicHandCollisionRuntime::refreshCollisionFilters(RE::hknpWorld* world)
+    {
+        auto mutation = _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
+        for (auto& hand : _hands) {
+            auto& owner = hand.bodies[0];
+            if (owner.created && owner.createdWorld == world &&
+                !owner.body.refreshCollisionFilter(world)) {
+                owner.rebuildRequestedAtomic.store(true, std::memory_order_release);
+                ROCK_LOG_WARN(Hand, "Dynamic hand collision filter refresh failed: body={}",
+                    owner.body.getBodyId().value);
+            }
+        }
     }
 
     void DynamicHandCollisionRuntime::retireAll(void* bhkWorld)
@@ -2130,6 +2070,7 @@ namespace rock
             const std::size_t index = handIndex(isLeft);
             auto& handSlots = _hands[index];
             auto& handTelemetry = telemetry.hands[index];
+            handSlots.poseFrame = 0;
             handTelemetry.isLeft = isLeft;
             handTelemetry.handDisabled = handInput.disabled;
             handTelemetry.visualAuthorityAvailable = frik_visual_authority::isAvailable();
@@ -2160,10 +2101,6 @@ namespace rock
              */
             if (handSlots.surfaceLatch.active) {
                 auto& latch = handSlots.surfaceLatch;
-                const auto targetSnapshot = havok_runtime::snapshotBody(
-                    frame.hknpWorld,
-                    RE::hknpBodyId{ latch.targetBodyId });
-                RE::NiTransform targetWorld{};
                 bool animatedTargetValid = true;
                 RE::NiTransform animatedWorld{};
                 if (latch.animatedReferenceFormId != 0) {
@@ -2175,14 +2112,19 @@ namespace rock
                         reference_interaction::pointTransform(ref, latch.animatedPoint, animatedWorld);
                     if (!animatedTargetValid) endSurfaceLatch(isLeft);
                 }
-                if (targetSnapshot.valid &&
-                    animatedTargetValid && latch.active &&
+                // Resolve after reference/animation helpers: no borrowed native body
+                // spans those calls, and identity gates all motion readback.
+                const auto targetSnapshot = animatedTargetValid && latch.active ?
+                    havok_runtime::snapshotBodyIdentity(frame.hknpWorld, RE::hknpBodyId{ latch.targetBodyId }) :
+                    havok_runtime::BodyIdentitySnapshot{};
+                const bool targetMatches = targetSnapshot.valid &&
                     targetSnapshot.body == latch.targetBodyIdentity &&
-                    targetSnapshot.collisionObject == latch.targetCollisionIdentity &&
-                    havok_runtime::tryResolveLiveBodyWorldTransform(
-                        frame.hknpWorld,
-                        RE::hknpBodyId{ latch.targetBodyId },
-                        targetWorld) &&
+                    targetSnapshot.collisionObject == latch.targetCollisionIdentity;
+                const auto liveTarget = targetMatches ?
+                    havok_runtime::resolveLiveBodyWorldTransform(frame.hknpWorld, *targetSnapshot.body) :
+                    havok_runtime::ResolvedBodyWorldTransform{};
+                RE::NiTransform targetWorld = liveTarget.transform;
+                if (targetMatches && liveTarget.valid &&
                     isFiniteTransform(targetWorld)) {
                     if (latch.animatedReferenceFormId != 0) targetWorld = animatedWorld;
                     latch.lastHandWorld = transform_math::composeTransforms(
@@ -2244,10 +2186,6 @@ namespace rock
                 twinTelemetry.radiusGameUnits = twinFrame->radius;
                 twinTelemetry.convexRadiusGameUnits =
                     twinFrame->convexRadius;
-                twinTelemetry.handTargetResponseScale =
-                    dynamic_hand_collision_kinematics::
-                        sanitizeHandTargetResponseScale(
-                            twinFrame->handTargetResponseScale);
                 driveTargets[bodyIndex] =
                     handSlots.surfaceLatch.active &&
                         handSlots.surfaceLatch.
@@ -2276,11 +2214,7 @@ namespace rock
                     twinFrames,
                     compoundRootTarget,
                     driveTargets,
-                    geometryGeneration) ||
-                !queueCompoundPose(
-                    handSlots,
-                    compoundRootTarget,
-                    driveTargets)) {
+                    geometryGeneration)) {
                 if (handSlots.bodies[0].created &&
                     !_transitionCollisionSuppressed) {
                     retireHand(handSlots, frame.bhkWorld, isLeft);
@@ -2295,12 +2229,9 @@ namespace rock
             }
 
             auto& compoundOwner = handSlots.bodies[0];
-            const auto queued = queueGeneratedKeyframedBodyTarget(
-                compoundOwner.driveState,
-                compoundRootTarget,
-                frame.deltaSeconds,
-                dynamic_hand_collision_policy::kDivergenceTeleportDistanceGameUnits);
-            handSlots.traceQueuedSequence = queued.queuedSequence;
+            // Decisions use current tracking and the preceding solver result.
+            // Publish one physical target only after this frame's fingers exist.
+            handSlots.poseFrame = frame.timing.sequence;
 
             for (std::size_t bodyIndex = 0;
                  bodyIndex < kBodiesPerHand;
@@ -2373,19 +2304,8 @@ namespace rock
                     twinTelemetry.requestedGapWorldGame;
                 twinTelemetry.contactDeviationGameUnits =
                     twinTelemetry.requestedGapGameUnits;
-                twinTelemetry.handTargetCorrectionWorldGame = {
-                    twinTelemetry.contactDeviationWorldGame.x *
-                        twinTelemetry.handTargetResponseScale,
-                    twinTelemetry.contactDeviationWorldGame.y *
-                        twinTelemetry.handTargetResponseScale,
-                    twinTelemetry.contactDeviationWorldGame.z *
-                        twinTelemetry.handTargetResponseScale,
-                };
-                twinTelemetry.handTargetCorrectionGameUnits =
-                    pointLength(
-                        twinTelemetry.handTargetCorrectionWorldGame);
                 deviations[bodyIndex] =
-                    twinTelemetry.handTargetCorrectionWorldGame;
+                    twinTelemetry.contactDeviationWorldGame;
                 deviationValid[bodyIndex] = true;
                 handTelemetry.contactMask |=
                     1u << static_cast<std::uint32_t>(bodyIndex);
@@ -2431,9 +2351,10 @@ namespace rock
 
             /*
              * Palm and forearm preserve the established rigid-hand response.
-             * A fingertip also preserves that legacy path whenever anatomical
-             * flexion/extension is unavailable or would move the segment
-             * farther into the surface. Base/middle phalanxes are finger-only
+             * A helpful curl is intent, not resolved penetration. Keep the
+             * measured fingertip residual until physics observes relief from
+             * the applied joints, including at anatomical limits or while
+             * FRIK is still blending. Base/middle phalanxes are finger-only
              * probes: adding them must not multiply whole-hand pushout.
              */
             for (std::size_t bodyIndex = 0;
@@ -2445,15 +2366,12 @@ namespace rock
                 const bool rigidPrimary = bodyIndex == kPalmSlot ||
                                           bodyIndex >= kFirstForearmSlot;
                 const bool unresolvedLegacyTip =
-                    dynamic_hand_collision_telemetry::isFingerTipSlot(
-                        bodyIndex) &&
-                    (helpfulFingerSlotMask &
-                        (1u << static_cast<std::uint32_t>(bodyIndex))) == 0;
+                    dynamic_hand_collision_telemetry::isFingerTipSlot(bodyIndex);
                 deviationValid[bodyIndex] =
                     rigidPrimary || unresolvedLegacyTip;
             }
-            const RE::NiPoint3 combined =
-                handTelemetry.anyContact ? combineTwinDeviations(deviations, deviationValid) : RE::NiPoint3{};
+            const RE::NiPoint3 combined = handTelemetry.anyContact ?
+                dynamic_hand_collision_kinematics::combineTwinDeviations(deviations, deviationValid) : RE::NiPoint3{};
             handTelemetry.combinedContactDeviationWorldGame = combined;
             handTelemetry.combinedContactDeviationGameUnits = pointLength(combined);
 
@@ -2486,13 +2404,11 @@ namespace rock
                     return;
                 }
                 applySurfaceLatchPose(handSlots, isLeft);
-                // A surface latch is anchored to the world, not the hand.
                 if (frik_visual_authority::publishHandWorld(
                         dynamicHandTag(isLeft),
                         frik_visual_authority::handFromBool(isLeft),
                         latchTarget,
-                        kSurfaceLatchVisualPriority,
-                        frik_visual_authority::RebaseDriver::Static)) {
+                        kSurfaceLatchVisualPriority)) {
                     handSlots.visualActive = true;
                     handSlots.lastPresentedHandWorld = latchTarget;
                     handSlots.lastPresentedHandWorldValid = true;
@@ -2593,8 +2509,7 @@ namespace rock
                     dynamicHandTag(isLeft),
                     frik_visual_authority::handFromBool(isLeft),
                     target,
-                    dynamic_hand_collision_policy::kVisualPriority,
-                    frik_visual_authority::physicalHandDriver(isLeft))) {
+                    dynamic_hand_collision_policy::kVisualPriority)) {
                 handSlots.visualActive = true;
             } else {
                 ROCK_LOG_SAMPLE_WARN(Hand, 2000, "{} dynamic hand render-follow apply failed", isLeft ? "Left" : "Right");
@@ -2647,10 +2562,10 @@ namespace rock
                 if (line >= kDenseTraceLines && (line - kDenseTraceLines) % 30 != 0) {
                     return;
                 }
-                frik_hand_world_authority::HandChainTransport transport{};
-                (void)frik_hand_world_authority::tryGetHandChainTransport(isLeft, transport);
                 RE::NiTransform rendered{};
                 const bool renderedValid = frik_hand_world_authority::tryGetPresentedHandWorld(isLeft, rendered);
+                const auto transport = rendered_bone_transport_policy::makeHandTransport(
+                    handInput.rawHandWorld, true, rendered, renderedValid);
                 const auto& palm = handTelemetry.twins[kPalmSlot];
                 ROCK_LOG_DEBUG(Hand,
                     "DYNHAND hand={} line={} claim={} src={} xport={}({:.2f}gu,{:.2f}deg) raw=({:.1f},{:.1f},{:.1f}) rendered=({:.1f},{:.1f},{:.1f}) palmTarget=({:.1f},{:.1f},{:.1f}) palmReq=({:.1f},{:.1f},{:.1f}) palmLive=({:.1f},{:.1f},{:.1f}) palmContact={} contacts={} combined={:.2f} applied={:.2f} visual={} latch={} owned={} authority={}",
@@ -2691,6 +2606,49 @@ namespace rock
         telemetry.transitionCollisionSuppressed =
             _transitionCollisionSuppressed;
         _telemetrySnapshot = telemetry;
+    }
+
+    void DynamicHandCollisionRuntime::finalizePose(const PhysicsFrameContext& frame,
+        const Hand& rightHand, const Hand& leftHand, const BodyBoneColliderSet& bodyBoneColliders)
+    {
+        for (const bool isLeft : { false, true }) {
+            auto& slots = _hands[handIndex(isLeft)];
+            auto& owner = slots.bodies[0];
+            const auto sourceFrame = std::exchange(slots.poseFrame, 0);
+            const auto& input = isLeft ? frame.left : frame.right;
+            if (!owner.created) continue;
+            if (input.disabled || sourceFrame != frame.timing.sequence || owner.createdWorld != frame.hknpWorld) {
+                retireHand(slots, frame.bhkWorld, isLeft);
+                continue;
+            }
+            const auto& hand = isLeft ? leftHand : rightHand;
+            std::array<RE::NiTransform, kBodiesPerHand> targets{};
+            bool valid = true;
+            for (std::size_t i = 0; i < kBodiesPerHand; ++i) {
+                const auto* twin = twinFrameForSlot(hand.dynamicTwinTargets(),
+                    bodyBoneColliders.dynamicForearmTwinTargets(), isLeft, i);
+                if (!twin || !twin->valid || !isFiniteTransform(twin->target)) { valid = false; break; }
+                targets[i] = slots.surfaceLatch.active && slots.surfaceLatch.proxyRelationshipValid[i] ?
+                    slots.surfaceLatch.lastProxyWorld[i] : twin->target;
+            }
+            if (!valid || !queueCompoundPose(slots, targets[kPalmSlot], targets)) {
+                retireHand(slots, frame.bhkWorld, isLeft);
+                continue;
+            }
+            const auto queued = queueGeneratedKeyframedBodyTarget(owner.driveState, targets[kPalmSlot],
+                frame.deltaSeconds, dynamic_hand_collision_policy::kDivergenceTeleportDistanceGameUnits);
+            slots.traceQueuedSequence = queued.queuedSequence;
+            if (dynamic_collider_trace::sample(queued.queuedSequence)) {
+                const auto& root = targets[kPalmSlot].translate;
+                dynamic_collider_trace::write("DHC_FINAL frame={} hand={} queued={} target=({:.4f},{:.4f},{:.4f})",
+                    frame.timing.sequence, isLeft ? "left" : "right", queued.queuedSequence, root.x, root.y, root.z);
+            }
+            auto& telemetry = _telemetrySnapshot.hands[handIndex(isLeft)];
+            for (std::size_t i = 0; i < kBodiesPerHand; ++i) {
+                telemetry.twins[i].publishedTargetWorld = targets[i];
+                telemetry.twins[i].publishedTargetValid = true;
+            }
+        }
     }
 
     void DynamicHandCollisionRuntime::flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)

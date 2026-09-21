@@ -52,6 +52,8 @@ namespace rock::weapon_equip_transfer
         RemoveItemFailed,
         DroppedReferenceUnavailable,
         Dropped,
+        PreviousWeaponRestoreResetUnavailable,
+        UnequipUnavailable,
     };
 
     struct EquipInput
@@ -110,7 +112,7 @@ namespace rock::weapon_equip_transfer
     struct EquippedDropInput
     {
         RE::NiPoint3 dropLoc{};
-        // Reference Euler radians (nifskope convention) for the spawned ref.
+        // Native reference Euler radians: stored rotation = Rz(z)*Ry(y)*Rx(x).
         RE::NiPoint3 dropRot{};
         bool hasDropLoc{ false };
         bool hasDropRot{ false };
@@ -120,6 +122,9 @@ namespace rock::weapon_equip_transfer
     {
         bool attempted{ false };
         bool success{ false };
+        // A valid drop still owns cleanup/rollback if native duplicate
+        // unequip fails. Only an empty equipped slot admits the loose grab.
+        bool equippedSlotReleased{ false };
         bool matchedInstanceData{ false };
         DropReason reason{ DropReason::NotAttempted };
         std::int32_t count{ 1 };
@@ -135,4 +140,9 @@ namespace rock::weapon_equip_transfer
     [[nodiscard]] const char* dropReasonName(DropReason reason) noexcept;
     [[nodiscard]] EquipResult transferHeldWeaponToPlayerAndEquip(EquipInput input) noexcept;
     [[nodiscard]] EquippedDropResult dropEquippedWeaponFromPlayer(const EquippedDropInput& input) noexcept;
+    // Frame-thread only. Changes selection, never removes an inventory item.
+    [[nodiscard]] bool replaceHolsteredWeaponWithUnarmed() noexcept;
+    // Exact-current compensation after a held equip; never removes an item.
+    [[nodiscard]] bool unequipExactCurrentWeapon(std::uint32_t formID, std::uintptr_t instanceData) noexcept;
+    [[nodiscard]] bool canRecoverHeldEquip() noexcept;
 }

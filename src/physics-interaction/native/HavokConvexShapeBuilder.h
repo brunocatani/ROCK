@@ -7,5 +7,12 @@
 
 namespace rock::havok_convex_shape_builder
 {
-    RE::hknpShape* buildConvexShapeFromLocalHavokPoints(const std::vector<RE::NiPoint3>& points, float convexRadius);
+    enum class ConvexFit
+    {
+        NativeDefault,
+        PreserveSharpFeatures
+    };
+
+    RE::hknpShape* buildConvexShapeFromLocalHavokPoints(const std::vector<RE::NiPoint3>& points, float convexRadius,
+        ConvexFit fit = ConvexFit::NativeDefault);
 }

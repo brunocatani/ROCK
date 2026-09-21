@@ -22,6 +22,7 @@ namespace rock
 
     void DynamicWeaponCollisionRuntime::updateSurfaceSupportInput()
     {
+        _surfaceInputReserved = false; // Also clears before interrupted-frame returns.
         if (!g_rockConfig.rockBipodMode) {
             _surfaceClickRequested = false;
             _surfaceToggle = {};
@@ -51,7 +52,7 @@ namespace rock
         using namespace dynamic_weapon_collision_policy;
         if (!_enabledAtomic.load(std::memory_order_acquire) || world != _createdWorld ||
             !_created || !isFinitePoint(pointGame)) return;
-        const auto other = havok_runtime::snapshotBody(world, RE::hknpBodyId{ otherBodyId });
+        const auto other = havok_runtime::snapshotBodyIdentity(world, RE::hknpBodyId{ otherBodyId });
         if (!other.valid || !other.body || other.motionIndex != 0 || !other.body->shape ||
             !collision_layer_policy::isWorldSurfaceLayer(
                 other.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK)) return;
@@ -83,7 +84,7 @@ namespace rock
     {
         if (!contact.valid || contact.world != reinterpret_cast<std::uintptr_t>(_frameWorld) ||
             contact.generation != _frameGenerationKey) return false;
-        const auto other = havok_runtime::snapshotBody(_frameWorld, RE::hknpBodyId{ contact.surfaceBodyId });
+        const auto other = havok_runtime::snapshotBodyIdentity(_frameWorld, RE::hknpBodyId{ contact.surfaceBodyId });
         return other.valid && other.body && other.motionIndex == 0 &&
             reinterpret_cast<std::uintptr_t>(other.body->shape) == contact.shape &&
             reinterpret_cast<std::uintptr_t>(other.collisionObject) == contact.collisionObject &&
@@ -109,13 +110,32 @@ namespace rock
             release(_surfaceSupport);
         }
 
+        // Use the same current contact for click arbitration and acquisition.
+        // Sample even without a click so consumers can defer before pressing.
+        Contact contact{};
+        RE::NiTransform liveProxyWorld{};
+        const bool contactRead = g_rockConfig.rockBipodMode && !_surfaceSupport.latched() && _surfaceContacts.read(contact);
+        const bool fresh = contactRead && isFresh(contact, reinterpret_cast<std::uintptr_t>(frame.hknpWorld),
+            _createdGenerationKey, _body.getBodyId().value, surfaceContactTimeMilliseconds());
+        const bool surfaceValid = fresh && resolveSurfaceSupportBody(contact, surfaceWorld);
+        const bool currentContact = surfaceValid &&
+            havok_runtime::tryResolveLiveBodyWorldTransform(frame.hknpWorld, _body.getBodyId(), liveProxyWorld);
+        if (currentContact) {
+            contact.weaponWorld = reconstructWeaponRoot(liveProxyWorld, _createdCenterWeaponLocal, _createdWeaponScale);
+            contact.surfaceWorld = surfaceWorld;
+        }
+        const bool touching = currentContact && contactStillTouches(contact, contact.weaponWorld, surfaceWorld);
+        // Keep the unlatch click reserved across later presentation passes in
+        // this frame, even after release(). The next input update clears it.
+        _surfaceInputReserved = g_rockConfig.rockBipodMode &&
+            (_surfaceInputReserved || _surfaceSupport.latched() || touching);
+
         if (_surfaceClickRequested) {
             _surfaceClickRequested = false;
             if (_surfaceSupport.latched()) {
                 release(_surfaceSupport);
                 ROCK_LOG_INFO(Weapon, "Weapon surface support released: reason=right-stick-click");
             } else {
-                Contact contact{};
                 RE::NiPoint3 primaryLocal{};
                 bool primaryValid = primaryGripWeaponLocal && isFinitePoint(*primaryGripWeaponLocal);
                 if (primaryValid) {
@@ -126,18 +146,6 @@ namespace rock
                     primaryLocal = transform_math::worldPointToLocal(_frameRequestedWeaponWorld, _frameIntentDriverWorld.translate);
                     primaryValid = isFinitePoint(primaryLocal);
                 }
-                RE::NiTransform liveProxyWorld{};
-                const bool contactRead = _surfaceContacts.read(contact);
-                const bool fresh = contactRead && isFresh(contact, reinterpret_cast<std::uintptr_t>(frame.hknpWorld),
-                    _createdGenerationKey, _body.getBodyId().value, surfaceContactTimeMilliseconds());
-                const bool surfaceValid = fresh && resolveSurfaceSupportBody(contact, surfaceWorld);
-                const bool currentContact = surfaceValid &&
-                    havok_runtime::tryResolveLiveBodyWorldTransform(frame.hknpWorld, _body.getBodyId(), liveProxyWorld);
-                if (currentContact) {
-                    contact.weaponWorld = reconstructWeaponRoot(liveProxyWorld, _createdCenterWeaponLocal, _createdWeaponScale);
-                    contact.surfaceWorld = surfaceWorld;
-                }
-                const bool touching = currentContact && contactStillTouches(contact, contact.weaponWorld, surfaceWorld);
                 if (primaryValid && touching && capture(_surfaceSupport, contact, _frameRequestedWeaponWorld, primaryLocal)) {
                     const auto anchor = transform_math::localPointToWorld(surfaceWorld, contact.surfacePointLocal);
                     ROCK_LOG_INFO(Weapon,

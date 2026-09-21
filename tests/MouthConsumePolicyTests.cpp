@@ -90,13 +90,41 @@ int main()
     ok &= expectFalse("enter padding stays precise", decision.candidate);
 
     input.objectProbe.pointGame = RE::NiPoint3{ 0.0f, 10.0f, -4.0f };
-    input.objectProbe.velocityGamePerSecond = RE::NiPoint3{ 200.0f, 0.0f, 0.0f };
-    input.objectProbe.hasVelocity = true;
+    input.deltaSeconds = 0.03f;
     decision = evaluate(input, runtime);
     ok &= expectFalse("fast probe is rejected", decision.candidate);
 
     resetRuntime(runtime);
-    input.objectProbe.hasVelocity = false;
+    input.hmdPositionWorld = RE::NiPoint3{};
+    input.objectProbe.pointGame = RE::NiPoint3{ 0.0f, 10.0f, -4.0f };
+    decision = evaluate(input, runtime);
+    input.hmdPositionWorld = RE::NiPoint3{ 100.0f, 0.0f, -20.0f };
+    input.objectProbe.pointGame = RE::NiPoint3{ 100.0f, 10.0f, -24.0f };
+    input.deltaSeconds = 0.06f;
+    decision = evaluate(input, runtime);
+    ok &= expectTrue("locomotion and crouching preserve mouth dwell", decision.confirmedForCommit);
+    ok &= expectNear("common translation contributes no gesture speed", decision.speedGameUnitsPerSecond, 0.0f, 0.001f);
+
+    input.hmdPositionWorld.x += 100.0f;
+    input.objectProbe.pointGame.x += 106.0f;
+    input.deltaSeconds = 0.03f;
+    decision = evaluate(input, runtime);
+    ok &= expectFalse("fast relative gesture still rejects during locomotion", decision.candidate);
+    ok &= expectNear("relative speed excludes locomotion", decision.speedGameUnitsPerSecond, 200.0f, 0.001f);
+
+    input.hasHmdFrame = false;
+    decision = evaluate(input, runtime);
+    ok &= expectFalse("missing HMD clears speed history", runtime.hasLastProbePoint);
+    input.hasHmdFrame = true;
+    input.hmdPositionWorld = RE::NiPoint3{ 500.0f, 0.0f, 0.0f };
+    input.objectProbe.pointGame = RE::NiPoint3{ 500.0f, 10.0f, -4.0f };
+    decision = evaluate(input, runtime);
+    ok &= expectTrue("returning HMD starts a fresh candidate", decision.candidate);
+    ok &= expectFalse("returning HMD does not preserve old dwell", decision.confirmedForCommit);
+    ok &= expectNear("returning HMD does not compare incompatible points", decision.speedGameUnitsPerSecond, 0.0f, 0.001f);
+
+    resetRuntime(runtime);
+    input.hmdPositionWorld = RE::NiPoint3{};
     input.objectProbe.pointGame = RE::NiPoint3{ 0.0f, 10.0f, -4.0f };
     input.config.hmdMouthOffsetGameUnits = RE::NiPoint3{ (std::numeric_limits<float>::infinity)(), 10.0f, -4.0f };
     decision = evaluate(input, runtime);

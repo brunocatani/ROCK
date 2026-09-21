@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <cmath>
+#include <limits>
 #include <string_view>
 
 namespace rock::authored_weapon_grip_capture_policy
@@ -244,6 +246,19 @@ namespace rock::authored_weapon_grip_capture_policy
             };
         }
 
+        // The two-hand solver replaces weapon transforms but consumes the
+        // same authored firing fingers. Keep that pose registered instead of
+        // clearing it here and republishing it in the later grip update.
+        // The retention path still validates canonical weapon identity and
+        // rejects detached or occupied firing hands before publication.
+        if (commonReady && input.weaponDrawn && input.weaponVisible &&
+            input.conflictingWeaponTransformAuthorityActive) {
+            return {
+                .action = AuthoredPrimaryAction::RetainPoseOnly,
+                .reason = AuthoredPrimaryDecisionReason::ConflictingWeaponAuthority,
+            };
+        }
+
         if (!input.runtimeInitialized) {
             return { .reason = AuthoredPrimaryDecisionReason::RuntimeUnavailable };
         }
@@ -427,6 +442,32 @@ namespace rock::authored_weapon_grip_capture_policy
                input.snapshotSupportGripCaptureSequence != 0 &&
                input.snapshotFingerLocalTransformMask ==
                    kCompleteAuthoredSupportFingerLocalTransformMask;
+    }
+
+    // Presentation starts at unit scale. A fresh animation graph value is
+    // applied on top, including zero scale used by an animation to hide a mesh.
+    [[nodiscard]] inline float resolveWeaponPresentationScale(bool animationAvailable, float animationScale) noexcept
+    {
+        return animationAvailable && std::isfinite(animationScale) ? animationScale : 1.0f;
+    }
+
+    /*
+     * Tolerance of the position-only hold identity check. The check recovers
+     * the palm pivot from the solved weapon world and the tracked hand world
+     * and compares it with the authored pivot; equal in real arithmetic, in
+     * float the recovered pivot carries the rounding of the world coordinates
+     * it passed through: one ulp is 0.008 gu near 76000 and 0.010-0.013 gu
+     * was measured there, so the tolerance follows the coordinate magnitude
+     * above a floor that covers small coordinates.
+     */
+    inline constexpr float kPositionOnlyHoldGripErrorFloorGameUnits = 0.01f;
+    inline constexpr float kPositionOnlyHoldGripErrorUlps = 4.0f;
+
+    [[nodiscard]] constexpr float positionOnlyHoldGripErrorTolerance(const float maxAbsWorldCoordinate) noexcept
+    {
+        const float magnitude = maxAbsWorldCoordinate < 0.0f ? -maxAbsWorldCoordinate : maxAbsWorldCoordinate;
+        const float rounding = kPositionOnlyHoldGripErrorUlps * std::numeric_limits<float>::epsilon() * magnitude;
+        return rounding > kPositionOnlyHoldGripErrorFloorGameUnits ? rounding : kPositionOnlyHoldGripErrorFloorGameUnits;
     }
 
     template <class Transform, class Point, class LocalPointToWorld>

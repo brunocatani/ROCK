@@ -1,8 +1,13 @@
 #include "physics-interaction/grab/GrabPinchPocket.h"
+#include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/TransformMath.h"
+#include "RE/NetImmerse/NiTransform.h"
 
 #include <cmath>
+#include <array>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 
 namespace
 {
@@ -75,52 +80,97 @@ int main()
 
     bool ok = true;
 
-    auto compact = evaluateObject(validInput(bounds(7.0f, 5.0f, 2.0f)));
-    ok &= expectTrue("compact object accepted", compact.accept);
-    ok &= expectTrue("compact object flag", compact.compactObject);
-    ok &= expectReason("compact object reason", compact.reason, "pinchCompact");
+    {
+        using namespace rock::hand_bone_collider_geometry_math;
+        BoneColliderFrameInput<RE::NiTransform, RE::NiPoint3> input{};
+        input.previous = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+        input.start = input.previous;
+        input.previous.translate = { 1.0f, 0.0f, 0.0f };
+        input.start.translate = { 3.0f, 0.0f, 0.0f };
+        input.extrapolateFromPrevious = true;
+        input.extrapolateAlongStartBoneAxis = true;
+        // The distal joint bends independently of the middle-to-distal bone.
+        input.start.rotate.entry[0][0] = 0.0f;
+        input.start.rotate.entry[0][1] = 1.0f;
+        input.start.rotate.entry[1][0] = -1.0f;
+        input.start.rotate.entry[1][1] = 0.0f;
+        const auto segment = buildSegmentColliderFrame(input);
+        RE::NiPoint3 tip{};
+        ok &= expectTrue("distal collider endpoint is available", colliderTipEndpoint(
+            segment.transform.translate, segment.xAxis, segment.length, 0.1f, tip));
+        ok &= expectNear("tip follows distal bend instead of middle bone", tip.x, 3.0f);
+        ok &= expectNear("tip reaches the collider end including convex skin", tip.y, 1.4f);
+        const auto frame = makeFingerFrame(RE::NiPoint3{ 0.0f, 2.0f, 0.0f }, tip);
+        ok &= expectNear("pocket centers the terminal endpoints", frame.center.x, 1.5f);
+        ok &= expectNear("pocket moves with distal bend", frame.center.y, 1.7f);
+        const auto ray = detectionDirection(frame, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }, 1.0f);
+        ok &= expectNear("ray follows current fingertip axis", ray.x, frame.axis.x);
+        ok &= expectNear("ray follows current fingertip closure", ray.y, frame.axis.y);
+        ok &= expectFalse("missing collider dimensions cannot supply a tip", colliderTipEndpoint(
+            segment.transform.translate, segment.xAxis, 0.0f, 0.1f, tip));
+        ok &= expectFalse("coincident endpoints have no pinch axis", makeFingerFrame({}, {}).valid);
+    }
 
-    auto compactLimit = evaluateObject(validInput(bounds(10.0f, 5.0f, 2.0f)));
-    ok &= expectTrue("compact object accepts the configured 10gu limit", compactLimit.accept);
-    ok &= expectReason("compact object limit reason", compactLimit.reason, "pinchCompact");
+    {
+        auto evaluate = [](float thickness, float opening) {
+            ClosureSample sample{};
+            sample.fingers = makeFingerFrame(
+                { 0.0f, opening * 2.0f, 0.0f }, { opening * 4.0f, opening * 2.0f, 0.0f });
+            sample.thicknessGameUnits = thickness;
+            Config config{};
+            config.thumbIndexMaxOpenValue = opening;
+            sample.pose = buildStablePinchFingerPose(config, 0.05f);
+            return sample;
+        };
+        const auto smallObjectFit = solveClosure(0.05f, 1.0f, [&](float opening) { return evaluate(1.0f, opening); });
+        const auto largeObjectFit = solveClosure(0.05f, 1.0f, [&](float opening) { return evaluate(3.0f, opening); });
+        ok &= expectTrue("small and large objects find closure poses", smallObjectFit.valid && smallObjectFit.bracketed && largeObjectFit.valid && largeObjectFit.bracketed);
+        ok &= expectNear("small object closes farther", smallObjectFit.sample.opening, 0.25f, 0.001f);
+        ok &= expectNear("large object retains wider closure", largeObjectFit.sample.opening, 0.75f, 0.001f);
+        ok &= expectNear("small-object seat follows solved fingertips", smallObjectFit.sample.fingers.center.y, 0.5f, 0.002f);
+        ok &= expectNear("large-object seat follows solved fingertips", largeObjectFit.sample.fingers.center.y, 1.5f, 0.002f);
+        ok &= expectNear("stored finger command matches seat solve", smallObjectFit.sample.pose.values[0], smallObjectFit.sample.opening);
+        const auto limited = solveClosure(0.05f, 0.45f, [&](float opening) { return evaluate(3.0f, opening); });
+        ok &= expectTrue("curl limit is reported without a new grab veto", limited.valid && !limited.bracketed);
+        ok &= expectNear("unreachable thickness uses closest permitted pose", limited.sample.opening, 0.45f);
+        const auto missing = solveClosure(0.05f, 1.0f, [&](float opening) {
+            return opening < 0.9f ? ClosureSample{} : evaluate(1.0f, opening);
+        });
+        ok &= expectFalse("provider loss cannot publish a partial closure", missing.valid);
+    }
 
-    auto canSizedObject = evaluateObject(validInput(bounds(11.0f, 5.0f, 2.0f)));
-    ok &= expectFalse("can-sized object above compact limit rejected", canSizedObject.accept);
-    ok &= expectReason("can-sized object reason", canSizedObject.reason, "objectTooLarge");
+    const auto longRodBounds = bounds(30.0f, 1.5f, 2.0f);
+    ok &= expectNear("total bounding volume includes long dimension", longRodBounds.boundsVolumeCubicGameUnits, 90.0f);
+    ok &= expectTrue("long thin object fits volume budget", evaluateObject(validInput(longRodBounds)).accept);
+    ok &= expectTrue("compact object of equal volume also fits", evaluateObject(validInput(bounds(6.0f, 5.0f, 3.0f))).accept);
+    ok &= expectTrue("flat wide object fits volume budget", evaluateObject(validInput(bounds(30.0f, 20.0f, 0.1f))).accept);
+    ok &= expectTrue("coin still fits", evaluateObject(validInput(bounds(2.0f, 2.0f, 0.3f))).accept);
+    ok &= expectTrue("small thick object has no separate thickness veto", evaluateObject(validInput(bounds(4.5f, 4.5f, 4.5f))).accept);
+    ok &= expectTrue("volume boundary is inclusive", evaluateObject(validInput(bounds(10.0f, 5.0f, 2.0f))).accept);
+    ok &= expectFalse("volume above boundary is rejected", evaluateObject(validInput(bounds(10.0f, 5.0f, 2.01f))).accept);
+    ok &= expectFalse("large total volume is rejected", evaluateObject(validInput(bounds(16.0f, 12.0f, 8.0f))).accept);
 
-    auto mugSizedObject = evaluateObject(validInput(bounds(7.0f, 7.0f, 5.6f)));
-    ok &= expectFalse("mug-sized compact object too thick to pinch", mugSizedObject.accept);
-    ok &= expectFalse("mug-sized compact flag rejected", mugSizedObject.compactObject);
-    ok &= expectReason("mug-sized compact reason", mugSizedObject.reason, "compactTooThickToPinch");
+    const auto scaledBounds = computeMeshExtentsFromBounds(
+        RE::NiPoint3{}, RE::NiPoint3{ 10.0f, 5.0f, 2.0f }, 2.0f);
+    ok &= expectNear("doubling scale multiplies volume by eight", scaledBounds.boundsVolumeCubicGameUnits, 800.0f);
+    ok &= expectFalse("scaled-up object exceeds volume budget", evaluateObject(validInput(scaledBounds)).accept);
+    auto tunedVolume = validInput(scaledBounds);
+    tunedVolume.config.maxVolumeCubicGameUnits = 800.0f;
+    ok &= expectTrue("configured volume limit controls acceptance", evaluateObject(tunedVolume).accept);
+    ok &= expectFalse("invalid scale cannot understate volume", computeMeshExtentsFromBounds(
+        RE::NiPoint3{}, RE::NiPoint3{ 10.0f, 5.0f, 2.0f }, std::numeric_limits<float>::quiet_NaN()).valid);
+    ok &= expectFalse("overflowing volume fails closed", computeMeshExtentsFromBounds(
+        RE::NiPoint3{}, RE::NiPoint3{ 1.0e20f, 1.0e20f, 1.0e20f }, 1.0f).valid);
 
-    auto shortCanObject = evaluateObject(validInput(bounds(6.0f, 4.7f, 4.7f)));
-    ok &= expectFalse("short can too thick to pinch", shortCanObject.accept);
-    ok &= expectReason("short can reason", shortCanObject.reason, "compactTooThickToPinch");
-
-    auto coinObject = evaluateObject(validInput(bounds(2.0f, 2.0f, 0.3f)));
-    ok &= expectTrue("coin accepted", coinObject.accept);
-    ok &= expectReason("coin reason", coinObject.reason, "pinchCompact");
-
-    auto cigarObject = evaluateObject(validInput(bounds(7.5f, 1.3f, 1.3f)));
-    ok &= expectTrue("cigar accepted", cigarObject.accept);
-    ok &= expectReason("cigar reason", cigarObject.reason, "pinchCompact");
-
-    auto thicknessLimitObject = evaluateObject(validInput(bounds(6.0f, 5.0f, 4.0f)));
-    ok &= expectTrue("compact object accepts the configured 4gu thickness limit", thicknessLimitObject.accept);
-    ok &= expectReason("thickness limit reason", thicknessLimitObject.reason, "pinchCompact");
-
-    auto thinRod = evaluateObject(validInput(bounds(17.5f, 3.5f, 2.0f)));
-    ok &= expectTrue("short thin rod accepted", thinRod.accept);
-    ok &= expectTrue("short thin rod flag", thinRod.thinRod);
-    ok &= expectReason("short thin rod reason", thinRod.reason, "pinchThinRod");
-
-    auto longRod = evaluateObject(validInput(bounds(30.0f, 3.0f, 2.0f)));
-    ok &= expectFalse("long rod rejected", longRod.accept);
-    ok &= expectReason("long rod reason", longRod.reason, "objectTooLarge");
-
-    auto largeProp = evaluateObject(validInput(bounds(16.0f, 12.0f, 8.0f)));
-    ok &= expectFalse("large prop rejected", largeProp.accept);
-    ok &= expectReason("large prop reason", largeProp.reason, "objectTooLarge");
+    struct Triangle { RE::NiPoint3 v0, v1, v2; };
+    std::array<Triangle, 2> mesh{{
+        { { 0.0f, 0.0f, 0.0f }, { 1.0f, 3.0f, 0.0f }, { 1.0f, 0.0f, 2.0f } },
+        { { 29.0f, 0.0f, 0.0f }, { 30.0f, 3.0f, 0.0f }, { 30.0f, 0.0f, 2.0f } },
+    }};
+    ok &= expectNear("volume includes separated mesh parts", computeMeshExtents(mesh, 1.0f).boundsVolumeCubicGameUnits, 180.0f);
+    mesh[1].v0.x = std::numeric_limits<float>::quiet_NaN();
+    ok &= expectFalse("invalid mesh part cannot silently shrink total volume", computeMeshExtents(mesh, 1.0f).valid);
+    ok &= expectFalse("empty mesh has no volume evidence", computeMeshExtents(std::array<Triangle, 0>{}, 1.0f).valid);
 
     auto farGrab = validInput(bounds(5.0f, 4.0f, 2.0f));
     farGrab.closeGrab = false;
@@ -132,13 +182,13 @@ int main()
     handPocketOnly.handPocketOnlyGrab = true;
     decision = evaluateObject(handPocketOnly);
     ok &= expectTrue("hand-pocket-only can use pinch geometry", decision.accept);
-    ok &= expectReason("hand-pocket-only pinch reason", decision.reason, "pinchCompact");
+    ok &= expectReason("hand-pocket-only pinch reason", decision.reason, "pinchObjectVolume");
 
     auto looseWeapon = validInput(bounds(5.0f, 4.0f, 2.0f));
     looseWeapon.looseWeaponGrab = true;
     decision = evaluateObject(looseWeapon);
     ok &= expectTrue("loose weapon can use pinch geometry", decision.accept);
-    ok &= expectReason("loose weapon pinch reason", decision.reason, "pinchCompact");
+    ok &= expectReason("loose weapon pinch reason", decision.reason, "pinchObjectVolume");
 
     auto multiBody = validInput(bounds(5.0f, 4.0f, 2.0f));
     multiBody.multipleAcceptedBodies = true;
@@ -150,24 +200,28 @@ int main()
     ownerMismatch.ownerMatchesResolvedBody = false;
     decision = evaluateObject(ownerMismatch);
     ok &= expectFalse("owner mismatch rejected", decision.accept);
+    ok &= expectFalse("owner mismatch is not retried", decision.retryable);
     ok &= expectReason("owner mismatch reason", decision.reason, "ownerMismatch");
 
     auto missingSnapshot = validInput(bounds(5.0f, 4.0f, 2.0f));
     missingSnapshot.hasFingerSnapshot = false;
     decision = evaluateObject(missingSnapshot);
     ok &= expectFalse("missing finger snapshot rejected", decision.accept);
+    ok &= expectTrue("missing finger snapshot can recover", decision.retryable);
     ok &= expectReason("missing finger snapshot reason", decision.reason, "missingFingerSnapshot");
 
     auto gapTooWide = validInput(bounds(5.0f, 4.0f, 2.0f));
     gapTooWide.thumbIndexGapGameUnits = 20.0f;
     decision = evaluateObject(gapTooWide);
     ok &= expectFalse("wide thumb-index gap rejected", decision.accept);
+    ok &= expectTrue("finger gap can recover as hand moves", decision.retryable);
     ok &= expectReason("wide thumb-index gap reason", decision.reason, "fingerGapRejected");
 
     auto surfaceTooFar = validInput(bounds(5.0f, 4.0f, 2.0f));
     surfaceTooFar.pocketToSurfaceDistanceGameUnits = 12.0f;
     decision = evaluateObject(surfaceTooFar);
     ok &= expectFalse("far surface rejected", decision.accept);
+    ok &= expectTrue("surface distance can recover as hand moves", decision.retryable);
     ok &= expectReason("far surface reason", decision.reason, "surfaceTooFarFromPocket");
 
     auto noMesh = validInput(MeshExtentMetrics{});
