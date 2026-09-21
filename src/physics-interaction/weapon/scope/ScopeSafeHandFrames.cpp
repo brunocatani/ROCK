@@ -65,11 +65,25 @@ namespace rock
 
             RE::NiTransform rootHandWorld{};
             const bool rootSampleAllowed =
-                !_scope.driverFrameAuthorityActive;
-            const bool rootHandValid = !_scope.driverFrameAuthorityActive &&
-                                       tryGetRootFlattenedHandBoneTransform(isLeft, rootHandWorld);
+                scope_safe_hand_frame_math::canSampleScopeRootHand(
+                    _scope.driverFrameAuthorityActive,
+                    state.hasDriverToHandLocal,
+                    frik_hand_world_authority::hasCalibratedRawHandFrame(isLeft));
+            bool rootHandValid = rootSampleAllowed &&
+                                 tryGetRootFlattenedHandBoneTransform(isLeft, rootHandWorld);
             const bool driverValid = driverFrame.valid &&
                                      isUsableHandAuthorityTransform(driverFrame.world);
+            if (rootHandValid && _scope.driverFrameAuthorityActive) {
+                // A scoped sample is cached as the driver relation and never
+                // re-taken while the menu is held, so refuse an unplaced arm
+                // rather than latch it for the rest of the hold.
+                const float dx = rootHandWorld.translate.x - driverFrame.world.translate.x;
+                const float dy = rootHandWorld.translate.y - driverFrame.world.translate.y;
+                const float dz = rootHandWorld.translate.z - driverFrame.world.translate.z;
+                rootHandValid = driverValid &&
+                                scope_safe_hand_frame_math::isPlausibleScopeSeedHand(
+                                    std::sqrt(dx * dx + dy * dy + dz * dz));
+            }
             RE::NiTransform reconstructedHandWorld{};
             bool reconstructedHandValid = false;
             if (driverValid && state.hasDriverToHandLocal) {

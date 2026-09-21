@@ -2713,9 +2713,30 @@ int main()
         ok &= expectEqual("native scope stops freezing after the bounded driver-miss grace",
             rock::scope_safe_hand_frame_math::resolveMode(true, false, false, true, 3, 3),
             ResolutionMode::Unavailable);
-        ok &= expectEqual("native scope without calibration or history fails closed",
+        ok &= expectEqual("native scope seeds an uncalibrated hand from the isolated controller root",
             rock::scope_safe_hand_frame_math::resolveMode(true, true, false, false, 0, 3),
+            ResolutionMode::RootFlattened);
+        ok &= expectEqual("native scope still fails closed when the caller offers no root sample",
+            rock::scope_safe_hand_frame_math::resolveMode(true, false, false, false, 0, 3),
             ResolutionMode::Unavailable);
+        ok &= expectEqual("a seeded scope hand never outranks a live reconstruction",
+            rock::scope_safe_hand_frame_math::resolveMode(true, true, true, false, 0, 3),
+            ResolutionMode::DriverReconstructed);
+        ok &= expectTrue("an uncalibrated scoped hand may sample a calibrated controller root",
+            rock::scope_safe_hand_frame_math::canSampleScopeRootHand(true, false, true));
+        ok &= expectFalse("a calibrated scoped hand never re-samples the root",
+            rock::scope_safe_hand_frame_math::canSampleScopeRootHand(true, true, true));
+        ok &= expectFalse("a contaminated raw hand may not seed a scoped hand",
+            rock::scope_safe_hand_frame_math::canSampleScopeRootHand(true, false, false));
+        ok &= expectTrue("unscoped frames always sample the root",
+            rock::scope_safe_hand_frame_math::canSampleScopeRootHand(false, true, false));
+        ok &= expectTrue("a placed hand near its controller may seed a scoped frame",
+            rock::scope_safe_hand_frame_math::isPlausibleScopeSeedHand(10.5f));
+        ok &= expectFalse("an unplaced first-person arm never seeds a scoped frame",
+            rock::scope_safe_hand_frame_math::isPlausibleScopeSeedHand(109950.0f));
+        ok &= expectFalse("a non-finite seed distance is refused",
+            rock::scope_safe_hand_frame_math::isPlausibleScopeSeedHand(
+                std::numeric_limits<float>::quiet_NaN()));
         ok &= expectEqual("ordinary aiming never substitutes the scope driver for a missing canonical hand frame",
             rock::scope_safe_hand_frame_math::resolveMode(false, false, true, true, 0, 3), ResolutionMode::Unavailable);
         ok &= expectEqual("prior collision presentation reconstructs from the physical driver even while unscoped",

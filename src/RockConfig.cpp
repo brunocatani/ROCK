@@ -70,6 +70,7 @@ namespace rock
         _store->appendLoadedValues(combined);
         static_cast<RockConfigValues&>(*this) = parseValues(combined);
         logger::setLogLevelAndPattern(rockLogLevel, rockLogPattern);
+        logger::setFlushImmediate(rockLogFlushImmediate);
         _configRevision.store(_store->revision(), std::memory_order_release);
         lock.unlock(); // Subscribers may inspect the newly applied catalog.
         ROCK_LOG_INFO(Config, "ROCK configuration applied (revision={}, logLevel={} {})",
