@@ -11,22 +11,12 @@ if(NOT DEFINED RPS_SDK_ROOT OR RPS_SDK_ROOT STREQUAL "")
 endif()
 set(ROCK_PUBLIC_SDK_DIR "${RPS_SDK_ROOT}/SDK/ROCK")
 foreach(REQUIRED_SDK_PATH IN ITEMS
-    "${ROCK_PUBLIC_SDK_DIR}/README.md"
-    "${ROCK_PUBLIC_SDK_DIR}/include/ROCKProviderApi.h"
-    "${ROCK_PUBLIC_SDK_DIR}/include/ROCKApi.h"
-    "${ROCK_PUBLIC_SDK_DIR}/docs/PublicApi.md"
+    "${ROCK_PUBLIC_SDK_DIR}/include/ROCK/Discovery.h"
+    "${ROCK_PUBLIC_SDK_DIR}/include/ROCK/Client.h"
+    "${ROCK_PUBLIC_SDK_DIR}/modular_examples/ReadHands.cpp"
     "${ROCK_PUBLIC_SDK_DIR}/examples/CMakeLists.txt")
   if(NOT EXISTS "${REQUIRED_SDK_PATH}")
     message(FATAL_ERROR "Independent RPS_SDK is incomplete; missing '${REQUIRED_SDK_PATH}'.")
-  endif()
-endforeach()
-
-foreach(API_HEADER IN ITEMS ROCKProviderApi.h ROCKApi.h)
-  file(SHA256 "${ROOT_DIR}/src/api/${API_HEADER}" SOURCE_HEADER_HASH)
-  file(SHA256 "${ROCK_PUBLIC_SDK_DIR}/include/${API_HEADER}" SDK_HEADER_HASH)
-  if(NOT SOURCE_HEADER_HASH STREQUAL SDK_HEADER_HASH)
-    message(FATAL_ERROR
-      "Independent SDK header '${API_HEADER}' does not match ROCK's runtime ABI header.")
   endif()
 endforeach()
 
@@ -51,6 +41,15 @@ file(COPY "${TARGET_FILE}" DESTINATION "${PACKAGE_STAGE_PLUGINS_DIR}")
 file(COPY "${TARGET_PDB_FILE}" DESTINATION "${PACKAGE_STAGE_PLUGINS_DIR}")
 file(COPY "${ROOT_DIR}/LICENSE" DESTINATION "${PACKAGE_STAGE_DIR}")
 
-file(COPY "${ROCK_PUBLIC_SDK_DIR}" DESTINATION "${PACKAGE_STAGE_SDK_DIR}")
+# Runtime and examples consume these modular declarations directly. The retired
+# monolithic headers and their documentation do not describe this release.
+file(MAKE_DIRECTORY "${PACKAGE_STAGE_SDK_DIR}/ROCK/include")
+file(COPY "${ROCK_PUBLIC_SDK_DIR}/include/ROCK"
+     DESTINATION "${PACKAGE_STAGE_SDK_DIR}/ROCK/include")
+file(COPY "${ROCK_PUBLIC_SDK_DIR}/examples" "${ROCK_PUBLIC_SDK_DIR}/modular_examples"
+     DESTINATION "${PACKAGE_STAGE_SDK_DIR}/ROCK"
+     PATTERN "README.md" EXCLUDE)
 
-execute_process(COMMAND ${CMAKE_COMMAND} -E tar cf "${TARGET_ZIP}" --format=7zip -- . WORKING_DIRECTORY "${PACKAGE_STAGE_DIR}")
+execute_process(COMMAND ${CMAKE_COMMAND} -E tar cf "${TARGET_ZIP}" --format=7zip -- .
+                WORKING_DIRECTORY "${PACKAGE_STAGE_DIR}"
+                COMMAND_ERROR_IS_FATAL ANY)

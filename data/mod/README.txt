@@ -1,4 +1,4 @@
-ROCK v0.8 - Release Install Notes
+ROCK v0.9 - Release Install Notes
 ================================
 
 Requirements
@@ -17,7 +17,11 @@ Install this archive through your mod manager. The plugin files belong at:
 Data\F4SE\Plugins\ROCK.dll
 Data\F4SE\Plugins\ROCK.pdb
 
-The SDK folder contains developer documentation, headers, and examples.
+The SDK folder contains the current modular headers and buildable examples.
+Start with SDK/ROCK/modular_examples/ReadHands.cpp. The examples/CMakeLists.txt
+supports building the full example set with CommonLibF4VR and vcpkg.
+The retired monolithic headers are not compatible with ROCK 0.9.
+Current developer documentation: https://devartificial.pro/docs/rps-sdk/rock/reference/api-index
 Player instructions and compatibility notes:
 https://www.nexusmods.com/fallout4/mods/108881
 
@@ -35,6 +39,13 @@ on load. Restoring a default removes that key; an empty developer file is remove
 Either file supports hot reload.
 The wheel menu uses ROCK's configuration interface to display and save settings.
 Runtime and example INIs are not included in this archive.
+
+Upgrading from older versions: bToggleGrab and bAutoDrop are replaced by
+iWeaponGrabMode and iWeaponDropMode. The default is iWeaponGrabMode=2
+(toggle firing grip, hold support) and iWeaponDropMode=1 (No Drop).
+Use iWeaponDropMode=2 for the former retained-in-hand Auto Drop behavior.
+NPC dynamic collisions are enabled by default through npcDynamicCollisions
+in ROCK.ini. Update dependent addons to versions using the modular ROCK API.
 
 The source references data/config/ROCK_example.ini and
 data/config/ROCK_Developer_example.ini list every supported option and default
