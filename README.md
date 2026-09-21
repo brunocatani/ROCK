@@ -123,10 +123,10 @@ RobCo PALM reads the compiled catalog and writes through ROCK's configuration AP
 
 ## Credits
 
+- **[RollingRock](https://www.patreon.com/rollingrock)** — For creating FRIK, implementing ROCK’s migration to FRIK API 2.3, and contributing code, debugging, in-game testing, and continued support to improve frame timing, weapon handling, and scope compatibility.
 - **[L.H. Adonis](https://www.patreon.com/theartofdev)** — For CommonLibF4VR, F4VR-CommonFramework, and supporting the FRIK changes needed by ROCK.
 - **[Cylon Surfer](https://www.patreon.com/CylonSurferMods)** — For support, advice, testing, and compatibility checks.
 - **[Asciimov](https://www.patreon.com/cw/Asciimov)** — For extensive testing, Heisenberg integration work, and serving as the main tester.
-- **[RollingRock](https://www.patreon.com/rollingrock)** — For creating FRIK and supporting the project.
 - **[FlyingParticle (Atom)](https://www.patreon.com/flyingparticle)** — For creating [HIGGS](https://www.nexusmods.com/skyrimspecialedition/mods/43930), the original inspiration for ROCK.
 - The Fallout 4 VR modding community.
 
