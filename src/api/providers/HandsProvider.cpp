@@ -1,19 +1,10 @@
+#include "SnapshotReads.h"
 #include "HandsMarshalling.h"
 #include <ROCK/Discovery.h>
 
 namespace rock::api::hands {
 namespace {
 using namespace boundary;
-Status ROCK_CALL getHandFrameV1(OwnerToken ownerToken, Hand hand, HandFrameV1* outFrame) noexcept {
-    if (const auto s = checkOutput(outFrame); s != Status::Ok) return s;
-    if (hand!=Hand::Right && hand!=Hand::Left) return Status::InvalidArgument;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        provider::RockProviderHandFrameV1 native_outFrame{};
-        const auto result = provider::runtime::apiGetHandFrameV1(static_cast<provider::RockProviderHand>(hand), &native_outFrame);
-        convert(*outFrame, native_outFrame);
-        return result ? Status::Ok : Status::NotReady;
-    });
-}
 Status ROCK_CALL getPresentedHandFrameV1(OwnerToken ownerToken, Hand hand, HandFrameV1* outFrame) noexcept {
     if (const auto s = checkOutput(outFrame); s != Status::Ok) return s;
     if (hand!=Hand::Right && hand!=Hand::Left) return Status::InvalidArgument;

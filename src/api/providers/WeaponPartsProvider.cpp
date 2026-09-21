@@ -1,3 +1,4 @@
+#include "SnapshotReads.h"
 #include "WeaponPartsMarshalling.h"
 #include <ROCK/Discovery.h>
 #include "EventBoundary.h"
@@ -114,17 +115,6 @@ Status ROCK_CALL clearWeaponPartDriveTargetsV1(std::uint64_t ownerToken) noexcep
     return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
         const auto result = provider::runtime::apiClearWeaponPartDriveTargetsV1(ownerToken);
         return static_cast<Status>(result);
-    });
-}
-Status ROCK_CALL getWeaponPartGripStateV1(OwnerToken ownerToken, Hand hand, WeaponPartGripStateV1* outState) noexcept {
-    if (const auto s = checkOutput(outState); s != Status::Ok) return s;
-    if (hand!=Hand::Right && hand!=Hand::Left) return Status::InvalidArgument;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        provider::runtime::refreshSources();
-        provider::RockProviderWeaponPartGripStateV1 native_outState{};
-        const auto result = provider::runtime::apiGetWeaponPartGripStateV1(static_cast<provider::RockProviderHand>(hand), &native_outState);
-        convert(*outState, native_outState);
-        return result ? Status::Ok : Status::NotReady;
     });
 }
 Status ROCK_CALL queryWeaponPartTargetResolutionV1(std::uint64_t ownerToken, const WeaponPartResolutionQueryV1* query, WeaponPartResolutionResultV1* outResolution) noexcept {

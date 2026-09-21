@@ -1,3 +1,5 @@
+#include "ProviderFrameThreadOwner.h"
+#include "providers/WeaponPartsMarshalling.h"
 #include "api/InterfaceNegotiation.h"
 #include "ProviderRuntimeServices.h"
 #include "OwnerBindingPolicy.h"
@@ -157,7 +159,7 @@ namespace rock::provider::runtime
     std::atomic<std::uint32_t> s_currentSkeletonGeneration{ 0 };
     std::atomic<std::uint32_t> s_currentProviderGeneration{ 0 };
     // Published together with the frame snapshot; indexed [right, left].
-    std::array<RockProviderWeaponPartGripStateV1, 2> s_lastPartGripStates{};
+    std::array<api::weaponparts::WeaponPartGripStateV1, 2> s_lastPartGripStates{};
     std::array<RockProviderHandInteractionStateV1, 2> s_lastHandInteractionStates{};
     RockProviderEquippedWeaponStateV1 s_lastEquippedWeaponState{};
 
@@ -373,8 +375,8 @@ namespace rock::provider::runtime
     std::atomic<std::uint64_t> s_nextAnimationPhaseCallbackToken{ 1 };
     std::atomic<std::uint64_t> s_activeAnimationPhaseFrameIndex{ 0 };
     thread_local bool s_presentedReadbackPhase = false;
-    std::atomic<std::uint32_t> s_animationOwnerThreadId{ 0 };
-    std::atomic<bool> s_animationThreadMismatchLogged{ false };
+    ProviderFrameThreadOwner s_frameThreadOwner;
+    std::atomic<std::uint32_t> s_threadMismatchReportedPhases{ 0 };
 
     struct HandVisualAuthoritySlot
     {
@@ -557,26 +559,20 @@ namespace rock::provider::runtime
 #endif
     }
 
-    [[nodiscard]] bool claimOrValidateAnimationOwnerThread()
+    void reportFrameThreadMismatch(const std::uint32_t phase) noexcept
     {
-        const auto currentThread =
-            static_cast<std::uint32_t>(GetCurrentThreadId());
-        std::uint32_t expected = 0;
-        if (s_animationOwnerThreadId.compare_exchange_strong(
-                expected,
-                currentThread,
-                std::memory_order_acq_rel)) {
-            return true;
+        const auto bit = 1u << (phase < 32 ? phase : 31);
+        if (!(s_threadMismatchReportedPhases.fetch_or(bit, std::memory_order_relaxed) & bit)) {
+            try {
+                logger::error("ROCK provider thread rejected: phase={} (0=FrameBegin) owner={} caller={} frame={}; owner is established only at FrameBegin",
+                    phase, s_frameThreadOwner.owner(), GetCurrentThreadId(), s_frameClock.current());
+            } catch (...) {}
         }
-        return expected == currentThread;
     }
 
     [[nodiscard]] bool onAnimationOwnerThread()
     {
-        const auto ownerThread =
-            s_animationOwnerThreadId.load(std::memory_order_acquire);
-        return ownerThread != 0 && ownerThread ==
-            static_cast<std::uint32_t>(GetCurrentThreadId());
+        return s_frameThreadOwner.allows(static_cast<std::uint32_t>(GetCurrentThreadId()));
     }
 
 
@@ -2180,6 +2176,10 @@ namespace rock::provider
 
     void beginGameFrame(const std::uint64_t frameIndex) noexcept
     {
+        if (!s_frameThreadOwner.beginFrame(static_cast<std::uint32_t>(GetCurrentThreadId()))) {
+            reportFrameThreadMismatch(0);
+            return;
+        }
         s_frameClock.beginFrame(frameIndex);
     }
 
@@ -2285,6 +2285,11 @@ namespace rock::provider
 
         std::array<RockProviderWeaponPartGripStateV1, 2> partGripStates{};
         pi.fillProviderWeaponPartGripStates(partGripStates);
+        // Resolve opaque source keys while the live catalog is owned by this
+        // frame. Task readers copy these values without touching scene nodes.
+        std::array<api::weaponparts::WeaponPartGripStateV1, 2> publicPartGripStates{};
+        for (std::size_t index = 0; index < partGripStates.size(); ++index)
+            api::boundary::convert(publicPartGripStates[index], partGripStates[index]);
 
         std::array<RockProviderHandInteractionStateV1, 2>
             handInteractionStates{};
@@ -2453,7 +2458,7 @@ namespace rock::provider
                 PhysicsInteraction::s_leftHandDisabled.load(std::memory_order_acquire));
             s_lastSnapshot = snapshot;
             s_hasSnapshot = true;
-            s_lastPartGripStates = partGripStates;
+            s_lastPartGripStates = publicPartGripStates;
             s_lastHandInteractionStates = handInteractionStates;
             s_lastEquippedWeaponState = equippedWeaponState;
         }
@@ -2590,13 +2595,11 @@ namespace rock::provider
         const game_frame_timing_policy::GameFrameTiming& timing)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::ProviderAnimationDispatch);
-        if (!claimOrValidateAnimationOwnerThread()) {
-            if (!s_animationThreadMismatchLogged.exchange(
-                    true,
-                    std::memory_order_acq_rel)) {
-                logger::error(
-                    "ROCK provider animation phases observed multiple threads; callback dispatch is disabled for the mismatching thread.");
-            }
+        if (!onAnimationOwnerThread()) {
+            // Graph hooks may fire before the first FRIK frame. They must not
+            // select the thread that later authorizes every gameplay endpoint.
+            if (s_frameThreadOwner.owner() != 0)
+                reportFrameThreadMismatch(static_cast<std::uint32_t>(phase));
             return;
         }
 
@@ -3316,7 +3319,7 @@ namespace rock::provider::runtime {
             const auto status = authorizeBinding(slot->interfaces[id-1], slot->revoked, permission, access);
             if (status != Status::Ok) return status;
         }
-        if (requireThread && !onAnimationOwnerThread() && !(id==1 && (permission==0 || permission==4) && s_animationOwnerThreadId.load(std::memory_order_acquire)==0)) return Status::WrongThread;
+        if (requireThread && !onAnimationOwnerThread() && !(id==1 && (permission==0 || permission==4) && s_frameThreadOwner.owner()==0)) return Status::WrongThread;
         return Status::Ok;
     }
     rock::api::Status bind(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t major, std::uint32_t permissions) {

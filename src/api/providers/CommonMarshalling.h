@@ -1,6 +1,10 @@
 #pragma once
 #include "Boundary.h"
 namespace rock::api::boundary {
+    inline SampleV1 sampleFromSnapshot(const provider::RockProviderFrameSnapshot& frame) noexcept {
+        return {frame.frameIndex, frame.stateSequence, frame.worldGeneration,
+            frame.skeletonGeneration, frame.providerGeneration, frame.collisionGeneration};
+    }
     inline void convert(rock::api::Point3& out, const rock::provider::RockProviderPoint3& in) {
         out.x = in.x;
         out.y = static_cast<decltype(out.y)>(in.y);

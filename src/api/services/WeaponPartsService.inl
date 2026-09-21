@@ -225,10 +225,10 @@
         return RockProviderResultV1::Ok;
     }
 
-    bool ROCK_PROVIDER_CALL apiGetWeaponPartGripStateV1(RockProviderHand hand, RockProviderWeaponPartGripStateV1* outState)
+    bool ROCK_PROVIDER_CALL apiGetWeaponPartGripStateV1(RockProviderHand hand, api::weaponparts::WeaponPartGripStateV1* outState)
     {
         provider_state_policy::clearQueryOutput(outState);
-        if (!outState || outState->size != sizeof(RockProviderWeaponPartGripStateV1)) {
+        if (!outState || outState->size != sizeof(api::weaponparts::WeaponPartGripStateV1)) {
             return false;
         }
         if (hand != RockProviderHand::Right && hand != RockProviderHand::Left) {

@@ -1,4 +1,5 @@
 #pragma once
+#include <ROCK/WeaponParts.h>
 #include "WeaponSourceCatalog.h"
 #include "ProviderRuntimeTypes.h"
 #include "OwnerBindingPolicy.h"
@@ -31,7 +32,7 @@ namespace rock::provider::runtime {
     RockProviderResultV1 ROCK_PROVIDER_CALL apiSetWeaponPartDriveTargetsV1(std::uint64_t ownerToken, const RockProviderWeaponPartDriveTargetV1* targets, std::uint32_t targetCount);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiClearWeaponPartDriveTargetsV1(std::uint64_t ownerToken);
     bool ROCK_PROVIDER_CALL apiQueryEquippedWeaponClassificationV1(RockProviderWeaponClassificationV1* outResult);
-    bool ROCK_PROVIDER_CALL apiGetWeaponPartGripStateV1(RockProviderHand hand, RockProviderWeaponPartGripStateV1* outState);
+    bool ROCK_PROVIDER_CALL apiGetWeaponPartGripStateV1(RockProviderHand hand, api::weaponparts::WeaponPartGripStateV1* outState);
     bool ROCK_PROVIDER_CALL apiGetRawWandButtonStateV1(RockProviderHand hand, std::uint32_t buttonId, RockProviderRawWandButtonStateV1* outState);
     bool ROCK_PROVIDER_CALL apiIsNativePipboyInputSuppressedV1();
     std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEmitterCountV1();

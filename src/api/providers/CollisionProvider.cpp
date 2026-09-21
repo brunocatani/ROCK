@@ -1,3 +1,4 @@
+#include "SnapshotReads.h"
 #include "CollisionMarshalling.h"
 #include <ROCK/Discovery.h>
 #include "EventBoundary.h"

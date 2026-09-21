@@ -1161,6 +1161,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKModularMarshallingTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKModularMarshallingTests)
 
+  add_executable(ROCKModularSnapshotReadsTests
+    "${ROOT_DIR}/tests/ModularSnapshotReadsTests.cpp"
+    "${SOURCE_DIR}/api/providers/SnapshotReads.cpp")
+  target_compile_features(ROCKModularSnapshotReadsTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKModularSnapshotReadsTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKModularSnapshotReadsTests)
+
   add_executable(ROCKModularEventDeliveryTests
     "${ROOT_DIR}/tests/ModularEventDeliveryTests.cpp"
     "${SOURCE_DIR}/api/EventStreams.cpp")

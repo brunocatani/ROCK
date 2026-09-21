@@ -1,3 +1,4 @@
+#include "SnapshotReads.h"
 #include "WeaponMarshalling.h"
 #include <ROCK/Discovery.h>
 #include "EventBoundary.h"
@@ -83,15 +84,6 @@ Status ROCK_CALL getEquippedWeaponHandlingStateV1(OwnerToken ownerToken, Equippe
         const auto result = provider::runtime::apiGetEquippedWeaponHandlingStateV1(&native_outState);
         convert(*outState, native_outState);
         return result ? Status::Ok : Status::NotReady;
-    });
-}
-Status ROCK_CALL getEquippedWeaponStateV1(std::uint64_t ownerToken, EquippedWeaponStateV1* outState) noexcept {
-    if (const auto s = checkOutput(outState); s != Status::Ok) return s;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        provider::RockProviderEquippedWeaponStateV1 native_outState{};
-        const auto result = provider::runtime::apiGetEquippedWeaponStateV1(ownerToken, &native_outState);
-        convert(*outState, native_outState);
-        return static_cast<Status>(result);
     });
 }
 Status ROCK_CALL getScopeSightStateV1(std::uint64_t ownerToken, ScopeSightStateV1* outState) noexcept {
