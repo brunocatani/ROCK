@@ -2,6 +2,19 @@ Status ROCK_CALL getSample(OwnerToken owner, SampleV1* outSample) noexcept {
     return boundary::readSample(owner, kInterfaceId, outSample);
 }
 
+Status ROCK_CALL getHandInteractionStateV1(std::uint64_t ownerToken, Hand hand, HandInteractionStateV1* outState) noexcept {
+    if (const auto s = checkOutput(outState); s != Status::Ok) return s;
+    if (hand!=Hand::Right && hand!=Hand::Left) return Status::InvalidArgument;
+    // The service copies an immutable-value publication under s_snapshotMutex;
+    // it does not read live hands. F4SE tasks need the same safe snapshot.
+    return invoke(ownerToken, kInterfaceId, 1, false, [&]() -> Status {
+        provider::RockProviderHandInteractionStateV1 native_outState{};
+        const auto result = provider::runtime::apiGetHandInteractionStateV1(ownerToken, static_cast<provider::RockProviderHand>(hand), &native_outState);
+        convert(*outState, native_outState);
+        return static_cast<Status>(result);
+    });
+}
+
 Status ROCK_CALL requestInventoryGrab(OwnerToken owner, const InventoryGrabRequestV1* request, std::uint64_t* command) noexcept {
     if (!command) return Status::InvalidArgument;
     *command=0;

@@ -48,16 +48,6 @@ Status ROCK_CALL requestThrownDropV1(std::uint64_t ownerToken, const ThrownDropR
         return static_cast<Status>(result);
     });
 }
-Status ROCK_CALL getHandInteractionStateV1(std::uint64_t ownerToken, Hand hand, HandInteractionStateV1* outState) noexcept {
-    if (const auto s = checkOutput(outState); s != Status::Ok) return s;
-    if (hand!=Hand::Right && hand!=Hand::Left) return Status::InvalidArgument;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        provider::RockProviderHandInteractionStateV1 native_outState{};
-        const auto result = provider::runtime::apiGetHandInteractionStateV1(ownerToken, static_cast<provider::RockProviderHand>(hand), &native_outState);
-        convert(*outState, native_outState);
-        return static_cast<Status>(result);
-    });
-}
 Status ROCK_CALL cancelInteractionCommandV1(std::uint64_t ownerToken, std::uint64_t commandId) noexcept {
     return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
         const auto result = provider::runtime::apiCancelInteractionCommandV1(ownerToken, commandId);

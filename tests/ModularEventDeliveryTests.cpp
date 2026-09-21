@@ -1,6 +1,9 @@
 #include "api/providers/EventBoundary.h"
+#include "api/providers/GrabMarshalling.h"
 #include "api/OwnerBindingPolicy.h"
 #include <cassert>
+#include <future>
+#include <thread>
 
 namespace {
     constexpr rock::api::OwnerToken testOwner=42, peerOwner=43;
@@ -8,21 +11,36 @@ namespace {
     bool revoked=false, revokeRequested=false;
     unsigned deliveries=0, peerDeliveries=0;
     rock::api::Status reentry=rock::api::Status::Ok;
+    const auto ownerThread=std::this_thread::get_id();
+    bool snapshotReady=true;
 }
 // Native runtime ownership is the fixture boundary. The production access
 // policy, exported Grab endpoint bodies and event dispatcher are exercised.
 namespace rock::provider::runtime {
-    api::Status authorize(std::uint64_t token,api::InterfaceId family,std::uint32_t permission,bool,OwnerAccess access) {
+    api::Status authorize(std::uint64_t token,api::InterfaceId family,std::uint32_t permission,bool requireThread,OwnerAccess access) {
         if(events::inSynchronousCallback())return api::Status::Busy;
         if(token!=testOwner && token!=peerOwner)return api::Status::OwnerNotRegistered;
         if(family!=api::InterfaceId::Grab)return api::Status::PermissionDenied;
-        return authorizeBinding(binding,token==testOwner && revoked,permission,access);
+        const auto status=authorizeBinding(binding,token==testOwner && revoked,permission,access);
+        if(status!=api::Status::Ok)return status;
+        return requireThread && std::this_thread::get_id()!=ownerThread?api::Status::WrongThread:api::Status::Ok;
     }
     api::SampleV1 sample() {return {20,30,1,2,3,4};}
     void deferRevoke(std::uint64_t token) {assert(token==testOwner);revoked=true;revokeRequested=true;}
     void reportBoundaryFailure(std::uint64_t,api::InterfaceId) noexcept {assert(false);}
     RockProviderResultV1 apiRequestForceGrabV1(std::uint64_t,const RockProviderForceGrabRequestV1*,std::uint64_t*) {
         assert(false);return RockProviderResultV1::NotReady;
+    }
+    RockProviderResultV1 apiGetHandInteractionStateV1(std::uint64_t,RockProviderHand hand,RockProviderHandInteractionStateV1* state) {
+        if(!snapshotReady)return RockProviderResultV1::NotReady;
+        state->hand=hand;
+        state->flags=static_cast<std::uint32_t>(RockProviderHandInteractionFlagV1::Valid)|
+            static_cast<std::uint32_t>(RockProviderHandInteractionFlagV1::LooseWeapon);
+        state->phase=RockProviderHandInteractionPhaseV1::Holding;
+        state->targetFormId=123;
+        state->frameIndex=20;
+        state->worldGeneration=1;state->skeletonGeneration=2;state->providerGeneration=3;
+        return RockProviderResultV1::Ok;
     }
 }
 namespace rock::api::grab {
@@ -41,6 +59,30 @@ namespace {
 int main() {
     using namespace rock;
     using api::Status;
+    // The exported read must work from an F4SE task without admitting writes.
+    binding.permissions=3;
+    auto task=std::async(std::launch::async,[] {
+        api::grab::HandInteractionStateV1 state{};
+        for(const auto hand:{api::Hand::Left,api::Hand::Right}) {
+            assert(api::grab::getHandInteractionStateV1(testOwner,hand,&state)==Status::Ok);
+            assert(state.hand==hand && state.phase==api::grab::HandInteractionPhaseV1::Holding);
+            assert(state.flags&static_cast<std::uint32_t>(api::grab::HandInteractionFlagV1::LooseWeapon));
+            assert(state.targetFormId==123 && state.frameIndex==20 && state.providerGeneration==3);
+        }
+        assert(api::grab::getHandInteractionStateV1(999,api::Hand::Left,&state)==Status::OwnerNotRegistered);
+        assert(state.flags==0 && state.targetFormId==0);
+        api::grab::InventoryGrabRequestV1 request{};std::uint64_t command=99;
+        assert(api::grab::requestInventoryGrab(testOwner,&request,&command)==Status::WrongThread);
+        assert(command==0);
+    });
+    task.get();
+    snapshotReady=false;
+    api::grab::HandInteractionStateV1 unavailable{};
+    unavailable.flags=0xFFFFFFFF;
+    assert(api::grab::getHandInteractionStateV1(testOwner,api::Hand::Left,&unavailable)==Status::NotReady);
+    assert(unavailable.flags==0);
+    snapshotReady=true;
+    binding.permissions=1;
     provider::events::bind(testOwner,api::InterfaceId::Grab);
     provider::events::bind(peerOwner,api::InterfaceId::Grab);
     provider::RockProviderEventV1 change{};
