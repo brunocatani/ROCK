@@ -202,7 +202,8 @@ namespace rock
         std::uint64_t currentWeaponGenerationKey,
         std::uint64_t currentEquippedWeaponOwnershipKey,
         const WeaponInteractionRuntimeState& leftRuntimeState,
-        const WeaponInteractionRuntimeState& rightRuntimeState)
+        const WeaponInteractionRuntimeState& rightRuntimeState,
+        const WeaponInteractionDecision& supportAcquisitionDecision)
     {
         const bool supportHandIsLeft = isSupportHandLeft();
         const bool firingHandIsLeft = isFiringHandLeft();
@@ -537,7 +538,9 @@ namespace rock
         }
 
         if (!supportGrip.active && supportHandAvailableForAcquisition) {
-            const WeaponInteractionDecision supportDecision = routeWeaponInteraction(supportHandContact, supportRuntimeState);
+            // Reuse the controller's authored-zone admission here as well;
+            // an authored seat does not require a mesh contact while carrying.
+            const auto& supportDecision = supportAcquisitionDecision;
             if (supportDecision.kind == WeaponInteractionKind::SupportGrip &&
                 weapon_two_handed_grip_math::canStartSupportGrip(true, supportGripHeld, supportHandHoldingObject)) {
                 if (authored_support_grab_policy::captured(

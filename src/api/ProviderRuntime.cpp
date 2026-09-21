@@ -3151,6 +3151,22 @@ namespace rock::provider
         pruneExpiredNativeAnimationAuthorityLocked(frameIndex);
     }
 
+    bool hasWeaponPartTargetsForGeneration(const std::uint64_t weaponGenerationKey)
+    {
+        std::scoped_lock lock(s_weaponPartMutex);
+        for (const auto& slot : s_weaponPartTargets) {
+            if (!slot.active) {
+                continue;
+            }
+            const auto target = toRuntimeTarget(slot);
+            if (weapon_part_runtime::targetAppliesToGeneration(target, weaponGenerationKey) &&
+                weapon_part_runtime::targetHasUsableMatcher(target)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     std::size_t copyWeaponPartTargets(std::span<weapon_part_runtime::Target> outTargets)
     {
         std::size_t count = 0;

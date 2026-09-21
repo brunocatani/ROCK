@@ -79,6 +79,7 @@ namespace rock::provider
     bool resolveWeaponPartTargetV1(
         const RockProviderWeaponPartTargetQueryV1& query,
         RockProviderWeaponPartTargetResolutionV1& outResolution);
+    bool hasWeaponPartTargetsForGeneration(std::uint64_t weaponGenerationKey);
     // Value snapshot for main-thread grip markers; never retains provider pointers.
     std::size_t copyWeaponPartTargets(std::span<weapon_part_runtime::Target> outTargets);
     std::uint32_t copyWeaponPartDriveTargetsV1(

@@ -129,6 +129,11 @@ namespace rock::performance_profiler
         RagdollComponentRead,
         RagdollBodyRefresh,
         GrabContactPatchIndexBuild,
+        WeaponProbePoseCapture,
+        WeaponSourcePoseUpdate,
+        WeaponCompoundPoseUpdate,
+        WeaponKinematicDrive,
+        WeaponDynamicDrive,
         Count
     };
 
@@ -162,6 +167,10 @@ namespace rock::performance_profiler
         GrabAcquisitionSucceeded,
         GrabSingleBodyVisualOwnerAccepted,
         GrabMeshOwnerMismatchRejected,
+        WeaponProbeFramesEnabled,
+        WeaponProbeFramesSkipped,
+        WeaponProbePoseBatches,
+        WeaponProbeBatchReuses,
         ContactPairBatchTruncated,
         NativeWeaponSelfPairsRejected,
         NativeWeaponOwnerUnresolved,
@@ -221,6 +230,10 @@ namespace rock::performance_profiler
         MeshSkinnedVerticesEvaluated,
         MeshSkinnedBonesSource,
         MeshSkinnedBonesEvaluated,
+        WeaponProbePoseParts,
+        WeaponProbeBoundsCandidates,
+        WeaponProbeSurfaceCandidates,
+        WeaponColliderDriveBodies,
         Count
     };
 

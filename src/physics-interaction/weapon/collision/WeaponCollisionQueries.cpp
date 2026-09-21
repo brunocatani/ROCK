@@ -1223,130 +1223,65 @@ namespace rock
         float probeRadiusGame,
         WeaponInteractionContact& outContact) const
     {
+        InteractionQueryBatch batch;
+        return tryFindInteractionContactNearPoint(weaponNode, probeWorldPoint, probeRadiusGame, outContact, batch);
+    }
+
+    bool WeaponCollision::tryFindInteractionContactNearPoint(
+        const RE::NiAVObject* weaponNode,
+        const RE::NiPoint3& probeWorldPoint,
+        float probeRadiusGame,
+        WeaponInteractionContact& outContact,
+        InteractionQueryBatch& batch) const
+    {
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponContactProbe);
         outContact = {};
-        const std::uint64_t currentGeneration = getCurrentWeaponGenerationKey();
-        const auto pointFinite = [](const RE::NiPoint3& point) {
-            return std::isfinite(point.x) &&
-                   std::isfinite(point.y) &&
-                   std::isfinite(point.z);
-        };
-        if (!weaponNode || currentGeneration == 0 ||
-            !activeWeaponBodyRootMatches(weaponNode) ||
-            !pointFinite(probeWorldPoint) ||
-            !std::isfinite(probeRadiusGame) || probeRadiusGame <= 0.0f) {
-            return false;
+        const auto currentGeneration = getCurrentWeaponGenerationKey();
+        if (!weaponNode || currentGeneration == 0 || !activeWeaponBodyRootMatches(weaponNode) ||
+            !weapon_interaction_query::finitePoint(probeWorldPoint) ||
+            !std::isfinite(probeRadiusGame) || probeRadiusGame <= 0.0f) return false;
+
+        if (batch.owner) {
+            if (batch.owner != this || batch.root != weaponNode || batch.generation != currentGeneration) return false;
+            performance_profiler::addCounter(performance_profiler::Counter::WeaponProbeBatchReuses);
+        } else {
+            performance_profiler::ScopedTimer prepareTimer(performance_profiler::Scope::WeaponProbePoseCapture);
+            batch.owner = this;
+            batch.root = weaponNode;
+            batch.generation = currentGeneration;
+            const RE::NiTransform rootWorld = weaponNode->world;
+            for (const auto& instance : activeWeaponBodies()) {
+                if (!instance.body.isValid() || !instance.geometry || !instance.indices) continue;
+                RE::NiTransform probeWorld = rootWorld;
+                const bool sourceCurrent = instance.sourceNode &&
+                    tryResolveDescendantWorldTransform(weaponNode, rootWorld, instance.sourceNode, probeWorld);
+                const bool useSourceFrame = sourceCurrent && !instance.geometry->mesh->sourceLocalTrianglesGame.empty();
+                if (!useSourceFrame) probeWorld = rootWorld;
+                const auto& triangles = useSourceFrame ? instance.geometry->mesh->sourceLocalTrianglesGame :
+                    instance.geometry->mesh->localTrianglesGame;
+                const auto& index = useSourceFrame ? instance.indices->sourceIndex : instance.indices->localIndex;
+                const auto& boundsMin = useSourceFrame ? instance.generatedSourceLocalMinGame : instance.generatedLocalMinGame;
+                const auto& boundsMax = useSourceFrame ? instance.generatedSourceLocalMaxGame : instance.generatedLocalMaxGame;
+                if (weapon_interaction_query::prepare(triangles, index, probeWorld, boundsMin, boundsMax,
+                        instance.semantic.priority, batch.parts[batch.count])) {
+                    batch.instances[batch.count++] = &instance;
+                }
+            }
+            performance_profiler::addCounter(performance_profiler::Counter::WeaponProbePoseBatches);
+            performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponProbePoseParts, batch.count);
         }
 
-        weapon_interaction_probe_math::ProbeCandidateRank bestRank{};
-        const WeaponBodyInstance* bestInstance = nullptr;
-        int boundsCandidateCount = 0;
-        int surfaceCandidateCount = 0;
-        const RE::NiAVObject* packageDriveRoot = weaponNode;
-
-        for (const auto& instance : activeWeaponBodies()) {
-            if (!instance.body.isValid() || !instance.geometry || !instance.indices) {
-                continue;
-            }
-
-            RE::NiTransform probeWorld = packageDriveRoot->world;
-            const bool sourceNodeCurrent = instance.sourceNode &&
-                tryResolveDescendantWorldTransform(
-                    packageDriveRoot,
-                    packageDriveRoot->world,
-                    instance.sourceNode,
-                    probeWorld);
-            if (!sourceNodeCurrent) {
-                probeWorld = packageDriveRoot->world;
-            }
-            const bool useSourceFrame =
-                sourceNodeCurrent &&
-                !instance.geometry->mesh->sourceLocalTrianglesGame.empty();
-            if (!useSourceFrame) {
-                probeWorld = packageDriveRoot->world;
-            }
-            const auto& localTriangles =
-                useSourceFrame ?
-                instance.geometry->mesh->sourceLocalTrianglesGame :
-                instance.geometry->mesh->localTrianglesGame;
-            const RE::NiPoint3& boundsMin =
-                useSourceFrame ?
-                instance.generatedSourceLocalMinGame :
-                instance.generatedLocalMinGame;
-            const RE::NiPoint3& boundsMax =
-                useSourceFrame ?
-                instance.generatedSourceLocalMaxGame :
-                instance.generatedLocalMaxGame;
-            if (localTriangles.empty() ||
-                !weaponTransformFinite(probeWorld) ||
-                std::abs(probeWorld.scale) <= 0.000001f ||
-                !pointFinite(boundsMin) || !pointFinite(boundsMax) ||
-                boundsMin.x > boundsMax.x ||
-                boundsMin.y > boundsMax.y ||
-                boundsMin.z > boundsMax.z) {
-                continue;
-            }
-
-            const float absoluteScale = std::abs(probeWorld.scale);
-            const float localRadius = probeRadiusGame / absoluteScale;
-            const RE::NiPoint3 probeLocal = weapon_collision_geometry_math::worldPointToLocal(
-                probeWorld.rotate,
-                probeWorld.translate,
-                probeWorld.scale,
-                probeWorldPoint);
-            if (!pointFinite(probeLocal)) {
-                continue;
-            }
-
-            const float boundsDistanceSquared = weapon_interaction_probe_math::pointAabbDistanceSquared(
-                probeLocal,
-                boundsMin,
-                boundsMax);
-            if (!std::isfinite(boundsDistanceSquared) ||
-                !weapon_interaction_probe_math::isWithinProbeRadiusSquared(
-                    boundsDistanceSquared,
-                    localRadius)) {
-                continue;
-            }
-
-            ++boundsCandidateCount;
-            const auto& index = useSourceFrame ? instance.indices->sourceIndex : instance.indices->localIndex;
-            const float minimumSurfaceDistanceSquaredLocal = index.nearestDistanceSquared(
-                localTriangles, probeLocal, localRadius * localRadius,
-                [](const RE::NiPoint3& point, const TriangleData& triangle) {
-                    float distanceSquared = (std::numeric_limits<float>::infinity)();
-                    (void)closestPointOnTriangleToPoint(point, triangle, distanceSquared);
-                    return distanceSquared;
-                });
-            if (!std::isfinite(minimumSurfaceDistanceSquaredLocal) ||
-                !weapon_interaction_probe_math::isWithinProbeRadiusSquared(
-                    minimumSurfaceDistanceSquaredLocal,
-                    localRadius)) {
-                continue;
-            }
-
-            ++surfaceCandidateCount;
-            const float scaleSquared = absoluteScale * absoluteScale;
-            const weapon_interaction_probe_math::ProbeCandidateRank rank{
-                .distanceSquaredGame =
-                    minimumSurfaceDistanceSquaredLocal * scaleSquared,
-                .aabbDiagonalSquaredGame =
-                    weapon_interaction_probe_math::aabbDiagonalSquared(
-                        boundsMin,
-                        boundsMax) * scaleSquared,
-                .semanticPriority = instance.semantic.priority,
-            };
-            if (bestInstance && !weapon_interaction_probe_math::isBetterProbeCandidate(rank, bestRank)) {
-                continue;
-            }
-
-            bestRank = rank;
-            bestInstance = &instance;
-        }
-
-        if (!bestInstance || getCurrentWeaponGenerationKey() != currentGeneration) {
-            return false;
-        }
+        const auto selection = weapon_interaction_query::find(
+            {batch.parts.data(), batch.count}, probeWorldPoint, probeRadiusGame);
+        performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponProbeBoundsCandidates, selection.boundsCandidates);
+        performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponProbeSurfaceCandidates, selection.surfaceCandidates);
+        if (!selection.valid() || getCurrentWeaponGenerationKey() != currentGeneration) return false;
+        const auto* bestInstance = batch.instances[selection.part];
+        if (!bestInstance->body.isValid()) return false;
+        const auto& bestRank = selection.rank;
+        const auto boundsCandidateCount = selection.boundsCandidates;
+        const auto surfaceCandidateCount = selection.surfaceCandidates;
+        const auto* packageDriveRoot = weaponNode;
 
         ROCK_LOG_SAMPLE_DEBUG(Weapon,
             g_rockConfig.rockLogSampleMilliseconds,

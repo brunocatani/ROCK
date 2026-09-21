@@ -233,6 +233,23 @@ int main()
                    SelectionReason::AuthoredActivationRejected;
     }());
 
+    // A missing/pending capture is not permission to scan the mesh. Explicit
+    // no-support-pose publications and API targets are the dynamic exceptions.
+    static_assert(!requiresSurfaceQueries({ .modeEnabled = true }));
+    static_assert(requiresSurfaceQueries({ .modeEnabled = false }));
+    static_assert(requiresSurfaceQueries({ .modeEnabled = true, .providerTargetsActive = true }));
+    static_assert(requiresSurfaceQueries({ .modeEnabled = true, .supportPoseAbsenceCurrent = true }));
+    static_assert([] {
+        SurfaceQueryInput input{ .modeEnabled = true, .providerTargetsActive = true };
+        if (!requiresSurfaceQueries(input)) return false;
+        input.providerTargetsActive = false;
+        if (requiresSurfaceQueries(input)) return false;
+        input.supportPoseAbsenceCurrent = true;
+        if (!requiresSurfaceQueries(input)) return false;
+        input.supportPoseAbsenceCurrent = false; // New generation / authored publication.
+        return !requiresSurfaceQueries(input);
+    }());
+
     static_assert(captured(Selection::ProviderDynamic));
     static_assert(captured(Selection::DynamicHandoff));
     static_assert(captured(Selection::Authored));

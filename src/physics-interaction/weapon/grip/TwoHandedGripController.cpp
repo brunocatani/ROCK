@@ -724,7 +724,8 @@ namespace rock
                             currentWeaponGenerationKey,
                             currentEquippedWeaponOwnershipKey,
                             leftRuntimeState,
-                            rightRuntimeState);
+                            rightRuntimeState,
+                            decision);
                     }
                 } else {
                     // Visual-only support cannot carry, so the firing grip is
@@ -762,7 +763,8 @@ namespace rock
                     currentWeaponGenerationKey,
                     currentEquippedWeaponOwnershipKey,
                     leftRuntimeState,
-                    rightRuntimeState);
+                    rightRuntimeState,
+                    decision);
             }
             break;
 

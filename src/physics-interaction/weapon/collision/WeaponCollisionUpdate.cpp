@@ -664,6 +664,7 @@ namespace rock
         const RE::NiAVObject* const* drivenSourceNodes,
         std::size_t drivenSourceNodeCount)
     {
+        performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponSourcePoseUpdate);
         if (!world || !hasWeaponBody() || getCurrentWeaponGenerationKey() == 0) {
             return;
         }
@@ -718,18 +719,21 @@ namespace rock
 
     void WeaponCollision::flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
+        performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponKinematicDrive);
         const auto publishedGeneration = getCurrentWeaponGenerationKey();
         if (!world || publishedGeneration == 0) {
             return;
         }
 
         auto& bank = activeWeaponBodies();
+        std::size_t driveBodies = 0;
 
         for (std::size_t i = 0; i < bank.size(); ++i) {
             auto& instance = bank[i];
             if (!instance.body.isValid()) {
                 continue;
             }
+            ++driveBodies;
             const auto bodyIndex = static_cast<std::uint32_t>(i);
             handleGeneratedBodyDriveResult(
                 driveGeneratedKeyframedBody(world,
@@ -743,6 +747,7 @@ namespace rock
                 "weapon-collision",
                 bodyIndex);
         }
+        performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponColliderDriveBodies, driveBodies);
     }
 
     void WeaponCollision::handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex)

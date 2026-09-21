@@ -334,6 +334,28 @@ namespace rock::authored_support_grab_policy
         };
     }
 
+    struct SurfaceQueryInput
+    {
+        bool modeEnabled{ false };
+        bool providerTargetsActive{ false };
+        bool supportPoseAbsenceCurrent{ false };
+    };
+
+    [[nodiscard]] constexpr bool requiresSurfaceQueries(const SurfaceQueryInput& input) noexcept
+    {
+        // Authored seats and firing-grip handoffs supply their own activation
+        // zones. Only a possible mesh-based acquisition needs a part search.
+        const auto selection = select({
+            .modeEnabled = input.modeEnabled,
+            .providerPartAuthorityActive = input.providerTargetsActive,
+            .capability = input.supportPoseAbsenceCurrent ? Capability::Unavailable : Capability::Pending,
+            .supportPoseAbsent = input.supportPoseAbsenceCurrent,
+        }).selection;
+        return selection == Selection::ProviderDynamic ||
+               selection == Selection::DynamicFallback ||
+               selection == Selection::DynamicUnrestricted;
+    }
+
     [[nodiscard]] constexpr bool captured(const Selection selection) noexcept
     {
         return selection == Selection::ProviderDynamic ||

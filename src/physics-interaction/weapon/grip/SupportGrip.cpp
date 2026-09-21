@@ -2728,6 +2728,24 @@ namespace rock
             current && candidate.poseAbsent, separation, _handlingSettings.firingGripProximitySupportRadiusGameUnits);
     }
 
+    bool TwoHandedGrip::requiresWeaponContactQueries(
+        RE::NiNode* weaponNode,
+        const std::uint64_t authoredGenerationKey,
+        const bool authoredOnlyModeEnabled,
+        const bool providerTargetsActive) const noexcept
+    {
+        const auto& candidate = _support.authoredCandidate;
+        const bool absenceCurrent = weaponNode && authoredGenerationKey != 0 &&
+            candidate.weaponNode == weaponNode &&
+            candidate.weaponGenerationKey == authoredGenerationKey &&
+            candidate.captureSequence != 0 && candidate.poseAbsent;
+        return authored_support_grab_policy::requiresSurfaceQueries({
+            .modeEnabled = authoredOnlyModeEnabled,
+            .providerTargetsActive = providerTargetsActive,
+            .supportPoseAbsenceCurrent = absenceCurrent,
+        });
+    }
+
     void TwoHandedGrip::clearAuthoredSupportGripCandidate()
     {
         _support.authoredCandidate = {};

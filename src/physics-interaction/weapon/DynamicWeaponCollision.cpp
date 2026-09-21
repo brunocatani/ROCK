@@ -923,6 +923,7 @@ namespace rock
     void DynamicWeaponCollisionRuntime::finalizeCompoundPose(const WeaponCollision& weaponCollision,
         RE::NiNode* weaponNode, const PhysicsFrameContext& frame, std::uint64_t generation)
     {
+        performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponCompoundPoseUpdate);
         const bool hasIntent = std::exchange(_frameHasIntent, false);
         if (!_created || !hasIntent || _frameIndex != frame.timing.sequence || _createdWorld != frame.hknpWorld ||
             _frameWeaponNode != weaponNode || _createdGenerationKey != generation) return;
@@ -1345,6 +1346,7 @@ namespace rock
         RE::hknpWorld* world,
         const havok_physics_timing::PhysicsTimingSample& timing)
     {
+        performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponDynamicDrive);
         if (!_enabledAtomic.load(std::memory_order_acquire) || !world || !_created || _createdWorld != world ||
             !_body.isValid() || !_authorityProxy.isValid() || !_authorityConstraint.isValid()) {
             return;

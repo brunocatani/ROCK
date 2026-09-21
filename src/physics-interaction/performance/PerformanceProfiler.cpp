@@ -252,6 +252,11 @@ namespace rock::performance_profiler
             case Scope::RagdollComponentRead: return "ragdollComponentRead";
             case Scope::RagdollBodyRefresh: return "ragdollBodyRefresh";
             case Scope::GrabContactPatchIndexBuild: return "grabContactPatchIndexBuild";
+            case Scope::WeaponProbePoseCapture: return "weaponProbePoseCapture";
+            case Scope::WeaponSourcePoseUpdate: return "weaponSourcePoseUpdate";
+            case Scope::WeaponCompoundPoseUpdate: return "weaponCompoundPoseUpdate";
+            case Scope::WeaponKinematicDrive: return "weaponKinematicDrive";
+            case Scope::WeaponDynamicDrive: return "weaponDynamicDrive";
             case Scope::Count:
                 break;
             }
@@ -309,6 +314,10 @@ namespace rock::performance_profiler
             case Counter::GrabAcquisitionSucceeded: return "grabAcquisitionSucceeded";
             case Counter::GrabSingleBodyVisualOwnerAccepted: return "grabSingleBodyVisualOwnerAccepted";
             case Counter::GrabMeshOwnerMismatchRejected: return "grabMeshOwnerMismatchRejected";
+            case Counter::WeaponProbeFramesEnabled: return "weaponProbeFramesEnabled";
+            case Counter::WeaponProbeFramesSkipped: return "weaponProbeFramesSkipped";
+            case Counter::WeaponProbePoseBatches: return "weaponProbePoseBatches";
+            case Counter::WeaponProbeBatchReuses: return "weaponProbeBatchReuses";
             case Counter::NativeWeaponSelfPairsRejected: return "nativeWeaponSelfPairsRejected";
             case Counter::NativeWeaponOwnerUnresolved: return "nativeWeaponOwnerUnresolved";
             case Counter::NativeWeaponOwnerResolvedOther: return "nativeWeaponOwnerResolvedOther";
@@ -390,6 +399,10 @@ namespace rock::performance_profiler
             case ValueMetric::MeshSkinnedVerticesEvaluated: return "meshSkinnedVerticesEvaluated";
             case ValueMetric::MeshSkinnedBonesSource: return "meshSkinnedBonesSource";
             case ValueMetric::MeshSkinnedBonesEvaluated: return "meshSkinnedBonesEvaluated";
+            case ValueMetric::WeaponProbePoseParts: return "weaponProbePoseParts";
+            case ValueMetric::WeaponProbeBoundsCandidates: return "weaponProbeBoundsCandidates";
+            case ValueMetric::WeaponProbeSurfaceCandidates: return "weaponProbeSurfaceCandidates";
+            case ValueMetric::WeaponColliderDriveBodies: return "weaponColliderDriveBodies";
             case ValueMetric::Count:
                 break;
             }
@@ -745,7 +758,7 @@ namespace rock::performance_profiler
                             snapshot.droppedSnapshotsBeforeThis);
                     }
 
-                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1 grabMeshQueries=1 contactPairs=1 nativeWeaponSelfFilter=1 grabSingleBodyVisualOwner=1 grabRagdollWork=1", snapshot.frames, GetCurrentProcessId());
+                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1 grabMeshQueries=1 contactPairs=1 nativeWeaponSelfFilter=1 grabSingleBodyVisualOwner=1 grabRagdollWork=1 equippedProbeBatch=1 equippedProbeGate=1", snapshot.frames, GetCurrentProcessId());
                     for (const auto& item : snapshot.scopes) {
                         if (!item.hasData()) {
                             continue;

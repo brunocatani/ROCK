@@ -438,7 +438,7 @@ namespace rock
                 }
             };
 
-            auto consumeWeaponContactForHand = [&](bool isLeft, const HandFrameInput& handInput, bool probeAllowed, WeaponInteractionContact& outContact) {
+            auto consumeWeaponContactForHand = [&](bool isLeft, const HandFrameInput& handInput, bool probeAllowed, WeaponInteractionContact& outContact, WeaponCollision::InteractionQueryBatch& interactionQueries) {
                 auto& bodyIdAtomic = isLeft ? _weaponContact.left.bodyId : _weaponContact.right.bodyId;
                 auto& missedFrames = isLeft ? _weaponContact.left.missedFrames : _weaponContact.right.missedFrames;
                 auto& acquisitionState = _equipped.weaponInteractionAcquisitionStates[isLeft ? 0u : 1u];
@@ -458,7 +458,7 @@ namespace rock
                         weaponNode,
                         legacyPalmPivotWorld,
                         g_rockConfig.rockWeaponInteractionTouchRadius,
-                        outContact);
+                        outContact, interactionQueries);
                 if (touchObserved) {
                     publishWeaponInteractionContact(isLeft, outContact);
                 } else if (weaponNode && probeAllowed) {
@@ -466,7 +466,7 @@ namespace rock
                             weaponNode,
                             handInput.grabAnchorWorld,
                             g_rockConfig.rockWeaponInteractionProbeRadius,
-                            outContact)) {
+                            outContact, interactionQueries)) {
                         publishWeaponInteractionContact(isLeft, outContact);
                         if (g_rockConfig.rockDebugVerboseLogging && ++_diagnostics.weaponInteractionProbeLogCounter >= 90) {
                             _diagnostics.weaponInteractionProbeLogCounter = 0;
@@ -598,14 +598,28 @@ namespace rock
              */
             (void)_twoHandedGrip.publishLeftFiringFeedForwardWeaponPose(weaponNode);
 
-            leftWeaponContactSource = consumeWeaponContactForHand(true, frame.left, weaponNode != nullptr, leftWeaponContact);
-            // The free firing hand needs weapon-part probes for part grips and
-            // for the reattach squeeze's proximity check, exactly like the
-            // offhand; while the LEFT hand fires, the right hand is the
-            // support/free hand and probes unconditionally.
-            const bool rightWeaponContactProbeAllowed = weaponNode != nullptr &&
-                (_twoHandedGrip.isPartCarryActive() || firingHandIsLeft);
-            (void)consumeWeaponContactForHand(false, frame.right, rightWeaponContactProbeAllowed, rightWeaponContact);
+            const bool weaponContactQueriesRequired = weaponNode && currentWeaponGenerationKey != 0 &&
+                _twoHandedGrip.requiresWeaponContactQueries(
+                    weaponNode, currentAuthoredGripGenerationKey,
+                    _equipped.handlingSettings.authoredOnlySupportGrabsEnabled,
+                    provider::hasWeaponPartTargetsForGeneration(currentWeaponGenerationKey));
+            if (weaponContactQueriesRequired) {
+                performance_profiler::addCounter(performance_profiler::Counter::WeaponProbeFramesEnabled);
+                WeaponCollision::InteractionQueryBatch interactionQueries;
+                leftWeaponContactSource = consumeWeaponContactForHand(
+                    true, frame.left, true, leftWeaponContact, interactionQueries);
+                const bool rightWeaponContactProbeAllowed =
+                    _twoHandedGrip.isPartCarryActive() || firingHandIsLeft;
+                (void)consumeWeaponContactForHand(false, frame.right,
+                    rightWeaponContactProbeAllowed, rightWeaponContact, interactionQueries);
+            } else {
+                performance_profiler::addCounter(performance_profiler::Counter::WeaponProbeFramesSkipped);
+                // Drain contact notifications and reset acquisition provenance
+                // immediately when leases end or the weapon returns to authored
+                // seats. Authored activation and firing-grip zones run below.
+                clearWeaponContactForHand(true);
+                clearWeaponContactForHand(false);
+            }
 
             auto leftPhysicalGripState =
                 peekGrabButtonState(true, input_remap_policy::kGrabButtonId);

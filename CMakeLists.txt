@@ -1027,6 +1027,11 @@ if(BUILD_ROCK_TESTS)
   list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKGrabMeshQueryTests)
   add_rock_test(ROCKGrabMeshQueryTests)
 
+  add_executable(ROCKWeaponInteractionQueryTests "${ROOT_DIR}/tests/WeaponInteractionQueryTests.cpp")
+  target_compile_features(ROCKWeaponInteractionQueryTests PRIVATE cxx_std_23)
+  list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKWeaponInteractionQueryTests)
+  add_rock_test(ROCKWeaponInteractionQueryTests)
+
   add_executable(ROCKPerformanceProfilerTests
     "${ROOT_DIR}/tests/PerformanceProfilerTests.cpp"
     "${SOURCE_DIR}/physics-interaction/performance/PerformanceProfiler.cpp"

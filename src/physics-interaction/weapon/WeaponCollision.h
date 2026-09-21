@@ -28,6 +28,7 @@
 #include "physics-interaction/weapon/WeaponSemantics.h"
 #include "physics-interaction/weapon/WeaponTriangleIndex.h"
 #include "physics-interaction/weapon/WeaponScenePath.h"
+#include "physics-interaction/weapon/WeaponInteractionQuery.h"
 
 #include "RE/Havok/hknpBody.h"
 #include "RE/Havok/hknpBodyCinfo.h"
@@ -63,6 +64,8 @@ namespace rock
 
     class WeaponCollision
     {
+        struct WeaponBodyInstance;
+
     public:
         WeaponCollision();
 
@@ -315,11 +318,37 @@ namespace rock
 
         std::uint64_t getCurrentWeaponGenerationKey() const { return _published.setKey.load(std::memory_order_acquire); }
 
+        // Main-thread scratch for consecutive queries with no intervening
+        // weapon update. Capture is lazy, after the caller publishes its pose.
+        // Never retain this batch across frames, callbacks, or model changes.
+        class InteractionQueryBatch
+        {
+            friend class WeaponCollision;
+        public:
+            InteractionQueryBatch() = default;
+            InteractionQueryBatch(const InteractionQueryBatch&) = delete;
+            InteractionQueryBatch& operator=(const InteractionQueryBatch&) = delete;
+        private:
+            const WeaponCollision* owner = nullptr;
+            const RE::NiAVObject* root = nullptr;
+            std::uint64_t generation = 0;
+            std::size_t count = 0;
+            std::array<weapon_interaction_query::Part, MAX_WEAPON_COLLISION_BODIES> parts{};
+            std::array<const WeaponBodyInstance*, MAX_WEAPON_COLLISION_BODIES> instances{};
+        };
+
         bool tryFindInteractionContactNearPoint(
             const RE::NiAVObject* weaponNode,
             const RE::NiPoint3& probeWorldPoint,
             float probeRadiusGame,
             WeaponInteractionContact& outContact) const;
+
+        bool tryFindInteractionContactNearPoint(
+            const RE::NiAVObject* weaponNode,
+            const RE::NiPoint3& probeWorldPoint,
+            float probeRadiusGame,
+            WeaponInteractionContact& outContact,
+            InteractionQueryBatch& batch) const;
 
         bool tryFindCurrentWeaponSurfaceNearPoint(
             const RE::NiAVObject* currentWeaponRoot,

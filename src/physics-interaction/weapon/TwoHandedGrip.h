@@ -637,6 +637,13 @@ namespace rock
          * Weapon. capturePartGrip latches it only during acquisition; it never
          * changes an already-active grip.
          */
+        // Reads this frame's identity-bound authored publication; never treats
+        // a pending or failed authored capture as dynamic-grab permission.
+        [[nodiscard]] bool requiresWeaponContactQueries(
+            RE::NiNode* weaponNode,
+            std::uint64_t authoredGenerationKey,
+            bool authoredOnlyModeEnabled,
+            bool providerTargetsActive) const noexcept;
         void clearAuthoredSupportGripCandidate();
         bool setAuthoredSupportGripAbsent(RE::NiNode* weaponNode, std::uint64_t generation, std::uint64_t capture);
         [[nodiscard]] authored_support_grab_policy::
@@ -1443,7 +1450,8 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey,
             const WeaponInteractionRuntimeState& leftRuntimeState,
-            const WeaponInteractionRuntimeState& rightRuntimeState);
+            const WeaponInteractionRuntimeState& rightRuntimeState,
+            const WeaponInteractionDecision& supportAcquisitionDecision);
 
         bool solvePartCarryWeaponAuthority(RE::NiNode* weaponNode, float dt);
 
