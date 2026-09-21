@@ -76,8 +76,46 @@ int main()
     reset();
     assert(memory::guardedCopyFromMemory(bodyIds, batchIds.data(), sizeof(batchIds)));
     assert(batchIds == individualIds && queries[0] == 1 && rejected == 0);
+    // Neighboring ragdoll fields use one guarded snapshot instead of three
+    // page queries. Compare all decoded values with independent field reads.
+    constexpr std::size_t recordCount = 32, recordStride = 0xA0;
+    struct Fields { std::uint32_t flags{}, motion{}; std::uint64_t owner{}; };
+    std::array<Fields, recordCount> expectedFields{}, batchFields{};
+    for (std::size_t i = 0; i < recordCount; ++i) {
+        const std::uint32_t flags = static_cast<std::uint32_t>(i * 17), motion = static_cast<std::uint32_t>(i + 91);
+        const std::uint64_t owner = 0x12340000ull + i * 0x1000;
+        std::memcpy(pages + i * recordStride + 0x40, &flags, sizeof(flags));
+        std::memcpy(pages + i * recordStride + 0x68, &motion, sizeof(motion));
+        std::memcpy(pages + i * recordStride + 0x88, &owner, sizeof(owner));
+    }
+    reset();
+    for (std::size_t i = 0; i < recordCount; ++i) {
+        assert(memory::tryReadField(pages + i * recordStride, 0x40, expectedFields[i].flags));
+        assert(memory::tryReadField(pages + i * recordStride, 0x68, expectedFields[i].motion));
+        assert(memory::tryReadField(pages + i * recordStride, 0x88, expectedFields[i].owner));
+    }
+    assert(queries[0] == recordCount * 3);
+    reset();
+    for (std::size_t i = 0; i < recordCount; ++i) {
+        std::array<std::byte, 0x50> fields{};
+        assert(memory::guardedCopyFromMemory(pages + i * recordStride + 0x40, fields.data(), fields.size()));
+        std::memcpy(&batchFields[i].flags, fields.data(), sizeof(batchFields[i].flags));
+        std::memcpy(&batchFields[i].motion, fields.data() + 0x28, sizeof(batchFields[i].motion));
+        std::memcpy(&batchFields[i].owner, fields.data() + 0x48, sizeof(batchFields[i].owner));
+        assert(batchFields[i].flags == expectedFields[i].flags && batchFields[i].motion == expectedFields[i].motion &&
+            batchFields[i].owner == expectedFields[i].owner);
+    }
+    assert(queries[0] == recordCount && rejected == 0);
+    const std::uint32_t changedMotion = 0x7FFFFFFF;
+    std::memcpy(pages + 0x68, &changedMotion, sizeof(changedMotion));
+    std::array<std::byte, 0x50> freshFields{};
+    assert(memory::guardedCopyFromMemory(pages + 0x40, freshFields.data(), freshFields.size()));
+    std::uint32_t freshMotion = 0;
+    std::memcpy(&freshMotion, freshFields.data() + 0x28, sizeof(freshMotion));
+    assert(freshMotion == changedMotion); // No stale data survives a later read.
+
     // Restore the fixture used by the remaining cross-page tests.
-    std::memset(pages, 0x5A, pageSize);
+    std::memset(pages, 0x5A, pageSize * 3);
     std::memcpy(pages, &value, sizeof(value));
 
     DWORD previous = 0;

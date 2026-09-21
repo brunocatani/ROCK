@@ -17,6 +17,7 @@
 #include <cstring>
 #include <functional>
 #include <limits>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
@@ -131,7 +132,7 @@ namespace rock
             std::size_t index;
         };
 
-        void build(const std::vector<GrabSurfaceTriangleData>& triangles)
+        void build(const std::vector<GrabSurfaceTriangleData>& triangles, std::size_t minimumIndexedTriangles = 2048)
         {
             performance_profiler::ScopedTimer timer(performance_profiler::Scope::GrabMeshQueryIndexBuild);
             _source = triangles.data();
@@ -139,7 +140,7 @@ namespace rock
             _nodes.clear();
             _nearest.clear();
             _cachedCount = 0;
-            if (_size > 2048) {
+            if (_size > minimumIndexedTriangles) {
                 _nodes.reserve((_size / kLeafSize + 1) * 4);
                 buildNode(triangles, 0, _size);
             }
@@ -372,7 +373,7 @@ namespace rock
             return;
         }
 
-        GrabSurfaceTriangleData surfaceTriangle{};
+        auto& surfaceTriangle = outSurfaceTriangles->emplace_back();
         surfaceTriangle.triangle = triangle;
         surfaceTriangle.sourceNode = sourceShape;
         surfaceTriangle.sourceShape = sourceShape;
@@ -382,7 +383,6 @@ namespace rock
             surfaceTriangle.skinInfluences = *skinInfluences;
             surfaceTriangle.hasSkinInfluences = hasAnySkinInfluence(*skinInfluences);
         }
-        outSurfaceTriangles->push_back(surfaceTriangle);
     }
 
     inline float halfToFloat(std::uint16_t h)
@@ -813,6 +813,50 @@ namespace rock
         return skinInst != nullptr;
     }
 
+    // Select work from visible, valid triangles before skinning. Every admitted
+    // vertex still uses the same full blend; hidden or unreferenced data cannot
+    // contribute to the returned mesh.
+    inline std::vector<std::uint8_t> referencedMeshVertices(
+        std::span<const std::uint16_t> indices, std::size_t vertexCount,
+        std::span<const std::uint8_t> visibleTriangles)
+    {
+        std::vector<std::uint8_t> referenced(vertexCount, 0);
+        for (std::size_t i = 0; i + 2 < indices.size(); i += 3) {
+            if (!visibleTriangles.empty() &&
+                (i / 3 >= visibleTriangles.size() || !visibleTriangles[i / 3])) continue;
+            const auto a = indices[i], b = indices[i + 1], c = indices[i + 2];
+            if (a >= vertexCount || b >= vertexCount || c >= vertexCount) continue;
+            referenced[a] = referenced[b] = referenced[c] = 1;
+        }
+        return referenced;
+    }
+
+    inline std::array<float, 4> skinVertexWeights(const std::uint8_t* vertex, std::uint32_t skinOffset)
+    {
+        const auto* weights = reinterpret_cast<const std::uint16_t*>(vertex + skinOffset);
+        const float w0 = halfToFloat(weights[0]), w1 = halfToFloat(weights[1]), w2 = halfToFloat(weights[2]);
+        return { w0, w1, w2, 1.0f - w0 - w1 - w2 };
+    }
+
+    inline std::vector<std::uint8_t> referencedSkinBones(
+        const std::uint8_t* vertices, std::uint32_t stride, std::uint32_t skinOffset,
+        std::span<const std::uint8_t> referencedVertices, std::size_t boneCount)
+    {
+        std::vector<std::uint8_t> referenced(boneCount, 0);
+        for (std::size_t vi = 0; vi < referencedVertices.size(); ++vi) {
+            if (!referencedVertices[vi]) continue;
+            const auto* vertex = vertices + vi * stride;
+            const auto weights = skinVertexWeights(vertex, skinOffset);
+            const auto* indices = vertex + skinOffset + 8;
+            for (std::size_t k = 0; k < weights.size(); ++k) {
+                if (std::isfinite(weights[k]) && weights[k] > 0.0f && indices[k] < boneCount) {
+                    referenced[indices[k]] = 1;
+                }
+            }
+        }
+        return referenced;
+    }
+
     inline int extractTrianglesFromSkinnedTriShape(
         RE::BSTriShape* triShape,
         std::vector<TriangleData>& outTriangles,
@@ -958,6 +1002,19 @@ namespace rock
             return 0;
         }
 
+        std::vector<std::uint8_t> visibleTriangles;
+        if (!readVisibleTriangles(triShape, numTris, visibleTriangles)) return 0;
+        const auto referencedVertices = referencedMeshVertices(
+            { tris, static_cast<std::size_t>(numTris) * 3 }, numVerts, visibleTriangles);
+        const auto referencedBones = referencedSkinBones(verts, vtxStride, skinOffset, referencedVertices, boneCount);
+        const auto evaluatedVertices = std::count(referencedVertices.begin(), referencedVertices.end(), 1);
+        performance_profiler::observeValue(performance_profiler::ValueMetric::MeshSkinnedVerticesSource, numVerts);
+        performance_profiler::observeValue(performance_profiler::ValueMetric::MeshSkinnedVerticesEvaluated, evaluatedVertices);
+        performance_profiler::observeValue(performance_profiler::ValueMetric::MeshSkinnedBonesSource, boneCount);
+        performance_profiler::observeValue(performance_profiler::ValueMetric::MeshSkinnedBonesEvaluated,
+            std::count(referencedBones.begin(), referencedBones.end(), 1));
+        if (evaluatedVertices == 0) return 0;
+
         struct BoneCombined
         {
             skinned_surface_math::Affine matrix{};
@@ -968,6 +1025,7 @@ namespace rock
         std::uint32_t invalidBoneNodePointers = 0;
         std::uint32_t invalidBoneTransforms = 0;
         for (std::uint32_t b = 0; b < boneCount; ++b) {
+            if (!referencedBones[b]) continue;
             const RE::NiTransform* worldTransform = nullptr;
             skinned_surface_math::Transform boneWorld{}, skinToBone{};
             std::array<float, 3> extraScale{};
@@ -1004,17 +1062,12 @@ namespace rock
         std::uint32_t invalidSkinnedVertices = 0;
         std::uint32_t positionOnlySkinnedVertices = 0;
         for (std::uint16_t vi = 0; vi < numVerts; vi++) {
+            if (!referencedVertices[vi]) continue;
             const std::uint8_t* vtx = verts + vi * vtxStride;
 
             const RE::NiPoint3 bindPos = dynamicSkinned ?
                 readDynamicVertexPosition(dynamicVerts + vi * dynamicStride) :
                 readVertexPosition(vtx, posOffset, fullPrecision);
-
-            const std::uint16_t* weightPtr = reinterpret_cast<const std::uint16_t*>(vtx + skinOffset);
-            float w0 = halfToFloat(weightPtr[0]);
-            float w1 = halfToFloat(weightPtr[1]);
-            float w2 = halfToFloat(weightPtr[2]);
-            float w3 = 1.0f - w0 - w1 - w2;
 
             const std::uint8_t* idxPtr = vtx + skinOffset + 8;
             std::uint8_t bi0 = idxPtr[0];
@@ -1022,7 +1075,7 @@ namespace rock
             std::uint8_t bi2 = idxPtr[2];
             std::uint8_t bi3 = idxPtr[3];
 
-            std::array<float,4> weights{ w0, w1, w2, w3 };
+            const auto weights = skinVertexWeights(vtx, skinOffset);
             std::array<const skinned_surface_math::Affine*,4> weightedMatrices{};
             std::uint8_t indices[4] = { bi0, bi1, bi2, bi3 };
 
@@ -1068,8 +1121,6 @@ namespace rock
             worldVertexValid[vi] = 1;
         }
 
-        std::vector<std::uint8_t> visibleTriangles;
-        if (!readVisibleTriangles(triShape, numTris, visibleTriangles)) return 0;
         int added = 0;
         std::uint32_t skippedInvalidVertexTriangles = 0;
         for (std::uint32_t i = 0; i < numTris; i++) {

@@ -64,10 +64,10 @@ namespace
         for (std::size_t i = 0; i < repeated.size(); ++i) assert(repeated[i].index == cached[i].index);
     }
 
-    void compareQueries(std::vector<GrabSurfaceTriangleData>& mesh, std::mt19937& random, float translation)
+    void compareQueries(std::vector<GrabSurfaceTriangleData>& mesh, std::mt19937& random, float translation, std::size_t threshold = 2048)
     {
         GrabSurfaceQueryIndex index;
-        index.build(mesh);
+        index.build(mesh, threshold);
         std::uniform_real_distribution<float> x(-2, 90), y(-2, 42), z(-3, 3);
         for (int query = 0; query < 80; ++query) {
             const auto point = query < 8 && !mesh.empty() ? mesh[query % mesh.size()].triangle.v0 :
@@ -88,10 +88,10 @@ namespace
         // including when allocation identity and triangle count do not change.
         if (mesh.size() > 3000) {
             std::reverse(mesh.begin(), mesh.end());
-            index.build(mesh);
+            index.build(mesh, threshold);
             compareNearest(mesh, index, {translation + 4, 5, 0}, 2048);
             mesh.erase(mesh.begin(), mesh.begin() + 23);
-            index.build(mesh);
+            index.build(mesh, threshold);
             compareNearest(mesh, index, {translation + 4, 5, 0}, 2048);
         }
     }
@@ -163,6 +163,88 @@ namespace
         compareNearest(mesh, index, {}, 2048);
     }
 
+    void visibleSkinWorkParity()
+    {
+        struct Vertex {
+            std::uint32_t unused{};
+            std::array<std::uint16_t, 3> weights{};
+            std::uint16_t padding{};
+            std::array<std::uint8_t, 4> bones{};
+        };
+        static_assert(sizeof(Vertex) == 16);
+        std::array<Vertex, 40> vertices{};
+        std::array<skinned_surface_math::Affine, 12> palette{};
+        skinned_surface_math::Transform bind{};
+        bind[0] = bind[5] = bind[10] = bind[15] = 1;
+        for (std::size_t b = 0; b < palette.size(); ++b) {
+            auto world = bind;
+            world[12] = static_cast<float>(b * 3);
+            assert(skinned_surface_math::worldFromSkin(world, bind, {}, palette[b]));
+        }
+        for (std::size_t i = 0; i < vertices.size(); ++i) {
+            vertices[i].weights = {0x3800, 0x3400, 0}; // 0.5, 0.25, 0; fourth weight = 0.25
+            vertices[i].bones = {static_cast<std::uint8_t>(i % 4), 4, 9, 5};
+        }
+        vertices[7].bones[0] = 255; // Invalid weighted data remains inadmissible.
+        vertices[8].weights[0] = 0x7C00; // Non-finite weights keep the existing blend decision.
+        std::vector<std::uint16_t> indices{0,1,2, 2,3,4, 4,5,6, 6,7,8, 8,9,10, 11,99,13};
+        for (const std::vector<std::uint8_t> visibility : {
+                std::vector<std::uint8_t>{}, {1,0,1,0,1,1}, {0,0,0,0,0,0}, {1,1,1,1,1,1}}) {
+            const auto usedVertices = referencedMeshVertices(indices, vertices.size(), visibility);
+            const auto usedBones = referencedSkinBones(reinterpret_cast<const std::uint8_t*>(vertices.data()),
+                sizeof(Vertex), 4, usedVertices, palette.size());
+            assert(!usedVertices[11] && !usedVertices[12] && !usedVertices[39]);
+            assert(!usedBones[9] && !usedBones[11]); // Zero-weight and unused bones require no palette reads.
+            std::array<RE::NiPoint3, 40> expected{}, actual{};
+            std::array<bool, 40> expectedValid{}, actualValid{};
+            for (std::size_t i = 0; i < vertices.size(); ++i) {
+                const auto& v = vertices[i];
+                const float w0 = halfToFloat(v.weights[0]), w1 = halfToFloat(v.weights[1]), w2 = halfToFloat(v.weights[2]);
+                const std::array<float,4> weights{w0,w1,w2,1.0f-w0-w1-w2};
+                assert(weights[1] == skinVertexWeights(reinterpret_cast<const std::uint8_t*>(&v),4)[1]);
+                std::array<const skinned_surface_math::Affine*,4> all{}, selected{};
+                for (std::size_t k=0;k<4;++k) {
+                    if (v.bones[k] < palette.size()) {
+                        all[k] = &palette[v.bones[k]];
+                        if (usedBones[v.bones[k]]) selected[k] = all[k];
+                    }
+                }
+                const RE::NiPoint3 p{static_cast<float>(i), 2, 3};
+                expectedValid[i] = skinned_surface_math::blendVertex(all, weights, p, RE::NiPoint3{}, expected[i]);
+                if (usedVertices[i]) actualValid[i] = skinned_surface_math::blendVertex(selected, weights, p, RE::NiPoint3{}, actual[i]);
+            }
+            for (std::size_t t=0;t<indices.size()/3;++t) {
+                if (!visibility.empty() && !visibility[t]) continue;
+                const auto a=indices[t*3], b=indices[t*3+1], c=indices[t*3+2];
+                if (a>=vertices.size() || b>=vertices.size() || c>=vertices.size()) continue;
+                for (const auto v : {a,b,c}) {
+                    assert(usedVertices[v]);
+                    assert(expectedValid[v] == actualValid[v]);
+                    if (expectedValid[v]) assert(same(expected[v],actual[v]));
+                }
+            }
+        }
+    }
+
+    void measurePatchQueries()
+    {
+        const auto mesh = makeMesh(2048);
+        const RE::NiPoint3 point{2,5,1}, normal{0,0,1};
+        const auto start = std::chrono::steady_clock::now();
+        int count=0;
+        for (int i=0;i<200;++i) { GrabSurfaceHit hit{}; count += findClosestGrabSurfaceHitToPoint(mesh,point,normal,2,65,hit); }
+        const auto linear = std::chrono::steady_clock::now();
+        GrabSurfaceQueryIndex index;
+        index.build(mesh,64);
+        for (int i=0;i<200;++i) { GrabSurfaceHit hit{}; count += findClosestGrabSurfaceHitToPoint(mesh,point,normal,2,65,hit,&index); }
+        const auto indexed = std::chrono::steady_clock::now();
+        assert(count==400);
+        assert(index.visit(mesh,point,[]{return 4.0f;},[](std::size_t){}) < mesh.size());
+        std::printf("2048-triangle patch: 200 normal-filtered queries linear %.3f ms / indexed including build %.3f ms\n",
+            std::chrono::duration<double,std::milli>(linear-start).count(),
+            std::chrono::duration<double,std::milli>(indexed-linear).count());
+    }
+
     void measureQueries()
     {
         auto mesh = makeMesh(55826);
@@ -222,6 +304,7 @@ int main()
     for (std::size_t count : {0u, 1u, 2048u, 2049u, 55826u}) {
         auto mesh = makeMesh(count);
         compareQueries(mesh, random, 0);
+        if (count <= 2049) compareQueries(mesh, random, 0, 64);
     }
     auto shuffled = makeMesh(6000, 120000);
     std::shuffle(shuffled.begin(), shuffled.end(), random);
@@ -229,6 +312,8 @@ int main()
     shuffled[37].triangle = shuffled[29].triangle;
     shuffled[45].triangle = {};
     compareQueries(shuffled, random, 120000);
+    shuffled.resize(2048);
+    compareQueries(shuffled, random, 120000, 64);
     auto irregular = makeMesh(6000);
     std::uniform_real_distribution<float> offset(-0.1f, 0.1f);
     for (auto& surface : irregular) {
@@ -239,5 +324,7 @@ int main()
     boundaryAndRebuildCases();
     extractionParity(false);
     extractionParity(true);
+    visibleSkinWorkParity();
+    measurePatchQueries();
     measureQueries();
 }

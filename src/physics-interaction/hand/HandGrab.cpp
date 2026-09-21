@@ -2316,6 +2316,12 @@ namespace rock
                 return result;
             }
 
+            GrabSurfaceQueryIndex queryIndex;
+            if (g_rockConfig.rockGrabContactPatchMeshSnapMaxDistanceGameUnits > 0.0f) {
+                performance_profiler::ScopedTimer indexTimer(performance_profiler::Scope::GrabContactPatchIndexBuild);
+                queryIndex.build(surfaceTriangles, 64);
+            }
+
             const auto probeGeometry = grab_contact_patch_math::computeContactPatchProbeGeometry(
                 g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits,
                 g_rockConfig.rockGrabContactPatchProbeRadiusGameUnits,
@@ -2393,7 +2399,7 @@ namespace rock
                                 normal,
                                 g_rockConfig.rockGrabContactPatchMeshSnapMaxDistanceGameUnits,
                                 g_rockConfig.rockGrabContactPatchMaxNormalAngleDegrees,
-                                recoveredMeshHit)) {
+                                recoveredMeshHit, &queryIndex)) {
                             const auto* recoveredOwnerRecord =
                                 recoveredMeshHit.sourceNode ? bodySet.findAcceptedRecordByOwnerNode(recoveredMeshHit.sourceNode) : nullptr;
                             meshRecoveredHit =
@@ -2499,7 +2505,7 @@ namespace rock
                         result.patch.normal,
                         g_rockConfig.rockGrabContactPatchMeshSnapMaxDistanceGameUnits,
                         g_rockConfig.rockGrabContactPatchMaxNormalAngleDegrees,
-                        snapHit)) {
+                        snapHit, &queryIndex)) {
                     bool ownerMatches = true;
                     if (snapHit.sourceNode) {
                         const auto* snapOwnerRecord = bodySet.findAcceptedRecordByOwnerNode(snapHit.sourceNode);
@@ -12195,6 +12201,7 @@ namespace rock
     bool Hand::refreshRagdollBodyScope(RE::hknpWorld* world, const GrabReleaseContext& releaseContext)
     {
         if (!grab_target::isRagdoll(_savedObjectState.targetKind)) return true;
+        performance_profiler::ScopedTimer timer(performance_profiler::Scope::RagdollBodyRefresh);
         const auto component = ragdoll::readComponent(world, _savedObjectState.bodyId.value);
         const auto* liveOwner = component.valid ? havok_runtime::getCollisionObjectFromBody(world, _savedObjectState.bodyId) : nullptr;
         bool sameNode = false;

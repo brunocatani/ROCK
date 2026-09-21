@@ -126,6 +126,9 @@ namespace rock::performance_profiler
         NativeImpactConsumer,
         NativeImpactPlayPair,
         NativeImpactManifoldTrace,
+        RagdollComponentRead,
+        RagdollBodyRefresh,
+        GrabContactPatchIndexBuild,
         Count
     };
 
@@ -211,6 +214,13 @@ namespace rock::performance_profiler
         SimulationPairsInput,
         SimulationPairsNative,
         SimulationPairsKept,
+        RagdollSystemBodies,
+        RagdollSystemConstraints,
+        RagdollConnectedBodies,
+        MeshSkinnedVerticesSource,
+        MeshSkinnedVerticesEvaluated,
+        MeshSkinnedBonesSource,
+        MeshSkinnedBonesEvaluated,
         Count
     };
 

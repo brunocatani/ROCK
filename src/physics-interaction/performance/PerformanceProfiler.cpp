@@ -249,6 +249,9 @@ namespace rock::performance_profiler
             case Scope::NativeImpactConsumer: return "nativeImpactConsumer";
             case Scope::NativeImpactPlayPair: return "nativeImpactPlayPair";
             case Scope::NativeImpactManifoldTrace: return "nativeImpactManifoldTrace";
+            case Scope::RagdollComponentRead: return "ragdollComponentRead";
+            case Scope::RagdollBodyRefresh: return "ragdollBodyRefresh";
+            case Scope::GrabContactPatchIndexBuild: return "grabContactPatchIndexBuild";
             case Scope::Count:
                 break;
             }
@@ -380,6 +383,13 @@ namespace rock::performance_profiler
             case ValueMetric::SimulationPairsInput: return "simulationPairsInput";
             case ValueMetric::SimulationPairsNative: return "simulationPairsNative";
             case ValueMetric::SimulationPairsKept: return "simulationPairsKept";
+            case ValueMetric::RagdollSystemBodies: return "ragdollSystemBodies";
+            case ValueMetric::RagdollSystemConstraints: return "ragdollSystemConstraints";
+            case ValueMetric::RagdollConnectedBodies: return "ragdollConnectedBodies";
+            case ValueMetric::MeshSkinnedVerticesSource: return "meshSkinnedVerticesSource";
+            case ValueMetric::MeshSkinnedVerticesEvaluated: return "meshSkinnedVerticesEvaluated";
+            case ValueMetric::MeshSkinnedBonesSource: return "meshSkinnedBonesSource";
+            case ValueMetric::MeshSkinnedBonesEvaluated: return "meshSkinnedBonesEvaluated";
             case ValueMetric::Count:
                 break;
             }
@@ -735,7 +745,7 @@ namespace rock::performance_profiler
                             snapshot.droppedSnapshotsBeforeThis);
                     }
 
-                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1 grabMeshQueries=1 contactPairs=1 nativeWeaponSelfFilter=1 grabSingleBodyVisualOwner=1", snapshot.frames, GetCurrentProcessId());
+                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1 grabMeshQueries=1 contactPairs=1 nativeWeaponSelfFilter=1 grabSingleBodyVisualOwner=1 grabRagdollWork=1", snapshot.frames, GetCurrentProcessId());
                     for (const auto& item : snapshot.scopes) {
                         if (!item.hasData()) {
                             continue;
