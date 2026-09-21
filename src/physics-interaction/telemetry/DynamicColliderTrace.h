@@ -4,6 +4,8 @@
 #include <utility>
 #include <spdlog/logger.h>
 
+namespace rock { struct PhysicsFrameContext; }
+
 namespace rock::dynamic_collider_trace
 {
     // Provisioned at skeleton-ready for grab-frame logging or skeleton overlays.
@@ -14,6 +16,8 @@ namespace rock::dynamic_collider_trace
     void shutdown() noexcept;
     void beginFrame(bool enabled, std::uint64_t frame) noexcept;
     void capturePresentedHands(std::uint64_t frame) noexcept;
+    // Game-thread, read-only census for missing NPC contacts across animations.
+    void captureNpcCollisionState(const PhysicsFrameContext& frame) noexcept;
     [[nodiscard]] bool enabled() noexcept;
     [[nodiscard]] bool motorOutputEnabled() noexcept;
     [[nodiscard]] bool presentationEnabled() noexcept;
