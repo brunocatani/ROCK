@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstddef>
+#include <limits>
 #include <string_view>
 
 namespace rock::weapon_authority_lifecycle_policy
@@ -278,24 +279,84 @@ namespace rock::native_scope_camera_follow_math
         return result;
     }
 
-    /*
-     * Capture the engine-specific NiCamera axis/scale calibration once in the
-     * equipped weapon frame, while replacing its controller-derived position
-     * with the resolved scope point. This value is the complete rigid scope
-     * frame: later hand-role and ScopeMenu changes may move the weapon, but
-     * must never recapture a different camera rotation.
-     */
+    // FRIK's neutral camera basis maps camera X/Y/Z to weapon Y/Z/X.
+    // Its vec2Vec steering establishes only forward. Resolve the remaining
+    // twist from weapon-local +Z, never from the controller at capture time.
+    template <class Rotation>
+    [[nodiscard]] inline bool tryBuildWeaponAlignedCameraRotation(
+        const Rotation& cameraWeaponLocal, Rotation& result)
+    {
+        const auto& row = cameraWeaponLocal.entry[0];
+        const double length = std::sqrt(static_cast<double>(row[0]) * row[0] +
+            static_cast<double>(row[1]) * row[1] + static_cast<double>(row[2]) * row[2]);
+        if (!std::isfinite(length) || length <= 0.000001) return false;
+        const double x = row[0] / length, y = row[1] / length, z = row[2] / length;
+        // forward cross weapon-up. A forward parallel to weapon-up cannot
+        // define a roll; reject it rather than capture an arbitrary frame.
+        const double rightLength = std::sqrt(x * x + y * y);
+        if (rightLength <= 0.000001) return false;
+        const double rightX = y / rightLength, rightY = -x / rightLength;
+        result = {};
+        transform_math::detail::setMatrixEntry(result, 0, 0, x);
+        transform_math::detail::setMatrixEntry(result, 0, 1, y);
+        transform_math::detail::setMatrixEntry(result, 0, 2, z);
+        transform_math::detail::setMatrixEntry(result, 1, 0, rightY * z);
+        transform_math::detail::setMatrixEntry(result, 1, 1, -rightX * z);
+        transform_math::detail::setMatrixEntry(result, 1, 2, rightX * y - rightY * x);
+        transform_math::detail::setMatrixEntry(result, 2, 0, rightX);
+        transform_math::detail::setMatrixEntry(result, 2, 1, rightY);
+        return true;
+    }
+
+    // Signed twist around optical forward; NaN means the frame is unusable.
+    // Used by capture and final-presentation diagnostics, not by the solve.
+    template <class Rotation>
+    [[nodiscard]] inline float weaponLocalCameraRollDegrees(const Rotation& cameraWeaponLocal)
+    {
+        Rotation aligned{};
+        if (!tryBuildWeaponAlignedCameraRotation(cameraWeaponLocal, aligned)) {
+            return std::numeric_limits<float>::quiet_NaN();
+        }
+        double up = 0.0, right = 0.0;
+        for (int column = 0; column < 3; ++column) {
+            up += static_cast<double>(cameraWeaponLocal.entry[1][column]) * aligned.entry[1][column];
+            right += static_cast<double>(cameraWeaponLocal.entry[1][column]) * aligned.entry[2][column];
+        }
+        if (!std::isfinite(up) || !std::isfinite(right) || std::hypot(up, right) <= 0.000001) {
+            return std::numeric_limits<float>::quiet_NaN();
+        }
+        return static_cast<float>(std::atan2(right, up) * 57.29577951308232);
+    }
+
+    // Keep the post-FRIK optical direction and scale, but establish roll in
+    // the weapon frame before retaining it across hand-role/menu changes.
     template <class Transform, class Point>
-    [[nodiscard]] inline Transform captureRigidAnchorFrameWeaponLocal(
+    [[nodiscard]] inline bool tryCaptureRigidAnchorFrameWeaponLocal(
         const Transform& weaponWorld,
         const Transform& nativeScopeCameraWorld,
-        const Point& anchorWeaponLocal)
+        const Point& anchorWeaponLocal,
+        Transform& result)
     {
-        Transform scopeFrameWeaponLocal = transform_math::composeTransforms(
-            transform_math::invertTransform(weaponWorld),
-            nativeScopeCameraWorld);
-        scopeFrameWeaponLocal.translate = anchorWeaponLocal;
-        return scopeFrameWeaponLocal;
+        result = {};
+        result.scale = 0.0f;
+        if (!std::isfinite(weaponWorld.scale) || weaponWorld.scale <= 0.0001f ||
+            !std::isfinite(nativeScopeCameraWorld.scale) || nativeScopeCameraWorld.scale <= 0.0001f ||
+            !std::isfinite(anchorWeaponLocal.x) || !std::isfinite(anchorWeaponLocal.y) || !std::isfinite(anchorWeaponLocal.z)) return false;
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                if (!std::isfinite(weaponWorld.rotate.entry[row][column]) ||
+                    !std::isfinite(nativeScopeCameraWorld.rotate.entry[row][column])) return false;
+            }
+        }
+        const auto cameraWeaponLocal = transform_math::multiplyStoredRotations(
+            nativeScopeCameraWorld.rotate, transform_math::transposeRotation(weaponWorld.rotate));
+        Transform captured{};
+        if (!tryBuildWeaponAlignedCameraRotation(cameraWeaponLocal, captured.rotate)) return false;
+        captured.translate = anchorWeaponLocal;
+        captured.scale = nativeScopeCameraWorld.scale / weaponWorld.scale;
+        if (!std::isfinite(captured.scale) || captured.scale <= 0.0001f) return false;
+        result = captured;
+        return true;
     }
 
     /*

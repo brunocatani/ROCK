@@ -386,7 +386,8 @@ namespace rock
         RE::NiTransform nativeCameraLocal{};
         RE::NiTransform lastAppliedCameraLocal{};
         bool hasAppliedLocal{ false };
-        // Immutable native axis/scale calibration captured at AfterWeaponPosition.
+        // Immutable optical direction/scale with weapon-relative roll, captured
+        // at AfterWeaponPosition before fallback rotation tuning.
         RE::NiTransform nativeCameraWeaponLocal{};
         // Resolved anchor plus any fallback-only weapon-axis correction.
         RE::NiTransform cameraWeaponLocal{};
@@ -2323,6 +2324,7 @@ namespace rock
             NativeScopeCameraDebugSnapshot cameraDebugSnapshot{};
             NativeScopeActivationDebugSnapshot activationDebugSnapshot{};
             NativeScopeRigidFrameState rigidFrame{};
+            std::uint64_t rejectedRigidFrameGeneration{ 0 };
             NativeScopeOverlayCalibrationState overlayCalibration{};
         };
 

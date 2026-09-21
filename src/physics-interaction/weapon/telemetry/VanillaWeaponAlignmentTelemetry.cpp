@@ -4,6 +4,7 @@
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/WeaponSceneTraversal.h"
 #include "physics-interaction/weapon/WeaponAimBasis.h"
+#include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/telemetry/NativeScopeShotPolicy.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "api/ROCKProviderApiInternal.h"
@@ -63,8 +64,8 @@ namespace rock::vanilla_weapon_alignment_telemetry
             std::array<std::chrono::steady_clock::time_point, 2> lastLooseSample{};
             std::uint32_t aimCapturesRemaining{ 0 };
             std::chrono::steady_clock::time_point lastAimJump{};
-            // Scope-direction investigation: remove after the capture-phase
-            // repair is qualified. Values/identity tokens only, no held nodes.
+            // Scope direction/roll investigation: remove after entry-pose
+            // calibration is qualified. Values/identity tokens only, no held nodes.
             std::chrono::steady_clock::time_point lastScopeSample{};
             std::uint64_t scopeFrame{ 0 };
             std::uint64_t scopeGeneration{ 0 };
@@ -93,6 +94,13 @@ namespace rock::vanilla_weapon_alignment_telemetry
                 { world.translate.x, world.translate.y, world.translate.z }, { row[0], row[1], row[2] });
         }
 
+        float scopeRollDegrees(const RE::NiTransform& weapon, const RE::NiTransform& camera) noexcept
+        {
+            const auto local = transform_math::multiplyStoredRotations(
+                camera.rotate, transform_math::transposeRotation(weapon.rotate));
+            return native_scope_camera_follow_math::weaponLocalCameraRollDegrees(local);
+        }
+
         void recordFinalScopeDirection(std::uint32_t formId) noexcept
         {
             const auto frame = runtime_state::currentFrame().frameIndex;
@@ -117,12 +125,14 @@ namespace rock::vanilla_weapon_alignment_telemetry
                 const auto cameraRay = scopeAxis(camera->world, 0);
                 const auto targetRay = scopeAxis(expected, 0);
                 const auto composedRay = scopeAxis(composed, 0);
-                session->log->info("SCOPE_DIRECTION phase=after-world-final frame={} generation={:016X} form={:08X} menuOpen={} cameraWeaponDeg={:.4f} targetWeaponDeg={:.4f} cameraTargetDeg={:.4f} worldComposedDeg={:.4f} weaponForward=({:.5f},{:.5f},{:.5f}) cameraForward=({:.5f},{:.5f},{:.5f}) overruns={} captureFailures={}",
+                session->log->info("SCOPE_DIRECTION phase=after-world-final frame={} generation={:016X} form={:08X} menuOpen={} cameraWeaponDeg={:.4f} targetWeaponDeg={:.4f} cameraTargetDeg={:.4f} worldComposedDeg={:.4f} cameraRollDeg={:.4f} targetRollDeg={:.4f} composedRollDeg={:.4f} weaponForward=({:.5f},{:.5f},{:.5f}) cameraForward=({:.5f},{:.5f},{:.5f}) overruns={} captureFailures={}",
                     frame, session->scopeGeneration, formId, runtime_state::currentFrame().localScopeMenuOpen,
                     native_scope_shot_policy::angleDegrees(cameraRay, weaponRay),
                     native_scope_shot_policy::angleDegrees(targetRay, weaponRay),
                     native_scope_shot_policy::angleDegrees(cameraRay, targetRay),
                     native_scope_shot_policy::angleDegrees(cameraRay, composedRay),
+                    scopeRollDegrees(weapon->world, camera->world), scopeRollDegrees(weapon->world, expected),
+                    scopeRollDegrees(weapon->world, composed),
                     weaponRay.direction.x, weaponRay.direction.y, weaponRay.direction.z,
                     cameraRay.direction.x, cameraRay.direction.y, cameraRay.direction.z,
                     session->pool->overrun_counter(), session->captureFailures);
@@ -558,11 +568,12 @@ namespace rock::vanilla_weapon_alignment_telemetry
             const auto weaponRay = scopeAxis(weapon->world, 1);
             const auto nativeRay = scopeAxis(nativeCameraWorld, 0);
             const auto targetRay = scopeAxis(target, 0);
-            session->log->info("SCOPE_DIRECTION phase=after-weapon-position frame={} generation={:016X} form={:08X} captured={} menuOpen={} nativeWeaponDeg={:.4f} targetWeaponDeg={:.4f} nativeTargetDeg={:.4f} weaponForward=({:.5f},{:.5f},{:.5f}) nativeForward=({:.5f},{:.5f},{:.5f}) targetForward=({:.5f},{:.5f},{:.5f})",
+            session->log->info("SCOPE_DIRECTION phase=after-weapon-position frame={} generation={:016X} form={:08X} captured={} menuOpen={} nativeWeaponDeg={:.4f} targetWeaponDeg={:.4f} nativeTargetDeg={:.4f} nativeRollDeg={:.4f} targetRollDeg={:.4f} weaponForward=({:.5f},{:.5f},{:.5f}) nativeForward=({:.5f},{:.5f},{:.5f}) targetForward=({:.5f},{:.5f},{:.5f})",
                 session->scopeFrame, generation, formId, newlyCaptured, runtime_state::currentFrame().localScopeMenuOpen,
                 native_scope_shot_policy::angleDegrees(nativeRay, weaponRay),
                 native_scope_shot_policy::angleDegrees(targetRay, weaponRay),
                 native_scope_shot_policy::angleDegrees(nativeRay, targetRay),
+                scopeRollDegrees(weapon->world, nativeCameraWorld), scopeRollDegrees(weapon->world, target),
                 weaponRay.direction.x, weaponRay.direction.y, weaponRay.direction.z,
                 nativeRay.direction.x, nativeRay.direction.y, nativeRay.direction.z,
                 targetRay.direction.x, targetRay.direction.y, targetRay.direction.z);

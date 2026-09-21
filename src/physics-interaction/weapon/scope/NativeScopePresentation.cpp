@@ -44,6 +44,7 @@ namespace rock
         _scope.anchorSource = native_scope_sight_anchor_policy::AnchorSource::None;
         _scope.anchorValid = false;
         _scope.fallbackRotationDegrees = {};
+        _scope.rejectedRigidFrameGeneration = 0;
         _scope.cameraDebugSnapshot = {};
         _scope.activationDebugSnapshot = {};
     }
@@ -124,12 +125,17 @@ namespace rock
             return false;
         }
 
-        const RE::NiTransform nativeCameraWeaponLocal =
-            native_scope_camera_follow_math::captureRigidAnchorFrameWeaponLocal(weaponNode->world, nativeCameraWorld, _scope.anchorWeaponLocal);
-        if (!isFiniteTransform(nativeCameraWeaponLocal) ||
-            std::abs(nativeCameraWeaponLocal.scale) <= 0.0001f) {
+        RE::NiTransform nativeCameraWeaponLocal{};
+        if (!native_scope_camera_follow_math::tryCaptureRigidAnchorFrameWeaponLocal(
+                weaponNode->world, nativeCameraWorld, _scope.anchorWeaponLocal, nativeCameraWeaponLocal)) {
+            if (_scope.rejectedRigidFrameGeneration != currentWeaponGenerationKey) {
+                ROCK_LOG_WARN(Weapon, "TwoHandedGrip: rejected native scope roll calibration generation={:016X} form={:08X}: invalid camera/weapon basis or scale",
+                    currentWeaponGenerationKey, _scope.anchorWeaponFormID);
+                _scope.rejectedRigidFrameGeneration = currentWeaponGenerationKey;
+            }
             return false;
         }
+        _scope.rejectedRigidFrameGeneration = 0;
 
         _scope.rigidFrame = NativeScopeRigidFrameState{
             .weaponGenerationKey = currentWeaponGenerationKey,
@@ -143,9 +149,14 @@ namespace rock
             clearNativeScopeRigidFrame();
             return false;
         }
-        ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: native scope rigid frame captured generation={:016X} cameraLocal=({:.2f},{:.2f},{:.2f}) scale={:.3f}", currentWeaponGenerationKey,
+        const auto sampledLocalRotation = transform_math::multiplyStoredRotations(
+            nativeCameraWorld.rotate, transform_math::transposeRotation(weaponNode->world.rotate));
+        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: native scope rigid frame captured generation={:016X} form={:08X} firingHand={} cameraLocal=({:.2f},{:.2f},{:.2f}) scale={:.3f} nativeRollDeg={:.3f} retainedRollDeg={:.3f}",
+            currentWeaponGenerationKey, _scope.anchorWeaponFormID, firingHandName(),
             _scope.rigidFrame.cameraWeaponLocal.translate.x, _scope.rigidFrame.cameraWeaponLocal.translate.y,
-            _scope.rigidFrame.cameraWeaponLocal.translate.z, _scope.rigidFrame.cameraWeaponLocal.scale);
+            _scope.rigidFrame.cameraWeaponLocal.translate.z, _scope.rigidFrame.cameraWeaponLocal.scale,
+            native_scope_camera_follow_math::weaponLocalCameraRollDegrees(sampledLocalRotation),
+            native_scope_camera_follow_math::weaponLocalCameraRollDegrees(_scope.rigidFrame.cameraWeaponLocal.rotate));
         return true;
     }
 
@@ -170,8 +181,8 @@ namespace rock
 
         /*
          * PlayerCharacter's native scope gate ran earlier in the frame. hFRIK
-         * has now authored its engine-specific camera axis calibration; capture
-         * that calibration once, then publish the complete rigid weapon-local
+         * has now aligned optical forward; capture that direction and scale
+         * with weapon-relative roll, then publish the complete rigid weapon-local
          * scope frame before FO4VR's later mono render. Earlier weapon solves
          * may only reuse this calibration, never create it. FRIK skips camera
          * alignment for a hidden weapon, so it cannot seed a new calibration.

@@ -149,6 +149,99 @@ namespace
     }
 }
 
+static bool testScopeRollCalibration()
+{
+    namespace scope = rock::native_scope_camera_follow_math;
+    namespace math = rock::transform_math;
+    bool ok = true;
+    auto cameraBasis = math::makeIdentityTransform<TestTransform>();
+    cameraBasis.rotate = {};
+    cameraBasis.rotate.entry[0][1] = 1.0f;
+    cameraBasis.rotate.entry[1][2] = 1.0f;
+    cameraBasis.rotate.entry[2][0] = 1.0f;
+    cameraBasis.scale = 0.75f;
+    const TestVector3 anchor{ 1.2f, 8.0f, 11.0f };
+    auto expectedLocal = cameraBasis;
+    expectedLocal.translate = anchor;
+
+    // The same optical direction can arrive with either sign of controller
+    // twist. Each equip must retain the same camera-to-weapon registration.
+    for (float entryYaw : { -175.0f, -40.0f, 0.0f, 95.0f }) {
+        auto entryWeapon = rock::native_scope_rotation_math::makePitchYawRollLocal<TestTransform>(78.0f, entryYaw, 23.0f);
+        entryWeapon.translate = { -1300.0f, 2300.0f, 800.0f };
+        entryWeapon.scale = 1.2f;
+        for (float entryRoll : { -170.0f, -35.0f, -7.0f, 0.0f, 12.0f, 90.0f, 175.0f }) {
+            auto twist = math::makeIdentityTransform<TestTransform>();
+            twist.rotate = makeAxisAngleRotation(TestVector3{ 1.0f, 0.0f, 0.0f }, entryRoll);
+            const auto nativeLocal = math::composeTransforms(cameraBasis, twist);
+            const auto nativeWorld = math::composeTransforms(entryWeapon, nativeLocal);
+            TestTransform captured{};
+            ok &= expectTrue("scope roll capture accepts either hand's entry orientation",
+                scope::tryCaptureRigidAnchorFrameWeaponLocal(entryWeapon, nativeWorld, anchor, captured));
+            ok &= expectTransformNear("entry pose cannot become permanent scope roll", captured, expectedLocal);
+            ok &= expectNear("roll diagnostic distinguishes aligned-forward twists",
+                scope::weaponLocalCameraRollDegrees(nativeLocal.rotate), entryRoll);
+            ok &= expectNear("retained scope frame has zero relative roll",
+                scope::weaponLocalCameraRollDegrees(captured.rotate), 0.0f);
+            for (float finalCant : { -65.0f, 0.0f, 42.0f }) {
+                auto finalWeapon = rock::native_scope_rotation_math::makePitchYawRollLocal<TestTransform>(-35.0f, 110.0f, finalCant);
+                finalWeapon.translate = { 900.0f, -850.0f, 1100.0f };
+                finalWeapon.scale = 0.8f;
+                const auto camera = scope::resolveRigidAnchorFrameWorld(finalWeapon, captured);
+                ok &= expectTransformNear("scope follows final weapon pose independent of entry",
+                    camera, math::composeTransforms(finalWeapon, expectedLocal));
+                const auto overlay = rock::native_scope_overlay_follow_math::resolveScopeModelRootWorld(
+                    camera, math::invertTransform(cameraBasis), math::makeIdentityTransform<TestTransform>());
+                for (int column = 0; column < 3; ++column) {
+                    ok &= expectNear("intentional weapon cant also cants scope markings",
+                        camera.rotate.entry[1][column], finalWeapon.rotate.entry[2][column]);
+                    ok &= expectNear("optical forward still follows barrel",
+                        camera.rotate.entry[0][column], finalWeapon.rotate.entry[1][column]);
+                    ok &= expectNear("calibrated reticle horizontal follows weapon horizontal",
+                        overlay.rotate.entry[0][column], finalWeapon.rotate.entry[0][column]);
+                    ok &= expectNear("calibrated reticle vertical follows weapon vertical",
+                        overlay.rotate.entry[2][column], finalWeapon.rotate.entry[2][column]);
+                }
+            }
+        }
+    }
+
+    const auto identity = math::makeIdentityTransform<TestTransform>();
+    const auto tiltedCamera = scope::applyWeaponLocalRotationOffset(cameraBasis, 3.0f, -7.0f, 28.0f);
+    TestTransform captured{};
+    ok &= expectTrue("slightly offset optical direction remains usable",
+        scope::tryCaptureRigidAnchorFrameWeaponLocal(identity, tiltedCamera, anchor, captured));
+    for (int column = 0; column < 3; ++column) {
+        ok &= expectNear("roll repair preserves sampled optical direction",
+            captured.rotate.entry[0][column], tiltedCamera.rotate.entry[0][column]);
+    }
+    ok &= expectNear("offset optical direction has no residual twist", scope::weaponLocalCameraRollDegrees(captured.rotate), 0.0f);
+    ok &= expectNear("scope rotation remains orthonormal", static_cast<float>(math::storedRotationOrthonormalityError(captured.rotate)), 0.0f);
+
+    auto invalidCamera = cameraBasis;
+    invalidCamera.rotate.entry[0][1] = 0.0f;
+    ok &= expectFalse("zero optical direction fails closed", scope::tryCaptureRigidAnchorFrameWeaponLocal(identity, invalidCamera, anchor, captured));
+    ok &= expectNear("rejected capture cannot be used as a valid frame", captured.scale, 0.0f);
+    invalidCamera.rotate.entry[0][2] = 1.0f;
+    ok &= expectFalse("weapon-up parallel to forward cannot seed a roll", scope::tryCaptureRigidAnchorFrameWeaponLocal(identity, invalidCamera, anchor, captured));
+    for (float scale : { 0.0f, -1.0f, std::numeric_limits<float>::infinity() }) {
+        auto invalidWeapon = identity;
+        invalidWeapon.scale = scale;
+        ok &= expectFalse("invalid weapon scale cannot seed a scope frame", scope::tryCaptureRigidAnchorFrameWeaponLocal(invalidWeapon, cameraBasis, anchor, captured));
+        invalidCamera = cameraBasis;
+        invalidCamera.scale = scale;
+        ok &= expectFalse("invalid camera scale cannot seed a scope frame", scope::tryCaptureRigidAnchorFrameWeaponLocal(identity, invalidCamera, anchor, captured));
+    }
+    invalidCamera = cameraBasis;
+    invalidCamera.rotate.entry[1][0] = std::numeric_limits<float>::quiet_NaN();
+    ok &= expectFalse("nonfinite native rotation fails closed", scope::tryCaptureRigidAnchorFrameWeaponLocal(identity, invalidCamera, anchor, captured));
+    ok &= expectTrue("invalid diagnostic roll is unknown rather than zero", std::isnan(scope::weaponLocalCameraRollDegrees(invalidCamera.rotate)));
+    auto invalidAnchor = anchor;
+    invalidAnchor.z = std::numeric_limits<float>::infinity();
+    ok &= expectFalse("invalid sight anchor fails closed", scope::tryCaptureRigidAnchorFrameWeaponLocal(identity, cameraBasis, invalidAnchor, captured));
+    return ok;
+}
+
 static bool testRecoilProfiles()
 {
     bool ok = true;
@@ -1819,6 +1912,7 @@ int main()
     ok &= testSelectionCleanupKeepsHeldOwnership();
 
     ok &= testRecoilProfiles();
+    ok &= testScopeRollCalibration();
 
     ok &= testNativeGripFrames();
 
@@ -2197,6 +2291,10 @@ int main()
         TestTransform weaponBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
         weaponBefore.translate = { 10.0f, 20.0f, 30.0f };
         TestTransform scopeBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
+        scopeBefore.rotate = {};
+        scopeBefore.rotate.entry[0][1] = 1.0f;
+        scopeBefore.rotate.entry[1][2] = 1.0f;
+        scopeBefore.rotate.entry[2][0] = 1.0f;
         scopeBefore.translate = { 12.0f, 24.0f, 35.0f };
         TestTransform weaponAfter = weaponBefore;
         weaponAfter.translate = { 17.0f, 16.0f, 32.0f };
@@ -2300,11 +2398,13 @@ int main()
         ok &= expectFalse("non-finite firing-grip offset fails closed",
             invalidFallbackResolution.valid);
 
-        const TestTransform rigidSightFrameLocal =
-            rock::native_scope_camera_follow_math::captureRigidAnchorFrameWeaponLocal(
+        TestTransform rigidSightFrameLocal{};
+        ok &= expectTrue("native scope captures a complete weapon-relative frame",
+            rock::native_scope_camera_follow_math::tryCaptureRigidAnchorFrameWeaponLocal(
                 weaponBefore,
                 scopeBefore,
-                sightAnchor);
+                sightAnchor,
+                rigidSightFrameLocal));
         const TestTransform anchoredScopeAfter =
             rock::native_scope_camera_follow_math::resolveRigidAnchorFrameWorld(
                 weaponAfter,
@@ -2321,6 +2421,8 @@ int main()
         }
 
         TestTransform fallbackCameraBase = rigidSightFrameLocal;
+        // Isolate weapon-axis offset checks; nonidentity calibration is tested below.
+        fallbackCameraBase.rotate = rock::transform_math::makeIdentityRotation<TestMatrix3>();
         fallbackCameraBase.translate =
             missingGeometryResolution.weaponLocal;
         const TestTransform zeroFallbackRotation =

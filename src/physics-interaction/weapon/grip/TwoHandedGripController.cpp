@@ -860,6 +860,7 @@ namespace rock
         _scope.cameraDebugSnapshot = {};
         _scope.activationDebugSnapshot = {};
         clearNativeScopeRigidFrame();
+        _scope.rejectedRigidFrameGeneration = 0;
         _scope.safeHandFrames = {};
         resetFrikWeaponOwnership();
         resetGripFailureDiagnostics();
