@@ -56,6 +56,9 @@ namespace
     const F4SE::MessagingInterface* s_messaging = nullptr;
 
     PhysicsInteraction* s_physicsInteraction = nullptr;
+    // Main-thread, same-session grip values survive PhysicsInteraction's
+    // skeleton lifetime. No scene node, body or reference handle crosses it.
+    EquippedWeaponTransitionCoordinator::PendingGrip s_equippedWeaponContinuity{};
     bool s_physicsPublished = false;
 
     bool s_frikAvailable = false;
@@ -169,6 +172,8 @@ namespace
             s_skeletonGeneration.load(std::memory_order_acquire),
             s_providerGeneration.load(std::memory_order_acquire));
         s_physicsInteraction->init();
+        s_physicsInteraction->restoreEquippedWeaponContinuity(s_equippedWeaponContinuity);
+        s_equippedWeaponContinuity = {};
 
         publishPhysicsInteractionIfReady();
         if (!s_physicsPublished) {
@@ -254,6 +259,11 @@ namespace
         }
 
         logger::info("ROCK: Destroying PhysicsInteraction (skeleton released)...");
+
+        s_equippedWeaponContinuity =
+            reason == rock::provider::RockProviderLifecycleReason::SkeletonDestroying ||
+                reason == rock::provider::RockProviderLifecycleReason::SkeletonReady ?
+            s_physicsInteraction->equippedWeaponContinuity() : EquippedWeaponTransitionCoordinator::PendingGrip{};
 
         PhysicsInteraction::s_hooksEnabled.store(false, std::memory_order_release);
         s_physicsInteraction->noteProviderLifecycle(
@@ -1213,6 +1223,7 @@ namespace
 
         if (msg->type == F4SE::MessagingInterface::kPostLoadGame || msg->type == F4SE::MessagingInterface::kNewGame) {
             logger::info("ROCK: New game session -- resetting PhysicsInteraction...");
+            s_equippedWeaponContinuity = {};
             const auto providerGeneration = bumpGeneration(s_providerGeneration);
             s_physicsCreationRequested.store(false, std::memory_order_release);
             s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);

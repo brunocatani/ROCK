@@ -556,6 +556,7 @@ namespace rock
 
     void PhysicsInteraction::shutdown(::rock::provider::RockProviderLifecycleReason reason)
     {
+        _equipped.gripResumePending = _equipped.continuityGrip.pending;
         cancelBareFistMode("physics-shutdown");
         _grabInput.bareFistDrawOwned = false;
         input_remap_runtime::setBareFistDrawState(0, false, false);

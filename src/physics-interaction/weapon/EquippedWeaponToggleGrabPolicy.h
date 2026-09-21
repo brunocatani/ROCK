@@ -53,6 +53,15 @@ namespace rock::equipped_weapon_toggle_grab_policy
         bool released{ false };
     };
 
+    // UI activity is not a release gesture. A resumed hold-mode grip waits
+    // for the physical button to be held again before honoring its release.
+    [[nodiscard]] constexpr ButtonState rearmResumedHold(bool& awaitingHold, ButtonState physical) noexcept
+    {
+        if (awaitingHold && !physical.held) return { .held = true };
+        awaitingHold = false;
+        return physical;
+    }
+
     struct TransferReleaseState
     {
         bool buttonReleased{ false };

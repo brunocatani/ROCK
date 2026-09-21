@@ -146,6 +146,11 @@ namespace rock
         // Observes and repairs native equipped-weapon presentation before any
         // weapon-relative ROCK authority reads the first-person graph.
         void updateEquippedWeaponTransition();
+        // Value-only continuity belongs to this game session, independently
+        // of the scene nodes and Havok bodies retired by shutdown().
+        [[nodiscard]] EquippedWeaponTransitionCoordinator::PendingGrip equippedWeaponContinuity() const;
+        void restoreEquippedWeaponContinuity(const EquippedWeaponTransitionCoordinator::PendingGrip& grip);
+        void captureEquippedWeaponContinuity();
 
         // Runs before the normal ROCK interaction frame so weapon-relative
         // consumers see one authored primary-grip frame. Runtime eligibility
@@ -835,6 +840,9 @@ namespace rock
             bool handlingModeInitialized{ false };
             bool handlingModeReconcilePending{ false };
             bool menuReconcilePending = false;
+            EquippedWeaponTransitionCoordinator::PendingGrip continuityGrip{};
+            bool gripResumePending{ false };
+            std::array<bool, 2> resumeAwaitingHold{};
             // Dedicated stash detector states for the equipped-weapon carry
             // gesture so dwell/hysteresis never mixes with a loose object
             // held by the same hand.

@@ -101,6 +101,7 @@ namespace rock
             bool localSkeletonReady{ false };
             bool menuBlocking{ false };
             bool compatibilityBlocking{ false };
+            bool gripSuspended{ false };
             std::uint32_t nativeWeaponState{ 0 };
             // Exact identity lease for ROCK's physical shoulder sheath. It
             // exempts only the instance ROCK deliberately transitioned; it is
@@ -145,8 +146,7 @@ namespace rock
         void recordGripPresentation();
         void validateHeldSource(bool held, std::uint32_t reference, std::uint64_t grab,
             std::uint32_t world, std::uint32_t skeleton);
-        void suspendMenuGrip(const PendingGrip& grip, std::uint32_t world, std::uint32_t skeleton);
-        void resumeMenuGrip(std::uint32_t world, std::uint32_t skeleton);
+        void resumeMenuGrip(const PendingGrip& grip, std::uint32_t world, std::uint32_t skeleton);
         [[nodiscard]] bool observedItemMatches(std::uint32_t form, std::uintptr_t instance) const noexcept
         {
             return _observationInitialized && held_weapon_transfer::sameMenuItem(_observedIdentity.formID,
@@ -220,10 +220,6 @@ namespace rock
         void releasePendingNativeCull(bool restore);
         held_weapon_transfer::State _heldTransfer{};
         PendingGrip _pendingGrip{};
-        PendingGrip _menuGrip{};
-        bool _menuGripSaved{ false };
-        std::uint32_t _menuWorld{ 0 };
-        std::uint32_t _menuSkeleton{ 0 };
         RE::NiPointer<RE::NiAVObject> _pendingNativeCull{};
         float _heldWaitSeconds{ 0.0f };
         bool _heldBridgeStarted{ false };

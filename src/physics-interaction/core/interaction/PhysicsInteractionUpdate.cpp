@@ -594,6 +594,7 @@ namespace rock
         // Equip identity/grip reconciliation can clear the early authored pose.
         // Yield the bridge only after every hand owner has finished this frame.
         finishEquippedWeaponHandPoseHandoff();
+        captureEquippedWeaponContinuity();
         // Final pose publication consumes this completed decision frame and
         // registers the callback only after all collider targets are committed.
         _frame.poseFrameIndex = frame.timing.sequence;
@@ -695,9 +696,9 @@ namespace rock
                 _equipped.transition.pendingGrip() = {};
                 clearEquippedWeaponFiringGripInputState();
                 auto* bhkMenu = getPlayerBhkWorld();
-                if (bhkMenu) {
+                if (bhkMenu && bhkMenu == _lifecycle.cachedBhkWorld) {
                     auto* hknpMenu = getHknpWorld(bhkMenu);
-                    if (hknpMenu) {
+                    if (hknpMenu && hknpMenu == _lifecycle.cachedHknpWorld) {
                         restoreRightHandCollisionAfterDominantWeapon(hknpMenu);
                         restoreHandCollisionAfterWeaponSupport(hknpMenu, true, true);
                         restoreHandCollisionAfterWeaponSupport(hknpMenu, false, true);
@@ -719,15 +720,11 @@ namespace rock
                             if (r)
                                 releaseObject(r, PhysicsObjectClaimOwner::LeftHand);
                         }
+                    } else {
+                        shutdown();
                     }
                 } else {
-                    _suppression.rightDominantSuppressed.store(false, std::memory_order_release);
-                    _suppression.leftWeaponSupportSuppressed.store(false, std::memory_order_release);
-                    _suppression.rightWeaponSupportSuppressed.store(false, std::memory_order_release);
-                    _suppression.rightDominantLeases.clearTracking();
-                    _suppression.leftWeaponSupportLeases.clearTracking();
-                    _suppression.rightWeaponSupportLeases.clearTracking();
-                    clearEquippedWeaponPostDropCollisionSuppressionState();
+                    shutdown();
                 }
             }
             debug::ClearFrame();
@@ -759,8 +756,8 @@ namespace rock
             return;
         }
 
-        if (_lifecycle.initialized && bhk != _lifecycle.cachedBhkWorld) {
-            ROCK_LOG_INFO(Update, "bhkWorld changed (cell transition) — reinitializing");
+        if (_lifecycle.initialized && (bhk != _lifecycle.cachedBhkWorld || getHknpWorld(bhk) != _lifecycle.cachedHknpWorld)) {
+            ROCK_LOG_INFO(Update, "Physics world changed (cell transition) — reinitializing");
 
             shutdown();
         }
@@ -779,6 +776,7 @@ namespace rock
             _dynamicWorldCarCollision.abandon();
             _lifecycle.cachedHknpWorld = nullptr;
             observeLifecycleFrame(bhk, nullptr, ::rock::provider::RockProviderLifecycleReason::WorldUnavailable);
+            _equipped.gripResumePending = _equipped.continuityGrip.pending;
             _twoHandedGrip.reset();
             _equipped.transition.pendingGrip() = {};
             clearEquippedWeaponFiringGripInputState();
@@ -867,6 +865,7 @@ namespace rock
                     _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire),
                     _lifecycle.stableFrameCountAtomic.load(std::memory_order_acquire));
                 debug::ClearFrame();
+                _equipped.gripResumePending = _equipped.continuityGrip.pending;
                 _twoHandedGrip.reset();
                 _equipped.transition.pendingGrip() = {};
                 clearEquippedWeaponFiringGripInputState();
@@ -889,6 +888,7 @@ namespace rock
                 _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire),
                 _lifecycle.stableFrameCountAtomic.load(std::memory_order_acquire));
             debug::ClearFrame();
+            _equipped.gripResumePending = _equipped.continuityGrip.pending;
             _twoHandedGrip.reset();
             _equipped.transition.pendingGrip() = {};
             clearEquippedWeaponFiringGripInputState();
@@ -899,9 +899,27 @@ namespace rock
             return;
         }
 
+        if (_equipped.gripResumePending &&
+            frik_hand_world_authority::hasCalibratedRawHandFrame(false) &&
+            frik_hand_world_authority::hasCalibratedRawHandFrame(true)) {
+            _equipped.transition.resumeMenuGrip(_equipped.continuityGrip,
+                _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire),
+                _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire));
+            const auto& resumed = _equipped.transition.pendingGrip();
+            if (resumed.menuResume) {
+                for (const bool left : { false, true }) {
+                    const bool firing = !resumed.supportGrip.validCarry() && left == resumed.isLeft;
+                    const bool occupied = left == resumed.isLeft || resumed.pairedGrips.valid() || resumed.secondSupportGrip.validCarry();
+                    _equipped.resumeAwaitingHold[equipped_weapon_toggle_grab_policy::handIndex(left)] = occupied &&
+                        !equipped_weapon_toggle_grab_policy::usesToggleForRole(_equipped.handlingSettings.weaponGrabMode, firing);
+                }
+            }
+            _equipped.gripResumePending = false;
+        }
+
         const bool forceBareFistRecheck = _equipped.menuReconcilePending;
         if (_equipped.menuReconcilePending && !_equipped.transition.pendingGrip().menuResume &&
-            !_equipped.transition.heldTransfer().active()) {
+            !_equipped.gripResumePending && !_equipped.transition.heldTransfer().active()) {
             const bool firingHandIsLeft =
                 _twoHandedGrip.isFiringGripOccupied() &&
                 _twoHandedGrip.isFiringHandLeft();

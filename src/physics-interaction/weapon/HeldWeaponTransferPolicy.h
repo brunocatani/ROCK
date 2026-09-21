@@ -41,6 +41,7 @@ namespace rock::held_weapon_transfer
         bool inventoryCommitted{ false };
         bool gripAcquired{ false };
         bool presentationAcquired{ false };
+        bool restoringEquippedGrip{ false };
 
         [[nodiscard]] constexpr bool active() const noexcept
         {
@@ -100,6 +101,10 @@ namespace rock::held_weapon_transfer
         if (!form) return false;
         if (state.active()) {
             if (!state.inventoryCommitted || !state.matchesTarget(form, instance)) return false;
+            state.request.world = destination.world;
+            state.request.skeleton = destination.skeleton;
+            state.request.isLeft = destination.isLeft;
+            state.request.role = destination.role;
             state.phase = Phase::AwaitGrip;
             state.gripAcquired = false;
             state.presentationAcquired = false;
@@ -109,6 +114,7 @@ namespace rock::held_weapon_transfer
                 .phase = Phase::AwaitGrip, .targetForm = form, .targetInstance = instance,
                 .observedInstance = instance, .identityBound = true, .inventoryCommitted = true };
         }
+        state.restoringEquippedGrip = true;
         return true;
     }
 
@@ -142,7 +148,9 @@ namespace rock::held_weapon_transfer
     {
         if (!state.active()) return;
         state.outcome = outcome;
-        state.phase = state.inventoryCommitted ? Phase::Recovering : Phase::Completing;
+        // Resuming an already equipped item performs no inventory mutation.
+        // Failed grip restoration must never unequip it as compensation.
+        state.phase = state.inventoryCommitted && !state.restoringEquippedGrip ? Phase::Recovering : Phase::Completing;
         finishIfReady(state);
     }
 

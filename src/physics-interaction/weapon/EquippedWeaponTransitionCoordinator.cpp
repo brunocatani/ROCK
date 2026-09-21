@@ -68,6 +68,7 @@ namespace rock
         _heldFailureReason = reason;
         held_weapon_transfer::cancel(_heldTransfer, outcome);
         _pendingGrip = {};
+        if (_heldTransfer.restoringEquippedGrip) releasePendingNativeCull(true);
         traceHeldTransfer("cancelled");
         input_remap_runtime::setWeaponTransferPending(_heldTransfer.blocksFire());
     }
@@ -185,35 +186,26 @@ namespace rock
         _pendingNativeCull.reset();
     }
 
-    void EquippedWeaponTransitionCoordinator::suspendMenuGrip(const PendingGrip& grip, std::uint32_t world, std::uint32_t skeleton)
+    void EquippedWeaponTransitionCoordinator::resumeMenuGrip(const PendingGrip& grip, std::uint32_t world, std::uint32_t skeleton)
     {
-        _menuGrip = grip;
-        _menuWorld = world;
-        _menuSkeleton = skeleton;
-        _menuGripSaved = grip.targetWeaponFormID != 0;
-        _pendingGrip = {};
-    }
-
-    void EquippedWeaponTransitionCoordinator::resumeMenuGrip(std::uint32_t world, std::uint32_t skeleton)
-    {
-        if (!_menuGripSaved) return;
-        _menuGripSaved = false;
+        if (!grip.pending) return;
         const auto current = readCurrentIdentity();
-        if (world != _menuWorld || skeleton != _menuSkeleton || !held_weapon_transfer::sameMenuItem(_menuGrip.targetWeaponFormID, _menuGrip.targetWeaponInstanceData,
+        if (!held_weapon_transfer::sameMenuItem(grip.targetWeaponFormID, grip.targetWeaponInstanceData,
                 current.formID, current.instanceData)) {
-            _menuGrip = {};
+            ROCK_LOG_INFO(Weapon, "Equipped grip resume cancelled: equipped instance changed saved={:08X}/{:#x} current={:08X}/{:#x}",
+                grip.targetWeaponFormID, grip.targetWeaponInstanceData, current.formID, current.instanceData);
             return;
         }
         if (!held_weapon_transfer::resumeMenu(_heldTransfer, current.formID, current.instanceData,
-                { .world = world, .skeleton = skeleton, .isLeft = _menuGrip.isLeft,
-                    .role = _menuGrip.supportGrip.validCarry() ? held_weapon_transfer::Role::Support :
-                        _menuGrip.pairedGrips.valid() ? held_weapon_transfer::Role::Paired : held_weapon_transfer::Role::Firing })) {
-            _menuGrip = {};
+                { .world = world, .skeleton = skeleton, .isLeft = grip.isLeft,
+                    .role = grip.supportGrip.validCarry() ? held_weapon_transfer::Role::Support :
+                        grip.pairedGrips.valid() ? held_weapon_transfer::Role::Paired : held_weapon_transfer::Role::Firing })) {
+            ROCK_LOG_WARN(Weapon, "Equipped grip resume rejected: another weapon transfer owns the item form={:08X}", current.formID);
             return;
         }
-        _pendingGrip = _menuGrip;
+        _pendingGrip = grip;
         _pendingGrip.menuResume = true;
-        _menuGrip = {};
+        _pendingGrip.pairedRelease = {};
         _heldWaitSeconds = 0.0f;
         _heldBridgeStarted = false;
         _heldRecoveryAttempts = 0;
@@ -298,20 +290,22 @@ namespace rock
         if (_heldTransfer.gripAcquired || !_heldTransfer.active()) releasePendingNativeCull(true);
 
         const auto current = readCurrentIdentity();
-        if (_heldTransfer.active()) {
+        if (_heldTransfer.active() && !input.gripSuspended) {
             if (_heldTransfer.phase == held_weapon_transfer::Phase::AwaitEquip && input.menuBlocking) {
                 cancelHeldRequest("menu-before-pickup", held_weapon_transfer::Outcome::Cancelled);
             }
             if (!input.menuBlocking && !input.compatibilityBlocking && input.visualAuthorityAvailable) {
                 _heldWaitSeconds += (std::max)(0.0f, input.deltaSeconds);
-                if (!held_weapon_transfer::equippedSourceCurrent(_heldTransfer, current.formID, current.instanceData)) {
+                if (_heldTransfer.restoringEquippedGrip && !_heldTransfer.matchesTarget(current.formID, current.instanceData)) {
+                    cancelHeldRequest("resumed-equipped-instance-changed", held_weapon_transfer::Outcome::Cancelled);
+                } else if (!held_weapon_transfer::equippedSourceCurrent(_heldTransfer, current.formID, current.instanceData)) {
                     cancelHeldRequest("equipped-item-changed-before-pickup", held_weapon_transfer::Outcome::Cancelled);
                 } else if (_heldTransfer.inventoryCommitted && !_heldTransfer.matchesTarget(current.formID, current.instanceData)) {
                     cancelHeldRequest("incoming-identity-replaced");
                 } else if (_heldTransfer.phase == held_weapon_transfer::Phase::AwaitGrip && !_pendingGrip.pending) {
                     cancelHeldRequest("requested-grip-cancelled");
                 } else if ((_heldTransfer.phase == held_weapon_transfer::Phase::AwaitEquip && _heldWaitSeconds >= 10.0f) ||
-                    (_heldTransfer.phase == held_weapon_transfer::Phase::AwaitGrip &&
+                    (_heldTransfer.phase == held_weapon_transfer::Phase::AwaitGrip && !_heldTransfer.restoringEquippedGrip &&
                         (_heldWaitSeconds >= 1.0f || (_heldBridgeStarted && _bridge.presentationLeaseWouldExpire(input.deltaSeconds))))) {
                     cancelHeldRequest("native-or-grip-readiness-exhausted");
                 }
@@ -863,8 +857,6 @@ namespace rock
         const auto sequence = _heldTransfer.sequence;
         _heldTransfer = { .sequence = sequence };
         _pendingGrip = {};
-        _menuGrip = {};
-        _menuGripSaved = false;
         releasePendingNativeCull(true);
         input_remap_runtime::setWeaponTransferPending(false);
         _visualCache = {};
@@ -906,8 +898,6 @@ namespace rock
         const auto sequence = _heldTransfer.sequence;
         _heldTransfer = { .sequence = sequence };
         _pendingGrip = {};
-        _menuGrip = {};
-        _menuGripSaved = false;
         releasePendingNativeCull(false);
         input_remap_runtime::setWeaponTransferPending(false);
         _visualCache = {};

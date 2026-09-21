@@ -117,6 +117,62 @@ namespace rock
         return true;
     }
 
+    EquippedWeaponTransitionCoordinator::PendingGrip PhysicsInteraction::equippedWeaponContinuity() const
+    {
+        return _equipped.continuityGrip;
+    }
+
+    void PhysicsInteraction::restoreEquippedWeaponContinuity(const EquippedWeaponTransitionCoordinator::PendingGrip& grip)
+    {
+        _equipped.continuityGrip = grip;
+        _equipped.gripResumePending = grip.pending;
+        if (grip.pending) {
+            ROCK_LOG_INFO(Weapon, "Equipped grip suspended form={:08X} hand={} paired={} support={} secondSupport={}",
+                grip.targetWeaponFormID, grip.isLeft ? "left" : "right", grip.pairedGrips.valid(),
+                grip.supportGrip.validCarry(), grip.secondSupportGrip.validCarry());
+        }
+    }
+
+    void PhysicsInteraction::captureEquippedWeaponContinuity()
+    {
+        if (_equipped.gripResumePending) return;
+        auto snapshot = _equipped.transition.pendingGrip();
+        if (snapshot.pending) {
+            _equipped.continuityGrip = snapshot;
+            return;
+        }
+        if (!_twoHandedGrip.isManualOwnershipActive()) {
+            _equipped.continuityGrip = {};
+            _equipped.resumeAwaitingHold = {};
+            return;
+        }
+        auto* weapon = currentEquippedWeaponForm();
+        snapshot.targetWeaponFormID = weapon ? weapon->formID : 0u;
+        snapshot.targetWeaponInstanceData = reinterpret_cast<std::uintptr_t>(currentEquippedWeaponInstanceData(weapon));
+        if (!_equipped.transition.observedItemMatches(snapshot.targetWeaponFormID, snapshot.targetWeaponInstanceData)) {
+            _equipped.continuityGrip = {};
+            return;
+        }
+        weapon_grip_transfer::HandGrip firing{};
+        bool carrierLeft = _twoHandedGrip.isFiringHandLeft();
+        snapshot.pending = _twoHandedGrip.captureMenuCarry(firing, snapshot.pairedGrips,
+            snapshot.supportGrip, snapshot.secondSupportGrip, carrierLeft);
+        snapshot.isLeft = carrierLeft;
+        snapshot.firingHandWeaponLocal = firing.handWeaponLocal;
+        snapshot.firingGripWeaponLocal = firing.gripWeaponLocal;
+        snapshot.hasFiringHandWeaponLocal = firing.valid();
+        snapshot.hasFiringGripWeaponLocal = firing.valid();
+        snapshot.toggleAcquisitionCommitted = !snapshot.supportGrip.validCarry();
+        snapshot.source = equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource::HeldWeaponEquip;
+        // Keep no scene pointers or world transforms. This is sampled after
+        // grip decisions, while the outgoing nodes and controller frame live.
+        _equipped.continuityGrip = snapshot;
+        if (!snapshot.pending) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Equipped grip continuity capture unavailable form={:08X} hand={}",
+                snapshot.targetWeaponFormID, carrierLeft ? "left" : "right");
+        }
+    }
+
     void PhysicsInteraction::updateEquippedWeaponTransition()
     {
         const auto& runtime = runtime_state::currentFrame();
@@ -152,36 +208,8 @@ namespace rock
                 static_cast<std::uint32_t>(RE::GUN_STATE::kReloading);
         RE::NiTransform leftCarrySolvedWeaponWorld{};
         if (runtime.localMenuBlocking && !_equipped.menuReconcilePending) {
-            auto snapshot = _equipped.transition.pendingGrip();
-            auto* weapon = currentEquippedWeaponForm();
-            snapshot.targetWeaponFormID = weapon ? weapon->formID : 0u;
-            snapshot.targetWeaponInstanceData = reinterpret_cast<std::uintptr_t>(currentEquippedWeaponInstanceData(weapon));
-            if ((!snapshot.pending && !_twoHandedGrip.isManualOwnershipActive()) ||
-                !_equipped.transition.observedItemMatches(snapshot.targetWeaponFormID, snapshot.targetWeaponInstanceData)) {
-                snapshot = {};
-            }
-            if (!snapshot.pending && snapshot.targetWeaponFormID) {
-                weapon_grip_transfer::HandGrip firing{};
-                bool carrierLeft = _twoHandedGrip.isFiringHandLeft();
-                snapshot.pending = _twoHandedGrip.captureMenuCarry(firing, snapshot.pairedGrips,
-                    snapshot.supportGrip, snapshot.secondSupportGrip, carrierLeft);
-                snapshot.isLeft = carrierLeft;
-                snapshot.firingHandWeaponLocal = firing.handWeaponLocal;
-                snapshot.firingGripWeaponLocal = firing.gripWeaponLocal;
-                snapshot.hasFiringHandWeaponLocal = firing.valid();
-                snapshot.hasFiringGripWeaponLocal = firing.valid();
-                snapshot.toggleAcquisitionCommitted = !snapshot.supportGrip.validCarry() &&
-                    equipped_weapon_toggle_grab_policy::firingUsesToggle(_equipped.handlingSettings.weaponGrabMode);
-                snapshot.remainingSeconds = 1.0f;
-                snapshot.source = equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource::HeldWeaponEquip;
-            }
-            _equipped.transition.suspendMenuGrip(snapshot,
-                _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire),
-                _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire));
+            restoreEquippedWeaponContinuity(_equipped.continuityGrip);
             cancelEquippedWeaponTransfersForMenu();
-        } else if (!runtime.localMenuBlocking && _equipped.menuReconcilePending) {
-            _equipped.transition.resumeMenuGrip(_lifecycle.worldGenerationAtomic.load(std::memory_order_acquire),
-                _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire));
         }
         const auto& transfer = _equipped.transition.heldTransfer();
         const auto& incomingHand = transfer.request.isLeft ? _leftHand : _rightHand;
@@ -196,6 +224,7 @@ namespace rock
                 .localSkeletonReady = runtime.localSkeletonReady,
                 .menuBlocking = runtime.localMenuBlocking,
                 .compatibilityBlocking = runtime.compatibilityConfigBlocking,
+                .gripSuspended = _equipped.gripResumePending,
                 .nativeWeaponState = nativeWeaponState,
                 .intentionalShoulderSheathActive =
                     _equipped.shoulderSheath.active,
@@ -581,10 +610,18 @@ namespace rock
                 peekGrabButtonState(true, input_remap_policy::kGrabButtonId);
             auto rightPhysicalGripState =
                 peekGrabButtonState(false, input_remap_policy::kGrabButtonId);
+            const auto rearmResumedHold = [this](bool left, GrabButtonState& button) {
+                const auto rearmed = equipped_weapon_toggle_grab_policy::rearmResumedHold(
+                    _equipped.resumeAwaitingHold[equipped_weapon_toggle_grab_policy::handIndex(left)],
+                    { .held = button.held, .pressed = button.pressed, .released = button.released });
+                button = { .held = rearmed.held, .pressed = rearmed.pressed, .released = rearmed.released };
+            };
             if (_equipped.transition.pendingGrip().menuResume) {
                 leftPhysicalGripState.held = input_remap_runtime::isRawButtonPhysicallyHeld(true, input_remap_policy::kGrabButtonId);
                 rightPhysicalGripState.held = input_remap_runtime::isRawButtonPhysicallyHeld(false, input_remap_policy::kGrabButtonId);
             }
+            rearmResumedHold(true, leftPhysicalGripState);
+            rearmResumedHold(false, rightPhysicalGripState);
             const auto providerGripOccupancy = _twoHandedGrip.getGripOccupancy();
             maskProviderWeaponGrabInput(true, providerGripOccupancy.left.weaponEngaged(), leftPhysicalGripState);
             maskProviderWeaponGrabInput(false, providerGripOccupancy.right.weaponEngaged(), rightPhysicalGripState);
@@ -748,6 +785,7 @@ namespace rock
                     // state after the menu closes.
                     primaryGrabState.held = input_remap_runtime::isRawButtonPhysicallyHeld(firingHandIsLeft, input_remap_policy::kGrabButtonId);
                     const auto physicalPrimaryGrabState = primaryGrabState;
+                    rearmResumedHold(firingHandIsLeft, primaryGrabState);
                     maskProviderWeaponGrabInput(firingHandIsLeft,
                         (firingHandIsLeft ? providerGripOccupancy.left : providerGripOccupancy.right).weaponEngaged(), primaryGrabState);
                     maskHolsterInput(firingHandIsLeft, primaryGrabState);
@@ -793,7 +831,7 @@ namespace rock
                     const auto& physical = isLeft ? leftPhysicalGripState : rightPhysicalGripState;
                     pendingPrimaryStart.pairedRelease[equipped_weapon_toggle_grab_policy::handIndex(isLeft)].observe(
                         _equipped.handlingSettings.weaponGrabMode, isLeft == pendingPrimaryStart.isLeft,
-                        { .held = physical.held, .pressed = physical.pressed, .released = physical.released });
+                        { .held = physical.held, .pressed = physical.pressed, .released = physical.released }, pendingPrimaryStart.menuResume);
                 }
             } else if (pendingPrimaryStart.supportGrip.validCarry()) {
                 for (const bool left : { false, true }) {
@@ -801,7 +839,7 @@ namespace rock
                     const auto& physical = left ? leftPhysicalGripState : rightPhysicalGripState;
                     pendingPrimaryStart.pairedRelease[equipped_weapon_toggle_grab_policy::handIndex(left)].observe(
                         _equipped.handlingSettings.weaponGrabMode, false,
-                        { .held = physical.held, .pressed = physical.pressed, .released = physical.released });
+                        { .held = physical.held, .pressed = physical.pressed, .released = physical.released }, pendingPrimaryStart.menuResume);
                 }
             } else if (pendingPrimaryStart.toggleAcquisitionCommitted) {
                 const auto& physical = firingHandIsLeft ? leftPhysicalGripState : rightPhysicalGripState;
@@ -1985,6 +2023,7 @@ namespace rock
                 (nativeAuthorityFlags &
                     authored_weapon_grip_capture_policy::kWeapon) != 0,
             .conflictingWeaponTransformAuthorityActive =
+                _equipped.gripResumePending || _equipped.transition.pendingGrip().menuResume ||
                 _twoHandedGrip.blocksAuthoredPrimaryGripWeaponAlignment(),
             .weaponVisualReturnActive = _twoHandedGrip.isWeaponVisualReturnActive(),
             .equippedWeaponTransitionActive =

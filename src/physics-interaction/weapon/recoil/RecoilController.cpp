@@ -91,22 +91,19 @@ namespace rock
         const bool nativeKick = isFiniteTransform(sample->nativeKickLocal) &&
             (hand_world_claim_registry_policy::translationDeltaGameUnits(sample->nativeKickLocal, identity) > 0.05f ||
                 hand_world_claim_registry_policy::rotationDeltaDegrees(sample->nativeKickLocal, identity) > 0.1f);
-        const auto decline = [&]() noexcept {
-            if (nativeKick) {
-                ++state.nativeKickSequence;
-            }
-            return false;
-        };
+        // When declined, FRIK leaves native recoil in the first-person arm
+        // input. It is already present in both sides of hand calibration.
+        // Only an accepted hand-only delivery below invalidates that sample.
         if (!g_rockConfig.rockImmersiveRecoil) {
             // Hand claims are separate from recoil registration. Release the
             // prior direct target before FRIK solves this disabled frame, then
             // decline so FRIK (or another controller) owns native hand recoil.
             self->clearOneHandRecoilClaim();
-            return decline();
+            return false;
         }
         const auto* const handedMode = f4vr::getIniSetting("bLeftHandedMode:VR");
         if (!handedMode || !f4vr::IsWeaponDrawn()) {
-            return decline();
+            return false;
         }
         const auto context = self->recoilSampleIdentity(handedMode->GetBinary());
         const bool rightCandidate = self->canUseRightOneHandRecoil();
@@ -124,14 +121,14 @@ namespace rock
         // when ROCK does not currently own a weapon presentation target.
         if (!ownedCarry && context.family != Family::Laser &&
             (context.profile == Profile::OneHand || context.profile == Profile::FullTwoHand)) {
-            return decline();
+            return false;
         }
 
         RE::NiTransform controlled{};
         if (!weapon_recoil_authority_math::tryBuildControlledKick(
                 sample->nativeKickLocal, effectiveGains(context.family, context.profile, context.familyPercent), controlled)) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Weapon recoil: invalid native sample; controlled delivery declined");
-            return decline();
+            return false;
         }
         if (ownedCarry && !self->captureOwnedWeaponRecoil(controlled, context)) {
             // Keep a valid neutral response: ROCK owns the final weapon and

@@ -1169,6 +1169,13 @@ namespace rock
     bool TwoHandedGrip::tryGetAuthoredPrimaryTrackedFiringHandWorld(
         RE::NiTransform& outHandWorld) const
     {
+        // A fresh skeleton needs a claim-free calibration before we can
+        // replace its tracked hand. Otherwise our first output prevents the
+        // next frame from reconstructing input and ownership oscillates.
+        if (!frik_hand_world_authority::hasCalibratedRawHandFrame(false)) {
+            outHandWorld = {};
+            return false;
+        }
         RE::NiTransform driverWorld{};
         if (tryResolvePhysicalHandFrame(false, outHandWorld, driverWorld)) {
             return true;

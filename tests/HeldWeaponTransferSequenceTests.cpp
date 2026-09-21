@@ -198,5 +198,28 @@ int main()
     ok &= expect(!rock::transferred_weapon_grab_policy::advance(retained, false, false, true), "original drop gesture cannot release newly retained weapon");
     ok &= expect(!rock::transferred_weapon_grab_policy::advance(retained, true, true, false), "retained release requires complete new gesture");
     ok &= expect(rock::transferred_weapon_grab_policy::advance(retained, false, false, true), "new release completes retained drop");
+    for (const bool left : { false, true }) {
+        for (const auto role : { Role::Firing, Role::Support, Role::Paired }) {
+            State resumed{};
+            ok &= expect(resumeMenu(resumed, 9, 10, { .world = 3, .skeleton = 4, .isLeft = left, .role = role }),
+                "each equipped grip role can resume in either hand");
+            ok &= expect(resumeMenu(resumed, 9, 10, { .world = 5, .skeleton = 6, .isLeft = left, .role = role }) &&
+                    sourceCurrent(resumed, false, 0, 0, 5, 6) && !sourceCurrent(resumed, false, 0, 0, 3, 4),
+                "another transition rebinds pending restoration to the new world and skeleton");
+            ok &= expect(!resumeMenu(resumed, 9, 11, { .world = 5, .skeleton = 6 }),
+                "restoration never adopts another instance of the same weapon");
+            cancel(resumed);
+            ok &= expect(resumed.phase == Phase::Terminal && !resumed.blocksFire(),
+                "failed restoration does not recover or unequip the existing inventory item");
+        }
+    }
+    bool awaitingHold = true;
+    const auto menuRelease = toggle::rearmResumedHold(awaitingHold, { .released = true });
+    ok &= expect(menuRelease.held && !menuRelease.released && awaitingHold,
+        "a release made while using the menu retains the resumed hold");
+    const auto pressedAgain = toggle::rearmResumedHold(awaitingHold, { .held = true, .pressed = true });
+    ok &= expect(pressedAgain.held && !awaitingHold, "a physical hold rearms normal release");
+    const auto gameplayRelease = toggle::rearmResumedHold(awaitingHold, { .released = true });
+    ok &= expect(!gameplayRelease.held && gameplayRelease.released, "the next gameplay release ends the resumed hold");
     return ok ? 0 : 1;
 }
