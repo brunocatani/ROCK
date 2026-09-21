@@ -17,6 +17,7 @@
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/debug/DebugBodyOverlay.h"
+#include "physics-interaction/visual/GripZoneIndicators.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/hand/NativeWandVisualSuppression.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
@@ -881,6 +882,7 @@ namespace
         if (!s_providerTickedThisFrame) {
             runFrameTick(false);
         }
+        grip_zone_indicators::EndFrame(game_timing::currentFrameTiming().sequence);
         performance_profiler::endFrame();
     }
 

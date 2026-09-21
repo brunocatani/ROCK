@@ -971,6 +971,7 @@ namespace rock
         {
             // Main-thread eligibility only; never retain frame-local engine pointers.
             std::uint64_t debugOverlayFrameIndex = 0;
+            std::uint64_t gripZoneIndicatorFrameIndex = 0;
             std::uint64_t poseFrameIndex = 0;
             // Central sanitized game delta captured each update; zero until
             // the first frame is measured.

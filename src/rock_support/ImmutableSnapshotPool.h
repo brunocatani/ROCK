@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <memory>
 
-namespace rock::debug_overlay_snapshot
+namespace rock::immutable_snapshot
 {
     // Single-producer pool for immutable snapshots published through shared_ptr.
     // The pool owns one reference to every allocated buffer. A use_count above

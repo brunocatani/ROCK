@@ -1,4 +1,5 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/visual/GripZoneIndicators.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
@@ -1749,12 +1750,20 @@ namespace rock
             !runtime.visualAuthorityAvailable ||
             !runtime.localSkeletonReady || runtime.localMenuBlocking ||
             runtime.compatibilityConfigBlocking || gameFrameIndex == 0 ||
-            gameFrameIndex != runtime.frameIndex) {
-            debug::ClearGripZoneIndicators();
+            gameFrameIndex != runtime.frameIndex ||
+            _frame.gripZoneIndicatorFrameIndex != gameFrameIndex) {
+            grip_zone_indicators::Clear();
             return;
         }
 
-        debug::GripZoneIndicatorOverlayFrame overlayFrame{};
+        auto* bhk = getPlayerBhkWorld();
+        auto* hknp = bhk ? getHknpWorld(bhk) : nullptr;
+        if (!bhk || bhk != _lifecycle.cachedBhkWorld || !hknp || hknp != _lifecycle.cachedHknpWorld) {
+            grip_zone_indicators::Clear();
+            return;
+        }
+
+        grip_zone_indicators::Frame overlayFrame{};
         overlayFrame.gameFrameIndex = gameFrameIndex;
         overlayFrame.diameterGameUnits =
             g_rockConfig.rockGripZoneIndicatorDiameterGameUnits;
@@ -1767,7 +1776,6 @@ namespace rock
                     overlayFrame.positions[overlayFrame.count++] = candidate.positionGame;
                 }
             }
-            if (overlayFrame.count) debug::Install();
         }
 
         for (const bool isLeft : {false, true}) {
@@ -1778,9 +1786,6 @@ namespace rock
                     std::span<RE::NiPoint3>(overlayFrame.positions).subspan(overlayFrame.count)));
             }
         }
-        if (overlayFrame.count) {
-            debug::Install();
-        }
 
         auto* weaponNode = resolveEquippedWeaponInteractionNode();
         const std::uint64_t currentWeaponGenerationKey =
@@ -1790,7 +1795,7 @@ namespace rock
             !dynamic_weapon_collision_policy::isFiniteTransform(
                 weaponNode->world) ||
             std::abs(weaponNode->world.scale) <= 0.0001f) {
-            debug::PublishGripZoneIndicators(overlayFrame);
+            grip_zone_indicators::Publish(overlayFrame);
             return;
         }
 
@@ -1856,10 +1861,7 @@ namespace rock
             }
         }
 
-        if (overlayFrame.count > 0) {
-            debug::Install();
-        }
-        debug::PublishGripZoneIndicators(overlayFrame);
+        grip_zone_indicators::Publish(overlayFrame);
     }
 
     /*

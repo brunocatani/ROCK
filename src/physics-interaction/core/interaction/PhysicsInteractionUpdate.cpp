@@ -598,6 +598,7 @@ namespace rock
         // Final pose publication consumes this completed decision frame and
         // registers the callback only after all collider targets are committed.
         _frame.poseFrameIndex = frame.timing.sequence;
+        _frame.gripZoneIndicatorFrameIndex = frame.timing.sequence;
     }
 
     void PhysicsInteraction::update()
@@ -606,6 +607,7 @@ namespace rock
             cancelBareFistMode("interaction-frame-interrupted");
         });
         _frame.debugOverlayFrameIndex = 0;
+        _frame.gripZoneIndicatorFrameIndex = 0;
         _frame.poseFrameIndex = 0;
         ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
 

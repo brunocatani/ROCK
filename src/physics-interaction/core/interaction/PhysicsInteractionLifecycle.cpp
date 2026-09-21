@@ -1,4 +1,5 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/visual/GripZoneIndicators.h"
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
 
@@ -561,6 +562,7 @@ namespace rock
         _grabInput.bareFistDrawOwned = false;
         input_remap_runtime::setBareFistDrawState(0, false, false);
         weapon_transition_animation_acceleration::cancel("physics-shutdown");
+        grip_zone_indicators::Clear();
         debug::ShutdownShapePipeline();
         input_remap_runtime::setRealMeleeWeaponEquipped(false);
         equipped_weapon_handling_runtime::reset();

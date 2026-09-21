@@ -1085,6 +1085,17 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKDebugOverlaySnapshotPoolTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKDebugOverlaySnapshotPoolTests)
 
+  add_executable(ROCKGripZoneIndicatorsTests
+    "${ROOT_DIR}/tests/GripZoneIndicatorsTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/visual/GripZoneIndicators.cpp"
+  )
+  target_compile_features(ROCKGripZoneIndicatorsTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKGripZoneIndicatorsTests PRIVATE ${SOURCE_DIR})
+  target_compile_definitions(ROCKGripZoneIndicatorsTests PRIVATE ROCK_POLICY_TEST_NO_RUNTIME_LOGGER)
+  target_precompile_headers(ROCKGripZoneIndicatorsTests PRIVATE <F4SE/Impl/PCH.h>)
+  target_link_libraries(ROCKGripZoneIndicatorsTests PRIVATE CommonLibF4::CommonLibF4)
+  add_rock_test(ROCKGripZoneIndicatorsTests)
+
   add_executable(ROCKDebugOverlayRuntimeSettingsTests
     "${ROOT_DIR}/tests/DebugOverlayRuntimeSettingsTests.cpp"
   )
