@@ -210,6 +210,19 @@ namespace rock
         RE::NiTransform& requestedWeapon, const bool surfaceSupportActive, const RE::NiPoint3* primaryGripWeaponLocal)
     {
         if (!gate) return !active();
+        if (!g_rockConfig.rockBladePenetrationEnabled || !g_rockConfig.npcDynamicCollisions) {
+            if (active()) {
+                // Retire the overlapping weapon through the parent before
+                // restoring collision, as on other embedded-blade exits.
+                ROCK_LOG_INFO(Weapon, "BLADE retirement requested: penetration-or-npc-collision-disabled");
+                return false;
+            }
+            if (_blade.valid || _anchor.isValid()) {
+                auto mutation = gate->pauseForMutation();
+                retire(frame.hknpWorld, frame.bhkWorld);
+            }
+            return true;
+        }
         if (_profileGeneration == generation && _sourceBodyId == kInvalidId && !active()) return true;
         auto mutation = gate->pauseForMutation();
         blade_penetration::Blade blade{};

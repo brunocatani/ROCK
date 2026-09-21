@@ -481,6 +481,7 @@ namespace rock
             "fRightSupportGripOffsetZGameUnits", rockRightSupportGripOffsetGameUnits.z, 0.0f, -15.0f, 15.0f);
         rockWeaponCollisionBlocksSpells = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksSpells", rockWeaponCollisionBlocksSpells);
         npcDynamicCollisions = ini.GetBoolValue(SECTION, "npcDynamicCollisions", npcDynamicCollisions);
+        rockBladePenetrationEnabled = ini.GetBoolValue(SECTION, "bBladePenetrationEnabled", rockBladePenetrationEnabled);
         rockWeaponShellCollisionGraceMs = readClampedFloat(ini, SECTION,
             "fWeaponShellCollisionGraceMs", rockWeaponShellCollisionGraceMs,
             shell_casing_grace::kDefaultMilliseconds, 0.0f, shell_casing_grace::kMaximumMilliseconds);

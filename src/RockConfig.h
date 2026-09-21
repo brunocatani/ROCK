@@ -122,6 +122,7 @@ namespace rock
         bool rockWeaponCollisionBlocksProjectiles = false;
         bool rockWeaponCollisionBlocksSpells = false;
         bool npcDynamicCollisions = true;
+        bool rockBladePenetrationEnabled = false;
         float rockWeaponShellCollisionGraceMs = shell_casing_grace::kDefaultMilliseconds;
         // A/B comparison: original support hulls or bounded gap-preserving compounds.
         bool rockWeaponCollisionPreserveGaps = true;
