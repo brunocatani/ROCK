@@ -381,14 +381,14 @@ int main(int argc, char** argv)
             "laser recoil strength reset failed");
         require(store.load(false), "laser recoil reset reload failed");
         require(find(store, "iWeaponDropMode").type == ValueType::Integer &&
-            find(store, "iWeaponDropMode").value == "1", "weapon drop must default to off");
+            find(store, "iWeaponDropMode").value == "2", "weapon drop must default to toggle drop");
         require(find(store, "iWeaponGrabMode").type == ValueType::Integer &&
-            find(store, "iWeaponGrabMode").value == "2", "weapon grab must default to toggling only the firing grip");
+            find(store, "iWeaponGrabMode").value == "1", "weapon grab must default to toggling both grips");
         for (const auto* invalid : { "-1", "0", "4", "invalid" }) {
             CSimpleIniA grabValues;
             grabValues.SetValue("ImmersiveWeapons", "iWeaponGrabMode", invalid);
-            require(rock::RockConfig::parseValues(grabValues).rockWeaponGrabMode == 2,
-                "invalid weapon grab mode must fall back to the firing-grip toggle default");
+            require(rock::RockConfig::parseValues(grabValues).rockWeaponGrabMode == 1,
+                "invalid weapon grab mode must fall back to the toggle-both default");
         }
         require(find(store, "bKeepPreviousWeaponInHandOnEquip").value == "true",
             "previous weapon retention must default to enabled");
@@ -400,7 +400,7 @@ int main(int argc, char** argv)
             store.appendLoadedValues(swapValues);
             const auto swapConfig = rock::RockConfig::parseValues(swapValues);
             require(swapConfig.rockKeepPreviousWeaponInHandOnEquip == (enabled[0] == 't') &&
-                swapConfig.rockWeaponDropMode == 1 && swapConfig.rockWeaponGrabMode == 2,
+                swapConfig.rockWeaponDropMode == 2 && swapConfig.rockWeaponGrabMode == 1,
                 "retention reload must remain independent of weapon drop and grab modes");
         }
         require(!store.setValue(Group::Consumer, "ImmersiveWeapons", "bAutoDrop", "true"),
@@ -414,16 +414,16 @@ int main(int argc, char** argv)
             const auto dropConfig = rock::RockConfig::parseValues(dropValues);
             require(dropConfig.rockWeaponDropMode == mode[0] - '0',
                 "weapon drop mode did not reach runtime configuration");
-            require(dropConfig.rockWeaponGrabMode == 2,
+            require(dropConfig.rockWeaponGrabMode == 1,
                 "weapon drop mode must not change the grip release gesture");
         }
         for (const auto* invalid : { "-1", "0", "4", "invalid" }) {
             CSimpleIniA dropValues;
             dropValues.SetValue("ImmersiveWeapons", "iWeaponDropMode", invalid);
-            require(rock::RockConfig::parseValues(dropValues).rockWeaponDropMode == 1,
-                "invalid weapon drop mode must fall back to off");
+            require(rock::RockConfig::parseValues(dropValues).rockWeaponDropMode == 2,
+                "invalid weapon drop mode must fall back to toggle drop");
         }
-        require(store.setValue(Group::Consumer, "ImmersiveWeapons", "iWeaponDropMode", "1"),
+        require(store.setValue(Group::Consumer, "ImmersiveWeapons", "iWeaponDropMode", "2"),
             "weapon drop mode reset failed");
         require(store.load(false), "weapon drop mode reset reload failed");
         require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fLeftFiringGripOffsetYGameUnits", "0.25"),

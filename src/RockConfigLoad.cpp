@@ -359,14 +359,14 @@ namespace rock
         rockWeaponDropMode = static_cast<int>(ini.GetLongValue(
             IMMERSIVE_WEAPONS_SECTION, "iWeaponDropMode", rockWeaponDropMode));
         if (rockWeaponDropMode < 1 || rockWeaponDropMode > 3) {
-            ROCK_LOG_WARN(Config, "Invalid iWeaponDropMode={} -- using 1", rockWeaponDropMode);
-            rockWeaponDropMode = 1;
+            ROCK_LOG_WARN(Config, "Invalid iWeaponDropMode={} -- using 2", rockWeaponDropMode);
+            rockWeaponDropMode = 2;
         }
         rockWeaponGrabMode = static_cast<int>(ini.GetLongValue(
             IMMERSIVE_WEAPONS_SECTION, "iWeaponGrabMode", rockWeaponGrabMode));
         if (rockWeaponGrabMode < 1 || rockWeaponGrabMode > 3) {
-            ROCK_LOG_WARN(Config, "Invalid iWeaponGrabMode={} -- using 2", rockWeaponGrabMode);
-            rockWeaponGrabMode = 2;
+            ROCK_LOG_WARN(Config, "Invalid iWeaponGrabMode={} -- using 1", rockWeaponGrabMode);
+            rockWeaponGrabMode = 1;
         }
         rockGrabAnywhereOnWeapon = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION,
