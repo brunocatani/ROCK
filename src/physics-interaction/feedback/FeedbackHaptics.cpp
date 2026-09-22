@@ -7,6 +7,10 @@ namespace rock::feedback_haptics
 {
     namespace
     {
+        constexpr double kArmedPulseDurationSeconds = 0.10;
+        constexpr double kArmedPulsePeriodSeconds = 0.30;
+        constexpr float kArmedPulseIntensity = 0.95f;
+
         [[nodiscard]] std::size_t handIndex(FeedbackHand hand) noexcept
         {
             return hand == FeedbackHand::Left ? 1u : 0u;
@@ -41,7 +45,14 @@ namespace rock::feedback_haptics
     void FeedbackHaptics::reset() noexcept
     {
         _events = {};
+        _armedThrowables = {};
         _nextSequence = 1;
+    }
+
+    void FeedbackHaptics::setArmedThrowable(FeedbackHand hand, std::uint32_t referenceId) noexcept
+    {
+        auto& pulse = _armedThrowables[handIndex(hand)];
+        if (pulse.referenceId != referenceId) pulse = { referenceId, 0.0 };
     }
 
     bool FeedbackHaptics::queue(FeedbackHand hand, float durationSeconds, float intensity) noexcept
@@ -120,14 +131,32 @@ namespace rock::feedback_haptics
                 }
             }
 
-            if (latest && outputs && outputCount < outputCapacity) {
+            HapticOutput output{
+                .hand = hand == 1u ? FeedbackHand::Left : FeedbackHand::Right,
+            };
+            if (latest) {
                 const float remaining = (std::max)(0.0f, latest->durationSeconds - latest->elapsedSeconds);
-                outputs[outputCount++] = HapticOutput{
-                    .active = true,
-                    .hand = hand == 1u ? FeedbackHand::Left : FeedbackHand::Right,
-                    .intensity = currentIntensity(*latest),
-                    .pulseDurationSeconds = std::min(remaining, std::clamp(delta, 0.005f, 0.02f)),
-                };
+                output.active = true;
+                output.intensity = currentIntensity(*latest);
+                output.pulseDurationSeconds = std::min(remaining, std::clamp(delta, 0.005f, 0.02f));
+            }
+
+            auto& pulse = _armedThrowables[hand];
+            if (pulse.referenceId != 0) {
+                if (pulse.phaseSeconds < kArmedPulseDurationSeconds) {
+                    const auto remaining = static_cast<float>(kArmedPulseDurationSeconds - pulse.phaseSeconds);
+                    output.active = true;
+                    output.intensity = std::max(output.intensity, kArmedPulseIntensity);
+                    output.pulseDurationSeconds = std::max(output.pulseDurationSeconds,
+                        std::min(remaining, std::clamp(delta, 0.005f, 0.02f)));
+                }
+                // A long frame advances the phase once; never replay missed
+                // bursts or enqueue a tail that could vibrate after release.
+                pulse.phaseSeconds = std::fmod(pulse.phaseSeconds + delta, kArmedPulsePeriodSeconds);
+            }
+
+            if (output.active && outputs && outputCount < outputCapacity) {
+                outputs[outputCount++] = output;
             }
 
             for (auto& event : _events[hand]) {

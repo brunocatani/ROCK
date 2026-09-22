@@ -36,6 +36,9 @@ namespace rock::feedback_haptics
         static constexpr std::size_t kEventsPerHand = 8;
 
         void reset() noexcept;
+        // Supply the final held/armed reference each frame; zero ends feedback.
+        // A separate sustained source cannot evict queued interaction events.
+        void setArmedThrowable(FeedbackHand hand, std::uint32_t referenceId) noexcept;
         bool queue(FeedbackHand hand, float durationSeconds, float intensity) noexcept;
         bool queue(FeedbackHand hand, float durationSeconds, float startIntensity, float endIntensity) noexcept;
         [[nodiscard]] std::size_t update(float deltaSeconds, HapticOutput* outputs, std::size_t outputCapacity) noexcept;
@@ -44,7 +47,14 @@ namespace rock::feedback_haptics
     private:
         using HandEvents = std::array<HapticEvent, kEventsPerHand>;
 
+        struct ArmedThrowablePulse
+        {
+            std::uint32_t referenceId = 0;
+            double phaseSeconds = 0.0;
+        };
+
         std::array<HandEvents, 2> _events{};
+        std::array<ArmedThrowablePulse, 2> _armedThrowables{};
         std::uint64_t _nextSequence = 1;
     };
 }

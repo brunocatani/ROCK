@@ -37,6 +37,14 @@ namespace rock::loose_grenade_runtime
         bool preserveReferenceAfterDetonation{ false };
         bool molotov{ false };
         GrenadeDetonationMode detonationMode{ GrenadeDetonationMode::TimedFuse };
+
+        [[nodiscard]] bool supportsHeldActivationFeedback() const noexcept
+        {
+            // Impact mode also includes throwable mines; Molotov identity must
+            // remain explicit so neither impact nor proximity mines vibrate.
+            return detonationMode == GrenadeDetonationMode::TimedFuse ||
+                (molotov && detonationMode == GrenadeDetonationMode::Impact);
+        }
     };
 
     struct ProximityScanResult

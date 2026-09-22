@@ -151,6 +151,26 @@ namespace rock
 
     void PhysicsInteraction::updateFeedbackHaptics(float deltaSeconds)
     {
+        // Runs after both hands' input and fuse service: release, handoff, and
+        // detonation must be reflected before any controller output is emitted.
+        for (const bool isLeft : { false, true }) {
+            const auto& hand = isLeft ? _leftHand : _rightHand;
+            auto* heldRef = hand.isHolding() ? hand.getHeldRef() : nullptr;
+            std::uint32_t armedReferenceId = 0;
+            if (heldRef && !heldRef->IsDeleted() && !heldRef->IsDisabled()) {
+                for (const auto& fuse : _forceGrab.grenadeFuses) {
+                    if (!fuse.active || !fuse.runtime.supportsHeldActivationFeedback()) continue;
+                    const auto reference = fuse.handle.get();
+                    if (reference.get() == heldRef) {
+                        armedReferenceId = fuse.refFormID;
+                        break;
+                    }
+                }
+            }
+            _feedbackHaptics.setArmedThrowable(isLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
+                armedReferenceId);
+        }
+
         std::array<feedback_haptics::HapticOutput, 2> outputs{};
         const auto outputCount = _feedbackHaptics.update(deltaSeconds, outputs.data(), outputs.size());
         for (std::size_t i = 0; i < outputCount; ++i) {

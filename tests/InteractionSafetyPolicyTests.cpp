@@ -1,6 +1,7 @@
 #include "physics-interaction/api/InteractionCommandPolicy.h"
 #include "physics-interaction/core/ForceGrabPolicy.h"
 #include "physics-interaction/grenade/LooseThrowablePolicy.h"
+#include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
 #include "physics-interaction/weapon/BareFistGuardPolicy.h"
 #include "physics-interaction/weapon/HeldWeaponEquipStatePolicy.h"
@@ -128,6 +129,21 @@ int main()
     ok &= expectFalse("gun is not a supported throwable", isSupportedWeaponType(TestWeaponType::Gun, TestWeaponType::Grenade, TestWeaponType::Mine));
     ok &= expectEqual("generic grenade keeps timed fuse", classifyDetonationMode(TestWeaponType::Grenade, TestWeaponType::Grenade, TestWeaponType::Mine, false, true, 0.0f), DetonationMode::TimedFuse);
     ok &= expectEqual("Molotov uses impact", classifyDetonationMode(TestWeaponType::Grenade, TestWeaponType::Grenade, TestWeaponType::Mine, true, true, 0.0f), DetonationMode::Impact);
+    {
+        using rock::loose_grenade_runtime::GrenadeDetonationMode;
+        rock::loose_grenade_runtime::GrenadeRuntimeData runtime{};
+        runtime.detonationMode = GrenadeDetonationMode::TimedFuse;
+        ok &= expectTrue("timed grenades provide held activation feedback", runtime.supportsHeldActivationFeedback());
+        runtime.detonationMode = GrenadeDetonationMode::Impact;
+        ok &= expectFalse("impact mines do not provide grenade activation feedback", runtime.supportsHeldActivationFeedback());
+        runtime.molotov = true;
+        ok &= expectTrue("Molotovs provide held activation feedback", runtime.supportsHeldActivationFeedback());
+        runtime.molotov = false;
+        runtime.detonationMode = GrenadeDetonationMode::Proximity;
+        ok &= expectFalse("proximity mines do not provide grenade activation feedback", runtime.supportsHeldActivationFeedback());
+        runtime.detonationMode = GrenadeDetonationMode::Unsupported;
+        ok &= expectFalse("unsupported explosives do not provide activation feedback", runtime.supportsHeldActivationFeedback());
+    }
     ok &= expectEqual("placed mine uses proximity", classifyDetonationMode(TestWeaponType::Mine, TestWeaponType::Grenade, TestWeaponType::Mine, false, true, 100.0f), DetonationMode::Proximity);
     ok &= expectEqual("projectile-style mine uses impact", classifyDetonationMode(TestWeaponType::Mine, TestWeaponType::Grenade, TestWeaponType::Mine, false, true, 0.0f), DetonationMode::Impact);
     ok &= expectEqual("mine with invalid proximity fails closed", classifyDetonationMode(TestWeaponType::Mine, TestWeaponType::Grenade, TestWeaponType::Mine, false, true, (std::numeric_limits<float>::quiet_NaN)()), DetonationMode::Unsupported);

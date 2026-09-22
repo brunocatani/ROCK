@@ -531,7 +531,7 @@ namespace rock
             REALISTIC_WEAPONS_SECTION,
             "fRealisticGrenadeFuseSeconds",
             rockRealisticGrenadeFuseSeconds,
-            3.0f,
+            4.0f,
             0.0f,
             30.0f);
         rockWeaponSupportGripHandLerpEnabled = ini.GetBoolValue(SECTION, "bWeaponSupportGripHandLerpEnabled", rockWeaponSupportGripHandLerpEnabled);

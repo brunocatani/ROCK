@@ -138,7 +138,7 @@ namespace rock
         float rockWeaponInteractionProbeRadius = 12.0f;
         float rockFiringGripProximitySupportRadius = 8.0f;
         bool rockImmersiveGrenades = true;
-        float rockRealisticGrenadeFuseSeconds = 3.0f;
+        float rockRealisticGrenadeFuseSeconds = 4.0f;
         bool rockWeaponSupportGripHandLerpEnabled = true;
         float rockWeaponSupportGripHandLerpTimeMin = 0.12f;
         float rockWeaponSupportGripHandLerpTimeMax = 0.20f;
