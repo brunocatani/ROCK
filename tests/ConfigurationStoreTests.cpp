@@ -290,8 +290,8 @@ int main(int argc, char** argv)
             require(rock::RockConfig::parseValues(grabValues).rockWeaponGrabMode == 2,
                 "invalid weapon grab mode must fall back to the firing-grip toggle default");
         }
-        require(find(store, "bKeepPreviousWeaponInHandOnEquip").value == "false",
-            "previous weapon retention must be opt-in");
+        require(find(store, "bKeepPreviousWeaponInHandOnEquip").value == "true",
+            "previous weapon retention must default to enabled");
         for (const auto* enabled : { "true", "false" }) {
             require(store.setValue(Group::Consumer, "ImmersiveWeapons", "bKeepPreviousWeaponInHandOnEquip", enabled),
                 "previous weapon retention write failed");

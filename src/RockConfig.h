@@ -95,7 +95,7 @@ namespace rock
         bool rockFiringGripDetachPosePreservationEnabled = true;
         // 1: keep equipped; 2: transfer to a held loose weapon; 3: drop without grabbing.
         int rockWeaponDropMode = 1;
-        bool rockKeepPreviousWeaponInHandOnEquip = false;
+        bool rockKeepPreviousWeaponInHandOnEquip = true;
         // 1: toggle both grips; 2: toggle firing only; 3: hold both grips.
         int rockWeaponGrabMode = 2;
         // Allow dynamic support grabs beyond authored grips. False preserves
