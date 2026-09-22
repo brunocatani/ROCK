@@ -5,7 +5,7 @@ Requirements
 ------------
 
 - Fallout 4 VR 1.2.72.0 and F4SEVR.
-- Upstream FRIK 0.79.0 or newer with FRIK API v2.3 (frame phases), installed separately.
+- Upstream FRIK 0.79.1 or newer with FRIK API v2.3 (frame phases), installed separately.
 - VR Address Library for F4SEVR.
 
 FRIK: https://www.nexusmods.com/fallout4/mods/53464
@@ -44,8 +44,16 @@ Upgrading from older versions: bToggleGrab and bAutoDrop are replaced by
 iWeaponGrabMode and iWeaponDropMode. The default is iWeaponGrabMode=2
 (toggle firing grip, hold support) and iWeaponDropMode=1 (No Drop).
 Use iWeaponDropMode=2 for the former retained-in-hand Auto Drop behavior.
+Keeping the previous weapon in the other hand when equipping another is now
+enabled by default through bKeepPreviousWeaponInHandOnEquip=true.
+Back up and delete an old ROCK.ini before launching to regenerate it with
+the current defaults. Keep SavedGrabOffsets and AuthoredWeaponGripCache.
 NPC dynamic collisions are enabled by default through npcDynamicCollisions
 in ROCK.ini. Update dependent addons to versions using the modular ROCK API.
+
+Experimental knife and sword penetration is disabled by default. Enable
+bBladePenetrationEnabled in ROCK.ini to use it; npcDynamicCollisions is also
+required. Disabling penetration releases an embedded blade.
 
 The source references data/config/ROCK_example.ini and
 data/config/ROCK_Developer_example.ini list every supported option and default
