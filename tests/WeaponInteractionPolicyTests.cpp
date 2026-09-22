@@ -1653,6 +1653,27 @@ static bool testPartGripReporting()
     ok &= expectEqual("firing hand without part grip in part-carry reports no grip",
         resolveHandGripKind(false, true, false, true, false, false, false),
         HandGripKind::None);
+    const CarryGripInput authoredSeat{ .active = true, .authoredSupportSeat = true };
+    ok &= expectTrue("paired authored handguards use one moving anchor",
+        usesAuthoredSupportCarryPair(authoredSeat, authoredSeat));
+    for (const bool changeLeft : { true, false }) {
+        for (int excluded = 0; excluded < 4; ++excluded) {
+            auto other = authoredSeat;
+            if (excluded == 0) other.active = false;
+            if (excluded == 1) other.authoredSupportSeat = false;
+            if (excluded == 2) other.providerAuthorityActive = true;
+            if (excluded == 3) other.attachOnly = true;
+            ok &= expectTrue("only two unreserved authored support seats select visual carry",
+                !usesAuthoredSupportCarryPair(changeLeft ? other : authoredSeat,
+                    changeLeft ? authoredSeat : other));
+        }
+    }
+    ok &= expectEqual("authored carry follower reports visual support",
+        resolveHandGripKind(false, true, false, true, true, false, true),
+        HandGripKind::SupportVisualOnly);
+    ok &= expectEqual("provider glue remains attach-only during visual carry",
+        resolveHandGripKind(false, true, false, false, true, true, true),
+        HandGripKind::AttachOnly);
     return ok;
 }
 
@@ -3024,6 +3045,53 @@ int main()
             authoredLeftHandWeaponLocal);
     }
 
+    // Alternating handguard carriers have very different raw wrist rotations.
+    // Every transfer must start at the prior rendered pose, then follow only
+    // subsequent controller motion while preserving the authored hand relation.
+    for (const bool startLeft : { true, false }) {
+        TestTransform weapon = rock::transform_math::makeIdentityTransform<TestTransform>();
+        weapon.rotate = makeAxisAngleRotation(rock::weaponSolverNormalize(TestVector3{ 0.3f, -0.4f, 0.7f }), 43.0f);
+        weapon.translate = { 20.0f, -15.0f, 31.0f };
+        weapon.scale = 1.25f;
+        for (int transfer = 0; transfer < 12; ++transfer) {
+            const bool left = (transfer % 2 == 0) == startLeft;
+            TestTransform seat = rock::transform_math::makeIdentityTransform<TestTransform>();
+            seat.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 1.0f, 0.0f }, left ? 90.0f : -90.0f);
+            seat.translate = { left ? -4.0f : 4.0f, 22.0f, 1.5f };
+            const auto handTarget = rock::transform_math::composeTransforms(weapon, seat);
+            TestTransform driver = rock::transform_math::makeIdentityTransform<TestTransform>();
+            driver.rotate = makeAxisAngleRotation(rock::weaponSolverNormalize(TestVector3{ 0.2f, 0.8f, -0.3f }),
+                (left ? -117.0f : 73.0f) + transfer * 3.0f);
+            driver.translate = { left ? -12.0f : 16.0f, 26.0f, 9.0f };
+            driver.scale = left ? 0.8f : 1.1f;
+            TestTransform weaponBaseline{}, handBaseline{}, firstWeapon{}, firstHand{};
+            ok &= expectTrue("carry handoff captures weapon baseline",
+                rock::weapon_support_acquisition_math::tryCaptureSupportInputBaseline(driver, weapon, weaponBaseline));
+            ok &= expectTrue("carry handoff captures authored wrist baseline",
+                rock::weapon_support_acquisition_math::tryCaptureSupportInputBaseline(driver, handTarget, handBaseline));
+            ok &= expectTrue("carry handoff resolves unchanged controller",
+                rock::weapon_support_acquisition_math::tryResolveSupportInputTarget(driver, weaponBaseline, firstWeapon));
+            ok &= expectTrue("carry handoff resolves unchanged authored wrist",
+                rock::weapon_support_acquisition_math::tryResolveSupportInputTarget(driver, handBaseline, firstHand));
+            ok &= expectTransformNear("handguard handoff preserves translation rotation and scale", firstWeapon, weapon);
+            ok &= expectTransformNear("handguard handoff preserves the authored wrist", firstHand, handTarget);
+            TestTransform motion = rock::transform_math::makeIdentityTransform<TestTransform>();
+            motion.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, left ? 13.0f : -8.0f);
+            motion.translate = { 3.0f, -2.0f, 1.0f };
+            const auto movedDriver = rock::transform_math::composeTransforms(motion, driver);
+            TestTransform movedWeapon{}, movedHand{};
+            ok &= expectTrue("new carrier moves the calibrated weapon",
+                rock::weapon_support_acquisition_math::tryResolveSupportInputTarget(movedDriver, weaponBaseline, movedWeapon));
+            ok &= expectTrue("new carrier moves its authored target",
+                rock::weapon_support_acquisition_math::tryResolveSupportInputTarget(movedDriver, handBaseline, movedHand));
+            ok &= expectTransformNear("only post-handoff raw motion moves the weapon", movedWeapon,
+                rock::transform_math::composeTransforms(motion, weapon));
+            ok &= expectTransformNear("handoffs never reauthor the handguard seat",
+                rock::transform_math::composeTransforms(rock::transform_math::invertTransform(movedWeapon), movedHand), seat);
+            weapon = movedWeapon;
+        }
+    }
+
     using namespace rock::contact_pipeline_policy;
 
     const ContactEndpoint weapon{
@@ -3174,6 +3242,12 @@ int main()
             }),
         rock::immersive_weapon_policy::
             DetachedFiringHandPartGrabSelection::Reject);
+    ok &= expectEqual("detached firing hand accepts its validated authored handguard seat",
+        rock::immersive_weapon_policy::resolveDetachedFiringHandPartGrab({
+            .partCarryAuthority = rock::immersive_weapon_policy::DetachAuthority::IntegratedImmersive,
+            .authoredOnlySupportGrabsEnabled = true,
+            .authoredSupportSeatAvailable = true,
+        }), rock::immersive_weapon_policy::DetachedFiringHandPartGrabSelection::Standard);
     ok &= expectEqual(
         "authored-only integrated detach accepts an exact provider part target",
         rock::immersive_weapon_policy::

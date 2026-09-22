@@ -1835,13 +1835,10 @@ namespace rock
             overlayFrame.positions[overlayFrame.count++] = positionWorld;
         };
 
-        const auto authoredSupportFrame =
-            _twoHandedGrip.getAuthoredSupportGripIndicatorFrame();
-        appendIndicator(
-            authoredSupportFrame,
-            authoredSupportFrame.supportHandIsLeft ?
-                _leftHand :
-                _rightHand);
+        for (const bool isLeft : { true, false }) {
+            appendIndicator(_twoHandedGrip.getAuthoredSupportGripIndicatorFrame(isLeft),
+                isLeft ? _leftHand : _rightHand);
+        }
 
         const auto firingReattachFrame =
             _twoHandedGrip.getFiringGripReattachIndicatorFrame();

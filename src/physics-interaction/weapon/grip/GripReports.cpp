@@ -75,7 +75,9 @@ namespace rock
             handHasFiringRole,
             grip.active,
             grip.attachOnly,
-            _session.authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport);
+            isPartCarryActive() ?
+                (hasAuthoredSupportCarryPair() && isLeft != _partCarry.pivotIsLeft) :
+                _session.authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport);
         outReport.kind = kind;
         if (kind == weapon_part_grip_report_policy::HandGripKind::None) {
             return;

@@ -513,9 +513,9 @@ namespace rock
         void observeEquippedOwnership(std::uint64_t ownershipKey, std::uint64_t gripGenerationKey, bool acquisitionPending);
 
         [[nodiscard]] AuthoredSupportGripIndicatorFrame
-            getAuthoredSupportGripIndicatorFrame() const noexcept
+            getAuthoredSupportGripIndicatorFrame(bool isLeft) const noexcept
         {
-            return _support.authoredIndicatorFrame;
+            return authoredSupportHand(isLeft).authoredIndicatorFrame;
         }
 
         // Marker for the firing-grip reattach zone: visible while an open
@@ -758,11 +758,7 @@ namespace rock
         bool weaponCarrierIsLeft() const
         {
             if (_session.state == TwoHandedState::PartCarry) {
-                const bool leftCarries = isHandPartCarryGripping(true);
-                const bool rightCarries = isHandPartCarryGripping(false);
-                if (leftCarries != rightCarries) {
-                    return leftCarries;
-                }
+                return _partCarry.pivotIsLeft;
             }
             return isFiringHandLeft();
         }
@@ -842,6 +838,7 @@ namespace rock
         bool getDebugAuthoritySnapshot(TwoHandedGripDebugSnapshot& outSnapshot) const;
 
         bool getAuthoredSupportGripDebugSnapshot(
+            bool isLeft,
             AuthoredSupportGripDebugSnapshot& outSnapshot) const;
 
         bool getFiringGripReattachZoneDebugSnapshot(
@@ -1461,7 +1458,7 @@ namespace rock
 
         bool transitionToPartCarry();
 
-        bool tryBuildIntegratedDetachPartCarryBaseline(
+        bool tryBuildPartCarryInputBaseline(
             bool carryHandIsLeft,
             SupportInputBaselineState& outBaseline,
             const char*& outFailureReason) const;
@@ -1630,28 +1627,37 @@ namespace rock
             RE::NiPoint3& outDownAxisWorld,
             RE::NiPoint3& outReferenceAxisWorld) const;
         void refreshAuthoredSupportGripActivationState(
+            bool isLeft,
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
             const WeaponCollision& weaponCollision);
-        void resetAuthoredSupportCapability(const char* reason);
+        void resetAuthoredSupportCapability(bool isLeft, const char* reason);
+        void resetAuthoredSupportCapabilities(const char* reason);
         void synchronizeAuthoredSupportCapabilityIdentity(
+            bool isLeft,
             RE::NiNode* weaponNode,
             std::uint64_t weaponOwnershipKey,
-            std::uint64_t weaponGenerationKey,
-            authored_weapon_grip_activation_policy::HandTopology handTopology);
+            std::uint64_t weaponGenerationKey);
         void advanceAuthoredSupportCapabilityQualification(
+            bool isLeft,
             bool ready,
             float deltaSeconds);
         void observeAuthoredSupportCapability(
+            bool isLeft,
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey);
         void setAuthoredSupportCapability(
+            bool isLeft,
             authored_support_grab_policy::Capability capability,
             authored_support_grab_policy::CapabilityReason reason);
         void recordSupportGrabSelection(
             const authored_support_grab_policy::SelectionDecision& decision,
             bool isLeft,
             std::uint64_t weaponGenerationKey);
+        [[nodiscard]] bool authoredSupportSeatAvailable(bool isLeft,
+            std::uint64_t generation, const WeaponInteractionRuntimeState& runtime) const;
+        [[nodiscard]] bool hasAuthoredSupportCarryPair() const noexcept;
+        bool handoffAuthoredSupportCarry(bool releasingHandIsLeft);
 
         /*
          * Reattach validates the hand first and only then commits; a takeover
@@ -2118,17 +2124,13 @@ namespace rock
             FiringGripReattachZoneDebugSnapshot reattachDebugSnapshot{};
         };
 
-        // State owned by the SupportGrip module: the per-hand part grips,
-        // the authored support candidate/capability/selection pipeline, and
-        // the dynamic support acquisition transaction.
-        struct SupportGripState
+        // Activation and qualification belong to physical hands, independently
+        // of which hand currently occupies the firing grip or carries the gun.
+        struct AuthoredSupportHandState
         {
-            std::array<WeaponPartGrip, 2> partGrips{};
-            AuthoredSupportGripCandidate authoredCandidate{};
             AuthoredSupportCapabilityState authoredCapability{};
             authored_support_grab_policy::SelectionDecision lastSelection{};
             std::uint64_t lastSelectionGenerationKey{ 0 };
-            bool lastSelectionHandIsLeft{ true };
             bool lastSelectionValid{ false };
             AuthoredSupportGripIndicatorFrame authoredIndicatorFrame{};
             AuthoredSupportGripDebugSnapshot authoredDebugSnapshot{};
@@ -2140,6 +2142,17 @@ namespace rock
                     authored_weapon_grip_activation_policy::HandTopology::Invalid
                 };
             bool lastStableApproachDirectionValid{ false };
+        };
+
+        AuthoredSupportHandState& authoredSupportHand(bool isLeft) { return _support.authoredHands[isLeft ? 0u : 1u]; }
+        const AuthoredSupportHandState& authoredSupportHand(bool isLeft) const { return _support.authoredHands[isLeft ? 0u : 1u]; }
+
+        // Per-hand grips and acquisition state share one identity-bound pose pair.
+        struct SupportGripState
+        {
+            std::array<WeaponPartGrip, 2> partGrips{};
+            AuthoredSupportGripCandidate authoredCandidate{};
+            std::array<AuthoredSupportHandState, 2> authoredHands{};
 
             DynamicSupportAcquisitionState dynamicAcquisition{};
 

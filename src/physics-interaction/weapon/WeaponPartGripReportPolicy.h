@@ -34,6 +34,26 @@ namespace rock::weapon_part_grip_report_policy
         return active && !attachOnly;
     }
 
+    struct CarryGripInput
+    {
+        bool active{ false };
+        bool authoredSupportSeat{ false };
+        bool providerAuthorityActive{ false };
+        bool attachOnly{ false };
+    };
+
+    // Both authored handguard seats may retain the gun, but only the current
+    // pivot moves it. Provider grips keep their explicitly requested authority.
+    [[nodiscard]] inline constexpr bool usesAuthoredSupportCarryPair(
+        const CarryGripInput& left, const CarryGripInput& right) noexcept
+    {
+        const auto authoredCarrier = [](const CarryGripInput& grip) {
+            return grip.active && grip.authoredSupportSeat &&
+                !grip.providerAuthorityActive && !grip.attachOnly;
+        };
+        return authoredCarrier(left) && authoredCarrier(right);
+    }
+
     [[nodiscard]] inline constexpr bool providerGrabModeIsAttachOnly(bool providerAuthorityActive, std::uint32_t grabMode) noexcept
     {
         return providerAuthorityActive &&
@@ -61,7 +81,7 @@ namespace rock::weapon_part_grip_report_policy
             return HandGripKind::AttachOnly;
         }
         if (partCarryActive) {
-            return HandGripKind::PartCarry;
+            return visualOnlyAuthority ? HandGripKind::SupportVisualOnly : HandGripKind::PartCarry;
         }
         if (grippingActive) {
             return visualOnlyAuthority ? HandGripKind::SupportVisualOnly : HandGripKind::SupportFullAuthority;
