@@ -129,6 +129,7 @@ namespace rock
 
     void TwoHandedGrip::updateHandVisualReturns(const float dt)
     {
+        performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedGripVisualReturn);
         // A return that starts at the grip pose pins the hand there until it
         // advances, and a scope provider can hold the vanilla ScopeMenu open
         // long after the player stops aiming. Under FRIK API v2.3 the scoped

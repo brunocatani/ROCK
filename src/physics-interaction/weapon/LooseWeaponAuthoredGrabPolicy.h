@@ -37,6 +37,24 @@ namespace rock::loose_weapon_authored_grab_policy
         return zoneRole;
     }
 
+    [[nodiscard]] constexpr bool dynamicSupportAcquisition(Role role, bool peerHolding,
+        Arrangement layout, bool transfer) noexcept
+    {
+        return role == Role::Support && peerHolding && layout == Arrangement::OneHanded && !transfer;
+    }
+
+    // Surface evidence may still change touch admission. Preselect only when
+    // both possible touch outcomes choose the same authored station, or when
+    // an arrival/transfer already determines it independently of touch.
+    [[nodiscard]] constexpr Role surfaceIndependentAcquisitionRole(bool programmaticArrival,
+        bool transfer, Role transferRole, Arrangement layout, bool peerHolding, Role zoneRole) noexcept
+    {
+        const auto role = acquisitionRole(false, transfer, transferRole, layout, peerHolding, zoneRole);
+        if ((!programmaticArrival && role != acquisitionRole(true, transfer, transferRole, layout, peerHolding, zoneRole)) ||
+            dynamicSupportAcquisition(role, peerHolding, layout, transfer)) return Role::None;
+        return role;
+    }
+
     // Outside both authored seats the existing mesh grab remains authoritative.
     // Compare actual distances, not radii, when the two zones overlap.
     [[nodiscard]] inline Role select(bool firingEligible, float firingDistance,

@@ -527,6 +527,39 @@ int main()
                 }
             }
         }
+        // Every admitted early role must equal the ordinary selector for
+        // either touch outcome. Programmatic arrivals cannot become touching.
+        for (const bool arrival : { false, true }) {
+            for (const bool transfer : { false, true }) {
+                for (const auto transferredRole : { Role::None, Role::Firing, Role::Support }) {
+                    for (const auto layout : { Layout::Pending, Layout::Separated, Layout::Close, Layout::OneHanded }) {
+                        for (const bool peer : { false, true }) {
+                            for (const auto zone : { Role::None, Role::Firing, Role::Support }) {
+                                const auto early = loose::surfaceIndependentAcquisitionRole(
+                                    arrival, transfer, transferredRole, layout, peer, zone);
+                                if (early == Role::None) continue;
+                                for (const bool touching : { false, true }) {
+                                    looseGripsPass &= early == loose::acquisitionRole(
+                                        touching && !arrival, transfer, transferredRole, layout, peer, zone);
+                                }
+                                looseGripsPass &= !(early == Role::Support && peer &&
+                                    layout == Layout::OneHanded && !transfer);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        looseGripsPass &= loose::surfaceIndependentAcquisitionRole(
+            true, true, Role::Firing, Layout::Separated, false, Role::None) == Role::Firing;
+        looseGripsPass &= loose::surfaceIndependentAcquisitionRole(
+            false, false, Role::None, Layout::Separated, false, Role::Firing) == Role::Firing;
+        looseGripsPass &= loose::surfaceIndependentAcquisitionRole(
+            false, false, Role::None, Layout::Separated, false, Role::Support) == Role::None;
+        looseGripsPass &= loose::surfaceIndependentAcquisitionRole(
+            false, false, Role::None, Layout::Separated, true, Role::Support) == Role::Support;
+        looseGripsPass &= loose::surfaceIndependentAcquisitionRole(
+            false, false, Role::None, Layout::OneHanded, true, Role::Firing) == Role::None;
         if (!looseGripsPass) return 1;
     }
 

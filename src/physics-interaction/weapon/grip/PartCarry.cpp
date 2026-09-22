@@ -205,6 +205,7 @@ namespace rock
         const WeaponInteractionRuntimeState& rightRuntimeState,
         const WeaponInteractionDecision& supportAcquisitionDecision)
     {
+        performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedGripSolve);
         const bool supportHandIsLeft = isSupportHandLeft();
         const bool firingHandIsLeft = isFiringHandLeft();
         const WeaponInteractionContact& firingHandContact = firingHandIsLeft ? leftWeaponContact : rightWeaponContact;

@@ -252,6 +252,14 @@ namespace rock::performance_profiler
             case Scope::RagdollComponentRead: return "ragdollComponentRead";
             case Scope::RagdollBodyRefresh: return "ragdollBodyRefresh";
             case Scope::GrabContactPatchIndexBuild: return "grabContactPatchIndexBuild";
+            case Scope::GrabAuthoredPreparation: return "grabAuthoredPreparation";
+            case Scope::EquippedGripController: return "equippedGripController";
+            case Scope::EquippedGripScopeFrames: return "equippedGripScopeFrames";
+            case Scope::EquippedGripActivation: return "equippedGripActivation";
+            case Scope::EquippedGripSolve: return "equippedGripSolve";
+            case Scope::EquippedGripVisualReturn: return "equippedGripVisualReturn";
+            case Scope::EquippedNativeScopeRead: return "equippedNativeScopeRead";
+            case Scope::EquippedNativeScopeAnchor: return "equippedNativeScopeAnchor";
             case Scope::WeaponProbePoseCapture: return "weaponProbePoseCapture";
             case Scope::WeaponSourcePoseUpdate: return "weaponSourcePoseUpdate";
             case Scope::WeaponCompoundPoseUpdate: return "weaponCompoundPoseUpdate";
@@ -314,6 +322,9 @@ namespace rock::performance_profiler
             case Counter::GrabAcquisitionSucceeded: return "grabAcquisitionSucceeded";
             case Counter::GrabSingleBodyVisualOwnerAccepted: return "grabSingleBodyVisualOwnerAccepted";
             case Counter::GrabMeshOwnerMismatchRejected: return "grabMeshOwnerMismatchRejected";
+            case Counter::GrabAuthoredSurfaceWorkSkipped: return "grabAuthoredSurfaceWorkSkipped";
+            case Counter::GrabAuthoredSurfaceWorkRequired: return "grabAuthoredSurfaceWorkRequired";
+            case Counter::GrabAuthoredPreparationInvalidated: return "grabAuthoredPreparationInvalidated";
             case Counter::WeaponProbeFramesEnabled: return "weaponProbeFramesEnabled";
             case Counter::WeaponProbeFramesSkipped: return "weaponProbeFramesSkipped";
             case Counter::WeaponProbePoseBatches: return "weaponProbePoseBatches";
@@ -758,7 +769,7 @@ namespace rock::performance_profiler
                             snapshot.droppedSnapshotsBeforeThis);
                     }
 
-                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1 grabMeshQueries=1 contactPairs=1 nativeWeaponSelfFilter=1 grabSingleBodyVisualOwner=1 grabRagdollWork=1 equippedProbeBatch=1 equippedProbeGate=1", snapshot.frames, GetCurrentProcessId());
+                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1 grabMeshQueries=1 contactPairs=1 nativeWeaponSelfFilter=1 grabSingleBodyVisualOwner=1 grabRagdollWork=1 equippedProbeBatch=1 equippedProbeGate=1 authoredPickupPreparation=1 equippedGripBreakdown=1", snapshot.frames, GetCurrentProcessId());
                     for (const auto& item : snapshot.scopes) {
                         if (!item.hasData()) {
                             continue;

@@ -404,6 +404,7 @@ namespace rock
         std::uint32_t currentEquippedWeaponFormID,
         const WeaponCollision& weaponCollision)
     {
+        performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedNativeScopeAnchor);
         if (!g_rockConfig.rockEnableImmersiveScopes) {
             clearImmersiveScopePresentation();
             // Observe native activation for this weapon without a ROCK anchor.

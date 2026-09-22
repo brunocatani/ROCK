@@ -224,6 +224,7 @@ namespace rock
 
         inline bool tryReadNativeScopeRequestState(bool& outActive)
         {
+            performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedNativeScopeRead);
             using GetScopeRequestState = bool (*)(const void*);
             static REL::Relocation<GetScopeRequestState> getScopeRequestState{ REL::Offset(offsets::kFunc_NativeScopeRequestStateGet) };
             static REL::Relocation<std::uintptr_t> rendererState{ REL::Offset(offsets::kData_NativeScopeRendererState) };

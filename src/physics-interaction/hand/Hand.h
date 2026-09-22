@@ -863,6 +863,7 @@ namespace rock
             const ResolvedGrabBodyCapture& bodyCapture,
             const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet,
             const grab_contact_source_policy::GrabContactSourcePolicy& contactSourcePolicy,
+            bool authoredSeatPrepared,
             bool canonicalPivotAvailable,
             const RE::NiPoint3& canonicalPivotPointWorld,
             const RE::NiPoint3& canonicalPivotNormalWorld,

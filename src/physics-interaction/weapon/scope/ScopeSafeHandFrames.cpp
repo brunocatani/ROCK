@@ -7,6 +7,7 @@ namespace rock
 {
     void TwoHandedGrip::refreshScopeSafeHandFrames(RE::NiNode* weaponNode, const EquippedWeaponGripFrameInput& frameInput, float dt)
     {
+        performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedGripScopeFrames);
         _scope.manualActivationRequested =
             frameInput.manualScopeActivationRequested;
         _scope.nativeRequestStateValid = frameInput.nativeScopeRequestStateValid;

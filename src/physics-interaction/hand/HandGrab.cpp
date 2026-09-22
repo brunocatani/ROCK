@@ -7586,6 +7586,7 @@ namespace rock
         const ResolvedGrabBodyCapture& bodyCapture,
         const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet,
         const grab_contact_source_policy::GrabContactSourcePolicy& contactSourcePolicy,
+        bool authoredSeatPrepared,
         bool canonicalPivotAvailable,
         const RE::NiPoint3& canonicalPivotPointWorld,
         const RE::NiPoint3& canonicalPivotNormalWorld,
@@ -7639,7 +7640,7 @@ namespace rock
             acquisitionGrabPivotAWorld,
             g_rockConfig.rockGrabPocketDepthGameUnits,
             g_rockConfig.rockGrabPocketRadiusGameUnits);
-            if (acquisitionPocket.valid && !grabSurfaceTriangles.empty()) {
+            if (!authoredSeatPrepared && acquisitionPocket.valid && !grabSurfaceTriangles.empty()) {
                 const float palmPocketSnapDistance = (std::max)(
                     g_rockConfig.rockGrabPocketRadiusGameUnits,
                     (std::max)(
@@ -7672,7 +7673,7 @@ namespace rock
                 }
             }
 
-            if (!handPocketOnlyGrab && contactSourcePolicy.allowContactPatchPivot && g_rockConfig.rockGrabContactPatchEnabled && !sel.isFarSelection) {
+            if (!authoredSeatPrepared && !handPocketOnlyGrab && contactSourcePolicy.allowContactPatchPivot && g_rockConfig.rockGrabContactPatchEnabled && !sel.isFarSelection) {
                 const RE::NiPoint3 palmNormalWorld = acquisitionPocket.palmNormalWorld;
                 const RE::NiPoint3 palmTangentWorld = acquisitionPocket.fingerForwardWorld;
                 const RE::NiPoint3 palmBitangentWorld = acquisitionPocket.crossPalmWorld;
@@ -7962,6 +7963,7 @@ namespace rock
         bool multiFingerEvidenceEnabled = false;
         bool hybridFingerProbeEvidenceEnabled = false;
         bool visualMeshPivotAvailable = false;
+        bool authoredSeatPrepared = false;
     };
 
     struct Hand::GrabFingerEvidence
@@ -8029,6 +8031,10 @@ namespace rock
             palmSeatPointMode = grabPointMode;
             palmSeatFallbackReason = grabFallbackReason;
             palmSeatPointValid = canonicalPivotAvailable;
+
+            // Preparation already proved that the baseline mesh alone passes
+            // contact admission. Authored placement supplies the final fingers.
+            if (input.authoredSeatPrepared) return true;
 
             if (!pinchPocketCandidate.valid && multiFingerEvidenceEnabled) {
                 std::vector<GrabSurfaceTriangleData> multiFingerSurfaceTriangles;
@@ -8556,6 +8562,7 @@ namespace rock
         bool looseWeaponGrab = false;
         bool joiningPeerHeldObject = false;
         const AuthoredWeaponGripPose* transferPose = nullptr;
+        const loose_weapon_grip_zone::NearGrab* preparedAuthoredGrip = nullptr;
         RE::NiPoint3 canonicalPivotNormalWorld{};
         GrabRollbackAction rollback{};
     };
@@ -8635,14 +8642,25 @@ namespace rock
         const bool authoredWeapon = looseWeaponGrab && !isThrowableLooseWeapon(selectedLooseWeaponForm(sel));
         bool requireAuthoredPose = false;
         bool nearAuthored = false;
-        if (authoredWeapon) {
+        if (input.preparedAuthoredGrip) {
+            nearGrip = *input.preparedAuthoredGrip;
+            requireAuthoredPose = true;
+            const auto* weapon = selectedLooseWeaponForm(sel);
+            nearAuthored = authoredWeapon && weapon && sel.refr->Get3D() == rootNode &&
+                nearGrip.handWorldValid && nearGrip.pose.valid() &&
+                nearGrip.pose.weaponFormId == weapon->formID && nearGrip.pose.isLeft == _isLeft &&
+                nearGrip.pose.role == nearGrip.role;
+            if (!nearAuthored) {
+                performance_profiler::addCounter(performance_profiler::Counter::GrabAuthoredPreparationInvalidated);
+            }
+        } else if (authoredWeapon) {
             namespace policy = loose_weapon_authored_grab_policy;
             (void)loose_weapon_grip_zone::tryResolveNearGrab(_isLeft, sel.refr, nearGrip, input.joiningPeerHeldObject);
             const auto role = policy::acquisitionRole(touchingPocket && !grabbedFromPullCatch && !sel.forcedArrival,
                 input.transferPose != nullptr, input.transferPose ? input.transferPose->role : policy::Role::None,
                 nearGrip.arrangement, input.joiningPeerHeldObject, nearGrip.role);
-            const bool dynamicOffhand = role == policy::Role::Support && input.joiningPeerHeldObject &&
-                nearGrip.arrangement == policy::Arrangement::OneHanded && !input.transferPose;
+            const bool dynamicOffhand = policy::dynamicSupportAcquisition(
+                role, input.joiningPeerHeldObject, nearGrip.arrangement, input.transferPose != nullptr);
             ROCK_LOG_SAMPLE_INFO(Hand, 1000,
                 "{} loose weapon role selection ref={:08X} peerHolding={} touchingPocket={} pull={} forced={} transfer={} arrangement={} zoneRole={} selectedRole={} dynamicSupport={}",
                 handName(), sel.refr ? sel.refr->GetFormID() : 0, input.joiningPeerHeldObject,
@@ -11695,6 +11713,62 @@ namespace rock
                 nodeDebugName(collidableNode), nodeDebugName(surfaceEvidence.surfaceOwnerNode));
         }
 
+        loose_weapon_grip_zone::NearGrab preparedAuthoredGrip{};
+        bool authoredSeatPrepared = false;
+        if (looseWeaponGrab && !isThrowableLooseWeapon(selectedLooseWeaponForm(sel))) {
+            performance_profiler::ScopedTimer preparationTimer(performance_profiler::Scope::GrabAuthoredPreparation);
+            const char* preparationReason = "body-or-mesh-evidence-required";
+            // Retain extraction and ownership validation: these still admit the
+            // selected body. Only supplemental surface solving is disposable.
+            const bool bodyAndMeshValidated = !handPocketOnlyGrab && !sel.pinchCloseSelectionFallback &&
+                sel.refr && sel.refr->Get3D() == rootNode &&
+                preparedBodySet.acceptedCount() == 1 && !activeLifecycle.hasIncompleteNativeScan() &&
+                surfaceOwnerMatchesResolvedBody && visualMeshPivotAvailable;
+            if (bodyAndMeshValidated) {
+                const auto baselineAdmission = grab_contact_evidence_policy::evaluateGrabContactEvidence({
+                    .qualityMode = static_cast<int>(grabContactQualityMode),
+                    .multiFingerValidationEnabled = multiFingerEvidenceEnabled,
+                    .meshSurfacePivotAccepted = true,
+                });
+                preparationReason = "supplemental-contact-evidence-required";
+                if (baselineAdmission.accept) {
+                    namespace policy = loose_weapon_authored_grab_policy;
+                    (void)loose_weapon_grip_zone::tryResolveNearGrab(_isLeft, sel.refr,
+                        preparedAuthoredGrip, joiningPeerHeldObject);
+                    const auto role = policy::surfaceIndependentAcquisitionRole(
+                        grabbedFromPullCatch || sel.forcedArrival, transferPose != nullptr,
+                        transferPose ? transferPose->role : policy::Role::None,
+                        preparedAuthoredGrip.arrangement, joiningPeerHeldObject, preparedAuthoredGrip.role);
+                    preparationReason = "surface-dependent-or-dynamic-role";
+                    if (role != policy::Role::None) {
+                        preparedAuthoredGrip.role = role;
+                        if (transferPose) {
+                            preparedAuthoredGrip.pose = *transferPose;
+                        } else {
+                            (void)loose_weapon_grip_zone::tryResolveAuthoredGrabPose(
+                                _isLeft, sel.refr, role, preparedAuthoredGrip.pose);
+                        }
+                        const auto* weapon = selectedLooseWeaponForm(sel);
+                        authoredSeatPrepared = preparedAuthoredGrip.handWorldValid &&
+                            preparedAuthoredGrip.pose.valid() && weapon &&
+                            preparedAuthoredGrip.pose.weaponFormId == weapon->formID &&
+                            preparedAuthoredGrip.pose.isLeft == _isLeft && preparedAuthoredGrip.pose.role == role;
+                        preparationReason = authoredSeatPrepared ? "authored-seat-ready" : "authored-pose-unavailable";
+                    }
+                }
+            }
+            performance_profiler::addCounter(authoredSeatPrepared ?
+                performance_profiler::Counter::GrabAuthoredSurfaceWorkSkipped :
+                performance_profiler::Counter::GrabAuthoredSurfaceWorkRequired);
+            if (performance_profiler::enabled()) {
+                ROCK_LOG_SAMPLE_INFO(Hand, 1000,
+                    "{} authored pickup preparation: ref={:08X} body={} role={} skipSurfaceWork={} reason={} meshTriangles={}",
+                    handName(), sel.refr ? sel.refr->GetFormID() : 0, objectBodyId.value,
+                    static_cast<unsigned>(preparedAuthoredGrip.role), authoredSeatPrepared, preparationReason,
+                    grabSurfaceTriangles.size());
+            }
+        }
+
         GrabPivotEvidence pivotEvidence{};
         resolveGrabPivotEvidence(
             world,
@@ -11704,6 +11778,7 @@ namespace rock
             resolvedBodyCapture,
             preparedBodySet,
             contactSourcePolicy,
+            authoredSeatPrepared,
             canonicalPivotAvailable,
             canonicalPivotPointWorld,
             canonicalPivotNormalWorld,
@@ -11736,7 +11811,8 @@ namespace rock
             return grabSurfaceTriangles.empty() ? GrabAttemptResult::Rejected : GrabAttemptResult::ContactUnavailable;
         }
 
-        const RuntimePinchPocketCandidate pinchPocketCandidate = buildRuntimePinchPocketCandidate(
+        const RuntimePinchPocketCandidate pinchPocketCandidate = authoredSeatPrepared ?
+            RuntimePinchPocketCandidate{} : buildRuntimePinchPocketCandidate(
             sel,
             preparedBodySet,
             objectBodyId.value,
@@ -11815,6 +11891,7 @@ namespace rock
             .multiFingerEvidenceEnabled = multiFingerEvidenceEnabled,
             .hybridFingerProbeEvidenceEnabled = hybridFingerProbeEvidenceEnabled,
             .visualMeshPivotAvailable = visualMeshPivotAvailable,
+            .authoredSeatPrepared = authoredSeatPrepared,
         };
         GrabFingerEvidence fingerEvidence{};
         if (!resolveGrabFingerEvidence(world, fingerEvidenceInput, surfaceEvidence, pivotEvidence, fingerEvidence)) {
@@ -11933,6 +12010,7 @@ namespace rock
                 .looseWeaponGrab = looseWeaponGrab,
                 .joiningPeerHeldObject = joiningPeerHeldObject,
                 .transferPose = transferPose,
+                .preparedAuthoredGrip = authoredSeatPrepared ? &preparedAuthoredGrip : nullptr,
                 .canonicalPivotNormalWorld = canonicalPivotNormalWorld,
                 .rollback = seatRollback,
             };

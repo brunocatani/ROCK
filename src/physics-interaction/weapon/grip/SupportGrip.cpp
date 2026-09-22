@@ -392,6 +392,7 @@ namespace rock
         const std::uint64_t currentWeaponGenerationKey,
         const WeaponCollision& weaponCollision)
     {
+        performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedGripActivation);
         _support.authoredDebugSnapshot = {};
         const bool collectPoseEvidence =
             g_rockConfig.rockDebugDrawAuthoredGripActivationZones;

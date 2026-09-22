@@ -118,6 +118,7 @@ namespace rock
         bool firingGripProximityAuthorityEnabled,
         const EquippedWeaponHandlingSettings& handlingSettings)
     {
+        performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedGripController);
         const EquippedWeaponGripOccupancy occupancyBefore =
             getGripOccupancy();
         authored_weapon_grip_activation_policy::IndicatorInput
@@ -1118,6 +1119,7 @@ namespace rock
 
     void TwoHandedGrip::updateGripping(RE::NiNode* weaponNode, float dt)
     {
+        performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedGripSolve);
         if (_session.authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport) {
             updateVisualOnlySupportGrip(weaponNode, dt);
             return;

@@ -441,6 +441,7 @@ namespace rock
         const bool primaryDetachEnabled,
         const float dt)
     {
+        performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedGripSolve);
         equipped_weapon_manual_ownership_policy::RuntimeState manualState{
             .active = true,
             .ownershipKey = _session.equippedWeaponOwnershipKey,
