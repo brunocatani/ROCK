@@ -81,14 +81,26 @@ int main()
     const HandAvailabilityInput freeHand{};
     const HandAvailabilityInput blockedHand{ .holding = true };
 
-    ok &= expectEqual("grenade prefers right", selectGrenadeHand(false, freeHand, freeHand).hand, HandChoice::Right);
-    ok &= expectEqual("grenade falls back left", selectGrenadeHand(false, blockedHand, freeHand).hand, HandChoice::Left);
-    ok &= expectEqual("blocked hands reject", selectGrenadeHand(false, blockedHand, blockedHand).failure, GrenadeSelectionFailure::HandsBlocked);
-    ok &= expectEqual("held grenade rejects globally", selectGrenadeHand(true, freeHand, freeHand).failure, GrenadeSelectionFailure::GrenadeAlreadyHeld);
+    for (const bool preferLeft : { false, true }) {
+        ok &= expectEqual("both free hands follow grenade preference",
+            selectGrenadeHand(false, freeHand, freeHand, preferLeft).hand,
+            preferLeft ? HandChoice::Left : HandChoice::Right);
+        ok &= expectEqual("occupied right hand selects free left hand",
+            selectGrenadeHand(false, blockedHand, freeHand, preferLeft).hand, HandChoice::Left);
+        ok &= expectEqual("occupied left hand selects free right hand",
+            selectGrenadeHand(false, freeHand, blockedHand, preferLeft).hand, HandChoice::Right);
+        const auto blocked = selectGrenadeHand(false, blockedHand, blockedHand, preferLeft);
+        ok &= expectEqual("blocked hands reject", blocked.failure, GrenadeSelectionFailure::HandsBlocked);
+        ok &= expectEqual("blocked hands have no selected hand", blocked.hand, HandChoice::None);
+        const auto held = selectGrenadeHand(true, freeHand, freeHand, preferLeft);
+        ok &= expectEqual("held grenade rejects globally", held.failure, GrenadeSelectionFailure::GrenadeAlreadyHeld);
+        ok &= expectEqual("held grenade prevents a second hand selection", held.hand, HandChoice::None);
+    }
 
     HandAvailabilityInput pending = freeHand;
     pending.pendingForceGrab = true;
-    ok &= expectEqual("pending right force grab selects left", selectGrenadeHand(false, pending, freeHand).hand, HandChoice::Left);
+    ok &= expectEqual("pending right force grab selects left", selectGrenadeHand(false, pending, freeHand, false).hand, HandChoice::Left);
+    ok &= expectEqual("left grenade preference respects pending left force grab", selectGrenadeHand(false, freeHand, pending, true).hand, HandChoice::Right);
 
     HandAvailabilityInput selected = freeHand;
     selected.openInteractionState = true;

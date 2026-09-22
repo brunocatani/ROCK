@@ -149,10 +149,13 @@ namespace rock
 
             const bool inventoryTransfer = isForceGrabCommand &&
                 (command.forceGrab.flags & static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::FromPlayerInventory)) != 0;
+            const bool inventoryThrowable = inventoryTransfer && loose_grenade_runtime::isThrowableWeapon(
+                RE::TESForm::GetFormByID<RE::TESObjectWEAP>(command.forceGrab.targetFormId));
             if (inventoryTransfer) {
                 const bool rightFree = forceGrabHandBlockerMask(_rightHand, false, frame.right.disabled, true) == 0;
                 const bool leftFree = forceGrabHandBlockerMask(_leftHand, true, frame.left.disabled, true) == 0;
-                const auto choice = force_grab_policy::selectGrenadeHand(false, rightFree, leftFree);
+                const auto choice = force_grab_policy::selectGrenadeHand(
+                    false, rightFree, leftFree, inventoryThrowable && g_rockConfig.rockLeftHandedMode);
                 if (!rightFree && !leftFree) {
                     f4vr::showNotification("ROCK: Cannot take item - neither hand is free.");
                     complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandBusy);
@@ -351,9 +354,7 @@ namespace rock
             }
 
             if (inventoryTransfer) {
-                auto* weapon = RE::TESForm::GetFormByID<RE::TESObjectWEAP>(command.forceGrab.targetFormId);
-                const bool throwable = weapon && loose_grenade_runtime::isThrowableWeapon(weapon);
-                if (throwable && (handHoldsLooseGrenade(_rightHand) || handHoldsLooseGrenade(_leftHand) || hasActiveLooseGrenadeCommit())) {
+                if (inventoryThrowable && (handHoldsLooseGrenade(_rightHand) || handHoldsLooseGrenade(_leftHand) || hasActiveLooseGrenadeCommit())) {
                     f4vr::showNotification("ROCK: A throwable is already held or attaching.");
                     complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetAlreadyOwned);
                     continue;
@@ -374,7 +375,7 @@ namespace rock
                     .isLeft = isLeft,
                     .phase = PendingForceGrabCommitPhase::WaitingForReference,
                     .targetHandle = drop.handle,
-                    .targetIsLooseThrowable = throwable,
+                    .targetIsLooseThrowable = inventoryThrowable,
                     .inventoryTransfer = true,
                     .maxDistanceGame = 96.0f,
                     .providerResultTemplate = result,

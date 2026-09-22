@@ -571,7 +571,8 @@ namespace rock::provider {
         UsePreferredGrabPointGame = 1u << 0,
         // targetFormId is an owned ALCH/throwable base form, not a world REFR.
         // Requires hand=None and no other flags. Transfers exactly one item to
-        // the first free hand (right preferred), without using or equipping it.
+        // a free hand, without using or equipping it. Throwables prefer ROCK's
+        // configured default hand; other inventory items prefer the right.
         // Query InventoryForceGrab support first. Failure before the drop leaves
         // inventory unchanged; failed attachment attempts return the exact drop.
         FromPlayerInventory = 1u << 1,
