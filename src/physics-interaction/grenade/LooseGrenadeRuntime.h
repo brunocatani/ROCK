@@ -35,6 +35,7 @@ namespace rock::loose_grenade_runtime
         float proximityRadiusGameUnits{ 0.0f };
         float directImpactDamage{ 0.0f };
         bool preserveReferenceAfterDetonation{ false };
+        bool molotov{ false };
         GrenadeDetonationMode detonationMode{ GrenadeDetonationMode::TimedFuse };
     };
 

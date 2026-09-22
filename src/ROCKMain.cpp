@@ -1193,6 +1193,7 @@ namespace
             }
             rock::saved_grab_offset::preload();
             rock::authored_weapon_grip_cache::preload();
+            rock::LooseMolotovVisual::prepareResources();
             rock::installHavokTimingFixHook();
             if (!rock::held_scene_presentation::install()) {
                 logger::warn(
@@ -1241,6 +1242,7 @@ namespace
             destroyPhysicsInteraction();
 
             if (s_frikAvailable) {
+                rock::LooseMolotovVisual::prepareResources();
                 g_rockConfig.reload();
                 input_remap_runtime::configurePipboyInput();
                 game_ini_overrides::update();
