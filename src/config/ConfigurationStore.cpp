@@ -6,6 +6,7 @@
 #include <charconv>
 #include <cmath>
 #include <format>
+#include <fstream>
 #include <optional>
 #include <map>
 #include <set>
@@ -175,7 +176,7 @@ namespace rock::config
         return true;
     }
 
-    bool ConfigurationStore::writeFile(Group group, CSimpleIniA& ini, bool replace)
+    bool ConfigurationStore::writeFile(Group group, CSimpleIniA& ini, bool replace, std::string_view prefix)
     {
         const auto destination = path(group);
         std::error_code ec;
@@ -186,6 +187,12 @@ namespace rock::config
         }
         CSimpleIniA organized;
         if (!organizeFile(group, ini, organized)) return false;
+        std::string contents(prefix);
+        if (!contents.empty()) contents += "\r\n\r\n";
+        if (organized.Save(contents, false) < 0) {
+            _error = "Cannot serialize configuration";
+            return false;
+        }
         std::filesystem::create_directories(_directory, ec);
         if (ec) {
             _error = std::format("Cannot create {}: {}", _directory.string(), ec.message());
@@ -193,7 +200,10 @@ namespace rock::config
         }
         auto temporary = destination;
         temporary += L".creating";
-        if (organized.SaveFile(temporary.c_str(), false) < 0) {
+        std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+        output.write(contents.data(), static_cast<std::streamsize>(contents.size()));
+        output.close();
+        if (!output) {
             _error = std::format("Cannot write {}", temporary.string());
             std::filesystem::remove(temporary, ec);
             return false;
@@ -207,6 +217,42 @@ namespace rock::config
             return false;
         }
         return true;
+    }
+
+    bool ConfigurationStore::completeConsumerDefaults()
+    {
+        const auto source = path(Group::Consumer);
+        std::string contents;
+        {
+            std::ifstream input(source, std::ios::binary);
+            if (!input) {
+                _error = std::format("Cannot read {}", source.string());
+                return false;
+            }
+            contents.assign(std::istreambuf_iterator<char>(input), {});
+            if (input.bad()) {
+                _error = std::format("Cannot read {}", source.string());
+                return false;
+            }
+        }
+        CSimpleIniA existing;
+        existing.SetMultiKey(true);
+        if (existing.LoadData(contents) < 0) {
+            _error = std::format("Cannot parse {}", source.string());
+            return false;
+        }
+        const auto keys = indexKeys(existing);
+        CSimpleIniA missing;
+        for (const auto& setting : _settings) {
+            if (setting.group != Group::Consumer || keys.contains(CSimpleIniA::Entry(setting.key.c_str()))) continue;
+            if (missing.SetValue(setting.section.c_str(), setting.key.c_str(), setting.defaultValue.c_str()) < 0) {
+                _error = "Cannot prepare missing consumer defaults";
+                return false;
+            }
+        }
+        // Append only absent keys. Re-serializing existing sections could reorder
+        // repeated keys and replace the user's effective value with an older one.
+        return !hasKeys(missing) || writeFile(Group::Consumer, missing, true, contents);
     }
 
     bool ConfigurationStore::load(bool createConsumer)
@@ -223,6 +269,10 @@ namespace rock::config
                 CSimpleIniA defaults;
                 if (!materializeConsumerDefaults(defaults)) return false;
                 if (!writeFile(Group::Consumer, defaults, false)) return false;
+            } else {
+                // An unwritable INI can still be read. Keep the completion error
+                // for the owner to report, then load the user's existing values.
+                (void)completeConsumerDefaults();
             }
         }
         CSimpleIniA consumer;
@@ -330,7 +380,8 @@ namespace rock::config
     bool ConfigurationStore::organizeFile(Group group, const CSimpleIniA& source, CSimpleIniA& output)
     {
         const auto header = group == Group::Consumer ?
-            "; ROCK.ini - regular options\n; Created with all regular defaults when missing.\n" :
+            "; ROCK.ini - regular options\n; Created with all regular defaults when missing.\n"
+            "; At startup, missing regular options are added without changing existing entries.\n" :
             "; ROCK_Developer.ini - developer options\n; Created only after a non-default developer change.\n"
             "; New files contain only changed options. Existing entries are preserved.\n"
             "; Resetting an option removes its entry; an empty developer file is removed.\n";

@@ -286,6 +286,7 @@ namespace rock
         rockLogSampleMilliseconds =
             logging_policy::sanitizeSampleMilliseconds(static_cast<int>(ini.GetLongValue(DEBUG_SECTION, "iLogSampleMilliseconds", rockLogSampleMilliseconds)));
         rockLogFlushImmediate = ini.GetBoolValue(DEBUG_SECTION, "bLogFlushImmediate", rockLogFlushImmediate);
+        rockDebugPipboyPauseInput = ini.GetBoolValue(DEBUG_SECTION, "bDebugPipboyPauseInput", rockDebugPipboyPauseInput);
         rockPerformanceProfilerEnabled = ini.GetBoolValue(DEBUG_SECTION, "bPerformanceProfilerEnabled", rockPerformanceProfilerEnabled);
         rockPerformanceProfilerLogIntervalFrames =
             std::clamp(static_cast<int>(ini.GetLongValue(DEBUG_SECTION, "iPerformanceProfilerLogIntervalFrames", rockPerformanceProfilerLogIntervalFrames)), 30, 54000);
@@ -423,6 +424,10 @@ namespace rock
             0.0f,
             1.0f);
 
+        rockLeftHandedMode = ini.GetBoolValue(
+            AMBIDEXTROUS_FIRING_SECTION,
+            "bLeftHandedMode",
+            rockLeftHandedMode);
         rockAmbidextrousFiringGripEnabled = ini.GetBoolValue(
             AMBIDEXTROUS_FIRING_SECTION,
             "bAmbidextrousFiringGripEnabled",
@@ -530,7 +535,7 @@ namespace rock
             REALISTIC_WEAPONS_SECTION,
             "fRealisticGrenadeFuseSeconds",
             rockRealisticGrenadeFuseSeconds,
-            3.0f,
+            4.0f,
             0.0f,
             30.0f);
         rockWeaponSupportGripHandLerpEnabled = ini.GetBoolValue(SECTION, "bWeaponSupportGripHandLerpEnabled", rockWeaponSupportGripHandLerpEnabled);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/grenade/LooseMolotovVisual.h"
+
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/collision/PushContact.h"
 
@@ -614,6 +616,7 @@ namespace rock
             float remainingSeconds{ 0.0f };
             std::uint32_t impactBodyId{ INVALID_CONTACT_BODY_ID };
             bool releasedSinceArming{ false };
+            std::unique_ptr<LooseMolotovVisual> visual;
         };
 
         enum class EquippedWeaponDropHandoffStage : std::uint8_t
@@ -840,6 +843,7 @@ namespace rock
             bool handlingModeInitialized{ false };
             bool handlingModeReconcilePending{ false };
             bool menuReconcilePending = false;
+            std::uint64_t defaultEquipObservedOwnershipKey{ 0 };
             EquippedWeaponTransitionCoordinator::PendingGrip continuityGrip{};
             bool gripResumePending{ false };
             std::array<bool, 2> resumeAwaitingHold{};

@@ -23,6 +23,7 @@ namespace rock::immersive_weapon_policy
         DetachAuthority partCarryAuthority{ DetachAuthority::None };
         bool authoredOnlySupportGrabsEnabled{ false };
         bool exactProviderPartTargetActive{ false };
+        bool authoredSupportSeatAvailable{ false };
     };
 
     struct Config
@@ -100,12 +101,9 @@ namespace rock::immersive_weapon_policy
     }
 
     /*
-     * Integrated immersive detach is an authored firing-grip contract.
-     * PartCarry tests that firing grip before this policy runs. With ROCK's
-     * authored-only switch enabled, the detached firing hand may therefore
-     * capture another weapon part only when the current contact has exact
-     * provider authority. External detach and mode-off operation retain the
-     * established support-grab selector.
+     * PartCarry tests the firing grip first. Either physical hand may then
+     * acquire its own validated authored support seat. Other parts still
+     * require exact provider authority in integrated authored-only mode.
      */
     [[nodiscard]] inline constexpr DetachedFiringHandPartGrabSelection
     resolveDetachedFiringHandPartGrab(
@@ -113,7 +111,8 @@ namespace rock::immersive_weapon_policy
     {
         if (input.partCarryAuthority !=
                 DetachAuthority::IntegratedImmersive ||
-            !input.authoredOnlySupportGrabsEnabled) {
+            !input.authoredOnlySupportGrabsEnabled ||
+            input.authoredSupportSeatAvailable) {
             return DetachedFiringHandPartGrabSelection::Standard;
         }
 

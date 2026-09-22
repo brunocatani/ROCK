@@ -4,7 +4,53 @@
 
 namespace rock
 {
-    bool TwoHandedGrip::tryBuildIntegratedDetachPartCarryBaseline(
+    bool TwoHandedGrip::hasAuthoredSupportCarryPair() const noexcept
+    {
+        const auto describe = [](const WeaponPartGrip& grip) {
+            return weapon_part_grip_report_policy::CarryGripInput{
+                .active = grip.active,
+                .authoredSupportSeat = grip.authoredRole == loose_weapon_authored_grab_policy::Role::Support,
+                .providerAuthorityActive = grip.providerPartAuthority.active,
+                .attachOnly = grip.attachOnly,
+            };
+        };
+        return isPartCarryActive() && weapon_part_grip_report_policy::usesAuthoredSupportCarryPair(
+            describe(partGrip(true)), describe(partGrip(false)));
+    }
+
+    bool TwoHandedGrip::handoffAuthoredSupportCarry(const bool releasingHandIsLeft)
+    {
+        if (!hasAuthoredSupportCarryPair() || _partCarry.pivotIsLeft != releasingHandIsLeft) {
+            return true;
+        }
+
+        const bool nextCarrierIsLeft = !releasingHandIsLeft;
+        SupportInputBaselineState baseline{};
+        const char* failure = nullptr;
+        if (!tryBuildPartCarryInputBaseline(nextCarrierIsLeft, baseline, failure)) {
+            // Do not release the owner or fall back to the visual wrist's
+            // orientation when the new physical driver cannot be calibrated.
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                "TwoHandedGrip: authored support carry handoff deferred hand={} reason={}",
+                nextCarrierIsLeft ? "left" : "right", failure);
+            return false;
+        }
+
+        clearSupportInputBaselines();
+        partGrip(nextCarrierIsLeft).supportInputBaseline = baseline;
+        _partCarry.pivotIsLeft = nextCarrierIsLeft;
+        _partCarry.gripSeparationWorld = 0.0f;
+        // The new baseline already reproduces the last rendered pose exactly.
+        // An earlier transition blend must not offset that calibrated result.
+        clearWeaponPoseHandoffBlend("authored-support-carry-handoff", true);
+        ROCK_LOG_INFO(Weapon,
+            "TwoHandedGrip: authored support carry handoff from={} to={} poseSource=last-rendered grip={} generation={:016X}",
+            releasingHandIsLeft ? "left" : "right", nextCarrierIsLeft ? "left" : "right",
+            partGrip(nextCarrierIsLeft).gripSequence, _session.weaponGenerationKey);
+        return true;
+    }
+
+    bool TwoHandedGrip::tryBuildPartCarryInputBaseline(
         const bool carryHandIsLeft,
         SupportInputBaselineState& outBaseline,
         const char*& outFailureReason) const
@@ -118,7 +164,7 @@ namespace rock
 
         if (posePreservationRequested) {
             poseHandoffReady =
-                tryBuildIntegratedDetachPartCarryBaseline(
+                tryBuildPartCarryInputBaseline(
                     carryHandIsLeft,
                     partCarryBaseline,
                     poseHandoffReason);
@@ -206,6 +252,7 @@ namespace rock
         const WeaponInteractionDecision& supportAcquisitionDecision)
     {
         performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedGripSolve);
+        const bool hadAuthoredSupportPair = hasAuthoredSupportCarryPair();
         const bool supportHandIsLeft = isSupportHandLeft();
         const bool firingHandIsLeft = isFiringHandLeft();
         const WeaponInteractionContact& firingHandContact = firingHandIsLeft ? leftWeaponContact : rightWeaponContact;
@@ -392,6 +439,20 @@ namespace rock
 
         WeaponPartGrip& supportGrip = partGrip(supportHandIsLeft);
         WeaponPartGrip& freeHandGrip = partGrip(firingHandIsLeft);
+        // A reservation may remove either authored seat after a carry handoff.
+        // Preserve the other seat when it can still own the weapon safely.
+        if (hasAuthoredSupportCarryPair()) {
+            for (const bool isLeft : { supportHandIsLeft, firingHandIsLeft }) {
+                const auto& runtime = isLeft ? leftRuntimeState : rightRuntimeState;
+                if (runtime.supportGripAllowed) continue;
+                const auto& remainingRuntime = isLeft ? rightRuntimeState : leftRuntimeState;
+                if (!remainingRuntime.supportGripAllowed || !handoffAuthoredSupportCarry(isLeft)) {
+                    transitionToInactive(false);
+                    return;
+                }
+                releasePartGrip(isLeft, "authored-support-hand-reserved", true);
+            }
+        }
         if (supportGripHeld) supportGrip.releaseRequiresNewHold = false;
         if (frameInput.primaryGripInput.held) freeHandGrip.releaseRequiresNewHold = false;
         if (supportGrip.active) {
@@ -415,7 +476,11 @@ namespace rock
                             supportHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right, dt);
                         return;
                     }
-                    releasePartGrip(supportHandIsLeft, "support-grip-released", true);
+                    if (handoffAuthoredSupportCarry(supportHandIsLeft)) {
+                        releasePartGrip(supportHandIsLeft, "support-grip-released", true);
+                    } else {
+                        recordGripReleaseRetained(supportHandIsLeft, "authored-support-handoff-unavailable");
+                    }
                 } else {
                     recordGripReleaseRetained(supportHandIsLeft, "part-carry-last-carrier");
                 }
@@ -435,7 +500,11 @@ namespace rock
                             firingHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right, dt);
                         return;
                     }
-                    releasePartGrip(firingHandIsLeft, "free-hand-grip-released", true);
+                    if (handoffAuthoredSupportCarry(firingHandIsLeft)) {
+                        releasePartGrip(firingHandIsLeft, "free-hand-grip-released", true);
+                    } else {
+                        recordGripReleaseRetained(firingHandIsLeft, "authored-support-handoff-unavailable");
+                    }
                 } else {
                     recordGripReleaseRetained(firingHandIsLeft, "part-carry-last-carrier");
                 }
@@ -460,7 +529,8 @@ namespace rock
             firingRuntimeState.providerPartAuthority.bodyId == freeHandGrip.contactBodyId &&
             weapon_part_grip_report_policy::partGripCountsAsCarry(supportGrip.active, supportGrip.attachOnly)) {
             const WeaponInteractionDecision freeHandDecision = routeWeaponInteraction(firingHandContact, firingRuntimeState);
-            if (freeHandDecision.kind == WeaponInteractionKind::SupportGrip) {
+            if (freeHandDecision.kind == WeaponInteractionKind::SupportGrip &&
+                handoffAuthoredSupportCarry(firingHandIsLeft)) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: recapturing free-hand part grip under newly matched provider weapon-part target");
                 releasePartGrip(firingHandIsLeft, "provider-part-target-newly-matched");
                 (void)capturePartGrip(firingHandIsLeft, weaponNode, freeHandDecision, weaponCollision, firingRuntimeState.providerPartAuthority, false, false);
@@ -471,18 +541,35 @@ namespace rock
             supportRuntimeState.providerPartAuthority.bodyId == supportGrip.contactBodyId &&
             weapon_part_grip_report_policy::partGripCountsAsCarry(freeHandGrip.active, freeHandGrip.attachOnly)) {
             const WeaponInteractionDecision supportDecision = routeWeaponInteraction(supportHandContact, supportRuntimeState);
-            if (supportDecision.kind == WeaponInteractionKind::SupportGrip) {
+            if (supportDecision.kind == WeaponInteractionKind::SupportGrip &&
+                handoffAuthoredSupportCarry(supportHandIsLeft)) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: recapturing support part grip under newly matched provider weapon-part target");
                 releasePartGrip(supportHandIsLeft, "provider-part-target-newly-matched");
                 (void)capturePartGrip(supportHandIsLeft, weaponNode, supportDecision, weaponCollision, supportRuntimeState.providerPartAuthority, false, false);
             }
         }
 
-        if (!freeHandGrip.active && firingHandAvailableForAcquisition && frameInput.primaryGripInput.pressed) {
-            const WeaponInteractionDecision freeHandDecision = routeWeaponInteraction(firingHandContact, firingRuntimeState);
+        const bool authoredFreeHandSeatAvailable = authoredSupportSeatAvailable(
+            firingHandIsLeft, currentWeaponGenerationKey, firingRuntimeState);
+        const bool freeHandGrabRequested = frameInput.primaryGripInput.pressed ||
+            (authoredFreeHandSeatAvailable && frameInput.primaryGripInput.held);
+        if (!freeHandGrip.active && firingHandAvailableForAcquisition && freeHandGrabRequested) {
+            WeaponInteractionDecision freeHandDecision = routeWeaponInteraction(firingHandContact, firingRuntimeState);
+            if (authoredFreeHandSeatAvailable) {
+                freeHandDecision = {
+                    .kind = WeaponInteractionKind::SupportGrip,
+                    .partKind = WeaponPartKind::Other,
+                    .gripPose = WeaponGripPoseId::ReceiverSupport,
+                    .bodyId = 0x7FFF'FFFFu,
+                    .interactionRoot = weaponNode,
+                    .sourceRoot = weaponNode,
+                    .weaponGenerationKey = currentWeaponGenerationKey,
+                    .acquisitionSource = WeaponInteractionAcquisitionSource::AuthoredSeat,
+                };
+            }
             if (weapon_two_handed_grip_math::canStartFreeHandPartGrip(
                     freeHandDecision.kind == WeaponInteractionKind::SupportGrip,
-                    frameInput.primaryGripInput.pressed,
+                    freeHandGrabRequested,
                     firingHandHoldingObject,
                     freeHandGrip.active)) {
                 const auto partGrabSelection =
@@ -498,13 +585,14 @@ namespace rock
                                     .exactProviderPartTargetActive =
                                         firingRuntimeState.
                                             providerPartAuthority.active,
+                                    .authoredSupportSeatAvailable = authoredFreeHandSeatAvailable,
                                 });
                 if (partGrabSelection ==
                     immersive_weapon_policy::
                         DetachedFiringHandPartGrabSelection::Reject) {
                     ROCK_LOG_INFO(
                         Weapon,
-                        "TwoHandedGrip: detached firing-hand part grip rejected hand={} reason=authored-firing-grip-or-exact-provider-target-required bodyId={} generation={:016X}",
+                        "TwoHandedGrip: detached firing-hand part grip rejected hand={} reason=authored-seat-or-exact-provider-target-required bodyId={} generation={:016X}",
                         firingHandIsLeft ? "left" : "right",
                         freeHandDecision.bodyId,
                         freeHandDecision.weaponGenerationKey);
@@ -586,6 +674,12 @@ namespace rock
             _partCarry.pivotIsLeft = !_partCarry.pivotIsLeft;
         }
 
+        if (!hadAuthoredSupportPair && hasAuthoredSupportCarryPair()) {
+            ROCK_LOG_INFO(Weapon,
+                "TwoHandedGrip: authored handguard pair carrier={} visualSupport={} firingGrip=vacant generation={:016X}",
+                _partCarry.pivotIsLeft ? "left" : "right",
+                _partCarry.pivotIsLeft ? "right" : "left", currentWeaponGenerationKey);
+        }
         (void)solvePartCarryWeaponAuthority(weaponNode, dt);
     }
 
@@ -603,9 +697,11 @@ namespace rock
         const bool pivotIsLeft = _partCarry.pivotIsLeft;
         WeaponPartGrip& pivotGrip = partGrip(pivotIsLeft);
         const WeaponPartGrip& aimGrip = partGrip(!pivotIsLeft);
-        // An AttachOnly glue never aims the weapon; the carry solves
-        // single-anchor around the pivot and the glue publishes afterwards.
-        const bool aimGripCarries = weapon_part_grip_report_policy::partGripCountsAsCarry(aimGrip.active, aimGrip.attachOnly);
+        // Provider glue and the second authored handguard seat follow the
+        // pivot's result; neither contributes an aim axis or wrist rotation.
+        const bool authoredVisualSupport = hasAuthoredSupportCarryPair();
+        const bool aimGripCarries = !authoredVisualSupport &&
+            weapon_part_grip_report_policy::partGripCountsAsCarry(aimGrip.active, aimGrip.attachOnly);
         if (!pivotGrip.active || !pivotGrip.hasHandWeaponLocal) {
             _hasSolvedWeaponTransform = false;
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing part-carry grip because captured hand frames are unavailable");
@@ -788,18 +884,17 @@ namespace rock
         }
 
         /*
-         * AttachOnly glue publishes after the weapon solve so it composes from
-         * this frame's part transforms (including provider part drives applied
-         * earlier in the frame). A glue visual failure only loses the attach;
-         * the carry pivot must survive it.
+         * Visual followers publish after the weapon solve. Provider glue also
+         * follows this frame's part drives. Failure only loses the follower;
+         * the carry pivot survives it.
          */
-        if (aimGrip.active && aimGrip.attachOnly) {
+        if (aimGrip.active && (aimGrip.attachOnly || authoredVisualSupport)) {
             RE::NiTransform attachHandTransform{};
             const RE::NiTransform* liveAttachHandWorld =
                 tryGetSolverHandTransform(!pivotIsLeft, attachHandTransform) ? &attachHandTransform : nullptr;
             publishGripHandPoses(!pivotIsLeft);
             if (!applyPartGripLockedVisual(!pivotIsLeft, weaponNode, dt, liveAttachHandWorld)) {
-                releasePartGrip(!pivotIsLeft, "attach-only-visual-authority-failed");
+                releasePartGrip(!pivotIsLeft, "carry-support-visual-authority-failed");
             }
         }
 
@@ -867,7 +962,7 @@ namespace rock
             ROCK_LOG_DEBUG(Weapon,
                 "TwoHandedGrip: part-carry authority pivot={} anchors={} pivotGrip=({:.1f},{:.1f},{:.1f}) handLerp=({:.2f}/{:.3f}s,{:.2f}/{:.3f}s)",
                 pivotIsLeft ? "left" : "right",
-                aimGrip.active ? 2 : 1,
+                aimGripCarries ? 2 : 1,
                 pivotGripFinal.x,
                 pivotGripFinal.y,
                 pivotGripFinal.z,

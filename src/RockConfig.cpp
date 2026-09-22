@@ -64,6 +64,9 @@ namespace rock
                 _store ? _store->error() : "configuration is not initialized");
             return false;
         }
+        if (!_store->error().empty()) {
+            ROCK_LOG_WARN(Config, "Configuration loaded, but missing regular options could not be saved: {}", _store->error());
+        }
         if (_store->revision() == configRevision()) return true;
 
         CSimpleIniA combined;

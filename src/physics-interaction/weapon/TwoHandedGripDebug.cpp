@@ -69,9 +69,10 @@ namespace rock
     }
 
     bool TwoHandedGrip::getAuthoredSupportGripDebugSnapshot(
+        const bool isLeft,
         AuthoredSupportGripDebugSnapshot& outSnapshot) const
     {
-        outSnapshot = _support.authoredDebugSnapshot;
+        outSnapshot = authoredSupportHand(isLeft).authoredDebugSnapshot;
         return outSnapshot.valid;
     }
 

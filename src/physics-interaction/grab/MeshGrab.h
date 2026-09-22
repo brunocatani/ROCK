@@ -6,6 +6,7 @@
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/grab/SkinnedSurfaceMath.h"
 #include "physics-interaction/grab/SegmentVisibilityPolicy.h"
+#include "physics-interaction/grenade/LooseMolotovVisualPolicy.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "RE/Fallout.h"
 #include "physics-interaction/grab/SkinnedBoneOwner.h"
@@ -456,6 +457,16 @@ namespace rock
     inline bool readTriShapeRawGeometry(RE::BSTriShape* triShape, TriShapeRawGeometry& out)
     {
         if (!triShape)
+            return false;
+
+        // Flame render geometry belongs to the armed-state visual, never to the
+        // bottle's grab/finger surface. Preserve this reader's guarded boundary.
+        const char* shapeName = nullptr;
+        std::array<char, sizeof(loose_molotov_visual_policy::kVisualShapeName)> name{};
+        if (!native_memory::tryReadField(triShape, offsetof(RE::NiObjectNET, name), shapeName))
+            return false;
+        if (shapeName && native_memory::guardedCopyFromMemory(shapeName, name.data(), name.size()) &&
+            name.back() == '\0' && loose_molotov_visual_policy::isVisualOnlyShape(name.data()))
             return false;
 
         if (!native_memory::tryReadField(triShape, VROffset::rendererData, out.rendererData))

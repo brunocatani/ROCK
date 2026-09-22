@@ -6,6 +6,21 @@
 namespace rock::loose_weapon_authored_grab_policy
 {
     enum class Role : std::uint8_t { None, Firing, Support };
+    enum class AcquisitionSource : std::uint8_t { Close, PullCatch, ForcedArrival, Transfer };
+
+    [[nodiscard]] constexpr AcquisitionSource acquisitionSource(bool pullCatch, bool forcedArrival, bool transfer) noexcept
+    {
+        if (transfer) return AcquisitionSource::Transfer;
+        if (pullCatch) return AcquisitionSource::PullCatch;
+        return forcedArrival ? AcquisitionSource::ForcedArrival : AcquisitionSource::Close;
+    }
+
+    [[nodiscard]] constexpr bool useAuthoredArrival(AcquisitionSource source, bool poseAvailable,
+        bool throwable, bool pinchSelection) noexcept
+    {
+        return source != AcquisitionSource::Close && poseAvailable && !throwable && !pinchSelection;
+    }
+
     enum class Arrangement : std::uint8_t { Pending, Separated, Close, OneHanded };
 
     [[nodiscard]] inline Arrangement arrangement(bool firingReady, bool supportReady,

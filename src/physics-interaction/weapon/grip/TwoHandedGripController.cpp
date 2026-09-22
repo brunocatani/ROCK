@@ -121,59 +121,36 @@ namespace rock
         performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedGripController);
         const EquippedWeaponGripOccupancy occupancyBefore =
             getGripOccupancy();
-        authored_weapon_grip_activation_policy::IndicatorInput
-            authoredIndicatorInput{};
-        RE::NiTransform authoredIndicatorWeaponWorld{};
-        std::uint64_t authoredIndicatorWeaponGenerationKey = 0;
-        bool authoredIndicatorSupportHandIsLeft = true;
-        bool authoredIndicatorWeaponWorldValid = false;
-        const auto finishUpdate = [this,
-                                      &occupancyBefore,
-                                      &authoredIndicatorInput,
-                                      &authoredIndicatorWeaponWorld,
-                                      &authoredIndicatorWeaponGenerationKey,
-                                      &authoredIndicatorSupportHandIsLeft,
-                                      &authoredIndicatorWeaponWorldValid]() {
-            const EquippedWeaponGripOccupancy occupancyAfter =
-                getGripOccupancy();
+        std::array<authored_weapon_grip_activation_policy::IndicatorInput, 2> authoredIndicatorInputs{};
+        const auto finishUpdate = [this, &occupancyBefore, &authoredIndicatorInputs]() {
+            const EquippedWeaponGripOccupancy occupancyAfter = getGripOccupancy();
             const auto& markerHand = _firing.reattachIndicatorFrame.handIsLeft ?
                 occupancyAfter.left : occupancyAfter.right;
             if (markerHand.weaponEngaged()) {
                 _firing.reattachIndicatorFrame = {};
             }
-            authoredIndicatorInput.supportHandWeaponEngaged =
-                authoredIndicatorSupportHandIsLeft ?
-                occupancyAfter.left.weaponEngaged() :
-                occupancyAfter.right.weaponEngaged();
-            const auto indicator =
-                authored_weapon_grip_activation_policy::evaluateIndicator(
-                    authoredIndicatorInput);
-            const RE::NiPoint3 indicatorWorld{
-                indicator.markerWorld.x,
-                indicator.markerWorld.y,
-                indicator.markerWorld.z,
-            };
-            RE::NiPoint3 indicatorWeaponLocal{};
-            bool indicatorWeaponLocalValid = false;
-            if (indicator.visible && authoredIndicatorWeaponWorldValid) {
-                indicatorWeaponLocal = transform_math::worldPointToLocal(
-                    authoredIndicatorWeaponWorld,
-                    indicatorWorld);
-                indicatorWeaponLocalValid =
-                    std::isfinite(indicatorWeaponLocal.x) &&
-                    std::isfinite(indicatorWeaponLocal.y) &&
-                    std::isfinite(indicatorWeaponLocal.z);
-            }
-            _support.authoredIndicatorFrame =
-                AuthoredSupportGripIndicatorFrame{
-                    .positionWeaponLocal = indicatorWeaponLocal,
-                    .weaponGenerationKey =
-                        authoredIndicatorWeaponGenerationKey,
-                    .supportHandIsLeft =
-                        authoredIndicatorSupportHandIsLeft,
-                    .weaponLocalValid = indicatorWeaponLocalValid,
-                    .visible = indicator.visible,
+            for (const bool isLeft : { true, false }) {
+                auto& hand = authoredSupportHand(isLeft);
+                auto& input = authoredIndicatorInputs[isLeft ? 0u : 1u];
+                input.supportHandWeaponEngaged = isLeft ?
+                    occupancyAfter.left.weaponEngaged() : occupancyAfter.right.weaponEngaged();
+                const auto indicator = authored_weapon_grip_activation_policy::evaluateIndicator(input);
+                const auto& snapshot = hand.authoredDebugSnapshot;
+                RE::NiPoint3 local{};
+                bool localValid = false;
+                if (indicator.visible && snapshot.valid && isInvertibleTransform(snapshot.weaponWorld)) {
+                    local = transform_math::worldPointToLocal(snapshot.weaponWorld,
+                        RE::NiPoint3{ indicator.markerWorld.x, indicator.markerWorld.y, indicator.markerWorld.z });
+                    localValid = std::isfinite(local.x) && std::isfinite(local.y) && std::isfinite(local.z);
+                }
+                hand.authoredIndicatorFrame = {
+                    .positionWeaponLocal = local,
+                    .weaponGenerationKey = snapshot.weaponGenerationKey,
+                    .supportHandIsLeft = isLeft,
+                    .weaponLocalValid = localValid,
+                    .visible = indicator.visible && localValid,
                 };
+            }
             return TwoHandedGripUpdateResult{
                 .before = occupancyBefore,
                 .after = occupancyAfter,
@@ -197,7 +174,7 @@ namespace rock
         if (authoredOnlyModeChanged) {
             // The mode is acquisition-only: invalidate qualification so the
             // next grab uses the new contract, but never tear down a live grip.
-            resetAuthoredSupportCapability("authored-only-mode-changed");
+            resetAuthoredSupportCapabilities("authored-only-mode-changed");
         }
         _handlingSettings = handlingSettings;
         _scope.currentHandDriverFrames[0] = frameInput.leftHandDriverFrame;
@@ -206,7 +183,7 @@ namespace rock
             frameInput.leftHandHoldingObject,
             frameInput.rightHandHoldingObject);
         _hasSolvedWeaponTransform = false;
-        _support.authoredDebugSnapshot = {};
+        for (auto& hand : _support.authoredHands) hand.authoredDebugSnapshot = {};
         _scope.handAuthorityPublishedThisFrame = {};
         _firing.reattachHoverInsideZone = false;
         _firing.reattachHoverHandIsLeft = isFiringHandLeft();
@@ -227,7 +204,7 @@ namespace rock
         refreshScopeSafeHandFrames(weaponNode, frameInput, dt);
 
         if (!runtime_state::isLocalSkeletonReady() || !weaponNode) {
-            resetAuthoredSupportCapability(
+            resetAuthoredSupportCapabilities(
                 "skeleton-or-weapon-unavailable");
             clearAllVisualReturns("skeleton-or-weapon-unavailable", true, true);
             if (_session.state != TwoHandedState::Inactive) {
@@ -336,10 +313,6 @@ namespace rock
          * grip math below is weapon-relative; the hands only choose roles.
          */
         const bool supportHandIsLeft = isSupportHandLeft();
-        const auto supportHandTopology =
-            authored_weapon_grip_activation_policy::resolveHandTopology(
-                isFiringHandLeft(),
-                supportHandIsLeft);
         const WeaponInteractionContact& supportWeaponContact = supportHandIsLeft ? leftWeaponContact : rightWeaponContact;
         const WeaponInteractionRuntimeState& supportRuntimeState = supportHandIsLeft ? leftRuntimeState : rightRuntimeState;
         WeaponInteractionDecision decision = routeWeaponInteraction(supportWeaponContact, supportRuntimeState);
@@ -352,46 +325,33 @@ namespace rock
          * AfterRock/Complete provider phases. Authored capability comes only
          * from the current captured pose; generated collision is diagnostic.
          */
-        if (_handlingSettings.authoredOnlySupportGrabsEnabled) {
-            synchronizeAuthoredSupportCapabilityIdentity(
-                weaponNode,
-                currentEquippedWeaponOwnershipKey,
-                currentWeaponGenerationKey,
-                supportHandTopology);
-            const auto& capabilityRuntime = runtime_state::currentFrame();
-            const bool qualificationReady =
-                _support.authoredCapability.initialized &&
-                capabilityRuntime.weaponDrawn &&
-                f4vr::isNodeVisible(weaponNode) &&
-                !capabilityRuntime.localMenuBlocking &&
-                !capabilityRuntime.compatibilityConfigBlocking &&
-                !frameInput.animationBoundaryActive &&
-                supportRuntimeState.supportGripAllowed &&
-                !supportRuntimeState.providerPartAuthority.active;
-            advanceAuthoredSupportCapabilityQualification(
-                qualificationReady,
-                dt);
-        } else {
-            if (_support.authoredCapability.initialized) {
-                resetAuthoredSupportCapability("authored-only-mode-disabled");
+        for (const bool isLeft : { true, false }) {
+            auto& hand = authoredSupportHand(isLeft);
+            const auto& runtime = isLeft ? leftRuntimeState : rightRuntimeState;
+            if (_handlingSettings.authoredOnlySupportGrabsEnabled) {
+                synchronizeAuthoredSupportCapabilityIdentity(isLeft, weaponNode,
+                    currentEquippedWeaponOwnershipKey, currentWeaponGenerationKey);
+                const auto& qualification = runtime_state::currentFrame();
+                const bool ready = hand.authoredCapability.initialized &&
+                    qualification.weaponDrawn && f4vr::isNodeVisible(weaponNode) &&
+                    !qualification.localMenuBlocking && !qualification.compatibilityConfigBlocking &&
+                    !frameInput.animationBoundaryActive && runtime.supportGripAllowed &&
+                    !runtime.providerPartAuthority.active;
+                advanceAuthoredSupportCapabilityQualification(isLeft, ready, dt);
+            } else {
+                if (hand.authoredCapability.initialized) {
+                    resetAuthoredSupportCapability(isLeft, "authored-only-mode-disabled");
+                }
+                hand.authoredCapability.reason = authored_support_grab_policy::CapabilityReason::ModeDisabled;
             }
-            _support.authoredCapability.reason =
-                authored_support_grab_policy::CapabilityReason::ModeDisabled;
-        }
-        refreshAuthoredSupportGripActivationState(
-            weaponNode,
-            currentWeaponGenerationKey,
-            weaponCollision);
-        if (_handlingSettings.authoredOnlySupportGrabsEnabled &&
-            !supportRuntimeState.providerPartAuthority.active) {
-            observeAuthoredSupportCapability(
-                weaponNode,
-                currentWeaponGenerationKey);
-        } else if (_support.authoredDebugSnapshot.valid) {
-            _support.authoredDebugSnapshot.authoredCapability =
-                authored_support_grab_policy::Capability::Pending;
-            _support.authoredDebugSnapshot.authoredCapabilityReason =
-                authored_support_grab_policy::CapabilityReason::ModeDisabled;
+            refreshAuthoredSupportGripActivationState(isLeft, weaponNode,
+                currentWeaponGenerationKey, weaponCollision);
+            if (_handlingSettings.authoredOnlySupportGrabsEnabled && !runtime.providerPartAuthority.active) {
+                observeAuthoredSupportCapability(isLeft, weaponNode, currentWeaponGenerationKey);
+            } else if (hand.authoredDebugSnapshot.valid) {
+                hand.authoredDebugSnapshot.authoredCapability = authored_support_grab_policy::Capability::Pending;
+                hand.authoredDebugSnapshot.authoredCapabilityReason = authored_support_grab_policy::CapabilityReason::ModeDisabled;
+            }
         }
         const bool routedSupportTouching =
             decision.kind == WeaponInteractionKind::SupportGrip;
@@ -401,33 +361,15 @@ namespace rock
             stableFrameInput.leftHandAvailableForAcquisition : stableFrameInput.rightHandAvailableForAcquisition;
         const EquippedWeaponPrimaryGripInput& primaryGripInput = stableFrameInput.primaryGripInput;
 
-        const auto& authoredActivation =
-            _support.authoredDebugSnapshot;
-        const bool authoredActivationStateMatches =
-            authoredActivation.valid &&
-            authoredActivation.supportHandIsLeft == supportHandIsLeft &&
-            authoredActivation.weaponGenerationKey ==
-                currentWeaponGenerationKey &&
-            authoredActivation.captureSequence ==
-                _support.authoredCandidate.captureSequence;
         using IndicatorVec3 =
             authored_weapon_grip_activation_policy::Vec3;
         const auto toIndicatorVector = [](const RE::NiPoint3& value) {
             return IndicatorVec3{ value.x, value.y, value.z };
         };
-        authoredIndicatorSupportHandIsLeft = supportHandIsLeft;
-        const bool authoredCapabilityAllowsIndicator =
-            !_handlingSettings.authoredOnlySupportGrabsEnabled ||
-            _support.authoredCapability.capability ==
-                authored_support_grab_policy::Capability::Usable;
         const auto arrangement = authoredGripArrangement(weaponNode, currentWeaponGenerationKey);
         const bool sharedFiringZone = loose_weapon_authored_grab_policy::sharedFiringZone(arrangement);
-        const bool authoredSeatAcquisitionAvailable = supportHandAvailableForAcquisition && !sharedFiringZone &&
-            authoredActivationStateMatches &&
-            authoredActivation.activationSpatialPass &&
-            authoredCapabilityAllowsIndicator &&
-            supportRuntimeState.supportGripAllowed &&
-            !supportRuntimeState.providerPartAuthority.active;
+        const bool authoredSeatAcquisitionAvailable = supportHandAvailableForAcquisition &&
+            authoredSupportSeatAvailable(supportHandIsLeft, currentWeaponGenerationKey, supportRuntimeState);
         firing_grip_reattach_zone_policy::ZoneInput handoffInput{};
         firing_grip_reattach_zone_policy::ZoneResult handoffZone{};
         // Evaluate the same cylinders as detached firing-grip reattachment,
@@ -497,34 +439,28 @@ namespace rock
             (handoffAcquisitionAvailable || authoredSeatAcquisitionAvailable) ?
             weaponNode :
             sourceRootNodeOrFallback(decision.interactionRoot, weaponNode);
-        authoredIndicatorInput =
-            authored_weapon_grip_activation_policy::IndicatorInput{
-                .weaponFamily = authoredActivation.weaponFamily,
-                .authoredSeatWorld = toIndicatorVector(
-                    authoredActivation.authoredPalmSeatWorld),
-                .supportSideAxisWorld = toIndicatorVector(
-                    authoredActivation.supportSideAxisWorld),
-                .downAxisWorld = toIndicatorVector(
-                    authoredActivation.downAxisWorld),
-                .activationStateValid =
-                    authoredActivationStateMatches &&
-                    authoredCapabilityAllowsIndicator,
-                .activationSpatialPass =
-                    authoredActivation.activationSpatialPass && !sharedFiringZone && !handoffAcquisitionAvailable,
-                .supportGripAllowed = supportHandAvailableForAcquisition && supportRuntimeState.supportGripAllowed,
-                .providerPartAuthorityActive =
-                    supportRuntimeState.providerPartAuthority.active,
-                .supportHandHoldingObject = supportHandHoldingObject,
+        for (const bool isLeft : { true, false }) {
+            const auto& snapshot = authoredSupportHand(isLeft).authoredDebugSnapshot;
+            const auto& runtime = isLeft ? leftRuntimeState : rightRuntimeState;
+            const bool available = (isLeft ? stableFrameInput.leftHandAvailableForAcquisition :
+                stableFrameInput.rightHandAvailableForAcquisition) &&
+                (isLeft != isFiringHandLeft() || isPartCarryActive());
+            authoredIndicatorInputs[isLeft ? 0u : 1u] = {
+                .weaponFamily = snapshot.weaponFamily,
+                .authoredSeatWorld = toIndicatorVector(snapshot.authoredPalmSeatWorld),
+                .supportSideAxisWorld = toIndicatorVector(snapshot.supportSideAxisWorld),
+                .downAxisWorld = toIndicatorVector(snapshot.downAxisWorld),
+                .activationStateValid = authoredSupportSeatAvailable(isLeft, currentWeaponGenerationKey, runtime),
+                .activationSpatialPass = snapshot.activationSpatialPass &&
+                    !(isLeft == supportHandIsLeft && handoffAcquisitionAvailable),
+                .supportGripAllowed = available && runtime.supportGripAllowed,
+                .providerPartAuthorityActive = runtime.providerPartAuthority.active,
+                .supportHandHoldingObject = isLeft ? stableFrameInput.leftHandHoldingObject : stableFrameInput.rightHandHoldingObject,
             };
-        authoredIndicatorWeaponWorld = authoredActivation.weaponWorld;
-        authoredIndicatorWeaponGenerationKey = currentWeaponGenerationKey;
-        authoredIndicatorWeaponWorldValid =
-            authoredActivationStateMatches &&
-            isInvertibleTransform(authoredIndicatorWeaponWorld);
-
+        }
         const bool supportOwned = partGrip(supportHandIsLeft).active && !partGrip(supportHandIsLeft).attachOnly;
         const bool freeSupportIndicator = !supportHandHoldingObject && !partGrip(supportHandIsLeft).active &&
-            (handoffAcquisitionAvailable || authored_weapon_grip_activation_policy::evaluateIndicator(authoredIndicatorInput).visible);
+            (handoffAcquisitionAvailable || authored_weapon_grip_activation_policy::evaluateIndicator(authoredIndicatorInputs[supportHandIsLeft ? 0u : 1u]).visible);
         const auto releaseIntent = equipped_weapon_manual_ownership_policy::resolvePrimaryReleaseIntent(
             _firing.primaryReleaseIntent, {
                 .ownershipKey = currentEquippedWeaponOwnershipKey,
@@ -832,15 +768,8 @@ namespace rock
         _visuals.weaponCollisionHandPresentationFromPreviousFrame = {};
         clearDynamicSupportAcquisition("reset", true);
         clearAuthoredSupportGripCandidate();
-        resetAuthoredSupportCapability("reset");
-        _support.authoredIndicatorFrame = {};
-        _support.authoredDebugSnapshot = {};
-        _support.lastStableApproachDirectionWorld = {};
-        _support.lastStableDirectionGenerationKey = 0;
-        _support.lastStableDirectionCaptureSequence = 0;
-        _support.lastStableDirectionHandTopology =
-            authored_weapon_grip_activation_policy::HandTopology::Invalid;
-        _support.lastStableApproachDirectionValid = false;
+        resetAuthoredSupportCapabilities("reset");
+        _support.authoredHands = {};
         clearAllVisualReturns("reset", false, true);
         clearNativeScopeOverlayAuthority(true);
         _equippedWeaponDropRequest = {};
@@ -1149,9 +1078,8 @@ namespace rock
         _firing.leftDampedFollowFrame = {};
         clearLeftFiringSupportReleaseReturn("firing-hand-changed");
         _session.firingHandIsLeft = isLeft;
-        // The authored support mirror and activation cone are role-specific.
-        // Never carry a capability verdict across a firing/support hand swap.
-        resetAuthoredSupportCapability("firing-hand-changed");
+        // Each physical hand retains its own identity-bound support verdict;
+        // changing the firing role does not change either handguard seat.
         ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing hand switched to {} reason={}", isLeft ? "left" : "right", reason ? reason : "unknown");
     }
 }

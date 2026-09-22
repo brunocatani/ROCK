@@ -74,5 +74,50 @@ int main()
     }
     ok &= expectEqual("queue stays fixed capacity", haptics.activeEventCount(FeedbackHand::Right), FeedbackHaptics::kEventsPerHand);
 
+    haptics.reset();
+    haptics.setArmedThrowable(FeedbackHand::Right, 101);
+    count = haptics.update(0.11f, outputs, 2);
+    ok &= expectEqual("armed feedback starts on the first frame", count, 1);
+    ok &= expectTrue("armed feedback targets the holding hand", outputs[0].hand == FeedbackHand::Right);
+    ok &= expectNear("armed feedback is strong", outputs[0].intensity, 0.95f, 0.001f);
+    ok &= expectTrue("output does not schedule a long motor tail", outputs[0].pulseDurationSeconds <= 0.02f);
+    ok &= expectEqual("sustained feedback uses no queued event slots", haptics.activeEventCount(FeedbackHand::Right), 0);
+    haptics.setArmedThrowable(FeedbackHand::Right, 101);
+    ok &= expectEqual("same reference does not restart the pulse during its gap", haptics.update(0.10f, outputs, 2), 0);
+    ok &= expectEqual("pulse gap continues", haptics.update(0.10f, outputs, 2), 0);
+    ok &= expectEqual("armed feedback repeats after the gap", haptics.update(0.01f, outputs, 2), 1);
+    haptics.setArmedThrowable(FeedbackHand::Right, 0);
+    ok &= expectEqual("release immediately stops the armed source", haptics.update(0.01f, outputs, 2), 0);
+
+    haptics.setArmedThrowable(FeedbackHand::Right, 101);
+    (void)haptics.update(0.11f, outputs, 2);
+    haptics.setArmedThrowable(FeedbackHand::Right, 102);
+    ok &= expectEqual("a newly held armed reference starts immediately", haptics.update(0.01f, outputs, 2), 1);
+    haptics.setArmedThrowable(FeedbackHand::Right, 0);
+    haptics.setArmedThrowable(FeedbackHand::Left, 102);
+    count = haptics.update(0.01f, outputs, 2);
+    ok &= expectEqual("handoff emits only on the new holding hand", count, 1);
+    ok &= expectTrue("handoff selects the left controller", outputs[0].hand == FeedbackHand::Left);
+    haptics.setArmedThrowable(FeedbackHand::Right, 103);
+    ok &= expectEqual("two held armed explosives pulse independently", haptics.update(0.01f, outputs, 2), 2);
+    haptics.reset();
+    ok &= expectEqual("menu or lifecycle reset clears both armed sources", haptics.update(0.01f, outputs, 2), 0);
+
+    haptics.setArmedThrowable(FeedbackHand::Left, 104);
+    ok &= expectTrue("ordinary feedback can coexist with an armed explosive", haptics.queue(FeedbackHand::Left, 0.20f, 1.0f));
+    count = haptics.update(0.11f, outputs, 2);
+    ok &= expectEqual("feedback is combined into one output per hand", count, 1);
+    ok &= expectNear("stronger ordinary feedback is preserved", outputs[0].intensity, 1.0f, 0.001f);
+    ok &= expectEqual("armed source does not evict ordinary feedback", haptics.activeEventCount(FeedbackHand::Left), 1);
+    count = haptics.update(0.01f, outputs, 2);
+    ok &= expectEqual("ordinary feedback continues through the armed pulse gap", count, 1);
+    haptics.setArmedThrowable(FeedbackHand::Left, 0);
+    ok &= expectEqual("ending armed feedback preserves unrelated feedback", haptics.update(0.01f, outputs, 2), 1);
+
+    haptics.reset();
+    haptics.setArmedThrowable(FeedbackHand::Right, 105);
+    (void)haptics.update(0.85f, outputs, 2);
+    ok &= expectEqual("long frames do not replay missed bursts", haptics.update(0.01f, outputs, 2), 0);
+
     return ok ? 0 : 1;
 }

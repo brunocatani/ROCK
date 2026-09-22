@@ -278,6 +278,7 @@ namespace rock::loose_grenade_runtime
                         policyMode,
                         projectile->data.flags,
                         projectile->data.explosionType->data.impactPlacedObject != nullptr),
+                .molotov = kind == GrenadeKind::Molotov,
                 .detonationMode = mode,
             };
             return true;

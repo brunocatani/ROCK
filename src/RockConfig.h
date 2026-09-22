@@ -57,6 +57,7 @@ namespace rock
         std::string rockLogPattern = "%Y-%m-%d %H:%M:%S.%e [%l] %v";
         int rockLogSampleMilliseconds = 2000;
         bool rockLogFlushImmediate = false;
+        bool rockDebugPipboyPauseInput = false;
         /*
          * Clock-domain note: the remaining *Frames diagnostic settings below
          * (profiler warmup/report windows, dump/audit/log intervals) are
@@ -110,6 +111,8 @@ namespace rock
         float rockFiringGripAttachHapticIntensity = 0.85f;
         float rockFiringGripDetachHapticIntensity = 0.30f;
 
+        // Default physical hand for equips without a hand-specific request.
+        bool rockLeftHandedMode = false;
         // ROCK-native firing-grip handoff. This remains independent from the
         // role-neutral Immersive Weapons detach/drop feature set.
         bool rockAmbidextrousFiringGripEnabled = true;
@@ -137,7 +140,7 @@ namespace rock
         float rockWeaponInteractionProbeRadius = 12.0f;
         float rockFiringGripProximitySupportRadius = 8.0f;
         bool rockImmersiveGrenades = true;
-        float rockRealisticGrenadeFuseSeconds = 3.0f;
+        float rockRealisticGrenadeFuseSeconds = 4.0f;
         bool rockWeaponSupportGripHandLerpEnabled = true;
         float rockWeaponSupportGripHandLerpTimeMin = 0.12f;
         float rockWeaponSupportGripHandLerpTimeMax = 0.20f;

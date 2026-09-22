@@ -186,7 +186,8 @@ namespace rock
             f4vr::showNotification("ROCK: Cannot draw throwable - both hands are occupied.");
             return;
         }
-        const bool isLeft = force_grab_policy::selectGrenadeHand(false, rightFree, leftFree).hand == force_grab_policy::HandChoice::Left;
+        const bool isLeft = force_grab_policy::selectGrenadeHand(
+            false, rightFree, leftFree, g_rockConfig.rockLeftHandedMode).hand == force_grab_policy::HandChoice::Left;
         auto location = (isLeft ? frame.left : frame.right).grabAnchorWorld;
         location.z -= 3.0f;
         const auto drop = loose_grenade_runtime::dropEquippedThrowableToWorld(location);
@@ -543,6 +544,10 @@ namespace rock
                 impactBodyId,
                 frame.deltaSeconds);
             const bool feedbackPlayed = loose_grenade_runtime::playPinPulledFeedbackAtReference(heldRef);
+            if (runtime.molotov) {
+                fuse.visual = LooseMolotovVisual::create(heldRef);
+                if (fuse.visual) fuse.visual->update(heldRef, 0.0f);
+            }
             ROCK_LOG_DEBUG(Hand,
                 "{} hand loose throwable activation feedback: ref={:08X} played={}",
                 hand.handName(),
@@ -595,6 +600,9 @@ namespace rock
             releaseHandIfHolding(_rightHand, false, ref, formID);
             releaseHandIfHolding(_leftHand, true, ref, formID);
 
+            // The detonation attempt ends this armed state even if creation
+            // fails. Retire its visual before the source 3D can be deleted.
+            if (fuse.visual) fuse.visual->release("detonation");
             const bool explosionCreated = loose_grenade_runtime::createExplosionAtReference(ref, fuse.runtime.explosion);
             if (explosionCreated) {
                 if (!fuse.runtime.preserveReferenceAfterDetonation) {
@@ -639,6 +647,8 @@ namespace rock
                 fuse = {};
                 continue;
             }
+
+            if (fuse.visual) fuse.visual->update(ref, deltaSeconds);
 
             if (fuse.runtime.detonationMode == loose_grenade_runtime::GrenadeDetonationMode::Impact) {
                 if (!pendingImpact || pendingImpactBodyId != fuse.impactBodyId) {

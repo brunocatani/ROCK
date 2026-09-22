@@ -1,4 +1,5 @@
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/grenade/LooseMolotovVisualPolicy.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 
 #include <cmath>
@@ -91,6 +92,57 @@ namespace
 int main()
 {
     bool ok = true;
+
+    {
+        using namespace rock::loose_molotov_visual_policy;
+        if (!isVisualOnlyShape(kVisualShapeName) || isVisualOnlyShape("Wick:0") ||
+            isVisualOnlyShape("BottleVodka01Empty001:78") || isVisualOnlyShape(nullptr)) {
+            std::printf("Only owned Molotov flames may be excluded from grip surfaces\n");
+            ok = false;
+        }
+        auto sourceWick = identityTransform();
+        sourceWick.translate = { 0.03529358f, -0.07418919f, 6.75411320f };
+        auto looseWick = identityTransform();
+        looseWick.translate = { -0.05391312f, -0.00279474f, 9.95219612f };
+        auto flame = identityTransform();
+        flame.translate = { 0.09797479f, -0.00144291f, 22.00520325f };
+        const auto placed = atWick(looseWick, sourceWick, flame);
+        ok &= expectVector("Molotov flame compensates for the different authored wick origins", placed.translate,
+            TestVector{ 0.00876809f, 0.06995154f, 25.20328617f });
+
+        sourceWick.translate = { 1.0f, 2.0f, 3.0f };
+        looseWick.translate = { 10.0f, 20.0f, 30.0f };
+        looseWick.rotate = TestMatrix{ { { 1, 0, 0 }, { 0, 0, 1 }, { 0, -1, 0 } } };
+        looseWick.scale = 2.0f;
+        flame.translate = { 3.0f, 5.0f, 7.0f };
+        flame.scale = 0.5f;
+        const auto rotated = atWick(looseWick, sourceWick, flame);
+        ok &= expectVector("Molotov flame follows destination wick rotation and scale", rotated.translate,
+            TestVector{ 14.0f, 12.0f, 36.0f });
+        ok &= expectFloat("Molotov flame scale follows the wick", rotated.scale, 1.0f);
+        ok &= expectRotation("Molotov flame orientation follows the wick", rotated.rotate, looseWick.rotate);
+
+        struct Bound { TestVector center; float fRadius; };
+        const Bound authored{ { 0.0f, 0.0f, 14.0f }, 3.0f };
+        auto candidate = authored;
+        if (!compatibleWick(126, 172, candidate, authored) ||
+            compatibleWick(125, 172, candidate, authored) ||
+            compatibleWick(126, 171, candidate, authored)) {
+            std::printf("Molotov wick topology qualification failed\n");
+            ok = false;
+        }
+        candidate.center.z += 1.0f;
+        if (compatibleWick(126, 172, candidate, authored)) {
+            std::printf("Different wick geometry must not receive a guessed flame placement\n");
+            ok = false;
+        }
+        candidate = authored;
+        candidate.fRadius = std::nanf("");
+        if (compatibleWick(126, 172, candidate, authored)) {
+            std::printf("Invalid wick bounds must fail closed\n");
+            ok = false;
+        }
+    }
 
     {
         TestMatrix rotation{};

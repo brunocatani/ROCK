@@ -23,6 +23,34 @@ int main()
 
     bool ok = true;
 
+    std::uint64_t defaultEquipOwnership = 0;
+    ok &= expect("ordinary equip uses the left default",
+        observeDefaultLeftEquip(defaultEquipOwnership, 101, true, false));
+    ok &= expect("same-weapon menu resume and geometry rebuild do not reassign the hand",
+        !observeDefaultLeftEquip(defaultEquipOwnership, 101, true, false));
+    ok &= expect("a wheel equip waits for the input-blocking menu to close without consuming the new identity",
+        !observeDefaultLeftEquip(defaultEquipOwnership, 102, true, false, true) &&
+            defaultEquipOwnership == 101);
+    ok &= expect("a menu weapon replacement selects the left default again",
+        observeDefaultLeftEquip(defaultEquipOwnership, 102, true, false));
+    ok &= expect("physical hand-specific equip overrides the left default",
+        !observeDefaultLeftEquip(defaultEquipOwnership, 103, true, true));
+    ok &= expect("completing a hand-specific equip cannot trigger a delayed default takeover",
+        !observeDefaultLeftEquip(defaultEquipOwnership, 103, true, false));
+    ok &= expect("disabled left mode preserves ordinary right carry",
+        !observeDefaultLeftEquip(defaultEquipOwnership, 104, false, false));
+    ok &= expect("changing the preference does not move a live weapon",
+        !observeDefaultLeftEquip(defaultEquipOwnership, 104, true, false));
+    ok &= expect("sheathed or absent weapons have no default grip",
+        !observeDefaultLeftEquip(defaultEquipOwnership, 0, true, false));
+    ok &= expect("ordinary redraw of the same weapon selects the default",
+        observeDefaultLeftEquip(defaultEquipOwnership, 104, true, false));
+    (void)observeDefaultLeftEquip(defaultEquipOwnership, 0, true, false);
+    ok &= expect("physical shoulder retrieval keeps its chosen hand on redraw",
+        !observeDefaultLeftEquip(defaultEquipOwnership, 104, true, true));
+    ok &= expect("a later ordinary replacement still uses the default after shoulder retrieval",
+        observeDefaultLeftEquip(defaultEquipOwnership, 105, true, false));
+
     ok &= expect("the bridge must honor a shorter positive presentation lease",
         rock::equip_visual_bridge_policy::effectivePresentationLeaseSeconds(0.4f) ==
             0.4f);

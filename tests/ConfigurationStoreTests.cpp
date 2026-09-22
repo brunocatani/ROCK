@@ -135,6 +135,93 @@ namespace
             "the real misplaced profiler configuration still does not activate");
     }
 
+    void consumerCompletionChecks(const std::filesystem::path& directory, const CSimpleIniA& compiled)
+    {
+        using namespace rock::config;
+        namespace fs = std::filesystem;
+        fs::create_directories(directory);
+        ConfigurationStore store(directory, compiled);
+        const auto consumerPath = store.path(Group::Consumer);
+        const auto developerPath = store.path(Group::Developer);
+        const auto write = [](const fs::path& path, std::string_view text) {
+            std::ofstream file(path, std::ios::binary | std::ios::trunc);
+            file << text;
+            require(file.good(), "cannot write consumer completion fixture");
+        };
+        const std::string suppliedDeveloper = "[My diagnostics]\nbDebugShowColliders=false\nsLocalNote=keep me\n";
+        const std::array<std::string, 3> fixtures{
+            "",
+            "\xEF\xBB\xBF; My settings\r\niLogLevel=1\r\n[My options]\r\nBBIPODMODE=false\r\n"
+            "; Keep this comment and blank value\r\nbEnableImmersiveScopes=\r\n"
+            "[Logging]\r\niLogLevel=4\r\n[My options]\r\nsUnknownOption = keep me",
+            "; Unix newlines\n[Custom]\nBBIPODMODE=false\nsUnknownOption=keep me\n"
+        };
+        for (const auto& original : fixtures) {
+            write(consumerPath, original);
+            if (original.empty()) fs::remove(developerPath);
+            else write(developerPath, suppliedDeveloper);
+            require(store.load(false), "sparse consumer hot reload failed");
+            require(bytes(consumerPath) == original, "hot reload wrote consumer defaults");
+            const auto previous = store.settings();
+            require(store.load(true), "consumer completion failed");
+            const auto completed = bytes(consumerPath);
+            require(completed.starts_with(original), "completion rewrote existing consumer bytes");
+            require(completed.size() > original.size(), "completion did not append missing options");
+            CSimpleIniA persisted;
+            persisted.SetMultiKey(true);
+            require(persisted.LoadFile(consumerPath.c_str()) >= 0, "completed consumer INI unreadable");
+            CSimpleIniA::TNamesDepend sections;
+            persisted.GetAllSections(sections);
+            CSimpleIniA additions;
+            require(additions.LoadData(completed.substr(original.size())) >= 0, "appended defaults unreadable");
+            CSimpleIniA::TNamesDepend addedSections;
+            additions.GetAllSections(addedSections);
+            for (const auto& setting : previous) {
+                const auto& loaded = find(store, setting.key);
+                require(loaded.value == setting.value, "completion changed an effective setting value");
+                if (setting.group == Group::Developer) {
+                    for (const auto& section : sections)
+                        require(!persisted.GetValue(section.pItem, setting.key.c_str(), nullptr),
+                            "completion added a developer key to the consumer file");
+                    continue;
+                }
+                require(loaded.specified, "completed consumer setting is still absent");
+                if (!setting.specified)
+                    require(std::string_view(persisted.GetValue(setting.section.c_str(), setting.key.c_str(), "")) == setting.defaultValue,
+                        "completion did not persist the compiled default");
+                else
+                    for (const auto& section : addedSections)
+                        require(!additions.GetValue(section.pItem, setting.key.c_str(), nullptr),
+                            "completion appended an existing key from another section or spelling case");
+            }
+            require(original.empty() ? !fs::exists(developerPath) : bytes(developerPath) == suppliedDeveloper,
+                "consumer completion created or changed the developer INI");
+            const auto revision = store.revision();
+            const auto timestamp = fs::last_write_time(consumerPath);
+            require(store.load(true) && store.revision() == revision, "repeat completion changed the catalog");
+            require(bytes(consumerPath) == completed && fs::last_write_time(consumerPath) == timestamp,
+                "repeat completion rewrote an already complete consumer INI");
+        }
+        write(consumerPath, "[Logging]\niLogLevel=5\n");
+        const auto beforeFailure = bytes(consumerPath);
+        const auto revision = store.revision();
+        {
+            // Permit reads but deny replacement to exercise publication failure.
+            struct FileLock {
+                HANDLE handle;
+                ~FileLock() { if (handle != INVALID_HANDLE_VALUE) CloseHandle(handle); }
+            } lock{ CreateFileW(consumerPath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr) };
+            require(lock.handle != INVALID_HANDLE_VALUE, "cannot lock consumer completion fixture");
+            require(store.load(true) && !store.error().empty(), "failed completion did not load existing settings and report the error");
+        }
+        require(bytes(consumerPath) == beforeFailure && store.revision() > revision && find(store, "iLogLevel").value == "5",
+            "failed completion modified the file or lost the user's existing settings");
+        auto temporary = consumerPath;
+        temporary += L".creating";
+        require(!fs::exists(temporary), "failed completion retained its temporary file");
+        require(store.load(true), "consumer completion did not recover after unlocking");
+    }
+
     void verifyReference(const CSimpleIniA& reference,
         const rock::config::ConfigurationStore& store, rock::config::Group owner)
     {
@@ -170,6 +257,7 @@ int main(int argc, char** argv)
             ("ROCK-configuration-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
         struct Cleanup { fs::path path; ~Cleanup() { std::error_code ec; fs::remove_all(path, ec); } } cleanup{ directory };
         decorativeSectionChecks(directory / "decorative", compiled);
+        consumerCompletionChecks(directory / "completion", compiled);
         ConfigurationStore store(directory, compiled);
         CSimpleIniA consumerExample;
         CSimpleIniA developerExample;
@@ -202,6 +290,18 @@ int main(int argc, char** argv)
             require(!other.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr), "example option belongs to both files");
         }
         require(store.load(true), "first-run load failed");
+        require(find(store, "bLeftHandedMode").group == Group::Consumer &&
+            find(store, "bLeftHandedMode").type == ValueType::Boolean &&
+            !rock::RockConfig::parseValues(missingOptions).rockLeftHandedMode,
+            "left-hand mode must be an opt-in consumer boolean");
+        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "bLeftHandedMode", "true") && store.load(false),
+            "left-hand mode enable/reload failed");
+        CSimpleIniA leftHandValues;
+        store.appendLoadedValues(leftHandValues);
+        require(rock::RockConfig::parseValues(leftHandValues).rockLeftHandedMode,
+            "left-hand mode did not reach runtime");
+        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "bLeftHandedMode", "false") && store.load(false),
+            "left-hand mode reset/reload failed");
         require(find(store, "bVatsPhysicsFixes").group == Group::Developer &&
             find(store, "bVatsPhysicsFixes").type == ValueType::Boolean &&
             rock::RockConfig::parseValues(missingOptions).rockVatsPhysicsFixes,

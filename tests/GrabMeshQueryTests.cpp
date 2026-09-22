@@ -132,6 +132,13 @@ namespace
             // Appending multiple shapes preserves existing output and optional outputs.
             assert(appendStaticMeshTriangles(geometry, bytes, stride, 0, fullPrecision, visible, transform, nullptr, world, nullptr, nullptr) == 3);
             assert(world.size() == 6);
+            // Removing contact metadata must preserve every admitted vertex:
+            // the authored arrival still uses these positions for release length.
+            for (std::size_t i = 0; i < 3; ++i) {
+                assert(same(world[i].v0, world[i + 3].v0));
+                assert(same(world[i].v1, world[i + 3].v1));
+                assert(same(world[i].v2, world[i + 3].v2));
+            }
         }
     }
 

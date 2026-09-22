@@ -535,6 +535,7 @@ namespace rock
         _equipped.handlingSettings = {};
         _equipped.handlingModeInitialized = false;
         _equipped.handlingModeReconcilePending = false;
+        _equipped.defaultEquipObservedOwnershipKey = 0;
         equipped_weapon_handling_runtime::reset();
         clearEquippedWeaponPostDropCollisionSuppressionState();
         _contacts.rightPush.clear();

@@ -6928,6 +6928,7 @@ namespace rock
         RE::NiAVObject* collidableNode,
         RE::NiAVObject* meshSourceNode,
         bool handPocketOnlyGrab,
+        bool surfaceEvidenceRequired,
         GrabMeshExtraction& outExtraction)
     {
         outExtraction = {};
@@ -6942,13 +6943,26 @@ namespace rock
         std::uint32_t attemptCount = 0;
         const char* extractionSource = "visual";
         attemptedRoots[attemptCount++] = meshSourceNode;
-        extractAllSurfaceTriangles(
-            meshSourceNode,
-            outExtraction.meshTriangles,
-            outExtraction.surfaceTriangles,
-            meshExtractionDepth,
-            &outExtraction.stats,
-            handPocketOnlyGrab);
+        const auto extract = [&](RE::NiAVObject* source) {
+            if (surfaceEvidenceRequired) {
+                extractAllSurfaceTriangles(source, outExtraction.meshTriangles, outExtraction.surfaceTriangles,
+                    meshExtractionDepth, &outExtraction.stats, handPocketOnlyGrab);
+                return;
+            }
+            // Authored placement needs no per-triangle contact/skin ownership
+            // records. Keep the same vertex positions for release spin limiting.
+            const auto before = outExtraction.meshTriangles.size();
+            extractAllTriangles(source, outExtraction.meshTriangles, meshExtractionDepth, &outExtraction.stats);
+            if (source && outExtraction.meshTriangles.size() == before) {
+                RE::BSVisit::TraverseScenegraphGeometries(source, [&](RE::BSGeometry* geometry) {
+                    if (auto* shape = geometry ? geometry->IsTriShape() : nullptr) {
+                        extractAllTriangles(shape, outExtraction.meshTriangles, 1, &outExtraction.stats);
+                    }
+                    return RE::BSVisit::BSVisitControl::kContinue;
+                });
+            }
+        };
+        extract(meshSourceNode);
 
         auto tryAlternateRoot = [&](RE::NiAVObject* candidateRoot, const char* sourceName) {
             if (!candidateRoot) {
@@ -6964,13 +6978,7 @@ namespace rock
             }
             ++attemptCount;
             const auto beforeTriangles = outExtraction.meshTriangles.size();
-            extractAllSurfaceTriangles(
-                candidateRoot,
-                outExtraction.meshTriangles,
-                outExtraction.surfaceTriangles,
-                meshExtractionDepth,
-                &outExtraction.stats,
-                handPocketOnlyGrab);
+            extract(candidateRoot);
             if (outExtraction.meshTriangles.size() == beforeTriangles) {
                 return false;
             }
@@ -7350,7 +7358,8 @@ namespace rock
         performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabBodyResolution);
         outResolution = {};
         const auto& selectedObject = _currentSelection;
-        outResolution.primaryChoiceTarget = surface.meshGrabFound ?
+        outResolution.primaryChoiceTarget = (surface.meshGrabFound ||
+            surface.pointAuthoritySource == GrabPivotAuthoritySource::LooseWeaponPrimaryAttach) ?
             surface.gripPoint :
             (selectedObject.hasHitPoint ? selectedObject.hitPointWorld : proxy.grabPivotAForPrimaryChoice);
         const auto nearestPrimaryChoice = preparedBodySet.choosePrimaryBody(
@@ -8023,7 +8032,7 @@ namespace rock
         auto& multiFingerGripUsed = outEvidence.multiFingerGripUsed;
         auto& palmSeatPointValid = outEvidence.palmSeatPointValid;
         auto& fingerEvidencePointValid = outEvidence.fingerEvidencePointValid;
-        const bool canonicalPivotAvailable = input.visualMeshPivotAvailable ||
+        const bool canonicalPivotAvailable = input.authoredSeatPrepared || input.visualMeshPivotAvailable ||
             (!g_rockConfig.rockGrabMeshContactOnly && surface.meshGrabFound && surface.surfaceHit.valid &&
                 surface.surfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery);
             palmSeatPointWorld = grabGripPoint;
@@ -8298,6 +8307,7 @@ namespace rock
         RE::hknpBodyId objectBodyId{};
         std::uint64_t traceId = 0;
         const std::string* objectName = nullptr;
+        bool authoredSeatPrepared = false;
     };
 
     struct Hand::GrabBodyFrameCapture
@@ -8453,7 +8463,7 @@ namespace rock
                     rootNode ? computeRuntimeBodyLocalTransform(rootNode->world, grabBodyWorldAtGrab) : makeIdentityTransform();
                 selectedGripPointLocal = transform_math::worldPointToLocal(objectWorldTransform, grabGripPoint);
                 selectedPivotBBodyLocalGame = transform_math::worldPointToLocal(grabBodyWorldAtGrab, grabGripPoint);
-                if (!grabMeshTriangles.empty()) {
+                if (!input.authoredSeatPrepared && !grabMeshTriangles.empty()) {
                     grabFingerPoseMeshTriangles = selectNearestGrabFingerPoseTriangles(
                         mesh.surfaceTriangles,
                         grabGripPoint,
@@ -8640,11 +8650,11 @@ namespace rock
             pointDistanceGameUnits(grabGripPoint, pocketAtAcquisition.palmCenterWorld) <= pocketAtAcquisition.pocketRadiusGameUnits &&
             dot(pocketDelta, pocketAtAcquisition.palmNormalWorld) >= -g_rockConfig.rockGrabSurfaceBehindPalmToleranceGameUnits;
         const bool authoredWeapon = looseWeaponGrab && !isThrowableLooseWeapon(selectedLooseWeaponForm(sel));
-        bool requireAuthoredPose = false;
+        bool requestAuthoredPose = false;
         bool nearAuthored = false;
         if (input.preparedAuthoredGrip) {
             nearGrip = *input.preparedAuthoredGrip;
-            requireAuthoredPose = true;
+            requestAuthoredPose = true;
             const auto* weapon = selectedLooseWeaponForm(sel);
             nearAuthored = authoredWeapon && weapon && sel.refr->Get3D() == rootNode &&
                 nearGrip.handWorldValid && nearGrip.pose.valid() &&
@@ -8667,7 +8677,7 @@ namespace rock
                 touchingPocket, grabbedFromPullCatch, sel.forcedArrival, input.transferPose != nullptr,
                 static_cast<unsigned>(nearGrip.arrangement), static_cast<unsigned>(nearGrip.role),
                 static_cast<unsigned>(role), dynamicOffhand);
-            requireAuthoredPose = (role != policy::Role::None || input.transferPose != nullptr) && !dynamicOffhand;
+            requestAuthoredPose = (role != policy::Role::None || input.transferPose != nullptr) && !dynamicOffhand;
             nearGrip.role = role;
             // Retain the controller-derived frame resolved by the zone runtime.
             // The incoming grab wrist can already be presented by ROCK.
@@ -8676,7 +8686,7 @@ namespace rock
                 const auto* weapon = selectedLooseWeaponForm(sel);
                 nearAuthored = nearGrip.pose.valid() && weapon && nearGrip.pose.weaponFormId == weapon->formID &&
                     nearGrip.pose.isLeft == _isLeft;
-            } else if (requireAuthoredPose) {
+            } else if (requestAuthoredPose) {
                 nearAuthored = loose_weapon_grip_zone::tryResolveAuthoredGrabPose(_isLeft, sel.refr, role, nearGrip.pose);
             }
             nearAuthored = nearAuthored && nearGrip.handWorldValid;
@@ -8701,7 +8711,7 @@ namespace rock
             return false;
         };
                 desiredObjectWorld = objectWorldTransform;
-                if (requireAuthoredPose && !nearAuthored) {
+                if (input.preparedAuthoredGrip && !nearAuthored) {
                     ROCK_LOG_SAMPLE_WARN(Hand, 1000, "{} authored weapon grab deferred: pose unavailable ref={:08X} role={} transfer={}",
                         handName(), sel.refr ? sel.refr->GetFormID() : 0, static_cast<unsigned>(nearGrip.role), input.transferPose != nullptr);
                     return abortCapture();
@@ -11420,6 +11430,58 @@ namespace rock
         auto* meshSourceNode = meshCaptureSetup.meshSourceNode;
         RE::NiTransform objectWorldTransform = meshCaptureSetup.objectWorldTransform;
 
+        namespace authoredPolicy = loose_weapon_authored_grab_policy;
+        const auto acquisitionSource = authoredPolicy::acquisitionSource(
+            grabbedFromPullCatch, sel.forcedArrival, transferPose != nullptr);
+        const bool authoredWeapon = looseWeaponGrab && !isThrowableLooseWeapon(selectedLooseWeaponForm(sel));
+        loose_weapon_grip_zone::NearGrab preparedAuthoredGrip{};
+        const auto prepareAuthoredGrip = [&](bool arrival) {
+            performance_profiler::ScopedTimer preparationTimer(performance_profiler::Scope::GrabAuthoredPreparation);
+            preparedAuthoredGrip = {};
+            (void)loose_weapon_grip_zone::tryResolveNearGrab(_isLeft, sel.refr,
+                preparedAuthoredGrip, joiningPeerHeldObject);
+            const auto role = authoredPolicy::surfaceIndependentAcquisitionRole(
+                arrival, transferPose != nullptr,
+                transferPose ? transferPose->role : authoredPolicy::Role::None,
+                preparedAuthoredGrip.arrangement, joiningPeerHeldObject, preparedAuthoredGrip.role);
+            if (role == authoredPolicy::Role::None) return false;
+            preparedAuthoredGrip.role = role;
+            if (transferPose) preparedAuthoredGrip.pose = *transferPose;
+            else (void)loose_weapon_grip_zone::tryResolveAuthoredGrabPose(_isLeft, sel.refr, role, preparedAuthoredGrip.pose);
+            const auto* weapon = selectedLooseWeaponForm(sel);
+            return preparedAuthoredGrip.handWorldValid && preparedAuthoredGrip.pose.valid() && weapon &&
+                preparedAuthoredGrip.pose.weaponFormId == weapon->formID && preparedAuthoredGrip.pose.isLeft == _isLeft &&
+                preparedAuthoredGrip.pose.role == role;
+        };
+        const bool authoredArrivalRequested = authoredWeapon && !handPocketOnlyGrab &&
+            authoredPolicy::useAuthoredArrival(acquisitionSource, true, false, sel.pinchCloseSelectionFallback);
+        const bool arrivalPoseAvailable = authoredArrivalRequested && prepareAuthoredGrip(true);
+        bool authoredSeatPrepared = authoredPolicy::useAuthoredArrival(acquisitionSource, arrivalPoseAvailable,
+            !authoredWeapon || handPocketOnlyGrab, sel.pinchCloseSelectionFallback);
+        if (authoredArrivalRequested && !authoredSeatPrepared) {
+            performance_profiler::addCounter(performance_profiler::Counter::GrabAuthoredArrivalDynamicFallback);
+        }
+        const auto* selectedBodyRecord = preparedBodySet.findRecord(objectBodyId.value);
+        const auto& bodyScan = preparedBodySet.diagnostics;
+        const bool authoredBodyOwnerVerified = authoredSeatPrepared &&
+            preparedBodySet.rootRef == sel.refr && preparedBodySet.rootNode == rootNode &&
+            sel.refr->Get3D() == rootNode && preparedBodySet.records.size() == 1 &&
+            selectedBodyRecord && selectedBodyRecord->accepted && selectedBodyRecord->refResolutionKnown &&
+            selectedBodyRecord->resolvedRef == sel.refr && nodeIsOrDescendsFrom(rootNode, selectedBodyRecord->owningNode) &&
+            !activeLifecycle.hasIncompleteNativeScan() && !bodyScan.scanFailures && !bodyScan.invalidPhysicsSystems &&
+            !bodyScan.depthLimitSkips && !bodyScan.foreignRefBodySkips && !bodyScan.unresolvedRefBodySkips;
+        if (authoredBodyOwnerVerified) {
+            performance_profiler::addCounter(performance_profiler::Counter::GrabAuthoredPositionsOnly);
+        }
+        const auto seedAuthoredPoint = [&](GrabSurfaceEvidence& surface) {
+            const auto seatLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(preparedAuthoredGrip.pose.handWeaponLocal, _isLeft);
+            surface.gripPoint = transform_math::localPointToWorld(rootNode->world, seatLocal);
+            surface.pointMode = "authoredWeaponSeat";
+            surface.pointAuthoritySource = GrabPivotAuthoritySource::LooseWeaponPrimaryAttach;
+            surface.fallbackReason = "authoredArrival";
+            // No mesh hit is fabricated: the authored pose is the position authority.
+        };
+
         GrabMeshExtraction meshExtraction{};
         auto& meshStats = meshExtraction.stats;
         auto& grabMeshTriangles = meshExtraction.meshTriangles;
@@ -11429,7 +11491,7 @@ namespace rock
         std::vector<GrabLocalTriangle> grabFingerPoseLocalMeshTriangles;
         bool activeGrabPointUsesMultiFingerEvidence = false;
         const bool meshContactOnly = g_rockConfig.rockGrabMeshContactOnly;
-        extractGrabMeshEvidence(world, objectBodyId, rootNode, collidableNode, meshSourceNode, handPocketOnlyGrab, meshExtraction);
+        extractGrabMeshEvidence(world, objectBodyId, rootNode, collidableNode, meshSourceNode, handPocketOnlyGrab, !authoredBodyOwnerVerified, meshExtraction);
         meshSourceNode = meshExtraction.meshSourceNode;
         if (grab_target::isRagdoll(sel.targetKind)) {
             const auto selectedComponent = ragdoll::readComponent(world, sel.bodyId.value);
@@ -11490,15 +11552,15 @@ namespace rock
             grabMeshTriangles.clear();
             for (const auto& triangle : grabSurfaceTriangles) grabMeshTriangles.push_back(triangle.triangle);
         }
-        meshExtraction.queryIndex.build(grabSurfaceTriangles);
         GrabSurfaceEvidence surfaceEvidence{};
-        resolveGrabSurfaceEvidence(
-            validatedSelection,
-            proxyPreparation,
-            meshCaptureSetup,
-            meshExtraction,
-            meshContactOnly,
-            surfaceEvidence);
+        if (authoredBodyOwnerVerified) {
+            seedAuthoredPoint(surfaceEvidence);
+        } else {
+            meshExtraction.queryIndex.build(grabSurfaceTriangles);
+            resolveGrabSurfaceEvidence(validatedSelection, proxyPreparation, meshCaptureSetup,
+                meshExtraction, meshContactOnly, surfaceEvidence);
+            if (authoredSeatPrepared && !surfaceEvidence.meshGrabFound) seedAuthoredPoint(surfaceEvidence);
+        }
         auto& grabGripPoint = surfaceEvidence.gripPoint;
         auto& selectionToMeshDistanceGameUnits = surfaceEvidence.selectionToMeshDistanceGameUnits;
         auto& meshGrabFound = surfaceEvidence.meshGrabFound;
@@ -11541,7 +11603,7 @@ namespace rock
         const bool hybridFingerProbeEvidenceEnabled =
             multiFingerEvidenceEnabled &&
             grabContactQualityMode == grab_contact_evidence_policy::GrabContactQualityMode::HybridEvidence;
-        if (contactSourcePolicy.failWithoutMesh && !handPocketOnlyGrab) {
+        if (contactSourcePolicy.failWithoutMesh && !handPocketOnlyGrab && !authoredSeatPrepared) {
             ROCK_LOG_SAMPLE_WARN(Hand, g_rockConfig.rockLogSampleMilliseconds,
                 "{} hand GRAB failed: mesh contact required for '{}' formID={:08X}; collision point was not used as pivot "
                 "meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} totalTris={} reason={}",
@@ -11662,7 +11724,7 @@ namespace rock
         const bool collisionFallbackPivotAllowed =
             !meshContactOnly && meshGrabFound && grabSurfaceHit.valid && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery;
         const bool visualMeshPivotAvailable = hasMeshSurfaceContact;
-        const bool canonicalPivotAvailable = visualMeshPivotAvailable || collisionFallbackPivotAllowed;
+        const bool canonicalPivotAvailable = authoredSeatPrepared || visualMeshPivotAvailable || collisionFallbackPivotAllowed;
         RE::NiPoint3 canonicalPivotPointWorld = grabGripPoint;
         RE::NiPoint3 canonicalPivotNormalWorld = grabSurfaceHit.valid ? grabSurfaceHit.normal : RE::NiPoint3{};
         const char* canonicalPivotMode = grabPointMode;
@@ -11713,59 +11775,31 @@ namespace rock
                 nodeDebugName(collidableNode), nodeDebugName(surfaceEvidence.surfaceOwnerNode));
         }
 
-        loose_weapon_grip_zone::NearGrab preparedAuthoredGrip{};
-        bool authoredSeatPrepared = false;
-        if (looseWeaponGrab && !isThrowableLooseWeapon(selectedLooseWeaponForm(sel))) {
-            performance_profiler::ScopedTimer preparationTimer(performance_profiler::Scope::GrabAuthoredPreparation);
-            const char* preparationReason = "body-or-mesh-evidence-required";
-            // Retain extraction and ownership validation: these still admit the
-            // selected body. Only supplemental surface solving is disposable.
-            const bool bodyAndMeshValidated = !handPocketOnlyGrab && !sel.pinchCloseSelectionFallback &&
-                sel.refr && sel.refr->Get3D() == rootNode &&
+        if (authoredWeapon) {
+            const char* preparationReason = authoredSeatPrepared ? "authored-arrival-ready" :
+                (authoredArrivalRequested ? "authored-unavailable-dynamic" : "surface-evidence-required");
+            if (!authoredSeatPrepared && !authoredArrivalRequested && !handPocketOnlyGrab &&
+                !sel.pinchCloseSelectionFallback && sel.refr->Get3D() == rootNode &&
                 preparedBodySet.acceptedCount() == 1 && !activeLifecycle.hasIncompleteNativeScan() &&
-                surfaceOwnerMatchesResolvedBody && visualMeshPivotAvailable;
-            if (bodyAndMeshValidated) {
+                surfaceOwnerMatchesResolvedBody && visualMeshPivotAvailable) {
                 const auto baselineAdmission = grab_contact_evidence_policy::evaluateGrabContactEvidence({
                     .qualityMode = static_cast<int>(grabContactQualityMode),
                     .multiFingerValidationEnabled = multiFingerEvidenceEnabled,
                     .meshSurfacePivotAccepted = true,
                 });
-                preparationReason = "supplemental-contact-evidence-required";
-                if (baselineAdmission.accept) {
-                    namespace policy = loose_weapon_authored_grab_policy;
-                    (void)loose_weapon_grip_zone::tryResolveNearGrab(_isLeft, sel.refr,
-                        preparedAuthoredGrip, joiningPeerHeldObject);
-                    const auto role = policy::surfaceIndependentAcquisitionRole(
-                        grabbedFromPullCatch || sel.forcedArrival, transferPose != nullptr,
-                        transferPose ? transferPose->role : policy::Role::None,
-                        preparedAuthoredGrip.arrangement, joiningPeerHeldObject, preparedAuthoredGrip.role);
-                    preparationReason = "surface-dependent-or-dynamic-role";
-                    if (role != policy::Role::None) {
-                        preparedAuthoredGrip.role = role;
-                        if (transferPose) {
-                            preparedAuthoredGrip.pose = *transferPose;
-                        } else {
-                            (void)loose_weapon_grip_zone::tryResolveAuthoredGrabPose(
-                                _isLeft, sel.refr, role, preparedAuthoredGrip.pose);
-                        }
-                        const auto* weapon = selectedLooseWeaponForm(sel);
-                        authoredSeatPrepared = preparedAuthoredGrip.handWorldValid &&
-                            preparedAuthoredGrip.pose.valid() && weapon &&
-                            preparedAuthoredGrip.pose.weaponFormId == weapon->formID &&
-                            preparedAuthoredGrip.pose.isLeft == _isLeft && preparedAuthoredGrip.pose.role == role;
-                        preparationReason = authoredSeatPrepared ? "authored-seat-ready" : "authored-pose-unavailable";
-                    }
-                }
+                authoredSeatPrepared = baselineAdmission.accept && prepareAuthoredGrip(false);
+                if (authoredSeatPrepared) preparationReason = "authored-close-seat-ready";
             }
             performance_profiler::addCounter(authoredSeatPrepared ?
                 performance_profiler::Counter::GrabAuthoredSurfaceWorkSkipped :
                 performance_profiler::Counter::GrabAuthoredSurfaceWorkRequired);
             if (performance_profiler::enabled()) {
                 ROCK_LOG_SAMPLE_INFO(Hand, 1000,
-                    "{} authored pickup preparation: ref={:08X} body={} role={} skipSurfaceWork={} reason={} meshTriangles={}",
+                    "{} authored pickup preparation: ref={:08X} body={} source={} role={} skipSurfaceWork={} positionsOnly={} reason={} triangles={} surfaceRecords={}",
                     handName(), sel.refr ? sel.refr->GetFormID() : 0, objectBodyId.value,
-                    static_cast<unsigned>(preparedAuthoredGrip.role), authoredSeatPrepared, preparationReason,
-                    grabSurfaceTriangles.size());
+                    static_cast<unsigned>(acquisitionSource), static_cast<unsigned>(preparedAuthoredGrip.role),
+                    authoredSeatPrepared, authoredBodyOwnerVerified, preparationReason,
+                    grabMeshTriangles.size(), grabSurfaceTriangles.size());
             }
         }
 
@@ -11796,7 +11830,7 @@ namespace rock
         float& pivotAuthoritySelectionDeltaGameUnits = pivotEvidence.authoritySelectionDeltaGameUnits;
         const char*& contactPatchPivotAuthorityReason = pivotEvidence.contactPatchAuthorityReason;
 
-        if (!meshGrabFound && !sel.hasHitPoint && !handPocketOnlyGrab) {
+        if (!authoredSeatPrepared && !meshGrabFound && !sel.hasHitPoint && !handPocketOnlyGrab) {
             ROCK_LOG_SAMPLE_WARN(Hand, g_rockConfig.rockLogSampleMilliseconds,
                 "{} hand GRAB failed: no object-side contact point for '{}' formID={:08X}; object origin/COM fallback is not valid dynamic grab authority reason={} meshNode='{}' ownerNode='{}' rootNode='{}'",
                 handName(),
@@ -11973,6 +12007,8 @@ namespace rock
                 .rootNode = rootNode,
                 .objectBodyId = objectBodyId,
                 .traceId = grabTraceId,
+                .objectName = &objName,
+                .authoredSeatPrepared = authoredSeatPrepared,
             };
             GrabBodyFrameCapture bodyFrameCapture{};
             if (!captureGrabBodyFrame(world, bodyFrameInput, bodyFrameCapture)) {

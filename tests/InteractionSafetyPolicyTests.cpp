@@ -1,6 +1,7 @@
 #include "physics-interaction/api/InteractionCommandPolicy.h"
 #include "physics-interaction/core/ForceGrabPolicy.h"
 #include "physics-interaction/grenade/LooseThrowablePolicy.h"
+#include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
 #include "physics-interaction/weapon/BareFistGuardPolicy.h"
 #include "physics-interaction/weapon/HeldWeaponEquipStatePolicy.h"
@@ -80,14 +81,26 @@ int main()
     const HandAvailabilityInput freeHand{};
     const HandAvailabilityInput blockedHand{ .holding = true };
 
-    ok &= expectEqual("grenade prefers right", selectGrenadeHand(false, freeHand, freeHand).hand, HandChoice::Right);
-    ok &= expectEqual("grenade falls back left", selectGrenadeHand(false, blockedHand, freeHand).hand, HandChoice::Left);
-    ok &= expectEqual("blocked hands reject", selectGrenadeHand(false, blockedHand, blockedHand).failure, GrenadeSelectionFailure::HandsBlocked);
-    ok &= expectEqual("held grenade rejects globally", selectGrenadeHand(true, freeHand, freeHand).failure, GrenadeSelectionFailure::GrenadeAlreadyHeld);
+    for (const bool preferLeft : { false, true }) {
+        ok &= expectEqual("both free hands follow grenade preference",
+            selectGrenadeHand(false, freeHand, freeHand, preferLeft).hand,
+            preferLeft ? HandChoice::Left : HandChoice::Right);
+        ok &= expectEqual("occupied right hand selects free left hand",
+            selectGrenadeHand(false, blockedHand, freeHand, preferLeft).hand, HandChoice::Left);
+        ok &= expectEqual("occupied left hand selects free right hand",
+            selectGrenadeHand(false, freeHand, blockedHand, preferLeft).hand, HandChoice::Right);
+        const auto blocked = selectGrenadeHand(false, blockedHand, blockedHand, preferLeft);
+        ok &= expectEqual("blocked hands reject", blocked.failure, GrenadeSelectionFailure::HandsBlocked);
+        ok &= expectEqual("blocked hands have no selected hand", blocked.hand, HandChoice::None);
+        const auto held = selectGrenadeHand(true, freeHand, freeHand, preferLeft);
+        ok &= expectEqual("held grenade rejects globally", held.failure, GrenadeSelectionFailure::GrenadeAlreadyHeld);
+        ok &= expectEqual("held grenade prevents a second hand selection", held.hand, HandChoice::None);
+    }
 
     HandAvailabilityInput pending = freeHand;
     pending.pendingForceGrab = true;
-    ok &= expectEqual("pending right force grab selects left", selectGrenadeHand(false, pending, freeHand).hand, HandChoice::Left);
+    ok &= expectEqual("pending right force grab selects left", selectGrenadeHand(false, pending, freeHand, false).hand, HandChoice::Left);
+    ok &= expectEqual("left grenade preference respects pending left force grab", selectGrenadeHand(false, freeHand, pending, true).hand, HandChoice::Right);
 
     HandAvailabilityInput selected = freeHand;
     selected.openInteractionState = true;
@@ -128,6 +141,21 @@ int main()
     ok &= expectFalse("gun is not a supported throwable", isSupportedWeaponType(TestWeaponType::Gun, TestWeaponType::Grenade, TestWeaponType::Mine));
     ok &= expectEqual("generic grenade keeps timed fuse", classifyDetonationMode(TestWeaponType::Grenade, TestWeaponType::Grenade, TestWeaponType::Mine, false, true, 0.0f), DetonationMode::TimedFuse);
     ok &= expectEqual("Molotov uses impact", classifyDetonationMode(TestWeaponType::Grenade, TestWeaponType::Grenade, TestWeaponType::Mine, true, true, 0.0f), DetonationMode::Impact);
+    {
+        using rock::loose_grenade_runtime::GrenadeDetonationMode;
+        rock::loose_grenade_runtime::GrenadeRuntimeData runtime{};
+        runtime.detonationMode = GrenadeDetonationMode::TimedFuse;
+        ok &= expectTrue("timed grenades provide held activation feedback", runtime.supportsHeldActivationFeedback());
+        runtime.detonationMode = GrenadeDetonationMode::Impact;
+        ok &= expectFalse("impact mines do not provide grenade activation feedback", runtime.supportsHeldActivationFeedback());
+        runtime.molotov = true;
+        ok &= expectTrue("Molotovs provide held activation feedback", runtime.supportsHeldActivationFeedback());
+        runtime.molotov = false;
+        runtime.detonationMode = GrenadeDetonationMode::Proximity;
+        ok &= expectFalse("proximity mines do not provide grenade activation feedback", runtime.supportsHeldActivationFeedback());
+        runtime.detonationMode = GrenadeDetonationMode::Unsupported;
+        ok &= expectFalse("unsupported explosives do not provide activation feedback", runtime.supportsHeldActivationFeedback());
+    }
     ok &= expectEqual("placed mine uses proximity", classifyDetonationMode(TestWeaponType::Mine, TestWeaponType::Grenade, TestWeaponType::Mine, false, true, 100.0f), DetonationMode::Proximity);
     ok &= expectEqual("projectile-style mine uses impact", classifyDetonationMode(TestWeaponType::Mine, TestWeaponType::Grenade, TestWeaponType::Mine, false, true, 0.0f), DetonationMode::Impact);
     ok &= expectEqual("mine with invalid proximity fails closed", classifyDetonationMode(TestWeaponType::Mine, TestWeaponType::Grenade, TestWeaponType::Mine, false, true, (std::numeric_limits<float>::quiet_NaN)()), DetonationMode::Unsupported);
