@@ -8,6 +8,7 @@ namespace rock
 {
     struct RockEquippedWeaponHandlingBaseline
     {
+        bool leftHandedModeEnabled{ false };
         bool ambidextrousHandoffEnabled{ false };
         bool authoredOnlySupportGrabsEnabled{ true };
         bool meleeWeapon{ false };
@@ -72,7 +73,7 @@ namespace rock
     {
         EquippedWeaponHandlingSettings settings{};
         settings.firingGripOwnershipEnabled =
-            rockBaseline.ambidextrousHandoffEnabled;
+            rockBaseline.ambidextrousHandoffEnabled || rockBaseline.leftHandedModeEnabled;
         // This base snapshot retains provider detach separately. Integrated
         // immersive detach is resolved as the same current-firing-role
         // contract for either physical hand.
@@ -145,8 +146,8 @@ namespace rock
         // RockProviderEquippedWeaponHandlingFlagV1::PipboyTriggerHandEquip
         // remains an accepted ABI flag but no longer maps to any behavior:
         // the Pip-Boy hand-equip mode was removed. Physical handoff,
-        // trigger/grip-zone equip, and shoulder retrieval are the supported
-        // left-hand entry points.
+        // trigger/grip-zone equip, shoulder retrieval and ROCK's default equip
+        // hand are independent of that retired flag.
         settings.gripZoneEquipRadiusGameUnits = request->gripZoneEquipRadiusGameUnits;
         settings.gripZoneEquipSettleSeconds = request->gripZoneEquipSettleSeconds;
         settings.firingGripReattachRadiusGameUnits = request->firingGripReattachRadiusGameUnits;

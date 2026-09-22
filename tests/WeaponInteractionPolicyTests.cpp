@@ -3331,6 +3331,17 @@ int main()
     ok &= expectFalse("disabled ROCK stash remains disabled",
         fixedOnlyHandling.equippedWeaponShoulderStashEnabled);
 
+    auto leftDefaultBaseline = fixedOnlyBaseline;
+    leftDefaultBaseline.leftHandedModeEnabled = true;
+    leftDefaultBaseline.immersiveWeapon.firingGripDetachEnabled = false;
+    const auto leftDefaultHandling = rock::makeEquippedWeaponHandlingSettings(leftDefaultBaseline, nullptr);
+    ok &= expectTrue("left default independently enables firing ownership",
+        leftDefaultHandling.firingGripOwnershipEnabled);
+    ok &= expectFalse("left default does not enable handoff",
+        leftDefaultHandling.ambidextrousHandoffEnabled);
+    ok &= expectFalse("left default does not enable detach",
+        rock::resolveEquippedWeaponDetachDecision(leftDefaultHandling).primaryDetachEnabled);
+
     rock::provider::RockProviderEquippedWeaponHandlingRequestV1 externalWeaponHandling{};
     externalWeaponHandling.flags = static_cast<std::uint32_t>(
         rock::provider::RockProviderEquippedWeaponHandlingFlagV1::FiringGripOwnership);
@@ -4252,6 +4263,21 @@ int main()
         }));
     ok &= expectFalse("firing-grip ownership is disabled when all modes are off",
         firingGripOwnershipEnabled(FiringGripModeAvailability{}));
+    for (const bool handIsLeft : { false, true }) {
+        ok &= expectTrue("left default preserves either physical trigger-equip hand without enabling handoff",
+            shouldStartHeldWeaponEquipOwnership(HeldWeaponEquipOwnershipInput{
+                .modes = FiringGripModeAvailability{ .leftHandedModeEnabled = true },
+                .handIsLeft = handIsLeft,
+                .holdingLooseWeapon = true,
+            }));
+    }
+    ok &= expectTrue("default equip starts without a held grab button",
+        shouldStartPendingPrimaryOnlyGrip(true, false, PrimaryOnlyStartSource::DefaultEquip));
+    ok &= expectTrue("default equip waits for authored readiness without a held grab button",
+        shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
+            .pending = true,
+            .source = PrimaryOnlyStartSource::DefaultEquip,
+        }));
     ok &= expectTrue("left-hand trigger equip starts ambidextrous handoff ownership",
         shouldStartHeldWeaponEquipOwnership(HeldWeaponEquipOwnershipInput{
             .modes = FiringGripModeAvailability{

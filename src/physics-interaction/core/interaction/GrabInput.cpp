@@ -2663,6 +2663,7 @@ namespace rock
             .integratedDetachEnabled = _equipped.handlingSettings.
                 immersiveWeapon.firingGripDetachEnabled,
             .ambidextrousHandoffAvailable = ambidextrousHandoffAvailable,
+            .leftHandedModeEnabled = g_rockConfig.rockLeftHandedMode,
         };
         const bool gripZoneSettleEquipEnabled =
             equipped_weapon_manual_ownership_policy::canSettleEquipInGripZone(

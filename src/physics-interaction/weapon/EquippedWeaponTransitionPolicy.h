@@ -129,6 +129,20 @@ namespace rock::equipped_weapon_transition_policy
                currentInstanceData != previousInstanceData;
     }
 
+    // Observe once per drawn inventory ownership, independently of transient
+    // grip/geometry resets. Explicit hand requests consume this boundary too:
+    // their completion must never be followed by a default-hand takeover.
+    [[nodiscard]] inline constexpr bool observeDefaultLeftEquip(
+        std::uint64_t& observedOwnershipKey, const std::uint64_t ownershipKey,
+        const bool leftHandedMode, const bool handSpecificOwnership,
+        const bool menuBlocked = false) noexcept
+    {
+        if (menuBlocked) return false;
+        const bool changed = observedOwnershipKey != ownershipKey;
+        observedOwnershipKey = ownershipKey;
+        return changed && ownershipKey != 0 && leftHandedMode && !handSpecificOwnership;
+    }
+
     struct FiringHandReservation
     {
         bool pending{ false };

@@ -202,6 +202,18 @@ int main(int argc, char** argv)
             require(!other.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr), "example option belongs to both files");
         }
         require(store.load(true), "first-run load failed");
+        require(find(store, "bLeftHandedMode").group == Group::Consumer &&
+            find(store, "bLeftHandedMode").type == ValueType::Boolean &&
+            !rock::RockConfig::parseValues(missingOptions).rockLeftHandedMode,
+            "left-hand mode must be an opt-in consumer boolean");
+        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "bLeftHandedMode", "true") && store.load(false),
+            "left-hand mode enable/reload failed");
+        CSimpleIniA leftHandValues;
+        store.appendLoadedValues(leftHandValues);
+        require(rock::RockConfig::parseValues(leftHandValues).rockLeftHandedMode,
+            "left-hand mode did not reach runtime");
+        require(store.setValue(Group::Consumer, "AmbidextrousFiring", "bLeftHandedMode", "false") && store.load(false),
+            "left-hand mode reset/reload failed");
         require(find(store, "bVatsPhysicsFixes").group == Group::Developer &&
             find(store, "bVatsPhysicsFixes").type == ValueType::Boolean &&
             rock::RockConfig::parseValues(missingOptions).rockVatsPhysicsFixes,

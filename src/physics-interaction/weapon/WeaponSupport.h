@@ -274,6 +274,7 @@ namespace rock::equipped_weapon_manual_ownership_policy
         GripInput,
         HeldWeaponEquip,
         ShoulderRetrieval,
+        DefaultEquip,
     };
 
     struct PendingPrimaryOnlyStartInput
@@ -294,6 +295,7 @@ namespace rock::equipped_weapon_manual_ownership_policy
         bool primaryDetachEnabled{ false };
         bool integratedDetachEnabled{ false };
         bool ambidextrousHandoffAvailable{ false };
+        bool leftHandedModeEnabled{ false };
     };
 
     struct HeldWeaponEquipOwnershipInput
@@ -308,7 +310,8 @@ namespace rock::equipped_weapon_manual_ownership_policy
     {
         return modes.primaryDetachEnabled ||
                modes.integratedDetachEnabled ||
-               modes.ambidextrousHandoffAvailable;
+               modes.ambidextrousHandoffAvailable ||
+               modes.leftHandedModeEnabled;
     }
 
     [[nodiscard]] inline constexpr bool shouldStartHeldWeaponEquipOwnership(const HeldWeaponEquipOwnershipInput& input) noexcept
@@ -318,6 +321,7 @@ namespace rock::equipped_weapon_manual_ownership_policy
         return input.holdingLooseWeapon &&
                (input.modes.primaryDetachEnabled ||
                    input.modes.integratedDetachEnabled ||
+                   input.modes.leftHandedModeEnabled ||
                    (input.handIsLeft && input.modes.ambidextrousHandoffAvailable));
     }
 

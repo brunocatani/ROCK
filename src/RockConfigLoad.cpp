@@ -424,6 +424,10 @@ namespace rock
             0.0f,
             1.0f);
 
+        rockLeftHandedMode = ini.GetBoolValue(
+            AMBIDEXTROUS_FIRING_SECTION,
+            "bLeftHandedMode",
+            rockLeftHandedMode);
         rockAmbidextrousFiringGripEnabled = ini.GetBoolValue(
             AMBIDEXTROUS_FIRING_SECTION,
             "bAmbidextrousFiringGripEnabled",

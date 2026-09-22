@@ -111,6 +111,8 @@ namespace rock
         float rockFiringGripAttachHapticIntensity = 0.85f;
         float rockFiringGripDetachHapticIntensity = 0.30f;
 
+        // Default physical hand for equips without a hand-specific request.
+        bool rockLeftHandedMode = false;
         // ROCK-native firing-grip handoff. This remains independent from the
         // role-neutral Immersive Weapons detach/drop feature set.
         bool rockAmbidextrousFiringGripEnabled = true;

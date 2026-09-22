@@ -843,6 +843,7 @@ namespace rock
             bool handlingModeInitialized{ false };
             bool handlingModeReconcilePending{ false };
             bool menuReconcilePending = false;
+            std::uint64_t defaultEquipObservedOwnershipKey{ 0 };
             EquippedWeaponTransitionCoordinator::PendingGrip continuityGrip{};
             bool gripResumePending{ false };
             std::array<bool, 2> resumeAwaitingHold{};
