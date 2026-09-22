@@ -175,6 +175,8 @@ namespace rock::performance_profiler
         GrabAcquisitionSucceeded,
         GrabSingleBodyVisualOwnerAccepted,
         GrabMeshOwnerMismatchRejected,
+        GrabAuthoredPositionsOnly,
+        GrabAuthoredArrivalDynamicFallback,
         GrabAuthoredSurfaceWorkSkipped,
         GrabAuthoredSurfaceWorkRequired,
         GrabAuthoredPreparationInvalidated,

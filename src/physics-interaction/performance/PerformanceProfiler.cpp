@@ -322,6 +322,8 @@ namespace rock::performance_profiler
             case Counter::GrabAcquisitionSucceeded: return "grabAcquisitionSucceeded";
             case Counter::GrabSingleBodyVisualOwnerAccepted: return "grabSingleBodyVisualOwnerAccepted";
             case Counter::GrabMeshOwnerMismatchRejected: return "grabMeshOwnerMismatchRejected";
+            case Counter::GrabAuthoredPositionsOnly: return "grabAuthoredPositionsOnly";
+            case Counter::GrabAuthoredArrivalDynamicFallback: return "grabAuthoredArrivalDynamicFallback";
             case Counter::GrabAuthoredSurfaceWorkSkipped: return "grabAuthoredSurfaceWorkSkipped";
             case Counter::GrabAuthoredSurfaceWorkRequired: return "grabAuthoredSurfaceWorkRequired";
             case Counter::GrabAuthoredPreparationInvalidated: return "grabAuthoredPreparationInvalidated";
@@ -769,7 +771,7 @@ namespace rock::performance_profiler
                             snapshot.droppedSnapshotsBeforeThis);
                     }
 
-                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1 grabMeshQueries=1 contactPairs=1 nativeWeaponSelfFilter=1 grabSingleBodyVisualOwner=1 grabRagdollWork=1 equippedProbeBatch=1 equippedProbeGate=1 authoredPickupPreparation=1 equippedGripBreakdown=1", snapshot.frames, GetCurrentProcessId());
+                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes schema=3 pid={} scopeTimes=inclusive queryCounts=exclusive queryTimingSampleEvery=64 nativePhysicsTimes=callbackBoundedWall grabAcquisitionBreakdown=1 grabMeshQueries=1 contactPairs=1 nativeWeaponSelfFilter=1 grabSingleBodyVisualOwner=1 grabRagdollWork=1 equippedProbeBatch=1 equippedProbeGate=1 authoredPickupPreparation=1 authoredArrivalRouting=1 equippedGripBreakdown=1", snapshot.frames, GetCurrentProcessId());
                     for (const auto& item : snapshot.scopes) {
                         if (!item.hasData()) {
                             continue;

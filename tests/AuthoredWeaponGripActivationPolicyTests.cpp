@@ -560,6 +560,20 @@ int main()
             false, false, Role::None, Layout::Separated, true, Role::Support) == Role::Support;
         looseGripsPass &= loose::surfaceIndependentAcquisitionRole(
             false, false, Role::None, Layout::OneHanded, true, Role::Firing) == Role::None;
+        using Source = loose::AcquisitionSource;
+        looseGripsPass &= loose::acquisitionSource(false, false, false) == Source::Close;
+        looseGripsPass &= loose::acquisitionSource(true, false, false) == Source::PullCatch;
+        looseGripsPass &= loose::acquisitionSource(false, true, false) == Source::ForcedArrival;
+        looseGripsPass &= loose::acquisitionSource(true, true, true) == Source::Transfer;
+        for (const auto source : { Source::PullCatch, Source::ForcedArrival, Source::Transfer }) {
+            looseGripsPass &= loose::useAuthoredArrival(source, true, false, false);
+            // No authored pose means the regular surface route remains available.
+            looseGripsPass &= !loose::useAuthoredArrival(source, false, false, false);
+            looseGripsPass &= !loose::useAuthoredArrival(source, true, true, false);
+            looseGripsPass &= !loose::useAuthoredArrival(source, true, false, true);
+        }
+        looseGripsPass &= !loose::useAuthoredArrival(Source::Close, true, false, false);
+        looseGripsPass &= !loose::useAuthoredArrival(Source::Close, false, false, false);
         if (!looseGripsPass) return 1;
     }
 

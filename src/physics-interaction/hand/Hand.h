@@ -828,6 +828,7 @@ namespace rock
             RE::NiAVObject* collidableNode,
             RE::NiAVObject* meshSourceNode,
             bool handPocketOnlyGrab,
+            bool surfaceEvidenceRequired,
             GrabMeshExtraction& outExtraction);
         void resolveGrabSurfaceEvidence(
             const ValidatedGrabSelection& selection,
