@@ -376,6 +376,51 @@ namespace rock
         dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, heldRef);
     }
 
+    void PhysicsInteraction::updateHeldObjectForHand(const PhysicsFrameContext& frame, Hand& hand, bool isLeft)
+    {
+        if (!hand.isHolding()) {
+            return;
+        }
+
+        const auto& transform = (isLeft ? frame.left : frame.right).rawHandWorld;
+        auto* heldRef = hand.getHeldRef();
+        const auto heldFormID = heldRef ? heldRef->GetFormID() : 0u;
+        auto& triggerEquipIntent = _grabInput.heldWeaponTriggerEquipIntents[isLeft ? 1u : 0u];
+        logPalmClockSampleForHand("game-before-held-update",
+            hand,
+            frame.hknpWorld,
+            &transform,
+            _frame.palmClockGameFrameIndex.load(std::memory_order_acquire),
+            _frame.palmClockGameDeltaSeconds.load(std::memory_order_acquire),
+            nullptr);
+        hand.updateHeldObject(frame.hknpWorld,
+            transform,
+            frame.deltaSeconds,
+            g_rockConfig.rockGrabForceFadeInTime,
+            g_rockConfig.rockGrabTauMin,
+            &_bodyBoneColliders,
+            makeGrabReleaseContext(hand, isLeft),
+            isLeft ? &_rightHand : &_leftHand,
+            &(isLeft ? frame.right : frame.left).rawHandWorld);
+        if (triggerEquipIntent.pending) {
+            // Existing opt-in, bounded transfer telemetry shows the
+            // live hand/model relationship during native readiness waits.
+            const auto* currentHeldRef = hand.getHeldRef();
+            vanilla_weapon_alignment_telemetry::recordTransferTrace(
+                vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip,
+                isLeft, "equip-wait-held-update", currentHeldRef ? currentHeldRef->Get3D() : nullptr);
+        }
+        if (heldRef && !hand.isHolding()) {
+            triggerEquipIntent = {};
+            ROCK_LOG_WARN(Hand, "Held update ended grab without an input release: hand={} ref={:08X}",
+                isLeft ? "left" : "right", heldFormID);
+            releaseObject(heldRef, claimOwnerForHand(isLeft));
+            dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, heldRef, heldFormID, 0);
+            dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, heldRef);
+            clearGameplayCandidatesForHand(hand, isLeft);
+        }
+    }
+
     struct PhysicsInteraction::GrabInputHandPrelude
     {
         GrabButtonState grabInput{};
@@ -625,6 +670,12 @@ namespace rock
             if (providerHoldsCurrentGrabState &&
                 !readGrabButtonHeld(isLeft, grabButton)) {
                 inputSuppressionState.deferredGrabRelease = true;
+            }
+            // UI capture owns interaction input, not the held pose. Keep the
+            // normal drive, presentation and invalid-body cleanup running
+            // without entering release, equip, consume or stash handling.
+            if (providerHoldsCurrentGrabState) {
+                updateHeldObjectForHand(frame, hand, isLeft);
             }
             return false;
         }
@@ -2232,42 +2283,7 @@ namespace rock
                 dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, heldRef);
                 clearGameplayCandidatesForHand(hand, isLeft);
             } else {
-                const auto& transform = handInput.rawHandWorld;
-                auto* heldRef = hand.getHeldRef();
-                auto heldFormID = heldRef ? heldRef->GetFormID() : 0u;
-                logPalmClockSampleForHand("game-before-held-update",
-                    hand,
-                    hknp,
-                    &transform,
-                    _frame.palmClockGameFrameIndex.load(std::memory_order_acquire),
-                    _frame.palmClockGameDeltaSeconds.load(std::memory_order_acquire),
-                    nullptr);
-                hand.updateHeldObject(hknp,
-                    transform,
-                    frame.deltaSeconds,
-                    g_rockConfig.rockGrabForceFadeInTime,
-                    g_rockConfig.rockGrabTauMin,
-                    &_bodyBoneColliders,
-                    makeGrabReleaseContext(hand, isLeft),
-                    isLeft ? &_rightHand : &_leftHand,
-                    &(isLeft ? frame.right : frame.left).rawHandWorld);
-                if (triggerEquipIntent.pending) {
-                    // Existing opt-in, bounded transfer telemetry shows the
-                    // live hand/model relationship during native readiness waits.
-                    const auto* currentHeldRef = hand.getHeldRef();
-                    vanilla_weapon_alignment_telemetry::recordTransferTrace(
-                        vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip,
-                        isLeft, "equip-wait-held-update", currentHeldRef ? currentHeldRef->Get3D() : nullptr);
-                }
-                if (heldRef && !hand.isHolding()) {
-                    triggerEquipIntent = {};
-                    ROCK_LOG_WARN(Hand, "Held update ended grab without an input release: hand={} ref={:08X}",
-                        isLeft ? "left" : "right", heldFormID);
-                    releaseObject(heldRef, claimOwnerForHand(isLeft));
-                    dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, heldRef, heldFormID, 0);
-                    dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, heldRef);
-                    clearGameplayCandidatesForHand(hand, isLeft);
-                }
+                updateHeldObjectForHand(frame, hand, isLeft);
             }
         } else {
             clearGameplayCandidatesForHand(hand, isLeft);

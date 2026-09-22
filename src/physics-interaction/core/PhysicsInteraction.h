@@ -375,6 +375,7 @@ namespace rock
         void clearGameplayCandidatesForHand(Hand& hand, bool isLeft);
         void publishHandInputOwnership(const Hand& hand, bool isLeft);
         void releaseSuppressedHeldObject(RE::hknpWorld* world, Hand& hand, bool isLeft, const char* reason);
+        void updateHeldObjectForHand(const PhysicsFrameContext& frame, Hand& hand, bool isLeft);
         void cancelPeerHeldJoinRetry(Hand& hand,
             peer_held_join_retry_policy::RuntimeState& retryState,
             const char* reason,
