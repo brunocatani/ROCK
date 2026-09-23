@@ -28,6 +28,7 @@
 #include "physics-interaction/weapon/WeaponSemantics.h"
 #include "physics-interaction/weapon/WeaponTriangleIndex.h"
 #include "physics-interaction/weapon/WeaponScenePath.h"
+#include "physics-interaction/weapon/WeaponMaterialVisibility.h"
 #include "physics-interaction/weapon/WeaponInteractionQuery.h"
 
 #include "RE/Havok/hknpBody.h"
@@ -844,6 +845,7 @@ namespace rock
         // Game-thread lookup cache; only the value snapshot crosses threads.
         std::array<EmitterPath, MAX_WEAPON_EMITTERS> _emitterPaths{};
         GeneratedSourceState _sources{};
+        weapon_material_visibility::State _materialVisibility{};
         DriveControlState _drive{};
         CollisionDiagnosticsState _diagnostics{};
 

@@ -43,6 +43,7 @@ namespace rock
 
     void WeaponCollision::shutdown()
     {
+        _materialVisibility.clear();
         _identity.classificationValid = false;
         if (hasWeaponBody()) {
             ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown destroying generated bodies from cached context");
@@ -82,6 +83,7 @@ namespace rock
 
     void WeaponCollision::abandonHavokStateAfterWorldLoss()
     {
+        _materialVisibility.clear();
         _identity.classificationValid = false;
         auto structuralMutation = _physicsCallbackGate ?
             _physicsCallbackGate->pauseForMutation() :
@@ -143,6 +145,7 @@ namespace rock
         (void)dt;
 
         auto clearCurrentWeaponState = [&]() {
+            _materialVisibility.clear();
             _identity.cachedWeaponKey = 0;
             _identity.cachedVisualKey = 0;
             _identity.cachedIdentityKey = 0;
@@ -165,6 +168,7 @@ namespace rock
         };
 
         if (!world) {
+            _materialVisibility.clear();
             _sources.preparation.reset();
             return;
         }
@@ -215,6 +219,23 @@ namespace rock
         _identity.observedFormID = observedFormID;
         _identity.observedInstanceContentKey = observedInstanceContentKey;
 
+        std::array<RE::NiAVObject*, 4> materialRoots{};
+        std::size_t materialRootCount = 0;
+        visitGeneratedWeaponMeshRootCandidates(weaponNode, [&](const WeaponMeshRootCandidate& candidate) {
+            materialRoots[materialRootCount++] = candidate.root;
+        });
+        const bool materialVisibilityChanged = _materialVisibility.update(
+            std::span<RE::NiAVObject* const>{ materialRoots.data(), materialRootCount });
+        if (materialVisibilityChanged) {
+            // A material-only swap can keep every node/geometry address and the
+            // equipped identity. Retire its old colliders before stabilization.
+            retireActiveWeaponBodiesForSceneTransition(world, "weapon-material-visibility-changed");
+            _sources.preparation.reset();
+            clearPendingGeneratedWeaponBuild(world, true);
+            clearGeneratedSourceCache();
+            clearPendingWeaponVisualRebuild();
+        }
+
         const bool geometryModeChanged = _sources.preserveGaps != g_rockConfig.rockWeaponCollisionPreserveGaps;
         if (geometryModeChanged) {
             _sources.preserveGaps = g_rockConfig.rockWeaponCollisionPreserveGaps;
@@ -248,7 +269,7 @@ namespace rock
         updateWeaponEmitterSnapshot(weaponNode, observedKey);
 
         const bool missingBodies = observedKey != 0 && !hasWeaponBody();
-        bool rebuildRequired = driveRequestedRebuild || workbenchExitRequested || keyChanged ||
+        bool rebuildRequired = materialVisibilityChanged || driveRequestedRebuild || workbenchExitRequested || keyChanged ||
             ownershipKeyChanged || activeRootChanged || missingBodies || geometryModeChanged || geometryModeRebuildRequired;
         bool rebuildDiagnosticsRecorded = false;
 

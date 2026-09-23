@@ -4,6 +4,7 @@
 
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponEffectGeometryPolicy.h"
+#include "physics-interaction/weapon/WeaponMaterialVisibilityPolicy.h"
 #include "physics-interaction/weapon/WeaponEmitterPolicy.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
@@ -332,6 +333,26 @@ int main()
     identity.instanceContentKey = 0x3333;
     identity.objectIndexDataSignature = 0xAAAB;
     ok &= expectDifferent("content key changes with equipped mod index content", contentKey, makeEquippedWeaponIdentityKey(identity));
+
+    using namespace rock::weapon_material_visibility;
+    ok &= expectTrue("Makarov hidden rail/sticker texture is excluded", isInvisibleTexture("AKMnv/Invisible.dds"));
+    ok &= expectTrue("live texture names accept resource prefix and Windows case/separators",
+        isInvisibleTexture("Textures\\AKMNV\\INVISIBLE.DDS"));
+    ok &= expectFalse("installed sight rail stays collidable",
+        isInvisibleTexture("SPAS12nv/Attachments/Rail/Rail LP_Rail_d.DDS"));
+    ok &= expectFalse("unrelated invisible basename does not identify an absent part", isInvisibleTexture("Other/Invisible.dds"));
+    ok &= expectFalse("no substring match", isInvisibleTexture("AKMnv/Invisible.dds.extra"));
+    ok &= expectFalse("missing texture is not proof of absence", isInvisibleTexture(""));
+    const auto hidden = decideCull(true, false, false);
+    ok &= expectTrue("absent part acquires a rendering cull", hidden.culled && hidden.owned);
+    const auto reasserted = decideCull(true, false, hidden.owned);
+    ok &= expectTrue("foreign uncull cannot expose an absent part", reasserted.culled && reasserted.owned);
+    const auto installed = decideCull(false, true, hidden.owned);
+    ok &= expectFalse("installing attachment restores its rendering", installed.culled || installed.owned);
+    const auto originallyHidden = decideCull(true, true, false);
+    ok &= expectTrue("engine cull is preserved without claiming ownership", originallyHidden.culled && !originallyHidden.owned);
+    const auto restoredNative = decideCull(false, originallyHidden.culled, originallyHidden.owned);
+    ok &= expectTrue("material swap does not clear an engine-owned cull", restoredNative.culled && !restoredNative.owned);
 
     return ok ? 0 : 1;
 }
