@@ -69,6 +69,7 @@ endif()
 
 add_subdirectory(${COMMON_LIB_F4VR_PATH_SELECTED} "CommonLibF4" EXCLUDE_FROM_ALL)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(directxtex CONFIG REQUIRED)
 
 set(ROCK_OPENVR_ROOT "${ROOT_DIR}/third_party/openvr")
 if(NOT EXISTS "${ROCK_OPENVR_ROOT}/openvr.h" OR NOT EXISTS "${ROCK_OPENVR_ROOT}/openvr_api.lib")
@@ -123,6 +124,7 @@ target_link_libraries(${PROJECT_NAME}
   PRIVATE
     CommonLibF4::CommonLibF4
     nlohmann_json::nlohmann_json
+    Microsoft::DirectXTex
     ROCK::OpenVR
     d3d11.lib
     dxgi.lib
@@ -648,6 +650,15 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKWeaponCollisionLifecyclePolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKWeaponCollisionLifecyclePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKWeaponCollisionLifecyclePolicyTests)
+
+  add_executable(ROCKTextureAlphaTests
+    "${ROOT_DIR}/tests/TextureAlphaTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/weapon/TextureAlpha.cpp"
+  )
+  target_compile_features(ROCKTextureAlphaTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKTextureAlphaTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKTextureAlphaTests PRIVATE Microsoft::DirectXTex)
+  add_rock_test(ROCKTextureAlphaTests)
 
   add_executable(ROCKNativeScopeAdmissionTests
     "${ROOT_DIR}/tests/NativeScopeAdmissionTests.cpp"

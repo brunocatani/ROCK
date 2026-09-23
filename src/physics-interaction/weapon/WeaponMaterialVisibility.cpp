@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/WeaponMaterialVisibility.h"
 #include "physics-interaction/weapon/WeaponMaterialVisibilityPolicy.h"
 #include "physics-interaction/weapon/WeaponSceneTraversal.h"
+#include "physics-interaction/weapon/WeaponTextureAlphaCache.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "RockConfig.h"
 
@@ -10,6 +11,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <cmath>
 
 namespace rock::weapon_material_visibility
 {
@@ -24,15 +26,20 @@ namespace rock::weapon_material_visibility
             std::uint64_t shaderFlags{};
             float materialAlpha{};
             char path[260]{};
+            char sourcePath[260]{};
+            AlphaState alpha{};
+            texture_alpha::Result coverage = texture_alpha::Result::Unavailable;
             bool lighting = false;
             unsigned stage = 0;
         };
 
         template <std::size_t Size>
-        void copyTraceText(char (&target)[Size], const char* source)
+        bool copyTraceText(char (&target)[Size], const char* source)
         {
-            if (!source) return;
-            for (std::size_t i = 0; i + 1 < Size && source[i]; ++i) target[i] = source[i];
+            if (!source || reinterpret_cast<std::uintptr_t>(source) < 0x10000) return false;
+            std::size_t i = 0;
+            for (; i + 1 < Size && source[i]; ++i) target[i] = source[i];
+            return i != 0 && source[i] == 0;
         }
 
         bool plausible(const void* pointer)
@@ -41,62 +48,84 @@ namespace rock::weapon_material_visibility
             return address >= 0x10000 && address < 0x0000800000000000 && (address & 7) == 0;
         }
 
+        void describeDiffuse(const char* material, ReadTrace& out)
+        {
+            // Renderer diagnostics cannot change the source-material verdict.
+            __try {
+                const auto* texture = *reinterpret_cast<const RE::NiTexture* const*>(material + 0x38);
+                out.diffuse = reinterpret_cast<std::uintptr_t>(texture);
+                if (plausible(texture)) copyTraceText(out.path, texture->name.c_str());
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                copyTraceText(out.path, "<unavailable>");
+            }
+        }
+
         // FO4VR 1.2.72 raw witnesses: property material +58 is set by
         // 14278EF20 and read by 1427A6E20; diffuse +38 is read by 1427A6E20
         // and retained/released by 14280B8B0/14280B9F0. NiTexture name +10
         // is constructed/destroyed by 141C24D30/141C24180. The shared lighting
         // material header's +40 diffuse field is NOT the VR layout.
-        bool readInvisibleTexture(const RE::BSTriShape* shape, unsigned& stage, ReadTrace* trace)
+        bool readMaterial(const RE::BSTriShape* shape, ReadTrace& out, bool trace)
         {
             __try {
-                stage = 1;
+                out.stage = 1;
                 if (!plausible(shape)) return false;
                 const auto& properties = shape->GetRuntimeData().properties;
+                const char* shader = nullptr;
                 for (unsigned index = 0; index < 2; ++index) {
                     auto* property = properties[index].get();
-                    if (trace) trace->properties[index] = reinterpret_cast<std::uintptr_t>(property);
+                    if (trace) out.properties[index] = reinterpret_cast<std::uintptr_t>(property);
                     if (!property) continue;
-                    stage = 2;
+                    out.stage = 2;
                     if (!plausible(property)) return false;
                     auto* rtti = property->GetRTTI();
-                    bool lighting = false;
                     for (unsigned depth = 0; rtti && depth < 16; ++depth, rtti = rtti->GetBaseRTTI()) {
                         if (!plausible(rtti)) return false;
                         const auto* name = rtti->GetName();
-                        if (trace && depth == 0) copyTraceText(trace->propertyTypes[index], name);
+                        if (trace && depth == 0) copyTraceText(out.propertyTypes[index], name);
                         if (name && std::strcmp(name, "BSLightingShaderProperty") == 0) {
-                            lighting = true;
+                            shader = reinterpret_cast<const char*>(property);
+                            break;
+                        }
+                        if (name && std::strcmp(name, "NiAlphaProperty") == 0) {
+                            // 1401DA7A0 initializes +28/+2A; alpha setters at
+                            // 1401DB5D0 / 1401DB770 update these packed flags.
+                            const auto* alpha = reinterpret_cast<const char*>(property);
+                            out.alpha = { *reinterpret_cast<const std::uint16_t*>(alpha + 0x28),
+                                *reinterpret_cast<const std::uint8_t*>(alpha + 0x2A), true };
                             break;
                         }
                     }
-                    if (!lighting) continue;
-                    if (trace) {
-                        trace->lighting = true;
-                        trace->shaderFlags = *reinterpret_cast<const std::uint64_t*>(reinterpret_cast<const char*>(property) + 0x30);
-                    }
-                    stage = 3;
-                    const auto* material = *reinterpret_cast<const char* const*>(reinterpret_cast<const char*>(property) + 0x58);
-                    if (trace) trace->material = reinterpret_cast<std::uintptr_t>(material);
-                    if (!plausible(material)) return false;
-                    // Native alpha setter/getter: 1427A7080 / 1427A6FA0.
-                    if (trace) trace->materialAlpha = *reinterpret_cast<const float*>(material + 0x70);
-                    stage = 4;
-                    const auto* texture = *reinterpret_cast<const RE::NiTexture* const*>(material + 0x38);
-                    if (trace) trace->diffuse = reinterpret_cast<std::uintptr_t>(texture);
-                    if (!plausible(texture)) return false;
-                    stage = 5;
-                    const char* path = texture->name.c_str();
-                    if (!path || reinterpret_cast<std::uintptr_t>(path) < 0x10000) return false;
-                    if (trace) copyTraceText(trace->path, path);
-                    // No path copies or unbounded string scan in the frame loop.
-                    std::size_t length = 0;
-                    while (length < 260 && path[length]) ++length;
-                    if (length == 0 || length == 260) return false;
-                    stage = 0;
-                    return isInvisibleTexture({ path, length });
                 }
-                stage = 0; // Non-lighting geometry is outside this material fix.
-                return false;
+                out.lighting = shader != nullptr;
+                if (!shader) { out.stage = 0; return true; }
+                out.shaderFlags = *reinterpret_cast<const std::uint64_t*>(shader + 0x30);
+                out.stage = 3;
+                const auto* material = *reinterpret_cast<const char* const*>(shader + 0x58);
+                out.material = reinterpret_cast<std::uintptr_t>(material);
+                if (!plausible(material)) return false;
+                // Native alpha setter/getter: 1427A7080 / 1427A6FA0.
+                out.materialAlpha = *reinterpret_cast<const float*>(material + 0x70);
+                if (!std::isfinite(out.materialAlpha) || out.materialAlpha < 0.0f) return false;
+                if (trace) describeDiffuse(material, out);
+                if (!zeroAlphaIsInvisible(out.alpha) || out.materialAlpha == 0.0f) {
+                    out.stage = 0;
+                    return true;
+                }
+                out.stage = 6;
+                // +68 retains the active texture set even when VR substitutes
+                // an opaque default texture for the invisible DDS. Witnesses:
+                // 14280C3D0 assigns it; 14280B9F0 releases it. Diffuse filename
+                // +10 is constructed at 1404AD450 and read at 1427918A0/8C0.
+                const auto* set = *reinterpret_cast<const RE::NiObject* const*>(material + 0x68);
+                if (!plausible(set)) return false;
+                const auto* rtti = set->GetRTTI();
+                if (!plausible(rtti) || !rtti->GetName() || std::strcmp(rtti->GetName(), "BSShaderTextureSet") != 0) return false;
+                out.stage = 7;
+                const auto* filename = reinterpret_cast<const RE::BSFixedString*>(reinterpret_cast<const char*>(set) + 0x10);
+                if (!copyTraceText(out.sourcePath, filename->c_str())) return false;
+                out.stage = 0;
+                return true;
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 return false;
             }
@@ -110,22 +139,27 @@ namespace rock::weapon_material_visibility
 
         MaterialRead inspect(const RE::BSTriShape* shape, ReadTrace* trace = nullptr)
         {
-            unsigned stage = 0;
-            const bool hidden = readInvisibleTexture(shape, stage, trace);
-            if (trace) trace->stage = stage;
-            if (stage != 0) {
+            ReadTrace local{};
+            auto& data = trace ? *trace : local;
+            const bool available = readMaterial(shape, data, trace != nullptr);
+            if (!available) {
                 ROCK_LOG_SAMPLE_WARN(Weapon, g_rockConfig.rockLogSampleMilliseconds,
-                    "Weapon material visibility unavailable: shape={:X} stage={} (shape/property/material/diffuse/path)",
-                    reinterpret_cast<std::uintptr_t>(shape), stage);
+                    "Weapon material visibility unavailable: shape={:X} stage={} (shape/property/material/diffuse/path/texture-set/source-path)",
+                    reinterpret_cast<std::uintptr_t>(shape), data.stage);
+                return { false, false };
             }
-            return { hidden, stage == 0 };
+            if (!data.lighting || !zeroAlphaIsInvisible(data.alpha)) return { false, true };
+            if (data.materialAlpha == 0.0f) return { true, true };
+            data.coverage = weapon_texture_alpha::query(data.sourcePath);
+            return { data.coverage == texture_alpha::Result::Transparent, true };
         }
     }
 
     bool isHidden(const RE::BSTriShape* shape)
     {
         const auto material = inspect(shape);
-        return material.hidden || !material.available;
+        // Missing evidence is not permission to remove installed geometry.
+        return material.hidden;
     }
 
     bool State::update(std::span<RE::NiAVObject* const> roots, std::uint32_t weaponFormID)
@@ -143,7 +177,7 @@ namespace rock::weapon_material_visibility
         if (_traceFrame < 121) ++_traceFrame;
         if (_traceFrame == 120) _traceCount = 0;
         if (_traceFrame == 1 || _traceFrame == 120) {
-            ROCK_LOG_INFO(Weapon, "Weapon material trace begin revision=2 form={:08X} roots={} rootKey={:016X} pass={}",
+            ROCK_LOG_INFO(Weapon, "Weapon material trace begin revision=3 form={:08X} roots={} rootKey={:016X} pass={}",
                 weaponFormID, roots.size(), rootSignature, _traceFrame == 1 ? "first" : "settled");
         }
         for (std::size_t i = 0; i < _count; ++i) _culled[i].seen = false;
@@ -169,10 +203,11 @@ namespace rock::weapon_material_visibility
                 if (traceShape) {
                     _tracedShapes[_traceCount++] = shapeIdentity;
                     ROCK_LOG_INFO(Weapon,
-                        "Weapon material trace shape='{}' node={:X} properties=({:X},'{}';{:X},'{}') lighting={} material={:X} diffuse={:X} path='{}' shaderFlags={:016X} materialAlpha={} stage={} available={} excluded={} appCulled={} ownedCull={}",
+                        "Weapon material trace shape='{}' node={:X} properties=({:X},'{}';{:X},'{}') lighting={} material={:X} diffuse={:X} path='{}' source='{}' shaderFlags={:016X} materialAlpha={} alphaFlags={:04X} alphaRef={} coverage={} stage={} available={} excluded={} appCulled={} ownedCull={}",
                         node->name.c_str(), shapeIdentity, trace.properties[0], trace.propertyTypes[0],
                         trace.properties[1], trace.propertyTypes[1], trace.lighting, trace.material, trace.diffuse,
-                        trace.path, trace.shaderFlags, trace.materialAlpha, trace.stage, material.available,
+                        trace.path, trace.sourcePath, trace.shaderFlags, trace.materialAlpha, trace.alpha.flags,
+                        trace.alpha.threshold, static_cast<unsigned>(trace.coverage), trace.stage, material.available,
                         material.hidden, node->GetAppCulled(), owned);
                 }
                 if (owned && !node->GetAppCulled()) {

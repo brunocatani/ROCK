@@ -3,6 +3,7 @@
   "version": "1",
   "dependencies": [
     "args",
+    { "name": "directxtex", "default-features": false },
     "rapidcsv",
     "rsm-mmio",
     "spdlog",

@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/WeaponCollisionInternal.h"
+#include "physics-interaction/weapon/WeaponTextureAlphaCache.h"
 
 #include <bit>
 
@@ -8,6 +9,7 @@ namespace rock
 {
     void WeaponCollision::init(RE::hknpWorld* world, void* bhkWorld)
     {
+        weapon_texture_alpha::start();
         _identity.classificationValid = false;
         // Cache the Havok context for the generated weapon-collision lifetime.
         _cachedWorld = world;
@@ -44,6 +46,7 @@ namespace rock
     void WeaponCollision::shutdown()
     {
         _materialVisibility.clear();
+        weapon_texture_alpha::stop();
         _identity.classificationValid = false;
         if (hasWeaponBody()) {
             ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown destroying generated bodies from cached context");

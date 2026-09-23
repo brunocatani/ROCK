@@ -335,14 +335,13 @@ int main()
     ok &= expectDifferent("content key changes with equipped mod index content", contentKey, makeEquippedWeaponIdentityKey(identity));
 
     using namespace rock::weapon_material_visibility;
-    ok &= expectTrue("Makarov hidden rail/sticker texture is excluded", isInvisibleTexture("AKMnv/Invisible.dds"));
-    ok &= expectTrue("live texture names accept resource prefix and Windows case/separators",
-        isInvisibleTexture("Textures\\AKMNV\\INVISIBLE.DDS"));
-    ok &= expectFalse("installed sight rail stays collidable",
-        isInvisibleTexture("SPAS12nv/Attachments/Rail/Rail LP_Rail_d.DDS"));
-    ok &= expectFalse("unrelated invisible basename does not identify an absent part", isInvisibleTexture("Other/Invisible.dds"));
-    ok &= expectFalse("no substring match", isInvisibleTexture("AKMnv/Invisible.dds.extra"));
-    ok &= expectFalse("missing texture is not proof of absence", isInvisibleTexture(""));
+    ok &= expectTrue("alpha-test greater rejects fully transparent texture from any weapon",
+        zeroAlphaIsInvisible({ 0x1200, 128, true }));
+    ok &= expectTrue("normal alpha blend is invisible at zero opacity", zeroAlphaIsInvisible({ 0x00ED, 0, true }));
+    ok &= expectFalse("opaque material may use a zero alpha channel", zeroAlphaIsInvisible({ 0, 128, true }));
+    ok &= expectFalse("missing alpha property is not absence evidence", zeroAlphaIsInvisible({ 0x1200, 128, false }));
+    ok &= expectFalse("alpha test less may deliberately show zero-alpha pixels", zeroAlphaIsInvisible({ 0x0600, 128, true }));
+    ok &= expectFalse("premultiplied blending can contribute RGB at zero alpha", zeroAlphaIsInvisible({ 0x00E1, 0, true }));
     const auto hidden = decideCull(true, false, false);
     ok &= expectTrue("absent part acquires a rendering cull", hidden.culled && hidden.owned);
     const auto reasserted = decideCull(true, false, hidden.owned);
