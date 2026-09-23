@@ -4,6 +4,7 @@
   "dependencies": [
     "args",
     { "name": "directxtex", "default-features": false },
+    "zlib",
     "rapidcsv",
     "rsm-mmio",
     "spdlog",

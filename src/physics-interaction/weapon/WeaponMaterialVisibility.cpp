@@ -177,7 +177,7 @@ namespace rock::weapon_material_visibility
         if (_traceFrame < 121) ++_traceFrame;
         if (_traceFrame == 120) _traceCount = 0;
         if (_traceFrame == 1 || _traceFrame == 120) {
-            ROCK_LOG_INFO(Weapon, "Weapon material trace begin revision=3 form={:08X} roots={} rootKey={:016X} pass={}",
+            ROCK_LOG_INFO(Weapon, "Weapon material trace begin revision=4 form={:08X} roots={} rootKey={:016X} pass={}",
                 weaponFormID, roots.size(), rootSignature, _traceFrame == 1 ? "first" : "settled");
         }
         for (std::size_t i = 0; i < _count; ++i) _culled[i].seen = false;

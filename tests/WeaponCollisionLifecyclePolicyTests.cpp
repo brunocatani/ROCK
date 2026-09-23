@@ -340,7 +340,9 @@ int main()
     ok &= expectTrue("normal alpha blend is invisible at zero opacity", zeroAlphaIsInvisible({ 0x00ED, 0, true }));
     ok &= expectFalse("opaque material may use a zero alpha channel", zeroAlphaIsInvisible({ 0, 128, true }));
     ok &= expectFalse("missing alpha property is not absence evidence", zeroAlphaIsInvisible({ 0x1200, 128, false }));
-    ok &= expectFalse("alpha test less may deliberately show zero-alpha pixels", zeroAlphaIsInvisible({ 0x0600, 128, true }));
+    ok &= expectTrue("BGSM-created rail uses the lighting shader threshold", zeroAlphaIsInvisible({ 0x02EC, 128, true }));
+    ok &= expectTrue("lighting alpha test ignores legacy comparison mode", zeroAlphaIsInvisible({ 0x0600, 128, true }));
+    ok &= expectFalse("zero threshold is not sufficient culling evidence", zeroAlphaIsInvisible({ 0x0200, 0, true }));
     ok &= expectFalse("premultiplied blending can contribute RGB at zero alpha", zeroAlphaIsInvisible({ 0x00E1, 0, true }));
     const auto hidden = decideCull(true, false, false);
     ok &= expectTrue("absent part acquires a rendering cull", hidden.culled && hidden.owned);

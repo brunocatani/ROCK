@@ -70,6 +70,7 @@ endif()
 add_subdirectory(${COMMON_LIB_F4VR_PATH_SELECTED} "CommonLibF4" EXCLUDE_FROM_ALL)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(directxtex CONFIG REQUIRED)
+find_package(ZLIB REQUIRED)
 
 set(ROCK_OPENVR_ROOT "${ROOT_DIR}/third_party/openvr")
 if(NOT EXISTS "${ROCK_OPENVR_ROOT}/openvr.h" OR NOT EXISTS "${ROCK_OPENVR_ROOT}/openvr_api.lib")
@@ -125,6 +126,7 @@ target_link_libraries(${PROJECT_NAME}
     CommonLibF4::CommonLibF4
     nlohmann_json::nlohmann_json
     Microsoft::DirectXTex
+    ZLIB::ZLIB
     ROCK::OpenVR
     d3d11.lib
     dxgi.lib

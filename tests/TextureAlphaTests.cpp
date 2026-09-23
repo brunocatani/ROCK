@@ -16,7 +16,12 @@ namespace
         DirectX::Blob dds;
         if (FAILED(DirectX::SaveToDDSMemory(image.GetImages(), image.GetImageCount(), image.GetMetadata(),
                 DirectX::DDS_FLAGS_NONE, dds))) return Result::Unavailable;
-        return rock::texture_alpha::inspect({ static_cast<const std::uint8_t*>(dds.GetBufferPointer()), dds.GetBufferSize() }, stopping);
+        const auto result = rock::texture_alpha::inspect({ static_cast<const std::uint8_t*>(dds.GetBufferPointer()), dds.GetBufferSize() }, stopping);
+        const auto& info = image.GetMetadata();
+        const auto raw = rock::texture_alpha::inspectMipData({ image.GetPixels(), image.GetPixelsSize() },
+            info.format, static_cast<std::uint32_t>(info.width), static_cast<std::uint32_t>(info.height),
+            static_cast<std::uint32_t>(info.mipLevels), stopping);
+        return raw == result ? result : Result::Unavailable;
     }
 }
 
@@ -58,6 +63,11 @@ int main(int argc, char** argv)
     if (rock::texture_alpha::inspect({}) != Result::Unavailable) return 11;
     const std::uint8_t invalid[]{ 'D', 'D', 'S', ' ' };
     if (rock::texture_alpha::inspect(invalid) != Result::Unavailable) return 12;
+    if (rock::texture_alpha::inspectMipData(invalid, DXGI_FORMAT_R8G8B8A8_UNORM, 8, 8, 1) != Result::Unavailable) return 15;
+    const std::uint8_t transparentPixel[4]{};
+    if (rock::texture_alpha::inspectMipData(transparentPixel, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 1, 2) != Result::Unavailable) return 16;
+    if (rock::texture_alpha::inspectMipData(transparentPixel, DXGI_FORMAT_R8G8B8A8_UNORM, 32768, 1, 1) != Result::Unavailable) return 17;
+    if (rock::texture_alpha::inspectMipData(transparentPixel, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 1, 0) != Result::Unavailable) return 18;
 
     // Optional local regression inputs: real DDS files, with no mod or path
     // assumptions in the decoder and no weapon assets distributed by ROCK.
@@ -67,6 +77,9 @@ int main(int argc, char** argv)
         const auto result = rock::texture_alpha::inspect(bytes);
         std::printf("%s: %u\n", argv[i], static_cast<unsigned>(result));
         if (result != Result::Transparent) return 13;
+        DirectX::ScratchImage actual;
+        if (FAILED(DirectX::LoadFromDDSMemory(bytes.data(), bytes.size(), DirectX::DDS_FLAGS_NONE, nullptr, actual)) ||
+            classify(actual) != Result::Transparent) return 19;
     }
     return 0;
 }
