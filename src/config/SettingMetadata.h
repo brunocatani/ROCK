@@ -299,6 +299,7 @@ namespace rock::config
         { "PhysicsInteraction", "fGrabHandReturnMaxDistance", "10. Grab Contact Evidence", "", configuration_api::Group::Developer },
         { "PhysicsInteraction", "fGrabHandReturnMinAngleDegrees", "10. Grab Contact Evidence", "", configuration_api::Group::Developer },
         { "PhysicsInteraction", "fGrabHandReturnMaxAngleDegrees", "10. Grab Contact Evidence", "", configuration_api::Group::Developer },
+        { "PhysicsInteraction", "iGrabFingerPoseMode", "11. Finger Poses", "1 = Current swept arc. 2 = June 2 legacy plane slice.\nApplies on the next loose-object grab or dynamic weapon support grip.\nLegacy captures at contact and omits later pad refinement and splay.\nAuthored and saved finger poses keep their existing priority.", configuration_api::Group::Developer },
         { "PhysicsInteraction", "bGrabMeshFingerPoseEnabled", "11. Finger Poses", "Computes custom finger curl from the held object's visible mesh.", configuration_api::Group::Developer },
         { "PhysicsInteraction", "bGrabMeshJointPoseEnabled", "11. Finger Poses", "Sends per-joint finger values to FRIK when available instead of one curl per finger.", configuration_api::Group::Developer },
         { "PhysicsInteraction", "fGrabFingerMinValue", "11. Finger Poses", "Lowest allowed finger value. 0=fully closed, 1=fully straight.", configuration_api::Group::Developer },

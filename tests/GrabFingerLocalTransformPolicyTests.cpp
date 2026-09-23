@@ -229,11 +229,17 @@ static bool testCommandedFingerCorrectionFrame()
         ok &= expectPointClose("middle inherits requested proximal pose", nodes[1].world.translate, second.translate);
         ok &= expectFloat("requested curl replaces displayed pose as correction source", nodes[0].world.rotate.entry[0][0], first.rotate.entry[0][0]);
 
+        ok &= expectBool("legacy resolves the captured live chain", resolveFingerTransforms(snapshot, isLeft, baseline, nodes,
+            nullptr, nullptr, grab_finger_pose_runtime::FingerPoseMode::June2), true);
+        ok &= expectPointClose("legacy uses live joint placement", nodes[0].world.translate, hand.translate);
+
         // Displayed poses can differ during interpolation or after a prior
         // grab. Even a poisoned displayed thumb must not change this solve.
         snapshot.bones[1].world.rotate.entry[0][0] = std::numeric_limits<float>::quiet_NaN();
         snapshot.bones[2].world.translate.x = 1.0e20f;
         snapshot.bones[3].world.scale = 0.00001f;
+        ok &= expectBool("legacy rejects poisoned live inputs", resolveFingerTransforms(snapshot, isLeft, baseline, nodes,
+            nullptr, nullptr, grab_finger_pose_runtime::FingerPoseMode::June2), false);
         for (int frame = 0; frame < 2000; ++frame) {
             ok &= expectBool("displayed finger state is excluded", resolveFingerTransforms(snapshot, isLeft, baseline, nodes), true);
             ok &= expectFloat("repeated capture preserves requested curl", nodes[0].world.rotate.entry[0][0], first.rotate.entry[0][0]);
@@ -364,9 +370,77 @@ bool testIndexedFingerPadProbes()
     return indexedTests < linearTests / 3;
 }
 
+static bool testJune2FingerSolver()
+{
+    using namespace rock;
+    using namespace grab_finger_pose_math;
+    using namespace grab_finger_pose_runtime;
+    bool ok = true;
+    constexpr float halfPi = 1.57079632679f;
+    const TestVector origin{}, normal{ 0, 0, 1 }, open{ 1, 0, 0 };
+    const std::vector<Triangle<TestVector>> front{{ {3, 3, -1}, {3, 3, 1}, {4, 4, 0} }};
+    const auto contact = solveLegacyFingerCurveCurlValue(front, origin, normal, open, halfPi, 10.0f, 0.2f);
+    ok &= expectBool("June2 mesh slice finds front contact", contact.hit && contact.hasHitPoint, true);
+    ok &= expectFloat("June2 45-degree contact maps to half curl", contact.value, 0.5f);
+    const std::vector<Triangle<TestVector>> behind{{ {3, -3, -1}, {3, -3, 1}, {4, -4, 0} }};
+    const auto behindContact = solveLegacyFingerCurveCurlValue(behind, origin, normal, open, halfPi, 10.0f, 0.2f);
+    ok &= expectBool("June2 behind-plane contact opens finger", behindContact.openedByBehindContact, true);
+    ok &= expectFloat("June2 behind-plane open value", behindContact.value, 1.0f);
+    const std::vector<Triangle<TestVector>> offPlane{{ {3, 3, 1}, {3, 4, 1}, {4, 3, 1} }};
+    ok &= expectBool("June2 has no volumetric off-plane contact",
+        solveLegacyFingerCurveCurlValue(offPlane, origin, normal, open, halfPi, 10.0f, 0.2f).hit, false);
+    ok &= expectBool("June2 respects finger reach",
+        solveLegacyFingerCurveCurlValue(front, origin, normal, open, halfPi, 1.0f, 0.2f).hit, false);
+    const std::vector<Triangle<TestVector>> thumbMesh{{ {3, -1, -3}, {3, 1, -3}, {4, 0, -4} }};
+    const auto thumb = solveLegacyThumbAwareFingerCurveCurlValue(thumbMesh, origin, normal, TestVector{0, 1, 0},
+        open, halfPi, 10.0f, 0.2f, true);
+    ok &= expectBool("June2 thumb uses alternate plane after primary miss", thumb.usedAlternateThumbCurve && thumb.value.hit, true);
+    ok &= expectFloat("June2 alternate thumb maps contact angle", thumb.value.value, 0.5f);
+
+    root_flattened_finger_skeleton_runtime::Snapshot snapshot{};
+    snapshot.valid = snapshot.palmNormalValid = true;
+    snapshot.palmNormalWorld = {0, 0, 1};
+    for (auto& finger : snapshot.fingers) {
+        finger.valid = true;
+        finger.points = { RE::NiPoint3{0, 0, 0}, RE::NiPoint3{5, 0, 0}, RE::NiPoint3{10, 0, 0} };
+    }
+    const auto world = transform_math::makeIdentityTransform<RE::NiTransform>();
+    const std::vector<TriangleData> triangles{{ {3, 3, -1}, {3, 3, 1}, {4, 4, 0} }};
+    auto targets = makeSharedGripPoseTarget({0, 0, 0});
+    targets.useSeatPointForMissingTargets = false;
+    targets.useWholeMeshForMissingTargets = true;
+    const auto pose = solveGrabFingerPoseFromTriangles(triangles, world, false, {}, targets,
+        0.2f, 100.0f, true, &snapshot, false, 1.5f, true, 0.6f, -1.0f, 1.5f, 2.0f,
+        nullptr, nullptr, nullptr, nullptr, FingerPoseMeshRelation::CurrentMeshRequiresVirtualSeat, FingerPoseMode::June2);
+    ok &= expectBool("runtime dispatch retains legacy selection", pose.solved && pose.mode == FingerPoseMode::June2, true);
+    ok &= expectFloat("runtime uses original index angle", pose.values[1], 1.0f - (halfPi / 2.0f) / 1.45f);
+    ok &= expectBool("legacy never advertises a baked arc contact", pose.contactArcRotationValid[1] != 0, false);
+    ok &= expectBool("legacy never queries swept spatial index", pose.usedSpatialIndex, false);
+    auto legacy = pose;
+    legacy.surfaceAimTarget[2] = {4, 1, 0};
+    legacy.surfaceAimTargetValid[2] = 1;
+    std::array<float, 5> splay{1, 1, 1, 1, 1};
+    std::array<RE::NiPoint3, 5> directions{};
+    directions.fill({1, 0, 0});
+    ok &= expectBool("legacy omits surface splay", buildSurfaceContactSplayValues(legacy, snapshot, directions, splay), false);
+    ok &= expectFloat("legacy clears splay output", splay[2], 0.0f);
+    std::array<FingerPadSurfaceEvidence, 5> evidence{};
+    ok &= expectBool("legacy omits later pad refinement", refineGrabFingerPoseWithPadProbes(legacy, triangles, targets, snapshot,
+        world, true, true, evidence, true), false);
+    ok &= expectPointClose("legacy preserves captured surface aim", legacy.surfaceAimTarget[2], {4, 1, 0});
+    captureSurfaceAimObjectLocal(legacy, world);
+    auto moved = world;
+    moved.translate = {10, 0, 0};
+    const auto resolved = resolveSurfaceAimObjectLocal(legacy, moved);
+    ok &= expectBool("held surface updates preserve captured mode", resolved.mode == FingerPoseMode::June2, true);
+    ok &= expectPointClose("legacy target follows object", resolved.surfaceAimTarget[2], {14, 1, 0});
+    return ok;
+}
+
 int main()
 {
     bool ok = testIndexedFingerPadProbes();
+    ok &= testJune2FingerSolver();
     {
         rock::AuthoredWeaponGripPose pose{};
         ok &= expectBool("empty authored transfer pose fails closed", pose.valid(), false);

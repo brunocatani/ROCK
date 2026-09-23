@@ -457,6 +457,7 @@ namespace rock
         float rockGrabHandReturnMaxDistance = 14.0f;
         float rockGrabHandReturnMinAngleDegrees = 5.0f;
         float rockGrabHandReturnMaxAngleDegrees = 90.0f;
+        int rockGrabFingerPoseMode = 1; // 1=current, 2=June 2; captured per grip.
         bool rockGrabMeshFingerPoseEnabled = true;
         bool rockGrabMeshJointPoseEnabled = true;
         float rockGrabFingerMinValue = 0.2f;

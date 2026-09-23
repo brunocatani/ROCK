@@ -17,6 +17,8 @@ namespace rock
         const WeaponCollision::SupportGripEvidenceView& evidenceView,
         WeaponPartGrip& grip)
     {
+        const auto poseMode = grab_finger_pose_runtime::fingerPoseMode(g_rockConfig.rockGrabFingerPoseMode);
+        const bool legacyFingerPose = poseMode == grab_finger_pose_runtime::FingerPoseMode::June2;
         auto& fingerScratch = _fingerPoseSolveScratch->hands[isLeft ? 0u : 1u];
         for (auto& ranking : fingerScratch.rankings) {
             ranking.clear();
@@ -287,6 +289,7 @@ namespace rock
                     .fingerSweepMaxOpenValue = g_rockConfig.rockGrabFingerSweepMaxOpenValue,
                     .meshFingerPoseEnabled = g_rockConfig.rockGrabMeshFingerPoseEnabled,
                     .captureSweepDebug = false,
+                    .mode = poseMode,
                 },
                 capturedFingerSnapshotValid ?
                     &capturedFingerSnapshot :
@@ -311,7 +314,7 @@ namespace rock
                 const auto oppositionConfig =
                     currentWeaponOppositionPocketConfig();
                 const auto oppositionPocket =
-                    !completeDirectFingerEvidence &&
+                    !legacyFingerPose && !completeDirectFingerEvidence &&
                             oppositionConfig.enabled &&
                             frozenSolve.liveFingerSnapshotValid ?
                         grab_finger_pose_runtime::
@@ -361,7 +364,7 @@ namespace rock
                 const bool completeFingerEvidence =
                     completeDirectFingerEvidence ||
                     oppositionPocket.valid;
-                if (completeFingerEvidence) {
+                if (legacyFingerPose || completeFingerEvidence) {
                     meshFingerPosePtr = &meshFingerPose;
                 } else {
                     ROCK_LOG_INFO(
@@ -378,7 +381,7 @@ namespace rock
                         sourceTriangleCount,
                         meshFingerPose.candidateTriangleCount);
                 }
-                if (completeDirectFingerEvidence &&
+                if (!legacyFingerPose && completeDirectFingerEvidence &&
                     frozenSolve.liveFingerSnapshotValid &&
                     frozenSolve.commandedOpenDirectionsValid &&
                     grab_finger_pose_runtime::buildSurfaceContactSplayValues(
@@ -454,7 +457,8 @@ namespace rock
                         transform_math::storedRotationOrthonormalityError(local.rotate));
                 }
                 ROCK_LOG_INFO(Weapon,
-                    "TwoHandedGrip: dynamic finger pose prepared hand={} mask=0x{:04X} lane={} curls=({:.3f},{:.3f},{:.3f},{:.3f},{:.3f}) maxBasisError={:.8f}",
+                    "TwoHandedGrip: dynamic finger pose prepared mode={} hand={} mask=0x{:04X} lane={} curls=({:.3f},{:.3f},{:.3f},{:.3f},{:.3f}) maxBasisError={:.8f}",
+                    static_cast<int>(poseMode),
                     isLeft ? "left" : "right",
                     grip.fingerLocalTransformMask,
                     grab_finger_pose_math::thumbLaneName(meshFingerPosePtr->selectedThumbLane),

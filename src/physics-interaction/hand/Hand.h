@@ -1429,6 +1429,8 @@ namespace rock
         std::array<RE::NiTransform, 15> _grabFingerLocalTransforms{};
         std::uint16_t _grabFingerLocalTransformMask = 0;
         grab_finger_pose_runtime::SolvedGrabFingerPose _grabFingerPose{};
+        unsigned _legacyFingerPoseUpdates = 0;
+        float _legacyFingerPoseDeltaTime = 0.0f;
         grab_finger_pose_runtime::FingerPoseTriangleSpatialIndex _grabFingerTriangleIndex{};
         bool _hasGrabFingerJointPose = false;
         bool _hasGrabFingerLocalTransforms = false;

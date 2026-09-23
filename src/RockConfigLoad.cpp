@@ -1476,6 +1476,11 @@ namespace rock
             90.0f,
             rockGrabHandReturnMinAngleDegrees,
             180.0f);
+        rockGrabFingerPoseMode = static_cast<int>(ini.GetLongValue(SECTION, "iGrabFingerPoseMode", rockGrabFingerPoseMode));
+        if (rockGrabFingerPoseMode != 1 && rockGrabFingerPoseMode != 2) {
+            ROCK_LOG_WARN(Config, "Invalid iGrabFingerPoseMode={} -- using 1", rockGrabFingerPoseMode);
+            rockGrabFingerPoseMode = 1;
+        }
         rockGrabMeshFingerPoseEnabled = ini.GetBoolValue(SECTION, "bGrabMeshFingerPoseEnabled", rockGrabMeshFingerPoseEnabled);
         rockGrabMeshJointPoseEnabled = ini.GetBoolValue(SECTION, "bGrabMeshJointPoseEnabled", rockGrabMeshJointPoseEnabled);
         rockGrabFingerMinValue = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFingerMinValue", rockGrabFingerMinValue));
