@@ -162,7 +162,7 @@ namespace rock::weapon_material_visibility
         return material.hidden;
     }
 
-    bool State::update(std::span<RE::NiAVObject* const> roots, std::uint32_t weaponFormID)
+    bool State::update(std::span<RE::NiAVObject* const> roots, std::uint32_t weaponFormID, bool traceDetails)
     {
         std::uint64_t rootSignature = 1469598103934665603ull ^ weaponFormID;
         for (const auto* root : roots) {
@@ -176,7 +176,7 @@ namespace rock::weapon_material_visibility
         }
         if (_traceFrame < 121) ++_traceFrame;
         if (_traceFrame == 120) _traceCount = 0;
-        if (_traceFrame == 1 || _traceFrame == 120) {
+        if (traceDetails && (_traceFrame == 1 || _traceFrame == 120)) {
             ROCK_LOG_INFO(Weapon, "Weapon material trace begin revision=4 form={:08X} roots={} rootKey={:016X} pass={}",
                 weaponFormID, roots.size(), rootSignature, _traceFrame == 1 ? "first" : "settled");
         }
@@ -192,7 +192,7 @@ namespace rock::weapon_material_visibility
                 const bool tracked = index < _count;
                 const bool owned = tracked && _culled[index].owned;
                 const auto shapeIdentity = reinterpret_cast<std::uintptr_t>(shape);
-                bool traceShape = _traceFrame <= 120 && _traceCount < _tracedShapes.size();
+                bool traceShape = traceDetails && _traceFrame <= 120 && _traceCount < _tracedShapes.size();
                 if (traceShape) {
                     for (std::size_t i = 0; i < _traceCount; ++i) {
                         if (_tracedShapes[i] == shapeIdentity) { traceShape = false; break; }

@@ -5,6 +5,7 @@
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponEffectGeometryPolicy.h"
 #include "physics-interaction/weapon/WeaponMaterialVisibilityPolicy.h"
+#include "physics-interaction/weapon/WorldWeaponVisibilityEvents.h"
 #include "physics-interaction/weapon/WeaponEmitterPolicy.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
@@ -354,6 +355,32 @@ int main()
     ok &= expectTrue("engine cull is preserved without claiming ownership", originallyHidden.culled && !originallyHidden.owned);
     const auto restoredNative = decideCull(false, originallyHidden.culled, originallyHidden.owned);
     ok &= expectTrue("material swap does not clear an engine-owned cull", restoredNative.culled && !restoredNative.owned);
+
+    {
+        using namespace rock::world_weapon_material_visibility;
+        PendingEvents pending;
+        AttachmentEvent event;
+        ok &= expectFalse("empty world event queue has no work", pending.pop(event));
+        // Fill and drain repeatedly to exercise wrapped slots, including a
+        // detach immediately following an attach for the same reference.
+        for (unsigned pass = 0; pass < 3; ++pass) {
+            for (std::size_t i = 0; i + 1 < PendingEvents::kCapacity; ++i)
+                ok &= pending.push({ static_cast<std::uint32_t>(i / 2 + 1), (i & 1) == 0 });
+            ok &= expectFalse("full queue never overwrites pending detach events", pending.push({ 0xFFFF, true }));
+            for (std::size_t i = 0; i + 1 < PendingEvents::kCapacity; ++i) {
+                if (!pending.pop(event) || event.referenceID != i / 2 + 1 || event.attached != ((i & 1) == 0)) {
+                    ok &= expectTrue("world event order and reference identity survive wrap", false);
+                    break;
+                }
+            }
+            ok &= expectFalse("drained queue does not replay old world events", pending.pop(event));
+        }
+        ok &= pending.push({ 1, true });
+        pending.discard();
+        ok &= expectFalse("pre-load reset discards old attachment events", pending.pop(event));
+        ok &= pending.push({ 2, true });
+        ok &= expectTrue("new session can publish after discard", pending.pop(event) && event.referenceID == 2 && event.attached);
+    }
 
     return ok ? 0 : 1;
 }

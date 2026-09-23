@@ -13,12 +13,13 @@ namespace rock::weapon_material_visibility
 {
     [[nodiscard]] bool isHidden(const RE::BSTriShape* shape);
 
-    // Updated with the live equipped scene on the game thread, before collider
-    // preparation. Strong references keep hidden shapes alive until restoration.
+    // Updated with a live weapon scene on the game thread. Equipped weapons run
+    // before collider preparation; loose references share the same material rule.
+    // Strong references keep hidden shapes alive until restoration.
     class State
     {
     public:
-        [[nodiscard]] bool update(std::span<RE::NiAVObject* const> roots, std::uint32_t weaponFormID);
+        [[nodiscard]] bool update(std::span<RE::NiAVObject* const> roots, std::uint32_t weaponFormID, bool traceDetails = true);
         void clear();
 
     private:
