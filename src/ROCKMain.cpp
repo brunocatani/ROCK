@@ -990,7 +990,21 @@ namespace
     void invokeFramePhaseGuarded(void (*handler)(), const std::uint32_t phase) noexcept
     {
         try {
-            handler();
+            constexpr std::array<const char*, 9> entryPhases{
+                "native-graph:entry", "body-placed", "legs-solved", "before-arm-solve",
+                "after-arm-solve:entry", "after-hand-pose", "after-weapon:entry", "before-world-final", "after-world-final:entry"
+            };
+            constexpr std::array<const char*, 9> exitPhases{
+                "native-graph:exit", "body-placed", "legs-solved", "before-arm-solve",
+                "after-arm-solve:exit", "after-hand-pose", "after-weapon:exit", "before-world-final", "after-world-final:exit"
+            };
+            if (s_frikSkeletonAnnounced && phase < entryPhases.size()) {
+                frik_hand_world_authority::traceArmPose(entryPhases[phase], s_schedulerSequence);
+            }
+            if (handler) handler();
+            if (handler && s_frikSkeletonAnnounced && phase < exitPhases.size()) {
+                frik_hand_world_authority::traceArmPose(exitPhases[phase], s_schedulerSequence);
+            }
         } catch (...) {
             reportFramePhaseFault(phase);
         }
@@ -1008,6 +1022,12 @@ namespace
             break;
         case FramePhase::AfterArmSolve:
             invokeFramePhaseGuarded(&onFrikAfterArmSolve, phase);
+            break;
+        case FramePhase::BodyPlaced:
+        case FramePhase::BeforeArmSolve:
+        case FramePhase::AfterHandPose:
+        case FramePhase::BeforeWorldFinal:
+            invokeFramePhaseGuarded(nullptr, phase);
             break;
         case FramePhase::AfterWeaponPosition:
             invokeFramePhaseGuarded(&onFrikAfterWeaponPosition, phase);
@@ -1040,6 +1060,15 @@ namespace
             }
         }
         logger::info("ROCK: FRIK frame callbacks registered (FrameBegin, NativeGraphOutput, AfterArmSolve, AfterWeaponPosition, AfterWorldFinal, FrameEnd).");
+        // Diagnostic callbacks are optional and cannot prevent ROCK's normal
+        // callbacks from loading when another client filled FRIK's registry.
+        for (const FramePhase phase : { FramePhase::BodyPlaced, FramePhase::BeforeArmSolve, FramePhase::AfterHandPose, FramePhase::BeforeWorldFinal }) {
+            if (!frik_visual_authority::registerFrameCallback("ROCK_ArmTrace", phase, &onFrikFramePhase, nullptr, kPriority)) {
+                (void)frik_visual_authority::unregisterFrameCallback("ROCK_ArmTrace");
+                logger::warn("ROCK: arm-pose diagnostic phase registration failed at {}; tracing existing ROCK phases only.", static_cast<unsigned>(phase));
+                break;
+            }
+        }
         return true;
     }
 

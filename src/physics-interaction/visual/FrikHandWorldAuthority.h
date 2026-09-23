@@ -74,6 +74,10 @@ namespace rock::frik_hand_world_authority
      */
     void beginRockFrame(std::uint64_t sequence);
 
+    // Read-only phase witnesses for grip-failure telemetry. phase must be a
+    // string literal; only copied transforms and that label survive the call.
+    void traceArmPose(const char* phase, std::uint64_t sequence) noexcept;
+
     // Initialization only: the provider's config reader performs disk I/O.
     void loadScopeDampingConfig();
     // Reset at FrameBegin; set by ROCK's accepted recoil response before FRIK

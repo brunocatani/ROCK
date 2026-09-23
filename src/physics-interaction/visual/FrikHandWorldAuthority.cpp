@@ -89,6 +89,28 @@ namespace rock::frik_hand_world_authority
             std::uint32_t driverSamplesMissing = 0;
         };
 
+        struct ArmTraceSample
+        {
+            const char* phase = "none";
+            std::uint64_t sequence = 0;
+            frik_visual_authority::ArmChainTransforms chain{};
+            bool chainAvailable = false;
+            DriverSample firstPerson{};
+            DriverSample driver{};
+            DriverSample flattenedForearm{};
+            DriverSample flattenedHand{};
+            registry_policy::Claim claim{};
+            std::uint32_t invalidMask = 0;
+        };
+
+        struct ArmTraceState
+        {
+            ArmTraceSample previous{};
+            // Report each newly bad source once per two-second window. A bad
+            // forearm must not suppress a later bad wrist in the same episode.
+            std::uint32_t reportedInvalidMask = 0;
+        };
+
         struct Service
         {
             registry_policy::Registry registry{};
@@ -115,6 +137,8 @@ namespace rock::frik_hand_world_authority
             std::array<registry_policy::ConsumedTarget, 2> consumedTargets{};
             std::array<IsolationState, 2> isolation{};
             ProbeCounters probes{};
+            std::array<ArmTraceState, 2> armTrace{};
+            bool armTraceEnabled = false;
             // Frames left in the scope-edge guard (see noteScopeEdge).
             std::uint32_t scopeEdgeFramesRemaining = 0;
             // ROCK's own scope state last frame, for edges FRIK does not broadcast
@@ -135,6 +159,48 @@ namespace rock::frik_hand_world_authority
         [[nodiscard]] const char* handName(const bool isLeft)
         {
             return isLeft ? "left" : "right";
+        }
+
+        constexpr std::array<const char*, 7> kArmBoneNames{
+            "shoulder", "upperArm", "upperArmTwist", "forearm1", "forearm2", "forearm3", "hand"
+        };
+
+        auto armTransforms(const frik_visual_authority::ArmChainTransforms& chain)
+        {
+            return std::array<const RE::NiTransform*, 7>{ &chain.shoulder, &chain.upperArm, &chain.upperArmTwist,
+                &chain.forearm1, &chain.forearm2, &chain.forearm3, &chain.hand };
+        }
+
+        void logArmTraceTransform(const ArmTraceSample& sample, const bool isLeft,
+            const char* source, const bool available, const RE::NiTransform& world)
+        {
+            ROCK_LOG_WARN(Hand,
+                "HAND_ARM_VALUE seq={} phase={} hand={} source={} available={} usable={} T=({:.6f},{:.6f},{:.6f}) S={:.8f} R=[{:.6f},{:.6f},{:.6f};{:.6f},{:.6f},{:.6f};{:.6f},{:.6f},{:.6f}]",
+                sample.sequence, sample.phase, handName(isLeft), source, available,
+                available && registry_policy::isFiniteTransform(world),
+                world.translate.x, world.translate.y, world.translate.z, world.scale,
+                world.rotate.entry[0][0], world.rotate.entry[0][1], world.rotate.entry[0][2],
+                world.rotate.entry[1][0], world.rotate.entry[1][1], world.rotate.entry[1][2],
+                world.rotate.entry[2][0], world.rotate.entry[2][1], world.rotate.entry[2][2]);
+        }
+
+        void logArmTraceSample(const ArmTraceSample& sample, const bool isLeft)
+        {
+            ROCK_LOG_WARN(Hand,
+                "HAND_ARM_SAMPLE seq={} phase={} hand={} chainAvailable={} boneMask=0x{:02X} invalidMask=0x{:03X} rockClaim='{}' priority={} order={}; tracked inputs current from before-arm-solve; flattened bones final only after-world-final",
+                sample.sequence, sample.phase, handName(isLeft), sample.chainAvailable,
+                sample.chain.validMask, sample.invalidMask, registry_policy::tagView(sample.claim),
+                sample.claim.priority, sample.claim.publishOrder);
+            const auto bones = armTransforms(sample.chain);
+            for (std::size_t bone = 0; bone < bones.size(); ++bone) {
+                logArmTraceTransform(sample, isLeft, kArmBoneNames[bone],
+                    sample.chainAvailable && (sample.chain.validMask & (1u << bone)) != 0, *bones[bone]);
+            }
+            logArmTraceTransform(sample, isLeft, "first-person", sample.firstPerson.valid, sample.firstPerson.world);
+            logArmTraceTransform(sample, isLeft, "weapon-offset", sample.driver.valid, sample.driver.world);
+            logArmTraceTransform(sample, isLeft, "flattened-forearm1", sample.flattenedForearm.valid, sample.flattenedForearm.world);
+            logArmTraceTransform(sample, isLeft, "flattened-hand", sample.flattenedHand.valid, sample.flattenedHand.world);
+            logArmTraceTransform(sample, isLeft, "rock-claim", sample.claim.valid, sample.claim.target);
         }
 
         [[nodiscard]] const char* solveStateName(const HandSolveState state)
@@ -381,6 +447,84 @@ namespace rock::frik_hand_world_authority
     {
         return static_cast<std::uint8_t>((g_service.scopeResults[0].corrected ? 1 : 0) |
             (g_service.scopeResults[1].corrected ? 2 : 0));
+    }
+
+    void traceArmPose(const char* phase, const std::uint64_t sequence) noexcept
+    {
+        try {
+            if (!g_rockConfig.rockDebugGripFailureTelemetry) {
+                if (g_service.armTraceEnabled) {
+                    g_service.armTrace = {};
+                    g_service.armTraceEnabled = false;
+                }
+                return;
+            }
+            if (!g_service.armTraceEnabled) {
+                g_service.armTraceEnabled = true;
+                ROCK_LOG_INFO(Hand,
+                    "HAND_ARM_TRACE enabled: read-only phase witnesses; invalidMask bits 0..6=shoulder/upper/twist/forearm1/forearm2/forearm3/hand, 7=first-person, 8=weapon-offset, 9=flattened-forearm1, 10=flattened-hand; newly invalid sources rate-limited per hand for 2000ms");
+            }
+            const auto* api = frik_visual_authority::api();
+            if (!api) return;
+            for (const bool isLeft : { false, true }) {
+                ArmTraceSample sample{};
+                sample.phase = phase;
+                sample.sequence = sequence;
+                const auto hand = frik_visual_authority::handFromBool(isLeft);
+                sample.chainAvailable = frik_visual_authority::tryGetArmChain(hand, sample.chain);
+                // Preserve invalid values: the ordinary input wrappers filter
+                // them, but this trace needs the provider's unmodified evidence.
+                if (api->getTrackedHandTransform) {
+                    sample.firstPerson.valid = api->getTrackedHandTransform(hand, TrackedHandKind::FirstPersonHand, &sample.firstPerson.world);
+                    sample.driver.valid = api->getTrackedHandTransform(hand, TrackedHandKind::WeaponOffset, &sample.driver.world);
+                }
+                if (api->getBoneWorldTransform) {
+                    sample.flattenedForearm.valid = api->getBoneWorldTransform(isLeft ? "LArm_ForeArm1" : "RArm_ForeArm1", &sample.flattenedForearm.world);
+                    sample.flattenedHand.valid = api->getBoneWorldTransform(isLeft ? "LArm_Hand" : "RArm_Hand", &sample.flattenedHand.world);
+                }
+                (void)tryGetPublishedHandClaim(isLeft, sample.claim);
+                const auto bones = armTransforms(sample.chain);
+                for (std::size_t bone = 0; bone < bones.size(); ++bone) {
+                    if (sample.chainAvailable && (sample.chain.validMask & (1u << bone)) != 0 &&
+                        !registry_policy::isFiniteTransform(*bones[bone])) {
+                        sample.invalidMask |= 1u << bone;
+                    }
+                }
+                const std::array<const DriverSample*, 4> inputs{
+                    &sample.firstPerson, &sample.driver, &sample.flattenedForearm, &sample.flattenedHand
+                };
+                for (std::size_t input = 0; input < inputs.size(); ++input) {
+                    if (inputs[input]->valid && !registry_policy::isFiniteTransform(inputs[input]->world)) {
+                        sample.invalidMask |= 1u << (7 + input);
+                    }
+                }
+                auto& state = g_service.armTrace[handIndex(isLeft)];
+                if (sample.invalidMask && logger::isWarnEnabled()) {
+                    if (logger::internal::shouldEmitSample(isLeft ? "arm-pose-origin-left" : "arm-pose-origin-right", 2000)) {
+                        state.reportedInvalidMask = 0;
+                    }
+                    const auto newlyInvalid = sample.invalidMask & ~state.reportedInvalidMask;
+                    if (newlyInvalid) {
+                        state.reportedInvalidMask |= sample.invalidMask;
+                        ROCK_LOG_WARN(Hand,
+                            "HAND_ARM_ORIGIN seq={} hand={} previous={}/{} current={}/{} newlyInvalid=0x{:03X} previousInvalid=0x{:03X} currentInvalid=0x{:03X}; phase interval witness, not writer attribution",
+                            sequence, handName(isLeft), state.previous.sequence, state.previous.phase,
+                            sample.sequence, sample.phase, newlyInvalid, state.previous.invalidMask, sample.invalidMask);
+                        if (state.previous.sequence) logArmTraceSample(state.previous, isLeft);
+                        logArmTraceSample(sample, isLeft);
+                    }
+                }
+                state.previous = sample;
+            }
+        } catch (...) {
+            // Diagnostic failure must not skip the gameplay phase or escape
+            // FRIK's noexcept callback boundary.
+            try {
+                ROCK_LOG_SAMPLE_WARN(Hand, 2000, "HAND_ARM_TRACE capture failed seq={} phase={}", sequence, phase);
+            } catch (...) {
+                // The logger itself is unavailable; gameplay still proceeds.
+            }
+        }
     }
 
     void captureRenderedFrame(const FrameHandSamples& samples)
@@ -793,6 +937,7 @@ namespace rock::frik_hand_world_authority
         g_service.scopeInputs = {};
         g_service.scopeResults = {};
         g_service.scopeRecoveryWrists = {};
+        g_service.armTrace = {};
     }
 
     void resetForSkeletonRelease()
@@ -807,6 +952,7 @@ namespace rock::frik_hand_world_authority
         g_service.scopeRecoveryWrists = {};
         g_service.nativeRecoilControlled = false;
         g_service.rendered = {};
+        g_service.armTrace = {};
         registry_policy::clearAll(g_service.registry);
         g_service.claimConsumedThisFrame = {};
         g_service.consumedTargets = {};
