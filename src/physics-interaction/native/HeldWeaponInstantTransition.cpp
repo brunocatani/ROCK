@@ -299,6 +299,8 @@ namespace rock::held_weapon_instant_transition
     const char* requestReasonName(const RequestReason reason) noexcept
     {
         switch (reason) {
+        case RequestReason::InventoryEquip:
+            return "inventory-equip";
         case RequestReason::SameHandTrigger:
             return "same-hand-trigger";
         case RequestReason::GripZoneSettle:

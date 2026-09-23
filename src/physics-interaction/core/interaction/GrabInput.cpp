@@ -1811,43 +1811,7 @@ namespace rock
                     return true;
                 }
                 if (retainOutgoing && !transition.heldTransfer().outgoingRemoved) {
-                    const bool retainedIsLeft = !equipIsLeft;
-                    const auto occupancy = _twoHandedGrip.getGripOccupancy();
-                    const bool retainedHandCarries = retainedIsLeft ?
-                        occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon();
-                    const bool receivingHandCarries = equipIsLeft ?
-                        occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon();
-                    const auto sourceHand = retainedIsLeft ?
-                        equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right;
-                    if (!retainedHandCarries || receivingHandCarries ||
-                        !_twoHandedGrip.requestEquippedWeaponDrop("trigger-equip-retention", sourceHand, frame.deltaSeconds)) {
-                        ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
-                            "Trigger equip retained both weapons: previous={:08X} hand={} carry={} receivingCarry={} drop pose unavailable",
-                            previousEquippedWeaponFormID, retainedIsLeft ? "left" : "right",
-                            retainedHandCarries, receivingHandCarries);
-                        transition.cancelHeldRequest("outgoing-carrier-unavailable");
-                        return true;
-                    }
-                    const auto dropRequest = _twoHandedGrip.consumeEquippedWeaponDropRequest();
-                    // Keep the old scene alive through cleanup of its grip authorities.
-                    RE::NiPointer<RE::NiNode> transferSourceNode(resolveEquippedWeaponInteractionNode());
-                    const bool dropped = dropEquippedWeaponToWorld(frame, dropRequest,
-                        equipped_weapon_drop_policy::Mode::ToggleDrop);
-                    _twoHandedGrip.completeEquippedWeaponDrop(dropRequest, dropped);
-                    if (dropped) {
-                        _equipped.transition.pendingGrip() = {};
-                        clearEquippedWeaponFiringGripInputState();
-                    }
-                    const auto& retainedTransfer = _forceGrab.pendingCommits[retainedIsLeft ? 1u : 0u];
-                    if (!dropped || !retainedTransfer.active ||
-                        retainedTransfer.phase != PendingForceGrabCommitPhase::WaitingForNativePlacement) {
-                        transition.cancelHeldRequest("outgoing-transfer-rejected");
-                        return true;
-                    }
-                    ROCK_LOG_INFO(Weapon,
-                        "Trigger equip keeping previous weapon in hand: previous={:08X} retainedHand={} incoming={:08X} equipHand={}",
-                        previousEquippedWeaponFormID, retainedIsLeft ? "left" : "right",
-                        heldRef ? heldRef->GetFormID() : 0u, equipIsLeft ? "left" : "right");
+                    if (!retainEquippedWeaponForReplacement(frame, equipIsLeft)) return true;
                     if (!held_weapon_equip_state_policy::canBeginEquip(f4vr::getNativeWeaponState(player))) {
                         // The accepted transfer owns this wait. Its original
                         // reference keeps updating; no short trigger replay owns it.
@@ -2620,6 +2584,7 @@ namespace rock
             _rightHand.cancelGrabVisualReturn("skeleton-not-ready");
             _leftHand.cancelGrabVisualReturn("skeleton-not-ready");
             provider::clearInteractionCommandsForProviderLossV1(provider::RockProviderInteractionFailureV1::ProviderNotReady);
+            clearProviderInventoryEquip();
             clearPendingForceGrabCommits();
             input_remap_runtime::setHandHeldWeapon(false, false);
             input_remap_runtime::setHandHeldWeapon(true, false);
@@ -2714,6 +2679,7 @@ namespace rock
                         TouchGrabRuntime::kPowerArmorProximityRadiusGame, &_powerArmorProbeDiagnostics[isLeft ? 1u : 0u]);
             }
         }
+        processProviderInventoryEquip(frame);
         processProviderInteractionCommands(frame);
         serviceLooseGrenadeQuickDraw(frame);
         serviceEquippedWeaponNativeHandoff(frame);

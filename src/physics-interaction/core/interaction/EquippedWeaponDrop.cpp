@@ -5,6 +5,50 @@
 
 namespace rock
 {
+    bool PhysicsInteraction::retainEquippedWeaponForReplacement(const PhysicsFrameContext& frame, bool equipIsLeft)
+    {
+        auto& transition = _equipped.transition;
+        const auto previousForm = currentEquippedWeaponFormId();
+        const bool retainedIsLeft = !equipIsLeft;
+        const auto occupancy = _twoHandedGrip.getGripOccupancy();
+        const bool retainedHandCarries = retainedIsLeft ?
+            occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon();
+        const bool receivingHandCarries = equipIsLeft ?
+            occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon();
+        const auto sourceHand = retainedIsLeft ?
+            equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right;
+        if (!retainedHandCarries || receivingHandCarries ||
+            !_twoHandedGrip.requestEquippedWeaponDrop("trigger-equip-retention", sourceHand, frame.deltaSeconds)) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                "Trigger equip retained both weapons: previous={:08X} hand={} carry={} receivingCarry={} drop pose unavailable",
+                previousForm, retainedIsLeft ? "left" : "right",
+                retainedHandCarries, receivingHandCarries);
+            transition.cancelHeldRequest("outgoing-carrier-unavailable");
+            return false;
+        }
+        const auto dropRequest = _twoHandedGrip.consumeEquippedWeaponDropRequest();
+        // Keep the old scene alive through cleanup of its grip authorities.
+        RE::NiPointer<RE::NiNode> transferSourceNode(resolveEquippedWeaponInteractionNode());
+        const bool dropped = dropEquippedWeaponToWorld(frame, dropRequest,
+            equipped_weapon_drop_policy::Mode::ToggleDrop);
+        _twoHandedGrip.completeEquippedWeaponDrop(dropRequest, dropped);
+        if (dropped) {
+            _equipped.transition.pendingGrip() = {};
+            clearEquippedWeaponFiringGripInputState();
+        }
+        const auto& retainedTransfer = _forceGrab.pendingCommits[retainedIsLeft ? 1u : 0u];
+        if (!dropped || !retainedTransfer.active ||
+            retainedTransfer.phase != PendingForceGrabCommitPhase::WaitingForNativePlacement) {
+            transition.cancelHeldRequest("outgoing-transfer-rejected");
+            return false;
+        }
+        ROCK_LOG_INFO(Weapon,
+            "Trigger equip keeping previous weapon in hand: previous={:08X} retainedHand={} incoming={:08X} equipHand={}",
+            previousForm, retainedIsLeft ? "left" : "right",
+            transition.heldTransfer().request.reference, equipIsLeft ? "left" : "right");
+        return true;
+    }
+
     bool PhysicsInteraction::dropEquippedWeaponToWorld(const PhysicsFrameContext& frame,
         const EquippedWeaponManualDropRequest& request, equipped_weapon_drop_policy::Mode mode)
     {

@@ -18,6 +18,7 @@ namespace rock::held_weapon_instant_transition
     {
         SameHandTrigger,
         GripZoneSettle,
+        InventoryEquip,
     };
 
     enum class ReadinessReason : std::uint8_t

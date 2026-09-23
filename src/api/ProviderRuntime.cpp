@@ -2156,6 +2156,7 @@ namespace rock::provider::runtime
 #include "services/GrabService.inl"
 #include "services/TouchService.inl"
 #include "services/WeaponService.inl"
+#include "services/WeaponInventoryService.inl"
 #include "services/WeaponPartsService.inl"
 #include "services/AnimationService.inl"
 #include "services/InputService.inl"

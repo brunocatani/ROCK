@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/HeldWeaponTransferPolicy.h"
+#include "physics-interaction/weapon/InventoryWeaponEquipPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
 #include "physics-interaction/input/InputRemapPolicy.h"
@@ -213,6 +214,91 @@ int main()
                 "failed restoration does not recover or unequip the existing inventory item");
         }
     }
+    for (const bool left : {false, true}) {
+        for (const bool keepPrevious : {false, true}) {
+            State inventory;
+            Request request{.world = 3, .skeleton = 4, .isLeft = left,
+                .retainOutgoing = keepPrevious, .previousForm = 10, .previousInstance = 11, .inventorySource = true};
+            ok &= expect(admit(inventory, request), "inventory command admits without inventing a loose grab");
+            ok &= expect(sourceCurrent(inventory, false, 0, 0, 3, 4), "inventory source does not require a ground pickup");
+            ok &= expect(!sourceCurrent(inventory, false, 0, 0, 3, 5), "inventory transfer remains lifecycle bound");
+            ok &= expect(!equippedSourceCurrent(inventory, 10, 12), "changed outgoing instance cancels before mutation");
+            if (keepPrevious) ok &= expect(outgoingRemoved(inventory, 123), "holster switch retains exact outgoing reference");
+            ok &= expect(inventoryCommitted(inventory, 20, 21), "holstered inventory weapon commits once");
+            ok &= expect(!acquireGrip(inventory, 20, 21, !left, Role::Firing), "inventory equip cannot silently use opposite hand");
+            ok &= expect(acquireGrip(inventory, 20, 21, left, Role::Firing), "requested inventory firing hand acquired");
+            presentationAcquired(inventory);
+            if (keepPrevious) {
+                ok &= expect(inventory.active(), "holster success waits for outgoing reattachment");
+                ok &= expect(outgoingFinished(inventory, inventory.sequence, true), "outgoing retained grab acknowledged");
+                ok &= expect(inventory.outgoingSucceeded, "retained disposition is distinct from incoming equip");
+            }
+            ok &= expect(inventory.phase == Phase::Terminal && inventory.outcome == Outcome::Completed,
+                "right and left inventory switches finish only after their required acknowledgements");
+        }
+        State failed;
+        admit(failed, {.isLeft = left, .retainOutgoing = true, .inventorySource = true});
+        outgoingRemoved(failed, 123);
+        inventoryCommitted(failed, 20, 21);
+        acquireGrip(failed, 20, 21, left, Role::Firing);
+        presentationAcquired(failed);
+        outgoingFinished(failed, failed.sequence, false);
+        ok &= expect(failed.phase == Phase::Terminal && failed.outcome == Outcome::Failed &&
+            failed.gripAcquired && !failed.outgoingSucceeded, "partial switch failure preserves incoming success evidence");
+        State cancelled;
+        admit(cancelled, {.isLeft = left, .inventorySource = true});
+        cancel(cancelled, Outcome::Cancelled);
+        ok &= expect(cancelled.phase == Phase::Terminal && !cancelled.inventoryCommitted,
+            "cancelling queued inventory equip causes no inventory compensation");
+    }
+    namespace inventoryPolicy = rock::inventory_weapon_equip_policy;
+    using Destination = inventoryPolicy::Destination;
+    for (bool left : {false, true}) {
+        ok &= expect(inventoryPolicy::destination(left, false, left, !left, true) == Destination::RetainOtherHand,
+            "a supported weapon stays in the opposite hand for either draw direction");
+        ok &= expect(inventoryPolicy::destination(left, false, !left, left, true) == Destination::Unavailable,
+            "drawing into the existing carrier cannot replace or discard its weapon");
+        ok &= expect(inventoryPolicy::destination(left, true, false, false, false) == Destination::Unavailable,
+            "a loose grab or disabled destination blocks inventory equip");
+        ok &= expect(inventoryPolicy::destination(left, false, false, false, true) == Destination::Unavailable,
+            "unidentified equipped occupancy cannot silently lose a weapon");
+        ok &= expect(inventoryPolicy::destination(left, false, false, false, false) == Destination::ReplaceUncarried,
+            "an available hand admits equip without inventing an outgoing grab");
+    }
+    rock::api::weapon::v1_1::InventoryWeapon item{.baseFormId=1, .stackIndex=2, .count=1,
+        .stackKey=100, .instanceKey=200, .frameIndex=10, .worldGeneration=1, .skeletonGeneration=2, .providerGeneration=3};
+    using rock::api::Status;
+    ok &= expect(inventoryPolicy::validateCapture(item,item)==Status::Ok, "exact current inventory selection admitted");
+    for (int changed=0; changed<9; ++changed) {
+        auto other=item;
+        switch (changed) {
+        case 0: ++other.frameIndex; break;
+        case 1: ++other.worldGeneration; break;
+        case 2: ++other.skeletonGeneration; break;
+        case 3: ++other.providerGeneration; break;
+        case 4: ++other.baseFormId; break;
+        case 5: ++other.stackIndex; break;
+        case 6: ++other.stackKey; break;
+        case 7: ++other.instanceKey; break;
+        case 8: ++other.count; break;
+        }
+        ok &= expect(inventoryPolicy::validateCapture(item,other) ==
+            (changed<4 ? Status::GenerationMismatch : Status::TargetUnavailable),
+            "stale captures and changed instances reject without choosing another inventory copy");
+    }
+    State completedInventory, nextTransfer;
+    admit(nextTransfer, {.inventorySource=true});
+    inventoryCommitted(nextTransfer, 1, 2);
+    acquireGrip(nextTransfer, 1, 2, false, Role::Firing);
+    presentationAcquired(nextTransfer);
+    const auto finishedSequence = nextTransfer.sequence;
+    rememberInventoryCompletion(nextTransfer, completedInventory);
+    admit(nextTransfer, {.reference=3, .grab=4});
+    const auto* finishedInventory = inventoryResult(nextTransfer, completedInventory, finishedSequence);
+    ok &= expect(finishedInventory && finishedInventory->outcome==Outcome::Completed &&
+        finishedInventory->phase==Phase::Terminal, "a following manual equip cannot erase the prior inventory result");
+    ok &= expect(!inventoryResult(nextTransfer, completedInventory, nextTransfer.sequence),
+        "a loose successor cannot impersonate a provider inventory transaction");
     bool awaitingHold = true;
     const auto menuRelease = toggle::rearmResumedHold(awaitingHold, { .released = true });
     ok &= expect(menuRelease.held && !menuRelease.released && awaitingHold,

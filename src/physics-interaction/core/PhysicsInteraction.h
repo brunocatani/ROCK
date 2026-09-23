@@ -43,6 +43,7 @@
 #include "physics-interaction/weapon/EquippedWeaponDropVisual.h"
 #include "physics-interaction/weapon/EquippedWeaponShoulderCoordinator.h"
 #include "physics-interaction/weapon/EquippedWeaponTransitionCoordinator.h"
+#include "physics-interaction/weapon/InventoryWeaponEquipRuntime.h"
 #include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
 #include "physics-interaction/weapon/VirtualHolstersCompatibility.h"
 #include "physics-interaction/weapon/grip/LeftCarryReadiness.h"
@@ -247,6 +248,13 @@ namespace rock
             std::array<::rock::provider::RockProviderHandInteractionStateV1, 2>& outStates) const;
         bool queryProviderEquippedWeaponStateV1(
             ::rock::provider::RockProviderEquippedWeaponStateV1& outState) const;
+        api::Status captureProviderInventoryWeapon(std::uint32_t form, std::uint32_t stack,
+            api::weapon::v1_1::InventoryWeapon& output) const;
+        api::Status requestProviderInventoryEquip(api::OwnerToken owner,
+            const api::weapon::v1_1::EquipRequest& request, std::uint64_t& command);
+        api::Status getProviderInventoryEquipResult(api::OwnerToken owner, std::uint64_t command,
+            api::weapon::v1_1::EquipResult& output) const;
+        api::Status cancelProviderInventoryEquip(api::OwnerToken owner, std::uint64_t command);
         std::uint32_t copyProviderWeaponPartPosesV1(
             ::rock::provider::RockProviderWeaponPartPoseV1* outParts,
             std::uint32_t maxParts) const;
@@ -398,6 +406,9 @@ namespace rock
         void processGrabInputHand(const PhysicsFrameContext& frame, Hand& hand, bool isLeft, const GrabInputHandContext& context);
         void updateGrabInput(const PhysicsFrameContext& frame);
         void processProviderInteractionCommands(const PhysicsFrameContext& frame);
+        void processProviderInventoryEquip(const PhysicsFrameContext& frame);
+        void clearProviderInventoryEquip();
+        bool retainEquippedWeaponForReplacement(const PhysicsFrameContext& frame, bool equipIsLeft);
         std::uint32_t forceGrabHandBlockerMask(const Hand& hand, bool isLeft, bool handDisabled, bool includePendingCommit) const;
         bool equippedWeaponFiringHandForGrabIsLeft() const;
         bool canHandAcceptForceGrab(const Hand& hand, bool isLeft, bool handDisabled) const;
@@ -1026,6 +1037,7 @@ namespace rock
         ContactEvidenceState _contacts;
         WeaponContactWitnessPair _weaponContact;
         EquippedWeaponFrameState _equipped;
+        InventoryWeaponEquipRuntime _inventoryEquip;
         EquippedWeaponDropState _drop;
         GrabInputState _grabInput;
         ForceGrabState _forceGrab;
