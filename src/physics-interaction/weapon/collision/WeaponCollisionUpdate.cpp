@@ -225,7 +225,7 @@ namespace rock
             materialRoots[materialRootCount++] = candidate.root;
         });
         const bool materialVisibilityChanged = _materialVisibility.update(
-            std::span<RE::NiAVObject* const>{ materialRoots.data(), materialRootCount });
+            std::span<RE::NiAVObject* const>{ materialRoots.data(), materialRootCount }, observedFormID);
         if (materialVisibilityChanged) {
             // A material-only swap can keep every node/geometry address and the
             // equipped identity. Retire its old colliders before stabilization.

@@ -4,6 +4,7 @@
 #include "RE/NetImmerse/NiSmartPointer.h"
 
 #include <array>
+#include <cstdint>
 #include <span>
 
 namespace RE { class BSTriShape; }
@@ -17,7 +18,7 @@ namespace rock::weapon_material_visibility
     class State
     {
     public:
-        [[nodiscard]] bool update(std::span<RE::NiAVObject* const> roots);
+        [[nodiscard]] bool update(std::span<RE::NiAVObject* const> roots, std::uint32_t weaponFormID);
         void clear();
 
     private:
@@ -29,5 +30,11 @@ namespace rock::weapon_material_visibility
         };
         std::array<Entry, 512> _culled{};
         std::size_t _count = 0;
+        // Bounded first/settled snapshots for each equipped root set. Numeric
+        // identities are used only for trace deduplication, never dereferenced.
+        std::array<std::uintptr_t, 512> _tracedShapes{};
+        std::size_t _traceCount = 0;
+        std::uint64_t _traceRoots = 0;
+        unsigned _traceFrame = 0;
     };
 }
