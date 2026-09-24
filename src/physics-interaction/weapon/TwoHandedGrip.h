@@ -1026,7 +1026,7 @@ namespace rock
         // The right one-hand recoil pose is away from rest: a kick is live or its neutral frame is pending.
         [[nodiscard]] bool isOneHandRecoilEnvelopeActive() const noexcept;
         void clearOneHandRecoilClaim();
-        void applyRightOneHandRecoil(RE::NiNode* weaponNode);
+        bool applyRightOneHandRecoil(RE::NiNode* weaponNode);
         void traceRecoilSample(const weapon_recoil_policy::SampleIdentity& context,
             const RE::NiTransform& nativeKick, const RE::NiTransform& controlledKick,
             bool ownedCarry, std::uint32_t handMask) const;

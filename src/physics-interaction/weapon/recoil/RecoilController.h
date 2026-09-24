@@ -24,6 +24,15 @@ namespace rock::weapon_recoil_policy
         return kickActive || needsNeutralFrame;
     }
 
+    [[nodiscard]] inline constexpr bool canPresentRightRecoilForGrip(
+        const bool gripping, const bool closeSupportAssist,
+        const bool transferredPrimaryGrip) noexcept
+    {
+        // Close support follows the firing-hand aim and must share its recoil.
+        // Full two-hand and transferred grips already have their own solve.
+        return !gripping || (closeSupportAssist && !transferredPrimaryGrip);
+    }
+
     struct SampleIdentity
     {
         std::uint32_t formID{ 0 };
