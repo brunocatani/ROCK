@@ -26,7 +26,17 @@ const ApiV1& table() noexcept { return tableV1_1().v1; }
 }
 namespace rock::api::weaponparts { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
 namespace rock::api::animation { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
-namespace rock::api::input { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
+namespace rock::api::input {
+namespace {
+Status ROCK_CALL oldClear(OwnerToken owner,Hand hand) noexcept { return owner==77 && hand==Hand::Left ? Status::Ok : Status::InvalidArgument; }
+Status ROCK_CALL decoration(OwnerToken owner,v1_1::DecorationState* out) noexcept {
+    if(owner!=77 || !out) return Status::InvalidArgument;
+    *out={};out->flags=static_cast<std::uint32_t>(v1_1::DecorationFlag::InputReserved);return Status::Ok;
+}
+}
+const v1_1::Api& tableV1_1() noexcept { static const v1_1::Api value{{nullptr,&oldClear},&decoration}; return value; }
+const ApiV1& table() noexcept { return tableV1_1().v1; }
+}
 namespace rock::api::references { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
 namespace rock::api::playercontroller { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
 namespace rock::api::diagnostics { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }

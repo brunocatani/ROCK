@@ -10,6 +10,7 @@
 #include <ROCK/WeaponParts.h>
 #include <ROCK/Animation.h>
 #include <ROCK/Input.h>
+#include <ROCK/InputV1_1.h>
 #include <ROCK/References.h>
 #include <ROCK/PlayerController.h>
 #include <ROCK/Diagnostics.h>
@@ -25,6 +26,7 @@ namespace rock::api::weapon { const v1_1::Api& tableV1_1() noexcept; }
 namespace rock::api::weaponparts { const ApiV1& table() noexcept; }
 namespace rock::api::animation { const ApiV1& table() noexcept; }
 namespace rock::api::input { const ApiV1& table() noexcept; }
+namespace rock::api::input { const v1_1::Api& tableV1_1() noexcept; }
 namespace rock::api::references { const ApiV1& table() noexcept; }
 namespace rock::api::playercontroller { const ApiV1& table() noexcept; }
 namespace rock::api::diagnostics { const ApiV1& table() noexcept; }
@@ -41,7 +43,7 @@ std::span<const RegisteredInterface> registeredInterfaces() noexcept {
         registration(weapon::tableV1_1(), weapon::kSupportedPermissions),
         registration(weaponparts::table(), weaponparts::kSupportedPermissions),
         registration(animation::table(), animation::kSupportedPermissions),
-        registration(input::table(), input::kSupportedPermissions),
+        registration(input::tableV1_1(), input::kSupportedPermissions),
         registration(references::table(), references::kSupportedPermissions),
         registration(playercontroller::table(), playercontroller::kSupportedPermissions),
         registration(diagnostics::table(), diagnostics::kSupportedPermissions),

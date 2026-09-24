@@ -19,6 +19,8 @@
 #include "physics-interaction/hand/SkeletonBoneNameIndex.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/grab/GrabEvent.h"
+#include "physics-interaction/grab/DecorationModePolicy.h"
+#include <ROCK/InputV1_1.h>
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/grab/TouchGrabRuntime.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
@@ -163,6 +165,7 @@ namespace rock
         void shutdown(::rock::provider::RockProviderLifecycleReason reason = ::rock::provider::RockProviderLifecycleReason::Shutdown);
 
         bool isInitialized() const { return _lifecycle.initialized; }
+        void queryDecorationState(api::input::v1_1::DecorationState& out) const;
         bool isProviderReady() const
         {
             return _lifecycle.initialized.load(std::memory_order_acquire) &&
@@ -407,6 +410,9 @@ namespace rock
         void processGrabInputHand(const PhysicsFrameContext& frame, Hand& hand, bool isLeft, const GrabInputHandContext& context);
         void cancelLockedFarSelection(Hand& hand, bool isLeft, const char* reason);
         void updateGrabInput(const PhysicsFrameContext& frame);
+        std::uint32_t decorationCandidate(RE::hknpWorld* world) const;
+        void updateDecorationInput();
+        void commitDecoration(const PhysicsFrameContext& frame);
         void processProviderInteractionCommands(const PhysicsFrameContext& frame);
         void processProviderInventoryEquip(const PhysicsFrameContext& frame);
         void clearProviderInventoryEquip();
@@ -1074,6 +1080,10 @@ namespace rock
         WeaponCollision _weaponCollision;
         DynamicWeaponCollisionRuntime _dynamicWeaponCollision;
         PhysicsStepDriveCoordinator _generatedBodyStepDrive;
+        decoration_mode::ClickState _decorationClick{};
+        std::uint32_t _decorationCandidate{};
+        std::uint32_t _decorationPendingForm{};
+        float _decorationScriptWait{};
         TwoHandedGrip _twoHandedGrip;
         DynamicHandCollisionRuntime _dynamicHandCollision;
         DynamicWorldCarCollisionRuntime _dynamicWorldCarCollision;

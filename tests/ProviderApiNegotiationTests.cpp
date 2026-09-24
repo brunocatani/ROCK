@@ -55,7 +55,20 @@ int main() {
     verify(weapon::tableV1_1(),weapon::kSupportedPermissions);
     verify(weaponparts::table(),weaponparts::kSupportedPermissions);
     verify(animation::table(),animation::kSupportedPermissions);
-    verify(input::table(),input::kSupportedPermissions);
+    verify(input::tableV1_1(),input::kSupportedPermissions);
+    {
+        const InterfaceDescriptorV1* oldInput{};
+        const InterfaceDescriptorV1* newInput{};
+        assert(ROCKAPI_QueryInterfaceV1(input::kInterfaceId,1,0,sizeof(input::ApiV1),&oldInput)==Status::Ok);
+        assert(ROCKAPI_QueryInterfaceV1(input::kInterfaceId,1,1,sizeof(input::v1_1::Api),&newInput)==Status::Ok);
+        assert(oldInput->table==newInput->table && oldInput->requiredCoreMinor==0);
+        const auto* oldCalls=static_cast<const input::ApiV1*>(oldInput->table);
+        assert(oldCalls->clearHandInputSuppressionV1(77,Hand::Left)==Status::Ok);
+        input::v1_1::DecorationState state;
+        assert(static_cast<const input::v1_1::Api*>(newInput->table)->getDecorationState(77,&state)==Status::Ok);
+        assert(state.flags==static_cast<std::uint32_t>(input::v1_1::DecorationFlag::InputReserved));
+        assert(oldCalls->clearHandInputSuppressionV1(77,Hand::Left)==Status::Ok);
+    }
     verify(references::table(),references::kSupportedPermissions);
     verify(playercontroller::table(),playercontroller::kSupportedPermissions);
     verify(diagnostics::table(),diagnostics::kSupportedPermissions);

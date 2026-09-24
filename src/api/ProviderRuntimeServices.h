@@ -1,11 +1,13 @@
 #pragma once
 #include <ROCK/WeaponParts.h>
 #include <ROCK/WeaponV1_1.h>
+#include <ROCK/InputV1_1.h>
 #include "WeaponSourceCatalog.h"
 #include "ProviderRuntimeTypes.h"
 #include "OwnerBindingPolicy.h"
 
 namespace rock::provider::runtime {
+    api::Status getDecorationState(api::input::v1_1::DecorationState& output);
     api::Status captureInventoryWeapon(std::uint64_t owner, std::uint32_t form, std::uint32_t stack,
         api::weapon::v1_1::InventoryWeapon& output);
     api::Status requestInventoryEquip(std::uint64_t owner, const api::weapon::v1_1::EquipRequest& request, std::uint64_t& command);
