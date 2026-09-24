@@ -30,6 +30,7 @@
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/input/BareFistGesturePolicy.h"
+#include "physics-interaction/input/FarPullGesturePolicy.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
 #include "physics-interaction/weapon/GripZoneIndicatorPolicy.h"
 
@@ -47,6 +48,7 @@ namespace rock
         // Function-level controls; raw OpenVR button state remains untouched.
         bool rockSuppressNativeVats = false;
         float rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
+        int rockFarGrabMode = static_cast<int>(far_pull_gesture::Mode::Immediate);
         bool rockGrabInputIntentStateEnabled = true;
         float rockGrabInputLeewaySeconds = 0.12f;
         float rockGrabInputForceSeconds = 0.08f;

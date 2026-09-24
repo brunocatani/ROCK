@@ -301,6 +301,14 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGrabInputIntentPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGrabInputIntentPolicyTests)
 
+  add_executable(ROCKFarPullGestureTests
+    "${ROOT_DIR}/tests/FarPullGestureTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/hand/HandInteractionStateMachine.cpp"
+  )
+  target_compile_features(ROCKFarPullGestureTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKFarPullGestureTests PRIVATE ${SOURCE_DIR} "${ROCK_OPENVR_ROOT}")
+  add_rock_test(ROCKFarPullGestureTests)
+
   add_executable(ROCKInputRemapPolicyTests
     "${ROOT_DIR}/tests/InputRemapPolicyTests.cpp"
   )

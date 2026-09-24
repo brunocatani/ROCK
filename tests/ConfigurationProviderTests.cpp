@@ -72,6 +72,17 @@ int main() {
     assert(api.visit(99,config::Group::Consumer,collect,&missing)==Status::OwnerNotRegistered);
     g_rockConfig.load();
     g_rockConfig.stopFileWatch(); // Keep reload timing deterministic; writes still request it.
+    assert(g_rockConfig.rockFarGrabMode == 1);
+    assert(catalog(config::Group::Consumer).at("iFarGrabMode") == "1");
+    assert(!catalog(config::Group::Developer).contains("iFarGrabMode"));
+    assert(set(config::Group::Consumer, "PhysicsInteraction", "iFarGrabMode", "2") == Status::Ok);
+    g_rockConfig.reload();
+    assert(g_rockConfig.rockFarGrabMode == 2);
+    assert(set(config::Group::Consumer, "PhysicsInteraction", "iFarGrabMode", "99") == Status::Ok);
+    g_rockConfig.reload();
+    assert(g_rockConfig.rockFarGrabMode == 1);
+    assert(set(config::Group::Consumer, "PhysicsInteraction", "iFarGrabMode", "1") == Status::Ok);
+    g_rockConfig.reload();
     assert(!g_rockConfig.rockBladePenetrationEnabled);
     assert(catalog(config::Group::Consumer).at("bBladePenetrationEnabled")=="false");
     assert(!catalog(config::Group::Developer).contains("bBladePenetrationEnabled"));

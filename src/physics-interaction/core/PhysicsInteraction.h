@@ -404,6 +404,7 @@ namespace rock
             const GrabInputHandContext& context,
             const GrabInputHandPrelude& prelude);
         void processGrabInputHand(const PhysicsFrameContext& frame, Hand& hand, bool isLeft, const GrabInputHandContext& context);
+        void cancelLockedFarSelection(Hand& hand, bool isLeft, const char* reason);
         void updateGrabInput(const PhysicsFrameContext& frame);
         void processProviderInteractionCommands(const PhysicsFrameContext& frame);
         void processProviderInventoryEquip(const PhysicsFrameContext& frame);

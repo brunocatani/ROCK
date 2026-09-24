@@ -21,7 +21,7 @@ namespace rock::vr_input
     class VRControllersManager
     {
     public:
-        void update(bool isLeftHanded) noexcept;
+        void update(bool isLeftHanded, bool sampleMotion = false) noexcept;
         void reset() noexcept;
 
         [[nodiscard]] bool isPressed(Hand hand, int buttonId) noexcept;
@@ -29,6 +29,7 @@ namespace rock::vr_input
         [[nodiscard]] bool isReleased(Hand hand, int buttonId, float maximumHoldSeconds = 99.0f) noexcept;
 
         void triggerHaptic(Hand hand, float durationSeconds = 0.1f, float intensity = 0.3f) noexcept;
+        [[nodiscard]] bool getVelocityInHmdAxes(Hand hand, std::array<float, 3>& velocity) const noexcept;
 
     private:
         static constexpr std::size_t kButtonCount = 64;
@@ -39,6 +40,7 @@ namespace rock::vr_input
             vr::VRControllerState_t current{};
             vr::VRControllerState_t previous{};
             bool valid{ false };
+            vr::TrackedDevicePose_t pose{};
 
             std::array<float, kButtonCount> pressStartTimes{};
             std::array<float, kButtonCount> releaseStartTimes{};
@@ -72,6 +74,7 @@ namespace rock::vr_input
         bool _leftHanded{ false };
         float _currentTime{ 0.0f };
         float _debounceSeconds{ 0.1f };
+        vr::TrackedDevicePose_t _hmdPose{};
     };
 
     inline VRControllersManager VRControllers;

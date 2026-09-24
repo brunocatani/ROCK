@@ -1,12 +1,14 @@
 #include "rock_support/VRControllers.h"
+#include "rock_support/VRMotion.h"
 
 #include <algorithm>
 #include <chrono>
 
 namespace rock::vr_input
 {
-    void VRControllersManager::update(const bool isLeftHanded) noexcept
+    void VRControllersManager::update(const bool isLeftHanded, const bool sampleMotion) noexcept
     {
+        _hmdPose = {};
         auto* vrSystem = vr::VRSystem();
         if (!vrSystem) {
             _left.reset();
@@ -19,6 +21,9 @@ namespace rock::vr_input
         const float now = currentTimeSeconds();
         _left.update(vrSystem->GetTrackedDeviceIndexForControllerRole(vr::TrackedControllerRole_LeftHand), now);
         _right.update(vrSystem->GetTrackedDeviceIndexForControllerRole(vr::TrackedControllerRole_RightHand), now);
+        if (sampleMotion) {
+            vrSystem->GetDeviceToAbsoluteTrackingPose(vr::TrackingUniverseStanding, 0.0f, &_hmdPose, 1);
+        }
         _currentTime = now;
     }
 
@@ -26,7 +31,17 @@ namespace rock::vr_input
     {
         _left.reset();
         _right.reset();
+        _hmdPose = {};
         _currentTime = currentTimeSeconds();
+    }
+
+    bool VRControllersManager::getVelocityInHmdAxes(const Hand hand, std::array<float, 3>& velocity) const noexcept
+    {
+        velocity = {};
+        const auto& controller = stateFor(resolveHand(hand));
+        const float ageSeconds = currentTimeSeconds() - _currentTime;
+        return controller.valid && ageSeconds >= 0.0f && ageSeconds <= 0.1f &&
+            velocityInHmdAxes(controller.pose, _hmdPose, velocity);
     }
 
     bool VRControllersManager::isPressed(const Hand hand, const int buttonId) noexcept
@@ -84,6 +99,7 @@ namespace rock::vr_input
     {
         previous = current;
         index = newIndex;
+        pose = {};
 
         auto* vrSystem = vr::VRSystem();
         if (!vrSystem || newIndex == vr::k_unTrackedDeviceIndexInvalid) {
@@ -92,7 +108,6 @@ namespace rock::vr_input
             return;
         }
 
-        vr::TrackedDevicePose_t pose{};
         valid = vrSystem->GetControllerStateWithPose(
             vr::TrackingUniverseStanding,
             newIndex,
@@ -133,6 +148,7 @@ namespace rock::vr_input
         current = {};
         previous = {};
         valid = false;
+        pose = {};
         pressStartTimes.fill(0.0f);
         releaseStartTimes.fill(0.0f);
         lastPressTimes.fill(0.0f);

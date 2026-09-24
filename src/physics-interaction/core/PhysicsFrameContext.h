@@ -21,6 +21,8 @@ namespace rock
     {
         bool isLeft = false;
         RE::NiTransform rawHandWorld{};
+        RE::NiPoint3 gestureVelocityMetersPerSecond{};
+        bool hasGestureVelocity = false;
         RE::NiNode* handNode = nullptr;
         RE::NiPoint3 grabAnchorWorld{};
         RE::NiPoint3 palmNormalWorld{};

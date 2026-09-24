@@ -146,6 +146,8 @@ namespace rock
                 return "ClearSelection";
             case HandInteractionEvent::LockFarSelection:
                 return "LockFarSelection";
+            case HandInteractionEvent::UnlockFarSelection:
+                return "UnlockFarSelection";
             case HandInteractionEvent::BeginPreGrabItem:
                 return "BeginPreGrabItem";
             case HandInteractionEvent::BeginPrePullItem:
@@ -233,6 +235,9 @@ namespace rock
         _currentSelection.clear();
         _cachedFarCandidate.clear();
         clearGrabAcquisitionCache("reset");
+        _gestureSelectionRoot.reset();
+        _gestureCollisionOwner = 0;
+        _gestureSelectionAnchor = {};
         _farDetectCounter = 0;
         _selectionHoldSeconds = 0.0f;
         _deselectCooldown = 0;
@@ -444,6 +449,11 @@ namespace rock
 
         const auto oldState = _state;
         if (result.next != oldState) {
+            if (oldState == HandState::SelectionLocked) {
+                _gestureSelectionRoot.reset();
+                _gestureCollisionOwner = 0;
+                _gestureSelectionAnchor = {};
+            }
             _prevState = oldState;
             _state = result.next;
             _stateAtomic.store(result.next, std::memory_order_release);
@@ -2202,8 +2212,81 @@ namespace rock
         return true;
     }
 
+    bool Hand::lockGesturePullSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* world, const RE::NiPoint3& handOrigin)
+    {
+        if (!bhkWorld || !world || !_currentSelection.isValid() || _state != HandState::SelectedFar) return false;
+        auto* root = _currentSelection.refr->Get3D();
+        auto* owner = havok_runtime::getCollisionObjectFromBody(world, _currentSelection.bodyId);
+        RE::NiTransform bodyWorld{};
+        if (!root || !owner || !tryResolveLiveBodyWorldTransform(world, _currentSelection.bodyId, bodyWorld)) return false;
+        selection_query_policy::BodyLocalSelectionAnchor anchor{};
+        if (_currentSelection.targetKind == grab_target::Kind::ActorEquipment) {
+            if (_currentSelection.equipmentAnchorOwner != reinterpret_cast<std::uintptr_t>(owner)) return false;
+            anchor = _currentSelection.equipmentAnchor;
+        } else if (!anchor.capture(bodyWorld, _currentSelection.hasHitPoint ? _currentSelection.hitPointWorld : bodyWorld.translate)) {
+            return false;
+        }
+        if (!lockFarSelection()) return false;
+        _gestureSelectionRoot.reset(root);
+        _gestureCollisionOwner = reinterpret_cast<std::uintptr_t>(owner);
+        _gestureSelectionAnchor = anchor;
+        RE::NiPoint3 target{};
+        if (!refreshGesturePullSelection(bhkWorld, world, handOrigin, target)) {
+            clearSelectionState(true);
+            return false;
+        }
+        // The lock may last arbitrarily long. Scan the current physics tree at
+        // confirmation instead of reusing the selection-time acquisition cache.
+        clearGrabAcquisitionCache("gesture-selection-locked");
+        return true;
+    }
+
+    bool Hand::refreshGesturePullSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* world,
+        const RE::NiPoint3& handOrigin, RE::NiPoint3& targetWorld)
+    {
+        targetWorld = {};
+        if (_state != HandState::SelectionLocked || !_currentSelection.isValid() || !bhkWorld || !world) return false;
+        auto* ref = _currentSelection.refr;
+        auto* cell = ref->GetParentCell();
+        if (ref->IsDeleted() || ref->IsDisabled() || !cell || cell->GetbhkWorld() != bhkWorld ||
+            !_gestureSelectionRoot || ref->Get3D() != _gestureSelectionRoot.get()) return false;
+        auto* owner = havok_runtime::getCollisionObjectFromBody(world, _currentSelection.bodyId);
+        if (!owner || reinterpret_cast<std::uintptr_t>(owner) != _gestureCollisionOwner ||
+            resolveBodyToRef(bhkWorld, world, _currentSelection.bodyId) != ref) return false;
+        if (_currentSelection.targetKind == grab_target::Kind::ActorEquipment) {
+            auto* actor = ref->As<RE::Actor>();
+            auto* biped = actor ? actor->GetBiped().get() : nullptr;
+            const auto slot = static_cast<std::uint32_t>(_currentSelection.actorEquipment.slot);
+            if (!biped || slot >= static_cast<std::uint32_t>(RE::BIPED_OBJECT::kEditorCount) ||
+                biped->object[slot].partClone.get() != _currentSelection.visualNode ||
+                biped->object[slot].parent.object != _currentSelection.actorEquipment.item) return false;
+        }
+        RE::NiTransform bodyWorld{};
+        if (!tryResolveLiveBodyWorldTransform(world, _currentSelection.bodyId, bodyWorld) ||
+            !_gestureSelectionAnchor.resolve(bodyWorld, targetWorld)) return false;
+        const float distance = pointDistanceGameUnits(handOrigin, targetWorld);
+        if (!std::isfinite(distance) || distance > selection_query_policy::kFarDetectionRangeGameUnits) return false;
+        _currentSelection.hitNode = getOwnerNodeFromBody(world, _currentSelection.bodyId);
+        if (!_currentSelection.hitNode) return false;
+        _currentSelection.hitPointWorld = targetWorld;
+        _currentSelection.hasHitPoint = true;
+        _currentSelection.distance = distance;
+        // The current biped slot proves a worn visual still exists. Its
+        // inventory/instance metadata is re-resolved only at gesture commit.
+        refreshSelectionHighlight(_currentSelection);
+        return true;
+    }
+
+    bool Hand::unlockFarSelection()
+    {
+        return applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::UnlockFarSelection }).accepted;
+    }
+
     void Hand::clearSelectionState(bool rememberDeselect)
     {
+        // A ref may already have replaced/unloaded its 3D. Keep the lock's old
+        // graph alive until its highlight has been detached below.
+        [[maybe_unused]] const auto lockedRoot = _gestureSelectionRoot;
         if (!applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::ClearSelection }).accepted) {
             return;
         }

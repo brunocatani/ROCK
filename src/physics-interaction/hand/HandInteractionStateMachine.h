@@ -44,6 +44,7 @@ namespace rock
         BeginTwoHandSelection,
         BeginTwoHandHold,
         EndTwoHandHold,
+        UnlockFarSelection,
     };
 
     enum class HandTransitionEffect : std::uint32_t
