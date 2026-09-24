@@ -4,7 +4,6 @@
 #include "rock_support/Logger.h"
 #include "physics-interaction/object/CarInteractionPolicy.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
-#include "physics-interaction/weapon/CarriedWeaponRuntime.h"
 
 #include <RE/Bethesda/SendPapyrusEvent.h>
 
@@ -89,14 +88,7 @@ namespace rock::fo4vr
             return nullptr;
         }
 
-        // Preserve the legacy native-equipment view. Only ROCK's explicitly
-        // owned carried context is excluded; other native indices retain
-        // their previous behavior for existing consumers.
-        RE::EquippedItem* equippedItem = nullptr;
-        for (auto& item : middleHigh->equippedItems) {
-            if (!rock::CarriedWeaponRuntime::ownsNativeContext(item)) { equippedItem = &item; break; }
-        }
-        if (!equippedItem) return nullptr;
+        auto* equippedItem = std::addressof(middleHigh->equippedItems[0]);
         auto* object = equippedItem->item.object;
         if (!object || object->formType != RE::ENUM_FORM_ID::kWEAP) {
             return nullptr;

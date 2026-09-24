@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/weapon/AkimboSessionPolicy.h"
+#include "physics-interaction/weapon/NativeWeaponCycle.h"
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
 #include "RE/NetImmerse/NiSmartPointer.h"
@@ -50,7 +51,6 @@ namespace rock
         static bool ready() noexcept;
         static void noteInteractionThread() noexcept;
         static bool isInteractionThread() noexcept;
-        static bool ownsNativeContext(const RE::EquippedItem& item) noexcept;
         static void beforeSave() noexcept;
         static void afterSave() noexcept;
 
@@ -71,12 +71,12 @@ namespace rock
         RE::ObjectRefHandle _referenceHandle{};
         RE::ObjectRefHandle _declinedReference{};
         akimbo::OperationState _operation{};
+        native_weapon_cycle::Session _cycle{};
         const RE::BGSEquipSlot* _slot{};
         std::uint32_t _index{}, _loaded{}, _ammoForm{}, _thread{};
         std::uint64_t _nextSession{1};
-        std::uint64_t _saveEpoch{};
         float _secondsPerShot{}, _reloadSeconds{};
-        bool _ammoKnown{}, _automatic{}, _registered{}, _suspended{}, _faulted{};
+        bool _ammoKnown{}, _automatic{}, _registered{}, _faulted{};
 
         struct Transfer
         {

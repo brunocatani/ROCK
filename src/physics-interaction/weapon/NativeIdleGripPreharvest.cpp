@@ -893,7 +893,8 @@ namespace rock::native_idle_grip_preharvest
         }
 
         [[nodiscard]] bool tryFindLoadedGraphIdlePath(RE::BShkbAnimationGraph* graph, const std::uint64_t subgraphHandle,
-            std::uint64_t& outBindingSubgraphIdentifier, std::array<char, 260>& outPath, IdleGripExtractionDiagnostics& diagnostics)
+            std::uint64_t& outBindingSubgraphIdentifier, std::array<char, 260>& outPath, IdleGripExtractionDiagnostics& diagnostics,
+            unsigned (*clipPriority)(std::string_view) = nullptr)
         {
             outPath.fill('\0');
             outBindingSubgraphIdentifier = 0;
@@ -952,7 +953,7 @@ namespace rock::native_idle_grip_preharvest
             }
             diagnostics.graphClipBucketCount = bucketCount;
 
-            auto selectedPriority = native_idle_grip_preharvest_policy::IdleClipPriority::None;
+            unsigned selectedPriority = 0;
             bool ambiguous = false;
             for (std::uint32_t index = 0; index < bucketCount; ++index) {
                 const auto* node = reinterpret_cast<const std::byte*>(buckets) + static_cast<std::size_t>(index) * kBindingTableNodeStride;
@@ -968,8 +969,8 @@ namespace rock::native_idle_grip_preharvest
                 }
                 ++diagnostics.graphClipPathCount;
                 const std::string_view candidate{ candidatePath.data() };
-                const auto candidatePriority = native_idle_grip_preharvest_policy::idleClipPriority(candidate);
-                if (candidatePriority == native_idle_grip_preharvest_policy::IdleClipPriority::None) {
+                const unsigned candidatePriority = clipPriority ? clipPriority(candidate) : static_cast<unsigned>(native_idle_grip_preharvest_policy::idleClipPriority(candidate));
+                if (candidatePriority == 0) {
                     continue;
                 }
                 ++diagnostics.graphIdlePathCandidateCount;
@@ -987,7 +988,7 @@ namespace rock::native_idle_grip_preharvest
             }
 
             diagnostics.graphIdlePathAmbiguous = ambiguous;
-            if (selectedPriority == native_idle_grip_preharvest_policy::IdleClipPriority::None || ambiguous) {
+            if (selectedPriority == 0 || ambiguous) {
                 outPath.fill('\0');
                 outBindingSubgraphIdentifier = 0;
                 return false;
@@ -1533,9 +1534,7 @@ namespace rock::native_idle_grip_preharvest
 #endif
         }
 
-        [[nodiscard]] ExtractionResult trySampleClip(Runtime& state, RE::BShkbAnimationGraph* graph, const std::uint64_t subgraphIdentifier, char* clipName,
-            RE::NiTransform& outHandInWeapon, authored_weapon_grip_library::FiringFingerPose& outRightFiringFingerPose, SupportGripSample& outSupport,
-            IdleGripExtractionDiagnostics& diagnostics)
+        [[nodiscard]] ExtractionResult resolveClipBinding(Runtime& state, RE::BShkbAnimationGraph* graph, const std::uint64_t subgraphIdentifier, char* clipName, void*& outBinding, IdleGripExtractionDiagnostics& diagnostics)
         {
             diagnostics.bindingSubgraphIdentifier = subgraphIdentifier;
             void* swapSingleton = nullptr;
@@ -1553,7 +1552,8 @@ namespace rock::native_idle_grip_preharvest
                     ROCK_LOG_INFO(Animation, "AGP binding form={:08X} graph={:X} binding={:X} subgraph={:016X} route=graph-binding clip={}",
                         state.job.weaponFormId, reinterpret_cast<std::uintptr_t>(graph), reinterpret_cast<std::uintptr_t>(binding),
                         subgraphIdentifier, clipName);
-                return trySampleAnimationBinding(state, graph, binding, outHandInWeapon, outRightFiringFingerPose, outSupport, diagnostics) ? ExtractionResult::Succeeded : ExtractionResult::Failed;
+                outBinding = binding;
+                return ExtractionResult::Succeeded;
             }
 
             auto& job = state.job;
@@ -1617,6 +1617,17 @@ namespace rock::native_idle_grip_preharvest
                 ROCK_LOG_INFO(Animation, "AGP binding form={:08X} graph={:X} binding={:X} subgraph={:016X} route=direct-resource clip={}",
                     state.job.weaponFormId, reinterpret_cast<std::uintptr_t>(graph), reinterpret_cast<std::uintptr_t>(binding),
                     subgraphIdentifier, clipName);
+            outBinding = binding;
+            return ExtractionResult::Succeeded;
+        }
+
+        [[nodiscard]] ExtractionResult trySampleClip(Runtime& state, RE::BShkbAnimationGraph* graph, const std::uint64_t subgraphIdentifier, char* clipName,
+            RE::NiTransform& outHandInWeapon, authored_weapon_grip_library::FiringFingerPose& outRightFiringFingerPose, SupportGripSample& outSupport,
+            IdleGripExtractionDiagnostics& diagnostics)
+        {
+            void* binding = nullptr;
+            const auto resolved = resolveClipBinding(state, graph, subgraphIdentifier, clipName, binding, diagnostics);
+            if (resolved != ExtractionResult::Succeeded) return resolved;
             return trySampleAnimationBinding(state, graph, binding, outHandInWeapon, outRightFiringFingerPose, outSupport, diagnostics) ? ExtractionResult::Succeeded : ExtractionResult::Failed;
         }
 
@@ -1731,11 +1742,11 @@ namespace rock::native_idle_grip_preharvest
             return ExtractionResult::Failed;
         }
 
-        [[nodiscard]] bool progressJob(Runtime& state)
+        [[nodiscard]] ExtractionResult progressGraphLoad(Runtime& state)
         {
             auto& job = state.job;
             if (job.phase == Phase::Idle) {
-                return true;
+                return ExtractionResult::Failed;
             }
 
             const ULONGLONG now = GetTickCount64();
@@ -1747,27 +1758,27 @@ namespace rock::native_idle_grip_preharvest
 
             auto* player = RE::PlayerCharacter::GetSingleton();
             if (!player) {
-                return false;
+                return ExtractionResult::Pending;
             }
 
             if (job.phase == Phase::BaseGraphsLoading) {
                 auto* holder = graphHolder(job);
                 if (!holder) {
                     failJob(state, "backgroundGraphHolderUnavailable");
-                    return true;
+                    return ExtractionResult::Failed;
                 }
                 if (!state.native.isAnimationLoadingComplete(holder)) {
-                    return false;
+                    return ExtractionResult::Pending;
                 }
 
                 if (player->race != job.race || f4vr::isInPowerArmor() != job.inPowerArmor) {
                     failJob(state, "playerRaceOrPowerArmorChanged");
-                    return true;
+                    return ExtractionResult::Failed;
                 }
                 auto* manager = holder ? holder->animationGraphManager.get() : nullptr;
                 if (!holder || !manager) {
                     failJob(state, "backgroundManagerUnavailable");
-                    return true;
+                    return ExtractionResult::Failed;
                 }
 
                 RE::BGSObjectInstance objectInstance(job.weapon, job.instanceData.get());
@@ -1775,7 +1786,7 @@ namespace rock::native_idle_grip_preharvest
                 state.native.addItemToTargetKeywords(&objectInstance, &targetKeywords);
                 if (targetKeywords.empty()) {
                     failJob(state, "weaponInstanceProducedNoTargetKeywords");
-                    return true;
+                    return ExtractionResult::Failed;
                 }
 
                 std::int32_t role = kWeaponAnimationRole;
@@ -1783,25 +1794,34 @@ namespace rock::native_idle_grip_preharvest
                 state.native.requestAnimationSubGraph(player, manager, &role, &targetKeywords, &priority, &job.subgraphHandles, &job.subgraphIdentifiers);
                 if (job.subgraphHandles.empty() || job.subgraphIdentifiers.empty()) {
                     failJob(state, "exactWeaponSubgraphRequestReturnedEmpty");
-                    return true;
+                    return ExtractionResult::Failed;
                 }
 
                 job.phase = Phase::WeaponSubgraphLoading;
                 job.longLoadLogged = false;
                 job.startedAtMilliseconds = now;
-                return false;
+                return ExtractionResult::Pending;
             }
 
             auto* holder = graphHolder(job);
             auto* manager = holder ? holder->animationGraphManager.get() : nullptr;
             if (!holder || !manager) {
                 failJob(state, "backgroundManagerLost");
-                return true;
+                return ExtractionResult::Failed;
             }
             std::int32_t priority = kIoTaskPriority;
             if (!state.native.isAnimationSubGraphLoaded(&holder->animationGraphManager, &job.subgraphHandles, &priority)) {
-                return false;
+                return ExtractionResult::Pending;
             }
+            return ExtractionResult::Succeeded;
+        }
+
+        [[nodiscard]] bool progressJob(Runtime& state)
+        {
+            const auto loaded = progressGraphLoad(state);
+            if (loaded != ExtractionResult::Succeeded) return loaded == ExtractionResult::Failed;
+            auto& job = state.job;
+            auto* manager = graphHolder(job)->animationGraphManager.get();
             RE::NiTransform handInWeapon{};
             authored_weapon_grip_library::FiringFingerPose rightFiringFingerPose{};
             SupportGripSample supportSample{};
@@ -2108,3 +2128,6 @@ namespace rock::native_idle_grip_preharvest
         startJob(state, std::move(candidateDescription));
     }
 }
+
+// Shares the verified native graph/resource backend, but owns a separate session.
+#include "physics-interaction/weapon/NativeWeaponCycle.inl"

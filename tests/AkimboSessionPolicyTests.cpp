@@ -1,4 +1,7 @@
 #include "physics-interaction/weapon/AkimboSessionPolicy.h"
+#include "physics-interaction/weapon/WeaponCyclePolicy.h"
+#include "physics-interaction/weapon/CarriedWeaponProjectile.h"
+#include <array>
 #include <iostream>
 #include <limits>
 
@@ -10,6 +13,24 @@ int main()
     const auto check = [&](bool value, const char* what) {
         if (!value) { std::cerr << what << '\n'; ok = false; }
     };
+    using namespace rock::carried_weapon_projectile;
+    constexpr Identity own{0x1000, 0x2000, 0x3000, 1};
+    check(isOwnHeldWeapon(42, own, 42, own), "The carried gun cannot intercept its own projectile");
+    check(!isOwnHeldWeapon(42, own, 43, own), "Another physical copy of the same gun remains hittable");
+    check(!isOwnHeldWeapon(0, own, 42, own), "Releasing the gun ends its self exclusion");
+    for (const Identity other : {Identity{0x1001,0x2000,0x3000,1}, Identity{0x1000,0x2001,0x3000,1},
+            Identity{0x1000,0x2000,0x3001,1}, Identity{0x1000,0x2000,0x3000,0}})
+        check(!isOwnHeldWeapon(42, own, 42, other), "Other weapon/instance/actor/index projectiles keep native collision");
+    using namespace rock::weapon_cycle_policy;
+    constexpr std::array<std::int16_t, 7> parents{-1,0,1,2,0,6,5};
+    check(isWeaponPart(3, 1, parents), "Nested bolt bones belong to the weapon branch");
+    for (const int bone : {0, 1, 4, 5, 6, 7, -1})
+        check(!isWeaponPart(bone, 1, parents), "Root/body/malformed/cyclic bones must never receive firing transforms");
+    check(fireClipPriority("Animations\\Glock19xAnims\\WPNFireSingleReady.hkx") == 3 &&
+        fireClipPriority("Animations/Glock19xAnims/WPNFireSingleReady.hkt") == 3,
+        "The exact subgraph's firing stroke accepts native resource extensions");
+    for (const auto path : {"WPNReload.hkx", "WPNFireAutoReadyBack.hkx", "WPNFireSingleReadySlave.hkt", "WPNAfterJiggleFireSingleAdd.hkx"})
+        check(!fireClipPriority(path), "Reload, blend, slave and additive arm clips cannot become a mechanical stroke");
     OperationState rifle, pistol;
     rifle.begin(1); pistol.begin(2);
     rifle.bind(Hand::Left, Grip::Support);

@@ -28,8 +28,8 @@ namespace rock
             !CarriedWeaponRuntime::ready() || !_lifecycle.initialized || !item.object ||
             item.object->formType != RE::ENUM_FORM_ID::kWEAP) return true;
         _nativeAkimboEquip = {};
-        // Native replacement may remove an overlapping borrowed context. Keep
-        // its weapon-owned count while the normal inventory transaction runs.
+        // Cancel pending input during the native inventory transaction. The
+        // retained weapon's private data is never part of native equipment.
         if (!_carriedWeapon.suspend()) return false;
         if (_inventoryEquip.active() || held_weapon_instant_transition::transactionActive() ||
             runtime_state::isPhysicsMenuBlocked() || runtime_state::isCompatibilityConfigBlocked() ||
