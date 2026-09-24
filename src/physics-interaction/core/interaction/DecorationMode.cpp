@@ -25,7 +25,7 @@ std::uint32_t PhysicsInteraction::decorationCandidate(RE::hknpWorld* world) cons
         if (!saved.isValid() || saved.refr->IsDeleted() || saved.refr->IsDisabled() ||
             saved.targetKind!=grab_target::Kind::LooseObject ||
             hand->getHeldBodyIds().empty() || hand->getHeldBodyIds().size()>64) return 0;
-        const auto contact=hand->readHeldBodyContactSnapshot();
+        const auto contact=hand->readDecorationSurfaceContact();
         if (!contact.recent || !hand->isHeldBodyId(contact.heldBodyId) ||
             _rightHand.isHeldBodyId(contact.otherBodyId) || _leftHand.isHeldBodyId(contact.otherBodyId)) continue;
         const auto other=havok_runtime::snapshotBodyIdentity(world,RE::hknpBodyId{contact.otherBodyId});
@@ -59,18 +59,18 @@ void PhysicsInteraction::updateDecorationInput()
     _decorationClick.update(g_rockConfig.rockDecorationMode,_decorationCandidate,
         raw.available,raw.held,raw.pressed,raw.sampleAgeMilliseconds);
     if (g_rockConfig.rockDecorationMode && (_rightHand.isHolding() || _leftHand.isHolding())) {
-        const auto rightContact=_rightHand.readHeldBodyContactSnapshot();
-        const auto leftContact=_leftHand.readHeldBodyContactSnapshot();
+        const auto rightContact=_rightHand.readDecorationSurfaceContact();
+        const auto leftContact=_leftHand.readDecorationSurfaceContact();
         if (raw.pressed) {
             ROCK_LOG_INFO(Hand,"Decoration click candidate={:08X} request={:08X} held={} available={} ageMs={} reserved={}",
                 _decorationCandidate,_decorationClick.request,raw.held,raw.available,raw.sampleAgeMilliseconds,_decorationClick.reserved);
         }
         ROCK_LOG_SAMPLE_DEBUG(Hand,1000,
-            "Decoration eligibility candidate={:08X} right[holding,legacyIncomplete,contact,other,layer]=[{},{},{},{},{}] left=[{},{},{},{},{}] raw[available,held,ageMs]=[{},{},{}]",
+            "Decoration eligibility candidate={:08X} right[holding,legacyIncomplete,contact,other]=[{},{},{},{}] left=[{},{},{},{}] raw[available,held,ageMs]=[{},{},{}] source=manifold",
             _decorationCandidate,_rightHand.isHolding(),_rightHand.getActiveGrabLifecycle().hasIncompleteNativeScan(),
-            rightContact.recent,rightContact.otherBodyId,rightContact.otherLayer,
+            rightContact.recent,rightContact.otherBodyId,
             _leftHand.isHolding(),_leftHand.getActiveGrabLifecycle().hasIncompleteNativeScan(),
-            leftContact.recent,leftContact.otherBodyId,leftContact.otherLayer,raw.available,raw.held,raw.sampleAgeMilliseconds);
+            leftContact.recent,leftContact.otherBodyId,raw.available,raw.held,raw.sampleAgeMilliseconds);
     }
 }
 

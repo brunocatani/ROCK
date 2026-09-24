@@ -17,6 +17,18 @@ int main()
     assert(!completeBodyScan(true,65,65,0));
     assert(!completeBodyScan(true,5,4,0));
     assert(!completeBodyScan(true,1,1,1));
+    SurfaceContactState contact;
+    assert(!contact.read().recent);
+    contact.publish(152,2); // A bottle touching the table needs no impact event.
+    assert(contact.read().recent && contact.read().heldBodyId==152 && contact.read().otherBodyId==2);
+    for (int i=0;i<4;++i) contact.tick();
+    assert(contact.read().recent);
+    contact.tick();
+    assert(!contact.read().recent);
+    contact.publish(149,3);
+    assert(contact.read().recent && contact.read().heldBodyId==149 && contact.read().otherBodyId==3);
+    contact.clear(); // Release/world cleanup cannot retain placement eligibility.
+    assert(!contact.read().recent);
     ClickState state;
     state.update(true,17,true,false,false,0);
     assert(state.reserved && !state.request);

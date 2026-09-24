@@ -1102,7 +1102,13 @@ namespace rock
         }
 
         constexpr const char* kHeldObjectDriveName = "proxyConstraint";
-        constexpr std::uint32_t kHeldCollisionParticipationFlags = 0x80u;
+        constexpr std::uint32_t heldCollisionParticipationFlags(grab_target::Kind targetKind)
+        {
+            // Key-2 manifold events (0x40, also used by hands/bipod) report a
+            // loose prop's sustained surface contact even without an impact.
+            // Other grab kinds keep their existing notification contract.
+            return 0x80u | (targetKind == grab_target::Kind::LooseObject ? 0x40u : 0u);
+        }
         constexpr std::uint32_t kHeldCollisionParticipationFlagMode = 0u;
         constexpr std::uint32_t kHeldAuthorityBodyFlags = 0x08000000u;
         constexpr std::uint32_t kHeldAuthorityBodyFlagMode = 1u;
@@ -1153,12 +1159,13 @@ namespace rock
             RE::hknpWorld* world,
             std::uint32_t primaryBodyId,
             const std::vector<std::uint32_t>& heldBodyIds,
+            grab_target::Kind targetKind,
             std::uintptr_t ownerToken)
         {
             /*
              * Proxy-constraint grab replaced the native held-object action, but the
-             * old path owned two different flag contracts: 0x80 was leased across
-             * the accepted held body set by ROCK, while the native action leased
+             * old path owned two different flag contracts: collision flags were
+             * leased across the accepted held body set by ROCK, while the native action leased
              * 0x08000000 only on its selected primary body. Keeping that split is
              * important for multipart weapons because secondary collision bodies
              * should participate in the hold without all becoming grab-authority
@@ -1175,7 +1182,7 @@ namespace rock
                 if (havok_runtime::acquireBodyFlagLease(
                         world,
                         bodyId,
-                        kHeldCollisionParticipationFlags,
+                        heldCollisionParticipationFlags(targetKind),
                         kHeldCollisionParticipationFlagMode,
                         ownerToken)) {
                     ++summary.collisionLeaseCount;
@@ -1203,6 +1210,7 @@ namespace rock
             RE::hknpWorld* world,
             std::uint32_t primaryBodyId,
             const std::vector<std::uint32_t>& heldBodyIds,
+            grab_target::Kind targetKind,
             std::uintptr_t ownerToken,
             bool restoreOnFinalLease)
         {
@@ -1217,7 +1225,7 @@ namespace rock
                 if (havok_runtime::releaseBodyFlagLease(
                         world,
                         bodyId,
-                        kHeldCollisionParticipationFlags,
+                        heldCollisionParticipationFlags(targetKind),
                         kHeldCollisionParticipationFlagMode,
                         ownerToken,
                         restoreOnFinalLease)) {
@@ -10879,7 +10887,7 @@ namespace rock
                 kGrabObjectRotationReferenceName);
 
             const auto heldFlagLeases =
-                acquireHeldObjectBodyFlagLeases(world, _savedObjectState.bodyId.value, _heldBodyIds, heldBodyFlagLeaseOwner(this));
+                acquireHeldObjectBodyFlagLeases(world, _savedObjectState.bodyId.value, _heldBodyIds, _savedObjectState.targetKind, heldBodyFlagLeaseOwner(this));
             if (heldFlagLeases.failedLeaseCount > 0) {
                 ROCK_LOG_WARN(Hand,
                     "{} hand GRAB held body flag lease incomplete: primaryBody={} bodies={} collision={} authority={} failed={}",
@@ -12357,8 +12365,8 @@ namespace rock
             const auto id = component.bodies[i].body.id;
             if (!held_object_body_set_policy::containsBody(_heldBodyIds, id)) added.push_back(id);
         }
-        const auto released = releaseHeldObjectBodyFlagLeases(world, INVALID_BODY_ID, removed, heldBodyFlagLeaseOwner(this), true);
-        const auto acquired = acquireHeldObjectBodyFlagLeases(world, INVALID_BODY_ID, added, heldBodyFlagLeaseOwner(this));
+        const auto released = releaseHeldObjectBodyFlagLeases(world, INVALID_BODY_ID, removed, _savedObjectState.targetKind, heldBodyFlagLeaseOwner(this), true);
+        const auto acquired = acquireHeldObjectBodyFlagLeases(world, INVALID_BODY_ID, added, _savedObjectState.targetKind, heldBodyFlagLeaseOwner(this));
         // Include newly acquired leases even on failure so normal release owns all cleanup.
         std::erase_if(_heldBodyIds, [&](auto id) { return !component.contains(id); });
         _heldBodyIds.insert(_heldBodyIds.end(), added.begin(), added.end());
@@ -15948,6 +15956,7 @@ namespace rock
                 world,
                 _savedObjectState.bodyId.value,
                 _heldBodyIds,
+                _savedObjectState.targetKind,
                 heldBodyFlagLeaseOwner(this),
                 grab_target::isRagdoll(_savedObjectState.targetKind) || releaseContext.finalObjectRelease);
             if (heldFlagReleases.failedLeaseCount > 0) {

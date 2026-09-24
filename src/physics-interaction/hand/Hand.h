@@ -5,6 +5,7 @@
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/grab/GrabCore.h"
+#include "physics-interaction/grab/DecorationModePolicy.h"
 #include "physics-interaction/weapon/WeaponGripTransfer.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabOffsetAcquisition.h"
@@ -1099,6 +1100,7 @@ namespace rock
         float _secondsSinceTouch = 100.0f;
 
         std::atomic<int> _heldBodyContactFrame{ 100 };
+        decoration_mode::SurfaceContactState _decorationSurfaceContact;
         std::atomic<std::uint32_t> _heldContactHeldBodyId{ INVALID_BODY_ID };
         std::atomic<std::uint32_t> _heldContactOtherBodyId{ INVALID_BODY_ID };
         std::atomic<std::uint32_t> _heldContactOtherLayer{ 0xFFFF'FFFFu };
@@ -1163,6 +1165,13 @@ namespace rock
     public:
         bool isHeldBodyColliding() const { return _heldBodyContactFrame.load(std::memory_order_acquire) < 5; }
 
+        void notifyDecorationSurfaceContact(std::uint32_t heldBody, std::uint32_t surfaceBody) {
+            _decorationSurfaceContact.publish(heldBody,surfaceBody);
+        }
+        decoration_mode::SurfaceContact readDecorationSurfaceContact() const {
+            return _decorationSurfaceContact.read();
+        }
+
         struct HeldBodyContactSnapshot
         {
             RE::NiPoint3 contactPointHavok{};
@@ -1176,6 +1185,7 @@ namespace rock
 
         void clearHeldBodyContactSnapshot()
         {
+            _decorationSurfaceContact.clear();
             _heldBodyContactFrame.store(100, std::memory_order_release);
             _heldContactHeldBodyId.store(INVALID_BODY_ID, std::memory_order_release);
             _heldContactOtherBodyId.store(INVALID_BODY_ID, std::memory_order_release);
@@ -1238,6 +1248,7 @@ namespace rock
 
         void tickHeldBodyContact()
         {
+            _decorationSurfaceContact.tick();
             int current = _heldBodyContactFrame.load(std::memory_order_acquire);
             if (current < 100) {
                 _heldBodyContactFrame.compare_exchange_weak(current, current + 1, std::memory_order_release, std::memory_order_relaxed);
