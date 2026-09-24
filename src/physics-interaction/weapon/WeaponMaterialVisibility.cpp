@@ -39,6 +39,7 @@ namespace rock::weapon_material_visibility
             if (!source || reinterpret_cast<std::uintptr_t>(source) < 0x10000) return false;
             std::size_t i = 0;
             for (; i + 1 < Size && source[i]; ++i) target[i] = source[i];
+            target[i] = '\0';
             return i != 0 && source[i] == 0;
         }
 
@@ -57,6 +58,27 @@ namespace rock::weapon_material_visibility
                 if (plausible(texture)) copyTraceText(out.path, texture->name.c_str());
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 copyTraceText(out.path, "<unavailable>");
+            }
+        }
+
+        bool readSource(const char* material, ReadTrace& out)
+        {
+            __try {
+                out.stage = 6;
+                // +68 retains the active texture set even when VR substitutes
+                // an opaque default texture. 14280C3D0 assigns it; 14280B9F0
+                // releases it. Filename +10: 1404AD450 and 1427918A0/8C0.
+                const auto* set = *reinterpret_cast<const RE::NiObject* const*>(material + 0x68);
+                if (!plausible(set)) return false;
+                const auto* rtti = set->GetRTTI();
+                if (!plausible(rtti) || !rtti->GetName() || std::strcmp(rtti->GetName(), "BSShaderTextureSet") != 0) return false;
+                out.stage = 7;
+                const auto* filename = reinterpret_cast<const RE::BSFixedString*>(reinterpret_cast<const char*>(set) + 0x10);
+                if (!copyTraceText(out.sourcePath, filename->c_str())) return false;
+                out.stage = 0;
+                return true;
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                return false;
             }
         }
 
@@ -109,23 +131,14 @@ namespace rock::weapon_material_visibility
                 if (!std::isfinite(out.materialAlpha) || out.materialAlpha < 0.0f) return false;
                 if (trace) describeDiffuse(material, out);
                 if (!zeroAlphaIsInvisible(out.alpha) || out.materialAlpha == 0.0f) {
+                    // Expose source material evidence even when an opaque/missing
+                    // alpha property rejects culling. Diagnostic lookup failure
+                    // must not change this material's visibility verdict.
+                    if (trace && !readSource(material, out)) copyTraceText(out.sourcePath, "<unavailable>");
                     out.stage = 0;
                     return true;
                 }
-                out.stage = 6;
-                // +68 retains the active texture set even when VR substitutes
-                // an opaque default texture for the invisible DDS. Witnesses:
-                // 14280C3D0 assigns it; 14280B9F0 releases it. Diffuse filename
-                // +10 is constructed at 1404AD450 and read at 1427918A0/8C0.
-                const auto* set = *reinterpret_cast<const RE::NiObject* const*>(material + 0x68);
-                if (!plausible(set)) return false;
-                const auto* rtti = set->GetRTTI();
-                if (!plausible(rtti) || !rtti->GetName() || std::strcmp(rtti->GetName(), "BSShaderTextureSet") != 0) return false;
-                out.stage = 7;
-                const auto* filename = reinterpret_cast<const RE::BSFixedString*>(reinterpret_cast<const char*>(set) + 0x10);
-                if (!copyTraceText(out.sourcePath, filename->c_str())) return false;
-                out.stage = 0;
-                return true;
+                return readSource(material, out);
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 return false;
             }
