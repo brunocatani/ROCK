@@ -85,13 +85,15 @@ The release preset creates a local archive using the independent RPS SDK checkou
 
 Start with the [ROCK SDK guide](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/PublicApi.md) and [minimal consumer example](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/examples/MinimalProviderConsumer.cpp).
 
-ROCK exposes **13 independently negotiated interfaces** through `ROCKAPI_QueryInterfaceV1`: Core, Hands, Collision, Grab, Touch, Weapon, WeaponParts, Animation, Input, References, PlayerController, Diagnostics and Configuration. Register one Core owner, then bind only the permissions each required family supports. All current interfaces are major 1; Hands and WeaponParts are minor 1, the others minor 0.
+ROCK exposes **13 independently negotiated interfaces** through `ROCKAPI_QueryInterfaceV1`: Core, Hands, Collision, Grab, Touch, Weapon, WeaponParts, Animation, Input, References, PlayerController, Diagnostics and Configuration. Register one Core owner, then bind only the permissions each required family supports. All current interfaces are major 1. Hands and WeaponParts are minor 1; Weapon offers a compatible 1.1 extension while retaining its original 1.0 header and table prefix.
 
 - [Complete callable index](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/ApiIndex.md)
 - [Discovery and permissions](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/DiscoveryAndCapabilities.md)
 - [Runtime, snapshots and callback lifetime](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/RuntimeContract.md)
 - [Migration from the combined provider](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/modular/Migration.md)
 - [Power Armor](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/modular/PowerArmor.md) and [Configuration](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/modular/Configuration.md)
+
+[Weapon 1.1 inventory equip](https://devartificial.pro/docs/rps-sdk/rock/reference/weapon-inventory-equip) supports explicit right- or left-hand draws from an exact inventory stack. It retains an existing weapon in the opposite carrying hand with Toggle Drop controls before equipping the incoming item. Consumers opt into `ROCK/WeaponV1_1.h`, negotiate minor 1 and the extended table size, and observe the command's terminal outcome. [Compiled examples for both hands](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/examples/InventoryWeaponEquip.cpp) include matching result/cleanup guidance. Existing Weapon 1.0 consumers keep their contracts without rebuilding.
 
 The old combined provider and `GetROCKConfigurationApi` exports are removed. FRIK API **2.3**, ROCK interface versions and the ROCK DLL version are separate domains. Core `Presented` supplies final same-frame hand observation; `Complete` retains control timing. Only the explicitly documented synchronized snapshot getters support arbitrary task threads; live queries and writes retain their owner-thread restrictions.
 
