@@ -3,8 +3,6 @@
   "version": "1",
   "dependencies": [
     "args",
-    { "name": "directxtex", "default-features": false },
-    "zlib",
     "rapidcsv",
     "rsm-mmio",
     "spdlog",

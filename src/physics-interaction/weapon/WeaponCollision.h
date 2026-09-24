@@ -28,7 +28,6 @@
 #include "physics-interaction/weapon/WeaponSemantics.h"
 #include "physics-interaction/weapon/WeaponTriangleIndex.h"
 #include "physics-interaction/weapon/WeaponScenePath.h"
-#include "physics-interaction/weapon/WeaponMaterialVisibility.h"
 #include "physics-interaction/weapon/WeaponInteractionQuery.h"
 
 #include "RE/Havok/hknpBody.h"
@@ -248,6 +247,7 @@ namespace rock
         void update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, float dt, bool weaponDrawn);
 
         void requestWorkbenchExitRebuild();
+        void requestExternalVisualRebuild() { _drive.workbenchExitRebuildRequested.store(true, std::memory_order_release); }
         void requestRebuildForReplacedSources();
 
         bool hasWeaponBody() const;
@@ -845,7 +845,6 @@ namespace rock
         // Game-thread lookup cache; only the value snapshot crosses threads.
         std::array<EmitterPath, MAX_WEAPON_EMITTERS> _emitterPaths{};
         GeneratedSourceState _sources{};
-        weapon_material_visibility::State _materialVisibility{};
         DriveControlState _drive{};
         CollisionDiagnosticsState _diagnostics{};
 

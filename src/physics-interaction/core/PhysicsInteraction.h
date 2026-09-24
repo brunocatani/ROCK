@@ -171,6 +171,7 @@ namespace rock
                     ::rock::provider::RockProviderLifecycleFlag::ProviderReady);
         }
         void requestWeaponCollisionRebuildAfterWorkbenchExit(const char* sourceMenuName);
+        void requestWeaponCollisionRefresh() { _weaponCollision.requestExternalVisualRebuild(); }
         void noteSkeletonLifecycle(std::uint32_t skeletonGeneration, ::rock::provider::RockProviderLifecycleReason reason);
         void noteProviderLifecycle(std::uint32_t providerGeneration, ::rock::provider::RockProviderLifecycleReason reason);
 

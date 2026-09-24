@@ -2402,9 +2402,7 @@ namespace rock
                 return false;
             }
             if ((node->flags.flags & 1) != 0 || node->GetAppCulled() || node->local.scale == 0.0f) return false;
-            // NiObject exposes only a non-const IsTriShape accessor.
-            const auto* shape = const_cast<RE::NiAVObject*>(node)->IsTriShape();
-            return !shape || !weapon_material_visibility::isHidden(shape);
+            return true;
         }
 
         inline std::uintptr_t readRendererChildPointer(void* rendererData, std::ptrdiff_t rendererChildOffset)

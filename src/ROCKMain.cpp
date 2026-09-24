@@ -40,7 +40,6 @@
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripCacheStore.h"
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
-#include "physics-interaction/weapon/WorldWeaponMaterialVisibility.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/weapon/telemetry/ScopeTransitionTelemetry.h"
 #include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
@@ -261,7 +260,6 @@ namespace
         }
 
         logger::info("ROCK: Destroying PhysicsInteraction (skeleton released)...");
-        world_weapon_material_visibility::suspend();
 
         s_equippedWeaponContinuity =
             reason == rock::provider::RockProviderLifecycleReason::SkeletonDestroying ||
@@ -364,7 +362,6 @@ namespace
         input_remap_runtime::setGameplayInputAllowed(gameplayInputAllowed);
 
         ensurePhysicsInteractionForReadySkeleton(runtime);
-        world_weapon_material_visibility::update(s_physicsPublished && !runtime.localLoadingMenuOpen);
     }
 
     // ROCK's interaction update proper; only meaningful with a skeleton.
@@ -1144,18 +1141,24 @@ namespace
         }
     }
 
+    void onExternalWeaponVisualChanged(F4SE::MessagingInterface::Message* msg)
+    {
+        // VRVanillaFixes v1 event: 0x56564601, no payload, game thread.
+        // ROCK owns only collider invalidation; material detection/culling live
+        // entirely in the optional sender. Existing culled-node filtering applies.
+        if (msg && msg->type == 0x56564601 && msg->dataLen == 0 && s_physicsInteraction) {
+            s_physicsInteraction->requestWeaponCollisionRefresh();
+        }
+    }
+
     void onF4SEMessage(F4SE::MessagingInterface::Message* msg)
     {
         if (!msg) {
             return;
         }
 
-        if (msg->type == F4SE::MessagingInterface::kPreLoadGame) {
-            world_weapon_material_visibility::reset();
-        }
-
         if (msg->type == F4SE::MessagingInterface::kGameLoaded) {
-            world_weapon_material_visibility::install();
+            s_messaging->RegisterListener(onExternalWeaponVisualChanged, "VRVanillaFixes");
             logger::info("ROCK: GameLoaded -- initializing FRIKApi and loading config...");
             const auto providerGeneration = bumpGeneration(s_providerGeneration);
             if (s_physicsInteraction) {

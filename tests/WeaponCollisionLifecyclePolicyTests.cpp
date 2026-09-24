@@ -4,8 +4,6 @@
 
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponEffectGeometryPolicy.h"
-#include "physics-interaction/weapon/WeaponMaterialVisibilityPolicy.h"
-#include "physics-interaction/weapon/WorldWeaponVisibilityEvents.h"
 #include "physics-interaction/weapon/WeaponEmitterPolicy.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
@@ -335,52 +333,6 @@ int main()
     identity.objectIndexDataSignature = 0xAAAB;
     ok &= expectDifferent("content key changes with equipped mod index content", contentKey, makeEquippedWeaponIdentityKey(identity));
 
-    using namespace rock::weapon_material_visibility;
-    ok &= expectTrue("alpha-test greater rejects fully transparent texture from any weapon",
-        zeroAlphaIsInvisible({ 0x1200, 128, true }));
-    ok &= expectTrue("normal alpha blend is invisible at zero opacity", zeroAlphaIsInvisible({ 0x00ED, 0, true }));
-    ok &= expectFalse("opaque material may use a zero alpha channel", zeroAlphaIsInvisible({ 0, 128, true }));
-    ok &= expectFalse("missing alpha property is not absence evidence", zeroAlphaIsInvisible({ 0x1200, 128, false }));
-    ok &= expectTrue("BGSM-created rail uses the lighting shader threshold", zeroAlphaIsInvisible({ 0x02EC, 128, true }));
-    ok &= expectTrue("lighting alpha test ignores legacy comparison mode", zeroAlphaIsInvisible({ 0x0600, 128, true }));
-    ok &= expectFalse("zero threshold is not sufficient culling evidence", zeroAlphaIsInvisible({ 0x0200, 0, true }));
-    ok &= expectFalse("premultiplied blending can contribute RGB at zero alpha", zeroAlphaIsInvisible({ 0x00E1, 0, true }));
-    const auto hidden = decideCull(true, false, false);
-    ok &= expectTrue("absent part acquires a rendering cull", hidden.culled && hidden.owned);
-    const auto reasserted = decideCull(true, false, hidden.owned);
-    ok &= expectTrue("foreign uncull cannot expose an absent part", reasserted.culled && reasserted.owned);
-    const auto installed = decideCull(false, true, hidden.owned);
-    ok &= expectFalse("installing attachment restores its rendering", installed.culled || installed.owned);
-    const auto originallyHidden = decideCull(true, true, false);
-    ok &= expectTrue("engine cull is preserved without claiming ownership", originallyHidden.culled && !originallyHidden.owned);
-    const auto restoredNative = decideCull(false, originallyHidden.culled, originallyHidden.owned);
-    ok &= expectTrue("material swap does not clear an engine-owned cull", restoredNative.culled && !restoredNative.owned);
-
-    {
-        using namespace rock::world_weapon_material_visibility;
-        PendingEvents pending;
-        AttachmentEvent event;
-        ok &= expectFalse("empty world event queue has no work", pending.pop(event));
-        // Fill and drain repeatedly to exercise wrapped slots, including a
-        // detach immediately following an attach for the same reference.
-        for (unsigned pass = 0; pass < 3; ++pass) {
-            for (std::size_t i = 0; i + 1 < PendingEvents::kCapacity; ++i)
-                ok &= pending.push({ static_cast<std::uint32_t>(i / 2 + 1), (i & 1) == 0 });
-            ok &= expectFalse("full queue never overwrites pending detach events", pending.push({ 0xFFFF, true }));
-            for (std::size_t i = 0; i + 1 < PendingEvents::kCapacity; ++i) {
-                if (!pending.pop(event) || event.referenceID != i / 2 + 1 || event.attached != ((i & 1) == 0)) {
-                    ok &= expectTrue("world event order and reference identity survive wrap", false);
-                    break;
-                }
-            }
-            ok &= expectFalse("drained queue does not replay old world events", pending.pop(event));
-        }
-        ok &= pending.push({ 1, true });
-        pending.discard();
-        ok &= expectFalse("pre-load reset discards old attachment events", pending.pop(event));
-        ok &= pending.push({ 2, true });
-        ok &= expectTrue("new session can publish after discard", pending.pop(event) && event.referenceID == 2 && event.attached);
-    }
 
     return ok ? 0 : 1;
 }
