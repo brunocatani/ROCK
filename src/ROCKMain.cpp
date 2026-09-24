@@ -38,7 +38,6 @@
 #include "physics-interaction/timing/RockGameTiming.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
-#include "physics-interaction/weapon/AuthoredWeaponGripCacheStore.h"
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/weapon/telemetry/ScopeTransitionTelemetry.h"
@@ -1232,7 +1231,6 @@ namespace
                 return;
             }
             rock::saved_grab_offset::preload();
-            rock::authored_weapon_grip_cache::preload();
             rock::LooseMolotovVisual::prepareResources();
             rock::installHavokTimingFixHook();
             if (!rock::held_scene_presentation::install()) {

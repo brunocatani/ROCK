@@ -22,13 +22,12 @@ namespace rock::authored_weapon_grip_library
     {
         Unknown,
         LiveEquippedGraph,
-        PersistedNativeIdle,
-        NativeIdlePreharvest,
+        NativeIdlePreharvest = 3,
     };
 
     [[nodiscard]] constexpr bool isNativeIdleAuthority(const CaptureSource source) noexcept
     {
-        return source == CaptureSource::PersistedNativeIdle || source == CaptureSource::NativeIdlePreharvest;
+        return source == CaptureSource::NativeIdlePreharvest;
     }
 
     struct FiringFingerPose

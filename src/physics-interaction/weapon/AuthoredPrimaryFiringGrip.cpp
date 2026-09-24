@@ -342,8 +342,8 @@ namespace rock
 
         /*
          * Support-relation precedence. A native-idle support relation
-         * (sampled from the idle clip by the preharvest, or restored from
-         * its disk record) is the settled authored pose and is published
+         * sampled from the idle clip by the preharvest is the settled
+         * authored pose and is published
          * directly, in both hand topologies, from frame zero. The live
          * equipped-graph capture and its stable snapshot are only the
          * fallback for a clip the preharvest could not serve.

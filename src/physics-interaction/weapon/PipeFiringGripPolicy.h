@@ -1,14 +1,18 @@
 #pragma once
 
-#include "physics-interaction/weapon/AuthoredWeaponGripCacheFormat.h"
-
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <string_view>
 
 namespace rock::pipe_firing_grip_policy
 {
-    using Transform = authored_weapon_grip_cache::PersistedTransform;
+    struct Transform
+    {
+        std::array<float, 9> rotate{ 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f };
+        std::array<float, 3> translate{};
+        float scale{ 1.0f };
+    };
     // User calibration from Pipe.json, 2026-09-14 23:07. FRIK's
     // Weapon-in-Hand convention; canonical for the shared pipe firing poses.
     inline constexpr Transform kWeaponInHand{
@@ -148,15 +152,6 @@ namespace rock::pipe_firing_grip_policy
             if (matchingFingers) return true;
         }
         return false;
-    }
-
-    template <class T, class Fingers>
-    [[nodiscard]] bool requiresFreshSample(std::string_view clip, const T& hand, const Fingers& fingers) noexcept
-    {
-        // Paths in the disk key cannot detect replaced animation contents.
-        // Recheck known paths even when the cached replacement did not match,
-        // and copied poses even when their mod uses a different filename.
-        return isKnownClip(clip) || recognizesVanilla(hand, fingers);
     }
 
     [[nodiscard]] constexpr bool useCompiledDefault(bool found, bool vanillaPose) noexcept

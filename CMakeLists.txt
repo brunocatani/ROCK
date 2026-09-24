@@ -805,17 +805,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKNativeIdleGripPreharvestPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKNativeIdleGripPreharvestPolicyTests)
 
-  add_executable(ROCKAuthoredWeaponGripCacheFormatTests
-    "${ROOT_DIR}/tests/AuthoredWeaponGripCacheFormatTests.cpp"
-    "${SOURCE_DIR}/physics-interaction/weapon/AuthoredWeaponGripCacheFormat.cpp"
-  )
-  target_compile_features(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE cxx_std_23)
-  target_compile_definitions(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE ROCK_TEST_FIXTURE_DIR="${ROOT_DIR}/tests/fixtures")
-  target_sources(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE "${ROOT_DIR}/tests/fixtures/AuthoredGripCache.json")
-  target_include_directories(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE ${SOURCE_DIR})
-  target_link_libraries(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE nlohmann_json::nlohmann_json)
-  add_rock_test(ROCKAuthoredWeaponGripCacheFormatTests)
-
   add_executable(ROCKAuthoredWeaponGripAuthorityPolicyTests
     "${ROOT_DIR}/tests/AuthoredWeaponGripAuthorityPolicyTests.cpp"
   )

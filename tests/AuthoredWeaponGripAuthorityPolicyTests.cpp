@@ -14,11 +14,9 @@ int main()
 
     static_assert(shouldAcceptPublication(false, PublicationAuthority::FreshNativeIdle, PublicationAuthority::LiveEquippedGraph));
     static_assert(shouldAcceptPublication(true, PublicationAuthority::LiveEquippedGraph, PublicationAuthority::LiveEquippedGraph));
-    static_assert(shouldAcceptPublication(true, PublicationAuthority::LiveEquippedGraph, PublicationAuthority::PersistedNativeIdle));
-    static_assert(shouldAcceptPublication(true, PublicationAuthority::PersistedNativeIdle, PublicationAuthority::FreshNativeIdle));
     static_assert(shouldAcceptPublication(true, PublicationAuthority::FreshNativeIdle, PublicationAuthority::FreshNativeIdle));
-    static_assert(!shouldAcceptPublication(true, PublicationAuthority::FreshNativeIdle, PublicationAuthority::PersistedNativeIdle));
-    static_assert(!shouldAcceptPublication(true, PublicationAuthority::PersistedNativeIdle, PublicationAuthority::LiveEquippedGraph));
+    static_assert(shouldAcceptPublication(true, PublicationAuthority::LiveEquippedGraph, PublicationAuthority::FreshNativeIdle));
+    static_assert(!shouldAcceptPublication(true, PublicationAuthority::FreshNativeIdle, PublicationAuthority::LiveEquippedGraph));
 
     struct MockRotation
     {
