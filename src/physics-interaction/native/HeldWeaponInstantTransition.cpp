@@ -150,6 +150,8 @@ namespace rock::held_weapon_instant_transition
         }
     }
 
+    bool transactionActive() noexcept { return t_activeScope != nullptr; }
+
     bool install() noexcept
     {
         if (s_installed.load(std::memory_order_acquire)) {

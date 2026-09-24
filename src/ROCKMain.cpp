@@ -1156,6 +1156,13 @@ namespace
             return;
         }
 
+        if (msg->type == F4SE::MessagingInterface::kPreSaveGame || msg->type == F4SE::MessagingInterface::kPreLoadGame) {
+            CarriedWeaponRuntime::beforeSave();
+        }
+        if (msg->type == F4SE::MessagingInterface::kPostSaveGame) {
+            CarriedWeaponRuntime::afterSave();
+        }
+
         if (msg->type == F4SE::MessagingInterface::kGameLoaded) {
             s_messaging->RegisterListener(onExternalWeaponVisualChanged, "VRVanillaFixes");
             logger::info("ROCK: GameLoaded -- initializing FRIKApi and loading config...");
@@ -1240,6 +1247,22 @@ namespace
             rock::held_render_trace::install();
             runtime_state::initialize();
             (void)native_scope_shot_diagnostics::install();
+            if (!CarriedWeaponRuntime::install()) {
+                logger::warn("ROCK: Akimbo native ammo contract unavailable; carried weapon admission disabled.");
+            }
+            if (!weapon_action_trace::installEquipBoundary(
+                    [](const RE::BGSObjectInstance& item, void* request) noexcept {
+                        if (!CarriedWeaponRuntime::isInteractionThread()) return true;
+                        try { return !s_physicsInteraction || s_physicsInteraction->beforeNativeWeaponEquip(item, request); }
+                        catch (...) { try { logger::error("ROCK: Akimbo native equip admission failed; incoming equip declined."); } catch (...) {} return false; }
+                    },
+                    [](const RE::BGSObjectInstance& item, bool success) noexcept {
+                        if (!CarriedWeaponRuntime::isInteractionThread()) return;
+                        try { if (s_physicsInteraction) s_physicsInteraction->afterNativeWeaponEquip(item, success); }
+                        catch (...) { try { logger::error("ROCK: Akimbo native equip completion failed; transfer requires reconciliation."); } catch (...) {} }
+                    })) {
+                logger::warn("ROCK: Akimbo inventory equip boundary unavailable.");
+            }
             reconcileNativeScopeGeometryOwnership();
             logger::info("ROCK: Config loaded.");
             rock::input_remap_runtime::installInputRemapHooks();
@@ -1263,6 +1286,7 @@ namespace
         }
 
         if (msg->type == F4SE::MessagingInterface::kPostLoadGame || msg->type == F4SE::MessagingInterface::kNewGame) {
+            CarriedWeaponRuntime::afterSave();
             logger::info("ROCK: New game session -- resetting PhysicsInteraction...");
             s_equippedWeaponContinuity = {};
             const auto providerGeneration = bumpGeneration(s_providerGeneration);

@@ -290,6 +290,11 @@ if(BUILD_ROCK_TESTS)
 
   include("${ROOT_DIR}/cmake/RockTestRegistration.cmake")
 
+  add_executable(ROCKAkimboSessionPolicyTests "${ROOT_DIR}/tests/AkimboSessionPolicyTests.cpp")
+  target_compile_features(ROCKAkimboSessionPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKAkimboSessionPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKAkimboSessionPolicyTests)
+
   add_executable(ROCKNativeWeaponQualificationTests
     "${ROOT_DIR}/tests/NativeWeaponQualificationTests.cpp"
   )

@@ -604,6 +604,8 @@ namespace rock
             _lifecycle.cachedHknpWorld &&
             currentHknp == _lifecycle.cachedHknpWorld;
 
+        _carriedWeapon.shutdown(worldValid);
+
         if (worldValid) {
             auto* hknp = getHknpWorld(_lifecycle.cachedBhkWorld);
             _dynamicWorldCarCollision.restoreAll(_lifecycle.cachedBhkWorld, hknp, "shutdown");
@@ -668,6 +670,9 @@ namespace rock
         _twoHandedGrip.reset();
         _equipped.transition.pendingGrip() = {};
         clearProviderInventoryEquip();
+        _nativeAkimboEquip = {};
+        input_remap_runtime::setCarriedWeaponInputOwner(false, 0, 0);
+        input_remap_runtime::setCarriedWeaponInputOwner(true, 0, 0);
         clearPendingForceGrabCommits();
         clearLooseGrenadeRuntimeState();
         clearEquippedWeaponFiringGripInputState();

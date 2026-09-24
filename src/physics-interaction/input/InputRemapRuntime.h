@@ -105,6 +105,10 @@ namespace rock::input_remap_runtime
      * native scope activation until release. Frame thread only.
      */
     void updateFiringHandReloadInput(float deltaSeconds);
+    // Frame-thread ownership and reload tickets for the independent carried
+    // weapon. Tickets cannot follow a hand into a different weapon binding.
+    void setCarriedWeaponInputOwner(bool isLeft, std::uint64_t session, std::uint64_t binding) noexcept;
+    bool consumeCarriedWeaponReload(bool isLeft, std::uint64_t session, std::uint64_t binding) noexcept;
     // Published manual-scope level state. The native scope decision hook owns
     // the engine transition; input runtime owns only the physical hold gesture.
     bool isManualScopeActivationRequested();

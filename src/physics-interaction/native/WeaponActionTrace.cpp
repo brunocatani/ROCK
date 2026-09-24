@@ -35,6 +35,10 @@ namespace rock::weapon_action_trace
         constexpr std::array<std::uint8_t, 5> kApplyBytes{0xE8, 0x65, 0x2D, 0x00, 0x00};
         EquipStep originalCheck = nullptr;
         EquipStep originalApply = nullptr;
+        BeforeEquip beforeEquip{};
+        AfterEquip afterEquip{};
+        bool equipHooksInstalled{};
+        thread_local bool insideEquipBoundary{};
 
         struct Module { std::uintptr_t base; std::uint32_t size; std::string name; };
         struct Session
@@ -148,7 +152,15 @@ namespace rock::weapon_action_trace
         {
             const auto id = record("equip-apply", actor, object, false,
                 reinterpret_cast<std::uintptr_t>(_ReturnAddress()));
-            const bool result = originalApply(manager, actor, object, request);
+            const bool observe = !insideEquipBoundary && actor == RE::PlayerCharacter::GetSingleton() && object && beforeEquip;
+            struct BoundaryScope {
+                bool active;
+                explicit BoundaryScope(bool value) : active(value) { if (active) insideEquipBoundary = true; }
+                ~BoundaryScope() { if (active) insideEquipBoundary = false; }
+            } scope{observe};
+            const bool permitted = !observe || beforeEquip(*object, request);
+            const bool result = permitted && originalApply(manager, actor, object, request);
+            if (observe && afterEquip) afterEquip(*object, result);
             recordResult(id, result);
             return result;
         }
@@ -258,12 +270,35 @@ namespace rock::weapon_action_trace
         }
     }
 
+    bool installEquipBoundary(BeforeEquip before, AfterEquip after) noexcept try
+    {
+        if (equipHooksInstalled) {
+            beforeEquip = before;
+            afterEquip = after;
+            return true;
+        }
+        if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72 ||
+            !validateCall(kCheckCall, kCheckBytes) || !validateCall(kApplyCall, kApplyBytes) ||
+            F4SE::GetTrampoline().free_size() < 32) return false;
+        originalCheck = reinterpret_cast<EquipStep>(REL::Offset(0xE712D0).address());
+        originalApply = reinterpret_cast<EquipStep>(REL::Offset(0xE72DA0).address());
+        beforeEquip = before;
+        afterEquip = after;
+        F4SE::GetTrampoline().write_call<5>(REL::Offset(kCheckCall).address(), &onCheck);
+        F4SE::GetTrampoline().write_call<5>(REL::Offset(kApplyCall).address(), &onApply);
+        equipHooksInstalled = true;
+        return true;
+    }
+    catch (...) {
+        try { ROCK_LOG_ERROR(Init, "Weapon equip boundary installation failed"); } catch (...) {}
+        return false;
+    }
+
     void initialize() noexcept
     {
         if (session || !logger::isDebugEnabled()) return;
         try {
-            if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72 ||
-                !validateCall(kCheckCall, kCheckBytes) || !validateCall(kApplyCall, kApplyBytes)) {
+            if (!equipHooksInstalled && !installEquipBoundary(beforeEquip, afterEquip)) {
                 ROCK_LOG_ERROR(Init, "Weapon action trace unavailable: native equip call validation failed");
                 return;
             }
@@ -306,13 +341,7 @@ namespace rock::weapon_action_trace
             next->log->info("AKQ start revision=1 nativeContract={} failedWitnessRva=0x{:X} observationIntervalMs=250 slotsLimit={} equippedLimit={} parentLimit={} changesOnly=true captureOnly=true",
                 !next->nativeContractFailureRva, next->nativeContractFailureRva, native_weapon_qualification::kMaximumSlots,
                 native_weapon_qualification::kMaximumEquipped, native_weapon_qualification::kMaximumParents);
-            // Both original targets are published before either callsite changes.
-            originalCheck = reinterpret_cast<EquipStep>(REL::Offset(0xE712D0).address());
-            originalApply = reinterpret_cast<EquipStep>(REL::Offset(0xE72DA0).address());
             session = std::move(next);
-            auto& trampoline = F4SE::GetTrampoline();
-            trampoline.write_call<5>(REL::Offset(kCheckCall).address(), &onCheck);
-            trampoline.write_call<5>(REL::Offset(kApplyCall).address(), &onApply);
             ready.store(true, std::memory_order_release);
             ROCK_LOG_INFO(Init, "Weapon action caller trace enabled: '{}' (existing debug logging; equip entry preserved)", path);
         } catch (...) {

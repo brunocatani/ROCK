@@ -1,5 +1,6 @@
 #include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
 #include "physics-interaction/weapon/telemetry/NativeScopeShotPolicy.h"
+#include "physics-interaction/weapon/CarriedWeaponRuntime.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/debug/DebugBodyOverlay.h"
 #include "physics-interaction/debug/DebugWorldTextGeometry.h"
@@ -180,14 +181,21 @@ namespace rock::native_scope_shot_diagnostics
             frame.panelValid = debug_world_text_geometry::validBasis(frame.panelAnchor, frame.panelRight, frame.panelDown, 0.12f);
         }
 
+        std::uint64_t setupOrigin(void* data)
+        {
+            const auto result = originalSetOrigin(data);
+            if ((result & 0xFF) && !CarriedWeaponRuntime::applyShotOrigin(data)) return result & ~std::uint64_t{0xFF};
+            return result;
+        }
+
         std::uint64_t onSetOrigin(void* data)
         {
-            if (!enabled.load(std::memory_order_acquire) || pending.active) return originalSetOrigin(data);
+            if (!enabled.load(std::memory_order_acquire) || pending.active) return setupOrigin(data);
             pending = {};
             LaunchPrefix prefix{};
             const auto* player = fo4vr::getPlayer();
             if (!player || !native_memory::tryReadValue(static_cast<const LaunchPrefix*>(data), prefix) ||
-                prefix.shooter != reinterpret_cast<std::uintptr_t>(player)) return originalSetOrigin(data);
+                prefix.shooter != reinterpret_cast<std::uintptr_t>(player)) return setupOrigin(data);
             playerSetups.fetch_add(1, std::memory_order_relaxed);
             pending.identity = reinterpret_cast<std::uintptr_t>(data);
             pending.shooter = prefix.shooter;
@@ -196,7 +204,7 @@ namespace rock::native_scope_shot_diagnostics
             pending.shot.onGameThread = pending.shot.thread == gameThread.load(std::memory_order_acquire);
             (void)presentedChannel.read(pending.shot.presented);
             pending.active = true;
-            const auto result = originalSetOrigin(data);
+            const auto result = setupOrigin(data);
             pending.active = false;
             if ((result & 0xFF) == 0 || !native_memory::tryReadValue(static_cast<const LaunchPrefix*>(data), prefix)) return result;
             pending.shot.initial = policy::launchRay(prefix.origin, prefix.yaw, prefix.pitch);
@@ -269,6 +277,9 @@ namespace rock::native_scope_shot_diagnostics
             // cone-of-fire loop, immediately before Launch consumes them.
             // Never alter the launch data, native result or firing behavior.
             auto* result = originalLaunch(output, data);
+            std::uint32_t carriedHandle{};
+            if (result && native_memory::tryReadValue(result, carriedHandle))
+                CarriedWeaponRuntime::observeShotLaunch(data, carriedHandle);
             if (capture) {
                 shot.launchReturned = result && native_memory::tryReadValue(result, shot.handle);
                 shot.sequence = shotSequence.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -390,6 +401,8 @@ namespace rock::native_scope_shot_diagnostics
             return site + 5 + displacement == REL::Offset(target).address();
         }
     }
+
+    bool hooksReady() noexcept { return installed; }
 
     bool install() noexcept
     {

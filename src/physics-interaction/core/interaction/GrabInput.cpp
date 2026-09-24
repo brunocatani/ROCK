@@ -1830,6 +1830,9 @@ namespace rock
                         return true;
                     }
                 }
+                // Only retire the carried context after all native readiness
+                // and grip checks pass, immediately before the actual pickup.
+                if (!_carriedWeapon.preparePrimaryEquip(heldRef)) return true;
                 equipHand.stopSelectionHighlight();
                 std::uint32_t heldFormID = heldRef ? heldRef->GetFormID() : 0u;
                 const std::uint32_t primaryBodyId = equipHand.getSavedObjectState().bodyId.value;
@@ -1867,10 +1870,12 @@ namespace rock
                     releaseObject(heldRef, claimOwnerForHand(equipIsLeft));
                 }
 
+                const auto carriedSource = heldRef ? heldRef->GetHandle() : RE::ObjectRefHandle{};
                 const auto equipResult = weapon_equip_transfer::transferHeldWeaponToPlayerAndEquip(weapon_equip_transfer::EquipInput{
                     .heldRef = releaseOutcome.takeRetainedReference(),
                     .transitionReason = transitionReason,
                 });
+                _carriedWeapon.finishPrimaryEquip(carriedSource, equipResult.weapon, equipResult.observedEquippedInstanceData, equipResult.committed);
                 if (equipResult.transferredToInventory) {
                     transition.recordInventoryCommit(equipResult.weapon ? equipResult.weapon->formID : 0u,
                         equipResult.requestedInstanceData, equipResult.success, equipResult.observedEquippedInstanceData);
@@ -2021,7 +2026,7 @@ namespace rock
                 if (heldWeaponEquipTriggerPressed) {
                     static_cast<void>(armHeldLooseGrenade(hand, frame));
                 }
-            } else if (heldWeaponEquipRequested) {
+            } else if (heldWeaponEquipRequested && (!_carriedWeapon.owns(heldRefForGameplay) || !currentEquippedWeaponFormId())) {
                 const bool triggeredByInput = heldWeaponEquipTriggerPressed;
                 const char* requestReason = triggeredByInput ? "same-hand-trigger-held-weapon-equip" :
                                                                "grip-zone-held-weapon-equip";

@@ -29,8 +29,10 @@ namespace rock
         const auto dropRequest = _twoHandedGrip.consumeEquippedWeaponDropRequest();
         // Keep the old scene alive through cleanup of its grip authorities.
         RE::NiPointer<RE::NiNode> transferSourceNode(resolveEquippedWeaponInteractionNode());
+        _carriedWeapon.captureTransfer();
         const bool dropped = dropEquippedWeaponToWorld(frame, dropRequest,
             equipped_weapon_drop_policy::Mode::ToggleDrop);
+        if (!dropped) _carriedWeapon.cancelTransfer();
         _twoHandedGrip.completeEquippedWeaponDrop(dropRequest, dropped);
         if (dropped) {
             _equipped.transition.pendingGrip() = {};
@@ -137,7 +139,10 @@ namespace rock
                 const bool replacementDrop = dropCommitted && transfer.phase == held_weapon_transfer::Phase::AwaitEquip &&
                     transfer.request.retainOutgoing && !transfer.outgoingRemoved &&
                     transfer.request.previousForm == observedEquippedWeaponFormID && transfer.request.isLeft != transferIsLeft;
-                if (replacementDrop) _equipped.transition.recordOutgoingRemoval(dropResult.droppedFormID);
+                if (replacementDrop) {
+                    _equipped.transition.recordOutgoingRemoval(dropResult.droppedFormID);
+                    _carriedWeapon.commitTransfer(dropResult.handle);
+                }
                 if (dropCommitted) {
                     enforceNoBareFistState(true);
                     /*

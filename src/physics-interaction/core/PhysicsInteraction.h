@@ -44,6 +44,7 @@
 #include "physics-interaction/weapon/EquippedWeaponShoulderCoordinator.h"
 #include "physics-interaction/weapon/EquippedWeaponTransitionCoordinator.h"
 #include "physics-interaction/weapon/InventoryWeaponEquipRuntime.h"
+#include "physics-interaction/weapon/CarriedWeaponRuntime.h"
 #include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
 #include "physics-interaction/weapon/VirtualHolstersCompatibility.h"
 #include "physics-interaction/weapon/grip/LeftCarryReadiness.h"
@@ -161,6 +162,8 @@ namespace rock
         void updateAuthoredPrimaryFiringGrip();
 
         void shutdown(::rock::provider::RockProviderLifecycleReason reason = ::rock::provider::RockProviderLifecycleReason::Shutdown);
+        bool beforeNativeWeaponEquip(const RE::BGSObjectInstance& item, void* request);
+        void afterNativeWeaponEquip(const RE::BGSObjectInstance& item, bool success);
 
         bool isInitialized() const { return _lifecycle.initialized; }
         bool isProviderReady() const
@@ -410,6 +413,7 @@ namespace rock
         void processProviderInteractionCommands(const PhysicsFrameContext& frame);
         void processProviderInventoryEquip(const PhysicsFrameContext& frame);
         void clearProviderInventoryEquip();
+        void updateCarriedWeapon(const PhysicsFrameContext& frame, bool prepareOnly);
         bool retainEquippedWeaponForReplacement(const PhysicsFrameContext& frame, bool equipIsLeft);
         std::uint32_t forceGrabHandBlockerMask(const Hand& hand, bool isLeft, bool handDisabled, bool includePendingCommit) const;
         bool equippedWeaponFiringHandForGrabIsLeft() const;
@@ -1040,6 +1044,13 @@ namespace rock
         WeaponContactWitnessPair _weaponContact;
         EquippedWeaponFrameState _equipped;
         InventoryWeaponEquipRuntime _inventoryEquip;
+        CarriedWeaponRuntime _carriedWeapon;
+        struct NativeAkimboEquip {
+            weapon_equip_transfer::InventorySelection incoming{};
+            std::uint32_t previousForm{};
+            std::uintptr_t previousInstance{}, previousNode{};
+            bool pending{}, isLeft{};
+        } _nativeAkimboEquip;
         EquippedWeaponDropState _drop;
         GrabInputState _grabInput;
         ForceGrabState _forceGrab;

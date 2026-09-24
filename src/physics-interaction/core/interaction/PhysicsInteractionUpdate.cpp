@@ -440,7 +440,9 @@ namespace rock
          * written the frame target.
          */
 
+        updateCarriedWeapon(frame, true);
         updateGrabInput(frame);
+        updateCarriedWeapon(frame, false);
         auto selectedCloseCarTarget = [&](const Hand& hand, const HandFrameInput& handInput) {
             DynamicWorldCarTarget target{};
             if (handInput.disabled || hand.isHolding() || !hand.hasSelection()) {

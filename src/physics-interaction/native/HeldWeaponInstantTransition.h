@@ -81,6 +81,7 @@ namespace rock::held_weapon_instant_transition
     // equip before the loose reference is released; ordinary native calls pass
     // through unchanged.
     [[nodiscard]] bool install() noexcept;
+    [[nodiscard]] bool transactionActive() noexcept;
     [[nodiscard]] Readiness readinessFor(RE::PlayerCharacter* player) noexcept;
 
     // Main-thread-only transaction. The scope surrounds exactly one immediate

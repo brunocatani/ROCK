@@ -252,6 +252,14 @@ namespace rock::input_remap_runtime
         std::array<std::atomic<bool>, 2> s_handInteractionEngaged{};
         std::array<std::atomic<std::uint32_t>, 2> s_heldObjectFormId{};
         std::array<std::atomic<bool>, 2> s_pendingSavedGrabOffsetRequest{};
+        struct CarriedInputOwner {
+            std::uint64_t session{}, binding{};
+            bool operator==(const CarriedInputOwner&) const = default;
+        };
+        // Only the frame thread reads/writes tickets; native input hooks read
+        // just the atomic occupied-hand flags.
+        std::array<CarriedInputOwner, 2> s_carriedInputOwner{}, s_carriedReload{};
+        std::array<std::atomic<bool>, 2> s_carriedFiringHand{};
         std::atomic<bool> s_equippedWeaponFiringGripInputActive{ false };
         std::atomic<bool> s_equippedWeaponShoulderSheathActive{ false };
         // MenuControls dispatches ButtonEvents serially on the frame/input
@@ -1731,7 +1739,8 @@ namespace rock::input_remap_runtime
             bool requested = false;
             for (const bool isLeft : { true, false }) {
                 const std::size_t handIndex = isLeft ? 0u : 1u;
-                if (s_handInteractionEngaged[handIndex].load(std::memory_order_acquire)) {
+                if (s_handInteractionEngaged[handIndex].load(std::memory_order_acquire) &&
+                    !s_carriedFiringHand[handIndex].load(std::memory_order_acquire)) {
                     s_pendingSavedGrabOffsetRequest[handIndex].store(true, std::memory_order_release);
                     requested = true;
                 }
@@ -1797,6 +1806,12 @@ namespace rock::input_remap_runtime
             const bool gameplayActivation = isActivateReloadEvent(inputEvent) &&
                 s_gameplayInputAllowed.load(std::memory_order_acquire) && !isInputBlockingMenuActive();
             const bool primaryHandEvent = isPrimaryWandInputEvent(inputEvent);
+            if (gameplayActivation && s_carriedFiringHand[takeEquipHandIndex(primaryHandEvent)].load(std::memory_order_acquire)) {
+                // Raw capture precedes semantic dispatch; the frame owner will
+                // deliver the ticket to this carried weapon, never the primary.
+                markInputEventStopped(inputEvent);
+                return;
+            }
             const bool weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire);
             const auto target = gameplayActivation && (weaponDrawn || isTakeEquipHandEngaged(primaryHandEvent)) ?
                 classifyActivateTarget(primaryHandEvent) : ActivateTarget::Unavailable;
@@ -2934,6 +2949,21 @@ namespace rock::input_remap_runtime
         }
     }
 
+    void setCarriedWeaponInputOwner(bool isLeft, std::uint64_t session, std::uint64_t binding) noexcept
+    {
+        const auto hand = isLeft ? 0u : 1u;
+        const CarriedInputOwner owner{session, binding};
+        if (owner != s_carriedInputOwner[hand]) s_carriedReload[hand] = {};
+        s_carriedInputOwner[hand] = owner;
+        s_carriedFiringHand[hand].store(session != 0, std::memory_order_release);
+    }
+
+    bool consumeCarriedWeaponReload(bool isLeft, std::uint64_t session, std::uint64_t binding) noexcept
+    {
+        const auto ticket = std::exchange(s_carriedReload[isLeft ? 0u : 1u], CarriedInputOwner{});
+        return ticket.session && ticket == CarriedInputOwner{session, binding};
+    }
+
     void updateFiringHandReloadInput(const float deltaSeconds)
     {
         /*
@@ -2952,8 +2982,15 @@ namespace rock::input_remap_runtime
          * Provider API consumers are unaffected: apiGetRawWandButtonStateV1
          * exposes level state only, by design. Frame-thread only.
          */
-        const auto leftAcceptState = consumeRawButtonState(true, input_remap_policy::kOpenVrAcceptButtonId);
-        const auto rightAcceptState = consumeRawButtonState(false, input_remap_policy::kOpenVrAcceptButtonId);
+        auto leftAcceptState = consumeRawButtonState(true, input_remap_policy::kOpenVrAcceptButtonId);
+        auto rightAcceptState = consumeRawButtonState(false, input_remap_policy::kOpenVrAcceptButtonId);
+        s_carriedReload = {}; // Tickets are consumed in this frame, never replayed after a skipped frame.
+        for (std::size_t hand = 0; hand < 2; ++hand) {
+            if (!s_carriedInputOwner[hand].session) continue;
+            auto& button = hand == 0 ? leftAcceptState : rightAcceptState;
+            if (button.available && button.pressed) s_carriedReload[hand] = s_carriedInputOwner[hand];
+            button = {};
+        }
         if (isAnyProviderOpenVrGameInputSuppressed()) {
             // The reads above intentionally drain both physical A/X edges.
             // SuppressOpenVrGameInput is a game-facing lease, so ROCK must not

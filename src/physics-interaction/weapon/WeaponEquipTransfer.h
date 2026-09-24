@@ -151,6 +151,8 @@ namespace rock::weapon_equip_transfer
         RE::BSTSmartPointer<RE::TBO_InstanceData> instance{};
     };
     [[nodiscard]] InventorySelection captureInventoryWeapon(std::uint32_t formID, std::uint32_t stackIndex) noexcept;
+    [[nodiscard]] InventorySelection captureInventoryWeapon(std::uint32_t formID, std::uint32_t stackIndex, bool allowEquippedStack) noexcept;
+    [[nodiscard]] bool resolveInventoryWeaponStack(const InventorySelection& selection, std::uint32_t& stackIndex) noexcept;
     [[nodiscard]] bool inventoryWeaponCurrent(const InventorySelection& selection) noexcept;
     [[nodiscard]] EquipResult equipInventoryWeapon(const InventorySelection& selection) noexcept;
     [[nodiscard]] EquippedDropResult dropEquippedWeaponFromPlayer(const EquippedDropInput& input) noexcept;

@@ -541,6 +541,11 @@ namespace rock::weapon_equip_transfer
 
     InventorySelection captureInventoryWeapon(std::uint32_t formID, std::uint32_t stackIndex) noexcept
     {
+        return captureInventoryWeapon(formID, stackIndex, false);
+    }
+
+    InventorySelection captureInventoryWeapon(std::uint32_t formID, std::uint32_t stackIndex, bool allowEquippedStack) noexcept
+    {
         auto* player = RE::PlayerCharacter::GetSingleton();
         auto* weapon = RE::TESForm::GetFormByID<RE::TESObjectWEAP>(formID);
         if (!player || !player->inventoryList || !weapon || stackIndex >=
@@ -552,7 +557,7 @@ namespace rock::weapon_equip_transfer
             if (entry.object != weapon) continue;
             auto stack = entry.stackData;
             for (std::uint32_t i = 0; stack && i < stackIndex; ++i) stack = stack->nextStack;
-            if (!stack || !stack->GetCount() || stack->IsEquipped()) return {};
+            if (!stack || !stack->GetCount() || (!allowEquippedStack && stack->IsEquipped())) return {};
             RE::BSTSmartPointer<RE::TBO_InstanceData> instance{};
             if (stack->extra) {
                 if (const auto* extra = stack->extra->GetByType<RE::ExtraInstanceData>()) instance = extra->data;
@@ -565,6 +570,14 @@ namespace rock::weapon_equip_transfer
     bool inventoryWeaponCurrent(const InventorySelection& selection) noexcept
     {
         return findSelectedInventoryStack(selection).found;
+    }
+
+    bool resolveInventoryWeaponStack(const InventorySelection& selection, std::uint32_t& stackIndex) noexcept
+    {
+        const auto current = findSelectedInventoryStack(selection);
+        if (!current.found) return false;
+        stackIndex = current.stackID;
+        return true;
     }
 
     EquipResult equipInventoryWeapon(const InventorySelection& selection) noexcept
