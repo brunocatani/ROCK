@@ -904,15 +904,6 @@ namespace rock
                         input.weaponNode,
                         input.weaponGenerationKey,
                         currentWeaponKey);
-            // Retaining the canonical pose also retains its verified grab
-            // stations while the two-hand solver owns the weapon transform.
-            if (retainedForHandoff && authoredDecision.reason ==
-                    authored_weapon_grip_capture_policy::AuthoredPrimaryDecisionReason::ConflictingWeaponAuthority) {
-                if (!publishLibraryAuthoredSupportCandidate() && authoredLookup.found) {
-                    (void)publishStableAuthoredSupportCandidate(
-                        authoredLookup.captureSequence, selectedRightHandInWeapon);
-                }
-            }
             if (!input.rockFiringHandIsLeft && !retainedForHandoff) {
                 weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             }

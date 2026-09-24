@@ -335,7 +335,7 @@ namespace rock
                 const bool ready = hand.authoredCapability.initialized &&
                     qualification.weaponDrawn && f4vr::isNodeVisible(weaponNode) &&
                     !qualification.localMenuBlocking && !qualification.compatibilityConfigBlocking &&
-                    runtime.supportGripAllowed &&
+                    !frameInput.animationBoundaryActive && runtime.supportGripAllowed &&
                     !runtime.providerPartAuthority.active;
                 advanceAuthoredSupportCapabilityQualification(isLeft, ready, dt);
             } else {
@@ -375,12 +375,12 @@ namespace rock
         // Evaluate the same cylinders as detached firing-grip reattachment,
         // even without a contact/probe or authored support seat. Keep the
         // debug boundary available while the firing grip is occupied.
-        // Native hand animation does not revoke authored grab/handoff access.
         const auto& handoffRuntime = runtime_state::currentFrame();
         const bool handoffZoneEvaluated =
             _session.state != TwoHandedState::PartCarry &&
             handoffRuntime.weaponDrawn && f4vr::isNodeVisible(weaponNode) &&
             !handoffRuntime.localMenuBlocking && !handoffRuntime.compatibilityConfigBlocking &&
+            !frameInput.animationBoundaryActive &&
             (_handlingSettings.ambidextrousHandoffEnabled || sharedFiringZone) &&
             arrangement != loose_weapon_authored_grab_policy::Arrangement::Pending &&
             firingGripProximityAuthorityEnabled &&
