@@ -8,6 +8,15 @@ int main()
     assert(singleObject(17,0)==17 && singleObject(0,17)==17);
     assert(singleObject(17,17)==17);
     assert(singleObject(17,18)==0);
+    // A full live scan accepts the single-body bottle and a multipart object
+    // independently of the old grab cache. Partial/stale discovery still fails.
+    assert(completeBodyScan(true,1,1,0));
+    assert(completeBodyScan(true,5,5,0));
+    assert(!completeBodyScan(false,1,1,0));
+    assert(!completeBodyScan(true,0,0,0));
+    assert(!completeBodyScan(true,65,65,0));
+    assert(!completeBodyScan(true,5,4,0));
+    assert(!completeBodyScan(true,1,1,1));
     ClickState state;
     state.update(true,17,true,false,false,0);
     assert(state.reserved && !state.request);

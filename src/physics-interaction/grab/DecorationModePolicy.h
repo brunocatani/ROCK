@@ -1,10 +1,20 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
 
 namespace rock::decoration_mode
 {
     inline constexpr int kButtonId = 32;
+    inline constexpr std::size_t kMaxBodies = 64;
+
+    // Validate a fresh scan at placement. The grab lifecycle's historical
+    // completeness flag describes its cached prep and is not a placement veto.
+    [[nodiscard]] constexpr bool completeBodyScan(bool finished, std::size_t bodies,
+        std::size_t accepted, std::uint32_t skippedOrFailed) noexcept
+    {
+        return finished && bodies > 0 && bodies <= kMaxBodies && accepted == bodies && skippedOrFailed == 0;
+    }
 
     // A two-handed hold is one reference. Two different objects are ambiguous.
     [[nodiscard]] constexpr std::uint32_t singleObject(std::uint32_t right, std::uint32_t left) noexcept

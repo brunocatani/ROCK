@@ -2,6 +2,7 @@
 #include "physics-interaction/native/DecorationPlacement.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/HavokWorldLock.h"
+#include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "api/ProviderRuntimeServices.h"
@@ -23,7 +24,6 @@ std::uint32_t PhysicsInteraction::decorationCandidate(RE::hknpWorld* world) cons
         const auto& saved=hand->getSavedObjectState();
         if (!saved.isValid() || saved.refr->IsDeleted() || saved.refr->IsDisabled() ||
             saved.targetKind!=grab_target::Kind::LooseObject ||
-            hand->getActiveGrabLifecycle().hasIncompleteNativeScan() ||
             hand->getHeldBodyIds().empty() || hand->getHeldBodyIds().size()>64) return 0;
         const auto contact=hand->readHeldBodyContactSnapshot();
         if (!contact.recent || !hand->isHeldBodyId(contact.heldBodyId) ||
@@ -58,6 +58,20 @@ void PhysicsInteraction::updateDecorationInput()
         input_remap_runtime::peekRawButtonState(false,decoration_mode::kButtonId);
     _decorationClick.update(g_rockConfig.rockDecorationMode,_decorationCandidate,
         raw.available,raw.held,raw.pressed,raw.sampleAgeMilliseconds);
+    if (g_rockConfig.rockDecorationMode && (_rightHand.isHolding() || _leftHand.isHolding())) {
+        const auto rightContact=_rightHand.readHeldBodyContactSnapshot();
+        const auto leftContact=_leftHand.readHeldBodyContactSnapshot();
+        if (raw.pressed) {
+            ROCK_LOG_INFO(Hand,"Decoration click candidate={:08X} request={:08X} held={} available={} ageMs={} reserved={}",
+                _decorationCandidate,_decorationClick.request,raw.held,raw.available,raw.sampleAgeMilliseconds,_decorationClick.reserved);
+        }
+        ROCK_LOG_SAMPLE_DEBUG(Hand,1000,
+            "Decoration eligibility candidate={:08X} right[holding,legacyIncomplete,contact,other,layer]=[{},{},{},{},{}] left=[{},{},{},{},{}] raw[available,held,ageMs]=[{},{},{}]",
+            _decorationCandidate,_rightHand.isHolding(),_rightHand.getActiveGrabLifecycle().hasIncompleteNativeScan(),
+            rightContact.recent,rightContact.otherBodyId,rightContact.otherLayer,
+            _leftHand.isHolding(),_leftHand.getActiveGrabLifecycle().hasIncompleteNativeScan(),
+            leftContact.recent,leftContact.otherBodyId,leftContact.otherLayer,raw.available,raw.held,raw.sampleAgeMilliseconds);
+    }
 }
 
 void PhysicsInteraction::queryDecorationState(api::input::v1_1::DecorationState& out) const
@@ -77,15 +91,24 @@ void PhysicsInteraction::commitDecoration(const PhysicsFrameContext& frame)
     const bool starting=click!=0 && _decorationPendingForm==0;
     if (starting) { _decorationPendingForm=click; _decorationScriptWait=0.0f; }
     const auto requested=_decorationPendingForm;
-    if (!requested || frame.menuBlocked || !frame.worldReady || !physicsWritesAllowedForWorld(frame.hknpWorld) ||
-        requested!=decorationCandidate(frame.hknpWorld)) { _decorationPendingForm=0; return; }
+    if (!requested) return;
+    if (frame.menuBlocked || !frame.worldReady || !physicsWritesAllowedForWorld(frame.hknpWorld) ||
+        requested!=decorationCandidate(frame.hknpWorld)) {
+        ROCK_LOG_INFO(Hand,"Decoration rejected ref={:08X} stage=commit-eligibility menu={} worldReady={}",requested,frame.menuBlocked,frame.worldReady);
+        _decorationPendingForm=0;
+        return;
+    }
     auto mutation=_generatedBodyStepDrive.callbackGate().pauseForMutation();
     auto& owner=_rightHand.isHolding() ? _rightHand : _leftHand;
     const auto retained=owner.getSavedObjectState().retainedRef;
     auto* ref=retained.get();
     auto* root=ref ? ref->Get3D() : nullptr;
     auto* cell=ref ? ref->GetParentCell() : nullptr;
-    if (!root || !cell || cell->GetbhkWorld()!=frame.bhkWorld) { _decorationPendingForm=0; return; }
+    if (!root || !cell || cell->GetbhkWorld()!=frame.bhkWorld) {
+        ROCK_LOG_WARN(Hand,"Decoration rejected ref={:08X} stage=reference-world",requested);
+        _decorationPendingForm=0;
+        return;
+    }
     const auto prepared=decoration_placement::prepareLoadScript(ref,starting);
     if (prepared==decoration_placement::ScriptPreparation::Rejected) { _decorationPendingForm=0; return; }
     if (prepared==decoration_placement::ScriptPreparation::Pending) {
@@ -98,15 +121,45 @@ void PhysicsInteraction::commitDecoration(const PhysicsFrameContext& frame)
     }
     _decorationPendingForm=0;
     const auto pose=root->world;
-    std::array<std::uint32_t,64> bodies{};
+    std::array<std::uint32_t,decoration_mode::kMaxBodies> bodies{};
     std::size_t count=0;
-    for (const auto* hand : { &_rightHand, &_leftHand }) {
-        if (!hand->isHolding()) continue;
-        for (const auto id:hand->getHeldBodyIds()) {
-            if (std::find(bodies.begin(),bodies.begin()+count,id)!=bodies.begin()+count) continue;
-            if (count==bodies.size()) return;
-            bodies[count++]=id;
+    {
+        // Cached grab prep deliberately leaves its lifecycle incomplete after
+        // native activation. Re-enumerate the current tree once on placement,
+        // without seeding a held body that could conceal missing discovery.
+        using namespace object_physics_body_set;
+        havok_world_lock::ScopedWorldReadLock lock(frame.hknpWorld);
+        BodySetScanOptions options{};
+        options.requireSameResolvedRef=true;
+        ObjectPhysicsBodyScanCursor cursor;
+        ObjectPhysicsBodyScanCache cache;
+        if (!beginObjectPhysicsBodyScanCache(ref,options,cursor,cache)) {
+            ROCK_LOG_WARN(Hand,"Decoration rejected ref={:08X} stage=body-scan-start",requested);
+            return;
         }
+        const auto step=advanceObjectPhysicsBodyScanCache(frame.hknpWorld,options,
+            {256,64,static_cast<std::uint32_t>(bodies.size())},cursor,cache);
+        const auto scanned=buildObjectPhysicsBodySetFromScanCache(frame.bhkWorld,frame.hknpWorld,ref,options,cache);
+        const auto& diagnostics=scanned.diagnostics;
+        const auto issues=diagnostics.scanFailures+diagnostics.invalidPhysicsSystems+
+            diagnostics.benignScanSkips+diagnostics.foreignRefBodySkips+diagnostics.unresolvedRefBodySkips+
+            diagnostics.weaponExpansionSkips+diagnostics.depthLimitSkips+diagnostics.staleCacheEntrySkips;
+        const bool complete=decoration_mode::completeBodyScan(step.finished && !step.invalidated,
+            scanned.records.size(),scanned.acceptedCount(),issues);
+        ROCK_LOG_INFO(Hand,"Decoration body scan ref={:08X} complete={} finished={} bodies={} accepted={} issues={} nodes={} collisionObjects={} budgetExhausted={}",
+            requested,complete,step.finished,scanned.records.size(),scanned.acceptedCount(),issues,
+            diagnostics.visitedNodes,diagnostics.collisionObjects,step.budgetExhausted);
+        if (!complete) return;
+        for (const auto* hand : { &_rightHand, &_leftHand }) {
+            if (!hand->isHolding()) continue;
+            for (const auto id:hand->getHeldBodyIds()) {
+                if (!scanned.containsAcceptedBody(id)) {
+                    ROCK_LOG_WARN(Hand,"Decoration rejected ref={:08X} stage=held-body-missing body={}",requested,id);
+                    return;
+                }
+            }
+        }
+        for (const auto& record:scanned.records) bodies[count++]=record.bodyId;
     }
     // Release both motors and their inertia/filter leases before freezing. A
     // native save never retains ROCK's hand constraint or a transient body ID.
