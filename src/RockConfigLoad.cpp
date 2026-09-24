@@ -25,6 +25,7 @@ namespace
     constexpr auto IMMERSIVE_WEAPONS_SECTION = "ImmersiveWeapons";
     constexpr auto AMBIDEXTROUS_FIRING_SECTION = "AmbidextrousFiring";
     constexpr auto NATIVE_SCOPES_SECTION = "NativeScopes";
+    constexpr auto GRABBING_SECTION = "Grabbing";
     constexpr float kDefaultWeaponCollisionVisualStabilizationSeconds = 0.0889f;
     constexpr float kMaxWeaponCollisionVisualStabilizationSeconds = 60.0f / 90.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintLinearTauMultiplier = 1.0f;
@@ -303,15 +304,15 @@ namespace rock
         rockSuppressNativeVats = ini.GetBoolValue(SECTION, "bSuppressNativeVats", rockSuppressNativeVats);
         rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::sanitizedHoldSeconds(
             static_cast<float>(ini.GetDoubleValue(SECTION, "fPipboyPauseHoldSeconds", rockPipboyPauseHoldSeconds)));
-        rockFarGrabMode = far_pull_gesture::sanitizeMode(static_cast<int>(ini.GetLongValue(SECTION, "iFarGrabMode", rockFarGrabMode)));
-        rockGrabInputIntentStateEnabled = ini.GetBoolValue(SECTION, "bGrabInputIntentStateEnabled", rockGrabInputIntentStateEnabled);
-        rockGrabInputLeewaySeconds = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabInputLeewaySeconds", rockGrabInputLeewaySeconds));
+        rockFarGrabMode = far_pull_gesture::sanitizeMode(static_cast<int>(ini.GetLongValue(GRABBING_SECTION, "iFarGrabMode", rockFarGrabMode)));
+        rockGrabInputIntentStateEnabled = ini.GetBoolValue(GRABBING_SECTION, "bGrabInputIntentStateEnabled", rockGrabInputIntentStateEnabled);
+        rockGrabInputLeewaySeconds = static_cast<float>(ini.GetDoubleValue(GRABBING_SECTION, "fGrabInputLeewaySeconds", rockGrabInputLeewaySeconds));
         if (!std::isfinite(rockGrabInputLeewaySeconds) || rockGrabInputLeewaySeconds < 0.0f) {
             ROCK_LOG_WARN(Config, "Invalid fGrabInputLeewaySeconds={} -- using 0.12", rockGrabInputLeewaySeconds);
             rockGrabInputLeewaySeconds = 0.12f;
         }
         rockGrabInputLeewaySeconds = std::clamp(rockGrabInputLeewaySeconds, 0.0f, 0.5f);
-        rockGrabInputForceSeconds = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabInputForceSeconds", rockGrabInputForceSeconds));
+        rockGrabInputForceSeconds = static_cast<float>(ini.GetDoubleValue(GRABBING_SECTION, "fGrabInputForceSeconds", rockGrabInputForceSeconds));
         if (!std::isfinite(rockGrabInputForceSeconds) || rockGrabInputForceSeconds < 0.0f) {
             ROCK_LOG_WARN(Config, "Invalid fGrabInputForceSeconds={} -- using 0.08", rockGrabInputForceSeconds);
             rockGrabInputForceSeconds = 0.08f;
