@@ -18,7 +18,6 @@
 #include "physics-interaction/weapon/WeaponSupport.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/recoil/RecoilController.h"
-#include "physics-interaction/weapon/recoil/RecoilRecovery.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 
@@ -248,17 +247,6 @@ static bool testRecoilProfiles()
     bool ok = true;
     using namespace rock::weapon_recoil_policy;
     using rock::weapon_recoil_authority_math::tryBuildControlledKick;
-    for (float spring : { 0.0f, -0.0f }) {
-        ok &= expectTrue("zero recovery receives the vanilla pistol spring", rock::recoil_recovery::repairZeroSpring(spring));
-        ok &= expectNear("repaired recovery is 150", spring, 150.0f);
-        ok &= expectFalse("recovery correction is idempotent", rock::recoil_recovery::repairZeroSpring(spring));
-    }
-    for (const float authored : { 0.00001f, 1.0f, 100.0f, 150.0f, 300.0f, -1.0f,
-             std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN() }) {
-        float spring = authored;
-        ok &= expectFalse("nonzero or invalid recovery is not replaced", rock::recoil_recovery::repairZeroSpring(spring));
-        ok &= expectTrue("authored recovery bits are preserved", std::memcmp(&spring, &authored, sizeof(float)) == 0);
-    }
     ok &= expectTrue("ordinary one hand selects independent profile",
         selectProfile(false, false, false) == Profile::OneHand);
     for (const bool armor : { false, true }) {

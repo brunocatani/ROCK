@@ -5,7 +5,6 @@
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/telemetry/ScopeTransitionTelemetry.h"
-#include "physics-interaction/weapon/recoil/RecoilRecovery.h"
 
 // Equipped-weapon frame: transitions, the per-frame equipped weapon update, authored primary grip runtime, handling settings, and shoulder sheath/retrieve.
 
@@ -254,7 +253,6 @@ namespace rock
         RE::hknpWorld* hknp)
     {
         performance_profiler::ScopedTimer equippedFrameTimer(performance_profiler::Scope::EquippedWeaponInteraction);
-        recoil_recovery::repairEquippedWeapon();
         const auto& runtime = runtime_state::currentFrame();
         const bool leftHandAvailableForAcquisition = force_grab_policy::availableForEquippedGrip(
             forceGrabHandBlockerMask(_leftHand, true, frame.left.disabled, true));
