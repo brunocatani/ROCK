@@ -290,6 +290,13 @@ if(BUILD_ROCK_TESTS)
 
   include("${ROOT_DIR}/cmake/RockTestRegistration.cmake")
 
+  add_executable(ROCKNativeWeaponQualificationTests
+    "${ROOT_DIR}/tests/NativeWeaponQualificationTests.cpp"
+  )
+  target_compile_features(ROCKNativeWeaponQualificationTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKNativeWeaponQualificationTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKNativeWeaponQualificationTests)
+
   add_executable(ROCKGrabInputIntentPolicyTests
     "${ROOT_DIR}/tests/GrabInputIntentPolicyTests.cpp"
   )
