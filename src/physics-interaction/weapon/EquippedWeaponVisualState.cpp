@@ -2,6 +2,7 @@
 
 #include "RE/NetImmerse/NiAVObject.h"
 #include "RE/NetImmerse/NiNode.h"
+#include "REL/Relocation.h"
 
 #include "rock_support/Fo4VrRuntime.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
@@ -150,11 +151,13 @@ namespace rock::equipped_weapon_visual_state
         if (!node) {
             return;
         }
-        if (visible) {
-            node->flags.flags &= ~kAppCulledFlag;
-        } else {
-            node->flags.flags |= kAppCulledFlag;
-        }
+        // Native VR SetAppCulled also dirties geometry caches on the node and
+        // its ancestors. A raw bit change can leave a dropped weapon's cached
+        // geometry empty after the temporary presentation root is restored.
+        // 141C23380 sets bit 29; BSFadeNode updates at 1427A8D1C/1427A8DE0
+        // consume it. Call directly: VR uses vslot 30, not the header's 2D.
+        static REL::Relocation<void (*)(RE::NiAVObject*, bool)> setCull{ REL::Offset(0x1C23380) };
+        setCull(node, !visible);
     }
 
     bool restoreExactInstancePathVisibility(const Snapshot& snapshot) noexcept

@@ -111,8 +111,6 @@ namespace rock::authored_weapon_grip_library
             switch (source) {
             case CaptureSource::LiveEquippedGraph:
                 return Authority::LiveEquippedGraph;
-            case CaptureSource::PersistedNativeIdle:
-                return Authority::PersistedNativeIdle;
             case CaptureSource::NativeIdlePreharvest:
                 return Authority::FreshNativeIdle;
             case CaptureSource::Unknown:
@@ -126,8 +124,6 @@ namespace rock::authored_weapon_grip_library
             switch (source) {
             case CaptureSource::LiveEquippedGraph:
                 return "liveEquippedGraph";
-            case CaptureSource::PersistedNativeIdle:
-                return "persistedNativeIdle";
             case CaptureSource::NativeIdlePreharvest:
                 return "nativeIdlePreharvest";
             case CaptureSource::Unknown:
@@ -255,7 +251,7 @@ namespace rock::authored_weapon_grip_library
             destination->hasRightPositionOnlyHandWeaponLocal = false;
             // The paired support relation belongs to the authored pose, not
             // to one capture instance: the same idle republished from a new
-            // source (live -> preharvest -> disk cache) keeps it. A
+            // source (live -> preharvest) keeps it. A
             // materially different canonical invalidates it.
             if ((destination->hasSupportRelation || destination->supportPoseAbsent) &&
                 !authored_weapon_grip_authority_policy::

@@ -297,6 +297,14 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGrabInputIntentPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGrabInputIntentPolicyTests)
 
+  add_executable(ROCKFarPullGestureTests
+    "${ROOT_DIR}/tests/FarPullGestureTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/hand/HandInteractionStateMachine.cpp"
+  )
+  target_compile_features(ROCKFarPullGestureTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKFarPullGestureTests PRIVATE ${SOURCE_DIR} "${ROCK_OPENVR_ROOT}")
+  add_rock_test(ROCKFarPullGestureTests)
+
   add_executable(ROCKInputRemapPolicyTests
     "${ROOT_DIR}/tests/InputRemapPolicyTests.cpp"
   )
@@ -796,17 +804,6 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKNativeIdleGripPreharvestPolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKNativeIdleGripPreharvestPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKNativeIdleGripPreharvestPolicyTests)
-
-  add_executable(ROCKAuthoredWeaponGripCacheFormatTests
-    "${ROOT_DIR}/tests/AuthoredWeaponGripCacheFormatTests.cpp"
-    "${SOURCE_DIR}/physics-interaction/weapon/AuthoredWeaponGripCacheFormat.cpp"
-  )
-  target_compile_features(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE cxx_std_23)
-  target_compile_definitions(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE ROCK_TEST_FIXTURE_DIR="${ROOT_DIR}/tests/fixtures")
-  target_sources(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE "${ROOT_DIR}/tests/fixtures/AuthoredGripCache.json")
-  target_include_directories(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE ${SOURCE_DIR})
-  target_link_libraries(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE nlohmann_json::nlohmann_json)
-  add_rock_test(ROCKAuthoredWeaponGripCacheFormatTests)
 
   add_executable(ROCKAuthoredWeaponGripAuthorityPolicyTests
     "${ROOT_DIR}/tests/AuthoredWeaponGripAuthorityPolicyTests.cpp"

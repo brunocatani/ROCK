@@ -21,6 +21,7 @@ namespace rock::held_weapon_transfer
         bool retainOutgoing{ false };
         std::uint32_t previousForm{ 0 };
         std::uintptr_t previousInstance{ 0 };
+        bool inventorySource{ false };
     };
 
     // Main-thread logical ownership. Native placement and grip resources stay
@@ -38,6 +39,7 @@ namespace rock::held_weapon_transfer
         std::uint32_t outgoingReference{ 0 };
         bool outgoingPending{ false };
         bool outgoingRemoved{ false };
+        bool outgoingSucceeded{ false };
         bool inventoryCommitted{ false };
         bool gripAcquired{ false };
         bool presentationAcquired{ false };
@@ -74,11 +76,28 @@ namespace rock::held_weapon_transfer
         return savedForm != 0 && savedForm == currentForm && savedInstance == currentInstance;
     }
 
+    // A subsequent physical equip or menu restoration can start before the
+    // provider next polls its completed switch. Preserve that terminal value;
+    // there is only one outstanding provider inventory command.
+    inline constexpr void rememberInventoryCompletion(const State& current, State& completed) noexcept
+    {
+        if (current.request.inventorySource && current.phase == Phase::Terminal) completed = current;
+    }
+
+    [[nodiscard]] inline constexpr const State* inventoryResult(const State& current, const State& completed,
+        std::uint64_t sequence) noexcept
+    {
+        if (!sequence) return nullptr;
+        if (current.sequence == sequence && current.request.inventorySource) return &current;
+        return completed.sequence == sequence && completed.phase == Phase::Terminal ? &completed : nullptr;
+    }
+
     [[nodiscard]] inline constexpr bool sourceCurrent(const State& state, bool held, std::uint32_t reference,
         std::uint64_t grab, std::uint32_t world, std::uint32_t skeleton) noexcept
     {
         return state.request.world == world && state.request.skeleton == skeleton &&
-            (state.phase != Phase::AwaitEquip || (held && state.request.reference == reference && state.request.grab == grab));
+            (state.phase != Phase::AwaitEquip || state.request.inventorySource ||
+                (held && state.request.reference == reference && state.request.grab == grab));
     }
 
     [[nodiscard]] inline constexpr bool equippedSourceCurrent(const State& state, std::uint32_t form, std::uintptr_t instance) noexcept
@@ -89,7 +108,8 @@ namespace rock::held_weapon_transfer
 
     inline constexpr bool admit(State& state, const Request& request) noexcept
     {
-        if (state.active() || !request.reference || !request.grab) return false;
+        if (state.active() || (!request.inventorySource && (!request.reference || !request.grab)) ||
+            (request.inventorySource && (request.reference || request.grab))) return false;
         const auto sequence = state.sequence + 1;
         state = State{ .sequence = sequence ? sequence : 1, .request = request, .phase = Phase::AwaitEquip };
         return true;
@@ -158,6 +178,7 @@ namespace rock::held_weapon_transfer
     {
         if (!state.active() || sequence != state.sequence || !state.outgoingPending) return false;
         state.outgoingPending = false;
+        state.outgoingSucceeded = succeeded;
         // An outgoing rollback must not undo a successfully acquired incoming
         // weapon. The adapter reports its exact disposition independently.
         if (!succeeded && state.outcome != Outcome::Cancelled) state.outcome = Outcome::Failed;

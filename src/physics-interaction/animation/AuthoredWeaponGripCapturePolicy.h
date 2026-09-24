@@ -106,7 +106,7 @@ namespace rock::authored_weapon_grip_capture_policy
         // hand-in-weapon relation matches by value. A sequence alone is not
         // identity - the same authored idle is republished under new
         // sequences when its source changes (live capture superseded by the
-        // preharvest library or the disk cache).
+        // preharvest library).
         bool canonicalRelationMatches{ false };
         bool powerArmorMatches{ false };
         std::uint64_t snapshotSupportGripCaptureSequence{ 0 };

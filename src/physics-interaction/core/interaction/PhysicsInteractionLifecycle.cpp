@@ -667,6 +667,7 @@ namespace rock
         _suppression.nativeGrenadeLeases.clearTracking();
         _twoHandedGrip.reset();
         _equipped.transition.pendingGrip() = {};
+        clearProviderInventoryEquip();
         clearPendingForceGrabCommits();
         clearLooseGrenadeRuntimeState();
         clearEquippedWeaponFiringGripInputState();

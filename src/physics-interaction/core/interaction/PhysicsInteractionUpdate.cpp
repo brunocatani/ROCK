@@ -654,7 +654,9 @@ namespace rock
         // ROCK always binds raw controller identity physically: right is the
         // primary wand and left is the secondary wand. Weapon handedness is a
         // separate ROCK role and never remaps buttons/controllers.
-        vrcf::VRControllers.update(false);
+        vrcf::VRControllers.update(false,
+            g_rockConfig.rockFarGrabMode == static_cast<int>(far_pull_gesture::Mode::Gesture) ||
+            _rightHand.getState() == HandState::SelectionLocked || _leftHand.getState() == HandState::SelectionLocked);
 
         // Before any early return below: a skipped consume would let a stale
         // accept-button press replay as a reload frames later (see the API doc).

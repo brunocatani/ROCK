@@ -275,6 +275,7 @@ namespace rock::equipped_weapon_manual_ownership_policy
         HeldWeaponEquip,
         ShoulderRetrieval,
         DefaultEquip,
+        InventoryEquip,
     };
 
     struct PendingPrimaryOnlyStartInput

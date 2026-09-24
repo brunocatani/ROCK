@@ -44,6 +44,19 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
             return input;
         }
 
+        if (frame.hasHmdFrame && frame.timing.valid && !frame.timing.discontinuity && !frame.timing.menuPaused && !frame.menuBlocked) {
+            std::array<float, 3> velocity{};
+            auto* playerNodes = f4vr::getPlayerNodes();
+            if (playerNodes && playerNodes->HmdNode && vrcf::VRControllers.getVelocityInHmdAxes(
+                    isLeft ? vrcf::Hand::Left : vrcf::Hand::Right, velocity)) {
+                // Use the same HmdNode basis as the far-selection forward vector.
+                input.gestureVelocityMetersPerSecond = playerNodes->HmdNode->world.rotate.Transpose() *
+                    RE::NiPoint3{ velocity[0], velocity[1], velocity[2] };
+                input.hasGestureVelocity = std::isfinite(input.gestureVelocityMetersPerSecond.x) &&
+                    std::isfinite(input.gestureVelocityMetersPerSecond.y) && std::isfinite(input.gestureVelocityMetersPerSecond.z);
+            }
+        }
+
         // The resolver intentionally exposes no scene node. Keep the validity
         // of this exact controller sample through every consumer's admission.
         input.grabAnchorWorld = input.rawHandWorld.translate;

@@ -38,7 +38,6 @@
 #include "physics-interaction/timing/RockGameTiming.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
-#include "physics-interaction/weapon/AuthoredWeaponGripCacheStore.h"
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/weapon/telemetry/ScopeTransitionTelemetry.h"
@@ -990,7 +989,21 @@ namespace
     void invokeFramePhaseGuarded(void (*handler)(), const std::uint32_t phase) noexcept
     {
         try {
-            handler();
+            constexpr std::array<const char*, 9> entryPhases{
+                "native-graph:entry", "body-placed", "legs-solved", "before-arm-solve",
+                "after-arm-solve:entry", "after-hand-pose", "after-weapon:entry", "before-world-final", "after-world-final:entry"
+            };
+            constexpr std::array<const char*, 9> exitPhases{
+                "native-graph:exit", "body-placed", "legs-solved", "before-arm-solve",
+                "after-arm-solve:exit", "after-hand-pose", "after-weapon:exit", "before-world-final", "after-world-final:exit"
+            };
+            if (s_frikSkeletonAnnounced && phase < entryPhases.size()) {
+                frik_hand_world_authority::traceArmPose(entryPhases[phase], s_schedulerSequence);
+            }
+            if (handler) handler();
+            if (handler && s_frikSkeletonAnnounced && phase < exitPhases.size()) {
+                frik_hand_world_authority::traceArmPose(exitPhases[phase], s_schedulerSequence);
+            }
         } catch (...) {
             reportFramePhaseFault(phase);
         }
@@ -1008,6 +1021,12 @@ namespace
             break;
         case FramePhase::AfterArmSolve:
             invokeFramePhaseGuarded(&onFrikAfterArmSolve, phase);
+            break;
+        case FramePhase::BodyPlaced:
+        case FramePhase::BeforeArmSolve:
+        case FramePhase::AfterHandPose:
+        case FramePhase::BeforeWorldFinal:
+            invokeFramePhaseGuarded(nullptr, phase);
             break;
         case FramePhase::AfterWeaponPosition:
             invokeFramePhaseGuarded(&onFrikAfterWeaponPosition, phase);
@@ -1040,6 +1059,15 @@ namespace
             }
         }
         logger::info("ROCK: FRIK frame callbacks registered (FrameBegin, NativeGraphOutput, AfterArmSolve, AfterWeaponPosition, AfterWorldFinal, FrameEnd).");
+        // Diagnostic callbacks are optional and cannot prevent ROCK's normal
+        // callbacks from loading when another client filled FRIK's registry.
+        for (const FramePhase phase : { FramePhase::BodyPlaced, FramePhase::BeforeArmSolve, FramePhase::AfterHandPose, FramePhase::BeforeWorldFinal }) {
+            if (!frik_visual_authority::registerFrameCallback("ROCK_ArmTrace", phase, &onFrikFramePhase, nullptr, kPriority)) {
+                (void)frik_visual_authority::unregisterFrameCallback("ROCK_ArmTrace");
+                logger::warn("ROCK: arm-pose diagnostic phase registration failed at {}; tracing existing ROCK phases only.", static_cast<unsigned>(phase));
+                break;
+            }
+        }
         return true;
     }
 
@@ -1112,6 +1140,16 @@ namespace
         }
     }
 
+    void onExternalWeaponVisualChanged(F4SE::MessagingInterface::Message* msg)
+    {
+        // VRVanillaFixes v1 event: 0x56564601, no payload, game thread.
+        // ROCK owns only collider invalidation; material detection/culling live
+        // entirely in the optional sender. Existing culled-node filtering applies.
+        if (msg && msg->type == 0x56564601 && msg->dataLen == 0 && s_physicsInteraction) {
+            s_physicsInteraction->requestWeaponCollisionRefresh();
+        }
+    }
+
     void onF4SEMessage(F4SE::MessagingInterface::Message* msg)
     {
         if (!msg) {
@@ -1119,6 +1157,7 @@ namespace
         }
 
         if (msg->type == F4SE::MessagingInterface::kGameLoaded) {
+            s_messaging->RegisterListener(onExternalWeaponVisualChanged, "VRVanillaFixes");
             logger::info("ROCK: GameLoaded -- initializing FRIKApi and loading config...");
             const auto providerGeneration = bumpGeneration(s_providerGeneration);
             if (s_physicsInteraction) {
@@ -1192,7 +1231,6 @@ namespace
                 return;
             }
             rock::saved_grab_offset::preload();
-            rock::authored_weapon_grip_cache::preload();
             rock::LooseMolotovVisual::prepareResources();
             rock::installHavokTimingFixHook();
             if (!rock::held_scene_presentation::install()) {

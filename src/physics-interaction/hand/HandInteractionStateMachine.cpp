@@ -101,6 +101,12 @@ namespace rock
             }
             break;
 
+        case HandInteractionEvent::UnlockFarSelection:
+            if (current == HandState::SelectionLocked) {
+                return accept(HandState::SelectedFar, 0, "unlockFarSelection");
+            }
+            break;
+
         case HandInteractionEvent::BeginPreGrabItem:
             if (isCommitCandidateState(current)) {
                 return accept(

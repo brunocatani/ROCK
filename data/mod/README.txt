@@ -41,9 +41,9 @@ The wheel menu uses ROCK's configuration interface to display and save settings.
 Runtime and example INIs are not included in this archive.
 
 Upgrading from older versions: bToggleGrab and bAutoDrop are replaced by
-iWeaponGrabMode and iWeaponDropMode. The default is iWeaponGrabMode=2
-(toggle firing grip, hold support) and iWeaponDropMode=1 (No Drop).
-Use iWeaponDropMode=2 for the former retained-in-hand Auto Drop behavior.
+iWeaponGrabMode and iWeaponDropMode. The default is iWeaponGrabMode=1
+(toggle both grips) and iWeaponDropMode=2 (Toggle Drop).
+Toggle Drop preserves the former retained-in-hand Auto Drop behavior.
 Keeping the previous weapon in the other hand when equipping another is now
 enabled by default through bKeepPreviousWeaponInHandOnEquip=true.
 Back up and delete an old ROCK.ini before launching to regenerate it with

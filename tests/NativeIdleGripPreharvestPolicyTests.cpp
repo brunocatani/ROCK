@@ -7,7 +7,7 @@
 
 namespace
 {
-    using PersistedTransform = rock::authored_weapon_grip_cache::PersistedTransform;
+    using CalibrationTransform = rock::pipe_firing_grip_policy::Transform;
 
     struct SampleTransform
     {
@@ -16,7 +16,7 @@ namespace
         float scale{ 1.0f };
 
         SampleTransform() = default;
-        explicit SampleTransform(const PersistedTransform& source)
+        explicit SampleTransform(const CalibrationTransform& source)
         {
             for (std::size_t r = 0; r < 3; ++r)
                 for (std::size_t c = 0; c < 3; ++c)
@@ -49,7 +49,7 @@ namespace
 
         // Native Syringer idle capture, 2026-09-20: same pipe-rifle pose,
         // independent clip path and sampling roundoff in hand/finger locals.
-        constexpr std::array<PersistedTransform, 16> syringerPose{{
+        constexpr std::array<CalibrationTransform, 16> syringerPose{{
             { { -0.00433158875f, 0.702639639f, -0.711532652f, 0.998639047f, 0.0400214195f, 0.0334417224f, 0.0519739389f, -0.710419416f, -0.701856613f }, { 2.08679962f, -9.78137493f, 2.116606f }, 1.0f },
             { { 0.625230908f, -0.582359731f, -0.519560933f, -0.770904839f, -0.357097268f, -0.527434707f, 0.121622935f, 0.730300426f, -0.672212124f }, { 1.58291626f, -1.26266479f, -1.85335541f }, 1.0f },
             { { 0.731590867f, -0.681743979f, 1.41930968E-07f, 0.681743979f, 0.731590867f, -3.60496614E-07f, 1.41930968E-07f, 3.60496614E-07f, 1.0f }, { 3.56959915f, 0.0f, 0.0f }, 1.0f },
@@ -71,18 +71,11 @@ namespace
         SampleFingers fingers{};
         for (std::size_t i = 0; i < fingers.localTransforms.size(); ++i)
             fingers.localTransforms[i] = SampleTransform{ syringerPose[i + 1] };
-        constexpr auto syringerClip = "actors\\character\\_1stperson\\animations\\syringer\\WPNIDLEready.HKX";
-        constexpr auto copiedClip = "Actors/Character/_1stPerson/Animations/ModdedWeapon/CopiedIdle.hkx";
         check(recognizesVanilla(hand, fingers), "recorded Syringer pose did not qualify");
-        check(requiresFreshSample(syringerClip, hand, fingers), "Syringer cache skipped fresh qualification");
-        check(requiresFreshSample(copiedClip, hand, fingers), "renamed shared pose skipped fresh qualification");
 
         auto shiftedHand = hand;
         shiftedHand.translate.x += 0.001f;
         check(!recognizesVanilla(shiftedHand, fingers), "different hand position received pipe correction");
-        check(requiresFreshSample(kVanillaPoses[0].clip, shiftedHand, fingers), "pipe replacement cache skipped refresh");
-        check(requiresFreshSample(syringerClip, shiftedHand, fingers), "Syringer replacement cache skipped refresh");
-        check(!requiresFreshSample(copiedClip, shiftedHand, fingers), "unrelated custom pose lost cache reuse");
         shiftedHand = hand;
         shiftedHand.rotate.entry[0][0] += 0.001f;
         check(!recognizesVanilla(shiftedHand, fingers), "different hand rotation received pipe correction");
@@ -172,24 +165,24 @@ int main()
     static_assert(sameClipPath("Actors/Character/SREP/WPNIdleReady.hkx", "actors\\character\\srep\\wpnidleready.HKX"));
     static_assert(!sameClipPath("SREP/WPNIdleReady.hkx", "SVD/WPNIdleReady.hkx"));
 
-    static_assert(persistenceSampleTimeSeconds(10.0f, 0) == 0.0f);
-    static_assert(persistenceSampleTimeSeconds(10.0f, 2) == 4.0f);
-    static_assert(persistenceSampleTimeSeconds(10.0f, 4) == 8.0f);
-    static_assert(stableForPersistence(5, 2.0f, 0.01f, 0.1f, 0.01f, 0.2f, 0.0001f));
-    static_assert(!stableForPersistence(4, 2.0f, 0.01f, 0.1f, 0.01f, 0.2f, 0.0001f));
-    static_assert(!stableForPersistence(5, 2.0f, 0.06f, 0.1f, 0.01f, 0.2f, 0.0001f));
-    static_assert(!stableForPersistence(5, 2.0f, 0.01f, 0.6f, 0.01f, 0.2f, 0.0001f));
-    static_assert(!stableForPersistence(5, 2.0f, 0.01f, 0.1f, 0.01f, 1.1f, 0.0001f));
+    static_assert(validationSampleTimeSeconds(10.0f, 0) == 0.0f);
+    static_assert(validationSampleTimeSeconds(10.0f, 2) == 4.0f);
+    static_assert(validationSampleTimeSeconds(10.0f, 4) == 8.0f);
+    static_assert(stableAcrossSamples(5, 2.0f, 0.01f, 0.1f, 0.01f, 0.2f, 0.0001f));
+    static_assert(!stableAcrossSamples(4, 2.0f, 0.01f, 0.1f, 0.01f, 0.2f, 0.0001f));
+    static_assert(!stableAcrossSamples(5, 2.0f, 0.06f, 0.1f, 0.01f, 0.2f, 0.0001f));
+    static_assert(!stableAcrossSamples(5, 2.0f, 0.01f, 0.6f, 0.01f, 0.2f, 0.0001f));
+    static_assert(!stableAcrossSamples(5, 2.0f, 0.01f, 0.1f, 0.01f, 1.1f, 0.0001f));
 
     // Support hand tolerates idle sway (1gu / 3deg) but not travel; the
     // finger and scale limits stay as strict as the primary's.
-    static_assert(supportStableForPersistence(5, 2.0f, 0.8f, 2.5f, 0.01f, 0.2f, 0.0001f));
-    static_assert(!supportStableForPersistence(4, 2.0f, 0.8f, 2.5f, 0.01f, 0.2f, 0.0001f));
-    static_assert(!supportStableForPersistence(5, 2.0f, 1.2f, 2.5f, 0.01f, 0.2f, 0.0001f));
-    static_assert(!supportStableForPersistence(5, 2.0f, 0.8f, 3.5f, 0.01f, 0.2f, 0.0001f));
-    static_assert(!supportStableForPersistence(5, 2.0f, 0.8f, 2.5f, 0.03f, 0.2f, 0.0001f));
-    static_assert(!supportStableForPersistence(5, 2.0f, 0.8f, 2.5f, 0.01f, 1.1f, 0.0001f));
-    static_assert(!supportStableForPersistence(5, 2.0f, 0.8f, 2.5f, 0.01f, 0.2f, 0.002f));
+    static_assert(supportStableAcrossSamples(5, 2.0f, 0.8f, 2.5f, 0.01f, 0.2f, 0.0001f));
+    static_assert(!supportStableAcrossSamples(4, 2.0f, 0.8f, 2.5f, 0.01f, 0.2f, 0.0001f));
+    static_assert(!supportStableAcrossSamples(5, 2.0f, 1.2f, 2.5f, 0.01f, 0.2f, 0.0001f));
+    static_assert(!supportStableAcrossSamples(5, 2.0f, 0.8f, 3.5f, 0.01f, 0.2f, 0.0001f));
+    static_assert(!supportStableAcrossSamples(5, 2.0f, 0.8f, 2.5f, 0.03f, 0.2f, 0.0001f));
+    static_assert(!supportStableAcrossSamples(5, 2.0f, 0.8f, 2.5f, 0.01f, 1.1f, 0.0001f));
+    static_assert(!supportStableAcrossSamples(5, 2.0f, 0.8f, 2.5f, 0.01f, 0.2f, 0.002f));
 
     // Bone chain walk: leaf first up to the root, failing closed on a bad
     // parent, a short buffer, or a cycle.

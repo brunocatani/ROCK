@@ -1,6 +1,7 @@
 #pragma once
 
 #include "RE/Bethesda/TESForms.h"
+#include "RE/Bethesda/BGSInventoryItem.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
 #include "RE/NetImmerse/NiAVObject.h"
 #include "RE/NetImmerse/NiPoint.h"
@@ -39,6 +40,7 @@ namespace rock::weapon_equip_transfer
         EquippedIdentityMismatch,
         EquippedStackMismatch,
         ActivateRefThenInstantEquip,
+        InventoryInstantEquip,
     };
 
     enum class DropReason : std::uint8_t
@@ -139,6 +141,18 @@ namespace rock::weapon_equip_transfer
     [[nodiscard]] const char* equipReasonName(EquipReason reason) noexcept;
     [[nodiscard]] const char* dropReasonName(DropReason reason) noexcept;
     [[nodiscard]] EquipResult transferHeldWeaponToPlayerAndEquip(EquipInput input) noexcept;
+    // Frame-thread lease. Stack and instance remain owned while a provider
+    // switch is pending; the native stack index is re-resolved before equip.
+    struct InventorySelection
+    {
+        std::uint32_t formID{};
+        std::uint32_t stackIndex{};
+        RE::BSTSmartPointer<RE::BGSInventoryItem::Stack> stack{};
+        RE::BSTSmartPointer<RE::TBO_InstanceData> instance{};
+    };
+    [[nodiscard]] InventorySelection captureInventoryWeapon(std::uint32_t formID, std::uint32_t stackIndex) noexcept;
+    [[nodiscard]] bool inventoryWeaponCurrent(const InventorySelection& selection) noexcept;
+    [[nodiscard]] EquipResult equipInventoryWeapon(const InventorySelection& selection) noexcept;
     [[nodiscard]] EquippedDropResult dropEquippedWeaponFromPlayer(const EquippedDropInput& input) noexcept;
     // Frame-thread only. Changes selection, never removes an inventory item.
     [[nodiscard]] bool replaceHolsteredWeaponWithUnarmed() noexcept;

@@ -57,6 +57,7 @@ namespace rock
             HeldGripZoneEquip,
             MenuExit,
             WorkbenchExit,
+            InventoryEquip,
         };
 
         enum class TerminalResult : std::uint8_t
@@ -137,6 +138,10 @@ namespace rock
         [[nodiscard]] PendingGrip& pendingGrip() noexcept { return _pendingGrip; }
         [[nodiscard]] const PendingGrip& pendingGrip() const noexcept { return _pendingGrip; }
         [[nodiscard]] const held_weapon_transfer::State& heldTransfer() const noexcept { return _heldTransfer; }
+        [[nodiscard]] const held_weapon_transfer::State* inventoryTransferResult(std::uint64_t sequence) const noexcept
+        {
+            return held_weapon_transfer::inventoryResult(_heldTransfer, _completedInventoryTransfer, sequence);
+        }
         bool beginHeldRequest(const held_weapon_transfer::Request& request);
         void cancelHeldRequest(const char* reason, held_weapon_transfer::Outcome outcome = held_weapon_transfer::Outcome::Failed);
         void recordOutgoingRemoval(std::uint32_t reference);
@@ -219,6 +224,7 @@ namespace rock
         void updateHeldRecovery();
         void releasePendingNativeCull(bool restore);
         held_weapon_transfer::State _heldTransfer{};
+        held_weapon_transfer::State _completedInventoryTransfer{};
         PendingGrip _pendingGrip{};
         RE::NiPointer<RE::NiAVObject> _pendingNativeCull{};
         float _heldWaitSeconds{ 0.0f };

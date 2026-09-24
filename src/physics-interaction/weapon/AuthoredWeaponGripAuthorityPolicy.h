@@ -11,8 +11,7 @@ namespace rock::authored_weapon_grip_authority_policy
     {
         Unknown,
         LiveEquippedGraph,
-        PersistedNativeIdle,
-        FreshNativeIdle,
+        FreshNativeIdle = 3,
     };
 
     [[nodiscard]] constexpr bool completeFiringFingerPose(const std::uint16_t enabledMask) noexcept { return enabledMask == kCompleteFiringFingerMask; }
@@ -39,7 +38,7 @@ namespace rock::authored_weapon_grip_authority_policy
     /*
      * Value witness for "same authored hand-in-weapon relation". Capture
      * sequences change whenever the same authored idle is re-published from a
-     * different source (live graph, fresh off-screen harvest, disk cache), so
+     * different source (live graph or fresh off-screen harvest), so
      * identity-by-sequence alone discards still-valid paired data. Two
      * relations are the same authored pose when every rotation entry and the
      * grip translation agree within the idle-sway tolerance below; a real

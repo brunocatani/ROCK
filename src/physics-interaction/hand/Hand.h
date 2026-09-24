@@ -578,6 +578,10 @@ namespace rock
         void updateDelayedGrabHandCollisionRestore(RE::hknpWorld* world, float deltaTime);
 
         bool lockFarSelection();
+        bool lockGesturePullSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* world, const RE::NiPoint3& handOrigin);
+        bool refreshGesturePullSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* world,
+            const RE::NiPoint3& handOrigin, RE::NiPoint3& targetWorld);
+        bool unlockFarSelection();
         bool startDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform);
         bool updateDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float deltaTime);
         void finishPullPrepAsPhysicalDropIfActive(const char* context);
@@ -1075,6 +1079,10 @@ namespace rock
         HandBoneColliderSet _boneColliders;
 
         SelectedObject _currentSelection;
+        // Pins only the lock's scene generation; no Havok body pointer survives a frame.
+        RE::NiPointer<RE::NiAVObject> _gestureSelectionRoot;
+        std::uintptr_t _gestureCollisionOwner = 0;
+        selection_query_policy::BodyLocalSelectionAnchor _gestureSelectionAnchor{};
         SelectedObject _cachedFarCandidate;
         GrabAcquisitionCache _grabAcquisitionCache;
         int _farDetectCounter = 0;
@@ -1429,6 +1437,8 @@ namespace rock
         std::array<RE::NiTransform, 15> _grabFingerLocalTransforms{};
         std::uint16_t _grabFingerLocalTransformMask = 0;
         grab_finger_pose_runtime::SolvedGrabFingerPose _grabFingerPose{};
+        unsigned _legacyFingerPoseUpdates = 0;
+        float _legacyFingerPoseDeltaTime = 0.0f;
         grab_finger_pose_runtime::FingerPoseTriangleSpatialIndex _grabFingerTriangleIndex{};
         bool _hasGrabFingerJointPose = false;
         bool _hasGrabFingerLocalTransforms = false;

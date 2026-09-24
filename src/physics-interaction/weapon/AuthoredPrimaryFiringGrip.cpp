@@ -342,8 +342,8 @@ namespace rock
 
         /*
          * Support-relation precedence. A native-idle support relation
-         * (sampled from the idle clip by the preharvest, or restored from
-         * its disk record) is the settled authored pose and is published
+         * sampled from the idle clip by the preharvest is the settled
+         * authored pose and is published
          * directly, in both hand topologies, from frame zero. The live
          * equipped-graph capture and its stable snapshot are only the
          * fallback for a clip the preharvest could not serve.
@@ -904,6 +904,15 @@ namespace rock
                         input.weaponNode,
                         input.weaponGenerationKey,
                         currentWeaponKey);
+            // Retaining the canonical pose also retains its verified grab
+            // stations while the two-hand solver owns the weapon transform.
+            if (retainedForHandoff && authoredDecision.reason ==
+                    authored_weapon_grip_capture_policy::AuthoredPrimaryDecisionReason::ConflictingWeaponAuthority) {
+                if (!publishLibraryAuthoredSupportCandidate() && authoredLookup.found) {
+                    (void)publishStableAuthoredSupportCandidate(
+                        authoredLookup.captureSequence, selectedRightHandInWeapon);
+                }
+            }
             if (!input.rockFiringHandIsLeft && !retainedForHandoff) {
                 weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             }

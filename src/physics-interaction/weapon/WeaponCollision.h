@@ -247,6 +247,7 @@ namespace rock
         void update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, float dt, bool weaponDrawn);
 
         void requestWorkbenchExitRebuild();
+        void requestExternalVisualRebuild() { _drive.workbenchExitRebuildRequested.store(true, std::memory_order_release); }
         void requestRebuildForReplacedSources();
 
         bool hasWeaponBody() const;

@@ -333,5 +333,6 @@ int main()
     identity.objectIndexDataSignature = 0xAAAB;
     ok &= expectDifferent("content key changes with equipped mod index content", contentKey, makeEquippedWeaponIdentityKey(identity));
 
+
     return ok ? 0 : 1;
 }

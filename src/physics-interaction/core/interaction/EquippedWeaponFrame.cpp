@@ -535,6 +535,7 @@ namespace rock
                 _equipped.shoulderSheath.active ||
                 (pendingGripMatches && (equipGrip.menuResume ||
                     equipGrip.source == StartSource::HeldWeaponEquip ||
+                    equipGrip.source == StartSource::InventoryEquip ||
                     equipGrip.source == StartSource::ShoulderRetrieval));
             if (equipped_weapon_transition_policy::observeDefaultLeftEquip(
                     _equipped.defaultEquipObservedOwnershipKey,
@@ -1048,6 +1049,7 @@ namespace rock
                             equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource::ShoulderRetrieval ||
                         _equipped.transition.pendingGrip().source ==
                             equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource::DefaultEquip ||
+                        _equipped.transition.pendingGrip().source == StartSource::InventoryEquip ||
                         pendingToggleGripRetained);
                 const auto leftTakeoverReadiness =
                     _twoHandedGrip.getLeftFiringTakeoverReadiness(

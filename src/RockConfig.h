@@ -30,6 +30,7 @@
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/input/BareFistGesturePolicy.h"
+#include "physics-interaction/input/FarPullGesturePolicy.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
 #include "physics-interaction/weapon/GripZoneIndicatorPolicy.h"
 
@@ -47,6 +48,7 @@ namespace rock
         // Function-level controls; raw OpenVR button state remains untouched.
         bool rockSuppressNativeVats = false;
         float rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
+        int rockFarGrabMode = static_cast<int>(far_pull_gesture::Mode::Immediate);
         bool rockGrabInputIntentStateEnabled = true;
         float rockGrabInputLeewaySeconds = 0.12f;
         float rockGrabInputForceSeconds = 0.08f;
@@ -95,10 +97,10 @@ namespace rock
         bool rockDetachEitherHand = true;
         bool rockFiringGripDetachPosePreservationEnabled = true;
         // 1: keep equipped; 2: transfer to a held loose weapon; 3: drop without grabbing.
-        int rockWeaponDropMode = 1;
+        int rockWeaponDropMode = 2;
         bool rockKeepPreviousWeaponInHandOnEquip = true;
         // 1: toggle both grips; 2: toggle firing only; 3: hold both grips.
-        int rockWeaponGrabMode = 2;
+        int rockWeaponGrabMode = 1;
         // Allow dynamic support grabs beyond authored grips. False preserves
         // authored-grip preference and the existing missing-pose fallback.
         bool rockGrabAnywhereOnWeapon = false;
@@ -457,6 +459,7 @@ namespace rock
         float rockGrabHandReturnMaxDistance = 14.0f;
         float rockGrabHandReturnMinAngleDegrees = 5.0f;
         float rockGrabHandReturnMaxAngleDegrees = 90.0f;
+        int rockGrabFingerPoseMode = 1; // 1=current, 2=June 2; captured per grip.
         bool rockGrabMeshFingerPoseEnabled = true;
         bool rockGrabMeshJointPoseEnabled = true;
         float rockGrabFingerMinValue = 0.2f;

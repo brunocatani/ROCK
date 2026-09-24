@@ -2401,7 +2401,8 @@ namespace rock
             if (!node) {
                 return false;
             }
-            return (node->flags.flags & 1) == 0 && !node->GetAppCulled() && node->local.scale != 0.0f;
+            if ((node->flags.flags & 1) != 0 || node->GetAppCulled() || node->local.scale == 0.0f) return false;
+            return true;
         }
 
         inline std::uintptr_t readRendererChildPointer(void* rendererData, std::ptrdiff_t rendererChildOffset)

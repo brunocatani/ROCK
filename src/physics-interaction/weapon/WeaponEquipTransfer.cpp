@@ -239,6 +239,111 @@ namespace rock::weapon_equip_transfer
             return fallback;
         }
 
+        EquipResult equipSelectedStack(RE::PlayerCharacter* player, RE::ActorEquipManager* equipManager,
+            const InventoryWeaponStack& stack, held_weapon_instant_transition::RequestReason reason,
+            EquipResult result) noexcept
+        {
+            result.stackID = stack.stackID;
+            result.requestedInstanceData = reinterpret_cast<std::uintptr_t>(
+                stack.instanceData.get());
+            RE::BGSObjectInstance objectInstance(result.weapon, stack.instanceData.get());
+            /*
+             * The native wrapper owns one immediate manager call and suppresses
+             * only the verified sheathe/draw action submissions made inside that
+             * synchronous transaction. A queued retry cannot rescue an immediate
+             * validation failure and would escape the scoped interceptor, so it is
+             * deliberately unsupported here.
+             */
+            result.instantTransition =
+                held_weapon_instant_transition::equipImmediatelyWithoutActions(
+                    held_weapon_instant_transition::ImmediateEquipInput{
+                        .manager = equipManager,
+                        .player = player,
+                        .object = &objectInstance,
+                        .stackID = stack.stackID,
+                        .equipSlot = stack.equipSlot,
+                        .reason = reason,
+                    });
+            result.usedImmediateEquip = result.instantTransition.managerAccepted;
+            if (!result.instantTransition.managerAccepted) {
+                result.reason = result.instantTransition.code ==
+                        held_weapon_instant_transition::ImmediateEquipCode::CapabilityUnavailable ?
+                    EquipReason::InstantTransitionUnavailable :
+                    EquipReason::EquipObjectFailed;
+                return result;
+            }
+            if (!result.instantTransition.success()) {
+                result.reason = EquipReason::InvalidNativeActionTrace;
+                return result;
+            }
+
+            const auto equippedAfter = readEquippedWeaponSnapshot();
+            result.observedEquippedFormID = equippedAfter.weapon ? equippedAfter.weapon->GetFormID() : 0;
+            result.observedEquippedInstanceData = reinterpret_cast<std::uintptr_t>(
+                equippedAfter.instanceData);
+            result.observedEquipIndex = equippedAfter.equipIndex;
+            result.committed = equippedAfter.weapon == result.weapon &&
+                (!stack.instanceData || equippedAfter.instanceData == stack.instanceData.get());
+            if (!result.committed) {
+                result.reason = EquipReason::EquippedIdentityMismatch;
+                return result;
+            }
+
+            const auto equippedStack = findEquippedWeaponStack(
+                player,
+                result.weapon,
+                stack.instanceData.get());
+            result.matchedEquippedStack = equippedStack.found &&
+                weapon_inventory_stack_selection_policy::matchesEquippedStack(
+                    { stack.stackAddress, reinterpret_cast<std::uintptr_t>(stack.instanceData.get()), stack.count },
+                    { equippedStack.stackAddress, reinterpret_cast<std::uintptr_t>(equippedStack.instanceData.get()), equippedStack.count });
+            ROCK_LOG_INFO(Weapon,
+                "Held equip stack validation weapon={:08X} requestedIndex={} equippedIndex={} found={} identityMatch={} requestedNode=0x{:X} equippedNode=0x{:X} requestedInstance=0x{:X} equippedInstance=0x{:X}",
+                result.weapon->formID, stack.stackID, equippedStack.stackID,
+                equippedStack.found, result.matchedEquippedStack,
+                stack.stackAddress, equippedStack.stackAddress,
+                reinterpret_cast<std::uintptr_t>(stack.instanceData.get()),
+                reinterpret_cast<std::uintptr_t>(equippedStack.instanceData.get()));
+            if (!result.matchedEquippedStack) {
+                result.reason = EquipReason::EquippedStackMismatch;
+                return result;
+            }
+            result.success = true;
+            result.reason = EquipReason::ActivateRefThenInstantEquip;
+            return result;
+        }
+
+        InventoryWeaponStack findSelectedInventoryStack(const InventorySelection& selection) noexcept
+        {
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            auto* weapon = RE::TESForm::GetFormByID<RE::TESObjectWEAP>(selection.formID);
+            if (!selection.stack || !player || !player->inventoryList || !weapon) return {};
+            const RE::BSAutoReadLock lock{player->inventoryList->rwLock};
+            std::size_t scanned = 0;
+            for (const auto& entry : player->inventoryList->data) {
+                if (++scanned > 16384) return {};
+                if (entry.object != weapon) continue;
+                std::uint32_t index = 0;
+                for (auto* stack = entry.stackData.get(); stack && index <
+                    weapon_inventory_stack_selection_policy::kMaximumObservedStacks; stack = stack->nextStack.get(), ++index) {
+                    if (stack != selection.stack.get()) continue;
+                    if (!stack->GetCount() || stack->IsEquipped()) return {};
+                    RE::BSTSmartPointer<RE::TBO_InstanceData> instance{};
+                    if (stack->extra) {
+                        if (const auto* extra = stack->extra->GetByType<RE::ExtraInstanceData>()) instance = extra->data;
+                    }
+                    if (instance.get() != selection.instance.get()) return {};
+                    auto* slot = weapon->GetEquipSlot(instance.get());
+                    if (!slot) slot = weapon->GetEquipSlot(nullptr);
+                    return {.found = true, .matchedInstanceData = true, .stackID = index,
+                        .count = stack->GetCount(), .stackAddress = reinterpret_cast<std::uintptr_t>(stack),
+                        .instanceData = std::move(instance), .equipSlot = slot};
+                }
+                return {};
+            }
+            return {};
+        }
+
     }
 
     const char* equipReasonName(EquipReason reason) noexcept
@@ -276,6 +381,8 @@ namespace rock::weapon_equip_transfer
             return "equipped-identity-mismatch";
         case EquipReason::EquippedStackMismatch:
             return "equipped-stack-mismatch";
+        case EquipReason::InventoryInstantEquip:
+            return "inventory-instant-equip";
         case EquipReason::ActivateRefThenInstantEquip:
             return "activate-ref-instant-equip";
         default:
@@ -427,75 +534,59 @@ namespace rock::weapon_equip_transfer
             return result;
         }
 
-        result.stackID = stack.stackID;
         result.matchedInstanceData = expectedInstanceData &&
             stack.instanceData.get() == expectedInstanceData.get();
-        result.requestedInstanceData = reinterpret_cast<std::uintptr_t>(
-            stack.instanceData.get());
-        RE::BGSObjectInstance objectInstance(result.weapon, stack.instanceData.get());
-        /*
-         * The native wrapper owns one immediate manager call and suppresses
-         * only the verified sheathe/draw action submissions made inside that
-         * synchronous transaction. A queued retry cannot rescue an immediate
-         * validation failure and would escape the scoped interceptor, so it is
-         * deliberately unsupported here.
-         */
-        result.instantTransition =
-            held_weapon_instant_transition::equipImmediatelyWithoutActions(
-                held_weapon_instant_transition::ImmediateEquipInput{
-                    .manager = equipManager,
-                    .player = player,
-                    .object = &objectInstance,
-                    .stackID = stack.stackID,
-                    .equipSlot = stack.equipSlot,
-                    .reason = input.transitionReason,
-                });
-        result.usedImmediateEquip = result.instantTransition.managerAccepted;
-        if (!result.instantTransition.managerAccepted) {
-            result.reason = result.instantTransition.code ==
-                    held_weapon_instant_transition::ImmediateEquipCode::CapabilityUnavailable ?
-                EquipReason::InstantTransitionUnavailable :
-                EquipReason::EquipObjectFailed;
-            return result;
-        }
-        if (!result.instantTransition.success()) {
-            result.reason = EquipReason::InvalidNativeActionTrace;
-            return result;
-        }
+        return equipSelectedStack(player, equipManager, stack, input.transitionReason, std::move(result));
+    }
 
-        const auto equippedAfter = readEquippedWeaponSnapshot();
-        result.observedEquippedFormID = equippedAfter.weapon ? equippedAfter.weapon->GetFormID() : 0;
-        result.observedEquippedInstanceData = reinterpret_cast<std::uintptr_t>(
-            equippedAfter.instanceData);
-        result.observedEquipIndex = equippedAfter.equipIndex;
-        result.committed = equippedAfter.weapon == result.weapon &&
-            (!stack.instanceData || equippedAfter.instanceData == stack.instanceData.get());
-        if (!result.committed) {
-            result.reason = EquipReason::EquippedIdentityMismatch;
-            return result;
+    InventorySelection captureInventoryWeapon(std::uint32_t formID, std::uint32_t stackIndex) noexcept
+    {
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        auto* weapon = RE::TESForm::GetFormByID<RE::TESObjectWEAP>(formID);
+        if (!player || !player->inventoryList || !weapon || stackIndex >=
+            weapon_inventory_stack_selection_policy::kMaximumObservedStacks) return {};
+        const RE::BSAutoReadLock lock{player->inventoryList->rwLock};
+        std::size_t scanned = 0;
+        for (const auto& entry : player->inventoryList->data) {
+            if (++scanned > 16384) return {};
+            if (entry.object != weapon) continue;
+            auto stack = entry.stackData;
+            for (std::uint32_t i = 0; stack && i < stackIndex; ++i) stack = stack->nextStack;
+            if (!stack || !stack->GetCount() || stack->IsEquipped()) return {};
+            RE::BSTSmartPointer<RE::TBO_InstanceData> instance{};
+            if (stack->extra) {
+                if (const auto* extra = stack->extra->GetByType<RE::ExtraInstanceData>()) instance = extra->data;
+            }
+            return {formID, stackIndex, std::move(stack), std::move(instance)};
         }
+        return {};
+    }
 
-        const auto equippedStack = findEquippedWeaponStack(
-            player,
-            result.weapon,
-            stack.instanceData.get());
-        result.matchedEquippedStack = equippedStack.found &&
-            weapon_inventory_stack_selection_policy::matchesEquippedStack(
-                { stack.stackAddress, reinterpret_cast<std::uintptr_t>(stack.instanceData.get()), stack.count },
-                { equippedStack.stackAddress, reinterpret_cast<std::uintptr_t>(equippedStack.instanceData.get()), equippedStack.count });
-        ROCK_LOG_INFO(Weapon,
-            "Held equip stack validation weapon={:08X} requestedIndex={} equippedIndex={} found={} identityMatch={} requestedNode=0x{:X} equippedNode=0x{:X} requestedInstance=0x{:X} equippedInstance=0x{:X}",
-            result.weapon->formID, stack.stackID, equippedStack.stackID,
-            equippedStack.found, result.matchedEquippedStack,
-            stack.stackAddress, equippedStack.stackAddress,
-            reinterpret_cast<std::uintptr_t>(stack.instanceData.get()),
-            reinterpret_cast<std::uintptr_t>(equippedStack.instanceData.get()));
-        if (!result.matchedEquippedStack) {
-            result.reason = EquipReason::EquippedStackMismatch;
+    bool inventoryWeaponCurrent(const InventorySelection& selection) noexcept
+    {
+        return findSelectedInventoryStack(selection).found;
+    }
+
+    EquipResult equipInventoryWeapon(const InventorySelection& selection) noexcept
+    {
+        EquipResult result{};
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        auto* manager = RE::ActorEquipManager::GetSingleton();
+        result.weapon = RE::TESForm::GetFormByID<RE::TESObjectWEAP>(selection.formID);
+        const auto stack = findSelectedInventoryStack(selection);
+        if (!player || !manager || !result.weapon || !stack.found || !stack.equipSlot) {
+            result.reason = EquipReason::InventoryStackNotFound;
             return result;
         }
-        result.success = true;
-        result.reason = EquipReason::ActivateRefThenInstantEquip;
+        const auto before = readEquippedWeaponSnapshot();
+        result.previousEquippedFormID = before.weapon ? before.weapon->GetFormID() : 0;
+        result.previousEquippedInstanceData = reinterpret_cast<std::uintptr_t>(before.instanceData);
+        result.formID = selection.formID;
+        result.attempted = true;
+        result.matchedInstanceData = stack.instanceData.get() == selection.instance.get();
+        result = equipSelectedStack(player, manager, stack,
+            held_weapon_instant_transition::RequestReason::InventoryEquip, std::move(result));
+        if (result.success) result.reason = EquipReason::InventoryInstantEquip;
         return result;
     }
 

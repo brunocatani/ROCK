@@ -2602,6 +2602,7 @@ namespace rock
         const bool supportHandIsLeft = isSupportHandLeft();
         const bool transferredRightGrip = usesNativeRightCarry() && _firing.transferredPrimaryGrip.valid();
         RE::NiTransform transferredWeaponWorld{};
+        bool rightRecoilApplied = false;
 
         if (usesLeftFiringCarry()) {
             // Visual-only support never steers aim, but with a LEFT firing
@@ -2636,6 +2637,11 @@ namespace rock
                 transitionToInactive(false);
                 return;
             }
+        } else {
+            // Publish the firing-hand recoil before deriving the support seat.
+            // Both hands then follow one recoiled weapon frame; FRIK receives
+            // no extra per-hand kick for this owned recoil sample.
+            rightRecoilApplied = applyRightOneHandRecoil(weaponNode);
         }
 
         static_assert(weapon_visual_authority_math::handPosePrecedesLockedHandAuthority());
@@ -2657,7 +2663,8 @@ namespace rock
         }
 
         _lastSolvedWeaponTransform = weaponNode ? weaponNode->world : RE::NiTransform{};
-        _hasSolvedWeaponTransform = transferredRightGrip || (usesLeftFiringCarry() && _hasSolvedWeaponTransform);
+        _hasSolvedWeaponTransform = transferredRightGrip || rightRecoilApplied ||
+            (usesLeftFiringCarry() && _hasSolvedWeaponTransform);
 
         if (weaponNode && ++_gripLogCounter >= 90) {
             _gripLogCounter = 0;

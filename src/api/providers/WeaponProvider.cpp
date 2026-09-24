@@ -1,6 +1,7 @@
 #include "SnapshotReads.h"
 #include "WeaponMarshalling.h"
 #include <ROCK/Discovery.h>
+#include <ROCK/WeaponV1_1.h>
 #include "EventBoundary.h"
 
 namespace rock::api::weapon {
@@ -128,9 +129,10 @@ Status ROCK_CALL getSelectedAuthoredGripPoseV1(std::uint64_t ownerToken, Authore
 }
 
 #include "WeaponEndpoints.inl"
+#include "WeaponInventoryEndpoints.inl"
 }
-const ApiV1& table() noexcept {
-    static const ApiV1 value{
+const v1_1::Api& tableV1_1() noexcept {
+    static const v1_1::Api value{{
         &getPrimaryHandV1,
         &getOffhandHandV1,
         &queryEquippedWeaponClassificationV1,
@@ -147,7 +149,8 @@ const ApiV1& table() noexcept {
         &getSelectedAuthoredGripPoseV1,
         &getSample,
         &copyEvents,
-    };
+    }, &captureInventoryWeapon, &requestInventoryEquip, &getInventoryEquipResult, &cancelInventoryEquip};
     return value;
 }
+const ApiV1& table() noexcept { return tableV1_1().v1; }
 }

@@ -21,6 +21,8 @@ namespace rock
         [[nodiscard]] const char* sourceName(const EquippedWeaponTransitionCoordinator::Source source) noexcept
         {
             switch (source) {
+            case EquippedWeaponTransitionCoordinator::Source::InventoryEquip:
+                return "inventory-equip";
             case EquippedWeaponTransitionCoordinator::Source::ObservedEquip:
                 return "observed-equip";
             case EquippedWeaponTransitionCoordinator::Source::HeldTriggerEquip:
@@ -50,6 +52,7 @@ namespace rock
 
     bool EquippedWeaponTransitionCoordinator::beginHeldRequest(const held_weapon_transfer::Request& request)
     {
+        held_weapon_transfer::rememberInventoryCompletion(_heldTransfer, _completedInventoryTransfer);
         if (!weapon_equip_transfer::canRecoverHeldEquip() || !held_weapon_transfer::admit(_heldTransfer, request)) return false;
         _heldWaitSeconds = 0.0f;
         _heldBridgeStarted = false;
@@ -188,6 +191,7 @@ namespace rock
 
     void EquippedWeaponTransitionCoordinator::resumeMenuGrip(const PendingGrip& grip, std::uint32_t world, std::uint32_t skeleton)
     {
+        held_weapon_transfer::rememberInventoryCompletion(_heldTransfer, _completedInventoryTransfer);
         if (!grip.pending) return;
         const auto current = readCurrentIdentity();
         if (!held_weapon_transfer::sameMenuItem(grip.targetWeaponFormID, grip.targetWeaponInstanceData,
@@ -856,6 +860,7 @@ namespace rock
         if (_heldTransfer.active()) traceHeldTransfer("lifecycle-ended");
         const auto sequence = _heldTransfer.sequence;
         _heldTransfer = { .sequence = sequence };
+        _completedInventoryTransfer = {};
         _pendingGrip = {};
         releasePendingNativeCull(true);
         input_remap_runtime::setWeaponTransferPending(false);
@@ -897,6 +902,7 @@ namespace rock
         if (_heldTransfer.active()) traceHeldTransfer("lifecycle-ended");
         const auto sequence = _heldTransfer.sequence;
         _heldTransfer = { .sequence = sequence };
+        _completedInventoryTransfer = {};
         _pendingGrip = {};
         releasePendingNativeCull(false);
         input_remap_runtime::setWeaponTransferPending(false);
@@ -974,7 +980,7 @@ namespace rock
         const bool completesSuppressedHeldDraw =
             _waitingForExpectedIdentity &&
             (source == Source::HeldTriggerEquip ||
-                source == Source::HeldGripZoneEquip);
+                source == Source::HeldGripZoneEquip || source == Source::InventoryEquip);
         const bool startsNewTransition = !_active ||
             !_boundIdentity.valid() ||
             _boundIdentity != identity ||

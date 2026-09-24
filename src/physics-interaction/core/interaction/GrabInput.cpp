@@ -376,6 +376,51 @@ namespace rock
         dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, heldRef);
     }
 
+    void PhysicsInteraction::updateHeldObjectForHand(const PhysicsFrameContext& frame, Hand& hand, bool isLeft)
+    {
+        if (!hand.isHolding()) {
+            return;
+        }
+
+        const auto& transform = (isLeft ? frame.left : frame.right).rawHandWorld;
+        auto* heldRef = hand.getHeldRef();
+        const auto heldFormID = heldRef ? heldRef->GetFormID() : 0u;
+        auto& triggerEquipIntent = _grabInput.heldWeaponTriggerEquipIntents[isLeft ? 1u : 0u];
+        logPalmClockSampleForHand("game-before-held-update",
+            hand,
+            frame.hknpWorld,
+            &transform,
+            _frame.palmClockGameFrameIndex.load(std::memory_order_acquire),
+            _frame.palmClockGameDeltaSeconds.load(std::memory_order_acquire),
+            nullptr);
+        hand.updateHeldObject(frame.hknpWorld,
+            transform,
+            frame.deltaSeconds,
+            g_rockConfig.rockGrabForceFadeInTime,
+            g_rockConfig.rockGrabTauMin,
+            &_bodyBoneColliders,
+            makeGrabReleaseContext(hand, isLeft),
+            isLeft ? &_rightHand : &_leftHand,
+            &(isLeft ? frame.right : frame.left).rawHandWorld);
+        if (triggerEquipIntent.pending) {
+            // Existing opt-in, bounded transfer telemetry shows the
+            // live hand/model relationship during native readiness waits.
+            const auto* currentHeldRef = hand.getHeldRef();
+            vanilla_weapon_alignment_telemetry::recordTransferTrace(
+                vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip,
+                isLeft, "equip-wait-held-update", currentHeldRef ? currentHeldRef->Get3D() : nullptr);
+        }
+        if (heldRef && !hand.isHolding()) {
+            triggerEquipIntent = {};
+            ROCK_LOG_WARN(Hand, "Held update ended grab without an input release: hand={} ref={:08X}",
+                isLeft ? "left" : "right", heldFormID);
+            releaseObject(heldRef, claimOwnerForHand(isLeft));
+            dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, heldRef, heldFormID, 0);
+            dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, heldRef);
+            clearGameplayCandidatesForHand(hand, isLeft);
+        }
+    }
+
     struct PhysicsInteraction::GrabInputHandPrelude
     {
         GrabButtonState grabInput{};
@@ -408,6 +453,17 @@ namespace rock
         }
     }
 
+    void PhysicsInteraction::cancelLockedFarSelection(Hand& hand, bool isLeft, const char* reason)
+    {
+        if (hand.getState() != HandState::SelectionLocked) return;
+        const auto selection = hand.getSelection();
+        ROCK_LOG_DEBUG(Hand, "{} hand cancelled locked far selection: {}", hand.handName(), reason);
+        dispatchSimpleGrabEvent(GrabEventType::SelectionUnlocked, isLeft, selection.refr, selection.bodyId.value);
+        hand.clearSelectionState(true);
+        releaseObject(selection.refr, claimOwnerForHand(isLeft));
+        grab_input_intent_policy::reset(_grabInput.intentStates[isLeft ? 1u : 0u]);
+    }
+
     bool PhysicsInteraction::prepareGrabInputHand(
         const PhysicsFrameContext& frame,
         Hand& hand,
@@ -423,6 +479,7 @@ namespace rock
         auto& peerHeldJoinRetryState = _grabInput.peerHeldJoinRetryStates[isLeft ? 1u : 0u];
         auto& inputSuppressionState = _grabInput.providerHandInputSuppressionStates[isLeft ? 1u : 0u];
         if (input_remap_runtime::ownsBareFistInput()) {
+            cancelLockedFarSelection(hand, isLeft, "bare-fist-input");
             static_cast<void>(input_remap_runtime::consumeRawButtonState(isLeft, context.grabButton));
             static_cast<void>(input_remap_runtime::consumeRawButtonState(isLeft, 33));
             grab_input_intent_policy::reset(inputIntentState);
@@ -625,6 +682,12 @@ namespace rock
             if (providerHoldsCurrentGrabState &&
                 !readGrabButtonHeld(isLeft, grabButton)) {
                 inputSuppressionState.deferredGrabRelease = true;
+            }
+            // UI capture owns interaction input, not the held pose. Keep the
+            // normal drive, presentation and invalid-body cleanup running
+            // without entering release, equip, consume or stash handling.
+            if (providerHoldsCurrentGrabState) {
+                updateHeldObjectForHand(frame, hand, isLeft);
             }
             return false;
         }
@@ -1760,43 +1823,7 @@ namespace rock
                     return true;
                 }
                 if (retainOutgoing && !transition.heldTransfer().outgoingRemoved) {
-                    const bool retainedIsLeft = !equipIsLeft;
-                    const auto occupancy = _twoHandedGrip.getGripOccupancy();
-                    const bool retainedHandCarries = retainedIsLeft ?
-                        occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon();
-                    const bool receivingHandCarries = equipIsLeft ?
-                        occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon();
-                    const auto sourceHand = retainedIsLeft ?
-                        equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right;
-                    if (!retainedHandCarries || receivingHandCarries ||
-                        !_twoHandedGrip.requestEquippedWeaponDrop("trigger-equip-retention", sourceHand, frame.deltaSeconds)) {
-                        ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
-                            "Trigger equip retained both weapons: previous={:08X} hand={} carry={} receivingCarry={} drop pose unavailable",
-                            previousEquippedWeaponFormID, retainedIsLeft ? "left" : "right",
-                            retainedHandCarries, receivingHandCarries);
-                        transition.cancelHeldRequest("outgoing-carrier-unavailable");
-                        return true;
-                    }
-                    const auto dropRequest = _twoHandedGrip.consumeEquippedWeaponDropRequest();
-                    // Keep the old scene alive through cleanup of its grip authorities.
-                    RE::NiPointer<RE::NiNode> transferSourceNode(resolveEquippedWeaponInteractionNode());
-                    const bool dropped = dropEquippedWeaponToWorld(frame, dropRequest,
-                        equipped_weapon_drop_policy::Mode::ToggleDrop);
-                    _twoHandedGrip.completeEquippedWeaponDrop(dropRequest, dropped);
-                    if (dropped) {
-                        _equipped.transition.pendingGrip() = {};
-                        clearEquippedWeaponFiringGripInputState();
-                    }
-                    const auto& retainedTransfer = _forceGrab.pendingCommits[retainedIsLeft ? 1u : 0u];
-                    if (!dropped || !retainedTransfer.active ||
-                        retainedTransfer.phase != PendingForceGrabCommitPhase::WaitingForNativePlacement) {
-                        transition.cancelHeldRequest("outgoing-transfer-rejected");
-                        return true;
-                    }
-                    ROCK_LOG_INFO(Weapon,
-                        "Trigger equip keeping previous weapon in hand: previous={:08X} retainedHand={} incoming={:08X} equipHand={}",
-                        previousEquippedWeaponFormID, retainedIsLeft ? "left" : "right",
-                        heldRef ? heldRef->GetFormID() : 0u, equipIsLeft ? "left" : "right");
+                    if (!retainEquippedWeaponForReplacement(frame, equipIsLeft)) return true;
                     if (!held_weapon_equip_state_policy::canBeginEquip(f4vr::getNativeWeaponState(player))) {
                         // The accepted transfer owns this wait. Its original
                         // reference keeps updating; no short trigger replay owns it.
@@ -2232,42 +2259,7 @@ namespace rock
                 dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, heldRef);
                 clearGameplayCandidatesForHand(hand, isLeft);
             } else {
-                const auto& transform = handInput.rawHandWorld;
-                auto* heldRef = hand.getHeldRef();
-                auto heldFormID = heldRef ? heldRef->GetFormID() : 0u;
-                logPalmClockSampleForHand("game-before-held-update",
-                    hand,
-                    hknp,
-                    &transform,
-                    _frame.palmClockGameFrameIndex.load(std::memory_order_acquire),
-                    _frame.palmClockGameDeltaSeconds.load(std::memory_order_acquire),
-                    nullptr);
-                hand.updateHeldObject(hknp,
-                    transform,
-                    frame.deltaSeconds,
-                    g_rockConfig.rockGrabForceFadeInTime,
-                    g_rockConfig.rockGrabTauMin,
-                    &_bodyBoneColliders,
-                    makeGrabReleaseContext(hand, isLeft),
-                    isLeft ? &_rightHand : &_leftHand,
-                    &(isLeft ? frame.right : frame.left).rawHandWorld);
-                if (triggerEquipIntent.pending) {
-                    // Existing opt-in, bounded transfer telemetry shows the
-                    // live hand/model relationship during native readiness waits.
-                    const auto* currentHeldRef = hand.getHeldRef();
-                    vanilla_weapon_alignment_telemetry::recordTransferTrace(
-                        vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip,
-                        isLeft, "equip-wait-held-update", currentHeldRef ? currentHeldRef->Get3D() : nullptr);
-                }
-                if (heldRef && !hand.isHolding()) {
-                    triggerEquipIntent = {};
-                    ROCK_LOG_WARN(Hand, "Held update ended grab without an input release: hand={} ref={:08X}",
-                        isLeft ? "left" : "right", heldFormID);
-                    releaseObject(heldRef, claimOwnerForHand(isLeft));
-                    dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, heldRef, heldFormID, 0);
-                    dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, heldRef);
-                    clearGameplayCandidatesForHand(hand, isLeft);
-                }
+                updateHeldObjectForHand(frame, hand, isLeft);
             }
         } else {
             clearGameplayCandidatesForHand(hand, isLeft);
@@ -2277,7 +2269,28 @@ namespace rock
             }
         }
 
-        if (!hand.isHolding() && selection_state_policy::canProcessSelectedState(hand.getState()) && hand.hasSelection()) {
+        bool gesturePullConfirmed = false;
+        if (hand.getState() == HandState::SelectionLocked) {
+            RE::NiPoint3 targetWorld{};
+            if (!rawGrabInput.held || rawGrabInput.released || !handInput.hasGestureVelocity ||
+                !hand.refreshGesturePullSelection(frame.bhkWorld, hknp, handInput.rawHandWorld.translate, targetWorld) ||
+                selectedObjectInteractionBlocked()) {
+                cancelLockedFarSelection(hand, isLeft, "release-or-invalid-target-motion");
+                return;
+            }
+            const float speed = far_pull_gesture::speedAwayFromTarget(
+                handInput.gestureVelocityMetersPerSecond, handInput.rawHandWorld.translate, targetWorld);
+            gesturePullConfirmed = far_pull_gesture::confirmsPull(rawGrabInput.held, rawGrabInput.released, handInput.hasGestureVelocity, speed);
+            if (!gesturePullConfirmed) return;
+            if (!farHmdConeGate.acceptsHitPoint(targetWorld)) {
+                cancelLockedFarSelection(hand, isLeft, "gesture-outside-hmd-cone");
+                return;
+            }
+            ROCK_LOG_DEBUG(Hand, "{} hand confirmed far pull gesture: speed={:.3f}m/s formID={:08X}",
+                hand.handName(), speed, hand.getSelection().refr->GetFormID());
+        }
+
+        if (!hand.isHolding() && (selection_state_policy::canProcessSelectedState(hand.getState()) || gesturePullConfirmed) && hand.hasSelection()) {
             const bool pullCatchCommitPending = hand.hasPendingPullCatchCommit();
             auto* pullCatchRef = pullCatchCommitPending ? hand.getPullCatchIntentRef() : nullptr;
             bool actorEquipmentDropHandoffReady = false;
@@ -2335,7 +2348,7 @@ namespace rock
                 }
             }
 
-            if (grabInput.pressed || peerHeldRetryCommitIntent || (pullCatchCommitPending && grabInput.held) || (actorEquipmentDropHandoffReady && grabInput.held)) {
+            if (grabInput.pressed || gesturePullConfirmed || peerHeldRetryCommitIntent || (pullCatchCommitPending && grabInput.held) || (actorEquipmentDropHandoffReady && grabInput.held)) {
                 if (!grab_interaction_policy::canAttemptSelectedObjectGrab(
                         hand.getSelection().isFarSelection, hand.getSelection().distance, selection_query_policy::kFarDetectionRangeGameUnits)) {
                     ROCK_LOG_DEBUG(Hand,
@@ -2346,7 +2359,7 @@ namespace rock
                     return;
                 }
 
-                if (hand.getSelection().isFarSelection) {
+                if (hand.getSelection().isFarSelection && !gesturePullConfirmed) {
                     float hmdConeDot = -1.0f;
                     if (!selectedObjectPassesFarHmdCone(hknp, hand.getSelection(), farHmdConeGate, &hmdConeDot)) {
                         ROCK_LOG_DEBUG(Hand,
@@ -2360,10 +2373,42 @@ namespace rock
                     }
                 }
 
+                if (!pullCatchCommitPending && !actorEquipmentDropHandoffReady && !gesturePullConfirmed &&
+                    hand.getSelection().isFarSelection &&
+                    g_rockConfig.rockFarGrabMode == static_cast<int>(far_pull_gesture::Mode::Gesture)) {
+                    const Hand& peer = isLeft ? _rightHand : _leftHand;
+                    const bool peerOwnsTarget = hasExclusiveObjectSelection(peer.getState()) && peer.hasSelection() &&
+                        peer.getSelection().refr == hand.getSelection().refr;
+                    if (!rawGrabInput.held || rawGrabInput.released || !handInput.hasGestureVelocity ||
+                        peerOwnsTarget || selectedObjectInteractionBlocked()) return;
+                    if (hand.lockGesturePullSelection(frame.bhkWorld, hknp, handInput.rawHandWorld.translate)) {
+                        dispatchSimpleGrabEvent(GrabEventType::SelectionLocked, isLeft,
+                            hand.getSelection().refr, hand.getSelection().bodyId.value);
+                    }
+                    // Never authorize physics or equipment removal on the lock frame.
+                    return;
+                }
+
                 if (!pullCatchCommitPending &&
                     hand.getSelection().isFarSelection &&
                     hand.getSelection().targetKind == grab_target::Kind::ActorEquipment) {
-                    const auto actorSelection = hand.getSelection();
+                    auto actorSelection = hand.getSelection();
+                    if (gesturePullConfirmed) {
+                        const auto liveEquipment = actor_equipment_grab::resolveFarActorEquipmentSelection(
+                            actorSelection.refr, actorSelection.hitNode, actorSelection.hitPointWorld, true);
+                        if (!liveEquipment.isUsable() || liveEquipment.itemFormId != actorSelection.actorEquipment.itemFormId ||
+                            liveEquipment.slot != actorSelection.actorEquipment.slot ||
+                            liveEquipment.instanceData != actorSelection.actorEquipment.instanceData) {
+                            cancelLockedFarSelection(hand, isLeft, "locked-equipment-changed");
+                            return;
+                        }
+                        actorSelection.actorEquipment = liveEquipment;
+                        // The actor's selection ends here. The existing handoff
+                        // subsequently locks the newly spawned loose reference.
+                        if (!hand.unlockFarSelection()) return;
+                        dispatchSimpleGrabEvent(GrabEventType::SelectionUnlocked, isLeft,
+                            actorSelection.refr, actorSelection.bodyId.value, ROCK_GRAB_EVENT_FLAG_SUPPRESS_HAPTIC);
+                    }
                     const auto dropResult = actor_equipment_grab::dropFarActorEquipmentSelection(
                         actorSelection.refr,
                         actorSelection.actorEquipment,
@@ -2443,8 +2488,9 @@ namespace rock
                      * lock/unlock ordering to API consumers, so the event stays ordered and only
                      * the selection haptic is suppressed on this pull-start path.
                      */
-                    const bool lockedSelection = hand.lockFarSelection();
-                    if (lockedSelection) {
+                    const bool alreadyLocked = hand.getState() == HandState::SelectionLocked;
+                    const bool lockedSelection = alreadyLocked || hand.lockFarSelection();
+                    if (lockedSelection && !alreadyLocked) {
                         dispatchSimpleGrabEvent(
                             GrabEventType::SelectionLocked,
                             isLeft,
@@ -2499,14 +2545,6 @@ namespace rock
                         "{} hand retaining pull catch commit after grab attempt failed; grip still held",
                         hand.handName());
                 }
-            }
-        } else if (hand.getState() == HandState::SelectionLocked) {
-            if (grabInput.released) {
-                auto* selectedRef = hand.getSelection().refr;
-                ROCK_LOG_DEBUG(Hand, "{} hand released locked far selection", hand.handName());
-                dispatchSimpleGrabEvent(GrabEventType::SelectionUnlocked, isLeft, selectedRef, hand.getSelection().bodyId.value);
-                hand.clearSelectionState(true);
-                releaseObject(selectedRef, claimOwnerForHand(isLeft));
             }
         } else if (hand.getState() == HandState::Pulled) {
             auto* pulledRef = hand.getSelection().refr;
@@ -2574,6 +2612,20 @@ namespace rock
     {
         _forceGrab.committedThisFrame = {};
 
+        for (const bool isLeft : { false, true }) {
+            auto& hand = isLeft ? _leftHand : _rightHand;
+            if (hand.getState() != HandState::SelectionLocked) continue;
+            const auto& input = isLeft ? frame.left : frame.right;
+            const bool releaseSuppressed = provider::hasHandInputSuppressionFlagV1(
+                provider::currentHandInputSuppressionFlagsV1(isLeft ? provider::RockProviderHand::Left : provider::RockProviderHand::Right),
+                provider::RockProviderHandInputSuppressionFlagV1::SuppressGrabRelease);
+            if (!runtime_state::isLocalSkeletonReady() || !frame.worldReady || frame.menuBlocked ||
+                    input.disabled || !input.hasGestureVelocity || !physicsWritesAllowedForWorld(frame.hknpWorld) ||
+                    (!releaseSuppressed && !readGrabButtonHeld(isLeft, input_remap_policy::kGrabButtonId))) {
+                cancelLockedFarSelection(hand, isLeft, "input-tracking-or-world-unavailable");
+            }
+        }
+
         /*
          * Loose-hold solves mirror from the physical right hand. Publish the
          * weapon-authority frame before any hand can commit a grab this frame
@@ -2604,6 +2656,7 @@ namespace rock
             _rightHand.cancelGrabVisualReturn("skeleton-not-ready");
             _leftHand.cancelGrabVisualReturn("skeleton-not-ready");
             provider::clearInteractionCommandsForProviderLossV1(provider::RockProviderInteractionFailureV1::ProviderNotReady);
+            clearProviderInventoryEquip();
             clearPendingForceGrabCommits();
             input_remap_runtime::setHandHeldWeapon(false, false);
             input_remap_runtime::setHandHeldWeapon(true, false);
@@ -2698,6 +2751,7 @@ namespace rock
                         TouchGrabRuntime::kPowerArmorProximityRadiusGame, &_powerArmorProbeDiagnostics[isLeft ? 1u : 0u]);
             }
         }
+        processProviderInventoryEquip(frame);
         processProviderInteractionCommands(frame);
         serviceLooseGrenadeQuickDraw(frame);
         serviceEquippedWeaponNativeHandoff(frame);

@@ -214,7 +214,9 @@ namespace rock
     {
         return g_rockConfig.rockImmersiveRecoil &&
             frik_hand_world_authority::hasCalibratedRawHandFrame(false) &&
-            !usesLeftFiringCarry() && !isGripping() &&
+            !usesLeftFiringCarry() &&
+            weapon_recoil_policy::canPresentRightRecoilForGrip(
+                isGripping(), hasVisualOnlySupportRecoilAssist(), _firing.transferredPrimaryGrip.valid()) &&
             !_firing.rightHandHoldingObjectForPose &&
             !isWeaponVisualReturnActive() && !isHandVisualReturnActive(false) &&
             _recoil.rightBaseValid && _recoil.equippedIdentity.weaponNode != 0 &&
@@ -242,16 +244,16 @@ namespace rock
         }
     }
 
-    void TwoHandedGrip::applyRightOneHandRecoil(RE::NiNode* weaponNode)
+    bool TwoHandedGrip::applyRightOneHandRecoil(RE::NiNode* weaponNode)
     {
         traceRecoilReadiness();
         if (!weaponNode || !canUseRightOneHandRecoil() || _recoil.rightHandClaimActive ||
             _recoil.equippedIdentity.weaponNode != reinterpret_cast<std::uintptr_t>(weaponNode)) {
-            return;
+            return false;
         }
         RE::NiTransform delta{};
         if (!consumeOwnedWeaponRecoil(delta)) {
-            return;
+            return false;
         }
         RE::NiTransform weaponTarget{};
         RE::NiTransform handTarget{};
@@ -259,7 +261,7 @@ namespace rock
             _recoil.rightWeaponBase, _recoil.rightHandBase, weaponTarget, handTarget);
         if (!isFiniteTransform(weaponTarget) || !isUsableHandAuthorityTransform(handTarget)) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Weapon recoil: invalid right one-hand target; publication skipped");
-            return;
+            return false;
         }
 
         // One bounded claim, renewed after native/authored alignment and before
@@ -269,21 +271,22 @@ namespace rock
             if (!frik_visual_authority::publishHandWorld(ONE_HAND_RECOIL_TAG,
                     frik_visual_authority::Hand::Right, handTarget, GRIP_HAND_POSE_PRIORITY)) {
                 ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Weapon recoil: right firing-hand publication failed");
-                return;
+                return false;
             }
             _recoil.rightHandClaimActive = true;
         }
         if (!applyWeaponVisualAuthority(weaponNode, weaponTarget,
                 _recoil.equippedIdentity.weaponGeneration, true, true, _recoil.rightBaseSource)) {
             clearOneHandRecoilClaim();
-            return;
+            return false;
         }
         noteFrikRecoilWeaponNodeWrite();
-        traceRecoilPresentation("one-hand-right");
+        traceRecoilPresentation(hasVisualOnlySupportRecoilAssist() ? "close-support-right" : "one-hand-right");
         _recoil.rightNeedsNeutralFrame = _recoil.controlledKickActive;
         recordPublishedHandWorld(false, handTarget);
         _lastSolvedWeaponTransform = weaponTarget;
         _hasSolvedWeaponTransform = true;
+        return true;
     }
 
 }

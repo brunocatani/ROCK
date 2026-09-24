@@ -266,6 +266,14 @@ static bool testRecoilProfiles()
     }
     ok &= expectTrue("close support chooses its own profile",
         selectProfile(false, true, false) == Profile::CloseSupport);
+    ok &= expectTrue("one firing hand can own direct recoil",
+        canPresentRightRecoilForGrip(false, false, false));
+    ok &= expectTrue("close support must share the firing-hand recoil owner",
+        canPresentRightRecoilForGrip(true, true, false));
+    ok &= expectFalse("full two-hand and provider-only grips retain their recoil owner",
+        canPresentRightRecoilForGrip(true, false, false));
+    ok &= expectFalse("transferred primary recoil is not consumed by the native-right path",
+        canPresentRightRecoilForGrip(true, true, true));
     for (const bool supported : { false, true }) {
         ok &= expectTrue("armor profile wins independently of support",
             selectProfile(true, supported, false) == Profile::PowerArmor);
@@ -472,6 +480,37 @@ static bool testRecoilProfiles()
     }
     ok &= expectTransformNear("identity sample fully removes previous recoil", weaponTarget, weaponBase);
     ok &= expectTransformNear("firing hand returns to its clean baseline", handTarget, handBase);
+    // A support seat follows the same world-space kick as the weapon, even
+    // when the physical firing hand uses the mirrored native-offhand frame.
+    auto supportLocal = rock::transform_math::makeIdentityTransform<TestTransform>();
+    supportLocal.translate = { -1.5f, 1.0f, -2.0f };
+    supportLocal.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 1.0f, 0.0f }, 28.0f);
+    const auto supportBase = rock::transform_math::composeTransforms(weaponBase, supportLocal);
+    auto primaryWand = rock::transform_math::makeIdentityTransform<TestTransform>();
+    primaryWand.translate = { 15.0f, 3.0f, 8.0f };
+    auto offhandWand = rock::transform_math::makeIdentityTransform<TestTransform>();
+    offhandWand.translate = { -12.0f, 7.0f, 4.0f };
+    offhandWand.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 47.0f);
+    for (const bool nativeLeft : { false, true }) {
+        for (const bool firingLeft : { false, true }) {
+            for (const auto kick : { native, armor,
+                    rock::transform_math::makeIdentityTransform<TestTransform>() }) {
+                const auto delta = rock::weapon_recoil_authority_math::resolveWorldDelta(
+                    kick, weaponBase, primaryWand, offhandWand, firingLeft != nativeLeft);
+                rock::weapon_recoil_authority_math::applyOneHandKick(
+                    delta, weaponBase, handBase, weaponTarget, handTarget);
+                const auto supportTarget = rock::weapon_support_authority_policy::buildVisualOnlySupportHandWorld(
+                    weaponTarget, supportLocal);
+                ok &= expectTransformNear("close support receives the weapon's exact recoil delta",
+                    supportTarget, rock::transform_math::composeTransforms(delta, supportBase));
+                ok &= expectTransformNear("recoiling support stays at its captured weapon-local seat",
+                    rock::transform_math::composeTransforms(
+                        rock::transform_math::invertTransform(weaponTarget), supportTarget), supportLocal);
+                ok &= expectTrue("neither hand receives a second native recoil kick",
+                    deliveryHand(true, firingLeft, nativeLeft) == HandMask::None);
+            }
+        }
+    }
     auto invalid = shot;
     invalid.rotate.entry[0][0] = 0.0f;
     ok &= expectFalse("non-rigid input cannot become a plausible controlled kick",
