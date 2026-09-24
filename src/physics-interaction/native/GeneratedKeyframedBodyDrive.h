@@ -66,6 +66,48 @@ namespace rock
         }
 
         template <class Point>
+        inline bool clampContactPressVelocity(
+            Point& velocityHavok,
+            const Point& direction,
+            const Point& referenceVelocityHavok,
+            float pressMaximumHavok,
+            float maximumLinearVelocityHavok)
+        {
+            const float directionLengthSquared =
+                direction.x * direction.x + direction.y * direction.y + direction.z * direction.z;
+            if (!std::isfinite(pressMaximumHavok) || pressMaximumHavok <= 0.0f ||
+                !std::isfinite(directionLengthSquared) ||
+                directionLengthSquared <= 0.5f || directionLengthSquared >= 2.0f) {
+                return false;
+            }
+            const float inverseLength = 1.0f / std::sqrt(directionLengthSquared);
+            const Point normal{ direction.x * inverseLength, direction.y * inverseLength, direction.z * inverseLength };
+            const float along = velocityHavok.x * normal.x + velocityHavok.y * normal.y + velocityHavok.z * normal.z;
+            const float referenceAlong = referenceVelocityHavok.x * normal.x +
+                referenceVelocityHavok.y * normal.y + referenceVelocityHavok.z * normal.z;
+            const float excess = along - (std::isfinite(referenceAlong) ? referenceAlong : 0.0f) - pressMaximumHavok;
+            if (!std::isfinite(excess) || excess <= 0.0f) {
+                return false;
+            }
+            velocityHavok.x -= normal.x * excess;
+            velocityHavok.y -= normal.y * excess;
+            velocityHavok.z -= normal.z * excess;
+
+            // A moving reference can require retreat in world space. Preserve
+            // the absolute drive safety limit even in that case.
+            const float speed = std::sqrt(velocityHavok.x * velocityHavok.x +
+                velocityHavok.y * velocityHavok.y + velocityHavok.z * velocityHavok.z);
+            if (std::isfinite(maximumLinearVelocityHavok) && maximumLinearVelocityHavok > 0.0f &&
+                speed > maximumLinearVelocityHavok) {
+                const float scale = maximumLinearVelocityHavok / speed;
+                velocityHavok.x *= scale;
+                velocityHavok.y *= scale;
+                velocityHavok.z *= scale;
+            }
+            return true;
+        }
+
+        template <class Point>
         inline bool tryComputeSampledLinearVelocityHavok(
             const Point& previousTargetGame,
             const Point& currentTargetGame,
@@ -355,6 +397,9 @@ namespace rock
         RE::NiTransform pendingTarget{};
         RE::NiTransform previousTarget{};
         RE::NiPoint3 sampledLinearVelocityHavok{};
+        // Shared player-space translation, queued under the same lock/sequence
+        // as the target. This excludes the controller's own pressing motion.
+        RE::NiPoint3 sourceTransportVelocityHavok{};
         // Zero until a usable source interval is queued (telemetry only).
         float sourceDeltaSeconds = 0.0f;
         float secondsSinceSourceSample = generated_keyframed_body_drive_math::kMaxStaleSeconds;
@@ -447,6 +492,7 @@ namespace rock
         bool divergencePlacement = false;
         RE::NiPoint3 dynamicLinearBeforePressHavok{};
         RE::NiPoint3 dynamicLinearAfterPressHavok{};
+        RE::NiPoint3 contactPressReferenceVelocityHavok{};
         /*
          * targetGamePosition is the COMMANDED target: velocity-limited toward
          * the live body when the raw gap exceeds maxLinearVelocity * driveDt.
@@ -522,7 +568,8 @@ namespace rock
         GeneratedKeyframedBodyDriveState& state,
         const RE::NiTransform& target,
         float sourceDeltaSeconds,
-        float teleportDistanceGameUnits);
+        float teleportDistanceGameUnits,
+        const RE::NiPoint3& sourceTransportDeltaGame = {});
     GeneratedKeyframedBodyDriveSampledVelocity snapshotGeneratedKeyframedBodyDriveSampledVelocity(const GeneratedKeyframedBodyDriveState& state);
     bool placeGeneratedKeyframedBodyImmediately(BethesdaPhysicsBody& body, const RE::NiTransform& target);
     inline void markGeneratedKeyframedBodyDrivePlacedUnlocked(
@@ -574,7 +621,8 @@ namespace rock
          * Contact press cap: with an established contact (caller-known
          * deviation), the hard-keyframe velocity component ALONG the press
          * direction (unit vector from body toward the target, i.e. into the
-         * contact) is clamped to contactPressMaxVelocityHavok. Without it the
+         * contact), relative to the selected reference frame, is clamped to
+         * contactPressMaxVelocityHavok. Without it the
          * drive slams the full deficit into the surface every substep and the
          * solver ejection reads as rapid micro-punching. Tangential sliding
          * and retreat keep full velocity. Zero cap or no direction = full
@@ -583,6 +631,9 @@ namespace rock
         bool hasContactPressDirection = false;
         float contactPressDirection[3] = { 0.0f, 0.0f, 0.0f };
         float contactPressMaxVelocityHavok = 0.0f;
+        // Only hand/weapon self-contact may use the queued player transport.
+        // World contact keeps a stationary reference, including mixed contact.
+        bool contactPressUsesSourceTransport = false;
     };
 
     GeneratedKeyframedBodyDriveResult driveGeneratedKeyframedBody(
