@@ -2,7 +2,7 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/PhysicsRecursiveWrappers.h"
-#include "physics-interaction/native/HavokWorldLock.h"
+#include "physics-interaction/grab/DecorationModePolicy.h"
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -15,6 +15,7 @@
 #include "RE/Bethesda/BSScript/IVirtualMachine.h"
 #include "RE/Bethesda/BSScript/IObjectHandlePolicy.h"
 #include <array>
+#include <algorithm>
 #include <cmath>
 
 namespace rock::decoration_placement {
@@ -104,28 +105,74 @@ ScriptPreparation prepareLoadScript(RE::TESObjectREFR* ref, bool start) {
 bool anchor(RE::TESObjectREFR* ref, RE::hknpWorld* world,
     const RE::NiTransform& pose, std::span<const std::uint32_t> bodyIds) {
     if (!available() || !ref || ref->IsDeleted() || ref->IsDisabled() || !world ||
-        bodyIds.empty() || bodyIds.size()>64 || !ref->Get3D() ||
+        bodyIds.empty() || bodyIds.size()>decoration_mode::kMaxBodies || !ref->Get3D() ||
         !std::isfinite(pose.translate.x) || !std::isfinite(pose.translate.y) || !std::isfinite(pose.translate.z)) return false;
     const auto angles=transform_math::matrixToReferenceEulerRadians<RE::NiMatrix3,RE::NiPoint3>(pose.rotate);
     if (!std::isfinite(angles.x) || !std::isfinite(angles.y) || !std::isfinite(angles.z)) return false;
-    auto* root=ref->Get3D();
     WriteScope lock(world);
-    const RE::hkVector4f zero{};
-    for (const auto id:bodyIds) {
-        if (!havok_runtime::setBodyVelocityDeferred(world,id,zero,zero)) {
-            ROCK_LOG_WARN(Hand,"Decoration rejected ref={:08X} stage=stop-velocity body={}",ref->GetFormID(),id);
+    using physics_body_classifier::BodyMotionType;
+    using physics_recursive_wrappers::MotionPreset;
+    std::array<RE::NiAVObject*,decoration_mode::kMaxBodies> owners{};
+    std::array<BodyMotionType,decoration_mode::kMaxBodies> originalMotion{};
+    std::array<RE::NiAVObject*,decoration_mode::kMaxBodies> movableOwners{};
+    std::size_t movableOwnerCount=0;
+    for (std::size_t i=0;i<bodyIds.size();++i) {
+        const auto body=havok_runtime::snapshotBody(world,RE::hknpBodyId{bodyIds[i]});
+        if (!body.valid || !body.body || !body.ownerNode || !body.collisionObject ||
+            body.ownerNode->collisionObject.get()!=body.collisionObject) {
+            ROCK_LOG_WARN(Hand,"Decoration rejected ref={:08X} stage=collision-owner body={}",ref->GetFormID(),bodyIds[i]);
+            return false;
+        }
+        owners[i]=body.ownerNode;
+        originalMotion[i]=physics_body_classifier::motionTypeFromBodyFlags(body.body->flags);
+        if (originalMotion[i]==BodyMotionType::Static && body.motionIndex==0) continue;
+        if (originalMotion[i]!=BodyMotionType::Dynamic) {
+            ROCK_LOG_WARN(Hand,"Decoration rejected ref={:08X} stage=body-motion body={}",ref->GetFormID(),bodyIds[i]);
+            return false;
+        }
+        if (std::find(movableOwners.begin(),movableOwners.begin()+movableOwnerCount,body.ownerNode)==movableOwners.begin()+movableOwnerCount)
+            movableOwners[movableOwnerCount++]=body.ownerNode;
+    }
+    // A native command operates on one collision owner. Reject a mixed owner
+    // rather than converting an authored static body along with a movable one.
+    for (std::size_t i=0;i<bodyIds.size();++i) {
+        if (originalMotion[i]==BodyMotionType::Static &&
+            std::find(movableOwners.begin(),movableOwners.begin()+movableOwnerCount,owners[i])!=movableOwners.begin()+movableOwnerCount) {
+            ROCK_LOG_WARN(Hand,"Decoration rejected ref={:08X} stage=mixed-static-owner body={}",ref->GetFormID(),bodyIds[i]);
             return false;
         }
     }
-    using physics_recursive_wrappers::MotionPreset;
-    bool frozen=physics_recursive_wrappers::setMotionRecursive(root,MotionPreset::Keyframed,true,false,false);
-    for (const auto id:bodyIds) {
-        const auto body=havok_runtime::snapshotBody(world,RE::hknpBodyId{id});
-        frozen=frozen && body.valid && body.body &&
-            physics_body_classifier::motionTypeFromBodyFlags(body.body->flags)==physics_body_classifier::BodyMotionType::Keyframed;
+    if (!movableOwnerCount) return false;
+    const RE::hkVector4f zero{};
+    for (std::size_t i=0;i<bodyIds.size();++i) {
+        if (originalMotion[i]==BodyMotionType::Static) continue;
+        if (!havok_runtime::setBodyVelocityDeferred(world,bodyIds[i],zero,zero)) {
+            ROCK_LOG_WARN(Hand,"Decoration rejected ref={:08X} stage=stop-velocity body={}",ref->GetFormID(),bodyIds[i]);
+            return false;
+        }
+    }
+    // The validated scan covers the whole object. Address its movable collision
+    // owners individually so existing static parts retain their motion state.
+    for (std::size_t i=0;i<movableOwnerCount;++i)
+        physics_recursive_wrappers::setMotionRecursive(movableOwners[i],MotionPreset::Keyframed,false,false,false);
+    bool frozen=true;
+    for (std::size_t i=0;i<bodyIds.size();++i) {
+        const auto body=havok_runtime::snapshotBodyIdentity(world,RE::hknpBodyId{bodyIds[i]});
+        const bool expected=body.valid && body.body && decoration_mode::anchoredMotion(originalMotion[i],
+            physics_body_classifier::motionTypeFromBodyFlags(body.body->flags));
+        if (!expected) ROCK_LOG_WARN(Hand,"Decoration rejected ref={:08X} stage=motion-verification body={} originalMotion={}",
+            ref->GetFormID(),bodyIds[i],static_cast<unsigned>(originalMotion[i]));
+        frozen=frozen && expected;
     }
     if (!frozen) {
-        const bool restored=physics_recursive_wrappers::setMotionRecursive(root,MotionPreset::Dynamic,true,true,true);
+        for (std::size_t i=0;i<movableOwnerCount;++i)
+            physics_recursive_wrappers::setMotionRecursive(movableOwners[i],MotionPreset::Dynamic,false,true,true);
+        bool restored=true;
+        for (std::size_t i=0;i<bodyIds.size();++i) {
+            const auto body=havok_runtime::snapshotBodyIdentity(world,RE::hknpBodyId{bodyIds[i]});
+            restored=restored && body.valid && body.body &&
+                physics_body_classifier::motionTypeFromBodyFlags(body.body->flags)==originalMotion[i];
+        }
         ROCK_LOG_ERROR(Hand,"Decoration freeze rejected ref={:08X} stage=motion-verification restoredDynamic={}",ref->GetFormID(),restored);
         ref->AddChange(4);
         return false;

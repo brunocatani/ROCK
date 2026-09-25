@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <atomic>
+#include "physics-interaction/object/PhysicsBodyClassifier.h"
 
 namespace rock::decoration_mode
 {
@@ -38,12 +39,30 @@ namespace rock::decoration_mode
         std::atomic<unsigned> _age{5};
     };
 
+    // A static part has no movable motion ID. It needs no hand drive or
+    // keyframing, but must be proven to belong to the placed reference.
+    [[nodiscard]] constexpr bool preserveStaticBody(physics_body_classifier::BodyRejectReason rejection,
+        physics_body_classifier::BodyMotionType motion, std::uint32_t motionId, bool sameKnownReference) noexcept
+    {
+        return sameKnownReference && motionId == 0 &&
+            motion == physics_body_classifier::BodyMotionType::Static &&
+            rejection == physics_body_classifier::BodyRejectReason::InvalidMotionId;
+    }
+
+    [[nodiscard]] constexpr bool anchoredMotion(physics_body_classifier::BodyMotionType before,
+        physics_body_classifier::BodyMotionType after) noexcept
+    {
+        using physics_body_classifier::BodyMotionType;
+        return (before == BodyMotionType::Static && after == BodyMotionType::Static) ||
+            (before == BodyMotionType::Dynamic && after == BodyMotionType::Keyframed);
+    }
+
     // Validate a fresh scan at placement. The grab lifecycle's historical
     // completeness flag describes its cached prep and is not a placement veto.
     [[nodiscard]] constexpr bool completeBodyScan(bool finished, std::size_t bodies,
-        std::size_t accepted, std::uint32_t skippedOrFailed) noexcept
+        std::size_t validated, std::uint32_t skippedOrFailed) noexcept
     {
-        return finished && bodies > 0 && bodies <= kMaxBodies && accepted == bodies && skippedOrFailed == 0;
+        return finished && bodies > 0 && bodies <= kMaxBodies && validated == bodies && skippedOrFailed == 0;
     }
 
     // A two-handed hold is one reference. Two different objects are ambiguous.

@@ -140,14 +140,20 @@ void PhysicsInteraction::commitDecoration(const PhysicsFrameContext& frame)
         const auto step=advanceObjectPhysicsBodyScanCache(frame.hknpWorld,options,
             {256,64,static_cast<std::uint32_t>(bodies.size())},cursor,cache);
         const auto scanned=buildObjectPhysicsBodySetFromScanCache(frame.bhkWorld,frame.hknpWorld,ref,options,cache);
+        const auto isPreservedStatic=[&](const ObjectPhysicsBodyRecord& record) {
+            return decoration_mode::preserveStaticBody(record.rejectReason,
+                physics_body_classifier::motionTypeFromBodyFlags(record.bodyFlags),record.motionId,
+                record.refResolutionKnown && record.resolvedRef==ref);
+        };
+        const auto staticBodies=static_cast<std::size_t>(std::count_if(scanned.records.begin(),scanned.records.end(),isPreservedStatic));
         const auto& diagnostics=scanned.diagnostics;
         const auto issues=diagnostics.scanFailures+diagnostics.invalidPhysicsSystems+
             diagnostics.benignScanSkips+diagnostics.foreignRefBodySkips+diagnostics.unresolvedRefBodySkips+
             diagnostics.weaponExpansionSkips+diagnostics.depthLimitSkips+diagnostics.staleCacheEntrySkips;
         const bool complete=decoration_mode::completeBodyScan(step.finished && !step.invalidated,
-            scanned.records.size(),scanned.acceptedCount(),issues);
-        ROCK_LOG_INFO(Hand,"Decoration body scan ref={:08X} complete={} finished={} bodies={} accepted={} issues={} nodes={} collisionObjects={} budgetExhausted={}",
-            requested,complete,step.finished,scanned.records.size(),scanned.acceptedCount(),issues,
+            scanned.records.size(),scanned.acceptedCount()+staticBodies,issues);
+        ROCK_LOG_INFO(Hand,"Decoration body scan ref={:08X} complete={} finished={} bodies={} accepted={} preservedStatic={} issues={} nodes={} collisionObjects={} budgetExhausted={}",
+            requested,complete,step.finished,scanned.records.size(),scanned.acceptedCount(),staticBodies,issues,
             diagnostics.visitedNodes,diagnostics.collisionObjects,step.budgetExhausted);
         if (!complete) {
             ROCK_LOG_WARN(Hand,
@@ -157,7 +163,7 @@ void PhysicsInteraction::commitDecoration(const PhysicsFrameContext& frame)
                 diagnostics.depthLimitSkips,diagnostics.staleCacheEntrySkips);
             for (std::size_t i=0;i<(std::min)(scanned.records.size(),bodies.size());++i) {
                 const auto& record=scanned.records[i];
-                if (record.accepted) continue;
+                if (record.accepted || isPreservedStatic(record)) continue;
                 ROCK_LOG_WARN(Hand,
                     "Decoration body rejected ref={:08X} body={} reason={} layer={} filter=0x{:08X} motion={} motionType={} motionProps={} flags=0x{:08X} refKnown={} resolvedRef={:08X} node='{}'",
                     requested,record.bodyId,physics_body_classifier::rejectReasonName(record.rejectReason),

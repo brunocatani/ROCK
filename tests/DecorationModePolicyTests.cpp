@@ -17,6 +17,21 @@ int main()
     assert(!completeBodyScan(true,65,65,0));
     assert(!completeBodyScan(true,5,4,0));
     assert(!completeBodyScan(true,1,1,1));
+    using rock::physics_body_classifier::BodyMotionType;
+    using rock::physics_body_classifier::BodyRejectReason;
+    // Timberwolf: five driven bodies and one owned static part at motion 0.
+    const bool fixedPart=preserveStaticBody(BodyRejectReason::InvalidMotionId,BodyMotionType::Static,0,true);
+    assert(fixedPart && completeBodyScan(true,6,5+fixedPart,0));
+    assert(!preserveStaticBody(BodyRejectReason::InvalidMotionId,BodyMotionType::Dynamic,0,true));
+    assert(!preserveStaticBody(BodyRejectReason::InvalidMotionId,BodyMotionType::Unknown,0,true));
+    assert(!preserveStaticBody(BodyRejectReason::InvalidMotionId,BodyMotionType::Static,1,true));
+    assert(!preserveStaticBody(BodyRejectReason::InvalidMotionId,BodyMotionType::Static,0,false));
+    assert(!preserveStaticBody(BodyRejectReason::InvalidBodyId,BodyMotionType::Static,0,true));
+    assert(anchoredMotion(BodyMotionType::Dynamic,BodyMotionType::Keyframed));
+    assert(anchoredMotion(BodyMotionType::Static,BodyMotionType::Static));
+    assert(!anchoredMotion(BodyMotionType::Static,BodyMotionType::Keyframed));
+    assert(!anchoredMotion(BodyMotionType::Dynamic,BodyMotionType::Static));
+    assert(!anchoredMotion(BodyMotionType::Dynamic,BodyMotionType::Dynamic));
     SurfaceContactState contact;
     assert(!contact.read().recent);
     contact.publish(152,2); // A bottle touching the table needs no impact event.
