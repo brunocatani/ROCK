@@ -4,6 +4,8 @@ Fallout 4 VR physics and interaction plugin, and the foundation of the ROCK / PA
 
 [Download and player guide](https://www.nexusmods.com/fallout4/mods/108881) · [RPS SDK](https://github.com/brunocatani/RPS_SDK) · [Developer documentation](https://devartificial.pro)
 
+[Changelog](CHANGELOG.md)
+
 <p align="center">
   <a href="https://www.youtube.com/watch?v=tPaIzmZ9P0o&t=113s">
     <img src="https://img.youtube.com/vi/tPaIzmZ9P0o/maxresdefault.jpg" alt="Watch the ROCK demo" width="800">
