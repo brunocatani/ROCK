@@ -20,7 +20,7 @@ namespace rock
         }
     }
 
-    void DynamicWeaponCollisionRuntime::updateSurfaceSupportInput(bool decorationOwnsClick)
+    void DynamicWeaponCollisionRuntime::updateSurfaceSupportInput(bool placementOwnsClick)
     {
         _surfaceInputReserved = false; // Also clears before interrupted-frame returns.
         if (!g_rockConfig.rockBipodMode) {
@@ -32,7 +32,7 @@ namespace rock
             }
             return; // Do not read or consume the button while this mode is off.
         }
-        if (decorationOwnsClick) {
+        if (placementOwnsClick) {
             _surfaceClickRequested = false;
             _surfaceToggle = {};
             return;

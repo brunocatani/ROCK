@@ -1,8 +1,8 @@
-#include "physics-interaction/native/DecorationPlacement.h"
+#include "physics-interaction/native/NativeObjectPlacement.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/PhysicsRecursiveWrappers.h"
-#include "physics-interaction/grab/DecorationModePolicy.h"
+#include "physics-interaction/grab/HeldPlacementPolicy.h"
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -18,7 +18,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace rock::decoration_placement {
+namespace rock::native_object_placement {
 namespace {
     template<class Fn, std::size_t N>
     Fn checkedEntry(std::uintptr_t rva, const std::array<std::uint8_t,N>& expected) {
@@ -28,7 +28,7 @@ namespace {
         if (!REL::Module::IsVR() || address<segment.address() ||
             address+N>segment.address()+segment.size() ||
             !native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(address),actual.data(),N) || actual!=expected) {
-            ROCK_LOG_ERROR(Init,"Decoration native entry rejected rva={:X}",rva);
+            ROCK_LOG_ERROR(Init,"Held placement native entry rejected rva={:X}",rva);
             return nullptr;
         }
         return reinterpret_cast<Fn>(address);
@@ -61,7 +61,7 @@ ScriptPreparation prepareLoadScript(RE::TESObjectREFR* ref, bool start) {
     // GameVM+0xB0 and VM slots 23/24 are witnessed by 1413FA6E0/1413FA890;
     // object type +8 and variable readback are witnessed by 142703060/142703C60.
     auto reject=[&](const char* stage) {
-        ROCK_LOG_WARN(Hand,"Decoration rejected ref={:08X} stage={}",ref ? ref->GetFormID() : 0,stage);
+        ROCK_LOG_WARN(Hand,"Held placement rejected ref={:08X} stage={}",ref ? ref->GetFormID() : 0,stage);
         return ScriptPreparation::Rejected;
     };
     if (!ref) return reject("script-reference");
@@ -105,29 +105,29 @@ ScriptPreparation prepareLoadScript(RE::TESObjectREFR* ref, bool start) {
 bool anchor(RE::TESObjectREFR* ref, RE::hknpWorld* world,
     const RE::NiTransform& pose, std::span<const std::uint32_t> bodyIds) {
     if (!available() || !ref || ref->IsDeleted() || ref->IsDisabled() || !world ||
-        bodyIds.empty() || bodyIds.size()>decoration_mode::kMaxBodies || !ref->Get3D() ||
+        bodyIds.empty() || bodyIds.size()>held_placement_policy::kMaxBodies || !ref->Get3D() ||
         !std::isfinite(pose.translate.x) || !std::isfinite(pose.translate.y) || !std::isfinite(pose.translate.z)) return false;
     const auto angles=transform_math::matrixToReferenceEulerRadians<RE::NiMatrix3,RE::NiPoint3>(pose.rotate);
     if (!std::isfinite(angles.x) || !std::isfinite(angles.y) || !std::isfinite(angles.z)) return false;
     WriteScope lock(world);
     using physics_body_classifier::BodyMotionType;
     using physics_recursive_wrappers::MotionPreset;
-    std::array<RE::NiAVObject*,decoration_mode::kMaxBodies> owners{};
-    std::array<BodyMotionType,decoration_mode::kMaxBodies> originalMotion{};
-    std::array<RE::NiAVObject*,decoration_mode::kMaxBodies> movableOwners{};
+    std::array<RE::NiAVObject*,held_placement_policy::kMaxBodies> owners{};
+    std::array<BodyMotionType,held_placement_policy::kMaxBodies> originalMotion{};
+    std::array<RE::NiAVObject*,held_placement_policy::kMaxBodies> movableOwners{};
     std::size_t movableOwnerCount=0;
     for (std::size_t i=0;i<bodyIds.size();++i) {
         const auto body=havok_runtime::snapshotBody(world,RE::hknpBodyId{bodyIds[i]});
         if (!body.valid || !body.body || !body.ownerNode || !body.collisionObject ||
             body.ownerNode->collisionObject.get()!=body.collisionObject) {
-            ROCK_LOG_WARN(Hand,"Decoration rejected ref={:08X} stage=collision-owner body={}",ref->GetFormID(),bodyIds[i]);
+            ROCK_LOG_WARN(Hand,"Held placement rejected ref={:08X} stage=collision-owner body={}",ref->GetFormID(),bodyIds[i]);
             return false;
         }
         owners[i]=body.ownerNode;
         originalMotion[i]=physics_body_classifier::motionTypeFromBodyFlags(body.body->flags);
         if (originalMotion[i]==BodyMotionType::Static && body.motionIndex==0) continue;
         if (originalMotion[i]!=BodyMotionType::Dynamic) {
-            ROCK_LOG_WARN(Hand,"Decoration rejected ref={:08X} stage=body-motion body={}",ref->GetFormID(),bodyIds[i]);
+            ROCK_LOG_WARN(Hand,"Held placement rejected ref={:08X} stage=body-motion body={}",ref->GetFormID(),bodyIds[i]);
             return false;
         }
         if (std::find(movableOwners.begin(),movableOwners.begin()+movableOwnerCount,body.ownerNode)==movableOwners.begin()+movableOwnerCount)
@@ -138,7 +138,7 @@ bool anchor(RE::TESObjectREFR* ref, RE::hknpWorld* world,
     for (std::size_t i=0;i<bodyIds.size();++i) {
         if (originalMotion[i]==BodyMotionType::Static &&
             std::find(movableOwners.begin(),movableOwners.begin()+movableOwnerCount,owners[i])!=movableOwners.begin()+movableOwnerCount) {
-            ROCK_LOG_WARN(Hand,"Decoration rejected ref={:08X} stage=mixed-static-owner body={}",ref->GetFormID(),bodyIds[i]);
+            ROCK_LOG_WARN(Hand,"Held placement rejected ref={:08X} stage=mixed-static-owner body={}",ref->GetFormID(),bodyIds[i]);
             return false;
         }
     }
@@ -147,7 +147,7 @@ bool anchor(RE::TESObjectREFR* ref, RE::hknpWorld* world,
     for (std::size_t i=0;i<bodyIds.size();++i) {
         if (originalMotion[i]==BodyMotionType::Static) continue;
         if (!havok_runtime::setBodyVelocityDeferred(world,bodyIds[i],zero,zero)) {
-            ROCK_LOG_WARN(Hand,"Decoration rejected ref={:08X} stage=stop-velocity body={}",ref->GetFormID(),bodyIds[i]);
+            ROCK_LOG_WARN(Hand,"Held placement rejected ref={:08X} stage=stop-velocity body={}",ref->GetFormID(),bodyIds[i]);
             return false;
         }
     }
@@ -158,9 +158,9 @@ bool anchor(RE::TESObjectREFR* ref, RE::hknpWorld* world,
     bool frozen=true;
     for (std::size_t i=0;i<bodyIds.size();++i) {
         const auto body=havok_runtime::snapshotBodyIdentity(world,RE::hknpBodyId{bodyIds[i]});
-        const bool expected=body.valid && body.body && decoration_mode::anchoredMotion(originalMotion[i],
+        const bool expected=body.valid && body.body && held_placement_policy::anchoredMotion(originalMotion[i],
             physics_body_classifier::motionTypeFromBodyFlags(body.body->flags));
-        if (!expected) ROCK_LOG_WARN(Hand,"Decoration rejected ref={:08X} stage=motion-verification body={} originalMotion={}",
+        if (!expected) ROCK_LOG_WARN(Hand,"Held placement rejected ref={:08X} stage=motion-verification body={} originalMotion={}",
             ref->GetFormID(),bodyIds[i],static_cast<unsigned>(originalMotion[i]));
         frozen=frozen && expected;
     }
@@ -173,7 +173,7 @@ bool anchor(RE::TESObjectREFR* ref, RE::hknpWorld* world,
             restored=restored && body.valid && body.body &&
                 physics_body_classifier::motionTypeFromBodyFlags(body.body->flags)==originalMotion[i];
         }
-        ROCK_LOG_ERROR(Hand,"Decoration freeze rejected ref={:08X} stage=motion-verification restoredDynamic={}",ref->GetFormID(),restored);
+        ROCK_LOG_ERROR(Hand,"Held placement freeze rejected ref={:08X} stage=motion-verification restoredDynamic={}",ref->GetFormID(),restored);
         ref->AddChange(4);
         return false;
     }

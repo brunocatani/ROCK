@@ -79,11 +79,11 @@ Status ROCK_CALL getNativeInputContextV1(OwnerToken ownerToken, std::uint32_t* o
 }
 
 #include "InputEndpoints.inl"
-Status ROCK_CALL getDecorationState(OwnerToken owner, v1_1::DecorationState* out) noexcept {
+Status ROCK_CALL getPlacementClickState(OwnerToken owner, v1_1::PlacementClickState* out) noexcept {
     if (!out) return Status::InvalidArgument;
     if (out->size!=sizeof(*out)) return Status::InvalidSize;
     *out={};
-    return invoke(owner,kInterfaceId,1,true,[&] { return provider::runtime::getDecorationState(*out); });
+    return invoke(owner,kInterfaceId,1,true,[&] { return provider::runtime::getPlacementClickState(*out); });
 }
 }
 const v1_1::Api& tableV1_1() noexcept {
@@ -98,7 +98,7 @@ const v1_1::Api& tableV1_1() noexcept {
         &getNativeInputContextV1,
         &getSample,
         &copyEvents,
-    }, &getDecorationState};
+    }, &getPlacementClickState};
     return value;
 }
 const ApiV1& table() noexcept { return tableV1_1().v1; }

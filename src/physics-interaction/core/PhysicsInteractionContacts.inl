@@ -581,7 +581,7 @@
         const bool solvedChildContact =
             manifoldPointCount > 0 && manifoldPointCount <= 4;
         if (solvedChildContact && heldContact) {
-            auto recordDecorationContact = [&](Hand& hand, bool heldA, bool heldB) {
+            auto recordHeldPlacementContact = [&](Hand& hand, bool heldA, bool heldB) {
                 if (!hand.isHoldingAtomic() || heldA == heldB) return;
                 const auto held = heldA ? bodyIdA : bodyIdB;
                 const auto other = heldA ? bodyIdB : bodyIdA;
@@ -596,15 +596,15 @@
                 using physics_body_classifier::BodyMotionType;
                 const auto motion = physics_body_classifier::motionTypeFromBodyFlags(surface.body->flags);
                 if (motion != BodyMotionType::Static && motion != BodyMotionType::Keyframed) return;
-                hand.notifyDecorationSurfaceContact(held,other);
+                hand.notifyHeldSurfaceContact(held,other);
                 ROCK_LOG_SAMPLE_DEBUG(Hand,1000,
-                    "Decoration manifold contact hand={} held={} surface={} layer={} points={}",
+                    "Held placement manifold contact hand={} held={} surface={} layer={} points={}",
                     hand.handName(),held,other,layer,manifoldPointCount);
             };
-            recordDecorationContact(_rightHand,bodyAIsRightHeld,bodyBIsRightHeld);
-            recordDecorationContact(_leftHand,bodyAIsLeftHeld,bodyBIsLeftHeld);
+            recordHeldPlacementContact(_rightHand,bodyAIsRightHeld,bodyBIsRightHeld);
+            recordHeldPlacementContact(_leftHand,bodyAIsLeftHeld,bodyBIsLeftHeld);
         }
-        // Decoration's observation must not enter the existing hand/weapon
+        // Held placement observation must not enter the existing hand/weapon
         // audio, support, haptic or grab-response routes for new participant pairs.
         if (!generatedContact) return;
         if (solvedChildContact) {

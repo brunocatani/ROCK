@@ -5,10 +5,34 @@
 #include <atomic>
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
 
-namespace rock::decoration_mode
+namespace rock::held_placement_policy
 {
-    inline constexpr int kButtonId = 32;
     inline constexpr std::size_t kMaxBodies = 64;
+
+    // One submission owner for one update. Invalidation advances the token so
+    // an old-world request cannot become valid again after a rebuild.
+    class FrameLease {
+    public:
+        enum class Admission { Accepted, InvalidOwner, Stale, Busy };
+        std::uint64_t token() const noexcept { return _token; }
+        std::uint64_t owner() const noexcept { return _owner; }
+        Admission submit(std::uint64_t owner, std::uint64_t token) noexcept {
+            if (!owner) return Admission::InvalidOwner;
+            if (token != _token) return Admission::Stale;
+            if (_owner && _owner != owner) return Admission::Busy;
+            _owner = owner;
+            return Admission::Accepted;
+        }
+        std::uint64_t consume() noexcept {
+            const auto owner = _owner;
+            invalidate();
+            return owner;
+        }
+        void clear(std::uint64_t owner) noexcept { if (_owner == owner) _owner = 0; }
+        void invalidate() noexcept { _owner = 0; ++_token; }
+    private:
+        std::uint64_t _token{1}, _owner{};
+    };
 
     struct SurfaceContact {
         std::uint32_t heldBodyId{0x7FFF'FFFFu};
@@ -71,37 +95,4 @@ namespace rock::decoration_mode
         return right && left && right != left ? 0 : (right ? right : left);
     }
 
-    struct ClickState
-    {
-        bool armed{};
-        bool draining{};
-        bool reserved{};
-        std::uint32_t request{};
-
-        void update(bool enabled, std::uint32_t candidate, bool available,
-            bool held, bool pressed, std::uint32_t ageMilliseconds) noexcept
-        {
-            request = 0;
-            reserved = false;
-            if (!available || ageMilliseconds > 100 || (!enabled && !draining)) {
-                armed = false;
-                draining = false;
-                return;
-            }
-            // Retain ownership through the release of an accepted click even
-            // after the object is released or the setting is disabled.
-            reserved = draining || (enabled && candidate != 0);
-            if (!held) {
-                if (armed && pressed && enabled && candidate && !draining) request = candidate;
-                armed = true;
-                draining = false;
-                return;
-            }
-            if (armed && pressed && enabled && candidate && !draining) {
-                request = candidate;
-                draining = true;
-            }
-            armed = false;
-        }
-    };
 }

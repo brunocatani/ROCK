@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <span>
 namespace RE { class TESObjectREFR; class hknpWorld; }
-namespace rock::decoration_placement {
+namespace rock::native_object_placement {
     // Game-thread action, with ROCK physics callbacks paused. No pointers or
     // body IDs survive the call. Reference pose and Havok state use native saves.
     bool available();

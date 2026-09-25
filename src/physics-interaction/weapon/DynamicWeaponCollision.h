@@ -108,7 +108,7 @@ namespace rock
         void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _physicsCallbackGate = gate; }
 
         // Game frame only, before early returns, so clicks cannot replay later.
-        void updateSurfaceSupportInput(bool decorationOwnsClick = false);
+        void updateSurfaceSupportInput(bool placementOwnsClick = false);
 
         // Game-frame observation, published through the provider snapshot.
         [[nodiscard]] bool surfaceSupportReservesInput(std::uintptr_t weaponNode, std::uint64_t generation) const noexcept

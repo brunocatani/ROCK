@@ -516,10 +516,10 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGeneratedKeyframedBodyDrivePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGeneratedKeyframedBodyDrivePolicyTests)
 
-  add_executable(ROCKDecorationModePolicyTests "${ROOT_DIR}/tests/DecorationModePolicyTests.cpp")
-  target_compile_features(ROCKDecorationModePolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKDecorationModePolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKDecorationModePolicyTests)
+  add_executable(ROCKHeldPlacementPolicyTests "${ROOT_DIR}/tests/HeldPlacementPolicyTests.cpp")
+  target_compile_features(ROCKHeldPlacementPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKHeldPlacementPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKHeldPlacementPolicyTests)
 
   add_executable(ROCKGeneratedBodyContactRegistryPolicyTests
     "${ROOT_DIR}/tests/GeneratedBodyContactRegistryPolicyTests.cpp"

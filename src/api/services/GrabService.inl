@@ -1,3 +1,20 @@
+// Held placement operations are coordinated by the frame owner.
+    api::Status getHeldPlacementState(api::grab::v1_1::HeldPlacementState& output) {
+        const auto access=s_physicsInteraction.borrow();
+        const auto* pi=access.get();
+        return pi ? pi->queryHeldPlacementState(output) : api::Status::NotReady;
+    }
+    api::Status submitHeldPlacementIntent(api::OwnerToken owner, const api::grab::v1_1::HeldPlacementIntent& request) {
+        const auto access=s_physicsInteraction.borrow();
+        auto* pi=access.get();
+        return pi ? pi->submitHeldPlacementIntent(owner,request) : api::Status::NotReady;
+    }
+    api::Status clearHeldPlacementIntent(api::OwnerToken owner) {
+        const auto access=s_physicsInteraction.borrow();
+        if (auto* pi=access.get()) pi->clearHeldPlacementIntent(owner);
+        return api::Status::Ok;
+    }
+
 // Private Grab service operations. Included after shared owner/lifecycle helpers.
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestForceGrabV1(

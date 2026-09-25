@@ -2,12 +2,16 @@
 #include <ROCK/WeaponParts.h>
 #include <ROCK/WeaponV1_1.h>
 #include <ROCK/InputV1_1.h>
+#include <ROCK/GrabV1_1.h>
 #include "WeaponSourceCatalog.h"
 #include "ProviderRuntimeTypes.h"
 #include "OwnerBindingPolicy.h"
 
 namespace rock::provider::runtime {
-    api::Status getDecorationState(api::input::v1_1::DecorationState& output);
+    api::Status getHeldPlacementState(api::grab::v1_1::HeldPlacementState& output);
+    api::Status submitHeldPlacementIntent(api::OwnerToken owner, const api::grab::v1_1::HeldPlacementIntent& request);
+    api::Status clearHeldPlacementIntent(api::OwnerToken owner);
+    api::Status getPlacementClickState(api::input::v1_1::PlacementClickState& output);
     api::Status captureInventoryWeapon(std::uint64_t owner, std::uint32_t form, std::uint32_t stack,
         api::weapon::v1_1::InventoryWeapon& output);
     api::Status requestInventoryEquip(std::uint64_t owner, const api::weapon::v1_1::EquipRequest& request, std::uint64_t& command);

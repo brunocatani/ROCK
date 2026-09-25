@@ -441,7 +441,7 @@ namespace rock
          */
 
         updateGrabInput(frame);
-        commitDecoration(frame);
+        commitHeldPlacement(frame);
         auto selectedCloseCarTarget = [&](const Hand& hand, const HandFrameInput& handInput) {
             DynamicWorldCarTarget target{};
             if (handInput.disabled || hand.isHolding() || !hand.hasSelection()) {
@@ -626,8 +626,8 @@ namespace rock
             if (bhk == _lifecycle.cachedBhkWorld && world == _lifecycle.cachedHknpWorld)
                 updateNativeGrenadeCollisionSuppression(world, runtime.deltaSeconds);
         }
-        updateDecorationInput();
-        _dynamicWeaponCollision.updateSurfaceSupportInput(_decorationClick.reserved);
+        beginHeldPlacementFrame();
+        _dynamicWeaponCollision.updateSurfaceSupportInput(_placementClickReserved);
         const auto retireDynamicWeaponForInterruptedFrame = [this](bool preserveSurfaceSupport = false) {
             if (!_lifecycle.initialized.load(std::memory_order_acquire)) {
                 return;
