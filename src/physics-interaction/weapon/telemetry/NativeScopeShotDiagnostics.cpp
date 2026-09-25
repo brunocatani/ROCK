@@ -135,8 +135,7 @@ namespace rock::native_scope_shot_diagnostics
         }
         Ray axisRay(const RE::NiTransform& world, unsigned axis) noexcept
         {
-            const auto& r = world.rotate.entry[axis];
-            return policy::ray(point(world.translate), { r[0], r[1], r[2] });
+            return policy::nodeAxisRay(point(world.translate), world.rotate, axis);
         }
         void readSight(Frame& frame) noexcept
         {

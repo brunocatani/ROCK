@@ -229,6 +229,13 @@ namespace rock::native_weapon_cycle
     };
 
     Session::Session() noexcept = default;
+    bool Session::ready() const noexcept { return _state && _state->ready && !_state->failed && !_state->retiring; }
+    bool Session::failed() const noexcept { return _state && _state->failed; }
+    void Session::present() noexcept try
+    {
+        if (ready()) _state->apply(0.0f);
+    }
+    catch (...) { if (_state) { try { _state->fail("late-presentation"); } catch (...) {} } }
     Session::~Session()
     {
         clear();

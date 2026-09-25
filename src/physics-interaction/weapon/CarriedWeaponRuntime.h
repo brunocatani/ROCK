@@ -26,6 +26,9 @@ namespace rock
 
         void prepare(const Input& input);
         void update(const Input& input);
+        void present() noexcept;
+        static bool isLooseFirearm(const RE::TESObjectREFR* reference) noexcept;
+        static bool nativeWeaponAbsent() noexcept;
         void clear(bool nativeWorldAvailable) noexcept;
         void shutdown(bool nativeWorldAvailable) noexcept;
         [[nodiscard]] bool suspend() noexcept;

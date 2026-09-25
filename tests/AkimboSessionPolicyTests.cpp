@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/AkimboSessionPolicy.h"
 #include "physics-interaction/weapon/WeaponCyclePolicy.h"
 #include "physics-interaction/weapon/CarriedWeaponProjectile.h"
+#include "physics-interaction/weapon/LooseWeaponExperimentPolicy.h"
 #include <array>
 #include <iostream>
 #include <limits>
@@ -13,6 +14,17 @@ int main()
     const auto check = [&](bool value, const char* what) {
         if (!value) { std::cerr << what << '\n'; ok = false; }
     };
+    using namespace rock::loose_weapon_experiment;
+    check(selectReference(42,0) == 42 && selectReference(0,42) == 42,
+        "Either physical hand can own the single loose firearm");
+    check(selectReference(42,42) == 42, "Two hands on one reference still mean one weapon");
+    check(selectReference(42,43) == 0 && selectReference(0,0) == 0,
+        "The experiment cannot admit two guns or an empty hold");
+    check(canAdmit(true,false,42) && !canAdmit(true,true,42) && !canAdmit(false,false,42) && !canAdmit(true,false,0),
+        "A loose shot requires its own valid reference and no native equipped weapon");
+    check(suppressNativePress(true,true,true,false) && !suppressNativePress(true,false,true,false) &&
+        !suppressNativePress(false,true,true,false) && !suppressNativePress(true,true,true,true),
+        "Loose triggers cannot also punch, while releases, other hands and UI retain native handling");
     using namespace rock::carried_weapon_projectile;
     constexpr Identity own{0x1000, 0x2000, 0x3000, 1};
     check(isOwnHeldWeapon(42, own, 42, own), "The carried gun cannot intercept its own projectile");

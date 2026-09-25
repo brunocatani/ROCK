@@ -1,4 +1,5 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/weapon/LooseWeaponExperimentPolicy.h"
 
 namespace rock
 {
@@ -116,11 +117,15 @@ namespace rock
     {
         CarriedWeaponRuntime::noteInteractionThread();
         CarriedWeaponRuntime::Input input{};
+        const auto candidate = [](const Hand& hand) -> std::uint32_t {
+            return hand.isHoldingLooseWeapon() && CarriedWeaponRuntime::isLooseFirearm(hand.getHeldRef()) ? hand.getHeldRef()->formID : 0;
+        };
+        const auto selected = loose_weapon_experiment::selectReference(candidate(_rightHand), candidate(_leftHand));
         for (const bool left : {false, true}) {
             auto& hand = left ? _leftHand : _rightHand;
             const auto& tracking = left ? frame.left : frame.right;
             if (!hand.isHoldingLooseWeapon() || !hand.getHeldRef()) continue;
-            if (!_carriedWeapon.owns(hand.getHeldRef()) && !_carriedWeapon.retains(hand.getHeldRef())) continue;
+            if (!selected || hand.getHeldRef()->formID != selected) continue;
             const auto& peer = left ? _rightHand : _leftHand;
             if (peer.isHoldingLooseWeapon() && peer.getHeldRef() == hand.getHeldRef() &&
                 !weapon_grip_transfer::requesterIsPrimary(hand.isHoldingFiringGrip(), peer.isHoldingFiringGrip(),
@@ -149,10 +154,13 @@ namespace rock
         else _carriedWeapon.update(input);
         if (!prepareOnly) {
             for (const bool left : {false, true}) {
-                const bool owner = _carriedWeapon.owns(input.reference) && input.grip == akimbo::Grip::Firing &&
-                    input.hand == (left ? akimbo::Hand::Left : akimbo::Hand::Right);
+                const auto& hand = left ? _leftHand : _rightHand;
+                const bool heldGun = candidate(hand) != 0;
+                const bool owner = heldGun && _carriedWeapon.owns(hand.getHeldRef());
+                // Both firing and support holds suppress the native trigger.
+                // A declined gun must not silently equip or punch instead.
                 input_remap_runtime::setCarriedWeaponInputOwner(left,
-                    owner ? _carriedWeapon.sessionId() : 0, owner ? _carriedWeapon.bindingId() : 0);
+                    owner ? _carriedWeapon.sessionId() : heldGun ? UINT64_MAX : 0, owner ? _carriedWeapon.bindingId() : 0);
             }
         }
     }

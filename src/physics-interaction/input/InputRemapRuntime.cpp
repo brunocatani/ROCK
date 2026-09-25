@@ -1,5 +1,6 @@
 #include "physics-interaction/input/WeaponTriggerRouting.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
+#include "physics-interaction/weapon/LooseWeaponExperimentPolicy.h"
 #include "RPSUIInputApi.h"
 
 #include "physics-interaction/input/InputRemapPolicy.h"
@@ -1391,24 +1392,26 @@ namespace rock::input_remap_runtime
 
         [[nodiscard]] bool shouldSuppressNativeTriggerActionEvent(const RE::InputEvent* event, const char* gate)
         {
+            const auto input = makeNativeActionSuppressionInput(
+                true, event, eventNameMatches(event, kNativeEventWandTrigger));
+            const auto* button = event ? event->As<RE::ButtonEvent>() : nullptr;
+            if (input.eventMatched && loose_weapon_experiment::suppressNativePress(
+                    s_carriedFiringHand[input.triggerSourceIsLeft ? 0u : 1u].load(std::memory_order_acquire),
+                    button && button->QPressed(), input.gameplayInputAllowed, input.menuInputActive)) return true;
             if (eventNameMatches(event, kNativeEventWandTrigger) && ownsBareFistInput()) {
                 // Native attack bookkeeping must see the real release. The
                 // ready/light handlers still skip this gesture, and the hit
                 // gates have already revoked unarmed damage permission.
-                const auto* button = event ? event->As<RE::ButtonEvent>() : nullptr;
                 if (button && !button->QPressed()) return false;
                 return !isBareFistDrawPermitted() || !s_bareFistReady.load(std::memory_order_acquire);
             }
             // Conditional chord leases are evaluated against the raw sample
             // before the consumer's next frame callback can publish ownership.
-            const auto input = makeNativeActionSuppressionInput(
-                true, event, eventNameMatches(event, kNativeEventWandTrigger));
             const bool providerSuppressed = input.eventMatched &&
                 isProviderOpenVrGameInputSuppressed(input.triggerSourceIsLeft ?
                     input_remap_policy::Hand::Left : input_remap_policy::Hand::Right);
             // A consumed equip press must still deliver its release to native
             // attack bookkeeping. No new attack can originate from button-up.
-            const auto* button = event ? event->As<RE::ButtonEvent>() : nullptr;
             if (input.eventMatched && button && !button->QPressed()) return false;
             const bool suppressed = providerSuppressed || input_remap_policy::shouldSuppressNativeTriggerAction(input);
             traceNativeWeaponInputGate(gate, event, input, suppressed, providerSuppressed);

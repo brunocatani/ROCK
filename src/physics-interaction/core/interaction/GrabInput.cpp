@@ -2026,7 +2026,7 @@ namespace rock
                 if (heldWeaponEquipTriggerPressed) {
                     static_cast<void>(armHeldLooseGrenade(hand, frame));
                 }
-            } else if (heldWeaponEquipRequested && (!_carriedWeapon.owns(heldRefForGameplay) || !currentEquippedWeaponFormId())) {
+            } else if (heldWeaponEquipRequested && !CarriedWeaponRuntime::isLooseFirearm(heldRefForGameplay)) {
                 const bool triggeredByInput = heldWeaponEquipTriggerPressed;
                 const char* requestReason = triggeredByInput ? "same-hand-trigger-held-weapon-equip" :
                                                                "grip-zone-held-weapon-equip";

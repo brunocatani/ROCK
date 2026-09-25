@@ -5,8 +5,10 @@
 #include "physics-interaction/weapon/NativeWeaponQualification.h"
 #include "physics-interaction/weapon/NativeCarriedWeaponContext.h"
 #include "physics-interaction/weapon/CarriedWeaponProjectile.h"
+#include "physics-interaction/weapon/LooseWeaponExperimentPolicy.h"
 #include "physics-interaction/weapon/WeaponGripTransfer.h"
 #include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
+#include "physics-interaction/weapon/telemetry/NativeScopeShotPolicy.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "RE/Bethesda/BSExtraData.h"
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -65,7 +67,10 @@ namespace rock
                 Archive record{};
                 if (!liveArchive.read(record)) {
                     ROCK_LOG_ERROR(Weapon, "Akimbo save snapshot unavailable");
-                } else if (record.reference && !serialization->WriteRecord(archiveType, 1, &record, sizeof(record))) {
+                    return;
+                }
+                if (!record.reference && !loadedArchive.read(record)) return;
+                if (record.reference && !serialization->WriteRecord(archiveType, 1, &record, sizeof(record))) {
                     ROCK_LOG_ERROR(Weapon, "Akimbo save record could not be written");
                 }
             } catch (...) { try { ROCK_LOG_ERROR(Weapon, "Akimbo save callback failed"); } catch (...) {} }
@@ -155,6 +160,9 @@ namespace rock
             std::uint32_t index{};
             bool active{}, applied{};
             std::uint32_t launches{}, lastHandle{};
+            native_scope_shot_policy::Point lastLaunchDirection{};
+            float maxLaunchDeltaDegrees{};
+            std::uint32_t angleSamples{};
         };
         thread_local ShotOrigin currentShot;
 
@@ -257,6 +265,22 @@ namespace rock
         return reference && _reference.get() == reference;
     }
 
+    bool CarriedWeaponRuntime::isLooseFirearm(const RE::TESObjectREFR* reference) noexcept
+    {
+        auto* form = reference ? reference->GetObjectReference() : nullptr;
+        const auto* weapon = form ? form->As<RE::TESObjectWEAP>() : nullptr;
+        return weapon && weapon->weaponData.type == RE::WEAPON_TYPE::kGun;
+    }
+
+    bool CarriedWeaponRuntime::nativeWeaponAbsent() noexcept
+    {
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (!ready() || !player || !player->currentProcess || !player->currentProcess->middleHigh ||
+            player->currentProcess->middleHigh->equippedItems.size() > native_weapon_qualification::kMaximumEquipped) return false;
+        auto item = emptyItem();
+        return !readItem(0, item) || !item.item.object || item.item.object->formType != RE::ENUM_FORM_ID::kWEAP;
+    }
+
     bool CarriedWeaponRuntime::retains(const RE::TESObjectREFR* reference) const noexcept
     {
         if (!reference) return false;
@@ -300,8 +324,7 @@ namespace rock
     {
         if (!input.reference || !ready() || !nativeReady()) return false;
         auto* player = RE::PlayerCharacter::GetSingleton();
-        auto primary = emptyItem();
-        if (!player || ((!readItem(0, primary) || !weaponData(primary)) && !retains(input.reference))) return false;
+        if (!player || !loose_weapon_experiment::canAdmit(ready(), !nativeWeaponAbsent(), input.reference->formID)) return false;
         auto* form = input.reference->GetObjectReference();
         auto* weapon = form ? form->As<RE::TESObjectWEAP>() : nullptr;
         if (!weapon || weapon->weaponData.type != RE::WEAPON_TYPE::kGun) return false;
@@ -370,7 +393,7 @@ namespace rock
         carried_weapon_projectile::publish(input.reference->formID, player->GetHandle().native_handle(),
             reinterpret_cast<std::uintptr_t>(_weapon.object),
             reinterpret_cast<std::uintptr_t>(_weapon.instanceData.get()), _index);
-        ROCK_LOG_INFO(Weapon, "Akimbo private carried session={} ref={:08X} form={:08X} index={} instance=0x{:X} ammo={:08X} loaded={} valid={}",
+        ROCK_LOG_INFO(Weapon, "Loose firearm admitted nativePrimary=absent session={} ref={:08X} form={:08X} index={} instance=0x{:X} ammo={:08X} loaded={} valid={}",
             _operation.session(), input.reference->formID, form->formID, _index,
             reinterpret_cast<std::uintptr_t>(_weapon.instanceData.get()), _ammoForm, _loaded, _ammoKnown);
         return true;
@@ -401,6 +424,11 @@ namespace rock
     }
     void CarriedWeaponRuntime::clear(bool nativeWorldAvailable) noexcept
     {
+        if (nativeWorldAvailable && isInteractionThread() && _reference && _ammoKnown && !_faulted && !saving.load(std::memory_order_acquire)) {
+            observeAmmo();
+            Archive last{};
+            if (liveArchive.read(last) && last.reference) (void)loadedArchive.write(last);
+        }
         carried_weapon_projectile::clear();
         _cycle.clear();
         if (nativeWorldAvailable) removeContext();
@@ -490,6 +518,11 @@ namespace rock
         auto* player = RE::PlayerCharacter::GetSingleton();
         auto item = emptyItem();
         if (!player || !player->currentProcess || !contextCurrent(item)) return;
+        // An unsuccessful native reload may clear its selected ammo pointer.
+        // Re-select only this exact instance's ammo before another attempt.
+        const auto* weapon = static_cast<const RE::TESObjectWEAP*>(_weapon.object);
+        const auto* effective = _weapon.instanceData ? static_cast<const RE::TESObjectWEAP::InstanceData*>(_weapon.instanceData.get()) : &weapon->weaponData;
+        weaponData(item)->ammo = effective->ammo;
         native_carried_weapon_context::Scope context(player->currentProcess, item);
         const bool completed = reinterpret_cast<Reload>(REL::Offset(0xE4E3B0).address())(player, &_weapon, _index);
         observeAmmo();
@@ -512,16 +545,14 @@ namespace rock
             !native_memory::tryReadField(launchData, 0x48, index) || index != currentShot.index ||
             form != reinterpret_cast<std::uintptr_t>(currentShot.form) ||
             instance != reinterpret_cast<std::uintptr_t>(currentShot.instance)) return false;
-        const auto& rotation = currentShot.world.rotate;
-        const auto x = rotation.entry[0][1], y = rotation.entry[1][1], z = rotation.entry[2][1];
-        const float yaw = std::atan2(x, y);
-        const float pitch = -std::atan2(z, std::sqrt(x*x + y*y));
         const auto& position = currentShot.world.translate;
-        if (!std::isfinite(yaw) || !std::isfinite(pitch) || !std::isfinite(position.x) ||
-            !std::isfinite(position.y) || !std::isfinite(position.z) || x*x + y*y + z*z < 0.0001f) return false;
+        const auto direction = native_scope_shot_policy::nodeAxisRay(
+            {position.x, position.y, position.z}, currentShot.world.rotate, 1);
+        const auto angles = native_scope_shot_policy::launchAngles(direction);
+        if (!angles.valid) return false;
         currentShot.applied = native_memory::tryWriteValue(static_cast<RE::NiPoint3*>(launchData), currentShot.world.translate) &&
-            native_memory::guardedCopyToMemory(static_cast<char*>(launchData) + 0x4C, &yaw, sizeof(yaw)) &&
-            native_memory::guardedCopyToMemory(static_cast<char*>(launchData) + 0x50, &pitch, sizeof(pitch));
+            native_memory::guardedCopyToMemory(static_cast<char*>(launchData) + 0x4C, &angles.yaw, sizeof(angles.yaw)) &&
+            native_memory::guardedCopyToMemory(static_cast<char*>(launchData) + 0x50, &angles.pitch, sizeof(angles.pitch));
         return currentShot.applied;
     }
 
@@ -529,7 +560,7 @@ namespace rock
     {
         auto* player = RE::PlayerCharacter::GetSingleton();
         auto item = emptyItem();
-        if (!ready() || !player || !player->currentProcess || !_muzzle || currentShot.active || !sourceCurrent() || !contextCurrent(item)) return;
+        if (!ready() || !nativeWeaponAbsent() || !player || !player->currentProcess || !_muzzle || currentShot.active || !sourceCurrent() || !contextCurrent(item)) return;
         auto* data = weaponData(item);
         if (!data || !data->ammo || !data->ammoCount || !weapon_grip_transfer::validFrame(_muzzle->world)) return;
         data->fireNode = _muzzle.get();
@@ -537,6 +568,8 @@ namespace rock
         const auto dataLease = _data;
         const auto muzzleLease = _muzzle;
         const auto session = _operation.session();
+        const auto shotHand = _operation.hand();
+        const auto referenceId = _reference->formID;
         currentShot = {weapon.object, weapon.instanceData.get(), muzzleLease->world, _index, true, false};
         struct ClearShot { ~ClearShot() { currentShot = {}; } } clearShot;
         const auto before = data->ammoCount;
@@ -552,7 +585,18 @@ namespace rock
         observeAmmo();
         if (result.applied && result.launches && _ammoKnown && _loaded < before) _cycle.fire();
         primaryData = readItem(0, primaryAfter) ? weaponData(primaryAfter) : nullptr;
-        ROCK_LOG_DEBUG(Weapon, "Akimbo shot session={} form={:08X} index={} before={} after={} known={} primaryBefore={} primaryAfter={} primaryKnown={} originApplied={} projectiles={} lastHandle={:08X} origin=({:.3f},{:.3f},{:.3f})",
+        const auto& p = result.world.translate;
+        const auto expected = native_scope_shot_policy::nodeAxisRay({p.x, p.y, p.z}, result.world.rotate, 1);
+        const auto& r = result.world.rotate.entry;
+        const auto transposed = native_scope_shot_policy::ray({p.x, p.y, p.z}, {r[0][1], r[1][1], r[2][1]});
+        ROCK_LOG_SAMPLE_INFO(Weapon, 250,
+            "Loose firearm aim ref={:08X} form={:08X} hand={} nativePrimary={} muzzle=({:.4f},{:.4f},{:.4f}) transposed=({:.4f},{:.4f},{:.4f}) launch=({:.4f},{:.4f},{:.4f}) maxLaunchDeltaDeg={:.3f} angleSamples={} projectiles={} originApplied={} origin=({:.3f},{:.3f},{:.3f})",
+            referenceId, weapon.object->formID, shotHand == akimbo::Hand::Left ? "left" : "right",
+            primaryData != nullptr, expected.direction.x, expected.direction.y, expected.direction.z,
+            transposed.direction.x, transposed.direction.y, transposed.direction.z,
+            result.lastLaunchDirection.x, result.lastLaunchDirection.y, result.lastLaunchDirection.z,
+            result.maxLaunchDeltaDegrees, result.angleSamples, result.launches, result.applied, p.x, p.y, p.z);
+        ROCK_LOG_DEBUG(Weapon, "Loose firearm shot session={} form={:08X} index={} before={} after={} known={} primaryBefore={} primaryAfter={} primaryKnown={} originApplied={} projectiles={} lastHandle={:08X} origin=({:.3f},{:.3f},{:.3f})",
             session, weapon.object->formID, _index, before, _loaded, _ammoKnown, primaryCountBefore,
             primaryData ? primaryData->ammoCount : 0, primaryData != nullptr, result.applied, result.launches, result.lastHandle,
             result.world.translate.x, result.world.translate.y, result.world.translate.z);
@@ -570,6 +614,17 @@ namespace rock
             instance == reinterpret_cast<std::uintptr_t>(currentShot.instance)) {
             ++currentShot.launches;
             currentShot.lastHandle = handle;
+            float yaw{}, pitch{};
+            if (native_memory::tryReadField(launchData, 0x4C, yaw) && native_memory::tryReadField(launchData, 0x50, pitch)) {
+                const auto launch = native_scope_shot_policy::launchRay({}, yaw, pitch);
+                const auto expected = native_scope_shot_policy::nodeAxisRay({}, currentShot.world.rotate, 1);
+                if (launch.valid && expected.valid) {
+                    currentShot.lastLaunchDirection = launch.direction;
+                    currentShot.maxLaunchDeltaDegrees = (std::max)(currentShot.maxLaunchDeltaDegrees,
+                        native_scope_shot_policy::angleDegrees(expected, launch));
+                    ++currentShot.angleSamples;
+                }
+            }
         }
     }
 
@@ -579,6 +634,11 @@ namespace rock
         if (saving.load(std::memory_order_acquire)) return;
         if (_reference && _reference.get() != input.reference) clear(true);
         if (!input.reference) { _declinedReference = {}; return; }
+        if (!nativeWeaponAbsent()) {
+            _operation.cancelInput();
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Loose firearm waiting: unequip the native weapon; experiment accepts one loose gun only");
+            return;
+        }
         if (!_reference && _declinedReference != input.reference->GetHandle() && !admit(input)) {
             _declinedReference = input.reference->GetHandle();
             ROCK_LOG_WARN(Weapon, "Akimbo admission declined ref={:08X} form={:08X}; native contract, firearm data or second index unavailable",
@@ -609,19 +669,24 @@ namespace rock
         weaponData(item)->fireNode = nextMuzzle.get();
         _muzzle = std::move(nextMuzzle);
         observeAmmo();
-        if (!input.inputAllowed) { _operation.cancelInput(); return; }
-        if (!_muzzle && input.grip == akimbo::Grip::Firing && input.triggerHeld) {
-            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Akimbo shot blocked session={} ref={:08X}: held model has no bounded ProjectileNode",
-                _operation.session(), _reference->formID);
+        if (!input.inputAllowed || !nativeWeaponAbsent()) { _operation.cancelInput(); return; }
+        if (input.triggerHeld && (!_cycle.ready() || !_muzzle || input.grip != akimbo::Grip::Firing)) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Loose firearm trigger blocked ref={:08X} firingGrip={} muzzle={} animationReady={} animationFailed={}",
+                _reference->formID, input.grip == akimbo::Grip::Firing, _muzzle != nullptr, _cycle.ready(), _cycle.failed());
         }
         if (input.reloadPressed) (void)_operation.beginReload(_reloadSeconds);
         if (_operation.reloadDue()) reload();
-        const auto ticket = _operation.requestFire(_muzzle && input.inputAllowed, input.triggerHeld,
+        const auto ticket = _operation.requestFire(_muzzle && _cycle.ready() && input.inputAllowed, input.triggerHeld,
             _automatic, _ammoKnown, _loaded);
         if (_operation.current(ticket)) {
             fire();
             _operation.completeFire(ticket, _secondsPerShot);
         }
         observeAmmo(); // Publish operation timing together with the resulting native count.
+    }
+
+    void CarriedWeaponRuntime::present() noexcept
+    {
+        if (_reference && !_faulted && sourceCurrent() && nativeWeaponAbsent()) _cycle.present();
     }
 }

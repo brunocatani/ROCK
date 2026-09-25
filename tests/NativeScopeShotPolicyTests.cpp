@@ -27,6 +27,35 @@ int main()
     const float nan = std::numeric_limits<float>::quiet_NaN();
     check(!p::launchRay(origin, nan, 0).valid && !p::ray({nan, 0, 0}, {0, 1, 0}).valid, "nonfinite data fails closed");
     check(p::angleDegrees(forward, {}) == -1, "missing capture is unknown rather than aligned");
+    struct Matrix { float entry[3][4]; };
+    // Padded native rows; this yaw makes the old column extraction point
+    // exactly backward. Identity-only tests cannot expose the transpose bug.
+    const Matrix yaw90{{{0,-1,0,123}, {1,0,0,456}, {0,0,1,789}}};
+    const auto muzzle = p::nodeAxisRay(origin, yaw90, 1);
+    const auto muzzleAngles = p::launchAngles(muzzle);
+    check(muzzle.valid && near(muzzle.direction.x, 1) && near(muzzle.direction.y, 0) &&
+        near(muzzleAngles.yaw, halfPi) && near(muzzleAngles.pitch, 0), "native muzzle uses its stored +Y row, not a matrix column");
+    check(near(p::angleDegrees(muzzle, p::launchRay(origin, muzzleAngles.yaw, muzzleAngles.pitch)), 0),
+        "muzzle direction survives native launch angle conversion");
+    const Matrix tilted{{{0.8f,-0.6f,0,123}, {0.36f,0.48f,0.8f,456}, {-0.48f,-0.64f,0.6f,789}}};
+    const Matrix rolled{{{-0.48f,-0.64f,0.6f,123}, {0.36f,0.48f,0.8f,456}, {-0.8f,0.6f,0,789}}};
+    for (const auto& rotation : {tilted, rolled}) {
+        const auto axis = p::nodeAxisRay(origin, rotation, 1);
+        const auto angles = p::launchAngles(axis);
+        check(angles.valid && near(angles.yaw, 0.643501109f) && near(angles.pitch, -0.927295218f) &&
+            near(p::angleDegrees(axis, p::launchRay(origin, angles.yaw, angles.pitch)), 0),
+            "yaw/pitch/roll follow the barrel without mirroring or roll-dependent aim");
+        check(near(axis.origin.x,origin.x) && near(axis.origin.y,origin.y) && near(axis.origin.z,origin.z),
+            "orientation correction preserves the actual muzzle position");
+    }
+    for (const p::Point aim : {p::Point{0,0,1}, p::Point{0,0,-1}, p::Point{-1,0,0}, p::Point{0,-1,0}}) {
+        const auto axis = p::ray(origin, aim);
+        const auto angles = p::launchAngles(axis);
+        check(angles.valid && near(p::angleDegrees(axis, p::launchRay(origin, angles.yaw, angles.pitch)), 0),
+            "vertical and reverse directions round trip without sign errors");
+    }
+    check(!p::nodeAxisRay(origin,yaw90,3).valid && !p::launchAngles({}).valid,
+        "invalid node axis or missing direction fails closed");
     const auto offset = p::planeOffset(forward, {1, 0, 0}, {0, 0, 1}, p::ray({13, -20, 24}, {0, 1, 0}));
     check(offset.valid && near(offset.rightGameUnits, 3) && near(offset.upGameUnits, -6), "parallel rays retain horizontal and bore-height separation");
     const auto crossing = p::planeOffset(p::ray({}, {0, 1, 0}), {1, 0, 0}, {0, 0, 1}, p::ray({-10, 0, 0}, {10, 100, 0}), 100);

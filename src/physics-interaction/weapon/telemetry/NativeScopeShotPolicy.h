@@ -26,6 +26,25 @@ namespace rock::native_scope_shot_policy
         if (!finite(origin) || !finite(direction) || !std::isfinite(length) || length < 0.0001f) return {};
         return { origin, { direction.x / length, direction.y / length, direction.z / length }, true };
     }
+    template<class Matrix>
+    inline Ray nodeAxisRay(Point origin, const Matrix& rotation, unsigned axis) noexcept
+    {
+        if (axis >= 3) return {};
+        // FO4VR stores the world-space node axes as padded rows. Native
+        // 0x104F3A0 takes ProjectileNode world rotation+0x10 (+Y);
+        // 0x1C11B00 independently uses matrix+0x10/+0x14/+0x18 for yaw/pitch.
+        const auto& row = rotation.entry[axis];
+        return ray(origin, {row[0], row[1], row[2]});
+    }
+    struct LaunchAngles { float yaw{}, pitch{}; bool valid{}; };
+    inline LaunchAngles launchAngles(const Ray& direction) noexcept
+    {
+        if (!direction.valid || !finite(direction.origin)) return {};
+        const auto normalized = ray(direction.origin, direction.direction);
+        if (!normalized.valid) return {};
+        const auto& d = normalized.direction;
+        return {std::atan2(d.x, d.y), -std::atan2(d.z, std::sqrt(d.x*d.x + d.y*d.y)), true};
+    }
     inline Point end(const Ray& r, float length = kGuideLengthGameUnits) noexcept
     {
         return { r.origin.x + r.direction.x * length, r.origin.y + r.direction.y * length, r.origin.z + r.direction.z * length };
