@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include "experimental/LooseReloadProtocol.h"
 
 namespace RE { class TESObjectREFR; }
 
@@ -19,6 +20,7 @@ namespace rock::native_weapon_cycle
         bool reload(float seconds, bool empty, float elapsed = 0.0f) noexcept;
         float reloadSeconds(bool empty, float speed) const noexcept;
         bool reloading() const noexcept;
+        bool copyReloadPose(loose_reload_experiment::Snapshot& out) noexcept;
         void finishReload() noexcept;
         void clear() noexcept;
         void reap() noexcept;

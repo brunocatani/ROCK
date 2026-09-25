@@ -59,6 +59,61 @@ namespace rock::native_weapon_cycle
         bool ready{}, failed{}, playing{}, restorePending{}, retiring{};
         unsigned shotsLogged{};
         unsigned poseLogs{};
+        std::array<int, 2> handBones{-1, -1};
+        std::array<std::array<int, 15>, 2> fingerBones{};
+        std::array<loose_reload_experiment::HandPose, 2> reloadHands{};
+        bool reloadPoseReady{};
+
+        bool boneLocal(int bone, RE::NiTransform& out) const
+        {
+            if (bone < 0 || bone >= boneCount) return false;
+            const auto track = native_idle_grip_preharvest_policy::findTransformTrackForBone(
+                bone, trackCount, std::span<const std::int16_t>(mapping.data(), mappingCount));
+            return convertHavokLocalTransform(track >= 0 ? samples[track] : referencePose[bone], out) && isFiniteTransform(out);
+        }
+
+        bool boneModel(int bone, RE::NiTransform& out, int& rootBone) const
+        {
+            std::array<int, native_idle_grip_preharvest_policy::kMaxBoneChainLength> chain{};
+            const auto length = native_idle_grip_preharvest_policy::collectBoneChainToRoot(
+                bone, std::span<const std::int16_t>(parents.data(), boneCount), chain);
+            if (!length) return false;
+            out = transform_math::makeIdentityTransform<RE::NiTransform>();
+            for (std::size_t i = length; i > 0; --i) {
+                RE::NiTransform local;
+                if (!boneLocal(chain[i-1], local)) return false;
+                out = transform_math::composeTransforms(out, local);
+            }
+            rootBone = chain[length-1];
+            return isFiniteTransform(out);
+        }
+
+        bool captureReloadHands(bool baseline)
+        {
+            RE::NiTransform weaponModel;
+            int weaponRoot;
+            if (!boneModel(weaponBone, weaponModel, weaponRoot)) return false;
+            const auto inverseWeapon = transform_math::invertTransform(weaponModel);
+            for (unsigned hand = 0; hand < 2; ++hand) {
+                auto& pose = reloadHands[hand];
+                RE::NiTransform wristModel;
+                int wristRoot;
+                if (!boneModel(handBones[hand], wristModel, wristRoot) || wristRoot != weaponRoot) return false;
+                const auto relative = transform_math::composeTransforms(inverseWeapon, wristModel);
+                if (!isFiniteTransform(relative)) return false;
+                pose.current = loose_reload_experiment::pack(relative);
+                if (baseline) pose.baseline = pose.current;
+                pose.valid = 1;
+                pose.fingerMask = 0;
+                for (unsigned finger = 0; finger < 15; ++finger) {
+                    RE::NiTransform local;
+                    if (!boneLocal(fingerBones[hand][finger], local)) continue;
+                    pose.fingers[finger] = loose_reload_experiment::pack(local);
+                    pose.fingerMask |= 1u << finger;
+                }
+            }
+            return true;
+        }
 
         ClipId reloadClip(bool empty) const noexcept
         {
@@ -287,6 +342,15 @@ namespace rock::native_weapon_cycle
             const auto weapon = backend.native.findBoneWithName(skeleton, "Weapon", nullptr);
             if (weapon >= static_cast<std::uint64_t>(boneCount)) return false;
             weaponBone = static_cast<int>(weapon);
+            const auto boneIndex = [&](const char* name) {
+                const auto found = backend.native.findBoneWithName(skeleton, name, nullptr);
+                return found < static_cast<std::uint64_t>(boneCount) ? static_cast<int>(found) : -1;
+            };
+            handBones = {boneIndex("RArm_Hand"), boneIndex("LArm_Hand")};
+            for (unsigned i = 0; i < 15; ++i) {
+                fingerBones[0][i] = boneIndex(kRightFiringFingerBoneNames[i]);
+                fingerBones[1][i] = boneIndex(kLeftSupportFingerBoneNames[i]);
+            }
             if (!guardedSampleTracks(sampler, animation, 0, trackCount, samples.data())) return false;
             nodeCount = 1;
             nodes[0].object = root;
@@ -548,6 +612,14 @@ namespace rock::native_weapon_cycle
             return false;
         }
         _state->selectClip(choice);
+        _state->reloadHands = {};
+        _state->reloadPoseReady = guardedSampleTracks(_state->sampler, _state->animation, 0.0f,
+            _state->trackCount, _state->samples.data()) && _state->captureReloadHands(true);
+        _state->sampledTime = _state->reloadPoseReady ? 0.0f : -1.0f;
+        if (!_state->reloadPoseReady) {
+            ROCK_LOG_WARN(Animation, "Loose reload IK unavailable ref={:08X} clip={}: wrist tracks or common root missing",
+                _state->backend.job.referenceFormId, _state->clips[choice].path.data());
+        }
         _state->poseLogs = 0;
         _state->playbackRate = _state->duration / seconds;
         _state->time = std::isfinite(elapsed) ? std::clamp(elapsed / seconds, 0.0f, 1.0f) * _state->duration : 0.0f;
@@ -571,5 +643,22 @@ namespace rock::native_weapon_cycle
     void Session::finishReload() noexcept
     {
         if (_state) _state->reloading = false;
+    }
+
+    bool Session::copyReloadPose(loose_reload_experiment::Snapshot& out) noexcept try
+    {
+        if (!reloading() || _state->paused || !_state->reloadPoseReady) return false;
+        // Same sample and clock as the parts; this never advances the reload.
+        _state->apply(0.0f);
+        if (!ready() || !_state->captureReloadHands(false)) return false;
+        out.time = _state->time;
+        out.duration = _state->duration;
+        out.weaponWorld = loose_reload_experiment::pack(_state->root->world);
+        for (unsigned hand = 0; hand < 2; ++hand) out.hands[hand] = _state->reloadHands[hand];
+        return true;
+    }
+    catch (...) {
+        try { ROCK_LOG_SAMPLE_WARN(Animation, 1000, "Loose reload IK snapshot failed; weapon reload retained"); } catch (...) {}
+        return false;
     }
 }

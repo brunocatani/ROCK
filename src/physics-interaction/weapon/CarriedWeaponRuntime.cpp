@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/CarriedWeaponRuntime.h"
+#include "experimental/LooseReloadBridge.h"
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/NativeMemory.h"
@@ -207,6 +208,7 @@ namespace rock
 
     void CarriedWeaponRuntime::beforeSave() noexcept
     {
+        loose_reload_bridge::clear();
         // The carried data is private, so native save/load never serializes
         // an extra equipped item. Its value snapshot belongs to the co-save.
         saving.store(true, std::memory_order_release);
@@ -448,6 +450,7 @@ namespace rock
 
     void CarriedWeaponRuntime::removeContext() noexcept
     {
+        loose_reload_bridge::clear();
         carried_weapon_projectile::clear();
         if (!_registered) return;
         stopAttackSound("context-retired");
@@ -457,6 +460,7 @@ namespace rock
     }
     void CarriedWeaponRuntime::clear(bool nativeWorldAvailable) noexcept
     {
+        loose_reload_bridge::clear();
         if (nativeWorldAvailable && isInteractionThread() && _reference && _ammoKnown && !_faulted && !saving.load(std::memory_order_acquire)) {
             observeAmmo();
             Archive last{};
@@ -490,6 +494,7 @@ namespace rock
 
     bool CarriedWeaponRuntime::suspend() noexcept
     {
+        loose_reload_bridge::clear();
         // Equip notifications cannot evict a private context. Only clear
         // pending physical input so a native transition cannot replay it.
         _operation.cancelInput();
@@ -770,6 +775,7 @@ namespace rock
                 return;
             }
             resumedReload = true;
+            ++_reloadSequence;
         }
         _operation.advance(!resumedReload ? input.deltaSeconds : 0.0f);
         if (input.triggerHeld && (!_cycle.ready() || !_muzzle || input.grip != akimbo::Grip::Firing)) {
@@ -779,6 +785,7 @@ namespace rock
         if (input.reloadPressed && input.grip == akimbo::Grip::Firing && !_operation.reloading()) {
             const float authored = _cycle.reloadSeconds(_loaded == 0, _reloadSpeed);
             if (authored > 0 && _cycle.reload(authored, _loaded == 0) && _operation.beginReload(authored)) {
+                ++_reloadSequence;
                 _reloadSeconds = authored;
                 stopAttackSound("reload");
             } else {
@@ -801,6 +808,22 @@ namespace rock
     void CarriedWeaponRuntime::present() noexcept
     {
         if (_reference && !_faulted && sourceCurrent() && nativeWeaponAbsent()) _cycle.present();
+    }
+
+    bool CarriedWeaponRuntime::copyReloadPose(loose_reload_experiment::Snapshot& out) noexcept
+    {
+        out = {};
+        if (saving.load(std::memory_order_acquire) || !isInteractionThread() || !_reference || _faulted ||
+            !_operation.reloading() ||
+            !nativeWeaponAbsent() || !sourceCurrent() || !_cycle.copyReloadPose(out)) return false;
+        out.session = _operation.session();
+        out.binding = _operation.binding();
+        out.reload = _reloadSequence;
+        out.reference = _reference->formID;
+        out.weapon = _weapon.object->formID;
+        out.firingHand = _operation.hand() == akimbo::Hand::Left ? 1u : 0u;
+        out.active = 1;
+        return true;
     }
 
     RE::NiPoint3 CarriedWeaponRuntime::advanceRecoil(float deltaSeconds) noexcept

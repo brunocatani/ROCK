@@ -28,6 +28,7 @@ namespace rock
         void prepare(const Input& input);
         void update(const Input& input);
         void present() noexcept;
+        bool copyReloadPose(loose_reload_experiment::Snapshot& out) noexcept;
         RE::NiPoint3 advanceRecoil(float deltaSeconds) noexcept;
         static bool isLooseFirearm(const RE::TESObjectREFR* reference) noexcept;
         static bool nativeWeaponAbsent() noexcept;
@@ -82,6 +83,7 @@ namespace rock
         const RE::BGSEquipSlot* _slot{};
         std::uint32_t _index{}, _loaded{}, _ammoForm{}, _thread{};
         std::uint64_t _nextSession{1};
+        std::uint64_t _reloadSequence{};
         float _secondsPerShot{}, _reloadSeconds{}, _reloadSpeed{1.0f};
         bool _ammoKnown{}, _automatic{}, _registered{}, _faulted{};
 

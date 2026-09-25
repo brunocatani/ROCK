@@ -1,5 +1,6 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/weapon/LooseWeaponExperimentPolicy.h"
+#include "experimental/LooseReloadBridge.h"
 
 namespace rock
 {
@@ -115,6 +116,7 @@ namespace rock
 
     void PhysicsInteraction::updateCarriedWeapon(const PhysicsFrameContext& frame, bool prepareOnly)
     {
+        loose_reload_bridge::clear();
         CarriedWeaponRuntime::noteInteractionThread();
         CarriedWeaponRuntime::Input input{};
         const auto candidate = [](const Hand& hand) -> std::uint32_t {
@@ -158,6 +160,21 @@ namespace rock
         }
         else _carriedWeapon.update(input);
         if (!prepareOnly) {
+            loose_reload_experiment::Snapshot pose;
+            RE::NiTransform seat;
+            const auto& firingHand = input.hand == akimbo::Hand::Left ? _leftHand : _rightHand;
+            if (input.inputAllowed && !frame.left.disabled && !frame.right.disabled &&
+                !input_remap_runtime::isProviderOpenVrGameInputSuppressedForHand(false) &&
+                !input_remap_runtime::isProviderOpenVrGameInputSuppressedForHand(true) && _carriedWeapon.copyReloadPose(pose)) {
+                if (firingHand.copyLooseFiringSeat(seat)) {
+                    pose.frame = frame.timing.sequence;
+                    pose.firingSeat = loose_reload_experiment::pack(seat);
+                    loose_reload_bridge::publish(pose);
+                } else {
+                    ROCK_LOG_SAMPLE_WARN(Animation, 1000, "Loose reload IK waiting for authored firing seat ref={:08X} session={}",
+                        pose.reference, pose.session);
+                }
+            }
             for (const bool left : {false, true}) {
                 const auto& hand = left ? _leftHand : _rightHand;
                 const bool heldGun = candidate(hand) != 0;

@@ -446,6 +446,12 @@ namespace rock
         bool isHoldingLooseWeapon() const { return isHolding() && _heldObjectIsLooseWeapon; }
         bool isHoldingAuthoredSupportGrip() const { return isHoldingLooseWeapon() && _grabFrame.authoredLooseWeaponSupportGrip; }
         bool isHoldingFiringGrip() const { return isHoldingLooseWeapon() && _grabFrame.syntheticLooseWeaponPrimaryAttach && !_grabFrame.authoredLooseWeaponSupportGrip; }
+        bool copyLooseFiringSeat(RE::NiTransform& out) const noexcept
+        {
+            if (!isHoldingFiringGrip() || !_grabFrame.authoredWeaponPose.valid()) return false;
+            out = _grabFrame.authoredWeaponPose.handWeaponLocal;
+            return true;
+        }
         void setLooseWeaponRecoil(const RE::NiPoint3& offset) noexcept
         {
             _looseRecoilTrace = isHoldingLooseWeapon() ? _grabFrame.traceId : 0;
