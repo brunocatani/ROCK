@@ -1,5 +1,5 @@
-ROCK v0.9 - Release Install Notes
-================================
+ROCK v0.92.2 - Release Install Notes
+==================================
 
 Requirements
 ------------
@@ -20,7 +20,7 @@ Data\F4SE\Plugins\ROCK.pdb
 The SDK folder contains the current modular headers and buildable examples.
 Start with SDK/ROCK/modular_examples/ReadHands.cpp. The examples/CMakeLists.txt
 supports building the full example set with CommonLibF4VR and vcpkg.
-The retired monolithic headers are not compatible with ROCK 0.9.
+The retired monolithic headers are not compatible with this release.
 Current developer documentation: https://devartificial.pro/docs/rps-sdk/rock/reference/api-index
 Player instructions and compatibility notes:
 https://www.nexusmods.com/fallout4/mods/108881
@@ -30,7 +30,7 @@ ROCK stores its runtime configuration beneath your Windows Documents folder:
 My Games\Fallout4VR\Mods_Config\ROCK
 
 ROCK.ini contains consumer settings. When absent, ROCK creates it with all
-consumer defaults compiled into the plugin. Existing files are loaded unchanged.
+consumer defaults compiled into the plugin. Existing configured values are preserved.
 
 ROCK_Developer.ini is optional. Developer defaults remain in code and are shown
 in the wheel menu even without this file. Changing a developer setting creates
@@ -46,8 +46,8 @@ iWeaponGrabMode and iWeaponDropMode. The default is iWeaponGrabMode=1
 Toggle Drop preserves the former retained-in-hand Auto Drop behavior.
 Keeping the previous weapon in the other hand when equipping another is now
 enabled by default through bKeepPreviousWeaponInHandOnEquip=true.
-Back up and delete an old ROCK.ini before launching to regenerate it with
-the current defaults. Keep SavedGrabOffsets and AuthoredWeaponGripCache.
+Existing configured values are preserved. Keep SavedGrabOffsets when updating; automatic authored
+grip JSON persistence has been removed in favor of session discovery.
 NPC dynamic collisions are enabled by default through npcDynamicCollisions
 in ROCK.ini. Update dependent addons to versions using the modular ROCK API.
 
@@ -66,3 +66,13 @@ Features
 - Full weapon collision for vanilla and modded weapons.
 - Dynamic object grabbing, two-hand grabs, pull/catch flow, and held-object release behavior.
 - Realistic gunplay support that lets you grab and use different parts of the gun for fire support.
+
+Gesture Pull (Grabbing/iFarGrabMode=2): hold grab to lock, flick toward yourself
+to launch, then release and press grab again within reach to catch. Holding
+the first press does not catch. Immediate Pull (mode 1) still auto-catches.
+
+World pickup/use takes priority over right-A reload/scope input. With no usable
+target, tap to reload or hold to scope. ROCK-held objects retain take protection.
+
+Decoration activation belongs to the optional ROCK Pimp my House add-on.
+ROCK supplies its native placement APIs but has no decoration-mode INI toggle.
