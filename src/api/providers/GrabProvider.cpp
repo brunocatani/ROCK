@@ -1,3 +1,4 @@
+#include <ROCK/GrabV1_1.h>
 #include "GrabMarshalling.h"
 #include <ROCK/Discovery.h>
 #include "EventBoundary.h"
@@ -110,9 +111,21 @@ Status ROCK_CALL requestPowerArmorGrabV1(std::uint64_t ownerToken, const PowerAr
 }
 
 #include "GrabEndpoints.inl"
+Status ROCK_CALL getHeldPlacementState(OwnerToken owner,v1_1::HeldPlacementState* out) noexcept {
+    if (const auto s=checkOutput(out); s!=Status::Ok) return s;
+    return invoke(owner,kInterfaceId,1,true,[&] {return provider::runtime::getHeldPlacementState(*out);});
 }
-const ApiV1& table() noexcept {
-    static const ApiV1 value{
+Status ROCK_CALL submitHeldPlacementIntent(OwnerToken owner,const v1_1::HeldPlacementIntent* request) noexcept {
+    if (const auto s=checkInput(request); s!=Status::Ok) return s;
+    return invoke(owner,kInterfaceId,2,true,[&] {return provider::runtime::submitHeldPlacementIntent(owner,*request);});
+}
+Status ROCK_CALL clearHeldPlacementIntent(OwnerToken owner) noexcept {
+    return invoke(owner,kInterfaceId,2,true,[&] {return provider::runtime::clearHeldPlacementIntent(owner);});
+}
+
+}
+const v1_1::Api& tableV1_1() noexcept {
+    static const v1_1::Api value{{
         &requestForceGrabV1,
         &getInteractionCommandResultV1,
         &requestForceReleaseV1,
@@ -130,7 +143,9 @@ const ApiV1& table() noexcept {
         &copyEvents,
         &setEventCallback,
         &clearEventCallback,
-    };
+    },&getHeldPlacementState,&submitHeldPlacementIntent,&clearHeldPlacementIntent};
     return value;
 }
+const ApiV1& table() noexcept { return tableV1_1().v1; }
+
 }

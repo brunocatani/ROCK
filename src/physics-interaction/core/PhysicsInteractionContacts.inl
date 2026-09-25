@@ -566,7 +566,13 @@
             _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
         const bool bodyBIsDynamicWeapon =
             _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
-        if (!bodyAIsDynamicHand && !bodyBIsDynamicHand && !bodyAIsDynamicWeapon && !bodyBIsDynamicWeapon) return;
+        const bool bodyAIsRightHeld = _rightHand.isHeldBodyId(bodyIdA);
+        const bool bodyBIsRightHeld = _rightHand.isHeldBodyId(bodyIdB);
+        const bool bodyAIsLeftHeld = _leftHand.isHeldBodyId(bodyIdA);
+        const bool bodyBIsLeftHeld = _leftHand.isHeldBodyId(bodyIdB);
+        const bool heldContact = bodyAIsRightHeld || bodyBIsRightHeld || bodyAIsLeftHeld || bodyBIsLeftHeld;
+        const bool generatedContact = bodyAIsDynamicHand || bodyBIsDynamicHand || bodyAIsDynamicWeapon || bodyBIsDynamicWeapon;
+        if (!generatedContact && !heldContact) return;
         // ID-only admission precedes native reads; accepted events retain all body checks.
         if (!havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdA }) ||
             !havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdB })) {
@@ -574,6 +580,33 @@
         }
         const bool solvedChildContact =
             manifoldPointCount > 0 && manifoldPointCount <= 4;
+        if (solvedChildContact && heldContact) {
+            auto recordHeldPlacementContact = [&](Hand& hand, bool heldA, bool heldB) {
+                if (!hand.isHoldingAtomic() || heldA == heldB) return;
+                const auto held = heldA ? bodyIdA : bodyIdB;
+                const auto other = heldA ? bodyIdB : bodyIdA;
+                if (_rightHand.isHeldBodyId(other) || _leftHand.isHeldBodyId(other) ||
+                    ::rock::provider::isExternalBodyId(other)) return;
+                const auto surface = havok_runtime::snapshotBodyIdentity(world,RE::hknpBodyId{other});
+                if (!surface.valid || !surface.body || !surface.body->shape) return;
+                const auto layer = surface.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+                if (collision_layer_policy::isRockGeneratedColliderLayer(layer) ||
+                    collision_layer_policy::isActorOrBipedLayer(layer) ||
+                    layer == collision_layer_policy::FO4_LAYER_CHARCONTROLLER) return;
+                using physics_body_classifier::BodyMotionType;
+                const auto motion = physics_body_classifier::motionTypeFromBodyFlags(surface.body->flags);
+                if (motion != BodyMotionType::Static && motion != BodyMotionType::Keyframed) return;
+                hand.notifyHeldSurfaceContact(held,other);
+                ROCK_LOG_SAMPLE_DEBUG(Hand,1000,
+                    "Held placement manifold contact hand={} held={} surface={} layer={} points={}",
+                    hand.handName(),held,other,layer,manifoldPointCount);
+            };
+            recordHeldPlacementContact(_rightHand,bodyAIsRightHeld,bodyBIsRightHeld);
+            recordHeldPlacementContact(_leftHand,bodyAIsLeftHeld,bodyBIsLeftHeld);
+        }
+        // Held placement observation must not enter the existing hand/weapon
+        // audio, support, haptic or grab-response routes for new participant pairs.
+        if (!generatedContact) return;
         if (solvedChildContact) {
             native_impact_audio::observeManifold(world, bodyIdA, bodyIdB, shapeKeyA, shapeKeyB);
         }

@@ -50,12 +50,40 @@ int main() {
     verify(core::table(),core::kSupportedPermissions);
     verify(hands::table(),hands::kSupportedPermissions);
     verify(collision::table(),collision::kSupportedPermissions);
-    verify(grab::table(),grab::kSupportedPermissions);
+    verify(grab::tableV1_1(),grab::kSupportedPermissions);
+    {
+        const InterfaceDescriptorV1 *oldGrab{}, *newGrab{};
+        assert(ROCKAPI_QueryInterfaceV1(grab::kInterfaceId,1,0,sizeof(grab::ApiV1),&oldGrab)==Status::Ok);
+        assert(ROCKAPI_QueryInterfaceV1(grab::kInterfaceId,1,1,sizeof(grab::v1_1::Api),&newGrab)==Status::Ok);
+        assert(oldGrab==newGrab && oldGrab->requiredCoreMinor==0);
+        const auto* oldApi=static_cast<const grab::ApiV1*>(oldGrab->table);
+        const auto* newApi=static_cast<const grab::v1_1::Api*>(newGrab->table);
+        assert(oldApi->cancelInteractionCommandV1(77,9)==Status::Ok);
+        grab::v1_1::HeldPlacementState state;
+        assert(newApi->getHeldPlacementState(77,&state)==Status::Ok && state.frameToken==42);
+        grab::v1_1::HeldPlacementIntent request;request.frameToken=state.frameToken;
+        assert(newApi->submitHeldPlacementIntent(77,&request)==Status::RequestQueued);
+        assert(newApi->clearHeldPlacementIntent(77)==Status::Ok);
+        assert(oldApi->cancelInteractionCommandV1(77,9)==Status::Ok);
+    }
     verify(touch::table(),touch::kSupportedPermissions);
     verify(weapon::tableV1_1(),weapon::kSupportedPermissions);
     verify(weaponparts::table(),weaponparts::kSupportedPermissions);
     verify(animation::table(),animation::kSupportedPermissions);
-    verify(input::table(),input::kSupportedPermissions);
+    verify(input::tableV1_1(),input::kSupportedPermissions);
+    {
+        const InterfaceDescriptorV1* oldInput{};
+        const InterfaceDescriptorV1* newInput{};
+        assert(ROCKAPI_QueryInterfaceV1(input::kInterfaceId,1,0,sizeof(input::ApiV1),&oldInput)==Status::Ok);
+        assert(ROCKAPI_QueryInterfaceV1(input::kInterfaceId,1,1,sizeof(input::v1_1::Api),&newInput)==Status::Ok);
+        assert(oldInput->table==newInput->table && oldInput->requiredCoreMinor==0);
+        const auto* oldCalls=static_cast<const input::ApiV1*>(oldInput->table);
+        assert(oldCalls->clearHandInputSuppressionV1(77,Hand::Left)==Status::Ok);
+        input::v1_1::PlacementClickState state;
+        assert(static_cast<const input::v1_1::Api*>(newInput->table)->getPlacementClickState(77,&state)==Status::Ok);
+        assert(state.flags==static_cast<std::uint32_t>(input::v1_1::PlacementClickFlag::InputReserved));
+        assert(oldCalls->clearHandInputSuppressionV1(77,Hand::Left)==Status::Ok);
+    }
     verify(references::table(),references::kSupportedPermissions);
     verify(playercontroller::table(),playercontroller::kSupportedPermissions);
     verify(diagnostics::table(),diagnostics::kSupportedPermissions);

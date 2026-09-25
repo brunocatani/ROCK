@@ -317,6 +317,7 @@ namespace rock
             state.pendingTarget = {};
             state.previousTarget = {};
             state.sampledLinearVelocityHavok = {};
+            state.sourceTransportVelocityHavok = {};
             state.sourceDeltaSeconds = 0.0f;
             state.secondsSinceSourceSample = generated_keyframed_body_drive_math::kMaxStaleSeconds;
             state.teleportDistanceGameUnits = 1000.0f;
@@ -403,11 +404,19 @@ namespace rock
         GeneratedKeyframedBodyDriveState& state,
         const RE::NiTransform& target,
         float sourceDeltaSeconds,
-        float teleportDistanceGameUnits)
+        float teleportDistanceGameUnits,
+        const RE::NiPoint3& sourceTransportDeltaGame)
     {
         std::scoped_lock lock(state.mutex);
         GeneratedKeyframedBodyDriveQueueResult result{};
         const float sanitizedSourceDelta = generated_keyframed_body_drive_math::sanitizeSourceDeltaSeconds(sourceDeltaSeconds);
+        state.sourceTransportVelocityHavok = {};
+        RE::NiPoint3 transportVelocity{};
+        if (generated_keyframed_body_drive_math::tryComputeSampledLinearVelocityHavok(
+                RE::NiPoint3{}, sourceTransportDeltaGame, sanitizedSourceDelta,
+                gameToHavokScale(), transportVelocity)) {
+            state.sourceTransportVelocityHavok = transportVelocity;
+        }
         const bool hadReferenceTarget = state.hasPendingTarget || state.hasPreviousTarget;
         const RE::NiTransform referenceTarget = state.hasPendingTarget ? state.pendingTarget : state.previousTarget;
         state.hasSampledLinearVelocityHavok = false;
@@ -464,6 +473,7 @@ namespace rock
             BethesdaPhysicsBody& body,
             const RE::NiTransform& target,
             float driveDeltaSeconds,
+            float maximumLinearVelocityHavok,
             const GeneratedBodyDriveMode& mode,
             GeneratedKeyframedBodyDriveResult& result)
         {
@@ -492,24 +502,17 @@ namespace rock
 
             result.dynamicVelocityValid = true;
             result.dynamicLinearBeforePressHavok = { linearVelocityHavok[0], linearVelocityHavok[1], linearVelocityHavok[2] };
-            if (mode.hasContactPressDirection && mode.contactPressMaxVelocityHavok > 0.0f) {
-                const float dirLengthSq =
-                    mode.contactPressDirection[0] * mode.contactPressDirection[0] +
-                    mode.contactPressDirection[1] * mode.contactPressDirection[1] +
-                    mode.contactPressDirection[2] * mode.contactPressDirection[2];
-                if (std::isfinite(dirLengthSq) && dirLengthSq > 0.5f && dirLengthSq < 2.0f) {
-                    const float along =
-                        linearVelocityHavok[0] * mode.contactPressDirection[0] +
-                        linearVelocityHavok[1] * mode.contactPressDirection[1] +
-                        linearVelocityHavok[2] * mode.contactPressDirection[2];
-                    const float excess = along - mode.contactPressMaxVelocityHavok;
-                    if (std::isfinite(excess) && excess > 0.0f) {
-                        result.contactPressClamped = true;
-                        linearVelocityHavok[0] -= mode.contactPressDirection[0] * excess;
-                        linearVelocityHavok[1] -= mode.contactPressDirection[1] * excess;
-                        linearVelocityHavok[2] -= mode.contactPressDirection[2] * excess;
-                    }
-                }
+            if (mode.hasContactPressDirection) {
+                auto velocity = result.dynamicLinearBeforePressHavok;
+                result.contactPressClamped = generated_keyframed_body_drive_math::clampContactPressVelocity(
+                    velocity,
+                    RE::NiPoint3{ mode.contactPressDirection[0], mode.contactPressDirection[1], mode.contactPressDirection[2] },
+                    result.contactPressReferenceVelocityHavok,
+                    mode.contactPressMaxVelocityHavok,
+                    maximumLinearVelocityHavok);
+                linearVelocityHavok[0] = velocity.x;
+                linearVelocityHavok[1] = velocity.y;
+                linearVelocityHavok[2] = velocity.z;
             }
 
             linearVelocityHavok[3] = 0.0f;
@@ -576,6 +579,9 @@ namespace rock
         result.stepsWithoutSource = state.stepsWithoutSource;
         result.hasSampledTargetLinearVelocityHavok = state.hasSampledLinearVelocityHavok;
         result.sampledTargetLinearVelocityHavok = state.sampledLinearVelocityHavok;
+        if (mode.contactPressUsesSourceTransport) {
+            result.contactPressReferenceVelocityHavok = state.sourceTransportVelocityHavok;
+        }
 
         if (result.sourceStale) {
             result.skippedStale = true;
@@ -706,7 +712,7 @@ namespace rock
                 result.driven = result.teleported;
                 result.placementFailed = !result.teleported;
             } else {
-                result.driven = driveDynamicBodyVelocityTowardTarget(world, body, target, driveDelta, mode, result);
+                result.driven = driveDynamicBodyVelocityTowardTarget(world, body, target, driveDelta, maxLinearVelocityHavok, mode, result);
                 result.nativeDriveFailed = !result.driven;
             }
             if (!result.driven) {

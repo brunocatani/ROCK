@@ -2635,8 +2635,14 @@ namespace rock
                 retireHand(slots, frame.bhkWorld, isLeft);
                 continue;
             }
+            const auto& runtimeFrame = runtime_state::currentFrame();
+            const auto transportDelta = !slots.surfaceLatch.active &&
+                runtimeFrame.timing.sequence == frame.timing.sequence &&
+                frame.timing.valid && !frame.timing.discontinuity &&
+                runtimeFrame.playerSpace.valid ? runtimeFrame.playerSpace.deltaGameUnits : RE::NiPoint3{};
             const auto queued = queueGeneratedKeyframedBodyTarget(owner.driveState, targets[kPalmSlot],
-                frame.deltaSeconds, dynamic_hand_collision_policy::kDivergenceTeleportDistanceGameUnits);
+                frame.deltaSeconds, dynamic_hand_collision_policy::kDivergenceTeleportDistanceGameUnits,
+                transportDelta);
             slots.traceQueuedSequence = queued.queuedSequence;
             if (dynamic_collider_trace::sample(queued.queuedSequence)) {
                 const auto& root = targets[kPalmSlot].translate;
@@ -2764,6 +2770,13 @@ namespace rock
                     mode.contactPressDirection[2] =
                         -deviation.z / deviationLength;
                     mode.contactPressMaxVelocityHavok = pressCapHavok;
+                    // Capping shared locomotion in world space makes two
+                    // touching player colliders lag until recovery teleports
+                    // them. Limit their relative press, retaining the world
+                    // cap whenever any world contact is still active.
+                    mode.contactPressUsesSourceTransport =
+                        handSlots.retainedSolverContactMask != 0 &&
+                        handSlots.retainedWorldContactMask == 0;
                 }
             }
 
@@ -2788,8 +2801,9 @@ namespace rock
                 const auto& before = result.dynamicLinearBeforePressHavok;
                 const auto& after = result.dynamicLinearAfterPressHavok;
                 const auto& targetVelocity = result.sampledTargetLinearVelocityHavok;
+                const auto& pressReference = result.contactPressReferenceVelocityHavok;
                 dynamic_collider_trace::write(
-                    "DHC_CLOCK drive: hand={} body={} generation={:016X} source={} step={} substep={}/{} sourceDt={:.6f} sourceAge={:.6f} physicsDt={:.6f} driven={} stale={} invalidTiming={} rebuild={} previousContact={} previousWorld={} press={} clamped={} capCount={} velocityValid={} targetVelocityValid={} targetV=({:.4f},{:.4f},{:.4f}) beforeV=({:.4f},{:.4f},{:.4f}) afterV=({:.4f},{:.4f},{:.4f}) pressDir=({:.4f},{:.4f},{:.4f}) requested=({:.4f},{:.4f},{:.4f}) preLive=({:.4f},{:.4f},{:.4f}) limit={} dwell={:.4f} teleported={} sourceJumps={} divergenceResets={}",
+                    "DHC_CLOCK drive: hand={} body={} generation={:016X} source={} step={} substep={}/{} sourceDt={:.6f} sourceAge={:.6f} physicsDt={:.6f} driven={} stale={} invalidTiming={} rebuild={} previousContact={} previousWorld={} press={} clamped={} capCount={} velocityValid={} targetVelocityValid={} targetV=({:.4f},{:.4f},{:.4f}) beforeV=({:.4f},{:.4f},{:.4f}) afterV=({:.4f},{:.4f},{:.4f}) pressDir=({:.4f},{:.4f},{:.4f}) pressRefV=({:.4f},{:.4f},{:.4f}) requested=({:.4f},{:.4f},{:.4f}) preLive=({:.4f},{:.4f},{:.4f}) limit={} dwell={:.4f} teleported={} sourceJumps={} divergenceResets={}",
                     isLeft ? "L" : "R", slot.body.getBodyId().value, handSlots.compoundGeometryGeneration,
                     result.sourceSequence, timing.stepSequence, timing.substepIndex, timing.substepCount,
                     result.sourceDeltaSeconds, result.sourceAgeSeconds, result.driveDeltaSeconds,
@@ -2799,6 +2813,7 @@ namespace rock
                     result.dynamicVelocityValid, result.hasSampledTargetLinearVelocityHavok,
                     targetVelocity.x, targetVelocity.y, targetVelocity.z, before.x, before.y, before.z, after.x, after.y, after.z,
                     mode.contactPressDirection[0], mode.contactPressDirection[1], mode.contactPressDirection[2],
+                    pressReference.x, pressReference.y, pressReference.z,
                     result.requestedTargetGamePosition.x, result.requestedTargetGamePosition.y, result.requestedTargetGamePosition.z,
                     result.liveBodyGamePosition.x, result.liveBodyGamePosition.y, result.liveBodyGamePosition.z,
                     result.linearLimitExceeded, slot.divergenceDwellSeconds, result.teleported,

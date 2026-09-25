@@ -152,6 +152,8 @@ namespace rock
         // Close callback entry and drain any native step already traversing
         // ROCK-owned body banks before clearing registry or wrapper state.
         _generatedBodyStepDrive.reset();
+        resetHeldPlacement();
+
         clearGeneratedBodyContactRegistry();
         const bool generatedWorldStillLive =
             currentBhkWorld &&
@@ -558,6 +560,7 @@ namespace rock
 
     void PhysicsInteraction::shutdown(::rock::provider::RockProviderLifecycleReason reason)
     {
+        resetHeldPlacement();
         _equipped.gripResumePending = _equipped.continuityGrip.pending;
         cancelBareFistMode("physics-shutdown");
         _grabInput.bareFistDrawOwned = false;

@@ -20,7 +20,7 @@ namespace rock
         }
     }
 
-    void DynamicWeaponCollisionRuntime::updateSurfaceSupportInput()
+    void DynamicWeaponCollisionRuntime::updateSurfaceSupportInput(bool placementOwnsClick)
     {
         _surfaceInputReserved = false; // Also clears before interrupted-frame returns.
         if (!g_rockConfig.rockBipodMode) {
@@ -31,6 +31,11 @@ namespace rock
                 ROCK_LOG_INFO(Weapon, "Weapon surface support released: reason=bipod-mode-disabled");
             }
             return; // Do not read or consume the button while this mode is off.
+        }
+        if (placementOwnsClick) {
+            _surfaceClickRequested = false;
+            _surfaceToggle = {};
+            return;
         }
         if (input_remap_runtime::isProviderOpenVrGameInputSuppressedForHand(false)) {
             _surfaceClickRequested = false;

@@ -1,5 +1,14 @@
 // Private Input service operations. Included after shared owner/lifecycle helpers.
 
+    api::Status getPlacementClickState(api::input::v1_1::PlacementClickState& output)
+    {
+        const auto access=s_physicsInteraction.borrow();
+        const auto* pi=access.get();
+        if (!pi || !pi->isProviderReady()) return api::Status::NotReady;
+        pi->queryPlacementClickState(output);
+        return api::Status::Ok;
+    }
+
     RockProviderResultV1 ROCK_PROVIDER_CALL apiSetHandInputSuppressionV1(
         std::uint64_t ownerToken,
         const RockProviderHandInputSuppressionRequestV1* request)

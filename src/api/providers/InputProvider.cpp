@@ -1,5 +1,6 @@
 #include "InputMarshalling.h"
 #include <ROCK/Discovery.h>
+#include <ROCK/InputV1_1.h>
 #include "EventBoundary.h"
 
 namespace rock::api::input {
@@ -78,9 +79,15 @@ Status ROCK_CALL getNativeInputContextV1(OwnerToken ownerToken, std::uint32_t* o
 }
 
 #include "InputEndpoints.inl"
+Status ROCK_CALL getPlacementClickState(OwnerToken owner, v1_1::PlacementClickState* out) noexcept {
+    if (!out) return Status::InvalidArgument;
+    if (out->size!=sizeof(*out)) return Status::InvalidSize;
+    *out={};
+    return invoke(owner,kInterfaceId,1,true,[&] { return provider::runtime::getPlacementClickState(*out); });
 }
-const ApiV1& table() noexcept {
-    static const ApiV1 value{
+}
+const v1_1::Api& tableV1_1() noexcept {
+    static const v1_1::Api value{{
         &setHandInputSuppressionV1,
         &clearHandInputSuppressionV1,
         &getRawWandButtonStateV1,
@@ -91,7 +98,8 @@ const ApiV1& table() noexcept {
         &getNativeInputContextV1,
         &getSample,
         &copyEvents,
-    };
+    }, &getPlacementClickState};
     return value;
 }
+const ApiV1& table() noexcept { return tableV1_1().v1; }
 }
