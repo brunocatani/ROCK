@@ -126,5 +126,31 @@ int main()
     restored.bind(Hand::Left, Grip::Firing);
     check(!restored.requestFire(true, true, false, true, 8).operation,
         "Restored or rebound firing grips still require trigger release");
+
+    OperationState burst;
+    burst.begin(50); burst.bind(Hand::Right, Grip::Firing);
+    check(!burst.canSustainAttack(true, true, true, 8), "A held trigger on acquisition cannot keep an attack loop alive");
+    (void)burst.requestFire(true, false, true, true, 8);
+    const auto burstShot = burst.requestFire(true, true, true, true, 8);
+    burst.completeFire(burstShot, 0.1f);
+    check(burst.canSustainAttack(true, true, true, 7), "An automatic burst keeps its sound through inter-shot cooldown");
+    check(!burst.canSustainAttack(true, false, true, 7) && !burst.canSustainAttack(false, true, true, 7),
+        "Trigger release and blocked gameplay end the sound while the weapon stays held");
+    check(!burst.canSustainAttack(true, true, true, 0) && !burst.canSustainAttack(true, true, false, 7),
+        "An empty or unknown magazine cannot sustain firing sound");
+    burst.cancelInput();
+    check(!burst.canSustainAttack(true, true, true, 7), "Suspension ends the burst until release-to-rearm");
+    (void)burst.requestFire(true, false, true, true, 7);
+    burst.bind(Hand::Left, Grip::Firing);
+    check(!burst.canSustainAttack(true, true, true, 7), "Hand transfer cannot inherit an active sound loop");
+    (void)burst.requestFire(true, false, true, true, 7);
+    check(burst.beginReload(1.0f) && !burst.canSustainAttack(true, true, true, 7), "Reload interrupts firing sound");
+    burst.advance(1.0f); burst.completeReload();
+    check(!burst.canSustainAttack(true, true, true, 7), "Reload completion alone does not restart an attack loop");
+    (void)burst.requestFire(true, false, true, true, 7);
+    burst.bind(Hand::Left, Grip::Support);
+    check(!burst.canSustainAttack(true, true, true, 7), "Support-only carry cannot sustain a firing loop");
+    burst.begin(0);
+    check(!burst.canSustainAttack(true, true, true, 7), "A retired session cannot sustain firing sound");
     return ok ? 0 : 1;
 }

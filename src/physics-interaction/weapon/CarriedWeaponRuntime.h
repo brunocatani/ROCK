@@ -63,6 +63,7 @@ namespace rock
         [[nodiscard]] bool sourceCurrent() const noexcept;
         [[nodiscard]] bool publishContext();
         void removeContext() noexcept;
+        void stopAttackSound(const char* reason) noexcept;
         void fire();
         void reload();
         void observeAmmo() noexcept;

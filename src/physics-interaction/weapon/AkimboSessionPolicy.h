@@ -60,6 +60,15 @@ namespace rock::akimbo
 
         void cancelInput() noexcept { _armed = false; _wasHeld = false; }
 
+        [[nodiscard]] bool canSustainAttack(bool inputAllowed, bool held,
+            bool ammoKnown, std::uint32_t loaded) const noexcept
+        {
+            // A burst remains active between shots, including during cooldown.
+            // Suspension or a changed grip requires release before re-arming.
+            return _session && _armed && _hand != Hand::None && _grip == Grip::Firing &&
+                inputAllowed && held && ammoKnown && loaded && !_reloading;
+        }
+
         [[nodiscard]] Ticket requestFire(bool inputAllowed, bool held, bool automatic,
             bool ammoKnown, std::uint32_t loaded) noexcept
         {

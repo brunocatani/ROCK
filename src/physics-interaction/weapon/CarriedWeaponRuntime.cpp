@@ -115,6 +115,7 @@ namespace rock
                 constexpr std::array guards{
                     Guard{0xE803D0,{0x48,0x89,0x5C,0x24,0x18,0x48,0x89,0x6C,0x24,0x20,0x89,0x54}},
                     Guard{0xEC39C0,{0x48,0x89,0x5C,0x24,0x08,0x57,0x48,0x83,0xEC,0x20,0x8B,0x41}},
+                    Guard{0xEC3910,{0x48,0x89,0x5C,0x24,0x08,0x57,0x48,0x83,0xEC,0x20,0x48,0x8B}},
                     Guard{0x3E8380,{0x48,0x89,0x5C,0x24,0x10,0x44,0x88,0x4C,0x24,0x20,0x56,0x57}},
                     Guard{0x2F30E0,{0x48,0x85,0xC9,0x74,0x15,0x48,0x3B,0x0D,0x7C,0x1C,0x65,0x05}},
                     Guard{0x333740,{0x44,0x89,0x44,0x24,0x18,0x48,0x89,0x54,0x24,0x10,0x55,0x41}},
@@ -414,10 +415,33 @@ namespace rock
         return true;
     }
 
+    void CarriedWeaponRuntime::stopAttackSound(const char* reason) noexcept
+    {
+        if (!_data || !nativeReady()) return;
+        const auto lease = _data;
+        auto* data = static_cast<RE::EquippedWeaponData*>(lease.get());
+        const auto attack = data->attackSound.soundID;
+        if (attack == UINT32_MAX) return;
+        // EC3700 starts this handle; E51910 ends it via EC3910 when leaving
+        // attack state 16. EC2FD0 uses the same stop during destruction.
+        // Unlike EC39C0 (idle only), this preserves native reverb-tail rules.
+        using StopAttack = void (*)(RE::EquippedWeaponData*);
+        reinterpret_cast<StopAttack>(REL::Offset(0xEC3910).address())(data);
+        // A still-loading handle can survive the native call. Keep checking
+        // it on inactive frames rather than forgetting a pending sound.
+        try {
+            ROCK_LOG_SAMPLE_INFO(Weapon, 250,
+                "Loose firearm attack sound stop session={} ref={:08X} reason={} attack={:08X}->{:08X} reverb={:08X} tail={:08X}",
+                _operation.session(), _reference ? _reference->formID : 0, reason,
+                attack, data->attackSound.soundID, data->reverbSound.soundID, data->prevReverb.soundID);
+        } catch (...) {}
+    }
+
     void CarriedWeaponRuntime::removeContext() noexcept
     {
         carried_weapon_projectile::clear();
         if (!_registered) return;
+        stopAttackSound("context-retired");
         using StopIdle = void (*)(RE::EquippedItemData*, bool);
         if (_data) reinterpret_cast<StopIdle>(REL::Offset(0xEC39C0).address())(_data.get(), false);
         _registered = false;
@@ -459,6 +483,7 @@ namespace rock
         // Equip notifications cannot evict a private context. Only clear
         // pending physical input so a native transition cannot replay it.
         _operation.cancelInput();
+        stopAttackSound("suspended");
         return true;
     }
 
@@ -560,9 +585,15 @@ namespace rock
     {
         auto* player = RE::PlayerCharacter::GetSingleton();
         auto item = emptyItem();
-        if (!ready() || !nativeWeaponAbsent() || !player || !player->currentProcess || !_muzzle || currentShot.active || !sourceCurrent() || !contextCurrent(item)) return;
+        if (!ready() || !nativeWeaponAbsent() || !player || !player->currentProcess || !_muzzle || currentShot.active || !sourceCurrent() || !contextCurrent(item)) {
+            stopAttackSound("dispatch-unavailable");
+            return;
+        }
         auto* data = weaponData(item);
-        if (!data || !data->ammo || !data->ammoCount || !weapon_grip_transfer::validFrame(_muzzle->world)) return;
+        if (!data || !data->ammo || !data->ammoCount || !weapon_grip_transfer::validFrame(_muzzle->world)) {
+            stopAttackSound("dispatch-invalid");
+            return;
+        }
         data->fireNode = _muzzle.get();
         const auto weapon = _weapon;
         const auto dataLease = _data;
@@ -584,6 +615,7 @@ namespace rock
         currentShot = {};
         observeAmmo();
         if (result.applied && result.launches && _ammoKnown && _loaded < before) _cycle.fire();
+        if (!result.applied || !result.launches) stopAttackSound("dispatch-failed");
         primaryData = readItem(0, primaryAfter) ? weaponData(primaryAfter) : nullptr;
         const auto& p = result.world.translate;
         const auto expected = native_scope_shot_policy::nodeAxisRay({p.x, p.y, p.z}, result.world.rotate, 1);
@@ -631,11 +663,16 @@ namespace rock
     void CarriedWeaponRuntime::prepare(const Input& input)
     {
         _cycle.reap();
-        if (saving.load(std::memory_order_acquire)) return;
+        if (saving.load(std::memory_order_acquire)) {
+            _operation.cancelInput();
+            stopAttackSound("saving");
+            return;
+        }
         if (_reference && _reference.get() != input.reference) clear(true);
         if (!input.reference) { _declinedReference = {}; return; }
         if (!nativeWeaponAbsent()) {
             _operation.cancelInput();
+            stopAttackSound("native-weapon-present");
             ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Loose firearm waiting: unequip the native weapon; experiment accepts one loose gun only");
             return;
         }
@@ -660,7 +697,9 @@ namespace rock
                 _operation.session(), _index);
             return;
         }
+        const auto previousBinding = _operation.binding();
         _operation.bind(input.hand, input.grip);
+        if (previousBinding != _operation.binding()) stopAttackSound("grip-changed");
         _operation.advance(input.deltaSeconds);
         _cycle.update(input.reference, input.inputAllowed ? input.deltaSeconds : 0.0f);
         // Publish the replacement cache while both nodes are still pinned.
@@ -669,12 +708,16 @@ namespace rock
         weaponData(item)->fireNode = nextMuzzle.get();
         _muzzle = std::move(nextMuzzle);
         observeAmmo();
-        if (!input.inputAllowed || !nativeWeaponAbsent()) { _operation.cancelInput(); return; }
+        if (!input.inputAllowed || !nativeWeaponAbsent()) {
+            _operation.cancelInput();
+            stopAttackSound("input-blocked");
+            return;
+        }
         if (input.triggerHeld && (!_cycle.ready() || !_muzzle || input.grip != akimbo::Grip::Firing)) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Loose firearm trigger blocked ref={:08X} firingGrip={} muzzle={} animationReady={} animationFailed={}",
                 _reference->formID, input.grip == akimbo::Grip::Firing, _muzzle != nullptr, _cycle.ready(), _cycle.failed());
         }
-        if (input.reloadPressed) (void)_operation.beginReload(_reloadSeconds);
+        if (input.reloadPressed && _operation.beginReload(_reloadSeconds)) stopAttackSound("reload");
         if (_operation.reloadDue()) reload();
         const auto ticket = _operation.requestFire(_muzzle && _cycle.ready() && input.inputAllowed, input.triggerHeld,
             _automatic, _ammoKnown, _loaded);
@@ -683,6 +726,9 @@ namespace rock
             _operation.completeFire(ticket, _secondsPerShot);
         }
         observeAmmo(); // Publish operation timing together with the resulting native count.
+        if (!_operation.canSustainAttack(_muzzle && _cycle.ready(), input.triggerHeld, _ammoKnown, _loaded)) {
+            stopAttackSound(!input.triggerHeld ? "trigger-released" : !_ammoKnown || !_loaded ? "ammunition-unavailable" : "firing-inactive");
+        }
     }
 
     void CarriedWeaponRuntime::present() noexcept
