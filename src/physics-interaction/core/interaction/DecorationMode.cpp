@@ -149,7 +149,25 @@ void PhysicsInteraction::commitDecoration(const PhysicsFrameContext& frame)
         ROCK_LOG_INFO(Hand,"Decoration body scan ref={:08X} complete={} finished={} bodies={} accepted={} issues={} nodes={} collisionObjects={} budgetExhausted={}",
             requested,complete,step.finished,scanned.records.size(),scanned.acceptedCount(),issues,
             diagnostics.visitedNodes,diagnostics.collisionObjects,step.budgetExhausted);
-        if (!complete) return;
+        if (!complete) {
+            ROCK_LOG_WARN(Hand,
+                "Decoration scan rejected ref={:08X} failures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedSkips={} depthSkips={} staleSkips={}",
+                requested,diagnostics.scanFailures,diagnostics.invalidPhysicsSystems,diagnostics.benignScanSkips,
+                diagnostics.foreignRefBodySkips,diagnostics.unresolvedRefBodySkips,
+                diagnostics.depthLimitSkips,diagnostics.staleCacheEntrySkips);
+            for (std::size_t i=0;i<(std::min)(scanned.records.size(),bodies.size());++i) {
+                const auto& record=scanned.records[i];
+                if (record.accepted) continue;
+                ROCK_LOG_WARN(Hand,
+                    "Decoration body rejected ref={:08X} body={} reason={} layer={} filter=0x{:08X} motion={} motionType={} motionProps={} flags=0x{:08X} refKnown={} resolvedRef={:08X} node='{}'",
+                    requested,record.bodyId,physics_body_classifier::rejectReasonName(record.rejectReason),
+                    record.collisionLayer,record.filterInfo,record.motionId,static_cast<unsigned>(record.motionType),
+                    record.motionPropertiesId,record.bodyFlags,record.refResolutionKnown,
+                    record.resolvedRef ? record.resolvedRef->GetFormID() : 0,
+                    record.owningNode && record.owningNode->name.c_str() ? record.owningNode->name.c_str() : "(none)");
+            }
+            return;
+        }
         for (const auto* hand : { &_rightHand, &_leftHand }) {
             if (!hand->isHolding()) continue;
             for (const auto id:hand->getHeldBodyIds()) {
