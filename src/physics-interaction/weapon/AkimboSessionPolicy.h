@@ -3,11 +3,23 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <optional>
 
 namespace rock::akimbo
 {
     enum class Hand : std::uint8_t { None, Right, Left };
     enum class Grip : std::uint8_t { None, Support, Firing };
+
+    inline constexpr std::uint32_t kArchiveVersion = 2;
+    constexpr std::uint32_t archiveFlags(bool reloading, bool active) noexcept
+    {
+        return (reloading ? 1u : 0u) | (active ? 2u : 0u);
+    }
+    constexpr std::optional<std::uint32_t> restoreArchiveFlags(std::uint32_t version, std::uint32_t flags) noexcept
+    {
+        if ((version != 1 && version != kArchiveVersion) || (flags & ~(version == 1 ? 1u : 3u))) return std::nullopt;
+        return version == 1 ? flags | 2u : flags;
+    }
 
     // FO4 inventory ammo includes loaded rounds. The other weapon's loaded
     // rounds cannot be allocated again by a reload of this magazine.

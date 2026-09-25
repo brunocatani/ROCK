@@ -1745,6 +1745,13 @@ namespace rock
         return response.lastHelpfulDynamicSlotMask;
     }
 
+    void DynamicHandCollisionRuntime::claimWeaponHandCollision(RE::hknpWorld* world, bool isLeft)
+    {
+        applyWeaponOwnershipCollisionSuppression(world,
+            _weaponOwnershipCollisionSuppressed[0] || !isLeft,
+            _weaponOwnershipCollisionSuppressed[1] || isLeft);
+    }
+
     void DynamicHandCollisionRuntime::applyWeaponOwnershipCollisionSuppression(
         RE::hknpWorld* world,
         bool rightHandWeaponOwned,
@@ -1887,12 +1894,9 @@ namespace rock
         _transitionCollisionSuppressed = false;
         _transitionCollisionSuppressedAtomic.store(false, std::memory_order_release);
         _weaponOwnershipCollisionSuppressed = {};
-        _desiredWeaponBodyIdAtomic.store(
-            hand_semantic_contact_state::kInvalidBodyId,
-            std::memory_order_release);
         _pairFilterReadyAtomic.store(false, std::memory_order_release);
         for (std::size_t hand = 0; hand < _hands.size(); ++hand) {
-            _weaponOwnedAtomic[hand].store(false, std::memory_order_release);
+            _ownedWeaponBodyIdsAtomic[hand].store(hand_semantic_contact_state::kInvalidBodyId, std::memory_order_release);
             _suppressedWeaponPairCountAtomic[hand].store(
                 0,
                 std::memory_order_release);
@@ -1916,7 +1920,7 @@ namespace rock
         const BodyBoneColliderSet& bodyBoneColliders,
         bool rightHandWeaponOwned,
         bool leftHandWeaponOwned,
-        std::uint32_t dynamicWeaponBodyId,
+        const std::array<std::uint32_t, 2>& dynamicWeaponBodyIds,
         bool rightVisualReturnActive,
         bool leftVisualReturnActive)
     {
@@ -1942,15 +1946,10 @@ namespace rock
         telemetry.hands[0].isLeft = false;
         telemetry.hands[1].isLeft = true;
 
-        _desiredWeaponBodyIdAtomic.store(
-            dynamicWeaponBodyId,
-            std::memory_order_release);
-        _weaponOwnedAtomic[0].store(
-            rightHandWeaponOwned,
-            std::memory_order_release);
-        _weaponOwnedAtomic[1].store(
-            leftHandWeaponOwned,
-            std::memory_order_release);
+        _ownedWeaponBodyIdsAtomic[0].store(rightHandWeaponOwned ? dynamicWeaponBodyIds[0] :
+            hand_semantic_contact_state::kInvalidBodyId, std::memory_order_release);
+        _ownedWeaponBodyIdsAtomic[1].store(leftHandWeaponOwned ? dynamicWeaponBodyIds[1] :
+            hand_semantic_contact_state::kInvalidBodyId, std::memory_order_release);
 
         constexpr std::uint8_t kInteractionContactGraceFrames = 2;
         for (std::size_t hand = 0; hand < _hands.size(); ++hand) {
@@ -2659,15 +2658,10 @@ namespace rock
             HavokPairCollisionLeaseSet::kMaximumPairs>
             desiredPairs{};
         std::size_t desiredPairCount = 0;
-        const std::uint32_t weaponBodyId =
-            _desiredWeaponBodyIdAtomic.load(std::memory_order_acquire);
-        if (world &&
-            weaponBodyId != hand_semantic_contact_state::kInvalidBodyId) {
+        if (world) {
             for (std::size_t hand = 0; hand < _hands.size(); ++hand) {
-                if (!_weaponOwnedAtomic[hand].load(
-                        std::memory_order_acquire)) {
-                    continue;
-                }
+                const auto weaponBodyId = _ownedWeaponBodyIdsAtomic[hand].load(std::memory_order_acquire);
+                if (weaponBodyId == hand_semantic_contact_state::kInvalidBodyId || weaponBodyId == UINT32_MAX) continue;
                 const std::uint32_t handBodyId =
                     _hands[hand].bodies[0].bodyIdAtomic.load(
                         std::memory_order_acquire);

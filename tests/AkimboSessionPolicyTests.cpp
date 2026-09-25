@@ -2,6 +2,8 @@
 #include "physics-interaction/weapon/WeaponCyclePolicy.h"
 #include "physics-interaction/weapon/CarriedWeaponProjectile.h"
 #include "physics-interaction/weapon/PhysicalWeaponPairPolicy.h"
+#include "physics-interaction/weapon/PhysicalWeaponGripPolicy.h"
+#include "physics-interaction/weapon/PhysicalWeaponShotPolicy.h"
 #include <array>
 #include <iostream>
 #include <limits>
@@ -14,8 +16,88 @@ int main()
     const auto check = [&](bool value, const char* what) {
         if (!value) { std::cerr << what << '\n'; ok = false; }
     };
+    check(restoreArchiveFlags(1, 0) == 2u && restoreArchiveFlags(1, 1) == 3u, "Old co-saves restore the formerly always-active weapon state");
+    for (const bool active : {false,true}) for (const bool reloading : {false,true}) {
+        const auto flags = archiveFlags(reloading, active);
+        check(restoreArchiveFlags(kArchiveVersion, flags) == flags, "Retained/active and reload state survive the new private co-save format");
+    }
+    check(!restoreArchiveFlags(1, 2) && !restoreArchiveFlags(2, 4) && !restoreArchiveFlags(3, 0), "Unknown co-save flags and versions are rejected");
+    namespace grips = rock::physical_weapon_grip_policy;
+    for (const auto mode : {grips::GrabMode::ToggleBoth, grips::GrabMode::ToggleFiringOnly, grips::GrabMode::HoldBoth}) {
+        for (const bool firing : {false, true}) {
+            std::array<grips::Grip, 2> hands{};
+            for (auto& hand : hands) {
+                const bool toggle = rock::equipped_weapon_toggle_grab_policy::usesToggleForRole(mode, firing);
+                check(!hand.observe(1, true, mode, firing, {true,true,false}, true, false), "Acquisition press cannot release either physical gun");
+                check(hand.observe(1, true, mode, firing, {false,false,true}, true, false) == !toggle,
+                    "Both physical guns honor firing/support toggle and hold modes");
+                if (toggle) check(hand.observe(1, true, mode, firing, {true,true,false}, true, false), "A fresh toggle press releases the existing grip");
+            }
+            for (const auto drop : {grips::DropMode::Off, grips::DropMode::ToggleDrop, grips::DropMode::AutoDrop}) {
+                const auto expected = drop == grips::DropMode::Off ? grips::Release::KeepAttached :
+                    drop == grips::DropMode::ToggleDrop ? grips::Release::RetainLoose : grips::Release::Drop;
+                check(grips::releaseAction(true, false, drop) == expected, "Last-grip release follows the configured drop mode");
+                check(grips::releaseAction(true, true, drop) == grips::Release::DetachHand, "A support/firing peer keeps the gun when one grip detaches");
+                check(grips::releaseAction(false, true, drop) == grips::Release::KeepAttached, "Disabled firing-hand detachment retains that grip");
+            }
+        }
+    }
+    grips::Grip retained;
+    retained.retainLoose(2);
+    check(!retained.observe(2, false, grips::GrabMode::ToggleBoth, true, {true,false,false}, true, false) &&
+        !retained.observe(2, false, grips::GrabMode::ToggleBoth, true, {false,false,true}, true, false),
+        "Toggle Drop retains the object through the release of the spent weapon gesture");
+    check(!retained.observe(2, false, grips::GrabMode::ToggleBoth, true, {true,true,false}, true, false) &&
+        retained.observe(2, false, grips::GrabMode::ToggleBoth, true, {false,false,true}, true, false),
+        "A subsequent complete click physically drops the retained inactive weapon");
+    check(!retained.observe(3, true, grips::GrabMode::ToggleBoth, true, {true,true,false}, true, false), "A new grab cannot inherit an old completed release");
+    check(!retained.observe(3, true, grips::GrabMode::ToggleBoth, true, {false,false,true}, false, false), "Provider-owned input cannot release the weapon");
+    check(!retained.observe(3, true, grips::GrabMode::ToggleBoth, true, {false,false,false}, true, false), "Yielding provider ownership does not replay its release");
+    check(retained.observe(3, true, grips::GrabMode::ToggleBoth, true, {true,true,false}, true, false), "A fresh press after UI capture still releases a toggle grip");
+    grips::Grip off;
+    (void)off.observe(4, true, grips::GrabMode::HoldBoth, true, {true,true,false}, true, false);
+    check(off.observe(4, true, grips::GrabMode::HoldBoth, true, {false,false,true}, true, false), "Hold release reaches drop policy");
+    off.keepAttached();
+    for (int frame=0; frame<5; ++frame) check(!off.observe(4, true, grips::GrabMode::HoldBoth, true, {}, true, false), "Drop Off must not repeat rejected releases while the button stays open");
+    (void)off.observe(4, true, grips::GrabMode::HoldBoth, true, {true,true,false}, true, false);
+    check(off.observe(4, true, grips::GrabMode::HoldBoth, true, {false,false,true}, true, false), "Holding again rearms the next valid release");
+    grips::Grip resumed;
+    (void)resumed.observe(5, true, grips::GrabMode::HoldBoth, false, {true,true,false}, true, false);
+    resumed.suspend();
+    check(!resumed.observe(5, true, grips::GrabMode::HoldBoth, false, {false,false,true}, true, false), "Menu release cannot drop a resumed hold-mode weapon");
+    (void)resumed.observe(5, true, grips::GrabMode::HoldBoth, false, {true,true,false}, true, false);
+    check(resumed.observe(5, true, grips::GrabMode::HoldBoth, false, {false,false,true}, true, false), "Hold mode rearms after menu resume");
+
+    struct Point { float x{},y{},z{}; };
+    struct Matrix { float entry[3][3]{}; };
+    struct Transform { Matrix rotate{}; Point translate{}; float scale{1}; };
+    Transform muzzle{{{{0,1,0},{-1,0,0},{0,0,1}}},{7,8,9},1};
+    auto aim = rock::physical_weapon_shot_policy::muzzleAim(muzzle);
+    check(aim.ray.valid && std::fabs(aim.ray.direction.x+1)<0.0001f && std::fabs(aim.ray.direction.y)<0.0001f,
+        "A quarter-turn muzzle points along its stored +Y row, not the inverse column");
+    auto launched = rock::native_scope_shot_policy::launchRay(aim.ray.origin, aim.yaw, aim.pitch);
+    check(rock::native_scope_shot_policy::angleDegrees(aim.ray, launched)<0.001f && launched.origin.x==7,
+        "Native yaw/pitch reproduce the visible muzzle direction and position");
+    muzzle.rotate = {{{1,0,0},{0,0,1},{0,-1,0}}};
+    aim = rock::physical_weapon_shot_policy::muzzleAim(muzzle);
+    launched = rock::native_scope_shot_policy::launchRay(aim.ray.origin, aim.yaw, aim.pitch);
+    check(aim.ray.direction.z>0.999f && launched.direction.z>0.999f, "An upward barrel must not fire downward");
+    muzzle.scale = 0;
+    check(!rock::physical_weapon_shot_policy::muzzleAim(muzzle).ray.valid, "Collapsed muzzle frames cannot supply a shot direction");
     using namespace rock::carried_weapon_projectile;
     namespace entry = rock::physical_weapon_pair_policy;
+    const auto nativeOwners = entry::collisionOwners({100,3}, {});
+    check(nativeOwners[0].body == 100 && nativeOwners[1].body == 100 && nativeOwners[0].hands && nativeOwners[1].hands,
+        "Two grips on one native weapon preserve their existing collision ownership");
+    const auto dualOwners = entry::collisionOwners({}, {{{200,1},{300,2}}});
+    check(dualOwners[0].body == 200 && dualOwners[1].body == 300 && dualOwners[0].hands && dualOwners[1].hands,
+        "Both physical gun owners suppress their own hands with independent body identities");
+    const auto transitionOwners = entry::collisionOwners({100,3}, {{{200,1},{0x7FFFFFFFu,2}}});
+    check(transitionOwners[0].body == 200 && transitionOwners[1].body == 0x7FFFFFFFu && transitionOwners[1].hands,
+        "A preparing physical owner suppresses its hand without borrowing the old native weapon body");
+    const auto handedOff = entry::collisionOwners({}, {{{200,2},{}}});
+    check(!handedOff[0].hands && handedOff[1].body == 200 && handedOff[1].hands,
+        "Handoff releases the former hand collision claim and preserves the weapon body on its new hand");
     check(entry::advance({.incomingHeld=true, .nativeOriginalPresent=true, .allReady=true}) == entry::EntryAction::Wait,
         "Preparing the second gun cannot admit a mixed native/physical pair");
     check(entry::advance({.incomingHeld=false, .nativeOriginalPresent=true}) == entry::EntryAction::Cancel,

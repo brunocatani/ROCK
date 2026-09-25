@@ -529,6 +529,8 @@ namespace rock
         const auto handIndex = isLeft ? 1u : 0u;
         auto& retainedWeapon = _forceGrab.retainedWeaponGrabs[handIndex];
         const auto& pendingTransfer = _forceGrab.pendingCommits[handIndex];
+        auto* physicalWeapon = hand.isHolding() ? _carriedWeapon.find(hand.getHeldRef()) : nullptr;
+        if (physicalWeapon && !physicalWeapon->owns(hand.getHeldRef())) physicalWeapon = nullptr;
         const bool retainedWeaponInput = transferred_weapon_grab_policy::ownsInput(
             pendingTransfer.active && pendingTransfer.isEquippedWeaponTransfer(),
             retainedWeapon.grabIdentity, hand.heldGrabIdentity());
@@ -552,7 +554,19 @@ namespace rock
             } else {
                 physical = readGrabButtonState(isLeft, grabButton);
             }
-            if (retainedWeaponInput) {
+            if (physicalWeapon) {
+                auto& grip = physicalWeapon->grip(isLeft);
+                const auto previousGrab = grip.grab();
+                const bool previousRelease = grip.releaseRequested();
+                (void)grip.observe(hand.heldGrabIdentity(), physicalWeapon->active(), _equipped.handlingSettings.weaponGrabMode,
+                    hand.isHoldingFiringGrip(), {physical.held, physical.pressed, physical.released}, releaseAllowed, retainedWeaponInput);
+                if (previousGrab != grip.grab() || previousRelease != grip.releaseRequested()) {
+                    ROCK_LOG_INFO(Weapon, "Physical weapon grip input session={} hand={} grab={} active={} firing={} mode={} physical=({},{},{}) release={} allowed={}",
+                        physicalWeapon->sessionId(), isLeft ? "left" : "right", hand.heldGrabIdentity(), physicalWeapon->active(),
+                        hand.isHoldingFiringGrip(), static_cast<unsigned>(_equipped.handlingSettings.weaponGrabMode),
+                        physical.held, physical.pressed, physical.released, grip.releaseRequested(), releaseAllowed);
+                }
+            } else if (retainedWeaponInput) {
                 const auto previous = retainedWeapon.inputState;
                 (void)transferred_weapon_grab_policy::advance(retainedWeapon.inputState,
                     physical.held, physical.pressed, physical.released, releaseAllowed);
@@ -777,7 +791,12 @@ namespace rock
             }
         }
         const auto rawGrabInput = grabInput;
-        if (retainedWeaponInput && hand.isHolding()) {
+        if (physicalWeapon && hand.isHolding()) {
+            const bool release = physicalWeapon->grip(isLeft).releaseRequested();
+            grabInput.held = !release;
+            grabInput.pressed = false;
+            grabInput.released = release;
+        } else if (retainedWeaponInput && hand.isHolding()) {
             // Keep raw input for other gestures. Only loose-grab release is
             // latched, and its second press cannot leak into acquisition.
             const bool release = retainedWeapon.inputState ==
@@ -1625,7 +1644,8 @@ namespace rock
                 }
 
                 bool equipIsLeft = isLeft;
-                const bool supportEquipRequested = triggeredByInput && !peerHoldingSameObject && hand.isHoldingAuthoredSupportGrip();
+                const bool supportEquipRequested = (triggeredByInput || restorePhysicalSingle) &&
+                    !peerHoldingSameObject && hand.isHoldingAuthoredSupportGrip();
                 if (supportEquipRequested &&
                     (!resolveEquippedWeaponDetachDecision(_equipped.handlingSettings).primaryDetachEnabled ||
                         !frik_visual_authority::canBlockPrimaryHandWeaponPose() ||
@@ -2041,8 +2061,12 @@ namespace rock
                 if (heldWeaponEquipTriggerPressed) {
                     static_cast<void>(armHeldLooseGrenade(hand, frame));
                 }
-            } else if (heldWeaponEquipRequested && (restorePhysicalSingle || !_carriedWeapon.owns(heldRefForGameplay))) {
-                if (!restorePhysicalSingle && activatePhysicalWeapon(frame, isLeft)) return;
+            } else if (heldWeaponEquipRequested && (restorePhysicalSingle || !_carriedWeapon.active(heldRefForGameplay)) &&
+                (restorePhysicalSingle || !_carriedWeapon.owns(heldRefForGameplay) || heldWeaponEquipTriggerPressed)) {
+                if (!restorePhysicalSingle && activatePhysicalWeapon(frame, isLeft)) {
+                    updateHeldObjectForHand(frame, hand, isLeft);
+                    return;
+                }
                 const bool triggeredByInput = heldWeaponEquipTriggerPressed;
                 const char* requestReason = triggeredByInput ? "same-hand-trigger-held-weapon-equip" :
                                                                "grip-zone-held-weapon-equip";
@@ -2167,6 +2191,24 @@ namespace rock
 
             const bool injectionCommit = injectionMode && consumeEligibility.eligible &&
                 consumeDecision.confirmedForCommit && hand.getState() == HandState::ConsumeCandidate;
+            if (grabInput.released && !(stashEligibility.eligible && stashDecision.confirmedForCommit)) {
+                if (auto* weapon = _carriedWeapon.find(heldRefForGameplay); weapon && weapon->active()) {
+                    using namespace physical_weapon_grip_policy;
+                    const bool canDetach = !hand.isHoldingFiringGrip() ||
+                        resolveEquippedWeaponDetachDecision(_equipped.handlingSettings).primaryDetachEnabled;
+                    const auto action = releaseAction(canDetach, peerHoldingSameObject,
+                        equipped_weapon_drop_policy::fromSetting(g_rockConfig.rockWeaponDropMode));
+                    if (action == Release::KeepAttached || action == Release::RetainLoose) {
+                        if (action == Release::RetainLoose) weapon->retainLoose(isLeft, hand.heldGrabIdentity());
+                        else weapon->grip(isLeft).keepAttached();
+                        ROCK_LOG_INFO(Weapon, "Physical weapon release resolved session={} hand={} action={} dropMode={} peer={} detach={}",
+                            weapon->sessionId(), isLeft ? "left" : "right", static_cast<unsigned>(action),
+                            g_rockConfig.rockWeaponDropMode, peerHoldingSameObject, canDetach);
+                        grabInput.released = false;
+                        grabInput.held = true;
+                    }
+                }
+            }
             if (grabInput.released || injectionCommit) {
                 triggerEquipIntent = {};
                 ROCK_LOG_INFO(Hand,

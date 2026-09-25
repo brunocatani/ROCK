@@ -69,6 +69,9 @@ namespace rock
         static constexpr std::size_t kBodiesPerHand = dynamic_hand_collision_telemetry::kBodiesPerHand;
 
         void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _physicsCallbackGate = gate; }
+        // Before a physical weapon enters Havok: exclude its holding hand
+        // immediately. updateFrame reconciles all owners and releases claims.
+        void claimWeaponHandCollision(RE::hknpWorld* world, bool isLeft);
 
         void updateFrame(const PhysicsFrameContext& frame,
             bool physicsWritesAllowed,
@@ -77,7 +80,7 @@ namespace rock
             const BodyBoneColliderSet& bodyBoneColliders,
             bool rightHandWeaponOwned,
             bool leftHandWeaponOwned,
-            std::uint32_t dynamicWeaponBodyId,
+            const std::array<std::uint32_t, 2>& dynamicWeaponBodyIds,
             bool rightVisualReturnActive,
             bool leftVisualReturnActive);
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
@@ -111,6 +114,11 @@ namespace rock
                 std::memory_order_acquire);
         }
         [[nodiscard]] dynamic_hand_collision_telemetry::HapticEvents consumeHapticEvents();
+        [[nodiscard]] bool isHandProxyBodyAtomic(bool isLeft, std::uint32_t bodyId) const noexcept
+        {
+            return bodyId != hand_semantic_contact_state::kInvalidBodyId && bodyId != UINT32_MAX &&
+                _hands[isLeft ? 1u : 0u].bodies[0].bodyIdAtomic.load(std::memory_order_acquire) == bodyId;
+        }
 
         struct DynamicBodyContactSource
         {
@@ -487,10 +495,8 @@ namespace rock
         bool _transitionCollisionSuppressed = false;
         std::atomic<bool> _transitionCollisionSuppressedAtomic{ false };
         std::array<bool, 2> _weaponOwnershipCollisionSuppressed{};
-        std::atomic<std::uint32_t> _desiredWeaponBodyIdAtomic{
-            hand_semantic_contact_state::kInvalidBodyId
-        };
-        std::array<std::atomic<bool>, 2> _weaponOwnedAtomic{};
+        std::array<std::atomic<std::uint32_t>, 2> _ownedWeaponBodyIdsAtomic{
+            hand_semantic_contact_state::kInvalidBodyId, hand_semantic_contact_state::kInvalidBodyId};
         std::atomic<bool> _pairFilterReadyAtomic{ false };
         std::array<std::atomic<std::uint32_t>, 2>
             _suppressedWeaponPairCountAtomic{};

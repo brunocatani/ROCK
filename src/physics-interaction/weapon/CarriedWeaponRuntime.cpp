@@ -5,6 +5,9 @@
 #include "physics-interaction/weapon/NativeWeaponQualification.h"
 #include "physics-interaction/weapon/NativeCarriedWeaponContext.h"
 #include "physics-interaction/weapon/CarriedWeaponProjectile.h"
+#include "physics-interaction/weapon/PhysicalWeaponShotPolicy.h"
+#include "physics-interaction/weapon/WeaponSceneTraversal.h"
+#include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/weapon/WeaponGripTransfer.h"
 #include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
 #include "rock_support/Fo4VrRuntime.h"
@@ -66,7 +69,7 @@ namespace rock
                 for (auto& channel : liveArchives) {
                     Archive record{};
                     if (!channel.read(record)) ROCK_LOG_ERROR(Weapon, "Physical weapon save snapshot unavailable");
-                    else if (record.reference && !serialization->WriteRecord(archiveType, 1, &record, sizeof(record)))
+                    else if (record.reference && !serialization->WriteRecord(archiveType, akimbo::kArchiveVersion, &record, sizeof(record)))
                         ROCK_LOG_ERROR(Weapon, "Physical weapon save record could not be written");
                 }
             } catch (...) { try { ROCK_LOG_ERROR(Weapon, "Akimbo save callback failed"); } catch (...) {} }
@@ -79,11 +82,14 @@ namespace rock
                 unsigned restoredCount = 0;
                 std::uint32_t type{}, version{}, length{};
                 for (unsigned recordIndex = 0; recordIndex < 64 && serialization->GetNextRecordInfo(type, version, length); ++recordIndex) {
-                    if (type != archiveType || version != 1 || length != sizeof(Archive)) continue;
+                    if (type != archiveType || length != sizeof(Archive)) continue;
                     Archive record{};
                     if (serialization->ReadRecordData(&record, sizeof(record)) != sizeof(record) || !record.reference || !record.weapon ||
-                        (record.flags & ~1u) || !std::isfinite(record.cooldown) || record.cooldown < 0.0f ||
+                        !std::isfinite(record.cooldown) || record.cooldown < 0.0f ||
                         !std::isfinite(record.reloadRemaining) || record.reloadRemaining < 0.0f) continue;
+                    const auto flags = akimbo::restoreArchiveFlags(version, record.flags);
+                    if (!flags) continue;
+                    record.flags = *flags;
                     const auto reference = serialization->ResolveFormID(record.reference);
                     const auto weapon = serialization->ResolveFormID(record.weapon);
                     const auto ammo = record.ammo ? serialization->ResolveFormID(record.ammo) : std::optional<std::uint32_t>{0};
@@ -177,6 +183,7 @@ namespace rock
             std::uint32_t index{};
             bool active{}, applied{};
             std::uint32_t launches{}, lastHandle{};
+            native_scope_shot_policy::Ray launch{};
         };
         thread_local ShotOrigin currentShot;
 
@@ -315,7 +322,7 @@ namespace rock
         _ammoForm = _ammoKnown && native_memory::tryReadValue(&data->ammo, ammo) && ammo ? ammo->formID : 0;
         if (_reference && _weapon.object && _ammoKnown) {
             (void)liveArchives[_slotNumber].write({_reference->formID, _weapon.object->formID, _ammoForm, _loaded,
-                _operation.cooldown(), _operation.reloadRemaining(), _operation.reloading() ? 1u : 0u});
+                _operation.cooldown(), _operation.reloadRemaining(), akimbo::archiveFlags(_operation.reloading(), _active)});
         }
     }
 
@@ -349,6 +356,7 @@ namespace rock
         _secondsPerShot = timing.shot;
         _reloadSeconds = timing.reload;
         _automatic = timing.automatic;
+        _active = true;
         _operation.begin((_nextSession++ << 1) | _slotNumber);
         _operation.bind(input.hand, input.grip);
         if (!publishContext()) { _faulted = true; clear(true); return false; }
@@ -364,6 +372,7 @@ namespace rock
             admittedData->ammoCount = count;
             observeAmmo();
             if (restoreSaved) {
+                _active = (restored.flags & 2u) != 0;
                 _operation.restore(restored.cooldown, restored.reloadRemaining, (restored.flags & 1) != 0);
                 (void)loadedArchives[_slotNumber].write({});
             }
@@ -427,6 +436,11 @@ namespace rock
         _ammoKnown = false;
         _operation.begin(0);
         _faulted = false;
+        _active = false;
+        _grips = {};
+        _shotTrace = {};
+        _shotSequence = 0;
+        _lastShotTraceMilliseconds = 0;
         (void)liveArchives[_slotNumber].write({});
     }
 
@@ -437,11 +451,23 @@ namespace rock
         cancelTransfer();
     }
 
+    void PhysicalWeaponSession::retainLoose(bool isLeft, std::uint64_t grab) noexcept
+    {
+        _active = false;
+        _grips = {};
+        grip(isLeft).retainLoose(grab);
+        _operation.bind(isLeft ? akimbo::Hand::Left : akimbo::Hand::Right, akimbo::Grip::None);
+        _operation.cancelInput();
+        ROCK_LOG_INFO(Weapon, "Physical weapon Toggle Drop retained session={} ref={:08X} hand={} grab={} loaded={}; firing inactive",
+            sessionId(), _reference ? _reference->formID : 0, isLeft ? "left" : "right", grab, _loaded);
+    }
+
     bool PhysicalWeaponSession::suspend() noexcept
     {
         // Equip notifications cannot evict a private context. Only clear
         // pending physical input so a native transition cannot replay it.
         _operation.cancelInput();
+        for (auto& grip : _grips) grip.suspend();
         return true;
     }
 
@@ -462,7 +488,7 @@ namespace rock
         if (!_transfer.valid || !reference) { _transfer = {}; return; }
         _transfer.reference = reference;
         if (const auto retained = reference.get()) {
-            (void)liveArchives[_slotNumber].write({retained->formID, _transfer.form->formID, _transfer.ammo, _transfer.loaded});
+            (void)liveArchives[_slotNumber].write({retained->formID, _transfer.form->formID, _transfer.ammo, _transfer.loaded, 0.0f, 0.0f, 2u});
         }
     }
 
@@ -529,16 +555,11 @@ namespace rock
             !native_memory::tryReadField(launchData, 0x48, index) || index != currentShot.index ||
             form != reinterpret_cast<std::uintptr_t>(currentShot.form) ||
             instance != reinterpret_cast<std::uintptr_t>(currentShot.instance)) return false;
-        const auto& rotation = currentShot.world.rotate;
-        const auto x = rotation.entry[0][1], y = rotation.entry[1][1], z = rotation.entry[2][1];
-        const float yaw = std::atan2(x, y);
-        const float pitch = -std::atan2(z, std::sqrt(x*x + y*y));
-        const auto& position = currentShot.world.translate;
-        if (!std::isfinite(yaw) || !std::isfinite(pitch) || !std::isfinite(position.x) ||
-            !std::isfinite(position.y) || !std::isfinite(position.z) || x*x + y*y + z*z < 0.0001f) return false;
+        const auto aim = physical_weapon_shot_policy::muzzleAim(currentShot.world);
+        if (!aim.ray.valid) return false;
         currentShot.applied = native_memory::tryWriteValue(static_cast<RE::NiPoint3*>(launchData), currentShot.world.translate) &&
-            native_memory::guardedCopyToMemory(static_cast<char*>(launchData) + 0x4C, &yaw, sizeof(yaw)) &&
-            native_memory::guardedCopyToMemory(static_cast<char*>(launchData) + 0x50, &pitch, sizeof(pitch));
+            native_memory::guardedCopyToMemory(static_cast<char*>(launchData) + 0x4C, &aim.yaw, sizeof(aim.yaw)) &&
+            native_memory::guardedCopyToMemory(static_cast<char*>(launchData) + 0x50, &aim.pitch, sizeof(aim.pitch));
         return currentShot.applied;
     }
 
@@ -554,6 +575,7 @@ namespace rock
         const auto dataLease = _data;
         const auto muzzleLease = _muzzle;
         const auto session = _operation.session();
+        const auto sequence = ++_shotSequence;
         currentShot = {weapon.object, weapon.instanceData.get(), muzzleLease->world, _index, true, false};
         struct ClearShot { ~ClearShot() { currentShot = {}; } } clearShot;
         const auto before = data->ammoCount;
@@ -567,6 +589,25 @@ namespace rock
         currentShot = {};
         observeAmmo();
         if (result.applied && result.launches && _ammoKnown && _loaded < before) _cycle.fire();
+        const auto now = GetTickCount64();
+        if (logger::isDebugEnabled() && (!_lastShotTraceMilliseconds || now - _lastShotTraceMilliseconds >= 1000)) {
+            _lastShotTraceMilliseconds = now;
+            const auto aim = physical_weapon_shot_policy::muzzleAim(result.world);
+            _shotTrace = {aim.ray, result.launch, sequence, runtime_state::currentFrame().frameIndex,
+                reinterpret_cast<std::uintptr_t>(muzzleLease.get()), result.lastHandle, true};
+            unsigned muzzleCount = 0;
+            const auto tree = weapon_scene::visitScene(_reference->Get3D(), [&](RE::NiAVObject* node) {
+                if (node && node->name.c_str() && _stricmp(node->name.c_str(), "ProjectileNode") == 0) ++muzzleCount;
+                return true;
+            });
+            ROCK_LOG_DEBUG(Weapon, "AKIMBO_SHOT_TRACE session={} shot={} frame={} slot={} ref={:08X} muzzle=0x{:X} candidates={} traversalComplete={} handle={:08X} launches={} ammo={}->{} aimValid={} launchValid={} spreadDeg={:.4f} origin=({:.4f},{:.4f},{:.4f}) forward=({:.6f},{:.6f},{:.6f}) launchOrigin=({:.4f},{:.4f},{:.4f}) launchDirection=({:.6f},{:.6f},{:.6f})",
+                session, sequence, _shotTrace.frame, _slotNumber, _reference->formID, _shotTrace.muzzleNode, muzzleCount, !tree.truncated,
+                result.lastHandle, result.launches, before, _loaded, aim.ray.valid, result.launch.valid,
+                native_scope_shot_policy::angleDegrees(aim.ray, result.launch),
+                aim.ray.origin.x, aim.ray.origin.y, aim.ray.origin.z, aim.ray.direction.x, aim.ray.direction.y, aim.ray.direction.z,
+                result.launch.origin.x, result.launch.origin.y, result.launch.origin.z,
+                result.launch.direction.x, result.launch.direction.y, result.launch.direction.z);
+        }
         const bool peerKnownAfter = liveArchives[_slotNumber ^ 1u].read(peerAfter) && peerAfter.reference;
         ROCK_LOG_DEBUG(Weapon, "Physical weapon shot session={} slot={} form={:08X} before={} after={} known={} peerForm={:08X} peerBefore={} peerAfter={} peerKnown={} originApplied={} projectiles={} lastHandle={:08X} origin=({:.3f},{:.3f},{:.3f})",
             session, _slotNumber, weapon.object->formID, before, _loaded, _ammoKnown,
@@ -574,6 +615,34 @@ namespace rock
             peerKnownBefore && peerKnownAfter && peerBefore.reference == peerAfter.reference,
             result.applied, result.launches, result.lastHandle,
             result.world.translate.x, result.world.translate.y, result.world.translate.z);
+    }
+
+    void PhysicalWeaponSession::observeShotLaunchData(const void* launchData) noexcept
+    {
+        if (!currentShot.active || !launchData) return;
+        currentShot.launch = {};
+        std::uintptr_t weapon{}, instance{};
+        std::uint32_t index{};
+        native_scope_shot_policy::Point origin{};
+        float yaw{}, pitch{};
+        if (native_memory::tryReadField(launchData, 0x30, weapon) && native_memory::tryReadField(launchData, 0x38, instance) &&
+            native_memory::tryReadField(launchData, 0x48, index) && index == currentShot.index &&
+            weapon == reinterpret_cast<std::uintptr_t>(currentShot.form) && instance == reinterpret_cast<std::uintptr_t>(currentShot.instance) &&
+            native_memory::tryReadField(launchData, 0, origin) && native_memory::tryReadField(launchData, 0x4C, yaw) &&
+            native_memory::tryReadField(launchData, 0x50, pitch)) currentShot.launch = native_scope_shot_policy::launchRay(origin, yaw, pitch);
+    }
+
+    void PhysicalWeaponSession::traceShotPresentation(const char* phase) noexcept
+    {
+        if (!_shotTrace.pending || !_reference || !_muzzle || GetCurrentThreadId() != _thread) return;
+        if (_shotTrace.frame != runtime_state::currentFrame().frameIndex) { _shotTrace.pending = false; return; }
+        const bool sameNode = _shotTrace.muzzleNode == reinterpret_cast<std::uintptr_t>(_muzzle.get());
+        const auto presented = sameNode ? physical_weapon_shot_policy::muzzleAim(_muzzle->world).ray : native_scope_shot_policy::Ray{};
+        ROCK_LOG_DEBUG(Weapon, "AKIMBO_SHOT_PRESENT session={} shot={} frame={} phase={} ref={:08X} handle={:08X} sameMuzzle={} valid={} dispatchToPresentedDeg={:.4f} launchToPresentedDeg={:.4f} origin=({:.4f},{:.4f},{:.4f}) forward=({:.6f},{:.6f},{:.6f})",
+            sessionId(), _shotTrace.sequence, _shotTrace.frame, phase, _reference->formID, _shotTrace.handle, sameNode, presented.valid,
+            native_scope_shot_policy::angleDegrees(_shotTrace.muzzle, presented), native_scope_shot_policy::angleDegrees(_shotTrace.launch, presented),
+            presented.origin.x, presented.origin.y, presented.origin.z, presented.direction.x, presented.direction.y, presented.direction.z);
+        if (std::strcmp(phase, "after-world-final") == 0) _shotTrace.pending = false;
     }
 
     void PhysicalWeaponSession::observeShotLaunch(const void* launchData, std::uint32_t handle) noexcept
@@ -619,7 +688,7 @@ namespace rock
                 _operation.session(), _index);
             return;
         }
-        _operation.bind(input.hand, input.grip);
+        _operation.bind(input.hand, _active ? input.grip : akimbo::Grip::None);
         _operation.advance(input.deltaSeconds);
         _cycle.update(input.reference, input.deltaSeconds);
         // Publish the replacement cache while both nodes are still pinned.
@@ -631,7 +700,7 @@ namespace rock
         // An accepted reload belongs to this item and must finish before
         // restoration to native single-weapon handling can proceed.
         if (_operation.reloadDue()) reload();
-        if (!input.inputAllowed) { _operation.cancelInput(); return; }
+        if (!input.inputAllowed || !_cycle.ready()) { _operation.cancelInput(); return; }
         if (!_muzzle && input.grip == akimbo::Grip::Firing && input.triggerHeld) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Akimbo shot blocked session={} ref={:08X}: held model has no bounded ProjectileNode",
                 _operation.session(), _reference->formID);

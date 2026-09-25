@@ -67,8 +67,8 @@ namespace rock::carried_weapon_projectile
             const bool self = isOwnHeldWeapon(snapshot.reference, identity, targetForm, projectileIdentity) || ownBody;
             if (candidateLogs[projectileIdentity.index].fetch_add(1, std::memory_order_relaxed) < 32) {
                 try {
-                    ROCK_LOG_INFO(Weapon, "Akimbo projectile candidate projectile={:08X} target={:08X} body={} layer={} nativeAccepted={} ownWeapon={} accepted={}",
-                        projectileForm, targetForm, body, filter & 0x7F, admitted, self, admitted && !self);
+                    ROCK_LOG_INFO(Weapon, "Akimbo projectile candidate slot={} ref={:08X} projectile={:08X} target={:08X} body={} layer={} nativeAccepted={} ownWeapon={} accepted={}",
+                        projectileIdentity.index, snapshot.reference, projectileForm, targetForm, body, filter & 0x7F, admitted, self, admitted && !self);
                 } catch (...) {}
             }
             // Match the exact held reference, not a form family or layer.
@@ -94,8 +94,8 @@ namespace rock::carried_weapon_projectile
             (void)native_memory::tryReadField(input, 0x30, shape);
             (void)native_memory::guardedCopyFromMemory(input, position.data(), sizeof(position));
             try {
-                ROCK_LOG_INFO(Weapon, "Akimbo projectile impact projectile={:08X} target={:08X} body={} shape={:08X} layer={} impact={} position=({:.3f},{:.3f},{:.3f})",
-                    projectileForm, targetForm, body, shape, filter & 0x7F, result, position[0], position[1], position[2]);
+                ROCK_LOG_INFO(Weapon, "Akimbo projectile impact slot={} ref={:08X} projectile={:08X} target={:08X} body={} shape={:08X} layer={} impact={} position=({:.3f},{:.3f},{:.3f})",
+                    projectileIdentity.index, snapshot.reference, projectileForm, targetForm, body, shape, filter & 0x7F, result, position[0], position[1], position[2]);
             } catch (...) {}
             return result;
         }

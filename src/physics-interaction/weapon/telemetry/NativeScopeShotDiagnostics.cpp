@@ -276,6 +276,7 @@ namespace rock::native_scope_shot_diagnostics
             // These are the final per-projectile angles, after the native
             // cone-of-fire loop, immediately before Launch consumes them.
             // Never alter the launch data, native result or firing behavior.
+            CarriedWeaponRuntime::observeShotLaunchData(data);
             auto* result = originalLaunch(output, data);
             std::uint32_t carriedHandle{};
             if (result && native_memory::tryReadValue(result, carriedHandle))

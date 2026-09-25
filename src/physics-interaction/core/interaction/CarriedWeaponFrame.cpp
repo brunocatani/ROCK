@@ -122,7 +122,6 @@ namespace rock
         auto& peer = isLeft ? _rightHand : _leftHand;
         auto* reference = hand.getHeldRef();
         if (!reference || !hand.isHoldingLooseWeapon() || !CarriedWeaponRuntime::ready()) return false;
-        if (_carriedWeapon.owns(reference)) return true;
         const bool nativePresent = currentEquippedWeaponFormId() != 0;
         const bool peerGun = peer.isHoldingLooseWeapon() && peer.getHeldRef() != reference;
         if (!_carriedWeapon.hasSession() && !nativePresent && !peerGun) return false;
@@ -133,6 +132,15 @@ namespace rock
             input.grip = held.isHoldingFiringGrip() ? akimbo::Grip::Firing : akimbo::Grip::Support;
             return input;
         };
+        if (auto* session = _carriedWeapon.find(reference); session && session->owns(reference)) {
+            if (!session->active()) {
+                (void)session->activate(inputFor(hand));
+                input_remap_runtime::blockWeaponTriggerUntilRelease(isLeft);
+                ROCK_LOG_INFO(Weapon, "Physical weapon reactivated session={} ref={:08X} hand={} magazine={}",
+                    session->sessionId(), reference->formID, isLeft ? "left" : "right", session->data()->ammoCount);
+            }
+            return true;
+        }
         if (nativePresent) {
             const auto occupancy = _twoHandedGrip.getGripOccupancy();
             if (!(isLeft ? occupancy.right.carriesWeapon() : occupancy.left.carriesWeapon()) ||
@@ -222,6 +230,8 @@ namespace rock
             auto& session = _carriedWeapon.sessions[slot];
             if (owners[slot] && session.owns(inputs[slot].reference)) {
                 anyHeld = true;
+                _dynamicHandCollision.claimWeaponHandCollision(frame.hknpWorld, owners[slot]->isLeft());
+                if (supports[slot]) _dynamicHandCollision.claimWeaponHandCollision(frame.hknpWorld, supports[slot]->isLeft());
                 const bool physicsReady = session.physics.update(frame, inputs[slot].reference, session.data(), *owners[slot], supports[slot]);
                 allReady = physicsReady && session.presentationReady() && allReady;
                 if (session.presentationFailed() && currentEquippedWeaponFormId() && !_physicalWeaponEntry.converted) {
@@ -307,7 +317,7 @@ namespace rock
         const bool survivorLeft = survivorOwner && survivorOwner->isLeft();
         const auto survivorTrigger = input_remap_runtime::peekRawButtonState(survivorLeft, 33);
         if (_physicalDualEstablished && liveCount == 1 && !_physicalWeaponEntry.incoming && !_physicalWeaponEntry.rollback &&
-            !transferPending && !nativeStillPresent && !twoDistinctHeldWeapons && survivorOwner && survivor->canReturnToNative() &&
+            !transferPending && !nativeStillPresent && !twoDistinctHeldWeapons && survivorOwner && survivor->active() && survivor->canReturnToNative() &&
             survivorTrigger.available && !survivorTrigger.held) {
             _physicalWeaponEntry.outgoing = survivor->reference()->GetHandle();
             _physicalWeaponEntry.rollback = true;
@@ -322,7 +332,7 @@ namespace rock
             auto& session = _carriedWeapon.sessions[slot];
             auto& input = inputs[slot];
             if (!owners[slot] || !session.owns(input.reference)) continue;
-            input.inputAllowed = input.inputAllowed && !nativeStillPresent && !transferPending && !_physicalWeaponEntry.rollback &&
+            input.inputAllowed = input.inputAllowed && session.active() && !nativeStillPresent && !transferPending && !_physicalWeaponEntry.rollback &&
                 session.presentationReady() && (_physicalDualEstablished || allReady);
             input.muzzle = carriedMuzzle(input.reference->Get3D());
             const bool left = input.hand == akimbo::Hand::Left;

@@ -61,6 +61,12 @@
             if (!unpackHeldImpactPair(packedPair, heldBody, otherBody) || !hand.isHolding()) {
                 return;
             }
+            for (const auto& session : _carriedWeapon.sessions) {
+                if (!session.owns(hand.getHeldRef()) || !session.physics.dynamic.isProxyBodyIdAtomic(heldBody)) continue;
+                const auto hands = session.physics.heldHandsAtomic();
+                if (((hands & 1u) && _dynamicHandCollision.isHandProxyBodyAtomic(false, otherBody)) ||
+                    ((hands & 2u) && _dynamicHandCollision.isHandProxyBodyAtomic(true, otherBody))) return;
+            }
 
             dispatchHeldImpactGrabEvent(
                 isLeft,
@@ -914,6 +920,10 @@
                 for (auto& session : _carriedWeapon.sessions) {
                     if (!session.physics.dynamic.isProxyBodyIdAtomic(proxyBodyId)) continue;
                     const auto hands = session.physics.heldHandsAtomic();
+                    // A queued contact can outlive the filter change. It is
+                    // still self contact, not a held-object impact event.
+                    if (((hands & 1u) && _dynamicHandCollision.isHandProxyBodyAtomic(false, otherBodyId)) ||
+                        ((hands & 2u) && _dynamicHandCollision.isHandProxyBodyAtomic(true, otherBodyId))) continue;
                     const auto pair = packHeldImpactPair(proxyBodyId, otherBodyId);
                     if (hands & 1u) _contacts.lastHeldImpactPairRight.store(pair, std::memory_order_release);
                     if (hands & 2u) _contacts.lastHeldImpactPairLeft.store(pair, std::memory_order_release);

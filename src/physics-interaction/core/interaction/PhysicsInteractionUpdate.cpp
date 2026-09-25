@@ -1,6 +1,7 @@
 #include "api/EventStreams.h"
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/weapon/PhysicalWeaponPairPolicy.h"
 #include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/telemetry/DynamicColliderTrace.h"
@@ -165,6 +166,8 @@ namespace rock
 
     void PhysicsInteraction::traceHeldPresentationPhase(const char* phase)
     {
+        if (std::strcmp(phase, "before-rock") != 0)
+            for (auto& session : _carriedWeapon.sessions) session.traceShotPresentation(phase);
         const auto& runtime = runtime_state::currentFrame();
         // Before the next ROCK tick, the owner still contains the engine's
         // late scene write for the preceding publication. Pair it with that
@@ -475,21 +478,27 @@ namespace rock
          * grab, pull, support-grip, or weapon owner for this frame can gate its
          * lower-priority visual authority without delaying proxy tracking.
          */
+        const bool nativeRightOwned = rightHandWeaponAuthorityActive || rightPartGripActive ||
+            _suppression.rightWeaponSupportSuppressed.load(std::memory_order_acquire);
+        const bool nativeLeftOwned = leftSupportGripActive ||
+            (_twoHandedGrip.isFiringHandLeft() && _twoHandedGrip.isFiringGripOccupied()) ||
+            _suppression.leftWeaponSupportSuppressed.load(std::memory_order_acquire);
+        std::array<physical_weapon_pair_policy::CollisionOwner, 2> physicalOwners{};
+        for (const auto& session : _carriedWeapon.sessions) {
+            physicalOwners[session.slotNumber()] = {session.physics.dynamic.proxyBodyIdForDebug().value,
+                (_rightHand.isHolding() && session.owns(_rightHand.getHeldRef()) ? 1u : 0u) |
+                (_leftHand.isHolding() && session.owns(_leftHand.getHeldRef()) ? 2u : 0u)};
+        }
+        const auto weaponOwners = physical_weapon_pair_policy::collisionOwners(
+            {_dynamicWeaponCollision.proxyBodyIdForDebug().value, (nativeRightOwned ? 1u : 0u) | (nativeLeftOwned ? 2u : 0u)}, physicalOwners);
         _dynamicHandCollision.updateFrame(
             frame,
             physicsWritesAllowedForWorld(frame.hknpWorld),
             _rightHand,
             _leftHand,
             _bodyBoneColliders,
-            rightHandWeaponAuthorityActive || rightPartGripActive ||
-                _suppression.rightWeaponSupportSuppressed.load(
-                    std::memory_order_acquire),
-            leftSupportGripActive ||
-                (_twoHandedGrip.isFiringHandLeft() &&
-                    _twoHandedGrip.isFiringGripOccupied()) ||
-                _suppression.leftWeaponSupportSuppressed.load(
-                    std::memory_order_acquire),
-            _dynamicWeaponCollision.proxyBodyIdForDebug().value,
+            weaponOwners[0].hands != 0, weaponOwners[1].hands != 0,
+            {weaponOwners[0].body, weaponOwners[1].body},
             _rightHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(false),
             _leftHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(true));
         const auto dynamicHandHapticEvents = _dynamicHandCollision.consumeHapticEvents();
@@ -722,7 +731,7 @@ namespace rock
                         restoreHandCollisionAfterWeaponSupport(hknpMenu, false, true);
                         restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, false);
                         restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, true);
-                        if (_rightHand.isHolding()) {
+                        if (_rightHand.isHolding() && !_carriedWeapon.owns(_rightHand.getHeldRef())) {
                             auto* r = _rightHand.getHeldRef();
                             auto release = makeGrabReleaseContext(_rightHand, false);
                             release.reason = "blocking-menu-opened";
@@ -730,7 +739,7 @@ namespace rock
                             if (r)
                                 releaseObject(r, PhysicsObjectClaimOwner::RightHand);
                         }
-                        if (_leftHand.isHolding()) {
+                        if (_leftHand.isHolding() && !_carriedWeapon.owns(_leftHand.getHeldRef())) {
                             auto* r = _leftHand.getHeldRef();
                             auto release = makeGrabReleaseContext(_leftHand, true);
                             release.reason = "blocking-menu-opened";

@@ -3,6 +3,8 @@
 #include "physics-interaction/weapon/AkimboSessionPolicy.h"
 #include "physics-interaction/weapon/NativeWeaponCycle.h"
 #include "physics-interaction/weapon/PhysicalWeaponPhysics.h"
+#include "physics-interaction/weapon/PhysicalWeaponGripPolicy.h"
+#include "physics-interaction/weapon/PhysicalWeaponShotPolicy.h"
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
 #include "RE/NetImmerse/NiSmartPointer.h"
@@ -28,7 +30,15 @@ namespace rock
             bool inputAllowed{}, triggerHeld{}, reloadPressed{};
         };
 
-        [[nodiscard]] bool activate(const Input& input) { return owns(input.reference) || (!_reference && admit(input)); }
+        [[nodiscard]] bool activate(const Input& input)
+        {
+            if (!owns(input.reference)) return !_reference && admit(input);
+            if (!_active) { _active = true; _grips = {}; _operation.cancelInput(); }
+            return true;
+        }
+        bool active() const noexcept { return hasSession() && _active; }
+        physical_weapon_grip_policy::Grip& grip(bool isLeft) noexcept { return _grips[isLeft ? 1u : 0u]; }
+        void retainLoose(bool isLeft, std::uint64_t grab) noexcept;
         void prepare(const Input& input);
         void update(const Input& input);
         void clear(bool nativeWorldAvailable) noexcept;
@@ -64,7 +74,9 @@ namespace rock
         // Called synchronously inside the existing native origin hook. Only
         // this thread's explicit carried-weapon shot may override its origin.
         static bool applyShotOrigin(void* launchData) noexcept;
+        static void observeShotLaunchData(const void* launchData) noexcept;
         static void observeShotLaunch(const void* launchData, std::uint32_t handle) noexcept;
+        void traceShotPresentation(const char* phase) noexcept;
         static bool install() noexcept;
         static bool ready() noexcept;
         static void noteInteractionThread() noexcept;
@@ -94,7 +106,17 @@ namespace rock
         std::uint32_t _slotNumber{}, _index{}, _loaded{}, _ammoForm{}, _thread{};
         std::uint64_t _nextSession{1};
         float _secondsPerShot{}, _reloadSeconds{};
-        bool _ammoKnown{}, _automatic{}, _registered{}, _faulted{};
+        bool _ammoKnown{}, _automatic{}, _registered{}, _faulted{}, _active{};
+        std::array<physical_weapon_grip_policy::Grip, 2> _grips{};
+        struct ShotTrace
+        {
+            native_scope_shot_policy::Ray muzzle{}, launch{};
+            std::uint64_t sequence{}, frame{};
+            std::uintptr_t muzzleNode{};
+            std::uint32_t handle{};
+            bool pending{};
+        } _shotTrace{};
+        std::uint64_t _shotSequence{}, _lastShotTraceMilliseconds{};
 
         struct Transfer
         {
@@ -117,6 +139,11 @@ namespace rock
         bool owns(const RE::TESObjectREFR* ref) const noexcept
         {
             for (const auto& session : sessions) if (session.owns(ref)) return true;
+            return false;
+        }
+        bool active(const RE::TESObjectREFR* ref) const noexcept
+        {
+            for (const auto& session : sessions) if (session.owns(ref)) return session.active();
             return false;
         }
         bool hasSession() const noexcept
@@ -171,6 +198,7 @@ namespace rock
             _pending = -1;
         }
         static bool applyShotOrigin(void* data) noexcept { return PhysicalWeaponSession::applyShotOrigin(data); }
+        static void observeShotLaunchData(const void* data) noexcept { PhysicalWeaponSession::observeShotLaunchData(data); }
         static void observeShotLaunch(const void* data, std::uint32_t handle) noexcept { PhysicalWeaponSession::observeShotLaunch(data, handle); }
         static bool install() noexcept { return PhysicalWeaponSession::install(); }
         static bool ready() noexcept { return PhysicalWeaponSession::ready(); }
