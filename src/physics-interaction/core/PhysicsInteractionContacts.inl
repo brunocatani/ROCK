@@ -61,6 +61,7 @@
             if (!unpackHeldImpactPair(packedPair, heldBody, otherBody) || !hand.isHolding()) {
                 return;
             }
+            if (native_player_collision::isReplacedWeaponBody(frame.hknpWorld, otherBody)) return;
             for (const auto& session : _carriedWeapon.sessions) {
                 if (!session.owns(hand.getHeldRef()) || !session.physics.dynamic.isProxyBodyIdAtomic(heldBody)) continue;
                 const auto hands = session.physics.heldHandsAtomic();
@@ -714,7 +715,10 @@
         if (!contact_pipeline_policy::isValidBodyId(bodyIdA) || !contact_pipeline_policy::isValidBodyId(bodyIdB) || bodyIdA == bodyIdB) {
             return;
         }
-
+        // A queued native contact may precede activation of the replacement
+        // rule. It cannot become push, surface support or haptic authority.
+        if (native_player_collision::isReplacedWeaponBody(world, bodyIdA) ||
+            native_player_collision::isReplacedWeaponBody(world, bodyIdB)) return;
 
         havok_runtime::ContactSignalPointResult rawContactPoint{};
         bool rawContactPointEvaluated = false;

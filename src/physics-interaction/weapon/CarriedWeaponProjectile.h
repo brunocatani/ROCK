@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <span>
+namespace RE { class AIProcess; class EquippedItem; class TESObjectREFR; class NiAVObject; }
 
 namespace rock::carried_weapon_projectile
 {
@@ -20,5 +21,10 @@ namespace rock::carried_weapon_projectile
     void publish(std::uint32_t heldReference, std::uint32_t shooterHandle,
         std::uintptr_t weapon, std::uintptr_t instance, std::uint32_t index) noexcept;
     void publishBodies(std::uint32_t slot, std::span<const std::uint32_t> bodies) noexcept;
+    // Game-thread publication. Native queued projectile initialization copies
+    // strong leases before entering its exact private indexed context.
+    void publishContext(std::uint32_t slot, RE::AIProcess* process, const RE::EquippedItem& item,
+        RE::TESObjectREFR* reference, RE::NiAVObject* muzzle);
+    void withdrawContext(std::uint32_t slot) noexcept;
     void clear(std::uint32_t slot) noexcept;
 }

@@ -9,6 +9,21 @@ namespace rock::akimbo
 {
     enum class Hand : std::uint8_t { None, Right, Left };
     enum class Grip : std::uint8_t { None, Support, Firing };
+    enum class TransferCapture : std::uint8_t { NotApplicable, Unavailable, Ready };
+
+    constexpr TransferCapture transferCapture(bool itemReadable, bool firearm, bool hasAmmoDefinition,
+        bool nativeMagazineReadable, bool supportedTiming) noexcept
+    {
+        if (!itemReadable) return TransferCapture::Unavailable;
+        if (!firearm || !hasAmmoDefinition) return TransferCapture::NotApplicable;
+        return nativeMagazineReadable && supportedTiming ? TransferCapture::Ready : TransferCapture::Unavailable;
+    }
+
+    constexpr bool keepFiringSound(bool active, Grip grip, bool inputAllowed, bool triggerHeld,
+        bool ammoKnown, std::uint32_t loaded, bool reloading) noexcept
+    {
+        return active && grip == Grip::Firing && inputAllowed && triggerHeld && ammoKnown && loaded && !reloading;
+    }
 
     inline constexpr std::uint32_t kArchiveVersion = 2;
     constexpr std::uint32_t archiveFlags(bool reloading, bool active) noexcept

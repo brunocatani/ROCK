@@ -15,7 +15,7 @@ namespace rock::native_weapon_cycle
         Session(const Session&) = delete;
         Session& operator=(const Session&) = delete;
         void update(RE::TESObjectREFR* reference, float deltaSeconds) noexcept;
-        void fire() noexcept;
+        void fire(float shotSeconds) noexcept;
         void clear() noexcept;
         void reap() noexcept;
         bool ready() const noexcept;

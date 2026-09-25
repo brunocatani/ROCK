@@ -145,7 +145,13 @@ namespace rock
             const auto occupancy = _twoHandedGrip.getGripOccupancy();
             if (!(isLeft ? occupancy.right.carriesWeapon() : occupancy.left.carriesWeapon()) ||
                 (isLeft ? occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon())) return false;
-            if (!_carriedWeapon.captureTransfer()) {
+            const auto capture = _carriedWeapon.captureTransfer();
+            if (capture == akimbo::TransferCapture::NotApplicable) {
+                // An ammo-less/non-firearm native item is an ordinary equip
+                // replacement, not a failed dual-firearm transaction.
+                return false;
+            }
+            if (capture != akimbo::TransferCapture::Ready) {
                 ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Physical dual activation declined: original firearm or magazine cannot enter an independent session");
                 return true;
             }

@@ -2,7 +2,6 @@
 
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/DynamicWeaponCollision.h"
-#include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/collision/PushContact.h"
 
 namespace rock
@@ -21,6 +20,7 @@ namespace rock
         push_assist::ContactChannel push;
         unsigned heldHandsAtomic() const noexcept { return _heldHands.load(std::memory_order_acquire); }
         void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate);
+        void setSessionSlot(unsigned slot) noexcept { _slot = slot; dynamic.setPhysicalSessionSlot(slot); }
         bool update(const PhysicsFrameContext& frame, RE::TESObjectREFR* reference,
             RE::EquippedWeaponData* data, Hand& owner, Hand* support);
         bool clear(bool worldAvailable);
@@ -34,8 +34,7 @@ namespace rock
         RE::NiPointer<RE::TESObjectREFR> _reference{};
         RE::NiPointer<RE::NiNode> _root{};
         std::uint64_t _reportedGeneration{};
-        collision_suppression_registry::SuppressionLeaseSet<128> _nativeBodies{
-            collision_suppression_registry::CollisionSuppressionOwner::PhysicalWeaponSession};
+        unsigned _slot{};
         bool _ready{}, _presenterLeft{};
         std::atomic<unsigned> _heldHands{0};
     };

@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <bit>
 
 namespace rock::native_player_collision
 {
@@ -42,6 +43,21 @@ namespace rock::native_player_collision
         // only blade publication pauses this gate and rebuilds its two bodies.
         PhysicsCallbackQuiescenceGate s_bladeGate;
         BladeCollisionPair s_bladePair;
+        PhysicsCallbackQuiescenceGate s_physicalWeaponGate;
+        struct PhysicalWeapon
+        {
+            RE::hknpWorld* world{};
+            RE::TESObjectREFR* reference{}; // Pinned by the publishing session.
+            bool replacementReady{};
+            // Body IDs are only observations, never lifetime authority. A bit
+            // covers every readable native ID without a full-table/overflow
+            // fallback. Only phase changes visit it; workers mark O(1).
+            std::array<std::atomic<std::uint64_t>, (body_frame::kMaxReadableBodyIndex + 1u) / 64u> seen{};
+            std::atomic<std::uint64_t> rejected{}, discovered{};
+            std::atomic<std::uint32_t> lastBody{body_frame::kInvalidBodyId};
+            std::uint64_t nextReport{};
+        };
+        std::array<PhysicalWeapon, 2> s_physicalWeapons;
         FilterPairs s_original{ nullptr };
         bool s_installed{ false };
         std::atomic<std::uint64_t> s_removedPairs{ 0 };
@@ -67,6 +83,64 @@ namespace rock::native_player_collision
         }
 
         enum class WeaponOwner : std::uint8_t { Unknown, Player, Other };
+
+        RE::TESObjectREFR* referenceForNode(RE::NiAVObject* node) noexcept
+        {
+            __try { return node ? RE::TESObjectREFR::FindReferenceFor3D(node) : nullptr; }
+            __except (EXCEPTION_EXECUTE_HANDLER) { return nullptr; }
+        }
+
+        RE::TESObjectREFR* resolveReference(RE::hknpWorld* world, std::uint32_t id) noexcept
+        {
+            // Same callback-local resolver and native witnesses as the
+            // existing native weapon filter. No scene scan or retained body
+            // pointer: detached wrappers still carry their actual 3D owner.
+            const auto body = havok_runtime::snapshotBodyIdentity(world, {id});
+            if (!body.valid || (body.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK) !=
+                    collision_layer_policy::FO4_LAYER_WEAPON) return nullptr;
+            return referenceForNode(havok_runtime::getOwnerNodeFromCollisionObject(body.collisionObject));
+        }
+
+        bool replacedWeaponBody(RE::hknpWorld* world, std::uint32_t id, bool record,
+            std::uint32_t otherLayer = UINT32_MAX) noexcept
+        {
+            if (!world || id > body_frame::kMaxReadableBodyIndex) return false;
+            bool hasOwner = false;
+            for (const auto& owner : s_physicalWeapons) hasOwner = hasOwner || (owner.world == world && owner.reference);
+            if (!hasOwner) return false;
+            auto* reference = resolveReference(world, id);
+            if (!reference) return false;
+            for (auto& owner : s_physicalWeapons) {
+                if (owner.world != world || !isReplacedWeapon(collision_layer_policy::FO4_LAYER_WEAPON,
+                        reinterpret_cast<std::uintptr_t>(reference), reinterpret_cast<std::uintptr_t>(owner.reference))) continue;
+                if (record) {
+                    const auto bit = std::uint64_t{1} << (id % 64);
+                    if (!(owner.seen[id / 64].fetch_or(bit, std::memory_order_relaxed) & bit))
+                        owner.discovered.fetch_add(1, std::memory_order_relaxed);
+                    owner.lastBody.store(id, std::memory_order_relaxed);
+                }
+                const bool reject = suppressReplacedWeaponPair(owner.replacementReady, otherLayer);
+                if (record && reject) owner.rejected.fetch_add(1, std::memory_order_relaxed);
+                return reject;
+            }
+            return false;
+        }
+
+        int filterPhysicalWeapons(RE::hknpWorld* world, BodyPair* pairs, int count) noexcept
+        {
+            auto lease = s_physicalWeaponGate.tryEnterCallback();
+            if (!lease) return count;
+            if (std::none_of(s_physicalWeapons.begin(), s_physicalWeapons.end(), [&](const PhysicalWeapon& owner) {
+                    return owner.reference && owner.world == world;
+                })) return count;
+            return filterPhysicalPairs(pairs, count, [&](const BodyPair& pair) {
+                std::uint32_t filterA{}, filterB{};
+                if (!havok_runtime::tryReadFilterInfo(world, {pair.bodyA}, filterA) ||
+                    !havok_runtime::tryReadFilterInfo(world, {pair.bodyB}, filterB)) return false;
+                return replacedWeaponBody(world, pair.bodyA, true, filterB & collision_layer_policy::FO4_LAYER_FILTER_MASK) ||
+                    replacedWeaponBody(world, pair.bodyB, true, filterA & collision_layer_policy::FO4_LAYER_FILTER_MASK);
+            });
+        }
 
         WeaponOwner resolveWeaponOwner(const havok_runtime::BodySnapshot& body) noexcept
         {
@@ -185,6 +259,7 @@ namespace rock::native_player_collision
             int admitted = nativeAdmitted > 0 && nativeAdmitted <= count ?
                 shell_casing_grace::filterPairs(world, pairs, nativeAdmitted) : nativeAdmitted;
             if (admitted > 0 && admitted <= count) admitted = filterBladePairs(world, pairs, admitted);
+            if (admitted > 0 && admitted <= count) admitted = filterPhysicalWeapons(world, pairs, admitted);
             auto lease = s_gate.tryEnterCallback();
             if (!lease || !world || world != s_snapshot.world || s_snapshot.count == 0 ||
                 !pairs || admitted <= 0 || admitted > count) {
@@ -387,6 +462,104 @@ namespace rock::native_player_collision
         s_bladeGate.pauseAndWait();
         s_bladePair = {};
         s_bladeRejectedPairs.store(0, std::memory_order_relaxed);
+        for (unsigned slot = 0; slot < s_physicalWeapons.size(); ++slot) clearPhysicalWeapon(slot, nullptr);
+    }
+
+    bool isReplacedWeaponBody(RE::hknpWorld* world, std::uint32_t body) noexcept
+    {
+        auto lease = s_physicalWeaponGate.tryEnterCallback();
+        return lease && replacedWeaponBody(world, body, false);
+    }
+
+    bool publishPhysicalWeapon(unsigned slot, RE::hknpWorld* world,
+        RE::TESObjectREFR* reference, std::span<const std::uint32_t> knownBodies)
+    {
+        if (!s_installed || slot >= s_physicalWeapons.size() || !world || !reference) return false;
+        auto& owner = s_physicalWeapons[slot];
+        if (owner.reference && (owner.reference != reference || owner.world != world)) return false;
+        if (!owner.reference) {
+            {
+                auto mutation = s_physicalWeaponGate.pauseForMutation();
+                owner.reference = reference;
+                owner.world = world;
+                owner.replacementReady = false;
+                owner.nextReport = 0;
+                owner.discovered.store(0);
+                owner.rejected.store(0);
+                owner.lastBody.store(body_frame::kInvalidBodyId);
+            }
+            s_physicalWeaponGate.resumeCallbacks();
+            // Existing pairs must be re-evaluated against the new rule. Late
+            // bodies meet it on their first native simulation pair evaluation.
+            static REL::Relocation<RebuildBodyCaches> rebuild{REL::Offset(offsets::kFunc_RebuildBodyCollisionCaches)};
+            for (const auto id : knownBodies) if (id <= body_frame::kMaxReadableBodyIndex && resolveReference(world, id) == reference) {
+                owner.seen[id / 64].fetch_or(std::uint64_t{1} << (id % 64), std::memory_order_relaxed);
+                rebuild(world, id);
+            }
+            ROCK_LOG_INFO(Weapon, "Physical weapon native collision replaced slot={} ref={:08X} knownBodies={} ownership=exact-reference",
+                slot, reference->formID, knownBodies.size());
+        }
+        const auto now = GetTickCount64();
+        if (logger::isDebugEnabled() && now >= owner.nextReport) {
+            owner.nextReport = now + 1000;
+            const auto rejected = owner.rejected.exchange(0, std::memory_order_relaxed);
+            if (rejected) ROCK_LOG_DEBUG(Weapon, "AKIMBO_NATIVE_COLLISION slot={} ref={:08X} rejectedPairs={} additionalBodies={} lastBody={}",
+                slot, reference->formID, rejected, owner.discovered.load(), owner.lastBody.load());
+        }
+        return true;
+    }
+
+    bool setPhysicalWeaponReady(unsigned slot, bool ready)
+    {
+        if (slot >= s_physicalWeapons.size()) return false;
+        auto& owner = s_physicalWeapons[slot];
+        if (!owner.reference || !owner.world) return false;
+        if (owner.replacementReady == ready) return true;
+        {
+            auto mutation = s_physicalWeaponGate.pauseForMutation();
+            owner.replacementReady = ready;
+        }
+        // Preparation records every encountered native body, including world
+        // contacts it preserved. Re-evaluate their cached response when the
+        // full generated solver takes over or returns to preparation.
+        static REL::Relocation<RebuildBodyCaches> rebuild{REL::Offset(offsets::kFunc_RebuildBodyCollisionCaches)};
+        for (std::size_t word = 0; word < owner.seen.size(); ++word) {
+            auto bits = owner.seen[word].load(std::memory_order_relaxed);
+            while (bits) {
+                const auto id = static_cast<std::uint32_t>(word * 64 + std::countr_zero(bits));
+                bits &= bits - 1;
+                if (resolveReference(owner.world, id) == owner.reference) rebuild(owner.world, id);
+            }
+        }
+        return true;
+    }
+
+    void clearPhysicalWeapon(unsigned slot, RE::hknpWorld* liveWorld)
+    {
+        if (slot >= s_physicalWeapons.size()) return;
+        auto& owner = s_physicalWeapons[slot];
+        if (!owner.reference) return;
+        const auto* reference = owner.reference;
+        const bool restore = liveWorld && liveWorld == owner.world;
+        {
+            auto mutation = s_physicalWeaponGate.pauseForMutation();
+            owner.reference = nullptr;
+            owner.world = nullptr;
+            owner.replacementReady = false;
+        }
+        static REL::Relocation<RebuildBodyCaches> rebuild{REL::Offset(offsets::kFunc_RebuildBodyCollisionCaches)};
+        unsigned restored = 0;
+        for (std::size_t word = 0; word < owner.seen.size(); ++word) {
+            auto bits = owner.seen[word].exchange(0, std::memory_order_relaxed);
+            while (bits) {
+                const auto id = static_cast<std::uint32_t>(word * 64 + std::countr_zero(bits));
+                bits &= bits - 1;
+                // Recheck current exact reference ownership, including ID reuse
+                // and changed motions. Never restore an unrelated recycled ID.
+                if (restore && resolveReference(liveWorld, id) == reference) { rebuild(liveWorld, id); ++restored; }
+            }
+        }
+        ROCK_LOG_INFO(Weapon, "Physical weapon native collision restored slot={} bodies={} worldAvailable={}", slot, restored, restore);
     }
 
     bool publishBladePair(RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody)

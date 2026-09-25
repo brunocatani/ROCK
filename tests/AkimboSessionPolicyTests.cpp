@@ -16,6 +16,22 @@ int main()
     const auto check = [&](bool value, const char* what) {
         if (!value) { std::cerr << what << '\n'; ok = false; }
     };
+    check(transferCapture(true, true, false, false, false) == TransferCapture::NotApplicable,
+        "Ammo-less native items use ordinary equip instead of consuming the request");
+    check(transferCapture(true, false, false, false, false) == TransferCapture::NotApplicable,
+        "Native melee replacement does not require a firearm magazine");
+    check(transferCapture(false, false, false, false, false) == TransferCapture::Unavailable &&
+        transferCapture(true, true, true, false, true) == TransferCapture::Unavailable,
+        "An unreadable or temporarily unready firearm remains owned during admission");
+    check(transferCapture(true, true, true, true, true) == TransferCapture::Ready,
+        "Two eligible firearms retain magazine capture");
+    check(keepFiringSound(true, Grip::Firing, true, true, true, 10, false), "Automatic burst retains its own firing sound");
+    for (unsigned cause = 0; cause < 7; ++cause) check(!keepFiringSound(cause != 0,
+        cause == 1 ? Grip::Support : Grip::Firing, cause != 2, cause != 3, cause != 4, cause == 5 ? 0 : 10, cause == 6),
+        "Detach, support carry, blocked input, release, unknown/empty ammo and reload end the firing loop");
+    check(rock::weapon_cycle_policy::playbackRate(0.5f, 0.1f) == 5.0f &&
+        rock::weapon_cycle_policy::playbackRate(0.1f, 0.5f) == 1.0f,
+        "Automatic mechanics finish a stroke before the next shot without slowing shorter authored strokes");
     check(restoreArchiveFlags(1, 0) == 2u && restoreArchiveFlags(1, 1) == 3u, "Old co-saves restore the formerly always-active weapon state");
     for (const bool active : {false,true}) for (const bool reloading : {false,true}) {
         const auto flags = archiveFlags(reloading, active);

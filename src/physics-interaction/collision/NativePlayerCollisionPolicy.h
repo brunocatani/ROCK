@@ -77,6 +77,20 @@ namespace rock::native_player_collision
         return weaponOwnedByPlayer && isNativeWeaponSelfContactCandidate(layerA, layerB);
     }
 
+    inline constexpr bool isReplacedWeapon(std::uint32_t layer,
+        std::uintptr_t resolvedReference, std::uintptr_t ownedReference)
+    {
+        return layer == collision_layer_policy::FO4_LAYER_WEAPON &&
+            ownedReference != 0 && resolvedReference == ownedReference;
+    }
+
+    inline constexpr bool suppressReplacedWeaponPair(bool replacementReady, std::uint32_t otherLayer)
+    {
+        // Keep native world response during incremental hull preparation.
+        // Generated player geometry must not contact that duplicate body.
+        return replacementReady || collision_layer_policy::isRockGeneratedColliderLayer(otherLayer);
+    }
+
     struct BodyPair
     {
         std::uint32_t bodyA;

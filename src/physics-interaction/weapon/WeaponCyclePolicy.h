@@ -2,9 +2,17 @@
 #include <string_view>
 #include <span>
 #include <cstdint>
+#include <algorithm>
+#include <cmath>
 
 namespace rock::weapon_cycle_policy
 {
+    inline float playbackRate(float clipSeconds, float shotSeconds) noexcept
+    {
+        if (!std::isfinite(clipSeconds) || !std::isfinite(shotSeconds) || clipSeconds <= 0 || shotSeconds <= 0) return 1.0f;
+        const float rate = clipSeconds / shotSeconds;
+        return std::isfinite(rate) ? (std::max)(1.0f, rate) : 1.0f;
+    }
     // Single-shot clips contain the complete mechanical stroke. Replaying an
     // auto forward/back blend clip as a stroke would leave the slide displaced.
     constexpr unsigned fireClipPriority(std::string_view path) noexcept

@@ -40,6 +40,15 @@ namespace rock::native_carried_weapon_context
         std::array<std::uint8_t, constructorBytes.size()> actual{};
         if (!native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(REL::Offset(0xEC2E30).address()),
                 actual.data(), actual.size()) || actual != constructorBytes) return false;
+        // StopAttackSound and MuzzleFlash::Update: EC3910/E51910/EC2FD0 and
+        // 104BB50/E1DBF0/E22BF0 independently establish their native contracts.
+        constexpr std::array<std::uint8_t, 10> stopBytes{0x48,0x89,0x5C,0x24,0x08,0x57,0x48,0x83,0xEC,0x20};
+        constexpr std::array<std::uint8_t, 10> updateBytes{0x48,0x89,0x5C,0x24,0x08,0x57,0x48,0x83,0xEC,0x30};
+        std::array<std::uint8_t, 10> effectBytes{};
+        if (!native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(REL::Offset(0xEC3910).address()),
+                effectBytes.data(), effectBytes.size()) || effectBytes != stopBytes ||
+            !native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(REL::Offset(0x104BB50).address()),
+                effectBytes.data(), effectBytes.size()) || effectBytes != updateBytes) return false;
         constexpr std::array<std::uint8_t, 18> readBytes{
             0x48,0x89,0x5C,0x24,0x18,0x48,0x89,0x6C,0x24,0x20,0x89,0x54,0x24,0x10,0x56,0x57,0x41,0x56};
         void* original{};

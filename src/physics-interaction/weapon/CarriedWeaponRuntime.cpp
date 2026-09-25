@@ -414,9 +414,20 @@ namespace rock
     {
         carried_weapon_projectile::clear(_slotNumber);
         if (!_registered) return;
+        stopFiringSound();
         using StopIdle = void (*)(RE::EquippedItemData*, bool);
         if (_data) reinterpret_cast<StopIdle>(REL::Offset(0xEC39C0).address())(_data.get(), false);
         _registered = false;
+    }
+    void PhysicalWeaponSession::stopFiringSound() noexcept
+    {
+        if (!_firingSoundActive) return;
+        _firingSoundActive = false;
+        // EC3910 ends attack loops and plays the authored reverb tail. The
+        // normal attack-state transition E51910 and destructor EC2FD0 both
+        // call it. EC39C0 only stops idle audio and cannot end a firing loop.
+        if (_data) reinterpret_cast<void (*)(RE::EquippedItemData*)>(REL::Offset(0xEC3910).address())(_data.get());
+        try { ROCK_LOG_DEBUG(Weapon, "AKIMBO_FIRE_SOUND stopped session={} slot={}", sessionId(), _slotNumber); } catch (...) {}
     }
     void PhysicalWeaponSession::clear(bool nativeWorldAvailable) noexcept
     {
@@ -437,6 +448,7 @@ namespace rock
         _operation.begin(0);
         _faulted = false;
         _active = false;
+        _firingSoundActive = false;
         _grips = {};
         _shotTrace = {};
         _shotSequence = 0;
@@ -453,6 +465,7 @@ namespace rock
 
     void PhysicalWeaponSession::retainLoose(bool isLeft, std::uint64_t grab) noexcept
     {
+        stopFiringSound();
         _active = false;
         _grips = {};
         grip(isLeft).retainLoose(grab);
@@ -467,20 +480,33 @@ namespace rock
         // Equip notifications cannot evict a private context. Only clear
         // pending physical input so a native transition cannot replay it.
         _operation.cancelInput();
+        stopFiringSound();
+        carried_weapon_projectile::withdrawContext(_slotNumber);
         for (auto& grip : _grips) grip.suspend();
         return true;
     }
 
-    bool PhysicalWeaponSession::captureTransfer() noexcept
+    akimbo::TransferCapture PhysicalWeaponSession::captureTransfer() noexcept
     {
         _transfer = {};
         auto item = emptyItem();
-        auto* data = readItem(0, item) ? weaponData(item) : nullptr;
-        if (!data || !data->ammo || !item.item.object) return false;
+        const bool readable = readItem(0, item) && item.item.object;
+        auto* weapon = readable ? item.item.object->As<RE::TESObjectWEAP>() : nullptr;
+        const auto* effective = weapon ? (item.item.instanceData ?
+            static_cast<const RE::TESObjectWEAP::InstanceData*>(item.item.instanceData.get()) : &weapon->weaponData) : nullptr;
+        auto* data = readable ? weaponData(item) : nullptr;
         FirearmTiming timing{};
-        if (!readFirearmTiming(item.item.object->As<RE::TESObjectWEAP>(), item.item.instanceData.get(), timing)) return false;
+        const bool timed = weapon && readFirearmTiming(weapon, item.item.instanceData.get(), timing);
+        const auto result = akimbo::transferCapture(readable, weapon && weapon->weaponData.type == RE::WEAPON_TYPE::kGun,
+            effective && effective->ammo, data && data->ammo, timed);
+        if (result != akimbo::TransferCapture::Ready) {
+            ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "Akimbo native transfer admission form={:08X} result={} readable={} firearm={} ammoDefinition={} nativeMagazine={} timing={}",
+                weapon ? weapon->formID : 0, static_cast<unsigned>(result), readable,
+                weapon && weapon->weaponData.type == RE::WEAPON_TYPE::kGun, effective && effective->ammo, data && data->ammo, timed);
+            return result;
+        }
         _transfer = {item.item.object, {}, data->ammoCount, data->ammo->formID, true};
-        return true;
+        return akimbo::TransferCapture::Ready;
     }
 
     void PhysicalWeaponSession::commitTransfer(RE::ObjectRefHandle reference) noexcept
@@ -585,10 +611,12 @@ namespace rock
             native_carried_weapon_context::Scope context(player->currentProcess, item);
             reinterpret_cast<Fire>(REL::Offset(0x333740).address())(&weapon, player, _index, data->ammo, nullptr);
         }
+        _firingSoundActive = true;
         const auto result = currentShot;
         currentShot = {};
         observeAmmo();
-        if (result.applied && result.launches && _ammoKnown && _loaded < before) _cycle.fire();
+        if (result.applied && result.launches && _ammoKnown && _loaded < before) _cycle.fire(_secondsPerShot);
+        else stopFiringSound();
         const auto now = GetTickCount64();
         if (logger::isDebugEnabled() && (!_lastShotTraceMilliseconds || now - _lastShotTraceMilliseconds >= 1000)) {
             _lastShotTraceMilliseconds = now;
@@ -688,7 +716,9 @@ namespace rock
                 _operation.session(), _index);
             return;
         }
+        const auto bindingBefore = _operation.binding();
         _operation.bind(input.hand, _active ? input.grip : akimbo::Grip::None);
+        if (bindingBefore != _operation.binding()) stopFiringSound();
         _operation.advance(input.deltaSeconds);
         _cycle.update(input.reference, input.deltaSeconds);
         // Publish the replacement cache while both nodes are still pinned.
@@ -696,16 +726,25 @@ namespace rock
         RE::NiPointer<RE::NiAVObject> nextMuzzle(input.muzzle);
         weaponData(item)->fireNode = nextMuzzle.get();
         _muzzle = std::move(nextMuzzle);
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        carried_weapon_projectile::publishContext(_slotNumber, player ? player->currentProcess : nullptr,
+            item, _reference.get(), _muzzle.get());
+        // Native E22BF0 updates only the actor equipment array. The private
+        // contexts own the same native flash lifecycle, once per game frame.
+        if (auto* flash = weaponData(item)->muzzleFlash; flash && player && std::isfinite(input.deltaSeconds) && input.deltaSeconds >= 0.0f)
+            reinterpret_cast<void (*)(RE::MuzzleFlash*, float, RE::Actor*)>(REL::Offset(0x104BB50).address())(flash, input.deltaSeconds, player);
         observeAmmo();
         // An accepted reload belongs to this item and must finish before
         // restoration to native single-weapon handling can proceed.
         if (_operation.reloadDue()) reload();
+        if (!akimbo::keepFiringSound(_active, input.grip, input.inputAllowed && _cycle.ready(),
+                input.triggerHeld, _ammoKnown, _loaded, _operation.reloading())) stopFiringSound();
         if (!input.inputAllowed || !_cycle.ready()) { _operation.cancelInput(); return; }
         if (!_muzzle && input.grip == akimbo::Grip::Firing && input.triggerHeld) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Akimbo shot blocked session={} ref={:08X}: held model has no bounded ProjectileNode",
                 _operation.session(), _reference->formID);
         }
-        if (input.reloadPressed) (void)_operation.beginReload(_reloadSeconds);
+        if (input.reloadPressed && _operation.beginReload(_reloadSeconds)) stopFiringSound();
         const auto ticket = _operation.requestFire(_muzzle && input.inputAllowed, input.triggerHeld,
             _automatic, _ammoKnown, _loaded);
         if (_operation.current(ticket)) {
@@ -713,5 +752,7 @@ namespace rock
             _operation.completeFire(ticket, _secondsPerShot);
         }
         observeAmmo(); // Publish operation timing together with the resulting native count.
+        if (!akimbo::keepFiringSound(_active, input.grip, input.inputAllowed, input.triggerHeld,
+                _ammoKnown, _loaded, _operation.reloading())) stopFiringSound();
     }
 }

@@ -27,7 +27,7 @@ namespace rock::native_weapon_cycle
         int boneCount{}, trackCount{}, mappingCount{}, weaponBone{-1};
         void* animation{}; // Pinned by backend graph/resource, never a live actor graph.
         SampleAnimationTracksFn sampler{};
-        float duration{}, time{};
+        float duration{}, time{}, playbackRate{1.0f};
         bool ready{}, failed{}, playing{}, restorePending{}, retiring{};
         unsigned shotsLogged{};
 
@@ -201,7 +201,7 @@ namespace rock::native_weapon_cycle
         {
             if (!playing) return;
             if (!topologyCurrent()) { fail("scene-topology-changed"); return; }
-            time = (std::min)(duration, time + (std::isfinite(deltaSeconds) ? (std::max)(0.0f, deltaSeconds) : 0.0f));
+            time = (std::min)(duration, time + playbackRate * (std::isfinite(deltaSeconds) ? (std::max)(0.0f, deltaSeconds) : 0.0f));
             if (!guardedSampleTracks(sampler, animation, time, trackCount, samples.data())) { fail("sample"); return; }
             worlds[0] = root->world;
             // Calculate all destinations before writing. Absolute part deltas
@@ -286,13 +286,18 @@ namespace rock::native_weapon_cycle
         if (_state) { try { _state->fail("exception"); } catch (...) {} }
     }
 
-    void Session::fire() noexcept
+    void Session::fire(float shotSeconds) noexcept
     {
         if (!_state || !_state->ready || _state->failed || _state->retiring) return;
         _state->playing = true;
         _state->time = 0;
+        // Complete the mechanical stroke within this weapon's firing period.
+        // Restarting an unscaled long single-shot clip every automatic shot
+        // otherwise samples only its opening frames indefinitely.
+        _state->playbackRate = weapon_cycle_policy::playbackRate(_state->duration, shotSeconds);
         if (_state->shotsLogged++ < 4) {
-            try { ROCK_LOG_INFO(Animation, "Akimbo mechanical stroke ref={:08X} parts={}", _state->backend.job.referenceFormId, _state->partCount); } catch (...) {}
+            try { ROCK_LOG_INFO(Animation, "Akimbo mechanical stroke ref={:08X} parts={} clipSeconds={} shotSeconds={} playbackRate={}",
+                _state->backend.job.referenceFormId, _state->partCount, _state->duration, shotSeconds, _state->playbackRate); } catch (...) {}
         }
     }
 }

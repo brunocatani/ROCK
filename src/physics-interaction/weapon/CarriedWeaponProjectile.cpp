@@ -2,6 +2,10 @@
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
+#include "physics-interaction/weapon/NativeCarriedWeaponContext.h"
+#include "RE/Bethesda/TESObjectREFRs.h"
+#include "RE/NetImmerse/NiAVObject.h"
 
 #include <array>
 #include <atomic>
@@ -33,6 +37,18 @@ namespace rock::carried_weapon_projectile
             }
         };
         std::array<Publication, 2> owners{};
+        struct ProjectileContext
+        {
+            RE::AIProcess* process{};
+            RE::EquippedItem item{RE::BGSObjectInstance(nullptr, nullptr)};
+            RE::NiPointer<RE::TESObjectREFR> reference{};
+            RE::NiPointer<RE::NiAVObject> muzzle{};
+        };
+        PhysicsCallbackQuiescenceGate contextGate;
+        std::array<ProjectileContext, 2> contexts;
+        using Initialize = void (*)(void*);
+        Initialize originalInitialize{};
+        std::array<std::atomic<unsigned>, 2> initializeLogs{};
         using AdmitHit = bool (*)(void*, std::uint32_t, void*, std::uint32_t);
         using AddImpact = std::uint32_t (*)(void*, const void*);
         AdmitHit originalAdmit{};
@@ -50,6 +66,39 @@ namespace rock::carried_weapon_projectile
                 native_memory::tryReadField(projectile, 0x240, identity.instance) &&
                 native_memory::tryReadField(projectile, 0x250, identity.index) && identity.index < owners.size() &&
                 owners[identity.index].read(snapshot) && identity == Identity{snapshot.weapon, snapshot.instance, snapshot.shooter, snapshot.index};
+        }
+
+        void initializeProjectile(void* projectile)
+        {
+            Owner owner{};
+            Identity identity{};
+            ProjectileContext context;
+            if (ownedProjectile(projectile, owner, identity)) {
+                // Do not hold the publication gate across native work or its
+                // callbacks. Each copied record pins the data, exact item and
+                // muzzle through initialization, including concurrent withdrawal.
+                auto lease = contextGate.tryEnterCallback();
+                if (lease) {
+                    const auto& current = contexts[identity.index];
+                    if (current.reference && current.reference->formID == owner.reference &&
+                        reinterpret_cast<std::uintptr_t>(current.item.item.object) == identity.weapon &&
+                        reinterpret_cast<std::uintptr_t>(current.item.item.instanceData.get()) == identity.instance &&
+                        current.item.equipIndex.index == identity.index && current.muzzle) context = current;
+                }
+            }
+            if (!context.reference || !context.process || !context.item.data) {
+                originalInitialize(projectile);
+                return;
+            }
+            // DB0E00 dispatches 1057700 after launch. Its 105A6C0 -> 104C1D0
+            // -> ECC570 path resolves the indexed muzzle/effect data again.
+            native_carried_weapon_context::Scope scope(context.process, context.item);
+            originalInitialize(projectile);
+            if (initializeLogs[identity.index].fetch_add(1, std::memory_order_relaxed) < 4) {
+                const auto* data = static_cast<const RE::EquippedWeaponData*>(context.item.data.get());
+                try { ROCK_LOG_DEBUG(Weapon, "AKIMBO_PROJECTILE_INITIALIZED slot={} ref={:08X} privateContext=true muzzleFlash={:p} fireNode={:p}",
+                    identity.index, owner.reference, static_cast<void*>(data->muzzleFlash), static_cast<void*>(data->fireNode)); } catch (...) {}
+            }
         }
 
         bool admitHit(void* target, std::uint32_t filter, void* projectile, std::uint32_t body)
@@ -116,9 +165,16 @@ namespace rock::carried_weapon_projectile
                     hitBytes.data(), hitBytes.size(), reinterpret_cast<void*>(&admitHit), original)) return false;
             originalAdmit = reinterpret_cast<AdmitHit>(original);
         }
-        if (!entry_trampoline_hook::install("carried-weapon projectile impact", 0x10585A0,
-                impactBytes.data(), impactBytes.size(), reinterpret_cast<void*>(&addImpact), original)) return false;
-        originalImpact = reinterpret_cast<AddImpact>(original);
+        if (!originalImpact) {
+            if (!entry_trampoline_hook::install("carried-weapon projectile impact", 0x10585A0,
+                    impactBytes.data(), impactBytes.size(), reinterpret_cast<void*>(&addImpact), original)) return false;
+            originalImpact = reinterpret_cast<AddImpact>(original);
+        }
+        constexpr std::array<std::uint8_t, 15> initializeBytes{
+            0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x6C,0x24,0x10,0x48,0x89,0x74,0x24,0x18};
+        if (!entry_trampoline_hook::install("carried-weapon projectile initialization", 0x1057700,
+                initializeBytes.data(), initializeBytes.size(), reinterpret_cast<void*>(&initializeProjectile), original)) return false;
+        originalInitialize = reinterpret_cast<Initialize>(original);
         installed = true;
         return true;
     }
@@ -135,6 +191,26 @@ namespace rock::carried_weapon_projectile
         owner.weapon.store(weapon); owner.instance.store(instance); owner.index.store(index);
         owner.sequence.fetch_add(1, std::memory_order_release);
         candidateLogs[index].store(0); impactLogs[index].store(0);
+        initializeLogs[index].store(0);
+    }
+
+    void publishContext(std::uint32_t slot, RE::AIProcess* process, const RE::EquippedItem& item,
+        RE::TESObjectREFR* reference, RE::NiAVObject* muzzle)
+    {
+        if (slot >= contexts.size()) return;
+        auto& current = contexts[slot];
+        // Sole frame-thread writer. Avoid refcount churn when the pinned scene
+        // and data are unchanged. Readers copy under their nonblocking gate.
+        if (current.process == process && current.item.data == item.data &&
+            current.reference.get() == reference && current.muzzle.get() == muzzle) return;
+        {
+            auto mutation = contextGate.pauseForMutation();
+            current.process = process;
+            current.item = item;
+            current.reference.reset(reference);
+            current.muzzle.reset(muzzle);
+        }
+        contextGate.resumeCallbacks();
     }
 
     void publishBodies(std::uint32_t slot, std::span<const std::uint32_t> bodies) noexcept
@@ -149,7 +225,15 @@ namespace rock::carried_weapon_projectile
     }
     void clear(std::uint32_t slot) noexcept
     {
+        if (slot >= contexts.size()) return;
         publish(0, 0, 0, 0, slot);
         publishBodies(slot, {});
+        withdrawContext(slot);
+    }
+    void withdrawContext(std::uint32_t slot) noexcept
+    {
+        if (slot >= contexts.size()) return;
+        auto mutation = contextGate.pauseForMutation();
+        contexts[slot] = ProjectileContext{};
     }
 }

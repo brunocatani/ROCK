@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <span>
 
-namespace RE { class hknpWorld; }
+namespace RE { class hknpWorld; class TESObjectREFR; }
 namespace rock::havok_runtime { struct BodySnapshot; }
 
 namespace rock::native_player_collision
@@ -34,6 +34,15 @@ namespace rock::native_player_collision
     std::uint64_t bladePairRejectedCount() noexcept;
     // A null liveWorld clears ownership after world loss without native calls.
     void clearBladePair(RE::hknpWorld* liveWorld);
+
+    // PhysicalWeaponPhysics pins the exact reference until withdrawal. These
+    // simulation-only rules cover native bodies published outside the 3D tree
+    // and bodies created later; generated replacement bodies stay collidable.
+    bool publishPhysicalWeapon(unsigned slot, RE::hknpWorld* world,
+        RE::TESObjectREFR* reference, std::span<const std::uint32_t> knownBodies);
+    bool setPhysicalWeaponReady(unsigned slot, bool ready);
+    void clearPhysicalWeapon(unsigned slot, RE::hknpWorld* liveWorld);
+    bool isReplacedWeaponBody(RE::hknpWorld* world, std::uint32_t body) noexcept;
 
     // Skeleton/world teardown: invalidate the snapshot without touching a world
     // whose lifetime may have ended. No collision bits or pair leases to restore.

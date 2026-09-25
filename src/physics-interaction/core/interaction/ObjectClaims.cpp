@@ -1,4 +1,5 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/native/NativePlayerCollisionFilter.h"
 
 // Physics object claims and forced drops. Includes the contact-callback implementation (PhysicsInteractionContacts.inl).
 

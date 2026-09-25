@@ -2,6 +2,7 @@
 #include "physics-interaction/core/PhysicsFrameContext.h"
 #include "physics-interaction/hand/Hand.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
+#include "physics-interaction/native/NativePlayerCollisionFilter.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 
 namespace rock
@@ -22,14 +23,11 @@ namespace rock
         if (worldAvailable && _world) {
             dynamic.retireAll(_bhk);
             collision.shutdown();
-            if (!_nativeBodies.releaseAll(_world, "physical-weapon-retired", [](auto, const auto&) {})) {
-                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Physical weapon collision restore remains pending");
-                return false;
-            }
+            native_player_collision::clearPhysicalWeapon(_slot, _world);
         } else {
             dynamic.abandonHavokStateAfterWorldLoss();
             collision.abandonHavokStateAfterWorldLoss();
-            _nativeBodies.clearTracking();
+            native_player_collision::clearPhysicalWeapon(_slot, nullptr);
         }
         collision.bindPhysicalSource(nullptr, nullptr);
         _reference.reset(); _root.reset();
@@ -43,10 +41,12 @@ namespace rock
         _ready = false;
         _heldHands.store(0, std::memory_order_release);
         dynamic.retireAll(_bhk);
+        collision.shutdown();
+        native_player_collision::clearPhysicalWeapon(_slot, _world);
         ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Physical weapon readiness deferred ref={:08X} reason={}",
             _reference ? _reference->formID : 0, reason);
-        if (!_nativeBodies.releaseAll(_world, reason, [](auto, const auto&) {}))
-            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Physical weapon collision restore pending reason={}", reason);
+        _reference.reset(); _root.reset();
+        _world = nullptr; _bhk = nullptr; _reportedGeneration = 0;
     }
 
     bool PhysicalWeaponPhysics::update(const PhysicsFrameContext& frame, RE::TESObjectREFR* reference,
@@ -66,10 +66,21 @@ namespace rock
             collision.init(_world, _bhk);
         }
         collision.bindPhysicalSource(reference, data);
+        // Claim the complete native representation before publishing any
+        // replacement collider. The grab's body list is only a cache-rebuild
+        // seed; it is not proof of complete ownership (late/detached bodies).
+        if (!native_player_collision::publishPhysicalWeapon(_slot, _world, reference, owner.getHeldBodyIds())) {
+            retireProxy("physical-weapon-native-ownership-unavailable");
+            return false;
+        }
         collision.update(_world, root, frame.deltaSeconds, true);
         const auto generation = collision.getCurrentWeaponGenerationKey();
         if (!generation || !collision.hasWeaponBody()) {
-            retireProxy("physical-weapon-generation-unavailable");
+            // Hull construction spans frames. Keep its preparation and native
+            // world response; firing stays closed until both solvers are ready.
+            dynamic.retireAll(_bhk);
+            (void)native_player_collision::setPhysicalWeaponReady(_slot, false);
+            _heldHands.store(0, std::memory_order_release);
             return false;
         }
         const bool left = owner.isLeft();
@@ -89,11 +100,9 @@ namespace rock
             retireProxy("physical-weapon-proxy-unavailable");
             return false;
         }
-        for (const auto body : owner.getHeldBodyIds()) {
-            if (!_nativeBodies.acquire(_world, body, "physical-weapon-generated-collision").valid) {
-                retireProxy("physical-weapon-activation-failed");
-                return false;
-            }
+        if (!native_player_collision::setPhysicalWeaponReady(_slot, true)) {
+            retireProxy("physical-weapon-native-activation-unavailable");
+            return false;
         }
         // The earlier grab owns a shared assembly's native scene publication.
         auto* presenter = support && support->heldGrabIdentity() < owner.heldGrabIdentity() ? support : &owner;

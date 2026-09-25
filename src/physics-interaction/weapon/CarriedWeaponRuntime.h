@@ -18,7 +18,7 @@ namespace rock
     class PhysicalWeaponSession
     {
     public:
-        explicit PhysicalWeaponSession(std::uint32_t slot = 0) noexcept : _slotNumber(slot) { physics.dynamic.setPhysicalSessionSlot(slot); }
+        explicit PhysicalWeaponSession(std::uint32_t slot = 0) noexcept : _slotNumber(slot) { physics.setSessionSlot(slot); }
         PhysicalWeaponPhysics physics;
         struct Input
         {
@@ -47,7 +47,7 @@ namespace rock
         [[nodiscard]] bool owns(const RE::TESObjectREFR* reference) const noexcept;
         // Capture before the existing exact equipped-to-world transfer.
         // Commit only with the resulting reference from that same transfer.
-        [[nodiscard]] bool captureTransfer() noexcept;
+        [[nodiscard]] akimbo::TransferCapture captureTransfer() noexcept;
         void commitTransfer(RE::ObjectRefHandle reference) noexcept;
         void cancelTransfer() noexcept;
         [[nodiscard]] bool retains(const RE::TESObjectREFR* reference) const noexcept;
@@ -90,6 +90,7 @@ namespace rock
         [[nodiscard]] bool sourceCurrent() const noexcept;
         [[nodiscard]] bool publishContext();
         void removeContext() noexcept;
+        void stopFiringSound() noexcept;
         void fire();
         void reload();
         void observeAmmo() noexcept;
@@ -106,7 +107,7 @@ namespace rock
         std::uint32_t _slotNumber{}, _index{}, _loaded{}, _ammoForm{}, _thread{};
         std::uint64_t _nextSession{1};
         float _secondsPerShot{}, _reloadSeconds{};
-        bool _ammoKnown{}, _automatic{}, _registered{}, _faulted{}, _active{};
+        bool _ammoKnown{}, _automatic{}, _registered{}, _faulted{}, _active{}, _firingSoundActive{};
         std::array<physical_weapon_grip_policy::Grip, 2> _grips{};
         struct ShotTrace
         {
@@ -156,14 +157,15 @@ namespace rock
             for (auto& session : sessions) if (!session.hasSession() && &session != pendingTransfer()) return session.activate(input);
             return false;
         }
-        bool captureTransfer() noexcept
+        akimbo::TransferCapture captureTransfer() noexcept
         {
             _pending = -1;
             for (unsigned i = 0; i < sessions.size(); ++i) if (!sessions[i].hasSession()) {
-                if (!sessions[i].captureTransfer()) return false;
-                _pending = static_cast<int>(i); return true;
+                const auto result = sessions[i].captureTransfer();
+                if (result != akimbo::TransferCapture::Ready) return result;
+                _pending = static_cast<int>(i); return result;
             }
-            return false;
+            return akimbo::TransferCapture::Unavailable;
         }
         void commitTransfer(RE::ObjectRefHandle reference) noexcept
         {

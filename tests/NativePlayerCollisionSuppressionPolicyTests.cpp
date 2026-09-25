@@ -380,5 +380,23 @@ int main()
     ok &= expect("blade filtering leaves the unadmitted native batch tail untouched",
         bladePairs[5].bodyA == 750 && bladePairs[5].bodyB == 422);
 
+    const std::uintptr_t physicalA = 0x10000, physicalB = 0x20000;
+    ok &= expect("preparation preserves native world response while rejecting generated self contacts",
+        !suppressReplacedWeaponPair(false, FO4_LAYER_STATIC) &&
+        !suppressReplacedWeaponPair(false, FO4_LAYER_CLUTTER) &&
+        suppressReplacedWeaponPair(false, ROCK_LAYER_WEAPON) &&
+        suppressReplacedWeaponPair(false, ROCK_LAYER_DYNAMIC_WEAPON_PROXY));
+    ok &= expect("ready replacement retires duplicate native world responses",
+        suppressReplacedWeaponPair(true, FO4_LAYER_STATIC) && suppressReplacedWeaponPair(true, FO4_LAYER_CLUTTER));
+    ok &= expect("late native body uses exact reference ownership without a grab-list membership requirement",
+        isReplacedWeapon(FO4_LAYER_WEAPON, physicalA, physicalA));
+    ok &= expect("another weapon, unknown ownership and withdrawn ownership retain native collision",
+        !isReplacedWeapon(FO4_LAYER_WEAPON, physicalB, physicalA) &&
+        !isReplacedWeapon(FO4_LAYER_WEAPON, 0, physicalA) && !isReplacedWeapon(FO4_LAYER_WEAPON, physicalA, 0));
+    ok &= expect("generated replacement colliders remain physical even when attached to the same reference",
+        !isReplacedWeapon(ROCK_LAYER_WEAPON, physicalA, physicalA) &&
+        !isReplacedWeapon(ROCK_LAYER_DYNAMIC_WEAPON_PROXY, physicalA, physicalA));
+    ok &= expect("both physical sessions resolve their own exact native bodies",
+        isReplacedWeapon(FO4_LAYER_WEAPON, physicalA, physicalA) && isReplacedWeapon(FO4_LAYER_WEAPON, physicalB, physicalB));
     return ok ? 0 : 1;
 }

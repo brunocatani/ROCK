@@ -29,7 +29,7 @@ namespace rock
         const auto dropRequest = _twoHandedGrip.consumeEquippedWeaponDropRequest();
         // Keep the old scene alive through cleanup of its grip authorities.
         RE::NiPointer<RE::NiNode> transferSourceNode(resolveEquippedWeaponInteractionNode());
-        if (!_carriedWeapon.captureTransfer()) {
+        if (_carriedWeapon.captureTransfer() == akimbo::TransferCapture::Unavailable) {
             _twoHandedGrip.completeEquippedWeaponDrop(dropRequest, false);
             transition.cancelHeldRequest("outgoing-magazine-unavailable");
             return false;
