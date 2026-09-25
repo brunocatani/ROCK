@@ -456,7 +456,7 @@ namespace rock
         void enforceNoBareFistState(bool forceRecheck);
         void updateBareFistMode(const PhysicsFrameContext& frame);
         void cancelBareFistMode(const char* reason);
-        [[nodiscard]] bool bareFistHandsAvailable(const PhysicsFrameContext& frame) const;
+        [[nodiscard]] const char* bareFistHandBlockReason(const PhysicsFrameContext& frame) const;
 
         std::size_t applyProviderWeaponPartDrives(
             RE::NiNode* weaponNode,

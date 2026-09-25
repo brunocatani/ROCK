@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "physics-interaction/input/BareFistGesturePolicy.h"
 
 namespace RE
 {
@@ -20,6 +21,15 @@ namespace rock::input_remap_runtime
     void setBareFistDrawState(std::uint64_t cycle, bool owned, bool ready);
     [[nodiscard]] bool isBareFistDrawPermitted();
     [[nodiscard]] bool isBareFistMeleeSuppressed();
+
+    struct BareFistInputSnapshot
+    {
+        bare_fist_gesture::Buttons buttons{};
+        std::uint64_t cycle{};
+        bool admissionFresh{};
+    };
+    // Diagnostics on the frame owner, using the same atomic samples as capture.
+    [[nodiscard]] BareFistInputSnapshot readBareFistInputSnapshot();
 
     enum class RawButtonAvailabilityReason : std::uint32_t
     {

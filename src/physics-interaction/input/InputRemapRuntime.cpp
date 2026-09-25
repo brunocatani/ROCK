@@ -660,41 +660,27 @@ namespace rock::input_remap_runtime
                        provider::RockProviderHand::Left);
         }
 
-        struct BareFistButtons
-        {
-            bool fresh{ false };
-            bool held{ false };
-            bool released{ false };
-        };
-
-        [[nodiscard]] BareFistButtons readBareFistButtons()
+        [[nodiscard]] bare_fist_gesture::Buttons readBareFistButtons()
         {
             const auto left = s_bareFistSamples[0].load(std::memory_order_acquire);
             const auto right = s_bareFistSamples[1].load(std::memory_order_acquire);
-            const auto now = GetTickCount64();
-            const auto fresh = [now](std::uint64_t sample) {
-                const auto tick = sample >> 3;
-                return tick != 0 && now >= tick &&
-                    now - tick <= bare_fist_gesture::kMaximumSampleAgeMilliseconds;
-            };
-            const bool samplesFresh = fresh(left) && fresh(right);
-            return { samplesFresh,
-                samplesFresh && (left & 7u) == 3u && (right & 7u) == 3u,
-                samplesFresh && (left & 3u) == 0 && (right & 3u) == 0 };
+            return bare_fist_gesture::readButtons(left, right, GetTickCount64());
         }
 
         void observeBareFistCapture(bool interrupted)
         {
             const auto buttons = readBareFistButtons();
-            const bool eligible = buttons.held &&
-                GetTickCount64() < s_bareFistAdmissionUntil.load(std::memory_order_acquire) &&
+            // Capture is not permission to draw or deal damage. Keep the
+            // physical cycle across an expired previous-frame publication;
+            // the live draw/damage gates still require its fresh 100 ms lease.
+            const bool eligible = s_bareFistAdmissionUntil.load(std::memory_order_acquire) != 0 &&
                 s_gameplayInputAllowed.load(std::memory_order_acquire) && !isInputBlockingMenuActive() &&
                 (currentProviderHandInputSuppressionFlagsAtDispatch() &
                     (static_cast<std::uint32_t>(provider::RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord) |
                      static_cast<std::uint32_t>(provider::RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput))) == 0;
             auto cycle = s_bareFistCycle.load(std::memory_order_acquire);
             const auto next = bare_fist_gesture::observe(
-                cycle, eligible, buttons.held, buttons.released, interrupted);
+                cycle, eligible, buttons, interrupted);
             // One bounded attempt. A competing cancellation must win; the
             // next physical sample can capture a subsequent fresh cycle.
             if (next != cycle) s_bareFistCycle.compare_exchange_strong(cycle, next, std::memory_order_acq_rel);
@@ -2706,8 +2692,8 @@ namespace rock::input_remap_runtime
     void cancelBareFistInput()
     {
         s_bareFistReady.store(false, std::memory_order_release);
-        // Preserve the cycle identity while latching cancellation through all
-        // four releases. Fetch-or cannot overwrite a concurrent new capture.
+        // Preserve cycle identity until a fresh, unblocked chord break rearms
+        // input. Fetch-or cannot overwrite a concurrent capture's identity.
         s_bareFistCycle.fetch_or(2u, std::memory_order_acq_rel);
     }
 
@@ -2722,6 +2708,12 @@ namespace rock::input_remap_runtime
     std::uint64_t bareFistInputCycle()
     {
         return s_bareFistCycle.load(std::memory_order_acquire);
+    }
+
+    BareFistInputSnapshot readBareFistInputSnapshot()
+    {
+        return { readBareFistButtons(), bareFistInputCycle(),
+            GetTickCount64() < s_bareFistAdmissionUntil.load(std::memory_order_acquire) };
     }
 
     bool ownsBareFistInput()

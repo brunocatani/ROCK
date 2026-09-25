@@ -1057,8 +1057,8 @@ namespace rock
         const auto equippedWeaponFrame = updateEquippedWeaponFrame(frame, bhk, hknp);
         finalizeInteractionFrame(frame, hknp, equippedWeaponFrame);
         dynamic_collider_trace::captureNpcCollisionState(frame);
-        if (input_remap_runtime::ownsBareFistInput() && !bareFistHandsAvailable(frame)) {
-            cancelBareFistMode("hand-owner-changed");
+        if (input_remap_runtime::ownsBareFistInput()) {
+            if (const auto* reason = bareFistHandBlockReason(frame)) cancelBareFistMode(reason);
         }
         cancelInterruptedFists.release();
     }

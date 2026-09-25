@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 
 namespace rock::bare_fist_gesture
 {
@@ -11,25 +12,73 @@ namespace rock::bare_fist_gesture
     inline constexpr float kMaximumHoldSeconds = 10.0f;
     inline constexpr float kDrawTimeoutSeconds = 2.0f;
 
-    // Low bits hold capture state; the upper bits identify a physical cycle.
+    struct Buttons
+    {
+        std::uint8_t leftBits{}, rightBits{}; // grip=1, trigger=2, input rearm/UI=4
+        std::uint64_t leftAgeMilliseconds{}, rightAgeMilliseconds{};
+        bool fresh{}, held{}, chordBroken{}, allReleased{}, blocked{};
+    };
+
+    [[nodiscard]] constexpr Buttons readButtons(
+        std::uint64_t left, std::uint64_t right, std::uint64_t now) noexcept
+    {
+        const auto age = [now](std::uint64_t sample) {
+            const auto tick = sample >> 3;
+            return tick != 0 && now >= tick ? now - tick : (std::numeric_limits<std::uint64_t>::max)();
+        };
+        Buttons result{};
+        result.leftBits = static_cast<std::uint8_t>(left & 7u);
+        result.rightBits = static_cast<std::uint8_t>(right & 7u);
+        result.leftAgeMilliseconds = age(left);
+        result.rightAgeMilliseconds = age(right);
+        result.fresh = result.leftAgeMilliseconds <= kMaximumSampleAgeMilliseconds &&
+            result.rightAgeMilliseconds <= kMaximumSampleAgeMilliseconds;
+        result.blocked = ((left | right) & 4u) != 0;
+        result.held = result.fresh && result.leftBits == 3u && result.rightBits == 3u;
+        // A deliberate chord break is enough to rearm. Keeping the other grip
+        // or trigger held must not require relaxing all four buttons together.
+        result.chordBroken = result.fresh && ((left & 3u) != 3u || (right & 3u) != 3u);
+        result.allReleased = result.fresh && ((left | right) & 3u) == 0;
+        return result;
+    }
+
+    // Three low bits hold capture state; upper bits identify a physical cycle.
     // A release/repress between game frames must never continue an old session.
-    enum class Capture : std::uint64_t { Idle = 0, Holding = 1, Rearming = 2, Draining = 3 };
+    // All odd states retain ownership of the spent input. OR-ing bit 1 cancels
+    // Holding and ReadyToRetry atomically, without losing a concurrent identity.
+    enum class Capture : std::uint64_t {
+        Idle = 0, Holding = 1, Rearming = 2, Draining = 3,
+        ReadyToRetry = 5, CancelledRetry = 7
+    };
     [[nodiscard]] constexpr Capture capture(std::uint64_t cycle) noexcept
     {
-        return static_cast<Capture>(cycle & 3u);
+        return static_cast<Capture>(cycle & 7u);
     }
     [[nodiscard]] constexpr std::uint64_t observe(
-        std::uint64_t cycle, bool eligible, bool held, bool released, bool interrupted) noexcept
+        std::uint64_t cycle, bool eligible, const Buttons& buttons, bool interrupted) noexcept
     {
         switch (capture(cycle)) {
         case Capture::Idle:
-            return eligible && held && !interrupted ? ((cycle & ~3ull) + 4u) | 1u : cycle;
+            return eligible && buttons.held && !interrupted ? ((cycle & ~7ull) + 8u) | 1u : cycle;
         case Capture::Holding:
-            if (!eligible || !held || interrupted) return (cycle & ~3ull) | 3u;
+            // Controllers are sampled separately. A stale peer is unknown,
+            // not a button-up event. Draw/damage gates still require freshness.
+            if (!eligible || interrupted || buttons.blocked || (buttons.fresh && !buttons.held))
+                return (cycle & ~7ull) | static_cast<std::uint64_t>(Capture::Draining);
             return cycle;
         case Capture::Rearming:
+            return buttons.chordBroken && !buttons.blocked ? cycle & ~7ull : cycle;
         case Capture::Draining:
-            return released ? cycle & ~3ull : cycle;
+        case Capture::CancelledRetry:
+            if (!buttons.fresh || buttons.blocked) return cycle;
+            if (buttons.allReleased) return cycle & ~7ull;
+            // Keep the remaining buttons consumed until either a fresh full
+            // chord starts a new cycle or every spent button is released.
+            return buttons.chordBroken ? (cycle & ~7ull) | static_cast<std::uint64_t>(Capture::ReadyToRetry) : cycle;
+        case Capture::ReadyToRetry:
+            if (!eligible || buttons.blocked || interrupted) return cycle | 2u;
+            if (buttons.allReleased) return cycle & ~7ull;
+            return eligible && buttons.held ? ((cycle & ~7ull) + 8u) | 1u : cycle;
         }
         return cycle;
     }
