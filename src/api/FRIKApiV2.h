@@ -68,7 +68,7 @@ namespace frik::api
      * number, so one header serves every FRIK from the minVersion you initialize with. Each entry
      * documents the version that introduced it; check getVersion() before calling a newer one.
      */
-    inline constexpr std::uint32_t FRIK_API_V2_VERSION = 3;
+    inline constexpr std::uint32_t FRIK_API_V2_VERSION = 5;
 
     struct FRIKApiV2
     {
@@ -872,11 +872,19 @@ namespace frik::api
         bool(FRIK_CALL* clearWeaponNodeParentHand)(const char* tag);
 
         /**
+         * Preserve external ownership of PlayerNodes::WeaponLeftNode during native arm placement.
+         * Independent of the primary-node block and parent requests. Does not suppress arm solving.
+         * Tagged like blockPrimaryWeaponNodeOwnership; claims clear on skeleton release. Publish on
+         * the game update thread and reacquire after the skeleton generation changes. Since v2.5.
+         */
+        bool(FRIK_CALL* blockSecondaryWeaponNodeOwnership)(const char* tag, bool block);
+
+        /**
          * Size of the table as published at a given contract version; the append-only rule keeps every older prefix intact.
          */
         static constexpr std::size_t tableSizeForVersion(const std::uint32_t version)
         {
-            constexpr std::size_t functionCountByVersion[] = { 0, 31, 37, 46 };
+            constexpr std::size_t functionCountByVersion[] = { 0, 31, 37, 46, 46, 47 };
             const auto index = version < std::size(functionCountByVersion) ? version : std::size(functionCountByVersion) - 1;
             return functionCountByVersion[index] * sizeof(void (*)());
         }
@@ -924,12 +932,20 @@ namespace frik::api
             }
 
             const auto getApiStructSize = reinterpret_cast<std::uint32_t(FRIK_CALL*)()>(GetProcAddress(frikDll, "FRIKAPI_V2_GetApiStructSize"));
-            if (!getApiStructSize || getApiStructSize() < tableSizeForVersion(minVersion)) {
+            const auto actualTableSize = getApiStructSize ? getApiStructSize() : 0;
+            if (actualTableSize < tableSizeForVersion(minVersion)) {
                 return 5;
             }
 
+            negotiatedTableSize = actualTableSize;
             inst = frikApi;
             return 0;
+        }
+
+        [[nodiscard]] static bool supportsVersion(const std::uint32_t version)
+        {
+            return version != 0 && version <= FRIK_API_V2_VERSION && inst &&
+                   inst->getVersion() >= version && negotiatedTableSize >= tableSizeForVersion(version);
         }
 
         /**
@@ -937,10 +953,13 @@ namespace frik::api
          * Use after successful call to initialize.
          */
         inline static const FRIKApiV2* inst = nullptr;
+        inline static std::uint32_t negotiatedTableSize = 0;
     };
 
     inline constexpr std::size_t FRIK_API_V2_FUNCTION_POINTER_SIZE = sizeof(decltype(FRIKApiV2::getVersion));
     static_assert(std::is_standard_layout_v<FRIKApiV2>, "FRIKApiV2 must remain standard-layout for its exported function table ABI");
-    static_assert(sizeof(FRIKApiV2) == 46 * FRIK_API_V2_FUNCTION_POINTER_SIZE, "FRIK API v2 function table layout changed");
+    static_assert(offsetof(FRIKApiV2, clearWeaponNodeParentHand) == 45 * FRIK_API_V2_FUNCTION_POINTER_SIZE, "Released v2.3/v2.4 prefix changed");
+    static_assert(offsetof(FRIKApiV2, blockSecondaryWeaponNodeOwnership) == 46 * FRIK_API_V2_FUNCTION_POINTER_SIZE, "Secondary ownership must follow the released prefix");
+    static_assert(sizeof(FRIKApiV2) == 47 * FRIK_API_V2_FUNCTION_POINTER_SIZE, "FRIK API v2 function table layout changed");
     static_assert(FRIKApiV2::tableSizeForVersion(FRIK_API_V2_VERSION) == sizeof(FRIKApiV2), "tableSizeForVersion is out of step with the table");
 }

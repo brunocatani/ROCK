@@ -74,6 +74,7 @@ namespace rock
         // Main-thread binding before update. Null restores the legacy native
         // source; a physical session never scans another weapon's scene roots.
         void bindPhysicalSource(RE::TESObjectREFR* reference, RE::EquippedWeaponData* data);
+        void bindEquippedSource(std::uint32_t nativeIndex);
 
         void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _physicsCallbackGate = gate; }
 
@@ -691,6 +692,7 @@ namespace rock
         WeaponCollisionSource weaponSource(bool includeMods = true) const;
         RE::NiPointer<RE::TESObjectREFR> _physicalReference{};
         RE::NiPointer<RE::EquippedWeaponData> _physicalData{};
+        std::uint32_t _nativeSourceIndex{UINT32_MAX};
 
         void queueBodyTarget(WeaponBodyInstance& instance, const RE::NiTransform& weaponTransform, float sourceDeltaSeconds);
 

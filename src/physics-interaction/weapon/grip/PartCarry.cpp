@@ -185,7 +185,7 @@ namespace rock
         beginHandVisualReturn(isFiringHandLeft(), "primary-detach-part-carry");
         clearPrimaryGripFingerPose(isFiringHandLeft());
         clearPrimaryGripWorldAuthority(isFiringHandLeft());
-        if (usesLeftFiringCarry()) {
+        if (usesManagedFiringCarry()) {
             _firing.leftDampedFollowFrame = {};
             clearLeftFiringSupportReleaseReturn("primary-detach-part-carry");
         }
@@ -414,8 +414,8 @@ namespace rock
                         currentWeaponGenerationKey,
                         currentEquippedWeaponOwnershipKey,
                         "part-carry-reattached-firing-grip");
-                    if (primaryOnlyActive && usesLeftFiringCarry()) {
-                        (void)solveLeftFiringWeaponCarry(weaponNode, dt);
+                    if (primaryOnlyActive && usesManagedFiringCarry()) {
+                        (void)solveManagedFiringWeaponCarry(weaponNode, dt);
                     }
                 }
                 return;

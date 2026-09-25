@@ -9,7 +9,7 @@ namespace rock
         const std::uint64_t currentWeaponGenerationKey)
     {
         if (!weaponNode || currentWeaponGenerationKey == 0 ||
-            usesLeftFiringCarry() || ownsWeaponTransform()) {
+            usesManagedFiringCarry() || ownsWeaponTransform()) {
             return;
         }
 
@@ -108,12 +108,12 @@ namespace rock
 
         state.begin(_visuals.lastPublishedHandWorld[index]);
         if (!frik_visual_authority::publishHandWorld(
-                RETURN_HAND_TAG,
+                ownerTag(RETURN_HAND_TAG),
                 handFromBool(isLeft),
                 state.start,
                 RETURN_HAND_VISUAL_PRIORITY)) {
             state.clear();
-            (void)frik_visual_authority::clearHandWorld(RETURN_HAND_TAG, handFromBool(isLeft));
+            (void)frik_visual_authority::clearHandWorld(ownerTag(RETURN_HAND_TAG), handFromBool(isLeft));
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: hand return start failed hand={}", isLeft ? "left" : "right");
             return;
         }
@@ -190,9 +190,9 @@ namespace rock
                 [](const RE::NiTransform& transform) {
                     return isUsableHandAuthorityTransform(transform);
                 },
-                [isLeft](const RE::NiTransform& transform) {
+                [this, isLeft](const RE::NiTransform& transform) {
                     return frik_visual_authority::publishHandWorld(
-                        RETURN_HAND_TAG,
+                        ownerTag(RETURN_HAND_TAG),
                         handFromBool(isLeft),
                         transform,
                         RETURN_HAND_VISUAL_PRIORITY);
@@ -213,7 +213,7 @@ namespace rock
 
             if (result.status == hand_visual_lerp_math::VisualReturnDriveStatus::Completed) {
                 const float completedDuration = result.durationSeconds;
-                (void)frik_visual_authority::clearHandWorld(RETURN_HAND_TAG, handFromBool(isLeft));
+                (void)frik_visual_authority::clearHandWorld(ownerTag(RETURN_HAND_TAG), handFromBool(isLeft));
                 state.clear();
                 _visuals.hasLastPublishedHandWorld[index] = false;
                 ROCK_LOG_DEBUG(Weapon,
@@ -229,7 +229,7 @@ namespace rock
         const std::size_t index = isLeft ? 0u : 1u;
         auto& state = _visuals.returningHands[index].transition;
         const bool wasActive = state.active;
-        (void)frik_visual_authority::clearHandWorld(RETURN_HAND_TAG, handFromBool(isLeft));
+        (void)frik_visual_authority::clearHandWorld(ownerTag(RETURN_HAND_TAG), handFromBool(isLeft));
         state.clear();
         _visuals.hasLastPublishedHandWorld[index] = false;
         if (wasActive && logCancellation) {
@@ -313,7 +313,7 @@ namespace rock
         returnState.equippedWeaponOwnershipKey = _session.equippedWeaponOwnershipKey;
         returnState.nativeBaselineLocal = _weaponNodeLocalBaseline;
         returnState.lastTargetLocal = returnTargetLocal;
-        returnState.retainPrimaryPoseBlocker = usesLeftFiringCarry();
+        returnState.retainPrimaryPoseBlocker = usesManagedFiringCarry();
         returnState.followsAuthoredPrimaryGrip = followsAuthoredPrimaryGrip;
         returnState.keepFiringHandAttached = keepFiringHandAttached &&
             usesNativeRightCarry() && _firing.hasPrimaryHandWeaponLocal &&
@@ -353,7 +353,7 @@ namespace rock
                 weaponWorld, state.firingHandWeaponLocal);
             if (!isUsableHandAuthorityTransform(handWorld) ||
                 !frik_visual_authority::publishHandWorld(
-                    PRIMARY_GRIP_TAG, handFromBool(false), handWorld,
+                    ownerTag(PRIMARY_GRIP_TAG), handFromBool(false), handWorld,
                     GRIP_HAND_POSE_PRIORITY)) {
                 clearPrimaryGripWorldAuthority(false);
                 ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
@@ -887,7 +887,7 @@ namespace rock
         }
         if (!frik_visual_authority::isAvailable() ||
             !frik_visual_authority::clearHandWorld(
-                WEAPON_COLLISION_HAND_TAG,
+                ownerTag(WEAPON_COLLISION_HAND_TAG),
                 handFromBool(isLeft))) {
             return false;
         }
@@ -996,7 +996,7 @@ namespace rock
                 frik_visual_authority::tryGetPublishedHandWorld(
                     handFromBool(pulse.isLeft),
                     requestedHandWorld,
-                    WEAPON_COLLISION_HAND_TAG,
+                    ownerTag(WEAPON_COLLISION_HAND_TAG),
                     WEAPON_COLLISION_HAND_PRIORITY - 1) ||
                 tryGetRootFlattenedHandBoneTransform(
                     pulse.isLeft,
@@ -1022,7 +1022,7 @@ namespace rock
                 const auto hand = handFromBool(pulse.isLeft);
                 pulse.applied =
                     frik_visual_authority::publishHandWorld(
-                        WEAPON_COLLISION_HAND_TAG,
+                        ownerTag(WEAPON_COLLISION_HAND_TAG),
                         hand,
                         pulse.targetWorld,
                         WEAPON_COLLISION_HAND_PRIORITY);
@@ -1112,7 +1112,7 @@ namespace rock
         (void)publishAuthoredPrimaryFiringGripFingerPose(isFiringHandLeft());
         const bool applied =
             frik_visual_authority::publishHandWorld(
-                PRIMARY_GRIP_TAG,
+                ownerTag(PRIMARY_GRIP_TAG),
                 handFromBool(isFiringHandLeft()),
                 appliedFiringHandWorld,
                 GRIP_HAND_POSE_PRIORITY);
@@ -1124,7 +1124,7 @@ namespace rock
             true,
             applied);
         if (applied) {
-            if (usesLeftFiringCarry()) {
+            if (usesManagedFiringCarry()) {
                 _firing.leftHandWorldActive = true;
             }
             recordScopeHandAuthorityPublication(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip, isFiringHandLeft());
@@ -1167,7 +1167,7 @@ namespace rock
                 grip.visualLerp);
         const bool applied =
             frik_visual_authority::publishHandWorld(
-                SUPPORT_GRIP_TAG,
+                ownerTag(SUPPORT_GRIP_TAG),
                 handFromBool(isLeft),
                 appliedHandWorld,
                 GRIP_HAND_POSE_PRIORITY);
@@ -1213,7 +1213,7 @@ namespace rock
         const bool supportHandIsLeft = isSupportHandLeft();
         const bool leftCarryArmProbe =
             g_rockConfig.rockDebugGrabFrameLogging &&
-            usesLeftFiringCarry() &&
+            usesManagedFiringCarry() &&
             applyPrimaryHand &&
             applySupportHand &&
             _firing.hasPrimaryHandWeaponLocal;
@@ -1279,14 +1279,14 @@ namespace rock
                 frik_visual_authority::makeHandPoseDataFromJointValues(grip.fingerPose, grip.fingerSplayRadians) :
                 frik_visual_authority::makeHandPoseDataFromJointValues(grip.fingerPose);
             if (!frik_visual_authority::setHandPoseCustom(
-                SUPPORT_GRIP_TAG,
+                ownerTag(SUPPORT_GRIP_TAG),
                 handFromBool(isLeft),
                 handPose,
                 GRIP_HAND_POSE_PRIORITY)) {
                 ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
                     "TwoHandedGrip: finger pose publication failed hand={} stage=joint-pose",
                     isLeft ? "left" : "right");
-                (void)frik_visual_authority::clearHandPose(SUPPORT_GRIP_TAG, handFromBool(isLeft));
+                (void)frik_visual_authority::clearHandPose(ownerTag(SUPPORT_GRIP_TAG), handFromBool(isLeft));
                 return;
             }
         }
@@ -1305,14 +1305,14 @@ namespace rock
                     grab_finger_local_transform_runtime::logRejectedFingerTransform(
                         isLeft, failureIndex, "support-publication", overrideData.localTransforms[failureIndex], failure);
                 }
-                (void)frik_visual_authority::clearHandPose(SUPPORT_GRIP_TAG, handFromBool(isLeft));
+                (void)frik_visual_authority::clearHandPose(ownerTag(SUPPORT_GRIP_TAG), handFromBool(isLeft));
                 return;
             }
-            if (!frik_visual_authority::setHandPoseCustomLocalTransforms(SUPPORT_GRIP_TAG, handFromBool(isLeft), &overrideData, GRIP_HAND_POSE_PRIORITY)) {
+            if (!frik_visual_authority::setHandPoseCustomLocalTransforms(ownerTag(SUPPORT_GRIP_TAG), handFromBool(isLeft), &overrideData, GRIP_HAND_POSE_PRIORITY)) {
                 ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
                     "TwoHandedGrip: finger pose publication failed hand={} stage=local-transforms",
                     isLeft ? "left" : "right");
-                (void)frik_visual_authority::clearHandPose(SUPPORT_GRIP_TAG, handFromBool(isLeft));
+                (void)frik_visual_authority::clearHandPose(ownerTag(SUPPORT_GRIP_TAG), handFromBool(isLeft));
             }
         }
     }
@@ -1327,7 +1327,7 @@ namespace rock
         if (authoredPoseMatchesHand && !preserveAuthoredFingerPose) {
             clearAuthoredPrimaryFiringGripFingerPose();
         } else if (!authoredPoseMatchesHand) {
-            (void)frik_visual_authority::clearHandPose(PRIMARY_GRIP_TAG, handFromBool(isLeft));
+            (void)frik_visual_authority::clearHandPose(ownerTag(PRIMARY_GRIP_TAG), handFromBool(isLeft));
         }
     }
 
@@ -1350,7 +1350,7 @@ namespace rock
 
     void TwoHandedGrip::clearPrimaryDetachVisualAuthority(bool isLeft)
     {
-        (void)frik_visual_authority::clearHandPose(PRIMARY_DETACH_TAG, handFromBool(isLeft));
+        (void)frik_visual_authority::clearHandPose(ownerTag(PRIMARY_DETACH_TAG), handFromBool(isLeft));
         if (_scope.menuOpenThisFrame || _scope.menuClosedThisFrame) {
             deferScopeHandAuthorityClear(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryDetach, isLeft);
         } else {
@@ -1360,6 +1360,7 @@ namespace rock
 
     bool TwoHandedGrip::blockFrikPrimaryWeaponPose()
     {
+        if (_secondaryNativeNode) return true;
         if (frik_visual_authority::blockPrimaryHandWeaponPose("ROCK_PrimaryDetach", true)) {
             ROCK_LOG_DEBUG(Weapon, "FRIK primary weapon pose suppressed");
             return true;
@@ -1369,6 +1370,7 @@ namespace rock
 
     void TwoHandedGrip::restoreFrikPrimaryWeaponPose()
     {
+        if (_secondaryNativeNode) return;
         if (frik_visual_authority::blockPrimaryHandWeaponPose("ROCK_PrimaryDetach", false)) {
             ROCK_LOG_DEBUG(Weapon, "FRIK primary weapon pose restored");
         }

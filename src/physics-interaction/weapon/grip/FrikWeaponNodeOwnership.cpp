@@ -27,7 +27,7 @@ namespace rock
         if (_frikWeaponNode.writeBlockEngaged) {
             return;
         }
-        if (frik_visual_authority::blockPrimaryWeaponNodeOwnership(WEAPON_NODE_WRITE_TAG, true)) {
+        if (blockOwnedWeaponNode(ownerTag(WEAPON_NODE_WRITE_TAG), true)) {
             _frikWeaponNode.writeBlockEngaged = true;
             ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: FRIK weapon-node writes blocked while ROCK owns the weapon transform");
         } else {
@@ -63,7 +63,7 @@ namespace rock
             .framesSinceRecoilWrite = _frikWeaponNode.framesSinceRecoilWrite,
             .ownsWeaponTransform = ownsWeaponTransform(),
             .weaponReturnActive = isWeaponVisualReturnActive(),
-            .leftCarryActive = usesLeftFiringCarry() && isManualOwnershipActive(),
+            .leftCarryActive = usesManagedFiringCarry() && isManualOwnershipActive(),
             .oneHandRecoilActive = isOneHandRecoilEnvelopeActive(),
             .authoredPrimaryAlignmentActive = _firing.authoredHandWorldActive,
         };
@@ -92,7 +92,7 @@ namespace rock
         if (!_frikWeaponNode.writeBlockEngaged) {
             return;
         }
-        (void)frik_visual_authority::blockPrimaryWeaponNodeOwnership(WEAPON_NODE_WRITE_TAG, false);
+        (void)blockOwnedWeaponNode(ownerTag(WEAPON_NODE_WRITE_TAG), false);
         _frikWeaponNode.writeBlockEngaged = false;
         ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: FRIK weapon-node writes released reason={}", reason ? reason : "unknown");
     }
@@ -119,7 +119,7 @@ namespace rock
         RE::NiTransform supportWorld{};
         const bool supportWorldValid = active && tryGetSolverHandTransform(supportIsLeft, supportWorld);
         if (!frik_visual_authority::setOffHandGripping(
-                TWO_HANDED_GRIP_REPORT_TAG,
+                ownerTag(TWO_HANDED_GRIP_REPORT_TAG),
                 active,
                 frik_visual_authority::handFromBool(supportIsLeft),
                 supportWorldValid ? &supportWorld : nullptr)) {
@@ -143,7 +143,7 @@ namespace rock
         releaseFrikWeaponNodeWriteBlock("reset");
         if (_frikWeaponNode.gripReported) {
             (void)frik_visual_authority::setOffHandGripping(
-                TWO_HANDED_GRIP_REPORT_TAG,
+                ownerTag(TWO_HANDED_GRIP_REPORT_TAG),
                 false,
                 frik_visual_authority::handFromBool(_frikWeaponNode.gripReportedSupportIsLeft),
                 nullptr);

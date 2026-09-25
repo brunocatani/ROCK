@@ -1,7 +1,7 @@
 #include "api/EventStreams.h"
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
-#include "physics-interaction/weapon/PhysicalWeaponPairPolicy.h"
+#include "physics-interaction/weapon/EquippedWeaponPairPolicy.h"
 #include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/telemetry/DynamicColliderTrace.h"
@@ -109,10 +109,7 @@ namespace rock
         _leftHand.invalidateCollisionPose(world);
         _dynamicHandCollision.retireAll(bhk);
         _dynamicWeaponCollision.retireAll(bhk);
-        for (auto& session : _carriedWeapon.sessions) {
-            (void)session.suspend();
-            (void)session.physics.clear(true);
-        }
+        
         ROCK_LOG_SAMPLE_WARN(Physics, 1000, "Collision pose publication interrupted frame={}; old collider targets invalidated", pending);
     }
 
@@ -159,6 +156,7 @@ namespace rock
                 _dynamicWeaponCollision.finalizeCompoundPose(_weaponCollision, weapon,
                     frame, _weaponCollision.getCurrentWeaponGenerationKey());
             }
+            _secondaryEquipped.finishPresentation(frame);
         }
         _frame.poseFrameIndex = 0;
         _generatedBodyStepDrive.registerForNextStep(bhk, world);
@@ -166,8 +164,6 @@ namespace rock
 
     void PhysicsInteraction::traceHeldPresentationPhase(const char* phase)
     {
-        if (std::strcmp(phase, "before-rock") != 0)
-            for (auto& session : _carriedWeapon.sessions) session.traceShotPresentation(phase);
         const auto& runtime = runtime_state::currentFrame();
         // Before the next ROCK tick, the owner still contains the engine's
         // late scene write for the preceding publication. Pair it with that
@@ -447,9 +443,9 @@ namespace rock
          * written the frame target.
          */
 
-        updateCarriedWeapon(frame, true);
+        updateNativeEquippedPair(frame, true);
         updateGrabInput(frame);
-        updateCarriedWeapon(frame, false);
+        updateNativeEquippedPair(frame, false);
         auto selectedCloseCarTarget = [&](const Hand& hand, const HandFrameInput& handInput) {
             DynamicWorldCarTarget target{};
             if (handInput.disabled || hand.isHolding() || !hand.hasSelection()) {
@@ -483,13 +479,10 @@ namespace rock
         const bool nativeLeftOwned = leftSupportGripActive ||
             (_twoHandedGrip.isFiringHandLeft() && _twoHandedGrip.isFiringGripOccupied()) ||
             _suppression.leftWeaponSupportSuppressed.load(std::memory_order_acquire);
-        std::array<physical_weapon_pair_policy::CollisionOwner, 2> physicalOwners{};
-        for (const auto& session : _carriedWeapon.sessions) {
-            physicalOwners[session.slotNumber()] = {session.physics.dynamic.proxyBodyIdForDebug().value,
-                (_rightHand.isHolding() && session.owns(_rightHand.getHeldRef()) ? 1u : 0u) |
-                (_leftHand.isHolding() && session.owns(_leftHand.getHeldRef()) ? 2u : 0u)};
-        }
-        const auto weaponOwners = physical_weapon_pair_policy::collisionOwners(
+        std::array<equipped_weapon_pair_policy::CollisionOwner, 2> physicalOwners{};
+        
+        physicalOwners[0] = {_secondaryEquipped.dynamic.proxyBodyIdForDebug().value,_secondaryEquipped.heldHandsAtomic()};
+        const auto weaponOwners = equipped_weapon_pair_policy::collisionOwners(
             {_dynamicWeaponCollision.proxyBodyIdForDebug().value, (nativeRightOwned ? 1u : 0u) | (nativeLeftOwned ? 2u : 0u)}, physicalOwners);
         _dynamicHandCollision.updateFrame(
             frame,
@@ -640,7 +633,7 @@ namespace rock
             if (bhk == _lifecycle.cachedBhkWorld && world == _lifecycle.cachedHknpWorld)
                 updateNativeGrenadeCollisionSuppression(world, runtime.deltaSeconds);
         }
-        if (!_carriedWeapon.hasSession()) _dynamicWeaponCollision.updateSurfaceSupportInput();
+        _dynamicWeaponCollision.updateSurfaceSupportInput();
         const auto retireDynamicWeaponForInterruptedFrame = [this](bool preserveSurfaceSupport = false) {
             if (!_lifecycle.initialized.load(std::memory_order_acquire)) {
                 return;
@@ -650,16 +643,14 @@ namespace rock
             if (currentBhk && currentBhk == _lifecycle.cachedBhkWorld &&
                 currentHknp && currentHknp == _lifecycle.cachedHknpWorld) {
                 _dynamicWeaponCollision.retireAll(currentBhk, preserveSurfaceSupport);
-                for (auto& session : _carriedWeapon.sessions) {
-                    (void)session.suspend();
-                    (void)session.physics.clear(true);
-                }
+                for (auto& actions : _nativeEquippedActions) actions.suspend();
+                _secondaryEquipped.interrupt(true);
+                
             } else {
                 _dynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
-                for (auto& session : _carriedWeapon.sessions) {
-                    (void)session.suspend();
-                    (void)session.physics.clear(false);
-                }
+                for (auto& actions : _nativeEquippedActions) actions.clear(false);
+                _secondaryEquipped.interrupt(false);
+                
             }
         };
         refreshEquippedWeaponHandlingSettings();
@@ -731,7 +722,7 @@ namespace rock
                         restoreHandCollisionAfterWeaponSupport(hknpMenu, false, true);
                         restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, false);
                         restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, true);
-                        if (_rightHand.isHolding() && !_carriedWeapon.owns(_rightHand.getHeldRef())) {
+                        if (_rightHand.isHolding()) {
                             auto* r = _rightHand.getHeldRef();
                             auto release = makeGrabReleaseContext(_rightHand, false);
                             release.reason = "blocking-menu-opened";
@@ -739,7 +730,7 @@ namespace rock
                             if (r)
                                 releaseObject(r, PhysicsObjectClaimOwner::RightHand);
                         }
-                        if (_leftHand.isHolding() && !_carriedWeapon.owns(_leftHand.getHeldRef())) {
+                        if (_leftHand.isHolding()) {
                             auto* r = _leftHand.getHeldRef();
                             auto release = makeGrabReleaseContext(_leftHand, true);
                             release.reason = "blocking-menu-opened";
@@ -1127,10 +1118,9 @@ namespace rock
         _bodyBoneColliders.flushPendingPhysicsDrive(world, timing);
         _weaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicWeaponCollision.flushPendingPhysicsDrive(world, timing);
-        for (auto& session : _carriedWeapon.sessions) {
-            session.physics.collision.flushPendingPhysicsDrive(world, timing);
-            session.physics.dynamic.flushPendingPhysicsDrive(world, timing);
-        }
+        _secondaryEquipped.collision.flushPendingPhysicsDrive(world,timing);
+        _secondaryEquipped.dynamic.flushPendingPhysicsDrive(world,timing);
+        
         _dynamicHandCollision.flushPendingPhysicsDrive(world, timing);
         if (performance_profiler::enabled()) {
             performance_profiler::observeValue(performance_profiler::ValueMetric::GeneratedHandBodies,
@@ -1175,8 +1165,7 @@ namespace rock
             world,
             completedSolveSequence,
             timing);
-        for (auto& session : _carriedWeapon.sessions)
-            session.physics.dynamic.samplePostSolve(world, completedSolveSequence, timing);
+        _secondaryEquipped.dynamic.samplePostSolve(world,completedSolveSequence,timing);
         _dynamicHandCollision.samplePostSolveDeviations(world, timing);
         const auto gameFrameIndex = _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
         debug::CapturePostSolveBodyPhases(
@@ -1189,7 +1178,7 @@ namespace rock
         logPalmClockSampleForHand("physics-after-solve", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         serviceRetiredGrabConstraintPayloads();
         _weaponCollision.serviceRetiredWeaponBodies(world);
-        for (auto& session : _carriedWeapon.sessions) session.physics.collision.serviceRetiredWeaponBodies(world);
+        _secondaryEquipped.collision.serviceRetiredWeaponBodies(world);
         // Neutralizes hand/body and grab-authority wrappers removed on the main
         // thread after the broadphase grace, while retaining their addresses for
         // native late readers. All generated body owners share this post-solve

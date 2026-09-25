@@ -426,13 +426,13 @@ namespace rock
         const char* tag = nullptr;
         switch (role) {
         case scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip:
-            tag = PRIMARY_GRIP_TAG;
+            tag = ownerTag(PRIMARY_GRIP_TAG);
             break;
         case scope_safe_hand_frame_math::HandAuthorityRole::SupportGrip:
-            tag = SUPPORT_GRIP_TAG;
+            tag = ownerTag(SUPPORT_GRIP_TAG);
             break;
         case scope_safe_hand_frame_math::HandAuthorityRole::PrimaryDetach:
-            tag = PRIMARY_DETACH_TAG;
+            tag = ownerTag(PRIMARY_DETACH_TAG);
             break;
         }
 

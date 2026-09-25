@@ -68,6 +68,9 @@ namespace rock::weapon_equip_transfer
         held_weapon_instant_transition::RequestReason transitionReason{
             held_weapon_instant_transition::RequestReason::SameHandTrigger
         };
+        // UINT32_MAX retains the item's ordinary authored slot. An explicit
+        // native hand index uses a validated slot and validates that record.
+        std::uint32_t nativeIndex{UINT32_MAX};
     };
 
     struct EquipResult
@@ -118,6 +121,7 @@ namespace rock::weapon_equip_transfer
         RE::NiPoint3 dropRot{};
         bool hasDropLoc{ false };
         bool hasDropRot{ false };
+        std::uint32_t nativeIndex{UINT32_MAX};
     };
 
     struct EquippedDropResult
@@ -155,10 +159,14 @@ namespace rock::weapon_equip_transfer
     [[nodiscard]] bool resolveInventoryWeaponStack(const InventorySelection& selection, std::uint32_t& stackIndex) noexcept;
     [[nodiscard]] bool inventoryWeaponCurrent(const InventorySelection& selection) noexcept;
     [[nodiscard]] EquipResult equipInventoryWeapon(const InventorySelection& selection) noexcept;
+    [[nodiscard]] EquipResult equipInventoryWeapon(const InventorySelection& selection, std::uint32_t nativeIndex) noexcept;
+    [[nodiscard]] InventorySelection captureEquippedInventoryWeapon(std::uint32_t nativeIndex) noexcept;
     [[nodiscard]] EquippedDropResult dropEquippedWeaponFromPlayer(const EquippedDropInput& input) noexcept;
     // Frame-thread only. Changes selection, never removes an inventory item.
     [[nodiscard]] bool replaceHolsteredWeaponWithUnarmed() noexcept;
     // Exact-current compensation after a held equip; never removes an item.
     [[nodiscard]] bool unequipExactCurrentWeapon(std::uint32_t formID, std::uintptr_t instanceData) noexcept;
+    [[nodiscard]] bool unequipExactIndexedWeapon(std::uint32_t nativeIndex,
+        std::uint32_t formID, std::uintptr_t instanceData) noexcept;
     [[nodiscard]] bool canRecoverHeldEquip() noexcept;
 }

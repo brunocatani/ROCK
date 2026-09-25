@@ -254,9 +254,12 @@ namespace rock
     {
         performance_profiler::ScopedTimer equippedFrameTimer(performance_profiler::Scope::EquippedWeaponInteraction);
         const auto& runtime = runtime_state::currentFrame();
-        const bool leftHandAvailableForAcquisition = force_grab_policy::availableForEquippedGrip(
+        const auto secondaryOccupancy = _secondaryEquipped.grip.getGripOccupancy();
+        const bool secondaryLeft = secondaryOccupancy.left.carriesWeapon() || (_secondaryEquipped.pending() && _secondaryEquipped.pendingHandIsLeft());
+        const bool secondaryRight = secondaryOccupancy.right.carriesWeapon() || (_secondaryEquipped.pending() && !_secondaryEquipped.pendingHandIsLeft());
+        const bool leftHandAvailableForAcquisition = !secondaryLeft && force_grab_policy::availableForEquippedGrip(
             forceGrabHandBlockerMask(_leftHand, true, frame.left.disabled, true));
-        const bool rightHandAvailableForAcquisition = force_grab_policy::availableForEquippedGrip(
+        const bool rightHandAvailableForAcquisition = !secondaryRight && force_grab_policy::availableForEquippedGrip(
             forceGrabHandBlockerMask(_rightHand, false, frame.right.disabled, true));
         if (_equipped.transition.heldTransfer().phase == held_weapon_transfer::Phase::Recovering && _twoHandedGrip.isManualOwnershipActive()) {
             _twoHandedGrip.reset();
@@ -810,7 +813,7 @@ namespace rock
                 leftWeaponDecision,
                 leftWeaponContactSource);
 
-            const bool leftHandHoldingObject = _leftHand.isHolding();
+            const bool leftHandHoldingObject = _leftHand.isHolding() || secondaryLeft;
             auto supportAuthorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
             bool supportAuthorityProviderOverride = false;
             // The grab-mode override follows the SUPPORT-ROLE hand's provider
@@ -1290,7 +1293,7 @@ namespace rock
                 .leftGripHeld = !pairedGripPending && leftGripHeld,
                 .rightGripHeld = !pairedGripPending && rightGripHeld,
                 .leftHandHoldingObject = leftHandHoldingObject,
-                .rightHandHoldingObject = _rightHand.isHolding(),
+                .rightHandHoldingObject = _rightHand.isHolding() || secondaryRight,
                 .leftHandAvailableForAcquisition = leftHandAvailableForAcquisition,
                 .rightHandAvailableForAcquisition = rightHandAvailableForAcquisition,
                 .leftReattachEligible = leftReattachEligible,

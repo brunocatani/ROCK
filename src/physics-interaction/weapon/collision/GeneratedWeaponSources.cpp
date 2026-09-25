@@ -510,16 +510,41 @@ namespace rock
     }
 
 
+    void WeaponCollision::bindEquippedSource(std::uint32_t nativeIndex)
+    {
+        if (_nativeSourceIndex == nativeIndex && !_physicalReference) return;
+        _physicalReference.reset();
+        _physicalData.reset();
+        _nativeSourceIndex = nativeIndex;
+        _identity.classificationValid = false;
+    }
+
     void WeaponCollision::bindPhysicalSource(RE::TESObjectREFR* reference, RE::EquippedWeaponData* data)
     {
         if (_physicalReference.get() == reference && _physicalData.get() == data) return;
         _physicalReference.reset(reference);
         _physicalData.reset(data);
+        _nativeSourceIndex = UINT32_MAX;
         _identity.classificationValid = false;
     }
 
     WeaponCollisionSource WeaponCollision::weaponSource(bool includeMods) const
     {
+        if (_nativeSourceIndex != UINT32_MAX) {
+            // The frame thread resolves the persistent native record on every
+            // read. No private/TLS item can stand in for an equipped source.
+            auto* player = f4vr::getPlayer();
+            auto* process = player ? player->currentProcess : nullptr;
+            auto* middle = process ? process->middleHigh : nullptr;
+            if (!middle || middle->equippedItems.size() > 16) return {};
+            for (const auto& item : middle->equippedItems) {
+                if (item.equipIndex.index != _nativeSourceIndex) continue;
+                if (!item.item.object || item.item.object->formType != RE::ENUM_FORM_ID::kWEAP || !item.data) return {};
+                return {item.item.object, item.item.instanceData.get(), static_cast<RE::EquippedWeaponData*>(item.data.get()),
+                    includeMods ? findEquippedWeaponObjectInstanceExtra(player, item.item.object, item.item.instanceData.get()) : nullptr};
+            }
+            return {};
+        }
         if (_physicalReference) {
             auto* list = _physicalReference->extraList.get();
             const auto* instance = list ? list->GetByType<RE::ExtraInstanceData>() : nullptr;
@@ -588,7 +613,7 @@ namespace rock
         std::uint64_t visualKey = 0;
         if (weaponNode) {
             visualKey = weapon_visual_composition_policy::kWeaponVisualCompositionOffset;
-            const auto candidates = makeGeneratedWeaponMeshRootCandidates(weaponNode, !_physicalReference);
+            const auto candidates = makeGeneratedWeaponMeshRootCandidates(weaponNode, !_physicalReference && _nativeSourceIndex == UINT32_MAX);
             for (const auto& candidate : candidates) {
                 if (!candidate.root) {
                     continue;
@@ -635,7 +660,7 @@ namespace rock
             co_return;
         }
 
-        const auto candidates = makeGeneratedWeaponMeshRootCandidates(weaponNode, !_physicalReference);
+        const auto candidates = makeGeneratedWeaponMeshRootCandidates(weaponNode, !_physicalReference && _nativeSourceIndex == UINT32_MAX);
         std::vector<RE::NiPointer<RE::NiAVObject>> candidateOwners;
         candidateOwners.reserve(candidates.size());
         for (const auto& candidate : candidates) { candidateOwners.emplace_back(candidate.root); }
@@ -748,7 +773,7 @@ namespace rock
             omodByAttachPointFormId,
             equippedWeaponKey,
             equippedWeaponKey,
-            makeWeaponEmitterRootSetKey(weaponNode, !_physicalReference), !_physicalReference);
+            makeWeaponEmitterRootSetKey(weaponNode, !_physicalReference && _nativeSourceIndex == UINT32_MAX), !_physicalReference && _nativeSourceIndex == UINT32_MAX);
         for (auto& source : outSources) {
             std::uint32_t sourceOmodFormId = 0;
             if (source.semantic.attachPointFormId != 0) {

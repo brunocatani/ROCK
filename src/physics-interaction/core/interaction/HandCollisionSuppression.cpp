@@ -639,9 +639,8 @@ namespace rock
             return false;
         }
 
-        for (const auto& session : _carriedWeapon.sessions) {
-            if (session.physics.collision.isWeaponBodyIdAtomic(bodyId) || session.physics.dynamic.isProxyBodyIdAtomic(bodyId)) return false;
-        }
+        
+        if (_secondaryEquipped.collision.isWeaponBodyIdAtomic(bodyId) || _secondaryEquipped.dynamic.isProxyBodyIdAtomic(bodyId)) return false;
         if (bodyId == _rightHand.getCollisionBodyId().value ||
             bodyId == _leftHand.getCollisionBodyId().value ||
             _rightHand.isHandColliderBodyId(bodyId) ||

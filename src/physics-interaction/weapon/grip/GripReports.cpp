@@ -220,7 +220,7 @@ namespace rock
         const bool releasePoseReady = singleCarrier && sourceCarries && weaponNode &&
             (allCarriersReleased && _session.state == TwoHandedState::Gripping ? true : _session.state == TwoHandedState::PartCarry ?
                 solvePartCarryWeaponAuthority(_session.weaponNode, dt) :
-                (!usesLeftFiringCarry() || solveLeftFiringWeaponCarry(_session.weaponNode, dt)));
+                (!usesManagedFiringCarry() || solveManagedFiringWeaponCarry(_session.weaponNode, dt)));
         if (sourceHand == equipped_weapon_drop_policy::SourceHand::None ||
             !releasePoseReady ||
             !captureDropGripPose(isLeft, pose)) {

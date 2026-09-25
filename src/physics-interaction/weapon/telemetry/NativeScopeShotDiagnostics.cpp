@@ -1,6 +1,6 @@
 #include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
 #include "physics-interaction/weapon/telemetry/NativeScopeShotPolicy.h"
-#include "physics-interaction/weapon/CarriedWeaponRuntime.h"
+#include "physics-interaction/weapon/NativeEquippedActions.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/debug/DebugBodyOverlay.h"
 #include "physics-interaction/debug/DebugWorldTextGeometry.h"
@@ -184,7 +184,7 @@ namespace rock::native_scope_shot_diagnostics
         std::uint64_t setupOrigin(void* data)
         {
             const auto result = originalSetOrigin(data);
-            if ((result & 0xFF) && !CarriedWeaponRuntime::applyShotOrigin(data)) return result & ~std::uint64_t{0xFF};
+            if ((result & 0xFF) && !native_equipped_actions::applyShotOrigin(data)) return result & ~std::uint64_t{0xFF};
             return result;
         }
 
@@ -276,11 +276,9 @@ namespace rock::native_scope_shot_diagnostics
             // These are the final per-projectile angles, after the native
             // cone-of-fire loop, immediately before Launch consumes them.
             // Never alter the launch data, native result or firing behavior.
-            CarriedWeaponRuntime::observeShotLaunchData(data);
             auto* result = originalLaunch(output, data);
             std::uint32_t carriedHandle{};
-            if (result && native_memory::tryReadValue(result, carriedHandle))
-                CarriedWeaponRuntime::observeShotLaunch(data, carriedHandle);
+            if (result && native_memory::tryReadValue(result, carriedHandle) && carriedHandle) native_equipped_actions::observeShotLaunch(data, carriedHandle);
             if (capture) {
                 shot.launchReturned = result && native_memory::tryReadValue(result, shot.handle);
                 shot.sequence = shotSequence.fetch_add(1, std::memory_order_relaxed) + 1;

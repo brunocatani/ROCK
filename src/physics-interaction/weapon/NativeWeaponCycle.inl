@@ -286,6 +286,31 @@ namespace rock::native_weapon_cycle
         if (_state) { try { _state->fail("exception"); } catch (...) {} }
     }
 
+    void Session::updateEquipped(RE::TESObjectWEAP* weapon, RE::TBO_InstanceData* instance,
+        RE::NiAVObject* root, std::uint64_t content, float deltaSeconds) noexcept try
+    {
+        if (!root || !weapon) { clear(); return; }
+        if (_state && (_state->root.get() != root || _state->backend.job.weapon != weapon ||
+                _state->backend.job.instanceData.get() != instance)) clear();
+        reap();
+        if (_state && _state->retiring) return;
+        if (!_state) {
+            for (const auto& retired : State::retired()) if (retired) return;
+            _state = std::make_unique<State>();
+            _state->root.reset(root);
+            if (!claimOrValidateThread(_state->backend) || !resolveNativeFunctions(_state->backend)) {
+                _state->fail("native-contract"); return;
+            }
+            startJob(_state->backend, describeEquippedCandidate(weapon, root, instance, content));
+        }
+        if (_state->failed) return;
+        if (!_state->ready) _state->load();
+        if (_state->ready) _state->apply(deltaSeconds);
+    }
+    catch (...) {
+        if (_state) { try { _state->fail("equipped-exception"); } catch (...) {} }
+    }
+
     void Session::fire(float shotSeconds) noexcept
     {
         if (!_state || !_state->ready || _state->failed || _state->retiring) return;

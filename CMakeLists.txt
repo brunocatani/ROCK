@@ -677,6 +677,18 @@ if(BUILD_ROCK_TESTS)
   target_link_libraries(ROCKNativeScopeAdmissionTests PRIVATE CommonLibF4::CommonLibF4)
   add_rock_test(ROCKNativeScopeAdmissionTests)
 
+  add_executable(ROCKNativeEquippedModelSlotTests "${ROOT_DIR}/tests/NativeEquippedModelSlotTests.cpp")
+  target_compile_features(ROCKNativeEquippedModelSlotTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKNativeEquippedModelSlotTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKNativeEquippedModelSlotTests PRIVATE CommonLibF4::CommonLibF4)
+  add_rock_test(ROCKNativeEquippedModelSlotTests)
+
+  add_executable(ROCKFrikApiNegotiationTests "${ROOT_DIR}/tests/FrikApiNegotiationTests.cpp")
+  target_compile_features(ROCKFrikApiNegotiationTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKFrikApiNegotiationTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKFrikApiNegotiationTests PRIVATE CommonLibF4::CommonLibF4)
+  add_rock_test(ROCKFrikApiNegotiationTests)
+
   add_executable(ROCKNativeScopeShotPolicyTests "${ROOT_DIR}/tests/NativeScopeShotPolicyTests.cpp")
   target_compile_features(ROCKNativeScopeShotPolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKNativeScopeShotPolicyTests PRIVATE ${SOURCE_DIR})

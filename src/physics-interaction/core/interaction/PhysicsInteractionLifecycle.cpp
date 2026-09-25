@@ -28,7 +28,7 @@ namespace rock
         _bodyBoneColliders.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _dynamicHandCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _weaponCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
-        for (auto& session : _carriedWeapon.sessions) session.physics.setPhysicsCallbackGate(generatedBodyCallbackGate);
+        _secondaryEquipped.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _dynamicWeaponCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _twoHandedGrip.setWeaponVisualIntentObserver(
             &_dynamicWeaponCollision,
@@ -280,7 +280,7 @@ namespace rock
             }
         };
         addWeaponEntries(_weaponCollision);
-        for (const auto& session : _carriedWeapon.sessions) addWeaponEntries(session.physics.collision);
+        addWeaponEntries(_secondaryEquipped.collision);
 
         const std::uint32_t bodyCount = (std::min)(_bodyBoneColliders.getBodyCount(), static_cast<std::uint32_t>(kBodyBoneColliderBodyCount));
         for (std::uint32_t i = 0; i < bodyCount; ++i) {
@@ -609,9 +609,10 @@ namespace rock
             _lifecycle.cachedHknpWorld &&
             currentHknp == _lifecycle.cachedHknpWorld;
 
-        _carriedWeapon.shutdown(worldValid);
-        _physicalWeaponEntry = {};
-        _physicalDualEstablished = false;
+        for (auto& actions : _nativeEquippedActions) actions.clear(worldValid);
+        _secondaryEquipped.clear(worldValid);
+        _nativeEquippedAdmission.abandonAfterGameLoad();
+        _nativeEquippedPairActive = false;
 
         if (worldValid) {
             auto* hknp = getHknpWorld(_lifecycle.cachedBhkWorld);
@@ -677,7 +678,6 @@ namespace rock
         _twoHandedGrip.reset();
         _equipped.transition.pendingGrip() = {};
         clearProviderInventoryEquip();
-        _nativeAkimboEquip = {};
         input_remap_runtime::setCarriedWeaponInputOwner(false, 0, 0);
         input_remap_runtime::setCarriedWeaponInputOwner(true, 0, 0);
         clearPendingForceGrabCommits();

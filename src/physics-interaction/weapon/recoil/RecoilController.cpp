@@ -10,7 +10,7 @@ namespace rock
             !_session.weaponNode ||
             _session.weaponGenerationKey == 0 ||
             _session.equippedWeaponOwnershipKey == 0 ||
-            (usesLeftFiringCarry() &&
+            (usesManagedFiringCarry() &&
                 (!_leftCarry.weaponNodeOwnershipBlockEngaged ||
                     !isManualOwnershipActive()))) {
             return false;
@@ -115,7 +115,7 @@ namespace rock
         const bool ownedCarry = directRight || (self->isManualOwnershipActive() &&
             (context.fullTwoHanded ||
                 (self->_session.state == TwoHandedState::Gripping && self->_firing.transferredPrimaryGrip.valid()) ||
-                (self->usesLeftFiringCarry() &&
+                (self->usesManagedFiringCarry() &&
                 self->_leftCarry.weaponNodeOwnershipBlockEngaged)));
         // Like armor, the laser profile also controls FRIK's native hand path
         // when ROCK does not currently own a weapon presentation target.
@@ -198,7 +198,7 @@ namespace rock
         const bool managedCarry = isManualOwnershipActive() &&
             (context.fullTwoHanded ||
                 (_session.state == TwoHandedState::Gripping && _firing.transferredPrimaryGrip.valid()) ||
-                (usesLeftFiringCarry() && _leftCarry.weaponNodeOwnershipBlockEngaged));
+                (usesManagedFiringCarry() && _leftCarry.weaponNodeOwnershipBlockEngaged));
         if (!directRight && !managedCarry) {
             _recoil.ticket.invalidate();
             return false;
@@ -214,7 +214,7 @@ namespace rock
     {
         return g_rockConfig.rockImmersiveRecoil &&
             frik_hand_world_authority::hasCalibratedRawHandFrame(false) &&
-            !usesLeftFiringCarry() &&
+            !usesManagedFiringCarry() &&
             weapon_recoil_policy::canPresentRightRecoilForGrip(
                 isGripping(), hasVisualOnlySupportRecoilAssist(), _firing.transferredPrimaryGrip.valid()) &&
             !_firing.rightHandHoldingObjectForPose &&
@@ -236,7 +236,7 @@ namespace rock
         if (!_recoil.rightHandClaimActive) {
             return;
         }
-        if (frik_visual_authority::clearHandWorld(ONE_HAND_RECOIL_TAG,
+        if (frik_visual_authority::clearHandWorld(ownerTag(ONE_HAND_RECOIL_TAG),
                 frik_visual_authority::Hand::Right)) {
             _recoil.rightHandClaimActive = false;
         } else {
@@ -268,7 +268,7 @@ namespace rock
         // collision. FRIK consumes it with no additional kick. The current
         // controller-derived base never contains the preceding frame's recoil.
         if (scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(_scope.menuOpenThisFrame)) {
-            if (!frik_visual_authority::publishHandWorld(ONE_HAND_RECOIL_TAG,
+            if (!frik_visual_authority::publishHandWorld(ownerTag(ONE_HAND_RECOIL_TAG),
                     frik_visual_authority::Hand::Right, handTarget, GRIP_HAND_POSE_PRIORITY)) {
                 ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Weapon recoil: right firing-hand publication failed");
                 return false;

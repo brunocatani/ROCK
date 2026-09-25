@@ -9,6 +9,38 @@
 
 namespace rock
 {
+    bool TwoHandedGrip::beginSecondaryEquippedPair(RE::NiNode* node, std::uint64_t generation,
+        std::uint64_t ownership, const weapon_grip_transfer::Pair& grips, const RE::NiTransform& world, const char** failure)
+    {
+        RE::NiTransform physical{}, driver{};
+        if (!_secondaryNativeNode || !grips.valid() || !weapon_grip_transfer::validFrame(world) ||
+            !tryResolvePhysicalHandFrame(grips.firingHandIsLeft,physical,driver)) return false;
+        _secondaryWeaponInPhysicalHand = transform_math::composeTransforms(transform_math::invertTransform(physical),world);
+        _secondaryPhysicalHandValid = true;
+        if (beginTransferredTwoHandGrip(node,generation,ownership,grips,failure)) return true;
+        _secondaryPhysicalHandValid = false;
+        return false;
+    }
+
+    bool TwoHandedGrip::beginSecondaryEquippedGrip(RE::NiNode* weaponNode, std::uint64_t generation,
+        std::uint64_t ownership, bool isLeft, const weapon_grip_transfer::HandGrip& grip,
+        const RE::NiTransform& weaponWorld, const char** failure)
+    {
+        RE::NiTransform physicalHand{}, driver{};
+        if (!_secondaryNativeNode || !grip.valid() || !weapon_grip_transfer::validFrame(weaponWorld) ||
+            !tryResolvePhysicalHandFrame(isLeft, physicalHand, driver)) return false;
+        _secondaryWeaponInPhysicalHand = transform_math::composeTransforms(
+            transform_math::invertTransform(physicalHand), weaponWorld);
+        _secondaryPhysicalHandValid = true;
+        if (!beginPrimaryOnlyGrip(weaponNode, generation, ownership, isLeft,
+                &grip.handWeaponLocal, &grip.gripWeaponLocal, true, false, failure)) {
+            _secondaryPhysicalHandValid = false;
+            return false;
+        }
+        _firing.transferredPrimaryGrip = grip;
+        return true;
+    }
+
     bool TwoHandedGrip::canBeginPrimaryOnlyGripForHand(const bool isLeft)
     {
         return !isLeft || leftFiringInfrastructureAvailable();
@@ -140,7 +172,7 @@ namespace rock
 
         const bool activeLeftCaptureCurrent =
             isManualOwnershipActive() &&
-            usesLeftFiringCarry() &&
+            usesManagedFiringCarry() &&
             _session.weaponNode == weaponNode &&
             currentEquippedWeaponOwnershipKey != 0 &&
             _session.equippedWeaponOwnershipKey ==
@@ -200,7 +232,13 @@ namespace rock
 
         RE::NiTransform resolvedLeftHandWeaponLocal{};
         RE::NiPoint3 resolvedLeftFiringGripWeaponLocal{};
-        if (firingHandIsLeft) {
+        if (_secondaryNativeNode) {
+            if (!frik_visual_authority::canBlockSecondaryWeaponNodeOwnership() || !_secondaryPhysicalHandValid ||
+                !capturedFiringHandWeaponLocal || !capturedFiringGripWeaponLocal ||
+                !weapon_grip_transfer::validFrame(*capturedFiringHandWeaponLocal)) return reject("secondary-equipped-binding-unavailable");
+            resolvedLeftHandWeaponLocal = *capturedFiringHandWeaponLocal;
+            resolvedLeftFiringGripWeaponLocal = *capturedFiringGripWeaponLocal;
+        } else if (firingHandIsLeft) {
             const char* canonicalFailureReason = nullptr;
             const bool currentCanonicalResolved =
                 tryBuildCurrentLeftFiringGripCapture(
@@ -251,7 +289,7 @@ namespace rock
         }
 
         setFiringHand(firingHandIsLeft, "primary-grip-start-hand");
-        if (firingHandIsLeft) {
+        if (firingHandIsLeft || _secondaryNativeNode) {
             _firing.primaryHandWeaponLocal = resolvedLeftHandWeaponLocal;
             _firing.hasPrimaryHandWeaponLocal = true;
         }
@@ -267,7 +305,7 @@ namespace rock
             restoreFrikPrimaryWeaponPose();
             return reject("primary-only-transition-rejected");
         }
-        if (firingHandIsLeft) {
+        if (firingHandIsLeft || _secondaryNativeNode) {
             // Install the normalized authored/transfer grip after the state
             // transition's provisional live sample. The first right-native
             // frame must not redefine the selected left firing seat.
@@ -475,7 +513,7 @@ namespace rock
 
         if (manualDecision.cleared) {
             beginHandVisualReturn(isFiringHandLeft(), "primary-only-released");
-            if (usesLeftFiringCarry()) {
+            if (usesManagedFiringCarry()) {
                 beginWeaponVisualReturn("left-primary-only-released");
             }
             transitionToInactive(false);
@@ -491,7 +529,7 @@ namespace rock
         // Left firing hand: mirror the native right weapon aim into the left
         // wand, translate its authored grip point onto the physical palm, and
         // publish the authored left wrist/fingers as separate presentation.
-        (void)solveLeftFiringWeaponCarry(weaponNode, dt);
+        (void)solveManagedFiringWeaponCarry(weaponNode, dt);
     }
 
     bool TwoHandedGrip::firingGripContactMatchesCapturedGrip(
@@ -975,8 +1013,8 @@ namespace rock
             clearAuthoredPrimaryFiringGripFingerPose();
         }
 
-        if (!_firing.authoredFingerPoseBlockEngaged) {
-            if (!frik_visual_authority::blockPrimaryHandWeaponPose(AUTHORED_PRIMARY_POSE_BLOCK_TAG, true)) {
+        if (!_secondaryNativeNode && !_firing.authoredFingerPoseBlockEngaged) {
+            if (!frik_visual_authority::blockPrimaryHandWeaponPose(ownerTag(AUTHORED_PRIMARY_POSE_BLOCK_TAG), true)) {
                 ROCK_LOG_SAMPLE_WARN(Animation, 2000,
                     "Authored finger publication rejected stage=pose-block hand={} ownership={:016X} capture={}",
                     isLeft ? "left" : "right", _firing.rightCanonicalOwnershipKey, _firing.rightCanonicalCaptureSequence);
@@ -989,7 +1027,7 @@ namespace rock
         _firing.publishedFingerPoseIsLeft = isLeft;
         const auto fingerPose = transferred ? frik_visual_authority::makeHandPoseDataFromJointValues(
             _firing.transferredPrimaryGrip.fingerValues) : frik_visual_authority::HandPoseData{};
-        if (!frik_visual_authority::setHandPoseCustom(PRIMARY_GRIP_TAG, hand, fingerPose, GRIP_HAND_POSE_PRIORITY)) {
+        if (!frik_visual_authority::setHandPoseCustom(ownerTag(PRIMARY_GRIP_TAG), hand, fingerPose, GRIP_HAND_POSE_PRIORITY)) {
             ROCK_LOG_SAMPLE_WARN(Animation, 2000,
                 "Authored finger publication rejected stage=custom-pose hand={} ownership={:016X} capture={}",
                 isLeft ? "left" : "right", _firing.rightCanonicalOwnershipKey, _firing.rightCanonicalCaptureSequence);
@@ -1002,7 +1040,7 @@ namespace rock
         for (std::size_t index = 0; index < transforms.size(); ++index) {
             overrideData.localTransforms[index] = transforms[index];
         }
-        if (mask && !frik_visual_authority::setHandPoseCustomLocalTransforms(PRIMARY_GRIP_TAG, hand, &overrideData, GRIP_HAND_POSE_PRIORITY)) {
+        if (mask && !frik_visual_authority::setHandPoseCustomLocalTransforms(ownerTag(PRIMARY_GRIP_TAG), hand, &overrideData, GRIP_HAND_POSE_PRIORITY)) {
             ROCK_LOG_SAMPLE_WARN(Animation, 2000,
                 "Authored finger publication rejected stage=finger-locals hand={} ownership={:016X} capture={} mask=0x{:04X}",
                 isLeft ? "left" : "right", _firing.rightCanonicalOwnershipKey, _firing.rightCanonicalCaptureSequence, mask);
@@ -1018,10 +1056,10 @@ namespace rock
     void TwoHandedGrip::clearAuthoredPrimaryFiringGripFingerPose()
     {
         if (_firing.authoredFingerPosePublished || _firing.authoredFingerPoseBlockEngaged) {
-            (void)frik_visual_authority::clearHandPose(PRIMARY_GRIP_TAG, handFromBool(_firing.publishedFingerPoseIsLeft));
+            (void)frik_visual_authority::clearHandPose(ownerTag(PRIMARY_GRIP_TAG), handFromBool(_firing.publishedFingerPoseIsLeft));
         }
         if (_firing.authoredFingerPoseBlockEngaged) {
-            (void)frik_visual_authority::blockPrimaryHandWeaponPose(AUTHORED_PRIMARY_POSE_BLOCK_TAG, false);
+            (void)frik_visual_authority::blockPrimaryHandWeaponPose(ownerTag(AUTHORED_PRIMARY_POSE_BLOCK_TAG), false);
         }
         _firing.publishedFingerPoseIsLeft = false;
         _firing.authoredFingerPosePublished = false;
@@ -1089,7 +1127,7 @@ namespace rock
 
         if (!isUsableHandAuthorityTransform(solvedFiringHandWorld) ||
             !frik_visual_authority::publishHandWorld(
-                PRIMARY_GRIP_TAG,
+                ownerTag(PRIMARY_GRIP_TAG),
                 frik_visual_authority::Hand::Right,
                 solvedFiringHandWorld,
                 GRIP_HAND_POSE_PRIORITY)) {
@@ -1226,7 +1264,7 @@ namespace rock
     void TwoHandedGrip::rememberRightFiringHandCanonicalFrame(
         const std::uint64_t weaponInstanceContentKey)
     {
-        if (usesLeftFiringCarry() || !_session.weaponNode ||
+        if (usesManagedFiringCarry() || !_session.weaponNode ||
             !_firing.hasPrimaryHandWeaponLocal || _session.weaponGenerationKey == 0) {
             return;
         }
@@ -1252,7 +1290,7 @@ namespace rock
     bool TwoHandedGrip::canCaptureRightNativeWeaponAimFrame(const bool cleanIntentAvailable) const
     {
         if (!equipped_weapon_manual_ownership_policy::canCaptureNativeAim(
-                !usesLeftFiringCarry() && !_leftCarry.weaponNodeOwnershipBlockEngaged,
+                !usesManagedFiringCarry() && !_leftCarry.weaponNodeOwnershipBlockEngaged,
                 _visuals.returningWeapon.localTransition.active,
                 scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(
                     _scope.menuOpenThisFrame,
@@ -2052,8 +2090,8 @@ namespace rock
         _firing.primaryGripLocal = newFiringGripWeaponLocal;
         _firing.hasPrimaryHandWeaponLocal = true;
         rememberRightFiringHandCanonicalFrame(_firing.rightCanonicalInstanceContentKey);
-        if (usesLeftFiringCarry() &&
-            !solveLeftFiringWeaponCarry(weaponNode, dt)) {
+        if (usesManagedFiringCarry() &&
+            !solveManagedFiringWeaponCarry(weaponNode, dt)) {
             return Result::Promoted;
         }
         _session.firingGripSequence = ++_session.gripCaptureSequence;

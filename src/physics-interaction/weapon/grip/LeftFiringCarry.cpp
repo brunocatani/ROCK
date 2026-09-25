@@ -11,14 +11,14 @@ namespace rock
     {
         if (!weaponNode || weaponNode != _session.weaponNode ||
             (_session.state != TwoHandedState::Gripping && _session.state != TwoHandedState::PrimaryOnly) ||
-            !usesLeftFiringCarry() || !_firing.hasPrimaryHandWeaponLocal) {
+            !usesManagedFiringCarry() || !_firing.hasPrimaryHandWeaponLocal) {
             return false;
         }
 
         RE::NiTransform physicalHandWorld{};
         RE::NiTransform presentedHandWorld{};
         RE::NiTransform feedForwardWeaponWorld{};
-        if (!tryResolveLeftPositionOnlyCarryFrames(
+        if (!tryResolveManagedCarryFrames(
                 weaponNode,
                 physicalHandWorld,
                 presentedHandWorld,
@@ -41,7 +41,7 @@ namespace rock
             false);
     }
 
-    bool TwoHandedGrip::solveLeftFiringWeaponCarry(RE::NiNode* weaponNode, const float dt)
+    bool TwoHandedGrip::solveManagedFiringWeaponCarry(RE::NiNode* weaponNode, const float dt)
     {
         if (!weaponNode || !_firing.hasPrimaryHandWeaponLocal) {
             _hasSolvedWeaponTransform = false;
@@ -54,7 +54,7 @@ namespace rock
         RE::NiTransform presentedHandWorld{};
         RE::NiTransform solvedWeaponWorld{};
         RE::NiTransform dampedAimCarrierWorld{};
-        if (!tryResolveLeftPositionOnlyCarryFrames(
+        if (!tryResolveManagedCarryFrames(
                 weaponNode,
                 physicalHandWorld,
                 presentedHandWorld,
@@ -79,11 +79,11 @@ namespace rock
         if (scope_safe_hand_frame_math::
                 shouldPublishLockedHandVisualAuthority(
                     _scope.menuOpenThisFrame)) {
-            (void)publishAuthoredPrimaryFiringGripFingerPose(true);
+            (void)publishAuthoredPrimaryFiringGripFingerPose(isFiringHandLeft());
             if (!frik_visual_authority::
                     publishHandWorld(
-                        PRIMARY_GRIP_TAG,
-                        frik_visual_authority::Hand::Left,
+                        ownerTag(PRIMARY_GRIP_TAG),
+                        handFromBool(isFiringHandLeft()),
                         presentedHandWorld,
                         GRIP_HAND_POSE_PRIORITY)) {
                 _hasSolvedWeaponTransform = false;
@@ -93,16 +93,17 @@ namespace rock
                 transitionToInactive(false);
                 return false;
             }
-            _firing.leftHandWorldActive = true;
+            if (isFiringHandLeft()) _firing.leftHandWorldActive = true;
+            else { _firing.authoredHandWorldActive = true; _firing.authoredHandWorldRefreshed = true; }
             recordScopeHandAuthorityPublication(
                 scope_safe_hand_frame_math::HandAuthorityRole::
                     PrimaryGrip,
-                true);
+                isFiringHandLeft());
             clearHandVisualReturn(
-                true,
+                isFiringHandLeft(),
                 "left-position-only-hand-acquired",
                 false);
-            recordPublishedHandWorld(true, presentedHandWorld);
+            recordPublishedHandWorld(isFiringHandLeft(), presentedHandWorld);
         }
 
         // The weapon is parented under LArm_Hand during left firing. Publish
@@ -130,7 +131,7 @@ namespace rock
         outHandWorld = {};
         // Carry states only: on drop/holster the session will not resume,
         // so the return keeps its physical endpoint.
-        if (usesLeftFiringCarry() ||
+        if (usesManagedFiringCarry() ||
             _firing.rightCanonicalSource !=
                 RightFiringCanonicalSource::AuthoredAnimation ||
             (_session.state != TwoHandedState::PrimaryOnly &&
@@ -155,7 +156,7 @@ namespace rock
         const RE::NiTransform& physicalLeftHandWorld)
     {
         if (!weaponNode || weaponNode != _session.weaponNode ||
-            !usesLeftFiringCarry() ||
+            !usesManagedFiringCarry() ||
             _session.equippedWeaponOwnershipKey == 0 ||
             !isInvertibleTransform(leftWandWorld) ||
             !isUsableHandAuthorityTransform(physicalLeftHandWorld)) {
@@ -207,7 +208,7 @@ namespace rock
                    _firing.leftDampedFollowFrame.handInWandOrientation);
     }
 
-    bool TwoHandedGrip::tryResolveLeftPositionOnlyCarryFrames(
+    bool TwoHandedGrip::tryResolveManagedCarryFrames(
         RE::NiNode* weaponNode,
         RE::NiTransform& outPhysicalHandWorld,
         RE::NiTransform& outPresentedHandWorld,
@@ -221,8 +222,20 @@ namespace rock
         if (outDampedAimCarrierWorld) {
             *outDampedAimCarrierWorld = {};
         }
+        if (_secondaryNativeNode) {
+            RE::NiTransform driver{};
+            if (!weaponNode || weaponNode != _session.weaponNode || !_secondaryPhysicalHandValid ||
+                !_firing.hasPrimaryHandWeaponLocal ||
+                !tryResolvePhysicalHandFrame(isFiringHandLeft(), outPhysicalHandWorld, driver)) return false;
+            // WeaponOffset contains native animation and recoil. It is only a
+            // tracking witness here; the isolated physical hand drives carry.
+            outWeaponWorld = transform_math::composeTransforms(outPhysicalHandWorld, _secondaryWeaponInPhysicalHand);
+            outPresentedHandWorld = transform_math::composeTransforms(outWeaponWorld, _firing.primaryHandWeaponLocal);
+            if (outDampedAimCarrierWorld) *outDampedAimCarrierWorld = outPhysicalHandWorld;
+            return weapon_grip_transfer::validFrame(outWeaponWorld) && isUsableHandAuthorityTransform(outPresentedHandWorld);
+        }
         if (!weaponNode || weaponNode != _session.weaponNode ||
-            !usesLeftFiringCarry() || !_firing.hasPrimaryHandWeaponLocal ||
+            !usesManagedFiringCarry() || !_firing.hasPrimaryHandWeaponLocal ||
             !hasRightNativeWeaponAimFrame(
                 weaponNode,
                 _session.weaponGenerationKey,
@@ -380,7 +393,7 @@ namespace rock
         auto& state = _leftCarry.supportReleaseReturn;
         state.clear();
         if (!hand_visual_lerp_math::kEquippedWeaponReturnEnabled ||
-            !usesLeftFiringCarry() ||
+            !usesManagedFiringCarry() ||
             !_visuals.hasLastRenderedWeaponWorld ||
             !isFiniteTransform(_visuals.lastRenderedWeaponWorld)) {
             return;
@@ -498,7 +511,7 @@ namespace rock
 
     void TwoHandedGrip::syncFiringHandWeaponNodeOwnership(RE::NiNode* weaponNode)
     {
-        const bool wantLeftFiringCarry = usesLeftFiringCarry() &&
+        const bool wantLeftFiringCarry = usesManagedFiringCarry() &&
             (_session.state == TwoHandedState::Gripping || _session.state == TwoHandedState::PrimaryOnly);
 
         if (!wantLeftFiringCarry) {
@@ -507,7 +520,7 @@ namespace rock
         }
 
         if (!_leftCarry.weaponNodeOwnershipBlockEngaged) {
-            if (!frik_visual_authority::blockPrimaryWeaponNodeOwnership(WEAPON_NODE_OWNERSHIP_TAG, true)) {
+            if (!blockOwnedWeaponNode(ownerTag(WEAPON_NODE_OWNERSHIP_TAG), true)) {
                 // Fail closed: without the FRIK block the weapon node would
                 // fight two per-frame owners.
                 ROCK_LOG_WARN(Weapon, "TwoHandedGrip: left-firing carry aborted because the FRIK weapon-node ownership block is unavailable");
@@ -528,8 +541,8 @@ namespace rock
          * hand. FRIK restores the game's setting when the request clears or
          * the skeleton rebuilds.
          */
-        if (!_leftCarry.weaponNodeReparented) {
-            if (!frik_visual_authority::setWeaponNodeParentHand(WEAPON_NODE_OWNERSHIP_TAG, frik_visual_authority::Hand::Left)) {
+        if (!_secondaryNativeNode && !_leftCarry.weaponNodeReparented) {
+            if (!frik_visual_authority::setWeaponNodeParentHand(ownerTag(WEAPON_NODE_OWNERSHIP_TAG), frik_visual_authority::Hand::Left)) {
                 ROCK_LOG_WARN(Weapon, "TwoHandedGrip: left-firing carry aborted because FRIK refused the weapon-node parent request");
                 releaseFiringHandWeaponNodeOwnership(weaponNode);
                 transitionToInactive(false);
@@ -544,13 +557,13 @@ namespace rock
     {
         if (_leftCarry.weaponNodeReparented) {
             // FRIK restores the game's parent hand in its next skeleton pass.
-            (void)frik_visual_authority::clearWeaponNodeParentHand(WEAPON_NODE_OWNERSHIP_TAG);
+            (void)frik_visual_authority::clearWeaponNodeParentHand(ownerTag(WEAPON_NODE_OWNERSHIP_TAG));
             _leftCarry.weaponNodeReparented = false;
             ROCK_LOG_INFO(Weapon, "TwoHandedGrip: equipped weapon node parent request cleared; FRIK restores the game's parent hand");
         }
 
         if (_leftCarry.weaponNodeOwnershipBlockEngaged) {
-            (void)frik_visual_authority::blockPrimaryWeaponNodeOwnership(WEAPON_NODE_OWNERSHIP_TAG, false);
+            (void)blockOwnedWeaponNode(ownerTag(WEAPON_NODE_OWNERSHIP_TAG), false);
             _leftCarry.weaponNodeOwnershipBlockEngaged = false;
             ROCK_LOG_INFO(Weapon, "TwoHandedGrip: FRIK weapon-node ownership restored");
         }
@@ -563,6 +576,14 @@ namespace rock
         const std::uint64_t currentInstanceContentKey,
         const bool logMissingAimFrame)
     {
+        if (_secondaryNativeNode) {
+            // Secondary carry is calibrated to its own physical hand, never
+            // the primary gun's WeaponOffset/aim frame. Geometry-only rebuilds
+            // may keep that relation only for this exact ownership and root.
+            return _secondaryPhysicalHandValid && currentWeaponNode == _session.weaponNode &&
+                currentEquippedWeaponOwnershipKey == _session.equippedWeaponOwnershipKey &&
+                weapon_grip_transfer::validFrame(_secondaryWeaponInPhysicalHand);
+        }
         if (!equipped_weapon_manual_ownership_policy::canRebindNativeAim({
                 .nativeRightCarry = usesNativeRightCarry(),
                 .frameValid = _firing.rightNativeWeaponAimFrame.valid &&

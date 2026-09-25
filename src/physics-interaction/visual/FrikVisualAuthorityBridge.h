@@ -567,6 +567,17 @@ namespace rock::frik_visual_authority
         return frikApi && frikApi->blockPrimaryWeaponNodeOwnership != nullptr;
     }
 
+    [[nodiscard]] inline bool canBlockSecondaryWeaponNodeOwnership()
+    {
+        auto* frikApi = api();
+        return frikApi && frik::api::FRIKApiV2::supportsVersion(5) && frikApi->blockSecondaryWeaponNodeOwnership;
+    }
+
+    [[nodiscard]] inline bool blockSecondaryWeaponNodeOwnership(const char* tag, bool block)
+    {
+        return canBlockSecondaryWeaponNodeOwnership() && api()->blockSecondaryWeaponNodeOwnership(tag, block);
+    }
+
     [[nodiscard]] inline bool registerWeaponHandRecoilController(
         const char* tag,
         WeaponHandRecoilController controller,

@@ -1,8 +1,6 @@
 #include "physics-interaction/weapon/AkimboSessionPolicy.h"
 #include "physics-interaction/weapon/WeaponCyclePolicy.h"
-#include "physics-interaction/weapon/CarriedWeaponProjectile.h"
-#include "physics-interaction/weapon/PhysicalWeaponPairPolicy.h"
-#include "physics-interaction/weapon/PhysicalWeaponGripPolicy.h"
+#include "physics-interaction/weapon/EquippedWeaponPairPolicy.h"
 #include "physics-interaction/weapon/PhysicalWeaponShotPolicy.h"
 #include <array>
 #include <iostream>
@@ -16,74 +14,9 @@ int main()
     const auto check = [&](bool value, const char* what) {
         if (!value) { std::cerr << what << '\n'; ok = false; }
     };
-    check(transferCapture(true, true, false, false, false) == TransferCapture::NotApplicable,
-        "Ammo-less native items use ordinary equip instead of consuming the request");
-    check(transferCapture(true, false, false, false, false) == TransferCapture::NotApplicable,
-        "Native melee replacement does not require a firearm magazine");
-    check(transferCapture(false, false, false, false, false) == TransferCapture::Unavailable &&
-        transferCapture(true, true, true, false, true) == TransferCapture::Unavailable,
-        "An unreadable or temporarily unready firearm remains owned during admission");
-    check(transferCapture(true, true, true, true, true) == TransferCapture::Ready,
-        "Two eligible firearms retain magazine capture");
-    check(keepFiringSound(true, Grip::Firing, true, true, true, 10, false), "Automatic burst retains its own firing sound");
-    for (unsigned cause = 0; cause < 7; ++cause) check(!keepFiringSound(cause != 0,
-        cause == 1 ? Grip::Support : Grip::Firing, cause != 2, cause != 3, cause != 4, cause == 5 ? 0 : 10, cause == 6),
-        "Detach, support carry, blocked input, release, unknown/empty ammo and reload end the firing loop");
     check(rock::weapon_cycle_policy::playbackRate(0.5f, 0.1f) == 5.0f &&
         rock::weapon_cycle_policy::playbackRate(0.1f, 0.5f) == 1.0f,
         "Automatic mechanics finish a stroke before the next shot without slowing shorter authored strokes");
-    check(restoreArchiveFlags(1, 0) == 2u && restoreArchiveFlags(1, 1) == 3u, "Old co-saves restore the formerly always-active weapon state");
-    for (const bool active : {false,true}) for (const bool reloading : {false,true}) {
-        const auto flags = archiveFlags(reloading, active);
-        check(restoreArchiveFlags(kArchiveVersion, flags) == flags, "Retained/active and reload state survive the new private co-save format");
-    }
-    check(!restoreArchiveFlags(1, 2) && !restoreArchiveFlags(2, 4) && !restoreArchiveFlags(3, 0), "Unknown co-save flags and versions are rejected");
-    namespace grips = rock::physical_weapon_grip_policy;
-    for (const auto mode : {grips::GrabMode::ToggleBoth, grips::GrabMode::ToggleFiringOnly, grips::GrabMode::HoldBoth}) {
-        for (const bool firing : {false, true}) {
-            std::array<grips::Grip, 2> hands{};
-            for (auto& hand : hands) {
-                const bool toggle = rock::equipped_weapon_toggle_grab_policy::usesToggleForRole(mode, firing);
-                check(!hand.observe(1, true, mode, firing, {true,true,false}, true, false), "Acquisition press cannot release either physical gun");
-                check(hand.observe(1, true, mode, firing, {false,false,true}, true, false) == !toggle,
-                    "Both physical guns honor firing/support toggle and hold modes");
-                if (toggle) check(hand.observe(1, true, mode, firing, {true,true,false}, true, false), "A fresh toggle press releases the existing grip");
-            }
-            for (const auto drop : {grips::DropMode::Off, grips::DropMode::ToggleDrop, grips::DropMode::AutoDrop}) {
-                const auto expected = drop == grips::DropMode::Off ? grips::Release::KeepAttached :
-                    drop == grips::DropMode::ToggleDrop ? grips::Release::RetainLoose : grips::Release::Drop;
-                check(grips::releaseAction(true, false, drop) == expected, "Last-grip release follows the configured drop mode");
-                check(grips::releaseAction(true, true, drop) == grips::Release::DetachHand, "A support/firing peer keeps the gun when one grip detaches");
-                check(grips::releaseAction(false, true, drop) == grips::Release::KeepAttached, "Disabled firing-hand detachment retains that grip");
-            }
-        }
-    }
-    grips::Grip retained;
-    retained.retainLoose(2);
-    check(!retained.observe(2, false, grips::GrabMode::ToggleBoth, true, {true,false,false}, true, false) &&
-        !retained.observe(2, false, grips::GrabMode::ToggleBoth, true, {false,false,true}, true, false),
-        "Toggle Drop retains the object through the release of the spent weapon gesture");
-    check(!retained.observe(2, false, grips::GrabMode::ToggleBoth, true, {true,true,false}, true, false) &&
-        retained.observe(2, false, grips::GrabMode::ToggleBoth, true, {false,false,true}, true, false),
-        "A subsequent complete click physically drops the retained inactive weapon");
-    check(!retained.observe(3, true, grips::GrabMode::ToggleBoth, true, {true,true,false}, true, false), "A new grab cannot inherit an old completed release");
-    check(!retained.observe(3, true, grips::GrabMode::ToggleBoth, true, {false,false,true}, false, false), "Provider-owned input cannot release the weapon");
-    check(!retained.observe(3, true, grips::GrabMode::ToggleBoth, true, {false,false,false}, true, false), "Yielding provider ownership does not replay its release");
-    check(retained.observe(3, true, grips::GrabMode::ToggleBoth, true, {true,true,false}, true, false), "A fresh press after UI capture still releases a toggle grip");
-    grips::Grip off;
-    (void)off.observe(4, true, grips::GrabMode::HoldBoth, true, {true,true,false}, true, false);
-    check(off.observe(4, true, grips::GrabMode::HoldBoth, true, {false,false,true}, true, false), "Hold release reaches drop policy");
-    off.keepAttached();
-    for (int frame=0; frame<5; ++frame) check(!off.observe(4, true, grips::GrabMode::HoldBoth, true, {}, true, false), "Drop Off must not repeat rejected releases while the button stays open");
-    (void)off.observe(4, true, grips::GrabMode::HoldBoth, true, {true,true,false}, true, false);
-    check(off.observe(4, true, grips::GrabMode::HoldBoth, true, {false,false,true}, true, false), "Holding again rearms the next valid release");
-    grips::Grip resumed;
-    (void)resumed.observe(5, true, grips::GrabMode::HoldBoth, false, {true,true,false}, true, false);
-    resumed.suspend();
-    check(!resumed.observe(5, true, grips::GrabMode::HoldBoth, false, {false,false,true}, true, false), "Menu release cannot drop a resumed hold-mode weapon");
-    (void)resumed.observe(5, true, grips::GrabMode::HoldBoth, false, {true,true,false}, true, false);
-    check(resumed.observe(5, true, grips::GrabMode::HoldBoth, false, {false,false,true}, true, false), "Hold mode rearms after menu resume");
-
     struct Point { float x{},y{},z{}; };
     struct Matrix { float entry[3][3]{}; };
     struct Transform { Matrix rotate{}; Point translate{}; float scale{1}; };
@@ -100,8 +33,7 @@ int main()
     check(aim.ray.direction.z>0.999f && launched.direction.z>0.999f, "An upward barrel must not fire downward");
     muzzle.scale = 0;
     check(!rock::physical_weapon_shot_policy::muzzleAim(muzzle).ray.valid, "Collapsed muzzle frames cannot supply a shot direction");
-    using namespace rock::carried_weapon_projectile;
-    namespace entry = rock::physical_weapon_pair_policy;
+    namespace entry = rock::equipped_weapon_pair_policy;
     const auto nativeOwners = entry::collisionOwners({100,3}, {});
     check(nativeOwners[0].body == 100 && nativeOwners[1].body == 100 && nativeOwners[0].hands && nativeOwners[1].hands,
         "Two grips on one native weapon preserve their existing collision ownership");
@@ -114,31 +46,6 @@ int main()
     const auto handedOff = entry::collisionOwners({}, {{{200,2},{}}});
     check(!handedOff[0].hands && handedOff[1].body == 200 && handedOff[1].hands,
         "Handoff releases the former hand collision claim and preserves the weapon body on its new hand");
-    check(entry::advance({.incomingHeld=true, .nativeOriginalPresent=true, .allReady=true}) == entry::EntryAction::Wait,
-        "Preparing the second gun cannot admit a mixed native/physical pair");
-    check(entry::advance({.incomingHeld=false, .nativeOriginalPresent=true}) == entry::EntryAction::Cancel,
-        "Cancellation before conversion preserves the original native gun");
-    check(entry::advance({.converted=true, .incomingHeld=false, .placementPending=true}) == entry::EntryAction::Wait,
-        "An interrupted conversion must retain its receipt until original placement completes");
-    check(entry::advance({.converted=true, .incomingHeld=false, .outgoingHeld=true}) == entry::EntryAction::RestoreOriginal,
-        "Interrupted entry restores the original weapon instead of leaving a half-completed replacement");
-    check(entry::advance({.converted=true, .incomingHeld=true, .outgoingHeld=true, .allReady=true}) == entry::EntryAction::Complete,
-        "Both physical weapon backends must be ready before dual entry completes");
-    check(entry::advance({.converted=true, .incomingHeld=false, .outgoingHeld=false}) == entry::EntryAction::Cancel,
-        "Dropping both guns must not pick either one up again");
-    check(entry::advance({.converted=true, .incomingHeld=true}) == entry::EntryAction::RestoreIncoming,
-        "Losing the original hold during conversion returns the remaining gun to single handling");
-    check(entry::advance({.incomingHeld=true, .nativeOriginalPresent=true, .failed=true}) == entry::EntryAction::Cancel,
-        "A failed preflight cannot convert the original weapon");
-    check(entry::advance({.converted=true, .incomingHeld=true, .outgoingHeld=true, .failed=true}) == entry::EntryAction::RestoreOriginal,
-        "A mechanical failure after conversion restores the original exact item");
-    constexpr Identity own{0x1000, 0x2000, 0x3000, 1};
-    check(isOwnHeldWeapon(42, own, 42, own), "The carried gun cannot intercept its own projectile");
-    check(!isOwnHeldWeapon(42, own, 43, own), "Another physical copy of the same gun remains hittable");
-    check(!isOwnHeldWeapon(0, own, 42, own), "Releasing the gun ends its self exclusion");
-    for (const Identity other : {Identity{0x1001,0x2000,0x3000,1}, Identity{0x1000,0x2001,0x3000,1},
-            Identity{0x1000,0x2000,0x3001,1}, Identity{0x1000,0x2000,0x3000,0}})
-        check(!isOwnHeldWeapon(42, own, 42, other), "Other weapon/instance/actor/index projectiles keep native collision");
     using namespace rock::weapon_cycle_policy;
     constexpr std::array<std::int16_t, 7> parents{-1,0,1,2,0,6,5};
     check(isWeaponPart(3, 1, parents), "Nested bolt bones belong to the weapon branch");

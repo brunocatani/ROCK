@@ -1,7 +1,8 @@
 #pragma once
+#include <cstdint>
 #include <memory>
 
-namespace RE { class TESObjectREFR; }
+namespace RE { class TESObjectREFR; class TESObjectWEAP; class TBO_InstanceData; class NiAVObject; }
 
 namespace rock::native_weapon_cycle
 {
@@ -15,6 +16,8 @@ namespace rock::native_weapon_cycle
         Session(const Session&) = delete;
         Session& operator=(const Session&) = delete;
         void update(RE::TESObjectREFR* reference, float deltaSeconds) noexcept;
+        void updateEquipped(RE::TESObjectWEAP* weapon, RE::TBO_InstanceData* instance,
+            RE::NiAVObject* root, std::uint64_t content, float deltaSeconds) noexcept;
         void fire(float shotSeconds) noexcept;
         void clear() noexcept;
         void reap() noexcept;

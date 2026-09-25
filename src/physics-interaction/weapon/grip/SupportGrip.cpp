@@ -459,7 +459,7 @@ namespace rock
          */
         const bool nodeHoldsBasisPreWrite =
             _session.state == TwoHandedState::Gripping &&
-            usesLeftFiringCarry() &&
+            usesManagedFiringCarry() &&
             ownsWeaponTransform() &&
             _visuals.hasLastRenderedWeaponWorld &&
             isFiniteTransform(_visuals.lastRenderedWeaponWorld);
@@ -1254,7 +1254,7 @@ namespace rock
         // A direct handoff must capture against the same firing seat used by
         // its admission cylinder, without rebasing it onto the live wrist.
         const bool keepFiringHold = _firing.hasPrimaryHandWeaponLocal &&
-            (usesLeftFiringCarry() ||
+            (usesManagedFiringCarry() ||
                 (decision.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone &&
                     _session.weaponNode == weaponNode &&
                     _session.weaponGenerationKey == decision.weaponGenerationKey &&
@@ -1908,7 +1908,7 @@ namespace rock
         const bool leftCarryProbeEnabled =
             g_rockConfig.rockDebugGrabFrameLogging &&
             primaryHandIsLeft &&
-            usesLeftFiringCarry();
+            usesManagedFiringCarry();
         const LeftCarryProbeSample leftBonesBefore =
             leftCarryProbeEnabled ? sampleLeftCarryProbe() : LeftCarryProbeSample{};
 
@@ -2604,11 +2604,11 @@ namespace rock
         RE::NiTransform transferredWeaponWorld{};
         bool rightRecoilApplied = false;
 
-        if (usesLeftFiringCarry()) {
+        if (usesManagedFiringCarry()) {
             // Visual-only support never steers aim, but with a LEFT firing
             // hand the weapon itself must still be ROCK-carried (FRIK's glue
             // is blocked); the shooting-cup right hand stays visual-only.
-            if (!solveLeftFiringWeaponCarry(weaponNode, dt)) {
+            if (!solveManagedFiringWeaponCarry(weaponNode, dt)) {
                 return;
             }
         } else if (transferredRightGrip) {
@@ -2664,7 +2664,7 @@ namespace rock
 
         _lastSolvedWeaponTransform = weaponNode ? weaponNode->world : RE::NiTransform{};
         _hasSolvedWeaponTransform = transferredRightGrip || rightRecoilApplied ||
-            (usesLeftFiringCarry() && _hasSolvedWeaponTransform);
+            (usesManagedFiringCarry() && _hasSolvedWeaponTransform);
 
         if (weaponNode && ++_gripLogCounter >= 90) {
             _gripLogCounter = 0;
@@ -2746,7 +2746,7 @@ namespace rock
         grip.fingerLocalTransformMask = 0;
         grip.hasFingerLocalTransforms = false;
 
-        (void)frik_visual_authority::clearHandPose(SUPPORT_GRIP_TAG, handFromBool(isLeft));
+        (void)frik_visual_authority::clearHandPose(ownerTag(SUPPORT_GRIP_TAG), handFromBool(isLeft));
         if (_scope.menuOpenThisFrame || _scope.menuClosedThisFrame) {
             deferScopeHandAuthorityClear(scope_safe_hand_frame_math::HandAuthorityRole::SupportGrip, isLeft);
         } else {
@@ -2939,7 +2939,7 @@ namespace rock
             return;
         }
 
-        if (usesLeftFiringCarry()) {
+        if (usesManagedFiringCarry()) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 2000,
                 "TwoHandedGrip: authored right-support mirror unavailable transform={} fingers={} naturalFrames=({}, {})",
                 rightHandTransformMirrored ? "ready" : "missing",

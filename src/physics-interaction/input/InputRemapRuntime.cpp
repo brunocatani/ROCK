@@ -1119,7 +1119,8 @@ namespace rock::input_remap_runtime
         {
             const void* callerAddress = _ReturnAddress();
             vr::TrackedDeviceIndex_t targetDeviceIndex = controllerDeviceIndex;
-            if (shouldRemapLeftHandFireTriggerForGame() &&
+            if (!s_carriedFiringHand[0].load(std::memory_order_acquire) &&
+                !s_carriedFiringHand[1].load(std::memory_order_acquire) && shouldRemapLeftHandFireTriggerForGame() &&
                 !isCallerModule(callerAddress, L"ROCK.dll") &&
                 !isCallerModule(callerAddress, L"FRIK.dll") &&
                 !isCallerModule(callerAddress, L"ImmersiveFlashlightVR.dll") &&

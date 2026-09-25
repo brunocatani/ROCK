@@ -16,7 +16,7 @@
         consumePush(_contacts.rightPush, "Right", &_rightHand, false);
         consumePush(_contacts.leftPush, "Left", &_leftHand, false);
         consumePush(_contacts.weaponPush, "Weapon", nullptr, true);
-        for (auto& session : _carriedWeapon.sessions) consumePush(session.physics.push, "Physical weapon", nullptr, true);
+        consumePush(_secondaryEquipped.push, "Secondary equipped weapon", nullptr, true);
 
         auto readBodyMass = [](RE::hknpWorld* world, std::uint32_t bodyId) {
             if (!world || bodyId == 0xFFFFFFFF || bodyId == object_physics_body_set::INVALID_BODY_ID) {
@@ -62,12 +62,7 @@
                 return;
             }
             if (native_player_collision::isReplacedWeaponBody(frame.hknpWorld, otherBody)) return;
-            for (const auto& session : _carriedWeapon.sessions) {
-                if (!session.owns(hand.getHeldRef()) || !session.physics.dynamic.isProxyBodyIdAtomic(heldBody)) continue;
-                const auto hands = session.physics.heldHandsAtomic();
-                if (((hands & 1u) && _dynamicHandCollision.isHandProxyBodyAtomic(false, otherBody)) ||
-                    ((hands & 2u) && _dynamicHandCollision.isHandProxyBodyAtomic(true, otherBody))) return;
-            }
+            
 
             dispatchHeldImpactGrabEvent(
                 isLeft,
@@ -920,19 +915,7 @@
                 otherLayer,
                 sourceIsA,
                 rawContactPointValid ? &rawContactPoint : nullptr);
-            if (otherLayerRead && collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(otherLayer)) {
-                for (auto& session : _carriedWeapon.sessions) {
-                    if (!session.physics.dynamic.isProxyBodyIdAtomic(proxyBodyId)) continue;
-                    const auto hands = session.physics.heldHandsAtomic();
-                    // A queued contact can outlive the filter change. It is
-                    // still self contact, not a held-object impact event.
-                    if (((hands & 1u) && _dynamicHandCollision.isHandProxyBodyAtomic(false, otherBodyId)) ||
-                        ((hands & 2u) && _dynamicHandCollision.isHandProxyBodyAtomic(true, otherBodyId))) continue;
-                    const auto pair = packHeldImpactPair(proxyBodyId, otherBodyId);
-                    if (hands & 1u) _contacts.lastHeldImpactPairRight.store(pair, std::memory_order_release);
-                    if (hands & 2u) _contacts.lastHeldImpactPairLeft.store(pair, std::memory_order_release);
-                }
-            }
+            
         }
 
         auto recordLooseGrenadeImpactIfArmed = [&]() {
@@ -1397,8 +1380,7 @@
         };
         if (contactRoute.driveWeaponDynamicPush) {
             auto* channel = &_contacts.weaponPush;
-            for (auto& session : _carriedWeapon.sessions)
-                if (session.physics.collision.isWeaponBodyIdAtomic(contactRoute.sourceBodyId)) channel = &session.physics.push;
+            if (_secondaryEquipped.collision.isWeaponBodyIdAtomic(contactRoute.sourceBodyId)) channel = &_secondaryEquipped.push;
             publishPushContact(*channel, contactRoute.sourceBodyId);
         }
 

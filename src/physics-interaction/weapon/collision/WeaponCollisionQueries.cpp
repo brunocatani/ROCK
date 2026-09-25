@@ -1046,7 +1046,7 @@ namespace rock
             omodByAttachPointFormId,
             equippedWeaponKey,
             weaponGenerationKey,
-            rootSetKey, !_physicalReference);
+            rootSetKey, !_physicalReference && _nativeSourceIndex == UINT32_MAX);
 
         ROCK_LOG_DEBUG(Weapon,
             "Weapon emitter snapshot discovered generation={:016X} emitters={} roots={:016X}",
@@ -1065,7 +1065,7 @@ namespace rock
             return;
         }
 
-        const std::uint64_t rootSetKey = makeWeaponEmitterRootSetKey(weaponNode, !_physicalReference);
+        const std::uint64_t rootSetKey = makeWeaponEmitterRootSetKey(weaponNode, !_physicalReference && _nativeSourceIndex == UINT32_MAX);
         WeaponEmitterSnapshot snapshot{};
         {
             std::scoped_lock lock(_evidence.mutex);
@@ -1084,7 +1084,7 @@ namespace rock
         std::size_t rootCount = 0;
         visitGeneratedWeaponMeshRootCandidates(weaponNode, [&](const WeaponMeshRootCandidate& candidate) {
             roots[rootCount++] = candidate.root;
-        }, !_physicalReference);
+        }, !_physicalReference && _nativeSourceIndex == UINT32_MAX);
         bool pathsValid = !discoveryRequired;
         for (std::size_t i = 0; i < snapshot.count; ++i) {
             auto& descriptor = snapshot.emitters[i];

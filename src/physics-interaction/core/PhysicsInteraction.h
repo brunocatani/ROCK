@@ -44,7 +44,9 @@
 #include "physics-interaction/weapon/EquippedWeaponShoulderCoordinator.h"
 #include "physics-interaction/weapon/EquippedWeaponTransitionCoordinator.h"
 #include "physics-interaction/weapon/InventoryWeaponEquipRuntime.h"
-#include "physics-interaction/weapon/CarriedWeaponRuntime.h"
+#include "physics-interaction/weapon/NativeEquippedAdmission.h"
+#include "physics-interaction/weapon/NativeEquippedActions.h"
+#include "physics-interaction/weapon/SecondaryEquippedWeapon.h"
 #include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
 #include "physics-interaction/weapon/VirtualHolstersCompatibility.h"
 #include "physics-interaction/weapon/grip/LeftCarryReadiness.h"
@@ -155,6 +157,8 @@ namespace rock
         [[nodiscard]] EquippedWeaponTransitionCoordinator::PendingGrip equippedWeaponContinuity() const;
         void restoreEquippedWeaponContinuity(const EquippedWeaponTransitionCoordinator::PendingGrip& grip);
         void captureEquippedWeaponContinuity();
+        [[nodiscard]] SecondaryEquippedWeapon::Transfer secondaryWeaponContinuity() const { return _secondaryEquipped.captureContinuity(); }
+        void restoreSecondaryWeaponContinuity(const SecondaryEquippedWeapon::Transfer& transfer) { if (transfer.valid) _secondaryEquipped.adopt(transfer); }
 
         // Runs before the normal ROCK interaction frame so weapon-relative
         // consumers see one authored primary-grip frame. Runtime eligibility
@@ -162,8 +166,6 @@ namespace rock
         void updateAuthoredPrimaryFiringGrip();
 
         void shutdown(::rock::provider::RockProviderLifecycleReason reason = ::rock::provider::RockProviderLifecycleReason::Shutdown);
-        bool beforeNativeWeaponEquip(const RE::BGSObjectInstance& item, void* request);
-        void afterNativeWeaponEquip(const RE::BGSObjectInstance& item, bool success);
 
         bool isInitialized() const { return _lifecycle.initialized; }
         bool isProviderReady() const
@@ -413,8 +415,9 @@ namespace rock
         void processProviderInteractionCommands(const PhysicsFrameContext& frame);
         void processProviderInventoryEquip(const PhysicsFrameContext& frame);
         void clearProviderInventoryEquip();
-        void updateCarriedWeapon(const PhysicsFrameContext& frame, bool prepareOnly);
-        bool activatePhysicalWeapon(const PhysicsFrameContext& frame, bool isLeft);
+        bool equipSecondNativeWeapon(const PhysicsFrameContext& frame, bool isLeft);
+        void updateNativeEquippedPair(const PhysicsFrameContext& frame, bool prepareOnly);
+        bool promoteSecondaryEquippedWeapon(const PhysicsFrameContext& frame);
         DynamicWeaponCollisionRuntime* weaponProxyForBody(std::uint32_t bodyId) noexcept;
         bool retainEquippedWeaponForReplacement(const PhysicsFrameContext& frame, bool equipIsLeft);
         std::uint32_t forceGrabHandBlockerMask(const Hand& hand, bool isLeft, bool handDisabled, bool includePendingCommit) const;
@@ -438,7 +441,7 @@ namespace rock
         bool hasAvailableEquippedWeaponDropHandoff() const;
         void serviceEquippedWeaponNativeHandoff(const PhysicsFrameContext& frame);
         bool dropEquippedWeaponToWorld(const PhysicsFrameContext& frame,
-            const EquippedWeaponManualDropRequest& request, equipped_weapon_drop_policy::Mode mode);
+            const EquippedWeaponManualDropRequest& request, equipped_weapon_drop_policy::Mode mode, std::uint32_t nativeIndex = UINT32_MAX);
         void updateEquippedWeaponDropVisuals(const PhysicsFrameContext& frame);
         void finishEquippedWeaponHandPoseHandoff();
         void serviceEquippedWeaponNativeTransaction(
@@ -1046,19 +1049,11 @@ namespace rock
         WeaponContactWitnessPair _weaponContact;
         EquippedWeaponFrameState _equipped;
         InventoryWeaponEquipRuntime _inventoryEquip;
-        CarriedWeaponRuntime _carriedWeapon;
-        struct PhysicalWeaponEntry {
-            RE::ObjectRefHandle incoming{}, outgoing{};
-            std::uint64_t incomingGrab{};
-            bool incomingLeft{}, converted{}, rollback{};
-        } _physicalWeaponEntry;
-        bool _physicalDualEstablished{};
-        struct NativeAkimboEquip {
-            weapon_equip_transfer::InventorySelection incoming{};
-            std::uint32_t previousForm{};
-            std::uintptr_t previousInstance{}, previousNode{};
-            bool pending{}, isLeft{};
-        } _nativeAkimboEquip;
+        SecondaryEquippedWeapon _secondaryEquipped;
+        NativeEquippedAdmission _nativeEquippedAdmission;
+        std::array<native_equipped_actions::Session, 2> _nativeEquippedActions;
+        bool _nativeEquippedPairActive{};
+        native_equipped_weapon::Identity _secondaryPromotionAttempted{};
         EquippedWeaponDropState _drop;
         GrabInputState _grabInput;
         ForceGrabState _forceGrab;

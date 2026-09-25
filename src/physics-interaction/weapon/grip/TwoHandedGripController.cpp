@@ -4,12 +4,42 @@
 
 namespace rock
 {
-    TwoHandedGrip::TwoHandedGrip() :
-        _fingerPoseSolveScratch(std::make_unique<FingerPoseSolveScratch>())
+    const char* TwoHandedGrip::ownerTag(const char* primaryTag) const noexcept
     {
+        if (!_secondaryNativeNode) return primaryTag;
+        struct Tags { const char* primary; const char* secondary; };
+        static constexpr Tags tags[]{
+            {PRIMARY_GRIP_TAG, "ROCK_AkimboPrimaryGrip"},
+            {AUTHORED_PRIMARY_POSE_BLOCK_TAG, "ROCK_AkimboAuthoredPose"},
+            {PRIMARY_DETACH_TAG, "ROCK_AkimboPrimaryDetach"},
+            {SUPPORT_GRIP_TAG, "ROCK_AkimboSupportGrip"},
+            {RETURN_HAND_TAG, "ROCK_AkimboReturn"},
+            {WEAPON_COLLISION_HAND_TAG, "ROCK_AkimboCollisionHand"},
+            {WEAPON_NODE_OWNERSHIP_TAG, "ROCK_AkimboCarry"},
+            {WEAPON_NODE_WRITE_TAG, "ROCK_AkimboAuthority"},
+            {TWO_HANDED_GRIP_REPORT_TAG, "ROCK_AkimboSupport"},
+            {ONE_HAND_RECOIL_TAG, "ROCK_AkimboRecoil"},
+            {WEAPON_RECOIL_CONTROLLER_TAG, "ROCK_AkimboRecoilController"},
+        };
+        for (const auto& tag : tags) if (primaryTag == tag.primary) return tag.secondary;
+        return nullptr;
+    }
+
+    bool TwoHandedGrip::blockOwnedWeaponNode(const char* tag, bool block) const
+    {
+        return _secondaryNativeNode ? frik_visual_authority::blockSecondaryWeaponNodeOwnership(tag, block) :
+            frik_visual_authority::blockPrimaryWeaponNodeOwnership(tag, block);
+    }
+
+    TwoHandedGrip::TwoHandedGrip(bool secondaryNativeNode) :
+        _secondaryNativeNode(secondaryNativeNode), _fingerPoseSolveScratch(std::make_unique<FingerPoseSolveScratch>())
+    {
+        // FRIK's released callback supplies the primary kick node only. A
+        // secondary controller must not register another claimant for it.
+        if (_secondaryNativeNode) return;
         _recoil.controllerRegistered =
             frik_visual_authority::registerWeaponHandRecoilController(
-                WEAPON_RECOIL_CONTROLLER_TAG,
+                ownerTag(WEAPON_RECOIL_CONTROLLER_TAG),
                 &TwoHandedGrip::controlWeaponHandRecoil,
                 this,
                 GRIP_HAND_POSE_PRIORITY);
@@ -30,7 +60,7 @@ namespace rock
         clearOneHandRecoilClaim();
         if (_recoil.controllerRegistered) {
             (void)frik_visual_authority::unregisterWeaponHandRecoilController(
-                WEAPON_RECOIL_CONTROLLER_TAG);
+                ownerTag(WEAPON_RECOIL_CONTROLLER_TAG));
             _recoil.controllerRegistered = false;
         }
     }
@@ -618,7 +648,7 @@ namespace rock
                             beginWeaponVisualReturn("support-released-primary-held", true);
                         }
                     }
-                    if (usesLeftFiringCarry() && ownsWeaponTransform()) {
+                    if (usesManagedFiringCarry() && ownsWeaponTransform()) {
                         // Left-carry counterpart of beginWeaponVisualReturn:
                         // ease from the two-hand pose to the wand aim instead
                         // of jumping there this frame.
@@ -630,8 +660,8 @@ namespace rock
                         currentWeaponGenerationKey,
                         currentEquippedWeaponOwnershipKey,
                         "support-released-primary-held");
-                    if (primaryOnlyActive && usesLeftFiringCarry()) {
-                        (void)solveLeftFiringWeaponCarry(
+                    if (primaryOnlyActive && usesManagedFiringCarry()) {
+                        (void)solveManagedFiringWeaponCarry(
                             _session.weaponNode,
                             dt);
                     }
@@ -759,10 +789,10 @@ namespace rock
         _recoil.rightBaseValid = false;
         _recoil.rightNeedsNeutralFrame = false;
         (void)frik_visual_authority::clearHandWorld(
-            WEAPON_COLLISION_HAND_TAG,
+            ownerTag(WEAPON_COLLISION_HAND_TAG),
             frik_visual_authority::Hand::Left);
         (void)frik_visual_authority::clearHandWorld(
-            WEAPON_COLLISION_HAND_TAG,
+            ownerTag(WEAPON_COLLISION_HAND_TAG),
             frik_visual_authority::Hand::Right);
         _visuals.weaponCollisionHandAuthorityLive = {};
         _visuals.weaponCollisionHandPresentationFromPreviousFrame = {};
@@ -775,6 +805,7 @@ namespace rock
         _equippedWeaponDropRequest = {};
         _firing.transferredPrimaryGrip = {};
         _hapticEvents = {};
+        _secondaryPhysicalHandValid = false;
         _gripReleaseRetained = {};
         _gripReleaseRetainedLogged = {};
         _firing.reattachHoverInsideZone = false;
@@ -882,7 +913,7 @@ namespace rock
          * visual-only support mode, and the topology blocker is included as a
          * fail-closed witness if state and bridge cleanup ever diverge.
          */
-        return usesLeftFiringCarry() ||
+        return usesManagedFiringCarry() ||
                _leftCarry.weaponNodeOwnershipBlockEngaged ||
                ownsWeaponTransform();
     }
@@ -910,7 +941,7 @@ namespace rock
 
         const WeaponPartGrip& supportGrip = partGrip(true);
         if (_session.state != TwoHandedState::Gripping ||
-            usesLeftFiringCarry() ||
+            usesManagedFiringCarry() ||
             !ownsWeaponTransform() ||
             !_hasSolvedWeaponTransform ||
             !_session.weaponNode ||
@@ -1078,6 +1109,13 @@ namespace rock
         _firing.leftDampedFollowFrame = {};
         clearLeftFiringSupportReleaseReturn("firing-hand-changed");
         _session.firingHandIsLeft = isLeft;
+        if (_secondaryNativeNode && _session.weaponNode) {
+            RE::NiTransform physicalHand{}, driver{};
+            _secondaryPhysicalHandValid = tryResolvePhysicalHandFrame(isLeft, physicalHand, driver) &&
+                weapon_grip_transfer::validFrame(_session.weaponNode->world);
+            if (_secondaryPhysicalHandValid) _secondaryWeaponInPhysicalHand = transform_math::composeTransforms(
+                transform_math::invertTransform(physicalHand), _session.weaponNode->world);
+        }
         // Each physical hand retains its own identity-bound support verdict;
         // changing the firing role does not change either handguard seat.
         ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing hand switched to {} reason={}", isLeft ? "left" : "right", reason ? reason : "unknown");

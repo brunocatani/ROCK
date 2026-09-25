@@ -483,7 +483,7 @@ namespace rock
             dynamic_weapon_collision_policy::VisualIntentSource source,
             const RE::NiTransform* physicalDriverWorld);
 
-        TwoHandedGrip();
+        explicit TwoHandedGrip(bool secondaryNativeNode = false);
         ~TwoHandedGrip();
 
         TwoHandedGrip(const TwoHandedGrip&) = delete;
@@ -663,6 +663,12 @@ namespace rock
 
         void reset();
 
+        // The native secondary model has its own physical-hand relation; it must
+        // never borrow the primary gun's native aim or pose authority.
+        bool beginSecondaryEquippedGrip(RE::NiNode* weaponNode, std::uint64_t generation,
+            std::uint64_t ownership, bool isLeft, const weapon_grip_transfer::HandGrip& grip,
+            const RE::NiTransform& weaponWorld, const char** failure);
+
         void setWeaponVisualIntentObserver(
             void* context,
             WeaponVisualIntentObserver observer)
@@ -720,6 +726,7 @@ namespace rock
 
         bool isFiringGripOccupied() const
         {
+            if (_secondaryNativeNode && !isManualOwnershipActive()) return false;
             return equipped_weapon_toggle_grab_policy::confirmedFiringGripOccupied(
                 _confirmedEquippedOwnershipKey, _session.equippedWeaponOwnershipKey, isPartCarryActive(),
                 _equippedGripAcquisitionPending, isManualOwnershipActive());
@@ -981,6 +988,9 @@ namespace rock
         EquippedWeaponManualDropRequest consumeEquippedWeaponDropRequest();
         bool beginTransferredTwoHandGrip(RE::NiNode* weaponNode, std::uint64_t generation,
             std::uint64_t ownership, const weapon_grip_transfer::Pair& grips, const char** failure);
+        bool beginSecondaryEquippedPair(RE::NiNode* weaponNode, std::uint64_t generation,
+            std::uint64_t ownership, const weapon_grip_transfer::Pair& grips,
+            const RE::NiTransform& world, const char** failure);
         bool beginTransferredSupportGrip(RE::NiNode* weaponNode, std::uint64_t generation,
             std::uint64_t ownership, const weapon_grip_transfer::Support& grip, const char** failure,
             const weapon_grip_transfer::Support* second = nullptr);
@@ -1382,15 +1392,20 @@ namespace rock
          * these name the two carry programs so call sites read as intent
          * instead of flag algebra. usesNativeRightCarry: FRIK native carry
          * stays authoritative and ROCK applies position-only authored
-         * alignment. usesLeftFiringCarry: ROCK owns the weapon node
-         * end-to-end (reparent, pose blockers, feed-forward publish, left
-         * recoil route). _session.firingHandIsLeft itself is written only by
+         * alignment. Managed carry owns either the primary node in the left
+         * hand or the secondary native node in either hand. Each instance
+         * has its own pose tags and node block. _session.firingHandIsLeft is written only by
          * setFiringHand() and reset().
          */
         [[nodiscard]] bool isFiringHand(bool isLeft) const noexcept { return isLeft == _session.firingHandIsLeft; }
         [[nodiscard]] bool isSupportHandLeft() const noexcept { return !_session.firingHandIsLeft; }
-        [[nodiscard]] bool usesLeftFiringCarry() const noexcept { return _session.firingHandIsLeft; }
-        [[nodiscard]] bool usesNativeRightCarry() const noexcept { return !_session.firingHandIsLeft; }
+        [[nodiscard]] bool usesManagedFiringCarry() const noexcept { return _session.firingHandIsLeft || _secondaryNativeNode; }
+        [[nodiscard]] bool usesNativeRightCarry() const noexcept { return !_session.firingHandIsLeft && !_secondaryNativeNode; }
+        const char* ownerTag(const char* primaryTag) const noexcept;
+        bool blockOwnedWeaponNode(const char* tag, bool block) const;
+        const bool _secondaryNativeNode;
+        RE::NiTransform _secondaryWeaponInPhysicalHand{};
+        bool _secondaryPhysicalHandValid{};
         [[nodiscard]] const char* firingHandName() const noexcept { return _session.firingHandIsLeft ? "left" : "right"; }
         [[nodiscard]] WeaponPartGrip& supportPartGrip() noexcept { return partGrip(!_session.firingHandIsLeft); }
         [[nodiscard]] const WeaponPartGrip& supportPartGrip() const noexcept { return partGrip(!_session.firingHandIsLeft); }
@@ -1499,7 +1514,7 @@ namespace rock
         // weapon-in-wand orientation is mirrored to the left wand, translated
         // to the physical left firing point, and then the authored left wrist
         // is published separately. Used by PrimaryOnly and VisualOnlySupport.
-        bool solveLeftFiringWeaponCarry(RE::NiNode* weaponNode, float dt);
+        bool solveManagedFiringWeaponCarry(RE::NiNode* weaponNode, float dt);
 
         /*
          * Support-release weapon return for the left carry: eases the last
@@ -1560,7 +1575,7 @@ namespace rock
             const RE::NiNode* weaponNode,
             std::uint64_t weaponGenerationKey,
             std::uint64_t weaponOwnershipKey) const;
-        bool tryResolveLeftPositionOnlyCarryFrames(
+        bool tryResolveManagedCarryFrames(
             RE::NiNode* weaponNode,
             RE::NiTransform& outPhysicalHandWorld,
             RE::NiTransform& outPresentedHandWorld,
@@ -1847,9 +1862,9 @@ namespace rock
         void clearPrimaryGripWorldAuthority(bool isLeft);
         void clearAuthoredPrimaryFiringHandWorldAuthority();
 
-        static bool blockFrikPrimaryWeaponPose();
+        bool blockFrikPrimaryWeaponPose();
 
-        static void restoreFrikPrimaryWeaponPose();
+        void restoreFrikPrimaryWeaponPose();
 
         static RE::NiPoint3 worldToWeaponLocal(const RE::NiPoint3& worldPos, const RE::NiAVObject* weaponNode);
 
