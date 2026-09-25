@@ -20,7 +20,7 @@ namespace rock
         }
     }
 
-    void DynamicWeaponCollisionRuntime::updateSurfaceSupportInput()
+    void DynamicWeaponCollisionRuntime::updateSurfaceSupportInput(bool isLeft)
     {
         _surfaceInputReserved = false; // Also clears before interrupted-frame returns.
         if (!g_rockConfig.rockBipodMode) {
@@ -32,12 +32,12 @@ namespace rock
             }
             return; // Do not read or consume the button while this mode is off.
         }
-        if (input_remap_runtime::isProviderOpenVrGameInputSuppressedForHand(false)) {
+        if (input_remap_runtime::isProviderOpenVrGameInputSuppressedForHand(isLeft)) {
             _surfaceClickRequested = false;
             _surfaceToggle = {};
             return; // The provider owns its raw click edge until it yields input.
         }
-        const auto raw = input_remap_runtime::consumeRawButtonState(false, weapon_surface_support::kButtonId);
+        const auto raw = input_remap_runtime::consumeRawButtonState(isLeft, weapon_surface_support::kButtonId);
         _surfaceClickRequested = _surfaceToggle.consume({
             .available = raw.available && !input_remap_runtime::isMenuInputActive(),
             .held = raw.held,

@@ -18,6 +18,9 @@ namespace rock::native_weapon_cycle
         void fire() noexcept;
         void clear() noexcept;
         void reap() noexcept;
+        bool ready() const noexcept;
+        bool failed() const noexcept;
+        bool playing() const noexcept;
     private:
         struct State;
         std::unique_ptr<State> _state;

@@ -106,9 +106,11 @@ namespace rock
         };
 
         void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _physicsCallbackGate = gate; }
+        // B: generated bodies, C/E: hand proxies, D: native weapon proxy.
+        void setPhysicalSessionSlot(std::uint32_t slot) noexcept { _collisionGroup = 0xFu + slot; }
 
         // Game frame only, before early returns, so clicks cannot replay later.
-        void updateSurfaceSupportInput();
+        void updateSurfaceSupportInput(bool isLeft = false);
 
         // Game-frame observation, published through the provider snapshot.
         [[nodiscard]] bool surfaceSupportReservesInput(std::uintptr_t weaponNode, std::uint64_t generation) const noexcept
@@ -193,6 +195,7 @@ namespace rock
         bool tryGetContactState(RE::NiNode* weapon, std::uint64_t generation, bool& contact) const;
 
     private:
+        std::uint32_t _collisionGroup{0xDu};
         struct AtomicTransform
         {
             std::array<std::atomic<float>, 9> rotation{};

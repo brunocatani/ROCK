@@ -283,6 +283,11 @@ int main()
     identity.activeModCount = 2;
     identity.displayName = "Test Weapon";
     const std::uint64_t contentKey = makeEquippedWeaponIdentityKey(identity);
+    ok &= expectDifferent("identical physical weapons own separate generated body sets",
+        makePhysicalWeaponIdentityKey(identity, 41), makePhysicalWeaponIdentityKey(identity, 42));
+    ok &= expectDifferent("physical source cannot alias legacy native content publication",
+        makePhysicalWeaponIdentityKey(identity, 41), contentKey);
+    ok &= expectFalse("physical collision requires a live reference handle", makePhysicalWeaponIdentityKey(identity, 0) != 0);
     const std::uint64_t ownershipKey = makeEquippedWeaponOwnershipKey(identity);
     ok &= expectNonZero("equipped identity creates content key", contentKey);
     ok &= expectNonZero("equipped instance witnesses create ownership key", ownershipKey);

@@ -1574,7 +1574,16 @@ namespace rock
                 loose_weapon_grip_zone::isGripZoneEquipSettled(
                     isLeft,
                     _equipped.handlingSettings.gripZoneEquipSettleSeconds);
-            const bool heldWeaponEquipRequested = input_remap_policy::shouldRequestHeldWeaponEquip(input_remap_policy::HeldWeaponEquipInput{
+            bool restorePhysicalSingle = _physicalWeaponEntry.rollback && heldRefForGameplay &&
+                heldRefForGameplay->GetHandle() == _physicalWeaponEntry.outgoing;
+            if (restorePhysicalSingle && !_physicalWeaponEntry.incoming &&
+                input_remap_runtime::peekRawButtonState(isLeft, 33).held) {
+                // Continue the surviving weapon's own operation if the player
+                // fires again before automatic single-weapon restoration.
+                _physicalWeaponEntry = {};
+                restorePhysicalSingle = false;
+            }
+            const bool heldWeaponEquipRequested = restorePhysicalSingle || input_remap_policy::shouldRequestHeldWeaponEquip(input_remap_policy::HeldWeaponEquipInput{
                 .remapEnabled = true,
                 .gameplayInputAllowed = true,
                 .menuInputActive = input_remap_runtime::isMenuInputActive(),
@@ -1876,6 +1885,12 @@ namespace rock
                     .transitionReason = transitionReason,
                 });
                 _carriedWeapon.finishPrimaryEquip(carriedSource, equipResult.weapon, equipResult.observedEquippedInstanceData, equipResult.committed);
+                if (restorePhysicalSingle && equipResult.committed) {
+                    _physicalWeaponEntry = {};
+                    _physicalDualEstablished = false;
+                    ROCK_LOG_INFO(Weapon, "Physical single-weapon restoration committed weapon={:08X} hand={}",
+                        equipResult.observedEquippedFormID, equipIsLeft ? "left" : "right");
+                }
                 if (equipResult.transferredToInventory) {
                     transition.recordInventoryCommit(equipResult.weapon ? equipResult.weapon->formID : 0u,
                         equipResult.requestedInstanceData, equipResult.success, equipResult.observedEquippedInstanceData);
@@ -2026,7 +2041,8 @@ namespace rock
                 if (heldWeaponEquipTriggerPressed) {
                     static_cast<void>(armHeldLooseGrenade(hand, frame));
                 }
-            } else if (heldWeaponEquipRequested && (!_carriedWeapon.owns(heldRefForGameplay) || !currentEquippedWeaponFormId())) {
+            } else if (heldWeaponEquipRequested && (restorePhysicalSingle || !_carriedWeapon.owns(heldRefForGameplay))) {
+                if (!restorePhysicalSingle && activatePhysicalWeapon(frame, isLeft)) return;
                 const bool triggeredByInput = heldWeaponEquipTriggerPressed;
                 const char* requestReason = triggeredByInput ? "same-hand-trigger-held-weapon-equip" :
                                                                "grip-zone-held-weapon-equip";

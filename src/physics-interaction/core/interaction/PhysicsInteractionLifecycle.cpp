@@ -28,6 +28,7 @@ namespace rock
         _bodyBoneColliders.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _dynamicHandCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _weaponCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
+        for (auto& session : _carriedWeapon.sessions) session.physics.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _dynamicWeaponCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _twoHandedGrip.setWeaponVisualIntentObserver(
             &_dynamicWeaponCollision,
@@ -248,34 +249,38 @@ namespace rock
         addHandEntries(_rightHand, false);
         addHandEntries(_leftHand, true);
 
-        std::array<WeaponCollision::WeaponContactState, MAX_WEAPON_COLLISION_BODIES> weaponStates{};
-        const auto weaponCount = _weaponCollision.copyWeaponContactStatesAtomic(weaponStates);
-        for (std::size_t i = 0; i < weaponCount; ++i) {
-            const auto& state = weaponStates[i];
-            const auto& contact = state.contact;
-            if (!contact.valid) {
-                continue;
-            }
+        const auto addWeaponEntries = [&](const WeaponCollision& weapon) {
+            std::array<WeaponCollision::WeaponContactState, MAX_WEAPON_COLLISION_BODIES> weaponStates{};
+            const auto weaponCount = weapon.copyWeaponContactStatesAtomic(weaponStates);
+            for (std::size_t i = 0; i < weaponCount; ++i) {
+                const auto& state = weaponStates[i];
+                const auto& contact = state.contact;
+                if (!contact.valid) {
+                    continue;
+                }
 
-            Entry entry{};
-            entry.bodyId = contact.bodyId;
-            entry.kind = GeneratedBodyKind::Weapon;
-            entry.role = static_cast<std::uint32_t>(contact.reloadRole);
-            entry.partKind = static_cast<std::uint32_t>(contact.partKind);
-            entry.subRole = static_cast<std::uint32_t>(contact.supportGripRole);
-            entry.socketRole = static_cast<std::uint32_t>(contact.socketRole);
-            entry.actionRole = static_cast<std::uint32_t>(contact.actionRole);
-            entry.gripPose = static_cast<std::uint32_t>(contact.fallbackGripPose);
-            entry.generationKey = contact.weaponGenerationKey;
+                Entry entry{};
+                entry.bodyId = contact.bodyId;
+                entry.kind = GeneratedBodyKind::Weapon;
+                entry.role = static_cast<std::uint32_t>(contact.reloadRole);
+                entry.partKind = static_cast<std::uint32_t>(contact.partKind);
+                entry.subRole = static_cast<std::uint32_t>(contact.supportGripRole);
+                entry.socketRole = static_cast<std::uint32_t>(contact.socketRole);
+                entry.actionRole = static_cast<std::uint32_t>(contact.actionRole);
+                entry.gripPose = static_cast<std::uint32_t>(contact.fallbackGripPose);
+                entry.generationKey = contact.weaponGenerationKey;
 
-            if (state.hasSampledVelocity) {
-                entry.flags |= kFlagSampledVelocity;
-                entry.sampledVelocityHavokX = state.sampledVelocityHavok[0];
-                entry.sampledVelocityHavokY = state.sampledVelocityHavok[1];
-                entry.sampledVelocityHavokZ = state.sampledVelocityHavok[2];
+                if (state.hasSampledVelocity) {
+                    entry.flags |= kFlagSampledVelocity;
+                    entry.sampledVelocityHavokX = state.sampledVelocityHavok[0];
+                    entry.sampledVelocityHavokY = state.sampledVelocityHavok[1];
+                    entry.sampledVelocityHavokZ = state.sampledVelocityHavok[2];
+                }
+                addEntry(entry);
             }
-            addEntry(entry);
-        }
+        };
+        addWeaponEntries(_weaponCollision);
+        for (const auto& session : _carriedWeapon.sessions) addWeaponEntries(session.physics.collision);
 
         const std::uint32_t bodyCount = (std::min)(_bodyBoneColliders.getBodyCount(), static_cast<std::uint32_t>(kBodyBoneColliderBodyCount));
         for (std::uint32_t i = 0; i < bodyCount; ++i) {
@@ -605,6 +610,8 @@ namespace rock
             currentHknp == _lifecycle.cachedHknpWorld;
 
         _carriedWeapon.shutdown(worldValid);
+        _physicalWeaponEntry = {};
+        _physicalDualEstablished = false;
 
         if (worldValid) {
             auto* hknp = getHknpWorld(_lifecycle.cachedBhkWorld);

@@ -447,6 +447,8 @@ namespace rock
         bool isHoldingAuthoredSupportGrip() const { return isHoldingLooseWeapon() && _grabFrame.authoredLooseWeaponSupportGrip; }
         bool isHoldingFiringGrip() const { return isHoldingLooseWeapon() && _grabFrame.syntheticLooseWeaponPrimaryAttach && !_grabFrame.authoredLooseWeaponSupportGrip; }
         bool captureWeaponGripTransfer(weapon_grip_transfer::HandGrip& out) const;
+        bool presentPhysicalWeapon(RE::hknpWorld* world, RE::TESObjectREFR* reference, const RE::NiTransform& resolvedRoot);
+        bool presentPhysicalWeaponHand(RE::TESObjectREFR* reference, const RE::NiTransform& rootDelta);
         loose_weapon_authored_grab_policy::Arrangement heldWeaponArrangement() const { return _grabFrame.authoredWeaponArrangement; }
         RE::TESObjectREFR* getHeldRef() const { return _savedObjectState.refr; }
         const ActiveConstraint& getActiveConstraint() const { return _activeConstraint; }

@@ -1335,6 +1335,15 @@ namespace rock::weapon_generation_identity_policy
         return key;
     }
 
+    inline std::uint64_t makePhysicalWeaponIdentityKey(const EquippedWeaponGenerationIdentity& identity, std::uint32_t referenceHandle)
+    {
+        auto key = makeEquippedWeaponIdentityKey(identity);
+        if (!key || !referenceHandle) return 0;
+        weapon_visual_composition_policy::mixString(key, "ROCKPhysicalWeaponSourceV1");
+        weapon_visual_composition_policy::mixValue(key, referenceHandle);
+        return key;
+    }
+
     /*
      * Manual ownership is instance-bound, unlike generated collision, which is
      * intentionally content-bound. Use the strongest available witness and do

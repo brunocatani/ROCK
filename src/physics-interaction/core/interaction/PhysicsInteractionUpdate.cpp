@@ -108,6 +108,10 @@ namespace rock
         _leftHand.invalidateCollisionPose(world);
         _dynamicHandCollision.retireAll(bhk);
         _dynamicWeaponCollision.retireAll(bhk);
+        for (auto& session : _carriedWeapon.sessions) {
+            (void)session.suspend();
+            (void)session.physics.clear(true);
+        }
         ROCK_LOG_SAMPLE_WARN(Physics, 1000, "Collision pose publication interrupted frame={}; old collider targets invalidated", pending);
     }
 
@@ -627,7 +631,7 @@ namespace rock
             if (bhk == _lifecycle.cachedBhkWorld && world == _lifecycle.cachedHknpWorld)
                 updateNativeGrenadeCollisionSuppression(world, runtime.deltaSeconds);
         }
-        _dynamicWeaponCollision.updateSurfaceSupportInput();
+        if (!_carriedWeapon.hasSession()) _dynamicWeaponCollision.updateSurfaceSupportInput();
         const auto retireDynamicWeaponForInterruptedFrame = [this](bool preserveSurfaceSupport = false) {
             if (!_lifecycle.initialized.load(std::memory_order_acquire)) {
                 return;
@@ -637,8 +641,16 @@ namespace rock
             if (currentBhk && currentBhk == _lifecycle.cachedBhkWorld &&
                 currentHknp && currentHknp == _lifecycle.cachedHknpWorld) {
                 _dynamicWeaponCollision.retireAll(currentBhk, preserveSurfaceSupport);
+                for (auto& session : _carriedWeapon.sessions) {
+                    (void)session.suspend();
+                    (void)session.physics.clear(true);
+                }
             } else {
                 _dynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
+                for (auto& session : _carriedWeapon.sessions) {
+                    (void)session.suspend();
+                    (void)session.physics.clear(false);
+                }
             }
         };
         refreshEquippedWeaponHandlingSettings();
@@ -1106,6 +1118,10 @@ namespace rock
         _bodyBoneColliders.flushPendingPhysicsDrive(world, timing);
         _weaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicWeaponCollision.flushPendingPhysicsDrive(world, timing);
+        for (auto& session : _carriedWeapon.sessions) {
+            session.physics.collision.flushPendingPhysicsDrive(world, timing);
+            session.physics.dynamic.flushPendingPhysicsDrive(world, timing);
+        }
         _dynamicHandCollision.flushPendingPhysicsDrive(world, timing);
         if (performance_profiler::enabled()) {
             performance_profiler::observeValue(performance_profiler::ValueMetric::GeneratedHandBodies,
@@ -1150,6 +1166,8 @@ namespace rock
             world,
             completedSolveSequence,
             timing);
+        for (auto& session : _carriedWeapon.sessions)
+            session.physics.dynamic.samplePostSolve(world, completedSolveSequence, timing);
         _dynamicHandCollision.samplePostSolveDeviations(world, timing);
         const auto gameFrameIndex = _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
         debug::CapturePostSolveBodyPhases(
@@ -1162,6 +1180,7 @@ namespace rock
         logPalmClockSampleForHand("physics-after-solve", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         serviceRetiredGrabConstraintPayloads();
         _weaponCollision.serviceRetiredWeaponBodies(world);
+        for (auto& session : _carriedWeapon.sessions) session.physics.collision.serviceRetiredWeaponBodies(world);
         // Neutralizes hand/body and grab-authority wrappers removed on the main
         // thread after the broadphase grace, while retaining their addresses for
         // native late readers. All generated body owners share this post-solve

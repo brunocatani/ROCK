@@ -4929,6 +4929,29 @@ namespace rock
         _grabHandCollisionSuppression.clearTracking();
     }
 
+    bool Hand::presentPhysicalWeaponHand(RE::TESObjectREFR* reference, const RE::NiTransform& rootDelta)
+    {
+        if (!isHoldingLooseWeapon() || getHeldRef() != reference || !_hasGrabVisualHandTransform) return false;
+        const auto hand = transform_math::composeTransforms(rootDelta, _grabVisualHandTransform);
+        if (!weapon_grip_transfer::validFrame(hand) || !applyGrabExternalHandWorldTransform(_isLeft, hand)) return false;
+        _grabVisualHandTransform = hand;
+        _lastPublishedGrabVisualHandTransform = hand;
+        _hasLastPublishedGrabVisualHandTransform = true;
+        return true;
+    }
+
+    bool Hand::presentPhysicalWeapon(RE::hknpWorld* world, RE::TESObjectREFR* reference, const RE::NiTransform& resolvedRoot)
+    {
+        if (!isHoldingLooseWeapon() || getHeldRef() != reference || !reference || !reference->Get3D() ||
+            !weapon_grip_transfer::validFrame(resolvedRoot)) return false;
+        RE::NiTransform bodyWorld{};
+        if (!havok_runtime::tryGetBodyArrayWorldTransform(world, _savedObjectState.bodyId, bodyWorld)) return false;
+        auto* root = reference->Get3D();
+        const auto requestedBody = transform_math::composeTransforms(root->world, _grabFrame.rootBodyLocal);
+        return held_scene_presentation::publishTargetTransport(_isLeft, world, _savedObjectState.bodyId.value,
+            _grabFrame.traceId, requestedBody, bodyWorld, root, _grabFrame.rootBodyLocal, &resolvedRoot).applied;
+    }
+
     void Hand::clearHeldLooseWeaponBodyCollisionSuppressionState()
     {
         _heldLooseWeaponBodyCollisionSuppression.clearTracking();

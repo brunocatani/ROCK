@@ -56,17 +56,18 @@ namespace rock
                 busy.clear(std::memory_order_release);
                 return true;
             }
-        } liveArchive, loadedArchive;
+        };
+        std::array<ArchiveChannel, 2> liveArchives{}, loadedArchives{};
         constexpr std::uint32_t archiveType = 0x424D4B41; // AKMB
 
         void saveArchive(const F4SE::SerializationInterface* serialization) noexcept
         {
             try {
-                Archive record{};
-                if (!liveArchive.read(record)) {
-                    ROCK_LOG_ERROR(Weapon, "Akimbo save snapshot unavailable");
-                } else if (record.reference && !serialization->WriteRecord(archiveType, 1, &record, sizeof(record))) {
-                    ROCK_LOG_ERROR(Weapon, "Akimbo save record could not be written");
+                for (auto& channel : liveArchives) {
+                    Archive record{};
+                    if (!channel.read(record)) ROCK_LOG_ERROR(Weapon, "Physical weapon save snapshot unavailable");
+                    else if (record.reference && !serialization->WriteRecord(archiveType, 1, &record, sizeof(record)))
+                        ROCK_LOG_ERROR(Weapon, "Physical weapon save record could not be written");
                 }
             } catch (...) { try { ROCK_LOG_ERROR(Weapon, "Akimbo save callback failed"); } catch (...) {} }
         }
@@ -74,7 +75,8 @@ namespace rock
         void loadArchive(const F4SE::SerializationInterface* serialization) noexcept
         {
             try {
-                (void)loadedArchive.write({});
+                for (auto& channel : loadedArchives) (void)channel.write({});
+                unsigned restoredCount = 0;
                 std::uint32_t type{}, version{}, length{};
                 for (unsigned recordIndex = 0; recordIndex < 64 && serialization->GetNextRecordInfo(type, version, length); ++recordIndex) {
                     if (type != archiveType || version != 1 || length != sizeof(Archive)) continue;
@@ -87,15 +89,16 @@ namespace rock
                     const auto ammo = record.ammo ? serialization->ResolveFormID(record.ammo) : std::optional<std::uint32_t>{0};
                     if (!reference || !weapon || !ammo) continue;
                     record.reference = *reference; record.weapon = *weapon; record.ammo = *ammo;
-                    if (!loadedArchive.write(record)) ROCK_LOG_ERROR(Weapon, "Akimbo restored snapshot publication failed");
+                    if (restoredCount < loadedArchives.size() && !loadedArchives[restoredCount++].write(record))
+                        ROCK_LOG_ERROR(Weapon, "Physical weapon restored snapshot publication failed");
                 }
             } catch (...) { try { ROCK_LOG_ERROR(Weapon, "Akimbo save data could not be restored"); } catch (...) {} }
         }
 
         void revertArchive(const F4SE::SerializationInterface*) noexcept
         {
-            (void)liveArchive.write({});
-            (void)loadedArchive.write({});
+            for (auto& channel : liveArchives) (void)channel.write({});
+            for (auto& channel : loadedArchives) (void)channel.write({});
             saving.store(false, std::memory_order_release);
         }
 
@@ -147,6 +150,25 @@ namespace rock
             return static_cast<RE::EquippedWeaponData*>(item.data.get());
         }
 
+        struct FirearmTiming { float shot{}, reload{}; bool automatic{}; };
+        bool readFirearmTiming(RE::TESObjectWEAP* weapon, RE::TBO_InstanceData* instance, FirearmTiming& timing)
+        {
+            if (!weapon || weapon->weaponData.type != RE::WEAPON_TYPE::kGun) return false;
+            const auto* effective = instance ? static_cast<const RE::TESObjectWEAP::InstanceData*>(instance) : &weapon->weaponData;
+            // Player-owned reload selection and charging need separate native
+            // operations. Reject them before converting an existing weapon.
+            using NeedsPlayerReload = bool (*)(const RE::TESAmmo*);
+            if (!effective->ammo || reinterpret_cast<NeedsPlayerReload>(REL::Offset(0x2F30E0).address())(effective->ammo) ||
+                effective->flags.any(RE::WEAPON_FLAGS::kChargingAttack, RE::WEAPON_FLAGS::kChargingReload,
+                    RE::WEAPON_FLAGS::kHoldInputToPower)) return false;
+            const float rate = reinterpret_cast<Rate>(REL::Offset(0x333360).address())(weapon, instance);
+            const auto* ranged = effective->rangedData ? effective->rangedData : weapon->weaponData.rangedData;
+            if (!ranged || !std::isfinite(rate) || rate <= 0.0f || !std::isfinite(effective->reloadSpeed) ||
+                effective->reloadSpeed <= 0.0f || !std::isfinite(ranged->reloadSeconds) || ranged->reloadSeconds <= 0.0f) return false;
+            timing = {1.0f / rate, ranged->reloadSeconds / effective->reloadSpeed, effective->flags.any(RE::WEAPON_FLAGS::kAutomatic)};
+            return std::isfinite(timing.shot) && std::isfinite(timing.reload);
+        }
+
         struct ShotOrigin
         {
             RE::TESForm* form{};
@@ -162,28 +184,29 @@ namespace rock
         {
             auto* player = RE::PlayerCharacter::GetSingleton();
             if (!player || player->currentProcess != process) return requested;
+            const auto* scoped = native_carried_weapon_context::current(process, index);
             auto primary = emptyItem();
-            if (!readItem(0, primary)) return requested;
-            const auto* primaryData = weaponData(primary);
-            if (!primaryData || !primaryData->ammo) return requested;
-            RE::TESAmmo* targetAmmo{};
-            std::uint32_t otherLoaded{};
-            if (index == 0) {
-                Archive carried{};
-                if (!liveArchive.read(carried)) return (std::min)(requested, primaryData->ammoCount);
-                if (!carried.reference || carried.ammo != primaryData->ammo->formID) return requested;
-                targetAmmo = primaryData->ammo;
-                otherLoaded = carried.loaded;
-            } else {
-                const auto* scoped = native_carried_weapon_context::current(process, index);
-                const auto* carried = scoped ? weaponData(*scoped) : nullptr;
-                if (!carried || carried->ammo != primaryData->ammo) return requested;
-                targetAmmo = carried->ammo;
-                otherLoaded = primaryData->ammoCount;
+            const auto* target = scoped ? weaponData(*scoped) : readItem(index, primary) ? weaponData(primary) : nullptr;
+            if (!target || !target->ammo) return requested;
+            std::uint64_t reserved = 0;
+            for (unsigned slot = 0; slot < liveArchives.size(); ++slot) {
+                if (scoped && slot == index) continue;
+                Archive other{};
+                if (!liveArchives[slot].read(other)) return (std::min)(requested, target->ammoCount);
+                if (other.reference && other.ammo == target->ammo->formID) reserved += other.loaded;
+            }
+            if (scoped) {
+                // During dual entry one original native gun can remain while
+                // the second item is prepared. Reserve that magazine too.
+                auto native = emptyItem();
+                if (native_carried_weapon_context::readNative(process, 0, native)) {
+                    const auto* nativeData = weaponData(native);
+                    if (nativeData && nativeData->ammo == target->ammo) reserved += nativeData->ammoCount;
+                }
             }
             std::uint32_t total{};
-            if (!reinterpret_cast<ItemCount>(REL::Offset(0x3E8380).address())(player, &total, targetAmmo, false)) return 0;
-            return akimbo::clampReload(requested, total, otherLoaded);
+            if (!reinterpret_cast<ItemCount>(REL::Offset(0x3E8380).address())(player, &total, target->ammo, false)) return 0;
+            return akimbo::clampReload(requested, total, static_cast<std::uint32_t>((std::min)(reserved, std::uint64_t{UINT32_MAX})));
         }
 
         void onReloadCount(RE::AIProcess* process, std::uint32_t index, std::uint32_t requested) noexcept
@@ -194,34 +217,34 @@ namespace rock
 
     }
 
-    void CarriedWeaponRuntime::beforeSave() noexcept
+    void PhysicalWeaponSession::beforeSave() noexcept
     {
         // The carried data is private, so native save/load never serializes
         // an extra equipped item. Its value snapshot belongs to the co-save.
         saving.store(true, std::memory_order_release);
     }
 
-    void CarriedWeaponRuntime::afterSave() noexcept
+    void PhysicalWeaponSession::afterSave() noexcept
     {
         saving.store(false, std::memory_order_release);
     }
 
-    bool CarriedWeaponRuntime::ready() noexcept
+    bool PhysicalWeaponSession::ready() noexcept
     {
         return ammoHookInstalled && native_scope_shot_diagnostics::hooksReady() && !saving.load(std::memory_order_acquire);
     }
 
-    void CarriedWeaponRuntime::noteInteractionThread() noexcept
+    void PhysicalWeaponSession::noteInteractionThread() noexcept
     {
         interactionThread.store(GetCurrentThreadId(), std::memory_order_release);
     }
 
-    bool CarriedWeaponRuntime::isInteractionThread() noexcept
+    bool PhysicalWeaponSession::isInteractionThread() noexcept
     {
         return interactionThread.load(std::memory_order_acquire) == GetCurrentThreadId();
     }
 
-    bool CarriedWeaponRuntime::install() noexcept try
+    bool PhysicalWeaponSession::install() noexcept try
     {
         if (ammoHookInstalled) return true;
         if (!nativeReady()) return false;
@@ -252,21 +275,21 @@ namespace rock
         return false;
     }
 
-    bool CarriedWeaponRuntime::owns(const RE::TESObjectREFR* reference) const noexcept
+    bool PhysicalWeaponSession::owns(const RE::TESObjectREFR* reference) const noexcept
     {
         return reference && _reference.get() == reference;
     }
 
-    bool CarriedWeaponRuntime::retains(const RE::TESObjectREFR* reference) const noexcept
+    bool PhysicalWeaponSession::retains(const RE::TESObjectREFR* reference) const noexcept
     {
         if (!reference) return false;
         if (_transfer.valid && _transfer.reference.get().get() == reference && reference->GetObjectReference() == _transfer.form) return true;
         Archive restored{};
         const auto* form = reference->GetObjectReference();
-        return loadedArchive.read(restored) && form && restored.reference == reference->formID && restored.weapon == form->formID;
+        return loadedArchives[_slotNumber].read(restored) && form && restored.reference == reference->formID && restored.weapon == form->formID;
     }
 
-    bool CarriedWeaponRuntime::contextCurrent(RE::EquippedItem& item) const noexcept
+    bool PhysicalWeaponSession::contextCurrent(RE::EquippedItem& item) const noexcept
     {
         if (!_registered || !_reference || !_data) return false;
         item.item = _weapon;
@@ -276,14 +299,14 @@ namespace rock
         return weaponData(item) != nullptr;
     }
 
-    bool CarriedWeaponRuntime::sourceCurrent() const noexcept
+    bool PhysicalWeaponSession::sourceCurrent() const noexcept
     {
         if (!_reference || _reference->GetHandle() != _referenceHandle || _reference->GetObjectReference() != _weapon.object) return false;
         const auto* extra = _reference->extraList ? _reference->extraList->GetByType<RE::ExtraInstanceData>() : nullptr;
         return (extra ? extra->data.get() : nullptr) == _weapon.instanceData.get();
     }
 
-    void CarriedWeaponRuntime::observeAmmo() noexcept
+    void PhysicalWeaponSession::observeAmmo() noexcept
     {
         auto item = emptyItem();
         auto* data = contextCurrent(item) ? weaponData(item) : nullptr;
@@ -291,17 +314,16 @@ namespace rock
         RE::TESAmmo* ammo{};
         _ammoForm = _ammoKnown && native_memory::tryReadValue(&data->ammo, ammo) && ammo ? ammo->formID : 0;
         if (_reference && _weapon.object && _ammoKnown) {
-            (void)liveArchive.write({_reference->formID, _weapon.object->formID, _ammoForm, _loaded,
+            (void)liveArchives[_slotNumber].write({_reference->formID, _weapon.object->formID, _ammoForm, _loaded,
                 _operation.cooldown(), _operation.reloadRemaining(), _operation.reloading() ? 1u : 0u});
         }
     }
 
-    bool CarriedWeaponRuntime::admit(const Input& input)
+    bool PhysicalWeaponSession::admit(const Input& input)
     {
         if (!input.reference || !ready() || !nativeReady()) return false;
         auto* player = RE::PlayerCharacter::GetSingleton();
-        auto primary = emptyItem();
-        if (!player || ((!readItem(0, primary) || !weaponData(primary)) && !retains(input.reference))) return false;
+        if (!player || !player->currentProcess || !player->currentProcess->middleHigh || _slotNumber >= 2) return false;
         auto* form = input.reference->GetObjectReference();
         auto* weapon = form ? form->As<RE::TESObjectWEAP>() : nullptr;
         if (!weapon || weapon->weaponData.type != RE::WEAPON_TYPE::kGun) return false;
@@ -309,26 +331,14 @@ namespace rock
         if (input.reference->extraList) {
             if (const auto* extra = input.reference->extraList->GetByType<RE::ExtraInstanceData>()) instance = extra->data;
         }
-        auto* slot = RE::TESForm::GetFormByID<RE::BGSEquipSlot>(0x13F43);
+        auto* slot = RE::TESForm::GetFormByID<RE::BGSEquipSlot>(_slotNumber ? 0x13F43 : 0x13F42);
         std::uint32_t index = UINT32_MAX;
         if (!slot) return false;
         reinterpret_cast<ResolveIndex>(REL::Offset(0x3E6840).address())(player, &index, slot);
-        auto occupied = emptyItem();
-        if (index == 0 || index == UINT32_MAX || readItem(index, occupied)) return false;
+        if (index != _slotNumber) return false;
 
-        const auto* effective = instance ? static_cast<const RE::TESObjectWEAP::InstanceData*>(instance.get()) : &weapon->weaponData;
-        // F04DB0 routes these two native ammo identities through player-owned
-        // reload selection, before the indexed actor path used here.
-        using NeedsPlayerReload = bool (*)(const RE::TESAmmo*);
-        if (!effective->ammo || reinterpret_cast<NeedsPlayerReload>(REL::Offset(0x2F30E0).address())(effective->ammo)) return false;
-        const float rate = reinterpret_cast<Rate>(REL::Offset(0x333360).address())(weapon, instance.get());
-        const auto* ranged = effective->rangedData ? effective->rangedData : weapon->weaponData.rangedData;
-        if (!ranged || !std::isfinite(rate) || rate <= 0.0f || !std::isfinite(effective->reloadSpeed) ||
-            effective->reloadSpeed <= 0.0f || !std::isfinite(ranged->reloadSeconds) || ranged->reloadSeconds <= 0.0f) return false;
-        // Charged operations need their own native admission/completion path;
-        // never turn a charge weapon into an ordinary trigger-driven firearm.
-        if (effective->flags.any(RE::WEAPON_FLAGS::kChargingAttack, RE::WEAPON_FLAGS::kChargingReload,
-                RE::WEAPON_FLAGS::kHoldInputToPower)) return false;
+        FirearmTiming timing{};
+        if (!readFirearmTiming(weapon, instance.get(), timing)) return false;
 
         _reference.reset(input.reference);
         _referenceHandle = input.reference->GetHandle();
@@ -336,16 +346,16 @@ namespace rock
         _slot = slot;
         _index = index;
         _thread = GetCurrentThreadId();
-        _secondsPerShot = 1.0f / rate;
-        _reloadSeconds = ranged->reloadSeconds / effective->reloadSpeed;
-        _automatic = effective->flags.any(RE::WEAPON_FLAGS::kAutomatic);
-        _operation.begin(_nextSession++);
+        _secondsPerShot = timing.shot;
+        _reloadSeconds = timing.reload;
+        _automatic = timing.automatic;
+        _operation.begin((_nextSession++ << 1) | _slotNumber);
         _operation.bind(input.hand, input.grip);
         if (!publishContext()) { _faulted = true; clear(true); return false; }
         auto admitted = emptyItem();
         auto* admittedData = contextCurrent(admitted) ? weaponData(admitted) : nullptr;
         Archive restored{};
-        const bool restoreSaved = loadedArchive.read(restored) && restored.reference == input.reference->formID &&
+        const bool restoreSaved = loadedArchives[_slotNumber].read(restored) && restored.reference == input.reference->formID &&
             restored.weapon == form->formID && admittedData && admittedData->ammo && admittedData->ammo->formID == restored.ammo;
         const bool restoreTransfer = _transfer.valid && _transfer.reference == _referenceHandle && _transfer.form == form &&
             admittedData && admittedData->ammo && admittedData->ammo->formID == _transfer.ammo;
@@ -355,7 +365,7 @@ namespace rock
             observeAmmo();
             if (restoreSaved) {
                 _operation.restore(restored.cooldown, restored.reloadRemaining, (restored.flags & 1) != 0);
-                (void)loadedArchive.write({});
+                (void)loadedArchives[_slotNumber].write({});
             }
             auto currentPrimary = emptyItem();
             if (readItem(0, currentPrimary)) {
@@ -376,7 +386,7 @@ namespace rock
         return true;
     }
 
-    bool CarriedWeaponRuntime::publishContext()
+    bool PhysicalWeaponSession::publishContext()
     {
         auto* player = RE::PlayerCharacter::GetSingleton();
         if (!ready() || !player || !player->currentProcess || !sourceCurrent()) return false;
@@ -391,17 +401,18 @@ namespace rock
         return true;
     }
 
-    void CarriedWeaponRuntime::removeContext() noexcept
+    void PhysicalWeaponSession::removeContext() noexcept
     {
-        carried_weapon_projectile::clear();
+        carried_weapon_projectile::clear(_slotNumber);
         if (!_registered) return;
         using StopIdle = void (*)(RE::EquippedItemData*, bool);
         if (_data) reinterpret_cast<StopIdle>(REL::Offset(0xEC39C0).address())(_data.get(), false);
         _registered = false;
     }
-    void CarriedWeaponRuntime::clear(bool nativeWorldAvailable) noexcept
+    void PhysicalWeaponSession::clear(bool nativeWorldAvailable) noexcept
     {
-        carried_weapon_projectile::clear();
+        if (!physics.clear(nativeWorldAvailable)) return;
+        carried_weapon_projectile::clear(_slotNumber);
         _cycle.clear();
         if (nativeWorldAvailable) removeContext();
         _registered = false;
@@ -416,17 +427,17 @@ namespace rock
         _ammoKnown = false;
         _operation.begin(0);
         _faulted = false;
-        (void)liveArchive.write({});
+        (void)liveArchives[_slotNumber].write({});
     }
 
-    void CarriedWeaponRuntime::shutdown(bool nativeWorldAvailable) noexcept
+    void PhysicalWeaponSession::shutdown(bool nativeWorldAvailable) noexcept
     {
         interactionThread.store(0, std::memory_order_release);
         clear(nativeWorldAvailable);
         cancelTransfer();
     }
 
-    bool CarriedWeaponRuntime::suspend() noexcept
+    bool PhysicalWeaponSession::suspend() noexcept
     {
         // Equip notifications cannot evict a private context. Only clear
         // pending physical input so a native transition cannot replay it.
@@ -434,43 +445,49 @@ namespace rock
         return true;
     }
 
-    void CarriedWeaponRuntime::captureTransfer() noexcept
+    bool PhysicalWeaponSession::captureTransfer() noexcept
     {
         _transfer = {};
         auto item = emptyItem();
         auto* data = readItem(0, item) ? weaponData(item) : nullptr;
-        if (!data || !data->ammo) return;
+        if (!data || !data->ammo || !item.item.object) return false;
+        FirearmTiming timing{};
+        if (!readFirearmTiming(item.item.object->As<RE::TESObjectWEAP>(), item.item.instanceData.get(), timing)) return false;
         _transfer = {item.item.object, {}, data->ammoCount, data->ammo->formID, true};
+        return true;
     }
 
-    void CarriedWeaponRuntime::commitTransfer(RE::ObjectRefHandle reference) noexcept
+    void PhysicalWeaponSession::commitTransfer(RE::ObjectRefHandle reference) noexcept
     {
         if (!_transfer.valid || !reference) { _transfer = {}; return; }
         _transfer.reference = reference;
         if (const auto retained = reference.get()) {
-            (void)liveArchive.write({retained->formID, _transfer.form->formID, _transfer.ammo, _transfer.loaded});
+            (void)liveArchives[_slotNumber].write({retained->formID, _transfer.form->formID, _transfer.ammo, _transfer.loaded});
         }
     }
 
-    void CarriedWeaponRuntime::cancelTransfer() noexcept
+    void PhysicalWeaponSession::cancelTransfer() noexcept
     {
         _transfer = {};
-        if (!_reference) (void)liveArchive.write({});
+        if (!_reference) (void)liveArchives[_slotNumber].write({});
     }
 
-    bool CarriedWeaponRuntime::preparePrimaryEquip(RE::TESObjectREFR* reference) noexcept
+    bool PhysicalWeaponSession::preparePrimaryEquip(RE::TESObjectREFR* reference) noexcept
     {
-        if (!owns(reference)) return true;
+        if (!owns(reference)) {
+            if (_transfer.valid && reference && _transfer.reference == reference->GetHandle()) _transfer.promoting = true;
+            return true;
+        }
         observeAmmo();
         // Complete weapon-owned operations before returning to the native
         // primary animation path; promotion must not bypass either timer.
-        if (!_ammoKnown || _faulted || _operation.reloading() || _operation.cooldown() > 0.0f) return false;
+        if (!canReturnToNative()) return false;
         _transfer = {_weapon.object, _referenceHandle, _loaded, _ammoForm, true, true};
         clear(true); // Pickup must not retain ROCK's old world-reference lease.
         return !hasSession();
     }
 
-    void CarriedWeaponRuntime::finishPrimaryEquip(RE::ObjectRefHandle source, RE::TESObjectWEAP* weapon,
+    void PhysicalWeaponSession::finishPrimaryEquip(RE::ObjectRefHandle source, RE::TESObjectWEAP* weapon,
         std::uintptr_t instance, bool committed) noexcept
     {
         if (!_transfer.valid || !_transfer.promoting || !committed || _transfer.form != weapon || source != _transfer.reference) return;
@@ -485,7 +502,7 @@ namespace rock
         _transfer = {};
     }
 
-    void CarriedWeaponRuntime::reload()
+    void PhysicalWeaponSession::reload()
     {
         auto* player = RE::PlayerCharacter::GetSingleton();
         auto item = emptyItem();
@@ -498,7 +515,7 @@ namespace rock
             _operation.session(), _index, completed, _loaded, _ammoKnown);
     }
 
-    bool CarriedWeaponRuntime::applyShotOrigin(void* launchData) noexcept
+    bool PhysicalWeaponSession::applyShotOrigin(void* launchData) noexcept
     {
         // True means an unrelated native shot needs no override. False during
         // our dispatch makes the origin hook decline the shot, never substitute
@@ -525,7 +542,7 @@ namespace rock
         return currentShot.applied;
     }
 
-    void CarriedWeaponRuntime::fire()
+    void PhysicalWeaponSession::fire()
     {
         auto* player = RE::PlayerCharacter::GetSingleton();
         auto item = emptyItem();
@@ -540,9 +557,8 @@ namespace rock
         currentShot = {weapon.object, weapon.instanceData.get(), muzzleLease->world, _index, true, false};
         struct ClearShot { ~ClearShot() { currentShot = {}; } } clearShot;
         const auto before = data->ammoCount;
-        auto primaryBefore = emptyItem(), primaryAfter = emptyItem();
-        const auto* primaryData = readItem(0, primaryBefore) ? weaponData(primaryBefore) : nullptr;
-        const auto primaryCountBefore = primaryData ? primaryData->ammoCount : 0;
+        Archive peerBefore{}, peerAfter{};
+        const bool peerKnownBefore = liveArchives[_slotNumber ^ 1u].read(peerBefore) && peerBefore.reference;
         {
             native_carried_weapon_context::Scope context(player->currentProcess, item);
             reinterpret_cast<Fire>(REL::Offset(0x333740).address())(&weapon, player, _index, data->ammo, nullptr);
@@ -551,14 +567,16 @@ namespace rock
         currentShot = {};
         observeAmmo();
         if (result.applied && result.launches && _ammoKnown && _loaded < before) _cycle.fire();
-        primaryData = readItem(0, primaryAfter) ? weaponData(primaryAfter) : nullptr;
-        ROCK_LOG_DEBUG(Weapon, "Akimbo shot session={} form={:08X} index={} before={} after={} known={} primaryBefore={} primaryAfter={} primaryKnown={} originApplied={} projectiles={} lastHandle={:08X} origin=({:.3f},{:.3f},{:.3f})",
-            session, weapon.object->formID, _index, before, _loaded, _ammoKnown, primaryCountBefore,
-            primaryData ? primaryData->ammoCount : 0, primaryData != nullptr, result.applied, result.launches, result.lastHandle,
+        const bool peerKnownAfter = liveArchives[_slotNumber ^ 1u].read(peerAfter) && peerAfter.reference;
+        ROCK_LOG_DEBUG(Weapon, "Physical weapon shot session={} slot={} form={:08X} before={} after={} known={} peerForm={:08X} peerBefore={} peerAfter={} peerKnown={} originApplied={} projectiles={} lastHandle={:08X} origin=({:.3f},{:.3f},{:.3f})",
+            session, _slotNumber, weapon.object->formID, before, _loaded, _ammoKnown,
+            peerBefore.weapon, peerBefore.loaded, peerAfter.loaded,
+            peerKnownBefore && peerKnownAfter && peerBefore.reference == peerAfter.reference,
+            result.applied, result.launches, result.lastHandle,
             result.world.translate.x, result.world.translate.y, result.world.translate.z);
     }
 
-    void CarriedWeaponRuntime::observeShotLaunch(const void* launchData, std::uint32_t handle) noexcept
+    void PhysicalWeaponSession::observeShotLaunch(const void* launchData, std::uint32_t handle) noexcept
     {
         if (!currentShot.active || !launchData || !handle) return;
         std::uintptr_t weapon{}, instance{};
@@ -573,7 +591,7 @@ namespace rock
         }
     }
 
-    void CarriedWeaponRuntime::prepare(const Input& input)
+    void PhysicalWeaponSession::prepare(const Input& input)
     {
         _cycle.reap();
         if (saving.load(std::memory_order_acquire)) return;
@@ -584,9 +602,10 @@ namespace rock
             ROCK_LOG_WARN(Weapon, "Akimbo admission declined ref={:08X} form={:08X}; native contract, firearm data or second index unavailable",
                 input.reference->formID, input.reference->GetObjectReference() ? input.reference->GetObjectReference()->formID : 0);
         }
+        if (owns(input.reference) && !_cycle.ready()) _cycle.update(input.reference, 0.0f);
     }
 
-    void CarriedWeaponRuntime::update(const Input& input)
+    void PhysicalWeaponSession::update(const Input& input)
     {
         prepare(input);
         if (!ready() || GetCurrentThreadId() != _thread || !owns(input.reference)) return;
@@ -602,20 +621,22 @@ namespace rock
         }
         _operation.bind(input.hand, input.grip);
         _operation.advance(input.deltaSeconds);
-        _cycle.update(input.reference, input.inputAllowed ? input.deltaSeconds : 0.0f);
+        _cycle.update(input.reference, input.deltaSeconds);
         // Publish the replacement cache while both nodes are still pinned.
         // Native readers must never see a retired node after its lease drops.
         RE::NiPointer<RE::NiAVObject> nextMuzzle(input.muzzle);
         weaponData(item)->fireNode = nextMuzzle.get();
         _muzzle = std::move(nextMuzzle);
         observeAmmo();
+        // An accepted reload belongs to this item and must finish before
+        // restoration to native single-weapon handling can proceed.
+        if (_operation.reloadDue()) reload();
         if (!input.inputAllowed) { _operation.cancelInput(); return; }
         if (!_muzzle && input.grip == akimbo::Grip::Firing && input.triggerHeld) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Akimbo shot blocked session={} ref={:08X}: held model has no bounded ProjectileNode",
                 _operation.session(), _reference->formID);
         }
         if (input.reloadPressed) (void)_operation.beginReload(_reloadSeconds);
-        if (_operation.reloadDue()) reload();
         const auto ticket = _operation.requestFire(_muzzle && input.inputAllowed, input.triggerHeld,
             _automatic, _ammoKnown, _loaded);
         if (_operation.current(ticket)) {

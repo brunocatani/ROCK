@@ -117,18 +117,15 @@ namespace rock
         }
         _diagnostics.lastOmodDumpGenerationKey = _identity.cachedBodySetKey;
 
-        auto* player = f4vr::getPlayer();
-        auto* equipData = f4vr::getEquippedWeaponItem();
-        auto* weaponForm = equipData ? equipData->item.object : nullptr;
-        auto* equippedInstanceData = equipData ? equipData->item.instanceData.get() : nullptr;
+        const auto source = weaponSource();
+        auto* weaponForm = source.form;
         ROCK_LOG_INFO(Weapon,
             "OMOD-DUMP begin generation={:016X} weapon={:08X} '{}'",
             _identity.cachedBodySetKey,
             weaponForm ? weaponForm->formID : 0u,
             weaponForm ? RE::TESFullName::GetFullName(*weaponForm) : std::string_view{});
 
-        const RE::BGSObjectInstanceExtra* objectInstanceExtra =
-            weaponForm ? findEquippedWeaponObjectInstanceExtra(player, weaponForm, equippedInstanceData) : nullptr;
+        const auto* objectInstanceExtra = source.mods;
         if (objectInstanceExtra && objectInstanceExtra->values) {
             const auto indexData = objectInstanceExtra->GetIndexData();
             ROCK_LOG_INFO(Weapon, "OMOD-DUMP installed mods count={}", indexData.size());

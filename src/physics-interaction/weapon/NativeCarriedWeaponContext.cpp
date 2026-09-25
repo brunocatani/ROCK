@@ -86,4 +86,9 @@ namespace rock::native_carried_weapon_context
     {
         return process && process == activeProcess && activeItem && activeItem->equipIndex.index == index ? activeItem : nullptr;
     }
+
+    bool readNative(RE::AIProcess* process, std::uint32_t index, RE::EquippedItem& output) noexcept
+    {
+        return originalRead && process && originalRead(process, index, &output);
+    }
 }

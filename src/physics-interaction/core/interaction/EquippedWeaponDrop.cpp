@@ -18,7 +18,7 @@ namespace rock
         const auto sourceHand = retainedIsLeft ?
             equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right;
         if (!retainedHandCarries || receivingHandCarries ||
-            !_twoHandedGrip.requestEquippedWeaponDrop("trigger-equip-retention", sourceHand, frame.deltaSeconds)) {
+            !_twoHandedGrip.requestEquippedWeaponDrop("physical-session-entry", sourceHand, frame.deltaSeconds)) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
                 "Trigger equip retained both weapons: previous={:08X} hand={} carry={} receivingCarry={} drop pose unavailable",
                 previousForm, retainedIsLeft ? "left" : "right",
@@ -29,7 +29,11 @@ namespace rock
         const auto dropRequest = _twoHandedGrip.consumeEquippedWeaponDropRequest();
         // Keep the old scene alive through cleanup of its grip authorities.
         RE::NiPointer<RE::NiNode> transferSourceNode(resolveEquippedWeaponInteractionNode());
-        _carriedWeapon.captureTransfer();
+        if (!_carriedWeapon.captureTransfer()) {
+            _twoHandedGrip.completeEquippedWeaponDrop(dropRequest, false);
+            transition.cancelHeldRequest("outgoing-magazine-unavailable");
+            return false;
+        }
         const bool dropped = dropEquippedWeaponToWorld(frame, dropRequest,
             equipped_weapon_drop_policy::Mode::ToggleDrop);
         if (!dropped) _carriedWeapon.cancelTransfer();
@@ -45,7 +49,7 @@ namespace rock
             return false;
         }
         ROCK_LOG_INFO(Weapon,
-            "Trigger equip keeping previous weapon in hand: previous={:08X} retainedHand={} incoming={:08X} equipHand={}",
+            "Physical weapon conversion keeps source grip: previous={:08X} retainedHand={} incoming={:08X} equipHand={}",
             previousForm, retainedIsLeft ? "left" : "right",
             transition.heldTransfer().request.reference, equipIsLeft ? "left" : "right");
         return true;
@@ -141,8 +145,8 @@ namespace rock
                     transfer.request.previousForm == observedEquippedWeaponFormID && transfer.request.isLeft != transferIsLeft;
                 if (replacementDrop) {
                     _equipped.transition.recordOutgoingRemoval(dropResult.droppedFormID);
-                    _carriedWeapon.commitTransfer(dropResult.handle);
                 }
+                if (dropCommitted) _carriedWeapon.commitTransfer(dropResult.handle);
                 if (dropCommitted) {
                     enforceNoBareFistState(true);
                     /*

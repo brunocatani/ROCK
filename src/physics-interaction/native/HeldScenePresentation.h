@@ -55,7 +55,12 @@ namespace rock::held_scene_presentation
         const RE::NiTransform& targetBodyWorld,
         const RE::NiTransform& solvedBodyWorld,
         RE::NiAVObject* referenceRoot,
-        const RE::NiTransform& bodyInRoot) noexcept;
+        const RE::NiTransform& bodyInRoot,
+        const RE::NiTransform* resolvedWeaponRoot = nullptr) noexcept;
+    // After mechanical animation, keep native body-owner writes on that same
+    // pose. Frame thread only; the scene writer consumes immutable transforms.
+    [[nodiscard]] bool refreshPhysicalWeaponParts(bool isLeft, RE::hknpWorld* world,
+        RE::NiAVObject* referenceRoot) noexcept;
     // Copies the selected hand's immutable pose only for this exact frame.
     // No scene pointer crosses into the overlay render thread.
     [[nodiscard]] bool tryGetPresentedBodyWorld(

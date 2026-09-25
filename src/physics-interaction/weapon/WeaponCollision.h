@@ -2,6 +2,7 @@
 
 #include "physics-interaction/weapon/GeneratedWeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponEvidenceSnapshot.h"
+#include "physics-interaction/weapon/WeaponCollisionSource.h"
 
 #include <array>
 #include <atomic>
@@ -42,6 +43,7 @@ namespace RE
 {
     class NiAVObject;
     class NiNode;
+    class TESObjectREFR;
     class NiTransform;
     class bhkWorld;
 }
@@ -68,6 +70,10 @@ namespace rock
 
     public:
         WeaponCollision();
+
+        // Main-thread binding before update. Null restores the legacy native
+        // source; a physical session never scans another weapon's scene roots.
+        void bindPhysicalSource(RE::TESObjectREFR* reference, RE::EquippedWeaponData* data);
 
         void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _physicsCallbackGate = gate; }
 
@@ -681,6 +687,10 @@ namespace rock
         std::uint64_t getWeaponVisualCompositionKey(RE::NiAVObject* weaponNode, WeaponVisualKeyStats& stats) const;
 
         void maybeDumpWeaponAnimNodeDiagnostics(RE::NiAVObject* updateWeaponNode, std::uint64_t observedKey);
+
+        WeaponCollisionSource weaponSource(bool includeMods = true) const;
+        RE::NiPointer<RE::TESObjectREFR> _physicalReference{};
+        RE::NiPointer<RE::EquippedWeaponData> _physicalData{};
 
         void queueBodyTarget(WeaponBodyInstance& instance, const RE::NiTransform& weaponTransform, float sourceDeltaSeconds);
 

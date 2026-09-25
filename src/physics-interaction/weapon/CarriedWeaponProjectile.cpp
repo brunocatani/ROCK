@@ -13,38 +13,43 @@ namespace rock::carried_weapon_projectile
         struct Owner
         {
             std::uintptr_t weapon{}, instance{};
-            std::uint32_t reference{}, shooter{}, index{};
+            std::uint32_t reference{}, shooter{}, index{}, bodyCount{};
+            std::array<std::uint32_t, 257> bodies{};
         };
         struct Publication
         {
             std::atomic<std::uint64_t> sequence{};
             std::atomic<std::uintptr_t> weapon{}, instance{};
-            std::atomic<std::uint32_t> reference{}, shooter{}, index{};
+            std::atomic<std::uint32_t> reference{}, shooter{}, index{}, bodyCount{};
+            std::array<std::atomic<std::uint32_t>, 257> bodies{};
             bool read(Owner& out) const noexcept
             {
                 const auto before = sequence.load(std::memory_order_acquire);
                 if (before & 1) return false;
                 out = {weapon.load(), instance.load(), reference.load(), shooter.load(), index.load()};
+                out.bodyCount = (std::min)(bodyCount.load(), static_cast<std::uint32_t>(out.bodies.size()));
+                for (unsigned i = 0; i < out.bodyCount; ++i) out.bodies[i] = bodies[i].load();
                 return out.reference && sequence.load(std::memory_order_acquire) == before;
             }
-        } owner;
+        };
+        std::array<Publication, 2> owners{};
         using AdmitHit = bool (*)(void*, std::uint32_t, void*, std::uint32_t);
         using AddImpact = std::uint32_t (*)(void*, const void*);
         AdmitHit originalAdmit{};
         AddImpact originalImpact{};
         bool installed{};
-        std::atomic<std::uint32_t> candidateLogs{}, impactLogs{};
+        std::array<std::atomic<std::uint32_t>, 2> candidateLogs{}, impactLogs{};
 
         bool ownedProjectile(const void* projectile, Owner& snapshot, Identity& identity) noexcept
         {
-            if (!projectile || !owner.read(snapshot)) return false;
+            if (!projectile) return false;
             // 1057B00 copies these fields from launch data; 104E020 initializes
             // them and 10585A0 independently reads the retained weapon pair.
             return native_memory::tryReadField(projectile, 0x1A8, identity.shooter) &&
                 native_memory::tryReadField(projectile, 0x238, identity.weapon) &&
                 native_memory::tryReadField(projectile, 0x240, identity.instance) &&
-                native_memory::tryReadField(projectile, 0x250, identity.index) &&
-                identity == Identity{snapshot.weapon, snapshot.instance, snapshot.shooter, snapshot.index};
+                native_memory::tryReadField(projectile, 0x250, identity.index) && identity.index < owners.size() &&
+                owners[identity.index].read(snapshot) && identity == Identity{snapshot.weapon, snapshot.instance, snapshot.shooter, snapshot.index};
         }
 
         bool admitHit(void* target, std::uint32_t filter, void* projectile, std::uint32_t body)
@@ -57,8 +62,10 @@ namespace rock::carried_weapon_projectile
             if (target) (void)native_memory::tryReadField(target, 0x14, targetForm);
             (void)native_memory::tryReadField(projectile, 0x14, projectileForm);
             const Identity identity{snapshot.weapon, snapshot.instance, snapshot.shooter, snapshot.index};
-            const bool self = isOwnHeldWeapon(snapshot.reference, identity, targetForm, projectileIdentity);
-            if (candidateLogs.fetch_add(1, std::memory_order_relaxed) < 32) {
+            const bool ownBody = body != UINT32_MAX && body != 0x7FFFFFFF &&
+                std::find(snapshot.bodies.begin(), snapshot.bodies.begin() + snapshot.bodyCount, body) != snapshot.bodies.begin() + snapshot.bodyCount;
+            const bool self = isOwnHeldWeapon(snapshot.reference, identity, targetForm, projectileIdentity) || ownBody;
+            if (candidateLogs[projectileIdentity.index].fetch_add(1, std::memory_order_relaxed) < 32) {
                 try {
                     ROCK_LOG_INFO(Weapon, "Akimbo projectile candidate projectile={:08X} target={:08X} body={} layer={} nativeAccepted={} ownWeapon={} accepted={}",
                         projectileForm, targetForm, body, filter & 0x7F, admitted, self, admitted && !self);
@@ -75,7 +82,7 @@ namespace rock::carried_weapon_projectile
             Owner snapshot{};
             Identity projectileIdentity{};
             if (result == UINT32_MAX || !input || !ownedProjectile(projectile, snapshot, projectileIdentity) ||
-                impactLogs.fetch_add(1, std::memory_order_relaxed) >= 32) return result;
+                impactLogs[projectileIdentity.index].fetch_add(1, std::memory_order_relaxed) >= 32) return result;
             void* target{};
             std::uint32_t targetForm{}, projectileForm{}, body{}, shape{}, filter{};
             std::array<float, 3> position{};
@@ -120,13 +127,29 @@ namespace rock::carried_weapon_projectile
     void publish(std::uint32_t reference, std::uint32_t shooter, std::uintptr_t weapon,
         std::uintptr_t instance, std::uint32_t index) noexcept
     {
+        if (index >= owners.size()) return;
+        auto& owner = owners[index];
         // Single frame-thread publisher; readers use only atomics and never wait.
         owner.sequence.fetch_add(1, std::memory_order_acq_rel);
         owner.reference.store(reference); owner.shooter.store(shooter);
         owner.weapon.store(weapon); owner.instance.store(instance); owner.index.store(index);
         owner.sequence.fetch_add(1, std::memory_order_release);
-        candidateLogs.store(0); impactLogs.store(0);
+        candidateLogs[index].store(0); impactLogs[index].store(0);
     }
 
-    void clear() noexcept { publish(0, 0, 0, 0, 0); }
+    void publishBodies(std::uint32_t slot, std::span<const std::uint32_t> bodies) noexcept
+    {
+        if (slot >= owners.size()) return;
+        auto& owner = owners[slot];
+        owner.sequence.fetch_add(1, std::memory_order_acq_rel);
+        const auto count = (std::min)(bodies.size(), owner.bodies.size());
+        for (std::size_t i = 0; i < count; ++i) owner.bodies[i].store(bodies[i]);
+        owner.bodyCount.store(static_cast<std::uint32_t>(count));
+        owner.sequence.fetch_add(1, std::memory_order_release);
+    }
+    void clear(std::uint32_t slot) noexcept
+    {
+        publish(0, 0, 0, 0, slot);
+        publishBodies(slot, {});
+    }
 }

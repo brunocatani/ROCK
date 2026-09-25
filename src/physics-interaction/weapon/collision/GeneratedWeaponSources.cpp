@@ -510,6 +510,29 @@ namespace rock
     }
 
 
+    void WeaponCollision::bindPhysicalSource(RE::TESObjectREFR* reference, RE::EquippedWeaponData* data)
+    {
+        if (_physicalReference.get() == reference && _physicalData.get() == data) return;
+        _physicalReference.reset(reference);
+        _physicalData.reset(data);
+        _identity.classificationValid = false;
+    }
+
+    WeaponCollisionSource WeaponCollision::weaponSource(bool includeMods) const
+    {
+        if (_physicalReference) {
+            auto* list = _physicalReference->extraList.get();
+            const auto* instance = list ? list->GetByType<RE::ExtraInstanceData>() : nullptr;
+            return {_physicalReference->GetObjectReference(), instance ? instance->data.get() : nullptr,
+                _physicalData.get(), includeMods && list ? list->GetByType<RE::BGSObjectInstanceExtra>() : nullptr};
+        }
+        const auto* item = f4vr::getEquippedWeaponItem();
+        if (!item) return {};
+        return {item->item.object, item->item.instanceData.get(),
+            item->data ? static_cast<RE::EquippedWeaponData*>(item->data.get()) : nullptr,
+            includeMods ? findEquippedWeaponObjectInstanceExtra(f4vr::getPlayer(), item->item.object, item->item.instanceData.get()) : nullptr};
+    }
+
     std::uint64_t WeaponCollision::getEquippedWeaponIdentityKey(
         std::uint64_t* outIdentityKey,
         std::uint64_t* outOwnershipKey,
@@ -518,7 +541,9 @@ namespace rock
         std::uint64_t* outInstanceContentKey) const
     {
         const auto identity = getEquippedWeaponClassification();
-        const auto identityKey = weapon_generation_identity_policy::makeEquippedWeaponIdentityKey(identity);
+        const auto identityKey = _physicalReference ?
+            weapon_generation_identity_policy::makePhysicalWeaponIdentityKey(identity, _physicalReference->GetHandle().native_handle()) :
+            weapon_generation_identity_policy::makeEquippedWeaponIdentityKey(identity);
         if (outIdentityKey) {
             *outIdentityKey = identityKey;
         }
@@ -541,17 +566,17 @@ namespace rock
     weapon_generation_identity_policy::EquippedWeaponGenerationIdentity WeaponCollision::getEquippedWeaponClassification() const
     {
         const auto frame = runtime_state::currentFrame().frameIndex;
-        const auto* item = f4vr::getEquippedWeaponItem();
-        const auto* data = item && item->data ? static_cast<RE::EquippedWeaponData*>(item->data.get()) : nullptr;
+        const auto source = weaponSource(false);
+        const auto* data = source.data;
         const auto& cached = _identity.frameClassification;
         if (!_identity.classificationValid || frame == 0 || _identity.classificationFrame != frame ||
-            cached.formAddress != reinterpret_cast<std::uintptr_t>(item ? item->item.object : nullptr) ||
-            cached.instanceDataAddress != reinterpret_cast<std::uintptr_t>(item ? item->item.instanceData.get() : nullptr) ||
+            cached.formAddress != reinterpret_cast<std::uintptr_t>(source.form) ||
+            cached.instanceDataAddress != reinterpret_cast<std::uintptr_t>(source.instance) ||
             cached.equippedDataAddress != reinterpret_cast<std::uintptr_t>(data) ||
             cached.equippedObjectAddress != reinterpret_cast<std::uintptr_t>(data ? data->fireNode : nullptr) ||
             _drive.workbenchExitRebuildRequested.load(std::memory_order_acquire)) {
             performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponIdentityRead);
-            _identity.frameClassification = readEquippedWeaponGenerationIdentity();
+            _identity.frameClassification = readEquippedWeaponGenerationIdentity(weaponSource());
             _identity.classificationFrame = frame;
             _identity.classificationValid = true;
         }
@@ -563,7 +588,7 @@ namespace rock
         std::uint64_t visualKey = 0;
         if (weaponNode) {
             visualKey = weapon_visual_composition_policy::kWeaponVisualCompositionOffset;
-            const auto candidates = makeGeneratedWeaponMeshRootCandidates(weaponNode);
+            const auto candidates = makeGeneratedWeaponMeshRootCandidates(weaponNode, !_physicalReference);
             for (const auto& candidate : candidates) {
                 if (!candidate.root) {
                     continue;
@@ -610,7 +635,7 @@ namespace rock
             co_return;
         }
 
-        const auto candidates = makeGeneratedWeaponMeshRootCandidates(weaponNode);
+        const auto candidates = makeGeneratedWeaponMeshRootCandidates(weaponNode, !_physicalReference);
         std::vector<RE::NiPointer<RE::NiAVObject>> candidateOwners;
         candidateOwners.reserve(candidates.size());
         for (const auto& candidate : candidates) { candidateOwners.emplace_back(candidate.root); }
@@ -708,7 +733,7 @@ namespace rock
          * bounded owner subtree captured during this same traversal; candidate
          * root fallbacks are explicitly rejected by ownerRootStructural.
          */
-        const auto omodByAttachPointFormId = readEquippedOmodsByAttachPointFormId();
+        const auto omodByAttachPointFormId = readEquippedOmodsByAttachPointFormId(weaponSource());
         std::unordered_set<std::uint32_t> nativeScopeOverlayOmods;
         nativeScopeOverlayOmods.reserve(omodByAttachPointFormId.size());
         for (const auto& [attachPointFormId, omodFormId] : omodByAttachPointFormId) {
@@ -723,7 +748,7 @@ namespace rock
             omodByAttachPointFormId,
             equippedWeaponKey,
             equippedWeaponKey,
-            makeWeaponEmitterRootSetKey(weaponNode));
+            makeWeaponEmitterRootSetKey(weaponNode, !_physicalReference), !_physicalReference);
         for (auto& source : outSources) {
             std::uint32_t sourceOmodFormId = 0;
             if (source.semantic.attachPointFormId != 0) {
@@ -980,7 +1005,7 @@ namespace rock
             source.indices = it->second;
         }
 
-        assignCollisionSoundMaterials(packageDriveRoot, outSources);
+        assignCollisionSoundMaterials(weaponSource(), packageDriveRoot, outSources);
 
         for (std::size_t i = 0; i < outSources.size(); ++i) {
             const auto& source = outSources[i];

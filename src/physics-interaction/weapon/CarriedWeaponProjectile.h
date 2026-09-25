@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <span>
 
 namespace rock::carried_weapon_projectile
 {
@@ -18,5 +19,6 @@ namespace rock::carried_weapon_projectile
     // Values only. Pointer-sized identities are compared, never dereferenced.
     void publish(std::uint32_t heldReference, std::uint32_t shooterHandle,
         std::uintptr_t weapon, std::uintptr_t instance, std::uint32_t index) noexcept;
-    void clear() noexcept;
+    void publishBodies(std::uint32_t slot, std::span<const std::uint32_t> bodies) noexcept;
+    void clear(std::uint32_t slot) noexcept;
 }

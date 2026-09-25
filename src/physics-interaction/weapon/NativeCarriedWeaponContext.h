@@ -24,4 +24,5 @@ namespace rock::native_carried_weapon_context
     };
 
     const RE::EquippedItem* current(RE::AIProcess* process, std::uint32_t index) noexcept;
+    bool readNative(RE::AIProcess* process, std::uint32_t index, RE::EquippedItem& output) noexcept;
 }

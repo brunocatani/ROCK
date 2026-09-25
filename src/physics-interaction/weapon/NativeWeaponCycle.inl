@@ -15,7 +15,7 @@ namespace rock::native_weapon_cycle
         struct Node
         {
             RE::NiPointer<RE::NiAVObject> object{};
-            RE::NiTransform originalLocal{}, restLocal{}, restInRoot{}, inverseClipRest{};
+            RE::NiTransform restLocal{}, restInRoot{}, inverseClipRest{};
             std::size_t parent{}, childCount{};
             int bone{-1};
         };
@@ -33,13 +33,13 @@ namespace rock::native_weapon_cycle
 
         ~State() { restore(); releaseJob(backend); }
 
-        static std::unique_ptr<State>& retired()
+        static std::array<std::unique_ptr<State>, 2>& retired()
         {
-            // One frame-thread retirement slot survives PhysicsInteraction
+            // Two frame-thread retirement slots survive PhysicsInteraction
             // replacement. Like the existing preharvest runtime, its storage
             // is process-lived: DLL/static teardown cannot wait for native IO.
             // New sessions are withheld until this slot has drained.
-            static auto* slot = new std::unique_ptr<State>();
+            static auto* slot = new std::array<std::unique_ptr<State>, 2>();
             return *slot;
         }
 
@@ -72,8 +72,9 @@ namespace rock::native_weapon_cycle
             if (!restorePending || !topologyCurrent()) return;
             for (std::size_t i = 1; i < nodeCount; ++i) {
                 auto& node = nodes[i];
-                node.object->local = node.originalLocal;
+                node.object->local = node.restLocal;
                 node.object->world = transform_math::composeTransforms(root->world, node.restInRoot);
+                if (auto* geometry = node.object->IsGeometry()) geometry->UpdateWorldData(nullptr);
             }
             restorePending = false;
         }
@@ -135,12 +136,11 @@ namespace rock::native_weapon_cycle
             const auto rootInverse = transform_math::invertTransform(root->world);
             for (std::size_t i = 0; i < nodeCount; ++i) {
                 auto& node = nodes[i];
-                node.originalLocal = node.object->local;
                 // Physics may already have evaluated worlds without rewriting
                 // every local. Preserve that pose; rebuilding stale locals is
                 // precisely what separates an assembled gun's components.
                 node.restLocal = i ? transform_math::composeTransforms(
-                    transform_math::invertTransform(nodes[node.parent].object->world), node.object->world) : node.originalLocal;
+                    transform_math::invertTransform(nodes[node.parent].object->world), node.object->world) : node.object->local;
                 node.restInRoot = transform_math::composeTransforms(rootInverse, node.object->world);
                 if (!isFiniteTransform(node.restLocal) || !isFiniteTransform(node.restInRoot)) return false;
                 const auto* name = node.object->name.c_str();
@@ -222,6 +222,9 @@ namespace rock::native_weapon_cycle
             for (std::size_t i = 1; i < nodeCount; ++i) {
                 nodes[i].object->local = locals[i];
                 nodes[i].object->world = worlds[i];
+                // Native render data must see the same mechanical pose as the
+                // scene and collider sources, without updating either arm rig.
+                if (auto* geometry = nodes[i].object->IsGeometry()) geometry->UpdateWorldData(nullptr);
             }
             restorePending = true;
             if (time >= duration) { restore(); playing = false; }
@@ -229,15 +232,17 @@ namespace rock::native_weapon_cycle
     };
 
     Session::Session() noexcept = default;
+    bool Session::ready() const noexcept { return _state && _state->ready && !_state->failed && !_state->retiring; }
+    bool Session::failed() const noexcept { return _state && _state->failed; }
+    bool Session::playing() const noexcept { return _state && _state->playing; }
     Session::~Session()
     {
         clear();
-        if (_state) State::retired() = std::move(_state);
+        if (_state) for (auto& slot : State::retired()) if (!slot) { slot = std::move(_state); break; }
     }
     void Session::reap() noexcept
     {
-        auto& retired = State::retired();
-        if (retired && retired->canRelease()) retired.reset();
+        for (auto& retired : State::retired()) if (retired && retired->canRelease()) retired.reset();
         if (_state && _state->retiring && _state->canRelease()) _state.reset();
     }
 
@@ -263,8 +268,8 @@ namespace rock::native_weapon_cycle
         if (_state && (_state->reference != reference->GetHandle() || _state->root.get() != root)) clear();
         reap();
         if (_state && _state->retiring) return;
-        if (State::retired()) return;
         if (!_state) {
+            for (const auto& retired : State::retired()) if (retired) return;
             _state = std::make_unique<State>();
             _state->reference = reference->GetHandle();
             _state->root.reset(root);

@@ -414,6 +414,8 @@ namespace rock
         void processProviderInventoryEquip(const PhysicsFrameContext& frame);
         void clearProviderInventoryEquip();
         void updateCarriedWeapon(const PhysicsFrameContext& frame, bool prepareOnly);
+        bool activatePhysicalWeapon(const PhysicsFrameContext& frame, bool isLeft);
+        DynamicWeaponCollisionRuntime* weaponProxyForBody(std::uint32_t bodyId) noexcept;
         bool retainEquippedWeaponForReplacement(const PhysicsFrameContext& frame, bool equipIsLeft);
         std::uint32_t forceGrabHandBlockerMask(const Hand& hand, bool isLeft, bool handDisabled, bool includePendingCommit) const;
         bool equippedWeaponFiringHandForGrabIsLeft() const;
@@ -584,7 +586,7 @@ namespace rock
 
         static constexpr std::size_t kGeneratedBodyContactRegistryCapacity =
             (hand_collider_semantics::kHandColliderBodyCountPerHand * 2u) +
-            MAX_WEAPON_COLLISION_BODIES +
+            (3 * MAX_WEAPON_COLLISION_BODIES) +
             kBodyBoneColliderBodyCount;
         static constexpr std::uint64_t INVALID_HELD_IMPACT_PAIR = 0xFFFF'FFFF'FFFF'FFFFull;
         static constexpr std::uint32_t INVALID_CONTACT_BODY_ID = 0x7FFF'FFFF;
@@ -1045,6 +1047,12 @@ namespace rock
         EquippedWeaponFrameState _equipped;
         InventoryWeaponEquipRuntime _inventoryEquip;
         CarriedWeaponRuntime _carriedWeapon;
+        struct PhysicalWeaponEntry {
+            RE::ObjectRefHandle incoming{}, outgoing{};
+            std::uint64_t incomingGrab{};
+            bool incomingLeft{}, converted{}, rollback{};
+        } _physicalWeaponEntry;
+        bool _physicalDualEstablished{};
         struct NativeAkimboEquip {
             weapon_equip_transfer::InventorySelection incoming{};
             std::uint32_t previousForm{};

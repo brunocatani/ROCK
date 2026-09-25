@@ -16,6 +16,7 @@
         consumePush(_contacts.rightPush, "Right", &_rightHand, false);
         consumePush(_contacts.leftPush, "Left", &_leftHand, false);
         consumePush(_contacts.weaponPush, "Weapon", nullptr, true);
+        for (auto& session : _carriedWeapon.sessions) consumePush(session.physics.push, "Physical weapon", nullptr, true);
 
         auto readBodyMass = [](RE::hknpWorld* world, std::uint32_t bodyId) {
             if (!world || bodyId == 0xFFFFFFFF || bodyId == object_physics_body_set::INVALID_BODY_ID) {
@@ -563,9 +564,9 @@
                 shapeKeyB,
                 dynamicBodySourceB);
         const bool bodyAIsDynamicWeapon =
-            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
+            (weaponProxyForBody(bodyIdA) != nullptr);
         const bool bodyBIsDynamicWeapon =
-            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
+            (weaponProxyForBody(bodyIdB) != nullptr);
         if (!bodyAIsDynamicHand && !bodyBIsDynamicHand && !bodyAIsDynamicWeapon && !bodyBIsDynamicWeapon) return;
         // ID-only admission precedes native reads; accepted events retain all body checks.
         if (!havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdA }) ||
@@ -657,12 +658,13 @@
         }
 
         const bool bodyAIsWeaponProxy =
-            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
+            (weaponProxyForBody(bodyIdA) != nullptr);
         const bool bodyBIsWeaponProxy =
-            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
-        if (bodyAIsWeaponProxy != bodyBIsWeaponProxy) {
-            const auto proxyBodyId = bodyAIsWeaponProxy ? bodyIdA : bodyIdB;
-            const auto otherBodyId = bodyAIsWeaponProxy ? bodyIdB : bodyIdA;
+            (weaponProxyForBody(bodyIdB) != nullptr);
+        for (const bool sourceIsA : {true, false}) {
+            if (!(sourceIsA ? bodyAIsWeaponProxy : bodyBIsWeaponProxy)) continue;
+            const auto proxyBodyId = sourceIsA ? bodyIdA : bodyIdB;
+            const auto otherBodyId = sourceIsA ? bodyIdB : bodyIdA;
             std::uint32_t otherFilterInfo = 0;
             const bool otherLayerRead = havok_runtime::tryReadFilterInfo(
                 world,
@@ -682,7 +684,7 @@
                     supportPointGame.z += point[2] * pointScale;
                 }
             }
-            _dynamicWeaponCollision.recordObstacleManifoldProcessedCallback(
+            weaponProxyForBody(proxyBodyId)->recordObstacleManifoldProcessedCallback(
                 world,
                 proxyBodyId,
                 otherBodyId,
@@ -735,9 +737,9 @@
          * the experimental matrix policy controls whether those pairs collide.
          */
         const bool bodyAIsDynamicWeaponProxy =
-            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
+            (weaponProxyForBody(bodyIdA) != nullptr);
         const bool bodyBIsDynamicWeaponProxy =
-            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
+            (weaponProxyForBody(bodyIdB) != nullptr);
 
         const auto rightId = _rightHand.getCollisionBodyId().value;
         const auto leftId = _leftHand.getCollisionBodyId().value;
@@ -885,11 +887,10 @@
             !havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdB })) {
             return;
         }
-        if (bodyAIsDynamicWeaponProxy != bodyBIsDynamicWeaponProxy) {
-            const std::uint32_t proxyBodyId =
-                bodyAIsDynamicWeaponProxy ? bodyIdA : bodyIdB;
-            const std::uint32_t otherBodyId =
-                bodyAIsDynamicWeaponProxy ? bodyIdB : bodyIdA;
+        for (const bool sourceIsA : {true, false}) {
+            if (!(sourceIsA ? bodyAIsDynamicWeaponProxy : bodyBIsDynamicWeaponProxy)) continue;
+            const std::uint32_t proxyBodyId = sourceIsA ? bodyIdA : bodyIdB;
+            const std::uint32_t otherBodyId = sourceIsA ? bodyIdB : bodyIdA;
             std::uint32_t otherFilterInfo = 0;
             const bool otherLayerRead = havok_runtime::tryReadFilterInfo(
                 world,
@@ -901,14 +902,23 @@
                 otherLayerRead &&
                 collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(otherLayer) &&
                 ensureRawContactPoint();
-            _dynamicWeaponCollision.recordObstacleContactCallback(
+            weaponProxyForBody(proxyBodyId)->recordObstacleContactCallback(
                 world,
                 proxyBodyId,
                 otherBodyId,
                 otherLayerRead,
                 otherLayer,
-                bodyAIsDynamicWeaponProxy,
+                sourceIsA,
                 rawContactPointValid ? &rawContactPoint : nullptr);
+            if (otherLayerRead && collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(otherLayer)) {
+                for (auto& session : _carriedWeapon.sessions) {
+                    if (!session.physics.dynamic.isProxyBodyIdAtomic(proxyBodyId)) continue;
+                    const auto hands = session.physics.heldHandsAtomic();
+                    const auto pair = packHeldImpactPair(proxyBodyId, otherBodyId);
+                    if (hands & 1u) _contacts.lastHeldImpactPairRight.store(pair, std::memory_order_release);
+                    if (hands & 2u) _contacts.lastHeldImpactPairLeft.store(pair, std::memory_order_release);
+                }
+            }
         }
 
         auto recordLooseGrenadeImpactIfArmed = [&]() {
@@ -1372,7 +1382,10 @@
             channel.publish(contact);
         };
         if (contactRoute.driveWeaponDynamicPush) {
-            publishPushContact(_contacts.weaponPush, contactRoute.sourceBodyId);
+            auto* channel = &_contacts.weaponPush;
+            for (auto& session : _carriedWeapon.sessions)
+                if (session.physics.collision.isWeaponBodyIdAtomic(contactRoute.sourceBodyId)) channel = &session.physics.push;
+            publishPushContact(*channel, contactRoute.sourceBodyId);
         }
 
         auto publishWeaponContactFromPhysics = [&](bool isLeft, const WeaponInteractionContact& weaponContact, std::uint32_t bodyId) {

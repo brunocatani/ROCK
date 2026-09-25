@@ -839,7 +839,8 @@ namespace rock::held_scene_presentation
         const RE::NiTransform& targetBodyWorld,
         const RE::NiTransform& solvedBodyWorld,
         RE::NiAVObject* referenceRoot,
-        const RE::NiTransform& bodyInRoot) noexcept
+        const RE::NiTransform& bodyInRoot,
+        const RE::NiTransform* resolvedWeaponRoot) noexcept
     {
         const std::size_t handIndex = isLeft ? 1u : 0u;
         if (!world || bodyId == 0x7FFF'FFFFu || traceId == 0) {
@@ -882,6 +883,12 @@ namespace rock::held_scene_presentation
                         targetBodyWorld);
             }
 
+            if (resolvedWeaponRoot && referenceRoot &&
+                held_scene_presentation_policy::finiteTransform(*resolvedWeaponRoot)) {
+                decision.presentedWorld = transform_math::composeTransforms(*resolvedWeaponRoot, bodyInRoot);
+                decision.apply = held_scene_presentation_policy::finiteTransform(decision.presentedWorld);
+                rebased = false;
+            }
             if (rebased || !decision.apply) {
                 clearTargetTransportPublication(handIndex);
             }
@@ -939,6 +946,10 @@ namespace rock::held_scene_presentation
             pose.bodyId = body.bodyId;
             if (body.bodyId == bodyId) {
                 pose.world = decision.presentedWorld;
+            } else if (resolvedWeaponRoot && referenceRoot) {
+                pose.world = transform_math::composeTransforms(*resolvedWeaponRoot,
+                    transform_math::composeTransforms(transform_math::invertTransform(referenceRoot->world), collision->sceneObject->world));
+                if (!held_scene_presentation_policy::finiteTransform(pose.world)) failure = "physical-part-transform-invalid";
             } else if (!held_scene_presentation_policy::transportAssemblyBody(
                            solvedBodyWorld, decision.presentedWorld, solved, pose.world)) {
                 failure = "body-transport-rejected";
@@ -1025,6 +1036,36 @@ namespace rock::held_scene_presentation
             .applied = true,
             .presentedBodyWorld = selected.presentedWorld,
         };
+    }
+
+    bool refreshPhysicalWeaponParts(bool isLeft, RE::hknpWorld* world, RE::NiAVObject* referenceRoot) noexcept
+    {
+        if (!world || !referenceRoot) return false;
+        std::scoped_lock publicationLock(s_targetTransportHistoryMutex);
+        Registration registration{};
+        if (!copyRegistration(isLeft, registration) || !registration.complete || !registration.count) return false;
+        TargetTransportMatch previous{};
+        if (!copyTargetTransport(s_targetTransport[isLeft ? 1u : 0u], isLeft, world, registration.bodies[0].bodyId, previous) ||
+            previous.traceId != registration.traceId || previous.frameIndex != runtime_state::currentFrame().frameIndex) return false;
+        std::array<BodyPose, kMaxRegisteredBodies> poses{};
+        for (std::size_t i = 0; i < registration.count; ++i) {
+            const auto& body = registration.bodies[i];
+            auto* collision = havok_runtime::getCollisionObjectFromBody(world, RE::hknpBodyId{body.bodyId});
+            if (body.world != world || !collision || collision != body.collisionObject || !collision->sceneObject) return false;
+            auto* node = collision->sceneObject;
+            auto* ancestor = node;
+            for (unsigned depth = 0; ancestor && ancestor != referenceRoot && depth < 64; ++depth) ancestor = ancestor->parent;
+            if (ancestor != referenceRoot || !held_scene_presentation_policy::finiteTransform(node->world)) return false;
+            poses[i] = {body.bodyId, node->world};
+        }
+        held_scene_presentation_policy::TargetTransportDecision<RE::NiTransform> decision{};
+        decision.targetTranslationStepGameUnits = previous.targetTranslationStepGameUnits;
+        decision.targetRotationStepDegrees = previous.targetRotationStepDegrees;
+        decision.physicalResidualGameUnits = previous.physicalResidualGameUnits;
+        decision.transportAdvanceGameUnits = previous.transportAdvanceGameUnits;
+        publishTargetTransportDecision(isLeft ? 1u : 0u, world, poses.data(), registration.count,
+            registration.traceId, previous.frameIndex, decision);
+        return true;
     }
 
     bool leftOwnsSharedAssembly() noexcept

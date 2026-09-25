@@ -29,7 +29,6 @@ namespace rock
     namespace
     {
         constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFFu;
-        constexpr std::uint32_t kDynamicWeaponCollisionGroup = 0x000Du;
         // FO4VR 141551F00 installs the contact-impulse creator at bundle+18;
         // 14154BB41..14154BB51 registers it for body flag 0x80, and its
         // 1418012D0 solver callback emits key-3 events consumed by native audio.
@@ -134,9 +133,9 @@ namespace rock
             return true;
         }
 
-        std::uint32_t dynamicWeaponProxyFilterInfo()
+        std::uint32_t dynamicWeaponProxyFilterInfo(std::uint32_t group)
         {
-            return (kDynamicWeaponCollisionGroup << 16) |
+            return (group << 16) |
                    (collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY & collision_layer_policy::FO4_LAYER_FILTER_MASK);
         }
 
@@ -1157,7 +1156,7 @@ namespace rock
                 frame.hknpWorld,
                 frame.bhkWorld,
                 shape,
-                dynamicWeaponProxyFilterInfo(),
+                dynamicWeaponProxyFilterInfo(_collisionGroup),
                 generatedMaterial,
                 BethesdaMotionType::Dynamic,
                 "ROCK_DynamicWeaponCompound",

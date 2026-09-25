@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/AkimboSessionPolicy.h"
 #include "physics-interaction/weapon/WeaponCyclePolicy.h"
 #include "physics-interaction/weapon/CarriedWeaponProjectile.h"
+#include "physics-interaction/weapon/PhysicalWeaponPairPolicy.h"
 #include <array>
 #include <iostream>
 #include <limits>
@@ -14,6 +15,25 @@ int main()
         if (!value) { std::cerr << what << '\n'; ok = false; }
     };
     using namespace rock::carried_weapon_projectile;
+    namespace entry = rock::physical_weapon_pair_policy;
+    check(entry::advance({.incomingHeld=true, .nativeOriginalPresent=true, .allReady=true}) == entry::EntryAction::Wait,
+        "Preparing the second gun cannot admit a mixed native/physical pair");
+    check(entry::advance({.incomingHeld=false, .nativeOriginalPresent=true}) == entry::EntryAction::Cancel,
+        "Cancellation before conversion preserves the original native gun");
+    check(entry::advance({.converted=true, .incomingHeld=false, .placementPending=true}) == entry::EntryAction::Wait,
+        "An interrupted conversion must retain its receipt until original placement completes");
+    check(entry::advance({.converted=true, .incomingHeld=false, .outgoingHeld=true}) == entry::EntryAction::RestoreOriginal,
+        "Interrupted entry restores the original weapon instead of leaving a half-completed replacement");
+    check(entry::advance({.converted=true, .incomingHeld=true, .outgoingHeld=true, .allReady=true}) == entry::EntryAction::Complete,
+        "Both physical weapon backends must be ready before dual entry completes");
+    check(entry::advance({.converted=true, .incomingHeld=false, .outgoingHeld=false}) == entry::EntryAction::Cancel,
+        "Dropping both guns must not pick either one up again");
+    check(entry::advance({.converted=true, .incomingHeld=true}) == entry::EntryAction::RestoreIncoming,
+        "Losing the original hold during conversion returns the remaining gun to single handling");
+    check(entry::advance({.incomingHeld=true, .nativeOriginalPresent=true, .failed=true}) == entry::EntryAction::Cancel,
+        "A failed preflight cannot convert the original weapon");
+    check(entry::advance({.converted=true, .incomingHeld=true, .outgoingHeld=true, .failed=true}) == entry::EntryAction::RestoreOriginal,
+        "A mechanical failure after conversion restores the original exact item");
     constexpr Identity own{0x1000, 0x2000, 0x3000, 1};
     check(isOwnHeldWeapon(42, own, 42, own), "The carried gun cannot intercept its own projectile");
     check(!isOwnHeldWeapon(42, own, 43, own), "Another physical copy of the same gun remains hittable");

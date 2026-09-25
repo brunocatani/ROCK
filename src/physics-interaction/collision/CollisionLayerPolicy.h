@@ -219,7 +219,7 @@ namespace rock::collision_layer_policy
         // must reach the same solver/visual response as world contact. Keep
         // surface-grab and weapon-bracing eligibility separate.
         return isWorldSurfaceLayer(layer) || isDynamicWorldCarLayer(layer) ||
-               layer == FO4_LAYER_BIPED_NO_CC;
+               layer == FO4_LAYER_BIPED_NO_CC || layer == ROCK_LAYER_DYNAMIC_WEAPON_PROXY;
     }
 
     inline constexpr bool isDynamicWeaponProxySolverObstacleLayer(
@@ -676,6 +676,7 @@ namespace rock::collision_layer_policy
         }
         mask = withLayer(mask, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY);
         mask = withLayer(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
+        mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
         if (npcDynamicCollisions) {
             mask = withLayer(mask, FO4_LAYER_BIPED_NO_CC);
         }

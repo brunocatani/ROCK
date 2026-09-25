@@ -455,7 +455,7 @@ namespace rock
             _identity.cachedOwnershipKey,
             _identity.cachedFormID,
             evidenceSnapshot);
-        const auto manualScopeTarget = resolveEquippedManualScopeTarget(packageDriveNode);
+        const auto manualScopeTarget = resolveEquippedManualScopeTarget(weaponSource(), packageDriveNode);
         nativeScopeSightAnchorSnapshot.scopeWeaponIdentity = manualScopeTarget.weaponIdentity;
         nativeScopeSightAnchorSnapshot.scopeInstanceIdentity = manualScopeTarget.instanceIdentity;
         nativeScopeSightAnchorSnapshot.scopeEligible = manualScopeTarget.scopeEligible;

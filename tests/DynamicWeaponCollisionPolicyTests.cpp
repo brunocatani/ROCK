@@ -249,6 +249,8 @@ int main()
     ok &= persistentDivergence.recoverNow;
 
     constexpr auto dynamicWeaponMask = rock::collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
+    ok &= rock::collision_layer_policy::maskEnablesLayer(dynamicWeaponMask,
+        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
     for (std::uint32_t layer = 0; layer < rock::collision_layer_policy::FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
         const bool enabled = rock::collision_layer_policy::maskEnablesLayer(dynamicWeaponMask, layer);
         const bool expected = rock::collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(layer) &&
