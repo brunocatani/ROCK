@@ -150,7 +150,12 @@ namespace rock
             }
             break;
         }
-        if (prepareOnly) _carriedWeapon.prepare(input);
+        if (prepareOnly) {
+            _carriedWeapon.prepare(input);
+            const auto recoil = input.inputAllowed ? _carriedWeapon.advanceRecoil(frame.deltaSeconds) : RE::NiPoint3{};
+            for (auto* hand : {&_rightHand, &_leftHand})
+                hand->setLooseWeaponRecoil(_carriedWeapon.owns(hand->getHeldRef()) ? recoil : RE::NiPoint3{});
+        }
         else _carriedWeapon.update(input);
         if (!prepareOnly) {
             for (const bool left : {false, true}) {

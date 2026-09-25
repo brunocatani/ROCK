@@ -1250,7 +1250,7 @@ namespace
             if (!CarriedWeaponRuntime::install()) {
                 logger::warn("ROCK: Akimbo native ammo contract unavailable; carried weapon admission disabled.");
             }
-            logger::info("ROCK Parallel 2: single loose firearm experiment; native equip is not used for held gun triggers.");
+            logger::info("ROCK Parallel 2: loose firearm effects experiment 2026-09-25; native equip disabled; recoil, muzzle effects, casings and weapon-only reloads.");
             if (!weapon_action_trace::installEquipBoundary(
                     [](const RE::BGSObjectInstance& item, void* request) noexcept {
                         if (!CarriedWeaponRuntime::isInteractionThread()) return true;

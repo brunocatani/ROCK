@@ -17,6 +17,22 @@ namespace rock::native_carried_weapon_context
         bool installed{};
         thread_local RE::AIProcess* activeProcess{};
         thread_local const RE::EquippedItem* activeItem{};
+        thread_local RE::NiAVObject* activeRoot{}; // Pinned by the explicit action/effect caller.
+        using ShellRoot = RE::NiAVObject* (*)(RE::AIProcess*, RE::Actor*, void*, std::uint32_t);
+        ShellRoot originalShellRoot{};
+
+        RE::NiAVObject* shellRoot(RE::AIProcess* process, RE::Actor* actor, void* graph, std::uint32_t index)
+        {
+            if (auto* root = physicalRoot(process, index)) {
+                static thread_local unsigned logged{};
+                if (logged < 8) {
+                    ++logged;
+                    try { ROCK_LOG_INFO(Weapon, "Loose shell ejection resolved physical root index={} root=0x{:X}", index, reinterpret_cast<std::uintptr_t>(root)); } catch (...) {}
+                }
+                return root;
+            }
+            return originalShellRoot(process, actor, graph, index);
+        }
 
         bool read(RE::AIProcess* process, std::uint32_t index, RE::EquippedItem* output)
         {
@@ -46,6 +62,13 @@ namespace rock::native_carried_weapon_context
         if (!entry_trampoline_hook::install("carried-weapon indexed context", 0xE803D0,
                 readBytes.data(), readBytes.size(), reinterpret_cast<void*>(&read), original)) return false;
         originalRead = reinterpret_cast<ReadItem>(original);
+        // 330C80 requests this root before walking the authored casing
+        // connection point. Keep native casing asset, velocity and lifetime.
+        constexpr std::array<std::uint8_t, 16> shellBytes{
+            0x44,0x89,0x4C,0x24,0x20,0x53,0x48,0x83,0xEC,0x20,0x48,0x8B,0x02,0x48,0x8B,0xCA};
+        if (!entry_trampoline_hook::install("loose weapon shell root", 0xEC5230,
+                shellBytes.data(), shellBytes.size(), reinterpret_cast<void*>(&shellRoot), original)) return false;
+        originalShellRoot = reinterpret_cast<ShellRoot>(original);
         installed = true;
         return true;
     }
@@ -69,21 +92,28 @@ namespace rock::native_carried_weapon_context
         return result;
     }
 
-    Scope::Scope(RE::AIProcess* process, const RE::EquippedItem& item) noexcept :
-        _previousProcess(activeProcess), _previousItem(activeItem)
+    Scope::Scope(RE::AIProcess* process, const RE::EquippedItem& item, RE::NiAVObject* root) noexcept :
+        _previousProcess(activeProcess), _previousItem(activeItem), _previousRoot(activeRoot)
     {
         activeProcess = process;
         activeItem = &item;
+        activeRoot = root;
     }
 
     Scope::~Scope()
     {
         activeProcess = _previousProcess;
         activeItem = _previousItem;
+        activeRoot = _previousRoot;
     }
 
     const RE::EquippedItem* current(RE::AIProcess* process, std::uint32_t index) noexcept
     {
         return process && process == activeProcess && activeItem && activeItem->equipIndex.index == index ? activeItem : nullptr;
+    }
+
+    RE::NiAVObject* physicalRoot(RE::AIProcess* process, std::uint32_t index) noexcept
+    {
+        return current(process, index) ? activeRoot : nullptr;
     }
 }

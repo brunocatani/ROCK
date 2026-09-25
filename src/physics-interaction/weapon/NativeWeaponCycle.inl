@@ -2,6 +2,8 @@
 // graph-loading and resource-release code; their native managers never overlap.
 #include "physics-interaction/weapon/NativeWeaponCycle.h"
 #include "physics-interaction/weapon/WeaponCyclePolicy.h"
+#include "RE/Bethesda/BSAnimationGraph.h"
+#include "physics-interaction/weapon/EquippedWeaponVisualState.h"
 
 namespace rock::native_weapon_cycle
 {
@@ -18,6 +20,7 @@ namespace rock::native_weapon_cycle
             RE::NiTransform originalLocal{}, restLocal{}, restInRoot{}, inverseClipRest{};
             std::size_t parent{}, childCount{};
             int bone{-1};
+            bool originalVisible{}, visibilityOwned{}, visible{};
         };
         std::array<Node, 512> nodes{};
         std::array<RE::NiTransform, 512> worlds{}, locals{};
@@ -27,11 +30,169 @@ namespace rock::native_weapon_cycle
         int boneCount{}, trackCount{}, mappingCount{}, weaponBone{-1};
         void* animation{}; // Pinned by backend graph/resource, never a live actor graph.
         SampleAnimationTracksFn sampler{};
-        float duration{}, time{};
+        struct Marker
+        {
+            float time{};
+            RE::BSFixedString tag, payload;
+        };
+        struct Clip
+        {
+            void* animation{};
+            SampleAnimationTracksFn sampler{};
+            float duration{};
+            int tracks{}, mappings{};
+            std::array<std::int16_t, kMaxBonesAndTracks> mapping{};
+            std::array<char, 260> path{};
+            std::uint64_t identifier{};
+            AnimationResourceHandle resource{};
+            std::array<Marker, 128> sounds{};
+            std::size_t soundCount{};
+            bool ready{};
+        };
+        enum ClipId : std::size_t { Fire, Reload, ReloadEmpty, ReloadReserve, ClipCount };
+        std::array<Clip, ClipCount> clips{};
+        std::size_t activeClip{Fire}, nextClip{Reload}, nextSound{};
+        RE::BShkbAnimationGraph* loadedGraph{}; // Owned by backend's retained graph holder.
+        std::uint64_t subgraphHandle{};
+        float duration{}, time{}, playbackRate{1.0f}, sampledTime{-1.0f};
+        bool reloading{}, paused{};
         bool ready{}, failed{}, playing{}, restorePending{}, retiring{};
         unsigned shotsLogged{};
+        unsigned poseLogs{};
 
-        ~State() { restore(); releaseJob(backend); }
+        ClipId reloadClip(bool empty) const noexcept
+        {
+            return empty && clips[ReloadEmpty].ready ? ReloadEmpty :
+                !empty && clips[ReloadReserve].ready ? ReloadReserve : Reload;
+        }
+
+        ~State()
+        {
+            restore();
+            for (auto& clip : clips) if (clip.resource.entry) {
+                AnimationResourceHandle empty{};
+                backend.native.moveAnimationResourceHandle(&clip.resource, &empty);
+            }
+            loadedGraph = nullptr;
+            releaseJob(backend);
+        }
+
+        bool readSounds(Clip& clip)
+        {
+            // hkaAnimation destruction (1A31580), annotation-track destruction
+            // (1A31650) and independent array teardown (1A31280/1A313E0)
+            // establish these bounded arrays. hkStringPtr uses its low bit.
+            void* tracks{}; int count{};
+            if (!native_memory::tryReadField(clip.animation, 0x28, tracks) ||
+                !native_memory::tryReadField(clip.animation, 0x30, count) || count < 0 || count > kMaxBonesAndTracks || (count && !tracks)) return false;
+            for (int i = 0; i < count; ++i) {
+                const auto* track = static_cast<const std::byte*>(tracks) + i * 0x18;
+                void* markers{}; int markerCount{};
+                if (!native_memory::tryReadField(track, 8, markers) || !native_memory::tryReadField(track, 0x10, markerCount) ||
+                    markerCount < 0 || markerCount > 1024 || (markerCount && !markers)) return false;
+                for (int j = 0; j < markerCount; ++j) {
+                    const auto* marker = static_cast<const std::byte*>(markers) + j * 0x10;
+                    float seconds{}; std::uintptr_t text{};
+                    if (!native_memory::tryReadField(marker, 0, seconds) || !native_memory::tryReadField(marker, 8, text) ||
+                        !std::isfinite(seconds) || seconds < 0 || seconds > clip.duration) return false;
+                    text &= ~std::uintptr_t{1};
+                    if (!text) continue;
+                    std::array<char, 260> value{};
+                    bool terminated{};
+                    for (std::size_t k = 0; k < value.size(); ++k) {
+                        if (!native_memory::tryReadValue(reinterpret_cast<const char*>(text + k), value[k])) return false;
+                        if (!value[k]) { terminated = true; break; }
+                    }
+                    if (!terminated) return false;
+                    const std::string_view name(value.data());
+                    const auto split = name.find('.');
+                    if (split == name.npos) continue;
+                    const auto tag = name.substr(0, split);
+                    if (weapon_cycle_policy::presentationEvent(tag) == weapon_cycle_policy::PresentationEvent::Ignore) continue;
+                    if (clip.soundCount == clip.sounds.size() || split + 1 == name.size()) return false;
+                    auto& sound = clip.sounds[clip.soundCount++];
+                    sound.time = seconds;
+                    value[split] = '\0';
+                    sound.tag = value.data(); sound.payload = value.data() + split + 1;
+                }
+            }
+            std::sort(clip.sounds.begin(), clip.sounds.begin() + clip.soundCount,
+                [](const Marker& a, const Marker& b) {
+                    if (a.time != b.time) return a.time < b.time;
+                    const auto tagOrder = std::strcmp(a.tag.c_str(), b.tag.c_str());
+                    return tagOrder ? tagOrder < 0 : std::strcmp(a.payload.c_str(), b.payload.c_str()) < 0;
+                });
+            // Identical annotations on several tracks represent one event.
+            clip.soundCount = std::unique(clip.sounds.begin(), clip.sounds.begin() + clip.soundCount,
+                [](const Marker& a, const Marker& b) { return a.time == b.time && a.tag == b.tag && a.payload == b.payload; }) - clip.sounds.begin();
+            return true;
+        }
+
+        bool readClip(void* binding, Clip& clip)
+        {
+            std::uint8_t blend{}; void** table{}; const std::int16_t* map{};
+            if (!native_memory::tryReadField(binding, kBindingBlendHintOffset, blend) || blend != 0 ||
+                !native_memory::tryReadField(binding, kAnimationFromBindingOffset, clip.animation) || !clip.animation ||
+                !native_memory::tryReadField(clip.animation, kAnimationDurationOffset, clip.duration) || !std::isfinite(clip.duration) || clip.duration <= 0 || clip.duration > 30 ||
+                !native_memory::tryReadField(clip.animation, kAnimationTransformTrackCountOffset, clip.tracks) || clip.tracks <= 0 || clip.tracks > kMaxBonesAndTracks ||
+                !native_memory::tryReadField(clip.animation, 0, table) || !table || !native_memory::tryReadValue(reinterpret_cast<SampleAnimationTracksFn*>(table + 5), clip.sampler) || !addressIsExecutable(reinterpret_cast<void*>(clip.sampler)) ||
+                !native_memory::tryReadField(binding, kTrackToBoneMappingCountOffset, clip.mappings) || clip.mappings < 0 || clip.mappings > kMaxBonesAndTracks ||
+                !native_memory::tryReadField(binding, kTrackToBoneMappingOffset, map)) return false;
+            if (clip.mappings && (!map || !native_memory::guardedCopyFromMemory(map, clip.mapping.data(), clip.mappings * sizeof(std::int16_t)))) return false;
+            clip.ready = readSounds(clip);
+            return clip.ready;
+        }
+
+        void selectClip(std::size_t index)
+        {
+            stopSounds();
+            restoreVisibility();
+            const auto& clip = clips[index];
+            activeClip = index; animation = clip.animation; sampler = clip.sampler;
+            duration = clip.duration; trackCount = clip.tracks; mappingCount = clip.mappings; mapping = clip.mapping;
+            time = 0; sampledTime = -1; nextSound = 0;
+        }
+
+        void restoreVisibility()
+        {
+            for (std::size_t i = 1; i < nodeCount; ++i) if (nodes[i].visibilityOwned && nodes[i].object) {
+                equipped_weapon_visual_state::setLocallyVisible(nodes[i].object.get(), nodes[i].originalVisible);
+                nodes[i].visibilityOwned = false;
+            }
+        }
+
+        bool applyVisibility(const Marker& marker)
+        {
+            const std::string_view tag(marker.tag.c_str());
+            const auto event = weapon_cycle_policy::presentationEvent(tag);
+            if (event != weapon_cycle_policy::PresentationEvent::HidePart && event != weapon_cycle_policy::PresentationEvent::ShowPart) return false;
+            for (std::size_t i = 1; i < nodeCount; ++i) {
+                auto& node = nodes[i];
+                if (node.bone >= 0 && node.object->name == marker.payload) {
+                    node.visibilityOwned = true;
+                    node.visible = event == weapon_cycle_policy::PresentationEvent::ShowPart;
+                    equipped_weapon_visual_state::setLocallyVisible(node.object.get(), node.visible);
+                }
+            }
+            return true;
+        }
+
+        void stopSounds() noexcept try
+        {
+            if (playing) if (const auto held = reference.get()) {
+                const auto& clip = clips[activeClip];
+                for (std::size_t i = 0; i < nextSound; ++i) {
+                    const auto& marker = clip.sounds[i];
+                    const std::string_view tag(marker.tag.c_str());
+                    if (tag != "SoundPlay" && tag != "SoundPlayAt") continue;
+                    const RE::BSAnimationGraphEvent event{held->GetHandle().native_handle(), RE::BSFixedString("SoundStop"), marker.payload};
+                    static_cast<RE::BSTEventSink<RE::BSAnimationGraphEvent>*>(held.get())->ProcessEvent(event, nullptr);
+                }
+            }
+        }
+        catch (...) {
+            try { ROCK_LOG_WARN(Animation, "Loose weapon animation sound cleanup failed ref={:08X}", backend.job.referenceFormId); } catch (...) {}
+        }
 
         static std::unique_ptr<State>& retired()
         {
@@ -57,6 +218,8 @@ namespace rock::native_weapon_cycle
 
         bool topologyCurrent() const
         {
+            const auto held = reference.get();
+            if (!held || held->Get3D() != root.get()) return false;
             if (!root || !nodeCount || nodes[0].object.get() != root.get()) return false;
             for (std::size_t i = 0; i < nodeCount; ++i) {
                 const auto& node = nodes[i];
@@ -69,6 +232,7 @@ namespace rock::native_weapon_cycle
 
         void restore()
         {
+            restoreVisibility();
             if (!restorePending || !topologyCurrent()) return;
             for (std::size_t i = 1; i < nodeCount; ++i) {
                 auto& node = nodes[i];
@@ -80,6 +244,7 @@ namespace rock::native_weapon_cycle
 
         void fail(const char* stage)
         {
+            stopSounds();
             restore();
             ready = false; failed = true; playing = false;
             ROCK_LOG_WARN(Animation, "Akimbo mechanical cycle unavailable ref={:08X} weapon={:08X} stage={}; held model retained",
@@ -104,17 +269,13 @@ namespace rock::native_weapon_cycle
 
         bool bind(RE::BShkbAnimationGraph* graph, void* binding)
         {
-            std::uint8_t blend{};
-            void* skeletonOwner{}; void* skeleton{}; void** table{};
+            if (!readClip(binding, clips[Fire])) return false;
+            selectClip(Fire);
+            void* skeletonOwner{}; void* skeleton{};
             int parentCount{}, poseCount{};
-            const std::int16_t *parentData{}, *mapData{};
+            const std::int16_t* parentData{};
             const HkQsTransform* pose{};
-            if (!native_memory::tryReadField(binding, kBindingBlendHintOffset, blend) || blend != 0 ||
-                !native_memory::tryReadField(binding, kAnimationFromBindingOffset, animation) || !animation ||
-                !native_memory::tryReadField(animation, kAnimationDurationOffset, duration) || !std::isfinite(duration) || duration <= 0 || duration > 30 ||
-                !native_memory::tryReadField(animation, kAnimationTransformTrackCountOffset, trackCount) || trackCount <= 0 || trackCount > kMaxBonesAndTracks ||
-                !native_memory::tryReadField(animation, 0, table) || !table || !native_memory::tryReadValue(reinterpret_cast<SampleAnimationTracksFn*>(table + 5), sampler) || !addressIsExecutable(reinterpret_cast<void*>(sampler)) ||
-                !native_memory::tryReadField(graph, kGraphSkeletonOwnerOffset, skeletonOwner) || !skeletonOwner ||
+            if (!native_memory::tryReadField(graph, kGraphSkeletonOwnerOffset, skeletonOwner) || !skeletonOwner ||
                 !native_memory::tryReadField(skeletonOwner, kSkeletonFromOwnerOffset, skeleton) || !skeleton ||
                 !native_memory::tryReadField(skeleton, kSkeletonBoneCountOffset, boneCount) || boneCount <= 0 || boneCount > kMaxBonesAndTracks ||
                 !native_memory::tryReadField(skeleton, kSkeletonParentCountOffset, parentCount) || parentCount < boneCount || parentCount > kMaxBonesAndTracks ||
@@ -122,10 +283,7 @@ namespace rock::native_weapon_cycle
                 !native_memory::guardedCopyFromMemory(parentData, parents.data(), boneCount * sizeof(std::int16_t)) ||
                 !native_memory::tryReadField(skeleton, kSkeletonReferencePoseOffset, pose) || !pose ||
                 !native_memory::tryReadField(skeleton, kSkeletonReferencePoseCountOffset, poseCount) || poseCount < boneCount || poseCount > kMaxBonesAndTracks ||
-                !native_memory::guardedCopyFromMemory(pose, referencePose.data(), boneCount * sizeof(HkQsTransform)) ||
-                !native_memory::tryReadField(binding, kTrackToBoneMappingCountOffset, mappingCount) || mappingCount < 0 || mappingCount > kMaxBonesAndTracks ||
-                !native_memory::tryReadField(binding, kTrackToBoneMappingOffset, mapData)) return false;
-            if (mappingCount && (!mapData || !native_memory::guardedCopyFromMemory(mapData, mapping.data(), mappingCount * sizeof(std::int16_t)))) return false;
+                !native_memory::guardedCopyFromMemory(pose, referencePose.data(), boneCount * sizeof(HkQsTransform))) return false;
             const auto weapon = backend.native.findBoneWithName(skeleton, "Weapon", nullptr);
             if (weapon >= static_cast<std::uint64_t>(boneCount)) return false;
             weaponBone = static_cast<int>(weapon);
@@ -136,6 +294,7 @@ namespace rock::native_weapon_cycle
             for (std::size_t i = 0; i < nodeCount; ++i) {
                 auto& node = nodes[i];
                 node.originalLocal = node.object->local;
+                node.originalVisible = equipped_weapon_visual_state::isLocallyVisible(node.object.get());
                 // Physics may already have evaluated worlds without rewriting
                 // every local. Preserve that pose; rebuilding stale locals is
                 // precisely what separates an assembled gun's components.
@@ -181,10 +340,11 @@ namespace rock::native_weapon_cycle
             if (!selection.valid || !manager->graph[graphIndex]) { fail("first-person-graph"); return; }
             auto* graph = manager->graph[graphIndex].get();
             const auto handle = backend.job.subgraphHandles[static_cast<decltype(backend.job.subgraphHandles)::size_type>(selection.graphIndex)].handle;
-            std::uint64_t identifier{};
-            std::array<char, 260> path{};
+            auto& fireClip = clips[Fire];
+            auto& path = fireClip.path;
+            auto& identifier = fireClip.identifier;
             IdleGripExtractionDiagnostics diagnostics{};
-            if (!tryFindLoadedGraphIdlePath(graph, handle, identifier, path, diagnostics, &weapon_cycle_policy::fireClipPriority)) {
+            if (!path[0] && !tryFindLoadedGraphIdlePath(graph, handle, identifier, path, diagnostics, &weapon_cycle_policy::fireClipPriority)) {
                 fail("unambiguous-fire-clip"); return;
             }
             void* binding{};
@@ -192,18 +352,53 @@ namespace rock::native_weapon_cycle
             if (resolved == ExtractionResult::Pending) return;
             if (resolved == ExtractionResult::Failed) { fail(extractionFailureName(diagnostics.failure)); return; }
             if (!bind(graph, binding)) { fail("weapon-part-binding"); return; }
+            loadedGraph = graph;
+            subgraphHandle = handle;
+            backend.native.moveAnimationResourceHandle(&clips[Fire].resource, &backend.job.idleClipResource);
             ready = true;
             ROCK_LOG_INFO(Animation, "Akimbo mechanical cycle ready ref={:08X} weapon={:08X} parts={} tracks={} duration={:.4f} clip={}",
                 backend.job.referenceFormId, backend.job.weaponFormId, partCount, trackCount, duration, path.data());
         }
 
-        void apply(float deltaSeconds)
+        void loadReloadClips()
+        {
+            if (nextClip >= ClipCount) return;
+            auto& clip = clips[nextClip];
+            const std::array<unsigned (*)(std::string_view), ClipCount> priorities{
+                &weapon_cycle_policy::fireClipPriority, &weapon_cycle_policy::reloadClipPriority,
+                &weapon_cycle_policy::emptyReloadClipPriority, &weapon_cycle_policy::reserveReloadClipPriority};
+            IdleGripExtractionDiagnostics diagnostics{};
+            if (!clip.path[0] && !tryFindLoadedGraphIdlePath(loadedGraph, subgraphHandle, clip.identifier, clip.path, diagnostics, priorities[nextClip])) {
+                ++nextClip; return;
+            }
+            backend.native.moveAnimationResourceHandle(&backend.job.idleClipResource, &clip.resource);
+            backend.job.idleClipPath = clip.path;
+            void* binding{};
+            const auto resolved = resolveClipBinding(backend, loadedGraph, clip.identifier, clip.path.data(), binding, diagnostics);
+            backend.native.moveAnimationResourceHandle(&clip.resource, &backend.job.idleClipResource);
+            if (resolved == ExtractionResult::Pending) return;
+            if (resolved == ExtractionResult::Failed || !readClip(binding, clip)) {
+                ROCK_LOG_WARN(Animation, "Loose weapon reload clip unavailable ref={:08X} clip={} stage=binding-or-events",
+                    backend.job.referenceFormId, clip.path.data());
+            } else {
+                ROCK_LOG_INFO(Animation, "Loose weapon reload clip ready ref={:08X} clip={} duration={:.3f} events={}",
+                    backend.job.referenceFormId, clip.path.data(), clip.duration, clip.soundCount);
+            }
+            ++nextClip;
+        }
+
+        void apply(float deltaSeconds, bool finalPhase = false)
         {
             if (!playing) return;
             if (!topologyCurrent()) { fail("scene-topology-changed"); return; }
-            time = (std::min)(duration, time + (std::isfinite(deltaSeconds) ? (std::max)(0.0f, deltaSeconds) : 0.0f));
-            if (!guardedSampleTracks(sampler, animation, time, trackCount, samples.data())) { fail("sample"); return; }
+            time = (std::min)(duration, time + playbackRate * (std::isfinite(deltaSeconds) ? (std::max)(0.0f, deltaSeconds) : 0.0f));
+            if (sampledTime != time) {
+                if (!guardedSampleTracks(sampler, animation, time, trackCount, samples.data())) { fail("sample"); return; }
+                sampledTime = time;
+            }
             worlds[0] = root->world;
+            std::size_t movingParts{}, firstMoving{};
+            const bool tracePose = finalPhase && poseLogs < 4 && (shotsLogged <= 4 || reloading);
             // Calculate all destinations before writing. Absolute part deltas
             // avoid applying an animated parent twice and preserve OMOD offsets.
             for (std::size_t i = 1; i < nodeCount; ++i) {
@@ -213,27 +408,61 @@ namespace rock::native_weapon_cycle
                 if (node.bone >= 0) {
                     RE::NiTransform sample{};
                     if (!partInWeapon(node.bone, sample)) { fail("part-chain"); return; }
-                    const auto delta = transform_math::composeTransforms(sample, node.inverseClipRest);
-                    worlds[i] = transform_math::composeTransforms(worlds[0], transform_math::composeTransforms(delta, node.restInRoot));
+                    // Carry the sampled delta through this part's bind basis.
+                    // Applying a clip-space world delta directly to model space
+                    // makes a rotated receiver cycle along the wrong axis.
+                    worlds[i] = transform_math::composeTransforms(worlds[0],
+                        weapon_cycle_policy::retargetPart(node.restInRoot, node.inverseClipRest, sample));
                     locals[i] = transform_math::composeTransforms(transform_math::invertTransform(worlds[node.parent]), worlds[i]);
                 }
                 if (!isFiniteTransform(worlds[i]) || !isFiniteTransform(locals[i])) { fail("part-transform"); return; }
+                if (tracePose && node.bone >= 0) {
+                    float change = std::abs(locals[i].translate.x - node.restLocal.translate.x) +
+                        std::abs(locals[i].translate.y - node.restLocal.translate.y) + std::abs(locals[i].translate.z - node.restLocal.translate.z);
+                    for (unsigned row = 0; row < 3; ++row) for (unsigned column = 0; column < 3; ++column)
+                        change += std::abs(locals[i].rotate.entry[row][column] - node.restLocal.rotate.entry[row][column]);
+                    if (change > 0.0001f) { if (!movingParts) firstMoving = i; ++movingParts; }
+                }
+            }
+            if (tracePose && (movingParts || poseLogs == 0)) {
+                ++poseLogs;
+                const auto& node = nodes[firstMoving];
+                const auto& before = node.object->world.translate;
+                const auto& after = worlds[firstMoving].translate;
+                ROCK_LOG_INFO(Animation, "Loose weapon pose ref={:08X} phase=after-world-final clip={} time={:.4f}/{:.4f} rate={:.3f} movingParts={} node={} before=({:.3f},{:.3f},{:.3f}) after=({:.3f},{:.3f},{:.3f})",
+                    backend.job.referenceFormId, clips[activeClip].path.data(), time, duration, playbackRate, movingParts,
+                    node.object->name.c_str() ? node.object->name.c_str() : "<unnamed>", before.x, before.y, before.z, after.x, after.y, after.z);
             }
             for (std::size_t i = 1; i < nodeCount; ++i) {
                 nodes[i].object->local = locals[i];
                 nodes[i].object->world = worlds[i];
+                if (nodes[i].visibilityOwned && equipped_weapon_visual_state::isLocallyVisible(nodes[i].object.get()) != nodes[i].visible)
+                    equipped_weapon_visual_state::setLocallyVisible(nodes[i].object.get(), nodes[i].visible);
             }
             restorePending = true;
-            if (time >= duration) { restore(); playing = false; }
+            if (!paused) if (const auto held = reference.get()) {
+                const auto& clip = clips[activeClip];
+                while (nextSound < clip.soundCount && clip.sounds[nextSound].time <= time) {
+                    const auto& marker = clip.sounds[nextSound++];
+                    if (applyVisibility(marker)) continue;
+                    // Only sound events reach the loose reference's native
+                    // sink. No actor/body reload or equip event is dispatched.
+                    const RE::BSAnimationGraphEvent event{held->GetHandle().native_handle(), marker.tag, marker.payload};
+                    static_cast<RE::BSTEventSink<RE::BSAnimationGraphEvent>*>(held.get())->ProcessEvent(event, nullptr);
+                }
+            }
+            // Keep the authored final weapon pose until the next operation.
+            // The render phase reapplies it after native loose-body updates.
         }
     };
 
     Session::Session() noexcept = default;
     bool Session::ready() const noexcept { return _state && _state->ready && !_state->failed && !_state->retiring; }
     bool Session::failed() const noexcept { return _state && _state->failed; }
+    bool Session::reloading() const noexcept { return ready() && _state->reloading; }
     void Session::present() noexcept try
     {
-        if (ready()) _state->apply(0.0f);
+        if (ready()) _state->apply(0.0f, true);
     }
     catch (...) { if (_state) { try { _state->fail("late-presentation"); } catch (...) {} } }
     Session::~Session()
@@ -251,6 +480,7 @@ namespace rock::native_weapon_cycle
     void Session::clear() noexcept
     {
         if (_state && !_state->retiring) {
+            _state->stopSounds();
             _state->restore();
             _state->playing = false;
             _state->retiring = true;
@@ -263,7 +493,7 @@ namespace rock::native_weapon_cycle
         reap();
     }
 
-    void Session::update(RE::TESObjectREFR* reference, float deltaSeconds) noexcept try
+    void Session::update(RE::TESObjectREFR* reference, float deltaSeconds, bool inputAllowed) noexcept try
     {
         auto* root = reference ? reference->Get3D() : nullptr;
         if (!root) { clear(); return; }
@@ -281,20 +511,65 @@ namespace rock::native_weapon_cycle
             startJob(_state->backend, describeLooseCandidate(reference, root));
         }
         if (_state->failed) return;
+        if (!inputAllowed && !_state->paused) _state->stopSounds();
+        _state->paused = !inputAllowed;
         if (!_state->ready) _state->load();
-        if (_state->ready) _state->apply(deltaSeconds);
+        if (_state->ready) {
+            _state->loadReloadClips();
+            _state->apply(inputAllowed ? deltaSeconds : 0.0f);
+        }
     }
     catch (...) {
         if (_state) { try { _state->fail("exception"); } catch (...) {} }
     }
 
-    void Session::fire() noexcept
+    void Session::fire(float secondsPerShot) noexcept
     {
         if (!_state || !_state->ready || _state->failed || _state->retiring) return;
         _state->playing = true;
-        _state->time = 0;
+        _state->reloading = false;
+        _state->selectClip(State::Fire);
+        _state->poseLogs = 0;
+        // A long single-shot clip must complete between automatic shots.
+        _state->playbackRate = std::isfinite(secondsPerShot) && secondsPerShot > 0 ?
+            (std::max)(1.0f, _state->duration / secondsPerShot) : 1.0f;
         if (_state->shotsLogged++ < 4) {
             try { ROCK_LOG_INFO(Animation, "Akimbo mechanical stroke ref={:08X} parts={}", _state->backend.job.referenceFormId, _state->partCount); } catch (...) {}
         }
+    }
+
+    bool Session::reload(float seconds, bool empty, float elapsed) noexcept try
+    {
+        if (!ready() || !std::isfinite(seconds) || seconds <= 0 || _state->reloading) return false;
+        const auto choice = _state->reloadClip(empty);
+        if (!_state->clips[choice].ready) {
+            ROCK_LOG_SAMPLE_WARN(Animation, 1000, "Loose weapon reload waiting/unavailable ref={:08X}: exact weapon-only clip not ready",
+                _state->backend.job.referenceFormId);
+            return false;
+        }
+        _state->selectClip(choice);
+        _state->poseLogs = 0;
+        _state->playbackRate = _state->duration / seconds;
+        _state->time = std::isfinite(elapsed) ? std::clamp(elapsed / seconds, 0.0f, 1.0f) * _state->duration : 0.0f;
+        while (_state->nextSound < _state->clips[choice].soundCount && _state->clips[choice].sounds[_state->nextSound].time < _state->time)
+            _state->applyVisibility(_state->clips[choice].sounds[_state->nextSound++]);
+        _state->playing = true; _state->reloading = true;
+        return true;
+    }
+    catch (...) {
+        if (_state) { try { _state->fail("reload-presentation"); } catch (...) {} }
+        return false;
+    }
+
+    float Session::reloadSeconds(bool empty, float speed) const noexcept
+    {
+        if (!ready() || _state->nextClip < State::ClipCount || !std::isfinite(speed) || speed <= 0) return 0;
+        const auto& clip = _state->clips[_state->reloadClip(empty)];
+        return clip.ready ? clip.duration / speed : 0;
+    }
+
+    void Session::finishReload() noexcept
+    {
+        if (_state) _state->reloading = false;
     }
 }

@@ -116,6 +116,8 @@ namespace rock
                     Guard{0xE803D0,{0x48,0x89,0x5C,0x24,0x18,0x48,0x89,0x6C,0x24,0x20,0x89,0x54}},
                     Guard{0xEC39C0,{0x48,0x89,0x5C,0x24,0x08,0x57,0x48,0x83,0xEC,0x20,0x8B,0x41}},
                     Guard{0xEC3910,{0x48,0x89,0x5C,0x24,0x08,0x57,0x48,0x83,0xEC,0x20,0x48,0x8B}},
+                    Guard{0x104BB50,{0x48,0x89,0x5C,0x24,0x08,0x57,0x48,0x83,0xEC,0x30,0x48,0x83}},
+                    Guard{0x834DF0,{0x48,0x89,0x5C,0x24,0x08,0x57,0x48,0x83,0xEC,0x40,0x8B,0x41}},
                     Guard{0x3E8380,{0x48,0x89,0x5C,0x24,0x10,0x44,0x88,0x4C,0x24,0x20,0x56,0x57}},
                     Guard{0x2F30E0,{0x48,0x85,0xC9,0x74,0x15,0x48,0x3B,0x0D,0x7C,0x1C,0x65,0x05}},
                     Guard{0x333740,{0x44,0x89,0x44,0x24,0x18,0x48,0x89,0x54,0x24,0x10,0x55,0x41}},
@@ -208,6 +210,7 @@ namespace rock
         // The carried data is private, so native save/load never serializes
         // an extra equipped item. Its value snapshot belongs to the co-save.
         saving.store(true, std::memory_order_release);
+        carried_weapon_projectile::clearEffects();
     }
 
     void CarriedWeaponRuntime::afterSave() noexcept
@@ -315,6 +318,11 @@ namespace rock
         _ammoKnown = data && native_memory::tryReadValue(&data->ammoCount, _loaded);
         RE::TESAmmo* ammo{};
         _ammoForm = _ammoKnown && native_memory::tryReadValue(&data->ammo, ammo) && ammo ? ammo->formID : 0;
+        if (_ammoKnown && !_ammoForm && _weapon.object) {
+            const auto* weapon = static_cast<const RE::TESObjectWEAP*>(_weapon.object);
+            const auto* effective = _weapon.instanceData ? static_cast<const RE::TESObjectWEAP::InstanceData*>(_weapon.instanceData.get()) : &weapon->weaponData;
+            _ammoForm = effective->ammo ? effective->ammo->formID : 0;
+        }
         if (_reference && _weapon.object && _ammoKnown) {
             (void)liveArchive.write({_reference->formID, _weapon.object->formID, _ammoForm, _loaded,
                 _operation.cooldown(), _operation.reloadRemaining(), _operation.reloading() ? 1u : 0u});
@@ -362,6 +370,7 @@ namespace rock
         _thread = GetCurrentThreadId();
         _secondsPerShot = 1.0f / rate;
         _reloadSeconds = ranged->reloadSeconds / effective->reloadSpeed;
+        _reloadSpeed = effective->reloadSpeed;
         _automatic = effective->flags.any(RE::WEAPON_FLAGS::kAutomatic);
         _operation.begin(_nextSession++);
         _operation.bind(input.hand, input.grip);
@@ -466,6 +475,7 @@ namespace rock
         _declinedReference = {};
         _slot = nullptr;
         _ammoKnown = false;
+        _kick = {};
         _operation.begin(0);
         _faulted = false;
         (void)liveArchive.write({});
@@ -484,6 +494,8 @@ namespace rock
         // pending physical input so a native transition cannot replay it.
         _operation.cancelInput();
         stopAttackSound("suspended");
+        carried_weapon_projectile::clearEffects();
+        _kick = {};
         return true;
     }
 
@@ -552,6 +564,7 @@ namespace rock
         const bool completed = reinterpret_cast<Reload>(REL::Offset(0xE4E3B0).address())(player, &_weapon, _index);
         observeAmmo();
         _operation.completeReload();
+        _cycle.finishReload();
         ROCK_LOG_DEBUG(Weapon, "Akimbo reload session={} index={} completed={} loaded={} known={}",
             _operation.session(), _index, completed, _loaded, _ammoKnown);
     }
@@ -598,6 +611,7 @@ namespace rock
         const auto weapon = _weapon;
         const auto dataLease = _data;
         const auto muzzleLease = _muzzle;
+        const RE::NiPointer<RE::NiAVObject> rootLease(_reference->Get3D());
         const auto session = _operation.session();
         const auto shotHand = _operation.hand();
         const auto referenceId = _reference->formID;
@@ -608,13 +622,26 @@ namespace rock
         const auto* primaryData = readItem(0, primaryBefore) ? weaponData(primaryBefore) : nullptr;
         const auto primaryCountBefore = primaryData ? primaryData->ammoCount : 0;
         {
-            native_carried_weapon_context::Scope context(player->currentProcess, item);
+            native_carried_weapon_context::Scope context(player->currentProcess, item, rootLease.get());
             reinterpret_cast<Fire>(REL::Offset(0x333740).address())(&weapon, player, _index, data->ammo, nullptr);
         }
         const auto result = currentShot;
         currentShot = {};
         observeAmmo();
-        if (result.applied && result.launches && _ammoKnown && _loaded < before) _cycle.fire();
+        if (result.applied && result.launches && _ammoKnown && _loaded < before) {
+            _cycle.fire(_secondsPerShot);
+            const auto* enabled = f4vr::getIniSetting("bUseKickback:VR");
+            const auto* minOffset = f4vr::getIniSetting("fKickbackMinOffset:VR");
+            const auto* maxOffset = f4vr::getIniSetting("fKickbackMaxOffset:VR");
+            const auto* minDuration = f4vr::getIniSetting("fKickbackMinDuration:VR");
+            const auto* maxDuration = f4vr::getIniSetting("fKickbackMaxDuration:VR");
+            if (data->aimModel && enabled && enabled->GetBinary() && minOffset && maxOffset && minDuration && maxDuration) {
+                const auto& target = data->aimModel->targetRecoilHead;
+                const auto& current = data->aimModel->currentRecoilHead;
+                _kick.fire(std::hypot(target.x, target.y), std::hypot(current.x, current.y),
+                    minOffset->GetFloat(), maxOffset->GetFloat(), minDuration->GetFloat(), maxDuration->GetFloat());
+            }
+        }
         if (!result.applied || !result.launches) stopAttackSound("dispatch-failed");
         primaryData = readItem(0, primaryAfter) ? weaponData(primaryAfter) : nullptr;
         const auto& p = result.world.translate;
@@ -700,24 +727,64 @@ namespace rock
         const auto previousBinding = _operation.binding();
         _operation.bind(input.hand, input.grip);
         if (previousBinding != _operation.binding()) stopAttackSound("grip-changed");
-        _operation.advance(input.deltaSeconds);
-        _cycle.update(input.reference, input.inputAllowed ? input.deltaSeconds : 0.0f);
+        _cycle.update(input.reference, input.deltaSeconds, input.inputAllowed);
         // Publish the replacement cache while both nodes are still pinned.
         // Native readers must never see a retired node after its lease drops.
         RE::NiPointer<RE::NiAVObject> nextMuzzle(input.muzzle);
         weaponData(item)->fireNode = nextMuzzle.get();
+        if (auto* flash = weaponData(item)->muzzleFlash) {
+            // 104B720 retains/releases the NiPointer at +18; 104BC90 uses
+            // that exact node's world pose. A replaced model must not leave
+            // the flash following its previously pinned muzzle.
+            auto* anchor = reinterpret_cast<RE::NiPointer<RE::NiAVObject>*>(reinterpret_cast<std::byte*>(flash) + 0x18);
+            RE::NiAVObject* priorAnchor{};
+            if (!native_memory::tryReadValue(reinterpret_cast<RE::NiAVObject* const*>(anchor), priorAnchor) ||
+                (priorAnchor != nextMuzzle.get() && !native_memory::pointerRangeLooksWritable(anchor, sizeof(*anchor)))) {
+                removeContext(); _faulted = true;
+                ROCK_LOG_ERROR(Weapon, "Loose weapon muzzle-effect anchor unavailable session={}", _operation.session());
+                return;
+            }
+            if (priorAnchor != nextMuzzle.get()) *anchor = nextMuzzle;
+        }
         _muzzle = std::move(nextMuzzle);
         observeAmmo();
+        auto* liveData = weaponData(item);
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (liveData && liveData->muzzleFlash && player && input.inputAllowed && std::isfinite(input.deltaSeconds) && input.deltaSeconds > 0) {
+            using UpdateFlash = void (*)(RE::MuzzleFlash*, float, RE::Actor*);
+            reinterpret_cast<UpdateFlash>(REL::Offset(0x104BB50).address())(liveData->muzzleFlash, input.deltaSeconds, player);
+        }
         if (!input.inputAllowed || !nativeWeaponAbsent()) {
             _operation.cancelInput();
             stopAttackSound("input-blocked");
+            carried_weapon_projectile::clearEffects();
+            _kick = {};
             return;
         }
+        carried_weapon_projectile::publishEffects(_reference.get(), _reference->Get3D(), _muzzle.get(), item);
+        bool resumedReload{};
+        if (_operation.reloading() && !_cycle.reloading()) {
+            if (const float authored = _cycle.reloadSeconds(_loaded == 0, _reloadSpeed); authored > 0) _reloadSeconds = authored;
+            if (!_cycle.reload(_reloadSeconds, _loaded == 0, _reloadSeconds - _operation.reloadRemaining())) {
+                stopAttackSound("reload-presentation-pending");
+                return;
+            }
+            resumedReload = true;
+        }
+        _operation.advance(!resumedReload ? input.deltaSeconds : 0.0f);
         if (input.triggerHeld && (!_cycle.ready() || !_muzzle || input.grip != akimbo::Grip::Firing)) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Loose firearm trigger blocked ref={:08X} firingGrip={} muzzle={} animationReady={} animationFailed={}",
                 _reference->formID, input.grip == akimbo::Grip::Firing, _muzzle != nullptr, _cycle.ready(), _cycle.failed());
         }
-        if (input.reloadPressed && _operation.beginReload(_reloadSeconds)) stopAttackSound("reload");
+        if (input.reloadPressed && input.grip == akimbo::Grip::Firing && !_operation.reloading()) {
+            const float authored = _cycle.reloadSeconds(_loaded == 0, _reloadSpeed);
+            if (authored > 0 && _cycle.reload(authored, _loaded == 0) && _operation.beginReload(authored)) {
+                _reloadSeconds = authored;
+                stopAttackSound("reload");
+            } else {
+                ROCK_LOG_SAMPLE_WARN(Animation, 1000, "Loose weapon reload unavailable: exact clip pending or unsupported ref={:08X}", _reference->formID);
+            }
+        }
         if (_operation.reloadDue()) reload();
         const auto ticket = _operation.requestFire(_muzzle && _cycle.ready() && input.inputAllowed, input.triggerHeld,
             _automatic, _ammoKnown, _loaded);
@@ -734,5 +801,27 @@ namespace rock
     void CarriedWeaponRuntime::present() noexcept
     {
         if (_reference && !_faulted && sourceCurrent() && nativeWeaponAbsent()) _cycle.present();
+    }
+
+    RE::NiPoint3 CarriedWeaponRuntime::advanceRecoil(float deltaSeconds) noexcept
+    {
+        auto item = emptyItem();
+        if (!ready() || !_reference || !_muzzle || _faulted || !nativeWeaponAbsent() ||
+            !sourceCurrent() || !contextCurrent(item) || !std::isfinite(deltaSeconds) || deltaSeconds <= 0) return {};
+        auto* data = weaponData(item);
+        if (data->aimModel) {
+            // E28120 normally advances this only through the equipment array.
+            using UpdateAim = void (*)(RE::AimModel*, float);
+            reinterpret_cast<UpdateAim>(REL::Offset(0x834DF0).address())(data->aimModel, deltaSeconds);
+        }
+        const float distance = _kick.advance(deltaSeconds);
+        auto* root = _reference->Get3D();
+        auto* node = _muzzle.get();
+        unsigned depth{};
+        for (; node && node != root && depth < 64; ++depth) node = node->parent;
+        if (!root || node != root) return {};
+        const auto direction = native_scope_shot_policy::nodeAxisRay({}, _muzzle->world.rotate, 1);
+        if (!direction.valid) return {};
+        return {-distance * direction.direction.x, -distance * direction.direction.y, -distance * direction.direction.z};
     }
 }

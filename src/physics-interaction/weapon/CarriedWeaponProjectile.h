@@ -1,6 +1,8 @@
 #pragma once
 #include <cstdint>
 
+namespace RE { class TESObjectREFR; class NiAVObject; class EquippedItem; }
+
 namespace rock::carried_weapon_projectile
 {
     struct Identity
@@ -18,5 +20,10 @@ namespace rock::carried_weapon_projectile
     // Values only. Pointer-sized identities are compared, never dereferenced.
     void publish(std::uint32_t heldReference, std::uint32_t shooterHandle,
         std::uintptr_t weapon, std::uintptr_t instance, std::uint32_t index) noexcept;
+    // Frame-thread publication. Native initialization on that same thread
+    // leases the exact item/model for its deferred muzzle-effect work.
+    void publishEffects(RE::TESObjectREFR* reference, RE::NiAVObject* root,
+        RE::NiAVObject* muzzle, const RE::EquippedItem& item) noexcept;
+    void clearEffects() noexcept;
     void clear() noexcept;
 }

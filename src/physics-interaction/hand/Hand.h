@@ -446,6 +446,11 @@ namespace rock
         bool isHoldingLooseWeapon() const { return isHolding() && _heldObjectIsLooseWeapon; }
         bool isHoldingAuthoredSupportGrip() const { return isHoldingLooseWeapon() && _grabFrame.authoredLooseWeaponSupportGrip; }
         bool isHoldingFiringGrip() const { return isHoldingLooseWeapon() && _grabFrame.syntheticLooseWeaponPrimaryAttach && !_grabFrame.authoredLooseWeaponSupportGrip; }
+        void setLooseWeaponRecoil(const RE::NiPoint3& offset) noexcept
+        {
+            _looseRecoilTrace = isHoldingLooseWeapon() ? _grabFrame.traceId : 0;
+            _looseRecoilOffset = offset;
+        }
         bool captureWeaponGripTransfer(weapon_grip_transfer::HandGrip& out) const;
         loose_weapon_authored_grab_policy::Arrangement heldWeaponArrangement() const { return _grabFrame.authoredWeaponArrangement; }
         RE::TESObjectREFR* getHeldRef() const { return _savedObjectState.refr; }
@@ -1392,6 +1397,8 @@ namespace rock
         std::uint32_t _ragdollGrabTriangle = 0;
         held_object_drive_policy::HeldBodySetDriveDecision _pullDriveDecision{};
         bool _heldObjectIsLooseWeapon = false;
+        std::uint64_t _looseRecoilTrace{};
+        RE::NiPoint3 _looseRecoilOffset{};
         bool _grabFingerPosePublished = false;
         float _grabConvergeStableInsidePocketSeconds = 0.0f;
         float _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();

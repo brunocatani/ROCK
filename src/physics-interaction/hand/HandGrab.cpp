@@ -12611,6 +12611,11 @@ namespace rock
                 return false;
             }
         }
+        // Move the existing physical grab target, so native collision and
+        // hand seating follow recoil together. A new grab cannot inherit it.
+        if (isHoldingLooseWeapon() && _looseRecoilTrace == _grabFrame.traceId) {
+            update.proxyAuthorityWorld.translate += _looseRecoilOffset;
+        }
         update.desiredObjectWorld =
             grab_frame_math::objectFromGeneratedProxyLocalSpace(update.proxyAuthorityWorld, _grabFrame.proxyAuthorityHandSpace);
         if (_hasGrabFingerSweepDebug) {

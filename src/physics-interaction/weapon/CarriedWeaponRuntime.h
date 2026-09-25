@@ -2,6 +2,7 @@
 
 #include "physics-interaction/weapon/AkimboSessionPolicy.h"
 #include "physics-interaction/weapon/NativeWeaponCycle.h"
+#include "physics-interaction/weapon/LooseWeaponRecoilPolicy.h"
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
 #include "RE/NetImmerse/NiSmartPointer.h"
@@ -27,6 +28,7 @@ namespace rock
         void prepare(const Input& input);
         void update(const Input& input);
         void present() noexcept;
+        RE::NiPoint3 advanceRecoil(float deltaSeconds) noexcept;
         static bool isLooseFirearm(const RE::TESObjectREFR* reference) noexcept;
         static bool nativeWeaponAbsent() noexcept;
         void clear(bool nativeWorldAvailable) noexcept;
@@ -76,10 +78,11 @@ namespace rock
         RE::ObjectRefHandle _declinedReference{};
         akimbo::OperationState _operation{};
         native_weapon_cycle::Session _cycle{};
+        loose_weapon_recoil::Kick _kick{};
         const RE::BGSEquipSlot* _slot{};
         std::uint32_t _index{}, _loaded{}, _ammoForm{}, _thread{};
         std::uint64_t _nextSession{1};
-        float _secondsPerShot{}, _reloadSeconds{};
+        float _secondsPerShot{}, _reloadSeconds{}, _reloadSpeed{1.0f};
         bool _ammoKnown{}, _automatic{}, _registered{}, _faulted{};
 
         struct Transfer

@@ -2,6 +2,7 @@
 #include "physics-interaction/weapon/WeaponCyclePolicy.h"
 #include "physics-interaction/weapon/CarriedWeaponProjectile.h"
 #include "physics-interaction/weapon/LooseWeaponExperimentPolicy.h"
+#include "physics-interaction/weapon/LooseWeaponRecoilPolicy.h"
 #include <array>
 #include <iostream>
 #include <limits>
@@ -41,6 +42,44 @@ int main()
     check(fireClipPriority("Animations\\Glock19xAnims\\WPNFireSingleReady.hkx") == 3 &&
         fireClipPriority("Animations/Glock19xAnims/WPNFireSingleReady.hkt") == 3,
         "The exact subgraph's firing stroke accepts native resource extensions");
+    check(reloadClipPriority("Animations/MWVictor/WPNReload.hkx") &&
+        emptyReloadClipPriority("Animations/M249/WPNReloadEmpty.hkt") &&
+        reserveReloadClipPriority("Animations/spas12/WPNReloadReserve.hkx"),
+        "Authored normal, empty and tactical reload clips remain distinct");
+    check(!reloadClipPriority("WPNReloadReserve.hkx") && !reloadClipPriority("WPNReloadSlave.hkx") &&
+        !emptyReloadClipPriority("WPNReload.hkx"), "Reload selection cannot pick a different operation or slave clip");
+    for (const auto tag : {"weaponFire", "ReloadComplete", "reloadEnd", "Equip", "Attach", "AnimationDriven"})
+        check(presentationEvent(tag) == PresentationEvent::Ignore,
+            "Weapon presentation cannot replay actor gameplay, ammo, equip or arm-animation events");
+    check(presentationEvent("SoundPlay") == PresentationEvent::Sound && presentationEvent("CullBone") == PresentationEvent::HidePart &&
+        presentationEvent("UnCullBone") == PresentationEvent::ShowPart, "Authored sound and weapon visibility markers retain their separate meanings");
+    struct Point { float x{}, y{}, z{}; };
+    struct Matrix { float entry[3][4]{}; };
+    struct Transform { Matrix rotate; Point translate; float scale{1}; };
+    auto modelRest = rock::transform_math::makeIdentityTransform<Transform>();
+    modelRest.rotate.entry[0][0] = 0; modelRest.rotate.entry[0][1] = -1;
+    modelRest.rotate.entry[1][0] = 1; modelRest.rotate.entry[1][1] = 0;
+    modelRest.translate = {20,30,40};
+    auto clipRest = rock::transform_math::makeIdentityTransform<Transform>();
+    clipRest.translate = {2,3,4};
+    auto slide = clipRest; slide.translate.y += 5;
+    const auto mapped = retargetPart(modelRest, rock::transform_math::invertTransform(clipRest), slide);
+    check(std::abs(mapped.translate.x - 25) < 0.0001f && std::abs(mapped.translate.y - 30) < 0.0001f &&
+        std::abs(mapped.translate.z - 40) < 0.0001f, "Slide displacement follows the model's rotated bind basis without moving its rest offset");
+    const auto stationary = retargetPart(modelRest, rock::transform_math::invertTransform(clipRest), clipRest);
+    check(std::abs(stationary.translate.x - 20) < 0.0001f && std::abs(stationary.translate.y - 30) < 0.0001f,
+        "A neutral clip sample preserves the assembled model's exact rest pose");
+    rock::loose_weapon_recoil::Kick kick;
+    kick.fire(0.3926990817f, 0, 1, 5, 0.1f, 0.3f);
+    check(std::abs(kick.offset - 3) < 0.0001f && std::abs(kick.duration - 0.2f) < 0.0001f,
+        "Native recoil uses the verified 4/pi normalization and native setting ranges");
+    const float halfKick = kick.duration * 0.5f;
+    check(std::abs(kick.advance(halfKick) - 0.75f) < 0.0001f && kick.advance(halfKick) == 0,
+        "Native kickback returns quadratically to neutral without accumulating a held offset");
+    kick.fire(50,0,1,5,0.1f,0.3f);
+    check(kick.offset == 5 && kick.duration == 0.3f, "Large recoil remains within the native setting limits");
+    kick.fire(std::numeric_limits<float>::quiet_NaN(),0,1,5,0.1f,0.3f);
+    check(kick.advance(0.01f) == 0, "Invalid recoil input cannot poison the physical grab target");
     for (const auto path : {"WPNReload.hkx", "WPNFireAutoReadyBack.hkx", "WPNFireSingleReadySlave.hkt", "WPNAfterJiggleFireSingleAdd.hkx"})
         check(!fireClipPriority(path), "Reload, blend, slave and additive arm clips cannot become a mechanical stroke");
     OperationState rifle, pistol;

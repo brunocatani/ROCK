@@ -14,14 +14,16 @@ namespace rock::native_carried_weapon_context
     class Scope
     {
     public:
-        Scope(RE::AIProcess* process, const RE::EquippedItem& item) noexcept;
+        Scope(RE::AIProcess* process, const RE::EquippedItem& item, RE::NiAVObject* physicalRoot = nullptr) noexcept;
         ~Scope();
         Scope(const Scope&) = delete;
         Scope& operator=(const Scope&) = delete;
     private:
         RE::AIProcess* _previousProcess{};
         const RE::EquippedItem* _previousItem{};
+        RE::NiAVObject* _previousRoot{};
     };
 
     const RE::EquippedItem* current(RE::AIProcess* process, std::uint32_t index) noexcept;
+    RE::NiAVObject* physicalRoot(RE::AIProcess* process, std::uint32_t index) noexcept;
 }

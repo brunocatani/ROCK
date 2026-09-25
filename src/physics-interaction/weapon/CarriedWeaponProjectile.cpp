@@ -2,6 +2,10 @@
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/weapon/NativeCarriedWeaponContext.h"
+#include "RE/Bethesda/PlayerCharacter.h"
+#include "RE/Bethesda/TESObjectREFRs.h"
+#include <Windows.h>
 
 #include <array>
 #include <atomic>
@@ -33,7 +37,17 @@ namespace rock::carried_weapon_projectile
         AdmitHit originalAdmit{};
         AddImpact originalImpact{};
         bool installed{};
-        std::atomic<std::uint32_t> candidateLogs{}, impactLogs{};
+        std::atomic<std::uint32_t> candidateLogs{}, impactLogs{}, initializationLogs{};
+        using InitializeProjectile = void (*)(void*);
+        InitializeProjectile originalInitialize{};
+        // Only the frame publisher and same-thread native task dispatch touch
+        // these leases. A foreign-thread initializer keeps native behavior and
+        // reports the missing contract; it never dereferences frame-owned data.
+        std::atomic<DWORD> effectsThread{};
+        std::atomic<std::uint32_t> offThreadInitializers{};
+        RE::NiPointer<RE::TESObjectREFR> effectReference;
+        RE::NiPointer<RE::NiAVObject> effectRoot, effectMuzzle;
+        RE::EquippedItem effectItem{RE::BGSObjectInstance(nullptr, nullptr), nullptr, {}, {}};
 
         bool ownedProjectile(const void* projectile, Owner& snapshot, Identity& identity) noexcept
         {
@@ -45,6 +59,39 @@ namespace rock::carried_weapon_projectile
                 native_memory::tryReadField(projectile, 0x240, identity.instance) &&
                 native_memory::tryReadField(projectile, 0x250, identity.index) &&
                 identity == Identity{snapshot.weapon, snapshot.instance, snapshot.shooter, snapshot.index};
+        }
+
+        void initializeProjectile(void* projectile)
+        {
+            Owner snapshot{};
+            Identity identity{};
+            if (!ownedProjectile(projectile, snapshot, identity)) { originalInitialize(projectile); return; }
+            const auto thread = effectsThread.load(std::memory_order_acquire);
+            if (!thread || thread != GetCurrentThreadId()) {
+                if (thread) offThreadInitializers.fetch_add(1, std::memory_order_relaxed);
+                originalInitialize(projectile);
+                return;
+            }
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            const auto reference = effectReference;
+            const auto root = effectRoot;
+            const auto muzzle = effectMuzzle;
+            const auto item = effectItem;
+            if (!player || !player->currentProcess || !reference || reference->formID != snapshot.reference ||
+                reference->Get3D() != root.get() || !muzzle || !item.data ||
+                item.item.object != reinterpret_cast<RE::TESForm*>(identity.weapon) ||
+                item.item.instanceData.get() != reinterpret_cast<RE::TBO_InstanceData*>(identity.instance) ||
+                item.equipIndex.index != identity.index) { originalInitialize(projectile); return; }
+            native_carried_weapon_context::Scope context(player->currentProcess, item, root.get());
+            originalInitialize(projectile);
+            if (initializationLogs.fetch_add(1, std::memory_order_relaxed) < 8) {
+                try {
+                    const auto* data = static_cast<const RE::EquippedWeaponData*>(item.data.get());
+                    ROCK_LOG_INFO(Weapon, "Loose projectile effects initialized ref={:08X} index={} muzzle=0x{:X} flash=0x{:X} thread={}",
+                        snapshot.reference, identity.index, reinterpret_cast<std::uintptr_t>(muzzle.get()),
+                        reinterpret_cast<std::uintptr_t>(data->muzzleFlash), thread);
+                } catch (...) {}
+            }
         }
 
         bool admitHit(void* target, std::uint32_t filter, void* projectile, std::uint32_t body)
@@ -112,6 +159,13 @@ namespace rock::carried_weapon_projectile
         if (!entry_trampoline_hook::install("carried-weapon projectile impact", 0x10585A0,
                 impactBytes.data(), impactBytes.size(), reinterpret_cast<void*>(&addImpact), original)) return false;
         originalImpact = reinterpret_cast<AddImpact>(original);
+        // DB3DF1 passes the projectile in RCX to this queued initialization.
+        // 1057700 -> 105A6C0 -> 104C1D0 -> ECC570 resolves private muzzle data.
+        constexpr std::array<std::uint8_t, 15> initializeBytes{
+            0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x6C,0x24,0x10,0x48,0x89,0x74,0x24,0x18};
+        if (!entry_trampoline_hook::install("loose projectile effect initialization", 0x1057700,
+                initializeBytes.data(), initializeBytes.size(), reinterpret_cast<void*>(&initializeProjectile), original)) return false;
+        originalInitialize = reinterpret_cast<InitializeProjectile>(original);
         installed = true;
         return true;
     }
@@ -125,8 +179,27 @@ namespace rock::carried_weapon_projectile
         owner.reference.store(reference); owner.shooter.store(shooter);
         owner.weapon.store(weapon); owner.instance.store(instance); owner.index.store(index);
         owner.sequence.fetch_add(1, std::memory_order_release);
-        candidateLogs.store(0); impactLogs.store(0);
+        candidateLogs.store(0); impactLogs.store(0); initializationLogs.store(0);
     }
 
-    void clear() noexcept { publish(0, 0, 0, 0, 0); }
+    void publishEffects(RE::TESObjectREFR* reference, RE::NiAVObject* root,
+        RE::NiAVObject* muzzle, const RE::EquippedItem& item) noexcept
+    {
+        effectsThread.store(0, std::memory_order_release);
+        effectReference.reset(reference); effectRoot.reset(root); effectMuzzle.reset(muzzle);
+        effectItem = item;
+        effectsThread.store(GetCurrentThreadId(), std::memory_order_release);
+        if (const auto rejected = offThreadInitializers.exchange(0)) {
+            try { ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Loose projectile effects declined: {} initializers outside owning frame thread", rejected); } catch (...) {}
+        }
+    }
+
+    void clearEffects() noexcept
+    {
+        effectsThread.store(0, std::memory_order_release);
+        effectItem = {RE::BGSObjectInstance(nullptr, nullptr), nullptr, {}, {}};
+        effectMuzzle.reset(); effectRoot.reset(); effectReference.reset();
+    }
+
+    void clear() noexcept { publish(0, 0, 0, 0, 0); clearEffects(); }
 }
