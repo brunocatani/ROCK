@@ -23,6 +23,27 @@ namespace rock::input_remap_policy
     // These native take/equip targets are always protected while the activating hand holds a ROCK object.
     inline constexpr std::string_view kNativeTakeEquipFormTypes = "WEAP,ARMO,AMMO,MISC,INGR,ALCH,BOOK,KEYM,SLGM";
 
+    enum class ActivateTarget : std::uint8_t
+    {
+        Unavailable,
+        TakeEquip,
+        NativeActivation,
+        OtherWandTakeEquip,
+    };
+
+    [[nodiscard]] constexpr bool isTakeEquipTarget(ActivateTarget target) noexcept
+    {
+        return target == ActivateTarget::TakeEquip || target == ActivateTarget::OtherWandTakeEquip;
+    }
+
+    [[nodiscard]] constexpr bool shouldPrioritizeNativeActivation(ActivateTarget target, bool handEngaged) noexcept
+    {
+        // Only this wand's target can own use input. The other wand's fallback
+        // remains evidence for take protection, never for stealing reload/scope.
+        return target == ActivateTarget::NativeActivation ||
+               (target == ActivateTarget::TakeEquip && !handEngaged);
+    }
+
     [[nodiscard]] constexpr bool providerSuppressionApplies(bool menuActive, bool requested) noexcept
     {
         return !menuActive && requested;

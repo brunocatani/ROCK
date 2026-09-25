@@ -300,6 +300,15 @@ static bool testInputRouting()
         ok &= expectFalse(formType, rock::far_selection_blacklist_policy::listContainsText(kNativeTakeEquipFormTypes, formType));
     }
 
+    ok &= expectTrue("loose item use wins over reload and scope", shouldPrioritizeNativeActivation(ActivateTarget::TakeEquip, false));
+    ok &= expectFalse("occupied hand cannot grant native pickup priority", shouldPrioritizeNativeActivation(ActivateTarget::TakeEquip, true));
+    for (const bool engaged : {false, true}) {
+        ok &= expectTrue("container use retains priority regardless of hand occupancy", shouldPrioritizeNativeActivation(ActivateTarget::NativeActivation, engaged));
+        ok &= expectFalse("no target leaves reload and scope available", shouldPrioritizeNativeActivation(ActivateTarget::Unavailable, engaged));
+        ok &= expectFalse("other wand pickup cannot steal this wand's reload or scope", shouldPrioritizeNativeActivation(ActivateTarget::OtherWandTakeEquip, engaged));
+    }
+    ok &= expectTrue("other wand fallback retains pickup protection", isTakeEquipTarget(ActivateTarget::OtherWandTakeEquip));
+
     auto takeEquipIdleHand = base;
     takeEquipIdleHand.takeEquipTargetEligible = true;
     ok &= expectFalse("free hand keeps native take/equip on an eligible target", shouldSuppressNativeTakeEquipAction(takeEquipIdleHand));
@@ -993,6 +1002,55 @@ static bool testManualScope()
     return ok;
 }
 
+static bool testPickupActivationPriority()
+{
+    using namespace rock::input_remap_policy;
+    bool ok = true;
+    for (const bool nativeFirst : {false, true}) {
+        for (const bool quickTap : {false, true}) {
+            manual::RuntimeState state{};
+            manual::Input input{
+                .gameplayInputAllowed = true,
+                .weaponDrawn = true,
+                .nativeActivationTarget = shouldPrioritizeNativeActivation(ActivateTarget::TakeEquip, false),
+                .leftButton = {.available = true},
+                .rightButton = {.available = true, .held = !quickTap, .pressed = true, .released = quickTap},
+            };
+            if (nativeFirst) {
+                manual::beginPrimaryActivateGesture(state, input.nativeActivationTarget);
+                // The native pickup can remove the target before raw polling.
+                input.nativeActivationTarget = shouldPrioritizeNativeActivation(ActivateTarget::Unavailable, false);
+            }
+            auto result = manual::update(state, input);
+            if (!nativeFirst) {
+                manual::beginPrimaryActivateGesture(state,
+                    shouldPrioritizeNativeActivation(ActivateTarget::Unavailable, false));
+            }
+            ok &= expectTrue("pickup ownership survives target loss in either input order", state.primaryPressUsesNative);
+            ok &= expectFalse("pickup tap never dispatches reload or scope", result.dispatchReload || result.scopeRequested);
+
+            if (!quickTap) {
+                input.nativeActivationTarget = false;
+                input.rightButton = {.available = true, .held = true};
+                input.deltaSeconds = 1.0f;
+                result = manual::update(state, input);
+                ok &= expectFalse("holding after pickup cannot become scope", result.dispatchReload || result.scopeRequested);
+                input.rightButton = {.available = true, .released = true};
+                result = manual::update(state, input);
+                ok &= expectFalse("releasing after pickup cannot reload", result.dispatchReload || result.scopeRequested);
+            }
+
+            manual::beginPrimaryActivateGesture(state,
+                shouldPrioritizeNativeActivation(ActivateTarget::Unavailable, false));
+            input.nativeActivationTarget = false;
+            input.rightButton = {.available = true, .pressed = true, .released = true};
+            result = manual::update(state, input);
+            ok &= expectTrue("a fresh tap with no item still reloads", result.dispatchReload);
+        }
+    }
+    return ok;
+}
+
 static bool testVanillaScopeMode()
 {
     bool ok = true;
@@ -1051,6 +1109,7 @@ int main()
     ok &= testNativeVats();
     ok &= testPipboyGestures();
     ok &= testManualScope();
+    ok &= testPickupActivationPriority();
     ok &= testVanillaScopeMode();
     return ok ? 0 : 1;
 }
