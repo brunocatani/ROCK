@@ -44,7 +44,7 @@ namespace rock::config
         { "ImmersiveWeapons", "fHeavyTwoHandRecoilPercent", "05. Weapon Recoil", "", configuration_api::Group::Consumer },
         { "ImmersiveWeapons", "fDefaultOneHandRecoilPercent", "05. Weapon Recoil", "", configuration_api::Group::Consumer },
         { "ImmersiveWeapons", "fDefaultTwoHandRecoilPercent", "05. Weapon Recoil", "", configuration_api::Group::Consumer },
-        { "Grabbing", "iFarGrabMode", "06. Grabbing", "Far Grab Mode\n1 = Immediate Pull. 2 = Gesture Pull.\nGesture Pull: hold grab to lock, then flick the hand back toward yourself.\nKeep holding to catch; release before the flick to cancel.\nMode changes apply to the next far grab.", configuration_api::Group::Consumer },
+        { "Grabbing", "iFarGrabMode", "06. Grabbing", "Far Grab Mode\n1 = Immediate Pull. 2 = Gesture Pull.\nGesture Pull: hold grab to lock, then flick the hand back toward yourself.\nRelease before the flick to cancel. After the pull, release and grab again to catch.\nHolding the first press does not catch in Gesture Pull; Immediate Pull still auto-catches.\nMode changes apply to the next far grab.", configuration_api::Group::Consumer },
         { "Grabbing", "bGrabInputIntentStateEnabled", "06. Grabbing", "Keeps a grab press alive briefly while selection, pull catch, or input suppression settles.", configuration_api::Group::Consumer },
         { "Grabbing", "fGrabInputLeewaySeconds", "06. Grabbing", "", configuration_api::Group::Consumer },
         { "Grabbing", "fGrabInputForceSeconds", "06. Grabbing", "", configuration_api::Group::Consumer },

@@ -757,10 +757,11 @@ namespace rock
         return true;
     }
 
-    void Hand::armPullCatchIntent(RE::TESObjectREFR* refr, std::uint32_t primaryBodyId, grab_target::Kind targetKind)
+    void Hand::armPullCatchIntent(RE::TESObjectREFR* refr, std::uint32_t primaryBodyId, grab_target::Kind targetKind, far_pull_gesture::Mode mode)
     {
         _pullCatchIntent = PullCatchIntent{
             .active = refr != nullptr && primaryBodyId != INVALID_BODY_ID,
+            .automaticCatch = mode == far_pull_gesture::Mode::Immediate,
             .commitPending = false,
             .refr = refr,
             .formId = refr ? refr->GetFormID() : 0,
@@ -781,7 +782,7 @@ namespace rock
 
     void Hand::markPullCatchIntentArrived()
     {
-        if (!_pullCatchIntent.active) {
+        if (!hasAutomaticPullCatchIntent()) {
             return;
         }
 
@@ -810,6 +811,11 @@ namespace rock
     bool Hand::hasActivePullCatchIntent() const
     {
         return _pullCatchIntent.active;
+    }
+
+    bool Hand::hasAutomaticPullCatchIntent() const
+    {
+        return _pullCatchIntent.active && _pullCatchIntent.automaticCatch;
     }
 
     bool Hand::hasArrivedPullCatchIntent() const
@@ -935,7 +941,8 @@ namespace rock
 
     bool Hand::beginActorEquipmentDropHandoff(
         const actor_equipment_grab::DropResult& dropResult,
-        const RE::NiPoint3& sourceHitPointWorld)
+        const RE::NiPoint3& sourceHitPointWorld,
+        far_pull_gesture::Mode mode)
     {
         if (dropResult.status != actor_equipment_grab::DropStatus::Success || !dropResult.handle) {
             return false;
@@ -946,6 +953,7 @@ namespace rock
 
         _actorEquipmentDropHandoff = ActorEquipmentDropHandoff{
             .active = true,
+            .pullMode = mode,
             .handle = dropResult.handle,
             .droppedRef = dropResult.droppedRef,
             .sourceHitPointWorld = sourceHitPointWorld,
