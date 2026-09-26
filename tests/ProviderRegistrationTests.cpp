@@ -2,6 +2,7 @@
 #include "api/ProviderStatePolicy.h"
 #include "api/OwnedEventStream.h"
 #include <ROCK/Core.h>
+#include "physics-interaction/grab/DefaultGrabPoseRegistry.h"
 #include <algorithm>
 #include <atomic>
 #include <cassert>
@@ -13,6 +14,10 @@
 #include <string>
 #include <string_view>
 
+namespace rock::saved_grab_offset {
+    DefaultGrabPoseRegistry defaults;
+    void clearDefaultGrabPosesForOwner(api::OwnerToken owner) { defaults.clearOwner(owner); }
+}
 namespace Version {constexpr std::string_view NAME="test";}
 namespace rock::provider::events {
     api::Status bind(api::OwnerToken,api::InterfaceId);
@@ -85,6 +90,11 @@ int main(){
         const auto name="Owner"+std::to_string(i);std::memcpy(registration.modName,name.c_str(),name.size()+1);
         assert(apiRegisterConsumerV1(&registration,&owners[i])==RockProviderResultV1::Ok);
     }
+    rock::api::grab::v1_2::DefaultGrabPoses pose;
+    pose.baseFormId=100;pose.left.flags=1;
+    assert(rock::saved_grab_offset::defaults.set(owners[0].ownerToken,pose)==rock::api::Status::Ok);
+    pose.baseFormId=101;
+    assert(rock::saved_grab_offset::defaults.set(owners[1].ownerToken,pose)==rock::api::Status::Ok);
     pauseRemoval=true;
     auto retire=std::async(std::launch::async,[&]{return apiUnregisterConsumerV1(owners[0].ownerToken);});
     removalEntered.wait();
@@ -96,6 +106,9 @@ int main(){
     registrationStarted.wait();allowRemoval.count_down();
     assert(retire.get()==RockProviderResultV1::Ok && registerNext.get()==RockProviderResultV1::Ok);
     assert(replacement.ownerToken!=owners[0].ownerToken);
+    rock::saved_grab_offset::HandOffset offset;
+    assert(!rock::saved_grab_offset::defaults.load(100,true,offset));
+    assert(rock::saved_grab_offset::defaults.load(101,true,offset));
     rock::api::StreamV1 state{};
     assert(stream.copy(replacement.ownerToken,0,nullptr,0,state)==rock::api::Status::Ok);
     assert(stream.copy(owners[0].ownerToken,0,nullptr,0,state)==rock::api::Status::PermissionDenied);

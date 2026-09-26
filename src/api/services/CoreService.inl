@@ -159,6 +159,7 @@
             RockProviderHand::None,
             true);
         clearNativeAnimationRuntimePublicationForOwner(ownerToken);
+        saved_grab_offset::clearDefaultGrabPosesForOwner(ownerToken);
         provider_debug_overlay::clear(ownerToken);
         provider_collider_visualization::clear(ownerToken);
 

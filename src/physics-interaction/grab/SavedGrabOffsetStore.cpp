@@ -1,4 +1,5 @@
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
+#include "physics-interaction/grab/DefaultGrabPoseRegistry.h"
 
 #include "physics-interaction/grab/SavedGrabCaptureFormat.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -111,6 +112,27 @@ namespace rock::saved_grab_offset
                 std::lock_guard lock(_mutex);
                 _cache = std::move(loaded);
                 ROCK_LOG_INFO(Config, "Loaded {} saved grab offset(s) ({} unreadable)", _cache.size(), failedCount);
+            }
+
+            api::Status setDefaults(api::OwnerToken owner, const api::grab::v1_2::DefaultGrabPoses& request)
+            {
+                std::lock_guard lock(_mutex);
+                return _defaults.set(owner, request);
+            }
+            api::Status clearDefaults(api::OwnerToken owner, std::uint32_t form)
+            {
+                std::lock_guard lock(_mutex);
+                return _defaults.clear(owner, form);
+            }
+            void clearDefaultOwner(api::OwnerToken owner)
+            {
+                std::lock_guard lock(_mutex);
+                _defaults.clearOwner(owner);
+            }
+            bool loadDefault(std::uint32_t form, bool left, HandOffset& out) const
+            {
+                std::lock_guard lock(_mutex);
+                return _defaults.load(form, left, out);
             }
 
             bool load(const FormRef& object, SavedGrabOffsetFile& out, std::string* outError) const
@@ -263,6 +285,7 @@ namespace rock::saved_grab_offset
             std::string _directory;
             std::thread _writer;
             mutable std::mutex _mutex;
+            DefaultGrabPoseRegistry _defaults;
             std::condition_variable _wake;
             std::deque<PendingWrite> _queue;
             std::unordered_map<std::string, SavedGrabOffsetFile> _cache;
@@ -297,6 +320,25 @@ namespace rock::saved_grab_offset
             return {};
         }
         return ref;
+    }
+
+    api::Status setDefaultGrabPoses(api::OwnerToken owner, const api::grab::v1_2::DefaultGrabPoses& request)
+    {
+        auto* form = RE::TESForm::GetFormByID(request.baseFormId);
+        if (!form || !form->As<RE::TESBoundObject>()) return api::Status::TargetInvalid;
+        return instance().setDefaults(owner, request);
+    }
+    api::Status clearDefaultGrabPoses(api::OwnerToken owner, std::uint32_t form)
+    {
+        return instance().clearDefaults(owner, form);
+    }
+    void clearDefaultGrabPosesForOwner(api::OwnerToken owner)
+    {
+        instance().clearDefaultOwner(owner);
+    }
+    bool loadDefaultGrabPose(std::uint32_t form, bool left, HandOffset& out)
+    {
+        return instance().loadDefault(form, left, out);
     }
 
     void preload()

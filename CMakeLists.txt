@@ -1154,6 +1154,11 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKProviderInstanceAccessTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKProviderInstanceAccessTests)
 
+  add_executable(ROCKDefaultGrabPoseRegistryTests "${ROOT_DIR}/tests/DefaultGrabPoseRegistryTests.cpp")
+  target_compile_features(ROCKDefaultGrabPoseRegistryTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKDefaultGrabPoseRegistryTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKDefaultGrabPoseRegistryTests)
+
   add_executable(ROCKProviderApiNegotiationTests
     "${ROOT_DIR}/tests/ProviderApiNegotiationTests.cpp"
     "${ROOT_DIR}/tests/ModularTestTables.cpp"

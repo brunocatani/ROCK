@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ROCK/GrabV1_2.h>
 #include <cstdint>
 #include <string>
 
@@ -54,6 +55,14 @@ namespace rock::saved_grab_offset
     // Populates the in-memory cache from every saved-offset file on disk.
     // Call once at plugin startup, before any grab can occur.
     void preload();
+
+    // Copied addon defaults use the existing cache mutex. Public set/clear and
+    // native lookup run on the frame owner; fault cleanup may revoke an owner.
+    // No file writes. User-saved offsets are checked before this lookup.
+    api::Status setDefaultGrabPoses(api::OwnerToken owner, const api::grab::v1_2::DefaultGrabPoses& request);
+    api::Status clearDefaultGrabPoses(api::OwnerToken owner, std::uint32_t baseFormId);
+    void clearDefaultGrabPosesForOwner(api::OwnerToken owner);
+    bool loadDefaultGrabPose(std::uint32_t baseFormId, bool left, HandOffset& out);
 
     // Cache-only lookup; false when no offset has ever been saved for this
     // object (outError says why on the rare case a cached file failed to

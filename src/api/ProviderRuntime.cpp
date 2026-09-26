@@ -39,6 +39,7 @@
 #include "rock_support/Fo4VrRuntime.h"
 #include "RockConfig.h"
 #include "Version.h"
+#include "physics-interaction/grab/SavedGrabOffsetStore.h"
 
 #ifdef DrawText
 #undef DrawText
@@ -1590,6 +1591,7 @@ namespace rock::provider::runtime
         if (ownerToken == 0) {
             return;
         }
+        saved_grab_offset::clearDefaultGrabPosesForOwner(ownerToken);
         events::clearGrabCallback(ownerToken);
         {
             std::scoped_lock lock(

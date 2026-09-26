@@ -1,4 +1,5 @@
-#include <ROCK/GrabV1_1.h>
+#include <ROCK/GrabV1_2.h>
+#include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "GrabMarshalling.h"
 #include <ROCK/Discovery.h>
 #include "EventBoundary.h"
@@ -123,6 +124,15 @@ Status ROCK_CALL clearHeldPlacementIntent(OwnerToken owner) noexcept {
     return invoke(owner,kInterfaceId,2,true,[&] {return provider::runtime::clearHeldPlacementIntent(owner);});
 }
 
+Status ROCK_CALL setDefaultGrabPoses(OwnerToken owner, const v1_2::DefaultGrabPoses* request) noexcept {
+    return invoke(owner,kInterfaceId,2,true,[&]() -> Status {
+        if (const auto status=checkInput(request); status!=Status::Ok) return status;
+        return saved_grab_offset::setDefaultGrabPoses(owner,*request);
+    });
+}
+Status ROCK_CALL clearDefaultGrabPoses(OwnerToken owner, std::uint32_t baseFormId) noexcept {
+    return invoke(owner,kInterfaceId,2,true,[&] {return saved_grab_offset::clearDefaultGrabPoses(owner,baseFormId);});
+}
 }
 const v1_1::Api& tableV1_1() noexcept {
     static const v1_1::Api value{{
@@ -146,6 +156,10 @@ const v1_1::Api& tableV1_1() noexcept {
     },&getHeldPlacementState,&submitHeldPlacementIntent,&clearHeldPlacementIntent};
     return value;
 }
-const ApiV1& table() noexcept { return tableV1_1().v1; }
+const v1_2::Api& tableV1_2() noexcept {
+    static const v1_2::Api value{tableV1_1(),&setDefaultGrabPoses,&clearDefaultGrabPoses};
+    return value;
+}
+const ApiV1& table() noexcept { return tableV1_2().v1_1.v1; }
 
 }

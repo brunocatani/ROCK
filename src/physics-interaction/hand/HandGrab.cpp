@@ -890,19 +890,15 @@ namespace rock
                 return false;
             }
             const auto formRef = saved_grab_offset::formRefFromRuntimeId(baseForm->GetFormID());
-            if (formRef.empty()) {
-                return false;
-            }
             saved_grab_offset::SavedGrabOffsetFile file{};
-            if (!saved_grab_offset::load(formRef, file, nullptr)) {
-                return false;
+            if (!formRef.empty() && saved_grab_offset::load(formRef, file, nullptr)) {
+                const auto& handOffset = isLeft ? file.left : file.right;
+                if (handOffset.present) {
+                    out = handOffset;
+                    return true;
+                }
             }
-            const auto& handOffset = isLeft ? file.left : file.right;
-            if (!handOffset.present) {
-                return false;
-            }
-            out = handOffset;
-            return true;
+            return saved_grab_offset::loadDefaultGrabPose(baseForm->GetFormID(), isLeft, out);
         }
 
         /*
