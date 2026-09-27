@@ -1258,6 +1258,11 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKDynamicHandSurfaceContactStateTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKDynamicHandSurfaceContactStateTests)
 
+  add_executable(ROCKStorageSceneLookupTests "${ROOT_DIR}/tests/StorageSceneLookupTests.cpp")
+  target_compile_features(ROCKStorageSceneLookupTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKStorageSceneLookupTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKStorageSceneLookupTests)
+
   add_executable(ROCKProviderLeasePolicyTests
     "${ROOT_DIR}/tests/ProviderLeasePolicyTests.cpp"
   )

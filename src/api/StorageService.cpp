@@ -1,4 +1,5 @@
 #include "api/StorageService.h"
+#include "api/StorageSceneLookup.h"
 #include <ROCK/Storage.h>
 #include <ROCK/StorageFeedback.h>
 #include <ROCK/StorageDisplay.h>
@@ -292,7 +293,7 @@ namespace rock::storage_service
                 return entry.owner==value.owner && entry.reference==request.storedReference && entry.stored && bool(entry.handle.get());
             })) return nullptr;
             auto* root=value.parent->Get3D();
-            auto* node=root?root->GetObjectByName(RE::BSFixedString(request.nodeName)):nullptr;
+            auto* node=storage_scene_lookup::find(root,RE::BSFixedString(request.nodeName));
             return node && node!=root ? node : nullptr;
         }
         api::Status setDisplay(api::OwnerToken owner,const api::storage_display::SelectionV1* request) noexcept
