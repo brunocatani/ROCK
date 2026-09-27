@@ -31,6 +31,13 @@ namespace rock
         return api::Status::RequestQueued;
     }
 
+    RE::NiAVObject* PhysicsInteraction::storageEquippedVisual(bool left, std::uint32_t expectedBase) const
+    {
+        if (currentEquippedWeaponFormId() != expectedBase) return nullptr;
+        const auto occupancy = _twoHandedGrip.getGripOccupancy();
+        if (!(left ? occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon())) return nullptr;
+        return resolveEquippedWeaponInteractionNode();
+    }
     bool PhysicsInteraction::storageHandoffPending(std::uint32_t reference) const
     {
         for (const auto& pending : _forceGrab.pendingCommits) if (pending.active) {

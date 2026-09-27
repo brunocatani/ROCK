@@ -1,5 +1,8 @@
 #include "api/StorageService.h"
 #include <ROCK/Storage.h>
+#include <ROCK/StorageFeedback.h>
+#include "physics-interaction/hand/HandSelection.h"
+#include "RE/Bethesda/PlayerCharacter.h"
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
@@ -30,6 +33,19 @@ namespace rock::storage_service
         // pointer or consumer callback is retained by these services.
         std::array<Claim, contract::kMaximumClaims> claims;
         std::array<Contact, 2> contacts;
+        struct Feedback {
+            api::OwnerToken owner{};
+            api::storage_feedback::CandidateV1 request;
+            std::uint64_t deadline{}, retry{};
+            RE::NiPointer<RE::TESObjectREFR> reference;
+            VatsSelectionHighlight highlight;
+        };
+        std::array<Feedback,2> feedback;
+        float pulseClock{};
+        float feedbackIntensity() { return .25f+.75f*(.5f+.5f*std::sin(pulseClock*31.41592654f)); }
+        void stopFeedback(Feedback& value) {
+            value.highlight.stop(); value.reference.reset(); value.owner=0; value.deadline=value.retry=0;
+        }
         std::uint64_t nextToken{1};
         collision::SuppressionLeaseSet<128> bodies{collision::CollisionSuppressionOwner::ConsumerStorage};
 
@@ -197,6 +213,55 @@ namespace rock::storage_service
                 return static_cast<api::Status>(provider::runtime::apiRequestForceGrabV1(owner, &native, command));
             } catch (...) { return api::Status::InternalError; }
         }
+        RE::NiAVObject* feedbackNode(Feedback& value, PhysicsInteraction& physics) {
+            const auto& request=value.request;
+            if (!value.reference || value.reference->IsDeleted()) return nullptr;
+            if (!request.reference) return physics.storageEquippedVisual(request.hand==api::Hand::Left,request.expectedBase);
+            auto& hand=request.hand==api::Hand::Left?physics.getLeftHand():physics.getRightHand();
+            return hand.isHolding() && hand.getHeldRef()==value.reference.get() ? value.reference->Get3D() : nullptr;
+        }
+        api::Status setCandidate(api::OwnerToken owner,const api::storage_feedback::CandidateV1* request) noexcept {
+            if (!request) return api::Status::InvalidArgument;
+            if (request->size!=sizeof(*request)) return api::Status::InvalidSize;
+            if (request->version!=1) return api::Status::UnsupportedVersion;
+            if ((request->hand!=api::Hand::Left && request->hand!=api::Hand::Right) || !request->expectedBase) return api::Status::InvalidArgument;
+            try {
+                const auto access=authorize(owner); if(access!=api::Status::Ok) return access;
+                auto* physics=interaction(); provider::RockProviderFrameSnapshot frame;
+                if(!physics || !provider::runtime::apiGetFrameSnapshot(&frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
+                if(request->worldGeneration!=frame.worldGeneration || request->skeletonGeneration!=frame.skeletonGeneration || request->providerGeneration!=frame.providerGeneration) return api::Status::GenerationMismatch;
+                provider::RockProviderHandInteractionStateV1 hand{};
+                if(provider::runtime::apiGetHandInteractionStateV1(owner,static_cast<provider::RockProviderHand>(request->hand),&hand)!=provider::RockProviderResultV1::Ok ||
+                    hand.gripSequence!=request->gripSequence) return api::Status::TargetUnavailable;
+                auto& value=feedback[request->hand==api::Hand::Left?1:0];
+                if(value.owner && value.owner!=owner && value.deadline>=frame.frameIndex) return api::Status::OwnerConflict;
+                if(value.owner!=owner || value.request.reference!=request->reference || value.request.expectedBase!=request->expectedBase ||
+                    value.request.gripSequence!=request->gripSequence) stopFeedback(value);
+                value.owner=owner; value.request=*request; value.deadline=frame.frameIndex+3;
+                auto* ref=request->reference ? RE::TESForm::GetFormByID<RE::TESObjectREFR>(request->reference) : RE::PlayerCharacter::GetSingleton();
+                if(request->reference && (!ref || !ref->GetObjectReference() || ref->GetObjectReference()->formID!=request->expectedBase)) { stopFeedback(value); return api::Status::TargetInvalid; }
+                value.reference.reset(ref);
+                auto* node=feedbackNode(value,*physics);
+                if(!node) { stopFeedback(value); return api::Status::TargetUnavailable; }
+                if(!VatsSelectionHighlight::stashAvailable()) { stopFeedback(value); return api::Status::Busy; }
+                if(frame.frameIndex<value.retry) return api::Status::NotReady;
+                if(!value.highlight.refreshStash(ref,node,feedbackIntensity())) {
+                    value.retry=frame.frameIndex+90;
+                    ROCK_LOG_SAMPLE_WARN(Hand,1000,"Held stash feedback has no usable VATS target: ref={:08X} base={:08X}",request->reference,request->expectedBase);
+                    return api::Status::NotReady;
+                }
+                return api::Status::Ok;
+            } catch(...) { return api::Status::InternalError; }
+        }
+        api::Status clearCandidate(api::OwnerToken owner,api::Hand hand) noexcept {
+            if(hand!=api::Hand::Left && hand!=api::Hand::Right) return api::Status::InvalidArgument;
+            try {
+                const auto access=authorize(owner,0); if(access!=api::Status::Ok) return access;
+                auto& value=feedback[hand==api::Hand::Left?1:0];
+                if(value.owner && value.owner!=owner) return api::Status::OwnerConflict;
+                stopFeedback(value); return api::Status::Ok;
+            } catch(...) { return api::Status::InternalError; }
+        }
         api::Status clearContacts(api::OwnerToken owner) noexcept
         {
             try {
@@ -216,6 +281,15 @@ namespace rock::storage_service
     void update(PhysicsInteraction& physics, const PhysicsFrameContext& frame)
     {
         const auto sample = provider::runtime::sample();
+        pulseClock=std::fmod(pulseClock+std::clamp(frame.deltaSeconds,0.f,.1f),1.f);
+        const float intensity=feedbackIntensity();
+        for(auto& value:feedback) if(value.owner) {
+            if(!frame.worldReady || frame.menuBlocked || value.deadline<sample.frameIndex || authorize(value.owner)!=api::Status::Ok ||
+                value.request.worldGeneration!=sample.worldGeneration || value.request.skeletonGeneration!=sample.skeletonGeneration ||
+                value.request.providerGeneration!=sample.providerGeneration) { stopFeedback(value); continue; }
+            auto* node=feedbackNode(value,physics);
+            if(!node || (value.highlight.isActive() && !value.highlight.refreshStash(value.reference.get(),node,intensity))) stopFeedback(value);
+        }
         std::array<std::uint32_t,128> wanted{}; unsigned count{};
         for (unsigned i = 0; i < contacts.size(); ++i) {
             auto& contact = contacts[i]; if (!contact.owner) continue;
@@ -240,6 +314,7 @@ namespace rock::storage_service
     }
     void shutdown(RE::hknpWorld* validWorld)
     {
+        for(auto& value:feedback) stopFeedback(value);
         contacts = {};
         if (validWorld) (void)bodies.releaseAll(validWorld, "consumer-storage-shutdown", [](auto, const auto&) {});
         else bodies.clearTracking();
@@ -247,6 +322,12 @@ namespace rock::storage_service
         // scene/owner leases. The restoring consumer reclaims exact references.
         for (auto& entry : claims) if (!entry.stored) entry = {};
     }
+}
+extern "C" __declspec(dllexport) const rock::api::storage_feedback::ApiV1* ROCK_CALL ROCK_StorageFeedback_QueryV1(
+    std::uint32_t major,std::uint32_t bytes) noexcept
+{
+    static const rock::api::storage_feedback::ApiV1 table{sizeof(table),1,rock::storage_service::setCandidate,rock::storage_service::clearCandidate};
+    return major==1 && bytes==sizeof(table)?&table:nullptr;
 }
 extern "C" __declspec(dllexport) const rock::api::storage::ApiV1* ROCK_CALL ROCK_Storage_QueryV1(
     std::uint32_t major, std::uint32_t bytes) noexcept

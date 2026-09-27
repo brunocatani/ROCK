@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 
 namespace rock
 {
@@ -73,6 +74,8 @@ namespace rock
         using TargetSmartPointer = RE::BSTSmartPointer<detail::VatsEffectTarget>;
 
         std::uint32_t s_activeRockVatsTargets = 0;
+        std::uint32_t s_stashTargets = 0;
+        float s_stashIntensity = 1;
 
         struct HighlightColor
         {
@@ -233,8 +236,8 @@ namespace rock
                 }
             }
 
-            const auto color = colorForName(g_rockConfig.rockHighlightColor);
-            const float intensity = intensityForMode(g_rockConfig.rockHighlightIntensityMode);
+            const auto color = s_stashTargets ? HighlightColor{0.03f,1.f,0.08f} : colorForName(g_rockConfig.rockHighlightColor);
+            const float intensity = s_stashTargets ? s_stashIntensity : intensityForMode(g_rockConfig.rockHighlightIntensityMode);
             setOverrideColor(color.red * intensity, color.green * intensity, color.blue * intensity);
             s_lastRockNativeVatsOverride = readNativeVatsOverrideState();
             s_rockNativeVatsOverrideApplied = s_lastRockNativeVatsOverride.valid;
@@ -300,7 +303,7 @@ namespace rock
         stop();
     }
 
-    bool VatsSelectionHighlight::play(RE::TESObjectREFR* refr, RE::NiAVObject* targetNode, bool enabled, const char* handName, const char* targetSourceName)
+    bool VatsSelectionHighlight::play(RE::TESObjectREFR* refr, RE::NiAVObject* targetNode, bool enabled, const char* handName, const char* targetSourceName, bool stash)
     {
         const bool sameAsCurrent = isActiveFor(refr, targetNode);
         if (!selection_highlight_policy::shouldStartVatsHighlight(enabled, refr != nullptr && targetNode != nullptr, sameAsCurrent)) {
@@ -337,6 +340,8 @@ namespace rock
             return false;
         }
 
+        _stash = stash;
+        if (_stash) ++s_stashTargets;
         enableVatsEffectControlForWorldRollover();
         applyRockGrabHighlightOverride();
 
@@ -357,6 +362,22 @@ namespace rock
         return true;
     }
 
+    bool VatsSelectionHighlight::stashAvailable() noexcept
+    {
+        if (s_activeRockVatsTargets != s_stashTargets) return false;
+        const auto native = readNativeVatsOverrideState();
+        return native.valid && (!native.active || (s_rockNativeVatsOverrideApplied && sameNativeVatsOverrideState(native,s_lastRockNativeVatsOverride)));
+    }
+    bool VatsSelectionHighlight::refreshStash(RE::TESObjectREFR* refr, RE::NiAVObject* node, float intensity)
+    {
+        if (!refr || !node || !stashAvailable()) { stop(); return false; }
+        s_stashIntensity = std::clamp(intensity,0.15f,1.f);
+        if (!_stash || !isActiveFor(refr,node) || !_target->targetObjectCount()) {
+            stop();
+            return play(refr,node,true,"Storage","held-stash",true);
+        }
+        enableVatsEffectControlForWorldRollover(); applyRockGrabHighlightOverride(); return true;
+    }
     bool VatsSelectionHighlight::refresh(RE::TESObjectREFR* refr, RE::NiAVObject* targetNode, bool enabled, const char* handName, const char* targetSourceName)
     {
         if (!enabled || !refr || !targetNode) {
@@ -405,6 +426,8 @@ namespace rock
         _target = nullptr;
         _highlightedRef = nullptr;
         _highlightedNode = nullptr;
+        const bool stash = std::exchange(_stash,false);
+        if (stash && s_stashTargets) --s_stashTargets;
 
         if (!target) {
             return;
@@ -416,7 +439,10 @@ namespace rock
         }
 
         if (remainingRockTargets == 0) {
-            disableVatsEffectControl(true);
+            if (stash) { TargetSmartPointer owned(target); removeTarget(owned); }
+            // An external color owner may have taken over while our target
+            // was active. Remove only our target without disabling its effect.
+            if (!stash || stashAvailable()) disableVatsEffectControl(!stash);
             restoreRockGrabHighlightOverride();
         } else {
             TargetSmartPointer targetRef(target);

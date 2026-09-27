@@ -195,6 +195,7 @@ namespace rock
         bool protectNativeGrenadeThrow();
 
         bool storageHandoffPending(std::uint32_t reference) const;
+        RE::NiAVObject* storageEquippedVisual(bool left, std::uint32_t expectedBase) const;
         api::Status extractEquippedForStorage(bool left, std::uint32_t weapon, std::uint32_t& reference);
         Hand& getRightHand() { return _rightHand; }
         Hand& getLeftHand() { return _leftHand; }
