@@ -1,4 +1,5 @@
 #include "physics-interaction/input/FarPullGesturePolicy.h"
+#include "physics-interaction/input/GrabInputIntentPolicy.h"
 #include "physics-interaction/hand/HandInteractionStateMachine.h"
 #include "rock_support/VRMotion.h"
 
@@ -92,5 +93,32 @@ int main()
     ok &= check(equipment.accepted && equipment.next == HandState::SelectedFar, "equipment confirmation hands off to existing drop path");
     ok &= check(!rock::evaluateHandTransition({ .current = HandState::HeldBody, .event = HandInteractionEvent::UnlockFarSelection }).accepted,
         "equipment handoff cannot unlock a physical hold");
+
+    // A launched gesture returns to ordinary selection without preserving its
+    // press. Exercise the real input policy through launch, arrival and catch,
+    // including disabled leeway and a press buffered before the target was ready.
+    namespace intent = rock::grab_input_intent_policy;
+    for (const bool leewayEnabled : {false, true}) {
+        for (const bool targetInitiallyReady : {false, true}) {
+            intent::RuntimeState input{};
+            const intent::Config config{ .enabled = leewayEnabled };
+            (void)intent::update(input, { .held = true, .pressed = true },
+                targetInitiallyReady, false, 0.01f, config);
+            intent::reset(input); // Launch consumes any original/buffered press.
+            for (int frame = 0; frame < 90; ++frame) {
+                const auto held = intent::update(input, { .held = true },
+                    frame >= 20, false, 1.0f / 90.0f, config);
+                ok &= check(!held.pressed && !held.pendingPress,
+                    "holding launch press cannot catch on arrival or later");
+            }
+            const auto released = intent::update(input, { .released = true }, true, false, 0.01f, config);
+            ok &= check(released.released && !released.pressed, "release alone does not catch");
+            const auto catchPress = intent::update(input, { .held = true, .pressed = true }, true, false, 0.01f, config);
+            ok &= check(catchPress.pressed && !catchPress.syntheticPressed, "fresh second press can catch immediately");
+        }
+    }
+    const auto launchFinished = rock::evaluateHandTransition({ .current = HandState::Pulled, .event = HandInteractionEvent::ClearSelection });
+    ok &= check(launchFinished.accepted && rock::canUpdateSelectionFromState(launchFinished.next) &&
+        !rock::hasExclusiveObjectSelection(launchFinished.next), "finished launch frees selection and other-hand ownership");
     return ok ? 0 : 1;
 }

@@ -2269,6 +2269,58 @@ namespace rock
             }
         }
 
+        auto advanceDynamicPull = [&]() {
+            // Keep the reference alive across selection cleanup and callbacks.
+            const auto pulledRef = hand.getSelection().retainedRef;
+            const bool automaticCatch = hand.hasAutomaticPullCatchIntent();
+            if (grabInput.released) {
+                ROCK_LOG_DEBUG(Hand, "{} hand released dynamic pull", hand.handName());
+                hand.finishPullPrepAsPhysicalDropIfActive("pull-release");
+                // A gesture release rearms the catch, so do not hide the object
+                // behind the ordinary deselection cooldown.
+                hand.clearSelectionState(automaticCatch);
+                releaseObject(pulledRef.get(), claimOwnerForHand(isLeft));
+                return;
+            }
+
+            const auto& transform = handInput.rawHandWorld;
+            const bool readyToGrab = hand.updateDynamicPull(hknp, transform, frame.deltaSeconds);
+            if (!hand.hasSelection() || hand.getState() == HandState::Idle) {
+                releaseObject(pulledRef.get(), claimOwnerForHand(isLeft));
+                return;
+            }
+
+            if (readyToGrab) {
+                dispatchSimpleGrabEvent(GrabEventType::PullArrived, isLeft, pulledRef.get(), hand.getSelection().bodyId.value);
+                if (!automaticCatch) {
+                    hand.finishPullPrepAsPhysicalDropIfActive("gesture-pull-arrived");
+                    hand.clearSelectionState(false);
+                    releaseObject(pulledRef.get(), claimOwnerForHand(isLeft));
+                    return;
+                }
+                if (selectedObjectInteractionBlocked()) {
+                    hand.finishPullPrepAsPhysicalDropIfActive("pull-arrived-blocked");
+                    hand.clearSelectionState(true);
+                    releaseObject(pulledRef.get(), claimOwnerForHand(isLeft));
+                    return;
+                }
+
+                dispatchSimpleGrabEvent(GrabEventType::PullCatchAttempt, isLeft, pulledRef.get(), hand.getSelection().bodyId.value);
+                const bool grabbed = attemptSelectedGrab();
+                if (!grabbed && (!hand.hasSelection() || !hand.hasPendingPullCatchCommit())) {
+                    hand.finishPullPrepAsPhysicalDropIfActive("pull-grab-refused");
+                    hand.clearSelectionState(true);
+                    releaseObject(pulledRef.get(), claimOwnerForHand(isLeft));
+                } else if (!grabbed) {
+                    hand.notePullCatchCommitAttemptFailed();
+                    ROCK_LOG_SAMPLE_DEBUG(Hand,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "{} hand pull arrived but grab commit did not accept yet; retaining catch intent while grip is held",
+                        hand.handName());
+                }
+            }
+        };
+
         bool gesturePullConfirmed = false;
         if (hand.getState() == HandState::SelectionLocked) {
             RE::NiPoint3 targetWorld{};
@@ -2291,6 +2343,7 @@ namespace rock
         }
 
         if (!hand.isHolding() && (selection_state_policy::canProcessSelectedState(hand.getState()) || gesturePullConfirmed) && hand.hasSelection()) {
+            auto pullMode = gesturePullConfirmed ? far_pull_gesture::Mode::Gesture : far_pull_gesture::Mode::Immediate;
             const bool pullCatchCommitPending = hand.hasPendingPullCatchCommit();
             auto* pullCatchRef = pullCatchCommitPending ? hand.getPullCatchIntentRef() : nullptr;
             bool actorEquipmentDropHandoffReady = false;
@@ -2315,6 +2368,9 @@ namespace rock
             }
 
             if (hand.hasPendingActorEquipmentDropHandoff()) {
+                // The gesture may have been confirmed on an earlier frame.
+                // Preserve its mode even if the INI changes during the drop.
+                pullMode = hand.actorEquipmentDropPullMode();
                 if (grabInput.released || !grabInput.held) {
                     ROCK_LOG_DEBUG(Hand, "{} hand cancelled actor-equipment drop handoff because grip was released", hand.handName());
                     hand.clearSelectionState(true);
@@ -2426,7 +2482,8 @@ namespace rock
 
                     if (!hand.beginActorEquipmentDropHandoff(
                             dropResult,
-                            actorSelection.hasHitPoint ? actorSelection.hitPointWorld : actorSelection.actorEquipment.hitPointWorld)) {
+                            actorSelection.hasHitPoint ? actorSelection.hitPointWorld : actorSelection.actorEquipment.hitPointWorld,
+                            pullMode)) {
                         ROCK_LOG_WARN(Hand,
                             "{} hand actor-equipment far pull failed to arm drop handoff: dropped={:08X} actor={:08X} item={:08X}",
                             hand.handName(),
@@ -2498,10 +2555,16 @@ namespace rock
                             selectedBodyId,
                             ROCK_GRAB_EVENT_FLAG_SUPPRESS_HAPTIC);
                     }
-                    const bool pullStarted = lockedSelection && hand.startDynamicPull(hknp, transform);
+                    const bool pullStarted = lockedSelection && hand.startDynamicPull(hknp, transform, pullMode);
                     if (pullStarted) {
                         claimObject(selectedRef, claimOwnerForHand(isLeft));
                         dispatchSimpleGrabEvent(GrabEventType::PullStarted, isLeft, selectedRef, selectedBodyId);
+                        if (pullMode == far_pull_gesture::Mode::Gesture) {
+                            // Spend the first press and launch now. Releasing on
+                            // the next frame must not cancel before any force ran.
+                            grab_input_intent_policy::reset(inputIntentState);
+                            advanceDynamicPull();
+                        }
                     } else {
                         if (lockedSelection) {
                             dispatchSimpleGrabEvent(GrabEventType::SelectionUnlocked, isLeft, selectedRef, selectedBodyId);
@@ -2547,45 +2610,7 @@ namespace rock
                 }
             }
         } else if (hand.getState() == HandState::Pulled) {
-            auto* pulledRef = hand.getSelection().refr;
-            if (grabInput.released) {
-                ROCK_LOG_DEBUG(Hand, "{} hand released dynamic pull", hand.handName());
-                hand.finishPullPrepAsPhysicalDropIfActive("pull-release");
-                hand.clearSelectionState(true);
-                releaseObject(pulledRef, claimOwnerForHand(isLeft));
-                return;
-            }
-
-            const auto& transform = handInput.rawHandWorld;
-            const bool readyToGrab = hand.updateDynamicPull(hknp, transform, frame.deltaSeconds);
-            if (!hand.hasSelection() || hand.getState() == HandState::Idle) {
-                releaseObject(pulledRef, claimOwnerForHand(isLeft));
-                return;
-            }
-
-            if (readyToGrab) {
-                dispatchSimpleGrabEvent(GrabEventType::PullArrived, isLeft, pulledRef, hand.getSelection().bodyId.value);
-                if (selectedObjectInteractionBlocked()) {
-                    hand.finishPullPrepAsPhysicalDropIfActive("pull-arrived-blocked");
-                    hand.clearSelectionState(true);
-                    releaseObject(pulledRef, claimOwnerForHand(isLeft));
-                    return;
-                }
-
-                dispatchSimpleGrabEvent(GrabEventType::PullCatchAttempt, isLeft, pulledRef, hand.getSelection().bodyId.value);
-                const bool grabbed = attemptSelectedGrab();
-                if (!grabbed && (!hand.hasSelection() || !hand.hasPendingPullCatchCommit())) {
-                    hand.finishPullPrepAsPhysicalDropIfActive("pull-grab-refused");
-                    hand.clearSelectionState(true);
-                    releaseObject(pulledRef, claimOwnerForHand(isLeft));
-                } else if (!grabbed) {
-                    hand.notePullCatchCommitAttemptFailed();
-                    ROCK_LOG_SAMPLE_DEBUG(Hand,
-                        g_rockConfig.rockLogSampleMilliseconds,
-                        "{} hand pull arrived but grab commit did not accept yet; retaining catch intent while grip is held",
-                        hand.handName());
-                }
-            }
+            advanceDynamicPull();
         }
 
 

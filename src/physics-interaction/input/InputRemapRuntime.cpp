@@ -1563,12 +1563,7 @@ namespace rock::input_remap_runtime
             return handleValue;
         }
 
-        enum class ActivateTarget : std::uint8_t
-        {
-            Unavailable,
-            TakeEquip,
-            NativeActivation,
-        };
+        using ActivateTarget = input_remap_policy::ActivateTarget;
 
         [[nodiscard]] ActivateTarget classifyActivateTarget(bool primaryHandEvent)
         {
@@ -1624,7 +1619,7 @@ namespace rock::input_remap_runtime
                     g_rockConfig.rockLogSampleMilliseconds,
                     "Take/Equip suppression classification: pick-ref formID=0x{:X} matches ROCK's own held object in this hand",
                     refFormId);
-                return ActivateTarget::TakeEquip;
+                return usedOtherWand ? ActivateTarget::OtherWandTakeEquip : ActivateTarget::TakeEquip;
             }
 
             const auto* baseForm = ref->GetObjectReference();
@@ -1650,7 +1645,7 @@ namespace rock::input_remap_runtime
                 eligible ? "yes" : "no");
             // The existing opposite-wand fallback protects against taking an
             // owned object. It cannot grant use priority for this wand.
-            return eligible ? ActivateTarget::TakeEquip :
+            return eligible ? (usedOtherWand ? ActivateTarget::OtherWandTakeEquip : ActivateTarget::TakeEquip) :
                 (usedOtherWand ? ActivateTarget::Unavailable : ActivateTarget::NativeActivation);
         }
 
@@ -1663,7 +1658,7 @@ namespace rock::input_remap_runtime
 
             const bool primaryHandEvent = isPrimaryWandInputEvent(event);
             const bool handEngaged = isTakeEquipHandEngaged(primaryHandEvent);
-            const bool targetEligible = target == ActivateTarget::TakeEquip;
+            const bool targetEligible = input_remap_policy::isTakeEquipTarget(target);
 
             auto input = makeNativeActionSuppressionInput(true, event, eventMatched);
             input.takeEquipHandEngaged = handEngaged;
@@ -1786,7 +1781,8 @@ namespace rock::input_remap_runtime
             const bool weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire);
             const auto target = gameplayActivation && (weaponDrawn || isTakeEquipHandEngaged(primaryHandEvent)) ?
                 classifyActivateTarget(primaryHandEvent) : ActivateTarget::Unavailable;
-            bool nativeActivation = target == ActivateTarget::NativeActivation;
+            bool nativeActivation = input_remap_policy::shouldPrioritizeNativeActivation(
+                target, isTakeEquipHandEngaged(primaryHandEvent));
             if (g_rockConfig.rockEnableImmersiveScopes && gameplayActivation && primaryHandEvent && weaponDrawn &&
                 !weaponRouting().leftFiring &&
                 s_hooksInstalled.load(std::memory_order_acquire)) {
@@ -2930,7 +2926,8 @@ namespace rock::input_remap_runtime
     {
         /*
          * Consume both physical accept buttons every frame. Native use owns
-         * a primary-wand press that starts on a non-pickup target. Otherwise
+         * a primary-wand press that starts on a usable target, including loose
+         * items when the activating hand is free of ROCK interactions. Otherwise
          * manual scope owns either physical firing-hand gesture end to end:
          * release before the threshold dispatches reload, while crossing it
          * holds native scope activation until release. Disabled immersive
@@ -2960,7 +2957,8 @@ namespace rock::input_remap_runtime
         const bool nativeActivationTarget = gameplayAllowed && !menuActive && weaponDrawn &&
             !firingHandIsLeft && rightAcceptState.pressed &&
             s_manualScopeInputState.state == manual_scope_input_policy::State::Idle &&
-            classifyActivateTarget(true) == ActivateTarget::NativeActivation;
+            input_remap_policy::shouldPrioritizeNativeActivation(
+                classifyActivateTarget(true), isTakeEquipHandEngaged(true));
 
         const auto toManualButtonState = [](const RawButtonState& state) {
             return manual_scope_input_policy::ButtonState{
@@ -3017,6 +3015,8 @@ namespace rock::input_remap_runtime
 
     bool hasNativeActivationTarget(bool primaryHand)
     {
+        // Published Input V1 context keeps its existing non-pickup meaning.
+        // Reload/scope arbitration uses shouldPrioritizeNativeActivation instead.
         return classifyActivateTarget(primaryHand) == ActivateTarget::NativeActivation;
     }
 

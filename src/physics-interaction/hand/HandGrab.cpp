@@ -6089,7 +6089,7 @@ namespace rock
         return false;
     }
 
-    bool Hand::startDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform)
+    bool Hand::startDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, far_pull_gesture::Mode mode)
     {
         /*
          * Long-range pull remains a dynamic-object operation. ROCK promotes the
@@ -6274,7 +6274,7 @@ namespace rock
         if (_pulledBodyIds.empty()) {
             _pulledBodyIds.push_back(_pulledPrimaryBodyId);
         }
-        armPullCatchIntent(selectedRef, _pulledPrimaryBodyId, _currentSelection.targetKind);
+        armPullCatchIntent(selectedRef, _pulledPrimaryBodyId, _currentSelection.targetKind, mode);
 
         for (const auto bodyId : _pulledBodyIds) {
             physics_recursive_wrappers::activateBody(world, bodyId);
@@ -6409,7 +6409,7 @@ namespace rock
         stopSelectionHighlight();
 
         ROCK_LOG_INFO(Hand,
-            "{} hand PULL start: type={} weapon={} formID={:08X} primaryBody={} bodyCount={} driveMode={} linearScope={} angularScope={} seeded={} scanFailures={} invalidSystems={} benignSkips={} unresolvedAccepted={} distanceHk={:.3f} duration={:.3f}s setMotion={} enableCollision={}",
+            "{} hand PULL start: type={} weapon={} formID={:08X} primaryBody={} bodyCount={} driveMode={} linearScope={} angularScope={} seeded={} scanFailures={} invalidSystems={} benignSkips={} unresolvedAccepted={} distanceHk={:.3f} duration={:.3f}s setMotion={} enableCollision={} catch={}",
             handName(),
             selectedType ? selectedType : "???",
             selectedIsWeapon ? "yes" : "no",
@@ -6427,7 +6427,8 @@ namespace rock
             pullDistance,
             _pullDurationSeconds,
             motionConverted ? "ok" : "failed",
-            collisionEnabled ? "ok" : "failed");
+            collisionEnabled ? "ok" : "failed",
+            hasAutomaticPullCatchIntent() ? "automatic" : "new-press");
         return true;
     }
 
@@ -6520,11 +6521,18 @@ namespace rock
                 _pullDurationSeconds,
                 pull_motion_math::kOwnerGraceSeconds);
             finishPullPrepAsPhysicalDropIfActive("pull-owner-expired");
-            clearSelectionState(true);
+            clearSelectionState(hasAutomaticPullCatchIntent());
             return false;
         }
 
         if (!motionResult.applyVelocity) {
+            if (!hasAutomaticPullCatchIntent()) {
+                // Gesture pull owns only the launch window. Leave the velocity
+                // intact and let either hand select/catch the freely flying prop.
+                finishPullPrepAsPhysicalDropIfActive("gesture-launch-finished");
+                clearSelectionState(false);
+                return false;
+            }
             ROCK_LOG_SAMPLE_DEBUG(Hand,
                 g_rockConfig.rockLogSampleMilliseconds,
                 "{} hand PULL holding owner after velocity window dist={:.1f} arrival={:.1f} elapsed={:.3f}s duration={:.3f}s ownerGrace={:.3f}s",
