@@ -1,3 +1,4 @@
+#include "api/StorageService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
 #include "physics-interaction/consume/ImmersiveAid.h"
@@ -1359,6 +1360,8 @@ namespace rock
             return blocked;
         };
         auto attemptSelectedGrab = [&]() {
+            const auto* selected = hand.getSelection().refr;
+            if (selected && !storage_service::allowsGrab(selected->formID)) return false;
             const auto& transform = handInput.rawHandWorld;
 
             const auto sharedContext = makeGrabSharedObjectContext(hand, isLeft);

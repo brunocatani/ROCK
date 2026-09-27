@@ -1,5 +1,6 @@
 #include "api/EventStreams.h"
 #include "api/ProviderRuntimeServices.h"
+#include "api/StorageService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
@@ -592,6 +593,7 @@ namespace rock
 
         updateNativeGrenadeCollisionSuppression(hknp, 0.0f);
         ::rock::provider::dispatchFrameCallbacks(*this);
+        storage_service::update(*this, frame);
         // Equip identity/grip reconciliation can clear the early authored pose.
         // Yield the bridge only after every hand owner has finished this frame.
         finishEquippedWeaponHandPoseHandoff();
@@ -738,6 +740,7 @@ namespace rock
             _equipped.transition.pendingGrip() = {};
             auto* snapshotBhk = getPlayerBhkWorld();
             auto* snapshotHknp = snapshotBhk ? getHknpWorld(snapshotBhk) : nullptr;
+            storage_service::shutdown(snapshotHknp);
             if (snapshotBhk && snapshotHknp) {
                 _dynamicWorldCarCollision.restoreAll(snapshotBhk, snapshotHknp, "menu-blocked");
             } else {

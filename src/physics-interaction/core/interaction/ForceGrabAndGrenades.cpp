@@ -1,3 +1,4 @@
+#include "api/StorageService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 
 // Provider force-grab commits, fuse service, and held-grenade arming.
@@ -276,6 +277,10 @@ namespace rock
             }
             if (targetRef->IsDeleted() || targetRef->IsDisabled()) {
                 abandon("target ref disappeared", provider::RockProviderInteractionFailureV1::TargetUnavailable, targetRef);
+                continue;
+            }
+            if (!commit.internallyOwned() && !storage_service::allowsGrab(targetRef->formID, commit.providerResultTemplate.ownerToken)) {
+                abandon("target reserved by item storage", provider::RockProviderInteractionFailureV1::TargetUnavailable, targetRef);
                 continue;
             }
 

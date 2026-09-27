@@ -1,3 +1,4 @@
+#include "api/StorageService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 
 // Provider interaction commands and provider weapon-part drives.
@@ -149,6 +150,10 @@ namespace rock
 
             const bool inventoryTransfer = isForceGrabCommand &&
                 (command.forceGrab.flags & static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::FromPlayerInventory)) != 0;
+            if (isForceGrabCommand && !inventoryTransfer && !storage_service::allowsGrab(requestTargetFormId, command.ownerToken)) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
+                continue;
+            }
             const bool inventoryThrowable = inventoryTransfer && loose_grenade_runtime::isThrowableWeapon(
                 RE::TESForm::GetFormByID<RE::TESObjectWEAP>(command.forceGrab.targetFormId));
             if (inventoryTransfer) {

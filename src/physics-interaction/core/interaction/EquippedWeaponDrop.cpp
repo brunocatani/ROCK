@@ -5,6 +5,43 @@
 
 namespace rock
 {
+    api::Status PhysicsInteraction::extractEquippedForStorage(bool left, std::uint32_t weapon, std::uint32_t& reference)
+    {
+        reference = 0;
+        if (!isProviderReady() || !_lifecycle.cachedBhkWorld || !_lifecycle.cachedHknpWorld || currentEquippedWeaponFormId() != weapon)
+            return api::Status::TargetUnavailable;
+        const auto occupancy = _twoHandedGrip.getGripOccupancy();
+        const bool carries = left ? occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon();
+        const bool otherCarries = left ? occupancy.right.carriesWeapon() : occupancy.left.carriesWeapon();
+        if (!carries || otherCarries || (left ? _leftHand : _rightHand).isHolding() || _forceGrab.pendingCommits[left ? 1 : 0].active)
+            return api::Status::HandBusy;
+        const auto frame = buildFrameContext(_lifecycle.cachedBhkWorld, _lifecycle.cachedHknpWorld);
+        if (frame.menuBlocked) return api::Status::NotReady;
+        const auto source = left ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right;
+        if (!_twoHandedGrip.requestEquippedWeaponDrop("external-storage", source, frame.deltaSeconds)) return api::Status::NotReady;
+        const auto request = _twoHandedGrip.consumeEquippedWeaponDropRequest();
+        RE::NiPointer<RE::NiNode> sourceNode(resolveEquippedWeaponInteractionNode());
+        const bool dropped = dropEquippedWeaponToWorld(frame, request, equipped_weapon_drop_policy::Mode::AutoDrop);
+        _twoHandedGrip.completeEquippedWeaponDrop(request, dropped);
+        if (!dropped) return api::Status::TargetUnavailable;
+        _equipped.transition.pendingGrip() = {}; clearEquippedWeaponFiringGripInputState();
+        const auto ref = _forceGrab.pendingCommits[left ? 1 : 0].targetHandle.get();
+        if (!ref) return api::Status::NotReady;
+        reference = ref->formID;
+        return api::Status::RequestQueued;
+    }
+
+    bool PhysicsInteraction::storageHandoffPending(std::uint32_t reference) const
+    {
+        for (const auto& pending : _forceGrab.pendingCommits) if (pending.active) {
+            const auto ref = pending.targetHandle.get();
+            if (ref && ref->formID == reference) return true;
+        }
+        for (const auto& handoff : _drop.nativeHandoffs)
+            if (handoff.active && handoff.droppedFormId == reference) return true;
+        return false;
+    }
+
     bool PhysicsInteraction::retainEquippedWeaponForReplacement(const PhysicsFrameContext& frame, bool equipIsLeft)
     {
         auto& transition = _equipped.transition;

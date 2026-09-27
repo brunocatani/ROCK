@@ -1,4 +1,5 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "api/StorageService.h"
 #include "physics-interaction/visual/GripZoneIndicators.h"
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
@@ -607,6 +608,7 @@ namespace rock
             _lifecycle.cachedHknpWorld &&
             currentHknp == _lifecycle.cachedHknpWorld;
 
+        storage_service::shutdown(worldValid ? currentHknp : nullptr);
         if (worldValid) {
             auto* hknp = getHknpWorld(_lifecycle.cachedBhkWorld);
             _dynamicWorldCarCollision.restoreAll(_lifecycle.cachedBhkWorld, hknp, "shutdown");

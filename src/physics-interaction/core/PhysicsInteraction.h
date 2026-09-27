@@ -194,6 +194,8 @@ namespace rock
         // protection before the native handler can create its grenade/preview.
         bool protectNativeGrenadeThrow();
 
+        bool storageHandoffPending(std::uint32_t reference) const;
+        api::Status extractEquippedForStorage(bool left, std::uint32_t weapon, std::uint32_t& reference);
         Hand& getRightHand() { return _rightHand; }
         Hand& getLeftHand() { return _leftHand; }
         const Hand& getRightHand() const { return _rightHand; }
