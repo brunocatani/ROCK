@@ -1,6 +1,8 @@
 #include "api/StorageService.h"
 #include <ROCK/Storage.h>
 #include <ROCK/StorageFeedback.h>
+#include <ROCK/StorageDisplay.h>
+#include <cstring>
 #include "physics-interaction/hand/HandSelection.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "api/ProviderRuntimeServices.h"
@@ -45,6 +47,18 @@ namespace rock::storage_service
         float feedbackIntensity() { return .25f+.75f*(.5f+.5f*std::sin(pulseClock*31.41592654f)); }
         void stopFeedback(Feedback& value) {
             value.highlight.stop(); value.reference.reset(); value.owner=0; value.deadline=value.retry=0;
+        }
+        struct Display {
+            api::OwnerToken owner{};
+            api::storage_display::SelectionV1 request;
+            std::uint64_t deadline{}, retry{};
+            RE::NiPointer<RE::TESObjectREFR> parent;
+            RE::NiPointer<RE::NiAVObject> node;
+            VatsSelectionHighlight highlight;
+        };
+        std::array<Display,2> displays;
+        void stopDisplay(Display& value) {
+            value.highlight.stop(); value.node.reset(); value.parent.reset(); value.owner=0; value.deadline=value.retry=0;
         }
         std::uint64_t nextToken{1};
         collision::SuppressionLeaseSet<128> bodies{collision::CollisionSuppressionOwner::ConsumerStorage};
@@ -262,6 +276,71 @@ namespace rock::storage_service
                 stopFeedback(value); return api::Status::Ok;
             } catch(...) { return api::Status::InternalError; }
         }
+        RE::NiAVObject* displayNode(Display& value, PhysicsInteraction& physics)
+        {
+            const auto& request=value.request;
+            if (!value.parent || value.parent->IsDeleted() || value.parent->IsDisabled()) return nullptr;
+            auto& hand=request.hand==api::Hand::Left?physics.getLeftHand():physics.getRightHand();
+            auto& other=request.hand==api::Hand::Left?physics.getRightHand():physics.getLeftHand();
+            if (hand.isHolding() || !other.isHolding() || other.getHeldRef()!=value.parent.get()) return nullptr;
+            provider::RockProviderHandInteractionStateV1 state{};
+            if (provider::runtime::apiGetHandInteractionStateV1(value.owner,static_cast<provider::RockProviderHand>(request.hand),&state)!=provider::RockProviderResultV1::Ok) return nullptr;
+            using Flag=api::grab::HandInteractionFlagV1;
+            constexpr unsigned occupied=unsigned(Flag::FiringGrip)|unsigned(Flag::PartGrip)|unsigned(Flag::PartCarry)|unsigned(Flag::TouchGrab)|unsigned(Flag::NativeWeaponCarry)|unsigned(Flag::RockGripActive)|unsigned(Flag::TransitionSuppressed);
+            if (!(state.flags & unsigned(Flag::Valid)) || state.heldBodyCount || (state.flags & occupied)) return nullptr;
+            if (!std::any_of(claims.begin(),claims.end(),[&](const auto& entry) {
+                return entry.owner==value.owner && entry.reference==request.storedReference && entry.stored && bool(entry.handle.get());
+            })) return nullptr;
+            auto* root=value.parent->Get3D();
+            auto* node=root?root->GetObjectByName(RE::BSFixedString(request.nodeName)):nullptr;
+            return node && node!=root ? node : nullptr;
+        }
+        api::Status setDisplay(api::OwnerToken owner,const api::storage_display::SelectionV1* request) noexcept
+        {
+            if (!request) return api::Status::InvalidArgument;
+            if (request->size!=sizeof(*request)) return api::Status::InvalidSize;
+            if (request->version!=1) return api::Status::UnsupportedVersion;
+            if ((request->hand!=api::Hand::Left && request->hand!=api::Hand::Right) || !request->parentReference ||
+                !request->storedReference || request->parentReference==request->storedReference || !request->nodeName[0] ||
+                !std::memchr(request->nodeName,0,sizeof(request->nodeName))) return api::Status::InvalidArgument;
+            try {
+                const auto access=authorize(owner); if(access!=api::Status::Ok) return access;
+                auto* physics=interaction(); provider::RockProviderFrameSnapshot frame;
+                if(!physics || !provider::runtime::apiGetFrameSnapshot(&frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
+                if(request->worldGeneration!=frame.worldGeneration || request->skeletonGeneration!=frame.skeletonGeneration || request->providerGeneration!=frame.providerGeneration) return api::Status::GenerationMismatch;
+                auto& value=displays[request->hand==api::Hand::Left?1:0];
+                if(value.owner && value.owner!=owner && value.deadline>=frame.frameIndex) return api::Status::OwnerConflict;
+                if(value.owner!=owner || value.request.parentReference!=request->parentReference || value.request.storedReference!=request->storedReference ||
+                    std::strncmp(value.request.nodeName,request->nodeName,sizeof(request->nodeName))) stopDisplay(value);
+                value.owner=owner; value.request=*request; value.deadline=frame.frameIndex+3;
+                value.parent.reset(RE::TESForm::GetFormByID<RE::TESObjectREFR>(request->parentReference));
+                auto* node=displayNode(value,*physics);
+                if(!node) { stopDisplay(value); return api::Status::TargetUnavailable; }
+                // The existing held-candidate contract retains its pulse. A
+                // passive display never changes that native-global override.
+                if(std::any_of(feedback.begin(),feedback.end(),[](const auto& entry){return entry.highlight.isActive();}) || !VatsSelectionHighlight::stashAvailable()) {
+                    stopDisplay(value); return api::Status::Busy;
+                }
+                value.node.reset(node);
+                if(frame.frameIndex<value.retry) return api::Status::NotReady;
+                if(!value.highlight.refreshStash(value.parent.get(),node,1.f)) {
+                    value.retry=frame.frameIndex+90;
+                    ROCK_LOG_SAMPLE_WARN(Hand,1000,"Stored display selection has no usable VATS target: parent={:08X} item={:08X}",request->parentReference,request->storedReference);
+                    return api::Status::NotReady;
+                }
+                return api::Status::Ok;
+            } catch(...) { return api::Status::InternalError; }
+        }
+        api::Status clearDisplay(api::OwnerToken owner,api::Hand hand) noexcept
+        {
+            if(hand!=api::Hand::Left && hand!=api::Hand::Right) return api::Status::InvalidArgument;
+            try {
+                const auto access=authorize(owner,0); if(access!=api::Status::Ok) return access;
+                auto& value=displays[hand==api::Hand::Left?1:0];
+                if(value.owner && value.owner!=owner) return api::Status::OwnerConflict;
+                stopDisplay(value); return api::Status::Ok;
+            } catch(...) { return api::Status::InternalError; }
+        }
         api::Status clearContacts(api::OwnerToken owner) noexcept
         {
             try {
@@ -290,6 +369,14 @@ namespace rock::storage_service
             auto* node=feedbackNode(value,physics);
             if(!node || (value.highlight.isActive() && !value.highlight.refreshStash(value.reference.get(),node,intensity))) stopFeedback(value);
         }
+        for(auto& value:displays) if(value.owner) {
+            if(!frame.worldReady || frame.menuBlocked || value.deadline<sample.frameIndex || authorize(value.owner)!=api::Status::Ok ||
+                value.request.worldGeneration!=sample.worldGeneration || value.request.skeletonGeneration!=sample.skeletonGeneration ||
+                value.request.providerGeneration!=sample.providerGeneration ||
+                std::any_of(feedback.begin(),feedback.end(),[](const auto& entry){return entry.highlight.isActive();})) { stopDisplay(value); continue; }
+            auto* node=displayNode(value,physics);
+            if(!node || node!=value.node.get() || (value.highlight.isActive() && !value.highlight.refreshStash(value.parent.get(),node,1.f))) stopDisplay(value);
+        }
         std::array<std::uint32_t,128> wanted{}; unsigned count{};
         for (unsigned i = 0; i < contacts.size(); ++i) {
             auto& contact = contacts[i]; if (!contact.owner) continue;
@@ -315,6 +402,7 @@ namespace rock::storage_service
     void shutdown(RE::hknpWorld* validWorld)
     {
         for(auto& value:feedback) stopFeedback(value);
+        for(auto& value:displays) stopDisplay(value);
         contacts = {};
         if (validWorld) (void)bodies.releaseAll(validWorld, "consumer-storage-shutdown", [](auto, const auto&) {});
         else bodies.clearTracking();
@@ -337,4 +425,10 @@ extern "C" __declspec(dllexport) const rock::api::storage::ApiV1* ROCK_CALL ROCK
         storage_service::claim, storage_service::commit, storage_service::release,
         storage_service::claimant, storage_service::suppressContacts, storage_service::clearContacts, storage_service::extractEquipped, storage_service::draw};
     return major == 1 && bytes == sizeof(api) ? &api : nullptr;
+}
+extern "C" __declspec(dllexport) const rock::api::storage_display::ApiV1* ROCK_CALL ROCK_StorageDisplay_QueryV1(
+    std::uint32_t major,std::uint32_t bytes) noexcept
+{
+    static const rock::api::storage_display::ApiV1 table{sizeof(table),1,rock::storage_service::setDisplay,rock::storage_service::clearDisplay};
+    return major==1 && bytes==sizeof(table)?&table:nullptr;
 }
