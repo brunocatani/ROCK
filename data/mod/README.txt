@@ -67,9 +67,10 @@ Features
 - Dynamic object grabbing, two-hand grabs, pull/catch flow, and held-object release behavior.
 - Realistic gunplay support that lets you grab and use different parts of the gun for fire support.
 
-Gesture Pull (Grabbing/iFarGrabMode=2): hold grab to lock, flick toward yourself
-to launch, then release and press grab again within reach to catch. Holding
-the first press does not catch. Immediate Pull (mode 1) still auto-catches.
+Higgs Pull Mode (Grabbing/iFarGrabMode=2): hold grab to lock, flick toward yourself,
+then keep holding to pull the object toward your hand and catch it automatically.
+Release before the flick or during the pull to cancel. Immediate Pull (mode 1)
+also auto-catches and does not require a flick.
 
 World pickup/use takes priority over right-A reload/scope input. With no usable
 target, tap to reload or hold to scope. ROCK-held objects retain take protection.

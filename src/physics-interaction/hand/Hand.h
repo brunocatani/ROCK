@@ -22,7 +22,6 @@
 #include "physics-interaction/hand/HandBoneColliderSet.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/hand/HandInteractionStateMachine.h"
-#include "physics-interaction/input/FarPullGesturePolicy.h"
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/grab/NearbyGrabDamping.h"
 #include "physics-interaction/object/ObjectDetection.h"
@@ -584,11 +583,10 @@ namespace rock
         bool refreshGesturePullSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* world,
             const RE::NiPoint3& handOrigin, RE::NiPoint3& targetWorld);
         bool unlockFarSelection();
-        bool startDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, far_pull_gesture::Mode mode);
+        bool startDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform);
         bool updateDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float deltaTime);
         void finishPullPrepAsPhysicalDropIfActive(const char* context);
         bool hasActivePullCatchIntent() const;
-        bool hasAutomaticPullCatchIntent() const;
         bool hasArrivedPullCatchIntent() const;
         bool hasPendingPullCatchCommit() const;
         bool advancePullCatchCommit(float deltaTime, float maxCommitSeconds);
@@ -602,10 +600,8 @@ namespace rock
             float maxBodyDistanceGameUnits);
         bool beginActorEquipmentDropHandoff(
             const actor_equipment_grab::DropResult& dropResult,
-            const RE::NiPoint3& sourceHitPointWorld,
-            far_pull_gesture::Mode mode);
+            const RE::NiPoint3& sourceHitPointWorld);
         bool hasPendingActorEquipmentDropHandoff() const;
-        far_pull_gesture::Mode actorEquipmentDropPullMode() const { return _actorEquipmentDropHandoff.pullMode; }
         ActorEquipmentDropHandoffStatus advanceActorEquipmentDropHandoff(
             RE::bhkWorld* bhkWorld,
             RE::hknpWorld* hknpWorld,
@@ -972,15 +968,14 @@ namespace rock
         RE::NiPoint3 activeProxyConstraintPivotBLocalGame() const;
 
         /*
-         * Pull ownership prevents another interaction from taking the hand or
-         * object during launch. Only Immediate Pull also owns the arrival catch:
-         * it retries a refused close commit while held. Gesture Pull releases
-         * ownership after launch and needs a fresh normal grab to catch.
+         * Far-pull arrival needs explicit ownership separate from button edges.
+         * Both pull modes keep a held grab request alive through arrival and
+         * retry a refused close commit without a second press. Release cancels
+         * the pull or pending catch; a retry never restarts the dynamic pull.
          */
         struct PullCatchIntent
         {
             bool active = false;
-            bool automaticCatch = false;
             bool commitPending = false;
             RE::TESObjectREFR* refr = nullptr;
             std::uint32_t formId = 0;
@@ -1000,7 +995,6 @@ namespace rock
         struct ActorEquipmentDropHandoff
         {
             bool active = false;
-            far_pull_gesture::Mode pullMode = far_pull_gesture::Mode::Immediate;
             RE::ObjectRefHandle handle{};
             RE::NiPointer<RE::TESObjectREFR> droppedRef;
             RE::NiPoint3 sourceHitPointWorld{};
@@ -1068,7 +1062,7 @@ namespace rock
             }
         };
 
-        void armPullCatchIntent(RE::TESObjectREFR* refr, std::uint32_t primaryBodyId, grab_target::Kind targetKind, far_pull_gesture::Mode mode);
+        void armPullCatchIntent(RE::TESObjectREFR* refr, std::uint32_t primaryBodyId, grab_target::Kind targetKind);
         void markPullCatchIntentArrived();
         bool pullCatchIntentMatchesSelection() const;
 

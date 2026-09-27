@@ -1,5 +1,4 @@
 #include "physics-interaction/input/FarPullGesturePolicy.h"
-#include "physics-interaction/input/GrabInputIntentPolicy.h"
 #include "physics-interaction/hand/HandInteractionStateMachine.h"
 #include "rock_support/VRMotion.h"
 
@@ -94,31 +93,21 @@ int main()
     ok &= check(!rock::evaluateHandTransition({ .current = HandState::HeldBody, .event = HandInteractionEvent::UnlockFarSelection }).accepted,
         "equipment handoff cannot unlock a physical hold");
 
-    // A launched gesture returns to ordinary selection without preserving its
-    // press. Exercise the real input policy through launch, arrival and catch,
-    // including disabled leeway and a press buffered before the target was ready.
-    namespace intent = rock::grab_input_intent_policy;
-    for (const bool leewayEnabled : {false, true}) {
-        for (const bool targetInitiallyReady : {false, true}) {
-            intent::RuntimeState input{};
-            const intent::Config config{ .enabled = leewayEnabled };
-            (void)intent::update(input, { .held = true, .pressed = true },
-                targetInitiallyReady, false, 0.01f, config);
-            intent::reset(input); // Launch consumes any original/buffered press.
-            for (int frame = 0; frame < 90; ++frame) {
-                const auto held = intent::update(input, { .held = true },
-                    frame >= 20, false, 1.0f / 90.0f, config);
-                ok &= check(!held.pressed && !held.pendingPress,
-                    "holding launch press cannot catch on arrival or later");
-            }
-            const auto released = intent::update(input, { .released = true }, true, false, 0.01f, config);
-            ok &= check(released.released && !released.pressed, "release alone does not catch");
-            const auto catchPress = intent::update(input, { .held = true, .pressed = true }, true, false, 0.01f, config);
-            ok &= check(catchPress.pressed && !catchPress.syntheticPressed, "fresh second press can catch immediately");
-        }
+    // The confirmed gesture uses the same arrival and catch sequence as an
+    // immediate pull. Arrival stays selected for the existing close-commit retry.
+    const auto arrived = rock::evaluateHandTransition({ .current = pull.next, .event = HandInteractionEvent::PullArrivedClose });
+    ok &= check(arrived.accepted && arrived.next == HandState::SelectedClose,
+        "gesture pull arrives into a close catch instead of clearing selection");
+    const auto catchAttempt = rock::evaluateHandTransition({ .current = arrived.next, .event = HandInteractionEvent::BeginGrabCommit });
+    ok &= check(catchAttempt.accepted && catchAttempt.next == HandState::SelectedClose,
+        "close catch stays retryable until commit succeeds");
+    const auto caught = rock::evaluateHandTransition({ .current = catchAttempt.next, .event = HandInteractionEvent::GrabCommitSucceeded });
+    ok &= check(caught.accepted && caught.next == HandState::HeldInit,
+        "successful pull catch begins the physical hold");
+    for (const auto state : {pull.next, arrived.next}) {
+        const auto cancelled = rock::evaluateHandTransition({ .current = state, .event = HandInteractionEvent::ClearSelection });
+        ok &= check(cancelled.accepted && cancelled.next == HandState::Idle,
+            "pull or pending catch can still be cancelled");
     }
-    const auto launchFinished = rock::evaluateHandTransition({ .current = HandState::Pulled, .event = HandInteractionEvent::ClearSelection });
-    ok &= check(launchFinished.accepted && rock::canUpdateSelectionFromState(launchFinished.next) &&
-        !rock::hasExclusiveObjectSelection(launchFinished.next), "finished launch frees selection and other-hand ownership");
     return ok ? 0 : 1;
 }
