@@ -443,13 +443,17 @@ namespace rock
 
             if (commit.isEquippedWeaponTransfer()) {
                 _drop.visuals[commit.isLeft ? 1u : 0u].release("exact-loose-grab-committed");
-                _forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u].grabIdentity = hand.heldGrabIdentity();
-                ROCK_LOG_INFO(Weapon,
-                    "Equipped weapon acquired as retained loose grab: hand={} ref={:08X} body={} grab={} handleMatches={} inputState={}",
-                    commit.isLeft ? "left" : "right", heldRef->GetFormID(), primaryBodyId, hand.heldGrabIdentity(),
-                    heldRef->GetHandle() == commit.targetHandle,
-                    static_cast<unsigned>(_forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u].inputState));
             }
+            // A force-grab success must remain held even when its UI/holster
+            // initiating button is already up. Preserve an equipped transfer's
+            // pending gesture, but start every other arrival with a fresh latch.
+            auto& retained = _forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u];
+            if (!commit.isEquippedWeaponTransfer()) retained = {};
+            retained.grabIdentity = hand.heldGrabIdentity();
+            ROCK_LOG_INFO(Hand,
+                "Force grab retained until a fresh grab/release: hand={} ref={:08X} grab={} inputState={}",
+                commit.isLeft ? "left" : "right", heldRef->GetFormID(), retained.grabIdentity,
+                static_cast<unsigned>(retained.inputState));
             claimObject(heldRef, claimOwnerForHand(commit.isLeft));
             dispatchPhysicsMessage(kPhysMsg_OnGrab, commit.isLeft, heldRef, heldRef ? heldRef->GetFormID() : 0, 0);
             dispatchGrabCommittedEvent(commit.isLeft, heldRef, primaryBodyId, frame.hknpWorld);

@@ -199,6 +199,18 @@ int main()
     ok &= expect(!rock::transferred_weapon_grab_policy::advance(retained, false, false, true), "original drop gesture cannot release newly retained weapon");
     ok &= expect(!rock::transferred_weapon_grab_policy::advance(retained, true, true, false), "retained release requires complete new gesture");
     ok &= expect(rock::transferred_weapon_grab_policy::advance(retained, false, false, true), "new release completes retained drop");
+    namespace delivery = rock::transferred_weapon_grab_policy;
+    auto arrival = delivery::State::AwaitInitialRelease;
+    ok &= expect(!delivery::advance(arrival, true, true, false), "arrival ignores an initiating held/pressed grip");
+    ok &= expect(!delivery::advance(arrival, false, false, true), "letting go of the initiating grip does not drop delivery");
+    for (unsigned i = 0; i < 120; ++i)
+        ok &= expect(!delivery::advance(arrival, false, false, false), "delivered object remains held with button up");
+    ok &= expect(!delivery::advance(arrival, true, true, false), "fresh press alone does not drop delivery");
+    ok &= expect(!delivery::advance(arrival, false, false, true, false), "a menu or input owner cannot complete a hidden release");
+    ok &= expect(!delivery::advance(arrival, false, false, false), "resuming does not replay the suppressed release");
+    ok &= expect(delivery::advance(arrival, false, true, true), "a fresh complete click in one sample drops delivery");
+    ok &= expect(delivery::ownsInput(false, 42, 42) && !delivery::ownsInput(false, 42, 43) &&
+        !delivery::ownsInput(false, 0, 0), "retention belongs only to the exact acquired grab");
     for (const bool left : { false, true }) {
         for (const auto role : { Role::Firing, Role::Support, Role::Paired }) {
             State resumed{};
