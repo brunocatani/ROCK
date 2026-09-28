@@ -894,6 +894,11 @@ namespace rock
             if (!formRef.empty() && saved_grab_offset::load(formRef, file, nullptr)) {
                 const auto& handOffset = isLeft ? file.left : file.right;
                 if (handOffset.present) {
+                    if (handOffset.hasExactFingerRotations && fo4vr::isInPowerArmor()) {
+                        ROCK_LOG_WARN(Hand, "{} saved exact grab pose skipped: normal-hand rig does not match power armor",
+                            isLeft ? "Left" : "Right");
+                        return false;
+                    }
                     out = handOffset;
                     return true;
                 }
@@ -10986,6 +10991,35 @@ namespace rock
                         0.0f,
                         /*publishLocalTransforms=*/false);
                     _grabFingerPosePublished = true;
+                    if (savedGrabOffset.hasExactFingerRotations) {
+                        frik_visual_authority::FingerLocalTransformOverride exact{};
+                        const auto handPose = frik_visual_authority::makeHandPoseDataFromJointValues(savedGrabOffset.fingerJointValues);
+                        bool applied = frik_visual_authority::getHandPoseLocalTransformsForPose(handFromBool(_isLeft), handPose, &exact) &&
+                            exact.enabledMask == 0x7fff;
+                        if (applied) {
+                            for (std::size_t joint = 0; joint < 15; ++joint) {
+                                for (std::size_t row = 0; row < 3; ++row) {
+                                    for (std::size_t column = 0; column < 3; ++column) {
+                                        exact.localTransforms[joint].rotate.entry[row][column] =
+                                            savedGrabOffset.exactFingerRotations[joint][row * 3 + column];
+                                    }
+                                }
+                            }
+                            applied = frik_visual_authority::setHandPoseCustomLocalTransforms("ROCK_Grab", handFromBool(_isLeft), &exact, 100);
+                        }
+                        if (applied) {
+                            for (std::size_t joint = 0; joint < 15; ++joint) _grabFingerLocalTransforms[joint] = exact.localTransforms[joint];
+                            _grabFingerLocalTransformMask = exact.enabledMask;
+                            _hasGrabFingerLocalTransforms = true;
+                            ROCK_LOG_INFO(Hand, "{} saved exact grab pose applied: 15 normal-rig joints", handName());
+                        } else {
+                            // Never retain the scalar seed as if the exact pose
+                            // succeeded. Existing release cleanup owns this tag.
+                            (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
+                            _grabFingerPosePublished = false;
+                            ROCK_LOG_WARN(Hand, "{} saved exact grab pose unavailable: FRIK rejected the normal-rig transform override", handName());
+                        }
+                    }
                     ROCK_LOG_INFO(Hand,
                         "{} hand loose weapon attach: applying savedGrabOffset finger pose",
                         handName());

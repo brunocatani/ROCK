@@ -102,9 +102,13 @@ namespace rock::saved_grab_offset
                     buffer << stream.rdbuf();
 
                     SavedGrabOffsetFile file{};
-                    if (!parse(buffer.str(), file, nullptr)) {
+                    std::string parseError;
+                    if (!parse(buffer.str(), file, &parseError)) {
                         ++failedCount;
                         continue;
+                    }
+                    if (!parseError.empty()) {
+                        ROCK_LOG_WARN(Config, "Saved grab offset {}: {}", entry.path().filename().string(), parseError);
                     }
                     loaded.emplace(entry.path().string(), std::move(file));
                 }

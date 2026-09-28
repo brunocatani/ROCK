@@ -210,6 +210,10 @@ namespace rock
          */
         Hand::GrabFingerPoseSnapshot fingerSnapshot{};
         if (hand.tryGetLiveGrabFingerPoseSnapshot(fingerSnapshot)) {
+            // A newly captured organic pose replaces any older authored exact
+            // pose. Position-only saves of an exact hold have no organic
+            // snapshot and preserve that exact pose, as before for scalar data.
+            handOffset.hasExactFingerRotations = false;
             handOffset.hasFingerPose = true;
             handOffset.fingerValues[0] = fingerSnapshot.values[0];
             handOffset.fingerValues[1] = fingerSnapshot.values[1];

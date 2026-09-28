@@ -17,8 +17,11 @@ namespace rock::saved_grab_offset
 {
     // v1: translate/rotate only. v2 (additive, backward compatible): optional
     // per-hand finger pose alongside the transform; a v1 file still parses
-    // fine under kFormatVersion == 2, it simply has no "finger" section.
-    inline constexpr std::uint32_t kFormatVersion = 2;
+    // fine under newer formats, it simply has no "finger" section.
+    // v3: optional exact parent-local finger rotations on the normal FRIK rig.
+    // This private disk record does not change any published provider record.
+    inline constexpr std::uint32_t kFormatVersion = 3;
+    inline constexpr std::string_view kExactFingerRig = "frik-normal-authored-v1";
 
     // Load-order-independent form identity; empty = none.
     struct FormRef
@@ -40,8 +43,8 @@ namespace rock::saved_grab_offset
         float rotate[9]{ 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f };
 
         // Same convention as grab_finger_pose_runtime::SolvedGrabFingerPose:
-        // thumb/index/middle/ring/pinky, 0 = open/extended, 1 = fully curled
-        // (thumb may exceed 1, up to 2.0, for an over-open brace pose).
+        // thumb/index/middle/ring/pinky, 0 = closed, 1 = authored open.
+        // All fingers support over-open values through 2.0.
         bool hasFingerPose{ false };
         float fingerValues[5]{ 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
         // Optional per-joint (3 per finger: proximal/mid/distal) shaping; when
@@ -49,6 +52,10 @@ namespace rock::saved_grab_offset
         // way the live mesh solver does.
         bool hasFingerJointValues{ false };
         float fingerJointValues[15]{};
+        // Exact rotations only: rest translations/scale remain FRIK-owned.
+        // Ni row order, thumb through pinky, proximal through distal.
+        bool hasExactFingerRotations{ false };
+        float exactFingerRotations[15][9]{};
     };
 
     struct SavedGrabOffsetFile

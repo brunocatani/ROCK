@@ -290,6 +290,15 @@ if(BUILD_ROCK_TESTS)
 
   include("${ROOT_DIR}/cmake/RockTestRegistration.cmake")
 
+  add_executable(ROCKSavedGrabOffsetFormatTests
+    "${ROOT_DIR}/tests/SavedGrabOffsetFormatTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/grab/SavedGrabOffsetFormat.cpp"
+  )
+  target_compile_features(ROCKSavedGrabOffsetFormatTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKSavedGrabOffsetFormatTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKSavedGrabOffsetFormatTests PRIVATE nlohmann_json::nlohmann_json)
+  add_rock_test(ROCKSavedGrabOffsetFormatTests)
+
   add_executable(ROCKGrabInputIntentPolicyTests
     "${ROOT_DIR}/tests/GrabInputIntentPolicyTests.cpp"
   )
