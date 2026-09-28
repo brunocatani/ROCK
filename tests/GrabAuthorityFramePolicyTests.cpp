@@ -408,5 +408,34 @@ int main()
         ok &= expectFalse("freeze rejects non-finite authority rotation", frozen.valid);
     }
 
+    {
+        auto root = identityTransform();
+        const float rootQuaternion[4]{ 0.0f, 0.0f, std::sin(0.63f / 2.0f), std::cos(0.63f / 2.0f) };
+        root.rotate = rock::transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(rootQuaternion);
+        root.translate = { 12.0f, -8.0f, 5.0f };
+        root.scale = 1.25f;
+        const auto self = rock::grab_frame_math::objectInFrameSpace(root, root);
+        ok &= expectPointNear("capture root in itself has no translation", self.translate, {}, 0.0001f);
+        ok &= expectNear("capture root in itself has unit scale", self.scale, 1.0f, 0.0001f);
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                ok &= expectNear("capture root in itself has identity rotation", self.rotate.entry[row][column],
+                    row == column ? 1.0f : 0.0f, 0.0001f);
+            }
+        }
+        auto child = identityTransform();
+        child.translate = { 2.0f, 3.0f, -1.0f };
+        const float childQuaternion[4]{ std::sin(-0.27f / 2.0f), 0.0f, 0.0f, std::cos(-0.27f / 2.0f) };
+        child.rotate = rock::transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(childQuaternion);
+        const auto world = rock::transform_math::composeTransforms(root, child);
+        const auto restored = rock::grab_frame_math::objectInFrameSpace(root, world);
+        ok &= expectPointNear("capture nested node position round trip", restored.translate, child.translate, 0.0001f);
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                ok &= expectNear("capture nested node rotation round trip", restored.rotate.entry[row][column],
+                    child.rotate.entry[row][column], 0.0001f);
+            }
+        }
+    }
     return ok ? 0 : 1;
 }

@@ -1483,7 +1483,9 @@ namespace rock
         auto& mesh = outCapture.mesh;
         mesh.valid = !triangles.empty();
         mesh.triangleCount = static_cast<std::uint32_t>(triangles.size());
-        mesh.nodeInObjectRoot = storeFrame(grab_frame_math::objectInGeneratedProxyLocalSpace(rootNode->world, meshNode->world));
+        // Both operands are ordinary Ni frames. The generated-proxy adapter
+        // has a different basis and even makes root-relative-to-itself rotate.
+        mesh.nodeInObjectRoot = storeFrame(grab_frame_math::objectInFrameSpace(rootNode->world, meshNode->world));
         if (mesh.valid) {
             mesh.verticesObjectLocal.reserve(triangles.size() * 9);
             RE::NiPoint3 aabbMin{ std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
@@ -1717,7 +1719,7 @@ namespace rock
         // instant at capture. Raw data only - see PhysicsCapture for why this
         // must not be read as a centre of mass until the layout is verified.
         outCapture.physics.bodyInObjectNode =
-            storeFrame(grab_frame_math::objectInGeneratedProxyLocalSpace(telemetry.authority.objectNodeWorldAtGrab, telemetry.authority.bodyWorldAtGrab));
+            storeFrame(grab_frame_math::objectInFrameSpace(telemetry.authority.objectNodeWorldAtGrab, telemetry.authority.bodyWorldAtGrab));
 
         auto& tuning = outCapture.tuning;
         tuning.seatDepthMaxGameUnits = g_rockConfig.rockGrabSeatDepthMaxGameUnits;
