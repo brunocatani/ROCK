@@ -1,6 +1,8 @@
 #include "InputMarshalling.h"
 #include <ROCK/Discovery.h>
 #include <ROCK/InputV1_1.h>
+#include <ROCK/InputV1_2.h>
+#include "physics-interaction/input/PhysicalReloadInput.h"
 #include "EventBoundary.h"
 
 namespace rock::api::input {
@@ -85,6 +87,17 @@ Status ROCK_CALL getPlacementClickState(OwnerToken owner, v1_1::PlacementClickSt
     *out={};
     return invoke(owner,kInterfaceId,1,true,[&] { return provider::runtime::getPlacementClickState(*out); });
 }
+Status ROCK_CALL setReloadInput(OwnerToken owner,const v1_2::ReloadInputRequest* request) noexcept {
+    if(const auto status=checkInput(request);status!=Status::Ok)return status;
+    return invoke(owner,kInterfaceId,2,true,[&]{return physical_reload_input::set(owner,*request);},provider::OwnerAccess::Active);
+}
+Status ROCK_CALL clearReloadInput(OwnerToken owner) noexcept {
+    return invoke(owner,kInterfaceId,2,true,[&]{return physical_reload_input::clear(owner);});
+}
+Status ROCK_CALL getReloadInput(OwnerToken owner,v1_2::ReloadInputState* output) noexcept {
+    if(const auto status=checkOutput(output);status!=Status::Ok)return status;
+    return invoke(owner,kInterfaceId,1,true,[&]{return physical_reload_input::read(*output);});
+}
 }
 const v1_1::Api& tableV1_1() noexcept {
     static const v1_1::Api value{{
@@ -102,4 +115,7 @@ const v1_1::Api& tableV1_1() noexcept {
     return value;
 }
 const ApiV1& table() noexcept { return tableV1_1().v1; }
+const v1_2::Api& tableV1_2() noexcept {
+    static const v1_2::Api value{tableV1_1(),&setReloadInput,&clearReloadInput,&getReloadInput};return value;
+}
 }

@@ -87,13 +87,22 @@ int main() {
     verify(weapon::tableV1_1(),weapon::kSupportedPermissions);
     verify(weaponparts::table(),weaponparts::kSupportedPermissions);
     verify(animation::table(),animation::kSupportedPermissions);
-    verify(input::tableV1_1(),input::kSupportedPermissions);
+    verify(input::tableV1_2(),input::kSupportedPermissions);
     {
         const InterfaceDescriptorV1* oldInput{};
         const InterfaceDescriptorV1* newInput{};
         assert(ROCKAPI_QueryInterfaceV1(input::kInterfaceId,1,0,sizeof(input::ApiV1),&oldInput)==Status::Ok);
         assert(ROCKAPI_QueryInterfaceV1(input::kInterfaceId,1,1,sizeof(input::v1_1::Api),&newInput)==Status::Ok);
         assert(oldInput->table==newInput->table && oldInput->requiredCoreMinor==0);
+        const InterfaceDescriptorV1* physicalInput{};
+        assert(ROCKAPI_QueryInterfaceV1(input::kInterfaceId,1,2,sizeof(input::v1_2::Api),&physicalInput)==Status::Ok);
+        assert(physicalInput==oldInput && physicalInput->requiredCoreMinor==0);
+        rock::provider::InterfaceBinding oldInputBinding{},newInputBinding{};
+        assert(rock::provider::bindInterface(oldInputBinding,1,1,input::kSupportedPermissions)==Status::Ok);
+        assert(rock::provider::bindInterface(newInputBinding,1,3,input::kSupportedPermissions)==Status::Ok);
+        const std::array priorInput{discovery::RegisteredInterface{
+            {40,InterfaceId::Input,1,1,sizeof(input::v1_1::Api),1,0,0,&input::tableV1_1()},3}};
+        assert(discovery::query(priorInput,InterfaceId::Input,1,2,sizeof(input::v1_2::Api),&result)==Status::UnsupportedMinor);
         const auto* oldCalls=static_cast<const input::ApiV1*>(oldInput->table);
         assert(oldCalls->clearHandInputSuppressionV1(77,Hand::Left)==Status::Ok);
         input::v1_1::PlacementClickState state;

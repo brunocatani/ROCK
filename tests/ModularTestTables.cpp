@@ -49,6 +49,7 @@ Status ROCK_CALL placement(OwnerToken owner,v1_1::PlacementClickState* out) noex
 }
 }
 const v1_1::Api& tableV1_1() noexcept { static const v1_1::Api value{{nullptr,&oldClear},&placement}; return value; }
+const v1_2::Api& tableV1_2() noexcept { static const v1_2::Api value{tableV1_1()}; return value; }
 const ApiV1& table() noexcept { return tableV1_1().v1; }
 }
 namespace rock::api::references { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }

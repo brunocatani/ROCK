@@ -1,5 +1,6 @@
 #include "physics-interaction/input/WeaponTriggerRouting.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
+#include "physics-interaction/input/PhysicalReloadInput.h"
 #include "RPSUIInputApi.h"
 
 #include "physics-interaction/input/InputRemapPolicy.h"
@@ -1035,6 +1036,11 @@ namespace rock::input_remap_runtime
                 captureControllerState(controllerDeviceIndex, controllerState, controllerStateSize);
                 input_remap_policy::Hand hand{};
                 if (resolveControllerHand(controllerDeviceIndex, hand)) {
+                    if(controllerState&&controllerStateSize>=sizeof(vr::VRControllerState_t)&&!isInputBlockingMenuActive()&&
+                        !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
+                        const auto mask=physical_reload_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed);
+                        controllerState->ulButtonPressed&=~mask;controllerState->ulButtonTouched&=~mask;
+                    }
                     if (isProviderOpenVrGameInputSuppressed(hand) &&
                         !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
                         clearOpenVrControllerStateForGame(controllerState, controllerStateSize);
@@ -1071,6 +1077,11 @@ namespace rock::input_remap_runtime
                 captureControllerState(controllerDeviceIndex, controllerState, controllerStateSize);
                 input_remap_policy::Hand hand{};
                 if (resolveControllerHand(controllerDeviceIndex, hand)) {
+                    if(controllerState&&controllerStateSize>=sizeof(vr::VRControllerState_t)&&!isInputBlockingMenuActive()&&
+                        !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
+                        const auto mask=physical_reload_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed);
+                        controllerState->ulButtonPressed&=~mask;controllerState->ulButtonTouched&=~mask;
+                    }
                     if (isProviderOpenVrGameInputSuppressed(hand) &&
                         !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
                         clearOpenVrControllerStateForGame(controllerState, controllerStateSize);
@@ -2941,15 +2952,19 @@ namespace rock::input_remap_runtime
          * Provider API consumers are unaffected: apiGetRawWandButtonStateV1
          * exposes level state only, by design. Frame-thread only.
          */
-        const auto leftAcceptState = consumeRawButtonState(true, input_remap_policy::kOpenVrAcceptButtonId);
-        const auto rightAcceptState = consumeRawButtonState(false, input_remap_policy::kOpenVrAcceptButtonId);
+        auto leftAcceptState = consumeRawButtonState(true, input_remap_policy::kOpenVrAcceptButtonId);
+        auto rightAcceptState = consumeRawButtonState(false, input_remap_policy::kOpenVrAcceptButtonId);
         if (isAnyProviderOpenVrGameInputSuppressed()) {
             // The reads above intentionally drain both physical A/X edges.
             // SuppressOpenVrGameInput is a game-facing lease, so ROCK must not
             // turn the Configurator's raw UI press into a native reload.
+            physical_reload_input::observe(true,{});
+            physical_reload_input::observe(false,{});
             blockManualScopeInputUntilRelease();
             return;
         }
+        if(physical_reload_input::observe(true,leftAcceptState))leftAcceptState={};
+        if(physical_reload_input::observe(false,rightAcceptState))rightAcceptState={};
         const bool firingHandIsLeft = weaponRouting().leftFiring;
         const bool gameplayAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire);
         const bool menuActive = isInputBlockingMenuActive();

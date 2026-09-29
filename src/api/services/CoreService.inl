@@ -93,6 +93,7 @@
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiUnregisterConsumerV1(std::uint64_t ownerToken)
     {
+        physical_reload_input::clearOwner(ownerToken);
         if (ownerToken == 0) {
             return RockProviderResultV1::InvalidArgument;
         }

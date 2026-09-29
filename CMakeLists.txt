@@ -290,6 +290,13 @@ if(BUILD_ROCK_TESTS)
 
   include("${ROOT_DIR}/cmake/RockTestRegistration.cmake")
 
+  add_executable(ROCKPhysicalReloadInputTests
+    "${ROOT_DIR}/tests/PhysicalReloadInputTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/input/PhysicalReloadInput.cpp")
+  target_compile_features(ROCKPhysicalReloadInputTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKPhysicalReloadInputTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKPhysicalReloadInputTests)
+
   add_executable(ROCKSavedGrabOffsetFormatTests
     "${ROOT_DIR}/tests/SavedGrabOffsetFormatTests.cpp"
     "${SOURCE_DIR}/physics-interaction/grab/SavedGrabOffsetFormat.cpp"
