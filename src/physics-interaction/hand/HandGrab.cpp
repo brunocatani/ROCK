@@ -9119,10 +9119,20 @@ namespace rock
                          */
                         const bool fixedAidPose = g_rockConfig.rockImmersiveAidEnabled &&
                             immersive_aid::usesStimpakPose(immersive_aid::classify(sel.refr ? sel.refr->GetObjectReference() : nullptr));
+                        /*
+                         * Owner rule (behavior library, "Vanilla grip templates"):
+                         * an object's authored offset also owns pinch-pocket grabs
+                         * (tiny items, where the authored pose beats a live solve)
+                         * and close grabs that are converging without touching.
+                         * Touch-held palm grabs stay dynamic.
+                         */
+                        const bool closeGrabNotTouching = !usingPinchPocket &&
+                            phaseDecision.phase == grab_three_phase::AcquisitionPhase::NearConverging;
+                        const bool savedOffsetArrival = programmaticArrival || usingPinchPocket || closeGrabNotTouching;
                         if (fixedAidPose) {
                             savedGrabOffset = immersive_aid::stimpakPose(_isLeft);
                             hasSavedGrabOffset = true;
-                        } else if (programmaticArrival && !authoredWeapon &&
+                        } else if (savedOffsetArrival && !authoredWeapon &&
                             saved_grab_offset::participatesInSavedGrabOffsets(
                                 looseWeaponGrab,
                                 isThrowableLooseWeapon(selectedLooseWeaponForm(sel)))) {
@@ -9130,7 +9140,7 @@ namespace rock
                         }
                         RE::NiTransform grabProxyWorldForOffset{};
                         const bool grabProxyWorldValidForOffset =
-                            (programmaticArrival || fixedAidPose) && tryComputeGrabProxyLocalPalmPocketFrameWorld(world, grabProxyWorldForOffset);
+                            (savedOffsetArrival || fixedAidPose) && tryComputeGrabProxyLocalPalmPocketFrameWorld(world, grabProxyWorldForOffset);
                         RE::NiTransform savedGrabOffsetRootWorld{};
                         const bool savedGrabOffsetAttachValid = hasSavedGrabOffset &&
                             tryResolveSavedGrabOffsetAttach(
