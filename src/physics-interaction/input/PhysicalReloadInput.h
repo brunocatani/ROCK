@@ -1,10 +1,16 @@
 #pragma once
-#include <ROCK/InputV1_2.h>
+#include <ROCK/InputV1_3.h>
 #include "physics-interaction/input/InputRemapRuntime.h"
 namespace rock::physical_reload_input {
     api::Status set(api::OwnerToken,const api::input::v1_2::ReloadInputRequest&);
     api::Status clear(api::OwnerToken);
     api::Status read(api::input::v1_2::ReloadInputState&);
+    api::Status setGesture(api::OwnerToken,const api::input::v1_3::ReloadGestureRequest&);
+    api::Status readGesture(api::input::v1_3::ReloadGestureState&);
+    bool gestureActive(bool left);
+    bool takeGestureChange();
+    bool routeGesture(bool left,bool tap,bool scopeHeld);
+    bool fireBlocked(bool left) noexcept;
     void clearOwner(api::OwnerToken);
     void reset();
     void beginFrame(std::uint64_t frame);

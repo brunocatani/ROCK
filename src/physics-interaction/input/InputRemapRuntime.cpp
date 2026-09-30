@@ -821,7 +821,7 @@ namespace rock::input_remap_runtime
                 // A UI-owned physical trigger must not reappear on the other
                 // wand through ROCK's left-hand firing remap.
                 const bool leftValid = leftTracker.valid.load(std::memory_order_acquire) &&
-                    (uiCapturedButtons(true) & triggerButtonMask) == 0;
+                    (uiCapturedButtons(true) & triggerButtonMask) == 0 && !physical_reload_input::fireBlocked(true);
                 const std::uint64_t leftPressed = leftValid ? leftTracker.rawPressed.load(std::memory_order_acquire) : 0;
                 const std::uint64_t leftTouched = leftValid ? leftTracker.rawTouched.load(std::memory_order_acquire) : 0;
                 state->ulButtonPressed = (state->ulButtonPressed & ~triggerButtonMask) | (leftPressed & triggerButtonMask);
@@ -1040,6 +1040,7 @@ namespace rock::input_remap_runtime
                         !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
                         const auto mask=physical_reload_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed);
                         controllerState->ulButtonPressed&=~mask;controllerState->ulButtonTouched&=~mask;
+                        if(mask&(1ull<<33))controllerState->rAxis[1]={};
                     }
                     if (isProviderOpenVrGameInputSuppressed(hand) &&
                         !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
@@ -1081,6 +1082,7 @@ namespace rock::input_remap_runtime
                         !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
                         const auto mask=physical_reload_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed);
                         controllerState->ulButtonPressed&=~mask;controllerState->ulButtonTouched&=~mask;
+                        if(mask&(1ull<<33))controllerState->rAxis[1]={};
                     }
                     if (isProviderOpenVrGameInputSuppressed(hand) &&
                         !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
@@ -1399,7 +1401,9 @@ namespace rock::input_remap_runtime
             // attack bookkeeping. No new attack can originate from button-up.
             const auto* button = event ? event->As<RE::ButtonEvent>() : nullptr;
             if (input.eventMatched && button && !button->QPressed()) return false;
-            const bool suppressed = providerSuppressed || input_remap_policy::shouldSuppressNativeTriggerAction(input);
+            const bool suppressed = providerSuppressed ||
+                (input.eventMatched&&physical_reload_input::fireBlocked(input.triggerSourceIsLeft)) ||
+                input_remap_policy::shouldSuppressNativeTriggerAction(input);
             traceNativeWeaponInputGate(gate, event, input, suppressed, providerSuppressed);
             return suppressed;
         }
@@ -2954,6 +2958,7 @@ namespace rock::input_remap_runtime
          */
         auto leftAcceptState = consumeRawButtonState(true, input_remap_policy::kOpenVrAcceptButtonId);
         auto rightAcceptState = consumeRawButtonState(false, input_remap_policy::kOpenVrAcceptButtonId);
+        if(physical_reload_input::takeGestureChange())blockManualScopeInputUntilRelease();
         if (isAnyProviderOpenVrGameInputSuppressed()) {
             // The reads above intentionally drain both physical A/X edges.
             // SuppressOpenVrGameInput is a game-facing lease, so ROCK must not
@@ -2966,10 +2971,11 @@ namespace rock::input_remap_runtime
         if(physical_reload_input::observe(true,leftAcceptState))leftAcceptState={};
         if(physical_reload_input::observe(false,rightAcceptState))rightAcceptState={};
         const bool firingHandIsLeft = weaponRouting().leftFiring;
+        const bool physicalGesture = physical_reload_input::gestureActive(firingHandIsLeft);
         const bool gameplayAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire);
         const bool menuActive = isInputBlockingMenuActive();
         const bool weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire);
-        const bool nativeActivationTarget = gameplayAllowed && !menuActive && weaponDrawn &&
+        const bool nativeActivationTarget = !physicalGesture && gameplayAllowed && !menuActive && weaponDrawn &&
             !firingHandIsLeft && rightAcceptState.pressed &&
             s_manualScopeInputState.state == manual_scope_input_policy::State::Idle &&
             input_remap_policy::shouldPrioritizeNativeActivation(
@@ -2991,7 +2997,7 @@ namespace rock::input_remap_runtime
                 .weaponDrawn = weaponDrawn,
                 .firingHandIsLeft = firingHandIsLeft,
                 .nativeActivationTarget = nativeActivationTarget,
-                .immersiveScopesEnabled = g_rockConfig.rockEnableImmersiveScopes,
+                .immersiveScopesEnabled = g_rockConfig.rockEnableImmersiveScopes || physicalGesture,
                 .leftButton = toManualButtonState(leftAcceptState),
                 .rightButton = toManualButtonState(rightAcceptState),
                 .deltaSeconds = deltaSeconds,
@@ -3010,7 +3016,9 @@ namespace rock::input_remap_runtime
                 decision.reason);
         }
 
-        if (decision.dispatchReload && dispatchNativeReloadAction()) {
+        const bool physicalRouted=physical_reload_input::routeGesture(firingHandIsLeft,decision.dispatchReload,
+            decision.scopeRequested&&g_rockConfig.rockEnableImmersiveScopes);
+        if (decision.dispatchReload && !physicalRouted && dispatchNativeReloadAction()) {
             ROCK_LOG_SAMPLE_DEBUG(Input,
                 g_rockConfig.rockLogSampleMilliseconds,
                 "Dispatched manual-scope short release to equipped weapon reload hand={}",

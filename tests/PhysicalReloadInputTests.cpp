@@ -1,13 +1,16 @@
 #include "physics-interaction/input/PhysicalReloadInput.h"
 #include "api/ProviderRuntimeServices.h"
+#include "physics-interaction/input/ManualScopeInputPolicy.h"
 #include <cassert>
 
 namespace {
     rock::api::SampleV1 sample{10,1,1,2,3,4};
     rock::provider::RockProviderEquippedWeaponStateV1 weapon;
     rock::input_remap_runtime::RawButtonState raw{true};
+    rock::provider::RockProviderHand primary=rock::provider::RockProviderHand::Left;
 }
 namespace rock::provider::runtime {
+    RockProviderHand ROCK_PROVIDER_CALL apiGetPrimaryHandV1(){return ::primary;}
     std::uint64_t currentGameFrameIndex(){return ::sample.frameIndex;}
     api::SampleV1 sample(){return ::sample;}
     RockProviderResultV1 ROCK_PROVIDER_CALL apiGetEquippedWeaponStateV1(std::uint64_t,RockProviderEquippedWeaponStateV1* out){
@@ -75,4 +78,57 @@ int main(){
     request.leaseFrames=121;assert(control::set(1,request)==Status::InvalidArgument);
     request.leaseFrames=2;request.hand=Hand::None;assert(control::set(1,request)==Status::InvalidArgument);
     request.hand=Hand::Left;request.sample.frameIndex=99;assert(control::set(1,request)==Status::GenerationMismatch);
+    // Production Input 1.3 lease and the same tap/hold policy used by runtime.
+    // Test both physical firing hands; an empty chamber only gates the trigger.
+    for(bool left:{true,false}) {
+        control::reset();raw={true};
+        ::primary=left?provider::RockProviderHand::Left:provider::RockProviderHand::Right;
+        ::weapon.flags=1|512;
+        input::v1_3::ReloadGestureRequest gesture;gesture.hand=left?Hand::Left:Hand::Right;
+        gesture.weaponFormId=123;gesture.weaponGenerationKey=456;gesture.sample=sample;gesture.flags=1;
+        assert(control::setGesture(1,gesture)==Status::Ok);
+        control::read(state);assert(!state.active&&!state.owner); // never present shared scope routing as legacy exclusive capture
+        assert(control::set(2,request)==Status::GenerationMismatch); // stale legacy sample
+        input::v1_3::ReloadGestureState observed;
+        control::readGesture(observed);auto before=observed.tapSequence;
+        manual_scope_input_policy::RuntimeState scope;
+        const auto update=[&](input_remap_runtime::RawButtonState button,float dt=.01f) {
+            ++sample.frameIndex;gesture.sample=sample;assert(control::setGesture(1,gesture)==Status::Ok);
+            control::beginFrame(sample.frameIndex);
+            if(control::takeGestureChange())manual_scope_input_policy::blockUntilRelease(scope);
+            if(control::observe(left,button))button={};
+            manual_scope_input_policy::Input in;in.gameplayInputAllowed=in.weaponDrawn=true;in.firingHandIsLeft=left;in.deltaSeconds=dt;in.holdSeconds=.3f;
+            in.leftButton=in.rightButton={true};
+            (left?in.leftButton:in.rightButton)={button.available,button.held,button.pressed,button.released};
+            const auto decision=manual_scope_input_policy::update(scope,in);
+            assert(control::routeGesture(left,decision.dispatchReload,decision.scopeRequested));
+            control::readGesture(observed);return decision;
+        };
+        update({true});assert(control::fireBlocked(left));
+        const auto mask=control::gameMask(left,x|(1ull<<33));assert(mask==(x|(1ull<<33)));
+        update({true,true,true});assert(observed.tapSequence==before);
+        update({true,false,false,true});assert(observed.tapSequence==++before);
+        update({true});assert(observed.tapSequence==before);
+        update({true,true,true});for(int i=0;i<4;++i)update({true,true},.1f);
+        assert(observed.scopeHeld&&observed.tapSequence==before&&control::fireBlocked(left));
+        gesture.flags=0;update({true,true});assert(observed.scopeHeld&&control::fireBlocked(left));
+        // A held physical trigger remains drained after its gate clears.
+        assert(control::gameMask(left,x|(1ull<<33))==(x|(1ull<<33)));
+        assert(control::gameMask(left,x)==x&&!control::fireBlocked(left));
+        update({true,false,false,true});assert(!observed.scopeHeld&&observed.tapSequence==before);
+        // Input/UI loss discards a pending tap and cannot replay on restoration.
+        update({true,true,true});update({});update({true,true,true});update({true,false,false,true});update({true});
+        assert(observed.tapSequence==before);
+        update({true,true,true});update({true,false,false,true});assert(observed.tapSequence==++before);
+        // Mode changes and lease expiry require a fresh physical release.
+        update({true,true,true});sample.frameIndex+=3;control::beginFrame(sample.frameIndex);
+        control::readGesture(observed);assert(!observed.active&&control::takeGestureChange());
+        assert(control::observe(left,{true,true}));assert(control::observe(left,{true,false,false,true}));
+        control::gameMask(left,0);raw={true};gesture.sample=sample;
+        assert(control::setGesture(1,gesture)==Status::Ok);
+        ::primary=left?provider::RockProviderHand::Right:provider::RockProviderHand::Left;
+        control::beginFrame(sample.frameIndex);control::readGesture(observed);assert(!observed.active);
+        assert(control::setGesture(1,gesture)==Status::HandUnavailable);
+        control::reset();control::gameMask(left,0);control::observe(left,{true});
+    }
 }
