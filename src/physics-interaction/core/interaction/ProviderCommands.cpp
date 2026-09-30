@@ -454,6 +454,87 @@ namespace rock
         }
     }
 
+    RE::NiAVObject* PhysicsInteraction::resolveProviderWeaponPartDriveNode(
+        RE::NiNode* weaponNode,std::uint64_t currentWeaponGenerationKey,
+        const ::rock::provider::RockProviderWeaponPartDriveTargetV1& drive,
+        const WeaponEvidenceSnapshot& evidenceDescriptors) const
+    {
+        if (drive.weaponGenerationKey != 0 && drive.weaponGenerationKey != currentWeaponGenerationKey) {
+            return nullptr;
+        }
+
+        RE::NiAVObject* candidate = nullptr;
+        auto acceptResolvedNode = [&](RE::NiAVObject* node) {
+            if (!node || !actor_equipment_grab::nodeContainsNode(weaponNode, node, 64)) {
+                return false;
+            }
+            if (candidate && candidate != node) {
+                return false;
+            }
+            candidate = node;
+            return true;
+        };
+
+        if ((drive.flags & static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchSourceRoot)) != 0 && drive.sourceRoot != 0) {
+            auto* node = reinterpret_cast<RE::NiAVObject*>(drive.sourceRoot);
+            if (!acceptResolvedNode(node)) {
+                return nullptr;
+            }
+        }
+
+        if ((drive.flags & static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchBodyId)) != 0 && drive.bodyId != INVALID_CONTACT_BODY_ID) {
+            const auto* descriptor = evidenceDescriptors.find(drive.bodyId);
+            if (descriptor && descriptor->sourceRootAddress != 0 &&
+                descriptor->weaponGenerationKey == currentWeaponGenerationKey &&
+                acceptResolvedNode(reinterpret_cast<RE::NiAVObject*>(descriptor->sourceRootAddress))) {
+            } else {
+                return nullptr;
+            }
+        }
+
+        const auto sourceName = providerFixedStringView(drive.sourceName, ::rock::provider::ROCK_PROVIDER_MAX_EVIDENCE_NAME);
+        if ((drive.flags & static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchSourceName)) != 0 && !sourceName.empty()) {
+            RE::NiAVObject* matchedSourceNode = nullptr;
+            for (const auto& descriptor : evidenceDescriptors) {
+                if (!descriptor.valid || descriptor.weaponGenerationKey != currentWeaponGenerationKey || descriptor.sourceName != sourceName) {
+                    continue;
+                }
+                matchedSourceNode = reinterpret_cast<RE::NiAVObject*>(descriptor.sourceRootAddress);
+                break;
+            }
+            if (!matchedSourceNode) {
+                matchedSourceNode = findWeaponNodeBySourceName(weaponNode, sourceName, 32);
+            }
+            if (!acceptResolvedNode(matchedSourceNode)) {
+                return nullptr;
+            }
+        }
+
+        return candidate;
+    }
+
+    weapon_drive_pose::NativeFrame PhysicsInteraction::captureProviderPartQueryPose(RE::NiNode* weaponNode,std::uint64_t generation) const
+    {
+        weapon_drive_pose::NativeFrame result(weaponNode,weaponNode->world);
+        std::array<provider::RockProviderWeaponPartDriveTargetV1,provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> drives{};
+        const auto count=provider::copyWeaponPartDriveTargetsV1(drives.data(),static_cast<unsigned>(drives.size()),nullptr,false);
+        const auto evidence=_weaponCollision.getProfileEvidenceDescriptors();
+        std::array<RE::NiAVObject*,provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> slots{};
+        if(_providerDrives.generationKey==generation)for(std::size_t i=0;i<slots.size();++i)slots[i]=_providerDrives.nodeStates[i].node;
+        for(unsigned i=0;i<count;++i)if(auto* node=resolveProviderWeaponPartDriveNode(weaponNode,generation,drives[i],evidence)){
+            auto slot=std::find(slots.begin(),slots.end(),node);
+            if(slot==slots.end())slot=std::find(slots.begin(),slots.end(),nullptr);
+            if(slot!=slots.end()&&result.apply(node,providerTransformToNi(drives[i].targetTransform),
+                drives[i].driveSpace==provider::RockProviderWeaponPartDriveSpaceV1::WeaponRootLocal,drives[i].priority))*slot=node;
+        }
+        // The writer restores expired/revoked nodes after active drives. Their
+        // old driven locals may still be present if native animation left them alone.
+        if(_providerDrives.generationKey==generation)for(const auto& state:_providerDrives.nodeStates)
+            if(state.node&&!result.contains(state.node)&&actor_equipment_grab::nodeContainsNode(weaponNode,state.node,64))
+                result.apply(state.node,state.baselineLocal,false,0);
+        return result;
+    }
+
     std::size_t PhysicsInteraction::applyProviderWeaponPartDrives(
         RE::NiNode* weaponNode,
         std::uint64_t currentWeaponGenerationKey,
@@ -500,61 +581,6 @@ namespace rock
         std::array<AppliedNode, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> appliedNodes{};
         std::size_t appliedNodeCount = 0;
         const auto evidenceDescriptors = _weaponCollision.getProfileEvidenceDescriptors();
-
-        auto resolveDriveNode = [&](const ::rock::provider::RockProviderWeaponPartDriveTargetV1& drive) -> RE::NiAVObject* {
-            if (drive.weaponGenerationKey != 0 && drive.weaponGenerationKey != currentWeaponGenerationKey) {
-                return nullptr;
-            }
-
-            RE::NiAVObject* candidate = nullptr;
-            auto acceptResolvedNode = [&](RE::NiAVObject* node) {
-                if (!node || !actor_equipment_grab::nodeContainsNode(weaponNode, node, 64)) {
-                    return false;
-                }
-                if (candidate && candidate != node) {
-                    return false;
-                }
-                candidate = node;
-                return true;
-            };
-
-            if ((drive.flags & static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchSourceRoot)) != 0 && drive.sourceRoot != 0) {
-                auto* node = reinterpret_cast<RE::NiAVObject*>(drive.sourceRoot);
-                if (!acceptResolvedNode(node)) {
-                    return nullptr;
-                }
-            }
-
-            if ((drive.flags & static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchBodyId)) != 0 && drive.bodyId != INVALID_CONTACT_BODY_ID) {
-                const auto* descriptor = evidenceDescriptors.find(drive.bodyId);
-                if (descriptor && descriptor->sourceRootAddress != 0 &&
-                    descriptor->weaponGenerationKey == currentWeaponGenerationKey &&
-                    acceptResolvedNode(reinterpret_cast<RE::NiAVObject*>(descriptor->sourceRootAddress))) {
-                } else {
-                    return nullptr;
-                }
-            }
-
-            const auto sourceName = providerFixedStringView(drive.sourceName, ::rock::provider::ROCK_PROVIDER_MAX_EVIDENCE_NAME);
-            if ((drive.flags & static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchSourceName)) != 0 && !sourceName.empty()) {
-                RE::NiAVObject* matchedSourceNode = nullptr;
-                for (const auto& descriptor : evidenceDescriptors) {
-                    if (!descriptor.valid || descriptor.weaponGenerationKey != currentWeaponGenerationKey || descriptor.sourceName != sourceName) {
-                        continue;
-                    }
-                    matchedSourceNode = reinterpret_cast<RE::NiAVObject*>(descriptor.sourceRootAddress);
-                    break;
-                }
-                if (!matchedSourceNode) {
-                    matchedSourceNode = findWeaponNodeBySourceName(weaponNode, sourceName, 32);
-                }
-                if (!acceptResolvedNode(matchedSourceNode)) {
-                    return nullptr;
-                }
-            }
-
-            return candidate;
-        };
 
         auto shouldApplyPriority = [&](
                                        RE::NiAVObject* node,
@@ -653,7 +679,7 @@ namespace rock
                     ::rock::provider::RockProviderWeaponPartDriveApplicationV1::StaleGeneration;
                 continue;
             }
-            auto* sourceNode = resolveDriveNode(drive);
+            auto* sourceNode = resolveProviderWeaponPartDriveNode(weaponNode,currentWeaponGenerationKey,drive,evidenceDescriptors);
             if (!sourceNode) {
                 applicationResult.result =
                     ::rock::provider::RockProviderWeaponPartDriveApplicationV1::Unresolved;

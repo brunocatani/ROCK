@@ -353,7 +353,7 @@
         return RockProviderResultV1::Ok;
     }
 
-    api::Status setWeaponPartGrabPoints(api::OwnerToken owner,std::span<const api::weaponparts::v1_3::GrabPoint> points) {
+    api::Status setWeaponPartGrabPoints(api::OwnerToken owner,std::span<const api::weaponparts::v1_3::GrabPoint> points,bool operating) {
         for(const auto& p:points)if(!resolveSourceKey(p.weaponGenerationKey,p.sourceKey))return api::Status::GenerationMismatch;
         std::scoped_lock lock(s_weaponPartMutex);
         return s_weaponPartGrabPoints.replace(owner,points,[&](const auto& p){
@@ -361,10 +361,13 @@
                 return s.active&&s.ownerToken==owner&&s.target.groupId==p.groupId&&s.target.weaponGenerationKey==p.weaponGenerationKey&&
                     s.target.grabMode==RockProviderWeaponPartGrabModeV1::AttachOnly;
             });
-        });
+        },operating);
     }
     api::Status clearWeaponPartGrabPoints(api::OwnerToken owner) {
         std::scoped_lock lock(s_weaponPartMutex);s_weaponPartGrabPoints.clear(owner);return api::Status::Ok;
+    }
+    bool hasOperatingGrabPoints(std::uint64_t generation) {
+        std::scoped_lock lock(s_weaponPartMutex);return s_weaponPartGrabPoints.operatingFor(generation);
     }
     std::size_t copyWeaponPartPointSelection(std::span<weapon_part_runtime::Target> targets,std::span<weapon_part_points::OwnedPoint> points,std::size_t& pointCount) {
         std::scoped_lock lock(s_weaponPartMutex);pointCount=s_weaponPartGrabPoints.copy(points);std::size_t count=0;

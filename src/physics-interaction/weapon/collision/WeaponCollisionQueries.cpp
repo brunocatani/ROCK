@@ -1255,7 +1255,8 @@ namespace rock
         float probeRadiusGame,
         WeaponInteractionContact& outContact,
         InteractionQueryBatch& batch,
-        api::Hand hand) const
+        api::Hand hand,const weapon_drive_pose::NativeFrame* operatingPose,
+        std::span<const std::array<float,3>> extraProbes,bool operatingOnly) const
     {
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponContactProbe);
         outContact = {};
@@ -1299,9 +1300,17 @@ namespace rock
                 auto& candidate=batch.points[batch.pointCount++];candidate.rule=rules[p];
                 auto* source=reinterpret_cast<RE::NiAVObject*>(provider::runtime::resolveSourceKey(currentGeneration,rules[p].point.sourceKey));
                 RE::NiTransform world{};
-                if(!source||!tryResolveDescendantWorldTransform(weaponNode,rootWorld,source,world)||!f4vr::isNodeVisible(source))continue;
+                if(!source||!f4vr::isNodeVisible(source))continue;
+                if(candidate.rule.operating){if(!operatingPose||!operatingPose->world(source,world))continue;}
+                else if(!tryResolveDescendantWorldTransform(weaponNode,rootWorld,source,world))continue;
                 const auto* v=rules[p].point.pointInSource;const auto position=transform_math::localPointToWorld(world,RE::NiPoint3{v[0],v[1],v[2]});candidate.world={position.x,position.y,position.z};
                 candidate.validWorld=weapon_interaction_query::finitePoint(position);
+                if(candidate.rule.operating){
+                    RE::NiTransform native{};const bool valid=tryResolveDescendantWorldTransform(weaponNode,rootWorld,source,native);
+                    const auto rest=valid?transform_math::localPointToWorld(native,RE::NiPoint3{v[0],v[1],v[2]}):RE::NiPoint3{};
+                    ROCK_LOG_SAMPLE_INFO(Weapon,1500,"OperatingGrabPose source={} point={} drives={} native=({:.2f},{:.2f},{:.2f}) driven=({:.2f},{:.2f},{:.2f}) valid={}",
+                        rules[p].point.sourceKey,rules[p].point.pointId,operatingPose->size(),rest.x,rest.y,rest.z,position.x,position.y,position.z,candidate.validWorld);
+                }
             }
             for(std::size_t i=0;batch.pointCount&&i<batch.count;++i) {
                 const auto& instance=*batch.instances[i];
@@ -1324,13 +1333,26 @@ namespace rock
 
         weapon_interaction_query::Selection selection;
         const auto pointSelection=weapon_part_points::nearest(std::span(batch.points).first(batch.pointCount),hand,
-            {probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z},probeRadiusGame);
+            {probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z},probeRadiusGame,extraProbes,operatingOnly);
         const auto picked=pointSelection.point;
         const bool handMask=hand==api::Hand::Left||hand==api::Hand::Right;
         if(picked<batch.pointCount){selection.part=batch.points[picked].part;selection.rank.distanceSquaredGame=pointSelection.distanceSquared;}
-        if(!selection.valid())selection=weapon_interaction_query::find(
+        if(!selection.valid()&&!operatingOnly)selection=weapon_interaction_query::find(
             {batch.parts.data(),batch.count},probeWorldPoint,probeRadiusGame,
             handMask?std::span<const bool>(batch.pointRestricted).first(batch.count):std::span<const bool>{});
+        if(operatingOnly){
+            const auto first=extraProbes.empty()?std::array<float,3>{}:extraProbes[0];
+            const auto second=extraProbes.size()<2?std::array<float,3>{}:extraProbes[1];
+            if(hand==api::Hand::Left){
+                ROCK_LOG_SAMPLE_INFO(Weapon,1500,"OperatingGrabProbe left extraProbes={} selected={} distance={:.3f} palm=({:.2f},{:.2f},{:.2f}) extra0=({:.2f},{:.2f},{:.2f}) extra1=({:.2f},{:.2f},{:.2f})",
+                    extraProbes.size(),picked<batch.pointCount?batch.points[picked].rule.point.pointId:0,picked<batch.pointCount?std::sqrt(pointSelection.distanceSquared):-1.f,
+                    probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z,first[0],first[1],first[2],second[0],second[1],second[2]);
+            }else{
+                ROCK_LOG_SAMPLE_INFO(Weapon,1500,"OperatingGrabProbe right extraProbes={} selected={} distance={:.3f} palm=({:.2f},{:.2f},{:.2f}) extra0=({:.2f},{:.2f},{:.2f}) extra1=({:.2f},{:.2f},{:.2f})",
+                    extraProbes.size(),picked<batch.pointCount?batch.points[picked].rule.point.pointId:0,picked<batch.pointCount?std::sqrt(pointSelection.distanceSquared):-1.f,
+                    probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z,first[0],first[1],first[2],second[0],second[1],second[2]);
+            }
+        }
         performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponProbeBoundsCandidates, selection.boundsCandidates);
         performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponProbeSurfaceCandidates, selection.surfaceCandidates);
         if (!selection.valid() || getCurrentWeaponGenerationKey() != currentGeneration) return false;

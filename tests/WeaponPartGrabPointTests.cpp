@@ -26,6 +26,19 @@ int main(){
     c[0].world={10,40,0};assert(p::nearest(c,api::Hand::Left,{0,39,0},12).point==c.size());
     assert(p::nearest(c,api::Hand::Left,{10,39,0},12).point==0);
     c[0].validWorld=false;assert(p::nearest(c,api::Hand::Left,{10,39,0},12).point==c.size());
+    c[0].validWorld=true;c[0].world={20,0,0};c[1].world={-20,0,0};
+    const std::array<std::array<float,3>,2> fingers{{{19,0,0},{-19.5f,0,0}}};
+    // 1.3 keeps palm-only acquisition even when finger probes are supplied.
+    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,fingers).point==c.size());
+    for(auto& candidate:c)candidate.rule.operating=true;
+    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,fingers,true).point==1);
+    assert(p::nearest(c,api::Hand::Right,{0,0,0},12,fingers,true).point==0);
+    assert(p::nearest(c,api::Hand::Left,{20,0,0},12,{},true).point==0); // palm remains available
+    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,{},true).point==c.size()); // missing fingers do not invent a point
+    const std::array<std::array<float,3>,2> distant{{{17,0,0},{-17,0,0}}};
+    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,distant,true).point==c.size()); // no radius inflation
+    assert(registry.replace(100,points,group,true)==Status::Ok&&registry.operatingFor(10)&&!registry.operatingFor(11));
+    assert(registry.replace(100,points,group)==Status::Ok&&!registry.operatingFor(10));
     registry.clear(100);assert(registry.copy(snapshot)==0);
     std::cout<<"PASS exact-point distance, midpoint exclusion, nearest location, hand filtering, current source pose and atomic owner lifecycle\n";
 }

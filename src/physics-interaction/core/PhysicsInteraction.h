@@ -34,6 +34,7 @@
 #include "physics-interaction/core/PendingForceGrabCommit.h"
 #include "physics-interaction/core/ForceGrabPolicy.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
+#include "physics-interaction/weapon/WeaponPartDrivePose.h"
 #include "physics-interaction/core/PhysicsLifecycleState.h"
 #include "physics-interaction/feedback/FeedbackHaptics.h"
 #include "physics-interaction/input/GrabInputIntentPolicy.h"
@@ -465,6 +466,9 @@ namespace rock
         void cancelBareFistMode(const char* reason);
         [[nodiscard]] const char* bareFistHandBlockReason(const PhysicsFrameContext& frame) const;
 
+        RE::NiAVObject* resolveProviderWeaponPartDriveNode(RE::NiNode*,std::uint64_t,
+            const ::rock::provider::RockProviderWeaponPartDriveTargetV1&,const WeaponEvidenceSnapshot&) const;
+        weapon_drive_pose::NativeFrame captureProviderPartQueryPose(RE::NiNode*,std::uint64_t) const;
         std::size_t applyProviderWeaponPartDrives(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,

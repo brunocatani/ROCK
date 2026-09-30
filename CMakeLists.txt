@@ -1049,6 +1049,10 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKWeaponInteractionQueryTests PRIVATE cxx_std_23)
   list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKWeaponInteractionQueryTests)
   add_rock_test(ROCKWeaponInteractionQueryTests)
+  add_executable(ROCKWeaponPartDrivePoseTests "${ROOT_DIR}/tests/WeaponPartDrivePoseTests.cpp")
+  target_compile_features(ROCKWeaponPartDrivePoseTests PRIVATE cxx_std_23)
+  list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKWeaponPartDrivePoseTests)
+  add_rock_test(ROCKWeaponPartDrivePoseTests)
 
   add_executable(ROCKPerformanceProfilerTests
     "${ROOT_DIR}/tests/PerformanceProfilerTests.cpp"

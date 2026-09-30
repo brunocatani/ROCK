@@ -88,7 +88,7 @@ int main() {
     }
     verify(touch::table(),touch::kSupportedPermissions);
     verify(weapon::tableV1_1(),weapon::kSupportedPermissions);
-    verify(weaponparts::tableV1_3(),weaponparts::kSupportedPermissions);
+    verify(weaponparts::tableV1_4(),weaponparts::kSupportedPermissions);
     {
         const InterfaceDescriptorV1 *oldParts{},*newParts{};
         for(const auto minor:{0u,1u}) {
@@ -107,7 +107,12 @@ int main() {
         const auto* points=static_cast<const weaponparts::v1_3::Api*>(pointed->table);weaponparts::v1_3::GrabPoint point;
         assert(points->setGrabPoints(79,&point,1)==Status::Ok);
         assert(points->v1_2.clearCollisionSuppression(78)==Status::Ok&&points->v1_2.v1.clearWeaponPartTargetsV1(77)==Status::Ok);
-        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,1,4,sizeof(*points),&result)==Status::UnsupportedMinor);
+        const InterfaceDescriptorV1* operating{};
+        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,1,4,sizeof(weaponparts::v1_4::Api),&operating)==Status::Ok&&operating==pointed);
+        const auto* operatingPoints=static_cast<const weaponparts::v1_4::Api*>(operating->table);
+        assert(operatingPoints->setOperatingGrabPoints(79,&point,1)==Status::Ok);
+        assert(operatingPoints->v1_3.setGrabPoints(79,&point,1)==Status::Ok&&operatingPoints->v1_3.clearGrabPoints(77)==Status::Ok);
+        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,1,5,sizeof(*operatingPoints),&result)==Status::UnsupportedMinor);
         assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,2,0,sizeof(*points),&result)==Status::UnsupportedMajor);
         const std::array previous{discovery::RegisteredInterface{{40,InterfaceId::WeaponParts,1,1,sizeof(weaponparts::ApiV1),1,0,0,&api->v1},3}};
         assert(discovery::query(previous,InterfaceId::WeaponParts,1,2,sizeof(*api),&result)==Status::UnsupportedMinor);

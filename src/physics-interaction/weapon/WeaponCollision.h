@@ -29,6 +29,7 @@
 #include "physics-interaction/weapon/WeaponTriangleIndex.h"
 #include "physics-interaction/weapon/WeaponScenePath.h"
 #include "physics-interaction/weapon/WeaponInteractionQuery.h"
+#include "physics-interaction/weapon/WeaponPartDrivePose.h"
 #include "api/WeaponPartGrabPoints.h"
 
 #include "RE/Havok/hknpBody.h"
@@ -355,7 +356,9 @@ namespace rock
             float probeRadiusGame,
             WeaponInteractionContact& outContact,
             InteractionQueryBatch& batch,
-            api::Hand hand = api::Hand::None) const;
+            api::Hand hand = api::Hand::None,
+            const weapon_drive_pose::NativeFrame* operatingPose=nullptr,
+            std::span<const std::array<float,3>> extraProbes={},bool operatingOnly=false) const;
 
         bool tryFindCurrentWeaponSurfaceNearPoint(
             const RE::NiAVObject* currentWeaponRoot,

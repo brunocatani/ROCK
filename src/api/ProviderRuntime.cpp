@@ -3231,7 +3231,7 @@ namespace rock::provider
     std::uint32_t copyWeaponPartDriveTargetsV1(
         RockProviderWeaponPartDriveTargetV1* outTargets,
         std::uint32_t maxTargets,
-        std::uint64_t* outOwnerTokens)
+        std::uint64_t* outOwnerTokens,bool pruneExpired)
     {
         if (!outTargets || maxTargets == 0) {
             return 0;
@@ -3240,9 +3240,9 @@ namespace rock::provider
         const auto frameIndex = currentProviderFrameIndex();
         std::uint32_t copied = 0;
         std::scoped_lock lock(s_weaponPartMutex);
-        pruneExpiredWeaponPartDrivesLocked(frameIndex);
+        if(pruneExpired)pruneExpiredWeaponPartDrivesLocked(frameIndex);
         for (const auto& slot : s_weaponPartDrives) {
-            if (!slot.active) {
+            if (!slot.active || !provider_lease_policy::isActive(frameIndex,slot.expiresAfterFrame)) {
                 continue;
             }
             if (copied >= maxTargets) {

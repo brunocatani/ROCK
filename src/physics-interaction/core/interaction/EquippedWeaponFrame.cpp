@@ -5,6 +5,7 @@
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/telemetry/ScopeTransitionTelemetry.h"
+#include "api/ProviderRuntimeServices.h"
 
 // Equipped-weapon frame: transitions, the per-frame equipped weapon update, authored primary grip runtime, handling settings, and shoulder sheath/retrieve.
 
@@ -438,7 +439,7 @@ namespace rock
                 }
             };
 
-            auto consumeWeaponContactForHand = [&](bool isLeft, const HandFrameInput& handInput, bool probeAllowed, WeaponInteractionContact& outContact, WeaponCollision::InteractionQueryBatch& interactionQueries) {
+            auto consumeWeaponContactForHand = [&](bool isLeft, const HandFrameInput& handInput, bool probeAllowed, WeaponInteractionContact& outContact, WeaponCollision::InteractionQueryBatch& interactionQueries,const weapon_drive_pose::NativeFrame* operatingPose) {
                 auto& bodyIdAtomic = isLeft ? _weaponContact.left.bodyId : _weaponContact.right.bodyId;
                 auto& missedFrames = isLeft ? _weaponContact.left.missedFrames : _weaponContact.right.missedFrames;
                 auto& acquisitionState = _equipped.weaponInteractionAcquisitionStates[isLeft ? 0u : 1u];
@@ -453,20 +454,32 @@ namespace rock
                     computeGrabLegacyPalmPivotAWorldFromHandBasis(
                         handInput.rawHandWorld,
                         isLeft);
-                const bool touchObserved = weaponNode &&
+                std::array<std::array<float,3>,3> extraProbes{};std::size_t extraCount=0;
+                if(operatingPose&&!handInput.disabled){
+                    grab_pinch_pocket_policy::FingerFrame fingers;
+                    if((isLeft?_leftHand:_rightHand).tryGetPinchFingerFrame(fingers)){
+                        extraProbes[extraCount++]={fingers.thumbTip.x,fingers.thumbTip.y,fingers.thumbTip.z};
+                        extraProbes[extraCount++]={fingers.indexTip.x,fingers.indexTip.y,fingers.indexTip.z};
+                    }
+                    if(probeAllowed)extraProbes[extraCount++]={handInput.grabAnchorWorld.x,handInput.grabAnchorWorld.y,handInput.grabAnchorWorld.z};
+                }
+                const bool operatingObserved=operatingPose&&!handInput.disabled&&_weaponCollision.tryFindInteractionContactNearPoint(
+                    weaponNode,legacyPalmPivotWorld,probeAllowed?g_rockConfig.rockWeaponInteractionProbeRadius:g_rockConfig.rockWeaponInteractionTouchRadius,
+                    outContact,interactionQueries,isLeft?api::Hand::Left:api::Hand::Right,operatingPose,std::span(extraProbes).first(extraCount),true);
+                const bool touchObserved = !operatingObserved&&weaponNode &&
                     _weaponCollision.tryFindInteractionContactNearPoint(
                         weaponNode,
                         legacyPalmPivotWorld,
                         g_rockConfig.rockWeaponInteractionTouchRadius,
-                        outContact, interactionQueries, isLeft?api::Hand::Left:api::Hand::Right);
-                if (touchObserved) {
+                        outContact, interactionQueries, isLeft?api::Hand::Left:api::Hand::Right,operatingPose);
+                if (operatingObserved||touchObserved) {
                     publishWeaponInteractionContact(isLeft, outContact);
                 } else if (weaponNode && probeAllowed) {
                     if (_weaponCollision.tryFindInteractionContactNearPoint(
                             weaponNode,
                             handInput.grabAnchorWorld,
                             g_rockConfig.rockWeaponInteractionProbeRadius,
-                            outContact, interactionQueries, isLeft?api::Hand::Left:api::Hand::Right)) {
+                            outContact, interactionQueries, isLeft?api::Hand::Left:api::Hand::Right,operatingPose)) {
                         publishWeaponInteractionContact(isLeft, outContact);
                         if (g_rockConfig.rockDebugVerboseLogging && ++_diagnostics.weaponInteractionProbeLogCounter >= 90) {
                             _diagnostics.weaponInteractionProbeLogCounter = 0;
@@ -646,12 +659,14 @@ namespace rock
             if (weaponContactQueriesRequired) {
                 performance_profiler::addCounter(performance_profiler::Counter::WeaponProbeFramesEnabled);
                 WeaponCollision::InteractionQueryBatch interactionQueries;
+                std::optional<weapon_drive_pose::NativeFrame> operatingPose;
+                if(provider::runtime::hasOperatingGrabPoints(currentWeaponGenerationKey))operatingPose.emplace(captureProviderPartQueryPose(weaponNode,currentWeaponGenerationKey));
                 leftWeaponContactSource = consumeWeaponContactForHand(
-                    true, frame.left, true, leftWeaponContact, interactionQueries);
+                    true, frame.left, true, leftWeaponContact, interactionQueries,operatingPose?&*operatingPose:nullptr);
                 const bool rightWeaponContactProbeAllowed =
                     _twoHandedGrip.isPartCarryActive() || firingHandIsLeft;
                 (void)consumeWeaponContactForHand(false, frame.right,
-                    rightWeaponContactProbeAllowed, rightWeaponContact, interactionQueries);
+                    rightWeaponContactProbeAllowed, rightWeaponContact, interactionQueries,operatingPose?&*operatingPose:nullptr);
             } else {
                 performance_profiler::addCounter(performance_profiler::Counter::WeaponProbeFramesSkipped);
                 // Drain contact notifications and reset acquisition provenance

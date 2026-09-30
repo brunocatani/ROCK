@@ -85,7 +85,7 @@ namespace rock::provider
     std::uint32_t copyWeaponPartDriveTargetsV1(
         RockProviderWeaponPartDriveTargetV1* outTargets,
         std::uint32_t maxTargets,
-        std::uint64_t* outOwnerTokens = nullptr);
+        std::uint64_t* outOwnerTokens = nullptr,bool pruneExpired = true);
     std::uint32_t currentExternalBodyCount();
     bool resolveTouchGrabTargetV1(
         std::uint32_t bodyId,
