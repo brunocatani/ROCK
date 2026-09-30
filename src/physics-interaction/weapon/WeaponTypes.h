@@ -246,6 +246,14 @@ namespace rock
         std::uint32_t attachPointFormId{ 0 };
     };
 
+    struct WeaponGrabPointLocation {
+        std::uint64_t ownerToken{};
+        std::uint32_t groupId{};
+        std::uint64_t sourceKey{};
+        std::uint32_t pointId{};
+        RE::NiPoint3 pointInSource{};
+    };
+
     struct WeaponInteractionContact
     {
         bool valid{ false };
@@ -268,6 +276,7 @@ namespace rock
         RE::NiAVObject* sourceRoot{ nullptr };
         std::uint64_t weaponGenerationKey{ 0 };
         float probeDistanceGame{ 0.0f };
+        WeaponGrabPointLocation grabPoint;
         std::uint32_t sequence{ 0 };
         WeaponInteractionAcquisitionSource acquisitionSource{ WeaponInteractionAcquisitionSource::None };
     };

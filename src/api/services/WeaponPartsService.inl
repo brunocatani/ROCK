@@ -352,3 +352,22 @@
             maxResults);
         return RockProviderResultV1::Ok;
     }
+
+    api::Status setWeaponPartGrabPoints(api::OwnerToken owner,std::span<const api::weaponparts::v1_3::GrabPoint> points) {
+        for(const auto& p:points)if(!resolveSourceKey(p.weaponGenerationKey,p.sourceKey))return api::Status::GenerationMismatch;
+        std::scoped_lock lock(s_weaponPartMutex);
+        return s_weaponPartGrabPoints.replace(owner,points,[&](const auto& p){
+            return std::any_of(s_weaponPartTargets.begin(),s_weaponPartTargets.end(),[&](const auto& s){
+                return s.active&&s.ownerToken==owner&&s.target.groupId==p.groupId&&s.target.weaponGenerationKey==p.weaponGenerationKey&&
+                    s.target.grabMode==RockProviderWeaponPartGrabModeV1::AttachOnly;
+            });
+        });
+    }
+    api::Status clearWeaponPartGrabPoints(api::OwnerToken owner) {
+        std::scoped_lock lock(s_weaponPartMutex);s_weaponPartGrabPoints.clear(owner);return api::Status::Ok;
+    }
+    std::size_t copyWeaponPartPointSelection(std::span<weapon_part_runtime::Target> targets,std::span<weapon_part_points::OwnedPoint> points,std::size_t& pointCount) {
+        std::scoped_lock lock(s_weaponPartMutex);pointCount=s_weaponPartGrabPoints.copy(points);std::size_t count=0;
+        if(pointCount)for(const auto& slot:s_weaponPartTargets)if(slot.active){if(count==targets.size())break;targets[count++]=toRuntimeTarget(slot);}
+        return count;
+    }

@@ -5,10 +5,15 @@
 #include <ROCK/GrabV1_1.h>
 #include <ROCK/GrabV1_3.h>
 #include "WeaponSourceCatalog.h"
+#include "WeaponPartGrabPoints.h"
 #include "ProviderRuntimeTypes.h"
 #include "OwnerBindingPolicy.h"
 
+namespace rock::weapon_part_runtime {struct Target;}
 namespace rock::provider::runtime {
+    api::Status setWeaponPartGrabPoints(api::OwnerToken,std::span<const api::weaponparts::v1_3::GrabPoint>);
+    api::Status clearWeaponPartGrabPoints(api::OwnerToken);
+    std::size_t copyWeaponPartPointSelection(std::span<weapon_part_runtime::Target>,std::span<weapon_part_points::OwnedPoint>,std::size_t& pointCount);
     api::Status setHeldObjectTarget(api::OwnerToken,const api::grab::v1_3::HeldObjectTarget&);
     api::Status clearHeldObjectTarget(api::OwnerToken,api::Hand);
     api::Status getHeldObjectPose(api::OwnerToken,api::Hand,api::grab::v1_3::HeldObjectPose&);

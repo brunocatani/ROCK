@@ -1,4 +1,6 @@
 #include "physics-interaction/weapon/WeaponCollisionInternal.h"
+#include "api/ProviderRuntimeServices.h"
+#include "api/ROCKProviderApiInternal.h"
 
 // Read-side snapshots and queries: bounds, compound geometry, contacts, support-grip evidence views, surface probes, profile evidence, and emitters.
 
@@ -8,7 +10,8 @@ namespace rock
         const RE::NiAVObject* currentWeaponRoot,
         std::span<const weapon_part_runtime::Target> targets,
         std::span<const std::uint32_t> candidateBodyIds,
-        std::span<RE::NiPoint3> outPositions) const
+        std::span<RE::NiPoint3> outPositions,
+        std::span<const WeaponGrabPointLocation> grabPoints) const
     {
         const auto generation = getCurrentWeaponGenerationKey();
         if (!currentWeaponRoot || generation == 0 || outPositions.empty() || candidateBodyIds.empty() ||
@@ -22,6 +25,21 @@ namespace rock
 
         std::array<std::uintptr_t, MAX_WEAPON_BODIES> markedSources{};
         std::size_t count = 0;
+        for(std::size_t i=0;i<grabPoints.size()&&i<candidateBodyIds.size()&&count<outPositions.size();++i) {
+            const auto& point=grabPoints[i];
+            if(!point.pointId||candidateBodyIds[i]==weapon_part_runtime::kInvalidBodyId)continue;
+            if(i&&grabPoints[0].ownerToken==point.ownerToken&&grabPoints[0].groupId==point.groupId&&grabPoints[0].pointId==point.pointId&&candidateBodyIds[0]!=weapon_part_runtime::kInvalidBodyId)continue;
+            const auto registered=std::any_of(targets.begin(),targets.end(),[&](const auto& target){
+                return target.ownerToken==point.ownerToken&&target.groupId==point.groupId&&
+                    weapon_part_runtime::targetAppliesToGeneration(target,generation)&&target.grabMode==weapon_part_runtime::GrabMode::AttachOnly;
+            });
+            if(!registered)continue;
+            auto* source=reinterpret_cast<RE::NiAVObject*>(provider::runtime::resolveSourceKey(generation,point.sourceKey));
+            RE::NiTransform world{};
+            if(!source||!tryResolveDescendantWorldTransform(currentWeaponRoot,currentWeaponRoot->world,source,world)||!f4vr::isNodeVisible(source))continue;
+            const auto position=transform_math::localPointToWorld(world,point.pointInSource);
+            if(weapon_interaction_query::finitePoint(position))outPositions[count++]=position;
+        }
         for (const auto& instance : activeWeaponBodies()) {
             if (count == outPositions.size() || count == markedSources.size()) {
                 break;
@@ -35,6 +53,10 @@ namespace rock
                     instance.body.getBodyId().value) == candidateBodyIds.end()) {
                 continue;
             }
+            bool authored=false;
+            for(std::size_t i=0;i<grabPoints.size()&&i<candidateBodyIds.size();++i)
+                if(grabPoints[i].pointId&&candidateBodyIds[i]==instance.body.getBodyId().value)authored=true;
+            if(authored)continue; // A missing authored frame must never fall back to a part center.
             const auto source = reinterpret_cast<std::uintptr_t>(instance.sourceNode);
             if (std::find(markedSources.begin(), markedSources.begin() + count, source) !=
                 markedSources.begin() + count) {
@@ -1232,7 +1254,8 @@ namespace rock
         const RE::NiPoint3& probeWorldPoint,
         float probeRadiusGame,
         WeaponInteractionContact& outContact,
-        InteractionQueryBatch& batch) const
+        InteractionQueryBatch& batch,
+        api::Hand hand) const
     {
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponContactProbe);
         outContact = {};
@@ -1267,12 +1290,47 @@ namespace rock
                     batch.instances[batch.count++] = &instance;
                 }
             }
+            std::array<weapon_part_points::OwnedPoint,weapon_part_points::kCapacity> rules{};
+            std::size_t ruleCount{};
+            std::array<weapon_part_runtime::Target,provider::ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1> targets{};
+            const auto targetCount=provider::runtime::copyWeaponPartPointSelection(targets,rules,ruleCount);
+            for(std::size_t p=0;p<ruleCount;++p) {
+                if(rules[p].point.weaponGenerationKey!=currentGeneration)continue;
+                auto& candidate=batch.points[batch.pointCount++];candidate.rule=rules[p];
+                auto* source=reinterpret_cast<RE::NiAVObject*>(provider::runtime::resolveSourceKey(currentGeneration,rules[p].point.sourceKey));
+                RE::NiTransform world{};
+                if(!source||!tryResolveDescendantWorldTransform(weaponNode,rootWorld,source,world)||!f4vr::isNodeVisible(source))continue;
+                const auto* v=rules[p].point.pointInSource;const auto position=transform_math::localPointToWorld(world,RE::NiPoint3{v[0],v[1],v[2]});candidate.world={position.x,position.y,position.z};
+                candidate.validWorld=weapon_interaction_query::finitePoint(position);
+            }
+            for(std::size_t i=0;batch.pointCount&&i<batch.count;++i) {
+                const auto& instance=*batch.instances[i];
+                const auto resolution=weapon_part_runtime::resolveTarget(std::span(targets).first(targetCount),{
+                    .weaponGenerationKey=currentGeneration,.bodyId=instance.body.getBodyId().value,
+                    .sourceRoot=reinterpret_cast<std::uintptr_t>(instance.sourceNode),.sourceName=instance.sourceName,
+                    .partKind=instance.semantic.partKind,.reloadRole=instance.semantic.reloadRole,
+                    .supportRole=instance.semantic.supportGripRole,.socketRole=instance.semantic.socketRole,.actionRole=instance.semantic.actionRole});
+                if(!resolution.matched||resolution.grabMode!=weapon_part_runtime::GrabMode::AttachOnly)continue;
+                for(std::size_t p=0;p<batch.pointCount;++p) {
+                    auto& candidate=batch.points[p];
+                    if(candidate.rule.owner!=resolution.ownerToken||candidate.rule.point.groupId!=resolution.groupId)continue;
+                    batch.pointRestricted[i]=true;
+                    if(candidate.part==~std::size_t{0})candidate.part=i;
+                }
+            }
             performance_profiler::addCounter(performance_profiler::Counter::WeaponProbePoseBatches);
             performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponProbePoseParts, batch.count);
         }
 
-        const auto selection = weapon_interaction_query::find(
-            {batch.parts.data(), batch.count}, probeWorldPoint, probeRadiusGame);
+        weapon_interaction_query::Selection selection;
+        const auto pointSelection=weapon_part_points::nearest(std::span(batch.points).first(batch.pointCount),hand,
+            {probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z},probeRadiusGame);
+        const auto picked=pointSelection.point;
+        const bool handMask=hand==api::Hand::Left||hand==api::Hand::Right;
+        if(picked<batch.pointCount){selection.part=batch.points[picked].part;selection.rank.distanceSquaredGame=pointSelection.distanceSquared;}
+        if(!selection.valid())selection=weapon_interaction_query::find(
+            {batch.parts.data(),batch.count},probeWorldPoint,probeRadiusGame,
+            handMask?std::span<const bool>(batch.pointRestricted).first(batch.count):std::span<const bool>{});
         performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponProbeBoundsCandidates, selection.boundsCandidates);
         performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponProbeSurfaceCandidates, selection.surfaceCandidates);
         if (!selection.valid() || getCurrentWeaponGenerationKey() != currentGeneration) return false;
@@ -1306,6 +1364,10 @@ namespace rock
         outContact.sourceRoot = bestInstance->sourceNode;
         outContact.weaponGenerationKey = currentGeneration;
         outContact.probeDistanceGame = std::sqrt(bestRank.distanceSquaredGame);
+        if(picked<batch.pointCount) {
+            const auto& point=batch.points[picked].rule.point;
+            outContact.grabPoint={batch.points[picked].rule.owner,point.groupId,point.sourceKey,point.pointId,{point.pointInSource[0],point.pointInSource[1],point.pointInSource[2]}};
+        }
         return true;
     }
 }

@@ -900,6 +900,7 @@ namespace rock
             // this frame and weapon generation. No scene pointers cross phases.
             std::array<std::uint32_t, 2> partIndicatorBodyIds{
                 weapon_part_runtime::kInvalidBodyId, weapon_part_runtime::kInvalidBodyId };
+            std::array<WeaponGrabPointLocation,2> partIndicatorPoints{};
             std::uint64_t partIndicatorFrame{ 0 };
             std::uint64_t partIndicatorGeneration{ 0 };
         };

@@ -1,5 +1,5 @@
 #include "SnapshotReads.h"
-#include <ROCK/WeaponPartsV1_2.h>
+#include <ROCK/WeaponPartsV1_3.h>
 #include "api/WeaponPartCollisionService.h"
 #include "WeaponPartsMarshalling.h"
 #include <ROCK/Discovery.h>
@@ -163,6 +163,16 @@ Status ROCK_CALL copyWeaponPartDriveApplicationResultsV1(std::uint64_t ownerToke
 }
 
 #include "WeaponPartsEndpoints.inl"
+Status ROCK_CALL setGrabPoints(OwnerToken owner,const v1_3::GrabPoint* points,std::uint32_t count) noexcept {
+    return invoke(owner,kInterfaceId,2,true,[&]() -> Status {
+        if(!count||count>v1_3::kMaxGrabPoints||!points)return Status::InvalidArgument;
+        for(std::uint32_t i=0;i<count;++i)if(const auto s=checkInput(points+i);s!=Status::Ok)return s;
+        provider::runtime::refreshSources();return provider::runtime::setWeaponPartGrabPoints(owner,{points,count});
+    });
+}
+Status ROCK_CALL clearGrabPoints(OwnerToken owner) noexcept {
+    return invoke(owner,kInterfaceId,2,true,[&]{return provider::runtime::clearWeaponPartGrabPoints(owner);});
+}
 Status ROCK_CALL setCollisionSuppression(OwnerToken owner,const v1_2::CollisionSuppression* request) noexcept {
     return invoke(owner,kInterfaceId,2,true,[&]() -> Status {
         if(const auto status=checkInput(request);status!=Status::Ok)return status;
@@ -198,5 +208,8 @@ const ApiV1& table() noexcept {
 }
 const v1_2::Api& tableV1_2() noexcept {
     static const v1_2::Api value{table(),&setCollisionSuppression,&clearCollisionSuppression};return value;
+}
+const v1_3::Api& tableV1_3() noexcept {
+    static const v1_3::Api value{tableV1_2(),&setGrabPoints,&clearGrabPoints};return value;
 }
 }

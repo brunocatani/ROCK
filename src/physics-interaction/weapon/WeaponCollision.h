@@ -29,6 +29,7 @@
 #include "physics-interaction/weapon/WeaponTriangleIndex.h"
 #include "physics-interaction/weapon/WeaponScenePath.h"
 #include "physics-interaction/weapon/WeaponInteractionQuery.h"
+#include "api/WeaponPartGrabPoints.h"
 
 #include "RE/Havok/hknpBody.h"
 #include "RE/Havok/hknpBodyCinfo.h"
@@ -284,7 +285,8 @@ namespace rock
             const RE::NiAVObject* currentWeaponRoot,
             std::span<const weapon_part_runtime::Target> targets,
             std::span<const std::uint32_t> candidateBodyIds,
-            std::span<RE::NiPoint3> outPositions) const;
+            std::span<RE::NiPoint3> outPositions,
+            std::span<const WeaponGrabPointLocation> grabPoints = {}) const;
         // Main-thread debug publication only. Returns the exact pending target
         // for one generated weapon body in the active bank.
         bool tryGetBodyTargetForDebug(std::uint32_t bodyId, RE::NiTransform& outTarget) const;
@@ -336,6 +338,9 @@ namespace rock
             std::size_t count = 0;
             std::array<weapon_interaction_query::Part, MAX_WEAPON_COLLISION_BODIES> parts{};
             std::array<const WeaponBodyInstance*, MAX_WEAPON_COLLISION_BODIES> instances{};
+            std::array<bool,MAX_WEAPON_COLLISION_BODIES> pointRestricted{};
+            std::array<weapon_part_points::Candidate,weapon_part_points::kCapacity> points{};
+            std::size_t pointCount{};
         };
 
         bool tryFindInteractionContactNearPoint(
@@ -349,7 +354,8 @@ namespace rock
             const RE::NiPoint3& probeWorldPoint,
             float probeRadiusGame,
             WeaponInteractionContact& outContact,
-            InteractionQueryBatch& batch) const;
+            InteractionQueryBatch& batch,
+            api::Hand hand = api::Hand::None) const;
 
         bool tryFindCurrentWeaponSurfaceNearPoint(
             const RE::NiAVObject* currentWeaponRoot,

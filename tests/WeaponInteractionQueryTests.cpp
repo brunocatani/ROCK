@@ -155,5 +155,10 @@ namespace
 int main()
 {
     parity();
+    const auto sources=makeSources(1);const Batch batch(sources);
+    const auto probe= sources[0].world.translate;
+    assert(query::find(std::span(batch.parts).first(batch.count),probe,2).valid());
+    const std::array<bool,1> restricted{true};
+    assert(!query::find(std::span(batch.parts).first(batch.count),probe,2,restricted).valid());
     measure();
 }

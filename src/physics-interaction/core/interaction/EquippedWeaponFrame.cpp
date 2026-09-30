@@ -458,7 +458,7 @@ namespace rock
                         weaponNode,
                         legacyPalmPivotWorld,
                         g_rockConfig.rockWeaponInteractionTouchRadius,
-                        outContact, interactionQueries);
+                        outContact, interactionQueries, isLeft?api::Hand::Left:api::Hand::Right);
                 if (touchObserved) {
                     publishWeaponInteractionContact(isLeft, outContact);
                 } else if (weaponNode && probeAllowed) {
@@ -466,7 +466,7 @@ namespace rock
                             weaponNode,
                             handInput.grabAnchorWorld,
                             g_rockConfig.rockWeaponInteractionProbeRadius,
-                            outContact, interactionQueries)) {
+                            outContact, interactionQueries, isLeft?api::Hand::Left:api::Hand::Right)) {
                         publishWeaponInteractionContact(isLeft, outContact);
                         if (g_rockConfig.rockDebugVerboseLogging && ++_diagnostics.weaponInteractionProbeLogCounter >= 90) {
                             _diagnostics.weaponInteractionProbeLogCounter = 0;
@@ -801,6 +801,7 @@ namespace rock
                 !rightHandAvailableForAcquisition ? weapon_part_runtime::kInvalidBodyId :
                     indicatorBodyId(rightWeaponContact, rightHandInteractionState),
             };
+            _equipped.partIndicatorPoints={leftWeaponContact.grabPoint,rightWeaponContact.grabPoint};
             _equipped.partIndicatorFrame = runtime.frameIndex;
             _equipped.partIndicatorGeneration = currentWeaponGenerationKey;
 
@@ -1921,7 +1922,7 @@ namespace rock
                 overlayFrame.count += static_cast<std::uint32_t>(
                     _weaponCollision.collectAttachOnlyGripIndicators(weaponNode,
                         std::span(partTargets).first(targetCount), candidateBodyIds,
-                        std::span(overlayFrame.positions).subspan(overlayFrame.count)));
+                        std::span(overlayFrame.positions).subspan(overlayFrame.count),_equipped.partIndicatorPoints));
             }
         }
 

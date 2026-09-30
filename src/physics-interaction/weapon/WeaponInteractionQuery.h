@@ -56,11 +56,12 @@ namespace rock::weapon_interaction_query
         bool valid() const { return part != (std::numeric_limits<std::size_t>::max)(); }
     };
 
-    inline Selection find(std::span<const Part> parts, const RE::NiPoint3& point, float radiusGame)
+    inline Selection find(std::span<const Part> parts, const RE::NiPoint3& point, float radiusGame, std::span<const bool> excluded = {})
     {
         Selection result{};
         if (!finitePoint(point) || !std::isfinite(radiusGame) || radiusGame <= 0.0f) return result;
         for (std::size_t i = 0; i < parts.size(); ++i) {
+            if(i<excluded.size()&&excluded[i])continue;
             const auto& part = parts[i];
             if (!part.triangles || !part.index) continue;
             const float localRadius = radiusGame / part.absoluteScale;

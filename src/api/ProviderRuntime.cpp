@@ -430,6 +430,7 @@ namespace rock::provider::runtime
     };
 
     std::mutex s_weaponPartMutex;
+    weapon_part_points::Registry s_weaponPartGrabPoints;
     std::array<WeaponPartTargetSlot, ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1> s_weaponPartTargets{};
     std::array<WeaponPartDriveSlot, ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> s_weaponPartDrives{};
 
@@ -1060,6 +1061,7 @@ namespace rock::provider::runtime
 
     void clearWeaponPartTargetsForOwnerLocked(std::uint64_t ownerToken)
     {
+        s_weaponPartGrabPoints.clear(ownerToken);
         for (auto& slot : s_weaponPartTargets) {
             if (slot.active && slot.ownerToken == ownerToken) {
                 slot = {};
@@ -2814,6 +2816,7 @@ namespace rock::provider
                 }
             }
             s_weaponPartTargets = {};
+            s_weaponPartGrabPoints = {};
             s_weaponPartDrives = {};
         }
         {
