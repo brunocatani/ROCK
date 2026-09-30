@@ -170,6 +170,9 @@ namespace rock
         api::Status queryHeldPlacementState(api::grab::v1_1::HeldPlacementState& out) const;
         api::Status submitHeldPlacementIntent(api::OwnerToken owner, const api::grab::v1_1::HeldPlacementIntent& intent);
         void clearHeldPlacementIntent(api::OwnerToken owner);
+        api::Status setHeldObjectTarget(api::OwnerToken,const api::grab::v1_3::HeldObjectTarget&);
+        api::Status clearHeldObjectTarget(api::OwnerToken,api::Hand);
+        api::Status getHeldObjectPose(api::OwnerToken,api::Hand,api::grab::v1_3::HeldObjectPose&) const;
         bool isProviderReady() const
         {
             return _lifecycle.initialized.load(std::memory_order_acquire) &&

@@ -6,6 +6,7 @@
 #include <ROCK/Collision.h>
 #include <ROCK/Grab.h>
 #include <ROCK/GrabV1_2.h>
+#include <ROCK/GrabV1_3.h>
 #include <ROCK/Touch.h>
 #include <ROCK/Weapon.h>
 #include <ROCK/WeaponV1_1.h>
@@ -19,6 +20,7 @@
 #include <ROCK/Diagnostics.h>
 #include <ROCK/Configuration.h>
 namespace rock::api::core { const ApiV1& table() noexcept; }
+namespace rock::api::grab { const v1_3::Api& tableV1_3() noexcept; }
 namespace rock::api::hands { const ApiV1& table() noexcept; }
 namespace rock::api::collision { const ApiV1& table() noexcept; }
 namespace rock::api::grab { const ApiV1& table() noexcept; const v1_1::Api& tableV1_1() noexcept; const v1_2::Api& tableV1_2() noexcept; }

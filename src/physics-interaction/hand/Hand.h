@@ -1,4 +1,6 @@
 #pragma once
+#include "physics-interaction/grab/HeldObjectTarget.h"
+#include "physics-interaction/native/HavokPairCollisionFilter.h"
 #include <span>
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
@@ -457,6 +459,10 @@ namespace rock
         // Frame-local view of the cached mesh, paired with its live physics transform.
         bool getHeldBodyContactMesh(RE::hknpWorld* world, std::span<const GrabLocalTriangle>& triangles, RE::NiTransform& meshWorld, const HeldContactMeshCache*& cache) const;
         std::uint64_t heldGrabIdentity() const { return isHolding() ? _grabFrame.traceId : 0; }
+        api::Status setHeldObjectTarget(api::OwnerToken,const api::grab::v1_3::HeldObjectTarget&,std::span<const std::uint32_t> weaponBodies);
+        api::Status clearHeldObjectTarget(api::OwnerToken);
+        bool readHeldObjectRoot(RE::hknpWorld*,RE::NiTransform&) const;
+        void flushConsumerObjectPairs(RE::hknpWorld*);
         bool getGrabPivotDebugSnapshot(RE::hknpWorld* world, GrabPivotDebugSnapshot& out) const;
         bool getGrabPocketNormalDebugSnapshot(RE::hknpWorld* world, GrabPocketNormalDebugSnapshot& out) const;
         bool getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const;
@@ -773,6 +779,14 @@ namespace rock
         struct GrabFrozenCommitInput;
         struct GrabPostFreezeInput;
         struct GrabConstraintCommitInput;
+        held_object_target::Lease _consumerObjectTarget{};
+        // Pair requests share the existing grab-drive mutex. Native pair
+        // reconciliation runs only at pre-collide, never in a provider call.
+        HavokPairCollisionLeaseSet _consumerPairLeases{};
+        std::array<HavokPairCollisionLeaseSet::DesiredPair,34> _consumerPairs{};
+        std::size_t _consumerPairCount{};
+        std::uint64_t _consumerPairsExpire{};
+        std::uint64_t runtimeFrameForObjectTarget() const;
         struct HeldDriveUpdate;
         bool validateSelectedGrab(
             RE::hknpWorld* world,

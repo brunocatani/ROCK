@@ -3,11 +3,15 @@
 #include <ROCK/WeaponV1_1.h>
 #include <ROCK/InputV1_1.h>
 #include <ROCK/GrabV1_1.h>
+#include <ROCK/GrabV1_3.h>
 #include "WeaponSourceCatalog.h"
 #include "ProviderRuntimeTypes.h"
 #include "OwnerBindingPolicy.h"
 
 namespace rock::provider::runtime {
+    api::Status setHeldObjectTarget(api::OwnerToken,const api::grab::v1_3::HeldObjectTarget&);
+    api::Status clearHeldObjectTarget(api::OwnerToken,api::Hand);
+    api::Status getHeldObjectPose(api::OwnerToken,api::Hand,api::grab::v1_3::HeldObjectPose&);
     api::Status getHeldPlacementState(api::grab::v1_1::HeldPlacementState& output);
     api::Status submitHeldPlacementIntent(api::OwnerToken owner, const api::grab::v1_1::HeldPlacementIntent& request);
     api::Status clearHeldPlacementIntent(api::OwnerToken owner);

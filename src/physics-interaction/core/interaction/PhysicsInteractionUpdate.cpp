@@ -1110,6 +1110,8 @@ namespace rock
         _weaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicWeaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicHandCollision.flushPendingPhysicsDrive(world, timing);
+        _rightHand.flushConsumerObjectPairs(world);
+        _leftHand.flushConsumerObjectPairs(world);
         if (performance_profiler::enabled()) {
             performance_profiler::observeValue(performance_profiler::ValueMetric::GeneratedHandBodies,
                 _rightHand.getHandColliderBodyCount() + _leftHand.getHandColliderBodyCount());

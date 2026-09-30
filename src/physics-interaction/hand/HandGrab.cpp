@@ -1,6 +1,7 @@
 #include "physics-interaction/hand/Hand.h"
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
 #include "physics-interaction/hand/HandGrabInternal.h"
+#include "api/ProviderRuntimeServices.h"
 
 #include "physics-interaction/body/BodyBoneColliderSet.h"
 #include "physics-interaction/native/HavokOffsets.h"
@@ -5212,6 +5213,7 @@ namespace rock
 
     void Hand::clearGrabAuthorityProxyRuntimeLocked()
     {
+        _consumerPairCount=0;
         _releaseObjectSample = {};
         _grabAuthorityProxyBhkWorld = nullptr;
         _grabAuthorityProxyHknpWorld = nullptr;
@@ -5258,6 +5260,7 @@ namespace rock
 
     void Hand::abandonGrabAuthorityProxyLocked()
     {
+        _consumerPairLeases.abandonWorld();
         _grabAuthorityProxy.reset();
         clearGrabAuthorityProxyRuntimeLocked();
     }
@@ -12459,6 +12462,57 @@ namespace rock
         return true;
     }
 
+    std::uint64_t Hand::runtimeFrameForObjectTarget() const {return runtime_state::currentFrame().frameIndex;}
+    bool Hand::readHeldObjectRoot(RE::hknpWorld* world,RE::NiTransform& root) const
+    {
+        RE::NiTransform body;
+        if(!isHolding()||!_savedObjectState.isValid()||
+            !tryGetGrabDriveObjectWorldTransform(world,_savedObjectState.bodyId,body))return false;
+        root=multiplyTransforms(body,invertTransform(_grabFrame.rootBodyLocal));
+        return isFiniteNiTransform(root);
+    }
+
+    api::Status Hand::setHeldObjectTarget(api::OwnerToken owner,const api::grab::v1_3::HeldObjectTarget& request,std::span<const std::uint32_t> weaponBodies)
+    {
+        if(!isHolding()||!getHeldRef()||getHeldRef()->GetFormID()!=request.referenceFormId)return api::Status::HandUnavailable;
+        if(_savedObjectState.targetKind!=grab_target::Kind::LooseObject||_heldObjectIsLooseWeapon||
+            _grabFrame.looseObjectSharedPeerTrace||!_activeConstraint.isValid())return api::Status::TargetUnavailable;
+        auto* root=getHeldRef()->Get3D();
+        if(!root||!std::isfinite(request.rootWorld.scale)||std::abs(request.rootWorld.scale-root->world.scale)>.001f)return api::Status::InvalidArgument;
+        for(const auto value:request.rootWorld.translate)if(!std::isfinite(value))return api::Status::InvalidArgument;
+        for(int row=0;row<3;++row)for(int other=0;other<3;++other) {
+            float dot=0;for(int c=0;c<3;++c)dot+=request.rootWorld.rotate[row*3+c]*request.rootWorld.rotate[other*3+c];
+            if(!std::isfinite(dot)||std::abs(dot-(row==other?1.f:0.f))>.001f)return api::Status::InvalidArgument;
+        }
+        const auto* r=request.rootWorld.rotate;
+        const float determinant=r[0]*(r[4]*r[8]-r[5]*r[7])-r[1]*(r[3]*r[8]-r[5]*r[6])+r[2]*(r[3]*r[7]-r[4]*r[6]);
+        if(determinant<.999f)return api::Status::InvalidArgument;
+        if(_heldBodyIds.size()*weaponBodies.size()>_consumerPairs.size())return api::Status::CapacityFull;
+        const auto status=_consumerObjectTarget.set(owner,heldGrabIdentity(),runtimeFrameForObjectTarget(),request);
+        if(status!=api::Status::Ok)return status;
+        std::scoped_lock lock(_grabAuthorityProxyMutex);
+        _consumerPairCount=0;_consumerPairsExpire=_consumerObjectTarget.expires;
+        for(const auto held:_heldBodyIds)for(const auto weapon:weaponBodies)_consumerPairs[_consumerPairCount++]={held,weapon,0};
+        return api::Status::Ok;
+    }
+
+    api::Status Hand::clearHeldObjectTarget(api::OwnerToken owner)
+    {
+        const auto result=_consumerObjectTarget.clear(owner,heldGrabIdentity(),runtimeFrameForObjectTarget());
+        if(result==api::Status::Ok){std::scoped_lock lock(_grabAuthorityProxyMutex);_consumerPairCount=0;}
+        return result;
+    }
+    void Hand::flushConsumerObjectPairs(RE::hknpWorld* world)
+    {
+        std::scoped_lock lock(_grabAuthorityProxyMutex);
+        if(world!=_grabAuthorityProxyHknpWorld||provider::runtime::currentGameFrameIndex()>_consumerPairsExpire)_consumerPairCount=0;
+        const auto result=_consumerPairLeases.reconcile(world,_consumerPairs.data(),_consumerPairCount);
+        if(_consumerPairCount&&(!result.filterAvailable||result.activePairCount!=_consumerPairCount)) {
+            _grabAuthorityProxyReleasePending.store(true,std::memory_order_release);
+            ROCK_LOG_SAMPLE_WARN(Hand,1000,"Held object connection pairs unavailable; releasing guided object");
+        }
+    }
+
     struct Hand::HeldDriveUpdate
     {
         RE::NiTransform proxyAuthorityWorld{};
@@ -12642,6 +12696,24 @@ namespace rock
                 ROCK_LOG_INFO(Hand, "{} OFFSET_ACQUIRE ended trace={} reason=shared-grip", handName(), _grabFrame.traceId);
                 _grabOffsetAcquisition = {};
             }
+        }
+        const bool consumerTarget=_consumerObjectTarget.current(heldGrabIdentity(),runtimeFrameForObjectTarget())&&
+            !_grabFrame.looseObjectSharedPeerTrace&&provider::runtime::authorize(_consumerObjectTarget.owner,api::grab::kInterfaceId,2,true)==api::Status::Ok;
+        if(!consumerTarget&&_consumerObjectTarget.owner) {
+            _consumerObjectTarget={};
+            std::scoped_lock lock(_grabAuthorityProxyMutex);_consumerPairCount=0;
+        }
+        if(consumerTarget) {
+            // Change only the queued proxy target. Frozen body/constraint
+            // relations, finite-force motors and collision stay ROCK-owned.
+            const auto& source=_consumerObjectTarget.target;
+            RE::NiTransform target;
+            for(int row=0;row<3;++row)for(int col=0;col<3;++col)target.rotate.entry[row][col]=source.rotate[row*3+col];
+            target.translate={source.translate[0],source.translate[1],source.translate[2]};target.scale=source.scale;
+            const auto bodyWorld=multiplyTransforms(target,_grabFrame.rootBodyLocal);
+            update.proxyAuthorityWorld=grab_frame_math::generatedProxyFromObjectWorld(bodyWorld,_grabFrame.proxyAuthorityBodyHandSpace);
+            update.proxyAuthoritySource="consumerHeldObjectTarget";
+            _grabOffsetAcquisition={};
         }
         const bool advancingOffset = _grabOffsetAcquisition.active;
         if (advancingOffset) {

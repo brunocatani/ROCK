@@ -16,6 +16,7 @@ Status ROCK_CALL placementClear(OwnerToken owner) noexcept {return owner==77 ? S
 }
 const v1_1::Api& tableV1_1() noexcept {static const v1_1::Api value{[] {ApiV1 old{};old.cancelInteractionCommandV1=&oldCancel;return old;}(),&placementRead,&placementSubmit,&placementClear};return value;}
 const v1_2::Api& tableV1_2() noexcept {static const v1_2::Api value{tableV1_1(),&setPoses,&clearPoses};return value;}
+const v1_3::Api& tableV1_3() noexcept {static const v1_3::Api value{tableV1_2()};return value;}
 const ApiV1& table() noexcept {return tableV1_2().v1_1.v1;}
 }
 namespace rock::api::touch { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }

@@ -50,7 +50,7 @@ int main() {
     verify(core::table(),core::kSupportedPermissions);
     verify(hands::table(),hands::kSupportedPermissions);
     verify(collision::table(),collision::kSupportedPermissions);
-    verify(grab::tableV1_2(),grab::kSupportedPermissions);
+    verify(grab::tableV1_3(),grab::kSupportedPermissions);
     {
         const InterfaceDescriptorV1 *oldGrab{}, *newGrab{};
         assert(ROCKAPI_QueryInterfaceV1(grab::kInterfaceId,1,0,sizeof(grab::ApiV1),&oldGrab)==Status::Ok);
@@ -59,6 +59,9 @@ int main() {
         const InterfaceDescriptorV1* defaults{};
         assert(ROCKAPI_QueryInterfaceV1(grab::kInterfaceId,1,2,sizeof(grab::v1_2::Api),&defaults)==Status::Ok);
         assert(defaults==oldGrab && defaults->requiredCoreMinor==0);
+        const InterfaceDescriptorV1* guided{};
+        assert(ROCKAPI_QueryInterfaceV1(grab::kInterfaceId,1,3,sizeof(grab::v1_3::Api),&guided)==Status::Ok);
+        assert(guided==oldGrab && guided->requiredCoreMinor==0);
         const auto* defaultsApi=static_cast<const grab::v1_2::Api*>(defaults->table);
         grab::v1_2::DefaultGrabPoses poses;
         poses.baseFormId=100; poses.left.flags=poses.right.flags=1;
