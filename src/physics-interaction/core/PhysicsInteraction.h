@@ -214,6 +214,7 @@ namespace rock
         }
         bool tryGetRootFlattenedHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
         void refreshProviderWeaponSources();
+        api::Status collectProviderWeaponCollisionBodies(std::uint64_t generation,std::span<const std::uint64_t> sources,std::span<std::uint32_t> bodies,std::uint32_t& count) const;
         api::Status queryProviderWeaponSourcePath(std::uint64_t generation,std::uint64_t key,std::uint64_t& parentKey,std::uint32_t& childIndex) const;
         api::Status queryProviderWeaponSourcePose(std::uint64_t generation,std::uint64_t key,provider::WeaponSourcePose&) const;
         std::uintptr_t resolveProviderWeaponSource(std::uint64_t generation, std::uint64_t key) const;

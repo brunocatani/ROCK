@@ -40,6 +40,7 @@ namespace rock::collision_suppression_registry
         NativeGrenadeThrow = 6,
         InvalidFinalPose = 7,
         ConsumerStorage = 9,
+        ConsumerWeaponPart = 10,
     };
 
     inline constexpr std::uint32_t ownerBit(CollisionSuppressionOwner owner) { return 1u << static_cast<std::uint32_t>(owner); }

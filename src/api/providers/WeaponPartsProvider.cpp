@@ -1,4 +1,6 @@
 #include "SnapshotReads.h"
+#include <ROCK/WeaponPartsV1_2.h>
+#include "api/WeaponPartCollisionService.h"
 #include "WeaponPartsMarshalling.h"
 #include <ROCK/Discovery.h>
 #include "EventBoundary.h"
@@ -161,6 +163,15 @@ Status ROCK_CALL copyWeaponPartDriveApplicationResultsV1(std::uint64_t ownerToke
 }
 
 #include "WeaponPartsEndpoints.inl"
+Status ROCK_CALL setCollisionSuppression(OwnerToken owner,const v1_2::CollisionSuppression* request) noexcept {
+    return invoke(owner,kInterfaceId,2,true,[&]() -> Status {
+        if(const auto status=checkInput(request);status!=Status::Ok)return status;
+        return weapon_part_collision::set(owner,*request);
+    });
+}
+Status ROCK_CALL clearCollisionSuppression(OwnerToken owner) noexcept {
+    return invoke(owner,kInterfaceId,2,true,[&]{return weapon_part_collision::clear(owner);});
+}
 }
 const ApiV1& table() noexcept {
     static const ApiV1 value{
@@ -184,5 +195,8 @@ const ApiV1& table() noexcept {
         &querySourcePath,
     };
     return value;
+}
+const v1_2::Api& tableV1_2() noexcept {
+    static const v1_2::Api value{table(),&setCollisionSuppression,&clearCollisionSuppression};return value;
 }
 }

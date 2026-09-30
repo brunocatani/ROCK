@@ -88,7 +88,26 @@ int main() {
     }
     verify(touch::table(),touch::kSupportedPermissions);
     verify(weapon::tableV1_1(),weapon::kSupportedPermissions);
-    verify(weaponparts::table(),weaponparts::kSupportedPermissions);
+    verify(weaponparts::tableV1_2(),weaponparts::kSupportedPermissions);
+    {
+        const InterfaceDescriptorV1 *oldParts{},*newParts{};
+        for(const auto minor:{0u,1u}) {
+            assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,1,minor,sizeof(weaponparts::ApiV1),&oldParts)==Status::Ok);
+            assert(oldParts->requiredCoreMinor==0);
+            assert(static_cast<const weaponparts::ApiV1*>(oldParts->table)->clearWeaponPartTargetsV1(77)==Status::Ok);
+        }
+        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,1,2,sizeof(weaponparts::v1_2::Api),&newParts)==Status::Ok&&newParts==oldParts);
+        const auto* api=static_cast<const weaponparts::v1_2::Api*>(newParts->table);
+        weaponparts::v1_2::CollisionSuppression suppression;
+        assert(api->setCollisionSuppression(78,&suppression)==Status::Ok);
+        assert(api->clearCollisionSuppression(78)==Status::Ok);
+        assert(api->v1.clearWeaponPartTargetsV1(77)==Status::Ok);
+        const std::array previous{discovery::RegisteredInterface{{40,InterfaceId::WeaponParts,1,1,sizeof(weaponparts::ApiV1),1,0,0,&api->v1},3}};
+        assert(discovery::query(previous,InterfaceId::WeaponParts,1,2,sizeof(*api),&result)==Status::UnsupportedMinor);
+        rock::provider::InterfaceBinding oldBinding{},newBinding{};
+        assert(rock::provider::bindInterface(oldBinding,1,3,weaponparts::kSupportedPermissions)==Status::Ok);
+        assert(rock::provider::bindInterface(newBinding,1,3,weaponparts::kSupportedPermissions)==Status::Ok);
+    }
     verify(animation::table(),animation::kSupportedPermissions);
     verify(input::tableV1_2(),input::kSupportedPermissions);
     {

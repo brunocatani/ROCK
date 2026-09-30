@@ -39,7 +39,15 @@ const v1_1::Api& tableV1_1() noexcept {
 }
 const ApiV1& table() noexcept { return tableV1_1().v1; }
 }
-namespace rock::api::weaponparts { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
+namespace rock::api::weaponparts {
+namespace {
+Status ROCK_CALL oldClear(OwnerToken owner) noexcept {return owner==77?Status::Ok:Status::OwnerNotRegistered;}
+Status ROCK_CALL suppress(OwnerToken owner,const v1_2::CollisionSuppression* request) noexcept {return owner==78&&request?Status::Ok:Status::InvalidArgument;}
+Status ROCK_CALL clearSuppression(OwnerToken owner) noexcept {return owner==78?Status::Ok:Status::OwnerNotRegistered;}
+}
+const ApiV1& table() noexcept { static const ApiV1 value=[] {ApiV1 api{};api.clearWeaponPartTargetsV1=&oldClear;return api;}(); return value; }
+const v1_2::Api& tableV1_2() noexcept {static const v1_2::Api value{table(),&suppress,&clearSuppression};return value;}
+}
 namespace rock::api::animation { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
 namespace rock::api::input {
 namespace {

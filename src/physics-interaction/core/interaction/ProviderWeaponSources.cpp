@@ -1,5 +1,6 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/weapon/WeaponHierarchy.h"
+#include "api/WeaponPartCollisionLease.h"
 #include <functional>
 #include <algorithm>
 #include <cstring>
@@ -99,6 +100,29 @@ std::uintptr_t PhysicsInteraction::resolveProviderWeaponSource(std::uint64_t gen
         return reinterpret_cast<std::uintptr_t>(catalog.entries[i].node.get());
     }
     return 0;
+}
+api::Status PhysicsInteraction::collectProviderWeaponCollisionBodies(std::uint64_t generation,std::span<const std::uint64_t> sources,
+    std::span<std::uint32_t> bodies,std::uint32_t& count) const {
+    count=0;
+    if(generation!=_weaponCollision.getCurrentWeaponGenerationKey())return api::Status::GenerationMismatch;
+    // Resolve and pin-check the live catalog first. No request retains a native
+    // node pointer; only body IDs qualified by this weapon generation survive.
+    std::array<const RE::NiAVObject*,api::weaponparts::v1_2::kMaxCollisionSources> roots{};
+    if(sources.empty()||sources.size()>roots.size())return api::Status::InvalidArgument;
+    for(std::size_t i=0;i<sources.size();++i) {
+        roots[i]=reinterpret_cast<const RE::NiAVObject*>(resolveProviderWeaponSource(generation,sources[i]));
+        if(!roots[i])return api::Status::TargetUnavailable;
+    }
+    const auto evidence=_weaponCollision.getProfileEvidenceDescriptors();
+    for(const auto& descriptor:evidence) {
+        if(!descriptor.valid||!providerWeaponSourceKey(generation,descriptor.sourceRootAddress))continue;
+        auto* node=reinterpret_cast<const RE::NiAVObject*>(descriptor.sourceRootAddress);
+        if(weapon_part_collision::selectedSource(node,std::span<const RE::NiAVObject* const>(roots).first(sources.size()),_providerSources.root)) {
+            if(count==bodies.size()){count=0;return api::Status::CapacityFull;}
+            bodies[count++]=descriptor.bodyId;
+        }
+    }
+    return count?api::Status::Ok:api::Status::TargetUnavailable;
 }
 std::uint64_t PhysicsInteraction::providerWeaponSourceKey(std::uint64_t generation,std::uintptr_t node) const {
     const auto& catalog=_providerSources;

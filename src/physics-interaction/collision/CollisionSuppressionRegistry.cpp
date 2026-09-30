@@ -37,6 +37,8 @@ namespace rock::collision_suppression_registry
                 return "InvalidFinalPose";
             case CollisionSuppressionOwner::ConsumerStorage:
                 return "ConsumerStorage";
+            case CollisionSuppressionOwner::ConsumerWeaponPart:
+                return "ConsumerWeaponPart";
             }
             return "Unknown";
         }
