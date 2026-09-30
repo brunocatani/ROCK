@@ -9123,19 +9123,15 @@ namespace rock
                         const bool fixedAidPose = g_rockConfig.rockImmersiveAidEnabled &&
                             immersive_aid::usesStimpakPose(immersive_aid::classify(sel.refr ? sel.refr->GetObjectReference() : nullptr));
                         /*
-                         * Owner rule (behavior library, "Vanilla grip templates"):
-                         * an object's authored offset also owns pinch-pocket grabs
-                         * (tiny items, where the authored pose beats a live solve)
-                         * and close grabs that are converging without touching.
-                         * Touch-held palm grabs stay dynamic.
+                         * Owner rule (2026-09-30, behavior library "Vanilla grip templates"):
+                         * saved offsets apply only when the object arrives by a far pull
+                         * (or a forced arrival); every close grab, pinch pocket included,
+                         * stays dynamic.
                          */
-                        const bool closeGrabNotTouching = !usingPinchPocket &&
-                            phaseDecision.phase == grab_three_phase::AcquisitionPhase::NearConverging;
-                        const bool savedOffsetArrival = programmaticArrival || usingPinchPocket || closeGrabNotTouching;
                         if (fixedAidPose) {
                             savedGrabOffset = immersive_aid::stimpakPose(_isLeft);
                             hasSavedGrabOffset = true;
-                        } else if (savedOffsetArrival && !authoredWeapon &&
+                        } else if (programmaticArrival && !authoredWeapon &&
                             saved_grab_offset::participatesInSavedGrabOffsets(
                                 looseWeaponGrab,
                                 isThrowableLooseWeapon(selectedLooseWeaponForm(sel)))) {
@@ -9143,7 +9139,7 @@ namespace rock
                         }
                         RE::NiTransform grabProxyWorldForOffset{};
                         const bool grabProxyWorldValidForOffset =
-                            (savedOffsetArrival || fixedAidPose) && tryComputeGrabProxyLocalPalmPocketFrameWorld(world, grabProxyWorldForOffset);
+                            (programmaticArrival || fixedAidPose) && tryComputeGrabProxyLocalPalmPocketFrameWorld(world, grabProxyWorldForOffset);
                         RE::NiTransform savedGrabOffsetRootWorld{};
                         const bool savedGrabOffsetAttachValid = hasSavedGrabOffset &&
                             tryResolveSavedGrabOffsetAttach(
