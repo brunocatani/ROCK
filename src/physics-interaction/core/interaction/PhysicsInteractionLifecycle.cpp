@@ -162,6 +162,7 @@ namespace rock
             currentBhkWorld == _lifecycle.generatedBodiesBhkWorld &&
             currentHknpWorld &&
             currentHknpWorld == _lifecycle.generatedBodiesHknpWorld;
+        _looseWeaponCollision.clear(generatedWorldStillLive ? currentHknpWorld : nullptr);
         if (generatedWorldStillLive) {
             _dynamicHandCollision.retireAll(_lifecycle.generatedBodiesBhkWorld);
             _dynamicWeaponCollision.retireAll(_lifecycle.generatedBodiesBhkWorld);
@@ -609,6 +610,7 @@ namespace rock
             _lifecycle.cachedHknpWorld &&
             currentHknp == _lifecycle.cachedHknpWorld;
 
+        _looseWeaponCollision.clear(worldValid ? currentHknp : nullptr);
         storage_service::shutdown(worldValid ? currentHknp : nullptr);
         weapon_part_collision::shutdown(worldValid ? currentHknp : nullptr);
         if (worldValid) {
@@ -792,16 +794,32 @@ namespace rock
 
         const bool npcPairsChanged =
             !collision_layer_policy::rockDynamicNpcPairsMatch(matrix, g_rockConfig.npcDynamicCollisions);
+        const bool retiredWeaponHandCollision =
+            native_player_collision::installed();
+        const bool retiredWeaponPairsChanged =
+            !collision_layer_policy::layerPairSymmetricMatches(matrix,
+                collision_layer_policy::ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY,
+                collision_layer_policy::FO4_LAYER_WEAPON, retiredWeaponHandCollision) ||
+            !collision_layer_policy::layerPairSymmetricMatches(matrix,
+                collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY,
+                collision_layer_policy::FO4_LAYER_WEAPON, retiredWeaponHandCollision);
         auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
         collision_layer_policy::applyRockGeneratedLayerPolicies(
             matrix,
             g_rockConfig.rockHandCollisionStaticWorldEnabled,
             g_rockConfig.rockWeaponCollisionBlocksProjectiles,
             g_rockConfig.rockWeaponCollisionBlocksSpells,
-            g_rockConfig.npcDynamicCollisions);
-        if (npcPairsChanged) {
+            g_rockConfig.npcDynamicCollisions,
+            retiredWeaponHandCollision);
+        if (npcPairsChanged || retiredWeaponPairsChanged) {
             _dynamicHandCollision.refreshCollisionFilters(world);
+        }
+        if (npcPairsChanged) {
             _dynamicWeaponCollision.refreshCollisionFilter(world);
+        }
+        if (retiredWeaponPairsChanged) {
+            ROCK_LOG_INFO(Config, "Retired weapon hand collision: requested={} active={} pairFilter={}",
+                true, retiredWeaponHandCollision, native_player_collision::installed());
         }
         _layers.expectedHandMask = collision_layer_policy::buildRockHandExpectedMask(true, g_rockConfig.rockHandCollisionStaticWorldEnabled);
         _layers.expectedWeaponMask =
@@ -817,10 +835,10 @@ namespace rock
         _layers.expectedBodyMask = collision_layer_policy::buildRockBodyExpectedMask();
         _layers.expectedDynamicHandProxyMask =
             collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-                false, g_rockConfig.npcDynamicCollisions);
+                false, g_rockConfig.npcDynamicCollisions, retiredWeaponHandCollision);
         _layers.expectedDynamicLeftHandProxyMask =
             collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-                true, g_rockConfig.npcDynamicCollisions);
+                true, g_rockConfig.npcDynamicCollisions, retiredWeaponHandCollision);
         _layers.expectedDynamicWeaponProxyMask =
             collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask(g_rockConfig.npcDynamicCollisions);
         _layers.expectedDynamicWorldCarClutterMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER];

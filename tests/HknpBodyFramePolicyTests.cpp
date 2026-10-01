@@ -1,5 +1,6 @@
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
+#include "physics-interaction/weapon/LooseWeaponCollisionPolicy.h"
 
 #include "RE/NetImmerse/NiMatrix3.h"
 #include "RE/NetImmerse/NiPoint.h"
@@ -126,5 +127,39 @@ int main()
         ok = false;
     }
 
+    // Two shape BODY frames may share a single MOTION. Compound children must
+    // recover the same mesh centre and axes through either BODY's native math.
+    auto rootWorld=rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+    rootWorld.translate={42,51,63};
+    auto sourceInRoot=rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+    sourceInRoot.rotate=bodyWorld.rotate;
+    sourceInRoot.translate={3,7,11};
+    const RE::NiPoint3 centre{2,4,6};
+    const auto sourceWorld=rock::transform_math::composeTransforms(rootWorld,sourceInRoot);
+    const auto meshCentreWorld=rock::transform_math::localPointToWorld(sourceWorld,centre);
+    constexpr float secondBody[16]{1,0,0,0,0,1,0,0,0,0,1,0,-10,8,12,0};
+    for (const auto* nativeBody : {bodyFloats,secondBody}) {
+        auto frame=rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+        frame.rotate=rock::transform_math::hknpBodyColumnsToNiStoredAxes<RE::NiMatrix3>(nativeBody);
+        frame.translate={nativeBody[12],nativeBody[13],nativeBody[14]};
+        const auto rootInBody=rock::transform_math::composeTransforms(rock::transform_math::invertTransform(frame),rootWorld);
+        const auto child=rock::loose_weapon_collision_policy::partInShapeBody(rootInBody,sourceInRoot,centre);
+        ok &= expectVectorNear("compound centre in native BODY",nativeBodyLocalPointToWorldGame(nativeBody,child.translate,frame.translate),meshCentreWorld);
+        for (const RE::NiPoint3 axis : {RE::NiPoint3{1,0,0},RE::NiPoint3{0,1,0},RE::NiPoint3{0,0,1}}) {
+            const auto inBody=rock::transform_math::localPointToWorld(child,axis);
+            const auto expected=rock::transform_math::localPointToWorld(sourceWorld,centre+axis);
+            ok &= expectVectorNear("compound axis in native BODY",nativeBodyLocalPointToWorldGame(nativeBody,inBody,frame.translate),expected);
+        }
+        auto animated=sourceInRoot; animated.translate.y+=5;
+        const auto movingChild=rock::loose_weapon_collision_policy::partInShapeBody(rootInBody,animated,centre);
+        const auto movingWorld=rock::transform_math::composeTransforms(rootWorld,animated);
+        ok &= expectVectorNear("animated part retains BODY calibration",
+            nativeBodyLocalPointToWorldGame(nativeBody,movingChild.translate,frame.translate),
+            rock::transform_math::localPointToWorld(movingWorld,centre));
+    }
+    // The previous COM substitution must fail for this rotated shape body.
+    const auto wrongChild=rock::loose_weapon_collision_policy::partInShapeBody(rootWorld,sourceInRoot,centre);
+    const auto wrongCentre=nativeBodyLocalPointToWorldGame(bodyFloats,wrongChild.translate,translationGame);
+    if ((wrongCentre-meshCentreWorld).Length()<1.0f) { std::puts("shared MOTION unexpectedly matched an offset shape BODY"); ok=false; }
     return ok ? 0 : 1;
 }

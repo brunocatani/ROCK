@@ -91,6 +91,8 @@ namespace rock::performance_profiler
         constexpr const char* scopeName(Scope scope) noexcept
         {
             switch (scope) {
+            case Scope::LooseWeaponCollision:
+                return "LooseWeaponCollision";
             case Scope::FrameUpdate:
                 return "frame";
             case Scope::RuntimePreparation:

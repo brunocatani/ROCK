@@ -1,11 +1,28 @@
 #pragma once
 
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
+#include "physics-interaction/object/PhysicsBodyClassifier.h"
 
 #include <cstdint>
 
 namespace rock::native_player_collision
 {
+    inline constexpr bool isRetiredWeaponHandPair(std::uint32_t layerA, std::uint32_t layerB)
+    {
+        using namespace collision_layer_policy;
+        return (layerA == FO4_LAYER_WEAPON && isDynamicHandInteractionLayer(layerB)) ||
+               (layerB == FO4_LAYER_WEAPON && isDynamicHandInteractionLayer(layerA));
+    }
+
+    inline constexpr bool allowsRetiredWeaponHandContact(
+        physics_body_classifier::BodyMotionType motion, bool looseWeapon)
+    {
+        using physics_body_classifier::BodyMotionType;
+        // Anchoring preserves native static parts beside the keyframed bodies.
+        // Active grab/pull preparation converts movable bodies back to dynamic.
+        return looseWeapon && (motion == BodyMotionType::Keyframed || motion == BodyMotionType::Static);
+    }
+
     // FO4VR proxy ctor 1E4B268/1E4B28C, dtor 1E4B3E3/1E4B4C0,
     // and processConstraintsCallback 1E4B83E use this same base adjustment.
     // The actor stores the controller interface; the callback receives the

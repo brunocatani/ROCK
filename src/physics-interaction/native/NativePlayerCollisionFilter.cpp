@@ -1,4 +1,6 @@
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
+#include "physics-interaction/weapon/LooseWeaponCollisionPolicy.h"
+#include "RE/Bethesda/TESBoundObjects.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/performance/ContactPairProfile.h"
 
@@ -170,6 +172,41 @@ namespace rock::native_player_collision
             return kept;
         }
 
+        bool isSupportedFixedWeapon(const havok_runtime::BodySnapshot& body) noexcept
+        {
+            // Callback-local ownership only; no engine pointer is published.
+            __try {
+                auto* ref=body.ownerNode ? RE::TESObjectREFR::FindReferenceFor3D(body.ownerNode) : nullptr;
+                auto* form=ref ? ref->GetObjectReference() : nullptr;
+                auto* weapon=form ? form->As<RE::TESObjectWEAP>() : nullptr;
+                return weapon && loose_weapon_collision_policy::eligibleType(weapon->weaponData.type.get());
+            } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+        }
+
+        int filterRetiredWeaponHandPairs(RE::hknpWorld* world, BodyPair* pairs, int count) noexcept
+        {
+            if (!world || !pairs || count <= 0) return count;
+            using namespace collision_layer_policy;
+            const auto* matrix = havok_runtime::getCollisionFilterMatrix(world);
+            if (!layerPairEnabledFromRow(matrix, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, FO4_LAYER_WEAPON) &&
+                !layerPairEnabledFromRow(matrix, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, FO4_LAYER_WEAPON)) return count;
+            // Independent of native-player skeleton publication: this gate
+            // must still protect dynamic weapons when that snapshot is empty.
+            return filterPhysicalPairs(pairs, count, [&](const BodyPair& pair) {
+                std::uint32_t filterA{}, filterB{};
+                if (!havok_runtime::tryReadFilterInfo(world, {pair.bodyA}, filterA) ||
+                    !havok_runtime::tryReadFilterInfo(world, {pair.bodyB}, filterB)) return false;
+                const auto layerA = filterA & FO4_LAYER_FILTER_MASK;
+                const auto layerB = filterB & FO4_LAYER_FILTER_MASK;
+                if (!isRetiredWeaponHandPair(layerA, layerB)) return false;
+                const auto weapon = havok_runtime::snapshotBody(world,
+                    {layerA == FO4_LAYER_WEAPON ? pair.bodyA : pair.bodyB});
+                if (!weapon.valid || !weapon.body) return true;
+                const auto motion = physics_body_classifier::motionTypeFromBodyFlags(weapon.body->flags);
+                return !allowsRetiredWeaponHandContact(motion, true) || !isSupportedFixedWeapon(weapon);
+            });
+        }
+
         int filterPairs(void* filter, RE::hknpWorld* world, BodyPair* pairs, int count) noexcept
         {
             profilePairs(world, pairs, count, performance_profiler::ContactStage::SimulationInput,
@@ -185,6 +222,7 @@ namespace rock::native_player_collision
             int admitted = nativeAdmitted > 0 && nativeAdmitted <= count ?
                 shell_casing_grace::filterPairs(world, pairs, nativeAdmitted) : nativeAdmitted;
             if (admitted > 0 && admitted <= count) admitted = filterBladePairs(world, pairs, admitted);
+            if (admitted > 0 && admitted <= count) admitted = filterRetiredWeaponHandPairs(world, pairs, admitted);
             auto lease = s_gate.tryEnterCallback();
             if (!lease || !world || world != s_snapshot.world || s_snapshot.count == 0 ||
                 !pairs || admitted <= 0 || admitted > count) {
@@ -287,6 +325,8 @@ namespace rock::native_player_collision
         s_unresolvedWeaponOwners.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
+
+    bool installed() noexcept { return s_installed; }
 
     bool install() noexcept
     {

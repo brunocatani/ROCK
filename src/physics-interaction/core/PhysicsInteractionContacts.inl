@@ -572,7 +572,8 @@
         const bool bodyBIsLeftHeld = _leftHand.isHeldBodyId(bodyIdB);
         const bool heldContact = bodyAIsRightHeld || bodyBIsRightHeld || bodyAIsLeftHeld || bodyBIsLeftHeld;
         const bool generatedContact = bodyAIsDynamicHand || bodyBIsDynamicHand || bodyAIsDynamicWeapon || bodyBIsDynamicWeapon;
-        if (!generatedContact && !heldContact) return;
+        const bool looseCollisionContact=_looseWeaponCollision.watches(bodyIdA) || _looseWeaponCollision.watches(bodyIdB);
+        if (!generatedContact && !heldContact && !looseCollisionContact) return;
         // ID-only admission precedes native reads; accepted events retain all body checks.
         if (!havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdA }) ||
             !havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdB })) {
@@ -580,6 +581,17 @@
         }
         const bool solvedChildContact =
             manifoldPointCount > 0 && manifoldPointCount <= 4;
+        if (solvedChildContact && looseCollisionContact && !heldContact &&
+            !::rock::provider::isExternalBodyId(bodyIdA) && !::rock::provider::isExternalBodyId(bodyIdB)) {
+            RE::NiPoint3 point{};
+            const float scale=havokToGameScale()/static_cast<float>(manifoldPointCount);
+            for (std::int32_t i=0;i<manifoldPointCount;++i) {
+                const auto* p=reinterpret_cast<const float*>(data+0x70+i*0x10);
+                point.x+=p[0]*scale; point.y+=p[1]*scale; point.z+=p[2]*scale;
+            }
+            const auto* normal=reinterpret_cast<const float*>(data+0x40);
+            _looseWeaponCollision.contact(world,bodyIdA,bodyIdB,point,{normal[0],normal[1],normal[2]});
+        }
         if (solvedChildContact && heldContact) {
             auto recordHeldPlacementContact = [&](Hand& hand, bool heldA, bool heldB) {
                 if (!hand.isHoldingAtomic() || heldA == heldB) return;

@@ -185,11 +185,11 @@ namespace rock
         _sources.cache = {};
     }
 
-    bool WeaponCollision::advanceSourcePreparation()
+    bool WeaponCollision::advanceSourcePreparation(double sliceMilliseconds)
     {
         auto& work = *_sources.preparation;
         const auto start = std::chrono::steady_clock::now();
-        constexpr double kPreparationSliceMilliseconds = 2.0;
+        const double kPreparationSliceMilliseconds = sliceMilliseconds;
         constexpr std::size_t kMaxResumesPerFrame = 1024;
         try {
             performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponGapColliderBuild);
@@ -601,7 +601,7 @@ namespace rock
     weapon_geometry_work::Task WeaponCollision::prepareGeneratedWeaponShapeSources(
         RE::NiPointer<RE::NiAVObject> root,
         std::uint64_t equippedWeaponKey,
-        std::vector<GeneratedHullSource>& outSources, bool preserveGaps)
+        std::vector<GeneratedHullSource>& outSources, bool preserveGaps, bool looseOnly)
     {
         auto* weaponNode = root.get();
         outSources.clear();
@@ -610,7 +610,8 @@ namespace rock
             co_return;
         }
 
-        const auto candidates = makeGeneratedWeaponMeshRootCandidates(weaponNode);
+        const auto candidates = looseOnly ?
+            std::vector<WeaponMeshRootCandidate>{{weaponNode, "loose-reference"}} : makeGeneratedWeaponMeshRootCandidates(weaponNode);
         std::vector<RE::NiPointer<RE::NiAVObject>> candidateOwners;
         candidateOwners.reserve(candidates.size());
         for (const auto& candidate : candidates) { candidateOwners.emplace_back(candidate.root); }
@@ -708,79 +709,82 @@ namespace rock
          * bounded owner subtree captured during this same traversal; candidate
          * root fallbacks are explicitly rejected by ownerRootStructural.
          */
-        const auto omodByAttachPointFormId = readEquippedOmodsByAttachPointFormId();
-        std::unordered_set<std::uint32_t> nativeScopeOverlayOmods;
-        nativeScopeOverlayOmods.reserve(omodByAttachPointFormId.size());
-        for (const auto& [attachPointFormId, omodFormId] : omodByAttachPointFormId) {
-            (void)attachPointFormId;
-            if (attachmentModHasScopeFlagProperty(omodFormId)) {
-                nativeScopeOverlayOmods.insert(omodFormId);
-            }
-        }
-
-        const auto emitterSnapshot = collectWeaponEmitterSnapshot(
-            weaponNode,
-            omodByAttachPointFormId,
-            equippedWeaponKey,
-            equippedWeaponKey,
-            makeWeaponEmitterRootSetKey(weaponNode));
-        for (auto& source : outSources) {
-            std::uint32_t sourceOmodFormId = 0;
-            if (source.semantic.attachPointFormId != 0) {
-                const auto omod = omodByAttachPointFormId.find(source.semantic.attachPointFormId);
-                if (omod != omodByAttachPointFormId.end()) {
-                    sourceOmodFormId = omod->second;
+        if (!looseOnly) {
+            const auto omodByAttachPointFormId = readEquippedOmodsByAttachPointFormId();
+            std::unordered_set<std::uint32_t> nativeScopeOverlayOmods;
+            nativeScopeOverlayOmods.reserve(omodByAttachPointFormId.size());
+            for (const auto& [attachPointFormId, omodFormId] : omodByAttachPointFormId) {
+                (void)attachPointFormId;
+                if (attachmentModHasScopeFlagProperty(omodFormId)) {
+                    nativeScopeOverlayOmods.insert(omodFormId);
                 }
             }
 
-            weapon_accessory_part_kind_policy::Evidence evidence{};
-            evidence.nativeScopeOverlay =
-                (sourceOmodFormId != 0 && nativeScopeOverlayOmods.contains(sourceOmodFormId)) ||
-                (sourceOmodFormId == 0 && source.semantic.partKind == WeaponPartKind::Sight && nativeScopeOverlayOmods.size() == 1);
-
-            for (std::size_t emitterIndex = 0; emitterIndex < emitterSnapshot.count; ++emitterIndex) {
-                const auto& emitter = emitterSnapshot.emitters[emitterIndex];
-                if (!emitter.valid) {
-                    continue;
+            const auto emitterSnapshot = collectWeaponEmitterSnapshot(
+                weaponNode,
+                omodByAttachPointFormId,
+                equippedWeaponKey,
+                equippedWeaponKey,
+                makeWeaponEmitterRootSetKey(weaponNode));
+            for (auto& source : outSources) {
+                std::uint32_t sourceOmodFormId = 0;
+                if (source.semantic.attachPointFormId != 0) {
+                    const auto omod = omodByAttachPointFormId.find(source.semantic.attachPointFormId);
+                    if (omod != omodByAttachPointFormId.end()) {
+                        sourceOmodFormId = omod->second;
+                    }
                 }
 
-                const bool sameOmod = sourceOmodFormId != 0 && emitter.omodFormId == sourceOmodFormId;
-                bool sameStructuralOwner = false;
-                if (!sameOmod && emitter.ownerRootStructural && emitter.ownerRootAddress != 0 && source.sourceRoot) {
-                    auto* ownerRoot = reinterpret_cast<RE::NiAVObject*>(emitter.ownerRootAddress);
-                    sameStructuralOwner = actor_equipment_grab::nodeContainsNode(ownerRoot, source.sourceRoot, 32);
-                }
-                if (!sameOmod && !sameStructuralOwner) {
-                    continue;
+                weapon_accessory_part_kind_policy::Evidence evidence{};
+                evidence.nativeScopeOverlay =
+                    (sourceOmodFormId != 0 && nativeScopeOverlayOmods.contains(sourceOmodFormId)) ||
+                    (sourceOmodFormId == 0 && source.semantic.partKind == WeaponPartKind::Sight && nativeScopeOverlayOmods.size() == 1);
+
+                for (std::size_t emitterIndex = 0; emitterIndex < emitterSnapshot.count; ++emitterIndex) {
+                    const auto& emitter = emitterSnapshot.emitters[emitterIndex];
+                    if (!emitter.valid) {
+                        continue;
+                    }
+
+                    const bool sameOmod = sourceOmodFormId != 0 && emitter.omodFormId == sourceOmodFormId;
+                    bool sameStructuralOwner = false;
+                    if (!sameOmod && emitter.ownerRootStructural && emitter.ownerRootAddress != 0 && source.sourceRoot) {
+                        auto* ownerRoot = reinterpret_cast<RE::NiAVObject*>(emitter.ownerRootAddress);
+                        sameStructuralOwner = actor_equipment_grab::nodeContainsNode(ownerRoot, source.sourceRoot, 32);
+                    }
+                    if (!sameOmod && !sameStructuralOwner) {
+                        continue;
+                    }
+
+                    switch (static_cast<weapon_emitter_policy::Kind>(emitter.kind)) {
+                    case weapon_emitter_policy::Kind::Laser:
+                        evidence.laserEmitter = true;
+                        break;
+                    case weapon_emitter_policy::Kind::Flashlight:
+                        evidence.flashlightEmitter = true;
+                        break;
+                    case weapon_emitter_policy::Kind::Reticle:
+                    case weapon_emitter_policy::Kind::Unknown:
+                    default:
+                        break;
+                    }
                 }
 
-                switch (static_cast<weapon_emitter_policy::Kind>(emitter.kind)) {
-                case weapon_emitter_policy::Kind::Laser:
-                    evidence.laserEmitter = true;
-                    break;
-                case weapon_emitter_policy::Kind::Flashlight:
-                    evidence.flashlightEmitter = true;
-                    break;
-                case weapon_emitter_policy::Kind::Reticle:
-                case weapon_emitter_policy::Kind::Unknown:
-                default:
-                    break;
+                const auto baseKind = source.semantic.partKind;
+                source.semantic = weapon_accessory_part_kind_policy::applyAttachmentEvidence(source.semantic, evidence);
+                if (source.semantic.partKind != baseKind) {
+                    ROCK_LOG_DEBUG(Weapon,
+                        "Generated weapon part refined by attachment evidence: source='{}' base={} resolved={} omod={:08X} nativeScope={} laser={} flashlight={}",
+                        source.sourceName,
+                        generatedWeaponPartKindName(baseKind),
+                        generatedWeaponPartKindName(source.semantic.partKind),
+                        sourceOmodFormId,
+                        evidence.nativeScopeOverlay,
+                        evidence.laserEmitter,
+                        evidence.flashlightEmitter);
                 }
             }
 
-            const auto baseKind = source.semantic.partKind;
-            source.semantic = weapon_accessory_part_kind_policy::applyAttachmentEvidence(source.semantic, evidence);
-            if (source.semantic.partKind != baseKind) {
-                ROCK_LOG_DEBUG(Weapon,
-                    "Generated weapon part refined by attachment evidence: source='{}' base={} resolved={} omod={:08X} nativeScope={} laser={} flashlight={}",
-                    source.sourceName,
-                    generatedWeaponPartKindName(baseKind),
-                    generatedWeaponPartKindName(source.semantic.partKind),
-                    sourceOmodFormId,
-                    evidence.nativeScopeOverlay,
-                    evidence.laserEmitter,
-                    evidence.flashlightEmitter);
-            }
         }
 
         const std::size_t cachedDetachedSourceCount = std::erase_if(outSources, [&](const GeneratedHullSource& source) {
@@ -1447,6 +1451,70 @@ namespace rock
         return createdCount;
     }
 
+    RE::hknpShape* WeaponCollision::buildGeneratedSourceShape(const GeneratedHullSource& source)
+    {
+        const auto tagCollisionSoundMaterial = [&](RE::hknpShape* shape) {
+            if (shape && source.collisionSoundMaterialId != 0) {
+                // FOCollisionListener resolves this exact field for both
+                // simple shapes and compound leaves. The body material
+                // remains the independently registered solver material.
+                shape->userData = static_cast<std::uintptr_t>(
+                    source.collisionSoundMaterialId);
+            }
+            return shape;
+        };
+
+        if (source.geometry->childLocalPointCloudsGame.size() <= 1) {
+            const bool useSourceLocal = !source.geometry->sourceLocalPointsGame.empty();
+            const auto& sourcePoints = useSourceLocal ? source.geometry->sourceLocalPointsGame : source.geometry->localPointsGame;
+            const auto& sourceCenter = useSourceLocal ? source.sourceLocalCenterGame : source.localCenterGame;
+            const float sourceScale = useSourceLocal ? source.sourceNodeScale : 1.0f;
+            auto centeredHavokPoints = makeCenteredHavokPointCloud(sourcePoints, sourceCenter, sourceScale);
+            return tagCollisionSoundMaterial(
+                havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(
+                    centeredHavokPoints,
+                    WEAPON_COLLISION_CONVEX_RADIUS_HAVOK,
+                    havok_convex_shape_builder::ConvexFit::PreserveSharpFeatures));
+        }
+
+        std::vector<std::unique_ptr<RE::hknpShape, havok_compound_shape_builder::HavokShapeRelease>> childShapes;
+        std::vector<havok_compound_shape_builder::CompoundChild> children;
+        childShapes.reserve(source.geometry->childLocalPointCloudsGame.size());
+        children.reserve(source.geometry->childLocalPointCloudsGame.size());
+
+        for (const auto& childLocalPointsGame : source.geometry->childLocalPointCloudsGame) {
+            if (!pointCloudCanBuildHull(childLocalPointsGame, source.sourceNodeScale)) {
+                return nullptr;
+            }
+
+            const auto childCenterGame = weapon_collision_geometry_math::pointCenter(childLocalPointsGame);
+            auto centeredChildHavokPoints = makeCenteredHavokPointCloud(childLocalPointsGame, childCenterGame, source.sourceNodeScale);
+            auto* childShape =
+                havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(centeredChildHavokPoints, WEAPON_COLLISION_CONVEX_RADIUS_HAVOK,
+                    havok_convex_shape_builder::ConvexFit::PreserveSharpFeatures);
+            if (!childShape) {
+                ROCK_LOG_WARN(Weapon, "Generated weapon compound source '{}' failed child convex build", source.sourceName);
+                return nullptr;
+            }
+
+            tagCollisionSoundMaterial(childShape);
+
+            childShapes.emplace_back(childShape);
+
+            havok_compound_shape_builder::CompoundChild child{};
+            child.shape = childShape;
+            child.transform.translation.x = (childCenterGame.x - source.sourceLocalCenterGame.x) * source.sourceNodeScale * gameToHavokScale();
+            child.transform.translation.y = (childCenterGame.y - source.sourceLocalCenterGame.y) * source.sourceNodeScale * gameToHavokScale();
+            child.transform.translation.z = (childCenterGame.z - source.sourceLocalCenterGame.z) * source.sourceNodeScale * gameToHavokScale();
+            child.transform.translation.w = 1.0f;
+            children.push_back(child);
+        }
+
+        // Native compound construction retains each child. Local ownership
+        // releases every temporary reference on success and on any failure.
+        return tagCollisionSoundMaterial(havok_compound_shape_builder::buildStaticCompoundShape(children));
+    }
+
     std::size_t WeaponCollision::createGeneratedWeaponBodiesInBankSlice(RE::hknpWorld* world,
         const std::vector<GeneratedHullSource>& sources,
         WeaponBodyBank& bank,
@@ -1470,68 +1538,7 @@ namespace rock
         std::size_t attemptedThisFrame = 0;
         static_assert(weapon_gap_decomposition::kMaxChildren <= GENERATED_WEAPON_BODY_CREATION_BATCH);
         const std::uint32_t filterInfo = generatedWeaponCollisionFilterInfo(options.collisionEnabledOnCreate);
-        auto buildSourceShape = [&](const GeneratedHullSource& source) -> RE::hknpShape* {
-            const auto tagCollisionSoundMaterial = [&](RE::hknpShape* shape) {
-                if (shape && source.collisionSoundMaterialId != 0) {
-                    // FOCollisionListener resolves this exact field for both
-                    // simple shapes and compound leaves. The body material
-                    // remains the independently registered solver material.
-                    shape->userData = static_cast<std::uintptr_t>(
-                        source.collisionSoundMaterialId);
-                }
-                return shape;
-            };
 
-            if (source.geometry->childLocalPointCloudsGame.size() <= 1) {
-                const bool useSourceLocal = !source.geometry->sourceLocalPointsGame.empty();
-                const auto& sourcePoints = useSourceLocal ? source.geometry->sourceLocalPointsGame : source.geometry->localPointsGame;
-                const auto& sourceCenter = useSourceLocal ? source.sourceLocalCenterGame : source.localCenterGame;
-                const float sourceScale = useSourceLocal ? source.sourceNodeScale : 1.0f;
-                auto centeredHavokPoints = makeCenteredHavokPointCloud(sourcePoints, sourceCenter, sourceScale);
-                return tagCollisionSoundMaterial(
-                    havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(
-                        centeredHavokPoints,
-                        WEAPON_COLLISION_CONVEX_RADIUS_HAVOK,
-                        havok_convex_shape_builder::ConvexFit::PreserveSharpFeatures));
-            }
-
-            std::vector<std::unique_ptr<RE::hknpShape, havok_compound_shape_builder::HavokShapeRelease>> childShapes;
-            std::vector<havok_compound_shape_builder::CompoundChild> children;
-            childShapes.reserve(source.geometry->childLocalPointCloudsGame.size());
-            children.reserve(source.geometry->childLocalPointCloudsGame.size());
-
-            for (const auto& childLocalPointsGame : source.geometry->childLocalPointCloudsGame) {
-                if (!pointCloudCanBuildHull(childLocalPointsGame, source.sourceNodeScale)) {
-                    return nullptr;
-                }
-
-                const auto childCenterGame = weapon_collision_geometry_math::pointCenter(childLocalPointsGame);
-                auto centeredChildHavokPoints = makeCenteredHavokPointCloud(childLocalPointsGame, childCenterGame, source.sourceNodeScale);
-                auto* childShape =
-                    havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(centeredChildHavokPoints, WEAPON_COLLISION_CONVEX_RADIUS_HAVOK,
-                        havok_convex_shape_builder::ConvexFit::PreserveSharpFeatures);
-                if (!childShape) {
-                    ROCK_LOG_WARN(Weapon, "Generated weapon compound source '{}' failed child convex build", source.sourceName);
-                    return nullptr;
-                }
-
-                tagCollisionSoundMaterial(childShape);
-
-                childShapes.emplace_back(childShape);
-
-                havok_compound_shape_builder::CompoundChild child{};
-                child.shape = childShape;
-                child.transform.translation.x = (childCenterGame.x - source.sourceLocalCenterGame.x) * source.sourceNodeScale * gameToHavokScale();
-                child.transform.translation.y = (childCenterGame.y - source.sourceLocalCenterGame.y) * source.sourceNodeScale * gameToHavokScale();
-                child.transform.translation.z = (childCenterGame.z - source.sourceLocalCenterGame.z) * source.sourceNodeScale * gameToHavokScale();
-                child.transform.translation.w = 1.0f;
-                children.push_back(child);
-            }
-
-            // Native compound construction retains each child. Local ownership
-            // releases every temporary reference on success and on any failure.
-            return tagCollisionSoundMaterial(havok_compound_shape_builder::buildStaticCompoundShape(children));
-        };
 
         while (nextSourceIndex < sources.size() && createdCount < MAX_WEAPON_BODIES && attemptedThisFrame < maxSourceAttemptsThisFrame) {
             // Count native convex builds, not compound bodies: an eight-child
@@ -1555,7 +1562,7 @@ namespace rock
                 continue;
             }
 
-            auto* shape = buildSourceShape(source);
+            auto* shape = buildGeneratedSourceShape(source);
             if (!shape) {
                 ROCK_LOG_WARN(Weapon, "Generated weapon mesh hull '{}' failed native shape build", source.sourceName);
                 continue;

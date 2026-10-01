@@ -644,7 +644,8 @@ namespace rock::collision_layer_policy
 
     inline constexpr std::uint64_t buildRockDynamicHandProxyExpectedMask(
         bool isLeft = false,
-        bool npcDynamicCollisions = false)
+        bool npcDynamicCollisions = false,
+        bool retiredWeaponHandCollision = false)
     {
         std::uint64_t mask = 0;
         for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
@@ -659,6 +660,11 @@ namespace rock::collision_layer_policy
             isLeft ? ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY :
                      ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
         mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
+        // The simulation-pair filter admits only fixed world WEAP bodies on
+        // this shared native row. Dynamic and actor-owned weapons stay excluded.
+        if (retiredWeaponHandCollision) {
+            mask = withLayer(mask, FO4_LAYER_WEAPON);
+        }
         if (npcDynamicCollisions) {
             mask = withLayer(mask, FO4_LAYER_BIPED_NO_CC);
         }
@@ -725,16 +731,17 @@ namespace rock::collision_layer_policy
 
     inline void applyRockDynamicHandProxyLayerPolicies(
         std::uint64_t* matrix,
-        bool npcDynamicCollisions = false)
+        bool npcDynamicCollisions = false,
+        bool retiredWeaponHandCollision = false)
     {
         applyLayerExpectedMask(
             matrix,
             ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY,
-            buildRockDynamicHandProxyExpectedMask(false, npcDynamicCollisions));
+            buildRockDynamicHandProxyExpectedMask(false, npcDynamicCollisions, retiredWeaponHandCollision));
         applyLayerExpectedMask(
             matrix,
             ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY,
-            buildRockDynamicHandProxyExpectedMask(true, npcDynamicCollisions));
+            buildRockDynamicHandProxyExpectedMask(true, npcDynamicCollisions, retiredWeaponHandCollision));
     }
 
     inline void applyRockDynamicWeaponProxyLayerPolicy(
@@ -768,7 +775,8 @@ namespace rock::collision_layer_policy
         bool handStaticWorld,
         bool weaponBlocksProjectiles,
         bool weaponBlocksSpells,
-        bool npcDynamicCollisions = false)
+        bool npcDynamicCollisions = false,
+        bool retiredWeaponHandCollision = false)
     {
         /*
          * Runtime registration uses one aggregate helper because layer 47 is an
@@ -782,7 +790,7 @@ namespace rock::collision_layer_policy
             buildRockWeaponExpectedMask(weaponBlocksProjectiles, weaponBlocksSpells, true));
         applyRockReloadLayerPolicy(matrix, weaponBlocksProjectiles, weaponBlocksSpells, handStaticWorld);
         applyRockBodyLayerPolicy(matrix);
-        applyRockDynamicHandProxyLayerPolicies(matrix, npcDynamicCollisions);
+        applyRockDynamicHandProxyLayerPolicies(matrix, npcDynamicCollisions, retiredWeaponHandCollision);
         applyRockDynamicWeaponProxyLayerPolicy(matrix, npcDynamicCollisions);
         applyRockDynamicWorldCarLayerPolicies(matrix);
     }

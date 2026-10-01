@@ -99,6 +99,27 @@ int main()
     Node empty;
     if (!rock::visitWeaponChildSlots(empty.children, [&](Node*, auto) { ++callbacks; return true; }) || callbacks != 1) return 11;
 
+    // The body scanner now shares the collider generator's slot iterator.
+    // Runtime regression: a weapon with 19 populated children in 20 slots
+    // exposes its final collision branch at slot 19, beyond size().
+    Node nativeWeapon;
+    std::array<Node, 19> nativeParts;
+    nativeWeapon.children.slotCount = 20;
+    for (std::size_t i = 0; i < 18; ++i) nativeWeapon.children.slots[i].value = &nativeParts[i];
+    nativeWeapon.children.slots[19].value = &nativeParts[18];
+    if (nativeWeapon.children.size() != 19) return 27;
+    std::array<bool, 20> discovered{};
+    if (!rock::visitWeaponChildSlots(nativeWeapon.children, [&](Node*, std::size_t slot) {
+            discovered[slot] = true;
+            return true;
+        }) || discovered[18] || !discovered[19]) return 28;
+    // A collision-presence query must reach that final branch and stop there.
+    std::size_t inspected = 0;
+    if (rock::visitWeaponChildSlots(nativeWeapon.children, [&](Node* child, auto) {
+            ++inspected;
+            return child != &nativeParts[18];
+        }) || inspected != 19) return 29;
+
     // The real menu can close well after the button/renderer tail expired.
     // All phases of an observed frame must share its budget and identity.
     namespace trace = rock::scope_transition_trace_policy;

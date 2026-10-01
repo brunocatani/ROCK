@@ -12,6 +12,7 @@
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/weapon/WeaponSceneChildren.h"
 #include "RockConfig.h"
 
 #include "RE/Bethesda/BSHavok.h"
@@ -333,12 +334,10 @@ namespace rock::object_physics_body_set
             }
 
             auto& children = niNode->GetRuntimeData().children;
-            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
-                auto* child = children[i].get();
-                if (child) {
-                    scanNode(bhkWorld, hknpWorld, rootRef, child, depth - 1, options, out, seenBodyIds, systems);
-                }
-            }
+            visitWeaponChildSlots(children, [&](auto* child, auto) {
+                scanNode(bhkWorld, hknpWorld, rootRef, child, depth - 1, options, out, seenBodyIds, systems);
+                return true;
+            });
         }
 
         void appendCachedScanEntry(ScanCacheContext& context)
@@ -402,15 +401,19 @@ namespace rock::object_physics_body_set
             }
 
             auto& children = niNode->GetRuntimeData().children;
-            for (auto i = children.size(); i > 0; --i) {
-                auto* child = children[i - 1].get();
-                if (child) {
-                    ObjectPhysicsBodyScanCursorEntry entry{};
-                    entry.node.reset(child);
-                    entry.depth = childDepth;
-                    pendingNodes.push_back(std::move(entry));
-                }
-            }
+            const auto firstChild = pendingNodes.size();
+            // Use the same sparse slot walk as generated weapon geometry.
+            // size() is a populated count: stopping there left native bodies
+            // active in attachment branches beyond a hole (e.g. P-Bipod).
+            visitWeaponChildSlots(children, [&](auto* child, auto) {
+                ObjectPhysicsBodyScanCursorEntry entry{};
+                entry.node.reset(child);
+                entry.depth = childDepth;
+                pendingNodes.push_back(std::move(entry));
+                return true;
+            });
+            // The incremental scanner pops a stack; preserve recursive order.
+            std::reverse(pendingNodes.begin() + firstChild, pendingNodes.end());
         }
 
         bool cacheEntryStillReachable(RE::NiAVObject* rootNode, const ObjectPhysicsBodyScanEntry& entry)
@@ -456,12 +459,10 @@ namespace rock::object_physics_body_set
             }
 
             auto& children = niNode->GetRuntimeData().children;
-            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
-                auto* child = children[i].get();
-                if (child) {
-                    captureScanNode(bhkWorld, hknpWorld, rootRef, child, depth - 1, options, out);
-                }
-            }
+            visitWeaponChildSlots(children, [&](auto* child, auto) {
+                captureScanNode(bhkWorld, hknpWorld, rootRef, child, depth - 1, options, out);
+                return true;
+            });
         }
 
         void appendCachedBodyRecords(RE::bhkWorld* bhkWorld,
@@ -641,13 +642,9 @@ namespace rock::object_physics_body_set
         }
 
         auto& children = niNode->GetRuntimeData().children;
-        for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
-            auto* child = children[i].get();
-            if (child && hasCollisionObjectInSubtree(child, maxDepth - 1)) {
-                return true;
-            }
-        }
-        return false;
+        return !visitWeaponChildSlots(children, [&](auto* child, auto) {
+            return !hasCollisionObjectInSubtree(child, maxDepth - 1);
+        });
     }
 
     bool beginObjectPhysicsBodyScanCache(

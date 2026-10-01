@@ -35,6 +35,8 @@ namespace rock::collision_suppression_registry
                 return "NativeGrenadeThrow";
             case CollisionSuppressionOwner::InvalidFinalPose:
                 return "InvalidFinalPose";
+            case CollisionSuppressionOwner::LooseGeneratedCollision:
+                return "LooseGeneratedCollision";
             case CollisionSuppressionOwner::ConsumerStorage:
                 return "ConsumerStorage";
             case CollisionSuppressionOwner::ConsumerWeaponPart:

@@ -537,6 +537,11 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKHeldPlacementPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKHeldPlacementPolicyTests)
 
+  add_executable(ROCKLooseWeaponCollisionPolicyTests "${ROOT_DIR}/tests/LooseWeaponCollisionPolicyTests.cpp")
+  target_compile_features(ROCKLooseWeaponCollisionPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKLooseWeaponCollisionPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKLooseWeaponCollisionPolicyTests)
+
   add_executable(ROCKGeneratedBodyContactRegistryPolicyTests
     "${ROOT_DIR}/tests/GeneratedBodyContactRegistryPolicyTests.cpp"
   )

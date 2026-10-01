@@ -1,4 +1,5 @@
 #include "physics-interaction/hand/Hand.h"
+#include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
 #include "physics-interaction/hand/HandGrabInternal.h"
 #include "api/ProviderRuntimeServices.h"
@@ -15828,6 +15829,15 @@ namespace rock
         outcome.finalObjectRelease = releaseContext.finalObjectRelease;
         if (!isHolding()) {
             return outcome;
+        }
+
+        if (releaseContext.finalObjectRelease && _heldObjectIsLooseWeapon && world) {
+            auto* physics = PhysicsInteraction::s_instance.load(std::memory_order_acquire);
+            if (physics && !physics->prepareLooseWeaponRelease(getHeldRef(), world,
+                releaseContext.disposition == GrabReleaseDisposition::PhysicalDrop)) {
+                ROCK_LOG_SAMPLE_WARN(Hand, 2000, "Weapon release waiting for native collision restoration");
+                return outcome;
+            }
         }
 
         held_scene_presentation::clearHeldBodies(_isLeft);

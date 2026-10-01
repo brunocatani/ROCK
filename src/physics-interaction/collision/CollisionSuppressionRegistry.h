@@ -39,6 +39,7 @@ namespace rock::collision_suppression_registry
         EquippedWeaponDropHand = 5,
         NativeGrenadeThrow = 6,
         InvalidFinalPose = 7,
+        LooseGeneratedCollision = 8,
         ConsumerStorage = 9,
         ConsumerWeaponPart = 10,
     };

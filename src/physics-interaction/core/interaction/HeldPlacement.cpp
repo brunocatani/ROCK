@@ -336,7 +336,9 @@ void PhysicsInteraction::commitHeldPlacement(const PhysicsFrameContext& frame)
         grab_input_intent_policy::reset(_grabInput.intentStates[left ? 1u : 0u]);
         publishHandInputOwnership(hand,left);
     }
-    const bool anchored=allReleased && native_object_placement::anchor(ref,frame.hknpWorld,pose,
+    const bool collisionRestored=allReleased && _looseWeaponCollision.releaseReference(ref,
+        frame.hknpWorld,_generatedBodyStepDrive.callbackGate());
+    const bool anchored=collisionRestored && native_object_placement::anchor(ref,frame.hknpWorld,pose,
         std::span<const std::uint32_t>{bodies.data(),count});
     _placementCandidate=0;
     _placementLastResult=anchored ? api::grab::v1_1::PlacementResult::Anchored : api::grab::v1_1::PlacementResult::Rejected;

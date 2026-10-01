@@ -15,6 +15,7 @@ namespace rock::native_player_collision
     // Process-lifetime hook, installed once on the game thread. Only simulation
     // body pairs are filtered; native ray/shape query entry points stay intact.
     bool install() noexcept;
+    bool installed() noexcept;
 
     // Called only with a live callback-local snapshot. Equipped weapons resolve
     // to their actor; only a positive world WEAP reference is a loose weapon.

@@ -66,6 +66,7 @@ namespace rock
 
     class WeaponCollision
     {
+        friend class LooseWeaponCollision;
         struct WeaponBodyInstance;
 
     public:
@@ -627,7 +628,8 @@ namespace rock
             std::vector<GeneratedHullSource>& outSources);
 
         weapon_geometry_work::Task prepareGeneratedWeaponShapeSources(RE::NiPointer<RE::NiAVObject> root,
-            std::uint64_t equippedWeaponKey, std::vector<GeneratedHullSource>& outSources, bool preserveGaps);
+            std::uint64_t equippedWeaponKey, std::vector<GeneratedHullSource>& outSources, bool preserveGaps, bool looseOnly = false);
+        static RE::hknpShape* buildGeneratedSourceShape(const GeneratedHullSource& source);
         weapon_geometry_work::Task findGeneratedWeaponShapeSourcesRecursive(RE::NiPointer<RE::NiAVObject> nodeOwner,
             RE::NiPointer<RE::NiAVObject> sourceOwner, RE::NiTransform weaponRootTransform,
             int depth,
@@ -637,7 +639,7 @@ namespace rock
             const std::unordered_set<std::uintptr_t>& claimedSourceGroups,
             std::unordered_set<std::uintptr_t>& candidateExtractedSourceGroups,
             std::uint32_t& culledForEffectGeometry, bool preserveGaps);
-        bool advanceSourcePreparation();
+        bool advanceSourcePreparation(double sliceMilliseconds = 2.0);
         RE::NiTransform makeGeneratedBodyWorldTransform(const RE::NiTransform& weaponRootTransform, const RE::NiPoint3& localCenterGame) const;
         void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex);
         void clearGeneratedSourceCompletenessTracking();

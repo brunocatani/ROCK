@@ -142,6 +142,7 @@ namespace rock::performance_profiler
         WeaponCompoundPoseUpdate,
         WeaponKinematicDrive,
         WeaponDynamicDrive,
+        LooseWeaponCollision,
         Count
     };
 

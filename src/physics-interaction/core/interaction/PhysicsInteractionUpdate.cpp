@@ -3,6 +3,7 @@
 #include "api/StorageService.h"
 #include "api/WeaponPartCollisionService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/native/NativePlayerCollisionFilter.h"
 #include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/telemetry/DynamicColliderTrace.h"
@@ -443,6 +444,10 @@ namespace rock
          */
 
         updateGrabInput(frame);
+        _looseWeaponCollision.update(frame,
+            _rightHand.isHolding() ? _rightHand.getHeldRef() : nullptr,
+            _leftHand.isHolding() ? _leftHand.getHeldRef() : nullptr,
+            _generatedBodyStepDrive.callbackGate());
         commitHeldPlacement(frame);
         auto selectedCloseCarTarget = [&](const Hand& hand, const HandFrameInput& handInput) {
             DynamicWorldCarTarget target{};
@@ -973,10 +978,10 @@ namespace rock
             const auto desiredBodyMask = collision_layer_policy::buildRockBodyExpectedMask();
             const auto desiredDynamicRightHandProxyMask =
                 collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-                    false, g_rockConfig.npcDynamicCollisions);
+                    false, g_rockConfig.npcDynamicCollisions, native_player_collision::installed());
             const auto desiredDynamicLeftHandProxyMask =
                 collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-                    true, g_rockConfig.npcDynamicCollisions);
+                    true, g_rockConfig.npcDynamicCollisions, native_player_collision::installed());
             const auto desiredDynamicWeaponProxyMask =
                 collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask(g_rockConfig.npcDynamicCollisions);
             if (!collision_layer_policy::matrixLayerMaskMatches(_layers.expectedHandMask, desiredHandMask) ||

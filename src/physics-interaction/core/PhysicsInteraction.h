@@ -54,6 +54,7 @@
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/DynamicWeaponCollision.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
+#include "physics-interaction/weapon/LooseWeaponCollision.h"
 #include "physics-interaction/weapon/WeaponDebug.h"
 #include "physics-interaction/weapon/BareFistGuardPolicy.h"
 #include "physics-interaction/input/BareFistGesturePolicy.h"
@@ -158,6 +159,9 @@ namespace rock
         [[nodiscard]] EquippedWeaponTransitionCoordinator::PendingGrip equippedWeaponContinuity() const;
         void restoreEquippedWeaponContinuity(const EquippedWeaponTransitionCoordinator::PendingGrip& grip);
         void captureEquippedWeaponContinuity();
+        // Called before a final hand release, while the exact world reference
+        // and native body set still exist. A failed restore retains the grab.
+        bool prepareLooseWeaponRelease(RE::TESObjectREFR* reference, RE::hknpWorld* world, bool physicalDrop);
 
         // Runs before the normal ROCK interaction frame so weapon-relative
         // consumers see one authored primary-grip frame. Runtime eligibility
@@ -1097,6 +1101,7 @@ namespace rock
         WeaponCollision _weaponCollision;
         DynamicWeaponCollisionRuntime _dynamicWeaponCollision;
         PhysicsStepDriveCoordinator _generatedBodyStepDrive;
+        LooseWeaponCollision _looseWeaponCollision;
         api::grab::v1_1::HeldPlacementIntent _placementIntent{};
         held_placement_policy::FrameLease _placementLease;
         api::OwnerToken _placementActiveOwner{}, _placementPendingOwner{};
