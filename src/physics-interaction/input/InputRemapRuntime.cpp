@@ -1464,7 +1464,7 @@ namespace rock::input_remap_runtime
 
         [[nodiscard]] bool shouldDeferFiringHandActivateForManualScope(const RE::InputEvent* event)
         {
-            if (!g_rockConfig.rockEnableImmersiveScopes) return false;
+            if (!g_rockConfig.rockEnableImmersiveScopes && !physical_reload_input::nativeActivationPriority(weaponRouting().leftFiring)) return false;
             const bool eventMatched = isActivateReloadEvent(event);
             const bool primaryHandEvent = eventMatched && isPrimaryWandInputEvent(event);
             constexpr bool primaryHandIsLeft = false;
@@ -1798,7 +1798,7 @@ namespace rock::input_remap_runtime
                 classifyActivateTarget(primaryHandEvent) : ActivateTarget::Unavailable;
             bool nativeActivation = input_remap_policy::shouldPrioritizeNativeActivation(
                 target, isTakeEquipHandEngaged(primaryHandEvent));
-            if (g_rockConfig.rockEnableImmersiveScopes && gameplayActivation && primaryHandEvent && weaponDrawn &&
+            if ((g_rockConfig.rockEnableImmersiveScopes || physical_reload_input::nativeActivationPriority(false)) && gameplayActivation && primaryHandEvent && weaponDrawn &&
                 !weaponRouting().leftFiring &&
                 s_hooksInstalled.load(std::memory_order_acquire)) {
                 const auto* button = inputEvent->As<RE::ButtonEvent>();
@@ -2975,7 +2975,7 @@ namespace rock::input_remap_runtime
         const bool gameplayAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire);
         const bool menuActive = isInputBlockingMenuActive();
         const bool weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire);
-        const bool nativeActivationTarget = !physicalGesture && gameplayAllowed && !menuActive && weaponDrawn &&
+        const bool nativeActivationTarget = (!physicalGesture || physical_reload_input::nativeActivationPriority(firingHandIsLeft)) && gameplayAllowed && !menuActive && weaponDrawn &&
             !firingHandIsLeft && rightAcceptState.pressed &&
             s_manualScopeInputState.state == manual_scope_input_policy::State::Idle &&
             input_remap_policy::shouldPrioritizeNativeActivation(

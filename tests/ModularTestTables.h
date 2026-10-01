@@ -18,6 +18,7 @@
 #include <ROCK/InputV1_1.h>
 #include <ROCK/InputV1_2.h>
 #include <ROCK/InputV1_3.h>
+#include <ROCK/InputV1_4.h>
 #include <ROCK/References.h>
 #include <ROCK/PlayerController.h>
 #include <ROCK/Diagnostics.h>
@@ -31,7 +32,7 @@ namespace rock::api::touch { const ApiV1& table() noexcept; }
 namespace rock::api::weapon { const ApiV1& table() noexcept; const v1_1::Api& tableV1_1() noexcept; }
 namespace rock::api::weaponparts { const ApiV1& table() noexcept; const v1_2::Api& tableV1_2() noexcept; const v1_3::Api& tableV1_3() noexcept; const v1_4::Api& tableV1_4() noexcept; }
 namespace rock::api::animation { const ApiV1& table() noexcept; }
-namespace rock::api::input { const ApiV1& table() noexcept; const v1_1::Api& tableV1_1() noexcept; const v1_2::Api& tableV1_2() noexcept; const v1_3::Api& tableV1_3() noexcept; }
+namespace rock::api::input { const ApiV1& table() noexcept; const v1_1::Api& tableV1_1() noexcept; const v1_2::Api& tableV1_2() noexcept; const v1_3::Api& tableV1_3() noexcept; const v1_4::Api& tableV1_4() noexcept; }
 namespace rock::api::references { const ApiV1& table() noexcept; }
 namespace rock::api::playercontroller { const ApiV1& table() noexcept; }
 namespace rock::api::diagnostics { const ApiV1& table() noexcept; }

@@ -3,6 +3,7 @@
 #include <ROCK/InputV1_1.h>
 #include <ROCK/InputV1_2.h>
 #include <ROCK/InputV1_3.h>
+#include <ROCK/InputV1_4.h>
 #include "physics-interaction/input/PhysicalReloadInput.h"
 #include "EventBoundary.h"
 
@@ -107,6 +108,10 @@ Status ROCK_CALL getReloadGesture(OwnerToken owner,v1_3::ReloadGestureState* out
     if(const auto status=checkOutput(output);status!=Status::Ok)return status;
     return invoke(owner,kInterfaceId,1,true,[&]{return physical_reload_input::readGesture(*output);});
 }
+Status ROCK_CALL setGameplayReloadGesture(OwnerToken owner,const v1_3::ReloadGestureRequest* request) noexcept {
+    if(const auto status=checkInput(request);status!=Status::Ok)return status;
+    return invoke(owner,kInterfaceId,2,true,[&]{return physical_reload_input::setGameplayGesture(owner,*request);},provider::OwnerAccess::Active);
+}
 }
 const v1_1::Api& tableV1_1() noexcept {
     static const v1_1::Api value{{
@@ -129,5 +134,8 @@ const v1_2::Api& tableV1_2() noexcept {
 }
 const v1_3::Api& tableV1_3() noexcept {
     static const v1_3::Api value{tableV1_2(),&setReloadGesture,&clearReloadInput,&getReloadGesture};return value;
+}
+const v1_4::Api& tableV1_4() noexcept {
+    static const v1_4::Api value{tableV1_3(),&setGameplayReloadGesture};return value;
 }
 }

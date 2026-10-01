@@ -11,7 +11,7 @@ namespace {
     input::v1_2::ReloadInputRequest request;
     input::v1_2::ReloadInputState state;
     bool armed{};
-    bool tapScope{},scopeHeld{},gestureChanged{};
+    bool tapScope{},scopeHeld{},gestureChanged{},nativePriority{};
     std::uint64_t tapSequence{};
     std::uint32_t drainingHands{};
     std::atomic<std::uint32_t> activeMask{},drainMask{};
@@ -39,7 +39,7 @@ namespace {
             sample.skeletonGeneration==request.sample.skeletonGeneration&&sample.providerGeneration==request.sample.providerGeneration;
     }
 }
-static api::Status setInput(api::OwnerToken owner,const api::input::v1_2::ReloadInputRequest& value,bool gesture,bool blockFire) {
+static api::Status setInput(api::OwnerToken owner,const api::input::v1_2::ReloadInputRequest& value,bool gesture,bool blockFire,bool gameplayPriority=false) {
     using api::Status;using api::Hand;
     if(!owner||!value.weaponFormId||!value.weaponGenerationKey||!value.leaseFrames||value.leaseFrames>api::input::v1_2::kMaximumLeaseFrames||
         (value.hand!=Hand::Left&&value.hand!=Hand::Right))return Status::InvalidArgument;
@@ -47,7 +47,7 @@ static api::Status setInput(api::OwnerToken owner,const api::input::v1_2::Reload
     if(value.sample.frameIndex>now||now-value.sample.frameIndex>1)return Status::GenerationMismatch;
     std::scoped_lock lock(mutex);
     if(state.active&&state.owner!=owner)return Status::Busy;
-    const bool continuing=state.active&&state.owner==owner&&request.weaponGenerationKey==value.weaponGenerationKey&&state.hand==value.hand&&tapScope==gesture;
+    const bool continuing=state.active&&state.owner==owner&&request.weaponGenerationKey==value.weaponGenerationKey&&state.hand==value.hand&&tapScope==gesture&&nativePriority==gameplayPriority;
     const auto oldRequest=request;const auto oldState=state;
     request=value;state.owner=owner;
     if(!current()){request=oldRequest;state=oldState;return Status::GenerationMismatch;}
@@ -57,24 +57,32 @@ static api::Status setInput(api::OwnerToken owner,const api::input::v1_2::Reload
         const auto raw=input_remap_runtime::peekRawButtonState(value.hand==Hand::Left,7);
         armed=raw.available&&!raw.held;state.held=raw.held;
     }
-    tapScope=gesture;state.active=1;state.sample=provider::runtime::sample();state.expiresAfterFrame=now+value.leaseFrames;
+    tapScope=gesture;nativePriority=gameplayPriority;state.active=1;state.sample=provider::runtime::sample();state.expiresAfterFrame=now+value.leaseFrames;
     const auto nextFire=blockFire?handMask(value.hand):0u;
     const auto oldFire=fireMask.exchange(nextFire,std::memory_order_acq_rel);
     fireDrainMask.fetch_or(oldFire&~nextFire,std::memory_order_release);
-    activeMask.store(handMask(value.hand),std::memory_order_release);
+    // Gameplay-priority leases arbitrate Accept at the existing native event
+    // hook. Masking it here would prevent workbenches/use/take from seeing it.
+    activeMask.store(gameplayPriority?0u:handMask(value.hand),std::memory_order_release);
     return Status::Ok;
 }
 api::Status set(api::OwnerToken owner,const api::input::v1_2::ReloadInputRequest& value) {
     return setInput(owner,value,false,false);
 }
-api::Status setGesture(api::OwnerToken owner,const api::input::v1_3::ReloadGestureRequest& value) {
+static api::Status setGestureInput(api::OwnerToken owner,const api::input::v1_3::ReloadGestureRequest& value,bool gameplayPriority) {
     if(value.flags&~1u)return api::Status::InvalidArgument;
     const auto primary=provider::runtime::apiGetPrimaryHandV1();
     if(static_cast<api::Hand>(primary)!=value.hand)return api::Status::HandUnavailable;
     api::input::v1_2::ReloadInputRequest common;
     common.weaponFormId=value.weaponFormId;common.weaponGenerationKey=value.weaponGenerationKey;
     common.sample=value.sample;common.hand=value.hand;common.leaseFrames=value.leaseFrames;
-    return setInput(owner,common,true,(value.flags&1)!=0);
+    return setInput(owner,common,true,(value.flags&1)!=0,gameplayPriority);
+}
+api::Status setGesture(api::OwnerToken owner,const api::input::v1_3::ReloadGestureRequest& value) {
+    return setGestureInput(owner,value,false);
+}
+api::Status setGameplayGesture(api::OwnerToken owner,const api::input::v1_3::ReloadGestureRequest& value) {
+    return setGestureInput(owner,value,true);
 }
 api::Status readGesture(api::input::v1_3::ReloadGestureState& out) {
     std::scoped_lock lock(mutex);out={};out.sample=provider::runtime::sample();out.tapSequence=tapSequence;
@@ -83,6 +91,9 @@ api::Status readGesture(api::input::v1_3::ReloadGestureState& out) {
 }
 bool gestureActive(bool left) {
     std::scoped_lock lock(mutex);return state.active&&tapScope&&state.hand==(left?api::Hand::Left:api::Hand::Right);
+}
+bool nativeActivationPriority(bool left) {
+    std::scoped_lock lock(mutex);return state.active&&tapScope&&nativePriority&&state.hand==(left?api::Hand::Left:api::Hand::Right);
 }
 bool takeGestureChange(){std::scoped_lock lock(mutex);return std::exchange(gestureChanged,false);}
 bool routeGesture(bool left,bool tap,bool scope) {

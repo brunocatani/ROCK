@@ -6,8 +6,10 @@ namespace rock::physical_reload_input {
     api::Status clear(api::OwnerToken);
     api::Status read(api::input::v1_2::ReloadInputState&);
     api::Status setGesture(api::OwnerToken,const api::input::v1_3::ReloadGestureRequest&);
+    api::Status setGameplayGesture(api::OwnerToken,const api::input::v1_3::ReloadGestureRequest&);
     api::Status readGesture(api::input::v1_3::ReloadGestureState&);
     bool gestureActive(bool left);
+    bool nativeActivationPriority(bool left);
     bool takeGestureChange();
     bool routeGesture(bool left,bool tap,bool scopeHeld);
     bool fireBlocked(bool left) noexcept;
