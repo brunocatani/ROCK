@@ -1256,7 +1256,7 @@ namespace rock
         WeaponInteractionContact& outContact,
         InteractionQueryBatch& batch,
         api::Hand hand,const weapon_drive_pose::NativeFrame* operatingPose,
-        std::span<const std::array<float,3>> extraProbes,bool operatingOnly) const
+        std::span<const std::array<float,3>> extraProbes,bool operatingOnly,std::span<const std::array<float,3>> pinkyProbes) const
     {
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponContactProbe);
         outContact = {};
@@ -1333,7 +1333,7 @@ namespace rock
 
         weapon_interaction_query::Selection selection;
         const auto pointSelection=weapon_part_points::nearest(std::span(batch.points).first(batch.pointCount),hand,
-            {probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z},probeRadiusGame,extraProbes,operatingOnly);
+            {probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z},probeRadiusGame,extraProbes,operatingOnly,pinkyProbes);
         const auto picked=pointSelection.point;
         const bool handMask=hand==api::Hand::Left||hand==api::Hand::Right;
         if(picked<batch.pointCount){selection.part=batch.points[picked].part;selection.rank.distanceSquaredGame=pointSelection.distanceSquared;}
@@ -1344,12 +1344,12 @@ namespace rock
             const auto first=extraProbes.empty()?std::array<float,3>{}:extraProbes[0];
             const auto second=extraProbes.size()<2?std::array<float,3>{}:extraProbes[1];
             if(hand==api::Hand::Left){
-                ROCK_LOG_SAMPLE_INFO(Weapon,1500,"OperatingGrabProbe left extraProbes={} selected={} distance={:.3f} palm=({:.2f},{:.2f},{:.2f}) extra0=({:.2f},{:.2f},{:.2f}) extra1=({:.2f},{:.2f},{:.2f})",
-                    extraProbes.size(),picked<batch.pointCount?batch.points[picked].rule.point.pointId:0,picked<batch.pointCount?std::sqrt(pointSelection.distanceSquared):-1.f,
+                ROCK_LOG_SAMPLE_INFO(Weapon,1500,"OperatingGrabProbe left extraProbes={} pinkyProbes={} selected={} distance={:.3f} palm=({:.2f},{:.2f},{:.2f}) extra0=({:.2f},{:.2f},{:.2f}) extra1=({:.2f},{:.2f},{:.2f})",
+                    extraProbes.size(),pinkyProbes.size(),picked<batch.pointCount?batch.points[picked].rule.point.pointId:0,picked<batch.pointCount?std::sqrt(pointSelection.distanceSquared):-1.f,
                     probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z,first[0],first[1],first[2],second[0],second[1],second[2]);
             }else{
-                ROCK_LOG_SAMPLE_INFO(Weapon,1500,"OperatingGrabProbe right extraProbes={} selected={} distance={:.3f} palm=({:.2f},{:.2f},{:.2f}) extra0=({:.2f},{:.2f},{:.2f}) extra1=({:.2f},{:.2f},{:.2f})",
-                    extraProbes.size(),picked<batch.pointCount?batch.points[picked].rule.point.pointId:0,picked<batch.pointCount?std::sqrt(pointSelection.distanceSquared):-1.f,
+                ROCK_LOG_SAMPLE_INFO(Weapon,1500,"OperatingGrabProbe right extraProbes={} pinkyProbes={} selected={} distance={:.3f} palm=({:.2f},{:.2f},{:.2f}) extra0=({:.2f},{:.2f},{:.2f}) extra1=({:.2f},{:.2f},{:.2f})",
+                    extraProbes.size(),pinkyProbes.size(),picked<batch.pointCount?batch.points[picked].rule.point.pointId:0,picked<batch.pointCount?std::sqrt(pointSelection.distanceSquared):-1.f,
                     probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z,first[0],first[1],first[2],second[0],second[1],second[2]);
             }
         }

@@ -455,17 +455,21 @@ namespace rock
                         handInput.rawHandWorld,
                         isLeft);
                 std::array<std::array<float,3>,3> extraProbes{};std::size_t extraCount=0;
+                std::array<std::array<float,3>,2> pinkyProbes{};std::size_t pinkyCount=0;
                 if(operatingPose&&!handInput.disabled){
                     grab_pinch_pocket_policy::FingerFrame fingers;
                     if((isLeft?_leftHand:_rightHand).tryGetPinchFingerFrame(fingers)){
                         extraProbes[extraCount++]={fingers.thumbTip.x,fingers.thumbTip.y,fingers.thumbTip.z};
                         extraProbes[extraCount++]={fingers.indexTip.x,fingers.indexTip.y,fingers.indexTip.z};
                     }
+                    std::array<RE::NiPoint3,2> pinky{};
+                    pinkyCount=(isLeft?_leftHand:_rightHand).getPinkyOperatingProbes(pinky);
+                    for(std::size_t i=0;i<pinkyCount;++i)pinkyProbes[i]={pinky[i].x,pinky[i].y,pinky[i].z};
                     if(probeAllowed)extraProbes[extraCount++]={handInput.grabAnchorWorld.x,handInput.grabAnchorWorld.y,handInput.grabAnchorWorld.z};
                 }
                 const bool operatingObserved=operatingPose&&!handInput.disabled&&_weaponCollision.tryFindInteractionContactNearPoint(
                     weaponNode,legacyPalmPivotWorld,probeAllowed?g_rockConfig.rockWeaponInteractionProbeRadius:g_rockConfig.rockWeaponInteractionTouchRadius,
-                    outContact,interactionQueries,isLeft?api::Hand::Left:api::Hand::Right,operatingPose,std::span(extraProbes).first(extraCount),true);
+                    outContact,interactionQueries,isLeft?api::Hand::Left:api::Hand::Right,operatingPose,std::span(extraProbes).first(extraCount),true,std::span(pinkyProbes).first(pinkyCount));
                 const bool touchObserved = !operatingObserved&&weaponNode &&
                     _weaponCollision.tryFindInteractionContactNearPoint(
                         weaponNode,

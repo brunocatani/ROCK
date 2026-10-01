@@ -359,7 +359,7 @@ namespace rock
             InteractionQueryBatch& batch,
             api::Hand hand = api::Hand::None,
             const weapon_drive_pose::NativeFrame* operatingPose=nullptr,
-            std::span<const std::array<float,3>> extraProbes={},bool operatingOnly=false) const;
+            std::span<const std::array<float,3>> extraProbes={},bool operatingOnly=false,std::span<const std::array<float,3>> pinkyProbes={}) const;
 
         bool tryFindCurrentWeaponSurfaceNearPoint(
             const RE::NiAVObject* currentWeaponRoot,

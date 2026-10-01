@@ -88,7 +88,7 @@ int main() {
     }
     verify(touch::table(),touch::kSupportedPermissions);
     verify(weapon::tableV1_1(),weapon::kSupportedPermissions);
-    verify(weaponparts::tableV1_4(),weaponparts::kSupportedPermissions);
+    verify(weaponparts::tableV1_5(),weaponparts::kSupportedPermissions);
     {
         const InterfaceDescriptorV1 *oldParts{},*newParts{};
         for(const auto minor:{0u,1u}) {
@@ -112,7 +112,14 @@ int main() {
         const auto* operatingPoints=static_cast<const weaponparts::v1_4::Api*>(operating->table);
         assert(operatingPoints->setOperatingGrabPoints(79,&point,1)==Status::Ok);
         assert(operatingPoints->v1_3.setGrabPoints(79,&point,1)==Status::Ok&&operatingPoints->v1_3.clearGrabPoints(77)==Status::Ok);
-        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,1,5,sizeof(*operatingPoints),&result)==Status::UnsupportedMinor);
+        const InterfaceDescriptorV1* pinky{};
+        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,1,5,sizeof(weaponparts::v1_5::Api),&pinky)==Status::Ok&&pinky==operating);
+        const auto* pinkyPoints=static_cast<const weaponparts::v1_5::Api*>(pinky->table);
+        assert(pinkyPoints->setPinkyOperatingGrabPoints(79,&point,1)==Status::Ok);
+        assert(pinkyPoints->v1_4.setOperatingGrabPoints(79,&point,1)==Status::Ok);
+        const std::array previousOperating{discovery::RegisteredInterface{{40,InterfaceId::WeaponParts,1,4,sizeof(weaponparts::v1_4::Api),1,0,0,&pinkyPoints->v1_4},3}};
+        assert(discovery::query(previousOperating,InterfaceId::WeaponParts,1,5,sizeof(*pinkyPoints),&result)==Status::UnsupportedMinor);
+        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,1,6,sizeof(*pinkyPoints),&result)==Status::UnsupportedMinor);
         assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,2,0,sizeof(*points),&result)==Status::UnsupportedMajor);
         const std::array previous{discovery::RegisteredInterface{{40,InterfaceId::WeaponParts,1,1,sizeof(weaponparts::ApiV1),1,0,0,&api->v1},3}};
         assert(discovery::query(previous,InterfaceId::WeaponParts,1,2,sizeof(*api),&result)==Status::UnsupportedMinor);

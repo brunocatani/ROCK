@@ -2310,6 +2310,27 @@ namespace rock
         _selectionHoldSeconds = 0.0f;
     }
 
+    std::size_t Hand::getPinkyOperatingProbes(std::array<RE::NiPoint3,2>& outProbes) const
+    {
+        outProbes = {};
+        root_flattened_finger_skeleton_runtime::Snapshot snapshot{};
+        if (!root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, snapshot)) return 0;
+        constexpr std::size_t pinky = 4;
+        const auto& chain = snapshot.fingers[pinky];
+        if (!chain.valid) return 0;
+        std::size_t count = 0;
+        // The proximal knuckle is the tracked boundary between little finger
+        // and palm; it remains useful when the fingertip folds into the palm.
+        if (grab_pinch_pocket_policy::isFinitePoint(chain.points[0])) outProbes[count++] = chain.points[0];
+        constexpr auto tip = static_cast<std::size_t>(hand_collider_semantics::HandFingerSegment::Tip);
+        const auto& collider = _boneColliders.dynamicTwinTargets().fingers[pinky][tip];
+        RE::NiPoint3 endpoint{};
+        if (chain.tipGeometryValid && collider.valid &&
+            grab_pinch_pocket_policy::colliderTipEndpoint(chain.tipSegmentCenterWorld,
+                chain.tipDirectionWorld, collider.length, collider.convexRadius, endpoint)) outProbes[count++] = endpoint;
+        return count;
+    }
+
     bool Hand::tryGetPinchFingerFrame(grab_pinch_pocket_policy::FingerFrame& outFrame) const
     {
         outFrame = {};

@@ -1,5 +1,5 @@
 #include "SnapshotReads.h"
-#include <ROCK/WeaponPartsV1_4.h>
+#include <ROCK/WeaponPartsV1_5.h>
 #include "api/WeaponPartCollisionService.h"
 #include "WeaponPartsMarshalling.h"
 #include <ROCK/Discovery.h>
@@ -180,6 +180,13 @@ Status ROCK_CALL setOperatingGrabPoints(OwnerToken owner,const v1_3::GrabPoint* 
         provider::runtime::refreshSources();return provider::runtime::setWeaponPartGrabPoints(owner,{points,count},true);
     });
 }
+Status ROCK_CALL setPinkyOperatingGrabPoints(OwnerToken owner,const v1_3::GrabPoint* points,std::uint32_t count) noexcept {
+    return invoke(owner,kInterfaceId,2,true,[&]() -> Status {
+        if(!count||count>v1_3::kMaxGrabPoints||!points)return Status::InvalidArgument;
+        for(std::uint32_t i=0;i<count;++i)if(const auto s=checkInput(points+i);s!=Status::Ok)return s;
+        provider::runtime::refreshSources();return provider::runtime::setWeaponPartGrabPoints(owner,{points,count},true,true);
+    });
+}
 Status ROCK_CALL setCollisionSuppression(OwnerToken owner,const v1_2::CollisionSuppression* request) noexcept {
     return invoke(owner,kInterfaceId,2,true,[&]() -> Status {
         if(const auto status=checkInput(request);status!=Status::Ok)return status;
@@ -222,4 +229,8 @@ const v1_3::Api& tableV1_3() noexcept {
 const v1_4::Api& tableV1_4() noexcept {
     static const v1_4::Api value{tableV1_3(),&setOperatingGrabPoints};return value;
 }
+const v1_5::Api& tableV1_5() noexcept {
+    static const v1_5::Api value{tableV1_4(),&setPinkyOperatingGrabPoints};return value;
+}
+
 }
