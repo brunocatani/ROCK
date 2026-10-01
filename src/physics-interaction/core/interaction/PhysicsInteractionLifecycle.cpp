@@ -1,4 +1,5 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/native/BipodFrozenRetirement.h"
 #include "api/StorageService.h"
 #include "api/WeaponPartCollisionService.h"
 #include "physics-interaction/visual/GripZoneIndicators.h"
@@ -155,6 +156,11 @@ namespace rock
         // ROCK-owned body banks before clearing registry or wrapper state.
         _generatedBodyStepDrive.reset();
         resetHeldPlacement();
+        if (currentBhkWorld != _lifecycle.generatedBodiesBhkWorld) {
+            bipod_frozen_retirement::cancelForWorldLoss();
+            _bipodRetirementVisual.abandonSceneGraph();
+            _bipodRetirementHandle = {};
+        }
 
         clearGeneratedBodyContactRegistry();
         const bool generatedWorldStillLive =
@@ -564,6 +570,13 @@ namespace rock
     void PhysicsInteraction::shutdown(::rock::provider::RockProviderLifecycleReason reason)
     {
         resetHeldPlacement();
+        if (reason == provider::RockProviderLifecycleReason::GameLoaded ||
+            reason == provider::RockProviderLifecycleReason::WorldChanged ||
+            reason == provider::RockProviderLifecycleReason::WorldUnavailable ||
+            reason == provider::RockProviderLifecycleReason::Shutdown)
+            bipod_frozen_retirement::cancelForWorldLoss();
+        _bipodRetirementVisual.release("physics-shutdown");
+        _bipodRetirementHandle = {};
         _equipped.gripResumePending = _equipped.continuityGrip.pending;
         cancelBareFistMode("physics-shutdown");
         _grabInput.bareFistDrawOwned = false;

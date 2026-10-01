@@ -767,7 +767,7 @@ namespace rock
          * firing seat to the stable equipped identity. The authored support
          * relation remains independent and unchanged.
          */
-        const bool supportOnlyCarry = weaponAuthority.isPartCarryActive();
+        const bool supportOnlyCarry = weaponAuthority.isFiringGripDetached();
         if (input.rockFiringHandIsLeft || supportOnlyCarry || input.pendingLeftFiringGrip) {
             const bool canonicalReady =
                 input.runtimeInitialized &&

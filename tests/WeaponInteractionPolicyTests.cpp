@@ -4503,15 +4503,43 @@ int main()
         canPreserveManualOwnership(0xAAu, 0xCCu, 0u, false));
 
     GripReleaseDebounceState primaryReleaseDebounce{};
-    auto primaryReleaseDecision = debouncePrimaryGripRelease(primaryReleaseDebounce, false);
+    auto primaryReleaseDecision = debouncePrimaryGripRelease(primaryReleaseDebounce, false, true);
     ok &= expectTrue("one open primary sample retains firing grip", primaryReleaseDecision.retained);
     ok &= expectFalse("one open primary sample does not confirm release", primaryReleaseDecision.releaseConfirmed);
-    primaryReleaseDecision = debouncePrimaryGripRelease(primaryReleaseDebounce, true);
+    primaryReleaseDecision = debouncePrimaryGripRelease(primaryReleaseDebounce, true, true);
     ok &= expectTrue("held primary sample resets release debounce", primaryReleaseDecision.retained);
-    primaryReleaseDecision = debouncePrimaryGripRelease(primaryReleaseDebounce, false);
-    primaryReleaseDecision = debouncePrimaryGripRelease(primaryReleaseDebounce, false);
+    primaryReleaseDecision = debouncePrimaryGripRelease(primaryReleaseDebounce, false, true);
+    primaryReleaseDecision = debouncePrimaryGripRelease(primaryReleaseDebounce, false, true);
     ok &= expectFalse("stable open primary samples release firing grip", primaryReleaseDecision.retained);
     ok &= expectTrue("stable open primary samples confirm release", primaryReleaseDecision.releaseConfirmed);
+
+    // Surface retention clears the old debounce, while support-only carry can
+    // arrive with a confirmed release. Neither may invent a reattach squeeze
+    // while the former firing hand remains inside the grip zone.
+    for (const bool firingLeft : { false, true }) {
+        for (const std::uint8_t openFrames : { std::uint8_t{0}, kPrimaryReleaseConfirmFrames }) {
+            GripReleaseDebounceState detachedDebounce{openFrames};
+            PrimaryReleaseIntentState detachedIntent{};
+            for (unsigned frame = 0; frame < 3; ++frame) {
+                const auto detachedRelease = resolvePrimaryReleaseIntent(detachedIntent, {
+                    .ownershipKey = 7, .firingHandIsLeft = firingLeft,
+                    .logicalHeld = false, .primaryOwned = false,
+                });
+                const auto detachedInput = debouncePrimaryGripRelease(
+                    detachedDebounce, detachedRelease.retained, false);
+                ok &= expectFalse("detached open firing hand cannot reattach inside grip zone",
+                    rock::weapon_two_handed_grip_math::shouldReattachFiringGripOnGrab(
+                        detachedInput.retained, true));
+            }
+            const auto squeezed = resolvePrimaryReleaseIntent(detachedIntent, {
+                .ownershipKey = 7, .firingHandIsLeft = firingLeft,
+                .logicalHeld = true, .primaryOwned = false,
+            });
+            const auto reattachInput = debouncePrimaryGripRelease(detachedDebounce, squeezed.retained, false);
+            ok &= expectTrue("fresh firing-hand squeeze can reattach from bipod",
+                rock::weapon_two_handed_grip_math::shouldReattachFiringGripOnGrab(reattachInput.retained, true));
+        }
+    }
 
     PrimaryReleaseIntentState releaseIntent{};
     auto release = resolvePrimaryReleaseIntent(releaseIntent, {

@@ -454,7 +454,7 @@ namespace rock
                 .primaryGripRetained = equipped_weapon_manual_ownership_policy::shouldRetainPrimaryOnlyOwnership(
                     primaryDetachEnabled,
                     primaryGripInput.held,
-                    _handlingSettings.lastGripReleaseDropEnabled),
+                    _handlingSettings.lastGripReleaseDropEnabled || canRetainOnSurface()),
                 .supportGripRetained = false,
             });
 
@@ -469,7 +469,7 @@ namespace rock
 
         if (manualDecision.dropRequested) {
             requestEquippedWeaponDrop("primary-only-grip-released",
-                isFiringHandLeft() ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right, dt);
+                isFiringHandLeft() ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right, dt, false, true);
             return;
         }
 
@@ -947,7 +947,7 @@ namespace rock
     {
         const bool targetHandHoldingObject =
             isLeft ? _firing.leftHandHoldingObjectForPose : _firing.rightHandHoldingObjectForPose;
-        const bool firingHandDetached = _session.state == TwoHandedState::PartCarry;
+        const bool firingHandDetached = isFiringGripDetached();
         const bool transferred = _session.state == TwoHandedState::Gripping && isFiringHand(isLeft) &&
             _firing.transferredPrimaryGrip.valid();
         if (firingHandDetached && _firing.authoredFingerPosePublished) {

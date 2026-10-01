@@ -78,6 +78,7 @@ namespace rock
         // Master switch for every ROCK-owned visual recoil profile and delivery.
         bool rockImmersiveRecoil = true;
         bool rockBipodMode = true;
+        float rockBipodHandsFreeRadiusMeters = 2.0f;
         float rockLaserRecoilPercent = 100.0f;
         float rockPistolOneHandRecoilPercent = 300.0f;
         float rockPistolTwoHandRecoilPercent = 80.0f;

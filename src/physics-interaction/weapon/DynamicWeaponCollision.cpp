@@ -565,7 +565,7 @@ namespace rock
         RE::NiNode* weaponNode,
         const std::uint64_t weaponGenerationKey,
         const WeaponCollision& weaponCollision,
-        const RE::NiPoint3* primaryGripWeaponLocal)
+        const RE::NiPoint3* primaryGripWeaponLocal, const bool handsFree)
     {
         FrameResult result{};
         result.requestedWeaponWorld = _frameRequestedWeaponWorld;
@@ -597,7 +597,7 @@ namespace rock
         }
 
         result.proxyActive = true;
-        updateSurfaceSupport(frame, primaryGripWeaponLocal);
+        updateSurfaceSupport(frame, primaryGripWeaponLocal, handsFree);
         if (!_authorityConstraint.isValid() || _rebuildRequestedAtomic.load(std::memory_order_acquire)) return result;
         if (!_bladePenetration.update(frame, weaponCollision, weaponNode, _body,
                 _createdCenterWeaponLocal, weaponGenerationKey, _physicsCallbackGate,

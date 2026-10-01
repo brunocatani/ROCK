@@ -9,6 +9,7 @@
 #include "api/FRIKApiV2.h"
 #define ROCK_API_EXPORTS
 #include "RockConfig.h"
+#include "physics-interaction/native/BipodFrozenRetirement.h"
 #include "rock_support/GameIniOverrides.h"
 #include "api/ROCKProviderApiInternal.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
@@ -1321,10 +1322,10 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Query(const F4SE::QueryInterface* a
         return false;
     }
 
-    const auto requiredRuntime = F4SE::RUNTIME_LATEST_VR;
+    const REL::Version requiredRuntime{1, 2, 72, 0};
 
-    if (a_f4se->RuntimeVersion() < requiredRuntime) {
-        logger::critical("ROCK: Unsupported runtime version {} (need >= {}).", a_f4se->RuntimeVersion().string(), requiredRuntime.string());
+    if (REL::Module::get().version() != requiredRuntime) {
+        logger::critical("ROCK: Unsupported executable version {} (need {}).", REL::Module::get().version().string(), requiredRuntime.string());
         return false;
     }
 
@@ -1347,8 +1348,9 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     }
     s_messaging->RegisterListener(onF4SEMessage);
 
-    logger::info("ROCK: Allocate trampoline (2048 bytes)...");
-    F4SE::AllocTrampoline(2048);
+    logger::info("ROCK: Allocate trampoline (2176 bytes)...");
+    F4SE::AllocTrampoline(2176);
+    (void)rock::bipod_frozen_retirement::install();
 
     if (!rock::native_impact_audio::install()) {
         logger::error("ROCK: Impact audio filtering is unavailable; native audio remains unchanged.");

@@ -793,9 +793,9 @@ namespace rock
         const std::uint64_t effectiveGenerationKey = authorityGenerationKey != 0 ? authorityGenerationKey : _session.weaponGenerationKey;
         if (notifyVisualIntentObserver && _visuals.weaponIntentObserver) {
             RE::NiTransform driverWorld{};
-            const bool driverValid = intentSource == dynamic_weapon_collision_policy::VisualIntentSource::AuthoredPrimary ?
+            const bool driverValid = !isSurfaceSupported() && (intentSource == dynamic_weapon_collision_policy::VisualIntentSource::AuthoredPrimary ?
                 tryGetAuthoredPrimaryTrackedFiringHandWorld(driverWorld) :
-                tryGetSolverHandTransform(weaponCarrierIsLeft(), driverWorld);
+                tryGetSolverHandTransform(weaponCarrierIsLeft(), driverWorld));
             _visuals.weaponIntentObserver(
                 _visuals.weaponIntentObserverContext,
                 weaponNode,
@@ -947,7 +947,7 @@ namespace rock
         const RE::NiTransform requestedWeaponWorld = weaponNode->world;
         const auto attachedHands =
             dynamic_weapon_collision_policy::selectAttachedHands(
-                _session.state == TwoHandedState::PartCarry,
+                isFiringGripDetached(),
                 _session.state == TwoHandedState::Gripping ||
                     _session.state == TwoHandedState::PrimaryOnly,
                 isFiringHandLeft(),

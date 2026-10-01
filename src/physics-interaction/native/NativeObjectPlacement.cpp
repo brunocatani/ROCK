@@ -102,8 +102,8 @@ ScriptPreparation prepareLoadScript(RE::TESObjectREFR* ref, bool start) {
     // grab intact and reads back completion on a later frame, with a deadline.
     return ScriptPreparation::Pending;
 }
-bool anchor(RE::TESObjectREFR* ref, RE::hknpWorld* world,
-    const RE::NiTransform& pose, std::span<const std::uint32_t> bodyIds) {
+static bool anchorImpl(RE::TESObjectREFR* ref, RE::hknpWorld* world,
+    const RE::NiTransform& pose, std::span<const std::uint32_t> bodyIds, bool allowFrozen) {
     if (!available() || !ref || ref->IsDeleted() || ref->IsDisabled() || !world ||
         bodyIds.empty() || bodyIds.size()>held_placement_policy::kMaxBodies || !ref->Get3D() ||
         !std::isfinite(pose.translate.x) || !std::isfinite(pose.translate.y) || !std::isfinite(pose.translate.z)) return false;
@@ -116,6 +116,7 @@ bool anchor(RE::TESObjectREFR* ref, RE::hknpWorld* world,
     std::array<BodyMotionType,held_placement_policy::kMaxBodies> originalMotion{};
     std::array<RE::NiAVObject*,held_placement_policy::kMaxBodies> movableOwners{};
     std::size_t movableOwnerCount=0;
+    bool alreadyFrozen=false;
     for (std::size_t i=0;i<bodyIds.size();++i) {
         const auto body=havok_runtime::snapshotBody(world,RE::hknpBodyId{bodyIds[i]});
         if (!body.valid || !body.body || !body.ownerNode || !body.collisionObject ||
@@ -126,6 +127,7 @@ bool anchor(RE::TESObjectREFR* ref, RE::hknpWorld* world,
         owners[i]=body.ownerNode;
         originalMotion[i]=physics_body_classifier::motionTypeFromBodyFlags(body.body->flags);
         if (originalMotion[i]==BodyMotionType::Static && body.motionIndex==0) continue;
+        if (allowFrozen && originalMotion[i]==BodyMotionType::Keyframed) { alreadyFrozen=true; continue; }
         if (originalMotion[i]!=BodyMotionType::Dynamic) {
             ROCK_LOG_WARN(Hand,"Held placement rejected ref={:08X} stage=body-motion body={}",ref->GetFormID(),bodyIds[i]);
             return false;
@@ -142,7 +144,7 @@ bool anchor(RE::TESObjectREFR* ref, RE::hknpWorld* world,
             return false;
         }
     }
-    if (!movableOwnerCount) return false;
+    if (!movableOwnerCount && !alreadyFrozen) return false;
     const RE::hkVector4f zero{};
     for (std::size_t i=0;i<bodyIds.size();++i) {
         if (originalMotion[i]==BodyMotionType::Static) continue;
@@ -158,8 +160,10 @@ bool anchor(RE::TESObjectREFR* ref, RE::hknpWorld* world,
     bool frozen=true;
     for (std::size_t i=0;i<bodyIds.size();++i) {
         const auto body=havok_runtime::snapshotBodyIdentity(world,RE::hknpBodyId{bodyIds[i]});
-        const bool expected=body.valid && body.body && held_placement_policy::anchoredMotion(originalMotion[i],
-            physics_body_classifier::motionTypeFromBodyFlags(body.body->flags));
+        const bool expected=body.valid && body.body &&
+            (held_placement_policy::anchoredMotion(originalMotion[i], physics_body_classifier::motionTypeFromBodyFlags(body.body->flags)) ||
+                (allowFrozen && originalMotion[i]==BodyMotionType::Keyframed &&
+                    physics_body_classifier::motionTypeFromBodyFlags(body.body->flags)==BodyMotionType::Keyframed));
         if (!expected) ROCK_LOG_WARN(Hand,"Held placement rejected ref={:08X} stage=motion-verification body={} originalMotion={}",
             ref->GetFormID(),bodyIds[i],static_cast<unsigned>(originalMotion[i]));
         frozen=frozen && expected;
@@ -184,5 +188,13 @@ bool anchor(RE::TESObjectREFR* ref, RE::hknpWorld* world,
     native().rotation(ref,angles);
     ref->AddChange(4);
     return true;
+}
+bool anchor(RE::TESObjectREFR* ref, RE::hknpWorld* world,
+    const RE::NiTransform& pose, std::span<const std::uint32_t> bodyIds) {
+    return anchorImpl(ref,world,pose,bodyIds,false);
+}
+bool anchorRetiredWeapon(RE::TESObjectREFR* ref, RE::hknpWorld* world,
+    const RE::NiTransform& pose, std::span<const std::uint32_t> bodyIds) {
+    return anchorImpl(ref,world,pose,bodyIds,true);
 }
 }

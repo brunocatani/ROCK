@@ -1,10 +1,65 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
+#include "physics-interaction/native/BipodFrozenRetirement.h"
+#include "physics-interaction/native/PhysicsScale.h"
+#include "physics-interaction/weapon/BipodRetentionPolicy.h"
 
 // Shared native placement for equipped-to-loose Toggle Drop and Auto Drop.
 
 namespace rock
 {
+    bool PhysicsInteraction::retireSurfaceSupportedWeapon(const PhysicsFrameContext& frame, RE::NiNode* weaponNode)
+    {
+        if (!_twoHandedGrip.isSurfaceSupported() || !weaponNode || frame.menuBlocked ||
+            !frame.worldReady || !physicsWritesAllowedForWorld(frame.hknpWorld)) return false;
+        RE::NiPoint3 anchor{};
+        const bool outside = frame.hasHmdFrame && _dynamicWeaponCollision.tryGetSurfaceAnchor(anchor) &&
+            bipod_retention_policy::outsideRadius(frame.hmdPositionWorld, anchor,
+                physics_scale::gameToHavok(), g_rockConfig.rockBipodHandsFreeRadiusMeters);
+        const bool supportLost = !_dynamicWeaponCollision.hasLatchedSurfaceSupport(
+            reinterpret_cast<std::uintptr_t>(weaponNode), _weaponCollision.getCurrentWeaponGenerationKey());
+        if (!outside && !_dynamicWeaponCollision.surfaceRetirementRequested() && !supportLost) return false;
+        const auto pose = weaponNode->world;
+        const auto form = currentEquippedWeaponFormId();
+        if (!bipod_frozen_retirement::arm(form, frame.bhkWorld, pose)) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Bipod retirement retained equipped item form={:08X} nativeGuard={} pending={}",
+                form, bipod_frozen_retirement::available(), bipod_frozen_retirement::pending());
+            return false;
+        }
+        const auto source = equipped_weapon_visual_state::observe(form);
+        RE::NiPointer<RE::NiAVObject> model(source.ancestorPathVisible && source.instanceLocallyVisible ? source.exactInstance : nullptr);
+        const auto modelInWeapon = model ? transform_math::composeTransforms(
+            transform_math::invertTransform(pose), model->world) : RE::NiTransform{};
+        RE::NiPointer<RE::NiNode> retainedNode(weaponNode);
+        auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
+        _twoHandedGrip.prepareEquippedWeaponDropCommit();
+        const auto drop = weapon_equip_transfer::dropEquippedWeaponFromPlayer({
+            .dropLoc = pose.translate,
+            .dropRot = transform_math::matrixToReferenceEulerRadians<RE::NiMatrix3, RE::NiPoint3>(pose.rotate),
+            .hasDropLoc = true,
+            .hasDropRot = true,
+        });
+        const bool committed = static_cast<bool>(drop.handle);
+        bipod_frozen_retirement::finishRemoval(committed);
+        if (!committed) {
+            ROCK_LOG_WARN(Weapon, "Bipod retirement retained equipped item form={:08X} reason={}",
+                form, weapon_equip_transfer::dropReasonName(drop.reason));
+            return false;
+        }
+        _dynamicWeaponCollision.retireAll(frame.bhkWorld);
+        _weaponCollision.destroyWeaponBody(frame.hknpWorld);
+        _twoHandedGrip.finishSurfaceRetirement();
+        _bipodRetirementHandle = drop.handle;
+        _bipodRetirementVisual.beginStationary(std::move(model), modelInWeapon, pose, drop.droppedFormID);
+        _equipped.transition.pendingGrip() = {};
+        clearEquippedWeaponFiringGripInputState();
+        enforceNoBareFistState(true);
+        ROCK_LOG_INFO(Weapon, "Bipod retirement committed form={:08X} ref={:08X} reason={} position=({:.3f},{:.3f},{:.3f})",
+            form, drop.droppedFormID, outside ? "outside-radius" : "support-released",
+            pose.translate.x, pose.translate.y, pose.translate.z);
+        return true;
+    }
+
     api::Status PhysicsInteraction::extractEquippedForStorage(bool left, std::uint32_t weapon, std::uint32_t& reference)
     {
         reference = 0;
@@ -336,6 +391,17 @@ namespace rock
 
     void PhysicsInteraction::serviceEquippedWeaponNativeHandoff(const PhysicsFrameContext& frame)
     {
+        bipod_frozen_retirement::service();
+        if (_bipodRetirementHandle) {
+            const auto ref = _bipodRetirementHandle.get();
+            if (!bipod_frozen_retirement::pending() ||
+                (ref && bipod_frozen_retirement::frozen(ref->GetFormID()))) {
+                _bipodRetirementVisual.release("bipod-native-placement-finished");
+                _bipodRetirementHandle = {};
+            } else {
+                _bipodRetirementVisual.update({}, ref ? ref->Get3D() : nullptr);
+            }
+        }
         for (auto& handoff : _drop.nativeHandoffs) {
             if (handoff.active) {
                 serviceEquippedWeaponNativeTransaction(handoff, frame);

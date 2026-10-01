@@ -105,7 +105,7 @@ namespace rock
             force_grab_policy::equippedWeaponOccupiesHand(
             isLeft,
             equippedWeaponPresent,
-            _twoHandedGrip.isPartCarryActive(),
+            _twoHandedGrip.isFiringGripDetached(),
             equippedWeaponFiringHandForGrabIsLeft(),
             _twoHandedGrip.isHandPartGripping(isLeft)));
 

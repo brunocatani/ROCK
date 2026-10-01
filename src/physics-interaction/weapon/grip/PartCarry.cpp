@@ -1,9 +1,70 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/DynamicWeaponCollision.h"
 
 // Part-carry sessions: baseline construction, transition, per-frame update, and part-carry weapon authority solve.
 
 namespace rock
 {
+    bool TwoHandedGrip::canRetainOnSurface() const
+    {
+        RE::NiTransform pose{};
+        return _surfaceSupportRuntime && _session.weaponNode &&
+            _session.equippedWeaponOwnershipKey != 0 &&
+            _surfaceSupportRuntime->tryGetLatchedSurfacePose(
+                _session.weaponNode, _session.weaponGenerationKey, pose);
+    }
+
+    bool TwoHandedGrip::retainOnSurface(const bool releaseBoth)
+    {
+        RE::NiTransform pose{};
+        if (!_surfaceSupportRuntime || !_session.weaponNode ||
+            !_surfaceSupportRuntime->tryGetLatchedSurfacePose(
+                _session.weaponNode, _session.weaponGenerationKey, pose) ||
+            !blockFrikPrimaryWeaponPose()) return false;
+
+        // The surface owns the weapon, never an invented hand grip. Operating
+        // AttachOnly grips keep their independent part/visual authority.
+        for (const bool left : { false, true }) {
+            if (partGrip(left).active && (releaseBoth || !partGrip(left).attachOnly))
+                releasePartGrip(left, "bipod-hands-free", true);
+            clearPrimaryGripFingerPose(left);
+            clearPrimaryGripWorldAuthority(left);
+            clearPrimaryDetachVisualAuthority(left);
+        }
+        clearDynamicSupportAcquisition("bipod-hands-free", true);
+        clearSupportInputBaselines();
+        clearWeaponVisualReturn("bipod-hands-free", true, true);
+        clearWeaponPoseHandoffBlend("bipod-hands-free", true);
+        _firing.persistentCarryActive = false;
+        _firing.primaryReleaseIntent = {};
+        _firing.primaryReleaseDebounce = {};
+        _surfaceSupportedWorld = pose;
+        const auto previousState = _session.state;
+        _session.state = TwoHandedState::SurfaceSupported;
+        recordFiringGripDetachedHaptic();
+        ROCK_LOG_INFO(Weapon, "Bipod hands-free retained firingHand={} previousState={} generation={:016X} ownership={:016X}",
+            firingHandName(), static_cast<unsigned>(previousState), _session.weaponGenerationKey, _session.equippedWeaponOwnershipKey);
+        (void)publishSurfaceSupportedPose(_session.weaponNode, 0.0f);
+        return true;
+    }
+
+    bool TwoHandedGrip::publishSurfaceSupportedPose(RE::NiNode* weaponNode, const float dt)
+    {
+        if (!isSurfaceSupported() || weaponNode != _session.weaponNode ||
+            !applyWeaponVisualAuthority(weaponNode, _surfaceSupportedWorld)) return false;
+        _lastSolvedWeaponTransform = _surfaceSupportedWorld;
+        _hasSolvedWeaponTransform = true;
+        for (const bool left : { false, true }) {
+            if (!partGrip(left).active || !partGrip(left).attachOnly) continue;
+            RE::NiTransform hand{};
+            const auto* tracked = tryGetSolverHandTransform(left, hand) ? &hand : nullptr;
+            publishGripHandPoses(left);
+            if (!applyPartGripLockedVisual(left, weaponNode, dt, tracked))
+                releasePartGrip(left, "bipod-operating-visual-lost");
+        }
+        return true;
+    }
+
     bool TwoHandedGrip::hasAuthoredSupportCarryPair() const noexcept
     {
         const auto describe = [](const WeaponPartGrip& grip) {
@@ -232,7 +293,7 @@ namespace rock
 
     bool TwoHandedGrip::republishPartCarryWeaponTransform(RE::NiNode* weaponNode)
     {
-        if (_session.state != TwoHandedState::PartCarry || !_hasSolvedWeaponTransform || !weaponNode) {
+        if (!isFiringGripDetached() || !_hasSolvedWeaponTransform || !weaponNode) {
             return false;
         }
         return applyWeaponVisualAuthority(weaponNode, _lastSolvedWeaponTransform);
@@ -423,7 +484,7 @@ namespace rock
         }
 
         const auto occupancy = getGripOccupancy();
-        const bool allowLastHandDrop = _handlingSettings.lastGripReleaseDropEnabled &&
+        const bool allowLastHandDrop = (_handlingSettings.lastGripReleaseDropEnabled || canRetainOnSurface()) &&
             equipped_weapon_drop_policy::canStartAutoDrop(
                 occupancy.left.carriesWeapon(), occupancy.right.carriesWeapon(), false);
 
@@ -462,18 +523,21 @@ namespace rock
                  * changes, not a player release: return the weapon to
                  * FRIK-native carry instead of dropping it.
                  */
-                ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing part-carry authority because provider revoked the support part grip");
-                transitionToInactive(false);
-                return;
-            }
-            if (!weapon_two_handed_grip_math::shouldContinueSupportGrip(supportGripHeld, supportHandHoldingObject)) {
+                if (isSurfaceSupported()) {
+                    releasePartGrip(supportHandIsLeft, "bipod-operating-authority-lost", true);
+                } else {
+                    ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing part-carry authority because provider revoked the support part grip");
+                    transitionToInactive(false);
+                    return;
+                }
+            } else if (!weapon_two_handed_grip_math::shouldContinueSupportGrip(supportGripHeld, supportHandHoldingObject)) {
                 if (weapon_two_handed_grip_math::canReleaseCarryGrip(
                         gripCarries(supportGrip),
                         gripCarries(freeHandGrip),
                         allowLastHandDrop, supportGrip.releaseRequiresNewHold)) {
                     if (gripCarries(supportGrip) && !gripCarries(freeHandGrip)) {
                         (void)requestEquippedWeaponDrop("support-carry-released",
-                            supportHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right, dt);
+                            supportHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right, dt, false, true);
                         return;
                     }
                     if (handoffAuthoredSupportCarry(supportHandIsLeft)) {
@@ -497,7 +561,7 @@ namespace rock
                         allowLastHandDrop, freeHandGrip.releaseRequiresNewHold)) {
                     if (gripCarries(freeHandGrip) && !gripCarries(supportGrip)) {
                         (void)requestEquippedWeaponDrop("part-carry-released",
-                            firingHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right, dt);
+                            firingHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right, dt, false, true);
                         return;
                     }
                     if (handoffAuthoredSupportCarry(firingHandIsLeft)) {
@@ -660,10 +724,21 @@ namespace rock
         // existed. Revoked carry authority returns to native ownership;
         // provider AttachOnly grips cannot inherit it or cause an auto-drop.
         if (!gripCarries(supportGrip) && !gripCarries(freeHandGrip)) {
+            if (isSurfaceSupported()) {
+                (void)publishSurfaceSupportedPose(weaponNode, dt);
+                return;
+            }
             releasePartGrip(supportHandIsLeft, "carry-authority-lost", true);
             releasePartGrip(firingHandIsLeft, "carry-authority-lost", true);
             transitionToInactive(false);
             return;
+        }
+
+        if (isSurfaceSupported()) {
+            _session.state = TwoHandedState::PartCarry;
+            _partCarry.pivotIsLeft = gripCarries(partGrip(true));
+            _partCarry.detachAuthority = _handlingSettings.detachAuthority;
+            clearWeaponPoseHandoffBlend("surface-carrier-acquired", true);
         }
 
         // The pivot must always be a carry-authority grip; after the check

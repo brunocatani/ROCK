@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/WeaponSurfaceSupport.h"
+#include "physics-interaction/weapon/BipodRetentionPolicy.h"
 
 #include <cmath>
 #include <cstdio>
@@ -54,6 +55,21 @@ int main()
     using namespace weapon_surface_support;
     using namespace dynamic_weapon_collision_policy;
     bool ok = true;
+    using bipod_retention_policy::outsideRadius;
+    const RE::NiPoint3 anchor{ 4200.0f, -7300.0f, 1200.0f };
+    ok &= check(!outsideRadius(anchor, anchor, 1.0 / 70.0, 2.0), "standing at anchor retains equipment");
+    auto observer = anchor;
+    observer.x += 140.0f;
+    ok &= check(!outsideRadius(observer, anchor, 1.0 / 70.0, 2.0), "exact radius is inside");
+    observer.x += 0.01f;
+    ok &= check(outsideRadius(observer, anchor, 1.0 / 70.0, 2.0), "first sample beyond radius retires without dwell");
+    observer = anchor; observer.z += 141.0f;
+    ok &= check(outsideRadius(observer, anchor, 1.0 / 70.0, 2.0), "vertical separation participates in the sphere");
+    ok &= check(!outsideRadius(observer, anchor, 1.0 / 140.0, 2.0), "distance follows current world conversion");
+    ok &= check(!outsideRadius(observer, anchor, 1.0 / 70.0, 3.0), "larger configured radius retains equipment");
+    ok &= check(!outsideRadius(observer, anchor, 0.0, 2.0), "invalid conversion never retires an item");
+    observer.x = std::numeric_limits<float>::quiet_NaN();
+    ok &= check(!outsideRadius(observer, anchor, 1.0 / 70.0, 2.0), "invalid tracking never retires an item");
     auto invalidRotation = rock::transform_math::makeIdentityTransform<RE::NiTransform>().rotate;
     const auto validRotation = invalidRotation;
     invalidRotation.entry[0][1] = std::numeric_limits<float>::quiet_NaN();

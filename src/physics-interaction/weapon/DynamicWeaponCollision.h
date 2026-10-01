@@ -110,6 +110,10 @@ namespace rock
         // Game frame only, before early returns, so clicks cannot replay later.
         void updateSurfaceSupportInput(bool placementOwnsClick = false);
 
+        bool tryGetLatchedSurfacePose(RE::NiNode* weapon, std::uint64_t generation, RE::NiTransform& pose) const;
+        bool surfaceRetirementRequested() const { return _surfaceSupport.retirementRequested; }
+        bool tryGetSurfaceAnchor(RE::NiPoint3& anchor) const;
+
         // Game-frame observation, published through the provider snapshot.
         [[nodiscard]] bool surfaceSupportReservesInput(std::uintptr_t weaponNode, std::uint64_t generation) const noexcept
         {
@@ -148,7 +152,7 @@ namespace rock
             RE::NiNode* weaponNode,
             std::uint64_t weaponGenerationKey,
             const WeaponCollision& weaponCollision,
-            const RE::NiPoint3* primaryGripWeaponLocal);
+            const RE::NiPoint3* primaryGripWeaponLocal, bool handsFree = false);
         // This frame's compound snapshot found a generated source the weapon root no longer contains.
         [[nodiscard]] bool compoundSourcesUnavailable() const { return _compoundSourcesUnavailable; }
 
@@ -257,7 +261,7 @@ namespace rock
         bool setAuthorityPivot(const PhysicsFrameContext& frame,
             const RE::NiPoint3& pivotWeaponLocal, const RE::NiTransform& weaponWorld);
         void updateSurfaceSupport(const PhysicsFrameContext& frame,
-            const RE::NiPoint3* primaryGripWeaponLocal);
+            const RE::NiPoint3* primaryGripWeaponLocal, bool handsFree);
         bool ensureProxyBody(
             const PhysicsFrameContext& frame,
             const WeaponCollision& weaponCollision,

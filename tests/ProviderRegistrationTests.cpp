@@ -25,6 +25,7 @@ namespace rock::provider::events {
 }
 namespace provider_debug_overlay {void clear(std::uint64_t){}}
 namespace provider_collider_visualization {void clear(std::uint64_t){}}
+namespace rock::physical_reload_input {void clearOwner(std::uint64_t){}}
 namespace rock::provider::runtime {
     // Exercise the actual registration/teardown service. Unrelated gameplay
     // resources are absent; the event stream uses the production bounded ring.
@@ -84,6 +85,12 @@ namespace rock::provider::events {
 }
 int main(){
     using namespace rock::provider;using namespace rock::provider::runtime;
+    using rock::provider_state_policy::firingGripOccupied;
+    assert(firingGripOccupied(true,false)); // Existing native right carry.
+    assert(!firingGripOccupied(true,true)); // Existing part carry.
+    assert(!firingGripOccupied(false,false) && !firingGripOccupied(false,true));
+    assert(!firingGripOccupied(true,false,true)); // Surface ownership never invents a firing hand.
+    assert(!firingGripOccupied(false,false,true));
     std::array<RockProviderConsumerHandleV1,64> owners{};
     for(unsigned i=0;i<owners.size();++i){
         RockProviderConsumerRegistrationV1 registration{};

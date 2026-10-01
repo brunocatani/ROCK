@@ -20,6 +20,8 @@ namespace rock
         void begin(RE::NiPointer<RE::NiAVObject> model,
             const RE::NiTransform& modelInWeapon,
             const AuthoredWeaponGripPose& grip, std::uint32_t referenceId);
+        void beginStationary(RE::NiPointer<RE::NiAVObject> model,
+            const RE::NiTransform& modelInWeapon, const RE::NiTransform& weaponWorld, std::uint32_t referenceId);
         void update(const RE::NiTransform& physicalHandWorld, RE::NiAVObject* looseRoot);
         void tracePresentation(const char* phase) const;
         void prepareGrab();
@@ -42,5 +44,7 @@ namespace rock
         std::uint32_t _presentedFrames{ 0 };
         bool _looseRootWasVisible{ false };
         bool _handPoseOwned{ false };
+        bool _stationary{ false };
+        RE::NiTransform _stationaryWorld{};
     };
 }

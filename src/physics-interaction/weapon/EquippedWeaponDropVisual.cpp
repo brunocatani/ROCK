@@ -55,6 +55,18 @@ namespace rock
             _referenceId, _grip.isLeft ? "left" : "right", _model->parent == nullptr);
     }
 
+    void EquippedWeaponDropVisual::beginStationary(RE::NiPointer<RE::NiAVObject> model,
+        const RE::NiTransform& modelInWeapon, const RE::NiTransform& weaponWorld, const std::uint32_t referenceId)
+    {
+        release("stationary-replaced");
+        if (!model || !held_scene_presentation_policy::finiteTransform(weaponWorld)) return;
+        _model = std::move(model);
+        _modelInWeapon = modelInWeapon;
+        _stationaryWorld = weaponWorld;
+        _stationary = true;
+        _referenceId = referenceId;
+    }
+
     void EquippedWeaponDropVisual::update(const RE::NiTransform& physicalHandWorld, RE::NiAVObject* looseRoot)
     {
         if (!_model) return;
@@ -67,16 +79,16 @@ namespace rock
             abandonSceneGraph();
             return;
         }
-        const auto weaponWorld = transform_math::composeTransforms(physicalHandWorld,
+        const auto weaponWorld = _stationary ? _stationaryWorld : transform_math::composeTransforms(physicalHandWorld,
             transform_math::invertTransform(_grip.placementHandWeaponLocal));
-        if (!held_scene_presentation_policy::finiteTransform(physicalHandWorld) ||
+        if ((!_stationary && !held_scene_presentation_policy::finiteTransform(physicalHandWorld)) ||
             !held_scene_presentation_policy::finiteTransform(weaponWorld)) {
             release("invalid-pose");
             return;
         }
         // Native detachment gates scene reuse, not the hand target. The equipped
         // grip has already released its IK ownership on this first drop frame.
-        if (!publishHandPose(weaponWorld)) {
+        if (!_stationary && !publishHandPose(weaponWorld)) {
             ROCK_LOG_WARN(Weapon, "Toggle drop visual rejected: ref={:08X} hand pose unavailable", _referenceId);
             release("hand-pose-unavailable");
             return;
@@ -203,6 +215,8 @@ namespace rock
         _presentedFrames = 0;
         _looseRootWasVisible = false;
         _handPoseOwned = false;
+        _stationary = false;
+        _stationaryWorld = {};
     }
 
     void EquippedWeaponDropVisual::tracePresentation(const char* phase) const

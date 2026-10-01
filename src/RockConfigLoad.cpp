@@ -324,6 +324,12 @@ namespace rock
             IMMERSIVE_WEAPONS_SECTION, "bImmersiveRecoil", rockImmersiveRecoil);
         rockBipodMode = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION, "bBipodMode", rockBipodMode);
+        rockBipodHandsFreeRadiusMeters = static_cast<float>(ini.GetDoubleValue(
+            IMMERSIVE_WEAPONS_SECTION, "fBipodHandsFreeRadiusMeters", rockBipodHandsFreeRadiusMeters));
+        if (!std::isfinite(rockBipodHandsFreeRadiusMeters) || rockBipodHandsFreeRadiusMeters <= 0.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fBipodHandsFreeRadiusMeters={} -- using 2.0", rockBipodHandsFreeRadiusMeters);
+            rockBipodHandsFreeRadiusMeters = 2.0f;
+        }
         rockLaserRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fLaserRecoilPercent",
             rockLaserRecoilPercent, 100.0f, 0.0f, 300.0f);
         rockPistolOneHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fPistolOneHandRecoilPercent",

@@ -456,6 +456,7 @@ namespace rock
         void serviceEquippedWeaponNativeHandoff(const PhysicsFrameContext& frame);
         bool dropEquippedWeaponToWorld(const PhysicsFrameContext& frame,
             const EquippedWeaponManualDropRequest& request, equipped_weapon_drop_policy::Mode mode);
+        bool retireSurfaceSupportedWeapon(const PhysicsFrameContext& frame, RE::NiNode* weaponNode);
         void updateEquippedWeaponDropVisuals(const PhysicsFrameContext& frame);
         void finishEquippedWeaponHandPoseHandoff();
         void serviceEquippedWeaponNativeTransaction(
@@ -1068,6 +1069,8 @@ namespace rock
         EquippedWeaponFrameState _equipped;
         InventoryWeaponEquipRuntime _inventoryEquip;
         EquippedWeaponDropState _drop;
+        EquippedWeaponDropVisual _bipodRetirementVisual;
+        RE::ObjectRefHandle _bipodRetirementHandle{};
         GrabInputState _grabInput;
         ForceGrabState _forceGrab;
         GrabEventState _grabEvents;

@@ -143,7 +143,7 @@ namespace rock
             _equipped.continuityGrip = snapshot;
             return;
         }
-        if (!_twoHandedGrip.isManualOwnershipActive()) {
+        if (!_twoHandedGrip.isManualOwnershipActive() || _twoHandedGrip.isSurfaceSupported()) {
             _equipped.continuityGrip = {};
             _equipped.resumeAwaitingHold = {};
             return;
@@ -291,7 +291,7 @@ namespace rock
          * visible weapon node keep the dominant-hand suppression because the
          * part-carry state cannot survive a missing weapon node anyway.
          */
-        if (rightHandWeaponEquipped && _twoHandedGrip.isPartCarryActive()) {
+        if (rightHandWeaponEquipped && _twoHandedGrip.isFiringGripDetached()) {
             rightHandWeaponAuthorityActive = false;
         }
         /*
@@ -668,7 +668,7 @@ namespace rock
                 leftWeaponContactSource = consumeWeaponContactForHand(
                     true, frame.left, true, leftWeaponContact, interactionQueries,operatingPose?&*operatingPose:nullptr);
                 const bool rightWeaponContactProbeAllowed =
-                    _twoHandedGrip.isPartCarryActive() || firingHandIsLeft;
+                    _twoHandedGrip.isFiringGripDetached() || firingHandIsLeft;
                 (void)consumeWeaponContactForHand(false, frame.right,
                     rightWeaponContactProbeAllowed, rightWeaponContact, interactionQueries,operatingPose?&*operatingPose:nullptr);
             } else {
@@ -1192,7 +1192,7 @@ namespace rock
              */
             bool leftReattachEligible = false;
             bool rightReattachEligible = false;
-            if (_twoHandedGrip.isPartCarryActive() && primaryDetachFeatureAvailable) {
+            if (_twoHandedGrip.isFiringGripDetached() && (primaryDetachFeatureAvailable || _twoHandedGrip.isSurfaceSupported())) {
                 leftReattachEligible = leftHandAvailableForAcquisition && weapon_two_handed_grip_math::canAttemptFiringGripReattach(
                     weapon_two_handed_grip_math::FiringGripReattachInput{
                         .partCarryActive = true,
@@ -1595,7 +1595,7 @@ namespace rock
             };
             input_remap_runtime::setEquippedWeaponFiringGripInputActive(
                 input_remap_policy::shouldUseEquippedWeaponFiringGripInput(updatedFiringGripInputGate));
-            input_remap_runtime::setEquippedWeaponPrimaryDetached(_twoHandedGrip.isPartCarryActive());
+            input_remap_runtime::setEquippedWeaponPrimaryDetached(_twoHandedGrip.isFiringGripDetached());
             /*
              * Left-hand fire publication: while the LEFT hand occupies the
              * firing grip, the OpenVR-level trigger remap presents the left
@@ -1608,7 +1608,7 @@ namespace rock
 
             bool rightHandWeaponAuthorityActiveAfterGrip = rightHandWeaponEquipped || retainedWeaponCollisionActive;
             // A visible part-carry frees the right hand even while weapon bodies exist (see the pre-grip gate).
-            if (rightHandWeaponEquipped && _twoHandedGrip.isPartCarryActive()) {
+            if (rightHandWeaponEquipped && _twoHandedGrip.isFiringGripDetached()) {
                 rightHandWeaponAuthorityActiveAfterGrip = false;
             }
             // Left-firing carry frees the right hand the same way (see the pre-grip gate).
@@ -1697,7 +1697,8 @@ namespace rock
                     weaponNode,
                     currentWeaponGenerationKey,
                     _weaponCollision,
-                    surfaceSupportPrimaryValid ? &surfaceSupportPrimaryGripLocal : nullptr);
+                    surfaceSupportPrimaryValid ? &surfaceSupportPrimaryGripLocal : nullptr,
+                    _twoHandedGrip.isSurfaceSupported());
             if (_dynamicWeaponCollision.compoundSourcesUnavailable()) {
                 _weaponCollision.requestRebuildForReplacedSources();
             }
@@ -1817,6 +1818,7 @@ namespace rock
                 }
             }
             // Final source transforms are queued after all animation/FRIK writers.
+            if (retireSurfaceSupportedWeapon(frame, weaponNode)) return {};
             if (f4vr::isNodeVisible(weaponNode)) {
                 applyFinalWeaponMuzzleAuthority();
             }
@@ -1929,7 +1931,7 @@ namespace rock
                 if (hand.isHolding() || _touchGrabRuntime.isHandActive(isLeft) ||
                     grip.weaponEngaged() ||
                     (isLeft == _twoHandedGrip.isFiringHandLeft() &&
-                        !_twoHandedGrip.isPartCarryActive())) {
+                        !_twoHandedGrip.isFiringGripDetached())) {
                     candidateBodyIds[isLeft ? 0u : 1u] = weapon_part_runtime::kInvalidBodyId;
                 }
             }
@@ -2122,7 +2124,7 @@ namespace rock
         _twoHandedGrip.finishAuthoredPrimaryFiringGripFrame();
         if (_equipped.transition.isHandPoseHandoffActive()) {
             const bool handoffHandIsLeft = _equipped.transition.handPoseHandoffIsLeft();
-            const bool pairedSupportOwned = !_twoHandedGrip.isPartCarryActive() &&
+            const bool pairedSupportOwned = !_twoHandedGrip.isFiringGripDetached() &&
                 _twoHandedGrip.isHandPartGripping(!handoffHandIsLeft);
             if (nativeAuthorityFlags != 0 ||
                 runtime.localMenuBlocking ||
@@ -2145,7 +2147,7 @@ namespace rock
     {
         if (!_equipped.transition.isHandPoseHandoffActive()) return;
         const bool handIsLeft = _equipped.transition.handPoseHandoffIsLeft();
-        const bool pairedSupportOwned = !_twoHandedGrip.isPartCarryActive() &&
+        const bool pairedSupportOwned = !_twoHandedGrip.isFiringGripDetached() &&
             _twoHandedGrip.isHandPartGripping(!handIsLeft);
         const bool supportGripOwned = _equipped.transition.hasSupportOnlyHandPoseHandoff() &&
             _twoHandedGrip.isHandPartGripping(handIsLeft);

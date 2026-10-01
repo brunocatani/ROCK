@@ -200,8 +200,13 @@ namespace rock
         return out.valid();
     }
 
-    bool TwoHandedGrip::requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand, float dt, bool allCarriersReleased)
+    bool TwoHandedGrip::requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand, float dt, bool allCarriersReleased, bool allowSurfaceRetention)
     {
+        if (allowSurfaceRetention && canRetainOnSurface()) {
+            if (retainOnSurface(allCarriersReleased)) return true;
+            recordGripReleaseRetained(equipped_weapon_drop_policy::isLeft(sourceHand), "bipod-pose-authority-unavailable");
+            return false;
+        }
         if (_equippedWeaponDropRequest.requested) {
             return true;
         }

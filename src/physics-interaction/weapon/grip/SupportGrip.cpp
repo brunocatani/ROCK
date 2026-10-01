@@ -114,6 +114,7 @@ namespace rock
         weapon_grip_transfer::Support& support, weapon_grip_transfer::Support& second, bool& carrierLeft) const
     {
         firing = {}; paired = {}; support = {}; second = {};
+        if (isSurfaceSupported()) return false; // There is no hand carry to restore after a menu.
         auto* node = isManualOwnershipActive() ? _session.weaponNode : _firing.rightCanonicalWeaponNode;
         if (!node || !_confirmedEquippedOwnershipKey) return false;
         const auto form = _recoil.weaponEvidence.formID;

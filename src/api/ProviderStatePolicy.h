@@ -21,9 +21,9 @@ namespace rock::provider_state_policy
         std::memcpy(output, &empty, (std::min<std::size_t>)(output->size, sizeof(T)));
     }
 
-    [[nodiscard]] constexpr bool firingGripOccupied(bool weaponPresent, bool partCarry) noexcept
+    [[nodiscard]] constexpr bool firingGripOccupied(bool weaponPresent, bool partCarry, bool surfaceSupported = false) noexcept
     {
-        return weaponPresent && !partCarry;
+        return weaponPresent && !partCarry && !surfaceSupported;
     }
 
     [[nodiscard]] constexpr bool handHolding(const RockProviderHandInteractionStateV1& state) noexcept

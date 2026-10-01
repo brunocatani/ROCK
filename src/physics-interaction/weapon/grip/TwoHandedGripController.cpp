@@ -378,7 +378,7 @@ namespace rock
         // Native hand animation does not revoke authored grab/handoff access.
         const auto& handoffRuntime = runtime_state::currentFrame();
         const bool handoffZoneEvaluated =
-            _session.state != TwoHandedState::PartCarry &&
+            !isFiringGripDetached() &&
             handoffRuntime.weaponDrawn && f4vr::isNodeVisible(weaponNode) &&
             !handoffRuntime.localMenuBlocking && !handoffRuntime.compatibilityConfigBlocking &&
             (_handlingSettings.ambidextrousHandoffEnabled || sharedFiringZone) &&
@@ -444,7 +444,7 @@ namespace rock
             const auto& runtime = isLeft ? leftRuntimeState : rightRuntimeState;
             const bool available = (isLeft ? stableFrameInput.leftHandAvailableForAcquisition :
                 stableFrameInput.rightHandAvailableForAcquisition) &&
-                (isLeft != isFiringHandLeft() || isPartCarryActive());
+                (isLeft != isFiringHandLeft() || isFiringGripDetached());
             authoredIndicatorInputs[isLeft ? 0u : 1u] = {
                 .weaponFamily = snapshot.weaponFamily,
                 .authoredSeatWorld = toIndicatorVector(snapshot.authoredPalmSeatWorld),
@@ -468,8 +468,8 @@ namespace rock
                 .logicalHeld = stableFrameInput.primaryGripInput.held,
                 .logicalReleased = stableFrameInput.primaryGripInput.released,
                 .supportGripActive = supportOwned,
-                .freeSupportIndicatorActive = freeSupportIndicator,
-                .primaryOwned = _session.state != TwoHandedState::PartCarry,
+                .freeSupportIndicatorActive = freeSupportIndicator && !canRetainOnSurface(),
+                .primaryOwned = !isFiringGripDetached(),
             });
         if (stableFrameInput.primaryGripInput.released) {
             ROCK_LOG_INFO(Weapon,
@@ -486,21 +486,21 @@ namespace rock
             else _gripReleaseRetained.right = true;
         }
         const auto releaseOccupancy = getGripOccupancy();
-        const bool leftRelease = isFiringHandLeft() && !isPartCarryActive() ? !releaseIntent.retained : !stableFrameInput.leftGripHeld;
-        const bool rightRelease = !isFiringHandLeft() && !isPartCarryActive() ? !releaseIntent.retained : !stableFrameInput.rightGripHeld;
+        const bool leftRelease = isFiringHandLeft() && !isFiringGripDetached() ? !releaseIntent.retained : !stableFrameInput.leftGripHeld;
+        const bool rightRelease = !isFiringHandLeft() && !isFiringGripDetached() ? !releaseIntent.retained : !stableFrameInput.rightGripHeld;
         const auto simultaneousSource = equipped_weapon_drop_policy::simultaneousReleaseSource(
-            _handlingSettings.lastGripReleaseDropEnabled,
+            _handlingSettings.lastGripReleaseDropEnabled || canRetainOnSurface(),
             releaseOccupancy.left.carriesWeapon(), releaseOccupancy.right.carriesWeapon(), leftRelease, rightRelease,
             isFiringGripOccupied(), isFiringHandLeft(), _partCarry.pivotIsLeft);
         if (simultaneousSource != equipped_weapon_drop_policy::SourceHand::None) {
             // Capture once while both pre-release authorities still exist.
             // Per-hand release processing must not retain a synthetic last carrier.
             if (_session.state == TwoHandedState::Gripping) updateGripping(_session.weaponNode, dt);
-            (void)requestEquippedWeaponDrop("simultaneous-carrier-release", simultaneousSource, dt, true);
+            (void)requestEquippedWeaponDrop("simultaneous-carrier-release", simultaneousSource, dt, true, true);
             return finishUpdate();
         }
         const auto primaryReleaseDecision = equipped_weapon_manual_ownership_policy::debouncePrimaryGripRelease(
-            _firing.primaryReleaseDebounce, releaseIntent.retained);
+            _firing.primaryReleaseDebounce, releaseIntent.retained, !isFiringGripDetached());
         stableFrameInput.primaryGripInput.held = primaryReleaseDecision.retained;
         stableFrameInput.primaryGripInput.released = primaryReleaseDecision.releaseConfirmed;
 
@@ -668,6 +668,7 @@ namespace rock
                     // Visual-only support cannot carry, so the firing grip is
                     // the weapon's only carrier: the open firing hand keeps
                     // the two-hand hold instead of dropping the weapon.
+                    if (partGrip(supportHandIsLeft).attachOnly && retainOnSurface(false)) break;
                     recordGripReleaseRetained(
                         isFiringHandLeft(),
                         "two-hand-noncarry-support");
@@ -681,13 +682,14 @@ namespace rock
             break;
 
         case TwoHandedState::PartCarry:
+        case TwoHandedState::SurfaceSupported:
             if (!_session.weaponNode) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing part-carry authority because active weapon source root is unavailable");
                 transitionToInactive(false);
             } else if (!weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(_session.weaponGenerationKey, currentWeaponGenerationKey)) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing part-carry authority because weapon generation changed");
                 transitionToInactive(false);
-            } else if (!handlingSettings.primaryDetachEnabled) {
+            } else if (!handlingSettings.primaryDetachEnabled && !isSurfaceSupported()) {
                 transitionToInactive(ownsWeaponTransform());
             } else {
                 updatePartCarryGrip(
@@ -866,7 +868,7 @@ namespace rock
 
     bool TwoHandedGrip::ownsWeaponTransform() const
     {
-        return (_session.state == TwoHandedState::Gripping && _firing.transferredPrimaryGrip.valid()) ||
+        return isSurfaceSupported() || (_session.state == TwoHandedState::Gripping && _firing.transferredPrimaryGrip.valid()) ||
                ((_session.state == TwoHandedState::Gripping || _session.state == TwoHandedState::PartCarry) &&
                    weapon_support_authority_policy::supportGripOwnsWeaponTransform(_session.authorityMode));
     }

@@ -712,7 +712,7 @@ namespace rock
                 handIsFiringHand,
                 equippedWeaponPresent,
                 _twoHandedGrip.isHandPartGripping(isLeft),
-                _twoHandedGrip.isPartCarryActive() && !_twoHandedGrip.isHandPartGripping(isLeft)))) {
+                _twoHandedGrip.isFiringGripDetached() && !_twoHandedGrip.isHandPartGripping(isLeft)))) {
             grab_input_intent_policy::reset(inputIntentState);
             cancelPeerHeldJoinRetry("normal-grab-suppressed", true);
             clearGameplayCandidatesForHand(hand, isLeft);

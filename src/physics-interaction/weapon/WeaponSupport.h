@@ -485,6 +485,7 @@ namespace rock::equipped_weapon_manual_ownership_policy
     [[nodiscard]] inline constexpr GripReleaseDebounceDecision debouncePrimaryGripRelease(
         GripReleaseDebounceState& state,
         bool physicallyHeld,
+        bool primaryOwned,
         std::uint8_t confirmFrames = kPrimaryReleaseConfirmFrames) noexcept
     {
         if (physicallyHeld) {
@@ -492,7 +493,9 @@ namespace rock::equipped_weapon_manual_ownership_policy
             return GripReleaseDebounceDecision{ .retained = true };
         }
 
-        if (confirmFrames == 0) {
+        // Debounce only an existing firing grip. Once detached, retaining an
+        // open hand for even one frame becomes a synthetic reattach squeeze.
+        if (!primaryOwned || confirmFrames == 0) {
             state = {};
             return GripReleaseDebounceDecision{ .releaseConfirmed = true };
         }
