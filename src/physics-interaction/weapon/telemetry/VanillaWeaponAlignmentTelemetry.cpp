@@ -7,6 +7,7 @@
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/telemetry/NativeScopeShotPolicy.h"
 #include "physics-interaction/core/RockRuntimeState.h"
+#include "physics-interaction/native/NativeMemory.h"
 #include "api/ROCKProviderApiInternal.h"
 
 #include "RockConfig.h"
@@ -22,6 +23,7 @@
 #include <chrono>
 #include <cmath>
 #include <memory>
+#include <limits>
 #include <string_view>
 #include <Windows.h>
 
@@ -81,11 +83,178 @@ namespace rock::vanilla_weapon_alignment_telemetry
             // using the existing diagnostic gate and bounded async writer.
             std::uint64_t scopeHandEdgeFrame{};
             bool scopeHandStateKnown{}, scopeHandOpen{};
+            // Owner: native melee/equip fade investigation. Remove after the
+            // first-hit -> later-equip transition is qualified. Values only;
+            // the existing bounded writer owns all I/O and no scene objects.
+            bool meleeFadeReady{};
+            std::array<ULONGLONG, 2> meleeFadeNextSample{};
+            std::uint64_t meleeFadeWrites{};
+            float meleeFadeRequested{ std::numeric_limits<float>::quiet_NaN() };
+            std::uintptr_t meleeFadeNativeRoot{};
         };
         std::unique_ptr<Session> session;
         // Lifecycle and phase capture share the game thread. Native animation
         // workers see false in their own TLS and never read the session pointer.
         thread_local bool captureThread = false;
+
+        using NativeFadeWrite = std::uint32_t (*)(RE::NiAVObject*, const float*);
+        // Process-lifetime hook. Skeleton shutdown stops observation through
+        // captureThread/session; the original call still runs with identical args.
+        NativeFadeWrite originalFadeWrite = nullptr;
+
+        template <std::size_t N>
+        bool fadeBytesMatch(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected)
+        {
+            std::array<std::uint8_t, N> actual{};
+            return native_memory::guardedCopyFromMemory(
+                reinterpret_cast<const void*>(REL::Offset(rva).address()), actual.data(), N) && actual == expected;
+        }
+
+        bool validateMeleeFadeLayout()
+        {
+            // FO4VR raw disassembly, 2026-10-02. Impact 140EFFA81/A8A writes
+            // player+908/90C; 140EF7E35 reads them, 140EF7EB7 caches at +910.
+            // 140F4B270 and 1427AB9D0 agree on geometry+178 -> shader+48.
+            // 140F4B2B9/C2 and renderer 1427A8650 agree on fade+1E0/1E4;
+            // renderer 1427A87C6..8813 separately retains alpha at fade+1F4.
+            return fadeBytesMatch(0xEF7E35, std::array<std::uint8_t, 8>{0xF3,0x0F,0x10,0x8F,0x08,0x09,0x00,0x00}) &&
+                fadeBytesMatch(0xEF7EAA, std::array<std::uint8_t, 7>{0x0F,0x2E,0xB7,0x10,0x09,0x00,0x00}) &&
+                fadeBytesMatch(0xF4B294, std::array<std::uint8_t, 7>{0x48,0x8B,0x88,0x78,0x01,0x00,0x00}) &&
+                fadeBytesMatch(0xF4B2A4, std::array<std::uint8_t, 4>{0x48,0x8B,0x49,0x48}) &&
+                fadeBytesMatch(0xF4B2B6, std::array<std::uint8_t, 18>{0x8B,0x45,0x00,0x89,0x81,0xE0,0x01,0x00,0x00,0x8B,0x45,0x00,0x89,0x81,0xE4,0x01,0x00,0x00}) &&
+                fadeBytesMatch(0x27ABA3E, std::array<std::uint8_t, 7>{0x48,0x8B,0x88,0x78,0x01,0x00,0x00}) &&
+                fadeBytesMatch(0x27A87C6, std::array<std::uint8_t, 20>{0xF3,0x0F,0x11,0xB3,0xE0,0x01,0x00,0x00,0x8B,0x83,0xE0,0x01,0x00,0x00,0x89,0x83,0xF4,0x01,0x00,0x00});
+        }
+
+        void recordMeleeFade(const char* phase, RE::NiAVObject* root) noexcept
+        {
+            if (!captureThread || !session || !session->meleeFadeReady ||
+                !g_rockConfig.rockDebugWeaponOmodDumpEnabled) return;
+            try {
+                const float unknown = std::numeric_limits<float>::quiet_NaN();
+                auto* player = f4vr::getPlayer();
+                std::array<float, 3> combat{unknown, unknown, unknown};
+                const bool playerReadable = player && native_memory::guardedCopyFromMemory(
+                    reinterpret_cast<const char*>(player) + 0x908, combat.data(), sizeof(combat));
+                float disabledAlpha = unknown, lerpSeconds = unknown;
+                const bool settingsReadable = native_memory::tryReadValue(
+                    reinterpret_cast<const float*>(REL::Offset(0x37CFFA8).address()), disabledAlpha) &&
+                    native_memory::tryReadValue(reinterpret_cast<const float*>(REL::Offset(0x37CFFC0).address()), lerpSeconds);
+                // Constructor 1427A7D10 starts nodes at zero when this global
+                // fade gate is active; 14284E950 enables it after load warm-up.
+                std::array<std::uint8_t, 2> renderFadeGates{0xFF, 0xFF};
+                std::int32_t renderFrame = -1;
+                const bool renderReadable = native_memory::guardedCopyFromMemory(
+                    reinterpret_cast<const void*>(REL::Offset(0x391AE0C).address()), renderFadeGates.data(), renderFadeGates.size()) &&
+                    native_memory::tryReadValue(reinterpret_cast<const std::int32_t*>(REL::Offset(0x391AE28).address()), renderFrame);
+                const auto* equipped = f4vr::getEquippedWeaponItem();
+                const auto form = equipped && equipped->item.object ? equipped->item.object->formID : 0;
+                std::array<void*, 16> owners{};
+                std::size_t ownerCount = 0, geometries = 0, unreadable = 0, unbound = 0;
+                unsigned deepestFailure = 0;
+                void* worstOwner = nullptr;
+                float lowestFade = unknown, lowestPrevious = unknown, decal = unknown, multiplier = unknown;
+                std::uint64_t flags = 0;
+                std::uint8_t category = 0;
+                std::int32_t lastRenderFrame = -1;
+                bool ownerLimit = false;
+                const auto walk = weapon_scene::visitScene(root, [&](RE::NiAVObject* node) {
+                    if (!native_memory::pointerRangeLooksReadable(node, sizeof(RE::NiAVObject))) {
+                        ++unreadable; deepestFailure = (std::max)(deepestFailure, 1u); return false;
+                    }
+                    auto* geometry = node->IsGeometry();
+                    if (!geometry) return true;
+                    ++geometries;
+                    void* shader = nullptr;
+                    void* owner = nullptr;
+                    if (!native_memory::tryReadField(geometry, 0x178, shader)) {
+                        ++unreadable; deepestFailure = (std::max)(deepestFailure, 2u); return true;
+                    }
+                    if (!shader) { ++unbound; return true; }
+                    if (!native_memory::tryReadField(shader, 0x48, owner)) {
+                        ++unreadable; deepestFailure = (std::max)(deepestFailure, 3u); return true;
+                    }
+                    std::uintptr_t ownerVtable = 0;
+                    if (!owner || !native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(owner), ownerVtable) ||
+                        !ownerVtable || !native_memory::pointerRangeLooksReadable(reinterpret_cast<void*>(ownerVtable), sizeof(void*))) {
+                        ++unbound; deepestFailure = (std::max)(deepestFailure, 4u); return true;
+                    }
+                    for (std::size_t i = 0; i < ownerCount; ++i) if (owners[i] == owner) return true;
+                    if (ownerCount == owners.size()) { ownerLimit = true; return false; }
+                    owners[ownerCount++] = owner;
+                    std::array<float, 6> values{};
+                    std::uint64_t ownerFlags = 0;
+                    float ownerMultiplier = unknown;
+                    std::uint8_t ownerCategory = 0;
+                    if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const char*>(owner) + 0x1E0,
+                            values.data(), sizeof(values)) ||
+                        !native_memory::tryReadField(owner, 0x108, ownerFlags) ||
+                        !native_memory::tryReadField(owner, 0x118, ownerMultiplier) ||
+                        !native_memory::tryReadField(owner, 0x11C, ownerCategory)) {
+                        ++unreadable; deepestFailure = (std::max)(deepestFailure, 5u); return true;
+                    }
+                    if (!std::isfinite(values[0]) || !std::isfinite(values[1]) || !std::isfinite(values[5]) || !std::isfinite(ownerMultiplier)) {
+                        ++unreadable; deepestFailure = (std::max)(deepestFailure, 6u); return true;
+                    }
+                    if (!std::isfinite(lowestPrevious) || values[5] < lowestPrevious) lowestPrevious = values[5];
+                    if (!worstOwner || values[0] < lowestFade) {
+                        worstOwner = owner; lowestFade = values[0]; decal = values[1];
+                        multiplier = ownerMultiplier; flags = ownerFlags; category = ownerCategory;
+                        // Same bounded read above: +1F0 is the renderer's frame
+                        // stamp; 1427A86CE uses it for the 20-frame stale reset.
+                        std::memcpy(&lastRenderFrame, &values[4], sizeof(lastRenderFrame));
+                    }
+                    return true;
+                });
+                session->log->info(
+                    "MELEE_FADE phase={} frame={} form={:08X} root=0x{:X} nativeRoot=0x{:X} writes={} requested={} playerReadable={} settingsReadable={} disabledAlpha={} lerp={} cooldown={} cooldownTotal={} cachedAlpha={} geometries={} owners={} worstOwner=0x{:X} currentFade={} decalFade={} multiplier={} minPreviousAlpha={} flags=0x{:X} category={} renderReadable={} renderGates={}/{} renderFrame={} lastRenderFrame={} visited={} truncated={} unreadable={} unbound={} failureStage={} overruns={}",
+                    phase, runtime_state::currentFrame().frameIndex, form, reinterpret_cast<std::uintptr_t>(root),
+                    session->meleeFadeNativeRoot, session->meleeFadeWrites, session->meleeFadeRequested,
+                    playerReadable, settingsReadable, disabledAlpha, lerpSeconds, combat[0], combat[1], combat[2],
+                    geometries, ownerCount, reinterpret_cast<std::uintptr_t>(worstOwner), lowestFade, decal, multiplier,
+                    lowestPrevious, flags, static_cast<unsigned>(category), renderReadable,
+                    static_cast<unsigned>(renderFadeGates[0]), static_cast<unsigned>(renderFadeGates[1]), renderFrame, lastRenderFrame,
+                    walk.visited, walk.truncated || ownerLimit,
+                    unreadable, unbound, deepestFailure, session->pool->overrun_counter());
+            } catch (...) {
+                ++session->captureFailures;
+            }
+        }
+
+        std::uint32_t traceNativeFadeWrite(RE::NiAVObject* root, const float* alpha)
+        {
+            // Only this verified player presentation call is hooked. Recursion
+            // stays native. TLS rejects other threads before session/config access.
+            bool sample = false;
+            if (captureThread && session && session->meleeFadeReady && g_rockConfig.rockDebugWeaponOmodDumpEnabled) {
+                ++session->meleeFadeWrites;
+                session->meleeFadeNativeRoot = reinterpret_cast<std::uintptr_t>(root);
+                session->meleeFadeRequested = std::numeric_limits<float>::quiet_NaN();
+                (void)native_memory::tryReadValue(alpha, session->meleeFadeRequested);
+                const auto now = GetTickCount64();
+                sample = now >= session->meleeFadeNextSample[0];
+                if (sample) {
+                    session->meleeFadeNextSample[0] = now + 100;
+                    recordMeleeFade("native-before", root);
+                }
+            }
+            const auto result = originalFadeWrite(root, alpha);
+            if (sample) recordMeleeFade("native-after", root);
+            return result;
+        }
+
+        bool installMeleeFadeTrace()
+        {
+            if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72 ||
+                !validateMeleeFadeLayout()) return false;
+            if (originalFadeWrite) return true;
+            if (!fadeBytesMatch(0xEF7EE4, std::array<std::uint8_t, 5>{0xE8,0x87,0x33,0x05,0x00})) return false;
+            auto& trampoline = F4SE::GetTrampoline();
+            if (trampoline.free_size() < 32) return false;
+            originalFadeWrite = reinterpret_cast<NativeFadeWrite>(REL::Offset(0xF4B270).address());
+            trampoline.write_call<5>(REL::Offset(0xEF7EE4).address(), &traceNativeFadeWrite);
+            return true;
+        }
 
         native_scope_shot_policy::Ray scopeAxis(const RE::NiTransform& world, unsigned axis) noexcept
         {
@@ -277,6 +446,10 @@ namespace rock::vanilla_weapon_alignment_telemetry
             next->log->flush();
             session = std::move(next);
             captureThread = true;
+            session->meleeFadeReady = installMeleeFadeTrace();
+            session->log->info("MELEE_FADE start ready={} nativeMinMs=100 presentedMinMs=100 nodeBudget=512 ownerBudget=16 failureStages=node:1,geometryShader:2,shaderOwner:3,ownerVtable:4,ownerFields:5,nonfinite:6",
+                session->meleeFadeReady);
+            if (!session->meleeFadeReady) logger::error("ROCK: Native melee fade trace rejected runtime bytes or trampoline capacity; fade sampling disabled.");
             logger::info("ROCK: Vanilla weapon alignment telemetry enabled at '{}'.", path);
         } catch (const std::exception& error) {
             logger::error("ROCK: Vanilla weapon alignment telemetry could not initialize: {}", error.what());
@@ -307,6 +480,13 @@ namespace rock::vanilla_weapon_alignment_telemetry
         const std::uint32_t formId = equipped && equipped->item.object ? equipped->item.object->formID : 0;
         if (phase == Phase::BeforeRockPreFrik) session->scopeFrame = 0;
         if (phase == Phase::AfterWorldFinal) recordFinalScopeDirection(formId);
+        if (phase == Phase::AfterWorldFinal && session->meleeFadeReady) {
+            const auto now = GetTickCount64();
+            if (now >= session->meleeFadeNextSample[1]) {
+                session->meleeFadeNextSample[1] = now + 100;
+                recordMeleeFade("presented", f4vr::getWeaponNode());
+            }
+        }
         // Investigation owner: ROCK/PAPER cycle integration. Compare the
         // solver output, PAPER's publication, and FRIK's later world final.
         // Authority selects the weapon, so a changed mod load index cannot
