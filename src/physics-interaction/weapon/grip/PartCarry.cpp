@@ -1,5 +1,6 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
 #include "physics-interaction/weapon/DynamicWeaponCollision.h"
+#include <chrono>
 
 // Part-carry sessions: baseline construction, transition, per-frame update, and part-carry weapon authority solve.
 
@@ -16,12 +17,15 @@ namespace rock
 
     bool TwoHandedGrip::retainOnSurface(const bool releaseBoth)
     {
+        const auto started = std::chrono::steady_clock::now();
         RE::NiTransform pose{};
         if (!_surfaceSupportRuntime || !_session.weaponNode ||
             !_surfaceSupportRuntime->tryGetLatchedSurfacePose(
                 _session.weaponNode, _session.weaponGenerationKey, pose) ||
             !blockFrikPrimaryWeaponPose()) return false;
 
+        const bool firingGripReleased = isFiringGripOccupied();
+        if (firingGripReleased) beginHandVisualReturn(isFiringHandLeft(), "bipod-hands-free");
         // The surface owns the weapon, never an invented hand grip. Operating
         // AttachOnly grips keep their independent part/visual authority.
         for (const bool left : { false, true }) {
@@ -33,7 +37,10 @@ namespace rock
         }
         clearDynamicSupportAcquisition("bipod-hands-free", true);
         clearSupportInputBaselines();
-        clearWeaponVisualReturn("bipod-hands-free", true, true);
+        // A cancelled return may own this same primary-pose blocker. Keep it
+        // continuously held for the surface instead of restoring native carry.
+        clearWeaponVisualReturn("bipod-hands-free", true, false);
+        releaseFiringHandWeaponNodeOwnership(_session.weaponNode);
         clearWeaponPoseHandoffBlend("bipod-hands-free", true);
         _firing.persistentCarryActive = false;
         _firing.primaryReleaseIntent = {};
@@ -42,9 +49,16 @@ namespace rock
         const auto previousState = _session.state;
         _session.state = TwoHandedState::SurfaceSupported;
         recordFiringGripDetachedHaptic();
-        ROCK_LOG_INFO(Weapon, "Bipod hands-free retained firingHand={} previousState={} generation={:016X} ownership={:016X}",
-            firingHandName(), static_cast<unsigned>(previousState), _session.weaponGenerationKey, _session.equippedWeaponOwnershipKey);
-        (void)publishSurfaceSupportedPose(_session.weaponNode, 0.0f);
+        const bool renderedValid = _visuals.hasLastRenderedWeaponWorld;
+        const float poseDelta = renderedValid ? dynamic_weapon_collision_policy::translationDeltaGameUnits(
+            _visuals.lastRenderedWeaponWorld, pose) : -1.0f;
+        const float angleDelta = renderedValid ? dynamic_weapon_collision_policy::rotationDeltaDegrees(
+            _visuals.lastRenderedWeaponWorld, pose) : -1.0f;
+        const bool published = publishSurfaceSupportedPose(_session.weaponNode, 0.0f);
+        ROCK_LOG_INFO(Weapon, "Bipod hands-free retained firingHand={} previousState={} generation={:016X} ownership={:016X} firingReleased={} handReturn={} poseDelta=({:.3f}gu,{:.3f}deg) published={} transitionMs={:.3f}",
+            firingHandName(), static_cast<unsigned>(previousState), _session.weaponGenerationKey, _session.equippedWeaponOwnershipKey,
+            firingGripReleased, isHandVisualReturnActive(isFiringHandLeft()), poseDelta, angleDelta, published,
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count());
         return true;
     }
 

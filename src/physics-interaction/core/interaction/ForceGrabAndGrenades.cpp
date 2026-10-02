@@ -7,7 +7,7 @@ namespace rock
 {
     namespace
     {
-        void rollbackInventoryTransfer(const PendingForceGrabCommit& commit)
+        void rollbackInventoryTransfer(const PendingForceGrabCommit& commit, const char* reason)
         {
             if (!commit.inventoryTransfer) {
                 return;
@@ -17,8 +17,10 @@ namespace rock
             f4vr::showNotification(returned ?
                 "ROCK: Item handoff failed; returned to inventory." :
                 "ROCK: Item handoff failed; check the dropped item near your hand.");
-            ROCK_LOG_WARN(Hand, "Inventory handoff rollback: command={} ref={:08X} returned={}",
-                commit.providerResultTemplate.commandId, ref ? ref->GetFormID() : 0, returned);
+            ROCK_LOG_WARN(Hand, "Inventory handoff rollback: command={} owner={} ref={:08X} returned={} reason={} hand={} dropMode={} phase={} elapsed={:.3f}s",
+                commit.providerResultTemplate.commandId, commit.providerResultTemplate.ownerToken,
+                ref ? ref->GetFormID() : 0, returned, reason, commit.isLeft ? "left" : "right",
+                static_cast<unsigned>(commit.equippedWeaponDropMode), static_cast<unsigned>(commit.phase), commit.elapsedTotalSeconds);
         }
     }
 
@@ -41,7 +43,7 @@ namespace rock
                 commit.providerResultTemplate.failure = provider::RockProviderInteractionFailureV1::ProviderNotReady;
                 provider::completeInteractionCommandV1(commit.providerResultTemplate);
             }
-            rollbackInventoryTransfer(commit);
+            rollbackInventoryTransfer(commit, "pending-grabs-cleared");
             if (commit.weaponTransferSequence) _equipped.transition.recordOutgoingResult(commit.weaponTransferSequence, false);
             commit = {};
         }
@@ -56,7 +58,7 @@ namespace rock
             for (auto& handoff : _drop.nativeHandoffs) {
                 if (handoff.active && handoff.handle == commit.targetHandle) handoff = {};
             }
-            rollbackInventoryTransfer(commit);
+            rollbackInventoryTransfer(commit, "blocking-menu");
             if (commit.weaponTransferSequence) _equipped.transition.recordOutgoingResult(commit.weaponTransferSequence, false);
             _forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u] = {};
             commit = {};
@@ -166,7 +168,7 @@ namespace rock
                 !provider::isInteractionCommandActiveV1(
                     commit.providerResultTemplate.ownerToken,
                     commit.providerResultTemplate.commandId)) {
-                rollbackInventoryTransfer(commit);
+                rollbackInventoryTransfer(commit, "provider-command-pruned");
                 commit = {};
             }
         }
@@ -227,7 +229,13 @@ namespace rock
 
             auto abandon = [&](const char* reason,
                                provider::RockProviderInteractionFailureV1 providerFailure,
-                               RE::TESObjectREFR*) {
+                               RE::TESObjectREFR* target) {
+                ROCK_LOG_WARN(Hand,
+                    "Pending force-grab commit abandoned ({}): hand={} ref={:08X} root={} phase={} elapsed={:.3f}s limit={:.3f}s blockers={:X} preferredBody={} selectionBody={} maxDistance={:.2f} sourceOverride={}",
+                    reason, commit.isLeft ? "left" : "right", target ? target->GetFormID() : 0,
+                    target && target->Get3D(), static_cast<unsigned>(commit.phase), commit.elapsedTotalSeconds, commit.maxTotalSeconds,
+                    forceGrabHandBlockerMask(hand, commit.isLeft, handInput.disabled, false), commit.preferredBodyId,
+                    hand.getSelection().bodyId.value, commit.maxDistanceGame, commit.hasSourcePointOverride);
                 commit.providerResultTemplate.state = provider::RockProviderInteractionCommandStateV1::Rejected;
                 commit.providerResultTemplate.failure = providerFailure;
                 if (!commit.internallyOwned()) {
@@ -243,12 +251,8 @@ namespace rock
                     }
                     _forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u] = {};
                 }
-                rollbackInventoryTransfer(commit);
+                rollbackInventoryTransfer(commit, reason);
                 if (commit.weaponTransferSequence) _equipped.transition.recordOutgoingResult(commit.weaponTransferSequence, false);
-                ROCK_LOG_WARN(Hand,
-                    "Pending force-grab commit abandoned ({}): hand={}",
-                    reason,
-                    commit.isLeft ? "left" : "right");
                 commit = {};
             };
 
@@ -259,7 +263,7 @@ namespace rock
                     "Pending provider force-grab commit cancelled because its command is no longer active: command={} hand={}",
                     commit.providerResultTemplate.commandId,
                     commit.isLeft ? "left" : "right");
-                rollbackInventoryTransfer(commit);
+                rollbackInventoryTransfer(commit, "provider-command-cancelled");
                 commit = {};
                 continue;
             }
@@ -441,7 +445,7 @@ namespace rock
                     "Provider force-grab rolled back because command ownership ended during commit: command={} hand={}",
                     commit.providerResultTemplate.commandId,
                     commit.isLeft ? "left" : "right");
-                rollbackInventoryTransfer(commit);
+                rollbackInventoryTransfer(commit, "provider-command-ended-during-commit");
                 commit = {};
                 continue;
             }
