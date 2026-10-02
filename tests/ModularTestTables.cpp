@@ -1,5 +1,6 @@
 #include <ROCK/Discovery.h>
 #include "ModularTestTables.h"
+#include "api/AuthoredInteractionLease.h"
 #include "physics-interaction/grab/DefaultGrabPoseRegistry.h"
 namespace rock::api::core { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
 namespace rock::api::hands { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
@@ -19,7 +20,19 @@ const v1_2::Api& tableV1_2() noexcept {static const v1_2::Api value{tableV1_1(),
 const v1_3::Api& tableV1_3() noexcept {static const v1_3::Api value{tableV1_2()};return value;}
 const ApiV1& table() noexcept {return tableV1_2().v1_1.v1;}
 }
-namespace rock::api::touch { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
+namespace rock::api::touch {
+namespace {
+Status ROCK_CALL oldYield(OwnerToken owner,std::uint64_t scope,std::uint64_t target,std::uint32_t generation) noexcept {
+    return owner==77&&scope==5&&target==6&&generation==7?Status::Ok:Status::InvalidArgument;
+}
+authored_interaction::Lease authored;
+SampleV1 sample{};
+Status ROCK_CALL setAuthored(OwnerToken owner,const v1_1::AuthoredHand* request) noexcept {return request?authored.set(owner,*request,sample):Status::InvalidArgument;}
+Status ROCK_CALL clearAuthored(OwnerToken owner,Hand) noexcept {return authored.clear(owner,sample);}
+}
+const ApiV1& table() noexcept {static const ApiV1 value=[] {ApiV1 v{};v.requestTouchGrabYieldV1=&oldYield;return v;}();return value;}
+const v1_1::Api& tableV1_1() noexcept {static const v1_1::Api value{table(),&setAuthored,&clearAuthored};return value;}
+}
 namespace rock::api::weapon {
 namespace {
 Status ROCK_CALL oldPrimary(OwnerToken owner, Hand* hand) noexcept {

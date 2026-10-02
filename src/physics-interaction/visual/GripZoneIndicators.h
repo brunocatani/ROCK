@@ -10,7 +10,7 @@ namespace rock::grip_zone_indicators
 {
     struct Frame
     {
-        static constexpr std::size_t kCapacity = MAX_WEAPON_COLLISION_BODIES + 4;
+        static constexpr std::size_t kCapacity = MAX_WEAPON_COLLISION_BODIES + 6;
         std::array<RE::NiPoint3, kCapacity> positions{};
         std::uint64_t gameFrameIndex{ 0 };
         float diameterGameUnits{ 0.0f };

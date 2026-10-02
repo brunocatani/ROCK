@@ -1,6 +1,7 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/native/BipodFrozenRetirement.h"
 #include "api/StorageService.h"
+#include "api/AuthoredInteractionService.h"
 #include "api/WeaponPartCollisionService.h"
 #include "physics-interaction/visual/GripZoneIndicators.h"
 #include "api/ProviderRuntimeServices.h"
@@ -626,6 +627,8 @@ namespace rock
         _looseWeaponCollision.clear(worldValid ? currentHknp : nullptr);
         storage_service::shutdown(worldValid ? currentHknp : nullptr);
         weapon_part_collision::shutdown(worldValid ? currentHknp : nullptr);
+        authored_interaction::reset();
+        native_player_collision::publishAuthoredHands(worldValid ? currentHknp : nullptr, {});
         if (worldValid) {
             auto* hknp = getHknpWorld(_lifecycle.cachedBhkWorld);
             _dynamicWorldCarCollision.restoreAll(_lifecycle.cachedBhkWorld, hknp, "shutdown");

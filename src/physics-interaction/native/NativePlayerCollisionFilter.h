@@ -26,6 +26,9 @@ namespace rock::native_player_collision
     // snapshot. IDs are checked against live identity before any suppression.
     // An empty publication restores physical pairs in the supplied live world.
     void publish(RE::hknpWorld* world, std::span<const BodyIdentity> bodies);
+    // Exact dynamic-hand bodies owned by an authored handle. Only their world
+    // surface simulation pairs are removed; publication changes rebuild caches.
+    void publishAuthoredHands(RE::hknpWorld* world, std::span<const BodyIdentity> bodies);
 
     // Single owner: the equipped BladePenetrationRuntime. Game-thread mutation
     // while its physics callbacks are quiesced. The existing simulation hook

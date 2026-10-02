@@ -1,3 +1,4 @@
+#include "api/AuthoredInteractionService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/visual/GripZoneIndicators.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
@@ -1856,6 +1857,8 @@ namespace rock
         overlayFrame.gameFrameIndex = gameFrameIndex;
         overlayFrame.diameterGameUnits =
             g_rockConfig.rockGripZoneIndicatorDiameterGameUnits;
+        overlayFrame.count += authored_interaction::appendIndicators(
+            std::span(overlayFrame.positions).subspan(overlayFrame.count));
 
         if (_powerArmorCandidateFrame == gameFrameIndex) {
             for (const bool isLeft : {false, true}) {

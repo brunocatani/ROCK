@@ -1,3 +1,4 @@
+#include "api/AuthoredInteractionService.h"
 #include "api/StorageService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
@@ -501,13 +502,14 @@ namespace rock
         auto providerSuppresses = [&](provider::RockProviderHandInputSuppressionFlagV1 flag) {
             return provider::hasHandInputSuppressionFlagV1(providerInputSuppressionFlags, flag);
         };
-        const bool providerSuppressesNormalGrabPress =
+        const bool authoredGrabReserved = authored_interaction::reserves(isLeft);
+        const bool providerSuppressesNormalGrabPress = authoredGrabReserved ||
             providerSuppresses(provider::RockProviderHandInputSuppressionFlagV1::SuppressNormalGrabPress);
         const bool providerSuppressesGrabRelease =
             providerSuppresses(provider::RockProviderHandInputSuppressionFlagV1::SuppressGrabRelease);
         const bool providerSuppressesHeldWeaponTriggerEquip =
             providerSuppresses(provider::RockProviderHandInputSuppressionFlagV1::SuppressHeldWeaponTriggerEquip);
-        const bool providerSuppressesGameplayCandidates =
+        const bool providerSuppressesGameplayCandidates = authoredGrabReserved ||
             providerSuppresses(provider::RockProviderHandInputSuppressionFlagV1::SuppressGameplayCandidates);
         const bool providerSuppressesOpenVrGameInput =
             providerSuppresses(provider::RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput);

@@ -51,6 +51,12 @@ namespace rock::native_player_collision
                expected.ownerNode != 0 && expected == live;
     }
 
+    inline bool suppressAuthoredHandWorldPair(const BodyIdentity& expected,
+        const BodyIdentity& live, std::uint32_t otherLayer)
+    {
+        return matchesLiveBody(expected, live) && collision_layer_policy::isWorldSurfaceLayer(otherLayer);
+    }
+
     // These are duplicate physical obstacles for the native player skeleton.
     // ROCK's generated bodies and the native controller own world response.
     // Weapon, projectile, spell, actor and query layers deliberately stay native.

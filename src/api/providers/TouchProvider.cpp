@@ -1,4 +1,5 @@
 #include "TouchMarshalling.h"
+#include "api/AuthoredInteractionService.h"
 #include <ROCK/Discovery.h>
 #include "EventBoundary.h"
 
@@ -45,6 +46,13 @@ Status ROCK_CALL requestTouchGrabYieldV1(std::uint64_t ownerToken, std::uint64_t
 }
 
 #include "TouchEndpoints.inl"
+Status ROCK_CALL setAuthoredHand(OwnerToken owner,const v1_1::AuthoredHand* request) noexcept {
+    if(const auto status=checkInput(request);status!=Status::Ok)return status;
+    return invoke(owner,kInterfaceId,2,true,[&]{return authored_interaction::set(owner,*request);});
+}
+Status ROCK_CALL clearAuthoredHand(OwnerToken owner,Hand hand) noexcept {
+    return invoke(owner,kInterfaceId,2,true,[&]{return authored_interaction::clear(owner,hand);});
+}
 }
 const ApiV1& table() noexcept {
     static const ApiV1 value{
@@ -56,5 +64,8 @@ const ApiV1& table() noexcept {
         &copyEvents,
     };
     return value;
+}
+const v1_1::Api& tableV1_1() noexcept {
+    static const v1_1::Api value{table(),&setAuthoredHand,&clearAuthoredHand};return value;
 }
 }

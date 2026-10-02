@@ -39,6 +39,7 @@ namespace rock::native_player_collision
         // original native filter returns. No native lock is taken under this gate.
         PhysicsCallbackQuiescenceGate s_gate;
         Snapshot s_snapshot;
+        Snapshot s_authoredHands; // Same game publisher and callback gate.
         // Independent game-thread publisher and physics-worker read gate.
         // Player-body refresh must never bypass an active blade exception;
         // only blade publication pauses this gate and rebuilds its two bodies.
@@ -51,6 +52,7 @@ namespace rock::native_player_collision
         std::atomic<std::uint64_t> s_staleIdentities{ 0 };
         std::atomic<std::uint64_t> s_unresolvedWeaponOwners{ 0 };
         std::atomic<std::uint64_t> s_bladeRejectedPairs{ 0 };
+        std::atomic<std::uint64_t> s_authoredRejectedPairs{ 0 };
         std::uint64_t s_nextReportMs{ 0 };
 
         BodyIdentity identity(const havok_runtime::BodySnapshot& body)
@@ -224,6 +226,20 @@ namespace rock::native_player_collision
             if (admitted > 0 && admitted <= count) admitted = filterBladePairs(world, pairs, admitted);
             if (admitted > 0 && admitted <= count) admitted = filterRetiredWeaponHandPairs(world, pairs, admitted);
             auto lease = s_gate.tryEnterCallback();
+            if (lease && world && world == s_authoredHands.world && s_authoredHands.count &&
+                pairs && admitted > 0 && admitted <= count) {
+                const int beforeAuthored = admitted;
+                admitted = filterPhysicalPairs(pairs, admitted, [&](const BodyPair& pair) {
+                    const auto* a = findPlayerBody(s_authoredHands, pair.bodyA);
+                    const auto* b = findPlayerBody(s_authoredHands, pair.bodyB);
+                    if (!a && !b) return false;
+                    const auto hand = havok_runtime::snapshotBody(world, {a ? pair.bodyA : pair.bodyB});
+                    const auto other = havok_runtime::snapshotBody(world, {a ? pair.bodyB : pair.bodyA});
+                    return hand.valid && other.valid && suppressAuthoredHandWorldPair(a ? *a : *b,
+                        identity(hand), other.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK);
+                });
+                s_authoredRejectedPairs.fetch_add(beforeAuthored - admitted, std::memory_order_relaxed);
+            }
             if (!lease || !world || world != s_snapshot.world || s_snapshot.count == 0 ||
                 !pairs || admitted <= 0 || admitted > count) {
                 if (admitted >= 0 && admitted <= count) profilePairs(world, pairs, admitted,
@@ -420,10 +436,34 @@ namespace rock::native_player_collision
         }
     }
 
+    void publishAuthoredHands(RE::hknpWorld* world, std::span<const BodyIdentity> bodies)
+    {
+        Snapshot next{};
+        if (s_installed && world && bodies.size() <= next.bodies.size()) {
+            next.world = world;
+            next.count = bodies.size();
+            std::copy(bodies.begin(), bodies.end(), next.bodies.begin());
+            std::sort(next.bodies.begin(), next.bodies.begin() + next.count,
+                [](const auto& a, const auto& b) { return a.bodyId < b.bodyId; });
+        }
+        const auto previous = s_authoredHands;
+        if (previous.world == next.world && previous.count == next.count &&
+            std::equal(next.bodies.begin(), next.bodies.begin() + next.count, previous.bodies.begin())) return;
+        {
+            auto mutation = s_gate.pauseForMutation();
+            s_authoredHands = next;
+        }
+        s_gate.resumeCallbacks();
+        if (world) invalidatePublishedBodies(previous, next);
+        ROCK_LOG_INFO(Hand, "Authored handle world collision: bodies={} world={:p} previousRejectedPairs={}",
+            next.count, static_cast<void*>(world), s_authoredRejectedPairs.exchange(0, std::memory_order_relaxed));
+    }
+
     void abandon() noexcept
     {
         s_gate.pauseAndWait();
         s_snapshot = {};
+        s_authoredHands = {};
         s_bladeGate.pauseAndWait();
         s_bladePair = {};
         s_bladeRejectedPairs.store(0, std::memory_order_relaxed);
