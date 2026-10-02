@@ -449,6 +449,7 @@ namespace rock
             _rightHand.isHolding() ? _rightHand.getHeldRef() : nullptr,
             _leftHand.isHolding() ? _leftHand.getHeldRef() : nullptr,
             _generatedBodyStepDrive.callbackGate());
+        updateObjectRest(frame);
         commitHeldPlacement(frame);
         auto selectedCloseCarTarget = [&](const Hand& hand, const HandFrameInput& handInput) {
             DynamicWorldCarTarget target{};

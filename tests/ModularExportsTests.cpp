@@ -9,6 +9,8 @@ int main(int argc,char** argv) {
     const auto module=LoadLibraryExA(argv[1],nullptr,DONT_RESOLVE_DLL_REFERENCES);
     assert(module);
     assert(GetProcAddress(module,rock::api::kQueryExportName));
+    assert(GetProcAddress(module,"ROCK_ObjectRest_QueryV1"));
+    assert(GetProcAddress(module,"ROCK_Storage_QueryV1"));
     assert(GetProcAddress(module,"F4SEPlugin_Query"));
     assert(GetProcAddress(module,"F4SEPlugin_Load"));
     for (const auto name:std::array{"ROCKAPI_GetApi","ROCKAPI_GetProviderApi","ROCKAPI_GetDescriptorV1","GetROCKConfigurationApi"}) assert(!GetProcAddress(module,name));

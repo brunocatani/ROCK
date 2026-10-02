@@ -158,7 +158,7 @@ struct LooseWeaponCollision::State
             bodies.reserve(set.records.size());
             for (const auto& record : set.records) {
                 const auto live = havok_runtime::snapshotBody(world, RE::hknpBodyId{record.bodyId});
-                if ((!record.accepted && record.motionType != Motion::Static) || !live.valid || !live.body || !live.body->shape ||
+                if ((!record.accepted && record.motionType != Motion::Static && !(nativeOnly && record.motionType==Motion::Keyframed)) || !live.valid || !live.body || !live.body->shape ||
                     !live.ownerNode || !live.collisionObject || record.resolvedRef != ref.get()) { failed=true; return false; }
                 RE::NiTransform bodyWorld;
                 // A multipart weapon can have many differently oriented BODY
@@ -380,12 +380,12 @@ void LooseWeaponCollision::publishWatchMask() noexcept
 void LooseWeaponCollision::clear(RE::hknpWorld* liveWorld)
 {
     _watchMask.store(0,std::memory_order_release);
-    for (auto& slot:_slots) { slot.clear(liveWorld); slot._declined=0; }
+    for (auto& slot:_slots) { slot.clear(liveWorld); slot._declined=slot._rested=0; }
     _nextPreparationSlot=0;
 }
 
 void LooseWeaponCollision::update(const PhysicsFrameContext& frame, RE::TESObjectREFR* right,
-    RE::TESObjectREFR* left, PhysicsCallbackQuiescenceGate& gate)
+    RE::TESObjectREFR* left, PhysicsCallbackQuiescenceGate& gate,bool admitWeapons)
 {
     if (!frame.worldReady || !frame.hknpWorld || frame.menuBlocked) return;
     performance_profiler::ScopedTimer timer(performance_profiler::Scope::LooseWeaponCollision);
@@ -402,12 +402,13 @@ void LooseWeaponCollision::update(const PhysicsFrameContext& frame, RE::TESObjec
         try {
             // A quick-drop native watcher hands back to fresh shape preparation
             // on regrab. Never keep a second owner for the same reference.
-            if (slot._state && (slot._state->nativeOnly || slot._state->frozen) &&
+            if (slot._state && (slot._state->frozen || (admitWeapons && slot._state->nativeOnly)) &&
                 (slot._state->ref.get()==right || slot._state->ref.get()==left)) {
                 auto mutation=gate.pauseForMutation(); slot.clear(frame.hknpWorld);
             }
             slot.update(frame,right,left,gate,i==preparing);
             if (slot._state && slot._state->parked) {
+                if(!admitWeapons)slot._rested=slot._state->ref->formID;
                 auto mutation=gate.pauseForMutation(); slot.clear(frame.hknpWorld);
             }
         } catch (...) {
@@ -417,7 +418,7 @@ void LooseWeaponCollision::update(const PhysicsFrameContext& frame, RE::TESObjec
             ROCK_LOG_SAMPLE_WARN(Weapon,2000,"Loose weapon collision update failed; native restoration requested");
         }
     }
-    for (auto* ref : {right,left}) {
+    if(admitWeapons)for (auto* ref : {right,left}) {
         auto* form=ref ? ref->GetObjectReference() : nullptr;
         auto* weapon=form ? form->As<RE::TESObjectWEAP>() : nullptr;
         if (!weapon || !loose_weapon_collision_policy::eligibleType(weapon->weaponData.type.get()) ||
@@ -443,6 +444,38 @@ void LooseWeaponCollision::update(const PhysicsFrameContext& frame, RE::TESObjec
         }
     }
     publishWatchMask();
+}
+
+LooseWeaponCollision::NativeRest LooseWeaponCollision::watchNative(RE::TESObjectREFR* ref,
+    const PhysicsFrameContext& frame,PhysicsCallbackQuiescenceGate& gate)
+{
+    if(!ref || !frame.worldReady || frame.menuBlocked || !frame.hknpWorld || !ref->Get3D() ||
+       ref->IsDeleted() || ref->IsDisabled() || !native_object_placement::available())return NativeRest::Unavailable;
+    for(auto& slot:_slots) {
+        if(slot._state && slot._state->ref.get()==ref)return NativeRest::Watching;
+        if(slot._rested==ref->formID){slot._rested=0;return NativeRest::Resting;}
+    }
+    auto free=std::find_if(_slots.begin(),_slots.end(),[](const auto& slot){return !slot._state;});
+    if(free==_slots.end())return NativeRest::CapacityFull;
+    auto mutation=gate.pauseForMutation();
+    free->_rested=0;free->_state=std::make_unique<State>(ref,frame.hknpWorld);
+    auto& state=*free->_state;state.nativeOnly=true;
+    if(state.failed || !state.captureBodies(frame)){free->clear(frame.hknpWorld);return NativeRest::Unavailable;}
+    bool dynamic=false,valid=true;
+    {
+        havok_world_lock::ScopedWorldReadLock lock(frame.hknpWorld);
+        for(const auto& body:state.bodies) {
+            const auto current=havok_runtime::snapshotBody(frame.hknpWorld,RE::hknpBodyId{body.id});
+            if(!current.valid || !current.body){valid=false;break;}
+            dynamic=dynamic || physics_body_classifier::motionTypeFromBodyFlags(current.body->flags)==Motion::Dynamic;
+        }
+    }
+    if(!valid){free->clear(frame.hknpWorld);return NativeRest::Unavailable;}
+    // A native saved keyframed object needs neither reactivation nor another
+    // contact watcher. This is also the save/load restoration path.
+    if(!dynamic){free->clear(frame.hknpWorld);return NativeRest::Resting;}
+    if(!state.install()){free->clear(frame.hknpWorld);return NativeRest::Unavailable;}
+    free->publishBodies();publishWatchMask();return NativeRest::Watching;
 }
 
 bool LooseWeaponCollision::prepareRelease(RE::TESObjectREFR* reference, RE::hknpWorld* liveWorld,
@@ -517,9 +550,12 @@ bool LooseWeaponCollision::releaseReference(RE::TESObjectREFR* reference, RE::hk
     auto mutation = gate.pauseForMutation();
     bool restored = true;
     const auto release = [&](auto& slots) {
-        for (auto& slot : slots) if (slot._state && slot._state->ref.get() == reference) {
-            slot.clear(liveWorld);
-            restored = restored && !slot._state;
+        for (auto& slot : slots) {
+            if(reference && slot._rested==reference->formID)slot._rested=0;
+            if (slot._state && slot._state->ref.get() == reference) {
+                slot.clear(liveWorld);
+                restored = restored && !slot._state;
+            }
         }
     };
     release(_slots);

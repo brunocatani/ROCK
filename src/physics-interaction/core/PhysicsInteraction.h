@@ -1,4 +1,5 @@
 #pragma once
+#include "api/ObjectRestRequests.h"
 
 #include "physics-interaction/grenade/LooseMolotovVisual.h"
 
@@ -162,6 +163,9 @@ namespace rock
         // Called before a final hand release, while the exact world reference
         // and native body set still exist. A failed restore retains the grab.
         bool prepareLooseWeaponRelease(RE::TESObjectREFR* reference, RE::hknpWorld* world, bool physicalDrop);
+        api::Status watchObjectRest(api::OwnerToken owner,const api::object_rest::RequestV1& request,api::object_rest::State& state)
+        {return _objectRestRequests.watch(owner,request,state);}
+        void cancelObjectRest(api::OwnerToken owner,std::uint32_t reference){_objectRestRequests.cancel(owner,reference);}
 
         // Runs before the normal ROCK interaction frame so weapon-relative
         // consumers see one authored primary-grip frame. Runtime eligibility
@@ -426,6 +430,7 @@ namespace rock
         void processGrabInputHand(const PhysicsFrameContext& frame, Hand& hand, bool isLeft, const GrabInputHandContext& context);
         void cancelLockedFarSelection(Hand& hand, bool isLeft, const char* reason);
         void updateGrabInput(const PhysicsFrameContext& frame);
+        void updateObjectRest(const PhysicsFrameContext& frame);
         std::uint32_t heldPlacementCandidate(RE::hknpWorld* world) const;
         void beginHeldPlacementFrame();
         void resetHeldPlacement();
@@ -1105,6 +1110,8 @@ namespace rock
         DynamicWeaponCollisionRuntime _dynamicWeaponCollision;
         PhysicsStepDriveCoordinator _generatedBodyStepDrive;
         LooseWeaponCollision _looseWeaponCollision;
+        LooseWeaponCollision _objectRestCollision; // independent capacity; native magazine shapes stay intact
+        object_rest_service::Requests _objectRestRequests;
         api::grab::v1_1::HeldPlacementIntent _placementIntent{};
         held_placement_policy::FrameLease _placementLease;
         api::OwnerToken _placementActiveOwner{}, _placementPendingOwner{};

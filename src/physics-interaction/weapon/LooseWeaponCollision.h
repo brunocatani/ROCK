@@ -20,7 +20,9 @@ namespace rock {
         LooseWeaponCollision();
         ~LooseWeaponCollision();
         void update(const PhysicsFrameContext& frame, RE::TESObjectREFR* right,
-            RE::TESObjectREFR* left, PhysicsCallbackQuiescenceGate& gate);
+            RE::TESObjectREFR* left, PhysicsCallbackQuiescenceGate& gate,bool admitWeapons=true);
+        enum class NativeRest { Watching, Resting, Unavailable, CapacityFull };
+        NativeRest watchNative(RE::TESObjectREFR*,const PhysicsFrameContext&,PhysicsCallbackQuiescenceGate&);
         void clear(RE::hknpWorld* liveWorld);
         bool prepareRelease(RE::TESObjectREFR* reference, RE::hknpWorld* liveWorld,
             PhysicsCallbackQuiescenceGate& gate, bool physicalDrop);
@@ -47,6 +49,7 @@ namespace rock {
 
             std::unique_ptr<State> _state;
             std::uint32_t _declined{};
+            std::uint32_t _rested{};
             std::atomic<RE::hknpWorld*> _world{};
             std::array<std::atomic<std::uint32_t>, loose_weapon_collision_policy::kMaxNativeBodies> _bodies{};
             std::atomic<unsigned> _count{};
