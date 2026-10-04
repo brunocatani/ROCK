@@ -2020,6 +2020,17 @@ namespace rock
             resolveEquippedWeaponInteractionNode(), currentEquippedWeaponFormId());
     }
 
+    void PhysicsInteraction::finalizeEquipVisualBridgePresentation()
+    {
+        const auto& runtime = runtime_state::currentFrame();
+        auto* player = f4vr::getPlayer();
+        if (!player || !_lifecycle.initialized.load(std::memory_order_acquire) || !runtime.visualAuthorityAvailable ||
+            !runtime.localSkeletonReady || runtime.localMenuBlocking || runtime.compatibilityConfigBlocking ||
+            provider::currentNativeAnimationAuthorityFlagsV1() != 0 ||
+            f4vr::getNativeGunState(player) == static_cast<std::uint32_t>(RE::GUN_STATE::kReloading)) return;
+        _equipped.transition.finalizeVisualPresentation();
+    }
+
     void PhysicsInteraction::updateAuthoredPrimaryFiringGrip()
     {
         const auto& runtime = runtime_state::currentFrame();

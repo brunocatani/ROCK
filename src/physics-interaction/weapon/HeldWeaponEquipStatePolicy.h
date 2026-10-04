@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cmath>
 
 namespace rock::held_weapon_equip_state_policy
 {
@@ -25,6 +26,16 @@ namespace rock::held_weapon_equip_state_policy
         Transitioning,
         Invalid,
     };
+
+    // A completed bash leaves its duration behind. Native draw restarts only
+    // the remaining cooldown, which would reuse that duration for another fade.
+    // Never retire an active cooldown or a fade that has not fully recovered.
+    [[nodiscard]] inline bool hasCompletedBashFade(
+        float remainingSeconds, float durationSeconds, float cachedAlpha) noexcept
+    {
+        return remainingSeconds == 0.0f && std::isfinite(durationSeconds) &&
+            durationSeconds > 0.0f && cachedAlpha == 1.0f;
+    }
 
     [[nodiscard]] inline constexpr EquipReadiness classifyForEquip(const std::uint32_t nativeState) noexcept
     {

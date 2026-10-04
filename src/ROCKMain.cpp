@@ -953,6 +953,7 @@ namespace
                 rock::provider::RockProviderAnimationPhaseV1::Presented,
                 game_timing::currentFrameTiming());
             if (!s_physicsInteraction) return;
+            s_physicsInteraction->finalizeEquipVisualBridgePresentation();
             s_physicsInteraction->publishGripZoneIndicatorRenderFrame(runtime_state::currentFrame().frameIndex);
             s_physicsInteraction->traceHeldPresentationPhase("after-world-final");
             s_physicsInteraction->publishDebugRenderFrame();

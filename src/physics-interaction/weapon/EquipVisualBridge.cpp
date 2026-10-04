@@ -718,20 +718,30 @@ namespace rock
         if (_culledNativeInstance && _culledNativeInstance.get() != exactInstance) {
             restoreNativeInstanceCull();
         }
-        if (_culledNativeInstance) {
-            return;
-        }
         if (!equipped_weapon_visual_state::isLocallyVisible(exactInstance)) {
             return;
         }
 
-        _culledNativeInstance.reset(exactInstance);
-        _culledNativeInstanceWasVisible = true;
+        // Owning the lease does not prove the engine kept its cull bit. Native
+        // draw/animation can unhide this same child before the lease ends.
+        const bool reasserting = _culledNativeInstance != nullptr;
+        if (!reasserting) {
+            _culledNativeInstance.reset(exactInstance);
+            _culledNativeInstanceWasVisible = true;
+        }
         equipped_weapon_visual_state::setLocallyVisible(exactInstance, false);
         f4vr::updateDown(exactInstance, true);
         vanilla_weapon_alignment_telemetry::recordTransferTrace(
             vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip, _isLeftHand,
-            "native-cull-acquired", exactInstance);
+            reasserting ? "native-cull-reasserted" : "native-cull-acquired", exactInstance);
+    }
+
+    void EquipVisualBridge::finalizePresentationVisibility(
+        const equipped_weapon_visual_state::Snapshot& nativeVisual)
+    {
+        if (!_active || !_modelPresented || !_model || !_parent ||
+            _parent != f4vr::getWorldRootNode() || _model->parent != _parent) return;
+        synchronizeNativeInstanceCull(&nativeVisual, true);
     }
 
     void EquipVisualBridge::restoreNativeInstanceCull()

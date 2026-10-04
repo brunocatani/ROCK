@@ -855,6 +855,15 @@ namespace rock
         }
     }
 
+    void EquippedWeaponTransitionCoordinator::finalizeVisualPresentation()
+    {
+        if (!_active || !_bridge.hasVisualModel() || !_bridge.isModelPresented() ||
+            !_boundIdentity.valid() || readCurrentIdentity() != _boundIdentity) return;
+        const auto visual = equipped_weapon_visual_state::observe(
+            _boundIdentity.formID, _supersededNativeInstanceNode, &_visualCache);
+        _bridge.finalizePresentationVisibility(visual);
+    }
+
     void EquippedWeaponTransitionCoordinator::shutdown()
     {
         if (_heldTransfer.active()) traceHeldTransfer("lifecycle-ended");

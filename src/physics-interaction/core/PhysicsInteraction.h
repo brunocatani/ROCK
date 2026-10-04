@@ -136,6 +136,7 @@ namespace rock
          */
         void normalizeWeaponPresentationScaleAfterFrikWeaponPass();
         void synchronizeEquipVisualBridgeAfterFrikWeaponPass();
+        void finalizeEquipVisualBridgePresentation();
         void traceScopeColliderState() const;
 
         [[nodiscard]] bool tryGetManualScopePresentationTarget(

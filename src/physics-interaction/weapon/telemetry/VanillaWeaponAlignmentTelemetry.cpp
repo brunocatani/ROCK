@@ -908,6 +908,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
             trace.targetFrame = frame;
         }
         const bool nativeCullEdge = std::string_view(stage) == "native-cull-acquired" ||
+            std::string_view(stage) == "native-cull-reasserted" ||
             std::string_view(stage) == "native-cull-restored";
         if (equipGapWindow(trace, frame) &&
             (terminal || nativeCullEdge || std::string_view(stage) == "after-world-final" || std::string_view(stage) == "request")) {

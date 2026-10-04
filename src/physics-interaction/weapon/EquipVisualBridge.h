@@ -165,6 +165,9 @@ namespace rock
         // AfterWeaponPosition only: the accepted equipped owner has completed
         // this frame's weapon solve, including provider presentation scale.
         void synchronizeEquippedPresentation(RE::NiNode* weaponNode);
+        // Final presentation phase: animation can overwrite the child's cull
+        // after update(). Reassert it only while our attached model is shown.
+        void finalizePresentationVisibility(const equipped_weapon_visual_state::Snapshot& nativeVisual);
 
     private:
         // Attach the (already orphaned) model under the world root; false when
