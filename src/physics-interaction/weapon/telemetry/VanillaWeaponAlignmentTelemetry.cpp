@@ -5,6 +5,7 @@
 #include "physics-interaction/weapon/WeaponSceneTraversal.h"
 #include "physics-interaction/weapon/WeaponAimBasis.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/weapon/EquippedWeaponVisualState.h"
 #include "physics-interaction/weapon/telemetry/NativeScopeShotPolicy.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/native/NativeMemory.h"
@@ -45,7 +46,17 @@ namespace rock::vanilla_weapon_alignment_telemetry
             std::uint32_t sourceId{};
             std::uintptr_t targetModel{};
             RE::NiTransform targetWorld{};
+            // Held-equip continuity investigation. Values and validated scene
+            // paths only; no scene leases or delayed raw-pointer dereferences.
+            std::chrono::steady_clock::time_point startedAt{};
+            std::uint32_t expectedForm{};
+            std::uint64_t bridgeFrame{}, finalFrame{};
+            std::uintptr_t bridgeModel{}, previousNativeModel{};
+            RE::NiTransform bridgeWorld{};
+            equipped_weapon_visual_state::ObservationCache nativeCache{};
+            bool gapWindowEnded{};
         };
+        constexpr std::uint64_t kEquipGapFrames = 240;
         // Investigation owner: ROCK weapon presentation. Remove this targeted
         // capture once 10mm scale, SMG translation and pipe rotation are qualified.
         // Existing bDebugWeaponOmodDump gates it and defaults to false. Enable
@@ -126,7 +137,8 @@ namespace rock::vanilla_weapon_alignment_telemetry
                 fadeBytesMatch(0x27A87C6, std::array<std::uint8_t, 20>{0xF3,0x0F,0x11,0xB3,0xE0,0x01,0x00,0x00,0x8B,0x83,0xE0,0x01,0x00,0x00,0x89,0x83,0xF4,0x01,0x00,0x00});
         }
 
-        void recordMeleeFade(const char* phase, RE::NiAVObject* root) noexcept
+        void recordMeleeFade(const char* phase, RE::NiAVObject* root,
+            std::uint64_t transferTrace = 0, const char* role = "equipped") noexcept
         {
             if (!captureThread || !session || !session->meleeFadeReady ||
                 !g_rockConfig.rockDebugWeaponOmodDumpEnabled) return;
@@ -207,7 +219,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
                     return true;
                 });
                 session->log->info(
-                    "MELEE_FADE phase={} frame={} form={:08X} root=0x{:X} nativeRoot=0x{:X} writes={} requested={} playerReadable={} settingsReadable={} disabledAlpha={} lerp={} cooldown={} cooldownTotal={} cachedAlpha={} geometries={} owners={} worstOwner=0x{:X} currentFade={} decalFade={} multiplier={} minPreviousAlpha={} flags=0x{:X} category={} renderReadable={} renderGates={}/{} renderFrame={} lastRenderFrame={} visited={} truncated={} unreadable={} unbound={} failureStage={} overruns={}",
+                    "MELEE_FADE phase={} frame={} form={:08X} root=0x{:X} nativeRoot=0x{:X} writes={} requested={} playerReadable={} settingsReadable={} disabledAlpha={} lerp={} cooldown={} cooldownTotal={} cachedAlpha={} geometries={} owners={} worstOwner=0x{:X} currentFade={} decalFade={} multiplier={} minPreviousAlpha={} flags=0x{:X} category={} renderReadable={} renderGates={}/{} renderFrame={} lastRenderFrame={} visited={} truncated={} unreadable={} unbound={} failureStage={} overruns={} transfer={} role={}",
                     phase, runtime_state::currentFrame().frameIndex, form, reinterpret_cast<std::uintptr_t>(root),
                     session->meleeFadeNativeRoot, session->meleeFadeWrites, session->meleeFadeRequested,
                     playerReadable, settingsReadable, disabledAlpha, lerpSeconds, combat[0], combat[1], combat[2],
@@ -215,10 +227,55 @@ namespace rock::vanilla_weapon_alignment_telemetry
                     lowestPrevious, flags, static_cast<unsigned>(category), renderReadable,
                     static_cast<unsigned>(renderFadeGates[0]), static_cast<unsigned>(renderFadeGates[1]), renderFrame, lastRenderFrame,
                     walk.visited, walk.truncated || ownerLimit,
-                    unreadable, unbound, deepestFailure, session->pool->overrun_counter());
+                    unreadable, unbound, deepestFailure, session->pool->overrun_counter(), transferTrace, role);
             } catch (...) {
                 ++session->captureFailures;
             }
+        }
+
+        bool equipGapWindow(const TransferTrace& trace, std::uint64_t frame) noexcept
+        {
+            return trace.id && trace.kind == TransferKind::HeldEquip &&
+                frame >= trace.startFrame && frame - trace.startFrame < kEquipGapFrames;
+        }
+
+        double equipElapsedMs(const TransferTrace& trace) noexcept
+        {
+            return std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - trace.startedAt).count();
+        }
+
+        void recordEquipNode(const TransferTrace& trace, const char* phase,
+            const char* role, const RE::NiAVObject* model)
+        {
+            // Ancestors above Weapon matter too. An orphan with AppCulled clear
+            // is not evidence of visibility. These are scene observations, not
+            // a claim that pixels were submitted by the renderer.
+            std::uint32_t culledMask = 0, depth = 0;
+            bool reachedWorld = false, reachedSkeleton = false, readable = true;
+            const auto* world = f4vr::getWorldRootNode();
+            const auto* skeleton = f4vr::getFirstPersonSkeleton();
+            const auto* ancestor = model;
+            for (; ancestor && depth < 32; ++depth) {
+                if (!native_memory::pointerRangeLooksReadable(ancestor, sizeof(RE::NiAVObject))) {
+                    readable = false;
+                    break;
+                }
+                if (ancestor->GetAppCulled()) culledMask |= 1u << depth;
+                reachedWorld |= ancestor == world;
+                reachedSkeleton |= ancestor == skeleton;
+                ancestor = ancestor->parent;
+            }
+            const bool rootReadable = model && native_memory::pointerRangeLooksReadable(model, sizeof(RE::NiAVObject));
+            const auto pose = rootReadable ? model->world : RE::NiTransform{};
+            session->log->info(
+                "EQUIP_NODE trace={} frame={} elapsedMs={:.3f} phase={} role={} model=0x{:X} parent=0x{:X} rootReadable={} ancestryReadable={} depth={} truncated={} culledMask=0x{:X} reachedWorld={} reachedSkeleton={} scale={} xyz=({},{},{}) fadeProbeReady={} overruns={}",
+                trace.id, runtime_state::currentFrame().frameIndex, equipElapsedMs(trace), phase, role,
+                reinterpret_cast<std::uintptr_t>(model), reinterpret_cast<std::uintptr_t>(rootReadable ? model->parent : nullptr),
+                rootReadable, readable, depth, ancestor != nullptr, culledMask, reachedWorld, reachedSkeleton,
+                pose.scale, pose.translate.x, pose.translate.y, pose.translate.z,
+                session->meleeFadeReady, session->pool->overrun_counter());
+            if (rootReadable) recordMeleeFade(phase, const_cast<RE::NiAVObject*>(model), trace.id, role);
         }
 
         std::uint32_t traceNativeFadeWrite(RE::NiAVObject* root, const float* alpha)
@@ -446,6 +503,8 @@ namespace rock::vanilla_weapon_alignment_telemetry
             next->log->flush();
             session = std::move(next);
             captureThread = true;
+            session->log->info("EQUIP_GAP start version=1 frames={} boundaryClock=steady-ms finalPhase=after-world-final ancestryBudget=32 sceneEvidenceOnly=true poseDeltas=model-origins gate=bDebugWeaponOmodDump",
+                kEquipGapFrames);
             session->meleeFadeReady = installMeleeFadeTrace();
             session->log->info("MELEE_FADE start ready={} nativeMinMs=100 presentedMinMs=100 nodeBudget=512 ownerBudget=16 failureStages=node:1,geometryShader:2,shaderOwner:3,ownerVtable:4,ownerFields:5,nonfinite:6",
                 session->meleeFadeReady);
@@ -790,7 +849,14 @@ namespace rock::vanilla_weapon_alignment_telemetry
         try {
             const auto frame = runtime_state::currentFrame().frameIndex;
             auto& trace = session->transfers[isLeft ? 1u : 0u];
-            trace = { .id = ++session->nextTransferTrace, .startFrame = frame, .kind = kind, .sourceId = sourceId };
+            trace = { .id = ++session->nextTransferTrace, .startFrame = frame, .kind = kind,
+                .sourceId = sourceId, .startedAt = std::chrono::steady_clock::now() };
+            if (kind == TransferKind::HeldEquip) {
+                const auto* equipped = f4vr::getEquippedWeaponItem();
+                const auto form = equipped && equipped->item.object ? equipped->item.object->formID : 0;
+                trace.previousNativeModel = reinterpret_cast<std::uintptr_t>(
+                    equipped_weapon_visual_state::observe(form).exactInstance);
+            }
             const auto& previous = session->lastTransferSource[isLeft ? 1u : 0u];
             const bool previousMatches = source && previous.model == reinterpret_cast<std::uintptr_t>(source) && previous.frame < frame;
             session->log->info("TRANSFER begin trace={} kind={} hand={} source={:08X} frame={} previousFrame={} previousSourceMatches={}",
@@ -802,6 +868,27 @@ namespace rock::vanilla_weapon_alignment_telemetry
                 if (previous.renderedHandValid) transform("transfer-previous-final", "rendered-hand", previous.renderedHandWorld);
             }
             recordTransferTrace(kind, isLeft, "request", source);
+        } catch (...) { ++session->captureFailures; }
+    }
+
+    void recordHeldEquipBoundary(std::uint32_t reference, std::uint32_t baseForm,
+        const char* stage, const RE::NiAVObject* retainedModel) noexcept
+    {
+        if (!captureThread || !session || !g_rockConfig.rockDebugWeaponOmodDumpEnabled) return;
+        try {
+            const auto frame = runtime_state::currentFrame().frameIndex;
+            for (auto& trace : session->transfers) {
+                if (trace.sourceId != reference || !equipGapWindow(trace, frame)) continue;
+                trace.expectedForm = baseForm;
+                const auto* equipped = f4vr::getEquippedWeaponItem();
+                session->log->info(
+                    "EQUIP_BOUNDARY trace={} frame={} elapsedMs={:.3f} phase={} reference={:08X} expected={:08X} equipped={:08X} instance=0x{:X} state={}",
+                    trace.id, frame, equipElapsedMs(trace), stage, reference, baseForm,
+                    equipped && equipped->item.object ? equipped->item.object->formID : 0,
+                    reinterpret_cast<std::uintptr_t>(equipped ? equipped->item.instanceData.get() : nullptr),
+                    f4vr::getNativeWeaponState(f4vr::getPlayer()));
+                recordEquipNode(trace, stage, "retained-source", retainedModel);
+            }
         } catch (...) { ++session->captureFailures; }
     }
 
@@ -819,6 +906,22 @@ namespace rock::vanilla_weapon_alignment_telemetry
             trace.targetWorld = *target;
             trace.targetModel = reinterpret_cast<std::uintptr_t>(model);
             trace.targetFrame = frame;
+        }
+        const bool nativeCullEdge = std::string_view(stage) == "native-cull-acquired" ||
+            std::string_view(stage) == "native-cull-restored";
+        if (equipGapWindow(trace, frame) &&
+            (terminal || nativeCullEdge || std::string_view(stage) == "after-world-final" || std::string_view(stage) == "request")) {
+            try {
+                recordEquipNode(trace, stage, terminal ? "bridge-release" : nativeCullEdge ? "native-cull" : "bridge-or-source", model);
+                if (terminal) {
+                    const auto native = equipped_weapon_visual_state::observe(trace.expectedForm, 0, &trace.nativeCache);
+                    recordEquipNode(trace, stage, "native-at-release", native.exactInstance);
+                } else if (model && std::string_view(stage) == "after-world-final") {
+                    trace.bridgeFrame = frame;
+                    trace.bridgeModel = reinterpret_cast<std::uintptr_t>(model);
+                    trace.bridgeWorld = model->world;
+                }
+            } catch (...) { ++session->captureFailures; }
         }
         if (!terminal && frame - trace.startFrame >= 16 &&
             (trace.terminalFrame == 0 || frame < trace.terminalFrame || frame - trace.terminalFrame >= 3)) return;
@@ -889,7 +992,45 @@ namespace rock::vanilla_weapon_alignment_telemetry
     {
         if (!captureThread || !session || !g_rockConfig.rockDebugWeaponOmodDumpEnabled) return;
         const auto index = isLeft ? 1u : 0u;
-        const auto kind = session->transfers[index].kind;
+        auto& trace = session->transfers[index];
+        const auto kind = trace.kind;
+        const auto frame = runtime_state::currentFrame().frameIndex;
+        if (equipGapWindow(trace, frame) && trace.finalFrame != frame) {
+            trace.finalFrame = frame;
+            try {
+                const auto* equipped = f4vr::getEquippedWeaponItem();
+                const auto currentForm = equipped && equipped->item.object ? equipped->item.object->formID : 0;
+                const auto native = equipped_weapon_visual_state::observe(trace.expectedForm, 0, &trace.nativeCache);
+                recordEquipNode(trace, "after-world-final", "native", native.exactInstance);
+                if (looseRoot) recordEquipNode(trace, "after-world-final", "held-loose", looseRoot);
+                const bool comparable = native.exactInstance && trace.bridgeFrame != 0;
+                const auto delta = comparable ? native.exactInstance->world.translate - trace.bridgeWorld.translate : RE::NiPoint3{};
+                // Model origins can differ between loose and equipped assets;
+                // these deltas are witnesses, not an automatic alignment test.
+                session->log->info(
+                    "EQUIP_FRAME trace={} frame={} age={} elapsedMs={:.3f} hand={} reference={:08X} expected={:08X} equipped={:08X} instance=0x{:X} state={} heldLoose={} bridgeThisFrame={} bridge=0x{:X} bridgeFrame={} native=0x{:X} sameAsPreviousNative={} ancestorsVisible={} locallyVisible={} comparable={} originDistance={} rotationDegrees={} bridgeScale={} nativeScale={} overruns={}",
+                    trace.id, frame, frame - trace.startFrame, equipElapsedMs(trace), isLeft ? "left" : "right",
+                    trace.sourceId, trace.expectedForm, currentForm,
+                    reinterpret_cast<std::uintptr_t>(equipped ? equipped->item.instanceData.get() : nullptr),
+                    f4vr::getNativeWeaponState(f4vr::getPlayer()), looseRoot != nullptr,
+                    trace.bridgeFrame == frame, trace.bridgeModel, trace.bridgeFrame,
+                    reinterpret_cast<std::uintptr_t>(native.exactInstance),
+                    native.exactInstance && reinterpret_cast<std::uintptr_t>(native.exactInstance) == trace.previousNativeModel,
+                    native.ancestorPathVisible, native.instanceLocallyVisible, comparable,
+                    comparable ? std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z) : -1.0f,
+                    comparable ? hand_world_claim_registry_policy::rotationDeltaDegrees(trace.bridgeWorld, native.exactInstance->world) : -1.0f,
+                    trace.bridgeFrame ? trace.bridgeWorld.scale : 0.0f,
+                    native.exactInstance ? native.exactInstance->world.scale : 0.0f, session->pool->overrun_counter());
+            } catch (...) { ++session->captureFailures; }
+        } else if (trace.id && kind == TransferKind::HeldEquip && !trace.gapWindowEnded &&
+            frame >= trace.startFrame && frame - trace.startFrame >= kEquipGapFrames) {
+            trace.gapWindowEnded = true;
+            try {
+                session->log->info("EQUIP_WINDOW_END trace={} frame={} elapsedMs={:.3f} limitFrames={} releaseFrame={} overruns={} failures={}",
+                    trace.id, frame, equipElapsedMs(trace), kEquipGapFrames, trace.terminalFrame,
+                    session->pool->overrun_counter(), session->captureFailures);
+            } catch (...) { ++session->captureFailures; }
+        }
         recordTransferTrace(kind, isLeft, "final-hand", nullptr);
         if (looseRoot) recordTransferTrace(kind, isLeft, "final-loose", looseRoot);
         if (equippedRoot) recordTransferTrace(kind, isLeft, "final-equipped", equippedRoot);

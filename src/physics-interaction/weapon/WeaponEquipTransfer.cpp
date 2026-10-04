@@ -3,6 +3,7 @@
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/BGSInventoryItem.h"
@@ -490,7 +491,13 @@ namespace rock::weapon_equip_transfer
          * NiPointer keeps the assembled model alive for the visual bridge.
          */
         result.detachedWorldModel.reset(heldRef->Get3D());
+        const auto traceBoundary = [&](const char* stage) {
+            vanilla_weapon_alignment_telemetry::recordHeldEquipBoundary(
+                result.formID, result.weapon->formID, stage, result.detachedWorldModel.get());
+        };
+        traceBoundary("before-activate");
         const bool activated = heldRef->ActivateRef(player, nullptr, result.count, false, false, false);
+        traceBoundary(activated ? "after-activate" : "activate-rejected");
         if (!activated) {
             result.reason = EquipReason::ActivateRefFailed;
             return result;
@@ -505,6 +512,7 @@ namespace rock::weapon_equip_transfer
          * durable first-person scene instance.
          */
         result.untransferredRef.reset();
+        traceBoundary("after-reference-release");
 
         const auto inventoryAfterTransfer = captureWeaponStacks(
             player,
@@ -536,7 +544,10 @@ namespace rock::weapon_equip_transfer
 
         result.matchedInstanceData = expectedInstanceData &&
             stack.instanceData.get() == expectedInstanceData.get();
-        return equipSelectedStack(player, equipManager, stack, input.transitionReason, std::move(result));
+        traceBoundary("before-equip-manager");
+        result = equipSelectedStack(player, equipManager, stack, input.transitionReason, std::move(result));
+        traceBoundary(result.success ? "after-equip-manager" : "equip-manager-rejected");
+        return result;
     }
 
     InventorySelection captureInventoryWeapon(std::uint32_t formID, std::uint32_t stackIndex) noexcept

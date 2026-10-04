@@ -27,6 +27,10 @@ namespace rock::vanilla_weapon_alignment_telemetry
         bool terminal = false) noexcept;
     void captureTransferFrame(bool isLeft, const RE::NiAVObject* looseRoot,
         const RE::NiAVObject* equippedRoot) noexcept;
+    // Held-equip investigation: synchronous native boundaries and 240 final
+    // frames, on the existing game-thread capture/writer. Never retains nodes.
+    void recordHeldEquipBoundary(std::uint32_t reference, std::uint32_t baseForm,
+        const char* stage, const RE::NiAVObject* retainedModel) noexcept;
     void recordTransferGrabGate(bool isLeft, std::uint64_t grabId, const char* phase, const char* reason,
         bool transferred, bool authoredPose, bool offsetActive, bool settled, bool presented, bool publish) noexcept;
 

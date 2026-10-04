@@ -729,6 +729,9 @@ namespace rock
         _culledNativeInstanceWasVisible = true;
         equipped_weapon_visual_state::setLocallyVisible(exactInstance, false);
         f4vr::updateDown(exactInstance, true);
+        vanilla_weapon_alignment_telemetry::recordTransferTrace(
+            vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip, _isLeftHand,
+            "native-cull-acquired", exactInstance);
     }
 
     void EquipVisualBridge::restoreNativeInstanceCull()
@@ -737,6 +740,9 @@ namespace rock
         if (exactInstance && _culledNativeInstanceWasVisible) {
             equipped_weapon_visual_state::setLocallyVisible(exactInstance, true);
             f4vr::updateDown(exactInstance, true);
+            vanilla_weapon_alignment_telemetry::recordTransferTrace(
+                vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip, _isLeftHand,
+                "native-cull-restored", exactInstance);
         }
         _culledNativeInstance.reset();
         _culledNativeInstanceWasVisible = false;
