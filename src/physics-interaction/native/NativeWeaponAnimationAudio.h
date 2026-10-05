@@ -23,8 +23,14 @@ namespace rock::native_weapon_animation_audio
     {
         const auto separator = path.find_last_of("/\\");
         if (separator != std::string_view::npos) path.remove_prefix(separator + 1);
-        return equalName(path, "WPNEquip.hkx") || equalName(path, "WPNEquipFast.hkx") ||
-            equalName(path, "WPNUnEquip.hkx");
+        // The live graph reports HKT clip names even for resolved HKX assets;
+        // its 1HM transition also uses EquipFast without the WPN prefix.
+        if (path.size() < 4) return false;
+        const auto extension = path.substr(path.size() - 4);
+        if (!equalName(extension, ".hkx") && !equalName(extension, ".hkt")) return false;
+        path.remove_suffix(4);
+        if (path.size() >= 3 && equalName(path.substr(0, 3), "WPN")) path.remove_prefix(3);
+        return equalName(path, "Equip") || equalName(path, "EquipFast") || equalName(path, "UnEquip");
     }
 
     // Filter the external sound notification copy, after Havok has queued it.

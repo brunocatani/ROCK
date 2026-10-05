@@ -41,10 +41,27 @@ int main()
     ok &= expect("authored equip clips qualify regardless of weapon directory or case",
         isEquipClip("Meshes/Actors/Character/Animations/RU556Anims/WPNEquip.hkx") &&
         isEquipClip("Pistol\\WPNEQUIPFAST.HKX") && isEquipClip("WPNUnEquip.hkx"));
+    // Exact clip identities in the 2026-10-05 runtime trace. These events
+    // reached the filter but previously escaped its HKX/WPN-only matcher.
+    ok &= expect("captured firearm fast-equip clip suppresses its sound",
+        isEquipClip("Animations\\44Pistol\\WPNEquipFast.hkt"));
+    ok &= expect("captured firearm unequip clip suppresses its sound",
+        isEquipClip("Animations\\44Pistol\\WPNUnEquip.hkt"));
+    ok &= expect("captured melee fast-equip clip suppresses its sound",
+        isEquipClip("Animations\\1HM\\EquipFast.hkt"));
+    ok &= expect("regular and unprefixed equipment clips accept both native representations",
+        isEquipClip("Animations/44Pistol/WPNEquip.hkt") && isEquipClip("Animations/1HM/Equip.hkt") &&
+        isEquipClip("Animations/1HM/UnEquip.hkt") && isEquipClip("Equip.hkx") &&
+        isEquipClip("EquipFast.hkx") && isEquipClip("UnEquip.hkx") && isEquipClip("WPNEQUIP.HKT"));
     ok &= expect("reload, fire, melee and unrelated equip names retain audio",
         !isEquipClip("WPNReload.hkx") && !isEquipClip("WPNFireSingleReady.hkx") &&
         !isEquipClip("WPNMelee.hkx") && !isEquipClip("WPNEquip.hkx/idle.hkx") &&
         !isEquipClip("NotWPNEquip.hkx") && !isEquipClip(""));
+    ok &= expect("runtime clip matching keeps action and filename boundaries",
+        !isEquipClip("Animations/1HM/Attack.hkt") && !isEquipClip("Animations/44Pistol/WPNReload.hkt") &&
+        !isEquipClip("Animations/44Pistol/WPNFireSingleReady.hkt") && !isEquipClip("WPNMelee.hkt") &&
+        !isEquipClip("EquipFurniture.hkt") && !isEquipClip("NotEquip.hkt") && !isEquipClip("Equip") &&
+        !isEquipClip("WPNEquip.hkt.bak") && !isEquipClip("WPNEquip.txt") && !isEquipClip("WPNEquip.hkt/Idle.hkt"));
     ok &= expect("only sound start notifications qualify",
         isSoundStart("SoundPlay") && isSoundStart("soundplayat") &&
         !isSoundStart("SoundStop") && !isSoundStart("SoundRelease") &&
