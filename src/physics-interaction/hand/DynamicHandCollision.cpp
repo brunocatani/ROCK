@@ -16,6 +16,7 @@
 #include "physics-interaction/native/HavokMaterialRegistry.h"
 #include "physics-interaction/native/HavokRefCount.h"
 #include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/NativePlayerCollisionFilter.h"
 #include "physics-interaction/native/ReferenceInteraction.h"
 #include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/native/PhysicsUtils.h"
@@ -1863,6 +1864,10 @@ namespace rock
         auto structuralMutation = _physicsCallbackGate ?
             _physicsCallbackGate->pauseForMutation() :
             PhysicsCallbackQuiescenceGate::MutationLease{};
+        // The hand compounds are being destroyed. Clear publication without
+        // touching a possibly expired world; no hand contact can survive them.
+        native_player_collision::clearWeaponRelease(nullptr);
+        _releasedWeaponLease.reset();
         retireHand(_hands[0], bhkWorld, false);
         retireHand(_hands[1], bhkWorld, true);
         _surfaceContacts.clear();
@@ -1875,7 +1880,6 @@ namespace rock
             _physicsCallbackGate->pauseForMutation() :
             PhysicsCallbackQuiescenceGate::MutationLease{};
         _weaponPairLeases.abandonWorld();
-        _releasedWeaponLease.reset();
         _telemetrySnapshot = {};
         _pendingHapticEvents = {};
         _surfaceImpulsePairSequenceAtomic.store(0, std::memory_order_release);
@@ -1943,18 +1947,19 @@ namespace rock
         telemetry.hands[0].isLeft = false;
         telemetry.hands[1].isLeft = true;
 
-        bool releaseLease = false;
         if (_releasedWeaponLease.active()) {
             const auto body = havok_runtime::snapshotBodyIdentity(frame.hknpWorld, RE::hknpBodyId{ dynamicWeaponBodyId });
-            releaseLease = _releasedWeaponLease.advance({reinterpret_cast<std::uintptr_t>(frame.hknpWorld),
-                body.valid ? reinterpret_cast<std::uintptr_t>(body.collisionObject) : 0, dynamicWeaponBodyId}, frame.deltaSeconds);
+            if (!_releasedWeaponLease.advance({reinterpret_cast<std::uintptr_t>(frame.hknpWorld),
+                    body.valid ? reinterpret_cast<std::uintptr_t>(body.collisionObject) : 0, dynamicWeaponBodyId}, frame.deltaSeconds)) {
+                native_player_collision::clearWeaponRelease(frame.hknpWorld);
+            }
         }
         _desiredWeaponBodyIdAtomic.store(dynamicWeaponBodyId, std::memory_order_release);
         _weaponOwnedAtomic[0].store(
-            rightHandWeaponOwned || releaseLease,
+            rightHandWeaponOwned,
             std::memory_order_release);
         _weaponOwnedAtomic[1].store(
-            leftHandWeaponOwned || releaseLease,
+            leftHandWeaponOwned,
             std::memory_order_release);
 
         constexpr std::uint8_t kInteractionContactGraceFrames = 2;
@@ -2664,17 +2669,24 @@ namespace rock
 
     bool DynamicHandCollisionRuntime::leaseReleasedWeapon(RE::hknpWorld* world, std::uint32_t weaponBody, float seconds)
     {
-        if (!world || !std::isfinite(seconds) || seconds < 0.0f) return false;
-        const auto body = havok_runtime::snapshotBodyIdentity(world, RE::hknpBodyId{ weaponBody });
-        if (!body.valid || !body.collisionObject || !_pairFilterReadyAtomic.load(std::memory_order_acquire)) return false;
-        if (!_releasedWeaponLease.arm({reinterpret_cast<std::uintptr_t>(world),
-                reinterpret_cast<std::uintptr_t>(body.collisionObject), weaponBody}, seconds)) return false;
-        if (seconds > 0.0f) {
-            // Publish before the release transaction resumes callbacks. The
-            // next pre-collide reconciliation keeps these exact pairs disabled.
-            _desiredWeaponBodyIdAtomic.store(weaponBody, std::memory_order_release);
-            for (auto& owned : _weaponOwnedAtomic) owned.store(true, std::memory_order_release);
+        if (!world || !std::isfinite(seconds) || seconds < 0.0f) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equipped drop collision lease rejected: stage=arguments world={:p} seconds={}",
+                static_cast<void*>(world), seconds);
+            return false;
         }
+        const auto body = havok_runtime::snapshotBodyIdentity(world, RE::hknpBodyId{ weaponBody });
+        if (!body.valid || !body.collisionObject) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equipped drop collision lease rejected: stage=weapon-identity body={} valid={} object={:p}",
+                weaponBody, body.valid, static_cast<void*>(body.collisionObject));
+            return false;
+        }
+        const weapon_release_collision_lease::Identity weapon{reinterpret_cast<std::uintptr_t>(world),
+            reinterpret_cast<std::uintptr_t>(body.collisionObject), weaponBody};
+        if (seconds > 0.0f && !native_player_collision::publishWeaponRelease(world, weapon)) return false;
+        if (seconds == 0.0f) native_player_collision::clearWeaponRelease(world);
+        if (!_releasedWeaponLease.arm(weapon, seconds)) return false;
+        ROCK_LOG_INFO(Weapon, "Equipped drop collision lease armed: body={} seconds={:.3f} simulationFilter={} countedFilterReady={}",
+            weaponBody, seconds, native_player_collision::installed(), _pairFilterReadyAtomic.load(std::memory_order_acquire));
         return true;
     }
 

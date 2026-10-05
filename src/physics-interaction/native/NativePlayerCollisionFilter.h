@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/collision/NativePlayerCollisionPolicy.h"
+#include "physics-interaction/hand/WeaponReleaseCollisionLease.h"
 
 #include <cstddef>
 #include <span>
@@ -38,6 +39,12 @@ namespace rock::native_player_collision
     std::uint64_t bladePairRejectedCount() noexcept;
     // A null liveWorld clears ownership after world loss without native calls.
     void clearBladePair(RE::hknpWorld* liveWorld);
+
+    // DynamicHandCollision owns the timer on the game thread. Publish before
+    // detaching, clear on expiry/invalidation; simulation workers read only a
+    // quiesced identity. Does not require an optional constraint pair filter.
+    bool publishWeaponRelease(RE::hknpWorld* world, weapon_release_collision_lease::Identity weapon);
+    void clearWeaponRelease(RE::hknpWorld* liveWorld);
 
     // Skeleton/world teardown: invalidate the snapshot without touching a world
     // whose lifetime may have ended. No collision bits or pair leases to restore.

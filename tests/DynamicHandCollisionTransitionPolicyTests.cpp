@@ -28,6 +28,24 @@ int main()
         assert(!release.arm({}, 0.8f));
         assert(!release.arm(weapon, -1.0f));
         assert(release.arm(weapon, 0.0f) && !release.active());
+
+        using namespace rock::collision_layer_policy;
+        using rock::weapon_release_collision_lease::suppressesHandPair;
+        // A simulation lease works for the held and released rows, independent
+        // of native constraint-filter availability. It must not suppress the
+        // weapon's world contacts or another item's recycled body ID.
+        for (const auto weaponLayer : {ROCK_LAYER_DYNAMIC_WEAPON_PROXY, ROCK_LAYER_EQUIPPED_DROP_PROXY}) {
+            assert(suppressesHandPair(weapon, weapon, weaponLayer, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY));
+            assert(suppressesHandPair(weapon, weapon, weaponLayer, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY));
+            for (std::uint32_t other = 0; other < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++other) {
+                if (!isDynamicHandInteractionLayer(other)) assert(!suppressesHandPair(weapon, weapon, weaponLayer, other));
+            }
+            assert(!suppressesHandPair(weapon, {weapon.world, 0x30000, weapon.body}, weaponLayer, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY));
+            assert(!suppressesHandPair(weapon, {0x40000, weapon.collisionObject, weapon.body}, weaponLayer, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY));
+            assert(!suppressesHandPair(weapon, {weapon.world, weapon.collisionObject, 84}, weaponLayer, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY));
+        }
+        assert(!suppressesHandPair({}, {}, ROCK_LAYER_EQUIPPED_DROP_PROXY, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY));
+        assert(!suppressesHandPair(weapon, weapon, FO4_LAYER_WEAPON, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY));
     }
 
     State state{};

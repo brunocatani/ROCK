@@ -180,10 +180,16 @@ namespace rock
             auto* node = resolveEquippedWeaponInteractionNode();
             const auto generation = _weaponCollision.getCurrentWeaponGenerationKey();
             if (!_dynamicHandCollision.leaseReleasedWeapon(frame.hknpWorld, _dynamicWeaponCollision.proxyBodyIdForDebug().value,
-                    g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds) ||
-                !_dynamicWeaponCollision.beginEquippedDrop(frame, node, generation, pose) ||
-                !_twoHandedGrip.retainEquippedDrop(pose)) {
-                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equipped drop retained: physics or visual ownership unavailable generation={:016X}", generation);
+                    g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds)) {
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equipped drop retained: stage=collision-lease generation={:016X}", generation);
+                return false;
+            }
+            if (!_dynamicWeaponCollision.beginEquippedDrop(frame, node, generation, pose)) {
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equipped drop retained: stage=physics-release generation={:016X}", generation);
+                return false;
+            }
+            if (!_twoHandedGrip.retainEquippedDrop(pose)) {
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equipped drop retained: stage=visual-retention generation={:016X}", generation);
                 return false;
             }
             _weaponCollision.setEquippedDropActive(frame.hknpWorld, true);

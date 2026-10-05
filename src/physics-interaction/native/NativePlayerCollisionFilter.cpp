@@ -45,6 +45,9 @@ namespace rock::native_player_collision
         // only blade publication pauses this gate and rebuilds its two bodies.
         PhysicsCallbackQuiescenceGate s_bladeGate;
         BladeCollisionPair s_bladePair;
+        PhysicsCallbackQuiescenceGate s_weaponReleaseGate;
+        weapon_release_collision_lease::Identity s_releasedWeapon;
+        std::atomic<std::uint64_t> s_weaponReleaseRejectedPairs{ 0 };
         FilterPairs s_original{ nullptr };
         bool s_installed{ false };
         std::atomic<std::uint64_t> s_removedPairs{ 0 };
@@ -174,6 +177,33 @@ namespace rock::native_player_collision
             return kept;
         }
 
+        weapon_release_collision_lease::Identity releaseIdentity(RE::hknpWorld* world, std::uint32_t id)
+        {
+            const auto body = havok_runtime::snapshotBodyIdentity(world, { id });
+            return { reinterpret_cast<std::uintptr_t>(world),
+                body.valid ? reinterpret_cast<std::uintptr_t>(body.collisionObject) : 0, id };
+        }
+
+        int filterWeaponReleasePairs(RE::hknpWorld* world, BodyPair* pairs, int count) noexcept
+        {
+            auto lease = s_weaponReleaseGate.tryEnterCallback();
+            if (!lease || !world || reinterpret_cast<std::uintptr_t>(world) != s_releasedWeapon.world ||
+                !pairs || count <= 0) return count;
+            const int kept = filterPhysicalPairs(pairs, count, [&](const BodyPair& pair) {
+                if (pair.bodyA != s_releasedWeapon.body && pair.bodyB != s_releasedWeapon.body) return false;
+                const auto other = pair.bodyA == s_releasedWeapon.body ? pair.bodyB : pair.bodyA;
+                std::uint32_t weaponFilter{}, otherFilter{};
+                return havok_runtime::tryReadFilterInfo(world, { s_releasedWeapon.body }, weaponFilter) &&
+                    havok_runtime::tryReadFilterInfo(world, { other }, otherFilter) &&
+                    weapon_release_collision_lease::suppressesHandPair(s_releasedWeapon,
+                        releaseIdentity(world, s_releasedWeapon.body),
+                        weaponFilter & collision_layer_policy::FO4_LAYER_FILTER_MASK,
+                        otherFilter & collision_layer_policy::FO4_LAYER_FILTER_MASK);
+            });
+            if (kept != count) s_weaponReleaseRejectedPairs.fetch_add(count - kept, std::memory_order_relaxed);
+            return kept;
+        }
+
         bool isSupportedFixedWeapon(const havok_runtime::BodySnapshot& body) noexcept
         {
             // Callback-local ownership only; no engine pointer is published.
@@ -224,6 +254,7 @@ namespace rock::native_player_collision
             int admitted = nativeAdmitted > 0 && nativeAdmitted <= count ?
                 shell_casing_grace::filterPairs(world, pairs, nativeAdmitted) : nativeAdmitted;
             if (admitted > 0 && admitted <= count) admitted = filterBladePairs(world, pairs, admitted);
+            if (admitted > 0 && admitted <= count) admitted = filterWeaponReleasePairs(world, pairs, admitted);
             if (admitted > 0 && admitted <= count) admitted = filterRetiredWeaponHandPairs(world, pairs, admitted);
             auto lease = s_gate.tryEnterCallback();
             if (lease && world && world == s_authoredHands.world && s_authoredHands.count &&
@@ -300,6 +331,14 @@ namespace rock::native_player_collision
                 // routine; no body filter bits or query filters are changed.
                 rebuild(world, body.bodyId);
             }
+        }
+
+        void invalidateReleasedWeapon(RE::hknpWorld* world, weapon_release_collision_lease::Identity weapon)
+        {
+            if (!world || !weapon.valid() || releaseIdentity(world, weapon.body) != weapon) return;
+            static REL::Relocation<RebuildBodyCaches> rebuild{
+                REL::Offset(offsets::kFunc_RebuildBodyCollisionCaches) };
+            rebuild(world, weapon.body);
         }
 
         void invalidatePublishedBodies(const Snapshot& before, const Snapshot& after)
@@ -467,6 +506,46 @@ namespace rock::native_player_collision
         s_bladeGate.pauseAndWait();
         s_bladePair = {};
         s_bladeRejectedPairs.store(0, std::memory_order_relaxed);
+        clearWeaponRelease(nullptr);
+    }
+
+    bool publishWeaponRelease(RE::hknpWorld* world, weapon_release_collision_lease::Identity weapon)
+    {
+        std::uint32_t filter{};
+        if (!s_installed || !world || !weapon.valid() || releaseIdentity(world, weapon.body) != weapon ||
+            !havok_runtime::tryReadFilterInfo(world, { weapon.body }, filter) ||
+            !weapon_release_collision_lease::suppressesHandPair(weapon, weapon,
+                filter & collision_layer_policy::FO4_LAYER_FILTER_MASK,
+                collision_layer_policy::ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY)) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                "Equipped drop collision lease rejected: stage=simulation-publication installed={} body={} object=0x{:X} filter=0x{:X}",
+                s_installed, weapon.body, weapon.collisionObject, filter);
+            return false;
+        }
+        const auto previous = s_releasedWeapon;
+        if (previous == weapon) return true;
+        {
+            auto mutation = s_weaponReleaseGate.pauseForMutation();
+            s_releasedWeapon = weapon;
+            s_weaponReleaseRejectedPairs.store(0, std::memory_order_relaxed);
+        }
+        s_weaponReleaseGate.resumeCallbacks();
+        // Invalidate after publication, outside the read gate. Both acquisition
+        // and expiry rebuild the weapon's pairs without changing body filters.
+        invalidateReleasedWeapon(world, previous);
+        invalidateReleasedWeapon(world, weapon);
+        return true;
+    }
+
+    void clearWeaponRelease(RE::hknpWorld* liveWorld)
+    {
+        const auto previous = s_releasedWeapon;
+        if (!previous.valid()) return;
+        s_weaponReleaseGate.pauseAndWait();
+        s_releasedWeapon = {};
+        const auto rejected = s_weaponReleaseRejectedPairs.exchange(0, std::memory_order_relaxed);
+        invalidateReleasedWeapon(liveWorld, previous);
+        ROCK_LOG_INFO(Weapon, "Equipped drop collision lease cleared: body={} rejectedPairs={}", previous.body, rejected);
     }
 
     bool publishBladePair(RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody)
