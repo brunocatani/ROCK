@@ -324,6 +324,10 @@ namespace rock::object_physics_body_set
                             isWeaponReference(rootRef) ? "yes" : "no");
                     } else {
                         ++out.diagnostics.benignScanSkips;
+                        if (scanResult.status == havok_runtime::PhysicsSystemBodyScanStatus::NoBodies ||
+                            scanResult.status == havok_runtime::PhysicsSystemBodyScanStatus::EmptyPhysicsSystem)
+                            ++out.diagnostics.emptyScanSkips;
+                        else out.diagnostics.unverifiedScanSkipStatus = static_cast<std::uint8_t>(scanResult.status);
                     }
                 }
             }
@@ -382,6 +386,10 @@ namespace rock::object_physics_body_set
                         isWeaponReference(context.rootRef) ? "yes" : "no");
                 } else {
                     ++out.diagnostics.benignScanSkips;
+                    if (scanResult.status == havok_runtime::PhysicsSystemBodyScanStatus::NoBodies ||
+                        scanResult.status == havok_runtime::PhysicsSystemBodyScanStatus::EmptyPhysicsSystem)
+                        ++out.diagnostics.emptyScanSkips;
+                    else out.diagnostics.unverifiedScanSkipStatus = static_cast<std::uint8_t>(scanResult.status);
                 }
             }
 

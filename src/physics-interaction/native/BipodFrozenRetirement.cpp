@@ -99,7 +99,12 @@ namespace rock::bipod_frozen_retirement
             }
             trace.stage = "scan-coverage";
             if (!held_placement_policy::completeBodyScan(step.finished && !step.invalidated,
-                    bodies.records.size(), count, issues)) return false;
+                    bodies.records.size(), count, issues, d.emptyScanSkips)) {
+                ROCK_LOG_WARN(Weapon, "Retired weapon scan incomplete ref={:08X} bodies={} validated={} issues={} verifiedEmpty={} unverifiedSkip={}",
+                    ref->GetFormID(), bodies.records.size(), count, issues, d.emptyScanSkips,
+                    havok_runtime::physicsSystemBodyScanStatusName(static_cast<havok_runtime::PhysicsSystemBodyScanStatus>(d.unverifiedScanSkipStatus)));
+                return false;
+            }
             trace.stage = "root-pose";
             auto* root = ref->Get3D();
             if (!root || !dynamic_weapon_collision_policy::isFiniteTransform(root->world) ||

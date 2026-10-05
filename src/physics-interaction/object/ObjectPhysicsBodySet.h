@@ -247,6 +247,10 @@ namespace rock::object_physics_body_set
         std::uint32_t seedBodiesAdded = 0;
         std::uint32_t scanFailures = 0;
         std::uint32_t benignScanSkips = 0;
+        // Positive absence: readable wrapper with no system, or a readable
+        // same-world instance with zero bodies. Missing/unreadable owners are not empty.
+        std::uint32_t emptyScanSkips = 0;
+        std::uint8_t unverifiedScanSkipStatus = 0;
         std::uint32_t invalidPhysicsSystems = 0;
         std::uint32_t foreignRefBodySkips = 0;
         std::uint32_t unresolvedRefBodiesAccepted = 0;

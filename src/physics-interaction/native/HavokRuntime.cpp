@@ -342,13 +342,18 @@ namespace rock::havok_runtime
     namespace
     {
         bool readSystemOwnership(RE::NiCollisionObject* collisionObject,
-            RE::bhkPhysicsSystem*& system, RE::hknpPhysicsSystemInstance*& instance)
+            RE::bhkPhysicsSystem*& system, RE::hknpPhysicsSystemInstance*& instance, bool* knownEmpty = nullptr)
         {
+            if (knownEmpty) *knownEmpty = false;
             system = nullptr;
             instance = nullptr;
             std::array<std::byte, offsets::kCollisionObject_PhysSystemPtr + sizeof(void*)> wrapper{};
             if (!native_memory::guardedCopyFromMemory(collisionObject, wrapper.data(), wrapper.size())) return false;
             std::memcpy(&system, wrapper.data() + offsets::kCollisionObject_PhysSystemPtr, sizeof(system));
+            if (!system) {
+                if (knownEmpty) *knownEmpty = true;
+                return false;
+            }
             // Copy bytes, never construct/copy an owning native C++ object.
             std::array<std::byte, sizeof(RE::bhkPhysicsSystem)> bytes{};
             if (!native_memory::guardedCopyFromMemory(system, bytes.data(), bytes.size())) {
@@ -445,6 +450,8 @@ namespace rock::havok_runtime
             return "unreadable-body-ids";
         case PhysicsSystemBodyScanStatus::NoBodies:
             return "no-bodies";
+        case PhysicsSystemBodyScanStatus::EmptyPhysicsSystem:
+            return "empty-physics-system";
         case PhysicsSystemBodyScanStatus::VisitorStopped:
             return "visitor-stopped";
         }
@@ -468,8 +475,9 @@ namespace rock::havok_runtime
 
         RE::bhkPhysicsSystem* physicsSystem = nullptr;
         RE::hknpPhysicsSystemInstance* instance = nullptr;
-        if (!readSystemOwnership(collisionObject, physicsSystem, instance)) {
-            result.status = PhysicsSystemBodyScanStatus::MissingPhysicsSystem;
+        bool knownEmpty = false;
+        if (!readSystemOwnership(collisionObject, physicsSystem, instance, &knownEmpty)) {
+            result.status = knownEmpty ? PhysicsSystemBodyScanStatus::EmptyPhysicsSystem : PhysicsSystemBodyScanStatus::MissingPhysicsSystem;
             return result;
         }
         RE::hknpPhysicsSystemInstance header{};
