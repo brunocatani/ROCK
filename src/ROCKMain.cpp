@@ -30,6 +30,7 @@
 #include "physics-interaction/native/NativeCollisionFilterSafety.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/NativeWeaponFadeSuppression.h"
+#include "physics-interaction/native/NativeWeaponEquipAudio.h"
 #include "physics-interaction/native/NativeRagdollSafety.h"
 #include "physics-interaction/native/NativeShapeCastSafety.h"
 #include "physics-interaction/native/NativeImpactAudio.h"
@@ -1384,6 +1385,9 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
 
     if (!rock::native_weapon_fade_suppression::install()) {
         logger::error("ROCK: Native player weapon fade suppression unavailable; see the instruction validation error.");
+    }
+    if (!rock::native_weapon_equip_audio::install()) {
+        logger::error("ROCK: Player weapon equip/unequip audio suppression unavailable.");
     }
     logger::info("ROCK: Install held weapon instant-transition capability...");
     if (!rock::held_weapon_instant_transition::install()) {

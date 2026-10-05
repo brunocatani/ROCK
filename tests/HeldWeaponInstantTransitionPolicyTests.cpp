@@ -1,4 +1,5 @@
 #include "physics-interaction/native/HeldWeaponInstantTransitionPolicy.h"
+#include "physics-interaction/native/NativeWeaponEquipAudio.h"
 
 #include <cstdio>
 
@@ -21,6 +22,13 @@ int main()
     constexpr std::uintptr_t drawReturn = 0x1000;
     constexpr std::uintptr_t sheatheReturn = 0x2000;
     bool ok = true;
+    using rock::native_weapon_equip_audio::isPlayerSource;
+    ok &= expect("weapon equip audio matches the player's position identity",
+        isPlayerSource(0x1000, 0x10D0));
+    ok &= expect("NPC and unrelated positions keep native playback",
+        !isPlayerSource(0x1000, 0x20D0) && !isPlayerSource(0x1000, 0x1000));
+    ok &= expect("missing player or position cannot suppress sound",
+        !isPlayerSource(0, 0) && !isPlayerSource(0, 0xD0) && !isPlayerSource(0x1000, 0));
 
     ok &= expect("inactive hook calls must pass through",
         classifyHookCall(false, true, true, drawReturn, drawReturn, sheatheReturn) ==
