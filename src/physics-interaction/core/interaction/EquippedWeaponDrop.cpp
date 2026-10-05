@@ -14,6 +14,9 @@ namespace rock
             !frame.worldReady || !physicsWritesAllowedForWorld(frame.hknpWorld)) return false;
         RE::NiPoint3 anchor{};
         const bool equippedDrop = _twoHandedGrip.isEquippedDrop();
+        // A bounded, button-owned pull is an active acquisition. Do not retire
+        // its item halfway through flight; cancellation restores the radius rule.
+        if (equippedDrop && _dynamicWeaponCollision.equippedDropPullActive()) return false;
         const bool hasAnchor = equippedDrop ? (anchor = weaponNode->world.translate, true) :
             _dynamicWeaponCollision.tryGetSurfaceAnchor(anchor);
         const bool outside = frame.hasHmdFrame && hasAnchor &&
@@ -176,7 +179,9 @@ namespace rock
             RE::NiTransform pose{};
             auto* node = resolveEquippedWeaponInteractionNode();
             const auto generation = _weaponCollision.getCurrentWeaponGenerationKey();
-            if (!_dynamicWeaponCollision.beginEquippedDrop(frame, node, generation, pose) ||
+            if (!_dynamicHandCollision.leaseReleasedWeapon(frame.hknpWorld, _dynamicWeaponCollision.proxyBodyIdForDebug().value,
+                    g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds) ||
+                !_dynamicWeaponCollision.beginEquippedDrop(frame, node, generation, pose) ||
                 !_twoHandedGrip.retainEquippedDrop(pose)) {
                 ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equipped drop retained: physics or visual ownership unavailable generation={:016X}", generation);
                 return false;

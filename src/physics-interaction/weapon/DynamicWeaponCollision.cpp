@@ -9,6 +9,7 @@
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
 #include "physics-interaction/grab/GrabInertiaPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
+#include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/native/HavokCompoundShapeBuilder.h"
 #include "physics-interaction/native/HavokMaterialRegistry.h"
 #include "physics-interaction/native/HavokRefCount.h"
@@ -687,6 +688,89 @@ namespace rock
         return true;
     }
 
+    bool DynamicWeaponCollisionRuntime::startEquippedDropPull(const PhysicsFrameContext& frame,
+        const RE::NiPoint3& gripWeaponLocal, const RE::NiPoint3& handWorld)
+    {
+        if (!_equippedDrop || _equippedDropPull.active || !_created || _createdWorld != frame.hknpWorld ||
+            !dynamic_weapon_collision_policy::isFinitePoint(gripWeaponLocal) ||
+            !dynamic_weapon_collision_policy::isFinitePoint(handWorld)) return false;
+        RE::NiTransform pose{};
+        if (!tryGetEquippedDropPose(_frameWeaponNode, _createdGenerationKey, pose)) return false;
+        const auto grip = transform_math::localPointToWorld(pose, gripWeaponLocal);
+        const float distance = (handWorld - grip).Length() * physics_scale::gameToHavok();
+        if (!std::isfinite(distance)) return false;
+        _equippedDropPull = { .active = true, .gripWeaponLocal = gripWeaponLocal,
+            .duration = pull_motion_math::computePullDurationSeconds(distance) };
+        ROCK_LOG_INFO(Weapon, "Equipped drop pull started body={} generation={:016X} distanceMeters={:.3f}",
+            _body.getBodyId().value, _createdGenerationKey, distance);
+        return true;
+    }
+
+    void DynamicWeaponCollisionRuntime::cancelEquippedDropPull() { _equippedDropPull = {}; }
+
+    DynamicWeaponCollisionRuntime::DropPullProgress DynamicWeaponCollisionRuntime::updateEquippedDropPull(
+        const PhysicsFrameContext& frame, const RE::NiPoint3& handWorld)
+    {
+        if (!_equippedDropPull.active || !_equippedDrop || !_created || _createdWorld != frame.hknpWorld ||
+            !dynamic_weapon_collision_policy::isFinitePoint(handWorld)) {
+            cancelEquippedDropPull();
+            return DropPullProgress::Unavailable;
+        }
+        auto mutation = _physicsCallbackGate ? _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
+        RE::NiTransform bodyWorld{};
+        const auto body = havok_runtime::snapshotBody(frame.hknpWorld, _body.getBodyId());
+        if (!body.valid || !body.motion || body.collisionObject != _body.getCollisionObject() ||
+            !havok_runtime::tryResolveLiveBodyWorldTransform(frame.hknpWorld, _body.getBodyId(), bodyWorld) ||
+            !dynamic_weapon_collision_policy::isFiniteTransform(bodyWorld)) {
+            ROCK_LOG_WARN(Weapon, "Equipped drop pull cancelled: body unavailable");
+            cancelEquippedDropPull();
+            return DropPullProgress::Unavailable;
+        }
+        const auto pose = dynamic_weapon_collision_policy::reconstructWeaponRoot(bodyWorld, _createdCenterWeaponLocal, _createdWeaponScale);
+        const auto grip = transform_math::localPointToWorld(pose, _equippedDropPull.gripWeaponLocal);
+        const float scale = physics_scale::gameToHavok();
+        if (!dynamic_weapon_collision_policy::isFinitePoint(grip) || !std::isfinite(scale) || scale <= 0.0f) {
+            ROCK_LOG_WARN(Weapon, "Equipped drop pull cancelled: invalid grip or physics scale");
+            cancelEquippedDropPull();
+            return DropPullProgress::Unavailable;
+        }
+        _equippedDropPull.elapsed += std::isfinite(frame.deltaSeconds) ? (std::max)(0.0f, frame.deltaSeconds) : 0.0f;
+        const auto motion = pull_motion_math::computePullMotion(pull_motion_math::PullMotionInput<RE::NiPoint3>{
+            .handHavok = handWorld * scale, .objectPointHavok = grip * scale,
+            .previousTargetHavok = _equippedDropPull.previousTargetHavok,
+            .elapsedSeconds = _equippedDropPull.elapsed, .durationSeconds = _equippedDropPull.duration,
+            .hasPreviousTarget = _equippedDropPull.hasTarget });
+        if (motion.expired) {
+            ROCK_LOG_INFO(Weapon, "Equipped drop pull expired body={} distance={:.3f}", _body.getBodyId().value, (handWorld - grip).Length());
+            cancelEquippedDropPull();
+            return DropPullProgress::Expired;
+        }
+        if ((handWorld - grip).Length() <= pull_motion_math::kAutoGrabDistanceGameUnits) return DropPullProgress::Arrived;
+        _equippedDropPull.previousTargetHavok = motion.targetHavok;
+        _equippedDropPull.hasTarget = true;
+        if (motion.applyVelocity) {
+            const auto q = body.motion->orientation;
+            const auto w = body.motion->angularVelocity;
+            const float quaternion[4]{q.x, q.y, q.z, q.w};
+            RE::NiPoint3 angular{};
+            if (!weapon_physics_time_scale::rebaseWorldAngularVelocity(quaternion, {w.x, w.y, w.z},
+                    pull_motion_math::angularVelocityKeepForDamping(frame.deltaSeconds), angular)) {
+                ROCK_LOG_WARN(Weapon, "Equipped drop pull cancelled: invalid angular motion");
+                cancelEquippedDropPull();
+                return DropPullProgress::Unavailable;
+            }
+            const float linear[4]{motion.velocityHavok.x, motion.velocityHavok.y, motion.velocityHavok.z, 0};
+            const float omega[4]{angular.x, angular.y, angular.z, 0};
+            if (!havok_runtime::isFinite3(linear) || !havok_runtime::isFinite3(omega) || !_body.setVelocity(linear, omega)) {
+                ROCK_LOG_WARN(Weapon, "Equipped drop pull cancelled: native velocity write rejected");
+                cancelEquippedDropPull();
+                return DropPullProgress::Unavailable;
+            }
+        }
+        return DropPullProgress::Flying;
+    }
+
     DynamicWeaponCollisionRuntime::FrameResult DynamicWeaponCollisionRuntime::finishFrame(
         const PhysicsFrameContext& frame,
         const bool physicsWritesAllowed,
@@ -754,6 +838,7 @@ namespace rock
             _body.setCollisionFilterInfo(dynamicWeaponProxyFilterInfo(), kRebuildBodyCollisionState);
             _body.activateBody();
             _equippedDrop = false;
+            cancelEquippedDropPull();
             _equippedDropGravitySamplePending = false;
             ROCK_LOG_INFO(Weapon, "Equipped drop regrabbed: body={} generation={:016X} restoredMotionProfile={}",
                 _body.getBodyId().value, weaponGenerationKey, heldProfile);
@@ -2171,6 +2256,7 @@ namespace rock
     {
         _equippedDrop = false;
         _equippedDropMotionProfile.reset();
+        cancelEquippedDropPull();
         _equippedDropGravitySamplePending = false;
         _surfaceContacts.clear();
         _authorityPivotWeaponLocal = {};

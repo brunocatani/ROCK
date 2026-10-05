@@ -697,19 +697,21 @@ namespace rock
         RE::NiNode* weaponNode,
         const WeaponInteractionContact& handWeaponContact,
         const bool authoredProviderAuthorityActive,
-        const bool authoredAttachOnlyAuthorityActive)
+        const bool authoredAttachOnlyAuthorityActive,
+        const bool equippedDropCatch)
     {
         const bool coreAuthoredStation = !authoredProviderAuthorityActive && !authoredAttachOnlyAuthorityActive;
         if (!weaponNode || weaponNode != _session.weaponNode ||
             (!coreAuthoredStation && (!handWeaponContact.valid ||
                 !weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(
                     handWeaponContact.weaponGenerationKey, _session.weaponGenerationKey)))) return false;
+        const bool directCatch = equippedDropCatch && isEquippedDrop();
         if (coreAuthoredStation) {
             firing_grip_reattach_zone_policy::ZoneInput zoneInput{};
             firing_grip_reattach_zone_policy::ZoneResult zone{};
-            if (!tryBuildFiringGripZoneInput(weaponNode, _session.weaponGenerationKey,
+            if (!directCatch && (!tryBuildFiringGripZoneInput(weaponNode, _session.weaponGenerationKey,
                     _session.equippedWeaponOwnershipKey, _handlingSettings.firingGripReattachRadiusGameUnits, zoneInput) ||
-                !tryEvaluateFiringGripZoneForHand(handIsLeft, zoneInput, zone) || !zone.inside) return false;
+                !tryEvaluateFiringGripZoneForHand(handIsLeft, zoneInput, zone) || !zone.inside)) return false;
             provider::RockProviderWeaponPartTargetQueryV1 query{};
             query.weaponGenerationKey = _session.weaponGenerationKey;
             query.bodyId = weapon_part_runtime::kInvalidBodyId;
@@ -790,10 +792,10 @@ namespace rock
                 "authored-canonical" :
                 "native-canonical";
         }
-        if (handIsLeft && !usedCanonicalHold) {
-            // Left carry has no safe live-capture fallback: it requires both
-            // the authored left wrist seat and the generation-bound native
-            // right weapon-in-wand aim frame.
+        if ((handIsLeft || directCatch) && !usedCanonicalHold) {
+            // A selected pickup must seat a canonical grip, not capture the
+            // arbitrary distance between the free hand and the dropped weapon.
+            // Left carry also requires the generation-bound native aim frame.
             return false;
         }
         if (!usedCanonicalHold) {

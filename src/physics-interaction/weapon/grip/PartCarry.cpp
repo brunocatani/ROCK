@@ -1,5 +1,6 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
 #include "physics-interaction/weapon/DynamicWeaponCollision.h"
+#include "physics-interaction/weapon/EquippedDropPickupPolicy.h"
 #include <chrono>
 
 // Part-carry sessions: baseline construction, transition, per-frame update, and part-carry weapon authority solve.
@@ -408,30 +409,31 @@ namespace rock
             _session.equippedWeaponOwnershipKey,
             _handlingSettings.firingGripReattachRadiusGameUnits, reattachInput);
         for (const FiringGripReattachCandidate& candidate : reattachCandidates) {
+            const bool directCatch = equipped_drop_pickup_policy::canBypassGripZone(isEquippedDrop(),
+                candidate.isLeft ? frameInput.leftEquippedDropCatch : frameInput.rightEquippedDropCatch);
             if (candidate.isLeft != firingHandIsLeft &&
                 (!_handlingSettings.ambidextrousHandoffEnabled ||
                     !canBeginPrimaryOnlyGripForHand(candidate.isLeft))) {
                 continue;
             }
-            if (!candidate.eligible || partGrip(candidate.isLeft).active) {
+            if ((!candidate.eligible && !directCatch) || partGrip(candidate.isLeft).active) {
                 continue;
             }
             firing_grip_reattach_zone_policy::ZoneResult reattachZone{};
-            if (!reattachInputValid || !tryEvaluateFiringGripZoneForHand(
+            if (!directCatch && (!reattachInputValid || !tryEvaluateFiringGripZoneForHand(
                     candidate.isLeft,
                     reattachInput,
-                    reattachZone)) {
+                    reattachZone))) {
                 continue;
             }
             _firing.reattachDebugSnapshot.hands[candidate.isLeft ? 0u : 1u]
                 .gripHeld = candidate.gripHeld;
             /*
-             * The zone is the only gate. A probe-acquired contact used to
-             * re-take the grip from anywhere inside the weapon probe; that
-             * acquisition now only selects the authored hold inside
-             * tryReattachFiringGrip and never bypasses the cylinders.
+             * Ordinary station reattachment stays inside its cylinders.
+             * Only a selected free-weapon catch may bypass them; the pickup
+             * owner already qualified reach, visibility, input and hand availability.
              */
-            const bool reattachRequested = weapon_two_handed_grip_math::shouldReattachFiringGripOnGrab(
+            const bool reattachRequested = directCatch || weapon_two_handed_grip_math::shouldReattachFiringGripOnGrab(
                 candidate.gripHeld,
                 reattachZone.inside);
             if (!_firing.reattachHoverInsideZone &&
@@ -443,16 +445,23 @@ namespace rock
                 updateFiringGripZoneIndicator(weaponNode,
                     currentWeaponGenerationKey, candidate.isLeft, reattachZone);
             }
-            if (reattachRequested &&
+            const bool reattached = reattachRequested &&
                 tryReattachFiringGrip(
                     candidate.isLeft,
                     weaponNode,
                     *candidate.contact,
                     authoredProviderAuthorityActive,
-                    authoredAttachOnlyAuthorityActive)) {
+                    authoredAttachOnlyAuthorityActive, directCatch);
+            if (directCatch && !reattached) {
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equipped drop catch not ready: hand={} generation={:016X} canonicalGeneration={:016X} provider={} attachOnly={}",
+                    candidate.isLeft ? "left" : "right", currentWeaponGenerationKey,
+                    _firing.rightCanonicalGenerationKey, authoredProviderAuthorityActive, authoredAttachOnlyAuthorityActive);
+            }
+            if (reattached) {
                 ROCK_LOG_INFO(Weapon,
-                    "TwoHandedGrip: firing-grip reattach zone hand={} inside={} side={} along={:.2f} perp={:.2f} reach={:.2f} radius={:.2f}",
+                    "TwoHandedGrip: firing-grip reattach hand={} source={} inside={} side={} along={:.2f} perp={:.2f} reach={:.2f} radius={:.2f}",
                     candidate.isLeft ? "left" : "right",
+                    directCatch ? "equipped-drop-catch" : "grip-zone",
                     reattachZone.inside ? "yes" : "no",
                     firing_grip_reattach_zone_policy::sideName(reattachZone.side),
                     reattachZone.alongAxisGameUnits,

@@ -121,6 +121,12 @@ namespace rock
             std::uint64_t generation, RE::NiTransform& pose);
         bool tryGetEquippedDropPose(RE::NiNode* weapon, std::uint64_t generation, RE::NiTransform& pose) const;
         bool equippedDropActive() const { return _equippedDrop; }
+        enum class DropPullProgress { Unavailable, Flying, Arrived, Expired };
+        bool startEquippedDropPull(const PhysicsFrameContext& frame, const RE::NiPoint3& gripWeaponLocal,
+            const RE::NiPoint3& handWorld);
+        DropPullProgress updateEquippedDropPull(const PhysicsFrameContext& frame, const RE::NiPoint3& handWorld);
+        void cancelEquippedDropPull();
+        bool equippedDropPullActive() const { return _equippedDropPull.active; }
 
         // Game-frame observation, published through the provider snapshot.
         [[nodiscard]] bool surfaceSupportReservesInput(std::uintptr_t weaponNode, std::uint64_t generation) const noexcept
@@ -325,6 +331,13 @@ namespace rock
         bool _equippedDrop{ false };
         equipped_drop_motion_profile::Lease _equippedDropMotionProfile;
         bool _equippedDropGravitySamplePending{ false };
+        // Game-thread pull owner; physics uses the native velocity set under
+        // callback quiescence, exactly as ordinary loose-object pulls do.
+        struct DropPullState {
+            bool active{}, hasTarget{};
+            RE::NiPoint3 gripWeaponLocal{}, previousTargetHavok{};
+            float elapsed{}, duration{};
+        } _equippedDropPull;
         bool _droveThisSubstep{ false };
         bool _physicsRequestedTargetValid{ false };
         bool _physicsDriveTeleported{ false };

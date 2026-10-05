@@ -720,6 +720,7 @@ namespace rock
         }
 
         const bool menuBlocking = runtime.localMenuBlocking;
+        if (menuBlocking) _equippedDropPickup = {};
         if (weapon_authority_lifecycle_policy::shouldClearWeaponAuthorityForUpdateInterruption(
                 menuBlocking,
                 false,
@@ -1244,7 +1245,7 @@ namespace rock
             _forceGrab.pendingCommits[1].active ? leftPendingTargetPtr.get() : nullptr);
         const auto farHmdConeGate = makeFarSelectionHmdConeGate(frame);
 
-        if (_forceGrab.pendingCommits[0].active) {
+        if (_forceGrab.pendingCommits[0].active || _equippedDropPickup.consumed[0]) {
             if (_rightHand.hasSelection()) {
                 _rightHand.clearSelectionState(false);
             }
@@ -1262,7 +1263,7 @@ namespace rock
                 leftHandContext);
         }
 
-        if (_forceGrab.pendingCommits[1].active) {
+        if (_forceGrab.pendingCommits[1].active || _equippedDropPickup.consumed[1]) {
             if (_leftHand.hasSelection()) {
                 _leftHand.clearSelectionState(false);
             }

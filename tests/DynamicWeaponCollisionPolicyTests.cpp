@@ -2,6 +2,7 @@
 #include "RE/NetImmerse/NiAVObject.h"
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/EquippedDropMotionProfile.h"
+#include "physics-interaction/weapon/EquippedDropPickupPolicy.h"
 #include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/collision/ImpactAudioPolicy.h"
@@ -177,6 +178,21 @@ int main()
     static_assert(!muteShellPair(ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, FO4_LAYER_STATIC));
     using namespace rock::dynamic_weapon_collision_policy;
     bool ok = vatsTimeScaleChecks() & equippedDropMotionProfileChecks();
+    {
+        using namespace rock::equipped_drop_pickup_policy;
+        const RE::NiPoint3 origin{1000.0f, -2000.0f, 600.0f}, direction{0.0f, 2.0f, 0.0f};
+        const auto hit = rayAdmission(origin, direction, RE::NiPoint3{1010.0f, -1800.0f, 600.0f}, 350.0f, 21.0f);
+        ok &= hit.valid;
+        ok &= expectNear("retained pull normalizes the hand ray", hit.along, 200.0f);
+        ok &= expectNear("retained pull measures lateral reach", hit.lateral, 10.0f);
+        ok &= !rayAdmission(origin, direction, RE::NiPoint3{1000.0f, -2100.0f, 600.0f}, 350.0f, 21.0f).valid;
+        ok &= !rayAdmission(origin, direction, RE::NiPoint3{1000.0f, -1600.0f, 600.0f}, 350.0f, 21.0f).valid;
+        ok &= !rayAdmission(origin, direction, RE::NiPoint3{1022.0f, -1800.0f, 600.0f}, 350.0f, 21.0f).valid;
+        ok &= !rayAdmission(origin, RE::NiPoint3{}, origin, 350.0f, 21.0f).valid;
+        static_assert(canBypassGripZone(true, true));
+        static_assert(!canBypassGripZone(false, true)); // Held and bipod states retain the published grip rules.
+        static_assert(!canBypassGripZone(true, false)); // No selected catch cannot bypass a firing station.
+    }
 
     const auto freeRecovery = resolveContactMotorRecovery(0.8f, 1.0f, 0.03f, 0.01f, 0.03f, false);
     ok &= expectNear("free aim preserves damping", freeRecovery.damping, 0.8f);

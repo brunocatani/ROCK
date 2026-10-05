@@ -693,6 +693,7 @@ namespace rock
         clearEquippedWeaponShoulderSheath("physics-shutdown");
         _suppression.nativeGrenadeLeases.clearTracking();
         _twoHandedGrip.reset();
+        _equippedDropPickup = {};
         _equipped.transition.pendingGrip() = {};
         clearProviderInventoryEquip();
         clearPendingForceGrabCommits();

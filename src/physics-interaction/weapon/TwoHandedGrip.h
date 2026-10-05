@@ -103,6 +103,8 @@ namespace rock
         bool rightHandAvailableForAcquisition{ false };
         bool leftReattachEligible{ false };
         bool rightReattachEligible{ false };
+        bool leftEquippedDropCatch{ false };
+        bool rightEquippedDropCatch{ false };
         // Menu-open state and renderer-request state are deliberately separate.
         // FO4VR may keep WSScope presentation alive outside an active sight;
         // the renderer request is the authority for actual scope entry/exit.
@@ -1685,7 +1687,8 @@ namespace rock
             RE::NiNode* weaponNode,
             const WeaponInteractionContact& handWeaponContact,
             bool authoredProviderAuthorityActive,
-            bool authoredAttachOnlyAuthorityActive);
+            bool authoredAttachOnlyAuthorityActive,
+            bool equippedDropCatch = false);
 
         bool tryResolveAuthoredFiringHandCanonicalForProbe(
             bool handIsLeft,

@@ -1875,6 +1875,7 @@ namespace rock
             _physicsCallbackGate->pauseForMutation() :
             PhysicsCallbackQuiescenceGate::MutationLease{};
         _weaponPairLeases.abandonWorld();
+        _releasedWeaponLease.reset();
         _telemetrySnapshot = {};
         _pendingHapticEvents = {};
         _surfaceImpulsePairSequenceAtomic.store(0, std::memory_order_release);
@@ -1942,14 +1943,18 @@ namespace rock
         telemetry.hands[0].isLeft = false;
         telemetry.hands[1].isLeft = true;
 
-        _desiredWeaponBodyIdAtomic.store(
-            dynamicWeaponBodyId,
-            std::memory_order_release);
+        bool releaseLease = false;
+        if (_releasedWeaponLease.active()) {
+            const auto body = havok_runtime::snapshotBodyIdentity(frame.hknpWorld, RE::hknpBodyId{ dynamicWeaponBodyId });
+            releaseLease = _releasedWeaponLease.advance({reinterpret_cast<std::uintptr_t>(frame.hknpWorld),
+                body.valid ? reinterpret_cast<std::uintptr_t>(body.collisionObject) : 0, dynamicWeaponBodyId}, frame.deltaSeconds);
+        }
+        _desiredWeaponBodyIdAtomic.store(dynamicWeaponBodyId, std::memory_order_release);
         _weaponOwnedAtomic[0].store(
-            rightHandWeaponOwned,
+            rightHandWeaponOwned || releaseLease,
             std::memory_order_release);
         _weaponOwnedAtomic[1].store(
-            leftHandWeaponOwned,
+            leftHandWeaponOwned || releaseLease,
             std::memory_order_release);
 
         constexpr std::uint8_t kInteractionContactGraceFrames = 2;
@@ -2655,6 +2660,22 @@ namespace rock
                 telemetry.twins[i].publishedTargetValid = true;
             }
         }
+    }
+
+    bool DynamicHandCollisionRuntime::leaseReleasedWeapon(RE::hknpWorld* world, std::uint32_t weaponBody, float seconds)
+    {
+        if (!world || !std::isfinite(seconds) || seconds < 0.0f) return false;
+        const auto body = havok_runtime::snapshotBodyIdentity(world, RE::hknpBodyId{ weaponBody });
+        if (!body.valid || !body.collisionObject || !_pairFilterReadyAtomic.load(std::memory_order_acquire)) return false;
+        if (!_releasedWeaponLease.arm({reinterpret_cast<std::uintptr_t>(world),
+                reinterpret_cast<std::uintptr_t>(body.collisionObject), weaponBody}, seconds)) return false;
+        if (seconds > 0.0f) {
+            // Publish before the release transaction resumes callbacks. The
+            // next pre-collide reconciliation keeps these exact pairs disabled.
+            _desiredWeaponBodyIdAtomic.store(weaponBody, std::memory_order_release);
+            for (auto& owned : _weaponOwnedAtomic) owned.store(true, std::memory_order_release);
+        }
+        return true;
     }
 
     void DynamicHandCollisionRuntime::flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
