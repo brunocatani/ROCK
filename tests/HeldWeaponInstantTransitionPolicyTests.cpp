@@ -1,5 +1,6 @@
 #include "physics-interaction/native/HeldWeaponInstantTransitionPolicy.h"
 #include "physics-interaction/native/NativeWeaponEquipAudio.h"
+#include "physics-interaction/native/NativeWeaponAnimationAudio.h"
 
 #include <cstdio>
 
@@ -29,6 +30,25 @@ int main()
         !isPlayerSource(0x1000, 0x20D0) && !isPlayerSource(0x1000, 0x1000));
     ok &= expect("missing player or position cannot suppress sound",
         !isPlayerSource(0, 0) && !isPlayerSource(0, 0xD0) && !isPlayerSource(0x1000, 0));
+    using rock::native_weapon_equip_audio::isPlayerWeaponItem;
+    ok &= expect("player weapon inventory sounds are suppressed",
+        isPlayerWeaponItem(0x1000, 0x1000, true));
+    ok &= expect("other items, NPCs and missing players retain inventory audio",
+        !isPlayerWeaponItem(0x1000, 0x1000, false) && !isPlayerWeaponItem(0x1000, 0x2000, true) &&
+        !isPlayerWeaponItem(0, 0, true));
+    using rock::native_weapon_animation_audio::isEquipClip;
+    using rock::native_weapon_animation_audio::isSoundStart;
+    ok &= expect("authored equip clips qualify regardless of weapon directory or case",
+        isEquipClip("Meshes/Actors/Character/Animations/RU556Anims/WPNEquip.hkx") &&
+        isEquipClip("Pistol\\WPNEQUIPFAST.HKX") && isEquipClip("WPNUnEquip.hkx"));
+    ok &= expect("reload, fire, melee and unrelated equip names retain audio",
+        !isEquipClip("WPNReload.hkx") && !isEquipClip("WPNFireSingleReady.hkx") &&
+        !isEquipClip("WPNMelee.hkx") && !isEquipClip("WPNEquip.hkx/idle.hkx") &&
+        !isEquipClip("NotWPNEquip.hkx") && !isEquipClip(""));
+    ok &= expect("only sound start notifications qualify",
+        isSoundStart("SoundPlay") && isSoundStart("soundplayat") &&
+        !isSoundStart("SoundStop") && !isSoundStart("SoundRelease") &&
+        !isSoundStart("weaponDraw") && !isSoundStart("weaponSheathe") && !isSoundStart("reloadComplete"));
 
     ok &= expect("inactive hook calls must pass through",
         classifyHookCall(false, true, true, drawReturn, drawReturn, sheatheReturn) ==
