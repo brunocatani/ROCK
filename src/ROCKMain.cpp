@@ -29,6 +29,7 @@
 #include "physics-interaction/native/NativeCharacterProxySafety.h"
 #include "physics-interaction/native/NativeCollisionFilterSafety.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/NativeWeaponFadeSuppression.h"
 #include "physics-interaction/native/NativeRagdollSafety.h"
 #include "physics-interaction/native/NativeShapeCastSafety.h"
 #include "physics-interaction/native/NativeImpactAudio.h"
@@ -1381,6 +1382,9 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
             "ROCK: Native collision-filter teardown safety is unavailable; native collision-filter lookups remain unchanged.");
     }
 
+    if (!rock::native_weapon_fade_suppression::install()) {
+        logger::error("ROCK: Native player weapon fade suppression unavailable; see the instruction validation error.");
+    }
     logger::info("ROCK: Install held weapon instant-transition capability...");
     if (!rock::held_weapon_instant_transition::install()) {
         logger::warn("ROCK: Held trigger/grip-zone equip disabled because the exact native transition contract is unavailable.");

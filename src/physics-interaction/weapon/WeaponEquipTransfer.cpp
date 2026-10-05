@@ -3,7 +3,6 @@
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/weapon/HeldWeaponEquipStatePolicy.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 
 #include "RE/Bethesda/Actor.h"
@@ -24,47 +23,6 @@ namespace rock::weapon_equip_transfer
 {
     namespace
     {
-        void retireCompletedBashFade(RE::PlayerCharacter* player, std::uint32_t weaponForm)
-        {
-            // VR 1.2.72 raw witnesses: impact 140EFFA81/8A writes +908/+90C;
-            // 140EF7E35/4B reads that pair for alpha and 140EF7EB7 caches +910.
-            // Draw preparation 140EF8EA3 resets +908 alone. Other native bash
-            // starts (140EF8EE1/EF, 140EFA46C/84) replace BOTH timers.
-            static const bool layoutVerified = [] {
-                if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) return false;
-                const auto matches = []<std::size_t N>(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) {
-                    std::array<std::uint8_t, N> actual{};
-                    return native_memory::guardedCopyFromMemory(
-                        reinterpret_cast<const void*>(REL::Offset(rva).address()), actual.data(), N) && actual == expected;
-                };
-                return matches(0xEF7E35, std::array<std::uint8_t, 8>{0xF3,0x0F,0x10,0x8F,0x08,0x09,0x00,0x00}) &&
-                    matches(0xEF7E4B, std::array<std::uint8_t, 8>{0xF3,0x0F,0x10,0x87,0x0C,0x09,0x00,0x00}) &&
-                    matches(0xEF7EB7, std::array<std::uint8_t, 8>{0xF3,0x0F,0x11,0xB7,0x10,0x09,0x00,0x00}) &&
-                    matches(0xEFFA81, std::array<std::uint8_t, 18>{0xF3,0x41,0x0F,0x11,0xB7,0x08,0x09,0x00,0x00,0xF3,0x41,0x0F,0x11,0xB7,0x0C,0x09,0x00,0x00}) &&
-                    matches(0xEF8EA3, std::array<std::uint8_t, 9>{0xF3,0x0F,0x11,0x81,0x08,0x09,0x00,0x00,0xC3});
-            }();
-            if (!layoutVerified) {
-                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Held equip fade correction skipped: native timer layout validation failed");
-                return;
-            }
-            std::array<float, 3> state{};
-            if (!player || !native_memory::tryReadField(player, 0x908, state)) {
-                ROCK_LOG_WARN(Weapon, "Held equip fade correction skipped form={:08X}: timer state unreadable", weaponForm);
-                return;
-            }
-            if (!held_weapon_equip_state_policy::hasCompletedBashFade(state[0], state[1], state[2])) return;
-            // Game-thread held transfer only, before EquipObject can restart
-            // the draw cooldown. Leave remaining time and cached alpha intact.
-            // Zero is the native pre-bash duration; the next real bash owns it.
-            auto* duration = reinterpret_cast<float*>(reinterpret_cast<char*>(player) + 0x90C);
-            if (!native_memory::tryWriteValue(duration, 0.0f)) {
-                ROCK_LOG_WARN(Weapon, "Held equip fade correction skipped form={:08X}: completed duration not writable", weaponForm);
-                return;
-            }
-            ROCK_LOG_INFO(Weapon, "Held equip retired completed bash fade form={:08X} remaining={} duration={}->0 alpha={}",
-                weaponForm, state[0], state[1], state[2]);
-        }
-
         using UnequipObject = bool (*)(RE::ActorEquipManager*, RE::Actor*, const RE::BGSObjectInstance*,
             std::uint32_t, const RE::BGSEquipSlot*, std::uint32_t, bool, bool, bool, bool, const RE::BGSEquipSlot*);
 
@@ -587,7 +545,6 @@ namespace rock::weapon_equip_transfer
         result.matchedInstanceData = expectedInstanceData &&
             stack.instanceData.get() == expectedInstanceData.get();
         traceBoundary("before-equip-manager");
-        retireCompletedBashFade(player, result.weapon->formID);
         result = equipSelectedStack(player, equipManager, stack, input.transitionReason, std::move(result));
         traceBoundary(result.success ? "after-equip-manager" : "equip-manager-rejected");
         return result;

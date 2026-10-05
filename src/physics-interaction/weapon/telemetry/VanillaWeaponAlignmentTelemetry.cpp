@@ -9,6 +9,7 @@
 #include "physics-interaction/weapon/telemetry/NativeScopeShotPolicy.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/NativeWeaponFadeSuppression.h"
 #include "api/ROCKProviderApiInternal.h"
 
 #include "RockConfig.h"
@@ -129,7 +130,8 @@ namespace rock::vanilla_weapon_alignment_telemetry
             // 140F4B2B9/C2 and renderer 1427A8650 agree on fade+1E0/1E4;
             // renderer 1427A87C6..8813 separately retains alpha at fade+1F4.
             return fadeBytesMatch(0xEF7E35, std::array<std::uint8_t, 8>{0xF3,0x0F,0x10,0x8F,0x08,0x09,0x00,0x00}) &&
-                fadeBytesMatch(0xEF7EAA, std::array<std::uint8_t, 7>{0x0F,0x2E,0xB7,0x10,0x09,0x00,0x00}) &&
+                (native_weapon_fade_suppression::installed() ||
+                    fadeBytesMatch(0xEF7EAA, std::array<std::uint8_t, 7>{0x0F,0x2E,0xB7,0x10,0x09,0x00,0x00})) &&
                 fadeBytesMatch(0xF4B294, std::array<std::uint8_t, 7>{0x48,0x8B,0x88,0x78,0x01,0x00,0x00}) &&
                 fadeBytesMatch(0xF4B2A4, std::array<std::uint8_t, 4>{0x48,0x8B,0x49,0x48}) &&
                 fadeBytesMatch(0xF4B2B6, std::array<std::uint8_t, 18>{0x8B,0x45,0x00,0x89,0x81,0xE0,0x01,0x00,0x00,0x8B,0x45,0x00,0x89,0x81,0xE4,0x01,0x00,0x00}) &&
@@ -506,6 +508,8 @@ namespace rock::vanilla_weapon_alignment_telemetry
             session->log->info("EQUIP_GAP start version=1 frames={} boundaryClock=steady-ms finalPhase=after-world-final ancestryBudget=32 sceneEvidenceOnly=true poseDeltas=model-origins gate=bDebugWeaponOmodDump",
                 kEquipGapFrames);
             session->meleeFadeReady = installMeleeFadeTrace();
+            session->log->info("WEAPON_FADE forcedOpaque={} source=native-player-update",
+                native_weapon_fade_suppression::installed());
             session->log->info("MELEE_FADE start ready={} nativeMinMs=100 presentedMinMs=100 nodeBudget=512 ownerBudget=16 failureStages=node:1,geometryShader:2,shaderOwner:3,ownerVtable:4,ownerFields:5,nonfinite:6",
                 session->meleeFadeReady);
             if (!session->meleeFadeReady) logger::error("ROCK: Native melee fade trace rejected runtime bytes or trampoline capacity; fade sampling disabled.");

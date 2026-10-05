@@ -4,7 +4,6 @@
 
 #include <cstdio>
 #include <initializer_list>
-#include <limits>
 
 namespace
 {
@@ -23,26 +22,6 @@ int main()
     using namespace rock::equipped_weapon_transition_policy;
 
     bool ok = true;
-
-    using rock::held_weapon_equip_state_policy::hasCompletedBashFade;
-    ok &= expect("the captured completed bash must not supply a second fade to held equip",
-        hasCompletedBashFade(0.0f, 0.667f, 1.0f));
-    ok &= expect("a fresh game has no completed bash duration to retire",
-        !hasCompletedBashFade(0.0f, 0.0f, 1.0f));
-    ok &= expect("an active bash and its final positive cooldown must stay native",
-        !hasCompletedBashFade(0.4f, 0.667f, 0.25f) &&
-        !hasCompletedBashFade(0.000001f, 0.667f, 1.0f));
-    ok &= expect("a cooldown that ended before alpha recovery must retain its native fade",
-        !hasCompletedBashFade(0.0f, 0.667f, 0.999f));
-    const float nan = std::numeric_limits<float>::quiet_NaN();
-    const float infinity = std::numeric_limits<float>::infinity();
-    ok &= expect("invalid timer or alpha evidence cannot authorize a native write",
-        !hasCompletedBashFade(nan, 0.667f, 1.0f) &&
-        !hasCompletedBashFade(-0.01f, 0.667f, 1.0f) &&
-        !hasCompletedBashFade(0.0f, nan, 1.0f) &&
-        !hasCompletedBashFade(0.0f, infinity, 1.0f) &&
-        !hasCompletedBashFade(0.0f, -0.667f, 1.0f) &&
-        !hasCompletedBashFade(0.0f, 0.667f, nan));
 
     std::uint64_t defaultEquipOwnership = 0;
     ok &= expect("ordinary equip uses the left default",
