@@ -2,7 +2,6 @@
 #include "physics-interaction/native/NativeWeaponAnimationAudio.h"
 
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "RockConfig.h"
@@ -24,10 +23,6 @@ namespace rock::native_weapon_equip_audio
         using SelectItemSound = RE::BGSSoundDescriptorForm* (*)(RE::Actor*, RE::TESBoundObject*, bool, bool);
         SelectItemSound s_selectItemSound = nullptr;
         bool s_installed = false;
-        // Retain until the new inventory/clip filters are runtime-qualified;
-        // this distinguishes a missed source from a failed filter in one run.
-        using BuildSound = bool (*)(void*, void*, const void*, float, std::uint32_t, void*);
-        BuildSound s_buildSound = nullptr;
         struct TraceWindow
         {
             std::uint64_t sequence{}, firstFrame{};
@@ -109,14 +104,6 @@ namespace rock::native_weapon_equip_audio
             }
         }
 
-        bool traceBuildSound(void* manager, void* handle, const void* descriptor,
-            float distance, std::uint32_t flags, void* extra)
-        {
-            const bool built = s_buildSound(manager, handle, descriptor, distance, flags, extra);
-            recordSound("descriptor-build", descriptor, flags, built);
-            return built;
-        }
-
         void playEquipSound(RE::BGSSoundDescriptorForm* sound, std::uint32_t flags,
             const RE::NiPoint3* position, RE::NiAVObject* node)
         {
@@ -181,7 +168,7 @@ namespace rock::native_weapon_equip_audio
         if (!g_rockConfig.rockDebugWeaponOmodDumpEnabled) return;
         t_trace = {t_trace.sequence + 1, runtime_state::currentFrame().frameIndex, weaponForm, 64, equip};
         ROCK_LOG_INFO(Weapon, "EQUIP_AUDIO begin seq={} operation={} weapon={:08X} frame={} ready={} frames=120 events=64 thread={}",
-            t_trace.sequence, equip ? "equip" : "unequip", weaponForm, t_trace.firstFrame, s_buildSound != nullptr, GetCurrentThreadId());
+            t_trace.sequence, equip ? "equip" : "unequip", weaponForm, t_trace.firstFrame, s_installed, GetCurrentThreadId());
     }
 
     void traceAnimationSource(std::string_view tag, std::string_view clip, bool muted) noexcept
@@ -203,16 +190,9 @@ namespace rock::native_weapon_equip_audio
         if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) return false;
         const bool animationReady = native_weapon_animation_audio::install();
         if (s_installed) return animationReady;
-        // ABI witnesses: 14081FD23..3D passes manager, handle, descriptor,
-        // XMM3 distance and two stack arguments. 141B4CF50..D105 consumes
-        // those arguments and returns the native build result in AL.
-        constexpr std::array<std::uint8_t, 15> buildEntry{
-            0x48,0x8B,0xC4,0x48,0x89,0x58,0x08,0x48,0x89,0x68,0x10,0x48,0x89,0x70,0x18};
-        void* originalBuild{};
-        if (entry_trampoline_hook::install("Weapon transfer audio observation", 0x1B4CF50,
-                buildEntry.data(), buildEntry.size(), reinterpret_cast<void*>(&traceBuildSound), originalBuild)) {
-            s_buildSound = reinterpret_cast<BuildSound>(originalBuild);
-        }
+        // Keep the shared descriptor builder native. DIAMOND qualifies that
+        // entry before playing authored reload cues; even an observational
+        // detour disables its audio. Trace only the equipment callsites below.
         if (!bytesMatch(kPlaySound, std::array<std::uint8_t, 15>{
                 0x48,0x83,0xEC,0x48,0x4C,0x89,0x4C,0x24,0x20,0x4D,0x8B,0xC8,0x44,0x8B,0xC2})) return false;
         if (!bytesMatch(0xF2073F, std::array<std::uint8_t, 5>{0x48,0x85,0xC0,0x74,0x69})) return false;
