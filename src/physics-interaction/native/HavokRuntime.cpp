@@ -4,6 +4,7 @@
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/PhysicsSystemBodyScanCache.h"
+#include "physics-interaction/native/CollisionSystemOwner.h"
 #include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
@@ -452,6 +453,8 @@ namespace rock::havok_runtime
             return "no-bodies";
         case PhysicsSystemBodyScanStatus::EmptyPhysicsSystem:
             return "empty-physics-system";
+        case PhysicsSystemBodyScanStatus::UnsupportedCollisionObject:
+            return "unsupported-collision-object";
         case PhysicsSystemBodyScanStatus::VisitorStopped:
             return "visitor-stopped";
         }
@@ -475,8 +478,44 @@ namespace rock::havok_runtime
 
         RE::bhkPhysicsSystem* physicsSystem = nullptr;
         RE::hknpPhysicsSystemInstance* instance = nullptr;
+        // Qualify the proxy layout before its first pointer read. The reader
+        // takes two +20 hops; interpreting the first as a system reads the
+        // body's flags as an instance and used to reject complete weapon scans.
+        static const bool proxyLayoutQualified = [] {
+            constexpr std::array<std::uint8_t, 12> expected{
+                0x48,0x8B,0x49,0x20,0x48,0x8B,0x41,0x20,0x48,0x85,0xC0,0x0F };
+            std::array<std::uint8_t, expected.size()> actual{};
+            return native_memory::guardedCopyFromMemory(
+                reinterpret_cast<const void*>(REL::Offset(0x1E0A43C).address()), actual.data(), actual.size()) && actual == expected;
+        }();
+        const auto owner = collision_system_owner::resolve(reinterpret_cast<std::uintptr_t>(collisionObject),
+            [](std::uintptr_t object, std::uintptr_t& table) {
+                if (!native_memory::tryReadField(reinterpret_cast<const void*>(object), 0, table)) return false;
+                const auto base = REL::Module::get().base();
+                if (table < base) return false;
+                table -= base;
+                return true;
+            }, [](std::uintptr_t object, std::uintptr_t& target) {
+                return proxyLayoutQualified && native_memory::tryReadField(reinterpret_cast<const void*>(object),
+                    offsets::kCollisionObject_PhysSystemPtr, target);
+            });
+        if (owner.stage == collision_system_owner::Stage::SceneOnly) {
+            result.status = PhysicsSystemBodyScanStatus::EmptyPhysicsSystem;
+            return result;
+        }
+        if (!owner.usable()) {
+            ROCK_LOG_SAMPLE_WARN(Physics, 1000,
+                "Collision system owner rejected: stage={} object={:p} sourceVtableRva={:X} targetVtableRva={:X} proxyLayout={}",
+                static_cast<unsigned>(owner.stage), static_cast<void*>(collisionObject), owner.sourceVtable, owner.targetVtable, proxyLayoutQualified);
+            result.status = PhysicsSystemBodyScanStatus::UnsupportedCollisionObject;
+            return result;
+        }
+        if (owner.stage == collision_system_owner::Stage::Proxy) {
+            ROCK_LOG_SAMPLE_INFO(Physics, 1000, "Collision system proxy resolved: proxy={:p} bodyObject=0x{:X}",
+                static_cast<void*>(collisionObject), owner.owner);
+        }
         bool knownEmpty = false;
-        if (!readSystemOwnership(collisionObject, physicsSystem, instance, &knownEmpty)) {
+        if (!readSystemOwnership(reinterpret_cast<RE::NiCollisionObject*>(owner.owner), physicsSystem, instance, &knownEmpty)) {
             result.status = knownEmpty ? PhysicsSystemBodyScanStatus::EmptyPhysicsSystem : PhysicsSystemBodyScanStatus::MissingPhysicsSystem;
             return result;
         }

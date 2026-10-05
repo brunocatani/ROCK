@@ -124,6 +124,7 @@ namespace rock::havok_runtime
         NoBodies,
         VisitorStopped,
         EmptyPhysicsSystem,
+        UnsupportedCollisionObject,
     };
 
     struct PhysicsSystemBodyScanResult

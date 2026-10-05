@@ -3,6 +3,7 @@
 #include "physics-interaction/grab/MotionBodySearchBatch.h"
 #include "physics-interaction/grab/NearbyGrabDamping.h"
 #include "physics-interaction/native/PhysicsSystemBodyScanCache.h"
+#include "physics-interaction/native/CollisionSystemOwner.h"
 #include "physics-interaction/weapon/GeneratedWeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponEvidenceSnapshot.h"
 
@@ -238,6 +239,42 @@ namespace
         active.reset();
         assert(lifetime.expired());
     }
+
+    void collisionSystemOwners()
+    {
+        using namespace rock::collision_system_owner;
+        // The proxy's +20 points to the BODY object. Its +20 then owns the
+        // system. Treating these as the same layout reads flags as an instance.
+        std::map<std::uintptr_t, std::uintptr_t> tables{{0x1000, kProxy}, {0x2000, kNativeBody},
+            {0x3000, kUnlinkedBody}, {0x4000, kSceneOnly}, {0x5000, 0xBAD}};
+        std::uintptr_t proxyTarget = 0x2000;
+        unsigned targetReads = 0;
+        const auto readTable = [&](std::uintptr_t object, std::uintptr_t& out) {
+            const auto found = tables.find(object);
+            if (found == tables.end()) return false;
+            out = found->second; return true;
+        };
+        const auto readTarget = [&](std::uintptr_t object, std::uintptr_t& out) {
+            ++targetReads;
+            assert(object == 0x1000);
+            out = proxyTarget; return true;
+        };
+        assert(resolve(0x2000, readTable, readTarget).owner == 0x2000);
+        assert(resolve(0x3000, readTable, readTarget).owner == 0x3000);
+        assert(resolve(0x4000, readTable, readTarget).stage == Stage::SceneOnly);
+        assert(!resolve(0x5000, readTable, readTarget).usable());
+        assert(targetReads == 0); // Unknown and scene-only types have no readable system field.
+        const auto proxy = resolve(0x1000, readTable, readTarget);
+        assert(proxy.stage == Stage::Proxy && proxy.owner == 0x2000 && targetReads == 1);
+        for (const std::uintptr_t invalid : {0u, 0x1000u, 0x4000u, 0x5000u, 0x6000u}) {
+            proxyTarget = invalid;
+            assert(!resolve(0x1000, readTable, readTarget).usable());
+        }
+        proxyTarget = 0x3000;
+        assert(resolve(0x1000, readTable, readTarget).owner == 0x3000);
+        assert(!resolve(0, readTable, readTarget).usable());
+        assert(!resolve(0x1000, readTable, [](auto, auto&) { return false; }).usable());
+    }
 }
 
 int main()
@@ -246,5 +283,6 @@ int main()
     exactMeshContacts();
     dampingAndMotionEnumeration();
     scanAndGeometryOwnership();
+    collisionSystemOwners();
     evidenceOwnership();
 }

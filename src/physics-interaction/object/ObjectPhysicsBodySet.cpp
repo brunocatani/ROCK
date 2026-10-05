@@ -9,6 +9,9 @@
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/HavokWorldLock.h"
 #include "physics-interaction/native/PhysicsSystemBodyScanCache.h"
+#include "physics-interaction/native/CollisionSystemOwner.h"
+#include "physics-interaction/native/NativeMemory.h"
+#include "REL/Relocation.h"
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
@@ -83,6 +86,7 @@ namespace rock::object_physics_body_set
         {
             using havok_runtime::PhysicsSystemBodyScanStatus;
             return status == PhysicsSystemBodyScanStatus::InvalidBodyCount ||
+                   status == PhysicsSystemBodyScanStatus::UnsupportedCollisionObject ||
                    status == PhysicsSystemBodyScanStatus::UnreadableBodyIds ||
                    status == PhysicsSystemBodyScanStatus::MissingBodyIds;
         }
@@ -177,9 +181,14 @@ namespace rock::object_physics_body_set
             const auto* base = context.rootRef ? context.rootRef->GetObjectReference() : nullptr;
             const bool bodyTarget = grab_target::isRagdoll(options.targetKind) ||
                 (base && base->Is(RE::ENUM_FORM_ID::kNPC_)) || grab_target::isDetachedGoreLayer(record.collisionLayer);
-            if (bodyTarget) {
+            std::uintptr_t sourceVtable{};
+            const bool proxySource = context.collisionObject && native_memory::tryReadField(context.collisionObject, 0, sourceVtable) &&
+                sourceVtable == REL::Offset(collision_system_owner::kProxy).address();
+            if (bodyTarget || proxySource) {
                 // A shared physics system is discovery, not ownership. Its first
                 // encountered wrapper must never own every enumerated limb.
+                // A scene proxy likewise delegates to the actual body owner;
+                // never store the proxy as that body's native collision object.
                 auto* owner = havok_runtime::getCollisionObjectFromBody(hknpWorld, bodyId);
                 RE::hknpWorld* ownerWorld = nullptr;
                 RE::hknpBodyId ownerId{INVALID_BODY_ID};
