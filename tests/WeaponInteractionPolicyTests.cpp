@@ -4644,6 +4644,22 @@ int main()
     static_assert(rock::equipped_weapon_drop_policy::fromSetting(3) == rock::equipped_weapon_drop_policy::Mode::AutoDrop);
     static_assert(rock::equipped_weapon_drop_policy::fromSetting(4) == rock::equipped_weapon_drop_policy::Mode::EquippedDrop);
     static_assert(rock::equipped_weapon_drop_policy::fromSetting(5) == rock::equipped_weapon_drop_policy::Mode::Off);
+    static_assert(!requiresAuthoredHandoffPose(rock::equipped_weapon_drop_policy::Mode::EquippedDrop));
+    static_assert(requiresAuthoredHandoffPose(rock::equipped_weapon_drop_policy::Mode::AutoDrop));
+    static_assert(requiresAuthoredHandoffPose(rock::equipped_weapon_drop_policy::Mode::ToggleDrop));
+    for (const bool physicsReady : {false, true}) {
+        for (const bool presentationReady : {false, true}) {
+            bool freeBody = false, handsReleased = false, restored = false;
+            const auto committed = commitRetainedDrop(
+                [&] { freeBody = physicsReady; return physicsReady; },
+                [&] { handsReleased = presentationReady; return presentationReady; },
+                [&] { restored = true; freeBody = false; });
+            ok &= expectTrue("drop cannot leave a free body while reporting held ownership", freeBody == handsReleased);
+            ok &= expectTrue("visual refusal restores physical grip", restored == (physicsReady && !presentationReady));
+            ok &= expectTrue("retained drop reports the failing stage", committed == (!physicsReady ? RetainedDropCommit::PhysicsRefused :
+                presentationReady ? RetainedDropCommit::Released : RetainedDropCommit::PresentationRefused));
+        }
+    }
     static_assert(canStartAutoDrop(true, false, false));
     static_assert(canStartAutoDrop(false, true, false));
     static_assert(!canStartAutoDrop(true, true, false));

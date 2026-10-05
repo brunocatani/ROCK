@@ -29,8 +29,14 @@ namespace rock
     {
         // Validate the complete presentation tree before releasing any hand
         // authority. A rejected tree keeps the original grip transaction intact.
-        if (!_session.weaponNode || !moveWeaponPresentationRigidly(_session.weaponNode, pose)) return false;
-        return retainHandsFree(pose, TwoHandedState::EquippedDrop, true);
+        if (!_session.weaponNode) return false;
+        const auto previous = _session.weaponNode->world;
+        if (!moveWeaponPresentationRigidly(_session.weaponNode, pose)) return false;
+        if (retainHandsFree(pose, TwoHandedState::EquippedDrop, true)) return true;
+        if (!moveWeaponPresentationRigidly(_session.weaponNode, previous)) {
+            ROCK_LOG_ERROR(Weapon, "Equipped drop presentation recovery failed generation={:016X}", _session.weaponGenerationKey);
+        }
+        return false;
     }
 
     bool TwoHandedGrip::retainHandsFree(const RE::NiTransform& pose, const TwoHandedState state, const bool releaseBoth)
@@ -578,7 +584,8 @@ namespace rock
                         allowLastHandDrop, supportGrip.releaseRequiresNewHold)) {
                     if (gripCarries(supportGrip) && !gripCarries(freeHandGrip)) {
                         (void)requestEquippedWeaponDrop("support-carry-released",
-                            supportHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right, dt, false, true);
+                            supportHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right,
+                            equipped_weapon_drop_policy::fromSetting(g_rockConfig.rockWeaponDropMode), dt, false, true);
                         return;
                     }
                     if (handoffAuthoredSupportCarry(supportHandIsLeft)) {
@@ -602,7 +609,8 @@ namespace rock
                         allowLastHandDrop, freeHandGrip.releaseRequiresNewHold)) {
                     if (gripCarries(freeHandGrip) && !gripCarries(supportGrip)) {
                         (void)requestEquippedWeaponDrop("part-carry-released",
-                            firingHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right, dt, false, true);
+                            firingHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right,
+                            equipped_weapon_drop_policy::fromSetting(g_rockConfig.rockWeaponDropMode), dt, false, true);
                         return;
                     }
                     if (handoffAuthoredSupportCarry(firingHandIsLeft)) {

@@ -469,7 +469,8 @@ namespace rock
 
         if (manualDecision.dropRequested) {
             requestEquippedWeaponDrop("primary-only-grip-released",
-                isFiringHandLeft() ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right, dt, false, true);
+                isFiringHandLeft() ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right,
+                equipped_weapon_drop_policy::fromSetting(g_rockConfig.rockWeaponDropMode), dt, false, true);
             return;
         }
 
@@ -743,8 +744,8 @@ namespace rock
                     .authoredCanonicalAvailable =
                         authoredProbeCanonicalAvailable,
                 });
-        if (coreAuthoredStation && !useAuthoredProbeCanonical) return false;
-        if (!useAuthoredProbeCanonical &&
+        if (coreAuthoredStation && !useAuthoredProbeCanonical && !directCatch) return false;
+        if (!useAuthoredProbeCanonical && !directCatch &&
             !firingGripContactMatchesCapturedGrip(
                 weaponNode,
                 handWeaponContact,

@@ -496,7 +496,8 @@ namespace rock
             // Capture once while both pre-release authorities still exist.
             // Per-hand release processing must not retain a synthetic last carrier.
             if (_session.state == TwoHandedState::Gripping) updateGripping(_session.weaponNode, dt);
-            (void)requestEquippedWeaponDrop("simultaneous-carrier-release", simultaneousSource, dt, true, true);
+            (void)requestEquippedWeaponDrop("simultaneous-carrier-release", simultaneousSource,
+                equipped_weapon_drop_policy::fromSetting(g_rockConfig.rockWeaponDropMode), dt, true, true);
             return finishUpdate();
         }
         const auto primaryReleaseDecision = equipped_weapon_manual_ownership_policy::debouncePrimaryGripRelease(

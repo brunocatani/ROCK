@@ -73,6 +73,7 @@ namespace rock
         // Main-thread grant. Only the two hand-compound/weapon pairs are leased;
         // both hands retain their collision with the world and other objects.
         bool leaseReleasedWeapon(RE::hknpWorld* world, std::uint32_t weaponBody, float seconds);
+        void cancelReleasedWeaponLease(RE::hknpWorld* liveWorld);
 
         void updateFrame(const PhysicsFrameContext& frame,
             bool physicsWritesAllowed,

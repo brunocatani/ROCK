@@ -421,6 +421,10 @@ namespace rock
     {
         bool requested{ false };
         equipped_weapon_drop_policy::SourceHand sourceHand{ equipped_weapon_drop_policy::SourceHand::None };
+        equipped_weapon_drop_policy::Mode mode{ equipped_weapon_drop_policy::Mode::Off };
+        std::uint32_t weaponFormId{};
+        std::uint64_t weaponGenerationKey{};
+        std::uint64_t weaponOwnershipKey{};
         AuthoredWeaponGripPose pose{};
         RE::NiTransform weaponWorld{};
     };
@@ -993,7 +997,7 @@ namespace rock
          */
         bool republishPartCarryWeaponTransform(RE::NiNode* weaponNode);
 
-        bool requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand, float dt, bool allCarriersReleased = false, bool allowSurfaceRetention = false);
+        bool requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand, equipped_weapon_drop_policy::Mode mode, float dt, bool allCarriersReleased = false, bool allowSurfaceRetention = false);
         EquippedWeaponManualDropRequest consumeEquippedWeaponDropRequest();
         bool beginTransferredTwoHandGrip(RE::NiNode* weaponNode, std::uint64_t generation,
             std::uint64_t ownership, const weapon_grip_transfer::Pair& grips, const char** failure);

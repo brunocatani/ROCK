@@ -667,6 +667,32 @@ namespace rock
         return true;
     }
 
+    bool DynamicWeaponCollisionRuntime::restoreEquippedHold(const PhysicsFrameContext& frame, const char* reason)
+    {
+        if (!_equippedDrop) return true;
+        auto mutation = _physicsCallbackGate ? _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
+        const auto heldProfile = _equippedDropMotionProfile.saved();
+        const char* stage = "motion-profile-restore";
+        if (_createdWorld != frame.hknpWorld || _createdBhkWorld != frame.bhkWorld ||
+            !_equippedDropMotionProfile.restore([&](std::uint16_t target) {
+                return setOwnedWeaponMotionProfile(frame.hknpWorld, _body, target, stage);
+            }) || !setAuthorityPivot(frame, {}, _frameRequestedWeaponWorld)) {
+            ROCK_LOG_WARN(Weapon, "Equipped drop held physics restore failed: body={} profile={} stage={} reason={}; retiring owned body",
+                _body.getBodyId().value, heldProfile, stage, reason);
+            retireProxyLocked(frame.bhkWorld);
+            return false;
+        }
+        _body.setCollisionFilterInfo(dynamicWeaponProxyFilterInfo(), kRebuildBodyCollisionState);
+        _body.activateBody();
+        _equippedDrop = false;
+        cancelEquippedDropPull();
+        _equippedDropGravitySamplePending = false;
+        ROCK_LOG_INFO(Weapon, "Equipped drop held physics restored: body={} generation={:016X} restoredMotionProfile={} reason={}",
+            _body.getBodyId().value, _createdGenerationKey, heldProfile, reason);
+        return true;
+    }
+
     bool DynamicWeaponCollisionRuntime::tryGetEquippedDropPose(RE::NiNode* weapon,
         const std::uint64_t generation, RE::NiTransform& pose) const
     {
@@ -817,31 +843,10 @@ namespace rock
                 result.applyVisualCorrection = tryGetEquippedDropPose(weaponNode, weaponGenerationKey, result.resolvedWeaponWorld);
                 return result;
             }
-            auto mutation = _physicsCallbackGate ? _physicsCallbackGate->pauseForMutation() :
-                PhysicsCallbackQuiescenceGate::MutationLease{};
-            const auto heldProfile = _equippedDropMotionProfile.saved();
-            const char* stage = "motion-profile-restore";
-            if (!_equippedDropMotionProfile.restore([&](std::uint16_t target) {
-                    return setOwnedWeaponMotionProfile(frame.hknpWorld, _body, target, stage);
-                })) {
-                ROCK_LOG_WARN(Weapon, "Equipped drop regrab profile restore failed: body={} target={} stage={}; retiring owned body",
-                    _body.getBodyId().value, heldProfile, stage);
-                retireProxyLocked(frame.bhkWorld);
+            if (!restoreEquippedHold(frame, "regrab")) {
                 result.proxyActive = false;
                 return result;
             }
-            if (!setAuthorityPivot(frame, {}, _frameRequestedWeaponWorld)) {
-                retireProxyLocked(frame.bhkWorld);
-                result.proxyActive = false;
-                return result;
-            }
-            _body.setCollisionFilterInfo(dynamicWeaponProxyFilterInfo(), kRebuildBodyCollisionState);
-            _body.activateBody();
-            _equippedDrop = false;
-            cancelEquippedDropPull();
-            _equippedDropGravitySamplePending = false;
-            ROCK_LOG_INFO(Weapon, "Equipped drop regrabbed: body={} generation={:016X} restoredMotionProfile={}",
-                _body.getBodyId().value, weaponGenerationKey, heldProfile);
         }
         updateSurfaceSupport(frame, primaryGripWeaponLocal, handsFree);
         if (!_authorityConstraint.isValid() || _rebuildRequestedAtomic.load(std::memory_order_acquire)) return result;

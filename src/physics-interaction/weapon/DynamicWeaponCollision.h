@@ -119,6 +119,7 @@ namespace rock
         // compound survives release and regrab; its native inventory item stays equipped.
         bool beginEquippedDrop(const PhysicsFrameContext& frame, RE::NiNode* weapon,
             std::uint64_t generation, RE::NiTransform& pose);
+        bool restoreEquippedHold(const PhysicsFrameContext& frame, const char* reason);
         bool tryGetEquippedDropPose(RE::NiNode* weapon, std::uint64_t generation, RE::NiTransform& pose) const;
         bool equippedDropActive() const { return _equippedDrop; }
         enum class DropPullProgress { Unavailable, Flying, Arrived, Expired };

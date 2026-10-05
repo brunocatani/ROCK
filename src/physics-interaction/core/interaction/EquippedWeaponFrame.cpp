@@ -1577,7 +1577,7 @@ namespace rock
                         equipped_weapon_drop_policy::shouldAttemptPhysicalDrop(stashCommitSelected);
                     if (physicalDropRequested) {
                         transferCommitted = dropEquippedWeaponToWorld(frame, equippedWeaponDropRequest,
-                            equipped_weapon_drop_policy::fromSetting(g_rockConfig.rockWeaponDropMode));
+                            equippedWeaponDropRequest.mode);
                     }
                     transferCommitted = transferCommitted || stashCommitSelected;
                 }

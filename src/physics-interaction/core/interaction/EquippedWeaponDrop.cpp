@@ -85,7 +85,8 @@ namespace rock
         const auto frame = buildFrameContext(_lifecycle.cachedBhkWorld, _lifecycle.cachedHknpWorld);
         if (frame.menuBlocked) return api::Status::NotReady;
         const auto source = left ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right;
-        if (!_twoHandedGrip.requestEquippedWeaponDrop("external-storage", source, frame.deltaSeconds)) return api::Status::NotReady;
+        if (!_twoHandedGrip.requestEquippedWeaponDrop("external-storage", source,
+                equipped_weapon_drop_policy::Mode::AutoDrop, frame.deltaSeconds)) return api::Status::NotReady;
         const auto request = _twoHandedGrip.consumeEquippedWeaponDropRequest();
         RE::NiPointer<RE::NiNode> sourceNode(resolveEquippedWeaponInteractionNode());
         const bool dropped = dropEquippedWeaponToWorld(frame, request, equipped_weapon_drop_policy::Mode::AutoDrop);
@@ -129,7 +130,8 @@ namespace rock
         const auto sourceHand = retainedIsLeft ?
             equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right;
         if (!retainedHandCarries || receivingHandCarries ||
-            !_twoHandedGrip.requestEquippedWeaponDrop("trigger-equip-retention", sourceHand, frame.deltaSeconds)) {
+            !_twoHandedGrip.requestEquippedWeaponDrop("trigger-equip-retention", sourceHand,
+                equipped_weapon_drop_policy::Mode::ToggleDrop, frame.deltaSeconds)) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
                 "Trigger equip retained both weapons: previous={:08X} hand={} carry={} receivingCarry={} drop pose unavailable",
                 previousForm, retainedIsLeft ? "left" : "right",
@@ -164,12 +166,14 @@ namespace rock
         const EquippedWeaponManualDropRequest& request, equipped_weapon_drop_policy::Mode mode)
     {
         if (!frame.worldReady || !frame.hknpWorld || frame.menuBlocked ||
-            mode == equipped_weapon_drop_policy::Mode::Off) return false;
+            mode == equipped_weapon_drop_policy::Mode::Off || mode != request.mode) return false;
         if (mode == equipped_weapon_drop_policy::Mode::EquippedDrop) {
             // No inventory mutation occurs here. Retirement capability is a
             // prerequisite, so the item cannot be released without an exit path.
-            if (!_twoHandedGrip.isManualOwnershipActive() || !request.pose.valid() ||
-                request.pose.weaponFormId != currentEquippedWeaponFormId() ||
+            if (!_twoHandedGrip.isManualOwnershipActive() || request.weaponFormId == 0 ||
+                request.weaponFormId != currentEquippedWeaponFormId() || request.weaponGenerationKey == 0 ||
+                request.weaponGenerationKey != _weaponCollision.getCurrentWeaponGenerationKey() ||
+                request.weaponOwnershipKey != _weaponCollision.getCurrentEquippedWeaponOwnershipKey() ||
                 !bipod_frozen_retirement::available() || bipod_frozen_retirement::pending()) {
                 ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equipped drop retained: item or retirement unavailable form={:08X} nativeGuard={} pending={}",
                     currentEquippedWeaponFormId(), bipod_frozen_retirement::available(), bipod_frozen_retirement::pending());
@@ -184,12 +188,14 @@ namespace rock
                 ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equipped drop retained: stage=collision-lease generation={:016X}", generation);
                 return false;
             }
-            if (!_dynamicWeaponCollision.beginEquippedDrop(frame, node, generation, pose)) {
-                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equipped drop retained: stage=physics-release generation={:016X}", generation);
-                return false;
-            }
-            if (!_twoHandedGrip.retainEquippedDrop(pose)) {
-                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equipped drop retained: stage=visual-retention generation={:016X}", generation);
+            const auto commit = equipped_weapon_drop_policy::commitRetainedDrop(
+                [&] { return _dynamicWeaponCollision.beginEquippedDrop(frame, node, generation, pose); },
+                [&] { return _twoHandedGrip.retainEquippedDrop(pose); },
+                [&] { (void)_dynamicWeaponCollision.restoreEquippedHold(frame, "release-refused"); });
+            if (commit != equipped_weapon_drop_policy::RetainedDropCommit::Released) {
+                _dynamicHandCollision.cancelReleasedWeaponLease(frame.hknpWorld);
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equipped drop retained: stage={} generation={:016X}",
+                    commit == equipped_weapon_drop_policy::RetainedDropCommit::PhysicsRefused ? "physics-release" : "visual-retention", generation);
                 return false;
             }
             _weaponCollision.setEquippedDropActive(frame.hknpWorld, true);
