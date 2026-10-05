@@ -3,6 +3,7 @@
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/NativeWeaponEquipAudio.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 
 #include "RE/Bethesda/Actor.h"
@@ -491,6 +492,7 @@ namespace rock::weapon_equip_transfer
          * NiPointer keeps the assembled model alive for the visual bridge.
          */
         result.detachedWorldModel.reset(heldRef->Get3D());
+        native_weapon_equip_audio::beginTransferTrace(result.weapon->formID, true);
         const auto traceBoundary = [&](const char* stage) {
             vanilla_weapon_alignment_telemetry::recordHeldEquipBoundary(
                 result.formID, result.weapon->formID, stage, result.detachedWorldModel.get());
@@ -709,6 +711,7 @@ namespace rock::weapon_equip_transfer
             result.reason = DropReason::PreviousWeaponRestoreResetUnavailable;
             return result;
         }
+        native_weapon_equip_audio::beginTransferTrace(equipped.weapon->formID, false);
         result.handle = player->RemoveItem(removeData);
         const auto equippedAfterDrop = readEquippedWeaponSnapshot();
         bool duplicateUnequipAccepted = false;
