@@ -394,6 +394,35 @@ static bool testRecoilProfiles()
     shot.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 60.0f);
     auto modestShot = shot;
     modestShot.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 20.0f);
+    for (const float percent : { 0.0f, 80.0f, 150.0f, 300.0f }) {
+        TestTransform closePistol{};
+        TestTransform fullPistol{};
+        const auto twoHandPercent = selectHoldPercent(false, 300.0f, percent);
+        ok &= expectTrue("close pistol support builds a valid two-hand kick",
+            tryBuildControlledKick(modestShot, effectiveGains(Family::Pistol, Profile::CloseSupport, twoHandPercent), closePistol));
+        ok &= expectTrue("full pistol support builds a valid two-hand kick",
+            tryBuildControlledKick(modestShot, effectiveGains(Family::Pistol, Profile::FullTwoHand, twoHandPercent), fullPistol));
+        ok &= expectTransformNear("pistol close support matches full two-hand recoil at every strength", closePistol, fullPistol);
+        auto pistolExpected = rock::transform_math::makeIdentityTransform<TestTransform>();
+        const float multiplier = percent * 0.01f;
+        pistolExpected.translate = { 10.0f * multiplier, -4.0f * multiplier, 2.0f * multiplier };
+        pistolExpected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 20.0f * multiplier);
+        ok &= expectTransformNear("supported pistol strength scales native recoil without extra attenuation", closePistol, pistolExpected);
+        for (const auto profile : { Profile::PowerArmor, Profile::Bipod }) {
+            const auto pistol = effectiveGains(Family::Pistol, profile, percent);
+            const auto fixed = gainsFor(profile);
+            ok &= expectTrue("pistol support strength preserves armor and bipod overrides",
+                pistol.translation == fixed.translation && pistol.rotation == fixed.rotation);
+        }
+    }
+    const auto oneHandPistol = effectiveGains(Family::Pistol, Profile::OneHand, selectHoldPercent(true, 300.0f, 80.0f));
+    ok &= expectTrue("one-hand pistol retains triple recoil",
+        oneHandPistol.translation == 3.0f && oneHandPistol.rotation == 3.0f);
+    for (const auto family : { Family::Default, Family::Rifle, Family::Shotgun, Family::Heavy }) {
+        const auto closeSupport = effectiveGains(family, Profile::CloseSupport, 80.0f);
+        ok &= expectNear("non-pistol close support retains movement attenuation", closeSupport.translation, 0.36f);
+        ok &= expectNear("non-pistol close support retains rotation attenuation", closeSupport.rotation, 0.24f);
+    }
     TestTransform tripleKick{};
     ok &= expectTrue("300 percent builds a valid three-times impulse",
         tryBuildControlledKick(modestShot, effectiveGains(Family::Default, Profile::OneHand, selectHoldPercent(true, 300.0f, 200.0f)), tripleKick));

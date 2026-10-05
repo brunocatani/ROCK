@@ -123,7 +123,11 @@ namespace rock::weapon_recoil_policy
         }
         // Lasers share the bipod attenuation for every hold, without stacking
         // the close-support or pistol/rifle/heavy multipliers on top of it.
-        const auto base = family == Family::Laser ? kBipod : gainsFor(profile);
+        // A pistol's close support keeps its aim authority but uses the same
+        // recoil strength as a full two-hand grip.
+        const auto strengthProfile = family == Family::Pistol && profile == Profile::CloseSupport ?
+                                         Profile::FullTwoHand : profile;
+        const auto base = family == Family::Laser ? kBipod : gainsFor(strengthProfile);
         const float multiplier = percent * 0.01f;
         return { base.translation * multiplier, base.rotation * multiplier };
     }
