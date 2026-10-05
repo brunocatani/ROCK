@@ -320,13 +320,24 @@ namespace rock
             _bodies.retiredPayloads.size());
     }
 
+    void WeaponCollision::setEquippedDropActive(RE::hknpWorld* world, const bool active)
+    {
+        if (_equippedDropActive == active || !world || world != _cachedWorld) return;
+        auto mutation = _physicsCallbackGate ? _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
+        _equippedDropActive = active;
+        // In free flight the dynamic compound is the only physical weapon.
+        // Keep source hulls for mesh/part queries, without kinematic prop impulses.
+        setWeaponBodyBankCollisionEnabled(world, activeWeaponBodies(), !active);
+    }
+
     void WeaponCollision::setWeaponBodyBankCollisionEnabled(RE::hknpWorld* world, WeaponBodyBank& bank, bool enabled)
     {
         if (!world) {
             return;
         }
 
-        const std::uint32_t filterInfo = generatedWeaponCollisionFilterInfo(enabled);
+        const std::uint32_t filterInfo = generatedWeaponCollisionFilterInfo(enabled && !_equippedDropActive);
         for (auto& instance : bank) {
             if (instance.body.isValid()) {
                 body_collision::setFilterInfo(world, instance.body.getBodyId(), filterInfo);

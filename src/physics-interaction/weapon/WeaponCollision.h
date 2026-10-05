@@ -73,6 +73,7 @@ namespace rock
         WeaponCollision();
 
         void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _physicsCallbackGate = gate; }
+        void setEquippedDropActive(RE::hknpWorld* world, bool active);
 
         struct WeaponBodySnapshot
         {
@@ -861,6 +862,7 @@ namespace rock
 
         // ---- Shared direct members ----
         PhysicsCallbackQuiescenceGate* _physicsCallbackGate{ nullptr };
+        bool _equippedDropActive{ false };
         RE::hknpWorld* _cachedWorld{ nullptr };
         void* _cachedBhkWorld{ nullptr };
 

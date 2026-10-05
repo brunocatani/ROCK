@@ -17,56 +17,73 @@ namespace rock
 
     bool TwoHandedGrip::retainOnSurface(const bool releaseBoth)
     {
-        const auto started = std::chrono::steady_clock::now();
         RE::NiTransform pose{};
         if (!_surfaceSupportRuntime || !_session.weaponNode ||
             !_surfaceSupportRuntime->tryGetLatchedSurfacePose(
-                _session.weaponNode, _session.weaponGenerationKey, pose) ||
-            !blockFrikPrimaryWeaponPose()) return false;
+                _session.weaponNode, _session.weaponGenerationKey, pose)) return false;
+        return retainHandsFree(pose, TwoHandedState::SurfaceSupported, releaseBoth);
+    }
+
+    bool TwoHandedGrip::retainEquippedDrop(const RE::NiTransform& pose)
+    {
+        // Validate the complete presentation tree before releasing any hand
+        // authority. A rejected tree keeps the original grip transaction intact.
+        if (!_session.weaponNode || !moveWeaponPresentationRigidly(_session.weaponNode, pose)) return false;
+        return retainHandsFree(pose, TwoHandedState::EquippedDrop, true);
+    }
+
+    bool TwoHandedGrip::retainHandsFree(const RE::NiTransform& pose, const TwoHandedState state, const bool releaseBoth)
+    {
+        const auto started = std::chrono::steady_clock::now();
+        if (!_session.weaponNode || !isFiniteTransform(pose) || !blockFrikPrimaryWeaponPose()) return false;
+        const char* reason = state == TwoHandedState::EquippedDrop ? "equipped-drop" : "bipod-hands-free";
 
         const bool firingGripReleased = isFiringGripOccupied();
-        if (firingGripReleased) beginHandVisualReturn(isFiringHandLeft(), "bipod-hands-free");
-        // The surface owns the weapon, never an invented hand grip. Operating
-        // AttachOnly grips keep their independent part/visual authority.
+        if (firingGripReleased) beginHandVisualReturn(isFiringHandLeft(), reason);
+        // The retained pose owns the weapon, never an invented hand grip.
+        // Surface retention may keep operating AttachOnly grips; a drop releases both hands.
         for (const bool left : { false, true }) {
             if (partGrip(left).active && (releaseBoth || !partGrip(left).attachOnly))
-                releasePartGrip(left, "bipod-hands-free", true);
+                releasePartGrip(left, reason, true);
             clearPrimaryGripFingerPose(left);
             clearPrimaryGripWorldAuthority(left);
             clearPrimaryDetachVisualAuthority(left);
         }
-        clearDynamicSupportAcquisition("bipod-hands-free", true);
+        clearDynamicSupportAcquisition(reason, true);
         clearSupportInputBaselines();
         // A cancelled return may own this same primary-pose blocker. Keep it
-        // continuously held for the surface instead of restoring native carry.
-        clearWeaponVisualReturn("bipod-hands-free", true, false);
+        // continuously held for the retained weapon instead of restoring native carry.
+        clearWeaponVisualReturn(reason, true, false);
         releaseFiringHandWeaponNodeOwnership(_session.weaponNode);
-        clearWeaponPoseHandoffBlend("bipod-hands-free", true);
+        clearWeaponPoseHandoffBlend(reason, true);
         _firing.persistentCarryActive = false;
         _firing.primaryReleaseIntent = {};
         _firing.primaryReleaseDebounce = {};
-        _surfaceSupportedWorld = pose;
+        _retainedWeaponWorld = pose;
         const auto previousState = _session.state;
-        _session.state = TwoHandedState::SurfaceSupported;
+        _session.state = state;
         recordFiringGripDetachedHaptic();
         const bool renderedValid = _visuals.hasLastRenderedWeaponWorld;
         const float poseDelta = renderedValid ? dynamic_weapon_collision_policy::translationDeltaGameUnits(
             _visuals.lastRenderedWeaponWorld, pose) : -1.0f;
         const float angleDelta = renderedValid ? dynamic_weapon_collision_policy::rotationDeltaDegrees(
             _visuals.lastRenderedWeaponWorld, pose) : -1.0f;
-        const bool published = publishSurfaceSupportedPose(_session.weaponNode, 0.0f);
-        ROCK_LOG_INFO(Weapon, "Bipod hands-free retained firingHand={} previousState={} generation={:016X} ownership={:016X} firingReleased={} handReturn={} poseDelta=({:.3f}gu,{:.3f}deg) published={} transitionMs={:.3f}",
-            firingHandName(), static_cast<unsigned>(previousState), _session.weaponGenerationKey, _session.equippedWeaponOwnershipKey,
+        const bool published = publishHandsFreeWeaponPose(_session.weaponNode, 0.0f);
+        ROCK_LOG_INFO(Weapon, "Hands-free retained reason={} firingHand={} previousState={} generation={:016X} ownership={:016X} firingReleased={} handReturn={} poseDelta=({:.3f}gu,{:.3f}deg) published={} transitionMs={:.3f}",
+            reason, firingHandName(), static_cast<unsigned>(previousState), _session.weaponGenerationKey, _session.equippedWeaponOwnershipKey,
             firingGripReleased, isHandVisualReturnActive(isFiringHandLeft()), poseDelta, angleDelta, published,
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count());
         return true;
     }
 
-    bool TwoHandedGrip::publishSurfaceSupportedPose(RE::NiNode* weaponNode, const float dt)
+    bool TwoHandedGrip::publishHandsFreeWeaponPose(RE::NiNode* weaponNode, const float dt)
     {
-        if (!isSurfaceSupported() || weaponNode != _session.weaponNode ||
-            !applyWeaponVisualAuthority(weaponNode, _surfaceSupportedWorld)) return false;
-        _lastSolvedWeaponTransform = _surfaceSupportedWorld;
+        if (isEquippedDrop() && _surfaceSupportRuntime) {
+            (void)_surfaceSupportRuntime->tryGetEquippedDropPose(weaponNode, _session.weaponGenerationKey, _retainedWeaponWorld);
+        }
+        if (!isHandsFreeRetained() || weaponNode != _session.weaponNode ||
+            !applyWeaponVisualAuthority(weaponNode, _retainedWeaponWorld)) return false;
+        _lastSolvedWeaponTransform = _retainedWeaponWorld;
         _hasSolvedWeaponTransform = true;
         for (const bool left : { false, true }) {
             if (!partGrip(left).active || !partGrip(left).attachOnly) continue;
@@ -74,7 +91,7 @@ namespace rock
             const auto* tracked = tryGetSolverHandTransform(left, hand) ? &hand : nullptr;
             publishGripHandPoses(left);
             if (!applyPartGripLockedVisual(left, weaponNode, dt, tracked))
-                releasePartGrip(left, "bipod-operating-visual-lost");
+                releasePartGrip(left, "retained-operating-visual-lost");
         }
         return true;
     }
@@ -307,6 +324,7 @@ namespace rock
 
     bool TwoHandedGrip::republishPartCarryWeaponTransform(RE::NiNode* weaponNode)
     {
+        if (isEquippedDrop()) return publishHandsFreeWeaponPose(weaponNode, 0.0f);
         if (!isFiringGripDetached() || !_hasSolvedWeaponTransform || !weaponNode) {
             return false;
         }
@@ -537,8 +555,8 @@ namespace rock
                  * changes, not a player release: return the weapon to
                  * FRIK-native carry instead of dropping it.
                  */
-                if (isSurfaceSupported()) {
-                    releasePartGrip(supportHandIsLeft, "bipod-operating-authority-lost", true);
+                if (isHandsFreeRetained()) {
+                    releasePartGrip(supportHandIsLeft, "retained-operating-authority-lost", true);
                 } else {
                     ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing part-carry authority because provider revoked the support part grip");
                     transitionToInactive(false);
@@ -738,8 +756,8 @@ namespace rock
         // existed. Revoked carry authority returns to native ownership;
         // provider AttachOnly grips cannot inherit it or cause an auto-drop.
         if (!gripCarries(supportGrip) && !gripCarries(freeHandGrip)) {
-            if (isSurfaceSupported()) {
-                (void)publishSurfaceSupportedPose(weaponNode, dt);
+            if (isHandsFreeRetained()) {
+                (void)publishHandsFreeWeaponPose(weaponNode, dt);
                 return;
             }
             releasePartGrip(supportHandIsLeft, "carry-authority-lost", true);
@@ -748,11 +766,11 @@ namespace rock
             return;
         }
 
-        if (isSurfaceSupported()) {
+        if (isHandsFreeRetained()) {
             _session.state = TwoHandedState::PartCarry;
             _partCarry.pivotIsLeft = gripCarries(partGrip(true));
             _partCarry.detachAuthority = _handlingSettings.detachAuthority;
-            clearWeaponPoseHandoffBlend("surface-carrier-acquired", true);
+            clearWeaponPoseHandoffBlend("retained-carrier-acquired", true);
         }
 
         // The pivot must always be a carry-authority grip; after the check

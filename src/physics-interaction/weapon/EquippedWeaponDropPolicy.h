@@ -9,6 +9,7 @@ namespace rock::equipped_weapon_drop_policy
         Off = 1,
         ToggleDrop = 2,
         AutoDrop = 3,
+        EquippedDrop = 4,
     };
 
     [[nodiscard]] inline constexpr Mode fromSetting(int value) noexcept
@@ -16,6 +17,7 @@ namespace rock::equipped_weapon_drop_policy
         switch (value) {
         case 2: return Mode::ToggleDrop;
         case 3: return Mode::AutoDrop;
+        case 4: return Mode::EquippedDrop;
         default: return Mode::Off;
         }
     }

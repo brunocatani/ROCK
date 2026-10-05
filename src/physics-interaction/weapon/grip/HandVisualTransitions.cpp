@@ -793,7 +793,7 @@ namespace rock
         const std::uint64_t effectiveGenerationKey = authorityGenerationKey != 0 ? authorityGenerationKey : _session.weaponGenerationKey;
         if (notifyVisualIntentObserver && _visuals.weaponIntentObserver) {
             RE::NiTransform driverWorld{};
-            const bool driverValid = !isSurfaceSupported() && (intentSource == dynamic_weapon_collision_policy::VisualIntentSource::AuthoredPrimary ?
+            const bool driverValid = !isHandsFreeRetained() && (intentSource == dynamic_weapon_collision_policy::VisualIntentSource::AuthoredPrimary ?
                 tryGetAuthoredPrimaryTrackedFiringHandWorld(driverWorld) :
                 tryGetSolverHandTransform(weaponCarrierIsLeft(), driverWorld));
             _visuals.weaponIntentObserver(

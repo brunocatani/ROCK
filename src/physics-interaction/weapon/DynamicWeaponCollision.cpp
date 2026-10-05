@@ -134,10 +134,11 @@ namespace rock
             return true;
         }
 
-        std::uint32_t dynamicWeaponProxyFilterInfo()
+        std::uint32_t dynamicWeaponProxyFilterInfo(bool equippedDrop = false)
         {
             return (kDynamicWeaponCollisionGroup << 16) |
-                   (collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY & collision_layer_policy::FO4_LAYER_FILTER_MASK);
+                   (equippedDrop ? collision_layer_policy::ROCK_LAYER_EQUIPPED_DROP_PROXY :
+                       collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
         }
 
         float scaleFiniteValue(const float value, const float multiplier)
@@ -533,8 +534,9 @@ namespace rock
         const PhysicsFrameContext& frame, const RE::NiPoint3& pivotWeaponLocal,
         const RE::NiTransform& weaponWorld)
     {
-        if (weaponSolverLength(weaponSolverSub(pivotWeaponLocal, _authorityPivotWeaponLocal)) < 0.0001f) {
-            return _authorityConstraint.isValid();
+        if (_authorityConstraint.isValid() &&
+            weaponSolverLength(weaponSolverSub(pivotWeaponLocal, _authorityPivotWeaponLocal)) < 0.0001f) {
+            return true;
         }
         auto mutation = _physicsCallbackGate ? _physicsCallbackGate->pauseForMutation() :
             PhysicsCallbackQuiescenceGate::MutationLease{};
@@ -559,13 +561,81 @@ namespace rock
         return true;
     }
 
+    bool DynamicWeaponCollisionRuntime::beginEquippedDrop(const PhysicsFrameContext& frame,
+        RE::NiNode* weapon, const std::uint64_t generation, RE::NiTransform& pose)
+    {
+        auto mutation = _physicsCallbackGate ? _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
+        if (_equippedDrop || !_created || !_body.isValid() || !_authorityConstraint.isValid() ||
+            _createdWorld != frame.hknpWorld || _createdBhkWorld != frame.bhkWorld ||
+            weapon != _frameWeaponNode || generation == 0 || generation != _createdGenerationKey ||
+            _bladePenetration.active() || _rebuildRequestedAtomic.load(std::memory_order_acquire)) return false;
+        RE::NiTransform live{};
+        if (!havok_runtime::tryResolveLiveBodyWorldTransform(frame.hknpWorld, _body.getBodyId(), live) ||
+            !dynamic_weapon_collision_policy::isFiniteTransform(live)) return false;
+        pose = dynamic_weapon_collision_policy::reconstructWeaponRoot(live, _createdCenterWeaponLocal, _createdWeaponScale);
+        if (!dynamic_weapon_collision_policy::isFiniteTransform(pose)) return false;
+        // The reusable no-contact anchor must not coast on its last keyframe
+        // velocity while no constraint owns it.
+        if (!placeGeneratedKeyframedBodyImmediately(_authorityProxy,
+                dynamic_weapon_collision_policy::makeGripAuthorityTarget(pose, _authorityPivotWeaponLocal))) return false;
+        const char* stage = "unchanged";
+        // A released object follows the native physics clock. Undo only ROCK's
+        // held/VATS velocity multiplier; retain the solver's linear and angular momentum.
+        if (!rebaseWeaponVelocity(frame.hknpWorld, _body,
+                weapon_physics_time_scale::velocityRebase(_handlingScale.velocity, 1.0f), stage)) {
+            ROCK_LOG_WARN(Weapon, "Equipped drop refused: momentum stage={}", stage);
+            return false;
+        }
+        destroyGrabConstraint(frame.hknpWorld, _authorityConstraint);
+        _body.setCollisionFilterInfo(dynamicWeaponProxyFilterInfo(true), kRebuildBodyCollisionState);
+        _body.activateBody();
+        _equippedDrop = true;
+        _handlingScale = {};
+        _surfaceSupport = {};
+        _surfaceContacts.clear();
+        _surfaceInputReserved = false;
+        _droveThisSubstep = false;
+        _surfaceClickRequested = false;
+        _surfaceToggle = {};
+        _physicsRequestedTargetValid = false;
+        _physicsPreviousRequestedTargetValid = false;
+        _physicsDriveTeleported = false;
+        _divergenceDwellSeconds = 0.0f;
+        clearPublishedPhysicsSnapshot();
+        ROCK_LOG_INFO(Weapon, "Equipped drop physics released: body={} generation={:016X} position=({:.3f},{:.3f},{:.3f})",
+            _body.getBodyId().value, generation, pose.translate.x, pose.translate.y, pose.translate.z);
+        return true;
+    }
+
+    bool DynamicWeaponCollisionRuntime::tryGetEquippedDropPose(RE::NiNode* weapon,
+        const std::uint64_t generation, RE::NiTransform& pose) const
+    {
+        if (!_equippedDrop || !_created || weapon != _frameWeaponNode ||
+            generation == 0 || generation != _createdGenerationKey) return false;
+        PhysicsSnapshot snapshot{};
+        if (readPhysicsSnapshot(snapshot) && snapshot.valid &&
+            snapshot.world == reinterpret_cast<std::uintptr_t>(_createdWorld) &&
+            snapshot.bodyId == _body.getBodyId().value && snapshot.generationKey == generation) {
+            const auto sampled = dynamic_weapon_collision_policy::reconstructWeaponRoot(
+                snapshot.liveProxyBodyWorld, _createdCenterWeaponLocal, _createdWeaponScale);
+            if (!dynamic_weapon_collision_policy::isFiniteTransform(sampled)) return false;
+            pose = sampled;
+        } else {
+            // The game-thread owner retains the last presented pose. A missing
+            // sample must never send a moving weapon back to its release point.
+            return false;
+        }
+        return true;
+    }
+
     DynamicWeaponCollisionRuntime::FrameResult DynamicWeaponCollisionRuntime::finishFrame(
         const PhysicsFrameContext& frame,
         const bool physicsWritesAllowed,
         RE::NiNode* weaponNode,
         const std::uint64_t weaponGenerationKey,
         const WeaponCollision& weaponCollision,
-        const RE::NiPoint3* primaryGripWeaponLocal, const bool handsFree)
+        const RE::NiPoint3* primaryGripWeaponLocal, const bool handsFree, const bool equippedDrop)
     {
         FrameResult result{};
         result.requestedWeaponWorld = _frameRequestedWeaponWorld;
@@ -597,6 +667,27 @@ namespace rock
         }
 
         result.proxyActive = true;
+        if (_equippedDrop) {
+            if (equippedDrop) {
+                _debugSnapshot = {}; // A free body has no hand target or held-contact residual.
+                // Free motion is absolute, including frames without contact.
+                // Never apply a hand-relative residual or a grip recovery here.
+                result.applyVisualCorrection = tryGetEquippedDropPose(weaponNode, weaponGenerationKey, result.resolvedWeaponWorld);
+                return result;
+            }
+            auto mutation = _physicsCallbackGate ? _physicsCallbackGate->pauseForMutation() :
+                PhysicsCallbackQuiescenceGate::MutationLease{};
+            if (!setAuthorityPivot(frame, {}, _frameRequestedWeaponWorld)) {
+                retireProxyLocked(frame.bhkWorld);
+                result.proxyActive = false;
+                return result;
+            }
+            _body.setCollisionFilterInfo(dynamicWeaponProxyFilterInfo(), kRebuildBodyCollisionState);
+            _body.activateBody();
+            _equippedDrop = false;
+            ROCK_LOG_INFO(Weapon, "Equipped drop regrabbed: body={} generation={:016X}",
+                _body.getBodyId().value, weaponGenerationKey);
+        }
         updateSurfaceSupport(frame, primaryGripWeaponLocal, handsFree);
         if (!_authorityConstraint.isValid() || _rebuildRequestedAtomic.load(std::memory_order_acquire)) return result;
         if (!_bladePenetration.update(frame, weaponCollision, weaponNode, _body,
@@ -936,6 +1027,7 @@ namespace rock
                 generation, _createdCompoundChildCount);
             return;
         }
+        if (_equippedDrop) return; // Articulation follows the mesh; the root belongs only to Havok.
         const auto target = dynamic_weapon_collision_policy::makeGripAuthorityTarget(_frameRequestedWeaponWorld, _authorityPivotWeaponLocal);
         const auto queued = queueGeneratedKeyframedBodyTarget(_authorityDriveState, target, frame.deltaSeconds,
             dynamic_weapon_collision_policy::kDivergenceTeleportDistanceGameUnits);
@@ -1012,7 +1104,7 @@ namespace rock
             _created &&
             _body.isValid() &&
             _authorityProxy.isValid() &&
-            _authorityConstraint.isValid() &&
+            (_equippedDrop || _authorityConstraint.isValid()) &&
             static_cast<bool>(_compoundShape) &&
             _createdWorld == frame.hknpWorld &&
             _createdBhkWorld == frame.bhkWorld &&
@@ -1022,6 +1114,9 @@ namespace rock
         if (bodyMatches) {
             return true;
         }
+        // A free body cannot be silently rebuilt at a hand target. The owner
+        // retires the retained item if this physical representation is lost.
+        if (_equippedDrop) return false;
 
         const auto weaponIdentity = weaponCollision.getEquippedWeaponClassification();
         if (!weaponIdentity.hasEquippedWeapon) {
@@ -1348,8 +1443,13 @@ namespace rock
     {
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponDynamicDrive);
         if (!_enabledAtomic.load(std::memory_order_acquire) || !world || !_created || _createdWorld != world ||
-            !_body.isValid() || !_authorityProxy.isValid() || !_authorityConstraint.isValid()) {
+            !_body.isValid() || !_authorityProxy.isValid() || (!_equippedDrop && !_authorityConstraint.isValid())) {
             return;
+        }
+
+        if (_equippedDrop) {
+            (void)flushCompoundChildTransforms();
+            return; // No motors, hand transport, velocity caps or grip recovery in free flight.
         }
 
         const auto timeScale = weapon_physics_time_scale::resolve(g_rockConfig.rockVatsPhysicsFixes, timing);
@@ -1382,36 +1482,7 @@ namespace rock
             return;
         }
 
-        {
-            std::scoped_lock poseLock(_compoundPoseMutex);
-            if (_queuedCompoundPoseSequence != _consumedCompoundPoseSequence) {
-                const auto updateResult = _compoundShape.updateTransforms(_pendingCompoundChildTransforms);
-                if (!updateResult.succeeded) {
-                    _rebuildRequestedAtomic.store(true, std::memory_order_release);
-                    _droveThisSubstep = false;
-                    clearPublishedPhysicsSnapshot();
-                    ROCK_LOG_SAMPLE_WARN(
-                        Weapon,
-                        1000,
-                        "Dynamic weapon live compound update failed: generation={:016X} children={}",
-                        _createdGenerationKey,
-                        _createdCompoundChildCount);
-                    return;
-                }
-                _consumedCompoundPoseSequence = _queuedCompoundPoseSequence;
-                if (updateResult.changedChildCount > 0 &&
-                    dynamicWeaponDebugEnabled()) {
-                    ROCK_LOG_SAMPLE_INFO(
-                        Weapon,
-                        500,
-                        "Dynamic weapon live compound updated: body={} generation={:016X} changed={}/{}",
-                        _body.getBodyId().value,
-                        _createdGenerationKey,
-                        updateResult.changedChildCount,
-                        _createdCompoundChildCount);
-                }
-            }
-        }
+        if (!flushCompoundChildTransforms()) return;
 
         const auto driveResult = driveGeneratedKeyframedBody(
             world,
@@ -1575,11 +1646,32 @@ namespace rock
         }
     }
 
+    bool DynamicWeaponCollisionRuntime::flushCompoundChildTransforms()
+    {
+        std::scoped_lock poseLock(_compoundPoseMutex);
+        if (_queuedCompoundPoseSequence == _consumedCompoundPoseSequence) return true;
+        const auto result = _compoundShape.updateTransforms(_pendingCompoundChildTransforms);
+        if (!result.succeeded) {
+            _rebuildRequestedAtomic.store(true, std::memory_order_release);
+            _droveThisSubstep = false;
+            clearPublishedPhysicsSnapshot();
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Dynamic weapon live compound update failed: generation={:016X} children={}",
+                _createdGenerationKey, _createdCompoundChildCount);
+            return false;
+        }
+        _consumedCompoundPoseSequence = _queuedCompoundPoseSequence;
+        if (result.changedChildCount > 0 && dynamicWeaponDebugEnabled()) {
+            ROCK_LOG_SAMPLE_INFO(Weapon, 500, "Dynamic weapon live compound updated: body={} generation={:016X} changed={}/{}",
+                _body.getBodyId().value, _createdGenerationKey, result.changedChildCount, _createdCompoundChildCount);
+        }
+        return true;
+    }
+
     void DynamicWeaponCollisionRuntime::samplePostSolve(RE::hknpWorld* world, const std::uint64_t solveSequence,
         const havok_physics_timing::PhysicsTimingSample& timing)
     {
         if (!_enabledAtomic.load(std::memory_order_acquire) || !world || !_created || _createdWorld != world ||
-            !_body.isValid() || !_droveThisSubstep || !_physicsRequestedTargetValid) {
+            !_body.isValid() || (!_equippedDrop && (!_droveThisSubstep || !_physicsRequestedTargetValid))) {
             return;
         }
         _droveThisSubstep = false;
@@ -1587,8 +1679,22 @@ namespace rock
         RE::NiTransform liveBodyWorld{};
         if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, _body.getBodyId(), liveBodyWorld) ||
             !dynamic_weapon_collision_policy::isFiniteTransform(liveBodyWorld)) {
+            if (_equippedDrop) _rebuildRequestedAtomic.store(true, std::memory_order_release);
             _contactRetentionSeconds = 0.0f;
             clearPublishedPhysicsSnapshot();
+            return;
+        }
+        if (_equippedDrop) {
+            PhysicsSnapshot snapshot{};
+            snapshot.valid = true;
+            snapshot.world = reinterpret_cast<std::uintptr_t>(world);
+            snapshot.bodyId = _body.getBodyId().value;
+            snapshot.generationKey = _createdGenerationKey;
+            snapshot.solveSequence = solveSequence;
+            snapshot.weaponScale = _createdWeaponScale;
+            snapshot.requestedProxyBodyWorld = liveBodyWorld;
+            snapshot.liveProxyBodyWorld = liveBodyWorld;
+            publishPhysicsSnapshot(snapshot);
             return;
         }
         ++_postSolveSamplesSinceCreate;
@@ -1873,7 +1979,7 @@ namespace rock
         const bool proxyWasBodyA,
         const havok_runtime::ContactSignalPointResult* rawContactPoint)
     {
-        if (!world || !isProxyBodyIdAtomic(proxyBodyId)) {
+        if (!world || _equippedDrop || !isProxyBodyIdAtomic(proxyBodyId)) {
             return;
         }
         _proxyPairCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
@@ -1912,7 +2018,7 @@ namespace rock
         const std::uint32_t otherLayer,
         const RE::NiPoint3* contactPointGame)
     {
-        if (!world || !isProxyBodyIdAtomic(proxyBodyId)) {
+        if (!world || _equippedDrop || !isProxyBodyIdAtomic(proxyBodyId)) {
             return;
         }
         _proxyPairCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
@@ -1979,6 +2085,7 @@ namespace rock
 
     void DynamicWeaponCollisionRuntime::clearLocalProxyStateLocked()
     {
+        _equippedDrop = false;
         _surfaceContacts.clear();
         _authorityPivotWeaponLocal = {};
         {
@@ -2109,7 +2216,7 @@ namespace rock
     bool DynamicWeaponCollisionRuntime::tryGetContactBodyTargetForDebug(
         RE::NiTransform& outTarget) const
     {
-        if (!_created || !_body.isValid()) {
+        if (!_created || !_body.isValid() || _equippedDrop) {
             return false;
         }
 

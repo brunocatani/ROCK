@@ -1190,6 +1190,10 @@
                     return "PartCarry";
                 case TwoHandedState::PrimaryOnly:
                     return "PrimaryOnly";
+                case TwoHandedState::SurfaceSupported:
+                    return "SurfaceSupported";
+                case TwoHandedState::EquippedDrop:
+                    return "EquippedDrop";
                 }
                 return "Unknown";
             };

@@ -114,6 +114,13 @@ namespace rock
         bool surfaceRetirementRequested() const { return _surfaceSupport.retirementRequested; }
         bool tryGetSurfaceAnchor(RE::NiPoint3& anchor) const;
 
+        // Game-thread transitions under callback quiescence. The same dynamic
+        // compound survives release and regrab; its native inventory item stays equipped.
+        bool beginEquippedDrop(const PhysicsFrameContext& frame, RE::NiNode* weapon,
+            std::uint64_t generation, RE::NiTransform& pose);
+        bool tryGetEquippedDropPose(RE::NiNode* weapon, std::uint64_t generation, RE::NiTransform& pose) const;
+        bool equippedDropActive() const { return _equippedDrop; }
+
         // Game-frame observation, published through the provider snapshot.
         [[nodiscard]] bool surfaceSupportReservesInput(std::uintptr_t weaponNode, std::uint64_t generation) const noexcept
         {
@@ -152,7 +159,7 @@ namespace rock
             RE::NiNode* weaponNode,
             std::uint64_t weaponGenerationKey,
             const WeaponCollision& weaponCollision,
-            const RE::NiPoint3* primaryGripWeaponLocal, bool handsFree = false);
+            const RE::NiPoint3* primaryGripWeaponLocal, bool handsFree = false, bool equippedDrop = false);
         // This frame's compound snapshot found a generated source the weapon root no longer contains.
         [[nodiscard]] bool compoundSourcesUnavailable() const { return _compoundSourcesUnavailable; }
 
@@ -270,6 +277,7 @@ namespace rock
             const WeaponCollision& weaponCollision,
             const RE::NiAVObject* weaponNode,
             float weaponScale);
+        bool flushCompoundChildTransforms();
         void retireProxyLocked(void* bhkWorld);
         void clearLocalProxyStateLocked();
         void clearPublishedPhysicsSnapshot();
@@ -311,6 +319,9 @@ namespace rock
         RE::NiPoint3 _authorityPivotWeaponLocal{};
         std::size_t _createdCompoundPointCount{ 0 };
         bool _created{ false };
+        // Mutated only while callbacks are quiescent, read by the game thread
+        // and the pre-collide/post-solve callbacks belonging to this body.
+        bool _equippedDrop{ false };
         bool _droveThisSubstep{ false };
         bool _physicsRequestedTargetValid{ false };
         bool _physicsDriveTeleported{ false };

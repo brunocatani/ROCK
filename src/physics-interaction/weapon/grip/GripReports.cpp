@@ -271,6 +271,9 @@ namespace rock
             _firing.primaryReleaseDebounce = {};
             return;
         }
+        // The retained state already released the hands, and must keep its
+        // pose blockers until regrab, native retirement or lifecycle teardown.
+        if (isEquippedDrop()) return;
         recordFiringGripDetachedHaptic();
         clearWeaponVisualReturn("equipped-weapon-drop", true, true);
         transitionToInactive(false);

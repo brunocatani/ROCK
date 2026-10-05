@@ -254,6 +254,7 @@ namespace rock::input_remap_runtime
         std::array<std::atomic<std::uint32_t>, 2> s_heldObjectFormId{};
         std::array<std::atomic<bool>, 2> s_pendingSavedGrabOffsetRequest{};
         std::atomic<bool> s_equippedWeaponFiringGripInputActive{ false };
+        std::atomic<bool> s_equippedDropActive{ false };
         std::atomic<bool> s_equippedWeaponShoulderSheathActive{ false };
         // MenuControls dispatches ButtonEvents serially on the frame/input
         // thread; these gesture states are never read from worker callbacks.
@@ -1295,6 +1296,7 @@ namespace rock::input_remap_runtime
                 .primaryHandEvent = false,
                 .equippedWeaponFiringGripInputActive = s_equippedWeaponFiringGripInputActive.load(std::memory_order_acquire),
                 .equippedWeaponPrimaryDetached = weaponRouting().detached,
+                .equippedDropActive = s_equippedDropActive.load(std::memory_order_acquire),
                 .equippedWeaponShoulderSheathActive = s_equippedWeaponShoulderSheathActive.load(std::memory_order_acquire),
                 .realMeleeWeaponEquipped = s_realMeleeWeaponEquipped.load(std::memory_order_acquire),
                 .nativeMeleeSuppressionActive = isNativeMeleeSuppressionActive(),
@@ -2874,9 +2876,10 @@ namespace rock::input_remap_runtime
         s_equippedWeaponFiringGripInputActive.store(active, std::memory_order_release);
     }
 
-    void setEquippedWeaponPrimaryDetached(bool detached)
+    void setEquippedWeaponPrimaryDetached(bool detached, bool equippedDrop)
     {
         s_pendingWeaponRouting.detached = detached;
+        s_equippedDropActive.store(detached && equippedDrop, std::memory_order_release);
     }
 
     void setEquippedWeaponShoulderSheathActive(bool active)

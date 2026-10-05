@@ -245,6 +245,15 @@ static bool testInputRouting()
     nativeDrawnMelee.realMeleeWeaponEquipped = true;
     ok &= expectFalse("native-mode real melee keeps drawn grip reload handling", shouldSuppressNativeGripReloadAction(nativeDrawnMelee));
     ok &= expectFalse("native-mode real melee keeps drawn trigger handling", shouldSuppressNativeTriggerAction(nativeDrawnMelee));
+    auto droppedMelee = nativeDrawnMelee;
+    droppedMelee.equippedWeaponPrimaryDetached = true;
+    droppedMelee.equippedDropActive = true;
+    ok &= expectTrue("free equipped melee cannot attack through the native melee exception", shouldSuppressNativeTriggerAction(droppedMelee));
+    auto droppedGun = primaryDetachedTrigger;
+    droppedGun.equippedDropActive = true;
+    ok &= expectTrue("free equipped firearm cannot fire from an empty hand", shouldSuppressNativeTriggerAction(droppedGun));
+    droppedGun.equippedWeaponPrimaryDetached = false;
+    ok &= expectTrue("equipped drop blocks firing before the next hand-routing publication", shouldSuppressNativeTriggerAction(droppedGun));
     ok &= expectTrue("ROCK grab always blocks native grip grenade handling", shouldSuppressNativeMeleeThrowAction(nativeDrawnMelee));
 
     auto shoulderStashedMeleeTransition = nativeDrawnMelee;

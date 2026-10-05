@@ -249,6 +249,36 @@ int main()
     ok &= persistentDivergence.recoverNow;
 
     constexpr auto dynamicWeaponMask = rock::collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
+    {
+        using namespace rock::collision_layer_policy;
+        const auto freeMask = buildRockEquippedDropExpectedMask();
+        for (const auto layer : { FO4_LAYER_STATIC, FO4_LAYER_GROUND, FO4_LAYER_CLUTTER, FO4_LAYER_PROPS,
+                 FO4_LAYER_WEAPON, FO4_LAYER_CLUTTER_LARGE, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY,
+                 ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY }) {
+            ok &= maskEnablesLayer(freeMask, layer);
+        }
+        for (const auto layer : { ROCK_LAYER_WEAPON, ROCK_LAYER_HAND, ROCK_LAYER_BODY,
+                 ROCK_LAYER_DYNAMIC_WEAPON_PROXY, FO4_LAYER_CHARCONTROLLER, FO4_LAYER_PROJECTILE,
+                 ROCK_LAYER_EQUIPPED_DROP_PROXY }) {
+            ok &= !maskEnablesLayer(freeMask, layer);
+        }
+        ok &= isRockGeneratedColliderLayer(ROCK_LAYER_EQUIPPED_DROP_PROXY);
+        ok &= isRockOwnedMatrixLayer(ROCK_LAYER_EQUIPPED_DROP_PROXY);
+        for (const bool npc : { false, true }) {
+            std::array<std::uint64_t, FO4_LAYER_MATRIX_ADDRESSABLE_COUNT> matrix{};
+            applyRockGeneratedLayerPolicies(matrix.data(), true, false, false, npc, true);
+            const auto first = matrix;
+            applyRockGeneratedLayerPolicies(matrix.data(), true, false, false, npc, true);
+            ok &= matrix == first; // Registration/watchdog must not oscillate.
+            for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
+                ok &= layerPairSymmetricMatches(matrix.data(), ROCK_LAYER_EQUIPPED_DROP_PROXY,
+                    layer, maskEnablesLayer(buildRockEquippedDropExpectedMask(npc), layer));
+            }
+            ok &= matrix[ROCK_LAYER_DYNAMIC_WEAPON_PROXY] == buildRockDynamicWeaponProxyExpectedMask(npc);
+            ok &= matrix[ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY] == buildRockDynamicHandProxyExpectedMask(false, npc, true);
+            ok &= matrix[ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY] == buildRockDynamicHandProxyExpectedMask(true, npc, true);
+        }
+    }
     for (std::uint32_t layer = 0; layer < rock::collision_layer_policy::FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
         const bool enabled = rock::collision_layer_policy::maskEnablesLayer(dynamicWeaponMask, layer);
         const bool expected = rock::collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(layer) &&

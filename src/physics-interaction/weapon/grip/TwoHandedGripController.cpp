@@ -683,13 +683,14 @@ namespace rock
 
         case TwoHandedState::PartCarry:
         case TwoHandedState::SurfaceSupported:
+        case TwoHandedState::EquippedDrop:
             if (!_session.weaponNode) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing part-carry authority because active weapon source root is unavailable");
                 transitionToInactive(false);
             } else if (!weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(_session.weaponGenerationKey, currentWeaponGenerationKey)) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing part-carry authority because weapon generation changed");
                 transitionToInactive(false);
-            } else if (!handlingSettings.primaryDetachEnabled && !isSurfaceSupported()) {
+            } else if (!handlingSettings.primaryDetachEnabled && !isHandsFreeRetained()) {
                 transitionToInactive(ownsWeaponTransform());
             } else {
                 updatePartCarryGrip(
@@ -868,7 +869,7 @@ namespace rock
 
     bool TwoHandedGrip::ownsWeaponTransform() const
     {
-        return isSurfaceSupported() || (_session.state == TwoHandedState::Gripping && _firing.transferredPrimaryGrip.valid()) ||
+        return isHandsFreeRetained() || (_session.state == TwoHandedState::Gripping && _firing.transferredPrimaryGrip.valid()) ||
                ((_session.state == TwoHandedState::Gripping || _session.state == TwoHandedState::PartCarry) &&
                    weapon_support_authority_policy::supportGripOwnsWeaponTransform(_session.authorityMode));
     }

@@ -42,6 +42,11 @@ namespace rock
 
     void DynamicWeaponCollisionRuntime::updateSurfaceSupportInput(bool placementOwnsClick)
     {
+        if (_equippedDrop) {
+            _surfaceClickRequested = false;
+            _surfaceToggle = {};
+            return;
+        }
         _surfaceInputReserved = false; // Also clears before interrupted-frame returns.
         if (!g_rockConfig.rockBipodMode) {
             _surfaceClickRequested = false;

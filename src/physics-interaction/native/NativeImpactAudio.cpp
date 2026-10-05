@@ -81,7 +81,8 @@ namespace rock::native_impact_audio
             const auto a = context.layers[0];
             const auto b = context.layers[1];
             const bool weapon = a == ROCK_LAYER_WEAPON || b == ROCK_LAYER_WEAPON ||
-                a == ROCK_LAYER_DYNAMIC_WEAPON_PROXY || b == ROCK_LAYER_DYNAMIC_WEAPON_PROXY;
+                a == ROCK_LAYER_DYNAMIC_WEAPON_PROXY || b == ROCK_LAYER_DYNAMIC_WEAPON_PROXY ||
+                a == ROCK_LAYER_EQUIPPED_DROP_PROXY || b == ROCK_LAYER_EQUIPPED_DROP_PROXY;
             const std::size_t peer = a == FO4_LAYER_SHELLCASING || b == FO4_LAYER_SHELLCASING ? 0 :
                 (isWorldSurfaceLayer(a) || isWorldSurfaceLayer(b) ? 1 : 2);
             return (weapon ? 0 : 3) + peer;

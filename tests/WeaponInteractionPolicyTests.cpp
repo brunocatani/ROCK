@@ -4639,6 +4639,11 @@ int main()
     ok &= expectFalse("equipped instance change does not drop the newly equipped weapon", manualDecision.dropRequested);
 
     using namespace rock::equipped_weapon_drop_policy;
+    static_assert(rock::equipped_weapon_drop_policy::fromSetting(1) == rock::equipped_weapon_drop_policy::Mode::Off);
+    static_assert(rock::equipped_weapon_drop_policy::fromSetting(2) == rock::equipped_weapon_drop_policy::Mode::ToggleDrop);
+    static_assert(rock::equipped_weapon_drop_policy::fromSetting(3) == rock::equipped_weapon_drop_policy::Mode::AutoDrop);
+    static_assert(rock::equipped_weapon_drop_policy::fromSetting(4) == rock::equipped_weapon_drop_policy::Mode::EquippedDrop);
+    static_assert(rock::equipped_weapon_drop_policy::fromSetting(5) == rock::equipped_weapon_drop_policy::Mode::Off);
     static_assert(canStartAutoDrop(true, false, false));
     static_assert(canStartAutoDrop(false, true, false));
     static_assert(!canStartAutoDrop(true, true, false));

@@ -664,6 +664,7 @@ namespace rock
             auto* currentHknp = currentBhk ? getHknpWorld(currentBhk) : nullptr;
             if (currentBhk && currentBhk == _lifecycle.cachedBhkWorld &&
                 currentHknp && currentHknp == _lifecycle.cachedHknpWorld) {
+                _weaponCollision.setEquippedDropActive(currentHknp, false);
                 _dynamicWeaponCollision.retireAll(currentBhk, preserveSurfaceSupport);
             } else {
                 _dynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
@@ -1044,6 +1045,9 @@ namespace rock
                         _layers.expectedDynamicLeftHandProxyMask);
                 const bool dynamicWeaponProxyMaskDrifted = _layers.expectedDynamicWeaponProxyMask != 0 &&
                     !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWeaponProxyMask, _layers.expectedDynamicWeaponProxyMask);
+                const bool equippedDropMaskDrifted = !collision_layer_policy::matrixLayerMaskMatches(
+                    matrix[collision_layer_policy::ROCK_LAYER_EQUIPPED_DROP_PROXY],
+                    collision_layer_policy::buildRockEquippedDropExpectedMask(g_rockConfig.npcDynamicCollisions));
                 const bool dynamicWorldCarClutterMaskDrifted = _layers.expectedDynamicWorldCarClutterMask != 0 &&
                     !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWorldCarClutterMask, _layers.expectedDynamicWorldCarClutterMask);
                 const bool dynamicWorldCarLargeClutterMaskDrifted = _layers.expectedDynamicWorldCarLargeClutterMask != 0 &&
@@ -1054,7 +1058,9 @@ namespace rock
                         !collision_layer_policy::rockDynamicNpcPairsMatch(matrix, g_rockConfig.npcDynamicCollisions));
                 const bool bodyPairsDrifted = _layers.expectedBodyMask != 0 && !collision_layer_policy::rockBodyManagedPairsMatch(matrix, _layers.expectedBodyMask);
                 if (handMaskDrifted || weaponMaskDrifted || reloadMaskDrifted || bodyMaskDrifted || dynamicHandProxyMaskDrifted || dynamicLeftHandProxyMaskDrifted || dynamicWeaponProxyMaskDrifted ||
-                    dynamicWorldCarClutterMaskDrifted || dynamicWorldCarLargeClutterMaskDrifted || actorToolPairsDrifted || bodyPairsDrifted) {
+                    dynamicWorldCarClutterMaskDrifted || dynamicWorldCarLargeClutterMaskDrifted || actorToolPairsDrifted || bodyPairsDrifted || equippedDropMaskDrifted) {
+                    if (equippedDropMaskDrifted) ROCK_LOG_WARN(Config, "Equipped drop collision layer drifted; restoring layer {}",
+                        collision_layer_policy::ROCK_LAYER_EQUIPPED_DROP_PROXY);
                     ROCK_LOG_WARN(Config,
                         "ROCK configured layer mask drift detected; hand expected=0x{:016X} current=0x{:016X}, weapon expected=0x{:016X} current=0x{:016X}, reload expected=0x{:016X} current=0x{:016X}, body expected=0x{:016X} current=0x{:016X}, dynamicRightHandProxy expected=0x{:016X} current=0x{:016X}, dynamicLeftHandProxy expected=0x{:016X} current=0x{:016X}, dynamicWeaponProxy expected=0x{:016X} current=0x{:016X}, carClutter expected=0x{:016X} current=0x{:016X}, carLarge expected=0x{:016X} current=0x{:016X}, actorToolPairs={}, bodyManagedPairs={}; re-registering",
                         collision_layer_policy::matrixAddressableMask(_layers.expectedHandMask),

@@ -102,6 +102,7 @@ namespace rock::input_remap_policy
         bool primaryHandEvent{ false };
         bool equippedWeaponFiringGripInputActive{ false };
         bool equippedWeaponPrimaryDetached{ false };
+        bool equippedDropActive{ false };
         bool equippedWeaponShoulderSheathActive{ false };
         bool realMeleeWeaponEquipped{ false };
         bool nativeMeleeSuppressionActive{ false };
@@ -236,6 +237,7 @@ namespace rock::input_remap_policy
     [[nodiscard]] constexpr bool shouldAllowNativeRealMeleeInput(const NativeActionSuppressionInput& input)
     {
         return input.realMeleeWeaponEquipped &&
+               !input.equippedDropActive &&
                !input.nativeMeleeSuppressionActive &&
                input.weaponDrawn &&
                !input.equippedWeaponShoulderSheathActive;
@@ -253,7 +255,7 @@ namespace rock::input_remap_policy
     [[nodiscard]] constexpr bool shouldSuppressNativeTriggerAction(const NativeActionSuppressionInput& input)
     {
         if (input.eventMatched && input.gameplayInputAllowed && !input.menuInputActive &&
-            (input.weaponTransferPending || input.triggerAwaitingRelease)) return true;
+            (input.equippedDropActive || input.weaponTransferPending || input.triggerAwaitingRelease)) return true;
         if (shouldAllowNativeRealMeleeInput(input)) {
             return false;
         }

@@ -97,8 +97,9 @@ namespace rock
         // physical hand currently occupies the firing grip.
         bool rockDetachEitherHand = true;
         bool rockFiringGripDetachPosePreservationEnabled = true;
-        // 1: keep equipped; 2: transfer to a held loose weapon; 3: drop without grabbing.
+        // 1: keep held; 2: held loose weapon; 3: native drop; 4: equipped physics drop.
         int rockWeaponDropMode = 2;
+        float rockEquippedDropRadiusMeters = 2.0f;
         bool rockKeepPreviousWeaponInHandOnEquip = true;
         // 1: toggle both grips; 2: toggle firing only; 3: hold both grips.
         int rockWeaponGrabMode = 1;

@@ -144,7 +144,7 @@ namespace rock
             _equipped.continuityGrip = snapshot;
             return;
         }
-        if (!_twoHandedGrip.isManualOwnershipActive() || _twoHandedGrip.isSurfaceSupported()) {
+        if (!_twoHandedGrip.isManualOwnershipActive() || _twoHandedGrip.isHandsFreeRetained()) {
             _equipped.continuityGrip = {};
             _equipped.resumeAwaitingHold = {};
             return;
@@ -365,6 +365,8 @@ namespace rock
                     }
                 }
             }
+            _weaponCollision.setEquippedDropActive(hknp,
+                _twoHandedGrip.isEquippedDrop() && _dynamicWeaponCollision.equippedDropActive());
             _weaponCollision.update(hknp, weaponNode, frame.deltaSeconds, runtime.weaponDrawn);
             const auto weaponClassification = _weaponCollision.getEquippedWeaponClassification();
             recoilWeapon = {
@@ -1193,7 +1195,7 @@ namespace rock
              */
             bool leftReattachEligible = false;
             bool rightReattachEligible = false;
-            if (_twoHandedGrip.isFiringGripDetached() && (primaryDetachFeatureAvailable || _twoHandedGrip.isSurfaceSupported())) {
+            if (_twoHandedGrip.isFiringGripDetached() && (primaryDetachFeatureAvailable || _twoHandedGrip.isHandsFreeRetained())) {
                 leftReattachEligible = leftHandAvailableForAcquisition && weapon_two_handed_grip_math::canAttemptFiringGripReattach(
                     weapon_two_handed_grip_math::FiringGripReattachInput{
                         .partCarryActive = true,
@@ -1596,7 +1598,7 @@ namespace rock
             };
             input_remap_runtime::setEquippedWeaponFiringGripInputActive(
                 input_remap_policy::shouldUseEquippedWeaponFiringGripInput(updatedFiringGripInputGate));
-            input_remap_runtime::setEquippedWeaponPrimaryDetached(_twoHandedGrip.isFiringGripDetached());
+            input_remap_runtime::setEquippedWeaponPrimaryDetached(_twoHandedGrip.isFiringGripDetached(), _twoHandedGrip.isEquippedDrop());
             /*
              * Left-hand fire publication: while the LEFT hand occupies the
              * firing grip, the OpenVR-level trigger remap presents the left
@@ -1699,7 +1701,8 @@ namespace rock
                     currentWeaponGenerationKey,
                     _weaponCollision,
                     surfaceSupportPrimaryValid ? &surfaceSupportPrimaryGripLocal : nullptr,
-                    _twoHandedGrip.isSurfaceSupported());
+                    _twoHandedGrip.isSurfaceSupported(), _twoHandedGrip.isEquippedDrop());
+            _weaponCollision.setEquippedDropActive(hknp, _dynamicWeaponCollision.equippedDropActive());
             if (_dynamicWeaponCollision.compoundSourcesUnavailable()) {
                 _weaponCollision.requestRebuildForReplacedSources();
             }
@@ -1819,7 +1822,7 @@ namespace rock
                 }
             }
             // Final source transforms are queued after all animation/FRIK writers.
-            if (retireSurfaceSupportedWeapon(frame, weaponNode)) return {};
+            if (retireHandsFreeWeapon(frame, weaponNode)) return {};
             if (f4vr::isNodeVisible(weaponNode)) {
                 applyFinalWeaponMuzzleAuthority();
             }

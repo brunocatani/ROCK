@@ -462,7 +462,7 @@ namespace rock
         void serviceEquippedWeaponNativeHandoff(const PhysicsFrameContext& frame);
         bool dropEquippedWeaponToWorld(const PhysicsFrameContext& frame,
             const EquippedWeaponManualDropRequest& request, equipped_weapon_drop_policy::Mode mode);
-        bool retireSurfaceSupportedWeapon(const PhysicsFrameContext& frame, RE::NiNode* weaponNode);
+        bool retireHandsFreeWeapon(const PhysicsFrameContext& frame, RE::NiNode* weaponNode);
         void updateEquippedWeaponDropVisuals(const PhysicsFrameContext& frame);
         void finishEquippedWeaponHandPoseHandoff();
         void serviceEquippedWeaponNativeTransaction(

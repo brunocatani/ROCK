@@ -71,6 +71,7 @@ namespace rock
         PartCarry,
         PrimaryOnly,
         SurfaceSupported,
+        EquippedDrop,
     };
 
     struct EquippedWeaponPrimaryGripInput
@@ -697,7 +698,7 @@ namespace rock
         {
             return _session.state == TwoHandedState::Gripping ||
                    _session.state == TwoHandedState::PartCarry ||
-                   _session.state == TwoHandedState::PrimaryOnly || isSurfaceSupported();
+                   _session.state == TwoHandedState::PrimaryOnly || isHandsFreeRetained();
         }
 
         bool isWeaponVisualReturnActive() const;
@@ -705,11 +706,15 @@ namespace rock
         bool isPartCarryActive() const { return _session.state == TwoHandedState::PartCarry; }
 
         bool isSurfaceSupported() const { return _session.state == TwoHandedState::SurfaceSupported; }
-        bool isFiringGripDetached() const { return isPartCarryActive() || isSurfaceSupported(); }
+        bool isEquippedDrop() const { return _session.state == TwoHandedState::EquippedDrop; }
+        bool isHandsFreeRetained() const { return isSurfaceSupported() || isEquippedDrop(); }
+        bool isFiringGripDetached() const { return isPartCarryActive() || isHandsFreeRetained(); }
+        bool retainEquippedDrop(const RE::NiTransform& pose);
+        bool retainHandsFree(const RE::NiTransform& pose, TwoHandedState state, bool releaseBoth);
         bool canRetainOnSurface() const;
         bool retainOnSurface(bool releaseBoth);
-        bool publishSurfaceSupportedPose(RE::NiNode* weaponNode, float dt);
-        void finishSurfaceRetirement() { clearWeaponVisualReturn("bipod-retired", true, true); transitionToInactive(false); }
+        bool publishHandsFreeWeaponPose(RE::NiNode* weaponNode, float dt);
+        void finishHandsFreeRetirement() { clearWeaponVisualReturn("bipod-retired", true, true); transitionToInactive(false); }
 
         bool isPrimaryOnlyActive() const { return _session.state == TwoHandedState::PrimaryOnly; }
 
@@ -728,7 +733,7 @@ namespace rock
 
         bool isFiringGripOccupied() const
         {
-            if (isSurfaceSupported()) return false;
+            if (isHandsFreeRetained()) return false;
             return equipped_weapon_toggle_grab_policy::confirmedFiringGripOccupied(
                 _confirmedEquippedOwnershipKey, _session.equippedWeaponOwnershipKey, isPartCarryActive(),
                 _equippedGripAcquisitionPending, isManualOwnershipActive());
@@ -751,7 +756,7 @@ namespace rock
         {
             return _session.state == TwoHandedState::Gripping ||
                    _session.state == TwoHandedState::PartCarry ||
-                   _session.state == TwoHandedState::PrimaryOnly || isSurfaceSupported();
+                   _session.state == TwoHandedState::PrimaryOnly || isHandsFreeRetained();
         }
 
         bool isTouching() const { return _session.state == TwoHandedState::Touching; }
@@ -2387,7 +2392,7 @@ namespace rock
         // Non-owning sibling service. PhysicsInteraction declares the surface
         // runtime first, so our recoil registration ends before it is destroyed.
         const DynamicWeaponCollisionRuntime* _surfaceSupportRuntime{ nullptr };
-        RE::NiTransform _surfaceSupportedWorld{};
+        RE::NiTransform _retainedWeaponWorld{};
         HandVisualTransitionState _visuals{};
         ScopePresentationState _scope{};
         GripFailureTelemetryState _telemetry{};
