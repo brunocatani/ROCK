@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/weapon/WeaponPhysicsTimeScale.h"
+#include "physics-interaction/weapon/EquippedDropMotionProfile.h"
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
@@ -322,6 +323,8 @@ namespace rock
         // Mutated only while callbacks are quiescent, read by the game thread
         // and the pre-collide/post-solve callbacks belonging to this body.
         bool _equippedDrop{ false };
+        equipped_drop_motion_profile::Lease _equippedDropMotionProfile;
+        bool _equippedDropGravitySamplePending{ false };
         bool _droveThisSubstep{ false };
         bool _physicsRequestedTargetValid{ false };
         bool _physicsDriveTeleported{ false };

@@ -13,6 +13,8 @@
 #include "physics-interaction/native/HavokMaterialRegistry.h"
 #include "physics-interaction/native/HavokRefCount.h"
 #include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
 #include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
@@ -144,6 +146,44 @@ namespace rock
         float scaleFiniteValue(const float value, const float multiplier)
         {
             return (std::isfinite(value) ? value : 0.0f) * (std::isfinite(multiplier) ? multiplier : 1.0f);
+        }
+
+        bool setOwnedWeaponMotionProfile(RE::hknpWorld* world, BethesdaPhysicsBody& body,
+            std::uint16_t profile, const char*& stage)
+        {
+            stage = "motion-profile-owner";
+            if (!world || !body.isValid() || profile == equipped_drop_motion_profile::kInvalid) return false;
+            const auto before = havok_runtime::snapshotBody(world, body.getBodyId());
+            if (!before.valid || !before.motion || before.motionIndex == 0 ||
+                before.collisionObject != body.getCollisionObject()) return false;
+            stage = "motion-profile-library";
+            havok_runtime::MotionPropertiesLibrarySnapshot library{};
+            if (!havok_runtime::snapshotMotionPropertiesLibrary(world, library) || !library.valid || profile >= library.count) return false;
+
+            // FO4VR 14153B35B..14153B379 writes motion+38 and publishes the
+            // native change signal. 1417E1EE4..1417E1EFB independently writes
+            // the same uint16 from motion-cinfo+0 during initialization.
+            using Setter = void (*)(RE::hknpWorld*, RE::hknpBodyId, RE::hknpMotionPropertiesId_Handle);
+            static const Setter setProfile = []() -> Setter {
+                const auto address = REL::Module::get().base() + offsets::kFunc_SetBodyMotionProperties;
+                constexpr std::array<std::uint8_t, 20> expected{
+                    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x20,
+                    0x66, 0x44, 0x89, 0x44, 0x24, 0x18, 0x89, 0x54, 0x24, 0x10 };
+                std::array<std::uint8_t, expected.size()> actual{};
+                return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), actual.data(), actual.size()) && actual == expected ?
+                    reinterpret_cast<Setter>(address) : nullptr;
+            }();
+            stage = "motion-profile-native-entry";
+            if (!setProfile) return false;
+            RE::hknpMotionPropertiesId_Handle target{};
+            target.value = profile;
+            setProfile(world, body.getBodyId(), target);
+            stage = "motion-profile-readback";
+            const auto after = havok_runtime::snapshotBody(world, body.getBodyId());
+            std::uint16_t actual = equipped_drop_motion_profile::kInvalid;
+            return after.valid && after.motion && after.motionIndex == before.motionIndex &&
+                after.collisionObject == body.getCollisionObject() &&
+                havok_runtime::tryReadMotionPropertiesId(after.motion, actual) && actual == profile;
         }
 
         float signedTranslationStepTowardContactError(
@@ -587,10 +627,27 @@ namespace rock
             ROCK_LOG_WARN(Weapon, "Equipped drop refused: momentum stage={}", stage);
             return false;
         }
+        // The wrapper path maps motion-cinfo's default FFFF to profile 2
+        // (141565041..1415650B9), regardless of the body's dynamic flags.
+        // Profile 1 differs from 2 by the gravity multiplier: 141841DEB sets
+        // it to 1; 141841DFF..141841E03 clears it for 2. Keep held behavior
+        // intact and lease the native gravity profile only for free flight.
+        std::uint16_t heldProfile = equipped_drop_motion_profile::kInvalid;
+        if (!havok_runtime::tryReadBodyMotionPropertiesId(frame.hknpWorld, _body.getBodyId(), heldProfile) ||
+            !_equippedDropMotionProfile.acquire(heldProfile, [&](std::uint16_t target) {
+                return setOwnedWeaponMotionProfile(frame.hknpWorld, _body, target, stage);
+            })) {
+            ROCK_LOG_WARN(Weapon, "Equipped drop refused: gravity stage={} heldProfile={}", stage, heldProfile);
+            // A failed readback may follow a native write. Remove this owned
+            // body rather than returning an uncertain profile to the held path.
+            retireProxyLocked(frame.bhkWorld);
+            return false;
+        }
         destroyGrabConstraint(frame.hknpWorld, _authorityConstraint);
         _body.setCollisionFilterInfo(dynamicWeaponProxyFilterInfo(true), kRebuildBodyCollisionState);
         _body.activateBody();
         _equippedDrop = true;
+        _equippedDropGravitySamplePending = true;
         _handlingScale = {};
         _surfaceSupport = {};
         _surfaceContacts.clear();
@@ -603,8 +660,9 @@ namespace rock
         _physicsDriveTeleported = false;
         _divergenceDwellSeconds = 0.0f;
         clearPublishedPhysicsSnapshot();
-        ROCK_LOG_INFO(Weapon, "Equipped drop physics released: body={} generation={:016X} position=({:.3f},{:.3f},{:.3f})",
-            _body.getBodyId().value, generation, pose.translate.x, pose.translate.y, pose.translate.z);
+        ROCK_LOG_INFO(Weapon, "Equipped drop physics released: body={} generation={:016X} motionProfile={}->{} position=({:.3f},{:.3f},{:.3f})",
+            _body.getBodyId().value, generation, heldProfile, equipped_drop_motion_profile::kGravityEnabled,
+            pose.translate.x, pose.translate.y, pose.translate.z);
         return true;
     }
 
@@ -677,6 +735,17 @@ namespace rock
             }
             auto mutation = _physicsCallbackGate ? _physicsCallbackGate->pauseForMutation() :
                 PhysicsCallbackQuiescenceGate::MutationLease{};
+            const auto heldProfile = _equippedDropMotionProfile.saved();
+            const char* stage = "motion-profile-restore";
+            if (!_equippedDropMotionProfile.restore([&](std::uint16_t target) {
+                    return setOwnedWeaponMotionProfile(frame.hknpWorld, _body, target, stage);
+                })) {
+                ROCK_LOG_WARN(Weapon, "Equipped drop regrab profile restore failed: body={} target={} stage={}; retiring owned body",
+                    _body.getBodyId().value, heldProfile, stage);
+                retireProxyLocked(frame.bhkWorld);
+                result.proxyActive = false;
+                return result;
+            }
             if (!setAuthorityPivot(frame, {}, _frameRequestedWeaponWorld)) {
                 retireProxyLocked(frame.bhkWorld);
                 result.proxyActive = false;
@@ -685,8 +754,9 @@ namespace rock
             _body.setCollisionFilterInfo(dynamicWeaponProxyFilterInfo(), kRebuildBodyCollisionState);
             _body.activateBody();
             _equippedDrop = false;
-            ROCK_LOG_INFO(Weapon, "Equipped drop regrabbed: body={} generation={:016X}",
-                _body.getBodyId().value, weaponGenerationKey);
+            _equippedDropGravitySamplePending = false;
+            ROCK_LOG_INFO(Weapon, "Equipped drop regrabbed: body={} generation={:016X} restoredMotionProfile={}",
+                _body.getBodyId().value, weaponGenerationKey, heldProfile);
         }
         updateSurfaceSupport(frame, primaryGripWeaponLocal, handsFree);
         if (!_authorityConstraint.isValid() || _rebuildRequestedAtomic.load(std::memory_order_acquire)) return result;
@@ -1685,6 +1755,20 @@ namespace rock
             return;
         }
         if (_equippedDrop) {
+            if (_equippedDropGravitySamplePending) {
+                _equippedDropGravitySamplePending = false;
+                const auto body = havok_runtime::snapshotBody(world, _body.getBodyId());
+                std::uint16_t profile = equipped_drop_motion_profile::kInvalid;
+                const bool readable = body.valid && body.motion && body.collisionObject == _body.getCollisionObject() &&
+                    havok_runtime::tryReadMotionPropertiesId(body.motion, profile);
+                if (readable) {
+                    ROCK_LOG_INFO(Weapon, "Equipped drop first solve: body={} motionProfile={} z={:.3f} velocityZ={:.5f} physicsDt={:.6f}",
+                        _body.getBodyId().value, profile, liveBodyWorld.translate.z,
+                        body.motion->linearVelocity.z, timing.substepDeltaSeconds);
+                } else {
+                    ROCK_LOG_WARN(Weapon, "Equipped drop first solve: motion unavailable body={}", _body.getBodyId().value);
+                }
+            }
             PhysicsSnapshot snapshot{};
             snapshot.valid = true;
             snapshot.world = reinterpret_cast<std::uintptr_t>(world);
@@ -2086,6 +2170,8 @@ namespace rock
     void DynamicWeaponCollisionRuntime::clearLocalProxyStateLocked()
     {
         _equippedDrop = false;
+        _equippedDropMotionProfile.reset();
+        _equippedDropGravitySamplePending = false;
         _surfaceContacts.clear();
         _authorityPivotWeaponLocal = {};
         {

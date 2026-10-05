@@ -1,6 +1,7 @@
 #include "RE/Havok/hknpCollisionQueryCollector.h"
 #include "RE/NetImmerse/NiAVObject.h"
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
+#include "physics-interaction/weapon/EquippedDropMotionProfile.h"
 #include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/collision/ImpactAudioPolicy.h"
@@ -16,6 +17,43 @@
 namespace
 {
     constexpr float kEpsilon = 0.001f;
+
+    bool equippedDropMotionProfileChecks()
+    {
+        using namespace rock::equipped_drop_motion_profile;
+        bool ok = true;
+        const auto check = [&ok](bool value, const char* message) {
+            if (!value) { std::printf("equipped drop motion profile: %s\n", message); ok = false; }
+        };
+        for (const std::uint16_t original : { std::uint16_t{1}, std::uint16_t{2}, std::uint16_t{7} }) {
+            Lease lease;
+            auto live = original;
+            int writes = 0;
+            const auto write = [&](std::uint16_t value) { ++writes; live = value; return true; };
+            check(lease.acquire(original, write) && live == kGravityEnabled && lease.saved() == original,
+                "release selects native gravity and preserves the exact held profile");
+            check(!lease.acquire(live, write) && writes == 1 && lease.saved() == original,
+                "repeated release cannot overwrite the restoration target");
+            check(!lease.restore([](std::uint16_t) { return false; }) && lease.active() && lease.saved() == original,
+                "failed native restore keeps ownership until body retirement or successful restore");
+            check(lease.restore(write) && !lease.active() && live == original && writes == 2,
+                "regrab restores the original profile, including custom profiles");
+            check(lease.restore(write) && writes == 2, "duplicate restore cannot mutate native state");
+            check(lease.acquire(original, write), "the same body can be released again after regrab");
+            const auto writesBeforeWorldLoss = writes;
+            lease.reset();
+            check(!lease.active() && lease.restore(write) && writes == writesBeforeWorldLoss,
+                "world loss abandons the lease without writing to a recycled native body");
+        }
+        Lease rejected;
+        int attempts = 0;
+        const auto fail = [&](std::uint16_t) { ++attempts; return false; };
+        check(!rejected.acquire(0, fail) && !rejected.acquire(kInvalid, fail) && attempts == 0,
+            "invalid or static profiles cannot start a release");
+        check(!rejected.acquire(2, fail) && !rejected.active() && attempts == 1,
+            "a rejected native switch cannot publish free-flight ownership");
+        return ok;
+    }
 
     bool expectNear(const char* label, float actual, float expected, float epsilon = kEpsilon)
     {
@@ -138,7 +176,7 @@ int main()
     static_assert(!muteShellPair(ROCK_LAYER_DYNAMIC_WEAPON_PROXY, FO4_LAYER_STATIC));
     static_assert(!muteShellPair(ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, FO4_LAYER_STATIC));
     using namespace rock::dynamic_weapon_collision_policy;
-    bool ok = vatsTimeScaleChecks();
+    bool ok = vatsTimeScaleChecks() & equippedDropMotionProfileChecks();
 
     const auto freeRecovery = resolveContactMotorRecovery(0.8f, 1.0f, 0.03f, 0.01f, 0.03f, false);
     ok &= expectNear("free aim preserves damping", freeRecovery.damping, 0.8f);
