@@ -1400,6 +1400,10 @@ namespace rock
         out.gripWeaponLocal = transform_math::localPointToWorld(_grabFrame.rootBodyLocal,
             _grabFrame.authority.pivotBBodyLocalGame);
         if (_grabFrame.authoredWeaponPose.valid()) {
+            // Equipped solves target the physical hand's authored palm, not
+            // the generated proxy pivot. Keep that same point when both held
+            // grips cross into equipped ownership after normalized placement.
+            out.gripWeaponLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(out.handWeaponLocal, _isLeft);
             out.authoredRole = _grabFrame.authoredWeaponPose.role;
             out.fingerLocals = _grabFrame.authoredWeaponPose.fingerLocals;
             out.fingerMask = _grabFrame.authoredWeaponPose.fingerMask;

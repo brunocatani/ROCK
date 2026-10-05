@@ -1019,19 +1019,20 @@ namespace rock
 
                 frame.pose = nearGrip->pose;
                 frame.supportGrip = frame.pose.role == loose_weapon_authored_grab_policy::Role::Support;
-                // FRIK 2.3 uses ROCK's controller basis for physical placement;
-                // retain the separately authored wrist/finger relation for IK.
-                frame.desiredRootWorld = multiplyTransforms(nearGrip->handWorld,
-                    transform_math::invertTransform(frame.pose.placementHandWeaponLocal));
                 frame.reason = frame.supportGrip ? "authoredSupportGrip" : "authoredFiringGrip";
             }
 
             frame.desiredRootWorld.scale =
                 rootNode && std::isfinite(rootNode->world.scale) && rootNode->world.scale > 0.0001f ? rootNode->world.scale : 1.0f;
             if (nearAuthored) {
-                const auto seatLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(nearGrip->pose.placementHandWeaponLocal, isLeft);
-                frame.desiredRootWorld.translate = {};
-                frame.desiredRootWorld.translate = grabPivotAWorld - transform_math::localPointToWorld(frame.desiredRootWorld, seatLocal);
+                const auto palmInHand = authoredHandspaceToRawHandspaceForHand(
+                    computeGrabLegacyPalmPivotAHandspacePosition(isLeft), isLeft);
+                frame.desiredRootWorld = nearGrip->pose.placementWorld(
+                    nearGrip->handWorld, frame.desiredRootWorld.scale, palmInHand);
+                const auto proxyDelta = grabPivotAWorld -
+                    transform_math::localPointToWorld(nearGrip->handWorld, palmInHand);
+                ROCK_LOG_DEBUG(Hand, "{} authored loose placement uses equipped palm form={:08X} proxyDelta=({:.4f},{:.4f},{:.4f})gu",
+                    isLeft ? "left" : "right", nearGrip->pose.weaponFormId, proxyDelta.x, proxyDelta.y, proxyDelta.z);
             }
             if (!isFiniteNiTransform(frame.desiredRootWorld)) {
                 frame.reason = "nonFiniteDesiredRoot";
@@ -1040,6 +1041,9 @@ namespace rock
 
             frame.desiredBodyWorld = multiplyTransforms(frame.desiredRootWorld, rootBodyLocalAtGrab);
             frame.desiredObjectWorld = deriveNodeWorldFromBodyWorld(frame.desiredBodyWorld, objectToBodyAtGrab);
+            // Preserve the generated proxy's physical pivot. Its weapon/body
+            // anchor is derived AFTER placement, so it cannot offset the hand
+            // and weapon from the equipped palm seat (0.86gu in the capture).
             const RE::NiPoint3 desiredPivotBodyLocal = transform_math::worldPointToLocal(frame.desiredBodyWorld, grabPivotAWorld);
             frame.gripPointWorld = transform_math::localPointToWorld(grabBodyWorldAtGrab, desiredPivotBodyLocal);
             if (!isFiniteNiTransform(frame.desiredBodyWorld) ||

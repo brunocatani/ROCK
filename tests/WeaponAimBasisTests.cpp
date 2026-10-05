@@ -2,6 +2,8 @@
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
+#include "physics-interaction/weapon/WeaponGripTransfer.h"
 #include "physics-interaction/hand/HandVisual.h"
 
 #include <cstdio>
@@ -278,6 +280,57 @@ int main()
     };
     for (int r = 0; r < 3; ++r)
         for (int c = 0; c < 3; ++c) controller.rotate.entry[r][c] = controllerRows[r][c];
+
+    // A generated proxy pocket is intentionally distinct from the authored
+    // palm. Loose placement must match equipped placement while its body-local
+    // constraint anchor still lands on that independent proxy pivot.
+    for (bool left : { false, true }) {
+        for (float modelScale : { 0.865347f, 1.0f, 1.2f }) {
+            for (const RE::NiPoint3 origin : { RE::NiPoint3{10.0f, 20.0f, 30.0f},
+                    RE::NiPoint3{-69457.0f, 79726.0f, 7475.0f} }) {
+                auto hand = controller;
+                hand.translate = origin;
+                hand.scale = left ? 0.95f : 1.0f;
+                const RE::NiPoint3 palmInHand{6.0f, -2.0f, left ? 0.2f : -0.2f};
+                const auto palm = transform_math::localPointToWorld(hand, palmInHand);
+                RE::NiTransform aim{};
+                ok &= expect("authored placement aim available", weapon_aim_basis::tryResolveWorld(controller, modelScale, aim));
+                const RE::NiPoint3 seat{0.815f, -0.734f, -2.679f};
+                const auto equipped = authored_weapon_grip_capture_policy::resolveAuthoredPrimaryWeaponWorldPositionOnly(
+                    aim, seat, palm, [](const auto& t, const auto& p) { return transform_math::localPointToWorld(t, p); });
+                AuthoredWeaponGripPose pose{};
+                pose.placementHandWeaponLocal = transform_math::composeTransforms(
+                    transform_math::invertTransform(equipped), hand);
+                const auto loose = pose.placementWorld(hand, modelScale, palmInHand);
+                const float tolerance = 0.025f; // Float-coordinate rounding at the captured distant cell.
+                ok &= expect("loose and equipped weapon origins agree across hand and model scales",
+                    weaponSolverLength(loose.translate - equipped.translate) < tolerance && loose.scale == modelScale);
+                for (int row = 0; row < 3; ++row)
+                    for (int col = 0; col < 3; ++col)
+                        ok &= expect("loose placement retains equipped orientation",
+                            std::fabs(loose.rotate.entry[row][col] - equipped.rotate.entry[row][col]) < 0.0001f);
+                const auto proxy = palm + transform_math::localVectorToWorld(hand, RE::NiPoint3{0.0f, left ? -0.86f : 0.86f, 0.0f});
+                auto bodyInWeapon = transform_math::makeIdentityTransform<RE::NiTransform>();
+                bodyInWeapon.translate = {1.0f, -3.0f, 2.0f};
+                const auto bodyWorld = transform_math::composeTransforms(loose, bodyInWeapon);
+                const auto pivotInBody = transform_math::worldPointToLocal(bodyWorld, proxy);
+                ok &= expect("normalizing presentation preserves the generated proxy constraint pivot",
+                    weaponSolverLength(transform_math::localPointToWorld(bodyWorld, pivotInBody) - proxy) < tolerance);
+                const auto capturedHand = weapon_grip_transfer::handInWeapon(bodyInWeapon,
+                    transform_math::makeIdentityTransform<RE::NiTransform>(),
+                    transform_math::composeTransforms(transform_math::invertTransform(hand), bodyWorld));
+                const auto capturedPalm = transform_math::localPointToWorld(capturedHand, palmInHand);
+                const auto transferred = authored_weapon_grip_capture_policy::resolveAuthoredPrimaryWeaponWorldPositionOnly(
+                    aim, capturedPalm, palm, [](const auto& t, const auto& p) { return transform_math::localPointToWorld(t, p); });
+                ok &= expect("paired transfer carries the normalized palm rather than the physics pivot",
+                    weaponSolverLength(transferred.translate - loose.translate) < tolerance);
+                const auto wrongSeat = authored_weapon_grip_capture_policy::resolveAuthoredPrimaryWeaponWorldPositionOnly(
+                    equipped, seat, proxy, [](const auto& t, const auto& p) { return transform_math::localPointToWorld(t, p); });
+                ok &= expect("seating visual geometry at the physics pivot reproduces the measured mismatch",
+                    weaponSolverLength(wrongSeat.translate - equipped.translate) > 0.8f);
+            }
+        }
+    }
     RE::NiTransform weapon{};
     ok &= expect("controller basis reproduces the healthy native aim", weapon_aim_basis::tryResolveWorld(controller, 1.0f, weapon));
     for (int r = 0; r < 3; ++r)
