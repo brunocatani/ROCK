@@ -250,9 +250,7 @@ namespace rock
         const char* acquisitionPhase = "none";
         const char* capturePivotAuthoritySource = "none";
         const char* captureGrabPointMode = "none";
-        const char* lastSeatedPivotReacquireReason = "none";
         std::uint32_t contactSampleCount = 0;
-        std::uint32_t seatedPivotReacquireCount = 0;
         bool hasTorqueAxis = false;
         bool hasMotorConstraintFrames = false;
         bool hasMotorRelationFrames = false;
@@ -759,8 +757,6 @@ namespace rock
         struct GrabBodyResolution;
         struct ResolvedGrabBodyCapture;
         struct GrabPivotEvidence;
-        struct GrabFingerEvidenceInput;
-        struct GrabFingerEvidence;
         struct GrabCommitPreparationInput;
         struct GrabBodyFrameCaptureInput;
         struct GrabBodyFrameCapture;
@@ -856,28 +852,10 @@ namespace rock
             const std::string& objectName,
             ResolvedGrabBodyCapture& outCapture);
         void resolveGrabPivotEvidence(
-            RE::hknpWorld* world,
-            const ValidatedGrabSelection& selection,
             const GrabProxyPreparation& proxy,
-            const GrabMeshExtraction& mesh,
             const ResolvedGrabBodyCapture& bodyCapture,
-            const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet,
-            bool meshContactOnly,
-            bool authoredSeatPrepared,
-            bool canonicalPivotAvailable,
-            const RE::NiPoint3& canonicalPivotPointWorld,
-            const RE::NiPoint3& canonicalPivotNormalWorld,
-            const char* canonicalPivotMode,
-            grab_authority_frame_math::GrabAuthorityPivotSource canonicalPivotAuthoritySource,
-            GrabSurfaceEvidence& surface,
-            GrabBodyResolution& bodyResolution,
+            const GrabSurfaceEvidence& surface,
             GrabPivotEvidence& outEvidence);
-        void resolveGrabFingerEvidence(
-            RE::hknpWorld* world,
-            const GrabFingerEvidenceInput& input,
-            GrabSurfaceEvidence& surface,
-            const GrabPivotEvidence& pivotEvidence,
-            GrabFingerEvidence& outEvidence);
         void beginResolvedGrabCommit(
             const GrabCommitPreparationInput& input);
         bool captureGrabBodyFrame(

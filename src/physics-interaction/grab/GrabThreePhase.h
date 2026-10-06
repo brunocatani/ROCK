@@ -27,7 +27,6 @@ namespace rock::grab_three_phase
         Idle,
         GravityPulling,
         NearConverging,
-        SeatedPivotReacquire,
         TouchHeld,
     };
 
@@ -40,8 +39,6 @@ namespace rock::grab_three_phase
             return "GravityPulling";
         case AcquisitionPhase::NearConverging:
             return "NearConverging";
-        case AcquisitionPhase::SeatedPivotReacquire:
-            return "SeatedPivotReacquire";
         case AcquisitionPhase::TouchHeld:
             return "TouchHeld";
         default:

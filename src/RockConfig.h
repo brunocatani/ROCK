@@ -402,11 +402,6 @@ namespace rock
         float rockGrabConvergeStableSeconds = 0.0333f;
         float rockGrabConvergeMaxSeparatingSpeedGameUnitsPerSecond = 40.0f;
         float rockGrabAcquisitionVisualStartDistanceGameUnits = 28.0f;
-        bool rockGrabMultiFingerContactValidationEnabled = true;
-        int rockGrabContactQualityMode = 1;
-        int rockGrabMinFingerContactGroups = 3;
-        float rockGrabMinFingerContactSpreadGameUnits = 1.0f;
-        float rockGrabFingerContactMeshSnapMaxDistanceGameUnits = 10.0f;
         float rockGrabSurfaceBehindPalmToleranceGameUnits = 1.5f;
         // Elapsed opposition/patch contact freshness (historical 5-frame
         // tuning at 90 Hz).
@@ -456,11 +451,6 @@ namespace rock
         float rockGrabDirectionalWeight = 0.4f;
         float rockGrabMaxTriangleDistance = 100.0f;
         bool rockGrabMeshContactOnly = true;
-        bool rockGrabContactPatchEnabled = true;
-        int rockGrabContactPatchProbeCount = 9;
-        float rockGrabContactPatchProbeSpacingGameUnits = 3.0f;
-        float rockGrabContactPatchProbeRadiusGameUnits = 2.0f;
-        float rockGrabContactPatchMeshSnapMaxDistanceGameUnits = 6.0f;
         float rockGrabContactPatchMaxNormalAngleDegrees = 35.0f;
         float rockGrabAlignmentMaxSelectionToMeshDistance = 8.0f;
         bool rockSelectedCloseFingerCurlEnabled = true;

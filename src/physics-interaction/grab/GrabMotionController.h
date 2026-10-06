@@ -399,106 +399,6 @@ namespace rock::grab_motion_controller
         const char* reason = "full-authority";
     };
 
-    struct SeatedPalmPocketPromotionInput
-    {
-        bool enabled = true;
-        bool weakMeshStart = false;
-        bool hasSeatedCandidate = false;
-        bool reachedTouchRange = false;
-        bool timedOutInsidePocket = false;
-        bool motorContactSoftening = false;
-        bool candidateNormalTrusted = false;
-        bool supportPatchValid = false;
-        bool supportPatchNormalTrusted = false;
-        bool programmaticArrival = false;
-        std::uint32_t currentContactPatchSampleCount = 0;
-        std::uint32_t supportPatchSampleCount = 0;
-        std::uint32_t currentMultiFingerContactGroupCount = 0;
-        std::uint32_t liveMultiFingerContactGroupCount = 0;
-        float candidateLocalDeltaGameUnits = std::numeric_limits<float>::infinity();
-        float immediateMaxLocalDeltaGameUnits = 4.0f;
-        float lerpMaxLocalDeltaGameUnits = 12.0f;
-    };
-
-    struct SeatedPalmPocketPromotionDecision
-    {
-        bool promotePivot = false;
-        bool completeSeatedRelation = false;
-        bool enrichSupport = false;
-        float pivotBlend = 0.0f;
-        const char* reason = "notEvaluated";
-    };
-
-    inline SeatedPalmPocketPromotionDecision evaluateSeatedPalmPocketPromotion(const SeatedPalmPocketPromotionInput& input)
-    {
-        SeatedPalmPocketPromotionDecision decision{};
-        if (!input.enabled) {
-            decision.reason = "seatedPalmPocketPromotionDisabled";
-            return decision;
-        }
-        if (!input.weakMeshStart) {
-            decision.reason = "seatedPalmPocketPromotionNotWeakMesh";
-            return decision;
-        }
-        if (!input.hasSeatedCandidate) {
-            decision.reason = "seatedPalmPocketPromotionMissingCandidate";
-            return decision;
-        }
-        if (!input.reachedTouchRange && !input.timedOutInsidePocket) {
-            decision.reason = "seatedPalmPocketPromotionAwaitingPocket";
-            return decision;
-        }
-
-        if (input.motorContactSoftening && !input.reachedTouchRange) {
-            decision.reason = "seatedPalmPocketPromotionContactSofteningKeepFrozen";
-            return decision;
-        }
-
-        /*
-         * A pull or force-grab starts from a ray-selected object point. Once
-         * the object reaches the hand, that old point is not a local seat
-         * authority: a normal-trusted mesh point under the palm pocket is the
-         * stronger evidence even when it is far across a large object from
-         * the original ray hit, and it does not wait for the seated support
-         * patch. The reacquire is evaluated against the frozen target pose,
-         * so a missing patch is a geometric verdict no later frame changes;
-         * holding the flight seat for it kept pulled objects on the far-ray
-         * point for the whole hold. Organic close grabs keep the support gate
-         * and the bounded local-delta rule below.
-         */
-        if (input.programmaticArrival &&
-            input.reachedTouchRange &&
-            input.candidateNormalTrusted) {
-            decision.promotePivot = true;
-            decision.completeSeatedRelation = true;
-            decision.enrichSupport = false;
-            decision.pivotBlend = 1.0f;
-            decision.reason = "seatedProgrammaticArrivalPromotion";
-            return decision;
-        }
-
-        if (!input.supportPatchValid ||
-            !input.supportPatchNormalTrusted ||
-            input.supportPatchSampleCount < 4) {
-            decision.reason = "seatedSupportGroupPromotionMissingSupport";
-            return decision;
-        }
-
-        const float localDelta = finiteOr(input.candidateLocalDeltaGameUnits, std::numeric_limits<float>::infinity());
-        const float immediateMax = safePositive(input.immediateMaxLocalDeltaGameUnits, 4.0f);
-        if (std::isfinite(localDelta) && localDelta <= immediateMax) {
-            decision.promotePivot = true;
-            decision.completeSeatedRelation = true;
-            decision.enrichSupport = false;
-            decision.pivotBlend = 1.0f;
-            decision.reason = "seatedPalmPocketPromotionImmediate";
-            return decision;
-        }
-
-        decision.reason = "seatedPalmPocketPromotionCandidateTooFarKeepFrozen";
-        return decision;
-    }
-
     struct VisualHandPublishInput
     {
         bool hasTelemetryCapture = false;
@@ -508,7 +408,7 @@ namespace rock::grab_motion_controller
         bool motorContactSoftening = false;
         bool pivotAuthorityPositionOnly = false;
         bool pivotAuthorityNormalTrusted = false;
-        bool hasSeatedPivotReacquire = false;
+        bool hasSettledVisualRelation = false;
         bool requiresSettledVisualRelation = false;
         bool transferredAuthoredGrip = false;
         std::uint32_t multiFingerContactGroupCount = 0;
@@ -576,7 +476,7 @@ namespace rock::grab_motion_controller
             decision.reason = "phaseNotVisualEligible";
             return decision;
         }
-        if (input.requiresSettledVisualRelation && !input.hasSeatedPivotReacquire) {
+        if (input.requiresSettledVisualRelation && !input.hasSettledVisualRelation) {
             decision.reason = "awaitingSettledVisualRelation";
             return decision;
         }

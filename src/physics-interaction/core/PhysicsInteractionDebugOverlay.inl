@@ -1462,13 +1462,12 @@
                         snapshot.leverLengthGameUnits);
                     addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -3.5f },
                         detailColor,
-                        "phase %s src %s body %u pbLock %.1f mut %.1f rq %u",
+                        "phase %s src %s body %u pbLock %.1f mut %.1f",
                         snapshot.acquisitionPhase,
                         snapshot.pivotAuthoritySource,
                         snapshot.pivotSourceBodyId.value,
                         snapshot.activePivotBVisualLockErrorGameUnits,
-                        snapshot.captureGripLocalDeltaGameUnits,
-                        snapshot.seatedPivotReacquireCount);
+                        snapshot.captureGripLocalDeltaGameUnits);
                     addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -7.0f },
                         detailColor,
                         "cap shift %.1f rot %.1f gap %.1f>%.1f dot %.2f lev %.1f",

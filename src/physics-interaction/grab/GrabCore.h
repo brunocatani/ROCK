@@ -665,18 +665,13 @@ namespace rock
         grab_pinch_pocket_policy::StablePinchFingerPose pinchFingerPose{};
         GrabSeatDiagnostics diagnostics{};
         GrabSeatMode mode = GrabSeatMode::None;
-        float lastPivotReacquireLocalDeltaGameUnits = 0.0f;
-        std::uint32_t pivotReacquireCount = 0;
         const char* activeGrabPointMode = "none";
         const char* palmSeatPointMode = "none";
-        const char* lastPivotReacquireReason = "none";
-        const char* lastPivotReacquirePhase = "none";
         bool hasPalmSeatPoint = false;
         bool hasPinchPocket = false;
         bool programmaticArrival = false;
         bool requiresSettledVisualHandRelation = false;
         bool hasSettledVisualHandRelation = false;
-        bool hasPivotReacquire = false;
         // Close-grab seat mode 1 turned or re-pivoted the object at capture.
         // The commit ramps the drive target into that seat instead of
         // snapping to it.

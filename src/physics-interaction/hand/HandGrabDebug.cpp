@@ -520,9 +520,6 @@ namespace rock
                 _grabFrame.captureTelemetry.pivotAuthority.source);
         out.captureGrabPointMode =
             _grabFrame.captureTelemetry.seat.activeGrabPointMode ? _grabFrame.captureTelemetry.seat.activeGrabPointMode : "none";
-        out.lastSeatedPivotReacquireReason =
-            _grabFrame.seat.lastPivotReacquireReason ? _grabFrame.seat.lastPivotReacquireReason : "none";
-        out.seatedPivotReacquireCount = _grabFrame.seat.pivotReacquireCount;
         out.positionOnlyPivot = _grabFrame.pivotAuthority.positionOnly;
         out.normalTrusted = _grabFrame.pivotAuthority.normalTrusted;
 

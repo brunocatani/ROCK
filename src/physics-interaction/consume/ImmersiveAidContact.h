@@ -1,6 +1,6 @@
 #pragma once
 
-#include "physics-interaction/grab/GrabPoseCandidateSelector.h"
+#include "physics-interaction/grab/MeshSegmentDistance.h"
 
 namespace rock::immersive_aid
 {
@@ -20,7 +20,7 @@ namespace rock::immersive_aid
             return false;
         }
         const auto touches = [&](const GrabLocalTriangle& triangle) {
-            const float distanceSquared = grab_pose_candidate_selector::detail::segmentTriangleDistanceSquared(a, b, triangle);
+            const float distanceSquared = mesh_segment_distance::detail::segmentTriangleDistanceSquared(a, b, triangle);
             return std::isfinite(distanceSquared) && distanceSquared <= radius * radius;
         };
         if (index) {
