@@ -28,7 +28,6 @@ namespace rock::debug_visualization_policy
         bool skeletonBoneLogging{ false };
         bool skeletonBoneTruncationLogging{ false };
         bool grabPocketNormal{ false };
-        bool grabContactPatch{ false };
         bool grabForceTorque{ false };
         bool grabForceTorqueText{ false };
         bool grabPivotSourceCollider{ false };
@@ -70,7 +69,6 @@ namespace rock::debug_visualization_policy
         bool skeletonBoneLogging{ false };
         bool skeletonBoneTruncationLogging{ false };
         bool grabPocketNormal{ false };
-        bool grabContactPatch{ false };
         bool grabForceTorque{ false };
         bool grabForceTorqueText{ false };
         bool grabPivotSourceEvidence{ false };
@@ -124,7 +122,6 @@ namespace rock::debug_visualization_policy
             .skeletonBoneTruncationLogging =
                 skeleton && input.skeletonBoneTruncationLogging,
             .grabPocketNormal = input.grabPocketNormal,
-            .grabContactPatch = input.grabContactPatch,
             .grabForceTorque = forceTorque,
             .grabForceTorqueText =
                 forceTorque && input.grabForceTorqueText,

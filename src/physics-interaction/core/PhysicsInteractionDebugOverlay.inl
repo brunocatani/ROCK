@@ -71,7 +71,6 @@
             .skeletonBoneTruncationLogging =
                 g_rockConfig.rockDebugLogSkeletonBoneTruncation,
             .grabPocketNormal = g_rockConfig.rockDebugShowGrabPocketNormal,
-            .grabContactPatch = g_rockConfig.rockDebugDrawGrabContactPatch,
             .grabForceTorque = g_rockConfig.rockDebugDrawGrabForceTorque,
             .grabForceTorqueText =
                 g_rockConfig.rockDebugDrawGrabForceTorqueText,
@@ -118,7 +117,6 @@
             visualization.rootFlattenedFingerSkeleton;
         const bool drawSkeletonBones = visualization.skeletonBones;
         const bool drawGrabPocketNormal = visualization.grabPocketNormal;
-        const bool drawGrabContactPatch = visualization.grabContactPatch;
         const bool drawGrabForceTorque = visualization.grabForceTorque;
         const bool drawGrabForceTorqueText =
             visualization.grabForceTorqueText;
@@ -186,7 +184,7 @@
             drawGrabAuthorityProxyCollider || drawGrabPivotSourceCollider;
         if (!drawAnyRockColliderBodies && !drawTargetColliders && !drawHandAxes && !drawGrabPivots && !drawFingerProbes &&
             !drawFingerSweptArc && !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal &&
-            !drawGrabContactPatch && !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawPerformanceProfilerOverlay &&
+            !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawPerformanceProfilerOverlay &&
             !drawWeaponAuthorityDebug && !drawLooseWeaponGripZones && !drawNativeScopeActivation && !drawGrabSupportFrame &&
             !drawDynamicHandColliders && !drawDynamicWeaponColliders && !drawAuthoredSupportGripDebug && !drawProviderOverlay) {
             debug::ClearFrame();
@@ -204,7 +202,7 @@
         frame.drawAxes = drawHandAxes || drawGrabAuthorityProxy || drawGrabForceTorque || drawNativeScopeActivation ||
             drawWeaponAuthorityDebug || drawAuthoredSupportGripDebug;
         frame.drawMarkers = drawGrabPivots || drawFingerProbes || drawFingerSweptArc || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton ||
-            drawGrabPocketNormal || drawGrabContactPatch || drawGrabForceTorque || drawHandBoneContacts || drawGrabAuthorityProxy ||
+            drawGrabPocketNormal || drawGrabForceTorque || drawHandBoneContacts || drawGrabAuthorityProxy ||
             drawWeaponAuthorityDebug || drawLooseWeaponGripZones || drawNativeScopeActivation || drawGrabSupportFrame || drawDynamicHandColliders ||
             drawAuthoredSupportGripDebug;
         frame.drawSkeleton = drawSkeletonBones;
@@ -1195,28 +1193,6 @@
             addGrabPocketNormalDebug(_leftHand);
         }
 
-        if (drawGrabContactPatch) {
-            auto addGrabContactPatchDebug = [&](const Hand& hand) {
-                if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
-                    return;
-                }
-
-                GrabContactPatchDebugSnapshot snapshot{};
-                if (!hand.getGrabContactPatchDebugSnapshot(hknp, snapshot)) {
-                    return;
-                }
-
-                const bool isLeft = hand.isLeft();
-                const auto role = isLeft ? debug::MarkerOverlayRole::LeftGrabContactPatchSample : debug::MarkerOverlayRole::RightGrabContactPatchSample;
-                for (std::uint32_t i = 0; i < snapshot.sampleCount; ++i) {
-                    addMarkerPoint(role, snapshot.samplePointsWorld[i], 1.8f);
-                }
-            };
-
-            addGrabContactPatchDebug(_rightHand);
-            addGrabContactPatchDebug(_leftHand);
-        }
-
         if (drawGrabSupportFrame) {
             auto addGrabSupportFrameDebug = [&](const Hand& hand) {
                 if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
@@ -1437,15 +1413,6 @@
                                 isLeft ? debug::MarkerOverlayRole::LeftGrabPivotSourceCaptureMutation : debug::MarkerOverlayRole::RightGrabPivotSourceCaptureMutation,
                                 snapshot.captureMeshGripPointBodyWorld,
                                 snapshot.meshGripPointWorld);
-                        }
-                    }
-                    if (snapshot.hasContactPatchPoint) {
-                        const auto contactRole =
-                            isLeft ? debug::MarkerOverlayRole::LeftGrabPivotSourceContactPoint : debug::MarkerOverlayRole::RightGrabPivotSourceContactPoint;
-                        addMarkerPoint(contactRole, snapshot.contactPatchPointWorld, 2.5f);
-                        for (std::uint32_t i = 0; i < snapshot.contactSampleCount; ++i) {
-                            addMarkerLine(contactRole, snapshot.contactPatchPointWorld, snapshot.contactSamplePointsWorld[i]);
-                            addMarkerPoint(contactRole, snapshot.contactSamplePointsWorld[i], 1.4f);
                         }
                     }
                 }

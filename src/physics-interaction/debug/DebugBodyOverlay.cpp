@@ -2664,18 +2664,6 @@ namespace rock::debug
                 color[2] = 0.05f;
                 color[3] = 0.95f;
                 break;
-            case MarkerOverlayRole::RightGrabContactPatchSample:
-                color[0] = 0.05f;
-                color[1] = 0.80f;
-                color[2] = 1.0f;
-                color[3] = 0.80f;
-                break;
-            case MarkerOverlayRole::LeftGrabContactPatchSample:
-                color[0] = 1.0f;
-                color[1] = 0.20f;
-                color[2] = 0.90f;
-                color[3] = 0.80f;
-                break;
             case MarkerOverlayRole::RightGrabForceTorqueTargetPivot:
             case MarkerOverlayRole::LeftGrabForceTorqueTargetPivot:
                 color[0] = 0.05f;
@@ -2843,13 +2831,6 @@ namespace rock::debug
                 color[1] = 0.35f;
                 color[2] = 1.0f;
                 color[3] = 0.88f;
-                break;
-            case MarkerOverlayRole::RightGrabPivotSourceContactPoint:
-            case MarkerOverlayRole::LeftGrabPivotSourceContactPoint:
-                color[0] = 1.0f;
-                color[1] = 0.55f;
-                color[2] = 0.08f;
-                color[3] = 0.95f;
                 break;
             case MarkerOverlayRole::RightGrabSupportFramePivot:
             case MarkerOverlayRole::LeftGrabSupportFramePivot:

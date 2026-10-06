@@ -224,13 +224,10 @@ namespace rock::performance_profiler
             case Scope::GrabBodyResolution: return "grabBodyResolution";
             case Scope::GrabResolvedBodyCapture: return "grabResolvedBodyCapture";
             case Scope::GrabPivotEvidence: return "grabPivotEvidence";
-            case Scope::GrabContactPatch: return "grabContactPatch";
             case Scope::GrabPinchPocket: return "grabPinchPocket";
-            case Scope::GrabFingerEvidence: return "grabFingerEvidence";
             case Scope::GrabCommitPreparation: return "grabCommitPreparation";
             case Scope::GrabBodyFrameCapture: return "grabBodyFrameCapture";
             case Scope::GrabSeatCapture: return "grabSeatCapture";
-            case Scope::GrabGripSupport: return "grabGripSupport";
             case Scope::GrabFrozenCommit: return "grabFrozenCommit";
             case Scope::GrabPostFreeze: return "grabPostFreeze";
             case Scope::GrabConstraintCommit: return "grabConstraintCommit";
@@ -250,7 +247,6 @@ namespace rock::performance_profiler
             case Scope::NativeImpactManifoldObserve: return "nativeImpactManifoldObserve";
             case Scope::RagdollComponentRead: return "ragdollComponentRead";
             case Scope::RagdollBodyRefresh: return "ragdollBodyRefresh";
-            case Scope::GrabContactPatchIndexBuild: return "grabContactPatchIndexBuild";
             case Scope::GrabAuthoredPreparation: return "grabAuthoredPreparation";
             case Scope::EquippedGripController: return "equippedGripController";
             case Scope::EquippedGripScopeFrames: return "equippedGripScopeFrames";

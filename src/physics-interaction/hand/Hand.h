@@ -152,12 +152,6 @@ namespace rock
         bool looseWeapon = false;
     };
 
-    struct GrabContactPatchDebugSnapshot
-    {
-        std::array<RE::NiPoint3, kMaxGrabContactPatchSamples> samplePointsWorld{};
-        std::uint32_t sampleCount = 0;
-    };
-
     struct GrabSupportFrameDebugSnapshot
     {
         std::array<RE::NiPoint3, 3> pivotTriangleWorld{};
@@ -168,20 +162,16 @@ namespace rock
         float axisLengthGameUnits = 0.0f;
         const char* pivotAuthoritySource = "none";
         const char* activeGrabPointMode = "none";
-        const char* supportKind = "none";
-        const char* supportReason = "none";
         bool hasNormal = false;
         bool hasSupportAxis = false;
         bool hasBinormal = false;
         bool hasPivotTriangle = false;
-        bool authoredSupportPivot = false;
         bool positionOnlyPivot = false;
         bool normalTrusted = false;
     };
 
     struct GrabForceTorqueDebugSnapshot
     {
-        std::array<RE::NiPoint3, kMaxGrabContactPatchSamples> contactSamplePointsWorld{};
         std::array<RE::NiPoint3, 3> pivotTriangleWorld{};
         RE::hknpBodyId pivotSourceBodyId{ INVALID_BODY_ID };
         RE::NiTransform liveBodyWorld{};
@@ -210,7 +200,6 @@ namespace rock
         RE::NiPoint3 visualMeshGripPointWorld{};
         RE::NiPoint3 captureMeshGripPointBodyWorld{};
         RE::NiPoint3 captureMeshGripPointVisualWorld{};
-        RE::NiPoint3 contactPatchPointWorld{};
         float pivotErrorGameUnits = 0.0f;
         float pivotTrackingErrorGameUnits = 0.0f;
         float bodyVisualMeshLockErrorGameUnits = 0.0f;
@@ -250,7 +239,6 @@ namespace rock
         const char* acquisitionPhase = "none";
         const char* capturePivotAuthoritySource = "none";
         const char* captureGrabPointMode = "none";
-        std::uint32_t contactSampleCount = 0;
         bool hasTorqueAxis = false;
         bool hasMotorConstraintFrames = false;
         bool hasMotorRelationFrames = false;
@@ -263,7 +251,6 @@ namespace rock
         bool hasActivePivotBVisualNode = false;
         bool hasCaptureMeshGripPoint = false;
         bool gripPointMutatedAfterCapture = false;
-        bool hasContactPatchPoint = false;
         bool positionOnlyPivot = false;
         bool normalTrusted = false;
     };
@@ -462,7 +449,6 @@ namespace rock
         // Non-const: takes _grabAuthorityProxyMutex to snapshot the applied pair.
         bool tryGetGrabOverlayPointProbeSample(RE::hknpWorld* world, GrabOverlayPointProbeSample& out);
         bool getGrabPresentationNodeDebugSnapshot(GrabPresentationNodeDebugSnapshot& out) const;
-        bool getGrabContactPatchDebugSnapshot(RE::hknpWorld* world, GrabContactPatchDebugSnapshot& out) const;
         bool getGrabSupportFrameDebugSnapshot(RE::hknpWorld* world, GrabSupportFrameDebugSnapshot& out) const;
         bool getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabForceTorqueDebugSnapshot& out) const;
         bool getGrabFingerSweepDebugSnapshot(grab_finger_pose_runtime::FingerSweepDebugSnapshot& out) const
