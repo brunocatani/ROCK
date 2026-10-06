@@ -596,17 +596,4 @@ namespace rock::grab_three_phase
         return decision;
     }
 
-    inline RE::NiTransform makeBodyTargetWithLocalGripAtPocket(RE::NiTransform targetBodyWorld,
-        const RE::NiPoint3& gripCenterBodyLocal,
-        const RE::NiPoint3& pocketCenterWorld)
-    {
-        const RE::NiPoint3 gripOffsetWorld = transform_math::localVectorToWorld(targetBodyWorld, gripCenterBodyLocal);
-        targetBodyWorld.translate = pocketCenterWorld - gripOffsetWorld;
-        return targetBodyWorld;
-    }
-
-    inline RE::NiTransform deriveNodeTargetFromBodyTarget(const RE::NiTransform& targetBodyWorld, const RE::NiTransform& bodyLocal)
-    {
-        return transform_math::composeTransforms(targetBodyWorld, transform_math::invertTransform(bodyLocal));
-    }
 }

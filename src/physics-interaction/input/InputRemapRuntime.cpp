@@ -189,7 +189,6 @@ namespace rock::input_remap_runtime
         constexpr std::string_view kNativeEventWandGrip{ "WandGrip" };
         constexpr std::string_view kNativeEventWandTrigger{ "WandTrigger" };
         constexpr std::string_view kNativeEventWandThumbClick{ "WandThumbClick" };
-        constexpr std::string_view kNativeEventPipboy{ "Pipboy" };
         constexpr std::string_view kNativeEventPause{ "Pause" };
         constexpr std::string_view kNativeEventJump{ "Jump" };
 
@@ -322,12 +321,6 @@ namespace rock::input_remap_runtime
         void blockManualScopeInputUntilRelease()
         {
             manual_scope_input_policy::blockUntilRelease(s_manualScopeInputState);
-            s_manualScopeActivationRequested.store(false, std::memory_order_release);
-        }
-
-        void resetManualScopeInput()
-        {
-            manual_scope_input_policy::reset(s_manualScopeInputState);
             s_manualScopeActivationRequested.store(false, std::memory_order_release);
         }
 
@@ -765,13 +758,6 @@ namespace rock::input_remap_runtime
                 state->rAxis[triggerAxisIndex].x = 0.0f;
                 state->rAxis[triggerAxisIndex].y = 0.0f;
             }
-        }
-
-        [[nodiscard]] input_remap_policy::Settings makeSettings()
-        {
-            return input_remap_policy::Settings{
-                .grabButtonId = input_remap_policy::kGrabButtonId,
-            };
         }
 
         [[nodiscard]] bool resolveControllerHand(vr::TrackedDeviceIndex_t deviceIndex, input_remap_policy::Hand& outHand)

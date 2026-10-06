@@ -640,20 +640,6 @@ namespace rock::grab_contact_patch_math
         return oriented;
     }
 
-    inline const char* pivotSourceName(GrabContactPatchPivotSource source)
-    {
-        switch (source) {
-        case GrabContactPatchPivotSource::SelectedHit:
-            return "selectedHit";
-        case GrabContactPatchPivotSource::MeshSnap:
-            return "meshSnap";
-        case GrabContactPatchPivotSource::PatchSample:
-            return "patchSample";
-        default:
-            return "none";
-        }
-    }
-
     template <class Vector, std::size_t Count>
     inline std::size_t buildContactPatchProbeOffsets(std::array<Vector, Count>& offsets, const Vector& palmTangent, const Vector& palmBitangent, float spacingGameUnits)
     {
@@ -1158,11 +1144,6 @@ namespace rock::grab_contact_patch_math
         return useSelected(patch.hitCount < 2 ? "insufficientPatchHitsForPivot" : "noValidatedPatchSample");
     }
 
-    template <class Transform, class Vector>
-    inline Vector freezePivotBBodyLocal(const Transform& bodyWorld, const Vector& gripPointWorld)
-    {
-        return transform_math::worldPointToLocal(bodyWorld, gripPointWorld);
-    }
 }
 
 // ---- GrabSupportModelMath.h ----
@@ -1261,29 +1242,6 @@ namespace rock::grab_support_model_math
             return "palmWrap";
         default:
             return "none";
-        }
-    }
-
-    inline const char* gripSupportRoleName(GripSupportRole role)
-    {
-        switch (role) {
-        case GripSupportRole::ContactPatch:
-            return "contactPatch";
-        case GripSupportRole::AcrossPositive:
-            return "acrossPositive";
-        case GripSupportRole::AcrossNegative:
-            return "acrossNegative";
-        case GripSupportRole::FingerForward:
-            return "fingerForward";
-        case GripSupportRole::FingerBack:
-            return "fingerBack";
-        case GripSupportRole::ThumbPad:
-            return "thumbPad";
-        case GripSupportRole::IndexPad:
-            return "indexPad";
-        case GripSupportRole::Main:
-        default:
-            return "main";
         }
     }
 
@@ -1875,17 +1833,4 @@ namespace rock::grab_multi_finger_contact_math
         return result;
     }
 
-    template <class Transform>
-    inline Transform captureObjectToGripFrame(const Transform& objectWorld,
-        const Transform& gripWorld)
-    {
-        return transform_math::composeTransforms(transform_math::invertTransform(gripWorld), objectWorld);
-    }
-
-    template <class Transform>
-    inline Transform recomposeObjectFromGripFrame(const Transform& gripWorld,
-        const Transform& objectToGrip)
-    {
-        return transform_math::composeTransforms(gripWorld, objectToGrip);
-    }
 }

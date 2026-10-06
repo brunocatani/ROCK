@@ -231,11 +231,6 @@ namespace rock::contact_pipeline_policy
         }
     }
 
-    inline constexpr ContactEndpoint makeNonRockEndpoint(std::uint32_t bodyId, std::uint32_t layer)
-    {
-        return ContactEndpoint{ .bodyId = bodyId, .layer = layer, .kind = classifyNonRockLayer(layer) };
-    }
-
     inline constexpr ContactClassification makeClassification(ContactRoute route, ContactEndpoint source, ContactEndpoint target)
     {
         ContactClassification result{};

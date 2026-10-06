@@ -440,22 +440,6 @@ namespace rock::hand_visual_lerp_math
         return output;
     }
 
-    template <class Vector>
-    inline Vector advancePosition(const Vector& current, const Vector& target, float speed, float deltaTime, bool& reached)
-    {
-        const Vector delta{ target.x - current.x, target.y - current.y, target.z - current.z };
-        const float distSq = lengthSquared(delta);
-        const float step = (std::max)(0.0f, speed) * (std::max)(0.0f, deltaTime);
-        if (distSq <= step * step || distSq <= 0.000001f) {
-            reached = true;
-            return target;
-        }
-
-        const float invDist = 1.0f / std::sqrt(distSq);
-        reached = false;
-        return Vector{ current.x + delta.x * invDist * step, current.y + delta.y * invDist * step, current.z + delta.z * invDist * step };
-    }
-
     template <class Transform>
     inline Transform buildHeldObjectRelativeHandWorld(const Transform& heldObjectWorld, const Transform& frozenObjectHandSpace)
     {
@@ -467,25 +451,4 @@ namespace rock::hand_visual_lerp_math
         return lerpEnabled && acquisitionVisual && !touchHeldPhase;
     }
 
-    template <class Transform>
-    inline AdvanceResult<Transform> advanceTransform(const Transform& current, const Transform& target, float positionSpeed, float angularSpeedDegrees, float deltaTime)
-    {
-        AdvanceResult<Transform> result{};
-        result.transform = target;
-
-        bool positionReached = true;
-        result.transform.translate = advancePosition(current.translate, target.translate, positionSpeed, deltaTime, positionReached);
-
-        const Quaternion currentRotation = matrixToQuaternion(current.rotate);
-        const Quaternion targetRotation = matrixToQuaternion(target.rotate);
-        const float angle = quaternionAngleRadians(currentRotation, targetRotation);
-        const float maxAngle = (std::max)(0.0f, angularSpeedDegrees) * 0.01745329251994329577f * (std::max)(0.0f, deltaTime);
-        const bool rotationReached = angle <= maxAngle || angle <= 0.000001f;
-        if (!rotationReached) {
-            result.transform.rotate = quaternionToMatrix<decltype(result.transform.rotate)>(slerp(currentRotation, targetRotation, maxAngle / angle));
-        }
-
-        result.reachedTarget = positionReached && rotationReached;
-        return result;
-    }
 }

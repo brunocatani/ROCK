@@ -129,14 +129,6 @@ namespace rock::nearby_grab_damping
         return (std::max)(0.0f, durationSeconds);
     }
 
-    inline float sanitizeDamping(float damping)
-    {
-        if (!std::isfinite(damping)) {
-            return 0.0f;
-        }
-        return std::clamp(damping, 0.0f, 1.0f);
-    }
-
     inline float sanitizeHknpDampingCoefficient(float damping)
     {
         if (!std::isfinite(damping)) {
@@ -181,17 +173,6 @@ namespace rock::nearby_grab_damping
     inline bool shouldBeginRuntimeNearbyDamping(bool enabled, bool verifiedRuntimeWriter, float radiusGame, float durationSeconds)
     {
         return enabled && verifiedRuntimeWriter && sanitizeRadius(radiusGame) > 0.0f && sanitizeDuration(durationSeconds) > 0.0f;
-    }
-
-    template <class Vec3>
-    Vec3 applyDampingToVelocity(const Vec3& velocity, float damping)
-    {
-        const float keep = 1.0f - sanitizeDamping(damping);
-        Vec3 result = velocity;
-        result.x *= keep;
-        result.y *= keep;
-        result.z *= keep;
-        return result;
     }
 
     inline bool advanceTimer(NearbyGrabDampingState& state, float deltaTime)

@@ -695,20 +695,6 @@ namespace rock
             return vrcf::VRControllers.isPressHeldDown(isLeft ? vrcf::Hand::Left : vrcf::Hand::Right, buttonId);
         }
 
-        inline bool readGrabButtonPressedEdge(bool isLeft, int buttonId)
-        {
-            if (!input_remap_policy::isAllowedGrabButtonId(buttonId)) {
-                return false;
-            }
-
-            const auto rawState = input_remap_runtime::peekRawButtonState(isLeft, buttonId);
-            if (rawState.available) {
-                return rawState.pressed;
-            }
-
-            return vrcf::VRControllers.isPressed(isLeft ? vrcf::Hand::Left : vrcf::Hand::Right, buttonId);
-        }
-
         inline bool readHeldWeaponEquipTriggerPressedEdge(bool isLeft)
         {
             constexpr int buttonId = input_remap_policy::kOpenVrSteamVrTriggerButtonId;
@@ -738,14 +724,6 @@ namespace rock
             const float angleRadians = 2.0f * std::acos(dot);
 
             return TransformDelta{ .position = std::sqrt(dx * dx + dy * dy + dz * dz), .rotationDegrees = angleRadians * (180.0f / std::numbers::pi_v<float>)};
-        }
-
-        inline float measurePointDelta(const RE::NiPoint3& a, const RE::NiPoint3& b)
-        {
-            const float dx = a.x - b.x;
-            const float dy = a.y - b.y;
-            const float dz = a.z - b.z;
-            return std::sqrt(dx * dx + dy * dy + dz * dz);
         }
 
         inline const char* physicsStepPhaseName(havok_physics_timing::PhysicsStepPhase phase)
@@ -855,12 +833,6 @@ namespace rock
             };
 
             emit();
-        }
-
-        inline float measureDirectionDeltaDegrees(const RE::NiPoint3& a, const RE::NiPoint3& b)
-        {
-            const float dot = std::clamp(a.x * b.x + a.y * b.y + a.z * b.z, -1.0f, 1.0f);
-            return std::acos(dot) * (180.0f / std::numbers::pi_v<float>);
         }
 
         inline bool startsWith(std::string_view value, std::string_view prefix)

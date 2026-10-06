@@ -1435,11 +1435,6 @@ namespace rock
         VatsSelectionHighlight _selectionHighlight;
 
     public:
-        selection_highlight_policy::VatsHighlightTargetChoice chooseSelectionHighlightTarget(const SelectedObject& selection) const
-        {
-            auto* referenceRoot = selection.refr ? selection.refr->Get3D() : nullptr;
-            return selection_highlight_policy::chooseVatsHighlightTarget(selection.hitNode, selection.visualNode, referenceRoot);
-        }
 
         bool playSelectionHighlightCandidate(RE::TESObjectREFR* refr, RE::NiAVObject* node, selection_highlight_policy::VatsHighlightSource source)
         {

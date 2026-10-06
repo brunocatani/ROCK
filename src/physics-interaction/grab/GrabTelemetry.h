@@ -239,12 +239,6 @@ namespace rock::grab_transform_telemetry
     }
 
     template <class Transform>
-    inline Transform computeCapturedObjectFromLiveHand(const Transform& liveHandWorld, const Transform& capturedObjectHandSpace)
-    {
-        return transform_math::composeTransforms(liveHandWorld, capturedObjectHandSpace);
-    }
-
-    template <class Transform>
     inline Transform computeCurrentDesiredObjectFromFrame(const Transform& frameWorld, const Transform& capturedObjectFrameSpace)
     {
         return transform_math::composeTransforms(frameWorld, capturedObjectFrameSpace);

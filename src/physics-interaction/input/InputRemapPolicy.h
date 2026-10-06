@@ -196,7 +196,6 @@ namespace rock::input_remap_policy
      * after the ReadyWeapon action itself is suppressed.
      */
     inline constexpr int kOpenVrAxisButtonBase = 32;
-    inline constexpr int kOpenVrAxisCount = 5;
     inline constexpr int kOpenVrSteamVrTriggerButtonId = kOpenVrAxisButtonBase + 1;
 
     /*
@@ -216,22 +215,6 @@ namespace rock::input_remap_policy
     [[nodiscard]] constexpr std::uint64_t buttonMask(int buttonId)
     {
         return isValidButtonId(buttonId) ? (std::uint64_t{ 1 } << static_cast<unsigned>(buttonId)) : 0;
-    }
-
-    [[nodiscard]] constexpr bool isOpenVrAxisButtonId(int buttonId)
-    {
-        return buttonId >= kOpenVrAxisButtonBase && buttonId < kOpenVrAxisButtonBase + kOpenVrAxisCount;
-    }
-
-    [[nodiscard]] constexpr std::uint8_t axisMaskFromOpenVrButtonId(int buttonId)
-    {
-        return isOpenVrAxisButtonId(buttonId) ? static_cast<std::uint8_t>(std::uint8_t{ 1 } << static_cast<unsigned>(buttonId - kOpenVrAxisButtonBase)) : 0;
-    }
-
-    [[nodiscard]] constexpr bool hasButton(std::uint64_t pressedMask, int buttonId)
-    {
-        const auto mask = buttonMask(buttonId);
-        return mask != 0 && (pressedMask & mask) != 0;
     }
 
     [[nodiscard]] constexpr bool shouldAllowNativeRealMeleeInput(const NativeActionSuppressionInput& input)

@@ -57,8 +57,4 @@ namespace rock::geometry_body_resolver
         return GeometryBodyResolution{};
     }
 
-    inline const char* dynamicSkinnedResolutionFallbackReason(bool verifiedWeightedBoneLayout)
-    {
-        return verifiedWeightedBoneLayout ? "weightedBoneOwner" : "dynamicSkinnedWeightsUnverified";
-    }
 }

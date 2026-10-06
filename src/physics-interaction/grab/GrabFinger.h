@@ -1448,24 +1448,6 @@ namespace rock::grab_finger_pose_math
         return maxBakedFingerCurveAngleRadians(profile.fingers[fingerIndex]);
     }
 
-    [[nodiscard]] inline float bakedCalibratedThumbLaneMaxAngleRadians(
-        grab_finger_calibration_data::BakedGrabThumbLane lane,
-        bool isLeft,
-        bool inPowerArmor)
-    {
-        const auto& profile = grab_finger_calibration_data::bakedGrabThumbProfile(isLeft, inPowerArmor);
-        const auto& handProfile = grab_finger_calibration_data::bakedGrabFingerHandProfile(isLeft, inPowerArmor);
-        for (const auto& candidate : profile.lanes) {
-            if (candidate.lane == lane) {
-                const auto& curve = candidate.curveSource == grab_finger_calibration_data::BakedGrabThumbCurveSource::SidePad ?
-                    profile.sidePadCurve :
-                    handProfile.fingers[0];
-                return maxBakedFingerCurveAngleRadians(curve);
-            }
-        }
-        return 0.0f;
-    }
-
     template <class Vector>
     inline Vector rotateAroundUnitAxis(const Vector& v, const Vector& unitAxis, float angleRadians)
     {
@@ -4052,7 +4034,6 @@ namespace rock::grab_finger_pose_runtime
 
 namespace rock::grab_finger_local_transform_math
 {
-    inline constexpr std::size_t kFingerLocalTransformCount = 15;
     inline constexpr std::uint16_t kFullFingerLocalTransformMask = 0x7FFF;
     inline constexpr float kDefaultLocalTransformSmoothingSpeed = 14.0f;
     inline constexpr float kDefaultMaxCorrectionDegrees = 35.0f;

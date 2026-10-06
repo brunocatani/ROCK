@@ -205,23 +205,6 @@ namespace rock::weapon_debug_notification_policy
         return key;
     }
 
-    inline bool shouldNotifyWeaponContact(WeaponNotificationState& state, const WeaponNotificationKey& key)
-    {
-        if (!key.valid) {
-            state.hasLastContact = false;
-            state.lastContact = {};
-            return false;
-        }
-
-        if (!state.hasLastContact || state.lastContact != key) {
-            state.lastContact = key;
-            state.hasLastContact = true;
-            return true;
-        }
-
-        return false;
-    }
-
     inline WeaponGripNotificationEvent observeWeaponSupportGrip(WeaponNotificationState& state, bool active)
     {
         if (active == state.supportGripActive) {
@@ -230,12 +213,6 @@ namespace rock::weapon_debug_notification_policy
 
         state.supportGripActive = active;
         return active ? WeaponGripNotificationEvent::Started : WeaponGripNotificationEvent::Ended;
-    }
-
-    inline std::string formatWeaponTouchNotification(const WeaponNotificationKey& key)
-    {
-        return std::string("[ROCK] WPN TOUCH src=") + nameOf(key.source) + " part=" + nameOf(key.partKind) + " route=" + nameOf(key.interactionKind) +
-               " pose=" + nameOf(key.gripPose) + " body=" + std::to_string(key.bodyId);
     }
 
     inline std::string formatWeaponGripNotification(WeaponGripNotificationEvent event, const WeaponNotificationKey& key, const WeaponInteractionDebugInfo& debugInfo)

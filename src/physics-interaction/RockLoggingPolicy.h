@@ -21,8 +21,6 @@ namespace rock::logging_policy
         Off = 6,
     };
 
-    constexpr int DefaultLogLevel = static_cast<int>(LogLevel::Info);
-    constexpr int DefaultLogSampleMilliseconds = 2000;
     constexpr const char* DefaultLogPattern = "%Y-%m-%d %H:%M:%S.%e [%l] %v";
 
     constexpr int clampLogLevel(const int rawLevel)
@@ -33,12 +31,6 @@ namespace rock::logging_policy
     constexpr int sanitizeSampleMilliseconds(const int rawMilliseconds)
     {
         return std::clamp(rawMilliseconds, 250, 60000);
-    }
-
-    constexpr bool shouldEmit(const int configuredLevel, const LogLevel messageLevel)
-    {
-        const int normalizedConfigured = clampLogLevel(configuredLevel);
-        return normalizedConfigured != static_cast<int>(LogLevel::Off) && static_cast<int>(messageLevel) >= normalizedConfigured;
     }
 
     constexpr const char* logLevelName(const int rawLevel)

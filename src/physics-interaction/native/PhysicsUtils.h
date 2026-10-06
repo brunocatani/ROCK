@@ -103,13 +103,6 @@ namespace rock
         return havok_runtime::tryResolveLiveBodyWorldTransform(world, bodyId, outTransform, outSource, outMotionIndex);
     }
 
-    inline RE::NiPoint3 worldDeltaToBodyLocal(const float* bodyFloats, const RE::NiPoint3& worldDelta)
-    {
-        return RE::NiPoint3{ bodyFloats[0] * worldDelta.x + bodyFloats[1] * worldDelta.y + bodyFloats[2] * worldDelta.z,
-            bodyFloats[4] * worldDelta.x + bodyFloats[5] * worldDelta.y + bodyFloats[6] * worldDelta.z,
-            bodyFloats[8] * worldDelta.x + bodyFloats[9] * worldDelta.y + bodyFloats[10] * worldDelta.z };
-    }
-
     inline RE::hkVector4f niRotToHkQuat(const RE::NiMatrix3& m)
     {
         float values[4]{};
@@ -136,10 +129,4 @@ namespace rock
         return havok_runtime::getBodyCOMWorld(world, bodyId, outX, outY, outZ);
     }
 
-    inline void getBodyCOMOffset(const float* bodyFloats, float& outX, float& outY, float& outZ)
-    {
-        outX = bodyFloats[3];
-        outY = bodyFloats[7];
-        outZ = bodyFloats[11];
-    }
 }

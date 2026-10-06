@@ -245,15 +245,6 @@ namespace rock::logger
         internal::loggerInstance->log(level, "[sample] {}", formatted);
     }
 
-    template <class... Args>
-    void infoRaw(spdlog::format_string_t<Args...> format, Args&&... args)
-    {
-        if (!internal::rawLoggerInstance || !internal::rawLoggerInstance->should_log(spdlog::level::info)) {
-            return;
-        }
-        internal::rawLoggerInstance->log(spdlog::level::info, format, std::forward<Args>(args)...);
-    }
-
     inline void init(const std::string_view logFileName)
     {
         auto path = F4SE::log::log_directory();

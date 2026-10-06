@@ -98,21 +98,6 @@ namespace rock::object_physics_body_set
             return result;
         }
 
-        std::uint32_t duplicateAcceptedMotionSkips() const
-        {
-            std::uint32_t skips = 0;
-            std::unordered_set<std::uint32_t> seenMotionIds;
-            for (const auto& record : records) {
-                if (!record.accepted) {
-                    continue;
-                }
-                if (!seenMotionIds.insert(record.motionId).second) {
-                    ++skips;
-                }
-            }
-            return skips;
-        }
-
         bool containsAcceptedBody(std::uint32_t bodyId) const
         {
             return std::any_of(records.begin(), records.end(), [&](const PureBodyRecord& record) { return record.accepted && record.bodyId == bodyId; });
@@ -183,16 +168,6 @@ namespace rock::object_physics_body_set
     class BodySetBuilder
     {
     public:
-        void addForTest(const PureBodyRecord& record)
-        {
-            if (record.bodyId == INVALID_BODY_ID) {
-                return;
-            }
-            if (!_seenBodyIds.insert(record.bodyId).second) {
-                return;
-            }
-            _set.records.push_back(record);
-        }
 
         PureBodySet build() const { return _set; }
 

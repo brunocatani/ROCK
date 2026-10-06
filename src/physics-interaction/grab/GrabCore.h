@@ -162,13 +162,6 @@ namespace rock::active_grab_body_lifecycle
         std::uint32_t preservedConvertedMotionCount = 0;
         std::uint32_t preservedConvertedFilterCount = 0;
 
-        bool shouldRestoreMotion(std::uint32_t bodyId) const
-        {
-            const auto it = std::find_if(entries.begin(), entries.end(), [&](const BodyRestorePlanEntry& entry) {
-                return entry.record.bodyId == bodyId;
-            });
-            return it != entries.end() && it->restoreMotion;
-        }
     };
 
     struct BodyLifecycleAudit
@@ -264,16 +257,6 @@ namespace rock::active_grab_body_lifecycle
             _records.push_back(record);
         }
 
-        void captureAcceptedBeforePrep(const object_physics_body_set::ObjectPhysicsBodySet& bodySet)
-        {
-            observeScanDiagnostics(bodySet);
-            for (const auto& record : bodySet.records) {
-                if (record.accepted) {
-                    capture(makeLifecycleRecord(record));
-                }
-            }
-        }
-
         void captureBeforeActivePrep(const object_physics_body_set::ObjectPhysicsBodySet& bodySet)
         {
             observeScanDiagnostics(bodySet);
@@ -298,13 +281,6 @@ namespace rock::active_grab_body_lifecycle
                 return record.bodyId == bodyId;
             });
             return it != _records.end() ? &*it : nullptr;
-        }
-
-        void markPreparedBody(std::uint32_t bodyId, bool motionChangedByRock)
-        {
-            if (auto* record = find(bodyId)) {
-                record->motionChangedByRock = record->motionChangedByRock || motionChangedByRock;
-            }
         }
 
         void markPreparedBodies(const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet)
@@ -333,13 +309,6 @@ namespace rock::active_grab_body_lifecycle
         void markIncompleteNativeScan()
         {
             _incompleteNativeScan = true;
-        }
-
-        void markFilterChanged(std::uint32_t bodyId)
-        {
-            if (auto* record = find(bodyId)) {
-                record->filterChangedByRock = true;
-            }
         }
 
         BodyRestorePlan restorePlanForFailure() const { return makeRestorePlan(BodyRestoreReason::FailedGrabSetup, BodyRestorePolicy::RestoreAllChanged, grab_target::Kind::None, BodyReleaseIntent::FailedSetup); }

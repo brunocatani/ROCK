@@ -1166,13 +1166,6 @@ namespace rock::provider {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
 
-    [[nodiscard]] inline constexpr bool hasWeaponPartTargetFlagV1(
-        std::uint32_t flags,
-        RockProviderWeaponPartTargetFlagV1 flag)
-    {
-        return (flags & static_cast<std::uint32_t>(flag)) != 0;
-    }
-
     [[nodiscard]] inline constexpr bool hasWeaponKeywordFlagV1(std::uint64_t flags, RockProviderWeaponKeywordFlagV1 flag)
     {
         return (flags & static_cast<std::uint64_t>(flag)) != 0;
@@ -1182,13 +1175,6 @@ namespace rock::provider {
     [[nodiscard]] inline constexpr bool hasTouchGrabTargetFlagV1(
         std::uint32_t flags,
         RockProviderTouchGrabTargetFlagV1 flag)
-    {
-        return (flags & static_cast<std::uint32_t>(flag)) != 0;
-    }
-
-    [[nodiscard]] inline constexpr bool hasNativeAnimationAuthorityFlagV1(
-        std::uint32_t flags,
-        RockProviderNativeAnimationAuthorityFlagV1 flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }

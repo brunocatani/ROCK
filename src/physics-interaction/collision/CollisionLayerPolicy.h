@@ -111,14 +111,7 @@ namespace rock::collision_layer_policy
     inline constexpr std::uint32_t ROCK_LAYER_STORED_DISPLAY = 54;
 
     inline constexpr std::uint32_t FO4_LAYER_VANILLA_CONFIGURED_COUNT = 47;
-    inline constexpr std::uint32_t FO4_LAYER_LAST_VANILLA_CONFIGURED = FO4_LAYER_DROPPINGPICK;
     inline constexpr std::uint32_t FO4_LAYER_MATRIX_ADDRESSABLE_COUNT = 64;
-    inline constexpr std::uint32_t ROCK_LAYER_EXTENDED_FIRST = ROCK_LAYER_BODY;
-    inline constexpr std::uint32_t ROCK_LAYER_EXTENDED_LAST = FO4_LAYER_MATRIX_ADDRESSABLE_COUNT - 1;
-
-    inline constexpr std::uint32_t FO4_LAYER_CONFIGURED_COUNT = FO4_LAYER_VANILLA_CONFIGURED_COUNT;
-    inline constexpr std::uint32_t FO4_LAYER_LAST_CONFIGURED = FO4_LAYER_LAST_VANILLA_CONFIGURED;
-    inline constexpr std::uint32_t FO4_LAYER_MAX_CONFIGURED = FO4_LAYER_LAST_CONFIGURED;
 
     // Generated player tools/proxies only: the tagged car rows are real world
     // objects and must remain eligible for native weapon hits and sound.
@@ -342,24 +335,9 @@ namespace rock::collision_layer_policy
         return isDynamicPropInteractionLayer(layer) || isActorOrBipedLayer(layer);
     }
 
-    inline constexpr bool isVanillaConfiguredLayer(std::uint32_t layer)
-    {
-        return layer < FO4_LAYER_VANILLA_CONFIGURED_COUNT;
-    }
-
     inline constexpr bool isMatrixAddressableLayer(std::uint32_t layer)
     {
         return layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT;
-    }
-
-    inline constexpr bool isRockExtendedLayer(std::uint32_t layer)
-    {
-        return layer >= ROCK_LAYER_EXTENDED_FIRST && layer <= ROCK_LAYER_EXTENDED_LAST;
-    }
-
-    inline constexpr bool isConfiguredLayer(std::uint32_t layer)
-    {
-        return isVanillaConfiguredLayer(layer);
     }
 
     inline constexpr std::uint64_t layerBitOrZero(std::uint32_t layer)
@@ -388,13 +366,6 @@ namespace rock::collision_layer_policy
         }
     }
 
-    inline void applyWeaponProjectileBlockingPolicy(std::uint64_t* matrix, std::uint32_t weaponLayer, bool blocksProjectiles, bool blocksSpells)
-    {
-        setPair(matrix, weaponLayer, FO4_LAYER_PROJECTILE, blocksProjectiles);
-        setPair(matrix, weaponLayer, FO4_LAYER_CONEPROJECTILE, blocksProjectiles);
-        setPair(matrix, weaponLayer, FO4_LAYER_SPELL, blocksSpells);
-    }
-
     inline constexpr std::uint64_t allVanillaConfiguredLayerBits()
     {
         return (FO4_LAYER_VANILLA_CONFIGURED_COUNT >= 64) ? ~0ULL : ((1ULL << FO4_LAYER_VANILLA_CONFIGURED_COUNT) - 1ULL);
@@ -407,14 +378,7 @@ namespace rock::collision_layer_policy
         return ~0ULL;
     }
 
-    inline constexpr std::uint64_t configuredMask(std::uint64_t mask) { return mask & allConfiguredLayerBits(); }
-
     inline constexpr std::uint64_t matrixAddressableMask(std::uint64_t mask) { return mask & allMatrixAddressableLayerBits(); }
-
-    inline constexpr bool configuredLayerMaskMatches(std::uint64_t currentMask, std::uint64_t expectedMask)
-    {
-        return configuredMask(currentMask) == configuredMask(expectedMask);
-    }
 
     inline constexpr bool matrixLayerMaskMatches(std::uint64_t currentMask, std::uint64_t expectedMask)
     {
@@ -591,20 +555,6 @@ namespace rock::collision_layer_policy
         return true;
     }
 
-    inline constexpr bool rockBodyPairsMatch(const std::uint64_t* matrix, std::uint64_t expectedBodyMask)
-    {
-        if (!matrix) {
-            return false;
-        }
-
-        for (std::uint32_t other = 0; other < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++other) {
-            if (!layerPairSymmetricMatches(matrix, ROCK_LAYER_BODY, other, maskEnablesLayer(expectedBodyMask, other))) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     inline constexpr bool rockBodyManagedPairsMatch(const std::uint64_t* matrix, std::uint64_t expectedBodyMask)
     {
         if (!matrix) {
@@ -632,11 +582,6 @@ namespace rock::collision_layer_policy
     inline void applyRockHandLayerPolicy(std::uint64_t* matrix, bool includeWeaponLayer, bool includeStaticWorld = true)
     {
         applyLayerExpectedMask(matrix, ROCK_LAYER_HAND, buildRockHandExpectedMask(includeWeaponLayer, includeStaticWorld));
-    }
-
-    inline void applyRockWeaponLayerPolicy(std::uint64_t* matrix, bool blocksProjectiles, bool blocksSpells)
-    {
-        applyLayerExpectedMask(matrix, ROCK_LAYER_WEAPON, buildRockWeaponExpectedMask(blocksProjectiles, blocksSpells));
     }
 
     inline void applyRockReloadLayerPolicy(std::uint64_t* matrix, bool blocksProjectiles, bool blocksSpells, bool includeStaticWorld = true)

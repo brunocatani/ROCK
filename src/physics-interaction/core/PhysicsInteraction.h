@@ -93,14 +93,6 @@ namespace rock
         LeftHand = 2,
     };
 
-    struct PhysicsEventData
-    {
-        bool isLeft;
-        RE::TESObjectREFR* refr;
-        std::uint32_t formID;
-        std::uint32_t collisionLayer;
-    };
-
     class PhysicsInteraction
     {
     public:
@@ -214,13 +206,6 @@ namespace rock
         const Hand& getRightHand() const { return _rightHand; }
         const Hand& getLeftHand() const { return _leftHand; }
 
-        std::uint32_t getLastTouchedWeaponPartKind() const
-        {
-            if (_weaponContact.left.missedFrames.load(std::memory_order_acquire) > WEAPON_CONTACT_TIMEOUT_FRAMES) {
-                return static_cast<std::uint32_t>(WeaponPartKind::Other);
-            }
-            return _weaponContact.left.partKind.load(std::memory_order_acquire);
-        }
         bool tryGetRootFlattenedHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
         void refreshProviderWeaponSources();
         api::Status collectProviderWeaponCollisionBodies(std::uint64_t generation,std::span<const std::uint64_t> sources,std::span<std::uint32_t> bodies,std::uint32_t& count) const;

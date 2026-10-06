@@ -657,23 +657,6 @@ namespace rock::provider::runtime
         return target;
     }
 
-    [[nodiscard]] RockProviderTransform toProviderTransform(
-        const RE::NiTransform& source)
-    {
-        RockProviderTransform target{};
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                target.rotate[row * 3 + column] =
-                    source.rotate.entry[row][column];
-            }
-        }
-        target.translate[0] = source.translate.x;
-        target.translate[1] = source.translate.y;
-        target.translate[2] = source.translate.z;
-        target.scale = source.scale;
-        return target;
-    }
-
     [[nodiscard]] constexpr frik_visual_authority::Hand toVisualHand(
         const RockProviderHand hand)
     {

@@ -86,15 +86,6 @@ namespace rock::weapon_collision_geometry_math
     }
 
     template <class Matrix, class Vector>
-    inline Vector rotateLocalPoint(const Matrix& matrix, const Vector& point)
-    {
-        return detail::makeVector<Vector>(
-            detail::rotateLocalPointAxis(matrix, point, 0),
-            detail::rotateLocalPointAxis(matrix, point, 1),
-            detail::rotateLocalPointAxis(matrix, point, 2));
-    }
-
-    template <class Matrix, class Vector>
     inline Vector localPointToWorld(const Matrix& rootRotation, const Vector& rootTranslation, float rootScale, const Vector& localPoint)
     {
         const double scale = static_cast<double>(rootScale);
@@ -228,13 +219,6 @@ namespace rock::weapon_collision_geometry_math
     }
 
     template <class Vector>
-    inline void splitOversizedCluster(const std::vector<Vector>& points, std::size_t maxPoints, std::vector<std::vector<Vector>>& outClusters)
-    {
-        auto task = splitOversizedClusterDeferred(points, maxPoints, outClusters);
-        while (task.step()) {}
-    }
-
-    template <class Vector>
     struct PointBounds
     {
         Vector min{};
@@ -292,33 +276,6 @@ namespace rock::weapon_collision_geometry_math
             return 2;
         }
         return 0;
-    }
-
-    template <class Vector>
-    inline float largestCrossAxisSpan(const PointBounds<Vector>& bounds, int longAxis)
-    {
-        float largest = 0.0f;
-        for (int axis = 0; axis < 3; ++axis) {
-            if (axis == longAxis) {
-                continue;
-            }
-            largest = (std::max)(largest, boundsAxisSpan(bounds, axis));
-        }
-        return largest;
-    }
-
-    template <class Vector>
-    inline float pointCloudDiagonalSquaredGeneric(const std::vector<Vector>& points)
-    {
-        const auto bounds = pointBounds(points);
-        if (!bounds.valid) {
-            return 0.0f;
-        }
-
-        const float dx = bounds.max.x - bounds.min.x;
-        const float dy = bounds.max.y - bounds.min.y;
-        const float dz = bounds.max.z - bounds.min.z;
-        return dx * dx + dy * dy + dz * dz;
     }
 
     struct SupportDirection
@@ -766,17 +723,6 @@ namespace rock::weapon_collision_geometry_math
             *outWorstDirection = worstDirection;
         }
         co_return;
-    }
-
-    template <class Vector>
-    inline float supportErrorForSelectedPoints(const std::vector<Vector>& points,
-        const std::vector<std::uint8_t>& selected,
-        const std::vector<SupportDirection>& directions, SupportDirection* worst)
-    {
-        float error = 0.0f;
-        auto task = supportErrorForSelectedPointsDeferred(points, selected, directions, worst, error);
-        while (task.step()) {}
-        return error;
     }
 
     template <class Vector>

@@ -100,7 +100,6 @@ namespace rock
         inline constexpr float WEAPON_COLLISION_POINT_DEDUP_GRID_HAVOK = 0.002f;
         inline constexpr std::size_t WEAPON_COLLISION_SUPPORT_FIT_TARGET_POINTS = 96;
         inline constexpr float WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS = 0.5f;
-        inline constexpr std::size_t MAX_GENERATED_CHILD_CONVEXES_PER_SOURCE = 16;
         inline constexpr std::size_t GENERATED_WEAPON_BODY_CREATION_BATCH = 8;
         inline constexpr std::size_t MAX_COLLISION_SOUND_SHAPE_KEYS = 4096;
         inline constexpr std::size_t COLLISION_SOUND_SHAPE_KEY_BATCH = 64;
@@ -269,21 +268,6 @@ namespace rock
                 matrix.entry[0][2] * (matrix.entry[1][0] * matrix.entry[2][1] - matrix.entry[1][1] * matrix.entry[2][0]);
         }
 
-        inline float bodyBasisDeterminant(const float* bodyFloats)
-        {
-            const float x0 = bodyFloats[0];
-            const float x1 = bodyFloats[1];
-            const float x2 = bodyFloats[2];
-            const float y0 = bodyFloats[4];
-            const float y1 = bodyFloats[5];
-            const float y2 = bodyFloats[6];
-            const float z0 = bodyFloats[8];
-            const float z1 = bodyFloats[9];
-            const float z2 = bodyFloats[10];
-
-            return x0 * (y1 * z2 - y2 * z1) - y0 * (x1 * z2 - x2 * z1) + z0 * (x1 * y2 - x2 * y1);
-        }
-
         inline RE::NiTransform makeIdentityTransform()
         {
             RE::NiTransform result{};
@@ -314,27 +298,6 @@ namespace rock
             weapon_visual_composition_policy::mixString(key, value);
         }
 
-        inline std::vector<RE::NiPoint3> dedupePointCloud(const std::vector<RE::NiPoint3>& points, float grid)
-        {
-            std::vector<RE::NiPoint3> unique;
-            unique.reserve(points.size());
-            std::unordered_set<QuantizedPointKey, QuantizedPointKeyHash> seen;
-            seen.reserve(points.size());
-
-            for (const auto& point : points) {
-                if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
-                    continue;
-                }
-
-                const auto key = quantizePoint(point, grid);
-                if (seen.insert(key).second) {
-                    unique.push_back(point);
-                }
-            }
-
-            return unique;
-        }
-
         inline float pointCloudDiagonalSquared(const std::vector<RE::NiPoint3>& points)
         {
             if (points.empty()) {
@@ -360,70 +323,6 @@ namespace rock
                                              pointCloudDiagonalSquared(points), sourceScale, MIN_HULL_DIAGONAL_GAME_UNITS);
         }
 
-        inline bool compressGeneratedChildClustersForBudget(
-            std::vector<std::vector<RE::NiPoint3>>& clusters,
-            const std::vector<RE::NiPoint3>& sourcePoints,
-            std::string_view sourceName,
-            int depth)
-        {
-            /*
-             * Dense modded meshes should not explode into unbounded compound
-             * children. The source itself is still kept and generated; only its
-             * internal child representation is reduced geometrically when it
-             * exceeds the per-source budget.
-             */
-            if (clusters.size() <= MAX_GENERATED_CHILD_CONVEXES_PER_SOURCE || !pointCloudCanBuildHull(sourcePoints)) {
-                return false;
-            }
-
-            constexpr auto targetPoints = WEAPON_COLLISION_SUPPORT_FIT_TARGET_POINTS;
-            const auto fit = weapon_collision_geometry_math::fitConvexSupportPointCloud(
-                sourcePoints,
-                targetPoints,
-                MAX_CONVEX_HULL_POINTS,
-                WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS);
-            if (fit.accepted && pointCloudCanBuildHull(fit.points)) {
-                const std::size_t previousCount = clusters.size();
-                clusters.clear();
-                clusters.push_back(fit.points);
-                ROCK_LOG_DEBUG(Weapon,
-                    "{}generated source '{}' compressed dense child hulls with support fit children={}->{} rawPoints={} fittedPoints={} maxError={:.3f}",
-                    std::string(depth * 2, ' '),
-                    sourceName,
-                    previousCount,
-                    clusters.size(),
-                    fit.inputPointCount,
-                    fit.selectedPointCount,
-                    fit.maxSupportError);
-                return true;
-            }
-
-            auto fallback = weapon_collision_geometry_math::limitPointCloud(sourcePoints, MAX_CONVEX_HULL_POINTS);
-            if (pointCloudCanBuildHull(fallback)) {
-                const std::size_t previousCount = clusters.size();
-                clusters.clear();
-                clusters.push_back(std::move(fallback));
-                ROCK_LOG_WARN(Weapon,
-                    "{}generated source '{}' exceeded child hull budget and used limited single-hull fallback children={}->{} rawPoints={} targetPoints={} maxError={:.3f}",
-                    std::string(depth * 2, ' '),
-                    sourceName,
-                    previousCount,
-                    clusters.size(),
-                    sourcePoints.size(),
-                    targetPoints,
-                    fit.maxSupportError);
-                return true;
-            }
-
-            ROCK_LOG_WARN(Weapon,
-                "{}generated source '{}' exceeded child hull budget but could not build compressed fallback children={} rawPoints={}",
-                std::string(depth * 2, ' '),
-                sourceName,
-                clusters.size(),
-                sourcePoints.size());
-            return false;
-        }
-
         inline PointCloudBounds pointCloudBounds(const std::vector<RE::NiPoint3>& points)
         {
             PointCloudBounds bounds{};
@@ -443,14 +342,6 @@ namespace rock
         inline std::array<float, 3> pointToArray(const RE::NiPoint3& point)
         {
             return { point.x, point.y, point.z };
-        }
-
-        inline void mixFormPointer(std::uint64_t& key, const RE::TESForm* form)
-        {
-            weapon_visual_composition_policy::mixValue(key, reinterpret_cast<std::uintptr_t>(form));
-            if (form) {
-                weapon_visual_composition_policy::mixValue(key, form->formID);
-            }
         }
 
         inline void mixFormStableContent(std::uint64_t& key, const RE::TESForm* form)
@@ -1725,14 +1616,6 @@ namespace rock
                 }
             }
             co_return;
-        }
-
-        inline GeneratedPointCloudClusterSet splitGeneratedWeaponPointCloudForCollision(const std::vector<RE::NiPoint3>& localPoints)
-        {
-            GeneratedPointCloudClusterSet result;
-            auto task = splitGeneratedWeaponPointCloudForCollisionDeferred(localPoints, result);
-            while (task.step()) {}
-            return result;
         }
 
         inline GeneratedHullCoverageInfo classifyGeneratedHullSemantic(const WeaponPartClassification& semantic)

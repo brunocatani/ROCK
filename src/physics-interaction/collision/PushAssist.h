@@ -83,19 +83,6 @@ namespace rock::push_assist
         return result;
     }
 
-    template <class Vec3>
-    inline Vec3 computeVelocityDeltaFromImpulse(const Vec3& impulse, float inverseMass)
-    {
-        Vec3 result{};
-        if (!std::isfinite(inverseMass) || inverseMass <= 0.0f) {
-            return result;
-        }
-        result.x = impulse.x * inverseMass;
-        result.y = impulse.y * inverseMass;
-        result.z = impulse.z * inverseMass;
-        return result;
-    }
-
     bool applyLinearImpulse(void* collisionObject, const RE::NiPoint3& impulseHavok);
     bool applyPointImpulse(RE::hknpWorld* world, std::uint32_t bodyId, std::uintptr_t expectedOwner,
         const RE::NiPoint3& impulseHavok, const RE::NiPoint3& pointHavok);

@@ -21,7 +21,6 @@ namespace rock
     namespace generated_keyframed_body_drive_math
     {
         inline constexpr bool kPredictionEnabled = false;
-        inline constexpr bool kVelocityHardSyncEnabled = false;
         inline constexpr float kMaxPredictionSeconds = 1.0f / 30.0f;
         inline constexpr float kMaxPredictionSourceFrames = 2.0f;
         inline constexpr float kMaxStaleSeconds = 0.10f;
@@ -419,21 +418,9 @@ namespace rock
         return state.hasPendingTarget || state.hasPreviousTarget;
     }
 
-    [[nodiscard]] inline bool hasGeneratedKeyframedBodyDriveTarget(const GeneratedKeyframedBodyDriveState& state)
-    {
-        std::scoped_lock lock(state.mutex);
-        return hasGeneratedKeyframedBodyDriveTargetUnlocked(state);
-    }
-
     [[nodiscard]] inline bool generatedKeyframedBodyDriveHasFreshSourceUnlocked(const GeneratedKeyframedBodyDriveState& state)
     {
         return state.queuedSequence != state.consumedSequence;
-    }
-
-    [[nodiscard]] inline bool generatedKeyframedBodyDriveHasFreshSource(const GeneratedKeyframedBodyDriveState& state)
-    {
-        std::scoped_lock lock(state.mutex);
-        return generatedKeyframedBodyDriveHasFreshSourceUnlocked(state);
     }
 
     inline void refreshGeneratedKeyframedBodySourceClockForDriveUnlocked(GeneratedKeyframedBodyDriveState& state, float driveDeltaSeconds)
@@ -455,12 +442,6 @@ namespace rock
         if (state.stepsWithoutSource < (std::numeric_limits<std::uint32_t>::max)()) {
             ++state.stepsWithoutSource;
         }
-    }
-
-    inline void refreshGeneratedKeyframedBodySourceClockForDrive(GeneratedKeyframedBodyDriveState& state, float driveDeltaSeconds)
-    {
-        std::scoped_lock lock(state.mutex);
-        refreshGeneratedKeyframedBodySourceClockForDriveUnlocked(state, driveDeltaSeconds);
     }
 
     struct GeneratedKeyframedBodyDriveResult
@@ -594,14 +575,6 @@ namespace rock
         state.consumedSequence = state.queuedSequence;
         state.hasPendingTarget = true;
         state.pendingTeleport = false;
-    }
-    inline void markGeneratedKeyframedBodyDrivePlaced(
-        GeneratedKeyframedBodyDriveState& state,
-        float driveDeltaSeconds = 0.0f,
-        bool finalizeTargetForNextSource = true)
-    {
-        std::scoped_lock lock(state.mutex);
-        markGeneratedKeyframedBodyDrivePlacedUnlocked(state, driveDeltaSeconds, finalizeTargetForNextSource);
     }
     struct GeneratedBodyDriveMode
     {

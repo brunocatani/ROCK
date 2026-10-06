@@ -426,47 +426,6 @@ namespace rock::held_object_physics_math
         return deviationGameUnits > instantDeviationReleaseThreshold(maxDeviationGameUnits);
     }
 
-    template <class Vec3>
-    inline Vec3 gameUnitsDeltaToHavokVelocity(const Vec3& deltaGameUnits, float deltaTime, float havokToGameScale = physics_scale::kFallbackHavokToGame)
-    {
-        const float dt = measuredDeltaOrZero(deltaTime);
-        if (dt <= 0.0f) {
-            // No measured interval: no velocity claim.
-            return makeVector<Vec3>(0.0f, 0.0f, 0.0f);
-        }
-        const float unitsPerHavok = physics_scale::isUsableScale(havokToGameScale) ? havokToGameScale : physics_scale::kFallbackHavokToGame;
-        const float scale = 1.0f / (unitsPerHavok * dt);
-        return makeVector<Vec3>(deltaGameUnits.x * scale, deltaGameUnits.y * scale, deltaGameUnits.z * scale);
-    }
-
-    template <class Vec3, std::size_t Count>
-    inline Vec3 maxMagnitudeVelocity(const std::array<Vec3, Count>& history, std::size_t validCount)
-    {
-        validCount = (std::min)(validCount, Count);
-        if (validCount == 0) {
-            return Vec3{};
-        }
-
-        std::size_t largestIndex = 0;
-        float largestMagnitude = lengthSquared(history[0]);
-        for (std::size_t i = 1; i < validCount; ++i) {
-            const float magnitude = lengthSquared(history[i]);
-            if (magnitude > largestMagnitude) {
-                largestMagnitude = magnitude;
-                largestIndex = i;
-            }
-        }
-
-        if (validCount < 3 || largestIndex == 0 || largestIndex == validCount - 1) {
-            return history[largestIndex];
-        }
-
-        return makeVector<Vec3>(
-            (history[largestIndex - 1].x + history[largestIndex].x + history[largestIndex + 1].x) / 3.0f,
-            (history[largestIndex - 1].y + history[largestIndex].y + history[largestIndex + 1].y) / 3.0f,
-            (history[largestIndex - 1].z + history[largestIndex].z + history[largestIndex + 1].z) / 3.0f);
-    }
-
     /*
      * Axis-angle rate extraction from two rotation matrices sampled deltaTime
      * apart. Matrix3 must expose entry[3][3] with world axes stored as
@@ -546,28 +505,6 @@ namespace rock::held_object_physics_math
         return makeVector<Vec3>(axis.x * rate, axis.y * rate, axis.z * rate);
     }
 
-    inline float computeHandLerpDuration(float distanceGameUnits, float minTime, float maxTime, float minDistanceGameUnits, float maxDistanceGameUnits)
-    {
-        if (!std::isfinite(minTime) || minTime < 0.0f) {
-            minTime = 0.0f;
-        }
-        if (!std::isfinite(maxTime) || maxTime < minTime) {
-            maxTime = minTime;
-        }
-        if (!std::isfinite(distanceGameUnits)) {
-            return maxTime;
-        }
-        if (!std::isfinite(minDistanceGameUnits)) {
-            minDistanceGameUnits = 0.0f;
-        }
-        if (!std::isfinite(maxDistanceGameUnits) || maxDistanceGameUnits <= minDistanceGameUnits) {
-            return maxTime;
-        }
-
-        const float t = std::clamp((distanceGameUnits - minDistanceGameUnits) / (maxDistanceGameUnits - minDistanceGameUnits), 0.0f, 1.0f);
-        return minTime + (maxTime - minTime) * t;
-    }
-
     inline float advanceDeviationSeconds(float currentSeconds, float deviationGameUnits, float maxDeviationGameUnits, float deltaTime)
     {
         if (!std::isfinite(maxDeviationGameUnits) || maxDeviationGameUnits <= 0.0f) {
@@ -611,17 +548,6 @@ namespace rock::held_object_physics_math
             return target;
         }
         return current + (delta > 0.0f ? step : -step);
-    }
-
-    inline float capForceByMassRatio(float force, float mass, float forceToMassRatio)
-    {
-        if (!std::isfinite(force) || force < 0.0f) {
-            return 0.0f;
-        }
-        if (!std::isfinite(mass) || mass <= 0.0f || !std::isfinite(forceToMassRatio) || forceToMassRatio <= 0.0f) {
-            return force;
-        }
-        return (std::min)(force, mass * forceToMassRatio);
     }
 
 }

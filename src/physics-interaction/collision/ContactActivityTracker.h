@@ -161,19 +161,6 @@ namespace rock::contact_activity_tracker
             return findSlot(isLeft ? _left : _right, makeBodyPairKey(handBodyId, targetBodyId)) != nullptr;
         }
 
-        std::size_t trackedCount(bool isLeft) const
-        {
-            std::size_t count = 0;
-            const auto& bank = isLeft ? _left : _right;
-            for (const auto& slot : bank.slots) {
-                const auto key = slot.key.load(std::memory_order_acquire);
-                if (key != kFreeContactActivityKey && key != kReservedContactActivityKey) {
-                    ++count;
-                }
-            }
-            return count;
-        }
-
     private:
         struct Slot
         {

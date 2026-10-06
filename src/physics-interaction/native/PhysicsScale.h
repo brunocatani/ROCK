@@ -58,11 +58,6 @@ namespace rock::physics_scale
         return std::fabs(a.gameToHavok - b.gameToHavok) <= 0.0000001f && std::fabs(a.havokToGame - b.havokToGame) <= 0.0001f;
     }
 
-    inline bool shouldInvalidateCachedScaleData(const Snapshot& previous, const Snapshot& current)
-    {
-        return previous.revision != current.revision || !sameConversionScale(previous, current);
-    }
-
     inline float reciprocalDriftGameUnits(const Snapshot& scale)
     {
         if (!isUsableScale(scale.gameToHavok) || !isUsableScale(scale.havokToGame)) {
@@ -76,26 +71,6 @@ namespace rock::physics_scale
     {
         const float threshold = warningThresholdGameUnits > 0.0f ? warningThresholdGameUnits : 0.0f;
         return reciprocalDriftGameUnits(scale) > threshold;
-    }
-
-    template <class Vec3>
-    inline Vec3 gameToHavokPoint(const Vec3& point, const Snapshot& scale)
-    {
-        Vec3 result{};
-        result.x = point.x * scale.gameToHavok;
-        result.y = point.y * scale.gameToHavok;
-        result.z = point.z * scale.gameToHavok;
-        return result;
-    }
-
-    template <class Vec3>
-    inline Vec3 havokToGamePoint(const Vec3& point, const Snapshot& scale)
-    {
-        Vec3 result{};
-        result.x = point.x * scale.havokToGame;
-        result.y = point.y * scale.havokToGame;
-        result.z = point.z * scale.havokToGame;
-        return result;
     }
 
     template <class Vec3>
