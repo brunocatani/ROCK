@@ -149,6 +149,8 @@ namespace rock
         float rockWeaponSupportGripHandLerpTimeMax = 0.20f;
         float rockWeaponSupportGripHandLerpMinDistance = 1.0f;
         float rockWeaponSupportGripHandLerpMaxDistance = 14.0f;
+        bool rockWeaponSupportSurfaceSeatEnabled = true;
+        float rockWeaponSupportSurfaceSeatMaxDegrees = 35.0f;
 
         bool rockEnableImmersiveScopes = true;
 
@@ -205,6 +207,9 @@ namespace rock
         bool rockDebugDrawGrabSupportFrame = false;
         bool rockDebugDrawGrabPockets = false;
         bool rockDebugShowGrabFingerProbes = false;
+        bool rockDebugShowGrabFingerSweptArc = false;
+        bool rockDebugShowGrabFingerSweptArcText = true;
+        bool rockDebugShowGrabFingerSweptArcLiveSkeleton = true;
         bool rockDebugShowPalmVectors = false;
         bool rockDebugDrawHandColliders = false;
         bool rockDebugDrawHandBoneColliders = false;
@@ -410,6 +415,8 @@ namespace rock
         float rockGrabHandReturnMaxDistance = 14.0f;
         float rockGrabHandReturnMinAngleDegrees = 5.0f;
         float rockGrabHandReturnMaxAngleDegrees = 90.0f;
+        int rockGrabFingerPoseMode = 1; // 1=current, 2=June 2; captured per grip.
+        int rockWeaponGrabPoseMode = 0; // 0=follow grab mode, 1=current, 2=July 9; next dynamic weapon grip.
         bool rockGrabMeshFingerPoseEnabled = true;
         bool rockGrabMeshJointPoseEnabled = true;
         float rockGrabFingerMinValue = 0.2f;
@@ -420,6 +427,9 @@ namespace rock
         float rockGrabFingerSurfaceAimStrength = 0.75f;
         bool rockGrabFingerRejectBacksideHits = true;
         float rockGrabFingerSurfacePlaneToleranceGameUnits = 1.5f;
+        float rockGrabFingerSweepContactRadiusGameUnits = 0.6f;
+        float rockGrabFingerSweepMaxOpenValue = 2.0f;
+        float rockGrabThumbSweepMaxOpenValue = 1.5f;
         float rockGrabThumbOppositionStrength = 1.0f;
         float rockGrabThumbAlternateCurveStrength = 0.65f;
         bool rockGrabThumbSurfaceSafetyEnabled = true;

@@ -1249,6 +1249,7 @@ namespace rock
             bool hasFingerLocalTransforms{ false };
             LockedHandVisualLerpState visualLerp{};
             SupportInputBaselineState supportInputBaseline{};
+            float surfaceSeatRotationRadians{ 0.0f };
         };
 
         struct AuthoredSupportGripCandidate
@@ -1661,7 +1662,10 @@ namespace rock
         void solveSupportGripFingerPose(
             bool isLeft,
             RE::NiNode* weaponNode,
+            const WeaponInteractionDecision& decision,
+            const WeaponCollision& weaponCollision,
             const RE::NiTransform& handTransform,
+            const RE::NiTransform& adjustedHandTransform,
             const RE::NiPoint3& gripWorldPoint,
             bool cachedTrianglesFound,
             const WeaponCollision::SupportGripEvidenceView& evidenceView,

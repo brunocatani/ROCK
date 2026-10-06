@@ -82,6 +82,10 @@ namespace rock
          */
         inline constexpr std::uint32_t SCOPE_DRIVER_MISS_GRACE_FRAMES = 3;
         inline constexpr float SCOPE_ROOT_REBASE_DURATION_SECONDS = 0.075f;
+        inline constexpr float WEAPON_OPPOSITION_MAX_FINGER_GAP_GAME_UNITS =
+            24.0f;
+        inline constexpr float WEAPON_OPPOSITION_SEGMENT_PROBE_RADIUS_GAME_UNITS =
+            0.5f;
         inline constexpr std::size_t WEAPON_PRESENTATION_MAX_DEPTH = 128;
         inline constexpr std::size_t WEAPON_PRESENTATION_MAX_OBJECTS = 8192;
 
@@ -134,6 +138,70 @@ namespace rock
                 return "none";
             }
             return "unknown";
+        }
+
+        inline grab_pinch_pocket_policy::Config
+            currentWeaponOppositionPocketConfig()
+        {
+            return grab_pinch_pocket_policy::sanitizeConfig(
+                grab_pinch_pocket_policy::Config{
+                    .enabled =
+                        g_rockConfig.rockGrabPinchPocketEnabled,
+                    .maxVolumeCubicGameUnits =
+                        g_rockConfig.
+                            rockGrabPinchMaxVolumeCubicGameUnits,
+                    .maxPocketDistanceGameUnits =
+                        g_rockConfig.
+                            rockGrabPinchMaxPocketDistanceGameUnits,
+                    .minFingerGapGameUnits =
+                        g_rockConfig.
+                            rockGrabPinchMinFingerGapGameUnits,
+                    .maxFingerGapGameUnits =
+                        g_rockConfig.
+                            rockGrabPinchMaxFingerGapGameUnits,
+                    .thumbIndexMaxOpenValue =
+                        g_rockConfig.
+                            rockGrabPinchThumbIndexMaxOpenValue,
+                    .otherFingerCurlValue =
+                        g_rockConfig.
+                            rockGrabPinchOtherFingerCurlValue,
+                    .detectionDirectionHandspace =
+                        g_rockConfig.
+                            rockGrabPinchDetectionDirectionHandspace,
+                    .detectionAxisBlend =
+                        g_rockConfig.
+                            rockGrabPinchDetectionAxisBlend,
+                });
+        }
+
+        inline void applyStableWeaponOppositionPose(
+            grab_finger_pose_runtime::SolvedGrabFingerPose& pose,
+            const grab_pinch_pocket_policy::Config& config,
+            const std::size_t opposedFingerIndex)
+        {
+            const auto stable =
+                grab_pinch_pocket_policy::
+                    buildStableOppositionFingerPose(
+                        config,
+                        g_rockConfig.rockGrabFingerMinValue,
+                        opposedFingerIndex);
+            pose.values = stable.values;
+            pose.jointValues = stable.jointValues;
+            pose.surfaceAimTarget = {};
+            pose.surfaceAimNormal = {};
+            pose.surfaceAimTargetValid = {};
+            pose.surfaceAimNormalValid = {};
+            pose.surfaceAimTargetObjectLocal = {};
+            pose.surfaceAimNormalObjectLocal = {};
+            pose.surfaceAimTargetObjectLocalValid = {};
+            pose.surfaceAimNormalObjectLocalValid = {};
+            pose.contactArcRotationRadians = {};
+            pose.contactArcRotationValid = {};
+            pose.hasObjectLocalSurfaceAim = false;
+            pose.usedAlternateThumbCurve = false;
+            pose.usedAlternateThumbSurfaceHit = false;
+            pose.hasJointValues = true;
+            pose.solved = true;
         }
 
         /*
@@ -1157,6 +1225,7 @@ namespace rock
             SkeletonBoneNameIndex capturedBoneNames;
             std::vector<TriangleData> localTriangles;
             std::vector<TriangleData> worldTriangles;
+            grab_finger_pose_runtime::FingerPoseTriangleSpatialIndex spatialIndex;
         };
 
         std::array<HandScratch, 2> hands{};

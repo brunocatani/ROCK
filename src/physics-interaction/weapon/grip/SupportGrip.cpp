@@ -2400,12 +2400,14 @@ namespace rock
                     kAttachTranslationWarningGameUnits;
             if (attachInvariantHeld) {
                 ROCK_LOG_INFO(Weapon,
-                    "TwoHandedGrip: support baseline published mode=dynamic hand={} grip={} generation={:016X} attachWeaponDelta=({:.5f}gu,{:.5f}deg) tandemDeltaAuthority=armed",
+                    "TwoHandedGrip: support baseline published mode=dynamic hand={} grip={} generation={:016X} attachWeaponDelta=({:.5f}gu,{:.5f}deg) surfaceSeat={:.2f}deg tandemDeltaAuthority=armed",
                     supportHandIsLeft ? "left" : "right",
                     supportGrip.gripSequence,
                     supportGrip.weaponGenerationKey,
                     attachTranslationGameUnits,
-                    attachRotationDegrees);
+                    attachRotationDegrees,
+                    supportGrip.surfaceSeatRotationRadians *
+                        RADIANS_TO_DEGREES);
             } else {
                 ROCK_LOG_WARN(Weapon,
                     "TwoHandedGrip: support attach invariant exceeded mode=dynamic hand={} grip={} generation={:016X} attachWeaponDelta=({:.5f}gu,{:.5f}deg)",
@@ -3597,13 +3599,38 @@ namespace rock
         const RE::NiPoint3 gripWorldPoint = useDynamicHandoffGrip ?
             firingGripWorld :
             (meshFound ? grabPoint.position : palmPos);
-        // The support hand seats by translation only: its palm pivot moves
-        // onto the grip point and the fingers solve against that seat.
+        constexpr float kDegreesToRadians =
+            0.01745329251994329577f;
+        const float surfaceSeatMaxRadians =
+            grab_finger_pose_runtime::weaponGrabPoseMode(
+                g_rockConfig.rockWeaponGrabPoseMode, g_rockConfig.rockGrabFingerPoseMode) !=
+                    grab_finger_pose_runtime::FingerPoseMode::July9 &&
+            g_rockConfig.rockWeaponSupportSurfaceSeatEnabled && meshFound ?
+            g_rockConfig.rockWeaponSupportSurfaceSeatMaxDegrees *
+                kDegreesToRadians :
+            0.0f;
+        const auto surfaceSeat =
+            weapon_support_acquisition_math::
+                alignHandFrameToGripSurface<
+                    RE::NiTransform,
+                    RE::NiPoint3>(
+                    handTransform,
+                    palmPos,
+                    palmDir,
+                    gripWorldPoint,
+                    grip.grabNormalWorld,
+                    surfaceSeatMaxRadians);
         const RE::NiTransform adjustedHandTransform =
+            surfaceSeat.valid ?
+            surfaceSeat.handWorld :
             weapon_two_handed_grip_math::alignHandFrameToGripPoint(
                 handTransform,
                 palmPos,
                 gripWorldPoint);
+        grip.surfaceSeatRotationRadians =
+            surfaceSeat.valid ?
+            surfaceSeat.appliedRotationRadians :
+            0.0f;
         const RE::NiPoint3 seatedPalmNormal =
             computePalmNormalFromHandBasis(
                 adjustedHandTransform,
@@ -3627,7 +3654,10 @@ namespace rock
         solveSupportGripFingerPose(
             isLeft,
             weaponNode,
+            decision,
+            weaponCollision,
             handTransform,
+            adjustedHandTransform,
             gripWorldPoint,
             cachedTrianglesFound,
             evidenceView,
@@ -3645,13 +3675,15 @@ namespace rock
         // gate diagnostics when selection falls through; the capture line
         // records only what identifies the resulting grip.
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: part grip captured hand={} weapon='{}' meshGrab={} fingerTriangles={} acquisition={} authority={} provider={} attachOnly={} generation={:016X}",
+            "TwoHandedGrip: part grip captured hand={} weapon='{}' meshGrab={} fingerTriangles={} surfaceSeat={:.2f}deg acquisition={} authority={} provider={} attachOnly={} generation={:016X}",
             isLeft ? "left" : "right",
             weaponNode->name.c_str(),
             useDynamicHandoffGrip ?
                 "HANDOFF" :
                 (meshFound ? "YES" : "FALLBACK"),
             fingerScratch.localTriangles.size(),
+            grip.surfaceSeatRotationRadians *
+                RADIANS_TO_DEGREES,
             weaponInteractionAcquisitionSourceName(
                 decision.acquisitionSource),
             _session.authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport ?

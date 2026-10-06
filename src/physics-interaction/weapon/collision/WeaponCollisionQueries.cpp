@@ -671,6 +671,53 @@ namespace rock
         return false;
     }
 
+    std::size_t WeaponCollision::findSupportGripEvidenceViews(
+        const RE::NiAVObject* currentWeaponRoot,
+        std::span<SupportGripEvidenceView> outViews) const
+    {
+        for (auto& view : outViews) {
+            view = {};
+        }
+        if (outViews.empty() || getCurrentWeaponGenerationKey() == 0 ||
+            !activeWeaponBodyRootMatches(currentWeaponRoot)) {
+            return 0;
+        }
+
+        std::array<std::uintptr_t, MAX_WEAPON_BODIES> seenSourceGroups{};
+        std::size_t seenSourceCount = 0;
+        std::size_t viewCount = 0;
+        for (const auto& instance : activeWeaponBodies()) {
+            SupportGripEvidenceView view{};
+            if (!tryBuildSupportGripEvidenceView(
+                    instance,
+                    currentWeaponRoot,
+                    view)) {
+                continue;
+            }
+
+            const std::uintptr_t sourceGroup = view.sourceGroupId;
+            const bool duplicate = sourceGroup != 0 &&
+                std::find(
+                    seenSourceGroups.begin(),
+                    seenSourceGroups.begin() + seenSourceCount,
+                    sourceGroup) !=
+                    seenSourceGroups.begin() + seenSourceCount;
+            if (duplicate) {
+                continue;
+            }
+            if (sourceGroup != 0 &&
+                seenSourceCount < seenSourceGroups.size()) {
+                seenSourceGroups[seenSourceCount++] = sourceGroup;
+            }
+
+            outViews[viewCount++] = view;
+            if (viewCount >= outViews.size()) {
+                break;
+            }
+        }
+        return viewCount;
+    }
+
     bool WeaponCollision::tryFindCurrentWeaponSurfaceNearPoint(
         const RE::NiAVObject* currentWeaponRoot,
         const RE::NiPoint3& pointWorld,
