@@ -147,20 +147,6 @@ namespace rock::contact_activity_tracker
             };
         }
 
-        bool isHandContactActive(bool isLeft, std::uint32_t handBodyId, std::uint32_t targetBodyId) const
-        {
-            const auto* slot = findSlot(isLeft ? _left : _right, makeBodyPairKey(handBodyId, targetBodyId));
-            return slot &&
-                   isWithinActiveWindow(
-                       _elapsedSeconds.load(std::memory_order_acquire),
-                       slot->lastSeenSeconds.load(std::memory_order_acquire));
-        }
-
-        bool isHandContactTracked(bool isLeft, std::uint32_t handBodyId, std::uint32_t targetBodyId) const
-        {
-            return findSlot(isLeft ? _left : _right, makeBodyPairKey(handBodyId, targetBodyId)) != nullptr;
-        }
-
     private:
         struct Slot
         {

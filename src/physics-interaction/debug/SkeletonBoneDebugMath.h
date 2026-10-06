@@ -197,7 +197,6 @@ namespace rock::skeleton_bone_debug_math
     inline constexpr const std::array<std::string_view, 30>& requiredFingerBoneNames() { return kRequiredFingerBoneNames; }
     inline constexpr const std::array<std::string_view, 31>& requiredCoreBoneNames() { return kRequiredCoreBoneNames; }
     inline constexpr const std::array<std::string_view, 16>& handsAndForearmsBoneNames() { return kHandsAndForearmsBoneNames; }
-    inline constexpr std::size_t estimatedCoreBodyAndFingerBoneCount() { return kRequiredCoreBoneNames.size() + kRequiredFingerBoneNames.size(); }
     inline constexpr std::size_t skeletonOverlayBudget() { return 768; }
 
     inline int sanitizeMaxSkeletonBonesDrawn(int value)

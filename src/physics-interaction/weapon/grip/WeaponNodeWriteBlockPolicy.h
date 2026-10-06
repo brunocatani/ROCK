@@ -93,9 +93,4 @@ namespace rock::weapon_node_write_block_policy
         }
         return HoldReason::None;
     }
-
-    [[nodiscard]] constexpr bool shouldHoldWriteBlock(const OwnershipInput& input) noexcept
-    {
-        return holdReason(input) != HoldReason::None;
-    }
 }

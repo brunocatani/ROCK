@@ -310,48 +310,6 @@ namespace rock::hand_semantic_contact_state
             }
         }
 
-        SemanticContactCollection collectFreshForBody(std::uint32_t targetBodyId, std::uint32_t maxFramesSinceContact) const
-        {
-            SemanticContactCollection result{};
-            for (const auto& record : _records) {
-                if (!record.valid || record.handBodyId == kInvalidBodyId || record.otherBodyId != targetBodyId) {
-                    continue;
-                }
-                if (record.framesSinceContact > maxFramesSinceContact) {
-                    continue;
-                }
-                result.add(record);
-            }
-            return result;
-        }
-
-        SemanticContactCollection collectFreshForBodyWithinSeconds(std::uint32_t targetBodyId, float maxAgeSeconds) const
-        {
-            SemanticContactCollection result{};
-            for (const auto& record : _records) {
-                if (!record.valid || record.handBodyId == kInvalidBodyId || record.otherBodyId != targetBodyId) {
-                    continue;
-                }
-                if (!(record.secondsSinceContact <= maxAgeSeconds)) {
-                    continue;
-                }
-                result.add(record);
-            }
-            return result;
-        }
-
-        SemanticContactRecord getFreshForRole(hand_collider_semantics::HandColliderRole role, std::uint32_t maxFramesSinceContact) const
-        {
-            const auto& record = _records[semanticContactSlotForRole(role)];
-            if (!record.valid || record.handBodyId == kInvalidBodyId || record.otherBodyId == kInvalidBodyId) {
-                return {};
-            }
-            if (record.framesSinceContact > maxFramesSinceContact) {
-                return {};
-            }
-            return record;
-        }
-
     private:
         std::array<SemanticContactRecord, kMaxSemanticContactRecords> _records{};
     };
