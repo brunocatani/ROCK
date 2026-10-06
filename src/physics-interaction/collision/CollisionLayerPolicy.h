@@ -106,6 +106,9 @@ namespace rock::collision_layer_policy
     // One equipped item in free flight. Unlike the held solver proxy, this
     // dynamic body exchanges impulses with ordinary loose props and weapons.
     inline constexpr std::uint32_t ROCK_LAYER_EQUIPPED_DROP_PROXY = 53;
+    // Opt-in stored weapon displays. The simulation filter further restricts
+    // these pairs to the exact empty-hand bodies published by their owner.
+    inline constexpr std::uint32_t ROCK_LAYER_STORED_DISPLAY = 54;
 
     inline constexpr std::uint32_t FO4_LAYER_VANILLA_CONFIGURED_COUNT = 47;
     inline constexpr std::uint32_t FO4_LAYER_LAST_VANILLA_CONFIGURED = FO4_LAYER_DROPPINGPICK;
@@ -124,7 +127,7 @@ namespace rock::collision_layer_policy
         return layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON ||
                layer == ROCK_LAYER_BODY || layer == ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY ||
                layer == ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY || layer == ROCK_LAYER_DYNAMIC_WEAPON_PROXY ||
-               layer == ROCK_LAYER_EQUIPPED_DROP_PROXY;
+               layer == ROCK_LAYER_EQUIPPED_DROP_PROXY || layer == ROCK_LAYER_STORED_DISPLAY;
     }
 
     inline constexpr bool isRockOwnedReusableLayer(std::uint32_t layer)
@@ -143,7 +146,7 @@ namespace rock::collision_layer_policy
     inline constexpr bool isRockOwnedMatrixLayer(std::uint32_t layer)
     {
         return layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON ||
-               (layer >= ROCK_LAYER_BODY && layer <= ROCK_LAYER_EQUIPPED_DROP_PROXY);
+               (layer >= ROCK_LAYER_BODY && layer <= ROCK_LAYER_STORED_DISPLAY);
     }
 
     inline constexpr bool isDynamicPropInteractionLayer(std::uint32_t layer)
@@ -665,6 +668,7 @@ namespace rock::collision_layer_policy
                      ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
         mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
         mask = withLayer(mask, ROCK_LAYER_EQUIPPED_DROP_PROXY);
+        mask = withLayer(mask, ROCK_LAYER_STORED_DISPLAY);
         // The simulation-pair filter admits only fixed world WEAP bodies on
         // this shared native row. Dynamic and actor-owned weapons stay excluded.
         if (retiredWeaponHandCollision) {
@@ -811,5 +815,7 @@ namespace rock::collision_layer_policy
         applyRockDynamicWeaponProxyLayerPolicy(matrix, npcDynamicCollisions);
         applyRockDynamicWorldCarLayerPolicies(matrix);
         applyLayerExpectedMask(matrix, ROCK_LAYER_EQUIPPED_DROP_PROXY, buildRockEquippedDropExpectedMask(npcDynamicCollisions));
+        applyLayerExpectedMask(matrix, ROCK_LAYER_STORED_DISPLAY,
+            (std::uint64_t{1}<<ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY) | (std::uint64_t{1}<<ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY));
     }
 }

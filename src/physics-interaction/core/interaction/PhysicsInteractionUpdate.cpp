@@ -602,6 +602,7 @@ namespace rock
         updateNativeGrenadeCollisionSuppression(hknp, 0.0f);
         ::rock::provider::dispatchFrameCallbacks(*this);
         storage_service::update(*this, frame);
+        storage_interaction::update(*this,frame,_dynamicHandCollision,_generatedBodyStepDrive.callbackGate());
         weapon_part_collision::update(*this, frame);
         // Equip identity/grip reconciliation can clear the early authored pose.
         // Yield the bridge only after every hand owner has finished this frame.
@@ -769,6 +770,7 @@ namespace rock
             auto* snapshotBhk = getPlayerBhkWorld();
             auto* snapshotHknp = snapshotBhk ? getHknpWorld(snapshotBhk) : nullptr;
             storage_service::shutdown(snapshotHknp);
+            storage_interaction::shutdown(snapshotHknp);
             if (snapshotBhk && snapshotHknp) {
                 _dynamicWorldCarCollision.restoreAll(snapshotBhk, snapshotHknp, "menu-blocked");
             } else {
@@ -1143,6 +1145,7 @@ namespace rock
         _weaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicWeaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicHandCollision.flushPendingPhysicsDrive(world, timing);
+        storage_interaction::flush(world,timing);
         _rightHand.flushConsumerObjectPairs(world);
         _leftHand.flushConsumerObjectPairs(world);
         if (performance_profiler::enabled()) {

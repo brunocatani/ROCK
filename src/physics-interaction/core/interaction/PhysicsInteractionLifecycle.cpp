@@ -628,6 +628,7 @@ namespace rock
         _looseWeaponCollision.clear(worldValid ? currentHknp : nullptr);
         _objectRestCollision.clear(worldValid ? currentHknp : nullptr);_objectRestRequests={};
         storage_service::shutdown(worldValid ? currentHknp : nullptr);
+        storage_interaction::shutdown(worldValid ? currentHknp : nullptr);
         weapon_part_collision::shutdown(worldValid ? currentHknp : nullptr);
         authored_interaction::reset();
         native_player_collision::publishAuthoredHands(worldValid ? currentHknp : nullptr, {});

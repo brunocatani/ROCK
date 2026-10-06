@@ -1308,6 +1308,11 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKStorageSceneLookupTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKStorageSceneLookupTests)
 
+  add_executable(ROCKStorageInteractionPolicyTests "${ROOT_DIR}/tests/StorageInteractionPolicyTests.cpp")
+  target_compile_features(ROCKStorageInteractionPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKStorageInteractionPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKStorageInteractionPolicyTests)
+
   add_executable(ROCKProviderLeasePolicyTests
     "${ROOT_DIR}/tests/ProviderLeasePolicyTests.cpp"
   )

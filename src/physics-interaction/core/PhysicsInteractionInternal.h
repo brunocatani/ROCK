@@ -1,4 +1,5 @@
 #pragma once
+#include "api/StorageInteractionService.h"
 
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/native/NativeImpactAudio.h"

@@ -2611,7 +2611,7 @@ namespace rock
                 auto& policyHand = isLeft ?
                     coordinatorInput.left : coordinatorInput.right;
                 policyHand.disabled = handInput.disabled;
-                policyHand.eligible = !handInput.disabled && handEmpty &&
+                policyHand.eligible = !storage_interaction::blocksShoulder(isLeft) && !handInput.disabled && handEmpty &&
                     handCanOwnFiringGrip;
                 if (!policyHand.eligible || menuInputActive) {
                     shoulder_stash::resetRuntime(detectorState);
@@ -2677,7 +2677,7 @@ namespace rock
                 auto& policyHand = isLeft ?
                     coordinatorInput.left : coordinatorInput.right;
                 policyHand.carriesWeapon = selectedCarryHand;
-                if (!selectedCarryHand || menuInputActive) {
+                if (!selectedCarryHand || menuInputActive || storage_interaction::blocksShoulder(isLeft)) {
                     shoulder_stash::resetRuntime(detectorState);
                     continue;
                 }

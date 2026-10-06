@@ -351,6 +351,12 @@ namespace rock::storage_service
             } catch (...) { return api::Status::InternalError; }
         }
     }
+    bool ownsStored(std::uint64_t owner,std::uint32_t reference)
+    {
+        return std::any_of(claims.begin(),claims.end(),[&](const auto& entry) {
+            return entry.owner==owner && entry.reference==reference && entry.stored && bool(entry.handle.get());
+        });
+    }
     bool allowsGrab(std::uint32_t reference, std::uint64_t owner)
     {
         for (const auto& entry : claims) if (entry.reference == reference && entry.owner != owner &&

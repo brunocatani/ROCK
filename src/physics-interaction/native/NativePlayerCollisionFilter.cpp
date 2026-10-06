@@ -1,4 +1,5 @@
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
+#include "api/StorageInteractionService.h"
 #include "physics-interaction/weapon/LooseWeaponCollisionPolicy.h"
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
@@ -256,6 +257,9 @@ namespace rock::native_player_collision
             if (admitted > 0 && admitted <= count) admitted = filterBladePairs(world, pairs, admitted);
             if (admitted > 0 && admitted <= count) admitted = filterWeaponReleasePairs(world, pairs, admitted);
             if (admitted > 0 && admitted <= count) admitted = filterRetiredWeaponHandPairs(world, pairs, admitted);
+            if (admitted > 0 && admitted <= count) admitted = filterPhysicalPairs(pairs,admitted,[&](const BodyPair& pair) {
+                return !storage_interaction::allowsPair(world,pair.bodyA,pair.bodyB);
+            });
             auto lease = s_gate.tryEnterCallback();
             if (lease && world && world == s_authoredHands.world && s_authoredHands.count &&
                 pairs && admitted > 0 && admitted <= count) {

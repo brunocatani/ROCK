@@ -625,6 +625,7 @@
             native_impact_audio::observeManifold(world, bodyIdA, bodyIdB, shapeKeyA, shapeKeyB);
         }
         if (solvedChildContact && bodyAIsDynamicHand) {
+            storage_interaction::contact(world,bodyIdB,dynamicBodySourceA.isLeft);
             _dynamicHandCollision.recordDynamicBodyContactCallback(
                 dynamicBodySourceA,
                 bodyIdB,
@@ -634,6 +635,7 @@
                 bodyBIsDynamicWeapon);
         }
         if (solvedChildContact && bodyBIsDynamicHand) {
+            storage_interaction::contact(world,bodyIdA,dynamicBodySourceB.isLeft);
             _dynamicHandCollision.recordDynamicBodyContactCallback(
                 dynamicBodySourceB,
                 bodyIdA,
