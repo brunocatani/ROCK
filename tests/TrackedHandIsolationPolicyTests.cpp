@@ -164,9 +164,11 @@ int main()
         ok &= expectNear("free frame raw x", result.rawHandWorld.translate.x, flattenedA.translate.x, 0.0001f);
         ok &= expectTrue("relation calibrated", state.valid);
         ok &= expectTrue("one accepted sample", state.acceptedSamples == 1);
-        ok &= expectTrue("probe valid", result.probeValid);
-        ok &= expectNear("probe translation zero", result.probeTranslationGameUnits, 0.0f, 0.001f);
-        ok &= expectNear("probe rotation zero", result.probeRotationDegrees, 0.0f, 0.01f);
+        // The calibrated relation reproduces the flattened hand exactly.
+        RE::NiTransform reconstructed{};
+        ok &= expectTrue("calibrated relation reconstructs", reconstruct(state, input, reconstructed));
+        ok &= expectNear("reconstruction translation matches", translationGameUnits(reconstructed, flattenedA), 0.0f, 0.001f);
+        ok &= expectNear("reconstruction rotation matches", rotationDegrees(reconstructed, flattenedA), 0.0f, 0.01f);
     }
 
     // Claimed frame: the flattened bone is ROCK's previous claim, far from the controller; the raw hand follows the first-person hand.
@@ -195,7 +197,6 @@ int main()
         ok &= expectNear("reconstructed scale", result.rawHandWorld.scale, expected.scale, 0.0001f);
         ok &= expectTrue("far from the claimed bone", translationGameUnits(result.rawHandWorld, flattenedB) > 100.0f);
         ok &= expectTrue("claimed frame does not calibrate", state.acceptedSamples == 1);
-        ok &= expectFalse("claimed frame has no probe", result.probeValid);
     }
 
     // Claimed output cannot become independent controller input on a missing-input frame.
@@ -220,9 +221,7 @@ int main()
         auto freePeer = input;
         freePeer.claimConsumed = false;
         auto peerRelation = state;
-        const auto unprobed = resolveFrame(peerRelation, freePeer, false);
-        ok &= expectTrue("valid peer remains available without diagnostic work", unprobed.valid);
-        ok &= expectFalse("disabled diagnostics do not compute residual", unprobed.probeValid);
+        ok &= expectTrue("valid peer remains available", resolveFrame(peerRelation, freePeer).valid);
 
         FrameInput nothing = input;
         nothing.flattenedHandValid = false;

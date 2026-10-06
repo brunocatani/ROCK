@@ -383,7 +383,6 @@ namespace rock
             RE::NiPoint3 appliedDeviation{};
             bool visualActive = false;
             // Lines emitted for the current contact episode (debug trace).
-            std::uint32_t debugTraceLines = 0;
             std::uint64_t poseFrame = 0; // Early decision awaiting final articulation.
             std::uint64_t traceSourceSequence = 0; // physics thread
             RE::NiTransform lastPresentedHandWorld{};

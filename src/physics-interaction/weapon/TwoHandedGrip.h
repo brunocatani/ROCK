@@ -1047,7 +1047,7 @@ namespace rock
         [[nodiscard]] bool isOneHandRecoilEnvelopeActive() const noexcept;
         void clearOneHandRecoilClaim();
         bool applyRightOneHandRecoil(RE::NiNode* weaponNode);
-        void traceRecoilReadiness() const;
+        void warnDeferredRightRecoilAcquisition() const;
 
 
         struct LockedHandVisualLerpState
@@ -1131,32 +1131,6 @@ namespace rock
             bool armed{ false };
         };
 
-        struct ScopeSafeHandFrameDiagnostic
-        {
-            RE::NiTransform rootHandWorld{};
-            RE::NiTransform driverWorld{};
-            RE::NiTransform reconstructedHandWorld{};
-            RE::NiTransform currentHandWorld{};
-            scope_safe_hand_frame_math::ResolutionMode resolutionMode{
-                scope_safe_hand_frame_math::ResolutionMode::Unavailable
-            };
-            std::uint32_t consecutiveDriverMissFramesBefore{ 0 };
-            std::uint32_t consecutiveDriverMissFramesAfter{ 0 };
-            bool rootSampleAllowed{ false };
-            bool rootHandValid{ false };
-            bool driverNodeAvailable{ false };
-            bool driverWorldFinite{ false };
-            bool driverFrameValid{ false };
-            bool driverWorldUsable{ false };
-            bool driverToHandLocalAvailable{ false };
-            bool reconstructedHandValid{ false };
-            bool lastHandWorldAvailable{ false };
-            bool collisionPresentationWasLive{ false };
-            bool scopeDriverFrameAuthorityActive{ false };
-            bool physicalFrameOverrideApplied{ false };
-            bool currentHandWorldValid{ false };
-        };
-
         struct ScopeSafeHandFrameState
         {
             RE::NiTransform driverToHandLocal{};
@@ -1169,7 +1143,6 @@ namespace rock
             bool currentHandWorldValid{ false };
             bool hasLastHandWorld{ false };
             bool rootRebaseActive{ false };
-            ScopeSafeHandFrameDiagnostic diagnostic{};
         };
 
         enum class LockedHandAuthorityRole : std::uint8_t
@@ -1178,62 +1151,6 @@ namespace rock
             PrimaryGrip,
             SupportGrip,
         };
-
-        struct LockedHandAuthorityAttemptDiagnostic
-        {
-            RE::NiTransform targetWorld{};
-            RE::NiTransform liveWorld{};
-            LockedHandAuthorityRole role{ LockedHandAuthorityRole::None };
-            bool requested{ false };
-            bool bridgeAvailable{ false };
-            bool targetUsable{ false };
-            bool liveWorldAvailable{ false };
-            bool liveWorldUsable{ false };
-            bool applied{ false };
-        };
-
-        struct GripFailureFrameSnapshot
-        {
-            std::array<ScopeSafeHandFrameDiagnostic, 2> handFrames{};
-            std::array<LockedHandAuthorityAttemptDiagnostic, 2>
-                authorityAttempts{};
-            RE::NiTransform weaponWorld{};
-            RE::NiPoint3 hmdPositionWorld{};
-            RE::NiPoint3 playerSpaceDeltaGameUnits{};
-            EquippedWeaponPrimaryGripInput leftPhysicalGripInput{};
-            EquippedWeaponPrimaryGripInput rightPhysicalGripInput{};
-            EquippedWeaponPrimaryGripInput primaryLogicalInput{};
-            EquippedWeaponPrimaryGripInput primaryDebouncedInput{};
-            std::uint64_t frameIndex{ 0 };
-            std::uint64_t weaponGenerationKey{ 0 };
-            std::uint64_t equippedWeaponOwnershipKey{ 0 };
-            std::uint64_t supportGripSequence{ 0 };
-            std::uint32_t weaponFormID{ 0 };
-            std::uint8_t primaryReleaseOpenFrames{ 0 };
-            float deltaSeconds{ 0.0f };
-            TwoHandedState state{ TwoHandedState::Inactive };
-            weapon_support_authority_policy::WeaponSupportAuthorityMode
-                authorityMode{
-                    weapon_support_authority_policy::
-                        WeaponSupportAuthorityMode::FullTwoHandedSolver
-                };
-            bool firingHandIsLeft{ false };
-            bool leftGripHeld{ false };
-            bool rightGripHeld{ false };
-            bool leftHandHoldingObject{ false };
-            bool rightHandHoldingObject{ false };
-            equipped_weapon_toggle_grab_policy::Mode weaponGrabMode{ equipped_weapon_toggle_grab_policy::Mode::HoldBoth };
-            bool animationBoundaryActive{ false };
-            bool scopeMenuOpen{ false };
-            bool manualScopeActivationRequested{ false };
-            bool nativeScopeRequestStateValid{ false };
-            bool nativeScopeRequestActive{ false };
-            bool hasHmdFrame{ false };
-            bool visualAuthorityAvailable{ false };
-            bool weaponWorldValid{ false };
-        };
-
-        static constexpr std::size_t kGripFailureHistoryCapacity = 30;
 
         enum class SupportInputBaselineKind : std::uint8_t
         {
@@ -1426,23 +1343,7 @@ namespace rock
 
         void updateGripping(RE::NiNode* weaponNode, float dt);
 
-        void recordGripFailureFrame(
-            RE::NiNode* weaponNode,
-            const EquippedWeaponGripFrameInput& frameInput,
-            const EquippedWeaponGripFrameInput& stableFrameInput,
-            float dt,
-            std::uint32_t currentWeaponFormID,
-            std::uint64_t currentWeaponGenerationKey,
-            std::uint64_t currentEquippedWeaponOwnershipKey);
-        void recordLockedHandAuthorityAttempt(
-            bool isLeft,
-            LockedHandAuthorityRole role,
-            const RE::NiTransform& targetWorld,
-            const RE::NiTransform* liveWorld,
-            bool bridgeAvailable,
-            bool applied);
         void logGripFailureIncident(const char* reason);
-        void resetGripFailureDiagnostics();
 
         bool providerPartAuthorityStillCurrent(WeaponPartGrip& grip, std::uint64_t currentWeaponGenerationKey);
 
@@ -2327,8 +2228,7 @@ namespace rock
             // hidden-frame clears so a same-frame handoff can publish its
             // replacement first.
             bool menuClosedThisFrame{ false };
-            // Presentation inputs. Diagnostic sampling is owned by
-            // ScopeTransitionTelemetry across all three scheduler phases.
+            // Presentation inputs.
             bool nativeRequestStateValid{ false };
             bool nativeRequestActive{ false };
             bool manualActivationRequested{ false };
@@ -2365,21 +2265,6 @@ namespace rock
             NativeScopeOverlayCalibrationState overlayCalibration{};
         };
 
-        // State owned by the GripFailureTelemetry module. Fixed-capacity,
-        // value-only prehistory: it allocates and formats nothing in the
-        // frame path; an involuntary teardown emits it once at a controlled
-        // rate so transient frame loss is reconstructible.
-        struct GripFailureTelemetryState
-        {
-            std::array<GripFailureFrameSnapshot, kGripFailureHistoryCapacity>
-                history{};
-            std::size_t historyNext{ 0 };
-            std::size_t historyCount{ 0 };
-            std::size_t currentHistoryIndex{ kGripFailureHistoryCapacity };
-            std::uint64_t incidentSequence{ 0 };
-            float detailedLogCooldownSeconds{ 0.0f };
-        };
-
         // Value-only equipped identity, independent of the grab-session state.
         std::uint64_t _confirmedEquippedOwnershipKey{ 0 };
         std::uint64_t _confirmedEquippedGripGenerationKey{ 0 };
@@ -2397,7 +2282,8 @@ namespace rock
         RE::NiTransform _retainedWeaponWorld{};
         HandVisualTransitionState _visuals{};
         ScopePresentationState _scope{};
-        GripFailureTelemetryState _telemetry{};
+        // Numbers the one-line grip failure warnings within a session.
+        std::uint64_t _gripFailureIncidentSequence{ 0 };
 
         // ---- Shared cross-module members ----
 

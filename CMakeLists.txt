@@ -699,11 +699,6 @@ if(BUILD_ROCK_TESTS)
   target_link_libraries(ROCKNativeScopeAdmissionTests PRIVATE CommonLibF4::CommonLibF4)
   add_rock_test(ROCKNativeScopeAdmissionTests)
 
-  add_executable(ROCKNativeScopeShotPolicyTests "${ROOT_DIR}/tests/NativeScopeShotPolicyTests.cpp")
-  target_compile_features(ROCKNativeScopeShotPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKNativeScopeShotPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKNativeScopeShotPolicyTests)
-
   add_executable(ROCKWorldTextStereoTests "${ROOT_DIR}/tests/WorldTextStereoTests.cpp")
   target_compile_features(ROCKWorldTextStereoTests PRIVATE cxx_std_23)
   target_include_directories(ROCKWorldTextStereoTests PRIVATE ${SOURCE_DIR})
@@ -1354,10 +1349,10 @@ if(BUILD_ROCK_TESTS)
   target_link_libraries(ROCKDebugOverlayShaderCompileTests PRIVATE d3dcompiler.lib)
   add_rock_test(ROCKDebugOverlayShaderCompileTests)
 
-  add_executable(ROCKWeaponTelemetryTraversalTests "${ROOT_DIR}/tests/WeaponTelemetryTraversalTests.cpp")
-  target_compile_features(ROCKWeaponTelemetryTraversalTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKWeaponTelemetryTraversalTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKWeaponTelemetryTraversalTests)
+  add_executable(ROCKWeaponSceneTraversalTests "${ROOT_DIR}/tests/WeaponSceneTraversalTests.cpp")
+  target_compile_features(ROCKWeaponSceneTraversalTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWeaponSceneTraversalTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKWeaponSceneTraversalTests)
 
   rock_write_test_catalog()
 

@@ -59,7 +59,6 @@ namespace rock
         std::string rockLogPattern = "%Y-%m-%d %H:%M:%S.%e [%l] %v";
         int rockLogSampleMilliseconds = 2000;
         bool rockLogFlushImmediate = false;
-        bool rockDebugPipboyPauseInput = false;
         /*
          * Clock-domain note: the remaining *Frames diagnostic settings below
          * (profiler warmup/report windows, dump/audit/log intervals) are
@@ -224,15 +223,11 @@ namespace rock
         bool rockDebugDrawWeaponColliders = false;
         bool rockDebugDrawGrabbedWeaponPartCollider = false;
         bool rockDebugDrawNativeScopeActivation = false;
-        bool rockDebugNativeScopeShotAlignment = false;
         bool rockDebugDrawAuthoredGripActivationZones = false;
         bool rockDebugDrawWeaponAuthority = false;
-        bool rockDebugGripFailureTelemetry = false;
         bool rockDebugDrawLooseWeaponGripZones = false;
         bool rockDebugDrawDynamicWeaponColliders = false;
-        bool rockDebugDumpWeaponAnimNodes = false;
         int rockDebugMaxWeaponBodiesDrawn = 100;
-        int rockDebugWeaponAnimNodeDumpIntervalFrames = 120;
         int rockDebugMaxShapeCapturesPerFrame = static_cast<int>(debug_overlay_runtime::kDefaultMaxShapeCapturesPerFrame);
         int rockDebugMaxConvexSupportVertices = 8;
         int rockDebugMaxCompoundChildren = static_cast<int>(debug_overlay_policy::kDefaultMaxCompoundChildren);
@@ -256,11 +251,6 @@ namespace rock
         int rockDebugGrabTransformTelemetryTextMode = 0;
         bool rockDebugShowGrabNotifications = false;
         bool rockDebugShowWeaponNotifications = false;
-        bool rockDebugHandTransformParity = false;
-        bool rockDebugHandWorldAuthority = false;
-        bool rockDebugWorldObjectOriginDiagnostics = false;
-        int rockDebugWorldObjectOriginLogIntervalFrames = 120;
-        float rockDebugWorldObjectOriginMismatchWarnGameUnits = 5.0f;
         bool rockDebugShowRootFlattenedFingerSkeletonMarkers = false;
         bool rockDebugShowSkeletonBoneVisualizer = false;
         bool rockDebugDrawSkeletonBoneAxes = false;

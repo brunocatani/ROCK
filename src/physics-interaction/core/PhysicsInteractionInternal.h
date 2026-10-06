@@ -89,7 +89,6 @@
 #include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
-#include "physics-interaction/debug/PhysicsWorldOriginDiagnostics.h"
 #include "physics-interaction/collision/PushAssist.h"
 #include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -132,12 +131,6 @@ namespace rock
 {
     namespace physics_interaction_internal
     {
-        inline constexpr float kRawParityWarnPosition = 0.10f;
-        inline constexpr float kRawParityWarnRotationDegrees = 0.5f;
-        inline constexpr float kRawParityFailPosition = 0.50f;
-        inline constexpr float kRawParityFailRotationDegrees = 2.0f;
-        inline constexpr int kRawParityWarnFrames = 2;
-        inline constexpr int kRawParityFailFrames = 10;
         inline constexpr std::array<std::string_view, 5> kWeaponCollisionWorkbenchExitMenuNames{
             "ExamineMenu",
             "PowerArmorModMenu",
@@ -538,12 +531,8 @@ namespace rock
 
             return flags;
         }
-        inline constexpr int kRawParitySummaryFrames = 300;
-        inline constexpr int kRawParityLagFrames = 5;
-        inline constexpr float kRawParityLagSlack = 0.05f;
         inline DirectSkeletonBoneReader s_directSkeletonBoneReader;
         inline std::uint32_t s_directSkeletonBoneLogCounter = 0;
-        inline bool s_worldOriginDiagnosticsEnabledLogged = false;
 
         struct ContactEventCallbackInfo
         {

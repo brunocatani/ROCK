@@ -287,7 +287,6 @@ namespace rock
         rockLogSampleMilliseconds =
             logging_policy::sanitizeSampleMilliseconds(static_cast<int>(ini.GetLongValue(DEBUG_SECTION, "iLogSampleMilliseconds", rockLogSampleMilliseconds)));
         rockLogFlushImmediate = ini.GetBoolValue(DEBUG_SECTION, "bLogFlushImmediate", rockLogFlushImmediate);
-        rockDebugPipboyPauseInput = ini.GetBoolValue(DEBUG_SECTION, "bDebugPipboyPauseInput", rockDebugPipboyPauseInput);
         rockPerformanceProfilerEnabled = ini.GetBoolValue(DEBUG_SECTION, "bPerformanceProfilerEnabled", rockPerformanceProfilerEnabled);
         rockPerformanceProfilerLogIntervalFrames =
             std::clamp(static_cast<int>(ini.GetLongValue(DEBUG_SECTION, "iPerformanceProfilerLogIntervalFrames", rockPerformanceProfilerLogIntervalFrames)), 30, 54000);
@@ -750,24 +749,14 @@ namespace rock
             rockDebugDrawGrabbedWeaponPartCollider);
         rockDebugDrawNativeScopeActivation =
             ini.GetBoolValue(SECTION, "bDebugDrawNativeScopeActivation", rockDebugDrawNativeScopeActivation);
-        rockDebugNativeScopeShotAlignment =
-            ini.GetBoolValue(SECTION, "bDebugNativeScopeShotAlignment", rockDebugNativeScopeShotAlignment);
         rockDebugDrawAuthoredGripActivationZones =
             ini.GetBoolValue(SECTION, "bDebugDrawAuthoredGripActivationZones", rockDebugDrawAuthoredGripActivationZones);
         rockDebugDrawWeaponAuthority =
             ini.GetBoolValue(SECTION, "bDebugDrawWeaponAuthority", rockDebugDrawWeaponAuthority);
-        rockDebugGripFailureTelemetry =
-            ini.GetBoolValue(SECTION, "bDebugGripFailureTelemetry", rockDebugGripFailureTelemetry);
         rockDebugDrawLooseWeaponGripZones =
             ini.GetBoolValue(SECTION, "bDebugDrawLooseWeaponGripZones", rockDebugDrawLooseWeaponGripZones);
         rockDebugDrawDynamicWeaponColliders = ini.GetBoolValue(SECTION, "bDebugDrawDynamicWeaponColliders", rockDebugDrawDynamicWeaponColliders);
-        rockDebugDumpWeaponAnimNodes = ini.GetBoolValue(SECTION, "bDebugDumpWeaponAnimNodes", rockDebugDumpWeaponAnimNodes);
         rockDebugMaxWeaponBodiesDrawn = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxWeaponBodiesDrawn", rockDebugMaxWeaponBodiesDrawn));
-        rockDebugWeaponAnimNodeDumpIntervalFrames =
-            static_cast<int>(ini.GetLongValue(SECTION, "iDebugWeaponAnimNodeDumpIntervalFrames", rockDebugWeaponAnimNodeDumpIntervalFrames));
-        if (rockDebugWeaponAnimNodeDumpIntervalFrames < 1) {
-            rockDebugWeaponAnimNodeDumpIntervalFrames = 1;
-        }
         rockDebugMaxShapeCapturesPerFrame = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxShapeCapturesPerFrame", rockDebugMaxShapeCapturesPerFrame));
         rockDebugMaxConvexSupportVertices = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxConvexSupportVertices", rockDebugMaxConvexSupportVertices));
         rockDebugMaxCompoundChildren = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxCompoundChildren", rockDebugMaxCompoundChildren));
@@ -825,20 +814,6 @@ namespace rock
         }
         rockDebugShowGrabNotifications = ini.GetBoolValue(SECTION, "bDebugShowGrabNotifications", rockDebugShowGrabNotifications);
         rockDebugShowWeaponNotifications = ini.GetBoolValue(SECTION, "bDebugShowWeaponNotifications", rockDebugShowWeaponNotifications);
-        rockDebugHandTransformParity = ini.GetBoolValue(SECTION, "bDebugHandTransformParity", rockDebugHandTransformParity);
-        rockDebugHandWorldAuthority = ini.GetBoolValue(SECTION, "bDebugHandWorldAuthority", rockDebugHandWorldAuthority);
-        rockDebugWorldObjectOriginDiagnostics =
-            ini.GetBoolValue(SECTION, "bDebugWorldObjectOriginDiagnostics", rockDebugWorldObjectOriginDiagnostics);
-        rockDebugWorldObjectOriginLogIntervalFrames =
-            static_cast<int>(ini.GetLongValue(SECTION, "iDebugWorldObjectOriginLogIntervalFrames", rockDebugWorldObjectOriginLogIntervalFrames));
-        if (rockDebugWorldObjectOriginLogIntervalFrames < 1) {
-            rockDebugWorldObjectOriginLogIntervalFrames = 1;
-        }
-        rockDebugWorldObjectOriginMismatchWarnGameUnits = static_cast<float>(
-            ini.GetDoubleValue(SECTION, "fDebugWorldObjectOriginMismatchWarnGameUnits", rockDebugWorldObjectOriginMismatchWarnGameUnits));
-        if (!std::isfinite(rockDebugWorldObjectOriginMismatchWarnGameUnits) || rockDebugWorldObjectOriginMismatchWarnGameUnits < 0.0f) {
-            rockDebugWorldObjectOriginMismatchWarnGameUnits = 0.0f;
-        }
         rockDebugShowRootFlattenedFingerSkeletonMarkers =
             ini.GetBoolValue(SECTION, "bDebugShowRootFlattenedFingerSkeletonMarkers", rockDebugShowRootFlattenedFingerSkeletonMarkers);
         rockDebugShowSkeletonBoneVisualizer = ini.GetBoolValue(SECTION, "bDebugShowSkeletonBoneVisualizer", rockDebugShowSkeletonBoneVisualizer);

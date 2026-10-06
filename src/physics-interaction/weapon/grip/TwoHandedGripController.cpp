@@ -505,14 +505,6 @@ namespace rock
         stableFrameInput.primaryGripInput.held = primaryReleaseDecision.retained;
         stableFrameInput.primaryGripInput.released = primaryReleaseDecision.releaseConfirmed;
 
-        recordGripFailureFrame(
-            weaponNode,
-            frameInput,
-            stableFrameInput,
-            dt,
-            weaponCollision.getCurrentObservedEquippedWeaponFormID(),
-            currentWeaponGenerationKey,
-            currentEquippedWeaponOwnershipKey);
 
         const auto tryReleasedPrimaryHandoff = [&]() {
             if (!handlingSettings.ambidextrousHandoffEnabled || !primaryGripInput.released || !supportOwned) return false;
@@ -799,7 +791,7 @@ namespace rock
         _scope.rejectedRigidFrameGeneration = 0;
         _scope.safeHandFrames = {};
         resetFrikWeaponOwnership();
-        resetGripFailureDiagnostics();
+        _gripFailureIncidentSequence = 0;
         _scope.driverFrameAuthorityActive = false;
         _scope.nativeRequestStateValid = false;
         _scope.nativeRequestActive = false;

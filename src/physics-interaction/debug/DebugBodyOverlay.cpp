@@ -3015,18 +3015,6 @@ namespace rock::debug
                 color[2] = 0.04f;
                 color[3] = 1.0f;
                 break;
-            case MarkerOverlayRole::NativeScopeShotSight:
-                color[0] = 0.1f; color[1] = 1.0f; color[2] = 0.2f; color[3] = 1.0f;
-                break;
-            case MarkerOverlayRole::NativeScopeShotMuzzle:
-                color[0] = 0.05f; color[1] = 0.9f; color[2] = 1.0f; color[3] = 1.0f;
-                break;
-            case MarkerOverlayRole::NativeScopeShotAim:
-                color[0] = 1.0f; color[1] = 0.9f; color[2] = 0.05f; color[3] = 1.0f;
-                break;
-            case MarkerOverlayRole::NativeScopeShotLaunch:
-                color[0] = 1.0f; color[1] = 0.1f; color[2] = 0.9f; color[3] = 1.0f;
-                break;
             case MarkerOverlayRole::NativeScopeRockTarget:
                 color[0] = 0.05f;
                 color[1] = 1.0f;
@@ -3151,42 +3139,6 @@ namespace rock::debug
                 color[1] = 0.25f;
                 color[2] = 0.95f;
                 color[3] = 0.88f;
-                break;
-            case MarkerOverlayRole::TargetVisualOrigin:
-                color[0] = 0.20f;
-                color[1] = 1.0f;
-                color[2] = 0.35f;
-                color[3] = 0.95f;
-                break;
-            case MarkerOverlayRole::TargetRawBodyOrigin:
-                color[0] = 1.0f;
-                color[1] = 0.45f;
-                color[2] = 0.05f;
-                color[3] = 0.95f;
-                break;
-            case MarkerOverlayRole::TargetBodyTransformOrigin:
-                color[0] = 1.0f;
-                color[1] = 0.85f;
-                color[2] = 0.10f;
-                color[3] = 0.95f;
-                break;
-            case MarkerOverlayRole::TargetMotionOrigin:
-                color[0] = 0.95f;
-                color[1] = 0.15f;
-                color[2] = 1.0f;
-                color[3] = 0.95f;
-                break;
-            case MarkerOverlayRole::TargetBestOriginCandidate:
-                color[0] = 0.10f;
-                color[1] = 0.75f;
-                color[2] = 1.0f;
-                color[3] = 0.95f;
-                break;
-            case MarkerOverlayRole::TargetOriginErrorLine:
-                color[0] = 1.0f;
-                color[1] = 0.05f;
-                color[2] = 0.05f;
-                color[3] = 0.95f;
                 break;
             case MarkerOverlayRole::RightGrabHeldRelativeHandTargetError:
             case MarkerOverlayRole::LeftGrabHeldRelativeHandTargetError:

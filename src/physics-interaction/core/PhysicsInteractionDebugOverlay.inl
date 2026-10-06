@@ -96,8 +96,6 @@
                 g_rockConfig.rockDebugDrawAuthoredGripActivationZones,
             .nativeScopeActivation =
                 g_rockConfig.rockEnableImmersiveScopes && g_rockConfig.rockDebugDrawNativeScopeActivation,
-            .worldOriginDiagnostics =
-                g_rockConfig.rockDebugWorldObjectOriginDiagnostics,
         });
 
         const bool drawTargetColliders = visualization.targetColliders;
@@ -156,9 +154,6 @@
             drawAuthoredGripActivationZones;
         const bool drawNativeScopeActivation =
             visualization.nativeScopeActivation;
-        const bool drawNativeScopeShots = g_rockConfig.rockEnableImmersiveScopes && g_rockConfig.rockDebugNativeScopeShotAlignment;
-        const bool drawWorldOriginDiagnostics =
-            visualization.worldOriginDiagnostics;
 
         std::array<std::uint32_t, 2> grabbedWeaponPartColliderBodyIds{
             INVALID_BODY_ID,
@@ -203,19 +198,10 @@
             drawWeaponColliders || hasGrabbedWeaponPartCollider ||
             drawDynamicWeaponColliders ||
             drawGrabAuthorityProxyCollider || drawGrabPivotSourceCollider;
-        if (drawWorldOriginDiagnostics && !s_worldOriginDiagnosticsEnabledLogged) {
-            ROCK_LOG_INFO(Hand,
-                "World object origin diagnostics enabled: intervalFrames={} warnThresholdGameUnits={:.2f} visualSourceOrder=bodyOwnerNode>hitNode>visualNode>referenceRoot",
-                g_rockConfig.rockDebugWorldObjectOriginLogIntervalFrames,
-                g_rockConfig.rockDebugWorldObjectOriginMismatchWarnGameUnits);
-            s_worldOriginDiagnosticsEnabledLogged = true;
-        } else if (!drawWorldOriginDiagnostics) {
-            s_worldOriginDiagnosticsEnabledLogged = false;
-        }
         if (!drawAnyRockColliderBodies && !drawTargetColliders && !drawHandAxes && !drawGrabPivots && !drawFingerProbes &&
             !drawFingerSweptArc && !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal &&
             !drawGrabContactPatch && !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay &&
-            !drawWeaponAuthorityDebug && !drawLooseWeaponGripZones && !drawNativeScopeActivation && !drawNativeScopeShots && !drawGrabSupportFrame && !drawWorldOriginDiagnostics &&
+            !drawWeaponAuthorityDebug && !drawLooseWeaponGripZones && !drawNativeScopeActivation && !drawGrabSupportFrame &&
             !drawDynamicHandColliders && !drawDynamicWeaponColliders && !drawAuthoredSupportGripDebug && !drawProviderOverlay && !drawVideoSyncMarker) {
             debug::ClearFrame();
             return;
@@ -233,7 +219,7 @@
             drawWeaponAuthorityDebug || drawAuthoredSupportGripDebug;
         frame.drawMarkers = drawGrabPivots || drawFingerProbes || drawFingerSweptArc || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton ||
             drawGrabPocketNormal || drawGrabContactPatch || drawGrabForceTorque || drawHandBoneContacts || drawGrabAuthorityProxy || drawGrabTransformTelemetryAxes ||
-            drawWeaponAuthorityDebug || drawLooseWeaponGripZones || drawNativeScopeActivation || drawGrabSupportFrame || drawWorldOriginDiagnostics || drawDynamicHandColliders ||
+            drawWeaponAuthorityDebug || drawLooseWeaponGripZones || drawNativeScopeActivation || drawGrabSupportFrame || drawDynamicHandColliders ||
             drawAuthoredSupportGripDebug;
         frame.drawSkeleton = drawSkeletonBones;
         frame.drawColoredLines = providerOverlay && providerOverlay->lineCount > 0;
@@ -263,8 +249,6 @@
                 (source.flags & static_cast<std::uint32_t>(
                     provider::RockProviderDebugOverlayTextFlagV1::WorldAnchored)) != 0;
         }
-        if (drawNativeScopeShots) native_scope_shot_diagnostics::appendOverlay(frame);
-        RE::bhkWorld* originDiagnosticBhk = drawWorldOriginDiagnostics ? context.bhkWorld : nullptr;
         const bool rightDisabled = context.right.disabled;
         const bool leftDisabled = context.left.disabled;
 
@@ -415,31 +399,6 @@
             outPosition = bodyWorld.translate;
             return true;
         };
-
-        auto addWorldOriginDiagnostic =
-            [&](const Hand& hand, bool held, RE::hknpBodyId bodyId, RE::TESObjectREFR* refr, RE::NiAVObject* hitNode, RE::NiAVObject* visualNode) {
-                if (!drawWorldOriginDiagnostics || !originDiagnosticBhk || !hknp) {
-                    return;
-                }
-
-                origin_diagnostics::TargetOriginSample sample{};
-                if (!origin_diagnostics::sampleTarget(originDiagnosticBhk,
-                        hknp,
-                        bodyId,
-                        refr,
-                        hitNode,
-                        visualNode,
-                        g_rockConfig.rockDebugWorldObjectOriginMismatchWarnGameUnits,
-                        sample)) {
-                    return;
-                }
-
-                origin_diagnostics::logSampleIfNeeded(hand.handName(),
-                    held,
-                    sample,
-                    static_cast<std::uint32_t>((std::max)(g_rockConfig.rockDebugWorldObjectOriginLogIntervalFrames, 1)));
-                origin_diagnostics::publishMarkers(frame, sample);
-            };
 
         auto addSkeletonBone = [&](const DirectSkeletonBoneSnapshot& snapshot, std::size_t boneIndex, bool drawAxis) {
             if (!frame.drawSkeleton || boneIndex >= snapshot.bones.size() || frame.skeletonCount >= frame.skeletonEntries.size()) {
@@ -3373,15 +3332,13 @@
                     liveProxyWorld);
                 const float queuedToApplied =
                     snapshot.hasQueuedTarget && snapshot.hasAppliedTarget ?
-                    origin_diagnostics::distance(
-                        snapshot.queuedProxyTargetWorld.translate,
-                        snapshot.appliedProxyTargetWorld.translate) :
+                    (snapshot.queuedProxyTargetWorld.translate -
+                        snapshot.appliedProxyTargetWorld.translate).Length() :
                     -1.0f;
                 const float appliedToPre =
                     snapshot.hasAppliedTarget && liveProxyOk ?
-                    origin_diagnostics::distance(
-                        snapshot.appliedProxyTargetWorld.translate,
-                        liveProxyWorld.translate) :
+                    (snapshot.appliedProxyTargetWorld.translate -
+                        liveProxyWorld.translate).Length() :
                     -1.0f;
                 constexpr float clockTextColor[4]{ 1.0f, 0.92f, 0.10f, 0.98f };
                 const RE::NiPoint3 clockLabel = snapshot.hasQueuedTarget ?
@@ -3681,24 +3638,14 @@
             }
         }
 
-        if (frame.drawTargetBodies || drawWorldOriginDiagnostics) {
+        if (frame.drawTargetBodies) {
             auto addHandTarget = [&](const Hand& hand) {
                 if (hand.isHolding()) {
-                    const auto& savedState = hand.getSavedObjectState();
-                    if (frame.drawTargetBodies) {
-                        addBody(
-                            savedState.bodyId,
-                            debug::BodyOverlayRole::Target);
-                    }
-                    addWorldOriginDiagnostic(hand, true, savedState.bodyId, savedState.refr, nullptr, nullptr);
+                    addBody(hand.getSavedObjectState().bodyId, debug::BodyOverlayRole::Target);
                     return;
                 }
                 if (hand.hasSelection()) {
-                    const auto& selection = hand.getSelection();
-                    if (frame.drawTargetBodies) {
-                        addBody(selection.bodyId, debug::BodyOverlayRole::Target);
-                    }
-                    addWorldOriginDiagnostic(hand, false, selection.bodyId, selection.refr, selection.hitNode, selection.visualNode);
+                    addBody(hand.getSelection().bodyId, debug::BodyOverlayRole::Target);
                 }
             };
 

@@ -2485,65 +2485,6 @@ namespace rock
         updateHand(false, frame.right, rightHand, rightHandWeaponOwned, rightVisualReturnActive);
         updateHand(true, frame.left, leftHand, leftHandWeaponOwned, leftVisualReturnActive);
 
-        /*
-         * Per-frame trace of the render-follow loop under FRIK API v2: which
-         * controller sample fed the twins, what the palm body did against its
-         * target, and what was presented. Dense for the first 240 frames of a
-         * contact episode, then every 30th frame. Debug key only.
-         */
-        if (g_rockConfig.rockDebugHandWorldAuthority) {
-            const auto traceHand = [&](bool isLeft, const HandFrameInput& handInput, const dynamic_hand_collision_telemetry::HandSample& handTelemetry, HandSlots& handSlots) {
-                const bool episodeActive = handTelemetry.anyContact || handSlots.visualActive || handSlots.surfaceLatch.active;
-                if (!episodeActive) {
-                    handSlots.debugTraceLines = 0;
-                    return;
-                }
-                constexpr std::uint32_t kDenseTraceLines = 240;
-                const std::uint32_t line = handSlots.debugTraceLines++;
-                if (line >= kDenseTraceLines && (line - kDenseTraceLines) % 30 != 0) {
-                    return;
-                }
-                RE::NiTransform rendered{};
-                const bool renderedValid = frik_hand_world_authority::tryGetPresentedHandWorld(isLeft, rendered);
-                const auto transport = rendered_bone_transport_policy::makeHandTransport(
-                    handInput.rawHandWorld, true, rendered, renderedValid);
-                const auto& palm = handTelemetry.twins[kPalmSlot];
-                ROCK_LOG_DEBUG(Hand,
-                    "DYNHAND hand={} line={} claim={} src={} xport={}({:.2f}gu,{:.2f}deg) raw=({:.1f},{:.1f},{:.1f}) rendered=({:.1f},{:.1f},{:.1f}) palmTarget=({:.1f},{:.1f},{:.1f}) palmReq=({:.1f},{:.1f},{:.1f}) palmLive=({:.1f},{:.1f},{:.1f}) palmContact={} contacts={} combined={:.2f} applied={:.2f} visual={} latch={} owned={} authority={}",
-                    isLeft ? "L" : "R",
-                    line,
-                    frik_hand_world_authority::wasClaimConsumedThisFrame(isLeft) ? 1 : 0,
-                    frik_hand_world_authority::rawHandSourceName(isLeft),
-                    transport.active ? 1 : 0,
-                    transport.active && renderedValid ? tracked_hand_isolation_policy::translationGameUnits(handInput.rawHandWorld, rendered) : 0.0f,
-                    transport.active && renderedValid ? tracked_hand_isolation_policy::rotationDegrees(handInput.rawHandWorld, rendered) : 0.0f,
-                    handInput.rawHandWorld.translate.x,
-                    handInput.rawHandWorld.translate.y,
-                    handInput.rawHandWorld.translate.z,
-                    renderedValid ? rendered.translate.x : 0.0f,
-                    renderedValid ? rendered.translate.y : 0.0f,
-                    renderedValid ? rendered.translate.z : 0.0f,
-                    palm.publishedTargetWorld.translate.x,
-                    palm.publishedTargetWorld.translate.y,
-                    palm.publishedTargetWorld.translate.z,
-                    palm.requestedTargetWorldGame.x,
-                    palm.requestedTargetWorldGame.y,
-                    palm.requestedTargetWorldGame.z,
-                    palm.liveBodyWorldGame.x,
-                    palm.liveBodyWorldGame.y,
-                    palm.liveBodyWorldGame.z,
-                    palm.contactActive ? 1 : 0,
-                    handTelemetry.contactCount,
-                    handTelemetry.combinedContactDeviationGameUnits,
-                    handTelemetry.appliedVisualDeviationGameUnits,
-                    handSlots.visualActive ? 1 : 0,
-                    handSlots.surfaceLatch.active ? 1 : 0,
-                    handTelemetry.ownedByStrongerSystem ? 1 : 0,
-                    handTelemetry.visualAuthorityAvailable ? 1 : 0);
-            };
-            traceHand(false, frame.right, telemetry.hands[0], _hands[0]);
-            traceHand(true, frame.left, telemetry.hands[1], _hands[1]);
-        }
         telemetry.transitionCollisionSuppressed =
             _transitionCollisionSuppressed;
         _telemetrySnapshot = telemetry;

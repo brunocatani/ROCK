@@ -3694,4 +3694,21 @@ namespace rock
             _session.weaponGenerationKey);
         return selectionDecision.selection;
     }
+
+    void TwoHandedGrip::logGripFailureIncident(const char* const reason)
+    {
+        const auto occupancy = getGripOccupancy();
+        ROCK_LOG_WARN(
+            Weapon,
+            "TwoHandedGrip: grip failure incident={} reason={} state={} authority={} firingHand={} generation={:016X} ownership={:016X} partGrip(L/R)={}/{}",
+            ++_gripFailureIncidentSequence,
+            reason ? reason : "unknown",
+            twoHandedStateDiagnosticName(_session.state),
+            supportAuthorityDiagnosticName(_session.authorityMode),
+            firingHandName(),
+            _session.weaponGenerationKey,
+            _session.equippedWeaponOwnershipKey,
+            occupancy.left.partGripActive,
+            occupancy.right.partGripActive);
+    }
 }

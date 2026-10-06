@@ -137,7 +137,6 @@ namespace rock
         void normalizeWeaponPresentationScaleAfterFrikWeaponPass();
         void synchronizeEquipVisualBridgeAfterFrikWeaponPass();
         void finalizeEquipVisualBridgePresentation();
-        void traceScopeColliderState() const;
 
         [[nodiscard]] bool tryGetManualScopePresentationTarget(
             std::uint64_t& outWeaponGenerationKey,
@@ -339,7 +338,6 @@ namespace rock
 
         bool refreshHandBoneCache();
 
-        void sampleHandTransformParity();
 
         RE::NiTransform getInteractionHandTransform(bool isLeft) const;
 
@@ -753,17 +751,6 @@ namespace rock
             bool activeThisFrame{ false };
         };
 
-        struct RawHandParityState
-        {
-            RE::NiTransform previousApiTransform{};
-            float lastPositionDelta = 0.0f;
-            float lastRotationDeltaDegrees = 0.0f;
-            int warnFrames = 0;
-            int failFrames = 0;
-            int lagFrames = 0;
-            bool hasPreviousApiTransform = false;
-        };
-
         struct GrabTransformTelemetryState
         {
             bool active = false;
@@ -1050,19 +1037,15 @@ namespace rock
             std::unordered_map<std::uint32_t, std::uint32_t> owned;
         };
 
-        // Diagnostic counters, one-shot log latches, parity auditing, and
-        // grab-transform telemetry.
+        // Diagnostic counters, one-shot log latches and grab-transform
+        // telemetry.
         struct InteractionDiagnosticsState
         {
             std::atomic<int> contactLogCounter{ 0 };
             int deltaLogCounter = 0;
-            int handCacheResolveLogCounter = 0;
             int weaponInteractionProbeLogCounter = 0;
             int wpnNodeLogCounter = 0;
-            int paritySummaryCounter = 0;
-            bool parityEnabledLogged = false;
             bool runtimeScaleLogged = false;
-            std::array<RawHandParityState, 2> rawHandParityStates{};
             std::array<GrabTransformTelemetryState, 2> grabTransformTelemetryStates{};
             std::uint32_t grabTransformTelemetryNextSession = 1;
             weapon_debug_notification_policy::WeaponNotificationState weaponDebugNotification{};

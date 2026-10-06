@@ -656,8 +656,6 @@ namespace rock
             std::uint64_t* outInstanceContentKey = nullptr) const;
         std::uint64_t getWeaponVisualCompositionKey(RE::NiAVObject* weaponNode, WeaponVisualKeyStats& stats) const;
 
-        void maybeDumpWeaponAnimNodeDiagnostics(RE::NiAVObject* updateWeaponNode, std::uint64_t observedKey);
-
         void queueBodyTarget(WeaponBodyInstance& instance, const RE::NiTransform& weaponTransform, float sourceDeltaSeconds);
 
         /*
@@ -795,14 +793,6 @@ namespace rock
             std::atomic<std::uint32_t> failureCount{ 0 };
         };
 
-        // State owned by the collision diagnostics TUs
-        // (WeaponCollisionDiagnostics).
-        struct CollisionDiagnosticsState
-        {
-            int animNodeDumpFrameCounter{ 0 };
-            std::uint64_t lastAnimNodeDumpKey{ 0 };
-        };
-
         WeaponIdentityState _identity{};
         WeaponBodyBankState _bodies{};
         // Default-initialized on purpose; see the struct comment.
@@ -819,7 +809,6 @@ namespace rock
         std::array<EmitterPath, MAX_WEAPON_EMITTERS> _emitterPaths{};
         GeneratedSourceState _sources{};
         DriveControlState _drive{};
-        CollisionDiagnosticsState _diagnostics{};
 
         // ---- Shared direct members ----
         PhysicsCallbackQuiescenceGate* _physicsCallbackGate{ nullptr };

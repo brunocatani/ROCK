@@ -1371,23 +1371,6 @@ namespace rock
                    _firing.rightNativeWeaponAimFrame.weaponInWandOrientation);
     }
 
-    namespace
-    {
-        const char* scopeSafeResolutionModeName(const scope_safe_hand_frame_math::ResolutionMode mode)
-        {
-            switch (mode) {
-            case scope_safe_hand_frame_math::ResolutionMode::RootFlattened:
-                return "root-flattened";
-            case scope_safe_hand_frame_math::ResolutionMode::DriverReconstructed:
-                return "driver-reconstructed";
-            case scope_safe_hand_frame_math::ResolutionMode::LastKnown:
-                return "last-known";
-            default:
-                return "unavailable";
-            }
-        }
-    }
-
     void TwoHandedGrip::refreshNaturalHandInWandFrames()
     {
         auto* playerNodes = f4vr::getPlayerNodes();
@@ -1432,44 +1415,6 @@ namespace rock
             };
 
             captureRelation(wandNode ? &wandNode->world : nullptr, outBoneInWand, outWandValid);
-
-            /*
-             * Probe (FRIK API v2.3 port): every loose seat, palm pivot and
-             * left-carry mirror derives from this solver hand through the
-             * relations captured here. Compare it with the hand FRIK tracked
-             * this frame and the hand it rendered last frame so a rotated
-             * basis shows up as a number instead of a rotated weapon.
-             */
-            RE::NiTransform firstPersonHand{};
-            RE::NiTransform presentedHand{};
-            const bool firstPersonValid = frik_visual_authority::tryGetHandWorldTransform(
-                frik_visual_authority::handFromBool(isLeft), firstPersonHand);
-            const bool presentedValid = frik_visual_authority::tryGetPresentedHandWorldTransform(isLeft, presentedHand);
-            const RE::NiTransform identity = transform_math::makeIdentityTransform<RE::NiTransform>();
-            const float solverVsFirstPersonDegrees = firstPersonValid ?
-                tracked_hand_isolation_policy::rotationDegrees(handWorld, firstPersonHand) : -1.0f;
-            const float solverVsFirstPersonGameUnits = firstPersonValid ?
-                tracked_hand_isolation_policy::translationGameUnits(handWorld, firstPersonHand) : -1.0f;
-            const float solverVsPresentedDegrees = presentedValid ?
-                tracked_hand_isolation_policy::rotationDegrees(handWorld, presentedHand) : -1.0f;
-            const float solverVsPresentedGameUnits = presentedValid ?
-                tracked_hand_isolation_policy::translationGameUnits(handWorld, presentedHand) : -1.0f;
-            const float boneInWandDegrees = outWandValid ?
-                tracked_hand_isolation_policy::rotationDegrees(outBoneInWand, identity) : -1.0f;
-            const char* solverMode = scopeSafeResolutionModeName(
-                _scope.safeHandFrames[isLeft ? 0u : 1u].diagnostic.resolutionMode);
-            const char* rawSource = frik_hand_world_authority::rawHandSourceName(isLeft);
-            if (isLeft) {
-                ROCK_LOG_SAMPLE_INFO(Weapon, 2000,
-                    "TwoHandedGrip: natural hand frame left solver={} raw={} vsFirstPerson={:.1f}deg/{:.2f}gu vsPresented={:.1f}deg/{:.2f}gu boneInWand={:.1f}deg",
-                    solverMode, rawSource, solverVsFirstPersonDegrees, solverVsFirstPersonGameUnits,
-                    solverVsPresentedDegrees, solverVsPresentedGameUnits, boneInWandDegrees);
-            } else {
-                ROCK_LOG_SAMPLE_INFO(Weapon, 2000,
-                    "TwoHandedGrip: natural hand frame right solver={} raw={} vsFirstPerson={:.1f}deg/{:.2f}gu vsPresented={:.1f}deg/{:.2f}gu boneInWand={:.1f}deg",
-                    solverMode, rawSource, solverVsFirstPersonDegrees, solverVsFirstPersonGameUnits,
-                    solverVsPresentedDegrees, solverVsPresentedGameUnits, boneInWandDegrees);
-            }
         };
 
         refreshHand(

@@ -4,7 +4,6 @@
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
-#include "physics-interaction/weapon/telemetry/ScopeTransitionTelemetry.h"
 #include "api/ProviderRuntimeServices.h"
 
 // Equipped-weapon frame: transitions, the per-frame equipped weapon update, authored primary grip runtime, handling settings, and shoulder sheath/retrieve.
@@ -33,22 +32,6 @@ namespace rock
             // wheel cannot become a delayed detach after its lease is cleared.
             static_cast<void>(input_remap_runtime::consumeRawButtonState(isLeft, input_remap_policy::kGrabButtonId));
         }
-    }
-
-    void PhysicsInteraction::traceScopeColliderState() const
-    {
-        if (!scope_transition_telemetry::activeLogger()) return;
-        DynamicWeaponCollisionRuntime::DebugSnapshot snapshot{};
-        const bool valid = _dynamicWeaponCollision.getDebugSnapshot(snapshot);
-        scope_transition_telemetry::write(
-            "SCT collider frame={} source=cached-finish-frame valid={} physicsReadable={} physicsValid={} identityCurrent={} generation={:X} solve={} body={} authorityBody={} contact={} teleported={} visualCorrection={} correction=({:.4f}gu,{:.4f}deg) requestedT=({:.4f},{:.4f},{:.4f}) liveT=({:.4f},{:.4f},{:.4f}) resolvedT=({:.4f},{:.4f},{:.4f})",
-            scope_transition_telemetry::sequence(), valid, snapshot.physicsSnapshotReadable, snapshot.physicsSnapshotValid,
-            snapshot.physicsSnapshotIdentityCurrent, snapshot.generationKey, snapshot.solveSequence, snapshot.bodyId,
-            snapshot.authorityBodyId, snapshot.contactActive, snapshot.physicsSnapshotTeleported, snapshot.visualCorrectionActive,
-            snapshot.translationCorrectionGameUnits, snapshot.rotationCorrectionDegrees,
-            snapshot.requestedWeaponWorld.translate.x, snapshot.requestedWeaponWorld.translate.y, snapshot.requestedWeaponWorld.translate.z,
-            snapshot.liveWeaponWorld.translate.x, snapshot.liveWeaponWorld.translate.y, snapshot.liveWeaponWorld.translate.z,
-            snapshot.resolvedWeaponWorld.translate.x, snapshot.resolvedWeaponWorld.translate.y, snapshot.resolvedWeaponWorld.translate.z);
     }
 
     bool PhysicsInteraction::tryGetManualScopePresentationTarget(

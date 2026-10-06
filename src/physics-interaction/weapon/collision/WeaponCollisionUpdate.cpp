@@ -33,8 +33,6 @@ namespace rock
         _drive.rebuildRequested.store(false, std::memory_order_release);
         _drive.workbenchExitRebuildRequested.store(false, std::memory_order_release);
         _drive.failureCount.store(0, std::memory_order_release);
-        _diagnostics.animNodeDumpFrameCounter = 0;
-        _diagnostics.lastAnimNodeDumpKey = 0;
         clearAtomicBodyIds();
 
         ROCK_LOG_INFO(Weapon, "WeaponCollision initialized");
@@ -72,8 +70,6 @@ namespace rock
         _drive.rebuildRequested.store(false, std::memory_order_release);
         _drive.workbenchExitRebuildRequested.store(false, std::memory_order_release);
         _drive.failureCount.store(0, std::memory_order_release);
-        _diagnostics.animNodeDumpFrameCounter = 0;
-        _diagnostics.lastAnimNodeDumpKey = 0;
         clearWeaponEmitterSnapshot();
 
         ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown");
@@ -268,7 +264,6 @@ namespace rock
             rebuildDiagnosticsRecorded = true;
         };
 
-        maybeDumpWeaponAnimNodeDiagnostics(weaponNode, observedKey);
         if (driveRequestedRebuild) {
             ROCK_LOG_WARN(Weapon,
                 "Generated weapon collision drive failure requested rebuild cachedKey={:016X} observedKey={:016X}",

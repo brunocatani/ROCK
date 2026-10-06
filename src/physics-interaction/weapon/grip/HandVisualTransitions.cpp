@@ -1116,13 +1116,6 @@ namespace rock
                 handFromBool(isFiringHandLeft()),
                 appliedFiringHandWorld,
                 GRIP_HAND_POSE_PRIORITY);
-        recordLockedHandAuthorityAttempt(
-            isFiringHandLeft(),
-            LockedHandAuthorityRole::PrimaryGrip,
-            appliedFiringHandWorld,
-            liveHandWorld,
-            true,
-            applied);
         if (applied) {
             if (usesLeftFiringCarry()) {
                 _firing.leftHandWorldActive = true;
@@ -1171,13 +1164,6 @@ namespace rock
                 handFromBool(isLeft),
                 appliedHandWorld,
                 GRIP_HAND_POSE_PRIORITY);
-        recordLockedHandAuthorityAttempt(
-            isLeft,
-            LockedHandAuthorityRole::SupportGrip,
-            appliedHandWorld,
-            liveHandWorld,
-            true,
-            applied);
         if (applied) {
             recordScopeHandAuthorityPublication(scope_safe_hand_frame_math::HandAuthorityRole::SupportGrip, isLeft);
             clearHandVisualReturn(isLeft, "part-grip-authority-acquired", false);

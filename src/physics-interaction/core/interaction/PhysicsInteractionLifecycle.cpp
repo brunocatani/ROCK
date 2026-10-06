@@ -740,11 +740,7 @@ namespace rock
         _handColliderBoneSnapshot = {};
         _finalPoseBoneReader.resetCache();
         _finalPoseBoneSnapshot = {};
-        _diagnostics.handCacheResolveLogCounter = 0;
-        _diagnostics.paritySummaryCounter = 0;
-        _diagnostics.parityEnabledLogged = false;
         _diagnostics.runtimeScaleLogged = false;
-        _diagnostics.rawHandParityStates = {};
         _contacts.dynamicPushCooldownUntil.clear();
         _grabEvents.heldImpactHapticCooldownUntil.clear();
         _grabEvents.frameCounter = 0;

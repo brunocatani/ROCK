@@ -44,7 +44,6 @@ namespace rock::debug_visualization_policy
         bool looseWeaponGripZones{ false };
         bool authoredGripActivationZones{ false };
         bool nativeScopeActivation{ false };
-        bool worldOriginDiagnostics{ false };
     };
 
     struct State
@@ -90,7 +89,6 @@ namespace rock::debug_visualization_policy
         bool looseWeaponGripZones{ false };
         bool authoredGripActivationZones{ false };
         bool nativeScopeActivation{ false };
-        bool worldOriginDiagnostics{ false };
     };
 
     [[nodiscard]] constexpr State resolve(const Input& input)
@@ -155,7 +153,6 @@ namespace rock::debug_visualization_policy
             .authoredGripActivationZones =
                 input.authoredGripActivationZones,
             .nativeScopeActivation = input.nativeScopeActivation,
-            .worldOriginDiagnostics = input.worldOriginDiagnostics,
         };
     }
 }

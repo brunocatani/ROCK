@@ -5,7 +5,6 @@
 #include "api/WeaponPartCollisionService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
-#include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
 
 // Per-frame orchestration: update(), interaction frame finalization, hand transform sampling, physics substep callbacks, held-mass slowdown, and the frame/debug-overlay implementation includes.
 
@@ -36,13 +35,6 @@ namespace rock
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::HandFrameResolve);
         const bool resolved = _handBoneCache.resolve();
-        if (resolved) {
-            _diagnostics.handCacheResolveLogCounter = 0;
-        } else if (g_rockConfig.rockDebugHandTransformParity) {
-            if (++_diagnostics.handCacheResolveLogCounter == 1 || _diagnostics.handCacheResolveLogCounter % 90 == 0) {
-                ROCK_LOG_WARN(Hand, "HandBoneCache unresolved; raw parity sampling skipped this frame");
-            }
-        }
 
         /*
          * Isolate the controller hand once per frame, before any consumer
@@ -184,97 +176,6 @@ namespace rock
         return nullptr;
     }
 
-    void PhysicsInteraction::sampleHandTransformParity()
-    {
-        if (!g_rockConfig.rockDebugHandTransformParity) {
-            _diagnostics.parityEnabledLogged = false;
-            _diagnostics.paritySummaryCounter = 0;
-            return;
-        }
-
-        if (!frik_visual_authority::isAvailable() || !_handBoneCache.isReady()) {
-            return;
-        }
-
-        if (!_diagnostics.parityEnabledLogged) {
-            ROCK_LOG_INFO(Init, "Hand-transform parity enabled (root flattened cache vs FRIK API, pre-write sampling)");
-            _diagnostics.parityEnabledLogged = true;
-        }
-
-        const bool playerMoving = runtime_state::currentFrame().playerSpace.moving;
-        const bool emitSummary = (++_diagnostics.paritySummaryCounter >= kRawParitySummaryFrames);
-
-        auto sampleHand = [&](bool isLeft) {
-            auto& state = _diagnostics.rawHandParityStates[isLeft ? 1 : 0];
-            const auto localTransform = _handBoneCache.getWorldTransform(isLeft);
-            RE::NiTransform apiTransform{};
-            if (!frik_visual_authority::tryGetPresentedHandWorldTransform(isLeft, apiTransform)) {
-                state = {};
-                return;
-            }
-            const auto delta = measureTransformDelta(localTransform, apiTransform);
-            const auto localPalmPosition = computeGrabLegacyPalmPivotAWorldFromHandBasis(localTransform, isLeft);
-            const auto apiPalmPosition = computeGrabLegacyPalmPivotAWorldFromHandBasis(apiTransform, isLeft);
-            const auto localPalmNormal = computePalmNormalFromHandBasis(localTransform, isLeft);
-            const auto apiPalmNormal = computePalmNormalFromHandBasis(apiTransform, isLeft);
-            const auto localPointing = computePointingVectorFromHandBasis(localTransform, isLeft);
-            const auto apiPointing = computePointingVectorFromHandBasis(apiTransform, isLeft);
-            state.lastPositionDelta = delta.position;
-            state.lastRotationDeltaDegrees = delta.rotationDegrees;
-
-            const bool warnExceeded = delta.position > kRawParityWarnPosition || delta.rotationDegrees > kRawParityWarnRotationDegrees;
-            const bool failExceeded = delta.position > kRawParityFailPosition || delta.rotationDegrees > kRawParityFailRotationDegrees;
-
-            state.warnFrames = warnExceeded ? state.warnFrames + 1 : 0;
-            state.failFrames = failExceeded ? state.failFrames + 1 : 0;
-
-            const char* handLabel = isLeft ? "Left" : "Right";
-            if (state.warnFrames == kRawParityWarnFrames) {
-                ROCK_LOG_WARN(Hand, "{} raw hand parity warning: posDelta={:.3f} rotDelta={:.3f}deg", handLabel, delta.position, delta.rotationDegrees);
-            }
-
-            if (state.failFrames == kRawParityFailFrames) {
-                ROCK_LOG_ERROR(Hand, "{} raw hand parity failure: posDelta={:.3f} rotDelta={:.3f}deg", handLabel, delta.position, delta.rotationDegrees);
-            }
-
-            if (playerMoving && state.hasPreviousApiTransform) {
-                const auto prevApiDelta = measureTransformDelta(localTransform, state.previousApiTransform);
-                if (prevApiDelta.position + kRawParityLagSlack < delta.position) {
-                    state.lagFrames++;
-                    if (state.lagFrames == kRawParityLagFrames) {
-                        ROCK_LOG_WARN(Hand, "{} hand parity suggests possible one-frame lag: currentDelta={:.3f} prevApiDelta={:.3f}", handLabel, delta.position,
-                            prevApiDelta.position);
-                    }
-                } else {
-                    state.lagFrames = 0;
-                }
-            } else {
-                state.lagFrames = 0;
-            }
-
-            state.previousApiTransform = apiTransform;
-            state.hasPreviousApiTransform = true;
-
-            if (emitSummary) {
-                const char* summaryHandLabel = isLeft ? "L" : "R";
-                ROCK_LOG_DEBUG(Hand, "{} parity: raw(pos={:.3f}, rot={:.3f}deg) basis(palmPos={:.3f}, palmNormal={:.3f}deg, pointing={:.3f}deg)", summaryHandLabel,
-                    delta.position, delta.rotationDegrees, measurePointDelta(localPalmPosition, apiPalmPosition), measureDirectionDeltaDegrees(localPalmNormal, apiPalmNormal),
-                    measureDirectionDeltaDegrees(localPointing, apiPointing));
-            }
-        };
-
-        sampleHand(false);
-        sampleHand(true);
-
-        if (emitSummary) {
-            _diagnostics.paritySummaryCounter = 0;
-            const auto& right = _diagnostics.rawHandParityStates[0];
-            const auto& left = _diagnostics.rawHandParityStates[1];
-            ROCK_LOG_DEBUG(Hand, "Raw hand parity summary: R(pos={:.3f}, rot={:.3f}deg) L(pos={:.3f}, rot={:.3f}deg)", right.lastPositionDelta, right.lastRotationDeltaDegrees,
-                left.lastPositionDelta, left.lastRotationDeltaDegrees);
-        }
-    }
-
 #include "physics-interaction/core/PhysicsInteractionFrame.inl"
 
     void PhysicsInteraction::synchronizeNativeScopePresentationAfterFrikUpdate()
@@ -311,28 +212,17 @@ namespace rock
             !_lifecycle.initialized.load(std::memory_order_acquire) || !runtime.visualAuthorityAvailable ||
             !runtime.localSkeletonReady || runtime.localMenuBlocking || runtime.compatibilityConfigBlocking) {
             debug::ClearFrame();
-            native_scope_shot_diagnostics::clearPresentation();
             return;
         }
         auto* bhk = getPlayerBhkWorld();
         auto* hknp = bhk ? getHknpWorld(bhk) : nullptr;
         if (!bhk || bhk != _lifecycle.cachedBhkWorld || !hknp || hknp != _lifecycle.cachedHknpWorld) {
             debug::ClearFrame();
-            native_scope_shot_diagnostics::clearPresentation();
             return;
         }
         // AfterWorldFinal: provider animation, FRIK's claim re-solve and its
         // flattened bone rebuild have completed. Re-sample on the main thread;
         // PublishFrame copies values before the render thread consumes them.
-        if (g_rockConfig.rockDebugNativeScopeShotAlignment) {
-            auto* weapon = resolveEquippedWeaponInteractionNode();
-            const auto generation = _weaponCollision.getCurrentWeaponGenerationKey();
-            bool contact = false;
-            const bool contactKnown = _dynamicWeaponCollision.tryGetContactState(weapon, generation, contact);
-            native_scope_shot_diagnostics::publishPresentation(weapon, generation,
-                _weaponCollision.getCurrentObservedEquippedWeaponFormID(), contactKnown, contact,
-                _dynamicWeaponCollision.hasLatchedSurfaceSupport(reinterpret_cast<std::uintptr_t>(weapon), generation));
-        }
         publishDebugBodyOverlay(buildFrameContext(bhk, hknp));
     }
 
@@ -793,7 +683,6 @@ namespace rock
         }
 
         refreshHandBoneCache();
-        sampleHandTransformParity();
         const auto frame = buildFrameContext(bhk, hknp);
         _frame.palmClockGameFrameIndex.store(runtime.frameIndex, std::memory_order_release);
         _frame.palmClockGameDeltaSeconds.store(frame.deltaSeconds, std::memory_order_release);

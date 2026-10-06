@@ -275,7 +275,6 @@ namespace rock::input_remap_runtime
         RE::Setting* s_hmdPipboySetting = nullptr;
         bool s_frikPipboyBindingReady = false;
         float s_frikPipboyHoldSeconds = 0.0f;
-        bool s_lastFrikPipboyOpen = false;
         native_vats_input_suppression_policy::RuntimeState s_nativeVatsInputSuppressionState{};
         std::atomic<bool> s_manualScopeActivationRequested{ false };
         std::atomic<bool> s_logicalJumpValid{ false };
@@ -436,61 +435,6 @@ namespace rock::input_remap_runtime
             s_pipboyMenuOpen.store(open, std::memory_order_release);
         }
 
-        bool s_menuDiagnosticLayoutReady = false;
-
-        void validateMenuDiagnosticLayout()
-        {
-            // Raw FO4VR witnesses: MenuOpenHandler 1326BD4/1326BDB and
-            // PipboyHandler 13270EB/13270F2 both read this same global and
-            // reject +374 == 1. Constructor C64A60 initializes +36C/+374;
-            // PipboyHandler 13270A6/13270B4 also reads +36C.
-            constexpr std::uintptr_t global = 0x5AC72B8;
-            for (const auto site : {0x1326BD4u, 0x13270EBu}) {
-                std::array<std::uint8_t, 14> expected{
-                    0x48,0x8B,0x05,0,0,0,0,0x83,0xB8,0x74,0x03,0,0,0x01};
-                const auto relative = static_cast<std::int32_t>(global - (site + 7));
-                std::memcpy(expected.data() + 3, &relative, sizeof(relative));
-                decltype(expected) actual{};
-                if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(site).address()),
-                        actual.data(), actual.size()) || actual != expected) {
-                    ROCK_LOG_WARN(Input, "Pip/Pause diagnostic native layout rejected at RVA={:#x}; controller state reads disabled", site);
-                    return;
-                }
-            }
-            s_menuDiagnosticLayoutReady = true;
-        }
-
-        void traceNativeMenuSubmission(const char* phase, const RE::ButtonEvent& event)
-        {
-            if (!g_rockConfig.rockDebugPipboyPauseInput) return;
-            std::uint32_t mode = UINT32_MAX, menuState = UINT32_MAX;
-            const char* stage = "layout-unavailable";
-            if (s_menuDiagnosticLayoutReady) {
-                std::uintptr_t controller{};
-                stage = "secondary-controller";
-                if (native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(REL::Offset(0x5AC72B8).address()), controller) &&
-                    controller >= 0x10000 && controller <= 0x00007FFFFFFEFFFF && controller % alignof(void*) == 0) {
-                    stage = "controller-mode";
-                    if (native_memory::tryReadField(reinterpret_cast<const void*>(controller), 0x36C, mode)) {
-                        stage = "controller-menu-state";
-                        if (native_memory::tryReadField(reinterpret_cast<const void*>(controller), 0x374, menuState)) stage = "ready";
-                    }
-                }
-            }
-            auto* ui = RE::UI::GetSingleton();
-            const auto* frik = frik_visual_authority::api();
-            const bool pipboy = ui && ui->GetMenuOpen(RE::BSFixedString{"PipboyMenu"});
-            const bool pause = ui && ui->GetMenuOpen(RE::BSFixedString{"PauseMenu"});
-            const bool scope = ui && ui->GetMenuOpen(RE::BSFixedString{"ScopeMenu"});
-            ROCK_LOG_SAMPLE_INFO(Input, 50,
-                "Pip/Pause native {}: event={} device={} value={} seconds={:.3f} handled={} "
-                "readStage={} secondaryMode={} secondaryMenuState={} (1 vetoes both) "
-                "menus[pipboy,pause,scope]=[{},{},{}] FRIK[wrist,config,supportGrip]=[{},{},{}]",
-                phase, event.strUserEvent.c_str(), event.deviceID, event.value, event.heldDownSecs, event.handled.underlying(),
-                stage, mode, menuState, pipboy, pause, scope,
-                frik && frik->isWristPipboyOpen(), frik && frik->isConfigOpen(), frik && frik->isOffHandGrippingWeapon());
-        }
-
         [[nodiscard]] std::optional<std::size_t> findGameStoppingMenuIndex(const RE::BSFixedString& menuName)
         {
             for (std::size_t i = 0; i < kGameStoppingMenuNames.size(); ++i) {
@@ -530,15 +474,6 @@ namespace rock::input_remap_runtime
                 f4vr::isInPowerArmor(), s_frikPipboyBindingReady);
         }
 
-        [[nodiscard]] const char* pipboyRouteName(PipboyRoute route)
-        {
-            switch (route) {
-            case PipboyRoute::Native: return "native";
-            case PipboyRoute::FrikWrist: return "FRIK-wrist";
-            default: return "unavailable";
-            }
-        }
-
         void refreshTrackedMenuState(const RE::UI& ui)
         {
             for (std::size_t i = 0; i < kGameStoppingMenuNames.size(); ++i) {
@@ -572,11 +507,6 @@ namespace rock::input_remap_runtime
                     s_gameStoppingMenuModeDepth[*menuIndex].store(0, std::memory_order_release);
                 }
                 publishMenuInputActiveFromTrackedMenus();
-                if (g_rockConfig.rockDebugPipboyPauseInput &&
-                    (event.menuName == "PipboyMenu" || event.menuName == "PauseMenu")) {
-                    ROCK_LOG_SAMPLE_INFO(Input, 50, "Pip/Pause actual menu transition: {} {}",
-                        event.menuName.c_str(), event.opening ? "opened" : "closed");
-                }
                 ROCK_LOG_DEBUG(Input, "Input remap menu gate: {} {}", event.menuName.c_str(), event.opening ? "opened" : "closed");
                 return RE::BSEventNotifyControl::kContinue;
             }
@@ -972,22 +902,6 @@ namespace rock::input_remap_runtime
             }
 
             const bool inputBlockingMenuActive = isInputBlockingMenuActive();
-            if (g_rockConfig.rockDebugPipboyPauseInput) {
-                constexpr auto yMask = input_remap_policy::buttonMask(vr::k_EButton_ApplicationMenu);
-                if ((rawTransition.pressedEdges & yMask) != 0) {
-                    ROCK_LOG_SAMPLE_INFO(Input, 50,
-                        "Pip/Pause raw press: hand={} gameplay={} menuInput={} triggerHeld={}",
-                        hand == input_remap_policy::Hand::Left ? "left" : "right",
-                        s_gameplayInputAllowed.load(std::memory_order_acquire), inputBlockingMenuActive,
-                        (rawPressed & input_remap_policy::buttonMask(vr::k_EButton_SteamVR_Trigger)) != 0);
-                }
-                if ((rawTransition.releasedEdges & yMask) != 0) {
-                    ROCK_LOG_SAMPLE_INFO(Input, 50,
-                        "Pip/Pause raw release: hand={} gameplay={} menuInput={}",
-                        hand == input_remap_policy::Hand::Left ? "left" : "right",
-                        s_gameplayInputAllowed.load(std::memory_order_acquire), inputBlockingMenuActive);
-                }
-            }
             if (inputBlockingMenuActive) {
                 tracker.rearmPressedMask.fetch_or(rawPressed, std::memory_order_acq_rel);
                 /*
@@ -1682,20 +1596,6 @@ namespace rock::input_remap_runtime
             input.takeEquipTargetEligible = targetEligible;
             const bool suppress = input_remap_policy::shouldSuppressNativeTakeEquipAction(input);
 
-            // Temporary diagnostic: fires on every matched Activate/WandAccept edge so a single
-            // in-game repro shows exactly which gate (hand-engaged vs target-FormType) blocks
-            // suppression. Rate-limited like every other native-action trace in this file.
-            ROCK_LOG_SAMPLE_DEBUG(Input,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "Take/Equip gate: primaryHandEvent={} physicalHand={} handEngaged={} targetEligible={} gameplay={} menuInput={} -> {}",
-                primaryHandEvent ? "yes" : "no",
-                primaryHandEvent ? "right" : "left",
-                handEngaged ? "yes" : "no",
-                targetEligible ? "yes" : "no",
-                input.gameplayInputAllowed ? "yes" : "no",
-                input.menuInputActive ? "yes" : "no",
-                suppress ? "suppress" : "native");
-
             return suppress;
         }
 
@@ -1967,7 +1867,6 @@ namespace rock::input_remap_runtime
             // including its secondary-device check. The physical Pause event
             // already carries that same secondary wand device ID; only the
             // semantic name and button phase are temporarily substituted.
-            traceNativeMenuSubmission("Pipboy-before", event);
             event.strUserEvent = kNativeEventWandTrigger.data();
             event.value = 1.0f;
             event.heldDownSecs = 0.0f;
@@ -1991,11 +1890,6 @@ namespace rock::input_remap_runtime
             event.value = originalValue;
             event.heldDownSecs = originalHeldDownSecs;
             event.handled = originalHandled;
-            if (g_rockConfig.rockDebugPipboyPauseInput) {
-                ROCK_LOG_SAMPLE_INFO(Input, 50,
-                    "Pip/Pause Pipboy submitted: pressHandled={} releaseHandled={}; actual menu transition confirms opening",
-                    pressHandled.underlying(), releaseHandled.underlying());
-            }
             return true;
         }
 
@@ -2016,17 +1910,12 @@ namespace rock::input_remap_runtime
             // secondary-device checks on a release phase. Feed that verified
             // phase once when ROCK's hold threshold is crossed; the physical
             // release is consumed later by the gesture state machine.
-            traceNativeMenuSubmission("Pause-before", event);
             event.value = 0.0f;
             event.heldDownSecs = (std::max)(
                 originalHeldDownSecs,
                 pipboy_pause_gesture_policy::sanitizedHoldSeconds(g_rockConfig.rockPipboyPauseHoldSeconds));
             event.handled = RE::InputEvent::HANDLED_RESULT::kUnhandled;
             s_originalMenuOpenEventHandler(handler, &event);
-            if (g_rockConfig.rockDebugPipboyPauseInput) {
-                ROCK_LOG_SAMPLE_INFO(Input, 50, "Pip/Pause Pause submitted: handled={}; actual menu transition confirms opening",
-                    event.handled.underlying());
-            }
 
             event.value = originalValue;
             event.heldDownSecs = originalHeldDownSecs;
@@ -2154,15 +2043,6 @@ namespace rock::input_remap_runtime
             }
 
             const auto wandIdentity = resolveNativeWandIdentity(inputEvent);
-            if (g_rockConfig.rockDebugPipboyPauseInput) {
-                if (button->QJustPressed()) {
-                    ROCK_LOG_SAMPLE_INFO(Input, 50, "Pip/Pause semantic press: device={} wand={} handled={}",
-                        button->deviceID, static_cast<unsigned>(wandIdentity), button->handled.underlying());
-                } else if (!button->QPressed()) {
-                    ROCK_LOG_SAMPLE_INFO(Input, 50, "Pip/Pause semantic release: device={} wand={} seconds={:.3f} handled={}",
-                        button->deviceID, static_cast<unsigned>(wandIdentity), button->QHeldDownSecs(), button->handled.underlying());
-                }
-            }
             if (wandIdentity == NativeWandIdentity::Primary) {
                 observePrimaryVatsGrenadeGesture(*button);
                 if (s_originalMenuOpenEventHandler) {
@@ -2202,15 +2082,6 @@ namespace rock::input_remap_runtime
                     "Pip-Boy Y fresh press after missing release: previousState={} reason={}",
                     static_cast<unsigned>(previousState), decision.reason);
             }
-            // Raw press has its own trace. Keep this callsite for releases so
-            // sampling cannot hide the decision for an ordinary sub-100ms tap.
-            if (g_rockConfig.rockDebugPipboyPauseInput && (!button->QPressed() || decision.dispatchPause)) {
-                ROCK_LOG_SAMPLE_INFO(Input, 50,
-                    "Pip/Pause decision: reason={} state={}->{} route={} gameplay={} menuInput={} providerLease={} heldSeconds={:.3f}",
-                    decision.reason, static_cast<unsigned>(previousState), static_cast<unsigned>(decision.state),
-                    pipboyRouteName(route), gameplayInputAllowed, menuInputActive, providerSuppressed,
-                    button->QHeldDownSecs());
-            }
 
             if (!decision.consume) {
                 if (s_originalMenuOpenEventHandler) {
@@ -2223,7 +2094,6 @@ namespace rock::input_remap_runtime
                 if (route == PipboyRoute::Native) {
                     (void)dispatchNativePipboyTap(*button);
                 } else if (route == PipboyRoute::FrikWrist) {
-                    traceNativeMenuSubmission("FRIK-wrist-request", *button);
                     // FRIK polls physical Y itself through its session binding.
                     // It owns screen visibility, gaze checks, and its open state.
                     // A second native trigger submission would bypass that owner.
@@ -2441,8 +2311,6 @@ namespace rock::input_remap_runtime
 
         bool installPipboyPauseArbitrationHooks()
         {
-            static const bool diagnosticChecked = (validateMenuDiagnosticLayout(), true);
-            (void)diagnosticChecked;
             const bool lightVetoHookReady = installPipboyLightHoldQueryHook();
             const bool openHookReady = installNativeActionVTableHook(kPipboyHandlerHandleEventVTableSlotOffset,
                 kPipboyHandlerHandleEventFunctionOffset,
@@ -2809,17 +2677,6 @@ namespace rock::input_remap_runtime
     void setGameplayInputAllowed(bool allowed)
     {
         s_gameplayInputAllowed.store(allowed, std::memory_order_release);
-        // The frame callback runs after FRIK, so this witnesses the owner's
-        // actual state transition rather than claiming an input call opened it.
-        const auto* frikApi = frik_visual_authority::api();
-        const bool wristOpen = frikApi && frikApi->isWristPipboyOpen();
-        if (wristOpen != s_lastFrikPipboyOpen) {
-            s_lastFrikPipboyOpen = wristOpen;
-            if (g_rockConfig.rockDebugPipboyPauseInput) {
-                ROCK_LOG_SAMPLE_INFO(Input, 50, "Pip/Pause actual FRIK wrist transition: {} route={}",
-                    wristOpen ? "opened" : "closed", pipboyRouteName(currentPipboyRoute()));
-            }
-        }
         if (!allowed) {
             setBareFistAdmission(false);
             native_grenade_throw_runtime::cancel();
@@ -2844,16 +2701,8 @@ namespace rock::input_remap_runtime
 
     void setRealMeleeWeaponEquipped(bool equipped)
     {
-        const bool previous = s_realMeleeWeaponEquipped.exchange(equipped, std::memory_order_acq_rel);
-        if (previous != equipped) {
-            // NATIVE-MELEE-TRACE: this flag selects the native input bypass for
-            // real melee weapons; a melee weapon that never turns it on keeps
-            // ROCK's trigger/grip suppression active and starves native melee.
-            ROCK_LOG_INFO(Input,
-                "NATIVE-MELEE-TRACE realMeleeWeaponEquipped {} -> {}",
-                previous ? "yes" : "no",
-                equipped ? "yes" : "no");
-        }
+        // Selects the native input bypass for real melee weapons.
+        s_realMeleeWeaponEquipped.store(equipped, std::memory_order_release);
     }
 
     void setHandHeldWeapon(const bool isLeft, const bool heldWeapon)
