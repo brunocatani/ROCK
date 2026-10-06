@@ -3,7 +3,7 @@
 #include "api/StorageInteractionService.h"
 #include "api/StorageInteractionPolicy.h"
 #include "api/StorageService.h"
-#include "api/StorageSceneLookup.h"
+#include "api/AttachedSceneLookup.h"
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
@@ -12,6 +12,7 @@
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
+#include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingRuntime.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include <chrono>
@@ -28,6 +29,7 @@ namespace rock::storage_interaction
             api::OwnerToken owner{};
             contract::DisplayV1 request;
             std::uint64_t deadline{}, publishedFrame{};
+            std::uint64_t authoredRequestedUntil{};
             RE::NiPointer<RE::TESObjectREFR> parent;
             RE::NiPointer<RE::NiAVObject> node;
             BethesdaPhysicsBody body;
@@ -76,6 +78,7 @@ namespace rock::storage_interaction
             value.rebuild=false;
             value.sourceScale=value.physicsScale=0; value.failed=false; value.freeHands=0;
             value.boundReference=value.boundParent=0;
+            value.authoredRequestedUntil=0;
         }
         bool captureGeometry(Display& value)
         {
@@ -149,7 +152,17 @@ namespace rock::storage_interaction
             // Body holsters attach to the loaded third-person skeleton, as
             // published by FRIK. Actor Get3D may select its first-person tree.
             RE::NiAVObject* root=parent==RE::PlayerCharacter::GetSingleton()?fo4vr::getWorldRootNode():parent->Get3D();
-            auto* node=storage_scene_lookup::find(root,RE::BSFixedString(value.request.nodeName));
+            const RE::BSFixedString name(value.request.nodeName);
+            const auto children=[](RE::NiAVObject* object) {
+                auto* branch=object->IsNode(); return branch?&branch->GetRuntimeData().children:nullptr;
+            };
+            auto* node=value.node.get();
+            if(!node || node->name!=name || !attached_scene_lookup::beneath(root,node)) {
+                node=attached_scene_lookup::find(root,[&](RE::NiAVObject* candidate) {
+                    return candidate!=root && candidate->name==name &&
+                        attached_scene_lookup::find(candidate,[](RE::NiAVObject* part) { return part->IsTriShape()!=nullptr; },children)!=nullptr;
+                },children);
+            }
             if(!node || node==root || node->GetAppCulled() || !finiteNiTransform(node->world)) return nullptr;
             value.parent.reset(parent); return node;
         }
@@ -310,6 +323,10 @@ namespace rock::storage_interaction
                 result->distanceGame=distance;
                 result->acquisitionRadiusGame=radius;
             }
+            // A 1.1 consumer has requested a pose for this display. Offer cold
+            // saved items to the normal native probe in the owner update, not
+            // by equipping/unparking them and not on the caller's read stack.
+            if(!result->valid) found->authoredRequestedUntil=frame.frameIndex+3;
             return api::Status::Ok;
         } catch(...) { return api::Status::InternalError; }
     }
@@ -341,7 +358,7 @@ namespace rock::storage_interaction
             const auto body=havok_runtime::snapshotBodyIdentity(service.world,{hand.id});
             hand.object=body.valid?reinterpret_cast<std::uintptr_t>(body.collisionObject):0;
         }
-        bool advanced{}, captured{}, anyOwner{};
+        bool advanced{}, captured{}, anyOwner{}, offeredAuthored{};
         std::array<BethesdaPhysicsBody*,contract::kMaximumDisplays> refresh{}; unsigned refreshCount{};
         for(unsigned i=0;i<service.displays.size();++i) {
             auto& entry=service.displays[(i+service.preparationCursor)%service.displays.size()];
@@ -352,6 +369,11 @@ namespace rock::storage_interaction
             anyOwner=true;
             auto* node=resolve(entry,physics);
             if(!node) { retire(entry,service.world); continue; }
+            if(!offeredAuthored && entry.authoredRequestedUntil>=current.frameIndex && entry.authoredRequestedUntil) {
+                offeredAuthored=true;
+                native_idle_grip_preharvest::observeStoredDisplay(
+                    RE::NiPointer<RE::TESObjectREFR>(RE::TESForm::GetFormByID<RE::TESObjectREFR>(entry.request.storedReference)),node);
+            }
             const bool reparented=entry.boundParent && entry.boundParent!=entry.request.parentReference;
             if(entry.rebuild || entry.node.get()!=node || entry.boundReference!=entry.request.storedReference ||
                 std::abs(entry.sourceScale-node->world.scale)>.0001f || entry.physicsScale!=physics_scale::gameToHavok()) {

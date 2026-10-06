@@ -22,6 +22,10 @@ namespace rock::native_idle_grip_preharvest
      * reference before its scene identity is copied.
      */
     void observeCandidate(RE::NiPointer<RE::TESObjectREFR> candidate) noexcept;
+    // Stored references are disabled and need not have their own loaded 3D.
+    // Identify the exact item from its handle and the frame-borrowed visible
+    // display. The existing one-slot probe owns/copies everything it retains.
+    void observeStoredDisplay(RE::NiPointer<RE::TESObjectREFR> candidate,RE::NiAVObject* displayRoot) noexcept;
 
     /*
      * Offer the currently equipped weapon after its stable generation exists.
