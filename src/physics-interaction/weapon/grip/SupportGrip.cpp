@@ -3706,6 +3706,9 @@ namespace rock
         constexpr float kDegreesToRadians =
             0.01745329251994329577f;
         const float surfaceSeatMaxRadians =
+            grab_finger_pose_runtime::weaponGrabPoseMode(
+                g_rockConfig.rockWeaponGrabPoseMode, g_rockConfig.rockGrabFingerPoseMode) !=
+                    grab_finger_pose_runtime::FingerPoseMode::July9 &&
             g_rockConfig.rockWeaponSupportSurfaceSeatEnabled && meshFound ?
             g_rockConfig.rockWeaponSupportSurfaceSeatMaxDegrees *
                 kDegreesToRadians :

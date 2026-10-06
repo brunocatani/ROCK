@@ -1495,6 +1495,11 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid iGrabFingerPoseMode={} -- using 1", rockGrabFingerPoseMode);
             rockGrabFingerPoseMode = 1;
         }
+        rockWeaponGrabPoseMode = static_cast<int>(ini.GetLongValue(SECTION, "iWeaponGrabPoseMode", rockWeaponGrabPoseMode));
+        if (rockWeaponGrabPoseMode < 0 || rockWeaponGrabPoseMode > 2) {
+            ROCK_LOG_WARN(Config, "Invalid iWeaponGrabPoseMode={} -- using 0", rockWeaponGrabPoseMode);
+            rockWeaponGrabPoseMode = 0;
+        }
         rockGrabMeshFingerPoseEnabled = ini.GetBoolValue(SECTION, "bGrabMeshFingerPoseEnabled", rockGrabMeshFingerPoseEnabled);
         rockGrabMeshJointPoseEnabled = ini.GetBoolValue(SECTION, "bGrabMeshJointPoseEnabled", rockGrabMeshJointPoseEnabled);
         rockGrabFingerMinValue = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFingerMinValue", rockGrabFingerMinValue));

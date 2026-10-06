@@ -13,6 +13,17 @@
 #include <random>
 #include <vector>
 
+namespace rock::root_flattened_finger_skeleton_runtime
+{
+    // A capture with a supplied snapshot must never query the game scene again.
+    bool queriedLiveScene = false;
+    bool resolveLiveFingerSkeletonSnapshot(bool, Snapshot&, std::string*, SkeletonBoneCaptureSpace)
+    {
+        queriedLiveScene = true;
+        return false;
+    }
+}
+
 namespace
 {
     struct TestVector
@@ -232,6 +243,9 @@ static bool testCommandedFingerCorrectionFrame()
         ok &= expectBool("legacy resolves the captured live chain", resolveFingerTransforms(snapshot, isLeft, baseline, nodes,
             nullptr, nullptr, grab_finger_pose_runtime::FingerPoseMode::June2), true);
         ok &= expectPointClose("legacy uses live joint placement", nodes[0].world.translate, hand.translate);
+        ok &= expectBool("July9 resolves the captured live chain", resolveFingerTransforms(snapshot, isLeft, baseline, nodes,
+            nullptr, nullptr, grab_finger_pose_runtime::FingerPoseMode::July9), true);
+        ok &= expectPointClose("July9 uses live joint placement", nodes[0].world.translate, hand.translate);
 
         // Displayed poses can differ during interpolation or after a prior
         // grab. Even a poisoned displayed thumb must not change this solve.
@@ -240,6 +254,8 @@ static bool testCommandedFingerCorrectionFrame()
         snapshot.bones[3].world.scale = 0.00001f;
         ok &= expectBool("legacy rejects poisoned live inputs", resolveFingerTransforms(snapshot, isLeft, baseline, nodes,
             nullptr, nullptr, grab_finger_pose_runtime::FingerPoseMode::June2), false);
+        ok &= expectBool("July9 rejects poisoned live inputs", resolveFingerTransforms(snapshot, isLeft, baseline, nodes,
+            nullptr, nullptr, grab_finger_pose_runtime::FingerPoseMode::July9), false);
         for (int frame = 0; frame < 2000; ++frame) {
             ok &= expectBool("displayed finger state is excluded", resolveFingerTransforms(snapshot, isLeft, baseline, nodes), true);
             ok &= expectFloat("repeated capture preserves requested curl", nodes[0].world.rotate.entry[0][0], first.rotate.entry[0][0]);
@@ -437,10 +453,110 @@ static bool testJune2FingerSolver()
     return ok;
 }
 
+static bool testJuly9WeaponFingerSolver()
+{
+    using namespace rock;
+    using namespace grab_finger_pose_math;
+    using namespace grab_finger_pose_runtime;
+    bool ok = true;
+    constexpr float halfPi = 1.57079632679f;
+    CalibratedFingerCurve<TestVector> curve{};
+    curve.probeCount = 1;
+    curve.surfaceThickness = 0;
+    auto& probe = curve.probes[0];
+    probe.sampleCount = 3;
+    probe.samples[0] = {1.0f, 0.0f, 10.0f};
+    probe.samples[1] = {0.75f, halfPi / 2.0f, 8.0f};
+    probe.samples[2] = {0.0f, halfPi, 5.0f};
+    const std::vector<Triangle<TestVector>> front{{ {3, 3, -1}, {3, 3, 1}, {4, 4, 0} }};
+    const auto contact = solveJuly9CalibratedFingerCurveCurlValue(front, curve, 0.2f);
+    ok &= expectBool("July9 calibrated slice finds contact", contact.hit && contact.hasHitPoint, true);
+    ok &= expectFloat("July9 uses calibrated openness instead of June2 linear angle", contact.value, 0.75f);
+    CalibratedFingerCurveSample<TestVector> interpolated{};
+    ok &= expectBool("July9 interpolates between calibrated samples", lookupJuly9FingerCurveSample(probe, halfPi / 4, interpolated), true);
+    ok &= expectFloat("July9 interpolated openness", interpolated.openValue, 0.875f);
+    ok &= expectFloat("July9 interpolated reach", interpolated.reachLength, 9.0f);
+    const std::vector<Triangle<TestVector>> offPlane{{ {3, 3, 1}, {3, 4, 1}, {4, 3, 1} }};
+    ok &= expectBool("July9 slice rejects off-plane triangles", solveJuly9CalibratedFingerCurveCurlValue(offPlane, curve, 0.2f).hit, false);
+    const std::vector<Triangle<TestVector>> behind{{ {3, -3, -1}, {3, -3, 1}, {4, -4, 0} }};
+    ok &= expectBool("July9 behind contact opens finger", solveJuly9CalibratedFingerCurveCurlValue(behind, curve, 0.2f).openedByBehindContact, true);
+    probe.samples[1].reachLength = 1.0f;
+    ok &= expectBool("July9 respects reach at the contact angle", solveJuly9CalibratedFingerCurveCurlValue(front, curve, 0.2f).hit, false);
+
+    ok &= expectBool("default weapon mode preserves current", weaponGrabPoseMode(0, 1) == FingerPoseMode::Current, true);
+    ok &= expectBool("default weapon mode preserves June2", weaponGrabPoseMode(0, 2) == FingerPoseMode::June2, true);
+    ok &= expectBool("explicit current is independent of loose mode", weaponGrabPoseMode(1, 2) == FingerPoseMode::Current, true);
+    ok &= expectBool("July9 is independently selectable", weaponGrabPoseMode(2, 1) == FingerPoseMode::July9 && weaponGrabPoseMode(2, 2) == FingerPoseMode::July9, true);
+    ok &= expectBool("loose mode cannot select July9", fingerPoseMode(3) == FingerPoseMode::Current, true);
+
+    root_flattened_finger_skeleton_runtime::Snapshot snapshot{};
+    snapshot.valid = snapshot.palmNormalValid = true;
+    snapshot.palmNormalWorld = {0, 0, 1};
+    for (auto& finger : snapshot.fingers) {
+        finger.valid = true;
+        finger.points = { RE::NiPoint3{0, 0, 0}, RE::NiPoint3{5, 0, 0}, RE::NiPoint3{10, 0, 0} };
+    }
+    const auto world = transform_math::makeIdentityTransform<RE::NiTransform>();
+    auto targets = makeSharedGripPoseTarget({2, 0, 0});
+    targets.useSeatPointForMissingTargets = false;
+    targets.useWholeMeshForMissingTargets = true;
+    for (const bool left : {false, true}) {
+        for (const bool powerArmor : {false, true}) {
+            snapshot.inPowerArmor = powerArmor;
+            const auto indexCurve = makeBakedCalibratedFingerCurve<RE::NiPoint3>(1, left, powerArmor,
+                {2, 0, 0}, {0, 0, 1}, {1, 0, 0}, 10.0f);
+            const auto& row = indexCurve.probes[0].samples[150]; // open value 0.5 in the current calibration.
+            const auto contactPoint = indexCurve.center + rotateAroundUnitAxis(RE::NiPoint3{1, 0, 0},
+                indexCurve.normal, row.angleRadians) * (row.reachLength * 0.75f);
+            const std::vector<TriangleData> triangles{{contactPoint - indexCurve.normal,
+                contactPoint + indexCurve.normal, contactPoint + RE::NiPoint3{0.01f, 0.01f, 0}}};
+            const auto solve = [&](const std::array<RE::NiPoint3, 5>* commanded) {
+                return solveGrabFingerPoseFromTriangles(triangles, world, left, {}, targets,
+                    0.2f, 100.0f, true, &snapshot, false, 1.5f, true, 0.6f, -1.0f, 1.5f, 2.0f,
+                    commanded, nullptr, nullptr, nullptr, FingerPoseMeshRelation::CurrentMeshRequiresVirtualSeat, FingerPoseMode::July9);
+            };
+            const auto pose = solve(nullptr);
+            ok &= expectBool("July9 solves both hands and armor profiles", pose.solved && pose.mode == FingerPoseMode::July9, true);
+            ok &= expectBool("July9 runtime finds the calibrated index surface", (pose.contactValidMask & (1u << 1)) != 0, true);
+            ok &= expectPointClose("July9 seats finger bases exactly once", pose.probeStart[1], {2, 0, 0});
+            ok &= expectBool("July9 does not claim sweep evidence", pose.usedSpatialIndex || pose.contactArcRotationValid[1], false);
+            std::array<RE::NiPoint3, 5> commanded{};
+            commanded.fill({0, 1, 0});
+            const auto withCommandedPose = solve(&commanded);
+            for (std::size_t finger = 0; finger < pose.values.size(); ++finger) {
+                ok &= expectFloat("July9 keeps captured directions", withCommandedPose.values[finger], pose.values[finger]);
+                ok &= expectBool("July9 curl remains in historical range", pose.values[finger] >= 0.2f && pose.values[finger] <= 1.0f, true);
+            }
+            FingerPoseTriangleSpatialIndex index;
+            std::vector<TriangleData> scratch;
+            const auto captured = solveFrozenMeshFingerPoseBase(triangles, world, world, left, {}, targets, index, scratch,
+                FrozenMeshFingerPoseSolveOptions{
+                    .rejectBacksideHits = false,
+                    .meshRelation = FingerPoseMeshRelation::CurrentMeshRequiresVirtualSeat,
+                    .mode = FingerPoseMode::July9,
+                }, &snapshot);
+            ok &= expectBool("July9 capture skips commanded directions and spatial rebuild", captured.spatialIndexBuilt || captured.commandedOpenDirectionsValid, false);
+            ok &= expectPointClose("July9 capture preserves single seat translation", captured.pose.probeStart[1], pose.probeStart[1]);
+            ok &= expectFloat("July9 capture preserves calibrated contact", captured.pose.values[1], pose.values[1]);
+            ok &= expectBool("July9 capture uses only the supplied snapshot", root_flattened_finger_skeleton_runtime::queriedLiveScene, false);
+        }
+    }
+    auto partialPose = SolvedGrabFingerPose{};
+    partialPose.mode = FingerPoseMode::July9;
+    partialPose.surfaceAimTarget[0] = {4, 1, 0};
+    partialPose.surfaceAimTargetValid[0] = 1;
+    std::array<RE::NiPoint3, 5> directions{};
+    directions.fill({1, 0, 0});
+    std::array<float, 5> splay{};
+    ok &= expectBool("July9 retains surface splay with partial finger evidence", buildSurfaceContactSplayValues(partialPose, snapshot, directions, splay), true);
+    return ok;
+}
+
 int main()
 {
     bool ok = testIndexedFingerPadProbes();
     ok &= testJune2FingerSolver();
+    ok &= testJuly9WeaponFingerSolver();
     {
         rock::AuthoredWeaponGripPose pose{};
         ok &= expectBool("empty authored transfer pose fails closed", pose.valid(), false);

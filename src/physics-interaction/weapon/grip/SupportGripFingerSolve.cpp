@@ -17,8 +17,10 @@ namespace rock
         const WeaponCollision::SupportGripEvidenceView& evidenceView,
         WeaponPartGrip& grip)
     {
-        const auto poseMode = grab_finger_pose_runtime::fingerPoseMode(g_rockConfig.rockGrabFingerPoseMode);
-        const bool legacyFingerPose = poseMode == grab_finger_pose_runtime::FingerPoseMode::June2;
+        const auto poseMode = grab_finger_pose_runtime::weaponGrabPoseMode(
+            g_rockConfig.rockWeaponGrabPoseMode, g_rockConfig.rockGrabFingerPoseMode);
+        const bool july9 = poseMode == grab_finger_pose_runtime::FingerPoseMode::July9;
+        const bool legacyFingerPose = grab_finger_pose_runtime::usesCapturedFingerDirections(poseMode);
         auto& fingerScratch = _fingerPoseSolveScratch->hands[isLeft ? 0u : 1u];
         for (auto& ranking : fingerScratch.rankings) {
             ranking.clear();
@@ -55,7 +57,7 @@ namespace rock
         fingerReferenceSet.seatPointWorld = gripWorldPoint;
         fingerReferenceSet.seatPointValid =
             grab_finger_pose_runtime::isFinitePoint(gripWorldPoint);
-        if (capturedFingerSnapshotValid) {
+        if (capturedFingerSnapshotValid && !july9) {
             const RE::NiTransform rawToSeatedWorld =
                 transform_math::composeTransforms(
                     adjustedHandTransform,
@@ -184,7 +186,9 @@ namespace rock
         std::size_t compositeEvidenceViewCount = 0;
         std::size_t sourceTriangleCount = 0;
         if (g_rockConfig.rockGrabMeshFingerPoseEnabled) {
-            const std::size_t discoveredViewCount =
+            // July 9 fitted only the contacted part. Retain today's bounded,
+            // generation-checked evidence cache rather than walking the scene.
+            const std::size_t discoveredViewCount = july9 ? 0 :
                 weaponCollision.findSupportGripEvidenceViews(
                     weaponNode,
                     compositeEvidenceViews);
@@ -248,15 +252,17 @@ namespace rock
                     handTransform,
                     transform_math::invertTransform(
                         adjustedHandTransform));
-            const RE::NiTransform frozenMeshWorld = weapon_two_handed_grip_math::virtualizeMeshForSeatedHand(
+            const RE::NiTransform frozenMeshWorld = july9 ? weaponNode->world : weapon_two_handed_grip_math::virtualizeMeshForSeatedHand(
                 weaponNode->world,
                 handTransform,
                 adjustedHandTransform);
-            const RE::NiPoint3 frozenGripPoint = weapon_two_handed_grip_math::virtualizeWorldPointForSeatedHand(
+            const RE::NiPoint3 frozenGripPoint = july9 ? gripWorldPoint : weapon_two_handed_grip_math::virtualizeWorldPointForSeatedHand(
                 gripWorldPoint,
                 handTransform,
                 adjustedHandTransform);
-            const RE::NiPoint3 frozenGripNormal =
+            const RE::NiPoint3 solveAnchorWorld = july9 ?
+                computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, isLeft) : frozenGripPoint;
+            const RE::NiPoint3 frozenGripNormal = july9 ? grip.grabNormalWorld :
                 transform_math::localVectorToWorld(
                     seatedToRawWorld,
                     grip.grabNormalWorld);
@@ -274,7 +280,7 @@ namespace rock
                 frozenMeshWorld,
                 handTransform,
                 isLeft,
-                frozenGripPoint,
+                solveAnchorWorld,
                 fingerPoseTargets,
                 fingerScratch.spatialIndex,
                 fingerScratch.worldTriangles,
@@ -289,6 +295,9 @@ namespace rock
                     .fingerSweepMaxOpenValue = g_rockConfig.rockGrabFingerSweepMaxOpenValue,
                     .meshFingerPoseEnabled = g_rockConfig.rockGrabMeshFingerPoseEnabled,
                     .captureSweepDebug = false,
+                    .meshRelation = july9 ?
+                        grab_finger_pose_runtime::FingerPoseMeshRelation::CurrentMeshRequiresVirtualSeat :
+                        grab_finger_pose_runtime::FingerPoseMeshRelation::AlreadyAtCommandedSeat,
                     .mode = poseMode,
                 },
                 capturedFingerSnapshotValid ?
@@ -381,6 +390,18 @@ namespace rock
                         sourceTriangleCount,
                         meshFingerPose.candidateTriangleCount);
                 }
+                if (july9 && frozenSolve.liveFingerSnapshotValid) {
+                    const auto landmarks = root_flattened_finger_skeleton_runtime::buildLandmarkSet(
+                        frozenSolve.liveFingerSnapshot);
+                    std::array<RE::NiPoint3, 5> capturedDirections{};
+                    for (std::size_t finger = 0; finger < capturedDirections.size(); ++finger) {
+                        capturedDirections[finger] = landmarks.fingers[finger].openDirection;
+                    }
+                    if (grab_finger_pose_runtime::buildSurfaceContactSplayValues(
+                            meshFingerPose, frozenSolve.liveFingerSnapshot, capturedDirections, capturedFingerSplayRadians)) {
+                        capturedFingerSplayRadiansPtr = &capturedFingerSplayRadians;
+                    }
+                }
                 if (!legacyFingerPose && completeDirectFingerEvidence &&
                     frozenSolve.liveFingerSnapshotValid &&
                     frozenSolve.commandedOpenDirectionsValid &&
@@ -427,6 +448,12 @@ namespace rock
                 }
             }
         }
+
+        ROCK_LOG_INFO(Weapon,
+            "TwoHandedGrip: weapon grab pose applied={} selection={} hand={} source={} pose={} hits={} candidates={}",
+            grab_finger_pose_runtime::fingerPoseModeName(poseMode), g_rockConfig.rockWeaponGrabPoseMode,
+            isLeft ? "left" : "right", july9 ? "contacted-part" : "composite",
+            meshFingerPosePtr ? "mesh" : "closed-fallback", meshFingerPose.hitCount, meshFingerPose.candidateTriangleCount);
 
         setSupportGripPose(
             isLeft,

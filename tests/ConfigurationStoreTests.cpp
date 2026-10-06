@@ -396,6 +396,23 @@ int main(int argc, char** argv)
             require(rock::RockConfig::parseValues(poseValues).rockGrabFingerPoseMode == 1,
                 "invalid finger pose mode must use current posing");
         }
+        require(find(store, "iWeaponGrabPoseMode").group == Group::Developer &&
+            find(store, "iWeaponGrabPoseMode").value == "0", "weapon posing must preserve the shared setting by default");
+        for (const auto* mode : { "2", "1", "0" }) {
+            require(store.setValue(Group::Developer, "PhysicsInteraction", "iWeaponGrabPoseMode", mode) && store.load(false),
+                "weapon posing must switch and reset through the configuration API");
+            CSimpleIniA poseValues;
+            store.appendLoadedValues(poseValues);
+            const auto config = rock::RockConfig::parseValues(poseValues);
+            require(config.rockWeaponGrabPoseMode == std::stoi(mode) && config.rockGrabFingerPoseMode == 1,
+                "weapon posing hot reload must not change loose-object posing");
+        }
+        for (const auto* invalid : { "-1", "3", "invalid" }) {
+            CSimpleIniA poseValues;
+            poseValues.SetValue("PhysicsInteraction", "iWeaponGrabPoseMode", invalid);
+            require(rock::RockConfig::parseValues(poseValues).rockWeaponGrabPoseMode == 0,
+                "invalid weapon posing must preserve the shared setting");
+        }
         require(find(store, "iWeaponDropMode").type == ValueType::Integer &&
             find(store, "iWeaponDropMode").value == "2", "weapon drop must default to toggle drop");
         require(find(store, "iWeaponGrabMode").type == ValueType::Integer &&
