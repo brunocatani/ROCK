@@ -211,7 +211,6 @@ namespace rock
         [[nodiscard]] RE::hknpBodyId proxyBodyIdForDebug() const;
         // Main-thread debug publication only. Returns the colliding contact
         // body's target reconstructed from the pending grip-authority target.
-        [[nodiscard]] bool tryGetContactBodyTargetForDebug(RE::NiTransform& outTarget) const;
         bool getDebugSnapshot(DebugSnapshot& outSnapshot) const;
         // Main-thread observation of the authoritative physics sample. This
         // does not depend on collider visualization or its debug snapshot.

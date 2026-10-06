@@ -287,8 +287,6 @@ namespace rock::debug
     {
         RE::hknpBodyId bodyId{ 0x7FFF'FFFF };
         BodyOverlayRole role{ BodyOverlayRole::Target };
-        RE::NiTransform currentTarget{};
-        bool hasCurrentTarget{ false };
     };
 
     struct AxisOverlayEntry
@@ -376,7 +374,6 @@ namespace rock::debug
         bool drawSkeleton{ false };
         bool drawColoredLines{ false };
         bool drawText{ false };
-        bool drawColliderPhaseDiagnostics{ false };
     };
 
     void Install();

@@ -2118,35 +2118,6 @@ namespace rock
         return RE::hknpBodyId{ _bodyIdAtomic.load(std::memory_order_acquire) };
     }
 
-    bool DynamicWeaponCollisionRuntime::tryGetContactBodyTargetForDebug(
-        RE::NiTransform& outTarget) const
-    {
-        if (!_created || !_body.isValid() || _equippedDrop) {
-            return false;
-        }
-
-        std::unique_lock targetLock(
-            _authorityDriveState.mutex,
-            std::try_to_lock);
-        if (!targetLock.owns_lock()) {
-            return false;
-        }
-        RE::NiTransform authorityTarget{};
-        if (_authorityDriveState.hasPendingTarget) {
-            authorityTarget = _authorityDriveState.pendingTarget;
-        } else if (_authorityDriveState.hasPreviousTarget) {
-            authorityTarget = _authorityDriveState.previousTarget;
-        } else {
-            return false;
-        }
-
-        outTarget = dynamic_weapon_collision_policy::makeContactBodyTargetFromGripAuthority(
-            authorityTarget,
-            _createdCenterWeaponLocal,
-            _createdWeaponScale, _authorityPivotWeaponLocal);
-        return dynamic_weapon_collision_policy::isFiniteTransform(outTarget);
-    }
-
     bool DynamicWeaponCollisionRuntime::getDebugSnapshot(DebugSnapshot& outSnapshot) const
     {
         outSnapshot = _debugSnapshot;

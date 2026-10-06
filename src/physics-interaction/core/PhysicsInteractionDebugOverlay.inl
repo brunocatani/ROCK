@@ -40,8 +40,6 @@
         const auto visualization = debug_visualization_policy::resolve({
             .colliderMaster = g_rockConfig.rockDebugShowColliders,
             .targetColliders = g_rockConfig.rockDebugShowTargetColliders,
-            .colliderPhaseDiagnostics =
-                g_rockConfig.rockDebugDrawColliderPhaseDiagnostics,
             .handColliders = g_rockConfig.rockDebugDrawHandColliders,
             .handBoneColliders = g_rockConfig.rockDebugDrawHandBoneColliders,
             .bodyBoneColliders = g_rockConfig.rockDebugDrawBodyBoneColliders,
@@ -103,8 +101,6 @@
         });
 
         const bool drawTargetColliders = visualization.targetColliders;
-        const bool drawColliderPhaseDiagnostics =
-            visualization.colliderPhaseDiagnostics;
         const bool drawHandColliders = visualization.handColliders;
         const bool drawHandBoneColliders = visualization.handBoneColliders;
         const bool drawBodyBoneColliders = visualization.bodyBoneColliders;
@@ -233,7 +229,6 @@
             _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
         frame.drawRockBodies = drawAnyRockColliderBodies;
         frame.drawTargetBodies = drawTargetColliders;
-        frame.drawColliderPhaseDiagnostics = drawColliderPhaseDiagnostics;
         frame.drawAxes = drawHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy || drawGrabForceTorque || drawNativeScopeActivation ||
             drawWeaponAuthorityDebug || drawAuthoredSupportGripDebug;
         frame.drawMarkers = drawGrabPivots || drawFingerProbes || drawFingerSweptArc || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton ||
@@ -273,19 +268,13 @@
         const bool rightDisabled = context.right.disabled;
         const bool leftDisabled = context.left.disabled;
 
-        auto addBodyWithTarget = [&](RE::hknpBodyId bodyId,
-                                     debug::BodyOverlayRole role,
-                                     const RE::NiTransform* currentTarget) {
+        auto addBody = [&](RE::hknpBodyId bodyId, debug::BodyOverlayRole role) {
             if (bodyId.value == INVALID_BODY_ID) {
                 return;
             }
 
             for (std::uint32_t i = 0; i < frame.count; i++) {
                 if (frame.entries[i].bodyId.value == bodyId.value && frame.entries[i].role == role) {
-                    if (drawColliderPhaseDiagnostics && currentTarget) {
-                        frame.entries[i].currentTarget = *currentTarget;
-                        frame.entries[i].hasCurrentTarget = true;
-                    }
                     return;
                 }
             }
@@ -297,14 +286,6 @@
             auto& entry = frame.entries[frame.count++];
             entry.bodyId = bodyId;
             entry.role = role;
-            if (drawColliderPhaseDiagnostics && currentTarget) {
-                entry.currentTarget = *currentTarget;
-                entry.hasCurrentTarget = true;
-            }
-        };
-
-        auto addBody = [&](RE::hknpBodyId bodyId, debug::BodyOverlayRole role) {
-            addBodyWithTarget(bodyId, role, nullptr);
         };
 
         auto addAxisTransformWithBasis = [&](const RE::NiTransform& transform,
@@ -3326,21 +3307,12 @@
                 }
 
                 const bool isLeft = hand.isLeft();
-                const RE::NiTransform* currentTarget =
-                    drawColliderPhaseDiagnostics ?
-                    (snapshot.hasQueuedTarget ?
-                            &snapshot.queuedProxyTargetWorld :
-                            (snapshot.hasAppliedTarget ?
-                                    &snapshot.appliedProxyTargetWorld :
-                                    nullptr)) :
-                    nullptr;
                 if (drawGrabAuthorityProxyCollider) {
-                    addBodyWithTarget(
+                    addBody(
                         snapshot.proxyBodyId,
                         isLeft ?
                             debug::BodyOverlayRole::LeftGrabAuthorityProxy :
-                            debug::BodyOverlayRole::RightGrabAuthorityProxy,
-                        currentTarget);
+                            debug::BodyOverlayRole::RightGrabAuthorityProxy);
                 }
 
                 RE::NiTransform currentPalmTarget{};
@@ -3446,16 +3418,9 @@
             if (drawHandColliders) {
                 const auto addPalmBody = [&](const Hand& hand, debug::BodyOverlayRole role) {
                     const auto bodyId = hand.getCollisionBodyId();
-                    RE::NiTransform currentTarget{};
-                    const bool hasCurrentTarget =
-                        drawColliderPhaseDiagnostics &&
-                        hand.tryGetHandColliderTargetForDebug(
-                            bodyId.value,
-                            currentTarget);
-                    addBodyWithTarget(
+                    addBody(
                         bodyId,
-                        role,
-                        hasCurrentTarget ? &currentTarget : nullptr);
+                        role);
                 };
                 addPalmBody(_rightHand, debug::BodyOverlayRole::RightHand);
                 addPalmBody(_leftHand, debug::BodyOverlayRole::LeftHand);
@@ -3469,33 +3434,17 @@
              */
             if (drawDynamicHandColliders) {
                 for (std::size_t twinIndex = 0; twinIndex < DynamicHandCollisionRuntime::kBodiesPerHand; ++twinIndex) {
-                    RE::NiTransform rightTarget{};
-                    const bool hasRightTarget =
-                        drawColliderPhaseDiagnostics &&
-                        _dynamicHandCollision.tryGetBodyTargetForDebug(
-                            false,
-                            twinIndex,
-                            rightTarget);
-                    addBodyWithTarget(
+                    addBody(
                         _dynamicHandCollision.proxyBodyIdForDebug(
                             false,
                             twinIndex),
-                        debug::BodyOverlayRole::RightHand,
-                        hasRightTarget ? &rightTarget : nullptr);
+                        debug::BodyOverlayRole::RightHand);
 
-                    RE::NiTransform leftTarget{};
-                    const bool hasLeftTarget =
-                        drawColliderPhaseDiagnostics &&
-                        _dynamicHandCollision.tryGetBodyTargetForDebug(
-                            true,
-                            twinIndex,
-                            leftTarget);
-                    addBodyWithTarget(
+                    addBody(
                         _dynamicHandCollision.proxyBodyIdForDebug(
                             true,
                             twinIndex),
-                        debug::BodyOverlayRole::LeftHand,
-                        hasLeftTarget ? &leftTarget : nullptr);
+                        debug::BodyOverlayRole::LeftHand);
                 }
 
                 dynamic_hand_collision_telemetry::Snapshot telemetry{};
@@ -3567,15 +3516,9 @@
             }
 
             if (drawDynamicWeaponColliders) {
-                RE::NiTransform currentTarget{};
-                const bool hasCurrentTarget =
-                    drawColliderPhaseDiagnostics &&
-                    _dynamicWeaponCollision.tryGetContactBodyTargetForDebug(
-                        currentTarget);
-                addBodyWithTarget(
+                addBody(
                     _dynamicWeaponCollision.proxyBodyIdForDebug(),
-                    debug::BodyOverlayRole::DynamicWeaponProxy,
-                    hasCurrentTarget ? &currentTarget : nullptr);
+                    debug::BodyOverlayRole::DynamicWeaponProxy);
 
                 DynamicWeaponCollisionRuntime::DebugSnapshot snapshot{};
                 constexpr float proxyColor[4]{ 1.0f, 0.24f, 0.08f, 0.96f };
@@ -3660,16 +3603,9 @@
                         if (bodyId == INVALID_BODY_ID) {
                             continue;
                         }
-                        RE::NiTransform currentTarget{};
-                        const bool hasCurrentTarget =
-                            drawColliderPhaseDiagnostics &&
-                            hand.tryGetHandColliderTargetForDebug(
-                                bodyId,
-                                currentTarget);
-                        addBodyWithTarget(
+                        addBody(
                             RE::hknpBodyId{ bodyId },
-                            i == 0 ? anchorRole : segmentRole,
-                            hasCurrentTarget ? &currentTarget : nullptr);
+                            i == 0 ? anchorRole : segmentRole);
                         ++drawn;
                     }
                 };
@@ -3709,16 +3645,9 @@
                     BodyBoneColliderMetadata metadata{};
                     const auto role =
                         _bodyBoneColliders.tryGetBodyMetadataAtIndexAtomic(i, bodyId, metadata) ? bodyOverlayRoleFor(metadata.role) : debug::BodyOverlayRole::BodyTorsoSegment;
-                    RE::NiTransform currentTarget{};
-                    const bool hasCurrentTarget =
-                        drawColliderPhaseDiagnostics &&
-                        _bodyBoneColliders.tryGetBodyTargetForDebug(
-                            bodyId,
-                            currentTarget);
-                    addBodyWithTarget(
+                    addBody(
                         RE::hknpBodyId{ bodyId },
-                        role,
-                        hasCurrentTarget ? &currentTarget : nullptr);
+                        role);
                     ++bodyDrawn;
                 }
             }
@@ -3728,16 +3657,9 @@
                  ++index) {
                 const std::uint32_t bodyId =
                     grabbedWeaponPartColliderBodyIds[index];
-                RE::NiTransform currentTarget{};
-                const bool hasCurrentTarget =
-                    drawColliderPhaseDiagnostics &&
-                    _weaponCollision.tryGetBodyTargetForDebug(
-                        bodyId,
-                        currentTarget);
-                addBodyWithTarget(
+                addBody(
                     RE::hknpBodyId{ bodyId },
-                    debug::BodyOverlayRole::FocusedWeaponPart,
-                    hasCurrentTarget ? &currentTarget : nullptr);
+                    debug::BodyOverlayRole::FocusedWeaponPart);
             }
 
             if (drawWeaponColliders) {
@@ -3752,39 +3674,21 @@
                             weaponSnapshot.bodyIds[i])) {
                         continue;
                     }
-                    RE::NiTransform currentTarget{};
-                    const bool hasCurrentTarget =
-                        drawColliderPhaseDiagnostics &&
-                        _weaponCollision.tryGetBodyTargetForDebug(
-                            weaponSnapshot.bodyIds[i],
-                            currentTarget);
-                    addBodyWithTarget(
+                    addBody(
                         RE::hknpBodyId{ weaponSnapshot.bodyIds[i] },
-                        debug::BodyOverlayRole::Weapon,
-                        hasCurrentTarget ? &currentTarget : nullptr);
+                        debug::BodyOverlayRole::Weapon);
                 }
             }
         }
 
         if (frame.drawTargetBodies || drawWorldOriginDiagnostics) {
             auto addHandTarget = [&](const Hand& hand) {
-                const auto& handInput = hand.isLeft() ? context.left : context.right;
                 if (hand.isHolding()) {
                     const auto& savedState = hand.getSavedObjectState();
                     if (frame.drawTargetBodies) {
-                        GrabForceTorqueDebugSnapshot targetSnapshot{};
-                        const bool hasCurrentTarget =
-                            drawColliderPhaseDiagnostics &&
-                            hand.getGrabForceTorqueDebugSnapshot(
-                                hknp,
-                                handInput.rawHandWorld,
-                                targetSnapshot);
-                        addBodyWithTarget(
+                        addBody(
                             savedState.bodyId,
-                            debug::BodyOverlayRole::Target,
-                            hasCurrentTarget ?
-                                &targetSnapshot.desiredBodyWorld :
-                                nullptr);
+                            debug::BodyOverlayRole::Target);
                     }
                     addWorldOriginDiagnostic(hand, true, savedState.bodyId, savedState.refr, nullptr, nullptr);
                     return;

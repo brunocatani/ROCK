@@ -705,10 +705,6 @@ namespace rock
         rockHighlightColor = readHighlightColor(ini, SECTION, "sHighlightColor", rockHighlightColor);
         rockDebugShowColliders = ini.GetBoolValue(SECTION, "bDebugShowColliders", rockDebugShowColliders);
         rockDebugShowTargetColliders = ini.GetBoolValue(SECTION, "bDebugShowTargetColliders", rockDebugShowTargetColliders);
-        rockDebugDrawColliderPhaseDiagnostics = ini.GetBoolValue(
-            SECTION,
-            "bDebugDrawColliderPhaseDiagnostics",
-            rockDebugDrawColliderPhaseDiagnostics);
         rockDebugShowHandAxes = ini.GetBoolValue(SECTION, "bDebugShowHandAxes", rockDebugShowHandAxes);
         rockDebugShowGrabPivots = ini.GetBoolValue(SECTION, "bDebugShowGrabPivots", rockDebugShowGrabPivots);
         rockDebugShowGrabPocketNormal = ini.GetBoolValue(SECTION, "bDebugShowGrabPocketNormal", rockDebugShowGrabPocketNormal);

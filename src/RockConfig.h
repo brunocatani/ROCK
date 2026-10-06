@@ -198,7 +198,6 @@ namespace rock
 
         bool rockDebugShowColliders = false;
         bool rockDebugShowTargetColliders = false;
-        bool rockDebugDrawColliderPhaseDiagnostics = false;
         bool rockDebugShowHandAxes = false;
         bool rockDebugShowGrabPivots = false;
         bool rockDebugShowGrabPocketNormal = false;

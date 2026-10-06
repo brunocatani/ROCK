@@ -211,10 +211,6 @@ namespace rock
         }
         // Main-thread debug publication only. Returns the current compound-root
         // target queued for the next generated-body physics callback.
-        [[nodiscard]] bool tryGetBodyTargetForDebug(
-            bool isLeft,
-            std::size_t bodyIndex,
-            RE::NiTransform& outTarget) const;
 
     private:
         struct PhysicsTelemetrySample

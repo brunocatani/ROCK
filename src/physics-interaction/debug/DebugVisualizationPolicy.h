@@ -6,7 +6,6 @@ namespace rock::debug_visualization_policy
     {
         bool colliderMaster{ false };
         bool targetColliders{ false };
-        bool colliderPhaseDiagnostics{ false };
         bool handColliders{ false };
         bool handBoneColliders{ false };
         bool bodyBoneColliders{ false };
@@ -52,7 +51,6 @@ namespace rock::debug_visualization_policy
     {
         bool colliderMaster{ false };
         bool targetColliders{ false };
-        bool colliderPhaseDiagnostics{ false };
         bool handColliders{ false };
         bool handBoneColliders{ false };
         bool bodyBoneColliders{ false };
@@ -106,8 +104,6 @@ namespace rock::debug_visualization_policy
         return {
             .colliderMaster = colliders,
             .targetColliders = colliders && input.targetColliders,
-            .colliderPhaseDiagnostics =
-                colliders && input.colliderPhaseDiagnostics,
             .handColliders = colliders && input.handColliders,
             .handBoneColliders = colliders && input.handBoneColliders,
             .bodyBoneColliders = colliders && input.bodyBoneColliders,

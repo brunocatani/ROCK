@@ -8,7 +8,6 @@ namespace
     constexpr bool colliderChildrenDisabled(const State& state)
     {
         return !state.targetColliders &&
-               !state.colliderPhaseDiagnostics &&
                !state.handColliders &&
                !state.handBoneColliders &&
                !state.bodyBoneColliders &&
@@ -22,7 +21,6 @@ namespace
 
     constexpr auto disabledColliderMaster = resolve({
         .targetColliders = true,
-        .colliderPhaseDiagnostics = true,
         .handColliders = true,
         .handBoneColliders = true,
         .bodyBoneColliders = true,
@@ -47,7 +45,6 @@ namespace
     constexpr auto selectedColliderChildren = resolve({
         .colliderMaster = true,
         .targetColliders = true,
-        .colliderPhaseDiagnostics = true,
         .handColliders = true,
         .handBoneColliders = true,
         .bodyBoneColliders = true,
@@ -60,7 +57,6 @@ namespace
         .grabAuthorityProxy = true,
     });
     static_assert(selectedColliderChildren.targetColliders);
-    static_assert(selectedColliderChildren.colliderPhaseDiagnostics);
     static_assert(selectedColliderChildren.handColliders);
     static_assert(selectedColliderChildren.handBoneColliders);
     static_assert(selectedColliderChildren.bodyBoneColliders);
