@@ -334,14 +334,14 @@ namespace rock
         PhysicsFrameContext buildFrameContext(RE::bhkWorld* bhk, RE::hknpWorld* hknp);
 
         bool generatedBodiesExistForConfig() const;
-        bool generatedBodiesMatchLifecycle(RE::bhkWorld* bhk, RE::hknpWorld* hknp) const;
+        bool generatedBodiesLiveIn(RE::bhkWorld* bhk, RE::hknpWorld* hknp) const;
         void markGeneratedBodiesRebuilt(RE::bhkWorld* bhk, RE::hknpWorld* hknp);
         void markGeneratedBodiesInvalidated();
         void clearGeneratedBodyContactRegistry();
         void refreshGeneratedBodyContactRegistry();
-        bool rebuildGeneratedBodiesForLifecycle(RE::bhkWorld* bhk, RE::hknpWorld* hknp, const char* reason);
         void observeLifecycleFrame(RE::bhkWorld* bhk, RE::hknpWorld* hknp, ::rock::provider::RockProviderLifecycleReason reasonHint);
         bool physicsWritesAllowedForWorld(RE::hknpWorld* world) const;
+        void interruptInteractionFrame(const char* reason);
 
         void registerCollisionLayer(RE::hknpWorld* world);
 
@@ -760,10 +760,9 @@ namespace rock
         };
 
         // State owned by the PhysicsInteractionLifecycle module: init state,
-        // the lifecycle state machine and its atomic mirrors, cross-thread
-        // generation counters, the bound Havok worlds, the worlds/generations
-        // the generated bodies were built against, and collider-creation
-        // retry backoff.
+        // the published lifecycle state and its atomic mirrors, cross-thread
+        // generation counters, the bound Havok worlds, the world the generated
+        // bodies were built in, and collider-creation retry backoff.
         struct LifecycleState
         {
             std::atomic<bool> initialized{ false };
@@ -780,28 +779,19 @@ namespace rock
             RE::hknpWorld* cachedHknpWorld = nullptr;
             RE::bhkWorld* generatedBodiesBhkWorld = nullptr;
             RE::hknpWorld* generatedBodiesHknpWorld = nullptr;
-            std::uint32_t generatedBodiesWorldGeneration = 0;
-            std::uint32_t generatedBodiesSkeletonGeneration = 0;
-            std::uint32_t generatedBodiesProviderGeneration = 0;
             int handColliderCreateRetryFrames = 0;
             int bodyBoneColliderCreateRetryFrames = 0;
         };
 
-        // Collision-layer registration and audit expectations, captured at
-        // registration by the lifecycle module and audited by the update
-        // module.
-        struct CollisionLayerAuditState
+        // Collision-layer registration and the config inputs it was built
+        // from; the layer policy is re-applied only when those inputs change.
+        struct CollisionLayerRegistrationState
         {
             bool registered = false;
-            std::uint64_t expectedHandMask = 0;
-            std::uint64_t expectedWeaponMask = 0;
-            std::uint64_t expectedReloadMask = 0;
-            std::uint64_t expectedBodyMask = 0;
-            std::uint64_t expectedDynamicHandProxyMask = 0;
-            std::uint64_t expectedDynamicLeftHandProxyMask = 0;
-            std::uint64_t expectedDynamicWeaponProxyMask = 0;
-            std::uint64_t expectedDynamicWorldCarClutterMask = 0;
-            std::uint64_t expectedDynamicWorldCarLargeClutterMask = 0;
+            bool handStaticWorld = false;
+            bool weaponBlocksProjectiles = false;
+            bool weaponBlocksSpells = false;
+            bool npcDynamicCollisions = false;
         };
 
         // State owned by the contact callback (PhysicsInteractionContacts.inl):
@@ -1007,11 +997,10 @@ namespace rock
             int deltaLogCounter = 0;
             int weaponInteractionProbeLogCounter = 0;
             int wpnNodeLogCounter = 0;
-            bool runtimeScaleLogged = false;
         };
 
         LifecycleState _lifecycle;
-        CollisionLayerAuditState _layers;
+        CollisionLayerRegistrationState _layers;
         ContactEvidenceState _contacts;
         WeaponContactWitnessPair _weaponContact;
         EquippedWeaponFrameState _equipped;

@@ -13,7 +13,6 @@
 #include "rock_support/GameIniOverrides.h"
 #include "api/ROCKProviderApiInternal.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
-#include "physics-interaction/core/PhysicsCreationGatePolicy.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/RockRuntimeState.h"
@@ -69,56 +68,15 @@ namespace
     bool s_pluginLoaded = false;
     std::atomic<std::uint32_t> s_providerGeneration{ 1 };
     std::atomic<std::uint32_t> s_skeletonGeneration{ 1 };
-    std::atomic<bool> s_physicsCreationRequested{ false };
-    std::atomic<std::uint32_t> s_physicsCreationReadyDeferralFrames{ 0 };
-    physics_creation_gate_policy::WorldStabilityState s_physicsCreationWorldStability{};
-    std::uint32_t s_physicsCreationGateLogCounter = 0;
+    // Set by FRIK's kSkeletonReady; consumed by the next frame whose skeleton,
+    // world and menu state allow creating PhysicsInteraction.
+    bool s_physicsCreationRequested = false;
 
     struct PlayerPhysicsWorlds
     {
         RE::bhkWorld* bhk = nullptr;
         RE::hknpWorld* hknp = nullptr;
     };
-
-    const char* physicsCreationBlockReasonName(physics_creation_gate_policy::CreationBlockReason reason)
-    {
-        using Reason = physics_creation_gate_policy::CreationBlockReason;
-        switch (reason) {
-        case Reason::None:
-            return "none";
-        case Reason::RockDisabled:
-            return "rock-disabled";
-        case Reason::ProviderUnavailable:
-            return "provider-unavailable";
-        case Reason::SkeletonNotReady:
-            return "skeleton-not-ready";
-        case Reason::ReadyEventDeferred:
-            return "ready-event-deferred";
-        case Reason::MenuBlocked:
-            return "menu-blocked";
-        case Reason::WorldUnavailable:
-            return "world-unavailable";
-        case Reason::WorldUnstable:
-            return "world-unstable";
-        default:
-            return "unknown";
-        }
-    }
-
-    void resetPhysicsCreationGate()
-    {
-        physics_creation_gate_policy::resetWorldStability(s_physicsCreationWorldStability);
-        s_physicsCreationGateLogCounter = 0;
-    }
-
-    void requestDeferredPhysicsCreation()
-    {
-        s_physicsCreationRequested.store(true, std::memory_order_release);
-        s_physicsCreationReadyDeferralFrames.store(
-            physics_creation_gate_policy::kSkeletonReadyCreateDeferralFrames,
-            std::memory_order_release);
-        resetPhysicsCreationGate();
-    }
 
     PlayerPhysicsWorlds samplePlayerPhysicsWorlds()
     {
@@ -183,69 +141,27 @@ namespace
 
     void ensurePhysicsInteractionForReadySkeleton(const runtime_state::RuntimeFrameSnapshot& runtime)
     {
-        // ROCK creation is event-driven when FRIK announces skeleton readiness.
-        // The frame loop re-requests a dropped creation only for a skeleton
-        // FRIK has announced: this runs at FrameBegin, before the kSkeletonReady
-        // FRIK broadcasts later in the frame that builds it, and that event
-        // would rebuild whatever was created here.
-        if (!s_physicsCreationRequested.load(std::memory_order_acquire) &&
-            !s_physicsInteraction &&
-            s_frikSkeletonAnnounced &&
-            runtime.visualAuthorityAvailable &&
-            runtime.localSkeletonReady) {
-            s_physicsCreationRequested.store(true, std::memory_order_release);
-            s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
+        // Creation is event-driven by FRIK's kSkeletonReady. A creation dropped
+        // for a skeleton FRIK still announces is re-requested here.
+        if (!s_physicsInteraction && s_frikSkeletonAnnounced) {
+            s_physicsCreationRequested = true;
         }
-
-        if (!s_physicsCreationRequested.load(std::memory_order_acquire)) {
+        if (!s_physicsCreationRequested || !runtime.visualAuthorityAvailable || !runtime.localSkeletonReady ||
+            runtime.localMenuBlocking || runtime.compatibilityConfigBlocking) {
             return;
         }
-
         const auto worlds = samplePlayerPhysicsWorlds();
-        const auto readyDeferralFrames = s_physicsCreationReadyDeferralFrames.load(std::memory_order_acquire);
-        const physics_creation_gate_policy::CreationGateInput gateInput{
-            .rockEnabled = true,
-            .providerAvailable = s_frikAvailable && runtime.visualAuthorityAvailable,
-            .skeletonReady = runtime.localSkeletonReady,
-            .runtimeMenuBlocking = runtime.localMenuBlocking,
-            .compatibilityConfigBlocking = runtime.compatibilityConfigBlocking,
-            .bhkWorld = reinterpret_cast<std::uintptr_t>(worlds.bhk),
-            .hknpWorld = reinterpret_cast<std::uintptr_t>(worlds.hknp),
-            .readyDeferralFrames = readyDeferralFrames,
-        };
-        const auto decision = physics_creation_gate_policy::evaluateCreationGate(s_physicsCreationWorldStability, gateInput);
-        if (readyDeferralFrames > 0) {
-            s_physicsCreationReadyDeferralFrames.fetch_sub(1, std::memory_order_acq_rel);
-        }
-
-        if (!decision.keepRequestPending) {
-            s_physicsCreationRequested.store(false, std::memory_order_release);
-        }
-
-        if (!decision.canCreate) {
-            if ((s_physicsCreationGateLogCounter++ % 90u) == 0u) {
-                logger::debug(
-                    "ROCK: Physics creation deferred reason={} stableFrames={} bhk={} hknp={} localMenu={} compatibilityConfig={} readyDeferral={}",
-                    physicsCreationBlockReasonName(decision.blockReason),
-                    decision.stableWorldFrames,
-                    static_cast<const void*>(worlds.bhk),
-                    static_cast<const void*>(worlds.hknp),
-                    runtime.localMenuBlocking ? "yes" : "no",
-                    runtime.compatibilityConfigBlocking ? "yes" : "no",
-                    readyDeferralFrames);
-            }
+        if (!worlds.bhk || !worlds.hknp) {
             return;
         }
 
         if (s_physicsInteraction) {
-            logger::info("ROCK: Recreating PhysicsInteraction after deferred skeleton-ready gate.");
+            logger::info("ROCK: Recreating PhysicsInteraction for the new FRIK skeleton.");
             destroyPhysicsInteraction(rock::provider::RockProviderLifecycleReason::SkeletonReady);
         }
 
         createPhysicsInteraction();
-        s_physicsCreationRequested.store(false, std::memory_order_release);
-        s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
-        resetPhysicsCreationGate();
+        s_physicsCreationRequested = false;
     }
 
     void destroyPhysicsInteraction(
@@ -1032,10 +948,7 @@ namespace
                     "ROCK: Authored equipped-weapon grip capture hook is unavailable for this runtime build.");
             }
             authored_weapon_grip_capture::setEnabled(true);
-            if (s_physicsInteraction) {
-                logger::warn("ROCK: PhysicsInteraction already exists on kSkeletonReady; deferring recreation to ROCK frame gate.");
-            }
-            requestDeferredPhysicsCreation();
+            s_physicsCreationRequested = true;
             s_frikSkeletonAnnounced = true;
             break;
 
@@ -1045,9 +958,7 @@ namespace
             frik_hand_world_authority::resetForSkeletonRelease();
             bumpGeneration(s_skeletonGeneration);
             authored_weapon_grip_capture::resetTransientState();
-            s_physicsCreationRequested.store(false, std::memory_order_release);
-            s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
-            resetPhysicsCreationGate();
+            s_physicsCreationRequested = false;
             if (s_physicsInteraction) {
                 s_physicsInteraction->noteSkeletonLifecycle(
                     s_skeletonGeneration.load(std::memory_order_acquire),
@@ -1195,9 +1106,7 @@ namespace
             logger::info("ROCK: New game session -- resetting PhysicsInteraction...");
             s_equippedWeaponContinuity = {};
             const auto providerGeneration = bumpGeneration(s_providerGeneration);
-            s_physicsCreationRequested.store(false, std::memory_order_release);
-            s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
-            resetPhysicsCreationGate();
+            s_physicsCreationRequested = false;
             runtime_state::resetTransientState();
             authored_weapon_grip_capture::resetTransientState();
             if (s_physicsInteraction) {

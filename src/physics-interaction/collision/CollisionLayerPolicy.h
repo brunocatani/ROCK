@@ -378,27 +378,6 @@ namespace rock::collision_layer_policy
         return ~0ULL;
     }
 
-    inline constexpr std::uint64_t matrixAddressableMask(std::uint64_t mask) { return mask & allMatrixAddressableLayerBits(); }
-
-    inline constexpr bool matrixLayerMaskMatches(std::uint64_t currentMask, std::uint64_t expectedMask)
-    {
-        return matrixAddressableMask(currentMask) == matrixAddressableMask(expectedMask);
-    }
-
-    inline constexpr std::uint64_t rockBodyManagedLayerBits()
-    {
-        return allMatrixAddressableLayerBits() &
-               ~layerBitOrZero(FO4_LAYER_BIPED) &
-               ~layerBitOrZero(FO4_LAYER_DEADBIP) &
-               ~layerBitOrZero(FO4_LAYER_BIPED_NO_CC);
-    }
-
-    inline constexpr bool bodyManagedLayerMaskMatches(std::uint64_t currentMask, std::uint64_t expectedMask)
-    {
-        const auto managedBits = rockBodyManagedLayerBits();
-        return (currentMask & managedBits) == (expectedMask & managedBits);
-    }
-
     inline constexpr std::uint64_t withoutLayer(std::uint64_t mask, std::uint32_t layer) { return mask & ~layerBitOrZero(layer); }
 
     inline constexpr std::uint64_t withLayer(std::uint64_t mask, std::uint32_t layer) { return mask | layerBitOrZero(layer); }
@@ -527,56 +506,6 @@ namespace rock::collision_layer_policy
                layerPairSymmetricMatches(matrix, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, FO4_LAYER_BIPED_NO_CC, enabled) &&
                layerPairSymmetricMatches(matrix, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, FO4_LAYER_BIPED_NO_CC, enabled) &&
                layerPairSymmetricMatches(matrix, ROCK_LAYER_DYNAMIC_WEAPON_PROXY, FO4_LAYER_BIPED_NO_CC, enabled);
-    }
-
-    inline constexpr bool rockToolActorPairsMatch(
-        const std::uint64_t* matrix,
-        std::uint64_t expectedHandMask,
-        std::uint64_t expectedWeaponMask)
-    {
-        if (!matrix) {
-            return false;
-        }
-
-        constexpr std::uint32_t actorLayers[] = { FO4_LAYER_BIPED, FO4_LAYER_DEADBIP, FO4_LAYER_BIPED_NO_CC };
-        for (const auto actorLayer : actorLayers) {
-            if (!layerPairSymmetricMatches(matrix, ROCK_LAYER_HAND, actorLayer, maskEnablesLayer(expectedHandMask, actorLayer))) {
-                return false;
-            }
-            if (!layerPairSymmetricMatches(matrix, ROCK_LAYER_WEAPON, actorLayer, maskEnablesLayer(expectedWeaponMask, actorLayer))) {
-                return false;
-            }
-            if constexpr (ROCK_LAYER_RELOAD != ROCK_LAYER_HAND && ROCK_LAYER_RELOAD != ROCK_LAYER_WEAPON) {
-                if (!layerPairSymmetricMatches(matrix, ROCK_LAYER_RELOAD, actorLayer, maskEnablesLayer(buildRockReloadExpectedMask(true, true), actorLayer))) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
-    inline constexpr bool rockBodyManagedPairsMatch(const std::uint64_t* matrix, std::uint64_t expectedBodyMask)
-    {
-        if (!matrix) {
-            return false;
-        }
-
-        /*
-         * ROCK owns the generated body layer's matrix row. FO4VR can restore
-         * native actor rows such as BIPED/BIPED_NO_CC onto the extended body
-         * layer after registration; those actor bits stay excluded from ROCK's
-         * authored body mask, but they should not make the watchdog churn the
-         * whole collision matrix every frame. All non-actor pairs remain guarded.
-         */
-        for (std::uint32_t other = 0; other < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++other) {
-            if (isActorOrBipedLayer(other)) {
-                continue;
-            }
-            if (!layerPairSymmetricMatches(matrix, ROCK_LAYER_BODY, other, maskEnablesLayer(expectedBodyMask, other))) {
-                return false;
-            }
-        }
-        return true;
     }
 
     inline void applyRockHandLayerPolicy(std::uint64_t* matrix, bool includeWeaponLayer, bool includeStaticWorld = true)

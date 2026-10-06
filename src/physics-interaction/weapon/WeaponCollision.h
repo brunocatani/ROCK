@@ -386,8 +386,6 @@ namespace rock
 
         void destroyWeaponBody(RE::hknpWorld* world);
 
-        void invalidateForScaleChange(RE::hknpWorld* world);
-
         void updateBodiesFromCurrentSourceTransforms(
             RE::hknpWorld* world,
             RE::NiAVObject* fallbackWeaponNode,

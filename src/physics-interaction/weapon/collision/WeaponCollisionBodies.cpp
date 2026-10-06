@@ -232,36 +232,6 @@ namespace rock
         ROCK_LOG_INFO(Weapon, "Weapon collision bodies destroyed count={}", activeDestroyed + inactiveDestroyed);
     }
 
-    void WeaponCollision::invalidateForScaleChange(RE::hknpWorld* world)
-    {
-        const bool hadWeaponBody = hasWeaponBody();
-        if (hadWeaponBody) {
-            ROCK_LOG_INFO(Weapon, "Generated weapon collision invalidated by physics scale change");
-            destroyWeaponBody(world);
-        } else {
-            clearAtomicBodyIds();
-            resetWeaponBodySetGeneration();
-            ROCK_LOG_DEBUG(Weapon, "Generated weapon collision scale invalidation had no active bodies");
-        }
-
-        _identity.cachedWeaponKey = 0;
-        _identity.cachedVisualKey = 0;
-        _identity.cachedIdentityKey = 0;
-        _identity.cachedOwnershipKey = 0;
-        _identity.cachedFormID = 0;
-        _identity.observedIdentityKey = 0;
-        _identity.observedOwnershipKey = 0;
-        _identity.observedFormID = 0;
-        _identity.observedInstanceContentKey = 0;
-        clearGeneratedSourceCompletenessTracking();
-        clearPendingWeaponVisualRebuild();
-        clearGeneratedSourceCache();
-        clearPendingGeneratedWeaponBuild(world, true);
-        resetVisualSourceUnavailableRetention();
-        _drive.rebuildRequested.store(false, std::memory_order_release);
-        _drive.failureCount.store(0, std::memory_order_release);
-    }
-
     void WeaponCollision::destroyWeaponBodyBank(WeaponBodyBank& bank, bool releaseShapeRef)
     {
         for (auto& instance : bank) {

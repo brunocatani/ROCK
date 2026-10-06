@@ -571,7 +571,9 @@ namespace rock
                 _rightHand.hasCollisionBody() ? "yes" : "no",
                 _leftHand.hasCollisionBody() ? "yes" : "no");
             destroyHandCollisions(frame.bhkWorld);
-            if (!createHandCollisions(frame.hknpWorld, frame.bhkWorld)) {
+            if (createHandCollisions(frame.hknpWorld, frame.bhkWorld)) {
+                markGeneratedBodiesRebuilt(frame.bhkWorld, frame.hknpWorld);
+            } else {
                 _lifecycle.handColliderCreateRetryFrames = 120;
             }
             return;
