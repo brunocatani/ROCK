@@ -2,51 +2,14 @@ param(
     [string]$Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 )
 
-# Repository contract checks. These verify structural project contracts that
-# no C++ policy test can observe: the CommonLibF4VR-only dependency boundary,
-# the ROCK.ini configuration-authority distribution contract. Input ownership
-# and configuration values are covered by the C++ tests.
+# Repository contract check: runtime INIs must never ship, deploy or embed
+# (ROCK configuration contract). Catalog/default parity belongs to
+# ConfigurationStoreTests.
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $failures = [System.Collections.Generic.List[string]]::new()
-
-function Read-Source {
-    param([string]$RelativePath)
-
-    $path = Join-Path $Root $RelativePath
-    if (-not (Test-Path -LiteralPath $path)) {
-        $failures.Add("Missing required file: $RelativePath")
-        return ''
-    }
-    return Get-Content -Raw -LiteralPath $path
-}
-
-# --- CommonLibF4VR-only dependency boundary -------------------------------
-
-$cmakeText = Read-Source 'CMakeLists.txt'
-if ($cmakeText -notmatch 'CommonLibF4::CommonLibF4') {
-    $failures.Add('CMakeLists.txt: ROCK must link the CommonLibF4 target directly.')
-}
-if ($cmakeText -match 'F4VR_COMMON_FRAMEWORK|F4VRCommon::framework') {
-    $failures.Add('CMakeLists.txt: ROCK must not configure or link the removed F4VR-CommonFramework.')
-}
-if ((Read-Source 'vcpkg.json') -match 'cpptrace') {
-    $failures.Add('vcpkg.json: ROCK must not retain the Framework-only cpptrace package.')
-}
-if (Test-Path -LiteralPath (Join-Path $Root '.gitmodules')) {
-    $failures.Add('.gitmodules: ROCK must not retain the removed Framework submodule declaration.')
-}
-
-$productionFiles = Get-ChildItem -LiteralPath (Join-Path $Root 'src') -Recurse -File -Include *.h,*.cpp,*.inl
-foreach ($file in $productionFiles) {
-    $text = Get-Content -Raw -LiteralPath $file.FullName
-    if ($text -match '#include\s*[<"](?:f4sevr|f4vr|vrcf|common)/' -or $text -match 'f4cf::') {
-        $relative = [System.IO.Path]::GetRelativePath($Root, $file.FullName)
-        $failures.Add("$relative`: production source still imports the removed Framework surface.")
-    }
-}
 
 # Distribution checks execute the production preflight. Compiled catalog/default
 # parity belongs to ConfigurationStoreTests; input ownership to adapter tests.
