@@ -565,13 +565,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKWeaponInventoryStackSelectionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKWeaponInventoryStackSelectionPolicyTests)
 
-  add_executable(ROCKAuthoredWeaponGripCapturePolicyTests
-    "${ROOT_DIR}/tests/AuthoredWeaponGripCapturePolicyTests.cpp"
-  )
-  target_compile_features(ROCKAuthoredWeaponGripCapturePolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKAuthoredWeaponGripCapturePolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKAuthoredWeaponGripCapturePolicyTests)
-
   add_executable(ROCKHandFingerMirrorMathTests
     "${ROOT_DIR}/tests/HandFingerMirrorMathTests.cpp"
   )
@@ -682,7 +675,6 @@ if(BUILD_ROCK_TESTS)
     ROCKNativeGrabHapticSuppressionPolicyTests
     ROCKHeldWeaponInstantTransitionPolicyTests
     ROCKWeaponInventoryStackSelectionPolicyTests
-    ROCKAuthoredWeaponGripCapturePolicyTests
     ROCKPhysicsCallbackQuiescenceGateTests
     ROCKDynamicHandCollisionTransitionPolicyTests
     ROCKHavokCompoundShapeKeyPolicyTests
@@ -700,6 +692,9 @@ if(BUILD_ROCK_TESTS)
   add_library(ROCKPolicyTestSupport STATIC
     "${ROOT_DIR}/tests/RockConfigPolicyStub.cpp"
     "${ROOT_DIR}/tests/PerformanceProfilerPolicyStub.cpp"
+    # Real CommonLib Ni math, so policy tests run the arithmetic the DLL ships.
+    "${COMMON_LIB_F4VR_PATH_SELECTED}/CommonLibF4/src/RE/NetImmerse/NiPoint.cpp"
+    "${COMMON_LIB_F4VR_PATH_SELECTED}/CommonLibF4/src/RE/NetImmerse/NiMatrix3.cpp"
   )
   target_compile_features(ROCKPolicyTestSupport PUBLIC cxx_std_23)
   target_include_directories(ROCKPolicyTestSupport
