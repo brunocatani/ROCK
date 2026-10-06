@@ -14,12 +14,14 @@
 #include "physics-interaction/native/HavokMaterialRegistry.h"
 #include "physics-interaction/native/HavokRefCount.h"
 #include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/HavokWorldLock.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
 #include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
+#include "physics-interaction/weapon/WeaponRestSupport.h"
 
 #include <algorithm>
 #include <chrono>
@@ -648,6 +650,7 @@ namespace rock
         _body.setCollisionFilterInfo(dynamicWeaponProxyFilterInfo(true), kRebuildBodyCollisionState);
         _body.activateBody();
         _equippedDrop = true;
+        resetEquippedDropRestWatch(true);
         _equippedDropGravitySamplePending = true;
         _handlingScale = {};
         _surfaceSupport = {};
@@ -686,6 +689,7 @@ namespace rock
         _body.setCollisionFilterInfo(dynamicWeaponProxyFilterInfo(), kRebuildBodyCollisionState);
         _body.activateBody();
         _equippedDrop = false;
+        resetEquippedDropRestWatch(false);
         cancelEquippedDropPull();
         _equippedDropGravitySamplePending = false;
         ROCK_LOG_INFO(Weapon, "Equipped drop held physics restored: body={} generation={:016X} restoredMotionProfile={} reason={}",
@@ -727,6 +731,7 @@ namespace rock
         if (!std::isfinite(distance)) return false;
         _equippedDropPull = { .active = true, .gripWeaponLocal = gripWeaponLocal,
             .duration = pull_motion_math::computePullDurationSeconds(distance) };
+        _equippedDropRest.reset();
         ROCK_LOG_INFO(Weapon, "Equipped drop pull started body={} generation={:016X} distanceMeters={:.3f}",
             _body.getBodyId().value, _createdGenerationKey, distance);
         return true;
@@ -837,6 +842,7 @@ namespace rock
         result.proxyActive = true;
         if (_equippedDrop) {
             if (equippedDrop) {
+                updateEquippedDropRest(frame);
                 _debugSnapshot = {}; // A free body has no hand target or held-contact residual.
                 // Free motion is absolute, including frames without contact.
                 // Never apply a hand-relative residual or a grip recovery here.
@@ -2139,6 +2145,93 @@ namespace rock
         }
     }
 
+    void DynamicWeaponCollisionRuntime::resetEquippedDropRestWatch(const bool active)
+    {
+        _dropRestWorldAtomic.store(nullptr, std::memory_order_release);
+        _dropRestBodyAtomic.store(kInvalidBodyId, std::memory_order_release);
+        _dropRestEpochAtomic.fetch_add(1, std::memory_order_acq_rel);
+        _equippedDropRest.reset();
+        if (!_dropRestSupportBusy.test_and_set(std::memory_order_acquire)) {
+            _dropRestSupport = {};
+            _dropRestSupportBusy.clear(std::memory_order_release);
+        }
+        if (active) {
+            _dropRestBodyAtomic.store(_body.getBodyId().value, std::memory_order_release);
+            _dropRestWorldAtomic.store(_createdWorld, std::memory_order_release);
+        }
+    }
+
+    void DynamicWeaponCollisionRuntime::recordEquippedDropRestContact(RE::hknpWorld* world,
+        const std::uint32_t a, const std::uint32_t b, const RE::NiPoint3& pointGame, const RE::NiPoint3& normal) noexcept
+    {
+        const auto epoch = _dropRestEpochAtomic.load(std::memory_order_acquire);
+        if (!world || world != _dropRestWorldAtomic.load(std::memory_order_acquire) ||
+            !std::isfinite(normal.z) || std::abs(normal.z) < 0.5f) return;
+        const bool mineA = watchesEquippedDropRest(a), mineB = watchesEquippedDropRest(b);
+        if (mineA == mineB) return;
+        DropRestSupport witness{};
+        witness.world = reinterpret_cast<std::uintptr_t>(world);
+        witness.generation = epoch;
+        witness.weaponBody = mineA ? a : b;
+        witness.surfaceBody = mineA ? b : a;
+        const auto surface = havok_runtime::snapshotBody(world, RE::hknpBodyId{witness.surfaceBody});
+        if (!weapon_rest_support::parkingSurface(surface)) return;
+        witness.surfaceCollision = reinterpret_cast<std::uintptr_t>(surface.collisionObject);
+        float comX{}, comY{}, comZ{};
+        if (!havok_runtime::tryGetBodyArrayWorldTransform(world, RE::hknpBodyId{witness.weaponBody}, witness.weaponPose) ||
+            !havok_runtime::tryGetBodyArrayWorldTransform(world, RE::hknpBodyId{witness.surfaceBody}, witness.surfacePose) ||
+            !havok_runtime::getBodyCOMWorld(world, RE::hknpBodyId{witness.weaponBody}, comX, comY, comZ)) return;
+        if (!std::isfinite(pointGame.z) || !std::isfinite(comZ) || pointGame.z > comZ * physics_scale::havokToGame() + 1.0f) return;
+        witness.valid = true;
+        if (!_dropRestSupportBusy.test_and_set(std::memory_order_acquire)) {
+            if (epoch == _dropRestEpochAtomic.load(std::memory_order_acquire) &&
+                world == _dropRestWorldAtomic.load(std::memory_order_acquire) && watchesEquippedDropRest(witness.weaponBody))
+                _dropRestSupport = witness;
+            _dropRestSupportBusy.clear(std::memory_order_release);
+        }
+    }
+
+    void DynamicWeaponCollisionRuntime::updateEquippedDropRest(const PhysicsFrameContext& frame)
+    {
+        if (!_equippedDrop || _equippedDropPull.active || !_created || !frame.worldReady ||
+            frame.menuBlocked || frame.hknpWorld != _createdWorld || !_body.isValid()) {
+            _equippedDropRest.reset();
+            return;
+        }
+        DropRestSupport support{};
+        if (!_dropRestSupportBusy.test_and_set(std::memory_order_acquire)) {
+            support = _dropRestSupport;
+            _dropRestSupportBusy.clear(std::memory_order_release);
+        }
+        RE::NiTransform pose{};
+        bool validPose = false, supported = false;
+        {
+            havok_world_lock::ScopedWorldReadLock lock(frame.hknpWorld);
+            const auto body = havok_runtime::snapshotBody(frame.hknpWorld, _body.getBodyId());
+            validPose = body.valid && body.body && body.motion && body.collisionObject == _body.getCollisionObject() &&
+                havok_runtime::tryGetBodyArrayWorldTransform(frame.hknpWorld, _body.getBodyId(), pose);
+            if (validPose && support.valid && support.world == reinterpret_cast<std::uintptr_t>(frame.hknpWorld) &&
+                support.generation == _dropRestEpochAtomic.load(std::memory_order_acquire) && support.weaponBody == _body.getBodyId().value) {
+                const auto surface = havok_runtime::snapshotBody(frame.hknpWorld, RE::hknpBodyId{support.surfaceBody});
+                RE::NiTransform surfacePose{};
+                // Retain sleeping contacts only while BOTH witnessed poses and
+                // the surface identity remain current, exactly as loose weapons.
+                supported = weapon_rest_support::parkingSurface(surface) &&
+                    reinterpret_cast<std::uintptr_t>(surface.collisionObject) == support.surfaceCollision &&
+                    havok_runtime::tryGetBodyArrayWorldTransform(frame.hknpWorld, RE::hknpBodyId{support.surfaceBody}, surfacePose) &&
+                    loose_weapon_collision_policy::poseDelta(pose, support.weaponPose, physics_scale::gameToHavok()).withinRestTolerance() &&
+                    weapon_rest_support::sameSurfacePose(surfacePose, support.surfacePose);
+            }
+        }
+        const bool previouslyReady = _equippedDropRest.ready();
+        const bool ready = _equippedDropRest.update(false, supported, validPose ? &pose : nullptr,
+            physics_scale::gameToHavok(), frame.deltaSeconds);
+        if (ready && !previouslyReady) {
+            ROCK_LOG_INFO(Weapon, "Equipped drop resting: body={} generation={:016X} supportedRest={:.3f}",
+                _body.getBodyId().value, _createdGenerationKey, _equippedDropRest.seconds());
+        }
+    }
+
     bool DynamicWeaponCollisionRuntime::isProxyBodyIdAtomic(const std::uint32_t bodyId) const
     {
         return bodyId != kInvalidBodyId && _bodyIdAtomic.load(std::memory_order_acquire) == bodyId;
@@ -2260,6 +2353,7 @@ namespace rock
     void DynamicWeaponCollisionRuntime::clearLocalProxyStateLocked()
     {
         _equippedDrop = false;
+        resetEquippedDropRestWatch(false);
         _equippedDropMotionProfile.reset();
         cancelEquippedDropPull();
         _equippedDropGravitySamplePending = false;

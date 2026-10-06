@@ -1,5 +1,6 @@
 #include "physics-interaction/weapon/LooseWeaponCollision.h"
 #include "physics-interaction/weapon/LooseWeaponCollisionPolicy.h"
+#include "physics-interaction/weapon/WeaponRestSupport.h"
 #include "physics-interaction/weapon/WeaponCollisionInternal.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
 #include "physics-interaction/core/RockRuntimeState.h"
@@ -55,25 +56,8 @@ namespace {
         }
         ~WriteScope() { reinterpret_cast<void (*)(RE::hknpWorld*)>(REL::Offset(0x1DF5FD0).address())(world); }
     };
-    bool sameSurfacePose(const RE::NiTransform& a, const RE::NiTransform& b)
-    {
-        const auto delta=a.translate-b.translate;
-        const auto distance=std::sqrt(delta.x*delta.x+delta.y*delta.y+delta.z*delta.z);
-        if (!std::isfinite(distance) || distance > 0.1f) return false;
-        for (unsigned r=0;r<3;++r) for (unsigned c=0;c<3;++c)
-            if (!std::isfinite(a.rotate.entry[r][c]) || !std::isfinite(b.rotate.entry[r][c]) ||
-                std::abs(a.rotate.entry[r][c]-b.rotate.entry[r][c]) > 0.002f) return false;
-        return true;
-    }
-    bool parkingSurface(const havok_runtime::BodySnapshot& surface)
-    {
-        if (!surface.valid || !surface.body || !surface.body->shape ||
-            (surface.collisionFilterInfo & collision_suppression_registry::kSuppressionNoCollideBit)) return false;
-        const auto layer=surface.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
-        if (!collision_layer_policy::isWorldSurfaceLayer(layer)) return false;
-        const auto type=physics_body_classifier::motionTypeFromBodyFlags(surface.body->flags);
-        return type==Motion::Static || type==Motion::Keyframed;
-    }
+    using weapon_rest_support::sameSurfacePose;
+    using weapon_rest_support::parkingSurface;
 }
 
 struct LooseWeaponCollision::State

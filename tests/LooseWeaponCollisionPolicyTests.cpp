@@ -111,6 +111,50 @@ int main()
     assert(!poseDelta(anchor,anchor,nan).withinRestTolerance());
     assert(!jitter.update(false,true,true,nan) && jitter.supportedRestSeconds==0);
     assert(!jitter.update(false,true,true,0) && jitter.supportedRestSeconds==0);
+    {
+        using rock::loose_weapon_collision_policy::AnchoredRest;
+        AnchoredRest<Pose> equipped;
+        // A distant airborne weapon can appear momentarily still at its apex.
+        // Without a supported contact that never counts toward retirement.
+        for (int i=0;i<32;++i) assert(!equipped.update(false,false,&anchor,gameToMeters,0.125f));
+        assert(equipped.seconds()==0);
+        for (int i=0;i<15;++i) assert(!equipped.update(false,true,&anchor,gameToMeters,0.125f));
+        assert(!equipped.ready());
+        assert(equipped.update(false,true,&anchor,gameToMeters,0.125f));
+        assert(equipped.ready() && equipped.seconds()==2.0f);
+        // Losing support, pulling/regrabbing, missing physics and a new drop
+        // each require a fresh, complete dwell rather than retaining credit.
+        assert(!equipped.update(false,false,&anchor,gameToMeters,0.125f));
+        assert(!equipped.update(false,true,&anchor,gameToMeters,1.5f));
+        assert(!equipped.update(true,true,&anchor,gameToMeters,0.5f));
+        assert(!equipped.update(false,true,&anchor,gameToMeters,1.5f));
+        assert(!equipped.update(false,true,nullptr,gameToMeters,0.5f));
+        assert(equipped.seconds()==0);
+        assert(!equipped.update(false,true,&anchor,gameToMeters,1.5f));
+        equipped.reset();
+        assert(!equipped.ready() && equipped.seconds()==0);
+        assert(!equipped.update(false,true,&anchor,gameToMeters,0.5f));
+        assert(!equipped.update(false,true,&anchor,gameToMeters,nan));
+        // Continuous drift/rotation cannot sneak through by taking tiny steps.
+        for (int i=0;i<160;++i) {
+            const auto moving=pose(0.2f*i,30);
+            assert(!equipped.update(false,true,&moving,gameToMeters,0.125f));
+        }
+        equipped.reset();
+        for (int i=0;i<160;++i) {
+            const auto rotating=pose(0,30+0.5f*i);
+            assert(!equipped.update(false,true,&rotating,gameToMeters,0.125f));
+        }
+        equipped.reset();
+        for (int i=0;i<16;++i) {
+            const float direction=i%2 ? 1.0f : -1.0f;
+            const auto resting=pose(0.2f*direction,30+0.5f*direction);
+            assert(equipped.update(false,true,&resting,gameToMeters,0.125f)==(i==15));
+        }
+        const auto knocked=pose(5,30);
+        assert(!equipped.update(false,true,&knocked,gameToMeters,0.125f));
+        assert(!equipped.ready());
+    }
     using namespace rock::native_player_collision;
     using namespace rock::collision_layer_policy;
     using Motion=rock::physics_body_classifier::BodyMotionType;

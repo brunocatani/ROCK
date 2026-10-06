@@ -29,6 +29,10 @@ namespace rock
         const bool modeChanged = equippedDrop &&
             equipped_weapon_drop_policy::fromSetting(g_rockConfig.rockWeaponDropMode) != equipped_weapon_drop_policy::Mode::EquippedDrop;
         if (!outside && !modeChanged && !_dynamicWeaponCollision.surfaceRetirementRequested() && !supportLost) return false;
+        // A live free body must finish the same supported two-second dwell as
+        // a loose weapon before any ordinary retirement trigger may freeze it.
+        // Missing-body recovery retains its existing exact-item rescue path.
+        if (equippedDrop && !supportLost && !_dynamicWeaponCollision.equippedDropRestReady()) return false;
         const auto pose = weaponNode->world;
         const auto form = currentEquippedWeaponFormId();
         if (!bipod_frozen_retirement::arm(form, frame.bhkWorld, pose)) {

@@ -97,4 +97,26 @@ namespace rock::loose_weapon_collision_policy
             return supportedRestSeconds >= kSettleSeconds;
         }
     };
+
+    // One-body counterpart to the loose weapon's per-body rest anchors.
+    // Measure the entire dwell against its initial pose, never adjacent frames.
+    template<class Transform>
+    class AnchoredRest
+    {
+    public:
+        bool update(bool held, bool supported, const Transform* pose, float gameToMeters, float seconds)
+        {
+            if (!pose) { reset(); return false; }
+            if (_parking.supportedRestSeconds == 0) _anchor = *pose;
+            return _parking.update(held, supported,
+                poseDelta(*pose, _anchor, gameToMeters).withinRestTolerance(), seconds);
+        }
+        bool ready() const { return _parking.supportedRestSeconds >= kSettleSeconds; }
+        float seconds() const { return _parking.supportedRestSeconds; }
+        void reset() { _parking = {}; _anchor = {}; }
+
+    private:
+        Parking _parking;
+        Transform _anchor{};
+    };
 }
