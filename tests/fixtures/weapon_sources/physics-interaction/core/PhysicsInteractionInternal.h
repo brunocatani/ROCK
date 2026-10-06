@@ -2,6 +2,7 @@
 #include "api/WeaponSourceCatalogRuntime.h"
 #include "api/EventStreams.h"
 #include "physics-interaction/weapon/WeaponHierarchy.h"
+#include <span>
 namespace rock {
     inline bool finiteNiTransform(const RE::NiTransform& value) {return weapon_hierarchy::weaponTransformFinite(value);}
     struct SourceTestDescriptor {bool valid{};std::uintptr_t sourceRootAddress{};std::uint32_t bodyId{};};
@@ -33,6 +34,7 @@ namespace rock {
         api::Status copyProviderWeaponSources(std::uint64_t,std::uint32_t,provider::WeaponSourceRecord*,std::uint32_t,std::uint32_t&,std::uint32_t&)const;
         api::Status queryProviderWeaponSourcePose(std::uint64_t,std::uint64_t,provider::WeaponSourcePose&)const;
         api::Status queryProviderWeaponSourcePath(std::uint64_t,std::uint64_t,std::uint64_t&,std::uint32_t&)const;
+        api::Status collectProviderWeaponCollisionBodies(std::uint64_t,std::span<const std::uint64_t>,std::span<std::uint32_t>,std::uint32_t&)const;
         api::SampleV1 providerEventSample()const;
         void dispatchPhysicsMessage(std::uint32_t,bool,RE::TESObjectREFR*,std::uint32_t,std::uint32_t);
         void dispatchGrabEvent(GrabEventData);
