@@ -1047,11 +1047,7 @@ namespace rock
         [[nodiscard]] bool isOneHandRecoilEnvelopeActive() const noexcept;
         void clearOneHandRecoilClaim();
         bool applyRightOneHandRecoil(RE::NiNode* weaponNode);
-        void traceRecoilSample(const weapon_recoil_policy::SampleIdentity& context,
-            const RE::NiTransform& nativeKick, const RE::NiTransform& controlledKick,
-            bool ownedCarry, std::uint32_t handMask) const;
         void traceRecoilReadiness() const;
-        void traceRecoilPresentation(const char* route) const;
 
 
         struct LockedHandVisualLerpState

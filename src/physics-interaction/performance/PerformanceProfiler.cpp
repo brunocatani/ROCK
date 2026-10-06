@@ -183,8 +183,6 @@ namespace rock::performance_profiler
                 return "grabHeldObjectUpdate";
             case Scope::GrabAuthorityFlush:
                 return "grabAuthorityFlush";
-            case Scope::GrabAuthorityAfterSolveDiagnostics:
-                return "grabAuthorityAfterSolveDiagnostics";
             case Scope::GrabNearbyDampingRestore:
                 return "grabNearbyDampingRestore";
             case Scope::GrabNearbyDampingRestoreBodySearch:

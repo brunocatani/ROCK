@@ -61,7 +61,6 @@ namespace rock::performance_profiler
         GrabNearbyDampingBegin,
         GrabHeldObjectUpdate,
         GrabAuthorityFlush,
-        GrabAuthorityAfterSolveDiagnostics,
         GrabNearbyDampingRestore,
         GrabNearbyDampingRestoreBodySearch,
         FramePrelude,

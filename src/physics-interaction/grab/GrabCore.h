@@ -798,7 +798,6 @@ namespace rock
         float multiFingerContactSpreadGameUnits = 0.0f;
         float handScaleAtGrab = 1.0f;
         std::uint64_t traceId = 0;
-        std::uint64_t traceTargetWriteSequence = 0;
         const char* bodyResolutionReason = "none";
         const char* multiFingerContactReason = "none";
         const char* fingerEvidencePointMode = "none";
@@ -836,7 +835,6 @@ namespace rock
         RE::NiTransform looseObjectSharedProxyCorrection{};
         std::uint64_t looseObjectSharedPeerTrace = 0;
         bool looseObjectSharedPrimaryIsLeft = false;
-        float looseObjectVisualTraceElapsed = 0.0f;
         bool equippedWeaponTransfer = false;
         bool hasLooseObjectSoloProxyCorrection = false;
         bool hasTelemetryCapture = false;
@@ -880,7 +878,6 @@ namespace rock
             multiFingerContactSpreadGameUnits = 0.0f;
             handScaleAtGrab = 1.0f;
             traceId = 0;
-            traceTargetWriteSequence = 0;
             bodyResolutionReason = "none";
             multiFingerContactReason = "none";
             fingerEvidencePointMode = "none";
@@ -910,7 +907,6 @@ namespace rock
             looseObjectSharedProxyCorrection = {};
             looseObjectSharedPeerTrace = 0;
             looseObjectSharedPrimaryIsLeft = false;
-            looseObjectVisualTraceElapsed = 0.0f;
             equippedWeaponTransfer = false;
             hasLooseObjectSoloProxyCorrection = false;
             hasTelemetryCapture = false;

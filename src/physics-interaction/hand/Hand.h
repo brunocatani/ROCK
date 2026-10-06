@@ -236,13 +236,6 @@ namespace rock
         float motorSolverEffectiveToAtomDeltaDegrees = 0.0f;
         float motorSolverEffectiveLiveABodyDeltaDegrees = 0.0f;
         float motorSolverEffectiveTargetALiveADeltaDegrees = 0.0f;
-        float motorPhysicsProxyToLiveProxyDeltaDegrees = 0.0f;
-        float motorPhysicsProxyToLiveProxyDeltaGameUnits = 0.0f;
-        float motorRelationToConstraintATargetDegrees = 0.0f;
-        float motorRelationToConstraintALiveDegrees = 0.0f;
-        float motorTransformARawMaxDelta = 0.0f;
-        float motorTransformBRawMaxDelta = 0.0f;
-        float motorTargetBRcaRawMaxDelta = 0.0f;
         float motorTargetProxyToLiveProxyDeltaDegrees = 0.0f;
         float motorTargetProxyToLiveProxyDeltaGameUnits = 0.0f;
         float motorTransformBRelationLocalDeltaGameUnits = 0.0f;
@@ -810,20 +803,12 @@ namespace rock
             const HeldDriveUpdate& driveUpdate,
             const GrabReleaseContext& releaseContext,
             bool& outConvergingAcquisitionPhase);
-        void logHeldRenderClockProbe(
-            const HeldDriveUpdate& driveUpdate,
-            const RE::NiTransform& rawHandWorld,
-            const RE::NiTransform& heldVisualNodeWorld,
-            bool heldVisualNodeFromPresentedPose,
-            float deltaTime);
-        void logGrabMeshContactProbe(const RE::NiTransform& rawHandWorld, const HeldDriveUpdate& driveUpdate);
         void updateHeldAcquisition(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
             float deltaTime,
             const HeldDriveUpdate& driveUpdate,
             bool convergingAcquisitionPhase);
         void finalizeHeldObjectUpdate(RE::hknpWorld* world,
-            const RE::NiTransform& handWorldTransform,
             float forceFadeInTime,
             const HeldDriveUpdate& driveUpdate);
         void prepareSelectedGrabBodies(
@@ -838,7 +823,6 @@ namespace rock
         bool prepareGrabMeshCapture(
             const RE::NiTransform& handWorldTransform,
             const ValidatedGrabSelection& selection,
-            std::uint64_t traceId,
             const std::string& objectName,
             GrabMeshCaptureSetup& outSetup);
         void extractGrabMeshEvidence(
@@ -873,7 +857,6 @@ namespace rock
             const std::vector<TriangleData>& meshTriangles,
             const RE::NiPointer<RE::TESObjectREFR>& selectedRef,
             std::uint16_t selectedOriginalMotionPropsId,
-            std::uint64_t traceId,
             const std::string& objectName,
             ResolvedGrabBodyCapture& outCapture);
         void resolveGrabPivotEvidence(
@@ -1315,87 +1298,12 @@ namespace rock
         RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
         RE::NiTransform _lastAppliedGrabAuthorityRawHandWorld{};
         bool _hasLastAppliedGrabAuthorityProxyWorld = false;
-        struct RagdollAngularProbePreSolve
-        {
-            RE::hknpBodyId objectBodyId{ INVALID_BODY_ID };
-            RE::NiTransform desiredBodyWorld{};
-            RE::NiTransform bodyAWorldBefore{};
-            RE::NiTransform bodyWorldBefore{};
-            RE::NiTransform targetRelationAWorld{};
-            RE::NiTransform liveRelationAWorld{};
-            RE::NiTransform targetConstraintAWorld{};
-            RE::NiTransform liveConstraintAWorld{};
-            RE::NiTransform relationInverseBodyWorld{};
-            RE::NiTransform atomRowsBodyWorld{};
-            RE::NiTransform solverEffectiveBodyWorld{};
-            RE::NiTransform solverEffectiveLiveAWorld{};
-            RE::NiMatrix3 transformARotation{};
-            RE::NiMatrix3 transformBRotation{};
-            std::array<float, 12> targetBRcaRaw{};
-            RE::NiPoint3 requiredAxisWorld{};
-            RE::NiPoint3 requiredAxisProxyLocal{};
-            RE::NiPoint3 linearCorrectionWorld{};
-            RE::NiPoint3 linearLeverWorld{};
-            RE::NiPoint3 linearTorqueWitnessWorld{};
-            RE::NiPoint3 linearTorqueAxisProxyLocal{};
-            RE::NiPoint3 angularVelocityBeforeRadians{};
-            float beforeErrorDegrees = -1.0f;
-            float beforeGripErrorGameUnits = -1.0f;
-            float pivotLeverGameUnits = -1.0f;
-            float linearTorqueWitnessGameUnitsSquared = -1.0f;
-            float linearTorqueAxisDotRequired = 0.0f;
-            float angularMotorTau = 0.0f;
-            float angularMotorDamping = 0.0f;
-            float angularMotorMaxForce = 0.0f;
-            float linearMotorMaxForce = 0.0f;
-            float targetToHiggsRelationDegrees = -1.0f;
-            float transformBFrozenDeltaDegrees = -1.0f;
-            float pivotBRelationDeltaGameUnits = -1.0f;
-            float transformAPivotRoundTripDeltaGameUnits = -1.0f;
-            float targetProxyToLiveProxyDeltaGameUnits = -1.0f;
-            float targetProxyToLiveProxyDeltaDegrees = -1.0f;
-            float targetRelationAToLiveRelationADegrees = -1.0f;
-            float targetConstraintAToLiveConstraintADegrees = -1.0f;
-            float targetRelationAToTargetConstraintADegrees = -1.0f;
-            float liveRelationAToLiveConstraintADegrees = -1.0f;
-            float transformARawMaxDelta = -1.0f;
-            float transformBRawMaxDelta = -1.0f;
-            float targetBRcaRawMaxDelta = -1.0f;
-            float relationInverseBodyDeltaGameUnits = -1.0f;
-            float relationInverseBodyDeltaDegrees = -1.0f;
-            float atomRowsBodyDeltaGameUnits = -1.0f;
-            float atomRowsBodyDeltaDegrees = -1.0f;
-            float atomRowsToRelationInverseDegrees = -1.0f;
-            float targetRowsToProxyInBodyDegrees = -1.0f;
-            float solverEffectiveBodyDeltaGameUnits = -1.0f;
-            float solverEffectiveBodyDeltaDegrees = -1.0f;
-            float solverEffectiveToAtomDegrees = -1.0f;
-            float solverEffectiveLiveABodyDeltaDegrees = -1.0f;
-            float solverEffectiveTargetALiveADeltaDegrees = -1.0f;
-            float ragdollBRcaRowsErrorDegrees = -1.0f;
-            float ragdollBRcaColumnsErrorDegrees = -1.0f;
-            float ragdollARcbRowsInverseErrorDegrees = -1.0f;
-            float ragdollARcbColumnsInverseErrorDegrees = -1.0f;
-            std::uint64_t traceId = 0;
-            std::uint64_t targetWriteSequence = 0;
-            std::uint64_t flushSequence = 0;
-            bool bodyAWorldValid = false;
-            bool ragdollMotorEnabled = false;
-            bool valid = false;
-        };
-        RagdollAngularProbePreSolve _ragdollAngularProbePreSolve{};
-        std::array<float, 12> _lastGrabProbeTransformARaw{};
-        std::array<float, 12> _lastGrabProbeTransformBRaw{};
-        std::array<float, 12> _lastGrabProbeTargetBRcaRaw{};
-        std::uint64_t _lastGrabProbeAtomTraceId = 0;
-        bool _hasLastGrabProbeAtomBytes = false;
         GeneratedKeyframedBodyDriveState _grabAuthorityProxyDriveState{};
         std::uint64_t _grabAuthorityProxyQueuedSequence = 0;
         std::uint64_t _grabAuthorityProxyFlushSequence = 0;
         std::uint64_t _grabAuthorityProxyFailedFlushes = 0;
         float _grabAuthorityProxyLastFlushDeltaSeconds = 0.0f;
         int _grabAuthorityProxyLogCounter = 0;
-        std::uint64_t _grabAuthorityProxyAfterSolveLogCounter = 0;
         std::atomic<bool> _grabAuthorityProxyReleasePending{ false };
         std::mutex _grabAuthorityProxyMutex;
         SavedObjectState _savedObjectState;
@@ -1435,7 +1343,6 @@ namespace rock
         RE::NiTransform _heldRenderClockProbePresentedNode{};
         RE::NiTransform _heldRenderClockProbeResidual{};
         bool _hasHeldRenderClockProbeSample = false;
-        std::uint64_t _grabMeshContactProbeTraceId = 0;
         hand_visual_lerp_math::VisualReturnTransition<RE::NiTransform> _grabVisualReturn{};
         RE::NiTransform _grabVisualHandLerpStartTransform{};
         float _grabVisualHandLerpElapsedSeconds = 0.0f;

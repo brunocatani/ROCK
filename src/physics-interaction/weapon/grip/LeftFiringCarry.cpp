@@ -115,9 +115,6 @@ namespace rock
             return false;
         }
 
-        if (recoilConsumed) {
-            traceRecoilPresentation("one-hand-left");
-        }
         _lastSolvedWeaponTransform = weaponNode->world;
         _hasSolvedWeaponTransform = true;
 

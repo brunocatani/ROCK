@@ -329,7 +329,6 @@ namespace rock
         void finalizeFramePose();
         void discardUnfinishedFramePose();
         void captureProviderPresentedHandPoses();
-        void traceHeldPresentationPhase(const char* phase);
         void publishDebugRenderFrame();
 
     private:
@@ -508,7 +507,6 @@ namespace rock
             const push_assist::Contact& contact);
 
         void publishDebugBodyOverlay(const PhysicsFrameContext& frame);
-        void logGrabOverlayPointProbe(const PhysicsFrameContext& frame);
 
         void clearLeftWeaponContact();
         void clearRightWeaponContact();
@@ -1059,7 +1057,6 @@ namespace rock
             std::atomic<int> contactLogCounter{ 0 };
             int deltaLogCounter = 0;
             int handCacheResolveLogCounter = 0;
-            int heldMassLogCounter = 0;
             int weaponInteractionProbeLogCounter = 0;
             int wpnNodeLogCounter = 0;
             int paritySummaryCounter = 0;

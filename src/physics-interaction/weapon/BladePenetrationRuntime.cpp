@@ -14,7 +14,6 @@
 #include "physics-interaction/native/ReferenceInteraction.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
-#include "physics-interaction/telemetry/DynamicColliderTrace.h"
 
 #include "RE/Havok/hknpBody.h"
 #include "RE/Havok/hknpConstraintCinfo.h"
@@ -247,12 +246,6 @@ namespace rock
         const float maximumDepthGame = primaryGripWeaponLocal ?
             maximumDepth(_blade, *primaryGripWeaponLocal, _weaponScale, physics_scale::havokToGame()) : 0.0f;
         if (maximumDepthGame <= 0.0f) {
-            const auto now = nowMilliseconds();
-            if (dynamic_collider_trace::enabled() && now - _lastContactReport >= 1000) {
-                _lastContactReport = now;
-                dynamic_collider_trace::writeWeapon("BLADE unavailable: reason=grip-clearance active={} gripPresent={}",
-                    wasActive, primaryGripWeaponLocal != nullptr);
-            }
             return !wasActive;
         }
         if (wasActive && maximumDepthGame != _maximumDepthGame) {
@@ -272,21 +265,10 @@ namespace rock
             if (!targetWorld(_world, target)) return true;
             auto* ref = reference_interaction::resolveBody(_world, _contact.surfaceBodyId);
             if (!ref || ref->GetFormType() != RE::ENUM_FORM_ID::kACHR || ref == RE::PlayerCharacter::GetSingleton()) {
-                const auto now = nowMilliseconds();
-                if (dynamic_collider_trace::enabled() && now - _lastContactReport >= 1000) {
-                    _lastContactReport = now;
-                    dynamic_collider_trace::writeWeapon("BLADE rejected: target={} reason=npc-reference-unavailable", _contact.surfaceBodyId);
-                }
                 return true;
             }
             const auto point = transform_math::localPointToWorld(target, candidate.surfacePointLocal);
             const auto entry = evaluateEntry(_blade, physicalWeapon, requestedWeapon, point);
-            const auto now = nowMilliseconds();
-            if (dynamic_collider_trace::enabled() && now - _lastContactReport >= 1000) {
-                _lastContactReport = now;
-                dynamic_collider_trace::writeWeapon("BLADE contact: target={} tipDistance={:.3f} pressure={:.3f} sideways={:.3f} accepted={}",
-                    _contact.surfaceBodyId, entry.tipDistance, entry.pressure, entry.lateralError, entry.accepted);
-            }
             if (!entry.accepted) return true;
             // Fail once per generation if native setup cannot be established.
             // Ordinary contact remains solid and a re-equip permits retry.
@@ -360,13 +342,6 @@ namespace rock
         }
         requestedWeapon = command.weaponWorld;
         _presentation = physicalWeapon;
-        const auto now = nowMilliseconds();
-        if (dynamic_collider_trace::enabled() && now - _lastContactReport >= 500) {
-            _lastContactReport = now;
-            dynamic_collider_trace::writeWeapon("BLADE depth: target={} requested={:.3f} actual={:.3f} maximum={:.3f}gu filteredPairs={}",
-                _contact.surfaceBodyId, command.requestedDepth, actual.requestedDepth, _maximumDepthGame,
-                native_player_collision::bladePairRejectedCount());
-        }
         return true;
     }
 

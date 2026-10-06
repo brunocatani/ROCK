@@ -93,16 +93,6 @@ namespace rock::dynamic_weapon_collision_policy
         ManagedGrip,
     };
 
-    inline const char* visualIntentSourceName(VisualIntentSource source) noexcept
-    {
-        switch (source) {
-        case VisualIntentSource::NativePhysicalHand: return "native-physical-hand";
-        case VisualIntentSource::AuthoredPrimary: return "authored-primary";
-        case VisualIntentSource::ManagedGrip: return "managed-grip";
-        default: return "none";
-        }
-    }
-
     struct DivergenceDwellResult
     {
         float elapsedSeconds{ 0.0f };

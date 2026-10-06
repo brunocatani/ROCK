@@ -147,10 +147,6 @@ namespace rock
         outResponse->delivery = Api::RecoilDelivery::Direct;
         outResponse->controlledKickLocal = controlled;
         frik_hand_world_authority::noteNativeRecoilControlled(true);
-
-        if (nativeKick) {
-            self->traceRecoilSample(context, sample->nativeKickLocal, controlled, ownedCarry, static_cast<std::uint32_t>(mask));
-        }
         return true;
     }
 
@@ -281,7 +277,6 @@ namespace rock
             return false;
         }
         noteFrikRecoilWeaponNodeWrite();
-        traceRecoilPresentation(hasVisualOnlySupportRecoilAssist() ? "close-support-right" : "one-hand-right");
         _recoil.rightNeedsNeutralFrame = _recoil.controlledKickActive;
         recordPublishedHandWorld(false, handTarget);
         _lastSolvedWeaponTransform = weaponTarget;

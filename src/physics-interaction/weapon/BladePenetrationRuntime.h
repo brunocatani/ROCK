@@ -53,7 +53,6 @@ namespace rock
         RE::NiTransform _presentation{};
         RE::NiTransform _lastTargetWorld{};
         std::atomic<bool> _physicsFailed{ false };
-        std::uint64_t _lastContactReport{ 0 };
         bool _acquisitionUnavailable{ false };
     };
 }

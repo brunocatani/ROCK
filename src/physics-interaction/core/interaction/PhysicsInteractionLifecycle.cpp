@@ -735,7 +735,6 @@ namespace rock
         _lifecycle.initialized = false;
         observeLifecycleFrame(nullptr, nullptr, reason);
         _frame.hasPrevPositions = false;
-        _diagnostics.heldMassLogCounter = 0;
         _handBoneCache.reset();
         _handColliderBoneReader.resetCache();
         _handColliderBoneSnapshot = {};

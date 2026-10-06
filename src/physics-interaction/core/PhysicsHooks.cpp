@@ -350,7 +350,7 @@ namespace rock
 
             if (!decision.valid) {
                 performance_profiler::observeValue(performance_profiler::ValueMetric::PhysicsRequestedSubsteps, oldSubstepCount);
-                if (g_rockConfig.rockDebugVerboseLogging || g_rockConfig.rockDebugGrabFrameLogging) {
+                if (g_rockConfig.rockDebugVerboseLogging) {
                     ROCK_LOG_SAMPLE_DEBUG(Physics,
                         g_rockConfig.rockLogSampleMilliseconds,
                         "HAVOK_TIMING_FIX skipped reason={} rawDt={:.6f} accumDt={:.6f} oldSubDt={:.6f} oldSubsteps={}",
@@ -381,7 +381,7 @@ namespace rock
             if (decision.substepCount > oldSubstepCount) {
                 performance_profiler::addCounter(performance_profiler::Counter::PhysicsTimingSubstepsIncreased);
             }
-            if (g_rockConfig.rockDebugVerboseLogging || g_rockConfig.rockDebugGrabFrameLogging) {
+            if (g_rockConfig.rockDebugVerboseLogging) {
                 ROCK_LOG_SAMPLE_DEBUG(Physics,
                     g_rockConfig.rockLogSampleMilliseconds,
                     "HAVOK_TIMING_FIX rawDt={:.6f} accumDt={:.6f} oldSubDt={:.6f} oldSubsteps={} newSubDt={:.6f} newSubsteps={} minHz={:.2f} maxFrameDt={:.6f} maxSubsteps={}",
@@ -1934,7 +1934,7 @@ namespace rock
             const bool piReady = pi && pi->isInitialized();
             const bool rightHolding = piReady && pi->getRightHand().isHoldingAtomic();
             const bool leftHolding = piReady && pi->getLeftHand().isHoldingAtomic();
-            const bool diagnosticsEnabled = g_rockConfig.rockDebugGrabFrameLogging || g_rockConfig.rockDebugVerboseLogging;
+            const bool diagnosticsEnabled = g_rockConfig.rockDebugVerboseLogging;
             const auto contactPolicy = held_grab_cc_policy::evaluateHeldGrabContactPolicy(held_grab_cc_policy::HeldGrabContactPolicyInput{
                 .hooksEnabled = piReady,
                 .holdingHeldObject = rightHolding || leftHolding,

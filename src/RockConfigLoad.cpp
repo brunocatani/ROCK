@@ -812,17 +812,8 @@ namespace rock
         rockDebugMaxTextVertices = static_cast<int>(overlayLimits.maxTextVertices);
         rockDebugUseBoundsForHeavyConvex = ini.GetBoolValue(SECTION, "bDebugUseBoundsForHeavyConvex", rockDebugUseBoundsForHeavyConvex);
         rockDebugVerboseLogging = ini.GetBoolValue(SECTION, "bDebugVerboseLogging", rockDebugVerboseLogging);
-        rockDebugGrabFrameLogging = ini.GetBoolValue(SECTION, "bDebugGrabFrameLogging", rockDebugGrabFrameLogging);
         rockDebugVideoSyncMarker = ini.GetBoolValue(SECTION, "bDebugVideoSyncMarker", rockDebugVideoSyncMarker);
         rockDebugVideoSyncMarkerSize = static_cast<float>(ini.GetDoubleValue(SECTION, "fDebugVideoSyncMarkerSize", rockDebugVideoSyncMarkerSize));
-        rockDebugGrabTimelineTrace = ini.GetBoolValue(SECTION, "bDebugGrabTimelineTrace", rockDebugGrabTimelineTrace);
-        rockDebugGrabAfterSolveAnomalySampling =
-            ini.GetBoolValue(SECTION, "bDebugGrabAfterSolveAnomalySampling", rockDebugGrabAfterSolveAnomalySampling);
-        rockDebugGrabTimelineTraceIntervalFrames =
-            static_cast<int>(ini.GetLongValue(SECTION, "iDebugGrabTimelineTraceIntervalFrames", rockDebugGrabTimelineTraceIntervalFrames));
-        if (rockDebugGrabTimelineTraceIntervalFrames < 1) {
-            rockDebugGrabTimelineTraceIntervalFrames = 1;
-        }
         rockDebugGrabTransformTelemetry = ini.GetBoolValue(SECTION, "bDebugGrabTransformTelemetry", rockDebugGrabTransformTelemetry);
         rockDebugGrabTransformTelemetryText = ini.GetBoolValue(SECTION, "bDebugGrabTransformTelemetryText", rockDebugGrabTransformTelemetryText);
         rockDebugGrabTransformTelemetryAxes = ini.GetBoolValue(SECTION, "bDebugGrabTransformTelemetryAxes", rockDebugGrabTransformTelemetryAxes);

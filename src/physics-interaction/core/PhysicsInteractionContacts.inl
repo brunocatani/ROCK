@@ -631,7 +631,6 @@
             storage_interaction::contact(world,bodyIdB,dynamicBodySourceA.isLeft);
             _dynamicHandCollision.recordDynamicBodyContactCallback(
                 dynamicBodySourceA,
-                bodyIdB,
                 bodyBIsDynamicHand &&
                     dynamicBodySourceA.isLeft !=
                         dynamicBodySourceB.isLeft,
@@ -641,7 +640,6 @@
             storage_interaction::contact(world,bodyIdA,dynamicBodySourceB.isLeft);
             _dynamicHandCollision.recordDynamicBodyContactCallback(
                 dynamicBodySourceB,
-                bodyIdA,
                 bodyAIsDynamicHand &&
                     dynamicBodySourceA.isLeft !=
                         dynamicBodySourceB.isLeft,

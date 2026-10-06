@@ -35,8 +35,6 @@
 #include "physics-interaction/native/NativeShapeCastSafety.h"
 #include "physics-interaction/native/NativeImpactAudio.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
-#include "physics-interaction/telemetry/DynamicColliderTrace.h"
-#include "physics-interaction/telemetry/HeldRenderTrace.h"
 #include "physics-interaction/timing/RockGameTiming.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -792,7 +790,6 @@ namespace
             frameTiming);
 
         if (withSkeletonPhysics) {
-            dynamic_collider_trace::beginFrame(g_rockConfig.rockDebugGrabFrameLogging, s_schedulerSequence);
             updatePhysicsInteractionFrame();
             native_scope_shot_diagnostics::beginFrame();
             if (!s_physicsInteraction) native_scope_shot_diagnostics::clearPresentation();
@@ -819,9 +816,6 @@ namespace
         }
         if (!withSkeletonPhysics) {
             return;
-        }
-        if (s_physicsInteraction) {
-            s_physicsInteraction->traceHeldPresentationPhase("after-rock");
         }
         scope_transition_telemetry::capture(scope_transition_telemetry::Phase::AfterRock, s_schedulerSequence);
     }
@@ -854,7 +848,6 @@ namespace
             scope_transition_telemetry::capture(scope_transition_telemetry::Phase::BeforeFrik, s_schedulerSequence);
         }
         prepareRuntimeFrame();
-        held_render_trace::recordPhase(held_render_trace::Phase::FrameBegin, runtime_state::currentFrame().frameIndex);
     }
 
     /*
@@ -904,7 +897,6 @@ namespace
         const RockFrameEnd rockFrameEnd{};
         if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->resolveFrameHands();
-            s_physicsInteraction->traceHeldPresentationPhase("before-rock");
         }
         scope_transition_telemetry::capture(scope_transition_telemetry::Phase::AfterFrik, s_schedulerSequence);
         preludeTimer.stop();
@@ -944,9 +936,7 @@ namespace
             if (!s_physicsInteraction) return;
             s_physicsInteraction->finalizeEquipVisualBridgePresentation();
             s_physicsInteraction->publishGripZoneIndicatorRenderFrame(runtime_state::currentFrame().frameIndex);
-            s_physicsInteraction->traceHeldPresentationPhase("after-world-final");
             s_physicsInteraction->publishDebugRenderFrame();
-            dynamic_collider_trace::capturePresentedHands(runtime_state::currentFrame().frameIndex);
         }
     }
 
@@ -1076,7 +1066,6 @@ namespace
                 logger::info("ROCK: FRIK skeleton generation {} powerArmor={}.", lifecycle->generation, lifecycle->inPowerArmor ? "yes" : "no");
             }
             scope_transition_telemetry::initialize();
-            dynamic_collider_trace::initialize();
             bumpGeneration(s_skeletonGeneration);
             if (!authored_weapon_grip_capture::installHook()) {
                 logger::error(
@@ -1107,7 +1096,6 @@ namespace
                     rock::provider::RockProviderLifecycleReason::SkeletonDestroying);
             }
             destroyPhysicsInteraction(rock::provider::RockProviderLifecycleReason::SkeletonDestroying);
-            dynamic_collider_trace::shutdown();
             // FRIK runs no skeleton phase without a skeleton: drop the input state now.
             clearUnavailableRuntimeInputState();
             break;
@@ -1222,7 +1210,6 @@ namespace
                 logger::warn(
                     "ROCK: Held-body scene presentation hook is unavailable; native presentation remains unchanged.");
             }
-            rock::held_render_trace::install();
             runtime_state::initialize();
             (void)native_scope_shot_diagnostics::install();
             reconcileNativeScopeGeometryOwnership();

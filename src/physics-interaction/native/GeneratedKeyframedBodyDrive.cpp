@@ -196,47 +196,6 @@ namespace rock
             std::uint32_t bodyIndex,
             RE::hknpBodyId bodyId)
         {
-            if (g_rockConfig.rockDebugGrabFrameLogging && result.driven && result.hasLiveBodyTransform) {
-                ROCK_LOG_SAMPLE_INFO(Physics,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "Generated body frame compare owner={} bodyIndex={} bodyId={} phase={} substep={}/{} bodyDeltaGame={:.2f} bodyRotErr={:.2f} axisDeg=({:.1f},{:.1f},{:.1f}) targetX=({:.2f},{:.2f},{:.2f}) targetY=({:.2f},{:.2f},{:.2f}) targetZ=({:.2f},{:.2f},{:.2f}) bodyX=({:.2f},{:.2f},{:.2f}) bodyY=({:.2f},{:.2f},{:.2f}) bodyZ=({:.2f},{:.2f},{:.2f}) bodySource={} motion={} teleported={} hardSync={} linCap={} angCap={} capAlpha={:.3f}",
-                    ownerName ? ownerName : "unknown",
-                    bodyIndex,
-                    bodyId.value,
-                    physicsStepPhaseName(timing.phase),
-                    timing.substepIndex + 1,
-                    timing.substepCount,
-                    result.bodyDeltaGameUnits,
-                    result.targetToBodyRotationDegrees,
-                    result.targetToBodyAxisXDegrees,
-                    result.targetToBodyAxisYDegrees,
-                    result.targetToBodyAxisZDegrees,
-                    result.targetAxisXWorld.x,
-                    result.targetAxisXWorld.y,
-                    result.targetAxisXWorld.z,
-                    result.targetAxisYWorld.x,
-                    result.targetAxisYWorld.y,
-                    result.targetAxisYWorld.z,
-                    result.targetAxisZWorld.x,
-                    result.targetAxisZWorld.y,
-                    result.targetAxisZWorld.z,
-                    result.liveBodyAxisXWorld.x,
-                    result.liveBodyAxisXWorld.y,
-                    result.liveBodyAxisXWorld.z,
-                    result.liveBodyAxisYWorld.x,
-                    result.liveBodyAxisYWorld.y,
-                    result.liveBodyAxisYWorld.z,
-                    result.liveBodyAxisZWorld.x,
-                    result.liveBodyAxisZWorld.y,
-                    result.liveBodyAxisZWorld.z,
-                    body_frame::bodyFrameSourceName(result.liveBodyFrameSource),
-                    result.motionIndex,
-                    result.teleported ? "yes" : "no",
-                    result.hardSynced ? "yes" : "no",
-                    result.linearLimitExceeded ? "yes" : "no",
-                    result.angularLimitExceeded ? "yes" : "no",
-                    result.targetLimitAlpha);
-            }
 
             if (!g_rockConfig.rockDebugVerboseLogging || !result.driven) {
                 return;

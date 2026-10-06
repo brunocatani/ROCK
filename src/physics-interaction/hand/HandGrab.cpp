@@ -7,8 +7,6 @@
 #include "physics-interaction/body/BodyBoneColliderSet.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
-#include "physics-interaction/telemetry/HeldRenderTrace.h"
-#include "physics-interaction/telemetry/DynamicColliderTrace.h"
 
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
@@ -134,22 +132,10 @@ namespace rock
         static_assert(kGrabCollisionSuppressionArmBodyCountPerHand == kBodyBoneGrabSuppressionArmBodyCountPerSide,
             "Normal grab arm-collider suppression capacity must match the body collider arm-chain query.");
 
-        std::uint64_t nextGrabTimelineTraceId() noexcept
+        std::uint64_t nextGrabTraceId() noexcept
         {
             static std::atomic<std::uint64_t> nextTraceId{ 1 };
             return nextTraceId.fetch_add(1, std::memory_order_relaxed);
-        }
-
-        bool grabTimelineTraceEnabled() noexcept
-        {
-            return g_rockConfig.rockDebugGrabTimelineTrace;
-        }
-
-        bool shouldLogGrabTimelineSequence(std::uint64_t sequence) noexcept
-        {
-            const auto interval = static_cast<std::uint64_t>(
-                (std::max)(1, g_rockConfig.rockDebugGrabTimelineTraceIntervalFrames));
-            return sequence <= 16u || (sequence % interval) == 0u;
         }
 
         const char* releaseDispositionName(GrabReleaseDisposition disposition) noexcept
@@ -2692,32 +2678,6 @@ namespace rock
             return result;
         }
 
-        void logGrabCaptureRefresh(
-            const char* handName,
-            bool isLeft,
-            std::uint64_t traceId,
-            const GrabCaptureTransformRefreshResult& refresh)
-        {
-            if (!grabTimelineTraceEnabled()) {
-                return;
-            }
-            for (std::uint32_t i = 0; i < refresh.count; ++i) {
-                const auto& sample = refresh.samples[i];
-                ROCK_LOG_INFO(Hand,
-                    "{} GRAB_TRACE stage=capture_refresh trace={} hand={} role={} node='{}'({:p}) validBefore={} validAfter={} posDelta={:.4f}gu rotDelta={:.3f}deg",
-                    handName,
-                    traceId,
-                    isLeft ? "left" : "right",
-                    sample.role,
-                    nodeDebugName(sample.node),
-                    static_cast<const void*>(sample.node),
-                    sample.validBefore ? "yes" : "no",
-                    sample.validAfter ? "yes" : "no",
-                    sample.positionDeltaGameUnits,
-                    sample.rotationDeltaDegrees);
-            }
-        }
-
         float axisDeltaDegrees(const RE::NiPoint3& a, const RE::NiPoint3& b)
         {
             const float dot = a.x * b.x + a.y * b.y + a.z * b.z;
@@ -3698,7 +3658,6 @@ namespace rock
                 return false;
             }
             const auto& solved = candidate.closure.sample;
-            const float centerShift = pinch::distance(candidate.pinchPocketWorld, solved.fingers.center);
             candidate.thumbPadWorld = solved.fingers.thumbTip;
             candidate.indexPadWorld = solved.fingers.indexTip;
             candidate.pinchPocketWorld = solved.fingers.center;
@@ -3711,13 +3670,6 @@ namespace rock
                     "{} pinch closure reached curl limit: opening={:.3f} range={:.3f}/{:.3f} gap={:.3f} thickness={:.3f} error={:.3f}",
                     isLeft ? "Left" : "Right", solved.opening, g_rockConfig.rockGrabFingerMinValue,
                     config.thumbIndexMaxOpenValue, solved.fingers.gapGameUnits, solved.thicknessGameUnits, candidate.closure.gapErrorGameUnits);
-            }
-            if (g_rockConfig.rockDebugGrabFrameLogging) {
-                ROCK_LOG_DEBUG(Hand, "{} PINCH CLOSURE: opening={:.3f} gap={:.3f} thickness={:.3f} error={:.3f} centerShift={:.3f} bracketed={} thumbTip=({:.3f},{:.3f},{:.3f}) indexTip=({:.3f},{:.3f},{:.3f})",
-                    isLeft ? "Left" : "Right", solved.opening, solved.fingers.gapGameUnits, solved.thicknessGameUnits,
-                    candidate.closure.gapErrorGameUnits, centerShift, candidate.closure.bracketed,
-                    solved.fingers.thumbTip.x, solved.fingers.thumbTip.y, solved.fingers.thumbTip.z,
-                    solved.fingers.indexTip.x, solved.fingers.indexTip.y, solved.fingers.indexTip.z);
             }
             return true;
         }
@@ -4429,7 +4381,7 @@ namespace rock
                     syncLocalTransformState();
                     return;
                 }
-                const bool publishedLocalTransforms = grab_finger_local_transform_runtime::publishLocalTransformPose("ROCK_Grab",
+                (void)grab_finger_local_transform_runtime::publishLocalTransformPose("ROCK_Grab",
                     hand,
                     isLeft,
                     fingerPose,
@@ -4448,14 +4400,6 @@ namespace rock
                     100,
                     localTransformState);
                 syncLocalTransformState();
-                if (g_rockConfig.rockDebugGrabFrameLogging) {
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} hand FINGER JOINT POSE: thumb=({:.2f},{:.2f},{:.2f}) index=({:.2f},{:.2f},{:.2f}) hits={} candidateTris={} altThumb={} thumbLane={} localTransforms={} mask=0x{:04X}",
-                        isLeft ? "Left" : "Right", currentJointPose[0], currentJointPose[1], currentJointPose[2], currentJointPose[3], currentJointPose[4],
-                        currentJointPose[5], fingerPose.hitCount, fingerPose.candidateTriangleCount, fingerPose.usedAlternateThumbCurve ? "yes" : "no",
-                        grab_finger_pose_math::thumbLaneName(fingerPose.selectedThumbLane),
-                        publishedLocalTransforms ? "yes" : "no", currentLocalTransformMask);
-                }
                 return;
             }
 
@@ -4472,14 +4416,7 @@ namespace rock
                     fingerPose.values[3],
                     fingerPose.values[4],
                     currentSplayRadians);
-                const bool published = frik_visual_authority::setHandPoseCustom("ROCK_Grab", hand, handPose, 100);
-                if (published && g_rockConfig.rockDebugGrabFrameLogging) {
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} hand FINGER POSE: mesh values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} candidateTris={} altThumb={} thumbLane={}",
-                        isLeft ? "Left" : "Right", fingerPose.values[0], fingerPose.values[1], fingerPose.values[2], fingerPose.values[3], fingerPose.values[4],
-                        fingerPose.hitCount, fingerPose.candidateTriangleCount, fingerPose.usedAlternateThumbCurve ? "yes" : "no",
-                        grab_finger_pose_math::thumbLaneName(fingerPose.selectedThumbLane));
-                }
+                (void)frik_visual_authority::setHandPoseCustom("ROCK_Grab", hand, handPose, 100);
                 return;
             }
 
@@ -4498,15 +4435,6 @@ namespace rock
                 fallbackValue,
                 fallbackValue);
             (void)frik_visual_authority::setHandPoseCustom("ROCK_Grab", hand, fallbackPose, 100);
-            if (g_rockConfig.rockDebugGrabFrameLogging) {
-                ROCK_LOG_DEBUG(Hand,
-                    "{} hand FINGER POSE: using selected-close fallback value={:.2f} solved={} hits={} candidateTris={}",
-                    isLeft ? "Left" : "Right",
-                    fallbackValue,
-                    fingerPose.solved ? "yes" : "no",
-                    fingerPose.hitCount,
-                    fingerPose.candidateTriangleCount);
-            }
         }
 
         grab_finger_pose_runtime::SolvedGrabFingerPose buildAcquisitionFingerPose(
@@ -5235,8 +5163,6 @@ namespace rock
         _grabAuthorityProxyFailedFlushes = 0;
         _grabAuthorityProxyLastFlushDeltaSeconds = 0.0f;
         _grabAuthorityProxyLogCounter = 0;
-        _grabAuthorityProxyAfterSolveLogCounter = 0;
-        _ragdollAngularProbePreSolve = {};
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
     }
 
@@ -5492,138 +5418,6 @@ namespace rock
             return false;
         }
 
-        if (grabTimelineTraceEnabled()) {
-            std::array<float, 12> traceTransformBRotation{};
-            std::array<float, 4> traceTransformBTranslation{};
-            std::array<float, 12> traceTargetBRca{};
-            grab_constraint_math::writeGrabConstraintCreationAtoms(
-                traceTransformBRotation.data(),
-                traceTransformBTranslation.data(),
-                traceTargetBRca.data(),
-                desiredBodyTransformProxySpace,
-                pivotAProxyLocalGame,
-                gameToHavokScale());
-            const float* traceTransformBRotationData = traceTransformBRotation.data();
-            const float* traceTransformBTranslationData = traceTransformBTranslation.data();
-            const float* traceTargetBRcaData = traceTargetBRca.data();
-            bool actualConstraintBytes = false;
-            if (_activeConstraint.constraintData) {
-                const auto* constraintData = static_cast<const char*>(_activeConstraint.constraintData);
-                traceTransformBRotationData = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
-                traceTransformBTranslationData = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
-                traceTargetBRcaData = reinterpret_cast<const float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
-                actualConstraintBytes = true;
-            }
-            const RE::NiTransform traceDesiredBodyToHandSpace = invertTransform(desiredBodyTransformProxySpace);
-            const RE::NiMatrix3 traceTargetRows = matrixFromHkRows(traceTargetBRcaData);
-            const RE::NiMatrix3 traceTransformBColumns = matrixFromHkColumns(traceTransformBRotationData);
-            const RE::NiPoint3 traceTransformBTranslationGame{
-                traceTransformBTranslationData[0] * havokToGameScale(),
-                traceTransformBTranslationData[1] * havokToGameScale(),
-                traceTransformBTranslationData[2] * havokToGameScale(),
-            };
-            const RE::NiTransform traceProxyInBodyBeforeTargetWrite =
-                grab_constraint_math::proxyInBodyFromBodyInProxy(desiredBodyTransformProxySpace);
-            const RE::NiPoint3 traceRelationTransformBLocal =
-                grab_constraint_math::computeHiggsTransformBTranslationGameFromProxyInBody(
-                    traceProxyInBodyBeforeTargetWrite,
-                    pivotAProxyLocalGame);
-            const RE::NiTransform traceRelationInverseBodyWorld = reconstructBodyWorldFromProxyInBody(
-                proxyWorldTransform,
-                traceProxyInBodyBeforeTargetWrite.rotate,
-                traceRelationTransformBLocal,
-                pivotAProxyLocalGame);
-            const RE::NiTransform traceAtomRowsBodyWorld = reconstructBodyWorldFromProxyInBody(
-                proxyWorldTransform,
-                traceTargetRows,
-                traceTransformBTranslationGame,
-                pivotAProxyLocalGame);
-            const float tracePivotBRelationDeltaGameUnits =
-                pointDistanceGameUnits(traceTransformBTranslationGame, relationPivotBConstraintLocalGame);
-
-            ROCK_LOG_INFO(Hand,
-                "{} GRAB_TRACE stage=constraint_create trace={} constraint={} proxyBody={} objBody={} bytes={} angular={} ragdoll={} pivotAProxy=({:.2f},{:.2f},{:.2f}) pivotBSelected=({:.2f},{:.2f},{:.2f}) relationPivotB=({:.2f},{:.2f},{:.2f}) selectedPivotRelationDelta={:.3f}gu pivotBRelationDelta={:.3f}gu pivotBBody=({:.2f},{:.2f},{:.2f}) linearTau={:.3f} angularTau={:.3f} linearForce={:.0f} angularForce={:.0f} motorMass={:.3f} effectiveMass={:.3f} forceBudget={:.2f} targetToHiggsRelation={:.2f}deg transformBFrozenDelta={:.2f}deg reason={}",
-                handName(),
-                _grabFrame.traceId,
-                _activeConstraint.constraintId,
-                _grabAuthorityProxy.getBodyId().value,
-                objectBodyId.value,
-                actualConstraintBytes ? "actual" : "computed",
-                grabAngularAuthorityName(_activeConstraint.angularAuthority),
-                _activeConstraint.usesRagdollAngularMotorAtom() ? "yes" : "no",
-                pivotAProxyLocalGame.x,
-                pivotAProxyLocalGame.y,
-                pivotAProxyLocalGame.z,
-                solverPivotBConstraintLocalGame.x,
-                solverPivotBConstraintLocalGame.y,
-                solverPivotBConstraintLocalGame.z,
-                relationPivotBConstraintLocalGame.x,
-                relationPivotBConstraintLocalGame.y,
-                relationPivotBConstraintLocalGame.z,
-                selectionPivotRelationDeltaGameUnits,
-                tracePivotBRelationDeltaGameUnits,
-                _grabFrame.authority.pivotBBodyLocalGame.x,
-                _grabFrame.authority.pivotBBodyLocalGame.y,
-                _grabFrame.authority.pivotBBodyLocalGame.z,
-                motorTuning.linearTau,
-                motorTuning.angularTau,
-                motorTuning.linearMaxForce,
-                motorTuning.angularMaxForce,
-                massSummaryAtCreation.motorMass(),
-                effectiveMassAtCreation,
-                sanitizedAuthorityForceScale,
-                rotationDeltaDegrees(traceTargetRows, traceDesiredBodyToHandSpace.rotate),
-                rotationDeltaDegrees(traceTransformBColumns, traceDesiredBodyToHandSpace.rotate),
-                reason ? reason : "unknown");
-
-            ROCK_LOG_INFO(Hand,
-                "{} GRAB_TRACE stage=constraint_atoms trace={} target_bRca=[({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f})] transformBCols=[({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f})]",
-                handName(),
-                _grabFrame.traceId,
-                traceTargetBRcaData[0],
-                traceTargetBRcaData[1],
-                traceTargetBRcaData[2],
-                traceTargetBRcaData[4],
-                traceTargetBRcaData[5],
-                traceTargetBRcaData[6],
-                traceTargetBRcaData[8],
-                traceTargetBRcaData[9],
-                traceTargetBRcaData[10],
-                traceTransformBRotationData[0],
-                traceTransformBRotationData[1],
-                traceTransformBRotationData[2],
-                traceTransformBRotationData[4],
-                traceTransformBRotationData[5],
-                traceTransformBRotationData[6],
-                traceTransformBRotationData[8],
-                traceTransformBRotationData[9],
-                traceTransformBRotationData[10]);
-
-            ROCK_LOG_INFO(Hand,
-                "{} GRAB_TRACE stage=constraint_relation trace={} bytes={} bodyInProxyToDesired={:.3f}gu/{:.2f}deg relationInvToDesired={:.3f}gu/{:.2f}deg atomRowsToDesired={:.3f}gu/{:.2f}deg atomRowsToRelationInv={:.2f}deg targetRowsToProxyInBody={:.2f}deg tBAtomRelationDelta={:.3f}gu relationPivotB=({:.2f},{:.2f},{:.2f}) atomPivotB=({:.2f},{:.2f},{:.2f})",
-                handName(),
-                _grabFrame.traceId,
-                actualConstraintBytes ? "actual" : "computed",
-                translationDeltaGameUnits(
-                    grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorldTransform, desiredBodyTransformProxySpace),
-                    desiredBodyWorldAtCreation),
-                rotationDeltaDegrees(
-                    grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorldTransform, desiredBodyTransformProxySpace).rotate,
-                    desiredBodyWorldAtCreation.rotate),
-                translationDeltaGameUnits(traceRelationInverseBodyWorld, desiredBodyWorldAtCreation),
-                rotationDeltaDegrees(traceRelationInverseBodyWorld.rotate, desiredBodyWorldAtCreation.rotate),
-                translationDeltaGameUnits(traceAtomRowsBodyWorld, desiredBodyWorldAtCreation),
-                rotationDeltaDegrees(traceAtomRowsBodyWorld.rotate, desiredBodyWorldAtCreation.rotate),
-                rotationDeltaDegrees(traceAtomRowsBodyWorld.rotate, traceRelationInverseBodyWorld.rotate),
-                rotationDeltaDegrees(traceTargetRows, traceProxyInBodyBeforeTargetWrite.rotate),
-                pointDistanceGameUnits(traceTransformBTranslationGame, traceRelationTransformBLocal),
-                traceRelationTransformBLocal.x,
-                traceRelationTransformBLocal.y,
-                traceRelationTransformBLocal.z,
-                traceTransformBTranslationGame.x,
-                traceTransformBTranslationGame.y,
-                traceTransformBTranslationGame.z);
-        }
 
         {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
@@ -5747,93 +5541,6 @@ namespace rock
             gameToHkScale);
         outDesiredTargetPointWorld = transform_math::localPointToWorld(outDesiredBodyWorld, outActivePivotBBodyLocalGame);
 
-        const std::uint64_t targetWriteSequence = ++_grabFrame.traceTargetWriteSequence;
-        if (grabTimelineTraceEnabled() && shouldLogGrabTimelineSequence(targetWriteSequence)) {
-            const RE::NiTransform desiredBodyToProxySpace = invertTransform(desiredBodyTransformProxySpace);
-            const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
-            const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
-            const RE::NiPoint3 activeTransformBTranslationGame{
-                transformBTranslation[0] * havokToGameScale(),
-                transformBTranslation[1] * havokToGameScale(),
-                transformBTranslation[2] * havokToGameScale(),
-            };
-            const float pivotBRelationDeltaGameUnits =
-                pointDistanceGameUnits(activeTransformBTranslationGame, relationPivotB);
-            const float selectedPivotRelationDeltaGameUnits =
-                pointDistanceGameUnits(selectedPivotBBodyLocalGame, relationPivotB);
-            const RE::NiTransform proxyInBodyBeforeTargetWrite =
-                grab_constraint_math::proxyInBodyFromBodyInProxy(desiredBodyTransformProxySpace);
-            const RE::NiTransform relationInverseBodyWorld = reconstructBodyWorldFromProxyInBody(
-                proxyWorldTransform,
-                proxyInBodyBeforeTargetWrite.rotate,
-                relationPivotB,
-                pivotAProxyLocalGame);
-            const RE::NiTransform atomRowsBodyWorld = reconstructBodyWorldFromProxyInBody(
-                proxyWorldTransform,
-                targetAsHkRows,
-                activeTransformBTranslationGame,
-                pivotAProxyLocalGame);
-
-            ROCK_LOG_INFO(Hand,
-                "{} GRAB_TRACE stage=target_write trace={} writeSeq={} flushNext={} queued={} constraint={} proxyBody={} objBody={} proxyPos=({:.2f},{:.2f},{:.2f}) desiredBodyPos=({:.2f},{:.2f},{:.2f}) targetPoint=({:.2f},{:.2f},{:.2f}) pivotAProxy=({:.2f},{:.2f},{:.2f}) pivotBSelected=({:.2f},{:.2f},{:.2f}) relationPivotB=({:.2f},{:.2f},{:.2f}) selectedPivotRelationDelta={:.3f}gu pivotBRelationDelta={:.3f}gu targetToHiggsRelation={:.2f}deg transformBFrozenDelta={:.2f}deg",
-                handName(),
-                _grabFrame.traceId,
-                targetWriteSequence,
-                _grabAuthorityProxyFlushSequence + 1,
-                _grabAuthorityProxyQueuedSequence,
-                _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu,
-                _grabAuthorityProxy.isValid() ? _grabAuthorityProxy.getBodyId().value : INVALID_BODY_ID,
-                _savedObjectState.bodyId.value,
-                proxyWorldTransform.translate.x,
-                proxyWorldTransform.translate.y,
-                proxyWorldTransform.translate.z,
-                outDesiredBodyWorld.translate.x,
-                outDesiredBodyWorld.translate.y,
-                outDesiredBodyWorld.translate.z,
-                outDesiredTargetPointWorld.x,
-                outDesiredTargetPointWorld.y,
-                outDesiredTargetPointWorld.z,
-                pivotAProxyLocalGame.x,
-                pivotAProxyLocalGame.y,
-                pivotAProxyLocalGame.z,
-                selectedPivotBBodyLocalGame.x,
-                selectedPivotBBodyLocalGame.y,
-                selectedPivotBBodyLocalGame.z,
-                relationPivotB.x,
-                relationPivotB.y,
-                relationPivotB.z,
-                selectedPivotRelationDeltaGameUnits,
-                pivotBRelationDeltaGameUnits,
-                rotationDeltaDegrees(targetAsHkRows, desiredBodyToProxySpace.rotate),
-                rotationDeltaDegrees(transformBAsHkColumns, desiredBodyToProxySpace.rotate));
-
-            ROCK_LOG_INFO(Hand,
-                "{} GRAB_TRACE stage=target_relation trace={} writeSeq={} flushNext={} queued={} bodyInProxyToDesired={:.3f}gu/{:.2f}deg relationInvToDesired={:.3f}gu/{:.2f}deg atomRowsToDesired={:.3f}gu/{:.2f}deg atomRowsToRelationInv={:.2f}deg targetRowsToProxyInBody={:.2f}deg tBAtomRelationDelta={:.3f}gu relationPivotB=({:.2f},{:.2f},{:.2f}) atomPivotB=({:.2f},{:.2f},{:.2f})",
-                handName(),
-                _grabFrame.traceId,
-                targetWriteSequence,
-                _grabAuthorityProxyFlushSequence + 1,
-                _grabAuthorityProxyQueuedSequence,
-                translationDeltaGameUnits(
-                    grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorldTransform, desiredBodyTransformProxySpace),
-                    outDesiredBodyWorld),
-                rotationDeltaDegrees(
-                    grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorldTransform, desiredBodyTransformProxySpace).rotate,
-                    outDesiredBodyWorld.rotate),
-                translationDeltaGameUnits(relationInverseBodyWorld, outDesiredBodyWorld),
-                rotationDeltaDegrees(relationInverseBodyWorld.rotate, outDesiredBodyWorld.rotate),
-                translationDeltaGameUnits(atomRowsBodyWorld, outDesiredBodyWorld),
-                rotationDeltaDegrees(atomRowsBodyWorld.rotate, outDesiredBodyWorld.rotate),
-                rotationDeltaDegrees(atomRowsBodyWorld.rotate, relationInverseBodyWorld.rotate),
-                rotationDeltaDegrees(targetAsHkRows, proxyInBodyBeforeTargetWrite.rotate),
-                pointDistanceGameUnits(activeTransformBTranslationGame, relationPivotB),
-                relationPivotB.x,
-                relationPivotB.y,
-                relationPivotB.z,
-                activeTransformBTranslationGame.x,
-                activeTransformBTranslationGame.y,
-                activeTransformBTranslationGame.z);
-        }
         return true;
     }
 
@@ -6885,7 +6592,6 @@ namespace rock
     bool Hand::prepareGrabMeshCapture(
         const RE::NiTransform& handWorldTransform,
         const ValidatedGrabSelection& selection,
-        std::uint64_t traceId,
         const std::string& objectName,
         GrabMeshCaptureSetup& outSetup)
     {
@@ -6903,7 +6609,6 @@ namespace rock
             outSetup.meshSourceNode,
             outSetup.collidableNode,
             !grab_target::isRagdoll(selectedObject.targetKind));
-        logGrabCaptureRefresh(handName(), _isLeft, traceId, captureRefresh);
         if (!captureRefresh.ok) {
             ROCK_LOG_WARN(Hand,
                 "{} hand GRAB failed: capture transform refresh produced a non-finite node transform for '{}' formID={:08X}; root='{}' mesh='{}' collidable='{}'",
@@ -7523,7 +7228,6 @@ namespace rock
         const std::vector<TriangleData>& meshTriangles,
         const RE::NiPointer<RE::TESObjectREFR>& selectedRef,
         std::uint16_t selectedOriginalMotionPropsId,
-        std::uint64_t traceId,
         const std::string& objectName,
         ResolvedGrabBodyCapture& outCapture)
     {
@@ -7558,7 +7262,6 @@ namespace rock
         if (auto* resolvedOwnerNode = bodyCollisionObject ? bodyCollisionObject->sceneObject : nullptr) {
             GrabCaptureTransformRefreshResult ownerRefresh{};
             refreshGrabCaptureNodeTransform(ownerRefresh, "resolvedOwner", resolvedOwnerNode, !grab_target::isRagdoll(selectedObject.targetKind));
-            logGrabCaptureRefresh(handName(), _isLeft, traceId, ownerRefresh);
             if (!ownerRefresh.ok) {
                 ROCK_LOG_WARN(Hand,
                     "{} hand GRAB failed: resolved owner transform refresh produced a non-finite node transform for '{}' formID={:08X}; owner='{}'",
@@ -7843,66 +7546,6 @@ namespace rock
                         canonicalPivotMode,
                         canonicalPivotCandidate.pivotToPocketGameUnits,
                         selectedPivotAuthority.score);
-                } else if (contactPatchRuntime.patch.valid && g_rockConfig.rockDebugGrabFrameLogging) {
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} hand CONTACT PATCH evidence-only: body={} mode={} probe={:.2f}/{:.2f} scale={:.2f}:{} meshSnap={} requireMeshSnap={} pivotSource={} normalTrusted={} positionOnly={} authoritySource={} "
-                        "clusterRaw={} clusterRejected={} clusterDepth={:.2f} clusterLat={:.2f} clusterReason={} "
-                        "authorityDelta={:.2f}/{:.2f}/{:.2f} canonical={} meshPocket={:.2f} patchPocket={:.2f} "
-                        "pocketImprove={:.2f} meshScore={:.2f} patchScore={:.2f} scoreImprove={:.2f} authorityReason={} fallback={}",
-                        handName(),
-                        objectBodyId.value,
-                        contactPatchRuntime.pointMode,
-                        contactPatchRuntime.probeSpacingGameUnits,
-                        contactPatchRuntime.probeRadiusGameUnits,
-                        contactPatchRuntime.probeScale,
-                        contactPatchRuntime.probeScaleReason,
-                        contactPatchRuntime.meshSnapped ? "yes" : "no",
-                        contactSourcePolicy.requireContactPatchMeshSnap ? "yes" : "no",
-                        grab_contact_patch_math::pivotSourceName(contactPatchRuntime.pivotDecision.source),
-                        contactPatchRuntime.normalTrusted ? "yes" : "no",
-                        contactPatchRuntime.positionOnly ? "yes" : "no",
-                        grabPivotAuthoritySourceName(pivotAuthoritySource),
-                        contactPatchRuntime.rawAcceptedSampleCount,
-                        contactPatchRuntime.clusterRejectedSampleCount,
-                        contactPatchRuntime.clusterDepthSpreadGameUnits,
-                        contactPatchRuntime.clusterMaxLateralGameUnits,
-                        contactPatchRuntime.clusterReason,
-                        contactPatchPivotCandidate.authorityDeltaGameUnits,
-                        contactPatchAuthorityResolution.baseAuthorityDeltaGameUnits,
-                        contactPatchAuthorityResolution.extendedAuthorityDeltaGameUnits,
-                        canonicalPivotMode,
-                        canonicalPivotCandidate.pivotToPocketGameUnits,
-                        contactPatchPivotCandidate.pivotToPocketGameUnits,
-                        contactPatchAuthorityResolution.pocketImprovementGameUnits,
-                        canonicalPivotCandidate.score,
-                        contactPatchPivotCandidate.score,
-                        contactPatchAuthorityResolution.scoreImprovement,
-                        contactPatchPivotAuthorityReason,
-                        contactPatchRuntime.patch.fallbackReason ? contactPatchRuntime.patch.fallbackReason :
-                            (contactPatchProducedMeshPivot ? contactPatchPivotAuthorityReason : "nonMeshPivot"));
-                } else if (g_rockConfig.rockDebugGrabFrameLogging) {
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} hand CONTACT PATCH failed: body={} samples={} probe={:.2f}/{:.2f} scale={:.2f}:{} castsHits={} rejectBody={} rejectNormal={} "
-                        "exactSamples={} meshRecovered={} clusterRaw={} clusterRejected={} clusterDepth={:.2f} clusterLat={:.2f} clusterReason={} rejectedBodies={} fallback={}",
-                        handName(),
-                        objectBodyId.value,
-                        contactPatchRuntime.sampleCount,
-                        contactPatchRuntime.probeSpacingGameUnits,
-                        contactPatchRuntime.probeRadiusGameUnits,
-                        contactPatchRuntime.probeScale,
-                        contactPatchRuntime.probeScaleReason,
-                        contactPatchRuntime.castHitCount,
-                        contactPatchRuntime.rejectedBodyHits,
-                        contactPatchRuntime.rejectedInvalidNormals,
-                        contactPatchRuntime.exactBodySamples,
-                        contactPatchRuntime.meshRecoveredSamples,
-                        contactPatchRuntime.rawAcceptedSampleCount,
-                        contactPatchRuntime.clusterRejectedSampleCount,
-                        contactPatchRuntime.clusterDepthSpreadGameUnits,
-                        contactPatchRuntime.clusterMaxLateralGameUnits,
-                        contactPatchRuntime.clusterReason,
-                        formatContactPatchRejectedBodies(contactPatchRuntime),
-                        contactPatchRuntime.patch.fallbackReason ? contactPatchRuntime.patch.fallbackReason : "unknown");
                 }
             }
             if (palmPocketMeshAvailable &&
@@ -8148,22 +7791,6 @@ namespace rock
                         gripSet.averageNormalWorld.z,
                         gripSet.spreadGameUnits,
                         gripSet.reason);
-                } else if (g_rockConfig.rockDebugGrabFrameLogging) {
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} hand MULTI-FINGER GRIP rejected: body={} groups={} semanticGroups={} probeGroups={} candidates={} meshHits={} "
-                        "semanticHits={} probeHits={} rejectOwner={} rejectDistance={} reason={}",
-                        handName(),
-                        objectBodyId.value,
-                        multiFingerGripRuntime.gripSet.groupCount,
-                        multiFingerGripRuntime.semanticGroupCount,
-                        multiFingerGripRuntime.liveProbeGroupCount,
-                        multiFingerGripRuntime.candidateContactCount,
-                        multiFingerGripRuntime.meshHitCount,
-                        multiFingerGripRuntime.semanticMeshHitCount,
-                        multiFingerGripRuntime.liveProbeMeshHitCount,
-                        multiFingerGripRuntime.rejectedOwnerCount,
-                        multiFingerGripRuntime.rejectedDistanceCount,
-                        multiFingerGripRuntime.reason ? multiFingerGripRuntime.reason : "unknown");
                 }
             }
 
@@ -8389,7 +8016,6 @@ namespace rock
         const auto& palmPocketPivotAWorld = proxy.palmPocketPivotAWorld;
         auto* rootNode = input.rootNode;
         auto objectBodyId = input.objectBodyId;
-        const auto grabTraceId = input.traceId;
         const auto& objName = *input.objectName;
         const char* grabPointMode = surface.pointMode;
         const bool activeGrabPointUsesMultiFingerEvidence = false;
@@ -8452,7 +8078,6 @@ namespace rock
                 if (ownerNodeAtGrab && ownerNodeAtGrab != collidableNode) {
                     GrabCaptureTransformRefreshResult ownerAtGrabRefresh{};
                     refreshGrabCaptureNodeTransform(ownerAtGrabRefresh, "ownerAtGrab", ownerNodeAtGrab, !grab_target::isRagdoll(sel.targetKind));
-                    logGrabCaptureRefresh(handName(), _isLeft, grabTraceId, ownerAtGrabRefresh);
                     if (!ownerAtGrabRefresh.ok) {
                         ROCK_LOG_WARN(Hand,
                             "{} hand GRAB failed: owner-at-grab transform refresh produced a non-finite node transform for '{}' formID={:08X}; owner='{}'",
@@ -8994,40 +8619,6 @@ namespace rock
                                     gripSupportRuntime.model.reason ? gripSupportRuntime.model.reason : "none",
                                     pinchPocketCandidate.decision.reason ? pinchPocketCandidate.decision.reason : "none");
                                 return abortCapture();
-                            }
-                            if (g_rockConfig.rockDebugGrabFrameLogging) {
-                                for (const auto& candidate : authorityCandidates) {
-                                    const float pivotDistance = candidate.valid ? pointDistanceGameUnits(grabPivotAWorld, candidate.pointWorld) : -1.0f;
-                                    const float pocketDistance =
-                                        (candidate.valid && pocket.valid) ? pointDistanceGameUnits(candidate.pointWorld, pocket.palmCenterWorld) : -1.0f;
-                                    const float selectionDistance =
-                                        (candidate.valid && sel.hasHitPoint) ? pointDistanceGameUnits(candidate.pointWorld, sel.hitPointWorld) : -1.0f;
-                                    const float leverDistance =
-                                        candidate.valid ? pointDistanceGameUnits(candidate.pointWorld, grabBodyWorldAtGrab.translate) : -1.0f;
-                                    const bool selectedCandidate = candidate.valid && candidate.source == resolvedAuthorityPivot.source;
-                                    ROCK_LOG_INFO(Hand,
-                                        "{} GRAB FREEZE CANDIDATE: formID={:08X} body={} source={} valid={} selected={} reason={} node='{}' "
-                                        "point=({:.2f},{:.2f},{:.2f}) normal=({:.3f},{:.3f},{:.3f}) pivotA={:.2f}gu pocket={:.2f}gu selection={:.2f}gu lever={:.2f}gu mode={}",
-                                        handName(),
-                                        sel.refr ? sel.refr->GetFormID() : 0,
-                                        objectBodyId.value,
-                                        grab_authority_frame_math::grabAuthorityPivotSourceName(candidate.source),
-                                        candidate.valid ? "yes" : "no",
-                                        selectedCandidate ? "yes" : "no",
-                                        candidate.reason ? candidate.reason : "none",
-                                        nodeDebugName(static_cast<const RE::NiAVObject*>(candidate.sourceNode)),
-                                        candidate.valid ? candidate.pointWorld.x : 0.0f,
-                                        candidate.valid ? candidate.pointWorld.y : 0.0f,
-                                        candidate.valid ? candidate.pointWorld.z : 0.0f,
-                                        candidate.normalValid ? candidate.normalWorld.x : 0.0f,
-                                        candidate.normalValid ? candidate.normalWorld.y : 0.0f,
-                                        candidate.normalValid ? candidate.normalWorld.z : 0.0f,
-                                        pivotDistance,
-                                        pocketDistance,
-                                        selectionDistance,
-                                        leverDistance,
-                                        grabPointMode);
-                                }
                             }
 
                             switch (resolvedAuthorityPivot.source) {
@@ -10230,10 +9821,8 @@ namespace rock
         const GrabBodyFrameCapture* bodyFrame = nullptr;
         GrabSeatCaptureResult* seatCapture = nullptr;
         const GrabSurfaceEvidence* surface = nullptr;
-        const GrabPivotEvidence* pivotEvidence = nullptr;
         RE::hknpBodyId objectBodyId{};
         std::uint64_t traceId = 0;
-        const std::string* objectName = nullptr;
         GrabRollbackAction rollback{};
     };
 
@@ -10246,8 +9835,6 @@ namespace rock
         const auto& bodyFrame = *input.bodyFrame;
         auto& seatCapture = *input.seatCapture;
         const auto& surface = *input.surface;
-        const auto& pivotEvidence = *input.pivotEvidence;
-        const auto& sel = _currentSelection;
         const auto& proxyFrameWorldAtGrab = proxy.proxyFrameWorldAtGrab;
         const auto& proxyAuthorityFrameWorldAtGrab = proxy.proxyAuthorityFrameWorldAtGrab;
         const auto& objectWorldTransform = meshCapture.objectWorldTransform;
@@ -10261,15 +9848,12 @@ namespace rock
         auto& desiredObjectWorld = seatCapture.desiredObjectWorld;
         auto& desiredBodyWorld = seatCapture.desiredBodyWorld;
         const auto resolvedAuthorityPivotSourceForFreeze = seatCapture.resolvedAuthoritySource;
-        const auto* resolvedAuthorityPivotReasonForFreeze = seatCapture.resolvedAuthorityReason;
         const auto visualHandObjectLocal = seatCapture.hasAuthoredHandRelation ?
             transform_math::composeTransforms(bodyFrame.objectToBody,
                 transform_math::composeTransforms(transform_math::invertTransform(rootBodyLocalAtGrab),
                     seatCapture.authoredHandWeaponLocal)) : transform_math::makeIdentityTransform<RE::NiTransform>();
-        const bool palmPocketMeshAvailable = pivotEvidence.palmPocketMeshAvailable;
         const auto objectBodyId = input.objectBodyId;
         const auto grabTraceId = input.traceId;
-        const auto& objName = *input.objectName;
         grab_authority_frame_math::FrozenGrabAuthorityFrame<RE::NiTransform> frozenAuthorityFrame{};
                 const RE::NiPoint3 frozenVisualNormalWorld = gripEvidenceNormalWorld(_grabFrame, objectWorldTransform);
                 frozenAuthorityFrame = grab_authority_frame_math::freezeGrabAuthorityFrame<RE::NiTransform>(
@@ -10332,308 +9916,17 @@ namespace rock
                 _grabFrame.hasTelemetryCapture = true;
                 _grabFrame.handScaleAtGrab = handWorldTransform.scale;
                 _grabFrame.traceId = grabTraceId;
-                _grabFrame.traceTargetWriteSequence = 0;
                 _grabFrame.freezeCaptureTelemetry(objectBodyId.value);
-                if (grabTimelineTraceEnabled()) {
-                    std::array<float, 12> traceTransformBRotation{};
-                    std::array<float, 4> traceTransformBTranslation{};
-                    std::array<float, 12> traceTargetBRca{};
-                    grab_constraint_math::writeGrabConstraintCreationAtoms(
-                        traceTransformBRotation.data(),
-                        traceTransformBTranslation.data(),
-                        traceTargetBRca.data(),
-                        frozenAuthorityFrame.proxyAuthorityBodyHandSpace,
-                        frozenAuthorityFrame.pivotAHandBodyLocalGame,
-                        gameToHavokScale());
-                    const RE::NiTransform traceDesiredBodyToHandSpace =
-                        invertTransform(frozenAuthorityFrame.proxyAuthorityBodyHandSpace);
-                    const RE::NiMatrix3 traceTargetRows = matrixFromHkRows(traceTargetBRca.data());
-                    const RE::NiMatrix3 traceTransformBColumns = matrixFromHkColumns(traceTransformBRotation.data());
-                    const RE::NiPoint3 traceRelationPivotB =
-                        grab_constraint_math::computeDynamicTransformBTranslationGame(
-                            frozenAuthorityFrame.proxyAuthorityBodyHandSpace,
-                            frozenAuthorityFrame.pivotAHandBodyLocalGame);
-                    const RE::NiPoint3 traceTransformBTranslationGame{
-                        traceTransformBTranslation[0] * havokToGameScale(),
-                        traceTransformBTranslation[1] * havokToGameScale(),
-                        traceTransformBTranslation[2] * havokToGameScale(),
-                    };
-                    const float traceSelectedPivotRelationDeltaGameUnits =
-                        pointDistanceGameUnits(frozenAuthorityFrame.pivotBConstraintLocalGame, traceRelationPivotB);
-                    const float tracePivotBRelationDeltaGameUnits =
-                        pointDistanceGameUnits(traceTransformBTranslationGame, traceRelationPivotB);
-                    const float traceTargetToHiggsRelationDegrees =
-                        rotationDeltaDegrees(traceTargetRows, traceDesiredBodyToHandSpace.rotate);
-                    const float traceTransformBFrozenDeltaDegrees =
-                        rotationDeltaDegrees(traceTransformBColumns, traceDesiredBodyToHandSpace.rotate);
-                    const float traceRawToProxyRotDegrees =
-                        rotationDeltaDegrees(handWorldTransform.rotate, proxyFrameWorldAtGrab.rotate);
-                    const float traceRawToProxyMaxAxisDegrees =
-                        maxColumnAxisDeltaDegrees(handWorldTransform.rotate, proxyFrameWorldAtGrab.rotate);
-                    const float traceObjectToDesiredMaxAxisDegrees =
-                        maxColumnAxisDeltaDegrees(objectWorldTransform.rotate, frozenAuthorityFrame.desiredObjectWorld.rotate);
-                    const float traceDesiredBodyToGrabBodyMaxAxisDegrees =
-                        maxColumnAxisDeltaDegrees(frozenAuthorityFrame.desiredBodyWorld.rotate, grabBodyWorldAtGrab.rotate);
-                    const RE::NiPoint3 tracePivotBeforeFreeze =
-                        transform_math::localPointToWorld(grabBodyWorldAtGrab, frozenAuthorityFrame.pivotBConstraintLocalGame);
-                    const RE::NiPoint3 tracePivotAfterFreeze =
-                        transform_math::localPointToWorld(frozenAuthorityFrame.desiredBodyWorld, frozenAuthorityFrame.pivotBConstraintLocalGame);
-                    const RE::NiPoint3 traceFreezeShift =
-                        frozenAuthorityFrame.desiredBodyWorld.translate - grabBodyWorldAtGrab.translate;
-                    const RE::NiPoint3 traceExpectedShift =
-                        frozenAuthorityFrame.pivotAWorld - frozenAuthorityFrame.gripPointWorldAtGrab;
-                    const float traceFreezeShiftLength = vectorMagnitude(traceFreezeShift);
-                    const float traceExpectedShiftLength = vectorMagnitude(traceExpectedShift);
-                    const float traceFreezeShiftDot =
-                        traceFreezeShiftLength > 0.0001f && traceExpectedShiftLength > 0.0001f ?
-                            std::clamp(dotProduct(traceFreezeShift, traceExpectedShift) / (traceFreezeShiftLength * traceExpectedShiftLength), -1.0f, 1.0f) :
-                            0.0f;
-                    const float tracePivotGapBeforeFreeze =
-                        pointDistanceGameUnits(tracePivotBeforeFreeze, frozenAuthorityFrame.pivotAWorld);
-                    const float tracePivotGapAfterFreeze =
-                        pointDistanceGameUnits(tracePivotAfterFreeze, frozenAuthorityFrame.pivotAWorld);
-                    const float traceBodyShiftDegrees =
-                        rotationDeltaDegrees(frozenAuthorityFrame.desiredBodyWorld.rotate, grabBodyWorldAtGrab.rotate);
-                    const auto traceRawBasis = grab_transform_telemetry::makeOrientationBasis(handWorldTransform);
-                    const auto traceProxyBasis = grab_transform_telemetry::makeOrientationBasis(proxyFrameWorldAtGrab);
-                    const auto traceBodyBasis = grab_transform_telemetry::makeOrientationBasis(grabBodyWorldAtGrab);
-                    const auto traceDesiredBodyBasis = grab_transform_telemetry::makeOrientationBasis(frozenAuthorityFrame.desiredBodyWorld);
-
-                    ROCK_LOG_INFO(Hand,
-                        "{} GRAB_TRACE stage=capture trace={} hand={} formID={:08X} name='{}' body={} mode={} pivotAuthority={} frozenSource={} resolverSource={} resolverReason={} seat={} phase={} pinch={} gripSupport={} supportPivot={} fullHeld={} settledReq={} shapeKey=0x{:08X} triangle=0x{:08X} pivotA=({:.2f},{:.2f},{:.2f}) grip=({:.2f},{:.2f},{:.2f}) pivotBBody=({:.2f},{:.2f},{:.2f}) pivotBSelected=({:.2f},{:.2f},{:.2f}) relationPivotB=({:.2f},{:.2f},{:.2f}) selectedPivotRelationDelta={:.3f}gu pivotBRelationDelta={:.3f}gu pocket={:.2f}gu selection={:.2f}gu longLever={:.2f}gu positionOnly={} normalTrusted={} confidence={:.2f}",
-                        handName(),
-                        _grabFrame.traceId,
-                        _isLeft ? "left" : "right",
-                        sel.refr ? sel.refr->GetFormID() : 0,
-                        objName,
-                        objectBodyId.value,
-                        _grabFrame.seat.activeGrabPointMode ? _grabFrame.seat.activeGrabPointMode : "none",
-                        grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
-                        grab_authority_frame_math::grabAuthorityPivotSourceName(frozenAuthorityFrame.source),
-                        grab_authority_frame_math::grabAuthorityPivotSourceName(resolvedAuthorityPivotSourceForFreeze),
-                        resolvedAuthorityPivotReasonForFreeze ? resolvedAuthorityPivotReasonForFreeze : "none",
-                        grabSeatModeName(_grabFrame.seat.mode),
-                        grab_three_phase::phaseName(_grabAcquisitionPhase),
-                        _grabFrame.seat.hasPinchPocket ? "yes" : "no",
-                        grab_support_model_math::gripSupportKindName(_grabFrame.support.kind),
-                        _grabFrame.support.authoredPivot ? "yes" : "no",
-                        _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld ? "yes" : "no",
-                        _grabFrame.seat.requiresSettledVisualHandRelation ? "yes" : "no",
-                        _grabFrame.gripEvidence.gripEvidenceShapeKey,
-                        _grabFrame.gripEvidence.gripEvidenceTriangleIndex,
-                        frozenAuthorityFrame.pivotAWorld.x,
-                        frozenAuthorityFrame.pivotAWorld.y,
-                        frozenAuthorityFrame.pivotAWorld.z,
-                        frozenAuthorityFrame.gripPointWorldAtGrab.x,
-                        frozenAuthorityFrame.gripPointWorldAtGrab.y,
-                        frozenAuthorityFrame.gripPointWorldAtGrab.z,
-                        frozenAuthorityFrame.pivotBBodyLocalGame.x,
-                        frozenAuthorityFrame.pivotBBodyLocalGame.y,
-                        frozenAuthorityFrame.pivotBBodyLocalGame.z,
-                        frozenAuthorityFrame.pivotBConstraintLocalGame.x,
-                        frozenAuthorityFrame.pivotBConstraintLocalGame.y,
-                        frozenAuthorityFrame.pivotBConstraintLocalGame.z,
-                        traceRelationPivotB.x,
-                        traceRelationPivotB.y,
-                        traceRelationPivotB.z,
-                        traceSelectedPivotRelationDeltaGameUnits,
-                        tracePivotBRelationDeltaGameUnits,
-                        _grabFrame.pivotAuthority.pocketDistanceGameUnits,
-                        _grabFrame.pivotAuthority.selectionDistanceGameUnits,
-                        _grabFrame.pivotAuthority.longLeverGameUnits,
-                        _grabFrame.pivotAuthority.positionOnly ? "yes" : "no",
-                        _grabFrame.pivotAuthority.normalTrusted ? "yes" : "no",
-                        _grabFrame.pivotAuthority.positionConfidence);
-
-                    ROCK_LOG_INFO(Hand,
-                        "{} GRAB_TRACE stage=capture_frames trace={} rawPos=({:.2f},{:.2f},{:.2f}) proxyPos=({:.2f},{:.2f},{:.2f}) objectPos=({:.2f},{:.2f},{:.2f}) bodyPos=({:.2f},{:.2f},{:.2f}) desiredBodyPos=({:.2f},{:.2f},{:.2f}) rawProxyRot={:.2f}deg rawProxyAxisMax={:.2f}deg objectDesiredAxisMax={:.2f}deg desiredBodyGrabBodyAxisMax={:.2f}deg targetToHiggsRelation={:.2f}deg transformBFrozenDelta={:.2f}deg",
-                        handName(),
-                        _grabFrame.traceId,
-                        handWorldTransform.translate.x,
-                        handWorldTransform.translate.y,
-                        handWorldTransform.translate.z,
-                        proxyFrameWorldAtGrab.translate.x,
-                        proxyFrameWorldAtGrab.translate.y,
-                        proxyFrameWorldAtGrab.translate.z,
-                        objectWorldTransform.translate.x,
-                        objectWorldTransform.translate.y,
-                        objectWorldTransform.translate.z,
-                        grabBodyWorldAtGrab.translate.x,
-                        grabBodyWorldAtGrab.translate.y,
-                        grabBodyWorldAtGrab.translate.z,
-                        frozenAuthorityFrame.desiredBodyWorld.translate.x,
-                        frozenAuthorityFrame.desiredBodyWorld.translate.y,
-                        frozenAuthorityFrame.desiredBodyWorld.translate.z,
-                        traceRawToProxyRotDegrees,
-                        traceRawToProxyMaxAxisDegrees,
-                        traceObjectToDesiredMaxAxisDegrees,
-                        traceDesiredBodyToGrabBodyMaxAxisDegrees,
-                        traceTargetToHiggsRelationDegrees,
-                        traceTransformBFrozenDeltaDegrees);
-
-                    ROCK_LOG_INFO(Hand,
-                        "{} GRAB_TRACE stage=capture_freeze_geometry trace={} body={} mode={} pivotAuthority={} "
-                        "bodyShift=({:.2f},{:.2f},{:.2f}) shiftLen={:.2f}gu expectedShift=({:.2f},{:.2f},{:.2f}) expectedLen={:.2f}gu shiftDot={:.3f} "
-                        "bodyRotShift={:.2f}deg pivotGapBefore={:.3f}gu pivotGapAfter={:.3f}gu pivotBefore=({:.2f},{:.2f},{:.2f}) pivotAfter=({:.2f},{:.2f},{:.2f}) pivotA=({:.2f},{:.2f},{:.2f}) grip=({:.2f},{:.2f},{:.2f})",
-                        handName(),
-                        _grabFrame.traceId,
-                        objectBodyId.value,
-                        _grabFrame.seat.activeGrabPointMode ? _grabFrame.seat.activeGrabPointMode : "none",
-                        grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
-                        traceFreezeShift.x,
-                        traceFreezeShift.y,
-                        traceFreezeShift.z,
-                        traceFreezeShiftLength,
-                        traceExpectedShift.x,
-                        traceExpectedShift.y,
-                        traceExpectedShift.z,
-                        traceExpectedShiftLength,
-                        traceFreezeShiftDot,
-                        traceBodyShiftDegrees,
-                        tracePivotGapBeforeFreeze,
-                        tracePivotGapAfterFreeze,
-                        tracePivotBeforeFreeze.x,
-                        tracePivotBeforeFreeze.y,
-                        tracePivotBeforeFreeze.z,
-                        tracePivotAfterFreeze.x,
-                        tracePivotAfterFreeze.y,
-                        tracePivotAfterFreeze.z,
-                        frozenAuthorityFrame.pivotAWorld.x,
-                        frozenAuthorityFrame.pivotAWorld.y,
-                        frozenAuthorityFrame.pivotAWorld.z,
-                        frozenAuthorityFrame.gripPointWorldAtGrab.x,
-                        frozenAuthorityFrame.gripPointWorldAtGrab.y,
-                        frozenAuthorityFrame.gripPointWorldAtGrab.z);
-
-                    ROCK_LOG_INFO(Hand,
-                        "{} GRAB_TRACE stage=capture_basis trace={} {} {} {} {}",
-                        handName(),
-                        _grabFrame.traceId,
-                        grab_transform_telemetry::formatBasis("raw", traceRawBasis),
-                        grab_transform_telemetry::formatBasis("proxy", traceProxyBasis),
-                        grab_transform_telemetry::formatBasis("body", traceBodyBasis),
-                        grab_transform_telemetry::formatBasis("desiredBody", traceDesiredBodyBasis));
-                    ROCK_LOG_INFO(Hand,
-                        "{} GRAB_TRACE stage=capture_axismap trace={} {} {} {} {}",
-                        handName(),
-                        _grabFrame.traceId,
-                        grab_transform_telemetry::formatBasisCrossMap("bodyToProxy", traceBodyBasis, traceProxyBasis),
-                        grab_transform_telemetry::formatBasisCrossMap("desiredBodyToProxy", traceDesiredBodyBasis, traceProxyBasis),
-                        grab_transform_telemetry::formatBasisCrossMap("proxyToBody", traceProxyBasis, traceBodyBasis),
-                        grab_transform_telemetry::formatBasisCrossMap("bodyToDesiredBody", traceBodyBasis, traceDesiredBodyBasis));
-                }
-                if (g_rockConfig.rockDebugGrabFrameLogging) {
-                    std::array<float, 12> freezeTransformBRotation{};
-                    std::array<float, 4> freezeTransformBTranslation{};
-                    std::array<float, 12> freezeTargetBRca{};
-                    grab_constraint_math::writeGrabConstraintCreationAtoms(
-                        freezeTransformBRotation.data(),
-                        freezeTransformBTranslation.data(),
-                        freezeTargetBRca.data(),
-                        frozenAuthorityFrame.proxyAuthorityBodyHandSpace,
-                        frozenAuthorityFrame.pivotAHandBodyLocalGame,
-                        gameToHavokScale());
-                    const RE::NiTransform frozenDesiredBodyToHandSpace =
-                        invertTransform(frozenAuthorityFrame.proxyAuthorityBodyHandSpace);
-                    const RE::NiMatrix3 freezeTargetRows = matrixFromHkRows(freezeTargetBRca.data());
-                    const RE::NiMatrix3 freezeTransformBColumns = matrixFromHkColumns(freezeTransformBRotation.data());
-                    const RE::NiPoint3 predictedTransformBLocal =
-                        grab_constraint_math::computeDynamicTransformBTranslationGame(
-                            frozenAuthorityFrame.proxyAuthorityBodyHandSpace,
-                            frozenAuthorityFrame.pivotAHandBodyLocalGame);
-                    const RE::NiPoint3 freezeTransformBTranslationGame{
-                        freezeTransformBTranslation[0] * havokToGameScale(),
-                        freezeTransformBTranslation[1] * havokToGameScale(),
-                        freezeTransformBTranslation[2] * havokToGameScale(),
-                    };
-                    const float freezeSelectedPivotRelationDelta =
-                        pointDistanceGameUnits(frozenAuthorityFrame.pivotBConstraintLocalGame, predictedTransformBLocal);
-                    const float freezePivotBRelationDelta =
-                        pointDistanceGameUnits(freezeTransformBTranslationGame, predictedTransformBLocal);
-                    const float freezeTargetToHiggsRelationDegrees =
-                        rotationDeltaDegrees(freezeTargetRows, frozenDesiredBodyToHandSpace.rotate);
-                    const float freezeTransformBFrozenDeltaDegrees =
-                        rotationDeltaDegrees(freezeTransformBColumns, frozenDesiredBodyToHandSpace.rotate);
-                    const float rawToProxyRotDegrees =
-                        rotationDeltaDegrees(handWorldTransform.rotate, proxyFrameWorldAtGrab.rotate);
-                    const float rawToProxyMaxAxisDegrees =
-                        maxColumnAxisDeltaDegrees(handWorldTransform.rotate, proxyFrameWorldAtGrab.rotate);
-                    const float objectToDesiredMaxAxisDegrees =
-                        maxColumnAxisDeltaDegrees(objectWorldTransform.rotate, frozenAuthorityFrame.desiredObjectWorld.rotate);
-                    const float desiredBodyToGrabBodyMaxAxisDegrees =
-                        maxColumnAxisDeltaDegrees(frozenAuthorityFrame.desiredBodyWorld.rotate, grabBodyWorldAtGrab.rotate);
-                    const float pivotBLeverGameUnits =
-                        pointDistanceGameUnits(frozenAuthorityFrame.gripPointWorldAtGrab, grabBodyWorldAtGrab.translate);
-                    const bool fullHeldAuthorityAtFreeze =
-                        _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld;
-
-                    ROCK_LOG_INFO(Hand,
-                        "{} GRAB FREEZE AUTHORITY: formID={:08X} name='{}' body={} mode={} pivotAuthority={} frozenSource={} resolverSource={} "
-                        "resolverReason={} seat={} phase={} pinch={} gripSupport={} supportPivot={} supportReason={} palmPocketMesh={} fullHeld={} settledReq={} "
-                        "pivotA=({:.2f},{:.2f},{:.2f}) grip=({:.2f},{:.2f},{:.2f}) pivotBBody=({:.2f},{:.2f},{:.2f}) "
-                        "pivotBSelected=({:.2f},{:.2f},{:.2f}) relationPivotB=({:.2f},{:.2f},{:.2f}) "
-                        "lever={:.2f}gu pocket={:.2f}gu selection={:.2f}gu rawProxy={:.2f}deg rawProxyAxisMax={:.2f}deg "
-                        "objectDesiredAxisMax={:.2f}deg desiredBodyGrabBodyAxisMax={:.2f}deg targetToHiggsRelation={:.2f}deg transformBFrozenDelta={:.2f}deg selectedPivotRelationDelta={:.3f}gu pivotBRelationDelta={:.3f}gu",
-                        handName(),
-                        sel.refr ? sel.refr->GetFormID() : 0,
-                        objName,
-                        objectBodyId.value,
-                        _grabFrame.seat.activeGrabPointMode ? _grabFrame.seat.activeGrabPointMode : "none",
-                        grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
-                        grab_authority_frame_math::grabAuthorityPivotSourceName(frozenAuthorityFrame.source),
-                        grab_authority_frame_math::grabAuthorityPivotSourceName(resolvedAuthorityPivotSourceForFreeze),
-                        resolvedAuthorityPivotReasonForFreeze ? resolvedAuthorityPivotReasonForFreeze : "none",
-                        grabSeatModeName(_grabFrame.seat.mode),
-                        grab_three_phase::phaseName(_grabAcquisitionPhase),
-                        _grabFrame.seat.hasPinchPocket ? "yes" : "no",
-                        grab_support_model_math::gripSupportKindName(_grabFrame.support.kind),
-                        _grabFrame.support.authoredPivot ? "yes" : "no",
-                        _grabFrame.support.reason ? _grabFrame.support.reason : "none",
-                        palmPocketMeshAvailable ? "yes" : "no",
-                        fullHeldAuthorityAtFreeze ? "yes" : "no",
-                        _grabFrame.seat.requiresSettledVisualHandRelation ? "yes" : "no",
-                        frozenAuthorityFrame.pivotAWorld.x,
-                        frozenAuthorityFrame.pivotAWorld.y,
-                        frozenAuthorityFrame.pivotAWorld.z,
-                        frozenAuthorityFrame.gripPointWorldAtGrab.x,
-                        frozenAuthorityFrame.gripPointWorldAtGrab.y,
-                        frozenAuthorityFrame.gripPointWorldAtGrab.z,
-                        frozenAuthorityFrame.pivotBBodyLocalGame.x,
-                        frozenAuthorityFrame.pivotBBodyLocalGame.y,
-                        frozenAuthorityFrame.pivotBBodyLocalGame.z,
-                        frozenAuthorityFrame.pivotBConstraintLocalGame.x,
-                        frozenAuthorityFrame.pivotBConstraintLocalGame.y,
-                        frozenAuthorityFrame.pivotBConstraintLocalGame.z,
-                        predictedTransformBLocal.x,
-                        predictedTransformBLocal.y,
-                        predictedTransformBLocal.z,
-                        pivotBLeverGameUnits,
-                        _grabFrame.pivotAuthority.pocketDistanceGameUnits,
-                        _grabFrame.pivotAuthority.selectionDistanceGameUnits,
-                        rawToProxyRotDegrees,
-                        rawToProxyMaxAxisDegrees,
-                        objectToDesiredMaxAxisDegrees,
-                        desiredBodyToGrabBodyMaxAxisDegrees,
-                        freezeTargetToHiggsRelationDegrees,
-                        freezeTransformBFrozenDeltaDegrees,
-                        freezeSelectedPivotRelationDelta,
-                        freezePivotBRelationDelta);
-                }
         return true;
     }
 
     struct Hand::GrabPostFreezeInput
     {
         const RE::NiTransform* handWorldTransform = nullptr;
-        const GrabProxyPreparation* proxy = nullptr;
         const GrabMeshCaptureSetup* meshCapture = nullptr;
         const GrabMeshExtraction* mesh = nullptr;
         const GrabBodyFrameCapture* bodyFrame = nullptr;
-        const GrabSeatCaptureResult* seatCapture = nullptr;
         const GrabSurfaceEvidence* surface = nullptr;
-        RE::NiAVObject* rootNode = nullptr;
-        RE::NiAVObject* collidableNode = nullptr;
-        RE::NiAVObject* meshSourceNode = nullptr;
         RE::hknpBodyId objectBodyId{};
         const BodyBoneColliderSet* bodyBoneColliders = nullptr;
         const GrabSharedObjectContext* sharedContext = nullptr;
@@ -10647,35 +9940,14 @@ namespace rock
     {
         performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabPostFreeze);
         const auto& handWorldTransform = *input.handWorldTransform;
-        const auto& proxy = *input.proxy;
         const auto& meshCapture = *input.meshCapture;
-        const auto& mesh = *input.mesh;
         const auto& bodyFrame = *input.bodyFrame;
-        const auto& seatCapture = *input.seatCapture;
         const auto& surface = *input.surface;
         const auto& sel = _currentSelection;
-        const auto& proxyFrameWorldAtGrab = proxy.proxyFrameWorldAtGrab;
-        const auto& handBodyWorldAtGrab = proxy.handBodyWorldAtGrab;
-        const auto* proxyFrameSourceAtGrab = proxy.proxyFrameSourceAtGrab;
-        const bool hasPalmProxyFrameAtGrab = proxy.hasPalmProxyFrameAtGrab;
         const auto& objectWorldTransform = meshCapture.objectWorldTransform;
-        const auto& grabMeshTriangles = mesh.meshTriangles;
-        const auto& grabBodyWorldAtGrab = bodyFrame.grabBodyWorld;
-        const auto& motionBodyWorldAtGrab = bodyFrame.motionBodyWorld;
-        const auto motionBodySourceAtGrab = bodyFrame.motionBodySource;
-        const bool hasMotionBodyWorldAtGrab = bodyFrame.hasMotionBodyWorld;
-        const bool constraintUsesMotionBodyAtGrab = bodyFrame.constraintUsesMotionBody;
-        const auto* bodyCollisionObjectAtGrab = bodyFrame.bodyCollisionObject;
-        const auto* ownerNodeAtGrab = bodyFrame.ownerNode;
         const auto& palmPos = bodyFrame.palmPosition;
         const auto& grabPivotAWorld = bodyFrame.grabPivotAWorld;
         const auto& grabGripPoint = surface.gripPoint;
-        const auto* grabPointMode = surface.pointMode;
-        const auto& desiredObjectWorld = seatCapture.desiredObjectWorld;
-        const auto& desiredBodyWorld = seatCapture.desiredBodyWorld;
-        auto* rootNode = input.rootNode;
-        auto* collidableNode = input.collidableNode;
-        auto* meshSourceNode = input.meshSourceNode;
         const auto objectBodyId = input.objectBodyId;
         const auto* bodyBoneColliders = input.bodyBoneColliders;
         const auto& sharedContext = *input.sharedContext;
@@ -10712,140 +9984,6 @@ namespace rock
                 _hasLastHeldHandPositionHavok = false;
                 _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
 
-                if (g_rockConfig.rockDebugGrabFrameLogging) {
-                    const RE::NiPoint3 legacyPalmPivotAHandspace = computeGrabLegacyPalmPivotAHandspacePosition(_isLeft);
-                    auto* vrScaleSetting = f4vr::getIniSetting("fVrScale:VR");
-                    const float vrScale = vrScaleSetting ? vrScaleSetting->GetFloat() : -1.0f;
-
-                    const RE::NiPoint3 rawLateral = getMatrixColumn(handWorldTransform.rotate, 0);
-                    const RE::NiPoint3 rawFinger = getMatrixColumn(handWorldTransform.rotate, 2);
-                    const RE::NiPoint3 rawBack = getMatrixColumn(handWorldTransform.rotate, 1);
-                    const RE::NiPoint3 proxyFinger = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 2);
-                    const RE::NiPoint3 proxyBack = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 1);
-                    const RE::NiPoint3 proxyLateral = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 0);
-                    const RE::NiPoint3 grabSpaceRawFinger = getMatrixColumn(_grabFrame.rawHandSpace.rotate, 0);
-                    const RE::NiPoint3 grabSpaceProxyFinger = getMatrixColumn(_grabFrame.proxyAuthorityHandSpace.rotate, 0);
-                    const RE::NiPoint3 grabPosDelta = _grabFrame.proxyAuthorityHandSpace.translate - _grabFrame.rawHandSpace.translate;
-                    const float rawVsProxyRot = rotationDeltaDegrees(_grabFrame.rawHandSpace.rotate, _grabFrame.proxyAuthorityHandSpace.rotate);
-                    const float rawVsProxyPos = std::sqrt(grabPosDelta.x * grabPosDelta.x + grabPosDelta.y * grabPosDelta.y + grabPosDelta.z * grabPosDelta.z);
-                    const float motionVsGrabRot = hasMotionBodyWorldAtGrab ? rotationDeltaDegrees(motionBodyWorldAtGrab.rotate, grabBodyWorldAtGrab.rotate) : -1.0f;
-                    const float motionVsGrabPos = hasMotionBodyWorldAtGrab ? translationDeltaGameUnits(motionBodyWorldAtGrab, grabBodyWorldAtGrab) : -1.0f;
-
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} GRAB FRAME SUMMARY: vrScale={:.3f} handScale={:.3f} bodyScale={:.3f} objectScale={:.3f} "
-                        "legacyPivotHS=({:.2f},{:.2f},{:.2f}) pocketW=({:.1f},{:.1f},{:.1f}) gripW=({:.1f},{:.1f},{:.1f}) "
-                        "pivotBBodyLocal=({:.2f},{:.2f},{:.2f}) pivotBConstraintLocal=({:.2f},{:.2f},{:.2f}) "
-                        "rawProxyDelta={:.2f}deg/{:.2f}gu motionDiagVsGrab={:.2f}deg/{:.2f}gu proxyBodyFrame={} rotRef={} proxyFrame={} rootPalm={} pivotALocal=({:.2f},{:.2f},{:.2f}) meshMode={} meshTris={} "
-                        "pocketGrip={:.1f}gu selectionGripEvidence={:.1f}gu "
-                        "shapeKey=0x{:08X} shapeFilter=0x{:08X} hitFraction={:.4f} contactPatchEvidence={} contactPatchPivot={} patchHits={} snapDelta={:.1f}gu "
-                        "multiFinger={} mfGroups={} mfSpread={:.2f}gu mfReason={} "
-                        "activePoint={} activeUsesFingerEvidence={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} positionConfidence={:.2f} palmSeatPoint={} fingerEvidencePoint={} "
-                        "poseTargets={} motorFade={} motorFadeReason={} bodyReason={} "
-                        "fingerPoseAim={} fingerPoseAimReason={}",
-                        handName(), vrScale, handWorldTransform.scale, handBodyWorldAtGrab.scale, collidableNode ? collidableNode->world.scale : -1.0f,
-                        legacyPalmPivotAHandspace.x, legacyPalmPivotAHandspace.y, legacyPalmPivotAHandspace.z, grabPivotAWorld.x, grabPivotAWorld.y, grabPivotAWorld.z, grabGripPoint.x,
-                        grabGripPoint.y, grabGripPoint.z, _grabFrame.authority.pivotBBodyLocalGame.x, _grabFrame.authority.pivotBBodyLocalGame.y, _grabFrame.authority.pivotBBodyLocalGame.z,
-                        _grabFrame.authority.pivotBConstraintLocalGame.x, _grabFrame.authority.pivotBConstraintLocalGame.y, _grabFrame.authority.pivotBConstraintLocalGame.z,
-                        rawVsProxyRot, rawVsProxyPos, motionVsGrabRot, motionVsGrabPos,
-                        constraintUsesMotionBodyAtGrab ? "MOTION" : "BODY",
-                        kGrabObjectRotationReferenceName,
-                        proxyFrameSourceAtGrab,
-                        hasPalmProxyFrameAtGrab ? "yes" : "no", _grabFrame.authority.pivotAHandBodyLocalGame.x,
-                        _grabFrame.authority.pivotAHandBodyLocalGame.y, _grabFrame.authority.pivotAHandBodyLocalGame.z, grabPointMode, grabMeshTriangles.size(),
-                        _grabFrame.pivotAuthority.pocketDistanceGameUnits, _grabFrame.pivotAuthority.selectionDistanceGameUnits,
-                        _grabFrame.gripEvidence.gripEvidenceShapeKey, _grabFrame.gripEvidence.gripEvidenceShapeCollisionFilterInfo, _grabFrame.gripEvidence.gripEvidenceHitFraction,
-                        _grabFrame.hasContactPatchEvidence ? "yes" : "no", "no",
-                        _grabFrame.contactPatchSampleCount, _grabFrame.contactPatchMeshSnapDeltaGameUnits,
-                        _grabFrame.hasMultiFingerContactPatch ? "yes" : "no", _grabFrame.multiFingerContactGroupCount,
-                        _grabFrame.multiFingerContactSpreadGameUnits, _grabFrame.multiFingerContactReason,
-                        _grabFrame.seat.activeGrabPointMode, _grabFrame.activeGrabPointUsesMultiFingerEvidence ? "yes" : "no",
-                        grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
-                        _grabFrame.pivotAuthority.positionOnly ? "yes" : "no",
-                        _grabFrame.pivotAuthority.normalTrusted ? "yes" : "no",
-                        _grabFrame.pivotAuthority.positionConfidence,
-                        _grabFrame.seat.palmSeatPointMode, _grabFrame.fingerEvidencePointMode,
-                        _grabFrame.fingerPoseTargetCount, _grabFrame.fadeInGrabConstraint ? "yes" : "no",
-                        _grabFrame.motorFadeReason, _grabFrame.bodyResolutionReason,
-                        _grabFrame.fingerPoseAimValid ? "yes" : "no", _grabFrame.fingerPoseAimReason);
-
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} GRAB FRAME SNAPSHOT: rawVsProxy rotDelta={:.2f}deg posDelta=({:.2f},{:.2f},{:.2f}) "
-                        "rawFinger=({:.3f},{:.3f},{:.3f}) rawBack=({:.3f},{:.3f},{:.3f}) rawLat=({:.3f},{:.3f},{:.3f}) "
-                        "proxyFinger=({:.3f},{:.3f},{:.3f}) proxyBack=({:.3f},{:.3f},{:.3f}) proxyLat=({:.3f},{:.3f},{:.3f})",
-                        handName(), rawVsProxyRot, grabPosDelta.x, grabPosDelta.y, grabPosDelta.z, rawFinger.x,
-                        rawFinger.y, rawFinger.z, rawBack.x, rawBack.y, rawBack.z, rawLateral.x, rawLateral.y, rawLateral.z, proxyFinger.x, proxyFinger.y, proxyFinger.z,
-                        proxyBack.x, proxyBack.y, proxyBack.z, proxyLateral.x, proxyLateral.y, proxyLateral.z);
-
-                    const auto rawHandBasis = grab_transform_telemetry::makeOrientationBasis(handWorldTransform);
-                    const auto proxyPalmBasis = grab_transform_telemetry::makeOrientationBasis(proxyFrameWorldAtGrab);
-                    const auto objectAtGrabBasis = grab_transform_telemetry::makeOrientationBasis(objectWorldTransform);
-                    const auto desiredObjectBasis = grab_transform_telemetry::makeOrientationBasis(desiredObjectWorld);
-                    const auto desiredBodyBasis = grab_transform_telemetry::makeOrientationBasis(desiredBodyWorld);
-                    const auto grabBodyBasis = grab_transform_telemetry::makeOrientationBasis(grabBodyWorldAtGrab);
-                    const auto motionBodyBasis = grab_transform_telemetry::makeOrientationBasis(motionBodyWorldAtGrab);
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} GRAB BASIS CAPTURE side={} phase=capture convention=niLocalVectorToWorld proxySource={} motionBody={} motionSrc={} proxyBodyFrame={} rotRef={} {} {} {} {} {} {} {}",
-                        handName(),
-                        _isLeft ? "left" : "right",
-                        proxyFrameSourceAtGrab,
-                        hasMotionBodyWorldAtGrab ? "yes" : "no",
-                        body_frame::bodyFrameSourceCode(motionBodySourceAtGrab),
-                        constraintUsesMotionBodyAtGrab ? "MOTION" : "BODY",
-                        kGrabObjectRotationReferenceName,
-                        grab_transform_telemetry::formatBasis("rawHand", rawHandBasis),
-                        grab_transform_telemetry::formatBasis("proxyPalm", proxyPalmBasis),
-                        grab_transform_telemetry::formatBasis("objectAtGrab", objectAtGrabBasis),
-                        grab_transform_telemetry::formatBasis("desiredObject", desiredObjectBasis),
-                        grab_transform_telemetry::formatBasis("desiredBody", desiredBodyBasis),
-                        grab_transform_telemetry::formatBasis("grabBody", grabBodyBasis),
-                        grab_transform_telemetry::formatBasis("motionBody", motionBodyBasis));
-
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} GRAB BASIS CAPTURE DELTA side={} phase=capture {} {} {} {} {}",
-                        handName(),
-                        _isLeft ? "left" : "right",
-                        grab_transform_telemetry::formatBasisDelta("rawHandToProxyPalm", rawHandBasis, proxyPalmBasis),
-                        grab_transform_telemetry::formatBasisDelta("objectAtGrabToDesiredObject", objectAtGrabBasis, desiredObjectBasis),
-                        grab_transform_telemetry::formatBasisDelta("desiredObjectToDesiredBody", desiredObjectBasis, desiredBodyBasis),
-                        grab_transform_telemetry::formatBasisDelta("grabBodyToDesiredBody", grabBodyBasis, desiredBodyBasis),
-                        grab_transform_telemetry::formatBasisDelta("motionBodyToGrabBody", motionBodyBasis, grabBodyBasis));
-
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} GRAB BASIS CAPTURE AXISMAP side={} phase=capture {} {} {} {} {}",
-                        handName(),
-                        _isLeft ? "left" : "right",
-                        grab_transform_telemetry::formatBasisCrossMap("bodyToProxy", grabBodyBasis, proxyPalmBasis),
-                        grab_transform_telemetry::formatBasisCrossMap("desiredBodyToProxy", desiredBodyBasis, proxyPalmBasis),
-                        grab_transform_telemetry::formatBasisCrossMap("proxyToBody", proxyPalmBasis, grabBodyBasis),
-                        grab_transform_telemetry::formatBasisCrossMap("rawHandToProxy", rawHandBasis, proxyPalmBasis),
-                        grab_transform_telemetry::formatBasisCrossMap("bodyToDesiredBody", grabBodyBasis, desiredBodyBasis));
-
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} GRAB FRAME TARGETS: grabHSRaw.pos=({:.2f},{:.2f},{:.2f}) grabHSProxy.pos=({:.2f},{:.2f},{:.2f}) "
-                        "grabHSRawFinger=({:.3f},{:.3f},{:.3f}) grabHSProxyFinger=({:.3f},{:.3f},{:.3f}) "
-                        "bodyLocal.pos=({:.2f},{:.2f},{:.2f}) bodyLocalFinger=({:.3f},{:.3f},{:.3f})",
-                        handName(), _grabFrame.rawHandSpace.translate.x, _grabFrame.rawHandSpace.translate.y, _grabFrame.rawHandSpace.translate.z, _grabFrame.proxyAuthorityHandSpace.translate.x,
-                        _grabFrame.proxyAuthorityHandSpace.translate.y, _grabFrame.proxyAuthorityHandSpace.translate.z, grabSpaceRawFinger.x, grabSpaceRawFinger.y, grabSpaceRawFinger.z,
-                        grabSpaceProxyFinger.x, grabSpaceProxyFinger.y, grabSpaceProxyFinger.z, _grabFrame.authority.bodyLocal.translate.x, _grabFrame.authority.bodyLocal.translate.y,
-                        _grabFrame.authority.bodyLocal.translate.z, _grabFrame.authority.bodyLocal.rotate.entry[0][0], _grabFrame.authority.bodyLocal.rotate.entry[1][0],
-                        _grabFrame.authority.bodyLocal.rotate.entry[2][0]);
-
-                    const RE::NiPoint3 rootBodyLocalFinger = getMatrixColumn(_grabFrame.rootBodyLocal.rotate, 0);
-                    const RE::NiPoint3 ownerBodyLocalFinger = getMatrixColumn(_grabFrame.ownerBodyLocal.rotate, 0);
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} GRAB NODE FRAMES: owner='{}'({:p}) hasCol={} ownsBodyCol={} "
-                        "root='{}'({:p}) held='{}'({:p}) mesh='{}'({:p}) sameOwnerHeld={} sameRootHeld={} "
-                        "ownerBodyLocal.pos=({:.2f},{:.2f},{:.2f}) ownerBodyLocalFinger=({:.3f},{:.3f},{:.3f}) "
-                        "rootBodyLocal.pos=({:.2f},{:.2f},{:.2f}) rootBodyLocalFinger=({:.3f},{:.3f},{:.3f})",
-                        handName(), nodeDebugName(ownerNodeAtGrab), static_cast<const void*>(ownerNodeAtGrab),
-                        (ownerNodeAtGrab && ownerNodeAtGrab->collisionObject.get()) ? "yes" : "no",
-                        (ownerNodeAtGrab && ownerNodeAtGrab->collisionObject.get() == bodyCollisionObjectAtGrab) ? "yes" : "no", nodeDebugName(rootNode),
-                        static_cast<const void*>(rootNode), nodeDebugName(collidableNode), static_cast<const void*>(collidableNode), nodeDebugName(meshSourceNode),
-                        static_cast<const void*>(meshSourceNode), ownerNodeAtGrab == collidableNode ? "yes" : "no", rootNode == collidableNode ? "yes" : "no",
-                        _grabFrame.ownerBodyLocal.translate.x, _grabFrame.ownerBodyLocal.translate.y, _grabFrame.ownerBodyLocal.translate.z, ownerBodyLocalFinger.x,
-                        ownerBodyLocalFinger.y, ownerBodyLocalFinger.z, _grabFrame.rootBodyLocal.translate.x, _grabFrame.rootBodyLocal.translate.y,
-                        _grabFrame.rootBodyLocal.translate.z, rootBodyLocalFinger.x, rootBodyLocalFinger.y, rootBodyLocalFinger.z);
-                }
 
                 ROCK_LOG_DEBUG(Hand,
                     "{} GRAB HAND SPACE: pos=({:.1f},{:.1f},{:.1f}) "
@@ -11580,21 +10718,7 @@ namespace rock
             }
         }
 
-        const std::uint64_t grabTraceId = nextGrabTimelineTraceId();
-        if (grabTimelineTraceEnabled()) {
-            ROCK_LOG_INFO(Hand,
-                "{} GRAB_TRACE stage=attempt trace={} hand={} formID={:08X} name='{}' selectedBody={} targetKind={} motion={} originalMotionProps={} root='{}'",
-                handName(),
-                grabTraceId,
-                _isLeft ? "left" : "right",
-                sel.refr ? sel.refr->GetFormID() : 0,
-                objName,
-                objectBodyId.value,
-                grab_target::name(sel.targetKind),
-                motionTypeStr,
-                selectedOriginalMotionPropsId,
-                nodeDebugName(rootNode));
-        }
+        const std::uint64_t grabTraceId = nextGrabTraceId();
 
         GrabBodyPreparation bodyPreparation{};
         prepareSelectedGrabBodies(world, sharedContext, validatedSelection, bodyPreparation);
@@ -11767,7 +10891,7 @@ namespace rock
             grabPalmBasisDelta.proxyDeterminant);
 
         GrabMeshCaptureSetup meshCaptureSetup{};
-        if (!prepareGrabMeshCapture(handWorldTransform, validatedSelection, grabTraceId, objName, meshCaptureSetup)) {
+        if (!prepareGrabMeshCapture(handWorldTransform, validatedSelection, objName, meshCaptureSetup)) {
             grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
             return GrabAttemptResult::Rejected;
@@ -12098,7 +11222,6 @@ namespace rock
                 grabMeshTriangles,
                 selectedRef,
                 selectedOriginalMotionPropsId,
-                grabTraceId,
                 objName,
                 resolvedBodyCapture)) {
             grabPreparationTransaction.rollback();
@@ -12227,21 +11350,6 @@ namespace rock
                 pinchPocketCandidate.meshExtents.maxExtentGameUnits,
                 pinchPocketCandidate.meshExtents.boundsVolumeCubicGameUnits,
                 g_rockConfig.rockGrabPinchMaxVolumeCubicGameUnits);
-        } else if (g_rockConfig.rockDebugGrabFrameLogging) {
-            ROCK_LOG_DEBUG(Hand,
-                "{} hand PINCH POCKET candidate rejected: reason={} gap={:.2f}gu dist={:.2f}gu extentsValid={} extents=({:.2f},{:.2f},{:.2f}) boundsVolume={:.2f}/{:.2f}gu^3 close={} bodies={}",
-                handName(),
-                pinchPocketCandidate.decision.reason,
-                pinchPocketCandidate.thumbIndexGapGameUnits,
-                pinchPocketCandidate.pocketToSurfaceDistanceGameUnits,
-                pinchPocketCandidate.meshExtents.valid ? "yes" : "no",
-                pinchPocketCandidate.meshExtents.minExtentGameUnits,
-                pinchPocketCandidate.meshExtents.middleExtentGameUnits,
-                pinchPocketCandidate.meshExtents.maxExtentGameUnits,
-                pinchPocketCandidate.meshExtents.boundsVolumeCubicGameUnits,
-                g_rockConfig.rockGrabPinchMaxVolumeCubicGameUnits,
-                (!sel.isFarSelection && !grabbedFromPullCatch) ? "yes" : "no",
-                preparedBodySet.acceptedCount());
         }
         if (sel.pinchCloseSelectionFallback && !pinchPocketCandidate.valid) {
             ROCK_LOG_DEBUG(Hand,
@@ -12408,10 +11516,8 @@ namespace rock
                 .bodyFrame = &bodyFrameCapture,
                 .seatCapture = &seatCapture,
                 .surface = &surfaceEvidence,
-                .pivotEvidence = &pivotEvidence,
                 .objectBodyId = objectBodyId,
                 .traceId = grabTraceId,
-                .objectName = &objName,
                 .rollback = seatRollback,
             };
             if (!commitFrozenGrabAuthority(frozenCommitInput)) {
@@ -12420,15 +11526,10 @@ namespace rock
 
             const GrabPostFreezeInput postFreezeInput{
                 .handWorldTransform = &handWorldTransform,
-                .proxy = &proxyPreparation,
                 .meshCapture = &meshCaptureSetup,
                 .mesh = &meshExtraction,
                 .bodyFrame = &bodyFrameCapture,
-                .seatCapture = &seatCapture,
                 .surface = &surfaceEvidence,
-                .rootNode = rootNode,
-                .collidableNode = collidableNode,
-                .meshSourceNode = meshSourceNode,
                 .objectBodyId = objectBodyId,
                 .bodyBoneColliders = bodyBoneColliders,
                 .sharedContext = &sharedContext,
@@ -12635,8 +11736,6 @@ namespace rock
         held_scene_presentation::publishHeldBodies(
             _isLeft,
             sceneRegistration);
-        held_render_trace::registerRoot(_isLeft, sceneRegistration.traceId,
-            _savedObjectState.refr ? _savedObjectState.refr->Get3D() : nullptr);
         if (sceneRegistration.count == 0) {
             ROCK_LOG_WARN(Hand,
                 "{} hand GRAB could not publish held-body scene presentation identity: trace={} heldBodies={}",
@@ -12921,7 +12020,6 @@ namespace rock
         _grabFrame.looseObjectSharedProxyCorrection = transform_math::composeTransforms(
             transform_math::invertTransform(physicalNi), targetNi);
         if (!_grabFrame.looseObjectSharedPeerTrace) {
-            _grabFrame.looseObjectVisualTraceElapsed = 0.5f;
             ROCK_LOG_INFO(Hand, "{} hand loose two-hand pivot started ref={:08X} primary={} separation={:.3f}",
                 handName(), getHeldRef()->GetFormID(), primary.handName(), separation);
         }
@@ -13155,103 +12253,6 @@ namespace rock
         return true;
     }
 
-    void Hand::logHeldRenderClockProbe(
-        const HeldDriveUpdate& driveUpdate,
-        const RE::NiTransform& rawHandWorld,
-        const RE::NiTransform& heldVisualNodeWorld,
-        bool heldVisualNodeFromPresentedPose,
-        float deltaTime)
-    {
-        /*
-         * Per-game-frame render-clock witness (2026-09-02 stick-locomotion
-         * stutter hunt). Every earlier probe measured physics-side state; the
-         * player compares the rendered hand and held mesh against the room.
-         * This row records, for one game frame: the room basis and its step,
-         * the raw hand, the drive target, the pose the scene writer will
-         * present, the hand ROCK published to FRIK, the residual riding on the
-         * presented pose, and the engine physics schedule that will consume
-         * the same frame. Offline: room-relative steps of presentedNode and
-         * visualHand are the perceived jitter; residualStep is the motor
-         * ripple; dtGame/havokRaw is the velocity-pulse ratio;
-         * nodeVsPrevPresented verifies the writer landed last frame's pose.
-         */
-        const auto& runtime = runtime_state::currentFrame();
-        const auto physicsTiming = havok_physics_timing::sampleCurrentTiming();
-        const bool sameTrace =
-            _hasHeldRenderClockProbeSample && _heldRenderClockProbeTraceId == _grabFrame.traceId;
-
-        RE::NiTransform residual = makeIdentityTransform();
-        if (driveUpdate.hasPresentedBodyWorld) {
-            residual = multiplyTransforms(invertTransform(driveUpdate.desiredBodyWorld), driveUpdate.presentedBodyWorld);
-        }
-        const float residualGameUnits = driveUpdate.hasPresentedBodyWorld ?
-            pointDistanceGameUnits(residual.translate, RE::NiPoint3{}) :
-            -1.0f;
-        const float residualDegrees = driveUpdate.hasPresentedBodyWorld ?
-            rotationDeltaDegrees(residual.rotate, makeIdentityTransform().rotate) :
-            -1.0f;
-        float residualStepGameUnits = -1.0f;
-        float residualStepDegrees = -1.0f;
-        float nodeVsPrevPresentedGameUnits = -1.0f;
-        if (sameTrace) {
-            if (driveUpdate.hasPresentedBodyWorld) {
-                residualStepGameUnits = pointDistanceGameUnits(residual.translate, _heldRenderClockProbeResidual.translate);
-                residualStepDegrees = rotationDeltaDegrees(residual.rotate, _heldRenderClockProbeResidual.rotate);
-            }
-            if (_grabFrame.heldNode) {
-                nodeVsPrevPresentedGameUnits =
-                    pointDistanceGameUnits(_grabFrame.heldNode->world.translate, _heldRenderClockProbePresentedNode.translate);
-            }
-        }
-        const RE::NiPoint3 nodeNow = _grabFrame.heldNode ? _grabFrame.heldNode->world.translate : RE::NiPoint3{};
-        const float roomStepGameUnits = pointDistanceGameUnits(runtime.playerSpace.deltaGameUnits, RE::NiPoint3{});
-
-        ROCK_LOG_DEBUG(Hand,
-            "{} HELD_RENDER_CLOCK: trace={} frame={} dtGame={:.6f} havokRaw={:.6f} havokSub={:.6f} substeps={} room=({:.3f},{:.3f},{:.3f}) roomStep={:.4f} moving={} rawHand=({:.3f},{:.3f},{:.3f}) target=({:.3f},{:.3f},{:.3f}) presented={} presentedNode=({:.3f},{:.3f},{:.3f}) nodeNow=({:.3f},{:.3f},{:.3f}) nodeVsPrevPresented={:.4f}gu visualHand=({:.3f},{:.3f},{:.3f}) residual={:.4f}gu/{:.3f}deg residualStep={:.4f}gu/{:.3f}deg",
-            handName(),
-            _grabFrame.traceId,
-            runtime.frameIndex,
-            deltaTime,
-            physicsTiming.rawDeltaSeconds,
-            physicsTiming.substepDeltaSeconds,
-            physicsTiming.substepCount,
-            runtime.playerSpace.world.translate.x,
-            runtime.playerSpace.world.translate.y,
-            runtime.playerSpace.world.translate.z,
-            roomStepGameUnits,
-            runtime.playerSpace.moving ? "yes" : "no",
-            rawHandWorld.translate.x,
-            rawHandWorld.translate.y,
-            rawHandWorld.translate.z,
-            driveUpdate.desiredBodyWorld.translate.x,
-            driveUpdate.desiredBodyWorld.translate.y,
-            driveUpdate.desiredBodyWorld.translate.z,
-            heldVisualNodeFromPresentedPose ? "yes" : "no",
-            heldVisualNodeWorld.translate.x,
-            heldVisualNodeWorld.translate.y,
-            heldVisualNodeWorld.translate.z,
-            nodeNow.x,
-            nodeNow.y,
-            nodeNow.z,
-            nodeVsPrevPresentedGameUnits,
-            _grabVisualHandTransform.translate.x,
-            _grabVisualHandTransform.translate.y,
-            _grabVisualHandTransform.translate.z,
-            residualGameUnits,
-            residualDegrees,
-            residualStepGameUnits,
-            residualStepDegrees);
-
-        if (heldVisualNodeFromPresentedPose) {
-            _heldRenderClockProbeTraceId = _grabFrame.traceId;
-            _heldRenderClockProbePresentedNode = heldVisualNodeWorld;
-            _heldRenderClockProbeResidual = residual;
-            _hasHeldRenderClockProbeSample = true;
-        } else {
-            _hasHeldRenderClockProbeSample = false;
-        }
-    }
-
     bool Hand::updateHeldVisualPresentation(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float deltaTime,
@@ -13259,7 +12260,6 @@ namespace rock
         const GrabReleaseContext& releaseContext,
         bool& outConvergingAcquisitionPhase)
     {
-        logGrabMeshContactProbe(handWorldTransform, driveUpdate);
         const float pivotTrackingErrorGameUnits = driveUpdate.pivotTrackingErrorGameUnits;
         const bool hasPivotTrackingError = driveUpdate.hasPivotTrackingError;
         const bool heldMotorContactSoftening = driveUpdate.heldMotorContactSoftening;
@@ -13303,18 +12303,6 @@ namespace rock
                 .contactPatchSampleCount = _grabFrame.contactPatchSampleCount,
                 .contactSupportShape = heldAngularAuthority.contactSupportShape,
             });
-        if (_grabFrame.looseObjectSharedPeerTrace && g_rockConfig.rockDebugGrabFrameLogging) {
-            _grabFrame.looseObjectVisualTraceElapsed += (std::max)(0.0f, deltaTime);
-            if (_grabFrame.looseObjectVisualTraceElapsed >= 0.5f) {
-                _grabFrame.looseObjectVisualTraceElapsed = 0.0f;
-                ROCK_LOG_INFO(Hand, "Shared grip seat: grab={} hand={} primary={} phase={} publish={} gate={} settled={} acquisition={} tracking={:.3f} relationT=({:.3f},{:.3f},{:.3f}) presented={}",
-                    _grabFrame.traceId, handName(), _grabFrame.looseObjectSharedPrimaryIsLeft ? "left" : "right",
-                    grab_three_phase::phaseName(_grabAcquisitionPhase), visualPublishDecision.apply, visualPublishDecision.reason,
-                    _grabFrame.seat.hasSettledVisualHandRelation, _grabOffsetAcquisition.active, pivotTrackingErrorGameUnits,
-                    _grabFrame.rawHandSpace.translate.x, _grabFrame.rawHandSpace.translate.y, _grabFrame.rawHandSpace.translate.z,
-                    driveUpdate.hasPresentedBodyWorld);
-            }
-        }
         // A transferred grip already owns the hand. Its small constraint-seat
         // correction must carry that hand with the presented weapon, rather than
         // returning the arm to the controller until acquisition finishes.
@@ -13448,14 +12436,6 @@ namespace rock
                     if (!_grabOffsetAcquisition.active && _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld)
                         _grabFrame.equippedWeaponTransfer = false;
                 }
-                if (g_rockConfig.rockDebugGrabFrameLogging) {
-                    logHeldRenderClockProbe(
-                        driveUpdate,
-                        handWorldTransform,
-                        heldVisualNodeWorld,
-                        heldVisualNodeFromPresentedPose,
-                        deltaTime);
-                }
 
                 ROCK_LOG_SAMPLE_DEBUG(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
@@ -13495,21 +12475,6 @@ namespace rock
                 _grabVisualHandLerpDurationSeconds = 0.0f;
             }
         } else {
-            if (_grabFrame.hasTelemetryCapture && g_rockConfig.rockDebugGrabFrameLogging &&
-                (_grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld || acquisitionVisualEligible)) {
-                ROCK_LOG_SAMPLE_DEBUG(Hand,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "{} GRAB VISUAL HAND HELD: phase={} authority={} shape={} scale={:.2f} positionOnly={} normalTrusted={} seated={} contactSoftening={}",
-                    handName(),
-                    grab_three_phase::phaseName(_grabAcquisitionPhase),
-                    visualPublishDecision.reason,
-                    grab_motion_controller::contactSupportShapeName(heldAngularAuthority.contactSupportShape),
-                    heldAngularAuthority.authorityScale,
-                    _grabFrame.pivotAuthority.positionOnly ? "yes" : "no",
-                    _grabFrame.pivotAuthority.normalTrusted ? "yes" : "no",
-                    _grabFrame.seat.hasPivotReacquire ? "yes" : "no",
-                    heldMotorContactSoftening ? "yes" : "no");
-            }
             _grabVisualDeviationExceededSeconds = 0.0f;
             _grabVisualDeviationHistory = {};
             _grabVisualDeviationHistoryCount = 0;
@@ -14167,139 +13132,7 @@ namespace rock
         }
     }
 
-    void Hand::logGrabMeshContactProbe(const RE::NiTransform& rawHandWorld, const HeldDriveUpdate& driveUpdate)
-    {
-        // One measurement per settled grab, behind the existing diagnostic gate.
-        // Read the scene hand and scene mesh together: the queued presentation
-        // belongs to the next scene write and cannot witness a rendered gap.
-        if (!g_rockConfig.rockDebugGrabFrameLogging || !_grabFrame.hasTelemetryCapture ||
-            _grabMeshContactProbeTraceId == _grabFrame.traceId || _grabStartTime < 1.0f ||
-            _grabAcquisitionPhase != grab_three_phase::AcquisitionPhase::TouchHeld ||
-            _grabFingerLocalTransformFinalizePending) {
-            return;
-        }
-        _grabMeshContactProbeTraceId = _grabFrame.traceId;
-        const auto started = std::chrono::steady_clock::now();
-        const auto& triangles = _grabFrame.localMeshTriangles;
-        constexpr std::size_t kMaxProbeTriangles = 4096;
-        const char* unavailable = nullptr;
-        if (triangles.empty()) {
-            unavailable = "noCachedMesh";
-        } else if (triangles.size() > kMaxProbeTriangles) {
-            unavailable = "triangleBudgetExceeded";
-        } else if (!_grabFrame.heldNode || !isUsableGrabVisualTransform(_grabFrame.heldNode->world) ||
-                   !isUsableGrabVisualTransform(rawHandWorld) ||
-                   !isUsableGrabVisualTransform(driveUpdate.desiredObjectWorld)) {
-            unavailable = "invalidMeshOrHandFrame";
-        }
-        DirectSkeletonBoneReader reader;
-        DirectSkeletonBoneSnapshot bones{};
-        root_flattened_finger_skeleton_runtime::Snapshot fingers{};
-        const DirectSkeletonBoneEntry* sceneHand = nullptr;
-        if (!unavailable) {
-            if (!reader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
-                    skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
-                    SkeletonBoneCaptureSpace::Rendered, bones) ||
-                !root_flattened_finger_skeleton_runtime::buildFingerSkeletonSnapshot(bones, _isLeft, fingers)) {
-                unavailable = "renderedSkeletonUnavailable";
-            } else {
-                const std::string_view handBone = _isLeft ? "LArm_Hand" : "RArm_Hand";
-                for (const auto& bone : bones.bones) {
-                    if (bone.name == handBone && isUsableGrabVisualTransform(bone.world)) {
-                        sceneHand = &bone;
-                        break;
-                    }
-                }
-                if (!sceneHand) {
-                    unavailable = "renderedHandUnavailable";
-                }
-            }
-        }
-        if (unavailable) {
-            ROCK_LOG_DEBUG(Hand, "{} GRAB MESH CONTACT: trace={} unavailable={} triangles={}",
-                handName(), _grabFrame.traceId, unavailable, triangles.size());
-            return;
-        }
-
-        const auto sceneObjectWorld = _grabFrame.heldNode->world;
-        auto meshDistance = [&](const RE::NiPoint3& pointWorld, const RE::NiTransform& objectWorld) {
-            const auto pointLocal = transform_math::worldPointToLocal(objectWorld, pointWorld);
-            if (!grab_three_phase::isFinite(pointLocal)) {
-                return -1.0f;
-            }
-            float bestSquared = std::numeric_limits<float>::max();
-            for (const auto& triangle : triangles) {
-                float distanceSquared = 0.0f;
-                (void)closestPointOnTriangleToPoint(pointLocal,
-                    TriangleData{ triangle.v0, triangle.v1, triangle.v2 }, distanceSquared);
-                if (std::isfinite(distanceSquared) && distanceSquared >= 0.0f) {
-                    bestSquared = (std::min)(bestSquared, distanceSquared);
-                }
-            }
-            return bestSquared < std::numeric_limits<float>::max() ?
-                std::sqrt(bestSquared) * std::abs(objectWorld.scale) : -1.0f;
-        };
-        float targetPalmGap = -1.0f;
-        float scenePalmGap = -1.0f;
-        bool palmAvailable = false;
-        for (const auto& segment : _boneColliders.segmentColliderFrames()) {
-            if (segment.role != hand_collider_semantics::HandColliderRole::PalmFace ||
-                !segment.valid || !isUsableGrabVisualTransform(segment.target) ||
-                !std::isfinite(segment.radius) || segment.radius <= 0.0f) {
-                continue;
-            }
-            const auto scenePalm = transform_math::localPointToWorld(sceneHand->world,
-                transform_math::worldPointToLocal(rawHandWorld, segment.target.translate));
-            const float targetDistance = meshDistance(segment.target.translate, driveUpdate.desiredObjectWorld);
-            const float sceneDistance = meshDistance(scenePalm, sceneObjectWorld);
-            palmAvailable = targetDistance >= 0.0f && sceneDistance >= 0.0f;
-            if (palmAvailable) {
-                // Sphere clearance at the palm-face centre, not a signed
-                // penetration test of the entire palm capsule.
-                targetPalmGap = targetDistance - segment.radius;
-                scenePalmGap = sceneDistance - segment.radius * std::abs(sceneHand->world.scale / rawHandWorld.scale);
-            }
-            break;
-        }
-        std::array<float, 5> targetDistalDistances{};
-        std::array<float, 5> sceneDistalDistances{};
-        for (std::size_t finger = 0; finger < fingers.fingers.size(); ++finger) {
-            const auto sceneDistal = fingers.fingers[finger].points[2];
-            const auto targetDistal = transform_math::localPointToWorld(rawHandWorld,
-                transform_math::worldPointToLocal(sceneHand->world, sceneDistal));
-            targetDistalDistances[finger] = meshDistance(targetDistal, driveUpdate.desiredObjectWorld);
-            sceneDistalDistances[finger] = meshDistance(sceneDistal, sceneObjectWorld);
-        }
-        const auto targetGrip = transform_math::localPointToWorld(driveUpdate.desiredObjectWorld,
-            _grabFrame.gripEvidence.gripPointLocal);
-        const float pivotMeshDistance = meshDistance(targetGrip, driveUpdate.desiredObjectWorld);
-        const bool hasPriorPresented = _hasHeldRenderClockProbeSample && _heldRenderClockProbeTraceId == _grabFrame.traceId;
-        const auto& seat = _grabFrame.seat.diagnostics;
-        ROCK_LOG_DEBUG(Hand,
-            "{} GRAB MESH CONTACT: trace={} frame={} acquisition={} source={} synthetic={} triangles={} "
-            "pivotMesh={:.3f}gu palmAvailable={} palmSphereGap(target/scene)={:.3f}/{:.3f}gu "
-            "distalMeshTarget(T/I/M/R/P)=({:.3f},{:.3f},{:.3f},{:.3f},{:.3f})gu "
-            "distalMeshScene(T/I/M/R/P)=({:.3f},{:.3f},{:.3f},{:.3f},{:.3f})gu "
-            "fingerHits={} fingerPublished={} depthOffset={:.3f}gu backstop={:.3f}gu supportShift={:.3f}gu "
-            "published={} sceneHandToPublished={:.3f}gu/{:.3f}deg priorPresented={} sceneNodeToPriorPresented={:.3f}gu/{:.3f}deg us={}",
-            handName(), _grabFrame.traceId, runtime_state::currentFrame().frameIndex,
-            seat.acquisitionMode, _grabFrame.support.reason, _grabFrame.syntheticLooseWeaponPrimaryAttach,
-            triangles.size(), pivotMeshDistance, palmAvailable,
-            targetPalmGap, scenePalmGap,
-            targetDistalDistances[0], targetDistalDistances[1], targetDistalDistances[2], targetDistalDistances[3], targetDistalDistances[4],
-            sceneDistalDistances[0], sceneDistalDistances[1], sceneDistalDistances[2], sceneDistalDistances[3], sceneDistalDistances[4],
-            _grabFingerPose.hitCount, _grabFingerPosePublished, seat.depthOffsetGameUnits, seat.penetrationBackstopGameUnits,
-            _grabFrame.support.pivotShiftGameUnits, _hasLastPublishedGrabVisualHandTransform,
-            _hasLastPublishedGrabVisualHandTransform ? translationDeltaGameUnits(sceneHand->world, _lastPublishedGrabVisualHandTransform) : -1.0f,
-            _hasLastPublishedGrabVisualHandTransform ? rotationDeltaDegrees(sceneHand->world.rotate, _lastPublishedGrabVisualHandTransform.rotate) : -1.0f,
-            hasPriorPresented,
-            hasPriorPresented ? translationDeltaGameUnits(sceneObjectWorld, _heldRenderClockProbePresentedNode) : -1.0f,
-            hasPriorPresented ? rotationDeltaDegrees(sceneObjectWorld.rotate, _heldRenderClockProbePresentedNode.rotate) : -1.0f,
-            std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started).count());
-    }
-
     void Hand::finalizeHeldObjectUpdate(RE::hknpWorld* world,
-        const RE::NiTransform& handWorldTransform,
         float forceFadeInTime,
         const HeldDriveUpdate& driveUpdate)
     {
@@ -14308,7 +13141,6 @@ namespace rock
         const auto& activePivotBBodyLocalGame = driveUpdate.activePivotBBodyLocalGame;
         const char* proxyAuthoritySource = driveUpdate.proxyAuthoritySource;
         const char* heldMotorContactReason = driveUpdate.heldMotorContactReason;
-        const float pivotTrackingErrorGameUnits = driveUpdate.pivotTrackingErrorGameUnits;
         const float grabRotationErrorDegrees = driveUpdate.grabRotationErrorDegrees;
         const float authorityForceScale = driveUpdate.authorityForceScale;
         const float averageGrabDeviationGameUnits = driveUpdate.averageGrabDeviationGameUnits;
@@ -14343,143 +13175,8 @@ namespace rock
                 driveFailedFlushes = _grabAuthorityProxyFailedFlushes;
                 driveLastFlushDeltaSeconds = _grabAuthorityProxyLastFlushDeltaSeconds;
             }
-            RE::NiTransform liveHandBodyWorld{};
-            RE::NiTransform grabObjectBodyWorld{};
             RE::NiTransform grabDriveObjectWorld{};
-            RE::NiTransform motionObjectBodyWorld{};
-            const bool hasLiveHandBody =
-                _handBody.getBodyId().value != INVALID_BODY_ID && tryResolveLiveBodyWorldTransform(world, _handBody.getBodyId(), liveHandBodyWorld);
-            const bool hasGrabObjectBody = tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, grabObjectBodyWorld);
             const bool hasGrabDriveObject = tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, grabDriveObjectWorld);
-            const bool hasMotionObjectBody = tryResolveLiveBodyWorldTransform(world, _savedObjectState.bodyId, motionObjectBodyWorld);
-
-            if (g_rockConfig.rockDebugGrabFrameLogging) {
-                const RE::NiTransform desiredNodeWorldRaw = multiplyTransforms(handWorldTransform, _grabFrame.rawHandSpace);
-                const RE::NiTransform desiredBodyWorldRaw = multiplyTransforms(desiredNodeWorldRaw, _grabFrame.authority.bodyLocal);
-                const RE::NiTransform grabAuthorityBodyWorld = hasGrabObjectBody ? grabObjectBodyWorld : getGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId);
-                auto* ownerCell = _savedObjectState.refr ? _savedObjectState.refr->GetParentCell() : nullptr;
-                auto* heldBhkWorld = ownerCell ? ownerCell->GetbhkWorld() : nullptr;
-                auto* bodyCollisionObject = heldBhkWorld ? RE::bhkNPCollisionObject::Getbhk(heldBhkWorld, _savedObjectState.bodyId) : nullptr;
-                auto* ownerNode = bodyCollisionObject ? bodyCollisionObject->sceneObject : nullptr;
-                auto* hitNode = (_currentSelection.refr == _savedObjectState.refr) ? _currentSelection.hitNode : nullptr;
-                auto* rootNode = _savedObjectState.refr ? _savedObjectState.refr->Get3D() : nullptr;
-
-                struct NodeFrameMetrics
-                {
-                    RE::NiAVObject* node = nullptr;
-                    RE::NiTransform world = {};
-                    RE::NiTransform expectedWorld = {};
-                    RE::NiPoint3 finger = {};
-                    RE::NiPoint3 expectedFinger = {};
-                    float rotErrDeg = -1.0f;
-                    float posErrGameUnits = -1.0f;
-                    bool hasCollisionObject = false;
-                    bool ownsBodyCollisionObject = false;
-                };
-
-                const auto captureNodeMetrics = [&](RE::NiAVObject* node, const RE::NiTransform& bodyLocalTransform) {
-                    NodeFrameMetrics metrics{};
-                    metrics.node = node;
-                    metrics.world = node ? node->world : grabAuthorityBodyWorld;
-                    metrics.expectedWorld = node ? deriveNodeWorldFromBodyWorld(grabAuthorityBodyWorld, bodyLocalTransform) : grabAuthorityBodyWorld;
-                    metrics.finger = getMatrixColumn(metrics.world.rotate, 0);
-                    metrics.expectedFinger = getMatrixColumn(metrics.expectedWorld.rotate, 0);
-                    if (node) {
-                        metrics.rotErrDeg = rotationDeltaDegrees(metrics.world.rotate, metrics.expectedWorld.rotate);
-                        metrics.posErrGameUnits = translationDeltaGameUnits(metrics.world, metrics.expectedWorld);
-                        auto* nodeCollisionObject = node->collisionObject.get();
-                        metrics.hasCollisionObject = (nodeCollisionObject != nullptr);
-                        metrics.ownsBodyCollisionObject = (nodeCollisionObject != nullptr && nodeCollisionObject == bodyCollisionObject);
-                    }
-                    return metrics;
-                };
-
-                const NodeFrameMetrics ownerMetrics = captureNodeMetrics(ownerNode, _grabFrame.ownerBodyLocal);
-                const NodeFrameMetrics hitMetrics = captureNodeMetrics(hitNode, _grabFrame.authority.bodyLocal);
-                const NodeFrameMetrics heldMetrics = captureNodeMetrics(_grabFrame.heldNode, _grabFrame.authority.bodyLocal);
-                const NodeFrameMetrics rootMetrics = captureNodeMetrics(rootNode, _grabFrame.rootBodyLocal);
-
-                const RE::NiPoint3 rawFinger = getMatrixColumn(handWorldTransform.rotate, 2);
-                const RE::NiPoint3 desiredRawFinger = getMatrixColumn(desiredBodyWorldRaw.rotate, 0);
-                const RE::NiPoint3 bodyFinger = getMatrixColumn(grabAuthorityBodyWorld.rotate, 0);
-                const float motionDiagVsGrabRot =
-                    (hasMotionObjectBody && hasGrabObjectBody) ? rotationDeltaDegrees(motionObjectBodyWorld.rotate, grabObjectBodyWorld.rotate) : -1.0f;
-                const float motionDiagVsGrabPos =
-                    (hasMotionObjectBody && hasGrabObjectBody) ? translationDeltaGameUnits(motionObjectBodyWorld, grabObjectBodyWorld) : -1.0f;
-                const float rawRowMax = max3(axisDeltaDegrees(getMatrixRow(grabAuthorityBodyWorld.rotate, 0), getMatrixRow(desiredBodyWorldRaw.rotate, 0)),
-                    axisDeltaDegrees(getMatrixRow(grabAuthorityBodyWorld.rotate, 1), getMatrixRow(desiredBodyWorldRaw.rotate, 1)),
-                    axisDeltaDegrees(getMatrixRow(grabAuthorityBodyWorld.rotate, 2), getMatrixRow(desiredBodyWorldRaw.rotate, 2)));
-                const float rawColMax = max3(axisDeltaDegrees(getMatrixColumn(grabAuthorityBodyWorld.rotate, 0), getMatrixColumn(desiredBodyWorldRaw.rotate, 0)),
-                    axisDeltaDegrees(getMatrixColumn(grabAuthorityBodyWorld.rotate, 1), getMatrixColumn(desiredBodyWorldRaw.rotate, 1)),
-                    axisDeltaDegrees(getMatrixColumn(grabAuthorityBodyWorld.rotate, 2), getMatrixColumn(desiredBodyWorldRaw.rotate, 2)));
-
-                ROCK_LOG_DEBUG(Hand,
-                    "{} GRAB FRAME HOLD: hasLiveHandBody={} bodyVsRaw={:.2f}deg "
-                    "ownerErr={:.2f}deg/{:.2f}gu hitErr={:.2f}deg/{:.2f}gu "
-                    "heldErr={:.2f}deg/{:.2f}gu rootErr={:.2f}deg/{:.2f}gu "
-                    "rawFinger=({:.3f},{:.3f},{:.3f}) bodyFinger=({:.3f},{:.3f},{:.3f}) desiredRawFinger=({:.3f},{:.3f},{:.3f})",
-                    handName(), hasLiveHandBody ? "yes" : "no", rotationDeltaDegrees(grabAuthorityBodyWorld.rotate, desiredBodyWorldRaw.rotate),
-                    ownerMetrics.rotErrDeg, ownerMetrics.posErrGameUnits, hitMetrics.rotErrDeg, hitMetrics.posErrGameUnits, heldMetrics.rotErrDeg, heldMetrics.posErrGameUnits,
-                    rootMetrics.rotErrDeg, rootMetrics.posErrGameUnits, rawFinger.x, rawFinger.y, rawFinger.z,
-                    bodyFinger.x, bodyFinger.y, bodyFinger.z, desiredRawFinger.x, desiredRawFinger.y, desiredRawFinger.z);
-
-                ROCK_LOG_TRACE(Hand,
-                    "{} GRAB FRAME NODES: bodyColl={:p} "
-                    "owner='{}'({:p}) hasCol={} ownsBodyCol={} "
-                    "hit='{}'({:p}) hasCol={} ownsBodyCol={} "
-                    "held='{}'({:p}) hasCol={} ownsBodyCol={} "
-                    "root='{}'({:p}) hasCol={} ownsBodyCol={} "
-                    "sameOwnerHeld={} sameHitHeld={} sameRootHeld={}",
-                    handName(), static_cast<const void*>(bodyCollisionObject), nodeDebugName(ownerMetrics.node), static_cast<const void*>(ownerMetrics.node),
-                    ownerMetrics.hasCollisionObject ? "yes" : "no", ownerMetrics.ownsBodyCollisionObject ? "yes" : "no", nodeDebugName(hitMetrics.node),
-                    static_cast<const void*>(hitMetrics.node), hitMetrics.hasCollisionObject ? "yes" : "no", hitMetrics.ownsBodyCollisionObject ? "yes" : "no",
-                    nodeDebugName(heldMetrics.node), static_cast<const void*>(heldMetrics.node), heldMetrics.hasCollisionObject ? "yes" : "no",
-                    heldMetrics.ownsBodyCollisionObject ? "yes" : "no", nodeDebugName(rootMetrics.node), static_cast<const void*>(rootMetrics.node),
-                    rootMetrics.hasCollisionObject ? "yes" : "no", rootMetrics.ownsBodyCollisionObject ? "yes" : "no", ownerMetrics.node == heldMetrics.node ? "yes" : "no",
-                    hitMetrics.node == heldMetrics.node ? "yes" : "no", rootMetrics.node == heldMetrics.node ? "yes" : "no");
-
-                ROCK_LOG_TRACE(Hand,
-                    "{} GRAB FRAME VISUALS: desiredRawFinger=({:.3f},{:.3f},{:.3f}) bodyFinger=({:.3f},{:.3f},{:.3f}) "
-                    "ownerFinger=({:.3f},{:.3f},{:.3f}) ownerExpectedFinger=({:.3f},{:.3f},{:.3f}) "
-                    "hitFinger=({:.3f},{:.3f},{:.3f}) hitExpectedFinger=({:.3f},{:.3f},{:.3f}) "
-                    "heldFinger=({:.3f},{:.3f},{:.3f}) heldExpectedFinger=({:.3f},{:.3f},{:.3f}) "
-                    "rootFinger=({:.3f},{:.3f},{:.3f}) rootExpectedFinger=({:.3f},{:.3f},{:.3f})",
-                    handName(), desiredRawFinger.x, desiredRawFinger.y, desiredRawFinger.z, bodyFinger.x, bodyFinger.y, bodyFinger.z, ownerMetrics.finger.x, ownerMetrics.finger.y,
-                    ownerMetrics.finger.z, ownerMetrics.expectedFinger.x,
-                    ownerMetrics.expectedFinger.y, ownerMetrics.expectedFinger.z, hitMetrics.finger.x, hitMetrics.finger.y, hitMetrics.finger.z, hitMetrics.expectedFinger.x,
-                    hitMetrics.expectedFinger.y, hitMetrics.expectedFinger.z, heldMetrics.finger.x, heldMetrics.finger.y, heldMetrics.finger.z, heldMetrics.expectedFinger.x,
-                    heldMetrics.expectedFinger.y, heldMetrics.expectedFinger.z, rootMetrics.finger.x, rootMetrics.finger.y, rootMetrics.finger.z, rootMetrics.expectedFinger.x,
-                    rootMetrics.expectedFinger.y, rootMetrics.expectedFinger.z);
-
-                const auto massSummary = readHeldBodyMassSummary(
-                    world,
-                    _savedObjectState.bodyId,
-                    _heldBodyIds,
-                    _heldDriveDecision.includeConnectedMass);
-                ROCK_LOG_TRACE(Hand,
-                    "{} GRAB ANGULAR PROBE: rawAxisErr(rowMax={:.2f} colMax={:.2f}) driveErr=({:.2f}gu,{:.2f}deg) mass={:.2f} primaryMass={:.2f} massBodies={} motions={} "
-                    "motionDiagVsGrab={:.2f}deg/{:.2f}gu fade={:.2f} fadeEnabled={} fadeReason={} drive={} constraint={} queued={} flushed={} failedFlushes={} lastDt={:.6f}",
-                    handName(),
-                    rawRowMax,
-                    rawColMax,
-                    pivotTrackingErrorGameUnits,
-                    grabRotationErrorDegrees,
-                    massSummary.motorMass(),
-                    massSummary.primaryMass,
-                    massSummary.sampledBodies,
-                    massSummary.uniqueMotions,
-                    motionDiagVsGrabRot,
-                    motionDiagVsGrabPos,
-                    grabFadeFactor,
-                    _grabFrame.fadeInGrabConstraint ? "yes" : "no",
-                    _grabFrame.motorFadeReason,
-                    kHeldObjectDriveName,
-                    _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu,
-                    driveQueuedTargets,
-                    driveFlushedTargets,
-                    driveFailedFlushes,
-                    driveLastFlushDeltaSeconds);
-            }
 
             const bool hasGrabPivotFrame = hasGrabDriveObject;
             const RE::NiPoint3 pivotAWorld = desiredTargetPointWorld;
@@ -14633,7 +13330,7 @@ namespace rock
             deltaTime,
             driveUpdate,
             convergingAcquisitionPhase);
-        finalizeHeldObjectUpdate(world, handWorldTransform, forceFadeInTime, driveUpdate);
+        finalizeHeldObjectUpdate(world, forceFadeInTime, driveUpdate);
     }
 
     void Hand::flushPendingCustomGrabAuthority(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
@@ -14821,417 +13518,6 @@ namespace rock
                             std::fabs(_activeConstraint.angularMotor->minForce),
                             std::fabs(_activeConstraint.angularMotor->maxForce));
                     }
-                    _ragdollAngularProbePreSolve = {};
-                    if (angularDriveOk && _activeConstraint.constraintData) {
-                        RE::NiTransform bodyWorldBeforeSolve{};
-                        if (tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, bodyWorldBeforeSolve)) {
-                            const auto* constraintData = static_cast<const char*>(_activeConstraint.constraintData);
-                            const auto* targetBRca = reinterpret_cast<const float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
-                            const auto* transformARotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_A_COL0);
-                            const auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
-                            const auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
-                            const RE::NiTransform desiredBodyTransformHandSpace =
-                                grab_frame_math::objectInGeneratedProxyLocalSpace(pending.proxyWorld, desiredBodyWorld);
-                            const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
-                            const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
-                            const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
-                            const RE::NiMatrix3 transformAAsHkColumns = matrixFromHkColumns(transformARotation);
-                            const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
-                            std::array<float, 12> transformARaw{};
-                            std::array<float, 12> transformBRaw{};
-                            std::array<float, 12> targetBRcaRaw{};
-                            std::memcpy(transformARaw.data(), transformARotation, sizeof(float) * transformARaw.size());
-                            std::memcpy(transformBRaw.data(), transformBRotation, sizeof(float) * transformBRaw.size());
-                            std::memcpy(targetBRcaRaw.data(), targetBRca, sizeof(float) * targetBRcaRaw.size());
-                            float transformARawMaxDelta = 0.0f;
-                            float transformBRawMaxDelta = 0.0f;
-                            float targetBRcaRawMaxDelta = 0.0f;
-                            if (_hasLastGrabProbeAtomBytes && _lastGrabProbeAtomTraceId == _grabFrame.traceId) {
-                                transformARawMaxDelta = maxAbsDelta(transformARaw, _lastGrabProbeTransformARaw);
-                                transformBRawMaxDelta = maxAbsDelta(transformBRaw, _lastGrabProbeTransformBRaw);
-                                targetBRcaRawMaxDelta = maxAbsDelta(targetBRcaRaw, _lastGrabProbeTargetBRcaRaw);
-                            }
-                            _lastGrabProbeTransformARaw = transformARaw;
-                            _lastGrabProbeTransformBRaw = transformBRaw;
-                            _lastGrabProbeTargetBRcaRaw = targetBRcaRaw;
-                            _lastGrabProbeAtomTraceId = _grabFrame.traceId;
-                            _hasLastGrabProbeAtomBytes = true;
-
-                            RE::NiTransform bodyAWorldBeforeSolve{};
-                            bool bodyAWorldBeforeSolveOk = false;
-                            if (proxyReadbackBetweenOk) {
-                                bodyAWorldBeforeSolve = proxyReadbackBetween;
-                                bodyAWorldBeforeSolveOk = true;
-                            } else {
-                                bodyAWorldBeforeSolveOk = tryResolveLiveBodyWorldTransform(world, proxyBodyId, bodyAWorldBeforeSolve);
-                            }
-                            const RE::NiPoint3 targetAnchorAWorld =
-                                generatedProxyLocalPointToWorld(pending.proxyWorld, _grabFrame.authority.pivotAHandBodyLocalGame);
-                            RE::NiTransform targetRelationAWorld = makeGeneratedProxyAuthorityRelationFrame(pending.proxyWorld);
-                            targetRelationAWorld.translate = targetAnchorAWorld;
-                            RE::NiTransform targetConstraintAWorld =
-                                transform_math::composeTransforms(pending.proxyWorld, rotationOnlyTransform(transformAAsHkColumns));
-                            targetConstraintAWorld.translate = targetAnchorAWorld;
-                            RE::NiTransform liveRelationAWorld = targetRelationAWorld;
-                            RE::NiTransform liveConstraintAWorld = targetConstraintAWorld;
-                            float targetProxyToLiveProxyDeltaGameUnits = -1.0f;
-                            float targetProxyToLiveProxyDeltaDegrees = -1.0f;
-                            float targetRelationAToLiveRelationADegrees = -1.0f;
-                            float targetConstraintAToLiveConstraintADegrees = -1.0f;
-                            float targetRelationAToTargetConstraintADegrees =
-                                rotationDeltaDegrees(targetRelationAWorld.rotate, targetConstraintAWorld.rotate);
-                            float liveRelationAToLiveConstraintADegrees = targetRelationAToTargetConstraintADegrees;
-                            if (bodyAWorldBeforeSolveOk) {
-                                const RE::NiPoint3 liveAnchorAWorld =
-                                    generatedProxyLocalPointToWorld(bodyAWorldBeforeSolve, _grabFrame.authority.pivotAHandBodyLocalGame);
-                                liveRelationAWorld = makeGeneratedProxyAuthorityRelationFrame(bodyAWorldBeforeSolve);
-                                liveRelationAWorld.translate = liveAnchorAWorld;
-                                liveConstraintAWorld =
-                                    transform_math::composeTransforms(bodyAWorldBeforeSolve, rotationOnlyTransform(transformAAsHkColumns));
-                                liveConstraintAWorld.translate = liveAnchorAWorld;
-                                targetProxyToLiveProxyDeltaGameUnits =
-                                    pointDistanceGameUnits(pending.proxyWorld.translate, bodyAWorldBeforeSolve.translate);
-                                targetProxyToLiveProxyDeltaDegrees =
-                                    rotationDeltaDegrees(pending.proxyWorld.rotate, bodyAWorldBeforeSolve.rotate);
-                                targetRelationAToLiveRelationADegrees =
-                                    rotationDeltaDegrees(targetRelationAWorld.rotate, liveRelationAWorld.rotate);
-                                targetConstraintAToLiveConstraintADegrees =
-                                    rotationDeltaDegrees(targetConstraintAWorld.rotate, liveConstraintAWorld.rotate);
-                                liveRelationAToLiveConstraintADegrees =
-                                    rotationDeltaDegrees(liveRelationAWorld.rotate, liveConstraintAWorld.rotate);
-                            }
-
-                            float ragdollBRcaRowsErrorDegrees = -1.0f;
-                            float ragdollBRcaColumnsErrorDegrees = -1.0f;
-                            float ragdollARcbRowsInverseErrorDegrees = -1.0f;
-                            float ragdollARcbColumnsInverseErrorDegrees = -1.0f;
-                            const float targetToHiggsRelationDegrees =
-                                rotationDeltaDegrees(targetAsHkRows, desiredBodyToHandSpace.rotate);
-                            const float transformBFrozenDeltaDegrees =
-                                rotationDeltaDegrees(transformBAsHkColumns, desiredBodyToHandSpace.rotate);
-                            const RE::NiPoint3 relationPivotB =
-                                grab_constraint_math::computeHiggsTransformBTranslationGame(
-                                    desiredBodyTransformHandSpace,
-                                    _grabFrame.authority.pivotAHandBodyLocalGame);
-                            const RE::NiPoint3 activeTransformBTranslationGame{
-                                transformBTranslation[0] * havokToGameScale(),
-                                transformBTranslation[1] * havokToGameScale(),
-                                transformBTranslation[2] * havokToGameScale(),
-                            };
-                            const float pivotBRelationDeltaGameUnits =
-                                pointDistanceGameUnits(activeTransformBTranslationGame, relationPivotB);
-                            const RE::NiTransform proxyInBodyBeforeTargetWrite =
-                                grab_constraint_math::proxyInBodyFromBodyInProxy(desiredBodyTransformHandSpace);
-                            const RE::NiTransform relationInverseBodyWorld = reconstructBodyWorldFromProxyInBody(
-                                pending.proxyWorld,
-                                proxyInBodyBeforeTargetWrite.rotate,
-                                relationPivotB,
-                                _grabFrame.authority.pivotAHandBodyLocalGame);
-                            const RE::NiTransform atomRowsBodyWorld = reconstructBodyWorldFromProxyInBody(
-                                pending.proxyWorld,
-                                targetAsHkRows,
-                                activeTransformBTranslationGame,
-                                _grabFrame.authority.pivotAHandBodyLocalGame);
-                            const RE::NiTransform solverEffectiveBodyWorld = reconstructSolverEffectiveBodyWorld(
-                                pending.proxyWorld,
-                                transformAAsHkColumns,
-                                transformBAsHkColumns,
-                                targetAsHkRows,
-                                activeTransformBTranslationGame,
-                                targetAnchorAWorld,
-                                desiredBodyWorld.scale);
-                            const RE::NiTransform solverEffectiveLiveAWorld = reconstructSolverEffectiveBodyWorld(
-                                bodyAWorldBeforeSolveOk ? bodyAWorldBeforeSolve : pending.proxyWorld,
-                                transformAAsHkColumns,
-                                transformBAsHkColumns,
-                                targetAsHkRows,
-                                activeTransformBTranslationGame,
-                                liveConstraintAWorld.translate,
-                                desiredBodyWorld.scale);
-                            const float relationInverseBodyDeltaGameUnits =
-                                translationDeltaGameUnits(relationInverseBodyWorld, desiredBodyWorld);
-                            const float relationInverseBodyDeltaDegrees =
-                                rotationDeltaDegrees(relationInverseBodyWorld.rotate, desiredBodyWorld.rotate);
-                            const float atomRowsBodyDeltaGameUnits =
-                                translationDeltaGameUnits(atomRowsBodyWorld, desiredBodyWorld);
-                            const float atomRowsBodyDeltaDegrees =
-                                rotationDeltaDegrees(atomRowsBodyWorld.rotate, desiredBodyWorld.rotate);
-                            const float atomRowsToRelationInverseDegrees =
-                                rotationDeltaDegrees(atomRowsBodyWorld.rotate, relationInverseBodyWorld.rotate);
-                            const float targetRowsToProxyInBodyDegrees =
-                                rotationDeltaDegrees(targetAsHkRows, proxyInBodyBeforeTargetWrite.rotate);
-                            const float solverEffectiveBodyDeltaGameUnits =
-                                translationDeltaGameUnits(solverEffectiveBodyWorld, desiredBodyWorld);
-                            const float solverEffectiveBodyDeltaDegrees =
-                                rotationDeltaDegrees(solverEffectiveBodyWorld.rotate, desiredBodyWorld.rotate);
-                            const float solverEffectiveToAtomDegrees =
-                                rotationDeltaDegrees(solverEffectiveBodyWorld.rotate, atomRowsBodyWorld.rotate);
-                            const float solverEffectiveLiveABodyDeltaDegrees =
-                                rotationDeltaDegrees(solverEffectiveLiveAWorld.rotate, desiredBodyWorld.rotate);
-                            const float solverEffectiveTargetALiveADeltaDegrees =
-                                rotationDeltaDegrees(solverEffectiveBodyWorld.rotate, solverEffectiveLiveAWorld.rotate);
-                            float transformAPivotRoundTripDeltaGameUnits = -1.0f;
-                            RE::NiPoint3 activePivotAWorld{};
-                            if (resolveActiveGrabAuthorityPivotAWorld(pending.proxyWorld, activePivotAWorld)) {
-                                const RE::NiPoint3 roundTripPivotAProxyLocalGame =
-                                    grab_constraint_math::computeGeneratedProxyConstraintPivotLocalGame(pending.proxyWorld, activePivotAWorld);
-                                if (std::isfinite(roundTripPivotAProxyLocalGame.x) &&
-                                    std::isfinite(roundTripPivotAProxyLocalGame.y) &&
-                                    std::isfinite(roundTripPivotAProxyLocalGame.z)) {
-                                    transformAPivotRoundTripDeltaGameUnits =
-                                        pointDistanceGameUnits(_grabAuthorityPivotAProxyLocalGame, roundTripPivotAProxyLocalGame);
-                                }
-                            }
-                            if (bodyAWorldBeforeSolveOk) {
-                                const RE::NiMatrix3 constraintAWorldRotation =
-                                    multiplyTransforms(bodyAWorldBeforeSolve, rotationOnlyTransform(transformAAsHkColumns)).rotate;
-                                const RE::NiMatrix3 constraintBWorldRotation =
-                                    multiplyTransforms(bodyWorldBeforeSolve, rotationOnlyTransform(transformBAsHkColumns)).rotate;
-                                const RE::NiMatrix3 currentBRca = frameToFrameRotation(constraintBWorldRotation, constraintAWorldRotation);
-                                const RE::NiMatrix3 currentARcb = frameToFrameRotation(constraintAWorldRotation, constraintBWorldRotation);
-                                const RE::NiMatrix3 targetRowsInverse = transform_math::transposeRotation(targetAsHkRows);
-                                const RE::NiMatrix3 targetColumnsInverse = transform_math::transposeRotation(targetAsHkColumns);
-                                ragdollBRcaRowsErrorDegrees = rotationDeltaDegrees(currentBRca, targetAsHkRows);
-                                ragdollBRcaColumnsErrorDegrees = rotationDeltaDegrees(currentBRca, targetAsHkColumns);
-                                ragdollARcbRowsInverseErrorDegrees = rotationDeltaDegrees(currentARcb, targetRowsInverse);
-                                ragdollARcbColumnsInverseErrorDegrees = rotationDeltaDegrees(currentARcb, targetColumnsInverse);
-                            }
-
-                            const RE::NiPoint3 liveGripBeforeSolve =
-                                transform_math::localPointToWorld(bodyWorldBeforeSolve, activePivotBBodyLocalGame);
-                            /*
-                             * The linear motor can rotate the object only through
-                             * this off-center pivot witness. A small cross product
-                             * means the angular atom must do almost all rotation.
-                             */
-                            const RE::NiPoint3 linearCorrectionWorld = desiredTargetPointWorld - liveGripBeforeSolve;
-                            const RE::NiPoint3 linearLeverWorld = liveGripBeforeSolve - bodyWorldBeforeSolve.translate;
-                            const RE::NiPoint3 linearTorqueWitnessWorld = crossProduct(linearLeverWorld, linearCorrectionWorld);
-                            const RE::NiPoint3 linearTorqueAxisWorld = normalizeOrZero(linearTorqueWitnessWorld);
-                            const float linearTorqueWitnessGameUnitsSquared = vectorMagnitude(linearTorqueWitnessWorld);
-                            RE::NiPoint3 angularVelocityBeforeSolve{};
-                            if (auto* motion = havok_runtime::getBodyMotion(world, _savedObjectState.bodyId)) {
-                                angularVelocityBeforeSolve = RE::NiPoint3{
-                                    motion->angularVelocity.x,
-                                    motion->angularVelocity.y,
-                                    motion->angularVelocity.z,
-                                };
-                            }
-
-                            const float linearMotorBudget = _activeConstraint.linearMotor ?
-                                (std::max)(
-                                    std::fabs(_activeConstraint.linearMotor->minForce),
-                                    std::fabs(_activeConstraint.linearMotor->maxForce)) :
-                                0.0f;
-                            const RE::NiPoint3 requiredAxisWorld = rotationCorrectionAxisWorld(bodyWorldBeforeSolve.rotate, desiredBodyWorld.rotate);
-                            const RE::NiPoint3 requiredAxisProxyLocal = bodyAWorldBeforeSolveOk ?
-                                rotationAxisProxyLocal(bodyAWorldBeforeSolve.rotate, requiredAxisWorld) :
-                                RE::NiPoint3{};
-                            const RE::NiPoint3 linearTorqueAxisProxyLocal =
-                                bodyAWorldBeforeSolveOk ? rotationAxisProxyLocal(bodyAWorldBeforeSolve.rotate, linearTorqueAxisWorld) : RE::NiPoint3{};
-                            const float linearTorqueAxisDotRequired =
-                                (lengthSquared(linearTorqueAxisWorld) > 0.000001f && lengthSquared(requiredAxisWorld) > 0.000001f) ?
-                                    std::clamp(dotProduct(linearTorqueAxisWorld, requiredAxisWorld), -1.0f, 1.0f) :
-                                    0.0f;
-                            _ragdollAngularProbePreSolve = RagdollAngularProbePreSolve{
-                                .objectBodyId = _savedObjectState.bodyId,
-                                .desiredBodyWorld = desiredBodyWorld,
-                                .bodyAWorldBefore = bodyAWorldBeforeSolve,
-                                .bodyWorldBefore = bodyWorldBeforeSolve,
-                                .targetRelationAWorld = targetRelationAWorld,
-                                .liveRelationAWorld = liveRelationAWorld,
-                                .targetConstraintAWorld = targetConstraintAWorld,
-                                .liveConstraintAWorld = liveConstraintAWorld,
-                                .relationInverseBodyWorld = relationInverseBodyWorld,
-                                .atomRowsBodyWorld = atomRowsBodyWorld,
-                                .solverEffectiveBodyWorld = solverEffectiveBodyWorld,
-                                .solverEffectiveLiveAWorld = solverEffectiveLiveAWorld,
-                                .transformARotation = transformAAsHkColumns,
-                                .transformBRotation = transformBAsHkColumns,
-                                .targetBRcaRaw = targetBRcaRaw,
-                                .requiredAxisWorld = requiredAxisWorld,
-                                .requiredAxisProxyLocal = requiredAxisProxyLocal,
-                                .linearCorrectionWorld = linearCorrectionWorld,
-                                .linearLeverWorld = linearLeverWorld,
-                                .linearTorqueWitnessWorld = linearTorqueWitnessWorld,
-                                .linearTorqueAxisProxyLocal = linearTorqueAxisProxyLocal,
-                                .angularVelocityBeforeRadians = angularVelocityBeforeSolve,
-                                .beforeErrorDegrees = rotationDeltaDegrees(bodyWorldBeforeSolve.rotate, desiredBodyWorld.rotate),
-                                .beforeGripErrorGameUnits = pointDistanceGameUnits(liveGripBeforeSolve, desiredTargetPointWorld),
-                                .pivotLeverGameUnits = pointDistanceGameUnits(bodyWorldBeforeSolve.translate, liveGripBeforeSolve),
-                                .linearTorqueWitnessGameUnitsSquared = linearTorqueWitnessGameUnitsSquared,
-                                .linearTorqueAxisDotRequired = linearTorqueAxisDotRequired,
-                                .angularMotorTau = _activeConstraint.angularMotor ? _activeConstraint.angularMotor->tau : 0.0f,
-                                .angularMotorDamping = _activeConstraint.angularMotor ? _activeConstraint.angularMotor->damping : 0.0f,
-                                .angularMotorMaxForce = angularMotorBudget,
-                                .linearMotorMaxForce = linearMotorBudget,
-                                .targetToHiggsRelationDegrees = targetToHiggsRelationDegrees,
-                                .transformBFrozenDeltaDegrees = transformBFrozenDeltaDegrees,
-                                .pivotBRelationDeltaGameUnits = pivotBRelationDeltaGameUnits,
-                                .transformAPivotRoundTripDeltaGameUnits = transformAPivotRoundTripDeltaGameUnits,
-                                .targetProxyToLiveProxyDeltaGameUnits = targetProxyToLiveProxyDeltaGameUnits,
-                                .targetProxyToLiveProxyDeltaDegrees = targetProxyToLiveProxyDeltaDegrees,
-                                .targetRelationAToLiveRelationADegrees = targetRelationAToLiveRelationADegrees,
-                                .targetConstraintAToLiveConstraintADegrees = targetConstraintAToLiveConstraintADegrees,
-                                .targetRelationAToTargetConstraintADegrees = targetRelationAToTargetConstraintADegrees,
-                                .liveRelationAToLiveConstraintADegrees = liveRelationAToLiveConstraintADegrees,
-                                .transformARawMaxDelta = transformARawMaxDelta,
-                                .transformBRawMaxDelta = transformBRawMaxDelta,
-                                .targetBRcaRawMaxDelta = targetBRcaRawMaxDelta,
-                                .relationInverseBodyDeltaGameUnits = relationInverseBodyDeltaGameUnits,
-                                .relationInverseBodyDeltaDegrees = relationInverseBodyDeltaDegrees,
-                                .atomRowsBodyDeltaGameUnits = atomRowsBodyDeltaGameUnits,
-                                .atomRowsBodyDeltaDegrees = atomRowsBodyDeltaDegrees,
-                                .atomRowsToRelationInverseDegrees = atomRowsToRelationInverseDegrees,
-                                .targetRowsToProxyInBodyDegrees = targetRowsToProxyInBodyDegrees,
-                                .solverEffectiveBodyDeltaGameUnits = solverEffectiveBodyDeltaGameUnits,
-                                .solverEffectiveBodyDeltaDegrees = solverEffectiveBodyDeltaDegrees,
-                                .solverEffectiveToAtomDegrees = solverEffectiveToAtomDegrees,
-                                .solverEffectiveLiveABodyDeltaDegrees = solverEffectiveLiveABodyDeltaDegrees,
-                                .solverEffectiveTargetALiveADeltaDegrees = solverEffectiveTargetALiveADeltaDegrees,
-                                .ragdollBRcaRowsErrorDegrees = ragdollBRcaRowsErrorDegrees,
-                                .ragdollBRcaColumnsErrorDegrees = ragdollBRcaColumnsErrorDegrees,
-                                .ragdollARcbRowsInverseErrorDegrees = ragdollARcbRowsInverseErrorDegrees,
-                                .ragdollARcbColumnsInverseErrorDegrees = ragdollARcbColumnsInverseErrorDegrees,
-                                .traceId = _grabFrame.traceId,
-                                .targetWriteSequence = _grabFrame.traceTargetWriteSequence,
-                                .flushSequence = _grabAuthorityProxyFlushSequence + 1,
-                                .bodyAWorldValid = bodyAWorldBeforeSolveOk,
-                                .ragdollMotorEnabled = *(constraintData + ATOM_RAGDOLL_MOT + 0x02) != 0,
-                                .valid = true,
-                            };
-                            if (grabTimelineTraceEnabled() && shouldLogGrabTimelineSequence(_grabFrame.traceTargetWriteSequence)) {
-                                const float lastGrabPhysicsHz = _lastGrabPhysicsHz.load(std::memory_order_relaxed);
-                                ROCK_LOG_INFO(Hand,
-                                    "{} GRAB_TRACE stage=pre_solve trace={} writeSeq={} flushNext={} queued={} substep={}/{} constraint={} proxyBody={} objBody={} bodyA={} beforeErr={:.2f}deg gripBefore={:.2f}gu pivotLever={:.2f}gu linTorque={:.3f}gu2 linTorqueDotReq={:.2f} reqAxis=({:.3f},{:.3f},{:.3f}) reqAxisProxy=({:.3f},{:.3f},{:.3f}) forceA={:.0f} forceL={:.0f} physHz={:.1f} tau={:.3f} damp={:.2f} targetToHiggsRelation={:.2f}deg transformBFrozenDelta={:.2f}deg pivotBRelationDelta={:.3f}gu bRcaRowsErr={:.2f}deg bRcaColsErr={:.2f}deg pivotARoundTrip={:.3f}gu",
-                                    handName(),
-                                    _grabFrame.traceId,
-                                    _grabFrame.traceTargetWriteSequence,
-                                    _grabAuthorityProxyFlushSequence + 1,
-                                    _grabAuthorityProxyQueuedSequence,
-                                    timing.substepIndex,
-                                    timing.substepCount,
-                                    _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu,
-                                    proxyBodyId.value,
-                                    _savedObjectState.bodyId.value,
-                                    bodyAWorldBeforeSolveOk ? "ok" : "fail",
-                                    _ragdollAngularProbePreSolve.beforeErrorDegrees,
-                                    _ragdollAngularProbePreSolve.beforeGripErrorGameUnits,
-                                    _ragdollAngularProbePreSolve.pivotLeverGameUnits,
-                                    _ragdollAngularProbePreSolve.linearTorqueWitnessGameUnitsSquared,
-                                    _ragdollAngularProbePreSolve.linearTorqueAxisDotRequired,
-                                    _ragdollAngularProbePreSolve.requiredAxisWorld.x,
-                                    _ragdollAngularProbePreSolve.requiredAxisWorld.y,
-                                    _ragdollAngularProbePreSolve.requiredAxisWorld.z,
-                                    _ragdollAngularProbePreSolve.requiredAxisProxyLocal.x,
-                                    _ragdollAngularProbePreSolve.requiredAxisProxyLocal.y,
-                                    _ragdollAngularProbePreSolve.requiredAxisProxyLocal.z,
-                                    _ragdollAngularProbePreSolve.angularMotorMaxForce,
-                                    _ragdollAngularProbePreSolve.linearMotorMaxForce,
-                                    lastGrabPhysicsHz,
-                                    _ragdollAngularProbePreSolve.angularMotorTau,
-                                    _ragdollAngularProbePreSolve.angularMotorDamping,
-                                    _ragdollAngularProbePreSolve.targetToHiggsRelationDegrees,
-                                    _ragdollAngularProbePreSolve.transformBFrozenDeltaDegrees,
-                                    _ragdollAngularProbePreSolve.pivotBRelationDeltaGameUnits,
-                                    _ragdollAngularProbePreSolve.ragdollBRcaRowsErrorDegrees,
-                                    _ragdollAngularProbePreSolve.ragdollBRcaColumnsErrorDegrees,
-                                    _ragdollAngularProbePreSolve.transformAPivotRoundTripDeltaGameUnits);
-                                ROCK_LOG_INFO(Hand,
-                                    "{} GRAB_TRACE stage=pre_solve_relation trace={} writeSeq={} flushNext={} queued={} relationInvToDesired={:.3f}gu/{:.2f}deg atomRowsToDesired={:.3f}gu/{:.2f}deg atomRowsToRelationInv={:.2f}deg solverEffToDesired={:.3f}gu/{:.2f}deg solverEffToAtom={:.2f}deg targetRowsToProxyInBody={:.2f}deg tBAtomRelationDelta={:.3f}gu",
-                                    handName(),
-                                    _grabFrame.traceId,
-                                    _grabFrame.traceTargetWriteSequence,
-                                    _grabAuthorityProxyFlushSequence + 1,
-                                    _grabAuthorityProxyQueuedSequence,
-                                    _ragdollAngularProbePreSolve.relationInverseBodyDeltaGameUnits,
-                                    _ragdollAngularProbePreSolve.relationInverseBodyDeltaDegrees,
-                                    _ragdollAngularProbePreSolve.atomRowsBodyDeltaGameUnits,
-                                    _ragdollAngularProbePreSolve.atomRowsBodyDeltaDegrees,
-                                    _ragdollAngularProbePreSolve.atomRowsToRelationInverseDegrees,
-                                    _ragdollAngularProbePreSolve.solverEffectiveBodyDeltaGameUnits,
-                                    _ragdollAngularProbePreSolve.solverEffectiveBodyDeltaDegrees,
-                                    _ragdollAngularProbePreSolve.solverEffectiveToAtomDegrees,
-                                    _ragdollAngularProbePreSolve.targetRowsToProxyInBodyDegrees,
-                                    _ragdollAngularProbePreSolve.pivotBRelationDeltaGameUnits);
-                                ROCK_LOG_INFO(Hand,
-                                    "{} GRAB_TRACE stage=pre_solve_a_frame trace={} writeSeq={} flushNext={} queued={} targetProxyLive={:.3f}gu/{:.2f}deg relA_targetLive={:.2f}deg conA_targetLive={:.2f}deg targetRelToCon={:.2f}deg liveRelToCon={:.2f}deg solverTargetA={:.3f}gu/{:.2f}deg solverLiveA={:.2f}deg solverTargetVsLive={:.2f}deg rawDelta tA={:.6f} tB={:.6f} target={:.6f}",
-                                    handName(),
-                                    _grabFrame.traceId,
-                                    _grabFrame.traceTargetWriteSequence,
-                                    _grabAuthorityProxyFlushSequence + 1,
-                                    _grabAuthorityProxyQueuedSequence,
-                                    _ragdollAngularProbePreSolve.targetProxyToLiveProxyDeltaGameUnits,
-                                    _ragdollAngularProbePreSolve.targetProxyToLiveProxyDeltaDegrees,
-                                    _ragdollAngularProbePreSolve.targetRelationAToLiveRelationADegrees,
-                                    _ragdollAngularProbePreSolve.targetConstraintAToLiveConstraintADegrees,
-                                    _ragdollAngularProbePreSolve.targetRelationAToTargetConstraintADegrees,
-                                    _ragdollAngularProbePreSolve.liveRelationAToLiveConstraintADegrees,
-                                    _ragdollAngularProbePreSolve.solverEffectiveBodyDeltaGameUnits,
-                                    _ragdollAngularProbePreSolve.solverEffectiveBodyDeltaDegrees,
-                                    _ragdollAngularProbePreSolve.solverEffectiveLiveABodyDeltaDegrees,
-                                    _ragdollAngularProbePreSolve.solverEffectiveTargetALiveADeltaDegrees,
-                                    _ragdollAngularProbePreSolve.transformARawMaxDelta,
-                                    _ragdollAngularProbePreSolve.transformBRawMaxDelta,
-                                    _ragdollAngularProbePreSolve.targetBRcaRawMaxDelta);
-                                if (bodyAWorldBeforeSolveOk) {
-                                    const auto bodyABasis = grab_transform_telemetry::makeOrientationBasis(bodyAWorldBeforeSolve);
-                                    const auto liveBodyBasis = grab_transform_telemetry::makeOrientationBasis(bodyWorldBeforeSolve);
-                                    const auto desiredBodyBasis = grab_transform_telemetry::makeOrientationBasis(desiredBodyWorld);
-                                    const auto relationBodyBasis = grab_transform_telemetry::makeOrientationBasis(relationInverseBodyWorld);
-                                    const auto atomRowsBodyBasis = grab_transform_telemetry::makeOrientationBasis(atomRowsBodyWorld);
-                                    const auto solverEffectiveBasis = grab_transform_telemetry::makeOrientationBasis(solverEffectiveBodyWorld);
-                                    const auto targetRelationABasis = grab_transform_telemetry::makeOrientationBasis(targetRelationAWorld);
-                                    const auto liveRelationABasis = grab_transform_telemetry::makeOrientationBasis(liveRelationAWorld);
-                                    const auto targetConstraintABasis = grab_transform_telemetry::makeOrientationBasis(targetConstraintAWorld);
-                                    const auto liveConstraintABasis = grab_transform_telemetry::makeOrientationBasis(liveConstraintAWorld);
-                                    const auto solverEffectiveLiveABasis = grab_transform_telemetry::makeOrientationBasis(solverEffectiveLiveAWorld);
-                                    ROCK_LOG_INFO(Hand,
-                                        "{} GRAB_TRACE stage=pre_solve_axismap trace={} writeSeq={} flushNext={} queued={} {} {} {}",
-                                        handName(),
-                                        _grabFrame.traceId,
-                                        _grabFrame.traceTargetWriteSequence,
-                                        _grabAuthorityProxyFlushSequence + 1,
-                                        _grabAuthorityProxyQueuedSequence,
-                                        grab_transform_telemetry::formatBasisCrossMap("liveBodyToA", liveBodyBasis, bodyABasis),
-                                        grab_transform_telemetry::formatBasisCrossMap("desiredBodyToA", desiredBodyBasis, bodyABasis),
-                                        grab_transform_telemetry::formatBasisCrossMap("atomRowsToA", atomRowsBodyBasis, bodyABasis));
-                                    ROCK_LOG_INFO(Hand,
-                                        "{} GRAB_TRACE stage=pre_solve_axismap2 trace={} writeSeq={} flushNext={} queued={} {} {} {}",
-                                        handName(),
-                                        _grabFrame.traceId,
-                                        _grabFrame.traceTargetWriteSequence,
-                                        _grabAuthorityProxyFlushSequence + 1,
-                                        _grabAuthorityProxyQueuedSequence,
-                                        grab_transform_telemetry::formatBasisCrossMap("relationInvToA", relationBodyBasis, bodyABasis),
-                                        grab_transform_telemetry::formatBasisCrossMap("solverEffToA", solverEffectiveBasis, bodyABasis),
-                                        grab_transform_telemetry::formatBasisCrossMap("liveBodyToDesiredBody", liveBodyBasis, desiredBodyBasis));
-                                    ROCK_LOG_INFO(Hand,
-                                        "{} GRAB_TRACE stage=pre_solve_a_axismap trace={} writeSeq={} flushNext={} queued={} {} {} {} {}",
-                                        handName(),
-                                        _grabFrame.traceId,
-                                        _grabFrame.traceTargetWriteSequence,
-                                        _grabAuthorityProxyFlushSequence + 1,
-                                        _grabAuthorityProxyQueuedSequence,
-                                        grab_transform_telemetry::formatBasisCrossMap("desiredToTargetRelA", desiredBodyBasis, targetRelationABasis),
-                                        grab_transform_telemetry::formatBasisCrossMap("solverToTargetRelA", solverEffectiveBasis, targetRelationABasis),
-                                        grab_transform_telemetry::formatBasisCrossMap("desiredToLiveRelA", desiredBodyBasis, liveRelationABasis),
-                                        grab_transform_telemetry::formatBasisCrossMap("solverLiveToLiveRelA", solverEffectiveLiveABasis, liveRelationABasis));
-                                    ROCK_LOG_INFO(Hand,
-                                        "{} GRAB_TRACE stage=pre_solve_constraint_a_axismap trace={} writeSeq={} flushNext={} queued={} {} {} {} {}",
-                                        handName(),
-                                        _grabFrame.traceId,
-                                        _grabFrame.traceTargetWriteSequence,
-                                        _grabAuthorityProxyFlushSequence + 1,
-                                        _grabAuthorityProxyQueuedSequence,
-                                        grab_transform_telemetry::formatBasisCrossMap("desiredToTargetConA", desiredBodyBasis, targetConstraintABasis),
-                                        grab_transform_telemetry::formatBasisCrossMap("solverToTargetConA", solverEffectiveBasis, targetConstraintABasis),
-                                        grab_transform_telemetry::formatBasisCrossMap("desiredToLiveConA", desiredBodyBasis, liveConstraintABasis),
-                                        grab_transform_telemetry::formatBasisCrossMap("solverLiveToLiveConA", solverEffectiveLiveABasis, liveConstraintABasis));
-                                }
-                            }
-                        }
-                    }
                     if (!angularDriveOk) {
                         ++_grabAuthorityProxyFailedFlushes;
                         _grabAuthorityProxyReleasePending.store(true, std::memory_order_release);
@@ -15244,32 +13530,6 @@ namespace rock
                     ++_grabAuthorityProxyFlushSequence;
                     flushSequence = _grabAuthorityProxyFlushSequence;
                     queuedSequence = _grabAuthorityProxyQueuedSequence;
-                    if (angularDriveOk && dynamic_collider_trace::motorOutputEnabled()) {
-                        const auto mass = readHeldBodyMassSummary(world, _savedObjectState.bodyId, _heldBodyIds,
-                            _heldDriveDecision.includeConnectedMass);
-                        grab_motor_telemetry::capture(world, _activeConstraint,
-                            _grabAuthorityProxy.getBodyId().value, _savedObjectState.bodyId.value, timing,
-                            flushSequence, _grabFrame.traceId,
-                            _isLeft ? grab_motor_telemetry::Owner::LeftHand : grab_motor_telemetry::Owner::RightHand,
-                            mass.motorMass(), pending.heldBodyColliding);
-                    }
-                    const auto diagnosticFrame = dynamic_collider_trace::presentationEnabled() ? held_render_trace::sampledFrame() : 0;
-                    if (diagnosticFrame && angularDriveOk) {
-                        const auto mass = readHeldBodyMassSummary(world, _savedObjectState.bodyId, _heldBodyIds,
-                            _heldDriveDecision.includeConnectedMass);
-                        dynamic_collider_trace::write(
-                            "HELD_SOLVER pre frame={} trace={} hand={} queued={} flush={} step={} solve={} substep={}/{} dt={:.6f} sourceDt={:.6f} rawDt={:.6f} remainder={:.6f} target=({:.4f},{:.4f},{:.4f}) proxyBefore=({:.4f},{:.4f},{:.4f}) proxyValid={} requiredV={:.4f}/{:.4f} limitAlpha={:.5f} teleported={} probe={} mass={:.5f} contact={} tauL={:.5f} dampL={:.5f} forceL={:.3f} tauA={:.5f} dampA={:.5f} forceA={:.3f}",
-                            diagnosticFrame, _grabFrame.traceId, _isLeft ? "left" : "right", queuedSequence, flushSequence,
-                            timing.stepSequence, timing.solveSequence, timing.substepIndex, timing.substepCount, driveDelta,
-                            pending.deltaTime, timing.rawDeltaSeconds, timing.remainderDeltaSeconds,
-                            pending.proxyWorld.translate.x, pending.proxyWorld.translate.y, pending.proxyWorld.translate.z,
-                            proxyReadbackBetween.translate.x, proxyReadbackBetween.translate.y, proxyReadbackBetween.translate.z,
-                            proxyReadbackBetweenOk, proxyDriveResult.uncappedRequiredLinearVelocityHavok,
-                            proxyDriveResult.uncappedRequiredAngularVelocityRadians, proxyDriveResult.targetLimitAlpha,
-                            proxyDriveResult.teleported, _ragdollAngularProbePreSolve.valid, mass.motorMass(), pending.heldBodyColliding,
-                            _activeConstraint.linearMotor->tau, _activeConstraint.linearMotor->damping, _activeConstraint.linearMotor->maxForce,
-                            _activeConstraint.angularMotor->tau, _activeConstraint.angularMotor->damping, _activeConstraint.angularMotor->maxForce);
-                    }
                     ++_grabAuthorityProxyLogCounter;
                     if (flushSequence <= 16 || _grabAuthorityProxyLogCounter >= 45 ||
                         !proxyReadbackBetweenOk ||
@@ -15323,54 +13583,6 @@ namespace rock
             return;
         }
 
-        if (shouldLog && g_rockConfig.rockDebugGrabFrameLogging) {
-            std::uint32_t filterInfo = 0;
-            const bool filterReadOk = havok_runtime::tryReadFilterInfo(world, proxyBodyId, filterInfo);
-            ROCK_LOG_DEBUG(Hand,
-                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+queuedTarget+generatedKeyframedProxy proxyBody={} constraint={} substep={}/{} dt={:.6f} resample={} rebases={} targetSrc={} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularAuthority={} angularRef={} solverAngular=ragdollAtom angularBudget={:.3f} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
-                handName(),
-                flushSequence,
-                queuedSequence,
-                proxyBodyId.value,
-                _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu,
-                timing.substepIndex,
-                timing.substepCount,
-                timing.substepDeltaSeconds,
-                grab_authority_source_clock::resampleActionName(resampleAction),
-                resampleRebaseCount,
-                pending.proxyFrameSource ? pending.proxyFrameSource : "unknown",
-                pending.proxyWorld.translate.x,
-                pending.proxyWorld.translate.y,
-                pending.proxyWorld.translate.z,
-                desiredBodyWorld.translate.x,
-                desiredBodyWorld.translate.y,
-                desiredBodyWorld.translate.z,
-                grabAngularAuthorityName(angularAuthority),
-                kGrabObjectRotationReferenceName,
-                angularMotorBudget,
-                activePivotBBodyLocalGame.x,
-                activePivotBBodyLocalGame.y,
-                activePivotBBodyLocalGame.z,
-                pending.grabPositionErrorGameUnits,
-                pending.grabRotationErrorDegrees,
-                livePalmReferenceOk ? "ok" : "fail",
-                body_frame::bodyFrameSourceCode(livePalmReference.source),
-                livePalmReference.motionIndex,
-                proxyVelocityTelemetryOk ? "palmMotion" : "computed",
-                proxyLinearVelocityHavokMagnitude,
-                proxyAngularVelocityRadiansPerSecond,
-                _grabFrame.pivotAuthority.longLeverGameUnits,
-                proxyReadbackBetweenOk ? "ok" : "fail",
-                body_frame::bodyFrameSourceCode(proxyReadbackSourceBetween),
-                proxyReadbackMotionIndexBetween,
-                proxyReadbackBetweenPositionErrorGameUnits,
-                proxyReadbackBetweenRotationErrorDegrees,
-                pending.authorityForceScale,
-                pending.heldBodyColliding ? "yes" : "no",
-                filterReadOk ? "ok" : "fail",
-                filterInfo,
-                grab_authority_proxy::hasNoContactFilterInfo(filterInfo) ? "yes" : "no");
-        }
     }
 
     bool Hand::tryGetGrabOverlayPointProbeSample(RE::hknpWorld* world, GrabOverlayPointProbeSample& out)
@@ -15399,676 +13611,25 @@ namespace rock
             return;
         }
 
-        const bool debugGrabFrameLogging = g_rockConfig.rockDebugGrabFrameLogging;
-        const bool timelineTraceLogging = grabTimelineTraceEnabled();
-
-        RE::hknpBodyId proxyBodyId{ INVALID_BODY_ID };
-        RE::hknpBodyId objectBodyId{ INVALID_BODY_ID };
-        RE::NiTransform targetProxyWorld{};
-        RE::NiTransform targetRawHandWorld{};
-        RE::NiTransform proxyAuthorityHandSpace{};
-        RE::NiTransform proxyAuthorityBodyHandSpace{};
-        RE::NiPoint3 pivotBConstraintLocalGame{};
-        std::uint64_t queuedSequence = 0;
-        std::uint64_t flushSequence = 0;
-        std::uint64_t afterSolveSequence = 0;
-        std::uint32_t constraintId = 0x7FFF'FFFFu;
-        GrabAngularAuthority angularAuthority = GrabAngularAuthority::HknpRagdollMotorAtom;
-        RagdollAngularProbePreSolve ragdollAngularProbePreSolve{};
-        {
-            std::scoped_lock lock(_grabAuthorityProxyMutex);
-            const bool hasAuthority = _grabAuthorityProxy.isValid() &&
-                                      _grabAuthorityProxyHknpWorld == world &&
-                                      _hasLastAppliedGrabAuthorityProxyWorld;
-            _releaseObjectSample = {};
-            if (!hasAuthority) {
-                return;
-            }
-
-            if (timing.valid && !timing.usedFallback) {
-                const auto* body = havok_runtime::getBody(world, _savedObjectState.bodyId);
-                const auto* motion = body && body_frame::hasUsableMotionIndex(body->motionIndex) ?
-                    havok_runtime::getMotion(world, body->motionIndex) : nullptr;
-                if (motion) {
-                    _releaseObjectSample = { world, _savedObjectState.bodyId.value, _grabFrame.traceId,
-                        timing.solveSequence, release_velocity::sampleTimeSeconds(),
-                        { motion->linearVelocity.x, motion->linearVelocity.y, motion->linearVelocity.z } };
-                }
-            }
-
-            proxyBodyId = _grabAuthorityProxy.getBodyId();
-            objectBodyId = _savedObjectState.bodyId;
-            targetProxyWorld = _lastAppliedGrabAuthorityProxyWorld;
-            targetRawHandWorld = _lastAppliedGrabAuthorityRawHandWorld;
-            proxyAuthorityHandSpace = _grabFrame.proxyAuthorityHandSpace;
-            proxyAuthorityBodyHandSpace = _grabFrame.proxyAuthorityBodyHandSpace;
-            pivotBConstraintLocalGame = activeProxyConstraintPivotBLocalGame();
-            queuedSequence = _grabAuthorityProxyQueuedSequence;
-            flushSequence = _grabAuthorityProxyFlushSequence;
-            afterSolveSequence = ++_grabAuthorityProxyAfterSolveLogCounter;
-            constraintId = _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu;
-            angularAuthority = _activeConstraint.angularAuthority;
-            ragdollAngularProbePreSolve = _ragdollAngularProbePreSolve;
-        }
-
-        const bool shouldSampleForAnomaly = g_rockConfig.rockDebugGrabAfterSolveAnomalySampling &&
-                                            (afterSolveSequence <= 16u || (afterSolveSequence % 30u) == 0u);
-        const bool legacyDiagnostics = debugGrabFrameLogging || timelineTraceLogging || shouldSampleForAnomaly;
-        const auto diagnosticFrame = dynamic_collider_trace::presentationEnabled() ? held_render_trace::sampledFrame() : 0;
-        /*
-         * After-solve readback is diagnostic only. Keeping it behind explicit
-         * grab diagnostics avoids paying body readback, constraint atom, and
-         * basis math costs during normal two-hand held-object gameplay.
-         */
-        if (!legacyDiagnostics && !diagnosticFrame) {
-            return;
-        }
-        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAuthorityAfterSolveDiagnostics);
-
-        bool hasConstraintFrameMetrics = false;
-        float pivotBRelationDeltaGameUnits = -1.0f;
-        float targetToHiggsRelationDegrees = -1.0f;
-        float transformBFrozenDeltaDegrees = -1.0f;
-        {
-            std::scoped_lock lock(_grabAuthorityProxyMutex);
-            if (_activeConstraint.constraintData) {
-                const auto* constraintData = static_cast<const char*>(_activeConstraint.constraintData);
-                const auto* targetBRca = reinterpret_cast<const float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
-                const auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
-                const auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
-                const RE::NiTransform desiredBodyWorldForConstraintMetrics =
-                    grab_frame_math::objectFromGeneratedProxyLocalSpace(targetProxyWorld, _grabFrame.proxyAuthorityBodyHandSpace);
-                const RE::NiTransform desiredBodyTransformHandSpace =
-                    grab_frame_math::objectInGeneratedProxyLocalSpace(targetProxyWorld, desiredBodyWorldForConstraintMetrics);
-                const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
-                const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
-                const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
-                const RE::NiPoint3 constraintTransformBLocalGame{
-                    transformBTranslation[0] * havokToGameScale(),
-                    transformBTranslation[1] * havokToGameScale(),
-                    transformBTranslation[2] * havokToGameScale(),
-                };
-                const RE::NiPoint3 desiredTransformBLocalGame =
-                    grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformHandSpace, _grabFrame.authority.pivotAHandBodyLocalGame);
-                pivotBRelationDeltaGameUnits =
-                    pointDistanceGameUnits(constraintTransformBLocalGame, desiredTransformBLocalGame);
-                targetToHiggsRelationDegrees = rotationDeltaDegrees(targetAsHkRows, desiredBodyToHandSpace.rotate);
-                transformBFrozenDeltaDegrees = rotationDeltaDegrees(transformBAsHkColumns, desiredBodyToHandSpace.rotate);
-                hasConstraintFrameMetrics = true;
-            }
-        }
-
-        RE::NiTransform proxyReadback{};
-        RE::NiTransform objectReadback{};
-        body_frame::BodyFrameSource proxySource = body_frame::BodyFrameSource::Fallback;
-        body_frame::BodyFrameSource objectSource = body_frame::BodyFrameSource::Fallback;
-        std::uint32_t proxyMotionIndex = body_frame::kFreeMotionIndex;
-        std::uint32_t objectMotionIndex = body_frame::kFreeMotionIndex;
-        objectSource = body_frame::BodyFrameSource::BodyTransform;
-        objectMotionIndex = body_frame::kFreeMotionIndex;
-        const bool proxyOk = tryResolveLiveBodyWorldTransform(world, proxyBodyId, proxyReadback, &proxySource, &proxyMotionIndex);
-        const bool objectOk = tryGetGrabAuthorityBodyWorldTransform(world, objectBodyId, objectReadback);
-        if (!proxyOk) {
-            proxySource = body_frame::BodyFrameSource::Fallback;
-        }
-        if (!objectOk) {
-            objectSource = body_frame::BodyFrameSource::Fallback;
-        }
-
-        const RE::NiTransform desiredObjectFromTarget =
-            grab_frame_math::objectFromGeneratedProxyLocalSpace(targetProxyWorld, proxyAuthorityHandSpace);
-        const RE::NiTransform desiredBodyFromTarget =
-            grab_frame_math::objectFromGeneratedProxyLocalSpace(targetProxyWorld, proxyAuthorityBodyHandSpace);
-        const RE::NiTransform desiredObjectFromLiveProxy = proxyOk ?
-            grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyReadback, proxyAuthorityHandSpace) :
-            desiredObjectFromTarget;
-        const RE::NiTransform desiredBodyFromLiveProxy = proxyOk ?
-            grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyReadback, proxyAuthorityBodyHandSpace) :
-            desiredBodyFromTarget;
-
-        const float proxyTargetPositionErrorGameUnits =
-            proxyOk ? pointDistanceGameUnits(proxyReadback.translate, targetProxyWorld.translate) : -1.0f;
-        const float proxyTargetRotationErrorDegrees =
-            proxyOk ? rotationDeltaDegrees(proxyReadback.rotate, targetProxyWorld.rotate) : -1.0f;
-        const float objectTargetPositionErrorGameUnits =
-            objectOk ? pointDistanceGameUnits(objectReadback.translate, desiredBodyFromTarget.translate) : -1.0f;
-        const float objectTargetRotationErrorDegrees =
-            objectOk ? rotationDeltaDegrees(objectReadback.rotate, desiredBodyFromTarget.rotate) : -1.0f;
-        const float objectLiveProxyPositionErrorGameUnits =
-            objectOk ? pointDistanceGameUnits(objectReadback.translate, desiredBodyFromLiveProxy.translate) : -1.0f;
-        const float objectLiveProxyRotationErrorDegrees =
-            objectOk ? rotationDeltaDegrees(objectReadback.rotate, desiredBodyFromLiveProxy.rotate) : -1.0f;
-        const float rawToTargetProxyRotationDegrees = rotationDeltaDegrees(targetRawHandWorld.rotate, targetProxyWorld.rotate);
-        const float rawToLiveProxyRotationDegrees =
-            proxyOk ? rotationDeltaDegrees(targetRawHandWorld.rotate, proxyReadback.rotate) : -1.0f;
-        const GrabPalmBasisDelta targetPalmBasisDelta = computeGrabPalmBasisDelta(targetRawHandWorld, targetProxyWorld);
-        const GrabPalmBasisDelta livePalmBasisDelta =
-            proxyOk ? computeGrabPalmBasisDelta(targetRawHandWorld, proxyReadback) : targetPalmBasisDelta;
-
-        float gripTargetErrorGameUnits = -1.0f;
-        float gripLiveProxyErrorGameUnits = -1.0f;
-        if (objectOk) {
-            const RE::NiPoint3 liveGripWorld = transform_math::localPointToWorld(objectReadback, pivotBConstraintLocalGame);
-            const RE::NiPoint3 targetGripWorld = transform_math::localPointToWorld(desiredBodyFromTarget, pivotBConstraintLocalGame);
-            const RE::NiPoint3 liveProxyGripWorld = transform_math::localPointToWorld(desiredBodyFromLiveProxy, pivotBConstraintLocalGame);
-            gripTargetErrorGameUnits = pointDistanceGameUnits(liveGripWorld, targetGripWorld);
-            gripLiveProxyErrorGameUnits = pointDistanceGameUnits(liveGripWorld, liveProxyGripWorld);
-        }
-
-        if (dynamic_collider_trace::motorOutputEnabled()) {
-            const bool colliding = isHeldBodyColliding();
-            std::scoped_lock lock(_grabAuthorityProxyMutex);
-            grab_motor_telemetry::record(world, _activeConstraint, timing,
-                gripTargetErrorGameUnits, objectTargetRotationErrorDegrees,
-                proxyTargetPositionErrorGameUnits, colliding);
-        }
-
-        if (diagnosticFrame) {
-            RE::NiPoint3 linearVelocity{}, angularVelocity{};
-            const auto* motion = havok_runtime::getBodyMotion(world, objectBodyId);
-            if (motion) {
-                linearVelocity = { motion->linearVelocity.x, motion->linearVelocity.y, motion->linearVelocity.z };
-                angularVelocity = { motion->angularVelocity.x, motion->angularVelocity.y, motion->angularVelocity.z };
-            }
-            const auto& probe = ragdollAngularProbePreSolve;
-            dynamic_collider_trace::write(
-                "HELD_SOLVER post frame={} trace={} hand={} queued={} flush={} step={} solve={} substep={}/{} dt={:.6f} proxyValid={} bodyValid={} motionValid={} probeValid={} probeFlush={} proxyError={:.5f}gu/{:.5f}deg bodyError={:.5f}gu/{:.5f}deg gripError={:.5f}gu beforeError={:.5f}deg beforeGrip={:.5f}gu solverTargetError={:.5f}deg atomDelta={:.6f}/{:.6f}/{:.6f} pivotDelta={:.6f} lever={:.5f} torqueDot={:.5f} beforeAng=({:.5f},{:.5f},{:.5f}) afterAng=({:.5f},{:.5f},{:.5f}) afterLin=({:.5f},{:.5f},{:.5f}) body=({:.4f},{:.4f},{:.4f}) proxy=({:.4f},{:.4f},{:.4f})",
-                diagnosticFrame, probe.traceId, _isLeft ? "left" : "right", queuedSequence, flushSequence,
-                timing.stepSequence, timing.solveSequence, timing.substepIndex, timing.substepCount, timing.substepDeltaSeconds,
-                proxyOk, objectOk, motion != nullptr, probe.valid, probe.flushSequence,
-                proxyTargetPositionErrorGameUnits, proxyTargetRotationErrorDegrees,
-                objectTargetPositionErrorGameUnits, objectTargetRotationErrorDegrees, gripTargetErrorGameUnits,
-                probe.beforeErrorDegrees, probe.beforeGripErrorGameUnits, probe.solverEffectiveBodyDeltaDegrees,
-                probe.transformARawMaxDelta, probe.transformBRawMaxDelta, probe.targetBRcaRawMaxDelta,
-                probe.pivotBRelationDeltaGameUnits, probe.pivotLeverGameUnits, probe.linearTorqueAxisDotRequired,
-                probe.angularVelocityBeforeRadians.x, probe.angularVelocityBeforeRadians.y, probe.angularVelocityBeforeRadians.z,
-                angularVelocity.x, angularVelocity.y, angularVelocity.z, linearVelocity.x, linearVelocity.y, linearVelocity.z,
-                objectReadback.translate.x, objectReadback.translate.y, objectReadback.translate.z,
-                proxyReadback.translate.x, proxyReadback.translate.y, proxyReadback.translate.z);
-        }
-        // The sampled asynchronous witness must not enable the older synchronous
-        // anomaly/timeline logs just because a skeleton overlay is active.
-        if (!legacyDiagnostics) return;
-
-        /*
-         * Per-substep POST-SOLVE ripple probe (2026-07-13 stutter hunt): every
-         * pre-solve metric in this file is blind to what the constraint motors
-         * actually did to the object this substep — the signal the eye sees.
-         * This line samples the object body and its solver-output velocities
-         * AFTER the solve, once per substep, continuously while held. Offline
-         * analysis differentiates obj/proxy positions per substep and checks
-         * the velocity ripple against dt quantization. Debug-flag gated; it is
-         * the replacement for trusting pre-solve telemetry.
-         */
-        if (debugGrabFrameLogging) {
-            RE::NiPoint3 objectLinearVelocityHavok{};
-            RE::NiPoint3 objectAngularVelocityRadians{};
-            if (objectOk) {
-                if (auto* motion = havok_runtime::getBodyMotion(world, objectBodyId)) {
-                    objectLinearVelocityHavok = RE::NiPoint3{
-                        motion->linearVelocity.x,
-                        motion->linearVelocity.y,
-                        motion->linearVelocity.z,
-                    };
-                    objectAngularVelocityRadians = RE::NiPoint3{
-                        motion->angularVelocity.x,
-                        motion->angularVelocity.y,
-                        motion->angularVelocity.z,
-                    };
-                }
-            }
-            ROCK_LOG_DEBUG(Hand,
-                "{} HELD_POSTSOLVE: afterSeq={} substep={}/{} dt={:.6f} objOk={} obj=({:.3f},{:.3f},{:.3f}) objVelHk=({:.4f},{:.4f},{:.4f}) objAngVel={:.4f} objErrTgt={:.3f}gu/{:.2f}deg objErrLive={:.3f}gu/{:.2f}deg gripErrLive={:.3f}gu proxyOk={} proxyErr={:.3f}gu/{:.2f}deg tgt=({:.3f},{:.3f},{:.3f})",
-                handName(),
-                afterSolveSequence,
-                timing.substepIndex,
-                timing.substepCount,
-                timing.substepDeltaSeconds,
-                objectOk ? "y" : "n",
-                objectReadback.translate.x,
-                objectReadback.translate.y,
-                objectReadback.translate.z,
-                objectLinearVelocityHavok.x,
-                objectLinearVelocityHavok.y,
-                objectLinearVelocityHavok.z,
-                vectorMagnitude(objectAngularVelocityRadians),
-                objectTargetPositionErrorGameUnits,
-                objectTargetRotationErrorDegrees,
-                objectLiveProxyPositionErrorGameUnits,
-                objectLiveProxyRotationErrorDegrees,
-                gripLiveProxyErrorGameUnits,
-                proxyOk ? "y" : "n",
-                proxyTargetPositionErrorGameUnits,
-                proxyTargetRotationErrorDegrees,
-                desiredBodyFromTarget.translate.x,
-                desiredBodyFromTarget.translate.y,
-                desiredBodyFromTarget.translate.z);
-        }
-
-        const bool hasRagdollAngularProbe =
-            ragdollAngularProbePreSolve.valid &&
-            ragdollAngularProbePreSolve.objectBodyId.value == objectBodyId.value;
-        if (hasRagdollAngularProbe && objectOk) {
-            RE::NiPoint3 angularVelocityAfterSolve{};
-            if (auto* motion = havok_runtime::getBodyMotion(world, objectBodyId)) {
-                angularVelocityAfterSolve = RE::NiPoint3{
-                    motion->angularVelocity.x,
-                    motion->angularVelocity.y,
-                    motion->angularVelocity.z,
-                };
-            }
-
-            const RE::NiPoint3 velocityAxisAfterSolve = normalizeOrZero(angularVelocityAfterSolve);
-            /*
-             * Keep the response axis in the same proxy-local basis as the required
-             * correction axis so left/right parity can be compared without a moving
-             * world-space frame hiding mirrored sign errors.
-             */
-            const RE::NiPoint3 velocityAxisProxyLocal =
-                ragdollAngularProbePreSolve.bodyAWorldValid ?
-                rotationAxisProxyLocal(ragdollAngularProbePreSolve.bodyAWorldBefore.rotate, velocityAxisAfterSolve) :
-                RE::NiPoint3{};
-            const float axisDot = dotProduct(ragdollAngularProbePreSolve.requiredAxisWorld, velocityAxisAfterSolve);
-            const float angularSpeedBefore = vectorMagnitude(ragdollAngularProbePreSolve.angularVelocityBeforeRadians);
-            const float angularSpeedAfter = vectorMagnitude(angularVelocityAfterSolve);
-            const float afterErrorDegrees =
-                rotationDeltaDegrees(objectReadback.rotate, ragdollAngularProbePreSolve.desiredBodyWorld.rotate);
-            const float errorReductionDegrees = ragdollAngularProbePreSolve.beforeErrorDegrees - afterErrorDegrees;
-            const RE::NiPoint3 liveGripAfterSolve =
-                transform_math::localPointToWorld(objectReadback, pivotBConstraintLocalGame);
-            const RE::NiPoint3 targetGripFromProbe =
-                transform_math::localPointToWorld(ragdollAngularProbePreSolve.desiredBodyWorld, pivotBConstraintLocalGame);
-            const float afterGripErrorGameUnits = pointDistanceGameUnits(liveGripAfterSolve, targetGripFromProbe);
-            const bool staleProbe = ragdollAngularProbePreSolve.flushSequence != flushSequence;
-            const bool shouldLogRagdollProbe =
-                !staleProbe &&
-                (afterSolveSequence <= 16u ||
-                    ragdollAngularProbePreSolve.beforeErrorDegrees > 10.0f ||
-                    afterErrorDegrees > 10.0f ||
-                    errorReductionDegrees < 0.25f ||
-                    axisDot < 0.35f);
-
-            if (!staleProbe &&
-                grabTimelineTraceEnabled() &&
-                shouldLogGrabTimelineSequence(ragdollAngularProbePreSolve.targetWriteSequence)) {
-                ROCK_LOG_INFO(Hand,
-                    "{} GRAB_TRACE stage=after_solve trace={} writeSeq={} flush={} queued={} afterSeq={} substep={}/{} constraint={} proxyBody={} objBody={} stale={} beforeErr={:.2f}deg afterErr={:.2f}deg reduce={:.2f}deg axisDot={:.3f} beforeAng={:.3f}rad/s afterAng={:.3f}rad/s gripBefore={:.2f}gu gripAfter={:.2f}gu proxyErr={:.3f}gu/{:.2f}deg objectErr={:.2f}gu/{:.2f}deg objectLiveProxyErr={:.2f}gu/{:.2f}deg pivotLever={:.2f}gu linTorque={:.3f}gu2 linTorqueDotReq={:.2f} reqAxisProxy=({:.3f},{:.3f},{:.3f}) velAxisProxy=({:.3f},{:.3f},{:.3f}) forceA={:.0f} forceL={:.0f} targetToHiggsRelation={:.2f}deg transformBFrozenDelta={:.2f}deg pivotBRelationDelta={:.3f}gu",
-                    handName(),
-                    ragdollAngularProbePreSolve.traceId,
-                    ragdollAngularProbePreSolve.targetWriteSequence,
-                    flushSequence,
-                    queuedSequence,
-                    afterSolveSequence,
-                    timing.substepIndex,
-                    timing.substepCount,
-                    constraintId,
-                    proxyBodyId.value,
-                    objectBodyId.value,
-                    staleProbe ? "yes" : "no",
-                    ragdollAngularProbePreSolve.beforeErrorDegrees,
-                    afterErrorDegrees,
-                    errorReductionDegrees,
-                    std::isfinite(axisDot) ? axisDot : 0.0f,
-                    angularSpeedBefore,
-                    angularSpeedAfter,
-                    ragdollAngularProbePreSolve.beforeGripErrorGameUnits,
-                    afterGripErrorGameUnits,
-                    proxyTargetPositionErrorGameUnits,
-                    proxyTargetRotationErrorDegrees,
-                    objectTargetPositionErrorGameUnits,
-                    objectTargetRotationErrorDegrees,
-                    objectLiveProxyPositionErrorGameUnits,
-                    objectLiveProxyRotationErrorDegrees,
-                    ragdollAngularProbePreSolve.pivotLeverGameUnits,
-                    ragdollAngularProbePreSolve.linearTorqueWitnessGameUnitsSquared,
-                    ragdollAngularProbePreSolve.linearTorqueAxisDotRequired,
-                    ragdollAngularProbePreSolve.requiredAxisProxyLocal.x,
-                    ragdollAngularProbePreSolve.requiredAxisProxyLocal.y,
-                    ragdollAngularProbePreSolve.requiredAxisProxyLocal.z,
-                    velocityAxisProxyLocal.x,
-                    velocityAxisProxyLocal.y,
-                    velocityAxisProxyLocal.z,
-                    ragdollAngularProbePreSolve.angularMotorMaxForce,
-                    ragdollAngularProbePreSolve.linearMotorMaxForce,
-                    ragdollAngularProbePreSolve.targetToHiggsRelationDegrees,
-                    ragdollAngularProbePreSolve.transformBFrozenDeltaDegrees,
-                    ragdollAngularProbePreSolve.pivotBRelationDeltaGameUnits);
-            }
-
-            if (shouldLogRagdollProbe) {
-                ROCK_LOG_SAMPLE_WARN(Hand,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "{} RAGDOLL ANGULAR PROBE: seq={}/{} afterSeq={} probeSeq={} stale={} substep={}/{} beforeErr={:.1f}deg afterErr={:.1f}deg reduce={:.1f}deg axisDot={:.2f} reqAxis=({:.2f},{:.2f},{:.2f}) velAxis=({:.2f},{:.2f},{:.2f}) reqAxisProxy=({:.2f},{:.2f},{:.2f}) velAxisProxy=({:.2f},{:.2f},{:.2f}) beforeAng={:.2f}rad/s afterAng={:.2f}rad/s forceA={:.0f} forceL={:.0f} tau={:.3f} damp={:.2f} ragdoll={} targetToHiggsRelation={:.1f}deg transformBFrozenDelta={:.1f}deg pivotBRelationDelta={:.3f}gu pivotARoundTrip={:.3f}gu gripBefore={:.2f}gu gripAfter={:.2f}gu pivotLever={:.2f}gu linTorque={:.3f}gu2 linTorqueDotReq={:.2f} linTorqueAxisProxy=({:.2f},{:.2f},{:.2f}) angularRef={} phase={} body={} motion={}",
-                    handName(),
-                    flushSequence,
-                    queuedSequence,
-                    afterSolveSequence,
-                    ragdollAngularProbePreSolve.flushSequence,
-                    staleProbe ? "yes" : "no",
-                    timing.substepIndex,
-                    timing.substepCount,
-                    ragdollAngularProbePreSolve.beforeErrorDegrees,
-                    afterErrorDegrees,
-                    errorReductionDegrees,
-                    std::isfinite(axisDot) ? axisDot : 0.0f,
-                    ragdollAngularProbePreSolve.requiredAxisWorld.x,
-                    ragdollAngularProbePreSolve.requiredAxisWorld.y,
-                    ragdollAngularProbePreSolve.requiredAxisWorld.z,
-                    velocityAxisAfterSolve.x,
-                    velocityAxisAfterSolve.y,
-                    velocityAxisAfterSolve.z,
-                    ragdollAngularProbePreSolve.requiredAxisProxyLocal.x,
-                    ragdollAngularProbePreSolve.requiredAxisProxyLocal.y,
-                    ragdollAngularProbePreSolve.requiredAxisProxyLocal.z,
-                    velocityAxisProxyLocal.x,
-                    velocityAxisProxyLocal.y,
-                    velocityAxisProxyLocal.z,
-                    angularSpeedBefore,
-                    angularSpeedAfter,
-                    ragdollAngularProbePreSolve.angularMotorMaxForce,
-                    ragdollAngularProbePreSolve.linearMotorMaxForce,
-                    ragdollAngularProbePreSolve.angularMotorTau,
-                    ragdollAngularProbePreSolve.angularMotorDamping,
-                    ragdollAngularProbePreSolve.ragdollMotorEnabled ? "yes" : "no",
-                    ragdollAngularProbePreSolve.targetToHiggsRelationDegrees,
-                    ragdollAngularProbePreSolve.transformBFrozenDeltaDegrees,
-                    ragdollAngularProbePreSolve.pivotBRelationDeltaGameUnits,
-                    ragdollAngularProbePreSolve.transformAPivotRoundTripDeltaGameUnits,
-                    ragdollAngularProbePreSolve.beforeGripErrorGameUnits,
-                    afterGripErrorGameUnits,
-                    ragdollAngularProbePreSolve.pivotLeverGameUnits,
-                    ragdollAngularProbePreSolve.linearTorqueWitnessGameUnitsSquared,
-                    ragdollAngularProbePreSolve.linearTorqueAxisDotRequired,
-                    ragdollAngularProbePreSolve.linearTorqueAxisProxyLocal.x,
-                    ragdollAngularProbePreSolve.linearTorqueAxisProxyLocal.y,
-                    ragdollAngularProbePreSolve.linearTorqueAxisProxyLocal.z,
-                    kGrabObjectRotationReferenceName,
-                    grab_three_phase::phaseName(_grabAcquisitionPhase),
-                    objectBodyId.value,
-                    objectMotionIndex);
-
-                ROCK_LOG_SAMPLE_WARN(Hand,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "{} RAGDOLL FRAME RAW: seq={}/{} target_bRca_raw=[({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f})] tA_rows=[({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f})] tB_rows=[({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f})]",
-                    handName(),
-                    flushSequence,
-                    queuedSequence,
-                    ragdollAngularProbePreSolve.targetBRcaRaw[0],
-                    ragdollAngularProbePreSolve.targetBRcaRaw[1],
-                    ragdollAngularProbePreSolve.targetBRcaRaw[2],
-                    ragdollAngularProbePreSolve.targetBRcaRaw[4],
-                    ragdollAngularProbePreSolve.targetBRcaRaw[5],
-                    ragdollAngularProbePreSolve.targetBRcaRaw[6],
-                    ragdollAngularProbePreSolve.targetBRcaRaw[8],
-                    ragdollAngularProbePreSolve.targetBRcaRaw[9],
-                    ragdollAngularProbePreSolve.targetBRcaRaw[10],
-                    ragdollAngularProbePreSolve.transformARotation.entry[0][0],
-                    ragdollAngularProbePreSolve.transformARotation.entry[0][1],
-                    ragdollAngularProbePreSolve.transformARotation.entry[0][2],
-                    ragdollAngularProbePreSolve.transformARotation.entry[1][0],
-                    ragdollAngularProbePreSolve.transformARotation.entry[1][1],
-                    ragdollAngularProbePreSolve.transformARotation.entry[1][2],
-                    ragdollAngularProbePreSolve.transformARotation.entry[2][0],
-                    ragdollAngularProbePreSolve.transformARotation.entry[2][1],
-                    ragdollAngularProbePreSolve.transformARotation.entry[2][2],
-                    ragdollAngularProbePreSolve.transformBRotation.entry[0][0],
-                    ragdollAngularProbePreSolve.transformBRotation.entry[0][1],
-                    ragdollAngularProbePreSolve.transformBRotation.entry[0][2],
-                    ragdollAngularProbePreSolve.transformBRotation.entry[1][0],
-                    ragdollAngularProbePreSolve.transformBRotation.entry[1][1],
-                    ragdollAngularProbePreSolve.transformBRotation.entry[1][2],
-                    ragdollAngularProbePreSolve.transformBRotation.entry[2][0],
-                    ragdollAngularProbePreSolve.transformBRotation.entry[2][1],
-                    ragdollAngularProbePreSolve.transformBRotation.entry[2][2]);
-
-                ROCK_LOG_SAMPLE_WARN(Hand,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "{} RAGDOLL FRAME LIVE: seq={}/{} liveA={} liveA_rows=[({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f})] liveB_rows=[({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f})]",
-                    handName(),
-                    flushSequence,
-                    queuedSequence,
-                    ragdollAngularProbePreSolve.bodyAWorldValid ? "ok" : "fail",
-                    ragdollAngularProbePreSolve.bodyAWorldBefore.rotate.entry[0][0],
-                    ragdollAngularProbePreSolve.bodyAWorldBefore.rotate.entry[0][1],
-                    ragdollAngularProbePreSolve.bodyAWorldBefore.rotate.entry[0][2],
-                    ragdollAngularProbePreSolve.bodyAWorldBefore.rotate.entry[1][0],
-                    ragdollAngularProbePreSolve.bodyAWorldBefore.rotate.entry[1][1],
-                    ragdollAngularProbePreSolve.bodyAWorldBefore.rotate.entry[1][2],
-                    ragdollAngularProbePreSolve.bodyAWorldBefore.rotate.entry[2][0],
-                    ragdollAngularProbePreSolve.bodyAWorldBefore.rotate.entry[2][1],
-                    ragdollAngularProbePreSolve.bodyAWorldBefore.rotate.entry[2][2],
-                    ragdollAngularProbePreSolve.bodyWorldBefore.rotate.entry[0][0],
-                    ragdollAngularProbePreSolve.bodyWorldBefore.rotate.entry[0][1],
-                    ragdollAngularProbePreSolve.bodyWorldBefore.rotate.entry[0][2],
-                    ragdollAngularProbePreSolve.bodyWorldBefore.rotate.entry[1][0],
-                    ragdollAngularProbePreSolve.bodyWorldBefore.rotate.entry[1][1],
-                    ragdollAngularProbePreSolve.bodyWorldBefore.rotate.entry[1][2],
-                    ragdollAngularProbePreSolve.bodyWorldBefore.rotate.entry[2][0],
-                    ragdollAngularProbePreSolve.bodyWorldBefore.rotate.entry[2][1],
-                    ragdollAngularProbePreSolve.bodyWorldBefore.rotate.entry[2][2]);
-
-                ROCK_LOG_SAMPLE_WARN(Hand,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "{} RAGDOLL FRAME ERROR: seq={}/{} appearsSolve=bRcaRows bRcaRowsErr={:.1f}deg bRcaColsErr={:.1f}deg aRcbRowsInvErr={:.1f}deg aRcbColsInvErr={:.1f}deg intendedBodyErr={:.1f}->{:.1f}deg targetToHiggsRelation={:.1f}deg transformBFrozenDelta={:.1f}deg pivotBRelationDelta={:.3f}gu pivotARoundTrip={:.3f}gu relationInv={:.3f}gu/{:.1f}deg atomRows={:.3f}gu/{:.1f}deg atomRel={:.1f}deg solverEff={:.3f}gu/{:.1f}deg effAtom={:.1f}deg rowsProxyInBody={:.1f}deg linTorque={:.3f}gu2 linTorqueDotReq={:.2f} reqAxisProxy=({:.2f},{:.2f},{:.2f})",
-                    handName(),
-                    flushSequence,
-                    queuedSequence,
-                    ragdollAngularProbePreSolve.ragdollBRcaRowsErrorDegrees,
-                    ragdollAngularProbePreSolve.ragdollBRcaColumnsErrorDegrees,
-                    ragdollAngularProbePreSolve.ragdollARcbRowsInverseErrorDegrees,
-                    ragdollAngularProbePreSolve.ragdollARcbColumnsInverseErrorDegrees,
-                    ragdollAngularProbePreSolve.beforeErrorDegrees,
-                    afterErrorDegrees,
-                    ragdollAngularProbePreSolve.targetToHiggsRelationDegrees,
-                    ragdollAngularProbePreSolve.transformBFrozenDeltaDegrees,
-                    ragdollAngularProbePreSolve.pivotBRelationDeltaGameUnits,
-                    ragdollAngularProbePreSolve.transformAPivotRoundTripDeltaGameUnits,
-                    ragdollAngularProbePreSolve.relationInverseBodyDeltaGameUnits,
-                    ragdollAngularProbePreSolve.relationInverseBodyDeltaDegrees,
-                    ragdollAngularProbePreSolve.atomRowsBodyDeltaGameUnits,
-                    ragdollAngularProbePreSolve.atomRowsBodyDeltaDegrees,
-                    ragdollAngularProbePreSolve.atomRowsToRelationInverseDegrees,
-                    ragdollAngularProbePreSolve.solverEffectiveBodyDeltaGameUnits,
-                    ragdollAngularProbePreSolve.solverEffectiveBodyDeltaDegrees,
-                    ragdollAngularProbePreSolve.solverEffectiveToAtomDegrees,
-                    ragdollAngularProbePreSolve.targetRowsToProxyInBodyDegrees,
-                    ragdollAngularProbePreSolve.linearTorqueWitnessGameUnitsSquared,
-                    ragdollAngularProbePreSolve.linearTorqueAxisDotRequired,
-                    ragdollAngularProbePreSolve.requiredAxisProxyLocal.x,
-                    ragdollAngularProbePreSolve.requiredAxisProxyLocal.y,
-                    ragdollAngularProbePreSolve.requiredAxisProxyLocal.z);
-                ROCK_LOG_SAMPLE_WARN(Hand,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "{} RAGDOLL A FRAME: seq={}/{} targetProxyLive={:.3f}gu/{:.1f}deg relA_targetLive={:.1f}deg conA_targetLive={:.1f}deg targetRelToCon={:.1f}deg liveRelToCon={:.1f}deg solverTargetA={:.3f}gu/{:.1f}deg solverLiveA={:.1f}deg solverTargetVsLive={:.1f}deg rawDelta tA={:.6f} tB={:.6f} target={:.6f}",
-                    handName(),
-                    flushSequence,
-                    queuedSequence,
-                    ragdollAngularProbePreSolve.targetProxyToLiveProxyDeltaGameUnits,
-                    ragdollAngularProbePreSolve.targetProxyToLiveProxyDeltaDegrees,
-                    ragdollAngularProbePreSolve.targetRelationAToLiveRelationADegrees,
-                    ragdollAngularProbePreSolve.targetConstraintAToLiveConstraintADegrees,
-                    ragdollAngularProbePreSolve.targetRelationAToTargetConstraintADegrees,
-                    ragdollAngularProbePreSolve.liveRelationAToLiveConstraintADegrees,
-                    ragdollAngularProbePreSolve.solverEffectiveBodyDeltaGameUnits,
-                    ragdollAngularProbePreSolve.solverEffectiveBodyDeltaDegrees,
-                    ragdollAngularProbePreSolve.solverEffectiveLiveABodyDeltaDegrees,
-                    ragdollAngularProbePreSolve.solverEffectiveTargetALiveADeltaDegrees,
-                    ragdollAngularProbePreSolve.transformARawMaxDelta,
-                    ragdollAngularProbePreSolve.transformBRawMaxDelta,
-                    ragdollAngularProbePreSolve.targetBRcaRawMaxDelta);
-                if (ragdollAngularProbePreSolve.bodyAWorldValid) {
-                    const auto bodyABasis = grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.liveRelationAWorld);
-                    const auto targetABasis = grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.targetRelationAWorld);
-                    const auto targetConstraintABasis =
-                        grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.targetConstraintAWorld);
-                    const auto liveConstraintABasis =
-                        grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.liveConstraintAWorld);
-                    const auto liveBeforeBasis = grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.bodyWorldBefore);
-                    const auto liveAfterBasis = grab_transform_telemetry::makeOrientationBasis(objectReadback);
-                    const auto desiredBasis = grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.desiredBodyWorld);
-                    const auto atomRowsBasis = grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.atomRowsBodyWorld);
-                    const auto solverEffectiveBasis = grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.solverEffectiveBodyWorld);
-                    const auto solverEffectiveLiveABasis =
-                        grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.solverEffectiveLiveAWorld);
-                    ROCK_LOG_SAMPLE_WARN(Hand,
-                        g_rockConfig.rockLogSampleMilliseconds,
-                        "{} RAGDOLL AXISMAP: seq={}/{} afterSeq={} ref=liveRelA {} {} {}",
-                        handName(),
-                        flushSequence,
-                        queuedSequence,
-                        afterSolveSequence,
-                        grab_transform_telemetry::formatBasisCrossMap("liveBeforeToA", liveBeforeBasis, bodyABasis),
-                        grab_transform_telemetry::formatBasisCrossMap("liveAfterToA", liveAfterBasis, bodyABasis),
-                        grab_transform_telemetry::formatBasisCrossMap("desiredToA", desiredBasis, bodyABasis));
-                    ROCK_LOG_SAMPLE_WARN(Hand,
-                        g_rockConfig.rockLogSampleMilliseconds,
-                        "{} RAGDOLL AXISMAP TARGETS: seq={}/{} afterSeq={} {} {} {}",
-                        handName(),
-                        flushSequence,
-                        queuedSequence,
-                        afterSolveSequence,
-                        grab_transform_telemetry::formatBasisCrossMap("atomRowsToA", atomRowsBasis, bodyABasis),
-                        grab_transform_telemetry::formatBasisCrossMap("solverEffToA", solverEffectiveBasis, bodyABasis),
-                        grab_transform_telemetry::formatBasisCrossMap("liveAfterToDesired", liveAfterBasis, desiredBasis));
-                    ROCK_LOG_SAMPLE_WARN(Hand,
-                        g_rockConfig.rockLogSampleMilliseconds,
-                        "{} RAGDOLL A AXISMAP: seq={}/{} afterSeq={} {} {} {} {}",
-                        handName(),
-                        flushSequence,
-                        queuedSequence,
-                        afterSolveSequence,
-                        grab_transform_telemetry::formatBasisCrossMap("desiredToTargetRelA", desiredBasis, targetABasis),
-                        grab_transform_telemetry::formatBasisCrossMap("solverToTargetRelA", solverEffectiveBasis, targetABasis),
-                        grab_transform_telemetry::formatBasisCrossMap("desiredToLiveRelA", desiredBasis, bodyABasis),
-                        grab_transform_telemetry::formatBasisCrossMap("solverLiveToLiveRelA", solverEffectiveLiveABasis, bodyABasis));
-                    ROCK_LOG_SAMPLE_WARN(Hand,
-                        g_rockConfig.rockLogSampleMilliseconds,
-                        "{} RAGDOLL CONSTRAINT A AXISMAP: seq={}/{} afterSeq={} {} {} {} {}",
-                        handName(),
-                        flushSequence,
-                        queuedSequence,
-                        afterSolveSequence,
-                        grab_transform_telemetry::formatBasisCrossMap("desiredToTargetConA", desiredBasis, targetConstraintABasis),
-                        grab_transform_telemetry::formatBasisCrossMap("solverToTargetConA", solverEffectiveBasis, targetConstraintABasis),
-                        grab_transform_telemetry::formatBasisCrossMap("desiredToLiveConA", desiredBasis, liveConstraintABasis),
-                        grab_transform_telemetry::formatBasisCrossMap("solverLiveToLiveConA", solverEffectiveLiveABasis, liveConstraintABasis));
-                }
-            }
-        }
-
-        const bool likelyRawProxyFrameMismatch =
-            rawToTargetProxyRotationDegrees > kGrabFrameMismatchRawProxyRotationWarnDegrees &&
-            ((proxyOk && proxyTargetRotationErrorDegrees > kGrabFrameMismatchProxyRotationWarnDegrees) ||
-                (objectOk && objectTargetRotationErrorDegrees > kGrabFrameMismatchObjectRotationWarnDegrees) ||
-                (objectOk && gripTargetErrorGameUnits > kGrabFrameMismatchGripErrorWarnGameUnits));
-        if (likelyRawProxyFrameMismatch) {
-            ROCK_LOG_SAMPLE_WARN(Hand,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "{} PROXY GRAB FRAME MISMATCH: seq={}/{} afterSeq={} substep={}/{} rawToProxyTarget={:.1f}deg rawToProxyLive={:.1f}deg targetAxisDeg=({:.1f},{:.1f},{:.1f}) liveAxisDeg=({:.1f},{:.1f},{:.1f}) determinantTarget=({:.3f},{:.3f}) determinantLive=({:.3f},{:.3f}) proxyErr={:.2f}gu/{:.1f}deg objectErr={:.2f}gu/{:.1f}deg gripErr={:.2f}gu pivotBRelationDelta={:.2f}gu pivotARoundTrip={:.3f}gu linTorque={:.3f}gu2 linTorqueDotReq={:.2f} targetToHiggsRelation={:.1f}deg transformBFrozenDelta={:.1f}deg probePivotBRelationDelta={:.3f}gu reqAxisProxy=({:.2f},{:.2f},{:.2f}) angularRef={} proxySrc={} objectSrc={} phase={} pivotB=({:.2f},{:.2f},{:.2f})",
-                handName(),
-                flushSequence,
-                queuedSequence,
-                afterSolveSequence,
-                timing.substepIndex,
-                timing.substepCount,
-                rawToTargetProxyRotationDegrees,
-                rawToLiveProxyRotationDegrees,
-                targetPalmBasisDelta.xAxisDegrees,
-                targetPalmBasisDelta.yAxisDegrees,
-                targetPalmBasisDelta.zAxisDegrees,
-                livePalmBasisDelta.xAxisDegrees,
-                livePalmBasisDelta.yAxisDegrees,
-                livePalmBasisDelta.zAxisDegrees,
-                targetPalmBasisDelta.rawDeterminant,
-                targetPalmBasisDelta.proxyDeterminant,
-                livePalmBasisDelta.rawDeterminant,
-                livePalmBasisDelta.proxyDeterminant,
-                proxyTargetPositionErrorGameUnits,
-                proxyTargetRotationErrorDegrees,
-                objectTargetPositionErrorGameUnits,
-                objectTargetRotationErrorDegrees,
-                gripTargetErrorGameUnits,
-                hasConstraintFrameMetrics ? pivotBRelationDeltaGameUnits : -1.0f,
-                ragdollAngularProbePreSolve.transformAPivotRoundTripDeltaGameUnits,
-                ragdollAngularProbePreSolve.linearTorqueWitnessGameUnitsSquared,
-                ragdollAngularProbePreSolve.linearTorqueAxisDotRequired,
-                hasConstraintFrameMetrics ? targetToHiggsRelationDegrees : -1.0f,
-                hasConstraintFrameMetrics ? transformBFrozenDeltaDegrees : -1.0f,
-                ragdollAngularProbePreSolve.pivotBRelationDeltaGameUnits,
-                ragdollAngularProbePreSolve.requiredAxisProxyLocal.x,
-                ragdollAngularProbePreSolve.requiredAxisProxyLocal.y,
-                ragdollAngularProbePreSolve.requiredAxisProxyLocal.z,
-                kGrabObjectRotationReferenceName,
-                body_frame::bodyFrameSourceCode(proxySource),
-                body_frame::bodyFrameSourceCode(objectSource),
-                grab_three_phase::phaseName(_grabAcquisitionPhase),
-                pivotBConstraintLocalGame.x,
-                pivotBConstraintLocalGame.y,
-                pivotBConstraintLocalGame.z);
-        }
-
-        const bool shouldLogSequence = afterSolveSequence <= 16 || (afterSolveSequence % 45u) == 0u;
-        const bool shouldLogAnomaly =
-            !proxyOk ||
-            !objectOk ||
-            proxyTargetPositionErrorGameUnits > 1.0f ||
-            proxyTargetRotationErrorDegrees > 1.0f ||
-            objectTargetPositionErrorGameUnits > 5.0f ||
-            objectTargetRotationErrorDegrees > 15.0f ||
-            gripTargetErrorGameUnits > 5.0f ||
-            likelyRawProxyFrameMismatch;
-        if (!debugGrabFrameLogging || (!shouldLogSequence && !shouldLogAnomaly)) {
+        // Post-solve object velocity for release momentum. It is sampled under
+        // the proxy mutex so release never reads a half-written sample.
+        std::scoped_lock lock(_grabAuthorityProxyMutex);
+        const bool hasAuthority = _grabAuthorityProxy.isValid() &&
+                                  _grabAuthorityProxyHknpWorld == world &&
+                                  _hasLastAppliedGrabAuthorityProxyWorld;
+        _releaseObjectSample = {};
+        if (!hasAuthority || !timing.valid || timing.usedFallback) {
             return;
         }
 
-        ROCK_LOG_DEBUG(Hand,
-            "{} PROXY GRAB AFTER_SOLVE: seq={}/{} afterSeq={} diag=bodyFrameConstraint+{} proxyBody={} objBody={} constraint={} substep={}/{} proxyRead={} proxySrc={} proxyMotion={} objectRead={} objectSrc={} objectMotion={} proxyTargetErr={:.3f}gu/{:.2f}deg objectTargetErr={:.2f}gu/{:.1f}deg objectLiveProxyErr={:.2f}gu/{:.1f}deg gripTargetErr={:.2f}gu gripLiveProxyErr={:.2f}gu angularRef={} targetBody=({:.1f},{:.1f},{:.1f}) targetProxy=({:.1f},{:.1f},{:.1f}) liveProxy=({:.1f},{:.1f},{:.1f}) targetObj=({:.1f},{:.1f},{:.1f}) liveObj=({:.1f},{:.1f},{:.1f}) desiredObjectTarget=({:.1f},{:.1f},{:.1f}) desiredObjectLiveProxy=({:.1f},{:.1f},{:.1f})",
-            handName(),
-            flushSequence,
-            queuedSequence,
-            afterSolveSequence,
-            grabAngularAuthorityName(angularAuthority),
-            proxyBodyId.value,
-            objectBodyId.value,
-            constraintId,
-            timing.substepIndex,
-            timing.substepCount,
-            proxyOk ? "ok" : "fail",
-            body_frame::bodyFrameSourceCode(proxySource),
-            proxyMotionIndex,
-            objectOk ? "ok" : "fail",
-            body_frame::bodyFrameSourceCode(objectSource),
-            objectMotionIndex,
-            proxyTargetPositionErrorGameUnits,
-            proxyTargetRotationErrorDegrees,
-            objectTargetPositionErrorGameUnits,
-            objectTargetRotationErrorDegrees,
-            objectLiveProxyPositionErrorGameUnits,
-            objectLiveProxyRotationErrorDegrees,
-            gripTargetErrorGameUnits,
-            gripLiveProxyErrorGameUnits,
-            kGrabObjectRotationReferenceName,
-            desiredBodyFromTarget.translate.x,
-            desiredBodyFromTarget.translate.y,
-            desiredBodyFromTarget.translate.z,
-            targetProxyWorld.translate.x,
-            targetProxyWorld.translate.y,
-            targetProxyWorld.translate.z,
-            proxyReadback.translate.x,
-            proxyReadback.translate.y,
-            proxyReadback.translate.z,
-            desiredBodyFromTarget.translate.x,
-            desiredBodyFromTarget.translate.y,
-            desiredBodyFromTarget.translate.z,
-            objectReadback.translate.x,
-            objectReadback.translate.y,
-            objectReadback.translate.z,
-            desiredObjectFromTarget.translate.x,
-            desiredObjectFromTarget.translate.y,
-            desiredObjectFromTarget.translate.z,
-            desiredObjectFromLiveProxy.translate.x,
-            desiredObjectFromLiveProxy.translate.y,
-            desiredObjectFromLiveProxy.translate.z);
+        const auto* body = havok_runtime::getBody(world, _savedObjectState.bodyId);
+        const auto* motion = body && body_frame::hasUsableMotionIndex(body->motionIndex) ?
+            havok_runtime::getMotion(world, body->motionIndex) : nullptr;
+        if (motion) {
+            _releaseObjectSample = { world, _savedObjectState.bodyId.value, _grabFrame.traceId,
+                timing.solveSequence, release_velocity::sampleTimeSeconds(),
+                { motion->linearVelocity.x, motion->linearVelocity.y, motion->linearVelocity.z } };
+        }
     }
 
     GrabReleaseOutcome Hand::releaseGrabbedObject(
@@ -16099,26 +13660,6 @@ namespace rock
         outcome.refr = outcome.retainedRef.get();
         outcome.formID = outcome.refr ? outcome.refr->GetFormID() : 0;
 
-        if (grabTimelineTraceEnabled()) {
-            ROCK_LOG_INFO(Hand,
-                "{} GRAB_TRACE stage=release trace={} hand={} formID={:08X} body={} proxyBody={} constraint={} queued={} flushed={} afterSeq={} writes={} finalObjectRelease={} disposition={} reason={} heldBodies={} looseWeapon={}",
-                handName(),
-                _grabFrame.traceId,
-                _isLeft ? "left" : "right",
-                outcome.formID,
-                _savedObjectState.bodyId.value,
-                _grabAuthorityProxy.isValid() ? _grabAuthorityProxy.getBodyId().value : INVALID_BODY_ID,
-                _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu,
-                _grabAuthorityProxyQueuedSequence,
-                _grabAuthorityProxyFlushSequence,
-                _grabAuthorityProxyAfterSolveLogCounter,
-                _grabFrame.traceTargetWriteSequence,
-                releaseContext.finalObjectRelease ? "yes" : "no",
-                releaseDispositionName(releaseContext.disposition),
-                releaseContext.reason ? releaseContext.reason : "none",
-                _heldBodyIds.size(),
-                _heldObjectIsLooseWeapon ? "yes" : "no");
-        }
 
         const std::string_view callerPath{ caller.file_name() };
         const auto separator = callerPath.find_last_of("/\\");

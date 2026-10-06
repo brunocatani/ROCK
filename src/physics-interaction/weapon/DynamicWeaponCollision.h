@@ -186,7 +186,6 @@ namespace rock
         void finalizeCompoundPose(const WeaponCollision& weaponCollision, RE::NiNode* weaponNode,
             const PhysicsFrameContext& frame, std::uint64_t generation);
         // Game-thread witness after the final claimed-hand presentation.
-        void tracePresentedWeapon(RE::NiNode* weaponNode, std::uint64_t frameIndex);
 
         bool isProxyBodyIdAtomic(std::uint32_t bodyId) const;
         void recordObstacleContactCallback(
@@ -274,7 +273,6 @@ namespace rock
             RE::NiNode* weaponNode,
             const RE::NiTransform& requestedWeaponWorld,
             std::uint64_t weaponGenerationKey,
-            dynamic_weapon_collision_policy::VisualIntentSource source,
             const RE::NiTransform* physicalDriverWorld);
         void recordSurfaceSupportContact(RE::hknpWorld* world,
             std::uint32_t otherBodyId, const RE::NiPoint3& contactPointGame);
@@ -370,15 +368,7 @@ namespace rock
         bool _physicsDriveTeleported{ false };
         RE::NiTransform _physicsRequestedAuthorityTarget{};
         RE::NiTransform _physicsRequestedTarget{};
-        RE::NiTransform _physicsPreviousRequestedTarget{};
-        bool _physicsPreviousRequestedTargetValid{ false };
-        // Physics callback values only; no scene pointers cross to this trace.
         std::uint64_t _physicsSourceSequence{ 0 };
-        GeneratedKeyframedBodyDriveResult _clockDriveResult{};
-        havok_physics_timing::PhysicsTimingSample _clockDriveTiming{};
-        std::uint64_t _clockSourceJumpCount{ 0 };
-        std::uint64_t _clockGripResetCount{ 0 };
-        std::uint64_t _clockDivergenceResetCount{ 0 };
         // Physics-thread-only persistence timer for the real colliding body.
         // The hidden authority target may jump immediately after a tracking
         // discontinuity, but blocked physical divergence must persist before
@@ -400,7 +390,6 @@ namespace rock
         void* _frameBhkWorld{ nullptr };
         RE::NiNode* _frameWeaponNode{ nullptr };
         RE::NiTransform _frameRequestedWeaponWorld{};
-        dynamic_weapon_collision_policy::VisualIntentSource _frameIntentSource{dynamic_weapon_collision_policy::VisualIntentSource::None};
         RE::NiTransform _frameIntentDriverWorld{};
         bool _frameIntentDriverValid{false};
         // Toggle, latch, and return are owned by the game frame. The contact
@@ -410,15 +399,7 @@ namespace rock
         weapon_surface_support::State _surfaceSupport{};
         bool _surfaceClickRequested{ false };
         bool _surfaceInputReserved{ false };
-        // Game-thread diagnostic baseline; source/generation changes rebase it.
-        RE::NiTransform _previousIntentDriverLocal{};
-        dynamic_weapon_collision_policy::VisualIntentSource _previousIntentSource{dynamic_weapon_collision_policy::VisualIntentSource::None};
-        std::uint64_t _previousIntentGeneration{0};
-        bool _previousIntentDriverValid{false};
         DebugSnapshot _debugSnapshot{};
-        // Current game frame only. Reset at beginFrame and on body retirement.
-        std::uint64_t _clockPresentationFrame{ 0 };
-        RE::NiTransform _clockExpectedWeaponWorld{};
 
         std::atomic<bool> _enabledAtomic{ false };
         std::atomic<float> _gripRecoveryDistanceGameUnitsAtomic{ 210.0f };

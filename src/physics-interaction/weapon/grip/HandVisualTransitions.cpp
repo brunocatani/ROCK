@@ -1211,32 +1211,10 @@ namespace rock
         }
 
         const bool supportHandIsLeft = isSupportHandLeft();
-        const bool leftCarryArmProbe =
-            g_rockConfig.rockDebugGrabFrameLogging &&
-            usesLeftFiringCarry() &&
-            applyPrimaryHand &&
-            applySupportHand &&
-            _firing.hasPrimaryHandWeaponLocal;
-        const LeftCarryArmSample armBeforePrimary =
-            leftCarryArmProbe ? sampleLeftCarryArm() : LeftCarryArmSample{};
-        const RE::NiTransform probeFiringHandWorld =
-            leftCarryArmProbe ?
-            weapon_visual_authority_math::weaponLocalFrameToWorld(weaponNode->world, _firing.primaryHandWeaponLocal) :
-            RE::NiTransform{};
         bool primaryApplied = true;
         bool supportApplied = true;
         if (applyPrimaryHand) {
             primaryApplied = applyFiringHandLockedVisual(weaponNode, dt, livePrimaryHandWorld);
-        }
-        if (leftCarryArmProbe) {
-            const LeftCarryArmSample armAfterPrimary = sampleLeftCarryArm();
-            ROCK_LOG_DEBUG(Weapon,
-                "LEFT_CARRY_ARM: frame={} applied={} target={} {} {}",
-                runtime_state::currentFrame().frameIndex,
-                primaryApplied ? 1 : 0,
-                formatLeftCarryArmFrame(probeFiringHandWorld),
-                formatLeftCarryArmSample("s0", armBeforePrimary),
-                formatLeftCarryArmSample("s1", armAfterPrimary));
         }
         if (applySupportHand) {
             supportApplied = applyPartGripLockedVisual(supportHandIsLeft, weaponNode, dt, liveSupportHandWorld);
