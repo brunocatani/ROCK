@@ -10,4 +10,18 @@ static_assert(supportsInventory(1,0,48) && !supportsInventory(1,1,48) && !suppor
 static_assert(!supportsInventory(1,0,40) && !supportsInventory(1,0,56));
 static_assert(sizeof(rock::api::storage_interaction::ApiV1)==48);
 static_assert(sizeof(rock::api::storage_interaction::v1_1::Api)==56);
+// Adding the inventory range must not stretch the old 16-display rotation
+// into a 48-frame cycle or repeatedly favor legacy slot zero.
+static_assert([] {
+    constexpr auto legacy=rock::api::storage_interaction::kMaximumDisplays;
+    constexpr auto inventory=rock::api::inventory_display::kMaximumDisplays;
+    for(std::uint64_t frame=0;frame<2*inventory;++frame) {
+        if(preparationIndex(0,frame,legacy)!=frame%legacy) return false;
+        for(std::size_t i=0;i<legacy;++i)
+            if(preparationIndex(i,frame,legacy)!=(i+frame)%legacy) return false;
+        for(std::size_t i=0;i<inventory;++i)
+            if(preparationIndex(i,frame,inventory)!=(i+frame)%inventory) return false;
+    }
+    return true;
+}());
 int main() {}

@@ -62,7 +62,7 @@ namespace rock::storage_interaction
             // Palm and all finger segments; the forearm remains excluded.
             struct HandBody { std::uint32_t id{policy::invalidBody}; std::uintptr_t object{}; };
             std::array<std::array<HandBody,dynamic_hand_collision_telemetry::kFirstForearmSlot>,2> hands{};
-            unsigned preparationCursor{};
+            std::array<std::uint64_t,2> preparationCursor{};
             std::atomic_bool active{};
         };
         Service service;
@@ -469,11 +469,16 @@ namespace rock::storage_interaction
             const auto body=havok_runtime::snapshotBodyIdentity(service.world,{hand.id});
             hand.object=body.valid?reinterpret_cast<std::uintptr_t>(body.collisionObject):0;
         }
-        bool advanced{}, captured{}, anyOwner{}, offeredAuthored{};
+        bool anyOwner{};
+        std::array<bool,2> advanced{},captured{},offeredAuthored{},hadOwner{};
         std::array<BethesdaPhysicsBody*,totalDisplays> refresh{}; unsigned refreshCount{};
         for(unsigned i=0;i<service.displays.size();++i) {
-            auto& entry=service.displays[(i+service.preparationCursor)%service.displays.size()];
+            const unsigned domain=i<contract::kMaximumDisplays?0:1;
+            const auto range=displayRange(domain!=0);
+            const auto ordinal=i-(domain?contract::kMaximumDisplays:0);
+            auto& entry=range[policy::preparationIndex(ordinal,service.preparationCursor[domain],range.size())];
             if(!entry.owner) continue;
+            hadOwner[domain]=true;
             if(entry.expired || entry.deadline<current.frameIndex || !sameGeneration(entry.request,current) ||
                 (entry.inventoryOwned?authorizeInventory(entry.owner):authorize(entry.owner))!=api::Status::Ok) {
                 retire(entry,service.world); entry.owner=0; continue;
@@ -481,8 +486,8 @@ namespace rock::storage_interaction
             anyOwner=true;
             auto* node=resolve(entry,physics);
             if(!node) { retire(entry,service.world); continue; }
-            if(!offeredAuthored && entry.authoredRequestedUntil>=current.frameIndex && entry.authoredRequestedUntil) {
-                offeredAuthored=true;
+            if(!offeredAuthored[domain] && entry.authoredRequestedUntil>=current.frameIndex && entry.authoredRequestedUntil) {
+                offeredAuthored[domain]=true;
                 if(entry.inventoryOwned) {
                     const auto selected=weapon_equip_transfer::captureInventoryWeapon(entry.inventoryItem.baseFormId,entry.inventoryItem.stackIndex);
                     if(selected.stack && reinterpret_cast<std::uintptr_t>(selected.stack.get())==entry.inventoryItem.stackKey)
@@ -496,8 +501,8 @@ namespace rock::storage_interaction
                 retire(entry,service.world);
                 // Bound scene extraction too, including simultaneous consumer
                 // registrations. Retired sources cannot leave stale contacts.
-                if(captured) continue;
-                captured=true;
+                if(captured[domain]) continue;
+                captured[domain]=true;
                 entry.node.reset(node); entry.sourceScale=node->world.scale; entry.physicsScale=physics_scale::gameToHavok();
                 entry.boundReference=entry.request.storedReference; entry.boundParent=entry.request.parentReference;
                 entry.parent.reset(RE::TESForm::GetFormByID<RE::TESObjectREFR>(entry.boundParent));
@@ -513,8 +518,8 @@ namespace rock::storage_interaction
             const auto mask=freeHands(entry.owner);
             bool filterChanged=entry.freeHands!=mask;
             entry.freeHands=mask; entry.publishedFrame=current.frameIndex;
-            if(!entry.failed && !entry.body.isValid() && !advanced) {
-                advanced=true;
+            if(!entry.failed && !entry.body.isValid() && !advanced[domain]) {
+                advanced[domain]=true;
                 if(advancePreparation(entry)) {
                     entry.preparation={}; entry.groups.clear();
                     if(!entry.failed && entry.shape) {
@@ -549,7 +554,7 @@ namespace rock::storage_interaction
                 if(filterChanged) refresh[refreshCount++]=&entry.body;
             }
         }
-        service.preparationCursor=(service.preparationCursor+1)%service.displays.size();
+        for(unsigned domain=0;domain<2;++domain) if(hadOwner[domain]) ++service.preparationCursor[domain];
         service.callbacks.resumeCallbacks();
         for(unsigned i=0;i<refreshCount;++i) refresh[i]->refreshCollisionFilter(service.world);
         service.active=anyOwner;
