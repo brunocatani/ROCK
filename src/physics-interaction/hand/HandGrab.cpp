@@ -7666,30 +7666,6 @@ namespace rock
             publishHeldBodyScope(world);
             _isHoldingFlag.store(true, std::memory_order_release);
 
-            if (g_rockConfig.rockGrabNearbyDampingEnabled && !grab_target::isRagdoll(sel.targetKind)) {
-                object_physics_body_set::BodySetScanOptions dampingOptions{};
-                dampingOptions.mode = physics_body_classifier::InteractionMode::PassivePush;
-                dampingOptions.rightHandBodyId = _isLeft ? INVALID_BODY_ID : _handBody.getBodyId().value;
-                dampingOptions.leftHandBodyId = _isLeft ? _handBody.getBodyId().value : INVALID_BODY_ID;
-                dampingOptions.heldBySameHand = &_heldBodyIds;
-                dampingOptions.maxDepth = (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth);
-                {
-                    performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabNearbyDampingBegin);
-                    _nearbyGrabDamping = nearby_grab_damping::beginNearbyGrabDamping(bhkWorld,
-                        world,
-                        sel.refr,
-                        _heldBodyIds,
-                        grabGripPoint,
-                        g_rockConfig.rockGrabNearbyDampingRadius,
-                        g_rockConfig.rockGrabNearbyDampingSeconds,
-                        g_rockConfig.rockGrabNearbyLinearDamping,
-                        g_rockConfig.rockGrabNearbyAngularDamping,
-                        dampingOptions);
-                }
-                performance_profiler::observeValue(performance_profiler::ValueMetric::GrabNearbyDampingMotions, _nearbyGrabDamping.motions.size());
-            } else {
-                _nearbyGrabDamping.clear();
-            }
 
             stopSelectionHighlight();
             clearSelectedCloseFingerPose();
@@ -9923,7 +9899,6 @@ namespace rock
             return;
         }
 
-        nearby_grab_damping::tickNearbyGrabDamping(world, _nearbyGrabDamping, deltaTime);
 
         suppressHandCollisionForGrab(world, bodyBoneColliders);
         if (_heldObjectIsLooseWeapon) {
@@ -10314,7 +10289,6 @@ namespace rock
             releaseContext.reason ? releaseContext.reason : "none",
             _grabFrame.traceId, callerFile, caller.line());
 
-        nearby_grab_damping::restoreNearbyGrabDamping(world, _nearbyGrabDamping);
 
         const auto releaseTime = runtime_state::currentFrame().timing.elapsedGameSeconds;
         const auto objectHistory = _objectReleaseHistory.peaks(release_velocity::sampleTimeSeconds());

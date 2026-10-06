@@ -11,7 +11,6 @@
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/hand/HandLifecycle.h"
-#include "physics-interaction/grab/NearbyGrabDamping.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/RockLoggingPolicy.h"
 
@@ -1078,15 +1077,6 @@ namespace rock
         rockGrabReleaseHandCollisionDelaySeconds =
             rock::hand_collision_suppression_math::sanitizeDelaySeconds(
                 static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabReleaseHandCollisionDelaySeconds", rockGrabReleaseHandCollisionDelaySeconds)));
-        rockGrabNearbyDampingEnabled = ini.GetBoolValue(SECTION, "bGrabNearbyDampingEnabled", rockGrabNearbyDampingEnabled);
-        rockGrabNearbyDampingRadius =
-            nearby_grab_damping::sanitizeRadius(static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabNearbyDampingRadius", rockGrabNearbyDampingRadius)));
-        rockGrabNearbyDampingSeconds =
-            nearby_grab_damping::sanitizeDuration(static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabNearbyDampingSeconds", rockGrabNearbyDampingSeconds)));
-        rockGrabNearbyLinearDamping =
-            nearby_grab_damping::sanitizeHknpDampingCoefficient(static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabNearbyLinearDamping", rockGrabNearbyLinearDamping)));
-        rockGrabNearbyAngularDamping =
-            nearby_grab_damping::sanitizeHknpDampingCoefficient(static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabNearbyAngularDamping", rockGrabNearbyAngularDamping)));
         rockGrabHeldMassMovementSlowdownEnabled =
             ini.GetBoolValue(SECTION, "bGrabHeldMassMovementSlowdownEnabled", rockGrabHeldMassMovementSlowdownEnabled);
         rockGrabHeldMassMovementMassProportion = readClampedFloat(ini,

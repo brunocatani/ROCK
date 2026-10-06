@@ -281,10 +281,6 @@ namespace rock
         clearPullRuntimeState(false, "reset");
         clearPullCatchIntent("reset");
         clearActorEquipmentDropHandoff("reset");
-        if (_nearbyGrabDamping.active || !_nearbyGrabDamping.motions.empty()) {
-            ROCK_LOG_WARN(Hand, "{} hand reset cleared nearby velocity-damping state without a world; no native damping fields were modified", handName());
-        }
-        _nearbyGrabDamping.clear();
         _grabFrame.clear();
         _grabOffsetAcquisition = {};
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
@@ -387,7 +383,6 @@ namespace rock
         _heldBodyIdsCount.store(0, std::memory_order_release);
         clearHeldBodyContactSnapshot();
         _isHoldingFlag.store(false, std::memory_order_release);
-        _nearbyGrabDamping.clear();
         _grabFrame.clear();
         _grabOffsetAcquisition = {};
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;

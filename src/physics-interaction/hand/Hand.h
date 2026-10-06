@@ -25,7 +25,6 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/hand/HandInteractionStateMachine.h"
 #include "physics-interaction/hand/HandVisual.h"
-#include "physics-interaction/grab/NearbyGrabDamping.h"
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/object/RagdollBodyScope.h"
@@ -1287,7 +1286,6 @@ namespace rock
         bool _grabFingerPosePublished = false;
         float _grabConvergeStableInsidePocketSeconds = 0.0f;
         float _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
-        nearby_grab_damping::NearbyGrabDampingState _nearbyGrabDamping;
         std::array<float, 5> _grabDeviationHistory{};
         std::size_t _grabDeviationHistoryCount = 0;
         std::size_t _grabDeviationHistoryNext = 0;

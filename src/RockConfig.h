@@ -364,11 +364,6 @@ namespace rock
         float rockMouthConsumeExitPaddingGameUnits = 1.0f;
         float rockMouthConsumeMinDwellSeconds = 0.08f;
         float rockMouthConsumeMaxSpeedGameUnitsPerSecond = 120.0f;
-        bool rockGrabNearbyDampingEnabled = true;
-        float rockGrabNearbyDampingRadius = 90.0f;
-        float rockGrabNearbyDampingSeconds = 0.35f;
-        float rockGrabNearbyLinearDamping = 3.0f;
-        float rockGrabNearbyAngularDamping = 5.5f;
         bool rockGrabHeldMassMovementSlowdownEnabled = true;
         float rockGrabHeldMassMovementMassProportion = 0.675f;
         float rockGrabHeldMassMovementMassExponent = 1.0f;

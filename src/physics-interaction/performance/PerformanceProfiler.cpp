@@ -177,16 +177,10 @@ namespace rock::performance_profiler
                 return "grabAcquisitionActivePrep";
             case Scope::GrabMeshExtraction:
                 return "grabMeshExtraction";
-            case Scope::GrabNearbyDampingBegin:
-                return "grabNearbyDampingBegin";
             case Scope::GrabHeldObjectUpdate:
                 return "grabHeldObjectUpdate";
             case Scope::GrabAuthorityFlush:
                 return "grabAuthorityFlush";
-            case Scope::GrabNearbyDampingRestore:
-                return "grabNearbyDampingRestore";
-            case Scope::GrabNearbyDampingRestoreBodySearch:
-                return "grabNearbyDampingRestoreBodySearch";
             case Scope::FramePrelude: return "framePrelude";
             case Scope::FrameBeginPreparation: return "frameBeginPreparation";
             case Scope::WeaponPresentation: return "weaponPresentation";
@@ -303,8 +297,6 @@ namespace rock::performance_profiler
                 return "grabAcquisitionCacheMiss";
             case Counter::GrabAcquisitionCacheInvalidated:
                 return "grabAcquisitionCacheInvalidated";
-            case Counter::GrabNearbyDampingRestoreFailed:
-                return "grabNearbyDampingRestoreFailed";
             case Counter::NativeMeleeRockPartnerDropped:
                 return "nativeMeleeRockPartnerDropped";
             case Counter::NativeMeleeDecodeFailed:
@@ -362,8 +354,6 @@ namespace rock::performance_profiler
                 return "grabAcquisitionBodyIds";
             case ValueMetric::GrabMeshTriangles:
                 return "grabMeshTriangles";
-            case ValueMetric::GrabNearbyDampingMotions:
-                return "grabNearbyDampingMotions";
             case ValueMetric::EquippedWeaponFingerPoseSourceTriangles:
                 return "equippedWeaponFingerPoseSourceTriangles";
             case ValueMetric::EquippedWeaponFingerPoseSelectedTriangles:
