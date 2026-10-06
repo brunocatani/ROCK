@@ -114,19 +114,6 @@ int main()
     ok &= expectMatrixEntryNear("hkTransform BODY block", hkTransformRotation, 2, 1, bodyFloats[9]);
     ok &= expectMatrixEntryNear("hkTransform BODY block", hkTransformRotation, 2, 2, bodyFloats[10]);
 
-    const RE::NiMatrix3 transposedReadback = rock::transform_math::havokColumnsToNiRows<RE::NiMatrix3>(bodyFloats);
-    RE::NiTransform transposedBodyWorld = bodyWorld;
-    transposedBodyWorld.rotate = transposedReadback;
-    const RE::NiPoint3 wrongWorld = rock::transform_math::localPointToWorld(transposedBodyWorld, localPivotGame);
-    const float wrongDelta = std::sqrt(
-        (wrongWorld.x - expectedWorld.x) * (wrongWorld.x - expectedWorld.x) +
-        (wrongWorld.y - expectedWorld.y) * (wrongWorld.y - expectedWorld.y) +
-        (wrongWorld.z - expectedWorld.z) * (wrongWorld.z - expectedWorld.z));
-    if (wrongDelta <= 1.0f) {
-        std::printf("transposed BODY readback unexpectedly matched native local-axis math\n");
-        ok = false;
-    }
-
     // Two shape BODY frames may share a single MOTION. Compound children must
     // recover the same mesh centre and axes through either BODY's native math.
     auto rootWorld=rock::transform_math::makeIdentityTransform<RE::NiTransform>();

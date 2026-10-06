@@ -76,11 +76,6 @@ namespace rock::weapon_support_authority_policy
         return mode == WeaponSupportAuthorityMode::FullTwoHandedSolver;
     }
 
-    inline constexpr bool supportGripAppliesSupportHandAuthority(WeaponSupportAuthorityMode)
-    {
-        return true;
-    }
-
     /*
      * A close core support grip cannot safely steer the weapon because its two
      * controller anchors are nearly coincident, but it still represents a real
@@ -599,15 +594,6 @@ namespace rock::weapon_two_handed_grip_math
         const Vector handSeatCorrection = weaponSolverSub(targetGripPointWorld, currentGripPivotWorld);
         result.translate = weaponSolverSub(result.translate, handSeatCorrection);
         return result;
-    }
-
-    template <class Vector>
-    inline Vector virtualizeGripPointForTranslatedHandSeat(
-        const Vector& currentGripPivotWorld,
-        const Vector& targetGripPointWorld)
-    {
-        const Vector handSeatCorrection = weaponSolverSub(targetGripPointWorld, currentGripPivotWorld);
-        return weaponSolverSub(targetGripPointWorld, handSeatCorrection);
     }
 
     /*

@@ -421,27 +421,6 @@ namespace rock::transform_math
     }
 
     template <class Matrix>
-    inline Matrix havokColumnsToNiRows(const float* bodyFloats)
-    {
-        Matrix result{};
-        result.entry[0][0] = bodyFloats[0];
-        result.entry[0][1] = bodyFloats[4];
-        result.entry[0][2] = bodyFloats[8];
-        result.entry[0][3] = 0.0f;
-
-        result.entry[1][0] = bodyFloats[1];
-        result.entry[1][1] = bodyFloats[5];
-        result.entry[1][2] = bodyFloats[9];
-        result.entry[1][3] = 0.0f;
-
-        result.entry[2][0] = bodyFloats[2];
-        result.entry[2][1] = bodyFloats[6];
-        result.entry[2][2] = bodyFloats[10];
-        result.entry[2][3] = 0.0f;
-        return result;
-    }
-
-    template <class Matrix>
     inline Matrix havokQuaternionToNiRows(const float quaternion[4])
     {
         Matrix matrix = makeIdentityRotation<Matrix>();

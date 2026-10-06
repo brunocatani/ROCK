@@ -315,7 +315,6 @@ if(BUILD_ROCK_TESTS)
 
   add_executable(ROCKFarPullGestureTests
     "${ROOT_DIR}/tests/FarPullGestureTests.cpp"
-    "${SOURCE_DIR}/physics-interaction/hand/HandInteractionStateMachine.cpp"
   )
   target_compile_features(ROCKFarPullGestureTests PRIVATE cxx_std_23)
   target_include_directories(ROCKFarPullGestureTests PRIVATE ${SOURCE_DIR} "${ROCK_OPENVR_ROOT}")
@@ -328,13 +327,12 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKInputRemapPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKInputRemapPolicyTests)
 
-  add_executable(ROCKWeaponInteractionPolicyTests
-    "${ROOT_DIR}/tests/WeaponInteractionPolicyTests.cpp"
-    "${SOURCE_DIR}/physics-interaction/hand/HandInteractionStateMachine.cpp"
+  add_executable(ROCKEquippedWeaponHandlingRequestTests
+    "${ROOT_DIR}/tests/EquippedWeaponHandlingRequestTests.cpp"
   )
-  target_compile_features(ROCKWeaponInteractionPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKWeaponInteractionPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKWeaponInteractionPolicyTests)
+  target_compile_features(ROCKEquippedWeaponHandlingRequestTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKEquippedWeaponHandlingRequestTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKEquippedWeaponHandlingRequestTests)
 
   add_executable(ROCKVirtualHolstersCompatibilityTests
     "${ROOT_DIR}/tests/VirtualHolstersCompatibilityTests.cpp"
@@ -662,7 +660,7 @@ if(BUILD_ROCK_TESTS)
     ROCKCpuWorkReductionTests
     ROCKGrabInputIntentPolicyTests
     ROCKInputRemapPolicyTests
-    ROCKWeaponInteractionPolicyTests
+    ROCKEquippedWeaponHandlingRequestTests
     ROCKInteractionSafetyPolicyTests
     ROCKGrabFingerLocalTransformPolicyTests
     ROCKSurfaceMeshGrabPolicyTests
