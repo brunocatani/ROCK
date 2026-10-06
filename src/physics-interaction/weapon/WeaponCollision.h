@@ -378,10 +378,6 @@ namespace rock
             const RE::NiAVObject* currentWeaponRoot,
             SupportGripEvidenceView& outView) const;
 
-        std::size_t findSupportGripEvidenceViews(
-            const RE::NiAVObject* currentWeaponRoot,
-            std::span<SupportGripEvidenceView> outViews) const;
-
         BethesdaPhysicsBody& getWeaponBody();
 
         void destroyWeaponBody(RE::hknpWorld* world);

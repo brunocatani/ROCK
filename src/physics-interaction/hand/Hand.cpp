@@ -300,9 +300,6 @@ namespace rock
         _grabFingerProbeStart = {};
         _grabFingerProbeEnd = {};
         _hasGrabFingerProbeDebug = false;
-        _grabFingerSweepDebugCapture = {};
-        _grabFingerSweepDebugObjectWorld = {};
-        _hasGrabFingerSweepDebug = false;
         _grabFingerPadProbeStart = {};
         _grabFingerPadProbeEnd = {};
         _grabFingerPadProbeHit = {};
@@ -315,7 +312,6 @@ namespace rock
         _grabFingerLocalTransforms = {};
         _grabFingerLocalTransformMask = 0;
         _grabFingerPose = {};
-        _grabFingerTriangleIndex.clear();
         _hasGrabFingerJointPose = false;
         _hasGrabFingerLocalTransforms = false;
         _grabFingerLocalTransformFinalizePending = false;
@@ -404,14 +400,10 @@ namespace rock
         _lastPublishedGrabVisualHandTransform = {};
         _hasLastPublishedGrabVisualHandTransform = false;
         clearSelectedCloseFingerPose();
-        _grabFingerSweepDebugCapture = {};
-        _grabFingerSweepDebugObjectWorld = {};
-        _hasGrabFingerSweepDebug = false;
         _grabFingerJointPose = {};
         _grabFingerLocalTransforms = {};
         _grabFingerLocalTransformMask = 0;
         _grabFingerPose = {};
-        _grabFingerTriangleIndex.clear();
         _hasGrabFingerJointPose = false;
         _hasGrabFingerLocalTransforms = false;
         _grabFingerLocalTransformFinalizePending = false;

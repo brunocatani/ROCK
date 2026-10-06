@@ -17,9 +17,6 @@ namespace rock::debug_visualization_policy
         bool handAxes{ false };
         bool grabPivots{ false };
         bool fingerProbes{ false };
-        bool fingerSweptArc{ false };
-        bool fingerSweptArcText{ false };
-        bool fingerSweptArcLiveSkeleton{ false };
         bool palmVectors{ false };
         bool grabPockets{ false };
         bool rootFlattenedFingerSkeleton{ false };
@@ -58,9 +55,6 @@ namespace rock::debug_visualization_policy
         bool handAxes{ false };
         bool grabPivots{ false };
         bool fingerProbes{ false };
-        bool fingerSweptArc{ false };
-        bool fingerSweptArcText{ false };
-        bool fingerSweptArcLiveSkeleton{ false };
         bool palmVectors{ false };
         bool grabPockets{ false };
         bool rootFlattenedFingerSkeleton{ false };
@@ -85,7 +79,6 @@ namespace rock::debug_visualization_policy
     {
         const bool colliders = input.colliderMaster;
         const bool forceTorque = input.grabForceTorque;
-        const bool sweptArc = input.fingerSweptArc;
         const bool skeleton = input.skeletonBones;
 
         return {
@@ -108,10 +101,6 @@ namespace rock::debug_visualization_policy
             .handAxes = input.handAxes,
             .grabPivots = input.grabPivots,
             .fingerProbes = input.fingerProbes,
-            .fingerSweptArc = sweptArc,
-            .fingerSweptArcText = sweptArc && input.fingerSweptArcText,
-            .fingerSweptArcLiveSkeleton =
-                sweptArc && input.fingerSweptArcLiveSkeleton,
             .palmVectors = input.palmVectors,
             .grabPockets = input.grabPockets,
             .rootFlattenedFingerSkeleton =

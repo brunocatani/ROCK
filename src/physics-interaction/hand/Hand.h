@@ -450,17 +450,6 @@ namespace rock
         bool getGrabPresentationNodeDebugSnapshot(GrabPresentationNodeDebugSnapshot& out) const;
         bool getGrabSupportFrameDebugSnapshot(RE::hknpWorld* world, GrabSupportFrameDebugSnapshot& out) const;
         bool getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabForceTorqueDebugSnapshot& out) const;
-        bool getGrabFingerSweepDebugSnapshot(grab_finger_pose_runtime::FingerSweepDebugSnapshot& out) const
-        {
-            if (!_hasGrabFingerSweepDebug || !_grabFingerSweepDebugCapture.valid) {
-                return false;
-            }
-            out.capture = _grabFingerSweepDebugCapture;
-            out.objectWorld = _grabFingerSweepDebugObjectWorld;
-            out.valid = true;
-            return true;
-        }
-
         bool getGrabFingerProbeDebug(std::array<RE::NiPoint3, 5>& outStart, std::array<RE::NiPoint3, 5>& outEnd) const
         {
             if (!_hasGrabFingerProbeDebug)
@@ -1311,9 +1300,6 @@ namespace rock
         std::array<RE::NiPoint3, 5> _grabFingerProbeStart{};
         std::array<RE::NiPoint3, 5> _grabFingerProbeEnd{};
         bool _hasGrabFingerProbeDebug = false;
-        grab_finger_pose_runtime::FingerSweepDebugCapture _grabFingerSweepDebugCapture{};
-        RE::NiTransform _grabFingerSweepDebugObjectWorld{};
-        bool _hasGrabFingerSweepDebug = false;
         std::array<RE::NiPoint3, 5> _grabFingerPadProbeStart{};
         std::array<RE::NiPoint3, 5> _grabFingerPadProbeEnd{};
         std::array<RE::NiPoint3, 5> _grabFingerPadProbeHit{};
@@ -1326,9 +1312,6 @@ namespace rock
         std::array<RE::NiTransform, 15> _grabFingerLocalTransforms{};
         std::uint16_t _grabFingerLocalTransformMask = 0;
         grab_finger_pose_runtime::SolvedGrabFingerPose _grabFingerPose{};
-        unsigned _legacyFingerPoseUpdates = 0;
-        float _legacyFingerPoseDeltaTime = 0.0f;
-        grab_finger_pose_runtime::FingerPoseTriangleSpatialIndex _grabFingerTriangleIndex{};
         bool _hasGrabFingerJointPose = false;
         bool _hasGrabFingerLocalTransforms = false;
         bool _grabFingerLocalTransformFinalizePending = false;
