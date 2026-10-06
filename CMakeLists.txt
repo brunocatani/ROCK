@@ -383,6 +383,10 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKHavokRefCountTests PRIVATE cxx_std_23)
   target_include_directories(ROCKHavokRefCountTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKHavokRefCountTests)
+  add_executable(ROCKNiReferenceOwnershipTests "${ROOT_DIR}/tests/NiReferenceOwnershipTests.cpp")
+  target_compile_features(ROCKNiReferenceOwnershipTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKNiReferenceOwnershipTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKNiReferenceOwnershipTests)
 
   add_executable(ROCKFo4VrActorStatePolicyTests
     "${ROOT_DIR}/tests/Fo4VrActorStatePolicyTests.cpp"

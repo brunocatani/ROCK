@@ -9,6 +9,7 @@
 #include "physics-interaction/native/HavokCompoundShapeBuilder.h"
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
+#include "rock_support/Fo4VrRuntime.h"
 #include <chrono>
 
 namespace rock::storage_interaction
@@ -77,7 +78,12 @@ namespace rock::storage_interaction
             std::vector<TriangleData> triangles;
             std::vector<GrabSurfaceTriangleData> surfaces;
             const auto result=extractBoundedSurfaceTriangles(value.node.get(),triangles,surfaces,32,128,65536,true);
-            if(!result.hasTriangles() || result.nodeBudgetExceeded || result.shapeBudgetExceeded || result.triangleBudgetExceeded) return false;
+            if(!result.hasTriangles() || result.nodeBudgetExceeded || result.shapeBudgetExceeded || result.triangleBudgetExceeded) {
+                ROCK_LOG_WARN(Hand,"Stored display geometry unavailable: display={} item={:08X} nodes={} meshes={} triangles={} limits(node/mesh/tri)={}/{}/{}",
+                    value.request.displayId,value.request.storedReference,result.visitedNodes,result.candidateShapes,result.stats.totalTriangles(),
+                    result.nodeBudgetExceeded,result.shapeBudgetExceeded,result.triangleBudgetExceeded);
+                return false;
+            }
             auto rigid=value.node->world; rigid.scale=1;
             const auto inverse=transform_math::invertTransform(rigid);
             RE::NiAVObject* previous{};
@@ -86,7 +92,10 @@ namespace rock::storage_interaction
                 auto& points=value.groups.back().points;
                 for(const auto& p:{surface.triangle.v0,surface.triangle.v1,surface.triangle.v2}) {
                     const auto local=transformPoint(inverse,p);
-                    if(!std::isfinite(local.x) || !std::isfinite(local.y) || !std::isfinite(local.z)) return false;
+                    if(!std::isfinite(local.x) || !std::isfinite(local.y) || !std::isfinite(local.z)) {
+                        ROCK_LOG_WARN(Hand,"Stored display geometry has a nonfinite vertex: display={} item={:08X}",value.request.displayId,value.request.storedReference);
+                        return false;
+                    }
                     points.push_back(local);
                 }
             }
@@ -133,7 +142,9 @@ namespace rock::storage_interaction
             if(parent!=RE::PlayerCharacter::GetSingleton() &&
                 (!physics.getRightHand().isHolding() || physics.getRightHand().getHeldRef()!=parent) &&
                 (!physics.getLeftHand().isHolding() || physics.getLeftHand().getHeldRef()!=parent)) return nullptr;
-            auto* root=parent->Get3D();
+            // Body holsters attach to the loaded third-person skeleton, as
+            // published by FRIK. Actor Get3D may select its first-person tree.
+            RE::NiAVObject* root=parent==RE::PlayerCharacter::GetSingleton()?fo4vr::getWorldRootNode():parent->Get3D();
             auto* node=storage_scene_lookup::find(root,RE::BSFixedString(value.request.nodeName));
             if(!node || node==root || node->GetAppCulled() || !finiteNiTransform(node->world)) return nullptr;
             value.parent.reset(parent); return node;
@@ -285,7 +296,6 @@ namespace rock::storage_interaction
                 entry.parent.reset(RE::TESForm::GetFormByID<RE::TESObjectREFR>(entry.boundParent));
                 if(!captureGeometry(entry)) {
                     entry.failed=true;
-                    ROCK_LOG_WARN(Hand,"Stored display geometry unavailable or exceeds extraction bounds: display={} item={:08X}",entry.request.displayId,entry.request.storedReference);
                 }
                 else entry.preparation=prepare(entry);
             }

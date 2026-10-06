@@ -3,9 +3,11 @@
 #include "physics-interaction/native/HavokRefCount.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/NiReferenceOwnership.h"
 #include "physics-interaction/PhysicsLog.h"
 
 #include "RE/Havok/hknpBody.h"
+#include "RE/NetImmerse/NiRefObject.h"
 
 #include <array>
 #include <atomic>
@@ -18,28 +20,7 @@ namespace rock
 {
     static void releaseRefCounted(void* obj)
     {
-        if (!obj)
-            return;
-
-        auto* refCountDword = reinterpret_cast<volatile long*>(reinterpret_cast<char*>(obj) + 0x08);
-
-        for (;;) {
-            long oldVal = *refCountDword;
-            std::uint16_t rc = static_cast<std::uint16_t>(oldVal & 0xFFFF);
-            if (rc == 0 || rc == 0xFFFF)
-                return;
-
-            long newVal = (oldVal & static_cast<long>(0xFFFF0000u)) | static_cast<long>(static_cast<std::uint16_t>(rc - 1));
-
-            if (_InterlockedCompareExchange(refCountDword, newVal, oldVal) == oldVal) {
-                if (rc - 1 == 0) {
-                    auto** vtable = *reinterpret_cast<void***>(obj);
-                    auto destructor = reinterpret_cast<void (*)(void*, int)>(vtable[0]);
-                    destructor(obj, 1);
-                }
-                return;
-            }
-        }
+        ni_reference_ownership::release(static_cast<RE::NiRefObject*>(obj));
     }
 
     static void* bethesdaAllocatorPool()
@@ -562,6 +543,7 @@ namespace rock
         {
             static REL::Relocation<PhysicsSystemCtor_t> physSysCtor{ REL::Offset(offsets::kFunc_PhysicsSystem_Ctor) };
             physSysCtor(_physicsSystem, _systemData);
+            ni_reference_ownership::retain(static_cast<RE::NiRefObject*>(_physicsSystem));
             releaseLocalSystemDataRef();
         }
 
@@ -596,6 +578,11 @@ namespace rock
 
             static REL::Relocation<CollisionObjectCtor_t> collObjCtor{ REL::Offset(offsets::kFunc_CollisionObject_Ctor) };
             collObjCtor(_collisionObject, 0, _physicsSystem);
+            // FO4VR 1C142F7 initializes NiObject+8 to zero; 1E07745
+            // retains the physics-system edge, and 2996CD1 later retains
+            // the node's collision edge. Neither owns this wrapper for us.
+            ni_reference_ownership::retain(static_cast<RE::NiRefObject*>(_collisionObject));
+            releaseRefCounted(_physicsSystem); // construction owner -> collision-object edge
         }
 
         if (!createNiNode(name)) {
@@ -1068,6 +1055,7 @@ namespace rock
             static REL::Relocation<NiNodeCtor_t> niNodeCtor{ REL::Offset(offsets::kFunc_NiNode_Ctor) };
             niNodeCtor(mem, 0);
             _niNode = mem;
+            ni_reference_ownership::retain(static_cast<RE::NiRefObject*>(_niNode));
         }
 
         if (name && name[0]) {
