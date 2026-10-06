@@ -1,5 +1,6 @@
 #include <ROCK/StorageInteraction.h>
 #include <ROCK/StorageInteractionV1_1.h>
+#include <ROCK/InventoryDisplay.h>
 #include "api/StorageInteractionService.h"
 #include "api/StorageInteractionPolicy.h"
 #include "api/StorageService.h"
@@ -23,11 +24,15 @@ namespace rock::storage_interaction
     {
         namespace contract=api::storage_interaction;
         namespace policy=storage_interaction_policy;
+        namespace inventory=api::inventory_display;
+        constexpr unsigned totalDisplays=contract::kMaximumDisplays+inventory::kMaximumDisplays;
         using Shape=std::unique_ptr<RE::hknpShape,havok_compound_shape_builder::HavokShapeRelease>;
         struct Group { std::vector<RE::NiPoint3> points; };
         struct Display {
             api::OwnerToken owner{};
             contract::DisplayV1 request;
+            api::weapon::v1_1::InventoryWeapon inventoryItem;
+            bool inventoryOwned{};
             std::uint64_t deadline{}, publishedFrame{};
             std::uint64_t authoredRequestedUntil{};
             RE::NiPointer<RE::TESObjectREFR> parent;
@@ -49,7 +54,7 @@ namespace rock::storage_interaction
         // simulation filtering and manifold callbacks borrow through this gate.
         // They never resolve consumer pointers or perform structural mutations.
         struct Service {
-            std::array<Display,contract::kMaximumDisplays> displays;
+            std::array<Display,totalDisplays> displays;
             std::array<Routing,8> routes;
             PhysicsCallbackQuiescenceGate callbacks;
             RE::hknpWorld* world{};
@@ -61,8 +66,23 @@ namespace rock::storage_interaction
             std::atomic_bool active{};
         };
         Service service;
+        std::span<Display> displayRange(bool inventoryOwned)
+        { return inventoryOwned?std::span{service.displays}.subspan(contract::kMaximumDisplays):std::span{service.displays}.first(contract::kMaximumDisplays); }
         api::Status authorize(api::OwnerToken owner,unsigned permissions=3)
         { return provider::runtime::authorize(owner,api::InterfaceId::Grab,permissions,true); }
+        api::Status authorizeInventory(api::OwnerToken owner,unsigned permissions=3)
+        {
+            const auto status=authorize(owner,permissions);
+            return status==api::Status::Ok?provider::runtime::authorize(owner,api::InterfaceId::Weapon,1,true):status;
+        }
+        bool inventoryCurrent(const api::weapon::v1_1::InventoryWeapon& expected,PhysicsInteraction& physics)
+        {
+            api::weapon::v1_1::InventoryWeapon current;
+            return physics.captureProviderInventoryWeapon(expected.baseFormId,expected.stackIndex,current)==api::Status::Ok &&
+                expected.stackKey==current.stackKey && expected.instanceKey==current.instanceKey && expected.count==current.count &&
+                expected.worldGeneration==current.worldGeneration && expected.skeletonGeneration==current.skeletonGeneration &&
+                expected.providerGeneration==current.providerGeneration;
+        }
         bool sameGeneration(const auto& request,const provider::RockProviderFrameSnapshot& frame)
         { return request.worldGeneration==frame.worldGeneration && request.skeletonGeneration==frame.skeletonGeneration && request.providerGeneration==frame.providerGeneration; }
         void retire(Display& value,RE::hknpWorld* world)
@@ -143,7 +163,9 @@ namespace rock::storage_interaction
         }
         RE::NiAVObject* resolve(Display& value,PhysicsInteraction& physics)
         {
-            if(!storage_service::ownsStored(value.owner,value.request.storedReference)) return nullptr;
+            if(value.inventoryOwned) {
+                if(authorizeInventory(value.owner,1)!=api::Status::Ok || !inventoryCurrent(value.inventoryItem,physics)) return nullptr;
+            } else if(!storage_service::ownsStored(value.owner,value.request.storedReference)) return nullptr;
             auto* parent=RE::TESForm::GetFormByID<RE::TESObjectREFR>(value.request.parentReference);
             if(!parent || parent->IsDisabled() || parent->IsDeleted()) return nullptr;
             if(parent!=RE::PlayerCharacter::GetSingleton() &&
@@ -195,7 +217,7 @@ namespace rock::storage_interaction
             if(!sameGeneration(*request,frame)) return api::Status::GenerationMismatch;
             if(!storage_service::ownsStored(owner,request->storedReference)) return api::Status::OwnerConflict;
             Display* slot{};
-            for(auto& entry:service.displays) {
+            for(auto& entry:displayRange(false)) {
                 if(entry.owner==owner && entry.request.displayId==request->displayId) { slot=&entry; break; }
                 if(!entry.owner && !slot) slot=&entry;
             }
@@ -207,7 +229,7 @@ namespace rock::storage_interaction
         api::Status ROCK_CALL clearDisplay(api::OwnerToken owner,std::uint64_t id) noexcept
         {
             const auto access=authorize(owner,0); if(access!=api::Status::Ok) return access;
-            for(auto& entry:service.displays) if(entry.owner==owner && entry.request.displayId==id) entry.expired=true;
+            for(auto& entry:displayRange(false)) if(entry.owner==owner && entry.request.displayId==id) entry.expired=true;
             return api::Status::Ok;
         }
         api::Status ROCK_CALL getContact(api::OwnerToken owner,api::Hand hand,contract::ContactV1* result) noexcept
@@ -221,7 +243,7 @@ namespace rock::storage_interaction
             if(!provider::runtime::apiGetFrameSnapshot(&frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
             result->sample={frame.frameIndex,frame.stateSequence,frame.worldGeneration,frame.skeletonGeneration,frame.providerGeneration,frame.collisionGeneration};
             if(!policy::allowsHand(freeHands(owner),hand==api::Hand::Left)) return api::Status::Ok;
-            for(const auto& entry:service.displays) if(entry.owner==owner && !entry.expired && !entry.rebuild && entry.boundReference==entry.request.storedReference &&
+            for(const auto& entry:displayRange(false)) if(entry.owner==owner && !entry.expired && !entry.rebuild && entry.boundReference==entry.request.storedReference &&
                 entry.boundParent==entry.request.parentReference && entry.deadline>=frame.frameIndex && sameGeneration(entry.request,frame)) {
                 const auto contact=entry.contactFrames[hand==api::Hand::Left?1:0].load(std::memory_order_acquire);
                 if(!policy::fresh(frame.frameIndex,contact)) continue;
@@ -256,7 +278,7 @@ namespace rock::storage_interaction
         api::Status ROCK_CALL clearOwner(api::OwnerToken owner) noexcept
         {
             const auto access=authorize(owner,0); if(access!=api::Status::Ok) return access;
-            for(auto& entry:service.displays) if(entry.owner==owner) entry.expired=true;
+            for(auto& entry:displayRange(false)) if(entry.owner==owner) entry.expired=true;
             for(auto& entry:service.routes) if(entry.owner==owner) entry={};
             return api::Status::Ok;
         }
@@ -267,7 +289,7 @@ namespace rock::storage_interaction
             result.translate[0]=source.translate.x; result.translate[1]=source.translate.y; result.translate[2]=source.translate.z;
             result.scale=source.scale; return result;
         }
-        api::Status ROCK_CALL getAuthoredGrip(api::OwnerToken owner,const contract::v1_1::GripRequest* request,contract::v1_1::GripPose* result) noexcept try
+        api::Status authoredGrip(api::OwnerToken owner,const contract::v1_1::GripRequest* request,contract::v1_1::GripPose* result,bool inventoryOwned) noexcept try
         {
             using Role=contract::v1_1::GripRole;
             if(!request || !result || !request->displayId ||
@@ -275,18 +297,20 @@ namespace rock::storage_interaction
             if(request->size!=sizeof(*request) || result->size!=sizeof(*result)) return api::Status::InvalidSize;
             if(request->version!=1 || result->version!=1) return api::Status::UnsupportedVersion;
             *result={};
-            const auto access=authorize(owner,1); if(access!=api::Status::Ok) return access;
+            const auto access=inventoryOwned?authorizeInventory(owner,1):authorize(owner,1); if(access!=api::Status::Ok) return access;
             provider::RockProviderFrameSnapshot frame;
             auto* physics=PhysicsInteraction::s_instance.load(std::memory_order_acquire);
             if(!physics || !provider::runtime::apiGetFrameSnapshot(&frame) || !frame.providerReady || frame.menuBlocking || request->sample.frameIndex!=frame.frameIndex) return api::Status::NotReady;
             if(!sameGeneration(request->sample,frame)) return api::Status::GenerationMismatch;
-            auto found=std::find_if(service.displays.begin(),service.displays.end(),[&](const auto& entry) {
+            const auto range=displayRange(inventoryOwned);
+            auto found=std::find_if(range.begin(),range.end(),[&](const auto& entry) {
                 return entry.owner==owner && entry.request.displayId==request->displayId && !entry.expired && entry.deadline>=frame.frameIndex && sameGeneration(entry.request,frame);
             });
-            if(found==service.displays.end()) return api::Status::TargetUnavailable;
+            if(found==range.end()) return api::Status::TargetUnavailable;
             auto* node=resolve(*found,*physics);
-            auto* ref=RE::TESForm::GetFormByID<RE::TESObjectREFR>(found->request.storedReference);
-            auto* weapon=ref && ref->GetObjectReference()?ref->GetObjectReference()->As<RE::TESObjectWEAP>():nullptr;
+            auto* ref=inventoryOwned?nullptr:RE::TESForm::GetFormByID<RE::TESObjectREFR>(found->request.storedReference);
+            auto* weapon=inventoryOwned?RE::TESForm::GetFormByID<RE::TESObjectWEAP>(found->inventoryItem.baseFormId):
+                ref && ref->GetObjectReference()?ref->GetObjectReference()->As<RE::TESObjectWEAP>():nullptr;
             const bool left=request->hand==api::Hand::Left;
             RE::NiTransform tracked,controllerWorld;
             const auto* nodes=fo4vr::getPlayerNodes();
@@ -313,7 +337,7 @@ namespace rock::storage_interaction
                 const bool inside=std::isfinite(radius) && radius>0 && distance<=radius;
                 if(!std::isfinite(distance) || (result->valid && (inside==nearestInside?distance>=nearest:!inside))) continue;
                 nearest=distance; nearestInside=inside;
-                result->valid=1; result->displayId=request->displayId; result->storedReference=ref->formID;
+                result->valid=1; result->displayId=request->displayId; result->storedReference=found->request.storedReference;
                 result->hand=request->hand; result->role=role; result->poseSequence=sequence;
                 result->displayWorld=copiedTransform(node->world); result->handInDisplay=copiedTransform(pose.handWeaponLocal);
                 for(unsigned i=0;i<15;++i) result->fingerLocals[i]=copiedTransform(pose.fingerLocals[i]);
@@ -327,6 +351,93 @@ namespace rock::storage_interaction
             // saved items to the normal native probe in the owner update, not
             // by equipping/unparking them and not on the caller's read stack.
             if(!result->valid) found->authoredRequestedUntil=frame.frameIndex+3;
+            return api::Status::Ok;
+        } catch(...) { return api::Status::InternalError; }
+        api::Status ROCK_CALL getAuthoredGrip(api::OwnerToken owner,const contract::v1_1::GripRequest* request,contract::v1_1::GripPose* result) noexcept
+        { return authoredGrip(owner,request,result,false); }
+        api::Status ROCK_CALL setInventoryDisplay(api::OwnerToken owner,const inventory::Display* request) noexcept try
+        {
+            if(!request) return api::Status::InvalidArgument;
+            if(request->size!=sizeof(*request) || request->item.size!=sizeof(request->item)) return api::Status::InvalidSize;
+            if(request->version!=1) return api::Status::UnsupportedVersion;
+            if(!request->displayId || !request->parentReference || !request->item.baseFormId || !request->item.stackKey ||
+                !request->item.count || request->item.reserved || !policy::validLease(request->leaseFrames) ||
+                !request->nodeName[0] || !std::memchr(request->nodeName,0,sizeof(request->nodeName))) return api::Status::InvalidArgument;
+            const auto access=authorizeInventory(owner); if(access!=api::Status::Ok) return access;
+            provider::RockProviderFrameSnapshot frame;
+            auto* physics=PhysicsInteraction::s_instance.load(std::memory_order_acquire);
+            if(!physics || !provider::runtime::apiGetFrameSnapshot(&frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
+            if(!sameGeneration(request->item,frame)) return api::Status::GenerationMismatch;
+            if(request->item.frameIndex!=frame.frameIndex || !inventoryCurrent(request->item,*physics)) return api::Status::TargetUnavailable;
+            Display* slot{};
+            for(auto& entry:displayRange(true)) {
+                if(entry.owner==owner && entry.request.displayId==request->displayId) { slot=&entry; break; }
+                if(!entry.owner && !slot) slot=&entry;
+            }
+            if(!slot) return api::Status::CapacityFull;
+            if(slot->owner && (slot->inventoryItem.stackKey!=request->item.stackKey || slot->inventoryItem.instanceKey!=request->item.instanceKey)) {
+                slot->rebuild=true; slot->contactFrames[0]=0; slot->contactFrames[1]=0;
+            }
+            slot->owner=owner; slot->inventoryOwned=true; slot->inventoryItem=request->item;
+            slot->request={}; slot->request.displayId=request->displayId; slot->request.parentReference=request->parentReference;
+            slot->request.storedReference=request->item.baseFormId;
+            slot->request.worldGeneration=frame.worldGeneration; slot->request.skeletonGeneration=frame.skeletonGeneration;
+            slot->request.providerGeneration=frame.providerGeneration; slot->request.leaseFrames=request->leaseFrames;
+            std::copy_n(request->nodeName,sizeof(request->nodeName),slot->request.nodeName);
+            slot->deadline=frame.frameIndex+request->leaseFrames; slot->expired=false; service.active=true;
+            return api::Status::Ok;
+        } catch(...) { return api::Status::InternalError; }
+        api::Status ROCK_CALL clearInventoryDisplay(api::OwnerToken owner,std::uint64_t id) noexcept
+        {
+            const auto access=authorize(owner,0); if(access!=api::Status::Ok) return access;
+            for(auto& entry:displayRange(true)) if(entry.owner==owner && entry.request.displayId==id) entry.expired=true;
+            return api::Status::Ok;
+        }
+        api::Status ROCK_CALL clearInventoryOwner(api::OwnerToken owner) noexcept
+        {
+            const auto access=authorize(owner,0); if(access!=api::Status::Ok) return access;
+            for(auto& entry:displayRange(true)) if(entry.owner==owner) entry.expired=true;
+            return api::Status::Ok;
+        }
+        api::Status ROCK_CALL getInventoryContact(api::OwnerToken owner,api::Hand hand,inventory::Contact* result) noexcept try
+        {
+            if(!result || (hand!=api::Hand::Left && hand!=api::Hand::Right)) return api::Status::InvalidArgument;
+            if(result->size!=sizeof(*result)) return api::Status::InvalidSize;
+            if(result->version!=1) return api::Status::UnsupportedVersion;
+            *result={}; result->hand=hand;
+            const auto access=authorizeInventory(owner,1); if(access!=api::Status::Ok) return access;
+            provider::RockProviderFrameSnapshot frame;
+            auto* physics=PhysicsInteraction::s_instance.load(std::memory_order_acquire);
+            if(!physics || !provider::runtime::apiGetFrameSnapshot(&frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
+            result->sample={frame.frameIndex,frame.stateSequence,frame.worldGeneration,frame.skeletonGeneration,frame.providerGeneration,frame.collisionGeneration};
+            if(!policy::allowsHand(freeHands(owner),hand==api::Hand::Left)) return api::Status::Ok;
+            for(const auto& entry:displayRange(true)) if(entry.owner==owner && !entry.expired && !entry.rebuild &&
+                entry.boundReference==entry.request.storedReference && entry.boundParent==entry.request.parentReference &&
+                entry.deadline>=frame.frameIndex && sameGeneration(entry.request,frame) && inventoryCurrent(entry.inventoryItem,*physics)) {
+                const auto contact=entry.contactFrames[hand==api::Hand::Left?1:0].load(std::memory_order_acquire);
+                if(policy::fresh(frame.frameIndex,contact) && (!result->valid || contact>result->contactFrame)) {
+                    result->valid=1; result->displayId=entry.request.displayId; result->contactFrame=contact; result->item=entry.inventoryItem;
+                }
+            }
+            return api::Status::Ok;
+        } catch(...) { return api::Status::InternalError; }
+        api::Status ROCK_CALL getInventoryGrip(api::OwnerToken owner,const inventory::GripRequest* request,inventory::GripPose* result) noexcept try
+        {
+            if(!request || !result) return api::Status::InvalidArgument;
+            if(request->size!=sizeof(*request) || result->size!=sizeof(*result)) return api::Status::InvalidSize;
+            if(request->version!=1 || result->version!=1) return api::Status::UnsupportedVersion;
+            *result={};
+            contract::v1_1::GripRequest inner;
+            inner.sample=request->sample; inner.displayId=request->displayId; inner.hand=request->hand; inner.role=contract::v1_1::GripRole(request->role);
+            contract::v1_1::GripPose pose;
+            const auto status=authoredGrip(owner,&inner,&pose,true); if(status!=api::Status::Ok) return status;
+            for(const auto& entry:displayRange(true)) if(entry.owner==owner && entry.request.displayId==request->displayId) { result->item=entry.inventoryItem; break; }
+            result->sample=pose.sample; result->displayId=pose.displayId; result->poseSequence=pose.poseSequence;
+            result->valid=pose.valid; result->hand=pose.hand; result->role=inventory::GripRole(pose.role); result->fingerMask=pose.fingerMask;
+            result->displayWorld=pose.displayWorld; result->handInDisplay=pose.handInDisplay;
+            std::copy_n(pose.fingerLocals,15,result->fingerLocals);
+            result->controllerInDisplay=pose.controllerInDisplay; result->controllerInTracking=pose.controllerInTracking; result->gripInDisplay=pose.gripInDisplay;
+            result->distanceGame=pose.distanceGame; result->acquisitionRadiusGame=pose.acquisitionRadiusGame;
             return api::Status::Ok;
         } catch(...) { return api::Status::InternalError; }
     }
@@ -359,11 +470,12 @@ namespace rock::storage_interaction
             hand.object=body.valid?reinterpret_cast<std::uintptr_t>(body.collisionObject):0;
         }
         bool advanced{}, captured{}, anyOwner{}, offeredAuthored{};
-        std::array<BethesdaPhysicsBody*,contract::kMaximumDisplays> refresh{}; unsigned refreshCount{};
+        std::array<BethesdaPhysicsBody*,totalDisplays> refresh{}; unsigned refreshCount{};
         for(unsigned i=0;i<service.displays.size();++i) {
             auto& entry=service.displays[(i+service.preparationCursor)%service.displays.size()];
             if(!entry.owner) continue;
-            if(entry.expired || entry.deadline<current.frameIndex || !sameGeneration(entry.request,current) || authorize(entry.owner)!=api::Status::Ok) {
+            if(entry.expired || entry.deadline<current.frameIndex || !sameGeneration(entry.request,current) ||
+                (entry.inventoryOwned?authorizeInventory(entry.owner):authorize(entry.owner))!=api::Status::Ok) {
                 retire(entry,service.world); entry.owner=0; continue;
             }
             anyOwner=true;
@@ -371,7 +483,11 @@ namespace rock::storage_interaction
             if(!node) { retire(entry,service.world); continue; }
             if(!offeredAuthored && entry.authoredRequestedUntil>=current.frameIndex && entry.authoredRequestedUntil) {
                 offeredAuthored=true;
-                native_idle_grip_preharvest::observeStoredDisplay(
+                if(entry.inventoryOwned) {
+                    const auto selected=weapon_equip_transfer::captureInventoryWeapon(entry.inventoryItem.baseFormId,entry.inventoryItem.stackIndex);
+                    if(selected.stack && reinterpret_cast<std::uintptr_t>(selected.stack.get())==entry.inventoryItem.stackKey)
+                        native_idle_grip_preharvest::observeInventoryDisplay(RE::TESForm::GetFormByID<RE::TESObjectWEAP>(entry.inventoryItem.baseFormId),node,selected.instance.get());
+                } else native_idle_grip_preharvest::observeStoredDisplay(
                     RE::NiPointer<RE::TESObjectREFR>(RE::TESForm::GetFormByID<RE::TESObjectREFR>(entry.request.storedReference)),node);
             }
             const bool reparented=entry.boundParent && entry.boundParent!=entry.request.parentReference;
@@ -505,4 +621,10 @@ extern "C" __declspec(dllexport) const rock::api::storage_interaction::v1_1::Api
         {sizeof(rock::api::storage_interaction::ApiV1),1,&setDisplay,&clearDisplay,&getContact,&setRouting,&clearOwner},&getAuthoredGrip};
     static_assert(sizeof(table)==56);
     return rock::storage_interaction_policy::supportsGripMinor(major,minor,bytes)?&table:nullptr;
+}
+extern "C" __declspec(dllexport) const rock::api::inventory_display::Api* ROCK_CALL ROCK_InventoryDisplay_QueryV1(std::uint32_t major,std::uint32_t minor,std::uint32_t bytes) noexcept
+{
+    using namespace rock::storage_interaction;
+    static const rock::api::inventory_display::Api table{sizeof(table),1,&setInventoryDisplay,&clearInventoryDisplay,&getInventoryContact,&getInventoryGrip,&clearInventoryOwner};
+    return rock::storage_interaction_policy::supportsInventory(major,minor,bytes)?&table:nullptr;
 }

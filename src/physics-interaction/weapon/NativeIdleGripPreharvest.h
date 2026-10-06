@@ -26,6 +26,9 @@ namespace rock::native_idle_grip_preharvest
     // Identify the exact item from its handle and the frame-borrowed visible
     // display. The existing one-slot probe owns/copies everything it retains.
     void observeStoredDisplay(RE::NiPointer<RE::TESObjectREFR> candidate,RE::NiAVObject* displayRoot) noexcept;
+    // Inventory-owned display: retain the exact instance data, but identify
+    // authored poses in the display model's same local variant domain.
+    void observeInventoryDisplay(RE::TESObjectWEAP*,RE::NiAVObject*,RE::TBO_InstanceData*) noexcept;
 
     /*
      * Offer the currently equipped weapon after its stable generation exists.

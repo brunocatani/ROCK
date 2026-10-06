@@ -230,6 +230,7 @@ namespace rock::native_idle_grip_preharvest
             Unknown,
             LooseReference,
             EquippedWeapon,
+            InventoryDisplay,
         };
 
         enum class ExtractionResult : std::uint8_t
@@ -718,7 +719,7 @@ namespace rock::native_idle_grip_preharvest
                 state.job.weaponFormId,
                 state.job.referenceFormId,
                 state.job.variant.key,
-                state.job.origin == CandidateOrigin::EquippedWeapon ? "equipped" : "loose",
+                state.job.origin == CandidateOrigin::InventoryDisplay?"inventory-display":state.job.origin == CandidateOrigin::EquippedWeapon ? "equipped" : "loose",
                 state.job.inPowerArmor ? "yes" : "no",
                 static_cast<unsigned>(state.job.phase),
                 reason ? reason : "unknown");
@@ -1837,7 +1838,7 @@ namespace rock::native_idle_grip_preharvest
                 "support={} supportReason={} supportStable={} supportMissingFingerMask=0x{:04X} maxSupportHandT={:.4f} maxSupportHandR={:.3f}deg "
                 "supportHandInWeaponT=({:.3f},{:.3f},{:.3f})",
                 job.weaponFormId, job.referenceFormId, job.variant.key,
-                job.origin == CandidateOrigin::EquippedWeapon ? "equipped" : "loose",
+                job.origin == CandidateOrigin::InventoryDisplay?"inventory-display":job.origin == CandidateOrigin::EquippedWeapon ? "equipped" : "loose",
                 extractionDiagnostics.subgraphHandle, subgraphIdentifier, extractionDiagnostics.bindingSubgraphIdentifier,
                 clipPath.data(), job.inPowerArmor ? "yes" : "no", extractionDiagnostics.animationType,
                 extractionDiagnostics.animationDurationSeconds, extractionDiagnostics.transformTrackCount, extractionDiagnostics.floatTrackCount,
@@ -1996,7 +1997,7 @@ namespace rock::native_idle_grip_preharvest
                 state.job.weaponFormId,
                 state.job.referenceFormId,
                 state.job.variant.key,
-                state.job.origin == CandidateOrigin::EquippedWeapon ? "equipped" : "loose",
+                state.job.origin == CandidateOrigin::InventoryDisplay?"inventory-display":state.job.origin == CandidateOrigin::EquippedWeapon ? "equipped" : "loose",
                 state.job.inPowerArmor ? "yes" : "no",
                 state.job.instanceIdentity,
                 graphProjects.size(),
@@ -2035,6 +2036,17 @@ namespace rock::native_idle_grip_preharvest
         if(!shouldStartCandidate(state,description,displayRoot)) return;
         ROCK_LOG_INFO(Animation,"Preparing authored grip for stored display: ref={:08X} weapon={:08X}",description.referenceFormId,description.weaponFormId);
         startJob(state,std::move(description));
+    }
+
+    void observeInventoryDisplay(RE::TESObjectWEAP* weapon,RE::NiAVObject* root,RE::TBO_InstanceData* instance) noexcept
+    {
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::NativeIdleGripHarvest);
+        auto& state=runtime();
+        if(!claimOrValidateThread(state) || !advanceAndCanStart(state) || !weapon || !root) return;
+        auto candidate=describeEquippedCandidate(weapon,root,instance,0);
+        candidate.variant=authored_weapon_grip_library::identifyWeaponVariant(root);
+        candidate.origin=CandidateOrigin::InventoryDisplay;
+        if(shouldStartCandidate(state,candidate,root)) startJob(state,std::move(candidate));
     }
 
     void observeEquippedWeapon(
