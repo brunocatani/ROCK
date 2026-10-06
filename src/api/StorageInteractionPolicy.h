@@ -14,4 +14,6 @@ namespace rock::storage_interaction_policy
     { return hand!=invalidBody && peer==hand && handObject && peerObject==handObject; }
     constexpr bool supports(std::uint32_t major,std::uint32_t bytes)
     { return major==1 && bytes==48; }
+    constexpr bool supportsGripMinor(std::uint32_t major,std::uint32_t minor,std::uint32_t bytes)
+    { return major==1 && minor<=1 && (bytes==48 || bytes==56); }
 }

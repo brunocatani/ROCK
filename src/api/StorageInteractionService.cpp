@@ -1,4 +1,5 @@
 #include <ROCK/StorageInteraction.h>
+#include <ROCK/StorageInteractionV1_1.h>
 #include "api/StorageInteractionService.h"
 #include "api/StorageInteractionPolicy.h"
 #include "api/StorageService.h"
@@ -10,6 +11,9 @@
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
 #include "rock_support/Fo4VrRuntime.h"
+#include "physics-interaction/weapon/LooseWeaponGripZone.h"
+#include "physics-interaction/weapon/EquippedWeaponHandlingRuntime.h"
+#include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include <chrono>
 
 namespace rock::storage_interaction
@@ -243,6 +247,71 @@ namespace rock::storage_interaction
             for(auto& entry:service.routes) if(entry.owner==owner) entry={};
             return api::Status::Ok;
         }
+        api::Transform copiedTransform(const RE::NiTransform& source)
+        {
+            api::Transform result;
+            for(unsigned r=0;r<3;++r) for(unsigned c=0;c<3;++c) result.rotate[r*3+c]=source.rotate.entry[r][c];
+            result.translate[0]=source.translate.x; result.translate[1]=source.translate.y; result.translate[2]=source.translate.z;
+            result.scale=source.scale; return result;
+        }
+        api::Status ROCK_CALL getAuthoredGrip(api::OwnerToken owner,const contract::v1_1::GripRequest* request,contract::v1_1::GripPose* result) noexcept try
+        {
+            using Role=contract::v1_1::GripRole;
+            if(!request || !result || !request->displayId ||
+                (request->hand!=api::Hand::Left && request->hand!=api::Hand::Right) || unsigned(request->role)>unsigned(Role::Support)) return api::Status::InvalidArgument;
+            if(request->size!=sizeof(*request) || result->size!=sizeof(*result)) return api::Status::InvalidSize;
+            if(request->version!=1 || result->version!=1) return api::Status::UnsupportedVersion;
+            *result={};
+            const auto access=authorize(owner,1); if(access!=api::Status::Ok) return access;
+            provider::RockProviderFrameSnapshot frame;
+            auto* physics=PhysicsInteraction::s_instance.load(std::memory_order_acquire);
+            if(!physics || !provider::runtime::apiGetFrameSnapshot(&frame) || !frame.providerReady || frame.menuBlocking || request->sample.frameIndex!=frame.frameIndex) return api::Status::NotReady;
+            if(!sameGeneration(request->sample,frame)) return api::Status::GenerationMismatch;
+            auto found=std::find_if(service.displays.begin(),service.displays.end(),[&](const auto& entry) {
+                return entry.owner==owner && entry.request.displayId==request->displayId && !entry.expired && entry.deadline>=frame.frameIndex && sameGeneration(entry.request,frame);
+            });
+            if(found==service.displays.end()) return api::Status::TargetUnavailable;
+            auto* node=resolve(*found,*physics);
+            auto* ref=RE::TESForm::GetFormByID<RE::TESObjectREFR>(found->request.storedReference);
+            auto* weapon=ref && ref->GetObjectReference()?ref->GetObjectReference()->As<RE::TESObjectWEAP>():nullptr;
+            const bool left=request->hand==api::Hand::Left;
+            RE::NiTransform tracked,controllerWorld;
+            const auto* nodes=fo4vr::getPlayerNodes();
+            if(!node || !weapon || !frik_hand_world_authority::tryGetRawHandWorld(left,tracked) || !finiteNiTransform(tracked) ||
+                !frik_visual_authority::tryGetTrackedHandTransform(left?frik_visual_authority::Hand::Left:frik_visual_authority::Hand::Right,
+                    frik_visual_authority::TrackedHandKind::Wand,controllerWorld) || !finiteNiTransform(controllerWorld) ||
+                !nodes || !nodes->roomnode || !finiteNiTransform(nodes->roomnode->world)) return api::Status::NotReady;
+            const auto palmWorld=computeGrabLegacyPalmPivotAWorldFromHandBasis(tracked,left);
+            const auto palm=transform_math::worldPointToLocal(node->world,palmWorld);
+            const auto controller=transform_math::worldPointToLocal(node->world,controllerWorld.translate);
+            const auto tracking=transform_math::worldPointToLocal(nodes->roomnode->world,controllerWorld.translate)*nodes->roomnode->world.scale;
+            float nearest=std::numeric_limits<float>::max();
+            bool nearestInside{};
+            result->sample={frame.frameIndex,frame.stateSequence,frame.worldGeneration,frame.skeletonGeneration,frame.providerGeneration,frame.collisionGeneration};
+            for(const auto role:{Role::Firing,Role::Support}) {
+                if(request->role!=Role::Nearest && request->role!=role) continue;
+                AuthoredWeaponGripPose pose; std::uint64_t sequence{};
+                const auto nativeRole=role==Role::Firing?loose_weapon_authored_grab_policy::Role::Firing:loose_weapon_authored_grab_policy::Role::Support;
+                if(!loose_weapon_grip_zone::tryResolveAuthoredGrabPoseForModel(left,weapon,node,nativeRole,pose,sequence)) continue;
+                const auto grip=computeGrabLegacyPalmPivotAWorldFromHandBasis(pose.handWeaponLocal,left);
+                const auto delta=palm-grip;
+                const float distance=std::sqrt(delta.x*delta.x+delta.y*delta.y+delta.z*delta.z)*node->world.scale;
+                const float radius=role==Role::Firing?equipped_weapon_handling_runtime::current().firingGripReattachCylinderRadiusGameUnits:g_rockConfig.rockWeaponInteractionProbeRadius;
+                const bool inside=std::isfinite(radius) && radius>0 && distance<=radius;
+                if(!std::isfinite(distance) || (result->valid && (inside==nearestInside?distance>=nearest:!inside))) continue;
+                nearest=distance; nearestInside=inside;
+                result->valid=1; result->displayId=request->displayId; result->storedReference=ref->formID;
+                result->hand=request->hand; result->role=role; result->poseSequence=sequence;
+                result->displayWorld=copiedTransform(node->world); result->handInDisplay=copiedTransform(pose.handWeaponLocal);
+                for(unsigned i=0;i<15;++i) result->fingerLocals[i]=copiedTransform(pose.fingerLocals[i]);
+                result->fingerMask=pose.fingerMask;
+                result->gripInDisplay={grip.x,grip.y,grip.z}; result->controllerInDisplay={controller.x,controller.y,controller.z};
+                result->controllerInTracking={tracking.x,tracking.y,tracking.z};
+                result->distanceGame=distance;
+                result->acquisitionRadiusGame=radius;
+            }
+            return api::Status::Ok;
+        } catch(...) { return api::Status::InternalError; }
     }
     bool blocksShoulder(bool left)
     {
@@ -406,4 +475,12 @@ extern "C" __declspec(dllexport) const rock::api::storage_interaction::ApiV1* RO
     static const rock::api::storage_interaction::ApiV1 table{sizeof(table),1,&setDisplay,&clearDisplay,&getContact,&setRouting,&clearOwner};
     static_assert(sizeof(table)==48);
     return rock::storage_interaction_policy::supports(major,bytes)?&table:nullptr;
+}
+extern "C" __declspec(dllexport) const rock::api::storage_interaction::v1_1::Api* ROCK_CALL ROCK_StorageInteraction_QueryV1_1(std::uint32_t major,std::uint32_t minor,std::uint32_t bytes) noexcept
+{
+    using namespace rock::storage_interaction;
+    static const rock::api::storage_interaction::v1_1::Api table{
+        {sizeof(rock::api::storage_interaction::ApiV1),1,&setDisplay,&clearDisplay,&getContact,&setRouting,&clearOwner},&getAuthoredGrip};
+    static_assert(sizeof(table)==56);
+    return rock::storage_interaction_policy::supportsGripMinor(major,minor,bytes)?&table:nullptr;
 }

@@ -7,6 +7,9 @@ int main()
 {
     using namespace rock::storage_interaction_policy;
     assert(supports(1,48));
+    assert(supportsGripMinor(1,1,56) && supportsGripMinor(1,0,48));
+    assert(!supportsGripMinor(2,0,56) && !supportsGripMinor(1,2,56) && !supportsGripMinor(1,1,55));
+    assert(!supports(1,56)); // The already published export still accepts only its original table.
     for(unsigned major:{0u,2u,3u}) assert(!supports(major,48));
     for(unsigned size:{0u,8u,40u,47u,49u,64u}) assert(!supports(1,size));
     assert(!fresh(100,0) && !fresh(100,101) && !fresh(100,97));
