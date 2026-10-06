@@ -242,15 +242,6 @@ namespace rock
         int rockDebugMaxTextVertices = static_cast<int>(debug_overlay_runtime::kDefaultMaxTextVertices);
         bool rockDebugUseBoundsForHeavyConvex = true;
         bool rockDebugVerboseLogging = false;
-        bool rockDebugVideoSyncMarker = false;
-        float rockDebugVideoSyncMarkerSize = 4.0f;
-        bool rockDebugGrabTransformTelemetry = false;
-        bool rockDebugGrabTransformTelemetryText = false;
-        bool rockDebugGrabTransformTelemetryAxes = false;
-        int rockDebugGrabTransformTelemetryLogIntervalFrames = 1;
-        int rockDebugGrabTransformTelemetryTextMode = 0;
-        bool rockDebugShowGrabNotifications = false;
-        bool rockDebugShowWeaponNotifications = false;
         bool rockDebugShowRootFlattenedFingerSkeletonMarkers = false;
         bool rockDebugShowSkeletonBoneVisualizer = false;
         bool rockDebugDrawSkeletonBoneAxes = false;

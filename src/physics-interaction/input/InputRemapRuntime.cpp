@@ -1859,7 +1859,6 @@ namespace rock::input_remap_runtime
             event.handled = RE::InputEvent::HANDLED_RESULT::kUnhandled;
             s_originalPipboyEventHandler(pipboyHandler, &event);
 
-            const auto pressHandled = event.handled;
             event.value = 0.0f;
             event.heldDownSecs = (std::max)(originalHeldDownSecs, 0.001f);
             event.handled = RE::InputEvent::HANDLED_RESULT::kUnhandled;
@@ -1871,7 +1870,6 @@ namespace rock::input_remap_runtime
                 s_originalPipboyEventHandler(pipboyHandler, &event);
             }
 
-            const auto releaseHandled = event.handled;
             event.strUserEvent = originalUserEvent;
             event.value = originalValue;
             event.heldDownSecs = originalHeldDownSecs;

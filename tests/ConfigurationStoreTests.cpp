@@ -576,7 +576,7 @@ int main(int argc, char** argv)
         require(!store.setValue(Group::Consumer, "PhysicsInteraction", "bDebugShowColliders", "true"), "wrong owning file accepted");
         require(!store.setValue(Group::Developer, "Debug", "bUnknown", "true"), "unknown setting accepted");
         require(!store.setValue(Group::Developer, "Debug", "bDeveloperModeEnabled", "invalid"), "invalid bool accepted");
-        require(!store.setValue(Group::Developer, "PhysicsInteraction", "fDebugVideoSyncMarkerSize", "nan"), "nonfinite override accepted");
+        require(!store.setValue(Group::Developer, "PhysicsInteraction", "fDebugSkeletonBoneAxisLength", "nan"), "nonfinite override accepted");
 
         // An editor changes one key after the menu snapshot. A menu change to
         // another key must preserve the newer edit, then both must hot reload.

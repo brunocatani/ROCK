@@ -75,8 +75,6 @@ namespace
         .skeletonBoneTruncationLogging = true,
         .grabForceTorqueText = true,
         .grabPivotSourceEvidence = true,
-        .grabTransformTelemetryAxes = true,
-        .grabTransformTelemetryText = true,
     });
     static_assert(!disabledSuiteMasters.fingerSweptArcText);
     static_assert(!disabledSuiteMasters.fingerSweptArcLiveSkeleton);
@@ -85,8 +83,6 @@ namespace
     static_assert(!disabledSuiteMasters.skeletonBoneTruncationLogging);
     static_assert(!disabledSuiteMasters.grabForceTorqueText);
     static_assert(!disabledSuiteMasters.grabPivotSourceEvidence);
-    static_assert(!disabledSuiteMasters.grabTransformTelemetryAxes);
-    static_assert(!disabledSuiteMasters.grabTransformTelemetryText);
 
     constexpr auto unrelatedGenericVisuals = resolve({
         .handAxes = true,

@@ -22,7 +22,6 @@ namespace rock::frik_hand_world_authority
     {
         namespace registry_policy = hand_world_claim_registry_policy;
         namespace isolation_policy = tracked_hand_isolation_policy;
-        namespace transport_policy = rendered_bone_transport_policy;
         namespace scope_policy = scope_hand_input_continuity_policy;
 
         using registry_policy::DriverFrame;

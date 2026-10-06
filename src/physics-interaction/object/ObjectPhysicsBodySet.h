@@ -173,7 +173,6 @@ namespace rock::object_physics_body_set
 
     private:
         PureBodySet _set;
-        std::unordered_set<std::uint32_t> _seenBodyIds;
     };
 
     struct BodySetScanOptions

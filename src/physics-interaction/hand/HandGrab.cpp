@@ -3051,9 +3051,6 @@ namespace rock
 
         constexpr const char* kGrabObjectRotationReferenceName = "generatedProxyAuthorityLocal";
         constexpr float kGrabFrameMismatchRawProxyRotationWarnDegrees = 20.0f;
-        constexpr float kGrabFrameMismatchProxyRotationWarnDegrees = 5.0f;
-        constexpr float kGrabFrameMismatchObjectRotationWarnDegrees = 25.0f;
-        constexpr float kGrabFrameMismatchGripErrorWarnGameUnits = 5.0f;
 
         float computeLocalMeshMaxDistanceFromPoint(const std::vector<GrabLocalTriangle>& localTriangles, const RE::NiPoint3& originLocal)
         {
@@ -7868,7 +7865,6 @@ namespace rock
         RE::NiAVObject* collidableNode = nullptr;
         RE::hknpBodyId objectBodyId{};
         const std::string* objectName = nullptr;
-        const char* motionType = "UNKNOWN";
         const mechanical_connected_body_set::MechanicalScope* mechanicalScope = nullptr;
         const GrabSharedObjectContext* sharedContext = nullptr;
         const object_physics_body_set::ObjectPhysicsBodySet* preparedBodySet = nullptr;
@@ -7882,7 +7878,6 @@ namespace rock
         auto* collidableNode = input.collidableNode;
         auto objectBodyId = input.objectBodyId;
         const auto& objectName = *input.objectName;
-        const auto* motionType = input.motionType;
         const auto& mechanicalScope = *input.mechanicalScope;
         const auto& sharedContext = *input.sharedContext;
         const auto& preparedBodySet = *input.preparedBodySet;
@@ -7895,14 +7890,6 @@ namespace rock
             _currentSelection.refr->GetFormID(),
             objectBodyId.value);
 
-        if (g_rockConfig.rockDebugShowGrabNotifications) {
-            const auto message = std::format(
-                "[ROCK] {} GRAB: {} ({})",
-                _isLeft ? "L" : "R",
-                objectName,
-                motionType);
-            f4vr::showNotification(message);
-        }
 
         bool adoptedPeerHeldBodySet = false;
         _heldBodyIds = grab_target::isRagdoll(_currentSelection.targetKind) ?
@@ -11439,7 +11426,6 @@ namespace rock
             .collidableNode = collidableNode,
             .objectBodyId = objectBodyId,
             .objectName = &objName,
-            .motionType = motionTypeStr,
             .mechanicalScope = &mechanicalScope,
             .sharedContext = &sharedContext,
             .preparedBodySet = &preparedBodySet,
@@ -13239,16 +13225,6 @@ namespace rock
                 desiredBodyWorld.translate.x, desiredBodyWorld.translate.y, desiredBodyWorld.translate.z,
                 grabDriveObjectWorld.translate.x, grabDriveObjectWorld.translate.y, grabDriveObjectWorld.translate.z);
 
-            _notifCounter++;
-            if (hasGrabPivotFrame && g_rockConfig.rockDebugShowGrabNotifications && _notifCounter >= 6) {
-                _notifCounter = 0;
-                const RE::NiPoint3 pivotAToHand = pivotAWorld - desiredBodyWorld.translate;
-                const RE::NiPoint3 pivotBToObject = pivotBWorld - grabDriveObjectWorld.translate;
-                const float paToHand = std::sqrt(pivotAToHand.x * pivotAToHand.x + pivotAToHand.y * pivotAToHand.y + pivotAToHand.z * pivotAToHand.z);
-                const float pbToObj = std::sqrt(pivotBToObject.x * pivotBToObject.x + pivotBToObject.y * pivotBToObject.y + pivotBToObject.z * pivotBToObject.z);
-                f4vr::showNotification(
-                    std::format("[ROCK] track={:.1f}gu vel={:.2f} flush={} paOff={:.1f} pbOff={:.1f}", pivotErrGame, objVelMag, driveFlushedTargets, paToHand, pbToObj));
-            }
         }
 
         {

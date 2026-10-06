@@ -797,23 +797,6 @@ namespace rock
         rockDebugMaxTextVertices = static_cast<int>(overlayLimits.maxTextVertices);
         rockDebugUseBoundsForHeavyConvex = ini.GetBoolValue(SECTION, "bDebugUseBoundsForHeavyConvex", rockDebugUseBoundsForHeavyConvex);
         rockDebugVerboseLogging = ini.GetBoolValue(SECTION, "bDebugVerboseLogging", rockDebugVerboseLogging);
-        rockDebugVideoSyncMarker = ini.GetBoolValue(SECTION, "bDebugVideoSyncMarker", rockDebugVideoSyncMarker);
-        rockDebugVideoSyncMarkerSize = static_cast<float>(ini.GetDoubleValue(SECTION, "fDebugVideoSyncMarkerSize", rockDebugVideoSyncMarkerSize));
-        rockDebugGrabTransformTelemetry = ini.GetBoolValue(SECTION, "bDebugGrabTransformTelemetry", rockDebugGrabTransformTelemetry);
-        rockDebugGrabTransformTelemetryText = ini.GetBoolValue(SECTION, "bDebugGrabTransformTelemetryText", rockDebugGrabTransformTelemetryText);
-        rockDebugGrabTransformTelemetryAxes = ini.GetBoolValue(SECTION, "bDebugGrabTransformTelemetryAxes", rockDebugGrabTransformTelemetryAxes);
-        rockDebugGrabTransformTelemetryLogIntervalFrames =
-            static_cast<int>(ini.GetLongValue(SECTION, "iDebugGrabTransformTelemetryLogIntervalFrames", rockDebugGrabTransformTelemetryLogIntervalFrames));
-        if (rockDebugGrabTransformTelemetryLogIntervalFrames < 1) {
-            rockDebugGrabTransformTelemetryLogIntervalFrames = 1;
-        }
-        rockDebugGrabTransformTelemetryTextMode =
-            static_cast<int>(ini.GetLongValue(SECTION, "iDebugGrabTransformTelemetryTextMode", rockDebugGrabTransformTelemetryTextMode));
-        if (rockDebugGrabTransformTelemetryTextMode < 0 || rockDebugGrabTransformTelemetryTextMode > 1) {
-            rockDebugGrabTransformTelemetryTextMode = 0;
-        }
-        rockDebugShowGrabNotifications = ini.GetBoolValue(SECTION, "bDebugShowGrabNotifications", rockDebugShowGrabNotifications);
-        rockDebugShowWeaponNotifications = ini.GetBoolValue(SECTION, "bDebugShowWeaponNotifications", rockDebugShowWeaponNotifications);
         rockDebugShowRootFlattenedFingerSkeletonMarkers =
             ini.GetBoolValue(SECTION, "bDebugShowRootFlattenedFingerSkeletonMarkers", rockDebugShowRootFlattenedFingerSkeletonMarkers);
         rockDebugShowSkeletonBoneVisualizer = ini.GetBoolValue(SECTION, "bDebugShowSkeletonBoneVisualizer", rockDebugShowSkeletonBoneVisualizer);

@@ -1352,7 +1352,7 @@ namespace rock::debug
             settings.pipelineLimits.maxCompletedJobs = settings.limits.maxShapeCompletedJobs;
             settings.pipelineLimits.maxCacheEntries = settings.limits.maxShapeCacheEntries;
             settings.pipelineLimits.maxGpuBytes = settings.limits.maxShapeCacheBytes;
-            settings.duplicateTextPerEye = g_rockConfig.rockDebugGrabTransformTelemetryTextMode == 0;
+            settings.duplicateTextPerEye = true;
             settings.verboseLogging = g_rockConfig.rockDebugVerboseLogging;
             return settings;
         }

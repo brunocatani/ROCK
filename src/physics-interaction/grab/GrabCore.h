@@ -127,7 +127,6 @@ namespace rock::active_grab_body_lifecycle
         bool capturedAfterPrep = false;
         bool originalStateKnown = true;
         bool motionChangedByRock = false;
-        bool filterChangedByRock = false;
         bool hasDampingSnapshot = false;
         bool hasInertiaSnapshot = false;
     };

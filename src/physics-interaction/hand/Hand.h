@@ -467,9 +467,6 @@ namespace rock
         bool getGrabContactPatchDebugSnapshot(RE::hknpWorld* world, GrabContactPatchDebugSnapshot& out) const;
         bool getGrabSupportFrameDebugSnapshot(RE::hknpWorld* world, GrabSupportFrameDebugSnapshot& out) const;
         bool getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabForceTorqueDebugSnapshot& out) const;
-        bool getGrabTransformTelemetrySnapshot(RE::hknpWorld* world,
-            const RE::NiTransform& rawHandWorld,
-            grab_transform_telemetry::RuntimeSample& out) const;
         bool getGrabFingerSweepDebugSnapshot(grab_finger_pose_runtime::FingerSweepDebugSnapshot& out) const
         {
             if (!_hasGrabFingerSweepDebug || !_grabFingerSweepDebugCapture.valid) {
@@ -1310,7 +1307,6 @@ namespace rock
         float _grabStartTime = 0.0f;
         std::uint64_t _heldObjectUpdateFrame = 0;
         int _heldLogCounter = 0;
-        int _notifCounter = 0;
 
         CanonicalGrabFrame _grabFrame;
         grab_offset_acquisition::Transition<RE::NiTransform> _grabOffsetAcquisition;
@@ -1336,12 +1332,6 @@ namespace rock
         bool _hasGrabVisualHandTransform = false;
         RE::NiTransform _lastPublishedGrabVisualHandTransform{};
         bool _hasLastPublishedGrabVisualHandTransform = false;
-        // HELD_RENDER_CLOCK probe (diagnostic only): previous frame's presented
-        // node pose and presentation residual, keyed by grab trace.
-        std::uint64_t _heldRenderClockProbeTraceId = 0;
-        RE::NiTransform _heldRenderClockProbePresentedNode{};
-        RE::NiTransform _heldRenderClockProbeResidual{};
-        bool _hasHeldRenderClockProbeSample = false;
         hand_visual_lerp_math::VisualReturnTransition<RE::NiTransform> _grabVisualReturn{};
         RE::NiTransform _grabVisualHandLerpStartTransform{};
         float _grabVisualHandLerpElapsedSeconds = 0.0f;

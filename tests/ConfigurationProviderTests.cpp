@@ -120,13 +120,13 @@ int main() {
     });
     auto second=std::async(std::launch::async,[&] {
         start.arrive_and_wait();
-        return set(config::Group::Developer,"PhysicsInteraction","fDebugVideoSyncMarkerSize","8");
+        return set(config::Group::Developer,"PhysicsInteraction","fDebugSkeletonBoneAxisLength","8");
     });
     start.arrive_and_wait();
     assert(first.get()==Status::Ok && second.get()==Status::Ok);
     g_rockConfig.reload();
     const auto developer=catalog(config::Group::Developer);
-    assert(developer.at("bDeveloperModeEnabled")=="false" && developer.at("fDebugVideoSyncMarkerSize")=="8");
+    assert(developer.at("bDeveloperModeEnabled")=="false" && developer.at("fDebugSkeletonBoneAxisLength")=="8");
 
     // Hold a borrowed catalog entry while a runtime reload becomes pending.
     // Reload must return without waiting and apply after the visitor finishes.
@@ -158,7 +158,7 @@ int main() {
     g_rockConfig.subscribeForConfigChanged("test",[&](const std::string&) {
         notified=true;assert(catalog(config::Group::Consumer).at("iLogLevel")=="4");
     });
-    assert(set(config::Group::Developer,"PhysicsInteraction","fDebugVideoSyncMarkerSize","4")==Status::Ok);
+    assert(set(config::Group::Developer,"PhysicsInteraction","fDebugSkeletonBoneAxisLength","4")==Status::Ok);
     assert(!fs::exists(directory/"ROCK_Developer.ini"));
     g_rockConfig.reload();assert(notified);
     g_rockConfig.unsubscribeFromConfigChanged("test");

@@ -36,10 +36,6 @@ namespace rock::debug_visualization_policy
         bool grabSupportFrame{ false };
         bool handBoneContacts{ false };
         bool grabAuthorityProxy{ false };
-        bool grabTransformTelemetry{ false };
-        bool grabTransformTelemetryAxes{ false };
-        bool grabTransformTelemetryText{ false };
-        bool videoSyncMarker{ false };
         bool weaponAuthority{ false };
         bool looseWeaponGripZones{ false };
         bool authoredGripActivationZones{ false };
@@ -81,10 +77,6 @@ namespace rock::debug_visualization_policy
         bool grabSupportFrame{ false };
         bool handBoneContacts{ false };
         bool grabAuthorityProxy{ false };
-        bool grabTransformTelemetry{ false };
-        bool grabTransformTelemetryAxes{ false };
-        bool grabTransformTelemetryText{ false };
-        bool videoSyncMarker{ false };
         bool weaponAuthority{ false };
         bool looseWeaponGripZones{ false };
         bool authoredGripActivationZones{ false };
@@ -97,7 +89,6 @@ namespace rock::debug_visualization_policy
         const bool forceTorque = input.grabForceTorque;
         const bool sweptArc = input.fingerSweptArc;
         const bool skeleton = input.skeletonBones;
-        const bool telemetry = input.grabTransformTelemetry;
 
         return {
             .colliderMaster = colliders,
@@ -142,12 +133,6 @@ namespace rock::debug_visualization_policy
             .grabSupportFrame = input.grabSupportFrame,
             .handBoneContacts = input.handBoneContacts,
             .grabAuthorityProxy = input.grabAuthorityProxy,
-            .grabTransformTelemetry = telemetry,
-            .grabTransformTelemetryAxes =
-                telemetry && input.grabTransformTelemetryAxes,
-            .grabTransformTelemetryText =
-                telemetry && input.grabTransformTelemetryText,
-            .videoSyncMarker = input.videoSyncMarker,
             .weaponAuthority = input.weaponAuthority,
             .looseWeaponGripZones = input.looseWeaponGripZones,
             .authoredGripActivationZones =

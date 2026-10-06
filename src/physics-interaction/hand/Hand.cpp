@@ -277,7 +277,6 @@ namespace rock
         _activeGrabLifecycle.clear();
         _grabStartTime = 0.0f;
         _heldLogCounter = 0;
-        _notifCounter = 0;
         _heldBodyIds.clear();
         clearPullRuntimeState(false, "reset");
         clearPullCatchIntent("reset");

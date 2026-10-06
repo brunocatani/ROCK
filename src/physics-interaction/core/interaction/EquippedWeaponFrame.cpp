@@ -394,7 +394,6 @@ namespace rock
         {
             WeaponInteractionContact leftWeaponContact{};
             WeaponInteractionContact rightWeaponContact{};
-            auto leftWeaponContactSource = weapon_debug_notification_policy::WeaponContactSource::None;
 
             auto publishWeaponInteractionContact = [&](bool isLeft, WeaponInteractionContact& contact) {
                 auto& partKind = isLeft ? _weaponContact.left.partKind : _weaponContact.right.partKind;
@@ -499,15 +498,6 @@ namespace rock
                     acquisitionState,
                     touchObserved,
                     outContact.valid);
-                switch (outContact.acquisitionSource) {
-                case WeaponInteractionAcquisitionSource::PhysicalContact:
-                    return weapon_debug_notification_policy::WeaponContactSource::Contact;
-                case WeaponInteractionAcquisitionSource::ProximityProbe:
-                    return weapon_debug_notification_policy::WeaponContactSource::Probe;
-                case WeaponInteractionAcquisitionSource::None:
-                default:
-                    return weapon_debug_notification_policy::WeaponContactSource::None;
-                }
             };
 
             // A loose-weapon equip carries the originating physical hand into
@@ -650,11 +640,11 @@ namespace rock
                 WeaponCollision::InteractionQueryBatch interactionQueries;
                 std::optional<weapon_drive_pose::NativeFrame> operatingPose;
                 if(provider::runtime::hasOperatingGrabPoints(currentWeaponGenerationKey))operatingPose.emplace(captureProviderPartQueryPose(weaponNode,currentWeaponGenerationKey));
-                leftWeaponContactSource = consumeWeaponContactForHand(
+                consumeWeaponContactForHand(
                     true, frame.left, true, leftWeaponContact, interactionQueries,operatingPose?&*operatingPose:nullptr);
                 const bool rightWeaponContactProbeAllowed =
                     _twoHandedGrip.isFiringGripDetached() || firingHandIsLeft;
-                (void)consumeWeaponContactForHand(false, frame.right,
+                consumeWeaponContactForHand(false, frame.right,
                     rightWeaponContactProbeAllowed, rightWeaponContact, interactionQueries,operatingPose?&*operatingPose:nullptr);
             } else {
                 performance_profiler::addCounter(performance_profiler::Counter::WeaponProbeFramesSkipped);
@@ -808,12 +798,6 @@ namespace rock
             _equipped.partIndicatorPoints={leftWeaponContact.grabPoint,rightWeaponContact.grabPoint};
             _equipped.partIndicatorFrame = runtime.frameIndex;
             _equipped.partIndicatorGeneration = currentWeaponGenerationKey;
-
-            const WeaponInteractionDecision leftWeaponDecision = routeWeaponInteraction(leftWeaponContact, providerInteractionState);
-            const auto weaponNotificationKey = weapon_debug_notification_policy::makeWeaponNotificationKey(
-                leftWeaponContact,
-                leftWeaponDecision,
-                leftWeaponContactSource);
 
             const bool leftHandHoldingObject = _leftHand.isHolding();
             auto supportAuthorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
@@ -1628,34 +1612,6 @@ namespace rock
             }
             rightPartGripActive = rightPartGripActiveAfterGrip;
 
-            if (g_rockConfig.rockDebugShowWeaponNotifications) {
-                const auto gripNotificationEvent =
-                    weapon_debug_notification_policy::observeWeaponSupportGrip(_diagnostics.weaponDebugNotification, weaponSupportGripActive);
-                if (gripNotificationEvent != weapon_debug_notification_policy::WeaponGripNotificationEvent::None) {
-                    if (gripNotificationEvent == weapon_debug_notification_policy::WeaponGripNotificationEvent::Started) {
-                        const auto weaponDebugInfo = makeWeaponInteractionDebugInfo(_weaponCollision, weaponNode, leftWeaponContact);
-                        f4vr::showNotification(
-                            weapon_debug_notification_policy::formatWeaponGripNotification(gripNotificationEvent, weaponNotificationKey, weaponDebugInfo));
-                        ROCK_LOG_INFO(Weapon,
-                            "WeaponGripDiagnostics: weapon='{}' formID={:08X} node='{}' driveRoot='{}' sourceRoot='{}' nif='{}' part={} route={} pose={} body={} source={}",
-                            weapon_debug_notification_policy::debugTextOrUnknown(weaponDebugInfo.weaponName),
-                            weaponDebugInfo.weaponFormId,
-                            weapon_debug_notification_policy::debugTextOrUnknown(weaponDebugInfo.weaponNodeName),
-                            weapon_debug_notification_policy::debugTextOrUnknown(weaponDebugInfo.interactionRootName),
-                            weapon_debug_notification_policy::debugTextOrUnknown(weaponDebugInfo.sourceRootName),
-                            weapon_debug_notification_policy::debugTextOrUnknown(weaponDebugInfo.sourceName),
-                            weapon_debug_notification_policy::nameOf(weaponNotificationKey.partKind),
-                            weapon_debug_notification_policy::nameOf(weaponNotificationKey.interactionKind),
-                            weapon_debug_notification_policy::nameOf(weaponNotificationKey.gripPose),
-                            weaponNotificationKey.bodyId,
-                            weapon_debug_notification_policy::nameOf(weaponNotificationKey.source));
-                    } else {
-                        f4vr::showNotification(weapon_debug_notification_policy::formatWeaponGripNotification(gripNotificationEvent, weaponNotificationKey));
-                    }
-                }
-            } else {
-                _diagnostics.weaponDebugNotification.supportGripActive = weaponSupportGripActive;
-            }
             leftSupportGripActive = weaponSupportGripActive;
 
             /*

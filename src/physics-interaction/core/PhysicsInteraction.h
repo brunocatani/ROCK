@@ -56,7 +56,6 @@
 #include "physics-interaction/weapon/DynamicWeaponCollision.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/LooseWeaponCollision.h"
-#include "physics-interaction/weapon/WeaponDebug.h"
 #include "physics-interaction/weapon/BareFistGuardPolicy.h"
 #include "physics-interaction/input/BareFistGesturePolicy.h"
 #include "api/ProviderRuntimeTypes.h"
@@ -736,27 +735,6 @@ namespace rock
             bool activeThisFrame{ false };
         };
 
-        struct GrabTransformTelemetryState
-        {
-            bool active = false;
-            std::uint32_t session = 0;
-            std::uint64_t frame = 0;
-            std::uint64_t logFrameCounter = 0;
-            bool hasPreviousAngularDeltaSample = false;
-            RE::NiTransform previousRawHandWorld{};
-            RE::NiTransform previousPalmAnchorGrabAuthorityWorld{};
-            RE::NiTransform previousProxyReadbackWorld{};
-            RE::NiTransform previousRawDesiredObjectWorld{};
-            RE::NiTransform previousHeldNodeWorld{};
-            RE::NiTransform previousHeldBodyWorld{};
-            RE::NiTransform previousNativeBodyWorld{};
-            bool previousHasPalmAnchorGrabAuthority = false;
-            bool previousHasProxyReadback = false;
-            bool previousHasHeldNodeWorld = false;
-            bool previousHasHeldBodyWorld = false;
-            bool previousHasHeldNativeBodyWorld = false;
-        };
-
         struct ProviderHandInputSuppressionRuntimeState
         {
             bool deferredGrabRelease = false;
@@ -1022,8 +1000,7 @@ namespace rock
             std::unordered_map<std::uint32_t, std::uint32_t> owned;
         };
 
-        // Diagnostic counters, one-shot log latches and grab-transform
-        // telemetry.
+        // Diagnostic counters and one-shot log latches.
         struct InteractionDiagnosticsState
         {
             std::atomic<int> contactLogCounter{ 0 };
@@ -1031,9 +1008,6 @@ namespace rock
             int weaponInteractionProbeLogCounter = 0;
             int wpnNodeLogCounter = 0;
             bool runtimeScaleLogged = false;
-            std::array<GrabTransformTelemetryState, 2> grabTransformTelemetryStates{};
-            std::uint32_t grabTransformTelemetryNextSession = 1;
-            weapon_debug_notification_policy::WeaponNotificationState weaponDebugNotification{};
         };
 
         LifecycleState _lifecycle;
