@@ -697,26 +697,6 @@ namespace rock::debug
             return true;
         }
 
-        DirectX::XMMATRIX niTransformToWorldMatrix(const RE::NiTransform& transform)
-        {
-            // Generated-body writes cross the NiTransform -> hkTransform
-            // boundary through niRotToHkTransformRotation. Render the current
-            // target through the same conversion so TARGET and BODY use one
-            // physical-axis convention in the row-major instancing shader.
-            const RE::NiMatrix3 physicsRotation =
-                niRotToHkTransformRotation(transform.rotate);
-            const DirectX::XMMATRIX rotation = DirectX::XMMatrixSet(
-                physicsRotation.entry[0][0], physicsRotation.entry[0][1], physicsRotation.entry[0][2], 0.0f,
-                physicsRotation.entry[1][0], physicsRotation.entry[1][1], physicsRotation.entry[1][2], 0.0f,
-                physicsRotation.entry[2][0], physicsRotation.entry[2][1], physicsRotation.entry[2][2], 0.0f,
-                0.0f, 0.0f, 0.0f, 1.0f);
-            const DirectX::XMMATRIX translation = DirectX::XMMatrixTranslation(
-                transform.translate.x,
-                transform.translate.y,
-                transform.translate.z);
-            return DirectX::XMMatrixMultiply(rotation, translation);
-        }
-
         DirectX::XMMATRIX niStoredBodyAxesToWorldMatrix(const RE::NiTransform& transform)
         {
             /*

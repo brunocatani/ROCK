@@ -696,15 +696,6 @@ namespace rock::frik_visual_authority
         return tryGetBoneWorldTransform(isLeft ? "LArm_Hand" : "RArm_Hand", outWorld);
     }
 
-    // Live arm chain nodes for a hand: valid after AfterArmSolve, final after AfterWorldFinal.
-    [[nodiscard]] inline bool tryGetArmChain(Hand hand, ArmChainTransforms& outChain)
-    {
-        outChain = {};
-        outChain.structSize = sizeof(ArmChainTransforms);
-        auto* frikApi = api();
-        return frikApi && frikApi->getArmChain && frikApi->getArmChain(hand, &outChain);
-    }
-
     // How a hand was solved this frame; latched once the frame's world transforms are final.
     [[nodiscard]] inline HandSolveState getHandSolveResult(Hand hand, RE::NiTransform& outWrist)
     {

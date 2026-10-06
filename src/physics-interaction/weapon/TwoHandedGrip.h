@@ -1145,13 +1145,6 @@ namespace rock
             bool rootRebaseActive{ false };
         };
 
-        enum class LockedHandAuthorityRole : std::uint8_t
-        {
-            None,
-            PrimaryGrip,
-            SupportGrip,
-        };
-
         enum class SupportInputBaselineKind : std::uint8_t
         {
             None = 0,

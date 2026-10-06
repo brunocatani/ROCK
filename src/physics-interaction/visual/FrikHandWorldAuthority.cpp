@@ -107,20 +107,6 @@ namespace rock::frik_hand_world_authority
             return isLeft ? "left" : "right";
         }
 
-        [[nodiscard]] const char* solveStateName(const HandSolveState state)
-        {
-            switch (state) {
-            case HandSolveState::NoClaim:
-                return "no-claim";
-            case HandSolveState::Consumed:
-                return "consumed";
-            case HandSolveState::Unreachable:
-                return "unreachable";
-            default:
-                return "skeleton-not-ready";
-            }
-        }
-
         [[nodiscard]] DriverSample sampleTrackedHand(const bool isLeft, const TrackedHandKind kind,
             const char** failure = nullptr)
         {

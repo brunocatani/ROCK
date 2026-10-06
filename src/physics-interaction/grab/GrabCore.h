@@ -1037,12 +1037,6 @@ namespace rock::grab_frame_math
         return hand_bone_collider_geometry_math::generatedColliderWorldPointToLocal(handBodyWorld, grabPivotWorld);
     }
 
-    template <class Transform>
-    inline Transform computeFrameFromCapturedObject(const Transform& heldNodeWorld, const Transform& rawHandSpace)
-    {
-        return transform_math::composeTransforms(heldNodeWorld, transform_math::invertTransform(rawHandSpace));
-    }
-
     template <class Transform, class Vector>
     inline SplitGrabFrame<Transform> buildSplitGrabFrameFromDesiredObject(const Transform& rawHandWorld,
         const Transform& handBodyWorld,

@@ -1126,16 +1126,6 @@ namespace rock
             return RockProviderBodyContactTargetKind::Unknown;
         }
 
-        inline const char* weaponDiagnosticNodeName(const RE::NiAVObject* node)
-        {
-            if (!node) {
-                return "";
-            }
-
-            const char* name = node->name.c_str();
-            return name ? name : "";
-        }
-
         inline const char* pushAssistSkipReasonName(push_assist::PushAssistSkipReason reason)
         {
             switch (reason) {
@@ -1151,42 +1141,6 @@ namespace rock
                 return "invalid-impulse";
             }
             return "unknown";
-        }
-
-        inline WeaponInteractionDebugInfo makeWeaponInteractionDebugInfo(
-            const WeaponCollision& weaponCollision,
-            RE::NiNode* weaponNode,
-            const WeaponInteractionContact& contact)
-        {
-            WeaponInteractionDebugInfo info{};
-            info.weaponNodeName = weaponDiagnosticNodeName(weaponNode);
-
-            auto* equipData = f4vr::getEquippedWeaponItem();
-            auto* weaponForm = equipData ? equipData->item.object : nullptr;
-            if (weaponForm) {
-                info.weaponFormId = weaponForm->formID;
-                const auto fullName = RE::TESFullName::GetFullName(*weaponForm);
-                if (!fullName.empty()) {
-                    info.weaponName = fullName;
-                }
-            }
-
-            if (contact.valid) {
-                WeaponInteractionDebugInfo sourceInfo{};
-                if (weaponCollision.tryGetWeaponContactDebugInfo(contact.bodyId, sourceInfo)) {
-                    info.sourceName = sourceInfo.sourceName;
-                    info.interactionRootName = sourceInfo.interactionRootName;
-                    info.sourceRootName = sourceInfo.sourceRootName;
-                }
-                if (info.interactionRootName.empty()) {
-                    info.interactionRootName = weaponDiagnosticNodeName(contact.interactionRoot);
-                }
-                if (info.sourceRootName.empty()) {
-                    info.sourceRootName = weaponDiagnosticNodeName(contact.sourceRoot);
-                }
-            }
-
-            return info;
         }
 
         inline RE::EquippedWeaponData* getValidatedEquippedWeaponData()

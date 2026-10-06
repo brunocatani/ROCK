@@ -155,10 +155,6 @@ namespace rock
             return "unknown";
         }
 
-        RE::NiPoint3 getMatrixColumn(const RE::NiMatrix3& matrix, int column) { return RE::NiPoint3(matrix.entry[0][column], matrix.entry[1][column], matrix.entry[2][column]); }
-
-        RE::NiPoint3 getMatrixRow(const RE::NiMatrix3& matrix, int row) { return RE::NiPoint3(matrix.entry[row][0], matrix.entry[row][1], matrix.entry[row][2]); }
-
         RE::NiPoint3 normalizeOrZero(const RE::NiPoint3& value)
         {
             const float lengthSquared = value.x * value.x + value.y * value.y + value.z * value.z;
@@ -183,15 +179,6 @@ namespace rock
         float dotProduct(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
         {
             return vector_math::dot(lhs, rhs);
-        }
-
-        float maxAbsDelta(const std::array<float, 12>& lhs, const std::array<float, 12>& rhs)
-        {
-            float maxDelta = 0.0f;
-            for (std::size_t i = 0; i < lhs.size(); ++i) {
-                maxDelta = (std::max)(maxDelta, std::fabs(lhs[i] - rhs[i]));
-            }
-            return maxDelta;
         }
 
         RE::NiPoint3 scalePoint(const RE::NiPoint3& value, float scalar)
@@ -314,13 +301,6 @@ namespace rock
         RE::NiPoint3 rotationCorrectionAxisWorld(const RE::NiMatrix3& current, const RE::NiMatrix3& target)
         {
             return normalizeOrZero(angularVelocityFromRotationDelta(current, target, 1.0f));
-        }
-
-        RE::NiPoint3 rotationAxisProxyLocal(const RE::NiMatrix3& proxyWorldRotation, const RE::NiPoint3& axisWorld)
-        {
-            RE::NiTransform proxyWorld = transform_math::makeIdentityTransform<RE::NiTransform>();
-            proxyWorld.rotate = proxyWorldRotation;
-            return normalizeOrZero(hand_bone_collider_geometry_math::generatedColliderWorldVectorToLocal(proxyWorld, axisWorld));
         }
 
         bool computeHardKeyframeVelocityForTarget(
@@ -1348,25 +1328,6 @@ namespace rock
             if (result.rejectedBodyIdCount < result.rejectedBodyIds.size()) {
                 result.rejectedBodyIds[result.rejectedBodyIdCount++] = bodyId;
             }
-        }
-
-        std::string formatContactPatchRejectedBodies(const RuntimeGrabContactPatch& result)
-        {
-            if (result.rejectedBodyIdCount == 0) {
-                return "-";
-            }
-
-            std::string out;
-            for (std::uint32_t index = 0; index < result.rejectedBodyIdCount; ++index) {
-                if (!out.empty()) {
-                    out += ",";
-                }
-                out += std::format("{}", result.rejectedBodyIds[index]);
-            }
-            if (result.rejectedBodyHits > static_cast<int>(result.rejectedBodyIdCount)) {
-                out += "+";
-            }
-            return out;
         }
 
         struct RuntimeMultiFingerGripContact
@@ -2741,16 +2702,6 @@ namespace rock
             return result;
         }
 
-        float max3(float a, float b, float c) { return (std::max)((std::max)(a, b), c); }
-
-        float maxColumnAxisDeltaDegrees(const RE::NiMatrix3& a, const RE::NiMatrix3& b)
-        {
-            return max3(
-                axisDeltaDegrees(getMatrixColumn(a, 0), getMatrixColumn(b, 0)),
-                axisDeltaDegrees(getMatrixColumn(a, 1), getMatrixColumn(b, 1)),
-                axisDeltaDegrees(getMatrixColumn(a, 2), getMatrixColumn(b, 2)));
-        }
-
         RE::NiMatrix3 matrixFromHkColumns(const float* hkMatrix)
         {
             RE::NiMatrix3 result{};
@@ -3035,13 +2986,6 @@ namespace rock
              */
             outTransform = makeIdentityTransform();
             return tryGetBodyArrayWorldTransform(world, bodyId, outTransform);
-        }
-
-        RE::NiTransform getGrabAuthorityBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
-        {
-            RE::NiTransform result = makeIdentityTransform();
-            tryGetGrabAuthorityBodyWorldTransform(world, bodyId, result);
-            return result;
         }
 
         RE::NiTransform computeRuntimeBodyLocalTransform(const RE::NiTransform& nodeWorld, const RE::NiTransform& bodyWorld)

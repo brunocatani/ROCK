@@ -140,47 +140,6 @@ namespace rock
             return "unknown";
         }
 
-        inline const char* handFrameResolutionDiagnosticName(
-            const scope_safe_hand_frame_math::ResolutionMode mode)
-        {
-            switch (mode) {
-            case scope_safe_hand_frame_math::ResolutionMode::RootFlattened:
-                return "root";
-            case scope_safe_hand_frame_math::ResolutionMode::
-                DriverReconstructed:
-                return "driver";
-            case scope_safe_hand_frame_math::ResolutionMode::LastKnown:
-                return "last-known";
-            case scope_safe_hand_frame_math::ResolutionMode::Unavailable:
-                return "unavailable";
-            }
-            return "unknown";
-        }
-
-        inline float diagnosticPointDistance(
-            const RE::NiPoint3& left,
-            const RE::NiPoint3& right)
-        {
-            const RE::NiPoint3 delta = left - right;
-            const float distance = delta.Length();
-            return std::isfinite(distance) ? distance : -1.0f;
-        }
-
-        inline float diagnosticRotationDeterminant(const RE::NiMatrix3& rotation)
-        {
-            const float determinant =
-                rotation.entry[0][0] *
-                    (rotation.entry[1][1] * rotation.entry[2][2] -
-                        rotation.entry[1][2] * rotation.entry[2][1]) -
-                rotation.entry[0][1] *
-                    (rotation.entry[1][0] * rotation.entry[2][2] -
-                        rotation.entry[1][2] * rotation.entry[2][0]) +
-                rotation.entry[0][2] *
-                    (rotation.entry[1][0] * rotation.entry[2][1] -
-                        rotation.entry[1][1] * rotation.entry[2][0]);
-            return std::isfinite(determinant) ? determinant : -1.0f;
-        }
-
         inline grab_pinch_pocket_policy::Config
             currentWeaponOppositionPocketConfig()
         {
@@ -1229,22 +1188,6 @@ namespace rock
                 return false;
             }
             outTransform = rawHandWorld;
-            return true;
-        }
-
-        /*
-         * The root flattened bone as FRIK rendered it this frame (probes and
-         * debug traces only; never physical intent).
-         */
-        inline bool tryGetPresentedRootFlattenedHandBoneTransform(bool isLeft, RE::NiTransform& outTransform)
-        {
-            outTransform = {};
-            RE::NiTransform presentedHandWorld{};
-            if (!frik_hand_world_authority::tryGetPresentedHandWorld(isLeft, presentedHandWorld) ||
-                !isUsableHandAuthorityTransform(presentedHandWorld)) {
-                return false;
-            }
-            outTransform = presentedHandWorld;
             return true;
         }
 
