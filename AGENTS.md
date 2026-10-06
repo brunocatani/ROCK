@@ -149,12 +149,12 @@ cmake --build build-tests --config Release --target ROCKPolicyTestBinaries -- /m
 ctest --test-dir build-tests -C Release --output-on-failure -j 4
 ```
 
-## Test Policy (owner, 2026-10-06)
+## Test Policy
 
-Tests exist to catch real breakage, not to restate decisions. The 2026-10-06
-triage deleted 51 of 146 test files that only mirrored policy if-chains, pinned
-tuning values or log strings, or modeled engine types with stand-ins; they had
-to be edited with nearly every intended behavior change and never caught a bug.
+Tests exist to catch real breakage, not to restate decisions. Tests that
+mirror policy if-chains, pin tuning values or log strings, or model engine types
+with stand-ins must be edited with nearly every intended behavior change and do
+not catch bugs.
 
 Add or keep a test only when it guards one of these:
 
