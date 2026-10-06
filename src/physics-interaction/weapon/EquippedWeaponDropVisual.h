@@ -23,7 +23,6 @@ namespace rock
         void beginStationary(RE::NiPointer<RE::NiAVObject> model,
             const RE::NiTransform& modelInWeapon, const RE::NiTransform& weaponWorld, std::uint32_t referenceId);
         void update(const RE::NiTransform& physicalHandWorld, RE::NiAVObject* looseRoot);
-        void tracePresentation(const char* phase) const;
         void prepareGrab();
         void release(const char* reason);
         void abandonSceneGraph();

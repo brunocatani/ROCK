@@ -2,7 +2,6 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/visual/GripZoneIndicators.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
-#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/telemetry/ScopeTransitionTelemetry.h"

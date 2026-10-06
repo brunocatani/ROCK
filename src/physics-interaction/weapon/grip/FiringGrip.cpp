@@ -2,7 +2,6 @@
 #include "physics-interaction/weapon/WeaponGripCalibration.h"
 
 #include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
-#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/weapon/WeaponAimBasis.h"
 
 // Firing-hand grip: canonical right frame, native aim-frame capture, left/right mirroring, authored primary firing grip canonical and finger pose, reattach, support-to-firing promotion, and PrimaryOnly (persistent equipped carry) sessions.
@@ -1282,8 +1281,7 @@ namespace rock
         const std::uint64_t currentWeaponGenerationKey,
         const std::uint64_t currentEquippedWeaponOwnershipKey,
         const std::uint64_t weaponInstanceContentKey,
-        const RE::NiTransform* cleanNativeIntentWorld,
-        const std::source_location captureLocation)
+        const RE::NiTransform* cleanNativeIntentWorld)
     {
         auto* playerNodes = f4vr::getPlayerNodes();
         RE::NiNode* rightWand =
@@ -1330,30 +1328,6 @@ namespace rock
                 currentEquippedWeaponOwnershipKey ||
             _firing.rightNativeWeaponAimFrame.weaponInstanceContentKey !=
                 weaponInstanceContentKey;
-        if (g_rockConfig.rockDebugWeaponOmodDumpEnabled) {
-            // Capture before assignment: same-identity refreshes hid the
-            // orientation change between native aim and left-carry takeover.
-            vanilla_weapon_alignment_telemetry::recordNativeAimCapture({
-                .caller = captureLocation.file_name(),
-                .callerLine = captureLocation.line(),
-                .weaponFormId = _recoil.equippedIdentity.formID,
-                .generation = currentWeaponGenerationKey,
-                .ownership = currentEquippedWeaponOwnershipKey,
-                .instanceContent = weaponInstanceContentKey,
-                .weapon = weaponNode,
-                .wandWorld = rightWand->world,
-                .inputWorld = cleanNativeIntentWorld ? *cleanNativeIntentWorld : weaponNode->world,
-                .previousAim = _firing.rightNativeWeaponAimFrame.weaponInWandOrientation,
-                .nextAim = weaponInRightWand,
-                .previousValid = _firing.rightNativeWeaponAimFrame.valid,
-                .identityChanged = identityChanged,
-                .cleanIntent = cleanNativeIntentWorld != nullptr,
-                .intentSource = static_cast<std::uint32_t>(_recoil.rightBaseSource),
-                .gripState = static_cast<std::uint32_t>(_session.state),
-                .authoredRefreshed = _firing.authoredHandWorldRefreshed,
-                .writeBlocked = _frikWeaponNode.writeBlockEngaged,
-            });
-        }
         _firing.rightNativeWeaponAimFrame = RightNativeWeaponAimFrame{
             .weaponInWandOrientation = weaponInRightWand,
             .weaponNodeIdentity = weaponNode,

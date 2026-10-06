@@ -39,7 +39,6 @@
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
-#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/object/SkinnedBodyResolver.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
@@ -12487,18 +12486,7 @@ namespace rock
             (void)held_scene_presentation::publishTargetTransport(_isLeft, world, objectBodyId.value,
                 _grabFrame.traceId, initialTarget, _grabFrame.authority.bodyWorldAtGrab,
                 rootNode, _grabFrame.rootBodyLocal);
-            const auto desiredRoot = transform_math::composeTransforms(
-                _grabFrame.authority.desiredBodyWorldAtGrab, transform_math::invertTransform(_grabFrame.rootBodyLocal));
-            vanilla_weapon_alignment_telemetry::recordTransferTrace(
-                vanilla_weapon_alignment_telemetry::TransferKind::ToggleDrop, _isLeft,
-                "loose-grab-commit", rootNode, &desiredRoot);
-            vanilla_weapon_alignment_telemetry::recordTransferPose(sel.refr ? sel.refr->GetFormID() : 0,
-                _isLeft, "commit", rootNode->world, handWorldTransform,
-                &proxyPreparation.proxyFrameWorldAtGrab, &desiredRoot);
-            _grabFrame.transferPoseTracePending = true;
         }
-        vanilla_weapon_alignment_telemetry::recordLooseGrab(
-            _savedObjectState.refr, _isLeft, _grabFrame.traceId, handWorldTransform);
         return GrabAttemptResult::Grabbed;
     }
 
@@ -13055,15 +13043,6 @@ namespace rock
                     _grabOffsetMaximumGripError, _grabOffsetMaximumRotationError);
             }
         }
-        const bool traceTransferPresentation = _grabFrame.transferPoseTracePending;
-        if (traceTransferPresentation) {
-            _grabFrame.transferPoseTracePending = false;
-            const auto rootFromBody = transform_math::invertTransform(_grabFrame.rootBodyLocal);
-            const auto root = transform_math::composeTransforms(update.solvedBodyWorld, rootFromBody);
-            const auto desiredRoot = transform_math::composeTransforms(update.desiredBodyWorld, rootFromBody);
-            vanilla_weapon_alignment_telemetry::recordTransferPose(getHeldRef() ? getHeldRef()->GetFormID() : 0,
-                _isLeft, "first-drive", root, handWorldTransform, &update.proxyAuthorityWorld, &desiredRoot);
-        }
         if (held_object_physics_math::instantDeviationExceeded(
                 update.pivotTrackingErrorGameUnits, g_rockConfig.rockGrabMaxDeviation)) {
             ROCK_LOG_WARN(Hand,
@@ -13093,13 +13072,6 @@ namespace rock
             _grabFrame.rootBodyLocal);
         update.hasPresentedBodyWorld = presentation.applied;
         update.presentedBodyWorld = presentation.presentedBodyWorld;
-        if (traceTransferPresentation && presentation.applied && _savedObjectState.refr) {
-            const auto presentedRoot = transform_math::composeTransforms(presentation.presentedBodyWorld,
-                transform_math::invertTransform(_grabFrame.rootBodyLocal));
-            vanilla_weapon_alignment_telemetry::recordTransferTrace(
-                vanilla_weapon_alignment_telemetry::TransferKind::ToggleDrop, _isLeft,
-                "first-held-presentation", _savedObjectState.refr->Get3D(), &presentedRoot);
-        }
 
         update.heldBodyColliding = isHeldBodyColliding();
         const auto heldContactSnapshot = readHeldBodyContactSnapshot();
@@ -13331,15 +13303,7 @@ namespace rock
                 .contactPatchSampleCount = _grabFrame.contactPatchSampleCount,
                 .contactSupportShape = heldAngularAuthority.contactSupportShape,
             });
-        if (g_rockConfig.rockDebugWeaponOmodDumpEnabled) {
-            vanilla_weapon_alignment_telemetry::recordTransferGrabGate(_isLeft, _grabFrame.traceId,
-                grab_three_phase::phaseName(_grabAcquisitionPhase), visualPublishDecision.reason,
-                _grabFrame.equippedWeaponTransfer, _grabFrame.authoredWeaponPose.valid(), _grabOffsetAcquisition.active,
-                _grabFrame.seat.hasPivotReacquire || _grabFrame.seat.hasSettledVisualHandRelation,
-                driveUpdate.hasPresentedBodyWorld, visualPublishDecision.apply);
-        }
-        if (_grabFrame.looseObjectSharedPeerTrace && (g_rockConfig.rockDebugGrabFrameLogging ||
-                (_heldObjectIsLooseWeapon && g_rockConfig.rockDebugWeaponOmodDumpEnabled))) {
+        if (_grabFrame.looseObjectSharedPeerTrace && g_rockConfig.rockDebugGrabFrameLogging) {
             _grabFrame.looseObjectVisualTraceElapsed += (std::max)(0.0f, deltaTime);
             if (_grabFrame.looseObjectVisualTraceElapsed >= 0.5f) {
                 _grabFrame.looseObjectVisualTraceElapsed = 0.0f;

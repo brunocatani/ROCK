@@ -838,7 +838,6 @@ namespace rock
         }
         rockDebugShowGrabNotifications = ini.GetBoolValue(SECTION, "bDebugShowGrabNotifications", rockDebugShowGrabNotifications);
         rockDebugShowWeaponNotifications = ini.GetBoolValue(SECTION, "bDebugShowWeaponNotifications", rockDebugShowWeaponNotifications);
-        rockDebugWeaponOmodDumpEnabled = ini.GetBoolValue(SECTION, "bDebugWeaponOmodDump", rockDebugWeaponOmodDumpEnabled);
         rockDebugHandTransformParity = ini.GetBoolValue(SECTION, "bDebugHandTransformParity", rockDebugHandTransformParity);
         rockDebugHandWorldAuthority = ini.GetBoolValue(SECTION, "bDebugHandWorldAuthority", rockDebugHandWorldAuthority);
         rockDebugWorldObjectOriginDiagnostics =

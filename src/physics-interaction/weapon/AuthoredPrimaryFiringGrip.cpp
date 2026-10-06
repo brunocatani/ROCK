@@ -11,7 +11,6 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/MinigunFiringGripPolicy.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
-#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 
 #include "RE/NetImmerse/NiNode.h"
 #include "RE/NetImmerse/NiTransform.h"
@@ -192,7 +191,6 @@ namespace rock
         const AuthoredPrimaryFiringGripFrameInput& input,
         TwoHandedGrip& weaponAuthority)
     {
-        vanilla_weapon_alignment_telemetry::recordInput(input);
         _weaponFormId = input.weapon ? input.weapon->formID : 0;
         _reportPoseSuspension = _weaponFormId != 0 && input.weaponDrawn && input.weaponVisible &&
             !input.menuBlocking && !input.compatibilityBlocking && !input.nativeReloadAuthorityActive &&
@@ -314,8 +312,6 @@ namespace rock
         }
         auto authoredLookup = authored_weapon_grip_library::findResolvedVariant(input.weapon, variant, input.inPowerArmor);
         authored_weapon_grip_library::applyPipeDefaultOffset(authoredLookup);
-        vanilla_weapon_alignment_telemetry::recordAuthoredSelection(
-            input, variant, authoredLookup, modelDisplacement, compiledMinigunFiringSeat);
         if (authoredLookup.found) {
             authoredLookup.rightHandWeaponLocal = vanilla_weapon_grip_frame::translateGrip(authoredLookup.rightHandWeaponLocal, modelDisplacement);
             if (authoredLookup.hasSupportRelation) {
@@ -1052,11 +1048,6 @@ namespace rock
             endSession("position-only-alignment-invalid");
             return;
         }
-
-        vanilla_weapon_alignment_telemetry::recordSolve(
-            input.weapon ? input.weapon->formID : 0, resolvedCaptureSequence,
-            harvestedRelationAvailable ? "native-idle" : "live-equipped",
-            authoredPrimaryHandInWeapon, trackedHandWorld, solvedWeaponWorld);
 
         // Firearms retain controller aim; melee rotates the authored grip
         // onto the physical wrist plus the user's pitch. Both present the

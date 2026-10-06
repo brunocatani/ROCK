@@ -5,7 +5,6 @@
 #include "physics-interaction/consume/ImmersiveAid.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
-#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 
 // Grab input pipeline: hand preludes, touch grab, grab intent and commit, and per-frame grab input update.
 
@@ -408,14 +407,6 @@ namespace rock
             makeGrabReleaseContext(hand, isLeft),
             isLeft ? &_rightHand : &_leftHand,
             &(isLeft ? frame.right : frame.left).rawHandWorld);
-        if (triggerEquipIntent.pending) {
-            // Existing opt-in, bounded transfer telemetry shows the
-            // live hand/model relationship during native readiness waits.
-            const auto* currentHeldRef = hand.getHeldRef();
-            vanilla_weapon_alignment_telemetry::recordTransferTrace(
-                vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip,
-                isLeft, "equip-wait-held-update", currentHeldRef ? currentHeldRef->Get3D() : nullptr);
-        }
         if (heldRef && !hand.isHolding()) {
             triggerEquipIntent = {};
             ROCK_LOG_WARN(Hand, "Held update ended grab without an input release: hand={} ref={:08X}",
@@ -1708,14 +1699,6 @@ namespace rock
                 }
 
                 auto* heldRef = equipHand.getHeldRef();
-                vanilla_weapon_alignment_telemetry::beginTransferTrace(
-                    vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip,
-                    equipIsLeft, heldRef ? heldRef->GetFormID() : 0, heldRef ? heldRef->Get3D() : nullptr);
-                if (pairedGrips.valid()) {
-                    vanilla_weapon_alignment_telemetry::beginTransferTrace(
-                        vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip,
-                        !equipIsLeft, heldRef ? heldRef->GetFormID() : 0, heldRef ? heldRef->Get3D() : nullptr);
-                }
                 const auto refreshTransferHand = [&](bool left) {
                     Hand& carryingHand = left ? _leftHand : _rightHand;
                     const auto reference = carryingHand.getSavedObjectState().retainedRef;
@@ -1788,9 +1771,6 @@ namespace rock
                         singleGrip = {};
                     }
                 }
-                vanilla_weapon_alignment_telemetry::recordTransferTrace(
-                    vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip,
-                    equipIsLeft, "equip-source-refreshed", heldRef ? heldRef->Get3D() : nullptr);
                 equipHand.captureHeldReleaseMotion(hknp, equipHandInput.rawHandWorld, frame.timing);
                 const auto previousEquippedWeaponFormID =
                     currentEquippedWeaponFormId();

@@ -165,7 +165,6 @@ namespace rock
         void requestCurrentWeaponReconcile(Source source) noexcept;
         void update(const FrameInput& input);
         void finalizeVisualPresentation();
-        void traceVisualPresentation(const char* phase) const { _bridge.tracePresentation(phase); }
         void shutdown();
         void abandonSceneGraph();
         [[nodiscard]] PublicSnapshot getPublicSnapshot() const noexcept;

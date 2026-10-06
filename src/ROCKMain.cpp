@@ -34,7 +34,6 @@
 #include "physics-interaction/native/NativeRagdollSafety.h"
 #include "physics-interaction/native/NativeShapeCastSafety.h"
 #include "physics-interaction/native/NativeImpactAudio.h"
-#include "physics-interaction/native/WeaponActionTrace.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/telemetry/DynamicColliderTrace.h"
 #include "physics-interaction/telemetry/HeldRenderTrace.h"
@@ -42,7 +41,6 @@
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
-#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/weapon/telemetry/ScopeTransitionTelemetry.h"
 #include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
 #include "physics-interaction/weapon/scope/NativeScopeData.h"
@@ -291,7 +289,6 @@ namespace
 
     void clearUnavailableRuntimeInputState()
     {
-        weapon_action_trace::invalidateContext();
         weapon_transition_animation_acceleration::cancel(
             "rock-runtime-unavailable");
         authored_weapon_grip_capture::setEnabled(false);
@@ -797,8 +794,6 @@ namespace
         if (withSkeletonPhysics) {
             dynamic_collider_trace::beginFrame(g_rockConfig.rockDebugGrabFrameLogging, s_schedulerSequence);
             updatePhysicsInteractionFrame();
-            vanilla_weapon_alignment_telemetry::capture(
-                vanilla_weapon_alignment_telemetry::Phase::AfterWeaponSolve, s_schedulerSequence);
             native_scope_shot_diagnostics::beginFrame();
             if (!s_physicsInteraction) native_scope_shot_diagnostics::clearPresentation();
             // Input classification runs inside the update. Apply the button
@@ -829,8 +824,6 @@ namespace
             s_physicsInteraction->traceHeldPresentationPhase("after-rock");
         }
         scope_transition_telemetry::capture(scope_transition_telemetry::Phase::AfterRock, s_schedulerSequence);
-        vanilla_weapon_alignment_telemetry::capture(
-            vanilla_weapon_alignment_telemetry::Phase::AfterRock, s_schedulerSequence);
     }
 
     /*
@@ -858,11 +851,7 @@ namespace
         rock::provider::beginGameFrame(frameTiming.sequence);
         native_scope_data::beginGameFrame();
         if (s_pluginLoaded && s_frikAvailable) {
-            vanilla_weapon_alignment_telemetry::capture(
-                vanilla_weapon_alignment_telemetry::Phase::BeforeRockPreFrik, s_schedulerSequence);
             scope_transition_telemetry::capture(scope_transition_telemetry::Phase::BeforeFrik, s_schedulerSequence);
-            vanilla_weapon_alignment_telemetry::capture(
-                vanilla_weapon_alignment_telemetry::Phase::BeforeFrik, s_schedulerSequence);
         }
         prepareRuntimeFrame();
         held_render_trace::recordPhase(held_render_trace::Phase::FrameBegin, runtime_state::currentFrame().frameIndex);
@@ -913,8 +902,6 @@ namespace
             }
         };
         const RockFrameEnd rockFrameEnd{};
-        vanilla_weapon_alignment_telemetry::capture(
-            vanilla_weapon_alignment_telemetry::Phase::AfterFrik, s_schedulerSequence);
         if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->resolveFrameHands();
             s_physicsInteraction->traceHeldPresentationPhase("before-rock");
@@ -960,8 +947,6 @@ namespace
             s_physicsInteraction->traceHeldPresentationPhase("after-world-final");
             s_physicsInteraction->publishDebugRenderFrame();
             dynamic_collider_trace::capturePresentedHands(runtime_state::currentFrame().frameIndex);
-            vanilla_weapon_alignment_telemetry::capture(
-                vanilla_weapon_alignment_telemetry::Phase::AfterWorldFinal, s_schedulerSequence);
         }
     }
 
@@ -1090,8 +1075,6 @@ namespace
                 const auto* lifecycle = static_cast<const frik::api::FRIKApiV2::SkeletonLifecycleData*>(msg->data);
                 logger::info("ROCK: FRIK skeleton generation {} powerArmor={}.", lifecycle->generation, lifecycle->inPowerArmor ? "yes" : "no");
             }
-            weapon_action_trace::initialize();
-            vanilla_weapon_alignment_telemetry::initialize();
             scope_transition_telemetry::initialize();
             dynamic_collider_trace::initialize();
             bumpGeneration(s_skeletonGeneration);
@@ -1110,8 +1093,6 @@ namespace
         case LE::kSkeletonDestroying:
             logger::info("ROCK: Received kSkeletonDestroying from FRIK.");
             s_frikSkeletonAnnounced = false;
-            weapon_action_trace::invalidateContext();
-            vanilla_weapon_alignment_telemetry::shutdown();
             scope_transition_telemetry::shutdown();
             native_scope_shot_diagnostics::shutdown();
             frik_hand_world_authority::resetForSkeletonRelease();

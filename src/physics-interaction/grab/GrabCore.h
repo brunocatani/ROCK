@@ -837,7 +837,6 @@ namespace rock
         std::uint64_t looseObjectSharedPeerTrace = 0;
         bool looseObjectSharedPrimaryIsLeft = false;
         float looseObjectVisualTraceElapsed = 0.0f;
-        bool transferPoseTracePending = false;
         bool equippedWeaponTransfer = false;
         bool hasLooseObjectSoloProxyCorrection = false;
         bool hasTelemetryCapture = false;
@@ -912,7 +911,6 @@ namespace rock
             looseObjectSharedPeerTrace = 0;
             looseObjectSharedPrimaryIsLeft = false;
             looseObjectVisualTraceElapsed = 0.0f;
-            transferPoseTracePending = false;
             equippedWeaponTransfer = false;
             hasLooseObjectSoloProxyCorrection = false;
             hasTelemetryCapture = false;

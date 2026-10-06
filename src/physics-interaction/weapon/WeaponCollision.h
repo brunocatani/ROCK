@@ -593,7 +593,6 @@ namespace rock
         void updateWeaponEmitterSnapshot(RE::NiAVObject* weaponNode, std::uint64_t equippedWeaponKey);
         void clearWeaponEmitterSnapshot();
         void publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult);
-        void dumpEquippedWeaponOmodEvidence(const WeaponBodyBank& bank, RE::NiAVObject* packageDriveNode);
 
         std::size_t findGeneratedWeaponShapeSources(
             RE::NiAVObject* weaponNode,
@@ -798,13 +797,11 @@ namespace rock
         };
 
         // State owned by the collision diagnostics TUs
-        // (WeaponCollisionDiagnostics and WeaponCollisionOmodDiagnostics).
+        // (WeaponCollisionDiagnostics).
         struct CollisionDiagnosticsState
         {
             int animNodeDumpFrameCounter{ 0 };
             std::uint64_t lastAnimNodeDumpKey{ 0 };
-            // Debug OMOD evidence dump fires once per weapon generation key.
-            std::uint64_t lastOmodDumpGenerationKey{ 0 };
         };
 
         WeaponIdentityState _identity{};

@@ -2,9 +2,7 @@
 #include "physics-interaction/native/NativeWeaponAnimationAudio.h"
 
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/PhysicsLog.h"
-#include "RockConfig.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include <REL/Relocation.h>
@@ -23,13 +21,6 @@ namespace rock::native_weapon_equip_audio
         using SelectItemSound = RE::BGSSoundDescriptorForm* (*)(RE::Actor*, RE::TESBoundObject*, bool, bool);
         SelectItemSound s_selectItemSound = nullptr;
         bool s_installed = false;
-        struct TraceWindow
-        {
-            std::uint64_t sequence{}, firstFrame{};
-            std::uint32_t weapon{}, remaining{};
-            bool equip{};
-        };
-        thread_local TraceWindow t_trace{};
         constexpr std::uintptr_t kPlaySound = 0x81FBF0;
 
         struct Callsite
@@ -67,43 +58,6 @@ namespace rock::native_weapon_equip_audio
                 reinterpret_cast<const void*>(REL::Offset(rva).address()), actual.data(), N) && actual == expected;
         }
 
-        void recordSound(const char* stage, const void* descriptor, std::uint32_t flags,
-            bool built, const void* position = nullptr) noexcept
-        {
-            // Reject other native threads before touching frame/config state.
-            if (!t_trace.remaining) return;
-            const auto frame = runtime_state::currentFrame().frameIndex;
-            if (!g_rockConfig.rockDebugWeaponOmodDumpEnabled || frame < t_trace.firstFrame || frame - t_trace.firstFrame >= 120) {
-                t_trace.remaining = 0;
-                return;
-            }
-            --t_trace.remaining;
-            try {
-                std::uintptr_t vtable{};
-                std::uint32_t soundForm{};
-                // 1404A7B00/7B40 install the descriptor subobject at form+20;
-                // 14081FD23 independently passes that subobject to BuildSound.
-                // Decode a form only for that exact verified vtable.
-                const bool descriptorReadable = descriptor && native_memory::tryReadValue(
-                    reinterpret_cast<const std::uintptr_t*>(descriptor), vtable);
-                const bool formKnown = descriptorReadable && vtable == REL::Offset(0x2CC7760).address() &&
-                    native_memory::tryReadValue(&reinterpret_cast<const RE::TESForm*>(
-                        reinterpret_cast<std::uintptr_t>(descriptor) - 0x20)->formID, soundForm);
-                std::array<void*, 12> stack{};
-                const auto count = RtlCaptureStackBackTrace(1, static_cast<DWORD>(stack.size()), stack.data(), nullptr);
-                const auto address = [&](std::size_t i) { return reinterpret_cast<std::uintptr_t>(stack[i]); };
-                ROCK_LOG_INFO(Weapon,
-                    "EQUIP_AUDIO seq={} operation={} weapon={:08X} frame={} age={} stage={} descriptor={:#x} readable={} soundFormKnown={} sound={:08X} flags={:#x} built={} position={:#x} player={:#x} gameBase={:#x} stackCount={} stack=[{:#x},{:#x},{:#x},{:#x},{:#x},{:#x},{:#x},{:#x},{:#x},{:#x},{:#x},{:#x}] budgetRemaining={}",
-                    t_trace.sequence, t_trace.equip ? "equip" : "unequip", t_trace.weapon, frame, frame - t_trace.firstFrame,
-                    stage, reinterpret_cast<std::uintptr_t>(descriptor), descriptorReadable, formKnown, soundForm, flags, built,
-                    reinterpret_cast<std::uintptr_t>(position), reinterpret_cast<std::uintptr_t>(f4vr::getPlayer()),
-                    REL::Module::get().base(), count, address(0), address(1), address(2), address(3), address(4), address(5),
-                    address(6), address(7), address(8), address(9), address(10), address(11), t_trace.remaining);
-            } catch (...) {
-                t_trace.remaining = 0;
-            }
-        }
-
         void playEquipSound(RE::BGSSoundDescriptorForm* sound, std::uint32_t flags,
             const RE::NiPoint3* position, RE::NiAVObject* node)
         {
@@ -111,8 +65,6 @@ namespace rock::native_weapon_equip_audio
             // actor mutation, shared per-event state or frame scheduling.
             const bool playerSource = isPlayerSource(reinterpret_cast<std::uintptr_t>(f4vr::getPlayer()),
                 reinterpret_cast<std::uintptr_t>(position));
-            recordSound(playerSource ? "equip-slot-muted" : "equip-slot-pass",
-                sound ? reinterpret_cast<const char*>(sound) + 0x20 : nullptr, flags, false, position);
             if (playerSource) {
                 ROCK_LOG_SAMPLE_DEBUG(Weapon, 1000, "Player weapon equip/unequip sound suppressed descriptor={:#x}",
                     reinterpret_cast<std::uintptr_t>(sound));
@@ -129,8 +81,6 @@ namespace rock::native_weapon_equip_audio
             // WEAP from form+1A == 2B. Keep every other item and actor intact.
             const bool muted = isPlayerWeaponItem(reinterpret_cast<std::uintptr_t>(f4vr::getPlayer()),
                 reinterpret_cast<std::uintptr_t>(actor), item && item->IsWeapon());
-            recordSound(muted ? "inventory-slot-muted" : "inventory-slot-pass",
-                sound ? reinterpret_cast<const char*>(sound) + 0x20 : nullptr, 0x10, false);
             if (muted) {
                 try {
                     ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "Player weapon inventory sound suppressed pickup={} weapon={:08X}",
@@ -163,28 +113,6 @@ namespace rock::native_weapon_equip_audio
         }
     }
 
-    void beginTransferTrace(std::uint32_t weaponForm, bool equip) noexcept
-    {
-        if (!g_rockConfig.rockDebugWeaponOmodDumpEnabled) return;
-        t_trace = {t_trace.sequence + 1, runtime_state::currentFrame().frameIndex, weaponForm, 64, equip};
-        ROCK_LOG_INFO(Weapon, "EQUIP_AUDIO begin seq={} operation={} weapon={:08X} frame={} ready={} frames=120 events=64 thread={}",
-            t_trace.sequence, equip ? "equip" : "unequip", weaponForm, t_trace.firstFrame, s_installed, GetCurrentThreadId());
-    }
-
-    void traceAnimationSource(std::string_view tag, std::string_view clip, bool muted) noexcept
-    {
-        if (!t_trace.remaining) return;
-        const auto frame = runtime_state::currentFrame().frameIndex;
-        if (!g_rockConfig.rockDebugWeaponOmodDumpEnabled || frame < t_trace.firstFrame || frame - t_trace.firstFrame >= 120) return;
-        --t_trace.remaining;
-        try {
-            ROCK_LOG_INFO(Weapon, "EQUIP_AUDIO seq={} operation={} weapon={:08X} frame={} age={} stage=animation-source tag={} clip={} muted={}",
-                t_trace.sequence, t_trace.equip ? "equip" : "unequip", t_trace.weapon, frame, frame - t_trace.firstFrame, tag, clip, muted);
-        } catch (...) {
-            t_trace.remaining = 0;
-        }
-    }
-
     bool install() noexcept
     {
         if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) return false;
@@ -192,7 +120,7 @@ namespace rock::native_weapon_equip_audio
         if (s_installed) return animationReady;
         // Keep the shared descriptor builder native. DIAMOND qualifies that
         // entry before playing authored reload cues; even an observational
-        // detour disables its audio. Trace only the equipment callsites below.
+        // detour disables its audio. Redirect only the equipment callsites below.
         if (!bytesMatch(kPlaySound, std::array<std::uint8_t, 15>{
                 0x48,0x83,0xEC,0x48,0x4C,0x89,0x4C,0x24,0x20,0x4D,0x8B,0xC8,0x44,0x8B,0xC2})) return false;
         if (!bytesMatch(0xF2073F, std::array<std::uint8_t, 5>{0x48,0x85,0xC0,0x74,0x69})) return false;

@@ -261,7 +261,6 @@ namespace rock
         int rockDebugGrabTransformTelemetryTextMode = 0;
         bool rockDebugShowGrabNotifications = false;
         bool rockDebugShowWeaponNotifications = false;
-        bool rockDebugWeaponOmodDumpEnabled = false;
         bool rockDebugHandTransformParity = false;
         bool rockDebugHandWorldAuthority = false;
         bool rockDebugWorldObjectOriginDiagnostics = false;

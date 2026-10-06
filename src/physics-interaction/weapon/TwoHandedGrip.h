@@ -1574,8 +1574,7 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey,
             std::uint64_t weaponInstanceContentKey,
-            const RE::NiTransform* cleanNativeIntentWorld = nullptr,
-            std::source_location captureLocation = std::source_location::current());
+            const RE::NiTransform* cleanNativeIntentWorld = nullptr);
         bool hasRightNativeWeaponAimFrame(
             const RE::NiNode* weaponNode,
             std::uint64_t weaponGenerationKey,

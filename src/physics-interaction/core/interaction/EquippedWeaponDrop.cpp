@@ -1,5 +1,4 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
-#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/native/BipodFrozenRetirement.h"
 #include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/weapon/BipodRetentionPolicy.h"
@@ -206,7 +205,6 @@ namespace rock
             return true;
         }
         auto* hknp = frame.hknpWorld;
-        auto* weaponNode = resolveEquippedWeaponInteractionNode();
         const auto observedEquippedWeaponFormID = currentEquippedWeaponFormId();
         const auto sourceHand = request.sourceHand;
         const bool sourceHandKnown = sourceHand == equipped_weapon_drop_policy::SourceHand::Right ||
@@ -265,11 +263,6 @@ namespace rock
                 const auto dropVisualInWeapon = dropVisualModel ?
                     transform_math::composeTransforms(transform_math::invertTransform(releaseWeaponWorld),
                         dropVisualModel->world) : RE::NiTransform{};
-                if (toggleDrop) {
-                    vanilla_weapon_alignment_telemetry::beginTransferTrace(
-                        vanilla_weapon_alignment_telemetry::TransferKind::ToggleDrop,
-                        transferIsLeft, observedEquippedWeaponFormID, weaponNode);
-                }
                 _twoHandedGrip.prepareEquippedWeaponDropCommit();
                 const auto dropResult = weapon_equip_transfer::dropEquippedWeaponFromPlayer(weapon_equip_transfer::EquippedDropInput{
                     .dropLoc = releaseLoc,
@@ -321,10 +314,6 @@ namespace rock
                             .inputState = transferred_weapon_grab_policy::State::AwaitInitialRelease,
                         };
                     }
-                    vanilla_weapon_alignment_telemetry::recordTransferPose(
-                        dropResult.droppedFormID, transferIsLeft, "release",
-                        releaseGeometry.capturedWeaponWorld,
-                        (transferIsLeft ? frame.left : frame.right).rawHandWorld);
                     if (dropResult.equippedSlotReleased) {
                         if (toggleDrop) {
                             _drop.visuals[transferHandIndex].begin(std::move(dropVisualModel),
@@ -792,9 +781,6 @@ namespace rock
                     endHandoff("native-placement-hand-invalid", true);
                     return;
                 }
-                vanilla_weapon_alignment_telemetry::recordTransferTrace(
-                    vanilla_weapon_alignment_telemetry::TransferKind::ToggleDrop, commit.isLeft,
-                    "native-placement-target", droppedRoot, &placementWorld);
                 break;
             }
             std::array<EquippedWeaponDropBodySnapshot, kEquippedWeaponDropBodySnapshotCapacity>

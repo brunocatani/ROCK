@@ -511,7 +511,6 @@ namespace rock
         }
         _published.count.store(count, std::memory_order_release);
         endWeaponBodyPublication();
-        dumpEquippedWeaponOmodEvidence(bank, packageDriveNode);
     }
 
     void WeaponCollision::publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult)

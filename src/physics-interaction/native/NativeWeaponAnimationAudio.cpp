@@ -2,7 +2,6 @@
 
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/native/NativeWeaponEquipAudio.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -117,16 +116,12 @@ namespace rock::native_weapon_animation_audio
                     vtable == REL::Offset(0x2E0FB38).address() &&
                     native_memory::tryReadField(event.sender, 0x90, path) &&
                     copyText(reinterpret_cast<const char*>(path & ~std::uintptr_t{1}), clip);
-                if (!knownClip || !isEquipClip(clip.data())) {
-                    native_weapon_equip_audio::traceAnimationSource(tag.data(), knownClip ? clip.data() : "<unknown-clip-type-or-path>", false);
-                    continue;
-                }
+                if (!knownClip || !isEquipClip(clip.data())) continue;
                 // 16A60C2 skips out-of-range IDs before accessing the payload.
                 // The original queue still drives the behavior graph; native
                 // payload cleanup, weapon events, and animation time are intact.
                 constexpr std::uint32_t invalidEvent = 0xFFFFFFFF;
                 const bool muted = native_memory::tryWriteValue(&queue.events[index].id, invalidEvent);
-                native_weapon_equip_audio::traceAnimationSource(tag.data(), clip.data(), muted);
                 if (!muted) {
                     ROCK_LOG_SAMPLE_WARN(Weapon, 5000, "Equip animation audio filter could not suppress notification");
                     continue;
