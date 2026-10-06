@@ -6789,16 +6789,17 @@ namespace rock
         auto& grabPointAuthoritySource = outEvidence.pointAuthoritySource;
         auto& grabFallbackReason = outEvidence.fallbackReason;
         grabGripPoint = sel.hasHitPoint ? sel.hitPointWorld : proxy.grabPivotAForPrimaryChoice;
-        grabPointMode = sel.hasHitPoint ? "selectionHitPointFallback" : "noContactPointPending";
+        grabPointMode = sel.hasHitPoint ? "selectionHitPointFallback" : "palmPivotFallback";
         grabPointAuthoritySource = sel.hasHitPoint ? GrabPivotAuthoritySource::CollisionFallback : GrabPivotAuthoritySource::None;
         grabFallbackReason = meshSourceNode ? "noTriangles" : "noMeshSourceNode";
             /*
              * hknp selection identifies the object/body. In mesh-authoritative mode
-             * it is logged as collision evidence only; the grabbed point and frame
-             * must come from visual geometry.
+             * the rendered mesh supplies the grabbed point when it is found; the
+             * physics collision point is the fallback below, never a refusal.
              */
+            GrabSurfaceHit collisionSurfaceHit{};
             if (sel.hasHitPoint && sel.hasHitNormal) {
-                const auto collisionSurfaceHit = makeCollisionQueryGrabSurfaceHit(sel, collidableNode);
+                collisionSurfaceHit = makeCollisionQueryGrabSurfaceHit(sel, collidableNode);
                 if (collisionSurfaceHit.valid) {
                     if (!meshContactOnly && !handPocketOnlyGrab) {
                         grabSurfaceHit = collisionSurfaceHit;
@@ -6987,6 +6988,16 @@ namespace rock
                 } else if (!meshGrabFound) {
                     grabFallbackReason = "noTriangles";
                 }
+            }
+            if (!meshGrabFound && collisionSurfaceHit.valid) {
+                // Object collision can sit off the visible surface; it is still the
+                // object's own physical surface and a valid place to hold it.
+                grabSurfaceHit = collisionSurfaceHit;
+                grabGripPoint = grabSurfaceHit.position;
+                surfaceOwnerNode = grabSurfaceHit.sourceNode;
+                meshGrabFound = true;
+                grabPointMode = "collisionSurfaceFallback";
+                grabPointAuthoritySource = GrabPivotAuthoritySource::CollisionFallback;
             }
             if (!meshGrabFound) {
                 ROCK_LOG_WARN(Hand,
@@ -7255,7 +7266,7 @@ namespace rock
         const GrabMeshExtraction& mesh,
         const ResolvedGrabBodyCapture& bodyCapture,
         const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet,
-        const grab_contact_source_policy::GrabContactSourcePolicy& contactSourcePolicy,
+        bool meshContactOnly,
         bool authoredSeatPrepared,
         bool canonicalPivotAvailable,
         const RE::NiPoint3& canonicalPivotPointWorld,
@@ -7343,7 +7354,7 @@ namespace rock
                 }
             }
 
-            if (!authoredSeatPrepared && !handPocketOnlyGrab && contactSourcePolicy.allowContactPatchPivot && g_rockConfig.rockGrabContactPatchEnabled && !sel.isFarSelection) {
+            if (!authoredSeatPrepared && !handPocketOnlyGrab && g_rockConfig.rockGrabContactPatchEnabled && !sel.isFarSelection) {
                 const RE::NiPoint3 palmNormalWorld = acquisitionPocket.palmNormalWorld;
                 const RE::NiPoint3 palmTangentWorld = acquisitionPocket.fingerForwardWorld;
                 const RE::NiPoint3 palmBitangentWorld = acquisitionPocket.crossPalmWorld;
@@ -7386,10 +7397,8 @@ namespace rock
                     contactPatchObjectLeverEstimateGameUnits,
                     *contactPatchTriangleSource);
 
-                const bool contactPatchAcceptedForPivot = grab_contact_source_policy::shouldAcceptContactPatchPivot(
-                    contactSourcePolicy,
-                    contactPatchRuntime.patch.valid,
-                    contactPatchRuntime.meshSnapped);
+                const bool contactPatchAcceptedForPivot =
+                    contactPatchRuntime.patch.valid && (!meshContactOnly || contactPatchRuntime.meshSnapped);
                 contactPatchEvidenceAvailable = contactPatchRuntime.patch.valid && contactPatchRuntime.meshSnapped;
                 const bool contactPatchProducedMeshPivot =
                     contactPatchRuntime.pivotDecision.valid &&
@@ -7567,9 +7576,6 @@ namespace rock
         const ResolvedGrabBodyCapture* bodyCapture = nullptr;
         const object_physics_body_set::ObjectPhysicsBodySet* preparedBodySet = nullptr;
         const RuntimePinchPocketCandidate* pinchPocketCandidate = nullptr;
-        const std::string* objectName = nullptr;
-        grab_contact_evidence_policy::GrabContactQualityMode contactQualityMode =
-            grab_contact_evidence_policy::GrabContactQualityMode::LegacyPermissive;
         bool multiFingerEvidenceEnabled = false;
         bool hybridFingerProbeEvidenceEnabled = false;
         bool visualMeshPivotAvailable = false;
@@ -7590,7 +7596,7 @@ namespace rock
         bool fingerEvidencePointValid = false;
     };
 
-    bool Hand::resolveGrabFingerEvidence(
+    void Hand::resolveGrabFingerEvidence(
         RE::hknpWorld* world,
         const GrabFingerEvidenceInput& input,
         GrabSurfaceEvidence& surface,
@@ -7604,19 +7610,14 @@ namespace rock
         const auto& bodyCapture = *input.bodyCapture;
         const auto& preparedBodySet = *input.preparedBodySet;
         const auto& pinchPocketCandidate = *input.pinchPocketCandidate;
-        const auto& objName = *input.objectName;
         const auto& sel = _currentSelection;
         const auto objectBodyId = bodyCapture.bodyId;
         const auto& objectWorldTransform = bodyCapture.objectWorldTransform;
         const auto& semanticContacts = pivotEvidence.semanticContacts;
-        const auto& contactPatchRuntime = pivotEvidence.contactPatch;
-        const bool contactPatchEvidenceAvailable = pivotEvidence.contactPatchEvidenceAvailable;
         const auto& grabSurfaceTriangles = mesh.surfaceTriangles;
         const auto& palmPocketPivotAWorld = proxy.palmPocketPivotAWorld;
-        const auto grabContactQualityMode = input.contactQualityMode;
         const bool multiFingerEvidenceEnabled = input.multiFingerEvidenceEnabled;
         const bool hybridFingerProbeEvidenceEnabled = input.hybridFingerProbeEvidenceEnabled;
-        const bool visualMeshPivotAvailable = input.visualMeshPivotAvailable;
         auto& grabGripPoint = surface.gripPoint;
         const auto& grabSurfaceHit = surface.surfaceHit;
         const auto* grabPointMode = surface.pointMode;
@@ -7629,12 +7630,11 @@ namespace rock
         auto& palmSeatPointMode = outEvidence.palmSeatPointMode;
         auto& palmSeatFallbackReason = outEvidence.palmSeatFallbackReason;
         auto& fingerEvidencePointMode = outEvidence.fingerEvidencePointMode;
-        const char* fingerEvidenceFallbackReason = "none";
         auto& multiFingerGripUsed = outEvidence.multiFingerGripUsed;
         auto& palmSeatPointValid = outEvidence.palmSeatPointValid;
         auto& fingerEvidencePointValid = outEvidence.fingerEvidencePointValid;
         const bool canonicalPivotAvailable = input.authoredSeatPrepared || input.visualMeshPivotAvailable ||
-            (!g_rockConfig.rockGrabMeshContactOnly && surface.meshGrabFound && surface.surfaceHit.valid &&
+            (surface.meshGrabFound && surface.surfaceHit.valid &&
                 surface.surfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery);
             palmSeatPointWorld = grabGripPoint;
             palmSeatSurfaceHit = grabSurfaceHit;
@@ -7642,9 +7642,8 @@ namespace rock
             palmSeatFallbackReason = grabFallbackReason;
             palmSeatPointValid = canonicalPivotAvailable;
 
-            // Preparation already proved that the baseline mesh alone passes
-            // contact admission. Authored placement supplies the final fingers.
-            if (input.authoredSeatPrepared) return true;
+            // Authored placement supplies the final fingers.
+            if (input.authoredSeatPrepared) return;
 
             if (!pinchPocketCandidate.valid && multiFingerEvidenceEnabled) {
                 std::vector<GrabSurfaceTriangleData> multiFingerSurfaceTriangles;
@@ -7702,7 +7701,6 @@ namespace rock
                     fingerEvidenceSurfaceHit.resolvedOwnerMatchesBody = true;
                     fingerEvidenceSurfaceHit.valid = true;
                     fingerEvidencePointMode = "multiFingerContactPatch";
-                    fingerEvidenceFallbackReason = gripSet.reason;
                     fingerEvidencePointValid = true;
 
                     ROCK_LOG_DEBUG(Hand,
@@ -7734,73 +7732,6 @@ namespace rock
                         gripSet.reason);
                 }
             }
-
-            grab_contact_evidence_policy::GrabContactEvidenceDecision contactEvidenceDecision{};
-            if (!pinchPocketCandidate.valid && multiFingerEvidenceEnabled) {
-                grab_contact_evidence_policy::GrabContactEvidenceInput evidenceInput{};
-                evidenceInput.qualityMode = static_cast<int>(grabContactQualityMode);
-                evidenceInput.multiFingerValidationEnabled = g_rockConfig.rockGrabMultiFingerContactValidationEnabled;
-                evidenceInput.contactPatchAccepted = contactPatchEvidenceAvailable;
-                evidenceInput.contactPatchMeshSnapped = contactPatchRuntime.meshSnapped;
-                evidenceInput.contactPatchReliable = contactPatchRuntime.normalTrusted;
-                evidenceInput.contactPatchNormalTrusted = contactPatchRuntime.normalTrusted;
-                evidenceInput.contactPatchPositionOnly = contactPatchRuntime.positionOnly;
-                evidenceInput.contactPatchConfidence =
-                    contactPatchRuntime.positionOnly ? 0.0f : contactPatchRuntime.patch.confidence;
-                evidenceInput.meshSurfacePivotAccepted = visualMeshPivotAvailable;
-                evidenceInput.multiFingerGripValid = multiFingerGripRuntime.gripSet.valid;
-                evidenceInput.semanticFingerGroups = multiFingerGripRuntime.semanticGroupCount;
-                evidenceInput.probeFingerGroups = multiFingerGripRuntime.liveProbeGroupCount;
-                evidenceInput.combinedFingerGroups = multiFingerGripRuntime.gripSet.groupCount;
-                evidenceInput.minimumFingerGroups =
-                    static_cast<std::uint32_t>((std::max)(1, g_rockConfig.rockGrabMinFingerContactGroups));
-                contactEvidenceDecision = grab_contact_evidence_policy::evaluateGrabContactEvidence(evidenceInput);
-
-                ROCK_LOG_DEBUG(Hand,
-                    "{} hand CONTACT EVIDENCE: mode={} accept={} level={} reason={} patch={} meshSnap={} reliable={} normalTrusted={} positionOnly={} confidence={:.2f}/{:.2f} "
-                    "multiFingerValid={} semanticGroups={} probeGroups={} combinedGroups={} minGroups={} useMultiFingerPivot={}",
-                    handName(),
-                    grab_contact_evidence_policy::contactQualityModeName(grabContactQualityMode),
-                    contactEvidenceDecision.accept ? "yes" : "no",
-                    grab_contact_evidence_policy::contactEvidenceLevelName(contactEvidenceDecision.level),
-                    contactEvidenceDecision.reason,
-                    contactPatchEvidenceAvailable ? "yes" : "no",
-                    contactPatchRuntime.meshSnapped ? "yes" : "no",
-                    contactPatchRuntime.patch.orientationReliable ? "yes" : "no",
-                    contactPatchRuntime.normalTrusted ? "yes" : "no",
-                    contactPatchRuntime.positionOnly ? "yes" : "no",
-                    contactPatchRuntime.patch.confidence,
-                    evidenceInput.contactPatchConfidence,
-                    multiFingerGripRuntime.gripSet.valid ? "yes" : "no",
-                    multiFingerGripRuntime.semanticGroupCount,
-                    multiFingerGripRuntime.liveProbeGroupCount,
-                    multiFingerGripRuntime.gripSet.groupCount,
-                    g_rockConfig.rockGrabMinFingerContactGroups,
-                    contactEvidenceDecision.useMultiFingerPivot ? "yes" : "no");
-            }
-
-            if (!pinchPocketCandidate.valid && multiFingerEvidenceEnabled && !contactEvidenceDecision.accept) {
-                ROCK_LOG_SAMPLE_WARN(Hand, g_rockConfig.rockLogSampleMilliseconds,
-                    "{} hand GRAB failed: contact evidence rejected '{}' formID={:08X}; "
-                    "mode={} level={} groups={} semanticGroups={} probeGroups={} candidates={} meshHits={} rejectOwner={} rejectDistance={} reason={} selectionFar={}",
-                    handName(),
-                    objName,
-                    sel.refr->GetFormID(),
-                    grab_contact_evidence_policy::contactQualityModeName(grabContactQualityMode),
-                    grab_contact_evidence_policy::contactEvidenceLevelName(contactEvidenceDecision.level),
-                    multiFingerGripRuntime.gripSet.groupCount,
-                    multiFingerGripRuntime.semanticGroupCount,
-                    multiFingerGripRuntime.liveProbeGroupCount,
-                    multiFingerGripRuntime.candidateContactCount,
-                    multiFingerGripRuntime.meshHitCount,
-                    multiFingerGripRuntime.rejectedOwnerCount,
-                    multiFingerGripRuntime.rejectedDistanceCount,
-                    contactEvidenceDecision.reason,
-                    sel.isFarSelection ? "yes" : "no");
-                return false;
-            }
-
-        return true;
     }
 
     struct Hand::GrabCommitPreparationInput
@@ -8285,9 +8216,9 @@ namespace rock
         };
                 desiredObjectWorld = objectWorldTransform;
                 if (input.preparedAuthoredGrip && !nearAuthored) {
-                    ROCK_LOG_SAMPLE_WARN(Hand, 1000, "{} authored weapon grab deferred: pose unavailable ref={:08X} role={} transfer={}",
+                    // The authored pose is unavailable now; hold the weapon dynamically.
+                    ROCK_LOG_SAMPLE_INFO(Hand, 1000, "{} authored weapon pose unavailable; dynamic grab ref={:08X} role={} transfer={}",
                         handName(), sel.refr ? sel.refr->GetFormID() : 0, static_cast<unsigned>(nearGrip.role), input.transferPose != nullptr);
-                    return abortCapture();
                 }
                 desiredBodyWorld = grabBodyWorldAtGrab;
                 bool looseWeaponPrimaryAttachApplied = false;
@@ -8540,8 +8471,9 @@ namespace rock
                             resolvedAuthorityPivotSourceForFreeze = resolvedAuthorityPivot.source;
                             resolvedAuthorityPivotReasonForFreeze = resolvedAuthorityPivot.reason ? resolvedAuthorityPivot.reason : "none";
                             if (!resolvedAuthorityPivot.valid) {
-                                ROCK_LOG_WARN(Hand,
-                                    "{} hand GRAB failed: no final pinch/support authority bodyId={} currentMode={} reason={} supportKind={} supportReason={} pinchReason={}",
+                                // Keep the current grip point instead of refusing the grab.
+                                ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
+                                    "{} hand GRAB keeps current grip point: no pinch/support authority bodyId={} currentMode={} reason={} supportKind={} supportReason={} pinchReason={}",
                                     handName(),
                                     objectBodyId.value,
                                     grabPointMode,
@@ -8549,7 +8481,6 @@ namespace rock
                                     grab_support_model_math::gripSupportKindName(gripSupportRuntime.model.kind),
                                     gripSupportRuntime.model.reason ? gripSupportRuntime.model.reason : "none",
                                     pinchPocketCandidate.decision.reason ? pinchPocketCandidate.decision.reason : "none");
-                                return abortCapture();
                             }
 
                             switch (resolvedAuthorityPivot.source) {
@@ -8647,7 +8578,7 @@ namespace rock
                          * Leaving the source empty here also keeps a saved finger
                          * pose from overriding the FRIK weapon hand pose.
                          */
-                        const bool fixedAidPose = g_rockConfig.rockImmersiveAidEnabled &&
+                        bool fixedAidPose = g_rockConfig.rockImmersiveAidEnabled &&
                             immersive_aid::usesStimpakPose(immersive_aid::classify(sel.refr ? sel.refr->GetObjectReference() : nullptr));
                         /*
                          * Owner rule (2026-09-30, behavior library "Vanilla grip templates"):
@@ -8675,8 +8606,10 @@ namespace rock
                                 savedGrabOffset,
                                 savedGrabOffsetRootWorld);
                         if (fixedAidPose && !savedGrabOffsetAttachValid) {
-                            ROCK_LOG_WARN(Hand, "{} hand immersive aid grab rejected: authored proxy frame unavailable", handName());
-                            return abortCapture();
+                            // Without the authored proxy frame the aid is held like any loose item.
+                            ROCK_LOG_SAMPLE_INFO(Hand, 1000, "{} hand immersive aid pose unavailable; dynamic grab", handName());
+                            fixedAidPose = false;
+                            hasSavedGrabOffset = false;
                         }
                         const auto looseWeaponPrimaryAttachFrame = resolveLooseWeaponPrimaryAttachFrame(
                             looseWeaponGrab,
@@ -8693,9 +8626,10 @@ namespace rock
                             nearAuthored ? &nearGrip : nullptr);
                         looseWeaponPrimaryAttachReason = looseWeaponPrimaryAttachFrame.reason;
                         if (nearAuthored && !looseWeaponPrimaryAttachFrame.valid) {
-                            ROCK_LOG_WARN(Hand, "{} hand authored loose seat rejected ref={:08X} reason={}",
+                            // The authored seat cannot be resolved; hold the weapon dynamically.
+                            ROCK_LOG_SAMPLE_INFO(Hand, 1000, "{} hand authored loose seat unavailable; dynamic grab ref={:08X} reason={}",
                                 handName(), sel.refr ? sel.refr->GetFormID() : 0, looseWeaponPrimaryAttachReason);
-                            return abortCapture();
+                            nearAuthored = false;
                         }
                         if (looseWeaponPrimaryAttachFrame.valid) {
                             desiredObjectWorld = looseWeaponPrimaryAttachFrame.desiredObjectWorld;
@@ -9398,8 +9332,10 @@ namespace rock
                                 g_rockConfig.rockGrabSeatDepthFootprintRadiusGameUnits,
                                 g_rockConfig.rockGrabSeatDepthMaxGameUnits);
                             if (!seatDepthStop.valid) {
-                                ROCK_LOG_WARN(Hand, "{} hand GRAB aborted: palm seat unavailable reason={}", handName(), seatDepthStop.reason);
-                                return abortCapture();
+                                // No measurable seat (e.g. collision-point grab with no mesh):
+                                // hold the object without the depth correction.
+                                ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
+                                    "{} hand GRAB seat depth skipped reason={}", handName(), seatDepthStop.reason);
                             }
                             if (seatDepthStop.valid && seatDepthStop.depthGameUnits > 0.01f) {
                                 seatDepthOffsetGameUnits =
@@ -9446,10 +9382,6 @@ namespace rock
                                 _boneColliders.segmentColliderFrames(),
                                 backstopFootprintRadiusGameUnits,
                                 g_rockConfig.rockGrabSeatDepthMaxGameUnits);
-                            if (!palmPlaneOvershoot.valid) {
-                                ROCK_LOG_WARN(Hand, "{} hand GRAB aborted: final palm seat unavailable reason={}", handName(), palmPlaneOvershoot.reason);
-                                return abortCapture();
-                            }
                             seatPenetrationBackstopReason = palmPlaneOvershoot.reason;
                             constexpr float kSeatPenetrationBackstopThresholdGameUnits = 1.0f;
                             if (palmPlaneOvershoot.valid &&
@@ -9892,8 +9824,6 @@ namespace rock
                 _grabVisualHandLerpStartTransform = handWorldTransform;
                 _grabVisualHandLerpElapsedSeconds = 0.0f;
                 _grabVisualHandLerpDurationSeconds = 0.0f;
-                _grabVisualDeviationExceededSeconds = 0.0f;
-                _grabDeviationExceededSeconds = 0.0f;
                 const RE::NiPoint3 initialGrabDelta = grabPivotAWorld - grabGripPoint;
                 const float initialGrabDistance =
                     std::sqrt(initialGrabDelta.x * initialGrabDelta.x + initialGrabDelta.y * initialGrabDelta.y + initialGrabDelta.z * initialGrabDelta.z);
@@ -10884,7 +10814,6 @@ namespace rock
         };
 
         GrabMeshExtraction meshExtraction{};
-        auto& meshStats = meshExtraction.stats;
         auto& grabMeshTriangles = meshExtraction.meshTriangles;
         std::vector<TriangleData> grabFingerPoseMeshTriangles;
         auto& grabSurfaceTriangles = meshExtraction.surfaceTriangles;
@@ -10970,58 +10899,17 @@ namespace rock
         const char*& grabPointMode = surfaceEvidence.pointMode;
         auto& grabPointAuthoritySource = surfaceEvidence.pointAuthoritySource;
         const char*& grabFallbackReason = surfaceEvidence.fallbackReason;
-        auto failHandPocketOnlyGrab = [&]() {
-            ROCK_LOG_WARN(Hand,
-                "{} hand GRAB failed: hand-pocket-only target requires pinch or palm-pocket support authority for '{}' formID={:08X}; targetKind={} meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} totalTris={} reason={}",
-                handName(),
-                objName,
-                sel.refr->GetFormID(),
-                grab_target::name(sel.targetKind),
-                nodeDebugName(meshSourceNode),
-                nodeDebugName(collidableNode),
-                nodeDebugName(rootNode),
-                meshStats.visitedShapes,
-                meshStats.totalTriangles(),
-                grabFallbackReason);
-            grabPreparationTransaction.rollback();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            return grabSurfaceTriangles.empty() ? GrabAttemptResult::Rejected : GrabAttemptResult::ContactUnavailable;
-        };
-
         const bool hasMeshSurfaceContact =
             meshGrabFound && grabSurfaceHit.valid && grabSurfaceHit.sourceKind != GrabSurfaceSourceKind::CollisionQuery;
-        const auto contactSourcePolicy = grab_contact_source_policy::evaluateGrabContactSourcePolicy(
-            meshContactOnly,
-            g_rockConfig.rockGrabRequireMeshContact,
-            hasMeshSurfaceContact);
         const auto grabContactQualityMode = grab_contact_evidence_policy::sanitizeQualityMode(g_rockConfig.rockGrabContactQualityMode);
         const bool multiFingerEvidenceEnabled =
             g_rockConfig.rockGrabMultiFingerContactValidationEnabled &&
             grabContactQualityMode != grab_contact_evidence_policy::GrabContactQualityMode::LegacyPermissive &&
             !handPocketOnlyGrab &&
-            meshContactOnly &&
-            g_rockConfig.rockGrabRequireMeshContact;
+            meshContactOnly;
         const bool hybridFingerProbeEvidenceEnabled =
             multiFingerEvidenceEnabled &&
             grabContactQualityMode == grab_contact_evidence_policy::GrabContactQualityMode::HybridEvidence;
-        if (contactSourcePolicy.failWithoutMesh && !handPocketOnlyGrab && !authoredSeatPrepared) {
-            ROCK_LOG_SAMPLE_WARN(Hand, g_rockConfig.rockLogSampleMilliseconds,
-                "{} hand GRAB failed: mesh contact required for '{}' formID={:08X}; collision point was not used as pivot "
-                "meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} totalTris={} reason={}",
-                handName(),
-                objName,
-                sel.refr->GetFormID(),
-                nodeDebugName(meshSourceNode),
-                nodeDebugName(collidableNode),
-                nodeDebugName(rootNode),
-                meshStats.visitedShapes,
-                meshStats.totalTriangles(),
-                contactSourcePolicy.reason);
-            grabPreparationTransaction.rollback();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            return grabSurfaceTriangles.empty() ? GrabAttemptResult::Rejected : GrabAttemptResult::ContactUnavailable;
-        }
-
         GrabBodyResolution bodyResolution{};
         resolveGrabBodyAndContactPolicy(
             validatedSelection,
@@ -11032,7 +10920,6 @@ namespace rock
             surfaceEvidence,
             bodyResolution);
         const auto& primaryChoice = bodyResolution.primaryChoice;
-        const auto& primaryChoiceTarget = bodyResolution.primaryChoiceTarget;
         bool& surfaceOwnerMatchesResolvedBody = bodyResolution.surfaceOwnerMatchesResolvedBody;
         const auto& mechanicalScope = bodyResolution.mechanicalScope;
         const bool relaxedArticulatedAuthority = bodyResolution.relaxedArticulatedAuthority;
@@ -11083,36 +10970,12 @@ namespace rock
             mechanicalScope.driveDecision.includeConnectedAngularVelocity ? "bodySet" : "primaryOnly",
             mechanicalScope.driveDecision.includeConnectedMass ? "bodySet" : "primaryOnly");
 
-        if (grab_contact_source_policy::shouldRejectMeshOwnerMismatch(meshContactOnly,
-                g_rockConfig.rockGrabRequireMeshContact,
-                hasMeshSurfaceContact,
-                surfaceOwnerMatchesResolvedBody) &&
-            !relaxedArticulatedAuthority) {
-            performance_profiler::addCounter(performance_profiler::Counter::GrabMeshOwnerMismatchRejected);
-            const auto* ownerRecord = preparedBodySet.findRecord(primaryChoice.bodyId);
-            ROCK_LOG_SAMPLE_WARN(Hand, g_rockConfig.rockLogSampleMilliseconds,
-                "{} hand GRAB failed: mesh contact owner does not match resolved body for '{}' formID={:08X}; "
-                "selectedBody={} resolvedBody={} sourceNode='{}' sourceKind={} target=({:.1f},{:.1f},{:.1f}) "
-                "records={} bodyOwner='{}' ownerRefKnown={} scanFailures={} invalidSystems={} depthSkips={}",
-                handName(),
-                objName,
-                sel.refr->GetFormID(),
-                sel.bodyId.value,
-                primaryChoice.bodyId,
-                nodeDebugName(surfaceOwnerNode),
-                grabSurfaceSourceKindName(grabSurfaceHit.sourceKind),
-                primaryChoiceTarget.x,
-                primaryChoiceTarget.y,
-                primaryChoiceTarget.z,
-                preparedBodySet.records.size(),
-                nodeDebugName(ownerRecord ? ownerRecord->owningNode : nullptr),
-                ownerRecord && ownerRecord->refResolutionKnown,
-                preparedBodySet.diagnostics.scanFailures,
-                preparedBodySet.diagnostics.invalidPhysicsSystems,
-                preparedBodySet.diagnostics.depthLimitSkips);
-            grabPreparationTransaction.rollback();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            return GrabAttemptResult::Rejected;
+        if (hasMeshSurfaceContact && !surfaceOwnerMatchesResolvedBody && !relaxedArticulatedAuthority) {
+            // A mesh point on a sibling branch still lies on this object; hold it
+            // there instead of refusing the grab.
+            ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
+                "{} hand GRAB mesh owner differs from resolved body for '{}' formID={:08X}; selectedBody={} resolvedBody={} sourceNode='{}'",
+                handName(), objName, sel.refr->GetFormID(), sel.bodyId.value, primaryChoice.bodyId, nodeDebugName(surfaceOwnerNode));
         }
 
         /*
@@ -11123,7 +10986,7 @@ namespace rock
          * must not replace the frozen BODY-local pivot by themselves.
          */
         const bool collisionFallbackPivotAllowed =
-            !meshContactOnly && meshGrabFound && grabSurfaceHit.valid && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery;
+            meshGrabFound && grabSurfaceHit.valid && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery;
         const bool visualMeshPivotAvailable = hasMeshSurfaceContact;
         const bool canonicalPivotAvailable = authoredSeatPrepared || visualMeshPivotAvailable || collisionFallbackPivotAllowed;
         RE::NiPoint3 canonicalPivotPointWorld = grabGripPoint;
@@ -11182,12 +11045,7 @@ namespace rock
                 !sel.pinchCloseSelectionFallback && sel.refr->Get3D() == rootNode &&
                 preparedBodySet.acceptedCount() == 1 && !activeLifecycle.hasIncompleteNativeScan() &&
                 surfaceOwnerMatchesResolvedBody && visualMeshPivotAvailable) {
-                const auto baselineAdmission = grab_contact_evidence_policy::evaluateGrabContactEvidence({
-                    .qualityMode = static_cast<int>(grabContactQualityMode),
-                    .multiFingerValidationEnabled = multiFingerEvidenceEnabled,
-                    .meshSurfacePivotAccepted = true,
-                });
-                authoredSeatPrepared = baselineAdmission.accept && prepareAuthoredGrip(false);
+                authoredSeatPrepared = prepareAuthoredGrip(false);
                 if (authoredSeatPrepared) preparationReason = "authored-close-seat-ready";
             }
             performance_profiler::addCounter(authoredSeatPrepared ?
@@ -11211,7 +11069,7 @@ namespace rock
             meshExtraction,
             resolvedBodyCapture,
             preparedBodySet,
-            contactSourcePolicy,
+            meshContactOnly,
             authoredSeatPrepared,
             canonicalPivotAvailable,
             canonicalPivotPointWorld,
@@ -11229,21 +11087,6 @@ namespace rock
         float& pivotAuthorityPocketDistanceGameUnits = pivotEvidence.authorityPocketDistanceGameUnits;
         float& pivotAuthoritySelectionDeltaGameUnits = pivotEvidence.authoritySelectionDeltaGameUnits;
         const char*& contactPatchPivotAuthorityReason = pivotEvidence.contactPatchAuthorityReason;
-
-        if (!authoredSeatPrepared && !meshGrabFound && !sel.hasHitPoint && !handPocketOnlyGrab) {
-            ROCK_LOG_SAMPLE_WARN(Hand, g_rockConfig.rockLogSampleMilliseconds,
-                "{} hand GRAB failed: no object-side contact point for '{}' formID={:08X}; object origin/COM fallback is not valid dynamic grab authority reason={} meshNode='{}' ownerNode='{}' rootNode='{}'",
-                handName(),
-                objName,
-                sel.refr->GetFormID(),
-                grabFallbackReason,
-                nodeDebugName(meshSourceNode),
-                nodeDebugName(collidableNode),
-                nodeDebugName(rootNode));
-            grabPreparationTransaction.rollback();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            return grabSurfaceTriangles.empty() ? GrabAttemptResult::Rejected : GrabAttemptResult::ContactUnavailable;
-        }
 
         const RuntimePinchPocketCandidate pinchPocketCandidate = authoredSeatPrepared ?
             RuntimePinchPocketCandidate{} : buildRuntimePinchPocketCandidate(
@@ -11282,43 +11125,19 @@ namespace rock
                 pinchPocketCandidate.meshExtents.boundsVolumeCubicGameUnits,
                 g_rockConfig.rockGrabPinchMaxVolumeCubicGameUnits);
         }
-        if (sel.pinchCloseSelectionFallback && !pinchPocketCandidate.valid) {
-            ROCK_LOG_DEBUG(Hand,
-                "{} hand GRAB rejected: pinch-direction close selection did not qualify for pinch pocket reason={} formID={:08X}",
-                handName(),
-                pinchPocketCandidate.decision.reason,
-                sel.refr ? sel.refr->GetFormID() : 0);
-            grabPreparationTransaction.rollback();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            return pinchPocketCandidate.decision.retryable ? GrabAttemptResult::ContactUnavailable : GrabAttemptResult::Rejected;
-        }
-        if (handPocketOnlyGrab &&
-            !pinchPocketCandidate.valid &&
-            !relaxedArticulatedAuthority &&
-            (!meshGrabFound || std::strcmp(grabPointMode, "palmPocketMeshSurface") != 0)) {
-            return failHandPocketOnlyGrab();
-        }
-
         GrabFingerEvidenceInput fingerEvidenceInput{
             .proxy = &proxyPreparation,
             .mesh = &meshExtraction,
             .bodyCapture = &resolvedBodyCapture,
             .preparedBodySet = &preparedBodySet,
             .pinchPocketCandidate = &pinchPocketCandidate,
-            .objectName = &objName,
-            .contactQualityMode = grabContactQualityMode,
             .multiFingerEvidenceEnabled = multiFingerEvidenceEnabled,
             .hybridFingerProbeEvidenceEnabled = hybridFingerProbeEvidenceEnabled,
             .visualMeshPivotAvailable = visualMeshPivotAvailable,
             .authoredSeatPrepared = authoredSeatPrepared,
         };
         GrabFingerEvidence fingerEvidence{};
-        if (!resolveGrabFingerEvidence(world, fingerEvidenceInput, surfaceEvidence, pivotEvidence, fingerEvidence)) {
-            grabPreparationTransaction.rollback();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            _savedObjectState.clear();
-            return grabSurfaceTriangles.empty() ? GrabAttemptResult::Rejected : GrabAttemptResult::ContactUnavailable;
-        }
+        resolveGrabFingerEvidence(world, fingerEvidenceInput, surfaceEvidence, pivotEvidence, fingerEvidence);
         auto& palmSeatPointWorld = fingerEvidence.palmSeatPointWorld;
         auto& fingerEvidencePointWorld = fingerEvidence.fingerEvidencePointWorld;
         auto& palmSeatSurfaceHit = fingerEvidence.palmSeatSurfaceHit;
@@ -12071,13 +11890,10 @@ namespace rock
                     _grabOffsetMaximumGripError, _grabOffsetMaximumRotationError);
             }
         }
-        if (held_object_physics_math::instantDeviationExceeded(
-                update.pivotTrackingErrorGameUnits, g_rockConfig.rockGrabMaxDeviation)) {
-            ROCK_LOG_WARN(Hand,
-                "{} hand release: held object instant pivot deviation exceeded ({:.1f}gu > {:.1f}gu)",
-                handName(),
-                update.pivotTrackingErrorGameUnits,
-                held_object_physics_math::instantDeviationReleaseThreshold(g_rockConfig.rockGrabMaxDeviation));
+        // A lagging held object stays held; only a broken (non-finite) pivot
+        // relation releases it.
+        if (!std::isfinite(update.pivotTrackingErrorGameUnits)) {
+            ROCK_LOG_WARN(Hand, "{} hand release: held object pivot error is non-finite", handName());
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Delayed, releaseContext);
             return false;
         }
@@ -12163,22 +11979,6 @@ namespace rock
             _grabDeviationHistoryCount,
             _grabDeviationHistoryNext,
             update.pivotTrackingErrorGameUnits);
-        _grabDeviationExceededSeconds = held_object_physics_math::advanceDeviationSeconds(
-            _grabDeviationExceededSeconds,
-            update.averageGrabDeviationGameUnits,
-            g_rockConfig.rockGrabMaxDeviation,
-            deltaTime);
-        if (held_object_physics_math::deviationExceeded(
-                _grabDeviationExceededSeconds, g_rockConfig.rockGrabMaxDeviationTime)) {
-            ROCK_LOG_WARN(Hand,
-                "{} hand release: held object exceeded max deviation average ({:.1f}gu > {:.1f}gu for {:.2f}s)",
-                handName(),
-                update.averageGrabDeviationGameUnits,
-                g_rockConfig.rockGrabMaxDeviation,
-                _grabDeviationExceededSeconds);
-            releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Delayed, releaseContext);
-            return false;
-        }
 
         return true;
     }
@@ -12326,38 +12126,12 @@ namespace rock
 
                 const float visualHandDeviationGameUnits =
                     pointDistanceGameUnits(nextVisualHandWorld.translate, handWorldTransform.translate);
-                if (held_object_physics_math::instantDeviationExceeded(visualHandDeviationGameUnits, g_rockConfig.rockGrabMaxDeviation)) {
-                    ROCK_LOG_WARN(Hand,
-                        "{} hand release: visual held-object hand target instant deviation exceeded ({:.1f}gu > {:.1f}gu)",
-                        handName(),
-                        visualHandDeviationGameUnits,
-                        held_object_physics_math::instantDeviationReleaseThreshold(g_rockConfig.rockGrabMaxDeviation));
+                if (!std::isfinite(visualHandDeviationGameUnits)) {
+                    ROCK_LOG_WARN(Hand, "{} hand release: visual held-object hand target is non-finite", handName());
                     clearGrabExternalHandWorldTransform(_isLeft);
                     releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Delayed, releaseContext);
                     return false;
                 }
-                const float averageVisualHandDeviationGameUnits = recordDeviationAverage(
-                    _grabVisualDeviationHistory,
-                    _grabVisualDeviationHistoryCount,
-                    _grabVisualDeviationHistoryNext,
-                    visualHandDeviationGameUnits);
-                _grabVisualDeviationExceededSeconds = held_object_physics_math::advanceDeviationSeconds(
-                    _grabVisualDeviationExceededSeconds,
-                    averageVisualHandDeviationGameUnits,
-                    g_rockConfig.rockGrabMaxDeviation,
-                    deltaTime);
-                if (held_object_physics_math::deviationExceeded(_grabVisualDeviationExceededSeconds, g_rockConfig.rockGrabMaxDeviationTime)) {
-                    ROCK_LOG_WARN(Hand,
-                        "{} hand release: visual held-object hand target exceeded max deviation average ({:.1f}gu > {:.1f}gu for {:.2f}s)",
-                        handName(),
-                        averageVisualHandDeviationGameUnits,
-                        g_rockConfig.rockGrabMaxDeviation,
-                        _grabVisualDeviationExceededSeconds);
-                    clearGrabExternalHandWorldTransform(_isLeft);
-                    releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Delayed, releaseContext);
-                    return false;
-                }
-
                 _grabVisualHandTransform = nextVisualHandWorld;
                 if (applyGrabExternalHandWorldTransform(_isLeft, _grabVisualHandTransform)) {
                     _lastPublishedGrabVisualHandTransform = _grabVisualHandTransform;
@@ -12369,7 +12143,7 @@ namespace rock
 
                 ROCK_LOG_SAMPLE_DEBUG(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} GRAB VISUAL HAND: relation=heldRelative phase={} visualOnly=yes authority={} shape={} follow={} scale={:.2f} lerpAlpha={:.2f} lerpDuration={:.3f}s target=({:.1f},{:.1f},{:.1f}) applied=({:.1f},{:.1f},{:.1f}) live=({:.1f},{:.1f},{:.1f}) deviation={:.2f}gu avgDeviation={:.2f}gu normalAuthority=false",
+                    "{} GRAB VISUAL HAND: relation=heldRelative phase={} visualOnly=yes authority={} shape={} follow={} scale={:.2f} lerpAlpha={:.2f} lerpDuration={:.3f}s target=({:.1f},{:.1f},{:.1f}) applied=({:.1f},{:.1f},{:.1f}) live=({:.1f},{:.1f},{:.1f}) deviation={:.2f}gu normalAuthority=false",
                     handName(),
                     grab_three_phase::phaseName(_grabAcquisitionPhase),
                     visualPublishDecision.reason,
@@ -12387,13 +12161,8 @@ namespace rock
                     handWorldTransform.translate.x,
                     handWorldTransform.translate.y,
                     handWorldTransform.translate.z,
-                    visualHandDeviationGameUnits,
-                    averageVisualHandDeviationGameUnits);
+                    visualHandDeviationGameUnits);
             } else {
-                _grabVisualDeviationExceededSeconds = 0.0f;
-                _grabVisualDeviationHistory = {};
-                _grabVisualDeviationHistoryCount = 0;
-                _grabVisualDeviationHistoryNext = 0;
                 if (_hasGrabVisualHandTransform) {
                     clearGrabExternalHandWorldTransform(_isLeft);
                     _hasGrabVisualHandTransform = false;
@@ -12405,10 +12174,6 @@ namespace rock
                 _grabVisualHandLerpDurationSeconds = 0.0f;
             }
         } else {
-            _grabVisualDeviationExceededSeconds = 0.0f;
-            _grabVisualDeviationHistory = {};
-            _grabVisualDeviationHistoryCount = 0;
-            _grabVisualDeviationHistoryNext = 0;
             if (_hasGrabVisualHandTransform) {
                 clearGrabExternalHandWorldTransform(_isLeft);
                 _hasGrabVisualHandTransform = false;
@@ -12797,10 +12562,6 @@ namespace rock
                                 _grabVisualHandLerpStartTransform = handWorldTransform;
                                 _grabVisualHandLerpElapsedSeconds = 0.0f;
                                 _grabVisualHandLerpDurationSeconds = 0.0f;
-                                _grabVisualDeviationExceededSeconds = 0.0f;
-                                _grabVisualDeviationHistory = {};
-                                _grabVisualDeviationHistoryCount = 0;
-                                _grabVisualDeviationHistoryNext = 0;
                                 ROCK_LOG_DEBUG(Hand,
                                     "{} THREE-PHASE GRAB SEATED SUPPORT-GROUP PROMOTION: phase={} source={} reason={} complete={} blend={:.2f} point=({:.1f},{:.1f},{:.1f}) "
                                     "pivotB=({:.2f},{:.2f},{:.2f}) pocketDistance={:.2f}gu meshDistance={:.2f}gu localDelta={:.2f}gu poseGap={:.2f}gu normalTrusted={} samples={} patchReason={} fingerGroups={} longLever={:.1f}gu count={}",
@@ -13870,7 +13631,6 @@ namespace rock
         _grabFingerPosePublished = false;
         _grabConvergeStableInsidePocketSeconds = 0.0f;
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
-        _grabDeviationExceededSeconds = 0.0f;
         _grabDeviationHistory = {};
         _grabDeviationHistoryCount = 0;
         _grabDeviationHistoryNext = 0;
@@ -13881,10 +13641,6 @@ namespace rock
         _grabVisualHandLerpStartTransform = {};
         _grabVisualHandLerpElapsedSeconds = 0.0f;
         _grabVisualHandLerpDurationSeconds = 0.0f;
-        _grabVisualDeviationExceededSeconds = 0.0f;
-        _grabVisualDeviationHistory = {};
-        _grabVisualDeviationHistoryCount = 0;
-        _grabVisualDeviationHistoryNext = 0;
         _grabFingerProbeStart = {};
         _grabFingerProbeEnd = {};
         _hasGrabFingerProbeDebug = false;

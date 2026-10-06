@@ -10,61 +10,14 @@
 // ---- GrabContactSourcePolicy.h ----
 
 /*
- * Mesh-authoritative grab contact keeps ROCK's dynamic object pipeline aligned
- * with rendered geometry: physics collision identifies the object and body,
- * while the rendered mesh supplies the grabbed point and frame. FO4VR collision
- * bubbles can sit away from the visible surface, so this policy prevents raw
- * hknp hit points from silently becoming pivot B when mesh-only contact is
- * enabled. Contact-patch casts are still allowed to probe the palm region, but
- * mesh-only grabs may use that patch only after it snaps back to the resolved
- * object's rendered mesh.
+ * Physics collision identifies the object and body; the rendered mesh supplies
+ * the grabbed point when one is found, and the collision point is the fallback.
+ * In mesh-only mode a contact patch must snap back to the rendered mesh before
+ * it can move the pivot.
  */
 
 namespace rock::grab_contact_source_policy
 {
-    struct GrabContactSourcePolicy
-    {
-        bool allowCollisionGrabPoint = true;
-        bool allowContactPatchPivot = true;
-        bool requireContactPatchMeshSnap = false;
-        bool requireMeshSurface = false;
-        bool failWithoutMesh = false;
-        const char* reason = "compatContactSources";
-    };
-
-    inline GrabContactSourcePolicy evaluateGrabContactSourcePolicy(bool meshContactOnly, bool requireMeshContact, bool hasMeshContact)
-    {
-        GrabContactSourcePolicy policy{};
-        policy.allowCollisionGrabPoint = !meshContactOnly;
-        policy.allowContactPatchPivot = true;
-        policy.requireContactPatchMeshSnap = meshContactOnly;
-        policy.requireMeshSurface = meshContactOnly && requireMeshContact;
-
-        if (!meshContactOnly) {
-            policy.failWithoutMesh = false;
-            policy.reason = "compatContactSources";
-            return policy;
-        }
-
-        if (hasMeshContact) {
-            policy.failWithoutMesh = false;
-            policy.reason = "meshContact";
-            return policy;
-        }
-
-        policy.failWithoutMesh = requireMeshContact;
-        policy.reason = requireMeshContact ? "meshContactRequired" : "meshContactMissing";
-        return policy;
-    }
-
-    inline bool shouldAcceptContactPatchPivot(const GrabContactSourcePolicy& policy, bool patchValid, bool meshSnapped)
-    {
-        if (!policy.allowContactPatchPivot || !patchValid) {
-            return false;
-        }
-        return !policy.requireContactPatchMeshSnap || meshSnapped;
-    }
-
     // A weapon may have one native collision owner and several visual sibling
     // branches. Prove both branches belong to that reference without crossing
     // another collision owner. No node is retained beyond this acquisition.
@@ -90,22 +43,14 @@ namespace rock::grab_contact_source_policy
         return false;
     }
 
-    inline bool shouldRejectMeshOwnerMismatch(bool meshContactOnly, bool requireMeshContact, bool hasMeshContact, bool ownerMatchesResolvedBody)
-    {
-        return meshContactOnly && requireMeshContact && hasMeshContact && !ownerMatchesResolvedBody;
-    }
 }
 
 // ---- GrabContactEvidencePolicy.h ----
 
 /*
- * Hybrid grab contact evidence exists because the per-finger Havok contact
- * stream is not guaranteed to contain three fresh semantic contacts on the exact
- * frame the grab button is pressed. ROCK treats finger geometry as a
- * pose/contact-quality layer around a stable object-in-hand transform, keeping
- * reliable mesh contact as the baseline and upgrading the grab when
- * finger/thumb evidence is available instead of letting missing contact events
- * reject otherwise valid grabs.
+ * Finger contact evidence shapes the grab point and pose around a stable
+ * object-in-hand transform. It never decides whether a grab happens: missing
+ * or partial finger contact must not refuse an otherwise reachable object.
  */
 
 #include <algorithm>
@@ -119,44 +64,7 @@ namespace rock::grab_contact_evidence_policy
     {
         LegacyPermissive = 0,
         HybridEvidence = 1,
-        StrictMultiFinger = 2
-    };
-
-    enum class GrabContactEvidenceLevel : std::uint8_t
-    {
-        Rejected,
-        LegacyPermissive,
-        BaselineMeshSurface,
-        BaselinePatch,
-        EnhancedFingerPatch,
-        HighConfidenceFingerGrip
-    };
-
-    struct GrabContactEvidenceInput
-    {
-        int qualityMode = static_cast<int>(GrabContactQualityMode::HybridEvidence);
-        bool multiFingerValidationEnabled = true;
-        bool contactPatchAccepted = false;
-        bool contactPatchMeshSnapped = false;
-        bool contactPatchReliable = false;
-        bool contactPatchNormalTrusted = false;
-        bool contactPatchPositionOnly = false;
-        float contactPatchConfidence = 0.0f;
-        bool meshSurfacePivotAccepted = false;
-        bool multiFingerGripValid = false;
-        std::uint32_t semanticFingerGroups = 0;
-        std::uint32_t probeFingerGroups = 0;
-        std::uint32_t combinedFingerGroups = 0;
-        std::uint32_t minimumFingerGroups = 3;
-    };
-
-    struct GrabContactEvidenceDecision
-    {
-        bool accept = false;
-        bool useMultiFingerPivot = false;
-        bool strictMultiFingerRequired = false;
-        GrabContactEvidenceLevel level = GrabContactEvidenceLevel::Rejected;
-        const char* reason = "noContactEvidence";
+        GroupedFingersOnly = 2
     };
 
     inline GrabContactQualityMode sanitizeQualityMode(int value)
@@ -164,137 +72,10 @@ namespace rock::grab_contact_evidence_policy
         if (value <= static_cast<int>(GrabContactQualityMode::LegacyPermissive)) {
             return GrabContactQualityMode::LegacyPermissive;
         }
-        if (value >= static_cast<int>(GrabContactQualityMode::StrictMultiFinger)) {
-            return GrabContactQualityMode::StrictMultiFinger;
+        if (value >= static_cast<int>(GrabContactQualityMode::GroupedFingersOnly)) {
+            return GrabContactQualityMode::GroupedFingersOnly;
         }
         return GrabContactQualityMode::HybridEvidence;
-    }
-
-    inline std::uint32_t sanitizeMinimumFingerGroups(std::uint32_t value)
-    {
-        return std::clamp(value, 1u, 5u);
-    }
-
-    inline std::uint32_t combinedFingerGroupCount(const GrabContactEvidenceInput& input)
-    {
-        if (input.combinedFingerGroups > 0) {
-            return (std::min)(input.combinedFingerGroups, 5u);
-        }
-        return (std::min)(input.semanticFingerGroups + input.probeFingerGroups, 5u);
-    }
-
-    inline const char* contactQualityModeName(GrabContactQualityMode mode)
-    {
-        switch (mode) {
-        case GrabContactQualityMode::LegacyPermissive:
-            return "permissiveFallback";
-        case GrabContactQualityMode::HybridEvidence:
-            return "hybridEvidence";
-        case GrabContactQualityMode::StrictMultiFinger:
-            return "strictMultiFinger";
-        default:
-            return "unknown";
-        }
-    }
-
-    inline const char* contactEvidenceLevelName(GrabContactEvidenceLevel level)
-    {
-        switch (level) {
-        case GrabContactEvidenceLevel::Rejected:
-            return "rejected";
-        case GrabContactEvidenceLevel::LegacyPermissive:
-            return "permissiveFallback";
-        case GrabContactEvidenceLevel::BaselineMeshSurface:
-            return "baselineMeshSurface";
-        case GrabContactEvidenceLevel::BaselinePatch:
-            return "baselinePatch";
-        case GrabContactEvidenceLevel::EnhancedFingerPatch:
-            return "enhancedFingerPatch";
-        case GrabContactEvidenceLevel::HighConfidenceFingerGrip:
-            return "highConfidenceFingerGrip";
-        default:
-            return "unknown";
-        }
-    }
-
-    inline GrabContactEvidenceDecision evaluateGrabContactEvidence(const GrabContactEvidenceInput& input)
-    {
-        GrabContactEvidenceDecision decision{};
-        const auto mode = sanitizeQualityMode(input.qualityMode);
-        const std::uint32_t minimumFingerGroups = sanitizeMinimumFingerGroups(input.minimumFingerGroups);
-        const std::uint32_t totalFingerGroups = combinedFingerGroupCount(input);
-
-        if (!input.multiFingerValidationEnabled || mode == GrabContactQualityMode::LegacyPermissive) {
-            decision.accept = true;
-            decision.level = GrabContactEvidenceLevel::LegacyPermissive;
-            decision.reason = input.multiFingerValidationEnabled ? "permissiveFallback" : "multiFingerEvidenceDisabled";
-            return decision;
-        }
-
-        if (mode == GrabContactQualityMode::StrictMultiFinger) {
-            decision.strictMultiFingerRequired = true;
-            const bool hasObjectPivotAuthority =
-                input.meshSurfacePivotAccepted || (input.contactPatchAccepted && input.contactPatchMeshSnapped);
-            if (!hasObjectPivotAuthority) {
-                decision.reason = "strictObjectPivotAuthorityRequired";
-            } else if (input.multiFingerGripValid && totalFingerGroups >= minimumFingerGroups) {
-                decision.accept = true;
-                decision.level = GrabContactEvidenceLevel::HighConfidenceFingerGrip;
-                decision.reason = "strictMultiFingerSatisfied";
-            } else {
-                decision.reason = "strictMultiFingerRequired";
-            }
-            return decision;
-        }
-
-        if (input.meshSurfacePivotAccepted) {
-            /*
-             * Patch position and patch orientation are different contracts.
-             * A position-only patch can keep the grip point out of a palm-ray
-             * fallback, but it must not promote itself as reliable normal
-             * evidence for pose/held authority.
-             */
-            const bool patchHasTrustedOrientation =
-                input.contactPatchReliable ||
-                (!input.contactPatchPositionOnly &&
-                    input.contactPatchNormalTrusted &&
-                    input.contactPatchConfidence >= 0.70f);
-            decision.accept = true;
-            if (input.multiFingerGripValid && totalFingerGroups >= minimumFingerGroups) {
-                decision.level = GrabContactEvidenceLevel::HighConfidenceFingerGrip;
-                decision.reason = "meshSurfaceFingerGrip";
-            } else if (input.contactPatchAccepted && input.contactPatchMeshSnapped &&
-                       patchHasTrustedOrientation) {
-                decision.level = GrabContactEvidenceLevel::BaselinePatch;
-                decision.reason = "meshSurfaceContactPatch";
-            } else {
-                decision.level = GrabContactEvidenceLevel::BaselineMeshSurface;
-                decision.reason = "meshSurfacePivot";
-            }
-            return decision;
-        }
-
-        if (input.contactPatchAccepted && input.contactPatchMeshSnapped) {
-            const bool patchHasTrustedOrientation =
-                input.contactPatchReliable ||
-                (!input.contactPatchPositionOnly &&
-                    input.contactPatchNormalTrusted &&
-                    input.contactPatchConfidence >= 0.70f);
-            const bool patchHasFingerSupport = totalFingerGroups > 0;
-            decision.accept = patchHasTrustedOrientation || patchHasFingerSupport;
-            if (decision.accept) {
-                decision.level = totalFingerGroups > 0 ? GrabContactEvidenceLevel::EnhancedFingerPatch : GrabContactEvidenceLevel::BaselinePatch;
-                decision.reason = totalFingerGroups > 0 ? "fingerEnhancedContactPatch" : "reliableContactPatch";
-            } else if (input.contactPatchPositionOnly) {
-                decision.reason = "positionOnlyPatchNeedsFingerOrSeat";
-            } else {
-                decision.reason = "weakPatchWithoutFingerEvidence";
-            }
-            return decision;
-        }
-
-        decision.reason = input.contactPatchAccepted ? "contactPatchNotMeshSnapped" : "noAcceptedContactPatch";
-        return decision;
     }
 }
 

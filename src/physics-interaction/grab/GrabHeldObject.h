@@ -412,20 +412,6 @@ namespace rock::held_object_physics_math
         return std::isfinite(deltaTime) && deltaTime > 0.0f && deltaTime <= kMaxGrabAuthorityTargetDeltaSeconds;
     }
 
-    inline float instantDeviationReleaseThreshold(float maxDeviationGameUnits)
-    {
-        const float configuredThreshold = (std::isfinite(maxDeviationGameUnits) && maxDeviationGameUnits > 0.0f) ? maxDeviationGameUnits * 2.0f : 0.0f;
-        return (std::max)(configuredThreshold, 100.0f);
-    }
-
-    inline bool instantDeviationExceeded(float deviationGameUnits, float maxDeviationGameUnits)
-    {
-        if (!std::isfinite(deviationGameUnits)) {
-            return true;
-        }
-        return deviationGameUnits > instantDeviationReleaseThreshold(maxDeviationGameUnits);
-    }
-
     /*
      * Axis-angle rate extraction from two rotation matrices sampled deltaTime
      * apart. Matrix3 must expose entry[3][3] with world axes stored as
@@ -503,27 +489,6 @@ namespace rock::held_object_physics_math
 
         const float rate = angle / deltaTime;
         return makeVector<Vec3>(axis.x * rate, axis.y * rate, axis.z * rate);
-    }
-
-    inline float advanceDeviationSeconds(float currentSeconds, float deviationGameUnits, float maxDeviationGameUnits, float deltaTime)
-    {
-        if (!std::isfinite(maxDeviationGameUnits) || maxDeviationGameUnits <= 0.0f) {
-            return 0.0f;
-        }
-        if (!std::isfinite(deviationGameUnits) || deviationGameUnits <= maxDeviationGameUnits) {
-            return 0.0f;
-        }
-
-        const float current = std::isfinite(currentSeconds) && currentSeconds > 0.0f ? currentSeconds : 0.0f;
-        return current + measuredDeltaOrZero(deltaTime);
-    }
-
-    inline bool deviationExceeded(float accumulatedSeconds, float allowedSeconds)
-    {
-        if (!std::isfinite(allowedSeconds) || allowedSeconds <= 0.0f) {
-            return false;
-        }
-        return std::isfinite(accumulatedSeconds) && accumulatedSeconds >= allowedSeconds;
     }
 
     inline float advanceToward(float current, float target, float speed, float deltaTime)

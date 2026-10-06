@@ -338,8 +338,6 @@ namespace rock
         float rockGrabMaxInertiaRatio = 10.0f;
         float rockGrabMinInertia = 0.01f;
 
-        float rockGrabMaxDeviation = 50.0f;
-        float rockGrabMaxDeviationTime = 2.0f;
         float rockThrowVelocityMultiplier = 1.5f;
         bool rockGrabControllerDerivedThrowVelocityEnabled = true;
         float rockGrabThrowMaxVelocityHavok = 12.0f;
@@ -355,8 +353,6 @@ namespace rock
         bool rockShoulderStashUseHmdBackVolume = true;
         float rockShoulderStashEnterPaddingGameUnits = 5.0f;
         float rockShoulderStashExitPaddingGameUnits = 8.0f;
-        float rockShoulderStashMinDwellSeconds = 0.08f;
-        float rockShoulderStashMaxSpeedGameUnitsPerSecond = 140.0f;
         // Elapsed shoulder-stash contact freshness and miss tolerance
         // (historical 4- and 18-frame tunings at 90 Hz).
         float rockShoulderStashRecentContactSeconds = 0.0444f;
@@ -460,7 +456,6 @@ namespace rock
         float rockGrabDirectionalWeight = 0.4f;
         float rockGrabMaxTriangleDistance = 100.0f;
         bool rockGrabMeshContactOnly = true;
-        bool rockGrabRequireMeshContact = true;
         bool rockGrabContactPatchEnabled = true;
         int rockGrabContactPatchProbeCount = 9;
         float rockGrabContactPatchProbeSpacingGameUnits = 3.0f;

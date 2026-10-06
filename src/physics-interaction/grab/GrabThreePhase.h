@@ -352,18 +352,11 @@ namespace rock::grab_three_phase
         result.frontHemisphere = result.signedPalmDistanceGameUnits >= -behindTolerance;
 
         if (!result.frontHemisphere) {
-            /*
-             * A force-grab has already passed explicit target, distance, body,
-             * and hand-ownership validation. Bypass only this organic spatial
-             * rejection; front-side arrivals retain the normal phase classifier.
-             */
-            if (input.programmaticArrival) {
-                result.accepted = true;
-                result.phase = AcquisitionPhase::NearConverging;
-                result.reason = "programmaticArrivalBehindPalm";
-                return result;
-            }
-            result.reason = "behindPalm";
+            // An object behind the palm plane converges into the palm instead of
+            // refusing the grab.
+            result.accepted = true;
+            result.phase = AcquisitionPhase::NearConverging;
+            result.reason = input.programmaticArrival ? "programmaticArrivalBehindPalm" : "behindPalmConverging";
             return result;
         }
 

@@ -296,12 +296,10 @@ namespace rock
         clearGrabHandPose(_isLeft);
         clearGrabExternalHandWorldTransform(_isLeft);
         clearGrabVisualReturn("reset", false);
-        _grabDeviationExceededSeconds = 0.0f;
         _grabVisualHandTransform = {};
         _hasGrabVisualHandTransform = false;
         _lastPublishedGrabVisualHandTransform = {};
         _hasLastPublishedGrabVisualHandTransform = false;
-        _grabVisualDeviationExceededSeconds = 0.0f;
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
         _grabFingerProbeStart = {};
         _grabFingerProbeEnd = {};
@@ -410,7 +408,6 @@ namespace rock
         _hasGrabVisualHandTransform = false;
         _lastPublishedGrabVisualHandTransform = {};
         _hasLastPublishedGrabVisualHandTransform = false;
-        _grabVisualDeviationExceededSeconds = 0.0f;
         clearSelectedCloseFingerPose();
         _grabFingerSweepDebugCapture = {};
         _grabFingerSweepDebugObjectWorld = {};

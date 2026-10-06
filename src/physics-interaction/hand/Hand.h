@@ -862,7 +862,7 @@ namespace rock
             const GrabMeshExtraction& mesh,
             const ResolvedGrabBodyCapture& bodyCapture,
             const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet,
-            const grab_contact_source_policy::GrabContactSourcePolicy& contactSourcePolicy,
+            bool meshContactOnly,
             bool authoredSeatPrepared,
             bool canonicalPivotAvailable,
             const RE::NiPoint3& canonicalPivotPointWorld,
@@ -872,7 +872,7 @@ namespace rock
             GrabSurfaceEvidence& surface,
             GrabBodyResolution& bodyResolution,
             GrabPivotEvidence& outEvidence);
-        bool resolveGrabFingerEvidence(
+        void resolveGrabFingerEvidence(
             RE::hknpWorld* world,
             const GrabFingerEvidenceInput& input,
             GrabSurfaceEvidence& surface,
@@ -1324,7 +1324,6 @@ namespace rock
         float _grabConvergeStableInsidePocketSeconds = 0.0f;
         float _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
         nearby_grab_damping::NearbyGrabDampingState _nearbyGrabDamping;
-        float _grabDeviationExceededSeconds = 0.0f;
         std::array<float, 5> _grabDeviationHistory{};
         std::size_t _grabDeviationHistoryCount = 0;
         std::size_t _grabDeviationHistoryNext = 0;
@@ -1336,10 +1335,6 @@ namespace rock
         RE::NiTransform _grabVisualHandLerpStartTransform{};
         float _grabVisualHandLerpElapsedSeconds = 0.0f;
         float _grabVisualHandLerpDurationSeconds = 0.0f;
-        float _grabVisualDeviationExceededSeconds = 0.0f;
-        std::array<float, 5> _grabVisualDeviationHistory{};
-        std::size_t _grabVisualDeviationHistoryCount = 0;
-        std::size_t _grabVisualDeviationHistoryNext = 0;
         std::array<RE::NiPoint3, 5> _grabFingerProbeStart{};
         std::array<RE::NiPoint3, 5> _grabFingerProbeEnd{};
         bool _hasGrabFingerProbeDebug = false;

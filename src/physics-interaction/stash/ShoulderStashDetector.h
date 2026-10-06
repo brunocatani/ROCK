@@ -26,8 +26,6 @@ namespace rock::shoulder_stash
         bool useHmdBackVolume = true;
         float enterPaddingGameUnits = 5.0f;
         float exitPaddingGameUnits = 8.0f;
-        float minDwellSeconds = 0.08f;
-        float maxSpeedGameUnitsPerSecond = 140.0f;
         // Elapsed contact freshness and miss tolerance (historical 4- and
         // 18-frame tunings at the 90 Hz baseline), rate-independent.
         float recentContactSeconds = 4.0f / 90.0f;

@@ -320,7 +320,6 @@ namespace rock::performance_profiler
             case Counter::GrabAcquisitionEquippedTransfer: return "grabAcquisitionEquippedTransfer";
             case Counter::GrabAcquisitionSucceeded: return "grabAcquisitionSucceeded";
             case Counter::GrabSingleBodyVisualOwnerAccepted: return "grabSingleBodyVisualOwnerAccepted";
-            case Counter::GrabMeshOwnerMismatchRejected: return "grabMeshOwnerMismatchRejected";
             case Counter::GrabAuthoredPositionsOnly: return "grabAuthoredPositionsOnly";
             case Counter::GrabAuthoredArrivalDynamicFallback: return "grabAuthoredArrivalDynamicFallback";
             case Counter::GrabAuthoredSurfaceWorkSkipped: return "grabAuthoredSurfaceWorkSkipped";

@@ -298,8 +298,6 @@ namespace rock
             config.useHmdBackVolume = g_rockConfig.rockShoulderStashUseHmdBackVolume;
             config.enterPaddingGameUnits = g_rockConfig.rockShoulderStashEnterPaddingGameUnits;
             config.exitPaddingGameUnits = g_rockConfig.rockShoulderStashExitPaddingGameUnits;
-            config.minDwellSeconds = g_rockConfig.rockShoulderStashMinDwellSeconds;
-            config.maxSpeedGameUnitsPerSecond = g_rockConfig.rockShoulderStashMaxSpeedGameUnitsPerSecond;
             config.recentContactSeconds = g_rockConfig.rockShoulderStashRecentContactSeconds;
             config.sustainedContactMissSeconds = g_rockConfig.rockShoulderStashSustainedContactMissSeconds;
             config.hmdBackRightOffsetGameUnits = g_rockConfig.rockShoulderStashHmdBackRightOffsetGameUnits;

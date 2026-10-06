@@ -3161,23 +3161,25 @@ namespace rock
             handoffInput.palmWorld = { palmPos.x, palmPos.y, palmPos.z };
             supportPalmInsideHandoffZone = firing_grip_reattach_zone_policy::evaluateZone(handoffInput).inside;
         }
-        if (!providerPartAuthority.active &&
-            (sharedFiringZone || decision.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone)) {
-            if (!supportPalmInsideHandoffZone) {
-                grip = {};
-                return authored_support_grab_policy::Selection::Reject;
-            }
+        // A palm inside the firing station attaches there; anywhere else on the
+        // weapon it continues as an ordinary support grip instead of refusing.
+        const bool firingStationAcquisition = !providerPartAuthority.active &&
+            (sharedFiringZone || decision.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone) &&
+            supportPalmInsideHandoffZone;
+        if (firingStationAcquisition) {
             grip.acquisitionSource = WeaponInteractionAcquisitionSource::FiringGripZone;
+        } else if (grip.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone) {
+            grip.acquisitionSource = WeaponInteractionAcquisitionSource::ProximityProbe;
         }
-        if (!providerPartAuthority.active && decision.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone &&
-            arrangement == loose_weapon_authored_grab_policy::Arrangement::Separated) {
-            // A second hand at the firing station receives the same exact
-            // authored firing pose, without taking weapon authority yet.
-            const char* source = nullptr;
-            if (!tryResolveAuthoredFiringHandCanonicalForProbe(isLeft, grip.handWeaponLocal, source)) {
-                grip = {};
-                return authored_support_grab_policy::Selection::Reject;
-            }
+        // A second hand at the firing station receives the same exact authored
+        // firing pose, without taking weapon authority yet. Without that pose it
+        // continues as an ordinary support grip.
+        const char* source = nullptr;
+        RE::NiTransform firingStationHandWeaponLocal{};
+        if (firingStationAcquisition && decision.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone &&
+            arrangement == loose_weapon_authored_grab_policy::Arrangement::Separated &&
+            tryResolveAuthoredFiringHandCanonicalForProbe(isLeft, firingStationHandWeaponLocal, source)) {
+            grip.handWeaponLocal = firingStationHandWeaponLocal;
             grip.gripLocal = _firing.rightCanonicalGripWeaponLocal;
             if (isLeft) grip.gripLocal += weapon_grip_calibration::offsetInWeapon(
                 grip.handWeaponLocal, g_rockConfig.rockLeftFiringGripOffsetGameUnits, true);
@@ -3188,11 +3190,9 @@ namespace rock
             setSupportGripPose(isLeft, nullptr, nullptr);
             grip.fingerLocalTransforms = isLeft ? _firing.leftFingerLocalTransforms : _firing.rightFingerLocalTransforms;
             grip.fingerLocalTransformMask = isLeft ? _firing.leftFingerLocalTransformMask : _firing.rightFingerLocalTransformMask;
-            grip.hasFingerLocalTransforms = grip.fingerLocalTransformMask == 0x7FFFu;
-            if (!grip.hasFingerLocalTransforms) {
-                grip = {};
-                return authored_support_grab_policy::Selection::Reject;
-            }
+            // FRIK publication honours the joint mask, so a partial authored pose
+            // still poses the joints it has.
+            grip.hasFingerLocalTransforms = grip.fingerLocalTransformMask != 0;
             grip.active = true;
             _session.authorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport;
             (isLeft ? _hapticEvents.leftPartGripCaptured : _hapticEvents.rightPartGripCaptured) = true;

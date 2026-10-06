@@ -1198,8 +1198,9 @@ namespace rock
             if (!peer.isHolding() || !peer.getHeldRef()) {
                 return setRefusal("peer-not-holding");
             }
-            if (!peer.getSavedObjectState().isValid() || peer.getSavedObjectState().targetKind != grab_target::Kind::LooseObject) {
-                return setRefusal("peer-target-not-loose-object");
+            // Any object the peer hand holds can be joined by this hand.
+            if (!peer.getSavedObjectState().isValid()) {
+                return setRefusal("peer-state-invalid");
             }
 
             if (hand.hasSelection() && hand.getSelection().refr != peer.getHeldRef()) {
