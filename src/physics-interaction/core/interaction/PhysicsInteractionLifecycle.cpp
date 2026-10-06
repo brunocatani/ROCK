@@ -491,7 +491,7 @@ namespace rock
         _equipped.handlingModeReconcilePending = false;
         _equipped.defaultEquipObservedOwnershipKey = 0;
         equipped_weapon_handling_runtime::reset();
-        clearEquippedWeaponPostDropCollisionSuppressionState();
+        abandonWeaponHandSuppression();
         _contacts.rightPush.clear();
         _contacts.leftPush.clear();
         _contacts.weaponPush.clear();
@@ -586,11 +586,8 @@ namespace rock
             unsubscribeContactEvents(hknp);
             clearNativePlayerCollisionFilter(hknp);
             restoreNativeGrenadeCollisionSuppression(hknp);
-            restoreRightHandCollisionAfterDominantWeapon(hknp);
-            restoreHandCollisionAfterWeaponSupport(hknp, true, true);
-            restoreHandCollisionAfterWeaponSupport(hknp, false, true);
-            restoreHandCollisionAfterEquippedWeaponDrop(hknp, false);
-            restoreHandCollisionAfterEquippedWeaponDrop(hknp, true);
+            clearWeaponHandSuppression(hknp, false);
+            clearWeaponHandSuppression(hknp, true);
             if (_rightHand.isHolding()) {
                 auto* r = _rightHand.getHeldRef();
                 _rightHand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, makeGrabReleaseContext(_rightHand, false));
@@ -620,13 +617,7 @@ namespace rock
             _weaponCollision.abandonHavokStateAfterWorldLoss();
             _equipped.transition.abandonSceneGraph();
             _bodyBoneColliders.reset();
-            _suppression.rightDominantSuppressed.store(false, std::memory_order_release);
-            _suppression.leftWeaponSupportSuppressed.store(false, std::memory_order_release);
-            _suppression.rightWeaponSupportSuppressed.store(false, std::memory_order_release);
-            _suppression.rightDominantLeases.clearTracking();
-            _suppression.leftWeaponSupportLeases.clearTracking();
-            _suppression.rightWeaponSupportLeases.clearTracking();
-            clearEquippedWeaponPostDropCollisionSuppressionState();
+            abandonWeaponHandSuppression();
             _suppression.nativePlayerRefreshFrames = 0;
             _suppression.nativePlayerOverflowLogged = false;
             collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
@@ -696,13 +687,7 @@ namespace rock
         _contacts.lastHeldImpactPairLeft.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
         _contacts.handActivity.reset();
         _contacts.bodyRuntime.reset();
-        _suppression.rightDominantLeases.clearTracking();
-        _suppression.leftWeaponSupportLeases.clearTracking();
-        _suppression.rightWeaponSupportLeases.clearTracking();
-        _suppression.rightDominantSuppressed.store(false, std::memory_order_release);
-        _suppression.leftWeaponSupportSuppressed.store(false, std::memory_order_release);
-        _suppression.rightWeaponSupportSuppressed.store(false, std::memory_order_release);
-        clearEquippedWeaponPostDropCollisionSuppressionState();
+        abandonWeaponHandSuppression();
         _suppression.nativePlayerRefreshFrames = 0;
         _suppression.nativePlayerOverflowLogged = false;
 

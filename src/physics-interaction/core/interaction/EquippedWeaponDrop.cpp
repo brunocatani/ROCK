@@ -350,8 +350,15 @@ namespace rock
                         dropResult.stackID,
                         dropResult.matchedInstanceData ? "yes" : "no");
                 }
-                if (sourceHandKnown && dropCommitted) {
-                    suppressHandCollisionAfterEquippedWeaponDrop(hknp, sourceHand);
+                if (sourceHandKnown && dropCommitted &&
+                    (sourceHand == equipped_weapon_drop_policy::SourceHand::Right ||
+                        sourceHand == equipped_weapon_drop_policy::SourceHand::Left)) {
+                    // The releasing hand and arm stop colliding briefly so they
+                    // do not knock the weapon they just let go of.
+                    const bool dropIsLeft = equipped_weapon_drop_policy::isLeft(sourceHand);
+                    setWeaponHandSuppression(hknp, dropIsLeft, WeaponHandReason::Drop, true);
+                    setWeaponHandSuppression(hknp, dropIsLeft, WeaponHandReason::Drop, false,
+                        g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds);
                 }
             }
         }

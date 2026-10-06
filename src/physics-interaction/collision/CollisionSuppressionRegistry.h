@@ -33,10 +33,8 @@ namespace rock::collision_suppression_registry
     enum class CollisionSuppressionOwner : std::uint8_t
     {
         Grab = 0,
-        WeaponDominantHand = 1,
-        WeaponSupportHand = 2,
+        WeaponHand = 1,
         HeldLooseWeaponBody = 4,
-        EquippedWeaponDropHand = 5,
         NativeGrenadeThrow = 6,
         InvalidFinalPose = 7,
         LooseGeneratedCollision = 8,

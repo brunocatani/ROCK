@@ -292,31 +292,14 @@ namespace rock
             weaponGripOccupancyBeforeUpdate.left.partGripActive;
         bool rightPartGripActive =
             weaponGripOccupancyBeforeUpdate.right.partGripActive;
-        if (rightHandWeaponAuthorityActive) {
-            suppressRightHandCollisionForDominantWeapon(hknp);
-        } else {
-            restoreRightHandCollisionAfterDominantWeapon(hknp);
-        }
+        setWeaponHandSuppression(hknp, false, WeaponHandReason::Dominant, rightHandWeaponAuthorityActive);
         // A part-gripping free hand is a transform driver like the support hand
         // and must not also solve contacts against the weapon package.
-        if (rightPartGripActive) {
-            suppressHandCollisionForWeaponSupport(hknp, false);
-        } else {
-            restoreHandCollisionAfterWeaponSupport(hknp, false);
-        }
+        setWeaponHandSuppression(hknp, false, WeaponHandReason::Grip, rightPartGripActive);
 
+        // Recreated hand bodies are re-leased inside updateHandCollisions
+        // before the next physics step.
         updateHandCollisions(frame);
-        /*
-         * Hand collider creation/rebuild happens in updateHandCollisions. Re-run
-         * active weapon-owner leases immediately so a new body ID cannot reach
-         * the next physics step without the owning-hand suppression.
-         */
-        if (rightHandWeaponAuthorityActive) {
-            suppressRightHandCollisionForDominantWeapon(hknp);
-        }
-        if (rightPartGripActive) {
-            suppressHandCollisionForWeaponSupport(hknp, false);
-        }
         logPalmClockSampleForHand("game-after-hand-collider-prepare",
             _rightHand,
             hknp,
@@ -1591,24 +1574,15 @@ namespace rock
                 rightHandWeaponAuthorityActiveAfterGrip = false;
             }
             if (rightHandWeaponAuthorityActiveAfterGrip != rightHandWeaponAuthorityActiveBeforeGrip) {
-                if (rightHandWeaponAuthorityActiveAfterGrip) {
-                    suppressRightHandCollisionForDominantWeapon(hknp);
-                } else {
-                    restoreRightHandCollisionAfterDominantWeapon(hknp);
-                }
+                setWeaponHandSuppression(hknp, false, WeaponHandReason::Dominant, rightHandWeaponAuthorityActiveAfterGrip);
             }
             rightHandWeaponAuthorityActive = rightHandWeaponAuthorityActiveAfterGrip;
             const bool rightPartGripActiveAfterGrip =
                 gripUpdateResult.after.right.partGripActive;
             if (rightPartGripActiveAfterGrip !=
                 gripUpdateResult.before.right.partGripActive) {
-                if (rightPartGripActiveAfterGrip) {
-                    suppressHandCollisionForWeaponSupport(hknp, false);
-                } else {
-                    beginDelayedHandCollisionRestoreAfterWeaponSupport(
-                        hknp,
-                        false);
-                }
+                setWeaponHandSuppression(hknp, false, WeaponHandReason::Grip, rightPartGripActiveAfterGrip,
+                    g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds);
             }
             rightPartGripActive = rightPartGripActiveAfterGrip;
 
@@ -1622,16 +1596,8 @@ namespace rock
              */
             const bool leftWeaponGripActiveAfterUpdate =
                 weaponSupportGripActive || leftHandFiringActiveAfterGrip;
-            if (leftWeaponGripActiveAfterUpdate) {
-                suppressHandCollisionForWeaponSupport(hknp, true);
-            } else if (
-                gripUpdateResult.before.left.weaponEngaged()) {
-                beginDelayedHandCollisionRestoreAfterWeaponSupport(
-                    hknp,
-                    true);
-            } else {
-                restoreHandCollisionAfterWeaponSupport(hknp, true);
-            }
+            setWeaponHandSuppression(hknp, true, WeaponHandReason::Grip, leftWeaponGripActiveAfterUpdate,
+                gripUpdateResult.before.left.weaponEngaged() ? g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds : 0.0f);
 
             RE::NiPoint3 surfaceSupportPrimaryGripLocal{};
             const bool surfaceSupportPrimaryValid =

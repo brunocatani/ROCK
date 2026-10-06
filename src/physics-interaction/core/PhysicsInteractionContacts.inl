@@ -1362,11 +1362,11 @@
          */
         const bool rightBodyPairSuppressed =
             (bodyAIsRight || bodyBIsRight) &&
-            (_suppression.rightDominantSuppressed.load(std::memory_order_acquire) ||
+            (weaponHandSuppressedFor(false, WeaponHandReason::Dominant) ||
                 _rightHand.hasContactEvidenceSuppressedAtomic());
         const bool leftBodyPairSuppressed =
             (bodyAIsLeft || bodyBIsLeft) &&
-            (_suppression.leftWeaponSupportSuppressed.load(std::memory_order_acquire) ||
+            (weaponHandSuppressedFor(true, WeaponHandReason::Grip) ||
                 _leftHand.hasContactEvidenceSuppressedAtomic());
         if (rightBodyPairSuppressed || leftBodyPairSuppressed) {
             ROCK_LOG_SAMPLE_DEBUG(Hand,

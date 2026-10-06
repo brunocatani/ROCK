@@ -524,34 +524,22 @@ namespace rock
             RE::NiNode* weaponNode,
             std::uint64_t currentEquippedWeaponOwnershipKey,
             bool firingHandIsLeft);
-        void suppressRightHandCollisionForDominantWeapon(RE::hknpWorld* world);
-
-        void restoreRightHandCollisionAfterDominantWeapon(RE::hknpWorld* world);
-
-        void suppressHandCollisionForWeaponSupport(RE::hknpWorld* world, bool isLeft);
-
-        void beginDelayedHandCollisionRestoreAfterWeaponSupport(
-            RE::hknpWorld* world,
-            bool isLeft);
-
-        void restoreHandCollisionAfterWeaponSupport(
-            RE::hknpWorld* world,
-            bool isLeft,
-            bool forceImmediate = false);
-
-        void updateWeaponSupportCollisionSuppression(
-            RE::hknpWorld* world,
-            float deltaSeconds);
-
-        void suppressHandCollisionAfterEquippedWeaponDrop(
-            RE::hknpWorld* world,
-            equipped_weapon_drop_policy::SourceHand sourceHand);
-
-        void restoreHandCollisionAfterEquippedWeaponDrop(RE::hknpWorld* world, bool isLeft);
-
-        void updateEquippedWeaponPostDropCollisionSuppression(RE::hknpWorld* world, float deltaSeconds);
-
-        void clearEquippedWeaponPostDropCollisionSuppressionState();
+        enum class WeaponHandReason : std::uint8_t
+        {
+            Dominant = 1u << 0,  // right hand owns the equipped weapon's aim
+            Grip = 1u << 1,      // support, part or left firing grip
+            Drop = 1u << 2,      // hand (and arm) just released the weapon
+        };
+        void setWeaponHandSuppression(RE::hknpWorld* world, bool isLeft, WeaponHandReason reason, bool active, float restoreDelaySeconds = 0.0f);
+        void clearWeaponHandSuppression(RE::hknpWorld* world, bool isLeft);
+        void abandonWeaponHandSuppression();
+        void updateWeaponHandSuppression(RE::hknpWorld* world, float deltaSeconds);
+        void refreshWeaponHandSuppression(RE::hknpWorld* world, bool isLeft);
+        [[nodiscard]] bool weaponHandSuppressedFor(bool isLeft, WeaponHandReason reason) const
+        {
+            return (_suppression.weaponHands[isLeft ? 1 : 0].published.load(std::memory_order_acquire) &
+                       static_cast<std::uint8_t>(reason)) != 0;
+        }
         bool refreshNativeGrenadeCollisionSuppression(RE::hknpWorld* world);
         void updateNativeGrenadeCollisionSuppression(RE::hknpWorld* world, float deltaSeconds);
         void restoreNativeGrenadeCollisionSuppression(RE::hknpWorld* world);
@@ -935,26 +923,16 @@ namespace rock
         {
             collision_suppression_registry::SuppressionLeaseSet<kGeneratedBodyContactRegistryCapacity + 3>
                 nativeGrenadeLeases{ collision_suppression_registry::CollisionSuppressionOwner::NativeGrenadeThrow };
-            std::atomic<bool> rightDominantSuppressed{ false };
-            std::atomic<bool> leftWeaponSupportSuppressed{ false };
-            std::atomic<bool> rightWeaponSupportSuppressed{ false };
-            std::atomic<bool> rightDropSuppressed{ false };
-            std::atomic<bool> leftDropSuppressed{ false };
-            collision_suppression_registry::SuppressionLeaseSet<hand_collider_semantics::kHandColliderBodyCountPerHand>
-                rightDominantLeases{
-                    collision_suppression_registry::CollisionSuppressionOwner::WeaponDominantHand };
-            collision_suppression_registry::SuppressionLeaseSet<hand_collider_semantics::kHandColliderBodyCountPerHand>
-                leftWeaponSupportLeases{
-                    collision_suppression_registry::CollisionSuppressionOwner::WeaponSupportHand };
-            collision_suppression_registry::SuppressionLeaseSet<hand_collider_semantics::kHandColliderBodyCountPerHand>
-                rightWeaponSupportLeases{
-                    collision_suppression_registry::CollisionSuppressionOwner::WeaponSupportHand };
-            collision_suppression_registry::SuppressionLeaseSet<kGrabCollisionSuppressionBodyCountPerHand>
-                rightDropLeases{
-                    collision_suppression_registry::CollisionSuppressionOwner::EquippedWeaponDropHand };
-            collision_suppression_registry::SuppressionLeaseSet<kGrabCollisionSuppressionBodyCountPerHand>
-                leftDropLeases{
-                    collision_suppression_registry::CollisionSuppressionOwner::EquippedWeaponDropHand };
+            struct WeaponHand
+            {
+                collision_suppression_registry::SuppressionLeaseSet<kGrabCollisionSuppressionBodyCountPerHand>
+                    leases{ collision_suppression_registry::CollisionSuppressionOwner::WeaponHand };
+                std::uint8_t active = 0;     // reasons requested now
+                std::uint8_t lingering = 0;  // released reasons waiting out restoreSeconds
+                float restoreSeconds = 0.0f;
+                std::atomic<std::uint8_t> published{ 0 };  // active | lingering, for contact callbacks
+            };
+            std::array<WeaponHand, 2> weaponHands{};
             std::uint32_t nativePlayerRefreshFrames = 0;
             bool nativePlayerOverflowLogged = false;
         };

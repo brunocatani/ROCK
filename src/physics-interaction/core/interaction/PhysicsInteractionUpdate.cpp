@@ -289,13 +289,11 @@ namespace rock
             _leftHand,
             _bodyBoneColliders,
             rightHandWeaponAuthorityActive || rightPartGripActive ||
-                _suppression.rightWeaponSupportSuppressed.load(
-                    std::memory_order_acquire),
+                weaponHandSuppressedFor(false, WeaponHandReason::Grip),
             leftSupportGripActive ||
                 (_twoHandedGrip.isFiringHandLeft() &&
                     _twoHandedGrip.isFiringGripOccupied()) ||
-                _suppression.leftWeaponSupportSuppressed.load(
-                    std::memory_order_acquire),
+                weaponHandSuppressedFor(true, WeaponHandReason::Grip),
             _dynamicWeaponCollision.proxyBodyIdForDebug().value,
             _rightHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(false),
             _leftHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(true));
@@ -547,11 +545,8 @@ namespace rock
                     // Weapon grips yield to the menu and resume through the
                     // equip continuity path. Held objects stay held: no menu
                     // drops what a hand is holding.
-                    restoreRightHandCollisionAfterDominantWeapon(hknpMenu);
-                    restoreHandCollisionAfterWeaponSupport(hknpMenu, true, true);
-                    restoreHandCollisionAfterWeaponSupport(hknpMenu, false, true);
-                    restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, false);
-                    restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, true);
+                    clearWeaponHandSuppression(hknpMenu, false);
+                    clearWeaponHandSuppression(hknpMenu, true);
                 } else {
                     shutdown();
                 }
