@@ -590,6 +590,13 @@ namespace rock
             clearGrabAcquisitionCache("target-kind-not-physical");
             return;
         }
+        // Only a close selection can become a grab on the next press, and that
+        // is where a large tree (an equipped or loose weapon) would hitch.
+        // A far selection scans its body tree when the pull starts.
+        if (_currentSelection.isFarSelection) {
+            clearGrabAcquisitionCache("far-selection");
+            return;
+        }
 
         const auto scanOptions = makeActiveGrabBodyScanOptions(_currentSelection);
         const bool matchingCache = grabAcquisitionCacheMatches(bhkWorld, hknpWorld, _currentSelection, scanOptions);
