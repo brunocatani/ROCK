@@ -140,48 +140,6 @@ namespace rock
         };
         inline constexpr float kNearbyCarCollisionRadiusGameUnits = 4096.0f;
 
-        template <std::size_t Count>
-        void releaseStaleGeneratedHandSuppressionLeases(
-            RE::hknpWorld* world,
-            const Hand& hand,
-            collision_suppression_registry::SuppressionLeaseSet<Count>& suppressionSet,
-            const char* context)
-        {
-            if (!world) {
-                return;
-            }
-
-            const auto handContainsBody = [&](std::uint32_t bodyId) {
-                if (bodyId == collision_suppression_registry::kInvalidBodyId) {
-                    return false;
-                }
-
-                const std::uint32_t colliderCount =
-                    hand.getHandColliderBodyCount();
-                if (colliderCount > 0) {
-                    for (std::uint32_t index = 0;
-                         index < colliderCount;
-                         ++index) {
-                        if (hand.getHandColliderBodyIdAtomic(index) == bodyId) {
-                            return true;
-                        }
-                    }
-                    return false;
-                }
-
-                return hand.hasCollisionBody() &&
-                       hand.getCollisionBodyId().value == bodyId;
-            };
-
-            suppressionSet.releaseWhere(
-                world,
-                context,
-                [&handContainsBody](std::uint32_t bodyId) {
-                    return !handContainsBody(bodyId);
-                },
-                [](std::uint32_t, const auto&) {});
-        }
-
         inline std::atomic<bool> s_weaponCollisionWorkbenchExitMenuSinkRegistered{ false };
         inline std::atomic<bool> s_weaponCollisionWorkbenchExitMenuSinkMissingUILogged{ false };
 
