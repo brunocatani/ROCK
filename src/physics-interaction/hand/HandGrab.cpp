@@ -1251,35 +1251,6 @@ namespace rock
             return candidate;
         }
 
-        grab_finger_pose_runtime::GrabFingerPoseTargetSet buildRuntimePinchFingerPoseTargets(
-            const RuntimePinchPocketCandidate& candidate)
-        {
-            auto targets = grab_finger_pose_runtime::makeSharedGripPoseTarget(candidate.surfaceHit.position, candidate.surfaceHit.normal);
-            targets.useSeatPointForMissingTargets = false;
-            targets.useWholeMeshForMissingTargets = false;
-
-            const float halfWidth = candidate.closure.sample.thicknessGameUnits * 0.5f;
-            const RE::NiPoint3 sourceCenter = candidate.surfaceHit.position +
-                candidate.pinchAxisWorld * candidate.closure.sample.centerOffsetGameUnits;
-            const RE::NiPoint3 thumbNormal{
-                -candidate.pinchAxisWorld.x,
-                -candidate.pinchAxisWorld.y,
-                -candidate.pinchAxisWorld.z,
-            };
-            const RE::NiPoint3 indexNormal = candidate.pinchAxisWorld;
-
-            targets.targets[0] = sourceCenter + thumbNormal * halfWidth;
-            targets.targetNormals[0] = thumbNormal;
-            targets.targetValid[0] = 1;
-            targets.targetNormalValid[0] = 1;
-            targets.targets[1] = sourceCenter + indexNormal * halfWidth;
-            targets.targetNormals[1] = indexNormal;
-            targets.targetValid[1] = 1;
-            targets.targetNormalValid[1] = 1;
-            targets.targetCount = 2;
-            return targets;
-        }
-
         struct LocalMeshLongAxis
         {
             RE::NiPoint3 axisWorld{};
@@ -1345,37 +1316,27 @@ namespace rock
             return result;
         }
 
+        /*
+         * Thumb and index keep the mesh solve, so they stop on the object's
+         * surface instead of closing through it onto each other. The free
+         * fingers tuck to the pinch curl unless the mesh stops them first.
+         */
         void applyPinchFingerPosePolicy(
             grab_finger_pose_runtime::SolvedGrabFingerPose& pose,
             const CanonicalGrabFrame& frame)
         {
-            const auto& stablePose = frame.seat.pinchFingerPose;
-
-            pose.values = stablePose.values;
-            pose.usedAlternateThumbCurve = false;
-            pose.usedAlternateThumbSurfaceHit = false;
-            pose.selectedThumbLane = grab_finger_calibration_data::BakedGrabThumbLane::Wrap;
-            pose.selectedThumbLaneNormalBlend = 0.0f;
-            pose.selectedThumbLaneLocalCorrectionStrength = 0.0f;
-            pose.hasThumbAlternateCurveFrame = false;
-            pose.thumbAlternateCurveBaseWorld = {};
-            pose.thumbAlternateCurveOpenDirectionWorld = {};
-            pose.thumbAlternateCurveNormalWorld = {};
-            pose.thumbAlternateCurveMaxCurlAngleRadians = 0.0f;
-            pose.hasThumbCurveDiagnostics = false;
-            pose.thumbPrimaryCurve = {};
-            pose.thumbAlternateCurve = {};
-            pose.thumbSidePadCurve = {};
-            pose.poseTargetCount = (std::max)(pose.poseTargetCount, static_cast<int>(frame.fingerPoseTargetCount));
-
-            for (std::size_t finger = 0; finger < 2 && finger < pose.surfaceAimTargetValid.size(); ++finger) {
-                pose.surfaceAimTargetValid[finger] = 0;
-                pose.surfaceAimNormalValid[finger] = 0;
+            const auto& tucked = frame.seat.pinchFingerPose;
+            for (std::size_t finger = 2; finger < pose.values.size(); ++finger) {
+                if (tucked.values[finger] <= pose.values[finger]) {
+                    continue;
+                }
+                pose.values[finger] = tucked.values[finger];
+                if (pose.hasJointValues) {
+                    for (std::size_t segment = 0; segment < 3; ++segment) {
+                        pose.jointValues[finger * 3 + segment] = tucked.jointValues[finger * 3 + segment];
+                    }
+                }
             }
-
-            pose.solved = true;
-            pose.hasJointValues = true;
-            pose.jointValues = stablePose.jointValues;
         }
 
         void storeFingerPoseTargetsInGrabFrame(CanonicalGrabFrame& frame,
@@ -5789,7 +5750,6 @@ namespace rock
         RE::NiTransform rootBodyLocal{};
         RE::NiPoint3 selectedGripPointLocal{};
         RE::NiPoint3 selectedPivotBBodyLocalGame{};
-        std::vector<TriangleData> fingerPoseMeshTriangles{};
         std::vector<GrabLocalTriangle> fingerPoseLocalMeshTriangles{};
         bool clearExternalOnFailure = false;
     };
@@ -5842,7 +5802,7 @@ namespace rock
         auto& rootBodyLocalAtGrab = outCapture.rootBodyLocal;
         auto& selectedGripPointLocal = outCapture.selectedGripPointLocal;
         auto& selectedPivotBBodyLocalGame = outCapture.selectedPivotBBodyLocalGame;
-        auto& grabFingerPoseMeshTriangles = outCapture.fingerPoseMeshTriangles;
+        std::vector<TriangleData> grabFingerPoseMeshTriangles;
         auto& grabFingerPoseLocalMeshTriangles = outCapture.fingerPoseLocalMeshTriangles;
                 palmPos = computeGrabLegacyPalmPivotAWorldFromHandBasis(handWorldTransform, _isLeft);
                 if (!tryGetGrabAuthorityBodyWorldTransform(world, objectBodyId, grabBodyWorldAtGrab)) {
@@ -7053,9 +7013,7 @@ namespace rock
                         const bool fullHeldAuthorityAtCapture =
                             _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld;
 
-                        const auto captureFingerTargets = effectivePinchPocket ?
-                            buildRuntimePinchFingerPoseTargets(pinchPocketCandidate) :
-                            buildRuntimeFingerPoseTargets(gripEvidencePointWorld, gripEvidenceNormalWorld);
+                        const auto captureFingerTargets = buildRuntimeFingerPoseTargets(gripEvidencePointWorld, gripEvidenceNormalWorld);
                         storeFingerPoseTargetsInGrabFrame(_grabFrame, captureFingerTargets, objectWorldTransform);
 
                         ROCK_LOG_DEBUG(Hand,
@@ -7400,7 +7358,6 @@ namespace rock
         RE::hknpBodyId objectBodyId{};
         const BodyBoneColliderSet* bodyBoneColliders = nullptr;
         active_grab_body_lifecycle::BodyLifecycleSnapshot* activeLifecycle = nullptr;
-        const std::vector<TriangleData>* fingerPoseMeshTriangles = nullptr;
         const saved_grab_offset::HandOffset* savedGrabOffset = nullptr;
         bool hasSavedGrabOffset = false;
         bool joiningPeerHeldObject = false;
@@ -7412,6 +7369,123 @@ namespace rock
         float constantRecovery = 0.0f;
         GrabRollbackAction rollback{};
     };
+
+    /*
+     * The one mesh finger solve. Commit calls it when the seat is already
+     * final; otherwise arrival at TouchHeld does. The live finger skeleton is
+     * rebased from the live hand onto the hand pose being solved for.
+     */
+    void Hand::solveAndPublishGrabFingerPose(const GrabFingerSolveFrame& frame)
+    {
+        const auto mode = _grabFingerPose.mode;
+        const bool legacyFingerPose = mode == grab_finger_pose_runtime::FingerPoseMode::June2;
+        const bool pinchFingerPose = _grabFrame.seat.mode == GrabSeatMode::PinchPocket;
+        const auto& localFingerPoseTriangles = !_grabFrame.fingerPoseLocalMeshTriangles.empty() ?
+            _grabFrame.fingerPoseLocalMeshTriangles :
+            _grabFrame.localMeshTriangles;
+        const auto fingerPoseTargets = rebuildFingerPoseTargetsFromGrabFrame(_grabFrame, frame.objectWorld);
+
+        root_flattened_finger_skeleton_runtime::Snapshot liveFingerSnapshot{};
+        const bool liveFingerSnapshotValid =
+            root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, liveFingerSnapshot) &&
+            rebaseFingerSkeletonSnapshot(liveFingerSnapshot, frame.liveHandWorld, frame.solveHandWorld);
+        if (!liveFingerSnapshotValid) {
+            liveFingerSnapshot = {};
+        }
+
+        std::vector<TriangleData> worldTriangles;
+        grab_finger_pose_runtime::FingerSweepDebugCapture sweepDebug{};
+        bool spatialIndexBuilt = false;
+        bool commandedOpenDirectionsValid = false;
+        if (legacyFingerPose) {
+            worldTriangles = rebuildFingerPoseWorldTrianglesFromGrabFrame(_grabFrame, frame.objectWorld);
+            _grabFingerPose = grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(worldTriangles, frame.solveHandWorld, _isLeft, frame.pivotWorld,
+                fingerPoseTargets, g_rockConfig.rockGrabFingerMinValue, g_rockConfig.rockGrabMaxTriangleDistance, true,
+                liveFingerSnapshotValid ? &liveFingerSnapshot : nullptr,
+                g_rockConfig.rockGrabFingerRejectBacksideHits, g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits, _grabFrame.fingerPoseAimValid,
+                g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits, -1.0f, g_rockConfig.rockGrabThumbSweepMaxOpenValue,
+                g_rockConfig.rockGrabFingerSweepMaxOpenValue,
+                nullptr, nullptr, nullptr, nullptr,
+                grab_finger_pose_runtime::FingerPoseMeshRelation::CurrentMeshRequiresVirtualSeat,
+                mode);
+        } else {
+            const auto frozenSolve = grab_finger_pose_runtime::solveFrozenMeshFingerPoseBase(
+                localFingerPoseTriangles,
+                frame.objectWorld,
+                frame.solveHandWorld,
+                _isLeft,
+                frame.pivotWorld,
+                fingerPoseTargets,
+                _grabFingerTriangleIndex,
+                worldTriangles,
+                grab_finger_pose_runtime::FrozenMeshFingerPoseSolveOptions{
+                    .minValue = g_rockConfig.rockGrabFingerMinValue,
+                    .maxTriangleDistanceSquared = g_rockConfig.rockGrabMaxTriangleDistance,
+                    .rejectBacksideHits = g_rockConfig.rockGrabFingerRejectBacksideHits,
+                    .surfacePlaneToleranceGameUnits = g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
+                    .allowSurfaceAimTargets = _grabFrame.fingerPoseAimValid,
+                    .sweepContactRadiusGameUnits = g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits,
+                    .thumbSweepMaxOpenValue = g_rockConfig.rockGrabThumbSweepMaxOpenValue,
+                    .fingerSweepMaxOpenValue = g_rockConfig.rockGrabFingerSweepMaxOpenValue,
+                    .meshFingerPoseEnabled = g_rockConfig.rockGrabMeshFingerPoseEnabled,
+                    .captureSweepDebug = g_rockConfig.rockDebugShowGrabFingerSweptArc,
+                    .mode = mode,
+                },
+                &liveFingerSnapshot);
+            _grabFingerPose = frozenSolve.pose;
+            sweepDebug = frozenSolve.sweepDebug;
+            spatialIndexBuilt = frozenSolve.spatialIndexBuilt;
+            commandedOpenDirectionsValid = frozenSolve.commandedOpenDirectionsValid;
+        }
+        _grabFingerPose.mode = mode;
+        if (pinchFingerPose) {
+            applyPinchFingerPosePolicy(_grabFingerPose, _grabFrame);
+        }
+        grab_finger_pose_runtime::useThumbIndexCurveOnlyPose(_grabFingerPose);
+        const auto* padIndex = spatialIndexBuilt ? &_grabFingerTriangleIndex : nullptr;
+        std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padCaptureEvidence{};
+        (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(_grabFingerPose, worldTriangles, fingerPoseTargets, liveFingerSnapshot,
+            frame.objectWorld, g_rockConfig.rockGrabMeshFingerPoseEnabled, true, padCaptureEvidence, true, {}, padIndex);
+        grab_finger_pose_runtime::captureSurfaceAimObjectLocal(_grabFingerPose, frame.objectWorld);
+
+        _grabFingerSweepDebugCapture = sweepDebug;
+        _grabFingerSweepDebugObjectWorld = frame.objectWorld;
+        _hasGrabFingerSweepDebug = sweepDebug.valid;
+        _grabFingerProbeStart = _grabFingerPose.probeStart;
+        _grabFingerProbeEnd = _grabFingerPose.probeEnd;
+        _hasGrabFingerProbeDebug = _grabFingerPose.candidateTriangleCount > 0;
+        auto publishFingerPose = grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, frame.objectWorld);
+        if (g_rockConfig.rockDebugShowGrabFingerProbes) {
+            std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padEvidence{};
+            (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(publishFingerPose, worldTriangles, fingerPoseTargets, liveFingerSnapshot,
+                frame.objectWorld, g_rockConfig.rockGrabMeshFingerPoseEnabled, true, padEvidence, false, {}, padIndex);
+            const auto padDebug = makeFingerPadPublishDebug(publishFingerPose, padEvidence);
+            _grabFingerPadProbeStart = padDebug.padProbeStart;
+            _grabFingerPadProbeEnd = padDebug.padProbeEnd;
+            _grabFingerPadProbeHit = padDebug.padProbeHit;
+            _grabFingerPadProbeHitValid = padDebug.padProbeHitValid;
+            _hasGrabFingerPadProbeDebug = padDebug.hasPadProbeDebug;
+            _grabFingerSurfaceTarget = padDebug.surfaceTarget;
+            _grabFingerSurfaceTargetValid = padDebug.surfaceTargetValid;
+            _hasGrabFingerSurfaceTargetDebug = padDebug.hasSurfaceTargetDebug;
+        } else {
+            _hasGrabFingerPadProbeDebug = false;
+            _hasGrabFingerSurfaceTargetDebug = false;
+        }
+        if (!frame.touchHeld) {
+            publishFingerPose = buildAcquisitionFingerPose(publishFingerPose, 0.0f);
+        }
+        applyRockGrabHandPose(_isLeft, publishFingerPose, _grabFingerJointPose, _hasGrabFingerJointPose, _grabFingerLocalTransforms, _grabFingerLocalTransformMask,
+            _hasGrabFingerLocalTransforms, 0.0f, /*publishLocalTransforms=*/legacyFingerPose, frame.touchHeld);
+        _grabFingerPosePublished = true;
+        _grabFingerLocalTransformFinalizePending = !legacyFingerPose && frame.touchHeld && _grabFingerPose.solved;
+        ROCK_LOG_DEBUG(Hand,
+            "{} THREE-PHASE GRAB POSE SOLVED: stage={} phase={} pinch={} solved={} hits={} triangles={} spatial={} nodes={} tests={} commandedAnchors={}",
+            handName(), frame.stage, grab_three_phase::phaseName(_grabAcquisitionPhase), pinchFingerPose ? "yes" : "no",
+            _grabFingerPose.solved ? "yes" : "no", _grabFingerPose.hitCount, _grabFingerPose.candidateTriangleCount,
+            _grabFingerPose.usedSpatialIndex ? "yes" : "no", _grabFingerPose.spatialNodeVisitCount, _grabFingerPose.spatialTriangleTestCount,
+            commandedOpenDirectionsValid ? "yes" : "no");
+    }
 
     bool Hand::commitGrabConstraintAndPose(
         RE::hknpWorld* world,
@@ -7426,7 +7500,6 @@ namespace rock
         const auto objectBodyId = input.objectBodyId;
         const auto* bodyBoneColliders = input.bodyBoneColliders;
         auto& activeLifecycle = *input.activeLifecycle;
-        const auto& grabFingerPoseMeshTriangles = *input.fingerPoseMeshTriangles;
         const auto& savedGrabOffset = *input.savedGrabOffset;
         const bool hasSavedGrabOffset = input.hasSavedGrabOffset;
         const bool joiningPeerHeldObject = input.joiningPeerHeldObject;
@@ -7800,109 +7873,16 @@ namespace rock
                         _grabFrame.fingerPoseLocalMeshTriangles.empty() ? _grabFrame.localMeshTriangles.size() : _grabFrame.fingerPoseLocalMeshTriangles.size(),
                         _grabFrame.fingerPoseTargetCount);
                 } else {
-                    /*
-                     * A final seat already exists, so regular grabs can solve
-                     * exactly once against that frozen commanded relation. A
-                     * converging seat that still needs promotion took the
-                     * deferred branch above instead of solving transient geometry.
-                     */
-                    const RE::NiTransform& targetObjectWorld = (pinchFingerPose || legacyFingerPose) ? objectWorldTransform : _grabFrame.authority.desiredObjectWorldAtGrab;
-                    std::vector<TriangleData> targetFingerPoseWorldTriangles = (pinchFingerPose || legacyFingerPose) ? grabFingerPoseMeshTriangles : std::vector<TriangleData>{};
-                    const auto& localFingerPoseTriangles = !_grabFrame.fingerPoseLocalMeshTriangles.empty() ? _grabFrame.fingerPoseLocalMeshTriangles : _grabFrame.localMeshTriangles;
-
-                    const RE::NiTransform& targetFingerHandTransform = handWorldTransform;
-                    root_flattened_finger_skeleton_runtime::Snapshot liveFingerSnapshotAtGrab{};
-                    const RE::NiPoint3 fingerPosePivotWorld =
-                        _grabFrame.hasTelemetryCapture ? _grabFrame.authority.grabPivotWorldAtGrab : computeGrabPivotAWorld(world, targetFingerHandTransform);
-                    const auto targetFingerPoseTargets = rebuildFingerPoseTargetsFromGrabFrame(_grabFrame, targetObjectWorld);
-                    grab_finger_pose_runtime::FingerSweepDebugCapture sweepDebugCapture{};
-                    grab_finger_pose_runtime::SolvedGrabFingerPose fingerPose{};
-                    bool spatialIndexBuilt = false;
-                    bool commandedOpenDirectionsValid = false;
-                    if (pinchFingerPose || legacyFingerPose) {
-                        const auto* liveFingerSnapshotAtGrabPtr =
-                            root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, liveFingerSnapshotAtGrab) ? &liveFingerSnapshotAtGrab : nullptr;
-                        fingerPose = grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(targetFingerPoseWorldTriangles, targetFingerHandTransform, _isLeft, fingerPosePivotWorld,
-                            targetFingerPoseTargets, g_rockConfig.rockGrabFingerMinValue, g_rockConfig.rockGrabMaxTriangleDistance, !pinchFingerPose, liveFingerSnapshotAtGrabPtr,
-                            g_rockConfig.rockGrabFingerRejectBacksideHits, g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits, _grabFrame.fingerPoseAimValid,
-                            g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits, -1.0f, g_rockConfig.rockGrabThumbSweepMaxOpenValue, g_rockConfig.rockGrabFingerSweepMaxOpenValue,
-                            nullptr, nullptr, nullptr, nullptr,
-                            legacyFingerPose ? grab_finger_pose_runtime::FingerPoseMeshRelation::CurrentMeshRequiresVirtualSeat :
-                                grab_finger_pose_runtime::FingerPoseMeshRelation::AlreadyAtCommandedSeat,
-                            _grabFingerPose.mode);
-                        if (pinchFingerPose) {
-                            applyPinchFingerPosePolicy(fingerPose, _grabFrame);
-                        }
-                        grab_finger_pose_runtime::useThumbIndexCurveOnlyPose(fingerPose);
-                        std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padCaptureEvidence{};
-                        (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(fingerPose, targetFingerPoseWorldTriangles, targetFingerPoseTargets,
-                            liveFingerSnapshotAtGrab, targetObjectWorld, g_rockConfig.rockGrabMeshFingerPoseEnabled, true, padCaptureEvidence, true);
-                        grab_finger_pose_runtime::captureSurfaceAimObjectLocal(fingerPose, targetObjectWorld);
-                    } else {
-                        const auto frozenSolve = grab_finger_pose_runtime::solveFrozenMeshFingerPose(
-                            localFingerPoseTriangles,
-                            targetObjectWorld,
-                            targetFingerHandTransform,
-                            _isLeft,
-                            fingerPosePivotWorld,
-                            targetFingerPoseTargets,
-                            _grabFingerTriangleIndex,
-                            targetFingerPoseWorldTriangles,
-                            grab_finger_pose_runtime::FrozenMeshFingerPoseSolveOptions{
-                                .minValue = g_rockConfig.rockGrabFingerMinValue,
-                                .maxTriangleDistanceSquared = g_rockConfig.rockGrabMaxTriangleDistance,
-                                .rejectBacksideHits = g_rockConfig.rockGrabFingerRejectBacksideHits,
-                                .surfacePlaneToleranceGameUnits = g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
-                                .allowSurfaceAimTargets = _grabFrame.fingerPoseAimValid,
-                                .sweepContactRadiusGameUnits = g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits,
-                                .thumbSweepMaxOpenValue = g_rockConfig.rockGrabThumbSweepMaxOpenValue,
-                                .fingerSweepMaxOpenValue = g_rockConfig.rockGrabFingerSweepMaxOpenValue,
-                                .meshFingerPoseEnabled = g_rockConfig.rockGrabMeshFingerPoseEnabled,
-                                .captureSweepDebug = g_rockConfig.rockDebugShowGrabFingerSweptArc,
-                            });
-                        fingerPose = frozenSolve.pose;
-                        sweepDebugCapture = frozenSolve.sweepDebug;
-                        liveFingerSnapshotAtGrab = frozenSolve.liveFingerSnapshot;
-                        spatialIndexBuilt = frozenSolve.spatialIndexBuilt;
-                        commandedOpenDirectionsValid = frozenSolve.commandedOpenDirectionsValid;
-                    }
-                    _grabFingerSweepDebugCapture = sweepDebugCapture;
-                    _grabFingerSweepDebugObjectWorld = targetObjectWorld;
-                    _hasGrabFingerSweepDebug = sweepDebugCapture.valid;
-                    _grabFingerPose = fingerPose;
-                    _grabFingerProbeStart = fingerPose.probeStart;
-                    _grabFingerProbeEnd = fingerPose.probeEnd;
-                    _hasGrabFingerProbeDebug = fingerPose.candidateTriangleCount > 0;
-                    auto publishFingerPose = grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, targetObjectWorld);
-                    if (g_rockConfig.rockDebugShowGrabFingerProbes) {
-                        std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padEvidence{};
-                        (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(publishFingerPose, targetFingerPoseWorldTriangles, targetFingerPoseTargets,
-                            liveFingerSnapshotAtGrab, targetObjectWorld, g_rockConfig.rockGrabMeshFingerPoseEnabled, true, padEvidence, false,
-                            {}, !pinchFingerPose && spatialIndexBuilt ? &_grabFingerTriangleIndex : nullptr);
-                        const auto padDebug = makeFingerPadPublishDebug(publishFingerPose, padEvidence);
-                        _grabFingerPadProbeStart = padDebug.padProbeStart;
-                        _grabFingerPadProbeEnd = padDebug.padProbeEnd;
-                        _grabFingerPadProbeHit = padDebug.padProbeHit;
-                        _grabFingerPadProbeHitValid = padDebug.padProbeHitValid;
-                        _hasGrabFingerPadProbeDebug = padDebug.hasPadProbeDebug;
-                        _grabFingerSurfaceTarget = padDebug.surfaceTarget;
-                        _grabFingerSurfaceTargetValid = padDebug.surfaceTargetValid;
-                        _hasGrabFingerSurfaceTargetDebug = padDebug.hasSurfaceTargetDebug;
-                    } else {
-                        _hasGrabFingerPadProbeDebug = false;
-                        _hasGrabFingerSurfaceTargetDebug = false;
-                    }
-                    if (!touchHeldAtCommit) {
-                        publishFingerPose = buildAcquisitionFingerPose(publishFingerPose, 0.0f);
-                    }
-                    applyRockGrabHandPose(_isLeft, publishFingerPose, _grabFingerJointPose, _hasGrabFingerJointPose, _grabFingerLocalTransforms, _grabFingerLocalTransformMask,
-                        _hasGrabFingerLocalTransforms, 0.0f, /*publishLocalTransforms=*/legacyFingerPose, touchHeldAtCommit);
-                    _grabFingerPosePublished = true;
-                    _grabFingerLocalTransformFinalizePending = !legacyFingerPose && touchHeldAtCommit && _grabFingerPose.solved;
-                    ROCK_LOG_DEBUG(Hand, "{} THREE-PHASE GRAB POSE TARGET: phase={} targetSpace=yes solved={} hits={} triangles={} spatial={} nodes={} tests={} commandedAnchors={}",
-                        handName(), grab_three_phase::phaseName(_grabAcquisitionPhase), _grabFingerPose.solved ? "yes" : "no", _grabFingerPose.hitCount,
-                        _grabFingerPose.candidateTriangleCount, _grabFingerPose.usedSpatialIndex ? "yes" : "no", _grabFingerPose.spatialNodeVisitCount,
-                        _grabFingerPose.spatialTriangleTestCount, commandedOpenDirectionsValid ? "yes" : "no");
+                    // The seat is final: solve once against the commanded relation.
+                    solveAndPublishGrabFingerPose(GrabFingerSolveFrame{
+                        .objectWorld = legacyFingerPose ? objectWorldTransform : _grabFrame.authority.desiredObjectWorldAtGrab,
+                        .liveHandWorld = handWorldTransform,
+                        .solveHandWorld = handWorldTransform,
+                        .pivotWorld = _grabFrame.hasTelemetryCapture ? _grabFrame.authority.grabPivotWorldAtGrab :
+                                                                       computeGrabPivotAWorld(world, handWorldTransform),
+                        .touchHeld = touchHeldAtCommit,
+                        .stage = "commit",
+                    });
                 }
             }
 
@@ -8248,7 +8228,6 @@ namespace rock
 
         GrabMeshExtraction meshExtraction{};
         auto& grabMeshTriangles = meshExtraction.meshTriangles;
-        std::vector<TriangleData> grabFingerPoseMeshTriangles;
         auto& grabSurfaceTriangles = meshExtraction.surfaceTriangles;
         std::vector<GrabLocalTriangle> grabLocalMeshTriangles;
         std::vector<GrabLocalTriangle> grabFingerPoseLocalMeshTriangles;
@@ -8543,7 +8522,6 @@ namespace rock
                 }
                 return GrabAttemptResult::Rejected;
             }
-            grabFingerPoseMeshTriangles = std::move(bodyFrameCapture.fingerPoseMeshTriangles);
             grabFingerPoseLocalMeshTriangles = std::move(bodyFrameCapture.fingerPoseLocalMeshTriangles);
 
             const GrabRollbackAction seatRollback{
@@ -8623,7 +8601,6 @@ namespace rock
             .objectBodyId = objectBodyId,
             .bodyBoneColliders = bodyBoneColliders,
             .activeLifecycle = &activeLifecycle,
-            .fingerPoseMeshTriangles = &grabFingerPoseMeshTriangles,
             .savedGrabOffset = &savedGrabOffset,
             .hasSavedGrabOffset = hasSavedGrabOffset,
             .joiningPeerHeldObject = joiningPeerHeldObject,
@@ -9623,110 +9600,14 @@ namespace rock
                         if (tryComputeGrabProxyLocalPalmPocketPivotAWorld(world, livePivotAWorld)) {
                             fingerPosePivotWorld = livePivotAWorld;
                         }
-                        std::vector<TriangleData> touchHeldWorldTriangles;
-                        root_flattened_finger_skeleton_runtime::Snapshot liveFingerSnapshot{};
-                        const bool liveFingerSnapshotResolved =
-                            root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, liveFingerSnapshot);
-                        const bool liveFingerSnapshotValid =
-                            liveFingerSnapshotResolved &&
-                            rebaseFingerSkeletonSnapshot(liveFingerSnapshot, handWorldTransform, finalPoseHandWorld);
-                        if (!liveFingerSnapshotValid) {
-                            liveFingerSnapshot = {};
-                        }
-                        const auto* liveFingerSnapshotPtr = liveFingerSnapshotValid ? &liveFingerSnapshot : nullptr;
-                        const auto touchHeldFingerPoseTargets = rebuildFingerPoseTargetsFromGrabFrame(_grabFrame, currentNodeWorld);
-                        const bool pinchFingerPose = _grabFrame.seat.mode == GrabSeatMode::PinchPocket;
-                        bool commandedOpenDirectionsValid = false;
-                        if (pinchFingerPose || legacyFingerPose) {
-                            touchHeldWorldTriangles = rebuildFingerPoseWorldTrianglesFromGrabFrame(_grabFrame, currentNodeWorld);
-                            _grabFingerPose = grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(touchHeldWorldTriangles, finalPoseHandWorld, _isLeft, fingerPosePivotWorld,
-                                touchHeldFingerPoseTargets, g_rockConfig.rockGrabFingerMinValue, g_rockConfig.rockGrabMaxTriangleDistance, !pinchFingerPose, liveFingerSnapshotPtr,
-                                g_rockConfig.rockGrabFingerRejectBacksideHits, g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits, _grabFrame.fingerPoseAimValid,
-                                g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits, -1.0f, g_rockConfig.rockGrabThumbSweepMaxOpenValue,
-                                g_rockConfig.rockGrabFingerSweepMaxOpenValue,
-                                nullptr, nullptr, nullptr, nullptr,
-                                legacyFingerPose ? grab_finger_pose_runtime::FingerPoseMeshRelation::CurrentMeshRequiresVirtualSeat :
-                                    grab_finger_pose_runtime::FingerPoseMeshRelation::AlreadyAtCommandedSeat,
-                                _grabFingerPose.mode);
-                        } else {
-                            const auto& localFingerPoseTriangles = !_grabFrame.fingerPoseLocalMeshTriangles.empty() ?
-                                _grabFrame.fingerPoseLocalMeshTriangles :
-                                _grabFrame.localMeshTriangles;
-                            const auto frozenSolve = grab_finger_pose_runtime::solveFrozenMeshFingerPoseBase(
-                                localFingerPoseTriangles,
-                                currentNodeWorld,
-                                finalPoseHandWorld,
-                                _isLeft,
-                                fingerPosePivotWorld,
-                                touchHeldFingerPoseTargets,
-                                _grabFingerTriangleIndex,
-                                touchHeldWorldTriangles,
-                                grab_finger_pose_runtime::FrozenMeshFingerPoseSolveOptions{
-                                    .minValue = g_rockConfig.rockGrabFingerMinValue,
-                                    .maxTriangleDistanceSquared = g_rockConfig.rockGrabMaxTriangleDistance,
-                                    .rejectBacksideHits = g_rockConfig.rockGrabFingerRejectBacksideHits,
-                                    .surfacePlaneToleranceGameUnits = g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
-                                    .allowSurfaceAimTargets = _grabFrame.fingerPoseAimValid,
-                                    .sweepContactRadiusGameUnits = g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits,
-                                    .thumbSweepMaxOpenValue = g_rockConfig.rockGrabThumbSweepMaxOpenValue,
-                                    .fingerSweepMaxOpenValue = g_rockConfig.rockGrabFingerSweepMaxOpenValue,
-                                    .meshFingerPoseEnabled = g_rockConfig.rockGrabMeshFingerPoseEnabled,
-                                    .captureSweepDebug = g_rockConfig.rockDebugShowGrabFingerSweptArc,
-                                },
-                                &liveFingerSnapshot);
-                            _grabFingerPose = frozenSolve.pose;
-                            liveFingerSnapshot = frozenSolve.liveFingerSnapshot;
-                            commandedOpenDirectionsValid = frozenSolve.commandedOpenDirectionsValid;
-                            _grabFingerSweepDebugCapture = frozenSolve.sweepDebug;
-                            _grabFingerSweepDebugObjectWorld = currentNodeWorld;
-                            _hasGrabFingerSweepDebug = frozenSolve.sweepDebug.valid;
-                        }
-                        if (pinchFingerPose) {
-                            applyPinchFingerPosePolicy(_grabFingerPose, _grabFrame);
-                        }
-                        grab_finger_pose_runtime::useThumbIndexCurveOnlyPose(_grabFingerPose);
-                        std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padCaptureEvidence{};
-                        (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(_grabFingerPose, touchHeldWorldTriangles, touchHeldFingerPoseTargets, liveFingerSnapshot,
-                            currentNodeWorld, g_rockConfig.rockGrabMeshFingerPoseEnabled, true, padCaptureEvidence, true,
-                            {}, !pinchFingerPose ? &_grabFingerTriangleIndex : nullptr);
-                        grab_finger_pose_runtime::captureSurfaceAimObjectLocal(_grabFingerPose, currentNodeWorld);
-                        _grabFingerProbeStart = _grabFingerPose.probeStart;
-                        _grabFingerProbeEnd = _grabFingerPose.probeEnd;
-                        _hasGrabFingerProbeDebug = _grabFingerPose.candidateTriangleCount > 0;
-                        auto publishFingerPose = grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, currentNodeWorld);
-                        if (g_rockConfig.rockDebugShowGrabFingerProbes) {
-                            std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padEvidence{};
-                            (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(publishFingerPose, touchHeldWorldTriangles, touchHeldFingerPoseTargets,
-                                liveFingerSnapshot, currentNodeWorld, g_rockConfig.rockGrabMeshFingerPoseEnabled, true, padEvidence, false,
-                                {}, !pinchFingerPose ? &_grabFingerTriangleIndex : nullptr);
-                            const auto padDebug = makeFingerPadPublishDebug(publishFingerPose, padEvidence);
-                            _grabFingerPadProbeStart = padDebug.padProbeStart;
-                            _grabFingerPadProbeEnd = padDebug.padProbeEnd;
-                            _grabFingerPadProbeHit = padDebug.padProbeHit;
-                            _grabFingerPadProbeHitValid = padDebug.padProbeHitValid;
-                            _hasGrabFingerPadProbeDebug = padDebug.hasPadProbeDebug;
-                            _grabFingerSurfaceTarget = padDebug.surfaceTarget;
-                            _grabFingerSurfaceTargetValid = padDebug.surfaceTargetValid;
-                            _hasGrabFingerSurfaceTargetDebug = padDebug.hasSurfaceTargetDebug;
-                        } else {
-                            _hasGrabFingerPadProbeDebug = false;
-                            _hasGrabFingerSurfaceTargetDebug = false;
-                        }
-                        applyRockGrabHandPose(_isLeft, publishFingerPose, _grabFingerJointPose, _hasGrabFingerJointPose, _grabFingerLocalTransforms, _grabFingerLocalTransformMask,
-                            _hasGrabFingerLocalTransforms, 0.0f, /*publishLocalTransforms=*/legacyFingerPose, true);
-                        _grabFingerPosePublished = true;
-                        _grabFingerLocalTransformFinalizePending = !legacyFingerPose && _grabFingerPose.solved;
-                        ROCK_LOG_DEBUG(Hand,
-                            "{} THREE-PHASE GRAB FINAL POSE: phase=TouchHeld solved={} hits={} triangles={} spatial={} nodes={} tests={} commandedAnchors={} localTransforms={}",
-                            handName(),
-                            _grabFingerPose.solved ? "yes" : "no",
-                            _grabFingerPose.hitCount,
-                            _grabFingerPose.candidateTriangleCount,
-                            _grabFingerPose.usedSpatialIndex ? "yes" : "no",
-                            _grabFingerPose.spatialNodeVisitCount,
-                            _grabFingerPose.spatialTriangleTestCount,
-                            commandedOpenDirectionsValid ? "yes" : "no",
-                            legacyFingerPose ? "live-legacy" : "pending");
+                        solveAndPublishGrabFingerPose(GrabFingerSolveFrame{
+                            .objectWorld = currentNodeWorld,
+                            .liveHandWorld = handWorldTransform,
+                            .solveHandWorld = finalPoseHandWorld,
+                            .pivotWorld = fingerPosePivotWorld,
+                            .touchHeld = true,
+                            .stage = "touchHeld",
+                        });
                     } else {
                         const RE::NiTransform finalPoseObjectWorld = grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyAuthorityWorld, _grabFrame.proxyAuthorityHandSpace);
                         const auto finalFingerPose = grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, finalPoseObjectWorld);

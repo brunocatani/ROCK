@@ -4682,16 +4682,13 @@ namespace rock::grab_finger_local_transform_runtime
     }
 
     [[nodiscard]] inline bool applyAlternateThumbPlaneCorrection(
-        bool isLeft,
         const grab_finger_pose_runtime::SolvedGrabFingerPose& fingerPose,
         std::array<LiveFingerTransform, 15>& liveNodes,
         float maxCorrectionRadians,
         float strength,
         bool surfaceSafetyEnabled,
         float surfaceSafetyMarginGameUnits,
-        frik_visual_authority::FingerLocalTransformOverride& transforms,
-        const char** outFailureReason = nullptr,
-        std::size_t* outFailureIndex = nullptr)
+        frik_visual_authority::FingerLocalTransformOverride& transforms)
     {
         const float configuredStrength = grab_finger_local_transform_math::sanitizeUnitStrength(
             strength, grab_finger_local_transform_math::kDefaultThumbAlternateCurveStrength);
@@ -4765,13 +4762,6 @@ namespace rock::grab_finger_local_transform_runtime
             RE::NiTransform localTransform = transforms.localTransforms[segment];
             localTransform.rotate = transform_math::orthonormalizeStoredRotation(
                 transform_math::multiplyStoredRotations(targetWorldRotation, transform_math::transposeRotation(node.parentWorld.rotate)));
-            const auto safetyFailure = grab_finger_local_transform_math::inspectFingerLocalTransformForPublication(localTransform);
-            if (safetyFailure != grab_finger_local_transform_math::FingerLocalTransformSafetyFailure::None) {
-                logRejectedFingerTransform(isLeft, segment, "alternate-thumb-correction", localTransform, safetyFailure);
-                setTransformFailure(outFailureReason, outFailureIndex, "corrected-thumb-transform", segment);
-                return false;
-            }
-
             transforms.localTransforms[segment] = localTransform;
             if (!grab_finger_pose_runtime::usesCapturedFingerDirections(fingerPose.mode)) {
                 updatePoseFingerTransform(segment, transforms, liveNodes);
@@ -4832,10 +4822,6 @@ namespace rock::grab_finger_local_transform_runtime
             grab_finger_local_transform_math::inspectStoredRotationBasis(hand->world) !=
                 grab_finger_local_transform_math::FingerLocalTransformSafetyFailure::None) {
             setTransformFailure(outFailureReason, outFailureIndex, "pose-hand-transform", kInvalidFingerLocalTransformIndex);
-            return false;
-        }
-        if (!fingerLocalTransformOverrideIsSafeForPublication(baseline, outFailureIndex)) {
-            setTransformFailure(outFailureReason, nullptr, "pose-baseline-transform", 0);
             return false;
         }
         const RE::NiTransform handWorld = transform_math::orthonormalizedTransform(hand->world);
@@ -4939,16 +4925,6 @@ namespace rock::grab_finger_local_transform_runtime
         outTransforms.enabledMask = grab_finger_local_transform_math::sanitizeFingerLocalTransformMask(baseline.enabledMask);
         if (outTransforms.enabledMask != grab_finger_local_transform_math::kFullFingerLocalTransformMask) {
             setTransformFailure(outFailureReason, outFailureIndex, "baseline-mask", kInvalidFingerLocalTransformIndex);
-            return false;
-        }
-
-        std::size_t unsafeBaselineIndex = kInvalidFingerLocalTransformIndex;
-        grab_finger_local_transform_math::FingerLocalTransformSafetyFailure unsafeBaselineFailure{};
-        if (!fingerLocalTransformOverrideIsSafeForPublication(baseline, &unsafeBaselineIndex, &unsafeBaselineFailure)) {
-            if (unsafeBaselineIndex < std::size(baseline.localTransforms)) {
-                logRejectedFingerTransform(isLeft, unsafeBaselineIndex, "baseline", baseline.localTransforms[unsafeBaselineIndex], unsafeBaselineFailure);
-            }
-            setTransformFailure(outFailureReason, outFailureIndex, "baseline-finger-transform", unsafeBaselineIndex);
             return false;
         }
 
@@ -5071,13 +5047,6 @@ namespace rock::grab_finger_local_transform_runtime
                 RE::NiTransform localTransform = outTransforms.localTransforms[index];
                 localTransform.rotate = transform_math::orthonormalizeStoredRotation(
                     transform_math::multiplyStoredRotations(targetWorldRotation, transform_math::transposeRotation(node.parentWorld.rotate)));
-                const auto safetyFailure = grab_finger_local_transform_math::inspectFingerLocalTransformForPublication(localTransform);
-                if (safetyFailure != grab_finger_local_transform_math::FingerLocalTransformSafetyFailure::None) {
-                    logRejectedFingerTransform(isLeft, index, "surface-correction", localTransform, safetyFailure);
-                    setTransformFailure(outFailureReason, outFailureIndex, "corrected-finger-transform", index);
-                    return false;
-                }
-
                 outTransforms.localTransforms[index] = localTransform;
                 if (!legacy) {
                     updatePoseFingerTransform(index, outTransforms, liveNodes);
@@ -5086,36 +5055,17 @@ namespace rock::grab_finger_local_transform_runtime
             }
         }
 
-        const char* alternateFailureReason = nullptr;
-        std::size_t alternateFailureIndex = kInvalidFingerLocalTransformIndex;
         const bool appliedAlternateThumbCurve = wantsAlternateThumbPlaneCorrection && applyAlternateThumbPlaneCorrection(
-            isLeft,
             fingerPose,
             liveNodes,
             maxCorrectionRadians,
             options.thumbAlternateCurveStrength,
             options.thumbSurfaceSafetyEnabled,
             options.thumbSurfaceSafetyMarginGameUnits,
-            outTransforms,
-            &alternateFailureReason,
-            &alternateFailureIndex);
+            outTransforms);
 
         if (wantsAlternateThumbPlaneCorrection && !appliedAlternateThumbCurve) {
-            setTransformFailure(
-                outFailureReason,
-                outFailureIndex,
-                alternateFailureReason ? alternateFailureReason : "alternate-thumb-plane",
-                alternateFailureIndex);
-            return false;
-        }
-
-        std::size_t unsafeOutputIndex = kInvalidFingerLocalTransformIndex;
-        grab_finger_local_transform_math::FingerLocalTransformSafetyFailure unsafeOutputFailure{};
-        if (!fingerLocalTransformOverrideIsSafeForPublication(outTransforms, &unsafeOutputIndex, &unsafeOutputFailure)) {
-            if (unsafeOutputIndex < std::size(outTransforms.localTransforms)) {
-                logRejectedFingerTransform(isLeft, unsafeOutputIndex, "final-output", outTransforms.localTransforms[unsafeOutputIndex], unsafeOutputFailure);
-            }
-            setTransformFailure(outFailureReason, outFailureIndex, "output-finger-transform", unsafeOutputIndex);
+            setTransformFailure(outFailureReason, outFailureIndex, "alternate-thumb-plane", kInvalidFingerLocalTransformIndex);
             return false;
         }
 
@@ -5134,8 +5084,7 @@ namespace rock::grab_finger_local_transform_runtime
         const frik_visual_authority::FingerLocalTransformOverride& target,
         State& state,
         float smoothingSpeed,
-        float deltaTime,
-        bool isLeft)
+        float deltaTime)
     {
         frik_visual_authority::FingerLocalTransformOverride smoothed = target;
         const std::uint16_t targetMask = grab_finger_local_transform_math::sanitizeFingerLocalTransformMask(target.enabledMask);
@@ -5158,13 +5107,6 @@ namespace rock::grab_finger_local_transform_runtime
                 continue;
             }
 
-            const auto currentSafetyFailure = grab_finger_local_transform_math::inspectFingerLocalTransformForPublication(state.currentTransforms[i]);
-            if (currentSafetyFailure != grab_finger_local_transform_math::FingerLocalTransformSafetyFailure::None) {
-                logRejectedFingerTransform(isLeft, i, "smoothing-state", state.currentTransforms[i], currentSafetyFailure);
-                resetStateToTarget();
-                return smoothed;
-            }
-
             RE::NiTransform next = target.localTransforms[i];
             next.translate.x = state.currentTransforms[i].translate.x + (target.localTransforms[i].translate.x - state.currentTransforms[i].translate.x) * alpha;
             next.translate.y = state.currentTransforms[i].translate.y + (target.localTransforms[i].translate.y - state.currentTransforms[i].translate.y) * alpha;
@@ -5175,13 +5117,6 @@ namespace rock::grab_finger_local_transform_runtime
             const auto targetRotation = hand_visual_lerp_math::matrixToQuaternion(target.localTransforms[i].rotate);
             next.rotate = hand_visual_lerp_math::quaternionToMatrix<RE::NiMatrix3>(
                 hand_visual_lerp_math::slerp(currentRotation, targetRotation, alpha));
-
-            const auto nextSafetyFailure = grab_finger_local_transform_math::inspectFingerLocalTransformForPublication(next);
-            if (nextSafetyFailure != grab_finger_local_transform_math::FingerLocalTransformSafetyFailure::None) {
-                logRejectedFingerTransform(isLeft, i, "smoothed-output", next, nextSafetyFailure);
-                resetStateToTarget();
-                return smoothed;
-            }
 
             state.currentTransforms[i] = next;
             smoothed.localTransforms[i] = next;
@@ -5249,7 +5184,9 @@ namespace rock::grab_finger_local_transform_runtime
         }
 
         const Options sanitizedOptions = sanitizeOptions(options);
-        const auto smoothed = smoothLocalTransforms(corrected, state, sanitizedOptions.smoothingSpeed, deltaTime, isLeft);
+        const auto smoothed = smoothLocalTransforms(corrected, state, sanitizedOptions.smoothingSpeed, deltaTime);
+        // The one safety check: an unsafe result clears the override and
+        // the smoothing state, so the next publish starts from the target.
         std::size_t unsafeIndex = kInvalidFingerLocalTransformIndex;
         grab_finger_local_transform_math::FingerLocalTransformSafetyFailure unsafeFailure{};
         if (!fingerLocalTransformOverrideIsSafeForPublication(smoothed, &unsafeIndex, &unsafeFailure)) {

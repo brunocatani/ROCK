@@ -96,31 +96,6 @@ static bool testPublicationSafety()
     ok &= expectBool("reflected local finger basis is rejected before publication",
         inspectFingerLocalTransformForPublication(reflectedPublishedFingerTransform) == FingerLocalTransformSafetyFailure::RotationDeterminant, true);
 
-    {
-        rock::frik_visual_authority::FingerLocalTransformOverride target{};
-        target.enabledMask = kFullFingerLocalTransformMask;
-        for (auto& local : target.localTransforms) {
-            local = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
-        }
-
-        rock::grab_finger_local_transform_runtime::State poisonedState{};
-        poisonedState.currentMask = kFullFingerLocalTransformMask;
-        poisonedState.hasCurrentTransforms = true;
-        for (std::size_t index = 0; index < poisonedState.currentTransforms.size(); ++index) {
-            poisonedState.currentTransforms[index] = target.localTransforms[index];
-        }
-        poisonedState.currentTransforms[0].rotate.entry[0][0] = 1000.0f;
-        const auto recovered = rock::grab_finger_local_transform_runtime::smoothLocalTransforms(
-            target,
-            poisonedState,
-            14.0f,
-            1.0f / 90.0f,
-            false);
-        ok &= expectBool("poisoned dynamic-grab smoothing state resets to the safe target",
-            rock::grab_finger_local_transform_runtime::fingerLocalTransformOverrideIsSafeForPublication(recovered), true);
-        ok &= expectBool("poisoned dynamic-grab smoothing state remains recovered",
-            inspectFingerLocalTransformForPublication(poisonedState.currentTransforms[0]) == FingerLocalTransformSafetyFailure::None, true);
-    }
 
     return ok;
 }

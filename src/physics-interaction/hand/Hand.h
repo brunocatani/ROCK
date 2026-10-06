@@ -860,6 +860,17 @@ namespace rock
             RE::hknpWorld* world,
             const GrabConstraintCommitInput& input);
 
+        struct GrabFingerSolveFrame
+        {
+            RE::NiTransform objectWorld{};
+            RE::NiTransform liveHandWorld{};
+            RE::NiTransform solveHandWorld{};
+            RE::NiPoint3 pivotWorld{};
+            bool touchHeld = false;
+            const char* stage = "";
+        };
+        void solveAndPublishGrabFingerPose(const GrabFingerSolveFrame& frame);
+
         HandTransitionResult applyTransition(const HandTransitionRequest& request);
 
         bool createProxyConstraintGrabDrive(RE::bhkWorld* bhkWorld,
