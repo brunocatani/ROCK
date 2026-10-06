@@ -423,6 +423,7 @@ namespace rock
         // check. Irregular shapes keep the seating radius.
         float rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits = 6.0f;
         float rockGrabSeatDepthSkinGameUnits = 0.5f;
+        int rockGrabCloseSeatMode = 0; // 0=current seat, 1=local grasp solve; captured per close grab.
         float rockGrabGripInsetGameUnits = 2.0f;
         float rockGrabConvergeMaxTimeSeconds = 0.35f;
         // Elapsed stable dwell inside the grab pocket before convergence

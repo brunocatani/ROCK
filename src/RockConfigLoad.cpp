@@ -1280,6 +1280,11 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid fGrabSeatDepthSkinGameUnits={} -- using 0.5", rockGrabSeatDepthSkinGameUnits);
             rockGrabSeatDepthSkinGameUnits = 0.5f;
         }
+        rockGrabCloseSeatMode = static_cast<int>(ini.GetLongValue(SECTION, "iGrabCloseSeatMode", rockGrabCloseSeatMode));
+        if (rockGrabCloseSeatMode != 0 && rockGrabCloseSeatMode != 1) {
+            ROCK_LOG_WARN(Config, "Invalid iGrabCloseSeatMode={} -- using 0", rockGrabCloseSeatMode);
+            rockGrabCloseSeatMode = 0;
+        }
         rockGrabGripInsetGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabGripInsetGameUnits", rockGrabGripInsetGameUnits));
         if (!std::isfinite(rockGrabGripInsetGameUnits) || rockGrabGripInsetGameUnits < 0.0f) {
             ROCK_LOG_WARN(Config, "Invalid fGrabGripInsetGameUnits={} -- using 2.0", rockGrabGripInsetGameUnits);

@@ -413,6 +413,23 @@ int main(int argc, char** argv)
             require(rock::RockConfig::parseValues(poseValues).rockWeaponGrabPoseMode == 0,
                 "invalid weapon posing must preserve the shared setting");
         }
+        require(find(store, "iGrabCloseSeatMode").group == Group::Developer &&
+            find(store, "iGrabCloseSeatMode").value == "0", "close grabs must keep the current seat by default");
+        for (const auto* mode : { "1", "0", "1", "0" }) {
+            require(store.setValue(Group::Developer, "PhysicsInteraction", "iGrabCloseSeatMode", mode) && store.load(false),
+                "close-grab seat mode must switch and reset through the configuration API");
+            CSimpleIniA seatValues;
+            store.appendLoadedValues(seatValues);
+            const auto config = rock::RockConfig::parseValues(seatValues);
+            require(config.rockGrabCloseSeatMode == std::stoi(mode) && config.rockGrabFingerPoseMode == 1,
+                "close-grab seat hot reload must deliver the selected mode without changing finger posing");
+        }
+        for (const auto* invalid : { "-1", "2", "invalid" }) {
+            CSimpleIniA seatValues;
+            seatValues.SetValue("PhysicsInteraction", "iGrabCloseSeatMode", invalid);
+            require(rock::RockConfig::parseValues(seatValues).rockGrabCloseSeatMode == 0,
+                "invalid close-grab seat mode must keep the current seat");
+        }
         require(find(store, "iWeaponDropMode").type == ValueType::Integer &&
             find(store, "iWeaponDropMode").value == "2", "weapon drop must default to toggle drop");
         require(find(store, "iWeaponGrabMode").type == ValueType::Integer &&

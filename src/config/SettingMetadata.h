@@ -266,6 +266,7 @@ namespace rock::config
         { "PhysicsInteraction", "fGrabSeatDepthFootprintRadiusGameUnits", "09. Grab Acquisition", "", configuration_api::Group::Developer },
         { "PhysicsInteraction", "fGrabSeatPenetrationBackstopFootprintRadiusGameUnits", "09. Grab Acquisition", "", configuration_api::Group::Developer },
         { "PhysicsInteraction", "fGrabSeatDepthSkinGameUnits", "09. Grab Acquisition", "", configuration_api::Group::Developer },
+        { "PhysicsInteraction", "iGrabCloseSeatMode", "09. Grab Acquisition", "0 = Current seat. 1 = Local grasp solve.\nApplies on the next close grab of a loose object. Pulled, forced, pinched and authored grabs are unchanged.\nMode 1 reads the mesh in front of the palm. A handle, neck, rim or round body is turned into the hand,\nand the fingers close on that part instead of the body behind it.\nWhen no such part is found the current seat is used. ROCK.log reports the result of each grab.", configuration_api::Group::Developer },
         { "PhysicsInteraction", "fGrabGripInsetGameUnits", "09. Grab Acquisition", "Moves the captured grip point slightly inside the object from the raw hit/mesh seed.", configuration_api::Group::Developer },
         { "PhysicsInteraction", "fGrabConvergeMaxTimeSeconds", "09. Grab Acquisition", "Optional near-converge diagnostic timeout. A value of 0 disables timeout promotion.", configuration_api::Group::Developer },
         { "PhysicsInteraction", "fGrabConvergeStableSeconds", "09. Grab Acquisition", "", configuration_api::Group::Developer },

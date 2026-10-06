@@ -709,6 +709,10 @@ namespace rock
         bool requiresSettledVisualHandRelation = false;
         bool hasSettledVisualHandRelation = false;
         bool hasPivotReacquire = false;
+        // Close-grab seat mode 1 turned or re-pivoted the object at capture.
+        // The commit ramps the drive target into that seat instead of
+        // snapping to it.
+        bool localGraspSeat = false;
     };
 
     struct GrabSupportFrameState

@@ -28,6 +28,7 @@
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
+#include "physics-interaction/grab/GrabLocalGraspSolve.h"
 #include "physics-interaction/grab/GrabPalmSeat.h"
 #include "physics-interaction/grab/GrabPoseCandidateSelector.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
@@ -9410,6 +9411,277 @@ namespace rock
                         }
 
                         /*
+                         * Close-grab seat mode 1 (iGrabCloseSeatMode): local grasp
+                         * solve. The current seat keeps the object's rotation and
+                         * slides the mesh point nearest the palm onto it, so a mug
+                         * handle held in front of the palm is seated like any other
+                         * point and the fingers stop on the mug body behind it. The
+                         * whole-mesh shape class cannot help: a mug is compact as a
+                         * whole and its handle is a bar only locally.
+                         *
+                         * This mode classifies the mesh inside a hand-sized window in
+                         * front of the palm (GrabLocalGraspSolve.h). When it finds a
+                         * bar, rim or round body there, that part's own point becomes
+                         * pivot B and the object turns about it onto the hand's grip
+                         * line. Pivot A moves from the palm centre toward the finger
+                         * bases by what the part's width allows, because closed
+                         * fingers trap a handle under their first segments and never
+                         * reach one lying on the palm centre. The depth stop below
+                         * then rests the turned surface on the palm exactly as it
+                         * does for any other seat.
+                         *
+                         * Plain close grabs of loose objects only. Pulled, forced,
+                         * pinched, authored, weapon and shared grabs keep their own
+                         * seat authority, and an unrecognised window keeps the current
+                         * seat: the mode changes how an object is placed, never whether
+                         * it is grabbed. One bounded pass at capture. The pivot source
+                         * stays GripSupportModel, so no seated reacquire can replace
+                         * this seat while the object is held.
+                         */
+                        grab_local_grasp::Result localGrasp{};
+                        const char* localGraspReason = "modeOff";
+                        bool localGraspApplied = false;
+                        // In-plane distance of pivot A from the palm centre. Zero
+                        // for every seat except a local grasp seat.
+                        RE::NiPoint3 seatPalmAnchorOffsetWorld{};
+                        float localGraspSeatForwardGameUnits = 0.0f;
+                        if (g_rockConfig.rockGrabCloseSeatMode == 1) {
+                            const auto localGraspStart = std::chrono::steady_clock::now();
+                            const std::size_t fingerTrianglesBefore = _grabFrame.fingerPoseLocalMeshTriangles.size();
+                            grab_local_grasp::NearestPoint localGraspSeed{};
+                            const bool plainCloseGrab =
+                                !programmaticArrival &&
+                                !nearAuthored &&
+                                !looseWeaponGrab &&
+                                !input.joiningPeerHeldObject &&
+                                sel.targetKind == grab_target::Kind::LooseObject;
+                            if (!plainCloseGrab) {
+                                localGraspReason = "notPlainCloseGrab";
+                            } else if (!seatShapeEvaluable || grabLocalMeshTriangles.empty()) {
+                                localGraspReason = "seatNotEvaluable";
+                            } else {
+                                // Pocket frame: x along the fingers, y across the palm,
+                                // z out of the palm, origin at the palm centre.
+                                const auto vectorToPocket = [&](const RE::NiPoint3& vectorWorld) {
+                                    return grab_local_grasp::Vec3{
+                                        dotProduct(vectorWorld, pocket.fingerForwardWorld),
+                                        dotProduct(vectorWorld, pocket.crossPalmWorld),
+                                        dotProduct(vectorWorld, pocket.palmNormalWorld),
+                                    };
+                                };
+                                const auto vectorToWorld = [&](const grab_local_grasp::Vec3& vectorPocket) {
+                                    return pocket.fingerForwardWorld * vectorPocket.x +
+                                           pocket.crossPalmWorld * vectorPocket.y +
+                                           pocket.palmNormalWorld * vectorPocket.z;
+                                };
+                                /*
+                                 * Node-local to pocket is affine, so it is sampled
+                                 * once instead of composing two transforms per
+                                 * vertex. The long basis keeps the float error of
+                                 * far-from-origin world coordinates out of the map.
+                                 */
+                                constexpr float kBasisLength = 64.0f;
+                                const RE::NiPoint3 nodeOriginWorld =
+                                    transform_math::localPointToWorld(objectWorldTransform, RE::NiPoint3{ 0.0f, 0.0f, 0.0f });
+                                const auto pocketOrigin = vectorToPocket(nodeOriginWorld - pocket.palmCenterWorld);
+                                const auto pocketColumn = [&](const RE::NiPoint3& axisLocal) {
+                                    const auto image = vectorToPocket(
+                                        transform_math::localPointToWorld(objectWorldTransform, axisLocal * kBasisLength) - nodeOriginWorld);
+                                    return grab_local_grasp::Vec3{ image.x / kBasisLength, image.y / kBasisLength, image.z / kBasisLength };
+                                };
+                                const auto pocketFromX = pocketColumn(RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+                                const auto pocketFromY = pocketColumn(RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+                                const auto pocketFromZ = pocketColumn(RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+                                const auto localToPocket = [&](const RE::NiPoint3& pointLocal) {
+                                    return grab_local_grasp::Vec3{
+                                        pocketOrigin.x + pocketFromX.x * pointLocal.x + pocketFromY.x * pointLocal.y + pocketFromZ.x * pointLocal.z,
+                                        pocketOrigin.y + pocketFromX.y * pointLocal.x + pocketFromY.y * pointLocal.y + pocketFromZ.y * pointLocal.z,
+                                        pocketOrigin.z + pocketFromX.z * pointLocal.x + pocketFromY.z * pointLocal.y + pocketFromZ.z * pointLocal.z,
+                                    };
+                                };
+
+                                // Same hand-neutral grip line the pull presentation seats rods on.
+                                const auto gripLinePocket = vectorToPocket(grab_three_phase::buildGripPresentationAxisTowardFingertips(
+                                    pocket.crossPalmWorld,
+                                    pocket.fingerForwardWorld,
+                                    g_rockConfig.rockPullPresentationGripAxisTiltDegrees));
+                                localGraspSeed = grab_local_grasp::nearestPointToOrigin(grabLocalMeshTriangles, localToPocket);
+                                const float behindPalmTolerance = (std::max)(0.0f, g_rockConfig.rockGrabSurfaceBehindPalmToleranceGameUnits);
+                                if (!localGraspSeed.found) {
+                                    localGraspReason = "noFiniteMesh";
+                                } else if (localGraspSeed.point.z < -behindPalmTolerance ||
+                                           std::hypot(localGraspSeed.point.x, localGraspSeed.point.y) > pocket.pocketRadiusGameUnits) {
+                                    // The window is read along the palm normal, which
+                                    // only describes mesh the palm actually faces.
+                                    localGraspReason = "nearestMeshNotInFrontOfPalm";
+                                } else {
+                                    localGrasp = grab_local_grasp::solve(
+                                        grabLocalMeshTriangles,
+                                        localGraspSeed.point,
+                                        gripLinePocket,
+                                        grab_local_grasp::Config{},
+                                        localToPocket);
+                                    localGraspReason = localGrasp.reason;
+                                }
+
+                                const RE::NiPoint3 localGraspPivotWorld = pocket.palmCenterWorld + vectorToWorld(localGrasp.pivot);
+                                if (localGrasp.valid && localGrasp.kind != grab_local_grasp::Kind::None &&
+                                    grab_three_phase::isFinite(localGraspPivotWorld)) {
+                                    grabGripPoint = localGraspPivotWorld;
+                                    if (localGrasp.hasAlignment) {
+                                        const RE::NiPoint3 fromWorld = normalizeOrZero(vectorToWorld(localGrasp.alignFrom));
+                                        const RE::NiPoint3 toWorld = normalizeOrZero(vectorToWorld(localGrasp.alignTo));
+                                        const RE::NiPoint3 rotationAxisRaw = crossProduct(fromWorld, toWorld);
+                                        const float sinAngle = std::sqrt((std::max)(0.0f, lengthSquared(rotationAxisRaw)));
+                                        const float cosAngle = std::clamp(dotProduct(fromWorld, toWorld), -1.0f, 1.0f);
+                                        const float angleRadians = std::atan2(sinAngle, cosAngle);
+                                        if (sinAngle > 0.000001f && angleRadians > 0.01f) {
+                                            const float invSin = 1.0f / sinAngle;
+                                            const RE::NiPoint3 rotationAxis{
+                                                rotationAxisRaw.x * invSin,
+                                                rotationAxisRaw.y * invSin,
+                                                rotationAxisRaw.z * invSin,
+                                            };
+                                            // About the new pivot, so the pivot pair is untouched.
+                                            seatBodyWorld = rotateTransformWorldAboutPoint(seatBodyWorld, rotationAxis, angleRadians, grabGripPoint);
+                                            seatObjectWorld = rotateTransformWorldAboutPoint(seatObjectWorld, rotationAxis, angleRadians, grabGripPoint);
+                                            seatAlignmentAngleDegrees = angleRadians * 57.29577951308232f;
+                                        }
+                                    }
+                                    seatAlignmentReason = localGrasp.reason;
+
+                                    /*
+                                     * Finger base joints from the created hand
+                                     * colliders. A base joint does not move when its
+                                     * finger curls, so the pose at grip press does
+                                     * not matter. The joint is the first segment's
+                                     * end away from the second segment; segment
+                                     * centres are used so no collider axis
+                                     * convention is involved.
+                                     */
+                                    {
+                                        using hand_collider_semantics::HandColliderRole;
+                                        constexpr std::array<std::pair<HandColliderRole, HandColliderRole>, 4> kFingerBaseSegments{ {
+                                            { HandColliderRole::IndexBase, HandColliderRole::IndexMiddle },
+                                            { HandColliderRole::MiddleBase, HandColliderRole::MiddleMiddle },
+                                            { HandColliderRole::RingBase, HandColliderRole::RingMiddle },
+                                            { HandColliderRole::PinkyBase, HandColliderRole::PinkyMiddle },
+                                        } };
+                                        const auto findSegment = [&](HandColliderRole role) -> const HandBoneColliderSet::PublishedSegmentFrame* {
+                                            for (const auto& segment : _boneColliders.segmentColliderFrames()) {
+                                                if (segment.valid && segment.role == role && grab_three_phase::isFinite(segment.target) &&
+                                                    std::isfinite(segment.length) && segment.length > 0.0f &&
+                                                    std::isfinite(segment.radius) && segment.radius > 0.0f) {
+                                                    return &segment;
+                                                }
+                                            }
+                                            return nullptr;
+                                        };
+                                        RE::NiPoint3 baseJointSumWorld{};
+                                        float fingerRadiusSum = 0.0f;
+                                        int fingerCount = 0;
+                                        for (const auto& [baseRole, middleRole] : kFingerBaseSegments) {
+                                            const auto* base = findSegment(baseRole);
+                                            const auto* middle = findSegment(middleRole);
+                                            if (!base || !middle) {
+                                                continue;
+                                            }
+                                            const RE::NiPoint3 towardPalm = normalizeOrZero(base->target.translate - middle->target.translate);
+                                            if (lengthSquared(towardPalm) <= 0.000001f) {
+                                                continue;
+                                            }
+                                            baseJointSumWorld = baseJointSumWorld + base->target.translate + towardPalm * (base->length * 0.5f);
+                                            fingerRadiusSum += base->radius;
+                                            ++fingerCount;
+                                        }
+                                        if (fingerCount > 0) {
+                                            const float inverseCount = 1.0f / static_cast<float>(fingerCount);
+                                            localGraspSeatForwardGameUnits = grab_local_grasp::fingerBaseSeat(
+                                                localGrasp,
+                                                vectorToPocket(baseJointSumWorld * inverseCount - pocket.palmCenterWorld),
+                                                fingerRadiusSum * inverseCount,
+                                                gripLinePocket);
+                                            seatPalmAnchorOffsetWorld = pocket.fingerForwardWorld * localGraspSeatForwardGameUnits;
+                                            grabPivotAWorld = pocket.palmCenterWorld + seatPalmAnchorOffsetWorld;
+                                        }
+                                    }
+                                    gripArea.contactSeedWorld = grabGripPoint;
+                                    gripEvidencePointWorld = grabGripPoint;
+                                    _grabObjectGripAtGrab.contactSeedWorld = grabGripPoint;
+                                    _grabObjectGripAtGrab.gripCenterWorld = grabGripPoint;
+                                    pivotAuthorityPocketDistanceGameUnits = pointDistanceGameUnits(grabPivotAWorld, grabGripPoint);
+                                    pivotAuthoritySelectionDeltaGameUnits =
+                                        sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, grabGripPoint) : std::numeric_limits<float>::max();
+                                    desiredBodyWorld = grab_frame_math::shiftObjectToAlignGripWithPocket(
+                                        seatBodyWorld,
+                                        grabPivotAWorld,
+                                        grabGripPoint);
+                                    desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
+                                    seatPoseChanged = true;
+                                    localGraspApplied = true;
+
+                                    if (localGrasp.threadFingers) {
+                                        /*
+                                         * Finger closure stops at first contact. With
+                                         * the body behind a handle loop still in its
+                                         * mesh, the fingers stop on that body on their
+                                         * way in and never reach the handle. Drop the
+                                         * triangles wholly behind the gap from closure
+                                         * only; seating and collision keep the full
+                                         * mesh. An emptied list would make closure fall
+                                         * back to that full mesh, so keep it populated.
+                                         */
+                                        auto& fingerTriangles = _grabFrame.fingerPoseLocalMeshTriangles;
+                                        const auto behindGap = [&](const GrabLocalTriangle& triangle) {
+                                            return grab_local_grasp::behindThreadGap(localGrasp,
+                                                localToPocket(triangle.v0), localToPocket(triangle.v1), localToPocket(triangle.v2));
+                                        };
+                                        const auto droppedCount = static_cast<std::size_t>(
+                                            std::count_if(fingerTriangles.begin(), fingerTriangles.end(), behindGap));
+                                        constexpr std::size_t kMinFingerClosureTriangles = 8;
+                                        if (droppedCount > 0 && fingerTriangles.size() - droppedCount >= kMinFingerClosureTriangles) {
+                                            std::erase_if(fingerTriangles, behindGap);
+                                        }
+                                    }
+                                }
+                            }
+                            const float localGraspMicroseconds = static_cast<float>(
+                                std::chrono::duration_cast<std::chrono::microseconds>(
+                                    std::chrono::steady_clock::now() - localGraspStart).count());
+                            // Applied-mode status: one line per grab while the mode is on.
+                            ROCK_LOG_INFO(Hand,
+                                "{} CLOSE GRAB SEAT: mode=1 localGrasp applied={} part={} reason={} turn={:.1f}deg towardFingers={:.2f}gu seed=({:.2f},{:.2f},{:.2f}) "
+                                "pivot=({:.2f},{:.2f},{:.2f}) width={:.2f} thickness={:.2f} length={:.2f} gapBehind={:.2f} slide={:.2f} "
+                                "elongation={:.2f} thread={} fingerTris={}->{} samples={} near={} meshTris={} us={:.0f} ref={:08X}",
+                                handName(),
+                                localGraspApplied ? "yes" : "no",
+                                grab_local_grasp::kindName(localGrasp.kind),
+                                localGraspReason,
+                                localGraspApplied ? seatAlignmentAngleDegrees : 0.0f,
+                                localGraspSeatForwardGameUnits,
+                                localGraspSeed.point.x,
+                                localGraspSeed.point.y,
+                                localGraspSeed.point.z,
+                                localGrasp.pivot.x,
+                                localGrasp.pivot.y,
+                                localGrasp.pivot.z,
+                                localGrasp.widthGameUnits,
+                                localGrasp.thicknessGameUnits,
+                                localGrasp.lengthGameUnits,
+                                localGrasp.gapBehindGameUnits,
+                                localGrasp.stationShiftGameUnits,
+                                localGrasp.elongation,
+                                localGrasp.threadFingers ? "yes" : "no",
+                                fingerTrianglesBefore,
+                                _grabFrame.fingerPoseLocalMeshTriangles.size(),
+                                localGrasp.sampleCount,
+                                localGrasp.nearSampleCount,
+                                grabLocalMeshTriangles.size(),
+                                localGraspMicroseconds,
+                                sel.refr ? sel.refr->GetFormID() : 0);
+                        }
+
+                        /*
                          * Fixed-budget fitted-objective refinement. This is not
                          * the reverted six-DOF solver: the current analytic seat
                          * remains the seed, exactly 12 nearby rotations are scored
@@ -9417,8 +9689,11 @@ namespace rock
                          * on the winner. The proxy and hand model are fixed-capacity,
                          * so candidate scoring performs no allocation and no work
                          * can leak into held-object reacquire.
+                         *
+                         * A local grasp seat is already solved against the part in
+                         * the hand; nudging it by whole-proxy score would undo that.
                          */
-                        if (seatShapeEvaluable && !_grabFrame.fingerPoseLocalMeshTriangles.empty()) {
+                        if (!localGraspApplied && seatShapeEvaluable && !_grabFrame.fingerPoseLocalMeshTriangles.empty()) {
                             const auto selectorStart = std::chrono::steady_clock::now();
                             grab_pose_candidate_selector::HandModel selectorHand{};
                             bool selectorPalmSeen = false;
@@ -9589,10 +9864,14 @@ namespace rock
                         float seatPenetrationBackstopGameUnits = 0.0f;
                         const char* seatPenetrationBackstopReason = "inactive";
                         if (!looseWeaponPrimaryAttachApplied && !usingPinchPocket && pocket.valid) {
+                            // The footprint is carried by the translation that puts
+                            // this origin on the palm centre, so a pivot A that sits
+                            // off the palm centre is taken out of it. The offset lies
+                            // in the palm plane and leaves every depth unchanged.
                             seatDepthStop = computeGrabPalmSeatDepthStop(
                                 grabLocalMeshTriangles,
                                 seatObjectWorld,
-                                grabGripPoint,
+                                grabGripPoint - seatPalmAnchorOffsetWorld,
                                 pocket,
                                 _boneColliders.segmentColliderFrames(),
                                 g_rockConfig.rockGrabSeatDepthFootprintRadiusGameUnits,
@@ -9771,6 +10050,7 @@ namespace rock
                         _grabFrame.seat.activeGrabPointMode = grabPointMode;
                         _grabFrame.seat.mode = usingPinchPocket ? GrabSeatMode::PinchPocket : GrabSeatMode::SupportGroup;
                         _grabFrame.seat.programmaticArrival = programmaticArrival;
+                        _grabFrame.seat.localGraspSeat = localGraspApplied;
                         if (looseWeaponPrimaryAttachApplied) {
                             _grabFrame.seat.mode = GrabSeatMode::SupportGroup;
                         }
@@ -9860,7 +10140,7 @@ namespace rock
                             handName(),
                             relationMode,
                             grabSeatModeName(_grabFrame.seat.mode),
-                            looseWeaponPrimaryAttachApplied ? "primaryWeaponAttach" : "preserve",
+                            looseWeaponPrimaryAttachApplied ? "primaryWeaponAttach" : (localGraspApplied ? "localGrasp" : "preserve"),
                             grab_three_phase::phaseName(_grabAcquisitionPhase),
                             captureReason,
                             semanticContacts.count > 0 ? "yes" : "no",
@@ -10769,9 +11049,13 @@ namespace rock
                 const char* driveReason = joiningPeerHeldObject ? "joining-peer-held-loose-object" : "ordinary-dynamic-loose-object";
                 RE::NiTransform initialProxyWorld = proxyFrameWorldAtGrab;
                 RE::NiPoint3 initialConstraintPivotWorld = grabPivotAWorld;
+                // A local grasp seat can turn the object up to a quarter turn
+                // about its grip. Ramp the target there like the other seats
+                // that rotate at capture; the visual hand stays on the
+                // controller until the ramp ends.
                 if (!joiningPeerHeldObject &&
                     sel.targetKind == grab_target::Kind::LooseObject &&
-                    (_grabFrame.syntheticLooseWeaponPrimaryAttach || sel.forcedArrival)) {
+                    (_grabFrame.syntheticLooseWeaponPrimaryAttach || sel.forcedArrival || _grabFrame.seat.localGraspSeat)) {
                     _grabOffsetAcquisition = grab_offset_acquisition::begin(
                         proxyFrameWorldAtGrab, _grabFrame.authority.bodyWorldAtGrab,
                         _grabFrame.proxyAuthorityBodyHandSpace, _grabFrame.authority.pivotBConstraintLocalGame);
