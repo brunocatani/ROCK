@@ -5,7 +5,6 @@
 #include "physics-interaction/hand/DynamicHandCollisionFeedbackPolicy.h"
 #include "physics-interaction/hand/WeaponReleaseCollisionLease.h"
 #include "physics-interaction/hand/DynamicHandSurfaceContactState.h"
-#include "physics-interaction/hand/DynamicHandCollisionTransitionPolicy.h"
 #include "physics-interaction/hand/DynamicHandCollisionTelemetry.h"
 #include "physics-interaction/hand/DynamicHandTwinTargets.h"
 #include "physics-interaction/hand/SurfaceFingerCollisionPolicy.h"
@@ -213,23 +212,17 @@ namespace rock
         // target queued for the next generated-body physics callback.
 
     private:
+        // Per-child post-solve result published by the physics step thread:
+        // the requested (pre-limit) target and the live body position, whose
+        // difference is the blocked depth while in contact.
         struct PhysicsTelemetrySample
         {
             RE::NiPoint3 requestedTargetWorldGame{};
-            RE::NiPoint3 commandedTargetWorldGame{};
             RE::NiPoint3 liveBodyWorldGame{};
-            RE::NiPoint3 targetVelocityWorldGameUnitsPerSecond{};
-            float approachSpeedGameUnitsPerSecond = 0.0f;
-            float physicsDeltaSeconds = 0.0f;
             bool valid = false;
-            bool targetVelocityValid = false;
             bool contactActive = false;
             bool worldContactActive = false;
-            bool recoveryTeleport = false;
-            std::uint64_t sourceSequence = 0;
-            std::uint64_t solveSequence = 0;
         };
-
         /*
          * Physics writes and the main thread reads these fields. Components
          * stay atomic to avoid a C++ data race; the odd/even sequence is a
@@ -241,26 +234,13 @@ namespace rock
             std::atomic<float> requestedX{ 0.0f };
             std::atomic<float> requestedY{ 0.0f };
             std::atomic<float> requestedZ{ 0.0f };
-            std::atomic<float> commandedX{ 0.0f };
-            std::atomic<float> commandedY{ 0.0f };
-            std::atomic<float> commandedZ{ 0.0f };
             std::atomic<float> liveX{ 0.0f };
             std::atomic<float> liveY{ 0.0f };
             std::atomic<float> liveZ{ 0.0f };
-            std::atomic<float> targetVelocityX{ 0.0f };
-            std::atomic<float> targetVelocityY{ 0.0f };
-            std::atomic<float> targetVelocityZ{ 0.0f };
-            std::atomic<float> approachSpeed{ 0.0f };
-            std::atomic<float> physicsDeltaSeconds{ 0.0f };
             std::atomic<bool> valid{ false };
-            std::atomic<bool> targetVelocityValid{ false };
             std::atomic<bool> contactActive{ false };
             std::atomic<bool> worldContactActive{ false };
-            std::atomic<bool> recoveryTeleport{ false };
-            std::atomic<std::uint64_t> sourceSequence{ 0 };
-            std::atomic<std::uint64_t> solveSequence{ 0 };
         };
-
         struct ProxySlot
         {
             BethesdaPhysicsBody body{};
@@ -275,21 +255,14 @@ namespace rock
             };
             /*
              * Physics-thread-only handshake between the pre-collide drive and
-             * the after-solve deviation sample of the same substep. Two targets
-             * with different jobs: the COMMANDED (velocity-limited) target
-             * detects contact — an unobstructed drive lands exactly on it, so
-             * any residual means the solver blocked the body — while the
-             * REQUESTED (pre-limit wand intent) target measures how deep the
-             * blocked intent is. Rendering the commanded residual instead
-             * saturates the deviation at maxLinearVelocity * driveDt, a value
-             * that steps with every substep-count/framerate change: the
-             * in-and-out "milli-punch" pulsing of in-game sessions 3-5.
+             * the after-solve deviation sample of the same substep. Contact
+             * comes from solver callbacks; the REQUESTED (pre-limit wand intent)
+             * target measures how deep the blocked intent is. The commanded
+             * (velocity-limited) residual would saturate at
+             * maxLinearVelocity * driveDt and pulse with framerate changes.
              */
             bool droveThisSubstep = false;
-            RE::NiTransform commandedTargetWorld{};
             RE::NiTransform requestedTargetWorld{};
-            RE::NiPoint3 commandedTargetGame{};
-            RE::NiPoint3 requestedTargetGame{};
             // Physics-thread copy of the last post-solve CONTACT deviation
             // (zero while tracking freely); feeds the next substep's contact
             // press cap (drive must lean on an established contact, not slam
@@ -297,9 +270,7 @@ namespace rock
             // contact from flapping around the enter threshold.
             RE::NiPoint3 lastPostSolveDeviationGame{};
             bool lastPostSolveDeviationValid = false;
-            bool lastPostSolveContact = false;
             RE::NiPoint3 droveTargetVelocityGameUnitsPerSecond{};
-            float drovePhysicsDeltaSeconds = 0.0f;
             bool droveTargetVelocityValid = false;
             bool droveRecoveryTeleport = false;
             /*
@@ -384,7 +355,6 @@ namespace rock
             bool visualActive = false;
             // Lines emitted for the current contact episode (debug trace).
             std::uint64_t poseFrame = 0; // Early decision awaiting final articulation.
-            std::uint64_t traceSourceSequence = 0; // physics thread
             RE::NiTransform lastPresentedHandWorld{};
             bool lastPresentedHandWorldValid = false;
             SurfaceLatch surfaceLatch{};
@@ -457,7 +427,7 @@ namespace rock
             bool leftHandWeaponOwned);
         void applyTransitionCollisionSuppression(RE::hknpWorld* world, bool suppressCollision);
         static void publishPhysicsTelemetry(ProxySlot& slot, const PhysicsTelemetrySample& sample);
-        [[nodiscard]] static bool readPhysicsTelemetry(const ProxySlot& slot, PhysicsTelemetrySample& outSample, std::uint64_t& outSequence);
+        [[nodiscard]] static bool readPhysicsTelemetry(const ProxySlot& slot, PhysicsTelemetrySample& outSample);
         static void clearPhysicsContactState(ProxySlot& slot);
         void updateHandHaptic(
             HandSlots& handSlots,
@@ -476,7 +446,6 @@ namespace rock
         std::uint64_t _telemetryUpdateSequence = 0;
         std::uint32_t _logCounter = 0;
         PhysicsCallbackQuiescenceGate* _physicsCallbackGate = nullptr;
-        dynamic_hand_collision_transition::State _transitionState{};
         bool _transitionCollisionSuppressed = false;
         std::atomic<bool> _transitionCollisionSuppressedAtomic{ false };
         std::array<bool, 2> _weaponOwnershipCollisionSuppressed{};

@@ -2698,24 +2698,18 @@
                         const auto requestedRole = handSample.isLeft ?
                             debug::MarkerOverlayRole::LeftDynamicHandRequestedDeviation :
                             debug::MarkerOverlayRole::RightDynamicHandRequestedDeviation;
-                        const auto residualRole = handSample.isLeft ?
-                            debug::MarkerOverlayRole::LeftDynamicHandSolverResidual :
-                            debug::MarkerOverlayRole::RightDynamicHandSolverResidual;
                         for (const auto& twin : handSample.twins) {
                             if (!twin.physicsSampleValid || !twin.contactActive) {
                                 continue;
                             }
                             addMarkerLine(requestedRole, twin.requestedTargetWorldGame, twin.liveBodyWorldGame);
-                            addMarkerLine(residualRole, twin.commandedTargetWorldGame, twin.liveBodyWorldGame);
                             addTextLineSized(twin.liveBodyWorldGame,
                                 1.45f,
                                 handColor,
-                                "%s %s RES=%.2f GAP=%.2f V=%.1f",
+                                "%s %s DEV=%.2f",
                                 handSample.isLeft ? "L" : "R",
                                 dynamic_hand_collision_telemetry::roleCode(twin.role),
-                                twin.solverResidualGameUnits,
-                                twin.requestedGapGameUnits,
-                                twin.approachSpeedGameUnitsPerSecond);
+                                twin.contactDeviationGameUnits);
                         }
                     }
                 }

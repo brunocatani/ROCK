@@ -394,35 +394,20 @@ namespace rock
     void DynamicHandCollisionRuntime::publishPhysicsTelemetry(ProxySlot& slot, const PhysicsTelemetrySample& sample)
     {
         auto& telemetry = slot.physicsTelemetry;
-        telemetry.sequence.fetch_add(1, std::memory_order_acq_rel);  // odd: write in progress
+        telemetry.sequence.fetch_add(1, std::memory_order_acq_rel);
         telemetry.requestedX.store(sample.requestedTargetWorldGame.x, std::memory_order_relaxed);
         telemetry.requestedY.store(sample.requestedTargetWorldGame.y, std::memory_order_relaxed);
         telemetry.requestedZ.store(sample.requestedTargetWorldGame.z, std::memory_order_relaxed);
-        telemetry.commandedX.store(sample.commandedTargetWorldGame.x, std::memory_order_relaxed);
-        telemetry.commandedY.store(sample.commandedTargetWorldGame.y, std::memory_order_relaxed);
-        telemetry.commandedZ.store(sample.commandedTargetWorldGame.z, std::memory_order_relaxed);
         telemetry.liveX.store(sample.liveBodyWorldGame.x, std::memory_order_relaxed);
         telemetry.liveY.store(sample.liveBodyWorldGame.y, std::memory_order_relaxed);
         telemetry.liveZ.store(sample.liveBodyWorldGame.z, std::memory_order_relaxed);
-        telemetry.targetVelocityX.store(sample.targetVelocityWorldGameUnitsPerSecond.x, std::memory_order_relaxed);
-        telemetry.targetVelocityY.store(sample.targetVelocityWorldGameUnitsPerSecond.y, std::memory_order_relaxed);
-        telemetry.targetVelocityZ.store(sample.targetVelocityWorldGameUnitsPerSecond.z, std::memory_order_relaxed);
-        telemetry.approachSpeed.store(sample.approachSpeedGameUnitsPerSecond, std::memory_order_relaxed);
-        telemetry.physicsDeltaSeconds.store(sample.physicsDeltaSeconds, std::memory_order_relaxed);
         telemetry.valid.store(sample.valid, std::memory_order_relaxed);
-        telemetry.targetVelocityValid.store(sample.targetVelocityValid, std::memory_order_relaxed);
         telemetry.contactActive.store(sample.contactActive, std::memory_order_relaxed);
         telemetry.worldContactActive.store(sample.worldContactActive, std::memory_order_relaxed);
-        telemetry.recoveryTeleport.store(sample.recoveryTeleport, std::memory_order_relaxed);
-        telemetry.sourceSequence.store(sample.sourceSequence, std::memory_order_relaxed);
-        telemetry.solveSequence.store(sample.solveSequence, std::memory_order_relaxed);
-        telemetry.sequence.fetch_add(1, std::memory_order_release);  // even: complete sample
+        telemetry.sequence.fetch_add(1, std::memory_order_release);
     }
 
-    bool DynamicHandCollisionRuntime::readPhysicsTelemetry(
-        const ProxySlot& slot,
-        PhysicsTelemetrySample& outSample,
-        std::uint64_t& outSequence)
+    bool DynamicHandCollisionRuntime::readPhysicsTelemetry(const ProxySlot& slot, PhysicsTelemetrySample& outSample)
     {
         constexpr int kMaxSnapshotAttempts = 4;
         const auto& telemetry = slot.physicsTelemetry;
@@ -438,41 +423,22 @@ namespace rock
                 telemetry.requestedY.load(std::memory_order_relaxed),
                 telemetry.requestedZ.load(std::memory_order_relaxed),
             };
-            sample.commandedTargetWorldGame = RE::NiPoint3{
-                telemetry.commandedX.load(std::memory_order_relaxed),
-                telemetry.commandedY.load(std::memory_order_relaxed),
-                telemetry.commandedZ.load(std::memory_order_relaxed),
-            };
             sample.liveBodyWorldGame = RE::NiPoint3{
                 telemetry.liveX.load(std::memory_order_relaxed),
                 telemetry.liveY.load(std::memory_order_relaxed),
                 telemetry.liveZ.load(std::memory_order_relaxed),
             };
-            sample.targetVelocityWorldGameUnitsPerSecond = RE::NiPoint3{
-                telemetry.targetVelocityX.load(std::memory_order_relaxed),
-                telemetry.targetVelocityY.load(std::memory_order_relaxed),
-                telemetry.targetVelocityZ.load(std::memory_order_relaxed),
-            };
-            sample.approachSpeedGameUnitsPerSecond = telemetry.approachSpeed.load(std::memory_order_relaxed);
-            sample.physicsDeltaSeconds = telemetry.physicsDeltaSeconds.load(std::memory_order_relaxed);
             sample.valid = telemetry.valid.load(std::memory_order_relaxed);
-            sample.targetVelocityValid = telemetry.targetVelocityValid.load(std::memory_order_relaxed);
             sample.contactActive = telemetry.contactActive.load(std::memory_order_relaxed);
             sample.worldContactActive = telemetry.worldContactActive.load(std::memory_order_relaxed);
-            sample.recoveryTeleport = telemetry.recoveryTeleport.load(std::memory_order_relaxed);
-            sample.sourceSequence = telemetry.sourceSequence.load(std::memory_order_relaxed);
-            sample.solveSequence = telemetry.solveSequence.load(std::memory_order_relaxed);
 
-            const std::uint64_t end = telemetry.sequence.load(std::memory_order_acquire);
-            if (begin == end && (end & 1u) == 0) {
+            if (telemetry.sequence.load(std::memory_order_acquire) == begin) {
                 outSample = sample;
-                outSequence = end;
                 return true;
             }
         }
 
         outSample = {};
-        outSequence = 0;
         return false;
     }
 
@@ -481,9 +447,7 @@ namespace rock
         slot.droveThisSubstep = false;
         slot.lastPostSolveDeviationGame = {};
         slot.lastPostSolveDeviationValid = false;
-        slot.lastPostSolveContact = false;
         slot.droveTargetVelocityGameUnitsPerSecond = {};
-        slot.drovePhysicsDeltaSeconds = 0.0f;
         slot.droveTargetVelocityValid = false;
         slot.droveRecoveryTeleport = false;
         publishPhysicsTelemetry(slot, {});
@@ -1196,10 +1160,7 @@ namespace rock
         slot.createdGeometryGeneration = 0;
         slot.droveThisSubstep = false;
         slot.divergenceDwellSeconds = 0.0f;
-        slot.commandedTargetWorld = {};
         slot.requestedTargetWorld = {};
-        slot.commandedTargetGame = {};
-        slot.requestedTargetGame = {};
         clearPhysicsContactState(slot);
         slot.teleportedAtomic.store(false, std::memory_order_release);
         slot.rebuildRequestedAtomic.store(false, std::memory_order_release);
@@ -1222,7 +1183,6 @@ namespace rock
             handSlots.consumedCompoundPoseSequence = 0;
         }
         handSlots.compoundGeometryGeneration = 0;
-        handSlots.traceSourceSequence = 0;
         handSlots.pendingSolverContactMaskAtomic.store(
             0,
             std::memory_order_release);
@@ -1846,7 +1806,6 @@ namespace rock
         _surfaceContactPublishSequenceAtomic.store(0, std::memory_order_release);
         _telemetryUpdateSequence = 0;
         _logCounter = 0;
-        _transitionState = {};
         _transitionCollisionSuppressed = false;
         _transitionCollisionSuppressedAtomic.store(false, std::memory_order_release);
         _weaponOwnershipCollisionSuppressed = {};
@@ -2021,14 +1980,10 @@ namespace rock
         const bool transitionTargetsStable =
             handTargetsStable(false, frame.right, rightHand) &&
             handTargetsStable(true, frame.left, leftHand);
-        const auto transitionStep = dynamic_hand_collision_transition::advance(
-            _transitionState,
-            frame.reloadBoundaryActive,
-            transitionTargetsStable);
-        _transitionState = transitionStep.state;
-        if (transitionStep.collisionStateChanged) {
-            applyTransitionCollisionSuppression(frame.hknpWorld, transitionStep.suppressCollision);
-        }
+        // Collision pauses for an animation boundary (reload) and resumes on
+        // the first frame after it whose twin targets are all valid.
+        applyTransitionCollisionSuppression(frame.hknpWorld,
+            frame.reloadBoundaryActive || (_transitionCollisionSuppressed && !transitionTargetsStable));
 
         // Stamp the sample actually used for this frame's visual correction;
         // rereading the atomic snapshot afterward could observe a newer solve.
@@ -2132,8 +2087,7 @@ namespace rock
             for (std::size_t bodyIndex = 0;
                  bodyIndex < kBodiesPerHand;
                  ++bodyIndex) {
-                auto& twinTelemetry = handTelemetry.twins[bodyIndex];
-                twinTelemetry.role =
+                handTelemetry.twins[bodyIndex].role =
                     dynamic_hand_collision_telemetry::roleForBodyIndex(
                         bodyIndex);
                 const auto* twinFrame = twinFrameForSlot(
@@ -2148,20 +2102,12 @@ namespace rock
                     continue;
                 }
 
-                twinTelemetry.lengthGameUnits = twinFrame->length;
-                twinTelemetry.radiusGameUnits = twinFrame->radius;
-                twinTelemetry.convexRadiusGameUnits =
-                    twinFrame->convexRadius;
                 driveTargets[bodyIndex] =
                     handSlots.surfaceLatch.active &&
                         handSlots.surfaceLatch.
                             proxyRelationshipValid[bodyIndex] ?
                     handSlots.surfaceLatch.lastProxyWorld[bodyIndex] :
                     twinFrame->target;
-                twinTelemetry.publishedTargetValid =
-                    isFiniteTransform(driveTargets[bodyIndex]);
-                twinTelemetry.publishedTargetWorld =
-                    driveTargets[bodyIndex];
             }
 
             const std::uint64_t geometryGeneration =
@@ -2209,63 +2155,27 @@ namespace rock
                     dynamic_hand_collision_telemetry::kInvalidBodyId;
 
                 PhysicsTelemetrySample physicsSample{};
-                std::uint64_t physicsSampleSequence = 0;
-                if (!readPhysicsTelemetry(
-                        handSlots.bodies[bodyIndex],
-                        physicsSample,
-                        physicsSampleSequence) ||
+                if (!readPhysicsTelemetry(handSlots.bodies[bodyIndex], physicsSample) ||
                     !physicsSample.valid ||
-                    !isFinitePoint(
-                        physicsSample.requestedTargetWorldGame) ||
-                    !isFinitePoint(
-                        physicsSample.commandedTargetWorldGame) ||
+                    !isFinitePoint(physicsSample.requestedTargetWorldGame) ||
                     !isFinitePoint(physicsSample.liveBodyWorldGame)) {
                     continue;
                 }
 
-                twinTelemetry.physicsSampleSequence =
-                    physicsSampleSequence;
                 twinTelemetry.physicsSampleValid = true;
-                twinTelemetry.targetVelocityValid =
-                    physicsSample.targetVelocityValid;
-                twinTelemetry.contactActive =
-                    physicsSample.contactActive;
-                twinTelemetry.worldContactActive =
-                    physicsSample.worldContactActive;
-                twinTelemetry.recoveryTeleport =
-                    physicsSample.recoveryTeleport;
-                twinTelemetry.requestedTargetWorldGame =
-                    physicsSample.requestedTargetWorldGame;
-                twinTelemetry.commandedTargetWorldGame =
-                    physicsSample.commandedTargetWorldGame;
-                twinTelemetry.liveBodyWorldGame =
-                    physicsSample.liveBodyWorldGame;
-                twinTelemetry.targetVelocityWorldGameUnitsPerSecond =
-                    physicsSample.
-                        targetVelocityWorldGameUnitsPerSecond;
-                twinTelemetry.approachSpeedGameUnitsPerSecond =
-                    physicsSample.approachSpeedGameUnitsPerSecond;
-                twinTelemetry.physicsDeltaSeconds =
-                    physicsSample.physicsDeltaSeconds;
-                twinTelemetry.solverResidualWorldGame = subtractPoints(
-                    twinTelemetry.liveBodyWorldGame,
-                    twinTelemetry.commandedTargetWorldGame);
-                twinTelemetry.requestedGapWorldGame = subtractPoints(
-                    twinTelemetry.liveBodyWorldGame,
-                    twinTelemetry.requestedTargetWorldGame);
-                twinTelemetry.solverResidualGameUnits = pointLength(
-                    twinTelemetry.solverResidualWorldGame);
-                twinTelemetry.requestedGapGameUnits = pointLength(
-                    twinTelemetry.requestedGapWorldGame);
-
+                twinTelemetry.contactActive = physicsSample.contactActive;
+                twinTelemetry.worldContactActive = physicsSample.worldContactActive;
+                twinTelemetry.requestedTargetWorldGame = physicsSample.requestedTargetWorldGame;
+                twinTelemetry.liveBodyWorldGame = physicsSample.liveBodyWorldGame;
                 if (!physicsSample.contactActive) {
                     continue;
                 }
 
-                twinTelemetry.contactDeviationWorldGame =
-                    twinTelemetry.requestedGapWorldGame;
-                twinTelemetry.contactDeviationGameUnits =
-                    twinTelemetry.requestedGapGameUnits;
+                twinTelemetry.contactDeviationWorldGame = subtractPoints(
+                    physicsSample.liveBodyWorldGame,
+                    physicsSample.requestedTargetWorldGame);
+                twinTelemetry.contactDeviationGameUnits = pointLength(
+                    twinTelemetry.contactDeviationWorldGame);
                 deviations[bodyIndex] =
                     twinTelemetry.contactDeviationWorldGame;
                 deviationValid[bodyIndex] = true;
@@ -2525,11 +2435,6 @@ namespace rock
             const auto queued = queueGeneratedKeyframedBodyTarget(owner.driveState, targets[kPalmSlot],
                 frame.deltaSeconds, dynamic_hand_collision_policy::kDivergenceTeleportDistanceGameUnits,
                 transportDelta);
-            auto& telemetry = _telemetrySnapshot.hands[handIndex(isLeft)];
-            for (std::size_t i = 0; i < kBodiesPerHand; ++i) {
-                telemetry.twins[i].publishedTargetWorld = targets[i];
-                telemetry.twins[i].publishedTargetValid = true;
-            }
         }
     }
 
@@ -2698,7 +2603,6 @@ namespace rock
                 0.0f,
                 mode);
 
-            handSlots.traceSourceSequence = result.sourceSequence;
             if (result.shouldRequestRebuild()) {
                 slot.rebuildRequestedAtomic.store(
                     true,
@@ -2707,20 +2611,13 @@ namespace rock
                 continue;
             }
             if (!result.driven ||
-                !result.hasRequestedTargetGameTransform ||
-                !result.hasCommandedTargetGameTransform) {
+                !result.hasRequestedTargetGameTransform) {
                 clearSemanticTelemetry();
                 continue;
             }
 
             slot.requestedTargetWorld =
                 result.requestedTargetGameTransform;
-            slot.commandedTargetWorld =
-                result.commandedTargetGameTransform;
-            slot.requestedTargetGame =
-                slot.requestedTargetWorld.translate;
-            slot.commandedTargetGame =
-                slot.commandedTargetWorld.translate;
             const float havokToGameScale = physics_scale::havokToGame();
             slot.droveTargetVelocityValid =
                 result.hasSampledTargetLinearVelocityHavok &&
@@ -2736,7 +2633,6 @@ namespace rock
                         havokToGameScale,
                 } :
                 RE::NiPoint3{};
-            slot.drovePhysicsDeltaSeconds = result.driveDeltaSeconds;
             slot.droveRecoveryTeleport = result.teleported;
             slot.droveThisSubstep = true;
 
@@ -2879,8 +2775,6 @@ namespace rock
 
             const RE::NiTransform requestedSceneWorld =
                 colliderFrameToSceneFrame(owner.requestedTargetWorld);
-            const RE::NiTransform commandedSceneWorld =
-                colliderFrameToSceneFrame(owner.commandedTargetWorld);
             const RE::NiTransform liveCompoundSceneWorld =
                 colliderFrameToSceneFrame(liveCompoundWorld);
 
@@ -2892,16 +2786,11 @@ namespace rock
                     transform_math::composeTransforms(
                         requestedSceneWorld,
                         childFrames[bodyIndex]);
-                const RE::NiTransform commandedChildWorld =
-                    transform_math::composeTransforms(
-                        commandedSceneWorld,
-                        childFrames[bodyIndex]);
                 const RE::NiTransform liveChildWorld =
                     transform_math::composeTransforms(
                         liveCompoundSceneWorld,
                         childFrames[bodyIndex]);
                 if (!isFiniteTransform(requestedChildWorld) ||
-                    !isFiniteTransform(commandedChildWorld) ||
                     !isFiniteTransform(liveChildWorld)) {
                     clearPhysicsContactState(
                         handSlots.bodies[bodyIndex]);
@@ -2939,27 +2828,11 @@ namespace rock
                 publishPhysicsTelemetry(
                     handSlots.bodies[bodyIndex],
                     PhysicsTelemetrySample{
-                        .requestedTargetWorldGame =
-                            requestedChildWorld.translate,
-                        .commandedTargetWorldGame =
-                            commandedChildWorld.translate,
+                        .requestedTargetWorldGame = requestedChildWorld.translate,
                         .liveBodyWorldGame = liveChildWorld.translate,
-                        .targetVelocityWorldGameUnitsPerSecond =
-                            owner.
-                                droveTargetVelocityGameUnitsPerSecond,
-                        .approachSpeedGameUnitsPerSecond =
-                            approachSpeedGameUnitsPerSecond,
-                        .physicsDeltaSeconds =
-                            owner.drovePhysicsDeltaSeconds,
                         .valid = true,
-                        .targetVelocityValid =
-                            owner.droveTargetVelocityValid,
                         .contactActive = contact,
                         .worldContactActive = worldContact,
-                        .recoveryTeleport =
-                            owner.droveRecoveryTeleport,
-                        .sourceSequence = handSlots.traceSourceSequence,
-                        .solveSequence = timing.solveSequence,
                     });
             }
 
@@ -2967,7 +2840,6 @@ namespace rock
                 liveCompoundWorld.translate,
                 owner.requestedTargetWorld.translate);
             owner.lastPostSolveDeviationValid = contactMask != 0;
-            owner.lastPostSolveContact = contactMask != 0;
 
             const bool anyContact = contactMask != 0;
             constexpr float entryGateSpeed = dynamic_hand_collision_policy::kHapticMinimumApproachSpeedGameUnitsPerSecond;
