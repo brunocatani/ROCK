@@ -67,19 +67,28 @@ using namespace std::literals;
         }                                                     \
     } while (false)
 
-#define ROCK_LOG_SAMPLE_DEBUG(category, time_ms, ...)         \
-    do {                                                      \
-        ::rock::logger::sampleDebug((time_ms), "[ROCK::" #category "] " __VA_ARGS__); \
+// The format literal is the throttle key. It is extracted without touching
+// the remaining arguments, so a rejected sample never evaluates them. The
+// EXPAND wrapper keeps __VA_ARGS__ splitting correct under both the
+// traditional and the conforming MSVC preprocessor.
+#define ROCK_LOG_DETAIL_EXPAND(x) x
+#define ROCK_LOG_DETAIL_FIRST_ARG(first, ...) first
+#define ROCK_LOG_DETAIL_SAMPLE(level, category, time_ms, ...)                                      \
+    do {                                                                                        \
+        if (::rock::logger::admitSample((level),                                                \
+                "[ROCK::" #category "] " ROCK_LOG_DETAIL_EXPAND(ROCK_LOG_DETAIL_FIRST_ARG(__VA_ARGS__, 0)), \
+                (time_ms))) {                                                                   \
+            ::rock::logger::emitSample((level), "[ROCK::" #category "] " __VA_ARGS__);          \
+        }                                                                                       \
     } while (false)
 
-#define ROCK_LOG_SAMPLE_INFO(category, time_ms, ...)          \
-    do {                                                      \
-        ::rock::logger::sample((time_ms), "[ROCK::" #category "] " __VA_ARGS__); \
-    } while (false)
+#define ROCK_LOG_SAMPLE_DEBUG(category, time_ms, ...) \
+    ROCK_LOG_DETAIL_SAMPLE(::spdlog::level::debug, category, time_ms, __VA_ARGS__)
 
-#define ROCK_LOG_SAMPLE_WARN(category, time_ms, ...)          \
-    do {                                                      \
-        ::rock::logger::sampleWarn((time_ms), "[ROCK::" #category "] " __VA_ARGS__); \
-    } while (false)
+#define ROCK_LOG_SAMPLE_INFO(category, time_ms, ...) \
+    ROCK_LOG_DETAIL_SAMPLE(::spdlog::level::info, category, time_ms, __VA_ARGS__)
+
+#define ROCK_LOG_SAMPLE_WARN(category, time_ms, ...) \
+    ROCK_LOG_DETAIL_SAMPLE(::spdlog::level::warn, category, time_ms, __VA_ARGS__)
 
 #endif

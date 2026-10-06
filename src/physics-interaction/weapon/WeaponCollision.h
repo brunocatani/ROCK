@@ -510,34 +510,6 @@ namespace rock
             weapon_generated_source_completeness_policy::GeneratedSourceCompleteness summary{};
         };
 
-        struct GeneratedRecaptureDiagnosticSource
-        {
-            std::uintptr_t sourceGroupId{ 0 };
-            std::uintptr_t sourceRootAddress{ 0 };
-            std::uintptr_t driveRootAddress{ 0 };
-            std::string sourceName;
-            RE::NiPoint3 weaponLocalCenter{};
-            RE::NiPoint3 sourceLocalCenter{};
-            RE::NiPoint3 sourceLocalMin{};
-            RE::NiPoint3 sourceLocalMax{};
-            std::shared_ptr<const GeneratedWeaponMeshGeometry> mesh;
-            std::size_t sourceLocalPointCount{ 0 };
-            std::size_t sourceLocalTriangleCount{ 0 };
-            float sourceNodeScale{ 1.0f };
-        };
-
-        struct GeneratedRecaptureDiagnostic
-        {
-            bool valid{ false };
-            bool sawUndrawnInterval{ false };
-            std::uint64_t equippedKey{ 0 };
-            std::uint64_t identityKey{ 0 };
-            std::uint64_t ownershipKey{ 0 };
-            std::uint32_t weaponFormID{ 0 };
-            std::uint32_t comparisonSequence{ 0 };
-            std::vector<GeneratedRecaptureDiagnosticSource> sources;
-        };
-
         struct PendingGeneratedWeaponBuild
         {
             bool active{ false };
@@ -646,12 +618,6 @@ namespace rock
         void clearGeneratedSourceCompletenessTracking();
         void clearPendingWeaponVisualRebuild();
         void clearGeneratedSourceCache();
-        void recordGeneratedRecaptureDiagnostic(
-            std::uint64_t equippedKey,
-            std::uint64_t identityKey,
-            std::uint64_t ownershipKey,
-            std::uint32_t weaponFormID,
-            const std::vector<GeneratedHullSource>& sources);
         void resetVisualSourceUnavailableRetention();
         bool canRetainCurrentWeaponBodiesForVisualSourceMiss(std::uint64_t observedIdentityKey, RE::NiAVObject* currentWeaponRoot, float retainSecondsLimit, float measuredDeltaSeconds);
         bool generatedSourceCacheMatches(
@@ -835,7 +801,6 @@ namespace rock
         // (WeaponCollisionDiagnostics and WeaponCollisionOmodDiagnostics).
         struct CollisionDiagnosticsState
         {
-            GeneratedRecaptureDiagnostic generatedRecapture{};
             int animNodeDumpFrameCounter{ 0 };
             std::uint64_t lastAnimNodeDumpKey{ 0 };
             // Debug OMOD evidence dump fires once per weapon generation key.

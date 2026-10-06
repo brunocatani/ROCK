@@ -249,8 +249,7 @@ namespace rock::performance_profiler
             case Scope::NativeImpactListener: return "nativeImpactListener";
             case Scope::NativeImpactDispatch: return "nativeImpactDispatch";
             case Scope::NativeImpactConsumer: return "nativeImpactConsumer";
-            case Scope::NativeImpactPlayPair: return "nativeImpactPlayPair";
-            case Scope::NativeImpactManifoldTrace: return "nativeImpactManifoldTrace";
+            case Scope::NativeImpactManifoldObserve: return "nativeImpactManifoldObserve";
             case Scope::RagdollComponentRead: return "ragdollComponentRead";
             case Scope::RagdollBodyRefresh: return "ragdollBodyRefresh";
             case Scope::GrabContactPatchIndexBuild: return "grabContactPatchIndexBuild";

@@ -102,9 +102,6 @@ namespace rock
         inline constexpr float WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS = 0.5f;
         inline constexpr std::size_t MAX_GENERATED_CHILD_CONVEXES_PER_SOURCE = 16;
         inline constexpr std::size_t GENERATED_WEAPON_BODY_CREATION_BATCH = 8;
-        inline constexpr float GENERATED_RECAPTURE_WEAPON_CENTER_DRIFT_GAME = 0.25f;
-        inline constexpr float GENERATED_RECAPTURE_SOURCE_CENTER_DRIFT_GAME = 0.10f;
-        inline constexpr std::size_t MAX_GENERATED_RECAPTURE_DETAIL_ROWS = 8;
         inline constexpr std::size_t MAX_COLLISION_SOUND_SHAPE_KEYS = 4096;
         inline constexpr std::size_t COLLISION_SOUND_SHAPE_KEY_BATCH = 64;
         inline constexpr std::size_t MAX_COLLISION_SOUND_HISTOGRAM_ROWS = 8;

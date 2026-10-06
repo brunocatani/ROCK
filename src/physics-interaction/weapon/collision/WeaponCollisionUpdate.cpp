@@ -28,7 +28,6 @@ namespace rock
         clearGeneratedSourceCache();
         _sources.detachedExclusionEquippedKey = 0;
         _sources.detachedExclusionGroups.clear();
-        _diagnostics.generatedRecapture = {};
         clearPendingGeneratedWeaponBuild(world, false);
         _bodies.usingReplacementBank = false;
         _drive.rebuildRequested.store(false, std::memory_order_release);
@@ -66,7 +65,6 @@ namespace rock
         clearGeneratedSourceCache();
         _sources.detachedExclusionEquippedKey = 0;
         _sources.detachedExclusionGroups.clear();
-        _diagnostics.generatedRecapture = {};
         clearPendingGeneratedWeaponBuild(_cachedWorld, true);
         _cachedWorld = nullptr;
         _cachedBhkWorld = nullptr;
@@ -98,7 +96,6 @@ namespace rock
             clearWeaponBodyInstance(instance, true);
         }
         _sources.pendingBuild = {};
-        _diagnostics.generatedRecapture = {};
         _bodies.usingReplacementBank = false;
         _cachedWorld = nullptr;
         clearGeneratedSourceCache();
@@ -182,14 +179,10 @@ namespace rock
             _cachedWorld = world;
             _sources.detachedExclusionEquippedKey = 0;
             _sources.detachedExclusionGroups.clear();
-            _diagnostics.generatedRecapture = {};
             clearCurrentWeaponState();
         }
 
         if (!weaponDrawn) {
-            if (_diagnostics.generatedRecapture.valid) {
-                _diagnostics.generatedRecapture.sawUndrawnInterval = true;
-            }
             if (hasWeaponBody()) {
                 ROCK_LOG_INFO(Weapon, "Weapon no longer drawn - destroying generated weapon bodies");
                 destroyWeaponBody(world);
@@ -494,12 +487,6 @@ namespace rock
                         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponColliderBuild);
                         generatedCount = findGeneratedWeaponShapeSources(weaponNode, observedKey, preparedSources);
                     }
-                    recordGeneratedRecaptureDiagnostic(
-                        observedKey,
-                        observedIdentityKey,
-                        observedOwnershipKey,
-                        observedFormID,
-                        preparedSources);
                     generatedSummary = summarizeGeneratedSources(preparedSources);
                     generatedSources = std::make_shared<const std::vector<GeneratedHullSource>>(std::move(preparedSources));
                 }

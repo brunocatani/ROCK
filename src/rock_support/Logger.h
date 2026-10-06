@@ -159,26 +159,6 @@ namespace rock::logger::internal
         }
     }
 
-    template <class... Args>
-    void sampleImpl(
-        const spdlog::level::level_enum level,
-        const int intervalMs,
-        spdlog::format_string_t<Args...> format,
-        Args&&... args)
-    {
-        if (!loggerInstance || !loggerInstance->should_log(level)) {
-            return;
-        }
-
-        const fmt::basic_string_view<char> formatView = format;
-        if (!shouldEmitSample(std::string_view(formatView.data(), formatView.size()), intervalMs)) {
-            return;
-        }
-
-        auto formatted = fmt::format(format, std::forward<Args>(args)...);
-        loggerInstance->log(level, "[sample] {}", formatted);
-    }
-
     class HybridFormatter final : public spdlog::formatter
     {
     public:
@@ -245,28 +225,24 @@ namespace rock::logger
         return internal::loggerInstance && internal::loggerInstance->should_log(spdlog::level::critical);
     }
 
-    template <class... Args>
-    void sample(spdlog::format_string_t<Args...> format, Args&&... args)
+    // Sampled messages are admitted before their arguments are evaluated:
+    // ROCK_LOG_SAMPLE_* calls admitSample() with the format literal (the
+    // throttle key) and only evaluates and formats arguments for an admitted
+    // sample. Admission claims the throttle slot, so emitSample() must follow.
+    [[nodiscard]] inline bool admitSample(
+        const spdlog::level::level_enum level,
+        const std::string_view format,
+        const int intervalMs)
     {
-        internal::sampleImpl(spdlog::level::info, 1000, format, std::forward<Args>(args)...);
+        return internal::loggerInstance && internal::loggerInstance->should_log(level) &&
+            internal::shouldEmitSample(format, intervalMs);
     }
 
     template <class... Args>
-    void sample(const int intervalMs, spdlog::format_string_t<Args...> format, Args&&... args)
+    void emitSample(const spdlog::level::level_enum level, spdlog::format_string_t<Args...> format, Args&&... args)
     {
-        internal::sampleImpl(spdlog::level::info, intervalMs, format, std::forward<Args>(args)...);
-    }
-
-    template <class... Args>
-    void sampleDebug(const int intervalMs, spdlog::format_string_t<Args...> format, Args&&... args)
-    {
-        internal::sampleImpl(spdlog::level::debug, intervalMs, format, std::forward<Args>(args)...);
-    }
-
-    template <class... Args>
-    void sampleWarn(const int intervalMs, spdlog::format_string_t<Args...> format, Args&&... args)
-    {
-        internal::sampleImpl(spdlog::level::warn, intervalMs, format, std::forward<Args>(args)...);
+        auto formatted = fmt::format(format, std::forward<Args>(args)...);
+        internal::loggerInstance->log(level, "[sample] {}", formatted);
     }
 
     template <class... Args>

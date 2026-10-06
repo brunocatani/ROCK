@@ -47,7 +47,6 @@ namespace
         requireScope("nativeImpactListener", 30);
         requireScope("nativeImpactDispatch", 30);
         requireScope("nativeImpactConsumer", 30);
-        requireScope("nativeImpactPlayPair", 30);
         assert(text.find("contactPairs=1 nativeWeaponSelfFilter=1") != std::string::npos);
         assert(text.find("otherMeleeForwarded=0 nativeWeaponSelfRejected=30") != std::string::npos);
         assert(text.find("Profiler counter nativeWeaponSelfPairsRejected: count=30") != std::string::npos);
@@ -152,7 +151,6 @@ int main()
             ScopedTimer listener(Scope::NativeImpactListener);
             ScopedTimer dispatch(Scope::NativeImpactDispatch);
             ScopedTimer consumer(Scope::NativeImpactConsumer);
-            ScopedTimer pair(Scope::NativeImpactPlayPair);
         }
         {
             ScopedTimer outer(Scope::RuntimePreparation);
