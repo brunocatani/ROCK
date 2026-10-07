@@ -1238,7 +1238,20 @@ namespace rock
         }
 
         RE::NiTransform nativeWeaponLocalBaseline = weaponNode->local;
-        if (_visuals.returningWeapon.localTransition.active && _visuals.returningWeapon.weaponNode == weaponNode) {
+        if (_hasWeaponNodeLocalBaseline && _session.weaponNode == weaponNode &&
+            _session.equippedWeaponOwnershipKey == currentEquippedWeaponOwnershipKey) {
+            // A support re-grab can occur during left carry, a bipod detach,
+            // or a driven two-hand pose. That presented parent-local transform
+            // is not the native return pose. Preserve it for this exact item
+            // and root, even when its collider generation was rebuilt.
+            nativeWeaponLocalBaseline = _weaponNodeLocalBaseline;
+            ROCK_LOG_DEBUG(Weapon,
+                "TwoHandedGrip: retained native return baseline ownership={:016X} firing={} nativeT=({:.3f},{:.3f},{:.3f}) presentedT=({:.3f},{:.3f},{:.3f})",
+                currentEquippedWeaponOwnershipKey, firingHandName(),
+                nativeWeaponLocalBaseline.translate.x, nativeWeaponLocalBaseline.translate.y, nativeWeaponLocalBaseline.translate.z,
+                weaponNode->local.translate.x, weaponNode->local.translate.y, weaponNode->local.translate.z);
+        } else if (_visuals.returningWeapon.localTransition.active && _visuals.returningWeapon.weaponNode == weaponNode &&
+            _visuals.returningWeapon.equippedWeaponOwnershipKey == currentEquippedWeaponOwnershipKey) {
             nativeWeaponLocalBaseline = _visuals.returningWeapon.nativeBaselineLocal;
         }
 
@@ -1765,10 +1778,12 @@ namespace rock
         if (currentWeaponGenerationKey == 0) {
             // PrimaryOnly rides the native firing-hand attach and can retain
             // ownership while the complete collider set is still building.
+            if (!_hasWeaponNodeLocalBaseline || _session.weaponNode != currentWeaponNode) {
+                _weaponNodeLocalBaseline = currentWeaponNode->local;
+                _hasWeaponNodeLocalBaseline = true;
+            }
             _session.weaponNode = currentWeaponNode;
             _session.weaponGenerationKey = 0;
-            _weaponNodeLocalBaseline = currentWeaponNode->local;
-            _hasWeaponNodeLocalBaseline = true;
             return rebindCarryFramesToWeapon(
                 currentWeaponNode,
                 0,
