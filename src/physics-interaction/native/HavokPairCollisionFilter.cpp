@@ -113,8 +113,9 @@ namespace rock
         }
 
         [[nodiscard]] void* findConstraintPairFilter(
-            RE::hknpWorld* world) noexcept
+            RE::hknpWorld* world, const char*& stage) noexcept
         {
+            stage = "added-signal-unreadable";
             std::uintptr_t tagged = 0;
             if (!world ||
                 !native_memory::tryReadField(
@@ -124,6 +125,7 @@ namespace rock
                 return nullptr;
             }
 
+            stage = "added-callback-missing";
             void* candidate = nullptr;
             std::uintptr_t previous = 0;
             for (std::size_t visited = 0;
@@ -152,17 +154,20 @@ namespace rock
                     return nullptr;
                 }
 
-                if (callback == constraintAddedCallback() &&
-                    filterOwnerMatches(owner, world) &&
-                    signalContainsOwner(
-                        world,
+                if (callback == constraintAddedCallback()) {
+                    if (!filterOwnerMatches(owner, world)) {
+                        stage = "filter-owner-identity-mismatch";
+                    } else if (!signalContainsOwner(world,
                         offsets::kHknpWorld_ConstraintRemovedSignal,
-                        constraintRemovedCallback(),
-                        owner)) {
-                    if (candidate && candidate != owner) {
-                        return nullptr;
+                        constraintRemovedCallback(), owner)) {
+                        stage = "removed-callback-missing";
+                    } else {
+                        if (candidate && candidate != owner) {
+                            stage = "ambiguous-filter";
+                            return nullptr;
+                        }
+                        candidate = owner;
                     }
-                    candidate = owner;
                 }
 
                 previous = slotAddress;
@@ -171,6 +176,7 @@ namespace rock
                     break;
                 }
             }
+            if (candidate) stage = "ready";
             return candidate;
         }
 
@@ -185,12 +191,13 @@ namespace rock
 
     template <std::size_t MaximumPairs, std::size_t OwnerGroupCount>
     bool BasicHavokPairCollisionLeaseSet<MaximumPairs, OwnerGroupCount>::resolveFilter(
-        RE::hknpWorld* world) noexcept
+        RE::hknpWorld* world, const char*& stage) noexcept
     {
         if (filterIdentityMatches(world)) {
+            stage = "ready";
             return true;
         }
-        _filter = findConstraintPairFilter(world);
+        _filter = findConstraintPairFilter(world, stage);
         _world = _filter ? world : nullptr;
         return _filter != nullptr;
     }
@@ -210,7 +217,7 @@ namespace rock
         if (_world && _world != world) {
             abandonWorld();
         }
-        if (!resolveFilter(world)) {
+        if (!resolveFilter(world, result.filterStage)) {
             return result;
         }
         result.filterAvailable = true;
@@ -240,6 +247,10 @@ namespace rock
                 RE::hknpBodyId{ normalized.bodyB });
             if (!snapshotA.valid || !snapshotB.valid ||
                 !snapshotA.collisionObject || !snapshotB.collisionObject) {
+                if (!snapshotA.valid || !snapshotB.valid) ++result.invalidBodies;
+                else ++result.missingOwners;
+                result.rejectedBodyA = normalized.bodyA;
+                result.rejectedBodyB = normalized.bodyB;
                 continue;
             }
             desired[acceptedDesiredCount++] = PairIdentity{
@@ -367,6 +378,9 @@ namespace rock
                 candidate.bodyA,
                 candidate.bodyB);
             if (referenceCount == 0) {
+                ++result.nativeRejected;
+                result.rejectedBodyA = candidate.bodyA;
+                result.rejectedBodyB = candidate.bodyB;
                 continue;
             }
             _activePairs[_activePairCount++] = candidate;

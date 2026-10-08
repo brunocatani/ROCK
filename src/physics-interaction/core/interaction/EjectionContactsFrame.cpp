@@ -54,7 +54,7 @@ void PhysicsInteraction::updateEjectionContacts(const PhysicsFrameContext& frame
         if(!ref||ref->GetFormType()!=RE::ENUM_FORM_ID::kREFR||ref->IsDeleted()||ref->IsDisabled()||!base||base->formID!=request.expectedBase||
             (key.referenceNativeHandle&&ref->GetHandle().native_handle()!=key.referenceNativeHandle)){entry={};continue;}
         if(entry.active){entry.age+=dt;if(entry.age>=1.f){entry.finished=true;entry.active=false;ROCK_LOG_INFO(Weapon,"Ejection contact lease expired ref={:08X}",key.referenceFormId);continue;}}
-        else {entry.waiting+=dt;if(entry.waiting>1.5f){ROCK_LOG_WARN(Weapon,"Ejection contact lease body wait timed out ref={:08X}",key.referenceFormId);entry={};continue;}}
+        else {entry.waiting+=dt;if(entry.waiting>1.5f){ROCK_LOG_WARN(Weapon,"Ejection contact lease activation timed out ref={:08X}",key.referenceFormId);entry={};continue;}}
         Bodies bodies;auto* root=ref->Get3D();if(!root||!weapon.count||weapon.count>weapon.bodyIds.size()||!collect(root,frame.hknpWorld,bodies))continue;
         const auto start=count;
         for(std::size_t a=0;a<bodies.count;++a) {
@@ -73,6 +73,6 @@ void PhysicsInteraction::updateEjectionContacts(const PhysicsFrameContext& frame
         auto& entry=service.entries[i];entry.active=true;entry.age=0;
         ROCK_LOG_INFO(Weapon,"Ejection contact lease active ref={:08X} weapon={:08X} duration=1s",entry.request.reference.referenceFormId,entry.request.weaponForm);
     }
-    if(count&&result.activePairCount!=count)ROCK_LOG_SAMPLE_WARN(Weapon,2000,"Ejection contact lease pairs pending requested={} active={}",count,result.activePairCount);
+    if(count&&result.activePairCount!=count)ROCK_LOG_SAMPLE_WARN(Weapon,2000,"Ejection contact lease pairs pending requested={} active={} filter={} stage={} invalidBodies={} missingOwners={} nativeRejected={} rejectedPair={}/{}",count,result.activePairCount,result.filterAvailable,result.filterStage,result.invalidBodies,result.missingOwners,result.nativeRejected,result.rejectedBodyA,result.rejectedBodyB);
 }
 }

@@ -34,6 +34,9 @@ namespace rock
         struct ReconcileResult
         {
             bool filterAvailable{ false };
+            const char* filterStage{ "not-requested" };
+            std::uint32_t invalidBodies{}, missingOwners{}, nativeRejected{};
+            std::uint32_t rejectedBodyA{ 0x7FFFFFFFu }, rejectedBodyB{ 0x7FFFFFFFu };
             std::uint32_t activePairCount{ 0 };
             std::array<std::uint32_t, OwnerGroupCount> activePairsByOwnerGroup{};
         };
@@ -58,7 +61,7 @@ namespace rock
             bool valid{ false };
         };
 
-        [[nodiscard]] bool resolveFilter(RE::hknpWorld* world) noexcept;
+        [[nodiscard]] bool resolveFilter(RE::hknpWorld* world, const char*& stage) noexcept;
         [[nodiscard]] bool filterIdentityMatches(RE::hknpWorld* world) const noexcept;
 
         RE::hknpWorld* _world{ nullptr };
