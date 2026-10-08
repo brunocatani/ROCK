@@ -24,4 +24,21 @@ static_assert([] {
     }
     return true;
 }());
-int main() {}
+#include "physics-interaction/weapon/EquipPickupScope.h"
+#include <cstdlib>
+#include <thread>
+int main() {
+    using namespace rock::equip_pickup;
+    auto check=[](bool value){if(!value) std::abort();};
+    check(query(1,0,16) && !query(1,1,16) && !query(2,0,16) && !query(1,0,8) && !query(1,0,24));
+    check(!matches(100,1));
+    {
+        Scope outer(100,1); check(matches(100,1) && !matches(101,1) && !matches(100,2));
+        std::thread other([&]{check(!matches(100,1));}); other.join();
+        { Scope inner(200,2); check(matches(200,2) && !matches(100,1)); }
+        check(matches(100,1));
+    }
+    check(!matches(100,1));
+    try { Scope failing(300,1); throw 1; } catch(...) {}
+    check(!matches(300,1) && !matches(0,0));
+}

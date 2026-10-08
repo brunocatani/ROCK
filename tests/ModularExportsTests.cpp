@@ -14,6 +14,7 @@ int main(int argc,char** argv) {
     assert(GetProcAddress(module,"ROCK_StorageInteraction_QueryV1"));
     assert(GetProcAddress(module,"ROCK_StorageInteraction_QueryV1_1"));
     assert(GetProcAddress(module,"ROCK_InventoryDisplay_QueryV1"));
+    assert(GetProcAddress(module,"ROCK_EquipPickup_QueryV1"));
     assert(GetProcAddress(module,"F4SEPlugin_Query"));
     assert(GetProcAddress(module,"F4SEPlugin_Load"));
     for (const auto name:std::array{"ROCKAPI_GetApi","ROCKAPI_GetProviderApi","ROCKAPI_GetDescriptorV1","GetROCKConfigurationApi"}) assert(!GetProcAddress(module,name));

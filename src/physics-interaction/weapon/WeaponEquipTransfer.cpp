@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
+#include "physics-interaction/weapon/EquipPickupScope.h"
 
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -491,7 +492,10 @@ namespace rock::weapon_equip_transfer
          * NiPointer keeps the assembled model alive for the visual bridge.
          */
         result.detachedWorldModel.reset(heldRef->Get3D());
-        const bool activated = heldRef->ActivateRef(player, nullptr, result.count, false, false, false);
+        const bool activated = [&] {
+            const equip_pickup::Scope intent(heldRef->GetFormID(),result.count);
+            return heldRef->ActivateRef(player, nullptr, result.count, false, false, false);
+        }();
         if (!activated) {
             result.reason = EquipReason::ActivateRefFailed;
             return result;
@@ -748,3 +752,6 @@ namespace rock::weapon_equip_transfer
     }
 
 }
+
+extern "C" __declspec(dllexport) const rock::api::equip_pickup::Api* ROCK_CALL ROCK_EquipPickup_QueryV1(std::uint32_t major,std::uint32_t minor,std::uint32_t bytes) noexcept
+{ return rock::equip_pickup::query(major,minor,bytes); }
