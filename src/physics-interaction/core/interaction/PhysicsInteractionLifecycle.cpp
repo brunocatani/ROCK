@@ -163,6 +163,7 @@ namespace rock
             currentHknpWorld == _lifecycle.generatedBodiesHknpWorld;
         _looseWeaponCollision.clear(generatedWorldStillLive ? currentHknpWorld : nullptr);
         _objectRestCollision.clear(generatedWorldStillLive ? currentHknpWorld : nullptr);_objectRestRequests={};
+        clearEjectionContacts(generatedWorldStillLive ? currentHknpWorld : nullptr);
         if (generatedWorldStillLive) {
             _dynamicHandCollision.retireAll(_lifecycle.generatedBodiesBhkWorld);
             _dynamicWeaponCollision.retireAll(_lifecycle.generatedBodiesBhkWorld);
@@ -568,6 +569,7 @@ namespace rock
 
         _looseWeaponCollision.clear(worldValid ? currentHknp : nullptr);
         _objectRestCollision.clear(worldValid ? currentHknp : nullptr);_objectRestRequests={};
+        clearEjectionContacts(worldValid ? currentHknp : nullptr);
         storage_service::shutdown(worldValid ? currentHknp : nullptr);
         storage_interaction::shutdown(worldValid ? currentHknp : nullptr);
         weapon_part_collision::shutdown(worldValid ? currentHknp : nullptr);

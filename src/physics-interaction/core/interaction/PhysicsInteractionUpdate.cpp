@@ -402,6 +402,9 @@ namespace rock
 
         updateNativeGrenadeCollisionSuppression(hknp, 0.0f);
         ::rock::provider::dispatchFrameCallbacks(*this);
+        // Consumers can create and register an ejected reference in this callback.
+        // Apply its pair exclusion in the same frame, before the next solve.
+        updateEjectionContacts(frame);
         storage_service::update(*this, frame);
         storage_interaction::update(*this,frame,_dynamicHandCollision,_generatedBodyStepDrive.callbackGate());
         weapon_part_collision::update(*this, frame);

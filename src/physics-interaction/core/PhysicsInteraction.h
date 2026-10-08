@@ -1,5 +1,6 @@
 #pragma once
 #include "api/ObjectRestRequests.h"
+#include "api/EjectionContactRequests.h"
 
 #include "physics-interaction/grenade/LooseMolotovVisual.h"
 
@@ -156,6 +157,8 @@ namespace rock
         bool prepareLooseWeaponRelease(RE::TESObjectREFR* reference, RE::hknpWorld* world, bool physicalDrop);
         api::Status watchObjectRest(api::OwnerToken owner,const api::object_rest::RequestV1& request,api::object_rest::State& state)
         {return _objectRestRequests.watch(owner,request,state);}
+        api::Status requestEjectionContacts(api::OwnerToken owner,const api::ejection_contacts::RequestV1& request){return _ejectionContacts.request(owner,request);}
+        void cancelEjectionContacts(api::OwnerToken owner,std::uint32_t reference){_ejectionContacts.cancel(owner,reference);}
         void cancelObjectRest(api::OwnerToken owner,std::uint32_t reference){_objectRestRequests.cancel(owner,reference);}
 
         // Runs before the normal ROCK interaction frame so weapon-relative
@@ -412,6 +415,8 @@ namespace rock
         void processGrabInputHand(const PhysicsFrameContext& frame, Hand& hand, bool isLeft, const GrabInputHandContext& context);
         void cancelLockedFarSelection(Hand& hand, bool isLeft, const char* reason);
         void updateGrabInput(const PhysicsFrameContext& frame);
+        void updateEjectionContacts(const PhysicsFrameContext& frame);
+        void clearEjectionContacts(RE::hknpWorld* world);
         void updateObjectRest(const PhysicsFrameContext& frame);
         std::uint32_t heldPlacementCandidate(RE::hknpWorld* world) const;
         void beginHeldPlacementFrame();
@@ -1031,6 +1036,7 @@ namespace rock
         LooseWeaponCollision _looseWeaponCollision;
         LooseWeaponCollision _objectRestCollision; // independent capacity; native magazine shapes stay intact
         object_rest_service::Requests _objectRestRequests;
+        EjectionContactRequests _ejectionContacts;
         api::grab::v1_1::HeldPlacementIntent _placementIntent{};
         held_placement_policy::FrameLease _placementLease;
         api::OwnerToken _placementActiveOwner{}, _placementPendingOwner{};
