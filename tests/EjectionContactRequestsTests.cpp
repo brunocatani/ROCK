@@ -1,5 +1,6 @@
 #include "api/EjectionContactRequests.h"
 #include <cassert>
+#include "physics-interaction/native/MagazineEjectionSnapshot.h"
 int main() {
     using namespace rock;using namespace api;
     EjectionContactRequests requests;
@@ -24,4 +25,18 @@ int main() {
     assert(requests.request(1,target)==Status::RequestQueued&&!requests.entries[0].finished);
     requests.entries[0].finished=true;++target.reference.referenceNativeHandle;
     assert(requests.request(1,target)==Status::RequestQueued&&!requests.entries[0].finished);
+    using namespace native_player_collision;
+    MagazineEjectionSnapshot contacts;contacts.world=123;
+    const BodyIdentity magazine{100,5,1000,2000}, weapon{200,6,3000,4000}, floor{300,0,5000,6000};
+    contacts.magazines[0]=magazine;contacts.magazineCount=1;
+    contacts.weapons[0]=weapon;contacts.weaponCount=1;
+    assert(contacts.containsPair(100,200)&&contacts.containsPair(200,100));
+    assert(contacts.suppresses(123,magazine,weapon)&&contacts.suppresses(123,weapon,magazine));
+    assert(!contacts.suppresses(123,magazine,floor)&&!contacts.suppresses(123,weapon,floor));
+    assert(!contacts.suppresses(124,magazine,weapon));
+    auto recycled=magazine;++recycled.collisionObject;
+    assert(!contacts.suppresses(123,recycled,weapon));
+    recycled=weapon;++recycled.ownerNode;
+    assert(!contacts.suppresses(123,magazine,recycled));
+    contacts={};assert(!contacts.suppresses(123,magazine,weapon));
 }

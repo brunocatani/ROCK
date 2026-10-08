@@ -1,4 +1,5 @@
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
+#include "physics-interaction/native/MagazineEjectionSnapshot.h"
 #include "api/StorageInteractionService.h"
 #include "physics-interaction/weapon/LooseWeaponCollisionPolicy.h"
 #include "RE/Bethesda/TESBoundObjects.h"
@@ -49,6 +50,9 @@ namespace rock::native_player_collision
         PhysicsCallbackQuiescenceGate s_weaponReleaseGate;
         weapon_release_collision_lease::Identity s_releasedWeapon;
         std::atomic<std::uint64_t> s_weaponReleaseRejectedPairs{ 0 };
+        PhysicsCallbackQuiescenceGate s_magazineEjectionGate;
+        MagazineEjectionSnapshot s_magazineEjection;
+        std::atomic<std::uint64_t> s_magazineEjectionRejected{ 0 };
         FilterPairs s_original{ nullptr };
         bool s_installed{ false };
         std::atomic<std::uint64_t> s_removedPairs{ 0 };
@@ -205,6 +209,20 @@ namespace rock::native_player_collision
             return kept;
         }
 
+        int filterMagazineEjectionPairs(RE::hknpWorld* world, BodyPair* pairs, int count) noexcept
+        {
+            auto lease=s_magazineEjectionGate.tryEnterCallback();
+            if(!lease||!world||s_magazineEjection.world!=reinterpret_cast<std::uintptr_t>(world)||!pairs||count<=0)return count;
+            const int kept=filterPhysicalPairs(pairs,count,[&](const BodyPair& pair) {
+                if(!s_magazineEjection.containsPair(pair.bodyA,pair.bodyB))return false;
+                const auto a=havok_runtime::snapshotBody(world,{pair.bodyA});
+                const auto b=havok_runtime::snapshotBody(world,{pair.bodyB});
+                return a.valid&&b.valid&&s_magazineEjection.suppresses(reinterpret_cast<std::uintptr_t>(world),identity(a),identity(b));
+            });
+            if(kept!=count)s_magazineEjectionRejected.fetch_add(count-kept,std::memory_order_relaxed);
+            return kept;
+        }
+
         bool isSupportedFixedWeapon(const havok_runtime::BodySnapshot& body) noexcept
         {
             // Callback-local ownership only; no engine pointer is published.
@@ -256,6 +274,7 @@ namespace rock::native_player_collision
                 shell_casing_grace::filterPairs(world, pairs, nativeAdmitted) : nativeAdmitted;
             if (admitted > 0 && admitted <= count) admitted = filterBladePairs(world, pairs, admitted);
             if (admitted > 0 && admitted <= count) admitted = filterWeaponReleasePairs(world, pairs, admitted);
+            if (admitted > 0 && admitted <= count) admitted = filterMagazineEjectionPairs(world, pairs, admitted);
             if (admitted > 0 && admitted <= count) admitted = filterRetiredWeaponHandPairs(world, pairs, admitted);
             if (admitted > 0 && admitted <= count) admitted = filterPhysicalPairs(pairs,admitted,[&](const BodyPair& pair) {
                 return !storage_interaction::allowsPair(world,pair.bodyA,pair.bodyB);
@@ -511,6 +530,55 @@ namespace rock::native_player_collision
         s_bladePair = {};
         s_bladeRejectedPairs.store(0, std::memory_order_relaxed);
         clearWeaponRelease(nullptr);
+        clearMagazineEjection(nullptr);
+    }
+
+    void clearMagazineEjection(RE::hknpWorld* liveWorld)
+    {
+        const auto previous=s_magazineEjection;
+        s_magazineEjectionGate.pauseAndWait();
+        s_magazineEjection={};
+        if(liveWorld&&previous.world==reinterpret_cast<std::uintptr_t>(liveWorld))
+            for(std::size_t i=0;i<previous.magazineCount;++i)invalidateBodyIfCurrent(liveWorld,previous.magazines[i]);
+    }
+
+    std::uint64_t magazineEjectionRejectedCount() noexcept {return s_magazineEjectionRejected.load(std::memory_order_relaxed);}
+
+    bool publishMagazineEjection(RE::hknpWorld* world,std::span<const std::uint32_t> magazines,
+        std::span<const std::uint32_t> weapons)
+    {
+        if(magazines.empty()||weapons.empty()){clearMagazineEjection(world);return s_installed&&world;}
+        MagazineEjectionSnapshot next;next.world=reinterpret_cast<std::uintptr_t>(world);
+        if(!s_installed||!world||magazines.size()>next.magazines.size()||weapons.size()>next.weapons.size())return false;
+        const auto collect=[&](auto ids,auto& out,std::size_t& count) {
+            for(auto id:ids) {
+                const auto body=havok_runtime::snapshotBody(world,{id});
+                const auto value=identity(body);
+                if(!body.valid||!matchesLiveBody(value,value)) {
+                    ROCK_LOG_SAMPLE_WARN(Weapon,2000,"Ejection simulation identity rejected body={} valid={} collision=0x{:X} node=0x{:X}",id,body.valid,value.collisionObject,value.ownerNode);
+                    return false;
+                }
+                out[count++]=value;
+            }
+            std::sort(out.begin(),out.begin()+count,[](const auto& a,const auto& b){return a.bodyId<b.bodyId;});
+            return true;
+        };
+        if(!collect(magazines,next.magazines,next.magazineCount)||!collect(weapons,next.weapons,next.weaponCount))return false;
+        const auto previous=s_magazineEjection;
+        if(previous==next)return true;
+        {
+            auto mutation=s_magazineEjectionGate.pauseForMutation();
+            s_magazineEjection=next;
+        }
+        s_magazineEjectionGate.resumeCallbacks();
+        // Rebuild the affected magazines after publication, outside the callback
+        // gate, for both acquisition and removal. World/ray filters stay intact.
+        if(previous.world==next.world)for(std::size_t i=0;i<previous.magazineCount;++i)invalidateBodyIfCurrent(world,previous.magazines[i]);
+        for(std::size_t i=0;i<next.magazineCount;++i) {
+            const auto* old=previous.world==next.world?MagazineEjectionSnapshot::find(previous.magazines,previous.magazineCount,next.magazines[i].bodyId):nullptr;
+            if(!old||*old!=next.magazines[i])invalidateBodyIfCurrent(world,next.magazines[i]);
+        }
+        return true;
     }
 
     bool publishWeaponRelease(RE::hknpWorld* world, weapon_release_collision_lease::Identity weapon)

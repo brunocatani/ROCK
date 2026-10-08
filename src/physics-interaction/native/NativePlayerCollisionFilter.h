@@ -46,6 +46,13 @@ namespace rock::native_player_collision
     bool publishWeaponRelease(RE::hknpWorld* world, weapon_release_collision_lease::Identity weapon);
     void clearWeaponRelease(RE::hknpWorld* liveWorld);
 
+    // EjectionContacts owns these exact magazine/equipped-weapon sets. Single
+    // game-thread publisher under the world write lock; empty sets restore pairs.
+    bool publishMagazineEjection(RE::hknpWorld* world, std::span<const std::uint32_t> magazines,
+        std::span<const std::uint32_t> weapons);
+    void clearMagazineEjection(RE::hknpWorld* liveWorld);
+    std::uint64_t magazineEjectionRejectedCount() noexcept;
+
     // Skeleton/world teardown: invalidate the snapshot without touching a world
     // whose lifetime may have ended. No collision bits or pair leases to restore.
     void abandon() noexcept;

@@ -411,5 +411,4 @@ namespace rock
     }
 
     template class BasicHavokPairCollisionLeaseSet<34, 2>;
-    template class BasicHavokPairCollisionLeaseSet<4096, 1>;
 }

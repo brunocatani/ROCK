@@ -1,11 +1,10 @@
 #pragma once
 #include <ROCK/EjectionContacts.h>
-#include "physics-interaction/native/HavokPairCollisionFilter.h"
+#include <array>
 namespace rock {
 struct EjectionContactRequests {
     struct Entry {api::OwnerToken owner{};api::ejection_contacts::RequestV1 request;float waiting{},age{};bool active{},cancelled{},finished{};};
     std::array<Entry,8> entries{};
-    BasicHavokPairCollisionLeaseSet<4096,1> pairs;
     bool hadPairs{};
     api::Status request(api::OwnerToken owner,const api::ejection_contacts::RequestV1& request) {
         for(auto& e:entries)if(e.owner&&e.request.reference.referenceFormId==request.reference.referenceFormId) {

@@ -3,6 +3,8 @@
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/HavokWorldLock.h"
 #include "physics-interaction/native/NativeObjectPlacement.h"
+#include "physics-interaction/native/NativePlayerCollisionFilter.h"
+#include "physics-interaction/native/MagazineEjectionSnapshot.h"
 #include "RE/Bethesda/TESBoundObjects.h"
 namespace rock {
 namespace {
@@ -34,8 +36,9 @@ bool collect(RE::NiAVObject* root,RE::hknpWorld* world,Bodies& out) {
 }
 }
 void PhysicsInteraction::clearEjectionContacts(RE::hknpWorld* world) {
-    if(world&&native_object_placement::available()) {WriteScope lock(world);(void)_ejectionContacts.pairs.reconcile(world,nullptr,0);}
-    _ejectionContacts.pairs.abandonWorld();_ejectionContacts.entries={};_ejectionContacts.hadPairs=false;
+    if(world&&native_object_placement::available()) {WriteScope lock(world);native_player_collision::clearMagazineEjection(world);}
+    else native_player_collision::clearMagazineEjection(nullptr);
+    _ejectionContacts.entries={};_ejectionContacts.hadPairs=false;
 }
 void PhysicsInteraction::updateEjectionContacts(const PhysicsFrameContext& frame) {
     auto& service=_ejectionContacts;
@@ -43,7 +46,12 @@ void PhysicsInteraction::updateEjectionContacts(const PhysicsFrameContext& frame
     if(!frame.hknpWorld||!native_object_placement::available())return;
     const auto sample=provider::runtime::sample();const auto weapon=_weaponCollision.getWeaponBodySnapshotAtomic();
     const float dt=std::isfinite(frame.deltaSeconds)?std::clamp(frame.deltaSeconds,0.f,.1f):0.f;
-    std::array<BasicHavokPairCollisionLeaseSet<4096,1>::DesiredPair,4096> desired{};std::size_t count=0;std::array<bool,8> prepared{};
+    std::array<std::uint32_t,32> magazines{};std::size_t count=0;std::array<bool,8> prepared{};
+    std::array<std::uint32_t,128> weapons{};std::size_t weaponCount=0;
+    static_assert(std::tuple_size_v<decltype(weapon.bodyIds)> < 128);
+    for(std::size_t i=0;i<weapon.count&&i<weapon.bodyIds.size();++i)if(weapon.bodyIds[i]!=0x7fffffff)weapons[weaponCount++]=weapon.bodyIds[i];
+    const auto proxy=_dynamicWeaponCollision.proxyBodyIdForDebug();
+    if(proxy.value!=0x7fffffff)weapons[weaponCount++]=proxy.value;
     WriteScope lock(frame.hknpWorld);
     for(auto& entry:service.entries)if(entry.owner&&!entry.finished) {
         const auto& request=entry.request;const auto& key=request.reference;
@@ -53,26 +61,21 @@ void PhysicsInteraction::updateEjectionContacts(const PhysicsFrameContext& frame
         auto* ref=RE::TESForm::GetFormByID<RE::TESObjectREFR>(key.referenceFormId);auto* base=ref?ref->GetObjectReference():nullptr;
         if(!ref||ref->GetFormType()!=RE::ENUM_FORM_ID::kREFR||ref->IsDeleted()||ref->IsDisabled()||!base||base->formID!=request.expectedBase||
             (key.referenceNativeHandle&&ref->GetHandle().native_handle()!=key.referenceNativeHandle)){entry={};continue;}
-        if(entry.active){entry.age+=dt;if(entry.age>=1.f){entry.finished=true;entry.active=false;ROCK_LOG_INFO(Weapon,"Ejection contact lease expired ref={:08X}",key.referenceFormId);continue;}}
+        if(entry.active){entry.age+=dt;if(entry.age>=1.f){entry.finished=true;entry.active=false;ROCK_LOG_INFO(Weapon,"Ejection contact lease expired ref={:08X} totalRejectedPairs={}",key.referenceFormId,native_player_collision::magazineEjectionRejectedCount());continue;}}
         else {entry.waiting+=dt;if(entry.waiting>1.5f){ROCK_LOG_WARN(Weapon,"Ejection contact lease activation timed out ref={:08X}",key.referenceFormId);entry={};continue;}}
         Bodies bodies;auto* root=ref->Get3D();if(!root||!weapon.count||weapon.count>weapon.bodyIds.size()||!collect(root,frame.hknpWorld,bodies))continue;
         const auto start=count;
-        for(std::size_t a=0;a<bodies.count;++a) {
-            for(std::size_t b=0;b<weapon.count;++b)if(weapon.bodyIds[b]!=0x7fffffff&&weapon.bodyIds[b]!=bodies.ids[a]&&count<desired.size())desired[count++]={bodies.ids[a],weapon.bodyIds[b],0};
-            const auto proxy=_dynamicWeaponCollision.proxyBodyIdForDebug();
-            if(proxy.value!=0x7fffffff&&proxy.value!=bodies.ids[a]&&count<desired.size())desired[count++]={bodies.ids[a],proxy.value,0};
-        }
+        for(std::size_t a=0;a<bodies.count;++a)if(count<magazines.size())magazines[count++]=bodies.ids[a];
         prepared[&entry-service.entries.data()]=count>start;
     }
-    for(std::size_t i=0;i<count;++i)if(desired[i].bodyB<desired[i].bodyA)std::swap(desired[i].bodyA,desired[i].bodyB);
-    const auto less=[](const auto& a,const auto& b){return a.bodyA<b.bodyA||(a.bodyA==b.bodyA&&a.bodyB<b.bodyB);};
-    std::sort(desired.begin(),desired.begin()+count,less);
-    count=std::unique(desired.begin(),desired.begin()+count,[](const auto& a,const auto& b){return a.bodyA==b.bodyA&&a.bodyB==b.bodyB;})-desired.begin();
-    const auto result=service.pairs.reconcile(frame.hknpWorld,desired.data(),count);service.hadPairs=result.activePairCount!=0;
-    if(result.filterAvailable&&result.activePairCount==count)for(std::size_t i=0;i<prepared.size();++i)if(prepared[i]&&!service.entries[i].active) {
+    const auto unique=[](auto& ids,std::size_t size) {std::sort(ids.begin(),ids.begin()+size);return static_cast<std::size_t>(std::unique(ids.begin(),ids.begin()+size)-ids.begin());};
+    count=unique(magazines,count);weaponCount=unique(weapons,weaponCount);
+    const bool applied=native_player_collision::publishMagazineEjection(frame.hknpWorld,{magazines.data(),count},{weapons.data(),weaponCount});
+    if(applied)service.hadPairs=count!=0&&weaponCount!=0;
+    if(applied&&weaponCount)for(std::size_t i=0;i<prepared.size();++i)if(prepared[i]&&!service.entries[i].active) {
         auto& entry=service.entries[i];entry.active=true;entry.age=0;
-        ROCK_LOG_INFO(Weapon,"Ejection contact lease active ref={:08X} weapon={:08X} duration=1s",entry.request.reference.referenceFormId,entry.request.weaponForm);
+        ROCK_LOG_INFO(Weapon,"Ejection contact lease active ref={:08X} weapon={:08X} duration=1s backend=simulation",entry.request.reference.referenceFormId,entry.request.weaponForm);
     }
-    if(count&&result.activePairCount!=count)ROCK_LOG_SAMPLE_WARN(Weapon,2000,"Ejection contact lease pairs pending requested={} active={} filter={} stage={} invalidBodies={} missingOwners={} nativeRejected={} rejectedPair={}/{}",count,result.activePairCount,result.filterAvailable,result.filterStage,result.invalidBodies,result.missingOwners,result.nativeRejected,result.rejectedBodyA,result.rejectedBodyB);
+    if(count&&!applied)ROCK_LOG_SAMPLE_WARN(Weapon,2000,"Ejection simulation publication pending magazines={} weaponBodies={} hook={}",count,weaponCount,native_player_collision::installed());
 }
 }
