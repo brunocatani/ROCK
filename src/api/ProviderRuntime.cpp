@@ -1842,8 +1842,35 @@ namespace rock::provider::runtime
         const auto permission = validateReadCapability(ownerToken, capability);
         if (permission != RockProviderResultV1::Ok) return permission;
         if (!onAnimationOwnerThread()) return RockProviderResultV1::WrongThread;
-        if (!apiIsProviderReady()) return RockProviderResultV1::NotReady;
-        return validateGenerationGuards(query->worldGeneration, query->skeletonGeneration, query->providerGeneration);
+        const bool ready = apiIsProviderReady();
+        const auto result = ready ? validateGenerationGuards(query->worldGeneration,
+            query->skeletonGeneration, query->providerGeneration) : RockProviderResultV1::NotReady;
+        if (result != RockProviderResultV1::Ok) {
+            // Animation-owner thread only. Preserve the query contract and log
+            // the actual rejecting authority, including during frame resets.
+            static std::uint64_t lastReportedFrame = 0;
+            static bool reported = false;
+            const auto frame = currentGameFrameIndex();
+            if (!reported || frame < lastReportedFrame || frame - lastReportedFrame >= 600) {
+                reported = true;
+                lastReportedFrame = frame;
+                RockProviderFrameSnapshot published{};
+                {
+                    std::scoped_lock lock(s_snapshotMutex);
+                    published = s_lastSnapshot;
+                }
+                logger::warn("ROCK reference query rejected owner={:016X} ref={:08X} capability={} result={} stage={} frame={} requested={}/{}/{} authorityAvailable={} authority={}/{}/{} published={}/{}/{} publishedFrame={}",
+                    ownerToken, query->referenceFormId, static_cast<unsigned>(capability), static_cast<unsigned>(result),
+                    ready ? "generation-guards" : "provider-readiness", frame,
+                    query->worldGeneration, query->skeletonGeneration, query->providerGeneration,
+                    s_generationStateAvailable.load(std::memory_order_acquire),
+                    s_currentWorldGeneration.load(std::memory_order_acquire),
+                    s_currentSkeletonGeneration.load(std::memory_order_acquire),
+                    s_currentProviderGeneration.load(std::memory_order_acquire),
+                    published.worldGeneration, published.skeletonGeneration, published.providerGeneration, published.frameIndex);
+            }
+        }
+        return result;
     }
 
 
