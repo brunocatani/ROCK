@@ -3,6 +3,7 @@
 #include "physics-interaction/weapon/WeaponAimBasis.h"
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
 #include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
+#include "physics-interaction/weapon/WeaponHierarchy.h"
 
 // Support-hand grip: authored capability qualification and selection, dynamic
 // acquisition, the capture transaction (capturePartGrip, whose finger solve
@@ -3566,6 +3567,16 @@ namespace rock
             return selectionDecision.selection;
         }
 
+        const bool anchoredPoint = grip.attachOnly && decision.grabPoint.anchorAtPoint;
+        if (anchoredPoint && (!decision.grabPoint.pointId ||
+            decision.grabPoint.ownerToken != providerPartAuthority.ownerToken ||
+            decision.grabPoint.groupId != providerPartAuthority.groupId ||
+            !weapon_hierarchy::weaponTransformFinite(decision.grabPoint.attachmentWorld) ||
+            std::abs(decision.grabPoint.attachmentWorld.scale) <= .000001f ||
+            !std::isfinite(decision.grabPoint.worldPoint.x) || !std::isfinite(decision.grabPoint.worldPoint.y) ||
+            !std::isfinite(decision.grabPoint.worldPoint.z))) {
+            grip = {};return authored_support_grab_policy::Selection::Failure;
+        }
         auto& fingerScratch = _fingerPoseSolveScratch->hands[isLeft ? 0u : 1u];
 
         WeaponCollision::SupportGripEvidenceView evidenceView{};
@@ -3574,7 +3585,7 @@ namespace rock
             evidenceView.weaponGenerationKey == _session.weaponGenerationKey;
         GrabPoint grabPoint{};
         bool meshFound = false;
-        if (!useDynamicHandoffGrip && cachedTrianglesFound) {
+        if (!useDynamicHandoffGrip && !anchoredPoint && cachedTrianglesFound) {
             const TransformedSupportGripTriangleView worldEvidence{
                 .localTriangles = evidenceView.localTriangles,
                 .localToWorld = evidenceView.localToWorld,
@@ -3604,6 +3615,9 @@ namespace rock
                 _session.authorityMode = weapon_support_authority_policy::
                     WeaponSupportAuthorityMode::VisualOnlySupport;
             }
+        } else if (anchoredPoint) {
+            grip.gripLocal = worldToWeaponLocal(decision.grabPoint.worldPoint, weaponNode);
+            grip.grabNormalWorld = palmDir;
         } else if (meshFound) {
             grip.gripLocal = worldToWeaponLocal(grabPoint.position, weaponNode);
             grip.grabNormalWorld = grabPoint.normal;
@@ -3611,7 +3625,7 @@ namespace rock
             grip.gripLocal = worldToWeaponLocal(palmPos, weaponNode);
             grip.grabNormalWorld = palmDir;
         }
-        const RE::NiPoint3 gripWorldPoint = useDynamicHandoffGrip ?
+        const RE::NiPoint3 gripWorldPoint = anchoredPoint ? decision.grabPoint.worldPoint : useDynamicHandoffGrip ?
             firingGripWorld :
             (meshFound ? grabPoint.position : palmPos);
         constexpr float kDegreesToRadians =
@@ -3656,14 +3670,21 @@ namespace rock
             weaponNode->world,
             seatedPalmNormal);
         if (supportAttachmentRoot) {
-            grip.gripSourceLocal = transform_math::worldPointToLocal(supportAttachmentRoot->world, gripWorldPoint);
+            const auto& attachmentWorld = anchoredPoint ? decision.grabPoint.attachmentWorld : supportAttachmentRoot->world;
+            grip.gripSourceLocal = transform_math::worldPointToLocal(attachmentWorld, gripWorldPoint);
             grip.normalSourceLocal = transform_math::worldVectorToLocal(
-                supportAttachmentRoot->world,
+                attachmentWorld,
                 seatedPalmNormal);
-            grip.handSourceLocal = transform_math::composeTransforms(transform_math::invertTransform(supportAttachmentRoot->world), adjustedHandTransform);
-            grip.attachmentWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), supportAttachmentRoot->world);
+            grip.handSourceLocal = transform_math::composeTransforms(transform_math::invertTransform(attachmentWorld), adjustedHandTransform);
+            grip.attachmentWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), attachmentWorld);
             grip.hasSourceFrames = true;
             grip.hasAttachmentWeaponLocal = true;
+        }
+
+        if (anchoredPoint) {
+            ROCK_LOG_INFO(Weapon, "Point-anchored operating grip hand={} point={} source={} body={} world=({:.3f},{:.3f},{:.3f})",
+                isLeft ? "left" : "right", decision.grabPoint.pointId, decision.grabPoint.sourceKey,
+                decision.bodyId, gripWorldPoint.x, gripWorldPoint.y, gripWorldPoint.z);
         }
 
         solveSupportGripFingerPose(

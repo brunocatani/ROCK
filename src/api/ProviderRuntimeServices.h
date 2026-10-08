@@ -11,7 +11,7 @@
 
 namespace rock::weapon_part_runtime {struct Target;}
 namespace rock::provider::runtime {
-    api::Status setWeaponPartGrabPoints(api::OwnerToken,std::span<const api::weaponparts::v1_3::GrabPoint>,bool operating=false,bool pinky=false);
+    api::Status setWeaponPartGrabPoints(api::OwnerToken,std::span<const api::weaponparts::v1_3::GrabPoint>,bool operating=false,bool pinky=false,bool anchored=false);
     api::Status clearWeaponPartGrabPoints(api::OwnerToken);
     bool hasOperatingGrabPoints(std::uint64_t generation);
     std::size_t copyWeaponPartPointSelection(std::span<weapon_part_runtime::Target>,std::span<weapon_part_points::OwnedPoint>,std::size_t& pointCount);

@@ -57,6 +57,20 @@ int main(){
     assert(registry.copy(snapshot)==3&&!snapshot[2].pinky); // old owner keeps its probe contract
     assert(registry.replace(100,points,group,true)==Status::Ok);
     assert(registry.copy(snapshot)==3&&!snapshot[0].pinky&&!snapshot[1].pinky);
+    // A first-listed bolt body must not replace the authored knob surface.
+    p::Candidate anchored;anchored.rule.anchored=true;
+    p::offerPart(anchored,0,16.f,90);p::offerPart(anchored,1,.01f,91);
+    assert(anchored.part==1);
+    p::Candidate reordered;reordered.rule.anchored=true;
+    p::offerPart(reordered,1,.01f,91);p::offerPart(reordered,0,16.f,90);
+    assert(reordered.part==1);
+    p::offerPart(anchored,3,std::numeric_limits<float>::quiet_NaN(),1);assert(anchored.part==1);
+    p::offerPart(anchored,4,.01f,89);assert(anchored.part==4); // deterministic tie
+    p::Candidate legacy;p::offerPart(legacy,0,16.f,90);p::offerPart(legacy,1,.01f,91);assert(legacy.part==0);
+    assert(registry.replace(100,points,group,true,true,true)==Status::Ok);
+    assert(registry.copy(snapshot)==3&&snapshot[0].anchored&&snapshot[1].anchored&&!snapshot[2].anchored);
+    assert(registry.replace(100,points,group,true,true)==Status::Ok);
+    assert(registry.copy(snapshot)==3&&!snapshot[0].anchored&&!snapshot[1].anchored);
     registry.clear(101);
     registry.clear(100);assert(registry.copy(snapshot)==0);
     std::cout<<"PASS exact-point distance, midpoint exclusion, nearest location, hand filtering, current source pose and atomic owner lifecycle\n";

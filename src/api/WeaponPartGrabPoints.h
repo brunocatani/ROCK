@@ -4,11 +4,12 @@
 #include <algorithm>
 #include <cmath>
 #include <span>
+#include <limits>
 
 namespace rock::weapon_part_points {
     using Point=api::weaponparts::v1_3::GrabPoint;
     inline constexpr std::size_t kCapacity=api::weaponparts::kMaxTargets;
-    struct OwnedPoint {api::OwnerToken owner{};Point point;bool operating{};bool pinky{};};
+    struct OwnedPoint {api::OwnerToken owner{};Point point;bool operating{};bool pinky{};bool anchored{};};
     inline bool valid(const Point& p) noexcept {
         return p.size==sizeof(Point)&&p.pointId&&p.groupId&&p.sourceKey&&p.weaponGenerationKey&&
             p.handMask&&!(p.handMask&~3u)&&std::isfinite(p.radiusGame)&&p.radiusGame>0&&p.radiusGame<=64&&
@@ -20,7 +21,16 @@ namespace rock::weapon_part_points {
         std::array<float,3> world{};
         std::size_t part{~std::size_t{0}};
         bool validWorld{};
+        float surfaceDistanceSquared{std::numeric_limits<float>::infinity()};
+        std::uint64_t surfaceKey{~std::uint64_t{0}};
     };
+    inline void offerPart(Candidate& c,std::size_t part,float distance,std::uint64_t key) noexcept {
+        if(!c.rule.anchored){if(c.part==~std::size_t{0})c.part=part;return;}
+        if(!std::isfinite(distance)||distance<0)return;
+        if(distance<c.surfaceDistanceSquared||(distance==c.surfaceDistanceSquared&&key<c.surfaceKey)) {
+            c.part=part;c.surfaceDistanceSquared=distance;c.surfaceKey=key;
+        }
+    }
     struct Selection {std::size_t point;float distanceSquared{};};
     inline Selection nearest(std::span<const Candidate> points,api::Hand hand,const std::array<float,3>& probe,float probeRadius,
         std::span<const std::array<float,3>> extraProbes={},bool operatingOnly=false,std::span<const std::array<float,3>> pinkyProbes={}) noexcept {
@@ -48,7 +58,7 @@ namespace rock::weapon_part_points {
     // copied for the owner frame and never contain retained engine pointers.
     class Registry {
     public:
-        template<class GroupValid>api::Status replace(api::OwnerToken owner,std::span<const Point> points,GroupValid&& groupValid,bool operating=false,bool pinky=false) {
+        template<class GroupValid>api::Status replace(api::OwnerToken owner,std::span<const Point> points,GroupValid&& groupValid,bool operating=false,bool pinky=false,bool anchored=false) {
             if(!owner||points.empty()||points.size()>api::weaponparts::v1_3::kMaxGrabPoints)return api::Status::InvalidArgument;
             for(std::size_t i=0;i<points.size();++i){
                 const auto& p=points[i];if(!valid(p))return api::Status::InvalidArgument;
@@ -57,7 +67,7 @@ namespace rock::weapon_part_points {
             }
             const auto available=std::count_if(slots_.begin(),slots_.end(),[&](const auto& s){return !s.owner||s.owner==owner;});
             if(points.size()>std::size_t(available))return api::Status::CapacityFull;
-            clear(owner);std::size_t i=0;for(auto& slot:slots_)if(!slot.owner){slot={owner,points[i++],operating,operating&&pinky};if(i==points.size())break;}
+            clear(owner);std::size_t i=0;for(auto& slot:slots_)if(!slot.owner){slot={owner,points[i++],operating,operating&&pinky,operating&&anchored};if(i==points.size())break;}
             return api::Status::Ok;
         }
         void clear(api::OwnerToken owner) noexcept {for(auto& slot:slots_)if(slot.owner==owner)slot={};}

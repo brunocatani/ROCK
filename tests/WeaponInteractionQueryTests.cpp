@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/WeaponInteractionQuery.h"
+#include "physics-interaction/weapon/WeaponInteraction.h"
 
 #include <cassert>
 #include <chrono>
@@ -154,6 +155,22 @@ namespace
 
 int main()
 {
+    rock::WeaponInteractionContact contact;contact.valid=true;contact.weaponGenerationKey=123;
+    contact.grabPoint.ownerToken=45;contact.grabPoint.groupId=1;contact.grabPoint.sourceKey=237;
+    contact.grabPoint.pointId=7;contact.grabPoint.anchorAtPoint=true;
+    contact.grabPoint.worldPoint={3,5,8};contact.grabPoint.attachmentWorld.scale=2;
+    const auto routed=rock::routeWeaponInteraction(contact,{});
+    assert(routed.grabPoint.pointId==7&&routed.grabPoint.ownerToken==45&&routed.grabPoint.sourceKey==237);
+    assert(routed.grabPoint.anchorAtPoint&&routed.grabPoint.worldPoint.z==8&&routed.grabPoint.attachmentWorld.scale==2);
+    contact.valid=false;assert(!rock::routeWeaponInteraction(contact,{}).grabPoint.pointId);
+    // An admitted point is also the palm seat; no projection to the rod body.
+    auto hand=rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+    hand.translate={10,20,30};const RE::NiPoint3 palm{11,22,33},knob{3,5,8};
+    const auto seated=rock::weapon_two_handed_grip_math::alignHandFrameToGripPoint(hand,palm,knob);
+    assert(seated.translate.x==2&&seated.translate.y==3&&seated.translate.z==5);
+    for(int r=0;r<3;++r)for(int c=0;c<3;++c)assert(seated.rotate.entry[r][c]==hand.rotate.entry[r][c]);
+
+
     parity();
     const auto sources=makeSources(1);const Batch batch(sources);
     const auto probe= sources[0].world.translate;

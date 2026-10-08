@@ -252,6 +252,9 @@ namespace rock
         std::uint64_t sourceKey{};
         std::uint32_t pointId{};
         RE::NiPoint3 pointInSource{};
+        bool anchorAtPoint{};
+        RE::NiPoint3 worldPoint{};
+        RE::NiTransform attachmentWorld{};
     };
 
     struct WeaponInteractionContact
@@ -307,6 +310,7 @@ namespace rock
         WeaponActionRole actionRole{ WeaponActionRole::None };
         WeaponGripPoseId gripPose{ WeaponGripPoseId::None };
         bool reloadActionAuthority{ false };
+        WeaponGrabPointLocation grabPoint;
         std::uint32_t bodyId{ 0x7FFF'FFFF };
         RE::NiAVObject* interactionRoot{ nullptr };
         RE::NiAVObject* sourceRoot{ nullptr };

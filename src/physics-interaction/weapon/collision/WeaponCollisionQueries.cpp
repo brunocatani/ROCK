@@ -1291,7 +1291,19 @@ namespace rock
                     auto& candidate=batch.points[p];
                     if(candidate.rule.owner!=resolution.ownerToken||candidate.rule.point.groupId!=resolution.groupId)continue;
                     batch.pointRestricted[i]=true;
-                    if(candidate.part==~std::size_t{0})candidate.part=i;
+                    if(!candidate.rule.anchored) {
+                        weapon_part_points::offerPart(candidate,i,0,instance.body.getBodyId().value);
+                    } else if(candidate.validWorld && operatingPose) {
+                        RE::NiTransform driven{};weapon_interaction_query::Part part;
+                        if(!operatingPose->world(instance.sourceNode,driven) ||
+                            !weapon_interaction_query::prepare(instance.geometry->mesh->sourceLocalTrianglesGame,
+                                instance.indices->sourceIndex,driven,instance.generatedSourceLocalMinGame,
+                                instance.generatedSourceLocalMaxGame,instance.semantic.priority,part))continue;
+                        const auto& point=candidate.world;
+                        const auto surface=weapon_interaction_query::find(std::span(&part,1),
+                            {point[0],point[1],point[2]},candidate.rule.point.radiusGame);
+                        if(surface.valid())weapon_part_points::offerPart(candidate,i,surface.rank.distanceSquaredGame,instance.body.getBodyId().value);
+                    }
                 }
             }
             performance_profiler::addCounter(performance_profiler::Counter::WeaponProbePoseBatches);
@@ -1356,6 +1368,13 @@ namespace rock
         if(picked<batch.pointCount) {
             const auto& point=batch.points[picked].rule.point;
             outContact.grabPoint={batch.points[picked].rule.owner,point.groupId,point.sourceKey,point.pointId,{point.pointInSource[0],point.pointInSource[1],point.pointInSource[2]}};
+            if(batch.points[picked].rule.anchored) {
+                auto& anchor=outContact.grabPoint;const auto& world=batch.points[picked].world;
+                anchor.anchorAtPoint=true;anchor.worldPoint={world[0],world[1],world[2]};
+                if(!operatingPose||!operatingPose->world(bestInstance->sourceNode,anchor.attachmentWorld)) {
+                    outContact={};return false;
+                }
+            }
         }
         return true;
     }

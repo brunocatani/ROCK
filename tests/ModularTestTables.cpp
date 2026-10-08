@@ -64,6 +64,7 @@ Status ROCK_CALL points(OwnerToken owner,const v1_3::GrabPoint* p,std::uint32_t 
 const v1_3::Api& tableV1_3() noexcept {static const v1_3::Api value{tableV1_2(),&points,&oldClear};return value;}
 const v1_4::Api& tableV1_4() noexcept {static const v1_4::Api value{tableV1_3(),&points};return value;}
 const v1_5::Api& tableV1_5() noexcept {static const v1_5::Api value{tableV1_4(),&points};return value;}
+const v1_6::Api& tableV1_6() noexcept {static const v1_6::Api value{tableV1_5(),&points};return value;}
 }
 namespace rock::api::animation { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
 namespace rock::api::input {
