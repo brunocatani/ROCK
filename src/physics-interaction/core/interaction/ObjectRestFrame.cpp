@@ -4,6 +4,9 @@
 
 namespace rock {
 void PhysicsInteraction::updateObjectRest(const PhysicsFrameContext& frame) {
+    // Menu blocking is a pause, not a failed native watch. watchNative rejects
+    // admission during menus, so do not turn existing watches into failures.
+    if(frame.menuBlocked)return;
     const auto sample=provider::runtime::sample();
     auto& gate=_generatedBodyStepDrive.callbackGate();
     auto* right=_rightHand.isHolding()?_rightHand.getHeldRef():nullptr;
@@ -35,6 +38,13 @@ void PhysicsInteraction::updateObjectRest(const PhysicsFrameContext& frame) {
     // Reuse precisely the weapon support witness, anchored rest interval,
     // native saved placement and lease cleanup, in a separate bounded pool.
     _objectRestCollision.update(frame,right,left,gate,false);
+    // Drain every completion before any waiting request can reuse a freed body
+    // slot. Otherwise admission can overwrite that slot's _rested receipt.
+    for(auto& entry:_objectRestRequests.entries)if(entry.owner&&!entry.cancelled&&
+        _objectRestCollision.takeNativeRestCompletion(entry.request.reference.referenceFormId)) {
+        entry.state=api::object_rest::State::Resting;entry.status=api::Status::Ok;
+        ROCK_LOG_INFO(Weapon,"Object rest completed ref={:08X}; physics ownership released, native placement retained",entry.request.reference.referenceFormId);
+    }
     for(auto& entry:_objectRestRequests.entries)if(entry.owner && !entry.cancelled) {
         auto* ref=RE::TESForm::GetFormByID<RE::TESObjectREFR>(entry.request.reference.referenceFormId);
         if(!ref || ref==right || ref==left)continue;

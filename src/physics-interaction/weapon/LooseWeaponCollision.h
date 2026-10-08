@@ -23,6 +23,7 @@ namespace rock {
             RE::TESObjectREFR* left, PhysicsCallbackQuiescenceGate& gate,bool admitWeapons=true);
         enum class NativeRest { Watching, Resting, Unavailable, CapacityFull };
         NativeRest watchNative(RE::TESObjectREFR*,const PhysicsFrameContext&,PhysicsCallbackQuiescenceGate&);
+        bool takeNativeRestCompletion(std::uint32_t reference) noexcept;
         void clear(RE::hknpWorld* liveWorld);
         bool prepareRelease(RE::TESObjectREFR* reference, RE::hknpWorld* liveWorld,
             PhysicsCallbackQuiescenceGate& gate, bool physicalDrop);

@@ -93,6 +93,8 @@ struct LooseWeaponCollision::State
     bool scanned{}, installed{}, frozen{}, parked{}, scriptStarted{}, failed{}, nativeOnly{};
     bool held{}, supported{}, stationary{};
     unsigned parkingStage{};
+    float unsettledSeconds{};
+    bool reportedUnsettled{};
     std::size_t preparationFrames{};
     double maxPreparationSliceMs{};
     const char* phase{"Preparing"};
@@ -430,6 +432,12 @@ void LooseWeaponCollision::update(const PhysicsFrameContext& frame, RE::TESObjec
     publishWatchMask();
 }
 
+bool LooseWeaponCollision::takeNativeRestCompletion(std::uint32_t reference) noexcept
+{
+    for(auto& slot:_slots)if(reference&&!slot._state&&slot._rested==reference){slot._rested=0;return true;}
+    return false;
+}
+
 LooseWeaponCollision::NativeRest LooseWeaponCollision::watchNative(RE::TESObjectREFR* ref,
     const PhysicsFrameContext& frame,PhysicsCallbackQuiescenceGate& gate)
 {
@@ -655,6 +663,14 @@ void LooseWeaponCollision::Slot::update(const PhysicsFrameContext& frame, RE::TE
     state.phase=state.nativeOnly ? (state.held ? "Dropped: held" : !state.supported ? "Dropped: no support" :
         state.stationary ? "Dropped: resting" : "Dropped: moving") : state.held ? "Generated: held" : !state.supported ? "Generated: no support" :
         state.stationary ? "Generated: resting" : "Generated: moving";
+    if(state.nativeOnly&&!state.held&&!state.reportedUnsettled) {
+        if(std::isfinite(frame.deltaSeconds)&&frame.deltaSeconds>0)state.unsettledSeconds+=std::min(frame.deltaSeconds,.1f);
+        if(state.unsettledSeconds>=5.f&&!park) {
+            state.reportedUnsettled=true;
+            ROCK_LOG_WARN(Weapon,"Native retirement still waiting ref={:08X} phase={} supported={} stationary={} witness={} surface={} restSeconds={:.3f}; object remains native dynamic",
+                state.ref->formID,state.phase,state.supported,state.stationary,support.valid,support.surfaceBody,state.parking.supportedRestSeconds);
+        }
+    }
     if (!park && !state.frozen) return;
     if (state.parkingStage==0) {
         state.parkingStage=1;
