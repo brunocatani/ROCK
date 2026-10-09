@@ -68,6 +68,18 @@ namespace rock
         return true;
     }
 
+    bool TwoHandedGrip::getAuthoredSupportGripDebugSnapshot(
+        const bool isLeft,
+        AuthoredSupportGripDebugSnapshot& outSnapshot) const
+    {
+        outSnapshot = authoredSupportHand(isLeft).authoredDebugSnapshot;
+        return outSnapshot.valid;
+    }
 
-
+    bool TwoHandedGrip::getFiringGripReattachZoneDebugSnapshot(
+        FiringGripReattachZoneDebugSnapshot& outSnapshot) const
+    {
+        outSnapshot = _firing.reattachDebugSnapshot;
+        return outSnapshot.valid;
+    }
 }

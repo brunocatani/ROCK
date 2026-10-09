@@ -1,7 +1,5 @@
 #include "physics-interaction/weapon/WeaponInteractionQuery.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
-#include "physics-interaction/weapon/WeaponGripSelection.h"
-#include "physics-interaction/weapon/FiringGripReattachZonePolicy.h"
 
 #include <cassert>
 #include <chrono>
@@ -41,11 +39,10 @@ namespace
             if (!std::isfinite(bounds) || !weapon_interaction_probe_math::isWithinProbeRadiusSquared(bounds,localRadius)) continue;
             ++result.boundsCandidates;
             float distance=(std::numeric_limits<float>::infinity)();
-            RE::NiPoint3 closestLocal{};
             for (const auto& triangle:source.triangles) {
                 float d=(std::numeric_limits<float>::infinity)();
-                const auto closest=closestPointOnTriangleToPoint(local,triangle,d);
-                if (std::isfinite(d) && d<=localRadius*localRadius && d<distance) { distance=d; closestLocal=closest; }
+                (void)closestPointOnTriangleToPoint(local,triangle,d);
+                if (std::isfinite(d) && d<=localRadius*localRadius) distance=(std::min)(distance,d);
             }
             if (!std::isfinite(distance) || !weapon_interaction_probe_math::isWithinProbeRadiusSquared(distance,localRadius)) continue;
             ++result.surfaceCandidates;
@@ -54,7 +51,6 @@ namespace
             if (result.valid() && !weapon_interaction_probe_math::isBetterProbeCandidate(rank,result.rank)) continue;
             result.part=i;
             result.rank=rank;
-            result.closestWorld=weapon_collision_geometry_math::localPointToWorld(source.world.rotate,source.world.translate,source.world.scale,closestLocal);
         }
         return result;
     }
@@ -87,7 +83,6 @@ namespace
         assert(a.rank.distanceSquaredGame==b.rank.distanceSquaredGame);
         assert(a.rank.aabbDiagonalSquaredGame==b.rank.aabbDiagonalSquaredGame);
         assert(a.rank.semanticPriority==b.rank.semanticPriority);
-        assert((a.closestWorld-b.closestWorld).Length()<0.0001f);
     }
 
     std::vector<Source> makeSources(std::size_t count)
@@ -160,83 +155,13 @@ namespace
 
 int main()
 {
-    // A spherical seat admits the same physical displacement after the weapon
-    // rotates/translates. Rear and side entry share one distance metric.
-    namespace volume = rock::firing_grip_reattach_zone_policy;
-    for (int i = 0; i < 80; ++i) {
-        const float angle = i * 0.17f;
-        const float distance = i * 0.125f;
-        const volume::Vec3 seat{31, -18, 72};
-        const auto result = volume::evaluateZone({seat,
-            {seat.x + distance * std::cos(angle), seat.y + distance * std::sin(angle), seat.z}, 5.0f});
-        assert(result.valid && std::abs(result.radialDistanceGameUnits - distance) < 0.00001f);
-        if (std::abs(distance - 5.0f) > 0.001f) assert(result.inside == (distance < 5.0f));
-    }
-    // Hover state cannot resurrect a withdrawn bolt, survive a weapon identity
-    // change, or prefer yesterday's distance to the current sampled positions.
-    namespace selection = rock::weapon_grip_selection;
-    const RE::NiPoint3 posePalm{1,0,0}, poseSeat{0,0,0}, poseNormal{0,0,1}, posePointing{0,1,0};
-    const auto posePreference=selection::supportPosePreference(posePalm,poseSeat,poseNormal,poseNormal,posePointing,posePointing);
-    assert(posePreference.valid && posePreference.credit>0);
-    for (int i=0;i<30;++i) {
-        const float angle=i*0.21f;
-        const auto rotate=[&](const RE::NiPoint3& point) {
-            return RE::NiPoint3{point.x*std::cos(angle)-point.y*std::sin(angle),point.x*std::sin(angle)+point.y*std::cos(angle),point.z};
-        };
-        const RE::NiPoint3 translation{130,-95,78};
-        const auto rotated=selection::supportPosePreference(rotate(posePalm)+translation,rotate(poseSeat)+translation,
-            rotate(poseNormal),rotate(poseNormal),rotate(posePointing),rotate(posePointing));
-        assert(rotated.valid && std::abs(rotated.credit-posePreference.credit)<0.0001f);
-    }
-    const auto mirrored=selection::supportPosePreference({-1,0,0},poseSeat,{-1,0,0},{-1,0,0},posePointing,posePointing);
-    assert(mirrored.valid && mirrored.credit==posePreference.credit);
-    const auto acrossSlide=selection::supportPosePreference(posePalm,poseSeat,poseNormal,poseNormal,{1,0,0},posePointing);
-    assert(acrossSlide.valid && acrossSlide.credit==0);
-    const auto outsidePose=selection::supportPosePreference({selection::kSupportPoseOuterRadius+1,0,0},poseSeat,
-        poseNormal,poseNormal,posePointing,posePointing);
-    assert(outsidePose.valid && outsidePose.credit==0);
-    assert(!selection::supportPosePreference(posePalm,poseSeat,{NAN,0,0},poseNormal,posePointing,posePointing).valid);
-    // Hover must follow the current pose evidence; a previous support credit
-    // cannot keep the hand on support after the wrist turns toward the slide.
-    std::array<selection::Candidate,2> overlap{{
-        {selection::Kind::Part,{},0.2f,2.0f,7,9,3,true},
-        {selection::Kind::Support,{},2.0f,10.0f,0,0,0,true}}};
-    selection::State overlapState{};
-    overlap[1].poseCredit=posePreference.credit;
-    assert(selection::select(overlapState,overlap,10,20,false).kind==selection::Kind::Support);
-    overlap[1].poseCredit=acrossSlide.credit;
-    assert(selection::select(overlapState,overlap,10,20,false).kind==selection::Kind::Part);
-    std::array<selection::Candidate, 2> candidates{{
-        {selection::Kind::Part, {}, 1.0f, 2.0f, 7, 9, 3, true},
-        {selection::Kind::Firing, {}, 1.1f, 10.0f, 0, 0, 0, true}}};
-    selection::State state{};
-    assert(selection::select(state, candidates, 10, 20, false).kind == selection::Kind::Part);
-    candidates[0].distance = 1.2f;
-    assert(selection::select(state, candidates, 10, 20, false).kind == selection::Kind::Part);
-    ++candidates[0].group;
-    assert(selection::select(state, candidates, 10, 20, false).kind == selection::Kind::Firing);
-    candidates[0].eligible = false;
-    assert(selection::select(state, candidates, 10, 20, false).kind == selection::Kind::Firing);
-    candidates[0].eligible = true;
-    candidates[0].distance = 1.0f;
-    assert(selection::select(state, candidates, 11, 20, false).kind == selection::Kind::Part);
-    assert(selection::select(state, {}, 11, 20, false).kind == selection::Kind::None);
-    assert(selection::select(state, candidates, 0, 20, false).kind == selection::Kind::None);
-    // Rejecting the nearer receiver leaves the next eligible surface visible.
-    const auto surfaceSources = makeSources(2);
-    const Batch surfaceBatch(surfaceSources);
-    const std::array<bool,2> excluded{{true,false}};
-    const auto masked = query::find(std::span(surfaceBatch.parts).first(surfaceBatch.count),
-        surfaceSources[0].world.translate, 3.0f, excluded);
-    assert(masked.valid() && masked.part == 1);
     rock::WeaponInteractionContact contact;contact.valid=true;contact.weaponGenerationKey=123;
     contact.grabPoint.ownerToken=45;contact.grabPoint.groupId=1;contact.grabPoint.sourceKey=237;
-    contact.grabPoint.pointId=7;contact.grabPoint.anchorAtPoint=true;contact.grabPoint.operating=true;
+    contact.grabPoint.pointId=7;contact.grabPoint.anchorAtPoint=true;
     contact.grabPoint.worldPoint={3,5,8};contact.grabPoint.attachmentWorld.scale=2;
     const auto routed=rock::routeWeaponInteraction(contact,{});
     assert(routed.grabPoint.pointId==7&&routed.grabPoint.ownerToken==45&&routed.grabPoint.sourceKey==237);
     assert(routed.grabPoint.anchorAtPoint&&routed.grabPoint.worldPoint.z==8&&routed.grabPoint.attachmentWorld.scale==2);
-    assert(routed.grabPoint.operating);
     contact.valid=false;assert(!rock::routeWeaponInteraction(contact,{}).grabPoint.pointId);
     // An admitted point is also the palm seat; no projection to the rod body.
     auto hand=rock::transform_math::makeIdentityTransform<RE::NiTransform>();

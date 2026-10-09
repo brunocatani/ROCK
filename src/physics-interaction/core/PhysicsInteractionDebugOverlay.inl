@@ -1776,70 +1776,570 @@
             addSemanticContactDebug(_leftHand);
         }
 
-        const auto drawGripSphere = [&](const RE::NiPoint3& center, float radius, debug::MarkerOverlayRole role) {
-            if (!std::isfinite(radius) || radius <= 0.0f) return;
-            constexpr int segments = 24;
-            for (int plane = 0; plane < 3; ++plane) {
-                RE::NiPoint3 previous{};
-                for (int i = 0; i <= segments; ++i) {
-                    const float angle = i * 2.0f * std::numbers::pi_v<float> / segments;
-                    const float a = radius * std::cos(angle), b = radius * std::sin(angle);
-                    const auto point = center + (plane == 0 ? RE::NiPoint3{a,b,0} : plane == 1 ? RE::NiPoint3{a,0,b} : RE::NiPoint3{0,a,b});
-                    if (i) addMarkerLine(role, previous, point);
-                    previous = point;
+        for (const bool isLeft : { true, false }) {
+            if (!drawAuthoredSupportGripDebug) break;
+            AuthoredSupportGripDebugSnapshot snapshot{};
+            if (_twoHandedGrip.getAuthoredSupportGripDebugSnapshot(isLeft, snapshot) && !snapshot.sharedFiringZone) {
+                // YELLOW cross: the final authored palm seat and center of the
+                // touch-substitution radius. BLUE cross: the live palm touch
+                // probe expressed in that same current Weapon frame. Wrist/
+                // hand-bone origins no longer participate in eligibility.
+                addMarkerPoint(
+                    debug::MarkerOverlayRole::AuthoredSupportGripPalmSeat,
+                    snapshot.authoredPalmSeatWorld,
+                    3.0f);
+                addMarkerPoint(
+                    debug::MarkerOverlayRole::AuthoredSupportGripLiveSample,
+                    snapshot.liveTouchProbeWorld,
+                    2.5f);
+                addMarkerLine(
+                    debug::MarkerOverlayRole::AuthoredSupportGripPalmSeat,
+                    snapshot.liveTouchProbeWorld,
+                    snapshot.authoredPalmSeatWorld);
+
+                constexpr float kSeatColor[4]{ 1.0f, 0.78f, 0.05f, 0.98f };
+                constexpr float kCoordinateColor[4]{ 0.92f, 0.92f, 1.0f, 0.94f };
+                const RE::NiPoint3 labelAnchor =
+                    snapshot.authoredPalmSeatWorld +
+                    RE::NiPoint3{ 0.0f, 0.0f, 4.0f };
+                addTextLineSized(
+                    labelAnchor,
+                    2.1f,
+                    kSeatColor,
+                    "AUTHORED SUPPORT SEAT %s topology=%s d=%.2f r=%.2f %s",
+                    snapshot.supportHandIsLeft ? "LEFT" : "RIGHT",
+                    authored_weapon_grip_activation_policy::handTopologyName(
+                        snapshot.handTopology),
+                    snapshot.weaponRelativeDistanceGameUnits,
+                    snapshot.touchRadiusGameUnits,
+                    snapshot.insideTouchRadius ? "INSIDE" : "OUTSIDE");
+                addTextLineSized(
+                    labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -2.2f },
+                    1.7f,
+                    kCoordinateColor,
+                    "seat Weapon=(%.2f, %.2f, %.2f)",
+                    snapshot.authoredPalmSeatWeaponLocal.x,
+                    snapshot.authoredPalmSeatWeaponLocal.y,
+                    snapshot.authoredPalmSeatWeaponLocal.z);
+                addTextLineSized(
+                    labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -4.2f },
+                    1.7f,
+                    kCoordinateColor,
+                    "touch Weapon=(%.2f, %.2f, %.2f) frameErr=%.4f",
+                    snapshot.liveTouchProbeWeaponLocal.x,
+                    snapshot.liveTouchProbeWeaponLocal.y,
+                    snapshot.liveTouchProbeWeaponLocal.z,
+                    snapshot.frameAgreementErrorGameUnits);
+
+                if (drawAuthoredGripActivationZones) {
+                    const float drawRadiusGameUnits = (std::min)(
+                        snapshot.radialCapGameUnits,
+                        12.0f);
+                    const auto activationBoundary =
+                        authored_weapon_grip_activation_policy::
+                            resolveActivationBoundaryDimensions(
+                                drawRadiusGameUnits);
+                    if (snapshot.canonicalAxesValid &&
+                        activationBoundary.valid) {
+                        const auto axisEnd = [&](const RE::NiPoint3& axis) {
+                            return RE::NiPoint3{
+                                snapshot.authoredPalmSeatWorld.x +
+                                    axis.x * drawRadiusGameUnits,
+                                snapshot.authoredPalmSeatWorld.y +
+                                    axis.y * drawRadiusGameUnits,
+                                snapshot.authoredPalmSeatWorld.z +
+                                    axis.z * drawRadiusGameUnits,
+                            };
+                        };
+                        addMarkerLine(
+                            debug::MarkerOverlayRole::AuthoredGripActivationSupportSideAxis,
+                            snapshot.authoredPalmSeatWorld,
+                            axisEnd(snapshot.supportSideAxisWorld));
+                        addMarkerLine(
+                            debug::MarkerOverlayRole::AuthoredGripActivationDownAxis,
+                            snapshot.authoredPalmSeatWorld,
+                            axisEnd(snapshot.downAxisWorld));
+                        addMarkerLine(
+                            debug::MarkerOverlayRole::AuthoredGripActivationReferenceAxis,
+                            snapshot.authoredPalmSeatWorld,
+                            axisEnd(snapshot.referenceAxisWorld));
+
+                        const auto drawWireCone = [&](
+                            const RE::NiPoint3& axis,
+                            const RE::NiPoint3& tangentA,
+                            const RE::NiPoint3& tangentB) {
+                            constexpr std::size_t SegmentCount = 12;
+                            std::array<RE::NiPoint3, SegmentCount> rim{};
+                            for (std::size_t segment = 0;
+                                 segment < SegmentCount;
+                                 ++segment) {
+                                const float angle =
+                                    static_cast<float>(segment) *
+                                    2.0f * std::numbers::pi_v<float> /
+                                    static_cast<float>(SegmentCount);
+                                const float radialA =
+                                    std::cos(angle) *
+                                    activationBoundary.rimRadiusGameUnits;
+                                const float radialB =
+                                    std::sin(angle) *
+                                    activationBoundary.rimRadiusGameUnits;
+                                rim[segment] = RE::NiPoint3{
+                                    snapshot.authoredPalmSeatWorld.x +
+                                        axis.x *
+                                            activationBoundary.axialGameUnits +
+                                        tangentA.x * radialA +
+                                        tangentB.x * radialB,
+                                    snapshot.authoredPalmSeatWorld.y +
+                                        axis.y *
+                                            activationBoundary.axialGameUnits +
+                                        tangentA.y * radialA +
+                                        tangentB.y * radialB,
+                                    snapshot.authoredPalmSeatWorld.z +
+                                        axis.z *
+                                            activationBoundary.axialGameUnits +
+                                        tangentA.z * radialA +
+                                        tangentB.z * radialB,
+                                };
+                            }
+                            for (std::size_t segment = 0;
+                                 segment < SegmentCount;
+                                 ++segment) {
+                                addMarkerLine(
+                                    debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
+                                    rim[segment],
+                                    rim[(segment + 1) % SegmentCount]);
+                                if ((segment % (SegmentCount / 4)) == 0) {
+                                    addMarkerLine(
+                                        debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
+                                        snapshot.authoredPalmSeatWorld,
+                                        rim[segment]);
+                                }
+                            }
+                        };
+
+                        const auto drawWireSweptActivationRegion = [&]() {
+                            const auto canonicalPoint = [&](
+                                const float supportSideOffset,
+                                const float downOffset,
+                                const float referenceOffset) {
+                                return RE::NiPoint3{
+                                    snapshot.authoredPalmSeatWorld.x +
+                                        snapshot.supportSideAxisWorld.x *
+                                            supportSideOffset +
+                                        snapshot.downAxisWorld.x * downOffset +
+                                        snapshot.referenceAxisWorld.x *
+                                            referenceOffset,
+                                    snapshot.authoredPalmSeatWorld.y +
+                                        snapshot.supportSideAxisWorld.y *
+                                            supportSideOffset +
+                                        snapshot.downAxisWorld.y * downOffset +
+                                        snapshot.referenceAxisWorld.y *
+                                            referenceOffset,
+                                    snapshot.authoredPalmSeatWorld.z +
+                                        snapshot.supportSideAxisWorld.z *
+                                            supportSideOffset +
+                                        snapshot.downAxisWorld.z * downOffset +
+                                        snapshot.referenceAxisWorld.z *
+                                            referenceOffset,
+                                };
+                            };
+                            const auto addAllowedLine = [&](
+                                const RE::NiPoint3& from,
+                                const RE::NiPoint3& to) {
+                                addMarkerLine(
+                                    debug::MarkerOverlayRole::
+                                        AuthoredGripActivationAllowedRegion,
+                                    from,
+                                    to);
+                            };
+
+                            constexpr std::size_t ArcSegmentCount = 12;
+                            RE::NiPoint3 previousPositive{};
+                            RE::NiPoint3 previousNegative{};
+                            RE::NiPoint3 previousCenter{};
+                            for (std::size_t segment = 0;
+                                 segment <= ArcSegmentCount;
+                                 ++segment) {
+                                const float angle =
+                                    static_cast<float>(segment) *
+                                    (0.5f * std::numbers::pi_v<float>) /
+                                    static_cast<float>(ArcSegmentCount);
+                                const float supportSideScale = std::cos(angle);
+                                const float downScale = std::sin(angle);
+                                const auto center = canonicalPoint(
+                                    supportSideScale * drawRadiusGameUnits,
+                                    downScale * drawRadiusGameUnits,
+                                    0.0f);
+                                const auto positive = canonicalPoint(
+                                    supportSideScale *
+                                        activationBoundary.axialGameUnits,
+                                    downScale *
+                                        activationBoundary.axialGameUnits,
+                                    activationBoundary.rimRadiusGameUnits);
+                                const auto negative = canonicalPoint(
+                                    supportSideScale *
+                                        activationBoundary.axialGameUnits,
+                                    downScale *
+                                        activationBoundary.axialGameUnits,
+                                    -activationBoundary.rimRadiusGameUnits);
+                                if (segment > 0) {
+                                    addAllowedLine(previousPositive, positive);
+                                    addAllowedLine(previousNegative, negative);
+                                    addAllowedLine(previousCenter, center);
+                                }
+                                if ((segment % (ArcSegmentCount / 4)) == 0) {
+                                    addAllowedLine(
+                                        snapshot.authoredPalmSeatWorld,
+                                        positive);
+                                    addAllowedLine(
+                                        snapshot.authoredPalmSeatWorld,
+                                        negative);
+                                }
+                                previousPositive = positive;
+                                previousNegative = negative;
+                                previousCenter = center;
+                            }
+
+                            const auto drawEndpointCap =
+                                [&](const bool supportSideEndpoint) {
+                                constexpr std::size_t SegmentCount = 12;
+                                RE::NiPoint3 previous{};
+                                for (std::size_t segment = 0;
+                                     segment <= SegmentCount;
+                                     ++segment) {
+                                    const float angle =
+                                        0.5f * std::numbers::pi_v<float> +
+                                        static_cast<float>(segment) *
+                                            std::numbers::pi_v<float> /
+                                            static_cast<float>(SegmentCount);
+                                    const float tangentOffset =
+                                        std::cos(angle) *
+                                        activationBoundary.rimRadiusGameUnits;
+                                    const auto point = canonicalPoint(
+                                        supportSideEndpoint ?
+                                            activationBoundary.axialGameUnits :
+                                            tangentOffset,
+                                        supportSideEndpoint ?
+                                            tangentOffset :
+                                            activationBoundary.axialGameUnits,
+                                        std::sin(angle) *
+                                            activationBoundary.rimRadiusGameUnits);
+                                    if (segment > 0) {
+                                        addAllowedLine(previous, point);
+                                    }
+                                    if (segment == SegmentCount / 2) {
+                                        addAllowedLine(
+                                            snapshot.authoredPalmSeatWorld,
+                                            point);
+                                    }
+                                    previous = point;
+                                }
+                            };
+                            drawEndpointCap(true);
+                            drawEndpointCap(false);
+                        };
+                        if (snapshot.weaponFamily ==
+                                authored_weapon_grip_activation_policy::
+                                    WeaponFamily::OneHandGun) {
+                            drawWireCone(
+                                snapshot.supportSideAxisWorld,
+                                snapshot.downAxisWorld,
+                                snapshot.referenceAxisWorld);
+                        }
+                        if (snapshot.weaponFamily ==
+                            authored_weapon_grip_activation_policy::
+                                WeaponFamily::TwoHandGun) {
+                            drawWireSweptActivationRegion();
+                        }
+                    }
+
+                    const auto liveVectorRole =
+                        snapshot.activationSpatialPass ?
+                        debug::MarkerOverlayRole::AuthoredGripActivationPass :
+                        debug::MarkerOverlayRole::AuthoredGripActivationFail;
+                    addMarkerLine(
+                        liveVectorRole,
+                        snapshot.authoredPalmSeatWorld,
+                        snapshot.liveTouchProbeWorld);
+
+                    for (std::size_t landmarkIndex = 0;
+                         landmarkIndex <
+                            AuthoredSupportGripDebugSnapshot::kPoseLandmarkCount;
+                         ++landmarkIndex) {
+                        const bool witnessValid =
+                            (snapshot.poseSurfaceWitnessMask &
+                                static_cast<std::uint8_t>(1u << landmarkIndex)) != 0;
+                        const auto witnessRole = witnessValid ?
+                            debug::MarkerOverlayRole::AuthoredGripActivationPass :
+                            debug::MarkerOverlayRole::AuthoredGripActivationFail;
+                        addMarkerPoint(
+                            witnessRole,
+                            snapshot.poseLandmarksWorld[landmarkIndex],
+                            landmarkIndex == 0 ? 2.4f : 1.7f);
+                        if (witnessValid) {
+                            addMarkerLine(
+                                witnessRole,
+                                snapshot.poseLandmarksWorld[landmarkIndex],
+                                snapshot.poseSurfaceWitnessWorld[landmarkIndex]);
+                        }
+                    }
+
+                    constexpr float kPassColor[4]{ 0.25f, 1.0f, 0.12f, 0.98f };
+                    constexpr float kFailColor[4]{ 1.0f, 0.18f, 0.08f, 0.98f };
+                    const bool authoredActivationPass =
+                        snapshot.activationSpatialPass;
+                    const float* verdictColor =
+                        authoredActivationPass ?
+                        kPassColor : kFailColor;
+                    addTextLineSized(
+                        labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -6.4f },
+                        1.75f,
+                        verdictColor,
+                        "AUTHORED ACTIVATION family=%s slot=%08X (%s) base=%08X",
+                        authored_weapon_grip_activation_policy::weaponFamilyName(
+                            snapshot.weaponFamily),
+                        snapshot.effectiveEquipSlotFormID,
+                        snapshot.effectiveEquipSlotUsesInstanceData ?
+                            "INSTANCE" : "BASE",
+                        snapshot.baseEquipSlotFormID);
+                    addTextLineSized(
+                        labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -8.4f },
+                        1.65f,
+                        verdictColor,
+                        "d=%.2f cap=%.2f sideDot=%.3f downDot=%.3f arcDot=%.3f region=%s spatial=%s",
+                        snapshot.weaponRelativeDistanceGameUnits,
+                        snapshot.radialCapGameUnits,
+                        snapshot.supportSideDot,
+                        snapshot.downDot,
+                        snapshot.sweptArcDot,
+                        authored_weapon_grip_activation_policy::activationRegionName(
+                            snapshot.selectedRegion),
+                        snapshot.activationSpatialPass ? "PASS" : "FAIL");
+                    addTextLineSized(
+                        labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -10.4f },
+                        1.65f,
+                        kCoordinateColor,
+                        "gates axes=%d class=%d radial=%d direction=%d topology=%d stable=%d",
+                        snapshot.canonicalAxesValid ? 1 : 0,
+                        snapshot.classifierSupported ? 1 : 0,
+                        snapshot.radialPass ? 1 : 0,
+                        snapshot.directionPass ? 1 : 0,
+                        snapshot.topologyPass ? 1 : 0,
+                        snapshot.directionUsedLastStableSample ? 1 : 0);
+                    addTextLineSized(
+                        labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -12.4f },
+                        1.65f,
+                        kCoordinateColor,
+                        "collision diagnostic witnesses=%u/6 mask=%02X evidence=%s authored=%s current=%s",
+                        static_cast<unsigned>(snapshot.poseSurfaceWitnessCount),
+                        static_cast<unsigned>(snapshot.poseSurfaceWitnessMask),
+                        snapshot.poseEvidencePass ? "PASS" : "FAIL",
+                        authoredActivationPass ? "AUTHORED" : "DYNAMIC/NONE",
+                        snapshot.currentSupportGripActive ?
+                            (snapshot.currentAuthoredSupportGripActive ?
+                                "AUTHORED" : "DYNAMIC") :
+                            "IDLE");
+                    addTextLineSized(
+                        labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -14.4f },
+                        1.65f,
+                        kCoordinateColor,
+                        "authoredOnly capability=%s reason=%s ready=%.3fs selection=%s/%s",
+                        authored_support_grab_policy::capabilityName(
+                            snapshot.authoredCapability),
+                        authored_support_grab_policy::capabilityReasonName(
+                            snapshot.authoredCapabilityReason),
+                        snapshot.authoredCapabilityReadySeconds,
+                        authored_support_grab_policy::selectionName(
+                            snapshot.lastSelection),
+                        authored_support_grab_policy::selectionReasonName(
+                            snapshot.lastSelectionReason));
                 }
             }
-        };
+        }
+
         if (drawAuthoredGripActivationZones) {
-            for (bool isLeft : {true, false}) {
-                const auto& snapshot = _twoHandedGrip.getWeaponGripSelectionDebug(isLeft);
-                if (!snapshot.valid) continue;
-                if (snapshot.pistolSupportContext && snapshot.supportPose.valid) {
-                    const auto palmRing = [&](RE::NiPoint3 center, RE::NiPoint3 normal, debug::MarkerOverlayRole role) {
-                        const float length=normal.Length();
-                        if (!std::isfinite(length) || length<0.0001f) return;
-                        normal=normal/length;
-                        const auto cross=[](const RE::NiPoint3& a,const RE::NiPoint3& b) {
-                            return RE::NiPoint3{a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};
+            FiringGripReattachZoneDebugSnapshot snapshot{};
+            if (_twoHandedGrip.getFiringGripReattachZoneDebugSnapshot(snapshot)) {
+                namespace reattach_zone = firing_grip_reattach_zone_policy;
+                // YELLOW cross: the captured firing grip point where both
+                // reattach cylinders start. BLUE crosses: each evaluated palm.
+                addMarkerPoint(
+                    debug::MarkerOverlayRole::AuthoredSupportGripPalmSeat,
+                    snapshot.gripWorld,
+                    3.0f);
+
+                const float drawReachGameUnits = (std::min)(
+                    snapshot.reachGameUnits,
+                    12.0f);
+                const float drawRadiusGameUnits =
+                    snapshot.cylinderRadiusGameUnits;
+                const auto tryBuildCylinderBasis = [](
+                    const RE::NiPoint3& axis,
+                    RE::NiPoint3& outUnitAxis,
+                    RE::NiPoint3& outTangentA,
+                    RE::NiPoint3& outTangentB) {
+                    const auto normalize = [](
+                        const RE::NiPoint3& value,
+                        RE::NiPoint3& outUnit) {
+                        const float lengthSquared =
+                            value.x * value.x +
+                            value.y * value.y +
+                            value.z * value.z;
+                        if (!std::isfinite(lengthSquared) ||
+                            lengthSquared <= 0.000001f) {
+                            return false;
+                        }
+                        const float inverseLength =
+                            1.0f / std::sqrt(lengthSquared);
+                        outUnit = RE::NiPoint3{
+                            value.x * inverseLength,
+                            value.y * inverseLength,
+                            value.z * inverseLength,
                         };
-                        auto tangent=cross(normal,std::abs(normal.z)<0.9f ? RE::NiPoint3{0,0,1} : RE::NiPoint3{0,1,0});
-                        tangent=tangent/tangent.Length();
-                        const auto second=cross(normal,tangent);
-                        addMarkerLine(role,center,center+normal*4.0f);
-                        RE::NiPoint3 previous{};
-                        for (int i=0;i<=16;++i) {
-                            const float angle=i*2.0f*std::numbers::pi_v<float>/16;
-                            const auto point=center+normal*2.0f+tangent*std::cos(angle)+second*std::sin(angle);
-                            if (i) addMarkerLine(role,previous,point);
-                            previous=point;
+                        return true;
+                    };
+                    const auto cross = [](
+                        const RE::NiPoint3& a,
+                        const RE::NiPoint3& b) {
+                        return RE::NiPoint3{
+                            a.y * b.z - a.z * b.y,
+                            a.z * b.x - a.x * b.z,
+                            a.x * b.y - a.y * b.x,
+                        };
+                    };
+                    if (!normalize(axis, outUnitAxis)) {
+                        return false;
+                    }
+                    const RE::NiPoint3 reference =
+                        std::abs(outUnitAxis.z) < 0.9f ?
+                        RE::NiPoint3{ 0.0f, 0.0f, 1.0f } :
+                        RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+                    if (!normalize(cross(reference, outUnitAxis), outTangentA)) {
+                        return false;
+                    }
+                    return normalize(cross(outUnitAxis, outTangentA), outTangentB);
+                };
+                RE::NiPoint3 unitAxis{};
+                RE::NiPoint3 tangentA{};
+                RE::NiPoint3 tangentB{};
+                if (drawReachGameUnits > 0.0f &&
+                    std::isfinite(drawRadiusGameUnits) &&
+                    drawRadiusGameUnits > 0.0f &&
+                    tryBuildCylinderBasis(
+                        snapshot.weaponLeftAxisWorld,
+                        unitAxis,
+                        tangentA,
+                        tangentB)) {
+                    const auto cylinderPoint = [&](
+                        const float axial,
+                        const float radialA,
+                        const float radialB) {
+                        return RE::NiPoint3{
+                            snapshot.gripWorld.x + unitAxis.x * axial +
+                                tangentA.x * radialA + tangentB.x * radialB,
+                            snapshot.gripWorld.y + unitAxis.y * axial +
+                                tangentA.y * radialA + tangentB.y * radialB,
+                            snapshot.gripWorld.z + unitAxis.z * axial +
+                                tangentA.z * radialA + tangentB.z * radialB,
+                        };
+                    };
+                    constexpr std::size_t SegmentCount = 12;
+                    const auto drawRing = [&](const float axial) {
+                        RE::NiPoint3 previous =
+                            cylinderPoint(axial, drawRadiusGameUnits, 0.0f);
+                        for (std::size_t segment = 1;
+                             segment <= SegmentCount;
+                             ++segment) {
+                            const float angle =
+                                static_cast<float>(segment) *
+                                2.0f * std::numbers::pi_v<float> /
+                                static_cast<float>(SegmentCount);
+                            const RE::NiPoint3 point = cylinderPoint(
+                                axial,
+                                std::cos(angle) * drawRadiusGameUnits,
+                                std::sin(angle) * drawRadiusGameUnits);
+                            addMarkerLine(
+                                debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
+                                previous,
+                                point);
+                            previous = point;
                         }
                     };
-                    palmRing(snapshot.palm,snapshot.palmNormal,debug::MarkerOverlayRole::AuthoredSupportGripLiveSample);
-                    palmRing(snapshot.supportSeat,snapshot.supportNormal,debug::MarkerOverlayRole::AuthoredSupportGripPalmSeat);
-                    addMarkerLine(debug::MarkerOverlayRole::AuthoredSupportGripLiveSample,
-                        snapshot.palm+snapshot.palmNormal*2.0f,snapshot.palm+snapshot.palmNormal*2.0f+snapshot.wristAxis*1.5f);
-                    addMarkerLine(debug::MarkerOverlayRole::AuthoredSupportGripPalmSeat,
-                        snapshot.supportSeat+snapshot.supportNormal*2.0f,snapshot.supportSeat+snapshot.supportNormal*2.0f+snapshot.supportWristAxis*1.5f);
-                    drawGripSphere(snapshot.supportSeat,weapon_grip_selection::kSupportPoseOuterRadius,
-                        debug::MarkerOverlayRole::AuthoredSupportGripPalmSeat);
-                    const float poseColor[4]{0.3f,0.85f,1.0f,1.0f};
-                    addTextLineSized(snapshot.supportSeat+RE::NiPoint3{0,0,7},1.7f,poseColor,
-                        "PISTOL %s d=%.2f palm=%.2f wrist=%.2f credit=%.2f",
-                        snapshot.supportPreferenceApplied && snapshot.supportPose.credit>0 ? "SUPPORT POSE MATCH" : "PROXIMITY",
-                        snapshot.supportPose.distance,snapshot.supportPose.palmDot,snapshot.supportPose.wristDot,
-                        snapshot.supportPreferenceApplied ? snapshot.supportPose.credit : 0.0f);
+                    // One cylinder per side of the weapon, starting on the
+                    // grip point: axis line, far ring, and four spokes.
+                    const auto drawWireCylinder = [&](const float axisSign) {
+                        addMarkerLine(
+                            debug::MarkerOverlayRole::AuthoredGripActivationSupportSideAxis,
+                            snapshot.gripWorld,
+                            cylinderPoint(axisSign * drawReachGameUnits, 0.0f, 0.0f));
+                        drawRing(axisSign * drawReachGameUnits);
+                        for (std::size_t spoke = 0; spoke < 4; ++spoke) {
+                            const float angle =
+                                static_cast<float>(spoke) *
+                                0.5f * std::numbers::pi_v<float>;
+                            const float radialA =
+                                std::cos(angle) * drawRadiusGameUnits;
+                            const float radialB =
+                                std::sin(angle) * drawRadiusGameUnits;
+                            addMarkerLine(
+                                debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
+                                cylinderPoint(0.0f, radialA, radialB),
+                                cylinderPoint(
+                                    axisSign * drawReachGameUnits,
+                                    radialA,
+                                    radialB));
+                        }
+                    };
+                    drawRing(0.0f);
+                    drawWireCylinder(1.0f);
+                    drawWireCylinder(-1.0f);
                 }
-                for (const auto& candidate : snapshot.candidates) {
-                    if (candidate.kind == weapon_grip_selection::Kind::None) continue;
-                    const bool selected = candidate.sameTarget(snapshot.selected);
-                    const auto role = selected ? debug::MarkerOverlayRole::AuthoredGripActivationPass :
-                        candidate.eligible ? debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion : debug::MarkerOverlayRole::AuthoredGripActivationFail;
-                    drawGripSphere(candidate.world, candidate.radius, role);
-                    addMarkerLine(role, snapshot.palm, candidate.world);
-                    const float color[4]{selected ? 0.2f : 1.0f, candidate.eligible ? 1.0f : 0.2f, 0.2f, 1.0f};
-                    addTextLineSized(candidate.world + RE::NiPoint3{0,0,isLeft ? 3.0f : 5.0f}, 1.7f, color,
-                        "%s %s d=%.2f r=%.2f score=%.2f %s", isLeft ? "L" : "R", weapon_grip_selection::name(candidate.kind),
-                        candidate.distance, candidate.radius, candidate.score(), selected ? "SELECTED" : candidate.eligible ? "ELIGIBLE" : "OUTSIDE");
+
+                constexpr float kSeatColor[4]{ 1.0f, 0.78f, 0.05f, 0.98f };
+                constexpr float kPassColor[4]{ 0.25f, 1.0f, 0.12f, 0.98f };
+                constexpr float kFailColor[4]{ 1.0f, 0.18f, 0.08f, 0.98f };
+                // Stack upward from the grip so the readout clears the
+                // authored support seat labels below it.
+                const RE::NiPoint3 labelAnchor =
+                    snapshot.gripWorld + RE::NiPoint3{ 0.0f, 0.0f, 6.0f };
+                addTextLineSized(
+                    labelAnchor,
+                    2.1f,
+                    kSeatColor,
+                    "FIRING REATTACH ZONE reach=%.2f radius=%.2f x2",
+                    snapshot.reachGameUnits,
+                    snapshot.cylinderRadiusGameUnits);
+                float labelOffset = 2.2f;
+                for (std::size_t handIndex = 0;
+                     handIndex < snapshot.hands.size();
+                     ++handIndex) {
+                    const auto& hand = snapshot.hands[handIndex];
+                    if (!hand.evaluated) {
+                        continue;
+                    }
+                    const auto verdictRole = hand.inside ?
+                        debug::MarkerOverlayRole::AuthoredGripActivationPass :
+                        debug::MarkerOverlayRole::AuthoredGripActivationFail;
+                    addMarkerPoint(
+                        debug::MarkerOverlayRole::AuthoredSupportGripLiveSample,
+                        hand.palmWorld,
+                        2.5f);
+                    addMarkerLine(verdictRole, snapshot.gripWorld, hand.palmWorld);
+                    addTextLineSized(
+                        labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, labelOffset },
+                        1.65f,
+                        hand.inside ? kPassColor : kFailColor,
+                        "%s palm along=%.2f perp=%.2f d=%.2f side=%s reach=%d radius=%d grab=%s %s",
+                        handIndex == 0 ? "LEFT" : "RIGHT",
+                        hand.alongAxisGameUnits,
+                        hand.perpendicularDistanceGameUnits,
+                        hand.radialDistanceGameUnits,
+                        reattach_zone::sideName(hand.side),
+                        hand.reachPass ? 1 : 0,
+                        hand.radiusPass ? 1 : 0,
+                        hand.gripHeld ? "HELD" : "OPEN",
+                        hand.inside ? "INSIDE" : "OUTSIDE");
+                    labelOffset += 2.0f;
                 }
             }
         }
@@ -1882,12 +2382,48 @@
         }
 
         if (drawAuthoredGripActivationZones) {
-            for (bool isLeft : {false, true}) {
+            // Each physical hand owns a separate loose support cone. Both
+            // remain available before either hand has acquired the weapon.
+            for (const bool isLeft : {false, true}) {
                 loose_weapon_grip_zone::AuthoredSupportDebug seat{};
-                if (!loose_weapon_grip_zone::tryGetAuthoredSupportDebug(isLeft, seat)) continue;
-                const auto role = seat.eligible ? debug::MarkerOverlayRole::AuthoredGripActivationPass : debug::MarkerOverlayRole::AuthoredGripActivationFail;
-                drawGripSphere(seat.seatWorld, seat.radius, role);
+                if (!loose_weapon_grip_zone::tryGetAuthoredSupportDebug(isLeft, seat)) {
+                    continue;
+                }
+                namespace activation = authored_weapon_grip_activation_policy;
+                const auto dimensions = activation::resolveActivationBoundaryDimensions(seat.radius);
+                if (!dimensions.valid || (seat.family != activation::WeaponFamily::OneHandGun &&
+                    seat.family != activation::WeaponFamily::TwoHandGun)) {
+                    continue;
+                }
+                const auto role = seat.eligible ? debug::MarkerOverlayRole::AuthoredGripActivationPass :
+                    debug::MarkerOverlayRole::AuthoredGripActivationFail;
+                addMarkerPoint(role, seat.seatWorld, 2.0f);
                 addMarkerLine(role, seat.seatWorld, seat.probeWorld);
+                // Rifle activation is the same side-to-down swept cone as the
+                // equipped gate. Draw its endpoints and bisector for readback.
+                const int coneCount = seat.family == activation::WeaponFamily::TwoHandGun ? 3 : 1;
+                for (int cone = 0; cone < coneCount; ++cone) {
+                    const float angle = static_cast<float>(cone) * std::numbers::pi_v<float> / 4.0f;
+                    const float c = std::cos(angle), sn = std::sin(angle);
+                    const RE::NiPoint3 axis = seat.sideWorld * c + seat.downWorld * sn;
+                    const RE::NiPoint3 tangent = seat.downWorld * c - seat.sideWorld * sn;
+                    constexpr std::size_t segments = 12;
+                    std::array<RE::NiPoint3, segments> rim{};
+                    for (std::size_t segment = 0; segment < segments; ++segment) {
+                        const float phase = static_cast<float>(segment) * 2.0f * std::numbers::pi_v<float> / segments;
+                        rim[segment] = seat.seatWorld + axis * dimensions.axialGameUnits +
+                            tangent * (std::cos(phase) * dimensions.rimRadiusGameUnits) +
+                            seat.referenceWorld * (std::sin(phase) * dimensions.rimRadiusGameUnits);
+                    }
+                    for (std::size_t segment = 0; segment < segments; ++segment) {
+                        addMarkerLine(debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
+                            rim[segment], rim[(segment + 1) % segments]);
+                        if (segment % 3 == 0) {
+                            addMarkerLine(debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
+                                seat.seatWorld, rim[segment]);
+                        }
+                    }
+                }
             }
         }
 

@@ -1223,7 +1223,7 @@ namespace rock
         WeaponInteractionContact& outContact,
         InteractionQueryBatch& batch,
         api::Hand hand,const weapon_drive_pose::NativeFrame* operatingPose,
-        std::span<const std::array<float,3>> extraProbes,bool allowSurfaceCompetition,std::span<const std::array<float,3>> pinkyProbes) const
+        std::span<const std::array<float,3>> extraProbes,bool operatingOnly,std::span<const std::array<float,3>> pinkyProbes) const
     {
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponContactProbe);
         outContact = {};
@@ -1279,15 +1279,13 @@ namespace rock
                         rules[p].point.sourceKey,rules[p].point.pointId,operatingPose->size(),rest.x,rest.y,rest.z,position.x,position.y,position.z,candidate.validWorld);
                 }
             }
-            for(std::size_t i=0;i<batch.count;++i) {
+            for(std::size_t i=0;batch.pointCount&&i<batch.count;++i) {
                 const auto& instance=*batch.instances[i];
                 const auto resolution=weapon_part_runtime::resolveTarget(std::span(targets).first(targetCount),{
                     .weaponGenerationKey=currentGeneration,.bodyId=instance.body.getBodyId().value,
                     .sourceRoot=reinterpret_cast<std::uintptr_t>(instance.sourceNode),.sourceName=instance.sourceName,
                     .partKind=instance.semantic.partKind,.reloadRole=instance.semantic.reloadRole,
                     .supportRole=instance.semantic.supportGripRole,.socketRole=instance.semantic.socketRole,.actionRole=instance.semantic.actionRole});
-                batch.providerMatched[i]=resolution.matched;
-                batch.exclusiveTargets=batch.exclusiveTargets||resolution.whitelistActive;
                 if(!resolution.matched||resolution.grabMode!=weapon_part_runtime::GrabMode::AttachOnly)continue;
                 for(std::size_t p=0;p<batch.pointCount;++p) {
                     auto& candidate=batch.points[p];
@@ -1314,29 +1312,24 @@ namespace rock
 
         weapon_interaction_query::Selection selection;
         const auto pointSelection=weapon_part_points::nearest(std::span(batch.points).first(batch.pointCount),hand,
-            {probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z},probeRadiusGame,extraProbes,pinkyProbes);
-        auto picked=pointSelection.point;
+            {probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z},probeRadiusGame,extraProbes,operatingOnly,pinkyProbes);
+        const auto picked=pointSelection.point;
         const bool handMask=hand==api::Hand::Left||hand==api::Hand::Right;
-        if(picked<batch.pointCount) {
-            selection.part=batch.points[picked].part;
-            selection.rank.distanceSquaredGame=pointSelection.distanceSquared;
-            const auto& point=batch.points[picked].world;
-            selection.closestWorld={point[0],point[1],point[2]};
-        }
-        {
-            // Eligibility precedes distance: an ungrabbable receiver surface
-            // must not hide a farther allowed bolt or authored point.
-            std::array<bool,MAX_WEAPON_COLLISION_BODIES> excluded{};
-            for(std::size_t i=0;i<batch.count;++i) {
-                excluded[i]=batch.pointRestricted[i] ||
-                    ((!allowSurfaceCompetition || batch.exclusiveTargets) && !batch.providerMatched[i]);
-            }
-            const auto surface=weapon_interaction_query::find(
-                {batch.parts.data(),batch.count},probeWorldPoint,probeRadiusGame,
-                handMask?std::span<const bool>(excluded).first(batch.count):std::span<const bool>{});
-            if(surface.valid() && (!selection.valid() || surface.rank.distanceSquaredGame < selection.rank.distanceSquaredGame)) {
-                selection=surface;
-                picked=batch.pointCount;
+        if(picked<batch.pointCount){selection.part=batch.points[picked].part;selection.rank.distanceSquaredGame=pointSelection.distanceSquared;}
+        if(!selection.valid()&&!operatingOnly)selection=weapon_interaction_query::find(
+            {batch.parts.data(),batch.count},probeWorldPoint,probeRadiusGame,
+            handMask?std::span<const bool>(batch.pointRestricted).first(batch.count):std::span<const bool>{});
+        if(operatingOnly){
+            const auto first=extraProbes.empty()?std::array<float,3>{}:extraProbes[0];
+            const auto second=extraProbes.size()<2?std::array<float,3>{}:extraProbes[1];
+            if(hand==api::Hand::Left){
+                ROCK_LOG_SAMPLE_INFO(Weapon,1500,"OperatingGrabProbe left extraProbes={} pinkyProbes={} selected={} distance={:.3f} palm=({:.2f},{:.2f},{:.2f}) extra0=({:.2f},{:.2f},{:.2f}) extra1=({:.2f},{:.2f},{:.2f})",
+                    extraProbes.size(),pinkyProbes.size(),picked<batch.pointCount?batch.points[picked].rule.point.pointId:0,picked<batch.pointCount?std::sqrt(pointSelection.distanceSquared):-1.f,
+                    probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z,first[0],first[1],first[2],second[0],second[1],second[2]);
+            }else{
+                ROCK_LOG_SAMPLE_INFO(Weapon,1500,"OperatingGrabProbe right extraProbes={} pinkyProbes={} selected={} distance={:.3f} palm=({:.2f},{:.2f},{:.2f}) extra0=({:.2f},{:.2f},{:.2f}) extra1=({:.2f},{:.2f},{:.2f})",
+                    extraProbes.size(),pinkyProbes.size(),picked<batch.pointCount?batch.points[picked].rule.point.pointId:0,picked<batch.pointCount?std::sqrt(pointSelection.distanceSquared):-1.f,
+                    probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z,first[0],first[1],first[2],second[0],second[1],second[2]);
             }
         }
         performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponProbeBoundsCandidates, selection.boundsCandidates);
@@ -1372,13 +1365,9 @@ namespace rock
         outContact.sourceRoot = bestInstance->sourceNode;
         outContact.weaponGenerationKey = currentGeneration;
         outContact.probeDistanceGame = std::sqrt(bestRank.distanceSquaredGame);
-        outContact.probeTargetWorld = selection.closestWorld;
-        outContact.probeTargetRadiusGame = probeRadiusGame;
         if(picked<batch.pointCount) {
             const auto& point=batch.points[picked].rule.point;
-            outContact.probeTargetRadiusGame = (std::min)(probeRadiusGame, point.radiusGame);
             outContact.grabPoint={batch.points[picked].rule.owner,point.groupId,point.sourceKey,point.pointId,{point.pointInSource[0],point.pointInSource[1],point.pointInSource[2]}};
-            outContact.grabPoint.operating=batch.points[picked].rule.operating;
             if(batch.points[picked].rule.anchored) {
                 auto& anchor=outContact.grabPoint;const auto& world=batch.points[picked].world;
                 anchor.anchorAtPoint=true;anchor.worldPoint={world[0],world[1],world[2]};

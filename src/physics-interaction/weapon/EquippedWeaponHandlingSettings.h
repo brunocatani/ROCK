@@ -20,6 +20,7 @@ namespace rock
         // the other hand still carries the weapon.
         bool lastGripReleaseDropEnabled{ true };
         immersive_weapon_policy::Config immersiveWeapon{};
+        float firingGripReattachCylinderRadiusGameUnits{ 2.0f };
         float firingGripProximitySupportRadiusGameUnits{ 6.0f };
         float leftFiringAimYawDegrees{ 0.0f };
         float leftFiringAimPitchDegrees{ 0.0f };
@@ -49,6 +50,7 @@ namespace rock
         float gripZoneEquipRadiusGameUnits{ 3.0f };
         float gripZoneEquipSettleSeconds{ 0.15f };
         float firingGripReattachRadiusGameUnits{ 12.0f };
+        float firingGripReattachCylinderRadiusGameUnits{ 2.0f };
         float gripZoneHoverHapticIntensity{ 0.75f };
         float firingGripProximitySupportRadiusGameUnits{ 6.0f };
         float weaponGripHapticDurationSeconds{ 0.10f };
@@ -94,6 +96,10 @@ namespace rock
         settings.equippedWeaponShoulderStashEnabled =
             rockBaseline.equippedWeaponShoulderStashEnabled;
         settings.immersiveWeapon = rockBaseline.immersiveWeapon;
+        // The reattach cylinder radius is ROCK tuning under both detach
+        // authorities; a handling owner may replace only the reach.
+        settings.firingGripReattachCylinderRadiusGameUnits =
+            rockBaseline.firingGripReattachCylinderRadiusGameUnits;
         // Near-firing-grip VisualOnlySupport is a ROCK weapon-support safety
         // contract, not ambidextrous ownership. ROCK supplies the baseline
         // radius; an active handling owner may replace only that tuning value.

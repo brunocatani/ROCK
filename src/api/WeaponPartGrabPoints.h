@@ -33,11 +33,11 @@ namespace rock::weapon_part_points {
     }
     struct Selection {std::size_t point;float distanceSquared{};};
     inline Selection nearest(std::span<const Candidate> points,api::Hand hand,const std::array<float,3>& probe,float probeRadius,
-        std::span<const std::array<float,3>> extraProbes={},std::span<const std::array<float,3>> pinkyProbes={}) noexcept {
+        std::span<const std::array<float,3>> extraProbes={},bool operatingOnly=false,std::span<const std::array<float,3>> pinkyProbes={}) noexcept {
         Selection result{points.size(),0};const auto mask=hand==api::Hand::Left?1u:hand==api::Hand::Right?2u:0u;
         if(!mask||!std::isfinite(probeRadius)||probeRadius<=0||!std::all_of(probe.begin(),probe.end(),[](auto v){return std::isfinite(v);}))return result;
         for(std::size_t i=0;i<points.size();++i){const auto& c=points[i];const auto& p=c.rule.point;
-            if(!c.validWorld||c.part==~std::size_t{0}||!(p.handMask&mask))continue;
+            if(!c.validWorld||c.part==~std::size_t{0}||!(p.handMask&mask)||c.rule.operating!=operatingOnly)continue;
             float distance=0;for(int k=0;k<3;++k){const auto d=c.world[k]-probe[k];distance+=d*d;}
             if(c.rule.operating)for(const auto& finger:extraProbes){
                 float fingerDistance=0;for(int k=0;k<3;++k){const auto d=c.world[k]-finger[k];fingerDistance+=d*d;}

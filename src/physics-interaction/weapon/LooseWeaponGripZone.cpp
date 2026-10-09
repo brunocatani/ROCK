@@ -62,6 +62,8 @@ namespace rock::loose_weapon_grip_zone
         {
             std::uint32_t refID{ 0 };
             std::uint64_t captureSequence{ 0 };
+            RE::NiPoint3 lastDirection{};
+            bool lastDirectionValid{ false };
             AuthoredSupportDebug debug{};
             std::array<RE::NiPoint3, 2> indicatorLocal{};
             std::size_t indicatorCount{ 0 };
@@ -428,10 +430,13 @@ namespace rock::loose_weapon_grip_zone
         const bool firingResolved = tryResolveGripWorld(isLeft, ref, firing);
         const float firingDistance = pointDistance(probeLocal, firing.gripWeaponLocal) * std::fabs(root->world.scale);
         const auto& settings = equipped_weapon_handling_runtime::current();
+        const auto canonicalRightWorld = transform_math::composeTransforms(root->world, authored.rightHandWeaponLocal);
+        const auto lateral = computePalmNormalFromHandBasis(canonicalRightWorld, false);
         const auto vec = [](const RE::NiPoint3& p) { return activation::Vec3{p.x, p.y, p.z}; };
         const auto firingZone = firing_grip_reattach_zone_policy::evaluateZone({
-            .gripWorld = vec(firing.gripWorld), .palmWorld = vec(probeWorld),
-            .radiusGameUnits = settings.firingGripReattachRadiusGameUnits,
+            .gripWorld = vec(firing.gripWorld), .palmWorld = vec(probeWorld), .weaponLeftAxisWorld = vec(lateral),
+            .reachGameUnits = settings.firingGripReattachRadiusGameUnits,
+            .radiusGameUnits = settings.firingGripReattachCylinderRadiusGameUnits,
         });
         const bool firingEligible = firingResolved && firing.hasFiringHandWeaponLocal && authored.found &&
             authored.rightFiringFingerPose.complete() && firingZone.inside;
@@ -471,13 +476,23 @@ namespace rock::loose_weapon_grip_zone
             debug.valid = !sharedZone && TwoHandedGrip::tryResolveAuthoredActivationAxes(
                 authored.rightHandWeaponLocal, root->world, topology,
                 debug.sideWorld, debug.downWorld, debug.referenceWorld);
-            const auto gate = sharedZone ? activation::RadialGateResult{} : activation::evaluateRadialGate({
+            const auto gate = sharedZone ? activation::DirectionGateResult{} : activation::evaluateDirectionGate({
                 .weaponFamily = debug.family,
                 .handTopology = topology,
                 .authoredSeatWorld = vec(debug.seatWorld),
                 .liveProbeWorld = vec(probeWorld),
+                .supportSideAxisWorld = vec(debug.sideWorld),
+                .downAxisWorld = vec(debug.downWorld),
+                .lastStableDirectionWorld = vec(state.lastDirection),
                 .radialCapGameUnits = debug.radius,
+                .lastStableDirectionValid = state.lastDirectionValid,
             });
+            if (gate.directionValid && gate.radialDistanceGameUnits >= activation::kMinimumDirectionDistanceGameUnits) {
+                state.lastDirection = {gate.approachDirectionWorld.x, gate.approachDirectionWorld.y, gate.approachDirectionWorld.z};
+                state.lastDirectionValid = true;
+            }
+            // The visible activation cone is the capture area. Requiring mesh
+            // touch here made its indicator promise a seat the grab ignored.
             supportEligible = sharedZone ? firingEligible : debug.valid && gate.spatialPass;
             debug.eligible = supportEligible;
             const auto indicator = activation::evaluateIndicator({

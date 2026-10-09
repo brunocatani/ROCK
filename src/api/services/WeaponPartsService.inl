@@ -371,6 +371,6 @@
     }
     std::size_t copyWeaponPartPointSelection(std::span<weapon_part_runtime::Target> targets,std::span<weapon_part_points::OwnedPoint> points,std::size_t& pointCount) {
         std::scoped_lock lock(s_weaponPartMutex);pointCount=s_weaponPartGrabPoints.copy(points);std::size_t count=0;
-        for(const auto& slot:s_weaponPartTargets)if(slot.active){if(count==targets.size())break;targets[count++]=toRuntimeTarget(slot);}
+        if(pointCount)for(const auto& slot:s_weaponPartTargets)if(slot.active){if(count==targets.size())break;targets[count++]=toRuntimeTarget(slot);}
         return count;
     }

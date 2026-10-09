@@ -978,6 +978,7 @@ namespace rock
         {
             std::atomic<int> contactLogCounter{ 0 };
             int deltaLogCounter = 0;
+            int weaponInteractionProbeLogCounter = 0;
             int wpnNodeLogCounter = 0;
         };
 
