@@ -175,6 +175,37 @@ int main()
     // Hover state cannot resurrect a withdrawn bolt, survive a weapon identity
     // change, or prefer yesterday's distance to the current sampled positions.
     namespace selection = rock::weapon_grip_selection;
+    const RE::NiPoint3 posePalm{1,0,0}, poseSeat{0,0,0}, poseNormal{0,0,1}, posePointing{0,1,0};
+    const auto posePreference=selection::supportPosePreference(posePalm,poseSeat,poseNormal,poseNormal,posePointing,posePointing);
+    assert(posePreference.valid && posePreference.credit>0);
+    for (int i=0;i<30;++i) {
+        const float angle=i*0.21f;
+        const auto rotate=[&](const RE::NiPoint3& point) {
+            return RE::NiPoint3{point.x*std::cos(angle)-point.y*std::sin(angle),point.x*std::sin(angle)+point.y*std::cos(angle),point.z};
+        };
+        const RE::NiPoint3 translation{130,-95,78};
+        const auto rotated=selection::supportPosePreference(rotate(posePalm)+translation,rotate(poseSeat)+translation,
+            rotate(poseNormal),rotate(poseNormal),rotate(posePointing),rotate(posePointing));
+        assert(rotated.valid && std::abs(rotated.credit-posePreference.credit)<0.0001f);
+    }
+    const auto mirrored=selection::supportPosePreference({-1,0,0},poseSeat,{-1,0,0},{-1,0,0},posePointing,posePointing);
+    assert(mirrored.valid && mirrored.credit==posePreference.credit);
+    const auto acrossSlide=selection::supportPosePreference(posePalm,poseSeat,poseNormal,poseNormal,{1,0,0},posePointing);
+    assert(acrossSlide.valid && acrossSlide.credit==0);
+    const auto outsidePose=selection::supportPosePreference({selection::kSupportPoseOuterRadius+1,0,0},poseSeat,
+        poseNormal,poseNormal,posePointing,posePointing);
+    assert(outsidePose.valid && outsidePose.credit==0);
+    assert(!selection::supportPosePreference(posePalm,poseSeat,{NAN,0,0},poseNormal,posePointing,posePointing).valid);
+    // Hover must follow the current pose evidence; a previous support credit
+    // cannot keep the hand on support after the wrist turns toward the slide.
+    std::array<selection::Candidate,2> overlap{{
+        {selection::Kind::Part,{},0.2f,2.0f,7,9,3,true},
+        {selection::Kind::Support,{},2.0f,10.0f,0,0,0,true}}};
+    selection::State overlapState{};
+    overlap[1].poseCredit=posePreference.credit;
+    assert(selection::select(overlapState,overlap,10,20,false).kind==selection::Kind::Support);
+    overlap[1].poseCredit=acrossSlide.credit;
+    assert(selection::select(overlapState,overlap,10,20,false).kind==selection::Kind::Part);
     std::array<selection::Candidate, 2> candidates{{
         {selection::Kind::Part, {}, 1.0f, 2.0f, 7, 9, 3, true},
         {selection::Kind::Firing, {}, 1.1f, 10.0f, 0, 0, 0, true}}};
@@ -200,11 +231,12 @@ int main()
     assert(masked.valid() && masked.part == 1);
     rock::WeaponInteractionContact contact;contact.valid=true;contact.weaponGenerationKey=123;
     contact.grabPoint.ownerToken=45;contact.grabPoint.groupId=1;contact.grabPoint.sourceKey=237;
-    contact.grabPoint.pointId=7;contact.grabPoint.anchorAtPoint=true;
+    contact.grabPoint.pointId=7;contact.grabPoint.anchorAtPoint=true;contact.grabPoint.operating=true;
     contact.grabPoint.worldPoint={3,5,8};contact.grabPoint.attachmentWorld.scale=2;
     const auto routed=rock::routeWeaponInteraction(contact,{});
     assert(routed.grabPoint.pointId==7&&routed.grabPoint.ownerToken==45&&routed.grabPoint.sourceKey==237);
     assert(routed.grabPoint.anchorAtPoint&&routed.grabPoint.worldPoint.z==8&&routed.grabPoint.attachmentWorld.scale==2);
+    assert(routed.grabPoint.operating);
     contact.valid=false;assert(!rock::routeWeaponInteraction(contact,{}).grabPoint.pointId);
     // An admitted point is also the palm seat; no projection to the rod body.
     auto hand=rock::transform_math::makeIdentityTransform<RE::NiTransform>();

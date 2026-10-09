@@ -463,6 +463,8 @@ namespace rock
         snapshot.authoredPalmSeatWeaponLocal =
             proximity.authoredPalmSeatWeaponLocal;
         snapshot.authoredPalmSeatWorld = proximity.authoredPalmSeatWorld;
+        snapshot.authoredPalmNormalWorld = computePalmNormalFromHandBasis(proximity.authoredHandWorld, supportHandIsLeft);
+        snapshot.authoredWristAxisWorld = transformHandspaceDirection(proximity.authoredHandWorld, RE::NiPoint3{1,0,0}, supportHandIsLeft);
         snapshot.liveTouchProbeWeaponLocal =
             proximity.liveTouchProbeWeaponLocal;
         snapshot.liveTouchProbeWorld = proximity.liveTouchProbeWorld;

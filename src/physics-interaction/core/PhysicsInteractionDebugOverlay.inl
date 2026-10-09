@@ -1794,6 +1794,41 @@
             for (bool isLeft : {true, false}) {
                 const auto& snapshot = _twoHandedGrip.getWeaponGripSelectionDebug(isLeft);
                 if (!snapshot.valid) continue;
+                if (snapshot.pistolSupportContext && snapshot.supportPose.valid) {
+                    const auto palmRing = [&](RE::NiPoint3 center, RE::NiPoint3 normal, debug::MarkerOverlayRole role) {
+                        const float length=normal.Length();
+                        if (!std::isfinite(length) || length<0.0001f) return;
+                        normal=normal/length;
+                        const auto cross=[](const RE::NiPoint3& a,const RE::NiPoint3& b) {
+                            return RE::NiPoint3{a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};
+                        };
+                        auto tangent=cross(normal,std::abs(normal.z)<0.9f ? RE::NiPoint3{0,0,1} : RE::NiPoint3{0,1,0});
+                        tangent=tangent/tangent.Length();
+                        const auto second=cross(normal,tangent);
+                        addMarkerLine(role,center,center+normal*4.0f);
+                        RE::NiPoint3 previous{};
+                        for (int i=0;i<=16;++i) {
+                            const float angle=i*2.0f*std::numbers::pi_v<float>/16;
+                            const auto point=center+normal*2.0f+tangent*std::cos(angle)+second*std::sin(angle);
+                            if (i) addMarkerLine(role,previous,point);
+                            previous=point;
+                        }
+                    };
+                    palmRing(snapshot.palm,snapshot.palmNormal,debug::MarkerOverlayRole::AuthoredSupportGripLiveSample);
+                    palmRing(snapshot.supportSeat,snapshot.supportNormal,debug::MarkerOverlayRole::AuthoredSupportGripPalmSeat);
+                    addMarkerLine(debug::MarkerOverlayRole::AuthoredSupportGripLiveSample,
+                        snapshot.palm+snapshot.palmNormal*2.0f,snapshot.palm+snapshot.palmNormal*2.0f+snapshot.wristAxis*1.5f);
+                    addMarkerLine(debug::MarkerOverlayRole::AuthoredSupportGripPalmSeat,
+                        snapshot.supportSeat+snapshot.supportNormal*2.0f,snapshot.supportSeat+snapshot.supportNormal*2.0f+snapshot.supportWristAxis*1.5f);
+                    drawGripSphere(snapshot.supportSeat,weapon_grip_selection::kSupportPoseOuterRadius,
+                        debug::MarkerOverlayRole::AuthoredSupportGripPalmSeat);
+                    const float poseColor[4]{0.3f,0.85f,1.0f,1.0f};
+                    addTextLineSized(snapshot.supportSeat+RE::NiPoint3{0,0,7},1.7f,poseColor,
+                        "PISTOL %s d=%.2f palm=%.2f wrist=%.2f credit=%.2f",
+                        snapshot.supportPreferenceApplied && snapshot.supportPose.credit>0 ? "SUPPORT POSE MATCH" : "PROXIMITY",
+                        snapshot.supportPose.distance,snapshot.supportPose.palmDot,snapshot.supportPose.wristDot,
+                        snapshot.supportPreferenceApplied ? snapshot.supportPose.credit : 0.0f);
+                }
                 for (const auto& candidate : snapshot.candidates) {
                     if (candidate.kind == weapon_grip_selection::Kind::None) continue;
                     const bool selected = candidate.sameTarget(snapshot.selected);
@@ -1803,8 +1838,8 @@
                     addMarkerLine(role, snapshot.palm, candidate.world);
                     const float color[4]{selected ? 0.2f : 1.0f, candidate.eligible ? 1.0f : 0.2f, 0.2f, 1.0f};
                     addTextLineSized(candidate.world + RE::NiPoint3{0,0,isLeft ? 3.0f : 5.0f}, 1.7f, color,
-                        "%s %s d=%.2f r=%.2f %s", isLeft ? "L" : "R", weapon_grip_selection::name(candidate.kind),
-                        candidate.distance, candidate.radius, selected ? "SELECTED" : candidate.eligible ? "ELIGIBLE" : "OUTSIDE");
+                        "%s %s d=%.2f r=%.2f score=%.2f %s", isLeft ? "L" : "R", weapon_grip_selection::name(candidate.kind),
+                        candidate.distance, candidate.radius, candidate.score(), selected ? "SELECTED" : candidate.eligible ? "ELIGIBLE" : "OUTSIDE");
                 }
             }
         }

@@ -417,6 +417,25 @@ namespace rock
                     contact.grabPoint.sourceKey, contact.grabPoint.pointId ? contact.grabPoint.pointId : contact.bodyId,
                     part.active || surfaceAllowed, part.groupId};
             }
+            // Only the free supporting hand of a held pistol gets this intent
+            // preference. Detached firing acquisition and rifles stay distance-ranked.
+            debug.pistolSupportContext = !isFiringGripDetached() && isLeft == supportHandIsLeft &&
+                support.valid && weaponCollision.getEquippedWeaponClassification().sizeClass == WeaponSizeClass::Pistol;
+            if (debug.pistolSupportContext) {
+                debug.supportSeat = support.authoredPalmSeatWorld;
+                debug.palmNormal = computePalmNormalFromHandBasis(hand, isLeft);
+                debug.supportNormal = support.authoredPalmNormalWorld;
+                // The legacy pointing helper equals the palm normal. Use an
+                // independent authored X axis to measure wrist roll instead.
+                debug.wristAxis = transformHandspaceDirection(hand, RE::NiPoint3{1,0,0}, isLeft);
+                debug.supportWristAxis = support.authoredWristAxisWorld;
+                debug.supportPose = weapon_grip_selection::supportPosePreference(debug.palm, debug.supportSeat,
+                    debug.palmNormal, debug.supportNormal, debug.wristAxis, debug.supportWristAxis);
+                auto& supportStation = debug.candidates[sharedForSelection ? 0u : 1u];
+                debug.supportPreferenceApplied = debug.supportPose.valid && supportStation.eligible &&
+                    debug.candidates[2].eligible && debug.candidates[2].kind == GripKind::Part && contact.grabPoint.operating;
+                if (debug.supportPreferenceApplied) supportStation.poseCredit = debug.supportPose.credit;
+            }
             const bool held = isLeft == isFiringHandLeft() ? stableFrameInput.primaryGripInput.held :
                 (isLeft ? stableFrameInput.leftGripHeld : stableFrameInput.rightGripHeld);
             const bool released = _gripSelectionWasHeld[index] && !held;
@@ -425,6 +444,14 @@ namespace rock
             debug.selected = weapon_grip_selection::select(_gripSelectionState[index], debug.candidates,
                 currentWeaponGenerationKey, currentEquippedWeaponOwnershipKey, released);
             debug.valid = true;
+            if (debug.pistolSupportContext) {
+                ROCK_LOG_SAMPLE_INFO(Weapon, 500,
+                    "PistolSupportIntent hand={} seatDistance={:.3f} palmDot={:.3f} wristDot={:.3f} strength={:.3f} credit={:.3f} operating={} eligible={} applied={} partDistance={:.3f} winner={} score={:.3f}",
+                    isLeft ? "left" : "right", debug.supportPose.distance, debug.supportPose.palmDot,
+                    debug.supportPose.wristDot, debug.supportPose.strength, debug.supportPose.credit,
+                    contact.grabPoint.operating, debug.candidates[2].eligible, debug.supportPreferenceApplied,
+                    debug.candidates[2].distance, weapon_grip_selection::name(debug.selected.kind), debug.selected.score());
+            }
             if (debug.selected.kind != GripKind::Part && debug.selected.kind != GripKind::Surface) {
                 contact = {};
                 runtime.providerPartAuthority = {};

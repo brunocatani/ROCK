@@ -1378,6 +1378,7 @@ namespace rock
             const auto& point=batch.points[picked].rule.point;
             outContact.probeTargetRadiusGame = (std::min)(probeRadiusGame, point.radiusGame);
             outContact.grabPoint={batch.points[picked].rule.owner,point.groupId,point.sourceKey,point.pointId,{point.pointInSource[0],point.pointInSource[1],point.pointInSource[2]}};
+            outContact.grabPoint.operating=batch.points[picked].rule.operating;
             if(batch.points[picked].rule.anchored) {
                 auto& anchor=outContact.grabPoint;const auto& world=batch.points[picked].world;
                 anchor.anchorAtPoint=true;anchor.worldPoint={world[0],world[1],world[2]};

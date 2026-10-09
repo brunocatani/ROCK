@@ -187,6 +187,7 @@ namespace rock
         RE::NiTransform weaponWorld{};
         RE::NiPoint3 authoredPalmSeatWeaponLocal{};
         RE::NiPoint3 authoredPalmSeatWorld{};
+        RE::NiPoint3 authoredPalmNormalWorld{}, authoredWristAxisWorld{};
         RE::NiPoint3 liveTouchProbeWeaponLocal{};
         RE::NiPoint3 liveTouchProbeWorld{};
         RE::NiPoint3 supportSideAxisWorld{};

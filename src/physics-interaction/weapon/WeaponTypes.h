@@ -255,6 +255,7 @@ namespace rock
         bool anchorAtPoint{};
         RE::NiPoint3 worldPoint{};
         RE::NiTransform attachmentWorld{};
+        bool operating{};
     };
 
     struct WeaponInteractionContact
