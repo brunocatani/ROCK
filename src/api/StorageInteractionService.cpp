@@ -333,7 +333,7 @@ namespace rock::storage_interaction
                 const auto grip=computeGrabLegacyPalmPivotAWorldFromHandBasis(pose.handWeaponLocal,left);
                 const auto delta=palm-grip;
                 const float distance=std::sqrt(delta.x*delta.x+delta.y*delta.y+delta.z*delta.z)*node->world.scale;
-                const float radius=role==Role::Firing?equipped_weapon_handling_runtime::current().firingGripReattachCylinderRadiusGameUnits:g_rockConfig.rockWeaponInteractionProbeRadius;
+                const float radius=role==Role::Firing?equipped_weapon_handling_runtime::current().firingGripReattachRadiusGameUnits:g_rockConfig.rockWeaponInteractionProbeRadius;
                 const bool inside=std::isfinite(radius) && radius>0 && distance<=radius;
                 if(!std::isfinite(distance) || (result->valid && (inside==nearestInside?distance>=nearest:!inside))) continue;
                 nearest=distance; nearestInside=inside;

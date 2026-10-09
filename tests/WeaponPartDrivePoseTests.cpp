@@ -21,10 +21,10 @@ int main(){
     auto point=weapon_part_points::Point{};point.pointId=point.groupId=1;point.sourceKey=4;point.weaponGenerationKey=1;point.radiusGame=2;
     weapon_part_points::Candidate candidate{{7,point,true},{world.translate.x,world.translate.y,world.translate.z},0,true};
     const auto candidates=std::span(&candidate,1);
-    assert(weapon_part_points::nearest(candidates,api::Hand::Right,{102,190,300},3,{},true).point==0);
-    assert(weapon_part_points::nearest(candidates,api::Hand::Right,{102,215,300},3,{},true).point==1);
+    assert(weapon_part_points::nearest(candidates,api::Hand::Right,{102,190,300},3,{}).point==0);
+    assert(weapon_part_points::nearest(candidates,api::Hand::Right,{102,215,300},3,{}).point==1);
     // New hand can reacquire after releasing: the drive persists independently.
-    assert(weapon_part_points::nearest(candidates,api::Hand::Left,{102,190,300},3,{},true).point==0);
+    assert(weapon_part_points::nearest(candidates,api::Hand::Left,{102,190,300},3,{}).point==0);
     assert(!driven.apply(&bolt,pose(0,12,0),true,99));assert(driven.world(&knob,world));at(world,102,190,300);
     assert(driven.apply(&bolt,pose(0,-12,0),true,100));assert(driven.world(&knob,world));at(world,102,188,300);
     // Match the writer's ordering: moving a parent after a root-space child

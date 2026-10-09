@@ -434,49 +434,19 @@ namespace rock
                     for(std::size_t i=0;i<pinkyCount;++i)pinkyProbes[i]={pinky[i].x,pinky[i].y,pinky[i].z};
                     if(probeAllowed)extraProbes[extraCount++]={handInput.grabAnchorWorld.x,handInput.grabAnchorWorld.y,handInput.grabAnchorWorld.z};
                 }
-                const bool operatingObserved=operatingPose&&!handInput.disabled&&_weaponCollision.tryFindInteractionContactNearPoint(
-                    weaponNode,legacyPalmPivotWorld,probeAllowed?g_rockConfig.rockWeaponInteractionProbeRadius:g_rockConfig.rockWeaponInteractionTouchRadius,
-                    outContact,interactionQueries,isLeft?api::Hand::Left:api::Hand::Right,operatingPose,std::span(extraProbes).first(extraCount),true,std::span(pinkyProbes).first(pinkyCount));
-                const bool touchObserved = !operatingObserved&&weaponNode &&
-                    _weaponCollision.tryFindInteractionContactNearPoint(
-                        weaponNode,
-                        legacyPalmPivotWorld,
-                        g_rockConfig.rockWeaponInteractionTouchRadius,
-                        outContact, interactionQueries, isLeft?api::Hand::Left:api::Hand::Right,operatingPose);
-                if (operatingObserved||touchObserved) {
-                    publishWeaponInteractionContact(isLeft, outContact);
-                } else if (weaponNode && probeAllowed) {
-                    if (_weaponCollision.tryFindInteractionContactNearPoint(
-                            weaponNode,
-                            handInput.grabAnchorWorld,
-                            g_rockConfig.rockWeaponInteractionProbeRadius,
-                            outContact, interactionQueries, isLeft?api::Hand::Left:api::Hand::Right,operatingPose)) {
-                        publishWeaponInteractionContact(isLeft, outContact);
-                        if (g_rockConfig.rockDebugVerboseLogging && ++_diagnostics.weaponInteractionProbeLogCounter >= 90) {
-                            _diagnostics.weaponInteractionProbeLogCounter = 0;
-                            ROCK_LOG_DEBUG(Weapon,
-                                "WeaponInteractionProbe: hand={} bodyId={} partKind={} supportRole={} reloadRole={} actionRole={} radius={:.1f}",
-                                isLeft ? "left" : "right",
-                                outContact.bodyId,
-                                static_cast<int>(outContact.partKind),
-                                static_cast<int>(outContact.supportGripRole),
-                                static_cast<int>(outContact.reloadRole),
-                                static_cast<int>(outContact.actionRole),
-                                g_rockConfig.rockWeaponInteractionProbeRadius);
-                        }
-                    } else {
-                        const auto missed = missedFrames.fetch_add(1, std::memory_order_acq_rel) + 1;
-                        if (missed > WEAPON_CONTACT_TIMEOUT_FRAMES) {
-                            clearWeaponContactForHand(isLeft);
-                        }
-                    }
-                } else {
+                const bool allowSurfaces = !_equipped.handlingSettings.authoredOnlySupportGrabsEnabled ||
+                    _twoHandedGrip.requiresWeaponContactQueries(weaponNode, currentAuthoredGripGenerationKey, true, false);
+                const bool observed = !handInput.disabled && weaponNode && _weaponCollision.tryFindInteractionContactNearPoint(
+                    weaponNode, legacyPalmPivotWorld,
+                    probeAllowed ? g_rockConfig.rockWeaponInteractionProbeRadius : g_rockConfig.rockWeaponInteractionTouchRadius,
+                    outContact, interactionQueries, isLeft ? api::Hand::Left : api::Hand::Right, operatingPose,
+                    std::span(extraProbes).first(extraCount), allowSurfaces, std::span(pinkyProbes).first(pinkyCount));
+                const bool touchObserved = observed && outContact.probeDistanceGame <= g_rockConfig.rockWeaponInteractionTouchRadius;
+                if (observed) publishWeaponInteractionContact(isLeft, outContact);
+                else {
                     const auto missed = missedFrames.fetch_add(1, std::memory_order_acq_rel) + 1;
-                    if (missed > WEAPON_CONTACT_TIMEOUT_FRAMES) {
-                        clearWeaponContactForHand(isLeft);
-                    }
+                    if (missed > WEAPON_CONTACT_TIMEOUT_FRAMES) clearWeaponContactForHand(isLeft);
                 }
-
                 outContact.acquisitionSource = weapon_interaction_acquisition_policy::resolve(
                     acquisitionState,
                     touchObserved,
@@ -1844,7 +1814,9 @@ namespace rock
             for (const bool isLeft : { true, false }) {
                 const auto& hand = isLeft ? _leftHand : _rightHand;
                 const auto& grip = isLeft ? occupancy.left : occupancy.right;
-                if (hand.isHolding() || _touchGrabRuntime.isHandActive(isLeft) ||
+                const auto& selected = _twoHandedGrip.getWeaponGripSelectionDebug(isLeft);
+                if (!selected.valid || selected.selected.kind != weapon_grip_selection::Kind::Part ||
+                    hand.isHolding() || _touchGrabRuntime.isHandActive(isLeft) ||
                     grip.weaponEngaged() ||
                     (isLeft == _twoHandedGrip.isFiringHandLeft() &&
                         !_twoHandedGrip.isFiringGripDetached())) {
@@ -2133,8 +2105,6 @@ namespace rock
                     g_rockConfig.
                         rockFiringGripDetachHapticIntensity,
             },
-            .firingGripReattachCylinderRadiusGameUnits =
-                g_rockConfig.rockFiringGripReattachCylinderRadiusGameUnits,
             .firingGripProximitySupportRadiusGameUnits =
                 g_rockConfig.rockFiringGripProximitySupportRadius,
             .leftFiringAimYawDegrees =

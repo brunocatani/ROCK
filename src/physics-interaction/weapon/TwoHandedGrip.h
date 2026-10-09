@@ -1,4 +1,5 @@
 #pragma once
+#include "physics-interaction/weapon/WeaponGripSelection.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
 #include "physics-interaction/weapon/WeaponGripTransfer.h"
 
@@ -167,38 +168,6 @@ namespace rock
         bool visible{ false };
     };
 
-    /*
-     * Main-thread diagnostic record of the firing-grip reattach zone for the
-     * debug overlay: where the cylinders start, their axis and size, plus
-     * each evaluated free palm's verdict. Values only, never engine pointers.
-     */
-    struct FiringGripReattachZoneDebugSnapshot
-    {
-        struct HandSample
-        {
-            RE::NiPoint3 palmWorld{};
-            float alongAxisGameUnits{ 0.0f };
-            float perpendicularDistanceGameUnits{ 0.0f };
-            float radialDistanceGameUnits{ 0.0f };
-            firing_grip_reattach_zone_policy::Side side{
-                firing_grip_reattach_zone_policy::Side::None
-            };
-            bool evaluated{ false };
-            bool gripHeld{ false };
-            bool reachPass{ false };
-            bool radiusPass{ false };
-            bool inside{ false };
-        };
-
-        RE::NiPoint3 gripWorld{};
-        RE::NiPoint3 weaponLeftAxisWorld{};
-        float reachGameUnits{ 0.0f };
-        float cylinderRadiusGameUnits{ 0.0f };
-        // Index 0 left hand, 1 right hand.
-        std::array<HandSample, 2> hands{};
-        bool valid{ false };
-    };
-
     struct TwoHandedGripDebugSnapshot
     {
         RE::NiTransform weaponWorld{};
@@ -223,7 +192,6 @@ namespace rock
         RE::NiPoint3 supportSideAxisWorld{};
         RE::NiPoint3 downAxisWorld{};
         RE::NiPoint3 referenceAxisWorld{};
-        RE::NiPoint3 approachDirectionWorld{};
         std::array<RE::NiPoint3, kPoseLandmarkCount> poseLandmarksWorld{};
         std::array<RE::NiPoint3, kPoseLandmarkCount> poseSurfaceWitnessWorld{};
         std::array<float, kPoseLandmarkCount> poseSurfaceDistanceGameUnits{};
@@ -232,9 +200,6 @@ namespace rock
         float frameAgreementErrorGameUnits{ 0.0f };
         float touchRadiusGameUnits{ 0.0f };
         float radialCapGameUnits{ 0.0f };
-        float supportSideDot{ -1.0f };
-        float downDot{ -1.0f };
-        float sweptArcDot{ -1.0f };
         std::uint64_t weaponGenerationKey{ 0 };
         std::uint64_t captureSequence{ 0 };
         std::uint32_t weaponFormID{ 0 };
@@ -246,9 +211,6 @@ namespace rock
         authored_weapon_grip_activation_policy::HandTopology handTopology{
             authored_weapon_grip_activation_policy::HandTopology::Invalid
         };
-        authored_weapon_grip_activation_policy::ActivationRegion selectedRegion{
-            authored_weapon_grip_activation_policy::ActivationRegion::None
-        };
         std::uint8_t poseSurfaceWitnessMask{ 0 };
         std::uint8_t poseSurfaceWitnessCount{ 0 };
         bool supportHandIsLeft{ true };
@@ -257,9 +219,7 @@ namespace rock
         bool classifierSupported{ false };
         bool canonicalAxesValid{ false };
         bool sharedFiringZone{ false };
-        bool directionUsedLastStableSample{ false };
         bool radialPass{ false };
-        bool directionPass{ false };
         bool topologyPass{ false };
         bool activationSpatialPass{ false };
         bool poseEvidenceEvaluated{ false };
@@ -527,7 +487,7 @@ namespace rock
         }
 
         // Marker for the firing-grip reattach zone: visible while an open
-        // free palm hovers inside a lateral cylinder during part carry.
+        // free palm selects the firing capture sphere during part carry.
         [[nodiscard]] FiringGripReattachIndicatorFrame
             getFiringGripReattachIndicatorFrame() const noexcept
         {
@@ -857,12 +817,8 @@ namespace rock
 
         bool getDebugAuthoritySnapshot(TwoHandedGripDebugSnapshot& outSnapshot) const;
 
-        bool getAuthoredSupportGripDebugSnapshot(
-            bool isLeft,
-            AuthoredSupportGripDebugSnapshot& outSnapshot) const;
 
-        bool getFiringGripReattachZoneDebugSnapshot(
-            FiringGripReattachZoneDebugSnapshot& outSnapshot) const;
+        const weapon_grip_selection::DebugSnapshot& getWeaponGripSelectionDebug(bool isLeft) const { return _gripSelectionDebug[isLeft ? 0u : 1u]; }
 
         NativeScopeCameraDebugSnapshot getNativeScopeCameraDebugSnapshot() const { return _scope.cameraDebugSnapshot; }
         NativeScopeCameraTargetPreviewSnapshot
@@ -1578,9 +1534,6 @@ namespace rock
         bool tryReattachFiringGrip(
             bool handIsLeft,
             RE::NiNode* weaponNode,
-            const WeaponInteractionContact& handWeaponContact,
-            bool authoredProviderAuthorityActive,
-            bool authoredAttachOnlyAuthorityActive,
             bool equippedDropCatch = false);
 
         bool tryResolveAuthoredFiringHandCanonicalForProbe(
@@ -1588,15 +1541,10 @@ namespace rock
             RE::NiTransform& outHandWeaponLocal,
             const char*& outSource) const;
 
-        bool firingGripContactMatchesCapturedGrip(
-            RE::NiNode* weaponNode,
-            const WeaponInteractionContact& handWeaponContact,
-            const RE::NiTransform& handTransform,
-            bool handIsLeft) const;
 
         /*
          * Evaluates the firing-grip handoff/reattach zone for one free hand: its palm
-         * pivot against the lateral cylinders that start at the captured grip
+         * pivot against the radial capture area centered on the captured grip
          * point. The lateral axis is the seated canonical right palm normal on
          * the current weapon; without that canonical hold the zone fails
          * closed. Records the overlay sample for that hand.
@@ -1605,7 +1553,7 @@ namespace rock
             RE::NiNode* weaponNode,
             std::uint64_t weaponGenerationKey,
             std::uint64_t weaponOwnershipKey,
-            float reachGameUnits,
+            float radiusGameUnits,
             firing_grip_reattach_zone_policy::ZoneInput& outInput) const;
         bool tryEvaluateFiringGripZoneForHand(
             bool handIsLeft,
@@ -2031,7 +1979,6 @@ namespace rock
             bool reattachHoverHandIsLeft{ false };
             // Per-frame indicator and overlay records; rebuilt every update().
             FiringGripReattachIndicatorFrame reattachIndicatorFrame{};
-            FiringGripReattachZoneDebugSnapshot reattachDebugSnapshot{};
         };
 
         // Activation and qualification belong to physical hands, independently
@@ -2044,16 +1991,14 @@ namespace rock
             bool lastSelectionValid{ false };
             AuthoredSupportGripIndicatorFrame authoredIndicatorFrame{};
             AuthoredSupportGripDebugSnapshot authoredDebugSnapshot{};
-            RE::NiPoint3 lastStableApproachDirectionWorld{};
-            std::uint64_t lastStableDirectionGenerationKey{ 0 };
-            std::uint64_t lastStableDirectionCaptureSequence{ 0 };
-            authored_weapon_grip_activation_policy::HandTopology
-                lastStableDirectionHandTopology{
-                    authored_weapon_grip_activation_policy::HandTopology::Invalid
-                };
-            bool lastStableApproachDirectionValid{ false };
         };
-
+        std::array<weapon_grip_selection::State, 2> _gripSelectionState{};
+        std::array<bool, 2> _gripSelectionWasHeld{};
+        std::array<weapon_grip_selection::DebugSnapshot, 2> _gripSelectionDebug{};
+        bool selectedGrip(bool isLeft, weapon_grip_selection::Kind kind) const {
+            const auto& selection = _gripSelectionDebug[isLeft ? 0u : 1u];
+            return selection.valid && selection.selected.kind == kind;
+        }
         AuthoredSupportHandState& authoredSupportHand(bool isLeft) { return _support.authoredHands[isLeft ? 0u : 1u]; }
         const AuthoredSupportHandState& authoredSupportHand(bool isLeft) const { return _support.authoredHands[isLeft ? 0u : 1u]; }
 

@@ -116,7 +116,7 @@ namespace rock::weapon_support_authority_policy
         // active grip's handoff capability. AttachOnly is the sole grip
         // contract that may never inherit firing-grip ownership; promotion is
         // still independently gated by ambidextrous mode, infrastructure, and
-        // firing-grip cylinder at the call site.
+        // firing-grip sphere at the call site.
         return supportGripActive && !attachOnly && insideFiringZone;
     }
 
@@ -695,7 +695,7 @@ namespace rock::weapon_two_handed_grip_math
 
     /*
      * Firing-grip reattach contract: the grab button is the hand. A held grab
-     * with the free palm inside the reattach zone (the lateral cylinders of
+     * with the free palm inside the reattach zone (the capture sphere of
      * firing_grip_reattach_zone_policy from the grip point) re-takes the
      * grip; nothing ever attaches to an open hand. The gesture
      * cannot re-capture a fresh detach because the detach itself requires the

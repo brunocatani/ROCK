@@ -107,7 +107,6 @@ namespace rock
         bool rockGrabAnywhereOnWeapon = false;
         float rockMeleeGripPitchDegrees = 0.0f;
         float rockFiringGripReattachRadiusGameUnits = 10.0f;
-        float rockFiringGripReattachCylinderRadiusGameUnits = 3.0f;
         float rockGripZoneIndicatorDiameterGameUnits =
             grip_zone_indicator_policy::kDefaultDiameterGameUnits;
         float rockFiringGripHapticDurationSeconds = 0.10f;

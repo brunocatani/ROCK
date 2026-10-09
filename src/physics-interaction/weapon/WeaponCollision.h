@@ -341,6 +341,8 @@ namespace rock
             std::array<weapon_interaction_query::Part, MAX_WEAPON_COLLISION_BODIES> parts{};
             std::array<const WeaponBodyInstance*, MAX_WEAPON_COLLISION_BODIES> instances{};
             std::array<bool,MAX_WEAPON_COLLISION_BODIES> pointRestricted{};
+            std::array<bool,MAX_WEAPON_COLLISION_BODIES> providerMatched{};
+            bool exclusiveTargets{};
             std::array<weapon_part_points::Candidate,weapon_part_points::kCapacity> points{};
             std::size_t pointCount{};
         };
@@ -359,7 +361,7 @@ namespace rock
             InteractionQueryBatch& batch,
             api::Hand hand = api::Hand::None,
             const weapon_drive_pose::NativeFrame* operatingPose=nullptr,
-            std::span<const std::array<float,3>> extraProbes={},bool operatingOnly=false,std::span<const std::array<float,3>> pinkyProbes={}) const;
+            std::span<const std::array<float,3>> extraProbes={},bool allowSurfaceCompetition=true,std::span<const std::array<float,3>> pinkyProbes={}) const;
 
         bool tryFindCurrentWeaponSurfaceNearPoint(
             const RE::NiAVObject* currentWeaponRoot,

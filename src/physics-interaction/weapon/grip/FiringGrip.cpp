@@ -494,33 +494,11 @@ namespace rock
         (void)solveLeftFiringWeaponCarry(weaponNode, dt);
     }
 
-    bool TwoHandedGrip::firingGripContactMatchesCapturedGrip(
-        RE::NiNode* weaponNode,
-        const WeaponInteractionContact& handWeaponContact,
-        const RE::NiTransform& handTransform,
-        const bool handIsLeft) const
-    {
-        if (!weaponNode || !handWeaponContact.valid) {
-            return false;
-        }
-
-        if (!weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(handWeaponContact.weaponGenerationKey, _session.weaponGenerationKey)) {
-            return false;
-        }
-
-        const RE::NiPoint3 palm = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, handIsLeft);
-        const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_firing.primaryGripLocal, weaponNode);
-        const RE::NiPoint3 delta = sub(palm, firingGripWorld);
-        const float distance = std::sqrt(dot(delta, delta));
-        return std::isfinite(distance) &&
-               distance <= _handlingSettings.firingGripReattachRadiusGameUnits;
-    }
-
     bool TwoHandedGrip::tryBuildFiringGripZoneInput(
         RE::NiNode* weaponNode,
         const std::uint64_t weaponGenerationKey,
         const std::uint64_t weaponOwnershipKey,
-        const float reachGameUnits,
+        const float radiusGameUnits,
         firing_grip_reattach_zone_policy::ZoneInput& outInput) const
     {
         outInput = {};
@@ -528,14 +506,6 @@ namespace rock
             !isInvertibleTransform(weaponNode->world)) {
             return false;
         }
-        /*
-         * The lateral axis is the seated canonical RIGHT palm normal on this
-         * weapon (weapon LEFT), the same axis the authored support activation
-         * cone is built from. The zone is symmetric in its sign, so one axis
-         * serves handoff and reattachment on both sides. Before acquisition,
-         * use the current canonical grip; an active session keeps its captured
-         * grip. Missing or stale canonical data cannot create a hover zone.
-         */
         if (!hasRightFiringHandCanonicalFrame(
                 weaponNode,
                 weaponGenerationKey,
@@ -548,14 +518,6 @@ namespace rock
             }
             return false;
         }
-        const RE::NiTransform seatedRightHandWorld =
-            transform_math::composeTransforms(
-                weaponNode->world,
-                _firing.rightCanonicalHandWeaponLocal);
-        if (!isFiniteTransform(seatedRightHandWorld)) {
-            return false;
-        }
-
         const bool capturedGripCurrent =
             _firing.hasPrimaryHandWeaponLocal &&
             _session.weaponNode == weaponNode &&
@@ -565,18 +527,13 @@ namespace rock
             capturedGripCurrent ? _firing.primaryGripLocal :
                 _firing.rightCanonicalGripWeaponLocal,
             weaponNode);
-        const RE::NiPoint3 weaponLeftAxisWorld =
-            computePalmNormalFromHandBasis(seatedRightHandWorld, false);
         using firing_grip_reattach_zone_policy::Vec3;
         const auto toZoneVector = [](const RE::NiPoint3& value) {
             return Vec3{ value.x, value.y, value.z };
         };
         outInput = {
             .gripWorld = toZoneVector(gripWorld),
-            .weaponLeftAxisWorld = toZoneVector(weaponLeftAxisWorld),
-            .reachGameUnits = reachGameUnits,
-            .radiusGameUnits =
-                _handlingSettings.firingGripReattachCylinderRadiusGameUnits,
+            .radiusGameUnits = radiusGameUnits,
         };
         return true;
     }
@@ -596,31 +553,10 @@ namespace rock
         auto handInput = input;
         handInput.palmWorld = { palmWorld.x, palmWorld.y, palmWorld.z };
         outZone = firing_grip_reattach_zone_policy::evaluateZone(handInput);
-        if (!outZone.axisValid) {
+        if (!outZone.valid) {
             return false;
         }
 
-        // Overlay record: values only, rebuilt every update().
-        auto& debugSnapshot = _firing.reattachDebugSnapshot;
-        debugSnapshot.gripWorld = {
-            input.gripWorld.x, input.gripWorld.y, input.gripWorld.z };
-        debugSnapshot.weaponLeftAxisWorld = {
-            input.weaponLeftAxisWorld.x, input.weaponLeftAxisWorld.y,
-            input.weaponLeftAxisWorld.z };
-        debugSnapshot.reachGameUnits = input.reachGameUnits;
-        debugSnapshot.cylinderRadiusGameUnits = input.radiusGameUnits;
-        debugSnapshot.valid = true;
-        auto& handSample = debugSnapshot.hands[handIsLeft ? 0u : 1u];
-        handSample.palmWorld = palmWorld;
-        handSample.alongAxisGameUnits = outZone.alongAxisGameUnits;
-        handSample.perpendicularDistanceGameUnits =
-            outZone.perpendicularDistanceGameUnits;
-        handSample.radialDistanceGameUnits = outZone.radialDistanceGameUnits;
-        handSample.side = outZone.side;
-        handSample.evaluated = true;
-        handSample.reachPass = outZone.reachPass;
-        handSample.radiusPass = outZone.radiusPass;
-        handSample.inside = outZone.inside;
         return true;
     }
 
@@ -695,29 +631,17 @@ namespace rock
     bool TwoHandedGrip::tryReattachFiringGrip(
         const bool handIsLeft,
         RE::NiNode* weaponNode,
-        const WeaponInteractionContact& handWeaponContact,
-        const bool authoredProviderAuthorityActive,
-        const bool authoredAttachOnlyAuthorityActive,
         const bool equippedDropCatch)
     {
-        const bool coreAuthoredStation = !authoredProviderAuthorityActive && !authoredAttachOnlyAuthorityActive;
-        if (!weaponNode || weaponNode != _session.weaponNode ||
-            (!coreAuthoredStation && (!handWeaponContact.valid ||
-                !weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(
-                    handWeaponContact.weaponGenerationKey, _session.weaponGenerationKey)))) return false;
+        if (!weaponNode || weaponNode != _session.weaponNode) return false;
         const bool directCatch = equippedDropCatch && isEquippedDrop();
-        if (coreAuthoredStation) {
+        if (!directCatch) {
+            if (!selectedGrip(handIsLeft, weapon_grip_selection::Kind::Firing)) return false;
             firing_grip_reattach_zone_policy::ZoneInput zoneInput{};
             firing_grip_reattach_zone_policy::ZoneResult zone{};
-            if (!directCatch && (!tryBuildFiringGripZoneInput(weaponNode, _session.weaponGenerationKey,
+            if (!tryBuildFiringGripZoneInput(weaponNode, _session.weaponGenerationKey,
                     _session.equippedWeaponOwnershipKey, _handlingSettings.firingGripReattachRadiusGameUnits, zoneInput) ||
-                !tryEvaluateFiringGripZoneForHand(handIsLeft, zoneInput, zone) || !zone.inside)) return false;
-            provider::RockProviderWeaponPartTargetQueryV1 query{};
-            query.weaponGenerationKey = _session.weaponGenerationKey;
-            query.bodyId = weapon_part_runtime::kInvalidBodyId;
-            provider::RockProviderWeaponPartTargetResolutionV1 resolution{};
-            (void)provider::resolveWeaponPartTargetV1(query, resolution);
-            if (resolution.whitelistActive) return false;
+                !tryEvaluateFiringGripZoneForHand(handIsLeft, zoneInput, zone) || !zone.inside) return false;
         }
 
         RE::NiTransform handTransform{};
@@ -732,26 +656,8 @@ namespace rock
                 handIsLeft,
                 authoredProbeCanonical,
                 authoredProbeCanonicalSource);
-        const bool useAuthoredProbeCanonical =
-            authored_weapon_grip_capture_policy::shouldUseAuthoredFiringGripProbe(
-                authored_weapon_grip_capture_policy::AuthoredFiringGripProbeInput{
-                    .proximityProbeAcquisition =
-                        coreAuthoredStation || handWeaponContact.acquisitionSource ==
-                        WeaponInteractionAcquisitionSource::ProximityProbe,
-                    .providerAuthorityActive = authoredProviderAuthorityActive,
-                    .attachOnly = authoredAttachOnlyAuthorityActive,
-                    .authoredCanonicalAvailable =
-                        authoredProbeCanonicalAvailable,
-                });
-        if (coreAuthoredStation && !useAuthoredProbeCanonical && !directCatch) return false;
-        if (!useAuthoredProbeCanonical && !directCatch &&
-            !firingGripContactMatchesCapturedGrip(
-                weaponNode,
-                handWeaponContact,
-                handTransform,
-                handIsLeft)) {
-            return false;
-        }
+        const bool useAuthoredProbeCanonical = authoredProbeCanonicalAvailable;
+        if (!useAuthoredProbeCanonical && !directCatch) return false;
 
         /*
          * Reattach forces the CANONICAL per-hand hold instead of freezing the
@@ -1862,7 +1768,7 @@ namespace rock
 
         const WeaponPartGrip& supportGrip = partGrip(supportHandIsLeft);
         // Core support may promote only from the acquired firing station.
-        // Explicit provider carry grips retain their cylinder-tested contract;
+        // Explicit provider carry grips retain their radial admission;
         // provider AttachOnly can never inherit firing authority.
         const bool coreFiringStation = supportGrip.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone;
         if (!supportGrip.active || supportGrip.attachOnly ||

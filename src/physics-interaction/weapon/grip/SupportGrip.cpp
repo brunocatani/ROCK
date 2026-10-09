@@ -291,14 +291,7 @@ namespace rock
                    std::isfinite(output.z);
         };
 
-        /*
-         * The native authored frame defines the RIGHT-fire/LEFT-support
-         * activation axes. The LEFT-fire/RIGHT-support topology must not reuse
-         * that left-facing cone. Reflect both axes through weapon-local X, the
-         * same bilateral plane used by the mirrored right support seat. This
-         * keeps LEFT and RIGHT topology independent while preserving DOWN and
-         * the full swept cone as an exact geometric mirror.
-         */
+        // Mirror the canonical basis with the authored support seat.
         const RE::NiTransform rightFiringHandWorld =
             transform_math::composeTransforms(
                 weaponWorld,
@@ -419,21 +412,6 @@ namespace rock
             authored_weapon_grip_activation_policy::resolveHandTopology(
                 !isLeft,
                 supportHandIsLeft);
-        if (authoredHand.lastStableDirectionGenerationKey !=
-                candidate.weaponGenerationKey ||
-            authoredHand.lastStableDirectionCaptureSequence !=
-                candidate.captureSequence ||
-            authoredHand.lastStableDirectionHandTopology !=
-                handTopology) {
-            authoredHand.lastStableApproachDirectionWorld = {};
-            authoredHand.lastStableDirectionGenerationKey =
-                candidate.weaponGenerationKey;
-            authoredHand.lastStableDirectionCaptureSequence =
-                candidate.captureSequence;
-            authoredHand.lastStableDirectionHandTopology = handTopology;
-            authoredHand.lastStableApproachDirectionValid = false;
-        }
-
         RE::NiTransform authoredSupportHandWeaponLocal{};
         std::array<RE::NiTransform, 15> authoredSupportFingerLocalTransforms{};
         std::uint16_t authoredSupportFingerLocalTransformMask = 0;
@@ -455,7 +433,7 @@ namespace rock
         /*
          * While both hands hold a left-fired weapon under full authority,
          * weaponNode->world is the wand-aimed basis pre-write that the
-         * two-hand solve overrides later this frame. The seat, its cone, and
+         * two-hand solve overrides later this frame. The seat, its capture sphere, and
          * the touch gate belong on the weapon the player sees, so use the
          * rendered record there; every other state renders the node pose.
          */
@@ -542,39 +520,19 @@ namespace rock
             return ActivationVec3{ value.x, value.y, value.z };
         };
         const auto gate = snapshot.sharedFiringZone ?
-            authored_weapon_grip_activation_policy::DirectionGateResult{} :
-            authored_weapon_grip_activation_policy::evaluateDirectionGate(
-                authored_weapon_grip_activation_policy::DirectionGateInput{
+            authored_weapon_grip_activation_policy::RadialGateResult{} :
+            authored_weapon_grip_activation_policy::evaluateRadialGate(
+                authored_weapon_grip_activation_policy::RadialGateInput{
                     .weaponFamily = snapshot.weaponFamily,
                     .handTopology = handTopology,
                     .authoredSeatWorld = toActivationVector(
                         snapshot.authoredPalmSeatWorld),
                     .liveProbeWorld = toActivationVector(
                         snapshot.liveTouchProbeWorld),
-                    .supportSideAxisWorld = toActivationVector(
-                        snapshot.supportSideAxisWorld),
-                    .downAxisWorld = toActivationVector(
-                        snapshot.downAxisWorld),
-                    .lastStableDirectionWorld = toActivationVector(
-                        authoredHand.lastStableApproachDirectionWorld),
                     .radialCapGameUnits = snapshot.radialCapGameUnits,
-                    .lastStableDirectionValid =
-                        authoredHand.lastStableApproachDirectionValid,
                 });
-        snapshot.approachDirectionWorld = RE::NiPoint3{
-            gate.approachDirectionWorld.x,
-            gate.approachDirectionWorld.y,
-            gate.approachDirectionWorld.z,
-        };
-        snapshot.supportSideDot = gate.supportSideDot;
-        snapshot.downDot = gate.downDot;
-        snapshot.sweptArcDot = gate.sweptArcDot;
-        snapshot.selectedRegion = gate.selectedRegion;
         snapshot.classifierSupported = gate.familySupported;
-        snapshot.directionUsedLastStableSample =
-            gate.usedLastStableDirection;
         snapshot.radialPass = gate.radialPass;
-        snapshot.directionPass = gate.directionPass;
         snapshot.topologyPass = gate.topologyPass;
         snapshot.activationSpatialPass = gate.spatialPass;
         if (snapshot.sharedFiringZone) {
@@ -584,21 +542,11 @@ namespace rock
             zoneInput.palmWorld = toActivationVector(snapshot.liveTouchProbeWorld);
             const auto zone = firing_grip_reattach_zone_policy::evaluateZone(zoneInput);
             snapshot.activationSpatialPass = built && zone.inside;
-            snapshot.radialPass = built && zone.reachPass && zone.radiusPass;
-            snapshot.directionPass = built && zone.axisValid;
-            snapshot.canonicalAxesValid = built && zone.axisValid;
+            snapshot.radialPass = built && zone.inside;
+            snapshot.canonicalAxesValid = built && zone.valid;
             snapshot.classifierSupported = snapshot.weaponFamily != authored_weapon_grip_activation_policy::WeaponFamily::Unsupported;
             snapshot.topologyPass = handTopology != authored_weapon_grip_activation_policy::HandTopology::Invalid;
         }
-        if (gate.directionValid &&
-            gate.radialDistanceGameUnits >=
-                authored_weapon_grip_activation_policy::
-                    kMinimumDirectionDistanceGameUnits) {
-            authoredHand.lastStableApproachDirectionWorld =
-                snapshot.approachDirectionWorld;
-            authoredHand.lastStableApproachDirectionValid = true;
-        }
-
         if (collectPoseEvidence) {
             snapshot.poseEvidenceEvaluated = true;
             std::array<RE::NiPoint3,
@@ -687,6 +635,8 @@ namespace rock
     bool TwoHandedGrip::authoredSupportSeatAvailable(const bool isLeft,
         const std::uint64_t generation, const WeaponInteractionRuntimeState& runtime) const
     {
+        const auto& selection = _gripSelectionDebug[isLeft ? 0u : 1u];
+        if (selection.valid && selection.selected.kind != weapon_grip_selection::Kind::Support) return false;
         const auto& hand = authoredSupportHand(isLeft);
         const auto& snapshot = hand.authoredDebugSnapshot;
         const bool seatAvailable = snapshot.valid && !snapshot.sharedFiringZone &&
@@ -699,7 +649,7 @@ namespace rock
                 hand.authoredCapability.capability == authored_support_grab_policy::Capability::Usable);
         if (!seatAvailable) return false;
 
-        // Authored cones can admit a hand without a collision contact. Such
+        // Authored spheres can admit a hand without a collision contact. Such
         // admission must still respect a provider's exclusive part whitelist.
         provider::RockProviderWeaponPartTargetQueryV1 query{};
         query.weaponGenerationKey = generation;
@@ -1267,7 +1217,7 @@ namespace rock
          * FRIK's authored carry and feed the canonical snapshot.
          */
         // A direct handoff must capture against the same firing seat used by
-        // its admission cylinder, without rebasing it onto the live wrist.
+        // its admission sphere, without rebasing it onto the live wrist.
         const bool keepFiringHold = _firing.hasPrimaryHandWeaponLocal &&
             (usesLeftFiringCarry() ||
                 (decision.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone &&
@@ -3181,7 +3131,7 @@ namespace rock
         // A palm inside the firing station attaches there; anywhere else on the
         // weapon it continues as an ordinary support grip instead of refusing.
         const bool firingStationAcquisition = !providerPartAuthority.active &&
-            (sharedFiringZone || decision.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone) &&
+            decision.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone &&
             supportPalmInsideHandoffZone;
         if (firingStationAcquisition) {
             grip.acquisitionSource = WeaponInteractionAcquisitionSource::FiringGripZone;
@@ -3221,25 +3171,9 @@ namespace rock
         const RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handTransform, isLeft);
         const RE::NiPoint3 firingGripWorld =
             weaponLocalToWorld(_firing.primaryGripLocal, weaponNode);
-        /*
-         * Acquisition-only grip priority. Physical contact and the proximity
-         * probe are equivalent entry sources. Exact provider authority wins
-         * first. A live palm at the firing grip may then select the bounded
-         * dynamic ambidextrous handoff station when the authored seat is not
-         * itself at that grip. Otherwise an eligible authored relation wins,
-         * but only inside the enforced family cone and radial cap. Generated
-         * collision witnesses remain optional visualization and never qualify
-         * or reject the captured authored relation. A matched provider target
-         * remains the first
-         * authority. Otherwise the authored-only policy permits the dynamic
-         * mesh solver only when the mode is disabled or this exact weapon and
-         * support topology has qualified as lacking a usable authored pose. A
-         * missed cone/radius rejects instead of silently becoming dynamic. The
-         * final authored seat also selects visual-only versus full weapon
-         * authority. Provider AttachOnly remains PAPER/consumer glue. Once
-         * selected, the exact hand/weapon relation and 15 finger locals are
-         * latched; later candidate changes cannot move it.
-         */
+        // The controller selected one eligible station before capture. Keep
+        // its authored pose or provider part relation; do not rerank here.
+        // Generated collision witnesses remain diagnostic for authored seats.
         const bool authoredWeaponIdentityMatches =
             _support.authoredCandidate.weaponNode == weaponNode;
         const bool authoredGenerationMatches =
@@ -3304,7 +3238,9 @@ namespace rock
                 _support.authoredCandidate.captureSequence;
         const bool authoredActivationZoneValid =
             authoredActivationStateMatches &&
-            authoredActivation.activationSpatialPass;
+            authoredActivation.activationSpatialPass &&
+            (decision.acquisitionSource == WeaponInteractionAcquisitionSource::AuthoredSeat ||
+             decision.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone);
         const bool authoredPoseCollisionDiagnosticPass =
             authoredActivationStateMatches &&
             authoredActivation.poseEvidenceEvaluated &&
@@ -3477,7 +3413,7 @@ namespace rock
             }
 
             ROCK_LOG_INFO(Weapon,
-                "TwoHandedGrip: authored support grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) touchToSeat={:.3f} radialCap={:.3f} surfaceDistance={:.3f} poseWitnesses={}/6 poseMask={:02X} topology={} sideDot={:.3f} downDot={:.3f} arcDot={:.3f} region={} authoredSeatToFiringGrip={:.3f} seatLocal=({:.3f},{:.3f},{:.3f}) touchLocal=({:.3f},{:.3f},{:.3f}) frameError={:.4f} capture={} generation={:016X} acquisition={} authority={} priority=provider>handoff>authored>dynamic",
+                "TwoHandedGrip: authored support grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) touchToSeat={:.3f} radialCap={:.3f} surfaceDistance={:.3f} poseWitnesses={}/6 poseMask={:02X} topology={} authoredSeatToFiringGrip={:.3f} seatLocal=({:.3f},{:.3f},{:.3f}) touchLocal=({:.3f},{:.3f},{:.3f}) frameError={:.4f} capture={} generation={:016X} acquisition={} authority={} selection=nearest-eligible",
                 isLeft ? "left" : "right",
                 weaponNode->name.c_str(),
                 grip.gripLocal.x,
@@ -3492,11 +3428,6 @@ namespace rock
                     authoredActivation.poseSurfaceWitnessMask),
                 authored_weapon_grip_activation_policy::handTopologyName(
                     authoredActivation.handTopology),
-                authoredActivation.supportSideDot,
-                authoredActivation.downDot,
-                authoredActivation.sweptArcDot,
-                authored_weapon_grip_activation_policy::activationRegionName(
-                    authoredActivation.selectedRegion),
                 authoredSupportPalmToFiringGripDistance,
                 authoredSupportPalmWeaponLocal.x,
                 authoredSupportPalmWeaponLocal.y,
@@ -3517,7 +3448,7 @@ namespace rock
 
         if (authoredSupportCandidateForHandValid) {
             ROCK_LOG_DEBUG(Weapon,
-                "TwoHandedGrip: authored support grip not selected hand={} selection={} source={} family={} topology={} axes={} activation={} poseDiagnostic={} palmDiagnostic={} witnesses={}/6 mask={:02X} distance={:.3f} cap={:.3f} sideDot={:.3f} downDot={:.3f} arcDot={:.3f} region={} class={} radial={} direction={} topologyGate={} provider={} attachOnly={} capture={} identity={} generation={} fingers={}",
+                "TwoHandedGrip: authored support grip not selected hand={} selection={} source={} family={} topology={} axes={} activation={} poseDiagnostic={} palmDiagnostic={} witnesses={}/6 mask={:02X} distance={:.3f} cap={:.3f} class={} radial={} topologyGate={} provider={} attachOnly={} capture={} identity={} generation={} fingers={}",
                 isLeft ? "left" : "right",
                 authored_support_grab_policy::selectionName(
                     selectionDecision.selection),
@@ -3539,14 +3470,8 @@ namespace rock
                     authoredActivation.poseSurfaceWitnessMask),
                 authoredActivation.weaponRelativeDistanceGameUnits,
                 authoredActivation.radialCapGameUnits,
-                authoredActivation.supportSideDot,
-                authoredActivation.downDot,
-                authoredActivation.sweptArcDot,
-                authored_weapon_grip_activation_policy::activationRegionName(
-                    authoredActivation.selectedRegion),
                 authoredActivation.classifierSupported ? "pass" : "fail",
                 authoredActivation.radialPass ? "pass" : "fail",
-                authoredActivation.directionPass ? "pass" : "fail",
                 authoredActivation.topologyPass ? "pass" : "fail",
                 providerPartAuthority.active ? "yes" : "no",
                 grip.attachOnly ? "yes" : "no",
@@ -3610,7 +3535,7 @@ namespace rock
             grip.gripLocal = _firing.primaryGripLocal;
             grip.grabNormalWorld = palmDir;
             if (firingGripZoneAcquisition) {
-                // The cylinder admits a distant palm, but the captured station
+                // The sphere admits a distant palm, but the captured station
                 // is the firing grip itself. Coincident seats use visual-only
                 // support, never a full two-hand solver selected by approach distance.
                 _session.authorityMode = weapon_support_authority_policy::

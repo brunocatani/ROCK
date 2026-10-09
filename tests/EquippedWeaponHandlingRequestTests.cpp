@@ -63,7 +63,6 @@ int main()
             .firingGripAttachHapticIntensity = 0.81f,
             .firingGripDetachHapticIntensity = 0.31f,
         },
-        .firingGripReattachCylinderRadiusGameUnits = 2.5f,
         .firingGripProximitySupportRadiusGameUnits = 7.0f,
         .leftFiringAimYawDegrees = 1.5f,
         .leftFiringAimPitchDegrees = -2.5f,

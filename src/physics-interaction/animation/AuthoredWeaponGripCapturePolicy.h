@@ -84,14 +84,6 @@ namespace rock::authored_weapon_grip_capture_policy
         bool completeFingerPose{ false };
     };
 
-    struct AuthoredFiringGripProbeInput
-    {
-        bool proximityProbeAcquisition{ false };
-        bool providerAuthorityActive{ false };
-        bool attachOnly{ false };
-        bool authoredCanonicalAvailable{ false };
-    };
-
     struct StableAuthoredSupportGripReuseInput
     {
         bool snapshotValid{ false };
@@ -375,15 +367,6 @@ namespace rock::authored_weapon_grip_capture_policy
                input.weaponIdentityMatches &&
                input.generationMatches &&
                input.completeFingerPose;
-    }
-
-    [[nodiscard]] constexpr bool shouldUseAuthoredFiringGripProbe(
-        const AuthoredFiringGripProbeInput& input)
-    {
-        return input.proximityProbeAcquisition &&
-               !input.providerAuthorityActive &&
-               !input.attachOnly &&
-               input.authoredCanonicalAvailable;
     }
 
     /*

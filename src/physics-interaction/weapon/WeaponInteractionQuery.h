@@ -51,6 +51,7 @@ namespace rock::weapon_interaction_query
     {
         std::size_t part = (std::numeric_limits<std::size_t>::max)();
         weapon_interaction_probe_math::ProbeCandidateRank rank{};
+        RE::NiPoint3 closestWorld{};
         std::uint32_t boundsCandidates = 0;
         std::uint32_t surfaceCandidates = 0;
         bool valid() const { return part != (std::numeric_limits<std::size_t>::max)(); }
@@ -73,10 +74,13 @@ namespace rock::weapon_interaction_query
             if (!std::isfinite(boundsDistance) ||
                 !weapon_interaction_probe_math::isWithinProbeRadiusSquared(boundsDistance, localRadius)) continue;
             ++result.boundsCandidates;
+            RE::NiPoint3 closestLocal{};
+            float closestSquared = (std::numeric_limits<float>::infinity)();
             const auto distance = part.index->nearestDistanceSquared(*part.triangles, localPoint, localRadius * localRadius,
-                [](const RE::NiPoint3& p, const TriangleData& triangle) {
+                [&](const RE::NiPoint3& p, const TriangleData& triangle) {
                     float squared = (std::numeric_limits<float>::infinity)();
-                    (void)closestPointOnTriangleToPoint(p, triangle, squared);
+                    const auto closest = closestPointOnTriangleToPoint(p, triangle, squared);
+                    if (squared < closestSquared) { closestSquared = squared; closestLocal = closest; }
                     return squared;
                 });
             if (!std::isfinite(distance) ||
@@ -90,6 +94,7 @@ namespace rock::weapon_interaction_query
             if (result.valid() && !weapon_interaction_probe_math::isBetterProbeCandidate(rank, result.rank)) continue;
             result.part = i;
             result.rank = rank;
+            result.closestWorld = weapon_collision_geometry_math::localPointToWorld(part.world.rotate, part.world.translate, part.world.scale, closestLocal);
         }
         return result;
     }

@@ -1,5 +1,7 @@
 #include "physics-interaction/weapon/WeaponInteractionQuery.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
+#include "physics-interaction/weapon/WeaponGripSelection.h"
+#include "physics-interaction/weapon/FiringGripReattachZonePolicy.h"
 
 #include <cassert>
 #include <chrono>
@@ -39,10 +41,11 @@ namespace
             if (!std::isfinite(bounds) || !weapon_interaction_probe_math::isWithinProbeRadiusSquared(bounds,localRadius)) continue;
             ++result.boundsCandidates;
             float distance=(std::numeric_limits<float>::infinity)();
+            RE::NiPoint3 closestLocal{};
             for (const auto& triangle:source.triangles) {
                 float d=(std::numeric_limits<float>::infinity)();
-                (void)closestPointOnTriangleToPoint(local,triangle,d);
-                if (std::isfinite(d) && d<=localRadius*localRadius) distance=(std::min)(distance,d);
+                const auto closest=closestPointOnTriangleToPoint(local,triangle,d);
+                if (std::isfinite(d) && d<=localRadius*localRadius && d<distance) { distance=d; closestLocal=closest; }
             }
             if (!std::isfinite(distance) || !weapon_interaction_probe_math::isWithinProbeRadiusSquared(distance,localRadius)) continue;
             ++result.surfaceCandidates;
@@ -51,6 +54,7 @@ namespace
             if (result.valid() && !weapon_interaction_probe_math::isBetterProbeCandidate(rank,result.rank)) continue;
             result.part=i;
             result.rank=rank;
+            result.closestWorld=weapon_collision_geometry_math::localPointToWorld(source.world.rotate,source.world.translate,source.world.scale,closestLocal);
         }
         return result;
     }
@@ -83,6 +87,7 @@ namespace
         assert(a.rank.distanceSquaredGame==b.rank.distanceSquaredGame);
         assert(a.rank.aabbDiagonalSquaredGame==b.rank.aabbDiagonalSquaredGame);
         assert(a.rank.semanticPriority==b.rank.semanticPriority);
+        assert((a.closestWorld-b.closestWorld).Length()<0.0001f);
     }
 
     std::vector<Source> makeSources(std::size_t count)
@@ -155,6 +160,44 @@ namespace
 
 int main()
 {
+    // A spherical seat admits the same physical displacement after the weapon
+    // rotates/translates. Rear and side entry share one distance metric.
+    namespace volume = rock::firing_grip_reattach_zone_policy;
+    for (int i = 0; i < 80; ++i) {
+        const float angle = i * 0.17f;
+        const float distance = i * 0.125f;
+        const volume::Vec3 seat{31, -18, 72};
+        const auto result = volume::evaluateZone({seat,
+            {seat.x + distance * std::cos(angle), seat.y + distance * std::sin(angle), seat.z}, 5.0f});
+        assert(result.valid && std::abs(result.radialDistanceGameUnits - distance) < 0.00001f);
+        if (std::abs(distance - 5.0f) > 0.001f) assert(result.inside == (distance < 5.0f));
+    }
+    // Hover state cannot resurrect a withdrawn bolt, survive a weapon identity
+    // change, or prefer yesterday's distance to the current sampled positions.
+    namespace selection = rock::weapon_grip_selection;
+    std::array<selection::Candidate, 2> candidates{{
+        {selection::Kind::Part, {}, 1.0f, 2.0f, 7, 9, 3, true},
+        {selection::Kind::Firing, {}, 1.1f, 10.0f, 0, 0, 0, true}}};
+    selection::State state{};
+    assert(selection::select(state, candidates, 10, 20, false).kind == selection::Kind::Part);
+    candidates[0].distance = 1.2f;
+    assert(selection::select(state, candidates, 10, 20, false).kind == selection::Kind::Part);
+    ++candidates[0].group;
+    assert(selection::select(state, candidates, 10, 20, false).kind == selection::Kind::Firing);
+    candidates[0].eligible = false;
+    assert(selection::select(state, candidates, 10, 20, false).kind == selection::Kind::Firing);
+    candidates[0].eligible = true;
+    candidates[0].distance = 1.0f;
+    assert(selection::select(state, candidates, 11, 20, false).kind == selection::Kind::Part);
+    assert(selection::select(state, {}, 11, 20, false).kind == selection::Kind::None);
+    assert(selection::select(state, candidates, 0, 20, false).kind == selection::Kind::None);
+    // Rejecting the nearer receiver leaves the next eligible surface visible.
+    const auto surfaceSources = makeSources(2);
+    const Batch surfaceBatch(surfaceSources);
+    const std::array<bool,2> excluded{{true,false}};
+    const auto masked = query::find(std::span(surfaceBatch.parts).first(surfaceBatch.count),
+        surfaceSources[0].world.translate, 3.0f, excluded);
+    assert(masked.valid() && masked.part == 1);
     rock::WeaponInteractionContact contact;contact.valid=true;contact.weaponGenerationKey=123;
     contact.grabPoint.ownerToken=45;contact.grabPoint.groupId=1;contact.grabPoint.sourceKey=237;
     contact.grabPoint.pointId=7;contact.grabPoint.anchorAtPoint=true;

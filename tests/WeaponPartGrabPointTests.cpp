@@ -31,26 +31,26 @@ int main(){
     // 1.3 keeps palm-only acquisition even when finger probes are supplied.
     assert(p::nearest(c,api::Hand::Left,{0,0,0},12,fingers).point==c.size());
     for(auto& candidate:c)candidate.rule.operating=true;
-    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,fingers,true).point==1);
-    assert(p::nearest(c,api::Hand::Right,{0,0,0},12,fingers,true).point==0);
-    assert(p::nearest(c,api::Hand::Left,{20,0,0},12,{},true).point==0); // palm remains available
-    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,{},true).point==c.size()); // missing fingers do not invent a point
+    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,fingers).point==1);
+    assert(p::nearest(c,api::Hand::Right,{0,0,0},12,fingers).point==0);
+    assert(p::nearest(c,api::Hand::Left,{20,0,0},12,{}).point==0); // palm remains available
+    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,{}).point==c.size()); // missing fingers do not invent a point
     const std::array<std::array<float,3>,2> distant{{{17,0,0},{-17,0,0}}};
-    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,distant,true).point==c.size()); // no radius inflation
+    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,distant).point==c.size()); // no radius inflation
     assert(registry.replace(100,points,group,true)==Status::Ok&&registry.operatingFor(10)&&!registry.operatingFor(11));
     assert(registry.replace(100,points,group)==Status::Ok&&!registry.operatingFor(10));
     // A 1.5 owner can acquire with either pinky anchor while 1.4 stays unchanged.
-    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,{},true,fingers).point==c.size());
+    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,{},fingers).point==c.size());
     c[0].rule.pinky=true;c[1].rule.pinky=true;
-    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,{},true,fingers).point==1);
-    assert(p::nearest(c,api::Hand::Right,{0,0,0},12,{},true,fingers).point==0);
+    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,{},fingers).point==1);
+    assert(p::nearest(c,api::Hand::Right,{0,0,0},12,{},fingers).point==0);
     c[1].rule.pinky=false; // coexistence: the closer legacy point cannot use pinky.
-    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,{},true,fingers).point==0);
-    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,{},true,distant).point==c.size());
-    assert(p::nearest(c,api::Hand::Left,{20,0,0},12,{},true).point==0);
-    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,fingers,true).point==1);
+    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,{},fingers).point==0);
+    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,{},distant).point==c.size());
+    assert(p::nearest(c,api::Hand::Left,{20,0,0},12,{}).point==0);
+    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,fingers).point==1);
     const std::array<std::array<float,3>,1> invalid{{{std::numeric_limits<float>::quiet_NaN(),0,0}}};
-    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,{},true,invalid).point==c.size());
+    assert(p::nearest(c,api::Hand::Left,{0,0,0},12,{},invalid).point==c.size());
     assert(registry.replace(100,points,group,true,true)==Status::Ok);
     assert(registry.copy(snapshot)==2&&snapshot[0].pinky&&snapshot[1].pinky);
     assert(registry.replace(101,std::span(&a,1),group,true)==Status::Ok);

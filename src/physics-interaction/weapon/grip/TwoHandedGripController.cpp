@@ -105,19 +105,24 @@ namespace rock
 
     TwoHandedGripUpdateResult TwoHandedGrip::update(
         RE::NiNode* weaponNode,
-        const WeaponInteractionContact& leftWeaponContact,
-        const WeaponInteractionContact& rightWeaponContact,
+        const WeaponInteractionContact& inputLeftContact,
+        const WeaponInteractionContact& inputRightContact,
         const EquippedWeaponGripFrameInput& frameInput,
         float dt,
         std::uint64_t currentWeaponGenerationKey,
         std::uint64_t currentEquippedWeaponOwnershipKey,
         const WeaponCollision& weaponCollision,
-        const WeaponInteractionRuntimeState& leftRuntimeState,
-        const WeaponInteractionRuntimeState& rightRuntimeState,
+        const WeaponInteractionRuntimeState& inputLeftRuntime,
+        const WeaponInteractionRuntimeState& inputRightRuntime,
         weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
         bool firingGripProximityAuthorityEnabled,
         const EquippedWeaponHandlingSettings& handlingSettings)
     {
+        auto leftWeaponContact = inputLeftContact;
+        auto rightWeaponContact = inputRightContact;
+        auto leftRuntimeState = inputLeftRuntime;
+        auto rightRuntimeState = inputRightRuntime;
+        _gripSelectionDebug = {};
         performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedGripController);
         const EquippedWeaponGripOccupancy occupancyBefore =
             getGripOccupancy();
@@ -130,6 +135,10 @@ namespace rock
                 _firing.reattachIndicatorFrame = {};
             }
             for (const bool isLeft : { true, false }) {
+                if (!_gripSelectionDebug[isLeft ? 0u : 1u].valid) {
+                    _gripSelectionState[isLeft ? 0u : 1u] = {};
+                    _gripSelectionWasHeld[isLeft ? 0u : 1u] = false;
+                }
                 auto& hand = authoredSupportHand(isLeft);
                 auto& input = authoredIndicatorInputs[isLeft ? 0u : 1u];
                 input.supportHandWeaponEngaged = isLeft ?
@@ -188,7 +197,6 @@ namespace rock
         _firing.reattachHoverInsideZone = false;
         _firing.reattachHoverHandIsLeft = isFiringHandLeft();
         _firing.reattachIndicatorFrame = {};
-        _firing.reattachDebugSnapshot = {};
         _gripReleaseRetained = {};
         if (g_rockConfig.rockDebugDrawNativeScopeActivation &&
             _scope.cameraDebugSnapshot.framesSinceApply != (std::numeric_limits<std::uint32_t>::max)()) {
@@ -335,8 +343,7 @@ namespace rock
                 const bool ready = hand.authoredCapability.initialized &&
                     qualification.weaponDrawn && f4vr::isNodeVisible(weaponNode) &&
                     !qualification.localMenuBlocking && !qualification.compatibilityConfigBlocking &&
-                    runtime.supportGripAllowed &&
-                    !runtime.providerPartAuthority.active;
+                    runtime.supportGripAllowed;
                 advanceAuthoredSupportCapabilityQualification(isLeft, ready, dt);
             } else {
                 if (hand.authoredCapability.initialized) {
@@ -346,13 +353,89 @@ namespace rock
             }
             refreshAuthoredSupportGripActivationState(isLeft, weaponNode,
                 currentWeaponGenerationKey, weaponCollision);
-            if (_handlingSettings.authoredOnlySupportGrabsEnabled && !runtime.providerPartAuthority.active) {
+            if (_handlingSettings.authoredOnlySupportGrabsEnabled) {
                 observeAuthoredSupportCapability(isLeft, weaponNode, currentWeaponGenerationKey);
             } else if (hand.authoredDebugSnapshot.valid) {
                 hand.authoredDebugSnapshot.authoredCapability = authored_support_grab_policy::Capability::Pending;
                 hand.authoredDebugSnapshot.authoredCapabilityReason = authored_support_grab_policy::CapabilityReason::ModeDisabled;
             }
         }
+        // All candidates are measured before any acquisition can claim the hand.
+        // A held grip bypasses selection and keeps its captured attachment.
+        using GripKind = weapon_grip_selection::Kind;
+        const auto arrangementForSelection = authoredGripArrangement(weaponNode, currentWeaponGenerationKey);
+        const bool sharedForSelection = loose_weapon_authored_grab_policy::sharedFiringZone(arrangementForSelection);
+        provider::RockProviderWeaponPartTargetQueryV1 whitelistQuery{};
+        whitelistQuery.weaponGenerationKey = currentWeaponGenerationKey;
+        whitelistQuery.bodyId = weapon_part_runtime::kInvalidBodyId;
+        provider::RockProviderWeaponPartTargetResolutionV1 whitelist{};
+        (void)provider::resolveWeaponPartTargetV1(whitelistQuery, whitelist);
+        for (bool isLeft : {true, false}) {
+            const auto index = isLeft ? 0u : 1u;
+            auto& contact = isLeft ? leftWeaponContact : rightWeaponContact;
+            auto& runtime = isLeft ? leftRuntimeState : rightRuntimeState;
+            auto& debug = _gripSelectionDebug[index];
+            const bool available = isLeft ? stableFrameInput.leftHandAvailableForAcquisition : stableFrameInput.rightHandAvailableForAcquisition;
+            const bool holdingObject = isLeft ? stableFrameInput.leftHandHoldingObject : stableFrameInput.rightHandHoldingObject;
+            RE::NiTransform hand{};
+            if (!available || holdingObject || partGrip(isLeft).active ||
+                (isLeft == isFiringHandLeft() && !isFiringGripDetached()) ||
+                !runtime.supportGripAllowed || !tryGetSolverHandTransform(isLeft, hand)) {
+                _gripSelectionState[index] = {};
+                _gripSelectionWasHeld[index] = false;
+                continue;
+            }
+            debug.palm = computeGrabLegacyPalmPivotAWorldFromHandBasis(hand, isLeft);
+            auto localRuntime = runtime;
+            localRuntime.providerPartAuthority = {};
+            const auto& support = authoredSupportHand(isLeft).authoredDebugSnapshot;
+            if (support.valid) {
+                debug.candidates[1] = {GripKind::Support, support.authoredPalmSeatWorld,
+                    support.weaponRelativeDistanceGameUnits, support.radialCapGameUnits, 0, 0, 0,
+                    authoredSupportSeatAvailable(isLeft, currentWeaponGenerationKey, localRuntime)};
+            }
+            firing_grip_reattach_zone_policy::ZoneInput input{};
+            firing_grip_reattach_zone_policy::ZoneResult zone{};
+            const bool firingAllowed = !whitelist.whitelistActive &&
+                (isFiringGripDetached() ?
+                    ((isLeft ? stableFrameInput.leftReattachEligible : stableFrameInput.rightReattachEligible) &&
+                        (isLeft == isFiringHandLeft() || (_handlingSettings.ambidextrousHandoffEnabled && canBeginPrimaryOnlyGripForHand(isLeft)))) :
+                    (arrangementForSelection != loose_weapon_authored_grab_policy::Arrangement::Pending &&
+                        firingGripProximityAuthorityEnabled && (_handlingSettings.ambidextrousHandoffEnabled || sharedForSelection) && canBeginPrimaryOnlyGripForHand(isLeft)));
+            if (tryBuildFiringGripZoneInput(weaponNode, currentWeaponGenerationKey, currentEquippedWeaponOwnershipKey,
+                    _handlingSettings.firingGripReattachRadiusGameUnits, input) && tryEvaluateFiringGripZoneForHand(isLeft, input, zone)) {
+                debug.candidates[0] = {GripKind::Firing, {input.gripWorld.x,input.gripWorld.y,input.gripWorld.z},
+                    zone.radialDistanceGameUnits, input.radiusGameUnits, 0, 0, 0, firingAllowed && zone.inside};
+            }
+            const auto route = routeWeaponInteraction(contact, runtime);
+            const bool surfaceAllowed = !_handlingSettings.authoredOnlySupportGrabsEnabled ||
+                (authoredSupportHand(isLeft).authoredCapability.capability == authored_support_grab_policy::Capability::Unavailable && _support.authoredCandidate.poseAbsent);
+            if (route.kind == WeaponInteractionKind::SupportGrip && contact.weaponGenerationKey == currentWeaponGenerationKey) {
+                const auto& part = runtime.providerPartAuthority;
+                debug.candidates[2] = {part.active ? GripKind::Part : GripKind::Surface, contact.probeTargetWorld,
+                    contact.probeDistanceGame, contact.probeTargetRadiusGame, part.ownerToken,
+                    contact.grabPoint.sourceKey, contact.grabPoint.pointId ? contact.grabPoint.pointId : contact.bodyId,
+                    part.active || surfaceAllowed, part.groupId};
+            }
+            const bool held = isLeft == isFiringHandLeft() ? stableFrameInput.primaryGripInput.held :
+                (isLeft ? stableFrameInput.leftGripHeld : stableFrameInput.rightGripHeld);
+            const bool released = _gripSelectionWasHeld[index] && !held;
+            _gripSelectionWasHeld[index] = held;
+            // Empty/invalid candidates immediately discard hover ownership.
+            debug.selected = weapon_grip_selection::select(_gripSelectionState[index], debug.candidates,
+                currentWeaponGenerationKey, currentEquippedWeaponOwnershipKey, released);
+            debug.valid = true;
+            if (debug.selected.kind != GripKind::Part && debug.selected.kind != GripKind::Surface) {
+                contact = {};
+                runtime.providerPartAuthority = {};
+            }
+            ROCK_LOG_SAMPLE_DEBUG(Weapon, 500,
+                "WeaponGrabSelection hand={} winner={} distance={:.3f} firing={:.3f}/{} support={:.3f}/{} part={:.3f}/{}",
+                isLeft ? "left" : "right", weapon_grip_selection::name(debug.selected.kind), debug.selected.distance,
+                debug.candidates[0].distance, debug.candidates[0].eligible, debug.candidates[1].distance,
+                debug.candidates[1].eligible, debug.candidates[2].distance, debug.candidates[2].eligible);
+        }
+        decision = routeWeaponInteraction(supportWeaponContact, supportRuntimeState);
         const bool routedSupportTouching =
             decision.kind == WeaponInteractionKind::SupportGrip;
         const bool supportGripHeld = supportHandIsLeft ? stableFrameInput.leftGripHeld : stableFrameInput.rightGripHeld;
@@ -372,7 +455,7 @@ namespace rock
             authoredSupportSeatAvailable(supportHandIsLeft, currentWeaponGenerationKey, supportRuntimeState);
         firing_grip_reattach_zone_policy::ZoneInput handoffInput{};
         firing_grip_reattach_zone_policy::ZoneResult handoffZone{};
-        // Evaluate the same cylinders as detached firing-grip reattachment,
+        // Evaluate the same sphere as detached firing-grip reattachment,
         // even without a contact/probe or authored support seat. Keep the
         // debug boundary available while the firing grip is occupied.
         // Native hand animation does not revoke authored grab/handoff access.
@@ -399,25 +482,13 @@ namespace rock
             (void)provider::resolveWeaponPartTargetV1(handoffPartQuery, handoffPartResolution);
         }
         const bool handoffAcquisitionAvailable =
-            supportHandAvailableForAcquisition && handoffZoneEvaluated && !partGrip(supportHandIsLeft).active &&
+            selectedGrip(supportHandIsLeft, GripKind::Firing) && supportHandAvailableForAcquisition && handoffZoneEvaluated && !partGrip(supportHandIsLeft).active &&
             !supportHandHoldingObject && canAcquireFiringGripHandoff(
                 handoffZone.inside, supportRuntimeState,
                 handoffPartResolution.whitelistActive != 0);
         if (handoffAcquisitionAvailable) {
             updateFiringGripZoneIndicator(weaponNode, currentWeaponGenerationKey,
                 supportHandIsLeft, handoffZone);
-        }
-        if (supportGripHeld && handoffZoneEvaluated &&
-            !partGrip(supportHandIsLeft).active && !supportHandHoldingObject) {
-            ROCK_LOG_SAMPLE_DEBUG(Weapon, 1000,
-                "TwoHandedGrip: firing-grip handoff acquisition hand={} inside={} along={:.2f} perp={:.2f} reach={:.2f} radius={:.2f} allowed={} contactRoute={} authoredRoute={} reserved={} provider={} whitelist={}",
-                supportHandIsLeft ? "left" : "right", handoffZone.inside,
-                handoffZone.alongAxisGameUnits, handoffZone.perpendicularDistanceGameUnits,
-                handoffInput.reachGameUnits, handoffInput.radiusGameUnits,
-                handoffAcquisitionAvailable, routedSupportTouching,
-                authoredSeatAcquisitionAvailable, !supportRuntimeState.supportGripAllowed,
-                supportRuntimeState.providerPartAuthority.active,
-                handoffPartResolution.whitelistActive != 0);
         }
         if (handoffAcquisitionAvailable || authoredSeatAcquisitionAvailable) {
             decision = WeaponInteractionDecision{
@@ -747,6 +818,9 @@ namespace rock
 
     void TwoHandedGrip::reset()
     {
+        _gripSelectionDebug = {};
+        _gripSelectionState = {};
+        _gripSelectionWasHeld = {};
         _confirmedEquippedOwnershipKey = 0;
         _confirmedEquippedGripGenerationKey = 0;
         _equippedGripAcquisitionPending = false;
@@ -775,7 +849,6 @@ namespace rock
         _gripReleaseRetainedLogged = {};
         _firing.reattachHoverInsideZone = false;
         _firing.reattachIndicatorFrame = {};
-        _firing.reattachDebugSnapshot = {};
         _scope.anchorWeaponNode = nullptr;
         _scope.anchorGenerationKey = 0;
         _scope.anchorOwnershipKey = 0;

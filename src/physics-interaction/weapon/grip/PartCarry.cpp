@@ -366,23 +366,9 @@ namespace rock
             frameInput.leftHandAvailableForAcquisition : frameInput.rightHandAvailableForAcquisition;
         const bool firingHandAvailableForAcquisition = firingHandIsLeft ?
             frameInput.leftHandAvailableForAcquisition : frameInput.rightHandAvailableForAcquisition;
-        const bool authoredProviderAuthorityActive =
-            leftRuntimeState.providerPartAuthority.active ||
-            rightRuntimeState.providerPartAuthority.active;
-        const bool authoredAttachOnlyAuthorityActive =
-            weapon_part_grip_report_policy::providerGrabModeIsAttachOnly(
-                leftRuntimeState.providerPartAuthority.active,
-                leftRuntimeState.providerPartAuthority.grabMode) ||
-            weapon_part_grip_report_policy::providerGrabModeIsAttachOnly(
-                rightRuntimeState.providerPartAuthority.active,
-                rightRuntimeState.providerPartAuthority.grabMode) ||
-            (partGrip(true).active && partGrip(true).attachOnly) ||
-            (partGrip(false).active && partGrip(false).attachOnly);
-
         /*
          * Firing-grip reattach is the squeeze gesture: a held grab with a
-         * free palm inside the reattach zone (the lateral cylinders from the
-         * grip point) re-takes the grip. Nothing attaches to an open
+         * free palm selecting the firing capture sphere re-takes the grip. Nothing attaches to an open
          * hand, and the gesture cannot re-capture a fresh detach because the
          * detach requires the grab to be open. A hand
          * already part-gripping is never converted; open it first, then
@@ -397,17 +383,14 @@ namespace rock
             bool isLeft;
             bool eligible;
             bool gripHeld;
-            const WeaponInteractionContact* contact;
         };
         const FiringGripReattachCandidate reattachCandidates[2] = {
             { firingHandIsLeft,
                 firingHandIsLeft ? frameInput.leftReattachEligible : frameInput.rightReattachEligible,
-                frameInput.primaryGripInput.held,
-                &firingHandContact },
+                frameInput.primaryGripInput.held },
             { supportHandIsLeft,
                 supportHandIsLeft ? frameInput.leftReattachEligible : frameInput.rightReattachEligible,
-                supportGripHeld,
-                &supportHandContact },
+                supportGripHeld },
         };
         firing_grip_reattach_zone_policy::ZoneInput reattachInput{};
         const bool reattachInputValid = tryBuildFiringGripZoneInput(
@@ -422,7 +405,7 @@ namespace rock
                     !canBeginPrimaryOnlyGripForHand(candidate.isLeft))) {
                 continue;
             }
-            if ((!candidate.eligible && !directCatch) || partGrip(candidate.isLeft).active) {
+            if ((!directCatch && (!candidate.eligible || !selectedGrip(candidate.isLeft, weapon_grip_selection::Kind::Firing))) || partGrip(candidate.isLeft).active) {
                 continue;
             }
             firing_grip_reattach_zone_policy::ZoneResult reattachZone{};
@@ -432,11 +415,9 @@ namespace rock
                     reattachZone))) {
                 continue;
             }
-            _firing.reattachDebugSnapshot.hands[candidate.isLeft ? 0u : 1u]
-                .gripHeld = candidate.gripHeld;
             /*
-             * Ordinary station reattachment stays inside its cylinders.
-             * Only a selected free-weapon catch may bypass them; the pickup
+             * Ordinary station reattachment uses the selected capture sphere.
+             * Only a selected free-weapon catch may bypass it; the pickup
              * owner already qualified reach, visibility, input and hand availability.
              */
             const bool reattachRequested = directCatch || weapon_two_handed_grip_math::shouldReattachFiringGripOnGrab(
@@ -455,25 +436,15 @@ namespace rock
                 tryReattachFiringGrip(
                     candidate.isLeft,
                     weaponNode,
-                    *candidate.contact,
-                    authoredProviderAuthorityActive,
-                    authoredAttachOnlyAuthorityActive, directCatch);
+                    directCatch);
             if (directCatch && !reattached) {
-                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equipped drop catch not ready: hand={} generation={:016X} canonicalGeneration={:016X} provider={} attachOnly={}",
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equipped drop catch not ready: hand={} generation={:016X} canonicalGeneration={:016X}",
                     candidate.isLeft ? "left" : "right", currentWeaponGenerationKey,
-                    _firing.rightCanonicalGenerationKey, authoredProviderAuthorityActive, authoredAttachOnlyAuthorityActive);
+                    _firing.rightCanonicalGenerationKey);
             }
             if (reattached) {
-                ROCK_LOG_INFO(Weapon,
-                    "TwoHandedGrip: firing-grip reattach hand={} source={} inside={} side={} along={:.2f} perp={:.2f} reach={:.2f} radius={:.2f}",
-                    candidate.isLeft ? "left" : "right",
-                    directCatch ? "equipped-drop-catch" : "grip-zone",
-                    reattachZone.inside ? "yes" : "no",
-                    firing_grip_reattach_zone_policy::sideName(reattachZone.side),
-                    reattachZone.alongAxisGameUnits,
-                    reattachZone.perpendicularDistanceGameUnits,
-                    _handlingSettings.firingGripReattachRadiusGameUnits,
-                    _handlingSettings.firingGripReattachCylinderRadiusGameUnits);
+                ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing-grip reattach hand={} distance={:.2f} radius={:.2f}",
+                    candidate.isLeft ? "left" : "right", reattachZone.radialDistanceGameUnits, reattachInput.radiusGameUnits);
                 const bool newSupportHandIsLeft = isSupportHandLeft();
                 if (partGrip(newSupportHandIsLeft).active) {
                     // Re-lock the two-hand separation against the (possibly
@@ -665,7 +636,7 @@ namespace rock
         const bool authoredFreeHandSeatAvailable = authoredSupportSeatAvailable(
             firingHandIsLeft, currentWeaponGenerationKey, firingRuntimeState);
         const bool freeHandGrabRequested = frameInput.primaryGripInput.pressed ||
-            (authoredFreeHandSeatAvailable && frameInput.primaryGripInput.held);
+            ((authoredFreeHandSeatAvailable || selectedGrip(firingHandIsLeft, weapon_grip_selection::Kind::Part)) && frameInput.primaryGripInput.held);
         if (!freeHandGrip.active && firingHandAvailableForAcquisition && freeHandGrabRequested) {
             WeaponInteractionDecision freeHandDecision = routeWeaponInteraction(firingHandContact, firingRuntimeState);
             if (authoredFreeHandSeatAvailable) {

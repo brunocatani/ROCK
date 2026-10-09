@@ -279,6 +279,8 @@ namespace rock
         RE::NiAVObject* sourceRoot{ nullptr };
         std::uint64_t weaponGenerationKey{ 0 };
         float probeDistanceGame{ 0.0f };
+        RE::NiPoint3 probeTargetWorld{};
+        float probeTargetRadiusGame{};
         WeaponGrabPointLocation grabPoint;
         std::uint32_t sequence{ 0 };
         WeaponInteractionAcquisitionSource acquisitionSource{ WeaponInteractionAcquisitionSource::None };
