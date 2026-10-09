@@ -1,6 +1,7 @@
 #include "physics-interaction/input/WeaponTriggerRouting.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/input/PhysicalReloadInput.h"
+#include "physics-interaction/input/SupportTriggerInput.h"
 #include "RPSUIInputApi.h"
 
 #include "physics-interaction/input/InputRemapPolicy.h"
@@ -745,7 +746,7 @@ namespace rock::input_remap_runtime
                 // A UI-owned physical trigger must not reappear on the other
                 // wand through ROCK's left-hand firing remap.
                 const bool leftValid = leftTracker.valid.load(std::memory_order_acquire) &&
-                    (uiCapturedButtons(true) & triggerButtonMask) == 0 && !physical_reload_input::fireBlocked(true);
+                    (uiCapturedButtons(true) & triggerButtonMask) == 0 && !physical_reload_input::fireBlocked(true) && !support_trigger_input::blocked(true);
                 const std::uint64_t leftPressed = leftValid ? leftTracker.rawPressed.load(std::memory_order_acquire) : 0;
                 const std::uint64_t leftTouched = leftValid ? leftTracker.rawTouched.load(std::memory_order_acquire) : 0;
                 state->ulButtonPressed = (state->ulButtonPressed & ~triggerButtonMask) | (leftPressed & triggerButtonMask);
@@ -939,7 +940,8 @@ namespace rock::input_remap_runtime
                 if (resolveControllerHand(controllerDeviceIndex, hand)) {
                     if(controllerState&&controllerStateSize>=sizeof(vr::VRControllerState_t)&&!isInputBlockingMenuActive()&&
                         !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
-                        const auto mask=physical_reload_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed);
+                        const auto mask=physical_reload_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed) |
+                            support_trigger_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed);
                         controllerState->ulButtonPressed&=~mask;controllerState->ulButtonTouched&=~mask;
                         if(mask&(1ull<<33))controllerState->rAxis[1]={};
                     }
@@ -981,7 +983,8 @@ namespace rock::input_remap_runtime
                 if (resolveControllerHand(controllerDeviceIndex, hand)) {
                     if(controllerState&&controllerStateSize>=sizeof(vr::VRControllerState_t)&&!isInputBlockingMenuActive()&&
                         !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
-                        const auto mask=physical_reload_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed);
+                        const auto mask=physical_reload_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed) |
+                            support_trigger_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed);
                         controllerState->ulButtonPressed&=~mask;controllerState->ulButtonTouched&=~mask;
                         if(mask&(1ull<<33))controllerState->rAxis[1]={};
                     }
@@ -1304,7 +1307,7 @@ namespace rock::input_remap_runtime
             const auto* button = event ? event->As<RE::ButtonEvent>() : nullptr;
             if (input.eventMatched && button && !button->QPressed()) return false;
             const bool suppressed = providerSuppressed ||
-                (input.eventMatched&&physical_reload_input::fireBlocked(input.triggerSourceIsLeft)) ||
+                (input.eventMatched&&(physical_reload_input::fireBlocked(input.triggerSourceIsLeft)||(input.gameplayInputAllowed&&!input.menuInputActive&&support_trigger_input::blocked(input.triggerSourceIsLeft)))) ||
                 input_remap_policy::shouldSuppressNativeTriggerAction(input);
             traceNativeWeaponInputGate(gate, event, input, suppressed, providerSuppressed);
             return suppressed;

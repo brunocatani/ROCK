@@ -3,6 +3,7 @@
 #include "api/InterfaceNegotiation.h"
 #include "ProviderRuntimeServices.h"
 #include "physics-interaction/input/PhysicalReloadInput.h"
+#include "physics-interaction/input/SupportTriggerInput.h"
 #include "OwnerBindingPolicy.h"
 #include "EventStreams.h"
 #include "ROCKProviderApiInternal.h"
@@ -1570,6 +1571,7 @@ namespace rock::provider::runtime
     void clearOwnerStateAfterCallbackFault(const std::uint64_t ownerToken)
     {
         physical_reload_input::clearOwner(ownerToken);
+        support_trigger_input::clearOwner(ownerToken);
         {
             std::scoped_lock lock(s_consumerMutex);
             if (auto* slot = findConsumerSlotLocked(ownerToken)) slot->revoked = true;
@@ -2198,11 +2200,12 @@ namespace rock::provider
         }
         s_frameClock.beginFrame(frameIndex);
         physical_reload_input::beginFrame(frameIndex);
+        support_trigger_input::beginFrame(frameIndex);
     }
 
     void setPhysicsInteractionInstance(rock::PhysicsInteraction* pi)
     {
-        if(!pi)physical_reload_input::reset();
+        if(!pi) { physical_reload_input::reset(); support_trigger_input::reset(); }
         s_physicsInteraction.publish(pi);
     }
 
@@ -2471,6 +2474,7 @@ namespace rock::provider
         // Revalidate against this publication before consumers run. The earlier
         // game-clock expiry check only has the previous weapon snapshot.
         physical_reload_input::beginFrame(snapshot.frameIndex);
+        support_trigger_input::beginFrame(snapshot.frameIndex);
 
         if (hadPrevious && lifecycleChanged) {
             RockProviderEventV1 event{};

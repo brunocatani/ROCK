@@ -290,6 +290,13 @@ if(BUILD_ROCK_TESTS)
 
   include("${ROOT_DIR}/cmake/RockTestRegistration.cmake")
 
+  add_executable(ROCKSupportTriggerInputTests
+    "${ROOT_DIR}/tests/SupportTriggerInputTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/input/SupportTriggerInput.cpp")
+  target_compile_features(ROCKSupportTriggerInputTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKSupportTriggerInputTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKSupportTriggerInputTests)
+
   add_executable(ROCKPhysicalReloadInputTests
     "${ROOT_DIR}/tests/PhysicalReloadInputTests.cpp"
     "${SOURCE_DIR}/physics-interaction/input/PhysicalReloadInput.cpp")
