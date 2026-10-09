@@ -1905,12 +1905,13 @@ namespace rock
             tryGetSolverHandTransform(supportHandIsLeft, supportTransform);
         if (!primaryTransformAvailable || !supportTransformAvailable) {
             _hasSolvedWeaponTransform = false;
-            ROCK_LOG_WARN(Weapon,
-                "TwoHandedGrip: clearing support grip because authoritative hand transforms are unavailable frame={} primaryHand={} primaryAvailable={} supportAvailable={} authored={} transferred={}",
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000,
+                "TwoHandedGrip: retaining support grip while authoritative hand transforms recover frame={} primaryHand={} primaryAvailable={} supportAvailable={} authored={} transferred={}",
                 runtime_state::currentFrame().frameIndex, firingHandName(), primaryTransformAvailable, supportTransformAvailable,
                 supportGrip.authoredSupportGrip, supportGrip.transferredLooseGrip);
-            logGripFailureIncident("authoritative-hand-frame-unavailable");
-            transitionToInactive(false);
+            // Missing pose input is not release intent. Keep grip-local data
+            // and ownership; the controller still handles release/identity
+            // changes and retries this solve with fresh input next frame.
             return;
         }
 
@@ -2019,8 +2020,8 @@ namespace rock
         if (supportInputBaselineActive &&
             !inputBaselineResolved) {
             _hasSolvedWeaponTransform = false;
-            ROCK_LOG_WARN(Weapon,
-                "TwoHandedGrip: clearing support grip because its captured input baseline became invalid mode=dynamic hand={} grip={} generation={:016X} primaryDriver={} supportDriver={}",
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000,
+                "TwoHandedGrip: retaining support grip while its input baseline recovers mode=dynamic hand={} grip={} generation={:016X} primaryDriver={} supportDriver={}",
                 supportHandIsLeft ? "left" : "right",
                 supportGrip.gripSequence,
                 supportGrip.weaponGenerationKey,
@@ -2034,8 +2035,6 @@ namespace rock
                         .valid ?
                     "valid" :
                     "missing");
-            logGripFailureIncident("dynamic-input-baseline-invalid");
-            transitionToInactive(false);
             return;
         }
 
@@ -2359,9 +2358,11 @@ namespace rock
         const bool applyPrimaryHandAuthority = weapon_support_authority_policy::supportGripAppliesPrimaryHandAuthority(_session.authorityMode);
         if (!applyLockedHandVisualAuthority(weaponNode, applyPrimaryHandAuthority, true, dt, &primaryTransform, &supportTransform)) {
             _hasSolvedWeaponTransform = false;
-            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing support grip because ROCK locked hand authority failed");
-            logGripFailureIncident("locked-hand-authority-publication-failed");
-            transitionToInactive(false);
+            // FRIK can temporarily reject an unreachable target even after
+            // accepting the next target. Keep the logical grip and retry;
+            // failed visual publication must not manufacture release intent.
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000,
+                "TwoHandedGrip: retaining support grip while locked hand authority recovers");
             return;
         }
         if (applyPrimaryHandAuthority &&

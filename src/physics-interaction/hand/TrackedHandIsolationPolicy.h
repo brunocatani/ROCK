@@ -60,6 +60,10 @@ namespace rock::tracked_hand_isolation_policy
         // The flattened bone ROCK has always read (refNode plus palm blend).
         RE::NiTransform flattenedHandWorld{};
         bool flattenedHandValid = false;
+        // Last finite local palm blend from this skeleton. This is calibration,
+        // not a previous world pose; recovery still follows current input.
+        RE::NiTransform retainedPalmBlend{};
+        bool retainedPalmBlendValid = false;
         // FRIK solved this hand to a ROCK claim in the frame just rendered.
         bool claimConsumed = false;
         // False while FRIK composes a native recoil kick onto the tracked
@@ -191,9 +195,17 @@ namespace rock::tracked_hand_isolation_policy
         RE::NiTransform& outRawHandWorld) noexcept
     {
         outRawHandWorld = {};
-        if (!state.valid || !input.firstPersonHandValid || !input.bodyHandNodeValid || !input.flattenedHandValid ||
-            !isFiniteTransform(input.firstPersonHandWorld) || !isFiniteTransform(input.bodyHandNodeWorld) ||
-            !isFiniteTransform(input.flattenedHandWorld)) {
+        if (!state.valid || !input.firstPersonHandValid ||
+            !isFiniteTransform(input.firstPersonHandWorld)) {
+            return false;
+        }
+        RE::NiTransform palmBlend{};
+        if (input.bodyHandNodeValid && input.flattenedHandValid &&
+            isFiniteTransform(input.bodyHandNodeWorld) && isFiniteTransform(input.flattenedHandWorld)) {
+            palmBlend = makePalmBlend(input.bodyHandNodeWorld, input.flattenedHandWorld);
+        } else if (input.retainedPalmBlendValid && isFiniteTransform(input.retainedPalmBlend)) {
+            palmBlend = input.retainedPalmBlend;
+        } else {
             return false;
         }
         const RE::NiTransform controllerBodyHand = transform_math::composeTransforms(
@@ -201,7 +213,7 @@ namespace rock::tracked_hand_isolation_policy
             state.firstPersonToBodyHand);
         const RE::NiTransform raw = transform_math::orthonormalizedTransform(transform_math::composeTransforms(
             controllerBodyHand,
-            makePalmBlend(input.bodyHandNodeWorld, input.flattenedHandWorld)));
+            palmBlend));
         if (!isFiniteTransform(raw)) {
             return false;
         }
@@ -238,6 +250,10 @@ namespace rock::tracked_hand_isolation_policy
             }
             if (input.calibrationAllowed && input.firstPersonHandValid && input.bodyHandNodeValid) {
                 (void)calibrateRelation(state, input.firstPersonHandWorld, input.bodyHandNodeWorld);
+            }
+            if (!result.valid && reconstruct(state, input, result.rawHandWorld)) {
+                result.valid = true;
+                result.source = RawHandSource::Reconstructed;
             }
             return result;
         }

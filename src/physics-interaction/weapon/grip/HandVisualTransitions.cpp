@@ -1209,7 +1209,7 @@ namespace rock
             return true;
         }
 
-        ROCK_LOG_WARN(Weapon,
+        ROCK_LOG_SAMPLE_WARN(Weapon, 2000,
             "TwoHandedGrip: locked hand authority publication failed primary={} support={} "
             "firingHand={} supportHand={} state={} scopeMenu={} primaryFrame={} supportGrip={} supportFrame={}",
             primaryApplied ? "ok" : "failed",

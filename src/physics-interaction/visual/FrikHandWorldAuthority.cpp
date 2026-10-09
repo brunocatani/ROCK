@@ -304,7 +304,8 @@ namespace rock::frik_hand_world_authority
             rendered.flattenedValid = sample.flattenedHandValid && registry_policy::isFiniteTransform(sample.flattenedHandWorld);
             rendered.nodeWorld = sample.bodyHandNodeWorld;
             rendered.nodeValid = sample.bodyHandNodeValid && registry_policy::isFiniteTransform(sample.bodyHandNodeWorld);
-            rendered.palmBlendValid = false;
+            // Keep finite local calibration across an invalid arm solve. The
+            // skeleton-release path clears it with the rest of the service.
             if (rendered.flattenedValid && rendered.nodeValid) {
                 const RE::NiTransform blend = transform_math::composeTransforms(
                     transform_math::invertTransform(transform_math::orthonormalizedTransform(rendered.nodeWorld)),
@@ -516,9 +517,18 @@ namespace rock::frik_hand_world_authority
             input.bodyHandNodeValid = sample.bodyHandNodeValid;
             input.flattenedHandWorld = flattenedNow;
             input.flattenedHandValid = flattenedNowValid;
+            input.retainedPalmBlend = rendered.palmBlend;
+            input.retainedPalmBlendValid = rendered.palmBlendValid;
             input.claimConsumed = g_service.claimConsumedThisFrame[hand];
             input.calibrationAllowed = !recoilKickThisFrame && !input.firstPersonInputCorrected;
             state.result = isolation_policy::resolveFrame(state.relation, input);
+            if (state.result.valid && (!input.bodyHandNodeValid ||
+                    !isolation_policy::isFiniteTransform(input.bodyHandNodeWorld))) {
+                ROCK_LOG_SAMPLE_WARN(Hand, 2000,
+                    "HAND_INPUT_RECOVERY frame={} hand={} source=current-input-retained-palm bodyValid={} bodyFinite={} claimConsumed={}",
+                    g_service.rockFrameSequence, handName(isLeft), input.bodyHandNodeValid,
+                    isolation_policy::isFiniteTransform(input.bodyHandNodeWorld), input.claimConsumed);
+            }
             // Include later resolves: the body tree can fail after the first
             // sample of the frame, before the weapon consumes this result.
             if (!state.result.valid && logger::isWarnEnabled() &&
