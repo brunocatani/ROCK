@@ -1,4 +1,5 @@
 #include "physics-interaction/native/BipodFrozenRetirement.h"
+#include "physics-interaction/native/LooseWeaponLayerRepair.h"
 #include "physics-interaction/native/NativeObjectPlacement.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/HavokRuntime.h"
@@ -135,19 +136,19 @@ namespace rock::bipod_frozen_retirement
         {
             if (s_cancelled.load(std::memory_order_acquire) || !ref ||
                 ref->GetFormID() != s_reference.load(std::memory_order_acquire)) {
-                s_initialize(ref);
+                loose_weapon_layer_repair::initialize(ref, s_initialize);
                 return;
             }
             auto stage = s_stage.load(std::memory_order_acquire);
             if (stage == Stage::Initializing || stage == Stage::Quarantined || stage == Stage::Finishing) return;
             if ((stage != Stage::Bound && stage != Stage::Frozen) ||
                 !s_stage.compare_exchange_strong(stage, Stage::Initializing, std::memory_order_acq_rel)) {
-                s_initialize(ref);
+                loose_weapon_layer_repair::initialize(ref, s_initialize);
                 return;
             }
             if (ref->GetFormID() != s_reference.load(std::memory_order_acquire)) {
                 s_stage.store(stage, std::memory_order_release);
-                s_initialize(ref);
+                loose_weapon_layer_repair::initialize(ref, s_initialize);
                 return;
             }
             auto* cell = ref->GetParentCell();
@@ -171,7 +172,7 @@ namespace rock::bipod_frozen_retirement
             FreezeTrace trace{};
             bool frozen = false;
             try {
-                s_initialize(ref);
+                loose_weapon_layer_repair::initialize(ref, s_initialize);
                 initialized = std::chrono::steady_clock::now();
                 trace.stage = "native-3d-publication";
                 frozen = ref->Get3D() && freeze(ref, bhk, world, trace);

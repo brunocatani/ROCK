@@ -254,6 +254,7 @@ namespace rock::performance_profiler
             case Scope::WeaponCompoundPoseUpdate: return "weaponCompoundPoseUpdate";
             case Scope::WeaponKinematicDrive: return "weaponKinematicDrive";
             case Scope::WeaponDynamicDrive: return "weaponDynamicDrive";
+            case Scope::LooseWeaponLayerRepair: return "looseWeaponLayerRepair";
             case Scope::Count:
                 break;
             }

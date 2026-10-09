@@ -441,6 +441,11 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKHeldPlacementPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKHeldPlacementPolicyTests)
 
+  add_executable(ROCKLooseWeaponLayerRepairTests "${ROOT_DIR}/tests/LooseWeaponLayerRepairTests.cpp")
+  target_compile_features(ROCKLooseWeaponLayerRepairTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKLooseWeaponLayerRepairTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKLooseWeaponLayerRepairTests)
+
   add_executable(ROCKEjectionContactRequestsTests "${ROOT_DIR}/tests/EjectionContactRequestsTests.cpp")
   target_compile_features(ROCKEjectionContactRequestsTests PRIVATE cxx_std_23)
   target_include_directories(ROCKEjectionContactRequestsTests PRIVATE ${SOURCE_DIR})
