@@ -155,10 +155,39 @@ namespace rock
         const auto* nodes = f4vr::getPlayerNodes();
         if (nodes && nodes->primaryWeaponScopeCamera) setPose(s, ScopeRendered, nodes->primaryWeaponScopeCamera->world);
         if(s.holding.requested&&s.holding.ready&&s.has(WeaponRendered)){
-            auto* player=f4vr::getPlayer();auto* root=player?player->Get3D():nullptr;
-            for(int h=0;h<2;++h){const bool left=h==0;RE::NiTransform wrist{};bool valid=frik_visual_authority::tryGetPresentedHandWorldTransform(left,wrist);
-                for(int finger=0;finger<5&&valid;++finger){auto parent=wrist;for(int joint=0;joint<3;++joint){auto* bone=root?f4vr::findNode(root,root_flattened_finger_skeleton_runtime::fingerBoneName(left,finger,joint)):nullptr;if(!bone){valid=false;break;}s.holding.renderedFingers[h][finger*3+joint]=transform_math::composeTransforms(transform_math::invertTransform(parent),bone->world);parent=bone->world;}}
-                s.holding.fingerValid[h]=valid;
+            // Fingers can exist only in the flattened skinning tree, without
+            // scene NiNodes. Read the final rendered array, including its wrist,
+            // so each parent-local joint uses the same presentation authority.
+            DirectSkeletonBoneReader reader;
+            DirectSkeletonBoneSnapshot bones;
+            const bool captured = reader.capture(
+                skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+                skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                SkeletonBoneCaptureSpace::Rendered, bones);
+            const auto findBone = [&](std::string_view name) -> const DirectSkeletonBoneEntry* {
+                if (!captured) return nullptr;
+                for (const auto& bone : bones.bones) {
+                    if (bone.name == name) return &bone;
+                }
+                return nullptr;
+            };
+            for (int h = 0; h < 2; ++h) {
+                const bool left = h == 0;
+                const auto* wrist = findBone(left ? "LArm_Hand" : "RArm_Hand");
+                bool valid = wrist != nullptr;
+                if (wrist) setPose(s, left ? LeftRendered : RightRendered, wrist->world);
+                for (int finger = 0; finger < 5 && valid; ++finger) {
+                    auto parent = wrist->world;
+                    for (int joint = 0; joint < 3; ++joint) {
+                        const auto* bone = findBone(root_flattened_finger_skeleton_runtime::fingerBoneName(left, finger, joint));
+                        if (!bone) { valid = false; break; }
+                        s.holding.renderedFingers[h][finger * 3 + joint] =
+                            transform_math::composeTransforms(transform_math::invertTransform(parent), bone->world);
+                        parent = bone->world;
+                    }
+                }
+                s.holding.fingerValid[h] = valid;
+                if (!valid) ROCK_LOG_WARN(Weapon, "Holding capture has no complete rendered {} finger chain", left ? "left" : "right");
             }
             if(_gunstockRecorder&&_gunstockRecorder->submit(s)){_holdingCapturePending=false;ROCK_LOG_INFO(Weapon,"Holding grip capture queued weapon={} frame={}",s.holding.weapon,s.frame);}
         }else if(_gunstockRecorder&&!s.holding.captureOnly)(void)_gunstockRecorder->submit(s);
