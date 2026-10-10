@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/WeaponInputFilter.h"
+#include "physics-interaction/weapon/recoil/RecoilMath.h"
 
 #include <cassert>
 #include <cstdio>
@@ -112,5 +113,41 @@ int main()
     assert(filter::update(state, rotated(3.12f), room, {}, 1, 0.01f, false, config, output));
     assert(filter::update(state, rotated(-3.12f), room, {}, 2, 0.01f, false, config, output));
     assert(output.rotate.entry[0][0] < -0.99f);
+
+    // A kick is authored around its controller-local parent. A raw-controller
+    // world delta applied to a delayed carrier changes the kick. Re-expressing
+    // the unchanged kick in that carrier must recover the exact authored pose,
+    // for either hand, every preset, and distant game-world coordinates.
+    for (bool offhand : {false, true}) for (int preset = 1; preset <= 4; ++preset) {
+        auto rawCarrier = rotated(0.65f);
+        rawCarrier.translate = {60000.0f, 73000.0f, 120.0f};
+        auto parentLocal = rotated(-0.2f);
+        parentLocal.translate = {2.0f, 4.0f, -1.0f};
+        const auto parentWorld = transform_math::composeTransforms(rawCarrier, parentLocal);
+        auto kick = rotated(0.3f);
+        kick.translate = {0.5f, -2.0f, 0.7f};
+        auto presentationLocal = rotated(-0.35f);
+        presentationLocal.translate = {-7.0f, 3.0f, 2.0f};
+        const auto lagged = transform_math::composeTransforms(rawCarrier, presentationLocal);
+        filter::State filteredState{};
+        RE::NiTransform filtered{};
+        assert(filter::update(filteredState, lagged, room, {}, 1, 0.01f, false, filter::tuning(preset), filtered));
+        assert(filter::update(filteredState, rawCarrier, room, {}, 2, 0.01f, false, filter::tuning(preset), filtered));
+        const auto localDelta = weapon_recoil_authority_math::resolveCarrierLocalDelta(kick, parentWorld, rawCarrier, offhand);
+        const auto delivery = weapon_recoil_authority_math::resolveCarrierWorldDelta(localDelta, filtered);
+        const auto targetParentLocal = offhand ? weapon_recoil_authority_math::mirrorLocalAcrossSagittal(parentLocal) : parentLocal;
+        const auto targetKick = offhand ? weapon_recoil_authority_math::mirrorLocalAcrossSagittal(kick) : kick;
+        const auto filteredParent = transform_math::composeTransforms(filtered, targetParentLocal);
+        const auto actual = transform_math::composeTransforms(delivery, filteredParent);
+        const auto expected = transform_math::composeTransforms(filteredParent, targetKick);
+        assert((actual.translate - expected.translate).Length() < 0.06f);
+        for (int r = 0; r < 3; ++r) for (int c = 0; c < 3; ++c)
+            assert(near(actual.rotate.entry[r][c], expected.rotate.entry[r][c], 0.0001f));
+        const auto oldDelta = weapon_recoil_authority_math::resolveCarrierWorldDelta(localDelta, rawCarrier);
+        const auto oldActual = transform_math::composeTransforms(oldDelta, filteredParent);
+        assert((oldActual.translate - expected.translate).Length() > 0.1f);
+        const auto neutralDelta = weapon_recoil_authority_math::resolveCarrierWorldDelta(identity(), filtered);
+        assert(!weapon_recoil_authority_math::hasKick(neutralDelta));
+    }
     std::puts("Weapon input filtering checks passed");
 }

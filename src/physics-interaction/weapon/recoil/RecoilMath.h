@@ -186,5 +186,34 @@ namespace rock::weapon_recoil_authority_math
                 kickLocal,
                 transform_math::invertTransform(kickParentWorld)));
     }
+
+    // Preserve the authored kick relative to the physical firing controller.
+    // Filtering moves that controller's presentation frame after the callback;
+    // retaining a world-space pivot would change the kick's lever arm and axes.
+    template <class Transform>
+    [[nodiscard]] inline Transform resolveCarrierLocalDelta(
+        const Transform& kickLocal, const Transform& parentWorld,
+        const Transform& primaryWandWorld, bool nativeOffhand)
+    {
+        if (!hasKick(kickLocal)) return transform_math::makeIdentityTransform<Transform>();
+        auto parentLocal = transform_math::composeTransforms(
+            transform_math::invertTransform(primaryWandWorld), parentWorld);
+        auto kick = kickLocal;
+        if (nativeOffhand) {
+            parentLocal = mirrorLocalAcrossSagittal(parentLocal);
+            kick = mirrorLocalAcrossSagittal(kick);
+        }
+        return transform_math::composeTransforms(parentLocal,
+            transform_math::composeTransforms(kick, transform_math::invertTransform(parentLocal)));
+    }
+
+    template <class Transform>
+    [[nodiscard]] inline Transform resolveCarrierWorldDelta(
+        const Transform& carrierLocalDelta, const Transform& carrierWorld)
+    {
+        if (!hasKick(carrierLocalDelta)) return transform_math::makeIdentityTransform<Transform>();
+        return transform_math::composeTransforms(carrierWorld,
+            transform_math::composeTransforms(carrierLocalDelta, transform_math::invertTransform(carrierWorld)));
+    }
 }
 

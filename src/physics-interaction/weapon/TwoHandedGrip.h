@@ -2168,6 +2168,8 @@ namespace rock
         struct WeaponRecoilState
         {
             RE::NiTransform worldDelta{};
+            RE::NiTransform carrierLocalDelta{};
+            bool carrierLocalDeltaValid = false;
             weapon_recoil_policy::SampleTicket ticket{};
             // Current equipped identity also covers native carry without a
             // manual grip session. The callback sees the previous frame's

@@ -154,6 +154,7 @@ namespace rock
         const RE::NiTransform& controlledKickLocal,
         const weapon_recoil_policy::SampleIdentity& identity) noexcept
     {
+        _recoil.carrierLocalDeltaValid = false;
         const auto* const nodes = f4vr::getPlayerNodes();
         const auto* const kick = nodes ? nodes->primaryWeaponKickbackRecoilNode : nullptr;
         const auto* const parent = kick ? kick->parent : nullptr;
@@ -176,6 +177,11 @@ namespace rock
         }
         _recoil.controlledKickActive = weapon_recoil_authority_math::hasKick(controlledKickLocal);
         _recoil.worldDelta = delta;
+        if (nodes->primaryWandNode && isInvertibleTransform(nodes->primaryWandNode->world)) {
+            _recoil.carrierLocalDelta = weapon_recoil_authority_math::resolveCarrierLocalDelta(
+                controlledKickLocal, parent->world, nodes->primaryWandNode->world, nativeOffhand);
+            _recoil.carrierLocalDeltaValid = isInvertibleTransform(_recoil.carrierLocalDelta);
+        }
         _recoil.ticket.identity = identity;
         _recoil.ticket.valid = true;
         return true;
@@ -199,10 +205,32 @@ namespace rock
             _recoil.ticket.invalidate();
             return false;
         }
+        RE::NiTransform deliveryDelta = _recoil.worldDelta;
+        if (frik_hand_world_authority::weaponFilteringActive()) {
+            RE::NiTransform filteredCarrier{};
+            if (!_recoil.carrierLocalDeltaValid ||
+                !frik_hand_world_authority::tryGetWeaponWandWorld(context.firingHandIsLeft, filteredCarrier)) {
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Weapon recoil: filtered controller delivery unavailable");
+                return false;
+            }
+            deliveryDelta = weapon_recoil_authority_math::resolveCarrierWorldDelta(
+                _recoil.carrierLocalDelta, filteredCarrier);
+            if (!isInvertibleTransform(deliveryDelta)) return false;
+        }
         if (!_recoil.ticket.consume(context)) {
             return false;
         }
-        outWorldDelta = _recoil.worldDelta;
+        outWorldDelta = deliveryDelta;
+        if (frik_hand_world_authority::weaponFilteringActive() && _recoil.controlledKickActive) {
+            const auto neutral = transform_math::makeIdentityTransform<RE::NiTransform>();
+            ROCK_LOG_SAMPLE_INFO(Weapon, 500,
+                "Weapon filtering recoil delivered preset={} hand={} profile={} localKick={:.3f}gu/{:.3f}deg worldRotation={:.3f}deg",
+                g_rockConfig.rockWeaponFilteringPreset, context.firingHandIsLeft ? "left" : "right",
+                weapon_recoil_policy::name(context.profile),
+                hand_world_claim_registry_policy::translationDeltaGameUnits(_recoil.carrierLocalDelta, neutral),
+                hand_world_claim_registry_policy::rotationDeltaDegrees(_recoil.carrierLocalDelta, neutral),
+                hand_world_claim_registry_policy::rotationDeltaDegrees(deliveryDelta, neutral));
+        }
         return true;
     }
 
