@@ -1,6 +1,8 @@
 #include "LooseWeaponStateService.h"
+#include "LooseWeaponStatePath.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/weapon/EquippedWeaponVisualState.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
 #include "RE/NetImmerse/NiNode.h"
 #include <REL/Relocation.h>
@@ -45,6 +47,11 @@ namespace {
     }
     RE::NiAVObject* path(RE::NiAVObject* root,std::string_view name) {
         auto* current=root;
+        // Equipped paths include the native instance wrapper beneath the
+        // actor's Weapon bone. The loose tree can start at that same wrapper.
+        // Consume it once instead of looking for a second nested instance.
+        if(root&&root->name.c_str())name=relativeItemPath(root->name.c_str(),name);
+        if(name.empty())return root;
         for(unsigned depth=0;!name.empty()&&depth<64;++depth) {
             const auto slash=name.find('/');current=child(current,name.substr(0,slash));
             if(!current)return nullptr;if(slash==name.npos)return current;name.remove_prefix(slash+1);
@@ -114,7 +121,7 @@ bool apply(RE::TESObjectREFR* ref,RE::NiAVObject* model) {
     std::array<RE::NiAVObject*,contract::kMaxItemParts> targets{};
     for(std::uint32_t i=0;i<found->state.count;++i) {
         targets[i]=path(root,found->state.parts[i].path);
-        if(!targets[i]) {found->failedModel=reinterpret_cast<std::uintptr_t>(model);ROCK_LOG_WARN(Weapon,"Loose item state path unavailable ref={:08X} path={}",ref->GetFormID(),found->state.parts[i].path);return false;}
+        if(!targets[i]||targets[i]==model) {found->failedModel=reinterpret_cast<std::uintptr_t>(model);ROCK_LOG_WARN(Weapon,"Loose item state path unavailable ref={:08X} path={} model='{}' root='{}'",ref->GetFormID(),found->state.parts[i].path,model->name.c_str()?model->name.c_str():"",root->name.c_str()?root->name.c_str():"");return false;}
     }
     if(found->model.get()!=model) {
         found->model.reset(model);found->originalState=found->state;
@@ -129,7 +136,7 @@ bool apply(RE::TESObjectREFR* ref,RE::NiAVObject* model) {
         auto* node=targets[i];const auto& p=found->state.parts[i];
         std::memcpy(node->local.rotate.entry,p.local.rotate,sizeof(p.local.rotate));
         node->local.translate={p.local.translate[0],p.local.translate[1],p.local.translate[2]};node->local.scale=p.local.scale;
-        node->SetAppCulled(p.hidden!=0);
+        equipped_weapon_visual_state::setLocallyVisible(node,p.hidden==0);
     }
     ROCK_LOG_INFO(Weapon,"Loose item state applied before model publication ref={:08X} parts={}",ref->GetFormID(),found->state.count);
     return true;
@@ -144,7 +151,7 @@ void restoreWithdrawn() {
                 const auto& p=e.originalState.parts[i];auto* node=path(root,p.path);if(!node)continue;
                 std::memcpy(node->local.rotate.entry,p.local.rotate,sizeof(p.local.rotate));
                 node->local.translate={p.local.translate[0],p.local.translate[1],p.local.translate[2]};node->local.scale=p.local.scale;
-                node->SetAppCulled(p.hidden!=0);
+                equipped_weapon_visual_state::setLocallyVisible(node,p.hidden==0);
             }
         }
         e.model.reset();e.retiring=false;

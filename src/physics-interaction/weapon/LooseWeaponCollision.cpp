@@ -1,5 +1,6 @@
 #include "physics-interaction/weapon/LooseWeaponCollision.h"
 #include "api/LooseWeaponStateService.h"
+#include "physics-interaction/weapon/EquippedWeaponVisualState.h"
 #include "physics-interaction/weapon/LooseWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/WeaponRestSupport.h"
 #include "physics-interaction/weapon/WeaponCollisionInternal.h"
@@ -207,8 +208,8 @@ struct LooseWeaponCollision::State
         // exclude missing magazines and payload during geometry extraction.
         struct RootVisibility {
             RE::NiAVObject* root;bool hidden,changed;
-            RootVisibility(RE::NiAVObject* r,bool stateful):root(r),hidden(r->GetAppCulled()),changed(stateful&&hidden){if(changed)root->SetAppCulled(false);}
-            ~RootVisibility(){if(changed)root->SetAppCulled(hidden);}
+            RootVisibility(RE::NiAVObject* r,bool stateful):root(r),hidden(r->GetAppCulled()),changed(stateful&&hidden){if(changed)equipped_weapon_visual_state::setLocallyVisible(root,true);}
+            ~RootVisibility(){if(changed)equipped_weapon_visual_state::setLocallyVisible(root,!hidden);}
         } visibility(root.get(),loose_weapon_state::owns(ref->formID));
         if (!builder) {
             builder=std::make_unique<WeaponCollision>();
