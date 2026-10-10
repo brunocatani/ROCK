@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
+#include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "physics-interaction/weapon/EquipPickupScope.h"
 
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
@@ -472,6 +473,8 @@ namespace rock::weapon_equip_transfer
         }
 
         const auto expectedInstanceData = resolveReferenceInstanceData(heldRef);
+        if (input.transitionReason == held_weapon_instant_transition::RequestReason::SameHandTrigger)
+            trigger_equip_readiness_trace::begin(result.weapon->formID, result.formID);
         const auto inventoryBeforeTransfer = captureWeaponStacks(
             player,
             result.weapon,
@@ -492,10 +495,12 @@ namespace rock::weapon_equip_transfer
          * NiPointer keeps the assembled model alive for the visual bridge.
          */
         result.detachedWorldModel.reset(heldRef->Get3D());
+        trigger_equip_readiness_trace::stage("before-activate-ref");
         const bool activated = [&] {
             const equip_pickup::Scope intent(heldRef->GetFormID(),result.count);
             return heldRef->ActivateRef(player, nullptr, result.count, false, false, false);
         }();
+        trigger_equip_readiness_trace::stage("after-activate-ref");
         if (!activated) {
             result.reason = EquipReason::ActivateRefFailed;
             return result;
@@ -510,6 +515,7 @@ namespace rock::weapon_equip_transfer
          * durable first-person scene instance.
          */
         result.untransferredRef.reset();
+        trigger_equip_readiness_trace::stage("world-ref-lease-released");
 
         const auto inventoryAfterTransfer = captureWeaponStacks(
             player,
@@ -520,6 +526,7 @@ namespace rock::weapon_equip_transfer
                 inventoryBeforeTransfer.witnesses,
                 inventoryAfterTransfer.witnesses,
                 reinterpret_cast<std::uintptr_t>(expectedInstanceData.get()));
+        trigger_equip_readiness_trace::stage("inventory-stack-resolved");
         result.preTransferStackCount = static_cast<std::uint32_t>(
             inventoryBeforeTransfer.witnesses.count);
         result.postTransferStackCount = static_cast<std::uint32_t>(

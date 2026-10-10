@@ -6,6 +6,7 @@
 #include "physics-interaction/weapon/NativeEquippedWeaponDraw.h"
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
+#include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/Actor.h"
@@ -451,6 +452,9 @@ namespace rock
         }
         if (_heldTransfer.active() && _heldTransfer.gripAcquired && !_bridge.isHandPoseHandoffActive() &&
             _heldTransfer.matchesTarget(current.formID, current.instanceData) && _nativeRenderable) recordGripPresentation();
+        trigger_equip_readiness_trace::frame(visual, _bridge.isModelPresented(),
+            _pendingGrip.pending || (_heldTransfer.active() && !_heldTransfer.gripAcquired),
+            input.nativeWeaponAnimationActive, input.menuBlocking);
         if (!_active) {
             return;
         }
@@ -866,6 +870,7 @@ namespace rock
 
     void EquippedWeaponTransitionCoordinator::shutdown()
     {
+        trigger_equip_readiness_trace::stop("shutdown");
         if (_heldTransfer.active()) traceHeldTransfer("lifecycle-ended");
         const auto sequence = _heldTransfer.sequence;
         _heldTransfer = { .sequence = sequence };
@@ -908,6 +913,7 @@ namespace rock
 
     void EquippedWeaponTransitionCoordinator::abandonSceneGraph()
     {
+        trigger_equip_readiness_trace::stop("scene-abandoned");
         if (_heldTransfer.active()) traceHeldTransfer("lifecycle-ended");
         const auto sequence = _heldTransfer.sequence;
         _heldTransfer = { .sequence = sequence };

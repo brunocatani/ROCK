@@ -3,6 +3,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
 
@@ -340,6 +341,7 @@ namespace rock::held_weapon_instant_transition
             .reason = input.reason,
         };
         result.attempted = true;
+        trigger_equip_readiness_trace::stage("before-equip-manager");
         {
             const ScopeLease scopeLease{ scope };
             result.managerAccepted = input.manager->EquipObject(
@@ -355,6 +357,7 @@ namespace rock::held_weapon_instant_transition
                 false);
         }
         result.actionTrace = scope.trace;
+        trigger_equip_readiness_trace::stage("after-equip-manager");
 
         if (!result.managerAccepted) {
             result.code = ImmediateEquipCode::ManagerRejected;
@@ -373,6 +376,7 @@ namespace rock::held_weapon_instant_transition
     void prepareDrawForTriggerEquip(RE::PlayerCharacter* player) noexcept
     {
         if (!player) return;
+        trigger_equip_readiness_trace::stage("before-native-preparation");
         const auto prepare = reinterpret_cast<PrepareEquippedWeaponDraw>(
             REL::Offset(kPrepareDrawEntry).address());
         float priorCooldown = 0.0f;
@@ -393,6 +397,7 @@ namespace rock::held_weapon_instant_transition
             return;
         }
         ROCK_LOG_INFO(Weapon, "Trigger equip preparation preserved attack cooldown={:.4f}s; added equip delay removed", priorCooldown);
+        trigger_equip_readiness_trace::stage("after-native-preparation");
     }
 
     const char* requestReasonName(const RequestReason reason) noexcept
