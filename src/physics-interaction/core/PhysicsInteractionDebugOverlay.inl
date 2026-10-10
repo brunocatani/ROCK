@@ -7,7 +7,7 @@
 
         provider_collider_visualization::Snapshot colliderFocus{};
         const bool hasColliderFocus = provider_collider_visualization::copySnapshot(colliderFocus);
-        if (hasColliderFocus && !g_rockConfig.rockDebugDrawGunstock) {
+        if (hasColliderFocus && !g_rockConfig.rockDebugDrawGunstock && !g_rockConfig.rockDebugDrawControllerAim) {
             debug::Install();
             debug::BodyOverlayFrame focusedFrame{};
             focusedFrame.world = context.hknpWorld;
@@ -132,6 +132,7 @@
         const bool drawWeaponAuthorityDebug =
             _twoHandedGrip.isGripping() && visualization.weaponAuthority;
         const bool drawGunstock = g_rockConfig.rockDebugDrawGunstock;
+        const bool drawControllerAim = g_rockConfig.rockDebugDrawControllerAim;
         const bool drawLooseWeaponGripZones =
             visualization.looseWeaponGripZones;
         const bool drawAuthoredGripActivationZones =
@@ -188,7 +189,7 @@
             !drawFingerSweptArc && !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal &&
             !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawPerformanceProfilerOverlay &&
             !drawWeaponAuthorityDebug && !drawLooseWeaponGripZones && !drawNativeScopeActivation && !drawGrabSupportFrame &&
-            !drawDynamicHandColliders && !drawDynamicWeaponColliders && !drawAuthoredSupportGripDebug && !drawProviderOverlay && !drawGunstock) {
+            !drawDynamicHandColliders && !drawDynamicWeaponColliders && !drawAuthoredSupportGripDebug && !drawProviderOverlay && !drawGunstock && !drawControllerAim) {
             debug::ClearFrame();
             return;
         }
@@ -202,17 +203,17 @@
         frame.drawRockBodies = drawAnyRockColliderBodies || hasColliderFocus;
         frame.drawTargetBodies = drawTargetColliders;
         frame.drawAxes = drawHandAxes || drawGrabAuthorityProxy || drawGrabForceTorque || drawNativeScopeActivation ||
-            drawWeaponAuthorityDebug || drawAuthoredSupportGripDebug || drawGunstock;
+            drawWeaponAuthorityDebug || drawAuthoredSupportGripDebug || drawGunstock || drawControllerAim;
         frame.drawMarkers = drawGrabPivots || drawFingerProbes || drawFingerSweptArc || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton ||
             drawGrabPocketNormal || drawGrabForceTorque || drawHandBoneContacts || drawGrabAuthorityProxy ||
             drawWeaponAuthorityDebug || drawLooseWeaponGripZones || drawNativeScopeActivation || drawGrabSupportFrame || drawDynamicHandColliders ||
-            drawAuthoredSupportGripDebug || drawGunstock;
+            drawAuthoredSupportGripDebug || drawGunstock || drawControllerAim;
         frame.drawSkeleton = drawSkeletonBones;
         frame.drawColoredLines = providerOverlay && providerOverlay->lineCount > 0;
         frame.drawText = drawGrabForceTorqueText || drawFingerSweptArcText || drawPerformanceProfilerOverlay ||
             drawDynamicHandColliders || drawDynamicWeaponColliders || drawNativeScopeActivation ||
             drawAuthoredSupportGripDebug || drawGrabAuthorityProxy ||
-            (providerOverlay && providerOverlay->textCount > 0) || drawGunstock;
+            (providerOverlay && providerOverlay->textCount > 0) || drawGunstock || drawControllerAim;
         if (providerOverlay) {
             frame.coloredLineEntries = providerOverlay->lines.data();
             frame.coloredLineCount = providerOverlay->lineCount;
@@ -2344,6 +2345,50 @@
                     labelOffset += 2.0f;
                 }
             }
+        }
+
+        if(drawControllerAim){
+            using namespace gunstock_debug;
+            const auto& sample=_twoHandedGrip.gunstockDebugSample();
+            const float white[4]{1,1,1,1},cyan[4]{.1f,.95f,1,1},gold[4]{1,.8f,.1f,1},green[4]{.1f,1,.2f,1};
+            const auto* recorder=_twoHandedGrip.gunstockRecorder();
+            char line[256]{};
+            std::snprintf(line,sizeof(line),"CONTROLLER AIM | firing=%s support=%s | capture=%llu %s | left trim yaw=%+.2f pitch=%+.2f",
+                sample.firingLeft?"LEFT":"RIGHT",sample.supportActive?"HELD":"FREE",
+                static_cast<unsigned long long>(recorder?recorder->aimWritten():0),recorder&&recorder->aimFailed()?"SAVE FAILED":"",sample.aimYawDegrees,sample.aimPitchDegrees);
+            addScreenTextLine(18,230,white,line);
+            addScreenTextLine(18,250,white,"CYAN reference (59-degree basis) | GOLD configured | PURPLE damped | GREEN actual barrel");
+            addScreenTextLine(18,270,white,"Reference formula is not physical ground truth. Point both controllers at the same target to compare.");
+            if(sample.frame==runtime_state::currentFrame().frameIndex&&sample.phase==2){
+                const auto ray=[&](Pose id,debug::MarkerOverlayRole role,float length,const char* label,const float color[4]){
+                    if(!sample.has(id))return;
+                    const auto& pose=sample.poses[id];const auto direction=weaponSolverNormalize(transform_math::rotateLocalVectorToWorld(pose.rotate,RE::NiPoint3{0,1,0}));
+                    const auto end=pose.translate+direction*length;addMarkerRay(role,pose.translate,end,.7f);addTextLine(end,color,"%s",label);
+                };
+                for(bool left:{true,false}){
+                    const auto ctrl=left?LeftController:RightController;
+                    if(sample.has(ctrl)){const auto& pose=sample.poses[ctrl];addAxisTransform(pose,left?debug::AxisOverlayRole::LeftHandRaw:debug::AxisOverlayRole::RightHandRaw,pose.translate,false);addTextLine(pose.translate+RE::NiPoint3{0,0,3},white,left?"LEFT CONTROLLER":"RIGHT CONTROLLER");}
+                    ray(left?LeftAimReference:RightAimReference,debug::MarkerOverlayRole::GunstockBaseline,300,left?"L REF":"R REF",cyan);
+                    ray(left?LeftAimConfigured:RightAimConfigured,debug::MarkerOverlayRole::GunstockSeat,450,left?"L CONFIG":"R CONFIG",gold);
+                    ray(left?LeftAimDamped:RightAimDamped,debug::MarkerOverlayRole::GunstockAim,550,left?"L DAMPED":"R DIRECT",white);
+                    const auto configured=left?LeftAimConfigured:RightAimConfigured;
+                    if(sample.aimReferenceValid&&sample.has(configured)){
+                        const auto& origin=sample.poses[configured].translate;
+                        const auto error=aimDirectionError(sample.poses[configured],RE::NiPoint3{sample.aimReferenceTarget[0]-origin.x,sample.aimReferenceTarget[1]-origin.y,sample.aimReferenceTarget[2]-origin.z});
+                        if(error.valid){std::snprintf(line,sizeof(line),"%s configured -> captured target: yaw %+.3f pitch %+.3f angle %.3f deg",left?"LEFT":"RIGHT",error.yaw,error.pitch,error.angle);addScreenTextLine(18,left?310.f:330.f,gold,line);}
+                    }
+                }
+                ray(WeaponRendered,debug::MarkerOverlayRole::GunstockWeapon,650,"ACTUAL BARREL",green);
+                const auto expected=sample.firingLeft?LeftAimDamped:RightAimDamped;
+                if(sample.has(expected)&&sample.has(WeaponRendered)){
+                    const auto error=aimError(sample.poses[expected],sample.poses[WeaponRendered]);
+                    if(error.valid){std::snprintf(line,sizeof(line),"Predicted -> rendered: yaw %+.3f pitch %+.3f angle %.3f deg",error.yaw,error.pitch,error.angle);addScreenTextLine(18,290,green,line);}
+                }
+                if(sample.aimReferenceValid){
+                    const RE::NiPoint3 target{sample.aimReferenceTarget[0],sample.aimReferenceTarget[1],sample.aimReferenceTarget[2]};
+                    addMarkerPoint(debug::MarkerOverlayRole::GunstockSeat,target,3);addTextLine(target,gold,"RIGHT CAPTURE TARGET");
+                }else addScreenTextLine(18,310,gold,"Capture while holding RIGHT to set the comparison target; LEFT captures keep it.");
+            }else addScreenTextLine(18,290,gold,"Waiting for current AfterWorldFinal weapon/controller sample");
         }
 
         if (drawGunstock) {

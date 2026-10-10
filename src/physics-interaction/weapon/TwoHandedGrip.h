@@ -1506,6 +1506,9 @@ namespace rock
         float _holdingMirrorPlaneX{};
         RE::NiTransform _holdingNativeRight{},_holdingLeft{};
         bool _holdingHasNative{false},_holdingHasLeft{false};
+        bool _aimCapturePending{},_aimCaptureLatched{},_aimReferenceValid{};
+        RE::NiPoint3 _aimReferenceTarget{};
+        std::uint64_t _aimReferenceGeneration{},_aimReferenceFrame{};
         bool _holdingCapturePending{false},_holdingCaptureLatched{false};
         bool _holdingSourcePowerArmor{false},_holdingHasSourceSupport{false},_holdingSourceRightValid{false};
         RE::NiTransform _holdingSourceSupport{};
