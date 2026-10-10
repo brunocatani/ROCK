@@ -161,5 +161,33 @@ int main()
         const auto neutralDelta = weapon_recoil_authority_math::resolveCarrierWorldDelta(identity(), filtered);
         assert(!weapon_recoil_authority_math::hasKick(neutralDelta));
     }
+    // FRIK solves a neutral hand, then restores the animated kick to its
+    // WeaponOffset graph. A stationary controller must leave that hand alone:
+    // dividing it by the restored offset injects an inverse kick.
+    auto wand = rotated(0.5f);
+    wand.translate = {20.0f, 40.0f, 10.0f};
+    auto neutralOffsetLocal = identity();
+    neutralOffsetLocal.translate = {1.0f, 3.0f, -2.0f};
+    const auto neutralOffset = transform_math::composeTransforms(wand, neutralOffsetLocal);
+    auto handLocal = rotated(-0.8f);
+    handLocal.translate = {2.0f, 5.0f, 1.0f};
+    const auto baselineHand = transform_math::composeTransforms(wand, handLocal);
+    for (float amplitude : {0.0f, 0.08f, 0.3f, -0.2f}) {
+        auto nativeKick = rotated(amplitude);
+        nativeKick.translate = {0.0f, amplitude * -7.0f, amplitude};
+        const auto restoredOffset = transform_math::composeTransforms(wand,
+            transform_math::composeTransforms(nativeKick, neutralOffsetLocal));
+        const auto oldHand = transform_math::composeTransforms(neutralOffset,
+            transform_math::composeTransforms(transform_math::invertTransform(restoredOffset), baselineHand));
+        const auto corrected = filter::applyTrackingCorrection(baselineHand, wand, wand);
+        assert((corrected.translate - baselineHand.translate).Length() < 0.0001f);
+        assert(near(corrected.rotate.entry[0][0], baselineHand.rotate.entry[0][0]));
+        if (amplitude != 0.0f) assert((oldHand.translate - baselineHand.translate).Length() > 0.1f);
+        // Even an existing recoil contribution in the baseline is carried
+        // through unchanged; it is never a sample in the controller filter.
+        const auto recoiledBaseline = transform_math::composeTransforms(baselineHand, nativeKick);
+        const auto preserved = filter::applyTrackingCorrection(recoiledBaseline, wand, wand);
+        assert((preserved.translate - recoiledBaseline.translate).Length() < 0.0001f);
+    }
     std::puts("Weapon input filtering checks passed");
 }
