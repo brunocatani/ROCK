@@ -643,6 +643,11 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKWeaponAimBasisTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKWeaponAimBasisTests)
 
+  add_executable(ROCKGunstockModeTests "${ROOT_DIR}/tests/GunstockModeTests.cpp")
+  target_compile_features(ROCKGunstockModeTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKGunstockModeTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKGunstockModeTests)
+
   add_executable(ROCKGunstockDebugTests
     "${ROOT_DIR}/tests/GunstockDebugTests.cpp"
     "${SOURCE_DIR}/physics-interaction/weapon/GunstockDebug.cpp")
@@ -700,6 +705,7 @@ if(BUILD_ROCK_TESTS)
     ROCKTrackedHandIsolationPolicyTests
     ROCKRenderedBoneTransportPolicyTests
     ROCKWeaponAimBasisTests
+    ROCKGunstockModeTests
     ROCKGunstockDebugTests
     ROCKFrikPresentedHandTests
   )

@@ -2363,6 +2363,9 @@
                 static_cast<unsigned long long>(recorder ? recorder->written() : 0),
                 static_cast<unsigned long long>(recorder ? recorder->dropped() : 0));
             addScreenTextLine(18, 120, white, status);
+            addScreenTextLine(18, 200, white, !g_rockConfig.rockGunstockMode ? "Gunstock mode OFF" :
+                sample.gunstockAim ? "Gunstock mode ACTIVE | PURPLE virtual aiming anchors | zero angular offset" :
+                "Gunstock mode ON | waiting for eligible firearm support grip");
             const auto relativeText = [&](const Sample& value, const char* label, float y) {
                 if (!value.has(LeftController) || !value.has(RightController)) return;
                 const auto& rear = value.poses[value.firingLeft ? LeftController : RightController];
@@ -2407,6 +2410,13 @@
                         const auto baseline = weaponSolverNormalize(delta);
                         addMarkerRay(debug::MarkerOverlayRole::GunstockWeapon, weapon.translate, weapon.translate + forward * 80.0f, 1.0f);
                         addMarkerLine(debug::MarkerOverlayRole::GunstockBaseline, weapon.translate, weapon.translate + baseline * 80.0f);
+                        if (sample.gunstockAim && sample.has(PrimarySeat)) {
+                            const auto anchor = sample.poses[PrimarySeat].translate;
+                            addMarkerRay(debug::MarkerOverlayRole::GunstockAim, anchor,
+                                anchor + forward * weaponSolverLength(delta), 1.2f);
+                            addMarkerPoint(debug::MarkerOverlayRole::GunstockAim,
+                                anchor + forward * weaponSolverLength(delta), 1.2f);
+                        }
                         const float angle = std::acos(std::clamp(weaponSolverDot(weaponSolverNormalize(forward), baseline), -1.0f, 1.0f)) * 57.2957795f;
                         char line[160]{};
                         std::snprintf(line, sizeof(line), "Baseline / weapon angle %.3f deg | support=%s | weapon=AfterWorldFinal", angle,

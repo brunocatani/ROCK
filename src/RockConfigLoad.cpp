@@ -316,6 +316,7 @@ namespace rock
             IMMERSIVE_WEAPONS_SECTION, "bImmersiveRecoil", rockImmersiveRecoil);
         rockBipodMode = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION, "bBipodMode", rockBipodMode);
+        rockGunstockMode = ini.GetBoolValue(IMMERSIVE_WEAPONS_SECTION, "bGunstockMode", rockGunstockMode);
         rockBipodHandsFreeRadiusMeters = static_cast<float>(ini.GetDoubleValue(
             IMMERSIVE_WEAPONS_SECTION, "fBipodHandsFreeRadiusMeters", rockBipodHandsFreeRadiusMeters));
         if (!std::isfinite(rockBipodHandsFreeRadiusMeters) || rockBipodHandsFreeRadiusMeters <= 0.0f) {

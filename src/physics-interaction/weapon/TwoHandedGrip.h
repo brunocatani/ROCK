@@ -1220,6 +1220,7 @@ namespace rock
             WeaponPartKind partKind{ WeaponPartKind::Other };
             WeaponProviderPartAuthority providerPartAuthority{};
             bool authoredSupportGrip{ false };
+            bool gunstockAimSelected{ false };
             loose_weapon_authored_grab_policy::Role authoredRole{ loose_weapon_authored_grab_policy::Role::None };
             WeaponInteractionAcquisitionSource acquisitionSource{
                 WeaponInteractionAcquisitionSource::None };

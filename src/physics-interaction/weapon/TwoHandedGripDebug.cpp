@@ -79,6 +79,7 @@ namespace rock
         s.firingLeft = isFiringHandLeft();
         const auto& support = partGrip(isSupportHandLeft());
         s.supportActive = support.active;
+        s.gunstockAim = support.active && support.gunstockAimSelected && _hasSolvedWeaponTransform;
         s.grip = support.active ? support.gripSequence : 0;
         s.authored = support.authoredSupportGrip;
         s.part = static_cast<std::uint32_t>(support.partKind);

@@ -120,6 +120,7 @@ namespace rock::debug
         GunstockBaseline,
         GunstockWeapon,
         GunstockSeat,
+        GunstockAim,
         RightGrabAnchor,
         LeftGrabAnchor,
         RightPalmNormal,

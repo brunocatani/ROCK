@@ -19,7 +19,7 @@ namespace rock::gunstock_debug
     // inputs are sampled once before the solve and shared by both phase rows.
     struct Sample {
         std::uint64_t frame{}, tick{}, generation{}, ownership{}, grip{}, mark{}, valid{};
-        std::uint32_t form{}, state{}, firingLeft{}, supportActive{}, authored{}, part{}, omod{}, attachPoint{}, phase{};
+        std::uint32_t form{}, state{}, firingLeft{}, supportActive{}, authored{}, part{}, omod{}, attachPoint{}, phase{}, gunstockAim{};
         float dt{};
         char source[128]{};
         std::array<RE::NiTransform, PoseCount> poses{};

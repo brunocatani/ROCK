@@ -3045,6 +3045,11 @@ namespace rock::debug
                 color[1] = 0.8f;
                 color[2] = 0.1f;
                 break;
+            case MarkerOverlayRole::GunstockAim:
+                color[0] = 0.9f;
+                color[1] = 0.25f;
+                color[2] = 1.0f;
+                break;
             case MarkerOverlayRole::RightWeaponAuthorityMismatch:
             case MarkerOverlayRole::LeftWeaponAuthorityMismatch:
                 color[0] = 1.0f;

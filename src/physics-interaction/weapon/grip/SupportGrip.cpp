@@ -1,6 +1,8 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
 #include "physics-interaction/weapon/WeaponGripCalibration.h"
 #include "physics-interaction/weapon/WeaponAimBasis.h"
+#include "physics-interaction/weapon/GunstockMode.h"
+#include "physics-interaction/weapon/DynamicWeaponCollision.h"
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
 #include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
 #include "physics-interaction/weapon/WeaponHierarchy.h"
@@ -1858,6 +1860,22 @@ namespace rock
         const bool supportHandIsLeft = isSupportHandLeft();
         const bool primaryHandIsLeft = isFiringHandLeft();
         WeaponPartGrip& supportGrip = partGrip(supportHandIsLeft);
+        const bool operatingPart = supportGrip.actionRole != WeaponActionRole::None ||
+            supportGrip.reloadRole == WeaponReloadRole::MagazineBody ||
+            supportGrip.reloadRole == WeaponReloadRole::AmmoPiece ||
+            supportGrip.partKind == WeaponPartKind::Magazine ||
+            supportGrip.partKind == WeaponPartKind::Bolt ||
+            supportGrip.partKind == WeaponPartKind::Slide ||
+            supportGrip.partKind == WeaponPartKind::ChargingHandle;
+        const bool surfaceLatched = _surfaceSupportRuntime &&
+            _surfaceSupportRuntime->hasLatchedSurfaceSupport(reinterpret_cast<std::uintptr_t>(weaponNode), _session.weaponGenerationKey);
+        const bool gunstockAim = g_rockConfig.rockGunstockMode &&
+            _recoil.weaponEvidence.resolved && _recoil.weaponEvidence.sizeClass != WeaponSizeClass::Melee &&
+            !supportGrip.attachOnly && !operatingPart && !surfaceLatched;
+        if (gunstockAim != supportGrip.gunstockAimSelected) {
+            armWeaponPoseHandoffBlend("gunstock-mode-changed");
+            supportGrip.gunstockAimSelected = gunstockAim;
+        }
         const bool dynamicBaselineActive =
             isDynamicSupportBaselineActive(
                 supportHandIsLeft,
@@ -1894,13 +1912,13 @@ namespace rock
         // Use the same controller-derived physical frames as one-hand carry;
         // animated wrists must not become inputs to the two-hand weapon solve.
         const bool primaryTransformAvailable =
-            primaryHandIsLeft || supportGrip.authoredSupportGrip || supportGrip.transferredLooseGrip ?
+            gunstockAim || primaryHandIsLeft || supportGrip.authoredSupportGrip || supportGrip.transferredLooseGrip ?
             tryResolvePhysicalHandFrame(
                 primaryHandIsLeft,
                 primaryTransform,
                 primaryDriverWorld) :
             tryGetSolverHandTransform(false, primaryTransform);
-        const bool supportTransformAvailable = supportGrip.authoredSupportGrip || supportGrip.transferredLooseGrip ?
+        const bool supportTransformAvailable = gunstockAim || supportGrip.authoredSupportGrip || supportGrip.transferredLooseGrip ?
             tryResolvePhysicalHandFrame(supportHandIsLeft, supportTransform, supportDriverWorld) :
             tryGetSolverHandTransform(supportHandIsLeft, supportTransform);
         if (!primaryTransformAvailable || !supportTransformAvailable) {
@@ -2038,6 +2056,7 @@ namespace rock
             return;
         }
 
+        const auto primaryBeforeRecoil = computeGrabLegacyPalmPivotAWorldFromHandBasis(calibratedPrimaryTransform, primaryHandIsLeft);
         RE::NiTransform recoilDelta{};
         const bool recoilConsumed = consumeOwnedWeaponRecoil(recoilDelta);
         if (recoilConsumed) {
@@ -2154,7 +2173,21 @@ namespace rock
 
         WeaponTwoHandedSolverResult<RE::NiTransform> solved{};
         RE::NiTransform appliedWeaponWorld{};
-        solved = solveTwoHandedWeaponTransformFrikPivot(solverInput);
+        if (gunstockAim) {
+            RE::NiTransform primaryWand{}, supportWand{};
+            if (!frik_visual_authority::tryGetTrackedHandTransform(handFromBool(primaryHandIsLeft), frik_visual_authority::TrackedHandKind::Wand, primaryWand) ||
+                !frik_visual_authority::tryGetTrackedHandTransform(handFromBool(supportHandIsLeft), frik_visual_authority::TrackedHandKind::Wand, supportWand) ||
+                !gunstock_mode::configureVirtualAim(solverInput, primaryWand, supportWand,
+                    sub(primaryController, primaryBeforeRecoil), dynamicAcquisition ? 1.0f : _support.rotationBlend)) {
+                _hasSolvedWeaponTransform = false;
+                ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Gunstock aim retaining grip while controller baseline is unavailable or degenerate");
+                return;
+            }
+            solved = gunstock_mode::solveVirtualAim(solverInput, primaryWand, supportWand,
+                sub(primaryController, primaryBeforeRecoil), dynamicAcquisition ? 1.0f : _support.rotationBlend);
+        } else {
+            solved = solveTwoHandedWeaponTransformFrikPivot(solverInput);
+        }
         if (!solved.solved) {
             if (dynamicAcquisition || supportInputBaselineActive) {
                 clearDynamicSupportAcquisition(
@@ -2317,12 +2350,12 @@ namespace rock
             const RE::NiPoint3 appliedSupportWorld =
                 transform_math::localPointToWorld(
                     appliedWeaponWorld,
-                    supportGripLocal);
+                    gunstockAim ? solverInput.supportGripLocal : supportGripLocal);
             acquisition.lastSupportTargetError =
                 weaponSolverLength(
                 weaponSolverSub(
                     appliedSupportWorld,
-                    lockedSupportControllerTarget));
+                    gunstockAim ? solverInput.supportTargetWorld : lockedSupportControllerTarget));
         }
 
         const bool supportBaselineAttachPublication =

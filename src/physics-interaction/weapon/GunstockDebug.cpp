@@ -54,7 +54,7 @@ namespace rock::gunstock_debug
                     file.open(_directory / ("gunstock-" + std::to_string(stamp) + ".csv"));
                     file.imbue(std::locale::classic());
                     file << std::setprecision(9);
-                    file << "frame,tick_ms,generation,ownership,grip,mark,valid,form,state,firing_left,support_active,authored,part,omod,attach_point,phase,dt,source";
+                    file << "frame,tick_ms,generation,ownership,grip,mark,valid,form,state,firing_left,support_active,authored,part,omod,attach_point,phase,gunstock_aim,dt,source";
                     constexpr const char* names[]{"left_controller","right_controller","left_driver","right_driver","left_physical","right_physical","weapon_before","weapon_after","primary_seat_world","support_seat_world","camera_root","scope_world","weapon_rendered","left_rendered","right_rendered","scope_rendered"};
                     for (auto name : names) {
                         for (int i = 0; i < 9; ++i) file << ',' << name << "_r" << i;
@@ -65,7 +65,7 @@ namespace rock::gunstock_debug
                 file << sample.frame << ',' << sample.tick << ',' << sample.generation << ',' << sample.ownership << ','
                      << sample.grip << ',' << sample.mark << ',' << sample.valid << ',' << sample.form << ',' << sample.state << ','
                      << sample.firingLeft << ',' << sample.supportActive << ',' << sample.authored << ',' << sample.part << ','
-                     << sample.omod << ',' << sample.attachPoint << ',' << sample.phase << ',' << sample.dt << ",\"";
+                     << sample.omod << ',' << sample.attachPoint << ',' << sample.phase << ',' << sample.gunstockAim << ',' << sample.dt << ",\"";
                 for (char c : sample.source) { if (!c) break; if (c == '"') file << '"'; file << (c == '\n' || c == '\r' ? ' ' : c); }
                 file << '"';
                 for (const auto& pose : sample.poses) {
