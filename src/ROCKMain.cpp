@@ -1187,8 +1187,8 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     }
     s_messaging->RegisterListener(onF4SEMessage);
 
-    logger::info("ROCK: Allocate trampoline (2176 bytes)...");
-    F4SE::AllocTrampoline(2176);
+    logger::info("ROCK: Allocate trampoline (2190 bytes)...");
+    F4SE::AllocTrampoline(2190);
     (void)rock::bipod_frozen_retirement::install();
 
     if (!rock::native_impact_audio::install()) {

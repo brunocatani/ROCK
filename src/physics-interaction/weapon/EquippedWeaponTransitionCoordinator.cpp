@@ -680,7 +680,7 @@ namespace rock
                         .formID = _boundIdentity.formID,
                         .instanceData = _boundIdentity.instanceData,
                         .equipIndex = _boundIdentity.equipIndex,
-                    });
+                    }, _source == Source::HeldTriggerEquip);
             ROCK_LOG_INFO(Weapon,
                 "Equipped weapon transition prepared draw recovery source={} formID={:08X} instance={:#x} request={} elapsed={:.3f}s state={}({})->{}({}) result={} evidenceSequence={} matchedActivations={} registeredUpdates={} activeClips={} updatedActiveClips={}",
                 sourceName(_source),

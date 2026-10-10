@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/NativeEquippedWeaponDraw.h"
 
 #include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/HeldWeaponInstantTransition.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/weapon/HeldWeaponEquipStatePolicy.h"
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
@@ -350,7 +351,8 @@ namespace rock::native_equipped_weapon_draw
         [[nodiscard]] Result submitResolvedDraw(
             const ExactCurrent& current,
             const Identity& expected,
-            const bool prepareEquipRecovery) noexcept
+            const bool prepareEquipRecovery,
+            const bool triggerEquip = false) noexcept
         {
             Result result{};
             result.result = current.result;
@@ -416,7 +418,11 @@ namespace rock::native_equipped_weapon_draw
                 const auto prepare = reinterpret_cast<PrepareEquippedWeaponDraw>(
                     REL::Offset(
                         offsets::kFunc_PrepareEquippedWeaponDraw).address());
-                prepare(current.player);
+                if (triggerEquip) {
+                    held_weapon_instant_transition::prepareDrawForTriggerEquip(current.player);
+                } else {
+                    prepare(current.player);
+                }
             }
 
             requestAnimationAcceleration(
@@ -478,10 +484,10 @@ namespace rock::native_equipped_weapon_draw
         return submitResolvedDraw(current, expected, false);
     }
 
-    Result submitPreparedExactCurrent(const Identity& expected) noexcept
+    Result submitPreparedExactCurrent(const Identity& expected, const bool triggerEquip) noexcept
     {
         const auto current = resolveExactCurrent(expected);
-        return submitResolvedDraw(current, expected, true);
+        return submitResolvedDraw(current, expected, true, triggerEquip);
     }
 
     Result finalizePartialExactCurrent(const Identity& expected) noexcept
