@@ -2855,7 +2855,7 @@ namespace rock
         const bool rightHandTransformMirrored =
             tryBuildMirroredSupportHandWeaponLocal(
                 candidate.leftHandWeaponLocal,
-                mirroredRightHandWeaponLocal);
+                mirroredRightHandWeaponLocal, _holdingMirrorPlaneX);
 
         // Exact skeleton mirror of the authored left finger locals; the
         // bone order and therefore the mask are identical on both hands.

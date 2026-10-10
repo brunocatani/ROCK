@@ -10,11 +10,11 @@
 namespace rock
 {
     namespace {
-        bool buildEquippedLeftFiringSeat(const RE::NiTransform& right, RE::NiTransform& left) {
+        bool buildEquippedLeftFiringSeat(const RE::NiTransform& right, RE::NiTransform& left, float planeX) {
             const auto source = holding_grip_math::fromNative(right);
             if (!holding_grip_math::valid(source)) return false;
             left = weapon_grip_calibration::shiftedHand(
-                holding_grip_math::toNative(holding_grip_math::mirroredHandSeat(source)),
+                holding_grip_math::toNative(holding_grip_math::mirroredHandSeat(source,planeX)),
                 g_rockConfig.rockLeftFiringGripOffsetGameUnits, true);
             return true;
         }
@@ -75,7 +75,7 @@ namespace rock
         if(_holdingHasLeft){outFiringHandWeaponLocal=_holdingLeft;outFiringGripWeaponLocal=computeGrabLegacyPalmPivotAWorldFromHandBasis(_holdingLeft,true);return true;}
         if (!buildEquippedLeftFiringSeat(
                 _holdingHasNative ? _holdingNativeRight : _firing.rightCanonicalHandWeaponLocal,
-                outFiringHandWeaponLocal)) {
+                outFiringHandWeaponLocal, _holdingMirrorPlaneX)) {
             return reject("mirrored-firing-frame-unavailable");
         }
         outFiringGripWeaponLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(outFiringHandWeaponLocal, true);
@@ -1489,7 +1489,7 @@ namespace rock
         if(_holdingHasLeft){outHandWeaponLocal=_holdingLeft;if(outUsedAuthoredCanonical)*outUsedAuthoredCanonical=true;return true;}
         const bool mirrored = buildEquippedLeftFiringSeat(
             _holdingHasNative ? _holdingNativeRight : _firing.rightCanonicalHandWeaponLocal,
-            outHandWeaponLocal);
+            outHandWeaponLocal, _holdingMirrorPlaneX);
         if (!mirrored) {
             return false;
         }
@@ -1516,12 +1516,12 @@ namespace rock
 
     bool TwoHandedGrip::tryBuildMirroredSupportHandWeaponLocal(
         const RE::NiTransform& leftHandWeaponLocal,
-        RE::NiTransform& outRightHandWeaponLocal)
+        RE::NiTransform& outRightHandWeaponLocal, float mirrorPlaneX)
     {
         outRightHandWeaponLocal = {};
         if (!isFiniteTransform(leftHandWeaponLocal)) return false;
         outRightHandWeaponLocal = holding_grip_math::toNative(
-            holding_grip_math::mirroredHandSeat(holding_grip_math::fromNative(leftHandWeaponLocal)));
+            holding_grip_math::mirroredHandSeat(holding_grip_math::fromNative(leftHandWeaponLocal),mirrorPlaneX));
         return isFiniteTransform(outRightHandWeaponLocal);
     }
 

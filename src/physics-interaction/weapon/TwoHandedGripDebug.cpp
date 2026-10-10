@@ -59,7 +59,7 @@ namespace rock
         auto& s = _gunstockSample;
         s.holding.requested=_holdingCapturePending;s.holding.captureOnly=!g_rockConfig.rockDebugDrawGunstock;
         if(_holdingCapturePending&&_firing.hasRightNaturalBoneInWand&&_firing.hasLeftNaturalBoneInWand&&hasRightFiringHandCanonicalFrame(weaponNode,generation,ownership)){
-            s.holding.rightBoneInWand=_firing.rightNaturalBoneInWand;s.holding.leftBoneInWand=_firing.leftNaturalBoneInWand;
+            s.holding.mirrorPlaneX=_holdingMirrorPlaneX;s.holding.rightBoneInWand=_firing.rightNaturalBoneInWand;s.holding.leftBoneInWand=_firing.leftNaturalBoneInWand;
             s.holding.rightBoneInWand.translate={};s.holding.rightBoneInWand.scale=1;s.holding.leftBoneInWand.translate={};s.holding.leftBoneInWand.scale=1;
             s.holding.nativeRight=_holdingHasNative?_holdingNativeRight:_firing.rightCanonicalHandWeaponLocal;s.holding.nativeFingers=_holdingSourceRightFingers;s.holding.nativeFingersValid=_holdingSourceRightValid;s.holding.powerArmor=_holdingSourcePowerArmor;if(const auto* handed=f4vr::getIniSetting("bLeftHandedMode:VR"))s.holding.gameLeftHanded=handed->GetBinary();s.holding.hasSupport=_holdingHasSourceSupport;s.holding.nativeSupport=_holdingSourceSupport;s.holding.supportFingers=_holdingSourceSupportFingers;
             RE::NiTransform identity;identity.MakeIdentity();const auto pr=computeGrabLegacyPalmPivotAWorldFromHandBasis(identity,false),pl=computeGrabLegacyPalmPivotAWorldFromHandBasis(identity,true);

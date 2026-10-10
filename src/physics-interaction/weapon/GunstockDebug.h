@@ -20,6 +20,7 @@ namespace rock::gunstock_debug
     // inputs are sampled once before the solve and shared by both phase rows.
     struct HoldingCapture {
         bool requested{},ready{},captureOnly{},fingerValid[2]{},powerArmor{},hasSupport{},gameLeftHanded{},nativeFingersValid{};
+        float mirrorPlaneX{};
         char weapon[256]{},gripNode[128]{};
         RE::NiTransform rightBoneInWand{},leftBoneInWand{},nativeRight{},nativeSupport{};
         std::array<RE::NiTransform,15> nativeFingers{},supportFingers{};

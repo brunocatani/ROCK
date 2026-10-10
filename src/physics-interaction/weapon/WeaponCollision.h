@@ -259,6 +259,7 @@ namespace rock
         std::uint32_t getWeaponBodyCount() const;
 
         bool getApproximateBoundsSnapshot(ApproximateBoundsSnapshot& outSnapshot) const;
+        float holdingMirrorPlaneX() const;
 
         bool getCompoundGeometrySnapshot(CompoundGeometrySnapshot& outSnapshot) const;
 
@@ -398,6 +399,8 @@ namespace rock
         void serviceRetiredWeaponBodies(RE::hknpWorld* currentWorld, std::uint32_t completedPhysicsSteps = 1);
 
     private:
+        mutable std::uint64_t _holdingPlaneGeneration{};
+        mutable float _holdingPlaneX{};
         WeaponInteractionContact readPublishedContact(std::uint32_t index) const;
         static constexpr std::uint32_t INVALID_BODY_ID = 0x7FFF'FFFF;
         static constexpr std::size_t MAX_WEAPON_BODIES = MAX_WEAPON_COLLISION_BODIES;

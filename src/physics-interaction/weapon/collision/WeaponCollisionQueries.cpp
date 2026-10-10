@@ -1,3 +1,4 @@
+#include "physics-interaction/weapon/HoldingGripMath.h"
 #include "physics-interaction/weapon/WeaponCollisionInternal.h"
 #include "api/ProviderRuntimeServices.h"
 #include "api/ROCKProviderApiInternal.h"
@@ -96,6 +97,31 @@ namespace rock
             outPositions[count++] = position;
         }
         return generation == getCurrentWeaponGenerationKey() ? count : 0;
+    }
+
+    float WeaponCollision::holdingMirrorPlaneX() const {
+        const auto generation=getCurrentWeaponGenerationKey();
+        if(!generation)return 0;
+        if(_holdingPlaneGeneration==generation)return _holdingPlaneX;
+        std::array<holding_grip_math::PlaneEvidence,MAX_WEAPON_BODIES> evidence{};
+        std::array<const void*,MAX_WEAPON_BODIES> seen{};
+        std::size_t count=0;
+        for(const auto& body:activeWeaponBodies()){
+            if(!body.body.isValid()||!body.geometry||!body.geometry->mesh)continue;
+            const auto* mesh=body.geometry->mesh.get();
+            if(std::find(seen.begin(),seen.begin()+count,mesh)!=seen.begin()+count)continue;
+            const auto& triangles=mesh->localTrianglesGame;
+            if(triangles.empty()||count==evidence.size())continue;
+            auto low=triangles.front().v0,high=low;
+            const std::size_t step=(std::max)(std::size_t{1},(triangles.size()+8191)/8192);
+            for(std::size_t i=0;i<triangles.size();i+=step)for(const auto& v:{triangles[i].v0,triangles[i].v1,triangles[i].v2}){
+                low.x=(std::min)(low.x,v.x);low.y=(std::min)(low.y,v.y);low.z=(std::min)(low.z,v.z);
+                high.x=(std::max)(high.x,v.x);high.y=(std::max)(high.y,v.y);high.z=(std::max)(high.z,v.z);
+            }
+            seen[count]=mesh;evidence[count++]=holding_grip_math::planeEvidence({low.x,low.y,low.z},{high.x,high.y,high.z});
+        }
+        if(count){_holdingPlaneX=holding_grip_math::geometryPlane(std::span(evidence.data(),count));_holdingPlaneGeneration=generation;}
+        return count?_holdingPlaneX:0;
     }
 
     bool WeaponCollision::getApproximateBoundsSnapshot(ApproximateBoundsSnapshot& outSnapshot) const

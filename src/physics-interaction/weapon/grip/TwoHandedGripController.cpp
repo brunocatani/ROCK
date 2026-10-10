@@ -124,6 +124,12 @@ namespace rock
         const EquippedWeaponHandlingSettings& handlingSettings)
     {
         performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedGripController);
+        const float mirrorPlane=weaponCollision.holdingMirrorPlaneX();
+        if(mirrorPlane!=_holdingMirrorPlaneX){
+            _holdingMirrorPlaneX=mirrorPlane;
+            _support.authoredCandidate.rightMirrorValid=false;
+            refreshAuthoredSupportRightMirror();
+        }
         beginGunstockDebug(weaponNode, dt, currentWeaponGenerationKey, currentEquippedWeaponOwnershipKey,
             weaponCollision.getCurrentObservedEquippedWeaponFormID());
         const EquippedWeaponGripOccupancy occupancyBefore =

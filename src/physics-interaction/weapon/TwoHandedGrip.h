@@ -962,7 +962,7 @@ namespace rock
         // Shared authored support contact; controller frames never change its fit.
         static bool tryBuildMirroredSupportHandWeaponLocal(
             const RE::NiTransform& leftHandWeaponLocal,
-            RE::NiTransform& outRightHandWeaponLocal);
+            RE::NiTransform& outRightHandWeaponLocal, float mirrorPlaneX = 0);
 
         static bool tryResolveAuthoredActivationAxes(
             const RE::NiTransform& rightHandWeaponLocal,
@@ -1503,6 +1503,7 @@ namespace rock
             std::uint64_t weaponGenerationKey,
             std::uint64_t weaponOwnershipKey) const;
 
+        float _holdingMirrorPlaneX{};
         RE::NiTransform _holdingNativeRight{},_holdingLeft{};
         bool _holdingHasNative{false},_holdingHasLeft{false};
         bool _holdingCapturePending{false},_holdingCaptureLatched{false};
