@@ -715,21 +715,27 @@ namespace rock
                 transitionToInactive(false);
             } else if (!handlingSettings.firingGripOwnershipEnabled) {
                 transitionToInactive(false);
-            } else if (supportTouchingSupport && weapon_two_handed_grip_math::canStartSupportGrip(supportTouchingSupport, supportGripHeld, supportHandHoldingObject)) {
-                transitionToGripping(interactionWeaponNode,
-                    decision,
-                    weaponCollision,
-                    supportAuthorityMode,
-                    firingGripProximityAuthorityEnabled,
-                    currentEquippedWeaponOwnershipKey,
-                    supportRuntimeState.providerPartAuthority);
             } else {
-                updatePrimaryOnlyGrip(
-                    _session.weaponNode,
-                    currentEquippedWeaponOwnershipKey,
-                    primaryGripInput,
-                    handlingSettings.primaryDetachEnabled,
-                    dt);
+                if (supportTouchingSupport && weapon_two_handed_grip_math::canStartSupportGrip(supportTouchingSupport, supportGripHeld, supportHandHoldingObject)) {
+                    transitionToGripping(interactionWeaponNode,
+                        decision,
+                        weaponCollision,
+                        supportAuthorityMode,
+                        firingGripProximityAuthorityEnabled,
+                        currentEquippedWeaponOwnershipKey,
+                        supportRuntimeState.providerPartAuthority);
+                }
+                // Contact can start an acquisition that the authored zone rejects.
+                // Until it commits, keep publishing the firing-hand carry and
+                // processing its release input, including on repeated attempts.
+                if (_session.state == TwoHandedState::PrimaryOnly) {
+                    updatePrimaryOnlyGrip(
+                        _session.weaponNode,
+                        currentEquippedWeaponOwnershipKey,
+                        primaryGripInput,
+                        handlingSettings.primaryDetachEnabled,
+                        dt);
+                }
             }
             break;
         }
