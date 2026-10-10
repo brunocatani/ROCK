@@ -591,26 +591,27 @@ namespace rock
             } else if (!weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(_session.weaponGenerationKey, currentWeaponGenerationKey)) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing authority because weapon generation changed during support grip");
                 transitionToInactive(false);
-            } else if (!providerPartAuthorityStillCurrent(partGrip(supportHandIsLeft), currentWeaponGenerationKey)) {
-                ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing authority because provider weapon-part target is no longer current");
-                transitionToInactive(false);
-            } else if (providerPartTargetNewlyMatchesGrip(partGrip(supportHandIsLeft), currentWeaponGenerationKey)) {
-                // The still-held grab recaptures next frame under the new
-                // provider resolution (e.g. an AttachOnly whitelist armed
-                // mid-hold).
-                ROCK_LOG_INFO(Weapon, "TwoHandedGrip: releasing support grip to recapture under newly matched provider weapon-part target");
-                transitionToInactive(ownsWeaponTransform());
-            } else if (!supportRuntimeState.supportGripAllowed) {
-                ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing authority because offhand reservation disabled support grip");
-                transitionToInactive(false);
-            } else if (!weapon_two_handed_grip_math::shouldContinueSupportGrip(supportGripHeld, supportHandHoldingObject)) {
+            } else if (const bool providerAuthorityLost =
+                           !providerPartAuthorityStillCurrent(partGrip(supportHandIsLeft), currentWeaponGenerationKey),
+                       providerTargetChanged =
+                           providerPartTargetNewlyMatchesGrip(partGrip(supportHandIsLeft), currentWeaponGenerationKey);
+                       providerAuthorityLost || providerTargetChanged || !supportRuntimeState.supportGripAllowed ||
+                       !weapon_two_handed_grip_math::shouldContinueSupportGrip(supportGripHeld, supportHandHoldingObject)) {
+                // Provider invalidation releases only the support grip. Clearing
+                // the session here also resets a left firing owner to right,
+                // letting the support hand's next press drop the whole weapon.
+                // PrimaryOnly permits a still-held support hand to recapture
+                // under the current provider resolution on the next frame.
                 ROCK_LOG_INFO(Weapon,
-                    "TwoHandedGrip: support release predicate firingHand={} supportHand={} gripHeld={} holdingObject={} scopeMenu={}",
+                    "TwoHandedGrip: support release predicate firingHand={} supportHand={} gripHeld={} holdingObject={} scopeMenu={} providerAuthorityLost={} providerTargetChanged={} supportAllowed={}",
                     firingHandName(),
                     supportHandIsLeft ? "left" : "right",
                     supportGripHeld ? "yes" : "no",
                     supportHandHoldingObject ? "yes" : "no",
-                    _scope.menuOpenThisFrame ? "open" : "closed");
+                    _scope.menuOpenThisFrame ? "open" : "closed",
+                    providerAuthorityLost,
+                    providerTargetChanged,
+                    supportRuntimeState.supportGripAllowed);
                 const auto releaseAction = weapon_two_handed_grip_math::resolveSupportReleaseManualAction(
                     weapon_two_handed_grip_math::SupportReleaseOwnershipInput{
                         .firingGripOwnershipEnabled = handlingSettings.firingGripOwnershipEnabled,
