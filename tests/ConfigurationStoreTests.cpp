@@ -27,6 +27,8 @@ namespace
         namespace fs = std::filesystem;
         fs::create_directories(directory);
         ConfigurationStore store(directory, compiled);
+        require(find(store, "bEmergencyDisableRecoil").group == Group::Developer,
+            "emergency recoil override must belong to developer controls");
         require(find(store, "iWeaponFilteringPreset").group == Group::Consumer,
             "weapon filtering must be a regular ROCK.ini setting");
         CSimpleIniA filterConfig;
@@ -299,6 +301,22 @@ int main(int argc, char** argv)
             require(!other.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr), "example option belongs to both files");
         }
         require(store.load(true), "first-run load failed");
+        const auto consumerBeforeRecoilOverride = bytes(store.path(Group::Consumer));
+        require(store.setValue(Group::Developer, "Debug", "bEmergencyDisableRecoil", "true") && store.load(false),
+            "emergency recoil override did not persist and reload");
+        CSimpleIniA recoilOverride;
+        store.appendLoadedValues(recoilOverride);
+        require(rock::RockConfig::parseValues(recoilOverride).rockEmergencyDisableRecoil,
+            "emergency recoil override did not reach runtime settings");
+        require(bytes(store.path(Group::Consumer)) == consumerBeforeRecoilOverride,
+            "emergency recoil override changed existing consumer recoil settings");
+        require(store.setValue(Group::Developer, "Debug", "bEmergencyDisableRecoil", "false") && store.load(false),
+            "emergency recoil reset did not reload");
+        CSimpleIniA recoilReset;
+        store.appendLoadedValues(recoilReset);
+        require(!rock::RockConfig::parseValues(recoilReset).rockEmergencyDisableRecoil &&
+                !fs::exists(store.path(Group::Developer)),
+            "reset retained the emergency override or an empty developer file");
         require(find(store, "bLeftHandedMode").group == Group::Consumer &&
             find(store, "bLeftHandedMode").type == ValueType::Boolean &&
             !rock::RockConfig::parseValues(missingOptions).rockLeftHandedMode,

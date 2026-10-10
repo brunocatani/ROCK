@@ -314,6 +314,8 @@ namespace rock
         rockImmersiveAidEnabled = ini.GetBoolValue("ImmersiveAid", "bEnabled", rockImmersiveAidEnabled);
         rockImmersiveRecoil = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION, "bImmersiveRecoil", rockImmersiveRecoil);
+        rockEmergencyDisableRecoil = ini.GetBoolValue(
+            DEBUG_SECTION, "bEmergencyDisableRecoil", rockEmergencyDisableRecoil);
         rockBipodMode = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION, "bBipodMode", rockBipodMode);
         rockGunstockMode = ini.GetBoolValue(IMMERSIVE_WEAPONS_SECTION, "bGunstockMode", rockGunstockMode);

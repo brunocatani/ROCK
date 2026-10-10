@@ -76,6 +76,8 @@ namespace rock
 
         // Master switch for every ROCK-owned visual recoil profile and delivery.
         bool rockImmersiveRecoil = true;
+        // Test override, independent of immersive recoil and every hold profile.
+        bool rockEmergencyDisableRecoil = false;
         bool rockBipodMode = true;
         bool rockGunstockMode = false;
         float rockBipodHandsFreeRadiusMeters = 2.0f;

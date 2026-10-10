@@ -1,6 +1,7 @@
 #include "rock_support/GameIniOverrides.h"
 
 #include "rock_support/Fo4VrRuntime.h"
+#include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
 
 #include <Windows.h>
@@ -16,7 +17,8 @@ namespace rock::game_ini_overrides
         struct Override
         {
             const char* name;
-            const bool desired;
+            const bool recoilSetting;
+            std::atomic<bool> desired{ true };
             // Non-owning, statically registered engine SettingT objects. Published
             // once before installing the hook; never retain a collection iterator.
             RE::Setting* setting = nullptr;
@@ -24,11 +26,12 @@ namespace rock::game_ini_overrides
             bool rejectionLogged = false;  // Main thread only.
         };
 
-        // Mandatory native behavior. Rotation and handedness remain owned by the game.
+        // Main-thread configuration publishes the desired value atomically for
+        // the native notifier. It never reads mutable configuration off-thread.
         constinit std::array<Override, 3> s_overrides{{
             { "bUseKickback:VR", true },
             { "bUseRecoil:VR", true },
-            { "bIgnoreConeOfFireCalculationsForPlayer:VR", true },
+            { "bIgnoreConeOfFireCalculationsForPlayer:VR", false },
         }};
         static_assert(std::atomic<bool>::is_always_lock_free);
 
@@ -44,8 +47,9 @@ namespace rock::game_ini_overrides
                 if (entry.setting != setting) {
                     continue;
                 }
-                if (entry.setting->GetBinary() != entry.desired) {
-                    entry.setting->SetBinary(entry.desired);
+                const bool desired = entry.desired.load(std::memory_order_relaxed);
+                if (entry.setting->GetBinary() != desired) {
+                    entry.setting->SetBinary(desired);
                     entry.rejected.store(true, std::memory_order_relaxed);
                 }
                 break;
@@ -123,6 +127,8 @@ namespace rock::game_ini_overrides
             return true;
         }
         for (auto& entry : s_overrides) {
+            entry.desired.store(!entry.recoilSetting || !g_rockConfig.rockEmergencyDisableRecoil,
+                std::memory_order_relaxed);
             entry.setting = f4vr::getIniSetting(entry.name);
             if (!entry.setting || entry.setting->GetType() != RE::Setting::SETTING_TYPE::kBinary) {
                 ROCK_LOG_ERROR(Init, "VR INI override '{}' is missing or has the wrong type; enforcement not installed", entry.name);
@@ -134,13 +140,15 @@ namespace rock::game_ini_overrides
         }
         s_installed = true;
         for (auto& entry : s_overrides) {
-            ROCK_LOG_INFO(Config, "VR INI override '{}': native={} required={}", entry.name, entry.setting->GetBinary(), entry.desired);
-            if (entry.setting->GetBinary() != entry.desired) {
-                entry.setting->SetBinary(entry.desired);
+            const bool desired = entry.desired.load(std::memory_order_relaxed);
+            ROCK_LOG_INFO(Config, "VR INI override '{}': native={} required={}", entry.name, entry.setting->GetBinary(), desired);
+            if (entry.setting->GetBinary() != desired) {
+                entry.setting->SetBinary(desired);
                 s_originalNotify(entry.setting);
             }
         }
-        ROCK_LOG_INFO(Init, "ROCK enforces three required VR settings; rotation and handedness remain controlled by the game");
+        ROCK_LOG_INFO(Init, "ROCK VR settings enforced; emergency recoil suppression={} (kickback/recoil disabled together)",
+            g_rockConfig.rockEmergencyDisableRecoil);
         return true;
     }
 
@@ -150,10 +158,16 @@ namespace rock::game_ini_overrides
             return;
         }
         for (auto& entry : s_overrides) {
-            if (entry.setting->GetBinary() != entry.desired) {
-                entry.rejected.store(true, std::memory_order_relaxed);
-                entry.setting->SetBinary(entry.desired);
+            const bool desired = !entry.recoilSetting || !g_rockConfig.rockEmergencyDisableRecoil;
+            const bool modeChanged = entry.desired.exchange(desired, std::memory_order_relaxed) != desired;
+            if (entry.setting->GetBinary() != desired) {
+                if (!modeChanged) entry.rejected.store(true, std::memory_order_relaxed);
+                entry.setting->SetBinary(desired);
                 s_originalNotify(entry.setting);
+            }
+            if (modeChanged) {
+                ROCK_LOG_INFO(Config, "Recoil native source: {}={} emergencyDisabled={}",
+                    entry.name, entry.setting->GetBinary(), g_rockConfig.rockEmergencyDisableRecoil);
             }
             if (!entry.rejectionLogged && entry.rejected.load(std::memory_order_relaxed)) {
                 entry.rejectionLogged = true;

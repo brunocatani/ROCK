@@ -5,7 +5,7 @@ namespace rock
 {
     bool TwoHandedGrip::hasVisualOnlySupportRecoilAssist() const noexcept
     {
-        if (!g_rockConfig.rockImmersiveRecoil ||
+        if (g_rockConfig.rockEmergencyDisableRecoil ||
             _session.state != TwoHandedState::Gripping ||
             !_session.weaponNode ||
             _session.weaponGenerationKey == 0 ||
@@ -35,6 +35,7 @@ namespace rock
             _session.authorityMode == weapon_support_authority_policy::
                 WeaponSupportAuthorityMode::FullTwoHandedSolver;
         auto identity = _recoil.equippedIdentity;
+        identity.immersiveRecoil = g_rockConfig.rockImmersiveRecoil;
         const bool surfaceLatched = g_rockConfig.rockBipodMode && _surfaceSupportRuntime &&
             _surfaceSupportRuntime->hasLatchedSurfaceSupport(identity.weaponNode, identity.weaponGeneration);
         identity.profile = weapon_recoil_policy::selectProfile(
@@ -88,19 +89,34 @@ namespace rock
         }
 
         const RE::NiTransform identity = transform_math::makeIdentityTransform<RE::NiTransform>();
+        if (g_rockConfig.rockEmergencyDisableRecoil) {
+            // Accept before every profile/ownership/drawn-weapon gate: declining
+            // would hand native recoil back to FRIK. A zero mask consumes native
+            // hand recoil without delivering any replacement to either hand.
+            self->clearOneHandRecoilClaim();
+            state.controlledKickActive = false;
+            state.rightNeedsNeutralFrame = false;
+            state.worldDelta = identity;
+            state.carrierLocalDeltaValid = false;
+            *outResponse = {};
+            outResponse->structSize = sizeof(Api::RecoilResponse);
+            outResponse->handMask = 0;
+            outResponse->delivery = Api::RecoilDelivery::Direct;
+            outResponse->controlledKickLocal = identity;
+            frik_hand_world_authority::noteNativeRecoilControlled(true);
+            if (weapon_recoil_authority_math::hasKick(sample->nativeKickLocal)) {
+                ROCK_LOG_SAMPLE_INFO(Weapon, 1000,
+                    "Recoil suppression: native kick still sampled; neutral response accepted hand={} owned={}",
+                    self->isFiringHandLeft() ? "left" : "right", self->isManualOwnershipActive());
+            }
+            return true;
+        }
         const bool nativeKick = isFiniteTransform(sample->nativeKickLocal) &&
             (hand_world_claim_registry_policy::translationDeltaGameUnits(sample->nativeKickLocal, identity) > 0.05f ||
                 hand_world_claim_registry_policy::rotationDeltaDegrees(sample->nativeKickLocal, identity) > 0.1f);
-        // When declined, FRIK leaves native recoil in the first-person arm
-        // input. It is already present in both sides of hand calibration.
-        // Only an accepted hand-only delivery below invalidates that sample.
-        if (!g_rockConfig.rockImmersiveRecoil) {
-            // Hand claims are separate from recoil registration. Release the
-            // prior direct target before FRIK solves this disabled frame, then
-            // decline so FRIK (or another controller) owns native hand recoil.
-            self->clearOneHandRecoilClaim();
-            return false;
-        }
+        // Native strength still needs ROCK's physical firing-hand routing.
+        // Declining would leave the kick in the game's primary hand, including
+        // when that hand is empty and ROCK carries the weapon in the other one.
         const auto* const handedMode = f4vr::getIniSetting("bLeftHandedMode:VR");
         if (!handedMode || !f4vr::IsWeaponDrawn()) {
             return false;
@@ -119,14 +135,16 @@ namespace rock
                 self->_leftCarry.weaponNodeOwnershipBlockEngaged)));
         // Like armor, the laser profile also controls FRIK's native hand path
         // when ROCK does not currently own a weapon presentation target.
-        if (!ownedCarry && context.family != Family::Laser &&
+        if (context.immersiveRecoil && !ownedCarry && context.family != Family::Laser &&
             (context.profile == Profile::OneHand || context.profile == Profile::FullTwoHand)) {
             return false;
         }
 
         RE::NiTransform controlled{};
+        const auto gains = context.immersiveRecoil ?
+            effectiveGains(context.family, context.profile, context.familyPercent) : ProfileGains{ 1.0f, 1.0f };
         if (!weapon_recoil_authority_math::tryBuildControlledKick(
-                sample->nativeKickLocal, effectiveGains(context.family, context.profile, context.familyPercent), controlled)) {
+                sample->nativeKickLocal, gains, controlled)) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Weapon recoil: invalid native sample; controlled delivery declined");
             return false;
         }
@@ -137,7 +155,14 @@ namespace rock
             controlled = identity;
         }
 
-        const auto mask = deliveryHand(ownedCarry, context.firingHandIsLeft, context.nativePrimaryIsLeft);
+        const auto mask = deliveryHand(ownedCarry);
+        if (nativeKick) {
+            ROCK_LOG_SAMPLE_INFO(Weapon, 1000,
+                "Recoil routing: mode={} firingHand={} nativePrimary={} owned={} mask={} captured={} filter={}",
+                context.immersiveRecoil ? "immersive" : "native-strength",
+                context.firingHandIsLeft ? "left" : "right", context.nativePrimaryIsLeft ? "left" : "right",
+                ownedCarry, static_cast<std::uint32_t>(mask), state.ticket.valid, g_rockConfig.rockWeaponFilteringPreset);
+        }
         if (nativeKick && mask != HandMask::None) {
             ++state.nativeKickSequence;
         }
@@ -191,7 +216,7 @@ namespace rock
     {
         outWorldDelta = transform_math::makeIdentityTransform<RE::NiTransform>();
         const auto* const handedMode = f4vr::getIniSetting("bLeftHandedMode:VR");
-        if (!g_rockConfig.rockImmersiveRecoil || !handedMode || !f4vr::IsWeaponDrawn()) {
+        if (g_rockConfig.rockEmergencyDisableRecoil || !handedMode || !f4vr::IsWeaponDrawn()) {
             _recoil.ticket.invalidate();
             return false;
         }
@@ -236,7 +261,7 @@ namespace rock
 
     bool TwoHandedGrip::canUseRightOneHandRecoil() const noexcept
     {
-        return g_rockConfig.rockImmersiveRecoil &&
+        return !g_rockConfig.rockEmergencyDisableRecoil &&
             frik_hand_world_authority::hasCalibratedRawHandFrame(false) &&
             !usesLeftFiringCarry() &&
             weapon_recoil_policy::canPresentRightRecoilForGrip(
@@ -270,7 +295,7 @@ namespace rock
 
     void TwoHandedGrip::warnDeferredRightRecoilAcquisition() const
     {
-        if (g_rockConfig.rockImmersiveRecoil && _recoil.rightBaseValid &&
+        if (!g_rockConfig.rockEmergencyDisableRecoil && _recoil.rightBaseValid &&
             !frik_hand_world_authority::hasCalibratedRawHandFrame(false)) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
                 "Weapon recoil: right acquisition deferred; rawSource={} controller/body relation unavailable form={:08X} generation={:016X}",
