@@ -2348,7 +2348,6 @@
 
         if (drawGunstock) {
             if (hasColliderFocus) addBody(RE::hknpBodyId{colliderFocus.bodyId}, debug::BodyOverlayRole::FocusedWeaponPart);
-            _twoHandedGrip.publishGunstockRenderDebug(resolveEquippedWeaponInteractionNode());
             using namespace gunstock_debug;
             const auto& sample = _twoHandedGrip.gunstockDebugSample();
             const auto& grab = _twoHandedGrip.gunstockGrabSample();

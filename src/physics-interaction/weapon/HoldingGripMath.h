@@ -1,0 +1,30 @@
+#pragma once
+#include <array>
+#include <cmath>
+namespace rock::holding_grip_math {
+using V=std::array<float,3>;
+struct Pose { std::array<float,9> r{1,0,0,0,1,0,0,0,1};V t{};float s{1}; };
+inline V add(V a,V b){for(int i=0;i<3;++i)a[i]+=b[i];return a;}
+inline V sub(V a,V b){for(int i=0;i<3;++i)a[i]-=b[i];return a;}
+inline V rotate(const Pose& p,V v){V o{};for(int i=0;i<3;++i)for(int j=0;j<3;++j)o[i]+=p.r[i*3+j]*v[j];return o;}
+inline V point(const Pose& p,V v){for(auto& x:v)x*=p.s;return add(p.t,rotate(p,v));}
+inline Pose compose(const Pose& a,const Pose& b){Pose o;o.r={};for(int i=0;i<3;++i)for(int j=0;j<3;++j)for(int k=0;k<3;++k)o.r[i*3+j]+=a.r[i*3+k]*b.r[k*3+j];o.t=point(a,b.t);o.s=a.s*b.s;return o;}
+inline Pose inverse(const Pose& p){Pose o;for(int i=0;i<3;++i)for(int j=0;j<3;++j)o.r[i*3+j]=p.r[j*3+i];o.s=1/p.s;V v=p.t;for(auto& x:v)x=-x*o.s;o.t=rotate(o,v);return o;}
+inline Pose reflected(Pose p,int axis){p.t[axis]=-p.t[axis];for(int i=0;i<3;++i)for(int j=0;j<3;++j)if((i==axis)!=(j==axis))p.r[i*3+j]=-p.r[i*3+j];return p;}
+inline Pose finger(Pose p){return reflected(p,2);}
+inline Pose orientation(Pose p){p.t={};p.s=1;return p;}
+inline Pose leftFiring(const Pose& right,const Pose& rightBoneInWand,const Pose& leftBoneInWand,V grip,V offset={},Pose trim={}){
+    const auto wr=compose(rightBoneInWand,inverse(right));
+    const auto wl=compose(trim,reflected(wr,0));
+    auto result=inverse(compose(inverse(leftBoneInWand),wl));
+    auto target=point(inverse(right),grip);target[2]=-target[2];target=add(target,offset);
+    auto weapon=inverse(result);weapon.t=sub(target,rotate(weapon,V{grip[0]*weapon.s,grip[1]*weapon.s,grip[2]*weapon.s}));
+    return inverse(weapon);
+}
+inline Pose rightSupport(const Pose& left,const Pose& leftBoneInWand,const Pose& rightBoneInWand,V leftPalm,V rightPalm){
+    auto w=reflected(compose(orientation(leftBoneInWand),inverse(orientation(left))),0);
+    auto result=inverse(compose(inverse(orientation(rightBoneInWand)),w));
+    auto target=point(left,leftPalm);target[0]=-target[0];result.t={};result.s=left.s;result.t=sub(target,point(result,rightPalm));return result;
+}
+inline bool valid(const Pose& p){if(!std::isfinite(p.s)||p.s<=.0001f)return false;for(auto x:p.t)if(!std::isfinite(x))return false;for(auto x:p.r)if(!std::isfinite(x))return false;for(int i=0;i<3;++i)for(int j=0;j<3;++j){float dot=0;for(int k=0;k<3;++k)dot+=p.r[i*3+k]*p.r[j*3+k];if(std::abs(dot-(i==j?1.f:0.f))>.002f)return false;}const auto& m=p.r;return std::abs(m[0]*(m[4]*m[8]-m[5]*m[7])-m[1]*(m[3]*m[8]-m[5]*m[6])+m[2]*(m[3]*m[7]-m[4]*m[6])-1)<.002f;}
+}

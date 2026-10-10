@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/AuthoredPrimaryFiringGrip.h"
+#include "physics-interaction/weapon/HoldingGripRecords.h"
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
 
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
@@ -319,10 +320,11 @@ namespace rock
             }
         }
         const bool harvestedRelationAvailable = authoredLookup.found && authored_weapon_grip_library::isNativeIdleAuthority(authoredLookup.source);
+        const auto* customRight=holding_grips::find(input.weapon,input.weaponNode,false,input.weaponGenerationKey,input.inPowerArmor);
+        const auto* customLeft=holding_grips::find(input.weapon,input.weaponNode,true,input.weaponGenerationKey,input.inPowerArmor);
+        const RE::NiTransform nativeRightHandInWeapon = compiledMinigunFiringSeat?compiledMinigunFiringHandInWeapon:authoredLookup.rightHandWeaponLocal;
         const RE::NiTransform& selectedRightHandInWeapon =
-            compiledMinigunFiringSeat ?
-                compiledMinigunFiringHandInWeapon :
-                authoredLookup.rightHandWeaponLocal;
+            customRight?customRight->wrist:nativeRightHandInWeapon;
         const auto* rightFingerPose = harvestedRelationAvailable && authoredLookup.rightFiringFingerPose.complete() ? &authoredLookup.rightFiringFingerPose : nullptr;
         if (rightFingerPose && _mirroredFingerPoseCaptureSequence != authoredLookup.captureSequence) {
             _mirroredLeftFingerPose = {};
@@ -335,6 +337,11 @@ namespace rock
             }
         }
         const auto* leftFingerPose = rightFingerPose && _mirroredFingerPoseValid ? &_mirroredLeftFingerPose : nullptr;
+        weaponAuthority.setHoldingSource(rightFingerPose,authoredLookup.hasSupportRelation?&authoredLookup.supportHandWeaponLocal:nullptr,authoredLookup.hasSupportRelation?&authoredLookup.supportFingerPose:nullptr,input.inPowerArmor);
+        weaponAuthority.setHoldingGripInputs(nativeRightHandInWeapon,customLeft?&customLeft->wrist:nullptr,customRight!=nullptr);
+        if(customLeft)leftFingerPose=&customLeft->fingers;
+        if(customRight){authoredLookup.rightHandWeaponLocal=customRight->wrist;rightFingerPose=&customRight->fingers;}
+
 
         /*
          * Support-relation precedence. A native-idle support relation
@@ -969,7 +976,8 @@ namespace rock
                     finiteTransform(currentAuthoredHandWorld);
             }
         }
-        if (alignmentResolved && compiledMinigunFiringSeat) {
+        if(alignmentResolved&&customRight){authoredPrimaryHandInWeapon=customRight->wrist;currentAuthoredHandWorld=transform_math::composeTransforms(liveWeaponWorld,authoredPrimaryHandInWeapon);}
+        else if (alignmentResolved && compiledMinigunFiringSeat) {
             authoredPrimaryHandInWeapon =
                 compiledMinigunFiringHandInWeapon;
             currentAuthoredHandWorld =

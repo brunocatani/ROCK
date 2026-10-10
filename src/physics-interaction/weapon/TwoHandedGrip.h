@@ -622,6 +622,9 @@ namespace rock
             const authored_weapon_grip_library::FiringFingerPose* rightFingerPose = nullptr,
             const authored_weapon_grip_library::FiringFingerPose* leftFingerPose = nullptr);
         void clearAuthoredPrimaryFiringGripCanonical(const char* reason);
+        void setHoldingSource(const authored_weapon_grip_library::FiringFingerPose* right,const RE::NiTransform* support,const authored_weapon_grip_library::FiringFingerPose* supportFingers,bool powerArmor);
+        void setHoldingGripInputs(const RE::NiTransform& nativeRight,const RE::NiTransform* explicitLeft,bool rightCustom) { _holdingNativeRight=nativeRight;_holdingHasNative=rightCustom;_holdingHasLeft=explicitLeft!=nullptr;if(explicitLeft)_holdingLeft=*explicitLeft; }
+
         bool publishAuthoredPrimaryFiringGripFingerPose(bool isLeft);
         bool retainAuthoredPrimaryFiringGripFingerPoseForHandoff(
             RE::NiNode* weaponNode,
@@ -1503,6 +1506,12 @@ namespace rock
             std::uint64_t weaponGenerationKey,
             std::uint64_t weaponOwnershipKey) const;
 
+        RE::NiTransform _holdingNativeRight{},_holdingLeft{};
+        bool _holdingHasNative{false},_holdingHasLeft{false};
+        bool _holdingCapturePending{false},_holdingCaptureLatched{false};
+        bool _holdingSourcePowerArmor{false},_holdingHasSourceSupport{false},_holdingSourceRightValid{false};
+        RE::NiTransform _holdingSourceSupport{};
+        std::array<RE::NiTransform,15> _holdingSourceRightFingers{},_holdingSourceSupportFingers{};
         bool tryComputeMirroredLeftFiringHandWeaponLocal(
             RE::NiTransform& outHandWeaponLocal,
             bool* outUsedAuthoredCanonical = nullptr,

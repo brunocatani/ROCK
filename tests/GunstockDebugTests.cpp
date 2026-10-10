@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/GunstockDebug.h"
 #include "physics-interaction/TransformMath.h"
 #include <fstream>
+#include <nlohmann/json.hpp>
 #include <chrono>
 #include <cstring>
 #include <iostream>
@@ -47,6 +48,15 @@ int main(int argc, char** argv)
         }
     }
     if (!count || count != accepted) return 7;
+    const auto holding=directory/"holding";
+    {
+        Recorder recorder(directory/"unused-csv",holding);Sample capture{};capture.phase=2;capture.frame=10;capture.holding.requested=true;capture.holding.ready=true;capture.holding.nativeFingersValid=true;capture.holding.captureOnly=true;
+        std::strcpy(capture.holding.weapon,"test.esp:000123");auto identity=rock::transform_math::makeIdentityTransform<RE::NiTransform>();capture.holding.rightBoneInWand=identity;capture.holding.leftBoneInWand=identity;capture.holding.nativeRight=identity;
+        for(auto& f:capture.holding.nativeFingers)f=identity;setPose(capture,WeaponRendered,identity);setPose(capture,LeftRendered,identity);setPose(capture,RightRendered,identity);
+        if(!recorder.submit(capture))return 9;
+    }
+    std::ifstream captureFile(holding/"0-0-10.json");nlohmann::json capture;captureFile>>capture;
+    if(capture.at("weapon")!="test.esp:000123"||capture.at("nativeFingers").size()!=15||!capture.contains("renderedLeft")||std::filesystem::exists(directory/"unused-csv"))return 10;
     std::cout << "Accepted " << accepted << " samples; verified ordered, complete drain and invalid-pose rejection.\n";
     return 0;
 }

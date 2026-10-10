@@ -275,6 +275,18 @@ else()
 endif()
 
 if(BUILD_ROCK_TESTS)
+  add_executable(ROCKHoldingGripFormatTests tests/HoldingGripFormatTests.cpp)
+  target_include_directories(ROCKHoldingGripFormatTests PRIVATE "${SOURCE_DIR}")
+  target_link_libraries(ROCKHoldingGripFormatTests PRIVATE nlohmann_json::nlohmann_json)
+  target_compile_features(ROCKHoldingGripFormatTests PRIVATE cxx_std_20)
+  target_compile_options(ROCKHoldingGripFormatTests PRIVATE /UNDEBUG)
+  add_test(NAME ROCKHoldingGripFormatTests COMMAND ROCKHoldingGripFormatTests)
+  add_executable(ROCKHoldingGripMathTests tests/HoldingGripMathTests.cpp)
+  target_include_directories(ROCKHoldingGripMathTests PRIVATE "${SOURCE_DIR}")
+  target_compile_features(ROCKHoldingGripMathTests PRIVATE cxx_std_20)
+  target_compile_options(ROCKHoldingGripMathTests PRIVATE /UNDEBUG)
+  add_test(NAME ROCKHoldingGripMathTests COMMAND ROCKHoldingGripMathTests)
+
   enable_testing()
 
   add_subdirectory(
@@ -651,6 +663,7 @@ if(BUILD_ROCK_TESTS)
   add_executable(ROCKGunstockDebugTests
     "${ROOT_DIR}/tests/GunstockDebugTests.cpp"
     "${SOURCE_DIR}/physics-interaction/weapon/GunstockDebug.cpp")
+  target_link_libraries(ROCKGunstockDebugTests PRIVATE nlohmann_json::nlohmann_json)
   target_compile_features(ROCKGunstockDebugTests PRIVATE cxx_std_23)
   target_include_directories(ROCKGunstockDebugTests PRIVATE ${SOURCE_DIR})
   add_test(NAME ROCKGunstockDebugTests COMMAND ROCKGunstockDebugTests "${BUILD_DIR}/gunstock-test-output")

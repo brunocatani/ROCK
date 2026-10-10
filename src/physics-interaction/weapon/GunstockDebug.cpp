@@ -1,5 +1,7 @@
 #include "physics-interaction/weapon/GunstockDebug.h"
 #include <chrono>
+#include "physics-interaction/weapon/HoldingGripAdapter.h"
+#include <nlohmann/json.hpp>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
@@ -18,7 +20,7 @@ namespace rock::gunstock_debug
         return true;
     }
 
-    Recorder::Recorder(std::filesystem::path directory) : _directory(std::move(directory)), _worker([this] { run(); }) {}
+    Recorder::Recorder(std::filesystem::path directory,std::filesystem::path holdingDirectory) : _directory(std::move(directory)), _holdingDirectory(std::move(holdingDirectory)), _queue(std::make_unique<std::array<Sample,capacity>>()), _worker([this] { run(); }) {}
     Recorder::~Recorder()
     {
         _stop.store(true, std::memory_order_release);
@@ -30,7 +32,7 @@ namespace rock::gunstock_debug
         if (_failed.load(std::memory_order_relaxed)) { ++_dropped; return false; }
         const auto write = _write.load(std::memory_order_relaxed);
         if (write - _read.load(std::memory_order_acquire) >= capacity) { ++_dropped; return false; }
-        _queue[write % capacity] = sample;
+        (*_queue)[write % capacity] = sample;
         _write.store(write + 1, std::memory_order_release);
         _ready.release();
         return true;
@@ -46,8 +48,17 @@ namespace rock::gunstock_debug
                     if (_stop.load(std::memory_order_acquire)) break;
                     continue;
                 }
-                const Sample sample = _queue[read % capacity];
+                const Sample sample = (*_queue)[read % capacity];
                 _read.store(read + 1, std::memory_order_release);
+                if(sample.phase==2&&sample.holding.requested&&sample.holding.ready){try{
+                    using namespace holding_grip_math;using J=nlohmann::json;
+                    const auto pose=[](const RE::NiTransform& t){const auto p=fromNative(t);return J{{"rotate",p.r},{"translate",p.t},{"scale",p.s}};};
+                    const auto& c=sample.holding;J j{{"format","rock-holding-grip-capture"},{"version",1},{"space","weapon-local"},{"fingerSpace","parent-local"},{"matrixConvention","active-row-major"},{"units","game"},{"weapon",c.weapon},{"gripNode",c.gripNode},{"frame",sample.frame},{"generation",sample.generation},{"holdingHand",sample.firingLeft?"left":"right"},{"rightBoneInWand",pose(c.rightBoneInWand)},{"leftBoneInWand",pose(c.leftBoneInWand)},{"nativeRight",pose(c.nativeRight)},{"palmRight",c.palmRight},{"palmLeft",c.palmLeft},{"leftGripOffset",c.leftOffset},{"rightSupportOffset",c.rightSupportOffset}};
+                    J fingers=J::array();for(const auto& f:c.nativeFingers)fingers.push_back(pose(f));if(c.nativeFingersValid)j["nativeFingers"]=fingers;j["powerArmor"]=c.powerArmor;j["gameLeftHanded"]=c.gameLeftHanded;j["phase"]="AfterWorldFinal";j["supportActive"]=sample.supportActive!=0;j["gunstockAim"]=sample.gunstockAim!=0;if(c.hasSupport){j["nativeSupport"]=pose(c.nativeSupport);J sf=J::array();for(const auto& f:c.supportFingers)sf.push_back(pose(f));j["supportFingers"]=sf;}
+                    if(sample.has(WeaponRendered))for(int h=0;h<2;++h){const auto id=h==0?LeftRendered:RightRendered;if(!sample.has(id))continue;const auto relative=compose(inverse(fromNative(sample.poses[WeaponRendered])),fromNative(sample.poses[id]));J hand{{"wrist",pose(toNative(relative))}};if(c.fingerValid[h]){hand["fingers"]=J::array();for(const auto& f:c.renderedFingers[h])hand["fingers"].push_back(pose(f));}j[h==0?"renderedLeft":"renderedRight"]=hand;}
+                    const auto& directory=_holdingDirectory;std::filesystem::create_directories(directory);std::ofstream capture(directory/(std::to_string(sample.form)+"-"+std::to_string(sample.tick)+"-"+std::to_string(sample.frame)+".json"));capture<<j.dump(2);capture.flush();if(!capture)_holdingFailed.store(true);
+                }catch(const std::exception&){_holdingFailed.store(true);}}
+                if(sample.holding.captureOnly)continue;
                 if (!file.is_open()) {
                     std::filesystem::create_directories(_directory);
                     const auto stamp = std::chrono::system_clock::now().time_since_epoch().count();

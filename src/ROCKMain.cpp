@@ -1,5 +1,6 @@
 
 #include <array>
+#include "physics-interaction/weapon/HoldingGripRecords.h"
 #include <atomic>
 #include <cstdint>
 #include <string>
@@ -1064,6 +1065,7 @@ namespace
             }
 
             g_rockConfig.load();
+            holding_grips::load("Data/F4SE/Plugins/ROCK/HoldingGrips");
             input_remap_runtime::configurePipboyInput();
             g_rockConfig.subscribeForConfigChanged("ROCKPipboyInput", [](const std::string&) {
                 input_remap_runtime::configurePipboyInput();

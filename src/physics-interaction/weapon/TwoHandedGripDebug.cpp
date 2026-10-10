@@ -25,6 +25,7 @@
 #include "rock_support/Fo4VrRuntime.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <array>
 #include <cmath>
 #include <chrono>
@@ -45,12 +46,29 @@ namespace rock
     {
         using namespace gunstock_debug;
         _gunstockSample = {};
-        if (!g_rockConfig.rockDebugDrawGunstock) {
+        if(g_rockConfig.rockCaptureHoldingGrip&&!_holdingCaptureLatched)_holdingCapturePending=true;
+        if(!g_rockConfig.rockCaptureHoldingGrip&&_holdingCaptureLatched)_holdingCapturePending=false;
+        _holdingCaptureLatched=g_rockConfig.rockCaptureHoldingGrip;
+        if(_gunstockRecorder&&_gunstockRecorder->holdingFailed()){ROCK_LOG_ERROR(Weapon,"Holding capture could not be written; existing gunstock recording remains available");_gunstockRecorder->clearHoldingFailure();_holdingCapturePending=false;}
+        if(_holdingCapturePending&&_gunstockRecorder&&_gunstockRecorder->failed()){_holdingCapturePending=false;ROCK_LOG_ERROR(Weapon,"Holding capture writer failed; check the diagnostic output directory");}
+        if (!g_rockConfig.rockDebugDrawGunstock&&!_holdingCapturePending) {
             _gunstockWasSupporting = false;
             _gunstockGrabSample = {};
             return;
         }
         auto& s = _gunstockSample;
+        s.holding.requested=_holdingCapturePending;s.holding.captureOnly=!g_rockConfig.rockDebugDrawGunstock;
+        if(_holdingCapturePending&&_firing.hasRightNaturalBoneInWand&&_firing.hasLeftNaturalBoneInWand&&hasRightFiringHandCanonicalFrame(weaponNode,generation,ownership)){
+            s.holding.rightBoneInWand=_firing.rightNaturalBoneInWand;s.holding.leftBoneInWand=_firing.leftNaturalBoneInWand;
+            s.holding.rightBoneInWand.translate={};s.holding.rightBoneInWand.scale=1;s.holding.leftBoneInWand.translate={};s.holding.leftBoneInWand.scale=1;
+            s.holding.nativeRight=_holdingHasNative?_holdingNativeRight:_firing.rightCanonicalHandWeaponLocal;s.holding.nativeFingers=_holdingSourceRightFingers;s.holding.nativeFingersValid=_holdingSourceRightValid;s.holding.powerArmor=_holdingSourcePowerArmor;if(const auto* handed=f4vr::getIniSetting("bLeftHandedMode:VR"))s.holding.gameLeftHanded=handed->GetBinary();s.holding.hasSupport=_holdingHasSourceSupport;s.holding.nativeSupport=_holdingSourceSupport;s.holding.supportFingers=_holdingSourceSupportFingers;
+            RE::NiTransform identity;identity.MakeIdentity();const auto pr=computeGrabLegacyPalmPivotAWorldFromHandBasis(identity,false),pl=computeGrabLegacyPalmPivotAWorldFromHandBasis(identity,true);
+            s.holding.palmRight={pr.x,pr.y,pr.z};s.holding.palmLeft={pl.x,pl.y,pl.z};
+            const auto lo=g_rockConfig.rockLeftFiringGripOffsetGameUnits,so=g_rockConfig.rockRightSupportGripOffsetGameUnits;s.holding.leftOffset={lo.x,lo.y,lo.z};s.holding.rightSupportOffset={so.x,so.y,so.z};
+            auto* item=RE::TESForm::GetFormByID(form);const auto* file=item?item->GetFile(0):nullptr;
+            if(file){std::snprintf(s.holding.weapon,sizeof(s.holding.weapon),"%.*s:%06x",static_cast<int>(file->GetFilename().size()),file->GetFilename().data(),item->GetLocalFormID());s.holding.ready=true;}
+            auto* mount=weaponNode?f4vr::findNode(weaponNode,"P-Grip"):nullptr;auto* child=mount?f4vr::getFirstChild(mount):nullptr;if(child&&child->name.c_str())std::snprintf(s.holding.gripNode,sizeof(s.holding.gripNode),"%s",child->name.c_str());
+        }
         s.frame = runtime_state::currentFrame().frameIndex;
         s.tick = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count());
@@ -72,7 +90,7 @@ namespace rock
     void TwoHandedGrip::finishGunstockDebug(RE::NiNode* weaponNode)
     {
         using namespace gunstock_debug;
-        if (!g_rockConfig.rockDebugDrawGunstock) return;
+        if (!g_rockConfig.rockDebugDrawGunstock&&!_holdingCapturePending) return;
         auto& s = _gunstockSample;
         s.state = static_cast<std::uint32_t>(_session.state);
         s.phase = 1; // End of grip update, before final collision/FRIK presentation.
@@ -108,14 +126,14 @@ namespace rock
         s.mark = _gunstockMark;
         _gunstockWasSupporting = support.active;
         _gunstockLastGrip = s.grip;
-        if (_gunstockRecorder) (void)_gunstockRecorder->submit(s);
+        if (_gunstockRecorder&&!s.holding.captureOnly) (void)_gunstockRecorder->submit(s);
     }
 
     void TwoHandedGrip::publishGunstockRenderDebug(RE::NiNode* weaponNode)
     {
         using namespace gunstock_debug;
         auto& s = _gunstockSample;
-        if (!g_rockConfig.rockDebugDrawGunstock || s.frame != runtime_state::currentFrame().frameIndex || s.phase != 1) return;
+        if ((!g_rockConfig.rockDebugDrawGunstock&&!_holdingCapturePending) || s.frame != runtime_state::currentFrame().frameIndex || s.phase != 1) return;
         s.phase = 2; // AfterWorldFinal; paired with phase 1 by frame and ownership.
         if (weaponNode) {
             setPose(s, WeaponRendered, weaponNode->world);
@@ -136,7 +154,15 @@ namespace rock
         if (frik_visual_authority::tryGetPresentedHandWorldTransform(false, hand)) setPose(s, RightRendered, hand);
         const auto* nodes = f4vr::getPlayerNodes();
         if (nodes && nodes->primaryWeaponScopeCamera) setPose(s, ScopeRendered, nodes->primaryWeaponScopeCamera->world);
-        if (_gunstockRecorder) (void)_gunstockRecorder->submit(s);
+        if(s.holding.requested&&s.holding.ready&&s.has(WeaponRendered)){
+            auto* player=f4vr::getPlayer();auto* root=player?player->Get3D():nullptr;
+            for(int h=0;h<2;++h){const bool left=h==0;RE::NiTransform wrist{};bool valid=frik_visual_authority::tryGetPresentedHandWorldTransform(left,wrist);
+                for(int finger=0;finger<5&&valid;++finger){auto parent=wrist;for(int joint=0;joint<3;++joint){auto* bone=root?f4vr::findNode(root,root_flattened_finger_skeleton_runtime::fingerBoneName(left,finger,joint)):nullptr;if(!bone){valid=false;break;}s.holding.renderedFingers[h][finger*3+joint]=transform_math::composeTransforms(transform_math::invertTransform(parent),bone->world);parent=bone->world;}}
+                s.holding.fingerValid[h]=valid;
+            }
+            if(_gunstockRecorder&&_gunstockRecorder->submit(s)){_holdingCapturePending=false;ROCK_LOG_INFO(Weapon,"Holding grip capture queued weapon={} frame={}",s.holding.weapon,s.frame);}
+        }else if(_gunstockRecorder&&!s.holding.captureOnly)(void)_gunstockRecorder->submit(s);
+
     }
 
     bool TwoHandedGrip::getDebugAuthoritySnapshot(TwoHandedGripDebugSnapshot& outSnapshot) const

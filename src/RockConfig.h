@@ -226,6 +226,7 @@ namespace rock
         bool rockDebugDrawAuthoredGripActivationZones = false;
         bool rockDebugDrawWeaponAuthority = false;
         bool rockDebugDrawGunstock = false;
+        bool rockCaptureHoldingGrip = false;
         bool rockDebugDrawLooseWeaponGripZones = false;
         bool rockDebugDrawDynamicWeaponColliders = false;
         int rockDebugMaxWeaponBodiesDrawn = 100;

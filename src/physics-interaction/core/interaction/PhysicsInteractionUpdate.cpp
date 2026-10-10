@@ -223,6 +223,7 @@ namespace rock
         // AfterWorldFinal: provider animation, FRIK's claim re-solve and its
         // flattened bone rebuild have completed. Re-sample on the main thread;
         // PublishFrame copies values before the render thread consumes them.
+        _twoHandedGrip.publishGunstockRenderDebug(resolveEquippedWeaponInteractionNode());
         publishDebugBodyOverlay(buildFrameContext(bhk, hknp));
     }
 
