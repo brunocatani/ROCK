@@ -70,7 +70,6 @@ namespace rock::frik_hand_world_authority
         struct Service
         {
             std::array<weapon_input_filter::State, 2> weaponFilters{};
-            std::array<DriverSample, 2> weaponRawDrivers{};
             std::array<DriverSample, 2> weaponWands{};
             std::array<DriverSample, 2> weaponFilteredWands{};
             std::uint64_t weaponOwnership = 0;
@@ -183,8 +182,24 @@ namespace rock::frik_hand_world_authority
                 g_service.weaponFilteredWands[hand] = {};
                 g_service.weaponWands[hand] = g_rockConfig.rockWeaponFilteringPreset > 0 ?
                     sampleTrackedHand(isLeft, TrackedHandKind::Wand) : DriverSample{};
-                g_service.weaponRawDrivers[hand] = g_rockConfig.rockWeaponFilteringPreset > 0 ?
-                    sampleRawDriver(isLeft) : DriverSample{};
+                // Compare the live (restored) graph with the neutral driver
+                // only for diagnostics. It must never select filtered input.
+                const auto* nodes = f4vr::getPlayerNodes();
+                const auto* kick = nodes ? nodes->primaryWeaponKickbackRecoilNode : nullptr;
+                if (logger::isInfoEnabled() && kick && scope_policy::usable(kick->local) &&
+                    registry_policy::rotationDeltaDegrees(kick->local,
+                        transform_math::makeIdentityTransform<RE::NiTransform>()) > 0.1f &&
+                    logger::internal::shouldEmitSample(isLeft ? "filter-recoil-input-left" : "filter-recoil-input-right", 100)) {
+                    const auto neutralDriver = sampleRawDriver(isLeft);
+                    ROCK_LOG_INFO(Weapon,
+                        "FILTER_RECOIL_INPUT seq={} preset={} hand={} controlled={} immersive={} scoped={} kick={:.4f}deg restoredVsNeutral={:.4f}gu/{:.4f}deg valid={}/{}",
+                        sequence, g_rockConfig.rockWeaponFilteringPreset, handName(isLeft),
+                        g_service.nativeRecoilControlled, g_rockConfig.rockImmersiveRecoil, scoped,
+                        registry_policy::rotationDeltaDegrees(kick->local, transform_math::makeIdentityTransform<RE::NiTransform>()),
+                        neutralDriver.valid && nativeDriver.valid ? registry_policy::translationDeltaGameUnits(nativeDriver.world, neutralDriver.world) : -1.0f,
+                        neutralDriver.valid && nativeDriver.valid ? registry_policy::rotationDeltaDegrees(nativeDriver.world, neutralDriver.world) : -1.0f,
+                        nativeDriver.valid, neutralDriver.valid);
+                }
                 auto& state = g_service.scopeInputs[hand];
                 const bool wasRecovering = state.recovering;
                 const bool needsRaw = (scoped && g_service.scopeDamping.valid &&
@@ -413,21 +428,16 @@ namespace rock::frik_hand_world_authority
         auto& cached = g_service.weaponFilteredWands[index];
         if (cached.valid) { outWorld = cached.world; return true; }
         const auto& wand = g_service.weaponWands[index];
-        const auto& rawDriver = g_service.weaponRawDrivers[index];
-        RE::NiTransform driver{}, hand{};
-        if (!wand.valid || !rawDriver.valid || !hasCalibratedRawHandFrame(isLeft) ||
-            !tryGetInputDriverWorld(isLeft, driver) || !tryGetRawHandWorld(isLeft, hand) ||
-            !weapon_input_filter::usable(driver) || !weapon_input_filter::usable(hand)) {
+        RE::NiTransform hand{};
+        if (!wand.valid || !hasCalibratedRawHandFrame(isLeft) ||
+            !tryGetRawHandWorld(isLeft, hand) || !weapon_input_filter::usable(hand)) {
             g_service.weaponFilters[index] = {};
             ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Weapon filtering input unavailable hand={}", handName(isLeft));
             return false;
         }
-        // Remove only FRIK's driver damping, then filter the controller around
-        // its physical palm. Native offsets and the calibrated wrist relation
-        // remain current; no rendered weapon or hand target feeds history.
-        const auto rawHand = transform_math::composeTransforms(rawDriver.world,
-            transform_math::composeTransforms(transform_math::invertTransform(driver), hand));
-        const auto palmWorld = computeGrabLegacyPalmPivotAWorldFromHandBasis(rawHand, isLeft);
+        // Keep Off's isolated hand as the baseline. Controller history contains
+        // only the wand, never an animated offset or an inverse native kick.
+        const auto palmWorld = computeGrabLegacyPalmPivotAWorldFromHandBasis(hand, isLeft);
         const auto pivot = transform_math::worldPointToLocal(wand.world, palmWorld);
         const auto& frame = runtime_state::currentFrame();
         cached.valid = weapon_input_filter::update(g_service.weaponFilters[index], wand.world,
@@ -443,22 +453,21 @@ namespace rock::frik_hand_world_authority
         RE::NiTransform filteredWand{};
         outWorld = {};
         if (!tryGetWeaponWandWorld(isLeft, filteredWand)) return false;
-        const auto index = handIndex(isLeft);
-        outWorld = transform_math::composeTransforms(filteredWand,
-            transform_math::composeTransforms(transform_math::invertTransform(g_service.weaponWands[index].world),
-                g_service.weaponRawDrivers[index].world));
+        RE::NiTransform driver{};
+        if (!tryGetInputDriverWorld(isLeft, driver)) return false;
+        outWorld = weapon_input_filter::applyTrackingCorrection(driver,
+            g_service.weaponWands[handIndex(isLeft)].world, filteredWand);
         return weapon_input_filter::usable(outWorld);
     }
 
     bool tryGetWeaponHandWorld(bool isLeft, RE::NiTransform& outWorld)
     {
         if (!weaponFilteringActive()) return tryGetRawHandWorld(isLeft, outWorld);
-        RE::NiTransform filteredDriver{}, driver{}, hand{};
+        RE::NiTransform filteredWand{}, hand{};
         outWorld = {};
-        if (!tryGetWeaponDriverWorld(isLeft, filteredDriver) || !tryGetInputDriverWorld(isLeft, driver) ||
-            !tryGetRawHandWorld(isLeft, hand) || !weapon_input_filter::usable(driver)) return false;
-        outWorld = transform_math::composeTransforms(filteredDriver,
-            transform_math::composeTransforms(transform_math::invertTransform(driver), hand));
+        if (!tryGetWeaponWandWorld(isLeft, filteredWand) || !tryGetRawHandWorld(isLeft, hand)) return false;
+        outWorld = weapon_input_filter::applyTrackingCorrection(hand,
+            g_service.weaponWands[handIndex(isLeft)].world, filteredWand);
         return weapon_input_filter::usable(outWorld);
     }
 

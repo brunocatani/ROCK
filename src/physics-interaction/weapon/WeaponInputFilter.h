@@ -35,6 +35,17 @@ namespace rock::weapon_input_filter
         bool valid = false;
     };
 
+    // Reframe the existing input by controller motion only. An animated offset
+    // node is not a controller frame: FRIK may restore native recoil there after
+    // solving the neutral hand, so its inverse would subtract recoil from input.
+    [[nodiscard]] inline RE::NiTransform applyTrackingCorrection(
+        const RE::NiTransform& input, const RE::NiTransform& trackedWand,
+        const RE::NiTransform& filteredWand)
+    {
+        return transform_math::composeTransforms(filteredWand,
+            transform_math::composeTransforms(transform_math::invertTransform(trackedWand), input));
+    }
+
     // State is in room space: locomotion and artificial turning transport it
     // without filtering. The caller resets on ownership/tracking discontinuity.
     [[nodiscard]] inline bool update(State& state, const RE::NiTransform& target,
