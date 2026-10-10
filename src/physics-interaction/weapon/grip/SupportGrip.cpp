@@ -2853,7 +2853,7 @@ namespace rock
         constexpr std::uint16_t kCompleteFingerLocalTransformMask = 0x7FFFu;
         RE::NiTransform mirroredRightHandWeaponLocal{};
         const bool rightHandTransformMirrored =
-            tryBuildMirroredRightSupportHandWeaponLocal(
+            tryBuildMirroredSupportHandWeaponLocal(
                 candidate.leftHandWeaponLocal,
                 mirroredRightHandWeaponLocal);
 
@@ -2888,11 +2888,9 @@ namespace rock
 
         if (usesLeftFiringCarry()) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 2000,
-                "TwoHandedGrip: authored right-support mirror unavailable transform={} fingers={} naturalFrames=({}, {})",
+                "TwoHandedGrip: authored right-support mirror unavailable transform={} fingers={}",
                 rightHandTransformMirrored ? "ready" : "missing",
-                rightFingerPoseFinite ? "ready" : "missing",
-                _firing.hasLeftNaturalBoneInWand ? "left" : "no-left",
-                _firing.hasRightNaturalBoneInWand ? "right" : "no-right");
+                rightFingerPoseFinite ? "ready" : "missing");
         }
     }
 

@@ -14,7 +14,7 @@ namespace rock
             const auto source = holding_grip_math::fromNative(right);
             if (!holding_grip_math::valid(source)) return false;
             left = weapon_grip_calibration::shiftedHand(
-                holding_grip_math::toNative(holding_grip_math::mirroredFiringSeat(source)),
+                holding_grip_math::toNative(holding_grip_math::mirroredHandSeat(source)),
                 g_rockConfig.rockLeftFiringGripOffsetGameUnits, true);
             return true;
         }
@@ -1514,119 +1514,15 @@ namespace rock
         return true;
     }
 
-    bool TwoHandedGrip::tryBuildMirroredRightSupportHandWeaponLocal(
-        const RE::NiTransform& leftHandWeaponLocal,
-        RE::NiTransform& outRightHandWeaponLocal) const
-    {
-        outRightHandWeaponLocal = {};
-        if (!_firing.hasLeftNaturalBoneInWand || !_firing.hasRightNaturalBoneInWand ||
-            !isFiniteTransform(leftHandWeaponLocal) ||
-            !isFiniteTransform(_firing.leftNaturalBoneInWand) ||
-            !isFiniteTransform(_firing.rightNaturalBoneInWand)) {
-            return false;
-        }
-
-        return tryBuildMirroredSupportHandWeaponLocal(leftHandWeaponLocal,
-            _firing.leftNaturalBoneInWand, _firing.rightNaturalBoneInWand, outRightHandWeaponLocal);
-    }
-
     bool TwoHandedGrip::tryBuildMirroredSupportHandWeaponLocal(
         const RE::NiTransform& leftHandWeaponLocal,
-        const RE::NiTransform& leftBoneInWand,
-        const RE::NiTransform& rightBoneInWand,
         RE::NiTransform& outRightHandWeaponLocal)
     {
         outRightHandWeaponLocal = {};
-        if (!isFiniteTransform(leftHandWeaponLocal) ||
-            !isFiniteTransform(leftBoneInWand) || !isFiniteTransform(rightBoneInWand)) {
-            return false;
-        }
-
-        /*
-         * Mirror only ORIENTATION through the physical wand pair. The cached
-         * bone-in-wand transforms remove hFRIK's asymmetric hand-bone
-         * conventions, but their translations/scales are presentation state
-         * and can be collapsed while ROCK owns left-primary carry. Feeding
-         * those affine values through inverse composition produced enormous
-         * intermediate translations and a catastrophically cancelled right
-         * support seat. Position is anchored independently below, so rigid
-         * zero-origin frames are the complete source authority here.
-         */
-        const auto orientationFrame = [](const RE::NiTransform& source) {
-            RE::NiTransform result = source;
-            result.translate = {};
-            result.scale = 1.0f;
-            return result;
-        };
-        const RE::NiTransform leftBoneInWandOrientation =
-            orientationFrame(leftBoneInWand);
-        const RE::NiTransform rightBoneInWandOrientation =
-            orientationFrame(rightBoneInWand);
-        const RE::NiTransform leftHandWeaponOrientation =
-            orientationFrame(leftHandWeaponLocal);
-
-        const RE::NiTransform weaponInLeftWand = transform_math::composeTransforms(
-            leftBoneInWandOrientation,
-            transform_math::invertTransform(leftHandWeaponOrientation));
-        const RE::NiTransform weaponInRightWand =
-            conjugateAcrossLateralMirror(weaponInLeftWand);
-        const RE::NiTransform weaponInRightHand = transform_math::composeTransforms(
-            transform_math::invertTransform(rightBoneInWandOrientation),
-            weaponInRightWand);
-        RE::NiTransform mirroredRightHandWeaponLocal = transform_math::invertTransform(weaponInRightHand);
-        if (!isFiniteTransform(mirroredRightHandWeaponLocal)) {
-            return false;
-        }
-
-        /*
-         * Position is anchored directly by the actual solver palm seat.
-         * Reflect the authored left seat across weapon-local X, clear the
-         * orientation solve's translation, then place the right hand from its
-         * own palm offset. This avoids subtracting two huge nearly-equal
-         * floats and keeps the result weapon-relative and controller-free.
-         */
-        const RE::NiPoint3 leftPalmWeaponLocal =
-            computeGrabLegacyPalmPivotAWorldFromHandBasis(leftHandWeaponLocal, true);
-        const RE::NiPoint3 desiredRightPalmWeaponLocal{
-            -leftPalmWeaponLocal.x,
-            leftPalmWeaponLocal.y,
-            leftPalmWeaponLocal.z,
-        };
-        mirroredRightHandWeaponLocal.translate = {};
-        mirroredRightHandWeaponLocal.scale = leftHandWeaponLocal.scale;
-        const RE::NiPoint3 rightPalmOffsetWeaponLocal =
-            computeGrabLegacyPalmPivotAWorldFromHandBasis(mirroredRightHandWeaponLocal, false);
-        if (!std::isfinite(desiredRightPalmWeaponLocal.x) ||
-            !std::isfinite(desiredRightPalmWeaponLocal.y) ||
-            !std::isfinite(desiredRightPalmWeaponLocal.z) ||
-            !std::isfinite(rightPalmOffsetWeaponLocal.x) ||
-            !std::isfinite(rightPalmOffsetWeaponLocal.y) ||
-            !std::isfinite(rightPalmOffsetWeaponLocal.z)) {
-            return false;
-        }
-        mirroredRightHandWeaponLocal.translate =
-            sub(desiredRightPalmWeaponLocal, rightPalmOffsetWeaponLocal);
-        if (!isFiniteTransform(mirroredRightHandWeaponLocal)) {
-            return false;
-        }
-
-        const RE::NiPoint3 anchoredRightPalmWeaponLocal =
-            computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                mirroredRightHandWeaponLocal,
-                false);
-        const RE::NiPoint3 anchorError =
-            sub(anchoredRightPalmWeaponLocal, desiredRightPalmWeaponLocal);
-        constexpr float kMaxPalmAnchorErrorGameUnits = 0.01f;
-        if (!std::isfinite(anchorError.x) ||
-            !std::isfinite(anchorError.y) ||
-            !std::isfinite(anchorError.z) ||
-            std::sqrt(dot(anchorError, anchorError)) >
-                kMaxPalmAnchorErrorGameUnits) {
-            return false;
-        }
-
-        outRightHandWeaponLocal = mirroredRightHandWeaponLocal;
-        return true;
+        if (!isFiniteTransform(leftHandWeaponLocal)) return false;
+        outRightHandWeaponLocal = holding_grip_math::toNative(
+            holding_grip_math::mirroredHandSeat(holding_grip_math::fromNative(leftHandWeaponLocal)));
+        return isFiniteTransform(outRightHandWeaponLocal);
     }
 
     bool TwoHandedGrip::tryBuildMirroredLeftFiringHandWeaponLocal(

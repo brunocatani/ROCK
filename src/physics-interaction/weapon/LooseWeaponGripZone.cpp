@@ -325,14 +325,8 @@ namespace rock::loose_weapon_grip_zone
             if (!authored.found || !authored.hasSupportRelation || !authored.supportFingerPose.complete() ||
                 !isUsableWorldTransform(out)) return false;
             if (isLeft) return true;
-            RE::NiTransform leftWorld{}, rightWorld{};
-            auto* nodes = f4vr::getPlayerNodes();
-            const bool mirrored = nodes && nodes->SecondaryWandNode && nodes->primaryWandNode &&
-                physicalHandWorld(true, leftWorld) && physicalHandWorld(false, rightWorld) &&
-                isUsableWorldTransform(nodes->SecondaryWandNode->world) && isUsableWorldTransform(nodes->primaryWandNode->world) &&
-                TwoHandedGrip::tryBuildMirroredSupportHandWeaponLocal(authored.supportHandWeaponLocal,
-                    transform_math::composeTransforms(transform_math::invertTransform(nodes->SecondaryWandNode->world), leftWorld),
-                    transform_math::composeTransforms(transform_math::invertTransform(nodes->primaryWandNode->world), rightWorld), out);
+            const bool mirrored = TwoHandedGrip::tryBuildMirroredSupportHandWeaponLocal(
+                authored.supportHandWeaponLocal, out);
             if (mirrored) out = weapon_grip_calibration::shiftedHand(out,
                 g_rockConfig.rockRightSupportGripOffsetGameUnits, false);
             return mirrored;
