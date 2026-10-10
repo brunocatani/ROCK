@@ -1139,7 +1139,7 @@ namespace rock
         bool hookedAttackBlockShouldHandleEvent(void* handler, const RE::InputEvent* event)
         {
             if (input_remap_runtime::shouldSuppressNativeTriggerAction(event)) {
-                trigger_equip_readiness_trace::input(event, true, false, false);
+                trigger_equip_readiness_trace::input(event, true, false, false, handler);
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
                     "Suppressed native WandTrigger AttackBlock gate while ROCK owns holstered or held-weapon trigger input");
@@ -1172,13 +1172,13 @@ namespace rock
             }
 
             if (decision.action == native_melee_suppression::NativeMeleeInputGateAction::ReturnFalse) {
-                trigger_equip_readiness_trace::input(event, true, false, false);
+                trigger_equip_readiness_trace::input(event, true, false, false, handler);
                 return false;
             }
 
             const bool nativeResult = g_originalAttackBlockShouldHandleEvent ? g_originalAttackBlockShouldHandleEvent(handler, event) : false;
             trigger_equip_readiness_trace::input(event, false,
-                g_originalAttackBlockShouldHandleEvent != nullptr, nativeResult);
+                g_originalAttackBlockShouldHandleEvent != nullptr, nativeResult, handler);
             return nativeResult;
         }
 

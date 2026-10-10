@@ -33,6 +33,7 @@ namespace rock::held_weapon_instant_transition
         // Startup-only installation; game-thread calls preserve the timer only
         // inside a trigger equip, never ordinary equipment or native bashing.
         bool s_attackDelayRemovalInstalled = false;
+        bool s_presentationDeadlineVerified = false;
 
         constexpr std::uintptr_t kPlayerDrawWeaponEntry = 0x0F78D10;
         constexpr std::uintptr_t kEquipManagerDrawCallsite = 0x0E107A1;
@@ -96,6 +97,9 @@ namespace rock::held_weapon_instant_transition
         void installTriggerEquipPreparation()
         {
             if (s_attackDelayRemovalInstalled) return;
+            s_presentationDeadlineVerified =
+                bytesMatch(0xEF8E93, std::array<std::uint8_t, 8>{ 0xF3,0x0F,0x11,0x81,0xA8,0x08,0x00,0x00 }) &&
+                bytesMatch(0xEF7C1C, std::array<std::uint8_t, 9>{ 0x0F,0x2F,0x87,0xA8,0x08,0x00,0x00,0x72,0x15 });
             // Raw FO4VR 1.2.72: EquipManager calls preparation immediately
             // before its draw virtual call. Preparation writes +908; the
             // trigger attack gate at FCD90E rejects positive values there.
@@ -389,7 +393,7 @@ namespace rock::held_weapon_instant_transition
         // This timer is shared with bash and other native combat input gates.
         // Restore its exact pre-call value, not an unconditional zero. The
         // synchronous preparation has no callbacks; its other writes (draw
-        // flags and attachment deadline) remain native. No delayed player or
+        // flags) remain native. No delayed player or
         // weapon pointer is retained, and no per-frame cooldown clearing occurs.
         auto* timer = reinterpret_cast<float*>(reinterpret_cast<char*>(player) + kAttackCooldownOffset);
         if (!native_memory::tryWriteValue(timer, priorCooldown)) {
@@ -397,6 +401,27 @@ namespace rock::held_weapon_instant_transition
             return;
         }
         ROCK_LOG_INFO(Weapon, "Trigger equip preparation preserved attack cooldown={:.4f}s; added equip delay removed", priorCooldown);
+        // The captured half-second rejection is a second, independent native
+        // presentation wait. Make only this trigger equip's deadline due now.
+        // Leave bits 80/40 untouched: the native player update must still clear
+        // the wait, issue its refresh task, and evaluate all other hide/attack
+        // conditions. This does not force Drawn or bypass model/graph readiness.
+        std::uint64_t ticks{};
+        float secondsPerTick{};
+        if (s_presentationDeadlineVerified &&
+            native_memory::tryReadValue(reinterpret_cast<const std::uint64_t*>(REL::Offset(0x5BBC058).address()), ticks) &&
+            native_memory::tryReadValue(reinterpret_cast<const float*>(REL::Offset(0x2C81B8C).address()), secondsPerTick) &&
+            std::isfinite(secondsPerTick) && secondsPerTick > 0.0f) {
+            const float due = static_cast<float>(ticks) * secondsPerTick;
+            auto* deadline = reinterpret_cast<float*>(reinterpret_cast<char*>(player) + 0x8A8);
+            if (std::isfinite(due) && native_memory::tryWriteValue(deadline, due)) {
+                ROCK_LOG_INFO(Weapon, "Trigger equip presentation deadline due now; native readiness update retained");
+            } else {
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Trigger equip presentation deadline write unavailable; native wait retained");
+            }
+        } else {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Trigger equip presentation deadline evidence unavailable; native wait retained");
+        }
         trigger_equip_readiness_trace::stage("after-native-preparation");
     }
 

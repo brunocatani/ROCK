@@ -1,6 +1,7 @@
 #include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/weapon/EquippedWeaponVisualState.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "rock_support/Fo4VrRuntime.h"
@@ -10,6 +11,8 @@
 #include <Windows.h>
 #include <atomic>
 #include <chrono>
+#include <array>
+#include <cstring>
 #include <string_view>
 
 namespace rock::trigger_equip_readiness_trace
@@ -29,6 +32,7 @@ namespace rock::trigger_equip_readiness_trace
             bool active{};
             std::uint64_t sequence{};
             std::uint32_t expectedForm{}, reference{}, samples{}, inputs{};
+            std::uint32_t requests{}, actions{};
             std::uintptr_t boundInstance{};
             Clock::time_point started{}, lastFrame{}, lastInput{};
             NativeSample previous{};
@@ -38,6 +42,10 @@ namespace rock::trigger_equip_readiness_trace
         // the capture; the atomic owner check precedes every state access.
         std::atomic<DWORD> s_owner{};
         Capture s_capture{};
+        using AttackRequest = void (*)(void*);
+        using DispatchAction = bool (*)(void*, std::int32_t, std::uint32_t);
+        AttackRequest s_request{};
+        DispatchAction s_dispatch{};
 
         bool onOwner() noexcept { return s_owner.load(std::memory_order_acquire) == GetCurrentThreadId(); }
         double elapsedMs() noexcept
@@ -90,6 +98,64 @@ namespace rock::trigger_equip_readiness_trace
                 value.stateBits, value.flags, (value.flags & 0x80) != 0, (value.flags & 0x40) != 0,
                 value.cooldown, value.deadline - value.nativeNow, value.ammo, value.attackState,
                 value.fireNode, value.weaponPreload, value.projectilePreload, value.valid);
+        }
+        void logHandler(const char* phase, const void* handler) noexcept
+        {
+            // Verified FC7BA0 and FCB100 gate/request fields; read only.
+            float holdoff{};
+            std::uint32_t mode{}, flags{};
+            const bool valid = native_memory::tryReadField(handler,0x50,holdoff) &&
+                native_memory::tryReadField(handler,0x38,mode) &&
+                native_memory::tryReadField(handler,0x74,flags);
+            ROCK_LOG_INFO(Input, "EQUIP-READY handler seq={} ms={:.2f} phase={} readable={} holdoff={:.4f} mode={} requestFlags={:08X} requestPending={} requestLatched={}",
+                s_capture.sequence,elapsedMs(),phase,valid,holdoff,mode,flags,flags&255,(flags>>8)&255);
+        }
+        void attackRequest(void* handler)
+        {
+            const bool trace = active() && s_capture.requests < 32;
+            if (trace) { ++s_capture.requests; logHandler("request-enter",handler); }
+            s_request(handler);
+            if (trace) { logHandler("request-return",handler); logNative("attack-request-return",sample()); }
+        }
+        bool dispatchAction(void* controls, std::int32_t action, std::uint32_t priority)
+        {
+            const bool trace = active() && s_capture.actions < 32;
+            const auto start = trace ? Clock::now() : Clock::time_point{};
+            const bool accepted = s_dispatch(controls,action,priority);
+            if (trace) {
+                ++s_capture.actions;
+                ROCK_LOG_INFO(Input, "EQUIP-READY action seq={} ms={:.2f} action={} priority={} accepted={} dispatchMs={:.3f}",
+                    s_capture.sequence,elapsedMs(),action,priority,accepted,
+                    std::chrono::duration<double,std::milli>(Clock::now()-start).count());
+                logNative("action-return",sample());
+            }
+            return accepted;
+        }
+    }
+
+    void install() noexcept
+    {
+        if (!logger::isDebugEnabled() || s_request || !REL::Module::IsVR() ||
+            REL::Module::get().version()!=F4SE::RUNTIME_VR_1_2_72) return;
+        constexpr std::array<std::uint8_t,14> prefix{0x40,0x53,0x48,0x83,0xEC,0x40,0x0F,0x29,0x74,0x24,0x30,0x0F,0x57,0xF6};
+        void* original = nullptr;
+        if (!entry_trampoline_hook::install("Trigger equip native attack request observation",0xFC7BA0,prefix.data(),prefix.size(),reinterpret_cast<void*>(&attackRequest),original)) return;
+        s_request = reinterpret_cast<AttackRequest>(original);
+        constexpr std::array<std::uint8_t,5> expected{0xE8,0xF7,0x8B,0xFF,0xFF};
+        std::array<std::uint8_t,5> actual{};
+        const auto call = REL::Offset(0xFC7BE4).address();
+        if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(call),actual.data(),actual.size()) || actual!=expected || F4SE::GetTrampoline().free_size()<14) {
+            ROCK_LOG_WARN(Init,"Trigger equip action-result observation unavailable; request observation retained"); return;
+        }
+        s_dispatch = reinterpret_cast<DispatchAction>(REL::Offset(0xFC07E0).address());
+        try {
+            (void)F4SE::GetTrampoline().write_call<5>(call,&dispatchAction);
+            FlushInstructionCache(GetCurrentProcess(),reinterpret_cast<const void*>(call),5);
+            ROCK_LOG_INFO(Init,"Trigger equip native request and action-result observation installed; no attack behavior changed");
+        } catch (...) {
+            REL::safe_write(call,expected.data(),expected.size());
+            FlushInstructionCache(GetCurrentProcess(),reinterpret_cast<const void*>(call),5);
+            ROCK_LOG_WARN(Init,"Trigger equip action-result observation failed; native action call retained");
         }
     }
 
@@ -145,7 +211,7 @@ namespace rock::trigger_equip_readiness_trace
         s_capture.previousVisual = bits;
         s_capture.lastFrame = now;
     }
-    void input(const RE::InputEvent* event, bool rockBlocked, bool nativeCalled, bool nativeAccepted) noexcept
+    void input(const RE::InputEvent* event, bool rockBlocked, bool nativeCalled, bool nativeAccepted, const void* handler) noexcept
     {
         if (!active() || !event || s_capture.inputs >= 32) return;
         const auto* button = event->As<RE::ButtonEvent>();
@@ -159,6 +225,7 @@ namespace rock::trigger_equip_readiness_trace
         ROCK_LOG_INFO(Input, "EQUIP-READY input seq={} ms={:.2f} pressed={} rockBlocked={} nativeCalled={} nativeAccepted={}",
             s_capture.sequence, elapsedMs(), button->QJustPressed(), rockBlocked, nativeCalled, nativeAccepted);
         logNative("input", sample());
+        if (handler) logHandler("input-gate",handler);
     }
     void stop(const char* reason) noexcept
     {

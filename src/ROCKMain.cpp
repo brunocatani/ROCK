@@ -26,6 +26,7 @@
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/native/HeldWeaponInstantTransition.h"
+#include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "physics-interaction/native/NativeCharacterProxySafety.h"
 #include "physics-interaction/native/NativeCollisionFilterSafety.h"
 #include "physics-interaction/native/NativeMemory.h"
@@ -1187,8 +1188,8 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     }
     s_messaging->RegisterListener(onF4SEMessage);
 
-    logger::info("ROCK: Allocate trampoline (2190 bytes)...");
-    F4SE::AllocTrampoline(2190);
+    logger::info("ROCK: Allocate trampoline (2204 bytes)...");
+    F4SE::AllocTrampoline(2204);
     (void)rock::bipod_frozen_retirement::install();
 
     if (!rock::native_impact_audio::install()) {
@@ -1231,6 +1232,7 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     }
 
     logger::info("ROCK: Install scoped weapon transition animation acceleration...");
+    rock::trigger_equip_readiness_trace::install();
     if (!rock::weapon_transition_animation_acceleration::install()) {
         logger::warn("ROCK: Weapon draw/sheath animation acceleration unavailable; native timing remains unchanged.");
     }
