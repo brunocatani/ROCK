@@ -1,6 +1,7 @@
 #pragma once
 #include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
 #include "physics-interaction/weapon/WeaponGripTransfer.h"
+#include "physics-interaction/weapon/GunstockDebug.h"
 
 #include <atomic>
 #include <array>
@@ -856,6 +857,12 @@ namespace rock
             RE::NiTransform& outLeftHandInWeapon) const;
 
         bool getDebugAuthoritySnapshot(TwoHandedGripDebugSnapshot& outSnapshot) const;
+        const gunstock_debug::Sample& gunstockDebugSample() const { return _gunstockSample; }
+        const gunstock_debug::Sample& gunstockGrabSample() const { return _gunstockGrabSample; }
+        const gunstock_debug::Recorder* gunstockRecorder() const { return _gunstockRecorder.get(); }
+        void beginGunstockDebug(RE::NiNode* weaponNode, float dt, std::uint64_t generation, std::uint64_t ownership, std::uint32_t form);
+        void finishGunstockDebug(RE::NiNode* weaponNode);
+        void publishGunstockRenderDebug(RE::NiNode* weaponNode);
 
         bool getAuthoredSupportGripDebugSnapshot(
             bool isLeft,
@@ -1027,6 +1034,10 @@ namespace rock
         static bool tryCaptureRootFlattenedPalmWorld(bool isLeft, RE::NiPoint3& outPalmWorld, RE::NiTransform& outHandWorld);
 
     private:
+        gunstock_debug::Sample _gunstockSample{}, _gunstockGrabSample{};
+        std::unique_ptr<gunstock_debug::Recorder> _gunstockRecorder;
+        std::uint64_t _gunstockMark{}, _gunstockLastGrip{};
+        bool _gunstockWasSupporting{};
         struct FingerPoseSolveScratch;
 
         static bool FRIK_CALL controlWeaponHandRecoil(

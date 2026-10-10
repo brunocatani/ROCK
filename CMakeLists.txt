@@ -643,6 +643,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKWeaponAimBasisTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKWeaponAimBasisTests)
 
+  add_executable(ROCKGunstockDebugTests
+    "${ROOT_DIR}/tests/GunstockDebugTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/weapon/GunstockDebug.cpp")
+  target_compile_features(ROCKGunstockDebugTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKGunstockDebugTests PRIVATE ${SOURCE_DIR})
+  add_test(NAME ROCKGunstockDebugTests COMMAND ROCKGunstockDebugTests "${BUILD_DIR}/gunstock-test-output")
+
   add_executable(ROCKFrikPresentedHandTests "${ROOT_DIR}/tests/FrikPresentedHandTests.cpp")
   target_compile_features(ROCKFrikPresentedHandTests PRIVATE cxx_std_23)
   target_include_directories(ROCKFrikPresentedHandTests PRIVATE ${SOURCE_DIR})
@@ -693,6 +700,7 @@ if(BUILD_ROCK_TESTS)
     ROCKTrackedHandIsolationPolicyTests
     ROCKRenderedBoneTransportPolicyTests
     ROCKWeaponAimBasisTests
+    ROCKGunstockDebugTests
     ROCKFrikPresentedHandTests
   )
   # Every policy executable uses the same CommonLib-heavy precompiled header and

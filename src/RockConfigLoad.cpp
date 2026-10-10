@@ -745,6 +745,7 @@ namespace rock
             ini.GetBoolValue(SECTION, "bDebugDrawAuthoredGripActivationZones", rockDebugDrawAuthoredGripActivationZones);
         rockDebugDrawWeaponAuthority =
             ini.GetBoolValue(SECTION, "bDebugDrawWeaponAuthority", rockDebugDrawWeaponAuthority);
+        rockDebugDrawGunstock = ini.GetBoolValue(SECTION, "bDebugDrawGunstock", rockDebugDrawGunstock);
         rockDebugDrawLooseWeaponGripZones =
             ini.GetBoolValue(SECTION, "bDebugDrawLooseWeaponGripZones", rockDebugDrawLooseWeaponGripZones);
         rockDebugDrawDynamicWeaponColliders = ini.GetBoolValue(SECTION, "bDebugDrawDynamicWeaponColliders", rockDebugDrawDynamicWeaponColliders);

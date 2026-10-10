@@ -7,6 +7,11 @@ namespace rock
     TwoHandedGrip::TwoHandedGrip() :
         _fingerPoseSolveScratch(std::make_unique<FingerPoseSolveScratch>())
     {
+        try {
+            _gunstockRecorder = std::make_unique<gunstock_debug::Recorder>("F:/fo4dev/misc/rock-gunstock-captures");
+        } catch (const std::exception& error) {
+            ROCK_LOG_ERROR(Weapon, "Gunstock diagnostic writer unavailable: {}", error.what());
+        }
         _recoil.controllerRegistered =
             frik_visual_authority::registerWeaponHandRecoilController(
                 WEAPON_RECOIL_CONTROLLER_TAG,
@@ -119,10 +124,13 @@ namespace rock
         const EquippedWeaponHandlingSettings& handlingSettings)
     {
         performance_profiler::ScopedTimer gripStageTimer(performance_profiler::Scope::EquippedGripController);
+        beginGunstockDebug(weaponNode, dt, currentWeaponGenerationKey, currentEquippedWeaponOwnershipKey,
+            weaponCollision.getCurrentObservedEquippedWeaponFormID());
         const EquippedWeaponGripOccupancy occupancyBefore =
             getGripOccupancy();
         std::array<authored_weapon_grip_activation_policy::IndicatorInput, 2> authoredIndicatorInputs{};
-        const auto finishUpdate = [this, &occupancyBefore, &authoredIndicatorInputs]() {
+        const auto finishUpdate = [this, weaponNode, &occupancyBefore, &authoredIndicatorInputs]() {
+            finishGunstockDebug(weaponNode);
             const EquippedWeaponGripOccupancy occupancyAfter = getGripOccupancy();
             const auto& markerHand = _firing.reattachIndicatorFrame.handIsLeft ?
                 occupancyAfter.left : occupancyAfter.right;
