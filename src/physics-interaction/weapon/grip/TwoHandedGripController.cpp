@@ -42,6 +42,9 @@ namespace rock
 
     bool TwoHandedGrip::tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const
     {
+        if (frik_hand_world_authority::weaponFilteringActive()) {
+            return frik_hand_world_authority::tryGetWeaponHandWorld(isLeft, outTransform);
+        }
         const ScopeSafeHandFrameState& state = _scope.safeHandFrames[isLeft ? 0u : 1u];
         if (!state.currentHandWorldValid) {
             outTransform = {};

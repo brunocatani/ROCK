@@ -27,6 +27,15 @@ namespace
         namespace fs = std::filesystem;
         fs::create_directories(directory);
         ConfigurationStore store(directory, compiled);
+        require(find(store, "iWeaponFilteringPreset").group == Group::Consumer,
+            "weapon filtering must be a regular ROCK.ini setting");
+        CSimpleIniA filterConfig;
+        filterConfig.SetLongValue("ImmersiveWeapons", "iWeaponFilteringPreset", 3);
+        require(rock::RockConfig::parseValues(filterConfig).rockWeaponFilteringPreset == 3,
+            "weapon filtering preset was not loaded");
+        filterConfig.SetLongValue("ImmersiveWeapons", "iWeaponFilteringPreset", 999);
+        require(rock::RockConfig::parseValues(filterConfig).rockWeaponFilteringPreset == 0,
+            "invalid weapon filtering preset must select Off");
         const auto write = [&](Group group, const std::string& text) {
             std::ofstream file(store.path(group), std::ios::binary | std::ios::trunc);
             file << text;

@@ -2013,6 +2013,14 @@ namespace rock
         const auto* effectiveWeaponData = equippedInstance ?
             static_cast<const RE::TESObjectWEAP::InstanceData*>(equippedInstance) :
             equippedWeapon ? &equippedWeapon->weaponData : nullptr;
+        frik_hand_world_authority::prepareWeaponInputs(weaponOwnershipKey, weaponGenerationKey,
+            effectiveWeaponData && effectiveWeaponData->type.get() == RE::WEAPON_TYPE::kGun &&
+            !(nativeAuthorityFlags & authored_weapon_grip_capture_policy::kWeapon));
+        if (frik_hand_world_authority::weaponFilteringActive()) {
+            // Authored grip alignment precedes the ordinary interaction pass.
+            // Resolve this frame's isolated input before its first filter read.
+            refreshHandBoneCache();
+        }
         _equipped.authoredPrimaryFiringGrip.update(AuthoredPrimaryFiringGripFrameInput{
             .weaponNode = weaponNode,
             .weapon = equippedWeapon,

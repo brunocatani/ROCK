@@ -84,6 +84,13 @@ namespace rock::frik_hand_world_authority
     // This frame's controller driver (FRIK's dampened weapon offset node).
     [[nodiscard]] bool tryGetInputDriverWorld(bool isLeft, RE::NiTransform& outWorld);
 
+    // Private equipped-firearm inputs; never replace the published tracked inputs.
+    void prepareWeaponInputs(std::uint64_t ownership, std::uint64_t generation, bool enabled);
+    [[nodiscard]] bool weaponFilteringActive();
+    [[nodiscard]] bool tryGetWeaponHandWorld(bool isLeft, RE::NiTransform& outWorld);
+    [[nodiscard]] bool tryGetWeaponDriverWorld(bool isLeft, RE::NiTransform& outWorld);
+    [[nodiscard]] bool tryGetWeaponWandWorld(bool isLeft, RE::NiTransform& outWorld);
+
     /*
      * kScopeEnter / kScopeExit: the native first-person arm update rebuilds
      * its tree on the scope edge, so the controller-hand relation must not be

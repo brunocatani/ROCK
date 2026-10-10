@@ -382,6 +382,12 @@ namespace rock
         rockMeleeGripPitchDegrees = readClampedFloat(
             ini, IMMERSIVE_WEAPONS_SECTION, "fMeleeGripPitchDegrees",
             rockMeleeGripPitchDegrees, 0.0f, -180.0f, 180.0f);
+        rockWeaponFilteringPreset = static_cast<int>(ini.GetLongValue(
+            IMMERSIVE_WEAPONS_SECTION, "iWeaponFilteringPreset", rockWeaponFilteringPreset));
+        if (rockWeaponFilteringPreset < 0 || rockWeaponFilteringPreset > 4) {
+            ROCK_LOG_WARN(Config, "Invalid iWeaponFilteringPreset={} -- using Off", rockWeaponFilteringPreset);
+            rockWeaponFilteringPreset = 0;
+        }
         rockFiringGripReattachRadiusGameUnits = readClampedFloat(
             ini,
             IMMERSIVE_WEAPONS_SECTION,

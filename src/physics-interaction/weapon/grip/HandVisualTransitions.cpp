@@ -45,6 +45,19 @@ namespace rock
             return;
         }
 
+        if (frik_hand_world_authority::weaponFilteringActive()) {
+            // Below grip/recoil authority: collision and recoil may replace
+            // this base later in the same frame, including with collision off.
+            if (!frik_visual_authority::publishHandWorld("ROCK_WeaponFiltering",
+                    handFromBool(false), physicalRightHandWorld, GRIP_HAND_POSE_PRIORITY - 1)) return;
+            _visuals.weaponFilteringHandAuthorityLive = true;
+            if (!applyWeaponVisualAuthority(weaponNode, requestedWeaponWorld, currentWeaponGenerationKey, false)) {
+                if (frik_visual_authority::clearHandWorld("ROCK_WeaponFiltering", handFromBool(false)))
+                    _visuals.weaponFilteringHandAuthorityLive = false;
+                return;
+            }
+        }
+
         // This source is identical whether the last collision residual was
         // zero, sub-threshold, or blocked by a wall. Later managed grip/return
         // publications may replace it as part of their existing ownership.
@@ -897,6 +910,11 @@ namespace rock
 
     void TwoHandedGrip::beginWeaponCollisionPresentationFrame()
     {
+        if (_visuals.weaponFilteringHandAuthorityLive) {
+            if (frik_visual_authority::clearHandWorld("ROCK_WeaponFiltering", handFromBool(false)))
+                _visuals.weaponFilteringHandAuthorityLive = false;
+            else ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Weapon filtering hand authority clear failed");
+        }
         // Scope reconstruction and canonical capture still need to know which
         // rendered roots are contaminated. This witness never selects between
         // a raw weapon-world input and the collision-free intent publisher.
@@ -998,9 +1016,9 @@ namespace rock
                     requestedHandWorld,
                     WEAPON_COLLISION_HAND_TAG,
                     WEAPON_COLLISION_HAND_PRIORITY - 1) ||
-                tryGetRootFlattenedHandBoneTransform(
-                    pulse.isLeft,
-                    requestedHandWorld);
+                (frik_hand_world_authority::weaponFilteringActive() ?
+                    frik_hand_world_authority::tryGetWeaponHandWorld(pulse.isLeft, requestedHandWorld) :
+                    tryGetRootFlattenedHandBoneTransform(pulse.isLeft, requestedHandWorld));
             pulse.targetWorld =
                 dynamic_weapon_collision_policy::reframeAttachedHand(
                     requestedWeaponWorld,

@@ -140,6 +140,11 @@ namespace rock
 
     void TwoHandedGrip::resetFrikWeaponOwnership()
     {
+        if (_visuals.weaponFilteringHandAuthorityLive) {
+            if (frik_visual_authority::clearHandWorld("ROCK_WeaponFiltering", handFromBool(false)))
+                _visuals.weaponFilteringHandAuthorityLive = false;
+            else ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Weapon filtering hand authority reset failed");
+        }
         releaseFrikWeaponNodeWriteBlock("reset");
         if (_frikWeaponNode.gripReported) {
             (void)frik_visual_authority::setOffHandGripping(

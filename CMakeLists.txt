@@ -641,6 +641,11 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKTrackedHandIsolationPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKTrackedHandIsolationPolicyTests)
 
+  add_executable(ROCKWeaponInputFilterTests "${ROOT_DIR}/tests/WeaponInputFilterTests.cpp")
+  target_compile_features(ROCKWeaponInputFilterTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWeaponInputFilterTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKWeaponInputFilterTests)
+
   add_executable(ROCKRenderedBoneTransportPolicyTests
     "${ROOT_DIR}/tests/RenderedBoneTransportPolicyTests.cpp"
   )
@@ -716,6 +721,7 @@ if(BUILD_ROCK_TESTS)
     ROCKBladePenetrationPolicyTests
     ROCKHandWorldClaimRegistryPolicyTests
     ROCKTrackedHandIsolationPolicyTests
+    ROCKWeaponInputFilterTests
     ROCKRenderedBoneTransportPolicyTests
     ROCKWeaponAimBasisTests
     ROCKGunstockModeTests

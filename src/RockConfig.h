@@ -107,6 +107,7 @@ namespace rock
         // authored-grip preference and the existing missing-pose fallback.
         bool rockGrabAnywhereOnWeapon = false;
         float rockMeleeGripPitchDegrees = 0.0f;
+        int rockWeaponFilteringPreset = 0;
         float rockFiringGripReattachRadiusGameUnits = 10.0f;
         float rockFiringGripReattachCylinderRadiusGameUnits = 3.0f;
         float rockGripZoneIndicatorDiameterGameUnits =

@@ -2200,6 +2200,7 @@ namespace rock
             // target survives only through the render interval that follows
             // post-solve.
             std::array<bool, 2> weaponCollisionHandAuthorityLive{};
+            bool weaponFilteringHandAuthorityLive = false;
             // Captured before those tags are cleared. Because ROCK runs after
             // FRIK, this identifies current root/weapon poses that already
             // include the previous render interval's collision presentation.
