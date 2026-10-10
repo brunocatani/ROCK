@@ -3230,9 +3230,9 @@ namespace rock
             arrangement == loose_weapon_authored_grab_policy::Arrangement::Separated &&
             tryResolveAuthoredFiringHandCanonicalForProbe(isLeft, firingStationHandWeaponLocal, source)) {
             grip.handWeaponLocal = firingStationHandWeaponLocal;
-            grip.gripLocal = _firing.rightCanonicalGripWeaponLocal;
-            if (isLeft) grip.gripLocal += weapon_grip_calibration::offsetInWeapon(
-                grip.handWeaponLocal, g_rockConfig.rockLeftFiringGripOffsetGameUnits, true);
+            grip.gripLocal = isLeft ?
+                computeGrabLegacyPalmPivotAWorldFromHandBasis(grip.handWeaponLocal, true) :
+                _firing.rightCanonicalGripWeaponLocal;
             grip.attachmentRoot = weaponNode;
             grip.hasHandWeaponLocal = true;
             grip.authoredSupportGrip = true;

@@ -13,6 +13,18 @@ inline Pose inverse(const Pose& p){Pose o;for(int i=0;i<3;++i)for(int j=0;j<3;++
 inline Pose reflected(Pose p,int axis){p.t[axis]=-p.t[axis];for(int i=0;i<3;++i)for(int j=0;j<3;++j)if((i==axis)!=(j==axis))p.r[i*3+j]=-p.r[i*3+j];return p;}
 inline Pose finger(Pose p){return reflected(p,2);}
 inline Pose orientation(Pose p){p.t={};p.s=1;return p;}
+// Mirror weapon-local X and hand-local Z together. Both reflections produce
+// a proper wrist rotation; mirrored finger locals then preserve every contact.
+// Controller bases belong to weapon aiming, not this authored mesh relation.
+inline Pose mirroredFiringSeat(Pose right) {
+    right.t[0] = -right.t[0];
+    for (int row = 0; row < 3; ++row) {
+        for (int column = 0; column < 3; ++column) {
+            if ((row == 0) != (column == 2)) right.r[row * 3 + column] *= -1;
+        }
+    }
+    return right;
+}
 inline Pose leftFiring(const Pose& right,const Pose& rightBoneInWand,const Pose& leftBoneInWand,V grip,V offset={},Pose trim={}){
     const auto wr=compose(rightBoneInWand,inverse(right));
     const auto wl=compose(trim,reflected(wr,0));

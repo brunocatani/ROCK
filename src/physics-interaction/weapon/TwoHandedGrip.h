@@ -1517,16 +1517,6 @@ namespace rock
             bool* outUsedAuthoredCanonical = nullptr,
             bool logDiagnostic = true) const;
 
-        static bool tryBuildMirroredLeftFiringHandWeaponLocalImpl(
-            const RE::NiTransform& canonicalRightHandWeaponLocal,
-            const RE::NiPoint3& firingGripWeaponLocal,
-            const RE::NiTransform& rightHandWorld,
-            const RE::NiTransform& leftHandWorld,
-            RE::NiTransform& outHandWeaponLocal,
-            bool applyHandlingTrim,
-            bool logDiagnostic,
-            bool applyGripCalibration = true);
-
         // Hand frame composed from the wand and the cached natural
         // bone-in-wand map (orientation only). Transient-free input for the
         // equip-takeover seat conjugation; the damped weapon-offset drivers
