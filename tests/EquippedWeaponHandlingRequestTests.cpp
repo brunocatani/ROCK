@@ -75,6 +75,10 @@ int main()
         coreWeaponHandlingBaseline,
         nullptr);
 
+    ok &= expectEqual("local yaw has no hidden correction", coreWeaponHandling.leftFiringAimYawDegrees, 1.5f);
+    const auto rawHandling = rock::makeEquippedWeaponHandlingSettings({}, nullptr);
+    ok &= expectEqual("zero yaw leaves the raw mirror", rawHandling.leftFiringAimYawDegrees, 0.0f);
+
     auto stashOnlyBaseline = coreWeaponHandlingBaseline;
     stashOnlyBaseline.ambidextrousHandoffEnabled = false;
     auto fixedOnlyBaseline = stashOnlyBaseline;

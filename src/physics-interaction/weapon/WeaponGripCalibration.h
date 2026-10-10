@@ -12,9 +12,10 @@ namespace rock::weapon_grip_calibration
         const RE::NiPoint3& handOffset, bool isLeft)
     {
         // Only mirrored left firing and right support captures use this path.
-        // User offsets are additive to the calibrated hand-local baseline.
+        // Left firing has no implicit correction; zero exposes the raw mirror.
+        // Right support retains its independent existing calibration.
         const RE::NiPoint3 calibratedOffset = isLeft ?
-            RE::NiPoint3{ handOffset.x, handOffset.y + 0.6f, handOffset.z } :
+            handOffset :
             RE::NiPoint3{ handOffset.x - 0.9f, handOffset.y, handOffset.z };
         return transformHandspaceLocalToWorld(handWeaponLocal,
             authoredHandspaceToRawHandspaceForHand(calibratedOffset, isLeft) * handWeaponLocal.scale);

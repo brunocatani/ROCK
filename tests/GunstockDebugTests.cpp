@@ -56,7 +56,7 @@ int main(int argc, char** argv)
         if(!recorder.submit(capture))return 9;
     }
     std::ifstream captureFile(holding/"0-0-10.json");nlohmann::json capture;captureFile>>capture;
-    if(capture.at("weapon")!="test.esp:000123"||capture.at("nativeFingers").size()!=15||!capture.contains("renderedLeft")||std::filesystem::exists(directory/"unused-csv"))return 10;
+    if(capture.at("leftGripBaselineY")!=0.0f||capture.at("weapon")!="test.esp:000123"||capture.at("nativeFingers").size()!=15||!capture.contains("renderedLeft")||std::filesystem::exists(directory/"unused-csv"))return 10;
     std::cout << "Accepted " << accepted << " samples; verified ordered, complete drain and invalid-pose rejection.\n";
     return 0;
 }
