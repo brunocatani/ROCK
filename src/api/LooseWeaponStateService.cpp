@@ -11,6 +11,7 @@
 #include <mutex>
 #include <cstring>
 #include <cmath>
+#include <cstdio>
 
 namespace rock::loose_weapon_state {
 namespace {
@@ -45,12 +46,13 @@ namespace {
         }
         return found;
     }
-    RE::NiAVObject* path(RE::NiAVObject* root,std::string_view name) {
+    RE::NiAVObject* path(RE::NiAVObject* root,std::string_view name,std::uint32_t weapon) {
         auto* current=root;
         // Equipped paths include the native instance wrapper beneath the
         // actor's Weapon bone. The loose tree can start at that same wrapper.
         // Consume it once instead of looking for a second nested instance.
-        if(root&&root->name.c_str())name=relativeItemPath(root->name.c_str(),name);
+        char instance[32]{};std::snprintf(instance,sizeof(instance),"Weapon  (%08X)",weapon);
+        if(root&&root->name.c_str())name=relativeItemPath(root->name.c_str(),name,instance);
         if(name.empty())return root;
         for(unsigned depth=0;!name.empty()&&depth<64;++depth) {
             const auto slash=name.find('/');current=child(current,name.substr(0,slash));
@@ -120,8 +122,8 @@ bool apply(RE::TESObjectREFR* ref,RE::NiAVObject* model) {
     auto* root=weaponRoot(model);if(!root)return false;
     std::array<RE::NiAVObject*,contract::kMaxItemParts> targets{};
     for(std::uint32_t i=0;i<found->state.count;++i) {
-        targets[i]=path(root,found->state.parts[i].path);
-        if(!targets[i]||targets[i]==model) {found->failedModel=reinterpret_cast<std::uintptr_t>(model);ROCK_LOG_WARN(Weapon,"Loose item state path unavailable ref={:08X} path={} model='{}' root='{}'",ref->GetFormID(),found->state.parts[i].path,model->name.c_str()?model->name.c_str():"",root->name.c_str()?root->name.c_str():"");return false;}
+        targets[i]=path(root,found->state.parts[i].path,key.weapon);
+        if(!targets[i]) {found->failedModel=reinterpret_cast<std::uintptr_t>(model);ROCK_LOG_WARN(Weapon,"Loose item state path unavailable ref={:08X} path={} model='{}' root='{}'",ref->GetFormID(),found->state.parts[i].path,model->name.c_str()?model->name.c_str():"",root->name.c_str()?root->name.c_str():"");return false;}
     }
     if(found->model.get()!=model) {
         found->model.reset(model);found->originalState=found->state;
@@ -132,13 +134,18 @@ bool apply(RE::TESObjectREFR* ref,RE::NiAVObject* model) {
             p.local.scale=node->local.scale;p.hidden=node->GetAppCulled()?1u:0u;
         }
     }
+    std::uint32_t applied{};
     for(std::uint32_t i=0;i<found->state.count;++i) {
         auto* node=targets[i];const auto& p=found->state.parts[i];
+        // P-Receiver may now identify the native model root itself. Its pose
+        // and visibility belong to the world reference/transition, not a part.
+        if(node==root||node==model)continue;
         std::memcpy(node->local.rotate.entry,p.local.rotate,sizeof(p.local.rotate));
         node->local.translate={p.local.translate[0],p.local.translate[1],p.local.translate[2]};node->local.scale=p.local.scale;
         equipped_weapon_visual_state::setLocallyVisible(node,p.hidden==0);
+        ++applied;
     }
-    ROCK_LOG_INFO(Weapon,"Loose item state applied before model publication ref={:08X} parts={}",ref->GetFormID(),found->state.count);
+    ROCK_LOG_INFO(Weapon,"Loose item state applied ref={:08X} parts={}/{} detached={} root='{}'",ref->GetFormID(),applied,found->state.count,model->parent==nullptr,root->name.c_str()?root->name.c_str():"");
     return true;
 }
 void restoreWithdrawn() {
@@ -148,7 +155,7 @@ void restoreWithdrawn() {
         if(ref&&ref->Get3D()==e.model.get()) {
             auto* root=weaponRoot(e.model.get());
             for(std::uint32_t i=0;root&&i<e.originalState.count;++i) {
-                const auto& p=e.originalState.parts[i];auto* node=path(root,p.path);if(!node)continue;
+                const auto& p=e.originalState.parts[i];auto* node=path(root,p.path,e.key.weapon);if(!node||node==root||node==e.model.get())continue;
                 std::memcpy(node->local.rotate.entry,p.local.rotate,sizeof(p.local.rotate));
                 node->local.translate={p.local.translate[0],p.local.translate[1],p.local.translate[2]};node->local.scale=p.local.scale;
                 equipped_weapon_visual_state::setLocallyVisible(node,p.hidden==0);

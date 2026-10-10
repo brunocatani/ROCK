@@ -10,4 +10,11 @@ int main() {
     assert(relativeItemPath("Weapon  (2400D8A5)",path)==path);
     assert(relativeItemPath("",path)==path);
     assert(relativeItemPath("WeaponMagazine","WeaponMagazine/WeaponMagazineChild1")=="WeaponMagazineChild1");
+    // Actual 20:45 No Heroics failure: the loose root already IS the receiver
+    // assembly. Do not require equipped wrappers or rewrite root placement.
+    constexpr auto receiverPath="Weapon  (2400D8A5)/P-Receiver/WeaponMagazine";
+    assert(relativeItemPath("ReceiverParentObject",receiverPath,"Weapon  (2400D8A5)")=="WeaponMagazine");
+    assert(relativeItemPath("ReceiverParentObject","Weapon  (2400D8A5)/P-Receiver","Weapon  (2400D8A5)").empty());
+    assert(relativeItemPath("ReceiverParentObject",receiverPath,"Weapon  (0D0087E8)")==receiverPath);
+    assert(relativeItemPath("ReceiverParentObject","Weapon  (2400D8A5)/P-Mag/WeaponMagazine","Weapon  (2400D8A5)")=="P-Mag/WeaponMagazine");
 }
