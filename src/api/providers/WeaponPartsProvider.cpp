@@ -1,5 +1,6 @@
 #include "SnapshotReads.h"
-#include <ROCK/WeaponPartsV1_6.h>
+#include <ROCK/WeaponPartsV1_7.h>
+#include "api/LooseWeaponStateService.h"
 #include "api/WeaponPartCollisionService.h"
 #include "WeaponPartsMarshalling.h"
 #include <ROCK/Discovery.h>
@@ -203,6 +204,15 @@ Status ROCK_CALL setCollisionSuppression(OwnerToken owner,const v1_2::CollisionS
 Status ROCK_CALL clearCollisionSuppression(OwnerToken owner) noexcept {
     return invoke(owner,kInterfaceId,2,true,[&]{return weapon_part_collision::clear(owner);});
 }
+Status ROCK_CALL setItemState(OwnerToken owner,const v1_7::ItemKey* key,const v1_7::ItemState* state) noexcept {
+    return invoke(owner,kInterfaceId,2,false,[&]{return key&&state?loose_weapon_state::set(owner,*key,*state):Status::InvalidArgument;});
+}
+Status ROCK_CALL moveItemState(OwnerToken owner,const v1_7::ItemKey* before,const v1_7::ItemKey* after) noexcept {
+    return invoke(owner,kInterfaceId,2,false,[&]{return before&&after?loose_weapon_state::move(owner,*before,*after):Status::InvalidArgument;});
+}
+Status ROCK_CALL clearItemStates(OwnerToken owner) noexcept {
+    return invoke(owner,kInterfaceId,2,false,[&]{return loose_weapon_state::clear(owner);});
+}
 }
 const ApiV1& table() noexcept {
     static const ApiV1 value{
@@ -242,6 +252,9 @@ const v1_5::Api& tableV1_5() noexcept {
 
 const v1_6::Api& tableV1_6() noexcept {
     static const v1_6::Api value{tableV1_5(),&setAnchoredOperatingGrabPoints};return value;
+}
+const v1_7::Api& tableV1_7() noexcept {
+    static const v1_7::Api value{tableV1_6(),&setItemState,&moveItemState,&clearItemStates};return value;
 }
 
 }

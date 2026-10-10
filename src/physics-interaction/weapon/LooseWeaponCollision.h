@@ -24,6 +24,7 @@ namespace rock {
         enum class NativeRest { Watching, Resting, Unavailable, CapacityFull };
         NativeRest watchNative(RE::TESObjectREFR*,const PhysicsFrameContext&,PhysicsCallbackQuiescenceGate&);
         bool takeNativeRestCompletion(std::uint32_t reference) noexcept;
+        bool presentationReady(std::uint32_t reference) const;
         void clear(RE::hknpWorld* liveWorld);
         bool prepareRelease(RE::TESObjectREFR* reference, RE::hknpWorld* liveWorld,
             PhysicsCallbackQuiescenceGate& gate, bool physicalDrop);
@@ -68,6 +69,10 @@ namespace rock {
         };
         void publishWatchMask() noexcept;
         std::array<Slot, loose_weapon_collision_policy::kMaxWeapons> _slots;
+        // Settled stateful weapons retain their exact generated shapes outside
+        // the active preparation/contact pool. Released on pickup, model/world
+        // replacement or consumer withdrawal, never evicted onto default shapes.
+        std::array<std::unique_ptr<State>,256> _parked;
         std::atomic<std::uint32_t> _watchMask{};
         std::size_t _nextPreparationSlot{};
     };

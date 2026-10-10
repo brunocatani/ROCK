@@ -976,6 +976,10 @@ namespace rock
                 return;
             }
         }
+        if(!_looseWeaponCollision.presentationReady(handoff.droppedFormId)) {
+            handoff.waitReason="saved-item-collision-preparation";
+            return;
+        }
         ROCK_LOG_INFO(Weapon,
             "Equipped weapon native drop placement ready: ref={:08X} bodies={} motions={} elapsed={:.3f}s",
             handoff.droppedFormId, acceptedRecordCount, uniqueMotionRecordCount, handoff.elapsedSeconds);

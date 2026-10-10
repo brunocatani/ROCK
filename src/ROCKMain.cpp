@@ -1,5 +1,6 @@
 
 #include <array>
+#include "api/LooseWeaponStateService.h"
 #include "physics-interaction/weapon/HoldingGripRecords.h"
 #include <atomic>
 #include <cstdint>
@@ -1190,6 +1191,9 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
 
     logger::info("ROCK: Allocate trampoline (2204 bytes)...");
     F4SE::AllocTrampoline(2204);
+    if (!rock::loose_weapon_state::install()) {
+        spdlog::error("Loose weapon state model installation unavailable");
+    }
     (void)rock::bipod_frozen_retirement::install();
 
     if (!rock::native_impact_audio::install()) {

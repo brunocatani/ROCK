@@ -1,4 +1,5 @@
 #include "ProviderFrameThreadOwner.h"
+#include "LooseWeaponStateService.h"
 #include "providers/WeaponPartsMarshalling.h"
 #include "api/InterfaceNegotiation.h"
 #include "ProviderRuntimeServices.h"
@@ -1570,6 +1571,7 @@ namespace rock::provider::runtime
 
     void clearOwnerStateAfterCallbackFault(const std::uint64_t ownerToken)
     {
+        loose_weapon_state::clear(ownerToken);
         physical_reload_input::clearOwner(ownerToken);
         support_trigger_input::clearOwner(ownerToken);
         {

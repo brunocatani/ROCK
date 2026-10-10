@@ -106,7 +106,7 @@ int main() {
         assert(discovery::query(oldOnly,InterfaceId::Touch,1,1,sizeof(touch::v1_1::Api),&newTouch)==Status::UnsupportedMinor);
     }
     verify(weapon::tableV1_1(),weapon::kSupportedPermissions);
-    verify(weaponparts::tableV1_6(),weaponparts::kSupportedPermissions);
+    verify(weaponparts::tableV1_7(),weaponparts::kSupportedPermissions);
     {
         const InterfaceDescriptorV1 *oldParts{},*newParts{};
         for(const auto minor:{0u,1u}) {
@@ -144,7 +144,18 @@ int main() {
         assert(anchoredPoints->v1_5.setPinkyOperatingGrabPoints(79,&point,1)==Status::Ok);
         const std::array previousPinky{discovery::RegisteredInterface{{40,InterfaceId::WeaponParts,1,5,sizeof(*pinkyPoints),1,0,0,pinkyPoints},3}};
         assert(discovery::query(previousPinky,InterfaceId::WeaponParts,1,6,sizeof(*anchoredPoints),&result)==Status::UnsupportedMinor);
-        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,1,7,sizeof(*anchoredPoints),&result)==Status::UnsupportedMinor);
+        const InterfaceDescriptorV1* itemDescriptor{};
+        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,1,7,sizeof(weaponparts::v1_7::Api),&itemDescriptor)==Status::Ok&&itemDescriptor==anchored);
+        const auto* items=static_cast<const weaponparts::v1_7::Api*>(itemDescriptor->table);
+        weaponparts::v1_7::ItemKey itemKey{123,0x14,7},worldKey{123,0xff001000,0};
+        weaponparts::v1_7::ItemState itemState;
+        assert(items->setItemState(80,&itemKey,&itemState)==Status::Ok);
+        assert(items->moveItemState(80,&itemKey,&worldKey)==Status::Ok);
+        assert(anchoredPoints->setAnchoredOperatingGrabPoints(79,&point,1)==Status::Ok);
+        assert(items->v1_6.v1_5.v1_4.v1_3.v1_2.v1.clearWeaponPartTargetsV1(77)==Status::Ok);
+        const std::array previousItems{discovery::RegisteredInterface{{40,InterfaceId::WeaponParts,1,6,sizeof(*anchoredPoints),1,0,0,anchoredPoints},3}};
+        assert(discovery::query(previousItems,InterfaceId::WeaponParts,1,7,sizeof(*items),&result)==Status::UnsupportedMinor);
+        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,1,8,sizeof(*items),&result)==Status::UnsupportedMinor);
         assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,2,0,sizeof(*points),&result)==Status::UnsupportedMajor);
         const std::array previous{discovery::RegisteredInterface{{40,InterfaceId::WeaponParts,1,1,sizeof(weaponparts::ApiV1),1,0,0,&api->v1},3}};
         assert(discovery::query(previous,InterfaceId::WeaponParts,1,2,sizeof(*api),&result)==Status::UnsupportedMinor);

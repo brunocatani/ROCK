@@ -65,6 +65,9 @@ const v1_3::Api& tableV1_3() noexcept {static const v1_3::Api value{tableV1_2(),
 const v1_4::Api& tableV1_4() noexcept {static const v1_4::Api value{tableV1_3(),&points};return value;}
 const v1_5::Api& tableV1_5() noexcept {static const v1_5::Api value{tableV1_4(),&points};return value;}
 const v1_6::Api& tableV1_6() noexcept {static const v1_6::Api value{tableV1_5(),&points};return value;}
+Status ROCK_CALL itemState(OwnerToken owner,const v1_7::ItemKey* key,const v1_7::ItemState* state) noexcept {return owner==80&&key&&state?Status::Ok:Status::InvalidArgument;}
+Status ROCK_CALL itemMove(OwnerToken owner,const v1_7::ItemKey* before,const v1_7::ItemKey* after) noexcept {return owner==80&&before&&after?Status::Ok:Status::InvalidArgument;}
+const v1_7::Api& tableV1_7() noexcept {static const v1_7::Api value{tableV1_6(),&itemState,&itemMove,&oldClear};return value;}
 }
 namespace rock::api::animation { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
 namespace rock::api::input {

@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/LooseWeaponCollision.h"
+#include "api/LooseWeaponStateService.h"
 #include "physics-interaction/weapon/LooseWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/WeaponRestSupport.h"
 #include "physics-interaction/weapon/WeaponCollisionInternal.h"
@@ -139,12 +140,13 @@ struct LooseWeaponCollision::State
             if (!step.finished) { phase="Native pickup scan exceeded budget"; failed=true; return false; }
             const auto set = object_physics_body_set::buildObjectPhysicsBodySetFromScanCache(frame.bhkWorld, world, ref.get(), scanOptions, scanCache);
             const auto& d = set.diagnostics;
+            if(set.records.empty()||d.unresolvedRefBodySkips) {phase="Waiting for native model physics publication";return false;}
             if (set.records.empty() || set.records.size()>loose_weapon_collision_policy::kMaxNativeBodies || d.scanFailures || d.invalidPhysicsSystems || d.foreignRefBodySkips ||
                 d.unresolvedRefBodySkips || d.depthLimitSkips || d.staleCacheEntrySkips) { failed = true; return false; }
             bodies.reserve(set.records.size());
             for (const auto& record : set.records) {
                 const auto live = havok_runtime::snapshotBody(world, RE::hknpBodyId{record.bodyId});
-                if ((!record.accepted && record.motionType != Motion::Static && !(nativeOnly && record.motionType==Motion::Keyframed)) || !live.valid || !live.body || !live.body->shape ||
+                if ((!record.accepted && record.motionType != Motion::Static && !((nativeOnly||loose_weapon_state::owns(ref->formID)) && record.motionType==Motion::Keyframed)) || !live.valid || !live.body || !live.body->shape ||
                     !live.ownerNode || !live.collisionObject || record.resolvedRef != ref.get()) { failed=true; return false; }
                 RE::NiTransform bodyWorld;
                 // A multipart weapon can have many differently oriented BODY
@@ -164,6 +166,12 @@ struct LooseWeaponCollision::State
             ROCK_LOG_INFO(Weapon,"Loose collision native scan ref={:08X} nodes={} collisionObjects={} bodies={} complete=true",
                 ref->formID,d.visitedNodes,d.collisionObjects,bodies.size());
             scanned=true;
+            if(loose_weapon_state::owns(ref->formID)) {
+                frozen=std::all_of(bodies.begin(),bodies.end(),[&](const auto& b){
+                    const auto live=havok_runtime::snapshotBody(world,RE::hknpBodyId{b.id});
+                    return live.valid&&live.body&&physics_body_classifier::motionTypeFromBodyFlags(live.body->flags)!=Motion::Dynamic;
+                });
+            }
         }
         return true;
     }
@@ -195,6 +203,13 @@ struct LooseWeaponCollision::State
     }
     bool prepare(const PhysicsFrameContext&)
     {
+        // The transition's root cull is not an absent part. Child culls still
+        // exclude missing magazines and payload during geometry extraction.
+        struct RootVisibility {
+            RE::NiAVObject* root;bool hidden,changed;
+            RootVisibility(RE::NiAVObject* r,bool stateful):root(r),hidden(r->GetAppCulled()),changed(stateful&&hidden){if(changed)root->SetAppCulled(false);}
+            ~RootVisibility(){if(changed)root->SetAppCulled(hidden);}
+        } visibility(root.get(),loose_weapon_state::owns(ref->formID));
         if (!builder) {
             builder=std::make_unique<WeaponCollision>();
             builder->_sources.preparation = std::make_unique<WeaponCollision::PendingSourcePreparation>();
@@ -263,6 +278,7 @@ struct LooseWeaponCollision::State
     bool install()
     {
         phase=nativeOnly ? "Watching native dropped bodies" : "Installing generated shapes";
+        if(!nativeOnly&&loose_weapon_state::owns(ref->formID)&&!suppressNative())return false;
         WriteScope lock(world);
         for (const auto& body:bodies) if (!current(body)) return false;
         if (nativeOnly) {
@@ -367,6 +383,10 @@ void LooseWeaponCollision::clear(RE::hknpWorld* liveWorld)
 {
     _watchMask.store(0,std::memory_order_release);
     for (auto& slot:_slots) { slot.clear(liveWorld); slot._declined=slot._rested=0; }
+    for(auto& state:_parked)if(state) {
+        if(liveWorld&&state->world==liveWorld&&!state->restore())continue;
+        state.reset();
+    }
     _nextPreparationSlot=0;
 }
 
@@ -375,6 +395,25 @@ void LooseWeaponCollision::update(const PhysicsFrameContext& frame, RE::TESObjec
 {
     if (!frame.worldReady || !frame.hknpWorld || frame.menuBlocked) return;
     performance_profiler::ScopedTimer timer(performance_profiler::Scope::LooseWeaponCollision);
+    loose_weapon_state::restoreWithdrawn();
+    // Retained parked shapes follow their live reference/model identity only.
+    // Regrab reuses the same prepared body set rather than briefly restoring
+    // an absent magazine's original collision.
+    for(auto& parked:_parked)if(parked) {
+        const bool current=parked->world==frame.hknpWorld&&parked->ref->Get3D()==parked->root.get()&&
+            !parked->ref->IsDeleted()&&!parked->ref->IsDisabled()&&loose_weapon_state::owns(parked->ref->formID);
+        if(!current) {
+            auto mutation=gate.pauseForMutation();
+            if(parked->world!=frame.hknpWorld||parked->restore())parked.reset();
+        }else if(parked->ref.get()==right||parked->ref.get()==left) {
+            auto slot=std::find_if(_slots.begin(),_slots.end(),[](const auto& s){return !s._state;});
+            if(slot!=_slots.end()) {
+                auto mutation=gate.pauseForMutation();
+                parked->parked=parked->frozen=false;parked->parking={};parked->parkingStage=0;
+                slot->_state=std::move(parked);slot->publishBodies();
+            }
+        }
+    }
     auto preparing=_slots.size();
     for (std::size_t step=0;step<_slots.size();++step) {
         const auto i=(_nextPreparationSlot+step)%_slots.size();
@@ -388,12 +427,21 @@ void LooseWeaponCollision::update(const PhysicsFrameContext& frame, RE::TESObjec
         try {
             // A quick-drop native watcher hands back to fresh shape preparation
             // on regrab. Never keep a second owner for the same reference.
-            if (slot._state && (slot._state->frozen || (admitWeapons && slot._state->nativeOnly)) &&
+            if (slot._state && !loose_weapon_state::owns(slot._state->ref->formID) && (slot._state->frozen || (admitWeapons && slot._state->nativeOnly)) &&
                 (slot._state->ref.get()==right || slot._state->ref.get()==left)) {
                 auto mutation=gate.pauseForMutation(); slot.clear(frame.hknpWorld);
             }
             slot.update(frame,right,left,gate,i==preparing);
             if (slot._state && slot._state->parked) {
+                if(loose_weapon_state::owns(slot._state->ref->formID)&&!slot._state->nativeOnly) {
+                    auto free=std::find_if(_parked.begin(),_parked.end(),[](const auto& s){return !s;});
+                    if(free!=_parked.end()) {
+                        slot._rested=slot._state->ref->formID;
+                        slot._world.store(nullptr);slot._count.store(0);slot._generation.fetch_add(1);
+                        *free=std::move(slot._state);
+                    }
+                    continue;
+                }
                 if(!admitWeapons)slot._rested=slot._state->ref->formID;
                 auto mutation=gate.pauseForMutation(); slot.clear(frame.hknpWorld);
             }
@@ -404,11 +452,15 @@ void LooseWeaponCollision::update(const PhysicsFrameContext& frame, RE::TESObjec
             ROCK_LOG_SAMPLE_WARN(Weapon,2000,"Loose weapon collision update failed; native restoration requested");
         }
     }
-    if(admitWeapons)for (auto* ref : {right,left}) {
+    std::array<std::uint32_t,256> requested{};
+    const auto requestCount=admitWeapons?loose_weapon_state::references(requested):0;
+    for(std::size_t candidate=0;admitWeapons&&candidate<requestCount+2;++candidate) {
+        auto* ref=candidate==0?right:candidate==1?left:RE::TESForm::GetFormByID<RE::TESObjectREFR>(requested[candidate-2]);
         auto* form=ref ? ref->GetObjectReference() : nullptr;
         auto* weapon=form ? form->As<RE::TESObjectWEAP>() : nullptr;
         if (!weapon || !loose_weapon_collision_policy::eligibleType(weapon->weaponData.type.get()) ||
             ref->IsDeleted() || ref->IsDisabled() || !ref->Get3D()) continue;
+        if(std::any_of(_parked.begin(),_parked.end(),[&](const auto& s){return s&&s->ref.get()==ref;}))continue;
         if (std::any_of(_slots.begin(),_slots.end(),[&](const Slot& slot) {
             return (slot._state && slot._state->ref.get()==ref) || slot._declined==ref->formID;
         })) continue;
@@ -423,7 +475,10 @@ void LooseWeaponCollision::update(const PhysicsFrameContext& frame, RE::TESObjec
         }
         auto free=_slots.begin()+static_cast<std::size_t>(found-admissions.begin());
         auto mutation=gate.pauseForMutation();
-        try { free->admit(ref,frame); }
+        try {
+            if(loose_weapon_state::owns(ref->formID)&&!loose_weapon_state::apply(ref,ref->Get3D()))continue;
+            free->admit(ref,frame);
+        }
         catch (...) {
             free->_declined=ref->formID; free->clear(frame.hknpWorld);
             ROCK_LOG_SAMPLE_WARN(Weapon,2000,"Loose collision preparation failed ref={:08X}; native restoration requested",ref->formID);
@@ -437,12 +492,22 @@ bool LooseWeaponCollision::takeNativeRestCompletion(std::uint32_t reference) noe
     for(auto& slot:_slots)if(reference&&!slot._state&&slot._rested==reference){slot._rested=0;return true;}
     return false;
 }
+bool LooseWeaponCollision::presentationReady(std::uint32_t reference) const {
+    if(!loose_weapon_state::owns(reference))return true;
+    // A reported preparation failure must never strand a native drop/grab.
+    // Slot::clear has restored its original physics before recording decline.
+    for(const auto& slot:_slots)if(slot._declined==reference)return true;
+    for(const auto& slot:_slots)if(slot._state&&slot._state->ref->formID==reference)
+        return slot._state->installed&&!slot._state->failed;
+    return std::any_of(_parked.begin(),_parked.end(),[&](const auto& state){return state&&state->ref->formID==reference;});
+}
 
 LooseWeaponCollision::NativeRest LooseWeaponCollision::watchNative(RE::TESObjectREFR* ref,
     const PhysicsFrameContext& frame,PhysicsCallbackQuiescenceGate& gate)
 {
     if(!ref || !frame.worldReady || frame.menuBlocked || !frame.hknpWorld || !ref->Get3D() ||
        ref->IsDeleted() || ref->IsDisabled() || !native_object_placement::available())return NativeRest::Unavailable;
+    if(std::any_of(_parked.begin(),_parked.end(),[&](const auto& state){return state&&state->ref.get()==ref;}))return NativeRest::Resting;
     for(auto& slot:_slots) {
         if(slot._state && slot._state->ref.get()==ref)return NativeRest::Watching;
         if(slot._rested==ref->formID){slot._rested=0;return NativeRest::Resting;}
@@ -451,7 +516,7 @@ LooseWeaponCollision::NativeRest LooseWeaponCollision::watchNative(RE::TESObject
     if(free==_slots.end())return NativeRest::CapacityFull;
     auto mutation=gate.pauseForMutation();
     free->_rested=0;free->_state=std::make_unique<State>(ref,frame.hknpWorld);
-    auto& state=*free->_state;state.nativeOnly=true;
+    auto& state=*free->_state;state.nativeOnly=!loose_weapon_state::owns(ref->formID);
     if(state.failed || !state.captureBodies(frame)){free->clear(frame.hknpWorld);return NativeRest::Unavailable;}
     bool dynamic=false,valid=true;
     {
@@ -465,8 +530,8 @@ LooseWeaponCollision::NativeRest LooseWeaponCollision::watchNative(RE::TESObject
     if(!valid){free->clear(frame.hknpWorld);return NativeRest::Unavailable;}
     // A native saved keyframed object needs neither reactivation nor another
     // contact watcher. This is also the save/load restoration path.
-    if(!dynamic){free->clear(frame.hknpWorld);return NativeRest::Resting;}
-    if(!state.install()){free->clear(frame.hknpWorld);return NativeRest::Unavailable;}
+    if(!dynamic&&state.nativeOnly){free->clear(frame.hknpWorld);return NativeRest::Resting;}
+    if(state.nativeOnly&&!state.install()){free->clear(frame.hknpWorld);return NativeRest::Unavailable;}
     free->publishBodies();publishWatchMask();return NativeRest::Watching;
 }
 
@@ -479,6 +544,7 @@ bool LooseWeaponCollision::prepareRelease(RE::TESObjectREFR* reference, RE::hknp
         auto& state=*slot._state;
         if (state.world!=liveWorld) return false;
         if (state.installed) return !state.failed;
+        if(loose_weapon_state::owns(reference->formID))return !state.failed;
         auto mutation=gate.pauseForMutation();
         if (!state.restore()) return false;
         state.nativeOnly=true;
@@ -527,7 +593,10 @@ void LooseWeaponCollision::Slot::admit(RE::TESObjectREFR* reference,const Physic
     const auto started=std::chrono::steady_clock::now();
     if (!shapeSetter()) { _declined=reference->formID; ROCK_LOG_ERROR(Weapon,"Loose collision native shape setter unavailable"); return; }
     _state=std::make_unique<State>(reference,frame.hknpWorld);
-    if (_state->failed || !_state->captureBodies(frame) || !_state->suppressNative()) {
+    const bool captured=!_state->failed&&_state->captureBodies(frame);
+    if(!captured&&!_state->failed){_state.reset();return;}
+    if (_state->failed || !captured ||
+        (!loose_weapon_state::owns(reference->formID)&&!_state->suppressNative())) {
         ROCK_LOG_WARN(Weapon,"Loose pickup collision suppression failed ref={:08X} stage={}; restoring native collision",reference->formID,_state->phase);
         clear(frame.hknpWorld); _declined=reference->formID; return;
     }
@@ -551,6 +620,9 @@ bool LooseWeaponCollision::releaseReference(RE::TESObjectREFR* reference, RE::hk
         }
     };
     release(_slots);
+    for(auto& state:_parked)if(state&&state->ref.get()==reference) {
+        if(state->world!=liveWorld||state->restore())state.reset();else restored=false;
+    }
     publishWatchMask();
     return restored;
 }
@@ -575,7 +647,7 @@ void LooseWeaponCollision::Slot::clear(RE::hknpWorld* liveWorld)
 void LooseWeaponCollision::Slot::update(const PhysicsFrameContext& frame, RE::TESObjectREFR* right,
     RE::TESObjectREFR* left, PhysicsCallbackQuiescenceGate& gate, bool prepare)
 {
-    if ((!right || right->formID!=_declined) && (!left || left->formID!=_declined)) _declined=0;
+    if ((!right || right->formID!=_declined) && (!left || left->formID!=_declined) && !loose_weapon_state::owns(_declined)) _declined=0;
     if (!_state) return;
     const auto reset=[&](RE::hknpWorld* live) { auto mutation=gate.pauseForMutation(); clear(live); };
     if (_state && (_state->world!=frame.hknpWorld || _state->ref->IsDeleted() || _state->ref->IsDisabled() || _state->ref->Get3D()!=_state->root.get()))
@@ -591,7 +663,7 @@ void LooseWeaponCollision::Slot::update(const PhysicsFrameContext& frame, RE::TE
     if (state.parked) return;
     state.held=right==state.ref.get() || left==state.ref.get();
     if (!state.installed) {
-        if (!state.held && !state.nativeOnly) {
+        if (!state.held && !state.nativeOnly && !loose_weapon_state::owns(state.ref->formID)) {
             // A quick release must regain collision before it can fall. Keep
             // this exact reference's rest watcher even if geometry is unfinished.
             auto mutation=gate.pauseForMutation();
@@ -700,9 +772,9 @@ void LooseWeaponCollision::Slot::update(const PhysicsFrameContext& frame, RE::TE
         state.parkingStage=3;
         ROCK_LOG_INFO(Weapon,"Loose collision parking stage=restore-shapes ref={:08X}",state.ref->formID);
     }
-    if (!state.restore()) { state.phase="Parked: restore pending"; return; }
+    if (!loose_weapon_state::owns(state.ref->formID) && !state.restore()) { state.phase="Parked: restore pending"; return; }
     _world.store(nullptr); _count.store(0);
-    state.parked=true; state.phase="Parked: native collision";
+    state.parked=true; state.phase=loose_weapon_state::owns(state.ref->formID)?"Parked: saved item collision":"Parked: native collision";
     state.parkingStage=4;
     ROCK_LOG_INFO(Weapon,"Loose collision parked ref={:08X} supportedRest={:.3f} save=native finalizeMs={:.3f}",
         state.ref->formID,state.parking.supportedRestSeconds,
