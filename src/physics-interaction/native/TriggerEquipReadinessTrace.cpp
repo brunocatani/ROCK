@@ -46,6 +46,7 @@ namespace rock::trigger_equip_readiness_trace
         using DispatchAction = bool (*)(void*, std::int32_t, std::uint32_t);
         AttackRequest s_request{};
         DispatchAction s_dispatch{};
+        bool s_actionHookInstalled{};
 
         bool onOwner() noexcept { return s_owner.load(std::memory_order_acquire) == GetCurrentThreadId(); }
         double elapsedMs() noexcept
@@ -135,7 +136,10 @@ namespace rock::trigger_equip_readiness_trace
 
     void install() noexcept
     {
-        if (!logger::isDebugEnabled() || s_request || !REL::Module::IsVR() ||
+        // Installation runs at F4SE Load, before the user's logging config is
+        // applied. Only capture/output may use that setting; gating installation
+        // here silently omitted both downstream witnesses in the prior build.
+        if (s_request || !REL::Module::IsVR() ||
             REL::Module::get().version()!=F4SE::RUNTIME_VR_1_2_72) return;
         constexpr std::array<std::uint8_t,14> prefix{0x40,0x53,0x48,0x83,0xEC,0x40,0x0F,0x29,0x74,0x24,0x30,0x0F,0x57,0xF6};
         void* original = nullptr;
@@ -151,8 +155,10 @@ namespace rock::trigger_equip_readiness_trace
         try {
             (void)F4SE::GetTrampoline().write_call<5>(call,&dispatchAction);
             FlushInstructionCache(GetCurrentProcess(),reinterpret_cast<const void*>(call),5);
+            s_actionHookInstalled = true;
             ROCK_LOG_INFO(Init,"Trigger equip native request and action-result observation installed; no attack behavior changed");
         } catch (...) {
+            s_actionHookInstalled = false;
             REL::safe_write(call,expected.data(),expected.size());
             FlushInstructionCache(GetCurrentProcess(),reinterpret_cast<const void*>(call),5);
             ROCK_LOG_WARN(Init,"Trigger equip action-result observation failed; native action call retained");
@@ -173,7 +179,7 @@ namespace rock::trigger_equip_readiness_trace
         s_capture.expectedForm = form;
         s_capture.reference = reference;
         s_capture.started = Clock::now();
-        ROCK_LOG_INFO(Weapon, "EQUIP-READY begin seq={} form={:08X} ref={:08X} thread={} windowMs=5000 maxFrames=64 maxInputEdges=32; preload pointers are presence witnesses, not completion flags", next, form, reference, GetCurrentThreadId());
+        ROCK_LOG_INFO(Weapon, "EQUIP-READY begin seq={} form={:08X} ref={:08X} thread={} requestHook={} actionHook={} windowMs=5000 maxFrames=64 maxInputEdges=32; preload pointers are presence witnesses, not completion flags", next, form, reference, GetCurrentThreadId(), s_request != nullptr, s_actionHookInstalled);
         stage("before-inventory-scan");
     }
     void stage(const char* name) noexcept
