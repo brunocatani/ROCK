@@ -356,7 +356,7 @@ namespace rock
                 _touchGrabRuntime.isHandActive(isLeft) ||
                 _twoHandedGrip.isHandPartGripping(isLeft) ||
                 pendingEquippedGripOwnership);
-        input_remap_runtime::setHeldObjectFormId(isLeft, heldRef ? heldRef->GetFormID() : 0u);
+        input_remap_runtime::setHeldObjectFormId(isLeft, heldRef ? heldRef->GetFormID() : 0u, hand.isHoldingLooseWeapon());
     }
 
     void PhysicsInteraction::releaseSuppressedHeldObject(
@@ -1636,6 +1636,7 @@ namespace rock
                     pairedGrips.weaponFormID = base ? base->GetFormID() : 0;
                     pairedGrips.firingHandIsLeft = equipIsLeft;
                     pairedGrips.arrangement = primary.heldWeaponArrangement();
+                    pairedGrips.gunstockAim = primary.heldWeaponGunstockAim();
                     if (!equipped_weapon_manual_ownership_policy::firingGripOwnershipEnabled(firingGripModes) ||
                         !primary.captureWeaponGripTransfer(pairedGrips.primary) || !support.captureWeaponGripTransfer(pairedGrips.support) ||
                         !vanilla_weapon_grip_frame::resolveModelTranslation(pairedGrips.weaponFormID,

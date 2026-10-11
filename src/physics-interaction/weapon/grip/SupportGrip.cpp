@@ -171,6 +171,7 @@ namespace rock
             paired.firingHandIsLeft = carrierLeft;
             paired.sourceModelTranslation = translation;
             paired.arrangement = loose_weapon_authored_grab_policy::Arrangement::Separated;
+            paired.gunstockAim = partGrip(!carrierLeft).gunstockAimSelected;
             if (!capturePart(!carrierLeft, paired.support)) return reject("paired-support-pose-unavailable");
             return paired.valid() || reject("paired-capture-invalid");
         }
@@ -207,6 +208,9 @@ namespace rock
         const bool supportIsLeft = !grips.firingHandIsLeft;
         adoptTransferredSupportGrip(supportIsLeft, weaponNode, generation, grips.support);
         auto& support = partGrip(supportIsLeft);
+        support.gunstockAimSelected = grips.gunstockAim;
+        ROCK_LOG_INFO(Weapon,"Paired gunstock mode inherited form={:08X} firingHand={} incomingGunstock={}",
+            grips.weaponFormID,grips.firingHandIsLeft?"left":"right",grips.gunstockAim);
         const auto delta = grips.support.gripWeaponLocal - grips.primary.gripWeaponLocal;
         _support.lockedGripSeparationWorld = std::sqrt(dot(delta, delta)) * std::abs(weaponNode->world.scale);
         const bool firingStation = loose_weapon_authored_grab_policy::sharedFiringZone(grips.arrangement) ||

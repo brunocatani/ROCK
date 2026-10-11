@@ -426,6 +426,7 @@ namespace rock
         bool isHoldingLooseWeapon() const { return isHolding() && _heldObjectIsLooseWeapon; }
         bool isHoldingAuthoredSupportGrip() const { return isHoldingLooseWeapon() && _grabFrame.authoredLooseWeaponSupportGrip; }
         bool isHoldingFiringGrip() const { return isHoldingLooseWeapon() && _grabFrame.syntheticLooseWeaponPrimaryAttach && !_grabFrame.authoredLooseWeaponSupportGrip; }
+        bool heldWeaponGunstockAim() const { return isHoldingFiringGrip() && _grabFrame.looseObjectSharedPeerTrace != 0 && _looseSharedGunstockAim; }
         bool captureWeaponGripTransfer(weapon_grip_transfer::HandGrip& out) const;
         loose_weapon_authored_grab_policy::Arrangement heldWeaponArrangement() const { return _grabFrame.authoredWeaponArrangement; }
         RE::TESObjectREFR* getHeldRef() const { return _savedObjectState.refr; }

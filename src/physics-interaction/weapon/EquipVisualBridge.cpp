@@ -12,6 +12,7 @@
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
+#include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
@@ -607,9 +608,19 @@ namespace rock
                     clear("paired-controller-unavailable", true);
                     return;
                 }
-                const auto solved = equip_visual_bridge_policy::solvePairedBridge(desiredWorld,
-                    _capturedGrips.primary.gripWeaponLocal, _capturedGrips.support.gripWeaponLocal,
-                    transform_math::localPointToWorld(supportWand->world, _supportGripInWandLocal));
+                WeaponTwoHandedSolverResult<RE::NiTransform> solved{};
+                if (_capturedGrips.gunstockAim && !_meleeWeapon) {
+                    RE::NiTransform primaryInput{}, supportInput{};
+                    if (frik_hand_world_authority::tryGetWeaponWandWorld(_isLeftHand,primaryInput) &&
+                        frik_hand_world_authority::tryGetWeaponWandWorld(!_isLeftHand,supportInput)) {
+                        solved = equip_visual_bridge_policy::solvePairedGunstockBridge(desiredWorld,
+                            _capturedGrips.primary.gripWeaponLocal,primaryInput,supportInput);
+                    }
+                } else {
+                    solved = equip_visual_bridge_policy::solvePairedBridge(desiredWorld,
+                        _capturedGrips.primary.gripWeaponLocal, _capturedGrips.support.gripWeaponLocal,
+                        transform_math::localPointToWorld(supportWand->world, _supportGripInWandLocal));
+                }
                 if (solved.solved) desiredWorld = solved.weaponWorldTransform;
                 else ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "EquipVisualBridge paired grip axis unavailable form={:08X}", _weaponFormID);
             }

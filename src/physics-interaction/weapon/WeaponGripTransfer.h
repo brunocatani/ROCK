@@ -62,6 +62,9 @@ namespace rock::weapon_grip_transfer
         RE::NiPoint3 sourceModelTranslation{};
         std::uint32_t weaponFormID{ 0 };
         bool firingHandIsLeft{ false };
+        // Private carry-state witness, not a setting override. Preserve the
+        // actual incoming mode so adoption is not mistaken for a mode change.
+        bool gunstockAim{ false };
         loose_weapon_authored_grab_policy::Arrangement arrangement{ loose_weapon_authored_grab_policy::Arrangement::Pending };
 
         [[nodiscard]] bool valid() const noexcept

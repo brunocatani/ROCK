@@ -1,5 +1,6 @@
 #include "physics-interaction/weapon/GunstockMode.h"
 #include "physics-interaction/grab/GrabCore.h"
+#include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
 #include "GunstockCapturedFrames.h"
 #include <iostream>
 #include <limits>
@@ -33,6 +34,21 @@ namespace
         const auto forward = transform_math::rotateLocalVectorToWorld(solved.weaponWorldTransform.rotate, RE::NiPoint3{0,1,0});
         const auto baseline = weaponSolverNormalize(weaponSolverSub(front.translate, rear.translate));
         if (!nearPoint(forward, baseline, 0.00002f)) return fail();
+        const auto bridge = equip_visual_bridge_policy::solvePairedGunstockBridge(
+            solved.weaponWorldTransform,input.primaryGripLocal,rear,front);
+        if (!bridge.solved || !sameRotation(bridge.weaponWorldTransform,solved.weaponWorldTransform) ||
+            !nearPoint(transform_math::localPointToWorld(bridge.weaponWorldTransform,input.primaryGripLocal),primary.translate)) return fail();
+        // The controller baseline changes while inventory/scene replacement is
+        // in flight. The visual bridge must follow the same stock solve rather
+        // than steer toward a captured, non-collinear authored support seat.
+        auto movedFront = front;
+        movedFront.translate = weaponSolverAdd(front.translate,RE::NiPoint3{2.0f,-1.0f,3.0f});
+        const auto movingBridge = equip_visual_bridge_policy::solvePairedGunstockBridge(
+            solved.weaponWorldTransform,input.primaryGripLocal,rear,movedFront);
+        const auto movingEquipped = gunstock_mode::solveVirtualAim(input,rear,movedFront,{},1.0f);
+        if (!movingBridge.solved || !movingEquipped.solved ||
+            !sameRotation(movingBridge.weaponWorldTransform,movingEquipped.weaponWorldTransform) ||
+            !nearPoint(movingBridge.weaponWorldTransform.translate,movingEquipped.weaponWorldTransform.translate)) return fail();
 
         // Loose grabs drive collision bodies in proxy space. Neither a rotated
         // body frame nor a different body's offset may change weapon +Y or
