@@ -763,15 +763,31 @@ namespace rock::weapon_transition_animation_acceleration
 
         bool admitFirearmHandoff(void* context, void* from, void* to, std::uintptr_t lease) noexcept
         {
-            // Captured trigger equips first activate the melee EquipFast,
-            // then blend MeleeBehavior -> GunBehavior for 0.2 s. Part-local
-            // transforms interpolate from the wrong pose over that exact span.
-            // Names include the terminator: neither generic graph kind nor a
-            // duration match identifies this edge. Admit it only once per
-            // leased character, after native draw activation was witnessed.
+            // Exact subgraph preparation removes the melee detour, but the
+            // native swap can still blend FROM the interrupted Gun -> MT
+            // sheathe effect. The 417 capture shows that composite pose moving
+            // weapon-local parts for 0.2 s after the incoming clip generates.
+            // Admit only these observed weapon graph edges, once per character;
+            // never identify an initialization transition by duration alone.
             if (s_registeredClips.load(std::memory_order_acquire) == 0 ||
-                !isNamedBehavior(from, "MeleeBehavior.hkb") ||
                 !isNamedBehavior(to, "GunBehavior.hkb")) return false;
+            const char* sourceKind = nullptr;
+            if (isNamedBehavior(from, "MeleeBehavior.hkb")) sourceKind = "melee";
+            else if (isNamedBehavior(from, "MTBehavior.hkb")) sourceKind = "movement";
+            else {
+                std::uintptr_t vtable{};
+                void* previousGun{};
+                void* movement{};
+                if (native_memory::tryReadField(from, 0, vtable) &&
+                    vtable == REL::Offset(0x2EE4F28).address() &&
+                    native_memory::tryReadField(from, 0x98, previousGun) &&
+                    native_memory::tryReadField(from, 0xA0, movement) &&
+                    isNamedBehavior(previousGun, "GunBehavior.hkb") &&
+                    isNamedBehavior(movement, "MTBehavior.hkb")) {
+                    sourceKind = "interrupted-gun-to-movement";
+                }
+            }
+            if (!sourceKind) return false;
             std::uintptr_t character{};
             if (!native_memory::tryReadField(context, 0, character) ||
                 s_encodedLease.load(std::memory_order_acquire) != lease) return false;
@@ -779,8 +795,13 @@ namespace rock::weapon_transition_animation_acceleration
             for (std::uint32_t index = 0; index < count; ++index) {
                 if (character == s_targetCharacters[index].load(std::memory_order_relaxed)) {
                     bool expected = false;
-                    return s_completedFirearmHandoff[index].compare_exchange_strong(
-                        expected, true, std::memory_order_acq_rel);
+                    if (s_completedFirearmHandoff[index].compare_exchange_strong(
+                            expected, true, std::memory_order_acq_rel)) {
+                        ROCK_LOG_DEBUG(Weapon, "Trigger equip firearm graph handoff admitted source={} character={:#x} from={} to={}",
+                            sourceKind, character, from, to);
+                        return true;
+                    }
+                    return false;
                 }
             }
             return false;
@@ -797,7 +818,7 @@ namespace rock::weapon_transition_animation_acceleration
             bool firearmHandoff = false;
             // Restrict to the verified concrete blending effect, in the exact
             // leased player graph, with an actively registered outgoing equip
-            // clip or the observed initial melee-to-firearm handoff.
+            // clip or an observed initial firearm graph handoff.
             // Other actors and ordinary
             // reload/fire/locomotion transitions retain their original timestep.
             if (lease && (lease & kEncodedStateMask) ==
