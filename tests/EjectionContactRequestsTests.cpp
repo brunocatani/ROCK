@@ -1,9 +1,12 @@
 #include "api/EjectionContactRequests.h"
+#include <ROCK/EjectionContactsV2.h>
 #include <cassert>
 #include "physics-interaction/native/MagazineEjectionSnapshot.h"
 int main() {
     using namespace rock;using namespace api;
     EjectionContactRequests requests;
+    static_assert(sizeof(ejection_contacts::ApiV1)==24&&sizeof(ejection_contacts::RequestV1)==48);
+    static_assert(sizeof(ejection_contacts::v2::Api)==24);
     ejection_contacts::RequestV1 target;target.reference={41,88,2,3,4};target.weaponGenerationKey=99;target.weaponForm=7;target.expectedBase=8;
     assert(requests.request(1,target)==Status::RequestQueued);
     requests.entries[0].waiting=.7f;
@@ -39,4 +42,26 @@ int main() {
     recycled=weapon;++recycled.ownerNode;
     assert(!contacts.suppresses(123,magazine,recycled));
     contacts={};assert(!contacts.suppresses(123,magazine,weapon));
+    // V1 and V2 coexist: hand exclusions belong only to opted-in magazines.
+    requests={};target.reference.referenceFormId=41;
+    assert(requests.request(1,target)==Status::RequestQueued&&!requests.entries[0].hands);
+    target.reference.referenceFormId=42;
+    assert(requests.request(2,target,true)==Status::RequestQueued&&requests.entries[1].hands);
+    requests.entries[1].active=true;requests.entries[1].age=.75f;
+    assert(requests.request(2,target,true)==Status::Ok&&requests.entries[1].age==.75f);
+    assert(requests.request(2,target,false)==Status::GenerationMismatch);
+    contacts.world=123;contacts.magazines[0]=magazine;contacts.magazineCount=1;
+    contacts.weapons[0]=weapon;contacts.weaponCount=1;
+    const BodyIdentity hand{400,9,7000,8000},legacyMagazine{101,10,9000,10000};
+    contacts.magazines[1]=legacyMagazine;contacts.magazineCount=2;
+    contacts.hands[0]=hand;contacts.handCount=1;
+    assert(!contacts.containsPair(100,400)&&!contacts.suppresses(123,magazine,hand));
+    contacts.handProtected[0]=magazine;contacts.handProtectedCount=1;
+    assert(contacts.containsPair(100,400)&&contacts.containsPair(400,100));
+    assert(contacts.suppresses(123,magazine,hand)&&contacts.suppresses(123,hand,magazine));
+    assert(!contacts.suppresses(123,legacyMagazine,hand)&&contacts.suppresses(123,legacyMagazine,weapon));
+    assert(!contacts.suppresses(123,magazine,floor)&&!contacts.suppresses(124,magazine,hand));
+    recycled=hand;++recycled.motionIndex;assert(!contacts.suppresses(123,magazine,recycled));
+    recycled=magazine;++recycled.ownerNode;assert(!contacts.suppresses(123,recycled,hand));
+    contacts.handProtectedCount=0;assert(!contacts.suppresses(123,magazine,hand)&&contacts.suppresses(123,magazine,weapon));
 }

@@ -53,6 +53,7 @@ namespace rock::native_player_collision
         PhysicsCallbackQuiescenceGate s_magazineEjectionGate;
         MagazineEjectionSnapshot s_magazineEjection;
         std::atomic<std::uint64_t> s_magazineEjectionRejected{ 0 };
+        std::atomic<std::uint64_t> s_magazineEjectionHandPair{ 0 };
         FilterPairs s_original{ nullptr };
         bool s_installed{ false };
         std::atomic<std::uint64_t> s_removedPairs{ 0 };
@@ -217,7 +218,14 @@ namespace rock::native_player_collision
                 if(!s_magazineEjection.containsPair(pair.bodyA,pair.bodyB))return false;
                 const auto a=havok_runtime::snapshotBody(world,{pair.bodyA});
                 const auto b=havok_runtime::snapshotBody(world,{pair.bodyB});
-                return a.valid&&b.valid&&s_magazineEjection.suppresses(reinterpret_cast<std::uintptr_t>(world),identity(a),identity(b));
+                if(!a.valid||!b.valid)return false;
+                if(s_magazineEjection.suppressesHand(reinterpret_cast<std::uintptr_t>(world),identity(a),identity(b))) {
+                    const bool firstIsMagazine=MagazineEjectionSnapshot::find(s_magazineEjection.handProtected,s_magazineEjection.handProtectedCount,pair.bodyA)!=nullptr;
+                    const auto magazine=firstIsMagazine?pair.bodyA:pair.bodyB,hand=firstIsMagazine?pair.bodyB:pair.bodyA;
+                    std::uint64_t empty=0;s_magazineEjectionHandPair.compare_exchange_strong(empty,(std::uint64_t(magazine)<<32)|hand,std::memory_order_relaxed);
+                    return true;
+                }
+                return s_magazineEjection.suppresses(reinterpret_cast<std::uintptr_t>(world),identity(a),identity(b));
             });
             if(kept!=count)s_magazineEjectionRejected.fetch_add(count-kept,std::memory_order_relaxed);
             return kept;
@@ -538,18 +546,20 @@ namespace rock::native_player_collision
         const auto previous=s_magazineEjection;
         s_magazineEjectionGate.pauseAndWait();
         s_magazineEjection={};
+        s_magazineEjectionHandPair.store(0,std::memory_order_relaxed);
         if(liveWorld&&previous.world==reinterpret_cast<std::uintptr_t>(liveWorld))
             for(std::size_t i=0;i<previous.magazineCount;++i)invalidateBodyIfCurrent(liveWorld,previous.magazines[i]);
     }
 
     std::uint64_t magazineEjectionRejectedCount() noexcept {return s_magazineEjectionRejected.load(std::memory_order_relaxed);}
+    std::uint64_t takeMagazineEjectionHandPair() noexcept {return s_magazineEjectionHandPair.exchange(0,std::memory_order_relaxed);}
 
     bool publishMagazineEjection(RE::hknpWorld* world,std::span<const std::uint32_t> magazines,
-        std::span<const std::uint32_t> weapons)
+        std::span<const std::uint32_t> weapons,std::span<const std::uint32_t> handProtected,std::span<const std::uint32_t> hands)
     {
         if(magazines.empty()||weapons.empty()){clearMagazineEjection(world);return s_installed&&world;}
         MagazineEjectionSnapshot next;next.world=reinterpret_cast<std::uintptr_t>(world);
-        if(!s_installed||!world||magazines.size()>next.magazines.size()||weapons.size()>next.weapons.size())return false;
+        if(!s_installed||!world||magazines.size()>next.magazines.size()||weapons.size()>next.weapons.size()||handProtected.size()>next.handProtected.size()||hands.size()>next.hands.size())return false;
         const auto collect=[&](auto ids,auto& out,std::size_t& count) {
             for(auto id:ids) {
                 const auto body=havok_runtime::snapshotBody(world,{id});
@@ -563,7 +573,8 @@ namespace rock::native_player_collision
             std::sort(out.begin(),out.begin()+count,[](const auto& a,const auto& b){return a.bodyId<b.bodyId;});
             return true;
         };
-        if(!collect(magazines,next.magazines,next.magazineCount)||!collect(weapons,next.weapons,next.weaponCount))return false;
+        if(!collect(magazines,next.magazines,next.magazineCount)||!collect(weapons,next.weapons,next.weaponCount)||
+            !collect(handProtected,next.handProtected,next.handProtectedCount)||!collect(hands,next.hands,next.handCount))return false;
         const auto previous=s_magazineEjection;
         if(previous==next)return true;
         {
@@ -576,7 +587,7 @@ namespace rock::native_player_collision
         if(previous.world==next.world)for(std::size_t i=0;i<previous.magazineCount;++i)invalidateBodyIfCurrent(world,previous.magazines[i]);
         for(std::size_t i=0;i<next.magazineCount;++i) {
             const auto* old=previous.world==next.world?MagazineEjectionSnapshot::find(previous.magazines,previous.magazineCount,next.magazines[i].bodyId):nullptr;
-            if(!old||*old!=next.magazines[i])invalidateBodyIfCurrent(world,next.magazines[i]);
+            if(!old||*old!=next.magazines[i]||previous.hands!=next.hands||previous.handProtected!=next.handProtected)invalidateBodyIfCurrent(world,next.magazines[i]);
         }
         return true;
     }

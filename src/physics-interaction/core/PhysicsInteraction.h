@@ -157,7 +157,7 @@ namespace rock
         bool prepareLooseWeaponRelease(RE::TESObjectREFR* reference, RE::hknpWorld* world, bool physicalDrop);
         api::Status watchObjectRest(api::OwnerToken owner,const api::object_rest::RequestV1& request,api::object_rest::State& state)
         {return _objectRestRequests.watch(owner,request,state);}
-        api::Status requestEjectionContacts(api::OwnerToken owner,const api::ejection_contacts::RequestV1& request){return _ejectionContacts.request(owner,request);}
+        api::Status requestEjectionContacts(api::OwnerToken owner,const api::ejection_contacts::RequestV1& request,bool hands=false){return _ejectionContacts.request(owner,request,hands);}
         void cancelEjectionContacts(api::OwnerToken owner,std::uint32_t reference){_ejectionContacts.cancel(owner,reference);}
         void cancelObjectRest(api::OwnerToken owner,std::uint32_t reference){_objectRestRequests.cancel(owner,reference);}
 

@@ -9,6 +9,9 @@ struct MagazineEjectionSnapshot {
     std::uintptr_t world{};
     std::array<BodyIdentity,32> magazines{};
     std::array<BodyIdentity,128> weapons{};
+    std::array<BodyIdentity,32> handProtected{};
+    std::array<BodyIdentity,128> hands{};
+    std::size_t handProtectedCount{},handCount{};
     std::size_t magazineCount{},weaponCount{};
     bool operator==(const MagazineEjectionSnapshot&) const = default;
     template<std::size_t N> static const BodyIdentity* find(const std::array<BodyIdentity,N>& bodies,std::size_t count,std::uint32_t id) {
@@ -18,10 +21,21 @@ struct MagazineEjectionSnapshot {
     }
     bool containsPair(std::uint32_t a,std::uint32_t b) const {
         return a!=b&&((find(magazines,magazineCount,a)&&find(weapons,weaponCount,b))||
-            (find(magazines,magazineCount,b)&&find(weapons,weaponCount,a)));
+            (find(magazines,magazineCount,b)&&find(weapons,weaponCount,a))||
+            (find(handProtected,handProtectedCount,a)&&find(hands,handCount,b))||
+            (find(handProtected,handProtectedCount,b)&&find(hands,handCount,a)));
+    }
+    bool suppressesHand(std::uintptr_t liveWorld,const BodyIdentity& a,const BodyIdentity& b) const {
+        if(!world||world!=liveWorld||a.bodyId==b.bodyId)return false;
+        const auto* mag=find(handProtected,handProtectedCount,a.bodyId);
+        const auto* hand=find(hands,handCount,b.bodyId);
+        if(mag&&hand)return matchesLiveBody(*mag,a)&&matchesLiveBody(*hand,b);
+        mag=find(handProtected,handProtectedCount,b.bodyId);hand=find(hands,handCount,a.bodyId);
+        return mag&&hand&&matchesLiveBody(*mag,b)&&matchesLiveBody(*hand,a);
     }
     bool suppresses(std::uintptr_t liveWorld,const BodyIdentity& a,const BodyIdentity& b) const {
         if(!world||world!=liveWorld||a.bodyId==b.bodyId)return false;
+        if(suppressesHand(liveWorld,a,b))return true;
         const auto* mag=find(magazines,magazineCount,a.bodyId);
         const auto* weapon=find(weapons,weaponCount,b.bodyId);
         if(mag&&weapon)return matchesLiveBody(*mag,a)&&matchesLiveBody(*weapon,b);

@@ -1,10 +1,10 @@
-#include <ROCK/EjectionContacts.h>
+#include <ROCK/EjectionContactsV2.h>
 #include "api/ProviderRuntimeServices.h"
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
 namespace {
 using namespace rock;
-api::Status ROCK_CALL request(api::OwnerToken owner,const api::ejection_contacts::RequestV1* req) noexcept {
+template<bool Hands> api::Status ROCK_CALL request(api::OwnerToken owner,const api::ejection_contacts::RequestV1* req) noexcept {
     if(!req)return api::Status::InvalidArgument;
     if(req->size!=sizeof(*req))return api::Status::InvalidSize;
     if(req->version!=1)return api::Status::UnsupportedVersion;
@@ -19,7 +19,7 @@ api::Status ROCK_CALL request(api::OwnerToken owner,const api::ejection_contacts
         auto* base=ref->GetObjectReference();
         if(!base||base->formID!=req->expectedBase||(req->reference.referenceNativeHandle&&ref->GetHandle().native_handle()!=req->reference.referenceNativeHandle))return api::Status::TargetInvalid;
         auto* physics=PhysicsInteraction::s_instance.load(std::memory_order_acquire);
-        return physics?physics->requestEjectionContacts(owner,*req):api::Status::NotReady;
+        return physics?physics->requestEjectionContacts(owner,*req,Hands):api::Status::NotReady;
     }catch(...){return api::Status::InternalError;}
 }
 api::Status ROCK_CALL cancel(api::OwnerToken owner,std::uint32_t reference) noexcept {
@@ -31,6 +31,10 @@ api::Status ROCK_CALL cancel(api::OwnerToken owner,std::uint32_t reference) noex
 }
 }
 extern "C" __declspec(dllexport) const rock::api::ejection_contacts::ApiV1* ROCK_CALL ROCK_EjectionContacts_QueryV1(std::uint32_t major,std::uint32_t bytes) noexcept {
-    static const rock::api::ejection_contacts::ApiV1 table{sizeof(table),1,&request,&cancel};
+    static const rock::api::ejection_contacts::ApiV1 table{sizeof(table),1,&request<false>,&cancel};
     return major==1&&bytes==sizeof(table)?&table:nullptr;
+}
+extern "C" __declspec(dllexport) const rock::api::ejection_contacts::v2::Api* ROCK_CALL ROCK_EjectionContacts_QueryV2(std::uint32_t major,std::uint32_t bytes) noexcept {
+    static const rock::api::ejection_contacts::v2::Api table{sizeof(table),2,&request<true>,&cancel};
+    return major==2&&bytes==sizeof(table)?&table:nullptr;
 }
