@@ -481,6 +481,7 @@ namespace rock
             }
             auto* currentBhk = getPlayerBhkWorld();
             auto* currentHknp = currentBhk ? getHknpWorld(currentBhk) : nullptr;
+            _npcCollision.clear(currentHknp, currentBhk);
             if (currentBhk && currentBhk == _lifecycle.cachedBhkWorld &&
                 currentHknp && currentHknp == _lifecycle.cachedHknpWorld) {
                 _weaponCollision.setEquippedDropActive(currentHknp, false);
@@ -594,6 +595,7 @@ namespace rock
 
         auto* hknp = getHknpWorld(bhk);
         if (!hknp) {
+            _npcCollision.clear(nullptr, nullptr);
             _dynamicWorldCarCollision.abandon();
             _lifecycle.cachedHknpWorld = nullptr;
             observeLifecycleFrame(bhk, nullptr, ::rock::provider::RockProviderLifecycleReason::WorldUnavailable);
@@ -610,6 +612,7 @@ namespace rock
         observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::None);
 
         if (!physicsWritesAllowedForWorld(hknp)) {
+            _npcCollision.clear(hknp, bhk);
             _equipped.gripResumePending = _equipped.continuityGrip.pending;
             interruptInteractionFrame("physics-gate-closed");
             return;
@@ -670,6 +673,7 @@ namespace rock
             registerCollisionLayer(hknp);
         }
 
+        _npcCollision.update(frame, g_rockConfig.npcDynamicCollisions);
         const auto equippedWeaponFrame = updateEquippedWeaponFrame(frame, bhk, hknp);
         finalizeInteractionFrame(frame, hknp, equippedWeaponFrame);
         if (input_remap_runtime::ownsBareFistInput()) {
@@ -716,6 +720,7 @@ namespace rock
             return;
         }
 
+        _npcCollision.drive(world, timing);
         _rightHand.flushPendingCollisionPhysicsDrive(world, timing);
         _leftHand.flushPendingCollisionPhysicsDrive(world, timing);
         _bodyBoneColliders.flushPendingPhysicsDrive(world, timing);

@@ -109,6 +109,10 @@ namespace rock::collision_layer_policy
     // Opt-in stored weapon displays. The simulation filter further restricts
     // these pairs to the exact empty-hand bodies published by their owner.
     inline constexpr std::uint32_t ROCK_LAYER_STORED_DISPLAY = 54;
+    // Passive copies of native animated limbs while their native bodies are
+    // absent from collision. Only dynamic hands and the equipped weapon stop
+    // against them; they are not native actors, damage targets or grab surfaces.
+    inline constexpr std::uint32_t ROCK_LAYER_NPC_SUPPLEMENT = 55;
 
     inline constexpr std::uint32_t FO4_LAYER_VANILLA_CONFIGURED_COUNT = 47;
     inline constexpr std::uint32_t FO4_LAYER_MATRIX_ADDRESSABLE_COUNT = 64;
@@ -120,7 +124,8 @@ namespace rock::collision_layer_policy
         return layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON ||
                layer == ROCK_LAYER_BODY || layer == ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY ||
                layer == ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY || layer == ROCK_LAYER_DYNAMIC_WEAPON_PROXY ||
-               layer == ROCK_LAYER_EQUIPPED_DROP_PROXY || layer == ROCK_LAYER_STORED_DISPLAY;
+               layer == ROCK_LAYER_EQUIPPED_DROP_PROXY || layer == ROCK_LAYER_STORED_DISPLAY ||
+               layer == ROCK_LAYER_NPC_SUPPLEMENT;
     }
 
     inline constexpr bool isRockOwnedReusableLayer(std::uint32_t layer)
@@ -139,7 +144,7 @@ namespace rock::collision_layer_policy
     inline constexpr bool isRockOwnedMatrixLayer(std::uint32_t layer)
     {
         return layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON ||
-               (layer >= ROCK_LAYER_BODY && layer <= ROCK_LAYER_STORED_DISPLAY);
+               (layer >= ROCK_LAYER_BODY && layer <= ROCK_LAYER_NPC_SUPPLEMENT);
     }
 
     inline constexpr bool isDynamicPropInteractionLayer(std::uint32_t layer)
@@ -219,7 +224,7 @@ namespace rock::collision_layer_policy
         // must reach the same solver/visual response as world contact. Keep
         // surface-grab and weapon-bracing eligibility separate.
         return isWorldSurfaceLayer(layer) || isDynamicWorldCarLayer(layer) ||
-               layer == FO4_LAYER_BIPED_NO_CC;
+               layer == FO4_LAYER_BIPED_NO_CC || layer == ROCK_LAYER_NPC_SUPPLEMENT;
     }
 
     inline constexpr bool isDynamicWeaponProxySolverObstacleLayer(
@@ -505,7 +510,10 @@ namespace rock::collision_layer_policy
         return matrix &&
                layerPairSymmetricMatches(matrix, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, FO4_LAYER_BIPED_NO_CC, enabled) &&
                layerPairSymmetricMatches(matrix, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, FO4_LAYER_BIPED_NO_CC, enabled) &&
-               layerPairSymmetricMatches(matrix, ROCK_LAYER_DYNAMIC_WEAPON_PROXY, FO4_LAYER_BIPED_NO_CC, enabled);
+               layerPairSymmetricMatches(matrix, ROCK_LAYER_DYNAMIC_WEAPON_PROXY, FO4_LAYER_BIPED_NO_CC, enabled) &&
+               layerPairSymmetricMatches(matrix, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, ROCK_LAYER_NPC_SUPPLEMENT, enabled) &&
+               layerPairSymmetricMatches(matrix, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, ROCK_LAYER_NPC_SUPPLEMENT, enabled) &&
+               layerPairSymmetricMatches(matrix, ROCK_LAYER_DYNAMIC_WEAPON_PROXY, ROCK_LAYER_NPC_SUPPLEMENT, enabled);
     }
 
     inline void applyRockHandLayerPolicy(std::uint64_t* matrix, bool includeWeaponLayer, bool includeStaticWorld = true)
@@ -550,6 +558,7 @@ namespace rock::collision_layer_policy
         }
         if (npcDynamicCollisions) {
             mask = withLayer(mask, FO4_LAYER_BIPED_NO_CC);
+            mask = withLayer(mask, ROCK_LAYER_NPC_SUPPLEMENT);
         }
         return mask;
     }
@@ -567,6 +576,7 @@ namespace rock::collision_layer_policy
         mask = withLayer(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
         if (npcDynamicCollisions) {
             mask = withLayer(mask, FO4_LAYER_BIPED_NO_CC);
+            mask = withLayer(mask, ROCK_LAYER_NPC_SUPPLEMENT);
         }
         return mask;
     }
@@ -574,6 +584,7 @@ namespace rock::collision_layer_policy
     inline constexpr std::uint64_t buildRockEquippedDropExpectedMask(bool npcDynamicCollisions = false)
     {
         auto mask = buildRockDynamicWeaponProxyExpectedMask(npcDynamicCollisions);
+        mask = withoutLayer(mask, ROCK_LAYER_NPC_SUPPLEMENT);
         for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
             if (isDynamicPropInteractionLayer(layer)) mask = withLayer(mask, layer);
         }
@@ -691,5 +702,9 @@ namespace rock::collision_layer_policy
         applyLayerExpectedMask(matrix, ROCK_LAYER_EQUIPPED_DROP_PROXY, buildRockEquippedDropExpectedMask(npcDynamicCollisions));
         applyLayerExpectedMask(matrix, ROCK_LAYER_STORED_DISPLAY,
             (std::uint64_t{1}<<ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY) | (std::uint64_t{1}<<ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY));
+        applyLayerExpectedMask(matrix, ROCK_LAYER_NPC_SUPPLEMENT, npcDynamicCollisions ?
+            layerBitOrZero(ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY) |
+                layerBitOrZero(ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY) |
+                layerBitOrZero(ROCK_LAYER_DYNAMIC_WEAPON_PROXY) : 0);
     }
 }

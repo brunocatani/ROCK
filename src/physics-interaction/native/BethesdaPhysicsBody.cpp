@@ -526,10 +526,14 @@ namespace rock
         {
             auto* shapeRefsArray = reinterpret_cast<char*>(_systemData) + offsets::kSysData_Shapes;
             auto* shapeSlot = hkArrayAppendOne(shapeRefsArray, 8);
-            if (shapeSlot) {
-                *reinterpret_cast<RE::hknpShape**>(shapeSlot) = shape;
-                havok_ref_count::addRef(shape);
+            if (!shapeSlot) {
+                ROCK_LOG_ERROR(BethesdaBody, "Failed to retain generated collision shape");
+                releaseLocalSystemDataRef();
+                _systemData = nullptr;
+                return false;
             }
+            *reinterpret_cast<RE::hknpShape**>(shapeSlot) = shape;
+            havok_ref_count::addRef(shape);
         }
 
         _physicsSystem = bethesdaAlloc(0x28);

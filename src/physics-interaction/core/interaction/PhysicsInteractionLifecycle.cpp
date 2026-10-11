@@ -33,6 +33,7 @@ namespace rock
         _dynamicHandCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _weaponCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _dynamicWeaponCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
+        _npcCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _twoHandedGrip.setWeaponVisualIntentObserver(
             &_dynamicWeaponCollision,
             &DynamicWeaponCollisionRuntime::observeWeaponVisualIntent);
@@ -161,6 +162,8 @@ namespace rock
             currentBhkWorld == _lifecycle.generatedBodiesBhkWorld &&
             currentHknpWorld &&
             currentHknpWorld == _lifecycle.generatedBodiesHknpWorld;
+        _npcCollision.clear(generatedWorldStillLive ? currentHknpWorld : nullptr,
+            generatedWorldStillLive ? currentBhkWorld : nullptr);
         _looseWeaponCollision.clear(generatedWorldStillLive ? currentHknpWorld : nullptr);
         _objectRestCollision.clear(generatedWorldStillLive ? currentHknpWorld : nullptr);_objectRestRequests={};
         clearEjectionContacts(generatedWorldStillLive ? currentHknpWorld : nullptr);
@@ -566,6 +569,7 @@ namespace rock
             currentBhk == _lifecycle.cachedBhkWorld &&
             _lifecycle.cachedHknpWorld &&
             currentHknp == _lifecycle.cachedHknpWorld;
+        _npcCollision.clear(worldValid ? currentHknp : nullptr, worldValid ? currentBhk : nullptr);
 
         _looseWeaponCollision.clear(worldValid ? currentHknp : nullptr);
         _objectRestCollision.clear(worldValid ? currentHknp : nullptr);_objectRestRequests={};

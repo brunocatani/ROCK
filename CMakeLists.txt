@@ -389,6 +389,11 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKNativeMemoryTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKNativeMemoryTests)
 
+  add_executable(ROCKNpcCollisionSourceTests "${ROOT_DIR}/tests/NpcCollisionSourceTests.cpp")
+  target_compile_features(ROCKNpcCollisionSourceTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKNpcCollisionSourceTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKNpcCollisionSourceTests)
+
   add_executable(ROCKHavokRefCountTests "${ROOT_DIR}/tests/HavokRefCountTests.cpp")
   target_compile_features(ROCKHavokRefCountTests PRIVATE cxx_std_23)
   target_include_directories(ROCKHavokRefCountTests PRIVATE ${SOURCE_DIR})

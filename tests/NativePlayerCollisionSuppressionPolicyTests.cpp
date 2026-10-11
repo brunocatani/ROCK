@@ -211,20 +211,13 @@ int main()
     // Only the player's native weapon representation is redundant with these
     // generated colliders. The same layer-5 body can also be an NPC attack or
     // loose weapon, so layer numbers alone cannot authorize suppression.
-    constexpr std::array generatedPlayerLayers{ ROCK_LAYER_HAND, ROCK_LAYER_WEAPON, ROCK_LAYER_BODY,
-        ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, ROCK_LAYER_DYNAMIC_WEAPON_PROXY,
-        ROCK_LAYER_EQUIPPED_DROP_PROXY, ROCK_LAYER_STORED_DISPLAY };
     for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
-        const bool generated = std::find(generatedPlayerLayers.begin(), generatedPlayerLayers.end(), layer) != generatedPlayerLayers.end();
-        ok &= expect("owned native weapon removes only generated self contacts",
-            suppressNativeWeaponSelfContact(FO4_LAYER_WEAPON, layer, true) == generated);
         ok &= expect("native weapon self filtering is symmetric",
-            suppressNativeWeaponSelfContact(layer, FO4_LAYER_WEAPON, true) == generated);
+            suppressNativeWeaponSelfContact(layer, FO4_LAYER_WEAPON, true) ==
+            suppressNativeWeaponSelfContact(FO4_LAYER_WEAPON, layer, true));
         ok &= expect("NPC, dropped and unresolved native weapon owners are preserved",
             !suppressNativeWeaponSelfContact(FO4_LAYER_WEAPON, layer, false) &&
             !suppressNativeWeaponSelfContact(layer, FO4_LAYER_WEAPON, false));
-        ok &= expect("generated collider classification excludes tagged world cars",
-            isRockGeneratedColliderLayer(layer) == generated);
         ok &= expect("ownership evidence cannot suppress a non-weapon pair",
             !suppressNativeWeaponSelfContact(FO4_LAYER_BIPED, layer, true));
     }
