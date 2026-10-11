@@ -3,9 +3,14 @@
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 
 #include <cstdint>
+#include <cstddef>
 
 namespace rock::npc_collision
 {
+    inline constexpr std::size_t kActorCapacity = 8;
+    inline constexpr std::size_t kBodyCapacity = 64;
+    inline constexpr std::size_t kDebugBodyCapacity = kActorCapacity * kBodyCapacity * 2;
+
     struct SourceIdentity
     {
         std::uint32_t bodyId = 0x7FFF'FFFF;
@@ -45,8 +50,10 @@ namespace rock::npc_collision
             // FO4VR 140E3CD92..DE7 and 14156589D..8F8 use body+6C != -1
             // or flags bit 18 for native presence. Removal at 141544E20..E32
             // writes -1 and clears that bit. Allocated IDs alone are insufficient.
-            return animatedLimb() && presence == -1 && (flags & 0x40000u) == 0;
+            return animatedLimb() && !hasNativePresence();
         }
+
+        [[nodiscard]] bool hasNativePresence() const noexcept { return presence != -1 || (flags & 0x40000u) != 0; }
 
         [[nodiscard]] bool canDrive(const SourceIdentity& expected) const noexcept
         {

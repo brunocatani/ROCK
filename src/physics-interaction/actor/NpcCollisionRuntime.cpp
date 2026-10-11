@@ -2,6 +2,7 @@
 
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
+#include "physics-interaction/debug/DebugBodyOverlay.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/native/HavokRefCount.h"
 #include "physics-interaction/native/HavokRuntime.h"
@@ -17,6 +18,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <cstdio>
 #include <string_view>
 #include <Windows.h>
 
@@ -152,6 +154,7 @@ namespace rock
             limb.source = {};
             limb.failed = false;
             limb.seen = false;
+            limb.boneName = {};
         }
         actor.handle = {};
         actor.formId = 0;
@@ -204,7 +207,11 @@ namespace rock
                         }
                         if (!found) {
                             found = empty;
-                            if (found) found->source = sample.state.identity;
+                            if (found) {
+                                found->source = sample.state.identity;
+                                const char* name = node->name.c_str();
+                                std::snprintf(found->boneName.data(), found->boneName.size(), "%s", name ? name : "unnamed");
+                            }
                         }
                         if (found) found->seen = true;
                         else truncated = true;
@@ -294,14 +301,15 @@ namespace rock
         }
     }
 
-    void NpcCollisionRuntime::update(const PhysicsFrameContext& frame, bool enabled)
+    void NpcCollisionRuntime::update(const PhysicsFrameContext& frame, bool enabled, bool visualize)
     {
         if (!_companionChecked) {
             _companionChecked = true;
             _scissorsLoaded = GetModuleHandleW(L"SCISSORS.dll") != nullptr;
             if (_scissorsLoaded) ROCK_LOG_INFO(Physics, "NPC supplemental colliders yield to loaded SCISSORS");
         }
-        if (!enabled || _scissorsLoaded || !frame.worldReady || !frame.hasHmdFrame || frame.menuBlocked) {
+        const bool simulate = enabled && !_scissorsLoaded;
+        if ((!simulate && !visualize) || !frame.worldReady || !frame.hasHmdFrame || frame.menuBlocked) {
             clear(frame.hknpWorld, frame.bhkWorld);
             return;
         }
@@ -328,6 +336,14 @@ namespace rock
             if (!actor || actor->GetFormID() != slot.formId || actor->IsDeleted() || actor->IsDisabled() || actor->IsDead(false) ||
                 reinterpret_cast<std::uintptr_t>(actor->Get3D()) != slot.root || !withinRetainRadius(actor->GetPosition(), frame.hmdPositionWorld)) {
                 release(slot, true);
+                continue;
+            }
+            if (!simulate) {
+                // Native-only comparison keeps discovery, never simulation.
+                for (auto& limb : slot.limbs) {
+                    retire(limb, true);
+                    limb.failed = false;
+                }
                 continue;
             }
             std::size_t created = 0, retired = 0;
@@ -404,6 +420,58 @@ namespace rock
             _lastActiveCount = active;
             _lastPooledCount = pooled;
         }
+    }
+
+    void NpcCollisionRuntime::appendDebugOverlay(debug::BodyOverlayFrame& frame, bool native, bool supplemental, bool labels)
+    {
+        auto mutation = _gate ? _gate->pauseForMutation() : PhysicsCallbackQuiescenceGate::MutationLease{};
+        const auto addText = [&](const char* text, float y, const std::array<float, 4>& color) {
+            if (frame.textCount >= frame.textEntries.size()) return;
+            auto& entry = frame.textEntries[frame.textCount++];
+            std::snprintf(entry.text, sizeof(entry.text), "%s", text);
+            entry.x = 18.0f;
+            entry.y = y;
+            std::copy(color.begin(), color.end(), entry.color);
+        };
+        using Role = debug::BodyOverlayRole;
+        addText("NPC: CYAN native active | BLUE native inactive", 350, debug::npcBodyColor(Role::NpcNativeActive));
+        addText("MAGENTA ROCK active | GREY ROCK inactive | dimensions in game units", 368, debug::npcBodyColor(Role::NpcSupplementActive));
+        addText("ORANGE bounds proxy / loading | RED unsupported | native/copy views toggle separately", 386, {1.0f, 0.7f, 0.2f, 1.0f});
+        std::array<std::size_t, 4> counts{};
+        std::size_t omitted = 0;
+        if (_world && frame.world == _world) {
+            havok_world_lock::ScopedWorldReadLock readLock(_world);
+            for (const auto& slot : _actors) for (const auto& limb : slot.limbs) {
+                if (!slot.formId || !limb.source.valid()) continue;
+                Sample source;
+                if (!readSource(_world, limb.source.bodyId, source) || source.state.identity != limb.source) continue;
+                const auto add = [&](const Sample& sample, Role role, const char* state) {
+                    ++counts[static_cast<std::size_t>(role) - static_cast<std::size_t>(Role::NpcNativeActive)];
+                    if (frame.count >= frame.entries.size()) { ++omitted; return; }
+                    auto& entry = frame.entries[frame.count++];
+                    entry.bodyId = RE::hknpBodyId{sample.state.identity.bodyId};
+                    entry.role = role;
+                    entry.expectedCollisionObject = sample.state.identity.collisionObject;
+                    entry.expectedShape = sample.state.identity.shape;
+                    if (labels) std::snprintf(entry.label, sizeof(entry.label), "%08X %.22s %s #%u L%u",
+                        slot.formId, limb.boneName.data(), state, sample.state.identity.bodyId,
+                        sample.state.filter & collision_layer_policy::FO4_LAYER_FILTER_MASK);
+                };
+                if (native) add(source, source.state.hasNativePresence() ? Role::NpcNativeActive : Role::NpcNativeInactive,
+                    source.state.hasNativePresence() ? "N+" : "N-");
+                Sample proxy;
+                if (supplemental && limb.body.isValid() && readSource(_world, limb.body.getBodyId().value, proxy) &&
+                    proxy.state.identity.collisionObject == reinterpret_cast<std::uintptr_t>(limb.body.getCollisionObject()) &&
+                    proxy.state.identity.shape == limb.source.shape) {
+                    const bool active = limb.collisionEnabled && (proxy.state.filter & 0x4000u) == 0 && proxy.state.hasNativePresence();
+                    add(proxy, active ? Role::NpcSupplementActive : Role::NpcSupplementInactive, active ? "R+" : "R-");
+                }
+            }
+        }
+        char status[128]{};
+        std::snprintf(status, sizeof(status), "NPC native %zu active / %zu inactive | ROCK %zu active / %zu inactive | omitted %zu%s",
+            counts[0], counts[1], counts[2], counts[3], omitted, _scissorsLoaded ? " | SCISSORS owns simulation" : "");
+        addText(status, 404, {1.0f, 1.0f, 1.0f, 1.0f});
     }
 
     void NpcCollisionRuntime::drive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)

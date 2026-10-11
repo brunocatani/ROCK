@@ -7,7 +7,10 @@
 
         provider_collider_visualization::Snapshot colliderFocus{};
         const bool hasColliderFocus = provider_collider_visualization::copySnapshot(colliderFocus);
-        if (hasColliderFocus && !g_rockConfig.rockDebugDrawGunstock && !g_rockConfig.rockDebugDrawControllerAim) {
+        const bool drawNpcNative = g_rockConfig.rockDebugShowColliders && g_rockConfig.rockDebugDrawNpcNativeColliders;
+        const bool drawNpcSupplement = g_rockConfig.rockDebugShowColliders && g_rockConfig.rockDebugDrawNpcSupplementColliders;
+        const bool drawNpc = drawNpcNative || drawNpcSupplement;
+        if (hasColliderFocus && !g_rockConfig.rockDebugDrawGunstock && !g_rockConfig.rockDebugDrawControllerAim && !drawNpc) {
             debug::Install();
             debug::BodyOverlayFrame focusedFrame{};
             focusedFrame.world = context.hknpWorld;
@@ -183,7 +186,7 @@
             drawHandColliders || drawHandBoneColliders ||
             drawBodyBoneColliders || drawDynamicHandColliders ||
             drawWeaponColliders || hasGrabbedWeaponPartCollider ||
-            drawDynamicWeaponColliders ||
+            drawDynamicWeaponColliders || drawNpc ||
             drawGrabAuthorityProxyCollider || drawGrabPivotSourceCollider;
         if (!drawAnyRockColliderBodies && !drawTargetColliders && !drawHandAxes && !drawGrabPivots && !drawFingerProbes &&
             !drawFingerSweptArc && !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal &&
@@ -213,7 +216,7 @@
         frame.drawText = drawGrabForceTorqueText || drawFingerSweptArcText || drawPerformanceProfilerOverlay ||
             drawDynamicHandColliders || drawDynamicWeaponColliders || drawNativeScopeActivation ||
             drawAuthoredSupportGripDebug || drawGrabAuthorityProxy ||
-            (providerOverlay && providerOverlay->textCount > 0) || drawGunstock || drawControllerAim;
+            (providerOverlay && providerOverlay->textCount > 0) || drawGunstock || drawControllerAim || drawNpc;
         if (providerOverlay) {
             frame.coloredLineEntries = providerOverlay->lines.data();
             frame.coloredLineCount = providerOverlay->lineCount;
@@ -238,6 +241,7 @@
         }
         const bool rightDisabled = context.right.disabled;
         const bool leftDisabled = context.left.disabled;
+        if (drawNpc) _npcCollision.appendDebugOverlay(frame, drawNpcNative, drawNpcSupplement, g_rockConfig.rockDebugDrawNpcColliderLabels);
 
         auto addBody = [&](RE::hknpBodyId bodyId, debug::BodyOverlayRole role) {
             if (bodyId.value == INVALID_BODY_ID) {

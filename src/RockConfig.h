@@ -220,6 +220,9 @@ namespace rock
         bool rockDebugDrawHandBoneColliders = false;
         bool rockDebugDrawBodyBoneColliders = false;
         bool rockDebugDrawDynamicHandColliders = false;
+        bool rockDebugDrawNpcNativeColliders = false;
+        bool rockDebugDrawNpcSupplementColliders = false;
+        bool rockDebugDrawNpcColliderLabels = false;
         bool rockDebugDrawHandBoneContacts = false;
         bool rockDebugDrawGrabAuthorityProxy = false;
         int rockDebugMaxHandBoneBodiesDrawn = 48;

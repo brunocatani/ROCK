@@ -365,6 +365,25 @@ int main(int argc, char** argv)
             find(store, "npcDynamicCollisions").specified &&
             !fs::exists(store.path(Group::Developer)),
             "reset must retain NPC collisions on in the consumer file without creating developer overrides");
+        for (const auto& [key, member] : {
+                 std::pair{"bDebugDrawNpcNativeColliders", &rock::RockConfigValues::rockDebugDrawNpcNativeColliders},
+                 std::pair{"bDebugDrawNpcSupplementColliders", &rock::RockConfigValues::rockDebugDrawNpcSupplementColliders},
+                 std::pair{"bDebugDrawNpcColliderLabels", &rock::RockConfigValues::rockDebugDrawNpcColliderLabels}}) {
+            require(find(store, key).group == Group::Developer && find(store, key).type == ValueType::Boolean &&
+                !(rock::RockConfig::parseValues(missingOptions).*member),
+                "NPC overlay must remain opt-in and developer-owned");
+            require(!store.setValue(Group::Consumer, "PhysicsInteraction", key, "true"),
+                "NPC overlay must not persist to the consumer file");
+            require(store.setValue(Group::Developer, "PhysicsInteraction", key, "true") && store.load(false),
+                "NPC overlay developer enable/reload failed");
+            CSimpleIniA overlayValues;
+            store.appendLoadedValues(overlayValues);
+            require(rock::RockConfig::parseValues(overlayValues).*member,
+                "NPC overlay override did not reach runtime");
+            require(store.setValue(Group::Developer, "PhysicsInteraction", key, "false") && store.load(false) &&
+                !find(store, key).specified && !fs::exists(store.path(Group::Developer)),
+                "NPC overlay reset must remove its optional developer override");
+        }
         require(find(store, "fMeleeGripPitchDegrees").group == Group::Consumer &&
             find(store, "fMeleeGripPitchDegrees").type == ValueType::Float,
             "melee pitch must be a consumer float");

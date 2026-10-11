@@ -673,7 +673,8 @@ namespace rock
             registerCollisionLayer(hknp);
         }
 
-        _npcCollision.update(frame, g_rockConfig.npcDynamicCollisions);
+        _npcCollision.update(frame, g_rockConfig.npcDynamicCollisions,
+            g_rockConfig.rockDebugShowColliders && (g_rockConfig.rockDebugDrawNpcNativeColliders || g_rockConfig.rockDebugDrawNpcSupplementColliders));
         const auto equippedWeaponFrame = updateEquippedWeaponFrame(frame, bhk, hknp);
         finalizeInteractionFrame(frame, hknp, equippedWeaponFrame);
         if (input_remap_runtime::ownsBareFistInput()) {

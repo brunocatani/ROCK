@@ -10,6 +10,7 @@
 #include <cstdint>
 
 namespace RE { class NiAVObject; }
+namespace rock::debug { struct BodyOverlayFrame; }
 
 namespace rock
 {
@@ -24,13 +25,15 @@ namespace rock
     {
     public:
         void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _gate = gate; }
-        void update(const PhysicsFrameContext& frame, bool enabled);
+        void update(const PhysicsFrameContext& frame, bool enabled, bool visualize = false);
         void drive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void clear(RE::hknpWorld* liveWorld, void* liveBhkWorld);
+        // Synchronous game-thread diagnostic publication; never changes native bodies.
+        void appendDebugOverlay(debug::BodyOverlayFrame& frame, bool native, bool supplemental, bool labels);
 
     private:
-        static constexpr std::size_t kActorCapacity = 8;
-        static constexpr std::size_t kBodyCapacity = 64;
+        static constexpr std::size_t kActorCapacity = npc_collision::kActorCapacity;
+        static constexpr std::size_t kBodyCapacity = npc_collision::kBodyCapacity;
 
         struct Limb
         {
@@ -39,6 +42,7 @@ namespace rock
             bool collisionEnabled = false;
             bool failed = false;
             bool seen = false;
+            std::array<char, 40> boneName{};
         };
 
         struct ActorSlot

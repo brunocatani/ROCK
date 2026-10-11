@@ -8,6 +8,7 @@
 #include "physics-interaction/weapon/WeaponTypes.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/actor/NpcCollisionSource.h"
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/NetImmerse/NiPoint.h"
@@ -42,8 +43,28 @@ namespace rock::debug
         LeftGrabAuthorityProxy,
         RightGrabPivotSourceCollider,
         LeftGrabPivotSourceCollider,
-        Target
+        Target,
+        NpcNativeActive,
+        NpcNativeInactive,
+        NpcSupplementActive,
+        NpcSupplementInactive
     };
+
+    inline constexpr bool isNpcBodyRole(BodyOverlayRole role)
+    {
+        return role >= BodyOverlayRole::NpcNativeActive && role <= BodyOverlayRole::NpcSupplementInactive;
+    }
+
+    inline constexpr std::array<float, 4> npcBodyColor(BodyOverlayRole role)
+    {
+        switch (role) {
+        case BodyOverlayRole::NpcNativeActive: return {0.05f, 1.0f, 0.95f, 0.85f};
+        case BodyOverlayRole::NpcNativeInactive: return {0.20f, 0.40f, 1.0f, 0.45f};
+        case BodyOverlayRole::NpcSupplementActive: return {1.0f, 0.10f, 0.75f, 0.95f};
+        case BodyOverlayRole::NpcSupplementInactive: return {0.60f, 0.60f, 0.60f, 0.35f};
+        default: return {1.0f, 1.0f, 1.0f, 1.0f};
+        }
+    }
 
     enum class AxisOverlayRole : std::uint8_t
     {
@@ -277,6 +298,11 @@ namespace rock::debug
     {
         RE::hknpBodyId bodyId{ 0x7FFF'FFFF };
         BodyOverlayRole role{ BodyOverlayRole::Target };
+        // Optional identity witnesses for external/native body IDs. Publication
+        // and post-solve readback reject a recycled source before drawing it.
+        std::uintptr_t expectedCollisionObject{ 0 };
+        std::uintptr_t expectedShape{ 0 };
+        char label[64]{};
     };
 
     struct AxisOverlayEntry
@@ -342,7 +368,7 @@ namespace rock::debug
         std::array<BodyOverlayEntry,
             MAX_WEAPON_COLLISION_BODIES +
                 (hand_collider_semantics::kHandColliderBodyCountPerHand * 2) +
-                skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size() + 8>
+                skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size() + 8 + npc_collision::kDebugBodyCapacity>
             entries{};
         std::array<AxisOverlayEntry, 96> axisEntries{};
         std::array<MarkerOverlayEntry, 512> markerEntries{};

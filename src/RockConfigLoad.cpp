@@ -730,6 +730,9 @@ namespace rock
             "bDebugDrawBodyBoneColliders",
             rockDebugDrawBodyBoneColliders);
         rockDebugDrawDynamicHandColliders = ini.GetBoolValue(SECTION, "bDebugDrawDynamicHandColliders", rockDebugDrawDynamicHandColliders);
+        rockDebugDrawNpcNativeColliders = ini.GetBoolValue(SECTION, "bDebugDrawNpcNativeColliders", rockDebugDrawNpcNativeColliders);
+        rockDebugDrawNpcSupplementColliders = ini.GetBoolValue(SECTION, "bDebugDrawNpcSupplementColliders", rockDebugDrawNpcSupplementColliders);
+        rockDebugDrawNpcColliderLabels = ini.GetBoolValue(SECTION, "bDebugDrawNpcColliderLabels", rockDebugDrawNpcColliderLabels);
         rockDebugDrawHandBoneContacts = ini.GetBoolValue(SECTION, "bDebugDrawHandBoneContacts", rockDebugDrawHandBoneContacts);
         rockDebugDrawGrabAuthorityProxy = ini.GetBoolValue(SECTION, "bDebugDrawGrabAuthorityProxy", rockDebugDrawGrabAuthorityProxy);
         rockDebugMaxHandBoneBodiesDrawn = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxHandBoneBodiesDrawn", rockDebugMaxHandBoneBodiesDrawn));

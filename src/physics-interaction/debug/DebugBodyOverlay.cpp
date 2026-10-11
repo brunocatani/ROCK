@@ -22,6 +22,7 @@
 
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/HavokWorldLock.h"
 #include "physics-interaction/debug/DebugOverlayFrameAdmission.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/debug/DebugOverlayGpuTimer.h"
@@ -180,6 +181,8 @@ namespace rock::debug
             DirectX::XMFLOAT3 worldAabbMax{};
             BodyOverlayRole role{ BodyOverlayRole::Target };
             std::uint32_t bodyId{ kInvalidBodyId };
+            std::uintptr_t expectedCollisionObject{ 0 };
+            std::uintptr_t expectedShape{ 0 };
             float detailUniformScale{ 1.0f };
             bool hasValidWorldAabb{ false };
             bool hasChildLocalMatrix{ false };
@@ -191,6 +194,8 @@ namespace rock::debug
             RE::hknpBodyId bodyId{ kInvalidBodyId };
             BodyOverlayRole role{ BodyOverlayRole::Target };
             bool useBodyArrayTransform{ false };
+            std::uintptr_t expectedCollisionObject{ 0 };
+            std::uintptr_t expectedShape{ 0 };
         };
 
         struct PhysicsPhaseCaptureRequest
@@ -738,7 +743,7 @@ namespace rock::debug
              * BODY array transform, matching body-B authority, instead of the
              * generic live MOTION/COM frame used by non-target body readback.
              */
-            return role == BodyOverlayRole::Target ?
+            return role == BodyOverlayRole::Target || isNpcBodyRole(role) ?
                        BodyOverlayFrameSource::BodyArrayTransform :
                        BodyOverlayFrameSource::LiveMotionWhenAvailable;
         }
@@ -778,6 +783,14 @@ namespace rock::debug
             }
 
             return true;
+        }
+
+        bool matchesBodyWitness(RE::hknpWorld* world, RE::hknpBodyId id, std::uintptr_t collisionObject, std::uintptr_t shape)
+        {
+            if (!collisionObject && !shape) return true;
+            const auto live = havok_runtime::snapshotBodyIdentity(world, id);
+            return live.valid && reinterpret_cast<std::uintptr_t>(live.collisionObject) == collisionObject &&
+                reinterpret_cast<std::uintptr_t>(live.body->shape) == shape;
         }
 
         // Reads the body's motion-record world-space linear velocity (Havok
@@ -840,7 +853,9 @@ namespace rock::debug
                 destination.bodyId = RE::hknpBodyId{ source.bodyId };
                 destination.role = source.role;
                 destination.useBodyArrayTransform =
-                    source.role == BodyOverlayRole::Target;
+                    source.role == BodyOverlayRole::Target || isNpcBodyRole(source.role);
+                destination.expectedCollisionObject = source.expectedCollisionObject;
+                destination.expectedShape = source.expectedShape;
             }
             // Body axes can be enabled without collider shells. Capture their
             // physical frame too, sharing a request when the shell is present.
@@ -1302,7 +1317,7 @@ namespace rock::debug
                    role == BodyOverlayRole::RightGrabAuthorityProxy ||
                    role == BodyOverlayRole::LeftGrabAuthorityProxy ||
                    role == BodyOverlayRole::RightGrabPivotSourceCollider ||
-                   role == BodyOverlayRole::LeftGrabPivotSourceCollider;
+                   role == BodyOverlayRole::LeftGrabPivotSourceCollider || isNpcBodyRole(role);
         }
 
         OverlayRenderSettings captureOverlayRenderSettings()
@@ -1427,6 +1442,64 @@ namespace rock::debug
             }
         }
 
+        bool readNpcShapeDimensions(std::uintptr_t shapeAddress, int& type, float& radius, float& length)
+        {
+            // Same primitive interpretation as captureShapeRecipeUnsafe; no
+            // authoring guesses, scene bounds or heap allocation for labels.
+            __try {
+                const auto* shape = reinterpret_cast<const RE::hknpShape*>(shapeAddress);
+                type = static_cast<int>(shape->GetType());
+                radius = shape->convexRadius * havokToGameScale();
+                if (!std::isfinite(radius) || radius < 0.0f) return false;
+                if (type == 3) {
+                    const auto* a = reinterpret_cast<const float*>(shapeAddress + 0x50);
+                    const auto* b = reinterpret_cast<const float*>(shapeAddress + 0x60);
+                    if (!finiteShapeVector3(a) || !finiteShapeVector3(b)) return false;
+                    const float x = b[0] - a[0], y = b[1] - a[1], z = b[2] - a[2];
+                    length = std::sqrt(x*x + y*y + z*z) * havokToGameScale() + 2.0f * radius;
+                    return std::isfinite(length);
+                }
+                return true;
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                return false;
+            }
+        }
+
+        void appendNpcShapeLabel(const BodyOverlayFrame& source, const BodyOverlayEntry& entry,
+            const BodyRenderInfo& body, PublishedOverlayFrame& destination)
+        {
+            if (!source.drawText || !isNpcBodyRole(entry.role) || !entry.label[0]) return;
+            TextOverlayEntry text{};
+            const auto color = npcBodyColor(entry.role);
+            std::copy(color.begin(), color.end(), text.color);
+            text.color[3] = 1.0f;
+            text.worldAnchored = true;
+            DirectX::XMFLOAT4X4 matrix{};
+            DirectX::XMStoreFloat4x4(&matrix, body.worldMatrix);
+            text.worldAnchor = {matrix._41, matrix._42, matrix._43};
+            text.x = 12.0f;
+            text.y = entry.role == BodyOverlayRole::NpcNativeActive || entry.role == BodyOverlayRole::NpcNativeInactive ? -16.0f : 0.0f;
+            text.size = 1.0f;
+            int type = -1;
+            float radius = 0.0f, length = 0.0f;
+            if (!readNpcShapeDimensions(body.shapeAddress, type, radius, length)) {
+                std::snprintf(text.text, sizeof(text.text), "%s | shape unreadable", entry.label);
+            } else if (type == 2) {
+                std::snprintf(text.text, sizeof(text.text), "%s | sphere R %.2f", entry.label, radius);
+            } else if (type == 3) {
+                std::snprintf(text.text, sizeof(text.text), "%s | capsule R %.2f L %.2f", entry.label, radius, length);
+            } else {
+                DirectX::XMFLOAT3 low{}, high{};
+                if (entry.role != BodyOverlayRole::NpcNativeInactive && captureBodyWorldAabb(source.world, entry.bodyId, low, high)) {
+                    std::snprintf(text.text, sizeof(text.text), "%s | type %d AABB %.1fx%.1fx%.1f", entry.label, type,
+                        high.x - low.x, high.y - low.y, high.z - low.z);
+                } else {
+                    std::snprintf(text.text, sizeof(text.text), "%s | type %d convex R %.2f (no active AABB)", entry.label, type, radius);
+                }
+            }
+            destination.text.push_back(text);
+        }
+
         bool buildPublishedFrame(const BodyOverlayFrame& source, PublishedOverlayFrame& destination)
         {
             resetPublishedFrame(destination);
@@ -1461,6 +1534,11 @@ namespace rock::debug
             destination.drawText = source.drawText;
 
             const auto bodyCount = (std::min)(source.count, static_cast<std::uint32_t>(source.entries.size()));
+            if (source.drawText) {
+                const auto count = (std::min)(source.textCount, static_cast<std::uint32_t>(source.textEntries.size()));
+                destination.text.reserve(count + bodyCount);
+                destination.text.assign(source.textEntries.begin(), source.textEntries.begin() + count);
+            }
             destination.bodies.reserve(source.entries.size());
             destination.capturedShapeIdentities.reserve(source.entries.size());
             for (std::uint32_t index = 0; index < bodyCount; ++index) {
@@ -1471,16 +1549,19 @@ namespace rock::debug
                 }
 
                 BodyRenderInfo body{};
-                if (!extractBody(source.world, entry.bodyId, targetBodyOverlayFrameSource(entry.role), body)) {
+                if (!matchesBodyWitness(source.world, entry.bodyId, entry.expectedCollisionObject, entry.expectedShape) ||
+                    !extractBody(source.world, entry.bodyId, targetBodyOverlayFrameSource(entry.role), body)) {
                     ++destination.bodyExtractFailures;
                     continue;
                 }
+                appendNpcShapeLabel(source, entry, body, destination);
+                const bool canReadWorldAabb = entry.role != BodyOverlayRole::NpcNativeInactive;
 
                 // Held-object presentation advances the complete solved pose.
                 // Use that same immutable frame for the ordinary collider shell,
                 // while phase diagnostics retain the unmodified physics sample.
                 RE::NiTransform presentedBody{};
-                const bool hasPresentation = held_scene_presentation::tryGetPresentedBodyWorld(
+                const bool hasPresentation = !isNpcBodyRole(entry.role) && held_scene_presentation::tryGetPresentedBodyWorld(
                     source.world, entry.bodyId.value, source.gameFrameIndex, presentedBody);
                 const auto displayedWorldMatrix = hasPresentation ?
                     niStoredBodyAxesToWorldMatrix(presentedBody) : body.worldMatrix;
@@ -1498,7 +1579,7 @@ namespace rock::debug
                     if (childCount > 0) {
                         DirectX::XMFLOAT3 aabbMin{};
                         DirectX::XMFLOAT3 aabbMax{};
-                        const bool aabbValid = captureBodyWorldAabb(
+                        const bool aabbValid = canReadWorldAabb && captureBodyWorldAabb(
                             source.world,
                             entry.bodyId,
                             aabbMin,
@@ -1526,6 +1607,8 @@ namespace rock::debug
                             // feeds this value back into extractBody, whose
                             // index guard rejects the serial bits.
                             published.bodyId = entry.bodyId.value;
+                            published.expectedCollisionObject = entry.expectedCollisionObject;
+                            published.expectedShape = entry.expectedShape;
                             published.detailUniformScale =
                                 childIdentity.detailUniformScale;
                             published.hasValidWorldAabb = aabbValid;
@@ -1552,9 +1635,11 @@ namespace rock::debug
                 // the post-solve phase capture feeds this value back into
                 // extractBody, whose index guard rejects the serial bits.
                 published.bodyId = entry.bodyId.value;
+                published.expectedCollisionObject = entry.expectedCollisionObject;
+                published.expectedShape = entry.expectedShape;
                 published.detailUniformScale = shapeIdentity.detailUniformScale;
                 published.hasValidWorldAabb =
-                    captureBodyWorldAabb(source.world, entry.bodyId, published.worldAabbMin, published.worldAabbMax);
+                    canReadWorldAabb && captureBodyWorldAabb(source.world, entry.bodyId, published.worldAabbMin, published.worldAabbMax);
                 requestShapeBuildForFrame(destination, published.shapeKey, body.shapeAddress);
                 destination.bodies.push_back(std::move(published));
             }
@@ -1612,11 +1697,6 @@ namespace rock::debug
                     }
                 }
             }
-            if (source.drawText) {
-                const auto count = (std::min)(source.textCount, static_cast<std::uint32_t>(source.textEntries.size()));
-                destination.text.assign(source.textEntries.begin(), source.textEntries.begin() + count);
-            }
-
             return !destination.bodies.empty() || !destination.axes.empty() || !destination.markers.empty() ||
                    !destination.skeleton.empty() || !destination.coloredLines.empty() || !destination.text.empty();
         }
@@ -2394,6 +2474,14 @@ namespace rock::debug
                 color[1] = 0.85f;
                 color[2] = 0.05f;
                 break;
+            case BodyOverlayRole::NpcNativeActive:
+            case BodyOverlayRole::NpcNativeInactive:
+            case BodyOverlayRole::NpcSupplementActive:
+            case BodyOverlayRole::NpcSupplementInactive: {
+                const auto npcColor = npcBodyColor(role);
+                std::copy(npcColor.begin(), npcColor.end(), color);
+                break;
+            }
             }
 
             if (decodeMode == debug_overlay_policy::ShapeDecodeMode::Proxy) {
@@ -3986,7 +4074,10 @@ namespace rock::debug
                     DirectX::XMStoreFloat4x4(&draw.instance.model, model);
                     bodyColor(
                         entry.role,
-                        gpuShape->decodeMode,
+                        isNpcBodyRole(entry.role) && !shapeReady ?
+                            (cached.state == debug_overlay_shape::CacheState::Unsupported ?
+                                debug_overlay_policy::ShapeDecodeMode::Unsupported : debug_overlay_policy::ShapeDecodeMode::Proxy) :
+                            gpuShape->decodeMode,
                         draw.instance.color);
                     draws.push_back(std::move(draw));
                 };
@@ -4419,7 +4510,13 @@ namespace rock::debug
             return;
         }
 
-        const bool enabled = buildPublishedFrame(frame, *next);
+        bool enabled = false;
+        {
+            // All native shape data is copied into recipes before this lock
+            // ends. The worker and renderer retain no borrowed engine pointers.
+            havok_world_lock::ScopedWorldReadLock readLock(frame.world);
+            enabled = buildPublishedFrame(frame, *next);
+        }
         if (enabled && (!next->bodies.empty() || !next->axes.empty())) {
             stagePhysicsPhaseCapture(*next);
 
@@ -4525,7 +4622,7 @@ namespace rock::debug
             destination.role = request.role;
 
             BodyRenderInfo body{};
-            if (!extractBody(
+            if (!matchesBodyWitness(world, request.bodyId, request.expectedCollisionObject, request.expectedShape) || !extractBody(
                     world,
                     request.bodyId,
                     request.useBodyArrayTransform ?
