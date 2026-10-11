@@ -1046,6 +1046,16 @@ namespace rock
         auto grabInput = prelude.grabInput;
         const auto rawGrabInput = prelude.rawGrabInput;
 
+        if (heldWeaponEquipTriggerPressedEdge) {
+            auto* selected = hand.hasSelection() ? hand.getSelection().refr : nullptr;
+            auto* held = hand.isHolding() ? hand.getHeldRef() : nullptr;
+            ROCK_LOG_SAMPLE_DEBUG(Hand, 25,
+                "Trigger equip edge hand={} state={} heldAtStart={} looseNow={} heldRef={:08X} selectedRef={:08X} grabHeld={} pendingDrop={} pendingCatch={}",
+                hand.handName(), static_cast<unsigned>(hand.getState()), heldWeaponAtFrameStart, hand.isHoldingLooseWeapon(),
+                held ? held->GetFormID() : 0u, selected ? selected->GetFormID() : 0u, rawGrabInput.held,
+                hand.hasPendingActorEquipmentDropHandoff(), hand.hasPendingPullCatchCommit());
+        }
+
         if (triggerEquipIntent.pending) {
             triggerEquipIntent.remainingSeconds -= (std::max)(0.0f, frame.deltaSeconds);
             if (triggerEquipIntent.remainingSeconds <= 0.0f ||
@@ -1563,14 +1573,25 @@ namespace rock
             const bool heldLooseGrenade = loose_grenade_runtime::isThrowableRef(heldRefForGameplay);
             const bool peerHoldingSameObject =
                 heldRefForGameplay && peer.isHolding() && peer.getHeldRef() == heldRefForGameplay;
+            // A catch can commit earlier in this function, after the prelude's
+            // held-at-frame-start snapshot. Retain its trigger for this exact
+            // grab instead of consuming it before the equip guard can admit it.
+            if (heldWeaponEquipTriggerPressedEdge && !heldLooseGrenade && hand.isHoldingLooseWeapon() &&
+                heldRefForGameplay && !heldWeaponAtFrameStart) {
+                triggerEquipIntent = HeldWeaponTriggerEquipIntent{
+                    .pending = true,
+                    .formID = heldRefForGameplay->GetFormID(),
+                    .grabIdentity = hand.heldGrabIdentity(),
+                    .remainingSeconds = 0.35f,
+                };
+            }
             const bool replayedSameHandTrigger = triggerEquipIntent.pending &&
                 heldRefForGameplay && triggerEquipIntent.formID == heldRefForGameplay->GetFormID();
             const bool acceptedTransfer = _equipped.transition.heldTransfer().wantsEquip(
                 isLeft, heldRefForGameplay ? heldRefForGameplay->GetFormID() : 0u, hand.heldGrabIdentity());
             const bool heldWeaponEquipTriggerPressed = heldWeaponEquipTriggerPressedEdge || replayedSameHandTrigger || acceptedTransfer;
-            if (replayedSameHandTrigger || (heldWeaponEquipTriggerPressedEdge && hand.isHoldingLooseWeapon())) {
-                triggerEquipIntent = {};
-            }
+            if (replayedSameHandTrigger && triggerEquipIntent.grabIdentity == 0)
+                triggerEquipIntent.grabIdentity = hand.heldGrabIdentity();
             const bool heldWeaponGripZoneEquipSettled = !heldLooseGrenade &&
                 loose_weapon_grip_zone::isGripZoneEquipSettled(
                     isLeft,
@@ -1587,6 +1608,15 @@ namespace rock
                 .gripZoneEquipEnabled = gripZoneSettleEquipEnabled,
                 .gripZoneEquipSettled = heldWeaponGripZoneEquipSettled,
             });
+            if (heldWeaponEquipTriggerPressedEdge || replayedSameHandTrigger) {
+                ROCK_LOG_SAMPLE_DEBUG(Hand, 25,
+                    "Trigger equip admission hand={} ref={:08X} grab={} edge={} replay={} heldAtStart={} looseNow={} menu={} admitted={} nativeState={} remaining={:.3f}s",
+                    hand.handName(), heldRefForGameplay ? heldRefForGameplay->GetFormID() : 0u, hand.heldGrabIdentity(),
+                    heldWeaponEquipTriggerPressedEdge, replayedSameHandTrigger, heldWeaponAtFrameStart, hand.isHoldingLooseWeapon(),
+                    input_remap_runtime::isMenuInputActive(), heldWeaponEquipRequested,
+                    f4vr::getNativeWeaponState(f4vr::getPlayer()), triggerEquipIntent.remainingSeconds);
+            }
+            if (heldWeaponEquipRequested) triggerEquipIntent = {};
 
             auto equipHeldWeaponFromHand = [&](const bool triggeredByInput, const char* requestReason, const char* logAction) {
                 if (acceptedTransfer && grabInput.released) {
