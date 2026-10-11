@@ -503,16 +503,6 @@ bool LooseWeaponCollision::takeNativeRestCompletion(std::uint32_t reference) noe
     for(auto& slot:_slots)if(reference&&!slot._state&&slot._rested==reference){slot._rested=0;return true;}
     return false;
 }
-bool LooseWeaponCollision::presentationReady(std::uint32_t reference) const {
-    if(!loose_weapon_state::owns(reference))return true;
-    // A reported preparation failure must never strand a native drop/grab.
-    // Slot::clear has restored its original physics before recording decline.
-    for(const auto& slot:_slots)if(slot._declined==reference)return true;
-    for(const auto& slot:_slots)if(slot._state&&slot._state->ref->formID==reference)
-        return slot._state->installed&&!slot._state->failed;
-    return std::any_of(_parked.begin(),_parked.end(),[&](const auto& state){return state&&state->ref->formID==reference;});
-}
-
 LooseWeaponCollision::NativeRest LooseWeaponCollision::watchNative(RE::TESObjectREFR* ref,
     const PhysicsFrameContext& frame,PhysicsCallbackQuiescenceGate& gate)
 {
