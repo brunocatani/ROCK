@@ -133,10 +133,10 @@ namespace rock::weapon_transition_animation_acceleration
         std::atomic<std::uintptr_t> s_encodedLease{ 0 };
         std::array<std::atomic<std::uintptr_t>, kMaxGraphSlots>
             s_targetCharacters{};
-        // Address-only witnesses of the graphs present when this exact draw
-        // was requested. A late native weapon graph can blend FROM one of these
-        // whole graphs, without an equip clip in its outgoing branch.
-        std::array<std::atomic<std::uintptr_t>, kMaxGraphSlots> s_initialGraphs{};
+        // Diagnostic address-only witnesses, never dereferenced after the
+        // callback. Per-effect admission avoids one graph's long transition
+        // suppressing evidence of a shorter transition in another graph.
+        std::array<std::atomic<std::uintptr_t>, 32> s_observedBlends{};
         std::atomic<std::uint32_t> s_targetCharacterCount{ 0 };
         std::array<std::atomic<std::uintptr_t>, kMaxTransitionClips>
             s_transitionClips{};
@@ -298,7 +298,7 @@ namespace rock::weapon_transition_animation_acceleration
             for (auto& character : s_targetCharacters) {
                 character.store(0, std::memory_order_relaxed);
             }
-            for (auto& graph : s_initialGraphs) graph.store(0, std::memory_order_relaxed);
+            for (auto& blend : s_observedBlends) blend.store(0, std::memory_order_relaxed);
             for (auto& clip : s_transitionClips) {
                 clip.store(0, std::memory_order_relaxed);
             }
@@ -381,13 +381,6 @@ namespace rock::weapon_transition_animation_acceleration
             }
 
             for (std::uint32_t index = 0; index < characterCount; ++index) {
-                std::uintptr_t behavior{};
-                std::uintptr_t behaviorVtable{};
-                if (!native_memory::tryReadField(reinterpret_cast<void*>(characters[index]), 0x80, behavior) ||
-                    !native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(behavior), behaviorVtable) ||
-                    behaviorVtable != REL::Offset(0x2E04848).address()) behavior = 0;
-                s_initialGraphs[index].store(behavior, std::memory_order_relaxed);
-                ROCK_LOG_DEBUG(Weapon, "Equip initial graph witness character={:#x} graph={:#x}", characters[index], behavior);
                 s_targetCharacters[index].store(
                     characters[index],
                     std::memory_order_relaxed);
@@ -676,6 +669,63 @@ namespace rock::weapon_transition_animation_acceleration
             return false;
         }
 
+        void traceBlend(void* blend, void* context, void* from, void* to,
+            float remaining, bool outgoingDraw) noexcept
+        {
+            if (!logger::isDebugEnabled()) return;
+            const auto address = reinterpret_cast<std::uintptr_t>(blend);
+            bool admitted = false;
+            for (auto& slot : s_observedBlends) {
+                auto expected = slot.load(std::memory_order_acquire);
+                if (expected == address) return;
+                if (expected == 0 && slot.compare_exchange_strong(expected, address, std::memory_order_acq_rel)) {
+                    admitted = true;
+                    break;
+                }
+                if (expected == address) return;
+            }
+            if (!admitted) return;
+
+            struct NodeEvidence
+            {
+                std::array<char, 96> name{};
+                std::uintptr_t vtable{};
+                std::uint8_t kind{};
+            };
+            const auto describe = [](const void* node) {
+                NodeEvidence evidence{};
+                std::uintptr_t name{};
+                (void)native_memory::tryReadField(node, 0, evidence.vtable);
+                (void)native_memory::tryReadField(node, 0x43, evidence.kind);
+                // hkbNode ctor 193D7D0 initializes hkStringPtr at +38;
+                // native subgraph installation 17762E0 reads the same name.
+                if (native_memory::tryReadField(node, 0x38, name) && name &&
+                    native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(name & ~std::uintptr_t{1}),
+                        evidence.name.data(), evidence.name.size())) {
+                    evidence.name.back() = '\0';
+                } else {
+                    evidence.name.fill('\0');
+                }
+                return evidence;
+            };
+            const auto source = describe(from);
+            const auto target = describe(to);
+            void* character{};
+            void* behavior{};
+            float elapsed{};
+            (void)native_memory::tryReadField(context, 0, character);
+            (void)native_memory::tryReadField(context, 8, behavior);
+            if (!behavior) (void)native_memory::tryReadField(character, 0x80, behavior);
+            (void)native_memory::tryReadField(blend, 0x134, elapsed);
+            const auto base = REL::Module::get().base();
+            ROCK_LOG_DEBUG(Weapon,
+                "Equip blend identity effect={} character={} behavior={} elapsed={:.6f} remaining={:.6f} outgoingDraw={} "
+                "from={} kind={} vtableRva={:#x} name='{}' to={} kind={} vtableRva={:#x} name='{}'",
+                blend, character, behavior, elapsed, remaining, outgoingDraw,
+                from, source.kind, source.vtable >= base ? source.vtable - base : 0, source.name.data(),
+                to, target.kind, target.vtable >= base ? target.vtable - base : 0, target.name.data());
+        }
+
         void onBlendUpdate(void* blend, void* context, float timestep, void* syncOwner)
         {
             const auto lease = s_encodedLease.load(std::memory_order_acquire);
@@ -684,10 +734,9 @@ namespace rock::weapon_transition_animation_acceleration
             void* to{};
             std::uintptr_t vtable{};
             bool complete = false;
-            bool graphInitialization = false;
             // Restrict to the verified concrete blending effect, in the exact
             // leased player graph, with an actively registered outgoing equip
-            // clip or a request-time initial graph. Other actors and ordinary
+            // clip. Other actors and ordinary
             // reload/fire/locomotion transitions retain their original timestep.
             if (lease && (lease & kEncodedStateMask) ==
                     weapon_transition_animation_acceleration_policy::transitionState(Direction::Draw) &&
@@ -698,33 +747,10 @@ namespace rock::weapon_transition_animation_acceleration
                 native_memory::tryReadField(blend, 0x130, remaining) && std::isfinite(remaining) && remaining > 0.0f &&
                 native_memory::tryReadField(blend, 0x98, from) && native_memory::tryReadField(blend, 0xA0, to) && from && to && from != to) {
                 const bool outgoingDraw = outgoingBranchHasDrawClip(context, from);
-                // Captured AK/M16/Glock: the part poses interpolate for 0.2 s
-                // from the same placeholder positions even after EquipFast is
-                // complete. That effect's source is hkbBehaviorGraph (kind 1),
-                // not a clip. Admit only a graph witnessed at request time,
-                // once, in the leased player's context. No graph-wide timer
-                // override or pose writes; native cleanup remains authoritative.
-                std::uintptr_t sourceVtable{};
-                if (s_encodedLease.load(std::memory_order_acquire) == lease &&
-                    native_memory::tryReadField(from, 0, sourceVtable) &&
-                    sourceVtable == REL::Offset(0x2E04848).address()) {
-                    for (auto& initial : s_initialGraphs) {
-                        auto expected = reinterpret_cast<std::uintptr_t>(from);
-                        if (initial.compare_exchange_strong(expected, 0, std::memory_order_acq_rel)) {
-                            graphInitialization = true;
-                            break;
-                        }
-                    }
-                }
-                if ((outgoingDraw || graphInitialization) && s_encodedLease.load(std::memory_order_acquire) == lease) {
+                traceBlend(blend, context, from, to, remaining, outgoingDraw);
+                if (outgoingDraw && s_encodedLease.load(std::memory_order_acquire) == lease) {
                     timestep = (std::max)(timestep, remaining);
                     complete = true;
-                } else {
-                    std::uint8_t fromKind{};
-                    (void)native_memory::tryReadField(from, 0x43, fromKind);
-                    ROCK_LOG_SAMPLE_DEBUG(Weapon, 250,
-                        "Equip blend observation: source={} kind={} target={} remaining={:.6f} outgoingDraw=false; native timing retained",
-                        from, fromKind, to, remaining);
                 }
             }
             // Native update owns its sync bookkeeping, elapsed/remaining clocks
@@ -734,8 +760,8 @@ namespace rock::weapon_transition_animation_acceleration
                 float after{};
                 const bool readable = native_memory::tryReadField(blend, 0x130, after);
                 ROCK_LOG_SAMPLE_INFO(Weapon, 10,
-                    "Equip blend completed graphInitialization={} from={} to={} remaining={:.6f}->{:.6f} readable={} timestep={:.6f}",
-                    graphInitialization, from, to, remaining, after, readable, timestep);
+                    "Equip blend completed from={} to={} remaining={:.6f}->{:.6f} readable={} timestep={:.6f}",
+                    from, to, remaining, after, readable, timestep);
             }
         }
 
