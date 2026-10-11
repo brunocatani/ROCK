@@ -425,19 +425,7 @@ namespace rock
     void NpcCollisionRuntime::appendDebugOverlay(debug::BodyOverlayFrame& frame, bool native, bool supplemental, bool labels)
     {
         auto mutation = _gate ? _gate->pauseForMutation() : PhysicsCallbackQuiescenceGate::MutationLease{};
-        const auto addText = [&](const char* text, float y, const std::array<float, 4>& color) {
-            if (frame.textCount >= frame.textEntries.size()) return;
-            auto& entry = frame.textEntries[frame.textCount++];
-            std::snprintf(entry.text, sizeof(entry.text), "%s", text);
-            entry.x = 18.0f;
-            entry.y = y;
-            std::copy(color.begin(), color.end(), entry.color);
-        };
         using Role = debug::BodyOverlayRole;
-        addText("NPC: CYAN native active | BLUE native inactive", 350, debug::npcBodyColor(Role::NpcNativeActive));
-        addText("MAGENTA ROCK active | GREY ROCK inactive | dimensions in game units", 368, debug::npcBodyColor(Role::NpcSupplementActive));
-        addText("ORANGE bounds proxy / loading | RED unsupported | native/copy views toggle separately", 386, {1.0f, 0.7f, 0.2f, 1.0f});
-        std::array<std::size_t, 4> counts{};
         std::size_t omitted = 0;
         if (_world && frame.world == _world) {
             havok_world_lock::ScopedWorldReadLock readLock(_world);
@@ -446,7 +434,6 @@ namespace rock
                 Sample source;
                 if (!readSource(_world, limb.source.bodyId, source) || source.state.identity != limb.source) continue;
                 const auto add = [&](const Sample& sample, Role role, const char* state) {
-                    ++counts[static_cast<std::size_t>(role) - static_cast<std::size_t>(Role::NpcNativeActive)];
                     if (frame.count >= frame.entries.size()) { ++omitted; return; }
                     auto& entry = frame.entries[frame.count++];
                     entry.bodyId = RE::hknpBodyId{sample.state.identity.bodyId};
@@ -468,10 +455,7 @@ namespace rock
                 }
             }
         }
-        char status[128]{};
-        std::snprintf(status, sizeof(status), "NPC native %zu active / %zu inactive | ROCK %zu active / %zu inactive | omitted %zu%s",
-            counts[0], counts[1], counts[2], counts[3], omitted, _scissorsLoaded ? " | SCISSORS owns simulation" : "");
-        addText(status, 404, {1.0f, 1.0f, 1.0f, 1.0f});
+        if (omitted) ROCK_LOG_SAMPLE_WARN(Physics, 5000, "NPC collider overlay capacity exceeded: omitted={}", omitted);
     }
 
     void NpcCollisionRuntime::drive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)

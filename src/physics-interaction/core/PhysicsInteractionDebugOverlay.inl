@@ -216,7 +216,8 @@
         frame.drawText = drawGrabForceTorqueText || drawFingerSweptArcText || drawPerformanceProfilerOverlay ||
             drawDynamicHandColliders || drawDynamicWeaponColliders || drawNativeScopeActivation ||
             drawAuthoredSupportGripDebug || drawGrabAuthorityProxy ||
-            (providerOverlay && providerOverlay->textCount > 0) || drawGunstock || drawControllerAim || drawNpc;
+            (providerOverlay && providerOverlay->textCount > 0) || drawGunstock || drawControllerAim ||
+            (drawNpc && g_rockConfig.rockDebugDrawNpcColliderLabels);
         if (providerOverlay) {
             frame.coloredLineEntries = providerOverlay->lines.data();
             frame.coloredLineCount = providerOverlay->lineCount;
