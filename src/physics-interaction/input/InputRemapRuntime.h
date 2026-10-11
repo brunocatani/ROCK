@@ -90,7 +90,7 @@ namespace rock::input_remap_runtime
     void setRealMeleeWeaponEquipped(bool equipped);
     void setHandHeldWeapon(bool isLeft, bool heldWeapon);
     void setHandInteractionEngaged(bool isLeft, bool engaged);
-    void setHeldObjectFormId(bool isLeft, std::uint32_t formId);
+    void setHeldObjectFormId(bool isLeft, std::uint32_t formId, bool looseWeapon = false);
     void setEquippedWeaponFiringGripInputActive(bool active);
     void setEquippedWeaponPrimaryDetached(bool detached, bool equippedDrop = false);
     void setEquippedWeaponShoulderSheathActive(bool active);

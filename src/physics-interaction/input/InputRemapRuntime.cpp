@@ -252,6 +252,10 @@ namespace rock::input_remap_runtime
         }
         std::array<std::atomic<bool>, 2> s_handInteractionEngaged{};
         std::array<std::atomic<std::uint32_t>, 2> s_heldObjectFormId{};
+        std::array<std::atomic<std::uint32_t>, 2> s_heldLooseWeaponFormId{};
+        using WandPickUpdate = void (*)(void*, const void*, const void*);
+        std::array<WandPickUpdate, 2> s_originalWandPickUpdate{};
+        std::array<std::atomic<bool>, 2> s_wandPickHookInstalled{};
         std::array<std::atomic<bool>, 2> s_pendingSavedGrabOffsetRequest{};
         std::atomic<bool> s_equippedWeaponFiringGripInputActive{ false };
         std::atomic<bool> s_equippedDropActive{ false };
@@ -1485,6 +1489,45 @@ namespace rock::input_remap_runtime
 
         using ActivateTarget = input_remap_policy::ActivateTarget;
 
+        [[nodiscard]] bool isHeldLooseWeaponTarget(std::uint32_t formId)
+        {
+            return input_remap_policy::isHeldLooseWeaponTarget(formId,
+                s_heldLooseWeaponFormId[0].load(std::memory_order_acquire),
+                s_heldLooseWeaponFormId[1].load(std::memory_order_acquire));
+        }
+
+        // Both native wand setters copy their pick event synchronously, then
+        // publish it to the rollover model and native activation consumers.
+        // Filter the exact held reference in a stack copy; never mutate the
+        // caster, input packet, world reference, or global HUD visibility.
+        template <std::size_t HandIndex>
+        void hookedWandPickUpdate(void* caster, const void* pick, const void* point)
+        {
+            const auto original = s_originalWandPickUpdate[HandIndex];
+            if (!original) return;
+            std::uint32_t handleValue{};
+            if (pick && native_memory::tryReadField(pick, 0, handleValue) && handleValue &&
+                (s_heldLooseWeaponFormId[0].load(std::memory_order_acquire) ||
+                 s_heldLooseWeaponFormId[1].load(std::memory_order_acquire))) {
+                RE::ObjectRefHandle handle{};
+                static_assert(sizeof(handle) == sizeof(handleValue));
+                std::memcpy(&handle, &handleValue, sizeof(handle));
+                const auto ref = handle.get();
+                if (ref && isHeldLooseWeaponTarget(ref->GetFormID())) {
+                    // 9D0B00 reads bytes [0, 0x28] from the input, builds its
+                    // own larger event, and resolves the leading uint32 handle.
+                    alignas(8) std::array<std::byte, 0x29> filtered{};
+                    if (native_memory::guardedCopyFromMemory(pick, filtered.data(), filtered.size())) {
+                        std::memset(filtered.data(), 0, sizeof(handleValue));
+                        original(caster, filtered.data(), point);
+                        return;
+                    }
+                    ROCK_LOG_SAMPLE_WARN(Input, 1000, "Held weapon rollover filter could not copy wand pick event");
+                }
+            }
+            original(caster, pick, point);
+        }
+
         [[nodiscard]] ActivateTarget classifyActivateTarget(bool primaryHandEvent)
         {
             const auto globalOffset = primaryHandEvent ? kActivatePrimaryWandPickRefGlobalOffset : kActivateSecondaryWandPickRefGlobalOffset;
@@ -1533,6 +1576,7 @@ namespace rock::input_remap_runtime
              * FormType allowlist below at all.
              */
             const auto refFormId = ref->GetFormID();
+            if (isHeldLooseWeaponTarget(refFormId)) return ActivateTarget::HeldLooseWeapon;
             const auto heldFormId = s_heldObjectFormId[takeEquipHandIndex(primaryHandEvent)].load(std::memory_order_acquire);
             if (heldFormId != 0 && heldFormId == refFormId) {
                 ROCK_LOG_SAMPLE_DEBUG(Input,
@@ -1576,6 +1620,9 @@ namespace rock::input_remap_runtime
                 return false;
             }
 
+            if (target == ActivateTarget::HeldLooseWeapon) {
+                return s_gameplayInputAllowed.load(std::memory_order_acquire) && !isInputBlockingMenuActive();
+            }
             const bool primaryHandEvent = isPrimaryWandInputEvent(event);
             const bool handEngaged = isTakeEquipHandEngaged(primaryHandEvent);
             const bool targetEligible = input_remap_policy::isTakeEquipTarget(target);
@@ -1685,7 +1732,7 @@ namespace rock::input_remap_runtime
                 s_gameplayInputAllowed.load(std::memory_order_acquire) && !isInputBlockingMenuActive();
             const bool primaryHandEvent = isPrimaryWandInputEvent(inputEvent);
             const bool weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire);
-            const auto target = gameplayActivation && (weaponDrawn || isTakeEquipHandEngaged(primaryHandEvent)) ?
+            const auto target = gameplayActivation && (weaponDrawn || s_heldLooseWeaponFormId[0].load(std::memory_order_acquire) || s_heldLooseWeaponFormId[1].load(std::memory_order_acquire) || isTakeEquipHandEngaged(primaryHandEvent)) ?
                 classifyActivateTarget(primaryHandEvent) : ActivateTarget::Unavailable;
             bool nativeActivation = input_remap_policy::shouldPrioritizeNativeActivation(
                 target, isTakeEquipHandEngaged(primaryHandEvent));
@@ -2392,6 +2439,23 @@ namespace rock::input_remap_runtime
             return true;
         }
 
+        bool installWandPickFilter(std::size_t index, std::uintptr_t slot, std::uintptr_t function, WandPickUpdate hook)
+        {
+            if (!s_wandPickHookInstalled[index].load(std::memory_order_acquire)) {
+                constexpr std::array<std::uint8_t, 21> expected{
+                    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10,
+                    0x48, 0x89, 0x7C, 0x24, 0x18, 0x41, 0x56, 0x48, 0x83, 0xEC, 0x60 };
+                std::array<std::uint8_t, expected.size()> actual{};
+                if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(function).address()),
+                        actual.data(), actual.size()) || actual != expected) {
+                    ROCK_LOG_SAMPLE_WARN(Input, 1000, "Wand pick filter verification failed hand={} function=0x{:X}", index, function);
+                    return false;
+                }
+            }
+            return installNativeActionVTableHook(slot, function, hook, s_originalWandPickUpdate[index],
+                s_wandPickHookInstalled[index], index == 0 ? "secondary wand held weapon filter" : "primary wand held weapon filter");
+        }
+
         bool updateNativeActionSuppressionHooks()
         {
             bool ready = installNativeVatsVansInputSuppressionHook();
@@ -2401,6 +2465,8 @@ namespace rock::input_remap_runtime
             ready = installFavoritesEventSuppressionHook() && ready;
             ready = installMeleeThrowEventSuppressionHook() && ready;
             ready = installPipboyPauseArbitrationHooks() && ready;
+            ready = installWandPickFilter(0, 0x2D81EC0, 0x9D54D0, &hookedWandPickUpdate<0>) && ready;
+            ready = installWandPickFilter(1, 0x2D81F18, 0x9D56F0, &hookedWandPickUpdate<1>) && ready;
             return ready;
         }
 
@@ -2702,9 +2768,10 @@ namespace rock::input_remap_runtime
         s_handInteractionEngaged[isLeft ? 0u : 1u].store(engaged, std::memory_order_release);
     }
 
-    void setHeldObjectFormId(bool isLeft, std::uint32_t formId)
+    void setHeldObjectFormId(bool isLeft, std::uint32_t formId, bool looseWeapon)
     {
         s_heldObjectFormId[isLeft ? 0u : 1u].store(formId, std::memory_order_release);
+        s_heldLooseWeaponFormId[isLeft ? 0u : 1u].store(looseWeapon ? formId : 0, std::memory_order_release);
     }
 
     void setEquippedWeaponFiringGripInputActive(bool active)

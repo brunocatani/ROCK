@@ -1114,6 +1114,13 @@ static bool testVanillaScopeMode()
 int main()
 {
     bool ok = true;
+    using namespace rock::input_remap_policy;
+    ok &= expectTrue("either wand excludes the left held weapon", isHeldLooseWeaponTarget(11,11,22));
+    ok &= expectTrue("either wand excludes the right held weapon", isHeldLooseWeaponTarget(22,11,22));
+    ok &= expectFalse("other world pickups remain visible", isHeldLooseWeaponTarget(33,11,22));
+    ok &= expectFalse("release restores pickup eligibility", isHeldLooseWeaponTarget(11,0,22));
+    ok &= expectFalse("empty hands cannot match an empty target", isHeldLooseWeaponTarget(0,0,0));
+    ok &= expectFalse("held weapon cannot take native use priority", shouldPrioritizeNativeActivation(ActivateTarget::HeldLooseWeapon,false));
     ok &= testInputRouting();
     ok &= testNativeVats();
     ok &= testPipboyGestures();

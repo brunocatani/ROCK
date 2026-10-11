@@ -6,6 +6,11 @@
 
 namespace rock::input_remap_policy
 {
+    [[nodiscard]] constexpr bool isHeldLooseWeaponTarget(std::uint32_t target,
+        std::uint32_t left, std::uint32_t right) noexcept
+    {
+        return target != 0 && (target == left || target == right);
+    }
     // ROCK uses the OpenVR grip button as its fixed grab input.
     inline constexpr int kGrabButtonId = 2;
 
@@ -29,6 +34,7 @@ namespace rock::input_remap_policy
         TakeEquip,
         NativeActivation,
         OtherWandTakeEquip,
+        HeldLooseWeapon,
     };
 
     [[nodiscard]] constexpr bool isTakeEquipTarget(ActivateTarget target) noexcept
