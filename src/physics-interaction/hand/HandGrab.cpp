@@ -9234,6 +9234,8 @@ namespace rock
         }
         const bool advancingOffset = _grabOffsetAcquisition.active;
         if (advancingOffset) {
+            const bool synchronizeAcquiringWeaponHand = isHoldingLooseWeapon() &&
+                !_grabFrame.looseObjectSharedPeerTrace && _looseWeaponReturnStartFrame == 0;
             // Both endpoints ride the current physical hand frame. The fixed
             // body-local grip follows a straight segment while rotation uses
             // the same fraction; no offset is applied around the body origin.
@@ -9242,6 +9244,11 @@ namespace rock
             update.proxyAuthorityWorld = grab_offset_acquisition::advance(_grabOffsetAcquisition,
                 update.proxyAuthorityWorld, _grabFrame.proxyAuthorityBodyHandSpace,
                 _grabFrame.authority.pivotBConstraintLocalGame, acquisitionDelta);
+            if (synchronizeAcquiringWeaponHand) {
+                const float alpha = hand_visual_lerp_math::timedBlendAlpha(
+                    _grabOffsetAcquisition.elapsedSeconds, _grabOffsetAcquisition.durationSeconds);
+                _looseSharedHandBlendAlpha = alpha * alpha * (3.0f - 2.0f * alpha);
+            }
             if (!_grabOffsetAcquisition.active) _looseWeaponReturnStartFrame = 0;
             update.proxyAuthoritySource = "offsetAcquisitionGripPath";
             if (!isFiniteNiTransform(update.proxyAuthorityWorld)) {
@@ -9515,13 +9522,22 @@ namespace rock
                         _grabVisualHandLerpElapsedSeconds,
                         _grabVisualHandLerpDurationSeconds);
                     if (weaponVisual && _looseSharedHandBlendAlpha >= 0.0f) {
-                        // The joining hand and rotating weapon finish together.
+                        // Initial wrist acquisition and paired joining use the
+                        // weapon's exact eased progress, including its last frame.
                         // Visual-only support retains its independent wrist blend.
                         visualHandLerpAlpha = _looseSharedHandBlendAlpha;
                         nextVisualHandWorld = hand_visual_lerp_math::interpolateTransform(
                             _grabVisualHandLerpStartTransform, targetVisualHandWorld, visualHandLerpAlpha);
                         if (visualHandLerpAlpha >= 1.0f)
                             _grabVisualHandLerpElapsedSeconds = _grabVisualHandLerpDurationSeconds;
+                        if (visualHandLerpAlpha < 1.0f) {
+                            ROCK_LOG_SAMPLE_DEBUG(Hand, 100,
+                                "{} loose grip slurp trace={} paired={} sharedAlpha={:.3f} wristDistance={:.3f}gu wristAngle={:.2f}deg",
+                                handName(), _grabFrame.traceId, _grabFrame.looseObjectSharedPeerTrace != 0,
+                                visualHandLerpAlpha,
+                                pointDistanceGameUnits(nextVisualHandWorld.translate, targetVisualHandWorld.translate),
+                                hand_visual_lerp_math::rotationDistanceDegrees(nextVisualHandWorld,targetVisualHandWorld));
+                        }
                     }
                 } else {
                     _grabVisualHandLerpStartTransform = targetVisualHandWorld;
