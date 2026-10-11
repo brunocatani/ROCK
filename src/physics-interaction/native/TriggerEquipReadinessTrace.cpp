@@ -5,6 +5,8 @@
 #include "physics-interaction/weapon/EquippedWeaponVisualState.h"
 #include "physics-interaction/weapon/WeaponScenePath.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/visual/FrikHandWorldAuthority.h"
+#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "RE/NetImmerse/NiNode.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "rock_support/Fo4VrRuntime.h"
@@ -38,6 +40,7 @@ namespace rock::trigger_equip_readiness_trace
             std::uint64_t sequence{};
             std::uint32_t expectedForm{}, reference{}, samples{}, inputs{};
             std::uint32_t requests{}, actions{};
+            std::uint32_t handFrames{};
             std::uintptr_t boundInstance{};
             Clock::time_point started{}, lastFrame{}, lastInput{};
             NativeSample previous{};
@@ -291,6 +294,37 @@ namespace rock::trigger_equip_readiness_trace
                 relative.rotate.entry[0][0],relative.rotate.entry[0][1],relative.rotate.entry[0][2],relative.rotate.entry[1][0],relative.rotate.entry[1][1],relative.rotate.entry[1][2],relative.rotate.entry[2][0],relative.rotate.entry[2][1],relative.rotate.entry[2][2]);
         }
     }
+    void renderedHands() noexcept
+    {
+        if (!active() || s_capture.handFrames >= 12 || elapsedMs() > 200.0) return;
+        ++s_capture.handFrames;
+        auto* player = f4vr::getPlayer();
+        auto* root = player ? player->Get3D() : nullptr;
+        for (const bool left : { false, true }) {
+            RE::NiTransform wand{}, presented{}, solved{};
+            const bool wandValid = frik_hand_world_authority::tryGetHandlingWandWorld(left, wand);
+            const bool presentedValid = frik_hand_world_authority::tryGetPresentedHandWorld(left, presented);
+            hand_world_claim_registry_policy::Claim claim{};
+            const bool claimed = frik_hand_world_authority::tryGetPublishedHandClaim(left, claim);
+            const auto solve = frik_visual_authority::getHandSolveResult(frik_visual_authority::handFromBool(left), solved);
+            RE::NiTransform local{};
+            if (wandValid && presentedValid) local = transform_math::composeTransforms(transform_math::invertTransform(wand), presented);
+            const auto error = claimed ? solved.translate - claim.target.translate : RE::NiPoint3{};
+            ROCK_LOG_DEBUG(Weapon,
+                "EQUIP-HAND rendered seq={} ms={:.2f} sample={} hand={} wandValid={} presentedValid={} solve={} claim={} priority={} fallback={} "
+                "solvedClaimDelta=({:.4f},{:.4f},{:.4f}) handInWandT=({:.4f},{:.4f},{:.4f}) handInWandS={:.5f} "
+                "handInWandR=({:.4f},{:.4f},{:.4f};{:.4f},{:.4f},{:.4f};{:.4f},{:.4f},{:.4f}) bodyRoot={} bodyCulled={} bodyScale={:.5f}",
+                s_capture.sequence, elapsedMs(), s_capture.handFrames, left ? "left" : "right", wandValid, presentedValid,
+                static_cast<unsigned>(solve), claimed ? hand_world_claim_registry_policy::tagView(claim) : std::string_view{},
+                claimed ? claim.priority : 0, claimed && claim.fallbackReported, error.x, error.y, error.z,
+                local.translate.x, local.translate.y, local.translate.z, local.scale,
+                local.rotate.entry[0][0], local.rotate.entry[0][1], local.rotate.entry[0][2],
+                local.rotate.entry[1][0], local.rotate.entry[1][1], local.rotate.entry[1][2],
+                local.rotate.entry[2][0], local.rotate.entry[2][1], local.rotate.entry[2][2],
+                static_cast<void*>(root), root && (root->flags.flags & 1u) != 0, root ? root->world.scale : 0.0f);
+        }
+    }
+
     void frame(const equipped_weapon_visual_state::Snapshot& visual,
         bool bridgeVisible, bool gripPending, bool nativeAnimation, bool menu) noexcept
     {

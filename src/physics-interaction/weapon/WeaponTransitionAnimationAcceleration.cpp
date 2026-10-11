@@ -137,7 +137,6 @@ namespace rock::weapon_transition_animation_acceleration
         // callback. Per-effect admission avoids one graph's long transition
         // suppressing evidence of a shorter transition in another graph.
         std::array<std::atomic<std::uintptr_t>, 32> s_observedBlends{};
-        std::array<std::atomic<bool>, kMaxGraphSlots> s_completedFirearmHandoff{};
         std::atomic<std::uintptr_t> s_firstPersonCharacter{};
         std::atomic<bool> s_firearmPoseGenerated{};
         std::array<std::atomic<std::uintptr_t>, kMaxTransitionClips> s_poseClips{};
@@ -305,7 +304,6 @@ namespace rock::weapon_transition_animation_acceleration
                 character.store(0, std::memory_order_relaxed);
             }
             for (auto& blend : s_observedBlends) blend.store(0, std::memory_order_relaxed);
-            for (auto& completed : s_completedFirearmHandoff) completed.store(false, std::memory_order_relaxed);
             s_firstPersonCharacter.store(0, std::memory_order_relaxed);
             s_firearmPoseGenerated.store(false, std::memory_order_relaxed);
             for (auto& clip : s_poseClips) clip.store(0, std::memory_order_relaxed);
@@ -748,63 +746,19 @@ namespace rock::weapon_transition_animation_acceleration
                 to, target.kind, target.vtable >= base ? target.vtable - base : 0, target.name.data());
         }
 
-        template <std::size_t N>
-        bool isNamedBehavior(const void* node, const char (&expected)[N]) noexcept
+        bool admitInitialGraphHandoff(void* to) noexcept
         {
-            std::uintptr_t vtable{}, name{};
-            std::array<char, N> actual{};
-            return native_memory::tryReadField(node, 0, vtable) &&
-                vtable == REL::Offset(0x2E04848).address() &&
-                native_memory::tryReadField(node, 0x38, name) && name &&
-                native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(name & ~std::uintptr_t{1}),
-                    actual.data(), actual.size()) &&
-                std::equal(actual.begin(), actual.end(), expected);
-        }
-
-        bool admitFirearmHandoff(void* context, void* from, void* to, std::uintptr_t lease) noexcept
-        {
-            // Exact subgraph preparation removes the melee detour, but the
-            // native swap can still blend FROM the interrupted Gun -> MT
-            // sheathe effect. The 417 capture shows that composite pose moving
-            // weapon-local parts for 0.2 s after the incoming clip generates.
-            // Admit only these observed weapon graph edges, once per character;
-            // never identify an initialization transition by duration alone.
-            if (s_registeredClips.load(std::memory_order_acquire) == 0 ||
-                !isNamedBehavior(to, "GunBehavior.hkb")) return false;
-            const char* sourceKind = nullptr;
-            if (isNamedBehavior(from, "MeleeBehavior.hkb")) sourceKind = "melee";
-            else if (isNamedBehavior(from, "MTBehavior.hkb")) sourceKind = "movement";
-            else {
-                std::uintptr_t vtable{};
-                void* previousGun{};
-                void* movement{};
-                if (native_memory::tryReadField(from, 0, vtable) &&
-                    vtable == REL::Offset(0x2EE4F28).address() &&
-                    native_memory::tryReadField(from, 0x98, previousGun) &&
-                    native_memory::tryReadField(from, 0xA0, movement) &&
-                    isNamedBehavior(previousGun, "GunBehavior.hkb") &&
-                    isNamedBehavior(movement, "MTBehavior.hkb")) {
-                    sourceKind = "interrupted-gun-to-movement";
-                }
-            }
-            if (!sourceKind) return false;
-            std::uintptr_t character{};
-            if (!native_memory::tryReadField(context, 0, character) ||
-                s_encodedLease.load(std::memory_order_acquire) != lease) return false;
-            const auto count = s_targetCharacterCount.load(std::memory_order_acquire);
-            for (std::uint32_t index = 0; index < count; ++index) {
-                if (character == s_targetCharacters[index].load(std::memory_order_relaxed)) {
-                    bool expected = false;
-                    if (s_completedFirearmHandoff[index].compare_exchange_strong(
-                            expected, true, std::memory_order_acq_rel)) {
-                        ROCK_LOG_DEBUG(Weapon, "Trigger equip firearm graph handoff admitted source={} character={:#x} from={} to={}",
-                            sourceKind, character, from, to);
-                        return true;
-                    }
-                    return false;
-                }
-            }
-            return false;
+            // A behavior graph is a native node category, not an asset name.
+            // During initial equip evaluation, finish every incoming graph
+            // blend, including interrupted/nested transitions. Close this
+            // window at the first generated firearm pose so subsequent gameplay
+            // transitions retain native timing. Clip-level equip handling is
+            // separate and keeps its existing activation-scoped registration.
+            // The caller already verified Drawing/Drawn on the exact equip
+            // lease. Root-graph admission must not depend on clip filenames.
+            if (s_firearmPoseGenerated.load(std::memory_order_acquire)) return false;
+            std::uint8_t kind{};
+            return native_memory::tryReadField(to, 0x43, kind) && kind == 1;
         }
 
         void onBlendUpdate(void* blend, void* context, float timestep, void* syncOwner)
@@ -818,7 +772,7 @@ namespace rock::weapon_transition_animation_acceleration
             bool firearmHandoff = false;
             // Restrict to the verified concrete blending effect, in the exact
             // leased player graph, with an actively registered outgoing equip
-            // clip or an observed initial firearm graph handoff.
+            // clip or an initial behavior-graph handoff, independent of names.
             // Other actors and ordinary
             // reload/fire/locomotion transitions retain their original timestep.
             if (lease && (lease & kEncodedStateMask) ==
@@ -831,7 +785,7 @@ namespace rock::weapon_transition_animation_acceleration
                 native_memory::tryReadField(blend, 0x98, from) && native_memory::tryReadField(blend, 0xA0, to) && from && to && from != to) {
                 const bool outgoingDraw = outgoingBranchHasDrawClip(context, from);
                 traceBlend(blend, context, from, to, remaining, outgoingDraw);
-                firearmHandoff = admitFirearmHandoff(context, from, to, lease);
+                firearmHandoff = admitInitialGraphHandoff(to);
                 if ((outgoingDraw || firearmHandoff) && s_encodedLease.load(std::memory_order_acquire) == lease) {
                     timestep = (std::max)(timestep, remaining);
                     complete = true;

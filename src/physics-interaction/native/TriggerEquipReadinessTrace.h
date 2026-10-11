@@ -15,6 +15,7 @@ namespace rock::trigger_equip_readiness_trace
     void stage(const char* name) noexcept;
     bool partCaptureActive() noexcept;
     void parts(RE::NiAVObject* root, unsigned phase, bool bridgeVisible = false) noexcept;
+    void renderedHands() noexcept;
     void frame(const equipped_weapon_visual_state::Snapshot& visual,
         bool bridgeVisible, bool gripPending, bool nativeAnimation, bool menu) noexcept;
     void input(const RE::InputEvent* event, bool rockBlocked,

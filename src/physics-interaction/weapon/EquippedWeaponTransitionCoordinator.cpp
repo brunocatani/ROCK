@@ -895,6 +895,7 @@ namespace rock
 
     void EquippedWeaponTransitionCoordinator::finalizeVisualPresentation()
     {
+        trigger_equip_readiness_trace::renderedHands();
         // Diagnose part movement even after the short visual bridge is gone.
         // Re-resolve from the live current identity, never a retained node.
         if (trigger_equip_readiness_trace::partCaptureActive()) {
