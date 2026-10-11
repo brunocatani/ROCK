@@ -681,8 +681,9 @@ namespace rock
             return;
         }
 
-        auto tryReadBodyIdentity = [&](std::uint32_t bodyId,
+        auto tryReadBodyIdentity = [&](const BodyRecord& record,
                                        equipped_weapon_drop_momentum::BodyIdentityKey& outIdentity) {
+            const auto bodyId = record.bodyId;
             handoff.inspectedBodyId = bodyId;
             const auto live = havok_runtime::snapshotBody(
                 frame.hknpWorld,
@@ -692,12 +693,24 @@ namespace rock
                 (live.valid && live.body && live.body->shape ? 8u : 0u) | (live.collisionObject ? 16u : 0u) |
                 (live.ownerNode ? 32u : 0u) | (live.valid && live.body && live.body->bodyId.value == bodyId ? 64u : 0u);
             if (!live.valid || !live.body || !live.motion || !live.body->shape ||
-                !live.collisionObject || !live.ownerNode ||
                 live.body->bodyId.value != bodyId) {
                 return false;
             }
+            auto* collisionObject = live.collisionObject;
+            auto* ownerNode = live.ownerNode;
+            if (!collisionObject && !ownerNode) {
+                // Shared weapon systems include bodies with no reverse scene
+                // link. This frame's exact-reference scan already enumerated
+                // this body through its owning system; retain that provenance.
+                // Never replace an existing but inconsistent native owner.
+                collisionObject = record.collisionObject;
+                ownerNode = havok_runtime::getOwnerNodeFromCollisionObject(collisionObject);
+                if (ownerNode != record.owningNode) return false;
+                handoff.identityProofMask |= 8192u;
+            }
+            if (!collisionObject || !ownerNode) return false;
             auto* physicsSystem =
-                havok_runtime::getPhysicsSystemFromCollisionObject(live.collisionObject);
+                havok_runtime::getPhysicsSystemFromCollisionObject(collisionObject);
             auto* physicsSystemInstance =
                 havok_runtime::getPhysicsSystemInstance(physicsSystem);
             if (!physicsSystemInstance) {
@@ -709,8 +722,8 @@ namespace rock
                 .motionId = live.motionIndex,
                 .motionFirstBodyId = live.motion->firstBodyId,
                 .shapeIdentity = reinterpret_cast<std::uintptr_t>(live.body->shape),
-                .owningNodeIdentity = reinterpret_cast<std::uintptr_t>(live.ownerNode),
-                .collisionObjectIdentity = reinterpret_cast<std::uintptr_t>(live.collisionObject),
+                .owningNodeIdentity = reinterpret_cast<std::uintptr_t>(ownerNode),
+                .collisionObjectIdentity = reinterpret_cast<std::uintptr_t>(collisionObject),
                 .physicsSystemInstanceIdentity =
                     reinterpret_cast<std::uintptr_t>(physicsSystemInstance),
             };
@@ -718,7 +731,7 @@ namespace rock
         };
         auto tryBuildBodyIdentity = [&](const BodyRecord& record,
                                         equipped_weapon_drop_momentum::BodyIdentityKey& outIdentity) {
-            if (!tryReadBodyIdentity(record.bodyId, outIdentity)) {
+            if (!tryReadBodyIdentity(record, outIdentity)) {
                 return false;
             }
             // Additional bits identify which scan/live identity comparison failed.
