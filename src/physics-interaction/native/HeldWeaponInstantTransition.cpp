@@ -1,4 +1,5 @@
 #include "physics-interaction/native/HeldWeaponInstantTransition.h"
+#include "physics-interaction/native/NativeTriggerEquipGraph.h"
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
@@ -260,7 +261,10 @@ namespace rock::held_weapon_instant_transition
         const bool ready = installed && s_originalDrawWeaponMagicHands != nullptr;
         s_ownerThreadId.store(0, std::memory_order_release);
         s_installed.store(ready, std::memory_order_release);
-        if (ready) installTriggerEquipPreparation();
+        if (ready) {
+            installTriggerEquipPreparation();
+            native_trigger_equip_graph::install();
+        }
         return ready;
     }
 

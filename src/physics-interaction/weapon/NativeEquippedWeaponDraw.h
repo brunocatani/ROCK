@@ -29,6 +29,8 @@ namespace rock::native_equipped_weapon_draw
         PartialRecoveryRejected,
         PartialActionRecovered,
         PartialActionFinalized,
+        GraphPending,
+        GraphPreparationUnavailable,
     };
 
     struct Result
@@ -44,7 +46,7 @@ namespace rock::native_equipped_weapon_draw
     };
 
     [[nodiscard]] bool captureCurrentIdentity(Identity& outIdentity) noexcept;
-    [[nodiscard]] Result submitExactCurrent(const Identity& expected) noexcept;
+    [[nodiscard]] Result submitExactCurrent(const Identity& expected, bool triggerEquip = false) noexcept;
     [[nodiscard]] Result submitPreparedExactCurrent(const Identity& expected,
         bool triggerEquip = false) noexcept;
     [[nodiscard]] Result finalizePartialExactCurrent(const Identity& expected) noexcept;

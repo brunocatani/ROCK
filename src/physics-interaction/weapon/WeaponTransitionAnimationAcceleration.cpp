@@ -138,6 +138,11 @@ namespace rock::weapon_transition_animation_acceleration
         // suppressing evidence of a shorter transition in another graph.
         std::array<std::atomic<std::uintptr_t>, 32> s_observedBlends{};
         std::array<std::atomic<bool>, kMaxGraphSlots> s_completedFirearmHandoff{};
+        std::atomic<std::uintptr_t> s_firstPersonCharacter{};
+        std::atomic<bool> s_firearmPoseGenerated{};
+        std::array<std::atomic<std::uintptr_t>, kMaxTransitionClips> s_poseClips{};
+        using GenerateFn = void (*)(void*, void*, void*, void*, float);
+        GenerateFn s_originalGenerate{};
         std::atomic<std::uint32_t> s_targetCharacterCount{ 0 };
         std::array<std::atomic<std::uintptr_t>, kMaxTransitionClips>
             s_transitionClips{};
@@ -301,6 +306,9 @@ namespace rock::weapon_transition_animation_acceleration
             }
             for (auto& blend : s_observedBlends) blend.store(0, std::memory_order_relaxed);
             for (auto& completed : s_completedFirearmHandoff) completed.store(false, std::memory_order_relaxed);
+            s_firstPersonCharacter.store(0, std::memory_order_relaxed);
+            s_firearmPoseGenerated.store(false, std::memory_order_relaxed);
+            for (auto& clip : s_poseClips) clip.store(0, std::memory_order_relaxed);
             for (auto& clip : s_transitionClips) {
                 clip.store(0, std::memory_order_relaxed);
             }
@@ -332,6 +340,9 @@ namespace rock::weapon_transition_animation_acceleration
             if (capacity == 0) {
                 return GraphTargetResult::MissingCharacters;
             }
+            std::uint32_t graphCount{};
+            if (!native_memory::tryReadField(reinterpret_cast<void*>(manager), 0x50, graphCount) ||
+                graphCount == 0 || graphCount > capacity) return GraphTargetResult::MissingCharacters;
 
             const auto storageAddress =
                 manager + kManagerGraphsStorageOffset;
@@ -352,7 +363,7 @@ namespace rock::weapon_transition_animation_acceleration
             std::array<std::uintptr_t, kMaxGraphSlots> characters{};
             std::uint32_t characterCount = 0;
             for (std::uint32_t index = 0;
-                 index < capacity && characterCount < characters.size();
+                 index < graphCount && characterCount < characters.size();
                  ++index) {
                 std::uintptr_t graph = 0;
                 std::uintptr_t graphVtable = 0;
@@ -377,6 +388,9 @@ namespace rock::weapon_transition_animation_acceleration
                     continue;
                 }
                 characters[characterCount++] = character;
+                // The native player graph pair is third-person then first-person,
+                // also used by NativeIdleGripPreharvest's graph selection.
+                if (index == 1) s_firstPersonCharacter.store(character, std::memory_order_relaxed);
             }
             if (characterCount == 0) {
                 return GraphTargetResult::MissingCharacters;
@@ -488,6 +502,12 @@ namespace rock::weapon_transition_animation_acceleration
             if (!clip ||
                 s_encodedLease.load(std::memory_order_acquire) == 0) {
                 return;
+            }
+            if (!s_firearmPoseGenerated.load(std::memory_order_acquire)) {
+                for (auto& slot : s_poseClips) {
+                    auto expected = clip;
+                    (void)slot.compare_exchange_strong(expected, 0, std::memory_order_acq_rel);
+                }
             }
             for (std::size_t index = 0;
                  index < s_transitionClips.size();
@@ -808,12 +828,64 @@ namespace rock::weapon_transition_animation_acceleration
             }
         }
 
+        void onGenerate(void* clip, void* context, void* children, void* output, float timeOffset)
+        {
+            s_originalGenerate(clip, context, children, output, timeOffset);
+            const auto lease = s_encodedLease.load(std::memory_order_acquire);
+            if (!lease || (lease & kEncodedStateMask) != 2 ||
+                s_firearmPoseGenerated.load(std::memory_order_acquire)) return;
+            bool activated = false;
+            for (auto& slot : s_poseClips) {
+                if (slot.load(std::memory_order_acquire) == reinterpret_cast<std::uintptr_t>(clip)) { activated = true; break; }
+            }
+            if (!activated) return;
+            std::uintptr_t character{}, name{};
+            void* wrapper{};
+            void* binding{};
+            void* animation{};
+            std::uint32_t blendHint{};
+            std::array<char, 256> path{};
+            if (!native_memory::tryReadField(context, 0, character) || !character ||
+                character != s_firstPersonCharacter.load(std::memory_order_acquire) ||
+                !native_memory::tryReadField(clip, 0xD0, wrapper) || !wrapper ||
+                !native_memory::tryReadField(wrapper, 0x38, binding) || !binding ||
+                !native_memory::tryReadField(binding, 0x18, animation) || !animation ||
+                !native_memory::tryReadField(binding, 0x50, blendHint) || blendHint != 0 ||
+                !native_memory::tryReadField(clip, 0x90, name) || !name ||
+                !native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(name & ~std::uintptr_t{1}), path.data(), path.size())) return;
+            const auto end = std::find(path.begin(), path.end(), '\0');
+            if (end == path.end()) return;
+            std::string_view filename(path.data(), static_cast<std::size_t>(end - path.begin()));
+            const auto slash = filename.find_last_of("/\\");
+            if (slash != std::string_view::npos) filename.remove_prefix(slash + 1);
+            if (filename.size() < 3 || !native_weapon_animation_audio::equalName(filename.substr(0, 3), "WPN")) return;
+            if (s_encodedLease.load(std::memory_order_acquire) == lease &&
+                !s_firearmPoseGenerated.exchange(true, std::memory_order_acq_rel)) {
+                ROCK_LOG_DEBUG(Weapon, "Trigger equip first-person firearm pose generated character={:#x} clip='{}'", character, path.data());
+            }
+        }
+
         __declspec(noinline) void onClipGeneratorActivate(
             void* clipGenerator,
             void* context)
         {
             if (s_originalClipActivate) {
                 s_originalClipActivate(clipGenerator, context);
+            }
+            // Retain only address witnesses for clips newly activated by this
+            // exact lease; an outgoing gun's already-running idle is not proof.
+            const auto lease = s_encodedLease.load(std::memory_order_acquire);
+            std::uintptr_t character{};
+            if (lease && (lease & kEncodedStateMask) == 2 &&
+                !s_firearmPoseGenerated.load(std::memory_order_acquire) &&
+                native_memory::tryReadField(context, 0, character) && character &&
+                character == s_firstPersonCharacter.load(std::memory_order_acquire)) {
+                for (auto& slot : s_poseClips) {
+                    auto expected = std::uintptr_t{};
+                    const auto clip = reinterpret_cast<std::uintptr_t>(clipGenerator);
+                    if (slot.load(std::memory_order_acquire) == clip ||
+                        slot.compare_exchange_strong(expected, clip, std::memory_order_acq_rel)) break;
+                }
             }
             registerActivatedClip(clipGenerator, context);
         }
@@ -997,6 +1069,15 @@ namespace rock::weapon_transition_animation_acceleration
                 Init,
                 "Weapon transition clip acceleration disabled: all three lifecycle entry hooks are required");
         } else {
+            constexpr std::array<std::uint8_t, 17> generatePrefix{
+                0x48,0x8B,0xC4,0x48,0x89,0x50,0x10,0x55,0x57,0x41,0x54,0x41,0x56,0x48,0x83,0xEC,0x78};
+            void* generateOriginal{};
+            if (entry_trampoline_hook::install("Trigger equip firearm pose generation", 0x192D9A0,
+                    generatePrefix.data(), generatePrefix.size(), reinterpret_cast<void*>(&onGenerate), generateOriginal)) {
+                s_originalGenerate = reinterpret_cast<GenerateFn>(generateOriginal);
+            } else {
+                ROCK_LOG_ERROR(Init, "Trigger equip firearm pose generation witness unavailable");
+            }
             // Update wrapper 141F79FA0 tail-calls this common implementation
             // with R9=self. Prefix ends before its first relative instruction.
             constexpr std::array<std::uint8_t, 15> prefix{
@@ -1016,6 +1097,14 @@ namespace rock::weapon_transition_animation_acceleration
             }
         }
         return ready;
+    }
+
+    bool hasGeneratedFirearmPose(RE::PlayerCharacter* player, const Identity& identity) noexcept
+    {
+        return s_ownerThreadId.load(std::memory_order_acquire) == GetCurrentThreadId() &&
+            s_runtimeLease.active && s_runtimeLease.player == player && s_runtimeLease.identity == identity &&
+            s_runtimeLease.direction == Direction::Draw && s_encodedLease.load(std::memory_order_acquire) != 0 &&
+            s_firearmPoseGenerated.load(std::memory_order_acquire);
     }
 
     RequestResult request(const RequestInput& input) noexcept

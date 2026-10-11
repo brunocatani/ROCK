@@ -71,6 +71,7 @@ namespace rock::equipped_weapon_transition_policy
         bool nativeInstanceLocallyVisible{ false };
         bool bridgeOwnsNativeInstanceCull{ false };
         bool gripHandoffPending{ false };
+        bool nativePoseReady{ true };
     };
 
     struct Decision
@@ -336,7 +337,7 @@ namespace rock::equipped_weapon_transition_policy
                 ++state.stableFrames;
             }
 
-            if (state.stableFrames >= kStableFramesBeforeNativeHandoff && !input.gripHandoffPending) {
+            if (state.stableFrames >= kStableFramesBeforeNativeHandoff && !input.gripHandoffPending && input.nativePoseReady) {
                 if (!state.nativeHandoffObserved) {
                     state.nativeHandoffObserved = true;
                     decision.handoffBridgeToNative = input.bridgeModelAvailable;

@@ -2,6 +2,7 @@
 #include "physics-interaction/native/NativeWeaponEquipAudio.h"
 #include "physics-interaction/native/NativeWeaponAnimationAudio.h"
 #include "physics-interaction/weapon/WeaponTransitionAnimationAccelerationPolicy.h"
+#include "physics-interaction/weapon/EquippedWeaponTransitionPolicy.h"
 
 #include <cstdio>
 
@@ -24,6 +25,35 @@ int main()
     constexpr std::uintptr_t drawReturn = 0x1000;
     constexpr std::uintptr_t sheatheReturn = 0x2000;
     bool ok = true;
+    {
+        namespace presentation = rock::equipped_weapon_transition_policy;
+        presentation::State state{};
+        presentation::FrameInput frame{
+            .mutationAllowed = true,
+            .identityMatches = true,
+            .weaponExactlyDrawn = true,
+            .nativeWeaponState = 3,
+            .bridgeModelAvailable = true,
+            .nativeInstanceFound = true,
+            .nativeAncestorPathVisible = true,
+            .bridgeOwnsNativeInstanceCull = true,
+            .nativePoseReady = false,
+        };
+        // M16 capture: the replacement is renderable at 15 ms and the old
+        // policy exposes its wrong bolt pose at 44 ms. Gun pose arrives at 55 ms.
+        for (const float time : {0.015f, 0.029f, 0.044f}) {
+            frame.drawRecoveryElapsedSeconds = time;
+            const auto decision = presentation::advance(state, frame);
+            ok &= expect("captured pre-pose frames retain the loose bridge without repairing valid geometry",
+                decision.presentBridgeModel && !decision.handoffBridgeToNative &&
+                decision.repair == presentation::RepairAction::None && !state.nativeHandoffObserved);
+        }
+        frame.drawRecoveryElapsedSeconds = 0.055f;
+        frame.nativePoseReady = true;
+        const auto ready = presentation::advance(state, frame);
+        ok &= expect("first generated firearm pose releases the already stable model without another timer",
+            ready.handoffBridgeToNative && state.nativeHandoffObserved && !ready.presentBridgeModel);
+    }
     namespace clip = rock::weapon_transition_animation_acceleration_policy;
     // Recorded HK417 sequence: native Drawn precedes replacement EquipFast.
     // The old terminal-state rule discarded the lease before this activation.
