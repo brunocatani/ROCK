@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/GunstockMode.h"
+#include "physics-interaction/grab/GrabCore.h"
 #include "GunstockCapturedFrames.h"
 #include <iostream>
 #include <limits>
@@ -32,6 +33,28 @@ namespace
         const auto forward = transform_math::rotateLocalVectorToWorld(solved.weaponWorldTransform.rotate, RE::NiPoint3{0,1,0});
         const auto baseline = weaponSolverNormalize(weaponSolverSub(front.translate, rear.translate));
         if (!nearPoint(forward, baseline, 0.00002f)) return fail();
+
+        // Loose grabs drive collision bodies in proxy space. Neither a rotated
+        // body frame nor a different body's offset may change weapon +Y or
+        // move the captured firing seat when the same item becomes equipped.
+        for (float offset : {-9.0f, 14.0f}) {
+            auto bodyInWeapon = weapon_aim_basis::weaponInController();
+            bodyInWeapon.translate = {offset,7.0f,-3.0f};
+            bodyInWeapon.scale = 0.85f;
+            const auto gripInBody = transform_math::worldPointToLocal(bodyInWeapon,input.primaryGripLocal);
+            auto loose = input;
+            loose.primaryGripLocal = transform_math::localPointToWorld(bodyInWeapon,gripInBody);
+            const auto looseSolved = gunstock_mode::solveVirtualAim(loose,rear,front,{},1);
+            if (!looseSolved.solved) return fail();
+            const auto bodyWorld = transform_math::composeTransforms(looseSolved.weaponWorldTransform,bodyInWeapon);
+            auto bodyInProxy = weapon_aim_basis::weaponInController();
+            bodyInProxy.translate = {3.0f,-4.0f,6.0f};
+            const auto proxy = grab_frame_math::generatedProxyFromObjectWorld(bodyWorld,bodyInProxy);
+            const auto presentedBody = grab_frame_math::objectFromGeneratedProxyLocalSpace(proxy,bodyInProxy);
+            const auto presentedRoot = transform_math::composeTransforms(presentedBody,transform_math::invertTransform(bodyInWeapon));
+            if (!sameRotation(presentedRoot,solved.weaponWorldTransform) ||
+                !nearPoint(transform_math::localPointToWorld(presentedRoot,input.primaryGripLocal),primary.translate,0.025f)) return fail();
+        }
 
         // Different authored support seats and support-controller wrist roll
         // must not alter the stock orientation at identical controller positions.

@@ -1287,6 +1287,7 @@ namespace rock
         grab_offset_acquisition::Transition<RE::NiTransform> _looseSharedAcquisition;
         std::uint64_t _looseSharedAcquisitionPeer{};
         std::uint64_t _looseSharedAcquisitionFrame{};
+        bool _looseSharedGunstockAim{};
         std::uint64_t _looseWeaponReturnStartFrame{};
         float _looseSharedHandBlendAlpha{-1.0f};
         hand_visual_lerp_math::VisualReturnConfig _grabVisualReturnConfig{};

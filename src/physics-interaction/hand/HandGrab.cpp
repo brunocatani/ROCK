@@ -37,6 +37,7 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
+#include "physics-interaction/weapon/GunstockMode.h"
 #include "physics-interaction/object/SkinnedBodyResolver.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -7545,6 +7546,7 @@ namespace rock
         _looseSharedAcquisition = {};
         _looseSharedAcquisitionPeer = 0;
         _looseSharedAcquisitionFrame = 0;
+        _looseSharedGunstockAim = false;
         _looseWeaponReturnStartFrame = 0;
         _looseSharedHandBlendAlpha = -1.0f;
         _grabOffsetMaximumGripError = 0.0f;
@@ -9026,6 +9028,7 @@ namespace rock
             _looseSharedAcquisition = {};
             _looseSharedAcquisitionPeer = 0;
             _looseSharedAcquisitionFrame = 0;
+            _looseSharedGunstockAim = false;
             _looseSharedHandBlendAlpha = -1.0f;
             proxyWorld = correctedProxy(*this, proxyWorld);
             if (leavingPair && isHoldingLooseWeapon()) {
@@ -9072,13 +9075,21 @@ namespace rock
             _grabFrame.traceId < peer->_grabFrame.traceId;
         Hand& primary = thisPrimary ? *this : *peer;
         Hand& support = thisPrimary ? *peer : *this;
+        const bool sharedFiringStation = loose_weapon_authored_grab_policy::sharedFiringZone(primary._grabFrame.authoredWeaponArrangement) ||
+            loose_weapon_authored_grab_policy::sharedFiringZone(support._grabFrame.authoredWeaponArrangement);
+        const auto* weapon = looseWeaponFormFromRef(getHeldRef());
+        const bool gunstockAim = g_rockConfig.rockGunstockMode &&
+            primary.isHoldingFiringGrip() && support.isHoldingLooseWeapon() && !sharedFiringStation &&
+            weapon && weapon->weaponData.type == RE::WEAPON_TYPE::kGun;
         const auto primaryProxy = correctedProxy(primary, thisPrimary ? proxyWorld : peerProxy);
         const auto supportProxy = correctedProxy(support, thisPrimary ? peerProxy : proxyWorld);
         // One driven body is its own common frame, including two seats on a
         // jointed object's same part. Different rigid bodies use the assembly
         // root; independent articulated parts keep their existing joint motion.
-        const auto primaryBodyLocal = sameBody ? transform_math::makeIdentityTransform<RE::NiTransform>() : primary._grabFrame.rootBodyLocal;
-        const auto supportBodyLocal = sameBody ? transform_math::makeIdentityTransform<RE::NiTransform>() : support._grabFrame.rootBodyLocal;
+        // Gunstock forward is weapon-root +Y, never the selected collision
+        // body's axes. Keep body-to-root registration even for a shared body.
+        const auto primaryBodyLocal = sameBody && !gunstockAim ? transform_math::makeIdentityTransform<RE::NiTransform>() : primary._grabFrame.rootBodyLocal;
+        const auto supportBodyLocal = sameBody && !gunstockAim ? transform_math::makeIdentityTransform<RE::NiTransform>() : support._grabFrame.rootBodyLocal;
         const auto primaryBody = grab_frame_math::objectFromGeneratedProxyLocalSpace(
             primaryProxy, primary._grabFrame.proxyAuthorityBodyHandSpace);
         const auto root = transform_math::composeTransforms(primaryBody,
@@ -9094,16 +9105,36 @@ namespace rock
         const auto supportBase = transform_math::localPointToWorld(root, supportLocal);
         const float separation = pointDistanceGameUnits(transform_math::localPointToWorld(root, primaryLocal), supportBase);
         const auto lockedSupport = makeLockedSupportGripTarget(primaryTarget, supportTarget, supportBase, separation, 0.001f);
-        const bool sharedFiringStation = loose_weapon_authored_grab_policy::sharedFiringZone(primary._grabFrame.authoredWeaponArrangement) ||
-            loose_weapon_authored_grab_policy::sharedFiringZone(support._grabFrame.authoredWeaponArrangement);
-        const auto solved = sharedFiringStation ? WeaponTwoHandedSolverResult<RE::NiTransform>{} :
-            solveTwoHandedWeaponTransformFrikPivot(WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3>{
+        const WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3> solverInput{
             .weaponWorldTransform = root,
             .primaryGripLocal = primaryLocal,
             .supportGripLocal = supportLocal,
             .primaryTargetWorld = primaryTarget,
             .supportTargetWorld = lockedSupport,
-        });
+        };
+        WeaponTwoHandedSolverResult<RE::NiTransform> solved{};
+        if (gunstockAim) {
+            RE::NiTransform primaryWand{}, supportWand{};
+            if (frik_hand_world_authority::tryGetWeaponWandWorld(primary._isLeft,primaryWand) &&
+                frik_hand_world_authority::tryGetWeaponWandWorld(support._isLeft,supportWand)) {
+                // Acquisition is already eased below. Solve the full stock
+                // endpoint here, exactly as equipped dynamic acquisition does.
+                solved = gunstock_mode::solveVirtualAim(solverInput,primaryWand,supportWand,{},1.0f);
+            }
+            if (!solved.solved) {
+                // Tracking loss is not release intent. Both constraints hold
+                // the current displayed assembly until a valid baseline returns.
+                RE::NiTransform presentedBody{};
+                if (!readPresentedBody(*this,presentedBody)) return false;
+                primary._looseSharedAcquisitionPeer = 0;
+                proxyWorld = grab_frame_math::generatedProxyFromObjectWorld(presentedBody,
+                    _grabFrame.proxyAuthorityBodyHandSpace);
+                ROCK_LOG_SAMPLE_WARN(Hand,1000,"{} loose gunstock waiting for tracked controller baseline",handName());
+                return isFiniteNiTransform(proxyWorld);
+            }
+        } else if (!sharedFiringStation) {
+            solved = solveTwoHandedWeaponTransformFrikPivot(solverInput);
+        }
         // Coincident seats cannot define an aim axis. Both constraints then
         // share the primary carry target until separation defines that axis.
         if (!sharedFiringStation && !solved.solved) {
@@ -9116,7 +9147,7 @@ namespace rock
             const auto pivot = primary.activeProxyConstraintPivotBLocalGame();
             auto& acquisition = primary._looseSharedAcquisition;
             const auto sequence = runtime_state::currentFrame().timing.sequence;
-            if (primary._looseSharedAcquisitionPeer != support._grabFrame.traceId) {
+            if (primary._looseSharedAcquisitionPeer != support._grabFrame.traceId || primary._looseSharedGunstockAim != gunstockAim) {
                 RE::NiTransform liveBody{};
                 if (!readPresentedBody(primary, liveBody)) return false;
                 acquisition = grab_offset_acquisition::begin(primaryProxy, liveBody, targetInProxy, pivot);
@@ -9139,6 +9170,22 @@ namespace rock
                 }
                 primary._looseSharedAcquisitionPeer = support._grabFrame.traceId;
                 primary._looseSharedAcquisitionFrame = sequence;
+                primary._looseSharedGunstockAim = gunstockAim;
+                // A live mode change/tracking recovery reuses these grips.
+                // Rebase the wrist too; replaying its original free-hand start
+                // would produce a hand snap even though the weapon is eased.
+                Hand& joining = primary._grabFrame.traceId > support._grabFrame.traceId ? primary : support;
+                if (joining._hasGrabVisualHandTransform) {
+                    auto wrist = joining._grabVisualHandTransform;
+                    RE::NiTransform presented{};
+                    if (frik_hand_world_authority::tryGetPresentedHandWorld(joining._isLeft,presented) &&
+                        isUsableGrabVisualTransform(presented)) wrist = presented;
+                    joining._grabVisualHandLerpStartTransform = wrist;
+                    joining._grabVisualHandLerpElapsedSeconds = 0.0f;
+                    joining._grabVisualHandLerpDurationSeconds = acquisition.durationSeconds;
+                }
+                ROCK_LOG_INFO(Hand,"Loose weapon handling ref={:08X} firingHand={} gunstock={} blend={:.3f}s",
+                    getHeldRef()->formID,primary.handName(),gunstockAim,acquisition.durationSeconds);
             }
             const auto blendedProxy = grab_offset_acquisition::advanceShared(acquisition,
                 primary._looseSharedAcquisitionFrame, sequence, primaryProxy, targetInProxy, pivot,
@@ -10564,6 +10611,7 @@ namespace rock
         _looseSharedAcquisition = {};
         _looseSharedAcquisitionPeer = 0;
         _looseSharedAcquisitionFrame = 0;
+        _looseSharedGunstockAim = false;
         _looseWeaponReturnStartFrame = 0;
         _looseSharedHandBlendAlpha = -1.0f;
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
