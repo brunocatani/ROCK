@@ -1,5 +1,6 @@
 #include "LooseWeaponStateService.h"
 #include "LooseWeaponStatePath.h"
+#include "LooseWeaponStateRotation.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/weapon/EquippedWeaponVisualState.h"
@@ -158,7 +159,7 @@ bool apply(RE::TESObjectREFR* ref,RE::NiAVObject* model) {
         found->model.reset(model);found->originalState=found->state;
         for(std::uint32_t i=0;i<found->state.count;++i) {
             const auto* node=targets[i];auto& p=found->originalState.parts[i];
-            std::memcpy(p.local.rotate,node->local.rotate.entry,sizeof(p.local.rotate));
+            packRotation(p.local.rotate,node->local.rotate.entry);
             p.local.translate[0]=node->local.translate.x;p.local.translate[1]=node->local.translate.y;p.local.translate[2]=node->local.translate.z;
             p.local.scale=node->local.scale;p.hidden=node->GetAppCulled()?1u:0u;
         }
@@ -169,7 +170,7 @@ bool apply(RE::TESObjectREFR* ref,RE::NiAVObject* model) {
         auto* node=targets[i];const auto& p=found->state.parts[i];
         // Whole-model placement/visibility belong to the native reference.
         if(node==root||node==model)continue;
-        std::memcpy(node->local.rotate.entry,p.local.rotate,sizeof(p.local.rotate));
+        unpackRotation(node->local.rotate.entry,p.local.rotate);
         node->local.translate={p.local.translate[0],p.local.translate[1],p.local.translate[2]};node->local.scale=p.local.scale;
         equipped_weapon_visual_state::setLocallyVisible(node,p.hidden==0);
         ++applied;
@@ -185,7 +186,7 @@ void restoreWithdrawn() {
             auto* root=weaponRoot(e.model.get());
             for(std::uint32_t i=0;root&&i<e.originalState.count;++i) {
                 const auto& p=e.originalState.parts[i];auto* node=path(root,p.path,e.key.weapon);if(!node||node==root||node==e.model.get())continue;
-                std::memcpy(node->local.rotate.entry,p.local.rotate,sizeof(p.local.rotate));
+                unpackRotation(node->local.rotate.entry,p.local.rotate);
                 node->local.translate={p.local.translate[0],p.local.translate[1],p.local.translate[2]};node->local.scale=p.local.scale;
                 equipped_weapon_visual_state::setLocallyVisible(node,p.hidden==0);
             }

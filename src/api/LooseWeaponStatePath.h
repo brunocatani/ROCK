@@ -4,10 +4,10 @@ namespace rock::loose_weapon_state {
     // A saved equipped path may include the instance wrapper that is itself
     // the root of the loose tree. Match a whole component, never a prefix.
     constexpr std::string_view relativeItemPath(std::string_view root,std::string_view path,std::string_view instance={}) noexcept {
-        // Native loose assemblies start at ReceiverParentObject, replacing
+        // Native loose assemblies use asset-defined root names, replacing
         // the actor's exact Weapon (base form) wrapper. P-Receiver is the
         // receiver attachment below that parent, not the parent itself.
-        if(root=="ReceiverParentObject"&&!instance.empty()) {
+        if(!root.empty()&&root!="Weapon"&&!instance.empty()) {
             const auto first=path.find('/');
             if(path.substr(0,first)==instance) {
                 path=first==path.npos?std::string_view{}:path.substr(first+1);
