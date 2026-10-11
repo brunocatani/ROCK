@@ -199,6 +199,7 @@ namespace rock
         int rockHighlightIntensityMode = 2;
         std::string rockHighlightColor = "blue";
 
+        bool rockDebugDisableTriggerEquipBridge = false;
         bool rockDebugShowColliders = false;
         bool rockDebugShowTargetColliders = false;
         bool rockDebugShowHandAxes = false;

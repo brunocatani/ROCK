@@ -351,6 +351,7 @@ namespace rock::config
         { "PhysicsInteraction", "fMouthConsumeCommitHapticDurationSeconds", "14. Haptics", "", configuration_api::Group::Developer },
         { "PhysicsInteraction", "fMouthConsumeCommitHapticIntensity", "14. Haptics", "", configuration_api::Group::Developer },
         { "PhysicsInteraction", "bDebugDrawGrabAuthorityProxy", "14. Haptics", "Draws the hidden no-contact grab authority proxy target/axes used by ROCK dynamic grab.", configuration_api::Group::Developer },
+        { "PhysicsInteraction", "bDebugDisableTriggerEquipBridge", "04. Weapon Handling", "Temporary trigger-equip gap test. Skips the loose-model bridge, its hand-pose handoff and native-model hiding. Native equip and firing remain active. Applies to the next trigger equip; restore false after testing.", configuration_api::Group::Developer },
         { "PhysicsInteraction", "bDebugShowColliders", "15. Debug Overlay", "Master switch for all ROCK-owned collider visualizations below.", configuration_api::Group::Developer },
         { "PhysicsInteraction", "bDebugShowTargetColliders", "15. Debug Overlay", "Draws the selected or held target body when the collider master is enabled.", configuration_api::Group::Developer },
         { "PhysicsInteraction", "bDebugShowHandAxes", "15. Debug Overlay", "Draws live transform axes. Red=X, green=Y, blue=Z.", configuration_api::Group::Developer },

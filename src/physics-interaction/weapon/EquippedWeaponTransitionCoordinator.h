@@ -229,6 +229,7 @@ namespace rock
         RE::NiPointer<RE::NiAVObject> _pendingNativeCull{};
         float _heldWaitSeconds{ 0.0f };
         bool _heldBridgeStarted{ false };
+        bool _bridgeDisabledForTest{ false };
         std::uint8_t _heldRecoveryAttempts{ 0 };
         bool _heldRecoveryHolsterRequested{ false };
         const char* _heldFailureReason{ nullptr };

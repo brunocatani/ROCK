@@ -704,6 +704,7 @@ namespace rock
         rockHighlightEnabled = ini.GetBoolValue(SECTION, "bHighlightEnabled", rockHighlightEnabled);
         rockHighlightIntensityMode = readHighlightIntensityMode(ini, SECTION, "iHighlightIntensityMode", rockHighlightIntensityMode);
         rockHighlightColor = readHighlightColor(ini, SECTION, "sHighlightColor", rockHighlightColor);
+        rockDebugDisableTriggerEquipBridge = ini.GetBoolValue(SECTION, "bDebugDisableTriggerEquipBridge", rockDebugDisableTriggerEquipBridge);
         rockDebugShowColliders = ini.GetBoolValue(SECTION, "bDebugShowColliders", rockDebugShowColliders);
         rockDebugShowTargetColliders = ini.GetBoolValue(SECTION, "bDebugShowTargetColliders", rockDebugShowTargetColliders);
         rockDebugShowHandAxes = ini.GetBoolValue(SECTION, "bDebugShowHandAxes", rockDebugShowHandAxes);
