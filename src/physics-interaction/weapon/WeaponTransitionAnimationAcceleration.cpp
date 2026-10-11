@@ -29,6 +29,8 @@ namespace rock::weapon_transition_animation_acceleration
         using ClipGeneratorActivateFn = void (*)(void*, void*);
         using ClipGeneratorUpdateFn = void (*)(void*, void*, float);
         using ClipGeneratorDeactivateFn = void (*)(void*, void*);
+        using BlendUpdateFn = void (*)(void*, void*, float, void*);
+        BlendUpdateFn s_originalBlendUpdate{};
 
         /*
          * PAPER's passive ClipTelemetry and ROCK's former clip harvester
@@ -131,6 +133,10 @@ namespace rock::weapon_transition_animation_acceleration
         std::atomic<std::uintptr_t> s_encodedLease{ 0 };
         std::array<std::atomic<std::uintptr_t>, kMaxGraphSlots>
             s_targetCharacters{};
+        // Address-only witnesses of the graphs present when this exact draw
+        // was requested. A late native weapon graph can blend FROM one of these
+        // whole graphs, without an equip clip in its outgoing branch.
+        std::array<std::atomic<std::uintptr_t>, kMaxGraphSlots> s_initialGraphs{};
         std::atomic<std::uint32_t> s_targetCharacterCount{ 0 };
         std::array<std::atomic<std::uintptr_t>, kMaxTransitionClips>
             s_transitionClips{};
@@ -292,6 +298,7 @@ namespace rock::weapon_transition_animation_acceleration
             for (auto& character : s_targetCharacters) {
                 character.store(0, std::memory_order_relaxed);
             }
+            for (auto& graph : s_initialGraphs) graph.store(0, std::memory_order_relaxed);
             for (auto& clip : s_transitionClips) {
                 clip.store(0, std::memory_order_relaxed);
             }
@@ -374,6 +381,13 @@ namespace rock::weapon_transition_animation_acceleration
             }
 
             for (std::uint32_t index = 0; index < characterCount; ++index) {
+                std::uintptr_t behavior{};
+                std::uintptr_t behaviorVtable{};
+                if (!native_memory::tryReadField(reinterpret_cast<void*>(characters[index]), 0x80, behavior) ||
+                    !native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(behavior), behaviorVtable) ||
+                    behaviorVtable != REL::Offset(0x2E04848).address()) behavior = 0;
+                s_initialGraphs[index].store(behavior, std::memory_order_relaxed);
+                ROCK_LOG_DEBUG(Weapon, "Equip initial graph witness character={:#x} graph={:#x}", characters[index], behavior);
                 s_targetCharacters[index].store(
                     characters[index],
                     std::memory_order_relaxed);
@@ -604,6 +618,127 @@ namespace rock::weapon_transition_animation_acceleration
             return accelerated;
         }
 
+        bool outgoingBranchHasDrawClip(void* context, void* root) noexcept
+        {
+            // Native 141F7A330 resolves serialized generators through the
+            // behavior's clone map. 14194DEC0 enumerates active blender children;
+            // 141A407F0 unwraps modifier/synchronized generators at +90.
+            // Bound the walk and retain no generator pointer across callbacks.
+            void* behavior{};
+            if (!native_memory::tryReadField(context, 8, behavior)) return false;
+            if (!behavior) {
+                void* character{};
+                if (!native_memory::tryReadField(context, 0, character) ||
+                    !native_memory::tryReadField(character, 0x80, behavior)) return false;
+            }
+            if (!behavior || !native_memory::pointerRangeLooksReadable(behavior, 0x120)) return false;
+            using ResolveClone = void* (*)(void*, void*);
+            const auto resolve = reinterpret_cast<ResolveClone>(REL::Offset(0x17BE290).address());
+            std::array<void*, 32> pending{}, visited{};
+            std::size_t count = 1, seen = 0;
+            pending[0] = root;
+            while (count && seen < visited.size()) {
+                auto* node = pending[--count];
+                if (!node || !native_memory::pointerRangeLooksReadable(node, 0x44)) return false;
+                node = resolve(behavior, node);
+                if (!node) return false;
+                if (std::find(visited.begin(), visited.begin() + seen, node) != visited.begin() + seen) continue;
+                visited[seen++] = node;
+                for (const auto& clip : s_transitionClips)
+                    if (clip.load(std::memory_order_acquire) == reinterpret_cast<std::uintptr_t>(node)) return true;
+                std::uint8_t kind{};
+                if (!native_memory::tryReadField(node, 0x43, kind)) return false;
+                if (kind == 2 || kind == 6) {
+                    void* child{};
+                    if (!native_memory::tryReadField(node, 0x90, child) || count == pending.size()) return false;
+                    pending[count++] = child;
+                } else if (kind == 3) {
+                    void* children{};
+                    void* enabled{};
+                    std::int32_t childCount{}, enabledCount{};
+                    if (!native_memory::tryReadField(node, 0xA0, children) ||
+                        !native_memory::tryReadField(node, 0xA8, childCount) ||
+                        !native_memory::tryReadField(node, 0xB0, enabled) ||
+                        !native_memory::tryReadField(node, 0xB8, enabledCount) ||
+                        childCount < 0 || childCount > 32 || enabledCount != childCount) return false;
+                    for (std::int32_t i = 0; i < childCount; ++i) {
+                        std::uint8_t active{};
+                        if (!native_memory::tryReadField(enabled, i * 2, active)) return false;
+                        if (!active) continue;
+                        void* childInfo{};
+                        void* child{};
+                        if (!native_memory::tryReadField(children, i * sizeof(void*), childInfo) ||
+                            !native_memory::tryReadField(childInfo, 0x30, child) || count == pending.size()) return false;
+                        if (child) pending[count++] = child;
+                    }
+                }
+            }
+            return false;
+        }
+
+        void onBlendUpdate(void* blend, void* context, float timestep, void* syncOwner)
+        {
+            const auto lease = s_encodedLease.load(std::memory_order_acquire);
+            float remaining{};
+            void* from{};
+            void* to{};
+            std::uintptr_t vtable{};
+            bool complete = false;
+            bool graphInitialization = false;
+            // Restrict to the verified concrete blending effect, in the exact
+            // leased player graph, with an actively registered outgoing equip
+            // clip or a request-time initial graph. Other actors and ordinary
+            // reload/fire/locomotion transitions retain their original timestep.
+            if (lease && (lease & kEncodedStateMask) ==
+                    weapon_transition_animation_acceleration_policy::transitionState(Direction::Draw) &&
+                weapon_transition_animation_acceleration_policy::shouldAccelerateSample(true, Direction::Draw,
+                    f4vr::getNativeWeaponState(reinterpret_cast<RE::Actor*>(lease & ~kEncodedStateMask))) &&
+                std::isfinite(timestep) && timestep > 0.0f && contextMatchesPlayerGraph(context) &&
+                native_memory::tryReadField(blend, 0, vtable) && vtable == REL::Offset(0x2EE4F28).address() &&
+                native_memory::tryReadField(blend, 0x130, remaining) && std::isfinite(remaining) && remaining > 0.0f &&
+                native_memory::tryReadField(blend, 0x98, from) && native_memory::tryReadField(blend, 0xA0, to) && from && to && from != to) {
+                const bool outgoingDraw = outgoingBranchHasDrawClip(context, from);
+                // Captured AK/M16/Glock: the part poses interpolate for 0.2 s
+                // from the same placeholder positions even after EquipFast is
+                // complete. That effect's source is hkbBehaviorGraph (kind 1),
+                // not a clip. Admit only a graph witnessed at request time,
+                // once, in the leased player's context. No graph-wide timer
+                // override or pose writes; native cleanup remains authoritative.
+                std::uintptr_t sourceVtable{};
+                if (s_encodedLease.load(std::memory_order_acquire) == lease &&
+                    native_memory::tryReadField(from, 0, sourceVtable) &&
+                    sourceVtable == REL::Offset(0x2E04848).address()) {
+                    for (auto& initial : s_initialGraphs) {
+                        auto expected = reinterpret_cast<std::uintptr_t>(from);
+                        if (initial.compare_exchange_strong(expected, 0, std::memory_order_acq_rel)) {
+                            graphInitialization = true;
+                            break;
+                        }
+                    }
+                }
+                if ((outgoingDraw || graphInitialization) && s_encodedLease.load(std::memory_order_acquire) == lease) {
+                    timestep = (std::max)(timestep, remaining);
+                    complete = true;
+                } else {
+                    std::uint8_t fromKind{};
+                    (void)native_memory::tryReadField(from, 0x43, fromKind);
+                    ROCK_LOG_SAMPLE_DEBUG(Weapon, 250,
+                        "Equip blend observation: source={} kind={} target={} remaining={:.6f} outgoingDraw=false; native timing retained",
+                        from, fromKind, to, remaining);
+                }
+            }
+            // Native update owns its sync bookkeeping, elapsed/remaining clocks
+            // and later graph cleanup. Never deactivate/free a clip ourselves.
+            s_originalBlendUpdate(blend, context, timestep, syncOwner);
+            if (complete) {
+                float after{};
+                const bool readable = native_memory::tryReadField(blend, 0x130, after);
+                ROCK_LOG_SAMPLE_INFO(Weapon, 10,
+                    "Equip blend completed graphInitialization={} from={} to={} remaining={:.6f}->{:.6f} readable={} timestep={:.6f}",
+                    graphInitialization, from, to, remaining, after, readable, timestep);
+            }
+        }
+
         __declspec(noinline) void onClipGeneratorActivate(
             void* clipGenerator,
             void* context)
@@ -792,6 +927,24 @@ namespace rock::weapon_transition_animation_acceleration
             ROCK_LOG_ERROR(
                 Init,
                 "Weapon transition clip acceleration disabled: all three lifecycle entry hooks are required");
+        } else {
+            // Update wrapper 141F79FA0 tail-calls this common implementation
+            // with R9=self. Prefix ends before its first relative instruction.
+            constexpr std::array<std::uint8_t, 15> prefix{
+                0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x74,0x24,0x10,0x57,0x48,0x83,0xEC,0x40 };
+            constexpr std::array<std::uint8_t, 14> clonePrefix{
+                0x48,0x8B,0x89,0x18,0x01,0x00,0x00,0x48,0x85,0xC9,0x74,0x08,0x45,0x33 };
+            std::array<std::uint8_t, 14> actual{};
+            void* original{};
+            const bool verified = native_memory::guardedCopyFromMemory(
+                reinterpret_cast<const void*>(REL::Offset(0x17BE290).address()), actual.data(), actual.size()) && actual == clonePrefix;
+            if (verified && entry_trampoline_hook::install("Scoped outgoing equip blend completion", 0x1F7AD90,
+                    prefix.data(), prefix.size(), reinterpret_cast<void*>(&onBlendUpdate), original)) {
+                s_originalBlendUpdate = reinterpret_cast<BlendUpdateFn>(original);
+                ROCK_LOG_INFO(Init, "Outgoing equip blend completion installed for leased player draw clips");
+            } else {
+                ROCK_LOG_WARN(Init, "Outgoing equip blend completion unavailable; native blend timing retained");
+            }
         }
         return ready;
     }

@@ -219,9 +219,8 @@ namespace rock::trigger_equip_readiness_trace
         const auto now = Clock::now();
         if (set.samples >= 48 || (set.samples &&
             std::chrono::duration<double,std::milli>(now-set.last).count() < 30.0)) return;
-        if (set.root != reinterpret_cast<std::uintptr_t>(root)) {
+        if (set.root != reinterpret_cast<std::uintptr_t>(root) || set.count == 0) {
             if (set.discoveries >= 4) return;
-            ++set.discoveries;
             set.root = reinterpret_cast<std::uintptr_t>(root);
             set.count = 0;
             std::array<RE::NiAVObject*,512> todo{};
@@ -259,6 +258,10 @@ namespace rock::trigger_equip_readiness_trace
                     if (child) todo[pending++]=child;
                 }
             }
+            // The first final-phase call can see only an empty Weapon root.
+            // That is not a completed discovery: its children arrive later with
+            // the same root identity. Do not spend the replacement budget on it.
+            if (visited > 1 || set.count) ++set.discoveries;
             ROCK_LOG_INFO(Weapon,"EQUIP-PART discovery seq={} phase={} root={:#x} nodes={} visited={} pending={} truncated={}",
                 s_capture.sequence,phase,set.root,set.count,visited,pending,pending!=0||set.count==set.nodes.size());
         }
