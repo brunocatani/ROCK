@@ -237,10 +237,12 @@ namespace rock
         }
         _bridgeDisabledForTest = source == Source::HeldTriggerEquip &&
             g_rockConfig.rockDebugDisableTriggerEquipBridge;
-        const bool bridgeStarted = !_bridgeDisabledForTest && _bridge.begin(bridgeInput);
+        auto handoffInput = bridgeInput;
+        handoffInput.handPoseOnly = _bridgeDisabledForTest;
+        const bool bridgeStarted = _bridge.begin(handoffInput);
         if (_bridgeDisabledForTest) {
             releasePendingNativeCull(true);
-            ROCK_LOG_INFO(Weapon, "Trigger equip bridge disabled for test form={:08X}; native presentation exposed", expected.formID);
+            ROCK_LOG_INFO(Weapon, "Trigger equip visual bridge disabled for test form={:08X}; native presentation exposed, hand continuity retained", expected.formID);
         }
         _heldBridgeStarted = bridgeStarted && _heldTransfer.active();
         _expectedIdentity = expected;
