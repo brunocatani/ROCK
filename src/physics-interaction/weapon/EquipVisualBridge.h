@@ -169,6 +169,13 @@ namespace rock
         void finalizePresentationVisibility(const equipped_weapon_visual_state::Snapshot& nativeVisual);
 
     private:
+        void tracePoseHandoff(const char* stage, const RE::NiTransform& targetWorld);
+        void rememberPresentedPose();
+        RE::NiTransform _lastPresentedInDriver{};
+        bool _lastPresentedInDriverValid = false;
+        unsigned _poseAuditSamples = 0;
+        unsigned _handPoseAuditMask = 0;
+        bool _registrationAuditLogged = false;
         // Attach the (already orphaned) model under the world root; false when
         // the model is still parented or the world root is unavailable.
         bool tryAttachToWorldRoot();

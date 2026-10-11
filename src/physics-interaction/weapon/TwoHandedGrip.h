@@ -1012,7 +1012,8 @@ namespace rock
             std::uint64_t ownership, const weapon_grip_transfer::Support& grip, const char** failure,
             const weapon_grip_transfer::Support* second = nullptr);
         bool captureMenuCarry(weapon_grip_transfer::HandGrip& firing, weapon_grip_transfer::Pair& paired,
-            weapon_grip_transfer::Support& support, weapon_grip_transfer::Support& second, bool& carrierLeft) const;
+            weapon_grip_transfer::Support& support, weapon_grip_transfer::Support& second, bool& carrierLeft,
+            const char** failure = nullptr) const;
         void prepareEquippedWeaponDropCommit();
         void completeEquippedWeaponDrop(const EquippedWeaponManualDropRequest& request, bool committed);
 

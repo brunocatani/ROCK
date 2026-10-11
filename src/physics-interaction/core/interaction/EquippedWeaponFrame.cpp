@@ -140,8 +140,9 @@ namespace rock
         }
         weapon_grip_transfer::HandGrip firing{};
         bool carrierLeft = _twoHandedGrip.isFiringHandLeft();
+        const char* captureFailure = nullptr;
         snapshot.pending = _twoHandedGrip.captureMenuCarry(firing, snapshot.pairedGrips,
-            snapshot.supportGrip, snapshot.secondSupportGrip, carrierLeft);
+            snapshot.supportGrip, snapshot.secondSupportGrip, carrierLeft, &captureFailure);
         snapshot.isLeft = carrierLeft;
         snapshot.firingHandWeaponLocal = firing.handWeaponLocal;
         snapshot.firingGripWeaponLocal = firing.gripWeaponLocal;
@@ -153,8 +154,8 @@ namespace rock
         // grip decisions, while the outgoing nodes and controller frame live.
         _equipped.continuityGrip = snapshot;
         if (!snapshot.pending) {
-            ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Equipped grip continuity capture unavailable form={:08X} hand={}",
-                snapshot.targetWeaponFormID, carrierLeft ? "left" : "right");
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Equipped menu-carry continuity capture unavailable form={:08X} hand={} reason={} instance={:#x}",
+                snapshot.targetWeaponFormID, carrierLeft ? "left" : "right", captureFailure ? captureFailure : "unknown", snapshot.targetWeaponInstanceData);
         }
     }
 

@@ -421,13 +421,16 @@ namespace rock
                 supportCaptureStatus.invalidOrMissingFingerMask !=
                     _supportCaptureFailureMaskLogged) {
                 ROCK_LOG_WARN(Animation,
-                    "Authored support grip capture unavailable weaponKey=0x{:X} reason={} secondaryPass={} capture={} fingerMask=0x{:04X}",
+                    "Live authored support grip capture unavailable weaponKey=0x{:X} reason={} secondaryPass={} capture={} fingerMask=0x{:04X} libraryFound={} librarySupport={} stableSupportCurrent={}",
                     currentWeaponKey,
                     authored_weapon_grip_capture::authoredSupportGripCaptureFailureReasonName(
                         supportCaptureStatus.failureReason),
                     supportCaptureStatus.secondaryPassSequence,
                     supportCaptureStatus.captureSequence,
-                    supportCaptureStatus.invalidOrMissingFingerMask);
+                    supportCaptureStatus.invalidOrMissingFingerMask,
+                    authoredLookup.found, authoredLookup.hasSupportRelation,
+                    _stableAuthoredSupportGrip.valid && _stableAuthoredSupportGrip.weaponNodeIdentity == input.weaponNode &&
+                        _stableAuthoredSupportGrip.weaponOwnershipKey == input.weaponOwnershipKey);
                 _supportCaptureFailureReasonLogged = supportCaptureFailureReason;
                 _supportCaptureFailureMaskLogged =
                     supportCaptureStatus.invalidOrMissingFingerMask;

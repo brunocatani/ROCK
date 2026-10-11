@@ -114,15 +114,18 @@ namespace rock
     }
 
     bool TwoHandedGrip::captureMenuCarry(weapon_grip_transfer::HandGrip& firing, weapon_grip_transfer::Pair& paired,
-        weapon_grip_transfer::Support& support, weapon_grip_transfer::Support& second, bool& carrierLeft) const
+        weapon_grip_transfer::Support& support, weapon_grip_transfer::Support& second, bool& carrierLeft, const char** failure) const
     {
+        if (failure) *failure = "none";
+        const auto reject = [&](const char* reason) { if (failure) *failure = reason; return false; };
         firing = {}; paired = {}; support = {}; second = {};
-        if (isHandsFreeRetained()) return false; // There is no hand carry to restore after a menu.
+        if (isHandsFreeRetained()) return reject("hands-free-retained"); // There is no hand carry to restore after a menu.
         auto* node = isManualOwnershipActive() ? _session.weaponNode : _firing.rightCanonicalWeaponNode;
-        if (!node || !_confirmedEquippedOwnershipKey) return false;
+        if (!node) return reject("weapon-node-unavailable");
+        if (!_confirmedEquippedOwnershipKey) return reject("equipped-ownership-unconfirmed");
         const auto form = _recoil.weaponEvidence.formID;
         RE::NiPoint3 translation{};
-        if (!vanilla_weapon_grip_frame::resolveModelTranslation(form, node, translation)) return false;
+        if (!vanilla_weapon_grip_frame::resolveModelTranslation(form, node, translation)) return reject("model-registration-unavailable");
         const auto capturePart = [&](bool left, weapon_grip_transfer::HandGrip& out) {
             const auto& part = partGrip(left);
             if (!part.active || part.attachOnly || part.providerPartAuthority.active || !part.hasFingerPose) return false;
@@ -146,15 +149,15 @@ namespace rock
         };
         if (isPartCarryActive()) {
             carrierLeft = _partCarry.pivotIsLeft;
-            if (!captureSupport(carrierLeft, support)) return false;
-            if (isHandPartCarryGripping(!carrierLeft) && !captureSupport(!carrierLeft, second)) return false;
+            if (!captureSupport(carrierLeft, support)) return reject("support-carry-pose-or-driver-unavailable");
+            if (isHandPartCarryGripping(!carrierLeft) && !captureSupport(!carrierLeft, second)) return reject("second-support-pose-or-driver-unavailable");
             return true;
         }
         carrierLeft = isFiringHandLeft();
         if (_firing.transferredPrimaryGrip.valid()) firing = _firing.transferredPrimaryGrip;
         else {
             AuthoredWeaponGripPose pose{};
-            if (!captureDropGripPose(carrierLeft, pose)) return false;
+            if (!captureDropGripPose(carrierLeft, pose)) return reject("firing-pose-or-physical-frame-unavailable");
             firing.handWeaponLocal = pose.handWeaponLocal;
             firing.gripWeaponLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(pose.handWeaponLocal, carrierLeft);
             firing.fingerLocals = pose.fingerLocals;
@@ -168,10 +171,10 @@ namespace rock
             paired.firingHandIsLeft = carrierLeft;
             paired.sourceModelTranslation = translation;
             paired.arrangement = loose_weapon_authored_grab_policy::Arrangement::Separated;
-            if (!capturePart(!carrierLeft, paired.support)) return false;
-            return paired.valid();
+            if (!capturePart(!carrierLeft, paired.support)) return reject("paired-support-pose-unavailable");
+            return paired.valid() || reject("paired-capture-invalid");
         }
-        return firing.valid();
+        return firing.valid() || reject("firing-capture-invalid");
     }
 
     bool TwoHandedGrip::beginTransferredTwoHandGrip(RE::NiNode* weaponNode, std::uint64_t generation,
