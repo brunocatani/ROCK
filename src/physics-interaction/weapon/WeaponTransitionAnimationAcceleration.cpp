@@ -426,6 +426,24 @@ namespace rock::weapon_transition_animation_acceleration
                 s_encodedLease.load(std::memory_order_acquire) != lease) {
                 return;
             }
+            const auto direction = weapon_transition_animation_acceleration_policy::directionForTransitionState(
+                static_cast<std::uint32_t>(lease & kEncodedStateMask));
+            if (direction == Direction::Draw) {
+                // FO4VR hkbClipGenerator animationName is hkStringPtr +90,
+                // independently decoded by existing PAPER clip telemetry.
+                // A draw lease spans late native model replacement, so matching
+                // the character alone would also accelerate idle/fire/reload.
+                std::uintptr_t namePointer{};
+                std::array<char, 256> name{};
+                if (!native_memory::tryReadField(clipGenerator, 0x90, namePointer) ||
+                    !native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(namePointer & ~std::uintptr_t{1}), name.data(), name.size())) return;
+                const auto end = std::find(name.begin(), name.end(), '\0');
+                if (end == name.end() || !weapon_transition_animation_acceleration_policy::isDrawClip(
+                        std::string_view(name.data(), static_cast<std::size_t>(end-name.begin())))) return;
+                ROCK_LOG_SAMPLE_INFO(Weapon, 10,
+                    "Weapon draw clip admitted after native draw request clip={} name='{}' nativeState={}",
+                    clipGenerator, name.data(), f4vr::getNativeWeaponState(reinterpret_cast<RE::Actor*>(lease & ~kEncodedStateMask)));
+            }
             s_matchedActivations.fetch_add(1, std::memory_order_relaxed);
 
             const auto clip = reinterpret_cast<std::uintptr_t>(clipGenerator);
@@ -550,9 +568,27 @@ namespace rock::weapon_transition_animation_acceleration
                 return timestep;
             }
 
-            const float accelerated =
+            float accelerated =
                 weapon_transition_animation_acceleration_policy::
                     scaleTransitionTimestep(timestep);
+            if (direction == Direction::Draw) {
+                // Finish a loaded draw clip in its native update, crossing its
+                // own weaponDraw/00NextClip events rather than fabricating them.
+                // These read-only offsets are shared with verified PAPER clip
+                // telemetry. Before a binding is readable, retain the existing
+                // accelerated step and let the next native update resolve it.
+                void* wrapper{};
+                void* binding{};
+                void* animation{};
+                float duration{};
+                if (native_memory::tryReadField(clipGenerator,0xD0,wrapper) &&
+                    native_memory::tryReadField(wrapper,0x38,binding) &&
+                    native_memory::tryReadField(binding,0x18,animation) &&
+                    native_memory::tryReadField(animation,0x14,duration) &&
+                    std::isfinite(duration) && duration > 0.0f && duration <= 300.0f) {
+                    accelerated = (std::max)(accelerated,duration + timestep);
+                }
+            }
             if (!std::isfinite(accelerated)) {
                 return timestep;
             }
@@ -899,7 +935,7 @@ namespace rock::weapon_transition_animation_acceleration
         switch (action) {
         case weapon_transition_animation_acceleration_policy::
             LifecycleAction::Complete:
-            clearLease("native-complete", input.nativeWeaponState);
+            clearLease(s_runtimeLease.direction == Direction::Draw ? "draw-clip-window-complete" : "native-complete", input.nativeWeaponState);
             break;
         case weapon_transition_animation_acceleration_policy::
             LifecycleAction::Cancel: {

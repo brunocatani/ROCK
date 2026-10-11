@@ -1,6 +1,7 @@
 #include "physics-interaction/native/HeldWeaponInstantTransitionPolicy.h"
 #include "physics-interaction/native/NativeWeaponEquipAudio.h"
 #include "physics-interaction/native/NativeWeaponAnimationAudio.h"
+#include "physics-interaction/weapon/WeaponTransitionAnimationAccelerationPolicy.h"
 
 #include <cstdio>
 
@@ -23,6 +24,23 @@ int main()
     constexpr std::uintptr_t drawReturn = 0x1000;
     constexpr std::uintptr_t sheatheReturn = 0x2000;
     bool ok = true;
+    namespace clip = rock::weapon_transition_animation_acceleration_policy;
+    // Recorded HK417 sequence: native Drawn precedes replacement EquipFast.
+    // The old terminal-state rule discarded the lease before this activation.
+    ok &= expect("captured late HK417 equip remains eligible after Drawn",
+        clip::classifyLifecycle(true,true,clip::Direction::Draw,3,0.0195f) == clip::LifecycleAction::KeepPending &&
+        clip::isDrawClip("Animations\\44Pistol\\WPNEquipFast.hkt") &&
+        clip::shouldAccelerateSample(true,clip::Direction::Draw,3));
+    ok &= expect("late window excludes captured idle and firing clips and unequip",
+        !clip::isDrawClip("Animations\\44Pistol\\WPNRunForwardReady.hkt") &&
+        !clip::isDrawClip("Animations\\44Pistol\\WPNFireSingleSighted.hkt") &&
+        !clip::isDrawClip("Animations\\44Pistol\\WPNReload.hkt") &&
+        !clip::isDrawClip("Animations\\44Pistol\\WPNUnEquip.hkt"));
+    ok &= expect("late equip cannot retain authority after item or lifecycle loss",
+        clip::classifyLifecycle(true,false,clip::Direction::Draw,3,0.041f) == clip::LifecycleAction::Cancel &&
+        clip::classifyLifecycle(false,true,clip::Direction::Draw,3,0.041f) == clip::LifecycleAction::Cancel &&
+        clip::classifyLifecycle(true,true,clip::Direction::Draw,3,3.0f) == clip::LifecycleAction::Complete &&
+        !clip::shouldAccelerateSample(true,clip::Direction::Draw,5));
     using rock::native_weapon_equip_audio::isPlayerSource;
     ok &= expect("weapon equip audio matches the player's position identity",
         isPlayerSource(0x1000, 0x10D0));
