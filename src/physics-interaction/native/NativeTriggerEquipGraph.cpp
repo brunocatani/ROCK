@@ -2,6 +2,7 @@
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -102,6 +103,24 @@ namespace rock::native_trigger_equip_graph
         // Do not move handles ourselves or submit draw against a pending set.
         const bool requested = reinterpret_cast<bool (*)(void*, RE::PlayerCharacter*)>(
             REL::Offset(0xE8D090).address())(process, player);
+        // Native pending handle array is at handles+60 (current at +40).
+        // Record exact first-person resource reuse, not merely a same-form hit.
+        std::uint64_t firstPersonHandle{};
+        std::uint32_t capacity{}, count{};
+        void* currentMiddle{};
+        void* currentHandles{};
+        if (native_memory::tryReadField(process, 8, currentMiddle) && currentMiddle &&
+            native_memory::tryReadField(currentMiddle, 0x2C0, currentHandles) && currentHandles) {
+            auto* array = static_cast<char*>(currentHandles) + (requested ? 0x60 : 0x40);
+            if (native_memory::tryReadField(array, 0, capacity) && native_memory::tryReadField(array, 0x18, count) &&
+                count >= 2 && count <= 8) {
+                void* data = array + 8;
+                if ((capacity & 0x80000000u) != 0 || native_memory::tryReadField(array, 8, data)) {
+                    (void)native_memory::tryReadField(data, 8, firstPersonHandle);
+                }
+            }
+        }
+        const bool warmResource = native_idle_grip_preharvest::isSubgraphWarm(firstPersonHandle);
         reinterpret_cast<void (*)(RE::PlayerCharacter*, bool)>(REL::Offset(0xE15B50).address())(player, !requested);
         // Native action/event callbacks may replace process storage. Reacquire
         // it before inspecting the post-commit set; keep no borrowed AIProcess
@@ -113,8 +132,8 @@ namespace rock::native_trigger_equip_graph
         std::uint32_t pending{};
         if (!native_memory::tryReadField(middle, 0x350, pending)) return Result::Unavailable;
         ROCK_LOG_SAMPLE_DEBUG(Weapon, 50,
-            "Trigger equip graph preparation form={:08X} instance={} requested={} pending={} currentMismatch={}",
-            object->formID, static_cast<void*>(instance), requested, pending, mismatch);
+            "Trigger equip graph preparation form={:08X} instance={} requested={} pending={} currentMismatch={} warmResource={} firstPersonHandle={:016X}",
+            object->formID, static_cast<void*>(instance), requested, pending, mismatch, warmResource, firstPersonHandle);
         return !mismatch && pending == 0 ? Result::Ready : Result::Pending;
     }
 }

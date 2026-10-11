@@ -1499,7 +1499,7 @@ namespace rock
             input_remap_runtime::isMenuInputActive() ? nullptr : nativeIdleGripCandidate.get(),
             nativeIdleGripCandidate && (isLeft ? _rightHand : _leftHand).isHolding() &&
                 (isLeft ? _rightHand : _leftHand).getHeldRef() == nativeIdleGripCandidate.get());
-        native_idle_grip_preharvest::observeCandidate(std::move(nativeIdleGripCandidate));
+        native_idle_grip_preharvest::observeCandidate(std::move(nativeIdleGripCandidate), isLeft, hand.isHoldingLooseWeapon());
 
         const bool heldWeaponEquipOwnershipEligible =
             equipped_weapon_manual_ownership_policy::shouldStartHeldWeaponEquipOwnership(

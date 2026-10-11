@@ -370,6 +370,7 @@ namespace rock::native_idle_grip_preharvest
             bool inPowerArmor{ false };
             bool graphHolderConstructed{ false };
             bool longLoadLogged{ false };
+            bool warmOnly{ false };
             CandidateOrigin origin{ CandidateOrigin::Unknown };
         };
 
@@ -384,10 +385,23 @@ namespace rock::native_idle_grip_preharvest
             bool occupied{ false };
         };
 
+        struct WarmResources
+        {
+            RE::BSTSmartPointer<RE::BSAnimationGraphManager> manager;
+            RE::BSTSmallArray<RE::SubgraphHandle, 2> handles;
+            RE::BSTSmartPointer<RE::TBO_InstanceData> instance;
+            authored_weapon_grip_library::WeaponVariantIdentity variant{};
+            std::uint32_t referenceFormId{};
+            RE::TESRace* race{};
+            bool inPowerArmor{};
+        };
+
         struct Runtime
         {
             NativeFunctions native{};
             Job job{};
+            std::array<WarmResources, 2> warm;
+            std::array<std::uint32_t, 2> heldReferences{};
             std::array<FailureEntry, kFailureCapacity> failures{};
             std::uint64_t nextCaptureSequence{ 0 };
             DWORD ownerThreadId{ 0 };
@@ -711,6 +725,41 @@ namespace rock::native_idle_grip_preharvest
                 job.graphHolderConstructed = false;
             }
             job = {};
+        }
+
+        void releaseWarmResources(Runtime& state, WarmResources& warm)
+        {
+            if (warm.manager && !warm.handles.empty()) {
+                state.native.releaseAnimationSubGraph(&warm.manager, &warm.handles);
+            }
+            warm.handles.clear();
+            warm.manager.reset();
+            warm.instance.reset();
+            warm.referenceFormId = 0;
+        }
+
+        void retainHeldResources(Runtime& state)
+        {
+            auto& job = state.job;
+            if (job.origin != CandidateOrigin::LooseReference || !job.referenceFormId ||
+                !job.weapon || job.weapon->weaponData.type != RE::WEAPON_TYPE::kGun) return;
+            auto* holder = graphHolder(job);
+            if (!holder || !holder->animationGraphManager || job.subgraphHandles.empty()) return;
+            for (std::size_t hand = 0; hand < state.heldReferences.size(); ++hand) {
+                if (state.heldReferences[hand] != job.referenceFormId) continue;
+                auto& warm = state.warm[hand];
+                releaseWarmResources(state, warm);
+                warm.manager = holder->animationGraphManager;
+                warm.handles = std::move(job.subgraphHandles);
+                warm.instance = job.instanceData;
+                warm.referenceFormId = job.referenceFormId;
+                warm.variant = job.variant;
+                warm.race = job.race;
+                warm.inPowerArmor = job.inPowerArmor;
+                ROCK_LOG_INFO(Animation, "Held firearm subgraphs warm form={:08X} ref={:08X} count={} warmOnly={}",
+                    job.weaponFormId, job.referenceFormId, warm.handles.size(), job.warmOnly);
+                break;
+            }
         }
 
         void failJob(Runtime& state, const char* reason)
@@ -1762,6 +1811,11 @@ namespace rock::native_idle_grip_preharvest
             if (!state.native.isAnimationSubGraphLoaded(&holder->animationGraphManager, &job.subgraphHandles, &priority)) {
                 return false;
             }
+            if (job.warmOnly) {
+                retainHeldResources(state);
+                releaseJob(state);
+                return true;
+            }
             RE::NiTransform handInWeapon{};
             authored_weapon_grip_library::FiringFingerPose rightFiringFingerPose{};
             SupportGripSample supportSample{};
@@ -1852,6 +1906,7 @@ namespace rock::native_idle_grip_preharvest
                 extractionDiagnostics.supportStableAcrossSamples ? "yes" : "no", extractionDiagnostics.supportMissingFingerMask,
                 extractionDiagnostics.maxSupportHandTranslationDelta, extractionDiagnostics.maxSupportHandRotationDeltaDegrees,
                 supportSample.handInWeapon.translate.x, supportSample.handInWeapon.translate.y, supportSample.handInWeapon.translate.z);
+            retainHeldResources(state);
             releaseJob(state);
             return true;
         }
@@ -2005,7 +2060,7 @@ namespace rock::native_idle_grip_preharvest
         }
     }
 
-    void observeCandidate(RE::NiPointer<RE::TESObjectREFR> candidate) noexcept
+    void observeCandidate(RE::NiPointer<RE::TESObjectREFR> candidate, bool isLeft, bool held) noexcept
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::NativeIdleGripHarvest);
         auto& state = runtime();
@@ -2013,6 +2068,14 @@ namespace rock::native_idle_grip_preharvest
             return;
         }
 
+        state.heldReferences[isLeft ? 0 : 1] = held && candidate ? candidate->GetFormID() : 0;
+        auto* player = f4vr::getPlayer();
+        for (auto& warm : state.warm) {
+            if (warm.referenceFormId && (!player || warm.race != player->race || warm.inPowerArmor != f4vr::isInPowerArmor() ||
+                (warm.referenceFormId != state.heldReferences[0] && warm.referenceFormId != state.heldReferences[1]))) {
+                releaseWarmResources(state, warm);
+            }
+        }
         if (!advanceAndCanStart(state) || !candidate) {
             return;
         }
@@ -2021,10 +2084,34 @@ namespace rock::native_idle_grip_preharvest
         RE::NiPointer<RE::NiAVObject> weaponRoot(candidateRaw->Get3D());
         Job candidateDescription = describeLooseCandidate(candidateRaw, weaponRoot.get());
         if (!shouldStartCandidate(state, candidateDescription, weaponRoot.get())) {
-            return;
+            if (!held || !candidateDescription.weapon || candidateDescription.weapon->weaponData.type != RE::WEAPON_TYPE::kGun ||
+                candidateIsCoolingDown(state, candidateDescription, GetTickCount64())) return;
+            for (const auto& warm : state.warm) {
+                if (warm.referenceFormId == candidateDescription.referenceFormId &&
+                    warm.variant.key == candidateDescription.variant.key && warm.inPowerArmor == candidateDescription.inPowerArmor) return;
+            }
+            candidateDescription.warmOnly = true;
         }
 
         startJob(state, std::move(candidateDescription));
+    }
+
+    bool isSubgraphWarm(std::uint64_t handle) noexcept
+    {
+        auto& state = runtime();
+        if (!handle || !claimOrValidateThread(state)) return false;
+        for (const auto& warm : state.warm) {
+            for (const auto& candidate : warm.handles) if (candidate.handle == handle) return true;
+        }
+        return false;
+    }
+
+    void clearHeldWarmups() noexcept
+    {
+        auto& state = runtime();
+        if (!claimOrValidateThread(state)) return;
+        state.heldReferences = {};
+        for (auto& warm : state.warm) releaseWarmResources(state, warm);
     }
 
     void observeStoredDisplay(RE::NiPointer<RE::TESObjectREFR> candidate,RE::NiAVObject* displayRoot) noexcept

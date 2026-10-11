@@ -6,6 +6,7 @@
 #include "physics-interaction/visual/GripZoneIndicators.h"
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
+#include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
 
 // PhysicsInteraction lifecycle: construction, init/shutdown, skeleton and provider lifecycle notes, generated-body lifecycle, collision layer registration, hand/body collision creation, and world accessors. Includes the provider API surface (PhysicsInteractionProvider.inl).
 
@@ -621,6 +622,7 @@ namespace rock
             _leftHand.abandonHavokStateAfterWorldLoss();
             _dynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
             _weaponCollision.abandonHavokStateAfterWorldLoss();
+            native_idle_grip_preharvest::clearHeldWarmups();
             _equipped.transition.abandonSceneGraph();
             _bodyBoneColliders.reset();
             abandonWeaponHandSuppression();
@@ -642,6 +644,7 @@ namespace rock
         _grabInput.shoulderStashStates = {};
         _grabInput.mouthConsumeStates = {};
         _feedbackHaptics.reset();
+        native_idle_grip_preharvest::clearHeldWarmups();
         _equipped.transition.shutdown();
         _weaponCollision.shutdown();
         _providerSources.clear();
