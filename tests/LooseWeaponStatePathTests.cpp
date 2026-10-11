@@ -10,11 +10,13 @@ int main() {
     assert(relativeItemPath("Weapon  (2400D8A5)",path)==path);
     assert(relativeItemPath("",path)==path);
     assert(relativeItemPath("WeaponMagazine","WeaponMagazine/WeaponMagazineChild1")=="WeaponMagazineChild1");
-    // Actual 20:45 No Heroics failure: the loose root already IS the receiver
-    // assembly. Do not require equipped wrappers or rewrite root placement.
+    // ReceiverParentObject replaces the equipped instance wrapper, while
+    // the receiver attachment and its complete part chain remain below it.
+    // M16A2E3 WEAP MODL: HandMade/Recievers/DummyReciever.nif. That NIF's
+    // ReceiverParentObject owns CPA P-Receiver; the receiver has C-Receiver.
     constexpr auto receiverPath="Weapon  (2400D8A5)/P-Receiver/WeaponMagazine";
-    assert(relativeItemPath("ReceiverParentObject",receiverPath,"Weapon  (2400D8A5)")=="WeaponMagazine");
-    assert(relativeItemPath("ReceiverParentObject","Weapon  (2400D8A5)/P-Receiver","Weapon  (2400D8A5)").empty());
+    assert(relativeItemPath("ReceiverParentObject",receiverPath,"Weapon  (2400D8A5)")=="P-Receiver/WeaponMagazine");
+    assert(relativeItemPath("ReceiverParentObject","Weapon  (2400D8A5)/P-Receiver","Weapon  (2400D8A5)")=="P-Receiver");
     assert(relativeItemPath("ReceiverParentObject",receiverPath,"Weapon  (0D0087E8)")==receiverPath);
     assert(relativeItemPath("ReceiverParentObject","Weapon  (2400D8A5)/P-Mag/WeaponMagazine","Weapon  (2400D8A5)")=="P-Mag/WeaponMagazine");
 }

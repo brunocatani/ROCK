@@ -461,6 +461,16 @@ void LooseWeaponCollision::update(const PhysicsFrameContext& frame, RE::TESObjec
         auto* weapon=form ? form->As<RE::TESObjectWEAP>() : nullptr;
         if (!weapon || !loose_weapon_collision_policy::eligibleType(weapon->weaponData.type.get()) ||
             ref->IsDeleted() || ref->IsDisabled() || !ref->Get3D()) continue;
+        if(candidate>=2) {
+            auto mutation=gate.pauseForMutation();
+            const bool wasReady=loose_weapon_state::owns(ref->formID);
+            // Revisit pending descriptions before the existing-slot shortcut:
+            // the engine can finish attachments on the same dummy root later.
+            if(!loose_weapon_state::apply(ref,ref->Get3D()))continue;
+            if(!wasReady) {
+                for(auto& slot:_slots)if(slot._state&&slot._state->ref.get()==ref)slot.clear(frame.hknpWorld);
+            }
+        }
         if(std::any_of(_parked.begin(),_parked.end(),[&](const auto& s){return s&&s->ref.get()==ref;}))continue;
         if (std::any_of(_slots.begin(),_slots.end(),[&](const Slot& slot) {
             return (slot._state && slot._state->ref.get()==ref) || slot._declined==ref->formID;

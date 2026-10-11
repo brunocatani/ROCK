@@ -18,7 +18,7 @@ namespace {
     struct Entry {
         api::OwnerToken owner{};contract::ItemKey key{};contract::ItemState state{},originalState{};
         RE::NiPointer<RE::NiAVObject> model;
-        bool retiring{};std::uintptr_t failedModel{};
+        bool retiring{}, pending{true};std::uintptr_t failedModel{};
     };
     // Value-only descriptions; native model callbacks never retain engine
     // pointers or call back into a consumer. Registry mutations are bounded.
@@ -73,6 +73,23 @@ namespace {
         }
         return found?found:root;
     }
+    void reportModelTree(std::uint32_t reference,RE::NiAVObject* root) {
+        struct Node {RE::NiAVObject* value{};std::size_t parent{},slot{};};
+        std::array<Node,256> nodes{};nodes[0]={root,0,0};std::size_t count=1;
+        // One bounded dump per rejected model (failedModel suppresses repeats).
+        // Actual parents/slots distinguish assembly differences from a lookup
+        // bug without another diagnostic-only build or pointer guessing.
+        for(std::size_t i=0;i<count;++i) {
+            const auto& item=nodes[i];auto* branch=item.value->IsNode();
+            if(!branch)continue;
+            ROCK_LOG_WARN(Weapon,"Loose item model node ref={:08X} index={} parent={} slot={} name='{}' children={}",
+                reference,i,item.parent,item.slot,item.value->name.c_str()?item.value->name.c_str():"",branch->children.size());
+            for(decltype(branch->children.capacity()) slot=0;slot<branch->children.capacity();++slot)if(branch->children[slot]) {
+                if(count==nodes.size()){ROCK_LOG_WARN(Weapon,"Loose item model tree truncated ref={:08X} nodes={}",reference,count);return;}
+                nodes[count++]={branch->children[slot].get(),i,slot};
+            }
+        }
+    }
     void set3D(RE::TESObjectREFR* ref,RE::NiAVObject* model,bool queued) noexcept {
         // Native caller owns the model through Set3D. Apply only to a detached
         // incoming tree before native publication; never touch shared templates.
@@ -88,7 +105,7 @@ api::Status set(api::OwnerToken owner,const contract::ItemKey& key,const contrac
     if(found!=entries.end()&&found->owner!=owner)return api::Status::NotReady;
     if(found==entries.end())found=std::find_if(entries.begin(),entries.end(),[](const auto& e){return !e.owner&&!e.retiring;});
     if(found==entries.end())return api::Status::CapacityFull;
-    found->owner=owner;found->key=key;found->state=state;found->failedModel=0;return api::Status::Ok;
+    found->owner=owner;found->key=key;found->state=state;found->pending=true;found->failedModel=0;return api::Status::Ok;
 }
 api::Status move(api::OwnerToken owner,const contract::ItemKey& before,const contract::ItemKey& after) {
     if(!valid(before)||before.weapon!=after.weapon||(after.owner&&!valid(after)))return api::Status::InvalidArgument;
@@ -105,7 +122,9 @@ api::Status clear(api::OwnerToken owner) {
 }
 std::size_t references(std::span<std::uint32_t> output) {
     std::scoped_lock lock(mutex);std::size_t count{};
-    for(const auto& e:entries)if(e.owner&&!e.failedModel&&!e.key.unique&&count<output.size())output[count++]=e.key.owner;
+    // A native dummy root can precede its attachment assembly. A missing path
+    // is a diagnostic witness, not a permanent rejection of that root pointer.
+    for(const auto& e:entries)if(e.owner&&!e.key.unique&&count<output.size())output[count++]=e.key.owner;
     return count;
 }
 bool owns(std::uint32_t reference) {
@@ -118,12 +137,22 @@ bool apply(RE::TESObjectREFR* ref,RE::NiAVObject* model) {
     const contract::ItemKey key{ref->GetObjectReference()->GetFormID(),ref->GetFormID(),0};
     const auto found=std::find_if(entries.begin(),entries.end(),[&](const auto& e){return e.owner&&e.key==key;});
     if(found==entries.end())return false;
-    if(found->failedModel==reinterpret_cast<std::uintptr_t>(model))return false;
+    if(found->model.get()==model&&!found->pending&&!found->failedModel)return true;
     auto* root=weaponRoot(model);if(!root)return false;
     std::array<RE::NiAVObject*,contract::kMaxItemParts> targets{};
     for(std::uint32_t i=0;i<found->state.count;++i) {
         targets[i]=path(root,found->state.parts[i].path,key.weapon);
-        if(!targets[i]) {found->failedModel=reinterpret_cast<std::uintptr_t>(model);ROCK_LOG_WARN(Weapon,"Loose item state path unavailable ref={:08X} path={} model='{}' root='{}'",ref->GetFormID(),found->state.parts[i].path,model->name.c_str()?model->name.c_str():"",root->name.c_str()?root->name.c_str():"");return false;}
+        if(!targets[i]) {
+            const bool report=found->failedModel!=reinterpret_cast<std::uintptr_t>(model);
+            found->failedModel=reinterpret_cast<std::uintptr_t>(model);
+            if(report) {
+                char instance[32]{};std::snprintf(instance,sizeof(instance),"Weapon  (%08X)",key.weapon);
+                ROCK_LOG_WARN(Weapon,"Loose item state awaiting model parts ref={:08X} path={} relative={} model='{}' root='{}'",ref->GetFormID(),found->state.parts[i].path,
+                    relativeItemPath(root->name.c_str()?root->name.c_str():"",found->state.parts[i].path,instance),model->name.c_str()?model->name.c_str():"",root->name.c_str()?root->name.c_str():"");
+                reportModelTree(ref->GetFormID(),root);
+            }
+            return false;
+        }
     }
     if(found->model.get()!=model) {
         found->model.reset(model);found->originalState=found->state;
@@ -134,11 +163,11 @@ bool apply(RE::TESObjectREFR* ref,RE::NiAVObject* model) {
             p.local.scale=node->local.scale;p.hidden=node->GetAppCulled()?1u:0u;
         }
     }
+    found->failedModel=0;found->pending=false;
     std::uint32_t applied{};
     for(std::uint32_t i=0;i<found->state.count;++i) {
         auto* node=targets[i];const auto& p=found->state.parts[i];
-        // P-Receiver may now identify the native model root itself. Its pose
-        // and visibility belong to the world reference/transition, not a part.
+        // Whole-model placement/visibility belong to the native reference.
         if(node==root||node==model)continue;
         std::memcpy(node->local.rotate.entry,p.local.rotate,sizeof(p.local.rotate));
         node->local.translate={p.local.translate[0],p.local.translate[1],p.local.translate[2]};node->local.scale=p.local.scale;
