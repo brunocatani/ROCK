@@ -39,27 +39,35 @@ namespace {
         }
         return true;
     }
-    RE::NiAVObject* child(RE::NiAVObject* parent,std::string_view name) {
-        auto* branch=parent?parent->IsNode():nullptr;if(!branch)return nullptr;
-        RE::NiAVObject* found{};
-        for(const auto& c:branch->children)if(c&&c->name.c_str()&&name==c->name.c_str()) {
-            if(found)return nullptr;found=c.get();
-        }
-        return found;
-    }
     RE::NiAVObject* path(RE::NiAVObject* root,std::string_view name,std::uint32_t weapon) {
-        auto* current=root;
-        // Equipped paths include the native instance wrapper beneath the
-        // actor's Weapon bone. The loose tree can start at that same wrapper.
-        // Consume it once instead of looking for a second nested instance.
         char instance[32]{};std::snprintf(instance,sizeof(instance),"Weapon  (%08X)",weapon);
         if(root&&root->name.c_str())name=relativeItemPath(root->name.c_str(),name,instance);
-        if(name.empty())return root;
-        for(unsigned depth=0;!name.empty()&&depth<64;++depth) {
-            const auto slash=name.find('/');current=child(current,name.substr(0,slash));
-            if(!current)return nullptr;if(slash==name.npos)return current;name.remove_prefix(slash+1);
+        return completeItemPath(root,name,[](RE::NiAVObject* parent,auto visit){
+            if(auto* branch=parent?parent->IsNode():nullptr)
+                for(decltype(branch->children.capacity()) i=0;i<branch->children.capacity();++i)
+                    if(branch->children[i])visit(branch->children[i].get());
+        },[](RE::NiAVObject* node){return std::string_view(node->name.c_str()?node->name.c_str():"");});
+    }
+    void resolveStatePaths(RE::NiAVObject* root,const contract::ItemState& state,std::uint32_t weapon,
+        std::array<RE::NiAVObject*,contract::kMaxItemParts>& targets) {
+    for(std::uint32_t i=0;i<state.count;++i)targets[i]=path(root,state.parts[i].path,weapon);
+    for(std::uint32_t i=0;i<state.count;++i) {
+        if(!targets[i]) {
+            // A saved attachment ancestor may share its name with accessories.
+            // Its uniquely resolved descendants identify the exact branch.
+            const std::string_view prefix=state.parts[i].path;
+            RE::NiAVObject* candidate{};bool conflict=false;
+            for(std::uint32_t j=0;j<state.count;++j) {
+                const std::string_view longer=state.parts[j].path;
+                if(!targets[j]||longer.size()<=prefix.size()||!longer.starts_with(prefix)||longer[prefix.size()]!='/')continue;
+                auto* ancestor=targets[j];
+                for(char c:longer.substr(prefix.size()))if(c=='/'&&ancestor)ancestor=ancestor->parent;
+                if(candidate&&candidate!=ancestor){conflict=true;break;}
+                candidate=ancestor;
+            }
+            if(!conflict)targets[i]=candidate;
         }
-        return nullptr;
+    }
     }
     RE::NiAVObject* weaponRoot(RE::NiAVObject* root) {
         std::array<RE::NiAVObject*,2048> nodes{};nodes[0]=root;std::size_t count=1;RE::NiAVObject* found{};
@@ -141,8 +149,8 @@ bool apply(RE::TESObjectREFR* ref,RE::NiAVObject* model) {
     if(found->model.get()==model&&!found->pending&&!found->failedModel)return true;
     auto* root=weaponRoot(model);if(!root)return false;
     std::array<RE::NiAVObject*,contract::kMaxItemParts> targets{};
+    resolveStatePaths(root,found->state,key.weapon,targets);
     for(std::uint32_t i=0;i<found->state.count;++i) {
-        targets[i]=path(root,found->state.parts[i].path,key.weapon);
         if(!targets[i]) {
             const bool report=found->failedModel!=reinterpret_cast<std::uintptr_t>(model);
             found->failedModel=reinterpret_cast<std::uintptr_t>(model);
@@ -184,8 +192,10 @@ void restoreWithdrawn() {
         auto* ref=RE::TESForm::GetFormByID<RE::TESObjectREFR>(e.key.owner);
         if(ref&&ref->Get3D()==e.model.get()) {
             auto* root=weaponRoot(e.model.get());
+            std::array<RE::NiAVObject*,contract::kMaxItemParts> targets{};
+            if(root)resolveStatePaths(root,e.originalState,e.key.weapon,targets);
             for(std::uint32_t i=0;root&&i<e.originalState.count;++i) {
-                const auto& p=e.originalState.parts[i];auto* node=path(root,p.path,e.key.weapon);if(!node||node==root||node==e.model.get())continue;
+                const auto& p=e.originalState.parts[i];auto* node=targets[i];if(!node||node==root||node==e.model.get())continue;
                 unpackRotation(node->local.rotate.entry,p.local.rotate);
                 node->local.translate={p.local.translate[0],p.local.translate[1],p.local.translate[2]};node->local.scale=p.local.scale;
                 equipped_weapon_visual_state::setLocallyVisible(node,p.hidden==0);

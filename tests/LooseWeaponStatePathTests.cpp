@@ -2,6 +2,18 @@
 #include "api/LooseWeaponStateRotation.h"
 #include <cassert>
 int main() {
+    struct Node {std::string_view name;std::array<Node*,4> children{};};
+    Node mag{"WeaponMagazine"},slot{"P-Mag",{&mag}},receiver{"P-Receiver",{&slot}},sling{"P-Receiver"},rail{"P-Receiver"};
+    Node root{"ReceiverParentObject",{&sling,&rail,&receiver}};
+    const auto children=[](Node* n,auto visit){for(auto* c:n->children)if(c)visit(c);};
+    const auto name=[](Node* n){return n->name;};
+    using rock::loose_weapon_state::completeItemPath;
+    assert(completeItemPath(&root,"P-Receiver/P-Mag/WeaponMagazine",children,name)==&mag);
+    assert(completeItemPath(&root,"P-Receiver",children,name)==nullptr);
+    Node otherMag{"WeaponMagazine"},otherSlot{"P-Mag",{&otherMag}};
+    rail.children[0]=&otherSlot;
+    assert(completeItemPath(&root,"P-Receiver/P-Mag/WeaponMagazine",children,name)==nullptr);
+    assert(completeItemPath(&root,"P-Receiver/WeaponMagazine",children,name)==nullptr);
     using rock::loose_weapon_state::relativeItemPath;
     constexpr auto path="Weapon  (0D01EC2E)/P-Receiver/WEAPON/WeaponExtra4";
     assert(relativeItemPath("Weapon",path)==path);
