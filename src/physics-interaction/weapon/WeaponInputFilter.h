@@ -46,6 +46,18 @@ namespace rock::weapon_input_filter
             transform_math::composeTransforms(transform_math::invertTransform(trackedWand), input));
     }
 
+    // Generated grab proxies store column axes; TransformMath uses row axes.
+    // Correct the row view, then restore proxy storage before driving Havok.
+    [[nodiscard]] inline RE::NiTransform applyProxyTrackingCorrection(
+        RE::NiTransform proxy, const RE::NiTransform& trackedWand,
+        const RE::NiTransform& filteredWand)
+    {
+        proxy.rotate = transform_math::transposeRotation(proxy.rotate);
+        proxy = applyTrackingCorrection(proxy, trackedWand, filteredWand);
+        proxy.rotate = transform_math::transposeRotation(proxy.rotate);
+        return proxy;
+    }
+
     // State is in room space: locomotion and artificial turning transport it
     // without filtering. The caller resets on ownership/tracking discontinuity.
     [[nodiscard]] inline bool update(State& state, const RE::NiTransform& target,

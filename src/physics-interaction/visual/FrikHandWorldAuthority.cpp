@@ -72,8 +72,6 @@ namespace rock::frik_hand_world_authority
             std::array<weapon_input_filter::State, 2> weaponFilters{};
             std::array<DriverSample, 2> weaponWands{};
             std::array<DriverSample, 2> weaponFilteredWands{};
-            std::uint64_t weaponOwnership = 0;
-            std::uint64_t weaponGeneration = 0;
             std::uint64_t weaponPreparedFrame = 0;
             bool weaponFilteringEnabled = false;
             const char* weaponRoomSource = nullptr;
@@ -398,16 +396,10 @@ namespace rock::frik_hand_world_authority
         enabled = enabled && ownership && generation && g_rockConfig.rockWeaponFilteringPreset > 0 &&
             frame.weaponDrawn && frame.localSkeletonReady && !frame.localMenuBlocking &&
             !frame.compatibilityConfigBlocking && frame.playerSpace.valid;
-        if (!enabled || !g_service.weaponFilteringEnabled || ownership != g_service.weaponOwnership ||
-            generation != g_service.weaponGeneration || frame.playerSpace.source != g_service.weaponRoomSource) {
-            g_service.weaponFilters = {};
-            g_service.weaponFilteredWands = {};
-        }
+        // Controller history belongs to the physical hand. Native equipment
+        // ownership changes must not discard the incoming loose-hand filter.
         g_service.weaponFilteringEnabled = enabled;
-        g_service.weaponOwnership = ownership;
-        g_service.weaponGeneration = generation;
         g_service.weaponPreparedFrame = frame.frameIndex;
-        g_service.weaponRoomSource = frame.playerSpace.source;
     }
 
     bool weaponFilteringActive()
@@ -419,12 +411,32 @@ namespace rock::frik_hand_world_authority
     bool tryGetWeaponWandWorld(bool isLeft, RE::NiTransform& outWorld)
     {
         outWorld = {};
-        const auto index = handIndex(isLeft);
         if (!weaponFilteringActive()) {
             const auto wand = sampleTrackedHand(isLeft, TrackedHandKind::Wand);
             outWorld = wand.world;
             return wand.valid;
         }
+        return tryGetHandlingWandWorld(isLeft, outWorld);
+    }
+
+    bool tryGetHandlingWandWorld(bool isLeft, RE::NiTransform& outWorld)
+    {
+        outWorld = {};
+        const auto& frame = runtime_state::currentFrame();
+        const bool enabled = g_rockConfig.rockWeaponFilteringPreset > 0 &&
+            frame.localSkeletonReady && !frame.localMenuBlocking &&
+            !frame.compatibilityConfigBlocking && frame.playerSpace.valid;
+        if (!enabled || frame.playerSpace.source != g_service.weaponRoomSource) {
+            g_service.weaponFilters = {};
+            g_service.weaponFilteredWands = {};
+        }
+        g_service.weaponRoomSource = frame.playerSpace.source;
+        if (!enabled) {
+            const auto wand = sampleTrackedHand(isLeft, TrackedHandKind::Wand);
+            outWorld = wand.world;
+            return wand.valid;
+        }
+        const auto index = handIndex(isLeft);
         auto& cached = g_service.weaponFilteredWands[index];
         if (cached.valid) { outWorld = cached.world; return true; }
         const auto& wand = g_service.weaponWands[index];
@@ -439,12 +451,29 @@ namespace rock::frik_hand_world_authority
         // only the wand, never an animated offset or an inverse native kick.
         const auto palmWorld = computeGrabLegacyPalmPivotAWorldFromHandBasis(hand, isLeft);
         const auto pivot = transform_math::worldPointToLocal(wand.world, palmWorld);
-        const auto& frame = runtime_state::currentFrame();
         cached.valid = weapon_input_filter::update(g_service.weaponFilters[index], wand.world,
             frame.playerSpace.world, pivot, frame.frameIndex, frame.deltaSeconds, frame.timing.discontinuity,
             weapon_input_filter::tuning(g_rockConfig.rockWeaponFilteringPreset), cached.world);
         outWorld = cached.world;
         return cached.valid;
+    }
+
+    bool filterHeldProxyWorld(bool isLeft, RE::NiTransform& proxyWorld)
+    {
+        if (g_rockConfig.rockWeaponFilteringPreset <= 0) return true;
+        RE::NiTransform filteredWand{};
+        if (!tryGetHandlingWandWorld(isLeft, filteredWand)) return false;
+        const auto& tracked = g_service.weaponWands[handIndex(isLeft)];
+        if (!tracked.valid) return false;
+        proxyWorld = weapon_input_filter::applyProxyTrackingCorrection(proxyWorld, tracked.world, filteredWand);
+        if (logger::isDebugEnabled() && logger::internal::shouldEmitSample(
+                isLeft ? "held-input-filter-left" : "held-input-filter-right", 1000)) {
+            ROCK_LOG_DEBUG(Hand, "Held input filtering hand={} preset={} frame={} correction={:.4f}gu/{:.3f}deg",
+                handName(isLeft), g_rockConfig.rockWeaponFilteringPreset, runtime_state::currentFrame().frameIndex,
+                registry_policy::translationDeltaGameUnits(tracked.world, filteredWand),
+                registry_policy::rotationDeltaDegrees(tracked.world, filteredWand));
+        }
+        return weapon_input_filter::usable(proxyWorld);
     }
 
     bool tryGetWeaponDriverWorld(bool isLeft, RE::NiTransform& outWorld)

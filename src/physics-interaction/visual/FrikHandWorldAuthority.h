@@ -91,6 +91,11 @@ namespace rock::frik_hand_world_authority
     [[nodiscard]] bool tryGetWeaponDriverWorld(bool isLeft, RE::NiTransform& outWorld);
     [[nodiscard]] bool tryGetWeaponWandWorld(bool isLeft, RE::NiTransform& outWorld);
 
+    // Private held-object inputs share controller history with equipped weapons.
+    // Free hands, published raw input and throw motion remain unfiltered.
+    [[nodiscard]] bool tryGetHandlingWandWorld(bool isLeft, RE::NiTransform& outWorld);
+    [[nodiscard]] bool filterHeldProxyWorld(bool isLeft, RE::NiTransform& proxyWorld);
+
     /*
      * kScopeEnter / kScopeExit: the native first-person arm update rebuilds
      * its tree on the scope edge, so the controller-hand relation must not be

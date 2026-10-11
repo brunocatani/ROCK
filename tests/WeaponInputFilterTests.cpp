@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/WeaponInputFilter.h"
+#include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/weapon/recoil/RecoilMath.h"
 #include "physics-interaction/weapon/recoil/RecoilController.h"
 
@@ -189,5 +190,26 @@ int main()
         const auto preserved = filter::applyTrackingCorrection(recoiledBaseline, wand, wand);
         assert((preserved.translate - recoiledBaseline.translate).Length() < 0.0001f);
     }
+    // A loose-body proxy and the equipped hand must receive the same rigid
+    // tracking correction despite the proxy's transposed rotation storage.
+    auto tracked = rotated(0.7f);
+    tracked.translate = {12.0f, -8.0f, 4.0f};
+    auto filtered = rotated(0.4f);
+    filtered.translate = {11.0f, -7.0f, 3.0f};
+    auto physical = transform_math::composeTransforms(tracked, handLocal);
+    auto proxy = physical;
+    proxy.rotate = transform_math::transposeRotation(proxy.rotate);
+    const auto correctedProxy = filter::applyProxyTrackingCorrection(proxy, tracked, filtered);
+    const auto correctedBody = grab_frame_math::objectFromGeneratedProxyLocalSpace(correctedProxy, identity());
+    const auto equipped = filter::applyTrackingCorrection(physical, tracked, filtered);
+    assert((correctedBody.translate - equipped.translate).Length() < 0.0001f);
+    for (int row = 0; row < 3; ++row)
+        for (int column = 0; column < 3; ++column)
+            assert(near(correctedBody.rotate.entry[row][column], equipped.rotate.entry[row][column]));
+    // Any body-local grip follows the same corrected frame, not a rotation
+    // around the object origin or a second filtering step for the peer hand.
+    const RE::NiPoint3 seat{3.0f, 12.0f, -2.0f};
+    assert((transform_math::localPointToWorld(correctedBody, seat) -
+        transform_math::localPointToWorld(equipped, seat)).Length() < 0.0001f);
     std::puts("Weapon input filtering checks passed");
 }

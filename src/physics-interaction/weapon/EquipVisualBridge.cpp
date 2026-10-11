@@ -212,7 +212,9 @@ namespace rock
             return false;
         }
 
-        _modelInHandLocal = transform_math::composeTransforms(transform_math::invertTransform(handNode->world), model->world);
+        RE::NiTransform handlingWand{};
+        if (!frik_hand_world_authority::tryGetHandlingWandWorld(input.isLeftHand, handlingWand)) return false;
+        _modelInHandLocal = transform_math::composeTransforms(transform_math::invertTransform(handlingWand), model->world);
         RE::NiPoint3 physicalPalmWorld{};
         RE::NiTransform physicalHandWorld{};
         _hasPhysicalHandInWandLocal =
@@ -261,13 +263,12 @@ namespace rock
             }
         }
         if (_capturedGrips.valid()) {
-            const auto* supportWand = resolveHandWandNode(!input.isLeftHand);
-            if (!supportWand || !isFiniteTransform(supportWand->world) ||
-                supportWand->world.scale <= 0.0001f) {
+            RE::NiTransform supportWand{};
+            if (!frik_hand_world_authority::tryGetHandlingWandWorld(!input.isLeftHand, supportWand)) {
                 ROCK_LOG_WARN(Weapon, "EquipVisualBridge paired begin rejected: support controller unavailable form={:08X}", input.weaponFormID);
                 return false;
             }
-            _supportGripInWandLocal = transform_math::worldPointToLocal(supportWand->world,
+            _supportGripInWandLocal = transform_math::worldPointToLocal(supportWand,
                 transform_math::localPointToWorld(model->world, _capturedGrips.support.gripWeaponLocal));
             _firingHandWeaponLocal = _capturedGrips.primary.handWeaponLocal;
             _hasFiringHandWeaponLocal = true;
@@ -564,6 +565,12 @@ namespace rock
                 return;
             }
 
+            RE::NiTransform handlingWand{};
+            if (!frik_hand_world_authority::tryGetHandlingWandWorld(_isLeftHand, handlingWand)) {
+                clear("controller-filter-unavailable", true);
+                return;
+            }
+
             /*
              * Rotation carrier selection. RIGHT bridges use ROCK's controller
              * basis and the authored grip for placement. LEFT
@@ -588,7 +595,7 @@ namespace rock
                     _hasFiringHandWeaponLocal && _hasPhysicalHandInWandLocal &&
                     (_meleeWeapon ?
                         TwoHandedGrip::tryGetMeleeWeaponAimWorld(false,
-                            transform_math::composeTransforms(handNode->world, _physicalHandInWandLocal),
+                            transform_math::composeTransforms(handlingWand, _physicalHandInWandLocal),
                             _firingHandWeaponLocal, _model->world.scale, nativeCarrierWorld) :
                         TwoHandedGrip::tryGetRightWeaponAimWorld(_model->world.scale, nativeCarrierWorld));
             }
@@ -599,27 +606,27 @@ namespace rock
             }
             _nativeCarrierWasUsable = nativePositionOnlyCarrierAvailable;
 
-            RE::NiTransform desiredWorld = transform_math::composeTransforms(handNode->world, _modelInHandLocal);
+            RE::NiTransform desiredWorld = transform_math::composeTransforms(handlingWand, _modelInHandLocal);
             if (_capturedGrips.valid() &&
                 _capturedGrips.support.authoredRole != loose_weapon_authored_grab_policy::Role::Firing &&
                 !loose_weapon_authored_grab_policy::sharedFiringZone(_capturedGrips.arrangement)) {
-                const auto* supportWand = resolveHandWandNode(!_isLeftHand);
-                if (!supportWand || !isFiniteTransform(supportWand->world) || supportWand->world.scale <= 0.0001f) {
+                RE::NiTransform supportWand{};
+                if (!frik_hand_world_authority::tryGetHandlingWandWorld(!_isLeftHand, supportWand)) {
                     clear("paired-controller-unavailable", true);
                     return;
                 }
                 WeaponTwoHandedSolverResult<RE::NiTransform> solved{};
                 if (_capturedGrips.gunstockAim && !_meleeWeapon) {
                     RE::NiTransform primaryInput{}, supportInput{};
-                    if (frik_hand_world_authority::tryGetWeaponWandWorld(_isLeftHand,primaryInput) &&
-                        frik_hand_world_authority::tryGetWeaponWandWorld(!_isLeftHand,supportInput)) {
+                    if (frik_hand_world_authority::tryGetHandlingWandWorld(_isLeftHand,primaryInput) &&
+                        frik_hand_world_authority::tryGetHandlingWandWorld(!_isLeftHand,supportInput)) {
                         solved = equip_visual_bridge_policy::solvePairedGunstockBridge(desiredWorld,
                             _capturedGrips.primary.gripWeaponLocal,primaryInput,supportInput);
                     }
                 } else {
                     solved = equip_visual_bridge_policy::solvePairedBridge(desiredWorld,
                         _capturedGrips.primary.gripWeaponLocal, _capturedGrips.support.gripWeaponLocal,
-                        transform_math::localPointToWorld(supportWand->world, _supportGripInWandLocal));
+                        transform_math::localPointToWorld(supportWand, _supportGripInWandLocal));
                 }
                 if (solved.solved) desiredWorld = solved.weaponWorldTransform;
                 else ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "EquipVisualBridge paired grip axis unavailable form={:08X}", _weaponFormID);
@@ -632,7 +639,7 @@ namespace rock
                 if (_hasPhysicalHandInWandLocal) {
                     const RE::NiTransform physicalHandWorld =
                         transform_math::composeTransforms(
-                            handNode->world,
+                            handlingWand,
                             _physicalHandInWandLocal);
                     const RE::NiPoint3 authoredGripWeaponLocal =
                         computeGrabLegacyPalmPivotAWorldFromHandBasis(

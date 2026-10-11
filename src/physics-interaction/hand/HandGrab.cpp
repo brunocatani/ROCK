@@ -9062,7 +9062,8 @@ namespace rock
         RE::NiTransform peerProxy{};
         const char* peerSource = "unavailable";
         if (!peer->resolveGrabAuthorityProxyFrame(world, *peerHandWorld, nullptr, peerProxy,
-                peerSource, GrabAuthorityProxyFramePolicy::PreferQueuedPalmTarget)) {
+                peerSource, GrabAuthorityProxyFramePolicy::PreferQueuedPalmTarget) ||
+            !frik_hand_world_authority::filterHeldProxyWorld(peer->_isLeft, peerProxy)) {
             ROCK_LOG_WARN(Hand, "Loose two-hand pivot missing peer palm source={}", peerSource);
             return false;
         }
@@ -9115,8 +9116,8 @@ namespace rock
         WeaponTwoHandedSolverResult<RE::NiTransform> solved{};
         if (gunstockAim) {
             RE::NiTransform primaryWand{}, supportWand{};
-            if (frik_hand_world_authority::tryGetWeaponWandWorld(primary._isLeft,primaryWand) &&
-                frik_hand_world_authority::tryGetWeaponWandWorld(support._isLeft,supportWand)) {
+            if (frik_hand_world_authority::tryGetHandlingWandWorld(primary._isLeft,primaryWand) &&
+                frik_hand_world_authority::tryGetHandlingWandWorld(support._isLeft,supportWand)) {
                 // Acquisition is already eased below. Solve the full stock
                 // endpoint here, exactly as equipped dynamic acquisition does.
                 solved = gunstock_mode::solveVirtualAim(solverInput,primaryWand,supportWand,{},1.0f);
@@ -9239,7 +9240,8 @@ namespace rock
             update.proxyAuthorityWorld,
             update.proxyAuthoritySource,
             GrabAuthorityProxyFramePolicy::PreferQueuedPalmTarget);
-        if (!update.hasProxyAuthorityFrame) {
+        if (!update.hasProxyAuthorityFrame ||
+            !frik_hand_world_authority::filterHeldProxyWorld(_isLeft, update.proxyAuthorityWorld)) {
             ROCK_LOG_WARN(Hand,
                 "{} hand release: palm anchor proxy frame unavailable while held source={}",
                 handName(),
