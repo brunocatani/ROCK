@@ -356,7 +356,7 @@ namespace rock
                 _touchGrabRuntime.isHandActive(isLeft) ||
                 _twoHandedGrip.isHandPartGripping(isLeft) ||
                 pendingEquippedGripOwnership);
-        input_remap_runtime::setHeldObjectFormId(isLeft, heldRef ? heldRef->GetFormID() : 0u);
+        input_remap_runtime::setHeldObjectFormId(isLeft, heldRef ? heldRef->GetFormID() : 0u, hand.isHoldingLooseWeapon());
     }
 
     void PhysicsInteraction::releaseSuppressedHeldObject(
