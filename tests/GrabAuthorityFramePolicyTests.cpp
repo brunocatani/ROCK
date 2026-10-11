@@ -126,6 +126,35 @@ int main()
         const auto origin = identityTransform();
         transition = acquisition::begin(origin, frames::objectFromGeneratedProxyLocalSpace(origin, seated), seated, grip);
         ok &= expectFalse("already seated resets acquisition", transition.active);
+        // Two physical hands update once each in the same runtime frame. The
+        // common target must not advance twice or separate at the shared grip.
+        auto shared = acquisition::beginWeapon(palm, initialWorld, seated, grip,
+            rock::hand_visual_lerp_math::kEquippedWeaponReturnConfig);
+        std::uint64_t sharedFrame = 10;
+        const float step = shared.durationSeconds * 0.25f;
+        const auto joinProxy = acquisition::advanceShared(shared, sharedFrame, 10, palm, seated, grip, step);
+        const auto joinBody = frames::objectFromGeneratedProxyLocalSpace(joinProxy, seated);
+        ok &= expectPointNear("pair acquisition starts at displayed body", joinBody.translate, initialWorld.translate, 0.03f);
+        ok &= expectNear("pair acquisition starts at displayed rotation", rotationDegrees(joinBody, initialWorld), 0.0f, 0.02f);
+        const auto primaryStep = acquisition::advanceShared(shared, sharedFrame, 11, movedPalm, seated, grip, step);
+        const float elapsedOnce = shared.elapsedSeconds;
+        const auto supportStep = acquisition::advanceShared(shared, sharedFrame, 11, movedPalm, seated, grip, step);
+        ok &= expectNear("second hand cannot advance shared clock twice", shared.elapsedSeconds, elapsedOnce, 0.0f);
+        ok &= expectPointNear("both hands receive one shared position", primaryStep.translate, supportStep.translate, 0.0f);
+        ok &= expectNear("both hands receive one shared rotation", rotationDegrees(primaryStep,supportStep), 0.0f, 0.02f);
+        // Letting go midway must rebase from the display, not the old final
+        // two-hand target. This also covers swapping the primary during entry.
+        const auto interruptedBody = frames::objectFromGeneratedProxyLocalSpace(primaryStep,seated);
+        auto soloTarget = rotated(0.2f);
+        soloTarget.translate = {2.0f,-3.0f,1.0f};
+        auto returning = acquisition::beginWeapon(movedPalm,interruptedBody,soloTarget,grip,
+            rock::hand_visual_lerp_math::kEquippedWeaponReturnConfig);
+        const auto returnProxy = acquisition::advance(returning,movedPalm,soloTarget,grip,0.0f);
+        const auto returnBody = frames::objectFromGeneratedProxyLocalSpace(returnProxy,soloTarget);
+        ok &= expectPointNear("interrupted return preserves visible position", returnBody.translate,interruptedBody.translate,0.03f);
+        ok &= expectNear("interrupted return preserves visible rotation", rotationDegrees(returnBody,interruptedBody),0.0f,0.02f);
+        const auto completedReturn = acquisition::advance(returning,movedPalm,soloTarget,grip,returning.durationSeconds);
+        ok &= expectPointNear("solo return converges to current controller",completedReturn.translate,movedPalm.translate,0.0f);
         auto invalid = palm;
         invalid.translate.x = std::numeric_limits<float>::quiet_NaN();
         ok &= expectFalse("nonfinite capture fails closed", acquisition::begin(invalid, initialWorld, seated, grip).active);

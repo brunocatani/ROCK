@@ -446,9 +446,11 @@ namespace rock::hand_visual_lerp_math
         return transform_math::composeTransforms(heldObjectWorld, transform_math::invertTransform(frozenObjectHandSpace));
     }
 
-    inline bool shouldSmoothHeldObjectRelativeHand(bool lerpEnabled, bool touchHeldPhase, bool acquisitionVisual)
+    inline bool shouldSmoothHeldObjectRelativeHand(bool lerpEnabled, bool touchHeldPhase, bool acquisitionVisual,
+        bool weaponHold = false)
     {
-        return lerpEnabled && acquisitionVisual && !touchHeldPhase;
+        // The authored weapon seat's blend survives generic touch/pocket phases.
+        return lerpEnabled && (weaponHold || (acquisitionVisual && !touchHeldPhase));
     }
 
 }

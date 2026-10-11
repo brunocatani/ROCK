@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/grab/GrabCore.h"
+#include "physics-interaction/hand/HandVisual.h"
 
 namespace rock::grab_offset_acquisition
 {
@@ -90,6 +91,24 @@ namespace rock::grab_offset_acquisition
         return state;
     }
 
+    // Match equipped acquisition/return timing at the held pivot. Long barrels
+    // must not extend the wrist transition merely because their origins differ.
+    template <class Transform, class Vector>
+    inline Transition<Transform> beginWeapon(const Transform& proxyWorld,
+        const Transform& presentedBodyWorld, const Transform& targetBodyInProxy,
+        const Vector& gripBodyLocal, const hand_visual_lerp_math::VisualReturnConfig& config)
+    {
+        auto state = begin(proxyWorld, presentedBodyWorld, targetBodyInProxy, gripBodyLocal);
+        if (!state.active) return state;
+        auto start = state.startBodyInProxy;
+        auto target = targetBodyInProxy;
+        start.translate = transform_math::localPointToWorld(start, gripBodyLocal) * std::abs(proxyWorld.scale);
+        target.translate = transform_math::localPointToWorld(target, gripBodyLocal) * std::abs(proxyWorld.scale);
+        state.durationSeconds = hand_visual_lerp_math::computeVisualReturnDuration(start, target, config);
+        state.active = state.durationSeconds > 0.0f;
+        return state;
+    }
+
     template <class Transform, class Vector>
     inline Transform advance(Transition<Transform>& state, const Transform& rawProxyWorld,
         const Transform& targetBodyInProxy, const Vector& gripBodyLocal, float deltaSeconds)
@@ -107,5 +126,16 @@ namespace rock::grab_offset_acquisition
         const auto bodyInProxy = interpolateAtGrip(state.startBodyInProxy, targetBodyInProxy, gripBodyLocal, eased);
         const auto bodyWorld = grab_frame_math::objectFromGeneratedProxyLocalSpace(rawProxyWorld, bodyInProxy);
         return grab_frame_math::generatedProxyFromObjectWorld(bodyWorld, targetBodyInProxy);
+    }
+
+    // Both hands resolve the same target; advance their shared clock once.
+    template <class Transform, class Vector>
+    inline Transform advanceShared(Transition<Transform>& state, std::uint64_t& lastFrame,
+        std::uint64_t frame, const Transform& proxyWorld, const Transform& targetBodyInProxy,
+        const Vector& gripBodyLocal, float deltaSeconds)
+    {
+        const float delta = lastFrame != frame ? deltaSeconds : 0.0f;
+        lastFrame = frame;
+        return advance(state, proxyWorld, targetBodyInProxy, gripBodyLocal, delta);
     }
 }

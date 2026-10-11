@@ -1284,6 +1284,12 @@ namespace rock
 
         CanonicalGrabFrame _grabFrame;
         grab_offset_acquisition::Transition<RE::NiTransform> _grabOffsetAcquisition;
+        grab_offset_acquisition::Transition<RE::NiTransform> _looseSharedAcquisition;
+        std::uint64_t _looseSharedAcquisitionPeer{};
+        std::uint64_t _looseSharedAcquisitionFrame{};
+        std::uint64_t _looseWeaponReturnStartFrame{};
+        float _looseSharedHandBlendAlpha{-1.0f};
+        hand_visual_lerp_math::VisualReturnConfig _grabVisualReturnConfig{};
         float _grabOffsetMaximumGripError = 0.0f;
         float _grabOffsetMaximumRotationError = 0.0f;
         grab_three_phase::AcquisitionPhase _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;

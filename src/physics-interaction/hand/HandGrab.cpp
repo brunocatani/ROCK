@@ -40,6 +40,7 @@
 #include "physics-interaction/object/SkinnedBodyResolver.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
+#include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/core/PhysicsHooks.h"
@@ -81,6 +82,17 @@ namespace rock
 {
     namespace
     {
+        hand_visual_lerp_math::VisualReturnConfig looseWeaponAcquireConfig()
+        {
+            return {
+                .minSeconds = g_rockConfig.rockWeaponSupportGripHandLerpTimeMin,
+                .maxSeconds = g_rockConfig.rockWeaponSupportGripHandLerpTimeMax,
+                .minDistanceGameUnits = g_rockConfig.rockWeaponSupportGripHandLerpMinDistance,
+                .maxDistanceGameUnits = g_rockConfig.rockWeaponSupportGripHandLerpMaxDistance,
+                .minAngleDegrees = hand_visual_lerp_math::kEquippedWeaponReturnConfig.minAngleDegrees,
+                .maxAngleDegrees = hand_visual_lerp_math::kEquippedWeaponReturnConfig.maxAngleDegrees,
+            };
+        }
         template <class Rollback>
         class GrabPreparationTransaction
         {
@@ -3001,7 +3013,8 @@ namespace rock
 
     void Hand::beginGrabVisualReturn()
     {
-        if (!g_rockConfig.rockGrabHandReturnEnabled ||
+        const bool weaponReturn = isHoldingLooseWeapon();
+        if (!(weaponReturn ? hand_visual_lerp_math::kEquippedWeaponReturnEnabled : g_rockConfig.rockGrabHandReturnEnabled) ||
             !_hasLastPublishedGrabVisualHandTransform ||
             !isUsableGrabVisualTransform(_lastPublishedGrabVisualHandTransform) ||
             !frik_visual_authority::isAvailable()) {
@@ -3009,7 +3022,24 @@ namespace rock
             return;
         }
 
-        _grabVisualReturn.begin(_lastPublishedGrabVisualHandTransform);
+        // A submitted IK target is not necessarily the rendered wrist (reach,
+        // final arm solve and locomotion can move it). Release from what was
+        // actually shown, before discarding the held-object authority.
+        auto start = _lastPublishedGrabVisualHandTransform;
+        RE::NiTransform presented{};
+        const bool hasPresentedStart = weaponReturn &&
+            frik_hand_world_authority::tryGetPresentedHandWorld(_isLeft, presented) && isUsableGrabVisualTransform(presented);
+        if (hasPresentedStart) start = presented;
+        _grabVisualReturnConfig = weaponReturn ? hand_visual_lerp_math::kEquippedWeaponReturnConfig :
+            hand_visual_lerp_math::VisualReturnConfig{
+                .minSeconds = g_rockConfig.rockGrabHandReturnTimeMin,
+                .maxSeconds = g_rockConfig.rockGrabHandReturnTimeMax,
+                .minDistanceGameUnits = g_rockConfig.rockGrabHandReturnMinDistance,
+                .maxDistanceGameUnits = g_rockConfig.rockGrabHandReturnMaxDistance,
+                .minAngleDegrees = g_rockConfig.rockGrabHandReturnMinAngleDegrees,
+                .maxAngleDegrees = g_rockConfig.rockGrabHandReturnMaxAngleDegrees,
+            };
+        _grabVisualReturn.begin(start);
         if (!applyGrabReturnHandWorldTransform(_isLeft, _grabVisualReturn.start)) {
             _grabVisualReturn.clear();
             clearGrabReturnHandWorldTransform(_isLeft);
@@ -3018,11 +3048,13 @@ namespace rock
         }
 
         ROCK_LOG_DEBUG(Hand,
-            "{} hand visual return started from=({:.2f},{:.2f},{:.2f})",
+            "{} hand visual return started from=({:.2f},{:.2f},{:.2f}) weapon={} source={} publishedGap={:.3f}gu/{:.2f}deg",
             handName(),
             _grabVisualReturn.start.translate.x,
             _grabVisualReturn.start.translate.y,
-            _grabVisualReturn.start.translate.z);
+            _grabVisualReturn.start.translate.z, weaponReturn, hasPresentedStart ? "rendered" : "published",
+            hand_visual_lerp_math::distanceGameUnits(start.translate, _lastPublishedGrabVisualHandTransform.translate),
+            hand_visual_lerp_math::rotationDistanceDegrees(start, _lastPublishedGrabVisualHandTransform));
     }
 
     void Hand::updateGrabVisualReturn(const RE::NiTransform& trackedHandWorld, float deltaTime)
@@ -3041,14 +3073,7 @@ namespace rock
             _grabVisualReturn,
             trackedHandWorld,
             deltaTime,
-            hand_visual_lerp_math::VisualReturnConfig{
-                .minSeconds = g_rockConfig.rockGrabHandReturnTimeMin,
-                .maxSeconds = g_rockConfig.rockGrabHandReturnTimeMax,
-                .minDistanceGameUnits = g_rockConfig.rockGrabHandReturnMinDistance,
-                .maxDistanceGameUnits = g_rockConfig.rockGrabHandReturnMaxDistance,
-                .minAngleDegrees = g_rockConfig.rockGrabHandReturnMinAngleDegrees,
-                .maxAngleDegrees = g_rockConfig.rockGrabHandReturnMaxAngleDegrees,
-            },
+            _grabVisualReturnConfig,
             [](const RE::NiTransform& transform) {
                 return isUsableGrabVisualTransform(transform);
             },
@@ -7517,6 +7542,11 @@ namespace rock
         const char* grabPointMode = surface.pointMode;
         const char* grabFallbackReason = surface.fallbackReason;
         _grabOffsetAcquisition = {};
+        _looseSharedAcquisition = {};
+        _looseSharedAcquisitionPeer = 0;
+        _looseSharedAcquisitionFrame = 0;
+        _looseWeaponReturnStartFrame = 0;
+        _looseSharedHandBlendAlpha = -1.0f;
         _grabOffsetMaximumGripError = 0.0f;
         _grabOffsetMaximumRotationError = 0.0f;
         const bool authoredPoseReady = !_grabFrame.authoredWeaponPose.valid() ||
@@ -7584,9 +7614,13 @@ namespace rock
                 if (!joiningPeerHeldObject &&
                     sel.targetKind == grab_target::Kind::LooseObject &&
                     (_grabFrame.syntheticLooseWeaponPrimaryAttach || sel.forcedArrival || _grabFrame.seat.localGraspSeat)) {
-                    _grabOffsetAcquisition = grab_offset_acquisition::begin(
-                        proxyFrameWorldAtGrab, _grabFrame.authority.bodyWorldAtGrab,
-                        _grabFrame.proxyAuthorityBodyHandSpace, _grabFrame.authority.pivotBConstraintLocalGame);
+                    _grabOffsetAcquisition = looseWeaponGrab ?
+                        (g_rockConfig.rockWeaponSupportGripHandLerpEnabled ?
+                            grab_offset_acquisition::beginWeapon(proxyFrameWorldAtGrab, _grabFrame.authority.bodyWorldAtGrab,
+                                _grabFrame.proxyAuthorityBodyHandSpace, _grabFrame.authority.pivotBConstraintLocalGame,
+                                looseWeaponAcquireConfig()) : grab_offset_acquisition::Transition<RE::NiTransform>{}) :
+                        grab_offset_acquisition::begin(proxyFrameWorldAtGrab, _grabFrame.authority.bodyWorldAtGrab,
+                            _grabFrame.proxyAuthorityBodyHandSpace, _grabFrame.authority.pivotBConstraintLocalGame);
                     if (_grabOffsetAcquisition.active) {
                         initialProxyWorld = grab_offset_acquisition::advance(_grabOffsetAcquisition,
                             proxyFrameWorldAtGrab, _grabFrame.proxyAuthorityBodyHandSpace,
@@ -8960,9 +8994,9 @@ namespace rock
         const auto finishOldPair = [](Hand& hand, std::uint64_t peerTrace) {
             auto& frame = hand._grabFrame;
             if (frame.looseObjectSharedPeerTrace && frame.looseObjectSharedPeerTrace != peerTrace) {
-                // Weapons return to the remaining hand's captured solo grip,
-                // like equipped support release. Props retain their shared pose.
-                const bool preserveSharedPose = !hand.isHoldingLooseWeapon();
+                // A remaining firing grip returns to its solo aim. A support
+                // carry or prop retains its acquired orientation.
+                const bool preserveSharedPose = !hand.isHoldingFiringGrip();
                 frame.looseObjectSoloProxyCorrection = preserveSharedPose ? frame.looseObjectSharedProxyCorrection :
                     transform_math::makeIdentityTransform<RE::NiTransform>();
                 frame.hasLooseObjectSoloProxyCorrection = preserveSharedPose;
@@ -8979,9 +9013,46 @@ namespace rock
             }
             return proxy;
         };
+        const auto readPresentedBody = [world](const Hand& hand, RE::NiTransform& body) {
+            if (hand._grabFrame.heldNode && isFiniteNiTransform(hand._grabFrame.heldNode->world)) {
+                body = transform_math::composeTransforms(hand._grabFrame.heldNode->world, hand._grabFrame.authority.bodyLocal);
+                return isFiniteNiTransform(body);
+            }
+            return hand.tryGetGrabDriveObjectWorldTransform(world, hand._savedObjectState.bodyId, body) && isFiniteNiTransform(body);
+        };
+        const bool leavingPair = _grabFrame.looseObjectSharedPeerTrace != 0 && !shared;
         finishOldPair(*this, shared ? peer->_grabFrame.traceId : 0);
         if (!shared) {
+            _looseSharedAcquisition = {};
+            _looseSharedAcquisitionPeer = 0;
+            _looseSharedAcquisitionFrame = 0;
+            _looseSharedHandBlendAlpha = -1.0f;
             proxyWorld = correctedProxy(*this, proxyWorld);
+            if (leavingPair && isHoldingLooseWeapon()) {
+                RE::NiTransform presentedBody{};
+                if (!readPresentedBody(*this, presentedBody)) return false;
+                if (!isHoldingFiringGrip()) {
+                    // When the firing hand leaves, keep the support carry as
+                    // displayed. Reattaching a firing grip will acquire it anew.
+                    const auto carriedProxy = grab_frame_math::generatedProxyFromObjectWorld(presentedBody,
+                        _grabFrame.proxyAuthorityBodyHandSpace);
+                    auto physical = proxyWorld;
+                    physical.rotate = transform_math::transposeRotation(physical.rotate);
+                    if (_grabFrame.hasLooseObjectSoloProxyCorrection)
+                        physical = transform_math::composeTransforms(physical,
+                            transform_math::invertTransform(_grabFrame.looseObjectSoloProxyCorrection));
+                    auto carried = carriedProxy;
+                    carried.rotate = transform_math::transposeRotation(carried.rotate);
+                    _grabFrame.looseObjectSoloProxyCorrection = transform_math::composeTransforms(
+                        transform_math::invertTransform(physical), carried);
+                    _grabFrame.hasLooseObjectSoloProxyCorrection = true;
+                    proxyWorld = carriedProxy;
+                }
+                _grabOffsetAcquisition = grab_offset_acquisition::beginWeapon(proxyWorld, presentedBody,
+                    _grabFrame.proxyAuthorityBodyHandSpace, _grabFrame.authority.pivotBConstraintLocalGame,
+                    hand_visual_lerp_math::kEquippedWeaponReturnConfig);
+                _looseWeaponReturnStartFrame = runtime_state::currentFrame().timing.sequence;
+            }
             return isFiniteNiTransform(proxyWorld);
         }
         finishOldPair(*peer, _grabFrame.traceId);
@@ -8999,8 +9070,8 @@ namespace rock
         };
         const bool thisPrimary = firingSeat(*this) != firingSeat(*peer) ? firingSeat(*this) :
             _grabFrame.traceId < peer->_grabFrame.traceId;
-        const Hand& primary = thisPrimary ? *this : *peer;
-        const Hand& support = thisPrimary ? *peer : *this;
+        Hand& primary = thisPrimary ? *this : *peer;
+        Hand& support = thisPrimary ? *peer : *this;
         const auto primaryProxy = correctedProxy(primary, thisPrimary ? proxyWorld : peerProxy);
         const auto supportProxy = correctedProxy(support, thisPrimary ? peerProxy : proxyWorld);
         // One driven body is its own common frame, including two seats on a
@@ -9038,7 +9109,50 @@ namespace rock
         if (!sharedFiringStation && !solved.solved) {
             ROCK_LOG_SAMPLE_WARN(Hand, 1000, "Loose two-hand pivot degenerate axis: separation={:.4f}; sharing primary target", separation);
         }
-        const auto sharedRoot = solved.solved ? solved.weaponWorldTransform : root;
+        auto sharedRoot = solved.solved ? solved.weaponWorldTransform : root;
+        if (isHoldingLooseWeapon() && peer->isHoldingLooseWeapon()) {
+            const auto targetBody = transform_math::composeTransforms(sharedRoot, primaryBodyLocal);
+            const auto targetInProxy = grab_frame_math::objectInGeneratedProxyLocalSpace(primaryProxy, targetBody);
+            const auto pivot = primary.activeProxyConstraintPivotBLocalGame();
+            auto& acquisition = primary._looseSharedAcquisition;
+            const auto sequence = runtime_state::currentFrame().timing.sequence;
+            if (primary._looseSharedAcquisitionPeer != support._grabFrame.traceId) {
+                RE::NiTransform liveBody{};
+                if (!readPresentedBody(primary, liveBody)) return false;
+                acquisition = grab_offset_acquisition::begin(primaryProxy, liveBody, targetInProxy, pivot);
+                if (acquisition.active) {
+                    const auto liveRoot = transform_math::composeTransforms(liveBody, transform_math::invertTransform(primaryBodyLocal));
+                    const float distance = (std::max)(
+                        pointDistanceGameUnits(transform_math::localPointToWorld(liveRoot, primaryLocal), primaryTarget),
+                        pointDistanceGameUnits(transform_math::localPointToWorld(liveRoot, supportLocal),
+                            transform_math::localPointToWorld(sharedRoot, supportLocal)));
+                    const float linearDuration = hand_visual_lerp_math::computeDistanceMappedDurationGameUnits(distance,
+                        g_rockConfig.rockWeaponSupportGripHandLerpTimeMin, g_rockConfig.rockWeaponSupportGripHandLerpTimeMax,
+                        g_rockConfig.rockWeaponSupportGripHandLerpMinDistance, g_rockConfig.rockWeaponSupportGripHandLerpMaxDistance);
+                    const float angularDuration = hand_visual_lerp_math::computeAngleMappedDurationDegrees(
+                        hand_visual_lerp_math::rotationDistanceDegrees(liveRoot, sharedRoot),
+                        g_rockConfig.rockWeaponSupportGripHandLerpTimeMin, g_rockConfig.rockWeaponSupportGripHandLerpTimeMax,
+                        hand_visual_lerp_math::kEquippedWeaponReturnConfig.minAngleDegrees,
+                        hand_visual_lerp_math::kEquippedWeaponReturnConfig.maxAngleDegrees);
+                    acquisition.durationSeconds = g_rockConfig.rockWeaponSupportGripHandLerpEnabled ?
+                        (std::max)(linearDuration, angularDuration) : 0.0f;
+                }
+                primary._looseSharedAcquisitionPeer = support._grabFrame.traceId;
+                primary._looseSharedAcquisitionFrame = sequence;
+            }
+            const auto blendedProxy = grab_offset_acquisition::advanceShared(acquisition,
+                primary._looseSharedAcquisitionFrame, sequence, primaryProxy, targetInProxy, pivot,
+                runtime_state::currentFrame().deltaSeconds);
+            primary._looseSharedHandBlendAlpha = -1.0f;
+            support._looseSharedHandBlendAlpha = -1.0f;
+            const float alpha = hand_visual_lerp_math::timedBlendAlpha(acquisition.elapsedSeconds, acquisition.durationSeconds);
+            Hand& joining = primary._grabFrame.traceId > support._grabFrame.traceId ? primary : support;
+            joining._looseSharedHandBlendAlpha = !sharedFiringStation && acquisition.durationSeconds > 0.0f ?
+                alpha * alpha * (3.0f - 2.0f * alpha) : -1.0f;
+            sharedRoot = transform_math::composeTransforms(
+                grab_frame_math::objectFromGeneratedProxyLocalSpace(blendedProxy, targetInProxy),
+                transform_math::invertTransform(primaryBodyLocal));
+        }
         const auto sharedBody = transform_math::composeTransforms(sharedRoot, thisPrimary ? primaryBodyLocal : supportBodyLocal);
         const auto targetProxy = grab_frame_math::generatedProxyFromObjectWorld(sharedBody, _grabFrame.proxyAuthorityBodyHandSpace);
         if (!isFiniteNiTransform(targetProxy) || targetProxy.scale <= 0.0001f) {
@@ -9093,6 +9207,7 @@ namespace rock
             return false;
         }
         if (_grabFrame.looseObjectSharedPeerTrace) {
+            _looseWeaponReturnStartFrame = 0;
             update.proxyAuthoritySource = "sharedLooseObjectPalmPivot";
             if (_grabOffsetAcquisition.active) {
                 ROCK_LOG_INFO(Hand, "{} OFFSET_ACQUIRE ended trace={} reason=shared-grip", handName(), _grabFrame.traceId);
@@ -9122,10 +9237,12 @@ namespace rock
             // Both endpoints ride the current physical hand frame. The fixed
             // body-local grip follows a straight segment while rotation uses
             // the same fraction; no offset is applied around the body origin.
-            const float acquisitionDelta = held_object_physics_math::shouldQueueGrabAuthorityTargetForDelta(deltaTime) ? deltaTime : 0.0f;
+            const float acquisitionDelta = held_object_physics_math::shouldQueueGrabAuthorityTargetForDelta(deltaTime) &&
+                _looseWeaponReturnStartFrame != runtime_state::currentFrame().timing.sequence ? deltaTime : 0.0f;
             update.proxyAuthorityWorld = grab_offset_acquisition::advance(_grabOffsetAcquisition,
                 update.proxyAuthorityWorld, _grabFrame.proxyAuthorityBodyHandSpace,
                 _grabFrame.authority.pivotBConstraintLocalGame, acquisitionDelta);
+            if (!_grabOffsetAcquisition.active) _looseWeaponReturnStartFrame = 0;
             update.proxyAuthoritySource = "offsetAcquisitionGripPath";
             if (!isFiniteNiTransform(update.proxyAuthorityWorld)) {
                 ROCK_LOG_WARN(Hand, "{} hand release: invalid offset acquisition target trace={}", handName(), _grabFrame.traceId);
@@ -9308,8 +9425,9 @@ namespace rock
         // A transferred grip already owns the hand. Its small constraint-seat
         // correction must carry that hand with the presented weapon, rather than
         // returning the arm to the controller until acquisition finishes.
+        const bool weaponVisual = isHoldingLooseWeapon();
         if (_grabFrame.hasTelemetryCapture &&
-            (!_grabOffsetAcquisition.active || preserveTransferredHand) && visualPublishDecision.apply) {
+            (weaponVisual || ((!_grabOffsetAcquisition.active || preserveTransferredHand) && visualPublishDecision.apply))) {
             RE::NiTransform heldVisualNodeWorld{};
             bool hasHeldVisualNodeWorld = false;
             bool heldVisualNodeFromPresentedPose = false;
@@ -9353,24 +9471,30 @@ namespace rock
 
                 RE::NiTransform nextVisualHandWorld = targetVisualHandWorld;
                 const bool smoothVisualHand = !preserveTransferredHand && hand_visual_lerp_math::shouldSmoothHeldObjectRelativeHand(
-                    g_rockConfig.rockGrabHandLerpEnabled,
+                    isHoldingLooseWeapon() ? g_rockConfig.rockWeaponSupportGripHandLerpEnabled : g_rockConfig.rockGrabHandLerpEnabled,
                     _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld,
-                    visualPublishDecision.acquisition);
+                    visualPublishDecision.acquisition, weaponVisual);
                 if (!_hasGrabVisualHandTransform) {
-                    const RE::NiTransform acquisitionStart =
+                    RE::NiTransform acquisitionStart =
                         _grabVisualReturn.active && isUsableGrabVisualTransform(_grabVisualReturn.lastApplied) ?
                         _grabVisualReturn.lastApplied :
                         handWorldTransform;
+                    if (weaponVisual && !_grabVisualReturn.active) {
+                        RE::NiTransform presented{};
+                        if (frik_hand_world_authority::tryGetPresentedHandWorld(_isLeft, presented) &&
+                            isUsableGrabVisualTransform(presented)) acquisitionStart = presented;
+                    }
                     _grabVisualHandTransform = acquisitionStart;
                     _grabVisualHandLerpStartTransform = acquisitionStart;
                     _grabVisualHandLerpElapsedSeconds = 0.0f;
                     _grabVisualHandLerpDurationSeconds = smoothVisualHand ?
-                        hand_visual_lerp_math::computeDistanceMappedDurationGameUnits(
+                        (isHoldingLooseWeapon() ? hand_visual_lerp_math::computeVisualReturnDuration(
+                            acquisitionStart, targetVisualHandWorld, looseWeaponAcquireConfig()) : hand_visual_lerp_math::computeDistanceMappedDurationGameUnits(
                             hand_visual_lerp_math::distanceGameUnits(acquisitionStart.translate, targetVisualHandWorld.translate),
                             g_rockConfig.rockGrabHandLerpTimeMin,
                             g_rockConfig.rockGrabHandLerpTimeMax,
                             g_rockConfig.rockGrabHandLerpMinDistance,
-                            g_rockConfig.rockGrabHandLerpMaxDistance) :
+                            g_rockConfig.rockGrabHandLerpMaxDistance)) :
                         0.0f;
                     _hasGrabVisualHandTransform = true;
                 }
@@ -9390,6 +9514,15 @@ namespace rock
                     visualHandLerpAlpha = hand_visual_lerp_math::timedBlendAlpha(
                         _grabVisualHandLerpElapsedSeconds,
                         _grabVisualHandLerpDurationSeconds);
+                    if (weaponVisual && _looseSharedHandBlendAlpha >= 0.0f) {
+                        // The joining hand and rotating weapon finish together.
+                        // Visual-only support retains its independent wrist blend.
+                        visualHandLerpAlpha = _looseSharedHandBlendAlpha;
+                        nextVisualHandWorld = hand_visual_lerp_math::interpolateTransform(
+                            _grabVisualHandLerpStartTransform, targetVisualHandWorld, visualHandLerpAlpha);
+                        if (visualHandLerpAlpha >= 1.0f)
+                            _grabVisualHandLerpElapsedSeconds = _grabVisualHandLerpDurationSeconds;
+                    }
                 } else {
                     _grabVisualHandLerpStartTransform = targetVisualHandWorld;
                     _grabVisualHandLerpElapsedSeconds = 0.0f;
@@ -10412,6 +10545,11 @@ namespace rock
         _heldBodyIds.clear();
         _grabFrame.clear();
         _grabOffsetAcquisition = {};
+        _looseSharedAcquisition = {};
+        _looseSharedAcquisitionPeer = 0;
+        _looseSharedAcquisitionFrame = 0;
+        _looseWeaponReturnStartFrame = 0;
+        _looseSharedHandBlendAlpha = -1.0f;
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         _grabObjectGripAtGrab = {};
         _heldDriveDecision = {};
