@@ -455,6 +455,7 @@ namespace rock
         trigger_equip_readiness_trace::frame(visual, _bridge.isModelPresented(),
             _pendingGrip.pending || (_heldTransfer.active() && !_heldTransfer.gripAcquired),
             input.nativeWeaponAnimationActive, input.menuBlocking);
+        trigger_equip_readiness_trace::parts(visual.weaponRoot, 1, _bridge.isModelPresented());
         if (!_active) {
             return;
         }
@@ -861,6 +862,16 @@ namespace rock
 
     void EquippedWeaponTransitionCoordinator::finalizeVisualPresentation()
     {
+        // Diagnose part movement even after the short visual bridge is gone.
+        // Re-resolve from the live current identity, never a retained node.
+        if (trigger_equip_readiness_trace::partCaptureActive()) {
+            const auto current = readCurrentIdentity();
+            if (current.valid()) {
+                const auto finalVisual = equipped_weapon_visual_state::observe(current.formID,
+                    _active ? _supersededNativeInstanceNode : 0, &_visualCache);
+                trigger_equip_readiness_trace::parts(finalVisual.weaponRoot, 2, _bridge.isModelPresented());
+            }
+        }
         if (!_active || !_bridge.hasVisualModel() || !_bridge.isModelPresented() ||
             !_boundIdentity.valid() || readCurrentIdentity() != _boundIdentity) return;
         const auto visual = equipped_weapon_visual_state::observe(

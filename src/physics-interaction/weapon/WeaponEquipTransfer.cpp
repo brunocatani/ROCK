@@ -495,6 +495,7 @@ namespace rock::weapon_equip_transfer
          * NiPointer keeps the assembled model alive for the visual bridge.
          */
         result.detachedWorldModel.reset(heldRef->Get3D());
+        trigger_equip_readiness_trace::parts(result.detachedWorldModel.get(), 0);
         trigger_equip_readiness_trace::stage("before-activate-ref");
         const bool activated = [&] {
             const equip_pickup::Scope intent(heldRef->GetFormID(),result.count);

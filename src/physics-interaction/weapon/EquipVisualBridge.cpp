@@ -6,6 +6,7 @@
 #include <cmath>
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/TransformMath.h"
@@ -704,6 +705,7 @@ namespace rock
 
             model->local = transform_math::composeTransforms(transform_math::invertTransform(_parent->world), desiredWorld);
             f4vr::updateDown(model, true);
+            trigger_equip_readiness_trace::parts(model, 3, true);
             rememberPresentedPose();
         }
 

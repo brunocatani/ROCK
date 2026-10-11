@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace RE { class InputEvent; }
+namespace RE { class InputEvent; class NiAVObject; }
 namespace rock::equipped_weapon_visual_state { struct Snapshot; }
 
 namespace rock::trigger_equip_readiness_trace
@@ -13,6 +13,8 @@ namespace rock::trigger_equip_readiness_trace
     // fixed storage, and the owning game thread. Remove after diagnosis.
     void begin(std::uint32_t form, std::uint32_t reference) noexcept;
     void stage(const char* name) noexcept;
+    bool partCaptureActive() noexcept;
+    void parts(RE::NiAVObject* root, unsigned phase, bool bridgeVisible = false) noexcept;
     void frame(const equipped_weapon_visual_state::Snapshot& visual,
         bool bridgeVisible, bool gripPending, bool nativeAnimation, bool menu) noexcept;
     void input(const RE::InputEvent* event, bool rockBlocked,

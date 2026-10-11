@@ -3,6 +3,9 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/weapon/EquippedWeaponVisualState.h"
+#include "physics-interaction/weapon/WeaponScenePath.h"
+#include "physics-interaction/TransformMath.h"
+#include "RE/NetImmerse/NiNode.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "RE/Bethesda/Actor.h"
@@ -13,6 +16,8 @@
 #include <chrono>
 #include <array>
 #include <cstring>
+#include <algorithm>
+#include <cmath>
 #include <string_view>
 
 namespace rock::trigger_equip_readiness_trace
@@ -42,6 +47,22 @@ namespace rock::trigger_equip_readiness_trace
         // the capture; the atomic owner check precedes every state access.
         std::atomic<DWORD> s_owner{};
         Capture s_capture{};
+        struct PartRecord
+        {
+            weapon_scene::Path<RE::NiAVObject,32> path;
+            std::array<char,96> name{};
+        };
+        struct PartSet
+        {
+            std::uintptr_t root{};
+            std::array<PartRecord,24> nodes{};
+            std::size_t count{};
+            unsigned samples{}, discoveries{};
+            Clock::time_point last{};
+        };
+        // Loose, pre-handling native, final native, retained bridge. Paths store identities and
+        // slots only, resolving from each callback's live root before reads.
+        std::array<PartSet,4> s_parts{};
         using AttackRequest = void (*)(void*);
         using DispatchAction = bool (*)(void*, std::int32_t, std::uint32_t);
         AttackRequest s_request{};
@@ -174,6 +195,7 @@ namespace rock::trigger_equip_readiness_trace
         if (s_capture.active) stop("next-trigger-equip");
         const auto next = s_capture.sequence + 1;
         s_capture = {};
+        s_parts = {};
         s_capture.active = true;
         s_capture.sequence = next;
         s_capture.expectedForm = form;
@@ -185,6 +207,86 @@ namespace rock::trigger_equip_readiness_trace
     void stage(const char* name) noexcept
     {
         if (active()) logNative(name, sample());
+    }
+    bool partCaptureActive() noexcept
+    {
+        return active() && elapsedMs() < 1500.0;
+    }
+    void parts(RE::NiAVObject* root, unsigned phase, bool bridgeVisible) noexcept
+    {
+        if (!partCaptureActive() || !root || phase >= s_parts.size()) return;
+        auto& set = s_parts[phase];
+        const auto now = Clock::now();
+        if (set.samples >= 48 || (set.samples &&
+            std::chrono::duration<double,std::milli>(now-set.last).count() < 30.0)) return;
+        if (set.root != reinterpret_cast<std::uintptr_t>(root)) {
+            if (set.discoveries >= 4) return;
+            ++set.discoveries;
+            set.root = reinterpret_cast<std::uintptr_t>(root);
+            set.count = 0;
+            std::array<RE::NiAVObject*,512> todo{};
+            std::size_t pending = 1, visited = 0;
+            todo[0] = root;
+            while (pending && visited++ < todo.size()) {
+                auto* object = todo[--pending];
+                auto* branch = object ? object->IsNode() : nullptr;
+                if (!branch) continue;
+                const auto* text = object->name.c_str();
+                std::array<char,96> lower{};
+                if (text) {
+                    const auto length = (std::min)(static_cast<std::size_t>(object->name.length()),lower.size()-1);
+                    for (std::size_t i=0;i<length;++i) lower[i] = text[i]>='A'&&text[i]<='Z'?text[i]+('a'-'A'):text[i];
+                    const std::string_view name(lower.data(),length);
+                    const bool part = name.find("child")==std::string_view::npos &&
+                        (name.find("mag")!=std::string_view::npos || name.find("bolt")!=std::string_view::npos ||
+                         name.find("slide")!=std::string_view::npos || name.find("selector")!=std::string_view::npos ||
+                         name.find("safety")!=std::string_view::npos || name.find("charging")!=std::string_view::npos ||
+                         name.find("weaponextra")!=std::string_view::npos || name.find("trigger")!=std::string_view::npos);
+                    if (part && set.count < set.nodes.size()) {
+                        auto& record = set.nodes[set.count];
+                        if (record.path.capture(root,object)) {
+                            record.name = {};
+                            std::copy_n(text,length,record.name.data());
+                            ++set.count;
+                        }
+                    }
+                }
+                // Preserve child order; bound malformed/oversized hierarchies.
+                const auto slots = branch->children.capacity();
+                if (slots > 128) continue;
+                for (std::size_t i=slots;i>0 && pending<todo.size();--i) {
+                    auto* child=branch->children[static_cast<decltype(slots)>(i-1)].get();
+                    if (child) todo[pending++]=child;
+                }
+            }
+            ROCK_LOG_INFO(Weapon,"EQUIP-PART discovery seq={} phase={} root={:#x} nodes={} visited={} pending={} truncated={}",
+                s_capture.sequence,phase,set.root,set.count,visited,pending,pending!=0||set.count==set.nodes.size());
+        }
+        const auto rootWorld = root->world;
+        if (!std::isfinite(rootWorld.scale) || std::abs(rootWorld.scale) < 0.00001f) return;
+        const auto inverse = transform_math::invertTransform(rootWorld);
+        ++set.samples;
+        set.last = now;
+        ROCK_LOG_INFO(Weapon,"EQUIP-PART frame seq={} ms={:.2f} phase={} sample={} bridge={} root={:#x} rootWorld=({:.4f},{:.4f},{:.4f}) scale={:.5f} culled={}",
+            s_capture.sequence,elapsedMs(),phase,set.samples,bridgeVisible,set.root,
+            rootWorld.translate.x,rootWorld.translate.y,rootWorld.translate.z,rootWorld.scale,root->GetAppCulled());
+        for (std::size_t i=0;i<set.count;++i) {
+            const auto& record=set.nodes[i];
+            auto* node=record.path.resolve(root);
+            if (!node) {
+                ROCK_LOG_INFO(Weapon,"EQUIP-PART missing seq={} phase={} name='{}' root={:#x}",s_capture.sequence,phase,record.name.data(),set.root);
+                set.root=0; // Rediscover next sample; never dereference old nodes.
+                continue;
+            }
+            const auto& local=node->local;
+            const auto relative=transform_math::composeTransforms(inverse,node->world);
+            ROCK_LOG_INFO(Weapon,"EQUIP-PART pose seq={} phase={} sample={} name='{}' node={:#x} parent={:#x} culled={} localT=({:.4f},{:.4f},{:.4f}) localS={:.5f} localR=({:.4f},{:.4f},{:.4f};{:.4f},{:.4f},{:.4f};{:.4f},{:.4f},{:.4f}) relativeT=({:.4f},{:.4f},{:.4f}) relativeS={:.5f} relativeR=({:.4f},{:.4f},{:.4f};{:.4f},{:.4f},{:.4f};{:.4f},{:.4f},{:.4f})",
+                s_capture.sequence,phase,set.samples,record.name.data(),reinterpret_cast<std::uintptr_t>(node),reinterpret_cast<std::uintptr_t>(node->parent),node->GetAppCulled(),
+                local.translate.x,local.translate.y,local.translate.z,local.scale,
+                local.rotate.entry[0][0],local.rotate.entry[0][1],local.rotate.entry[0][2],local.rotate.entry[1][0],local.rotate.entry[1][1],local.rotate.entry[1][2],local.rotate.entry[2][0],local.rotate.entry[2][1],local.rotate.entry[2][2],
+                relative.translate.x,relative.translate.y,relative.translate.z,relative.scale,
+                relative.rotate.entry[0][0],relative.rotate.entry[0][1],relative.rotate.entry[0][2],relative.rotate.entry[1][0],relative.rotate.entry[1][1],relative.rotate.entry[1][2],relative.rotate.entry[2][0],relative.rotate.entry[2][1],relative.rotate.entry[2][2]);
+        }
     }
     void frame(const equipped_weapon_visual_state::Snapshot& visual,
         bool bridgeVisible, bool gripPending, bool nativeAnimation, bool menu) noexcept
