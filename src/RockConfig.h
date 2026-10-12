@@ -132,8 +132,6 @@ namespace rock
         RE::NiPoint3 rockRightSupportGripOffsetGameUnits{ 0.0f, 0.0f, 0.0f };
         bool rockWeaponCollisionBlocksProjectiles = false;
         bool rockWeaponCollisionBlocksSpells = false;
-        bool npcDynamicCollisions = true;
-        bool rockBladePenetrationEnabled = false;
         float rockWeaponShellCollisionGraceMs = shell_casing_grace::kDefaultMilliseconds;
         // A/B comparison: original support hulls or bounded gap-preserving compounds.
         bool rockWeaponCollisionPreserveGaps = true;
@@ -220,9 +218,6 @@ namespace rock
         bool rockDebugDrawHandBoneColliders = false;
         bool rockDebugDrawBodyBoneColliders = false;
         bool rockDebugDrawDynamicHandColliders = false;
-        bool rockDebugDrawNpcNativeColliders = false;
-        bool rockDebugDrawNpcSupplementColliders = false;
-        bool rockDebugDrawNpcColliderLabels = false;
         bool rockDebugDrawHandBoneContacts = false;
         bool rockDebugDrawGrabAuthorityProxy = false;
         int rockDebugMaxHandBoneBodiesDrawn = 48;

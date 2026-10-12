@@ -501,8 +501,6 @@ namespace rock
         rockRightSupportGripOffsetGameUnits.z = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
             "fRightSupportGripOffsetZGameUnits", rockRightSupportGripOffsetGameUnits.z, 0.0f, -15.0f, 15.0f);
         rockWeaponCollisionBlocksSpells = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksSpells", rockWeaponCollisionBlocksSpells);
-        npcDynamicCollisions = ini.GetBoolValue(SECTION, "npcDynamicCollisions", npcDynamicCollisions);
-        rockBladePenetrationEnabled = ini.GetBoolValue(SECTION, "bBladePenetrationEnabled", rockBladePenetrationEnabled);
         rockWeaponShellCollisionGraceMs = readClampedFloat(ini, SECTION,
             "fWeaponShellCollisionGraceMs", rockWeaponShellCollisionGraceMs,
             shell_casing_grace::kDefaultMilliseconds, 0.0f, shell_casing_grace::kMaximumMilliseconds);
@@ -730,9 +728,6 @@ namespace rock
             "bDebugDrawBodyBoneColliders",
             rockDebugDrawBodyBoneColliders);
         rockDebugDrawDynamicHandColliders = ini.GetBoolValue(SECTION, "bDebugDrawDynamicHandColliders", rockDebugDrawDynamicHandColliders);
-        rockDebugDrawNpcNativeColliders = ini.GetBoolValue(SECTION, "bDebugDrawNpcNativeColliders", rockDebugDrawNpcNativeColliders);
-        rockDebugDrawNpcSupplementColliders = ini.GetBoolValue(SECTION, "bDebugDrawNpcSupplementColliders", rockDebugDrawNpcSupplementColliders);
-        rockDebugDrawNpcColliderLabels = ini.GetBoolValue(SECTION, "bDebugDrawNpcColliderLabels", rockDebugDrawNpcColliderLabels);
         rockDebugDrawHandBoneContacts = ini.GetBoolValue(SECTION, "bDebugDrawHandBoneContacts", rockDebugDrawHandBoneContacts);
         rockDebugDrawGrabAuthorityProxy = ini.GetBoolValue(SECTION, "bDebugDrawGrabAuthorityProxy", rockDebugDrawGrabAuthorityProxy);
         rockDebugMaxHandBoneBodiesDrawn = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxHandBoneBodiesDrawn", rockDebugMaxHandBoneBodiesDrawn));

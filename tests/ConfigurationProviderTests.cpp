@@ -83,15 +83,13 @@ int main() {
     assert(g_rockConfig.rockFarGrabMode == 1);
     assert(set(config::Group::Consumer, "PhysicsInteraction", "iFarGrabMode", "1") == Status::Ok);
     g_rockConfig.reload();
-    assert(!g_rockConfig.rockBladePenetrationEnabled);
-    assert(catalog(config::Group::Consumer).at("bBladePenetrationEnabled")=="false");
-    assert(!catalog(config::Group::Developer).contains("bBladePenetrationEnabled"));
-    assert(set(config::Group::Consumer,"PhysicsInteraction","bBladePenetrationEnabled","true")==Status::Ok);
-    g_rockConfig.reload();
-    assert(g_rockConfig.rockBladePenetrationEnabled);
-    assert(set(config::Group::Consumer,"PhysicsInteraction","bBladePenetrationEnabled","false")==Status::Ok);
-    g_rockConfig.reload();
-    assert(!g_rockConfig.rockBladePenetrationEnabled);
+    for (const auto* key : {"npcDynamicCollisions", "bBladePenetrationEnabled",
+             "bDebugDrawNpcNativeColliders", "bDebugDrawNpcSupplementColliders", "bDebugDrawNpcColliderLabels"}) {
+        assert(!catalog(config::Group::Consumer).contains(key));
+        assert(!catalog(config::Group::Developer).contains(key));
+        assert(set(config::Group::Consumer,"PhysicsInteraction",key,"true")!=Status::Ok);
+        assert(set(config::Group::Developer,"PhysicsInteraction",key,"true")!=Status::Ok);
+    }
     const auto initialRevision=g_rockConfig.configRevision();
     assert(initialRevision && !fs::exists(directory/"ROCK_Developer.ini"));
     const auto originalLogLevel=g_rockConfig.rockLogLevel;

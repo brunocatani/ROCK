@@ -93,10 +93,10 @@ namespace
 
         // Section names cannot redirect an option into the other owning file.
         write(Group::Consumer, "[Debug]\nbPerformanceProfilerEnabled=true\n");
-        write(Group::Developer, "[Logging]\niLogLevel=0\nnpcDynamicCollisions=false\n");
+        write(Group::Developer, "[Logging]\niLogLevel=0\nbLeftHandedMode=true\n");
         require(store.load(false), "wrong-file fixture failed to load");
         require(!find(store, "bPerformanceProfilerEnabled").specified && runtime().rockLogLevel == 2 &&
-                !find(store, "npcDynamicCollisions").specified && runtime().npcDynamicCollisions,
+                !find(store, "bLeftHandedMode").specified && !runtime().rockLeftHandedMode,
             "decorative sections broke consumer/developer ownership");
         require(settingGroup("Any label", "BPERFORMANCEPROFILERENABLED") == Group::Developer,
             "key-only ownership lookup still depends on a section or spelling case");
@@ -343,46 +343,14 @@ int main(int argc, char** argv)
             "VATS physics fixes reset/reload failed");
         require(!find(store, "bVatsPhysicsFixes").specified,
             "resetting VATS physics fixes retained the default override");
-        require(find(store, "npcDynamicCollisions").type == ValueType::Boolean &&
-            find(store, "npcDynamicCollisions").group == Group::Consumer &&
-            rock::RockConfig::parseValues(missingOptions).npcDynamicCollisions,
-            "NPC dynamic collisions must be a consumer boolean defaulting on");
-        require(!store.setValue(Group::Developer, "PhysicsInteraction", "npcDynamicCollisions", "false"),
-            "NPC dynamic collisions must no longer be writable as a developer override");
-        require(store.setValue(Group::Consumer, "PhysicsInteraction", "npcDynamicCollisions", "false"),
-            "NPC collision disable failed");
-        require(store.load(false), "NPC collision reload failed");
-        CSimpleIniA npcValues;
-        store.appendLoadedValues(npcValues);
-        require(!rock::RockConfig::parseValues(npcValues).npcDynamicCollisions,
-            "NPC collision consumer value did not reach runtime");
-        require(store.setValue(Group::Consumer, "PhysicsInteraction", "npcDynamicCollisions", "true"),
-            "NPC collision reset failed");
-        require(store.load(false), "NPC collision reset reload failed");
-        CSimpleIniA resetNpcValues;
-        store.appendLoadedValues(resetNpcValues);
-        require(rock::RockConfig::parseValues(resetNpcValues).npcDynamicCollisions &&
-            find(store, "npcDynamicCollisions").specified &&
-            !fs::exists(store.path(Group::Developer)),
-            "reset must retain NPC collisions on in the consumer file without creating developer overrides");
-        for (const auto& [key, member] : {
-                 std::pair{"bDebugDrawNpcNativeColliders", &rock::RockConfigValues::rockDebugDrawNpcNativeColliders},
-                 std::pair{"bDebugDrawNpcSupplementColliders", &rock::RockConfigValues::rockDebugDrawNpcSupplementColliders},
-                 std::pair{"bDebugDrawNpcColliderLabels", &rock::RockConfigValues::rockDebugDrawNpcColliderLabels}}) {
-            require(find(store, key).group == Group::Developer && find(store, key).type == ValueType::Boolean &&
-                !(rock::RockConfig::parseValues(missingOptions).*member),
-                "NPC overlay must remain opt-in and developer-owned");
-            require(!store.setValue(Group::Consumer, "PhysicsInteraction", key, "true"),
-                "NPC overlay must not persist to the consumer file");
-            require(store.setValue(Group::Developer, "PhysicsInteraction", key, "true") && store.load(false),
-                "NPC overlay developer enable/reload failed");
-            CSimpleIniA overlayValues;
-            store.appendLoadedValues(overlayValues);
-            require(rock::RockConfig::parseValues(overlayValues).*member,
-                "NPC overlay override did not reach runtime");
-            require(store.setValue(Group::Developer, "PhysicsInteraction", key, "false") && store.load(false) &&
-                !find(store, key).specified && !fs::exists(store.path(Group::Developer)),
-                "NPC overlay reset must remove its optional developer override");
+        // NPC controls moved to SCISSORS Redux by the owner's explicit decision.
+        for (const auto* key : {"npcDynamicCollisions", "bBladePenetrationEnabled",
+                 "bDebugDrawNpcNativeColliders", "bDebugDrawNpcSupplementColliders", "bDebugDrawNpcColliderLabels"}) {
+            require(std::none_of(store.settings().begin(), store.settings().end(),
+                [key](const auto& setting) { return setting.key == key; }), "Redux setting leaked into ROCK's catalog");
+            require(!store.setValue(Group::Consumer, "PhysicsInteraction", key, "true") &&
+                !store.setValue(Group::Developer, "PhysicsInteraction", key, "true"),
+                "ROCK must reject NPC setting writes instead of keeping a forwarding alias");
         }
         require(find(store, "fMeleeGripPitchDegrees").group == Group::Consumer &&
             find(store, "fMeleeGripPitchDegrees").type == ValueType::Float,
