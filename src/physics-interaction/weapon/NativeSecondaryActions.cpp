@@ -7,6 +7,7 @@
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/NativeNiNodeFactory.h"
+#include "physics-interaction/native/NativeTriggerEquipGraph.h"
 #include "physics-interaction/weapon/recoil/RecoilMath.h"
 #include "physics-interaction/weapon/WeaponInstanceClassification.h"
 #include "physics-interaction/weapon/HoldingGripAdapter.h"
@@ -814,6 +815,46 @@ namespace rock::native_secondary_actions
         }
     }
 
+    namespace
+    {
+        // A save restored with a gun in each hand leaves the primary's native
+        // weapon subgraph without its reload animations until the primary is
+        // re-equipped. Re-equip re-requests the subgraph while index one is a
+        // readable gun, so ED93E0 yields the primary's keywords alone. After a
+        // load, run that same native request/commit (E8D090/E15B50) once both
+        // hands are ready. An already correct subgraph makes the request a
+        // no-op; the log records whether new handles were staged.
+        bool s_primaryGraphAfterLoad{};
+        std::uint32_t s_primaryGraphAfterLoadFrames{};
+        bool s_primaryGraphAfterLoadStaged{};
+        void primaryGraphAfterLoad()
+        {
+            if (!s_primaryGraphAfterLoad) return;
+            constexpr std::uint32_t kMaxFrames=600;
+            auto* player=f4vr::getPlayer();
+            const auto result=native_trigger_equip_graph::prepare(player,&s_primaryGraphAfterLoadStaged);
+            ++s_primaryGraphAfterLoadFrames;
+            const bool done=result!=native_trigger_equip_graph::Result::Pending || s_primaryGraphAfterLoadFrames>=kMaxFrames;
+            if (!done) return;
+            s_primaryGraphAfterLoad=false;
+            const char* outcome=result==native_trigger_equip_graph::Result::Ready?"ready":
+                result==native_trigger_equip_graph::Result::Pending?"pending-timeout":"unavailable";
+            // staged=true: the restored subgraph differed from the primary's
+            // own (the load-time request was wrong); false: it was already right.
+            if (result==native_trigger_equip_graph::Result::Ready) ROCK_LOG_INFO(Animation,"AKIMBO primary graph refreshed after load outcome={} staged={} frames={}",
+                outcome,s_primaryGraphAfterLoadStaged,s_primaryGraphAfterLoadFrames);
+            else ROCK_LOG_WARN(Animation,"AKIMBO primary graph refreshed after load outcome={} staged={} frames={}",
+                outcome,s_primaryGraphAfterLoadStaged,s_primaryGraphAfterLoadFrames);
+        }
+    }
+
+    void noteGameLoaded() noexcept
+    {
+        s_primaryGraphAfterLoad=true;
+        s_primaryGraphAfterLoadFrames=0;
+        s_primaryGraphAfterLoadStaged=false;
+    }
+
     bool install() noexcept
     {
         if (s_installed) return true;
@@ -1024,6 +1065,7 @@ namespace rock::native_secondary_actions
                     if (dispatch(s,action)) { attackState(s,15); s.trigger.accepted(true); }
                 }
             }
+            primaryGraphAfterLoad();
             s.graph->update(dt);
             if (!s.graph->place(attachment->world) || s.graph->eventOverflow()) {
                 cancel(s); s.bindings.restore(); releaseModelGraphs(s,true); s.failed=true; s.ready=false;

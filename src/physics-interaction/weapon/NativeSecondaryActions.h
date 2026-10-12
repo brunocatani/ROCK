@@ -9,6 +9,9 @@ namespace rock::native_secondary_actions
     void present(RE::NiNode* attachment) noexcept;
     void carryPresentation(const RE::NiTransform& previous,const RE::NiTransform& target) noexcept;
     void suspend() noexcept;
+    // Game load/new game: the restored primary's weapon subgraph is refreshed
+    // once the restored secondary gun is ready (see primaryGraphAfterLoad).
+    void noteGameLoaded() noexcept;
     // Called by the existing physical A/X arbiter, after UI suppression.
     bool requestReload() noexcept;
     // Uses the secondary item's native recoil and the existing physical-hand

@@ -81,7 +81,7 @@ namespace rock::native_trigger_equip_graph
 
     bool installed() noexcept { return s_ready; }
 
-    Result prepare(RE::PlayerCharacter* player) noexcept
+    Result prepare(RE::PlayerCharacter* player, bool* staged) noexcept
     {
         auto* equipped = f4vr::getEquippedWeaponItem();
         auto* object = equipped ? equipped->item.object : nullptr;
@@ -107,6 +107,7 @@ namespace rock::native_trigger_equip_graph
         // Do not move handles ourselves or submit draw against a pending set.
         const bool requested = reinterpret_cast<bool (*)(void*, RE::PlayerCharacter*)>(
             REL::Offset(0xE8D090).address())(process, player);
+        if (staged) *staged = *staged || requested;
         // Native pending handle array is at handles+60 (current at +40).
         // Record exact first-person resource reuse, not merely a same-form hit.
         std::uint64_t firstPersonHandle{};

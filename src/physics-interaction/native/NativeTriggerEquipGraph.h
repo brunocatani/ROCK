@@ -9,5 +9,6 @@ namespace rock::native_trigger_equip_graph
     [[nodiscard]] bool installed() noexcept;
     // Game thread, after native item identity is committed and before draw.
     // Native AIProcess retains and releases all current/pending graph handles.
-    [[nodiscard]] Result prepare(RE::PlayerCharacter* player) noexcept;
+    // staged (optional) reports whether E8D090 staged a new handle set.
+    [[nodiscard]] Result prepare(RE::PlayerCharacter* player, bool* staged = nullptr) noexcept;
 }
