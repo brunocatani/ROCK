@@ -92,10 +92,13 @@ namespace rock::native_secondary_actions
             std::uint32_t recoilShots{},recoilSamples{};
             bool rootsTraced{};
             struct TraceWindow { std::uint64_t second{UINT64_MAX}; std::uint32_t count{},suppressed{}; };
-            std::array<TraceWindow,6> traces{};
+            std::array<TraceWindow,7> traces{};
         };
-        enum class Trace : std::size_t { Action,Event,Lifecycle,Fire,Recoil,Input };
-        bool trace(State& s,Trace channel)
+        // Refusal: condition/idle dumps of refused actions. Separate from
+        // Lifecycle so a held trigger on a refused gun cannot suppress the
+        // reload and draw events logged in the same second.
+        enum class Trace : std::size_t { Action,Event,Lifecycle,Fire,Recoil,Input,Refusal };
+        bool trace(State& s,Trace channel,std::uint32_t limit=8)
         {
             auto& window=s.traces[static_cast<std::size_t>(channel)];
             const auto second=GetTickCount64()/1000;
@@ -104,7 +107,7 @@ namespace rock::native_secondary_actions
                     s.item.object?s.item.object->formID:0,static_cast<std::size_t>(channel),window.suppressed);
                 window={second,0,0};
             }
-            if (window.count<8) { ++window.count; return true; }
+            if (window.count<limit) { ++window.count; return true; }
             ++window.suppressed;
             return false;
         }
@@ -663,7 +666,7 @@ namespace rock::native_secondary_actions
             ++s.actions;
             if (accepted || trace(s,Trace::Action)) ROCK_LOG_INFO(Weapon,"AKIMBO native action form={:08X} hand=left action={} event='{}' accepted={} actualIndex=1 managerReads={} idleQueries={} idleMatches={} cacheReads={} conditional={} attempt={}",
                 s.item.object->formID,std::to_underlying(object),action.event().c_str(),accepted,context.managerReads,context.idleQueries,context.idleMatches,context.cacheReads,conditional,s.actions);
-            if ((object==RE::DEFAULT_OBJECT::kActionReload || !accepted) && (accepted || trace(s,Trace::Lifecycle))) {
+            if ((object==RE::DEFAULT_OBJECT::kActionReload || !accepted) && (accepted || trace(s,Trace::Refusal,2))) {
                 for (std::size_t i=0;i<context.queryCount;++i) {
                     const auto& query=context.queries[i];
                     ROCK_LOG_INFO(Animation,"AKIMBO action condition form={:08X} action={} attempt={} name='{}' id={} readable={} source={} value={}",

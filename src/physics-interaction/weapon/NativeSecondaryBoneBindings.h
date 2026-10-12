@@ -11,6 +11,7 @@
 #include "RE/Bethesda/BSGeometry.h"
 #include "RE/NetImmerse/NiCloningProcess.h"
 #include <Windows.h>
+#include <algorithm>
 #include <vector>
 
 namespace rock::native_secondary_actions
@@ -42,6 +43,7 @@ namespace rock::native_secondary_actions
             native_secondary_pose_transport::PresentedHistory history;
             RE::NiTransform lastNativeLocal{};
             bool sampledNative{};
+            bool duplicate{}; // Same name as an earlier bone owner; diagnostic only.
         };
         std::vector<Skin> _skins;
         std::vector<Node> _nodes;
@@ -136,15 +138,23 @@ namespace rock::native_secondary_actions
             // authored pose. Driving every duplicate pushed the second set of
             // rounds up out of the slide.
             std::vector<std::pair<RE::BSFixedString,RE::NiAVObject*>> owners;
+            std::vector<RE::NiAVObject*> duplicates;
             {
                 std::vector<RE::NiAVObject*> stack{root};
                 std::size_t visited=0;
                 while (!stack.empty()) {
                     if (++visited>8192) return false;
                     auto* object=stack.back(); stack.pop_back();
-                    if (object!=root && object->IsNode() && graph.bone(object->name) &&
-                        std::none_of(owners.begin(),owners.end(),[&](const auto& owner) { return owner.first==object->name; }))
-                        owners.emplace_back(object->name,object);
+                    if (object!=root && object->IsNode() && graph.bone(object->name)) {
+                        const auto owner=std::find_if(owners.begin(),owners.end(),[&](const auto& entry) { return entry.first==object->name; });
+                        if (owner==owners.end()) owners.emplace_back(object->name,object);
+                        else {
+                            duplicates.push_back(object);
+                            ROCK_LOG_INFO(Animation,"AKIMBO bone owner duplicate name='{}' parent='{}' kept='{}' keptParent='{}' native=unanimated",
+                                object->name.c_str(),object->parent?object->parent->name.c_str():"",
+                                owner->second->name.c_str(),owner->second->parent?owner->second->parent->name.c_str():"");
+                        }
+                    }
                     if (auto* node=object->IsNode()) {
                         const auto& children=node->GetRuntimeData().children;
                         // Reverse push so children pop in native (forward) order.
@@ -169,6 +179,7 @@ namespace rock::native_secondary_actions
                         if (target) ++boundNodes;
                         const auto anchor=_nodes[i].target?i:_nodes[i].anchorIndex;
                         _nodes.push_back({RE::NiPointer<RE::NiAVObject>{child.get()},target,i,anchor,child->local,{},{},{}});
+                        _nodes.back().duplicate=std::find(duplicates.begin(),duplicates.end(),child.get())!=duplicates.end();
                     }
                 }
                 auto* geometry=object->IsGeometry();
@@ -178,11 +189,17 @@ namespace rock::native_secondary_actions
                 RE::NiAVObject** nodes{}; const RE::NiTransform** worlds{}; std::uint32_t count{}; RE::NiAVObject* skinRoot{};
                 if (!arrays(instance,nodes,worlds,count) || !native_memory::tryReadField(instance,0x48,skinRoot)) return false;
                 Skin skin; skin.geometry.reset(geometry); skin.original.reset(instance); skin.slots.reserve(count);
+                std::size_t skippedDuplicates=0;
                 for (std::uint32_t j=0;j<count;++j) {
                     OriginalBone original;
                     if (!originalBone(nodes[j],skinRoot,worlds[j],original)) continue;
+                    // A skin bone that is a non-owner duplicate keeps its own
+                    // node, as natively: the graph never animates it.
+                    if (std::find(duplicates.begin(),duplicates.end(),original.node.get())!=duplicates.end()) { ++skippedDuplicates; continue; }
                     if (auto* target=graph.bone(original.name)) skin.slots.push_back({std::move(original),target,j});
                 }
+                if (skippedDuplicates) ROCK_LOG_INFO(Animation,"AKIMBO skin duplicate bones kept native shape='{}' skipped={}",
+                    geometry->name.c_str(),skippedDuplicates);
                 // Native skin cloning gives this geometry independent palette
                 // arrays while retaining its original bind matrices/materials.
                 // The original instance stays intact for exact restoration.
@@ -283,7 +300,16 @@ namespace rock::native_secondary_actions
                 _nextBoneReport=now+5000;
                 std::size_t reported=0;
                 for (const auto& node:_nodes) {
-                    if (!node.target || ++reported>24) continue;
+                    if (node.duplicate && reported<32) {
+                        ++reported;
+                        const auto& rest=node.originalLocal.translate;
+                        const auto& shown=node.actual->local.translate;
+                        ROCK_LOG_INFO(Animation,"AKIMBO unbound duplicate pose name='{}' parent='{}' rest=({:.3f},{:.3f},{:.3f}) local=({:.3f},{:.3f},{:.3f})",
+                            node.actual->name.c_str(),node.actual->parent?node.actual->parent->name.c_str():"",
+                            rest.x,rest.y,rest.z,shown.x,shown.y,shown.z);
+                        continue;
+                    }
+                    if (!node.target || ++reported>32) continue;
                     const auto& rest=node.originalLocal.translate;
                     const auto& model=node.beforeLocal.translate;
                     const auto& skeleton=node.target->local.translate;
