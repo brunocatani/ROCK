@@ -13,6 +13,7 @@
 #include <string>
 
 #include "RE/NetImmerse/NiPoint.h"
+#include "RE/NetImmerse/NiTransform.h"
 
 namespace RE
 {
