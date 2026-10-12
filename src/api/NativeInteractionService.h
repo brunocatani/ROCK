@@ -1,5 +1,5 @@
 #pragma once
-#include <ROCK/NativeInteraction.h>
+#include <ROCK/NativeInteractionV1_1.h>
 #include "physics-interaction/native/HavokPhysicsTiming.h"
 #include "RE/NetImmerse/NiTransform.h"
 
@@ -34,7 +34,7 @@ namespace rock::native_interaction_service {
     bool weaponControlled();
     RE::NiTransform weaponPresentation();
     bool preCollideWeapon(RE::hknpWorld*,const havok_physics_timing::PhysicsTimingSample&);
-    void weaponContact(RE::hknpWorld*,std::uint32_t weapon,std::uint32_t target,std::uint32_t layer,const RE::NiPoint3&);
+    void weaponContact(RE::hknpWorld*,std::uint32_t weapon,std::uint32_t target,std::uint32_t layer,const RE::NiPoint3&,const RE::NiPoint3&,std::uint32_t pointCount);
     void retireWeapon(RE::hknpWorld*,void* bhkWorld);
 
     api::native_interaction::SelectionReply classify(const api::native_interaction::SelectionQuery&);

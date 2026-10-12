@@ -202,7 +202,7 @@ namespace rock
             std::uint32_t otherBodyId,
             bool otherLayerRead,
             std::uint32_t otherLayer,
-            const RE::NiPoint3* contactPointGame);
+            const RE::NiPoint3* contactPointGame, const RE::NiPoint3& targetNormalGame, std::uint32_t pointCount);
 
         void retireAll(void* bhkWorld, bool preserveSurfaceSupport = false);
         void refreshCollisionFilter(RE::hknpWorld* world);

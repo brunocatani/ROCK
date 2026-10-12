@@ -740,13 +740,22 @@
                     supportPointGame.z += point[2] * pointScale;
                 }
             }
+            RE::NiPoint3 targetNormal{};
+            if (solvedChildContact) {
+                // 1418028B0 copies the manifold normal to +0x40. Normals point
+                // B -> A; orient target -> weapon. Key-2 removal events leave
+                // this payload uninitialized and must not read it.
+                const auto* manifoldNormal=reinterpret_cast<const float*>(data+0x40);
+                const float sign=bodyAIsWeaponProxy?1.0f:-1.0f;
+                targetNormal={manifoldNormal[0]*sign,manifoldNormal[1]*sign,manifoldNormal[2]*sign};
+            }
             _dynamicWeaponCollision.recordObstacleManifoldProcessedCallback(
                 world,
                 proxyBodyId,
                 otherBodyId,
                 otherLayerRead,
                 otherLayer,
-                solvedChildContact ? &supportPointGame : nullptr);
+                solvedChildContact ? &supportPointGame : nullptr,targetNormal,solvedChildContact?static_cast<std::uint32_t>(manifoldPointCount):0);
         }
     }
 

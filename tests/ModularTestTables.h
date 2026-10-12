@@ -43,5 +43,5 @@ namespace rock::api::configuration { const ApiV1& table() noexcept; }
 extern "C" rock::api::Status ROCK_CALL ROCKAPI_QueryInterfaceV1(
     rock::api::InterfaceId,std::uint32_t,std::uint32_t,std::uint32_t,
     const rock::api::InterfaceDescriptorV1**) noexcept;
-#include <ROCK/NativeInteraction.h>
-namespace rock::native_interaction_service { const api::native_interaction::ApiV1& table() noexcept; }
+#include <ROCK/NativeInteractionV1_1.h>
+namespace rock::native_interaction_service { const api::native_interaction::ApiV1& table() noexcept; const api::native_interaction::v1_1::Api& tableV1_1() noexcept; }

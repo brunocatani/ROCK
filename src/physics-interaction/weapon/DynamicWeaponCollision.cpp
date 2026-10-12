@@ -1929,7 +1929,7 @@ namespace rock
         const std::uint32_t otherBodyId,
         const bool otherLayerRead,
         const std::uint32_t otherLayer,
-        const RE::NiPoint3* contactPointGame)
+        const RE::NiPoint3* contactPointGame, const RE::NiPoint3& targetNormalGame, std::uint32_t pointCount)
     {
         if (!world || _equippedDrop || !isProxyBodyIdAtomic(proxyBodyId)) {
             return;
@@ -1944,7 +1944,7 @@ namespace rock
             recordSurfaceSupportContact(world, otherBodyId, *contactPointGame);
         }
         if (contactPointGame) {
-            native_interaction_service::weaponContact(world, proxyBodyId, otherBodyId, otherLayer, *contactPointGame);
+            native_interaction_service::weaponContact(world, proxyBodyId, otherBodyId, otherLayer, *contactPointGame, targetNormalGame, pointCount);
         }
         _contactWorldAtomic.store(reinterpret_cast<std::uintptr_t>(world), std::memory_order_relaxed);
         _contactProxyBodyIdAtomic.store(proxyBodyId, std::memory_order_relaxed);

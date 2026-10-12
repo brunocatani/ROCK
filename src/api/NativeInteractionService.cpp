@@ -33,6 +33,7 @@ namespace rock::native_interaction_service {
     }
     using namespace detail;
     namespace {
+        thread_local const ni::v1_1::ContactDetails* contactDetails=nullptr;
         ni::Frame makeFrame(const PhysicsFrameContext& context,ni::Phase phase) {
             ni::Frame result{};result.phase=phase;result.sample=provider::runtime::sample();
             result.sample.frameIndex=provider::runtime::currentGameFrameIndex();
@@ -86,6 +87,15 @@ namespace rock::native_interaction_service {
             if(service.excludedTarget!=ni::kInvalidBody)return true;
             for(const auto& slider:service.sliders)if(service.driver&&slider.owner==service.driver)return true;
             return false;
+        }
+        Status readContactDetails(Owner owner,ni::v1_1::ContactDetails* output) noexcept {
+            return guarded(owner,[&] {
+                if(!output||output->size!=sizeof(*output))return Status::InvalidSize;
+                *output={};
+                if(auto status=access(owner);status!=Status::Ok)return status;
+                if(current->frame.phase!=ni::Phase::WeaponContact||!contactDetails)return Status::WrongThread;
+                *output=*contactDetails;return output->valid?Status::Ok:Status::NotReady;
+            });
         }
         Status registerExtension(Owner owner,const ni::Callbacks* callbacks) noexcept {
             return guarded(owner,[&] {
@@ -310,12 +320,20 @@ namespace rock::native_interaction_service {
         const auto frame=stepFrame(world,timing);std::uint32_t result=0;
         return invoke(*slot,frame,[&]{result=slot->callbacks.weaponPreCollide(&frame,slot->callbacks.context);})&&result!=0;
     }
-    void weaponContact(RE::hknpWorld* world,std::uint32_t weapon,std::uint32_t target,std::uint32_t layer,const RE::NiPoint3& point) {
+    void weaponContact(RE::hknpWorld* world,std::uint32_t weapon,std::uint32_t target,std::uint32_t layer,const RE::NiPoint3& point,const RE::NiPoint3& normal,std::uint32_t pointCount) {
         auto lease=state().gate.tryEnterCallback();if(!lease)return;
         auto* slot=extension(state().driver);if(!slot||!slot->callbacks.weaponContact||state().weaponBody!=weapon||state().frame.world!=reinterpret_cast<std::uintptr_t>(world))return;
         ni::Contact contact{};contact.frame=state().frame;contact.frame.phase=ni::Phase::WeaponContact;
         contact.weapon=weapon;contact.target=target;contact.targetLayer=layer;contact.pointWorld=toApi(point);
+        ni::v1_1::ContactDetails details{};details.pointCount=pointCount;
+        const float length=normal.x*normal.x+normal.y*normal.y+normal.z*normal.z;
+        if(pointCount>0&&pointCount<=4&&std::isfinite(length)&&length>0.000001f) {
+            const float inverse=1.0f/std::sqrt(length);
+            details.valid=1;details.normalWorld={normal.x*inverse,normal.y*inverse,normal.z*inverse};
+        }
+        const auto* previous=contactDetails;contactDetails=&details;
         invoke(*slot,contact.frame,[&]{slot->callbacks.weaponContact(&contact,slot->callbacks.context);});
+        contactDetails=previous;
     }
     void retireWeapon(RE::hknpWorld* world,void* bhk) {
         auto& service=state();auto* slot=extension(service.driver);if(!slot||!service.rockGate)return;
@@ -395,5 +413,8 @@ namespace rock::native_interaction_service {
             &setWeaponContactExclusion,&clearWeaponContactExclusion,&hasWeaponContactExclusion,&setDynamicObstacleLayers,
             &copyWeaponSources,&getSourceGeometry,&publishVisuals};
         return api;
+    }
+    const ni::v1_1::Api& tableV1_1() noexcept {
+        static const ni::v1_1::Api value{table(),&readContactDetails};return value;
     }
 }

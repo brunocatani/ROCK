@@ -48,7 +48,16 @@ int main() {
         assert(!descriptor);
     };
     verify(core::table(),core::kSupportedPermissions);
-    verify(rock::native_interaction_service::table(),native_interaction::kSupportedPermissions);
+    verify(rock::native_interaction_service::tableV1_1(),native_interaction::kSupportedPermissions);
+    {
+        const InterfaceDescriptorV1 *legacy{},*current{};
+        assert(ROCKAPI_QueryInterfaceV1(native_interaction::kInterfaceId,1,0,sizeof(native_interaction::ApiV1),&legacy)==Status::Ok);
+        assert(ROCKAPI_QueryInterfaceV1(native_interaction::kInterfaceId,1,1,sizeof(native_interaction::v1_1::Api),&current)==Status::Ok);
+        assert(legacy==current&&legacy->requiredCoreMinor==0);
+        const auto* oldTable=static_cast<const native_interaction::ApiV1*>(legacy->table);
+        assert(oldTable->registerExtension==rock::native_interaction_service::table().registerExtension);
+        assert(oldTable->publishVisuals==rock::native_interaction_service::table().publishVisuals);
+    }
     verify(hands::table(),hands::kSupportedPermissions);
     verify(collision::table(),collision::kSupportedPermissions);
     verify(grab::tableV1_3(),grab::kSupportedPermissions);
