@@ -518,9 +518,16 @@ namespace rock::native_secondary_actions
             const bool traceRoots=!t_context->state->rootsTraced;
             t_context->state->rootsTraced=true;
             for (const auto& entry:t_context->state->graph->idleRoots()) {
-                auto* root=native<void*(*)(void*,const char*)>(0x595760)(database,entry.name.c_str());
-                if (traceRoots) ROCK_LOG_INFO(Animation,"AKIMBO idle root lookup form={:08X} name='{}' resolved={:#x}",
-                    t_context->state->item.object->formID,entry.name.c_str(),reinterpret_cast<std::uintptr_t>(root));
+                // Native EC5C80 copies each root name and rewrites it through
+                // the global behavior alias table (2BB10) before the idle
+                // database lookup. Wrapping behaviors (Tactical Reload's
+                // Pistol_GunWrappingBehavior) are not idle-database roots; only
+                // the aliased name is.
+                RE::BSFixedString name{entry.name};
+                native<bool(*)(RE::BSFixedString*)>(0x2BB10)(&name);
+                auto* root=native<void*(*)(void*,const char*)>(0x595760)(database,name.c_str());
+                if (traceRoots) ROCK_LOG_INFO(Animation,"AKIMBO idle root lookup form={:08X} name='{}' aliased='{}' resolved={:#x}",
+                    t_context->state->item.object->formID,entry.name.c_str(),name.c_str(),reinterpret_cast<std::uintptr_t>(root));
                 if (root && std::find(out->begin(),out->end(),root)==out->end()) {
                     out->push_back(root);
                     ++t_context->idleMatches;
@@ -821,6 +828,7 @@ namespace rock::native_secondary_actions
             !matches(0xFF2A40,std::to_array<std::uint8_t>({0x48,0x89,0x5C,0x24,0x08})) ||
             !matches(0xFF2C10,std::to_array<std::uint8_t>({0x48,0x89,0x5C,0x24,0x08})) ||
             !matches(0x595760,std::to_array<std::uint8_t>({0x40,0x56,0x48,0x83,0xEC,0x20,0x48,0x8B,0xF2})) ||
+            !matches(0x2BB10,std::to_array<std::uint8_t>({0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x74,0x24,0x18,0x57,0x48,0x83,0xEC,0x20,0x48,0x8B,0xF9})) ||
             !matches(0xDE85F0,std::to_array<std::uint8_t>({0x48,0x89,0x5C,0x24,0x20,0x89,0x54,0x24,0x10})) ||
             !matches(0x3331F0,std::to_array<std::uint8_t>({0x48,0x89,0x5C,0x24,0x20,0x57,0x48,0x83,0xEC,0x40})) ||
             !matches(0x64DE20,std::to_array<std::uint8_t>({0x48,0x89,0x5C,0x24,0x08,0x57,0x48,0x83,0xEC,0x30})) ||

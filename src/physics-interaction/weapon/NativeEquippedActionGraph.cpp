@@ -268,12 +268,11 @@ namespace rock::native_equipped_action_graph
                 s.handles.empty() || s.identifiers.empty()) return Load::Failed;
             // Weapon roots first, in request order (the third-person weapon
             // root resolves rifle attack/reload idles), then the base
-            // request's roots. The native player's idle-root list always holds
-            // the base MTBehavior roots beside the weapon's; wrapped pistols
-            // (Glock: NoHandIKRelaxedWeaponWrappingBehavior,
-            // Pistol_GunWrappingBehavior) have no idle-database roots of their
-            // own and select from those. No person filter: filtering by the
-            // player's person mode removed the rifles' attack idles.
+            // request's roots: the native player's idle-root list always holds
+            // the base MTBehavior roots beside the weapon's. Names are aliased
+            // at lookup, as natively (see NativeSecondaryActions idleRoots).
+            // No person filter: filtering by the player's person mode removed
+            // the rifles' attack idles.
             if (!s.addRoots(metadata) || !s.addRoots(baseMetadata)) return Load::Failed;
             s.phase=2;
             s.stage="native-subgraph-loading";
