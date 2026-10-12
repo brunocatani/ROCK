@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cstring>
+#include <fmt/ranges.h>
 
 namespace rock::native_scene
 {
@@ -30,7 +31,8 @@ namespace rock::native_scene
             if (!addressIsInGameText(address) ||
                 !native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), actual.data(), actual.size()) ||
                 actual != expected) {
-                ROCK_LOG_ERROR(Init, "Native NiNode factory validation failed for {} at 0x{:X}", label, address);
+                ROCK_LOG_ERROR(Init, "Native NiNode factory validation failed for {} at 0x{:X}: inGameText={} bytes={}",
+                    label, address, addressIsInGameText(address), fmt::join(actual, ","));
                 return false;
             }
             return true;
@@ -45,20 +47,14 @@ namespace rock::native_scene
                 }
 
                 /*
-                 * Blind-verified against Fallout4VR.exe 1.2.72 on 2026-07-20.
-                 * The allocator entries are part of the constructor's child-
-                 * array allocation chain and are validated with it so the
-                 * complete construct/destroy ownership domain fails closed.
+                 * The constructor/layout are specific to FO4VR 1.2.72. The
+                 * allocator implementation is not: Buffout replaces Allocate,
+                 * Deallocate and initialization together. RE::aligned_alloc
+                 * and the native destructor must use those live engine entry
+                 * points, exactly as the rest of the engine does. Requiring
+                 * their original bytes rejects a valid replacement heap.
                  */
                 const bool entriesMatch = validateNativeEntry(
-                                              "MemoryManager::Allocate",
-                                              offsets::kFunc_BethesdaAlloc,
-                                              std::array<std::uint8_t, 10>{ 0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x6C, 0x24, 0x18 }) &&
-                    validateNativeEntry(
-                        "MemoryManager initialization",
-                        offsets::kFunc_BethesdaAllocatorInit,
-                        std::array<std::uint8_t, 12>{ 0x57, 0x48, 0x83, 0xEC, 0x20, 0x44, 0x8B, 0x05, 0xEF, 0xAC, 0xD0, 0x04 }) &&
-                    validateNativeEntry(
                         "NiNode constructor",
                         offsets::kFunc_NiNode_Ctor,
                         std::array<std::uint8_t, 10>{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10 });
