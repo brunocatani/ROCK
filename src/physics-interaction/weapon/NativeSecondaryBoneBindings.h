@@ -128,6 +128,33 @@ namespace rock::native_secondary_actions
             constexpr auto prefix=std::to_array<std::uint8_t>({0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x74,0x24,0x10,0x57,0x48,0x83,0xEC,0x20});
             std::array<std::uint8_t,prefix.size()> live{};
             if (!native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(REL::Offset(0x1C13FF0).address()),live.data(),live.size()) || live!=prefix) return false;
+            // Native binding resolves each graph bone with 1C20840, a
+            // pre-order depth-first search (1C220E0) that stops at the first
+            // same-named node. Models can repeat a bone name (the 1911 has a
+            // WeaponMagazine with its own rounds under both P-Receiver and
+            // P-Mag); only the first one is animated, the others keep their
+            // authored pose. Driving every duplicate pushed the second set of
+            // rounds up out of the slide.
+            std::vector<std::pair<RE::BSFixedString,RE::NiAVObject*>> owners;
+            {
+                std::vector<RE::NiAVObject*> stack{root};
+                std::size_t visited=0;
+                while (!stack.empty()) {
+                    if (++visited>8192) return false;
+                    auto* object=stack.back(); stack.pop_back();
+                    if (object!=root && object->IsNode() && graph.bone(object->name) &&
+                        std::none_of(owners.begin(),owners.end(),[&](const auto& owner) { return owner.first==object->name; }))
+                        owners.emplace_back(object->name,object);
+                    if (auto* node=object->IsNode()) {
+                        const auto& children=node->GetRuntimeData().children;
+                        // Reverse push so children pop in native (forward) order.
+                        for (auto i=children.size();i>0;--i) if (children[i-1]) stack.push_back(children[i-1].get());
+                    }
+                }
+            }
+            const auto nativeOwner=[&](RE::NiAVObject* object) {
+                return std::any_of(owners.begin(),owners.end(),[&](const auto& owner) { return owner.second==object; });
+            };
             std::vector<RE::NiAVObject*> objects;
             objects.reserve(256); objects.push_back(root);
             _nodes.push_back({RE::NiPointer<RE::NiAVObject>{root},nullptr,0,0,root->local,{},{},{}});
@@ -138,7 +165,7 @@ namespace rock::native_secondary_actions
                     for (const auto& child:node->GetRuntimeData().children) if (child) {
                         if (objects.size()>=8192) return false;
                         objects.push_back(child.get());
-                        auto* target=child->IsNode()?graph.bone(child->name):nullptr;
+                        auto* target=child->IsNode() && nativeOwner(child.get())?graph.bone(child->name):nullptr;
                         if (target) ++boundNodes;
                         const auto anchor=_nodes[i].target?i:_nodes[i].anchorIndex;
                         _nodes.push_back({RE::NiPointer<RE::NiAVObject>{child.get()},target,i,anchor,child->local,{},{},{}});
