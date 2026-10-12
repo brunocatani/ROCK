@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/WeaponAimBasis.h"
 #include "physics-interaction/weapon/NativeSecondaryPose.h"
 #include "physics-interaction/weapon/NativeSecondaryPoseTransport.h"
+#include "physics-interaction/weapon/NativePresentedPoseHistory.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
@@ -560,6 +561,27 @@ int main()
         ok &= expect("authored hidden descendant remains hidden",evaluatedPose.reframe(previous,initial,hidden,identical) && identical.scale==0);
         auto singular=previous; singular.rotate=RE::NiMatrix3{};
         ok &= expect("singular source is rejected before transport",!evaluatedPose.reframe(singular,initial,output,identical));
+    }
+    {
+        native_secondary_pose_transport::PresentedHistory history;
+        auto last=transform_math::makeIdentityTransform<RE::NiTransform>();
+        last.translate={29985.1328f,-66897.5469f,599.2660f};
+        ok &= expect("first presentation has no fabricated prior motion",samePose(history.publish(1899,last),last));
+        auto corrected=last;
+        corrected.translate.x+=0.25f;
+        ok &= expect("same-frame correction cannot advance history",samePose(history.publish(1899,corrected),last));
+        auto movedHistoryPose=corrected;
+        movedHistoryPose.translate={29988.3242f,-66905.2031f,602.2858f};
+        movedHistoryPose.rotate=weaponSolverAxisAngleStored<RE::NiMatrix3,RE::NiPoint3>({1,0,0},1.85f);
+        ok &= expect("new frame retains the last corrected presentation",samePose(history.publish(1900,movedHistoryPose),corrected));
+        // Captured native hand placement moves through another origin and a
+        // different rotation. Six callbacks in one frame are still one frame.
+        for (int phase=0;phase<6;++phase) {
+            movedHistoryPose.translate.z+=0.12f;
+            ok &= expect("native intermediate passes cannot become previous-frame pose",samePose(history.publish(1900,movedHistoryPose),corrected));
+        }
+        ok &= expect("real controller and part motion survive in history",samePose(history.publish(1901,corrected),movedHistoryPose));
+        ok &= expect("menu gap seeds a new presentation epoch",samePose(history.publish(1920,last),last));
     }
     ok &= expect("invalid scale rejected", !weapon_aim_basis::tryResolveWorld(controller, 0.0f, weapon));
     controller.rotate.entry[0][0] = std::numeric_limits<float>::quiet_NaN();

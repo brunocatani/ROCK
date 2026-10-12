@@ -2,6 +2,7 @@
 #include "physics-interaction/weapon/NativeEquippedActionGraph.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/weapon/NativeSecondaryBoneBindings.h"
+#include "physics-interaction/weapon/NativeEquippedAnimationAudio.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/NativeNiNodeFactory.h"
@@ -66,6 +67,7 @@ namespace rock::native_secondary_actions
         {
             std::unique_ptr<Graph> graph;
             BoneBindings bindings;
+            native_equipped_animation_audio::Channel audio;
             std::array<ManagerRef,2> modelManagers;
             ManagerRef originalParent;
             RE::BGSObjectInstance item{nullptr,nullptr};
@@ -114,7 +116,7 @@ namespace rock::native_secondary_actions
             bool shot{};
             RE::NiAVObject* muzzle{};
             bool prepared{};
-            std::uint32_t managerReads{},idleQueries{},idleMatches{};
+            std::uint32_t managerReads{},idleQueries{},idleMatches{},cacheReads{};
             bool recoil{};
         };
         thread_local Context* t_context{};
@@ -164,7 +166,18 @@ namespace rock::native_secondary_actions
                     native<bool(*)(void*,ManagerRef*)>(0x812EA0)(holder,&manager);
                 }
                 if (view==1 && manager && manager==s.modelManagers[0]) continue;
-                if (manager==s.modelManagers[view]) continue;
+                if (manager==s.modelManagers[view]) {
+                    // Rebuilding the other hand can register this unchanged
+                    // native model manager with the actor again. Identity is
+                    // not proof of exclusive event ownership. The native
+                    // detach lookup is allocation-free when it is absent.
+                    if (manager && native<bool(*)(RE::BSAnimationGraphManager*,ManagerRef*)>(0x16906A0)(parent.get(),&manager)) {
+                        native<void(*)(RE::BSAnimationGraphManager*,ManagerRef*,bool)>(0x1690440)(s.graph->manager(),&manager,true);
+                        ROCK_LOG_SAMPLE_INFO(Animation,1000,"AKIMBO model graph reattachment isolated form={:08X} view={} manager={:#x}",
+                            s.item.object->formID,view,reinterpret_cast<std::uintptr_t>(manager.get()));
+                    }
+                    continue;
+                }
                 if (s.modelManagers[view]) native<void(*)(RE::BSAnimationGraphManager*,ManagerRef*)>(0x16906A0)(s.graph->manager(),&s.modelManagers[view]);
                 s.modelManagers[view]=manager;
                 if (!manager) continue; // A native model graph is optional.
@@ -306,6 +319,59 @@ namespace rock::native_secondary_actions
                 return bool(*out);
             }
             return s_getManager(holder,out);
+        }
+        RE::BSAnimationGraphVariableCache* variableCache(void* process)
+        {
+            if (t_context && process==t_context->player->currentProcess) {
+                if (!validContext()) return nullptr;
+                auto* manager=t_context->state->graph->manager();
+                if (!manager || manager->activeGraph>=manager->graph.size() ||
+                    manager->variableCache.graphToCacheFor!=manager->graph[manager->activeGraph] ||
+                    !manager->variableCache.lock || manager->variableCache.variableQuickLookup.empty()) return nullptr;
+                ++t_context->cacheReads;
+                return &manager->variableCache;
+            }
+            return native<RE::BSAnimationGraphVariableCache*(*)(void*)>(0xEC5590)(process);
+        }
+        bool installVariableCacheCalls()
+        {
+            // Actor's six variable getters bypass GetAnimationGraphManagerImpl
+            // and read AIProcess+8 -> +268 directly. Native graph activation
+            // builds the SAME named/fixed-ID cache on our private manager.
+            constexpr std::array<std::uintptr_t,6> calls{0xE1518C,0xE151EC,0xE1524C,0xE152AB,0xE1530B,0xE1536B};
+            std::array<std::array<std::uint8_t,5>,calls.size()> originals{};
+            for (std::size_t i=0;i<calls.size();++i) {
+                const auto displacement=static_cast<std::int32_t>(0xEC5590-calls[i]-5);
+                originals[i][0]=0xE8;
+                std::memcpy(originals[i].data()+1,&displacement,4);
+                if (!matches(calls[i],originals[i])) return false;
+            }
+            std::size_t patched=0;
+            try {
+                auto& trampoline=F4SE::GetTrampoline();
+                if (trampoline.free_size()<calls.size()*14) return false;
+                for (std::size_t i=0;i<calls.size();++i) {
+                    const auto address=REL::Offset(calls[i]).address();
+                    ++patched;
+                    (void)trampoline.write_call<5>(address,&variableCache);
+                    std::array<std::uint8_t,5> call{};
+                    std::array<std::uint8_t,14> relay{};
+                    std::int32_t displacement{}; std::uintptr_t destination{};
+                    bool valid=native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(address),call.data(),call.size()) && call[0]==0xE8;
+                    std::memcpy(&displacement,call.data()+1,4);
+                    valid=valid && native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(address+5+displacement),relay.data(),relay.size());
+                    std::memcpy(&destination,relay.data()+6,8);
+                    constexpr std::array<std::uint8_t,6> jump{0xFF,0x25,0,0,0,0};
+                    if (!valid || std::memcmp(relay.data(),jump.data(),jump.size()) || destination!=reinterpret_cast<std::uintptr_t>(&variableCache))
+                        throw std::runtime_error("native variable cache redirect failed");
+                }
+                if (!FlushInstructionCache(GetCurrentProcess(),nullptr,0)) throw std::runtime_error("native variable cache instruction flush failed");
+                return true;
+            } catch (...) {
+                for (std::size_t i=0;i<patched;++i) REL::safe_write(REL::Offset(calls[i]).address(),originals[i].data(),originals[i].size());
+                FlushInstructionCache(GetCurrentProcess(),nullptr,0);
+                return false;
+            }
         }
         bool idleRoots(void* database,RE::Actor* actor,RE::BSScrapArray<void*>* out)
         {
@@ -466,8 +532,8 @@ namespace rock::native_secondary_actions
             Action action{player,form};
             const bool accepted=native<bool(*)(void*)>(0xF9BEF0)(action.data.data());
             ++s.actions;
-            if (accepted || trace(s,Trace::Action)) ROCK_LOG_INFO(Weapon,"AKIMBO native action form={:08X} hand=left action={} event='{}' accepted={} actualIndex=1 managerReads={} idleQueries={} idleMatches={} conditional={} attempt={}",
-                s.item.object->formID,std::to_underlying(object),action.event().c_str(),accepted,context.managerReads,context.idleQueries,context.idleMatches,conditional,s.actions);
+            if (accepted || trace(s,Trace::Action)) ROCK_LOG_INFO(Weapon,"AKIMBO native action form={:08X} hand=left action={} event='{}' accepted={} actualIndex=1 managerReads={} idleQueries={} idleMatches={} cacheReads={} conditional={} attempt={}",
+                s.item.object->formID,std::to_underlying(object),action.event().c_str(),accepted,context.managerReads,context.idleQueries,context.idleMatches,context.cacheReads,conditional,s.actions);
             return accepted;
         }
         void attackState(State& s,std::uint32_t value)
@@ -515,6 +581,7 @@ namespace rock::native_secondary_actions
                 if (trace(s,lifecycle?Trace::Lifecycle:Trace::Event)) ROCK_LOG_INFO(Animation,"AKIMBO private native event form={:08X} tag='{}' payload='{}' gameplay={} sequence={}",
                     s.item.object->formID,event.tag.c_str(),event.payload.c_str(),effects,s.events);
                 if (!effects) continue;
+                if (s.audio.event(f4vr::getPlayer(),s.model.get(),event.tag,event.payload,s.frame)) continue;
                 if (event.tag==RE::BSFixedString("weaponFire")) {
                     const auto views=native_hand_equipment::equippedViews();
                     const auto before=loaded(views[1]),rightBefore=loaded(views[0]);
@@ -541,6 +608,12 @@ namespace rock::native_secondary_actions
                     if (trace(s,Trace::Fire) || loaded(after[1])==0 || loaded(after[0])!=rightBefore || !context.prepared) ROCK_LOG_INFO(Weapon,
                         "AKIMBO native fire event form={:08X} hand=left prepared={} loaded={}->{} rightLoaded={}->{} index=1 sequence={}",
                         s.item.object->formID,context.prepared,before,loaded(after[1]),rightBefore,loaded(after[0]),s.shots);
+                } else if (event.tag==RE::BSFixedString("reloadStart")) {
+                    // Native graphs can enter reload themselves after the last
+                    // shot. Their lifecycle, not just our button dispatch,
+                    // owns whether further attacks are admitted.
+                    s.reloading=true;
+                    (void)s.trigger.cancel();
                 } else if (event.tag==RE::BSFixedString("reloadComplete")) {
                     const auto before=native_hand_equipment::equippedViews();
                     const auto leftBefore=loaded(before[1]),rightBefore=loaded(before[0]);
@@ -564,6 +637,7 @@ namespace rock::native_secondary_actions
         {
             if (s.trigger.cancel() && s.ready && s.graph) { (void)s.graph->notify(RE::BSFixedString("attackRelease")); attackState(s,0); }
             s.reload=false;
+            s.audio.stop();
             if (s.graph) drain(s,false);
         }
     }
@@ -571,7 +645,10 @@ namespace rock::native_secondary_actions
     bool install() noexcept
     {
         if (s_installed) return true;
-        if (!Graph::validate()) return false;
+        if (!Graph::validate() || !native_equipped_animation_audio::Channel::validate()) {
+            ROCK_LOG_ERROR(Init,"AKIMBO native graph/audio dependency validation failed");
+            return false;
+        }
         std::uintptr_t getter{};
         const auto slot=REL::Offset(0x2D819E8).address();
         if (!native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(slot),getter) || getter!=REL::Offset(0xE14FD0).address() ||
@@ -626,6 +703,10 @@ namespace rock::native_secondary_actions
             !matches(0xE526A0,std::to_array<std::uint8_t>({0x48,0x83,0xEC,0x28,0x48,0x8B,0x89,0,3,0,0})) ||
             !installRecoilCalls()) {
             ROCK_LOG_ERROR(Init,"AKIMBO native recoil routing validation failed");
+            return false;
+        }
+        if (!installVariableCacheCalls()) {
+            ROCK_LOG_ERROR(Init,"AKIMBO native variable cache routing validation failed");
             return false;
         }
         s_getManager=reinterpret_cast<GetManager>(getter);
@@ -765,13 +846,14 @@ namespace rock::native_secondary_actions
                 ROCK_LOG_ERROR(Animation,"AKIMBO secondary graph stopped: invalid pose or event overflow form={:08X}",view.weapon->formID);
                 return;
             }
-            if (!s.bindings.present()) {
+            if (!s.bindings.present(s.frame)) {
                 cancel(s);
                 ROCK_LOG_SAMPLE_WARN(Animation,1000,"AKIMBO secondary part transport unavailable form={:08X}",view.weapon->formID);
                 return;
             }
             drain(s,true);
         } catch (...) {
+            s.audio.stop();
             s.bindings.restore(); releaseModelGraphs(s,true);
             s.failed=true; s.ready=false; (void)s.trigger.cancel();
             OutputDebugStringA("ROCK: independent equipped secondary action failed\n");
@@ -788,7 +870,7 @@ namespace rock::native_secondary_actions
     {
         auto& s=state();
         if (s.thread!=GetCurrentThreadId() || !s.ready || !s.graph || !attachment || !same(s,native_hand_equipment::equippedViews()[1])) return;
-        if (s.graph->place(attachment->world) && !s.bindings.present())
+        if (s.graph->place(attachment->world) && !s.bindings.present(runtime_state::currentFrame().frameIndex))
             ROCK_LOG_SAMPLE_WARN(Animation,1000,"AKIMBO secondary late part transport unavailable form={:08X}",s.item.object->formID);
     }
     void suspend() noexcept

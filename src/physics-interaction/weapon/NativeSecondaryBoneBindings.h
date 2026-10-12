@@ -5,6 +5,7 @@
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/weapon/WeaponScenePresentation.h"
 #include "physics-interaction/weapon/NativeSecondaryPoseTransport.h"
+#include "physics-interaction/weapon/NativePresentedPoseHistory.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "RE/Bethesda/BSSkin.h"
 #include "RE/Bethesda/BSGeometry.h"
@@ -37,6 +38,7 @@ namespace rock::native_secondary_actions
             std::size_t parentIndex{},anchorIndex{};
             RE::NiTransform originalLocal, beforeWorld, presentedWorld, presentedLocal;
             native_secondary_pose_transport::EvaluatedPose transport;
+            native_secondary_pose_transport::PresentedHistory history;
         };
         std::vector<Skin> _skins;
         std::vector<Node> _nodes;
@@ -153,7 +155,7 @@ namespace rock::native_secondary_actions
         {
             for (auto& node:_nodes) node.transport.carryPublished(delta);
         }
-        bool present() noexcept
+        bool present(std::uint64_t frame) noexcept
         {
             if (_nodes.empty()) return false;
             // Snapshot evaluated worlds before moving any parent. Animated
@@ -190,6 +192,20 @@ namespace rock::native_secondary_actions
                 node.actual->world=node.presentedWorld;
                 if (node.target) node.actual->local=node.presentedLocal;
             }
+            // 1C23777..3849 copies current world (+70) to previous (+C0)
+            // before native placement. The shader accumulator (281BE35..BE4D)
+            // and shader setup (28796C0..97AE) consume that prior transform.
+            // Give them the prior presented pose, not the transient melee arm
+            // pose or this frame's earlier private graph placement. True hand
+            // movement and native part animation remain in the history.
+            float historyError=0;
+            for (auto& node:_nodes) {
+                const auto& previous=node.history.publish(frame,node.actual->world);
+                historyError=(std::max)(historyError,(node.actual->previousWorld.translate-previous.translate).Length());
+                node.actual->previousWorld=previous;
+            }
+            ROCK_LOG_SAMPLE_INFO(Animation,1000,"AKIMBO secondary motion history frame={} nodes={} correctedPreviousMaxGame={:.3f} source=previous-presentation",
+                frame,_nodes.size(),historyError);
             return true;
         }
     };

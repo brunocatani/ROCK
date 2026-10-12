@@ -144,6 +144,7 @@ namespace rock::native_secondary_presentation
                     ++shapes;
                     const char* name = geometry->name.c_str() ? geometry->name.c_str() : "<unnamed-shape>";
                     traceNode(phase, name, geometry);
+                    traceTransform(phase, "geometry-previous-world", geometry->previousWorld);
                     auto* skin = geometry->GetRuntimeData().skinInstance.get();
                     const RE::NiTransform** worlds = nullptr;
                     RE::NiAVObject* skinRoot = nullptr;
@@ -155,9 +156,10 @@ namespace rock::native_secondary_presentation
                         native_memory::tryReadField(skin, 0x38, worldCount) &&
                         native_memory::tryReadField(skin, 0x48, skinRoot) && worlds && worldCount <= 512;
                     ROCK_LOG_INFO(Weapon,
-                        "AKIMBO secondary geometry frame={} phase={} pass={} name='{}' node={:#x} skin={:#x} paletteReadable={} bones={} skinRoot={:#x}",
+                        "AKIMBO secondary geometry frame={} phase={} pass={} name='{}' node={:#x} skin={:#x} paletteReadable={} bones={} skinRoot={:#x} flags={:#x} culled={} fade={}",
                         s_state.frame, phase, s_state.traceNativePass, name, reinterpret_cast<std::uintptr_t>(geometry),
-                        reinterpret_cast<std::uintptr_t>(skin), readable, worldCount, reinterpret_cast<std::uintptr_t>(skinRoot));
+                        reinterpret_cast<std::uintptr_t>(skin), readable, worldCount, reinterpret_cast<std::uintptr_t>(skinRoot),
+                        geometry->GetFlags(),geometry->GetAppCulled(),geometry->fadeAmount);
                     if (!readable) continue;
                     for (std::uint32_t b = 0; b < worldCount && bones < seenBoneWorlds.size(); ++b) {
                         const RE::NiTransform* world = nullptr;
@@ -182,11 +184,12 @@ namespace rock::native_secondary_presentation
                     const auto primaryGeometry = native_weapon_model_geometry::inspect(primary.root);
                     auto* primaryParent = primary.root ? primary.root->parent : nullptr;
                     ROCK_LOG_INFO(Weapon,
-                        "AKIMBO rendered visibility frame={} rightWeapon={:08X} rightRoot={:#x} rightParent={:#x} rightShapes={} rightCulled={} rightParentCulled={} leftCulled={} leftParentCulled={}",
+                        "AKIMBO rendered visibility frame={} rightWeapon={:08X} rightRoot={:#x} rightParent={:#x} rightShapes={} rightCulled={} rightParentCulled={} leftCulled={} leftParentCulled={} leftBody={:#x} leftBodyCulled={}",
                         s_state.frame, primary.weapon ? primary.weapon->formID : 0,
                         reinterpret_cast<std::uintptr_t>(primary.root), reinterpret_cast<std::uintptr_t>(primaryParent),
                         primaryGeometry.shapes, primary.root ? primary.root->GetAppCulled() : true,
-                        primaryParent ? primaryParent->GetAppCulled() : true, view.root->GetAppCulled(), attachment->GetAppCulled());
+                        primaryParent ? primaryParent->GetAppCulled() : true, view.root->GetAppCulled(), attachment->GetAppCulled(),
+                        reinterpret_cast<std::uintptr_t>(view.bodyRoot),view.bodyRoot?view.bodyRoot->GetAppCulled():true);
                 }
             } catch (...) {
                 OutputDebugStringA("ROCK: secondary geometry trace failed\n");

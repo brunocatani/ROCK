@@ -185,6 +185,9 @@ namespace rock::native_equipped_action_graph
             matches(0xEDA2F0,std::to_array<std::uint8_t>({0x48,0x89,0x5C,0x24,0x08,0x57,0x48,0x83,0xEC,0x30})) &&
             matches(0x168F940,std::to_array<std::uint8_t>({0x40,0x53,0x41,0x57,0x48,0x83,0xEC,0x38})) &&
             matches(0x1690240,std::to_array<std::uint8_t>({0x48,0x8B,0xC4,0x53,0x57,0x41,0x55,0x41,0x57})) &&
+            matches(0x169036E,std::to_array<std::uint8_t>({0x48,0x8D,0x8F,0x88,0,0,0,0xE8,0x96,0x1A,0x11,0})) &&
+            matches(0x1C23777,std::to_array<std::uint8_t>({0x8B,0x43,0x70,0xF3,0x0F,0x10,0x53,0x7C})) &&
+            matches(0x1C2381F,std::to_array<std::uint8_t>({0x8B,0x83,0xA0,0,0,0,0x89,0x83,0xF0,0,0,0})) &&
             matches(0x80D6C0,std::to_array<std::uint8_t>({0x48,0x89,0x5C,0x24,0x08,0x57,0x48,0x83,0xEC,0x40})) &&
             matches(0x80DC20,std::to_array<std::uint8_t>({0x44,0x89,0x44,0x24,0x18,0x48,0x83,0xEC,0x28})) &&
             matches(0x80DC40,std::to_array<std::uint8_t>({0xF3,0x0F,0x11,0x54,0x24,0x18,0x48,0x83,0xEC,0x28})) &&
@@ -280,6 +283,10 @@ namespace rock::native_equipped_action_graph
             if (!native<bool(*)(RE::BSAnimationGraphManager*,decltype(roots)*,bool)>(0x168F940)(manager,&roots,true)) return Load::Failed;
             s.stage="native-first-person-activation";
             if (!native<bool(*)(RE::BSAnimationGraphManager*,std::uint32_t)>(0x1690240)(manager,1)) return Load::Failed;
+            s.stage="private-variable-cache";
+            const auto& cache=manager->variableCache;
+            if (cache.graphToCacheFor!=manager->graph[1] || cache.lock!=&manager->updateLock ||
+                cache.variableQuickLookup.empty() || cache.variableQuickLookup.size()>4096) return Load::Failed;
             for (const auto& graph:manager->graph) s.source(graph.get())->RegisterSink(&s);
             s.sinks=true; s.phase=3;
             s.stage="ready";

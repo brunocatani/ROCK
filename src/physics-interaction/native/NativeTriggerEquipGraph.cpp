@@ -3,6 +3,7 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
+#include "physics-interaction/weapon/NativePrimaryWeaponGraph.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -46,6 +47,7 @@ namespace rock::native_trigger_equip_graph
                     REL::Offset(0xEDA2F0).address())(t_scope->object, output);
                 return 1;
             }
+            if (native_primary_weapon_graph::collect(player, output)) return 1;
             return s_collect(player, output);
         }
 
@@ -76,6 +78,8 @@ namespace rock::native_trigger_equip_graph
         s_collect = reinterpret_cast<Collect>(original);
         s_ready = s_ready && s_collect;
     }
+
+    bool installed() noexcept { return s_ready; }
 
     Result prepare(RE::PlayerCharacter* player) noexcept
     {
