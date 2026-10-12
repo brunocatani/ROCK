@@ -1,6 +1,6 @@
 #include <ROCK/StorageInteraction.h>
 #include <ROCK/StorageInteractionV1_1.h>
-#include <ROCK/InventoryDisplay.h>
+#include <ROCK/InventoryDisplayV1_1.h>
 #include "api/StorageInteractionService.h"
 #include "api/StorageInteractionPolicy.h"
 #include "api/StorageService.h"
@@ -33,6 +33,7 @@ namespace rock::storage_interaction
             contract::DisplayV1 request;
             api::weapon::v1_1::InventoryWeapon inventoryItem;
             bool inventoryOwned{};
+            bool collisionEnabled{true};
             std::uint64_t deadline{}, publishedFrame{};
             std::uint64_t authoredRequestedUntil{};
             RE::NiPointer<RE::TESObjectREFR> parent;
@@ -355,7 +356,7 @@ namespace rock::storage_interaction
         } catch(...) { return api::Status::InternalError; }
         api::Status ROCK_CALL getAuthoredGrip(api::OwnerToken owner,const contract::v1_1::GripRequest* request,contract::v1_1::GripPose* result) noexcept
         { return authoredGrip(owner,request,result,false); }
-        api::Status ROCK_CALL setInventoryDisplay(api::OwnerToken owner,const inventory::Display* request) noexcept try
+        api::Status setInventoryDisplayMode(api::OwnerToken owner,const inventory::Display* request,bool collisionEnabled) noexcept try
         {
             if(!request) return api::Status::InvalidArgument;
             if(request->size!=sizeof(*request) || request->item.size!=sizeof(request->item)) return api::Status::InvalidSize;
@@ -375,10 +376,10 @@ namespace rock::storage_interaction
                 if(!entry.owner && !slot) slot=&entry;
             }
             if(!slot) return api::Status::CapacityFull;
-            if(slot->owner && (slot->inventoryItem.stackKey!=request->item.stackKey || slot->inventoryItem.instanceKey!=request->item.instanceKey)) {
+            if(slot->owner && (slot->inventoryItem.stackKey!=request->item.stackKey || slot->inventoryItem.instanceKey!=request->item.instanceKey || slot->collisionEnabled!=collisionEnabled)) {
                 slot->rebuild=true; slot->contactFrames[0]=0; slot->contactFrames[1]=0;
             }
-            slot->owner=owner; slot->inventoryOwned=true; slot->inventoryItem=request->item;
+            slot->owner=owner; slot->inventoryOwned=true; slot->inventoryItem=request->item; slot->collisionEnabled=collisionEnabled;
             slot->request={}; slot->request.displayId=request->displayId; slot->request.parentReference=request->parentReference;
             slot->request.storedReference=request->item.baseFormId;
             slot->request.worldGeneration=frame.worldGeneration; slot->request.skeletonGeneration=frame.skeletonGeneration;
@@ -387,6 +388,10 @@ namespace rock::storage_interaction
             slot->deadline=frame.frameIndex+request->leaseFrames; slot->expired=false; service.active=true;
             return api::Status::Ok;
         } catch(...) { return api::Status::InternalError; }
+        api::Status ROCK_CALL setInventoryDisplay(api::OwnerToken owner,const inventory::Display* request) noexcept
+        { return setInventoryDisplayMode(owner,request,true); }
+        api::Status ROCK_CALL setInventoryDisplayWithoutCollision(api::OwnerToken owner,const inventory::Display* request) noexcept
+        { return setInventoryDisplayMode(owner,request,false); }
         api::Status ROCK_CALL clearInventoryDisplay(api::OwnerToken owner,std::uint64_t id) noexcept
         {
             const auto access=authorize(owner,0); if(access!=api::Status::Ok) return access;
@@ -494,6 +499,19 @@ namespace rock::storage_interaction
                         native_idle_grip_preharvest::observeInventoryDisplay(RE::TESForm::GetFormByID<RE::TESObjectWEAP>(entry.inventoryItem.baseFormId),node,selected.instance.get());
                 } else native_idle_grip_preharvest::observeStoredDisplay(
                     RE::NiPointer<RE::TESObjectREFR>(RE::TESForm::GetFormByID<RE::TESObjectREFR>(entry.request.storedReference)),node);
+            }
+            if(!policy::buildsCollision(entry.inventoryOwned,entry.collisionEnabled)) {
+                // Authored-pose harvesting above is independent of collision.
+                // Retire any former colliding registration under the existing
+                // mutation gates; skip extraction, shape building and body drive.
+                if(entry.rebuild || entry.body.isValid() || entry.shape || !entry.groups.empty()) {
+                    const auto requested=entry.authoredRequestedUntil;
+                    retire(entry,service.world); entry.authoredRequestedUntil=requested;
+                }
+                // Retain only the validated scene node so authored-grip queries
+                // need an ancestry check, not another full skeleton search.
+                entry.node.reset(node);
+                continue;
             }
             const bool reparented=entry.boundParent && entry.boundParent!=entry.request.parentReference;
             if(entry.rebuild || entry.node.get()!=node || entry.boundReference!=entry.request.storedReference ||
@@ -632,4 +650,13 @@ extern "C" __declspec(dllexport) const rock::api::inventory_display::Api* ROCK_C
     using namespace rock::storage_interaction;
     static const rock::api::inventory_display::Api table{sizeof(table),1,&setInventoryDisplay,&clearInventoryDisplay,&getInventoryContact,&getInventoryGrip,&clearInventoryOwner};
     return rock::storage_interaction_policy::supportsInventory(major,minor,bytes)?&table:nullptr;
+}
+
+extern "C" __declspec(dllexport) const rock::api::inventory_display::v1_1::Api* ROCK_CALL ROCK_InventoryDisplay_QueryV1_1(std::uint32_t major,std::uint32_t minor,std::uint32_t bytes) noexcept
+{
+    using namespace rock::storage_interaction;
+    static const rock::api::inventory_display::v1_1::Api table{
+        {sizeof(rock::api::inventory_display::Api),1,&setInventoryDisplay,&clearInventoryDisplay,&getInventoryContact,&getInventoryGrip,&clearInventoryOwner},
+        &setInventoryDisplayWithoutCollision};
+    return rock::storage_interaction_policy::supportsInventoryMinor(major,minor,bytes)?&table:nullptr;
 }

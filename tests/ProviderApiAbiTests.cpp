@@ -1,8 +1,12 @@
 #include <ModularAbiLayoutChecks.h>
-#include <ROCK/InventoryDisplay.h>
+#include <ROCK/InventoryDisplayV1_1.h>
+static_assert(sizeof(rock::api::inventory_display::Api)==48 && sizeof(rock::api::inventory_display::v1_1::Api)==56);
 #include <ROCK/StorageInteractionV1_1.h>
 #include "api/StorageInteractionPolicy.h"
 using namespace rock::storage_interaction_policy;
+static_assert(supportsInventoryMinor(1,0,48) && supportsInventoryMinor(1,1,56));
+static_assert(!supportsInventoryMinor(2,1,56) && !supportsInventoryMinor(1,2,56) && !supportsInventoryMinor(1,1,64));
+static_assert(buildsCollision(false,false) && buildsCollision(true,true) && !buildsCollision(true,false));
 static_assert(supports(1,48) && !supports(2,48) && !supports(1,56));
 static_assert(supportsGripMinor(1,0,48) && supportsGripMinor(1,1,48) && supportsGripMinor(1,1,56));
 static_assert(!supportsGripMinor(2,0,56) && !supportsGripMinor(1,2,56) && !supportsGripMinor(1,1,47));

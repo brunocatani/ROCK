@@ -19,6 +19,9 @@ namespace rock::storage_interaction_policy
     { return major==1 && minor<=1 && (bytes==48 || bytes==56); }
     constexpr bool supportsInventory(std::uint32_t major,std::uint32_t minor,std::uint32_t bytes)
     { return major==1 && minor==0 && bytes==48; }
+    constexpr bool supportsInventoryMinor(std::uint32_t major,std::uint32_t minor,std::uint32_t bytes)
+    { return major==1 && minor<=1 && (bytes==48 || bytes==56); }
+    constexpr bool buildsCollision(bool inventoryOwned,bool enabled) { return !inventoryOwned || enabled; }
     constexpr std::size_t preparationIndex(std::size_t ordinal,std::uint64_t cursor,std::size_t count)
     { return (ordinal+cursor%count)%count; }
 }
