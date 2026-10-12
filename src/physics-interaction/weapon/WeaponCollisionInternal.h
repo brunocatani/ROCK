@@ -2,7 +2,7 @@
 
 #include "physics-interaction/weapon/WeaponCollision.h"
 
-#include "physics-interaction/actor/ActorEquipmentGrab.h"
+#include "physics-interaction/native/SceneRelation.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/HavokRefCount.h"

@@ -179,8 +179,8 @@ namespace rock::object_physics_body_set
             record.seeded = seeded;
 
             const auto* base = context.rootRef ? context.rootRef->GetObjectReference() : nullptr;
-            const bool bodyTarget = grab_target::isRagdoll(options.targetKind) ||
-                (base && base->Is(RE::ENUM_FORM_ID::kNPC_)) || grab_target::isDetachedGoreLayer(record.collisionLayer);
+            const bool bodyTarget = grab_target::requiresNativeBodyOwnership(options.targetKind) ||
+                (base && base->Is(RE::ENUM_FORM_ID::kNPC_)) || grab_target::isNativeDetachedBodyLayer(record.collisionLayer);
             std::uintptr_t sourceVtable{};
             const bool proxySource = context.collisionObject && native_memory::tryReadField(context.collisionObject, 0, sourceVtable) &&
                 sourceVtable == REL::Offset(collision_system_owner::kProxy).address();
@@ -865,7 +865,7 @@ namespace rock::object_physics_body_set
         if (options.seedBodyId != INVALID_BODY_ID) {
             ScanBodyContext seedContext{ bhkWorld, hknpWorld, ref, options.seedHitNode ? options.seedHitNode : result.rootNode, nullptr, &options, &result, &seenBodyIds };
             appendBodyRecord(seedContext, options.seedBodyId, true);
-            if (grab_target::isRagdoll(options.targetKind) && options.seedHitNode) {
+            if (grab_target::requiresNativeBodyOwnership(options.targetKind) && options.seedHitNode) {
                 // Detached systems may no longer be under the actor's current 3D.
                 scanNode(bhkWorld, hknpWorld, ref, options.seedHitNode, 0, options, result, seenBodyIds, systems);
             }

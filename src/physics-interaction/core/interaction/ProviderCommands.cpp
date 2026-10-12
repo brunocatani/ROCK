@@ -1,3 +1,4 @@
+#include "physics-interaction/native/SceneRelation.h"
 #include "api/StorageService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 
@@ -465,7 +466,7 @@ namespace rock
 
         RE::NiAVObject* candidate = nullptr;
         auto acceptResolvedNode = [&](RE::NiAVObject* node) {
-            if (!node || !actor_equipment_grab::nodeContainsNode(weaponNode, node, 64)) {
+            if (!node || !scene_relation::nodeContainsNode(weaponNode, node, 64)) {
                 return false;
             }
             if (candidate && candidate != node) {
@@ -530,7 +531,7 @@ namespace rock
         // The writer restores expired/revoked nodes after active drives. Their
         // old driven locals may still be present if native animation left them alone.
         if(_providerDrives.generationKey==generation)for(const auto& state:_providerDrives.nodeStates)
-            if(state.node&&!result.contains(state.node)&&actor_equipment_grab::nodeContainsNode(weaponNode,state.node,64))
+            if(state.node&&!result.contains(state.node)&&scene_relation::nodeContainsNode(weaponNode,state.node,64))
                 result.apply(state.node,state.baselineLocal,false,0);
         return result;
     }
@@ -769,7 +770,7 @@ namespace rock
                 anyActive = true;
                 continue;
             }
-            if (actor_equipment_grab::nodeContainsNode(weaponNode, state.node, 64)) {
+            if (scene_relation::nodeContainsNode(weaponNode, state.node, 64)) {
                 state.node->local = state.baselineLocal;
                 f4vr::updateTransformsDown(state.node, true);
                 if (_providerDrives.resultCount <

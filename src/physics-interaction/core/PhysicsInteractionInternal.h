@@ -1,4 +1,5 @@
 #pragma once
+#include "api/NativeInteractionService.h"
 #include "api/StorageInteractionService.h"
 
 #include "physics-interaction/core/PhysicsInteraction.h"
@@ -29,7 +30,7 @@
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
-#include "physics-interaction/actor/ActorEquipmentGrab.h"
+#include "physics-interaction/native/SceneRelation.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/api/InteractionCommandQueue.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"

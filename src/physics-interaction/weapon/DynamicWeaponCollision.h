@@ -11,7 +11,7 @@
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/WeaponSurfaceSupport.h"
-#include "physics-interaction/weapon/BladePenetrationRuntime.h"
+#include "api/NativeInteractionService.h"
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/NetImmerse/NiTransform.h"
@@ -307,7 +307,7 @@ namespace rock
         BethesdaPhysicsBody _body{};
         BethesdaPhysicsBody _authorityProxy{};
         ActiveConstraint _authorityConstraint{};
-        BladePenetrationRuntime _bladePenetration;
+
         havok_compound_shape_builder::DynamicCompoundShape _compoundShape{};
         mutable std::mutex _compoundPoseMutex;
         std::vector<WeaponCollision::CompoundChildPoseSnapshot> _compoundPoseScratch;

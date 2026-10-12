@@ -18,7 +18,7 @@ namespace rock::force_grab_policy
         InteractionState = 1u << 1,
         Holding = 1u << 2,
         PullCatch = 1u << 3,
-        ActorEquipmentHandoff = 1u << 4,
+        ExtractionHandoff = 1u << 4,
         PendingForceGrab = 1u << 5,
         EquippedWeapon = 1u << 6,
         TouchGrab = 1u << 7,
@@ -31,7 +31,7 @@ namespace rock::force_grab_policy
         bool openInteractionState{ true };
         bool holding{ false };
         bool activePullCatch{ false };
-        bool actorEquipmentHandoff{ false };
+        bool extractionHandoff{ false };
         bool pendingForceGrab{ false };
         bool equippedWeaponOccupiesHand{ false };
         bool touchGrabActive{ false };
@@ -51,7 +51,7 @@ namespace rock::force_grab_policy
         add(!input.openInteractionState, HandBlocker::InteractionState);
         add(input.holding, HandBlocker::Holding);
         add(input.activePullCatch, HandBlocker::PullCatch);
-        add(input.actorEquipmentHandoff, HandBlocker::ActorEquipmentHandoff);
+        add(input.extractionHandoff, HandBlocker::ExtractionHandoff);
         add(input.pendingForceGrab, HandBlocker::PendingForceGrab);
         add(input.equippedWeaponOccupiesHand, HandBlocker::EquippedWeapon);
         add(input.touchGrabActive, HandBlocker::TouchGrab);

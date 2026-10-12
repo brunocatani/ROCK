@@ -1,3 +1,4 @@
+#include "physics-interaction/native/SceneRelation.h"
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
 
 // TwoHandedGrip lifecycle and per-frame state dispatch: construction, update(), reset(), core state transitions, firing-hand role switch, and the small shared part-grip coordinate resolvers.
@@ -108,7 +109,7 @@ namespace rock
         if (!grip.hasSourceFrames || !grip.attachmentRoot || !weaponNode) {
             return nullptr;
         }
-        return actor_equipment_grab::nodeContainsNode(weaponNode, grip.attachmentRoot, 64) ? grip.attachmentRoot : nullptr;
+        return scene_relation::nodeContainsNode(weaponNode, grip.attachmentRoot, 64) ? grip.attachmentRoot : nullptr;
     }
 
     TwoHandedGripUpdateResult TwoHandedGrip::update(

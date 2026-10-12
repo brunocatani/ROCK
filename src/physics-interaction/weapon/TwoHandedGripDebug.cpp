@@ -3,7 +3,7 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
 
 #include "api/ROCKProviderApiInternal.h"
-#include "physics-interaction/actor/ActorEquipmentGrab.h"
+#include "physics-interaction/native/SceneRelation.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/hand/HandVisual.h"

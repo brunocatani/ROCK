@@ -252,10 +252,10 @@ int main()
         matrix[i] = 0xB2978EBA769DC523ull ^ (i * 0x9E3779B97F4A7C15ull);
     }
     const auto original = matrix;
-    for (const bool npcDynamicCollisions : { false, true, false }) {
-        applyRockGeneratedLayerPolicies(matrix.data(), true, false, false, npcDynamicCollisions);
+    for (const auto extensionMask : { std::uint64_t{0}, kOptionalObstacleLayers, layerBitOrZero(FO4_LAYER_BIPED_NO_CC), layerBitOrZero(ROCK_LAYER_PASSIVE_OBSTACLE), std::uint64_t{0} }) {
+        applyRockGeneratedLayerPolicies(matrix.data(), true, false, false, extensionMask);
         ok &= expect("NPC dynamic collision toggles all three pairs symmetrically",
-            rockDynamicNpcPairsMatch(matrix.data(), npcDynamicCollisions));
+            rockDynamicExtensionPairsMatch(matrix.data(), extensionMask));
         for (const auto layer : { ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY,
                 ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, ROCK_LAYER_DYNAMIC_WEAPON_PROXY }) {
             ok &= expect("native player remains excluded from experimental dynamic contacts",
@@ -277,7 +277,7 @@ int main()
         }
     }
     matrix[FO4_LAYER_BIPED_NO_CC] = withLayer(matrix[FO4_LAYER_BIPED_NO_CC], ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
-    ok &= expect("NPC row-only drift is detected", !rockDynamicNpcPairsMatch(matrix.data(), false));
+    ok &= expect("NPC row-only drift is detected", !rockDynamicExtensionPairsMatch(matrix.data(), false));
 
     const BodyIdentity player{ 27, 8, 0x100000, 0x200000 };
     ok &= expect("live body identity matches", matchesLiveBody(player, player));
@@ -323,7 +323,7 @@ int main()
     const BodyIdentity blade{ 750, 81, 0x12340, 0x56780 };
     const BodyIdentity torso{ 422, 37, 0x23450, 0x67890 };
     constexpr std::uintptr_t bladeWorld = 0x90000;
-    const BladeCollisionPair bladePair{ bladeWorld, blade, torso };
+    const ToolContactExclusion bladePair{ bladeWorld, blade, torso, FO4_LAYER_BIPED_NO_CC };
     const auto bladeLayer = ROCK_LAYER_DYNAMIC_WEAPON_PROXY;
     const auto npcLayer = FO4_LAYER_BIPED_NO_CC;
     ok &= expect("embedded blade suppresses only its owned NPC pair",
@@ -356,7 +356,7 @@ int main()
         !bladePair.suppresses(bladeWorld, blade, torso, bladeLayer, FO4_LAYER_STATIC) &&
         !bladePair.suppresses(bladeWorld, blade, torso, ROCK_LAYER_HAND, npcLayer));
     ok &= expect("clearing the published blade pair restores collision",
-        !BladeCollisionPair{}.suppresses(bladeWorld, blade, torso, bladeLayer, npcLayer));
+        !ToolContactExclusion{}.suppresses(bladeWorld, blade, torso, bladeLayer, npcLayer));
     auto unknownPair = bladePair;
     unknownPair.target.ownerNode = 0;
     ok &= expect("unverified body ownership cannot suppress collision",

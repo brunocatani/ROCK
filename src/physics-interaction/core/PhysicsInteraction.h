@@ -29,7 +29,6 @@
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/hand/DynamicHandCollision.h"
 #include "physics-interaction/object/DynamicWorldCarCollision.h"
-#include "physics-interaction/actor/NpcCollisionRuntime.h"
 #include "physics-interaction/contact/GeneratedBodyContactRegistry.h"
 #include "physics-interaction/collision/ContactActivityTracker.h"
 #include "physics-interaction/consume/MouthConsumeDetector.h"
@@ -785,7 +784,7 @@ namespace rock
             bool handStaticWorld = false;
             bool weaponBlocksProjectiles = false;
             bool weaponBlocksSpells = false;
-            bool npcDynamicCollisions = false;
+            std::uint64_t extensionObstacleLayers = 0;
         };
 
         // State owned by the contact callback (PhysicsInteractionContacts.inl):
@@ -1049,7 +1048,6 @@ namespace rock
         TwoHandedGrip _twoHandedGrip;
         DynamicHandCollisionRuntime _dynamicHandCollision;
         DynamicWorldCarCollisionRuntime _dynamicWorldCarCollision;
-        NpcCollisionRuntime _npcCollision;
         feedback_haptics::FeedbackHaptics _feedbackHaptics;
     };
 }

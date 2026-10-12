@@ -280,7 +280,7 @@ namespace rock
         _heldBodyIds.clear();
         clearPullRuntimeState(false, "reset");
         clearPullCatchIntent("reset");
-        clearActorEquipmentDropHandoff("reset");
+        clearExtractedItemHandoff("reset");
         _grabFrame.clear();
         _grabOffsetAcquisition = {};
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
@@ -379,7 +379,7 @@ namespace rock
         clearGrabAcquisitionCache("worldLoss");
         clearPullRuntimeState(false, "worldLoss");
         clearPullCatchIntent("worldLoss");
-        clearActorEquipmentDropHandoff("worldLoss");
+        clearExtractedItemHandoff("worldLoss");
         _heldBodyIdsCount.store(0, std::memory_order_release);
         clearHeldBodyContactSnapshot();
         _isHoldingFlag.store(false, std::memory_order_release);
@@ -931,95 +931,99 @@ namespace rock
         return true;
     }
 
-    bool Hand::beginActorEquipmentDropHandoff(
-        const actor_equipment_grab::DropResult& dropResult,
+    bool Hand::beginExtractedItemHandoff(
+        const api::native_interaction::ExtractedReference& dropResult,
         const RE::NiPoint3& sourceHitPointWorld)
     {
-        if (dropResult.status != actor_equipment_grab::DropStatus::Success || !dropResult.handle) {
+        if (!dropResult.nativeHandle) {
             return false;
         }
-        if (!_currentSelection.isValid() || !_currentSelection.isFarSelection || _currentSelection.targetKind != grab_target::Kind::ActorEquipment) {
+        if (!_currentSelection.isValid() || !_currentSelection.isFarSelection || _currentSelection.targetKind != grab_target::Kind::ExtractableItem) {
             return false;
         }
 
-        _actorEquipmentDropHandoff = ActorEquipmentDropHandoff{
+        RE::NiPointer<RE::TESObjectREFR> extracted(RE::TESForm::GetFormByID<RE::TESObjectREFR>(dropResult.referenceForm));
+        if(!extracted||extracted->IsDeleted()||extracted->IsDisabled()||
+            extracted->GetHandle().native_handle()!=dropResult.nativeHandle)return false;
+
+        _extractedItemHandoff = ExtractedItemHandoff{
             .active = true,
-            .handle = dropResult.handle,
-            .droppedRef = dropResult.droppedRef,
+            .handle = extracted->GetHandle(),
+            .droppedRef = extracted,
             .sourceHitPointWorld = sourceHitPointWorld,
             .elapsedSeconds = 0.0f,
             .attempts = 0,
-            .actorFormId = dropResult.actorFormId,
-            .itemFormId = dropResult.itemFormId,
-            .droppedFormId = dropResult.droppedFormId,
+            .actorFormId = _currentSelection.refr->GetFormID(),
+            .itemFormId = dropResult.itemForm,
+            .droppedFormId = dropResult.referenceForm,
         };
 
         ROCK_LOG_DEBUG(Hand,
             "{} hand actor-equipment drop handoff armed: actor={:08X} item={:08X} dropped={:08X}",
             handName(),
-            _actorEquipmentDropHandoff.actorFormId,
-            _actorEquipmentDropHandoff.itemFormId,
-            _actorEquipmentDropHandoff.droppedFormId);
+            _extractedItemHandoff.actorFormId,
+            _extractedItemHandoff.itemFormId,
+            _extractedItemHandoff.droppedFormId);
         return true;
     }
 
-    bool Hand::hasPendingActorEquipmentDropHandoff() const
+    bool Hand::hasPendingExtractedItemHandoff() const
     {
-        return _actorEquipmentDropHandoff.active;
+        return _extractedItemHandoff.active;
     }
 
-    Hand::ActorEquipmentDropHandoffStatus Hand::advanceActorEquipmentDropHandoff(
+    Hand::ExtractedItemHandoffStatus Hand::advanceExtractedItemHandoff(
         RE::bhkWorld* bhkWorld,
         RE::hknpWorld* hknpWorld,
         float deltaSeconds,
         float maxHandoffSeconds)
     {
-        if (!_actorEquipmentDropHandoff.active) {
-            return ActorEquipmentDropHandoffStatus::None;
+        if (!_extractedItemHandoff.active) {
+            return ExtractedItemHandoffStatus::None;
         }
 
-        if (!_currentSelection.isValid() || !_currentSelection.isFarSelection || _currentSelection.targetKind != grab_target::Kind::ActorEquipment) {
-            clearActorEquipmentDropHandoff("invalid-selection");
-            return ActorEquipmentDropHandoffStatus::InvalidSelection;
+        if (!_currentSelection.isValid() || !_currentSelection.isFarSelection || _currentSelection.targetKind != grab_target::Kind::ExtractableItem) {
+            clearExtractedItemHandoff("invalid-selection");
+            return ExtractedItemHandoffStatus::InvalidSelection;
         }
 
-        _actorEquipmentDropHandoff.elapsedSeconds += (std::max)(0.0f, std::isfinite(deltaSeconds) ? deltaSeconds : 0.0f);
+        _extractedItemHandoff.elapsedSeconds += (std::max)(0.0f, std::isfinite(deltaSeconds) ? deltaSeconds : 0.0f);
         const float handoffWindow = (std::max)(0.0f, std::isfinite(maxHandoffSeconds) ? maxHandoffSeconds : 0.0f);
 
-        auto droppedRef = _actorEquipmentDropHandoff.droppedRef;
-        if (!droppedRef && _actorEquipmentDropHandoff.handle) {
-            droppedRef = _actorEquipmentDropHandoff.handle.get();
-            _actorEquipmentDropHandoff.droppedRef = droppedRef;
-            _actorEquipmentDropHandoff.droppedFormId = droppedRef ? droppedRef->GetFormID() : _actorEquipmentDropHandoff.droppedFormId;
+        auto droppedRef = _extractedItemHandoff.droppedRef;
+        if (!droppedRef && _extractedItemHandoff.handle) {
+            droppedRef = _extractedItemHandoff.handle.get();
+            _extractedItemHandoff.droppedRef = droppedRef;
+            _extractedItemHandoff.droppedFormId = droppedRef ? droppedRef->GetFormID() : _extractedItemHandoff.droppedFormId;
         }
 
         if (!droppedRef || droppedRef->IsDeleted() || droppedRef->IsDisabled()) {
-            if (handoffWindow > 0.0f && _actorEquipmentDropHandoff.elapsedSeconds > handoffWindow) {
-                clearActorEquipmentDropHandoff("missing-dropped-reference");
-                return ActorEquipmentDropHandoffStatus::MissingDroppedReference;
+            if (handoffWindow > 0.0f && _extractedItemHandoff.elapsedSeconds > handoffWindow) {
+                clearExtractedItemHandoff("missing-dropped-reference");
+                return ExtractedItemHandoffStatus::MissingDroppedReference;
             }
-            return ActorEquipmentDropHandoffStatus::Pending;
+            return ExtractedItemHandoffStatus::Pending;
         }
 
-        ++_actorEquipmentDropHandoff.attempts;
-        if (replaceFarActorEquipmentSelectionWithDroppedObject(
+        ++_extractedItemHandoff.attempts;
+        if (replaceExtractedSelectionWithLooseObject(
                 bhkWorld,
                 hknpWorld,
                 droppedRef.get(),
-                _actorEquipmentDropHandoff.sourceHitPointWorld)) {
-            clearActorEquipmentDropHandoff("ready");
-            return ActorEquipmentDropHandoffStatus::Ready;
+                _extractedItemHandoff.sourceHitPointWorld)) {
+            clearExtractedItemHandoff("ready");
+            return ExtractedItemHandoffStatus::Ready;
         }
 
-        if (handoffWindow > 0.0f && _actorEquipmentDropHandoff.elapsedSeconds > handoffWindow) {
-            clearActorEquipmentDropHandoff("timed-out");
-            return ActorEquipmentDropHandoffStatus::TimedOut;
+        if (handoffWindow > 0.0f && _extractedItemHandoff.elapsedSeconds > handoffWindow) {
+            clearExtractedItemHandoff("timed-out");
+            return ExtractedItemHandoffStatus::TimedOut;
         }
 
-        return ActorEquipmentDropHandoffStatus::Pending;
+        return ExtractedItemHandoffStatus::Pending;
     }
 
-    bool Hand::replaceFarActorEquipmentSelectionWithDroppedObject(RE::bhkWorld* bhkWorld,
+    bool Hand::replaceExtractedSelectionWithLooseObject(RE::bhkWorld* bhkWorld,
         RE::hknpWorld* hknpWorld,
         RE::TESObjectREFR* droppedRef,
         const RE::NiPoint3& sourceHitPointWorld)
@@ -1034,7 +1038,7 @@ namespace rock
         if (!hknpWorld || !droppedRef || droppedRef->IsDeleted() || droppedRef->IsDisabled()) {
             return false;
         }
-        if (!_currentSelection.isValid() || !_currentSelection.isFarSelection || _currentSelection.targetKind != grab_target::Kind::ActorEquipment) {
+        if (!_currentSelection.isValid() || !_currentSelection.isFarSelection || _currentSelection.targetKind != grab_target::Kind::ExtractableItem) {
             return false;
         }
 
@@ -1107,13 +1111,13 @@ namespace rock
         playSelectionHighlight(_currentSelection);
 
         ROCK_LOG_DEBUG(Hand,
-            "{} hand actor-equipment selection replaced with dropped object: dropped={:08X} body={} reason={} previousActor={:08X} previousItem={:08X}",
+            "{} hand actor-equipment selection replaced with dropped object: dropped={:08X} body={} reason={} previousActor={:08X} previousOwner={:016X}",
             handName(),
             droppedRef->GetFormID(),
             primaryChoice.bodyId,
             primaryBodyChoiceReasonName(primaryChoice.reason),
             previousSelection.refr ? previousSelection.refr->GetFormID() : 0,
-            previousSelection.actorEquipment.itemFormId);
+            previousSelection.extensionSelection.owner);
         return true;
     }
 
@@ -1224,20 +1228,20 @@ namespace rock
         return true;
     }
 
-    void Hand::clearActorEquipmentDropHandoff(const char* reason)
+    void Hand::clearExtractedItemHandoff(const char* reason)
     {
-        if (_actorEquipmentDropHandoff.active) {
+        if (_extractedItemHandoff.active) {
             ROCK_LOG_DEBUG(Hand,
                 "{} hand actor-equipment drop handoff cleared reason={} actor={:08X} item={:08X} dropped={:08X} attempts={} elapsed={:.3f}s",
                 handName(),
                 reason ? reason : "cleared",
-                _actorEquipmentDropHandoff.actorFormId,
-                _actorEquipmentDropHandoff.itemFormId,
-                _actorEquipmentDropHandoff.droppedFormId,
-                _actorEquipmentDropHandoff.attempts,
-                _actorEquipmentDropHandoff.elapsedSeconds);
+                _extractedItemHandoff.actorFormId,
+                _extractedItemHandoff.itemFormId,
+                _extractedItemHandoff.droppedFormId,
+                _extractedItemHandoff.attempts,
+                _extractedItemHandoff.elapsedSeconds);
         }
-        _actorEquipmentDropHandoff = {};
+        _extractedItemHandoff = {};
     }
 
     void Hand::clearPullCatchIntent(const char* reason)
@@ -2224,7 +2228,7 @@ namespace rock
         RE::NiTransform bodyWorld{};
         if (!root || !owner || !tryResolveLiveBodyWorldTransform(world, _currentSelection.bodyId, bodyWorld)) return false;
         selection_query_policy::BodyLocalSelectionAnchor anchor{};
-        if (_currentSelection.targetKind == grab_target::Kind::ActorEquipment) {
+        if (_currentSelection.targetKind == grab_target::Kind::ExtractableItem) {
             if (_currentSelection.equipmentAnchorOwner != reinterpret_cast<std::uintptr_t>(owner)) return false;
             anchor = _currentSelection.equipmentAnchor;
         } else if (!anchor.capture(bodyWorld, _currentSelection.hasHitPoint ? _currentSelection.hitPointWorld : bodyWorld.translate)) {
@@ -2257,13 +2261,9 @@ namespace rock
         auto* owner = havok_runtime::getCollisionObjectFromBody(world, _currentSelection.bodyId);
         if (!owner || reinterpret_cast<std::uintptr_t>(owner) != _gestureCollisionOwner ||
             resolveBodyToRef(bhkWorld, world, _currentSelection.bodyId) != ref) return false;
-        if (_currentSelection.targetKind == grab_target::Kind::ActorEquipment) {
-            auto* actor = ref->As<RE::Actor>();
-            auto* biped = actor ? actor->GetBiped().get() : nullptr;
-            const auto slot = static_cast<std::uint32_t>(_currentSelection.actorEquipment.slot);
-            if (!biped || slot >= static_cast<std::uint32_t>(RE::BIPED_OBJECT::kEditorCount) ||
-                biped->object[slot].partClone.get() != _currentSelection.visualNode ||
-                biped->object[slot].parent.object != _currentSelection.actorEquipment.item) return false;
+        if (_currentSelection.targetKind == grab_target::Kind::ExtractableItem) {
+            if(!native_interaction_service::validateSelection(extensionSelectionQuery(world,_currentSelection),
+                _currentSelection.extensionSelection))return false;
         }
         RE::NiTransform bodyWorld{};
         if (!tryResolveLiveBodyWorldTransform(world, _currentSelection.bodyId, bodyWorld) ||
@@ -2305,7 +2305,7 @@ namespace rock
         clearGrabAcquisitionCache(rememberDeselect ? "selection-cleared-remembered" : "selection-cleared");
         clearPullRuntimeState(true, rememberDeselect ? "selection-cleared-remembered" : "selection-cleared");
         clearPullCatchIntent(rememberDeselect ? "selectionClearedRemembered" : "selectionCleared");
-        clearActorEquipmentDropHandoff(rememberDeselect ? "selectionClearedRemembered" : "selectionCleared");
+        clearExtractedItemHandoff(rememberDeselect ? "selectionClearedRemembered" : "selectionCleared");
         _lastSelectedCloseOrigin = {};
         _hasLastSelectedCloseOrigin = false;
         _selectedCloseHandSpeedMetersPerSecond = 0.0f;
@@ -2379,7 +2379,7 @@ namespace rock
             return;
         }
 
-        if (hasPendingActorEquipmentDropHandoff()) {
+        if (hasPendingExtractedItemHandoff()) {
             /*
              * The dropped wearable is not selectable as a normal loose object
              * until its scene tree/physics bodies exist. Keep the original

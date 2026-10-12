@@ -742,7 +742,7 @@
             }
         };
         const auto targetKindForSelection = [](const SelectedObject& selection) {
-            return grab_target::isActorDriven(selection.targetKind) ?
+            return grab_target::isExtensionSelection(selection.targetKind) ?
                 TargetKind::Actor :
                 TargetKind::DynamicProp;
         };

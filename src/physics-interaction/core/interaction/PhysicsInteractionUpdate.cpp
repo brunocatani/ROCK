@@ -224,7 +224,9 @@ namespace rock
         // flattened bone rebuild have completed. Re-sample on the main thread;
         // PublishFrame copies values before the render thread consumes them.
         _twoHandedGrip.publishGunstockRenderDebug(resolveEquippedWeaponInteractionNode());
-        publishDebugBodyOverlay(buildFrameContext(bhk, hknp));
+        const auto context=buildFrameContext(bhk,hknp);
+        native_interaction_service::render(context);
+        publishDebugBodyOverlay(context);
     }
 
     void PhysicsInteraction::finalizeInteractionFrame(
@@ -481,7 +483,7 @@ namespace rock
             }
             auto* currentBhk = getPlayerBhkWorld();
             auto* currentHknp = currentBhk ? getHknpWorld(currentBhk) : nullptr;
-            _npcCollision.clear(currentHknp, currentBhk);
+            native_interaction_service::clear(currentHknp, currentBhk);
             if (currentBhk && currentBhk == _lifecycle.cachedBhkWorld &&
                 currentHknp && currentHknp == _lifecycle.cachedHknpWorld) {
                 _weaponCollision.setEquippedDropActive(currentHknp, false);
@@ -595,7 +597,7 @@ namespace rock
 
         auto* hknp = getHknpWorld(bhk);
         if (!hknp) {
-            _npcCollision.clear(nullptr, nullptr);
+            native_interaction_service::clear(nullptr, nullptr);
             _dynamicWorldCarCollision.abandon();
             _lifecycle.cachedHknpWorld = nullptr;
             observeLifecycleFrame(bhk, nullptr, ::rock::provider::RockProviderLifecycleReason::WorldUnavailable);
@@ -612,7 +614,7 @@ namespace rock
         observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::None);
 
         if (!physicsWritesAllowedForWorld(hknp)) {
-            _npcCollision.clear(hknp, bhk);
+            native_interaction_service::clear(hknp, bhk);
             _equipped.gripResumePending = _equipped.continuityGrip.pending;
             interruptInteractionFrame("physics-gate-closed");
             return;
@@ -665,16 +667,16 @@ namespace rock
         updateBareFistMode(frame);
         enforceNoBareFistState(forceBareFistRecheck);
 
+        native_interaction_service::update(frame);
         if (_layers.handStaticWorld != g_rockConfig.rockHandCollisionStaticWorldEnabled ||
             _layers.weaponBlocksProjectiles != g_rockConfig.rockWeaponCollisionBlocksProjectiles ||
             _layers.weaponBlocksSpells != g_rockConfig.rockWeaponCollisionBlocksSpells ||
-            _layers.npcDynamicCollisions != g_rockConfig.npcDynamicCollisions) {
+            _layers.extensionObstacleLayers != native_interaction_service::dynamicObstacleLayers()) {
             ROCK_LOG_INFO(Config, "ROCK collision layer config changed; re-registering matrix policy");
             registerCollisionLayer(hknp);
         }
 
-        _npcCollision.update(frame, g_rockConfig.npcDynamicCollisions,
-            g_rockConfig.rockDebugShowColliders && (g_rockConfig.rockDebugDrawNpcNativeColliders || g_rockConfig.rockDebugDrawNpcSupplementColliders));
+
         const auto equippedWeaponFrame = updateEquippedWeaponFrame(frame, bhk, hknp);
         finalizeInteractionFrame(frame, hknp, equippedWeaponFrame);
         if (input_remap_runtime::ownsBareFistInput()) {
@@ -721,7 +723,7 @@ namespace rock
             return;
         }
 
-        _npcCollision.drive(world, timing);
+        native_interaction_service::preCollide(world, timing);
         _rightHand.flushPendingCollisionPhysicsDrive(world, timing);
         _leftHand.flushPendingCollisionPhysicsDrive(world, timing);
         _bodyBoneColliders.flushPendingPhysicsDrive(world, timing);

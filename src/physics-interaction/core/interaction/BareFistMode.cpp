@@ -23,7 +23,7 @@ namespace rock
             const auto state = hand.getState();
             if (hand.isHolding()) return "object-held";
             if (hand.hasActivePullCatchIntent()) return "pull-active";
-            if (hand.hasPendingActorEquipmentDropHandoff()) return "equipment-drop-handoff";
+            if (hand.hasPendingExtractedItemHandoff()) return "equipment-drop-handoff";
             if (hand.hasPendingPullCatchCommit()) return "pull-commit";
             if (_forceGrab.pendingCommits[index].active) return "force-grab-pending";
             if (_forceGrab.retainedWeaponGrabs[index].grabIdentity != 0) return "retained-weapon";

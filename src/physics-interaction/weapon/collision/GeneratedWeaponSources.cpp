@@ -1,3 +1,4 @@
+#include "physics-interaction/native/SceneRelation.h"
 #include "physics-interaction/weapon/WeaponCollisionInternal.h"
 #include "physics-interaction/weapon/WeaponGapDecomposition.h"
 #include "physics-interaction/core/RockRuntimeState.h"
@@ -750,7 +751,7 @@ namespace rock
                     bool sameStructuralOwner = false;
                     if (!sameOmod && emitter.ownerRootStructural && emitter.ownerRootAddress != 0 && source.sourceRoot) {
                         auto* ownerRoot = reinterpret_cast<RE::NiAVObject*>(emitter.ownerRootAddress);
-                        sameStructuralOwner = actor_equipment_grab::nodeContainsNode(ownerRoot, source.sourceRoot, 32);
+                        sameStructuralOwner = scene_relation::nodeContainsNode(ownerRoot, source.sourceRoot, 32);
                     }
                     if (!sameOmod && !sameStructuralOwner) {
                         continue;

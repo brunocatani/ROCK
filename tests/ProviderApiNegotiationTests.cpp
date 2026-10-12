@@ -48,6 +48,7 @@ int main() {
         assert(!descriptor);
     };
     verify(core::table(),core::kSupportedPermissions);
+    verify(rock::native_interaction_service::table(),native_interaction::kSupportedPermissions);
     verify(hands::table(),hands::kSupportedPermissions);
     verify(collision::table(),collision::kSupportedPermissions);
     verify(grab::tableV1_3(),grab::kSupportedPermissions);

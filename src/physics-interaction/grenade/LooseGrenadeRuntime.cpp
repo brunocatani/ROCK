@@ -8,7 +8,7 @@
 #include "RE/Bethesda/BSExtraData.h"
 #include "RE/Bethesda/BSLock.h"
 #include "RE/Bethesda/PlayerCharacter.h"
-#include "RE/Bethesda/ProcessLists.h"
+
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/TESDataHandler.h"
 #include "RE/Bethesda/TESForms.h"
@@ -21,7 +21,7 @@ namespace rock::loose_grenade_runtime
     namespace
     {
         constexpr std::uint32_t kInvalidStackId = 0xFFFF'FFFFu;
-        constexpr std::uint32_t kMaximumProximityActorHandlesScanned = 2048;
+
 
         enum class GrenadeKind : std::uint8_t
         {
@@ -469,75 +469,6 @@ namespace rock::loose_grenade_runtime
         default:
             return "unknown";
         }
-    }
-
-    ProximityScanResult scanHostileActorsWithinProximity(
-        RE::TESObjectREFR* ref,
-        float radiusGameUnits) noexcept
-    {
-        ProximityScanResult result{};
-        auto* player = RE::PlayerCharacter::GetSingleton();
-        auto* processLists = RE::ProcessLists::GetSingleton();
-        auto* refCell = ref ? ref->GetParentCell() : nullptr;
-        if (!ref || ref->IsDeleted() || ref->IsDisabled() ||
-            !player || !processLists || !refCell ||
-            !std::isfinite(radiusGameUnits) || radiusGameUnits <= 0.0f) {
-            return result;
-        }
-
-        const RE::NiPoint3 source = ref->GetPosition();
-        auto scanHandles = [&](const RE::BSTArray<RE::ActorHandle>& handles) {
-            for (const auto& handle : handles) {
-                if (result.actorHandlesScanned >= kMaximumProximityActorHandlesScanned) {
-                    result.truncated = true;
-                    return true;
-                }
-                ++result.actorHandlesScanned;
-
-                const auto actorPtr = handle.get();
-                auto* actor = actorPtr.get();
-                if (!actor || actor == player || actor->IsDeleted() || actor->IsDisabled() || actor->IsDead(false)) {
-                    continue;
-                }
-
-                auto* actorCell = actor->GetParentCell();
-                if (!actorCell) {
-                    continue;
-                }
-                if (refCell->IsInterior() || actorCell->IsInterior()) {
-                    if (actorCell != refCell) {
-                        continue;
-                    }
-                } else if (actorCell->worldSpace != refCell->worldSpace) {
-                    continue;
-                }
-
-                const RE::NiPoint3 target = actor->GetPosition();
-                if (!loose_throwable_policy::isWithinProximity(
-                        radiusGameUnits,
-                        target.x - source.x,
-                        target.y - source.y,
-                        target.z - source.z)) {
-                    continue;
-                }
-                if (!player->GetHostileToActor(actor) && !actor->GetHostileToActor(player)) {
-                    continue;
-                }
-
-                result.targetFound = true;
-                result.targetActorFormID = actor->GetFormID();
-                return true;
-            }
-            return false;
-        };
-
-        if (scanHandles(processLists->highActorHandles) ||
-            scanHandles(processLists->middleHighActorHandles) ||
-            scanHandles(processLists->middleLowActorHandles) ||
-            scanHandles(processLists->lowActorHandles)) {
-            return result;
-        }
-        return result;
     }
 
     bool playPinPulledFeedbackAtReference(RE::TESObjectREFR* ref)

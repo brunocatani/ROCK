@@ -47,14 +47,6 @@ namespace rock::loose_grenade_runtime
         }
     };
 
-    struct ProximityScanResult
-    {
-        bool targetFound{ false };
-        bool truncated{ false };
-        std::uint32_t targetActorFormID{ 0 };
-        std::uint32_t actorHandlesScanned{ 0 };
-    };
-
     struct DropResult
     {
         bool success{ false };
@@ -79,9 +71,6 @@ namespace rock::loose_grenade_runtime
     [[nodiscard]] DropResult dropInventoryItemToWorld(std::uint32_t baseFormId, const RE::NiPoint3& dropLocation);
     [[nodiscard]] DropResult dropEquippedThrowableToWorld(const RE::NiPoint3& dropLocation);
     [[nodiscard]] const char* detonationModeName(GrenadeDetonationMode mode) noexcept;
-    [[nodiscard]] ProximityScanResult scanHostileActorsWithinProximity(
-        RE::TESObjectREFR* ref,
-        float radiusGameUnits) noexcept;
     [[nodiscard]] bool playPinPulledFeedbackAtReference(RE::TESObjectREFR* ref);
     [[nodiscard]] bool returnDroppedReferenceToInventory(RE::TESObjectREFR* ref);
     void disableAndDeleteReference(RE::TESObjectREFR* ref);

@@ -145,9 +145,17 @@
         }
 
         const auto target = havok_runtime::snapshotBody(hknp, RE::hknpBodyId{targetBodyId});
+        api::native_interaction::SelectionQuery pushQuery{};
+        pushQuery.reference=reinterpret_cast<std::uintptr_t>(targetRef);
+        pushQuery.world=reinterpret_cast<std::uintptr_t>(hknp);pushQuery.body=targetBodyId;
+        const auto pushKind=native_interaction_service::classifyPush(pushQuery);
+        if(pushKind==api::native_interaction::PushKind::Blocked)return;
         const auto* base = targetRef->GetObjectReference();
-        const bool bodyContact = target.valid && ((base && base->Is(RE::ENUM_FORM_ID::kNPC_)) ||
-            grab_target::isDetachedGoreLayer(target.collisionFilterInfo & 0x7F));
+        // Native articulated targets must never fall into whole-reference loose
+        // object conversion when their owning extension is absent.
+        if(pushKind==api::native_interaction::PushKind::Unhandled&&((base&&base->Is(RE::ENUM_FORM_ID::kNPC_))||
+            (target.valid&&grab_target::isNativeDetachedBodyLayer(target.collisionFilterInfo&0x7F))))return;
+        const bool bodyContact=target.valid&&pushKind==api::native_interaction::PushKind::PointOnly;
         if (bodyContact) {
             if (!contact.hasPoint || !target.body ||
                 physics_body_classifier::motionTypeFromBodyFlags(target.body->flags) != physics_body_classifier::BodyMotionType::Dynamic) return;

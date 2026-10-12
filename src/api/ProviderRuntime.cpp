@@ -1,5 +1,6 @@
 #include "ProviderFrameThreadOwner.h"
 #include "LooseWeaponStateService.h"
+#include "NativeInteractionService.h"
 #include "providers/WeaponPartsMarshalling.h"
 #include "api/InterfaceNegotiation.h"
 #include "ProviderRuntimeServices.h"
@@ -290,7 +291,7 @@ namespace rock::provider::runtime
 
     struct ConsumerSlot
     {
-        std::array<InterfaceBinding, 13> interfaces{};
+        std::array<InterfaceBinding, 14> interfaces{};
         bool revoked{ false };
         bool pendingRevoke{ false };
         std::uint64_t token{ 0 };
@@ -1571,6 +1572,7 @@ namespace rock::provider::runtime
 
     void clearOwnerStateAfterCallbackFault(const std::uint64_t ownerToken)
     {
+        native_interaction_service::clearOwner(ownerToken);
         loose_weapon_state::clear(ownerToken);
         physical_reload_input::clearOwner(ownerToken);
         support_trigger_input::clearOwner(ownerToken);
@@ -3343,7 +3345,7 @@ namespace rock::provider::runtime {
         using rock::api::Status;
         if (events::inSynchronousCallback()) return Status::Busy;
         const auto id=static_cast<std::uint32_t>(family);
-        if (!owner || id<1 || id>13) return Status::InvalidArgument;
+        if (!owner || id<1 || id>14) return Status::InvalidArgument;
         {
             std::scoped_lock lock(s_consumerMutex);
             const auto* slot=findConsumerSlotLocked(owner);
@@ -3358,7 +3360,7 @@ namespace rock::provider::runtime {
         using rock::api::Status;
         if (events::inSynchronousCallback()) return Status::Busy;
         const auto id=static_cast<std::uint32_t>(family);
-        if (id<1 || id>13) return Status::UnknownInterface;
+        if (id<1 || id>14) return Status::UnknownInterface;
         const auto* registration = api::discovery::findRegistration(api::discovery::registeredInterfaces(), family, major);
         if (!registration) return Status::UnsupportedMajor;
         const auto supported = registration->permissions;
@@ -3383,6 +3385,7 @@ namespace rock::provider::runtime {
         return {s.frameIndex,s.stateSequence,s.worldGeneration,s.skeletonGeneration,s.providerGeneration,s.collisionGeneration};
     }
     void revoke(std::uint64_t owner) { clearOwnerStateAfterCallbackFault(owner); }
+    bool onOwnerThread() noexcept { return onAnimationOwnerThread(); }
 }
 
 namespace rock::provider::runtime {

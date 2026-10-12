@@ -166,7 +166,9 @@ namespace rock
          * fails closed by rejecting all subsequent generated-body creation.
          */
         inline constexpr std::uint32_t kRetiredDeferredBodyGraceSteps = 8;
-        inline constexpr std::size_t kMaxRetiredDeferredBodies = 512;
+        // Core's existing bank plus every body an extension may retire in one
+        // owner/world transition. Keep native wrappers quarantined in both paths.
+        inline constexpr std::size_t kMaxRetiredDeferredBodies = 512 + 1024;
         inline constexpr std::size_t kMaxProcessLifetimeCollisionObjectTombstones = 65'536;
 
         std::mutex s_retiredDeferredBodyMutex;

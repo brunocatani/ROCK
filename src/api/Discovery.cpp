@@ -19,6 +19,7 @@
 #include <ROCK/PlayerController.h>
 #include <ROCK/Diagnostics.h>
 #include <ROCK/Configuration.h>
+#include <ROCK/NativeInteraction.h>
 
 namespace rock::api::core { const ApiV1& table() noexcept; }
 namespace rock::api::hands { const ApiV1& table() noexcept; }
@@ -37,6 +38,7 @@ namespace rock::api::references { const ApiV1& table() noexcept; }
 namespace rock::api::playercontroller { const ApiV1& table() noexcept; }
 namespace rock::api::diagnostics { const ApiV1& table() noexcept; }
 namespace rock::api::configuration { const ApiV1& table() noexcept; }
+namespace rock::native_interaction_service { const api::native_interaction::ApiV1& table() noexcept; }
 
 namespace rock::api::discovery {
 std::span<const RegisteredInterface> registeredInterfaces() noexcept {
@@ -54,6 +56,7 @@ std::span<const RegisteredInterface> registeredInterfaces() noexcept {
         registration(playercontroller::table(), playercontroller::kSupportedPermissions),
         registration(diagnostics::table(), diagnostics::kSupportedPermissions),
         registration(configuration::table(), configuration::kSupportedPermissions),
+        registration(native_interaction_service::table(), native_interaction::kSupportedPermissions),
     };
     return entries;
 }

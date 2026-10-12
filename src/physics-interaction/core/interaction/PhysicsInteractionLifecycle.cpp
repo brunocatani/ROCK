@@ -34,7 +34,9 @@ namespace rock
         _dynamicHandCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _weaponCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _dynamicWeaponCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
-        _npcCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
+        native_interaction_service::initialize(generatedBodyCallbackGate,
+            [](void* context,void* bhk){static_cast<PhysicsInteraction*>(context)->_dynamicWeaponCollision.retireAll(bhk);},
+            [](void* context,RE::hknpWorld* world){static_cast<PhysicsInteraction*>(context)->registerCollisionLayer(world);},this);
         _twoHandedGrip.setWeaponVisualIntentObserver(
             &_dynamicWeaponCollision,
             &DynamicWeaponCollisionRuntime::observeWeaponVisualIntent);
@@ -64,6 +66,7 @@ namespace rock
         if (_lifecycle.initialized) {
             shutdown();
         }
+        native_interaction_service::detach(&_generatedBodyStepDrive.callbackGate());
         ROCK_LOG_INFO(Init, "ROCK Physics Module — destroyed");
     }
 
@@ -163,7 +166,7 @@ namespace rock
             currentBhkWorld == _lifecycle.generatedBodiesBhkWorld &&
             currentHknpWorld &&
             currentHknpWorld == _lifecycle.generatedBodiesHknpWorld;
-        _npcCollision.clear(generatedWorldStillLive ? currentHknpWorld : nullptr,
+        native_interaction_service::clear(generatedWorldStillLive ? currentHknpWorld : nullptr,
             generatedWorldStillLive ? currentBhkWorld : nullptr);
         _looseWeaponCollision.clear(generatedWorldStillLive ? currentHknpWorld : nullptr);
         _objectRestCollision.clear(generatedWorldStillLive ? currentHknpWorld : nullptr);_objectRestRequests={};
@@ -570,7 +573,7 @@ namespace rock
             currentBhk == _lifecycle.cachedBhkWorld &&
             _lifecycle.cachedHknpWorld &&
             currentHknp == _lifecycle.cachedHknpWorld;
-        _npcCollision.clear(worldValid ? currentHknp : nullptr, worldValid ? currentBhk : nullptr);
+        native_interaction_service::clear(worldValid ? currentHknp : nullptr, worldValid ? currentBhk : nullptr);
 
         _looseWeaponCollision.clear(worldValid ? currentHknp : nullptr);
         _objectRestCollision.clear(worldValid ? currentHknp : nullptr);_objectRestRequests={};
@@ -732,8 +735,8 @@ namespace rock
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER, matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER]);
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::FO4_LAYER_CHARCONTROLLER, matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER]);
 
-        const bool npcPairsChanged =
-            !collision_layer_policy::rockDynamicNpcPairsMatch(matrix, g_rockConfig.npcDynamicCollisions);
+        const bool extensionPairsChanged =
+            !collision_layer_policy::rockDynamicExtensionPairsMatch(matrix, native_interaction_service::dynamicObstacleLayers());
         const bool retiredWeaponHandCollision =
             native_player_collision::installed();
         const bool retiredWeaponPairsChanged =
@@ -749,12 +752,12 @@ namespace rock
             g_rockConfig.rockHandCollisionStaticWorldEnabled,
             g_rockConfig.rockWeaponCollisionBlocksProjectiles,
             g_rockConfig.rockWeaponCollisionBlocksSpells,
-            g_rockConfig.npcDynamicCollisions,
+            native_interaction_service::dynamicObstacleLayers(),
             retiredWeaponHandCollision);
-        if (npcPairsChanged || retiredWeaponPairsChanged) {
+        if (extensionPairsChanged || retiredWeaponPairsChanged) {
             _dynamicHandCollision.refreshCollisionFilters(world);
         }
-        if (npcPairsChanged) {
+        if (extensionPairsChanged) {
             _dynamicWeaponCollision.refreshCollisionFilter(world);
         }
         if (retiredWeaponPairsChanged) {
@@ -766,11 +769,11 @@ namespace rock
             .handStaticWorld = g_rockConfig.rockHandCollisionStaticWorldEnabled,
             .weaponBlocksProjectiles = g_rockConfig.rockWeaponCollisionBlocksProjectiles,
             .weaponBlocksSpells = g_rockConfig.rockWeaponCollisionBlocksSpells,
-            .npcDynamicCollisions = g_rockConfig.npcDynamicCollisions,
+            .extensionObstacleLayers = native_interaction_service::dynamicObstacleLayers(),
         };
 
         ROCK_LOG_INFO(Config,
-            "Registered ROCK collision layers: hand={} mask=0x{:016X}, weapon={} mask=0x{:016X}, reload={} mask=0x{:016X}, body={} mask=0x{:016X}, handStaticWorld={}, projectiles={}, spells={}, npcDynamicCollisions={}",
+            "Registered ROCK collision layers: hand={} mask=0x{:016X}, weapon={} mask=0x{:016X}, reload={} mask=0x{:016X}, body={} mask=0x{:016X}, handStaticWorld={}, projectiles={}, spells={}, extensionObstacleLayers=0x{:016X}",
             collision_layer_policy::ROCK_LAYER_HAND,
             matrix[collision_layer_policy::ROCK_LAYER_HAND],
             collision_layer_policy::ROCK_LAYER_WEAPON,
@@ -782,7 +785,7 @@ namespace rock
             _layers.handStaticWorld ? "enabled" : "disabled",
             _layers.weaponBlocksProjectiles ? "enabled" : "disabled",
             _layers.weaponBlocksSpells ? "enabled" : "disabled",
-            _layers.npcDynamicCollisions ? "enabled" : "disabled");
+            _layers.extensionObstacleLayers);
     }
 
     bool PhysicsInteraction::createHandCollisions(RE::hknpWorld* world, void* bhkWorld)

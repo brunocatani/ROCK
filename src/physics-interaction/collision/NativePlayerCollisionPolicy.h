@@ -107,13 +107,14 @@ namespace rock::native_player_collision
     };
     static_assert(sizeof(BodyPair) == 8);
 
-    // One equipped blade may overlap one NPC BODY while its insertion guide
-    // owns the weapon. Identity checks prevent a recycled ID inheriting it.
-    struct BladeCollisionPair
+    // One controlled equipped tool may exclude one exact target. The extension
+    // chooses the target; identity and layer checks prevent recycled admission.
+    struct ToolContactExclusion
     {
         std::uintptr_t world{ 0 };
         BodyIdentity weapon{};
         BodyIdentity target{};
+        std::uint32_t targetLayer{ 0xFFFF'FFFFu };
 
         bool valid() const
         {
@@ -136,7 +137,7 @@ namespace rock::native_player_collision
             return matchesLiveBody(weapon, weaponIsA ? bodyA : bodyB) &&
                 matchesLiveBody(target, weaponIsA ? bodyB : bodyA) &&
                 (weaponIsA ? layerA : layerB) == ROCK_LAYER_DYNAMIC_WEAPON_PROXY &&
-                (weaponIsA ? layerB : layerA) == FO4_LAYER_BIPED_NO_CC;
+                (weaponIsA ? layerB : layerA) == targetLayer;
         }
     };
 

@@ -726,7 +726,7 @@ namespace rock
                 hand.clearSelectionState(true);
                 releaseObject(pullCatchRef, claimOwnerForHand(isLeft));
                 ROCK_LOG_DEBUG(Hand, "{} hand: cleared pull catch because normal grab input is suppressed", hand.handName());
-            } else if (hand.hasPendingActorEquipmentDropHandoff()) {
+            } else if (hand.hasPendingExtractedItemHandoff()) {
                 hand.clearSelectionState(true);
                 ROCK_LOG_DEBUG(Hand, "{} hand: cleared actor-equipment drop handoff because normal grab input is suppressed", hand.handName());
             } else if (hand.getState() == HandState::Pulled || hand.getState() == HandState::SelectionLocked) {
@@ -875,7 +875,7 @@ namespace rock
             !hand.isHolding() &&
             touchGrabStateAvailable &&
             !hand.hasActivePullCatchIntent() &&
-            !hand.hasPendingActorEquipmentDropHandoff() &&
+            !hand.hasPendingExtractedItemHandoff() &&
             !_forceGrab.pendingCommits[handIndex].active &&
             touchGrabPhysicsWritesAllowed;
         if (rawGrabInput.pressed && !canTryTouchGrab) {
@@ -891,7 +891,7 @@ namespace rock
                 static_cast<std::uint32_t>(handState),
                 touchGrabStateAvailable,
                 hand.hasActivePullCatchIntent(),
-                hand.hasPendingActorEquipmentDropHandoff(),
+                hand.hasPendingExtractedItemHandoff(),
                 _forceGrab.pendingCommits[handIndex].active,
                 touchGrabPhysicsWritesAllowed);
         }
@@ -1053,7 +1053,7 @@ namespace rock
                 "Trigger equip edge hand={} state={} heldAtStart={} looseNow={} heldRef={:08X} selectedRef={:08X} grabHeld={} pendingDrop={} pendingCatch={}",
                 hand.handName(), static_cast<unsigned>(hand.getState()), heldWeaponAtFrameStart, hand.isHoldingLooseWeapon(),
                 held ? held->GetFormID() : 0u, selected ? selected->GetFormID() : 0u, rawGrabInput.held,
-                hand.hasPendingActorEquipmentDropHandoff(), hand.hasPendingPullCatchCommit());
+                hand.hasPendingExtractedItemHandoff(), hand.hasPendingPullCatchCommit());
         }
 
         if (triggerEquipIntent.pending) {
@@ -1092,7 +1092,7 @@ namespace rock
             selection_state_policy::canProcessSelectedState(hand.getState()) &&
             hand.hasSelection() &&
             hand.getSelection().isFarSelection &&
-            !hand.hasPendingActorEquipmentDropHandoff() &&
+            !hand.hasPendingExtractedItemHandoff() &&
             !hand.hasPendingPullCatchCommit()) {
             float hmdConeDot = -1.0f;
             if (!selectedObjectPassesFarHmdCone(hknp, hand.getSelection(), farHmdConeGate, &hmdConeDot)) {
@@ -1352,8 +1352,9 @@ namespace rock
                 hasMotionProps = havok_runtime::tryReadBodyMotionPropertiesId(hknp, sel.bodyId, motionProps);
             }
 
-            const bool isLiveNpc = formType == "NPC_" && !selRef->IsDead(false);
-            const bool blocked = grab_interaction_policy::shouldBlockSelectedObjectInteractionForTarget(sel.targetKind, formType, isLiveNpc, hasMotionProps, motionProps);
+            if(sel.extensionSelection.owner&&!native_interaction_service::validateSelection(
+                extensionSelectionQuery(hknp,sel),sel.extensionSelection))return false;
+            const bool blocked = grab_interaction_policy::shouldBlockSelectedObjectInteractionForTarget(sel.targetKind, formType, hasMotionProps, motionProps);
             if (blocked) {
                 ROCK_LOG_DEBUG(Hand,
                     "{} hand: selected object interaction blocked targetKind={} formType={} formID={:08X} far={} motionProps={} hasMotionProps={}",
@@ -2337,7 +2338,7 @@ namespace rock
         if (!hand.isHolding() && (selection_state_policy::canProcessSelectedState(hand.getState()) || gesturePullConfirmed) && hand.hasSelection()) {
             const bool pullCatchCommitPending = hand.hasPendingPullCatchCommit();
             auto* pullCatchRef = pullCatchCommitPending ? hand.getPullCatchIntentRef() : nullptr;
-            bool actorEquipmentDropHandoffReady = false;
+            bool extractedItemHandoffReady = false;
             if (pullCatchCommitPending) {
                 if (grabInput.released || !grabInput.held) {
                     ROCK_LOG_DEBUG(Hand, "{} hand cancelled pull catch commit because grip was released", hand.handName());
@@ -2358,29 +2359,29 @@ namespace rock
                 }
             }
 
-            if (hand.hasPendingActorEquipmentDropHandoff()) {
+            if (hand.hasPendingExtractedItemHandoff()) {
                 if (grabInput.released || !grabInput.held) {
                     ROCK_LOG_DEBUG(Hand, "{} hand cancelled actor-equipment drop handoff because grip was released", hand.handName());
                     hand.clearSelectionState(true);
                     return;
                 }
 
-                const auto handoffStatus = hand.advanceActorEquipmentDropHandoff(
+                const auto handoffStatus = hand.advanceExtractedItemHandoff(
                     frame.bhkWorld,
                     hknp,
                     frame.deltaSeconds,
-                    pull_motion_math::kActorEquipmentHandoffMaximumTimeSeconds);
+                    pull_motion_math::kExtractionHandoffMaximumTimeSeconds);
                 switch (handoffStatus) {
-                case Hand::ActorEquipmentDropHandoffStatus::Ready:
-                    actorEquipmentDropHandoffReady = true;
+                case Hand::ExtractedItemHandoffStatus::Ready:
+                    extractedItemHandoffReady = true;
                     break;
-                case Hand::ActorEquipmentDropHandoffStatus::Pending:
+                case Hand::ExtractedItemHandoffStatus::Pending:
                     return;
-                case Hand::ActorEquipmentDropHandoffStatus::None:
+                case Hand::ExtractedItemHandoffStatus::None:
                     break;
-                case Hand::ActorEquipmentDropHandoffStatus::InvalidSelection:
-                case Hand::ActorEquipmentDropHandoffStatus::MissingDroppedReference:
-                case Hand::ActorEquipmentDropHandoffStatus::TimedOut:
+                case Hand::ExtractedItemHandoffStatus::InvalidSelection:
+                case Hand::ExtractedItemHandoffStatus::MissingDroppedReference:
+                case Hand::ExtractedItemHandoffStatus::TimedOut:
                 default:
                     ROCK_LOG_WARN(Hand,
                         "{} hand actor-equipment drop handoff failed status={} actorSelection={:08X}",
@@ -2392,7 +2393,7 @@ namespace rock
                 }
             }
 
-            if (grabInput.pressed || gesturePullConfirmed || peerHeldRetryCommitIntent || (pullCatchCommitPending && grabInput.held) || (actorEquipmentDropHandoffReady && grabInput.held)) {
+            if (grabInput.pressed || gesturePullConfirmed || peerHeldRetryCommitIntent || (pullCatchCommitPending && grabInput.held) || (extractedItemHandoffReady && grabInput.held)) {
                 if (!grab_interaction_policy::canAttemptSelectedObjectGrab(
                         hand.getSelection().isFarSelection, hand.getSelection().distance, selection_query_policy::kFarDetectionRangeGameUnits)) {
                     ROCK_LOG_DEBUG(Hand,
@@ -2417,7 +2418,7 @@ namespace rock
                     }
                 }
 
-                if (!pullCatchCommitPending && !actorEquipmentDropHandoffReady && !gesturePullConfirmed &&
+                if (!pullCatchCommitPending && !extractedItemHandoffReady && !gesturePullConfirmed &&
                     hand.getSelection().isFarSelection &&
                     g_rockConfig.rockFarGrabMode == static_cast<int>(far_pull_gesture::Mode::Gesture)) {
                     const Hand& peer = isLeft ? _rightHand : _leftHand;
@@ -2435,69 +2436,55 @@ namespace rock
 
                 if (!pullCatchCommitPending &&
                     hand.getSelection().isFarSelection &&
-                    hand.getSelection().targetKind == grab_target::Kind::ActorEquipment) {
+                    hand.getSelection().targetKind == grab_target::Kind::ExtractableItem) {
                     auto actorSelection = hand.getSelection();
-                    if (gesturePullConfirmed) {
-                        const auto liveEquipment = actor_equipment_grab::resolveFarActorEquipmentSelection(
-                            actorSelection.refr, actorSelection.hitNode, actorSelection.hitPointWorld, true);
-                        if (!liveEquipment.isUsable() || liveEquipment.itemFormId != actorSelection.actorEquipment.itemFormId ||
-                            liveEquipment.slot != actorSelection.actorEquipment.slot ||
-                            liveEquipment.instanceData != actorSelection.actorEquipment.instanceData) {
-                            cancelLockedFarSelection(hand, isLeft, "locked-equipment-changed");
-                            return;
-                        }
-                        actorSelection.actorEquipment = liveEquipment;
-                        // The actor's selection ends here. The existing handoff
-                        // subsequently locks the newly spawned loose reference.
-                        if (!hand.unlockFarSelection()) return;
-                        dispatchSimpleGrabEvent(GrabEventType::SelectionUnlocked, isLeft,
-                            actorSelection.refr, actorSelection.bodyId.value, ROCK_GRAB_EVENT_FLAG_SUPPRESS_HAPTIC);
-                    }
-                    const auto dropResult = actor_equipment_grab::dropFarActorEquipmentSelection(
-                        actorSelection.refr,
-                        actorSelection.actorEquipment,
-                        actor_equipment_grab::kDefaultAttachedDropZOffsetGameUnits);
-                    if (dropResult.status != actor_equipment_grab::DropStatus::Success || !dropResult.droppedRef) {
-                        ROCK_LOG_WARN(Hand,
-                            "{} hand actor-equipment far pull failed before drop handoff: status={} actor={:08X} item={:08X}",
-                            hand.handName(),
-                            actor_equipment_grab::dropStatusName(dropResult.status),
-                            dropResult.actorFormId,
-                            dropResult.itemFormId);
-                        hand.clearSelectionState(true);
+                    // The owner revalidates its opaque selection ticket before
+                    // changing inventory. Core only owns the new loose-reference handoff.
+                    api::native_interaction::ExtractedReference dropResult{};
+                    const auto dropStatus=native_interaction_service::extract(
+                        extensionSelectionQuery(hknp,actorSelection),actorSelection.extensionSelection,dropResult);
+                    if(dropStatus!=api::Status::Ok) {
+                        ROCK_LOG_WARN(Hand,"{} hand extraction failed: owner={} status={}",hand.handName(),
+                            actorSelection.extensionSelection.owner,static_cast<unsigned>(dropStatus));
+                        if(gesturePullConfirmed)cancelLockedFarSelection(hand,isLeft,"locked-extraction-changed");
+                        else hand.clearSelectionState(true);
                         return;
                     }
-
-                    if (!hand.beginActorEquipmentDropHandoff(
+                    if(gesturePullConfirmed) {
+                        if(!hand.unlockFarSelection())return;
+                        dispatchSimpleGrabEvent(GrabEventType::SelectionUnlocked,isLeft,
+                            actorSelection.refr,actorSelection.bodyId.value,ROCK_GRAB_EVENT_FLAG_SUPPRESS_HAPTIC);
+                    }
+                    if (!hand.beginExtractedItemHandoff(
                             dropResult,
-                            actorSelection.hasHitPoint ? actorSelection.hitPointWorld : actorSelection.actorEquipment.hitPointWorld)) {
+                            actorSelection.hitPointWorld)) {
                         ROCK_LOG_WARN(Hand,
                             "{} hand actor-equipment far pull failed to arm drop handoff: dropped={:08X} actor={:08X} item={:08X}",
                             hand.handName(),
-                            dropResult.droppedFormId,
-                            dropResult.actorFormId,
-                            dropResult.itemFormId);
+                            dropResult.referenceForm,
+                            actorSelection.refr->GetFormID(),
+                            dropResult.itemForm);
                         hand.clearSelectionState(true);
                         return;
                     }
 
-                    const auto handoffStatus = hand.advanceActorEquipmentDropHandoff(
+                    const auto handoffStatus = hand.advanceExtractedItemHandoff(
                         frame.bhkWorld,
                         hknp,
                         0.0f,
-                        pull_motion_math::kActorEquipmentHandoffMaximumTimeSeconds);
-                    if (handoffStatus == Hand::ActorEquipmentDropHandoffStatus::Ready) {
-                        actorEquipmentDropHandoffReady = true;
-                    } else if (handoffStatus == Hand::ActorEquipmentDropHandoffStatus::Pending) {
+                        pull_motion_math::kExtractionHandoffMaximumTimeSeconds);
+                    if (handoffStatus == Hand::ExtractedItemHandoffStatus::Ready) {
+                        extractedItemHandoffReady = true;
+                    } else if (handoffStatus == Hand::ExtractedItemHandoffStatus::Pending) {
                         return;
                     } else {
                         ROCK_LOG_WARN(Hand,
                             "{} hand actor-equipment far pull failed after arming handoff: status={} dropped={:08X} actor={:08X} item={:08X}",
                             hand.handName(),
                             static_cast<int>(handoffStatus),
-                            dropResult.droppedFormId,
-                            dropResult.actorFormId,
-                            dropResult.itemFormId);
+                            dropResult.referenceForm,
+                            actorSelection.refr->GetFormID(),
+                            dropResult.itemForm);
                         hand.clearSelectionState(true);
                         return;
                     }

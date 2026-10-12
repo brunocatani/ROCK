@@ -109,7 +109,7 @@ namespace rock::active_grab_body_lifecycle
          * selected body is already dynamic. Return every touched actor body and
          * filter to its captured state before the engine later detaches the cell.
          */
-        return targetKind == grab_target::Kind::DeadActorBody ? BodyRestorePolicy::RestoreAllChanged :
+        return targetKind == grab_target::Kind::ConnectedBody ? BodyRestorePolicy::RestoreAllChanged :
                                                                BodyRestorePolicy::ProtectComplexSystemOwned;
     }
 
@@ -1261,7 +1261,7 @@ namespace rock::pull_motion_math
     inline constexpr float kCatchRetryMaximumTimeSeconds = 0.65f;
     // Actor-equipment materialization is a separate lifecycle even though its
     // current timeout matches pull-catch retry tuning.
-    inline constexpr float kActorEquipmentHandoffMaximumTimeSeconds = 0.65f;
+    inline constexpr float kExtractionHandoffMaximumTimeSeconds = 0.65f;
     inline constexpr bool kCatchWideReacquireEnabled = true;
     inline constexpr float kCatchWideReacquireRadiusGameUnits = 32.0f;
     inline constexpr float kCatchWideReacquireMaximumBodyDistanceGameUnits = 42.0f;

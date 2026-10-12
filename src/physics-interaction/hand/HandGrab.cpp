@@ -558,7 +558,7 @@ namespace rock
         bool sharedContextMatchesSelection(const GrabSharedObjectContext& sharedContext, const SelectedObject& selection)
         {
             if (!sharedContext.hasPeerState() || !selection.refr || sharedContext.peerSavedObjectState->refr != selection.refr) return false;
-            if (!grab_target::isRagdoll(selection.targetKind)) return true;
+            if (!grab_target::requiresNativeBodyOwnership(selection.targetKind)) return true;
             auto* cell = selection.refr->GetParentCell();
             auto* world = cell ? havok_runtime::getHknpWorldFromBhk(cell->GetbhkWorld()) : nullptr;
             const auto component = ragdoll::readComponent(world, selection.bodyId.value);
@@ -4827,7 +4827,7 @@ namespace rock
         const auto& selectedObject = _currentSelection;
         outPreparation.scanOptions = makeActiveGrabBodyScanOptions(selectedObject);
         const auto& scanOptions = outPreparation.scanOptions;
-        if (grab_target::isRagdoll(selectedObject.targetKind)) {
+        if (grab_target::requiresNativeBodyOwnership(selectedObject.targetKind)) {
             outPreparation.beforePrepBodySet = object_physics_body_set::scanObjectPhysicsBodySet(
                 selection.bhkWorld, world, selectedObject.refr, scanOptions);
             outPreparation.preparedBodySet = outPreparation.beforePrepBodySet;
@@ -4978,7 +4978,7 @@ namespace rock
             selection.rootNode,
             outSetup.meshSourceNode,
             outSetup.collidableNode,
-            !grab_target::isRagdoll(selectedObject.targetKind));
+            !grab_target::requiresNativeBodyOwnership(selectedObject.targetKind));
         if (!captureRefresh.ok) {
             ROCK_LOG_WARN(Hand,
                 "{} hand GRAB failed: capture transform refresh produced a non-finite node transform for '{}' formID={:08X}; root='{}' mesh='{}' collidable='{}'",
@@ -5430,7 +5430,7 @@ namespace rock
         const auto nearestPrimaryChoice = preparedBodySet.choosePrimaryBody(
             object_physics_body_set::INVALID_BODY_ID,
             object_physics_body_set::PurePoint3{ outResolution.primaryChoiceTarget });
-        const bool ragdollGrab = grab_target::isRagdoll(selectedObject.targetKind);
+        const bool ragdollGrab = grab_target::requiresNativeBodyOwnership(selectedObject.targetKind);
         const auto* surfaceOwnerRecord = ragdollGrab ? preparedBodySet.findAcceptedRagdollOwner(surface.surfaceOwnerNode) :
             preparedBodySet.findAcceptedRecordByOwnerNode(surface.surfaceOwnerNode);
         const auto skinnedResolution = skinned_body_resolver::resolvePrimaryBody(skinned_body_resolver::ResolutionInput{
@@ -5604,7 +5604,7 @@ namespace rock
         auto* bodyCollisionObject = ownerWorld ? RE::bhkNPCollisionObject::Getbhk(ownerWorld, outCapture.bodyId) : nullptr;
         if (auto* resolvedOwnerNode = bodyCollisionObject ? bodyCollisionObject->sceneObject : nullptr) {
             GrabCaptureTransformRefreshResult ownerRefresh{};
-            refreshGrabCaptureNodeTransform(ownerRefresh, "resolvedOwner", resolvedOwnerNode, !grab_target::isRagdoll(selectedObject.targetKind));
+            refreshGrabCaptureNodeTransform(ownerRefresh, "resolvedOwner", resolvedOwnerNode, !grab_target::requiresNativeBodyOwnership(selectedObject.targetKind));
             if (!ownerRefresh.ok) {
                 ROCK_LOG_WARN(Hand,
                     "{} hand GRAB failed: resolved owner transform refresh produced a non-finite node transform for '{}' formID={:08X}; owner='{}'",
@@ -5711,7 +5711,7 @@ namespace rock
 
 
         bool adoptedPeerHeldBodySet = false;
-        _heldBodyIds = grab_target::isRagdoll(_currentSelection.targetKind) ?
+        _heldBodyIds = grab_target::requiresNativeBodyOwnership(_currentSelection.targetKind) ?
             held_object_body_set_policy::makePrimaryFirstUniqueBodyList(objectBodyId.value, mechanicalScope.committedBodyIds) :
             buildCommittedHeldBodyIds(objectBodyId.value, mechanicalScope.committedBodyIds, sharedContext, adoptedPeerHeldBodySet);
         if (_heldBodyIds.empty()) {
@@ -5869,7 +5869,7 @@ namespace rock
                 ownerNodeAtGrab = bodyCollisionObjectAtGrab ? bodyCollisionObjectAtGrab->sceneObject : nullptr;
                 if (ownerNodeAtGrab && ownerNodeAtGrab != collidableNode) {
                     GrabCaptureTransformRefreshResult ownerAtGrabRefresh{};
-                    refreshGrabCaptureNodeTransform(ownerAtGrabRefresh, "ownerAtGrab", ownerNodeAtGrab, !grab_target::isRagdoll(sel.targetKind));
+                    refreshGrabCaptureNodeTransform(ownerAtGrabRefresh, "ownerAtGrab", ownerNodeAtGrab, !grab_target::requiresNativeBodyOwnership(sel.targetKind));
                     if (!ownerAtGrabRefresh.ok) {
                         ROCK_LOG_WARN(Hand,
                             "{} hand GRAB failed: owner-at-grab transform refresh produced a non-finite node transform for '{}' formID={:08X}; owner='{}'",
@@ -7333,7 +7333,7 @@ namespace rock
                 }
             }
 
-            if (!grab_target::isRagdoll(sel.targetKind)) {
+            if (!grab_target::requiresNativeBodyOwnership(sel.targetKind)) {
                 const RE::hkVector4f zeroVel{ 0.0f, 0.0f, 0.0f, 0.0f };
                 havok_runtime::setBodyVelocityDeferred(world, objectBodyId.value, zeroVel, zeroVel);
 
@@ -7358,7 +7358,7 @@ namespace rock
             suppressHandCollisionForGrab(world, bodyBoneColliders);
 
             // Native ragdoll inertia belongs to its joints/solver.
-            if (!grab_target::isRagdoll(sel.targetKind)) {
+            if (!grab_target::requiresNativeBodyOwnership(sel.targetKind)) {
                 if (joiningPeerHeldObject && sharedContext.peerSavedObjectState) {
                     copyPeerInertiaSnapshot(_savedObjectState, *sharedContext.peerSavedObjectState);
                     ROCK_LOG_DEBUG(Hand,
@@ -7555,7 +7555,7 @@ namespace rock
             publishLooseWeaponPrimaryAttachHandPose(_isLeft, sel.refr, _grabFrame.authoredWeaponPose);
             if (!authoredPoseReady) {
                 ROCK_LOG_WARN(Hand, "{} authored weapon pose rejected before constraint commit", handName());
-            } else if (grab_target::isRagdoll(sel.targetKind) &&
+            } else if (grab_target::requiresNativeBodyOwnership(sel.targetKind) &&
                 (!surface.surfaceHit.valid || !surface.surfaceHit.sourceShape ||
                     surface.surfaceHit.sourceNode != _grabFrame.heldNode)) {
                 // Pocket refinement can choose another surface after primary
@@ -7697,9 +7697,9 @@ namespace rock
                 return false;
             }
 
-            _ragdollGrabOwner.reset(grab_target::isRagdoll(sel.targetKind) ?
+            _ragdollGrabOwner.reset(grab_target::requiresNativeBodyOwnership(sel.targetKind) ?
                 havok_runtime::getCollisionObjectFromBody(world, _savedObjectState.bodyId) : nullptr);
-            _ragdollGrabSurface.reset(grab_target::isRagdoll(sel.targetKind) ? input.surface->surfaceHit.sourceShape : nullptr);
+            _ragdollGrabSurface.reset(grab_target::requiresNativeBodyOwnership(sel.targetKind) ? input.surface->surfaceHit.sourceShape : nullptr);
             _ragdollGrabTriangle = input.surface->surfaceHit.sourceTriangleIndex;
             _heldObjectIsLooseWeapon = looseWeaponGrab;
             if (_heldObjectIsLooseWeapon) {
@@ -8270,7 +8270,7 @@ namespace rock
         const bool meshContactOnly = g_rockConfig.rockGrabMeshContactOnly;
         extractGrabMeshEvidence(world, objectBodyId, rootNode, collidableNode, meshSourceNode, handPocketOnlyGrab, !authoredBodyOwnerVerified, meshExtraction);
         meshSourceNode = meshExtraction.meshSourceNode;
-        if (grab_target::isRagdoll(sel.targetKind)) {
+        if (grab_target::requiresNativeBodyOwnership(sel.targetKind)) {
             const auto selectedComponent = ragdoll::readComponent(world, sel.bodyId.value);
             if (!selectedComponent.valid) {
                 ROCK_LOG_WARN(Hand, "{} ragdoll surface rejected: selected body={} topology={}", handName(), sel.bodyId.value, selectedComponent.reason);
@@ -8303,7 +8303,7 @@ namespace rock
                 });
             };
             mapSurfaceOwners();
-            if (grabSurfaceTriangles.empty() && sel.targetKind == grab_target::Kind::DetachedGore) {
+            if (grabSurfaceTriangles.empty() && sel.targetKind == grab_target::Kind::DetachedBody) {
                 // The actor's 3D is not necessarily the detached part's render root.
                 // Choose the nearest bounded ancestor with surfaces owned by this
                 // exact native component. Never accept the actor's unrelated mesh.
@@ -8414,7 +8414,7 @@ namespace rock
         const bool visualMeshPivotAvailable = hasMeshSurfaceContact;
         const RE::NiPoint3 canonicalPivotNormalWorld = grabSurfaceHit.valid ? grabSurfaceHit.normal : RE::NiPoint3{};
 
-        if (grab_target::isRagdoll(sel.targetKind)) {
+        if (grab_target::requiresNativeBodyOwnership(sel.targetKind)) {
             auto* owner = preparedBodySet.findRecord(primaryChoice.bodyId)->owningNode;
             std::erase_if(grabSurfaceTriangles, [owner](const auto& triangle) {
                 if (!triangle.hasSkinInfluences) return triangle.sourceNode != owner;
@@ -8446,7 +8446,7 @@ namespace rock
         collidableNode = resolvedBodyCapture.collidableNode;
         objectWorldTransform = resolvedBodyCapture.objectWorldTransform;
         grabLocalMeshTriangles = std::move(resolvedBodyCapture.localMeshTriangles);
-        if (grab_target::isRagdoll(sel.targetKind)) {
+        if (grab_target::requiresNativeBodyOwnership(sel.targetKind)) {
             // Skin weights may resolve to a different bone than the cast hit.
             // Later frame/constraint capture reads this setup, so it must use
             // the resolved owner's frame just like the local mesh cache above.
@@ -8830,7 +8830,7 @@ namespace rock
 
     bool Hand::refreshRagdollBodyScope(RE::hknpWorld* world, const GrabReleaseContext& releaseContext)
     {
-        if (!grab_target::isRagdoll(_savedObjectState.targetKind)) return true;
+        if (!grab_target::requiresNativeBodyOwnership(_savedObjectState.targetKind)) return true;
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::RagdollBodyRefresh);
         const auto component = ragdoll::readComponent(world, _savedObjectState.bodyId.value);
         const auto* liveOwner = component.valid ? havok_runtime::getCollisionObjectFromBody(world, _savedObjectState.bodyId) : nullptr;
@@ -8989,7 +8989,7 @@ namespace rock
         // Detached pieces can retain the same actor ref without sharing a
         // rigid root. Only two grips on the same ragdoll body may share a pivot.
         const bool sameAssembly = sameObject && (sameBody ||
-            (!grab_target::isRagdoll(_savedObjectState.targetKind) && !grab_target::isRagdoll(peer->_savedObjectState.targetKind)));
+            (!grab_target::requiresNativeBodyOwnership(_savedObjectState.targetKind) && !grab_target::requiresNativeBodyOwnership(peer->_savedObjectState.targetKind)));
         const bool shared = sameAssembly && held_object_drive_policy::canShareTwoHandPivot(
             _heldDriveDecision.mode, peer->_heldDriveDecision.mode, sameBody,
             isHoldingLooseWeapon() && peer->isHoldingLooseWeapon());
@@ -10373,7 +10373,7 @@ namespace rock
         const auto objectHistory = _objectReleaseHistory.peaks(release_velocity::sampleTimeSeconds());
         const auto handHistory = _controllerReleaseHistory.peaks(releaseTime);
         const bool captureReleaseVelocity =
-            !grab_target::isRagdoll(_savedObjectState.targetKind) &&
+            !grab_target::requiresNativeBodyOwnership(_savedObjectState.targetKind) &&
             (releaseContext.disposition == GrabReleaseDisposition::PhysicalDrop ||
                 releaseContext.disposition == GrabReleaseDisposition::PendingInventoryTransfer ||
                 releaseContext.disposition == GrabReleaseDisposition::PendingConsumeTransfer) &&
@@ -10536,7 +10536,7 @@ namespace rock
                 _heldBodyIds,
                 _savedObjectState.targetKind,
                 heldBodyFlagLeaseOwner(this),
-                grab_target::isRagdoll(_savedObjectState.targetKind) || releaseContext.finalObjectRelease);
+                grab_target::requiresNativeBodyOwnership(_savedObjectState.targetKind) || releaseContext.finalObjectRelease);
             if (heldFlagReleases.failedLeaseCount > 0) {
                 ROCK_LOG_WARN(Hand,
                     "{} hand RELEASE held body flag release incomplete: primaryBody={} bodies={} collision={} authority={} failed={} finalObjectRelease={}",

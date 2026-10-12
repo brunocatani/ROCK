@@ -567,7 +567,7 @@ namespace rock
         if (_equippedDrop || !_created || !_body.isValid() || !_authorityConstraint.isValid() ||
             _createdWorld != frame.hknpWorld || _createdBhkWorld != frame.bhkWorld ||
             weapon != _frameWeaponNode || generation == 0 || generation != _createdGenerationKey ||
-            _bladePenetration.active() || _rebuildRequestedAtomic.load(std::memory_order_acquire)) return false;
+            native_interaction_service::weaponControlled() || _rebuildRequestedAtomic.load(std::memory_order_acquire)) return false;
         RE::NiTransform live{};
         if (!havok_runtime::tryResolveLiveBodyWorldTransform(frame.hknpWorld, _body.getBodyId(), live) ||
             !dynamic_weapon_collision_policy::isFiniteTransform(live)) return false;
@@ -804,8 +804,8 @@ namespace rock
         }
         updateSurfaceSupport(frame, primaryGripWeaponLocal, handsFree);
         if (!_authorityConstraint.isValid() || _rebuildRequestedAtomic.load(std::memory_order_acquire)) return result;
-        if (!_bladePenetration.update(frame, weaponCollision, weaponNode, _body,
-                _createdCenterWeaponLocal, weaponGenerationKey, _physicsCallbackGate,
+        if (!native_interaction_service::updateWeapon(frame, weaponCollision, weaponNode, _body,
+                _createdCenterWeaponLocal, weaponGenerationKey,
                 _frameRequestedWeaponWorld, _surfaceSupport.ownsPose(), primaryGripWeaponLocal)) {
             retireAll(frame.bhkWorld);
             return result;
@@ -939,7 +939,7 @@ namespace rock
             snapshot.liveProxyBodyWorld,
             _createdCenterWeaponLocal,
             snapshot.weaponScale);
-        const RE::NiTransform resolvedWeaponWorld = _bladePenetration.active() ? _bladePenetration.presentation() :
+        const RE::NiTransform resolvedWeaponWorld = native_interaction_service::weaponControlled() ? native_interaction_service::weaponPresentation() :
             dynamic_weapon_collision_policy::resolveCurrentIntentFromSample(
             snapshot.requestedProxyBodyWorld,
             snapshot.liveProxyBodyWorld,
@@ -1455,7 +1455,7 @@ namespace rock
         }
         _handlingScale = timeScale;
 
-        if (!_bladePenetration.prePhysics(world, timing)) {
+        if (!native_interaction_service::preCollideWeapon(world, timing)) {
             _droveThisSubstep = false;
             clearPublishedPhysicsSnapshot();
             return;
@@ -1491,7 +1491,7 @@ namespace rock
             _authorityConstraint,
             motorTuning,
             _authorityConstraint.motorBodyProperties,
-            _contactRetentionSeconds > 0.0f || _bladePenetration.active(),
+            _contactRetentionSeconds > 0.0f || native_interaction_service::weaponControlled(),
             timeScale)) {
             if (_authorityConstraint.linearMotor)
                 _authorityConstraint.linearMotor->minForce = _authorityConstraint.linearMotor->maxForce = 0.0f;
@@ -1530,7 +1530,7 @@ namespace rock
                     liveContactBodyWorld,
                     _physicsRequestedTarget) :
                 0.0f;
-            const auto gripRecovery = hasLiveContactBody && !_bladePenetration.active() ?
+            const auto gripRecovery = hasLiveContactBody && !native_interaction_service::weaponControlled() ?
                 dynamic_weapon_collision_policy::evaluateGripRecovery(
                     liveContactBodyWorld,
                     _physicsRequestedAuthorityTarget,
@@ -1569,7 +1569,7 @@ namespace rock
                             std::memory_order_relaxed));
                     return;
                 }
-            } else if (!_bladePenetration.active()) {
+            } else if (!native_interaction_service::weaponControlled()) {
                 const auto dwell = dynamic_weapon_collision_policy::advanceDivergenceDwell(
                     _divergenceDwellSeconds,
                     requestedGapGameUnits,
@@ -1944,7 +1944,7 @@ namespace rock
             recordSurfaceSupportContact(world, otherBodyId, *contactPointGame);
         }
         if (contactPointGame) {
-            _bladePenetration.recordContact(world, proxyBodyId, otherBodyId, otherLayer, *contactPointGame);
+            native_interaction_service::weaponContact(world, proxyBodyId, otherBodyId, otherLayer, *contactPointGame);
         }
         _contactWorldAtomic.store(reinterpret_cast<std::uintptr_t>(world), std::memory_order_relaxed);
         _contactProxyBodyIdAtomic.store(proxyBodyId, std::memory_order_relaxed);
@@ -1963,7 +1963,7 @@ namespace rock
             bhkWorld &&
             bhkWorld == _createdBhkWorld;
         if (liveOwnerMatches) {
-            _bladePenetration.retire(_createdWorld, bhkWorld);
+            native_interaction_service::retireWeapon(_createdWorld, bhkWorld);
             destroyGrabConstraint(_createdWorld, _authorityConstraint);
             if (_body.isValid()) {
                 _body.retireDeferred(bhkWorld);
@@ -1972,7 +1972,7 @@ namespace rock
                 _authorityProxy.retireDeferred(bhkWorld);
             }
         } else {
-            _bladePenetration.retire(nullptr, nullptr);
+            native_interaction_service::retireWeapon(nullptr, nullptr);
             destroyGrabConstraint(nullptr, _authorityConstraint);
             if (_created && (_body.isValid() || _authorityProxy.isValid())) {
                 ROCK_LOG_WARN(
@@ -2086,7 +2086,7 @@ namespace rock
         const auto bodyId = _bodyIdAtomic.exchange(kInvalidBodyId, std::memory_order_acq_rel);
         const auto authorityBodyId = _authorityProxy.isValid() ? _authorityProxy.getBodyId().value : kInvalidBodyId;
         const auto constraintId = _authorityConstraint.constraintId;
-        _bladePenetration.retire(nullptr, nullptr);
+        native_interaction_service::retireWeapon(nullptr, nullptr);
         destroyGrabConstraint(nullptr, _authorityConstraint);
         _body.reset();
         _authorityProxy.reset();

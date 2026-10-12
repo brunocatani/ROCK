@@ -2512,7 +2512,7 @@ namespace rock
                     !_touchGrabRuntime.isHandActive(isLeft) &&
                     !_forceGrab.pendingCommits[handIndex].active &&
                     !hand.hasActivePullCatchIntent() &&
-                    !hand.hasPendingActorEquipmentDropHandoff() &&
+                    !hand.hasPendingExtractedItemHandoff() &&
                     !_twoHandedGrip.isHandPartGripping(isLeft) &&
                     !(_twoHandedGrip.isFiringGripOccupied() &&
                         _twoHandedGrip.isFiringHandLeft() == isLeft);
@@ -2602,7 +2602,7 @@ namespace rock
                     !_touchGrabRuntime.isHandActive(isLeft) &&
                     !_forceGrab.pendingCommits[handIndex].active &&
                     !hand.hasActivePullCatchIntent() &&
-                    !hand.hasPendingActorEquipmentDropHandoff();
+                    !hand.hasPendingExtractedItemHandoff();
                 policyHand.disabled = handInput.disabled;
                 policyHand.eligible = handlingEnabled &&
                     !handInput.disabled && handEmpty && weaponNode != nullptr &&

@@ -317,7 +317,7 @@ int main()
         }
         ok &= isRockGeneratedColliderLayer(ROCK_LAYER_EQUIPPED_DROP_PROXY);
         ok &= isRockOwnedMatrixLayer(ROCK_LAYER_EQUIPPED_DROP_PROXY);
-        for (const bool npc : { false, true }) {
+        for (const auto npc : { std::uint64_t{0}, kOptionalObstacleLayers }) {
             std::array<std::uint64_t, FO4_LAYER_MATRIX_ADDRESSABLE_COUNT> matrix{};
             applyRockGeneratedLayerPolicies(matrix.data(), true, false, false, npc, true);
             const auto first = matrix;

@@ -316,7 +316,7 @@ namespace rock
     class Hand
     {
     public:
-        enum class ActorEquipmentDropHandoffStatus : std::uint8_t
+        enum class ExtractedItemHandoffStatus : std::uint8_t
         {
             None,
             Pending,
@@ -578,16 +578,16 @@ namespace rock
             const RE::NiPoint3& palmNormal,
             float radiusGameUnits,
             float maxBodyDistanceGameUnits);
-        bool beginActorEquipmentDropHandoff(
-            const actor_equipment_grab::DropResult& dropResult,
+        bool beginExtractedItemHandoff(
+            const api::native_interaction::ExtractedReference& dropResult,
             const RE::NiPoint3& sourceHitPointWorld);
-        bool hasPendingActorEquipmentDropHandoff() const;
-        ActorEquipmentDropHandoffStatus advanceActorEquipmentDropHandoff(
+        bool hasPendingExtractedItemHandoff() const;
+        ExtractedItemHandoffStatus advanceExtractedItemHandoff(
             RE::bhkWorld* bhkWorld,
             RE::hknpWorld* hknpWorld,
             float deltaSeconds,
             float maxHandoffSeconds);
-        bool replaceFarActorEquipmentSelectionWithDroppedObject(RE::bhkWorld* bhkWorld,
+        bool replaceExtractedSelectionWithLooseObject(RE::bhkWorld* bhkWorld,
             RE::hknpWorld* hknpWorld,
             RE::TESObjectREFR* droppedRef,
             const RE::NiPoint3& sourceHitPointWorld);
@@ -599,7 +599,7 @@ namespace rock
             float maxDistanceGame,
             bool allowProjectileLayerForExactTarget,
             bool equippedWeaponTransfer = false);
-        void clearActorEquipmentDropHandoff(const char* reason = "cleared");
+        void clearExtractedItemHandoff(const char* reason = "cleared");
         void clearPullCatchIntent(const char* reason = "cleared");
         void clearSelectionState(bool rememberDeselect);
 
@@ -961,7 +961,7 @@ namespace rock
          * authority until the dropped ref scans as a normal loose object, then
          * the existing far-pull code takes over unchanged.
          */
-        struct ActorEquipmentDropHandoff
+        struct ExtractedItemHandoff
         {
             bool active = false;
             RE::ObjectRefHandle handle{};
@@ -1389,7 +1389,7 @@ namespace rock
         float _pullPresentationElongationRatio = 0.0f;
         bool _pullPresentationValid = false;
         PullCatchIntent _pullCatchIntent{};
-        ActorEquipmentDropHandoff _actorEquipmentDropHandoff{};
+        ExtractedItemHandoff _extractedItemHandoff{};
 
         static constexpr int MAX_HELD_BODIES = 64;
         std::atomic<std::uint32_t> _heldBodyIdsSnapshot[MAX_HELD_BODIES]{};
@@ -1420,7 +1420,7 @@ namespace rock
 
             auto* referenceRoot = selection.refr ? selection.refr->Get3D() : nullptr;
             _selectionHighlightRefreshFrames = 0;
-            if (selection.targetKind == grab_target::Kind::ActorEquipment) {
+            if (selection.targetKind == grab_target::Kind::ExtractableItem) {
                 if (playSelectionHighlightCandidate(selection.refr, selection.visualNode, selection_highlight_policy::VatsHighlightSource::VisualNode)) {
                     return true;
                 }

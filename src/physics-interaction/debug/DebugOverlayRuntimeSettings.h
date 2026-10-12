@@ -4,7 +4,7 @@
 #include <cstdint>
 
 #include "physics-interaction/debug/DebugOverlayPolicy.h"
-#include "physics-interaction/actor/NpcCollisionSource.h"
+#include <ROCK/NativeInteraction.h>
 
 namespace rock::debug_overlay_runtime
 {
@@ -19,7 +19,7 @@ namespace rock::debug_overlay_runtime
     inline constexpr std::size_t kDefaultMaxShapeCacheBytes = 64u * 1024u * 1024u;
     inline constexpr std::size_t kMinShapeCacheBytes = 1u * 1024u * 1024u;
     inline constexpr std::size_t kMaxShapeCacheBytes = 512u * 1024u * 1024u;
-    inline constexpr std::uint32_t kMaxBodyInstances = 171 + npc_collision::kDebugBodyCapacity;
+    inline constexpr std::uint32_t kMaxBodyInstances = 171 + api::native_interaction::kMaxVisualBodies;
     inline constexpr std::uint32_t kDefaultMaxBodyInstances = kMaxBodyInstances;
     inline constexpr std::uint32_t kDefaultMaxTextVertices = 131072;
     inline constexpr std::uint32_t kMaxTextVertices = 131072;

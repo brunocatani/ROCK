@@ -116,7 +116,7 @@ namespace rock
             .openInteractionState = openInteractionState,
             .holding = hand.isHolding(),
             .activePullCatch = hand.hasActivePullCatchIntent(),
-            .actorEquipmentHandoff = hand.hasPendingActorEquipmentDropHandoff(),
+            .extractionHandoff = hand.hasPendingExtractedItemHandoff(),
             .pendingForceGrab = includePendingCommit && _forceGrab.pendingCommits[isLeft ? 1u : 0u].active,
             .equippedWeaponOccupiesHand = equippedWeaponOccupiesHand,
             .touchGrabActive = _touchGrabRuntime.isHandActive(isLeft),
@@ -696,29 +696,14 @@ namespace rock
                     continue;
                 }
 
-                std::uint32_t impactActorFormID = 0;
-                if (impactOtherRef && player &&
-                    impactOtherRef->formType == RE::ENUM_FORM_ID::kACHR &&
-                    std::isfinite(fuse.runtime.directImpactDamage) &&
-                    fuse.runtime.directImpactDamage > 0.0f) {
-                    auto* actor = static_cast<RE::Actor*>(impactOtherRef);
-                    if (!actor->IsDead(false)) {
-                        actor->HandleHealthDamage(player, fuse.runtime.directImpactDamage);
-                        impactActorFormID = actor->GetFormID();
-                        ROCK_LOG_INFO(Hand,
-                            "Loose impact throwable applied direct authored weapon damage: ref={:08X} target={:08X} damage={:.1f}",
-                            fuse.refFormID,
-                            impactActorFormID,
-                            fuse.runtime.directImpactDamage);
-                    }
-                }
-
+                const auto impactTargetFormID=native_interaction_service::impactEffect(
+                    reinterpret_cast<std::uintptr_t>(ref),reinterpret_cast<std::uintptr_t>(impactOtherRef),fuse.runtime.directImpactDamage);
                 detonateLooseGrenade(
                     fuse,
                     slotIndex,
                     ref,
                     "impact",
-                    impactActorFormID);
+                    impactTargetFormID);
                 continue;
             }
 
@@ -744,23 +729,23 @@ namespace rock
                     fuse.remainingSeconds = 0.0f;
                 }
 
-                const auto proximity = loose_grenade_runtime::scanHostileActorsWithinProximity(
-                    ref,
+                const auto proximity = native_interaction_service::proximityTarget(
+                    reinterpret_cast<std::uintptr_t>(ref),
                     fuse.runtime.proximityRadiusGameUnits);
                 if (proximity.truncated) {
                     ROCK_LOG_SAMPLE_WARN(Hand,
                         g_rockConfig.rockLogSampleMilliseconds,
                         "Placed mine proximity scan reached its actor-handle bound: ref={:08X} scanned={}",
                         fuse.refFormID,
-                        proximity.actorHandlesScanned);
+                        proximity.scanned);
                 }
-                if (proximity.targetFound) {
+                if (proximity.targetForm) {
                     detonateLooseGrenade(
                         fuse,
                         slotIndex,
                         ref,
                         "proximity",
-                        proximity.targetActorFormID);
+                        proximity.targetForm);
                     continue;
                 }
 
