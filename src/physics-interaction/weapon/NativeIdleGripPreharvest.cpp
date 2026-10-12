@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
+#include "physics-interaction/weapon/NativeSubgraphMetadata.h"
 #include "physics-interaction/weapon/PipeFiringGripPolicy.h"
 
 #include "RockConfig.h"
@@ -45,7 +46,7 @@ namespace rock::native_idle_grip_preharvest
         constexpr std::uintptr_t kSimpleAnimationGraphManagerHolderDtor = 0x0811F50;
         constexpr std::uintptr_t kCreateBackgroundSimpleManager = 0x0811FE0;
         constexpr std::uintptr_t kIsAnimationLoadingComplete = 0x08122C0;
-        constexpr std::uintptr_t kRequestAnimationSubGraph = 0x10162B0;
+        constexpr std::uintptr_t kRequestAnimationSubGraph = 0x1016340;
         constexpr std::uintptr_t kIsAnimationSubGraphLoaded = 0x07F4320;
         constexpr std::uintptr_t kReleaseAnimationSubGraph = 0x07F43C0;
         constexpr std::uintptr_t kAddItemToTargetKeywords = 0x0EDA2F0;
@@ -185,8 +186,8 @@ namespace rock::native_idle_grip_preharvest
         using CreateBackgroundSimpleManagerFn = bool (*)(void*, RE::BSScrapArray<RE::BSStaticStringT<260>>*, std::int32_t);
         using IsAnimationLoadingCompleteFn = bool (*)(void*);
         using AddItemToTargetKeywordsFn = void (*)(RE::BGSObjectInstance*, RE::BSScrapArray<RE::IKeywordFormBase*>*);
-        using RequestAnimationSubGraphFn = void (*)(RE::Actor*, RE::BSAnimationGraphManager*, std::int32_t*, RE::BSScrapArray<RE::IKeywordFormBase*>*, std::int32_t*,
-            RE::BSTSmallArray<RE::SubgraphHandle, 2>*, RE::BSTSmallArray<RE::SubgraphIdentifier, 2>*);
+        using RequestAnimationSubGraphFn = bool (*)(RE::Actor*, RE::TESRace*, RE::BSAnimationGraphManager*, std::int32_t*, RE::BSScrapArray<RE::IKeywordFormBase*>*, std::int32_t*,
+            RE::BSTSmallArray<RE::SubgraphHandle, 2>*, RE::BSTSmallArray<RE::SubgraphIdentifier, 2>*, native_subgraph_metadata::List*);
         using IsAnimationSubGraphLoadedFn = bool (*)(RE::BSTSmartPointer<RE::BSAnimationGraphManager>*, RE::BSTSmallArray<RE::SubgraphHandle, 2>*, std::int32_t*);
         using ReleaseAnimationSubGraphFn = void (*)(RE::BSTSmartPointer<RE::BSAnimationGraphManager>*, RE::BSTSmallArray<RE::SubgraphHandle, 2>*);
         using GetClipGeneratorBindingFn = void* (*)(void*, RE::BShkbAnimationGraph*, std::uint64_t, char*);
@@ -1789,7 +1790,18 @@ namespace rock::native_idle_grip_preharvest
 
                 std::int32_t role = kWeaponAnimationRole;
                 std::int32_t priority = kIoTaskPriority;
-                state.native.requestAnimationSubGraph(player, manager, &role, &targetKeywords, &priority, &job.subgraphHandles, &job.subgraphIdentifiers);
+                // A private sampler must not register this candidate's idle
+                // roots on the real player's primary animation process. Native
+                // 10162B0 always takes that side effect; 1016340 accepts owned
+                // metadata instead (also used by ExtraAnimGraphPreload).
+                auto* visualsRace = player->GetVisualsRace();
+                if (!visualsRace) {
+                    failJob(state, "nativeVisualsRaceUnavailable");
+                    return true;
+                }
+                native_subgraph_metadata::List privateMetadata;
+                state.native.requestAnimationSubGraph(player, visualsRace, manager, &role, &targetKeywords, &priority,
+                    &job.subgraphHandles, &job.subgraphIdentifiers, &privateMetadata);
                 if (job.subgraphHandles.empty() || job.subgraphIdentifiers.empty()) {
                     failJob(state, "exactWeaponSubgraphRequestReturnedEmpty");
                     return true;
