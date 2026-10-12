@@ -4,8 +4,9 @@ namespace RE { class PlayerCharacter; class NiNode; }
 
 namespace rock::native_secondary_presentation
 {
-    // Game-frame owner only. The left native equipped model uses its own
-    // authored firing seat; the ordinary primary weapon keeps its existing owner.
+    // Game-frame owner only. The native index-1 model is placed in the hand
+    // that holds it, using its own authored firing seat; the primary weapon
+    // keeps its existing owner.
     void beginFrame() noexcept;
     void update() noexcept;
     void afterWeaponPosition() noexcept;

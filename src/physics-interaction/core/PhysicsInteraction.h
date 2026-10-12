@@ -825,6 +825,8 @@ namespace rock
             bool handlingModeReconcilePending{ false };
             bool menuReconcilePending = false;
             std::uint64_t defaultEquipObservedOwnershipKey{ 0 };
+            // Last consumed native_hand_equipment::lastDirectedPrimaryEquip().
+            std::uint64_t directedPrimarySequence{ 0 };
             EquippedWeaponTransitionCoordinator::PendingGrip continuityGrip{};
             bool gripResumePending{ false };
             std::array<bool, 2> resumeAwaitingHold{};
@@ -1045,10 +1047,15 @@ namespace rock
         std::uint32_t _placementCandidate{}, _placementRequestedForm{}, _placementPendingForm{}, _placementLastRequestForm{};
         bool _placementClickReserved{};
         float _placementScriptWait{};
-        // Frame-thread sample: a drawn offhand weapon (native equipment index
-        // 1, always the physical left hand) occupies that hand for every
-        // grab, force-grab, touch-grab, transfer and grenade gate this frame.
-        bool _offhandWeaponOccupiesLeft{};
+        // Frame-thread sample: a drawn second weapon (native equipment index
+        // 1) occupies the physical hand holding it for every grab,
+        // force-grab, touch-grab, transfer and grenade gate this frame.
+        bool _offhandWeaponOccupiesHand{};
+        bool _offhandWeaponHandLeft{ true };
+        [[nodiscard]] bool offhandWeaponOccupies(bool isLeft) const noexcept
+        {
+            return _offhandWeaponOccupiesHand && isLeft == _offhandWeaponHandLeft;
+        }
         TwoHandedGrip _twoHandedGrip;
         DynamicHandCollisionRuntime _dynamicHandCollision;
         DynamicWorldCarCollisionRuntime _dynamicWorldCarCollision;

@@ -495,11 +495,11 @@ namespace rock
         };
         refreshEquippedWeaponHandlingSettings();
         // Sampled before any early return so input-thread grenade gating never
-        // reads a stale pairing. Index 1 is the physical left hand: native
-        // left-handed mode is not a supported ROCK configuration.
-        _offhandWeaponOccupiesLeft = native_hand_equipment::hasSecondaryGun() &&
+        // reads a stale pairing. Index 1 is in whichever hand holds it.
+        _offhandWeaponOccupiesHand = native_hand_equipment::hasSecondaryGun() &&
             fo4vr_actor_state_policy::equippedWeaponOccupiesHand(true, f4vr::getNativeWeaponState(f4vr::getPlayer()));
-        input_remap_runtime::setBothHandsHoldWeapons(_offhandWeaponOccupiesLeft && currentEquippedWeaponOccupiesHand());
+        _offhandWeaponHandLeft = !_offhandWeaponOccupiesHand || native_hand_equipment::secondaryHandIsLeft();
+        input_remap_runtime::setBothHandsHoldWeapons(_offhandWeaponOccupiesHand && currentEquippedWeaponOccupiesHand());
         if (!runtime.visualAuthorityAvailable) {
             retireDynamicWeaponForInterruptedFrame();
             restoreHeldMassMovementSlowdown("frik-unavailable");

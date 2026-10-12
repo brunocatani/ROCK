@@ -45,6 +45,9 @@ namespace rock::native_secondary_presentation
             RE::NiTransform controllerWorld{};
             float modelScale = 1.0f;
             bool ownsLocal = false, claimed = false, ready = false;
+            // Physical hand of the index-1 weapon this frame, and the hand
+            // whose FRIK publications are currently claimed.
+            bool left = true, claimedLeft = true;
             bool geometryChecked = false, geometryReady = false, bodyWasVisible = false;
             bool traceFrame = false;
             std::uint64_t frame = 0;
@@ -215,12 +218,12 @@ namespace rock::native_secondary_presentation
                 traceNode(phase, "attachment-parent", parent->parent);
                 traceNode(phase, "first-person-root", f4vr::getFirstPersonSkeleton());
                 traceNode(phase, "body-root", f4vr::getWorldRootNode());
-                traceNode(phase, "wand-live", nodes ? nodes->SecondaryWandNode : nullptr);
+                traceNode(phase, "wand-live", nodes ? (s_state.left ? nodes->SecondaryWandNode : nodes->primaryWandNode) : nullptr);
                 const RE::NiAVObject* fireNode = nullptr;
                 if (native_memory::tryReadField(reinterpret_cast<const void*>(view.data), 0x30, fireNode))
                     traceNode(phase, "native-fire-node", fireNode);
                 RE::NiTransform renderedHand{};
-                if (frik_visual_authority::tryGetPresentedHandWorldTransform(true, renderedHand))
+                if (frik_visual_authority::tryGetPresentedHandWorldTransform(s_state.left, renderedHand))
                     traceTransform(phase, "body-hand", renderedHand);
                 const auto& local = view.root->local;
                 const auto& attach = parent->local;
@@ -244,11 +247,16 @@ namespace rock::native_secondary_presentation
             }
         }
 
+        frik_visual_authority::Hand frikHand(bool left) noexcept
+        {
+            return left ? frik_visual_authority::Hand::Left : frik_visual_authority::Hand::Right;
+        }
+
         void clearClaims() noexcept
         {
             if (!s_state.claimed) return;
-            (void)frik_visual_authority::clearHandWorld(kTag, frik_visual_authority::Hand::Left);
-            (void)frik_visual_authority::clearHandPose(kTag, frik_visual_authority::Hand::Left);
+            (void)frik_visual_authority::clearHandWorld(kTag, frikHand(s_state.claimedLeft));
+            (void)frik_visual_authority::clearHandPose(kTag, frikHand(s_state.claimedLeft));
             (void)frik_visual_authority::blockOffHandWeaponGripping(kTag, false);
             s_state.claimed = false;
         }
@@ -412,52 +420,65 @@ namespace rock::native_secondary_presentation
             // idle sampler supplies animation data only; it never fires or owns
             // a loose weapon, and retains the exact native item instance itself.
             native_idle_grip_preharvest::observeInventoryDisplay(view.weapon, attachment, view.instance);
+            // The equip slot follows the weapon: index 1 is presented in the
+            // hand that holds it. A hand change moves the FRIK claims.
+            const bool left = native_hand_equipment::secondaryHandIsLeft();
+            if (s_state.claimed && s_state.claimedLeft != left) clearClaims();
+            s_state.left = left;
             const bool powerArmor = f4vr::isInPowerArmor();
             const auto authored = authored_weapon_grip_library::find(view.weapon, attachment, powerArmor);
-            const auto* leftOverride = holding_grips::find(view.weapon, attachment, true, view.data, powerArmor);
+            const auto* handOverride = holding_grips::find(view.weapon, attachment, left, view.data, powerArmor);
             RE::NiTransform seat{};
             authored_weapon_grip_library::FiringFingerPose fingers{};
-            if (leftOverride) {
-                seat = leftOverride->wrist;
-                fingers = leftOverride->fingers;
+            if (handOverride) {
+                seat = handOverride->wrist;
+                fingers = handOverride->fingers;
             } else {
                 if (!authored.found || !authored_weapon_grip_library::isNativeIdleAuthority(authored.source) ||
                     !authored.rightFiringFingerPose.complete()) {
                     waitFor(view, "own-authored-firing-grip");
                     return;
                 }
-                seat = holding_grip_math::toNative(holding_grip_math::mirroredHandSeat(
-                    holding_grip_math::fromNative(authored.rightHandWeaponLocal)));
-                if (!hand_finger_mirror_math::mirrorFingerLocalsAcrossHands<RE::NiTransform>(
-                        authored.rightFiringFingerPose.localTransforms, fingers.localTransforms)) {
-                    waitFor(view, "finger-pose");
-                    return;
+                if (left) {
+                    seat = holding_grip_math::toNative(holding_grip_math::mirroredHandSeat(
+                        holding_grip_math::fromNative(authored.rightHandWeaponLocal)));
+                    if (!hand_finger_mirror_math::mirrorFingerLocalsAcrossHands<RE::NiTransform>(
+                            authored.rightFiringFingerPose.localTransforms, fingers.localTransforms)) {
+                        waitFor(view, "finger-pose");
+                        return;
+                    }
+                    fingers.enabledMask = authored.rightFiringFingerPose.enabledMask;
+                } else {
+                    // The right hand uses the native idle seat as captured.
+                    seat = authored.rightHandWeaponLocal;
+                    fingers = authored.rightFiringFingerPose;
                 }
-                fingers.enabledMask = authored.rightFiringFingerPose.enabledMask;
             }
-            seat = weapon_grip_calibration::shiftedHand(seat, g_rockConfig.rockLeftFiringGripOffsetGameUnits, true);
+            if (left) seat = weapon_grip_calibration::shiftedHand(seat, g_rockConfig.rockLeftFiringGripOffsetGameUnits, true);
             RE::NiTransform physicalHand{};
             const auto* nodes = f4vr::getPlayerNodes();
-            if (!usable(seat) || !nodes || !nodes->SecondaryWandNode ||
-                !frik_hand_world_authority::hasCalibratedRawHandFrame(true) ||
-                !frik_hand_world_authority::tryGetRawHandWorld(true, physicalHand) || !usable(physicalHand)) {
-                waitFor(view, "tracked-left-hand");
+            auto* wand = nodes ? (left ? nodes->SecondaryWandNode : nodes->primaryWandNode) : nullptr;
+            if (!usable(seat) || !wand ||
+                !frik_hand_world_authority::hasCalibratedRawHandFrame(left) ||
+                !frik_hand_world_authority::tryGetRawHandWorld(left, physicalHand) || !usable(physicalHand)) {
+                waitFor(view, "tracked-hand");
                 return;
             }
             RE::NiTransform target{}, hand{};
-            const auto palm = authoredHandspaceToRawHandspaceForHand(computeGrabLegacyPalmPivotAHandspacePosition(true), true);
-            if (!native_secondary_pose::solve(nodes->SecondaryWandNode->world, physicalHand, seat,
+            const auto palm = authoredHandspaceToRawHandspaceForHand(computeGrabLegacyPalmPivotAHandspacePosition(left), left);
+            if (!native_secondary_pose::solve(wand->world, physicalHand, seat,
                     palm, s_state.modelScale, target, hand)) {
                 waitFor(view, "invalid-placement");
                 return;
             }
-            native_secondary_actions::applyRecoil(target,hand,nodes->SecondaryWandNode->world);
+            native_secondary_actions::applyRecoil(target,hand,wand->world);
             frik_visual_authority::FingerLocalTransformOverride fingerOverride{};
             fingerOverride.enabledMask = fingers.enabledMask;
             std::copy(fingers.localTransforms.begin(), fingers.localTransforms.end(), fingerOverride.localTransforms);
             // Mark before publication so a partial provider failure is unwound.
             s_state.claimed = true;
-            if (!frik_visual_authority::setAuthoredFingerPose(kTag, frik_visual_authority::Hand::Left, fingerOverride, kPriority)) {
+            s_state.claimedLeft = left;
+            if (!frik_visual_authority::setAuthoredFingerPose(kTag, frikHand(left), fingerOverride, kPriority)) {
                 waitFor(view, "authored-finger-provider");
                 return;
             }
@@ -465,12 +486,12 @@ namespace rock::native_secondary_presentation
                 waitFor(view, "offhand-grip-provider");
                 return;
             }
-            if (!frik_visual_authority::publishHandWorld(kTag, frik_visual_authority::Hand::Left, hand, kPriority)) {
+            if (!frik_visual_authority::publishHandWorld(kTag, frikHand(left), hand, kPriority)) {
                 waitFor(view, "hand-world-provider");
                 return;
             }
             s_state.targetWorld = target;
-            s_state.controllerWorld = nodes->SecondaryWandNode->world;
+            s_state.controllerWorld = wand->world;
             s_state.frame = frame.frameIndex;
             s_state.ready = true;
             s_state.traceFrame = s_state.samples == 0 && s_state.tracedFrames < 4;
@@ -491,9 +512,9 @@ namespace rock::native_secondary_presentation
             if (s_state.reason != "ready") {
                 s_state.reason = "ready";
                 ROCK_LOG_INFO(Weapon,
-                    "AKIMBO secondary presentation ready weapon={:08X} model={:#x} attachment={:#x} attachmentName='{}' instance={:#x} data={:#x} grip={} capture={} handInWeapon=({:.3f},{:.3f},{:.3f})",
-                    s_state.form, s_state.root, s_state.attachment, attachment->name.c_str() ? attachment->name.c_str() : "<unnamed>", s_state.instance, s_state.data,
-                    leftOverride ? "authored-left-override" : "own-native-idle-mirrored", authored.captureSequence,
+                    "AKIMBO secondary presentation ready weapon={:08X} hand={} model={:#x} attachment={:#x} attachmentName='{}' instance={:#x} data={:#x} grip={} capture={} handInWeapon=({:.3f},{:.3f},{:.3f})",
+                    s_state.form, left ? "left" : "right", s_state.root, s_state.attachment, attachment->name.c_str() ? attachment->name.c_str() : "<unnamed>", s_state.instance, s_state.data,
+                    handOverride ? "authored-hand-override" : left ? "own-native-idle-mirrored" : "own-native-idle", authored.captureSequence,
                     seat.translate.x, seat.translate.y, seat.translate.z);
             }
             if (++s_state.samples == 120) {

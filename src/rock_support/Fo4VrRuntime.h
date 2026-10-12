@@ -121,7 +121,8 @@ namespace rock::fo4vr
     [[nodiscard]] BSFlattenedBoneTree* getFlattenedBoneTree() noexcept;
     [[nodiscard]] RE::NiNode* getFirstPersonSkeleton() noexcept;
     [[nodiscard]] BSFlattenedBoneTree* getFirstPersonBoneTree() noexcept;
-    [[nodiscard]] RE::EquippedItem* getEquippedWeaponItem() noexcept;
+    // Native equipment index 0 (primary graph) or 1 (ROCK's second graph).
+    [[nodiscard]] RE::EquippedItem* getEquippedWeaponItem(std::uint32_t index = 0) noexcept;
     [[nodiscard]] RE::EquippedWeaponData* getEquippedWeaponData() noexcept;
     [[nodiscard]] RE::NiNode* getWeaponNode() noexcept;
     [[nodiscard]] RE::PlayerCamera* getPlayerCamera() noexcept;

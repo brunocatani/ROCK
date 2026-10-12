@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include "physics-interaction/input/BareFistGesturePolicy.h"
+#include "physics-interaction/input/WeaponTriggerRouting.h"
 
 namespace RE
 {
@@ -100,7 +101,11 @@ namespace rock::input_remap_runtime
     void setEquippedWeaponLeftHandFiringActive(bool active);
     // Independent equipped index one consumes the physical left trigger itself.
     // Raw capture and menu/Pip-Boy input retain their existing physical identity.
-    void setSecondaryEquippedTriggerOwned(bool owned) noexcept;
+    // The second equipped weapon (native index 1) owns the trigger and reload
+    // button of the physical hand that holds it.
+    void setSecondaryEquippedTrigger(bool owned, bool left) noexcept;
+    // Last routing published by the interaction frame (any thread).
+    [[nodiscard]] weapon_trigger_routing::Snapshot publishedWeaponTriggerRouting() noexcept;
     // Frame thread publication: a weapon is drawn in each hand, so grenade
     // use (native throw and ROCK quick-draw) has no free hand.
     void setBothHandsHoldWeapons(bool occupied) noexcept;

@@ -55,6 +55,11 @@ namespace rock::native_secondary_actions
         ModelInt s_modelInt{};
         Pulse s_pulse{};
         Pattern s_pattern{};
+        // Physical hand of the index-1 weapon. Frame writer (update), read by
+        // the native haptic queue hooks on the game's calling thread.
+        std::atomic<bool> s_handLeft{true};
+        std::atomic<bool> s_drawn{false}; // Same writer/readers: index 1 equipped and drawn.
+        const char* handName() noexcept { return s_handLeft.load(std::memory_order_relaxed) ? "left" : "right"; }
         SetLoaded s_setLoaded{};
         SelectIdle s_selectIdle{};
         bool s_installed{};
@@ -558,7 +563,7 @@ namespace rock::native_secondary_actions
             auto* muzzle=native<RE::NiAVObject*(*)(RE::Actor*,std::uint32_t)>(0xDE85F0)(actor,1);
             auto* primary=native<RE::NiAVObject*(*)(RE::Actor*,std::uint32_t)>(0xDE85F0)(actor,0);
             if (!muzzle || muzzle==primary) {
-                ROCK_LOG_SAMPLE_WARN(Weapon,1000,"AKIMBO left shot rejected: independent native muzzle unavailable");
+                ROCK_LOG_SAMPLE_WARN(Weapon,1000,"AKIMBO second weapon shot rejected: independent native muzzle unavailable");
                 return false;
             }
             // Native 104F661/104F70F read muzzle+80: stored ROW one.
@@ -596,12 +601,25 @@ namespace rock::native_secondary_actions
             }
             return s_modelInt(biped,slot,name,value);
         }
+        // 1BA9BF0/1BA9D20 only queue a pulse per native controller index
+        // (+0x50 records at 145BBCA08); another thread plays it later, so the
+        // physical hand must be chosen here, not at the OpenVR call. Player
+        // +0x8D0 holds the native offhand (left) index; native left-handed
+        // mode is forced off.
         std::uint32_t pulseHand(std::uint32_t hand)
         {
-            if (validContext() && t_context->shot) {
-                std::uint32_t secondary{};
-                if (native_memory::tryReadField(t_context->player,0x8D0,secondary) && secondary<2) return secondary;
-            }
+            auto* player=s_installed?f4vr::getPlayer():nullptr;
+            std::uint32_t left{};
+            if (!player || !native_memory::tryReadField(player,0x8D0,left) || left>1) return hand;
+            const std::uint32_t right=1-left;
+            const bool secondaryLeft=s_handLeft.load(std::memory_order_relaxed);
+            if (validContext() && t_context->shot) return secondaryLeft?left:right;
+            // The second weapon holds the right hand, so the primary fires
+            // from the left: its pulses, queued for the native primary
+            // (right) index, belong to the left hand. Input's OpenVR retarget
+            // stands down in this layout.
+            if (!secondaryLeft && hand==right && s_drawn.load(std::memory_order_relaxed) &&
+                input_remap_runtime::publishedWeaponTriggerRouting().leftFiring) return left;
             return hand;
         }
         void pulse(std::uint32_t hand,float duration,float strength)
@@ -682,8 +700,8 @@ namespace rock::native_secondary_actions
             Action action{player,form};
             const bool accepted=native<bool(*)(void*)>(0xF9BEF0)(action.data.data());
             ++s.actions;
-            if (accepted || trace(s,Trace::Action)) ROCK_LOG_INFO(Weapon,"AKIMBO native action form={:08X} hand=left action={} event='{}' accepted={} actualIndex=1 managerReads={} idleQueries={} idleMatches={} cacheReads={} conditional={} attempt={}",
-                s.item.object->formID,std::to_underlying(object),action.event().c_str(),accepted,context.managerReads,context.idleQueries,context.idleMatches,context.cacheReads,conditional,s.actions);
+            if (accepted || trace(s,Trace::Action)) ROCK_LOG_INFO(Weapon,"AKIMBO native action form={:08X} hand={} action={} event='{}' accepted={} actualIndex=1 managerReads={} idleQueries={} idleMatches={} cacheReads={} conditional={} attempt={}",
+                s.item.object->formID,handName(),std::to_underlying(object),action.event().c_str(),accepted,context.managerReads,context.idleQueries,context.idleMatches,context.cacheReads,conditional,s.actions);
             if ((object==RE::DEFAULT_OBJECT::kActionReload || !accepted) && (accepted || trace(s,Trace::Refusal,2))) {
                 for (std::size_t i=0;i<context.queryCount;++i) {
                     const auto& query=context.queries[i];
@@ -783,7 +801,7 @@ namespace rock::native_secondary_actions
                     context.muzzle=native<RE::NiAVObject*(*)(RE::TESObjectWEAP*,RE::NiAVObject*,RE::NiAVObject*,bool)>(0x3331F0)(
                         static_cast<RE::TESObjectWEAP*>(s.item.object),views[1].root,views[1].root,true);
                     if (!context.muzzle) {
-                        ROCK_LOG_SAMPLE_WARN(Weapon,1000,"AKIMBO left shot rejected: native model has no independent muzzle form={:08X}",s.item.object->formID);
+                        ROCK_LOG_SAMPLE_WARN(Weapon,1000,"AKIMBO second weapon shot rejected: native model has no independent muzzle form={:08X}",s.item.object->formID);
                         continue;
                     }
                     const RE::BSFixedString index{"1"};
@@ -791,8 +809,8 @@ namespace rock::native_secondary_actions
                     const auto after=native_hand_equipment::equippedViews();
                     ++s.shots;
                     if (trace(s,Trace::Fire) || loaded(after[1])==0 || loaded(after[0])!=rightBefore || !context.prepared) ROCK_LOG_INFO(Weapon,
-                        "AKIMBO native fire event form={:08X} hand=left prepared={} loaded={}->{} rightLoaded={}->{} index=1 sequence={}",
-                        s.item.object->formID,context.prepared,before,loaded(after[1]),rightBefore,loaded(after[0]),s.shots);
+                        "AKIMBO native fire event form={:08X} hand={} prepared={} loaded={}->{} primaryLoaded={}->{} index=1 sequence={}",
+                        s.item.object->formID,handName(),context.prepared,before,loaded(after[1]),rightBefore,loaded(after[0]),s.shots);
                 } else if (event.tag==RE::BSFixedString("reloadComplete")) {
                     const auto before=native_hand_equipment::equippedViews();
                     const auto leftBefore=loaded(before[1]),rightBefore=loaded(before[0]);
@@ -949,7 +967,10 @@ namespace rock::native_secondary_actions
             if (s.frame==frame.frameIndex) return;
             s.frame=frame.frameIndex;
             const auto view=native_hand_equipment::equippedViews()[1];
-            input_remap_runtime::setSecondaryEquippedTriggerOwned(view.weapon && frame.weaponDrawn);
+            const bool handLeft=native_hand_equipment::secondaryHandIsLeft();
+            s_handLeft.store(handLeft,std::memory_order_relaxed);
+            s_drawn.store(view.weapon && frame.weaponDrawn,std::memory_order_relaxed);
+            input_remap_runtime::setSecondaryEquippedTrigger(view.weapon && frame.weaponDrawn,handLeft);
             if (s.graph && !same(s,view)) { cancel(s); s.ready=false; s.retiring=true; }
             if (s.retiring) {
                 if (!s.graph->canDestroy()) return;
@@ -960,8 +981,8 @@ namespace rock::native_secondary_actions
                 s.retiring=false; s.failed=false; s.reloading=false; s.rootsTraced=false;
             }
             if (!attachment || !view.weapon || !view.root || frame.localMenuBlocking || !frame.weaponDrawn || !frame.visualAuthorityAvailable) { cancel(s); return; }
-            const auto trigger=input_remap_runtime::peekRawButtonState(true,input_remap_policy::kOpenVrSteamVrTriggerButtonId);
-            const bool providerSuppressed=input_remap_runtime::isProviderOpenVrGameInputSuppressedForHand(true);
+            const auto trigger=input_remap_runtime::peekRawButtonState(handLeft,input_remap_policy::kOpenVrSteamVrTriggerButtonId);
+            const bool providerSuppressed=input_remap_runtime::isProviderOpenVrGameInputSuppressedForHand(handLeft);
             const bool menu=input_remap_runtime::isMenuInputActive();
             // A sample older than one normal input period (a frame hitch)
             // neither starts nor ends a press: the held state is kept. Only a
@@ -1170,8 +1191,8 @@ namespace rock::native_secondary_actions
             if (!holding_grip_math::valid(holding_grip_math::fromNative(delta))) return;
             weapon_recoil_authority_math::applyOneHandKick(delta,weapon,hand,weapon,hand);
             if (weapon_recoil_authority_math::hasKick(controlled) && (++s.recoilSamples,trace(s,Trace::Recoil)))
-                ROCK_LOG_INFO(Weapon,"AKIMBO recoil delivered form={:08X} physicalHand=left profile={} family={} nativeT=({:.4f},{:.4f},{:.4f}) primaryRecord=restored",
-                    s.item.object->formID,name(profile),name(s.recoilFamily),s.recoilNode->local.translate.x,s.recoilNode->local.translate.y,s.recoilNode->local.translate.z);
+                ROCK_LOG_INFO(Weapon,"AKIMBO recoil delivered form={:08X} physicalHand={} profile={} family={} nativeT=({:.4f},{:.4f},{:.4f}) primaryRecord=restored",
+                    s.item.object->formID,handName(),name(profile),name(s.recoilFamily),s.recoilNode->local.translate.x,s.recoilNode->local.translate.y,s.recoilNode->local.translate.z);
         } catch (...) {
             ROCK_LOG_SAMPLE_WARN(Weapon,1000,"AKIMBO secondary recoil delivery failed");
         }

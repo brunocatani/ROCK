@@ -21,10 +21,16 @@ namespace rock::native_hand_equipment
         std::uintptr_t data = 0;
         std::uint32_t slot = 0;
     };
-    // Main-frame borrowed views, indexed by native physical right/left slot.
+    // Main-frame borrowed views, indexed by native equipment index (0: the
+    // player's own graph; 1: ROCK's second graph). An index is not a hand.
     // No caller may retain these pointers across native calls or frames.
     [[nodiscard]] std::array<EquippedView, 2> equippedViews() noexcept;
     [[nodiscard]] bool hasSecondaryGun() noexcept;
+    // Physical hand holding the weapon at native index 1. Frame owner only.
+    // The hand chosen by a Pip-Boy equip or cross-hand move is kept for that
+    // exact item; an index-1 weapon without one (save load, script equip)
+    // takes the hand that does not fire index 0.
+    [[nodiscard]] bool secondaryHandIsLeft() noexcept;
     // Borrowed for this synchronous native call. Uses the native bool biped
     // getter; avoids the incorrectly ordered CommonLib virtual overloads.
     [[nodiscard]] const void* playerBiped(bool firstPerson) noexcept;
@@ -40,9 +46,9 @@ namespace rock::native_hand_equipment
     // identities after a hand-directed transaction, without retaining objects.
     void observe() noexcept;
 
-    // The last accepted Pip-Boy equip that carried a physical hand into
-    // native index 0. Numeric identity only; the frame owner compares it with
-    // the observed primary so the default-hand path never re-hands it.
+    // The last accepted Pip-Boy equip or cross-hand move that gave the weapon
+    // at native index 0 a physical hand. Numeric identity only; the frame
+    // owner compares it with the observed primary and moves its firing hand.
     struct DirectedEquip
     {
         std::uint32_t form = 0;

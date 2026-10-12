@@ -158,5 +158,9 @@ namespace rock::weapon_equip_transfer
     [[nodiscard]] bool replaceHolsteredWeaponWithUnarmed() noexcept;
     // Exact-current compensation after a held equip; never removes an item.
     [[nodiscard]] bool unequipExactCurrentWeapon(std::uint32_t formID, std::uintptr_t instanceData) noexcept;
+    // Unequips the exact weapon at native equipment index 0 or 1 from its own
+    // hand leaf; the weapon at the other index stays equipped. True when the
+    // index is empty afterwards.
+    [[nodiscard]] bool unequipEquippedIndex(std::uint32_t index, std::uint32_t formID, std::uintptr_t instanceData) noexcept;
     [[nodiscard]] bool canRecoverHeldEquip() noexcept;
 }

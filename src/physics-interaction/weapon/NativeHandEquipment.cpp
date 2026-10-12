@@ -5,6 +5,8 @@
 #include "physics-interaction/weapon/NativePrimaryWeaponGraph.h"
 #include "physics-interaction/weapon/NativeSecondaryActions.h"
 #include "physics-interaction/weapon/NativeInventoryHandSlots.h"
+#include "physics-interaction/weapon/WeaponEquipTransfer.h"
+#include "physics-interaction/input/InputRemapRuntime.h"
 
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/input/NativePipboyHandInput.h"
@@ -60,6 +62,74 @@ namespace rock::native_hand_equipment
         std::atomic<std::uintptr_t> s_directedInstance{0};
         std::atomic<bool> s_directedLeft{false};
         std::atomic<std::uint64_t> s_directedSequence{0};
+
+        void publishDirectedPrimary(std::uint32_t form, std::uintptr_t instance, bool left) noexcept
+        {
+            s_directedForm.store(form, std::memory_order_relaxed);
+            s_directedInstance.store(instance, std::memory_order_relaxed);
+            s_directedLeft.store(left, std::memory_order_relaxed);
+            s_directedSequence.fetch_add(1, std::memory_order_release);
+        }
+
+        // Hand of the index-1 weapon. Written by the Pip-Boy transaction
+        // (UI thread) and by the frame owner when it derives a hand for an
+        // unrecorded item; read by both. The SRW lock guards only these
+        // fields; no native call is made while it is held.
+        struct SecondaryHandRecord
+        {
+            std::uint32_t form = 0;
+            std::uintptr_t instance = 0;
+            bool left = true;
+        };
+        SRWLOCK s_secondaryHandLock = SRWLOCK_INIT;
+        SecondaryHandRecord s_secondaryHand{};
+
+        void recordSecondaryHand(std::uint32_t form, std::uintptr_t instance, bool left) noexcept
+        {
+            AcquireSRWLockExclusive(&s_secondaryHandLock);
+            s_secondaryHand = {form, instance, left};
+            ReleaseSRWLockExclusive(&s_secondaryHandLock);
+        }
+
+        // An item without instance data is identified by its form alone.
+        bool sameItem(std::uint32_t form, std::uintptr_t instance, std::uint32_t otherForm, std::uintptr_t otherInstance) noexcept
+        {
+            return form != 0 && form == otherForm && (!instance || !otherInstance || instance == otherInstance);
+        }
+
+        // The recorded hand for this exact index-1 item, else the hand that
+        // does not fire index 0 (recorded so it stays put afterwards).
+        bool resolveSecondaryHand(std::uint32_t form, std::uintptr_t instance) noexcept
+        {
+            AcquireSRWLockShared(&s_secondaryHandLock);
+            const auto record = s_secondaryHand;
+            ReleaseSRWLockShared(&s_secondaryHandLock);
+            if (sameItem(record.form, record.instance, form, instance)) return record.left;
+            const bool left = !input_remap_runtime::publishedWeaponTriggerRouting().leftFiring;
+            if (form) recordSecondaryHand(form, instance, left);
+            return left;
+        }
+
+        struct WornWeapon
+        {
+            std::uint32_t form = 0;
+            std::uintptr_t instance = 0;
+        };
+
+        std::array<WornWeapon, 2> wornWeapons(RE::Actor* actor) noexcept
+        {
+            std::array<WornWeapon, 2> worn{};
+            auto* middle = actor && actor->currentProcess ? actor->currentProcess->middleHigh : nullptr;
+            if (!middle) return worn;
+            RE::BSAutoLock<RE::BSSpinLock> lock{ middle->equippedItemsLock };
+            if (middle->equippedItems.size() > 32) return worn;
+            for (const auto& entry : middle->equippedItems) {
+                const auto index = entry.equipIndex.index;
+                if (index >= worn.size() || !entry.item.object || !entry.item.object->IsWeapon()) continue;
+                worn[index] = {entry.item.object->formID, reinterpret_cast<std::uintptr_t>(entry.item.instanceData.get())};
+            }
+            return worn;
+        }
 
         // NativePipboyHandInput carries physical provenance through BOTH
         // native UI and GFx input queues. Untagged commands remain native.
@@ -305,34 +375,75 @@ namespace rock::native_hand_equipment
                     ROCK_LOG_WARN(Weapon, "AKIMBO equip refused: native player hand-slot layout unavailable");
                     return false;
                 }
-                if (hand == Hand::Left && !leftBipedAvailable(player, static_cast<RE::TESObjectWEAP*>(object))) return false;
-                if (hand == Hand::Left) canonicalizeRestoredPrimary(actor, slots);
                 const auto formID = object->formID;
                 const auto inventoryHandle = *handle;
-                const auto* selected = hand == Hand::Left ? slots.left : slots.right;
                 InventorySelection selection{};
                 s_readSelection(inventoryHandles, handle, stack, &selection);
                 if (selection.object != object || selection.count == 0) {
                     ROCK_LOG_WARN(Weapon, "AKIMBO equip refused: selected native inventory stack unavailable weapon={:08X} stack={}", formID, stack);
                     return false;
                 }
+                const auto instance = reinterpret_cast<std::uintptr_t>(selection.instance.get());
+
+                // The equip slot follows the weapon, not the hand: index 0 is
+                // the player's own graph and index 1 ROCK's second graph, in
+                // either hand. The acting hand chooses which weapon it holds.
+                const bool actingLeft = hand == Hand::Left;
+                const auto worn = wornWeapons(actor);
+                const auto routing = input_remap_runtime::publishedWeaponTriggerRouting();
+                const bool secondaryLeft = worn[1].form && resolveSecondaryHand(worn[1].form, worn[1].instance);
+                // A support-held (detached) primary has no firing hand.
+                const auto fires = [&](std::uint32_t index) {
+                    if (!worn[index].form) return false;
+                    return index == 0 ? !routing.detached && routing.leftFiring == actingLeft : secondaryLeft == actingLeft;
+                };
+                const int actingIndex = fires(0) ? 0 : fires(1) ? 1 : -1;
+                const auto wears = [&](int index) {
+                    return index >= 0 && sameItem(worn[index].form, worn[index].instance, formID, instance);
+                };
+                const int wornIndex = wears(actingIndex) ? actingIndex : wears(0) ? 0 : wears(1) ? 1 : -1;
+                if (wornIndex >= 0 && wornIndex != actingIndex) {
+                    // Cross-hand press: the item moves to the pressing hand
+                    // without a re-equip. A weapon whose firing grip that hand
+                    // held returns to inventory.
+                    const bool displaced = actingIndex < 0 ||
+                        weapon_equip_transfer::unequipEquippedIndex(static_cast<std::uint32_t>(actingIndex),
+                            worn[actingIndex].form, worn[actingIndex].instance);
+                    if (displaced) {
+                        if (wornIndex == 0) publishDirectedPrimary(worn[0].form, worn[0].instance, actingLeft);
+                        else recordSecondaryHand(worn[1].form, worn[1].instance, actingLeft);
+                        if (actingIndex >= 0) native_equipped_model_lifetime::noteEquipmentChange();
+                    }
+                    const auto sequence = s_transaction.fetch_add(1, std::memory_order_release) + 1;
+                    ROCK_LOG_INFO(Weapon,
+                        "AKIMBO cross-hand move request={} inputToken={} hand={} weapon={:08X} index={} displacedIndex={} accepted={}",
+                        sequence, origin.sequence, handName(hand), formID, wornIndex, actingIndex, displaced);
+                    return displaced;
+                }
+                // Same hand on its own item toggles it; otherwise replace the
+                // weapon this hand fires, else fill the first free index, else
+                // replace a support-held primary.
+                const std::uint32_t index = wornIndex >= 0 ? static_cast<std::uint32_t>(wornIndex) :
+                    actingIndex >= 0 ? static_cast<std::uint32_t>(actingIndex) :
+                    !worn[0].form ? 0u : !worn[1].form ? 1u : routing.detached ? 0u : 1u;
+                if (index == 1 && !leftBipedAvailable(player, static_cast<RE::TESObjectWEAP*>(object))) return false;
+                if (index == 1) canonicalizeRestoredPrimary(actor, slots);
+                const auto* selected = index == 0 ? slots.right : slots.left;
                 ExecutionContext execution{actor, object, selected};
                 const ScopedValue executionScope{s_execution, &execution};
                 const ScopedValue context{s_toggle, ToggleContext{object, slots.either}};
-                const bool affectsPair = hand == Hand::Left || hasSecondaryGun();
+                const bool affectsPair = index == 1 || worn[1].form != 0;
                 accepted = s_useItem(manager, actor, handle, stack, selected, toggle, force);
                 if (accepted && affectsPair) native_equipped_model_lifetime::noteEquipmentChange();
-                if (accepted && selected == slots.right) {
-                    s_directedForm.store(formID, std::memory_order_relaxed);
-                    s_directedInstance.store(reinterpret_cast<std::uintptr_t>(selection.instance.get()), std::memory_order_relaxed);
-                    s_directedLeft.store(hand == Hand::Left, std::memory_order_relaxed);
-                    s_directedSequence.fetch_add(1, std::memory_order_release);
+                if (accepted && wornIndex < 0) {
+                    if (index == 0) publishDirectedPrimary(formID, instance, actingLeft);
+                    else recordSecondaryHand(formID, instance, actingLeft);
                 }
                 // Native return means request accepted, not model/graph ready.
                 const auto sequence = s_transaction.fetch_add(1, std::memory_order_release) + 1;
                 ROCK_LOG_INFO(Weapon,
-                    "AKIMBO equip request={} inputToken={} hand={} weapon={:08X} handle={:08X} stack={} requestedSlot={:08X} accepted={} executionSelected={} nativeInventory=true",
-                    sequence, origin.sequence, handName(hand), formID, inventoryHandle, stack,
+                    "AKIMBO equip request={} inputToken={} hand={} weapon={:08X} handle={:08X} stack={} index={} actingIndex={} toggleOff={} requestedSlot={:08X} accepted={} executionSelected={} nativeInventory=true",
+                    sequence, origin.sequence, handName(hand), formID, inventoryHandle, stack, index, actingIndex, wornIndex >= 0,
                     selected->formID, accepted, execution.consumed);
                 return accepted;
             } catch (...) {
@@ -462,6 +573,12 @@ namespace rock::native_hand_equipment
     bool hasSecondaryGun() noexcept
     {
         return equippedViews()[1].weapon != nullptr;
+    }
+
+    bool secondaryHandIsLeft() noexcept
+    {
+        const auto view = equippedViews()[1];
+        return resolveSecondaryHand(view.weapon ? view.weapon->formID : 0, reinterpret_cast<std::uintptr_t>(view.instance));
     }
 
     RE::NiAVObject* resolveAttachment(std::uint32_t index) noexcept

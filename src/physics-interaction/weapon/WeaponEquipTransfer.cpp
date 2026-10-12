@@ -109,10 +109,10 @@ namespace rock::weapon_equip_transfer
             return form->As<RE::TESObjectWEAP>();
         }
 
-        [[nodiscard]] EquippedWeaponSnapshot readEquippedWeaponSnapshot() noexcept
+        [[nodiscard]] EquippedWeaponSnapshot readEquippedWeaponSnapshot(const std::uint32_t index = 0) noexcept
         {
             EquippedWeaponSnapshot snapshot{};
-            auto* equipData = f4vr::getEquippedWeaponItem();
+            auto* equipData = f4vr::getEquippedWeaponItem(index);
             auto* weaponForm = equipData ? equipData->item.object : nullptr;
             snapshot.weapon = asWeaponForm(weaponForm);
             snapshot.instanceData = equipData ? equipData->item.instanceData.get() : nullptr;
@@ -189,7 +189,8 @@ namespace rock::weapon_equip_transfer
         [[nodiscard]] InventoryWeaponStack findEquippedWeaponStack(
             RE::PlayerCharacter* player,
             RE::TESObjectWEAP* weapon,
-            const RE::TBO_InstanceData* expectedInstanceData) noexcept
+            const RE::TBO_InstanceData* expectedInstanceData,
+            const std::uint32_t index = 0) noexcept
         {
             InventoryWeaponStack fallback{};
             std::uint32_t equippedCandidateCount = 0;
@@ -197,7 +198,7 @@ namespace rock::weapon_equip_transfer
                 return fallback;
             }
 
-            const auto equipped=readEquippedWeaponSnapshot();
+            const auto equipped=readEquippedWeaponSnapshot(index);
             if (equipped.weapon!=weapon || equipped.instanceData!=expectedInstanceData || !equipped.equipSlot) return fallback;
             const RE::BGSObjectInstance exact(weapon,equipped.instanceData);
             const native_inventory_hand_slots::Scope inventoryOwner(player);
@@ -664,6 +665,27 @@ namespace rock::weapon_equip_transfer
         const auto remaining = readEquippedWeaponSnapshot();
         ROCK_LOG_INFO(Weapon, "Held transfer recovery unequip form={:08X} instance={:#x} accepted={} remaining={:08X}",
             formID, instanceData, accepted, remaining.weapon ? remaining.weapon->GetFormID() : 0u);
+        return !remaining.weapon;
+    }
+
+    bool unequipEquippedIndex(const std::uint32_t index, const std::uint32_t formID, const std::uintptr_t instanceData) noexcept
+    {
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        auto* manager = RE::ActorEquipManager::GetSingleton();
+        const auto equipped = readEquippedWeaponSnapshot(index);
+        if (!equipped.weapon) return true;
+        if (!player || !manager || index > 1 || equipped.weapon->GetFormID() != formID ||
+            reinterpret_cast<std::uintptr_t>(equipped.instanceData) != instanceData) return false;
+        const auto stack = findEquippedWeaponStack(player, equipped.weapon, equipped.instanceData, index);
+        const auto unequip = validatedUnequipObject();
+        if (!stack.found || !stack.equipSlot || !stack.count || !unequip ||
+            stack.instanceData.get() != equipped.instanceData || !clearPreviousWeaponRestore(player)) return false;
+        // The stack's actual hand leaf, so the other index's weapon is untouched.
+        RE::BGSObjectInstance object(equipped.weapon, stack.instanceData.get());
+        const bool accepted = unequip(manager, player, &object, 1, stack.equipSlot, stack.stackID, false, true, false, true, nullptr);
+        const auto remaining = readEquippedWeaponSnapshot(index);
+        ROCK_LOG_INFO(Weapon, "Equipped index unequip index={} form={:08X} instance={:#x} slot={:08X} accepted={} remaining={:08X}",
+            index, formID, instanceData, stack.equipSlot->formID, accepted, remaining.weapon ? remaining.weapon->GetFormID() : 0u);
         return !remaining.weapon;
     }
 

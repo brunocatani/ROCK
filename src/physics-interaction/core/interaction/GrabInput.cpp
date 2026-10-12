@@ -699,7 +699,7 @@ namespace rock
         // earlier hand's equip/transfer instead of caching scene occupancy.
         const bool equippedWeaponPresent = currentEquippedWeaponOccupiesHand();
         const bool supportTransferPending = _equipped.transition.pendingGrip().supportGrip.validCarry();
-        const bool offhandWeaponOccupiesHand = isLeft && _offhandWeaponOccupiesLeft;
+        const bool offhandWeaponOccupiesHand = offhandWeaponOccupies(isLeft);
         if (offhandWeaponOccupiesHand ||
             (_equipped.transition.pendingGrip().pairedGrips.valid() || _equipped.transition.pendingGrip().secondSupportGrip.validCarry()) ||
             (supportTransferPending ? isLeft == _equipped.transition.pendingGrip().isLeft :

@@ -119,7 +119,7 @@ namespace rock
             .extractionHandoff = hand.hasPendingExtractedItemHandoff(),
             .pendingForceGrab = includePendingCommit && _forceGrab.pendingCommits[isLeft ? 1u : 0u].active,
             .equippedWeaponOccupiesHand = equippedWeaponOccupiesHand,
-            .offhandWeaponOccupiesHand = isLeft && _offhandWeaponOccupiesLeft,
+            .offhandWeaponOccupiesHand = offhandWeaponOccupies(isLeft),
             .touchGrabActive = _touchGrabRuntime.isHandActive(isLeft),
             .inputReserved = input_remap_runtime::ownsBareFistInput(),
         });

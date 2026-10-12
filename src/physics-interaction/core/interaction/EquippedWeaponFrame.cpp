@@ -241,15 +241,23 @@ namespace rock
         performance_profiler::ScopedTimer equippedFrameTimer(performance_profiler::Scope::EquippedWeaponInteraction);
         const auto& runtime = runtime_state::currentFrame();
         const bool secondaryEquipped = native_hand_equipment::hasSecondaryGun();
-        // A separately equipped left gun occupies this hand. It must not be
-        // acquired as support/firing ownership of the primary gun as well.
-        if (secondaryEquipped && (_twoHandedGrip.isFiringHandLeft() || _twoHandedGrip.isHandPartGripping(true))) {
+        const bool secondaryLeft = secondaryEquipped && native_hand_equipment::secondaryHandIsLeft();
+        const bool secondaryRight = secondaryEquipped && !secondaryLeft;
+        // The second weapon's hand cannot also hold the primary, by its firing
+        // grip or a part grip. In the right hand it also ends ROCK's right
+        // firing ownership; the primary moves to the left below. A
+        // support-held (detached) primary keeps its support hand.
+        if ((secondaryLeft && (_twoHandedGrip.isFiringHandLeft() || _twoHandedGrip.isHandPartGripping(true))) ||
+            (secondaryRight && (_twoHandedGrip.isHandPartGripping(false) ||
+                (_twoHandedGrip.isManualOwnershipActive() && !_twoHandedGrip.isFiringHandLeft() &&
+                    !_twoHandedGrip.isFiringGripDetached())))) {
+            ROCK_LOG_INFO(Weapon, "AKIMBO primary released from the second weapon's hand={}", secondaryLeft ? "left" : "right");
             _twoHandedGrip.reset();
             clearEquippedWeaponFiringGripInputState();
         }
-        const bool leftHandAvailableForAcquisition = !secondaryEquipped && force_grab_policy::availableForEquippedGrip(
+        const bool leftHandAvailableForAcquisition = !secondaryLeft && force_grab_policy::availableForEquippedGrip(
             forceGrabHandBlockerMask(_leftHand, true, frame.left.disabled, true));
-        const bool rightHandAvailableForAcquisition = force_grab_policy::availableForEquippedGrip(
+        const bool rightHandAvailableForAcquisition = !secondaryRight && force_grab_policy::availableForEquippedGrip(
             forceGrabHandBlockerMask(_rightHand, false, frame.right.disabled, true));
         if (_equipped.transition.heldTransfer().phase == held_weapon_transfer::Phase::Recovering && _twoHandedGrip.isManualOwnershipActive()) {
             _twoHandedGrip.reset();
@@ -510,28 +518,55 @@ namespace rock
                         observedEquippedWeaponFormID, observedEquippedWeaponInstanceData,
                         equipGrip.targetWeaponFormID, equipGrip.targetWeaponInstanceData,
                         equipGrip.previousWeaponFormID, equipGrip.previousWeaponInstanceData));
-            if (equipGrip.pending && equipGrip.source == StartSource::DefaultEquip &&
-                (!g_rockConfig.rockLeftHandedMode || !pendingGripMatches || !runtime.weaponDrawn)) {
-                equipGrip = {};
-            }
-            // A Pip-Boy equip carried by a physical hand is never re-handed
-            // by the default-hand path.
+            // Primary firing hand when no physical grab chose one: opposite
+            // the second weapon; else the hand of the Pip-Boy equip or move
+            // that gave this exact item a hand; else the default hand.
             const auto directedPrimary = native_hand_equipment::lastDirectedPrimaryEquip();
-            const bool directedPrimaryEquip = directedPrimary.sequence != 0 &&
+            const bool directedPrimaryMatches = directedPrimary.sequence != 0 &&
                 directedPrimary.form == observedEquippedWeaponFormID &&
                 directedPrimary.instance == observedEquippedWeaponInstanceData;
-            const bool handSpecificOwnership = directedPrimaryEquip || _twoHandedGrip.isManualOwnershipActive() ||
+            const bool directedPrimaryChanged = directedPrimary.sequence != _equipped.directedPrimarySequence;
+            _equipped.directedPrimarySequence = directedPrimary.sequence;
+            const bool primaryDefaultLeft = secondaryEquipped ? secondaryRight :
+                directedPrimaryMatches ? directedPrimary.left : g_rockConfig.rockLeftHandedMode;
+            if (equipGrip.pending && equipGrip.source == StartSource::DefaultEquip &&
+                (!primaryDefaultLeft || !pendingGripMatches || !runtime.weaponDrawn)) {
+                equipGrip = {};
+            }
+            const bool handSpecificOwnership = _twoHandedGrip.isManualOwnershipActive() ||
                 _equipped.transition.heldTransfer().active() || _equipped.gripResumePending ||
                 _equipped.shoulderSheath.active ||
                 (pendingGripMatches && (equipGrip.menuResume ||
                     equipGrip.source == StartSource::HeldWeaponEquip ||
                     equipGrip.source == StartSource::InventoryEquip ||
                     equipGrip.source == StartSource::ShoulderRetrieval));
-            if (equipped_weapon_transition_policy::observeDefaultLeftEquip(
-                    _equipped.defaultEquipObservedOwnershipKey,
-                    runtime.weaponDrawn && observedEquippedWeaponFormID != 0 ?
-                        currentEquippedWeaponOwnershipKey : 0,
-                    g_rockConfig.rockLeftHandedMode, handSpecificOwnership, inputBlockingMenuActive)) {
+            bool queueDefaultLeft = equipped_weapon_transition_policy::observeDefaultLeftEquip(
+                _equipped.defaultEquipObservedOwnershipKey,
+                runtime.weaponDrawn && observedEquippedWeaponFormID != 0 ?
+                    currentEquippedWeaponOwnershipKey : 0,
+                primaryDefaultLeft, handSpecificOwnership, inputBlockingMenuActive);
+            // The same equipped primary changes hands: a Pip-Boy cross-hand
+            // move, or the second weapon taking the right hand. A support-held
+            // primary keeps its support hand.
+            if (!queueDefaultLeft && !inputBlockingMenuActive && runtime.weaponDrawn && observedEquippedWeaponFormID != 0 &&
+                !equipGrip.pending && !_twoHandedGrip.isFiringGripDetached()) {
+                const bool firingLeft = _twoHandedGrip.isFiringHandLeft();
+                const bool moved = directedPrimaryChanged && directedPrimaryMatches;
+                if (primaryDefaultLeft && !firingLeft && (secondaryRight || moved)) {
+                    if (_twoHandedGrip.isManualOwnershipActive()) {
+                        _twoHandedGrip.reset();
+                        clearEquippedWeaponFiringGripInputState();
+                    }
+                    queueDefaultLeft = true;
+                } else if (!primaryDefaultLeft && firingLeft && moved) {
+                    // Back to the right hand: release ROCK's left carry and
+                    // the native right carry resumes.
+                    ROCK_LOG_INFO(Weapon, "AKIMBO primary moved to hand=right formID={:08X}", observedEquippedWeaponFormID);
+                    _twoHandedGrip.reset();
+                    clearEquippedWeaponFiringGripInputState();
+                }
+            }
+            if (queueDefaultLeft) {
                 equipGrip = PendingEquippedWeaponPrimaryOnlyGripStart{
                     .pending = true,
                     .isLeft = true,

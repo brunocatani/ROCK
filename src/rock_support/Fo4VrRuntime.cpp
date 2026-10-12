@@ -80,7 +80,7 @@ namespace rock::fo4vr
         return reinterpret_cast<BSFlattenedBoneTree*>(skeleton->children[0]->IsNode());
     }
 
-    RE::EquippedItem* getEquippedWeaponItem() noexcept
+    RE::EquippedItem* getEquippedWeaponItem(const std::uint32_t index) noexcept
     {
         auto* player = getPlayer();
         auto* middleHigh = player && player->currentProcess ? player->currentProcess->middleHigh : nullptr;
@@ -93,7 +93,7 @@ namespace rock::fo4vr
         // attachment. Never drive the primary model using the left item's data.
         RE::EquippedItem* equippedItem = nullptr;
         for (auto& entry : middleHigh->equippedItems) {
-            if (entry.equipIndex.index == 0) { equippedItem = std::addressof(entry); break; }
+            if (entry.equipIndex.index == index) { equippedItem = std::addressof(entry); break; }
         }
         if (!equippedItem) return nullptr;
         auto* object = equippedItem->item.object;
