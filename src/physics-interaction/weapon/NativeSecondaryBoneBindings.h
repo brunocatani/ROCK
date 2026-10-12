@@ -182,6 +182,8 @@ namespace rock::native_secondary_actions
             }
             ROCK_LOG_INFO(Animation,"AKIMBO independent bone binding objects={} skins={} nodes={} descendantTransport=complete",
                 objects.size(),_skins.size(),boundNodes);
+            // First pose sample after the graph has evaluated, not the bind pose.
+            _nextBoneReport=GetTickCount64()+1000;
             return true;
         }
         void carryPublished(const RE::NiTransform& delta) noexcept

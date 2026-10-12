@@ -23,6 +23,7 @@
 #include <Windows.h>
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <memory>
@@ -127,6 +128,7 @@ namespace rock::native_secondary_actions
                 std::uint32_t id{UINT32_MAX};
                 double value{};
                 bool accepted{};
+                bool actorState{};
             };
             std::array<Query,16> queries{};
             std::size_t queryCount{};
@@ -138,6 +140,9 @@ namespace rock::native_secondary_actions
             bool identityChecked{},identityMatched{};
         };
         thread_local Context* t_context{};
+        // Set only while one actor-level variable getter is re-run against the
+        // player's own AIProcess cache (see variableQuery).
+        thread_local bool t_actorVariableLookup{};
         struct Scope
         {
             Context* previous;
@@ -350,7 +355,7 @@ namespace rock::native_secondary_actions
         }
         RE::BSAnimationGraphVariableCache* variableCache(void* process)
         {
-            if (t_context && process==t_context->player->currentProcess) {
+            if (t_context && !t_actorVariableLookup && process==t_context->player->currentProcess) {
                 if (!validContext()) return nullptr;
                 auto* manager=t_context->state->graph->manager();
                 if (!manager || manager->activeGraph>=manager->graph.size() ||
@@ -364,13 +369,28 @@ namespace rock::native_secondary_actions
         template<std::uintptr_t Rva,class Key,class Value>
         bool variableQuery(void* holder,Key key,Value* output)
         {
-            const bool accepted=native<bool(*)(void*,Key,Value*)>(Rva)(holder,key,output);
+            bool accepted=native<bool(*)(void*,Key,Value*)>(Rva)(holder,key,output);
             const bool player=t_context && holder==static_cast<RE::IAnimationGraphManagerHolder*>(t_context->player);
+            bool actorState=false;
+            if (!accepted && player && validContext()) {
+                // Actor getters read AIProcess+8 -> +268, the player's own
+                // graph cache. The private weapon graph does not define every
+                // actor-level variable native conditions read: a left reload
+                // idle requires isReloading, which only the actor cache
+                // answers (verified: 18:48 reloads selected 000BDDA6 with
+                // isReloading from the actor; without this, nothing selects).
+                // Weapon variables still come from this hand's graph first.
+                t_actorVariableLookup=true;
+                accepted=native<bool(*)(void*,Key,Value*)>(Rva)(holder,key,output);
+                t_actorVariableLookup=false;
+                actorState=accepted;
+            }
             if (player && t_context->queryCount<t_context->queries.size()) {
                 auto& query=t_context->queries[t_context->queryCount++];
                 if constexpr (std::is_integral_v<Key>) query.id=key;
                 else if (key) query.name=*key;
                 query.accepted=accepted;
+                query.actorState=actorState;
                 if (accepted && output) query.value=static_cast<double>(*output);
             }
             return accepted;
@@ -456,8 +476,26 @@ namespace rock::native_secondary_actions
                 return false;
             }
         }
+        // Diagnostic: once per primary weapon identity, the idle roots the
+        // native collector returns for the player's own (right-hand) actions,
+        // for comparison with weapons whose roots do not resolve in the left
+        // graph.
+        std::atomic<std::uint32_t> s_tracedPrimaryRoots{UINT32_MAX}; // Any native idle thread.
         bool idleRoots(void* database,RE::Actor* actor,RE::BSScrapArray<void*>* out)
         {
+            if (!t_context && out && s_installed && actor==f4vr::getPlayer()) {
+                const bool result=s_idleRoots(database,actor,out);
+                RE::BGSObjectInstance right{nullptr,nullptr};
+                native<RE::BGSObjectInstance*(*)(RE::Actor*,RE::BGSObjectInstance*,std::uint32_t)>(0xE50DA0)(actor,&right,0);
+                const auto form=right.object?right.object->formID:0;
+                if (s_tracedPrimaryRoots.exchange(form,std::memory_order_relaxed)!=form) {
+                    for (std::uint32_t i=0;i<out->size() && i<16;++i)
+                        ROCK_LOG_INFO(Animation,"AKIMBO native primary idle root weapon={:08X} index={} root={:#x}",
+                            form,i,reinterpret_cast<std::uintptr_t>((*out)[i]));
+                    ROCK_LOG_INFO(Animation,"AKIMBO native primary idle roots weapon={:08X} count={} result={}",form,out->size(),result);
+                }
+                return result;
+            }
             if (!t_context || actor!=t_context->player || !out) return s_idleRoots(database,actor,out);
             if (!validContext()) return false;
             ++t_context->idleQueries;
@@ -628,8 +666,9 @@ namespace rock::native_secondary_actions
             if ((object==RE::DEFAULT_OBJECT::kActionReload || !accepted) && (accepted || trace(s,Trace::Lifecycle))) {
                 for (std::size_t i=0;i<context.queryCount;++i) {
                     const auto& query=context.queries[i];
-                    ROCK_LOG_INFO(Animation,"AKIMBO action condition form={:08X} action={} attempt={} name='{}' id={} readable={} value={}",
-                        s.item.object->formID,std::to_underlying(object),s.actions,query.name.c_str(),query.id,query.accepted,query.value);
+                    ROCK_LOG_INFO(Animation,"AKIMBO action condition form={:08X} action={} attempt={} name='{}' id={} readable={} source={} value={}",
+                        s.item.object->formID,std::to_underlying(object),s.actions,query.name.c_str(),query.id,query.accepted,
+                        query.actorState?"actor":"weapon-graph",query.value);
                 }
                 for (std::size_t i=0;i<context.idleCount;++i) {
                     const auto& query=context.idles[i];
