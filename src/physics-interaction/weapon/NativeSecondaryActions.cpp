@@ -126,7 +126,6 @@ namespace rock::native_secondary_actions
                 std::uint32_t id{UINT32_MAX};
                 double value{};
                 bool accepted{};
-                bool actorState{};
             };
             std::array<Query,16> queries{};
             std::size_t queryCount{};
@@ -138,9 +137,6 @@ namespace rock::native_secondary_actions
             bool identityChecked{},identityMatched{};
         };
         thread_local Context* t_context{};
-        // Set only while one actor-level variable getter is re-run against the
-        // player's own AIProcess cache (see variableQuery).
-        thread_local bool t_actorVariableLookup{};
         struct Scope
         {
             Context* previous;
@@ -353,7 +349,7 @@ namespace rock::native_secondary_actions
         }
         RE::BSAnimationGraphVariableCache* variableCache(void* process)
         {
-            if (t_context && !t_actorVariableLookup && process==t_context->player->currentProcess) {
+            if (t_context && process==t_context->player->currentProcess) {
                 if (!validContext()) return nullptr;
                 auto* manager=t_context->state->graph->manager();
                 if (!manager || manager->activeGraph>=manager->graph.size() ||
@@ -367,27 +363,13 @@ namespace rock::native_secondary_actions
         template<std::uintptr_t Rva,class Key,class Value>
         bool variableQuery(void* holder,Key key,Value* output)
         {
-            bool accepted=native<bool(*)(void*,Key,Value*)>(Rva)(holder,key,output);
+            const bool accepted=native<bool(*)(void*,Key,Value*)>(Rva)(holder,key,output);
             const bool player=t_context && holder==static_cast<RE::IAnimationGraphManagerHolder*>(t_context->player);
-            bool actorState=false;
-            if (!accepted && player && validContext()) {
-                // The actor getters read AIProcess+8 -> +268, the player's
-                // body-graph cache. The private first-person weapon graph does
-                // not define body state such as bWantFullRagdoll (fixed id 10),
-                // which native reload conditions check. Weapon variables come
-                // from this hand's graph; variables it does not define are the
-                // actor's own state, answered exactly as the native player.
-                t_actorVariableLookup=true;
-                accepted=native<bool(*)(void*,Key,Value*)>(Rva)(holder,key,output);
-                t_actorVariableLookup=false;
-                actorState=accepted;
-            }
             if (player && t_context->queryCount<t_context->queries.size()) {
                 auto& query=t_context->queries[t_context->queryCount++];
                 if constexpr (std::is_integral_v<Key>) query.id=key;
                 else if (key) query.name=*key;
                 query.accepted=accepted;
-                query.actorState=actorState;
                 if (accepted && output) query.value=static_cast<double>(*output);
             }
             return accepted;
@@ -479,10 +461,16 @@ namespace rock::native_secondary_actions
             if (!validContext()) return false;
             ++t_context->idleQueries;
             // Native 595C50 still adds the race/base root after this collector.
-            // Only the weapon-specific roots come from this hand's exact native
-            // subgraph request; none are inserted into the player's primary list.
-            for (const auto& name:t_context->state->graph->idleRoots()) {
-                auto* root=native<void*(*)(void*,const char*)>(0x595760)(database,name.c_str());
+            // The roots come from this hand's own base and weapon subgraph
+            // requests; none are inserted into the player's primary list.
+            // Mirror EC5C80: newest record first, only the person mode the
+            // player vfunction +0x470 (F5E180) selects (flag == !result).
+            const auto* vtable=*reinterpret_cast<const std::uintptr_t* const*>(t_context->player);
+            const auto person=static_cast<std::uint8_t>(!reinterpret_cast<bool(*)(RE::Actor*)>(vtable[0x470/8])(t_context->player));
+            const auto roots=t_context->state->graph->idleRoots();
+            for (auto it=roots.rbegin();it!=roots.rend();++it) {
+                if (it->person!=person) continue;
+                auto* root=native<void*(*)(void*,const char*)>(0x595760)(database,it->name.c_str());
                 if (root && std::find(out->begin(),out->end(),root)==out->end()) {
                     out->push_back(root);
                     ++t_context->idleMatches;
@@ -638,8 +626,8 @@ namespace rock::native_secondary_actions
             if (object==RE::DEFAULT_OBJECT::kActionReload && (accepted || trace(s,Trace::Lifecycle))) {
                 for (std::size_t i=0;i<context.queryCount;++i) {
                     const auto& query=context.queries[i];
-                    ROCK_LOG_INFO(Animation,"AKIMBO reload condition form={:08X} attempt={} name='{}' id={} readable={} source={} value={}",
-                        s.item.object->formID,s.actions,query.name.c_str(),query.id,query.accepted,query.actorState?"actor":"weapon-graph",query.value);
+                    ROCK_LOG_INFO(Animation,"AKIMBO reload condition form={:08X} attempt={} name='{}' id={} readable={} value={}",
+                        s.item.object->formID,s.actions,query.name.c_str(),query.id,query.accepted,query.value);
                 }
                 for (std::size_t i=0;i<context.idleCount;++i) {
                     const auto& query=context.idles[i];
@@ -825,6 +813,14 @@ namespace rock::native_secondary_actions
             !matches(0xE526A0,std::to_array<std::uint8_t>({0x48,0x83,0xEC,0x28,0x48,0x8B,0x89,0,3,0,0})) ||
             !installRecoilCalls()) {
             ROCK_LOG_ERROR(Init,"AKIMBO native recoil routing validation failed");
+            return false;
+        }
+        // Idle-root person filter: PlayerCharacter vtable 2D80F88 slot +0x470.
+        std::uintptr_t personMode{};
+        if (!native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(REL::Offset(0x2D80F88+0x470).address()),personMode) ||
+            personMode!=REL::Offset(0xF5E180).address() ||
+            !matches(0xF5E180,std::to_array<std::uint8_t>({0x0F,0xB6,0x81,0x9E,0x12,0,0,0xC0,0xE8,0x04,0x24,0x01,0xC3}))) {
+            ROCK_LOG_ERROR(Init,"AKIMBO native idle-root person filter validation failed");
             return false;
         }
         if (!installVariableCacheCalls() || !installVariableQueryTrace()) {

@@ -211,6 +211,36 @@ namespace rock::native_hand_equipment
             return context->slot;
         }
 
+        void canonicalizeRestoredPrimary(RE::Actor* actor, const Slots& slots) noexcept
+        {
+            // Every equip made while installed is constructed on its hand leaf
+            // (native_inventory_hand_slots). A saved game instead restores the
+            // primary's EquippedItem with its authored BothHands/EitherHand
+            // slot; the reconstruction path rebuilds data only when the item
+            // changed. That multi-hand slot contains the left leaf, so a left
+            // equip's native conflict pass would unequip the primary. Re-seat
+            // it on the right leaf, the slot its construction would have used.
+            auto* middle = actor && actor->currentProcess ? actor->currentProcess->middleHigh : nullptr;
+            if (!middle) return;
+            RE::BSAutoLock<RE::BSSpinLock> lock{ middle->equippedItemsLock };
+            for (auto& entry : middle->equippedItems) {
+                if (entry.equipIndex.index != 0 || !entry.equipSlot || !entry.item.object || !entry.item.object->IsWeapon()) continue;
+                const auto slot = entry.equipSlot->formID;
+                if (slot != 0x13F44 && slot != 0x13F45) continue;
+                const auto* data = entry.item.instanceData ?
+                    static_cast<const RE::TESObjectWEAP::InstanceData*>(entry.item.instanceData.get()) :
+                    &static_cast<const RE::TESObjectWEAP*>(entry.item.object)->weaponData;
+                if (data->type != RE::WEAPON_TYPE::kGun) continue;
+                entry.equipSlot = slots.right;
+                try {
+                    ROCK_LOG_INFO(Weapon, "AKIMBO restored primary re-seated weapon={:08X} instance={:#x} authoredSlot={:08X} actualSlot={:08X}",
+                        entry.item.object->formID, reinterpret_cast<std::uintptr_t>(entry.item.instanceData.get()), slot, slots.right->formID);
+                } catch (...) {
+                    OutputDebugStringA("ROCK: restored primary diagnostic failed\n");
+                }
+            }
+        }
+
         bool leftBipedAvailable(RE::PlayerCharacter* player, RE::TESObjectWEAP* weapon) noexcept
         {
             // Native secondary weapons use the race's shield biped object.
@@ -271,6 +301,7 @@ namespace rock::native_hand_equipment
                     return false;
                 }
                 if (hand == Hand::Left && !leftBipedAvailable(player, static_cast<RE::TESObjectWEAP*>(object))) return false;
+                if (hand == Hand::Left) canonicalizeRestoredPrimary(actor, slots);
                 const auto formID = object->formID;
                 const auto inventoryHandle = *handle;
                 const auto* selected = hand == Hand::Left ? slots.left : slots.right;
