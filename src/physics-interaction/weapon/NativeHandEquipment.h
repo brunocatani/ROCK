@@ -39,4 +39,16 @@ namespace rock::native_hand_equipment
     // Frame owner only. Records changes in the two native equipment/model
     // identities after a hand-directed transaction, without retaining objects.
     void observe() noexcept;
+
+    // The last accepted Pip-Boy equip that carried a physical hand into
+    // native index 0. Numeric identity only; the frame owner compares it with
+    // the observed primary so the default-hand path never re-hands it.
+    struct DirectedEquip
+    {
+        std::uint32_t form = 0;
+        std::uintptr_t instance = 0;
+        bool left = false;
+        std::uint64_t sequence = 0; // 0: none since load.
+    };
+    [[nodiscard]] DirectedEquip lastDirectedPrimaryEquip() noexcept;
 }

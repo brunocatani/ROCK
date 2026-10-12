@@ -9,7 +9,6 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/input/NativePipboyHandInput.h"
 #include "physics-interaction/PhysicsLog.h"
-#include "RockConfig.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -55,6 +54,12 @@ namespace rock::native_hand_equipment
         ReadSelection s_readSelection = nullptr;
         bool s_installed = false; // Load owner; immutable after hook installation.
         std::atomic<std::uint64_t> s_transaction{0}; // Input/UI -> frame diagnostic publication.
+        // Input/UI writer, frame reader: fields first, then the sequence with
+        // release; the reader acquires the sequence before the fields.
+        std::atomic<std::uint32_t> s_directedForm{0};
+        std::atomic<std::uintptr_t> s_directedInstance{0};
+        std::atomic<bool> s_directedLeft{false};
+        std::atomic<std::uint64_t> s_directedSequence{0};
 
         // NativePipboyHandInput carries physical provenance through BOTH
         // native UI and GFx input queues. Untagged commands remain native.
@@ -267,9 +272,9 @@ namespace rock::native_hand_equipment
             const native_inventory_hand_slots::Scope inventoryOwner(actor);
             auto* player = f4vr::getPlayer();
             const auto origin = native_pipboy_hand_input::current();
-            // Akimbo Mode off keeps ordinary single-weapon equipping: no
-            // physical-hand routing reaches the native transaction.
-            const auto hand = g_rockConfig.rockAkimboMode ? origin.hand : Hand::None;
+            // Several weapons may always be equipped: the physical hand that
+            // pressed decides. Equips without provenance stay native.
+            const auto hand = origin.hand;
             if (hand == Hand::None || !actor || actor != player || !handle || requestedSlot) {
                 try {
                     ROCK_LOG_SAMPLE_INFO(Weapon, 250,
@@ -317,6 +322,12 @@ namespace rock::native_hand_equipment
                 const bool affectsPair = hand == Hand::Left || hasSecondaryGun();
                 accepted = s_useItem(manager, actor, handle, stack, selected, toggle, force);
                 if (accepted && affectsPair) native_equipped_model_lifetime::noteEquipmentChange();
+                if (accepted && selected == slots.right) {
+                    s_directedForm.store(formID, std::memory_order_relaxed);
+                    s_directedInstance.store(reinterpret_cast<std::uintptr_t>(selection.instance.get()), std::memory_order_relaxed);
+                    s_directedLeft.store(hand == Hand::Left, std::memory_order_relaxed);
+                    s_directedSequence.fetch_add(1, std::memory_order_release);
+                }
                 // Native return means request accepted, not model/graph ready.
                 const auto sequence = s_transaction.fetch_add(1, std::memory_order_release) + 1;
                 ROCK_LOG_INFO(Weapon,
@@ -435,6 +446,17 @@ namespace rock::native_hand_equipment
             if (bodyBiped != biped) readModel(bodyBiped, view.bodyRoot);
         }
         return views;
+    }
+
+    DirectedEquip lastDirectedPrimaryEquip() noexcept
+    {
+        DirectedEquip result{};
+        result.sequence = s_directedSequence.load(std::memory_order_acquire);
+        if (!result.sequence) return {};
+        result.form = s_directedForm.load(std::memory_order_relaxed);
+        result.instance = s_directedInstance.load(std::memory_order_relaxed);
+        result.left = s_directedLeft.load(std::memory_order_relaxed);
+        return result;
     }
 
     bool hasSecondaryGun() noexcept

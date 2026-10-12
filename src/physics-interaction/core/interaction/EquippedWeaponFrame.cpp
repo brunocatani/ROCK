@@ -511,10 +511,16 @@ namespace rock
                         equipGrip.targetWeaponFormID, equipGrip.targetWeaponInstanceData,
                         equipGrip.previousWeaponFormID, equipGrip.previousWeaponInstanceData));
             if (equipGrip.pending && equipGrip.source == StartSource::DefaultEquip &&
-                (!g_rockConfig.effectiveLeftHandedMode() || !pendingGripMatches || !runtime.weaponDrawn)) {
+                (!g_rockConfig.rockLeftHandedMode || !pendingGripMatches || !runtime.weaponDrawn)) {
                 equipGrip = {};
             }
-            const bool handSpecificOwnership = _twoHandedGrip.isManualOwnershipActive() ||
+            // A Pip-Boy equip carried by a physical hand is never re-handed
+            // by the default-hand path.
+            const auto directedPrimary = native_hand_equipment::lastDirectedPrimaryEquip();
+            const bool directedPrimaryEquip = directedPrimary.sequence != 0 &&
+                directedPrimary.form == observedEquippedWeaponFormID &&
+                directedPrimary.instance == observedEquippedWeaponInstanceData;
+            const bool handSpecificOwnership = directedPrimaryEquip || _twoHandedGrip.isManualOwnershipActive() ||
                 _equipped.transition.heldTransfer().active() || _equipped.gripResumePending ||
                 _equipped.shoulderSheath.active ||
                 (pendingGripMatches && (equipGrip.menuResume ||
@@ -525,7 +531,7 @@ namespace rock
                     _equipped.defaultEquipObservedOwnershipKey,
                     runtime.weaponDrawn && observedEquippedWeaponFormID != 0 ?
                         currentEquippedWeaponOwnershipKey : 0,
-                    g_rockConfig.effectiveLeftHandedMode(), handSpecificOwnership, inputBlockingMenuActive)) {
+                    g_rockConfig.rockLeftHandedMode, handSpecificOwnership, inputBlockingMenuActive)) {
                 equipGrip = PendingEquippedWeaponPrimaryOnlyGripStart{
                     .pending = true,
                     .isLeft = true,
@@ -2117,9 +2123,10 @@ namespace rock
             ::rock::provider::getEquippedWeaponHandlingAuthorityV1(request);
         const auto weaponClassification = _weaponCollision.getEquippedWeaponClassification();
         const RockEquippedWeaponHandlingBaseline rockBaseline{
-            .leftHandedModeEnabled = g_rockConfig.effectiveLeftHandedMode(),
-            .ambidextrousHandoffEnabled =
-                g_rockConfig.rockAmbidextrousFiringGripEnabled,
+            .leftHandedModeEnabled = g_rockConfig.rockLeftHandedMode,
+            // Firing belongs to whichever hand holds the firing grip; the
+            // handoff is the general rule, not an option.
+            .ambidextrousHandoffEnabled = true,
             .authoredOnlySupportGrabsEnabled =
                 !g_rockConfig.rockGrabAnywhereOnWeapon,
             .meleeWeapon = weaponClassification.classificationResolved &&

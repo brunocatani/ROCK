@@ -443,14 +443,6 @@ namespace rock
             AMBIDEXTROUS_FIRING_SECTION,
             "bLeftHandedMode",
             rockLeftHandedMode);
-        rockAkimboMode = ini.GetBoolValue(
-            AMBIDEXTROUS_FIRING_SECTION,
-            "bAkimboMode",
-            rockAkimboMode);
-        rockAmbidextrousFiringGripEnabled = ini.GetBoolValue(
-            AMBIDEXTROUS_FIRING_SECTION,
-            "bAmbidextrousFiringGripEnabled",
-            rockAmbidextrousFiringGripEnabled);
         rockLeftFiringAimYawDegrees = readClampedFloat(
             ini,
             AMBIDEXTROUS_FIRING_SECTION,

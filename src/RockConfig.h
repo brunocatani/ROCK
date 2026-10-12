@@ -118,15 +118,13 @@ namespace rock
         float rockFiringGripAttachHapticIntensity = 0.85f;
         float rockFiringGripDetachHapticIntensity = 0.30f;
 
-        // Default physical hand for equips without a hand-specific request.
-        // Ignored while Akimbo Mode is on: the acting hand decides instead.
+        // Default hand: the firing hand for equips that carry no physical
+        // hand (favorites, PALM, scripts) and the grenade preference. Physical
+        // Pip-Boy/trigger equips, grip handoffs and shoulder retrieval keep
+        // the acting hand. Several weapons may always be equipped; firing
+        // belongs to whichever hand holds a weapon's firing grip.
         bool rockLeftHandedMode = false;
-        // Each physical hand may hold its own genuinely equipped weapon.
-        bool rockAkimboMode = false;
-        [[nodiscard]] bool effectiveLeftHandedMode() const noexcept { return rockLeftHandedMode && !rockAkimboMode; }
-        // ROCK-native firing-grip handoff. This remains independent from the
-        // role-neutral Immersive Weapons detach/drop feature set.
-        bool rockAmbidextrousFiringGripEnabled = true;
+        // Left firing-hand aim correction for the mirrored hold.
         float rockLeftFiringAimYawDegrees = 0.0f;
         float rockLeftFiringAimPitchDegrees = 0.0f;
         float rockLeftFiringAimOffsetXGameUnits = 0.0f;
