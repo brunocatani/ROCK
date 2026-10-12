@@ -89,7 +89,6 @@ namespace rock::native_secondary_actions
             std::uint64_t recoilFrame{UINT64_MAX};
             weapon_recoil_policy::Family recoilFamily{weapon_recoil_policy::Family::Default};
             std::uint32_t recoilShots{},recoilSamples{};
-            std::uint32_t charge{UINT32_MAX}; // iWeaponCharge last published for index one.
             bool rootsTraced{};
             struct TraceWindow { std::uint64_t second{UINT64_MAX}; std::uint32_t count{},suppressed{}; };
             std::array<TraceWindow,6> traces{};
@@ -743,30 +742,6 @@ namespace rock::native_secondary_actions
                 }
             }
         }
-        // Native EB4B40 and the ammo-change paths keep iWeaponCharge on the
-        // PRIMARY model graph (biped weapon slot 0x29) equal to its loaded
-        // rounds; magazine round bones are posed from it. Nothing native
-        // writes it for index one's model (shield slot), and left shots
-        // change ammo outside any scoped native call. Publish index one's
-        // count to this hand's graph and both biped models whenever it moves.
-        void syncCharge(State& s,const View& view)
-        {
-            const auto count=loaded(view);
-            if (count==s.charge) return;
-            const RE::BSFixedString name{"iWeaponCharge"};
-            s.graph->setInt(name,static_cast<std::int32_t>(count));
-            auto* player=f4vr::getPlayer();
-            const auto slot=native<std::uint32_t(*)(RE::Actor*,RE::TESBoundObject*,std::uint32_t)>(0x1CAFC0)(
-                player,static_cast<RE::TESObjectWEAP*>(s.item.object),1);
-            if (slot<44) {
-                for (const bool firstPerson:{true,false})
-                    if (auto* biped=const_cast<void*>(native_hand_equipment::playerBiped(firstPerson)))
-                        s_modelInt(biped,slot,&name,static_cast<int>(count));
-            }
-            if (s.charge==UINT32_MAX || trace(s,Trace::Lifecycle)) ROCK_LOG_INFO(Animation,"AKIMBO left round count form={:08X} iWeaponCharge={}->{} modelSlot={}",
-                s.item.object->formID,s.charge==UINT32_MAX?-1:static_cast<std::int64_t>(s.charge),count,slot);
-            s.charge=count;
-        }
         void cancel(State& s)
         {
             if (s.trigger.cancel() && s.ready && s.graph) { (void)s.graph->notify(RE::BSFixedString("attackRelease")); attackState(s,0); }
@@ -877,7 +852,7 @@ namespace rock::native_secondary_actions
                 s.bindings.restore();
                 s.graph.reset(); s.model.reset(); s.item=RE::BGSObjectInstance{nullptr,nullptr};
                 s.recoilNode.reset(); s.kick={}; s.kickActive=false; s.recoilFrame=UINT64_MAX;
-                s.retiring=false; s.failed=false; s.reloading=false; s.charge=UINT32_MAX; s.rootsTraced=false;
+                s.retiring=false; s.failed=false; s.reloading=false; s.rootsTraced=false;
             }
             if (!attachment || !view.weapon || !view.root || frame.localMenuBlocking || !frame.weaponDrawn || !frame.visualAuthorityAvailable) { cancel(s); return; }
             const auto trigger=input_remap_runtime::peekRawButtonState(true,input_remap_policy::kOpenVrSteamVrTriggerButtonId);
@@ -985,7 +960,6 @@ namespace rock::native_secondary_actions
                     if (dispatch(s,action)) { attackState(s,15); s.trigger.accepted(true); }
                 }
             }
-            syncCharge(s,view);
             s.graph->update(dt);
             if (!s.graph->place(attachment->world) || s.graph->eventOverflow()) {
                 cancel(s); s.bindings.restore(); releaseModelGraphs(s,true); s.failed=true; s.ready=false;
@@ -997,8 +971,6 @@ namespace rock::native_secondary_actions
             if (!s.bindings.present(s.frame))
                 ROCK_LOG_SAMPLE_WARN(Animation,1000,"AKIMBO secondary part transport unavailable form={:08X}",view.weapon->formID);
             drain(s,true);
-            // Shots and magazine refills drained above change the count now.
-            if (const auto after=native_hand_equipment::equippedViews()[1]; same(s,after)) syncCharge(s,after);
         } catch (...) {
             s.audio.stop();
             s.bindings.restore(); releaseModelGraphs(s,true);
