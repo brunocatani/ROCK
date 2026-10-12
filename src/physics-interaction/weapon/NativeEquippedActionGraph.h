@@ -45,15 +45,16 @@ namespace rock::native_equipped_action_graph
         // Anchor the entire evaluated skeleton to the held weapon. Animation
         // keeps the local part motion; tracking owns only its world frame.
         bool place(const RE::NiTransform& weaponWorld) noexcept;
-        // Idle-root records from this graph's base and weapon subgraph
-        // requests, in the order native 10197E0 adds them to an actor's
-        // process list (de-duplicated by identifier). The native collector
-        // EC5C80 walks that list newest first and keeps one person mode.
+        // Idle-root records from this graph's weapon and base subgraph
+        // requests (de-duplicated by identifier). Weapon roots keep their
+        // request order and come first; base roots follow as a fallback for
+        // weapon graphs whose own roots are not idle-database roots.
         struct IdleRoot
         {
             RE::BSFixedString name;
             std::uint8_t person{};
             std::uint64_t identifier{};
+            bool base{};
         };
         std::span<const IdleRoot> idleRoots() const noexcept;
 

@@ -65,7 +65,7 @@ namespace rock::native_equipped_action_graph
         Handles baseHandles;
         Identifiers baseIdentifiers;
         std::vector<IdleRoot> roots;
-        bool addRoots(const Metadata& metadata)
+        bool addRoots(const Metadata& metadata,bool base)
         {
             if (metadata.count>1024) return false;
             auto* block=metadata.head; auto* record=metadata.read;
@@ -73,7 +73,7 @@ namespace rock::native_equipped_action_graph
                 if (!record) return false;
                 const auto person=static_cast<std::uint8_t>(record->flags&0xFF);
                 if (std::none_of(roots.begin(),roots.end(),[&](const IdleRoot& root) { return root.identifier==record->identifier; }))
-                    roots.push_back({record->name,person,record->identifier});
+                    roots.push_back({record->name,person,record->identifier,base});
                 ++record;
                 if (block && reinterpret_cast<std::byte*>(record)>=block->records.data()+0x300) {
                     block=block->next; record=block?reinterpret_cast<Metadata::Record*>(block->records.data()):nullptr;
@@ -266,11 +266,11 @@ namespace rock::native_equipped_action_graph
             s.stage="private-weapon-subgraph-request";
             if (!native<Request>(0x1016340)(s.player,s.race,manager,&role,&keywords,&priority,&s.handles,&s.identifiers,&metadata) ||
                 s.handles.empty() || s.identifiers.empty()) return Load::Failed;
-            // Native actors keep the base subgraph's idle roots beside the
-            // weapon's. A weapon graph whose own roots are not idle-database
-            // roots (e.g. a modded pistol) selects equip/fire/reload idles
-            // from the base roots, so both are required, base first.
-            if (!s.addRoots(baseMetadata) || !s.addRoots(metadata)) return Load::Failed;
+            // Weapon roots first, in request order: the third-person weapon
+            // root resolves the attack/reload idles for the private graph.
+            // Base roots are appended for weapon graphs whose own roots are
+            // not idle-database roots (left Glock: idleMatches=0 without them).
+            if (!s.addRoots(metadata,false) || !s.addRoots(baseMetadata,true)) return Load::Failed;
             s.phase=2;
             s.stage="native-subgraph-loading";
             return Load::Pending;
@@ -299,8 +299,8 @@ namespace rock::native_equipped_action_graph
             const auto& cache=manager->variableCache;
             if (cache.graphToCacheFor!=manager->graph[1] || cache.lock!=&manager->updateLock ||
                 cache.variableQuickLookup.empty() || cache.variableQuickLookup.size()>4096) return Load::Failed;
-            for (const auto& root:s.roots) ROCK_LOG_INFO(Animation,"AKIMBO private idle root form={:08X} name='{}' person={} identifier={:#x}",
-                s.item.object->formID,root.name.c_str(),root.person,root.identifier);
+            for (const auto& root:s.roots) ROCK_LOG_INFO(Animation,"AKIMBO private idle root form={:08X} name='{}' person={} base={} identifier={:#x}",
+                s.item.object->formID,root.name.c_str(),root.person,root.base,root.identifier);
             for (const auto& graph:manager->graph) s.source(graph.get())->RegisterSink(&s);
             s.sinks=true; s.phase=3;
             s.stage="ready";
