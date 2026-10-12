@@ -2,6 +2,7 @@
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
 #include <cassert>
+#include "physics-interaction/input/NativeSecondaryTrigger.h"
 
 namespace {
     rock::api::SampleV1 sample{10,1,1,2,3,4};
@@ -21,6 +22,42 @@ namespace rock::input_remap_runtime {
     RawButtonState peekRawButtonState(bool,int){return ::raw;}
 }
 int main(){
+    {
+        rock::native_secondary_trigger::Intent trigger;
+        trigger.observe(true,true); // Do not fire the held Pip-Boy equip press.
+        assert(!trigger.wantsStart());
+        trigger.observe(false,true);
+        trigger.observe(true,true);
+        assert(trigger.wantsStart());
+        trigger.observe(true,true); // Native rejected this still-held press.
+        assert(trigger.wantsStart());
+        trigger.accepted(true);
+        assert(trigger.active() && !trigger.wantsStart());
+        trigger.observe(true,true);
+        assert(!trigger.wantsStart());
+        assert(trigger.observe(false,true));
+        trigger.observe(true,true);
+        assert(trigger.wantsStart());
+        trigger.observe(false,true); // Rejected short tap cannot fire later.
+        assert(!trigger.wantsStart());
+        trigger.observe(true,true);
+        trigger.accepted(false); // Empty-trigger reload consumes this press.
+        assert(!trigger.active() && !trigger.wantsStart());
+        trigger.observe(true,true);
+        assert(!trigger.wantsStart());
+        trigger.cancel(); // Equipment change/menu/provider loss cancels it.
+        trigger.observe(true,true);
+        assert(!trigger.wantsStart());
+        trigger.observe(false,true);
+        trigger.observe(true,true);
+        trigger.accepted(true);
+        assert(trigger.observe(true,false)); // Stale input stops active fire.
+        trigger.observe(true,true);
+        assert(!trigger.wantsStart());
+        trigger.observe(false,true);
+        trigger.observe(true,true);
+        assert(trigger.wantsStart());
+    }
     using namespace rock;
     using namespace api;
     namespace control=physical_reload_input;

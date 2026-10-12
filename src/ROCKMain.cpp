@@ -41,6 +41,8 @@
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
+#include "physics-interaction/weapon/NativeHandEquipment.h"
+#include "physics-interaction/weapon/NativeSecondaryPresentation.h"
 #include "physics-interaction/weapon/scope/NativeScopeData.h"
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -305,6 +307,7 @@ namespace
         {
             performance_profiler::ScopedTimer timer(performance_profiler::Scope::InteractionUpdate);
             s_physicsInteraction->update();
+            native_secondary_presentation::update();
             input_remap_runtime::publishWeaponTriggerRouting();
         }
         {
@@ -740,6 +743,7 @@ namespace
      */
     void onFrikFrameBegin()
     {
+        native_secondary_presentation::beginFrame();
         frik_hand_world_authority::noteNativeRecoilControlled(false);
         performance_profiler::refreshSettings(
             g_rockConfig.rockPerformanceProfilerEnabled,
@@ -772,6 +776,7 @@ namespace
      */
     void onFrikFrameEnd()
     {
+        native_secondary_presentation::endFrame(s_skeletonTickedThisFrame);
         if (s_physicsInteraction) s_physicsInteraction->discardUnfinishedFramePose();
         if (!s_providerTickedThisFrame) {
             runFrameTick(false);
@@ -827,6 +832,7 @@ namespace
             s_physicsInteraction->syncFrikOffHandGripReport();
             s_physicsInteraction->normalizeWeaponPresentationScaleAfterFrikWeaponPass();
             s_physicsInteraction->synchronizeEquipVisualBridgeAfterFrikWeaponPass();
+            native_secondary_presentation::afterWeaponPosition();
             s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
         }
     }
@@ -834,6 +840,7 @@ namespace
     // AfterWorldFinal: every bone world transform is final. Latch what was rendered.
     void onFrikAfterWorldFinal()
     {
+        native_secondary_presentation::afterWorldFinal();
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::FinalPresentation);
         if (s_skeletonTickedThisFrame && s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->captureRenderedHands();
@@ -1189,8 +1196,8 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     }
     s_messaging->RegisterListener(onF4SEMessage);
 
-    logger::info("ROCK: Allocate trampoline (2204 bytes)...");
-    F4SE::AllocTrampoline(2204);
+    logger::info("ROCK: Allocate trampoline (4380 bytes)...");
+    F4SE::AllocTrampoline(4380);
     if (!rock::loose_weapon_state::install()) {
         spdlog::error("Loose weapon state model installation unavailable");
     }
@@ -1239,6 +1246,10 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     rock::trigger_equip_readiness_trace::install();
     if (!rock::weapon_transition_animation_acceleration::install()) {
         logger::warn("ROCK: Weapon draw/sheath animation acceleration unavailable; native timing remains unchanged.");
+    }
+
+    if (!rock::native_hand_equipment::install()) {
+        logger::error("ROCK: Hand-directed native Pip-Boy equipment unavailable.");
     }
 
     logger::info("ROCK: Install native scope data hooks...");

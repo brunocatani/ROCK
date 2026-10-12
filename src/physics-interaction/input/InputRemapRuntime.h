@@ -98,6 +98,9 @@ namespace rock::input_remap_runtime
     // OpenVR hooks present the physical left trigger to the game as the
     // primary wand's trigger and blank both physical trigger identities.
     void setEquippedWeaponLeftHandFiringActive(bool active);
+    // Independent equipped index one consumes the physical left trigger itself.
+    // Raw capture and menu/Pip-Boy input retain their existing physical identity.
+    void setSecondaryEquippedTriggerOwned(bool owned) noexcept;
     // Frame-thread staging and one coherent publication to controller hooks.
     void setWeaponTransferPending(bool pending);
     void publishWeaponTriggerRouting();

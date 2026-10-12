@@ -84,11 +84,18 @@ namespace rock::fo4vr
     {
         auto* player = getPlayer();
         auto* middleHigh = player && player->currentProcess ? player->currentProcess->middleHigh : nullptr;
-        if (!middleHigh || middleHigh->equippedItems.empty()) {
+        if (!middleHigh || middleHigh->equippedItems.empty() || middleHigh->equippedItems.size() > 32) {
             return nullptr;
         }
 
-        auto* equippedItem = std::addressof(middleHigh->equippedItems[0]);
+        // The native array is sorted by equipment index. With only a left
+        // firearm present element zero is index one, not the primary Weapon
+        // attachment. Never drive the primary model using the left item's data.
+        RE::EquippedItem* equippedItem = nullptr;
+        for (auto& entry : middleHigh->equippedItems) {
+            if (entry.equipIndex.index == 0) { equippedItem = std::addressof(entry); break; }
+        }
+        if (!equippedItem) return nullptr;
         auto* object = equippedItem->item.object;
         if (!object || object->formType != RE::ENUM_FORM_ID::kWEAP) {
             return nullptr;

@@ -552,6 +552,25 @@ if(BUILD_ROCK_TESTS)
   target_link_libraries(ROCKNativeScopeAdmissionTests PRIVATE CommonLibF4::CommonLibF4)
   add_rock_test(ROCKNativeScopeAdmissionTests)
 
+  add_executable(ROCKNativeExecutionSlotStubTests "${ROOT_DIR}/tests/NativeExecutionSlotStubTests.cpp")
+  target_compile_features(ROCKNativeExecutionSlotStubTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKNativeExecutionSlotStubTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKNativeExecutionSlotStubTests PRIVATE CommonLibF4::CommonLibF4)
+  add_rock_test(ROCKNativeExecutionSlotStubTests)
+
+  add_executable(ROCKNativeSecondaryModelBranchTests "${ROOT_DIR}/tests/NativeSecondaryModelBranchTests.cpp")
+  target_compile_features(ROCKNativeSecondaryModelBranchTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKNativeSecondaryModelBranchTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKNativeSecondaryModelBranchTests PRIVATE CommonLibF4::CommonLibF4)
+  add_rock_test(ROCKNativeSecondaryModelBranchTests)
+
+  add_executable(ROCKNativeModelAncestryTests
+    "${ROOT_DIR}/tests/NativeModelAncestryTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/native/NativeMemory.cpp")
+  target_compile_features(ROCKNativeModelAncestryTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKNativeModelAncestryTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKNativeModelAncestryTests)
+
   add_executable(ROCKNativePlayerCollisionSuppressionPolicyTests
     "${ROOT_DIR}/tests/NativePlayerCollisionSuppressionPolicyTests.cpp"
   )
@@ -871,6 +890,11 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKProviderInstanceAccessTests PRIVATE cxx_std_23)
   target_include_directories(ROCKProviderInstanceAccessTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKProviderInstanceAccessTests)
+
+  add_executable(ROCKQueuedHandInputTests "${ROOT_DIR}/tests/QueuedHandInputTests.cpp")
+  target_compile_features(ROCKQueuedHandInputTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKQueuedHandInputTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKQueuedHandInputTests)
 
   add_executable(ROCKDefaultGrabPoseRegistryTests "${ROOT_DIR}/tests/DefaultGrabPoseRegistryTests.cpp")
   add_executable(ROCKHeldObjectTargetTests "${ROOT_DIR}/tests/HeldObjectTargetTests.cpp")

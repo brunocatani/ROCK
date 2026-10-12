@@ -4,6 +4,7 @@
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
+#include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "api/ProviderRuntimeServices.h"
 
 // Equipped-weapon frame: transitions, the per-frame equipped weapon update, authored primary grip runtime, handling settings, and shoulder sheath/retrieve.
@@ -239,7 +240,14 @@ namespace rock
     {
         performance_profiler::ScopedTimer equippedFrameTimer(performance_profiler::Scope::EquippedWeaponInteraction);
         const auto& runtime = runtime_state::currentFrame();
-        const bool leftHandAvailableForAcquisition = force_grab_policy::availableForEquippedGrip(
+        const bool secondaryEquipped = native_hand_equipment::hasSecondaryGun();
+        // A separately equipped left gun occupies this hand. It must not be
+        // acquired as support/firing ownership of the primary gun as well.
+        if (secondaryEquipped && (_twoHandedGrip.isFiringHandLeft() || _twoHandedGrip.isHandPartGripping(true))) {
+            _twoHandedGrip.reset();
+            clearEquippedWeaponFiringGripInputState();
+        }
+        const bool leftHandAvailableForAcquisition = !secondaryEquipped && force_grab_policy::availableForEquippedGrip(
             forceGrabHandBlockerMask(_leftHand, true, frame.left.disabled, true));
         const bool rightHandAvailableForAcquisition = force_grab_policy::availableForEquippedGrip(
             forceGrabHandBlockerMask(_rightHand, false, frame.right.disabled, true));
@@ -838,6 +846,7 @@ namespace rock
             };
             const bool primaryPoseBlockerAvailable = frik_visual_authority::canBlockPrimaryHandWeaponPose();
             const bool ambidextrousHandoffAvailable =
+                !secondaryEquipped &&
                 _equipped.handlingSettings.ambidextrousHandoffEnabled &&
                 TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true);
             const bool firingGripOwnershipFeatureAvailable = equipped_weapon_manual_ownership_policy::featureAvailable(

@@ -5,6 +5,7 @@
 #include "api/WeaponPartCollisionService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
+#include "physics-interaction/weapon/NativeHandEquipment.h"
 
 // Per-frame orchestration: update(), interaction frame finalization, hand transform sampling, physics substep callbacks, held-mass slowdown, and the frame/debug-overlay implementation includes.
 
@@ -514,6 +515,7 @@ namespace rock
         // Before any early return below: a skipped consume would let a stale
         // accept-button press replay as a reload frames later (see the API doc).
         input_remap_runtime::updateFiringHandReloadInput(runtime.deltaSeconds);
+        native_hand_equipment::observe();
 
         /*
          * runtime.deltaSeconds is the central sanitized game delta; no local

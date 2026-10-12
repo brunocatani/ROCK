@@ -2,6 +2,8 @@
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/input/PhysicalReloadInput.h"
 #include "physics-interaction/input/SupportTriggerInput.h"
+#include "physics-interaction/weapon/NativeSecondaryActions.h"
+#include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "RPSUIInputApi.h"
 
 #include "physics-interaction/input/InputRemapPolicy.h"
@@ -241,6 +243,7 @@ namespace rock::input_remap_runtime
 
         std::array<ControllerTracker, 2> s_controllers;
         std::atomic<bool> s_gameplayInputAllowed{ false };
+        std::atomic<bool> s_secondaryEquippedTriggerOwned{ false };
         std::atomic<bool> s_weaponDrawn{ false };
         std::atomic<bool> s_realMeleeWeaponEquipped{ false };
         weapon_trigger_routing::Snapshot s_pendingWeaponRouting{}; // Interaction thread only.
@@ -720,7 +723,7 @@ namespace rock::input_remap_runtime
          */
         [[nodiscard]] bool shouldRemapLeftHandFireTriggerForGame()
         {
-            return weaponRouting().leftFiring &&
+            return weaponRouting().leftFiring && !s_secondaryEquippedTriggerOwned.load(std::memory_order_acquire) &&
                 s_gameplayInputAllowed.load(std::memory_order_acquire) &&
                 !isInputBlockingMenuActive();
         }
@@ -945,7 +948,8 @@ namespace rock::input_remap_runtime
                     if(controllerState&&controllerStateSize>=sizeof(vr::VRControllerState_t)&&!isInputBlockingMenuActive()&&
                         !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
                         const auto mask=physical_reload_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed) |
-                            support_trigger_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed);
+                            support_trigger_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed) |
+                            ((hand==input_remap_policy::Hand::Left && s_secondaryEquippedTriggerOwned.load(std::memory_order_acquire)) ? (1ull<<33) : 0ull);
                         controllerState->ulButtonPressed&=~mask;controllerState->ulButtonTouched&=~mask;
                         if(mask&(1ull<<33))controllerState->rAxis[1]={};
                     }
@@ -988,7 +992,8 @@ namespace rock::input_remap_runtime
                     if(controllerState&&controllerStateSize>=sizeof(vr::VRControllerState_t)&&!isInputBlockingMenuActive()&&
                         !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
                         const auto mask=physical_reload_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed) |
-                            support_trigger_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed);
+                            support_trigger_input::gameMask(hand==input_remap_policy::Hand::Left,controllerState->ulButtonPressed) |
+                            ((hand==input_remap_policy::Hand::Left && s_secondaryEquippedTriggerOwned.load(std::memory_order_acquire)) ? (1ull<<33) : 0ull);
                         controllerState->ulButtonPressed&=~mask;controllerState->ulButtonTouched&=~mask;
                         if(mask&(1ull<<33))controllerState->rAxis[1]={};
                     }
@@ -2800,6 +2805,11 @@ namespace rock::input_remap_runtime
         }
     }
 
+    void setSecondaryEquippedTriggerOwned(bool owned) noexcept
+    {
+        s_secondaryEquippedTriggerOwned.store(owned,std::memory_order_release);
+    }
+
     bool isProviderOpenVrGameInputSuppressedForHand(bool isLeft)
     {
         return isProviderOpenVrGameInputSuppressed(
@@ -2873,6 +2883,15 @@ namespace rock::input_remap_runtime
             physical_reload_input::observe(false,{});
             blockManualScopeInputUntilRelease();
             return;
+        }
+        if (native_hand_equipment::hasSecondaryGun()) {
+            if (leftAcceptState.available && leftAcceptState.pressed &&
+                s_gameplayInputAllowed.load(std::memory_order_acquire) &&
+                s_weaponDrawn.load(std::memory_order_acquire) && !isInputBlockingMenuActive())
+                (void)native_secondary_actions::requestReload();
+            // This hand owns a second equipped firearm. Its X press must not
+            // become a primary reload or a physical-reload consumer gesture.
+            leftAcceptState={};
         }
         if(physical_reload_input::observe(true,leftAcceptState))leftAcceptState={};
         if(physical_reload_input::observe(false,rightAcceptState))rightAcceptState={};

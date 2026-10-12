@@ -1,4 +1,5 @@
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
+#include "physics-interaction/weapon/NativeSecondaryPresentation.h"
 
 #include "api/ROCKProviderApiInternal.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
@@ -689,10 +690,13 @@ namespace rock::authored_weapon_grip_capture
                 invalidateAuthoredSupportGripCapture();
             }
 
+            const bool secondaryArmPass = native_secondary_presentation::beforeNativeArm(
+                player, weapon ? *weapon : nullptr, offsetNode ? *offsetNode : nullptr);
             void* result = s_originalUpdateFirstPersonArm ?
                 s_originalUpdateFirstPersonArm(player, weapon, offsetNode) :
                 nullptr;
             if (!captureEnabled || authorityActive) {
+                native_secondary_presentation::afterNativeArm(player, secondaryArmPass);
                 return result;
             }
             if (supportPass) {
@@ -743,6 +747,7 @@ namespace rock::authored_weapon_grip_capture
                 }
             }
 #endif
+            native_secondary_presentation::afterNativeArm(player, secondaryArmPass);
             return result;
         }
 

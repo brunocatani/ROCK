@@ -1,4 +1,6 @@
 #include "physics-interaction/weapon/WeaponAimBasis.h"
+#include "physics-interaction/weapon/NativeSecondaryPose.h"
+#include "physics-interaction/weapon/NativeSecondaryPoseTransport.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
@@ -281,6 +283,89 @@ int main()
     for (int r = 0; r < 3; ++r)
         for (int c = 0; c < 3; ++c) controller.rotate.entry[r][c] = controllerRows[r][c];
 
+    // Secondary native model placement must survive arbitrary player movement
+    // and parent changes, without turning the gun into a reflected mesh.
+    {
+        auto wristInController = transform_math::makeIdentityTransform<RE::NiTransform>();
+        wristInController.translate = { 2.0f, -3.0f, 1.0f };
+        const auto physical = transform_math::composeTransforms(controller, wristInController);
+        auto rightSeat = transform_math::makeIdentityTransform<RE::NiTransform>();
+        rightSeat.rotate = weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>({ 0, 0, 1 }, 0.37f);
+        rightSeat.translate = { 0.815f, -0.734f, -2.679f };
+        const auto leftSeat = holding_grip_math::toNative(holding_grip_math::mirroredHandSeat(
+            holding_grip_math::fromNative(rightSeat)));
+        const RE::NiPoint3 palm{ 6.0f, -2.0f, 0.2f };
+        for (const float scale : { 0.865347f, 1.0f, 1.2f }) {
+            RE::NiTransform weapon{}, hand{};
+            ok &= expect("secondary pose resolves", native_secondary_pose::solve(controller, physical, leftSeat, palm, scale, weapon, hand));
+            ok &= expect("secondary firing seat pins the physical palm at every model scale",
+                weaponSolverLength(transform_math::localPointToWorld(hand, palm) - transform_math::localPointToWorld(physical, palm)) < 0.001f);
+            ok &= expect("mirrored seat and rendered gun retain proper rotations",
+                holding_grip_math::valid(holding_grip_math::fromNative(leftSeat)) &&
+                holding_grip_math::valid(holding_grip_math::fromNative(weapon)));
+            auto motion = transform_math::makeIdentityTransform<RE::NiTransform>();
+            motion.rotate = weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>({ 0, 0, 1 }, 1.3f);
+            motion.translate = { 2100.0f, -3800.0f, 620.0f };
+            RE::NiTransform movedWeapon{}, movedHand{};
+            ok &= expect("moving controllers resolve independently", native_secondary_pose::solve(
+                transform_math::composeTransforms(motion, controller), transform_math::composeTransforms(motion, physical),
+                leftSeat, palm, scale, movedWeapon, movedHand));
+            ok &= expect("secondary solve follows player motion without a frozen world pose",
+                samePose(movedWeapon, transform_math::composeTransforms(motion, weapon)) &&
+                samePose(movedHand, transform_math::composeTransforms(motion, hand)));
+            // The game changes the parent after FRIK. Recompute local placement
+            // under that parent; replaying the previous local is incorrect.
+            const auto local = transform_math::composeTransforms(transform_math::invertTransform(motion), weapon);
+            ok &= expect("late native parent movement cannot rotate the placed gun",
+                samePose(transform_math::composeTransforms(motion, local), weapon));
+        }
+        auto invalidSeat = leftSeat;
+        invalidSeat.scale = 0;
+        RE::NiTransform rejectedWeapon{}, rejectedHand{};
+        ok &= expect("invalid authored pose fails before a scene write", !native_secondary_pose::solve(
+            controller, physical, invalidSeat, palm, 1, rejectedWeapon, rejectedHand));
+    }
+
+    // Captured 2026-10-12 frame 3452: the primary native arm pass leaves the
+    // secondary attachment near the origin; its own pass moves it to the
+    // controller. A world write between those passes creates a huge local.
+    {
+        auto target = weapon_aim_basis::weaponInController();
+        target.translate = { 0.9847f, -1.9616f, -2.0078f };
+        auto temporaryParent = transform_math::makeIdentityTransform<RE::NiTransform>();
+        temporaryParent.translate = { -48387.7695f, 47794.0703f, -40325.0781f };
+        const float temporaryRows[3][3] = {
+            {-0.649386f, 0.091125f, 0.754980f}, {0.676474f, 0.522750f, 0.518764f}, {-0.347393f, 0.847602f, -0.401110f}
+        };
+        auto placedParent = transform_math::makeIdentityTransform<RE::NiTransform>();
+        placedParent.translate = {-0.5560f, -8.7682f, 3.5112f};
+        const float placedRows[3][3] = {
+            {-0.085775f, 0.977530f, -0.192554f}, {-0.064110f, -0.198281f, -0.978046f}, {-0.994249f, -0.071547f, 0.079677f}
+        };
+        for (int row = 0; row < 3; ++row) for (int col = 0; col < 3; ++col) {
+            temporaryParent.rotate.entry[row][col] = temporaryRows[row][col];
+            placedParent.rotate.entry[row][col] = placedRows[row][col];
+        }
+        const auto earlyLocal = weapon_visual_authority_math::worldTargetToParentLocal(temporaryParent, target);
+        const auto corrupted = transform_math::composeTransforms(placedParent, earlyLocal);
+        ok &= expect("captured unrelated arm repair reproduces the huge offset",
+            weaponSolverLength(earlyLocal.translate) > 78000 && weaponSolverLength(corrupted.translate - target.translate) > 78000);
+        const auto properLocal = weapon_visual_authority_math::worldTargetToParentLocal(placedParent, target);
+        const auto restored = transform_math::composeTransforms(placedParent, properLocal);
+        ok &= expect("same target after its own arm placement retains a grip-sized local",
+            weaponSolverLength(properLocal.translate) < 15 && weaponSolverLength(restored.translate - target.translate) < 0.001f);
+
+        auto evaluatedPart = transform_math::composeTransforms(placedParent, target);
+        // Native evaluated worlds can differ from rebuilding the original local
+        // (animation/OMOD output). Transport the evaluated frame intact.
+        evaluatedPart.translate += RE::NiPoint3{ 1.0f, -2.0f, 3.0f };
+        const auto relation = transform_math::composeTransforms(transform_math::invertTransform(placedParent), evaluatedPart);
+        const auto delta = weapon_visual_authority_math::makePresentationWorldDelta(placedParent, target);
+        const auto movedPart = weapon_visual_authority_math::applyPresentationWorldDelta(delta, evaluatedPart);
+        const auto retainedRelation = transform_math::composeTransforms(transform_math::invertTransform(target), movedPart);
+        ok &= expect("rigid presentation retains native evaluated descendant pose", samePose(relation, retainedRelation));
+    }
+
     // A generated proxy pocket is intentionally distinct from the authored
     // palm. Loose placement must match equipped placement while its body-local
     // constraint anchor still lands on that independent proxy pivot.
@@ -389,6 +474,92 @@ int main()
         mirroredController.rotate = weaponSolverApplyWorldRotationToStoredBasis<RE::NiMatrix3, RE::NiPoint3>(
             weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>(RE::NiPoint3{ 0.0f, 0.0f, 1.0f }, 1.2f), controller.rotate);
         ok &= checkAuthoredTransitions(mirroredController, scale);
+    }
+    // Captured failure: body around (29971,-66900,606), private parts near
+    // the detached rig's origin. Its world must include the authored Weapon
+    // offset before descendant worlds are evaluated.
+    for (const float scale:{1.0f,0.865347f}) {
+        auto target=weapon;
+        target.translate={29971.7363f,-66900.9297f,606.3915f};
+        target.scale=scale;
+        auto weaponInRig=transform_math::makeIdentityTransform<RE::NiTransform>();
+        weaponInRig.translate={1.6f,14.2f,-8.4f};
+        weaponInRig.rotate=weaponSolverAxisAngleStored<RE::NiMatrix3,RE::NiPoint3>({1,0,0},0.65f);
+        RE::NiTransform rigWorld{};
+        ok &= expect("detached behavior root can be anchored",native_secondary_pose::resolveBehaviorRootWorld(weaponInRig,target,rigWorld));
+        const auto placedWeapon=transform_math::composeTransforms(rigWorld,weaponInRig);
+        ok &= expect("private Weapon lands on the held weapon",(placedWeapon.translate-target.translate).Length()<0.02f);
+        for (const RE::NiPoint3 partOffset:{RE::NiPoint3{0,-2,-7},RE::NiPoint3{0,3,2},RE::NiPoint3{0,4.5f,2}}) {
+            auto part=transform_math::makeIdentityTransform<RE::NiTransform>();
+            part.translate=partOffset;
+            const auto partInRig=transform_math::composeTransforms(weaponInRig,part);
+            const auto presented=transform_math::composeTransforms(rigWorld,partInRig);
+            const auto expected=transform_math::composeTransforms(target,part);
+            ok &= expect("magazine and moving bolt retain their evaluated weapon-relative pose",(presented.translate-expected.translate).Length()<0.025f);
+            ok &= expect("unplaced rig reproduces the missing-part distance",(partInRig.translate-expected.translate).Length()>10000);
+        }
+        auto collapsed=weaponInRig;
+        collapsed.rotate=RE::NiMatrix3{};
+        ok &= expect("collapsed private rig rejected before inversion",!native_secondary_pose::resolveBehaviorRootWorld(collapsed,target,rigWorld));
+    }
+    {
+        namespace transport=native_secondary_pose_transport;
+        auto initial=transform_math::makeIdentityTransform<RE::NiTransform>();
+        initial.translate={29971.7363f,-66900.9297f,606.3915f};
+        // Native matrix measured in frame1095, 16:26 session. Its tiny
+        // non-orthogonality must not multiply into descendant scale each pass.
+        const float rows[3][3]={{1.000163f,0.001669f,-0.002215f},{-0.001730f,0.550011f,-0.834557f},{0.000301f,0.835510f,0.551147f}};
+        for (int r=0;r<3;++r) for (int c=0;c<3;++c) initial.rotate.entry[r][c]=rows[r][c];
+        auto part=transform_math::makeIdentityTransform<RE::NiTransform>();
+        part.translate={-0.8f,7.3f,-10.3f};
+        auto previous=initial;
+        auto output=transform_math::composeTransforms(previous,part);
+        auto oldOutput=output;
+        transport::EvaluatedPose evaluatedPose;
+        bool reproduced=false;
+        for (int frame=1;frame<=2000;++frame) {
+            auto target=initial;
+            target.translate.x+=std::sin(float(frame)*0.019f)*3.0f;
+            const auto yaw=weaponSolverAxisAngleStored<RE::NiMatrix3,RE::NiPoint3>({0,0,1},std::sin(float(frame)*0.013f)*0.25f);
+            target.rotate=transform_math::multiplyStoredRotations(initial.rotate,yaw);
+            auto carry=transform_math::makeIdentityTransform<RE::NiTransform>();
+            carry.translate={0.125f,-0.25f,0.0625f};
+            previous=transform_math::composeTransforms(carry,previous);
+            output=transform_math::composeTransforms(carry,output);
+            oldOutput=transform_math::composeTransforms(carry,oldOutput);
+            evaluatedPose.carryPublished(carry);
+            RE::NiTransform next;
+            ok &= expect("evaluated descendant transports",evaluatedPose.reframe(previous,target,output,next));
+            const auto expected=transform_math::composeTransforms(target,part);
+            ok &= expect("repeated transport retains part placement",(next.translate-expected.translate).Length()<0.15f);
+            for (int r=0;r<3;++r) for (int c=0;c<3;++c)
+                ok &= expect("repeated transport does not stretch rotation",std::abs(next.rotate.entry[r][c]-expected.rotate.entry[r][c])<0.0002f);
+            if (!reproduced) {
+                const auto badDelta=transform_math::composeTransforms(target,transform_math::invertTransform(previous));
+                oldOutput=transform_math::composeTransforms(badDelta,oldOutput);
+                reproduced=transport::inspect(oldOutput).orthogonalityError>0.1;
+            }
+            output=next; previous=target;
+        }
+        ok &= expect("old transpose transport reproduces accumulated distortion",reproduced);
+        RE::NiTransform identical;
+        ok &= expect("unchanged anchor is exactly idempotent",evaluatedPose.reframe(previous,previous,output,identical) && samePose(output,identical));
+        auto nativeUpdate=output;
+        nativeUpdate.translate.z+=0.75f;
+        RE::NiTransform changedLocal;
+        ok &= expect("native world-only animation can be captured",transport::relative(previous,nativeUpdate,changedLocal));
+        ok &= expect("external animation replaces cached relation",evaluatedPose.reframe(previous,initial,nativeUpdate,identical) &&
+            (identical.translate-transform_math::composeTransforms(initial,changedLocal).translate).Length()<0.02f);
+        auto hiddenAnchor=initial; hiddenAnchor.scale=0;
+        auto beforeHide=identical;
+        ok &= expect("controlled anchor may hide descendants",evaluatedPose.reframe(initial,hiddenAnchor,beforeHide,identical) && identical.scale==0);
+        auto hiddenWorld=identical;
+        ok &= expect("retained relation survives native zero-scale hiding",evaluatedPose.reframe(hiddenAnchor,initial,hiddenWorld,identical) &&
+            (identical.translate-beforeHide.translate).Length()<0.02f && identical.scale==beforeHide.scale);
+        auto hidden=output; hidden.scale=0;
+        ok &= expect("authored hidden descendant remains hidden",evaluatedPose.reframe(previous,initial,hidden,identical) && identical.scale==0);
+        auto singular=previous; singular.rotate=RE::NiMatrix3{};
+        ok &= expect("singular source is rejected before transport",!evaluatedPose.reframe(singular,initial,output,identical));
     }
     ok &= expect("invalid scale rejected", !weapon_aim_basis::tryResolveWorld(controller, 0.0f, weapon));
     controller.rotate.entry[0][0] = std::numeric_limits<float>::quiet_NaN();

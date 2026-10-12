@@ -519,6 +519,19 @@ namespace rock::frik_visual_authority
         return published;
     }
 
+    // FRIK attaches exact finger locals to an existing tagged pose; locals
+    // alone do not create one. Keep acquisition and failure cleanup together.
+    [[nodiscard]] inline bool setAuthoredFingerPose(const char* tag, Hand hand,
+        const FingerLocalTransformOverride& transforms, int priority)
+    {
+        if (!setHandPoseCustom(tag, hand, HandPoseData{}, priority) ||
+            !setHandPoseCustomLocalTransforms(tag, hand, &transforms, priority)) {
+            (void)clearHandPose(tag, hand);
+            return false;
+        }
+        return true;
+    }
+
     [[nodiscard]] inline bool getHandPoseLocalTransformsForPose(
         Hand hand,
         const HandPoseData& handPose,
