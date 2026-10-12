@@ -1761,6 +1761,29 @@ namespace rock
                     return true;
                 }
                 heldRef = equipHand.getHeldRef();
+                if (pairedGrips.valid()) {
+                    // The final held update can change both the model and its
+                    // authored wrist targets. Transfer that single presentation
+                    // sample to both owners, not the earlier constraint sample.
+                    const auto capturePresentedGrip = [&](Hand& source, bool left,
+                                                          weapon_grip_transfer::HandGrip& grip) {
+                        RE::NiTransform handWorld{};
+                        if (!source.captureWeaponGripTransfer(grip) || !heldRef || !heldRef->Get3D() ||
+                            !weapon_grip_transfer::validFrame(heldRef->Get3D()->world) ||
+                            !frik_hand_world_authority::tryGetPublishedHandWorld(left, handWorld)) return false;
+                        grip.handWeaponLocal = transform_math::composeTransforms(
+                            transform_math::invertTransform(heldRef->Get3D()->world), handWorld);
+                        return grip.valid();
+                    };
+                    if (!capturePresentedGrip(equipHand, equipIsLeft, pairedGrips.primary) ||
+                        !capturePresentedGrip(supportHand, !equipIsLeft, pairedGrips.support)) {
+                        ROCK_LOG_SAMPLE_WARN(Hand, 1000, "Paired held equip deferred: current presented wrists unavailable");
+                        return true; // Both held objects were already updated this frame.
+                    }
+                    pendingGripStart.pairedGrips = pairedGrips;
+                    pendingGripStart.firingHandWeaponLocal = pairedGrips.primary.handWeaponLocal;
+                    pendingGripStart.firingGripWeaponLocal = pairedGrips.primary.gripWeaponLocal;
+                }
                 weapon_grip_transfer::HandGrip singleGrip{};
                 RE::NiTransform looseHandWorld{};
                 if (supportEquipRequested) {

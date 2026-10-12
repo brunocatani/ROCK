@@ -1122,7 +1122,10 @@ namespace rock
             &returningHand.lastApplied :
             liveHandWorld;
         const RE::NiTransform appliedFiringHandWorld =
-            resolveLockedHandVisualTarget(
+            // A loose-to-equipped transfer already owns a seated wrist. A new
+            // acquisition would first publish the unposed physical hand and
+            // then animate it back onto the grip, despite uninterrupted holding.
+            _firing.transferredPrimaryGrip.valid() ? firingHandWorld : resolveLockedHandVisualTarget(
                 firingHandWorld,
                 acquisitionStart,
                 dt,
@@ -1167,7 +1170,7 @@ namespace rock
         const bool synchronizedDynamicAcquisition =
             dynamicSupportAcquisitionMatches(isLeft, grip);
         const RE::NiTransform appliedHandWorld =
-            synchronizedDynamicAcquisition ?
+            grip.transferredLooseGrip ? partGripHandWorld : synchronizedDynamicAcquisition ?
             resolveDynamicSupportAcquisitionHandTarget(
                 partGripHandWorld,
                 grip.visualLerp) :

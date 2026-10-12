@@ -843,6 +843,23 @@ namespace rock
                     _weaponFormID,(primary ? _isLeftHand : !_isLeftHand)?"left":"right",_lifetimeSeconds*1000.0f,
                     delta.x,delta.y,delta.z,std::sqrt(delta.x*delta.x+delta.y*delta.y+delta.z*delta.z),
                     rotationDistanceDegrees(bridgeHand,replacement.target),hand_world_claim_registry_policy::tagView(replacement),replacement.priority,grip.fingerMask,compensated);
+                // Separate a changed hand seat from movement of the whole
+                // weapon. This comparison remains meaningful while playing VR.
+                const auto native = equipped_weapon_visual_state::observe(_weaponFormID);
+                RE::NiPoint3 targetTranslation{};
+                if (native.exactInstance && native.weaponRoot &&
+                    weapon_grip_transfer::validFrame(native.weaponRoot->world) &&
+                    vanilla_weapon_grip_frame::resolveModelTranslation(_weaponFormID, native.weaponRoot, targetTranslation)) {
+                    auto expectedLocal = grip.handWeaponLocal;
+                    expectedLocal.translate += targetTranslation - _capturedGrips.sourceModelTranslation;
+                    const auto actualLocal = transform_math::composeTransforms(
+                        transform_math::invertTransform(native.weaponRoot->world), replacement.target);
+                    const auto seatDelta = actualLocal.translate - expectedLocal.translate;
+                    ROCK_LOG_INFO(Weapon, "EQUIP-POSE hand-seat form={:08X} hand={} visualBridge={} distance={:.5f}gu rotation={:.4f}deg owner={}",
+                        _weaponFormID, (primary ? _isLeftHand : !_isLeftHand) ? "left" : "right", !_handPoseOnly,
+                        std::sqrt(seatDelta.x*seatDelta.x + seatDelta.y*seatDelta.y + seatDelta.z*seatDelta.z),
+                        rotationDistanceDegrees(expectedLocal, actualLocal), hand_world_claim_registry_policy::tagView(replacement));
+                }
                 _handPoseAuditMask |= auditBit;
             }
         }
