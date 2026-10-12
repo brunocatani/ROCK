@@ -387,12 +387,18 @@ namespace rock::native_hand_equipment
             if (modelIndex >= 44) continue;
             const auto readModel = [&](const void* source, RE::NiAVObject*& root) {
                 if (!source) return;
+                // One guarded copy of the record's form (+10), instance (+18)
+                // and root (+40) span: each guarded read costs a page query,
+                // and this view is rebuilt many times per frame.
+                std::array<std::byte, 0x38> fields{};
                 const auto* record = static_cast<const std::byte*>(source) + modelIndex * 0x58;
+                if (!native_memory::guardedCopyFromMemory(record + 0x10, fields.data(), fields.size())) return;
                 RE::TESBoundObject* modelForm = nullptr;
                 RE::TBO_InstanceData* modelInstance = nullptr;
-                if (native_memory::tryReadField(record, 0x10, modelForm) && modelForm == weapon &&
-                    native_memory::tryReadField(record, 0x18, modelInstance) && modelInstance == instance)
-                    native_memory::tryReadField(record, 0x40, root);
+                std::memcpy(&modelForm, fields.data(), sizeof(modelForm));
+                std::memcpy(&modelInstance, fields.data() + 0x08, sizeof(modelInstance));
+                if (modelForm == weapon && modelInstance == instance)
+                    std::memcpy(&root, fields.data() + 0x30, sizeof(root));
             };
             readModel(biped, view.root);
             if (bodyBiped != biped) readModel(bodyBiped, view.bodyRoot);

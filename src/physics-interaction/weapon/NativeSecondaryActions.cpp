@@ -133,6 +133,8 @@ namespace rock::native_secondary_actions
             std::array<IdleQuery,32> idles{};
             std::size_t idleCount{};
             bool traceReload{};
+            // Equipment identity resolved once per synchronous native call.
+            bool identityChecked{},identityMatched{};
         };
         thread_local Context* t_context{};
         struct Scope
@@ -206,9 +208,18 @@ namespace rock::native_secondary_actions
         }
         bool validContext()
         {
-            return s_installed && t_context && t_context->player==f4vr::getPlayer() &&
-                t_context->state->ready && t_context->state->thread==GetCurrentThreadId() &&
-                same(*t_context->state,native_hand_equipment::equippedViews()[1]);
+            if (!s_installed || !t_context || t_context->player!=f4vr::getPlayer() ||
+                !t_context->state->ready || t_context->state->thread!=GetCurrentThreadId()) return false;
+            // A scope spans one synchronous native action, shot, reload or
+            // recoil call, and ROCK never equips inside it. Every hooked lookup
+            // in that call (variable getters fire dozens of times) shares the
+            // identity resolved at its first lookup instead of re-reading the
+            // equipment and biped records through guarded page queries.
+            if (!t_context->identityChecked) {
+                t_context->identityMatched=same(*t_context->state,native_hand_equipment::equippedViews()[1]);
+                t_context->identityChecked=true;
+            }
+            return t_context->identityMatched;
         }
         // EF96B0 and EFD1C0 share only these three scalar fields and bit 1.
         // Execute those synchronous native leaf operations on the scene owner,
