@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
 #include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "physics-interaction/weapon/EquipPickupScope.h"
+#include "physics-interaction/weapon/NativeInventoryHandSlots.h"
 
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -41,7 +42,7 @@ namespace rock::weapon_equip_transfer
             const auto target = REL::Offset(0xE70280).address();
             std::array<std::uint8_t, expected.size()> actual{};
             if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(target), actual.data(), actual.size()) ||
-                actual != expected) return nullptr;
+                (actual != expected && !native_inventory_hand_slots::ownsNativeUnequipEntry())) return nullptr;
             return reinterpret_cast<UnequipObject>(target);
         }
 
@@ -80,7 +81,7 @@ namespace rock::weapon_equip_transfer
             std::uint32_t count = 0;
             std::uintptr_t stackAddress = 0;
             RE::BSTSmartPointer<RE::TBO_InstanceData> instanceData{};
-            RE::BGSEquipSlot* equipSlot = nullptr;
+            const RE::BGSEquipSlot* equipSlot = nullptr;
         };
 
         struct EquippedWeaponSnapshot
@@ -88,6 +89,7 @@ namespace rock::weapon_equip_transfer
             RE::TESObjectWEAP* weapon = nullptr;
             RE::TBO_InstanceData* instanceData = nullptr;
             std::uint32_t equipIndex = 0;
+            const RE::BGSEquipSlot* equipSlot = nullptr;
         };
 
         struct InventoryWeaponStackSnapshot
@@ -115,6 +117,7 @@ namespace rock::weapon_equip_transfer
             snapshot.weapon = asWeaponForm(weaponForm);
             snapshot.instanceData = equipData ? equipData->item.instanceData.get() : nullptr;
             snapshot.equipIndex = equipData ? equipData->equipIndex.index : 0;
+            snapshot.equipSlot = equipData ? equipData->equipSlot : nullptr;
             return snapshot;
         }
 
@@ -194,6 +197,15 @@ namespace rock::weapon_equip_transfer
                 return fallback;
             }
 
+            const auto equipped=readEquippedWeaponSnapshot();
+            if (equipped.weapon!=weapon || equipped.instanceData!=expectedInstanceData || !equipped.equipSlot) return fallback;
+            const RE::BGSObjectInstance exact(weapon,equipped.instanceData);
+            const native_inventory_hand_slots::Scope inventoryOwner(player);
+            using RelativeSlot=int(*)(const RE::BGSObjectInstance*,const RE::BGSEquipSlot*);
+            const auto ordinal=reinterpret_cast<RelativeSlot>(REL::Offset(0x146340).address())(&exact,equipped.equipSlot);
+            if (ordinal<0 || ordinal>2) return fallback;
+            const auto worn=static_cast<RE::BGSInventoryItem::Stack::Flag>(1u<<ordinal);
+
             const RE::BSAutoReadLock inventoryLock{ player->inventoryList->rwLock };
             for (auto& inventoryItem : player->inventoryList->data) {
                 if (inventoryItem.object != weapon) {
@@ -202,7 +214,7 @@ namespace rock::weapon_equip_transfer
 
                 std::uint32_t stackID = 0;
                 for (auto* stack = inventoryItem.stackData.get(); stack; stack = stack->nextStack.get(), ++stackID) {
-                    if (!stack->IsEquipped()) {
+                    if (!stack->flags.any(worn)) {
                         continue;
                     }
 
@@ -221,11 +233,10 @@ namespace rock::weapon_equip_transfer
                         .count = stack->GetCount(),
                         .stackAddress = reinterpret_cast<std::uintptr_t>(stack),
                         .instanceData = instanceData,
-                        .equipSlot = weapon->GetEquipSlot(instanceData.get()),
+                        // Unequip the actual native hand, not the authored
+                        // BothHands slot which can include the surviving gun.
+                        .equipSlot = equipped.equipSlot,
                     };
-                    if (!candidate.equipSlot) {
-                        candidate.equipSlot = weapon->GetEquipSlot(nullptr);
-                    }
 
                     if (candidate.matchedInstanceData) {
                         return candidate;

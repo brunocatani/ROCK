@@ -10,6 +10,7 @@
 #include "RE/Bethesda/BSSkin.h"
 #include "RE/Bethesda/BSGeometry.h"
 #include "RE/NetImmerse/NiCloningProcess.h"
+#include <Windows.h>
 #include <vector>
 
 namespace rock::native_secondary_actions
@@ -39,9 +40,39 @@ namespace rock::native_secondary_actions
             RE::NiTransform originalLocal, beforeWorld, presentedWorld, presentedLocal;
             native_secondary_pose_transport::EvaluatedPose transport;
             native_secondary_pose_transport::PresentedHistory history;
+            RE::NiTransform lastNativeLocal{};
+            bool sampledNative{};
         };
         std::vector<Skin> _skins;
         std::vector<Node> _nodes;
+        std::uint64_t _sampleFrame{UINT64_MAX},_nextReport{};
+        std::uint32_t _sampleFrames{},_movingSamples{};
+        float _nativeTravel{},_nativeRotation{},_nativeScale{},_overwrite{};
+        RE::BSFixedString _movingName;
+
+        void sampleNative(std::uint64_t frame) noexcept
+        {
+            if (_sampleFrame==frame) return;
+            _sampleFrame=frame;
+            ++_sampleFrames;
+            for (auto& node:_nodes) if (node.target) {
+                const auto& current=node.target->local;
+                if (node.sampledNative) {
+                    const float travel=(current.translate-node.lastNativeLocal.translate).Length();
+                    float matrix=0;
+                    for (int row=0;row<3;++row) for (int column=0;column<3;++column)
+                        matrix=(std::max)(matrix,std::abs(current.rotate.entry[row][column]-node.lastNativeLocal.rotate.entry[row][column]));
+                    const float scale=std::abs(current.scale-node.lastNativeLocal.scale);
+                    if (travel>0.0001f || matrix>0.0001f || scale>0.0001f) ++_movingSamples;
+                    if (travel>_nativeTravel || matrix>_nativeRotation || scale>_nativeScale) _movingName=node.actual->name;
+                    _nativeTravel=(std::max)(_nativeTravel,travel);
+                    _nativeRotation=(std::max)(_nativeRotation,matrix);
+                    _nativeScale=(std::max)(_nativeScale,scale);
+                }
+                node.lastNativeLocal=current;
+                node.sampledNative=true;
+            }
+        }
 
         static bool flatBone(RE::NiAVObject* candidate,const RE::NiTransform* world,OriginalBone& out)
         {
@@ -87,6 +118,8 @@ namespace rock::native_secondary_actions
             }
             for (auto& node:_nodes) if (node.target) node.actual->local=node.originalLocal;
             _skins.clear(); _nodes.clear();
+            _sampleFrame=UINT64_MAX; _nextReport=0; _sampleFrames=_movingSamples=0;
+            _nativeTravel=_nativeRotation=_nativeScale=_overwrite=0; _movingName={};
         }
         bool bind(RE::NiAVObject* root,native_equipped_action_graph::Graph& graph)
         {
@@ -158,6 +191,7 @@ namespace rock::native_secondary_actions
         bool present(std::uint64_t frame) noexcept
         {
             if (_nodes.empty()) return false;
+            sampleNative(frame);
             // Snapshot evaluated worlds before moving any parent. Animated
             // descendants can differ from their local transforms; rigidly carry
             // that output with the corrected bone instead of discarding it.
@@ -173,6 +207,7 @@ namespace rock::native_secondary_actions
                 const auto& parent=_nodes[node.parentIndex];
                 if (node.target) {
                     node.presentedWorld=node.target->world;
+                    _overwrite=(std::max)(_overwrite,(node.beforeWorld.translate-node.presentedWorld.translate).Length());
                     if (!native_secondary_pose_transport::relative(parent.presentedWorld,node.presentedWorld,node.presentedLocal)) {
                         ROCK_LOG_SAMPLE_WARN(Animation,1000,"AKIMBO part pose rejected stage=bound-local name='{}'",node.actual->name.c_str());
                         return false;
@@ -206,6 +241,13 @@ namespace rock::native_secondary_actions
             }
             ROCK_LOG_SAMPLE_INFO(Animation,1000,"AKIMBO secondary motion history frame={} nodes={} correctedPreviousMaxGame={:.3f} source=previous-presentation",
                 frame,_nodes.size(),historyError);
+            const auto now=GetTickCount64();
+            if (now>=_nextReport) {
+                ROCK_LOG_INFO(Animation,"AKIMBO native part evaluation frame={} frames={} changedSamples={} nativeLocalTravelGame={:.5f} nativeLocalMatrixDelta={:.5f} nativeLocalScaleDelta={:.5f} part='{}' presentationRepairGame={:.3f} reference=bone-parent-local",
+                    frame,_sampleFrames,_movingSamples,_nativeTravel,_nativeRotation,_nativeScale,_movingName.c_str(),_overwrite);
+                _nextReport=now+1000; _sampleFrames=_movingSamples=0;
+                _nativeTravel=_nativeRotation=_nativeScale=_overwrite=0; _movingName={};
+            }
             return true;
         }
     };

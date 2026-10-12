@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/NativePrimaryWeaponGraph.h"
+#include "physics-interaction/weapon/NativeEquippedBoneOwnership.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/NativeTriggerEquipGraph.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -60,7 +61,7 @@ namespace rock::native_primary_weapon_graph
         if (s_installed) return true;
         if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) return false;
         native_trigger_equip_graph::install();
-        if (!native_trigger_equip_graph::installed() ||
+        if (!native_trigger_equip_graph::installed() || !native_equipped_bone_ownership::install() ||
             !matches(0xE50DA0, std::to_array<std::uint8_t>({0x40,0x53,0x48,0x83,0xEC,0x20,0x48,0x8B,0xDA})) ||
             !matches(0xEDA2F0, std::to_array<std::uint8_t>({0x48,0x89,0x5C,0x24,0x08,0x57,0x48,0x83,0xEC,0x30}))) {
             ROCK_LOG_ERROR(Init, "Primary graph selection unavailable: shared collector or native instance lookup invalid");

@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/NativeExecutionSlotStub.h"
+#include "physics-interaction/weapon/NativeInventorySlotStub.h"
 #include <array>
 #include <cassert>
 #include <cstdint>
@@ -91,4 +92,37 @@ int main()
     assert(callbackAlignment == 8 && observed.alignment == 0);
     assert(observed.result == selected);
     assert(observed.instance == expected[1] && observed.component == expected[0]);
+
+    // E202ED retains its owner callback in RBX, with an already aligned
+    // native call frame. Verify the actual generated tail-call ABI, including
+    // volatile clobbers and the surviving nonvolatile owner register.
+    class OrdinalResolver final : public Xbyak::CodeGenerator
+    {
+    public:
+        OrdinalResolver():CodeGenerator(256)
+        {
+            mov(r10,reinterpret_cast<std::uintptr_t>(arguments.data()));
+            mov(ptr[r10],rcx); mov(ptr[r10+8],rdx); mov(ptr[r10+16],r8);
+            mov(rax,rsp); and_(eax,15); mov(ptr[r10+24],rax);
+            for (auto reg:{rcx,rdx,r8,r9,r10,r11}) mov(reg,0xBAD0BAD0BAD0BAD0ull);
+            mov(rax,selected); ret(); ready();
+        }
+    } ordinalResolver;
+    rock::native_inventory_hand_slots::OrdinalStub ordinalStub(reinterpret_cast<std::uintptr_t>(ordinalResolver.getCode()));
+    class OrdinalCaller final : public Xbyak::CodeGenerator
+    {
+    public:
+        explicit OrdinalCaller(const void* target):CodeGenerator(256)
+        {
+            push(rbx); push(rsi); sub(rsp,0x28);
+            mov(rsi,rcx); mov(rcx,expected[0]); mov(rdx,expected[1]); mov(rbx,expected[2]);
+            mov(rax,reinterpret_cast<std::uintptr_t>(target)); call(rax);
+            mov(ptr[rsi],rax); mov(ptr[rsi+8],rbx);
+            add(rsp,0x28); pop(rsi); pop(rbx); ret(); ready();
+        }
+    } ordinalCaller(ordinalStub.getCode());
+    arguments={}; observed={};
+    ordinalCaller.getCode<void(*)(Observation*)>()(&observed);
+    assert(arguments[0]==expected[0] && arguments[1]==expected[1] && arguments[2]==expected[2]);
+    assert(arguments[3]==8 && observed.result==selected && observed.instance==expected[2]);
 }

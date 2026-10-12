@@ -3,6 +3,7 @@
 #include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/weapon/NativeSecondaryBoneBindings.h"
 #include "physics-interaction/weapon/NativeEquippedAnimationAudio.h"
+#include "physics-interaction/weapon/NativeInventoryHandSlots.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/NativeNiNodeFactory.h"
@@ -43,6 +44,7 @@ namespace rock::native_secondary_actions
         using Pulse=void(*)(std::uint32_t,float,float);
         using Pattern=void(*)(std::uint32_t,float,float,std::uint32_t,std::uint32_t);
         using SetLoaded=void(*)(void*,std::uint32_t,std::uint32_t);
+        using SelectIdle=RE::TESForm*(*)(RE::TESForm*,void*,void*);
         GetManager s_getManager{};
         IdleRoots s_idleRoots{};
         DefaultWeapon s_defaultWeapon{};
@@ -52,6 +54,7 @@ namespace rock::native_secondary_actions
         Pulse s_pulse{};
         Pattern s_pattern{};
         SetLoaded s_setLoaded{};
+        SelectIdle s_selectIdle{};
         bool s_installed{};
 
         struct NativeKick { float duration{},elapsed{},distance{}; };
@@ -118,12 +121,25 @@ namespace rock::native_secondary_actions
             bool prepared{};
             std::uint32_t managerReads{},idleQueries{},idleMatches{},cacheReads{};
             bool recoil{};
+            struct Query {
+                RE::BSFixedString name;
+                std::uint32_t id{UINT32_MAX};
+                double value{};
+                bool accepted{};
+            };
+            std::array<Query,16> queries{};
+            std::size_t queryCount{};
+            struct IdleQuery { std::uint32_t candidate{},selected{}; std::size_t queryBegin{},queryEnd{}; };
+            std::array<IdleQuery,32> idles{};
+            std::size_t idleCount{};
+            bool traceReload{};
         };
         thread_local Context* t_context{};
         struct Scope
         {
             Context* previous;
-            explicit Scope(Context& context):previous(std::exchange(t_context,&context)) {}
+            native_inventory_hand_slots::Scope inventoryOwner;
+            explicit Scope(Context& context):previous(std::exchange(t_context,&context)),inventoryOwner(context.player) {}
             ~Scope() { t_context=previous; }
         };
         bool same(const State& s,const View& view)
@@ -333,6 +349,61 @@ namespace rock::native_secondary_actions
             }
             return native<RE::BSAnimationGraphVariableCache*(*)(void*)>(0xEC5590)(process);
         }
+        template<std::uintptr_t Rva,class Key,class Value>
+        bool variableQuery(void* holder,Key key,Value* output)
+        {
+            const bool accepted=native<bool(*)(void*,Key,Value*)>(Rva)(holder,key,output);
+            if (t_context && holder==static_cast<RE::IAnimationGraphManagerHolder*>(t_context->player) &&
+                t_context->queryCount<t_context->queries.size()) {
+                auto& query=t_context->queries[t_context->queryCount++];
+                if constexpr (std::is_integral_v<Key>) query.id=key;
+                else if (key) query.name=*key;
+                query.accepted=accepted;
+                if (accepted && output) query.value=static_cast<double>(*output);
+            }
+            return accepted;
+        }
+        RE::TESForm* selectIdle(RE::TESForm* candidate,void* conditions,void* history)
+        {
+            // Trace the native decision tree without changing its conditions,
+            // cooldown list or result. Keep the complete parent/child query
+            // spans for a rejected reload, including non-variable conditions.
+            auto* context=t_context;
+            Context::IdleQuery* query=nullptr;
+            if (context && context->traceReload && context->idleCount<context->idles.size()) {
+                query=&context->idles[context->idleCount++];
+                query->candidate=candidate?candidate->formID:0;
+                query->queryBegin=context->queryCount;
+            }
+            auto* result=s_selectIdle(candidate,conditions,history);
+            if (query) { query->selected=result?result->formID:0; query->queryEnd=context->queryCount; }
+            return result;
+        }
+        bool installVariableQueryTrace()
+        {
+            constexpr std::array<std::uintptr_t,6> originals{0xE15290,0xE152F0,0xE15350,0xE15230,0xE151D0,0xE15170};
+            const std::array<std::uintptr_t,6> hooks{
+                reinterpret_cast<std::uintptr_t>(&variableQuery<0xE15290,std::uint32_t,float>),
+                reinterpret_cast<std::uintptr_t>(&variableQuery<0xE152F0,std::uint32_t,bool>),
+                reinterpret_cast<std::uintptr_t>(&variableQuery<0xE15350,std::uint32_t,std::int32_t>),
+                reinterpret_cast<std::uintptr_t>(&variableQuery<0xE15230,const RE::BSFixedString*,float>),
+                reinterpret_cast<std::uintptr_t>(&variableQuery<0xE151D0,const RE::BSFixedString*,std::int32_t>),
+                reinterpret_cast<std::uintptr_t>(&variableQuery<0xE15170,const RE::BSFixedString*,bool>)};
+            const auto table=REL::Offset(0x2D819C8).address()+0x80;
+            for (std::size_t i=0;i<originals.size();++i) {
+                std::uintptr_t value{};
+                if (!native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(table+i*8),value) || value!=REL::Offset(originals[i]).address()) return false;
+            }
+            for (std::size_t i=0;i<hooks.size();++i) {
+                REL::safe_write(table+i*8,hooks[i]);
+                std::uintptr_t value{};
+                if (!native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(table+i*8),value) || value!=hooks[i]) {
+                    for (std::size_t j=0;j<=i;++j) REL::safe_write(table+j*8,REL::Offset(originals[j]).address());
+                    return false;
+                }
+            }
+            return true;
+        }
         bool installVariableCacheCalls()
         {
             // Actor's six variable getters bypass GetAnimationGraphManagerImpl
@@ -529,11 +600,24 @@ namespace rock::native_secondary_actions
             auto* form=defaults?defaults->GetDefaultObject(object):nullptr;
             if (!player || !form || !same(s,native_hand_equipment::equippedViews()[1])) return false;
             Context context{&s,player}; Scope scope{context};
+            context.traceReload=object==RE::DEFAULT_OBJECT::kActionReload;
             Action action{player,form};
             const bool accepted=native<bool(*)(void*)>(0xF9BEF0)(action.data.data());
             ++s.actions;
             if (accepted || trace(s,Trace::Action)) ROCK_LOG_INFO(Weapon,"AKIMBO native action form={:08X} hand=left action={} event='{}' accepted={} actualIndex=1 managerReads={} idleQueries={} idleMatches={} cacheReads={} conditional={} attempt={}",
                 s.item.object->formID,std::to_underlying(object),action.event().c_str(),accepted,context.managerReads,context.idleQueries,context.idleMatches,context.cacheReads,conditional,s.actions);
+            if (object==RE::DEFAULT_OBJECT::kActionReload && (accepted || trace(s,Trace::Lifecycle))) {
+                for (std::size_t i=0;i<context.queryCount;++i) {
+                    const auto& query=context.queries[i];
+                    ROCK_LOG_INFO(Animation,"AKIMBO reload condition form={:08X} attempt={} name='{}' id={} readable={} value={}",
+                        s.item.object->formID,s.actions,query.name.c_str(),query.id,query.accepted,query.value);
+                }
+                for (std::size_t i=0;i<context.idleCount;++i) {
+                    const auto& query=context.idles[i];
+                    ROCK_LOG_INFO(Animation,"AKIMBO reload selection form={:08X} attempt={} candidate={:08X} selected={:08X} variableQueryRange=[{},{})",
+                        s.item.object->formID,s.actions,query.candidate,query.selected,query.queryBegin,query.queryEnd);
+                }
+            }
             return accepted;
         }
         void attackState(State& s,std::uint32_t value)
@@ -697,6 +781,9 @@ namespace rock::native_secondary_actions
         constexpr auto ammoPrefix=std::to_array<std::uint8_t>({0x40,0x53,0x48,0x83,0xEC,0x30,0x41,0x8B,0xD8,0x4C,0x8D,0x44,0x24,0x20});
         if (!entry_trampoline_hook::install("Equipped magazines shared reserve",0xEC4B90,ammoPrefix.data(),ammoPrefix.size(),reinterpret_cast<void*>(&setLoaded),original)) return false;
         s_setLoaded=reinterpret_cast<SetLoaded>(original);
+        constexpr auto idleTracePrefix=std::to_array<std::uint8_t>({0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x6C,0x24,0x10,0x48,0x89,0x74,0x24,0x18});
+        if (!entry_trampoline_hook::install("Equipped reload native selection trace",0x593D90,idleTracePrefix.data(),idleTracePrefix.size(),reinterpret_cast<void*>(&selectIdle),original)) return false;
+        s_selectIdle=reinterpret_cast<SelectIdle>(original);
         if (!matches(0xEF96B0,std::to_array<std::uint8_t>({0x40,0x53,0x48,0x83,0xEC,0x20})) ||
             !matches(0xEFD0B0,std::to_array<std::uint8_t>({0x40,0x53,0x48,0x83,0xEC,0x50})) ||
             !matches(0xEFD1C0,std::to_array<std::uint8_t>({0x48,0x89,0x5C,0x24,0x08,0x57,0x48,0x83,0xEC,0x20})) ||
@@ -705,7 +792,7 @@ namespace rock::native_secondary_actions
             ROCK_LOG_ERROR(Init,"AKIMBO native recoil routing validation failed");
             return false;
         }
-        if (!installVariableCacheCalls()) {
+        if (!installVariableCacheCalls() || !installVariableQueryTrace()) {
             ROCK_LOG_ERROR(Init,"AKIMBO native variable cache routing validation failed");
             return false;
         }

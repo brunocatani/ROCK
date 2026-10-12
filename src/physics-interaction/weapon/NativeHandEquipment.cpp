@@ -4,6 +4,7 @@
 #include "physics-interaction/weapon/NativeEquippedModelLifetime.h"
 #include "physics-interaction/weapon/NativePrimaryWeaponGraph.h"
 #include "physics-interaction/weapon/NativeSecondaryActions.h"
+#include "physics-interaction/weapon/NativeInventoryHandSlots.h"
 
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/input/NativePipboyHandInput.h"
@@ -138,7 +139,7 @@ namespace rock::native_hand_equipment
             if (object != context.weapon || !context.either) return original;
             Slots slots{};
             auto* player = f4vr::getPlayer();
-            const bool eligible = player && resolveSlots(player, slots) && hasHandChildren(original, slots);
+            const bool eligible = player && resolveSlots(player, slots);
             try {
                 ROCK_LOG_INFO(Weapon, "AKIMBO toggle slot inputToken={} weapon={:08X} instance={:#x} original={:08X} either={:08X} eligible={}",
                     native_pipboy_hand_input::current().sequence, object->formID,
@@ -232,6 +233,7 @@ namespace rock::native_hand_equipment
         bool useItem(RE::ActorEquipManager* manager, RE::Actor* actor, std::uint32_t* handle,
             std::int32_t stack, const RE::BGSEquipSlot* requestedSlot, bool toggle, bool force) noexcept
         {
+            const native_inventory_hand_slots::Scope inventoryOwner(actor);
             auto* player = f4vr::getPlayer();
             const auto origin = native_pipboy_hand_input::current();
             const auto hand = origin.hand;
@@ -273,17 +275,6 @@ namespace rock::native_hand_equipment
                 s_readSelection(inventoryHandles, handle, stack, &selection);
                 if (selection.object != object || selection.count == 0) {
                     ROCK_LOG_WARN(Weapon, "AKIMBO equip refused: selected native inventory stack unavailable weapon={:08X} stack={}", formID, stack);
-                    return false;
-                }
-                const auto* authoredSlot = s_getSlot(object, selection.instance.get());
-                if (!hasHandChildren(authoredSlot, slots) && authoredSlot != selected) {
-                    // A leaf-only slot has no relative left worn bit: 146340
-                    // returns -1, then the native stack writer clamps it to
-                    // bit zero. Do not accept a left request that instead
-                    // replaces the right weapon or corrupts inventory markers.
-                    ROCK_LOG_WARN(Weapon,
-                        "AKIMBO equip refused: authored slot requires native inventory mapping weapon={:08X} authoredSlot={:08X} requestedSlot={:08X}; existing equipment preserved",
-                        formID, authoredSlot ? authoredSlot->formID : 0, selected->formID);
                     return false;
                 }
                 ExecutionContext execution{actor, object, selected};
@@ -511,7 +502,7 @@ namespace rock::native_hand_equipment
         s_readSelection = reinterpret_cast<ReadSelection>(REL::Offset(0x1ABBD0).address());
         // A left inventory slot without its complete native first-person gun
         // model is not a usable hand-directed equipment capability.
-        if (!native_secondary_model::install() || !native_equipped_model_lifetime::install() ||
+        if (!native_inventory_hand_slots::install() || !native_secondary_model::install() || !native_equipped_model_lifetime::install() ||
             !native_primary_weapon_graph::install() || !native_secondary_actions::install()) return false;
         try {
             native_execution_slot::Stub stub(reinterpret_cast<std::uintptr_t>(&executionSlot), REL::Offset(0xE72E25).address());
