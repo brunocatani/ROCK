@@ -101,6 +101,9 @@ namespace rock::input_remap_runtime
     // Independent equipped index one consumes the physical left trigger itself.
     // Raw capture and menu/Pip-Boy input retain their existing physical identity.
     void setSecondaryEquippedTriggerOwned(bool owned) noexcept;
+    // Frame thread publication: a weapon is drawn in each hand, so grenade
+    // use (native throw and ROCK quick-draw) has no free hand.
+    void setBothHandsHoldWeapons(bool occupied) noexcept;
     // Frame-thread staging and one coherent publication to controller hooks.
     void setWeaponTransferPending(bool pending);
     void publishWeaponTriggerRouting();

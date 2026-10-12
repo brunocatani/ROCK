@@ -18,6 +18,7 @@ namespace rock::game_ini_overrides
         {
             const char* name;
             const bool recoilSetting;
+            const bool required;  // Enforced value; recoil settings follow emergency suppression instead.
             std::atomic<bool> desired{ true };
             // Non-owning, statically registered engine SettingT objects. Published
             // once before installing the hook; never retain a collection iterator.
@@ -28,11 +29,20 @@ namespace rock::game_ini_overrides
 
         // Main-thread configuration publishes the desired value atomically for
         // the native notifier. It never reads mutable configuration off-thread.
-        constinit std::array<Override, 3> s_overrides{{
-            { "bUseKickback:VR", true },
-            { "bUseRecoil:VR", true },
-            { "bIgnoreConeOfFireCalculationsForPlayer:VR", false },
+        // Native left-handed mode is unsupported: equipment index 1, the
+        // offhand wand chain and ROCK's physical controller binding must all be
+        // the physical left hand (akimbo, recoil, FRIK hand authority).
+        constinit std::array<Override, 4> s_overrides{{
+            { "bUseKickback:VR", true, true },
+            { "bUseRecoil:VR", true, true },
+            { "bIgnoreConeOfFireCalculationsForPlayer:VR", false, true },
+            { "bLeftHandedMode:VR", false, false },
         }};
+
+        [[nodiscard]] bool requiredValue(const Override& entry) noexcept
+        {
+            return entry.recoilSetting ? !g_rockConfig.rockEmergencyDisableRecoil : entry.required;
+        }
         static_assert(std::atomic<bool>::is_always_lock_free);
 
         using Notify = void (*)(RE::Setting*);
@@ -62,7 +72,7 @@ namespace rock::game_ini_overrides
             // FO4VR 1.2.72: native INI reader 0x1D13230 (+0x3A6), settings
             // menu 0xBD9880 (handedness tail at +0xD6), and Papyrus SetINIBool
             // 0x14D70B0 (+0x99) / SetINIInt 0x14D7330 (+0x99) all notify here
-            // after writing Setting+8. Enforce the three required values before
+            // after writing Setting+8. Enforce the required values before
             // observer dispatch; other settings retain their native behavior.
             constexpr std::uintptr_t kNotifyRva = 0x1D11C30;
             constexpr std::array<std::uint8_t, 10> kPrefix{
@@ -127,8 +137,7 @@ namespace rock::game_ini_overrides
             return true;
         }
         for (auto& entry : s_overrides) {
-            entry.desired.store(!entry.recoilSetting || !g_rockConfig.rockEmergencyDisableRecoil,
-                std::memory_order_relaxed);
+            entry.desired.store(requiredValue(entry), std::memory_order_relaxed);
             entry.setting = f4vr::getIniSetting(entry.name);
             if (!entry.setting || entry.setting->GetType() != RE::Setting::SETTING_TYPE::kBinary) {
                 ROCK_LOG_ERROR(Init, "VR INI override '{}' is missing or has the wrong type; enforcement not installed", entry.name);
@@ -158,7 +167,7 @@ namespace rock::game_ini_overrides
             return;
         }
         for (auto& entry : s_overrides) {
-            const bool desired = !entry.recoilSetting || !g_rockConfig.rockEmergencyDisableRecoil;
+            const bool desired = requiredValue(entry);
             const bool modeChanged = entry.desired.exchange(desired, std::memory_order_relaxed) != desired;
             if (entry.setting->GetBinary() != desired) {
                 if (!modeChanged) entry.rejected.store(true, std::memory_order_relaxed);

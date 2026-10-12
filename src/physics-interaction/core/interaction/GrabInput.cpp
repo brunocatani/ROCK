@@ -699,7 +699,9 @@ namespace rock
         // earlier hand's equip/transfer instead of caching scene occupancy.
         const bool equippedWeaponPresent = currentEquippedWeaponOccupiesHand();
         const bool supportTransferPending = _equipped.transition.pendingGrip().supportGrip.validCarry();
-        if ((_equipped.transition.pendingGrip().pairedGrips.valid() || _equipped.transition.pendingGrip().secondSupportGrip.validCarry()) ||
+        const bool offhandWeaponOccupiesHand = isLeft && _offhandWeaponOccupiesLeft;
+        if (offhandWeaponOccupiesHand ||
+            (_equipped.transition.pendingGrip().pairedGrips.valid() || _equipped.transition.pendingGrip().secondSupportGrip.validCarry()) ||
             (supportTransferPending ? isLeft == _equipped.transition.pendingGrip().isLeft :
             !weapon_two_handed_grip_math::canProcessNormalGrabInput(
                 handIsFiringHand,
@@ -719,7 +721,9 @@ namespace rock
                     collisionGeneration);
             }
             if (hand.isHolding()) {
-                releaseSuppressedHeldObject(context.hknp, hand, isLeft, handIsFiringHand ? "firing-hand weapon equipped" : "equipped weapon support grip active");
+                releaseSuppressedHeldObject(context.hknp, hand, isLeft,
+                    offhandWeaponOccupiesHand ? "offhand weapon equipped" :
+                    handIsFiringHand ? "firing-hand weapon equipped" : "equipped weapon support grip active");
             } else if (hand.hasActivePullCatchIntent()) {
                 auto* pullCatchRef = hand.getPullCatchIntentRef();
                 hand.finishPullPrepAsPhysicalDropIfActive("pull-catch-normal-grab-suppressed");
@@ -2749,7 +2753,7 @@ namespace rock
             .integratedDetachEnabled = _equipped.handlingSettings.
                 immersiveWeapon.firingGripDetachEnabled,
             .ambidextrousHandoffAvailable = ambidextrousHandoffAvailable,
-            .leftHandedModeEnabled = g_rockConfig.rockLeftHandedMode,
+            .leftHandedModeEnabled = g_rockConfig.effectiveLeftHandedMode(),
         };
         const bool gripZoneSettleEquipEnabled =
             equipped_weapon_manual_ownership_policy::canSettleEquipInGripZone(

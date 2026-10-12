@@ -511,7 +511,7 @@ namespace rock
                         equipGrip.targetWeaponFormID, equipGrip.targetWeaponInstanceData,
                         equipGrip.previousWeaponFormID, equipGrip.previousWeaponInstanceData));
             if (equipGrip.pending && equipGrip.source == StartSource::DefaultEquip &&
-                (!g_rockConfig.rockLeftHandedMode || !pendingGripMatches || !runtime.weaponDrawn)) {
+                (!g_rockConfig.effectiveLeftHandedMode() || !pendingGripMatches || !runtime.weaponDrawn)) {
                 equipGrip = {};
             }
             const bool handSpecificOwnership = _twoHandedGrip.isManualOwnershipActive() ||
@@ -525,7 +525,7 @@ namespace rock
                     _equipped.defaultEquipObservedOwnershipKey,
                     runtime.weaponDrawn && observedEquippedWeaponFormID != 0 ?
                         currentEquippedWeaponOwnershipKey : 0,
-                    g_rockConfig.rockLeftHandedMode, handSpecificOwnership, inputBlockingMenuActive)) {
+                    g_rockConfig.effectiveLeftHandedMode(), handSpecificOwnership, inputBlockingMenuActive)) {
                 equipGrip = PendingEquippedWeaponPrimaryOnlyGripStart{
                     .pending = true,
                     .isLeft = true,
@@ -2117,7 +2117,7 @@ namespace rock
             ::rock::provider::getEquippedWeaponHandlingAuthorityV1(request);
         const auto weaponClassification = _weaponCollision.getEquippedWeaponClassification();
         const RockEquippedWeaponHandlingBaseline rockBaseline{
-            .leftHandedModeEnabled = g_rockConfig.rockLeftHandedMode,
+            .leftHandedModeEnabled = g_rockConfig.effectiveLeftHandedMode(),
             .ambidextrousHandoffEnabled =
                 g_rockConfig.rockAmbidextrousFiringGripEnabled,
             .authoredOnlySupportGrabsEnabled =

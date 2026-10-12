@@ -1045,6 +1045,10 @@ namespace rock
         std::uint32_t _placementCandidate{}, _placementRequestedForm{}, _placementPendingForm{}, _placementLastRequestForm{};
         bool _placementClickReserved{};
         float _placementScriptWait{};
+        // Frame-thread sample: a drawn offhand weapon (native equipment index
+        // 1, always the physical left hand) occupies that hand for every
+        // grab, force-grab, touch-grab, transfer and grenade gate this frame.
+        bool _offhandWeaponOccupiesLeft{};
         TwoHandedGrip _twoHandedGrip;
         DynamicHandCollisionRuntime _dynamicHandCollision;
         DynamicWorldCarCollisionRuntime _dynamicWorldCarCollision;

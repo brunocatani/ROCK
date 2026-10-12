@@ -244,6 +244,7 @@ namespace rock::input_remap_runtime
         std::array<ControllerTracker, 2> s_controllers;
         std::atomic<bool> s_gameplayInputAllowed{ false };
         std::atomic<bool> s_secondaryEquippedTriggerOwned{ false };
+        std::atomic<bool> s_bothHandsHoldWeapons{ false }; // Frame thread -> input dispatch.
         std::atomic<bool> s_weaponDrawn{ false };
         std::atomic<bool> s_realMeleeWeaponEquipped{ false };
         weapon_trigger_routing::Snapshot s_pendingWeaponRouting{}; // Interaction thread only.
@@ -2057,7 +2058,15 @@ namespace rock::input_remap_runtime
                     .immersiveGrenades = g_rockConfig.rockImmersiveGrenades,
                 });
             if (decision.cancelNativeThrow) native_grenade_throw_runtime::cancel();
-            if (decision.requestNativeThrow) static_cast<void>(native_grenade_throw_runtime::begin(button));
+            if (decision.requestNativeThrow) {
+                // Grenade use needs a free hand. With a weapon in each hand the
+                // throw is refused here; release() ignores an unarmed throw.
+                if (s_bothHandsHoldWeapons.load(std::memory_order_acquire)) {
+                    f4vr::showNotification("ROCK: Cannot throw - both hands hold weapons.");
+                } else {
+                    static_cast<void>(native_grenade_throw_runtime::begin(button));
+                }
+            }
             if (decision.releaseNativeThrow) native_grenade_throw_runtime::release(button);
             if (decision.requestGrenade) {
                 s_pendingGrenadeQuickDrawHoldRequest.store(true, std::memory_order_release);
@@ -2808,6 +2817,11 @@ namespace rock::input_remap_runtime
     void setSecondaryEquippedTriggerOwned(bool owned) noexcept
     {
         s_secondaryEquippedTriggerOwned.store(owned,std::memory_order_release);
+    }
+
+    void setBothHandsHoldWeapons(bool occupied) noexcept
+    {
+        s_bothHandsHoldWeapons.store(occupied, std::memory_order_release);
     }
 
     bool isProviderOpenVrGameInputSuppressedForHand(bool isLeft)

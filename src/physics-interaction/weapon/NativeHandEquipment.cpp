@@ -9,6 +9,7 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/input/NativePipboyHandInput.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "RockConfig.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -236,7 +237,9 @@ namespace rock::native_hand_equipment
             const native_inventory_hand_slots::Scope inventoryOwner(actor);
             auto* player = f4vr::getPlayer();
             const auto origin = native_pipboy_hand_input::current();
-            const auto hand = origin.hand;
+            // Akimbo Mode off keeps ordinary single-weapon equipping: no
+            // physical-hand routing reaches the native transaction.
+            const auto hand = g_rockConfig.rockAkimboMode ? origin.hand : Hand::None;
             if (hand == Hand::None || !actor || actor != player || !handle || requestedSlot) {
                 try {
                     ROCK_LOG_SAMPLE_INFO(Weapon, 250,
