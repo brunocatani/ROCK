@@ -617,22 +617,25 @@ namespace rock::native_secondary_actions
             auto* form=defaults?defaults->GetDefaultObject(object):nullptr;
             if (!player || !form || !same(s,native_hand_equipment::equippedViews()[1])) return false;
             Context context{&s,player}; Scope scope{context};
-            context.traceReload=object==RE::DEFAULT_OBJECT::kActionReload;
+            // Condition and idle-selection traces cover reloads and every
+            // refused action (rate-limited below), so a rejected attack
+            // reports the variable or idle that refused it.
+            context.traceReload=true;
             Action action{player,form};
             const bool accepted=native<bool(*)(void*)>(0xF9BEF0)(action.data.data());
             ++s.actions;
             if (accepted || trace(s,Trace::Action)) ROCK_LOG_INFO(Weapon,"AKIMBO native action form={:08X} hand=left action={} event='{}' accepted={} actualIndex=1 managerReads={} idleQueries={} idleMatches={} cacheReads={} conditional={} attempt={}",
                 s.item.object->formID,std::to_underlying(object),action.event().c_str(),accepted,context.managerReads,context.idleQueries,context.idleMatches,context.cacheReads,conditional,s.actions);
-            if (object==RE::DEFAULT_OBJECT::kActionReload && (accepted || trace(s,Trace::Lifecycle))) {
+            if ((object==RE::DEFAULT_OBJECT::kActionReload || !accepted) && (accepted || trace(s,Trace::Lifecycle))) {
                 for (std::size_t i=0;i<context.queryCount;++i) {
                     const auto& query=context.queries[i];
-                    ROCK_LOG_INFO(Animation,"AKIMBO reload condition form={:08X} attempt={} name='{}' id={} readable={} value={}",
-                        s.item.object->formID,s.actions,query.name.c_str(),query.id,query.accepted,query.value);
+                    ROCK_LOG_INFO(Animation,"AKIMBO action condition form={:08X} action={} attempt={} name='{}' id={} readable={} value={}",
+                        s.item.object->formID,std::to_underlying(object),s.actions,query.name.c_str(),query.id,query.accepted,query.value);
                 }
                 for (std::size_t i=0;i<context.idleCount;++i) {
                     const auto& query=context.idles[i];
-                    ROCK_LOG_INFO(Animation,"AKIMBO reload selection form={:08X} attempt={} candidate={:08X} selected={:08X} variableQueryRange=[{},{})",
-                        s.item.object->formID,s.actions,query.candidate,query.selected,query.queryBegin,query.queryEnd);
+                    ROCK_LOG_INFO(Animation,"AKIMBO action selection form={:08X} action={} attempt={} candidate={:08X} selected={:08X} variableQueryRange=[{},{})",
+                        s.item.object->formID,std::to_underlying(object),s.actions,query.candidate,query.selected,query.queryBegin,query.queryEnd);
                 }
             }
             return accepted;

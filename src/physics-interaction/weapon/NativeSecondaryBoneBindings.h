@@ -207,12 +207,16 @@ namespace rock::native_secondary_actions
                 auto& node=_nodes[i];
                 const auto& parent=_nodes[node.parentIndex];
                 if (node.target) {
-                    node.presentedWorld=node.target->world;
+                    // Native graph binding (1785010) drives a same-named model
+                    // node with the bone's LOCAL transform under the model's
+                    // own parent. Model hierarchies differ from the skeleton
+                    // (BAS rounds hang under WeaponMagazineHelper, the skeleton
+                    // has them under WeaponMagazine); copying the bone's WORLD
+                    // dropped that intermediate offset and moved the rounds
+                    // out of the magazine.
+                    node.presentedLocal=node.target->local;
+                    node.presentedWorld=transform_math::composeTransforms(parent.presentedWorld,node.presentedLocal);
                     _overwrite=(std::max)(_overwrite,(node.beforeWorld.translate-node.presentedWorld.translate).Length());
-                    if (!native_secondary_pose_transport::relative(parent.presentedWorld,node.presentedWorld,node.presentedLocal)) {
-                        ROCK_LOG_SAMPLE_WARN(Animation,1000,"AKIMBO part pose rejected stage=bound-local name='{}'",node.actual->name.c_str());
-                        return false;
-                    }
                 } else {
                     const auto& anchor=_nodes[node.anchorIndex];
                     if (!node.transport.reframe(anchor.beforeWorld,anchor.presentedWorld,node.beforeWorld,node.presentedWorld)) {
