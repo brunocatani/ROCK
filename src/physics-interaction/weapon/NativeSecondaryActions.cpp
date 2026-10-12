@@ -479,11 +479,13 @@ namespace rock::native_secondary_actions
                 return false;
             }
         }
-        // Diagnostic: once per primary weapon identity, the idle roots the
-        // native collector returns for the player's own (right-hand) actions,
-        // for comparison with weapons whose roots do not resolve in the left
-        // graph.
+        // Diagnostic: per primary weapon identity, the idle roots the native
+        // collector returns for the player's own (right-hand) actions and the
+        // player's idle-root list, at the change and again once 3 s later
+        // (subgraph registration is asynchronous), for comparison with
+        // weapons whose roots do not resolve in the left graph.
         std::atomic<std::uint32_t> s_tracedPrimaryRoots{UINT32_MAX}; // Any native idle thread.
+        std::atomic<std::uint64_t> s_settledPrimaryTrace{};
         bool idleRoots(void* database,RE::Actor* actor,RE::BSScrapArray<void*>* out)
         {
             if (!t_context && out && s_installed && actor==f4vr::getPlayer()) {
@@ -491,11 +493,19 @@ namespace rock::native_secondary_actions
                 RE::BGSObjectInstance right{nullptr,nullptr};
                 native<RE::BGSObjectInstance*(*)(RE::Actor*,RE::BGSObjectInstance*,std::uint32_t)>(0xE50DA0)(actor,&right,0);
                 const auto form=right.object?right.object->formID:0;
-                if (s_tracedPrimaryRoots.exchange(form,std::memory_order_relaxed)!=form) {
+                const auto now=GetTickCount64();
+                const bool changed=s_tracedPrimaryRoots.exchange(form,std::memory_order_relaxed)!=form;
+                if (changed) s_settledPrimaryTrace.store(now+3000,std::memory_order_relaxed);
+                auto settleAt=s_settledPrimaryTrace.load(std::memory_order_relaxed);
+                const bool settled=!changed && settleAt && now>=settleAt &&
+                    s_settledPrimaryTrace.compare_exchange_strong(settleAt,0,std::memory_order_relaxed);
+                if (changed || settled) {
+                    const char* stage=changed?"right-weapon-change":"right-weapon-settled";
                     for (std::uint32_t i=0;i<out->size() && i<16;++i)
-                        ROCK_LOG_INFO(Animation,"AKIMBO native primary idle root weapon={:08X} index={} root={:#x}",
-                            form,i,reinterpret_cast<std::uintptr_t>((*out)[i]));
-                    ROCK_LOG_INFO(Animation,"AKIMBO native primary idle roots weapon={:08X} count={} result={}",form,out->size(),result);
+                        ROCK_LOG_INFO(Animation,"AKIMBO native primary idle root stage={} weapon={:08X} index={} root={:#x}",
+                            stage,form,i,reinterpret_cast<std::uintptr_t>((*out)[i]));
+                    ROCK_LOG_INFO(Animation,"AKIMBO native primary idle roots stage={} weapon={:08X} count={} result={}",stage,form,out->size(),result);
+                    native_equipped_action_graph::logPlayerIdleRoots(actor,form,stage);
                 }
                 return result;
             }
@@ -736,9 +746,13 @@ namespace rock::native_secondary_actions
                     (void)s.trigger.cancel();
                     continue;
                 }
-                if (event.tag==RE::BSFixedString("reloadEnd")) {
-                    if (s.reloading) ROCK_LOG_INFO(Weapon,"AKIMBO native reload ended form={:08X} loaded={} eventSequence={}",
-                        s.item.object->formID,loaded(native_hand_equipment::equippedViews()[1]),s.events);
+                // Every reload leaves the graph's reload state with
+                // reloadStateExit; reloadEnd is not universal (Tactical Reload's
+                // empty-magazine reloads exit without it, which left this hand
+                // refusing every later attack).
+                if (event.tag==RE::BSFixedString("reloadEnd") || event.tag==RE::BSFixedString("reloadStateExit")) {
+                    if (s.reloading) ROCK_LOG_INFO(Weapon,"AKIMBO native reload ended form={:08X} tag='{}' loaded={} eventSequence={}",
+                        s.item.object->formID,event.tag.c_str(),loaded(native_hand_equipment::equippedViews()[1]),s.events);
                     s.reloading=false;
                     continue;
                 }

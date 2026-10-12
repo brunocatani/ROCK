@@ -59,4 +59,8 @@ namespace rock::native_equipped_action_graph
         struct Impl;
         std::unique_ptr<Impl> _impl;
     };
+
+    // Diagnostic: logs the player's live native idle-root list (the names the
+    // native idle collector resolves), tagged with the given weapon and context.
+    void logPlayerIdleRoots(const RE::Actor* player,std::uint32_t form,const char* context);
 }

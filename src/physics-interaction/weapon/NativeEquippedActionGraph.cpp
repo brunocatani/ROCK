@@ -305,24 +305,7 @@ namespace rock::native_equipped_action_graph
                 cache.variableQuickLookup.empty() || cache.variableQuickLookup.size()>4096) return Load::Failed;
             for (const auto& root:s.roots) ROCK_LOG_INFO(Animation,"AKIMBO private idle root form={:08X} name='{}' person={} identifier={:#x}",
                 s.item.object->formID,root.name.c_str(),root.person,root.identifier);
-            // Diagnostic: the player's live native idle-root list (EC56F0 /
-            // EDD3B0 layout: id +0, name +8, refcount +10, person +12).
-            if (auto* process=s.player->currentProcess; process && process->middleHigh) {
-                const auto* middle=reinterpret_cast<const std::byte*>(process->middleHigh);
-                const std::byte* entries{}; std::uint32_t count{};
-                if (native_memory::tryReadField(middle,0x270,entries) && entries &&
-                    native_memory::tryReadField(middle,0x280,count) && count<=64) {
-                    for (std::uint32_t i=0;i<count;++i) {
-                        const auto* entry=entries+i*0x18;
-                        std::uint8_t references{},person{}; std::uint64_t identifier{};
-                        if (!native_memory::tryReadField(entry,0,identifier) || !native_memory::tryReadField(entry,0x10,references) ||
-                            !native_memory::tryReadField(entry,0x12,person)) break;
-                        const auto& text=*reinterpret_cast<const RE::BSFixedString*>(entry+8);
-                        ROCK_LOG_INFO(Animation,"AKIMBO player idle root form={:08X} index={} name='{}' references={} person={} identifier={:#x}",
-                            s.item.object->formID,i,text.c_str(),references,person,identifier);
-                    }
-                }
-            }
+            logPlayerIdleRoots(s.player,s.item.object->formID,"left-graph-ready");
             for (const auto& graph:manager->graph) s.source(graph.get())->RegisterSink(&s);
             s.sinks=true; s.phase=3;
             s.stage="ready";
@@ -375,4 +358,24 @@ namespace rock::native_equipped_action_graph
         return true;
     }
     std::span<const Graph::IdleRoot> Graph::idleRoots() const noexcept { return _impl->roots; }
+
+    void logPlayerIdleRoots(const RE::Actor* player,std::uint32_t form,const char* context)
+    {
+        // EC56F0 / EDD3B0 layout: id +0, name +8, refcount +10, person +12.
+        auto* process=player?player->currentProcess:nullptr;
+        if (!process || !process->middleHigh) return;
+        const auto* middle=reinterpret_cast<const std::byte*>(process->middleHigh);
+        const std::byte* entries{}; std::uint32_t count{};
+        if (!native_memory::tryReadField(middle,0x270,entries) || !entries ||
+            !native_memory::tryReadField(middle,0x280,count) || count>64) return;
+        for (std::uint32_t i=0;i<count;++i) {
+            const auto* entry=entries+i*0x18;
+            std::uint8_t references{},person{}; std::uint64_t identifier{};
+            if (!native_memory::tryReadField(entry,0,identifier) || !native_memory::tryReadField(entry,0x10,references) ||
+                !native_memory::tryReadField(entry,0x12,person)) break;
+            const auto& text=*reinterpret_cast<const RE::BSFixedString*>(entry+8);
+            ROCK_LOG_INFO(Animation,"AKIMBO player idle root context={} form={:08X} index={} name='{}' references={} person={} identifier={:#x}",
+                context,form,i,text.c_str(),references,person,identifier);
+        }
+    }
 }
