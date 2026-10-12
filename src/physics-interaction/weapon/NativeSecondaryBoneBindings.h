@@ -37,7 +37,7 @@ namespace rock::native_secondary_actions
             RE::NiPointer<RE::NiAVObject> actual;
             RE::NiNode* target{};
             std::size_t parentIndex{},anchorIndex{};
-            RE::NiTransform originalLocal, beforeWorld, presentedWorld, presentedLocal;
+            RE::NiTransform originalLocal, beforeLocal, beforeWorld, presentedWorld, presentedLocal;
             native_secondary_pose_transport::EvaluatedPose transport;
             native_secondary_pose_transport::PresentedHistory history;
             RE::NiTransform lastNativeLocal{};
@@ -45,7 +45,7 @@ namespace rock::native_secondary_actions
         };
         std::vector<Skin> _skins;
         std::vector<Node> _nodes;
-        std::uint64_t _sampleFrame{UINT64_MAX},_nextReport{};
+        std::uint64_t _sampleFrame{UINT64_MAX},_nextReport{},_nextBoneReport{};
         std::uint32_t _sampleFrames{},_movingSamples{};
         float _nativeTravel{},_nativeRotation{},_nativeScale{},_overwrite{};
         RE::BSFixedString _movingName;
@@ -118,7 +118,7 @@ namespace rock::native_secondary_actions
             }
             for (auto& node:_nodes) if (node.target) node.actual->local=node.originalLocal;
             _skins.clear(); _nodes.clear();
-            _sampleFrame=UINT64_MAX; _nextReport=0; _sampleFrames=_movingSamples=0;
+            _sampleFrame=UINT64_MAX; _nextReport=0; _nextBoneReport=0; _sampleFrames=_movingSamples=0;
             _nativeTravel=_nativeRotation=_nativeScale=_overwrite=0; _movingName={};
         }
         bool bind(RE::NiAVObject* root,native_equipped_action_graph::Graph& graph)
@@ -199,6 +199,7 @@ namespace rock::native_secondary_actions
                 auto& node=_nodes[i];
                 if (i && node.actual->parent!=_nodes[node.parentIndex].actual.get()) return false;
                 node.beforeWorld=node.actual->world;
+                node.beforeLocal=node.actual->local;
                 if (!weapon_scene_presentation::isFiniteTransform(node.beforeWorld)) return false;
             }
             _nodes[0].presentedWorld=_nodes[0].beforeWorld;
@@ -242,6 +243,23 @@ namespace rock::native_secondary_actions
             ROCK_LOG_SAMPLE_INFO(Animation,1000,"AKIMBO secondary motion history frame={} nodes={} correctedPreviousMaxGame={:.3f} source=previous-presentation",
                 frame,_nodes.size(),historyError);
             const auto now=GetTickCount64();
+            // Diagnostic: per bound model bone, its authored rest local, the
+            // local the model's own graph/native code left this frame, and
+            // the private skeleton's local that replaced it. Every 5 seconds.
+            if (now>=_nextBoneReport) {
+                _nextBoneReport=now+5000;
+                std::size_t reported=0;
+                for (const auto& node:_nodes) {
+                    if (!node.target || ++reported>24) continue;
+                    const auto& rest=node.originalLocal.translate;
+                    const auto& model=node.beforeLocal.translate;
+                    const auto& skeleton=node.target->local.translate;
+                    ROCK_LOG_INFO(Animation,"AKIMBO bound bone pose name='{}' parent='{}' rest=({:.3f},{:.3f},{:.3f}) modelFrame=({:.3f},{:.3f},{:.3f}) skeleton=({:.3f},{:.3f},{:.3f}) skeletonParent='{}'",
+                        node.actual->name.c_str(),node.actual->parent?node.actual->parent->name.c_str():"",
+                        rest.x,rest.y,rest.z,model.x,model.y,model.z,skeleton.x,skeleton.y,skeleton.z,
+                        node.target->parent?node.target->parent->name.c_str():"");
+                }
+            }
             if (now>=_nextReport) {
                 ROCK_LOG_INFO(Animation,"AKIMBO native part evaluation frame={} frames={} changedSamples={} nativeLocalTravelGame={:.5f} nativeLocalMatrixDelta={:.5f} nativeLocalScaleDelta={:.5f} part='{}' presentationRepairGame={:.3f} reference=bone-parent-local",
                     frame,_sampleFrames,_movingSamples,_nativeTravel,_nativeRotation,_nativeScale,_movingName.c_str(),_overwrite);

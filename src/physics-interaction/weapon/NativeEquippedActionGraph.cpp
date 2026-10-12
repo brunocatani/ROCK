@@ -65,7 +65,7 @@ namespace rock::native_equipped_action_graph
         Handles baseHandles;
         Identifiers baseIdentifiers;
         std::vector<IdleRoot> roots;
-        bool addRoots(const Metadata& metadata,bool base)
+        bool addRoots(const Metadata& metadata)
         {
             if (metadata.count>1024) return false;
             auto* block=metadata.head; auto* record=metadata.read;
@@ -73,7 +73,7 @@ namespace rock::native_equipped_action_graph
                 if (!record) return false;
                 const auto person=static_cast<std::uint8_t>(record->flags&0xFF);
                 if (std::none_of(roots.begin(),roots.end(),[&](const IdleRoot& root) { return root.identifier==record->identifier; }))
-                    roots.push_back({record->name,person,record->identifier,base});
+                    roots.push_back({record->name,person,record->identifier});
                 ++record;
                 if (block && reinterpret_cast<std::byte*>(record)>=block->records.data()+0x300) {
                     block=block->next; record=block?reinterpret_cast<Metadata::Record*>(block->records.data()):nullptr;
@@ -266,11 +266,11 @@ namespace rock::native_equipped_action_graph
             s.stage="private-weapon-subgraph-request";
             if (!native<Request>(0x1016340)(s.player,s.race,manager,&role,&keywords,&priority,&s.handles,&s.identifiers,&metadata) ||
                 s.handles.empty() || s.identifiers.empty()) return Load::Failed;
-            // Weapon roots first, in request order: the third-person weapon
-            // root resolves the attack/reload idles for the private graph.
-            // Base roots are appended for weapon graphs whose own roots are
-            // not idle-database roots (left Glock: idleMatches=0 without them).
-            if (!s.addRoots(metadata,false) || !s.addRoots(baseMetadata,true)) return Load::Failed;
+            // Weapon request roots only, in request order: the third-person
+            // weapon root resolves the attack/reload idles for this graph.
+            // Appending base-request roots broke the 1911's attack selection
+            // and did not resolve the Glock, so they are not idle sources.
+            if (!s.addRoots(metadata)) return Load::Failed;
             s.phase=2;
             s.stage="native-subgraph-loading";
             return Load::Pending;
@@ -299,8 +299,26 @@ namespace rock::native_equipped_action_graph
             const auto& cache=manager->variableCache;
             if (cache.graphToCacheFor!=manager->graph[1] || cache.lock!=&manager->updateLock ||
                 cache.variableQuickLookup.empty() || cache.variableQuickLookup.size()>4096) return Load::Failed;
-            for (const auto& root:s.roots) ROCK_LOG_INFO(Animation,"AKIMBO private idle root form={:08X} name='{}' person={} base={} identifier={:#x}",
-                s.item.object->formID,root.name.c_str(),root.person,root.base,root.identifier);
+            for (const auto& root:s.roots) ROCK_LOG_INFO(Animation,"AKIMBO private idle root form={:08X} name='{}' person={} identifier={:#x}",
+                s.item.object->formID,root.name.c_str(),root.person,root.identifier);
+            // Diagnostic: the player's live native idle-root list (EC56F0 /
+            // EDD3B0 layout: id +0, name +8, refcount +10, person +12).
+            if (auto* process=s.player->currentProcess; process && process->middleHigh) {
+                const auto* middle=reinterpret_cast<const std::byte*>(process->middleHigh);
+                const std::byte* entries{}; std::uint32_t count{};
+                if (native_memory::tryReadField(middle,0x270,entries) && entries &&
+                    native_memory::tryReadField(middle,0x280,count) && count<=64) {
+                    for (std::uint32_t i=0;i<count;++i) {
+                        const auto* entry=entries+i*0x18;
+                        std::uint8_t references{},person{}; std::uint64_t identifier{};
+                        if (!native_memory::tryReadField(entry,0,identifier) || !native_memory::tryReadField(entry,0x10,references) ||
+                            !native_memory::tryReadField(entry,0x12,person)) break;
+                        const auto& text=*reinterpret_cast<const RE::BSFixedString*>(entry+8);
+                        ROCK_LOG_INFO(Animation,"AKIMBO player idle root form={:08X} index={} name='{}' references={} person={} identifier={:#x}",
+                            s.item.object->formID,i,text.c_str(),references,person,identifier);
+                    }
+                }
+            }
             for (const auto& graph:manager->graph) s.source(graph.get())->RegisterSink(&s);
             s.sinks=true; s.phase=3;
             s.stage="ready";

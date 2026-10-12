@@ -90,6 +90,7 @@ namespace rock::native_secondary_actions
             weapon_recoil_policy::Family recoilFamily{weapon_recoil_policy::Family::Default};
             std::uint32_t recoilShots{},recoilSamples{};
             std::uint32_t charge{UINT32_MAX}; // iWeaponCharge last published for index one.
+            bool rootsTraced{};
             struct TraceWindow { std::uint64_t second{UINT64_MAX}; std::uint32_t count{},suppressed{}; };
             std::array<TraceWindow,6> traces{};
         };
@@ -462,10 +463,14 @@ namespace rock::native_secondary_actions
             if (!validContext()) return false;
             ++t_context->idleQueries;
             // Native 595C50 still adds the race/base root after this collector.
-            // The roots come from this hand's own weapon and base subgraph
-            // requests in stored order; none enter the player's primary list.
+            // The roots come from this hand's own weapon subgraph request in
+            // stored order; none enter the player's primary list.
+            const bool traceRoots=!t_context->state->rootsTraced;
+            t_context->state->rootsTraced=true;
             for (const auto& entry:t_context->state->graph->idleRoots()) {
                 auto* root=native<void*(*)(void*,const char*)>(0x595760)(database,entry.name.c_str());
+                if (traceRoots) ROCK_LOG_INFO(Animation,"AKIMBO idle root lookup form={:08X} name='{}' resolved={:#x}",
+                    t_context->state->item.object->formID,entry.name.c_str(),reinterpret_cast<std::uintptr_t>(root));
                 if (root && std::find(out->begin(),out->end(),root)==out->end()) {
                     out->push_back(root);
                     ++t_context->idleMatches;
@@ -869,7 +874,7 @@ namespace rock::native_secondary_actions
                 s.bindings.restore();
                 s.graph.reset(); s.model.reset(); s.item=RE::BGSObjectInstance{nullptr,nullptr};
                 s.recoilNode.reset(); s.kick={}; s.kickActive=false; s.recoilFrame=UINT64_MAX;
-                s.retiring=false; s.failed=false; s.reloading=false; s.charge=UINT32_MAX;
+                s.retiring=false; s.failed=false; s.reloading=false; s.charge=UINT32_MAX; s.rootsTraced=false;
             }
             if (!attachment || !view.weapon || !view.root || frame.localMenuBlocking || !frame.weaponDrawn || !frame.visualAuthorityAvailable) { cancel(s); return; }
             const auto trigger=input_remap_runtime::peekRawButtonState(true,input_remap_policy::kOpenVrSteamVrTriggerButtonId);
