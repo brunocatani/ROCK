@@ -126,6 +126,7 @@ namespace rock::native_secondary_actions
                 std::uint32_t id{UINT32_MAX};
                 double value{};
                 bool accepted{};
+                bool actorState{};
             };
             std::array<Query,16> queries{};
             std::size_t queryCount{};
@@ -137,6 +138,9 @@ namespace rock::native_secondary_actions
             bool identityChecked{},identityMatched{};
         };
         thread_local Context* t_context{};
+        // Set only while one actor-level variable getter is re-run against the
+        // player's own AIProcess cache (see variableQuery).
+        thread_local bool t_actorVariableLookup{};
         struct Scope
         {
             Context* previous;
@@ -349,7 +353,7 @@ namespace rock::native_secondary_actions
         }
         RE::BSAnimationGraphVariableCache* variableCache(void* process)
         {
-            if (t_context && process==t_context->player->currentProcess) {
+            if (t_context && !t_actorVariableLookup && process==t_context->player->currentProcess) {
                 if (!validContext()) return nullptr;
                 auto* manager=t_context->state->graph->manager();
                 if (!manager || manager->activeGraph>=manager->graph.size() ||
@@ -363,13 +367,27 @@ namespace rock::native_secondary_actions
         template<std::uintptr_t Rva,class Key,class Value>
         bool variableQuery(void* holder,Key key,Value* output)
         {
-            const bool accepted=native<bool(*)(void*,Key,Value*)>(Rva)(holder,key,output);
-            if (t_context && holder==static_cast<RE::IAnimationGraphManagerHolder*>(t_context->player) &&
-                t_context->queryCount<t_context->queries.size()) {
+            bool accepted=native<bool(*)(void*,Key,Value*)>(Rva)(holder,key,output);
+            const bool player=t_context && holder==static_cast<RE::IAnimationGraphManagerHolder*>(t_context->player);
+            bool actorState=false;
+            if (!accepted && player && validContext()) {
+                // The actor getters read AIProcess+8 -> +268, the player's
+                // body-graph cache. The private first-person weapon graph does
+                // not define body state such as bWantFullRagdoll (fixed id 10),
+                // which native reload conditions check. Weapon variables come
+                // from this hand's graph; variables it does not define are the
+                // actor's own state, answered exactly as the native player.
+                t_actorVariableLookup=true;
+                accepted=native<bool(*)(void*,Key,Value*)>(Rva)(holder,key,output);
+                t_actorVariableLookup=false;
+                actorState=accepted;
+            }
+            if (player && t_context->queryCount<t_context->queries.size()) {
                 auto& query=t_context->queries[t_context->queryCount++];
                 if constexpr (std::is_integral_v<Key>) query.id=key;
                 else if (key) query.name=*key;
                 query.accepted=accepted;
+                query.actorState=actorState;
                 if (accepted && output) query.value=static_cast<double>(*output);
             }
             return accepted;
@@ -620,8 +638,8 @@ namespace rock::native_secondary_actions
             if (object==RE::DEFAULT_OBJECT::kActionReload && (accepted || trace(s,Trace::Lifecycle))) {
                 for (std::size_t i=0;i<context.queryCount;++i) {
                     const auto& query=context.queries[i];
-                    ROCK_LOG_INFO(Animation,"AKIMBO reload condition form={:08X} attempt={} name='{}' id={} readable={} value={}",
-                        s.item.object->formID,s.actions,query.name.c_str(),query.id,query.accepted,query.value);
+                    ROCK_LOG_INFO(Animation,"AKIMBO reload condition form={:08X} attempt={} name='{}' id={} readable={} source={} value={}",
+                        s.item.object->formID,s.actions,query.name.c_str(),query.id,query.accepted,query.actorState?"actor":"weapon-graph",query.value);
                 }
                 for (std::size_t i=0;i<context.idleCount;++i) {
                     const auto& query=context.idles[i];
@@ -675,6 +693,24 @@ namespace rock::native_secondary_actions
                     event.tag==RE::BSFixedString("reloadStart") || event.tag==RE::BSFixedString("weaponDraw");
                 if (trace(s,lifecycle?Trace::Lifecycle:Trace::Event)) ROCK_LOG_INFO(Animation,"AKIMBO private native event form={:08X} tag='{}' payload='{}' gameplay={} sequence={}",
                     s.item.object->formID,event.tag.c_str(),event.payload.c_str(),effects,s.events);
+                // Graph lifecycle state follows every drained event, including
+                // teardown drains; otherwise a discarded reloadEnd leaves this
+                // hand permanently "reloading" and refusing fire and reload.
+                if (event.tag==RE::BSFixedString("reloadStart")) {
+                    // Native graphs can enter reload themselves after the last
+                    // shot. Their lifecycle, not just our button dispatch,
+                    // owns whether further attacks are admitted.
+                    s.reloading=true;
+                    (void)s.trigger.cancel();
+                    continue;
+                }
+                if (event.tag==RE::BSFixedString("reloadEnd")) {
+                    if (s.reloading) ROCK_LOG_INFO(Weapon,"AKIMBO native reload ended form={:08X} loaded={} eventSequence={}",
+                        s.item.object->formID,loaded(native_hand_equipment::equippedViews()[1]),s.events);
+                    s.reloading=false;
+                    continue;
+                }
+                if (event.tag==RE::BSFixedString("attackStop")) { attackState(s,0); continue; }
                 if (!effects) continue;
                 if (s.audio.event(f4vr::getPlayer(),s.model.get(),event.tag,event.payload,s.frame)) continue;
                 if (event.tag==RE::BSFixedString("weaponFire")) {
@@ -703,12 +739,6 @@ namespace rock::native_secondary_actions
                     if (trace(s,Trace::Fire) || loaded(after[1])==0 || loaded(after[0])!=rightBefore || !context.prepared) ROCK_LOG_INFO(Weapon,
                         "AKIMBO native fire event form={:08X} hand=left prepared={} loaded={}->{} rightLoaded={}->{} index=1 sequence={}",
                         s.item.object->formID,context.prepared,before,loaded(after[1]),rightBefore,loaded(after[0]),s.shots);
-                } else if (event.tag==RE::BSFixedString("reloadStart")) {
-                    // Native graphs can enter reload themselves after the last
-                    // shot. Their lifecycle, not just our button dispatch,
-                    // owns whether further attacks are admitted.
-                    s.reloading=true;
-                    (void)s.trigger.cancel();
                 } else if (event.tag==RE::BSFixedString("reloadComplete")) {
                     const auto before=native_hand_equipment::equippedViews();
                     const auto leftBefore=loaded(before[1]),rightBefore=loaded(before[0]);
@@ -719,12 +749,6 @@ namespace rock::native_secondary_actions
                     if (loaded(after[1])!=leftBefore || loaded(after[0])!=rightBefore || trace(s,Trace::Lifecycle)) ROCK_LOG_INFO(Weapon,
                         "AKIMBO native reload complete form={:08X} loaded={}->{} rightLoaded={}->{} index=1",
                         s.item.object->formID,leftBefore,loaded(after[1]),rightBefore,loaded(after[0]));
-                } else if (event.tag==RE::BSFixedString("reloadEnd")) {
-                    if (s.reloading) ROCK_LOG_INFO(Weapon,"AKIMBO native reload ended form={:08X} loaded={} eventSequence={}",
-                        s.item.object->formID,loaded(native_hand_equipment::equippedViews()[1]),s.events);
-                    s.reloading=false;
-                } else if (event.tag==RE::BSFixedString("attackStop")) {
-                    attackState(s,0);
                 }
             }
         }
@@ -844,9 +868,14 @@ namespace rock::native_secondary_actions
             const auto trigger=input_remap_runtime::peekRawButtonState(true,input_remap_policy::kOpenVrSteamVrTriggerButtonId);
             const bool providerSuppressed=input_remap_runtime::isProviderOpenVrGameInputSuppressedForHand(true);
             const bool menu=input_remap_runtime::isMenuInputActive();
-            const bool fresh=trigger.sampleAgeMilliseconds<=100;
-            const bool allowed=trigger.available && fresh && !providerSuppressed && !menu;
-            if (s.trigger.observe(trigger.held,allowed) && s.ready && s.graph) {
+            // A sample older than one normal input period (a frame hitch)
+            // neither starts nor ends a press: the held state is kept. Only a
+            // sample too old to describe the controller releases the trigger.
+            constexpr std::uint64_t kFreshInputMs=100,kLostInputMs=500;
+            const bool fresh=trigger.sampleAgeMilliseconds<=kFreshInputMs;
+            const bool lost=trigger.sampleAgeMilliseconds>kLostInputMs;
+            const bool allowed=trigger.available && !lost && !providerSuppressed && !menu;
+            if ((fresh || !allowed) && s.trigger.observe(trigger.held,allowed) && s.ready && s.graph) {
                 (void)s.graph->notify(RE::BSFixedString("attackRelease"));
                 if (!allowed) attackState(s,0);
             }
@@ -915,20 +944,23 @@ namespace rock::native_secondary_actions
             const std::uint32_t inputMask=static_cast<std::uint32_t>(trigger.available) | (static_cast<std::uint32_t>(fresh)<<1) |
                 (static_cast<std::uint32_t>(providerSuppressed)<<2) | (static_cast<std::uint32_t>(menu)<<3) |
                 (static_cast<std::uint32_t>(trigger.held)<<4) | (static_cast<std::uint32_t>(s.trigger.armed())<<5) |
-                (static_cast<std::uint32_t>(s.reloading)<<6);
+                (static_cast<std::uint32_t>(s.reloading)<<6) | (static_cast<std::uint32_t>(lost)<<7);
             if (inputMask!=s.inputMask) {
                 s.inputMask=inputMask;
                 ++s.inputTraces;
                 if (trace(s,Trace::Input)) ROCK_LOG_INFO(Weapon,
-                    "AKIMBO secondary input form={:08X} available={} ageMs={} providerSuppressed={} menu={} held={} armed={} reloading={} allowed={}",
-                    view.weapon->formID,trigger.available,trigger.sampleAgeMilliseconds,providerSuppressed,menu,trigger.held,s.trigger.armed(),s.reloading,allowed);
+                    "AKIMBO secondary input form={:08X} available={} ageMs={} lost={} providerSuppressed={} menu={} held={} armed={} reloading={} allowed={}",
+                    view.weapon->formID,trigger.available,trigger.sampleAgeMilliseconds,lost,providerSuppressed,menu,trigger.held,s.trigger.armed(),s.reloading,allowed);
             }
-            if (!allowed) { cancel(s); return; }
+            // Input admission gates only NEW actions. The graph, its part
+            // presentation and its events keep running every drawn frame, so
+            // a suppressed or stale trigger never freezes a reload, drops its
+            // reloadComplete/reloadEnd, or cuts its sounds.
             if (s.reload) {
                 s.reload=false;
-                if (!s.reloading && dispatch(s,RE::DEFAULT_OBJECT::kActionReload)) { s.reloading=true; (void)s.trigger.cancel(); }
+                if (!menu && !s.reloading && dispatch(s,RE::DEFAULT_OBJECT::kActionReload)) { s.reloading=true; (void)s.trigger.cancel(); }
             }
-            if (s.trigger.wantsStart() && !s.reloading) {
+            if (allowed && fresh && s.trigger.wantsStart() && !s.reloading) {
                 if (data->ammo && !loaded(view) && !data->flags.any(RE::WEAPON_FLAGS::kChargingReload)) {
                     if (emptyTrigger(s)) s.trigger.accepted(false);
                 } else {
@@ -944,11 +976,10 @@ namespace rock::native_secondary_actions
                 ROCK_LOG_ERROR(Animation,"AKIMBO secondary graph stopped: invalid pose or event overflow form={:08X}",view.weapon->formID);
                 return;
             }
-            if (!s.bindings.present(s.frame)) {
-                cancel(s);
+            // A frame without part transport still owns this graph's gameplay
+            // events (shots, magazine refill, reload end).
+            if (!s.bindings.present(s.frame))
                 ROCK_LOG_SAMPLE_WARN(Animation,1000,"AKIMBO secondary part transport unavailable form={:08X}",view.weapon->formID);
-                return;
-            }
             drain(s,true);
         } catch (...) {
             s.audio.stop();
