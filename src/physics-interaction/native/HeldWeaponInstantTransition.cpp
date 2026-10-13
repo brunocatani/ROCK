@@ -31,8 +31,10 @@ namespace rock::held_weapon_instant_transition
         constexpr std::array<std::uint8_t, 5> kPrepareCall{
             0xE8, 0xC7, 0x86, 0x0E, 0x00,
         };
-        // Startup-only installation; game-thread calls preserve the timer only
-        // inside a trigger equip, never ordinary equipment or native bashing.
+        // Startup-only installation. Every player equip that EquipManager draws
+        // (trigger equip, Pip-Boy, favorites, other mods' equips) is prepared
+        // for instant presentation and fire; bashing and other actors never
+        // reach this callsite's redirect.
         bool s_attackDelayRemovalInstalled = false;
         bool s_presentationDeadlineVerified = false;
 
@@ -86,9 +88,8 @@ namespace rock::held_weapon_instant_transition
 
         void onPrepareEquippedWeaponDraw(RE::PlayerCharacter* player)
         {
-            if (t_activeScope && t_activeScope->player == player &&
-                t_activeScope->reason == RequestReason::SameHandTrigger) {
-                prepareDrawForTriggerEquip(player);
+            if (player && player == RE::PlayerCharacter::GetSingleton()) {
+                prepareInstantDraw(player);
             } else {
                 reinterpret_cast<PrepareEquippedWeaponDraw>(
                     REL::Offset(kPrepareDrawEntry).address())(player);
@@ -381,7 +382,7 @@ namespace rock::held_weapon_instant_transition
         return result;
     }
 
-    void prepareDrawForTriggerEquip(RE::PlayerCharacter* player) noexcept
+    void prepareInstantDraw(RE::PlayerCharacter* player) noexcept
     {
         if (!player) return;
         trigger_equip_readiness_trace::stage("before-native-preparation");
@@ -401,12 +402,12 @@ namespace rock::held_weapon_instant_transition
         // weapon pointer is retained, and no per-frame cooldown clearing occurs.
         auto* timer = reinterpret_cast<float*>(reinterpret_cast<char*>(player) + kAttackCooldownOffset);
         if (!native_memory::tryWriteValue(timer, priorCooldown)) {
-            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Trigger equip could not restore pre-existing attack cooldown");
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equip preparation could not restore pre-existing attack cooldown");
             return;
         }
-        ROCK_LOG_INFO(Weapon, "Trigger equip preparation preserved attack cooldown={:.4f}s; added equip delay removed", priorCooldown);
+        ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "Equip preparation preserved attack cooldown={:.4f}s; added equip delay removed", priorCooldown);
         // The captured half-second rejection is a second, independent native
-        // presentation wait. Make only this trigger equip's deadline due now.
+        // presentation wait. Make only this equip's deadline due now.
         // Leave bits 80/40 untouched: the native player update must still clear
         // the wait, issue its refresh task, and evaluate all other hide/attack
         // conditions. This does not force Drawn or bypass model/graph readiness.
@@ -419,12 +420,12 @@ namespace rock::held_weapon_instant_transition
             const float due = static_cast<float>(ticks) * secondsPerTick;
             auto* deadline = reinterpret_cast<float*>(reinterpret_cast<char*>(player) + 0x8A8);
             if (std::isfinite(due) && native_memory::tryWriteValue(deadline, due)) {
-                ROCK_LOG_INFO(Weapon, "Trigger equip presentation deadline due now; native readiness update retained");
+                ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "Equip presentation deadline due now; native readiness update retained");
             } else {
-                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Trigger equip presentation deadline write unavailable; native wait retained");
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equip presentation deadline write unavailable; native wait retained");
             }
         } else {
-            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Trigger equip presentation deadline evidence unavailable; native wait retained");
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equip presentation deadline evidence unavailable; native wait retained");
         }
         trigger_equip_readiness_trace::stage("after-native-preparation");
     }

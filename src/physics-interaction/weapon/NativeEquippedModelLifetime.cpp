@@ -179,6 +179,8 @@ namespace rock::native_equipped_model_lifetime
         void retire(void* biped, void* record, bool deferred) noexcept
         {
             Retirement context{};
+            LARGE_INTEGER start{}, built{}, retired{}, frequency{};
+            QueryPerformanceCounter(&start);
             RE::TESObjectWEAP* outgoing = nullptr;
             RE::NiAVObject* retiringRoot = nullptr;
             const bool playerBiped = s_installed && biped &&
@@ -204,18 +206,25 @@ namespace rock::native_equipped_model_lifetime
                 }
                 if (context.count) buildOwnership(context);
             }
+            QueryPerformanceCounter(&built);
             const Scope scope(context.count ? &context : nullptr);
             s_retire(biped, record, deferred);
+            QueryPerformanceCounter(&retired);
             if (context.count) {
                 try {
+                    QueryPerformanceFrequency(&frequency);
+                    const auto ms = [&](const LARGE_INTEGER& a, const LARGE_INTEGER& b) {
+                        return frequency.QuadPart ? static_cast<double>(b.QuadPart - a.QuadPart) * 1000.0 / frequency.QuadPart : 0.0;
+                    };
                     for (std::size_t i = 0; i < context.count; ++i) {
                         const auto& model = context.models[i];
                         const auto after = native_weapon_model_geometry::inspect(model.root.get());
                         ROCK_LOG_INFO(Weapon,
-                            "AKIMBO model retirement outgoing={:08X} survivor={:08X} root={:#x} boundary={:#x} deferred={} prunedSearches={} rejectedDeletes={} unreadable={} shapesBefore={} shapesAfter={} complete={}",
+                            "AKIMBO model retirement outgoing={:08X} survivor={:08X} root={:#x} boundary={:#x} deferred={} prunedSearches={} rejectedDeletes={} unreadable={} shapesBefore={} shapesAfter={} complete={} ownershipNodes={} buildMs={:.2f} nativeMs={:.2f}",
                             outgoing->formID, model.form, reinterpret_cast<std::uintptr_t>(model.root.get()),
                             reinterpret_cast<std::uintptr_t>(model.boundary.get()), deferred, context.pruned, context.rejected,
-                            context.unreadable, model.shapesBefore, after.shapes, after.complete);
+                            context.unreadable, model.shapesBefore, after.shapes, after.complete, context.inside.size(),
+                            ms(start, built), ms(built, retired));
                     }
                 } catch (...) { OutputDebugStringA("ROCK: equipped model retirement diagnostic failed\n"); }
             }

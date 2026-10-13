@@ -1118,6 +1118,29 @@ namespace rock
                 held_weapon_equip_state_policy::nativeWeaponStateName(
                     result.stateAfter),
                 native_equipped_weapon_draw::submitResultName(result.result));
+        } else if (source != Source::HeldTriggerEquip && source != Source::HeldGripZoneEquip &&
+            source != Source::InventoryEquip) {
+            /*
+             * Native equips (Pip-Boy, favorites, other mods) and the redraw
+             * after a menu or workbench play their own draw clip at native
+             * speed, and the native equip hide lasts until it ends (~200 ms
+             * after the Pip-Boy closed, runtime 12 Oct 22:35:44). Arm the same
+             * bounded draw-clip acceleration lease that ROCK's own draws use:
+             * it only speeds this identity's Equip/EquipFast clips while the
+             * native state is Drawing (or briefly Drawn for a late clip).
+             */
+            const auto acceleration = weapon_transition_animation_acceleration::request(
+                weapon_transition_animation_acceleration::RequestInput{
+                    .player = f4vr::getPlayer(),
+                    .identity = {
+                        .formID = identity.formID,
+                        .instanceData = identity.instanceData,
+                        .equipIndex = identity.equipIndex,
+                    },
+                    .direction = weapon_transition_animation_acceleration_policy::Direction::Draw,
+                });
+            ROCK_LOG_INFO(Weapon, "Equipped weapon transition draw acceleration source={} formID={:08X} result={}",
+                sourceName(source), identity.formID, static_cast<int>(acceleration));
         }
     }
 

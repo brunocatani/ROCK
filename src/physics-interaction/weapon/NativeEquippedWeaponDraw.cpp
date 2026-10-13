@@ -438,16 +438,9 @@ namespace rock::native_equipped_weapon_draw
                     return result;
                 }
 
-                using PrepareEquippedWeaponDraw = void (*)(
-                    RE::PlayerCharacter*);
-                const auto prepare = reinterpret_cast<PrepareEquippedWeaponDraw>(
-                    REL::Offset(
-                        offsets::kFunc_PrepareEquippedWeaponDraw).address());
-                if (triggerEquip) {
-                    held_weapon_instant_transition::prepareDrawForTriggerEquip(current.player);
-                } else {
-                    prepare(current.player);
-                }
+                // Every recovery draw presents and fires at once, as a
+                // trigger equip does.
+                held_weapon_instant_transition::prepareInstantDraw(current.player);
             }
 
             requestAnimationAcceleration(

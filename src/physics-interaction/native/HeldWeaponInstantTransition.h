@@ -83,9 +83,10 @@ namespace rock::held_weapon_instant_transition
     [[nodiscard]] bool install() noexcept;
     [[nodiscard]] Readiness readinessFor(RE::PlayerCharacter* player) noexcept;
 
-    // Game-thread native draw preparation for an exact trigger-equip request.
-    // Keeps pre-existing combat cooldowns instead of adding the equip delay.
-    void prepareDrawForTriggerEquip(RE::PlayerCharacter* player) noexcept;
+    // Game-thread native draw preparation for every player equip draw:
+    // keeps pre-existing combat cooldowns instead of adding the equip delay
+    // and makes the native presentation deadline due now.
+    void prepareInstantDraw(RE::PlayerCharacter* player) noexcept;
 
     // Main-thread-only transaction. The scope surrounds exactly one immediate
     // EquipObject call and suppresses only its verified player draw/sheathe
