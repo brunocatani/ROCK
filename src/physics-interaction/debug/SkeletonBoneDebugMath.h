@@ -38,12 +38,6 @@ namespace rock::skeleton_bone_debug_math
         FirstPersonDiagnosticOnly = 2
     };
 
-    enum class BoneColliderProfileVariant : int
-    {
-        Standard = 0,
-        PowerArmor = 1
-    };
-
     enum class BoneColliderRole : int
     {
         UpperArmSegment,
@@ -93,13 +87,6 @@ namespace rock::skeleton_bone_debug_math
             origin.z + span.z * descriptor.endFraction };
     }
 
-    struct FingerBoneChain
-    {
-        std::string_view base{};
-        std::string_view middle{};
-        std::string_view tip{};
-    };
-
     template <class Vector>
     struct AxisEndpoints
     {
@@ -135,19 +122,6 @@ namespace rock::skeleton_bone_debug_math
         "RArm_ForeArm1", "RArm_ForeArm2", "RArm_ForeArm3", "RArm_Hand",
         "LArm_UpperArm", "RArm_UpperArm", "LArm_Collarbone", "RArm_Collarbone",
         "LArm_UpperTwist1", "LArm_UpperTwist2", "RArm_UpperTwist1", "RArm_UpperTwist2"
-    };
-
-    inline constexpr std::array<FingerBoneChain, 10> kFingerBoneChains{
-        FingerBoneChain{ "LArm_Finger11", "LArm_Finger12", "LArm_Finger13" },
-        FingerBoneChain{ "LArm_Finger21", "LArm_Finger22", "LArm_Finger23" },
-        FingerBoneChain{ "LArm_Finger31", "LArm_Finger32", "LArm_Finger33" },
-        FingerBoneChain{ "LArm_Finger41", "LArm_Finger42", "LArm_Finger43" },
-        FingerBoneChain{ "LArm_Finger51", "LArm_Finger52", "LArm_Finger53" },
-        FingerBoneChain{ "RArm_Finger11", "RArm_Finger12", "RArm_Finger13" },
-        FingerBoneChain{ "RArm_Finger21", "RArm_Finger22", "RArm_Finger23" },
-        FingerBoneChain{ "RArm_Finger31", "RArm_Finger32", "RArm_Finger33" },
-        FingerBoneChain{ "RArm_Finger41", "RArm_Finger42", "RArm_Finger43" },
-        FingerBoneChain{ "RArm_Finger51", "RArm_Finger52", "RArm_Finger53" }
     };
 
     inline constexpr std::array<BoneColliderDescriptor, 23> kStandardBodyColliderDescriptors{
@@ -223,7 +197,6 @@ namespace rock::skeleton_bone_debug_math
     inline constexpr const std::array<std::string_view, 30>& requiredFingerBoneNames() { return kRequiredFingerBoneNames; }
     inline constexpr const std::array<std::string_view, 31>& requiredCoreBoneNames() { return kRequiredCoreBoneNames; }
     inline constexpr const std::array<std::string_view, 16>& handsAndForearmsBoneNames() { return kHandsAndForearmsBoneNames; }
-    inline constexpr std::size_t estimatedCoreBodyAndFingerBoneCount() { return kRequiredCoreBoneNames.size() + kRequiredFingerBoneNames.size(); }
     inline constexpr std::size_t skeletonOverlayBudget() { return 768; }
 
     inline int sanitizeMaxSkeletonBonesDrawn(int value)
@@ -497,107 +470,4 @@ namespace rock::skeleton_bone_debug_math
         };
     }
 
-    inline void appendFingerColliderDescriptors(std::vector<BoneColliderDescriptor>& descriptors, BoneColliderProfileVariant variant)
-    {
-        const bool powerArmor = variant == BoneColliderProfileVariant::PowerArmor;
-        const float baseRadius = powerArmor ? 0.85f : 0.55f;
-        const float middleRadius = powerArmor ? 0.75f : 0.45f;
-        const float tipRadius = powerArmor ? 0.65f : 0.38f;
-        const float convexRadius = powerArmor ? 0.15f : 0.10f;
-
-        for (const auto& chain : kFingerBoneChains) {
-            const bool left = !chain.base.empty() && chain.base.front() == 'L';
-            const auto side = left ? body_zone::BodyZoneSide::Left : body_zone::BodyZoneSide::Right;
-            const auto zone = left ? body_zone::BodyZoneKind::LeftHand : body_zone::BodyZoneKind::RightHand;
-            descriptors.push_back(BoneColliderDescriptor{
-                BoneColliderRole::FingerSegment,
-                zone,
-                side,
-                chain.base,
-                chain.middle,
-                baseRadius,
-                convexRadius,
-                true,
-                BoneColliderEndpointMode::ChildBone });
-            descriptors.push_back(BoneColliderDescriptor{
-                BoneColliderRole::FingerSegment,
-                zone,
-                side,
-                chain.middle,
-                chain.tip,
-                middleRadius,
-                convexRadius,
-                true,
-                BoneColliderEndpointMode::ChildBone });
-            descriptors.push_back(BoneColliderDescriptor{
-                BoneColliderRole::FingerSegment,
-                zone,
-                side,
-                chain.tip,
-                {},
-                tipRadius,
-                convexRadius,
-                true,
-                BoneColliderEndpointMode::ExtrapolatedTip });
-        }
-    }
-
-    inline std::vector<BoneColliderDescriptor> colliderDescriptors(BoneColliderProfileVariant variant)
-    {
-        std::vector<BoneColliderDescriptor> descriptors;
-        descriptors.reserve(kStandardBodyColliderDescriptors.size() + kFingerBoneChains.size() * 3);
-
-        const auto& bodyDescriptors = variant == BoneColliderProfileVariant::PowerArmor ? kPowerArmorBodyColliderDescriptors : kStandardBodyColliderDescriptors;
-        descriptors.insert(descriptors.end(), bodyDescriptors.begin(), bodyDescriptors.end());
-        appendFingerColliderDescriptors(descriptors, variant);
-        return descriptors;
-    }
-
-    inline bool descriptorTableBonesAreNamed(BoneColliderProfileVariant variant)
-    {
-        const auto descriptors = colliderDescriptors(variant);
-        return std::all_of(descriptors.begin(), descriptors.end(), [](const BoneColliderDescriptor& descriptor) {
-            const bool validEnd =
-                descriptor.endpointMode == BoneColliderEndpointMode::ExtrapolatedTip ? descriptor.endBone.empty() : !descriptor.endBone.empty();
-            const bool distinctNamedBones = descriptor.endBone.empty() || descriptor.startBone != descriptor.endBone;
-            return descriptor.enabled &&
-                   !descriptor.startBone.empty() &&
-                   validEnd &&
-                   distinctNamedBones &&
-                   descriptor.radiusGameUnits > 0.0f &&
-                   descriptor.convexRadiusGameUnits >= 0.0f;
-        });
-    }
-
-    inline std::size_t fingerSegmentDescriptorCount(BoneColliderProfileVariant variant)
-    {
-        const auto descriptors = colliderDescriptors(variant);
-        return static_cast<std::size_t>(std::count_if(descriptors.begin(), descriptors.end(), [](const BoneColliderDescriptor& descriptor) {
-            return descriptor.role == BoneColliderRole::FingerSegment;
-        }));
-    }
-
-    inline std::size_t tipExtrapolatedDescriptorCount(BoneColliderProfileVariant variant)
-    {
-        const auto descriptors = colliderDescriptors(variant);
-        return static_cast<std::size_t>(std::count_if(descriptors.begin(), descriptors.end(), [](const BoneColliderDescriptor& descriptor) {
-            return descriptor.role == BoneColliderRole::FingerSegment && descriptor.endpointMode == BoneColliderEndpointMode::ExtrapolatedTip;
-        }));
-    }
-
-    inline float representativeForearmRadius(BoneColliderProfileVariant variant)
-    {
-        const auto descriptors = colliderDescriptors(variant);
-        for (const auto& descriptor : descriptors) {
-            if (descriptor.role == BoneColliderRole::ForearmSegment && descriptor.startBone == "RArm_ForeArm1") {
-                return descriptor.radiusGameUnits;
-            }
-        }
-        return 0.0f;
-    }
-
-    inline BoneColliderProfileVariant colliderVariantForPowerArmor(bool inPowerArmor)
-    {
-        return inPowerArmor ? BoneColliderProfileVariant::PowerArmor : BoneColliderProfileVariant::Standard;
-    }
 }

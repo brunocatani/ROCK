@@ -4,6 +4,7 @@
 
 #include <charconv>
 #include <cstdio>
+#include <cmath>
 
 namespace rock::saved_grab_offset
 {
@@ -72,6 +73,13 @@ namespace rock::saved_grab_offset
                 }
                 j["finger"] = std::move(finger);
             }
+            if (offset.hasExactFingerRotations) {
+                json rotations = json::array();
+                for (const auto& rotation : offset.exactFingerRotations) {
+                    rotations.push_back(rotation);
+                }
+                j["exactFinger"] = { { "rig", std::string(kExactFingerRig) }, { "rotations", std::move(rotations) } };
+            }
             return j;
         }
 
@@ -94,7 +102,24 @@ namespace rock::saved_grab_offset
             return true;
         }
 
-        bool handOffsetFromJson(const json& j, HandOffset& out)
+        bool validExactRotation(const float (&r)[9])
+        {
+            for (float value : r) {
+                if (!std::isfinite(value)) return false;
+            }
+            for (int row = 0; row < 3; ++row) {
+                for (int other = row; other < 3; ++other) {
+                    float dot = 0.0f;
+                    for (int c = 0; c < 3; ++c) dot += r[row * 3 + c] * r[other * 3 + c];
+                    if (std::abs(dot - (row == other ? 1.0f : 0.0f)) > 0.002f) return false;
+                }
+            }
+            const float determinant = r[0] * (r[4] * r[8] - r[5] * r[7]) -
+                r[1] * (r[3] * r[8] - r[5] * r[6]) + r[2] * (r[3] * r[7] - r[4] * r[6]);
+            return std::abs(determinant - 1.0f) <= 0.002f;
+        }
+
+        bool handOffsetFromJson(const json& j, HandOffset& out, bool allowExact)
         {
             if (!j.is_object() || !j.contains("translate") || !j["translate"].is_array() || j["translate"].size() != 3 ||
                 !j.contains("rotate") || !j["rotate"].is_array() || j["rotate"].size() != 9) {
@@ -123,6 +148,36 @@ namespace rock::saved_grab_offset
                     out.hasFingerJointValues = floatArrayFromJson(fingerJson, "jointValues", out.fingerJointValues);
                 }
             }
+            if (allowExact && j.contains("exactFinger")) {
+                const auto& exact = j["exactFinger"];
+                if (!exact.is_object() || !exact.contains("rig") || !exact["rig"].is_string() ||
+                    exact["rig"].get_ref<const std::string&>() != kExactFingerRig ||
+                    !exact.contains("rotations") || !exact["rotations"].is_array() || exact["rotations"].size() != 15) {
+                    return false;
+                }
+                for (std::size_t i = 0; i < 15; ++i) {
+                    const auto& rotation = exact["rotations"][i];
+                    if (!rotation.is_array() || rotation.size() != 9) return false;
+                    for (std::size_t c = 0; c < 9; ++c) {
+                        if (!rotation[c].is_number()) return false;
+                        out.exactFingerRotations[i][c] = rotation[c].get<float>();
+                    }
+                    if (!validExactRotation(out.exactFingerRotations[i])) return false;
+                }
+                // The scalar seed establishes the existing tagged override and
+                // provides its normal-rig rest translations. It is never a
+                // lossy substitute for an invalid exact pose.
+                if (!out.hasFingerPose || !out.hasFingerJointValues) return false;
+                for (float value : out.fingerJointValues) {
+                    if (!std::isfinite(value) || value < 0.0f || value > 2.0f) return false;
+                }
+                for (float value : out.fingerValues) {
+                    if (!std::isfinite(value) || value < 0.0f || value > 2.0f) return false;
+                }
+                if (!validExactRotation(out.rotate)) return false;
+                for (float value : out.translateGame) if (!std::isfinite(value)) return false;
+                out.hasExactFingerRotations = true;
+            }
             return true;
         }
     }
@@ -145,45 +200,51 @@ namespace rock::saved_grab_offset
 
     bool parse(std::string_view jsonText, SavedGrabOffsetFile& out, std::string* outError)
     {
-        out = SavedGrabOffsetFile{};
-        if (outError) {
-            outError->clear();
-        }
-        const json j = json::parse(jsonText, nullptr, /*allow_exceptions=*/false);
-        if (j.is_discarded() || !j.is_object()) {
+        try {
+            out = SavedGrabOffsetFile{};
             if (outError) {
-                *outError = "not valid JSON";
+                outError->clear();
             }
-            return false;
-        }
-        out.formatVersion = j.value("format", 0u);
-        if (out.formatVersion == 0 || out.formatVersion > kFormatVersion) {
-            if (outError) {
-                *outError = "unsupported format version";
+            const json j = json::parse(jsonText, nullptr, /*allow_exceptions=*/false);
+            if (j.is_discarded() || !j.is_object()) {
+                if (outError) {
+                    *outError = "not valid JSON";
+                }
+                return false;
             }
-            return false;
-        }
-        if (!j.contains("object") || !formRefFromJson(j["object"], out.object) || out.object.empty()) {
-            if (outError) {
-                *outError = "missing/invalid object identity";
+            out.formatVersion = j.value("format", 0u);
+            if (out.formatVersion == 0 || out.formatVersion > kFormatVersion) {
+                if (outError) {
+                    *outError = "unsupported format version";
+                }
+                return false;
             }
-            return false;
-        }
-        out.objectName = j.value("objectName", std::string{});
-        out.right = {};
-        if (j.contains("right") && !handOffsetFromJson(j["right"], out.right)) {
-            if (outError) {
-                *outError = "invalid right-hand offset (skipped)";
+            if (!j.contains("object") || !formRefFromJson(j["object"], out.object) || out.object.empty()) {
+                if (outError) {
+                    *outError = "missing/invalid object identity";
+                }
+                return false;
             }
+            out.objectName = j.value("objectName", std::string{});
             out.right = {};
-        }
-        out.left = {};
-        if (j.contains("left") && !handOffsetFromJson(j["left"], out.left)) {
-            if (outError) {
-                *outError = "invalid left-hand offset (skipped)";
+            if (j.contains("right") && !handOffsetFromJson(j["right"], out.right, out.formatVersion >= 3)) {
+                if (outError) {
+                    *outError = "invalid right-hand offset (skipped)";
+                }
+                out.right = {};
             }
             out.left = {};
+            if (j.contains("left") && !handOffsetFromJson(j["left"], out.left, out.formatVersion >= 3)) {
+                if (outError) {
+                    *outError = "invalid left-hand offset (skipped)";
+                }
+                out.left = {};
+            }
+            return true;
+        } catch (const json::exception&) {
+            out = SavedGrabOffsetFile{};
+            if (outError) *outError = "invalid offset field type or numeric range";
+            return false;
         }
-        return true;
     }
 }

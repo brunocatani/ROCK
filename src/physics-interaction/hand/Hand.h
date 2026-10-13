@@ -1,4 +1,6 @@
 #pragma once
+#include "physics-interaction/grab/HeldObjectTarget.h"
+#include "physics-interaction/native/HavokPairCollisionFilter.h"
 #include <span>
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
@@ -22,9 +24,7 @@
 #include "physics-interaction/hand/HandBoneColliderSet.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/hand/HandInteractionStateMachine.h"
-#include "physics-interaction/input/FarPullGesturePolicy.h"
 #include "physics-interaction/hand/HandVisual.h"
-#include "physics-interaction/grab/NearbyGrabDamping.h"
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/object/RagdollBodyScope.h"
@@ -151,12 +151,6 @@ namespace rock
         bool looseWeapon = false;
     };
 
-    struct GrabContactPatchDebugSnapshot
-    {
-        std::array<RE::NiPoint3, kMaxGrabContactPatchSamples> samplePointsWorld{};
-        std::uint32_t sampleCount = 0;
-    };
-
     struct GrabSupportFrameDebugSnapshot
     {
         std::array<RE::NiPoint3, 3> pivotTriangleWorld{};
@@ -167,20 +161,16 @@ namespace rock
         float axisLengthGameUnits = 0.0f;
         const char* pivotAuthoritySource = "none";
         const char* activeGrabPointMode = "none";
-        const char* supportKind = "none";
-        const char* supportReason = "none";
         bool hasNormal = false;
         bool hasSupportAxis = false;
         bool hasBinormal = false;
         bool hasPivotTriangle = false;
-        bool authoredSupportPivot = false;
         bool positionOnlyPivot = false;
         bool normalTrusted = false;
     };
 
     struct GrabForceTorqueDebugSnapshot
     {
-        std::array<RE::NiPoint3, kMaxGrabContactPatchSamples> contactSamplePointsWorld{};
         std::array<RE::NiPoint3, 3> pivotTriangleWorld{};
         RE::hknpBodyId pivotSourceBodyId{ INVALID_BODY_ID };
         RE::NiTransform liveBodyWorld{};
@@ -209,7 +199,6 @@ namespace rock
         RE::NiPoint3 visualMeshGripPointWorld{};
         RE::NiPoint3 captureMeshGripPointBodyWorld{};
         RE::NiPoint3 captureMeshGripPointVisualWorld{};
-        RE::NiPoint3 contactPatchPointWorld{};
         float pivotErrorGameUnits = 0.0f;
         float pivotTrackingErrorGameUnits = 0.0f;
         float bodyVisualMeshLockErrorGameUnits = 0.0f;
@@ -235,13 +224,6 @@ namespace rock
         float motorSolverEffectiveToAtomDeltaDegrees = 0.0f;
         float motorSolverEffectiveLiveABodyDeltaDegrees = 0.0f;
         float motorSolverEffectiveTargetALiveADeltaDegrees = 0.0f;
-        float motorPhysicsProxyToLiveProxyDeltaDegrees = 0.0f;
-        float motorPhysicsProxyToLiveProxyDeltaGameUnits = 0.0f;
-        float motorRelationToConstraintATargetDegrees = 0.0f;
-        float motorRelationToConstraintALiveDegrees = 0.0f;
-        float motorTransformARawMaxDelta = 0.0f;
-        float motorTransformBRawMaxDelta = 0.0f;
-        float motorTargetBRcaRawMaxDelta = 0.0f;
         float motorTargetProxyToLiveProxyDeltaDegrees = 0.0f;
         float motorTargetProxyToLiveProxyDeltaGameUnits = 0.0f;
         float motorTransformBRelationLocalDeltaGameUnits = 0.0f;
@@ -256,9 +238,6 @@ namespace rock
         const char* acquisitionPhase = "none";
         const char* capturePivotAuthoritySource = "none";
         const char* captureGrabPointMode = "none";
-        const char* lastSeatedPivotReacquireReason = "none";
-        std::uint32_t contactSampleCount = 0;
-        std::uint32_t seatedPivotReacquireCount = 0;
         bool hasTorqueAxis = false;
         bool hasMotorConstraintFrames = false;
         bool hasMotorRelationFrames = false;
@@ -271,7 +250,6 @@ namespace rock
         bool hasActivePivotBVisualNode = false;
         bool hasCaptureMeshGripPoint = false;
         bool gripPointMutatedAfterCapture = false;
-        bool hasContactPatchPoint = false;
         bool positionOnlyPivot = false;
         bool normalTrusted = false;
     };
@@ -338,7 +316,7 @@ namespace rock
     class Hand
     {
     public:
-        enum class ActorEquipmentDropHandoffStatus : std::uint8_t
+        enum class ExtractedItemHandoffStatus : std::uint8_t
         {
             None,
             Pending,
@@ -448,6 +426,7 @@ namespace rock
         bool isHoldingLooseWeapon() const { return isHolding() && _heldObjectIsLooseWeapon; }
         bool isHoldingAuthoredSupportGrip() const { return isHoldingLooseWeapon() && _grabFrame.authoredLooseWeaponSupportGrip; }
         bool isHoldingFiringGrip() const { return isHoldingLooseWeapon() && _grabFrame.syntheticLooseWeaponPrimaryAttach && !_grabFrame.authoredLooseWeaponSupportGrip; }
+        bool heldWeaponGunstockAim() const { return isHoldingFiringGrip() && _grabFrame.looseObjectSharedPeerTrace != 0 && _looseSharedGunstockAim; }
         bool captureWeaponGripTransfer(weapon_grip_transfer::HandGrip& out) const;
         loose_weapon_authored_grab_policy::Arrangement heldWeaponArrangement() const { return _grabFrame.authoredWeaponArrangement; }
         RE::TESObjectREFR* getHeldRef() const { return _savedObjectState.refr; }
@@ -458,6 +437,10 @@ namespace rock
         // Frame-local view of the cached mesh, paired with its live physics transform.
         bool getHeldBodyContactMesh(RE::hknpWorld* world, std::span<const GrabLocalTriangle>& triangles, RE::NiTransform& meshWorld, const HeldContactMeshCache*& cache) const;
         std::uint64_t heldGrabIdentity() const { return isHolding() ? _grabFrame.traceId : 0; }
+        api::Status setHeldObjectTarget(api::OwnerToken,const api::grab::v1_3::HeldObjectTarget&,std::span<const std::uint32_t> weaponBodies);
+        api::Status clearHeldObjectTarget(api::OwnerToken);
+        bool readHeldObjectRoot(RE::hknpWorld*,RE::NiTransform&) const;
+        void flushConsumerObjectPairs(RE::hknpWorld*);
         bool getGrabPivotDebugSnapshot(RE::hknpWorld* world, GrabPivotDebugSnapshot& out) const;
         bool getGrabPocketNormalDebugSnapshot(RE::hknpWorld* world, GrabPocketNormalDebugSnapshot& out) const;
         bool getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const;
@@ -466,12 +449,8 @@ namespace rock
         // Non-const: takes _grabAuthorityProxyMutex to snapshot the applied pair.
         bool tryGetGrabOverlayPointProbeSample(RE::hknpWorld* world, GrabOverlayPointProbeSample& out);
         bool getGrabPresentationNodeDebugSnapshot(GrabPresentationNodeDebugSnapshot& out) const;
-        bool getGrabContactPatchDebugSnapshot(RE::hknpWorld* world, GrabContactPatchDebugSnapshot& out) const;
         bool getGrabSupportFrameDebugSnapshot(RE::hknpWorld* world, GrabSupportFrameDebugSnapshot& out) const;
         bool getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabForceTorqueDebugSnapshot& out) const;
-        bool getGrabTransformTelemetrySnapshot(RE::hknpWorld* world,
-            const RE::NiTransform& rawHandWorld,
-            grab_transform_telemetry::RuntimeSample& out) const;
         bool getGrabFingerSweepDebugSnapshot(grab_finger_pose_runtime::FingerSweepDebugSnapshot& out) const
         {
             if (!_hasGrabFingerSweepDebug || !_grabFingerSweepDebugCapture.valid) {
@@ -584,11 +563,10 @@ namespace rock
         bool refreshGesturePullSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* world,
             const RE::NiPoint3& handOrigin, RE::NiPoint3& targetWorld);
         bool unlockFarSelection();
-        bool startDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, far_pull_gesture::Mode mode);
+        bool startDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform);
         bool updateDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float deltaTime);
         void finishPullPrepAsPhysicalDropIfActive(const char* context);
         bool hasActivePullCatchIntent() const;
-        bool hasAutomaticPullCatchIntent() const;
         bool hasArrivedPullCatchIntent() const;
         bool hasPendingPullCatchCommit() const;
         bool advancePullCatchCommit(float deltaTime, float maxCommitSeconds);
@@ -600,18 +578,16 @@ namespace rock
             const RE::NiPoint3& palmNormal,
             float radiusGameUnits,
             float maxBodyDistanceGameUnits);
-        bool beginActorEquipmentDropHandoff(
-            const actor_equipment_grab::DropResult& dropResult,
-            const RE::NiPoint3& sourceHitPointWorld,
-            far_pull_gesture::Mode mode);
-        bool hasPendingActorEquipmentDropHandoff() const;
-        far_pull_gesture::Mode actorEquipmentDropPullMode() const { return _actorEquipmentDropHandoff.pullMode; }
-        ActorEquipmentDropHandoffStatus advanceActorEquipmentDropHandoff(
+        bool beginExtractedItemHandoff(
+            const api::native_interaction::ExtractedReference& dropResult,
+            const RE::NiPoint3& sourceHitPointWorld);
+        bool hasPendingExtractedItemHandoff() const;
+        ExtractedItemHandoffStatus advanceExtractedItemHandoff(
             RE::bhkWorld* bhkWorld,
             RE::hknpWorld* hknpWorld,
             float deltaSeconds,
             float maxHandoffSeconds);
-        bool replaceFarActorEquipmentSelectionWithDroppedObject(RE::bhkWorld* bhkWorld,
+        bool replaceExtractedSelectionWithLooseObject(RE::bhkWorld* bhkWorld,
             RE::hknpWorld* hknpWorld,
             RE::TESObjectREFR* droppedRef,
             const RE::NiPoint3& sourceHitPointWorld);
@@ -623,7 +599,7 @@ namespace rock
             float maxDistanceGame,
             bool allowProjectileLayerForExactTarget,
             bool equippedWeaponTransfer = false);
-        void clearActorEquipmentDropHandoff(const char* reason = "cleared");
+        void clearExtractedItemHandoff(const char* reason = "cleared");
         void clearPullCatchIntent(const char* reason = "cleared");
         void clearSelectionState(bool rememberDeselect);
 
@@ -703,8 +679,8 @@ namespace rock
         bool tryGetHandColliderMetadata(std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const { return _boneColliders.tryGetBodyMetadataAtomic(bodyId, outMetadata); }
         bool tryGetHandColliderMetadataAtIndex(std::uint32_t index, std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const { return _boneColliders.tryGetBodyMetadataAtIndexAtomic(index, bodyId, outMetadata); }
         bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const { return _boneColliders.tryGetPalmAnchorTarget(outTarget); }
-        bool tryGetHandColliderTargetForDebug(std::uint32_t bodyId, RE::NiTransform& outTarget) const { return _boneColliders.tryGetBodyTargetForDebug(bodyId, outTarget); }
         const dynamic_hand_twin::TwinTargets& dynamicTwinTargets() const { return _boneColliders.dynamicTwinTargets(); }
+        std::size_t getPinkyOperatingProbes(std::array<RE::NiPoint3,2>& outProbes) const;
         bool tryGetPinchFingerFrame(grab_pinch_pocket_policy::FingerFrame& outFrame) const;
         RE::hknpShape* buildDynamicTwinShape(const dynamic_hand_twin::TwinSlotFrame& slotFrame, bool isPalm) const
         {
@@ -767,8 +743,6 @@ namespace rock
         struct GrabBodyResolution;
         struct ResolvedGrabBodyCapture;
         struct GrabPivotEvidence;
-        struct GrabFingerEvidenceInput;
-        struct GrabFingerEvidence;
         struct GrabCommitPreparationInput;
         struct GrabBodyFrameCaptureInput;
         struct GrabBodyFrameCapture;
@@ -777,6 +751,14 @@ namespace rock
         struct GrabFrozenCommitInput;
         struct GrabPostFreezeInput;
         struct GrabConstraintCommitInput;
+        held_object_target::Lease _consumerObjectTarget{};
+        // Pair requests share the existing grab-drive mutex. Native pair
+        // reconciliation runs only at pre-collide, never in a provider call.
+        HavokPairCollisionLeaseSet _consumerPairLeases{};
+        std::array<HavokPairCollisionLeaseSet::DesiredPair,34> _consumerPairs{};
+        std::size_t _consumerPairCount{};
+        std::uint64_t _consumerPairsExpire{};
+        std::uint64_t runtimeFrameForObjectTarget() const;
         struct HeldDriveUpdate;
         bool validateSelectedGrab(
             RE::hknpWorld* world,
@@ -799,20 +781,12 @@ namespace rock
             const HeldDriveUpdate& driveUpdate,
             const GrabReleaseContext& releaseContext,
             bool& outConvergingAcquisitionPhase);
-        void logHeldRenderClockProbe(
-            const HeldDriveUpdate& driveUpdate,
-            const RE::NiTransform& rawHandWorld,
-            const RE::NiTransform& heldVisualNodeWorld,
-            bool heldVisualNodeFromPresentedPose,
-            float deltaTime);
-        void logGrabMeshContactProbe(const RE::NiTransform& rawHandWorld, const HeldDriveUpdate& driveUpdate);
         void updateHeldAcquisition(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
             float deltaTime,
             const HeldDriveUpdate& driveUpdate,
             bool convergingAcquisitionPhase);
         void finalizeHeldObjectUpdate(RE::hknpWorld* world,
-            const RE::NiTransform& handWorldTransform,
             float forceFadeInTime,
             const HeldDriveUpdate& driveUpdate);
         void prepareSelectedGrabBodies(
@@ -827,7 +801,6 @@ namespace rock
         bool prepareGrabMeshCapture(
             const RE::NiTransform& handWorldTransform,
             const ValidatedGrabSelection& selection,
-            std::uint64_t traceId,
             const std::string& objectName,
             GrabMeshCaptureSetup& outSetup);
         void extractGrabMeshEvidence(
@@ -862,32 +835,13 @@ namespace rock
             const std::vector<TriangleData>& meshTriangles,
             const RE::NiPointer<RE::TESObjectREFR>& selectedRef,
             std::uint16_t selectedOriginalMotionPropsId,
-            std::uint64_t traceId,
             const std::string& objectName,
             ResolvedGrabBodyCapture& outCapture);
         void resolveGrabPivotEvidence(
-            RE::hknpWorld* world,
-            const ValidatedGrabSelection& selection,
             const GrabProxyPreparation& proxy,
-            const GrabMeshExtraction& mesh,
             const ResolvedGrabBodyCapture& bodyCapture,
-            const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet,
-            const grab_contact_source_policy::GrabContactSourcePolicy& contactSourcePolicy,
-            bool authoredSeatPrepared,
-            bool canonicalPivotAvailable,
-            const RE::NiPoint3& canonicalPivotPointWorld,
-            const RE::NiPoint3& canonicalPivotNormalWorld,
-            const char* canonicalPivotMode,
-            grab_authority_frame_math::GrabAuthorityPivotSource canonicalPivotAuthoritySource,
-            GrabSurfaceEvidence& surface,
-            GrabBodyResolution& bodyResolution,
+            const GrabSurfaceEvidence& surface,
             GrabPivotEvidence& outEvidence);
-        bool resolveGrabFingerEvidence(
-            RE::hknpWorld* world,
-            const GrabFingerEvidenceInput& input,
-            GrabSurfaceEvidence& surface,
-            const GrabPivotEvidence& pivotEvidence,
-            GrabFingerEvidence& outEvidence);
         void beginResolvedGrabCommit(
             const GrabCommitPreparationInput& input);
         bool captureGrabBodyFrame(
@@ -906,6 +860,17 @@ namespace rock
         bool commitGrabConstraintAndPose(
             RE::hknpWorld* world,
             const GrabConstraintCommitInput& input);
+
+        struct GrabFingerSolveFrame
+        {
+            RE::NiTransform objectWorld{};
+            RE::NiTransform liveHandWorld{};
+            RE::NiTransform solveHandWorld{};
+            RE::NiPoint3 pivotWorld{};
+            bool touchHeld = false;
+            const char* stage = "";
+        };
+        void solveAndPublishGrabFingerPose(const GrabFingerSolveFrame& frame);
 
         HandTransitionResult applyTransition(const HandTransitionRequest& request);
 
@@ -972,15 +937,14 @@ namespace rock
         RE::NiPoint3 activeProxyConstraintPivotBLocalGame() const;
 
         /*
-         * Pull ownership prevents another interaction from taking the hand or
-         * object during launch. Only Immediate Pull also owns the arrival catch:
-         * it retries a refused close commit while held. Gesture Pull releases
-         * ownership after launch and needs a fresh normal grab to catch.
+         * Far-pull arrival needs explicit ownership separate from button edges.
+         * Both pull modes keep a held grab request alive through arrival and
+         * retry a refused close commit without a second press. Release cancels
+         * the pull or pending catch; a retry never restarts the dynamic pull.
          */
         struct PullCatchIntent
         {
             bool active = false;
-            bool automaticCatch = false;
             bool commitPending = false;
             RE::TESObjectREFR* refr = nullptr;
             std::uint32_t formId = 0;
@@ -997,10 +961,9 @@ namespace rock
          * authority until the dropped ref scans as a normal loose object, then
          * the existing far-pull code takes over unchanged.
          */
-        struct ActorEquipmentDropHandoff
+        struct ExtractedItemHandoff
         {
             bool active = false;
-            far_pull_gesture::Mode pullMode = far_pull_gesture::Mode::Immediate;
             RE::ObjectRefHandle handle{};
             RE::NiPointer<RE::TESObjectREFR> droppedRef;
             RE::NiPoint3 sourceHitPointWorld{};
@@ -1068,7 +1031,7 @@ namespace rock
             }
         };
 
-        void armPullCatchIntent(RE::TESObjectREFR* refr, std::uint32_t primaryBodyId, grab_target::Kind targetKind, far_pull_gesture::Mode mode);
+        void armPullCatchIntent(RE::TESObjectREFR* refr, std::uint32_t primaryBodyId, grab_target::Kind targetKind);
         void markPullCatchIntentArrived();
         bool pullCatchIntentMatchesSelection() const;
 
@@ -1306,87 +1269,12 @@ namespace rock
         RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
         RE::NiTransform _lastAppliedGrabAuthorityRawHandWorld{};
         bool _hasLastAppliedGrabAuthorityProxyWorld = false;
-        struct RagdollAngularProbePreSolve
-        {
-            RE::hknpBodyId objectBodyId{ INVALID_BODY_ID };
-            RE::NiTransform desiredBodyWorld{};
-            RE::NiTransform bodyAWorldBefore{};
-            RE::NiTransform bodyWorldBefore{};
-            RE::NiTransform targetRelationAWorld{};
-            RE::NiTransform liveRelationAWorld{};
-            RE::NiTransform targetConstraintAWorld{};
-            RE::NiTransform liveConstraintAWorld{};
-            RE::NiTransform relationInverseBodyWorld{};
-            RE::NiTransform atomRowsBodyWorld{};
-            RE::NiTransform solverEffectiveBodyWorld{};
-            RE::NiTransform solverEffectiveLiveAWorld{};
-            RE::NiMatrix3 transformARotation{};
-            RE::NiMatrix3 transformBRotation{};
-            std::array<float, 12> targetBRcaRaw{};
-            RE::NiPoint3 requiredAxisWorld{};
-            RE::NiPoint3 requiredAxisProxyLocal{};
-            RE::NiPoint3 linearCorrectionWorld{};
-            RE::NiPoint3 linearLeverWorld{};
-            RE::NiPoint3 linearTorqueWitnessWorld{};
-            RE::NiPoint3 linearTorqueAxisProxyLocal{};
-            RE::NiPoint3 angularVelocityBeforeRadians{};
-            float beforeErrorDegrees = -1.0f;
-            float beforeGripErrorGameUnits = -1.0f;
-            float pivotLeverGameUnits = -1.0f;
-            float linearTorqueWitnessGameUnitsSquared = -1.0f;
-            float linearTorqueAxisDotRequired = 0.0f;
-            float angularMotorTau = 0.0f;
-            float angularMotorDamping = 0.0f;
-            float angularMotorMaxForce = 0.0f;
-            float linearMotorMaxForce = 0.0f;
-            float targetToHiggsRelationDegrees = -1.0f;
-            float transformBFrozenDeltaDegrees = -1.0f;
-            float pivotBRelationDeltaGameUnits = -1.0f;
-            float transformAPivotRoundTripDeltaGameUnits = -1.0f;
-            float targetProxyToLiveProxyDeltaGameUnits = -1.0f;
-            float targetProxyToLiveProxyDeltaDegrees = -1.0f;
-            float targetRelationAToLiveRelationADegrees = -1.0f;
-            float targetConstraintAToLiveConstraintADegrees = -1.0f;
-            float targetRelationAToTargetConstraintADegrees = -1.0f;
-            float liveRelationAToLiveConstraintADegrees = -1.0f;
-            float transformARawMaxDelta = -1.0f;
-            float transformBRawMaxDelta = -1.0f;
-            float targetBRcaRawMaxDelta = -1.0f;
-            float relationInverseBodyDeltaGameUnits = -1.0f;
-            float relationInverseBodyDeltaDegrees = -1.0f;
-            float atomRowsBodyDeltaGameUnits = -1.0f;
-            float atomRowsBodyDeltaDegrees = -1.0f;
-            float atomRowsToRelationInverseDegrees = -1.0f;
-            float targetRowsToProxyInBodyDegrees = -1.0f;
-            float solverEffectiveBodyDeltaGameUnits = -1.0f;
-            float solverEffectiveBodyDeltaDegrees = -1.0f;
-            float solverEffectiveToAtomDegrees = -1.0f;
-            float solverEffectiveLiveABodyDeltaDegrees = -1.0f;
-            float solverEffectiveTargetALiveADeltaDegrees = -1.0f;
-            float ragdollBRcaRowsErrorDegrees = -1.0f;
-            float ragdollBRcaColumnsErrorDegrees = -1.0f;
-            float ragdollARcbRowsInverseErrorDegrees = -1.0f;
-            float ragdollARcbColumnsInverseErrorDegrees = -1.0f;
-            std::uint64_t traceId = 0;
-            std::uint64_t targetWriteSequence = 0;
-            std::uint64_t flushSequence = 0;
-            bool bodyAWorldValid = false;
-            bool ragdollMotorEnabled = false;
-            bool valid = false;
-        };
-        RagdollAngularProbePreSolve _ragdollAngularProbePreSolve{};
-        std::array<float, 12> _lastGrabProbeTransformARaw{};
-        std::array<float, 12> _lastGrabProbeTransformBRaw{};
-        std::array<float, 12> _lastGrabProbeTargetBRcaRaw{};
-        std::uint64_t _lastGrabProbeAtomTraceId = 0;
-        bool _hasLastGrabProbeAtomBytes = false;
         GeneratedKeyframedBodyDriveState _grabAuthorityProxyDriveState{};
         std::uint64_t _grabAuthorityProxyQueuedSequence = 0;
         std::uint64_t _grabAuthorityProxyFlushSequence = 0;
         std::uint64_t _grabAuthorityProxyFailedFlushes = 0;
         float _grabAuthorityProxyLastFlushDeltaSeconds = 0.0f;
         int _grabAuthorityProxyLogCounter = 0;
-        std::uint64_t _grabAuthorityProxyAfterSolveLogCounter = 0;
         std::atomic<bool> _grabAuthorityProxyReleasePending{ false };
         std::mutex _grabAuthorityProxyMutex;
         SavedObjectState _savedObjectState;
@@ -1394,10 +1282,16 @@ namespace rock
         float _grabStartTime = 0.0f;
         std::uint64_t _heldObjectUpdateFrame = 0;
         int _heldLogCounter = 0;
-        int _notifCounter = 0;
 
         CanonicalGrabFrame _grabFrame;
         grab_offset_acquisition::Transition<RE::NiTransform> _grabOffsetAcquisition;
+        grab_offset_acquisition::Transition<RE::NiTransform> _looseSharedAcquisition;
+        std::uint64_t _looseSharedAcquisitionPeer{};
+        std::uint64_t _looseSharedAcquisitionFrame{};
+        bool _looseSharedGunstockAim{};
+        std::uint64_t _looseWeaponReturnStartFrame{};
+        float _looseSharedHandBlendAlpha{-1.0f};
+        hand_visual_lerp_math::VisualReturnConfig _grabVisualReturnConfig{};
         float _grabOffsetMaximumGripError = 0.0f;
         float _grabOffsetMaximumRotationError = 0.0f;
         grab_three_phase::AcquisitionPhase _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
@@ -1411,8 +1305,6 @@ namespace rock
         bool _grabFingerPosePublished = false;
         float _grabConvergeStableInsidePocketSeconds = 0.0f;
         float _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
-        nearby_grab_damping::NearbyGrabDampingState _nearbyGrabDamping;
-        float _grabDeviationExceededSeconds = 0.0f;
         std::array<float, 5> _grabDeviationHistory{};
         std::size_t _grabDeviationHistoryCount = 0;
         std::size_t _grabDeviationHistoryNext = 0;
@@ -1420,21 +1312,10 @@ namespace rock
         bool _hasGrabVisualHandTransform = false;
         RE::NiTransform _lastPublishedGrabVisualHandTransform{};
         bool _hasLastPublishedGrabVisualHandTransform = false;
-        // HELD_RENDER_CLOCK probe (diagnostic only): previous frame's presented
-        // node pose and presentation residual, keyed by grab trace.
-        std::uint64_t _heldRenderClockProbeTraceId = 0;
-        RE::NiTransform _heldRenderClockProbePresentedNode{};
-        RE::NiTransform _heldRenderClockProbeResidual{};
-        bool _hasHeldRenderClockProbeSample = false;
-        std::uint64_t _grabMeshContactProbeTraceId = 0;
         hand_visual_lerp_math::VisualReturnTransition<RE::NiTransform> _grabVisualReturn{};
         RE::NiTransform _grabVisualHandLerpStartTransform{};
         float _grabVisualHandLerpElapsedSeconds = 0.0f;
         float _grabVisualHandLerpDurationSeconds = 0.0f;
-        float _grabVisualDeviationExceededSeconds = 0.0f;
-        std::array<float, 5> _grabVisualDeviationHistory{};
-        std::size_t _grabVisualDeviationHistoryCount = 0;
-        std::size_t _grabVisualDeviationHistoryNext = 0;
         std::array<RE::NiPoint3, 5> _grabFingerProbeStart{};
         std::array<RE::NiPoint3, 5> _grabFingerProbeEnd{};
         bool _hasGrabFingerProbeDebug = false;
@@ -1508,7 +1389,7 @@ namespace rock
         float _pullPresentationElongationRatio = 0.0f;
         bool _pullPresentationValid = false;
         PullCatchIntent _pullCatchIntent{};
-        ActorEquipmentDropHandoff _actorEquipmentDropHandoff{};
+        ExtractedItemHandoff _extractedItemHandoff{};
 
         static constexpr int MAX_HELD_BODIES = 64;
         std::atomic<std::uint32_t> _heldBodyIdsSnapshot[MAX_HELD_BODIES]{};
@@ -1520,11 +1401,6 @@ namespace rock
         VatsSelectionHighlight _selectionHighlight;
 
     public:
-        selection_highlight_policy::VatsHighlightTargetChoice chooseSelectionHighlightTarget(const SelectedObject& selection) const
-        {
-            auto* referenceRoot = selection.refr ? selection.refr->Get3D() : nullptr;
-            return selection_highlight_policy::chooseVatsHighlightTarget(selection.hitNode, selection.visualNode, referenceRoot);
-        }
 
         bool playSelectionHighlightCandidate(RE::TESObjectREFR* refr, RE::NiAVObject* node, selection_highlight_policy::VatsHighlightSource source)
         {
@@ -1544,7 +1420,7 @@ namespace rock
 
             auto* referenceRoot = selection.refr ? selection.refr->Get3D() : nullptr;
             _selectionHighlightRefreshFrames = 0;
-            if (selection.targetKind == grab_target::Kind::ActorEquipment) {
+            if (selection.targetKind == grab_target::Kind::ExtractableItem) {
                 if (playSelectionHighlightCandidate(selection.refr, selection.visualNode, selection_highlight_policy::VatsHighlightSource::VisualNode)) {
                     return true;
                 }

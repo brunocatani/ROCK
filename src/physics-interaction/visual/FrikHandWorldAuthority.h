@@ -74,10 +74,6 @@ namespace rock::frik_hand_world_authority
      */
     void beginRockFrame(std::uint64_t sequence);
 
-    // Read-only phase witnesses for grip-failure telemetry. phase must be a
-    // string literal; only copied transforms and that label survive the call.
-    void traceArmPose(const char* phase, std::uint64_t sequence) noexcept;
-
     // Initialization only: the provider's config reader performs disk I/O.
     void loadScopeDampingConfig();
     // Reset at FrameBegin; set by ROCK's accepted recoil response before FRIK
@@ -87,6 +83,18 @@ namespace rock::frik_hand_world_authority
 
     // This frame's controller driver (FRIK's dampened weapon offset node).
     [[nodiscard]] bool tryGetInputDriverWorld(bool isLeft, RE::NiTransform& outWorld);
+
+    // Private equipped-firearm inputs; never replace the published tracked inputs.
+    void prepareWeaponInputs(std::uint64_t ownership, std::uint64_t generation, bool enabled);
+    [[nodiscard]] bool weaponFilteringActive();
+    [[nodiscard]] bool tryGetWeaponHandWorld(bool isLeft, RE::NiTransform& outWorld);
+    [[nodiscard]] bool tryGetWeaponDriverWorld(bool isLeft, RE::NiTransform& outWorld);
+    [[nodiscard]] bool tryGetWeaponWandWorld(bool isLeft, RE::NiTransform& outWorld);
+
+    // Private held-object inputs share controller history with equipped weapons.
+    // Free hands, published raw input and throw motion remain unfiltered.
+    [[nodiscard]] bool tryGetHandlingWandWorld(bool isLeft, RE::NiTransform& outWorld);
+    [[nodiscard]] bool filterHeldProxyWorld(bool isLeft, RE::NiTransform& proxyWorld);
 
     /*
      * kScopeEnter / kScopeExit: the native first-person arm update rebuilds

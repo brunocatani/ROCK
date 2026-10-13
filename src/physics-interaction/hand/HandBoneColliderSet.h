@@ -71,7 +71,6 @@ namespace rock
         bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const;
         // Main-thread debug publication only. Returns the exact pending target
         // that the next generated-body physics callback will consume.
-        bool tryGetBodyTargetForDebug(std::uint32_t bodyId, RE::NiTransform& outTarget) const;
 
         /*
          * Dynamic-twin publication (main thread only): the exact palm anchor

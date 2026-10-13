@@ -50,21 +50,6 @@ namespace rock::grab_authority_source_clock
         Rebase,
     };
 
-    constexpr const char* resampleActionName(ResampleAction action) noexcept
-    {
-        switch (action) {
-        case ResampleAction::Hold:
-            return "hold";
-        case ResampleAction::Interpolate:
-            return "interpolate";
-        case ResampleAction::Lock:
-            return "lock";
-        case ResampleAction::Rebase:
-            return "rebase";
-        }
-        return "unknown";
-    }
-
     // A source sample farther than one game frame at 10 FPS is a hitch, not motion.
     constexpr float kMaxSourceIntervalSeconds = 0.1f;
     // One-sample discontinuity gates; beyond these the sample is a snap turn,

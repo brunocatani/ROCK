@@ -1,3 +1,4 @@
+#include "physics-interaction/native/SceneRelation.h"
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
@@ -126,7 +127,7 @@ namespace rock
 
             if (ref && hitNode) {
                 if (auto* root3D = ref->Get3D()) {
-                    telemetry.hitNodeInsideActorRoot = actor_equipment_grab::nodeContainsNode(root3D, hitNode, 64);
+                    telemetry.hitNodeInsideActorRoot = scene_relation::nodeContainsNode(root3D, hitNode, 64);
                 }
             }
 
@@ -222,29 +223,6 @@ namespace rock
                        baseForm->Is(RE::ENUM_FORM_ID::kACTI));
         }
 
-        bool hasDynamicDeadBipedBodyEvidence(RE::hknpWorld* hknpWorld, RE::hknpBodyId bodyId)
-        {
-            if (!hknpWorld || bodyId.value == kInvalidBodyId) {
-                return false;
-            }
-
-            auto* body = havok_runtime::getBody(hknpWorld, bodyId);
-            if (!body) {
-                return false;
-            }
-
-            const auto layer = body->collisionFilterInfo & 0x7F;
-            if (!grab_target::isDetachedGoreLayer(layer)) {
-                return false;
-            }
-
-            auto motionType = physics_body_classifier::motionTypeFromBodyFlags(body->flags);
-            if (motionType == physics_body_classifier::BodyMotionType::Unknown) {
-                motionType = physics_body_classifier::motionTypeFromMotionPropertiesId(static_cast<std::uint16_t>(body->motionPropertiesId));
-            }
-            return motionType == physics_body_classifier::BodyMotionType::Dynamic;
-        }
-
         bool hasDynamicMovableStaticBodyEvidence(RE::hknpWorld* hknpWorld, RE::hknpBodyId bodyId)
         {
             if (!hknpWorld || bodyId.value == kInvalidBodyId) {
@@ -261,29 +239,6 @@ namespace rock
                 motionType = physics_body_classifier::motionTypeFromMotionPropertiesId(static_cast<std::uint16_t>(body->motionPropertiesId));
             }
             return motionType == physics_body_classifier::BodyMotionType::Dynamic;
-        }
-
-        grab_target::Kind classifyDeadActorPhysics(RE::TESObjectREFR* ref, RE::NiAVObject* hitNode,
-            RE::hknpWorld* world, RE::hknpBodyId bodyId)
-        {
-            auto* body = world && bodyId.value != kInvalidBodyId ? havok_runtime::getBody(world, bodyId) : nullptr;
-            if (!body) return grab_target::Kind::BlockedWholeActorBody;
-            const auto layer = body->collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
-            auto motionType = physics_body_classifier::motionTypeFromBodyFlags(body->flags);
-            if (motionType == physics_body_classifier::BodyMotionType::Unknown) {
-                motionType = physics_body_classifier::motionTypeFromMotionPropertiesId(static_cast<std::uint16_t>(body->motionPropertiesId));
-            }
-            auto* root = ref ? ref->Get3D() : nullptr;
-            const bool outsideRoot = grab_target::isDetachedGoreLayer(layer) && hitNode && root &&
-                !actor_equipment_grab::nodeContainsNode(root, hitNode, 64);
-            const auto kind = grab_target::classifyDeadActorPhysicalTarget(
-                motionType == physics_body_classifier::BodyMotionType::Dynamic, layer, outsideRoot);
-            if (kind == grab_target::Kind::DetachedGore) {
-                ROCK_LOG_SAMPLE_DEBUG(Hand, 2000,
-                    "Detached actor part admitted: actor={:08X} body={} layer={} owner='{}' outsideRoot={}",
-                    ref ? ref->GetFormID() : 0, bodyId.value, layer, hitNode ? hitNode->name.c_str() : "none", outsideRoot);
-            }
-            return kind;
         }
 
         bool readSelectionBodyInteractionState(
@@ -326,7 +281,7 @@ namespace rock
         }
 
         if (ref == RE::PlayerCharacter::GetSingleton()) {
-            return { .kind = grab_target::Kind::BlockedWholeActorBody, .reason = "player-ref", .grabbable = false };
+            return { .kind = grab_target::Kind::BlockedExtension, .reason = "player-ref", .grabbable = false };
         }
 
         if (ref->IsDeleted() || ref->IsDisabled()) {
@@ -347,35 +302,26 @@ namespace rock
             return { .kind = grab_target::Kind::None, .reason = "missing-3d", .grabbable = false };
         }
 
-        if (baseForm->Is(RE::ENUM_FORM_ID::kNPC_)) {
-            if (!ref->IsDead(false)) {
-                return { .kind = grab_target::Kind::LiveActorScissors, .reason = "live-actor-requires-scissors", .grabbable = false };
+        api::native_interaction::SelectionQuery query{};
+        query.reference=reinterpret_cast<std::uintptr_t>(ref);
+        query.world=reinterpret_cast<std::uintptr_t>(hknpWorld);
+        query.hitNode=reinterpret_cast<std::uintptr_t>(hitNode);
+        query.body=bodyId.value;query.farSelection=isFarSelection;query.hasHitPoint=hasHitPoint;
+        query.hitPoint={hitPointWorld.x,hitPointWorld.y,hitPointWorld.z};
+        const auto fromExtension=[](const api::native_interaction::SelectionReply& reply) {
+            using Kind=api::native_interaction::SelectionKind;
+            GrabTargetClassification result{};result.extensionSelection=reply;
+            switch(reply.kind) {
+            case Kind::Blocked:result.kind=grab_target::Kind::BlockedExtension;result.reason="extension-blocked";break;
+            case Kind::ExtractableItem:result.kind=grab_target::Kind::ExtractableItem;result.reason="extension-extractable-item";result.grabbable=true;break;
+            case Kind::DirectConnectedBody:result.kind=grab_target::Kind::ConnectedBody;result.reason="extension-connected-body";result.grabbable=true;break;
+            case Kind::DirectDetachedBody:result.kind=grab_target::Kind::DetachedBody;result.reason="extension-detached-body";result.grabbable=true;break;
+            default:break;
             }
-
-            if (isFarSelection) {
-                auto equipmentSelection = actor_equipment_grab::resolveFarActorEquipmentSelection(ref, hitNode, hitPointWorld, hasHitPoint);
-                if (equipmentSelection.isUsable()) {
-                    return {
-                        .kind = grab_target::Kind::ActorEquipment,
-                        .reason = "far-dead-actor-equipment",
-                        .grabbable = true,
-                        .actorEquipment = equipmentSelection,
-                    };
-                }
-            }
-
-            const auto physicalKind = classifyDeadActorPhysics(ref, hitNode, hknpWorld, bodyId);
-            if (physicalKind == grab_target::Kind::DetachedGore) {
-                return { .kind = physicalKind, .reason = "detached-actor-part-dynamic", .grabbable = true };
-            }
-
-            if (physicalKind == grab_target::Kind::DeadActorBody) {
-                return { .kind = grab_target::Kind::DeadActorBody, .reason = "dead-actor-body-dynamic", .grabbable = true };
-            }
-
-            return { .kind = grab_target::Kind::BlockedWholeActorBody, .reason = isFarSelection ? "far-dead-actor-no-equipment" : "close-dead-actor-body", .grabbable = false };
-        }
-
+            return result;
+        };
+        const auto extension=native_interaction_service::classify(query);
+        if(extension.kind!=api::native_interaction::SelectionKind::Unhandled)return fromExtension(extension);
         if (baseForm->Is(RE::ENUM_FORM_ID::kMSTT) && hasDynamicMovableStaticBodyEvidence(hknpWorld, bodyId)) {
             const bool targetIsCar = fo4vr::isExplodableCar(baseForm);
             const auto carSelectionDecision = car_interaction_policy::evaluateSelection(car_interaction_policy::GrabPolicyInput{
@@ -412,9 +358,9 @@ namespace rock
             return { .kind = grab_target::Kind::LooseObject, .reason = "loose-form-whitelist", .grabbable = true };
         }
 
-        if (hasDynamicDeadBipedBodyEvidence(hknpWorld, bodyId)) {
-            return { .kind = grab_target::Kind::DetachedGore, .reason = "dynamic-deadbip-body", .grabbable = true };
-        }
+        query.stage=api::native_interaction::SelectionStage::AfterCoreTypes;
+        const auto fallback=native_interaction_service::classify(query);
+        if(fallback.kind!=api::native_interaction::SelectionKind::Unhandled)return fromExtension(fallback);
 
         return { .kind = grab_target::Kind::None, .reason = "unsupported-form-and-body", .grabbable = false };
     }
@@ -505,7 +451,7 @@ namespace rock
 
         bool promotesFarHitToCloseSelection(const GrabTargetClassification& classification, const RE::NiPoint3& start, const RE::NiPoint3& hitPoint, float nearReachDistance)
         {
-            return classification.kind != grab_target::Kind::ActorEquipment &&
+            return classification.kind != grab_target::Kind::ExtractableItem &&
                    selection_query_policy::shouldPromoteFarHitToClose(pointDistance(start, hitPoint), nearReachDistance);
         }
 
@@ -622,7 +568,7 @@ namespace rock
                             .kind = classification.kind,
                             .reason = "far-target-kind",
                             .grabbable = false,
-                            .actorEquipment = classification.actorEquipment,
+                            .extensionSelection = classification.extensionSelection,
                         };
                         logSelectionRejectTelemetry(queryName, "far-target-kind", i, ref, hitNode, hknpWorld, hitBodyId, &rejectedClassification, "far-target-kind", isFarSelection, 0.0f, 0.0f,
                             -1.0f, loggedRejectTelemetry);
@@ -655,7 +601,7 @@ namespace rock
                                 .kind = classification.kind,
                                 .reason = farBlacklistDecision.reason,
                                 .grabbable = false,
-                                .actorEquipment = classification.actorEquipment,
+                                .extensionSelection = classification.extensionSelection,
                             };
                             logSelectionRejectTelemetry(queryName,
                                 "far-blacklist",
@@ -744,10 +690,10 @@ namespace rock
                 candidate.hasHitShapeKey = shapeKey != 0xFFFF'FFFF;
                 candidate.hasSelectionScore = true;
                 candidate.hasHmdConeDot = hasHmdConeDot;
-                candidate.actorEquipment = classification.actorEquipment;
+                candidate.extensionSelection = classification.extensionSelection;
 
                 candidate.hitNode = hitNode;
-                candidate.visualNode = classification.actorEquipment.visualNode ? classification.actorEquipment.visualNode : ref->Get3D();
+                candidate.visualNode = classification.extensionSelection.visualNode ? reinterpret_cast<RE::NiAVObject*>(classification.extensionSelection.visualNode) : ref->Get3D();
                 insertRankedSelectionCandidate(rankedCandidates, rankedCandidateCount, candidate, candidateScore);
             }
 
@@ -757,7 +703,7 @@ namespace rock
                 const auto hitBodyId = candidate.bodyId;
                 const auto& hitPoint = candidate.hitPointWorld;
                 const auto hmdConeDot = candidate.hmdConeDot;
-                if (candidate.targetKind == grab_target::Kind::ActorEquipment) {
+                if (candidate.targetKind == grab_target::Kind::ExtractableItem) {
                     auto* owner = havok_runtime::getCollisionObjectFromBody(hknpWorld, hitBodyId);
                     RE::hknpWorld* ownerWorld = nullptr;
                     RE::hknpBodyId ownerBody{kInvalidBodyId};
@@ -773,8 +719,8 @@ namespace rock
                     }
                     candidate.equipmentAnchorOwner = reinterpret_cast<std::uintptr_t>(owner);
                     ROCK_LOG_SAMPLE_DEBUG(Hand, 2000,
-                        "Actor equipment anchor: actor={:08X} item={:08X} body={} point=({:.2f},{:.2f},{:.2f}) local=({:.2f},{:.2f},{:.2f}) hmdDot={:.3f}",
-                        ref->GetFormID(), candidate.actorEquipment.itemFormId, hitBodyId.value,
+                        "Extractable selection anchor: ref={:08X} owner={:016X} body={} point=({:.2f},{:.2f},{:.2f}) local=({:.2f},{:.2f},{:.2f}) hmdDot={:.3f}",
+                        ref->GetFormID(), candidate.extensionSelection.owner, hitBodyId.value,
                         hitPoint.x, hitPoint.y, hitPoint.z, candidate.equipmentAnchor.localPoint.x,
                         candidate.equipmentAnchor.localPoint.y, candidate.equipmentAnchor.localPoint.z, hmdConeDot);
                 }
@@ -920,7 +866,7 @@ namespace rock
         // Released objects can rest beside or partly behind the palm, where the far sphere cast
         // sees a hit at the hand origin. Treating that as a pull creates a false "can't re-grab"
         // state; ROCK keeps active hand-reachable objects on the close-grab path.
-        if (result.isValid() && result.hasHitPoint && result.targetKind != grab_target::Kind::ActorEquipment) {
+        if (result.isValid() && result.hasHitPoint && result.targetKind != grab_target::Kind::ExtractableItem) {
             const float hitDistance = pointDistance(handPos, result.hitPointWorld);
             if (selection_query_policy::shouldPromoteFarHitToClose(hitDistance, configuredNearReach)) {
                 result.isFarSelection = false;

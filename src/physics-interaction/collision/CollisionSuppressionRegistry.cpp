@@ -23,18 +23,20 @@ namespace rock::collision_suppression_registry
             switch (owner) {
             case CollisionSuppressionOwner::Grab:
                 return "Grab";
-            case CollisionSuppressionOwner::WeaponDominantHand:
-                return "WeaponDominantHand";
-            case CollisionSuppressionOwner::WeaponSupportHand:
-                return "WeaponSupportHand";
+            case CollisionSuppressionOwner::WeaponHand:
+                return "WeaponHand";
             case CollisionSuppressionOwner::HeldLooseWeaponBody:
                 return "HeldLooseWeaponBody";
-            case CollisionSuppressionOwner::EquippedWeaponDropHand:
-                return "EquippedWeaponDropHand";
             case CollisionSuppressionOwner::NativeGrenadeThrow:
                 return "NativeGrenadeThrow";
             case CollisionSuppressionOwner::InvalidFinalPose:
                 return "InvalidFinalPose";
+            case CollisionSuppressionOwner::LooseGeneratedCollision:
+                return "LooseGeneratedCollision";
+            case CollisionSuppressionOwner::ConsumerStorage:
+                return "ConsumerStorage";
+            case CollisionSuppressionOwner::ConsumerWeaponPart:
+                return "ConsumerWeaponPart";
             }
             return "Unknown";
         }

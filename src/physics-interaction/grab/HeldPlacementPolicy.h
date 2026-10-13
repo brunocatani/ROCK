@@ -84,9 +84,11 @@ namespace rock::held_placement_policy
     // Validate a fresh scan at placement. The grab lifecycle's historical
     // completeness flag describes its cached prep and is not a placement veto.
     [[nodiscard]] constexpr bool completeBodyScan(bool finished, std::size_t bodies,
-        std::size_t validated, std::uint32_t skippedOrFailed) noexcept
+        std::size_t validated, std::uint32_t skippedOrFailed, std::uint32_t verifiedEmpty = 0) noexcept
     {
-        return finished && bodies > 0 && bodies <= kMaxBodies && validated == bodies && skippedOrFailed == 0;
+        // Native weapon assemblies may contain empty attachment collision
+        // wrappers. Only positively verified empty nodes can be discounted.
+        return finished && bodies > 0 && bodies <= kMaxBodies && validated == bodies && skippedOrFailed == verifiedEmpty;
     }
 
     // A two-handed hold is one reference. Two different objects are ambiguous.

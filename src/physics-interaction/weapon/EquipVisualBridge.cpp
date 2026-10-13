@@ -6,16 +6,17 @@
 #include <cmath>
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
+#include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
-#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock
@@ -212,7 +213,9 @@ namespace rock
             return false;
         }
 
-        _modelInHandLocal = transform_math::composeTransforms(transform_math::invertTransform(handNode->world), model->world);
+        RE::NiTransform handlingWand{};
+        if (!frik_hand_world_authority::tryGetHandlingWandWorld(input.isLeftHand, handlingWand)) return false;
+        _modelInHandLocal = transform_math::composeTransforms(transform_math::invertTransform(handlingWand), model->world);
         RE::NiPoint3 physicalPalmWorld{};
         RE::NiTransform physicalHandWorld{};
         _hasPhysicalHandInWandLocal =
@@ -261,13 +264,12 @@ namespace rock
             }
         }
         if (_capturedGrips.valid()) {
-            const auto* supportWand = resolveHandWandNode(!input.isLeftHand);
-            if (!supportWand || !isFiniteTransform(supportWand->world) ||
-                supportWand->world.scale <= 0.0001f) {
+            RE::NiTransform supportWand{};
+            if (!frik_hand_world_authority::tryGetHandlingWandWorld(!input.isLeftHand, supportWand)) {
                 ROCK_LOG_WARN(Weapon, "EquipVisualBridge paired begin rejected: support controller unavailable form={:08X}", input.weaponFormID);
                 return false;
             }
-            _supportGripInWandLocal = transform_math::worldPointToLocal(supportWand->world,
+            _supportGripInWandLocal = transform_math::worldPointToLocal(supportWand,
                 transform_math::localPointToWorld(model->world, _capturedGrips.support.gripWeaponLocal));
             _firingHandWeaponLocal = _capturedGrips.primary.handWeaponLocal;
             _hasFiringHandWeaponLocal = true;
@@ -291,6 +293,11 @@ namespace rock
         }
 
         _model = input.worldModel;
+        _lastPresentedInDriver = _modelInHandLocal;
+        _lastPresentedInDriverValid = true;
+        _poseAuditSamples = 0;
+        _handPoseAuditMask = 0;
+        _registrationAuditLogged = false;
         _supportOnly = input.supportOnly;
         _weaponFormID = input.weaponFormID;
         _meleeWeapon = input.weapon && weapon_type_policy::isEquippedMelee(input.weapon->weaponData.type.get());
@@ -302,7 +309,8 @@ namespace rock
             equip_visual_bridge_policy::effectivePresentationLeaseSeconds(
                 input.timeoutSeconds);
         _presentationLeaseStartedAt = std::chrono::steady_clock::now();
-        _modelPresented = true;
+        _handPoseOnly = input.handPoseOnly;
+        _modelPresented = !_handPoseOnly;
         _followEquippedPose = false;
         _nativeCarrierTraceLogged = false;
         _nativeCarrierWasUsable = false;
@@ -333,7 +341,11 @@ namespace rock
          * for the detach and attaches then. Either way ROCK never steals a
          * live scene node.
          */
-        const bool attachedNow = !model->parent && tryAttachToWorldRoot();
+        const bool attachedNow = !_handPoseOnly && !model->parent && tryAttachToWorldRoot();
+        if (_handPoseOnly) {
+            ROCK_LOG_INFO(Weapon, "Trigger equip hands-only handoff form={:08X} captured={} active={}; native weapon visibility unchanged",
+                _weaponFormID, _capturedGrips.primary.valid(), _handPoseHandoffActive);
+        }
         ROCK_LOG_INFO(Weapon, "EquipVisualBridge begin formID={:08X} hand={} attachedNow={} blend={:.2f}s requestedTimeout={:.2f}s presentationLease={:.2f}s target={} exactPoseHandoff={} capturedHands={}",
             _weaponFormID, _isLeftHand ? "left" : "right", attachedNow ? "yes" : "no", _blendSeconds,
             input.timeoutSeconds, _presentationLeaseSeconds,
@@ -372,13 +384,19 @@ namespace rock
             if (!vanilla_weapon_grip_frame::resolveModelTranslation(_weaponFormID, model, displacement)) return false;
             displacement -= _capturedGrips.sourceModelTranslation;
         }
+        return publishCapturedHandsAt(model->world, displacement);
+    }
+
+    bool EquipVisualBridge::publishCapturedHandsAt(const RE::NiTransform& world, const RE::NiPoint3& displacement)
+    {
+        if (!_capturedGrips.primary.valid() || !isFiniteTransform(world)) return false;
         for (const bool primary : { true, false }) {
             if (!primary && !_capturedGrips.valid()) break;
             const bool isLeft = primary ? _isLeftHand : !_isLeftHand;
             auto local = (primary ? _capturedGrips.primary : _capturedGrips.support).handWeaponLocal;
             local.translate += displacement;
             if (!frik_visual_authority::publishHandWorld(kHandPoseHandoffTag, handFromBool(isLeft),
-                    transform_math::composeTransforms(model->world, local), kHandPoseHandoffPriority)) return false;
+                    transform_math::composeTransforms(world, local), kHandPoseHandoffPriority)) return false;
         }
         return true;
     }
@@ -499,6 +517,23 @@ namespace rock
         }
 
         const float frameSeconds = (std::max)(0.0f, input.deltaSeconds);
+        if (_handPoseOnly) {
+            if (input.advanceLifetime && advancePresentationLeaseImpl(frameSeconds, false)) return;
+            _elapsedSeconds += frameSeconds;
+            if (!_handPoseHandoffActive) {
+                clear("hands-only-handoff-complete", false);
+                return;
+            }
+            RE::NiTransform wand{};
+            if (!frik_hand_world_authority::tryGetHandlingWandWorld(_isLeftHand, wand) ||
+                !publishHandPoseHandoff() || (_capturedGrips.primary.valid() &&
+                !publishCapturedHandsAt(transform_math::composeTransforms(wand, _modelInHandLocal), RE::NiPoint3{}))) {
+                clear("hands-only-pose-unavailable", false);
+            }
+            // The retained source is a pose reference only: never attach it,
+            // advance its scene, or acquire a native-instance cull lease.
+            return;
+        }
         const bool presentThisFrame = input.presentModel && _model != nullptr;
         if (input.advanceLifetime &&
             advancePresentationLeaseImpl(frameSeconds, presentThisFrame)) {
@@ -530,10 +565,6 @@ namespace rock
         auto* model = _model.get();
         if (model && !_parent) {
             if (model->parent) {
-                tracePresentation("equip-wait-native-detach");
-                vanilla_weapon_alignment_telemetry::recordTransferTrace(
-                    vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip, _isLeftHand,
-                    "equip-wait-native-instance", input.nativeVisual ? input.nativeVisual->exactInstance : nullptr);
             }
             /*
              * Before ActivateRef's removal has completed, the retained graph
@@ -563,6 +594,12 @@ namespace rock
                 return;
             }
 
+            RE::NiTransform handlingWand{};
+            if (!frik_hand_world_authority::tryGetHandlingWandWorld(_isLeftHand, handlingWand)) {
+                clear("controller-filter-unavailable", true);
+                return;
+            }
+
             /*
              * Rotation carrier selection. RIGHT bridges use ROCK's controller
              * basis and the authored grip for placement. LEFT
@@ -587,7 +624,7 @@ namespace rock
                     _hasFiringHandWeaponLocal && _hasPhysicalHandInWandLocal &&
                     (_meleeWeapon ?
                         TwoHandedGrip::tryGetMeleeWeaponAimWorld(false,
-                            transform_math::composeTransforms(handNode->world, _physicalHandInWandLocal),
+                            transform_math::composeTransforms(handlingWand, _physicalHandInWandLocal),
                             _firingHandWeaponLocal, _model->world.scale, nativeCarrierWorld) :
                         TwoHandedGrip::tryGetRightWeaponAimWorld(_model->world.scale, nativeCarrierWorld));
             }
@@ -598,18 +635,28 @@ namespace rock
             }
             _nativeCarrierWasUsable = nativePositionOnlyCarrierAvailable;
 
-            RE::NiTransform desiredWorld = transform_math::composeTransforms(handNode->world, _modelInHandLocal);
+            RE::NiTransform desiredWorld = transform_math::composeTransforms(handlingWand, _modelInHandLocal);
             if (_capturedGrips.valid() &&
                 _capturedGrips.support.authoredRole != loose_weapon_authored_grab_policy::Role::Firing &&
                 !loose_weapon_authored_grab_policy::sharedFiringZone(_capturedGrips.arrangement)) {
-                const auto* supportWand = resolveHandWandNode(!_isLeftHand);
-                if (!supportWand || !isFiniteTransform(supportWand->world) || supportWand->world.scale <= 0.0001f) {
+                RE::NiTransform supportWand{};
+                if (!frik_hand_world_authority::tryGetHandlingWandWorld(!_isLeftHand, supportWand)) {
                     clear("paired-controller-unavailable", true);
                     return;
                 }
-                const auto solved = equip_visual_bridge_policy::solvePairedBridge(desiredWorld,
-                    _capturedGrips.primary.gripWeaponLocal, _capturedGrips.support.gripWeaponLocal,
-                    transform_math::localPointToWorld(supportWand->world, _supportGripInWandLocal));
+                WeaponTwoHandedSolverResult<RE::NiTransform> solved{};
+                if (_capturedGrips.gunstockAim && !_meleeWeapon) {
+                    RE::NiTransform primaryInput{}, supportInput{};
+                    if (frik_hand_world_authority::tryGetHandlingWandWorld(_isLeftHand,primaryInput) &&
+                        frik_hand_world_authority::tryGetHandlingWandWorld(!_isLeftHand,supportInput)) {
+                        solved = equip_visual_bridge_policy::solvePairedGunstockBridge(desiredWorld,
+                            _capturedGrips.primary.gripWeaponLocal,primaryInput,supportInput);
+                    }
+                } else {
+                    solved = equip_visual_bridge_policy::solvePairedBridge(desiredWorld,
+                        _capturedGrips.primary.gripWeaponLocal, _capturedGrips.support.gripWeaponLocal,
+                        transform_math::localPointToWorld(supportWand, _supportGripInWandLocal));
+                }
                 if (solved.solved) desiredWorld = solved.weaponWorldTransform;
                 else ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "EquipVisualBridge paired grip axis unavailable form={:08X}", _weaponFormID);
             }
@@ -621,7 +668,7 @@ namespace rock
                 if (_hasPhysicalHandInWandLocal) {
                     const RE::NiTransform physicalHandWorld =
                         transform_math::composeTransforms(
-                            handNode->world,
+                            handlingWand,
                             _physicalHandInWandLocal);
                     const RE::NiPoint3 authoredGripWeaponLocal =
                         computeGrabLegacyPalmPivotAWorldFromHandBasis(
@@ -686,9 +733,8 @@ namespace rock
 
             model->local = transform_math::composeTransforms(transform_math::invertTransform(_parent->world), desiredWorld);
             f4vr::updateDown(model, true);
-            vanilla_weapon_alignment_telemetry::recordTransferTrace(
-                vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip, _isLeftHand,
-                "equip-visual-write", model, &desiredWorld);
+            trigger_equip_readiness_trace::parts(model, 3, true);
+            rememberPresentedPose();
         }
 
         if (_handPoseHandoffActive) {
@@ -718,17 +764,27 @@ namespace rock
         if (_culledNativeInstance && _culledNativeInstance.get() != exactInstance) {
             restoreNativeInstanceCull();
         }
-        if (_culledNativeInstance) {
-            return;
-        }
         if (!equipped_weapon_visual_state::isLocallyVisible(exactInstance)) {
             return;
         }
 
-        _culledNativeInstance.reset(exactInstance);
-        _culledNativeInstanceWasVisible = true;
+        // Owning the lease does not prove the engine kept its cull bit. Native
+        // draw/animation can unhide this same child before the lease ends.
+        const bool reasserting = _culledNativeInstance != nullptr;
+        if (!reasserting) {
+            _culledNativeInstance.reset(exactInstance);
+            _culledNativeInstanceWasVisible = true;
+        }
         equipped_weapon_visual_state::setLocallyVisible(exactInstance, false);
         f4vr::updateDown(exactInstance, true);
+    }
+
+    void EquipVisualBridge::finalizePresentationVisibility(
+        const equipped_weapon_visual_state::Snapshot& nativeVisual)
+    {
+        if (!_active || !_modelPresented || !_model || !_parent ||
+            _parent != f4vr::getWorldRootNode() || _model->parent != _parent) return;
+        synchronizeNativeInstanceCull(&nativeVisual, true);
     }
 
     void EquipVisualBridge::restoreNativeInstanceCull()
@@ -768,6 +824,44 @@ namespace rock
             hand_world_claim_registry_policy::Claim replacement{};
             if (!frik_hand_world_authority::tryGetPublishedHandClaim(primary ? _isLeftHand : !_isLeftHand, replacement) ||
                 replacement.priority <= kHandPoseHandoffPriority || replacement.fallbackReported) return;
+            const unsigned auditBit = primary ? 1u : 2u;
+            if (logger::isDebugEnabled() && !(_handPoseAuditMask & auditBit) && _model && _capturedGrips.primary.valid()) {
+                const auto& grip = primary ? _capturedGrips.primary : _capturedGrips.support;
+                const auto* driver = resolveHandWandNode(_isLeftHand);
+                bool compensated = driver && _lastPresentedInDriverValid && isFiniteTransform(driver->world);
+                auto bridgeWorld = compensated ? transform_math::composeTransforms(driver->world,_lastPresentedInDriver) : _model->world;
+                if (_handPoseOnly) {
+                    RE::NiTransform wand{};
+                    if (frik_hand_world_authority::tryGetHandlingWandWorld(_isLeftHand, wand)) {
+                        bridgeWorld = transform_math::composeTransforms(wand, _modelInHandLocal);
+                        compensated = true;
+                    } else compensated = false;
+                }
+                const auto bridgeHand = transform_math::composeTransforms(bridgeWorld,grip.handWeaponLocal);
+                const auto delta = replacement.target.translate - bridgeHand.translate;
+                ROCK_LOG_INFO(Weapon, "EQUIP-POSE hand-transfer form={:08X} hand={} ageMs={:.2f} deltaWorld=({:.4f},{:.4f},{:.4f}) distance={:.4f}gu rotation={:.3f}deg owner={} priority={} sourceFingerMask={:04X} controllerMotionCompensated={}",
+                    _weaponFormID,(primary ? _isLeftHand : !_isLeftHand)?"left":"right",_lifetimeSeconds*1000.0f,
+                    delta.x,delta.y,delta.z,std::sqrt(delta.x*delta.x+delta.y*delta.y+delta.z*delta.z),
+                    rotationDistanceDegrees(bridgeHand,replacement.target),hand_world_claim_registry_policy::tagView(replacement),replacement.priority,grip.fingerMask,compensated);
+                // Separate a changed hand seat from movement of the whole
+                // weapon. This comparison remains meaningful while playing VR.
+                const auto native = equipped_weapon_visual_state::observe(_weaponFormID);
+                RE::NiPoint3 targetTranslation{};
+                if (native.exactInstance && native.weaponRoot &&
+                    weapon_grip_transfer::validFrame(native.weaponRoot->world) &&
+                    vanilla_weapon_grip_frame::resolveModelTranslation(_weaponFormID, native.weaponRoot, targetTranslation)) {
+                    auto expectedLocal = grip.handWeaponLocal;
+                    expectedLocal.translate += targetTranslation - _capturedGrips.sourceModelTranslation;
+                    const auto actualLocal = transform_math::composeTransforms(
+                        transform_math::invertTransform(native.weaponRoot->world), replacement.target);
+                    const auto seatDelta = actualLocal.translate - expectedLocal.translate;
+                    ROCK_LOG_INFO(Weapon, "EQUIP-POSE hand-seat form={:08X} hand={} visualBridge={} distance={:.5f}gu rotation={:.4f}deg owner={}",
+                        _weaponFormID, (primary ? _isLeftHand : !_isLeftHand) ? "left" : "right", !_handPoseOnly,
+                        std::sqrt(seatDelta.x*seatDelta.x + seatDelta.y*seatDelta.y + seatDelta.z*seatDelta.z),
+                        rotationDistanceDegrees(expectedLocal, actualLocal), hand_world_claim_registry_policy::tagView(replacement));
+                }
+                _handPoseAuditMask |= auditBit;
+            }
         }
         _followEquippedPose = true;
         completeHandPoseHandoff("equipped-authored-pose-acquired");
@@ -792,11 +886,53 @@ namespace rock
             clear("non-finite-equipped-pose", true);
             return;
         }
+        if (logger::isDebugEnabled() && !_registrationAuditLogged) {
+            _registrationAuditLogged = true;
+            ROCK_LOG_INFO(Weapon,"EQUIP-POSE registration form={:08X} sourceModel=({:.4f},{:.4f},{:.4f}) equippedModel=({:.4f},{:.4f},{:.4f}) capturedGrip=({:.4f},{:.4f},{:.4f}) firingHandLocal=({:.4f},{:.4f},{:.4f}) capturedPose={} resolvedFiringPose={}",
+                _weaponFormID,_capturedGrips.sourceModelTranslation.x,_capturedGrips.sourceModelTranslation.y,_capturedGrips.sourceModelTranslation.z,
+                equippedTranslation.x,equippedTranslation.y,equippedTranslation.z,
+                _capturedGrips.primary.gripWeaponLocal.x,_capturedGrips.primary.gripWeaponLocal.y,_capturedGrips.primary.gripWeaponLocal.z,
+                _firingHandWeaponLocal.translate.x,_firingHandWeaponLocal.translate.y,_firingHandWeaponLocal.translate.z,
+                _capturedGrips.primary.valid(),_hasFiringHandWeaponLocal);
+        }
+        tracePoseHandoff("equipped-solve",desiredWorld);
         _model->local = transform_math::composeTransforms(transform_math::invertTransform(_parent->world), desiredWorld);
         f4vr::updateDown(_model.get(), true);
-        vanilla_weapon_alignment_telemetry::recordTransferTrace(
-            vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip, _isLeftHand,
-            "equip-final-equipped-pose", _model.get(), &desiredWorld);
+        rememberPresentedPose();
+    }
+
+    void EquipVisualBridge::rememberPresentedPose()
+    {
+        if (!logger::isDebugEnabled() || !_model) return;
+        const auto* driver = resolveHandWandNode(_isLeftHand);
+        if (!driver || !isFiniteTransform(driver->world) || driver->world.scale <= 0.0001f || !isFiniteTransform(_model->world)) {
+            _lastPresentedInDriverValid = false; return;
+        }
+        _lastPresentedInDriver = transform_math::composeTransforms(transform_math::invertTransform(driver->world),_model->world);
+        _lastPresentedInDriverValid = true;
+    }
+
+    void EquipVisualBridge::tracePoseHandoff(const char* stage, const RE::NiTransform& targetWorld)
+    {
+        // At most eight samples per bridge, only during debug logging. Compare
+        // in the same current controller frame so walking/wrist motion between
+        // callbacks is not mistaken for a loose-to-equipped placement change.
+        if (!logger::isDebugEnabled() || !_model || !_lastPresentedInDriverValid || _poseAuditSamples >= 8) return;
+        const auto* driver = resolveHandWandNode(_isLeftHand);
+        if (!driver || !isFiniteTransform(driver->world) || driver->world.scale <= 0.0001f) return;
+        const auto targetInDriver = transform_math::composeTransforms(transform_math::invertTransform(driver->world),targetWorld);
+        const auto delta = targetInDriver.translate - _lastPresentedInDriver.translate;
+        const auto projectedPrevious = transform_math::composeTransforms(driver->world,_lastPresentedInDriver);
+        const auto grip = _capturedGrips.primary.valid() ? _capturedGrips.primary.gripWeaponLocal :
+            computeGrabLegacyPalmPivotAWorldFromHandBasis(_firingHandWeaponLocal,_isLeftHand);
+        const auto palmDelta = transform_math::localPointToWorld(targetWorld,grip) -
+            transform_math::localPointToWorld(projectedPrevious,grip);
+        ROCK_LOG_INFO(Weapon,"EQUIP-POSE weapon-transfer form={:08X} hand={} sample={} stage={} ageMs={:.2f} blend={:.3f}/{:.3f}s fromDriver=({:.4f},{:.4f},{:.4f}) toDriver=({:.4f},{:.4f},{:.4f}) deltaDriver=({:.4f},{:.4f},{:.4f}) rotation={:.3f}deg palmDeltaWorld=({:.4f},{:.4f},{:.4f}) scales={:.5f}/{:.5f} paired={} supportOnly={}",
+            _weaponFormID,_isLeftHand?"left":"right",++_poseAuditSamples,stage,_lifetimeSeconds*1000.0f,_elapsedSeconds,_blendSeconds,
+            _lastPresentedInDriver.translate.x,_lastPresentedInDriver.translate.y,_lastPresentedInDriver.translate.z,
+            targetInDriver.translate.x,targetInDriver.translate.y,targetInDriver.translate.z,delta.x,delta.y,delta.z,
+            rotationDistanceDegrees(_lastPresentedInDriver,targetInDriver),palmDelta.x,palmDelta.y,palmDelta.z,
+            _lastPresentedInDriver.scale,targetInDriver.scale,_capturedGrips.valid(),_supportOnly);
     }
 
     void EquipVisualBridge::completeHandPoseHandoff(const char* reason)
@@ -814,19 +950,19 @@ namespace rock
     {
         auto* model = _model.get();
         // Abandonment passes false and may refer to an already lost scene.
-        if (model && detachFromParent) {
-            vanilla_weapon_alignment_telemetry::recordTransferTrace(
-                vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip, _isLeftHand,
-                reason, model, nullptr, true);
-        }
         if (detachFromParent && model && _parent && model->parent == _parent) {
             RE::NiPointer<RE::NiAVObject> detached;
             _parent->DetachChild(model, detached);
         }
 
         if (model) {
-            ROCK_LOG_INFO(Weapon, "EquipVisualBridge model released reason={} formID={:08X} elapsed={:.3f}s",
-                reason ? reason : "unknown", _weaponFormID, _elapsedSeconds);
+            if (_handPoseOnly) {
+                ROCK_LOG_DEBUG(Weapon, "EquipVisualBridge pose reference released reason={} formID={:08X} lifetime={:.3f}s",
+                    reason ? reason : "unknown", _weaponFormID, _lifetimeSeconds);
+            } else {
+                ROCK_LOG_INFO(Weapon, "EquipVisualBridge model released reason={} formID={:08X} elapsed={:.3f}s",
+                    reason ? reason : "unknown", _weaponFormID, _elapsedSeconds);
+            }
         }
 
         _model.reset();
@@ -834,12 +970,6 @@ namespace rock
         _modelInHandLocal = {};
         _physicalHandInWandLocal = {};
         _modelPresented = false;
-    }
-
-    void EquipVisualBridge::tracePresentation(const char* phase) const
-    {
-        if (_model) vanilla_weapon_alignment_telemetry::recordTransferTrace(
-            vanilla_weapon_alignment_telemetry::TransferKind::HeldEquip, _isLeftHand, phase, _model.get());
     }
 
     void EquipVisualBridge::clearHandPoseHandoff(
@@ -913,6 +1043,7 @@ namespace rock
         _nativeCarrierTraceLogged = false;
         _nativeCarrierWasUsable = false;
         _active = false;
+        _handPoseOnly = false;
         _followEquippedPose = false;
         _supportGripInWandLocal = {};
     }

@@ -1,4 +1,7 @@
+#include "physics-interaction/weapon/HoldingGripMath.h"
 #include "physics-interaction/weapon/WeaponCollisionInternal.h"
+#include "api/ProviderRuntimeServices.h"
+#include "api/ROCKProviderApiInternal.h"
 
 // Read-side snapshots and queries: bounds, compound geometry, contacts, support-grip evidence views, surface probes, profile evidence, and emitters.
 
@@ -8,7 +11,8 @@ namespace rock
         const RE::NiAVObject* currentWeaponRoot,
         std::span<const weapon_part_runtime::Target> targets,
         std::span<const std::uint32_t> candidateBodyIds,
-        std::span<RE::NiPoint3> outPositions) const
+        std::span<RE::NiPoint3> outPositions,
+        std::span<const WeaponGrabPointLocation> grabPoints) const
     {
         const auto generation = getCurrentWeaponGenerationKey();
         if (!currentWeaponRoot || generation == 0 || outPositions.empty() || candidateBodyIds.empty() ||
@@ -22,6 +26,21 @@ namespace rock
 
         std::array<std::uintptr_t, MAX_WEAPON_BODIES> markedSources{};
         std::size_t count = 0;
+        for(std::size_t i=0;i<grabPoints.size()&&i<candidateBodyIds.size()&&count<outPositions.size();++i) {
+            const auto& point=grabPoints[i];
+            if(!point.pointId||candidateBodyIds[i]==weapon_part_runtime::kInvalidBodyId)continue;
+            if(i&&grabPoints[0].ownerToken==point.ownerToken&&grabPoints[0].groupId==point.groupId&&grabPoints[0].pointId==point.pointId&&candidateBodyIds[0]!=weapon_part_runtime::kInvalidBodyId)continue;
+            const auto registered=std::any_of(targets.begin(),targets.end(),[&](const auto& target){
+                return target.ownerToken==point.ownerToken&&target.groupId==point.groupId&&
+                    weapon_part_runtime::targetAppliesToGeneration(target,generation)&&target.grabMode==weapon_part_runtime::GrabMode::AttachOnly;
+            });
+            if(!registered)continue;
+            auto* source=reinterpret_cast<RE::NiAVObject*>(provider::runtime::resolveSourceKey(generation,point.sourceKey));
+            RE::NiTransform world{};
+            if(!source||!tryResolveDescendantWorldTransform(currentWeaponRoot,currentWeaponRoot->world,source,world)||!f4vr::isNodeVisible(source))continue;
+            const auto position=transform_math::localPointToWorld(world,point.pointInSource);
+            if(weapon_interaction_query::finitePoint(position))outPositions[count++]=position;
+        }
         for (const auto& instance : activeWeaponBodies()) {
             if (count == outPositions.size() || count == markedSources.size()) {
                 break;
@@ -35,6 +54,10 @@ namespace rock
                     instance.body.getBodyId().value) == candidateBodyIds.end()) {
                 continue;
             }
+            bool authored=false;
+            for(std::size_t i=0;i<grabPoints.size()&&i<candidateBodyIds.size();++i)
+                if(grabPoints[i].pointId&&candidateBodyIds[i]==instance.body.getBodyId().value)authored=true;
+            if(authored)continue; // A missing authored frame must never fall back to a part center.
             const auto source = reinterpret_cast<std::uintptr_t>(instance.sourceNode);
             if (std::find(markedSources.begin(), markedSources.begin() + count, source) !=
                 markedSources.begin() + count) {
@@ -74,6 +97,31 @@ namespace rock
             outPositions[count++] = position;
         }
         return generation == getCurrentWeaponGenerationKey() ? count : 0;
+    }
+
+    float WeaponCollision::holdingMirrorPlaneX() const {
+        const auto generation=getCurrentWeaponGenerationKey();
+        if(!generation)return 0;
+        if(_holdingPlaneGeneration==generation)return _holdingPlaneX;
+        std::array<holding_grip_math::PlaneEvidence,MAX_WEAPON_BODIES> evidence{};
+        std::array<const void*,MAX_WEAPON_BODIES> seen{};
+        std::size_t count=0;
+        for(const auto& body:activeWeaponBodies()){
+            if(!body.body.isValid()||!body.geometry||!body.geometry->mesh)continue;
+            const auto* mesh=body.geometry->mesh.get();
+            if(std::find(seen.begin(),seen.begin()+count,mesh)!=seen.begin()+count)continue;
+            const auto& triangles=mesh->localTrianglesGame;
+            if(triangles.empty()||count==evidence.size())continue;
+            auto low=triangles.front().v0,high=low;
+            const std::size_t step=(std::max)(std::size_t{1},(triangles.size()+8191)/8192);
+            for(std::size_t i=0;i<triangles.size();i+=step)for(const auto& v:{triangles[i].v0,triangles[i].v1,triangles[i].v2}){
+                low.x=(std::min)(low.x,v.x);low.y=(std::min)(low.y,v.y);low.z=(std::min)(low.z,v.z);
+                high.x=(std::max)(high.x,v.x);high.y=(std::max)(high.y,v.y);high.z=(std::max)(high.z,v.z);
+            }
+            seen[count]=mesh;evidence[count++]=holding_grip_math::planeEvidence({low.x,low.y,low.z},{high.x,high.y,high.z});
+        }
+        if(count){_holdingPlaneX=holding_grip_math::geometryPlane(std::span(evidence.data(),count));_holdingPlaneGeneration=generation;}
+        return count?_holdingPlaneX:0;
     }
 
     bool WeaponCollision::getApproximateBoundsSnapshot(ApproximateBoundsSnapshot& outSnapshot) const
@@ -397,39 +445,6 @@ namespace rock
 
         result.leverGameUnits = sampledPoint ? std::sqrt(maxDistanceSquared) : 0.0f;
         return result;
-    }
-
-    bool WeaponCollision::tryGetBodyTargetForDebug(
-        const std::uint32_t bodyId,
-        RE::NiTransform& outTarget) const
-    {
-        if (bodyId == INVALID_BODY_ID) {
-            return false;
-        }
-
-        for (const auto& instance : activeWeaponBodies()) {
-            if (!instance.body.isValid() || !instance.geometry ||
-                instance.body.getBodyId().value != bodyId) {
-                continue;
-            }
-
-            std::unique_lock targetLock(
-                instance.driveState.mutex,
-                std::try_to_lock);
-            if (!targetLock.owns_lock()) {
-                return false;
-            }
-            if (instance.driveState.hasPendingTarget) {
-                outTarget = instance.driveState.pendingTarget;
-                return true;
-            }
-            if (instance.driveState.hasPreviousTarget) {
-                outTarget = instance.driveState.previousTarget;
-                return true;
-            }
-            return false;
-        }
-        return false;
     }
 
     bool WeaponCollision::tryGetWeaponContactAtomic(std::uint32_t bodyId, WeaponInteractionContact& outContact) const
@@ -1232,7 +1247,9 @@ namespace rock
         const RE::NiPoint3& probeWorldPoint,
         float probeRadiusGame,
         WeaponInteractionContact& outContact,
-        InteractionQueryBatch& batch) const
+        InteractionQueryBatch& batch,
+        api::Hand hand,const weapon_drive_pose::NativeFrame* operatingPose,
+        std::span<const std::array<float,3>> extraProbes,bool operatingOnly,std::span<const std::array<float,3>> pinkyProbes) const
     {
         performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponContactProbe);
         outContact = {};
@@ -1267,12 +1284,80 @@ namespace rock
                     batch.instances[batch.count++] = &instance;
                 }
             }
+            std::array<weapon_part_points::OwnedPoint,weapon_part_points::kCapacity> rules{};
+            std::size_t ruleCount{};
+            std::array<weapon_part_runtime::Target,provider::ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1> targets{};
+            const auto targetCount=provider::runtime::copyWeaponPartPointSelection(targets,rules,ruleCount);
+            for(std::size_t p=0;p<ruleCount;++p) {
+                if(rules[p].point.weaponGenerationKey!=currentGeneration)continue;
+                auto& candidate=batch.points[batch.pointCount++];candidate.rule=rules[p];
+                auto* source=reinterpret_cast<RE::NiAVObject*>(provider::runtime::resolveSourceKey(currentGeneration,rules[p].point.sourceKey));
+                RE::NiTransform world{};
+                if(!source||!f4vr::isNodeVisible(source))continue;
+                if(candidate.rule.operating){if(!operatingPose||!operatingPose->world(source,world))continue;}
+                else if(!tryResolveDescendantWorldTransform(weaponNode,rootWorld,source,world))continue;
+                const auto* v=rules[p].point.pointInSource;const auto position=transform_math::localPointToWorld(world,RE::NiPoint3{v[0],v[1],v[2]});candidate.world={position.x,position.y,position.z};
+                candidate.validWorld=weapon_interaction_query::finitePoint(position);
+                if(candidate.rule.operating){
+                    RE::NiTransform native{};const bool valid=tryResolveDescendantWorldTransform(weaponNode,rootWorld,source,native);
+                    const auto rest=valid?transform_math::localPointToWorld(native,RE::NiPoint3{v[0],v[1],v[2]}):RE::NiPoint3{};
+                    ROCK_LOG_SAMPLE_INFO(Weapon,1500,"OperatingGrabPose source={} point={} drives={} native=({:.2f},{:.2f},{:.2f}) driven=({:.2f},{:.2f},{:.2f}) valid={}",
+                        rules[p].point.sourceKey,rules[p].point.pointId,operatingPose->size(),rest.x,rest.y,rest.z,position.x,position.y,position.z,candidate.validWorld);
+                }
+            }
+            for(std::size_t i=0;batch.pointCount&&i<batch.count;++i) {
+                const auto& instance=*batch.instances[i];
+                const auto resolution=weapon_part_runtime::resolveTarget(std::span(targets).first(targetCount),{
+                    .weaponGenerationKey=currentGeneration,.bodyId=instance.body.getBodyId().value,
+                    .sourceRoot=reinterpret_cast<std::uintptr_t>(instance.sourceNode),.sourceName=instance.sourceName,
+                    .partKind=instance.semantic.partKind,.reloadRole=instance.semantic.reloadRole,
+                    .supportRole=instance.semantic.supportGripRole,.socketRole=instance.semantic.socketRole,.actionRole=instance.semantic.actionRole});
+                if(!resolution.matched||resolution.grabMode!=weapon_part_runtime::GrabMode::AttachOnly)continue;
+                for(std::size_t p=0;p<batch.pointCount;++p) {
+                    auto& candidate=batch.points[p];
+                    if(candidate.rule.owner!=resolution.ownerToken||candidate.rule.point.groupId!=resolution.groupId)continue;
+                    batch.pointRestricted[i]=true;
+                    if(!candidate.rule.anchored) {
+                        weapon_part_points::offerPart(candidate,i,0,instance.body.getBodyId().value);
+                    } else if(candidate.validWorld && operatingPose) {
+                        RE::NiTransform driven{};weapon_interaction_query::Part part;
+                        if(!operatingPose->world(instance.sourceNode,driven) ||
+                            !weapon_interaction_query::prepare(instance.geometry->mesh->sourceLocalTrianglesGame,
+                                instance.indices->sourceIndex,driven,instance.generatedSourceLocalMinGame,
+                                instance.generatedSourceLocalMaxGame,instance.semantic.priority,part))continue;
+                        const auto& point=candidate.world;
+                        const auto surface=weapon_interaction_query::find(std::span(&part,1),
+                            {point[0],point[1],point[2]},candidate.rule.point.radiusGame);
+                        if(surface.valid())weapon_part_points::offerPart(candidate,i,surface.rank.distanceSquaredGame,instance.body.getBodyId().value);
+                    }
+                }
+            }
             performance_profiler::addCounter(performance_profiler::Counter::WeaponProbePoseBatches);
             performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponProbePoseParts, batch.count);
         }
 
-        const auto selection = weapon_interaction_query::find(
-            {batch.parts.data(), batch.count}, probeWorldPoint, probeRadiusGame);
+        weapon_interaction_query::Selection selection;
+        const auto pointSelection=weapon_part_points::nearest(std::span(batch.points).first(batch.pointCount),hand,
+            {probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z},probeRadiusGame,extraProbes,operatingOnly,pinkyProbes);
+        const auto picked=pointSelection.point;
+        const bool handMask=hand==api::Hand::Left||hand==api::Hand::Right;
+        if(picked<batch.pointCount){selection.part=batch.points[picked].part;selection.rank.distanceSquaredGame=pointSelection.distanceSquared;}
+        if(!selection.valid()&&!operatingOnly)selection=weapon_interaction_query::find(
+            {batch.parts.data(),batch.count},probeWorldPoint,probeRadiusGame,
+            handMask?std::span<const bool>(batch.pointRestricted).first(batch.count):std::span<const bool>{});
+        if(operatingOnly){
+            const auto first=extraProbes.empty()?std::array<float,3>{}:extraProbes[0];
+            const auto second=extraProbes.size()<2?std::array<float,3>{}:extraProbes[1];
+            if(hand==api::Hand::Left){
+                ROCK_LOG_SAMPLE_INFO(Weapon,1500,"OperatingGrabProbe left extraProbes={} pinkyProbes={} selected={} distance={:.3f} palm=({:.2f},{:.2f},{:.2f}) extra0=({:.2f},{:.2f},{:.2f}) extra1=({:.2f},{:.2f},{:.2f})",
+                    extraProbes.size(),pinkyProbes.size(),picked<batch.pointCount?batch.points[picked].rule.point.pointId:0,picked<batch.pointCount?std::sqrt(pointSelection.distanceSquared):-1.f,
+                    probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z,first[0],first[1],first[2],second[0],second[1],second[2]);
+            }else{
+                ROCK_LOG_SAMPLE_INFO(Weapon,1500,"OperatingGrabProbe right extraProbes={} pinkyProbes={} selected={} distance={:.3f} palm=({:.2f},{:.2f},{:.2f}) extra0=({:.2f},{:.2f},{:.2f}) extra1=({:.2f},{:.2f},{:.2f})",
+                    extraProbes.size(),pinkyProbes.size(),picked<batch.pointCount?batch.points[picked].rule.point.pointId:0,picked<batch.pointCount?std::sqrt(pointSelection.distanceSquared):-1.f,
+                    probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z,first[0],first[1],first[2],second[0],second[1],second[2]);
+            }
+        }
         performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponProbeBoundsCandidates, selection.boundsCandidates);
         performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponProbeSurfaceCandidates, selection.surfaceCandidates);
         if (!selection.valid() || getCurrentWeaponGenerationKey() != currentGeneration) return false;
@@ -1306,6 +1391,17 @@ namespace rock
         outContact.sourceRoot = bestInstance->sourceNode;
         outContact.weaponGenerationKey = currentGeneration;
         outContact.probeDistanceGame = std::sqrt(bestRank.distanceSquaredGame);
+        if(picked<batch.pointCount) {
+            const auto& point=batch.points[picked].rule.point;
+            outContact.grabPoint={batch.points[picked].rule.owner,point.groupId,point.sourceKey,point.pointId,{point.pointInSource[0],point.pointInSource[1],point.pointInSource[2]}};
+            if(batch.points[picked].rule.anchored) {
+                auto& anchor=outContact.grabPoint;const auto& world=batch.points[picked].world;
+                anchor.anchorAtPoint=true;anchor.worldPoint={world[0],world[1],world[2]};
+                if(!operatingPose||!operatingPose->world(bestInstance->sourceNode,anchor.attachmentWorld)) {
+                    outContact={};return false;
+                }
+            }
+        }
         return true;
     }
 }

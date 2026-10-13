@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/weapon/HeldWeaponEquipStatePolicy.h"
+#include "physics-interaction/native/NativeWeaponAnimationAudio.h"
 
 #include <cstdint>
 
@@ -22,6 +23,17 @@ namespace rock::weapon_transition_animation_acceleration_policy
         Complete,
         Cancel,
     };
+
+    [[nodiscard]] inline constexpr bool isDrawClip(std::string_view path) noexcept
+    {
+        const auto slash = path.find_last_of("/\\");
+        if (slash != std::string_view::npos) path.remove_prefix(slash + 1);
+        if (!native_weapon_animation_audio::isEquipClip(path)) return false;
+        path.remove_suffix(4);
+        if (path.size() >= 3 && native_weapon_animation_audio::equalName(path.substr(0,3), "WPN")) path.remove_prefix(3);
+        return native_weapon_animation_audio::equalName(path,"Equip") ||
+            native_weapon_animation_audio::equalName(path,"EquipFast");
+    }
 
     [[nodiscard]] inline constexpr float scaleTransitionTimestep(
         const float timestep) noexcept
@@ -65,7 +77,8 @@ namespace rock::weapon_transition_animation_acceleration_policy
         const std::uint32_t nativeState) noexcept
     {
         return registeredTransitionClip &&
-               nativeState == transitionState(direction);
+               (nativeState == transitionState(direction) ||
+                (direction == Direction::Draw && nativeState == terminalState(direction)));
     }
 
     [[nodiscard]] inline constexpr LifecycleAction classifyLifecycle(
@@ -81,6 +94,12 @@ namespace rock::weapon_transition_animation_acceleration_policy
             return LifecycleAction::Cancel;
         }
         if (nativeState == terminalState(direction)) {
+            // HK417 capture: Drawn at 19 ms, replacement WPNEquipFast starts
+            // at 41 ms and runs 1.5 seconds if we drop the lease here. Keep
+            // the existing bounded identity lease to admit delayed draw clips.
+            // Registration filters draw filenames; idle/fire/reload never enter.
+            if (direction == Direction::Draw && elapsedSeconds < kLeaseTimeoutSeconds)
+                return LifecycleAction::KeepPending;
             return LifecycleAction::Complete;
         }
         if (elapsedSeconds >= kLeaseTimeoutSeconds) {

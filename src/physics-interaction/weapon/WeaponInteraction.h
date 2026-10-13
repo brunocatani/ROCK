@@ -87,6 +87,7 @@ namespace rock
         decision.actionRole = contact.actionRole;
         decision.gripPose = contact.fallbackGripPose;
         decision.reloadActionAuthority = contact.reloadActionAuthority;
+        decision.grabPoint = contact.grabPoint;
         decision.bodyId = contact.bodyId;
         decision.interactionRoot = contact.interactionRoot;
         decision.sourceRoot = contact.sourceRoot;

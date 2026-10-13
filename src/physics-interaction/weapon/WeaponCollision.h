@@ -29,6 +29,8 @@
 #include "physics-interaction/weapon/WeaponTriangleIndex.h"
 #include "physics-interaction/weapon/WeaponScenePath.h"
 #include "physics-interaction/weapon/WeaponInteractionQuery.h"
+#include "physics-interaction/weapon/WeaponPartDrivePose.h"
+#include "api/WeaponPartGrabPoints.h"
 
 #include "RE/Havok/hknpBody.h"
 #include "RE/Havok/hknpBodyCinfo.h"
@@ -64,12 +66,14 @@ namespace rock
 
     class WeaponCollision
     {
+        friend class LooseWeaponCollision;
         struct WeaponBodyInstance;
 
     public:
         WeaponCollision();
 
         void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _physicsCallbackGate = gate; }
+        void setEquippedDropActive(RE::hknpWorld* world, bool active);
 
         struct WeaponBodySnapshot
         {
@@ -255,6 +259,7 @@ namespace rock
         std::uint32_t getWeaponBodyCount() const;
 
         bool getApproximateBoundsSnapshot(ApproximateBoundsSnapshot& outSnapshot) const;
+        float holdingMirrorPlaneX() const;
 
         bool getCompoundGeometrySnapshot(CompoundGeometrySnapshot& outSnapshot) const;
 
@@ -284,10 +289,10 @@ namespace rock
             const RE::NiAVObject* currentWeaponRoot,
             std::span<const weapon_part_runtime::Target> targets,
             std::span<const std::uint32_t> candidateBodyIds,
-            std::span<RE::NiPoint3> outPositions) const;
+            std::span<RE::NiPoint3> outPositions,
+            std::span<const WeaponGrabPointLocation> grabPoints = {}) const;
         // Main-thread debug publication only. Returns the exact pending target
         // for one generated weapon body in the active bank.
-        bool tryGetBodyTargetForDebug(std::uint32_t bodyId, RE::NiTransform& outTarget) const;
 
         bool isWeaponBodyIdAtomic(std::uint32_t bodyId) const;
 
@@ -336,6 +341,9 @@ namespace rock
             std::size_t count = 0;
             std::array<weapon_interaction_query::Part, MAX_WEAPON_COLLISION_BODIES> parts{};
             std::array<const WeaponBodyInstance*, MAX_WEAPON_COLLISION_BODIES> instances{};
+            std::array<bool,MAX_WEAPON_COLLISION_BODIES> pointRestricted{};
+            std::array<weapon_part_points::Candidate,weapon_part_points::kCapacity> points{};
+            std::size_t pointCount{};
         };
 
         bool tryFindInteractionContactNearPoint(
@@ -349,7 +357,10 @@ namespace rock
             const RE::NiPoint3& probeWorldPoint,
             float probeRadiusGame,
             WeaponInteractionContact& outContact,
-            InteractionQueryBatch& batch) const;
+            InteractionQueryBatch& batch,
+            api::Hand hand = api::Hand::None,
+            const weapon_drive_pose::NativeFrame* operatingPose=nullptr,
+            std::span<const std::array<float,3>> extraProbes={},bool operatingOnly=false,std::span<const std::array<float,3>> pinkyProbes={}) const;
 
         bool tryFindCurrentWeaponSurfaceNearPoint(
             const RE::NiAVObject* currentWeaponRoot,
@@ -376,8 +387,6 @@ namespace rock
 
         void destroyWeaponBody(RE::hknpWorld* world);
 
-        void invalidateForScaleChange(RE::hknpWorld* world);
-
         void updateBodiesFromCurrentSourceTransforms(
             RE::hknpWorld* world,
             RE::NiAVObject* fallbackWeaponNode,
@@ -390,6 +399,8 @@ namespace rock
         void serviceRetiredWeaponBodies(RE::hknpWorld* currentWorld, std::uint32_t completedPhysicsSteps = 1);
 
     private:
+        mutable std::uint64_t _holdingPlaneGeneration{};
+        mutable float _holdingPlaneX{};
         WeaponInteractionContact readPublishedContact(std::uint32_t index) const;
         static constexpr std::uint32_t INVALID_BODY_ID = 0x7FFF'FFFF;
         static constexpr std::size_t MAX_WEAPON_BODIES = MAX_WEAPON_COLLISION_BODIES;
@@ -499,34 +510,6 @@ namespace rock
             weapon_generated_source_completeness_policy::GeneratedSourceCompleteness summary{};
         };
 
-        struct GeneratedRecaptureDiagnosticSource
-        {
-            std::uintptr_t sourceGroupId{ 0 };
-            std::uintptr_t sourceRootAddress{ 0 };
-            std::uintptr_t driveRootAddress{ 0 };
-            std::string sourceName;
-            RE::NiPoint3 weaponLocalCenter{};
-            RE::NiPoint3 sourceLocalCenter{};
-            RE::NiPoint3 sourceLocalMin{};
-            RE::NiPoint3 sourceLocalMax{};
-            std::shared_ptr<const GeneratedWeaponMeshGeometry> mesh;
-            std::size_t sourceLocalPointCount{ 0 };
-            std::size_t sourceLocalTriangleCount{ 0 };
-            float sourceNodeScale{ 1.0f };
-        };
-
-        struct GeneratedRecaptureDiagnostic
-        {
-            bool valid{ false };
-            bool sawUndrawnInterval{ false };
-            std::uint64_t equippedKey{ 0 };
-            std::uint64_t identityKey{ 0 };
-            std::uint64_t ownershipKey{ 0 };
-            std::uint32_t weaponFormID{ 0 };
-            std::uint32_t comparisonSequence{ 0 };
-            std::vector<GeneratedRecaptureDiagnosticSource> sources;
-        };
-
         struct PendingGeneratedWeaponBuild
         {
             bool active{ false };
@@ -610,7 +593,6 @@ namespace rock
         void updateWeaponEmitterSnapshot(RE::NiAVObject* weaponNode, std::uint64_t equippedWeaponKey);
         void clearWeaponEmitterSnapshot();
         void publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult);
-        void dumpEquippedWeaponOmodEvidence(const WeaponBodyBank& bank, RE::NiAVObject* packageDriveNode);
 
         std::size_t findGeneratedWeaponShapeSources(
             RE::NiAVObject* weaponNode,
@@ -618,7 +600,8 @@ namespace rock
             std::vector<GeneratedHullSource>& outSources);
 
         weapon_geometry_work::Task prepareGeneratedWeaponShapeSources(RE::NiPointer<RE::NiAVObject> root,
-            std::uint64_t equippedWeaponKey, std::vector<GeneratedHullSource>& outSources, bool preserveGaps);
+            std::uint64_t equippedWeaponKey, std::vector<GeneratedHullSource>& outSources, bool preserveGaps, bool looseOnly = false);
+        static RE::hknpShape* buildGeneratedSourceShape(const GeneratedHullSource& source);
         weapon_geometry_work::Task findGeneratedWeaponShapeSourcesRecursive(RE::NiPointer<RE::NiAVObject> nodeOwner,
             RE::NiPointer<RE::NiAVObject> sourceOwner, RE::NiTransform weaponRootTransform,
             int depth,
@@ -628,18 +611,12 @@ namespace rock
             const std::unordered_set<std::uintptr_t>& claimedSourceGroups,
             std::unordered_set<std::uintptr_t>& candidateExtractedSourceGroups,
             std::uint32_t& culledForEffectGeometry, bool preserveGaps);
-        bool advanceSourcePreparation();
+        bool advanceSourcePreparation(double sliceMilliseconds = 2.0);
         RE::NiTransform makeGeneratedBodyWorldTransform(const RE::NiTransform& weaponRootTransform, const RE::NiPoint3& localCenterGame) const;
         void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex);
         void clearGeneratedSourceCompletenessTracking();
         void clearPendingWeaponVisualRebuild();
         void clearGeneratedSourceCache();
-        void recordGeneratedRecaptureDiagnostic(
-            std::uint64_t equippedKey,
-            std::uint64_t identityKey,
-            std::uint64_t ownershipKey,
-            std::uint32_t weaponFormID,
-            const std::vector<GeneratedHullSource>& sources);
         void resetVisualSourceUnavailableRetention();
         bool canRetainCurrentWeaponBodiesForVisualSourceMiss(std::uint64_t observedIdentityKey, RE::NiAVObject* currentWeaponRoot, float retainSecondsLimit, float measuredDeltaSeconds);
         bool generatedSourceCacheMatches(
@@ -679,8 +656,6 @@ namespace rock
             std::uint32_t* outFormID = nullptr,
             std::uint64_t* outInstanceContentKey = nullptr) const;
         std::uint64_t getWeaponVisualCompositionKey(RE::NiAVObject* weaponNode, WeaponVisualKeyStats& stats) const;
-
-        void maybeDumpWeaponAnimNodeDiagnostics(RE::NiAVObject* updateWeaponNode, std::uint64_t observedKey);
 
         void queueBodyTarget(WeaponBodyInstance& instance, const RE::NiTransform& weaponTransform, float sourceDeltaSeconds);
 
@@ -819,17 +794,6 @@ namespace rock
             std::atomic<std::uint32_t> failureCount{ 0 };
         };
 
-        // State owned by the collision diagnostics TUs
-        // (WeaponCollisionDiagnostics and WeaponCollisionOmodDiagnostics).
-        struct CollisionDiagnosticsState
-        {
-            GeneratedRecaptureDiagnostic generatedRecapture{};
-            int animNodeDumpFrameCounter{ 0 };
-            std::uint64_t lastAnimNodeDumpKey{ 0 };
-            // Debug OMOD evidence dump fires once per weapon generation key.
-            std::uint64_t lastOmodDumpGenerationKey{ 0 };
-        };
-
         WeaponIdentityState _identity{};
         WeaponBodyBankState _bodies{};
         // Default-initialized on purpose; see the struct comment.
@@ -846,10 +810,10 @@ namespace rock
         std::array<EmitterPath, MAX_WEAPON_EMITTERS> _emitterPaths{};
         GeneratedSourceState _sources{};
         DriveControlState _drive{};
-        CollisionDiagnosticsState _diagnostics{};
 
         // ---- Shared direct members ----
         PhysicsCallbackQuiescenceGate* _physicsCallbackGate{ nullptr };
+        bool _equippedDropActive{ false };
         RE::hknpWorld* _cachedWorld{ nullptr };
         void* _cachedBhkWorld{ nullptr };
 

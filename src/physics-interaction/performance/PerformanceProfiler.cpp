@@ -91,6 +91,8 @@ namespace rock::performance_profiler
         constexpr const char* scopeName(Scope scope) noexcept
         {
             switch (scope) {
+            case Scope::LooseWeaponCollision:
+                return "LooseWeaponCollision";
             case Scope::FrameUpdate:
                 return "frame";
             case Scope::RuntimePreparation:
@@ -175,18 +177,10 @@ namespace rock::performance_profiler
                 return "grabAcquisitionActivePrep";
             case Scope::GrabMeshExtraction:
                 return "grabMeshExtraction";
-            case Scope::GrabNearbyDampingBegin:
-                return "grabNearbyDampingBegin";
             case Scope::GrabHeldObjectUpdate:
                 return "grabHeldObjectUpdate";
             case Scope::GrabAuthorityFlush:
                 return "grabAuthorityFlush";
-            case Scope::GrabAuthorityAfterSolveDiagnostics:
-                return "grabAuthorityAfterSolveDiagnostics";
-            case Scope::GrabNearbyDampingRestore:
-                return "grabNearbyDampingRestore";
-            case Scope::GrabNearbyDampingRestoreBodySearch:
-                return "grabNearbyDampingRestoreBodySearch";
             case Scope::FramePrelude: return "framePrelude";
             case Scope::FrameBeginPreparation: return "frameBeginPreparation";
             case Scope::WeaponPresentation: return "weaponPresentation";
@@ -224,13 +218,10 @@ namespace rock::performance_profiler
             case Scope::GrabBodyResolution: return "grabBodyResolution";
             case Scope::GrabResolvedBodyCapture: return "grabResolvedBodyCapture";
             case Scope::GrabPivotEvidence: return "grabPivotEvidence";
-            case Scope::GrabContactPatch: return "grabContactPatch";
             case Scope::GrabPinchPocket: return "grabPinchPocket";
-            case Scope::GrabFingerEvidence: return "grabFingerEvidence";
             case Scope::GrabCommitPreparation: return "grabCommitPreparation";
             case Scope::GrabBodyFrameCapture: return "grabBodyFrameCapture";
             case Scope::GrabSeatCapture: return "grabSeatCapture";
-            case Scope::GrabGripSupport: return "grabGripSupport";
             case Scope::GrabFrozenCommit: return "grabFrozenCommit";
             case Scope::GrabPostFreeze: return "grabPostFreeze";
             case Scope::GrabConstraintCommit: return "grabConstraintCommit";
@@ -247,11 +238,9 @@ namespace rock::performance_profiler
             case Scope::NativeImpactListener: return "nativeImpactListener";
             case Scope::NativeImpactDispatch: return "nativeImpactDispatch";
             case Scope::NativeImpactConsumer: return "nativeImpactConsumer";
-            case Scope::NativeImpactPlayPair: return "nativeImpactPlayPair";
-            case Scope::NativeImpactManifoldTrace: return "nativeImpactManifoldTrace";
+            case Scope::NativeImpactManifoldObserve: return "nativeImpactManifoldObserve";
             case Scope::RagdollComponentRead: return "ragdollComponentRead";
             case Scope::RagdollBodyRefresh: return "ragdollBodyRefresh";
-            case Scope::GrabContactPatchIndexBuild: return "grabContactPatchIndexBuild";
             case Scope::GrabAuthoredPreparation: return "grabAuthoredPreparation";
             case Scope::EquippedGripController: return "equippedGripController";
             case Scope::EquippedGripScopeFrames: return "equippedGripScopeFrames";
@@ -265,6 +254,7 @@ namespace rock::performance_profiler
             case Scope::WeaponCompoundPoseUpdate: return "weaponCompoundPoseUpdate";
             case Scope::WeaponKinematicDrive: return "weaponKinematicDrive";
             case Scope::WeaponDynamicDrive: return "weaponDynamicDrive";
+            case Scope::LooseWeaponLayerRepair: return "looseWeaponLayerRepair";
             case Scope::Count:
                 break;
             }
@@ -308,8 +298,6 @@ namespace rock::performance_profiler
                 return "grabAcquisitionCacheMiss";
             case Counter::GrabAcquisitionCacheInvalidated:
                 return "grabAcquisitionCacheInvalidated";
-            case Counter::GrabNearbyDampingRestoreFailed:
-                return "grabNearbyDampingRestoreFailed";
             case Counter::NativeMeleeRockPartnerDropped:
                 return "nativeMeleeRockPartnerDropped";
             case Counter::NativeMeleeDecodeFailed:
@@ -321,7 +309,6 @@ namespace rock::performance_profiler
             case Counter::GrabAcquisitionEquippedTransfer: return "grabAcquisitionEquippedTransfer";
             case Counter::GrabAcquisitionSucceeded: return "grabAcquisitionSucceeded";
             case Counter::GrabSingleBodyVisualOwnerAccepted: return "grabSingleBodyVisualOwnerAccepted";
-            case Counter::GrabMeshOwnerMismatchRejected: return "grabMeshOwnerMismatchRejected";
             case Counter::GrabAuthoredPositionsOnly: return "grabAuthoredPositionsOnly";
             case Counter::GrabAuthoredArrivalDynamicFallback: return "grabAuthoredArrivalDynamicFallback";
             case Counter::GrabAuthoredSurfaceWorkSkipped: return "grabAuthoredSurfaceWorkSkipped";
@@ -368,8 +355,6 @@ namespace rock::performance_profiler
                 return "grabAcquisitionBodyIds";
             case ValueMetric::GrabMeshTriangles:
                 return "grabMeshTriangles";
-            case ValueMetric::GrabNearbyDampingMotions:
-                return "grabNearbyDampingMotions";
             case ValueMetric::EquippedWeaponFingerPoseSourceTriangles:
                 return "equippedWeaponFingerPoseSourceTriangles";
             case ValueMetric::EquippedWeaponFingerPoseSelectedTriangles:

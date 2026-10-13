@@ -15,6 +15,7 @@
 #include "physics-interaction/native/HavokPhysicsTiming.h"
 #include "physics-interaction/native/NativeGrabHapticSuppressionPolicy.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/performance/ContactPairProfile.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
@@ -350,7 +351,7 @@ namespace rock
 
             if (!decision.valid) {
                 performance_profiler::observeValue(performance_profiler::ValueMetric::PhysicsRequestedSubsteps, oldSubstepCount);
-                if (g_rockConfig.rockDebugVerboseLogging || g_rockConfig.rockDebugGrabFrameLogging) {
+                if (g_rockConfig.rockDebugVerboseLogging) {
                     ROCK_LOG_SAMPLE_DEBUG(Physics,
                         g_rockConfig.rockLogSampleMilliseconds,
                         "HAVOK_TIMING_FIX skipped reason={} rawDt={:.6f} accumDt={:.6f} oldSubDt={:.6f} oldSubsteps={}",
@@ -381,7 +382,7 @@ namespace rock
             if (decision.substepCount > oldSubstepCount) {
                 performance_profiler::addCounter(performance_profiler::Counter::PhysicsTimingSubstepsIncreased);
             }
-            if (g_rockConfig.rockDebugVerboseLogging || g_rockConfig.rockDebugGrabFrameLogging) {
+            if (g_rockConfig.rockDebugVerboseLogging) {
                 ROCK_LOG_SAMPLE_DEBUG(Physics,
                     g_rockConfig.rockLogSampleMilliseconds,
                     "HAVOK_TIMING_FIX rawDt={:.6f} accumDt={:.6f} oldSubDt={:.6f} oldSubsteps={} newSubDt={:.6f} newSubsteps={} minHz={:.2f} maxFrameDt={:.6f} maxSubsteps={}",
@@ -933,21 +934,6 @@ namespace rock
             return decision.action == NativeMeleeImpactAction::Suppress;
         }
 
-        /*
-         * NATIVE-MELEE-TRACE: native melee damage is reported broken while
-         * suppression is disabled and every hook forwards to native. Each
-         * pass-through boundary below logs a bounded trace so one in-game
-         * session shows the deepest stage the native chain reaches:
-         * AttackBlock input gate -> WeaponSwingHandler -> HitFrameHandler ->
-         * PlayerCharacter::WeaponSwingCallBack -> VRMeleeImpact contact.
-         * Diagnostic instrumentation; remove with the root-cause fix.
-         */
-        [[nodiscard]] bool shouldEmitNativeMeleeTrace(std::atomic<std::uint32_t>& counter, std::uint32_t& outCount, std::uint32_t burst = 20, std::uint32_t period = 60)
-        {
-            outCount = counter.fetch_add(1, std::memory_order_relaxed) + 1;
-            return outCount <= burst || outCount % period == 0;
-        }
-
         enum class MeleeContactDecodeStage : std::uint32_t
         {
             Complete = 0,
@@ -1049,13 +1035,6 @@ namespace rock
             }
 
             const bool nativeResult = g_originalWeaponSwingHandler ? g_originalWeaponSwingHandler(handler, actor, side) : false;
-            if (input.actorIsPlayer && !input.suppressionActive) {
-                static std::atomic<std::uint32_t> traceCounter{ 0 };
-                std::uint32_t count = 0;
-                if (shouldEmitNativeMeleeTrace(traceCounter, count)) {
-                    ROCK_LOG_INFO(Combat, "NATIVE-MELEE-TRACE WeaponSwingHandler native result={} count={}", nativeResult ? "true" : "false", count);
-                }
-            }
             return nativeResult;
         }
 
@@ -1071,13 +1050,6 @@ namespace rock
             }
 
             const bool nativeResult = g_originalHitFrameHandler ? g_originalHitFrameHandler(handler, actor, side) : false;
-            if (input.actorIsPlayer && !input.suppressionActive) {
-                static std::atomic<std::uint32_t> traceCounter{ 0 };
-                std::uint32_t count = 0;
-                if (shouldEmitNativeMeleeTrace(traceCounter, count)) {
-                    ROCK_LOG_INFO(Combat, "NATIVE-MELEE-TRACE HitFrameHandler native result={} count={}", nativeResult ? "true" : "false", count);
-                }
-            }
             return nativeResult;
         }
 
@@ -1097,14 +1069,6 @@ namespace rock
             if (!shouldCallNative) {
                 applyNativeMeleeDecision(native_melee_suppression::NativeMeleeEvent::WeaponSwing, input, decision);
                 return;
-            }
-
-            if (input.actorIsPlayer && !input.suppressionActive) {
-                static std::atomic<std::uint32_t> traceCounter{ 0 };
-                std::uint32_t count = 0;
-                if (shouldEmitNativeMeleeTrace(traceCounter, count)) {
-                    ROCK_LOG_INFO(Combat, "NATIVE-MELEE-TRACE PlayerWeaponSwingCallback equipIndex={} count={}", equipIndex, count);
-                }
             }
 
             if (g_originalPlayerWeaponSwingCallback) {
@@ -1175,6 +1139,7 @@ namespace rock
         bool hookedAttackBlockShouldHandleEvent(void* handler, const RE::InputEvent* event)
         {
             if (input_remap_runtime::shouldSuppressNativeTriggerAction(event)) {
+                trigger_equip_readiness_trace::input(event, true, false, false, handler);
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
                     "Suppressed native WandTrigger AttackBlock gate while ROCK owns holstered or held-weapon trigger input");
@@ -1207,26 +1172,13 @@ namespace rock
             }
 
             if (decision.action == native_melee_suppression::NativeMeleeInputGateAction::ReturnFalse) {
+                trigger_equip_readiness_trace::input(event, true, false, false, handler);
                 return false;
             }
 
             const bool nativeResult = g_originalAttackBlockShouldHandleEvent ? g_originalAttackBlockShouldHandleEvent(handler, event) : false;
-            if (inputEvent == native_melee_suppression::NativeMeleeInputEvent::RightStick && !policyInput.suppressionActive) {
-                static std::atomic<std::uint32_t> acceptedCounter{ 0 };
-                static std::atomic<std::uint32_t> seenCounter{ 0 };
-                const auto seen = seenCounter.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (nativeResult) {
-                    std::uint32_t accepted = 0;
-                    if (shouldEmitNativeMeleeTrace(acceptedCounter, accepted)) {
-                        ROCK_LOG_INFO(Combat, "NATIVE-MELEE-TRACE AttackBlock RightStick accepted by native: accepted={} seen={}", accepted, seen);
-                    }
-                } else if (seen == 1 || seen % 300 == 0) {
-                    ROCK_LOG_INFO(Combat,
-                        "NATIVE-MELEE-TRACE AttackBlock RightStick pass-through: accepted={} seen={}",
-                        acceptedCounter.load(std::memory_order_relaxed),
-                        seen);
-                }
-            }
+            trigger_equip_readiness_trace::input(event, false,
+                g_originalAttackBlockShouldHandleEvent != nullptr, nativeResult, handler);
             return nativeResult;
         }
 
@@ -1307,43 +1259,6 @@ namespace rock
             original = nullptr;
             return true;
         }
-
-        /*
-         * NATIVE-MELEE-TRACE: with suppression disabled ROCK never reads the
-         * native VR melee velocity-gate settings, so a hostile runtime value
-         * (for example a leftover or third-party 1e9 threshold) is invisible.
-         * Dump the live values once per session while suppression is off.
-         */
-        void logNativeMeleeRuntimeGateSettingsOnce()
-        {
-            static std::atomic<bool> logged{ false };
-            if (logged.load(std::memory_order_acquire)) {
-                return;
-            }
-
-            auto* velocityCheck = RE::GetINISetting(native_melee_suppression::kVelocityCheckSetting);
-            auto* linearThreshold = RE::GetINISetting(native_melee_suppression::kLinearVelocityThresholdSetting);
-            auto* angularThreshold = RE::GetINISetting(native_melee_suppression::kAngularVelocityThresholdSetting);
-            if (!velocityCheck && !linearThreshold && !angularThreshold) {
-                return;
-            }
-            logged.store(true, std::memory_order_release);
-
-            const char* velocityCheckText = "unresolved";
-            if (velocityCheck) {
-                velocityCheckText = velocityCheck->GetType() == RE::Setting::SETTING_TYPE::kBinary ?
-                    (velocityCheck->GetBinary() ? "true" : "false") :
-                    "wrong-type";
-            }
-            ROCK_LOG_INFO(Combat,
-                "NATIVE-MELEE-TRACE runtime gate settings while suppression disabled: {}={} {}={} {}={}",
-                native_melee_suppression::kVelocityCheckSetting,
-                velocityCheckText,
-                native_melee_suppression::kLinearVelocityThresholdSetting,
-                linearThreshold && linearThreshold->GetType() == RE::Setting::SETTING_TYPE::kFloat ? linearThreshold->GetFloat() : -1.0f,
-                native_melee_suppression::kAngularVelocityThresholdSetting,
-                angularThreshold && angularThreshold->GetType() == RE::Setting::SETTING_TYPE::kFloat ? angularThreshold->GetFloat() : -1.0f);
-        }
     }
 
     bool validateNativeMeleeSuppressionHookTargets()
@@ -1400,9 +1315,6 @@ namespace rock
         g_nativeMeleeRuntimeSuppressionRequested = shouldSuppress;
         g_nativeMeleeSuppressionActive.store(shouldSuppress, std::memory_order_release);
         if (!shouldSuppress && !shouldRestore) {
-            if (input.hooksInstalled) {
-                logNativeMeleeRuntimeGateSettingsOnce();
-            }
             return;
         }
 
@@ -1934,7 +1846,7 @@ namespace rock
             const bool piReady = pi && pi->isInitialized();
             const bool rightHolding = piReady && pi->getRightHand().isHoldingAtomic();
             const bool leftHolding = piReady && pi->getLeftHand().isHoldingAtomic();
-            const bool diagnosticsEnabled = g_rockConfig.rockDebugGrabFrameLogging || g_rockConfig.rockDebugVerboseLogging;
+            const bool diagnosticsEnabled = g_rockConfig.rockDebugVerboseLogging;
             const auto contactPolicy = held_grab_cc_policy::evaluateHeldGrabContactPolicy(held_grab_cc_policy::HeldGrabContactPolicyInput{
                 .hooksEnabled = piReady,
                 .holdingHeldObject = rightHolding || leftHolding,

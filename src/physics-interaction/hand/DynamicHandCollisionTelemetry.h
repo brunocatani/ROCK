@@ -155,35 +155,17 @@ namespace rock::dynamic_hand_collision_telemetry
     {
         TwinRole role{ TwinRole::Palm };
         std::uint32_t bodyId{ kInvalidBodyId };
-        std::uint64_t physicsSampleSequence = 0;
-
-        RE::NiTransform publishedTargetWorld{};
         RE::NiPoint3 requestedTargetWorldGame{};
-        RE::NiPoint3 commandedTargetWorldGame{};
         RE::NiPoint3 liveBodyWorldGame{};
-        RE::NiPoint3 solverResidualWorldGame{};
-        RE::NiPoint3 requestedGapWorldGame{};
+        // live - requested while in contact: the blocked depth.
         RE::NiPoint3 contactDeviationWorldGame{};
-        RE::NiPoint3 targetVelocityWorldGameUnitsPerSecond{};
-
-        float lengthGameUnits = 0.0f;
-        float radiusGameUnits = 0.0f;
-        float convexRadiusGameUnits = 0.0f;
-        float solverResidualGameUnits = 0.0f;
-        float requestedGapGameUnits = 0.0f;
         float contactDeviationGameUnits = 0.0f;
-        float approachSpeedGameUnitsPerSecond = 0.0f;
-        float physicsDeltaSeconds = 0.0f;
-
         bool bodyCreated = false;
-        bool publishedTargetValid = false;
         bool physicsSampleValid = false;
-        bool targetVelocityValid = false;
         bool contactActive = false;
         // Static-world and car contact only. Hand and equipped-weapon contact
         // must not drive the anatomical surface-finger response.
         bool worldContactActive = false;
-        bool recoveryTeleport = false;
     };
 
     struct HandSample

@@ -109,7 +109,7 @@ namespace rock::active_grab_body_lifecycle
          * selected body is already dynamic. Return every touched actor body and
          * filter to its captured state before the engine later detaches the cell.
          */
-        return targetKind == grab_target::Kind::DeadActorBody ? BodyRestorePolicy::RestoreAllChanged :
+        return targetKind == grab_target::Kind::ConnectedBody ? BodyRestorePolicy::RestoreAllChanged :
                                                                BodyRestorePolicy::ProtectComplexSystemOwned;
     }
 
@@ -127,7 +127,6 @@ namespace rock::active_grab_body_lifecycle
         bool capturedAfterPrep = false;
         bool originalStateKnown = true;
         bool motionChangedByRock = false;
-        bool filterChangedByRock = false;
         bool hasDampingSnapshot = false;
         bool hasInertiaSnapshot = false;
     };
@@ -162,13 +161,6 @@ namespace rock::active_grab_body_lifecycle
         std::uint32_t preservedConvertedMotionCount = 0;
         std::uint32_t preservedConvertedFilterCount = 0;
 
-        bool shouldRestoreMotion(std::uint32_t bodyId) const
-        {
-            const auto it = std::find_if(entries.begin(), entries.end(), [&](const BodyRestorePlanEntry& entry) {
-                return entry.record.bodyId == bodyId;
-            });
-            return it != entries.end() && it->restoreMotion;
-        }
     };
 
     struct BodyLifecycleAudit
@@ -264,16 +256,6 @@ namespace rock::active_grab_body_lifecycle
             _records.push_back(record);
         }
 
-        void captureAcceptedBeforePrep(const object_physics_body_set::ObjectPhysicsBodySet& bodySet)
-        {
-            observeScanDiagnostics(bodySet);
-            for (const auto& record : bodySet.records) {
-                if (record.accepted) {
-                    capture(makeLifecycleRecord(record));
-                }
-            }
-        }
-
         void captureBeforeActivePrep(const object_physics_body_set::ObjectPhysicsBodySet& bodySet)
         {
             observeScanDiagnostics(bodySet);
@@ -298,13 +280,6 @@ namespace rock::active_grab_body_lifecycle
                 return record.bodyId == bodyId;
             });
             return it != _records.end() ? &*it : nullptr;
-        }
-
-        void markPreparedBody(std::uint32_t bodyId, bool motionChangedByRock)
-        {
-            if (auto* record = find(bodyId)) {
-                record->motionChangedByRock = record->motionChangedByRock || motionChangedByRock;
-            }
         }
 
         void markPreparedBodies(const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet)
@@ -333,13 +308,6 @@ namespace rock::active_grab_body_lifecycle
         void markIncompleteNativeScan()
         {
             _incompleteNativeScan = true;
-        }
-
-        void markFilterChanged(std::uint32_t bodyId)
-        {
-            if (auto* record = find(bodyId)) {
-                record->filterChangedByRock = true;
-            }
         }
 
         BodyRestorePlan restorePlanForFailure() const { return makeRestorePlan(BodyRestoreReason::FailedGrabSetup, BodyRestorePolicy::RestoreAllChanged, grab_target::Kind::None, BodyReleaseIntent::FailedSetup); }
@@ -604,7 +572,6 @@ namespace rock::grab_authority_frame_math
 
 namespace rock
 {
-    inline constexpr std::size_t kMaxGrabContactPatchSamples = grab_contact_patch_math::kContactPatchProbePatternSampleCount;
 
     struct GrabLocalTriangle
     {
@@ -697,35 +664,17 @@ namespace rock
         grab_pinch_pocket_policy::StablePinchFingerPose pinchFingerPose{};
         GrabSeatDiagnostics diagnostics{};
         GrabSeatMode mode = GrabSeatMode::None;
-        float lastPivotReacquireLocalDeltaGameUnits = 0.0f;
-        std::uint32_t pivotReacquireCount = 0;
         const char* activeGrabPointMode = "none";
         const char* palmSeatPointMode = "none";
-        const char* lastPivotReacquireReason = "none";
-        const char* lastPivotReacquirePhase = "none";
         bool hasPalmSeatPoint = false;
         bool hasPinchPocket = false;
         bool programmaticArrival = false;
         bool requiresSettledVisualHandRelation = false;
         bool hasSettledVisualHandRelation = false;
-        bool hasPivotReacquire = false;
-    };
-
-    struct GrabSupportFrameState
-    {
-        RE::NiPoint3 normalBodyLocal{};
-        RE::NiPoint3 axisBodyLocal{};
-        RE::NiPoint3 binormalBodyLocal{};
-        grab_support_model_math::GripSupportKind kind = grab_support_model_math::GripSupportKind::None;
-        float confidence = 0.0f;
-        float spanGameUnits = 0.0f;
-        float pivotShiftGameUnits = 0.0f;
-        const char* reason = "none";
-        bool hasModel = false;
-        bool hasNormal = false;
-        bool hasAxis = false;
-        bool hasBinormal = false;
-        bool authoredPivot = false;
+        // Close-grab seat mode 1 turned or re-pivoted the object at capture.
+        // The commit ramps the drive target into that seat instead of
+        // snapping to it.
+        bool localGraspSeat = false;
     };
 
     struct GrabFrozenAuthorityState
@@ -755,11 +704,9 @@ namespace rock
          * select?" without being contaminated by later solver authority changes.
          */
         std::uint32_t sourceBodyId = 0x7FFF'FFFF;
-        const char* fingerEvidencePointMode = "none";
         GrabGripEvidenceState gripEvidence{};
         GrabPivotAuthorityState pivotAuthority{};
         GrabSeatState seat{};
-        GrabSupportFrameState support{};
         GrabFrozenAuthorityState authority{};
         bool valid = false;
         bool hasMeshPoseData = false;
@@ -778,26 +725,14 @@ namespace rock
         RE::NiTransform handBodyToRawHandAtGrab{};
         RE::NiTransform rootBodyLocal{};
         RE::NiTransform ownerBodyLocal{};
-        RE::NiPoint3 fingerEvidencePointWorldAtGrab{};
-        RE::NiPoint3 multiFingerGripCenterWorldAtGrab{};
-        RE::NiPoint3 multiFingerHandCenterWorldAtGrab{};
-        RE::NiPoint3 multiFingerAverageNormalWorldAtGrab{};
         std::array<RE::NiPoint3, 5> fingerPoseTargetLocal{};
         std::array<RE::NiPoint3, 5> fingerPoseTargetNormalLocal{};
         std::array<std::uint8_t, 5> fingerPoseTargetValid{};
         std::array<std::uint8_t, 5> fingerPoseTargetNormalValid{};
-        std::array<grab_contact_patch_math::GrabContactPatchSample<RE::NiPoint3>, kMaxGrabContactPatchSamples> contactPatchSamples{};
-        std::uint32_t contactPatchSampleCount = 0;
-        std::uint32_t multiFingerContactGroupCount = 0;
         std::uint32_t fingerPoseTargetCount = 0;
-        float contactPatchMeshSnapDeltaGameUnits = 0.0f;
-        float multiFingerContactSpreadGameUnits = 0.0f;
         float handScaleAtGrab = 1.0f;
         std::uint64_t traceId = 0;
-        std::uint64_t traceTargetWriteSequence = 0;
         const char* bodyResolutionReason = "none";
-        const char* multiFingerContactReason = "none";
-        const char* fingerEvidencePointMode = "none";
         const char* fingerPoseAimReason = "none";
         /*
          * ROCK only fades the dynamic grab when the object must be synced from
@@ -814,14 +749,8 @@ namespace rock
         GrabGripEvidenceState gripEvidence{};
         GrabPivotAuthorityState pivotAuthority{};
         GrabSeatState seat{};
-        GrabSupportFrameState support{};
         GrabFrozenAuthorityState authority{};
         bool hasMeshPoseData = false;
-        bool hasContactPatch = false;
-        bool hasContactPatchEvidence = false;
-        bool hasMultiFingerContactPatch = false;
-        bool hasFingerEvidencePoint = false;
-        bool activeGrabPointUsesMultiFingerEvidence = false;
         bool syntheticLooseWeaponPrimaryAttach = false;
         bool authoredLooseWeaponSupportGrip = false;
         AuthoredWeaponGripPose authoredWeaponPose{};
@@ -832,8 +761,6 @@ namespace rock
         RE::NiTransform looseObjectSharedProxyCorrection{};
         std::uint64_t looseObjectSharedPeerTrace = 0;
         bool looseObjectSharedPrimaryIsLeft = false;
-        float looseObjectVisualTraceElapsed = 0.0f;
-        bool transferPoseTracePending = false;
         bool equippedWeaponTransfer = false;
         bool hasLooseObjectSoloProxyCorrection = false;
         bool hasTelemetryCapture = false;
@@ -847,8 +774,6 @@ namespace rock
             captureTelemetry.sourceBodyId = sourceBodyId;
             captureTelemetry.seat = seat;
             captureTelemetry.pivotAuthority = pivotAuthority;
-            captureTelemetry.support = support;
-            captureTelemetry.fingerEvidencePointMode = fingerEvidencePointMode;
             captureTelemetry.hasMeshPoseData = hasMeshPoseData;
             captureTelemetry.valid = hasTelemetryCapture;
         }
@@ -861,26 +786,14 @@ namespace rock
             handBodyToRawHandAtGrab = RE::NiTransform();
             rootBodyLocal = RE::NiTransform();
             ownerBodyLocal = RE::NiTransform();
-            fingerEvidencePointWorldAtGrab = {};
-            multiFingerGripCenterWorldAtGrab = {};
-            multiFingerHandCenterWorldAtGrab = {};
-            multiFingerAverageNormalWorldAtGrab = {};
             fingerPoseTargetLocal = {};
             fingerPoseTargetNormalLocal = {};
             fingerPoseTargetValid = {};
             fingerPoseTargetNormalValid = {};
-            contactPatchSamples = {};
-            contactPatchSampleCount = 0;
-            multiFingerContactGroupCount = 0;
             fingerPoseTargetCount = 0;
-            contactPatchMeshSnapDeltaGameUnits = 0.0f;
-            multiFingerContactSpreadGameUnits = 0.0f;
             handScaleAtGrab = 1.0f;
             traceId = 0;
-            traceTargetWriteSequence = 0;
             bodyResolutionReason = "none";
-            multiFingerContactReason = "none";
-            fingerEvidencePointMode = "none";
             fingerPoseAimReason = "none";
             motorFadeReason = "none";
             captureTelemetry.clear();
@@ -891,14 +804,8 @@ namespace rock
             gripEvidence = GrabGripEvidenceState{};
             pivotAuthority = GrabPivotAuthorityState{};
             seat = GrabSeatState{};
-            support = GrabSupportFrameState{};
             authority = GrabFrozenAuthorityState{};
             hasMeshPoseData = false;
-            hasContactPatch = false;
-            hasContactPatchEvidence = false;
-            hasMultiFingerContactPatch = false;
-            hasFingerEvidencePoint = false;
-            activeGrabPointUsesMultiFingerEvidence = false;
             syntheticLooseWeaponPrimaryAttach = false;
             authoredLooseWeaponSupportGrip = false;
             authoredWeaponPose = {};
@@ -907,8 +814,6 @@ namespace rock
             looseObjectSharedProxyCorrection = {};
             looseObjectSharedPeerTrace = 0;
             looseObjectSharedPrimaryIsLeft = false;
-            looseObjectVisualTraceElapsed = 0.0f;
-            transferPoseTracePending = false;
             equippedWeaponTransfer = false;
             hasLooseObjectSoloProxyCorrection = false;
             hasTelemetryCapture = false;
@@ -1071,12 +976,6 @@ namespace rock::grab_frame_math
         return hand_bone_collider_geometry_math::generatedColliderWorldPointToLocal(handBodyWorld, grabPivotWorld);
     }
 
-    template <class Transform>
-    inline Transform computeFrameFromCapturedObject(const Transform& heldNodeWorld, const Transform& rawHandSpace)
-    {
-        return transform_math::composeTransforms(heldNodeWorld, transform_math::invertTransform(rawHandSpace));
-    }
-
     template <class Transform, class Vector>
     inline SplitGrabFrame<Transform> buildSplitGrabFrameFromDesiredObject(const Transform& rawHandWorld,
         const Transform& handBodyWorld,
@@ -1137,40 +1036,6 @@ namespace rock::grab_authority_frame_math
         }
     }
 
-    inline int grabAuthorityPivotSourcePriority(GrabAuthorityPivotSource source)
-    {
-        switch (source) {
-        case GrabAuthorityPivotSource::PinchPocketMeshPoint:
-        case GrabAuthorityPivotSource::PinchPocket:
-            return 0;
-        case GrabAuthorityPivotSource::GripSupportModel:
-        case GrabAuthorityPivotSource::LooseWeaponPrimaryAttach:
-            return 1;
-        case GrabAuthorityPivotSource::PalmPocketMeshPoint:
-        case GrabAuthorityPivotSource::PalmPocketMesh:
-            return 2;
-        case GrabAuthorityPivotSource::SelectionHitMeshSnap:
-        case GrabAuthorityPivotSource::SelectionMeshSnap:
-        case GrabAuthorityPivotSource::ContactPatchMeshSnap:
-        case GrabAuthorityPivotSource::ContactPatchPositionOnly:
-        case GrabAuthorityPivotSource::PalmRayMeshPoint:
-            return 3;
-        case GrabAuthorityPivotSource::CollisionFallback:
-            return 4;
-        case GrabAuthorityPivotSource::None:
-        default:
-            return 100;
-        }
-    }
-
-    inline bool isFinalGrabAuthorityPivotSource(GrabAuthorityPivotSource source)
-    {
-        return source == GrabAuthorityPivotSource::PinchPocketMeshPoint ||
-               source == GrabAuthorityPivotSource::PinchPocket ||
-               source == GrabAuthorityPivotSource::GripSupportModel ||
-               source == GrabAuthorityPivotSource::LooseWeaponPrimaryAttach;
-    }
-
     template <class Vector>
     inline bool isFiniteVector(const Vector& value)
     {
@@ -1187,54 +1052,6 @@ namespace rock::grab_authority_frame_math
             }
         }
         return rotationFinite && isFiniteVector(value.translate) && std::isfinite(value.scale) && value.scale > 0.0001f;
-    }
-
-    template <class Vector>
-    struct GrabAuthorityPivotCandidate
-    {
-        bool valid = false;
-        GrabAuthorityPivotSource source = GrabAuthorityPivotSource::None;
-        Vector pointWorld{};
-        Vector normalWorld{};
-        bool normalValid = false;
-        std::uint32_t bodyId = kInvalidGrabAuthorityBodyId;
-        const void* sourceNode = nullptr;
-        const char* reason = "notEvaluated";
-    };
-
-    template <class Vector>
-    using ResolvedGrabAuthorityPivot = GrabAuthorityPivotCandidate<Vector>;
-
-    template <class Vector>
-    inline ResolvedGrabAuthorityPivot<Vector> resolveGrabAuthorityPivot(
-        std::span<const GrabAuthorityPivotCandidate<Vector>> candidates)
-    {
-        ResolvedGrabAuthorityPivot<Vector> selected{};
-        selected.reason = "noFinalPinchOrSupportAuthority";
-        int selectedPriority = grabAuthorityPivotSourcePriority(GrabAuthorityPivotSource::None);
-
-        for (const auto& candidate : candidates) {
-            if (!candidate.valid ||
-                candidate.source == GrabAuthorityPivotSource::None ||
-                candidate.bodyId == kInvalidGrabAuthorityBodyId ||
-                !isFiniteVector(candidate.pointWorld)) {
-                continue;
-            }
-            if (!isFinalGrabAuthorityPivotSource(candidate.source)) {
-                continue;
-            }
-
-            const int priority = grabAuthorityPivotSourcePriority(candidate.source);
-            if (!selected.valid || priority < selectedPriority) {
-                selected = candidate;
-                selectedPriority = priority;
-            }
-        }
-
-        if (selected.valid) {
-            selected.reason = selected.reason ? selected.reason : grabAuthorityPivotSourceName(selected.source);
-        }
-        return selected;
     }
 
     template <class Transform, class Vector>
@@ -1323,10 +1140,6 @@ namespace rock::grab_authority_frame_math
         frozen.bodyWorldAtGrab = input.bodyWorld;
         frozen.visualNormalWorld = input.visualNormalWorld;
         frozen.visualNormalValid = input.visualNormalValid && isFiniteVector(input.visualNormalWorld);
-
-        if (!isFinalGrabAuthorityPivotSource(input.source)) {
-            return frozen;
-        }
 
         if (!isFiniteTransform(input.rawHandWorld) ||
             !isFiniteTransform(input.proxyWorld) ||
@@ -1448,7 +1261,7 @@ namespace rock::pull_motion_math
     inline constexpr float kCatchRetryMaximumTimeSeconds = 0.65f;
     // Actor-equipment materialization is a separate lifecycle even though its
     // current timeout matches pull-catch retry tuning.
-    inline constexpr float kActorEquipmentHandoffMaximumTimeSeconds = 0.65f;
+    inline constexpr float kExtractionHandoffMaximumTimeSeconds = 0.65f;
     inline constexpr bool kCatchWideReacquireEnabled = true;
     inline constexpr float kCatchWideReacquireRadiusGameUnits = 32.0f;
     inline constexpr float kCatchWideReacquireMaximumBodyDistanceGameUnits = 42.0f;

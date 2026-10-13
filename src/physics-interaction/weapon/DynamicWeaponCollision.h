@@ -1,6 +1,8 @@
 #pragma once
 
 #include "physics-interaction/weapon/WeaponPhysicsTimeScale.h"
+#include "physics-interaction/weapon/EquippedDropMotionProfile.h"
+#include "physics-interaction/weapon/LooseWeaponCollisionPolicy.h"
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
@@ -9,7 +11,7 @@
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/WeaponSurfaceSupport.h"
-#include "physics-interaction/weapon/BladePenetrationRuntime.h"
+#include "api/NativeInteractionService.h"
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/NetImmerse/NiTransform.h"
@@ -110,6 +112,30 @@ namespace rock
         // Game frame only, before early returns, so clicks cannot replay later.
         void updateSurfaceSupportInput(bool placementOwnsClick = false);
 
+        bool tryGetLatchedSurfacePose(RE::NiNode* weapon, std::uint64_t generation, RE::NiTransform& pose) const;
+        bool surfaceRetirementRequested() const { return _surfaceSupport.retirementRequested; }
+        bool tryGetSurfaceAnchor(RE::NiPoint3& anchor) const;
+
+        // Game-thread transitions under callback quiescence. The same dynamic
+        // compound survives release and regrab; its native inventory item stays equipped.
+        bool beginEquippedDrop(const PhysicsFrameContext& frame, RE::NiNode* weapon,
+            std::uint64_t generation, RE::NiTransform& pose);
+        bool restoreEquippedHold(const PhysicsFrameContext& frame, const char* reason);
+        bool tryGetEquippedDropPose(RE::NiNode* weapon, std::uint64_t generation, RE::NiTransform& pose) const;
+        bool equippedDropActive() const { return _equippedDrop; }
+        bool equippedDropRestReady() const { return _equippedDrop && !_equippedDropPull.active && _equippedDropRest.ready(); }
+        bool watchesEquippedDropRest(std::uint32_t body) const {
+            return body != 0x7FFF'FFFFu && _dropRestBodyAtomic.load(std::memory_order_acquire) == body;
+        }
+        void recordEquippedDropRestContact(RE::hknpWorld* world, std::uint32_t a, std::uint32_t b,
+            const RE::NiPoint3& pointGame, const RE::NiPoint3& normal) noexcept;
+        enum class DropPullProgress { Unavailable, Flying, Arrived, Expired };
+        bool startEquippedDropPull(const PhysicsFrameContext& frame, const RE::NiPoint3& gripWeaponLocal,
+            const RE::NiPoint3& handWorld);
+        DropPullProgress updateEquippedDropPull(const PhysicsFrameContext& frame, const RE::NiPoint3& handWorld);
+        void cancelEquippedDropPull();
+        bool equippedDropPullActive() const { return _equippedDropPull.active; }
+
         // Game-frame observation, published through the provider snapshot.
         [[nodiscard]] bool surfaceSupportReservesInput(std::uintptr_t weaponNode, std::uint64_t generation) const noexcept
         {
@@ -148,7 +174,7 @@ namespace rock
             RE::NiNode* weaponNode,
             std::uint64_t weaponGenerationKey,
             const WeaponCollision& weaponCollision,
-            const RE::NiPoint3* primaryGripWeaponLocal);
+            const RE::NiPoint3* primaryGripWeaponLocal, bool handsFree = false, bool equippedDrop = false);
         // This frame's compound snapshot found a generated source the weapon root no longer contains.
         [[nodiscard]] bool compoundSourcesUnavailable() const { return _compoundSourcesUnavailable; }
 
@@ -160,7 +186,6 @@ namespace rock
         void finalizeCompoundPose(const WeaponCollision& weaponCollision, RE::NiNode* weaponNode,
             const PhysicsFrameContext& frame, std::uint64_t generation);
         // Game-thread witness after the final claimed-hand presentation.
-        void tracePresentedWeapon(RE::NiNode* weaponNode, std::uint64_t frameIndex);
 
         bool isProxyBodyIdAtomic(std::uint32_t bodyId) const;
         void recordObstacleContactCallback(
@@ -177,7 +202,7 @@ namespace rock
             std::uint32_t otherBodyId,
             bool otherLayerRead,
             std::uint32_t otherLayer,
-            const RE::NiPoint3* contactPointGame);
+            const RE::NiPoint3* contactPointGame, const RE::NiPoint3& targetNormalGame, std::uint32_t pointCount);
 
         void retireAll(void* bhkWorld, bool preserveSurfaceSupport = false);
         void refreshCollisionFilter(RE::hknpWorld* world);
@@ -186,7 +211,6 @@ namespace rock
         [[nodiscard]] RE::hknpBodyId proxyBodyIdForDebug() const;
         // Main-thread debug publication only. Returns the colliding contact
         // body's target reconstructed from the pending grip-authority target.
-        [[nodiscard]] bool tryGetContactBodyTargetForDebug(RE::NiTransform& outTarget) const;
         bool getDebugSnapshot(DebugSnapshot& outSnapshot) const;
         // Main-thread observation of the authoritative physics sample. This
         // does not depend on collider visualization or its debug snapshot.
@@ -248,7 +272,6 @@ namespace rock
             RE::NiNode* weaponNode,
             const RE::NiTransform& requestedWeaponWorld,
             std::uint64_t weaponGenerationKey,
-            dynamic_weapon_collision_policy::VisualIntentSource source,
             const RE::NiTransform* physicalDriverWorld);
         void recordSurfaceSupportContact(RE::hknpWorld* world,
             std::uint32_t otherBodyId, const RE::NiPoint3& contactPointGame);
@@ -257,7 +280,9 @@ namespace rock
         bool setAuthorityPivot(const PhysicsFrameContext& frame,
             const RE::NiPoint3& pivotWeaponLocal, const RE::NiTransform& weaponWorld);
         void updateSurfaceSupport(const PhysicsFrameContext& frame,
-            const RE::NiPoint3* primaryGripWeaponLocal);
+            const RE::NiPoint3* primaryGripWeaponLocal, bool handsFree);
+        void updateEquippedDropRest(const PhysicsFrameContext& frame);
+        void resetEquippedDropRestWatch(bool active);
         bool ensureProxyBody(
             const PhysicsFrameContext& frame,
             const WeaponCollision& weaponCollision,
@@ -266,6 +291,7 @@ namespace rock
             const WeaponCollision& weaponCollision,
             const RE::NiAVObject* weaponNode,
             float weaponScale);
+        bool flushCompoundChildTransforms();
         void retireProxyLocked(void* bhkWorld);
         void clearLocalProxyStateLocked();
         void clearPublishedPhysicsSnapshot();
@@ -281,7 +307,7 @@ namespace rock
         BethesdaPhysicsBody _body{};
         BethesdaPhysicsBody _authorityProxy{};
         ActiveConstraint _authorityConstraint{};
-        BladePenetrationRuntime _bladePenetration;
+
         havok_compound_shape_builder::DynamicCompoundShape _compoundShape{};
         mutable std::mutex _compoundPoseMutex;
         std::vector<WeaponCollision::CompoundChildPoseSnapshot> _compoundPoseScratch;
@@ -307,20 +333,41 @@ namespace rock
         RE::NiPoint3 _authorityPivotWeaponLocal{};
         std::size_t _createdCompoundPointCount{ 0 };
         bool _created{ false };
+        // Mutated only while callbacks are quiescent, read by the game thread
+        // and the pre-collide/post-solve callbacks belonging to this body.
+        bool _equippedDrop{ false };
+        equipped_drop_motion_profile::Lease _equippedDropMotionProfile;
+        bool _equippedDropGravitySamplePending{ false };
+        // The game thread owns dwell/anchor state. Native contact workers use
+        // only the atomic watch identity and publish a bounded value witness.
+        // Epoch changes reject in-flight contacts after release/regrab/teardown;
+        // contact callbacks are independent of the generated-body step gate.
+        loose_weapon_collision_policy::AnchoredRest<RE::NiTransform> _equippedDropRest;
+        struct DropRestSupport {
+            std::uintptr_t world{}, surfaceCollision{};
+            std::uint64_t generation{};
+            std::uint32_t weaponBody{}, surfaceBody{};
+            RE::NiTransform weaponPose{}, surfacePose{};
+            bool valid{};
+        };
+        std::atomic_flag _dropRestSupportBusy = ATOMIC_FLAG_INIT;
+        DropRestSupport _dropRestSupport{};
+        std::atomic<RE::hknpWorld*> _dropRestWorldAtomic{ nullptr };
+        std::atomic<std::uint32_t> _dropRestBodyAtomic{ 0x7FFF'FFFFu };
+        std::atomic<std::uint64_t> _dropRestEpochAtomic{ 1 };
+        // Game-thread pull owner; physics uses the native velocity set under
+        // callback quiescence, exactly as ordinary loose-object pulls do.
+        struct DropPullState {
+            bool active{}, hasTarget{};
+            RE::NiPoint3 gripWeaponLocal{}, previousTargetHavok{};
+            float elapsed{}, duration{};
+        } _equippedDropPull;
         bool _droveThisSubstep{ false };
         bool _physicsRequestedTargetValid{ false };
         bool _physicsDriveTeleported{ false };
         RE::NiTransform _physicsRequestedAuthorityTarget{};
         RE::NiTransform _physicsRequestedTarget{};
-        RE::NiTransform _physicsPreviousRequestedTarget{};
-        bool _physicsPreviousRequestedTargetValid{ false };
-        // Physics callback values only; no scene pointers cross to this trace.
         std::uint64_t _physicsSourceSequence{ 0 };
-        GeneratedKeyframedBodyDriveResult _clockDriveResult{};
-        havok_physics_timing::PhysicsTimingSample _clockDriveTiming{};
-        std::uint64_t _clockSourceJumpCount{ 0 };
-        std::uint64_t _clockGripResetCount{ 0 };
-        std::uint64_t _clockDivergenceResetCount{ 0 };
         // Physics-thread-only persistence timer for the real colliding body.
         // The hidden authority target may jump immediately after a tracking
         // discontinuity, but blocked physical divergence must persist before
@@ -342,7 +389,6 @@ namespace rock
         void* _frameBhkWorld{ nullptr };
         RE::NiNode* _frameWeaponNode{ nullptr };
         RE::NiTransform _frameRequestedWeaponWorld{};
-        dynamic_weapon_collision_policy::VisualIntentSource _frameIntentSource{dynamic_weapon_collision_policy::VisualIntentSource::None};
         RE::NiTransform _frameIntentDriverWorld{};
         bool _frameIntentDriverValid{false};
         // Toggle, latch, and return are owned by the game frame. The contact
@@ -352,15 +398,7 @@ namespace rock
         weapon_surface_support::State _surfaceSupport{};
         bool _surfaceClickRequested{ false };
         bool _surfaceInputReserved{ false };
-        // Game-thread diagnostic baseline; source/generation changes rebase it.
-        RE::NiTransform _previousIntentDriverLocal{};
-        dynamic_weapon_collision_policy::VisualIntentSource _previousIntentSource{dynamic_weapon_collision_policy::VisualIntentSource::None};
-        std::uint64_t _previousIntentGeneration{0};
-        bool _previousIntentDriverValid{false};
         DebugSnapshot _debugSnapshot{};
-        // Current game frame only. Reset at beginFrame and on body retirement.
-        std::uint64_t _clockPresentationFrame{ 0 };
-        RE::NiTransform _clockExpectedWeaponWorld{};
 
         std::atomic<bool> _enabledAtomic{ false };
         std::atomic<float> _gripRecoveryDistanceGameUnitsAtomic{ 210.0f };

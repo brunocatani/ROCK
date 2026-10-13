@@ -1,5 +1,4 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
-#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 
 // Native scope presentation: rigid frame capture/synchronization, overlay calibration and target application, camera follow, and sight anchor refresh.
 
@@ -188,10 +187,6 @@ namespace rock
          * alignment for a hidden weapon, so it cannot seed a new calibration.
          */
         const NativeScopeCameraFollowCapture capture = captureNativeScopeCameraFollow(weaponNode);
-        const bool newlyCaptured = !_scope.rigidFrame.valid ||
-            _scope.rigidFrame.weaponGenerationKey != currentWeaponGenerationKey ||
-            _scope.rigidFrame.weaponNodeIdentity != weaponNode ||
-            _scope.rigidFrame.scopeCameraIdentity != capture.camera;
         if (!capture.valid || !capturePostFrikNativeScopeRigidFrame(weaponNode, currentWeaponGenerationKey, capture.camera, capture.cameraWorldBefore)) {
             return;
         }
@@ -199,11 +194,6 @@ namespace rock
         const bool overlayCalibrationReady = captureNativeScopeOverlayCalibration(capture.cameraWorldBefore, currentWeaponGenerationKey);
         const RE::NiTransform targetCameraWorld = native_scope_camera_follow_math::resolveRigidAnchorFrameWorld(weaponNode->world, _scope.rigidFrame.cameraWeaponLocal);
         const NativeScopeCameraFollowResult result = applyNativeScopeCameraWorldTarget(capture, targetCameraWorld, _scope.rigidFrame);
-        if (result.writeApplied) {
-            vanilla_weapon_alignment_telemetry::recordScopeCalibration(
-                weaponNode, capture.camera, currentWeaponGenerationKey, _scope.anchorWeaponFormID,
-                capture.cameraWorldBefore, _scope.rigidFrame.cameraWeaponLocal, newlyCaptured);
-        }
         if (overlayCalibrationReady && result.targetValid && result.writeApplied) {
             (void)applyNativeScopeOverlayTarget(result.targetCameraWorld, currentWeaponGenerationKey);
         }

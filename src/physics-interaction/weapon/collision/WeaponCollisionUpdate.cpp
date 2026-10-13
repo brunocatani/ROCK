@@ -28,14 +28,11 @@ namespace rock
         clearGeneratedSourceCache();
         _sources.detachedExclusionEquippedKey = 0;
         _sources.detachedExclusionGroups.clear();
-        _diagnostics.generatedRecapture = {};
         clearPendingGeneratedWeaponBuild(world, false);
         _bodies.usingReplacementBank = false;
         _drive.rebuildRequested.store(false, std::memory_order_release);
         _drive.workbenchExitRebuildRequested.store(false, std::memory_order_release);
         _drive.failureCount.store(0, std::memory_order_release);
-        _diagnostics.animNodeDumpFrameCounter = 0;
-        _diagnostics.lastAnimNodeDumpKey = 0;
         clearAtomicBodyIds();
 
         ROCK_LOG_INFO(Weapon, "WeaponCollision initialized");
@@ -43,6 +40,7 @@ namespace rock
 
     void WeaponCollision::shutdown()
     {
+        _equippedDropActive = false;
         _identity.classificationValid = false;
         if (hasWeaponBody()) {
             ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown destroying generated bodies from cached context");
@@ -65,7 +63,6 @@ namespace rock
         clearGeneratedSourceCache();
         _sources.detachedExclusionEquippedKey = 0;
         _sources.detachedExclusionGroups.clear();
-        _diagnostics.generatedRecapture = {};
         clearPendingGeneratedWeaponBuild(_cachedWorld, true);
         _cachedWorld = nullptr;
         _cachedBhkWorld = nullptr;
@@ -73,8 +70,6 @@ namespace rock
         _drive.rebuildRequested.store(false, std::memory_order_release);
         _drive.workbenchExitRebuildRequested.store(false, std::memory_order_release);
         _drive.failureCount.store(0, std::memory_order_release);
-        _diagnostics.animNodeDumpFrameCounter = 0;
-        _diagnostics.lastAnimNodeDumpKey = 0;
         clearWeaponEmitterSnapshot();
 
         ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown");
@@ -82,6 +77,7 @@ namespace rock
 
     void WeaponCollision::abandonHavokStateAfterWorldLoss()
     {
+        _equippedDropActive = false;
         _identity.classificationValid = false;
         auto structuralMutation = _physicsCallbackGate ?
             _physicsCallbackGate->pauseForMutation() :
@@ -96,7 +92,6 @@ namespace rock
             clearWeaponBodyInstance(instance, true);
         }
         _sources.pendingBuild = {};
-        _diagnostics.generatedRecapture = {};
         _bodies.usingReplacementBank = false;
         _cachedWorld = nullptr;
         clearGeneratedSourceCache();
@@ -180,14 +175,10 @@ namespace rock
             _cachedWorld = world;
             _sources.detachedExclusionEquippedKey = 0;
             _sources.detachedExclusionGroups.clear();
-            _diagnostics.generatedRecapture = {};
             clearCurrentWeaponState();
         }
 
         if (!weaponDrawn) {
-            if (_diagnostics.generatedRecapture.valid) {
-                _diagnostics.generatedRecapture.sawUndrawnInterval = true;
-            }
             if (hasWeaponBody()) {
                 ROCK_LOG_INFO(Weapon, "Weapon no longer drawn - destroying generated weapon bodies");
                 destroyWeaponBody(world);
@@ -273,7 +264,6 @@ namespace rock
             rebuildDiagnosticsRecorded = true;
         };
 
-        maybeDumpWeaponAnimNodeDiagnostics(weaponNode, observedKey);
         if (driveRequestedRebuild) {
             ROCK_LOG_WARN(Weapon,
                 "Generated weapon collision drive failure requested rebuild cachedKey={:016X} observedKey={:016X}",
@@ -492,12 +482,6 @@ namespace rock
                         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponColliderBuild);
                         generatedCount = findGeneratedWeaponShapeSources(weaponNode, observedKey, preparedSources);
                     }
-                    recordGeneratedRecaptureDiagnostic(
-                        observedKey,
-                        observedIdentityKey,
-                        observedOwnershipKey,
-                        observedFormID,
-                        preparedSources);
                     generatedSummary = summarizeGeneratedSources(preparedSources);
                     generatedSources = std::make_shared<const std::vector<GeneratedHullSource>>(std::move(preparedSources));
                 }

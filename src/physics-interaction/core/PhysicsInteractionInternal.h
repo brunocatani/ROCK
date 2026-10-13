@@ -1,4 +1,6 @@
 #pragma once
+#include "api/NativeInteractionService.h"
+#include "api/StorageInteractionService.h"
 
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/native/NativeImpactAudio.h"
@@ -28,7 +30,7 @@
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
-#include "physics-interaction/actor/ActorEquipmentGrab.h"
+#include "physics-interaction/native/SceneRelation.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/api/InteractionCommandQueue.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
@@ -88,7 +90,6 @@
 #include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
-#include "physics-interaction/debug/PhysicsWorldOriginDiagnostics.h"
 #include "physics-interaction/collision/PushAssist.h"
 #include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -131,12 +132,6 @@ namespace rock
 {
     namespace physics_interaction_internal
     {
-        inline constexpr float kRawParityWarnPosition = 0.10f;
-        inline constexpr float kRawParityWarnRotationDegrees = 0.5f;
-        inline constexpr float kRawParityFailPosition = 0.50f;
-        inline constexpr float kRawParityFailRotationDegrees = 2.0f;
-        inline constexpr int kRawParityWarnFrames = 2;
-        inline constexpr int kRawParityFailFrames = 10;
         inline constexpr std::array<std::string_view, 5> kWeaponCollisionWorkbenchExitMenuNames{
             "ExamineMenu",
             "PowerArmorModMenu",
@@ -145,48 +140,6 @@ namespace rock
             "CraftingMenu",
         };
         inline constexpr float kNearbyCarCollisionRadiusGameUnits = 4096.0f;
-
-        template <std::size_t Count>
-        void releaseStaleGeneratedHandSuppressionLeases(
-            RE::hknpWorld* world,
-            const Hand& hand,
-            collision_suppression_registry::SuppressionLeaseSet<Count>& suppressionSet,
-            const char* context)
-        {
-            if (!world) {
-                return;
-            }
-
-            const auto handContainsBody = [&](std::uint32_t bodyId) {
-                if (bodyId == collision_suppression_registry::kInvalidBodyId) {
-                    return false;
-                }
-
-                const std::uint32_t colliderCount =
-                    hand.getHandColliderBodyCount();
-                if (colliderCount > 0) {
-                    for (std::uint32_t index = 0;
-                         index < colliderCount;
-                         ++index) {
-                        if (hand.getHandColliderBodyIdAtomic(index) == bodyId) {
-                            return true;
-                        }
-                    }
-                    return false;
-                }
-
-                return hand.hasCollisionBody() &&
-                       hand.getCollisionBodyId().value == bodyId;
-            };
-
-            suppressionSet.releaseWhere(
-                world,
-                context,
-                [&handContainsBody](std::uint32_t bodyId) {
-                    return !handContainsBody(bodyId);
-                },
-                [](std::uint32_t, const auto&) {});
-        }
 
         inline std::atomic<bool> s_weaponCollisionWorkbenchExitMenuSinkRegistered{ false };
         inline std::atomic<bool> s_weaponCollisionWorkbenchExitMenuSinkMissingUILogged{ false };
@@ -304,8 +257,6 @@ namespace rock
             config.useHmdBackVolume = g_rockConfig.rockShoulderStashUseHmdBackVolume;
             config.enterPaddingGameUnits = g_rockConfig.rockShoulderStashEnterPaddingGameUnits;
             config.exitPaddingGameUnits = g_rockConfig.rockShoulderStashExitPaddingGameUnits;
-            config.minDwellSeconds = g_rockConfig.rockShoulderStashMinDwellSeconds;
-            config.maxSpeedGameUnitsPerSecond = g_rockConfig.rockShoulderStashMaxSpeedGameUnitsPerSecond;
             config.recentContactSeconds = g_rockConfig.rockShoulderStashRecentContactSeconds;
             config.sustainedContactMissSeconds = g_rockConfig.rockShoulderStashSustainedContactMissSeconds;
             config.hmdBackRightOffsetGameUnits = g_rockConfig.rockShoulderStashHmdBackRightOffsetGameUnits;
@@ -537,12 +488,8 @@ namespace rock
 
             return flags;
         }
-        inline constexpr int kRawParitySummaryFrames = 300;
-        inline constexpr int kRawParityLagFrames = 5;
-        inline constexpr float kRawParityLagSlack = 0.05f;
         inline DirectSkeletonBoneReader s_directSkeletonBoneReader;
         inline std::uint32_t s_directSkeletonBoneLogCounter = 0;
-        inline bool s_worldOriginDiagnosticsEnabledLogged = false;
 
         struct ContactEventCallbackInfo
         {
@@ -705,20 +652,6 @@ namespace rock
             return vrcf::VRControllers.isPressHeldDown(isLeft ? vrcf::Hand::Left : vrcf::Hand::Right, buttonId);
         }
 
-        inline bool readGrabButtonPressedEdge(bool isLeft, int buttonId)
-        {
-            if (!input_remap_policy::isAllowedGrabButtonId(buttonId)) {
-                return false;
-            }
-
-            const auto rawState = input_remap_runtime::peekRawButtonState(isLeft, buttonId);
-            if (rawState.available) {
-                return rawState.pressed;
-            }
-
-            return vrcf::VRControllers.isPressed(isLeft ? vrcf::Hand::Left : vrcf::Hand::Right, buttonId);
-        }
-
         inline bool readHeldWeaponEquipTriggerPressedEdge(bool isLeft)
         {
             constexpr int buttonId = input_remap_policy::kOpenVrSteamVrTriggerButtonId;
@@ -750,21 +683,6 @@ namespace rock
             return TransformDelta{ .position = std::sqrt(dx * dx + dy * dy + dz * dz), .rotationDegrees = angleRadians * (180.0f / std::numbers::pi_v<float>)};
         }
 
-        inline float measurePointDelta(const RE::NiPoint3& a, const RE::NiPoint3& b)
-        {
-            const float dx = a.x - b.x;
-            const float dy = a.y - b.y;
-            const float dz = a.z - b.z;
-            return std::sqrt(dx * dx + dy * dy + dz * dz);
-        }
-
-        enum class PalmClockLogMode : std::uint8_t
-        {
-            Disabled,
-            Sampled,
-            Trace,
-        };
-
         inline const char* physicsStepPhaseName(havok_physics_timing::PhysicsStepPhase phase)
         {
             switch (phase) {
@@ -778,23 +696,6 @@ namespace rock
                 return "substep-post-solve";
             }
             return "unknown";
-        }
-
-        inline PalmClockLogMode palmClockLogMode()
-        {
-            if (g_rockConfig.rockDebugGrabTimelineTrace) {
-                return PalmClockLogMode::Trace;
-            }
-            if (g_rockConfig.rockDebugGrabFrameLogging || g_rockConfig.rockDebugVerboseLogging) {
-                return PalmClockLogMode::Sampled;
-            }
-            return PalmClockLogMode::Disabled;
-        }
-
-        inline bool palmClockTraceFrameSelected(std::uint64_t gameFrameIndex)
-        {
-            const auto interval = static_cast<std::uint64_t>((std::max)(1, g_rockConfig.rockDebugGrabTimelineTraceIntervalFrames));
-            return gameFrameIndex <= 3 || (gameFrameIndex % interval) == 0;
         }
 
         /*
@@ -811,14 +712,7 @@ namespace rock
             float gameDeltaSeconds,
             const havok_physics_timing::PhysicsTimingSample* timing)
         {
-            const PalmClockLogMode mode = palmClockLogMode();
-            if (mode == PalmClockLogMode::Disabled) {
-                return;
-            }
-            if (mode == PalmClockLogMode::Trace && !palmClockTraceFrameSelected(gameFrameIndex)) {
-                return;
-            }
-            if (!hand.isHoldingAtomic() && !g_rockConfig.rockDebugVerboseLogging) {
+            if (!g_rockConfig.rockDebugVerboseLogging) {
                 return;
             }
 
@@ -856,91 +750,46 @@ namespace rock
                 const RE::NiPoint3 targetPosition = targetOk ? palmTargetWorld.translate : RE::NiPoint3{};
                 const RE::NiPoint3 livePosition = liveOk ? livePalm.world.translate : RE::NiPoint3{};
 
-                if (mode == PalmClockLogMode::Trace) {
-                    ROCK_LOG_INFO(Hand,
-                        "PALM_CLOCK stage={} hand={} frame={} holding={} raw={} target={} live={} body={} proxyBody={} gameDt={:.6f} physicsPhase={} rawDt={:.6f} subDt={:.6f} driveDt={:.6f} substep={}/{} progress={:.3f} rawToTarget={:.3f}gu/{:.3f}deg rawToLive={:.3f}gu/{:.3f}deg targetToLive={:.3f}gu/{:.3f}deg rawPos=({:.2f},{:.2f},{:.2f}) targetPos=({:.2f},{:.2f},{:.2f}) livePos=({:.2f},{:.2f},{:.2f}) liveSource={} liveMotion={}",
-                        stage ? stage : "unknown",
-                        hand.handName(),
-                        gameFrameIndex,
-                        hand.isHoldingAtomic() ? "yes" : "no",
-                        rawState,
-                        targetState,
-                        liveState,
-                        hand.getCollisionBodyId().value,
-                        hand.getGrabAuthorityProxyBodyId().value,
-                        gameDeltaSeconds,
-                        physicsPhase,
-                        rawDt,
-                        subDt,
-                        driveDt,
-                        substepIndex,
-                        substepCount,
-                        progress,
-                        rawToTarget.position,
-                        rawToTarget.rotationDegrees,
-                        rawToLive.position,
-                        rawToLive.rotationDegrees,
-                        targetToLive.position,
-                        targetToLive.rotationDegrees,
-                        rawPosition.x,
-                        rawPosition.y,
-                        rawPosition.z,
-                        targetPosition.x,
-                        targetPosition.y,
-                        targetPosition.z,
-                        livePosition.x,
-                        livePosition.y,
-                        livePosition.z,
-                        palmSource,
-                        palmMotion);
-                } else {
-                    ROCK_LOG_SAMPLE_DEBUG(Hand,
-                        g_rockConfig.rockLogSampleMilliseconds,
-                        "PALM_CLOCK stage={} hand={} frame={} holding={} raw={} target={} live={} body={} proxyBody={} gameDt={:.6f} physicsPhase={} rawDt={:.6f} subDt={:.6f} driveDt={:.6f} substep={}/{} progress={:.3f} rawToTarget={:.3f}gu/{:.3f}deg rawToLive={:.3f}gu/{:.3f}deg targetToLive={:.3f}gu/{:.3f}deg rawPos=({:.2f},{:.2f},{:.2f}) targetPos=({:.2f},{:.2f},{:.2f}) livePos=({:.2f},{:.2f},{:.2f}) liveSource={} liveMotion={}",
-                        stage ? stage : "unknown",
-                        hand.handName(),
-                        gameFrameIndex,
-                        hand.isHoldingAtomic() ? "yes" : "no",
-                        rawState,
-                        targetState,
-                        liveState,
-                        hand.getCollisionBodyId().value,
-                        hand.getGrabAuthorityProxyBodyId().value,
-                        gameDeltaSeconds,
-                        physicsPhase,
-                        rawDt,
-                        subDt,
-                        driveDt,
-                        substepIndex,
-                        substepCount,
-                        progress,
-                        rawToTarget.position,
-                        rawToTarget.rotationDegrees,
-                        rawToLive.position,
-                        rawToLive.rotationDegrees,
-                        targetToLive.position,
-                        targetToLive.rotationDegrees,
-                        rawPosition.x,
-                        rawPosition.y,
-                        rawPosition.z,
-                        targetPosition.x,
-                        targetPosition.y,
-                        targetPosition.z,
-                        livePosition.x,
-                        livePosition.y,
-                        livePosition.z,
-                        palmSource,
-                        palmMotion);
-                }
+                ROCK_LOG_SAMPLE_DEBUG(Hand,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "PALM_CLOCK stage={} hand={} frame={} holding={} raw={} target={} live={} body={} proxyBody={} gameDt={:.6f} physicsPhase={} rawDt={:.6f} subDt={:.6f} driveDt={:.6f} substep={}/{} progress={:.3f} rawToTarget={:.3f}gu/{:.3f}deg rawToLive={:.3f}gu/{:.3f}deg targetToLive={:.3f}gu/{:.3f}deg rawPos=({:.2f},{:.2f},{:.2f}) targetPos=({:.2f},{:.2f},{:.2f}) livePos=({:.2f},{:.2f},{:.2f}) liveSource={} liveMotion={}",
+                    stage ? stage : "unknown",
+                    hand.handName(),
+                    gameFrameIndex,
+                    hand.isHoldingAtomic() ? "yes" : "no",
+                    rawState,
+                    targetState,
+                    liveState,
+                    hand.getCollisionBodyId().value,
+                    hand.getGrabAuthorityProxyBodyId().value,
+                    gameDeltaSeconds,
+                    physicsPhase,
+                    rawDt,
+                    subDt,
+                    driveDt,
+                    substepIndex,
+                    substepCount,
+                    progress,
+                    rawToTarget.position,
+                    rawToTarget.rotationDegrees,
+                    rawToLive.position,
+                    rawToLive.rotationDegrees,
+                    targetToLive.position,
+                    targetToLive.rotationDegrees,
+                    rawPosition.x,
+                    rawPosition.y,
+                    rawPosition.z,
+                    targetPosition.x,
+                    targetPosition.y,
+                    targetPosition.z,
+                    livePosition.x,
+                    livePosition.y,
+                    livePosition.z,
+                    palmSource,
+                    palmMotion);
             };
 
             emit();
-        }
-
-        inline float measureDirectionDeltaDegrees(const RE::NiPoint3& a, const RE::NiPoint3& b)
-        {
-            const float dot = std::clamp(a.x * b.x + a.y * b.y + a.z * b.z, -1.0f, 1.0f);
-            return std::acos(dot) * (180.0f / std::numbers::pi_v<float>);
         }
 
         inline bool startsWith(std::string_view value, std::string_view prefix)
@@ -1234,16 +1083,6 @@ namespace rock
             return RockProviderBodyContactTargetKind::Unknown;
         }
 
-        inline const char* weaponDiagnosticNodeName(const RE::NiAVObject* node)
-        {
-            if (!node) {
-                return "";
-            }
-
-            const char* name = node->name.c_str();
-            return name ? name : "";
-        }
-
         inline const char* pushAssistSkipReasonName(push_assist::PushAssistSkipReason reason)
         {
             switch (reason) {
@@ -1259,42 +1098,6 @@ namespace rock
                 return "invalid-impulse";
             }
             return "unknown";
-        }
-
-        inline WeaponInteractionDebugInfo makeWeaponInteractionDebugInfo(
-            const WeaponCollision& weaponCollision,
-            RE::NiNode* weaponNode,
-            const WeaponInteractionContact& contact)
-        {
-            WeaponInteractionDebugInfo info{};
-            info.weaponNodeName = weaponDiagnosticNodeName(weaponNode);
-
-            auto* equipData = f4vr::getEquippedWeaponItem();
-            auto* weaponForm = equipData ? equipData->item.object : nullptr;
-            if (weaponForm) {
-                info.weaponFormId = weaponForm->formID;
-                const auto fullName = RE::TESFullName::GetFullName(*weaponForm);
-                if (!fullName.empty()) {
-                    info.weaponName = fullName;
-                }
-            }
-
-            if (contact.valid) {
-                WeaponInteractionDebugInfo sourceInfo{};
-                if (weaponCollision.tryGetWeaponContactDebugInfo(contact.bodyId, sourceInfo)) {
-                    info.sourceName = sourceInfo.sourceName;
-                    info.interactionRootName = sourceInfo.interactionRootName;
-                    info.sourceRootName = sourceInfo.sourceRootName;
-                }
-                if (info.interactionRootName.empty()) {
-                    info.interactionRootName = weaponDiagnosticNodeName(contact.interactionRoot);
-                }
-                if (info.sourceRootName.empty()) {
-                    info.sourceRootName = weaponDiagnosticNodeName(contact.sourceRoot);
-                }
-            }
-
-            return info;
         }
 
         inline RE::EquippedWeaponData* getValidatedEquippedWeaponData()

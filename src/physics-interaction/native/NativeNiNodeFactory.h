@@ -12,8 +12,9 @@ namespace rock::native_scene
      * constructed by the engine, so the virtual engine destructor releases
      * them through the same allocator domain.
      *
-     * Fails closed when the executable identity, native entry signatures, or
-     * allocation cannot be validated. Callers must not retain borrowed scene
+     * Fails closed when the executable identity, constructor signature, or
+     * allocation cannot be validated. Uses the live engine heap, including
+     * installed allocator replacements. Callers must not retain borrowed scene
      * pointers beyond the lifetime protected by the returned NiPointer.
      */
     [[nodiscard]] RE::NiPointer<RE::NiNode> createEngineNiNode(std::uint16_t childCapacity) noexcept;

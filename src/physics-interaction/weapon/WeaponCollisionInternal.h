@@ -2,7 +2,7 @@
 
 #include "physics-interaction/weapon/WeaponCollision.h"
 
-#include "physics-interaction/actor/ActorEquipmentGrab.h"
+#include "physics-interaction/native/SceneRelation.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/HavokRefCount.h"
@@ -100,11 +100,7 @@ namespace rock
         inline constexpr float WEAPON_COLLISION_POINT_DEDUP_GRID_HAVOK = 0.002f;
         inline constexpr std::size_t WEAPON_COLLISION_SUPPORT_FIT_TARGET_POINTS = 96;
         inline constexpr float WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS = 0.5f;
-        inline constexpr std::size_t MAX_GENERATED_CHILD_CONVEXES_PER_SOURCE = 16;
         inline constexpr std::size_t GENERATED_WEAPON_BODY_CREATION_BATCH = 8;
-        inline constexpr float GENERATED_RECAPTURE_WEAPON_CENTER_DRIFT_GAME = 0.25f;
-        inline constexpr float GENERATED_RECAPTURE_SOURCE_CENTER_DRIFT_GAME = 0.10f;
-        inline constexpr std::size_t MAX_GENERATED_RECAPTURE_DETAIL_ROWS = 8;
         inline constexpr std::size_t MAX_COLLISION_SOUND_SHAPE_KEYS = 4096;
         inline constexpr std::size_t COLLISION_SOUND_SHAPE_KEY_BATCH = 64;
         inline constexpr std::size_t MAX_COLLISION_SOUND_HISTOGRAM_ROWS = 8;
@@ -179,66 +175,6 @@ namespace rock
             std::size_t supportFitValidationDirections{ 0 };
         };
 
-        struct WeaponAnimNodeMatch
-        {
-            RE::NiAVObject* node{ nullptr };
-            std::string path;
-            std::uint32_t depth{ 0 };
-        };
-
-        struct WeaponAnimNodeSubtreeStats
-        {
-            std::uint32_t nodeCount{ 0 };
-            std::uint32_t niNodeCount{ 0 };
-            std::uint32_t triShapeCount{ 0 };
-            std::uint32_t visibleTriShapeCount{ 0 };
-            std::uint32_t hiddenFlagCount{ 0 };
-            std::uint32_t appCulledCount{ 0 };
-            std::uint32_t maxDepth{ 0 };
-        };
-
-        struct WeaponAnimNodeDumpRoot
-        {
-            const char* label{ "" };
-            RE::NiAVObject* root{ nullptr };
-        };
-
-        struct WeaponAnimFlattenedRoot
-        {
-            const char* label{ "" };
-            f4vr::BSFlattenedBoneTree* tree{ nullptr };
-        };
-
-        struct WeaponAnimFlattenedBoneMatch
-        {
-            int index{ -1 };
-            int parentIndex{ -1 };
-            short childPosition{ -1 };
-            RE::NiNode* refNode{ nullptr };
-            std::string name;
-        };
-
-        inline constexpr std::array<const char*, 11> WEAPON_ANIM_NODE_DUMP_TARGETS{
-            "Weapon",
-            "WeaponLeft",
-            "ProjectileNode",
-            "AnimObjectR1",
-            "AnimObjectR2",
-            "AnimObjectR3",
-            "AnimObjectL1",
-            "AnimObjectL2",
-            "AnimObjectL3",
-            "AnimObjectA",
-            "AnimObjectB",
-        };
-
-        inline constexpr int WEAPON_ANIM_NODE_DUMP_MAX_DEPTH = 32;
-        inline constexpr std::size_t WEAPON_ANIM_NODE_DUMP_MAX_MATCHES_PER_NAME = 32;
-        inline constexpr std::size_t WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES = 4096;
-        inline constexpr std::size_t WEAPON_ANIM_NODE_DUMP_MAX_CHILD_NAMES = 16;
-        inline constexpr std::size_t WEAPON_ANIM_NODE_DUMP_MAX_SUBTREE_NODES = 4096;
-        inline constexpr int WEAPON_ANIM_NODE_DUMP_MAX_FLATTENED_TRANSFORMS = 768;
-
         bool weaponVisualNodeVisible(const RE::NiAVObject* node);
         const char* safeNodeName(const RE::NiAVObject* node);
 
@@ -309,368 +245,6 @@ namespace rock
             }
         }
 
-        inline bool weaponAnimNodeNameMatches(const RE::NiAVObject* node, const char* targetName)
-        {
-            if (!node || !targetName) {
-                return false;
-            }
-            return _stricmp(targetName, node->name.c_str()) == 0;
-        }
-
-        inline void collectWeaponAnimNodeMatchesRecursive(
-            RE::NiAVObject* node,
-            const char* targetName,
-            std::string path,
-            std::uint32_t depth,
-            std::size_t& visited,
-            std::vector<WeaponAnimNodeMatch>& outMatches)
-        {
-            if (!node || visited >= WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES || depth > WEAPON_ANIM_NODE_DUMP_MAX_DEPTH ||
-                outMatches.size() >= WEAPON_ANIM_NODE_DUMP_MAX_MATCHES_PER_NAME) {
-                return;
-            }
-
-            ++visited;
-            const char* nodeName = node->name.c_str();
-            if (!nodeName || nodeName[0] == '\0') {
-                nodeName = "(unnamed)";
-            }
-            if (path.empty()) {
-                path = nodeName;
-            } else {
-                path += "/";
-                path += nodeName;
-            }
-
-            if (weaponAnimNodeNameMatches(node, targetName)) {
-                outMatches.push_back(WeaponAnimNodeMatch{
-                    .node = node,
-                    .path = path,
-                    .depth = depth,
-                });
-            }
-
-            auto* niNode = node->IsNode();
-            if (!niNode) {
-                return;
-            }
-
-            const auto& children = niNode->children;
-            for (auto i = decltype(children.size()){ 0 }; i < children.capacity(); ++i) {
-                if (auto* child = children[i].get()) {
-                    collectWeaponAnimNodeMatchesRecursive(child, targetName, path, depth + 1, visited, outMatches);
-                }
-            }
-        }
-
-        inline std::vector<WeaponAnimNodeMatch> collectWeaponAnimNodeMatches(RE::NiAVObject* root, const char* targetName)
-        {
-            std::vector<WeaponAnimNodeMatch> matches;
-            std::size_t visited = 0;
-            collectWeaponAnimNodeMatchesRecursive(root, targetName, {}, 0, visited, matches);
-            return matches;
-        }
-
-        inline void accumulateWeaponAnimNodeSubtreeStats(
-            RE::NiAVObject* node,
-            WeaponAnimNodeSubtreeStats& stats,
-            std::uint32_t depth,
-            std::size_t& visited)
-        {
-            if (!node || visited >= WEAPON_ANIM_NODE_DUMP_MAX_SUBTREE_NODES) {
-                return;
-            }
-
-            ++visited;
-            ++stats.nodeCount;
-            stats.maxDepth = (std::max)(stats.maxDepth, depth);
-            if ((node->flags.flags & 1) != 0) {
-                ++stats.hiddenFlagCount;
-            }
-            if (node->GetAppCulled()) {
-                ++stats.appCulledCount;
-            }
-
-            if (node->IsTriShape()) {
-                ++stats.triShapeCount;
-                if (weaponVisualNodeVisible(node)) {
-                    ++stats.visibleTriShapeCount;
-                }
-                return;
-            }
-
-            auto* niNode = node->IsNode();
-            if (!niNode) {
-                return;
-            }
-
-            ++stats.niNodeCount;
-            const auto& children = niNode->children;
-            for (auto i = decltype(children.size()){ 0 }; i < children.capacity(); ++i) {
-                if (auto* child = children[i].get()) {
-                    accumulateWeaponAnimNodeSubtreeStats(child, stats, depth + 1, visited);
-                }
-            }
-        }
-
-        inline WeaponAnimNodeSubtreeStats summarizeWeaponAnimNodeSubtree(RE::NiAVObject* node)
-        {
-            WeaponAnimNodeSubtreeStats stats{};
-            std::size_t visited = 0;
-            accumulateWeaponAnimNodeSubtreeStats(node, stats, 0, visited);
-            return stats;
-        }
-
-        inline std::string weaponAnimNodeImmediateChildNames(RE::NiAVObject* node)
-        {
-            auto* niNode = node ? node->IsNode() : nullptr;
-            if (!niNode) {
-                return "";
-            }
-
-            std::string result;
-            const auto& children = niNode->children;
-            std::size_t appended = 0;
-            for (auto i = decltype(children.size()){ 0 }; i < children.capacity() && appended < WEAPON_ANIM_NODE_DUMP_MAX_CHILD_NAMES; ++i) {
-                const auto* child = children[i].get();
-                if (!child) {
-                    continue;
-                }
-                if (!result.empty()) {
-                    result += "|";
-                }
-                const char* childName = child->name.c_str();
-                result += childName && childName[0] != '\0' ? childName : "(unnamed)";
-                ++appended;
-            }
-            if (children.size() > appended) {
-                result += "|+";
-                result += std::to_string(children.size() - appended);
-                result += " more";
-            }
-            return result;
-        }
-
-        inline bool weaponAnimFlattenedTreeValid(const f4vr::BSFlattenedBoneTree* tree)
-        {
-            return tree && tree->transforms && tree->numTransforms > 0 && tree->numTransforms <= WEAPON_ANIM_NODE_DUMP_MAX_FLATTENED_TRANSFORMS;
-        }
-
-        inline const char* weaponAnimFlattenedTransformName(const f4vr::BSFlattenedBoneTree::BoneTransforms& transform)
-        {
-            const char* name = transform.name.c_str();
-            return name && name[0] != '\0' ? name : "(unnamed)";
-        }
-
-        inline bool weaponAnimFlattenedTransformNameMatches(const f4vr::BSFlattenedBoneTree::BoneTransforms& transform, const char* targetName)
-        {
-            if (!targetName) {
-                return false;
-            }
-
-            const char* name = transform.name.c_str();
-            return name && _stricmp(targetName, name) == 0;
-        }
-
-        inline std::vector<WeaponAnimFlattenedBoneMatch> collectWeaponAnimFlattenedBoneMatches(
-            f4vr::BSFlattenedBoneTree* tree,
-            const char* targetName)
-        {
-            std::vector<WeaponAnimFlattenedBoneMatch> matches;
-            if (!weaponAnimFlattenedTreeValid(tree)) {
-                return matches;
-            }
-
-            for (int index = 0; index < tree->numTransforms &&
-                                matches.size() < WEAPON_ANIM_NODE_DUMP_MAX_MATCHES_PER_NAME;
-                 ++index) {
-                const auto& transform = tree->transforms[index];
-                if (!weaponAnimFlattenedTransformNameMatches(transform, targetName)) {
-                    continue;
-                }
-
-                matches.push_back(WeaponAnimFlattenedBoneMatch{
-                    .index = index,
-                    .parentIndex = transform.parPos,
-                    .childPosition = transform.childPos,
-                    .refNode = transform.refNode,
-                    .name = weaponAnimFlattenedTransformName(transform),
-                });
-            }
-
-            return matches;
-        }
-
-        inline const char* weaponAnimFlattenedParentName(const f4vr::BSFlattenedBoneTree* tree, int parentIndex)
-        {
-            if (!weaponAnimFlattenedTreeValid(tree) || parentIndex < 0 || parentIndex >= tree->numTransforms) {
-                return "(none)";
-            }
-
-            return weaponAnimFlattenedTransformName(tree->transforms[parentIndex]);
-        }
-
-        inline void logWeaponAnimNodeMapRoot(const WeaponAnimNodeDumpRoot& dumpRoot)
-        {
-            auto* root = dumpRoot.root;
-            auto* niNode = root ? root->IsNode() : nullptr;
-            const auto childCount = niNode ? niNode->children.size() : 0;
-            const auto childNames = weaponAnimNodeImmediateChildNames(root);
-            const auto rootStats = root ? summarizeWeaponAnimNodeSubtree(root) : WeaponAnimNodeSubtreeStats{};
-
-            ROCK_LOG_INFO(Weapon,
-                "WeaponAnimMap root='{}' kind=node addr=0x{:X} name='{}' children={} childNames='{}' flags=0x{:X} appCulled={} visible={} subtreeNodes={} niNodes={} triShapes={} visibleTriShapes={} hiddenFlags={} appCulledNodes={} subtreeMaxDepth={}",
-                dumpRoot.label,
-                reinterpret_cast<std::uintptr_t>(root),
-                safeNodeName(root),
-                static_cast<std::size_t>(childCount),
-                childNames,
-                static_cast<std::uint32_t>(root ? root->flags.flags : 0),
-                root && root->GetAppCulled() ? "yes" : "no",
-                root && weaponVisualNodeVisible(root) ? "yes" : "no",
-                rootStats.nodeCount,
-                rootStats.niNodeCount,
-                rootStats.triShapeCount,
-                rootStats.visibleTriShapeCount,
-                rootStats.hiddenFlagCount,
-                rootStats.appCulledCount,
-                rootStats.maxDepth);
-
-            for (const char* targetName : WEAPON_ANIM_NODE_DUMP_TARGETS) {
-                auto matches = collectWeaponAnimNodeMatches(root, targetName);
-                ROCK_LOG_INFO(Weapon,
-                    "WeaponAnimMap root='{}' kind=node target='{}' matches={}",
-                    dumpRoot.label,
-                    targetName,
-                    matches.size());
-
-                for (std::size_t matchIndex = 0; matchIndex < matches.size(); ++matchIndex) {
-                    auto* node = matches[matchIndex].node;
-                    if (!node) {
-                        continue;
-                    }
-
-                    auto* matchNode = node->IsNode();
-                    const auto matchChildCount = matchNode ? matchNode->children.size() : 0;
-                    const auto stats = summarizeWeaponAnimNodeSubtree(node);
-                    const auto matchChildNames = weaponAnimNodeImmediateChildNames(node);
-                    auto* parent = node->parent;
-
-                    ROCK_LOG_INFO(Weapon,
-                        "WeaponAnimMap node root='{}' target='{}' match={} path='{}' depth={} addr=0x{:X} name='{}' parent='{}'/0x{:X} children={} childNames='{}' flags=0x{:X} appCulled={} visible={} subtreeNodes={} niNodes={} triShapes={} visibleTriShapes={} hiddenFlags={} appCulledNodes={} subtreeMaxDepth={}",
-                        dumpRoot.label,
-                        targetName,
-                        matchIndex,
-                        matches[matchIndex].path,
-                        matches[matchIndex].depth,
-                        reinterpret_cast<std::uintptr_t>(node),
-                        safeNodeName(node),
-                        safeNodeName(parent),
-                        reinterpret_cast<std::uintptr_t>(parent),
-                        static_cast<std::size_t>(matchChildCount),
-                        matchChildNames,
-                        static_cast<std::uint32_t>(node->flags.flags),
-                        node->GetAppCulled() ? "yes" : "no",
-                        weaponVisualNodeVisible(node) ? "yes" : "no",
-                        stats.nodeCount,
-                        stats.niNodeCount,
-                        stats.triShapeCount,
-                        stats.visibleTriShapeCount,
-                        stats.hiddenFlagCount,
-                        stats.appCulledCount,
-                        stats.maxDepth);
-
-                    ROCK_LOG_INFO(Weapon,
-                        "WeaponAnimMap transform root='{}' target='{}' match={} localT=({:.3f},{:.3f},{:.3f}) localScale={:.3f} worldT=({:.3f},{:.3f},{:.3f}) worldScale={:.3f}",
-                        dumpRoot.label,
-                        targetName,
-                        matchIndex,
-                        node->local.translate.x,
-                        node->local.translate.y,
-                        node->local.translate.z,
-                        node->local.scale,
-                        node->world.translate.x,
-                        node->world.translate.y,
-                        node->world.translate.z,
-                        node->world.scale);
-                }
-            }
-        }
-
-        inline void logWeaponAnimFlattenedMapRoot(const WeaponAnimFlattenedRoot& flatRoot)
-        {
-            auto* tree = flatRoot.tree;
-            auto* treeNode = static_cast<RE::NiAVObject*>(tree);
-            auto* niNode = treeNode ? treeNode->IsNode() : nullptr;
-            const bool valid = weaponAnimFlattenedTreeValid(tree);
-            const auto childCount = niNode ? niNode->children.size() : 0;
-            const auto childNames = weaponAnimNodeImmediateChildNames(treeNode);
-
-            ROCK_LOG_INFO(Weapon,
-                "WeaponAnimMap root='{}' kind=flattened tree=0x{:X} valid={} name='{}' numTransforms={} transforms=0x{:X} bonePositions=0x{:X} children={} childNames='{}'",
-                flatRoot.label,
-                reinterpret_cast<std::uintptr_t>(tree),
-                valid ? "yes" : "no",
-                safeNodeName(treeNode),
-                tree ? tree->numTransforms : 0,
-                reinterpret_cast<std::uintptr_t>(tree ? tree->transforms : nullptr),
-                reinterpret_cast<std::uintptr_t>(tree ? tree->bonePositions : nullptr),
-                static_cast<std::size_t>(childCount),
-                childNames);
-
-            if (!valid) {
-                return;
-            }
-
-            for (const char* targetName : WEAPON_ANIM_NODE_DUMP_TARGETS) {
-                auto matches = collectWeaponAnimFlattenedBoneMatches(tree, targetName);
-                ROCK_LOG_INFO(Weapon,
-                    "WeaponAnimMap root='{}' kind=flattened target='{}' matches={}",
-                    flatRoot.label,
-                    targetName,
-                    matches.size());
-
-                for (std::size_t matchIndex = 0; matchIndex < matches.size(); ++matchIndex) {
-                    const auto& match = matches[matchIndex];
-                    if (match.index < 0 || match.index >= tree->numTransforms) {
-                        continue;
-                    }
-
-                    const auto& transform = tree->transforms[match.index];
-                    auto* refNode = match.refNode;
-                    auto* refParent = refNode ? refNode->parent : nullptr;
-
-                    ROCK_LOG_INFO(Weapon,
-                        "WeaponAnimMap flatBone root='{}' target='{}' match={} index={} name='{}' parentIndex={} parentName='{}' childPos={} refNode='{}'/0x{:X} refParent='{}'/0x{:X} refFlags=0x{:X} refAppCulled={} refVisible={} localT=({:.3f},{:.3f},{:.3f}) localScale={:.3f} worldT=({:.3f},{:.3f},{:.3f}) worldScale={:.3f} unk8c=0x{:X} unk98=0x{:X}",
-                        flatRoot.label,
-                        targetName,
-                        matchIndex,
-                        match.index,
-                        match.name,
-                        match.parentIndex,
-                        weaponAnimFlattenedParentName(tree, match.parentIndex),
-                        match.childPosition,
-                        safeNodeName(refNode),
-                        reinterpret_cast<std::uintptr_t>(refNode),
-                        safeNodeName(refParent),
-                        reinterpret_cast<std::uintptr_t>(refParent),
-                        static_cast<std::uint32_t>(refNode ? refNode->flags.flags : 0),
-                        refNode && refNode->GetAppCulled() ? "yes" : "no",
-                        refNode && weaponVisualNodeVisible(refNode) ? "yes" : "no",
-                        transform.local.translate.x,
-                        transform.local.translate.y,
-                        transform.local.translate.z,
-                        transform.local.scale,
-                        transform.world.translate.x,
-                        transform.world.translate.y,
-                        transform.world.translate.z,
-                        transform.world.scale,
-                        transform.unk8c,
-                        transform.unk98);
-                }
-            }
-        }
-
         inline std::string generatedWeaponSemanticMaskNames(std::uint32_t mask)
         {
             std::string result;
@@ -692,21 +266,6 @@ namespace rock
             return matrix.entry[0][0] * (matrix.entry[1][1] * matrix.entry[2][2] - matrix.entry[1][2] * matrix.entry[2][1]) -
                 matrix.entry[0][1] * (matrix.entry[1][0] * matrix.entry[2][2] - matrix.entry[1][2] * matrix.entry[2][0]) +
                 matrix.entry[0][2] * (matrix.entry[1][0] * matrix.entry[2][1] - matrix.entry[1][1] * matrix.entry[2][0]);
-        }
-
-        inline float bodyBasisDeterminant(const float* bodyFloats)
-        {
-            const float x0 = bodyFloats[0];
-            const float x1 = bodyFloats[1];
-            const float x2 = bodyFloats[2];
-            const float y0 = bodyFloats[4];
-            const float y1 = bodyFloats[5];
-            const float y2 = bodyFloats[6];
-            const float z0 = bodyFloats[8];
-            const float z1 = bodyFloats[9];
-            const float z2 = bodyFloats[10];
-
-            return x0 * (y1 * z2 - y2 * z1) - y0 * (x1 * z2 - x2 * z1) + z0 * (x1 * y2 - x2 * y1);
         }
 
         inline RE::NiTransform makeIdentityTransform()
@@ -739,27 +298,6 @@ namespace rock
             weapon_visual_composition_policy::mixString(key, value);
         }
 
-        inline std::vector<RE::NiPoint3> dedupePointCloud(const std::vector<RE::NiPoint3>& points, float grid)
-        {
-            std::vector<RE::NiPoint3> unique;
-            unique.reserve(points.size());
-            std::unordered_set<QuantizedPointKey, QuantizedPointKeyHash> seen;
-            seen.reserve(points.size());
-
-            for (const auto& point : points) {
-                if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
-                    continue;
-                }
-
-                const auto key = quantizePoint(point, grid);
-                if (seen.insert(key).second) {
-                    unique.push_back(point);
-                }
-            }
-
-            return unique;
-        }
-
         inline float pointCloudDiagonalSquared(const std::vector<RE::NiPoint3>& points)
         {
             if (points.empty()) {
@@ -785,70 +323,6 @@ namespace rock
                                              pointCloudDiagonalSquared(points), sourceScale, MIN_HULL_DIAGONAL_GAME_UNITS);
         }
 
-        inline bool compressGeneratedChildClustersForBudget(
-            std::vector<std::vector<RE::NiPoint3>>& clusters,
-            const std::vector<RE::NiPoint3>& sourcePoints,
-            std::string_view sourceName,
-            int depth)
-        {
-            /*
-             * Dense modded meshes should not explode into unbounded compound
-             * children. The source itself is still kept and generated; only its
-             * internal child representation is reduced geometrically when it
-             * exceeds the per-source budget.
-             */
-            if (clusters.size() <= MAX_GENERATED_CHILD_CONVEXES_PER_SOURCE || !pointCloudCanBuildHull(sourcePoints)) {
-                return false;
-            }
-
-            constexpr auto targetPoints = WEAPON_COLLISION_SUPPORT_FIT_TARGET_POINTS;
-            const auto fit = weapon_collision_geometry_math::fitConvexSupportPointCloud(
-                sourcePoints,
-                targetPoints,
-                MAX_CONVEX_HULL_POINTS,
-                WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS);
-            if (fit.accepted && pointCloudCanBuildHull(fit.points)) {
-                const std::size_t previousCount = clusters.size();
-                clusters.clear();
-                clusters.push_back(fit.points);
-                ROCK_LOG_DEBUG(Weapon,
-                    "{}generated source '{}' compressed dense child hulls with support fit children={}->{} rawPoints={} fittedPoints={} maxError={:.3f}",
-                    std::string(depth * 2, ' '),
-                    sourceName,
-                    previousCount,
-                    clusters.size(),
-                    fit.inputPointCount,
-                    fit.selectedPointCount,
-                    fit.maxSupportError);
-                return true;
-            }
-
-            auto fallback = weapon_collision_geometry_math::limitPointCloud(sourcePoints, MAX_CONVEX_HULL_POINTS);
-            if (pointCloudCanBuildHull(fallback)) {
-                const std::size_t previousCount = clusters.size();
-                clusters.clear();
-                clusters.push_back(std::move(fallback));
-                ROCK_LOG_WARN(Weapon,
-                    "{}generated source '{}' exceeded child hull budget and used limited single-hull fallback children={}->{} rawPoints={} targetPoints={} maxError={:.3f}",
-                    std::string(depth * 2, ' '),
-                    sourceName,
-                    previousCount,
-                    clusters.size(),
-                    sourcePoints.size(),
-                    targetPoints,
-                    fit.maxSupportError);
-                return true;
-            }
-
-            ROCK_LOG_WARN(Weapon,
-                "{}generated source '{}' exceeded child hull budget but could not build compressed fallback children={} rawPoints={}",
-                std::string(depth * 2, ' '),
-                sourceName,
-                clusters.size(),
-                sourcePoints.size());
-            return false;
-        }
-
         inline PointCloudBounds pointCloudBounds(const std::vector<RE::NiPoint3>& points)
         {
             PointCloudBounds bounds{};
@@ -868,14 +342,6 @@ namespace rock
         inline std::array<float, 3> pointToArray(const RE::NiPoint3& point)
         {
             return { point.x, point.y, point.z };
-        }
-
-        inline void mixFormPointer(std::uint64_t& key, const RE::TESForm* form)
-        {
-            weapon_visual_composition_policy::mixValue(key, reinterpret_cast<std::uintptr_t>(form));
-            if (form) {
-                weapon_visual_composition_policy::mixValue(key, form->formID);
-            }
         }
 
         inline void mixFormStableContent(std::uint64_t& key, const RE::TESForm* form)
@@ -2150,14 +1616,6 @@ namespace rock
                 }
             }
             co_return;
-        }
-
-        inline GeneratedPointCloudClusterSet splitGeneratedWeaponPointCloudForCollision(const std::vector<RE::NiPoint3>& localPoints)
-        {
-            GeneratedPointCloudClusterSet result;
-            auto task = splitGeneratedWeaponPointCloudForCollisionDeferred(localPoints, result);
-            while (task.step()) {}
-            return result;
         }
 
         inline GeneratedHullCoverageInfo classifyGeneratedHullSemantic(const WeaponPartClassification& semantic)

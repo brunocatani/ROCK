@@ -9,6 +9,50 @@
 #include "RE/Havok/hknpBody.h"
 
 namespace rock {
+api::Status PhysicsInteraction::getHeldObjectPose(api::OwnerToken owner,api::Hand which,api::grab::v1_3::HeldObjectPose& out) const
+{
+    out={};
+    if(which!=api::Hand::Left&&which!=api::Hand::Right)return api::Status::InvalidArgument;
+    auto* world=_lifecycle.cachedHknpWorld;
+    if(!isProviderReady()||!world||!physicsWritesAllowedForWorld(world))return api::Status::NotReady;
+    provider::RockProviderHandInteractionStateV1 observed;
+    const auto status=provider::runtime::apiGetHandInteractionStateV1(owner,static_cast<provider::RockProviderHand>(which),&observed);
+    if(status!=provider::RockProviderResultV1::Ok)return static_cast<api::Status>(status);
+    const auto& hand=which==api::Hand::Left?_leftHand:_rightHand;
+    if(!hand.isHolding()||!hand.getHeldRef()||hand.getHeldRef()->GetFormID()!=observed.targetFormId)return api::Status::HandUnavailable;
+    RE::NiTransform root;
+    {havok_world_lock::ScopedWorldReadLock lock(world);if(!hand.readHeldObjectRoot(world,root))return api::Status::TargetUnavailable;}
+    out.hand=which;out.referenceFormId=observed.targetFormId;out.bodyId=hand.getSavedObjectState().bodyId.value;
+    out.sample=provider::runtime::sample();out.gripSequence=observed.gripSequence;
+    for(int r=0;r<3;++r)for(int c=0;c<3;++c)out.rootWorld.rotate[r*3+c]=root.rotate.entry[r][c];
+    out.rootWorld.translate[0]=root.translate.x;out.rootWorld.translate[1]=root.translate.y;out.rootWorld.translate[2]=root.translate.z;out.rootWorld.scale=root.scale;
+    return api::Status::Ok;
+}
+api::Status PhysicsInteraction::setHeldObjectTarget(api::OwnerToken owner,const api::grab::v1_3::HeldObjectTarget& request)
+{
+    const auto sample=provider::runtime::sample();
+    if(request.hand!=api::Hand::Left&&request.hand!=api::Hand::Right)return api::Status::InvalidArgument;
+    if(!isProviderReady()||!physicsWritesAllowedForWorld(_lifecycle.cachedHknpWorld))return api::Status::NotReady;
+    if(request.sample.frameIndex>sample.frameIndex||sample.frameIndex-request.sample.frameIndex>1||
+        request.sample.worldGeneration!=sample.worldGeneration||request.sample.skeletonGeneration!=sample.skeletonGeneration||
+        request.sample.providerGeneration!=sample.providerGeneration||request.sample.collisionGeneration!=sample.collisionGeneration)return api::Status::GenerationMismatch;
+    provider::RockProviderHandInteractionStateV1 observed;
+    const auto result=provider::runtime::apiGetHandInteractionStateV1(owner,static_cast<provider::RockProviderHand>(request.hand),&observed);
+    if(result!=provider::RockProviderResultV1::Ok)return static_cast<api::Status>(result);
+    if(observed.targetFormId!=request.referenceFormId||!(observed.flags&(1u<<3)))return api::Status::HandUnavailable;
+    if(!request.gripSequence||observed.gripSequence!=request.gripSequence)return api::Status::GenerationMismatch;
+    const auto weapon=_weaponCollision.getWeaponBodySnapshotAtomic();
+    if(request.reserved||bool(request.connectedWeaponFormId)!=bool(request.connectedWeaponGeneration))return api::Status::InvalidArgument;
+    if(request.connectedWeaponFormId&&(request.connectedWeaponFormId!=currentEquippedWeaponFormId()||
+        request.connectedWeaponGeneration!=weapon.generationKey||weapon.count==0||weapon.count>weapon.bodyIds.size()))return api::Status::TargetUnavailable;
+    return (request.hand==api::Hand::Left?_leftHand:_rightHand).setHeldObjectTarget(owner,request,
+        std::span(weapon.bodyIds).first(request.connectedWeaponFormId?weapon.count:0));
+}
+api::Status PhysicsInteraction::clearHeldObjectTarget(api::OwnerToken owner,api::Hand hand)
+{
+    if(hand!=api::Hand::Left&&hand!=api::Hand::Right)return api::Status::InvalidArgument;
+    return (hand==api::Hand::Left?_leftHand:_rightHand).clearHeldObjectTarget(owner);
+}
 api::Status PhysicsInteraction::queryHeldPlacementState(api::grab::v1_1::HeldPlacementState& out) const
 {
     out={};
@@ -292,7 +336,10 @@ void PhysicsInteraction::commitHeldPlacement(const PhysicsFrameContext& frame)
         grab_input_intent_policy::reset(_grabInput.intentStates[left ? 1u : 0u]);
         publishHandInputOwnership(hand,left);
     }
-    const bool anchored=allReleased && native_object_placement::anchor(ref,frame.hknpWorld,pose,
+    const bool collisionRestored=allReleased && _looseWeaponCollision.releaseReference(ref,
+        frame.hknpWorld,_generatedBodyStepDrive.callbackGate()) && _objectRestCollision.releaseReference(ref,
+        frame.hknpWorld,_generatedBodyStepDrive.callbackGate());
+    const bool anchored=collisionRestored && native_object_placement::anchor(ref,frame.hknpWorld,pose,
         std::span<const std::uint32_t>{bodies.data(),count});
     _placementCandidate=0;
     _placementLastResult=anchored ? api::grab::v1_1::PlacementResult::Anchored : api::grab::v1_1::PlacementResult::Rejected;

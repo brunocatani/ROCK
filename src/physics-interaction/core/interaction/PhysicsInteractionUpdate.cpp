@@ -1,10 +1,10 @@
 #include "api/EventStreams.h"
+#include "api/AuthoredInteractionService.h"
 #include "api/ProviderRuntimeServices.h"
+#include "api/StorageService.h"
+#include "api/WeaponPartCollisionService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
-#include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
-#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
-#include "physics-interaction/telemetry/DynamicColliderTrace.h"
-#include "physics-interaction/telemetry/HeldRenderTrace.h"
+#include "physics-interaction/native/NativePlayerCollisionFilter.h"
 
 // Per-frame orchestration: update(), interaction frame finalization, hand transform sampling, physics substep callbacks, held-mass slowdown, and the frame/debug-overlay implementation includes.
 
@@ -35,13 +35,6 @@ namespace rock
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::HandFrameResolve);
         const bool resolved = _handBoneCache.resolve();
-        if (resolved) {
-            _diagnostics.handCacheResolveLogCounter = 0;
-        } else if (g_rockConfig.rockDebugHandTransformParity) {
-            if (++_diagnostics.handCacheResolveLogCounter == 1 || _diagnostics.handCacheResolveLogCounter % 90 == 0) {
-                ROCK_LOG_WARN(Hand, "HandBoneCache unresolved; raw parity sampling skipped this frame");
-            }
-        }
 
         /*
          * Isolate the controller hand once per frame, before any consumer
@@ -89,9 +82,6 @@ namespace rock
         sampleHand(false, samples.right);
         sampleHand(true, samples.left);
         frik_hand_world_authority::captureRenderedFrame(samples);
-        if (g_rockConfig.rockDebugGrabFrameLogging) {
-            _dynamicWeaponCollision.tracePresentedWeapon(resolveEquippedWeaponInteractionNode(), runtime_state::currentFrame().frameIndex);
-        }
     }
 
     void PhysicsInteraction::discardUnfinishedFramePose()
@@ -159,87 +149,6 @@ namespace rock
         _generatedBodyStepDrive.registerForNextStep(bhk, world);
     }
 
-    void PhysicsInteraction::traceHeldPresentationPhase(const char* phase)
-    {
-        const auto& runtime = runtime_state::currentFrame();
-        // Before the next ROCK tick, the owner still contains the engine's
-        // late scene write for the preceding publication. Pair it with that
-        // frame's after-rock / after-world-final samples.
-        const bool beforeRock = std::string_view(phase) == "before-rock";
-        held_render_trace::recordPhase(beforeRock ? held_render_trace::Phase::BeforeRock :
-            std::string_view(phase) == "after-rock" ? held_render_trace::Phase::AfterRock : held_render_trace::Phase::AfterWorldFinal,
-            runtime.frameIndex);
-        if (g_rockConfig.rockDebugWeaponOmodDumpEnabled && runtime.localSkeletonReady &&
-            _lifecycle.initialized.load(std::memory_order_acquire)) {
-            _equipped.transition.traceVisualPresentation(phase);
-            for (const auto& visual : _drop.visuals) visual.tracePresentation(phase);
-            if (std::string_view(phase) == "after-world-final") {
-                const auto* equippedRoot = resolveEquippedWeaponInteractionNode();
-                for (const auto* hand : { &_rightHand, &_leftHand }) {
-                    const auto* ref = hand->isHolding() ? hand->getHeldRef() : nullptr;
-                    vanilla_weapon_alignment_telemetry::captureTransferFrame(hand->isLeft(),
-                        ref ? ref->Get3D() : nullptr, equippedRoot);
-                }
-            }
-        }
-        const auto presentationFrame = runtime.frameIndex > 0 ? runtime.frameIndex - (beforeRock ? 1u : 0u) : 0;
-        if (!dynamic_collider_trace::presentationEnabled() ||
-            !held_render_trace::sampleFrame(presentationFrame) ||
-            !_lifecycle.initialized.load(std::memory_order_acquire) || !runtime.localSkeletonReady) return;
-        auto* bhk = getPlayerBhkWorld();
-        auto* world = bhk ? getHknpWorld(bhk) : nullptr;
-        if (!world || world != _lifecycle.cachedHknpWorld || bhk != _lifecycle.cachedBhkWorld) return;
-
-        // Borrow scene nodes only in this game-thread callback. The logs carry
-        // values from the same phase, including the actual physics target age.
-        for (Hand* hand : { &_rightHand, &_leftHand }) {
-            if (!hand->isHolding()) continue;
-            const bool left = hand->isLeft();
-            GrabPresentationNodeDebugSnapshot nodes{};
-            GrabAuthorityProxyClockDebugSnapshot clock{};
-            GrabOverlayPointProbeSample applied{};
-            const bool nodesValid = hand->getGrabPresentationNodeDebugSnapshot(nodes);
-            const bool clockValid = hand->tryGetGrabAuthorityProxyClockDebugSnapshot(world, clock);
-            const bool appliedValid = hand->tryGetGrabOverlayPointProbeSample(world, applied);
-            RE::NiTransform raw{}, claim{}, presented{}, solved{};
-            const bool rawValid = frik_hand_world_authority::tryGetRawHandWorld(left, raw);
-            const bool claimValid = frik_hand_world_authority::tryGetPublishedHandWorld(left, claim);
-            const bool presentationValid = appliedValid && held_scene_presentation::tryGetPresentedBodyWorld(
-                world, applied.objectBodyId.value, presentationFrame, presented);
-            const bool solvedValid = appliedValid && havok_runtime::tryGetBodyArrayWorldTransform(world, applied.objectBodyId, solved);
-            frik_visual_authority::ArmChainTransforms arm{};
-            const bool wristValid = frik_visual_authority::tryGetArmChain(frik_visual_authority::handFromBool(left), arm) &&
-                (arm.validMask & (1u << 6)) != 0;
-            dynamic_collider_trace::write(
-                "HELD_PHASE phase={} frame={} presentationFrame={} trace={} hand={} body={} moving={} room=({:.3f},{:.3f},{:.3f}) roomStep=({:.3f},{:.3f},{:.3f}) nodes={} clock={} queued={} applied={} flush={} raw={} claim={} wrist={} presented={} solved={} contact={} kind={} drive={} looseWeapon={}",
-                phase, runtime.frameIndex, presentationFrame, nodes.traceId, left ? "left" : "right", applied.objectBodyId.value,
-                runtime.playerSpace.moving, runtime.playerSpace.world.translate.x, runtime.playerSpace.world.translate.y, runtime.playerSpace.world.translate.z,
-                runtime.playerSpace.deltaGameUnits.x, runtime.playerSpace.deltaGameUnits.y, runtime.playerSpace.deltaGameUnits.z,
-                nodesValid, clockValid, clock.queuedSequence, clock.hasAppliedTarget, clock.flushSequence,
-                rawValid, claimValid, wristValid, presentationValid, solvedValid, hand->isHeldBodyColliding(),
-                grab_target::name(nodes.targetKind), held_object_drive_policy::modeName(nodes.driveMode), nodes.looseWeapon);
-            const auto pose = [&](const char* label, bool valid, const RE::NiTransform& value) {
-                if (!valid) return;
-                const auto& t = value.translate;
-                const auto& r = value.rotate.entry;
-                dynamic_collider_trace::write(
-                    "HELD_PHASE_POSE phase={} frame={} trace={} hand={} label={} T=({:.4f},{:.4f},{:.4f}) S={:.6f} R=({:.6f},{:.6f},{:.6f};{:.6f},{:.6f},{:.6f};{:.6f},{:.6f},{:.6f})",
-                    phase, runtime.frameIndex, nodes.traceId, left ? "left" : "right", label, t.x, t.y, t.z, value.scale,
-                    r[0][0], r[0][1], r[0][2], r[1][0], r[1][1], r[1][2], r[2][0], r[2][1], r[2][2]);
-            };
-            pose("raw", rawValid, raw);
-            pose("claim", claimValid, claim);
-            pose("wrist", wristValid, arm.hand);
-            pose("queued-proxy", clockValid && clock.hasQueuedTarget, clock.queuedProxyTargetWorld);
-            pose("applied-proxy", clockValid && clock.hasAppliedTarget, clock.appliedProxyTargetWorld);
-            pose("presented-body", presentationValid, presented);
-            pose("solved-body", solvedValid, solved);
-            pose("owner", nodes.collisionOwner.valid, nodes.collisionOwner.world);
-            pose("root", nodes.referenceRoot.valid, nodes.referenceRoot.world);
-            pose("root-previous", nodes.referenceRoot.valid, nodes.referenceRoot.previousWorld);
-            pose("mesh", nodes.visibleGeometry.valid, nodes.visibleGeometry.world);
-        }
-    }
 
     RE::NiTransform PhysicsInteraction::getInteractionHandTransform(bool isLeft) const
     {
@@ -265,97 +174,6 @@ namespace rock
         }
 
         return nullptr;
-    }
-
-    void PhysicsInteraction::sampleHandTransformParity()
-    {
-        if (!g_rockConfig.rockDebugHandTransformParity) {
-            _diagnostics.parityEnabledLogged = false;
-            _diagnostics.paritySummaryCounter = 0;
-            return;
-        }
-
-        if (!frik_visual_authority::isAvailable() || !_handBoneCache.isReady()) {
-            return;
-        }
-
-        if (!_diagnostics.parityEnabledLogged) {
-            ROCK_LOG_INFO(Init, "Hand-transform parity enabled (root flattened cache vs FRIK API, pre-write sampling)");
-            _diagnostics.parityEnabledLogged = true;
-        }
-
-        const bool playerMoving = runtime_state::currentFrame().playerSpace.moving;
-        const bool emitSummary = (++_diagnostics.paritySummaryCounter >= kRawParitySummaryFrames);
-
-        auto sampleHand = [&](bool isLeft) {
-            auto& state = _diagnostics.rawHandParityStates[isLeft ? 1 : 0];
-            const auto localTransform = _handBoneCache.getWorldTransform(isLeft);
-            RE::NiTransform apiTransform{};
-            if (!frik_visual_authority::tryGetPresentedHandWorldTransform(isLeft, apiTransform)) {
-                state = {};
-                return;
-            }
-            const auto delta = measureTransformDelta(localTransform, apiTransform);
-            const auto localPalmPosition = computeGrabLegacyPalmPivotAWorldFromHandBasis(localTransform, isLeft);
-            const auto apiPalmPosition = computeGrabLegacyPalmPivotAWorldFromHandBasis(apiTransform, isLeft);
-            const auto localPalmNormal = computePalmNormalFromHandBasis(localTransform, isLeft);
-            const auto apiPalmNormal = computePalmNormalFromHandBasis(apiTransform, isLeft);
-            const auto localPointing = computePointingVectorFromHandBasis(localTransform, isLeft);
-            const auto apiPointing = computePointingVectorFromHandBasis(apiTransform, isLeft);
-            state.lastPositionDelta = delta.position;
-            state.lastRotationDeltaDegrees = delta.rotationDegrees;
-
-            const bool warnExceeded = delta.position > kRawParityWarnPosition || delta.rotationDegrees > kRawParityWarnRotationDegrees;
-            const bool failExceeded = delta.position > kRawParityFailPosition || delta.rotationDegrees > kRawParityFailRotationDegrees;
-
-            state.warnFrames = warnExceeded ? state.warnFrames + 1 : 0;
-            state.failFrames = failExceeded ? state.failFrames + 1 : 0;
-
-            const char* handLabel = isLeft ? "Left" : "Right";
-            if (state.warnFrames == kRawParityWarnFrames) {
-                ROCK_LOG_WARN(Hand, "{} raw hand parity warning: posDelta={:.3f} rotDelta={:.3f}deg", handLabel, delta.position, delta.rotationDegrees);
-            }
-
-            if (state.failFrames == kRawParityFailFrames) {
-                ROCK_LOG_ERROR(Hand, "{} raw hand parity failure: posDelta={:.3f} rotDelta={:.3f}deg", handLabel, delta.position, delta.rotationDegrees);
-            }
-
-            if (playerMoving && state.hasPreviousApiTransform) {
-                const auto prevApiDelta = measureTransformDelta(localTransform, state.previousApiTransform);
-                if (prevApiDelta.position + kRawParityLagSlack < delta.position) {
-                    state.lagFrames++;
-                    if (state.lagFrames == kRawParityLagFrames) {
-                        ROCK_LOG_WARN(Hand, "{} hand parity suggests possible one-frame lag: currentDelta={:.3f} prevApiDelta={:.3f}", handLabel, delta.position,
-                            prevApiDelta.position);
-                    }
-                } else {
-                    state.lagFrames = 0;
-                }
-            } else {
-                state.lagFrames = 0;
-            }
-
-            state.previousApiTransform = apiTransform;
-            state.hasPreviousApiTransform = true;
-
-            if (emitSummary) {
-                const char* summaryHandLabel = isLeft ? "L" : "R";
-                ROCK_LOG_DEBUG(Hand, "{} parity: raw(pos={:.3f}, rot={:.3f}deg) basis(palmPos={:.3f}, palmNormal={:.3f}deg, pointing={:.3f}deg)", summaryHandLabel,
-                    delta.position, delta.rotationDegrees, measurePointDelta(localPalmPosition, apiPalmPosition), measureDirectionDeltaDegrees(localPalmNormal, apiPalmNormal),
-                    measureDirectionDeltaDegrees(localPointing, apiPointing));
-            }
-        };
-
-        sampleHand(false);
-        sampleHand(true);
-
-        if (emitSummary) {
-            _diagnostics.paritySummaryCounter = 0;
-            const auto& right = _diagnostics.rawHandParityStates[0];
-            const auto& left = _diagnostics.rawHandParityStates[1];
-            ROCK_LOG_DEBUG(Hand, "Raw hand parity summary: R(pos={:.3f}, rot={:.3f}deg) L(pos={:.3f}, rot={:.3f}deg)", right.lastPositionDelta, right.lastRotationDeltaDegrees,
-                left.lastPositionDelta, left.lastRotationDeltaDegrees);
-        }
     }
 
 #include "physics-interaction/core/PhysicsInteractionFrame.inl"
@@ -394,29 +212,21 @@ namespace rock
             !_lifecycle.initialized.load(std::memory_order_acquire) || !runtime.visualAuthorityAvailable ||
             !runtime.localSkeletonReady || runtime.localMenuBlocking || runtime.compatibilityConfigBlocking) {
             debug::ClearFrame();
-            native_scope_shot_diagnostics::clearPresentation();
             return;
         }
         auto* bhk = getPlayerBhkWorld();
         auto* hknp = bhk ? getHknpWorld(bhk) : nullptr;
         if (!bhk || bhk != _lifecycle.cachedBhkWorld || !hknp || hknp != _lifecycle.cachedHknpWorld) {
             debug::ClearFrame();
-            native_scope_shot_diagnostics::clearPresentation();
             return;
         }
         // AfterWorldFinal: provider animation, FRIK's claim re-solve and its
         // flattened bone rebuild have completed. Re-sample on the main thread;
         // PublishFrame copies values before the render thread consumes them.
-        if (g_rockConfig.rockDebugNativeScopeShotAlignment) {
-            auto* weapon = resolveEquippedWeaponInteractionNode();
-            const auto generation = _weaponCollision.getCurrentWeaponGenerationKey();
-            bool contact = false;
-            const bool contactKnown = _dynamicWeaponCollision.tryGetContactState(weapon, generation, contact);
-            native_scope_shot_diagnostics::publishPresentation(weapon, generation,
-                _weaponCollision.getCurrentObservedEquippedWeaponFormID(), contactKnown, contact,
-                _dynamicWeaponCollision.hasLatchedSurfaceSupport(reinterpret_cast<std::uintptr_t>(weapon), generation));
-        }
-        publishDebugBodyOverlay(buildFrameContext(bhk, hknp));
+        _twoHandedGrip.publishGunstockRenderDebug(resolveEquippedWeaponInteractionNode());
+        const auto context=buildFrameContext(bhk,hknp);
+        native_interaction_service::render(context);
+        publishDebugBodyOverlay(context);
     }
 
     void PhysicsInteraction::finalizeInteractionFrame(
@@ -441,6 +251,11 @@ namespace rock
          */
 
         updateGrabInput(frame);
+        _looseWeaponCollision.update(frame,
+            _rightHand.isHolding() ? _rightHand.getHeldRef() : nullptr,
+            _leftHand.isHolding() ? _leftHand.getHeldRef() : nullptr,
+            _generatedBodyStepDrive.callbackGate());
+        updateObjectRest(frame);
         commitHeldPlacement(frame);
         auto selectedCloseCarTarget = [&](const Hand& hand, const HandFrameInput& handInput) {
             DynamicWorldCarTarget target{};
@@ -477,13 +292,11 @@ namespace rock
             _leftHand,
             _bodyBoneColliders,
             rightHandWeaponAuthorityActive || rightPartGripActive ||
-                _suppression.rightWeaponSupportSuppressed.load(
-                    std::memory_order_acquire),
+                weaponHandSuppressedFor(false, WeaponHandReason::Grip),
             leftSupportGripActive ||
                 (_twoHandedGrip.isFiringHandLeft() &&
                     _twoHandedGrip.isFiringGripOccupied()) ||
-                _suppression.leftWeaponSupportSuppressed.load(
-                    std::memory_order_acquire),
+                weaponHandSuppressedFor(true, WeaponHandReason::Grip),
             _dynamicWeaponCollision.proxyBodyIdForDebug().value,
             _rightHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(false),
             _leftHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(true));
@@ -592,6 +405,12 @@ namespace rock
 
         updateNativeGrenadeCollisionSuppression(hknp, 0.0f);
         ::rock::provider::dispatchFrameCallbacks(*this);
+        // Consumers can create and register an ejected reference in this callback.
+        // Apply its pair exclusion in the same frame, before the next solve.
+        updateEjectionContacts(frame);
+        storage_service::update(*this, frame);
+        storage_interaction::update(*this,frame,_dynamicHandCollision,_generatedBodyStepDrive.callbackGate());
+        weapon_part_collision::update(*this, frame);
         // Equip identity/grip reconciliation can clear the early authored pose.
         // Yield the bridge only after every hand owner has finished this frame.
         finishEquippedWeaponHandPoseHandoff();
@@ -602,8 +421,38 @@ namespace rock
         _frame.gripZoneIndicatorFrameIndex = frame.timing.sequence;
     }
 
+    void PhysicsInteraction::interruptInteractionFrame(const char* reason)
+    {
+        debug::ClearFrame();
+        _twoHandedGrip.reset();
+        _equipped.transition.pendingGrip() = {};
+        clearEquippedWeaponFiringGripInputState();
+        restoreHeldMassMovementSlowdown(reason);
+        _grabInput.shoulderStashStates = {};
+        _grabInput.mouthConsumeStates = {};
+        _feedbackHaptics.reset();
+        ::rock::provider::dispatchFrameCallbacks(*this);
+    }
+
     void PhysicsInteraction::update()
     {
+        auto authoredCollision = F4SE::stl::scope_exit([this] {
+            const auto& runtime = runtime_state::currentFrame();
+            auto* bhk = getPlayerBhkWorld();
+            auto* world = bhk ? getHknpWorld(bhk) : nullptr;
+            const bool live = world && bhk == _lifecycle.cachedBhkWorld && world == _lifecycle.cachedHknpWorld;
+            std::array<native_player_collision::BodyIdentity, 2> bodies{};
+            std::size_t count = 0;
+            if (live && _frame.poseFrameIndex == runtime.frameIndex && runtime.visualAuthorityAvailable &&
+                runtime.localSkeletonReady && !runtime.localMenuBlocking && !runtime.compatibilityConfigBlocking) {
+                for (bool left : {false, true}) if (authored_interaction::isAttached(left)) {
+                    const auto body = havok_runtime::snapshotBody(world, _dynamicHandCollision.proxyBodyIdForDebug(left, 0));
+                    if (body.valid) bodies[count++] = {body.bodyId.value, body.motionIndex,
+                        reinterpret_cast<std::uintptr_t>(body.collisionObject), reinterpret_cast<std::uintptr_t>(body.ownerNode)};
+                }
+            } else authored_interaction::reset();
+            native_player_collision::publishAuthoredHands(live ? world : nullptr, std::span(bodies).first(count));
+        });
         auto cancelInterruptedFists = F4SE::stl::scope_exit([this] {
             cancelBareFistMode("interaction-frame-interrupted");
         });
@@ -634,8 +483,10 @@ namespace rock
             }
             auto* currentBhk = getPlayerBhkWorld();
             auto* currentHknp = currentBhk ? getHknpWorld(currentBhk) : nullptr;
+            native_interaction_service::clear(currentHknp, currentBhk);
             if (currentBhk && currentBhk == _lifecycle.cachedBhkWorld &&
                 currentHknp && currentHknp == _lifecycle.cachedHknpWorld) {
+                _weaponCollision.setEquippedDropActive(currentHknp, false);
                 _dynamicWeaponCollision.retireAll(currentBhk, preserveSurfaceSupport);
             } else {
                 _dynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
@@ -690,65 +541,32 @@ namespace rock
             return;
         }
 
-        const bool menuBlocking = runtime.localMenuBlocking;
-        if (weapon_authority_lifecycle_policy::shouldClearWeaponAuthorityForUpdateInterruption(
-                menuBlocking,
-                false,
-                false)) {
+        if (runtime.localMenuBlocking) {
+            _equippedDropPickup = {};
             retireDynamicWeaponForInterruptedFrame(true);
             _equipped.menuReconcilePending = true;
+            auto* bhkMenu = getPlayerBhkWorld();
+            auto* hknpMenu = bhkMenu ? getHknpWorld(bhkMenu) : nullptr;
             if (_lifecycle.initialized) {
-                _twoHandedGrip.reset();
-                _equipped.transition.pendingGrip() = {};
-                clearEquippedWeaponFiringGripInputState();
-                auto* bhkMenu = getPlayerBhkWorld();
-                if (bhkMenu && bhkMenu == _lifecycle.cachedBhkWorld) {
-                    auto* hknpMenu = getHknpWorld(bhkMenu);
-                    if (hknpMenu && hknpMenu == _lifecycle.cachedHknpWorld) {
-                        restoreRightHandCollisionAfterDominantWeapon(hknpMenu);
-                        restoreHandCollisionAfterWeaponSupport(hknpMenu, true, true);
-                        restoreHandCollisionAfterWeaponSupport(hknpMenu, false, true);
-                        restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, false);
-                        restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, true);
-                        if (_rightHand.isHolding()) {
-                            auto* r = _rightHand.getHeldRef();
-                            auto release = makeGrabReleaseContext(_rightHand, false);
-                            release.reason = "blocking-menu-opened";
-                            _rightHand.releaseGrabbedObject(hknpMenu, GrabReleaseCollisionRestoreMode::Delayed, release);
-                            if (r)
-                                releaseObject(r, PhysicsObjectClaimOwner::RightHand);
-                        }
-                        if (_leftHand.isHolding()) {
-                            auto* r = _leftHand.getHeldRef();
-                            auto release = makeGrabReleaseContext(_leftHand, true);
-                            release.reason = "blocking-menu-opened";
-                            _leftHand.releaseGrabbedObject(hknpMenu, GrabReleaseCollisionRestoreMode::Delayed, release);
-                            if (r)
-                                releaseObject(r, PhysicsObjectClaimOwner::LeftHand);
-                        }
-                    } else {
-                        shutdown();
-                    }
+                if (bhkMenu && bhkMenu == _lifecycle.cachedBhkWorld && hknpMenu && hknpMenu == _lifecycle.cachedHknpWorld) {
+                    // Weapon grips yield to the menu and resume through the
+                    // equip continuity path. Held objects stay held: no menu
+                    // drops what a hand is holding.
+                    clearWeaponHandSuppression(hknpMenu, false);
+                    clearWeaponHandSuppression(hknpMenu, true);
                 } else {
                     shutdown();
                 }
             }
-            debug::ClearFrame();
-            clearEquippedWeaponFiringGripInputState();
-            _equipped.transition.pendingGrip() = {};
-            auto* snapshotBhk = getPlayerBhkWorld();
-            auto* snapshotHknp = snapshotBhk ? getHknpWorld(snapshotBhk) : nullptr;
-            if (snapshotBhk && snapshotHknp) {
-                _dynamicWorldCarCollision.restoreAll(snapshotBhk, snapshotHknp, "menu-blocked");
+            storage_service::shutdown(hknpMenu);
+            storage_interaction::shutdown(hknpMenu);
+            if (bhkMenu && hknpMenu) {
+                _dynamicWorldCarCollision.restoreAll(bhkMenu, hknpMenu, "menu-blocked");
             } else {
                 _dynamicWorldCarCollision.abandon();
             }
-            observeLifecycleFrame(snapshotBhk, snapshotHknp, ::rock::provider::RockProviderLifecycleReason::MenuBlocked);
-            restoreHeldMassMovementSlowdown("menu-blocked");
-            _grabInput.shoulderStashStates = {};
-            _grabInput.mouthConsumeStates = {};
-            _feedbackHaptics.reset();
-            ::rock::provider::dispatchFrameCallbacks(*this);
+            observeLifecycleFrame(bhkMenu, hknpMenu, ::rock::provider::RockProviderLifecycleReason::MenuBlocked);
+            interruptInteractionFrame("menu-blocked");
             return;
         }
 
@@ -779,129 +597,26 @@ namespace rock
 
         auto* hknp = getHknpWorld(bhk);
         if (!hknp) {
+            native_interaction_service::clear(nullptr, nullptr);
             _dynamicWorldCarCollision.abandon();
             _lifecycle.cachedHknpWorld = nullptr;
             observeLifecycleFrame(bhk, nullptr, ::rock::provider::RockProviderLifecycleReason::WorldUnavailable);
             _equipped.gripResumePending = _equipped.continuityGrip.pending;
-            _twoHandedGrip.reset();
-            _equipped.transition.pendingGrip() = {};
-            clearEquippedWeaponFiringGripInputState();
-            debug::ClearFrame();
-            restoreHeldMassMovementSlowdown("world-unavailable");
-            _grabInput.shoulderStashStates = {};
-            _grabInput.mouthConsumeStates = {};
-            _feedbackHaptics.reset();
-            ::rock::provider::dispatchFrameCallbacks(*this);
+            interruptInteractionFrame("world-unavailable");
             return;
         }
         _lifecycle.cachedHknpWorld = hknp;
 
-        if (physics_scale::refreshAndLogIfChanged()) {
-            ROCK_LOG_WARN(Config, "Authoritative Havok scale changed; invalidating ROCK-generated collision bodies");
-            /*
-             * A live scale change is a physics-frame convention change, not a
-             * cosmetic setting reload. Existing constraints and ROCK-owned shapes
-             * were authored with the previous conversion, so active interactions
-             * must yield before generated bodies are destroyed and rebuilt.
-             */
-            auto releaseHeldForScaleChange = [&](Hand& hand, bool isLeft) {
-                if (!hand.isHolding()) {
-                    return;
-                }
-
-                auto* heldRef = hand.getHeldRef();
-                hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, makeGrabReleaseContext(hand, isLeft));
-                if (heldRef) {
-                    releaseObject(heldRef, claimOwnerForHand(isLeft));
-                }
-            };
-            releaseHeldForScaleChange(_rightHand, false);
-            releaseHeldForScaleChange(_leftHand, true);
-
-            restoreRightHandCollisionAfterDominantWeapon(hknp);
-            restoreHandCollisionAfterWeaponSupport(hknp, true, true);
-            restoreHandCollisionAfterWeaponSupport(hknp, false, true);
-            restoreHandCollisionAfterEquippedWeaponDrop(hknp, false);
-            restoreHandCollisionAfterEquippedWeaponDrop(hknp, true);
-            _twoHandedGrip.reset();
-            _equipped.transition.pendingGrip() = {};
-            clearEquippedWeaponFiringGripInputState();
-            _contacts.bodyRuntime.reset();
-            clearLeftWeaponContact();
-            clearRightWeaponContact();
-
-            destroyHandCollisions(bhk);
-            destroyBodyBoneCollisions(bhk);
-            _weaponCollision.invalidateForScaleChange(hknp);
-            markGeneratedBodiesInvalidated();
-            _suppression.rightDominantLeases.clearTracking();
-            _suppression.leftWeaponSupportLeases.clearTracking();
-            _suppression.rightWeaponSupportLeases.clearTracking();
-            _suppression.rightDominantSuppressed.store(false, std::memory_order_release);
-            _suppression.leftWeaponSupportSuppressed.store(false, std::memory_order_release);
-            _suppression.rightWeaponSupportSuppressed.store(false, std::memory_order_release);
-            clearEquippedWeaponPostDropCollisionSuppressionState();
-            clearNativePlayerCollisionFilter(hknp);
-            _suppression.nativePlayerRefreshFrames = 0;
-            collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
-        }
-
         refreshHandBoneCache();
-        sampleHandTransformParity();
         const auto frame = buildFrameContext(bhk, hknp);
         _frame.palmClockGameFrameIndex.store(runtime.frameIndex, std::memory_order_release);
         _frame.palmClockGameDeltaSeconds.store(frame.deltaSeconds, std::memory_order_release);
         observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::None);
-        if (!generatedBodiesMatchLifecycle(bhk, hknp)) {
-            const bool rebuilt =
-                !frame.reloadBoundaryActive &&
-                rebuildGeneratedBodiesForLifecycle(bhk, hknp, "epoch-mismatch");
-            if (rebuilt) {
-                observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::GeneratedBodiesRebuilt);
-            } else {
-                observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::GeneratedBodiesInvalidated);
-                ROCK_LOG_SAMPLE_DEBUG(Update,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "ROCK lifecycle generated-body rebuild pending: animationBoundary={} flags=0x{:08X} reason={} worldGen={} skeletonGen={} providerGen={} stableFrames={}",
-                    frame.reloadBoundaryActive ? "yes" : "no",
-                    _lifecycle.flagsAtomic.load(std::memory_order_acquire),
-                    _lifecycle.lastReasonAtomic.load(std::memory_order_acquire),
-                    _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire),
-                    _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire),
-                    _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire),
-                    _lifecycle.stableFrameCountAtomic.load(std::memory_order_acquire));
-                debug::ClearFrame();
-                _equipped.gripResumePending = _equipped.continuityGrip.pending;
-                _twoHandedGrip.reset();
-                _equipped.transition.pendingGrip() = {};
-                clearEquippedWeaponFiringGripInputState();
-                _grabInput.shoulderStashStates = {};
-                _grabInput.mouthConsumeStates = {};
-                _feedbackHaptics.reset();
-                ::rock::provider::dispatchFrameCallbacks(*this);
-                return;
-            }
-        }
 
         if (!physicsWritesAllowedForWorld(hknp)) {
-            ROCK_LOG_SAMPLE_DEBUG(Update,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "ROCK lifecycle gate closed frame: flags=0x{:08X} reason={} worldGen={} skeletonGen={} providerGen={} stableFrames={}",
-                _lifecycle.flagsAtomic.load(std::memory_order_acquire),
-                _lifecycle.lastReasonAtomic.load(std::memory_order_acquire),
-                _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire),
-                _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire),
-                _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire),
-                _lifecycle.stableFrameCountAtomic.load(std::memory_order_acquire));
-            debug::ClearFrame();
+            native_interaction_service::clear(hknp, bhk);
             _equipped.gripResumePending = _equipped.continuityGrip.pending;
-            _twoHandedGrip.reset();
-            _equipped.transition.pendingGrip() = {};
-            clearEquippedWeaponFiringGripInputState();
-            _grabInput.shoulderStashStates = {};
-            _grabInput.mouthConsumeStates = {};
-            _feedbackHaptics.reset();
-            ::rock::provider::dispatchFrameCallbacks(*this);
+            interruptInteractionFrame("physics-gate-closed");
             return;
         }
 
@@ -952,111 +667,18 @@ namespace rock
         updateBareFistMode(frame);
         enforceNoBareFistState(forceBareFistRecheck);
 
-        if (_layers.registered &&
-            (_layers.expectedHandMask != 0 || _layers.expectedWeaponMask != 0 || _layers.expectedReloadMask != 0 || _layers.expectedBodyMask != 0 ||
-                _layers.expectedDynamicHandProxyMask != 0 || _layers.expectedDynamicWeaponProxyMask != 0 ||
-                _layers.expectedDynamicWorldCarClutterMask != 0 || _layers.expectedDynamicWorldCarLargeClutterMask != 0)) {
-            const auto desiredHandMask = collision_layer_policy::buildRockHandExpectedMask(true, g_rockConfig.rockHandCollisionStaticWorldEnabled);
-            const auto desiredWeaponMask = collision_layer_policy::buildRockWeaponExpectedMask(
-                g_rockConfig.rockWeaponCollisionBlocksProjectiles,
-                g_rockConfig.rockWeaponCollisionBlocksSpells,
-                true);
-            const auto desiredReloadMask = collision_layer_policy::buildRockReloadExpectedMask(
-                g_rockConfig.rockWeaponCollisionBlocksProjectiles,
-                g_rockConfig.rockWeaponCollisionBlocksSpells,
-                g_rockConfig.rockHandCollisionStaticWorldEnabled);
-            const auto desiredBodyMask = collision_layer_policy::buildRockBodyExpectedMask();
-            const auto desiredDynamicRightHandProxyMask =
-                collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-                    false, g_rockConfig.npcDynamicCollisions);
-            const auto desiredDynamicLeftHandProxyMask =
-                collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-                    true, g_rockConfig.npcDynamicCollisions);
-            const auto desiredDynamicWeaponProxyMask =
-                collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask(g_rockConfig.npcDynamicCollisions);
-            if (!collision_layer_policy::matrixLayerMaskMatches(_layers.expectedHandMask, desiredHandMask) ||
-                !collision_layer_policy::matrixLayerMaskMatches(_layers.expectedWeaponMask, desiredWeaponMask) ||
-                !collision_layer_policy::matrixLayerMaskMatches(_layers.expectedReloadMask, desiredReloadMask) ||
-                !collision_layer_policy::matrixLayerMaskMatches(_layers.expectedBodyMask, desiredBodyMask) ||
-                !collision_layer_policy::matrixLayerMaskMatches(
-                    _layers.expectedDynamicHandProxyMask,
-                    desiredDynamicRightHandProxyMask) ||
-                !collision_layer_policy::matrixLayerMaskMatches(
-                    _layers.expectedDynamicLeftHandProxyMask,
-                    desiredDynamicLeftHandProxyMask) ||
-                !collision_layer_policy::matrixLayerMaskMatches(
-                    _layers.expectedDynamicWeaponProxyMask,
-                    desiredDynamicWeaponProxyMask)) {
-                ROCK_LOG_INFO(Config, "ROCK collision layer config changed; re-registering matrix policy");
-                _layers.registered = false;
-                registerCollisionLayer(hknp);
-            }
-
-            if (auto* matrix = havok_runtime::getCollisionFilterMatrix(hknp)) {
-                const auto currentHandMask = matrix[collision_layer_policy::ROCK_LAYER_HAND];
-                const auto currentWeaponMask = matrix[collision_layer_policy::ROCK_LAYER_WEAPON];
-                const auto currentReloadMask = matrix[collision_layer_policy::ROCK_LAYER_RELOAD];
-                const auto currentBodyMask = matrix[collision_layer_policy::ROCK_LAYER_BODY];
-                const auto currentDynamicHandProxyMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY];
-                const auto currentDynamicLeftHandProxyMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY];
-                const auto currentDynamicWeaponProxyMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY];
-                const auto currentDynamicWorldCarClutterMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER];
-                const auto currentDynamicWorldCarLargeClutterMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER];
-                const bool handMaskDrifted = _layers.expectedHandMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentHandMask, _layers.expectedHandMask);
-                const bool weaponMaskDrifted = _layers.expectedWeaponMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentWeaponMask, _layers.expectedWeaponMask);
-                const bool reloadMaskDrifted = _layers.expectedReloadMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentReloadMask, _layers.expectedReloadMask);
-                const bool bodyMaskDrifted = _layers.expectedBodyMask != 0 && !collision_layer_policy::bodyManagedLayerMaskMatches(currentBodyMask, _layers.expectedBodyMask);
-                const bool dynamicHandProxyMaskDrifted = _layers.expectedDynamicHandProxyMask != 0 &&
-                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicHandProxyMask, _layers.expectedDynamicHandProxyMask);
-                const bool dynamicLeftHandProxyMaskDrifted =
-                    _layers.expectedDynamicLeftHandProxyMask != 0 &&
-                    !collision_layer_policy::matrixLayerMaskMatches(
-                        currentDynamicLeftHandProxyMask,
-                        _layers.expectedDynamicLeftHandProxyMask);
-                const bool dynamicWeaponProxyMaskDrifted = _layers.expectedDynamicWeaponProxyMask != 0 &&
-                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWeaponProxyMask, _layers.expectedDynamicWeaponProxyMask);
-                const bool dynamicWorldCarClutterMaskDrifted = _layers.expectedDynamicWorldCarClutterMask != 0 &&
-                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWorldCarClutterMask, _layers.expectedDynamicWorldCarClutterMask);
-                const bool dynamicWorldCarLargeClutterMaskDrifted = _layers.expectedDynamicWorldCarLargeClutterMask != 0 &&
-                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWorldCarLargeClutterMask, _layers.expectedDynamicWorldCarLargeClutterMask);
-                const bool actorToolPairsDrifted =
-                    _layers.expectedHandMask != 0 && _layers.expectedWeaponMask != 0 &&
-                    (!collision_layer_policy::rockToolActorPairsMatch(matrix, _layers.expectedHandMask, _layers.expectedWeaponMask) ||
-                        !collision_layer_policy::rockDynamicNpcPairsMatch(matrix, g_rockConfig.npcDynamicCollisions));
-                const bool bodyPairsDrifted = _layers.expectedBodyMask != 0 && !collision_layer_policy::rockBodyManagedPairsMatch(matrix, _layers.expectedBodyMask);
-                if (handMaskDrifted || weaponMaskDrifted || reloadMaskDrifted || bodyMaskDrifted || dynamicHandProxyMaskDrifted || dynamicLeftHandProxyMaskDrifted || dynamicWeaponProxyMaskDrifted ||
-                    dynamicWorldCarClutterMaskDrifted || dynamicWorldCarLargeClutterMaskDrifted || actorToolPairsDrifted || bodyPairsDrifted) {
-                    ROCK_LOG_WARN(Config,
-                        "ROCK configured layer mask drift detected; hand expected=0x{:016X} current=0x{:016X}, weapon expected=0x{:016X} current=0x{:016X}, reload expected=0x{:016X} current=0x{:016X}, body expected=0x{:016X} current=0x{:016X}, dynamicRightHandProxy expected=0x{:016X} current=0x{:016X}, dynamicLeftHandProxy expected=0x{:016X} current=0x{:016X}, dynamicWeaponProxy expected=0x{:016X} current=0x{:016X}, carClutter expected=0x{:016X} current=0x{:016X}, carLarge expected=0x{:016X} current=0x{:016X}, actorToolPairs={}, bodyManagedPairs={}; re-registering",
-                        collision_layer_policy::matrixAddressableMask(_layers.expectedHandMask),
-                        collision_layer_policy::matrixAddressableMask(currentHandMask),
-                        collision_layer_policy::matrixAddressableMask(_layers.expectedWeaponMask),
-                        collision_layer_policy::matrixAddressableMask(currentWeaponMask),
-                        collision_layer_policy::matrixAddressableMask(_layers.expectedReloadMask),
-                        collision_layer_policy::matrixAddressableMask(currentReloadMask),
-                        collision_layer_policy::matrixAddressableMask(_layers.expectedBodyMask),
-                        collision_layer_policy::matrixAddressableMask(currentBodyMask),
-                        collision_layer_policy::matrixAddressableMask(_layers.expectedDynamicHandProxyMask),
-                        collision_layer_policy::matrixAddressableMask(currentDynamicHandProxyMask),
-                        collision_layer_policy::matrixAddressableMask(_layers.expectedDynamicLeftHandProxyMask),
-                        collision_layer_policy::matrixAddressableMask(currentDynamicLeftHandProxyMask),
-                        collision_layer_policy::matrixAddressableMask(_layers.expectedDynamicWeaponProxyMask),
-                        collision_layer_policy::matrixAddressableMask(currentDynamicWeaponProxyMask),
-                        collision_layer_policy::matrixAddressableMask(_layers.expectedDynamicWorldCarClutterMask),
-                        collision_layer_policy::matrixAddressableMask(currentDynamicWorldCarClutterMask),
-                        collision_layer_policy::matrixAddressableMask(_layers.expectedDynamicWorldCarLargeClutterMask),
-                        collision_layer_policy::matrixAddressableMask(currentDynamicWorldCarLargeClutterMask),
-                        actorToolPairsDrifted ? "drifted" : "ok",
-                        bodyPairsDrifted ? "drifted" : "ok");
-                    _layers.registered = false;
-                    registerCollisionLayer(hknp);
-                }
-            }
+        native_interaction_service::update(frame);
+        if (_layers.handStaticWorld != g_rockConfig.rockHandCollisionStaticWorldEnabled ||
+            _layers.weaponBlocksProjectiles != g_rockConfig.rockWeaponCollisionBlocksProjectiles ||
+            _layers.weaponBlocksSpells != g_rockConfig.rockWeaponCollisionBlocksSpells ||
+            _layers.extensionObstacleLayers != native_interaction_service::dynamicObstacleLayers()) {
+            ROCK_LOG_INFO(Config, "ROCK collision layer config changed; re-registering matrix policy");
+            registerCollisionLayer(hknp);
         }
+
 
         const auto equippedWeaponFrame = updateEquippedWeaponFrame(frame, bhk, hknp);
         finalizeInteractionFrame(frame, hknp, equippedWeaponFrame);
-        dynamic_collider_trace::captureNpcCollisionState(frame);
         if (input_remap_runtime::ownsBareFistInput()) {
             if (const auto* reason = bareFistHandBlockReason(frame)) cancelBareFistMode(reason);
         }
@@ -1101,12 +723,16 @@ namespace rock
             return;
         }
 
+        native_interaction_service::preCollide(world, timing);
         _rightHand.flushPendingCollisionPhysicsDrive(world, timing);
         _leftHand.flushPendingCollisionPhysicsDrive(world, timing);
         _bodyBoneColliders.flushPendingPhysicsDrive(world, timing);
         _weaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicWeaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicHandCollision.flushPendingPhysicsDrive(world, timing);
+        storage_interaction::flush(world,timing);
+        _rightHand.flushConsumerObjectPairs(world);
+        _leftHand.flushConsumerObjectPairs(world);
         if (performance_profiler::enabled()) {
             performance_profiler::observeValue(performance_profiler::ValueMetric::GeneratedHandBodies,
                 _rightHand.getHandColliderBodyCount() + _leftHand.getHandColliderBodyCount());
@@ -1207,7 +833,7 @@ namespace rock
             _forceGrab.pendingCommits[1].active ? leftPendingTargetPtr.get() : nullptr);
         const auto farHmdConeGate = makeFarSelectionHmdConeGate(frame);
 
-        if (_forceGrab.pendingCommits[0].active) {
+        if (_forceGrab.pendingCommits[0].active || _equippedDropPickup.consumed[0]) {
             if (_rightHand.hasSelection()) {
                 _rightHand.clearSelectionState(false);
             }
@@ -1225,7 +851,7 @@ namespace rock
                 leftHandContext);
         }
 
-        if (_forceGrab.pendingCommits[1].active) {
+        if (_forceGrab.pendingCommits[1].active || _equippedDropPickup.consumed[1]) {
             if (_leftHand.hasSelection()) {
                 _leftHand.clearSelectionState(false);
             }
@@ -1255,7 +881,6 @@ namespace rock
             _frame.heldMassSpeedReduction = 0.0f;
             _frame.heldMassFadeStartReduction = 0.0f;
             _frame.heldMassFadeElapsedSeconds = 0.0f;
-            _diagnostics.heldMassLogCounter = 0;
             ROCK_LOG_DEBUG(Hand,
                 "Held mass movement slowdown restored: previousReduction={:.2f} reason={}",
                 previousReduction,
@@ -1376,17 +1001,6 @@ namespace rock
         if (targetReduction <= 0.0f) {
             _frame.heldMassFadeStartReduction = 0.0f;
             _frame.heldMassFadeElapsedSeconds = 0.0f;
-        }
-        if (g_rockConfig.rockDebugGrabFrameLogging) {
-            ++_diagnostics.heldMassLogCounter;
-            if (_diagnostics.heldMassLogCounter >= 90 || heldMass <= 0.0f || previousReduction <= 0.0f) {
-                _diagnostics.heldMassLogCounter = 0;
-                ROCK_LOG_DEBUG(Hand,
-                    "Held mass movement slowdown: heldMass={:.3f} previousReduction={:.2f} targetReduction={:.2f}",
-                    heldMass,
-                    previousReduction,
-                    targetReduction);
-            }
         }
     }
 }

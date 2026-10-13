@@ -38,7 +38,7 @@ namespace rock::grab_interaction_policy
      * pull from bypassing the close-grab checks for doors, furniture, fixed
      * activators, and live actors.
      */
-    inline bool shouldBlockSelectedObjectInteraction(std::string_view formType, bool isLiveNpc, bool hasMotionProps, std::uint16_t motionPropsId)
+    inline bool shouldBlockSelectedObjectInteraction(std::string_view formType, bool hasMotionProps, std::uint16_t motionPropsId)
     {
         if (formType == "DOOR" || formType == "CONT" || formType == "TERM" || formType == "FURN") {
             return true;
@@ -51,23 +51,21 @@ namespace rock::grab_interaction_policy
             }
         }
 
-        return formType == "NPC_" && isLiveNpc;
+        return false;
     }
 
     inline bool shouldBlockSelectedObjectInteractionForTarget(
         grab_target::Kind targetKind,
         std::string_view formType,
-        bool isLiveNpc,
         bool hasMotionProps,
         std::uint16_t motionPropsId)
     {
-        if (targetKind == grab_target::Kind::ActorEquipment ||
-            targetKind == grab_target::Kind::LiveActorScissors ||
-            targetKind == grab_target::Kind::BlockedWholeActorBody) {
+        if (targetKind == grab_target::Kind::ExtractableItem ||
+            targetKind == grab_target::Kind::BlockedExtension) {
             return true;
         }
 
-        return shouldBlockSelectedObjectInteraction(formType, isLiveNpc, hasMotionProps, motionPropsId);
+        return shouldBlockSelectedObjectInteraction(formType, hasMotionProps, motionPropsId);
     }
 
     inline bool looseObjectSelectionLayerCanReachActiveGrab(std::uint32_t layer) noexcept
@@ -82,7 +80,7 @@ namespace rock::grab_interaction_policy
         bool hasCollisionLayer,
         std::uint32_t collisionLayer)
     {
-        if (shouldBlockSelectedObjectInteraction(formType, false, hasMotionProps, motionPropsId)) {
+        if (shouldBlockSelectedObjectInteraction(formType, hasMotionProps, motionPropsId)) {
             return { .blocked = true, .reason = "blocked-selected-interaction" };
         }
 

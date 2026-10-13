@@ -58,22 +58,4 @@ namespace rock::loose_throwable_policy
                !explosionSpawnsPlacedObject;
     }
 
-    [[nodiscard]] inline bool isWithinProximity(
-        float radius,
-        float deltaX,
-        float deltaY,
-        float deltaZ) noexcept
-    {
-        if (!std::isfinite(radius) || radius <= 0.0f ||
-            !std::isfinite(deltaX) || !std::isfinite(deltaY) || !std::isfinite(deltaZ)) {
-            return false;
-        }
-        const double distanceSquared =
-            static_cast<double>(deltaX) * deltaX +
-            static_cast<double>(deltaY) * deltaY +
-            static_cast<double>(deltaZ) * deltaZ;
-        const double radiusSquared = static_cast<double>(radius) * radius;
-        return std::isfinite(distanceSquared) && std::isfinite(radiusSquared) &&
-               distanceSquared <= radiusSquared;
-    }
 }

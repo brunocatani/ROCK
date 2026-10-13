@@ -62,17 +62,6 @@ namespace rock::body_frame
         return bodyId != kInvalidBodyId && bodyId <= kMaxReadableBodyIndex && highWaterMark <= kMaxReadableBodyIndex && bodyId <= highWaterMark;
     }
 
-    inline BodyFrameSource chooseColliderFrameSource(bool hasBodyTransform, bool hasMotionCenterOfMass)
-    {
-        if (hasMotionCenterOfMass) {
-            return BodyFrameSource::MotionCenterOfMass;
-        }
-        if (hasBodyTransform) {
-            return BodyFrameSource::BodyTransform;
-        }
-        return BodyFrameSource::Fallback;
-    }
-
     inline BodyFrameSource chooseLiveBodyFrameSource(bool hasBodyTransform, bool hasMotionTransform)
     {
         /*

@@ -60,6 +60,10 @@ namespace rock::tracked_hand_isolation_policy
         // The flattened bone ROCK has always read (refNode plus palm blend).
         RE::NiTransform flattenedHandWorld{};
         bool flattenedHandValid = false;
+        // Last finite local palm blend from this skeleton. This is calibration,
+        // not a previous world pose; recovery still follows current input.
+        RE::NiTransform retainedPalmBlend{};
+        bool retainedPalmBlendValid = false;
         // FRIK solved this hand to a ROCK claim in the frame just rendered.
         bool claimConsumed = false;
         // False while FRIK composes a native recoil kick onto the tracked
@@ -83,10 +87,6 @@ namespace rock::tracked_hand_isolation_policy
         RE::NiTransform rawHandWorld{};
         RawHandSource source = RawHandSource::Unavailable;
         bool valid = false;
-        // Claim-free frames only: reconstruction versus the flattened bone.
-        bool probeValid = false;
-        float probeTranslationGameUnits = 0.0f;
-        float probeRotationDegrees = 0.0f;
     };
 
     // External hand writers must not acquire the previous rendered output
@@ -195,9 +195,17 @@ namespace rock::tracked_hand_isolation_policy
         RE::NiTransform& outRawHandWorld) noexcept
     {
         outRawHandWorld = {};
-        if (!state.valid || !input.firstPersonHandValid || !input.bodyHandNodeValid || !input.flattenedHandValid ||
-            !isFiniteTransform(input.firstPersonHandWorld) || !isFiniteTransform(input.bodyHandNodeWorld) ||
-            !isFiniteTransform(input.flattenedHandWorld)) {
+        if (!state.valid || !input.firstPersonHandValid ||
+            !isFiniteTransform(input.firstPersonHandWorld)) {
+            return false;
+        }
+        RE::NiTransform palmBlend{};
+        if (input.bodyHandNodeValid && input.flattenedHandValid &&
+            isFiniteTransform(input.bodyHandNodeWorld) && isFiniteTransform(input.flattenedHandWorld)) {
+            palmBlend = makePalmBlend(input.bodyHandNodeWorld, input.flattenedHandWorld);
+        } else if (input.retainedPalmBlendValid && isFiniteTransform(input.retainedPalmBlend)) {
+            palmBlend = input.retainedPalmBlend;
+        } else {
             return false;
         }
         const RE::NiTransform controllerBodyHand = transform_math::composeTransforms(
@@ -205,7 +213,7 @@ namespace rock::tracked_hand_isolation_policy
             state.firstPersonToBodyHand);
         const RE::NiTransform raw = transform_math::orthonormalizedTransform(transform_math::composeTransforms(
             controllerBodyHand,
-            makePalmBlend(input.bodyHandNodeWorld, input.flattenedHandWorld)));
+            palmBlend));
         if (!isFiniteTransform(raw)) {
             return false;
         }
@@ -220,7 +228,7 @@ namespace rock::tracked_hand_isolation_policy
      * as a transpose here and rendered again next frame squares the drift
      * every frame until the hand stretches and flies off.
      */
-    [[nodiscard]] inline FrameResult resolveFrame(RelationState& state, const FrameInput& rawInput, bool measureProbe = true) noexcept
+    [[nodiscard]] inline FrameResult resolveFrame(RelationState& state, const FrameInput& rawInput) noexcept
     {
         FrameInput input = rawInput;
         input.firstPersonHandWorld = transform_math::orthonormalizedTransform(rawInput.firstPersonHandWorld);
@@ -243,11 +251,9 @@ namespace rock::tracked_hand_isolation_policy
             if (input.calibrationAllowed && input.firstPersonHandValid && input.bodyHandNodeValid) {
                 (void)calibrateRelation(state, input.firstPersonHandWorld, input.bodyHandNodeWorld);
             }
-            RE::NiTransform reconstructed{};
-            if (measureProbe && result.valid && reconstruct(state, input, reconstructed)) {
-                result.probeValid = true;
-                result.probeTranslationGameUnits = translationGameUnits(reconstructed, input.flattenedHandWorld);
-                result.probeRotationDegrees = rotationDegrees(reconstructed, input.flattenedHandWorld);
+            if (!result.valid && reconstruct(state, input, result.rawHandWorld)) {
+                result.valid = true;
+                result.source = RawHandSource::Reconstructed;
             }
             return result;
         }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/weapon/WeaponSupport.h"
+#include "physics-interaction/weapon/GunstockMode.h"
 
 namespace rock::equip_visual_bridge_policy
 {
@@ -31,6 +32,17 @@ namespace rock::equip_visual_bridge_policy
             .primaryTargetWorld = primaryTarget,
             .supportTargetWorld = lockedSupport,
         });
+    }
+
+    inline WeaponTwoHandedSolverResult<RE::NiTransform> solvePairedGunstockBridge(
+        const RE::NiTransform& capturedWorld, const RE::NiPoint3& primaryLocal,
+        const RE::NiTransform& primaryController, const RE::NiTransform& supportController)
+    {
+        WeaponTwoHandedSolverInput<RE::NiTransform,RE::NiPoint3> aim{};
+        aim.weaponWorldTransform = capturedWorld;
+        aim.primaryGripLocal = primaryLocal;
+        aim.primaryTargetWorld = transform_math::localPointToWorld(capturedWorld,primaryLocal);
+        return gunstock_mode::solveVirtualAim(aim,primaryController,supportController,{},1.0f);
     }
 
     // The detached loose model is visual-only. It may cover the native

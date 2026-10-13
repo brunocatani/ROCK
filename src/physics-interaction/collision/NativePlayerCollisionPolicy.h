@@ -1,11 +1,28 @@
 #pragma once
 
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
+#include "physics-interaction/object/PhysicsBodyClassifier.h"
 
 #include <cstdint>
 
 namespace rock::native_player_collision
 {
+    inline constexpr bool isRetiredWeaponHandPair(std::uint32_t layerA, std::uint32_t layerB)
+    {
+        using namespace collision_layer_policy;
+        return (layerA == FO4_LAYER_WEAPON && isDynamicHandInteractionLayer(layerB)) ||
+               (layerB == FO4_LAYER_WEAPON && isDynamicHandInteractionLayer(layerA));
+    }
+
+    inline constexpr bool allowsRetiredWeaponHandContact(
+        physics_body_classifier::BodyMotionType motion, bool looseWeapon)
+    {
+        using physics_body_classifier::BodyMotionType;
+        // Anchoring preserves native static parts beside the keyframed bodies.
+        // Active grab/pull preparation converts movable bodies back to dynamic.
+        return looseWeapon && (motion == BodyMotionType::Keyframed || motion == BodyMotionType::Static);
+    }
+
     // FO4VR proxy ctor 1E4B268/1E4B28C, dtor 1E4B3E3/1E4B4C0,
     // and processConstraintsCallback 1E4B83E use this same base adjustment.
     // The actor stores the controller interface; the callback receives the
@@ -34,6 +51,12 @@ namespace rock::native_player_collision
                expected.ownerNode != 0 && expected == live;
     }
 
+    inline bool suppressAuthoredHandWorldPair(const BodyIdentity& expected,
+        const BodyIdentity& live, std::uint32_t otherLayer)
+    {
+        return matchesLiveBody(expected, live) && collision_layer_policy::isWorldSurfaceLayer(otherLayer);
+    }
+
     // These are duplicate physical obstacles for the native player skeleton.
     // ROCK's generated bodies and the native controller own world response.
     // Weapon, projectile, spell, actor and query layers deliberately stay native.
@@ -47,7 +70,7 @@ namespace rock::native_player_collision
                layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON ||
                layer == ROCK_LAYER_BODY || layer == ROCK_LAYER_DYNAMIC_HAND_PROXY ||
                layer == ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY ||
-               layer == ROCK_LAYER_DYNAMIC_WEAPON_PROXY;
+               layer == ROCK_LAYER_DYNAMIC_WEAPON_PROXY || layer == ROCK_LAYER_EQUIPPED_DROP_PROXY;
     }
 
     inline constexpr bool suppressPhysicalPair(bool playerA, bool playerB,
@@ -84,13 +107,14 @@ namespace rock::native_player_collision
     };
     static_assert(sizeof(BodyPair) == 8);
 
-    // One equipped blade may overlap one NPC BODY while its insertion guide
-    // owns the weapon. Identity checks prevent a recycled ID inheriting it.
-    struct BladeCollisionPair
+    // One controlled equipped tool may exclude one exact target. The extension
+    // chooses the target; identity and layer checks prevent recycled admission.
+    struct ToolContactExclusion
     {
         std::uintptr_t world{ 0 };
         BodyIdentity weapon{};
         BodyIdentity target{};
+        std::uint32_t targetLayer{ 0xFFFF'FFFFu };
 
         bool valid() const
         {
@@ -113,7 +137,7 @@ namespace rock::native_player_collision
             return matchesLiveBody(weapon, weaponIsA ? bodyA : bodyB) &&
                 matchesLiveBody(target, weaponIsA ? bodyB : bodyA) &&
                 (weaponIsA ? layerA : layerB) == ROCK_LAYER_DYNAMIC_WEAPON_PROXY &&
-                (weaponIsA ? layerB : layerA) == FO4_LAYER_BIPED_NO_CC;
+                (weaponIsA ? layerB : layerA) == targetLayer;
         }
     };
 

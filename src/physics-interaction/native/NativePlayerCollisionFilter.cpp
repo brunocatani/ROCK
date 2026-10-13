@@ -1,4 +1,8 @@
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
+#include "physics-interaction/native/MagazineEjectionSnapshot.h"
+#include "api/StorageInteractionService.h"
+#include "physics-interaction/weapon/LooseWeaponCollisionPolicy.h"
+#include "RE/Bethesda/TESBoundObjects.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/performance/ContactPairProfile.h"
 
@@ -37,18 +41,27 @@ namespace rock::native_player_collision
         // original native filter returns. No native lock is taken under this gate.
         PhysicsCallbackQuiescenceGate s_gate;
         Snapshot s_snapshot;
+        Snapshot s_authoredHands; // Same game publisher and callback gate.
         // Independent game-thread publisher and physics-worker read gate.
         // Player-body refresh must never bypass an active blade exception;
         // only blade publication pauses this gate and rebuilds its two bodies.
-        PhysicsCallbackQuiescenceGate s_bladeGate;
-        BladeCollisionPair s_bladePair;
+        PhysicsCallbackQuiescenceGate s_toolContactGate;
+        ToolContactExclusion s_toolContactPair;
+        PhysicsCallbackQuiescenceGate s_weaponReleaseGate;
+        weapon_release_collision_lease::Identity s_releasedWeapon;
+        std::atomic<std::uint64_t> s_weaponReleaseRejectedPairs{ 0 };
+        PhysicsCallbackQuiescenceGate s_magazineEjectionGate;
+        MagazineEjectionSnapshot s_magazineEjection;
+        std::atomic<std::uint64_t> s_magazineEjectionRejected{ 0 };
+        std::atomic<std::uint64_t> s_magazineEjectionHandPair{ 0 };
         FilterPairs s_original{ nullptr };
         bool s_installed{ false };
         std::atomic<std::uint64_t> s_removedPairs{ 0 };
         std::atomic<std::uint64_t> s_preservedPlayerPairs{ 0 };
         std::atomic<std::uint64_t> s_staleIdentities{ 0 };
         std::atomic<std::uint64_t> s_unresolvedWeaponOwners{ 0 };
-        std::atomic<std::uint64_t> s_bladeRejectedPairs{ 0 };
+        std::atomic<std::uint64_t> s_toolContactRejectedPairs{ 0 };
+        std::atomic<std::uint64_t> s_authoredRejectedPairs{ 0 };
         std::uint64_t s_nextReportMs{ 0 };
 
         BodyIdentity identity(const havok_runtime::BodySnapshot& body)
@@ -152,22 +165,105 @@ namespace rock::native_player_collision
             }
         }
 
-        int filterBladePairs(RE::hknpWorld* world, BodyPair* pairs, int count) noexcept
+        int filterToolContactPairs(RE::hknpWorld* world, BodyPair* pairs, int count) noexcept
         {
-            auto lease = s_bladeGate.tryEnterCallback();
-            if (!lease || !world || reinterpret_cast<std::uintptr_t>(world) != s_bladePair.world || !pairs || count <= 0)
+            auto lease = s_toolContactGate.tryEnterCallback();
+            if (!lease || !world || reinterpret_cast<std::uintptr_t>(world) != s_toolContactPair.world || !pairs || count <= 0)
                 return count;
             const int kept = filterPhysicalPairs(pairs, count, [&](const BodyPair& pair) {
-                if (!s_bladePair.matchesIds(pair)) return false;
+                if (!s_toolContactPair.matchesIds(pair)) return false;
                 const auto a = havok_runtime::snapshotBody(world, RE::hknpBodyId{ pair.bodyA });
                 const auto b = havok_runtime::snapshotBody(world, RE::hknpBodyId{ pair.bodyB });
-                return a.valid && b.valid && s_bladePair.suppresses(reinterpret_cast<std::uintptr_t>(world),
+                return a.valid && b.valid && s_toolContactPair.suppresses(reinterpret_cast<std::uintptr_t>(world),
                     identity(a), identity(b),
                     a.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK,
                     b.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK);
             });
-            if (kept != count) s_bladeRejectedPairs.fetch_add(count - kept, std::memory_order_relaxed);
+            if (kept != count) s_toolContactRejectedPairs.fetch_add(count - kept, std::memory_order_relaxed);
             return kept;
+        }
+
+        weapon_release_collision_lease::Identity releaseIdentity(RE::hknpWorld* world, std::uint32_t id)
+        {
+            const auto body = havok_runtime::snapshotBodyIdentity(world, { id });
+            return { reinterpret_cast<std::uintptr_t>(world),
+                body.valid ? reinterpret_cast<std::uintptr_t>(body.collisionObject) : 0, id };
+        }
+
+        int filterWeaponReleasePairs(RE::hknpWorld* world, BodyPair* pairs, int count) noexcept
+        {
+            auto lease = s_weaponReleaseGate.tryEnterCallback();
+            if (!lease || !world || reinterpret_cast<std::uintptr_t>(world) != s_releasedWeapon.world ||
+                !pairs || count <= 0) return count;
+            const int kept = filterPhysicalPairs(pairs, count, [&](const BodyPair& pair) {
+                if (pair.bodyA != s_releasedWeapon.body && pair.bodyB != s_releasedWeapon.body) return false;
+                const auto other = pair.bodyA == s_releasedWeapon.body ? pair.bodyB : pair.bodyA;
+                std::uint32_t weaponFilter{}, otherFilter{};
+                return havok_runtime::tryReadFilterInfo(world, { s_releasedWeapon.body }, weaponFilter) &&
+                    havok_runtime::tryReadFilterInfo(world, { other }, otherFilter) &&
+                    weapon_release_collision_lease::suppressesHandPair(s_releasedWeapon,
+                        releaseIdentity(world, s_releasedWeapon.body),
+                        weaponFilter & collision_layer_policy::FO4_LAYER_FILTER_MASK,
+                        otherFilter & collision_layer_policy::FO4_LAYER_FILTER_MASK);
+            });
+            if (kept != count) s_weaponReleaseRejectedPairs.fetch_add(count - kept, std::memory_order_relaxed);
+            return kept;
+        }
+
+        int filterMagazineEjectionPairs(RE::hknpWorld* world, BodyPair* pairs, int count) noexcept
+        {
+            auto lease=s_magazineEjectionGate.tryEnterCallback();
+            if(!lease||!world||s_magazineEjection.world!=reinterpret_cast<std::uintptr_t>(world)||!pairs||count<=0)return count;
+            const int kept=filterPhysicalPairs(pairs,count,[&](const BodyPair& pair) {
+                if(!s_magazineEjection.containsPair(pair.bodyA,pair.bodyB))return false;
+                const auto a=havok_runtime::snapshotBody(world,{pair.bodyA});
+                const auto b=havok_runtime::snapshotBody(world,{pair.bodyB});
+                if(!a.valid||!b.valid)return false;
+                if(s_magazineEjection.suppressesHand(reinterpret_cast<std::uintptr_t>(world),identity(a),identity(b))) {
+                    const bool firstIsMagazine=MagazineEjectionSnapshot::find(s_magazineEjection.handProtected,s_magazineEjection.handProtectedCount,pair.bodyA)!=nullptr;
+                    const auto magazine=firstIsMagazine?pair.bodyA:pair.bodyB,hand=firstIsMagazine?pair.bodyB:pair.bodyA;
+                    std::uint64_t empty=0;s_magazineEjectionHandPair.compare_exchange_strong(empty,(std::uint64_t(magazine)<<32)|hand,std::memory_order_relaxed);
+                    return true;
+                }
+                return s_magazineEjection.suppresses(reinterpret_cast<std::uintptr_t>(world),identity(a),identity(b));
+            });
+            if(kept!=count)s_magazineEjectionRejected.fetch_add(count-kept,std::memory_order_relaxed);
+            return kept;
+        }
+
+        bool isSupportedFixedWeapon(const havok_runtime::BodySnapshot& body) noexcept
+        {
+            // Callback-local ownership only; no engine pointer is published.
+            __try {
+                auto* ref=body.ownerNode ? RE::TESObjectREFR::FindReferenceFor3D(body.ownerNode) : nullptr;
+                auto* form=ref ? ref->GetObjectReference() : nullptr;
+                auto* weapon=form ? form->As<RE::TESObjectWEAP>() : nullptr;
+                return weapon && loose_weapon_collision_policy::eligibleType(weapon->weaponData.type.get());
+            } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+        }
+
+        int filterRetiredWeaponHandPairs(RE::hknpWorld* world, BodyPair* pairs, int count) noexcept
+        {
+            if (!world || !pairs || count <= 0) return count;
+            using namespace collision_layer_policy;
+            const auto* matrix = havok_runtime::getCollisionFilterMatrix(world);
+            if (!layerPairEnabledFromRow(matrix, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, FO4_LAYER_WEAPON) &&
+                !layerPairEnabledFromRow(matrix, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, FO4_LAYER_WEAPON)) return count;
+            // Independent of native-player skeleton publication: this gate
+            // must still protect dynamic weapons when that snapshot is empty.
+            return filterPhysicalPairs(pairs, count, [&](const BodyPair& pair) {
+                std::uint32_t filterA{}, filterB{};
+                if (!havok_runtime::tryReadFilterInfo(world, {pair.bodyA}, filterA) ||
+                    !havok_runtime::tryReadFilterInfo(world, {pair.bodyB}, filterB)) return false;
+                const auto layerA = filterA & FO4_LAYER_FILTER_MASK;
+                const auto layerB = filterB & FO4_LAYER_FILTER_MASK;
+                if (!isRetiredWeaponHandPair(layerA, layerB)) return false;
+                const auto weapon = havok_runtime::snapshotBody(world,
+                    {layerA == FO4_LAYER_WEAPON ? pair.bodyA : pair.bodyB});
+                if (!weapon.valid || !weapon.body) return true;
+                const auto motion = physics_body_classifier::motionTypeFromBodyFlags(weapon.body->flags);
+                return !allowsRetiredWeaponHandContact(motion, true) || !isSupportedFixedWeapon(weapon);
+            });
         }
 
         int filterPairs(void* filter, RE::hknpWorld* world, BodyPair* pairs, int count) noexcept
@@ -184,8 +280,28 @@ namespace rock::native_player_collision
             performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::NativePlayerPairFilter);
             int admitted = nativeAdmitted > 0 && nativeAdmitted <= count ?
                 shell_casing_grace::filterPairs(world, pairs, nativeAdmitted) : nativeAdmitted;
-            if (admitted > 0 && admitted <= count) admitted = filterBladePairs(world, pairs, admitted);
+            if (admitted > 0 && admitted <= count) admitted = filterToolContactPairs(world, pairs, admitted);
+            if (admitted > 0 && admitted <= count) admitted = filterWeaponReleasePairs(world, pairs, admitted);
+            if (admitted > 0 && admitted <= count) admitted = filterMagazineEjectionPairs(world, pairs, admitted);
+            if (admitted > 0 && admitted <= count) admitted = filterRetiredWeaponHandPairs(world, pairs, admitted);
+            if (admitted > 0 && admitted <= count) admitted = filterPhysicalPairs(pairs,admitted,[&](const BodyPair& pair) {
+                return !storage_interaction::allowsPair(world,pair.bodyA,pair.bodyB);
+            });
             auto lease = s_gate.tryEnterCallback();
+            if (lease && world && world == s_authoredHands.world && s_authoredHands.count &&
+                pairs && admitted > 0 && admitted <= count) {
+                const int beforeAuthored = admitted;
+                admitted = filterPhysicalPairs(pairs, admitted, [&](const BodyPair& pair) {
+                    const auto* a = findPlayerBody(s_authoredHands, pair.bodyA);
+                    const auto* b = findPlayerBody(s_authoredHands, pair.bodyB);
+                    if (!a && !b) return false;
+                    const auto hand = havok_runtime::snapshotBody(world, {a ? pair.bodyA : pair.bodyB});
+                    const auto other = havok_runtime::snapshotBody(world, {a ? pair.bodyB : pair.bodyA});
+                    return hand.valid && other.valid && suppressAuthoredHandWorldPair(a ? *a : *b,
+                        identity(hand), other.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK);
+                });
+                s_authoredRejectedPairs.fetch_add(beforeAuthored - admitted, std::memory_order_relaxed);
+            }
             if (!lease || !world || world != s_snapshot.world || s_snapshot.count == 0 ||
                 !pairs || admitted <= 0 || admitted > count) {
                 if (admitted >= 0 && admitted <= count) profilePairs(world, pairs, admitted,
@@ -248,6 +364,14 @@ namespace rock::native_player_collision
             }
         }
 
+        void invalidateReleasedWeapon(RE::hknpWorld* world, weapon_release_collision_lease::Identity weapon)
+        {
+            if (!world || !weapon.valid() || releaseIdentity(world, weapon.body) != weapon) return;
+            static REL::Relocation<RebuildBodyCaches> rebuild{
+                REL::Offset(offsets::kFunc_RebuildBodyCollisionCaches) };
+            rebuild(world, weapon.body);
+        }
+
         void invalidatePublishedBodies(const Snapshot& before, const Snapshot& after)
         {
             if (before.world == after.world) {
@@ -287,6 +411,8 @@ namespace rock::native_player_collision
         s_unresolvedWeaponOwners.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
+
+    bool installed() noexcept { return s_installed; }
 
     bool install() noexcept
     {
@@ -380,81 +506,199 @@ namespace rock::native_player_collision
         }
     }
 
+    void publishAuthoredHands(RE::hknpWorld* world, std::span<const BodyIdentity> bodies)
+    {
+        Snapshot next{};
+        if (s_installed && world && bodies.size() <= next.bodies.size()) {
+            next.world = world;
+            next.count = bodies.size();
+            std::copy(bodies.begin(), bodies.end(), next.bodies.begin());
+            std::sort(next.bodies.begin(), next.bodies.begin() + next.count,
+                [](const auto& a, const auto& b) { return a.bodyId < b.bodyId; });
+        }
+        const auto previous = s_authoredHands;
+        if (previous.world == next.world && previous.count == next.count &&
+            std::equal(next.bodies.begin(), next.bodies.begin() + next.count, previous.bodies.begin())) return;
+        {
+            auto mutation = s_gate.pauseForMutation();
+            s_authoredHands = next;
+        }
+        s_gate.resumeCallbacks();
+        if (world) invalidatePublishedBodies(previous, next);
+        ROCK_LOG_INFO(Hand, "Authored handle world collision: bodies={} world={:p} previousRejectedPairs={}",
+            next.count, static_cast<void*>(world), s_authoredRejectedPairs.exchange(0, std::memory_order_relaxed));
+    }
+
     void abandon() noexcept
     {
         s_gate.pauseAndWait();
         s_snapshot = {};
-        s_bladeGate.pauseAndWait();
-        s_bladePair = {};
-        s_bladeRejectedPairs.store(0, std::memory_order_relaxed);
+        s_authoredHands = {};
+        s_toolContactGate.pauseAndWait();
+        s_toolContactPair = {};
+        s_toolContactRejectedPairs.store(0, std::memory_order_relaxed);
+        clearWeaponRelease(nullptr);
+        clearMagazineEjection(nullptr);
     }
 
-    bool publishBladePair(RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody)
+    void clearMagazineEjection(RE::hknpWorld* liveWorld)
+    {
+        const auto previous=s_magazineEjection;
+        s_magazineEjectionGate.pauseAndWait();
+        s_magazineEjection={};
+        s_magazineEjectionHandPair.store(0,std::memory_order_relaxed);
+        if(liveWorld&&previous.world==reinterpret_cast<std::uintptr_t>(liveWorld))
+            for(std::size_t i=0;i<previous.magazineCount;++i)invalidateBodyIfCurrent(liveWorld,previous.magazines[i]);
+    }
+
+    std::uint64_t magazineEjectionRejectedCount() noexcept {return s_magazineEjectionRejected.load(std::memory_order_relaxed);}
+    std::uint64_t takeMagazineEjectionHandPair() noexcept {return s_magazineEjectionHandPair.exchange(0,std::memory_order_relaxed);}
+
+    bool publishMagazineEjection(RE::hknpWorld* world,std::span<const std::uint32_t> magazines,
+        std::span<const std::uint32_t> weapons,std::span<const std::uint32_t> handProtected,std::span<const std::uint32_t> hands)
+    {
+        if(magazines.empty()||weapons.empty()){clearMagazineEjection(world);return s_installed&&world;}
+        MagazineEjectionSnapshot next;next.world=reinterpret_cast<std::uintptr_t>(world);
+        if(!s_installed||!world||magazines.size()>next.magazines.size()||weapons.size()>next.weapons.size()||handProtected.size()>next.handProtected.size()||hands.size()>next.hands.size())return false;
+        const auto collect=[&](auto ids,auto& out,std::size_t& count) {
+            for(auto id:ids) {
+                const auto body=havok_runtime::snapshotBody(world,{id});
+                const auto value=identity(body);
+                if(!body.valid||!matchesLiveBody(value,value)) {
+                    ROCK_LOG_SAMPLE_WARN(Weapon,2000,"Ejection simulation identity rejected body={} valid={} collision=0x{:X} node=0x{:X}",id,body.valid,value.collisionObject,value.ownerNode);
+                    return false;
+                }
+                out[count++]=value;
+            }
+            std::sort(out.begin(),out.begin()+count,[](const auto& a,const auto& b){return a.bodyId<b.bodyId;});
+            return true;
+        };
+        if(!collect(magazines,next.magazines,next.magazineCount)||!collect(weapons,next.weapons,next.weaponCount)||
+            !collect(handProtected,next.handProtected,next.handProtectedCount)||!collect(hands,next.hands,next.handCount))return false;
+        const auto previous=s_magazineEjection;
+        if(previous==next)return true;
+        {
+            auto mutation=s_magazineEjectionGate.pauseForMutation();
+            s_magazineEjection=next;
+        }
+        s_magazineEjectionGate.resumeCallbacks();
+        // Rebuild the affected magazines after publication, outside the callback
+        // gate, for both acquisition and removal. World/ray filters stay intact.
+        if(previous.world==next.world)for(std::size_t i=0;i<previous.magazineCount;++i)invalidateBodyIfCurrent(world,previous.magazines[i]);
+        for(std::size_t i=0;i<next.magazineCount;++i) {
+            const auto* old=previous.world==next.world?MagazineEjectionSnapshot::find(previous.magazines,previous.magazineCount,next.magazines[i].bodyId):nullptr;
+            if(!old||*old!=next.magazines[i]||previous.hands!=next.hands||previous.handProtected!=next.handProtected)invalidateBodyIfCurrent(world,next.magazines[i]);
+        }
+        return true;
+    }
+
+    bool publishWeaponRelease(RE::hknpWorld* world, weapon_release_collision_lease::Identity weapon)
+    {
+        std::uint32_t filter{};
+        if (!s_installed || !world || !weapon.valid() || releaseIdentity(world, weapon.body) != weapon ||
+            !havok_runtime::tryReadFilterInfo(world, { weapon.body }, filter) ||
+            !weapon_release_collision_lease::suppressesHandPair(weapon, weapon,
+                filter & collision_layer_policy::FO4_LAYER_FILTER_MASK,
+                collision_layer_policy::ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY)) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                "Equipped drop collision lease rejected: stage=simulation-publication installed={} body={} object=0x{:X} filter=0x{:X}",
+                s_installed, weapon.body, weapon.collisionObject, filter);
+            return false;
+        }
+        const auto previous = s_releasedWeapon;
+        if (previous == weapon) return true;
+        {
+            auto mutation = s_weaponReleaseGate.pauseForMutation();
+            s_releasedWeapon = weapon;
+            s_weaponReleaseRejectedPairs.store(0, std::memory_order_relaxed);
+        }
+        s_weaponReleaseGate.resumeCallbacks();
+        // Invalidate after publication, outside the read gate. Both acquisition
+        // and expiry rebuild the weapon's pairs without changing body filters.
+        invalidateReleasedWeapon(world, previous);
+        invalidateReleasedWeapon(world, weapon);
+        return true;
+    }
+
+    void clearWeaponRelease(RE::hknpWorld* liveWorld)
+    {
+        const auto previous = s_releasedWeapon;
+        if (!previous.valid()) return;
+        s_weaponReleaseGate.pauseAndWait();
+        s_releasedWeapon = {};
+        const auto rejected = s_weaponReleaseRejectedPairs.exchange(0, std::memory_order_relaxed);
+        invalidateReleasedWeapon(liveWorld, previous);
+        ROCK_LOG_INFO(Weapon, "Equipped drop collision lease cleared: body={} rejectedPairs={}", previous.body, rejected);
+    }
+
+    bool publishToolContactExclusion(RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody)
     {
         if (!s_installed || !world) {
-            ROCK_LOG_WARN(Weapon, "BLADE simulation pair rejected: stage=hook-or-world-unavailable installed={}", s_installed);
+            ROCK_LOG_WARN(Weapon, "Tool contact exclusion rejected: stage=hook-or-world-unavailable installed={}", s_installed);
             return false;
         }
         const auto weapon = havok_runtime::snapshotBody(world, RE::hknpBodyId{ weaponBody });
         const auto target = havok_runtime::snapshotBody(world, RE::hknpBodyId{ targetBody });
-        const BladeCollisionPair next{ reinterpret_cast<std::uintptr_t>(world), identity(weapon), identity(target) };
+        const ToolContactExclusion next{ reinterpret_cast<std::uintptr_t>(world), identity(weapon), identity(target),
+            target.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK };
         if (!weapon.valid || !target.valid || !next.suppresses(next.world, next.weapon, next.target,
                 weapon.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK,
                 target.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK)) {
-            ROCK_LOG_WARN(Weapon, "BLADE simulation pair rejected: stage=body-identity-or-layer weapon={} target={} valid={}/{} objects=0x{:X}/0x{:X} nodes=0x{:X}/0x{:X} filters=0x{:X}/0x{:X}",
+            ROCK_LOG_WARN(Weapon, "Tool contact exclusion rejected: stage=body-identity-or-layer weapon={} target={} valid={}/{} objects=0x{:X}/0x{:X} nodes=0x{:X}/0x{:X} filters=0x{:X}/0x{:X}",
                 weaponBody, targetBody, weapon.valid, target.valid, next.weapon.collisionObject, next.target.collisionObject,
                 next.weapon.ownerNode, next.target.ownerNode, weapon.collisionFilterInfo, target.collisionFilterInfo);
             return false;
         }
-        // Only this game's equipped-blade owner may publish. A second request
+        // Only this game's equipped-tool owner may publish. A second request
         // cannot silently replace another live exception or a recycled body.
-        if (s_bladePair.valid()) {
-            const bool same = s_bladePair.world == next.world && s_bladePair.weapon == next.weapon && s_bladePair.target == next.target;
-            if (!same) ROCK_LOG_WARN(Weapon, "BLADE simulation pair rejected: stage=previous-pair-still-owned");
+        if (s_toolContactPair.valid()) {
+            const bool same = s_toolContactPair.world == next.world && s_toolContactPair.weapon == next.weapon &&
+                s_toolContactPair.target == next.target && s_toolContactPair.targetLayer == next.targetLayer;
+            if (!same) ROCK_LOG_WARN(Weapon, "Tool contact exclusion rejected: stage=previous-pair-still-owned");
             return same;
         }
         {
-            auto mutation = s_bladeGate.pauseForMutation();
-            s_bladeRejectedPairs.store(0, std::memory_order_relaxed);
-            s_bladePair = next;
+            auto mutation = s_toolContactGate.pauseForMutation();
+            s_toolContactRejectedPairs.store(0, std::memory_order_relaxed);
+            s_toolContactPair = next;
         }
-        s_bladeGate.resumeCallbacks();
+        s_toolContactGate.resumeCallbacks();
         invalidateBodyIfCurrent(world, next.weapon);
         invalidateBodyIfCurrent(world, next.target);
-        ROCK_LOG_INFO(Weapon, "BLADE simulation pair published: weapon={} target={} world=0x{:X}", weaponBody, targetBody, next.world);
+        ROCK_LOG_INFO(Weapon, "Tool contact exclusion published: weapon={} target={} world=0x{:X}", weaponBody, targetBody, next.world);
         return true;
     }
 
-    bool hasBladePair(RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody) noexcept
+    bool hasToolContactExclusion(RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody) noexcept
     {
-        if (!s_installed || !s_bladePair.valid() || s_bladePair.world != reinterpret_cast<std::uintptr_t>(world) ||
-            s_bladePair.weapon.bodyId != weaponBody || s_bladePair.target.bodyId != targetBody) return false;
+        if (!s_installed || !s_toolContactPair.valid() || s_toolContactPair.world != reinterpret_cast<std::uintptr_t>(world) ||
+            s_toolContactPair.weapon.bodyId != weaponBody || s_toolContactPair.target.bodyId != targetBody) return false;
         const auto weapon = havok_runtime::snapshotBody(world, RE::hknpBodyId{ weaponBody });
         const auto target = havok_runtime::snapshotBody(world, RE::hknpBodyId{ targetBody });
-        return weapon.valid && target.valid && s_bladePair.suppresses(reinterpret_cast<std::uintptr_t>(world),
+        return weapon.valid && target.valid && s_toolContactPair.suppresses(reinterpret_cast<std::uintptr_t>(world),
             identity(weapon), identity(target),
             weapon.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK,
             target.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK);
     }
 
-    std::uint64_t bladePairRejectedCount() noexcept
+    std::uint64_t toolContactRejectedCount() noexcept
     {
-        return s_bladeRejectedPairs.load(std::memory_order_relaxed);
+        return s_toolContactRejectedPairs.load(std::memory_order_relaxed);
     }
 
-    void clearBladePair(RE::hknpWorld* liveWorld)
+    void clearToolContactExclusion(RE::hknpWorld* liveWorld)
     {
-        const auto previous = s_bladePair;
+        const auto previous = s_toolContactPair;
         if (!previous.valid()) return;
         std::uint64_t rejectedPairs = 0;
-        s_bladeGate.pauseAndWait();
-        s_bladePair = {};
-        rejectedPairs = s_bladeRejectedPairs.exchange(0, std::memory_order_relaxed);
+        s_toolContactGate.pauseAndWait();
+        s_toolContactPair = {};
+        rejectedPairs = s_toolContactRejectedPairs.exchange(0, std::memory_order_relaxed);
         if (liveWorld && previous.world == reinterpret_cast<std::uintptr_t>(liveWorld)) {
             invalidateBodyIfCurrent(liveWorld, previous.weapon);
             invalidateBodyIfCurrent(liveWorld, previous.target);
         }
-        ROCK_LOG_INFO(Weapon, "BLADE simulation pair cleared: weapon={} target={} rejectedPairs={}",
+        ROCK_LOG_INFO(Weapon, "Tool contact exclusion cleared: weapon={} target={} rejectedPairs={}",
             previous.weapon.bodyId, previous.target.bodyId, rejectedPairs);
     }
 }

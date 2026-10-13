@@ -154,16 +154,8 @@ function Get-ChangedFiles {
     return @($paths | Sort-Object)
 }
 
-function Test-CatalogCurrent {
-    $catalogPath = Join-Path $script:BuildDirectory 'RockTestCatalog.json'
-    if (-not (Test-Path -LiteralPath $catalogPath)) { return $false }
-    try {
-        $catalog = Get-Content -Raw -LiteralPath $catalogPath | ConvertFrom-Json
-        return $catalog.CMakeHash -eq (Get-FileHash (Join-Path $script:RepoRoot 'CMakeLists.txt')).Hash -and
-            $catalog.RegistrationHash -eq (Get-FileHash (Join-Path $script:RepoRoot 'cmake/RockTestRegistration.cmake')).Hash
-    } catch {
-        return $false
-    }
+function Test-CatalogPresent {
+    return Test-Path -LiteralPath (Join-Path $script:BuildDirectory 'RockTestCatalog.json')
 }
 
 function Get-PolicyTargetDefinitions {
@@ -330,15 +322,15 @@ if ($Json -and -not $PlanOnly) {
     throw '-Json is available only with -PlanOnly.'
 }
 
-# PlanOnly remains read-only. Refuse a stale catalog rather than presenting
-# an incomplete target list; an executing run refreshes it before selection.
+# An executing run always refreshes the catalog through the incremental
+# configure, so newly registered targets are visible before selection.
+# PlanOnly stays read-only and uses the catalog that exists.
 $catalogConfigured = $false
-if (-not (Test-CatalogCurrent)) {
-    if ($PlanOnly) {
-        throw 'The CMake test catalog is missing or stale. Run cmake --preset custom-tests before requesting a plan.'
-    }
+if (-not $PlanOnly) {
     Invoke-CheckedCommand 'cmake' @('--preset', 'custom-tests')
     $catalogConfigured = $true
+} elseif (-not (Test-CatalogPresent)) {
+    throw 'The CMake test catalog is missing. Run cmake --preset custom-tests before requesting a plan.'
 }
 $policyDefinitions = Get-PolicyTargetDefinitions
 $allPolicyTargets = @($policyDefinitions.Keys | Sort-Object)
@@ -487,14 +479,12 @@ $sdkSelected = [bool]($fullSuiteReason -or @($changedFiles | Where-Object {
 $sdkBuildTargets = if ($sdkSelected) { @('ROCKSDKExamplePlugins') } else { @() }
 $sdkTests = if ($sdkSelected) { @('RpsSdkRockContractTests', 'ROCKSDKExampleBehaviorTests') } else { @() }
 $testNames = @($policyTargets + $sourceTests + $sdkTests | Sort-Object -Unique)
-$uncoveredBehavior = if ($fullSuiteReason) {
-    # Full selection is conservative; it cannot establish integration coverage.
-    @($changedFiles | Where-Object { $_ -match '(?i)^src/.*\.(cpp|h|inl)$' })
-} else {
-    @($changedFiles | Where-Object {
-        $_ -match '(?i)^src/.*\.(cpp|h|inl)$' -and -not $behaviorMappedChanges.Contains($_)
-    })
-}
+# Full selection is conservative; it cannot establish integration coverage.
+# The outer @() keeps an empty result an array under StrictMode.
+$uncoveredBehavior = @($changedFiles | Where-Object {
+    $_ -match '(?i)^src/.*\.(cpp|h|inl)$' -and
+        ($fullSuiteReason -or -not $behaviorMappedChanges.Contains($_))
+})
 if ($policyTargets.Count -eq $allPolicyTargets.Count) {
     $policyBuildTargets = @('ROCKPolicyTestBinaries')
 } else {

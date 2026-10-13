@@ -98,21 +98,6 @@ namespace rock::object_physics_body_set
             return result;
         }
 
-        std::uint32_t duplicateAcceptedMotionSkips() const
-        {
-            std::uint32_t skips = 0;
-            std::unordered_set<std::uint32_t> seenMotionIds;
-            for (const auto& record : records) {
-                if (!record.accepted) {
-                    continue;
-                }
-                if (!seenMotionIds.insert(record.motionId).second) {
-                    ++skips;
-                }
-            }
-            return skips;
-        }
-
         bool containsAcceptedBody(std::uint32_t bodyId) const
         {
             return std::any_of(records.begin(), records.end(), [&](const PureBodyRecord& record) { return record.accepted && record.bodyId == bodyId; });
@@ -183,22 +168,11 @@ namespace rock::object_physics_body_set
     class BodySetBuilder
     {
     public:
-        void addForTest(const PureBodyRecord& record)
-        {
-            if (record.bodyId == INVALID_BODY_ID) {
-                return;
-            }
-            if (!_seenBodyIds.insert(record.bodyId).second) {
-                return;
-            }
-            _set.records.push_back(record);
-        }
 
         PureBodySet build() const { return _set; }
 
     private:
         PureBodySet _set;
-        std::unordered_set<std::uint32_t> _seenBodyIds;
     };
 
     struct BodySetScanOptions
@@ -247,6 +221,10 @@ namespace rock::object_physics_body_set
         std::uint32_t seedBodiesAdded = 0;
         std::uint32_t scanFailures = 0;
         std::uint32_t benignScanSkips = 0;
+        // Positive absence: readable wrapper with no system, or a readable
+        // same-world instance with zero bodies. Missing/unreadable owners are not empty.
+        std::uint32_t emptyScanSkips = 0;
+        std::uint8_t unverifiedScanSkipStatus = 0;
         std::uint32_t invalidPhysicsSystems = 0;
         std::uint32_t foreignRefBodySkips = 0;
         std::uint32_t unresolvedRefBodiesAccepted = 0;

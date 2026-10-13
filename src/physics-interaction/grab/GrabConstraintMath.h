@@ -52,18 +52,6 @@ namespace rock::grab_constraint_math
     }
 
     template <class Matrix>
-    inline Matrix proxyInBodyRotationFromBodyInProxyRotation(const Matrix& bodyInProxyRotation)
-    {
-        return transform_math::transposeRotation(bodyInProxyRotation);
-    }
-
-    template <class Matrix>
-    inline Matrix desiredBodyToHandRotation(const Matrix& desiredBodyTransformHandSpaceRotation)
-    {
-        return proxyInBodyRotationFromBodyInProxyRotation(desiredBodyTransformHandSpaceRotation);
-    }
-
-    template <class Matrix>
     inline void writeHavokRotationRows(float* target, const Matrix& rotation)
     {
         if (!target) {
@@ -106,12 +94,6 @@ namespace rock::grab_constraint_math
     inline Transform proxyInBodyFromBodyInProxy(const Transform& bodyInProxy)
     {
         return transform_math::invertTransform(bodyInProxy);
-    }
-
-    template <class Transform>
-    inline auto proxyInBodyRotationFromBodyInProxy(const Transform& bodyInProxy)
-    {
-        return proxyInBodyRotationFromBodyInProxyRotation(bodyInProxy.rotate);
     }
 
     template <class Transform, class Vector>
@@ -191,42 +173,9 @@ namespace rock::grab_constraint_math
     }
 
     template <class Transform, class Vector>
-    inline void writeGeneratedProxyConstraintPivotLocalTranslation(float* constraintTranslation,
-        const Transform& bodyWorld,
-        const Vector& pivotWorld,
-        float gameToHavokScale)
-    {
-        if (!constraintTranslation) {
-            return;
-        }
-
-        const Vector pivotLocalGame = computeGeneratedProxyConstraintPivotLocalGame(bodyWorld, pivotWorld);
-        constraintTranslation[0] = pivotLocalGame.x * gameToHavokScale;
-        constraintTranslation[1] = pivotLocalGame.y * gameToHavokScale;
-        constraintTranslation[2] = pivotLocalGame.z * gameToHavokScale;
-        constraintTranslation[3] = 0.0f;
-    }
-
-    template <class Transform, class Vector>
     inline Vector computeDynamicTransformBTranslationGame(const Transform& desiredBodyTransformHandSpace, const Vector& pivotAHandBodyLocalGame)
     {
         return computeHiggsTransformBTranslationGame(desiredBodyTransformHandSpace, pivotAHandBodyLocalGame);
     }
 
-    template <class Transform, class Vector>
-    inline void writeDynamicTransformBTranslation(float* transformBTranslation,
-        const Transform& desiredBodyTransformHandSpace,
-        const Vector& pivotAHandBodyLocalGame,
-        float gameToHavokScale)
-    {
-        if (!transformBTranslation) {
-            return;
-        }
-
-        const Vector transformBTranslationGame = computeDynamicTransformBTranslationGame(desiredBodyTransformHandSpace, pivotAHandBodyLocalGame);
-        transformBTranslation[0] = transformBTranslationGame.x * gameToHavokScale;
-        transformBTranslation[1] = transformBTranslationGame.y * gameToHavokScale;
-        transformBTranslation[2] = transformBTranslationGame.z * gameToHavokScale;
-        transformBTranslation[3] = 0.0f;
-    }
 }

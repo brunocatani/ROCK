@@ -117,6 +117,8 @@ namespace rock::shell_casing_grace
             return "unknown";
         }
         std::atomic<std::uint64_t> s_registered{}, s_suppressed{}, s_restored{}, s_stale{}, s_failures{};
+        std::atomic<std::uint64_t> s_nonShellLayerRegistered{};
+        std::atomic<std::uint32_t> s_lastCandidateLayer{ UINT32_MAX };
         std::atomic<Failure> s_failure{};
         std::atomic<std::uint32_t> s_lastBody{ kInvalidBody }, s_lastRestoredBody{ kInvalidBody };
         std::atomic<double> s_lastRestoreMs{};
@@ -160,7 +162,12 @@ namespace rock::shell_casing_grace
         {
             const auto live = havok_runtime::snapshotBodyIdentity(world, RE::hknpBodyId{ id });
             if (!live.valid || !live.collisionObject || !live.motionIndex) { fail(Failure::BodyIdentity); return; }
-            if ((live.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK) != collision_layer_policy::FO4_LAYER_SHELLCASING) return;
+            const auto layer = live.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+            s_lastCandidateLayer.store(layer, std::memory_order_relaxed);
+            // The verified native ejection scope owns this body. Casing assets
+            // can use other layers (including PROJECTILE); requiring layer 25
+            // here silently leaves those shells colliding with their weapon.
+            // Retain the exact body identity and source generation instead.
             const auto epoch = s_epoch.load();
             Record born{ identity(live), reinterpret_cast<std::uintptr_t>(world), epoch,
                 s_birthContext.weaponGeneration, s_birthContext.birth,
@@ -177,6 +184,8 @@ namespace rock::shell_casing_grace
                 if (!occupied) s_active.fetch_add(1);
                 slot.write(born, stamp);
                 s_registered.fetch_add(1, std::memory_order_relaxed);
+                if (layer != collision_layer_policy::FO4_LAYER_SHELLCASING)
+                    s_nonShellLayerRegistered.fetch_add(1, std::memory_order_relaxed);
                 s_lastBody.store(id, std::memory_order_relaxed);
                 return;
             }
@@ -225,7 +234,13 @@ namespace rock::shell_casing_grace
             const bool result = s_attach(world, physicsRoot, visualRoot);
             // FO4VR 71DAD9 acquires the world write lock; 71DAF2 attaches the
             // bodies; 71DB44 releases it. Capture here, before that release.
-            if (s_birthContext.weaponGeneration) recordAttachedTreeGuarded(world, physicsRoot);
+            if (s_birthContext.weaponGeneration) {
+                // 71DAE9 passes the complete debris scene in R8; 1DF9250
+                // retains that third argument and traverses it at 1DF9370.
+                // RDX may be only one child selected by 71D9B0. Capture the
+                // same full scene that native attachment actually processes.
+                recordAttachedTreeGuarded(world, visualRoot);
+            }
             return result;
         }
 
@@ -258,7 +273,6 @@ namespace rock::shell_casing_grace
                     record.world != reinterpret_cast<std::uintptr_t>(world) || !weaponContains(weapon, record.weaponGeneration)) continue;
                 const auto live = havok_runtime::snapshotBodyIdentity(world, RE::hknpBodyId{ casing });
                 return live.valid && record.body.matches(identity(live)) &&
-                    (live.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK) == collision_layer_policy::FO4_LAYER_SHELLCASING &&
                     slot.version.load() == stamp && s_epoch.load() == epoch;
             }
             return false;
@@ -336,10 +350,12 @@ namespace rock::shell_casing_grace
         s_nextReportMs = now + 5000;
         const auto registered = s_registered.exchange(0), suppressed = s_suppressed.exchange(0);
         const auto restored = s_restored.exchange(0), stale = s_stale.exchange(0), failures = s_failures.exchange(0);
+        const auto nonShellLayerRegistered = s_nonShellLayerRegistered.exchange(0);
         if (registered || restored || suppressed || failures) {
-            ROCK_LOG_INFO(Weapon, "Shell casing grace: registered={} suppressedPairs={} restored={} stale={} failures={} deepestStage={} active={} graceMs={:.3f} lastBornBody={} lastRestoredBody={} lastRestoreMs={:.3f}",
+            ROCK_LOG_INFO(Weapon, "Shell casing grace: registered={} suppressedPairs={} restored={} stale={} failures={} deepestStage={} active={} graceMs={:.3f} lastBornBody={} lastRestoredBody={} lastRestoreMs={:.3f} rootScope=full-debris nonShellLayerRegistered={} lastLayer={}",
                 registered, suppressed, restored, stale, failures, failureName(s_failure.exchange(Failure::None)),
-                s_active.load(), s_milliseconds.load(), s_lastBody.load(), s_lastRestoredBody.load(), s_lastRestoreMs.load());
+                s_active.load(), s_milliseconds.load(), s_lastBody.load(), s_lastRestoredBody.load(), s_lastRestoreMs.load(),
+                nonShellLayerRegistered, s_lastCandidateLayer.load());
         }
     }
 

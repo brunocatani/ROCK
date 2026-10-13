@@ -1,5 +1,4 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
-#include "physics-interaction/weapon/telemetry/ScopeTransitionTelemetry.h"
 
 // ScopeMenu-safe hand frames and deferred scope hand-authority role clears.
 
@@ -36,10 +35,6 @@ namespace rock
             driverFrameAuthorityWasActive && !_scope.driverFrameAuthorityActive;
 
         if (scopeStateChanged) {
-            scope_transition_telemetry::write("SCT hand-mode frame={} menuOpen={} button={} driverBefore={} driverAfter={} ownership={} deferredLeft={} deferredRight={}",
-                scope_transition_telemetry::sequence(), _scope.menuOpenThisFrame, _scope.manualActivationRequested,
-                driverFrameAuthorityWasActive, _scope.driverFrameAuthorityActive, isManualOwnershipActive(),
-                _scope.deferredHandAuthorityClears[0], _scope.deferredHandAuthorityClears[1]);
             // FRIK 2.3 keeps solving the arms while scoped. A menu edge does
             // not acquire a new grip: preserve its interpolation state so a
             // seated hand cannot jump back to controller intent and re-seat.
@@ -60,8 +55,6 @@ namespace rock
         const auto refreshHand = [this, weaponNode, driverFrameAuthorityStoppedThisFrame, frameDeltaSeconds](bool isLeft, const EquippedWeaponScopeHandDriverFrame& driverFrame) {
             const std::size_t handIndex = isLeft ? 0u : 1u;
             ScopeSafeHandFrameState& state = _scope.safeHandFrames[handIndex];
-            ScopeSafeHandFrameDiagnostic& diagnostic = state.diagnostic;
-            diagnostic = {};
             state.currentHandWorldValid = false;
 
             RE::NiTransform rootHandWorld{};
@@ -101,27 +94,6 @@ namespace rock
                 state.hasLastHandWorld,
                 state.consecutiveDriverMissFrames,
                 SCOPE_DRIVER_MISS_GRACE_FRAMES);
-
-            diagnostic.rootHandWorld = rootHandWorld;
-            diagnostic.driverWorld = driverFrame.world;
-            diagnostic.reconstructedHandWorld = reconstructedHandWorld;
-            diagnostic.resolutionMode = resolutionMode;
-            diagnostic.consecutiveDriverMissFramesBefore =
-                state.consecutiveDriverMissFrames;
-            diagnostic.rootSampleAllowed = rootSampleAllowed;
-            diagnostic.rootHandValid = rootHandValid;
-            diagnostic.driverNodeAvailable = driverFrame.nodeAvailable;
-            diagnostic.driverWorldFinite = driverFrame.worldFinite;
-            diagnostic.driverFrameValid = driverFrame.valid;
-            diagnostic.driverWorldUsable = driverValid;
-            diagnostic.driverToHandLocalAvailable =
-                state.hasDriverToHandLocal;
-            diagnostic.reconstructedHandValid = reconstructedHandValid;
-            diagnostic.lastHandWorldAvailable = state.hasLastHandWorld;
-            diagnostic.collisionPresentationWasLive =
-                _visuals.weaponCollisionHandPresentationFromPreviousFrame[handIndex];
-            diagnostic.scopeDriverFrameAuthorityActive =
-                _scope.driverFrameAuthorityActive;
 
             if (resolutionMode == scope_safe_hand_frame_math::ResolutionMode::RootFlattened) {
                 const bool recentScopedHandAvailable = state.hasLastHandWorld &&
@@ -244,160 +216,9 @@ namespace rock
                 firingState.currentHandWorldValid = true;
                 firingState.lastHandWorld = physicalHandWorld;
                 firingState.hasLastHandWorld = true;
-                firingState.diagnostic.physicalFrameOverrideApplied = true;
             }
         }
 
-        for (ScopeSafeHandFrameState& state : _scope.safeHandFrames) {
-            state.diagnostic.currentHandWorld = state.currentHandWorld;
-            state.diagnostic.currentHandWorldValid =
-                state.currentHandWorldValid;
-            state.diagnostic.consecutiveDriverMissFramesAfter =
-                state.consecutiveDriverMissFrames;
-        }
-
-        if (scope_transition_telemetry::activeLogger()) {
-            for (const bool isLeft : { true, false }) {
-                const auto index = isLeft ? 0u : 1u;
-                const auto& hand = _scope.safeHandFrames[index];
-                const auto& d = hand.diagnostic;
-                scope_transition_telemetry::write("SCT solver-mode frame={} hand={} generation={:X} ownership={:X} form={:08X} mode={} rootAllowed={} driverRelation={} missedDrivers={} rebaseActive={} rebaseElapsed={:.6f} collisionPresented={} physicalOverride={} deferred={} published={}",
-                    scope_transition_telemetry::sequence(), isLeft ? "left" : "right", _scope.anchorGenerationKey,
-                    _scope.anchorOwnershipKey, _scope.anchorWeaponFormID, static_cast<unsigned>(d.resolutionMode),
-                    d.rootSampleAllowed, hand.hasDriverToHandLocal, hand.consecutiveDriverMissFrames,
-                    hand.rootRebaseActive, hand.rootRebaseElapsedSeconds, d.collisionPresentationWasLive,
-                    d.physicalFrameOverrideApplied, _scope.deferredHandAuthorityClears[index], _scope.handAuthorityPublishedThisFrame[index]);
-            }
-            struct HandTrace
-            {
-                RE::NiTransform rootWorld{};
-                RE::NiTransform driverWorld{};
-                RE::NiTransform reconstructedWorld{};
-                RE::NiTransform solverWorld{};
-                bool rootValid{ false };
-                bool driverValid{ false };
-                bool reconstructedValid{ false };
-                bool solverValid{ false };
-                float rootToReconstructedDistance{ -1.0f };
-                float rootToSolverDistance{ -1.0f };
-            };
-
-            const auto distanceBetween = [](const RE::NiPoint3& left, const RE::NiPoint3& right) {
-                const RE::NiPoint3 delta = left - right;
-                const float distance = delta.Length();
-                return std::isfinite(distance) ? distance : -1.0f;
-            };
-            const auto captureHandTrace = [this, &distanceBetween](bool isLeft, const EquippedWeaponScopeHandDriverFrame& driverFrame) {
-                HandTrace trace{};
-                const ScopeSafeHandFrameState& state =
-                    _scope.safeHandFrames[isLeft ? 0u : 1u];
-                trace.rootValid =
-                    tryGetRootFlattenedHandBoneTransform(isLeft, trace.rootWorld);
-                trace.driverValid = driverFrame.valid &&
-                                    isUsableHandAuthorityTransform(driverFrame.world);
-                if (trace.driverValid) {
-                    trace.driverWorld = driverFrame.world;
-                }
-                if (trace.driverValid && state.hasDriverToHandLocal) {
-                    trace.reconstructedWorld =
-                        scope_safe_hand_frame_math::resolveHandWorld(
-                            driverFrame.world,
-                            state.driverToHandLocal);
-                    trace.reconstructedValid =
-                        isUsableHandAuthorityTransform(trace.reconstructedWorld);
-                }
-                trace.solverValid = state.currentHandWorldValid;
-                if (trace.solverValid) {
-                    trace.solverWorld = state.currentHandWorld;
-                }
-                if (trace.rootValid && trace.reconstructedValid) {
-                    trace.rootToReconstructedDistance = distanceBetween(
-                        trace.rootWorld.translate,
-                        trace.reconstructedWorld.translate);
-                }
-                if (trace.rootValid && trace.solverValid) {
-                    trace.rootToSolverDistance = distanceBetween(
-                        trace.rootWorld.translate,
-                        trace.solverWorld.translate);
-                }
-                return trace;
-            };
-
-            const HandTrace leftTrace =
-                captureHandTrace(true, frameInput.leftHandDriverFrame);
-            const HandTrace rightTrace =
-                captureHandTrace(false, frameInput.rightHandDriverFrame);
-            RE::NiPoint3 weaponWorldPosition{};
-            const bool weaponWorldValid = weaponNode &&
-                                          isFiniteTransform(weaponNode->world);
-            if (weaponWorldValid) {
-                weaponWorldPosition = weaponNode->world.translate;
-            }
-            RE::NiPoint3 playerWorldOffset{};
-            bool playerWorldOffsetValid = false;
-            if (const auto* playerNodes = f4vr::getPlayerNodes();
-                playerNodes && playerNodes->playerworldnode &&
-                isFiniteTransform(playerNodes->playerworldnode->local)) {
-                playerWorldOffset =
-                    playerNodes->playerworldnode->local.translate;
-                playerWorldOffsetValid = true;
-            }
-
-            scope_transition_telemetry::write(
-                "SCT solver frame={} buttonRequested={} rendererValid={} rendererActive={} menuOpen={} manual={} state={} driverAuthority={} weaponValid={} weapon=({:.2f},{:.2f},{:.2f}) playerOffsetValid={} playerOffset=({:.2f},{:.2f},{:.2f}) left[root={} driver={} reconstructed={} solver={} rootT=({:.2f},{:.2f},{:.2f}) driverT=({:.2f},{:.2f},{:.2f}) reconstructedT=({:.2f},{:.2f},{:.2f}) solverT=({:.2f},{:.2f},{:.2f}) rootToReconstructed={:.2f} rootToSolver={:.2f}] right[root={} driver={} reconstructed={} solver={} rootT=({:.2f},{:.2f},{:.2f}) driverT=({:.2f},{:.2f},{:.2f}) reconstructedT=({:.2f},{:.2f},{:.2f}) solverT=({:.2f},{:.2f},{:.2f}) rootToReconstructed={:.2f} rootToSolver={:.2f}]",
-                scope_transition_telemetry::sequence(),
-                _scope.manualActivationRequested ? "yes" : "no",
-                frameInput.nativeScopeRequestStateValid ? "yes" : "no",
-                _scope.nativeRequestActive ? "yes" : "no",
-                _scope.menuOpenThisFrame ? "yes" : "no",
-                isManualOwnershipActive() ? "yes" : "no",
-                static_cast<std::uint32_t>(_session.state),
-                _scope.driverFrameAuthorityActive ? "yes" : "no",
-                weaponWorldValid ? "yes" : "no",
-                weaponWorldPosition.x,
-                weaponWorldPosition.y,
-                weaponWorldPosition.z,
-                playerWorldOffsetValid ? "yes" : "no",
-                playerWorldOffset.x,
-                playerWorldOffset.y,
-                playerWorldOffset.z,
-                leftTrace.rootValid ? "yes" : "no",
-                leftTrace.driverValid ? "yes" : "no",
-                leftTrace.reconstructedValid ? "yes" : "no",
-                leftTrace.solverValid ? "yes" : "no",
-                leftTrace.rootWorld.translate.x,
-                leftTrace.rootWorld.translate.y,
-                leftTrace.rootWorld.translate.z,
-                leftTrace.driverWorld.translate.x,
-                leftTrace.driverWorld.translate.y,
-                leftTrace.driverWorld.translate.z,
-                leftTrace.reconstructedWorld.translate.x,
-                leftTrace.reconstructedWorld.translate.y,
-                leftTrace.reconstructedWorld.translate.z,
-                leftTrace.solverWorld.translate.x,
-                leftTrace.solverWorld.translate.y,
-                leftTrace.solverWorld.translate.z,
-                leftTrace.rootToReconstructedDistance,
-                leftTrace.rootToSolverDistance,
-                rightTrace.rootValid ? "yes" : "no",
-                rightTrace.driverValid ? "yes" : "no",
-                rightTrace.reconstructedValid ? "yes" : "no",
-                rightTrace.solverValid ? "yes" : "no",
-                rightTrace.rootWorld.translate.x,
-                rightTrace.rootWorld.translate.y,
-                rightTrace.rootWorld.translate.z,
-                rightTrace.driverWorld.translate.x,
-                rightTrace.driverWorld.translate.y,
-                rightTrace.driverWorld.translate.z,
-                rightTrace.reconstructedWorld.translate.x,
-                rightTrace.reconstructedWorld.translate.y,
-                rightTrace.reconstructedWorld.translate.z,
-                rightTrace.solverWorld.translate.x,
-                rightTrace.solverWorld.translate.y,
-                rightTrace.solverWorld.translate.z,
-                rightTrace.rootToReconstructedDistance,
-                rightTrace.rootToSolverDistance);
-        }
     }
 
     void TwoHandedGrip::deferScopeHandAuthorityClear(
@@ -525,16 +346,5 @@ namespace rock
         if (clearAttempted) {
             restoreScopeHandAuthorityCleanupVisuals(visualSnapshot);
         }
-        scope_transition_telemetry::write(
-            "SCT cleanup frame={} "
-            "left(clear=0x{:02X},retain=0x{:02X},pending=0x{:02X}) "
-            "right(clear=0x{:02X},retain=0x{:02X},pending=0x{:02X})",
-            scope_transition_telemetry::sequence(),
-            static_cast<unsigned>(cleared[0]),
-            static_cast<unsigned>(retained[0]),
-            static_cast<unsigned>(_scope.deferredHandAuthorityClears[0]),
-            static_cast<unsigned>(cleared[1]),
-            static_cast<unsigned>(retained[1]),
-            static_cast<unsigned>(_scope.deferredHandAuthorityClears[1]));
     }
 }

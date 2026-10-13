@@ -1,3 +1,4 @@
+#include "api/StorageService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 
 // Provider force-grab commits, fuse service, and held-grenade arming.
@@ -6,7 +7,7 @@ namespace rock
 {
     namespace
     {
-        void rollbackInventoryTransfer(const PendingForceGrabCommit& commit)
+        void rollbackInventoryTransfer(const PendingForceGrabCommit& commit, const char* reason)
         {
             if (!commit.inventoryTransfer) {
                 return;
@@ -16,8 +17,10 @@ namespace rock
             f4vr::showNotification(returned ?
                 "ROCK: Item handoff failed; returned to inventory." :
                 "ROCK: Item handoff failed; check the dropped item near your hand.");
-            ROCK_LOG_WARN(Hand, "Inventory handoff rollback: command={} ref={:08X} returned={}",
-                commit.providerResultTemplate.commandId, ref ? ref->GetFormID() : 0, returned);
+            ROCK_LOG_WARN(Hand, "Inventory handoff rollback: command={} owner={} ref={:08X} returned={} reason={} hand={} dropMode={} phase={} elapsed={:.3f}s",
+                commit.providerResultTemplate.commandId, commit.providerResultTemplate.ownerToken,
+                ref ? ref->GetFormID() : 0, returned, reason, commit.isLeft ? "left" : "right",
+                static_cast<unsigned>(commit.equippedWeaponDropMode), static_cast<unsigned>(commit.phase), commit.elapsedTotalSeconds);
         }
     }
 
@@ -40,7 +43,7 @@ namespace rock
                 commit.providerResultTemplate.failure = provider::RockProviderInteractionFailureV1::ProviderNotReady;
                 provider::completeInteractionCommandV1(commit.providerResultTemplate);
             }
-            rollbackInventoryTransfer(commit);
+            rollbackInventoryTransfer(commit, "pending-grabs-cleared");
             if (commit.weaponTransferSequence) _equipped.transition.recordOutgoingResult(commit.weaponTransferSequence, false);
             commit = {};
         }
@@ -55,7 +58,7 @@ namespace rock
             for (auto& handoff : _drop.nativeHandoffs) {
                 if (handoff.active && handoff.handle == commit.targetHandle) handoff = {};
             }
-            rollbackInventoryTransfer(commit);
+            rollbackInventoryTransfer(commit, "blocking-menu");
             if (commit.weaponTransferSequence) _equipped.transition.recordOutgoingResult(commit.weaponTransferSequence, false);
             _forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u] = {};
             commit = {};
@@ -104,7 +107,7 @@ namespace rock
             force_grab_policy::equippedWeaponOccupiesHand(
             isLeft,
             equippedWeaponPresent,
-            _twoHandedGrip.isPartCarryActive(),
+            _twoHandedGrip.isFiringGripDetached(),
             equippedWeaponFiringHandForGrabIsLeft(),
             _twoHandedGrip.isHandPartGripping(isLeft)));
 
@@ -113,7 +116,7 @@ namespace rock
             .openInteractionState = openInteractionState,
             .holding = hand.isHolding(),
             .activePullCatch = hand.hasActivePullCatchIntent(),
-            .actorEquipmentHandoff = hand.hasPendingActorEquipmentDropHandoff(),
+            .extractionHandoff = hand.hasPendingExtractedItemHandoff(),
             .pendingForceGrab = includePendingCommit && _forceGrab.pendingCommits[isLeft ? 1u : 0u].active,
             .equippedWeaponOccupiesHand = equippedWeaponOccupiesHand,
             .touchGrabActive = _touchGrabRuntime.isHandActive(isLeft),
@@ -165,7 +168,7 @@ namespace rock
                 !provider::isInteractionCommandActiveV1(
                     commit.providerResultTemplate.ownerToken,
                     commit.providerResultTemplate.commandId)) {
-                rollbackInventoryTransfer(commit);
+                rollbackInventoryTransfer(commit, "provider-command-pruned");
                 commit = {};
             }
         }
@@ -226,7 +229,13 @@ namespace rock
 
             auto abandon = [&](const char* reason,
                                provider::RockProviderInteractionFailureV1 providerFailure,
-                               RE::TESObjectREFR*) {
+                               RE::TESObjectREFR* target) {
+                ROCK_LOG_WARN(Hand,
+                    "Pending force-grab commit abandoned ({}): hand={} ref={:08X} root={} phase={} elapsed={:.3f}s limit={:.3f}s blockers={:X} preferredBody={} selectionBody={} maxDistance={:.2f} sourceOverride={}",
+                    reason, commit.isLeft ? "left" : "right", target ? target->GetFormID() : 0,
+                    target && target->Get3D(), static_cast<unsigned>(commit.phase), commit.elapsedTotalSeconds, commit.maxTotalSeconds,
+                    forceGrabHandBlockerMask(hand, commit.isLeft, handInput.disabled, false), commit.preferredBodyId,
+                    hand.getSelection().bodyId.value, commit.maxDistanceGame, commit.hasSourcePointOverride);
                 commit.providerResultTemplate.state = provider::RockProviderInteractionCommandStateV1::Rejected;
                 commit.providerResultTemplate.failure = providerFailure;
                 if (!commit.internallyOwned()) {
@@ -242,12 +251,8 @@ namespace rock
                     }
                     _forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u] = {};
                 }
-                rollbackInventoryTransfer(commit);
+                rollbackInventoryTransfer(commit, reason);
                 if (commit.weaponTransferSequence) _equipped.transition.recordOutgoingResult(commit.weaponTransferSequence, false);
-                ROCK_LOG_WARN(Hand,
-                    "Pending force-grab commit abandoned ({}): hand={}",
-                    reason,
-                    commit.isLeft ? "left" : "right");
                 commit = {};
             };
 
@@ -258,7 +263,7 @@ namespace rock
                     "Pending provider force-grab commit cancelled because its command is no longer active: command={} hand={}",
                     commit.providerResultTemplate.commandId,
                     commit.isLeft ? "left" : "right");
-                rollbackInventoryTransfer(commit);
+                rollbackInventoryTransfer(commit, "provider-command-cancelled");
                 commit = {};
                 continue;
             }
@@ -276,6 +281,10 @@ namespace rock
             }
             if (targetRef->IsDeleted() || targetRef->IsDisabled()) {
                 abandon("target ref disappeared", provider::RockProviderInteractionFailureV1::TargetUnavailable, targetRef);
+                continue;
+            }
+            if (!commit.internallyOwned() && !storage_service::allowsGrab(targetRef->formID, commit.providerResultTemplate.ownerToken)) {
+                abandon("target reserved by item storage", provider::RockProviderInteractionFailureV1::TargetUnavailable, targetRef);
                 continue;
             }
 
@@ -436,20 +445,24 @@ namespace rock
                     "Provider force-grab rolled back because command ownership ended during commit: command={} hand={}",
                     commit.providerResultTemplate.commandId,
                     commit.isLeft ? "left" : "right");
-                rollbackInventoryTransfer(commit);
+                rollbackInventoryTransfer(commit, "provider-command-ended-during-commit");
                 commit = {};
                 continue;
             }
 
             if (commit.isEquippedWeaponTransfer()) {
                 _drop.visuals[commit.isLeft ? 1u : 0u].release("exact-loose-grab-committed");
-                _forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u].grabIdentity = hand.heldGrabIdentity();
-                ROCK_LOG_INFO(Weapon,
-                    "Equipped weapon acquired as retained loose grab: hand={} ref={:08X} body={} grab={} handleMatches={} inputState={}",
-                    commit.isLeft ? "left" : "right", heldRef->GetFormID(), primaryBodyId, hand.heldGrabIdentity(),
-                    heldRef->GetHandle() == commit.targetHandle,
-                    static_cast<unsigned>(_forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u].inputState));
             }
+            // A force-grab success must remain held even when its UI/holster
+            // initiating button is already up. Preserve an equipped transfer's
+            // pending gesture, but start every other arrival with a fresh latch.
+            auto& retained = _forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u];
+            if (!commit.isEquippedWeaponTransfer()) retained = {};
+            retained.grabIdentity = hand.heldGrabIdentity();
+            ROCK_LOG_INFO(Hand,
+                "Force grab retained until a fresh grab/release: hand={} ref={:08X} grab={} inputState={}",
+                commit.isLeft ? "left" : "right", heldRef->GetFormID(), retained.grabIdentity,
+                static_cast<unsigned>(retained.inputState));
             claimObject(heldRef, claimOwnerForHand(commit.isLeft));
             dispatchPhysicsMessage(kPhysMsg_OnGrab, commit.isLeft, heldRef, heldRef ? heldRef->GetFormID() : 0, 0);
             dispatchGrabCommittedEvent(commit.isLeft, heldRef, primaryBodyId, frame.hknpWorld);
@@ -683,29 +696,14 @@ namespace rock
                     continue;
                 }
 
-                std::uint32_t impactActorFormID = 0;
-                if (impactOtherRef && player &&
-                    impactOtherRef->formType == RE::ENUM_FORM_ID::kACHR &&
-                    std::isfinite(fuse.runtime.directImpactDamage) &&
-                    fuse.runtime.directImpactDamage > 0.0f) {
-                    auto* actor = static_cast<RE::Actor*>(impactOtherRef);
-                    if (!actor->IsDead(false)) {
-                        actor->HandleHealthDamage(player, fuse.runtime.directImpactDamage);
-                        impactActorFormID = actor->GetFormID();
-                        ROCK_LOG_INFO(Hand,
-                            "Loose impact throwable applied direct authored weapon damage: ref={:08X} target={:08X} damage={:.1f}",
-                            fuse.refFormID,
-                            impactActorFormID,
-                            fuse.runtime.directImpactDamage);
-                    }
-                }
-
+                const auto impactTargetFormID=native_interaction_service::impactEffect(
+                    reinterpret_cast<std::uintptr_t>(ref),reinterpret_cast<std::uintptr_t>(impactOtherRef),fuse.runtime.directImpactDamage);
                 detonateLooseGrenade(
                     fuse,
                     slotIndex,
                     ref,
                     "impact",
-                    impactActorFormID);
+                    impactTargetFormID);
                 continue;
             }
 
@@ -731,23 +729,23 @@ namespace rock
                     fuse.remainingSeconds = 0.0f;
                 }
 
-                const auto proximity = loose_grenade_runtime::scanHostileActorsWithinProximity(
-                    ref,
+                const auto proximity = native_interaction_service::proximityTarget(
+                    reinterpret_cast<std::uintptr_t>(ref),
                     fuse.runtime.proximityRadiusGameUnits);
                 if (proximity.truncated) {
                     ROCK_LOG_SAMPLE_WARN(Hand,
                         g_rockConfig.rockLogSampleMilliseconds,
                         "Placed mine proximity scan reached its actor-handle bound: ref={:08X} scanned={}",
                         fuse.refFormID,
-                        proximity.actorHandlesScanned);
+                        proximity.scanned);
                 }
-                if (proximity.targetFound) {
+                if (proximity.targetForm) {
                     detonateLooseGrenade(
                         fuse,
                         slotIndex,
                         ref,
                         "proximity",
-                        proximity.targetActorFormID);
+                        proximity.targetForm);
                     continue;
                 }
 

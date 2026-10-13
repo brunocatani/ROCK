@@ -1,8 +1,7 @@
 #include "physics-interaction/contact/GeneratedBodyContactRegistry.h"
 #include "physics-interaction/consume/ImmersiveAidContact.h"
-#include "physics-interaction/grab/MotionBodySearchBatch.h"
-#include "physics-interaction/grab/NearbyGrabDamping.h"
 #include "physics-interaction/native/PhysicsSystemBodyScanCache.h"
+#include "physics-interaction/native/CollisionSystemOwner.h"
 #include "physics-interaction/weapon/GeneratedWeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponEvidenceSnapshot.h"
 
@@ -100,67 +99,8 @@ namespace
         assert(!cache.valid);
     }
 
-    void dampingAndMotionEnumeration()
+    void uniqueMotionEnumeration()
     {
-        using namespace rock::nearby_grab_damping;
-        MotionBodySearchBatch batch;
-        batch.add(8); batch.add(9); batch.add(10); batch.add(8);
-        unsigned scans = 0, slots = 0;
-        std::map<std::uint32_t, std::uint32_t> live{ { 10, 8 }, { 9000, 9 } };
-        const auto enumerate = [&](auto&& observe) {
-            ++scans;
-            for (std::uint32_t id = 0; id <= 9000; ++id) {
-                ++slots;
-                const auto it = live.find(id);
-                if (it != live.end() && observe(it->second, id)) break;
-            }
-            return true;
-        };
-        const auto valid = [&](std::uint32_t body, std::uint32_t motion) {
-            const auto it = live.find(body);
-            return it != live.end() && it->second == motion;
-        };
-        assert(batch.find(8, enumerate, valid).bodyId == 10);
-        assert(scans == 1 && slots == 11); // B's valid preferred body must not extend A's scan.
-        assert(batch.find(8, enumerate, valid).bodyId == 10 && scans == 1);
-        assert(batch.find(9, enumerate, valid).bodyId == 9000 && scans == 2);
-        // Recycling a positive hint requires a fresh search and skips invalid candidates.
-        live[10] = 7; live[15] = 8; live[20] = 8;
-        assert(batch.find(8, enumerate, [&](auto body, auto motion) {
-            return body != 15 && valid(body, motion);
-        }).bodyId == 20);
-        assert(batch.find(10, enumerate, valid).freshAbsence);
-        const auto oldScans = scans;
-        live[30] = 10;
-        assert(batch.find(10, enumerate, valid).bodyId == 30 && scans == oldScans + 1);
-        MotionBodySearchBatch hints;
-        hints.add(8); hints.add(9);
-        assert(hints.find(9, enumerate, valid).bodyId == 9000);
-        const auto hintScans = scans;
-        assert(hints.find(8, enumerate, valid).bodyId == 15 && scans == hintScans);
-        MotionBodySearchBatch missing;
-        missing.add(11);
-        assert(missing.find(11, enumerate, valid).freshAbsence);
-        const auto absentScans = scans;
-        assert(missing.find(11, enumerate, valid).freshAbsence && scans == absentScans + 1);
-        MotionBodySearchBatch failed;
-        failed.add(10);
-        assert(!failed.find(10, [](auto&&) { return false; }, valid).freshAbsence);
-        MotionBodySearchBatch full;
-        for (unsigned motion = 1; motion <= 129; ++motion) full.add(motion);
-        const auto fullScans = scans;
-        assert(!full.find(129, enumerate, valid).freshAbsence && scans == fullScans);
-        std::printf("Demand-driven damping search: 11 slots instead of 9001; live hints and fresh absence verified\n");
-
-        PureDampingCandidateSet candidates;
-        candidates.add({ .bodyId = 1, .motionId = 8, .accepted = true });
-        candidates.add({ .bodyId = 2, .motionId = 8, .accepted = true });
-        candidates.add({ .bodyId = 3, .motionId = 9, .accepted = true, .heldBySameHand = true });
-        candidates.add({ .bodyId = 4, .motionId = 9, .accepted = true });
-        assert(candidates.uniqueAcceptedMotionBodyIds().size() == 2);
-        assert(candidates.uniqueAcceptedMotionBodyIds()[0] == 1 && candidates.uniqueAcceptedMotionBodyIds()[1] == 4);
-        assert(candidates.duplicateMotionSkips() == 1);
-
         rock::object_physics_body_set::ObjectPhysicsBodySet bodies;
         for (unsigned i = 0; i < 200; ++i) {
             rock::object_physics_body_set::ObjectPhysicsBodyRecord body{};
@@ -238,13 +178,50 @@ namespace
         active.reset();
         assert(lifetime.expired());
     }
+
+    void collisionSystemOwners()
+    {
+        using namespace rock::collision_system_owner;
+        // The proxy's +20 points to the BODY object. Its +20 then owns the
+        // system. Treating these as the same layout reads flags as an instance.
+        std::map<std::uintptr_t, std::uintptr_t> tables{{0x1000, kProxy}, {0x2000, kNativeBody},
+            {0x3000, kUnlinkedBody}, {0x4000, kSceneOnly}, {0x5000, 0xBAD}};
+        std::uintptr_t proxyTarget = 0x2000;
+        unsigned targetReads = 0;
+        const auto readTable = [&](std::uintptr_t object, std::uintptr_t& out) {
+            const auto found = tables.find(object);
+            if (found == tables.end()) return false;
+            out = found->second; return true;
+        };
+        const auto readTarget = [&](std::uintptr_t object, std::uintptr_t& out) {
+            ++targetReads;
+            assert(object == 0x1000);
+            out = proxyTarget; return true;
+        };
+        assert(resolve(0x2000, readTable, readTarget).owner == 0x2000);
+        assert(resolve(0x3000, readTable, readTarget).owner == 0x3000);
+        assert(resolve(0x4000, readTable, readTarget).stage == Stage::SceneOnly);
+        assert(!resolve(0x5000, readTable, readTarget).usable());
+        assert(targetReads == 0); // Unknown and scene-only types have no readable system field.
+        const auto proxy = resolve(0x1000, readTable, readTarget);
+        assert(proxy.stage == Stage::Proxy && proxy.owner == 0x2000 && targetReads == 1);
+        for (const std::uintptr_t invalid : {0u, 0x1000u, 0x4000u, 0x5000u, 0x6000u}) {
+            proxyTarget = invalid;
+            assert(!resolve(0x1000, readTable, readTarget).usable());
+        }
+        proxyTarget = 0x3000;
+        assert(resolve(0x1000, readTable, readTarget).owner == 0x3000);
+        assert(!resolve(0, readTable, readTarget).usable());
+        assert(!resolve(0x1000, readTable, [](auto, auto&) { return false; }).usable());
+    }
 }
 
 int main()
 {
     registryEquivalence();
     exactMeshContacts();
-    dampingAndMotionEnumeration();
+    uniqueMotionEnumeration();
     scanAndGeometryOwnership();
+    collisionSystemOwners();
     evidenceOwnership();
 }

@@ -11,7 +11,6 @@
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/hand/HandLifecycle.h"
-#include "physics-interaction/grab/NearbyGrabDamping.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/RockLoggingPolicy.h"
 
@@ -45,12 +44,6 @@ namespace
     constexpr float kDefaultGrabLongObjectReferenceLeverGameUnits = 24.0f;
     constexpr float kDefaultGrabLongObjectMinAngularScale = 0.35f;
     constexpr float kDefaultGrabEffectiveMotorMassFloor = 2.0f;
-    constexpr float kDefaultGrabPositionOnlyAngularScale = 0.55f;
-    constexpr float kDefaultGrabSmallObjectReferenceLeverGameUnits = 12.0f;
-    constexpr float kDefaultGrabSmallObjectAngularScale = 0.65f;
-    constexpr float kDefaultGrabLowContactSupportAngularScale = 0.75f;
-    constexpr float kDefaultGrabMinAngularAuthorityScale = 0.30f;
-    constexpr float kDefaultGrabWeakPivotTwistScale = 0.35f;
     constexpr float kDefaultGrabMinInertia = 0.01f;
     constexpr float kDefaultGrabThumbSurfaceSafetyMarginGameUnits = 1.0f;
     constexpr int kDefaultHighlightIntensityMode = 2;
@@ -287,7 +280,6 @@ namespace rock
         rockLogSampleMilliseconds =
             logging_policy::sanitizeSampleMilliseconds(static_cast<int>(ini.GetLongValue(DEBUG_SECTION, "iLogSampleMilliseconds", rockLogSampleMilliseconds)));
         rockLogFlushImmediate = ini.GetBoolValue(DEBUG_SECTION, "bLogFlushImmediate", rockLogFlushImmediate);
-        rockDebugPipboyPauseInput = ini.GetBoolValue(DEBUG_SECTION, "bDebugPipboyPauseInput", rockDebugPipboyPauseInput);
         rockPerformanceProfilerEnabled = ini.GetBoolValue(DEBUG_SECTION, "bPerformanceProfilerEnabled", rockPerformanceProfilerEnabled);
         rockPerformanceProfilerLogIntervalFrames =
             std::clamp(static_cast<int>(ini.GetLongValue(DEBUG_SECTION, "iPerformanceProfilerLogIntervalFrames", rockPerformanceProfilerLogIntervalFrames)), 30, 54000);
@@ -322,8 +314,23 @@ namespace rock
         rockImmersiveAidEnabled = ini.GetBoolValue("ImmersiveAid", "bEnabled", rockImmersiveAidEnabled);
         rockImmersiveRecoil = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION, "bImmersiveRecoil", rockImmersiveRecoil);
+        rockEmergencyDisableRecoil = ini.GetBoolValue(
+            DEBUG_SECTION, "bEmergencyDisableRecoil", rockEmergencyDisableRecoil);
         rockBipodMode = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION, "bBipodMode", rockBipodMode);
+        rockGunstockMode = ini.GetBoolValue(IMMERSIVE_WEAPONS_SECTION, "bGunstockMode", rockGunstockMode);
+        rockBipodHandsFreeRadiusMeters = static_cast<float>(ini.GetDoubleValue(
+            IMMERSIVE_WEAPONS_SECTION, "fBipodHandsFreeRadiusMeters", rockBipodHandsFreeRadiusMeters));
+        if (!std::isfinite(rockBipodHandsFreeRadiusMeters) || rockBipodHandsFreeRadiusMeters <= 0.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fBipodHandsFreeRadiusMeters={} -- using 2.0", rockBipodHandsFreeRadiusMeters);
+            rockBipodHandsFreeRadiusMeters = 2.0f;
+        }
+        rockEquippedDropRadiusMeters = static_cast<float>(ini.GetDoubleValue(
+            IMMERSIVE_WEAPONS_SECTION, "fEquippedDropRadiusMeters", rockEquippedDropRadiusMeters));
+        if (!std::isfinite(rockEquippedDropRadiusMeters) || rockEquippedDropRadiusMeters <= 0.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fEquippedDropRadiusMeters={} -- using 2.0", rockEquippedDropRadiusMeters);
+            rockEquippedDropRadiusMeters = 2.0f;
+        }
         rockLaserRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fLaserRecoilPercent",
             rockLaserRecoilPercent, 100.0f, 0.0f, 300.0f);
         rockPistolOneHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fPistolOneHandRecoilPercent",
@@ -360,7 +367,7 @@ namespace rock
             IMMERSIVE_WEAPONS_SECTION, "bKeepPreviousWeaponInHandOnEquip", rockKeepPreviousWeaponInHandOnEquip);
         rockWeaponDropMode = static_cast<int>(ini.GetLongValue(
             IMMERSIVE_WEAPONS_SECTION, "iWeaponDropMode", rockWeaponDropMode));
-        if (rockWeaponDropMode < 1 || rockWeaponDropMode > 3) {
+        if (rockWeaponDropMode < 1 || rockWeaponDropMode > 4) {
             ROCK_LOG_WARN(Config, "Invalid iWeaponDropMode={} -- using 2", rockWeaponDropMode);
             rockWeaponDropMode = 2;
         }
@@ -377,6 +384,12 @@ namespace rock
         rockMeleeGripPitchDegrees = readClampedFloat(
             ini, IMMERSIVE_WEAPONS_SECTION, "fMeleeGripPitchDegrees",
             rockMeleeGripPitchDegrees, 0.0f, -180.0f, 180.0f);
+        rockWeaponFilteringPreset = static_cast<int>(ini.GetLongValue(
+            IMMERSIVE_WEAPONS_SECTION, "iWeaponFilteringPreset", rockWeaponFilteringPreset));
+        if (rockWeaponFilteringPreset < 0 || rockWeaponFilteringPreset > 4) {
+            ROCK_LOG_WARN(Config, "Invalid iWeaponFilteringPreset={} -- using Off", rockWeaponFilteringPreset);
+            rockWeaponFilteringPreset = 0;
+        }
         rockFiringGripReattachRadiusGameUnits = readClampedFloat(
             ini,
             IMMERSIVE_WEAPONS_SECTION,
@@ -488,8 +501,6 @@ namespace rock
         rockRightSupportGripOffsetGameUnits.z = readClampedFloat(ini, AMBIDEXTROUS_FIRING_SECTION,
             "fRightSupportGripOffsetZGameUnits", rockRightSupportGripOffsetGameUnits.z, 0.0f, -15.0f, 15.0f);
         rockWeaponCollisionBlocksSpells = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksSpells", rockWeaponCollisionBlocksSpells);
-        npcDynamicCollisions = ini.GetBoolValue(SECTION, "npcDynamicCollisions", npcDynamicCollisions);
-        rockBladePenetrationEnabled = ini.GetBoolValue(SECTION, "bBladePenetrationEnabled", rockBladePenetrationEnabled);
         rockWeaponShellCollisionGraceMs = readClampedFloat(ini, SECTION,
             "fWeaponShellCollisionGraceMs", rockWeaponShellCollisionGraceMs,
             shell_casing_grace::kDefaultMilliseconds, 0.0f, shell_casing_grace::kMaximumMilliseconds);
@@ -691,16 +702,12 @@ namespace rock
         rockHighlightEnabled = ini.GetBoolValue(SECTION, "bHighlightEnabled", rockHighlightEnabled);
         rockHighlightIntensityMode = readHighlightIntensityMode(ini, SECTION, "iHighlightIntensityMode", rockHighlightIntensityMode);
         rockHighlightColor = readHighlightColor(ini, SECTION, "sHighlightColor", rockHighlightColor);
+        rockDebugDisableTriggerEquipBridge = ini.GetBoolValue(SECTION, "bDebugDisableTriggerEquipBridge", rockDebugDisableTriggerEquipBridge);
         rockDebugShowColliders = ini.GetBoolValue(SECTION, "bDebugShowColliders", rockDebugShowColliders);
         rockDebugShowTargetColliders = ini.GetBoolValue(SECTION, "bDebugShowTargetColliders", rockDebugShowTargetColliders);
-        rockDebugDrawColliderPhaseDiagnostics = ini.GetBoolValue(
-            SECTION,
-            "bDebugDrawColliderPhaseDiagnostics",
-            rockDebugDrawColliderPhaseDiagnostics);
         rockDebugShowHandAxes = ini.GetBoolValue(SECTION, "bDebugShowHandAxes", rockDebugShowHandAxes);
         rockDebugShowGrabPivots = ini.GetBoolValue(SECTION, "bDebugShowGrabPivots", rockDebugShowGrabPivots);
         rockDebugShowGrabPocketNormal = ini.GetBoolValue(SECTION, "bDebugShowGrabPocketNormal", rockDebugShowGrabPocketNormal);
-        rockDebugDrawGrabContactPatch = ini.GetBoolValue(SECTION, "bDebugDrawGrabContactPatch", rockDebugDrawGrabContactPatch);
         rockDebugDrawGrabForceTorque = ini.GetBoolValue(SECTION, "bDebugDrawGrabForceTorque", rockDebugDrawGrabForceTorque);
         rockDebugDrawGrabForceTorqueText = ini.GetBoolValue(SECTION, "bDebugDrawGrabForceTorqueText", rockDebugDrawGrabForceTorqueText);
         rockDebugDrawGrabPivotSourceCollider =
@@ -742,24 +749,18 @@ namespace rock
             rockDebugDrawGrabbedWeaponPartCollider);
         rockDebugDrawNativeScopeActivation =
             ini.GetBoolValue(SECTION, "bDebugDrawNativeScopeActivation", rockDebugDrawNativeScopeActivation);
-        rockDebugNativeScopeShotAlignment =
-            ini.GetBoolValue(SECTION, "bDebugNativeScopeShotAlignment", rockDebugNativeScopeShotAlignment);
         rockDebugDrawAuthoredGripActivationZones =
             ini.GetBoolValue(SECTION, "bDebugDrawAuthoredGripActivationZones", rockDebugDrawAuthoredGripActivationZones);
         rockDebugDrawWeaponAuthority =
             ini.GetBoolValue(SECTION, "bDebugDrawWeaponAuthority", rockDebugDrawWeaponAuthority);
-        rockDebugGripFailureTelemetry =
-            ini.GetBoolValue(SECTION, "bDebugGripFailureTelemetry", rockDebugGripFailureTelemetry);
+        rockDebugDrawGunstock = ini.GetBoolValue(SECTION, "bDebugDrawGunstock", rockDebugDrawGunstock);
+        rockCaptureHoldingGrip = ini.GetBoolValue(SECTION, "bCaptureHoldingGrip", rockCaptureHoldingGrip);
+        rockDebugDrawControllerAim = ini.GetBoolValue(SECTION, "bDebugDrawControllerAim", rockDebugDrawControllerAim);
+        rockCaptureControllerAim = ini.GetBoolValue(SECTION, "bCaptureControllerAim", rockCaptureControllerAim);
         rockDebugDrawLooseWeaponGripZones =
             ini.GetBoolValue(SECTION, "bDebugDrawLooseWeaponGripZones", rockDebugDrawLooseWeaponGripZones);
         rockDebugDrawDynamicWeaponColliders = ini.GetBoolValue(SECTION, "bDebugDrawDynamicWeaponColliders", rockDebugDrawDynamicWeaponColliders);
-        rockDebugDumpWeaponAnimNodes = ini.GetBoolValue(SECTION, "bDebugDumpWeaponAnimNodes", rockDebugDumpWeaponAnimNodes);
         rockDebugMaxWeaponBodiesDrawn = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxWeaponBodiesDrawn", rockDebugMaxWeaponBodiesDrawn));
-        rockDebugWeaponAnimNodeDumpIntervalFrames =
-            static_cast<int>(ini.GetLongValue(SECTION, "iDebugWeaponAnimNodeDumpIntervalFrames", rockDebugWeaponAnimNodeDumpIntervalFrames));
-        if (rockDebugWeaponAnimNodeDumpIntervalFrames < 1) {
-            rockDebugWeaponAnimNodeDumpIntervalFrames = 1;
-        }
         rockDebugMaxShapeCapturesPerFrame = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxShapeCapturesPerFrame", rockDebugMaxShapeCapturesPerFrame));
         rockDebugMaxConvexSupportVertices = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxConvexSupportVertices", rockDebugMaxConvexSupportVertices));
         rockDebugMaxCompoundChildren = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxCompoundChildren", rockDebugMaxCompoundChildren));
@@ -800,47 +801,6 @@ namespace rock
         rockDebugMaxTextVertices = static_cast<int>(overlayLimits.maxTextVertices);
         rockDebugUseBoundsForHeavyConvex = ini.GetBoolValue(SECTION, "bDebugUseBoundsForHeavyConvex", rockDebugUseBoundsForHeavyConvex);
         rockDebugVerboseLogging = ini.GetBoolValue(SECTION, "bDebugVerboseLogging", rockDebugVerboseLogging);
-        rockDebugGrabFrameLogging = ini.GetBoolValue(SECTION, "bDebugGrabFrameLogging", rockDebugGrabFrameLogging);
-        rockDebugVideoSyncMarker = ini.GetBoolValue(SECTION, "bDebugVideoSyncMarker", rockDebugVideoSyncMarker);
-        rockDebugVideoSyncMarkerSize = static_cast<float>(ini.GetDoubleValue(SECTION, "fDebugVideoSyncMarkerSize", rockDebugVideoSyncMarkerSize));
-        rockDebugGrabTimelineTrace = ini.GetBoolValue(SECTION, "bDebugGrabTimelineTrace", rockDebugGrabTimelineTrace);
-        rockDebugGrabAfterSolveAnomalySampling =
-            ini.GetBoolValue(SECTION, "bDebugGrabAfterSolveAnomalySampling", rockDebugGrabAfterSolveAnomalySampling);
-        rockDebugGrabTimelineTraceIntervalFrames =
-            static_cast<int>(ini.GetLongValue(SECTION, "iDebugGrabTimelineTraceIntervalFrames", rockDebugGrabTimelineTraceIntervalFrames));
-        if (rockDebugGrabTimelineTraceIntervalFrames < 1) {
-            rockDebugGrabTimelineTraceIntervalFrames = 1;
-        }
-        rockDebugGrabTransformTelemetry = ini.GetBoolValue(SECTION, "bDebugGrabTransformTelemetry", rockDebugGrabTransformTelemetry);
-        rockDebugGrabTransformTelemetryText = ini.GetBoolValue(SECTION, "bDebugGrabTransformTelemetryText", rockDebugGrabTransformTelemetryText);
-        rockDebugGrabTransformTelemetryAxes = ini.GetBoolValue(SECTION, "bDebugGrabTransformTelemetryAxes", rockDebugGrabTransformTelemetryAxes);
-        rockDebugGrabTransformTelemetryLogIntervalFrames =
-            static_cast<int>(ini.GetLongValue(SECTION, "iDebugGrabTransformTelemetryLogIntervalFrames", rockDebugGrabTransformTelemetryLogIntervalFrames));
-        if (rockDebugGrabTransformTelemetryLogIntervalFrames < 1) {
-            rockDebugGrabTransformTelemetryLogIntervalFrames = 1;
-        }
-        rockDebugGrabTransformTelemetryTextMode =
-            static_cast<int>(ini.GetLongValue(SECTION, "iDebugGrabTransformTelemetryTextMode", rockDebugGrabTransformTelemetryTextMode));
-        if (rockDebugGrabTransformTelemetryTextMode < 0 || rockDebugGrabTransformTelemetryTextMode > 1) {
-            rockDebugGrabTransformTelemetryTextMode = 0;
-        }
-        rockDebugShowGrabNotifications = ini.GetBoolValue(SECTION, "bDebugShowGrabNotifications", rockDebugShowGrabNotifications);
-        rockDebugShowWeaponNotifications = ini.GetBoolValue(SECTION, "bDebugShowWeaponNotifications", rockDebugShowWeaponNotifications);
-        rockDebugWeaponOmodDumpEnabled = ini.GetBoolValue(SECTION, "bDebugWeaponOmodDump", rockDebugWeaponOmodDumpEnabled);
-        rockDebugHandTransformParity = ini.GetBoolValue(SECTION, "bDebugHandTransformParity", rockDebugHandTransformParity);
-        rockDebugHandWorldAuthority = ini.GetBoolValue(SECTION, "bDebugHandWorldAuthority", rockDebugHandWorldAuthority);
-        rockDebugWorldObjectOriginDiagnostics =
-            ini.GetBoolValue(SECTION, "bDebugWorldObjectOriginDiagnostics", rockDebugWorldObjectOriginDiagnostics);
-        rockDebugWorldObjectOriginLogIntervalFrames =
-            static_cast<int>(ini.GetLongValue(SECTION, "iDebugWorldObjectOriginLogIntervalFrames", rockDebugWorldObjectOriginLogIntervalFrames));
-        if (rockDebugWorldObjectOriginLogIntervalFrames < 1) {
-            rockDebugWorldObjectOriginLogIntervalFrames = 1;
-        }
-        rockDebugWorldObjectOriginMismatchWarnGameUnits = static_cast<float>(
-            ini.GetDoubleValue(SECTION, "fDebugWorldObjectOriginMismatchWarnGameUnits", rockDebugWorldObjectOriginMismatchWarnGameUnits));
-        if (!std::isfinite(rockDebugWorldObjectOriginMismatchWarnGameUnits) || rockDebugWorldObjectOriginMismatchWarnGameUnits < 0.0f) {
-            rockDebugWorldObjectOriginMismatchWarnGameUnits = 0.0f;
-        }
         rockDebugShowRootFlattenedFingerSkeletonMarkers =
             ini.GetBoolValue(SECTION, "bDebugShowRootFlattenedFingerSkeletonMarkers", rockDebugShowRootFlattenedFingerSkeletonMarkers);
         rockDebugShowSkeletonBoneVisualizer = ini.GetBoolValue(SECTION, "bDebugShowSkeletonBoneVisualizer", rockDebugShowSkeletonBoneVisualizer);
@@ -1096,50 +1056,6 @@ namespace rock
             std::clamp(std::isfinite(rockGrabLongObjectMinAngularScale) ? rockGrabLongObjectMinAngularScale : kDefaultGrabLongObjectMinAngularScale,
                 0.05f,
                 1.0f);
-        rockGrabPivotQualityAngularScalingEnabled =
-            ini.GetBoolValue(SECTION, "bGrabPivotQualityAngularScalingEnabled", rockGrabPivotQualityAngularScalingEnabled);
-        rockGrabPositionOnlyAngularScale = readClampedFloat(ini,
-            SECTION,
-            "fGrabPositionOnlyAngularScale",
-            rockGrabPositionOnlyAngularScale,
-            kDefaultGrabPositionOnlyAngularScale,
-            0.05f,
-            1.0f);
-        rockGrabSmallObjectReferenceLeverGameUnits = readClampedFloat(ini,
-            SECTION,
-            "fGrabSmallObjectReferenceLeverGameUnits",
-            rockGrabSmallObjectReferenceLeverGameUnits,
-            kDefaultGrabSmallObjectReferenceLeverGameUnits,
-            1.0f,
-            120.0f);
-        rockGrabSmallObjectAngularScale = readClampedFloat(ini,
-            SECTION,
-            "fGrabSmallObjectAngularScale",
-            rockGrabSmallObjectAngularScale,
-            kDefaultGrabSmallObjectAngularScale,
-            0.05f,
-            1.0f);
-        rockGrabLowContactSupportAngularScale = readClampedFloat(ini,
-            SECTION,
-            "fGrabLowContactSupportAngularScale",
-            rockGrabLowContactSupportAngularScale,
-            kDefaultGrabLowContactSupportAngularScale,
-            0.05f,
-            1.0f);
-        rockGrabMinAngularAuthorityScale = readClampedFloat(ini,
-            SECTION,
-            "fGrabMinAngularAuthorityScale",
-            rockGrabMinAngularAuthorityScale,
-            kDefaultGrabMinAngularAuthorityScale,
-            0.05f,
-            1.0f);
-        rockGrabWeakPivotTwistScale = readClampedFloat(ini,
-            SECTION,
-            "fGrabWeakPivotTwistScale",
-            rockGrabWeakPivotTwistScale,
-            kDefaultGrabWeakPivotTwistScale,
-            0.0f,
-            1.0f);
 
         rockGrabMaxInertiaRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxInertiaRatio", rockGrabMaxInertiaRatio));
         rockGrabMinInertia = readClampedFloat(ini,
@@ -1150,8 +1066,6 @@ namespace rock
             0.0001f,
             100.0f);
 
-        rockGrabMaxDeviation = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxDeviation", rockGrabMaxDeviation));
-        rockGrabMaxDeviationTime = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxDeviationTime", rockGrabMaxDeviationTime));
         rockThrowVelocityMultiplier = static_cast<float>(ini.GetDoubleValue(SECTION, "fThrowVelocityMultiplier", rockThrowVelocityMultiplier));
         rockGrabControllerDerivedThrowVelocityEnabled =
             ini.GetBoolValue(SECTION, "bGrabControllerDerivedThrowVelocityEnabled", rockGrabControllerDerivedThrowVelocityEnabled);
@@ -1175,15 +1089,6 @@ namespace rock
         rockGrabReleaseHandCollisionDelaySeconds =
             rock::hand_collision_suppression_math::sanitizeDelaySeconds(
                 static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabReleaseHandCollisionDelaySeconds", rockGrabReleaseHandCollisionDelaySeconds)));
-        rockGrabNearbyDampingEnabled = ini.GetBoolValue(SECTION, "bGrabNearbyDampingEnabled", rockGrabNearbyDampingEnabled);
-        rockGrabNearbyDampingRadius =
-            nearby_grab_damping::sanitizeRadius(static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabNearbyDampingRadius", rockGrabNearbyDampingRadius)));
-        rockGrabNearbyDampingSeconds =
-            nearby_grab_damping::sanitizeDuration(static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabNearbyDampingSeconds", rockGrabNearbyDampingSeconds)));
-        rockGrabNearbyLinearDamping =
-            nearby_grab_damping::sanitizeHknpDampingCoefficient(static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabNearbyLinearDamping", rockGrabNearbyLinearDamping)));
-        rockGrabNearbyAngularDamping =
-            nearby_grab_damping::sanitizeHknpDampingCoefficient(static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabNearbyAngularDamping", rockGrabNearbyAngularDamping)));
         rockGrabHeldMassMovementSlowdownEnabled =
             ini.GetBoolValue(SECTION, "bGrabHeldMassMovementSlowdownEnabled", rockGrabHeldMassMovementSlowdownEnabled);
         rockGrabHeldMassMovementMassProportion = readClampedFloat(ini,
@@ -1268,6 +1173,11 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid fGrabSeatDepthSkinGameUnits={} -- using 0.5", rockGrabSeatDepthSkinGameUnits);
             rockGrabSeatDepthSkinGameUnits = 0.5f;
         }
+        rockGrabCloseSeatMode = static_cast<int>(ini.GetLongValue(SECTION, "iGrabCloseSeatMode", rockGrabCloseSeatMode));
+        if (rockGrabCloseSeatMode != 0 && rockGrabCloseSeatMode != 1) {
+            ROCK_LOG_WARN(Config, "Invalid iGrabCloseSeatMode={} -- using 0", rockGrabCloseSeatMode);
+            rockGrabCloseSeatMode = 0;
+        }
         rockGrabGripInsetGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabGripInsetGameUnits", rockGrabGripInsetGameUnits));
         if (!std::isfinite(rockGrabGripInsetGameUnits) || rockGrabGripInsetGameUnits < 0.0f) {
             ROCK_LOG_WARN(Config, "Invalid fGrabGripInsetGameUnits={} -- using 2.0", rockGrabGripInsetGameUnits);
@@ -1310,23 +1220,6 @@ namespace rock
                 rockGrabTouchAcquireDistanceGameUnits,
                 rockGrabNearConvergeDistanceGameUnits,
                 rockGrabAcquisitionVisualStartDistanceGameUnits);
-        rockGrabMultiFingerContactValidationEnabled =
-            ini.GetBoolValue(SECTION, "bGrabMultiFingerContactValidationEnabled", rockGrabMultiFingerContactValidationEnabled);
-        rockGrabContactQualityMode = static_cast<int>(ini.GetLongValue(SECTION, "iGrabContactQualityMode", rockGrabContactQualityMode));
-        rockGrabContactQualityMode = std::clamp(rockGrabContactQualityMode, 0, 2);
-        rockGrabMinFingerContactGroups =
-            static_cast<int>(ini.GetLongValue(SECTION, "iGrabMinFingerContactGroups", rockGrabMinFingerContactGroups));
-        rockGrabMinFingerContactGroups = std::clamp(rockGrabMinFingerContactGroups, 1, 5);
-        rockGrabMinFingerContactSpreadGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMinFingerContactSpreadGameUnits", rockGrabMinFingerContactSpreadGameUnits));
-        if (!std::isfinite(rockGrabMinFingerContactSpreadGameUnits) || rockGrabMinFingerContactSpreadGameUnits < 0.0f) {
-            rockGrabMinFingerContactSpreadGameUnits = 1.0f;
-        }
-        rockGrabFingerContactMeshSnapMaxDistanceGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFingerContactMeshSnapMaxDistanceGameUnits", rockGrabFingerContactMeshSnapMaxDistanceGameUnits));
-        if (!std::isfinite(rockGrabFingerContactMeshSnapMaxDistanceGameUnits) || rockGrabFingerContactMeshSnapMaxDistanceGameUnits < 0.0f) {
-            rockGrabFingerContactMeshSnapMaxDistanceGameUnits = 10.0f;
-        }
         rockGrabSurfaceBehindPalmToleranceGameUnits =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabSurfaceBehindPalmToleranceGameUnits", rockGrabSurfaceBehindPalmToleranceGameUnits));
         if (!std::isfinite(rockGrabSurfaceBehindPalmToleranceGameUnits) || rockGrabSurfaceBehindPalmToleranceGameUnits < 0.0f) {
@@ -1483,6 +1376,11 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid iGrabFingerPoseMode={} -- using 1", rockGrabFingerPoseMode);
             rockGrabFingerPoseMode = 1;
         }
+        rockWeaponGrabPoseMode = static_cast<int>(ini.GetLongValue(SECTION, "iWeaponGrabPoseMode", rockWeaponGrabPoseMode));
+        if (rockWeaponGrabPoseMode < 0 || rockWeaponGrabPoseMode > 2) {
+            ROCK_LOG_WARN(Config, "Invalid iWeaponGrabPoseMode={} -- using 0", rockWeaponGrabPoseMode);
+            rockWeaponGrabPoseMode = 0;
+        }
         rockGrabMeshFingerPoseEnabled = ini.GetBoolValue(SECTION, "bGrabMeshFingerPoseEnabled", rockGrabMeshFingerPoseEnabled);
         rockGrabMeshJointPoseEnabled = ini.GetBoolValue(SECTION, "bGrabMeshJointPoseEnabled", rockGrabMeshJointPoseEnabled);
         rockGrabFingerMinValue = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFingerMinValue", rockGrabFingerMinValue));
@@ -1553,25 +1451,6 @@ namespace rock
         rockGrabDirectionalWeight = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabDirectionalWeight", rockGrabDirectionalWeight));
         rockGrabMaxTriangleDistance = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxTriangleDistance", rockGrabMaxTriangleDistance));
         rockGrabMeshContactOnly = ini.GetBoolValue(SECTION, "bGrabMeshContactOnly", rockGrabMeshContactOnly);
-        rockGrabRequireMeshContact = ini.GetBoolValue(SECTION, "bGrabRequireMeshContact", rockGrabRequireMeshContact);
-        rockGrabContactPatchEnabled = ini.GetBoolValue(SECTION, "bGrabContactPatchEnabled", rockGrabContactPatchEnabled);
-        rockGrabContactPatchProbeCount = static_cast<int>(ini.GetLongValue(SECTION, "iGrabContactPatchProbeCount", rockGrabContactPatchProbeCount));
-        rockGrabContactPatchProbeCount = std::clamp(rockGrabContactPatchProbeCount, 1, 9);
-        rockGrabContactPatchProbeSpacingGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabContactPatchProbeSpacingGameUnits", rockGrabContactPatchProbeSpacingGameUnits));
-        if (!std::isfinite(rockGrabContactPatchProbeSpacingGameUnits) || rockGrabContactPatchProbeSpacingGameUnits < 0.0f) {
-            rockGrabContactPatchProbeSpacingGameUnits = 3.0f;
-        }
-        rockGrabContactPatchProbeRadiusGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabContactPatchProbeRadiusGameUnits", rockGrabContactPatchProbeRadiusGameUnits));
-        if (!std::isfinite(rockGrabContactPatchProbeRadiusGameUnits) || rockGrabContactPatchProbeRadiusGameUnits <= 0.0f) {
-            rockGrabContactPatchProbeRadiusGameUnits = 2.0f;
-        }
-        rockGrabContactPatchMeshSnapMaxDistanceGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabContactPatchMeshSnapMaxDistanceGameUnits", rockGrabContactPatchMeshSnapMaxDistanceGameUnits));
-        if (!std::isfinite(rockGrabContactPatchMeshSnapMaxDistanceGameUnits) || rockGrabContactPatchMeshSnapMaxDistanceGameUnits < 0.0f) {
-            rockGrabContactPatchMeshSnapMaxDistanceGameUnits = 6.0f;
-        }
         rockGrabContactPatchMaxNormalAngleDegrees =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabContactPatchMaxNormalAngleDegrees", rockGrabContactPatchMaxNormalAngleDegrees));
         rockGrabContactPatchMaxNormalAngleDegrees = std::clamp(rockGrabContactPatchMaxNormalAngleDegrees, 0.0f, 179.0f);
@@ -1655,8 +1534,6 @@ namespace rock
             ini.GetBoolValue(SECTION, "bShoulderStashUseHmdBackVolume", rockShoulderStashUseHmdBackVolume);
         readClampedFloat("fShoulderStashEnterPaddingGameUnits", rockShoulderStashEnterPaddingGameUnits, 5.0f, 0.0f, 40.0f);
         readClampedFloat("fShoulderStashExitPaddingGameUnits", rockShoulderStashExitPaddingGameUnits, 8.0f, 0.0f, 60.0f);
-        readClampedFloat("fShoulderStashMinDwellSeconds", rockShoulderStashMinDwellSeconds, 0.08f, 0.0f, 1.0f);
-        readClampedFloat("fShoulderStashMaxSpeedGameUnitsPerSecond", rockShoulderStashMaxSpeedGameUnitsPerSecond, 140.0f, 0.0f, 1000.0f);
         rockShoulderStashRecentContactSeconds =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fShoulderStashRecentContactSeconds", rockShoulderStashRecentContactSeconds));
         rockShoulderStashRecentContactSeconds =

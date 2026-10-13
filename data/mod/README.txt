@@ -48,12 +48,11 @@ Keeping the previous weapon in the other hand when equipping another is now
 enabled by default through bKeepPreviousWeaponInHandOnEquip=true.
 Existing configured values are preserved. Keep SavedGrabOffsets when updating; automatic authored
 grip JSON persistence has been removed in favor of session discovery.
-NPC dynamic collisions are enabled by default through npcDynamicCollisions
-in ROCK.ini. Update dependent addons to versions using the modular ROCK API.
-
-Experimental knife and sword penetration is disabled by default. Enable
-bBladePenetrationEnabled in ROCK.ini to use it; npcDynamicCollisions is also
-required. Disabling penetration releases an embedded blade.
+NPC collisions, experimental blade penetration and NPC collider visualization
+belong to SCISSORS Redux. Configure its own SCISSORS_Redux.ini and optional
+SCISSORS_Redux_Developer.ini under Mods_Config/SCISSORS_Redux in Documents.
+ROCK no longer exposes or forwards those settings. Its shared native physics
+and visualization services remain available to independently bound consumers.
 
 The source references data/config/ROCK_example.ini and
 data/config/ROCK_Developer_example.ini list every supported option and default
@@ -67,9 +66,10 @@ Features
 - Dynamic object grabbing, two-hand grabs, pull/catch flow, and held-object release behavior.
 - Realistic gunplay support that lets you grab and use different parts of the gun for fire support.
 
-Gesture Pull (Grabbing/iFarGrabMode=2): hold grab to lock, flick toward yourself
-to launch, then release and press grab again within reach to catch. Holding
-the first press does not catch. Immediate Pull (mode 1) still auto-catches.
+Higgs Pull Mode (Grabbing/iFarGrabMode=2): hold grab to lock, flick toward yourself,
+then keep holding to pull the object toward your hand and catch it automatically.
+Release before the flick or during the pull to cancel. Immediate Pull (mode 1)
+also auto-catches and does not require a flick.
 
 World pickup/use takes priority over right-A reload/scope input. With no usable
 target, tap to reload or hold to scope. ROCK-held objects retain take protection.

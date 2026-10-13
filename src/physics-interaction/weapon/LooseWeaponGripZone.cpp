@@ -325,14 +325,8 @@ namespace rock::loose_weapon_grip_zone
             if (!authored.found || !authored.hasSupportRelation || !authored.supportFingerPose.complete() ||
                 !isUsableWorldTransform(out)) return false;
             if (isLeft) return true;
-            RE::NiTransform leftWorld{}, rightWorld{};
-            auto* nodes = f4vr::getPlayerNodes();
-            const bool mirrored = nodes && nodes->SecondaryWandNode && nodes->primaryWandNode &&
-                physicalHandWorld(true, leftWorld) && physicalHandWorld(false, rightWorld) &&
-                isUsableWorldTransform(nodes->SecondaryWandNode->world) && isUsableWorldTransform(nodes->primaryWandNode->world) &&
-                TwoHandedGrip::tryBuildMirroredSupportHandWeaponLocal(authored.supportHandWeaponLocal,
-                    transform_math::composeTransforms(transform_math::invertTransform(nodes->SecondaryWandNode->world), leftWorld),
-                    transform_math::composeTransforms(transform_math::invertTransform(nodes->primaryWandNode->world), rightWorld), out);
+            const bool mirrored = TwoHandedGrip::tryBuildMirroredSupportHandWeaponLocal(
+                authored.supportHandWeaponLocal, out);
             if (mirrored) out = weapon_grip_calibration::shiftedHand(out,
                 g_rockConfig.rockRightSupportGripOffsetGameUnits, false);
             return mirrored;
@@ -369,6 +363,14 @@ namespace rock::loose_weapon_grip_zone
         auto* base = ref ? ref->GetObjectReference() : nullptr;
         auto* weapon = base ? base->As<RE::TESObjectWEAP>() : nullptr;
         auto* root = ref ? ref->Get3D() : nullptr;
+        std::uint64_t sequence{};
+        return tryResolveAuthoredGrabPoseForModel(isLeft,weapon,root,role,out,sequence);
+    }
+
+    bool tryResolveAuthoredGrabPoseForModel(bool isLeft,const RE::TESObjectWEAP* weapon,RE::NiAVObject* root,
+        loose_weapon_authored_grab_policy::Role role,AuthoredWeaponGripPose& out,std::uint64_t& sequence)
+    {
+        out={}; sequence=0;
         if (!weapon || !root) return false;
         const auto authored = authored_weapon_grip_library::find(weapon, root, f4vr::isInPowerArmor());
         RE::NiTransform local{}, placement{};
@@ -377,11 +379,12 @@ namespace rock::loose_weapon_grip_zone
             placement = local;
         } else {
             HandZoneState firing{};
-            if (!tryResolveGripWorld(isLeft, ref, firing) || !firing.hasFiringHandWeaponLocal) return false;
+            if (!tryResolveGripWorldForModel(isLeft, weapon, root, firing) || !firing.hasFiringHandWeaponLocal) return false;
             local = firing.firingHandWeaponLocal;
             if (!firing.hasLoosePlacementHandWeaponLocal) return false;
             placement = firing.loosePlacementHandWeaponLocal;
         }
+        sequence=role==loose_weapon_authored_grab_policy::Role::Support?authored.supportCaptureSequence:authored.captureSequence;
         return capturePose(isLeft, weapon->formID, role, local, placement, authored, out);
     }
 

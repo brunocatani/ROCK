@@ -9,9 +9,13 @@
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/HavokWorldLock.h"
 #include "physics-interaction/native/PhysicsSystemBodyScanCache.h"
+#include "physics-interaction/native/CollisionSystemOwner.h"
+#include "physics-interaction/native/NativeMemory.h"
+#include "REL/Relocation.h"
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/weapon/WeaponSceneChildren.h"
 #include "RockConfig.h"
 
 #include "RE/Bethesda/BSHavok.h"
@@ -82,6 +86,7 @@ namespace rock::object_physics_body_set
         {
             using havok_runtime::PhysicsSystemBodyScanStatus;
             return status == PhysicsSystemBodyScanStatus::InvalidBodyCount ||
+                   status == PhysicsSystemBodyScanStatus::UnsupportedCollisionObject ||
                    status == PhysicsSystemBodyScanStatus::UnreadableBodyIds ||
                    status == PhysicsSystemBodyScanStatus::MissingBodyIds;
         }
@@ -174,11 +179,16 @@ namespace rock::object_physics_body_set
             record.seeded = seeded;
 
             const auto* base = context.rootRef ? context.rootRef->GetObjectReference() : nullptr;
-            const bool bodyTarget = grab_target::isRagdoll(options.targetKind) ||
-                (base && base->Is(RE::ENUM_FORM_ID::kNPC_)) || grab_target::isDetachedGoreLayer(record.collisionLayer);
-            if (bodyTarget) {
+            const bool bodyTarget = grab_target::requiresNativeBodyOwnership(options.targetKind) ||
+                (base && base->Is(RE::ENUM_FORM_ID::kNPC_)) || grab_target::isNativeDetachedBodyLayer(record.collisionLayer);
+            std::uintptr_t sourceVtable{};
+            const bool proxySource = context.collisionObject && native_memory::tryReadField(context.collisionObject, 0, sourceVtable) &&
+                sourceVtable == REL::Offset(collision_system_owner::kProxy).address();
+            if (bodyTarget || proxySource) {
                 // A shared physics system is discovery, not ownership. Its first
                 // encountered wrapper must never own every enumerated limb.
+                // A scene proxy likewise delegates to the actual body owner;
+                // never store the proxy as that body's native collision object.
                 auto* owner = havok_runtime::getCollisionObjectFromBody(hknpWorld, bodyId);
                 RE::hknpWorld* ownerWorld = nullptr;
                 RE::hknpBodyId ownerId{INVALID_BODY_ID};
@@ -323,6 +333,10 @@ namespace rock::object_physics_body_set
                             isWeaponReference(rootRef) ? "yes" : "no");
                     } else {
                         ++out.diagnostics.benignScanSkips;
+                        if (scanResult.status == havok_runtime::PhysicsSystemBodyScanStatus::NoBodies ||
+                            scanResult.status == havok_runtime::PhysicsSystemBodyScanStatus::EmptyPhysicsSystem)
+                            ++out.diagnostics.emptyScanSkips;
+                        else out.diagnostics.unverifiedScanSkipStatus = static_cast<std::uint8_t>(scanResult.status);
                     }
                 }
             }
@@ -333,12 +347,10 @@ namespace rock::object_physics_body_set
             }
 
             auto& children = niNode->GetRuntimeData().children;
-            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
-                auto* child = children[i].get();
-                if (child) {
-                    scanNode(bhkWorld, hknpWorld, rootRef, child, depth - 1, options, out, seenBodyIds, systems);
-                }
-            }
+            visitWeaponChildSlots(children, [&](auto* child, auto) {
+                scanNode(bhkWorld, hknpWorld, rootRef, child, depth - 1, options, out, seenBodyIds, systems);
+                return true;
+            });
         }
 
         void appendCachedScanEntry(ScanCacheContext& context)
@@ -383,6 +395,10 @@ namespace rock::object_physics_body_set
                         isWeaponReference(context.rootRef) ? "yes" : "no");
                 } else {
                     ++out.diagnostics.benignScanSkips;
+                    if (scanResult.status == havok_runtime::PhysicsSystemBodyScanStatus::NoBodies ||
+                        scanResult.status == havok_runtime::PhysicsSystemBodyScanStatus::EmptyPhysicsSystem)
+                        ++out.diagnostics.emptyScanSkips;
+                    else out.diagnostics.unverifiedScanSkipStatus = static_cast<std::uint8_t>(scanResult.status);
                 }
             }
 
@@ -402,15 +418,19 @@ namespace rock::object_physics_body_set
             }
 
             auto& children = niNode->GetRuntimeData().children;
-            for (auto i = children.size(); i > 0; --i) {
-                auto* child = children[i - 1].get();
-                if (child) {
-                    ObjectPhysicsBodyScanCursorEntry entry{};
-                    entry.node.reset(child);
-                    entry.depth = childDepth;
-                    pendingNodes.push_back(std::move(entry));
-                }
-            }
+            const auto firstChild = pendingNodes.size();
+            // Use the same sparse slot walk as generated weapon geometry.
+            // size() is a populated count: stopping there left native bodies
+            // active in attachment branches beyond a hole (e.g. P-Bipod).
+            visitWeaponChildSlots(children, [&](auto* child, auto) {
+                ObjectPhysicsBodyScanCursorEntry entry{};
+                entry.node.reset(child);
+                entry.depth = childDepth;
+                pendingNodes.push_back(std::move(entry));
+                return true;
+            });
+            // The incremental scanner pops a stack; preserve recursive order.
+            std::reverse(pendingNodes.begin() + firstChild, pendingNodes.end());
         }
 
         bool cacheEntryStillReachable(RE::NiAVObject* rootNode, const ObjectPhysicsBodyScanEntry& entry)
@@ -456,12 +476,10 @@ namespace rock::object_physics_body_set
             }
 
             auto& children = niNode->GetRuntimeData().children;
-            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
-                auto* child = children[i].get();
-                if (child) {
-                    captureScanNode(bhkWorld, hknpWorld, rootRef, child, depth - 1, options, out);
-                }
-            }
+            visitWeaponChildSlots(children, [&](auto* child, auto) {
+                captureScanNode(bhkWorld, hknpWorld, rootRef, child, depth - 1, options, out);
+                return true;
+            });
         }
 
         void appendCachedBodyRecords(RE::bhkWorld* bhkWorld,
@@ -641,13 +659,9 @@ namespace rock::object_physics_body_set
         }
 
         auto& children = niNode->GetRuntimeData().children;
-        for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
-            auto* child = children[i].get();
-            if (child && hasCollisionObjectInSubtree(child, maxDepth - 1)) {
-                return true;
-            }
-        }
-        return false;
+        return !visitWeaponChildSlots(children, [&](auto* child, auto) {
+            return !hasCollisionObjectInSubtree(child, maxDepth - 1);
+        });
     }
 
     bool beginObjectPhysicsBodyScanCache(
@@ -851,7 +865,7 @@ namespace rock::object_physics_body_set
         if (options.seedBodyId != INVALID_BODY_ID) {
             ScanBodyContext seedContext{ bhkWorld, hknpWorld, ref, options.seedHitNode ? options.seedHitNode : result.rootNode, nullptr, &options, &result, &seenBodyIds };
             appendBodyRecord(seedContext, options.seedBodyId, true);
-            if (grab_target::isRagdoll(options.targetKind) && options.seedHitNode) {
+            if (grab_target::requiresNativeBodyOwnership(options.targetKind) && options.seedHitNode) {
                 // Detached systems may no longer be under the actor's current 3D.
                 scanNode(bhkWorld, hknpWorld, ref, options.seedHitNode, 0, options, result, seenBodyIds, systems);
             }

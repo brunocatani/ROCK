@@ -6,6 +6,11 @@
 
 namespace rock::input_remap_policy
 {
+    [[nodiscard]] constexpr bool isHeldLooseWeaponTarget(std::uint32_t target,
+        std::uint32_t left, std::uint32_t right) noexcept
+    {
+        return target != 0 && (target == left || target == right);
+    }
     // ROCK uses the OpenVR grip button as its fixed grab input.
     inline constexpr int kGrabButtonId = 2;
 
@@ -29,6 +34,7 @@ namespace rock::input_remap_policy
         TakeEquip,
         NativeActivation,
         OtherWandTakeEquip,
+        HeldLooseWeapon,
     };
 
     [[nodiscard]] constexpr bool isTakeEquipTarget(ActivateTarget target) noexcept
@@ -102,6 +108,7 @@ namespace rock::input_remap_policy
         bool primaryHandEvent{ false };
         bool equippedWeaponFiringGripInputActive{ false };
         bool equippedWeaponPrimaryDetached{ false };
+        bool equippedDropActive{ false };
         bool equippedWeaponShoulderSheathActive{ false };
         bool realMeleeWeaponEquipped{ false };
         bool nativeMeleeSuppressionActive{ false };
@@ -195,7 +202,6 @@ namespace rock::input_remap_policy
      * after the ReadyWeapon action itself is suppressed.
      */
     inline constexpr int kOpenVrAxisButtonBase = 32;
-    inline constexpr int kOpenVrAxisCount = 5;
     inline constexpr int kOpenVrSteamVrTriggerButtonId = kOpenVrAxisButtonBase + 1;
 
     /*
@@ -217,25 +223,10 @@ namespace rock::input_remap_policy
         return isValidButtonId(buttonId) ? (std::uint64_t{ 1 } << static_cast<unsigned>(buttonId)) : 0;
     }
 
-    [[nodiscard]] constexpr bool isOpenVrAxisButtonId(int buttonId)
-    {
-        return buttonId >= kOpenVrAxisButtonBase && buttonId < kOpenVrAxisButtonBase + kOpenVrAxisCount;
-    }
-
-    [[nodiscard]] constexpr std::uint8_t axisMaskFromOpenVrButtonId(int buttonId)
-    {
-        return isOpenVrAxisButtonId(buttonId) ? static_cast<std::uint8_t>(std::uint8_t{ 1 } << static_cast<unsigned>(buttonId - kOpenVrAxisButtonBase)) : 0;
-    }
-
-    [[nodiscard]] constexpr bool hasButton(std::uint64_t pressedMask, int buttonId)
-    {
-        const auto mask = buttonMask(buttonId);
-        return mask != 0 && (pressedMask & mask) != 0;
-    }
-
     [[nodiscard]] constexpr bool shouldAllowNativeRealMeleeInput(const NativeActionSuppressionInput& input)
     {
         return input.realMeleeWeaponEquipped &&
+               !input.equippedDropActive &&
                !input.nativeMeleeSuppressionActive &&
                input.weaponDrawn &&
                !input.equippedWeaponShoulderSheathActive;
@@ -253,7 +244,7 @@ namespace rock::input_remap_policy
     [[nodiscard]] constexpr bool shouldSuppressNativeTriggerAction(const NativeActionSuppressionInput& input)
     {
         if (input.eventMatched && input.gameplayInputAllowed && !input.menuInputActive &&
-            (input.weaponTransferPending || input.triggerAwaitingRelease)) return true;
+            (input.equippedDropActive || input.weaponTransferPending || input.triggerAwaitingRelease)) return true;
         if (shouldAllowNativeRealMeleeInput(input)) {
             return false;
         }

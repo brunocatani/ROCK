@@ -47,13 +47,6 @@ namespace rock::held_weapon_equip_state_policy
         return classifyForEquip(nativeState) == EquipReadiness::Stable;
     }
 
-    [[nodiscard]] inline constexpr bool shouldRearmTrigger(
-        const std::uint32_t nativeState,
-        const bool sameHandTriggerRequest) noexcept
-    {
-        return sameHandTriggerRequest && classifyForEquip(nativeState) == EquipReadiness::Transitioning;
-    }
-
     [[nodiscard]] inline constexpr bool isValidNativeWeaponState(
         const std::uint32_t nativeState) noexcept
     {

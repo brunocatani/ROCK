@@ -332,7 +332,9 @@ MigrationBackup/
 /docs/
 /analysis/
 
+# Machine-local investigation logs, captures, extracted assets, and scratch files.
+/local/
+
 lib/
 lib_debug/
 xbyak/
-AGENTS.md

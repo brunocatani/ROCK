@@ -5,17 +5,16 @@
 
 namespace rock::weapon_recoil_policy
 {
-    // Matches the API role bits; physical left/right are resolved per sample.
+    // FRIK resolves these roles against the physically carried weapon, not
+    // bLeftHandedMode. Primary is always the actual firing hand.
     enum class HandMask : std::uint32_t { None = 0, Primary = 1, Offhand = 2 };
 
     [[nodiscard]] inline constexpr HandMask deliveryHand(
-        const bool ownedCarry, const bool firingHandIsLeft,
-        const bool nativePrimaryIsLeft) noexcept
+        const bool ownedCarry) noexcept
     {
         // Owned carry/solver publishes already-recoiled weapon AND hand targets.
         // FRIK must not add a second kick to those targets next skeleton frame.
-        return ownedCarry ? HandMask::None :
-               firingHandIsLeft == nativePrimaryIsLeft ? HandMask::Primary : HandMask::Offhand;
+        return ownedCarry ? HandMask::None : HandMask::Primary;
     }
 
     [[nodiscard]] inline constexpr bool needsOneHandPresentation(
@@ -46,6 +45,7 @@ namespace rock::weapon_recoil_policy
         bool nativePrimaryIsLeft{ false };
         bool fullTwoHanded{ false };
         bool oneHanded{ false };
+        bool immersiveRecoil{ true };
 
         [[nodiscard]] bool operator==(const SampleIdentity&) const = default;
     };

@@ -33,18 +33,6 @@ namespace rock
         static constexpr std::uint32_t kMaxScopes =
             ::rock::provider::ROCK_PROVIDER_MAX_EXTERNAL_SCOPES_V1;
 
-        bool registerBodies(
-            const std::uint64_t ownerToken,
-            const ::rock::provider::RockProviderExternalBodyRegistration* bodies,
-            const std::uint32_t bodyCount)
-        {
-            return registerBodiesForScope(
-                ownerToken,
-                ownerToken,
-                bodies,
-                bodyCount);
-        }
-
         bool registerBodiesForScope(
             const std::uint64_t parentOwnerToken,
             const std::uint64_t scopeToken,

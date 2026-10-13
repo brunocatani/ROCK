@@ -4,8 +4,9 @@
 
 namespace rock::transferred_weapon_grab_policy
 {
-    // Only an equipped-to-loose transfer owns this latch. Ordinary world
-    // grabs and provider force grabs continue to use their existing input.
+    // Every programmatic force-grab arrival owns this latch, including
+    // inventory handoffs and equipped-to-loose transfers. Ordinary manual
+    // grabs keep their configured input; retention is scoped to one grab ID.
     enum class State : std::uint8_t
     {
         AwaitInitialRelease,

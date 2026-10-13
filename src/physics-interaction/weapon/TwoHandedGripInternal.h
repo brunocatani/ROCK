@@ -5,7 +5,7 @@
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 
 #include "api/ROCKProviderApiInternal.h"
-#include "physics-interaction/actor/ActorEquipmentGrab.h"
+#include "physics-interaction/native/SceneRelation.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/hand/HandVisual.h"
@@ -82,7 +82,6 @@ namespace rock
          */
         inline constexpr std::uint32_t SCOPE_DRIVER_MISS_GRACE_FRAMES = 3;
         inline constexpr float SCOPE_ROOT_REBASE_DURATION_SECONDS = 0.075f;
-        inline constexpr float GRIP_FAILURE_DETAILED_LOG_COOLDOWN_SECONDS = 2.0f;
         inline constexpr float WEAPON_OPPOSITION_MAX_FINGER_GAP_GAME_UNITS =
             24.0f;
         inline constexpr float WEAPON_OPPOSITION_SEGMENT_PROBE_RADIUS_GAME_UNITS =
@@ -139,47 +138,6 @@ namespace rock
                 return "none";
             }
             return "unknown";
-        }
-
-        inline const char* handFrameResolutionDiagnosticName(
-            const scope_safe_hand_frame_math::ResolutionMode mode)
-        {
-            switch (mode) {
-            case scope_safe_hand_frame_math::ResolutionMode::RootFlattened:
-                return "root";
-            case scope_safe_hand_frame_math::ResolutionMode::
-                DriverReconstructed:
-                return "driver";
-            case scope_safe_hand_frame_math::ResolutionMode::LastKnown:
-                return "last-known";
-            case scope_safe_hand_frame_math::ResolutionMode::Unavailable:
-                return "unavailable";
-            }
-            return "unknown";
-        }
-
-        inline float diagnosticPointDistance(
-            const RE::NiPoint3& left,
-            const RE::NiPoint3& right)
-        {
-            const RE::NiPoint3 delta = left - right;
-            const float distance = delta.Length();
-            return std::isfinite(distance) ? distance : -1.0f;
-        }
-
-        inline float diagnosticRotationDeterminant(const RE::NiMatrix3& rotation)
-        {
-            const float determinant =
-                rotation.entry[0][0] *
-                    (rotation.entry[1][1] * rotation.entry[2][2] -
-                        rotation.entry[1][2] * rotation.entry[2][1]) -
-                rotation.entry[0][1] *
-                    (rotation.entry[1][0] * rotation.entry[2][2] -
-                        rotation.entry[1][2] * rotation.entry[2][0]) +
-                rotation.entry[0][2] *
-                    (rotation.entry[1][0] * rotation.entry[2][1] -
-                        rotation.entry[1][1] * rotation.entry[2][0]);
-            return std::isfinite(determinant) ? determinant : -1.0f;
         }
 
         inline grab_pinch_pocket_policy::Config
@@ -1231,149 +1189,6 @@ namespace rock
             }
             outTransform = rawHandWorld;
             return true;
-        }
-
-        /*
-         * The root flattened bone as FRIK rendered it this frame (probes and
-         * debug traces only; never physical intent).
-         */
-        inline bool tryGetPresentedRootFlattenedHandBoneTransform(bool isLeft, RE::NiTransform& outTransform)
-        {
-            outTransform = {};
-            RE::NiTransform presentedHandWorld{};
-            if (!frik_hand_world_authority::tryGetPresentedHandWorld(isLeft, presentedHandWorld) ||
-                !isUsableHandAuthorityTransform(presentedHandWorld)) {
-                return false;
-            }
-            outTransform = presentedHandWorld;
-            return true;
-        }
-
-        /*
-         * LEFT_CARRY_CLOCK / LEFT_CARRY_STAGE probe sample (debug grab-frame
-         * logging only): the left hand and elbow read from the game's root
-         * flattened bone array (what the renderer skins) and from the body
-         * skeleton nodes, so a stage whose array diverges from its nodes is
-         * visible.
-         */
-        struct LeftCarryProbeSample
-        {
-            RE::NiTransform handArray{};
-            RE::NiTransform forearmArray{};
-            RE::NiTransform handNode{};
-            RE::NiTransform forearmNode{};
-            bool arrayValid = false;
-            bool nodeValid = false;
-        };
-
-        inline LeftCarryProbeSample sampleLeftCarryProbe()
-        {
-            LeftCarryProbeSample sample{};
-            DirectSkeletonBoneSnapshot snapshot{};
-            // The probe compares the rendered array against the applied target.
-            if (rootFlattenedTwoHandedReader().capture(
-                    skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
-                    skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
-                    SkeletonBoneCaptureSpace::Rendered,
-                    snapshot)) {
-                const auto* handBone = findSnapshotBone(snapshot, "LArm_Hand");
-                const auto* forearmBone = findSnapshotBone(snapshot, "LArm_ForeArm1");
-                if (handBone && forearmBone &&
-                    isUsableHandAuthorityTransform(handBone->world) &&
-                    isFiniteTransform(forearmBone->world)) {
-                    sample.handArray = handBone->world;
-                    sample.forearmArray = forearmBone->world;
-                    sample.arrayValid = true;
-                }
-            }
-            auto* const rootNode = f4vr::getRootNode();
-            const auto* const handNode = rootNode ? f4vr::findNode(rootNode, "LArm_Hand") : nullptr;
-            const auto* const forearmNode = rootNode ? f4vr::findNode(rootNode, "LArm_ForeArm1") : nullptr;
-            if (handNode && forearmNode &&
-                isUsableHandAuthorityTransform(handNode->world) &&
-                isFiniteTransform(forearmNode->world)) {
-                sample.handNode = handNode->world;
-                sample.forearmNode = forearmNode->world;
-                sample.nodeValid = true;
-            }
-            return sample;
-        }
-
-        /*
-         * Left-carry solver probe: the body-skeleton left arm chain hFRIK
-         * solves toward ROCK's external hand target. Rows X and Y of each
-         * world rotation are that bone's local axes in world space (hFRIK
-         * composes world vectors as rotate^T * local), so a roll of a twist
-         * bone about its own axis shows as row Y turning while row X holds.
-         */
-        inline constexpr std::array<std::pair<const char*, const char*>, 6> LEFT_CARRY_ARM_BONES{ {
-            { "LArm_UpperArm", "upper" },
-            { "LArm_UpperTwist1", "upT1" },
-            { "LArm_ForeArm1", "fa1" },
-            { "LArm_ForeArm2", "fa2" },
-            { "LArm_ForeArm3", "fa3" },
-            { "LArm_Hand", "hand" },
-        } };
-
-        struct LeftCarryArmSample
-        {
-            std::array<RE::NiTransform, LEFT_CARRY_ARM_BONES.size()> bones{};
-            bool valid = false;
-        };
-
-        inline LeftCarryArmSample sampleLeftCarryArm()
-        {
-            LeftCarryArmSample sample{};
-            auto* const rootNode = f4vr::getRootNode();
-            if (!rootNode) {
-                return sample;
-            }
-            for (std::size_t index = 0; index < LEFT_CARRY_ARM_BONES.size(); ++index) {
-                const auto* const node = f4vr::findNode(rootNode, LEFT_CARRY_ARM_BONES[index].first);
-                if (!node || !isFiniteTransform(node->world)) {
-                    return sample;
-                }
-                sample.bones[index] = node->world;
-            }
-            sample.valid = true;
-            return sample;
-        }
-
-        inline std::string formatLeftCarryArmFrame(const RE::NiTransform& world)
-        {
-            const auto& rows = world.rotate.entry;
-            return std::format(
-                "({:.3f},{:.3f},{:.3f}|{:.4f},{:.4f},{:.4f}|{:.4f},{:.4f},{:.4f})",
-                world.translate.x,
-                world.translate.y,
-                world.translate.z,
-                rows[0][0],
-                rows[0][1],
-                rows[0][2],
-                rows[1][0],
-                rows[1][1],
-                rows[1][2]);
-        }
-
-        inline std::string formatLeftCarryArmSample(const char* stage, const LeftCarryArmSample& sample)
-        {
-            std::string out;
-            if (!sample.valid) {
-                out += stage;
-                out += ".valid=0";
-                return out;
-            }
-            for (std::size_t index = 0; index < LEFT_CARRY_ARM_BONES.size(); ++index) {
-                if (index != 0) {
-                    out += ' ';
-                }
-                out += stage;
-                out += '.';
-                out += LEFT_CARRY_ARM_BONES[index].second;
-                out += '=';
-                out += formatLeftCarryArmFrame(sample.bones[index]);
-            }
-            return out;
         }
 
         /*

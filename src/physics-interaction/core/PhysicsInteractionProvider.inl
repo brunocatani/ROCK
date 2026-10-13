@@ -462,7 +462,7 @@
             // the native right hand still occupies the firing grip. The
             // internal occupancy predicate counts explicit ROCK grips only;
             // PartCarry is the state that actually vacates the firing grip.
-            if (provider_state_policy::firingGripOccupied(true, _twoHandedGrip.isPartCarryActive())) {
+            if (provider_state_policy::firingGripOccupied(true, _twoHandedGrip.isPartCarryActive(), _twoHandedGrip.isHandsFreeRetained())) {
                 setFlag(RuntimeFlag::FiringGripOccupied);
             }
         }
@@ -742,7 +742,7 @@
             }
         };
         const auto targetKindForSelection = [](const SelectedObject& selection) {
-            return grab_target::isActorDriven(selection.targetKind) ?
+            return grab_target::isExtensionSelection(selection.targetKind) ?
                 TargetKind::Actor :
                 TargetKind::DynamicProp;
         };

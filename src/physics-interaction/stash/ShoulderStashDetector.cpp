@@ -463,18 +463,6 @@ namespace rock::shoulder_stash
             return decision;
         }
 
-        if (exceedsShoulderStashSpeedLimit(speed, input.config.maxSpeedGameUnitsPerSecond)) {
-            runtime.candidate = false;
-            runtime.confirmed = false;
-            runtime.zone = body_zone::BodyZoneKind::Unknown;
-            runtime.source = EvidenceSource::None;
-            runtime.shoulderBodyId = kInvalidBodyId;
-            runtime.dwellSeconds = 0.0f;
-            clearSustainedContact(runtime);
-            updateProbeHistory();
-            return decision;
-        }
-
         Candidate best = findHmdBackVolumeCandidate(input, runtime);
         const BodyCandidateSearchResult bodySearch = findBodyColliderCandidate(input, runtime);
         Candidate bodyBackup = bodySearch.candidate;
@@ -499,11 +487,9 @@ namespace rock::shoulder_stash
 
         if (!best.valid) {
             runtime.candidate = false;
-            runtime.confirmed = false;
             runtime.zone = body_zone::BodyZoneKind::Unknown;
             runtime.source = EvidenceSource::None;
             runtime.shoulderBodyId = kInvalidBodyId;
-            runtime.dwellSeconds = 0.0f;
             updateProbeHistory();
             return decision;
         }
@@ -513,30 +499,17 @@ namespace rock::shoulder_stash
             runtime.zone == best.zone &&
             runtime.source == best.source &&
             runtime.shoulderBodyId == best.shoulderBodyId;
-        const bool sameDwellCandidate =
-            runtime.candidate &&
-            shoulderStashDwellIdentityMatches(
-                runtime.zone,
-                runtime.source,
-                runtime.shoulderBodyId,
-                best.zone,
-                best.source,
-                best.shoulderBodyId);
         const bool wasCandidate = runtime.candidate;
 
         runtime.candidate = true;
         runtime.zone = best.zone;
         runtime.source = best.source;
         runtime.shoulderBodyId = best.shoulderBodyId;
-        runtime.dwellSeconds = sameDwellCandidate ? runtime.dwellSeconds + (std::max)(0.0f, input.deltaSeconds) : 0.0f;
-        runtime.confirmed =
-            best.source == EvidenceSource::BodyZoneColliderAndContact ||
-            best.source == EvidenceSource::BodyZoneContact ||
-            best.source == EvidenceSource::BodyZoneSustainedContact ||
-            runtime.dwellSeconds >= (std::max)(0.0f, input.config.minDwellSeconds);
 
+        // Releasing a held object anywhere inside a stash zone stashes it,
+        // regardless of hand speed or time spent in the zone.
         decision.candidate = true;
-        decision.confirmedForCommit = runtime.confirmed;
+        decision.confirmedForCommit = true;
         decision.enteredCandidate = !wasCandidate;
         decision.changedCandidate = !sameCandidate;
         decision.zone = best.zone;

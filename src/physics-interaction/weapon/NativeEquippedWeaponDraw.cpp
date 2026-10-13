@@ -1,7 +1,9 @@
 #include "physics-interaction/weapon/NativeEquippedWeaponDraw.h"
 
 #include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/HeldWeaponInstantTransition.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/NativeTriggerEquipGraph.h"
 #include "physics-interaction/weapon/HeldWeaponEquipStatePolicy.h"
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
 #include "rock_support/Fo4VrRuntime.h"
@@ -350,7 +352,8 @@ namespace rock::native_equipped_weapon_draw
         [[nodiscard]] Result submitResolvedDraw(
             const ExactCurrent& current,
             const Identity& expected,
-            const bool prepareEquipRecovery) noexcept
+            const bool prepareEquipRecovery,
+            const bool triggerEquip = false) noexcept
         {
             Result result{};
             result.result = current.result;
@@ -398,6 +401,30 @@ namespace rock::native_equipped_weapon_draw
                 }
             }
 
+            if (triggerEquip) {
+                requestAnimationAcceleration(current.player, expected,
+                    weapon_transition_animation_acceleration_policy::Direction::Draw);
+                const auto graph = native_trigger_equip_graph::prepare(current.player);
+                if (graph != native_trigger_equip_graph::Result::Ready) {
+                    result.result = graph == native_trigger_equip_graph::Result::Pending ?
+                        SubmitResult::GraphPending : SubmitResult::GraphPreparationUnavailable;
+                    return result;
+                }
+                const auto afterGraph = resolveExactCurrent(expected);
+                if (afterGraph.result != SubmitResult::Submitted) {
+                    result.result = afterGraph.result;
+                    return result;
+                }
+                // Native graph commit may itself acknowledge the draw. Re-read
+                // state before deciding whether another action is necessary.
+                result.stateBefore = f4vr::getNativeWeaponState(current.player);
+                result.stateAfter = result.stateBefore;
+                if (!held_weapon_equip_state_policy::shouldSubmitDrawFollowup(result.stateBefore)) {
+                    result.result = SubmitResult::AlreadyDrawingOrDrawn;
+                    return result;
+                }
+            }
+
             if (prepareEquipRecovery) {
                 if (result.stateBefore != static_cast<std::uint32_t>(
                         held_weapon_equip_state_policy::NativeWeaponState::
@@ -416,7 +443,11 @@ namespace rock::native_equipped_weapon_draw
                 const auto prepare = reinterpret_cast<PrepareEquippedWeaponDraw>(
                     REL::Offset(
                         offsets::kFunc_PrepareEquippedWeaponDraw).address());
-                prepare(current.player);
+                if (triggerEquip) {
+                    held_weapon_instant_transition::prepareDrawForTriggerEquip(current.player);
+                } else {
+                    prepare(current.player);
+                }
             }
 
             requestAnimationAcceleration(
@@ -472,16 +503,16 @@ namespace rock::native_equipped_weapon_draw
         return true;
     }
 
-    Result submitExactCurrent(const Identity& expected) noexcept
+    Result submitExactCurrent(const Identity& expected, const bool triggerEquip) noexcept
     {
         const auto current = resolveExactCurrent(expected);
-        return submitResolvedDraw(current, expected, false);
+        return submitResolvedDraw(current, expected, false, triggerEquip);
     }
 
-    Result submitPreparedExactCurrent(const Identity& expected) noexcept
+    Result submitPreparedExactCurrent(const Identity& expected, const bool triggerEquip) noexcept
     {
         const auto current = resolveExactCurrent(expected);
-        return submitResolvedDraw(current, expected, true);
+        return submitResolvedDraw(current, expected, true, triggerEquip);
     }
 
     Result finalizePartialExactCurrent(const Identity& expected) noexcept
@@ -566,6 +597,10 @@ namespace rock::native_equipped_weapon_draw
         switch (result) {
         case SubmitResult::Submitted:
             return "submitted";
+        case SubmitResult::GraphPending:
+            return "weapon-graph-pending";
+        case SubmitResult::GraphPreparationUnavailable:
+            return "weapon-graph-preparation-unavailable";
         case SubmitResult::AlreadyDrawingOrDrawn:
             return "already-drawing-or-drawn";
         case SubmitResult::AlreadySheathingOrSheathed:

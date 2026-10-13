@@ -3,11 +3,22 @@
 #include <ROCK/WeaponV1_1.h>
 #include <ROCK/InputV1_1.h>
 #include <ROCK/GrabV1_1.h>
+#include <ROCK/GrabV1_3.h>
 #include "WeaponSourceCatalog.h"
+#include "WeaponPartGrabPoints.h"
 #include "ProviderRuntimeTypes.h"
 #include "OwnerBindingPolicy.h"
 
+namespace rock::weapon_part_runtime {struct Target;}
 namespace rock::provider::runtime {
+    bool onOwnerThread() noexcept;
+    api::Status setWeaponPartGrabPoints(api::OwnerToken,std::span<const api::weaponparts::v1_3::GrabPoint>,bool operating=false,bool pinky=false,bool anchored=false);
+    api::Status clearWeaponPartGrabPoints(api::OwnerToken);
+    bool hasOperatingGrabPoints(std::uint64_t generation);
+    std::size_t copyWeaponPartPointSelection(std::span<weapon_part_runtime::Target>,std::span<weapon_part_points::OwnedPoint>,std::size_t& pointCount);
+    api::Status setHeldObjectTarget(api::OwnerToken,const api::grab::v1_3::HeldObjectTarget&);
+    api::Status clearHeldObjectTarget(api::OwnerToken,api::Hand);
+    api::Status getHeldObjectPose(api::OwnerToken,api::Hand,api::grab::v1_3::HeldObjectPose&);
     api::Status getHeldPlacementState(api::grab::v1_1::HeldPlacementState& output);
     api::Status submitHeldPlacementIntent(api::OwnerToken owner, const api::grab::v1_1::HeldPlacementIntent& request);
     api::Status clearHeldPlacementIntent(api::OwnerToken owner);

@@ -50,6 +50,14 @@ int main()
         .physicsSystemInstanceIdentity = 0x4000,
     };
     ok &= expectTrue("identical native body generation is stable", sameBodyIdentity(bodyIdentity, bodyIdentity));
+    ok &= expectTrue("scene-enumerated body matches its live system",
+        matchesDiscoveredBody(bodyIdentity, 11, 7, 0x4000));
+    ok &= expectFalse("scene discovery cannot substitute a different system",
+        matchesDiscoveredBody(bodyIdentity, 11, 7, 0x5000));
+    ok &= expectFalse("scene discovery cannot substitute another body",
+        matchesDiscoveredBody(bodyIdentity, 12, 7, 0x4000));
+    ok &= expectFalse("scene discovery requires a live system",
+        matchesDiscoveredBody(bodyIdentity, 11, 7, 0));
     auto rebuiltIdentity = bodyIdentity;
     rebuiltIdentity.physicsSystemInstanceIdentity = 0x5000;
     ok &= expectFalse("reused body and motion IDs do not hide a native rebuild", sameBodyIdentity(bodyIdentity, rebuiltIdentity));

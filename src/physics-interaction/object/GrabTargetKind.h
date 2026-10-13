@@ -6,23 +6,18 @@
 
 namespace rock::grab_target
 {
-    /*
-     * Actor visuals, gore pieces, and loose objects can all arrive through the
-     * same hknp selection query, but they do not share authority. This target
-     * kind keeps ROCK's gameplay split explicit: whole NPC bodies are not loose
-     * pull-grab objects, worn gear is an actor-loot candidate, and detached gore
-     * parts are physical objects only when the runtime body evidence proves it.
-     */
+    // Mechanical acquisition categories. Extensions own target eligibility and
+    // opaque extraction tickets; core owns hand/pull/constraint execution.
     enum class Kind : std::uint8_t
     {
         None = 0,
         LooseObject,
-        ActorEquipment,
-        DetachedGore,
+        ExtractableItem,
+        DetachedBody,
         DynamicMovableStatic,
-        DeadActorBody,
-        LiveActorScissors,
-        BlockedWholeActorBody,
+        ConnectedBody,
+
+        BlockedExtension,
     };
 
     enum class GrabAcquisitionMode : std::uint8_t
@@ -36,18 +31,16 @@ namespace rock::grab_target
         switch (kind) {
         case Kind::LooseObject:
             return "loose-object";
-        case Kind::ActorEquipment:
-            return "actor-equipment";
-        case Kind::DetachedGore:
-            return "detached-gore";
+        case Kind::ExtractableItem:
+            return "extractable-item";
+        case Kind::DetachedBody:
+            return "detached-body";
         case Kind::DynamicMovableStatic:
             return "dynamic-movable-static";
-        case Kind::DeadActorBody:
-            return "dead-actor-body";
-        case Kind::LiveActorScissors:
-            return "live-actor-scissors";
-        case Kind::BlockedWholeActorBody:
-            return "blocked-whole-actor-body";
+        case Kind::ConnectedBody:
+            return "connected-body";
+        case Kind::BlockedExtension:
+            return "blocked-extension";
         default:
             return "none";
         }
@@ -55,15 +48,15 @@ namespace rock::grab_target
 
     [[nodiscard]] inline constexpr bool isPhysicalRockObject(Kind kind) noexcept
     {
-        return kind == Kind::LooseObject || kind == Kind::DetachedGore || kind == Kind::DynamicMovableStatic || kind == Kind::DeadActorBody;
+        return kind == Kind::LooseObject || kind == Kind::DetachedBody || kind == Kind::DynamicMovableStatic || kind == Kind::ConnectedBody;
     }
 
     [[nodiscard]] inline constexpr GrabAcquisitionMode acquisitionMode(Kind kind) noexcept
     {
         switch (kind) {
         case Kind::DynamicMovableStatic:
-        case Kind::DetachedGore:
-        case Kind::DeadActorBody:
+        case Kind::DetachedBody:
+        case Kind::ConnectedBody:
             return GrabAcquisitionMode::HandPocketOnly;
         default:
             return GrabAcquisitionMode::Default;
@@ -77,7 +70,7 @@ namespace rock::grab_target
 
     [[nodiscard]] inline constexpr bool canUseFarSelection(Kind kind) noexcept
     {
-        return kind == Kind::ActorEquipment || (isPhysicalRockObject(kind) && !requiresHandPocketGrab(kind));
+        return kind == Kind::ExtractableItem || (isPhysicalRockObject(kind) && !requiresHandPocketGrab(kind));
     }
 
     [[nodiscard]] inline constexpr bool canUseRockDynamicPull(Kind kind) noexcept
@@ -90,43 +83,29 @@ namespace rock::grab_target
         return isPhysicalRockObject(kind);
     }
 
-    [[nodiscard]] inline constexpr bool isRagdoll(Kind kind) noexcept
+    [[nodiscard]] inline constexpr bool requiresNativeBodyOwnership(Kind kind) noexcept
     {
-        return kind == Kind::DeadActorBody || kind == Kind::DetachedGore;
+        return kind == Kind::ConnectedBody || kind == Kind::DetachedBody;
     }
 
     [[nodiscard]] inline constexpr bool prefersMechanicalScope(Kind kind) noexcept
     {
-        return kind == Kind::DeadActorBody || kind == Kind::DynamicMovableStatic;
+        return kind == Kind::ConnectedBody || kind == Kind::DynamicMovableStatic;
     }
 
     [[nodiscard]] inline constexpr bool relaxesStrictPocketAuthorityForMechanicalGrab(Kind kind) noexcept
     {
-        return kind == Kind::DeadActorBody;
+        return kind == Kind::ConnectedBody;
     }
 
-    [[nodiscard]] inline constexpr bool isActorDriven(Kind kind) noexcept
+    [[nodiscard]] inline constexpr bool isExtensionSelection(Kind kind) noexcept
     {
-        return kind == Kind::ActorEquipment || kind == Kind::LiveActorScissors || kind == Kind::BlockedWholeActorBody;
+        return kind == Kind::ExtractableItem || kind == Kind::BlockedExtension;
     }
 
-    [[nodiscard]] inline constexpr bool isDetachedGoreLayer(std::uint32_t layer) noexcept
+    [[nodiscard]] inline constexpr bool isNativeDetachedBodyLayer(std::uint32_t layer) noexcept
     {
         return layer == collision_layer_policy::FO4_LAYER_DEADBIP;
     }
 
-    // Caller must already have verified a dead NPC reference. Dismembered
-    // chunks can retain that actor's scene ancestry while using debris physics.
-    // Creature chunks such as the mongrel's Dome/Snoot use CLUTTER instead.
-    [[nodiscard]] inline constexpr Kind classifyDeadActorPhysicalTarget(
-        bool dynamicBody, std::uint32_t layer, bool hitOutsideActorRoot) noexcept
-    {
-        if (!dynamicBody) return Kind::BlockedWholeActorBody;
-        if (layer == collision_layer_policy::FO4_LAYER_CLUTTER ||
-            layer == collision_layer_policy::FO4_LAYER_DEBRIS_SMALL ||
-            layer == collision_layer_policy::FO4_LAYER_DEBRIS_LARGE ||
-            (isDetachedGoreLayer(layer) && hitOutsideActorRoot)) return Kind::DetachedGore;
-        if (collision_layer_policy::isActorOrBipedLayer(layer)) return Kind::DeadActorBody;
-        return Kind::BlockedWholeActorBody;
-    }
 }

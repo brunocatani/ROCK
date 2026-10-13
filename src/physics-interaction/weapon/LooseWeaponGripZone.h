@@ -89,6 +89,10 @@ namespace rock::loose_weapon_grip_zone
     bool tryResolveNearGrab(bool isLeft, RE::TESObjectREFR* ref, NearGrab& out, bool peerHolding = false);
     bool tryResolveAuthoredGrabPose(bool isLeft, RE::TESObjectREFR* ref,
         loose_weapon_authored_grab_policy::Role role, AuthoredWeaponGripPose& out);
+    // Copied-pose projection for a consumer's detached visual of a stored item.
+    // Uses the same library and physical-hand mirroring as ordinary loose grabs.
+    bool tryResolveAuthoredGrabPoseForModel(bool isLeft,const RE::TESObjectWEAP* weapon,RE::NiAVObject* root,
+        loose_weapon_authored_grab_policy::Role role,AuthoredWeaponGripPose& out,std::uint64_t& sequence);
     void updateNearGrabCandidate(bool isLeft, RE::TESObjectREFR* ref, bool peerHolding);
     bool tryGetAuthoredSupportDebug(bool isLeft, AuthoredSupportDebug& out);
     std::size_t collectIndicators(bool isLeft, RE::TESObjectREFR* ref, std::span<RE::NiPoint3> positions);

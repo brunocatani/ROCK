@@ -93,6 +93,12 @@
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiUnregisterConsumerV1(std::uint64_t ownerToken)
     {
+        if(const auto status=native_interaction_service::canUnregisterOwner(ownerToken);status!=rock::api::Status::Ok)
+            return static_cast<RockProviderResultV1>(status);
+        native_interaction_service::clearOwner(ownerToken);
+        loose_weapon_state::clear(ownerToken);
+        physical_reload_input::clearOwner(ownerToken);
+        support_trigger_input::clearOwner(ownerToken);
         if (ownerToken == 0) {
             return RockProviderResultV1::InvalidArgument;
         }

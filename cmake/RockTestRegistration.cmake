@@ -29,8 +29,5 @@ endfunction()
 
 function(rock_write_test_catalog)
   get_property(CATALOG GLOBAL PROPERTY ROCK_POLICY_CATALOG)
-  file(SHA256 "${ROOT_DIR}/CMakeLists.txt" CMAKE_HASH)
-  file(SHA256 "${CMAKE_CURRENT_FUNCTION_LIST_FILE}" REGISTRATION_HASH)
-  file(WRITE "${BUILD_DIR}/RockTestCatalog.json"
-    "{\"CMakeHash\":\"${CMAKE_HASH}\",\"RegistrationHash\":\"${REGISTRATION_HASH}\",\"Targets\":${CATALOG}}\n")
+  file(WRITE "${BUILD_DIR}/RockTestCatalog.json" "{\"Targets\":${CATALOG}}\n")
 endfunction()

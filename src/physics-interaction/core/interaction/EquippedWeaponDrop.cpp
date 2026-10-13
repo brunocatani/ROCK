@@ -1,10 +1,125 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
-#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
+#include "physics-interaction/native/BipodFrozenRetirement.h"
+#include "physics-interaction/native/PhysicsScale.h"
+#include "physics-interaction/weapon/BipodRetentionPolicy.h"
 
 // Shared native placement for equipped-to-loose Toggle Drop and Auto Drop.
 
 namespace rock
 {
+    bool PhysicsInteraction::retireHandsFreeWeapon(const PhysicsFrameContext& frame, RE::NiNode* weaponNode)
+    {
+        if (!_twoHandedGrip.isHandsFreeRetained() || !weaponNode || frame.menuBlocked ||
+            !frame.worldReady || !physicsWritesAllowedForWorld(frame.hknpWorld)) return false;
+        RE::NiPoint3 anchor{};
+        const bool equippedDrop = _twoHandedGrip.isEquippedDrop();
+        // A bounded, button-owned pull is an active acquisition. Do not retire
+        // its item halfway through flight; cancellation restores the radius rule.
+        if (equippedDrop && _dynamicWeaponCollision.equippedDropPullActive()) return false;
+        const bool hasAnchor = equippedDrop ? (anchor = weaponNode->world.translate, true) :
+            _dynamicWeaponCollision.tryGetSurfaceAnchor(anchor);
+        const bool outside = frame.hasHmdFrame && hasAnchor &&
+            bipod_retention_policy::outsideRadius(frame.hmdPositionWorld, anchor,
+                physics_scale::gameToHavok(), equippedDrop ? g_rockConfig.rockEquippedDropRadiusMeters :
+                    g_rockConfig.rockBipodHandsFreeRadiusMeters);
+        const bool supportLost = equippedDrop ? !_dynamicWeaponCollision.equippedDropActive() :
+            !_dynamicWeaponCollision.hasLatchedSurfaceSupport(
+                reinterpret_cast<std::uintptr_t>(weaponNode), _weaponCollision.getCurrentWeaponGenerationKey());
+        const bool modeChanged = equippedDrop &&
+            equipped_weapon_drop_policy::fromSetting(g_rockConfig.rockWeaponDropMode) != equipped_weapon_drop_policy::Mode::EquippedDrop;
+        if (!outside && !modeChanged && !_dynamicWeaponCollision.surfaceRetirementRequested() && !supportLost) return false;
+        // A live free body must finish the same supported two-second dwell as
+        // a loose weapon before any ordinary retirement trigger may freeze it.
+        // Missing-body recovery retains its existing exact-item rescue path.
+        if (equippedDrop && !supportLost && !_dynamicWeaponCollision.equippedDropRestReady()) return false;
+        const auto pose = weaponNode->world;
+        const auto form = currentEquippedWeaponFormId();
+        if (!bipod_frozen_retirement::arm(form, frame.bhkWorld, pose)) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Bipod retirement retained equipped item form={:08X} nativeGuard={} pending={}",
+                form, bipod_frozen_retirement::available(), bipod_frozen_retirement::pending());
+            return false;
+        }
+        const auto source = equipped_weapon_visual_state::observe(form);
+        RE::NiPointer<RE::NiAVObject> model(source.ancestorPathVisible && source.instanceLocallyVisible ? source.exactInstance : nullptr);
+        const auto modelInWeapon = model ? transform_math::composeTransforms(
+            transform_math::invertTransform(pose), model->world) : RE::NiTransform{};
+        RE::NiPointer<RE::NiNode> retainedNode(weaponNode);
+        auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
+        _twoHandedGrip.prepareEquippedWeaponDropCommit();
+        const auto drop = weapon_equip_transfer::dropEquippedWeaponFromPlayer({
+            .dropLoc = pose.translate,
+            .dropRot = transform_math::matrixToReferenceEulerRadians<RE::NiMatrix3, RE::NiPoint3>(pose.rotate),
+            .hasDropLoc = true,
+            .hasDropRot = true,
+        });
+        const bool committed = static_cast<bool>(drop.handle);
+        bipod_frozen_retirement::finishRemoval(committed);
+        if (!committed) {
+            ROCK_LOG_WARN(Weapon, "Bipod retirement retained equipped item form={:08X} reason={}",
+                form, weapon_equip_transfer::dropReasonName(drop.reason));
+            return false;
+        }
+        _dynamicWeaponCollision.retireAll(frame.bhkWorld);
+        _weaponCollision.setEquippedDropActive(frame.hknpWorld, false);
+        _weaponCollision.destroyWeaponBody(frame.hknpWorld);
+        _twoHandedGrip.finishHandsFreeRetirement();
+        _bipodRetirementHandle = drop.handle;
+        _bipodRetirementVisual.beginStationary(std::move(model), modelInWeapon, pose, drop.droppedFormID);
+        _equipped.transition.pendingGrip() = {};
+        clearEquippedWeaponFiringGripInputState();
+        enforceNoBareFistState(true);
+        ROCK_LOG_INFO(Weapon, "Hands-free retirement committed mode={} form={:08X} ref={:08X} reason={} position=({:.3f},{:.3f},{:.3f})",
+            equippedDrop ? "equipped-drop" : "bipod", form, drop.droppedFormID,
+            outside ? "outside-radius" : modeChanged ? "mode-changed" : "support-released",
+            pose.translate.x, pose.translate.y, pose.translate.z);
+        return true;
+    }
+
+    api::Status PhysicsInteraction::extractEquippedForStorage(bool left, std::uint32_t weapon, std::uint32_t& reference)
+    {
+        reference = 0;
+        if (!isProviderReady() || !_lifecycle.cachedBhkWorld || !_lifecycle.cachedHknpWorld || currentEquippedWeaponFormId() != weapon)
+            return api::Status::TargetUnavailable;
+        const auto occupancy = _twoHandedGrip.getGripOccupancy();
+        const bool carries = left ? occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon();
+        const bool otherCarries = left ? occupancy.right.carriesWeapon() : occupancy.left.carriesWeapon();
+        if (!carries || otherCarries || (left ? _leftHand : _rightHand).isHolding() || _forceGrab.pendingCommits[left ? 1 : 0].active)
+            return api::Status::HandBusy;
+        const auto frame = buildFrameContext(_lifecycle.cachedBhkWorld, _lifecycle.cachedHknpWorld);
+        if (frame.menuBlocked) return api::Status::NotReady;
+        const auto source = left ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right;
+        if (!_twoHandedGrip.requestEquippedWeaponDrop("external-storage", source,
+                equipped_weapon_drop_policy::Mode::AutoDrop, frame.deltaSeconds)) return api::Status::NotReady;
+        const auto request = _twoHandedGrip.consumeEquippedWeaponDropRequest();
+        RE::NiPointer<RE::NiNode> sourceNode(resolveEquippedWeaponInteractionNode());
+        const bool dropped = dropEquippedWeaponToWorld(frame, request, equipped_weapon_drop_policy::Mode::AutoDrop);
+        _twoHandedGrip.completeEquippedWeaponDrop(request, dropped);
+        if (!dropped) return api::Status::TargetUnavailable;
+        _equipped.transition.pendingGrip() = {}; clearEquippedWeaponFiringGripInputState();
+        const auto ref = _forceGrab.pendingCommits[left ? 1 : 0].targetHandle.get();
+        if (!ref) return api::Status::NotReady;
+        reference = ref->formID;
+        return api::Status::RequestQueued;
+    }
+
+    RE::NiAVObject* PhysicsInteraction::storageEquippedVisual(bool left, std::uint32_t expectedBase) const
+    {
+        if (currentEquippedWeaponFormId() != expectedBase) return nullptr;
+        const auto occupancy = _twoHandedGrip.getGripOccupancy();
+        if (!(left ? occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon())) return nullptr;
+        return resolveEquippedWeaponInteractionNode();
+    }
+    bool PhysicsInteraction::storageHandoffPending(std::uint32_t reference) const
+    {
+        for (const auto& pending : _forceGrab.pendingCommits) if (pending.active) {
+            const auto ref = pending.targetHandle.get();
+            if (ref && ref->formID == reference) return true;
+        }
+        for (const auto& handoff : _drop.nativeHandoffs)
+            if (handoff.active && handoff.droppedFormId == reference) return true;
+        return false;
+    }
+
     bool PhysicsInteraction::retainEquippedWeaponForReplacement(const PhysicsFrameContext& frame, bool equipIsLeft)
     {
         auto& transition = _equipped.transition;
@@ -18,7 +133,8 @@ namespace rock
         const auto sourceHand = retainedIsLeft ?
             equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right;
         if (!retainedHandCarries || receivingHandCarries ||
-            !_twoHandedGrip.requestEquippedWeaponDrop("trigger-equip-retention", sourceHand, frame.deltaSeconds)) {
+            !_twoHandedGrip.requestEquippedWeaponDrop("trigger-equip-retention", sourceHand,
+                equipped_weapon_drop_policy::Mode::ToggleDrop, frame.deltaSeconds)) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
                 "Trigger equip retained both weapons: previous={:08X} hand={} carry={} receivingCarry={} drop pose unavailable",
                 previousForm, retainedIsLeft ? "left" : "right",
@@ -53,9 +169,42 @@ namespace rock
         const EquippedWeaponManualDropRequest& request, equipped_weapon_drop_policy::Mode mode)
     {
         if (!frame.worldReady || !frame.hknpWorld || frame.menuBlocked ||
-            mode == equipped_weapon_drop_policy::Mode::Off) return false;
+            mode == equipped_weapon_drop_policy::Mode::Off || mode != request.mode) return false;
+        if (mode == equipped_weapon_drop_policy::Mode::EquippedDrop) {
+            // No inventory mutation occurs here. Retirement capability is a
+            // prerequisite, so the item cannot be released without an exit path.
+            if (!_twoHandedGrip.isManualOwnershipActive() || request.weaponFormId == 0 ||
+                request.weaponFormId != currentEquippedWeaponFormId() || request.weaponGenerationKey == 0 ||
+                request.weaponGenerationKey != _weaponCollision.getCurrentWeaponGenerationKey() ||
+                request.weaponOwnershipKey != _weaponCollision.getCurrentEquippedWeaponOwnershipKey() ||
+                !bipod_frozen_retirement::available() || bipod_frozen_retirement::pending()) {
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equipped drop retained: item or retirement unavailable form={:08X} nativeGuard={} pending={}",
+                    currentEquippedWeaponFormId(), bipod_frozen_retirement::available(), bipod_frozen_retirement::pending());
+                return false;
+            }
+            auto mutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
+            RE::NiTransform pose{};
+            auto* node = resolveEquippedWeaponInteractionNode();
+            const auto generation = _weaponCollision.getCurrentWeaponGenerationKey();
+            if (!_dynamicHandCollision.leaseReleasedWeapon(frame.hknpWorld, _dynamicWeaponCollision.proxyBodyIdForDebug().value,
+                    g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds)) {
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equipped drop retained: stage=collision-lease generation={:016X}", generation);
+                return false;
+            }
+            const auto commit = equipped_weapon_drop_policy::commitRetainedDrop(
+                [&] { return _dynamicWeaponCollision.beginEquippedDrop(frame, node, generation, pose); },
+                [&] { return _twoHandedGrip.retainEquippedDrop(pose); },
+                [&] { (void)_dynamicWeaponCollision.restoreEquippedHold(frame, "release-refused"); });
+            if (commit != equipped_weapon_drop_policy::RetainedDropCommit::Released) {
+                _dynamicHandCollision.cancelReleasedWeaponLease(frame.hknpWorld);
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equipped drop retained: stage={} generation={:016X}",
+                    commit == equipped_weapon_drop_policy::RetainedDropCommit::PhysicsRefused ? "physics-release" : "visual-retention", generation);
+                return false;
+            }
+            _weaponCollision.setEquippedDropActive(frame.hknpWorld, true);
+            return true;
+        }
         auto* hknp = frame.hknpWorld;
-        auto* weaponNode = resolveEquippedWeaponInteractionNode();
         const auto observedEquippedWeaponFormID = currentEquippedWeaponFormId();
         const auto sourceHand = request.sourceHand;
         const bool sourceHandKnown = sourceHand == equipped_weapon_drop_policy::SourceHand::Right ||
@@ -114,11 +263,6 @@ namespace rock
                 const auto dropVisualInWeapon = dropVisualModel ?
                     transform_math::composeTransforms(transform_math::invertTransform(releaseWeaponWorld),
                         dropVisualModel->world) : RE::NiTransform{};
-                if (toggleDrop) {
-                    vanilla_weapon_alignment_telemetry::beginTransferTrace(
-                        vanilla_weapon_alignment_telemetry::TransferKind::ToggleDrop,
-                        transferIsLeft, observedEquippedWeaponFormID, weaponNode);
-                }
                 _twoHandedGrip.prepareEquippedWeaponDropCommit();
                 const auto dropResult = weapon_equip_transfer::dropEquippedWeaponFromPlayer(weapon_equip_transfer::EquippedDropInput{
                     .dropLoc = releaseLoc,
@@ -170,10 +314,6 @@ namespace rock
                             .inputState = transferred_weapon_grab_policy::State::AwaitInitialRelease,
                         };
                     }
-                    vanilla_weapon_alignment_telemetry::recordTransferPose(
-                        dropResult.droppedFormID, transferIsLeft, "release",
-                        releaseGeometry.capturedWeaponWorld,
-                        (transferIsLeft ? frame.left : frame.right).rawHandWorld);
                     if (dropResult.equippedSlotReleased) {
                         if (toggleDrop) {
                             _drop.visuals[transferHandIndex].begin(std::move(dropVisualModel),
@@ -210,8 +350,15 @@ namespace rock
                         dropResult.stackID,
                         dropResult.matchedInstanceData ? "yes" : "no");
                 }
-                if (sourceHandKnown && dropCommitted) {
-                    suppressHandCollisionAfterEquippedWeaponDrop(hknp, sourceHand);
+                if (sourceHandKnown && dropCommitted &&
+                    (sourceHand == equipped_weapon_drop_policy::SourceHand::Right ||
+                        sourceHand == equipped_weapon_drop_policy::SourceHand::Left)) {
+                    // The releasing hand and arm stop colliding briefly so they
+                    // do not knock the weapon they just let go of.
+                    const bool dropIsLeft = equipped_weapon_drop_policy::isLeft(sourceHand);
+                    setWeaponHandSuppression(hknp, dropIsLeft, WeaponHandReason::Drop, true);
+                    setWeaponHandSuppression(hknp, dropIsLeft, WeaponHandReason::Drop, false,
+                        g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds);
                 }
             }
         }
@@ -292,6 +439,17 @@ namespace rock
 
     void PhysicsInteraction::serviceEquippedWeaponNativeHandoff(const PhysicsFrameContext& frame)
     {
+        bipod_frozen_retirement::service();
+        if (_bipodRetirementHandle) {
+            const auto ref = _bipodRetirementHandle.get();
+            if (!bipod_frozen_retirement::pending() ||
+                (ref && bipod_frozen_retirement::frozen(ref->GetFormID()))) {
+                _bipodRetirementVisual.release("bipod-native-placement-finished");
+                _bipodRetirementHandle = {};
+            } else {
+                _bipodRetirementVisual.update({}, ref ? ref->Get3D() : nullptr);
+            }
+        }
         for (auto& handoff : _drop.nativeHandoffs) {
             if (handoff.active) {
                 serviceEquippedWeaponNativeTransaction(handoff, frame);
@@ -523,8 +681,9 @@ namespace rock
             return;
         }
 
-        auto tryReadBodyIdentity = [&](std::uint32_t bodyId,
+        auto tryReadBodyIdentity = [&](const BodyRecord& record,
                                        equipped_weapon_drop_momentum::BodyIdentityKey& outIdentity) {
+            const auto bodyId = record.bodyId;
             handoff.inspectedBodyId = bodyId;
             const auto live = havok_runtime::snapshotBody(
                 frame.hknpWorld,
@@ -534,12 +693,24 @@ namespace rock
                 (live.valid && live.body && live.body->shape ? 8u : 0u) | (live.collisionObject ? 16u : 0u) |
                 (live.ownerNode ? 32u : 0u) | (live.valid && live.body && live.body->bodyId.value == bodyId ? 64u : 0u);
             if (!live.valid || !live.body || !live.motion || !live.body->shape ||
-                !live.collisionObject || !live.ownerNode ||
                 live.body->bodyId.value != bodyId) {
                 return false;
             }
+            auto* collisionObject = live.collisionObject;
+            auto* ownerNode = live.ownerNode;
+            if (!collisionObject && !ownerNode) {
+                // Shared weapon systems include bodies with no reverse scene
+                // link. This frame's exact-reference scan already enumerated
+                // this body through its owning system; retain that provenance.
+                // Never replace an existing but inconsistent native owner.
+                collisionObject = record.collisionObject;
+                ownerNode = havok_runtime::getOwnerNodeFromCollisionObject(collisionObject);
+                if (ownerNode != record.owningNode) return false;
+                handoff.identityProofMask |= 8192u;
+            }
+            if (!collisionObject || !ownerNode) return false;
             auto* physicsSystem =
-                havok_runtime::getPhysicsSystemFromCollisionObject(live.collisionObject);
+                havok_runtime::getPhysicsSystemFromCollisionObject(collisionObject);
             auto* physicsSystemInstance =
                 havok_runtime::getPhysicsSystemInstance(physicsSystem);
             if (!physicsSystemInstance) {
@@ -551,8 +722,8 @@ namespace rock
                 .motionId = live.motionIndex,
                 .motionFirstBodyId = live.motion->firstBodyId,
                 .shapeIdentity = reinterpret_cast<std::uintptr_t>(live.body->shape),
-                .owningNodeIdentity = reinterpret_cast<std::uintptr_t>(live.ownerNode),
-                .collisionObjectIdentity = reinterpret_cast<std::uintptr_t>(live.collisionObject),
+                .owningNodeIdentity = reinterpret_cast<std::uintptr_t>(ownerNode),
+                .collisionObjectIdentity = reinterpret_cast<std::uintptr_t>(collisionObject),
                 .physicsSystemInstanceIdentity =
                     reinterpret_cast<std::uintptr_t>(physicsSystemInstance),
             };
@@ -560,7 +731,7 @@ namespace rock
         };
         auto tryBuildBodyIdentity = [&](const BodyRecord& record,
                                         equipped_weapon_drop_momentum::BodyIdentityKey& outIdentity) {
-            if (!tryReadBodyIdentity(record.bodyId, outIdentity)) {
+            if (!tryReadBodyIdentity(record, outIdentity)) {
                 return false;
             }
             // Additional bits identify which scan/live identity comparison failed.
@@ -630,9 +801,6 @@ namespace rock
                     endHandoff("native-placement-hand-invalid", true);
                     return;
                 }
-                vanilla_weapon_alignment_telemetry::recordTransferTrace(
-                    vanilla_weapon_alignment_telemetry::TransferKind::ToggleDrop, commit.isLeft,
-                    "native-placement-target", droppedRoot, &placementWorld);
                 break;
             }
             std::array<EquippedWeaponDropBodySnapshot, kEquippedWeaponDropBodySnapshotCapacity>
@@ -821,6 +989,10 @@ namespace rock
                 return;
             }
         }
+        // Native bodies have settled and can complete the handoff now.
+        // Saved-state geometry builds incrementally; LooseWeaponCollision
+        // retains native collision until its generated replacements install.
+        // Its work budget must not become a native placement timeout.
         ROCK_LOG_INFO(Weapon,
             "Equipped weapon native drop placement ready: ref={:08X} bodies={} motions={} elapsed={:.3f}s",
             handoff.droppedFormId, acceptedRecordCount, uniqueMotionRecordCount, handoff.elapsedSeconds);

@@ -11,6 +11,26 @@
 
 namespace rock
 {
+    bool DynamicWeaponCollisionRuntime::tryGetLatchedSurfacePose(
+        RE::NiNode* weapon, const std::uint64_t generation, RE::NiTransform& pose) const
+    {
+        RE::NiTransform surface{};
+        if (!g_rockConfig.rockBipodMode ||
+            !hasLatchedSurfaceSupport(reinterpret_cast<std::uintptr_t>(weapon), generation) ||
+            !resolveSurfaceSupportBody(_surfaceSupport.contact, surface) ||
+            !dynamic_weapon_collision_policy::isFiniteTransform(_surfaceSupport.lastWorld)) return false;
+        pose = _surfaceSupport.lastWorld;
+        return true;
+    }
+
+    bool DynamicWeaponCollisionRuntime::tryGetSurfaceAnchor(RE::NiPoint3& anchor) const
+    {
+        if (!_surfaceSupport.latched()) return false;
+        anchor = transform_math::localPointToWorld(_surfaceSupport.contact.surfaceWorld,
+            _surfaceSupport.contact.surfacePointLocal);
+        return dynamic_weapon_collision_policy::isFinitePoint(anchor);
+    }
+
     namespace
     {
         std::uint64_t surfaceContactTimeMilliseconds() noexcept
@@ -22,12 +42,18 @@ namespace rock
 
     void DynamicWeaponCollisionRuntime::updateSurfaceSupportInput(bool placementOwnsClick)
     {
+        if (_equippedDrop) {
+            _surfaceClickRequested = false;
+            _surfaceToggle = {};
+            return;
+        }
         _surfaceInputReserved = false; // Also clears before interrupted-frame returns.
         if (!g_rockConfig.rockBipodMode) {
             _surfaceClickRequested = false;
             _surfaceToggle = {};
             if (_surfaceSupport.latched()) {
-                weapon_surface_support::release(_surfaceSupport);
+                if (_surfaceSupport.handsFree) _surfaceSupport.retirementRequested = true;
+                else weapon_surface_support::release(_surfaceSupport);
                 ROCK_LOG_INFO(Weapon, "Weapon surface support released: reason=bipod-mode-disabled");
             }
             return; // Do not read or consume the button while this mode is off.
@@ -100,10 +126,13 @@ namespace rock
     }
 
     void DynamicWeaponCollisionRuntime::updateSurfaceSupport(
-        const PhysicsFrameContext& frame, const RE::NiPoint3* primaryGripWeaponLocal)
+        const PhysicsFrameContext& frame, const RE::NiPoint3* primaryGripWeaponLocal, const bool handsFree)
     {
         using namespace weapon_surface_support;
         using namespace dynamic_weapon_collision_policy;
+        const bool resumedCarry = _surfaceSupport.handsFree && !handsFree;
+        _surfaceSupport.handsFree = handsFree;
+        if (resumedCarry) _surfaceSupport.retirementRequested = false;
         if (_surfaceSupport.ownsPose() && std::abs(_surfaceSupport.captureWorld.scale - _createdWeaponScale) > 0.0001f) {
             _surfaceSupport = {};
             ROCK_LOG_INFO(Weapon, "Weapon surface support cleared: reason=weapon-scale-changed");
@@ -112,7 +141,8 @@ namespace rock
         if (_surfaceSupport.latched() && !resolveSurfaceSupportBody(_surfaceSupport.contact, surfaceWorld)) {
             ROCK_LOG_INFO(Weapon, "Weapon surface support released: reason=surface-invalid body={} generation={:016X}",
                 _surfaceSupport.contact.surfaceBodyId, _surfaceSupport.contact.generation);
-            release(_surfaceSupport);
+            if (handsFree) _surfaceSupport.retirementRequested = true;
+            else release(_surfaceSupport);
         }
 
         // Use the same current contact for click arbitration and acquisition.
@@ -138,7 +168,8 @@ namespace rock
         if (_surfaceClickRequested) {
             _surfaceClickRequested = false;
             if (_surfaceSupport.latched()) {
-                release(_surfaceSupport);
+                if (handsFree) _surfaceSupport.retirementRequested = true;
+                else release(_surfaceSupport);
                 ROCK_LOG_INFO(Weapon, "Weapon surface support released: reason=right-stick-click");
             } else {
                 RE::NiPoint3 primaryLocal{};
@@ -169,11 +200,11 @@ namespace rock
             }
         }
 
-        if (_surfaceSupport.latched()) {
+        if (_surfaceSupport.latched() && !handsFree) {
             // A firing-hand transfer changes the grip input, never the anchor.
             // Rebase the aiming relationship at the currently presented pose.
             if (primaryGripWeaponLocal && isFinitePoint(*primaryGripWeaponLocal) &&
-                weaponSolverLength(weaponSolverSub(*primaryGripWeaponLocal, _surfaceSupport.primaryGripLocal)) > 0.01f) {
+                (resumedCarry || weaponSolverLength(weaponSolverSub(*primaryGripWeaponLocal, _surfaceSupport.primaryGripLocal)) > 0.01f)) {
                 _surfaceSupport.primaryGripLocal = *primaryGripWeaponLocal;
                 _surfaceSupport.primaryTargetAtCapture = transform_math::localPointToWorld(_frameRequestedWeaponWorld, *primaryGripWeaponLocal);
                 _surfaceSupport.captureWorld = _surfaceSupport.lastWorld;

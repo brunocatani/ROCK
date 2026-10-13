@@ -148,15 +148,4 @@ namespace rock::rendered_bone_transport_policy
         }
         return true;
     }
-
-    /*
-     * Local of a carried bone under a parent that was not carried. The parent
-     * is a rendered scene basis: orthonormalized before the transpose inverse.
-     */
-    [[nodiscard]] inline RE::NiTransform localUnderParent(const RE::NiTransform& parentWorld, const RE::NiTransform& world) noexcept
-    {
-        return transform_math::composeTransforms(
-            transform_math::invertTransform(transform_math::orthonormalizedTransform(parentWorld)),
-            world);
-    }
 }

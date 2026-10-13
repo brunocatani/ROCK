@@ -27,6 +27,17 @@ namespace
         namespace fs = std::filesystem;
         fs::create_directories(directory);
         ConfigurationStore store(directory, compiled);
+        require(find(store, "bEmergencyDisableRecoil").group == Group::Developer,
+            "emergency recoil override must belong to developer controls");
+        require(find(store, "iWeaponFilteringPreset").group == Group::Consumer,
+            "weapon filtering must be a regular ROCK.ini setting");
+        CSimpleIniA filterConfig;
+        filterConfig.SetLongValue("ImmersiveWeapons", "iWeaponFilteringPreset", 3);
+        require(rock::RockConfig::parseValues(filterConfig).rockWeaponFilteringPreset == 3,
+            "weapon filtering preset was not loaded");
+        filterConfig.SetLongValue("ImmersiveWeapons", "iWeaponFilteringPreset", 999);
+        require(rock::RockConfig::parseValues(filterConfig).rockWeaponFilteringPreset == 0,
+            "invalid weapon filtering preset must select Off");
         const auto write = [&](Group group, const std::string& text) {
             std::ofstream file(store.path(group), std::ios::binary | std::ios::trunc);
             file << text;
@@ -82,10 +93,10 @@ namespace
 
         // Section names cannot redirect an option into the other owning file.
         write(Group::Consumer, "[Debug]\nbPerformanceProfilerEnabled=true\n");
-        write(Group::Developer, "[Logging]\niLogLevel=0\nnpcDynamicCollisions=false\n");
+        write(Group::Developer, "[Logging]\niLogLevel=0\nbLeftHandedMode=true\n");
         require(store.load(false), "wrong-file fixture failed to load");
         require(!find(store, "bPerformanceProfilerEnabled").specified && runtime().rockLogLevel == 2 &&
-                !find(store, "npcDynamicCollisions").specified && runtime().npcDynamicCollisions,
+                !find(store, "bLeftHandedMode").specified && !runtime().rockLeftHandedMode,
             "decorative sections broke consumer/developer ownership");
         require(settingGroup("Any label", "BPERFORMANCEPROFILERENABLED") == Group::Developer,
             "key-only ownership lookup still depends on a section or spelling case");
@@ -290,6 +301,22 @@ int main(int argc, char** argv)
             require(!other.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr), "example option belongs to both files");
         }
         require(store.load(true), "first-run load failed");
+        const auto consumerBeforeRecoilOverride = bytes(store.path(Group::Consumer));
+        require(store.setValue(Group::Developer, "Debug", "bEmergencyDisableRecoil", "true") && store.load(false),
+            "emergency recoil override did not persist and reload");
+        CSimpleIniA recoilOverride;
+        store.appendLoadedValues(recoilOverride);
+        require(rock::RockConfig::parseValues(recoilOverride).rockEmergencyDisableRecoil,
+            "emergency recoil override did not reach runtime settings");
+        require(bytes(store.path(Group::Consumer)) == consumerBeforeRecoilOverride,
+            "emergency recoil override changed existing consumer recoil settings");
+        require(store.setValue(Group::Developer, "Debug", "bEmergencyDisableRecoil", "false") && store.load(false),
+            "emergency recoil reset did not reload");
+        CSimpleIniA recoilReset;
+        store.appendLoadedValues(recoilReset);
+        require(!rock::RockConfig::parseValues(recoilReset).rockEmergencyDisableRecoil &&
+                !fs::exists(store.path(Group::Developer)),
+            "reset retained the emergency override or an empty developer file");
         require(find(store, "bLeftHandedMode").group == Group::Consumer &&
             find(store, "bLeftHandedMode").type == ValueType::Boolean &&
             !rock::RockConfig::parseValues(missingOptions).rockLeftHandedMode,
@@ -316,28 +343,15 @@ int main(int argc, char** argv)
             "VATS physics fixes reset/reload failed");
         require(!find(store, "bVatsPhysicsFixes").specified,
             "resetting VATS physics fixes retained the default override");
-        require(find(store, "npcDynamicCollisions").type == ValueType::Boolean &&
-            find(store, "npcDynamicCollisions").group == Group::Consumer &&
-            rock::RockConfig::parseValues(missingOptions).npcDynamicCollisions,
-            "NPC dynamic collisions must be a consumer boolean defaulting on");
-        require(!store.setValue(Group::Developer, "PhysicsInteraction", "npcDynamicCollisions", "false"),
-            "NPC dynamic collisions must no longer be writable as a developer override");
-        require(store.setValue(Group::Consumer, "PhysicsInteraction", "npcDynamicCollisions", "false"),
-            "NPC collision disable failed");
-        require(store.load(false), "NPC collision reload failed");
-        CSimpleIniA npcValues;
-        store.appendLoadedValues(npcValues);
-        require(!rock::RockConfig::parseValues(npcValues).npcDynamicCollisions,
-            "NPC collision consumer value did not reach runtime");
-        require(store.setValue(Group::Consumer, "PhysicsInteraction", "npcDynamicCollisions", "true"),
-            "NPC collision reset failed");
-        require(store.load(false), "NPC collision reset reload failed");
-        CSimpleIniA resetNpcValues;
-        store.appendLoadedValues(resetNpcValues);
-        require(rock::RockConfig::parseValues(resetNpcValues).npcDynamicCollisions &&
-            find(store, "npcDynamicCollisions").specified &&
-            !fs::exists(store.path(Group::Developer)),
-            "reset must retain NPC collisions on in the consumer file without creating developer overrides");
+        // NPC controls moved to SCISSORS Redux by the owner's explicit decision.
+        for (const auto* key : {"npcDynamicCollisions", "bBladePenetrationEnabled",
+                 "bDebugDrawNpcNativeColliders", "bDebugDrawNpcSupplementColliders", "bDebugDrawNpcColliderLabels"}) {
+            require(std::none_of(store.settings().begin(), store.settings().end(),
+                [key](const auto& setting) { return setting.key == key; }), "Redux setting leaked into ROCK's catalog");
+            require(!store.setValue(Group::Consumer, "PhysicsInteraction", key, "true") &&
+                !store.setValue(Group::Developer, "PhysicsInteraction", key, "true"),
+                "ROCK must reject NPC setting writes instead of keeping a forwarding alias");
+        }
         require(find(store, "fMeleeGripPitchDegrees").group == Group::Consumer &&
             find(store, "fMeleeGripPitchDegrees").type == ValueType::Float,
             "melee pitch must be a consumer float");
@@ -396,6 +410,40 @@ int main(int argc, char** argv)
             require(rock::RockConfig::parseValues(poseValues).rockGrabFingerPoseMode == 1,
                 "invalid finger pose mode must use current posing");
         }
+        require(find(store, "iWeaponGrabPoseMode").group == Group::Developer &&
+            find(store, "iWeaponGrabPoseMode").value == "0", "weapon posing must preserve the shared setting by default");
+        for (const auto* mode : { "2", "1", "0" }) {
+            require(store.setValue(Group::Developer, "PhysicsInteraction", "iWeaponGrabPoseMode", mode) && store.load(false),
+                "weapon posing must switch and reset through the configuration API");
+            CSimpleIniA poseValues;
+            store.appendLoadedValues(poseValues);
+            const auto config = rock::RockConfig::parseValues(poseValues);
+            require(config.rockWeaponGrabPoseMode == std::stoi(mode) && config.rockGrabFingerPoseMode == 1,
+                "weapon posing hot reload must not change loose-object posing");
+        }
+        for (const auto* invalid : { "-1", "3", "invalid" }) {
+            CSimpleIniA poseValues;
+            poseValues.SetValue("PhysicsInteraction", "iWeaponGrabPoseMode", invalid);
+            require(rock::RockConfig::parseValues(poseValues).rockWeaponGrabPoseMode == 0,
+                "invalid weapon posing must preserve the shared setting");
+        }
+        require(find(store, "iGrabCloseSeatMode").group == Group::Developer &&
+            find(store, "iGrabCloseSeatMode").value == "0", "close grabs must keep the current seat by default");
+        for (const auto* mode : { "1", "0", "1", "0" }) {
+            require(store.setValue(Group::Developer, "PhysicsInteraction", "iGrabCloseSeatMode", mode) && store.load(false),
+                "close-grab seat mode must switch and reset through the configuration API");
+            CSimpleIniA seatValues;
+            store.appendLoadedValues(seatValues);
+            const auto config = rock::RockConfig::parseValues(seatValues);
+            require(config.rockGrabCloseSeatMode == std::stoi(mode) && config.rockGrabFingerPoseMode == 1,
+                "close-grab seat hot reload must deliver the selected mode without changing finger posing");
+        }
+        for (const auto* invalid : { "-1", "2", "invalid" }) {
+            CSimpleIniA seatValues;
+            seatValues.SetValue("PhysicsInteraction", "iGrabCloseSeatMode", invalid);
+            require(rock::RockConfig::parseValues(seatValues).rockGrabCloseSeatMode == 0,
+                "invalid close-grab seat mode must keep the current seat");
+        }
         require(find(store, "iWeaponDropMode").type == ValueType::Integer &&
             find(store, "iWeaponDropMode").value == "2", "weapon drop must default to toggle drop");
         require(find(store, "iWeaponGrabMode").type == ValueType::Integer &&
@@ -421,7 +469,7 @@ int main(int argc, char** argv)
         }
         require(!store.setValue(Group::Consumer, "ImmersiveWeapons", "bAutoDrop", "true"),
             "removed auto-drop boolean must not remain writable");
-        for (const auto* mode : { "1", "2", "3" }) {
+        for (const auto* mode : { "1", "2", "3", "4" }) {
             require(store.setValue(Group::Consumer, "ImmersiveWeapons", "iWeaponDropMode", mode),
                 "weapon drop mode write failed");
             require(store.load(false), "weapon drop mode reload failed");
@@ -433,7 +481,7 @@ int main(int argc, char** argv)
             require(dropConfig.rockWeaponGrabMode == 1,
                 "weapon drop mode must not change the grip release gesture");
         }
-        for (const auto* invalid : { "-1", "0", "4", "invalid" }) {
+        for (const auto* invalid : { "-1", "0", "5", "invalid" }) {
             CSimpleIniA dropValues;
             dropValues.SetValue("ImmersiveWeapons", "iWeaponDropMode", invalid);
             require(rock::RockConfig::parseValues(dropValues).rockWeaponDropMode == 2,
@@ -441,6 +489,22 @@ int main(int argc, char** argv)
         }
         require(store.setValue(Group::Consumer, "ImmersiveWeapons", "iWeaponDropMode", "2"),
             "weapon drop mode reset failed");
+        require(find(store, "fEquippedDropRadiusMeters").group == Group::Consumer,
+            "equipped drop radius must be a consumer setting");
+        {
+            CSimpleIniA radius;
+            radius.SetValue("ImmersiveWeapons", "fEquippedDropRadiusMeters", "12.5");
+            radius.SetValue("ImmersiveWeapons", "fBipodHandsFreeRadiusMeters", "3.0");
+            const auto value = rock::RockConfig::parseValues(radius);
+            require(value.rockEquippedDropRadiusMeters == 12.5f && value.rockBipodHandsFreeRadiusMeters == 3.0f,
+                "equipped drop and bipod radii must remain independent without an arbitrary upper clamp");
+            for (const auto* invalid : { "0", "-1", "nan", "inf" }) {
+                radius.SetValue("ImmersiveWeapons", "fEquippedDropRadiusMeters", invalid);
+                const auto rejected = rock::RockConfig::parseValues(radius);
+                require(rejected.rockEquippedDropRadiusMeters == 2.0f && rejected.rockBipodHandsFreeRadiusMeters == 3.0f,
+                    "invalid equipped drop radius must restore its default without changing bipod");
+            }
+        }
         require(store.load(false), "weapon drop mode reset reload failed");
         require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fLeftFiringGripOffsetYGameUnits", "0.25"),
             "left firing relative placement write failed");
@@ -526,7 +590,7 @@ int main(int argc, char** argv)
         require(!store.setValue(Group::Consumer, "PhysicsInteraction", "bDebugShowColliders", "true"), "wrong owning file accepted");
         require(!store.setValue(Group::Developer, "Debug", "bUnknown", "true"), "unknown setting accepted");
         require(!store.setValue(Group::Developer, "Debug", "bDeveloperModeEnabled", "invalid"), "invalid bool accepted");
-        require(!store.setValue(Group::Developer, "PhysicsInteraction", "fDebugVideoSyncMarkerSize", "nan"), "nonfinite override accepted");
+        require(!store.setValue(Group::Developer, "PhysicsInteraction", "fDebugSkeletonBoneAxisLength", "nan"), "nonfinite override accepted");
 
         // An editor changes one key after the menu snapshot. A menu change to
         // another key must preserve the newer edit, then both must hot reload.

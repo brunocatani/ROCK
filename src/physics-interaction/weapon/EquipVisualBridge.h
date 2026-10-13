@@ -84,6 +84,9 @@ namespace rock
             RE::NiTransform firingHandWeaponLocal{};
             float timeoutSeconds = 1.0f;
             float blendSeconds = 0.15f;
+            // Preserve hand continuity without attaching a visual model or
+            // hiding the native weapon (bridge-off latency tests).
+            bool handPoseOnly = false;
         };
 
         struct UpdateInput
@@ -123,7 +126,6 @@ namespace rock
         // loose model immediately while allowing the independent temporary
         // hand-pose payload to survive until its equipped owner acquires it.
         void update(const UpdateInput& input);
-        void tracePresentation(const char* phase) const;
 
         // Advances only the hard presentation lease while the coordinator is
         // mutation-blocked by a menu, compatibility owner, or unavailable
@@ -143,7 +145,7 @@ namespace rock
 
         [[nodiscard]] bool isActive() const noexcept { return _active; }
         [[nodiscard]] bool presentationLeaseWouldExpire(float deltaSeconds) const noexcept;
-        [[nodiscard]] bool hasVisualModel() const noexcept { return _model != nullptr; }
+        [[nodiscard]] bool hasVisualModel() const noexcept { return _model != nullptr && !_handPoseOnly; }
         [[nodiscard]] bool isModelPresented() const noexcept { return _modelPresented; }
         [[nodiscard]] bool ownsNativeInstanceCull(const RE::NiAVObject* node) const noexcept;
         [[nodiscard]] bool isHandPoseHandoffActive() const noexcept { return _handPoseHandoffActive; }
@@ -165,13 +167,24 @@ namespace rock
         // AfterWeaponPosition only: the accepted equipped owner has completed
         // this frame's weapon solve, including provider presentation scale.
         void synchronizeEquippedPresentation(RE::NiNode* weaponNode);
+        // Final presentation phase: animation can overwrite the child's cull
+        // after update(). Reassert it only while our attached model is shown.
+        void finalizePresentationVisibility(const equipped_weapon_visual_state::Snapshot& nativeVisual);
 
     private:
+        void tracePoseHandoff(const char* stage, const RE::NiTransform& targetWorld);
+        void rememberPresentedPose();
+        RE::NiTransform _lastPresentedInDriver{};
+        bool _lastPresentedInDriverValid = false;
+        unsigned _poseAuditSamples = 0;
+        unsigned _handPoseAuditMask = 0;
+        bool _registrationAuditLogged = false;
         // Attach the (already orphaned) model under the world root; false when
         // the model is still parented or the world root is unavailable.
         bool tryAttachToWorldRoot();
         bool publishHandPoseHandoff();
         bool publishCapturedHandWorld(RE::NiAVObject* model, bool equippedModel);
+        bool publishCapturedHandsAt(const RE::NiTransform& world, const RE::NiPoint3& displacement);
         void synchronizeNativeInstanceCull(
             const equipped_weapon_visual_state::Snapshot* nativeVisual,
             bool bridgePresented);
@@ -218,6 +231,7 @@ namespace rock
         bool _meleeWeapon = false;
         bool _isLeftHand = false;
         bool _modelPresented = false;
+        bool _handPoseOnly = false;
         bool _culledNativeInstanceWasVisible = false;
         bool _handPoseHandoffActive = false;
         bool _handPoseBlockEngaged = false;

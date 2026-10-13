@@ -521,20 +521,6 @@ namespace rock
         return native_memory::pointerRangeLooksReadable(vertices, byteCount);
     }
 
-    inline bool finiteFloatArray(const float* values, std::size_t count)
-    {
-        if (!values) {
-            return false;
-        }
-
-        for (std::size_t i = 0; i < count; ++i) {
-            if (!std::isfinite(values[i])) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     inline bool isDynamicTriShape(RE::BSTriShape* triShape)
     {
         if (!triShape)

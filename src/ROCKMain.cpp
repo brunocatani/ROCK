@@ -1,5 +1,7 @@
 
 #include <array>
+#include "api/LooseWeaponStateService.h"
+#include "physics-interaction/weapon/HoldingGripRecords.h"
 #include <atomic>
 #include <cstdint>
 #include <string>
@@ -9,10 +11,10 @@
 #include "api/FRIKApiV2.h"
 #define ROCK_API_EXPORTS
 #include "RockConfig.h"
+#include "physics-interaction/native/BipodFrozenRetirement.h"
 #include "rock_support/GameIniOverrides.h"
 #include "api/ROCKProviderApiInternal.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
-#include "physics-interaction/core/PhysicsCreationGatePolicy.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/RockRuntimeState.h"
@@ -25,23 +27,20 @@
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/native/HeldWeaponInstantTransition.h"
+#include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "physics-interaction/native/NativeCharacterProxySafety.h"
 #include "physics-interaction/native/NativeCollisionFilterSafety.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/NativeWeaponFadeSuppression.h"
+#include "physics-interaction/native/NativeWeaponEquipAudio.h"
 #include "physics-interaction/native/NativeRagdollSafety.h"
 #include "physics-interaction/native/NativeShapeCastSafety.h"
 #include "physics-interaction/native/NativeImpactAudio.h"
-#include "physics-interaction/native/WeaponActionTrace.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
-#include "physics-interaction/telemetry/DynamicColliderTrace.h"
-#include "physics-interaction/telemetry/HeldRenderTrace.h"
 #include "physics-interaction/timing/RockGameTiming.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
-#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
-#include "physics-interaction/weapon/telemetry/ScopeTransitionTelemetry.h"
-#include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
 #include "physics-interaction/weapon/scope/NativeScopeData.h"
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -72,56 +71,15 @@ namespace
     bool s_pluginLoaded = false;
     std::atomic<std::uint32_t> s_providerGeneration{ 1 };
     std::atomic<std::uint32_t> s_skeletonGeneration{ 1 };
-    std::atomic<bool> s_physicsCreationRequested{ false };
-    std::atomic<std::uint32_t> s_physicsCreationReadyDeferralFrames{ 0 };
-    physics_creation_gate_policy::WorldStabilityState s_physicsCreationWorldStability{};
-    std::uint32_t s_physicsCreationGateLogCounter = 0;
+    // Set by FRIK's kSkeletonReady; consumed by the next frame whose skeleton,
+    // world and menu state allow creating PhysicsInteraction.
+    bool s_physicsCreationRequested = false;
 
     struct PlayerPhysicsWorlds
     {
         RE::bhkWorld* bhk = nullptr;
         RE::hknpWorld* hknp = nullptr;
     };
-
-    const char* physicsCreationBlockReasonName(physics_creation_gate_policy::CreationBlockReason reason)
-    {
-        using Reason = physics_creation_gate_policy::CreationBlockReason;
-        switch (reason) {
-        case Reason::None:
-            return "none";
-        case Reason::RockDisabled:
-            return "rock-disabled";
-        case Reason::ProviderUnavailable:
-            return "provider-unavailable";
-        case Reason::SkeletonNotReady:
-            return "skeleton-not-ready";
-        case Reason::ReadyEventDeferred:
-            return "ready-event-deferred";
-        case Reason::MenuBlocked:
-            return "menu-blocked";
-        case Reason::WorldUnavailable:
-            return "world-unavailable";
-        case Reason::WorldUnstable:
-            return "world-unstable";
-        default:
-            return "unknown";
-        }
-    }
-
-    void resetPhysicsCreationGate()
-    {
-        physics_creation_gate_policy::resetWorldStability(s_physicsCreationWorldStability);
-        s_physicsCreationGateLogCounter = 0;
-    }
-
-    void requestDeferredPhysicsCreation()
-    {
-        s_physicsCreationRequested.store(true, std::memory_order_release);
-        s_physicsCreationReadyDeferralFrames.store(
-            physics_creation_gate_policy::kSkeletonReadyCreateDeferralFrames,
-            std::memory_order_release);
-        resetPhysicsCreationGate();
-    }
 
     PlayerPhysicsWorlds samplePlayerPhysicsWorlds()
     {
@@ -186,69 +144,27 @@ namespace
 
     void ensurePhysicsInteractionForReadySkeleton(const runtime_state::RuntimeFrameSnapshot& runtime)
     {
-        // ROCK creation is event-driven when FRIK announces skeleton readiness.
-        // The frame loop re-requests a dropped creation only for a skeleton
-        // FRIK has announced: this runs at FrameBegin, before the kSkeletonReady
-        // FRIK broadcasts later in the frame that builds it, and that event
-        // would rebuild whatever was created here.
-        if (!s_physicsCreationRequested.load(std::memory_order_acquire) &&
-            !s_physicsInteraction &&
-            s_frikSkeletonAnnounced &&
-            runtime.visualAuthorityAvailable &&
-            runtime.localSkeletonReady) {
-            s_physicsCreationRequested.store(true, std::memory_order_release);
-            s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
+        // Creation is event-driven by FRIK's kSkeletonReady. A creation dropped
+        // for a skeleton FRIK still announces is re-requested here.
+        if (!s_physicsInteraction && s_frikSkeletonAnnounced) {
+            s_physicsCreationRequested = true;
         }
-
-        if (!s_physicsCreationRequested.load(std::memory_order_acquire)) {
+        if (!s_physicsCreationRequested || !runtime.visualAuthorityAvailable || !runtime.localSkeletonReady ||
+            runtime.localMenuBlocking || runtime.compatibilityConfigBlocking) {
             return;
         }
-
         const auto worlds = samplePlayerPhysicsWorlds();
-        const auto readyDeferralFrames = s_physicsCreationReadyDeferralFrames.load(std::memory_order_acquire);
-        const physics_creation_gate_policy::CreationGateInput gateInput{
-            .rockEnabled = true,
-            .providerAvailable = s_frikAvailable && runtime.visualAuthorityAvailable,
-            .skeletonReady = runtime.localSkeletonReady,
-            .runtimeMenuBlocking = runtime.localMenuBlocking,
-            .compatibilityConfigBlocking = runtime.compatibilityConfigBlocking,
-            .bhkWorld = reinterpret_cast<std::uintptr_t>(worlds.bhk),
-            .hknpWorld = reinterpret_cast<std::uintptr_t>(worlds.hknp),
-            .readyDeferralFrames = readyDeferralFrames,
-        };
-        const auto decision = physics_creation_gate_policy::evaluateCreationGate(s_physicsCreationWorldStability, gateInput);
-        if (readyDeferralFrames > 0) {
-            s_physicsCreationReadyDeferralFrames.fetch_sub(1, std::memory_order_acq_rel);
-        }
-
-        if (!decision.keepRequestPending) {
-            s_physicsCreationRequested.store(false, std::memory_order_release);
-        }
-
-        if (!decision.canCreate) {
-            if ((s_physicsCreationGateLogCounter++ % 90u) == 0u) {
-                logger::debug(
-                    "ROCK: Physics creation deferred reason={} stableFrames={} bhk={} hknp={} localMenu={} compatibilityConfig={} readyDeferral={}",
-                    physicsCreationBlockReasonName(decision.blockReason),
-                    decision.stableWorldFrames,
-                    static_cast<const void*>(worlds.bhk),
-                    static_cast<const void*>(worlds.hknp),
-                    runtime.localMenuBlocking ? "yes" : "no",
-                    runtime.compatibilityConfigBlocking ? "yes" : "no",
-                    readyDeferralFrames);
-            }
+        if (!worlds.bhk || !worlds.hknp) {
             return;
         }
 
         if (s_physicsInteraction) {
-            logger::info("ROCK: Recreating PhysicsInteraction after deferred skeleton-ready gate.");
+            logger::info("ROCK: Recreating PhysicsInteraction for the new FRIK skeleton.");
             destroyPhysicsInteraction(rock::provider::RockProviderLifecycleReason::SkeletonReady);
         }
 
         createPhysicsInteraction();
-        s_physicsCreationRequested.store(false, std::memory_order_release);
-        s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
-        resetPhysicsCreationGate();
+        s_physicsCreationRequested = false;
     }
 
     void destroyPhysicsInteraction(
@@ -288,7 +204,6 @@ namespace
 
     void clearUnavailableRuntimeInputState()
     {
-        weapon_action_trace::invalidateContext();
         weapon_transition_animation_acceleration::cancel(
             "rock-runtime-unavailable");
         authored_weapon_grip_capture::setEnabled(false);
@@ -792,12 +707,7 @@ namespace
             frameTiming);
 
         if (withSkeletonPhysics) {
-            dynamic_collider_trace::beginFrame(g_rockConfig.rockDebugGrabFrameLogging, s_schedulerSequence);
             updatePhysicsInteractionFrame();
-            vanilla_weapon_alignment_telemetry::capture(
-                vanilla_weapon_alignment_telemetry::Phase::AfterWeaponSolve, s_schedulerSequence);
-            native_scope_shot_diagnostics::beginFrame();
-            if (!s_physicsInteraction) native_scope_shot_diagnostics::clearPresentation();
             // Input classification runs inside the update. Apply the button
             // scope level after it so an unflagged scope does not wait for a
             // native cone callback that Bethesda will never issue.
@@ -817,17 +727,10 @@ namespace
         // The weapon-node write block is settled here, before FRIK's weapon pass.
         if (withSkeletonPhysics && s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->finalizeFrikWeaponOwnershipForFrame();
-            s_physicsInteraction->traceScopeColliderState();
         }
         if (!withSkeletonPhysics) {
             return;
         }
-        if (s_physicsInteraction) {
-            s_physicsInteraction->traceHeldPresentationPhase("after-rock");
-        }
-        scope_transition_telemetry::capture(scope_transition_telemetry::Phase::AfterRock, s_schedulerSequence);
-        vanilla_weapon_alignment_telemetry::capture(
-            vanilla_weapon_alignment_telemetry::Phase::AfterRock, s_schedulerSequence);
     }
 
     /*
@@ -854,15 +757,7 @@ namespace
         const auto& frameTiming = runtime_state::beginFrameTiming(input_remap_runtime::isMenuInputActive());
         rock::provider::beginGameFrame(frameTiming.sequence);
         native_scope_data::beginGameFrame();
-        if (s_pluginLoaded && s_frikAvailable) {
-            vanilla_weapon_alignment_telemetry::capture(
-                vanilla_weapon_alignment_telemetry::Phase::BeforeRockPreFrik, s_schedulerSequence);
-            scope_transition_telemetry::capture(scope_transition_telemetry::Phase::BeforeFrik, s_schedulerSequence);
-            vanilla_weapon_alignment_telemetry::capture(
-                vanilla_weapon_alignment_telemetry::Phase::BeforeFrik, s_schedulerSequence);
-        }
         prepareRuntimeFrame();
-        held_render_trace::recordPhase(held_render_trace::Phase::FrameBegin, runtime_state::currentFrame().frameIndex);
     }
 
     /*
@@ -910,13 +805,9 @@ namespace
             }
         };
         const RockFrameEnd rockFrameEnd{};
-        vanilla_weapon_alignment_telemetry::capture(
-            vanilla_weapon_alignment_telemetry::Phase::AfterFrik, s_schedulerSequence);
         if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->resolveFrameHands();
-            s_physicsInteraction->traceHeldPresentationPhase("before-rock");
         }
-        scope_transition_telemetry::capture(scope_transition_telemetry::Phase::AfterFrik, s_schedulerSequence);
         preludeTimer.stop();
         runFrameTick(true);
     }
@@ -952,12 +843,9 @@ namespace
                 rock::provider::RockProviderAnimationPhaseV1::Presented,
                 game_timing::currentFrameTiming());
             if (!s_physicsInteraction) return;
+            s_physicsInteraction->finalizeEquipVisualBridgePresentation();
             s_physicsInteraction->publishGripZoneIndicatorRenderFrame(runtime_state::currentFrame().frameIndex);
-            s_physicsInteraction->traceHeldPresentationPhase("after-world-final");
             s_physicsInteraction->publishDebugRenderFrame();
-            dynamic_collider_trace::capturePresentedHands(runtime_state::currentFrame().frameIndex);
-            vanilla_weapon_alignment_telemetry::capture(
-                vanilla_weapon_alignment_telemetry::Phase::AfterWorldFinal, s_schedulerSequence);
         }
     }
 
@@ -989,21 +877,7 @@ namespace
     void invokeFramePhaseGuarded(void (*handler)(), const std::uint32_t phase) noexcept
     {
         try {
-            constexpr std::array<const char*, 9> entryPhases{
-                "native-graph:entry", "body-placed", "legs-solved", "before-arm-solve",
-                "after-arm-solve:entry", "after-hand-pose", "after-weapon:entry", "before-world-final", "after-world-final:entry"
-            };
-            constexpr std::array<const char*, 9> exitPhases{
-                "native-graph:exit", "body-placed", "legs-solved", "before-arm-solve",
-                "after-arm-solve:exit", "after-hand-pose", "after-weapon:exit", "before-world-final", "after-world-final:exit"
-            };
-            if (s_frikSkeletonAnnounced && phase < entryPhases.size()) {
-                frik_hand_world_authority::traceArmPose(entryPhases[phase], s_schedulerSequence);
-            }
-            if (handler) handler();
-            if (handler && s_frikSkeletonAnnounced && phase < exitPhases.size()) {
-                frik_hand_world_authority::traceArmPose(exitPhases[phase], s_schedulerSequence);
-            }
+            handler();
         } catch (...) {
             reportFramePhaseFault(phase);
         }
@@ -1021,12 +895,6 @@ namespace
             break;
         case FramePhase::AfterArmSolve:
             invokeFramePhaseGuarded(&onFrikAfterArmSolve, phase);
-            break;
-        case FramePhase::BodyPlaced:
-        case FramePhase::BeforeArmSolve:
-        case FramePhase::AfterHandPose:
-        case FramePhase::BeforeWorldFinal:
-            invokeFramePhaseGuarded(nullptr, phase);
             break;
         case FramePhase::AfterWeaponPosition:
             invokeFramePhaseGuarded(&onFrikAfterWeaponPosition, phase);
@@ -1059,15 +927,6 @@ namespace
             }
         }
         logger::info("ROCK: FRIK frame callbacks registered (FrameBegin, NativeGraphOutput, AfterArmSolve, AfterWeaponPosition, AfterWorldFinal, FrameEnd).");
-        // Diagnostic callbacks are optional and cannot prevent ROCK's normal
-        // callbacks from loading when another client filled FRIK's registry.
-        for (const FramePhase phase : { FramePhase::BodyPlaced, FramePhase::BeforeArmSolve, FramePhase::AfterHandPose, FramePhase::BeforeWorldFinal }) {
-            if (!frik_visual_authority::registerFrameCallback("ROCK_ArmTrace", phase, &onFrikFramePhase, nullptr, kPriority)) {
-                (void)frik_visual_authority::unregisterFrameCallback("ROCK_ArmTrace");
-                logger::warn("ROCK: arm-pose diagnostic phase registration failed at {}; tracing existing ROCK phases only.", static_cast<unsigned>(phase));
-                break;
-            }
-        }
         return true;
     }
 
@@ -1086,43 +945,29 @@ namespace
                 const auto* lifecycle = static_cast<const frik::api::FRIKApiV2::SkeletonLifecycleData*>(msg->data);
                 logger::info("ROCK: FRIK skeleton generation {} powerArmor={}.", lifecycle->generation, lifecycle->inPowerArmor ? "yes" : "no");
             }
-            weapon_action_trace::initialize();
-            vanilla_weapon_alignment_telemetry::initialize();
-            scope_transition_telemetry::initialize();
-            dynamic_collider_trace::initialize();
             bumpGeneration(s_skeletonGeneration);
             if (!authored_weapon_grip_capture::installHook()) {
                 logger::error(
                     "ROCK: Authored equipped-weapon grip capture hook is unavailable for this runtime build.");
             }
             authored_weapon_grip_capture::setEnabled(true);
-            if (s_physicsInteraction) {
-                logger::warn("ROCK: PhysicsInteraction already exists on kSkeletonReady; deferring recreation to ROCK frame gate.");
-            }
-            requestDeferredPhysicsCreation();
+            s_physicsCreationRequested = true;
             s_frikSkeletonAnnounced = true;
             break;
 
         case LE::kSkeletonDestroying:
             logger::info("ROCK: Received kSkeletonDestroying from FRIK.");
             s_frikSkeletonAnnounced = false;
-            weapon_action_trace::invalidateContext();
-            vanilla_weapon_alignment_telemetry::shutdown();
-            scope_transition_telemetry::shutdown();
-            native_scope_shot_diagnostics::shutdown();
             frik_hand_world_authority::resetForSkeletonRelease();
             bumpGeneration(s_skeletonGeneration);
             authored_weapon_grip_capture::resetTransientState();
-            s_physicsCreationRequested.store(false, std::memory_order_release);
-            s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
-            resetPhysicsCreationGate();
+            s_physicsCreationRequested = false;
             if (s_physicsInteraction) {
                 s_physicsInteraction->noteSkeletonLifecycle(
                     s_skeletonGeneration.load(std::memory_order_acquire),
                     rock::provider::RockProviderLifecycleReason::SkeletonDestroying);
             }
             destroyPhysicsInteraction(rock::provider::RockProviderLifecycleReason::SkeletonDestroying);
-            dynamic_collider_trace::shutdown();
             // FRIK runs no skeleton phase without a skeleton: drop the input state now.
             clearUnavailableRuntimeInputState();
             break;
@@ -1222,6 +1067,7 @@ namespace
             }
 
             g_rockConfig.load();
+            holding_grips::load("Data/F4SE/Plugins/ROCK/HoldingGrips");
             input_remap_runtime::configurePipboyInput();
             g_rockConfig.subscribeForConfigChanged("ROCKPipboyInput", [](const std::string&) {
                 input_remap_runtime::configurePipboyInput();
@@ -1237,9 +1083,7 @@ namespace
                 logger::warn(
                     "ROCK: Held-body scene presentation hook is unavailable; native presentation remains unchanged.");
             }
-            rock::held_render_trace::install();
             runtime_state::initialize();
-            (void)native_scope_shot_diagnostics::install();
             reconcileNativeScopeGeometryOwnership();
             logger::info("ROCK: Config loaded.");
             rock::input_remap_runtime::installInputRemapHooks();
@@ -1266,9 +1110,7 @@ namespace
             logger::info("ROCK: New game session -- resetting PhysicsInteraction...");
             s_equippedWeaponContinuity = {};
             const auto providerGeneration = bumpGeneration(s_providerGeneration);
-            s_physicsCreationRequested.store(false, std::memory_order_release);
-            s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
-            resetPhysicsCreationGate();
+            s_physicsCreationRequested = false;
             runtime_state::resetTransientState();
             authored_weapon_grip_capture::resetTransientState();
             if (s_physicsInteraction) {
@@ -1321,10 +1163,10 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Query(const F4SE::QueryInterface* a
         return false;
     }
 
-    const auto requiredRuntime = F4SE::RUNTIME_LATEST_VR;
+    const REL::Version requiredRuntime{1, 2, 72, 0};
 
-    if (a_f4se->RuntimeVersion() < requiredRuntime) {
-        logger::critical("ROCK: Unsupported runtime version {} (need >= {}).", a_f4se->RuntimeVersion().string(), requiredRuntime.string());
+    if (REL::Module::get().version() != requiredRuntime) {
+        logger::critical("ROCK: Unsupported executable version {} (need {}).", REL::Module::get().version().string(), requiredRuntime.string());
         return false;
     }
 
@@ -1347,8 +1189,12 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     }
     s_messaging->RegisterListener(onF4SEMessage);
 
-    logger::info("ROCK: Allocate trampoline (2048 bytes)...");
-    F4SE::AllocTrampoline(2048);
+    logger::info("ROCK: Allocate trampoline (2204 bytes)...");
+    F4SE::AllocTrampoline(2204);
+    if (!rock::loose_weapon_state::install()) {
+        spdlog::error("Loose weapon state model installation unavailable");
+    }
+    (void)rock::bipod_frozen_retirement::install();
 
     if (!rock::native_impact_audio::install()) {
         logger::error("ROCK: Impact audio filtering is unavailable; native audio remains unchanged.");
@@ -1378,12 +1224,19 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
             "ROCK: Native collision-filter teardown safety is unavailable; native collision-filter lookups remain unchanged.");
     }
 
+    if (!rock::native_weapon_fade_suppression::install()) {
+        logger::error("ROCK: Native player weapon fade suppression unavailable; see the instruction validation error.");
+    }
+    if (!rock::native_weapon_equip_audio::install()) {
+        logger::error("ROCK: Player weapon equip/unequip audio suppression unavailable.");
+    }
     logger::info("ROCK: Install held weapon instant-transition capability...");
     if (!rock::held_weapon_instant_transition::install()) {
         logger::warn("ROCK: Held trigger/grip-zone equip disabled because the exact native transition contract is unavailable.");
     }
 
     logger::info("ROCK: Install scoped weapon transition animation acceleration...");
+    rock::trigger_equip_readiness_trace::install();
     if (!rock::weapon_transition_animation_acceleration::install()) {
         logger::warn("ROCK: Weapon draw/sheath animation acceleration unavailable; native timing remains unchanged.");
     }

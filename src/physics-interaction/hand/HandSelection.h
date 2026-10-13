@@ -114,26 +114,6 @@ namespace rock::selection_query_policy
         return currentIsFarSelection != nextIsFarSelection || currentBodyId != nextBodyId;
     }
 
-    inline bool isBetterShapeCastCandidate(bool isFarSelection, float lateralDistance, float alongDistance, float bestLateralDistance, float bestAlongDistance)
-    {
-        constexpr float kTieEpsilon = 0.001f;
-        if (!isFarSelection) {
-            if (alongDistance < bestAlongDistance - kTieEpsilon) {
-                return true;
-            }
-            if (alongDistance > bestAlongDistance + kTieEpsilon) {
-                return false;
-            }
-        }
-        if (lateralDistance < bestLateralDistance - kTieEpsilon) {
-            return true;
-        }
-        if (lateralDistance > bestLateralDistance + kTieEpsilon) {
-            return false;
-        }
-        return isFarSelection && alongDistance < bestAlongDistance;
-    }
-
     inline float sanitizeSelectionScoreScale(float value, float fallback)
     {
         if (!std::isfinite(value) || value <= 0.0f) {
@@ -391,37 +371,6 @@ namespace rock::selection_highlight_policy
         ReferenceRoot
     };
 
-    struct VatsHighlightTargetChoice
-    {
-        RE::NiAVObject* node = nullptr;
-        VatsHighlightSource source = VatsHighlightSource::None;
-    };
-
-    /*
-     * Vanilla pointed-object rollover builds the VatsEffectTarget from the
-     * reference's object 3D. ROCK keeps visual/hit nodes as fallbacks for cases
-     * where the selected physics body resolves to a child node that the root
-     * target builder cannot enumerate.
-     */
-    [[nodiscard]] inline VatsHighlightTargetChoice chooseVatsHighlightTarget(RE::NiAVObject* hitNode, RE::NiAVObject* visualNode, RE::NiAVObject* referenceRoot) noexcept
-    {
-        if (referenceRoot) {
-            return { referenceRoot, VatsHighlightSource::ReferenceRoot };
-        }
-        if (visualNode) {
-            return { visualNode, VatsHighlightSource::VisualNode };
-        }
-        if (hitNode) {
-            return { hitNode, VatsHighlightSource::HitNode };
-        }
-        return {};
-    }
-
-    [[nodiscard]] inline RE::NiAVObject* chooseVatsHighlightTargetNode(RE::NiAVObject* hitNode, RE::NiAVObject* visualNode, RE::NiAVObject* referenceRoot) noexcept
-    {
-        return chooseVatsHighlightTarget(hitNode, visualNode, referenceRoot).node;
-    }
-
     [[nodiscard]] constexpr const char* vatsHighlightSourceName(VatsHighlightSource source) noexcept
     {
         switch (source) {
@@ -454,7 +403,6 @@ namespace rock::selection_highlight_policy
 
 namespace rock::selection_state_policy
 {
-    inline HandState stateForSelection(bool isFarSelection) { return isFarSelection ? HandState::SelectedFar : HandState::SelectedClose; }
 
     inline bool canUpdateSelectionFromState(HandState state) { return rock::canUpdateSelectionFromState(state); }
 
@@ -553,7 +501,9 @@ namespace rock
         VatsSelectionHighlight(VatsSelectionHighlight&&) = delete;
         VatsSelectionHighlight& operator=(VatsSelectionHighlight&&) = delete;
 
-        bool play(RE::TESObjectREFR* refr, RE::NiAVObject* targetNode, bool enabled, const char* handName, const char* targetSourceName);
+        bool play(RE::TESObjectREFR* refr, RE::NiAVObject* targetNode, bool enabled, const char* handName, const char* targetSourceName, bool stash = false);
+        bool refreshStash(RE::TESObjectREFR* refr, RE::NiAVObject* node, float intensity);
+        static bool stashAvailable() noexcept;
         bool refresh(RE::TESObjectREFR* refr, RE::NiAVObject* targetNode, bool enabled, const char* handName, const char* targetSourceName);
         bool refreshActive(bool enabled, const char* handName);
         void stop();
@@ -567,6 +517,7 @@ namespace rock
 
     private:
         detail::VatsEffectTarget* _target = nullptr;
+        bool _stash{};
         RE::TESObjectREFR* _highlightedRef = nullptr;
         RE::NiAVObject* _highlightedNode = nullptr;
     };

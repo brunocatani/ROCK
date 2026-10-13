@@ -126,6 +126,8 @@ namespace rock::weapon_surface_support
         RE::NiTransform lastWorld{};
         RE::NiTransform returnFrom{};
         float returnElapsed{ 0.0f };
+        bool handsFree{ false };
+        bool retirementRequested{ false };
 
         [[nodiscard]] bool latched() const noexcept { return phase == Phase::Latched; }
         [[nodiscard]] bool ownsPose() const noexcept { return phase != Phase::Free; }

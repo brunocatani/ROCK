@@ -1,8 +1,11 @@
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
+#include "physics-interaction/native/TriggerEquipReadinessTrace.h"
+#include "physics-interaction/weapon/EquipPickupScope.h"
 
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/NativeWeaponEquipAudio.h"
 
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/BGSInventoryItem.h"
@@ -470,6 +473,8 @@ namespace rock::weapon_equip_transfer
         }
 
         const auto expectedInstanceData = resolveReferenceInstanceData(heldRef);
+        if (input.transitionReason == held_weapon_instant_transition::RequestReason::SameHandTrigger)
+            trigger_equip_readiness_trace::begin(result.weapon->formID, result.formID);
         const auto inventoryBeforeTransfer = captureWeaponStacks(
             player,
             result.weapon,
@@ -490,7 +495,13 @@ namespace rock::weapon_equip_transfer
          * NiPointer keeps the assembled model alive for the visual bridge.
          */
         result.detachedWorldModel.reset(heldRef->Get3D());
-        const bool activated = heldRef->ActivateRef(player, nullptr, result.count, false, false, false);
+        trigger_equip_readiness_trace::parts(result.detachedWorldModel.get(), 0);
+        trigger_equip_readiness_trace::stage("before-activate-ref");
+        const bool activated = [&] {
+            const equip_pickup::Scope intent(heldRef->GetFormID(),result.count);
+            return heldRef->ActivateRef(player, nullptr, result.count, false, false, false);
+        }();
+        trigger_equip_readiness_trace::stage("after-activate-ref");
         if (!activated) {
             result.reason = EquipReason::ActivateRefFailed;
             return result;
@@ -505,6 +516,7 @@ namespace rock::weapon_equip_transfer
          * durable first-person scene instance.
          */
         result.untransferredRef.reset();
+        trigger_equip_readiness_trace::stage("world-ref-lease-released");
 
         const auto inventoryAfterTransfer = captureWeaponStacks(
             player,
@@ -515,6 +527,7 @@ namespace rock::weapon_equip_transfer
                 inventoryBeforeTransfer.witnesses,
                 inventoryAfterTransfer.witnesses,
                 reinterpret_cast<std::uintptr_t>(expectedInstanceData.get()));
+        trigger_equip_readiness_trace::stage("inventory-stack-resolved");
         result.preTransferStackCount = static_cast<std::uint32_t>(
             inventoryBeforeTransfer.witnesses.count);
         result.postTransferStackCount = static_cast<std::uint32_t>(
@@ -536,7 +549,8 @@ namespace rock::weapon_equip_transfer
 
         result.matchedInstanceData = expectedInstanceData &&
             stack.instanceData.get() == expectedInstanceData.get();
-        return equipSelectedStack(player, equipManager, stack, input.transitionReason, std::move(result));
+        result = equipSelectedStack(player, equipManager, stack, input.transitionReason, std::move(result));
+        return result;
     }
 
     InventorySelection captureInventoryWeapon(std::uint32_t formID, std::uint32_t stackIndex) noexcept
@@ -746,3 +760,6 @@ namespace rock::weapon_equip_transfer
     }
 
 }
+
+extern "C" __declspec(dllexport) const rock::api::equip_pickup::Api* ROCK_CALL ROCK_EquipPickup_QueryV1(std::uint32_t major,std::uint32_t minor,std::uint32_t bytes) noexcept
+{ return rock::equip_pickup::query(major,minor,bytes); }

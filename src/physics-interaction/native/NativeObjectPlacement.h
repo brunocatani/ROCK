@@ -11,4 +11,8 @@ namespace rock::native_object_placement {
     ScriptPreparation prepareLoadScript(RE::TESObjectREFR* ref, bool start);
     bool anchor(RE::TESObjectREFR* ref, RE::hknpWorld* world,
         const RE::NiTransform& pose, std::span<const std::uint32_t> bodyIds);
+    // Internal creation transaction only; unlike held placement it also
+    // accepts bodies the native loader has already restored as keyframed.
+    bool anchorRetiredWeapon(RE::TESObjectREFR* ref, RE::hknpWorld* world,
+        const RE::NiTransform& pose, std::span<const std::uint32_t> bodyIds);
 }

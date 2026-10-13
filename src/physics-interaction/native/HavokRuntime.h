@@ -123,6 +123,8 @@ namespace rock::havok_runtime
         UnreadableBodyIds,
         NoBodies,
         VisitorStopped,
+        EmptyPhysicsSystem,
+        UnsupportedCollisionObject,
     };
 
     struct PhysicsSystemBodyScanResult

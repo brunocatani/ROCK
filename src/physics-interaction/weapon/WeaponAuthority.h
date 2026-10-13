@@ -124,29 +124,6 @@ namespace rock::weapon_visual_authority_math
         return role == LockedHandRole::Support;
     }
 
-    inline constexpr bool shouldUseMeshGripFrameRotationAtGrabStart(const LockedHandRole)
-    {
-        /*
-         * Mesh semantics may choose the grip point, but locked hand authority
-         * must preserve the wrist rotation already produced by FRIK/INI/native
-         * weapon setup at the moment support grip starts. Replacing the right
-         * wrist with the mesh-derived grip frame is what causes the visible
-         * hand to snap up or down on grab activation.
-         */
-        return false;
-    }
-
-    inline constexpr bool shouldSelectMeshGripPointAtGrabStart(const LockedHandRole role)
-    {
-        /*
-         * The support hand is allowed to select the mesh contact it actually
-         * touched. The primary/right hand is not reselected from weapon part
-         * names or bounds when support grip starts; the current FRIK-configured
-         * hand-to-weapon relationship is already the correct primary grip.
-         */
-        return role == LockedHandRole::Support;
-    }
-
     template <class Transform>
     inline Transform worldTargetToParentLocal(const Transform& parentWorld, const Transform& targetWorld)
     {
@@ -1099,9 +1076,6 @@ namespace rock::weapon_generated_source_completeness_policy
     {
         return (completeness.semanticPartMask & partMask(kind)) != 0;
     }
-
-    inline constexpr std::uint32_t kMissingFrontPackageCoverage = 1u << 0;
-    inline constexpr std::uint32_t kMissingRearPackageCoverage = 1u << 1;
 
     inline bool hasFrontPackageCoverage(const GeneratedSourceCompleteness& completeness)
     {

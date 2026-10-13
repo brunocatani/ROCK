@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/weapon/LooseWeaponAuthoredGrabPolicy.h"
+#include "physics-interaction/TransformMath.h"
 #include "RE/NetImmerse/NiTransform.h"
 
 #include <array>
@@ -21,6 +22,22 @@ namespace rock
         std::uint32_t weaponFormId{ 0 };
         std::uint16_t fingerMask{ 0 };
         bool isLeft{ false };
+
+        // Placement uses the same physical palm as equipped alignment. The
+        // generated physics proxy has a different pivot; callers derive its
+        // constraint anchor from this pose instead of moving this pose to it.
+        [[nodiscard]] RE::NiTransform placementWorld(const RE::NiTransform& physicalHandWorld,
+            float modelScale, const RE::NiPoint3& palmInHand) const
+        {
+            auto world = transform_math::composeTransforms(physicalHandWorld,
+                transform_math::invertTransform(placementHandWeaponLocal));
+            world.scale = modelScale;
+            const auto seatLocal = transform_math::localPointToWorld(placementHandWeaponLocal, palmInHand);
+            const auto physicalPalm = transform_math::localPointToWorld(physicalHandWorld, palmInHand);
+            world.translate = {};
+            world.translate = physicalPalm - transform_math::localPointToWorld(world, seatLocal);
+            return world;
+        }
 
         [[nodiscard]] bool valid() const noexcept
         {

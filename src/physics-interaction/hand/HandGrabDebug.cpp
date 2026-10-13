@@ -177,26 +177,6 @@ namespace rock
         return true;
     }
 
-    bool Hand::getGrabContactPatchDebugSnapshot(RE::hknpWorld* world, GrabContactPatchDebugSnapshot& out) const
-    {
-        out = {};
-
-        if (!world || !isHolding() || !_grabFrame.hasContactPatch || _grabFrame.contactPatchSampleCount == 0 || _savedObjectState.bodyId.value == INVALID_BODY_ID) {
-            return false;
-        }
-
-        RE::NiTransform grabBodyWorld{};
-        if (!tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, grabBodyWorld)) {
-            return false;
-        }
-        const std::uint32_t count = (std::min)(_grabFrame.contactPatchSampleCount, static_cast<std::uint32_t>(out.samplePointsWorld.size()));
-        for (std::uint32_t i = 0; i < count; ++i) {
-            out.samplePointsWorld[i] = transform_math::localPointToWorld(grabBodyWorld, _grabFrame.contactPatchSamples[i].point);
-        }
-        out.sampleCount = count;
-        return count > 0;
-    }
-
     bool Hand::getGrabSupportFrameDebugSnapshot(RE::hknpWorld* world, GrabSupportFrameDebugSnapshot& out) const
     {
         out = {};
@@ -213,34 +193,15 @@ namespace rock
         out.pivotWorld = transform_math::localPointToWorld(liveBodyWorld, activeProxyConstraintPivotBLocalGame());
         const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(liveBodyWorld, _grabFrame.authority.bodyLocal);
 
-        RE::NiPoint3 normalWorld = _grabFrame.support.hasNormal ?
-            normalizeOrZero(transform_math::localVectorToWorld(liveBodyWorld, _grabFrame.support.normalBodyLocal)) :
+        RE::NiPoint3 normalWorld = _grabFrame.gripEvidence.hasGripPoint ?
+            gripEvidenceNormalWorld(_grabFrame, currentNodeWorld) :
             RE::NiPoint3{};
-        if (vector_math::lengthSquared(normalWorld) <= 0.000001f && _grabFrame.gripEvidence.hasGripPoint) {
-            normalWorld = gripEvidenceNormalWorld(_grabFrame, currentNodeWorld);
-        }
         if (vector_math::lengthSquared(normalWorld) <= 0.000001f) {
             return false;
         }
-
-        RE::NiPoint3 axisWorld = _grabFrame.support.hasAxis ?
-            normalizeOrZero(transform_math::localVectorToWorld(liveBodyWorld, _grabFrame.support.axisBodyLocal)) :
-            RE::NiPoint3{};
-        if (vector_math::lengthSquared(axisWorld) <= 0.000001f) {
-            axisWorld = stablePerpendicularAxis(normalWorld);
-        }
-
-        RE::NiPoint3 binormalWorld = _grabFrame.support.hasBinormal ?
-            normalizeOrZero(transform_math::localVectorToWorld(liveBodyWorld, _grabFrame.support.binormalBodyLocal)) :
-            RE::NiPoint3{};
-        if (vector_math::lengthSquared(binormalWorld) <= 0.000001f) {
-            binormalWorld = normalizeOrZero(vector_math::cross(normalWorld, axisWorld));
-        }
-
-        const float supportHalfSpan = std::isfinite(_grabFrame.support.spanGameUnits) && _grabFrame.support.spanGameUnits > 0.0f ?
-            _grabFrame.support.spanGameUnits * 0.5f :
-            0.0f;
-        const float axisLength = std::clamp((std::max)(supportHalfSpan, 10.0f), 6.0f, 24.0f);
+        const RE::NiPoint3 axisWorld = stablePerpendicularAxis(normalWorld);
+        const RE::NiPoint3 binormalWorld = normalizeOrZero(vector_math::cross(normalWorld, axisWorld));
+        constexpr float axisLength = 10.0f;
         out.axisLengthGameUnits = axisLength;
         out.normalEndWorld = out.pivotWorld + normalWorld * axisLength;
         out.supportAxisEndWorld = out.pivotWorld + axisWorld * axisLength;
@@ -251,9 +212,6 @@ namespace rock
         out.pivotAuthoritySource = grab_authority_frame_math::grabAuthorityPivotSourceName(
             _grabFrame.pivotAuthority.source);
         out.activeGrabPointMode = _grabFrame.seat.activeGrabPointMode ? _grabFrame.seat.activeGrabPointMode : "none";
-        out.supportKind = grab_support_model_math::gripSupportKindName(_grabFrame.support.kind);
-        out.supportReason = _grabFrame.support.reason ? _grabFrame.support.reason : "none";
-        out.authoredSupportPivot = _grabFrame.support.authoredPivot;
         out.positionOnlyPivot = _grabFrame.pivotAuthority.positionOnly;
         out.normalTrusted = _grabFrame.pivotAuthority.normalTrusted;
 
@@ -370,7 +328,6 @@ namespace rock
                 const RE::NiMatrix3 transformAAsHkColumns = matrixFromHkColumns(transformARotation);
                 const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
                 const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
-                const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
 
                 RE::NiTransform transformBLocal = makeIdentityTransform();
                 transformBLocal.rotate = transformBAsHkColumns;
@@ -456,30 +413,6 @@ namespace rock
                     rotationDeltaDegrees(out.motorSolverEffectiveBodyWorld.rotate, desiredBodyWorld.rotate);
                 out.motorSolverEffectiveToAtomDeltaDegrees =
                     rotationDeltaDegrees(out.motorSolverEffectiveBodyWorld.rotate, out.motorAtomTargetBodyWorld.rotate);
-                const bool hasMatchingPhysicsProbe =
-                    _ragdollAngularProbePreSolve.valid &&
-                    _ragdollAngularProbePreSolve.objectBodyId.value == _savedObjectState.bodyId.value;
-                if (hasMatchingPhysicsProbe) {
-                    out.motorPhysicsProxyToLiveProxyDeltaGameUnits =
-                        _ragdollAngularProbePreSolve.targetProxyToLiveProxyDeltaGameUnits;
-                    out.motorPhysicsProxyToLiveProxyDeltaDegrees =
-                        _ragdollAngularProbePreSolve.targetProxyToLiveProxyDeltaDegrees;
-                    out.motorRelationToConstraintATargetDegrees =
-                        _ragdollAngularProbePreSolve.targetRelationAToTargetConstraintADegrees;
-                    out.motorRelationToConstraintALiveDegrees =
-                        _ragdollAngularProbePreSolve.liveRelationAToLiveConstraintADegrees;
-                    out.motorTransformARawMaxDelta = _ragdollAngularProbePreSolve.transformARawMaxDelta;
-                    out.motorTransformBRawMaxDelta = _ragdollAngularProbePreSolve.transformBRawMaxDelta;
-                    out.motorTargetBRcaRawMaxDelta = _ragdollAngularProbePreSolve.targetBRcaRawMaxDelta;
-                } else {
-                    out.motorPhysicsProxyToLiveProxyDeltaGameUnits = -1.0f;
-                    out.motorPhysicsProxyToLiveProxyDeltaDegrees = -1.0f;
-                    out.motorRelationToConstraintATargetDegrees = -1.0f;
-                    out.motorRelationToConstraintALiveDegrees = -1.0f;
-                    out.motorTransformARawMaxDelta = -1.0f;
-                    out.motorTransformBRawMaxDelta = -1.0f;
-                    out.motorTargetBRcaRawMaxDelta = -1.0f;
-                }
                 out.motorTransformBRelationLocalDeltaGameUnits =
                     pointDistanceGameUnits(atomTransformBLocalGame, relationTransformBLocalGame);
                 out.motorTransformBPivotToAnchorAGameUnits =
@@ -545,9 +478,6 @@ namespace rock
                 _grabFrame.captureTelemetry.pivotAuthority.source);
         out.captureGrabPointMode =
             _grabFrame.captureTelemetry.seat.activeGrabPointMode ? _grabFrame.captureTelemetry.seat.activeGrabPointMode : "none";
-        out.lastSeatedPivotReacquireReason =
-            _grabFrame.seat.lastPivotReacquireReason ? _grabFrame.seat.lastPivotReacquireReason : "none";
-        out.seatedPivotReacquireCount = _grabFrame.seat.pivotReacquireCount;
         out.positionOnlyPivot = _grabFrame.pivotAuthority.positionOnly;
         out.normalTrusted = _grabFrame.pivotAuthority.normalTrusted;
 
@@ -621,299 +551,7 @@ namespace rock
             out.hasPivotTriangle = true;
         }
 
-        if (_grabFrame.hasContactPatch && _grabFrame.contactPatchSampleCount > 0) {
-            const std::uint32_t count = (std::min)(_grabFrame.contactPatchSampleCount, static_cast<std::uint32_t>(out.contactSamplePointsWorld.size()));
-            RE::NiPoint3 average{};
-            for (std::uint32_t i = 0; i < count; ++i) {
-                out.contactSamplePointsWorld[i] = transform_math::localPointToWorld(liveBodyWorld, _grabFrame.contactPatchSamples[i].point);
-                average = average + out.contactSamplePointsWorld[i];
-            }
-            out.contactSampleCount = count;
-            if (count > 0) {
-                out.contactPatchPointWorld = average * (1.0f / static_cast<float>(count));
-                out.hasContactPatchPoint = true;
-            }
-        }
-
         return true;
     }
 
-    bool Hand::getGrabTransformTelemetrySnapshot(RE::hknpWorld* world,
-        const RE::NiTransform& rawHandWorld,
-        grab_transform_telemetry::RuntimeSample& out) const
-    {
-        out = {};
-        if (!world || !isHolding() || _savedObjectState.bodyId.value == INVALID_BODY_ID) {
-            return false;
-        }
-
-        out.valid = true;
-        out.isLeft = _isLeft;
-        out.rawHandWorld = rawHandWorld;
-        out.nativeFlattenedHandWorld = rawHandWorld;
-        out.rawHandBasis = grab_transform_telemetry::makeOrientationBasis(out.rawHandWorld);
-        out.nativeFlattenedHandBasis = out.rawHandBasis;
-        out.heldFormId = _savedObjectState.refr ? _savedObjectState.refr->GetFormID() : 0;
-        out.heldBodyId = _savedObjectState.bodyId.value;
-        out.handBodyId = _handBody.isValid() ? _handBody.getBodyId().value : INVALID_BODY_ID;
-        out.legacyPalmPivotAWorld = computeGrabLegacyPalmPivotAWorldFromHandBasis(out.nativeFlattenedHandWorld, _isLeft);
-        out.hasLegacyPalmPivotAWorld = true;
-        out.runtimePivotSource = "rawHandOriginFallback";
-
-        LivePalmAnchorReference palmReference{};
-        if (tryResolveLivePalmAnchorReference(world, palmReference)) {
-            out.runtimePivotSource = palmReference.source == body_frame::BodyFrameSource::MotionCenterOfMass ?
-                                         "livePalmAnchorMotion" :
-                                         "livePalmAnchorBody";
-            out.handBodyWorld = palmReference.world;
-            out.handBodyBasis = grab_transform_telemetry::makeOrientationBasis(out.handBodyWorld);
-            out.handBodySource = palmReference.source;
-            out.handMotionIndex = palmReference.motionIndex;
-            out.hasHandBodyWorld = true;
-            out.rawToHandBody = grab_transform_telemetry::measureTransformDelta(out.rawHandWorld, out.handBodyWorld);
-            const RE::NiTransform palmAnchorGrabAuthorityBase =
-                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(out.handBodyWorld);
-            out.palmAnchorGrabAuthorityWorld =
-                applyGrabAuthorityProxyLocalOffsetToFrame(palmAnchorGrabAuthorityBase, _isLeft);
-            out.palmAnchorGrabAuthorityBasis = grab_transform_telemetry::makeOrientationBasis(out.palmAnchorGrabAuthorityWorld);
-            out.hasPalmAnchorGrabAuthority = true;
-            out.nativeFlattenedHandToGrabAuthority =
-                grab_transform_telemetry::measureTransformDelta(out.nativeFlattenedHandWorld, out.palmAnchorGrabAuthorityWorld);
-            out.legacyPalmPivotAToGrabAuthority =
-                grab_transform_telemetry::measurePointPair(out.legacyPalmPivotAWorld, out.palmAnchorGrabAuthorityWorld.translate);
-        }
-
-        if (_boneColliders.tryGetPalmAnchorTarget(out.palmAnchorTargetWorld)) {
-            out.hasPalmAnchorTarget = true;
-            out.palmAnchorTargetBasis = grab_transform_telemetry::makeOrientationBasis(out.palmAnchorTargetWorld);
-            out.rawToPalmAnchorTarget =
-                grab_transform_telemetry::measureTransformDelta(out.rawHandWorld, out.palmAnchorTargetWorld);
-            out.nativeFlattenedHandToPalmAnchorTarget =
-                grab_transform_telemetry::measureTransformDelta(out.nativeFlattenedHandWorld, out.palmAnchorTargetWorld);
-            out.legacyPalmPivotAToPalmAnchor =
-                grab_transform_telemetry::measurePointPair(out.legacyPalmPivotAWorld, out.palmAnchorTargetWorld.translate);
-            if (out.hasPalmAnchorGrabAuthority) {
-                out.palmAnchorTargetToGrabAuthority =
-                    grab_transform_telemetry::measureTransformDelta(out.palmAnchorTargetWorld, out.palmAnchorGrabAuthorityWorld);
-            }
-        }
-
-        root_flattened_finger_skeleton_runtime::Snapshot fingerSnapshot{};
-        if (root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, fingerSnapshot)) {
-            RE::NiPoint3 baseSum{};
-            RE::NiPoint3 tipSum{};
-            std::uint32_t validFingers = 0;
-            for (const auto& finger : fingerSnapshot.fingers) {
-                if (!finger.valid) {
-                    continue;
-                }
-                baseSum = baseSum + finger.points[0];
-                tipSum = tipSum + finger.points[2];
-                ++validFingers;
-            }
-
-            if (validFingers > 0) {
-                const float inv = 1.0f / static_cast<float>(validFingers);
-                out.rootFingerBaseCenterWorld = baseSum * inv;
-                out.rootFingerTipCenterWorld = tipSum * inv;
-                out.rootFingerBaseLineWorld =
-                    grab_transform_telemetry::normalizeDirectionOrFallback(out.rootFingerBaseCenterWorld - out.rawHandWorld.translate, out.rawHandBasis.x);
-                out.handBodyFingerBaseLineWorld =
-                    out.hasHandBodyWorld ?
-                    grab_transform_telemetry::normalizeDirectionOrFallback(out.rootFingerBaseCenterWorld - out.handBodyWorld.translate, out.handBodyBasis.x) :
-                    out.rootFingerBaseLineWorld;
-                out.palmAnchorFingerBaseLineWorld =
-                    out.hasPalmAnchorTarget ?
-                    grab_transform_telemetry::normalizeDirectionOrFallback(out.rootFingerBaseCenterWorld - out.palmAnchorTargetWorld.translate, out.palmAnchorTargetBasis.x) :
-                    out.rootFingerBaseLineWorld;
-                out.rootFingerOpenLineWorld =
-                    grab_transform_telemetry::normalizeDirectionOrFallback(out.rootFingerTipCenterWorld - out.rootFingerBaseCenterWorld, out.rootFingerBaseLineWorld);
-                out.rootPalmNormalWorld =
-                    grab_transform_telemetry::normalizeDirectionOrFallback(fingerSnapshot.palmNormalWorld, out.rawHandBasis.z);
-                out.hasRootFingerLandmarks = true;
-            }
-        }
-
-        if (_grabAuthorityProxy.isValid() && _grabAuthorityProxy.getBodyId().value != INVALID_BODY_ID) {
-            RE::NiTransform proxyWorld{};
-            if (tryResolveLiveBodyWorldTransform(world, _grabAuthorityProxy.getBodyId(), proxyWorld)) {
-                out.proxyReadbackWorld = proxyWorld;
-                out.proxyReadbackBasis = grab_transform_telemetry::makeOrientationBasis(out.proxyReadbackWorld);
-                out.hasProxyReadback = true;
-                if (out.hasPalmAnchorGrabAuthority) {
-                    out.grabAuthorityToProxyReadback =
-                        grab_transform_telemetry::measureTransformDelta(out.palmAnchorGrabAuthorityWorld, out.proxyReadbackWorld);
-                }
-                out.nativeFlattenedHandToProxyReadback =
-                    grab_transform_telemetry::measureTransformDelta(out.nativeFlattenedHandWorld, out.proxyReadbackWorld);
-                out.legacyPalmPivotAToProxyReadback =
-                    grab_transform_telemetry::measurePointPair(out.legacyPalmPivotAWorld, out.proxyReadbackWorld.translate);
-            }
-        }
-
-        const auto heldBodyFrame = resolveLiveBodyWorldTransform(world, _savedObjectState.bodyId);
-        out.heldBodyWorld = heldBodyFrame.transform;
-        out.heldBodyBasis = grab_transform_telemetry::makeOrientationBasis(out.heldBodyWorld);
-        out.heldBodySource = heldBodyFrame.source;
-        out.heldMotionIndex = heldBodyFrame.motionIndex;
-        out.hasHeldBodyWorld = heldBodyFrame.valid;
-        out.heldBodyMass = readHeldBodyMassSummary(
-            world,
-            _savedObjectState.bodyId,
-            _heldBodyIds,
-            _heldDriveDecision.includeConnectedMass).motorMass();
-
-        RE::NiTransform heldNativeBodyWorld{};
-        if (tryGetBodyArrayWorldTransform(world, _savedObjectState.bodyId, heldNativeBodyWorld)) {
-            out.heldNativeBodyWorld = heldNativeBodyWorld;
-            out.heldNativeBodyBasis = grab_transform_telemetry::makeOrientationBasis(out.heldNativeBodyWorld);
-            out.hasHeldNativeBodyWorld = true;
-            if (heldBodyFrame.valid) {
-                out.heldNativeBodyToHeldBody = grab_transform_telemetry::measureTransformDelta(out.heldNativeBodyWorld, out.heldBodyWorld);
-            }
-        }
-
-        if (heldBodyFrame.valid || out.hasHeldNativeBodyWorld) {
-            const RE::NiTransform& bodyLocalAuthorityFrame = out.hasHeldNativeBodyWorld ? out.heldNativeBodyWorld : out.heldBodyWorld;
-            out.heldBodyDerivedNodeWorld = deriveNodeWorldFromBodyWorld(bodyLocalAuthorityFrame, _grabFrame.authority.bodyLocal);
-            out.heldBodyDerivedNodeBasis = grab_transform_telemetry::makeOrientationBasis(out.heldBodyDerivedNodeWorld);
-            out.hasHeldBodyDerivedNodeWorld = true;
-        }
-
-        /*
-         * Telemetry keeps the same split as runtime authority: the held visual
-         * node is the scene graph source, while body-derived node shows what the
-         * native BODY authority predicts from the frozen frame. In a correct
-         * native dynamic grab those should be nearly identical; MOTION is logged
-         * separately as COM/weight diagnostics.
-         */
-        RE::NiAVObject* heldVisualNode = nullptr;
-        if (_savedObjectState.refr && !_savedObjectState.refr->IsDeleted() && !_savedObjectState.refr->IsDisabled()) {
-            heldVisualNode = _grabFrame.heldNode ? _grabFrame.heldNode : _savedObjectState.refr->Get3D();
-        }
-        if (heldVisualNode) {
-            out.heldNodeWorld = heldVisualNode->world;
-            out.heldNodeBasis = grab_transform_telemetry::makeOrientationBasis(out.heldNodeWorld);
-            out.hasHeldNodeWorld = true;
-        } else if (out.hasHeldBodyDerivedNodeWorld) {
-            out.heldNodeWorld = out.heldBodyDerivedNodeWorld;
-            out.heldNodeBasis = grab_transform_telemetry::makeOrientationBasis(out.heldNodeWorld);
-            out.hasHeldNodeWorld = true;
-        }
-        if (out.hasHeldNodeWorld && out.hasHeldBodyDerivedNodeWorld) {
-            out.bodyDerivedNodeToHeldNode = grab_transform_telemetry::measureTransformDelta(out.heldBodyDerivedNodeWorld, out.heldNodeWorld);
-        }
-        if (_grabFrame.hasTelemetryCapture) {
-            out.hasGrabStartFrames = true;
-            out.liveHandWorldAtGrab = _grabFrame.authority.liveHandWorldAtGrab;
-            out.handBodyWorldAtGrab = _grabFrame.authority.handBodyWorldAtGrab;
-            out.objectNodeWorldAtGrab = _grabFrame.authority.objectNodeWorldAtGrab;
-            out.desiredObjectWorldAtGrab = _grabFrame.authority.desiredObjectWorldAtGrab;
-            out.rawHandSpace = _grabFrame.rawHandSpace;
-            out.handBodyToRawHandAtGrab = _grabFrame.handBodyToRawHandAtGrab;
-            out.bodyLocal = _grabFrame.authority.bodyLocal;
-            out.liveHandWorldAtGrabBasis = grab_transform_telemetry::makeOrientationBasis(out.liveHandWorldAtGrab);
-            out.handBodyWorldAtGrabBasis = grab_transform_telemetry::makeOrientationBasis(out.handBodyWorldAtGrab);
-            out.objectNodeWorldAtGrabBasis = grab_transform_telemetry::makeOrientationBasis(out.objectNodeWorldAtGrab);
-            out.desiredObjectWorldAtGrabBasis = grab_transform_telemetry::makeOrientationBasis(out.desiredObjectWorldAtGrab);
-            out.rawHandSpaceBasis = grab_transform_telemetry::makeOrientationBasis(out.rawHandSpace);
-            out.bodyLocalBasis = grab_transform_telemetry::makeOrientationBasis(out.bodyLocal);
-            out.currentRawDesiredObjectWorld =
-                grab_transform_telemetry::computeCurrentDesiredObjectFromFrame(out.rawHandWorld, _grabFrame.rawHandSpace);
-            out.currentRawDesiredObjectWorldBasis = grab_transform_telemetry::makeOrientationBasis(out.currentRawDesiredObjectWorld);
-            out.currentRawDesiredBodyWorld = multiplyTransforms(out.currentRawDesiredObjectWorld, _grabFrame.authority.bodyLocal);
-            out.currentRawDesiredBodyWorldBasis = grab_transform_telemetry::makeOrientationBasis(out.currentRawDesiredBodyWorld);
-            {
-                const RE::NiPoint3 currentPalmAnchorWorld = computeGrabPivotAWorld(world, out.rawHandWorld);
-                const RE::NiPoint3 currentDesiredGripWorld =
-                    transform_math::localPointToWorld(out.currentRawDesiredBodyWorld, activeProxyConstraintPivotBLocalGame());
-                out.relationPivotErr =
-                    pointDistanceGameUnits(currentPalmAnchorWorld, currentDesiredGripWorld);
-                out.rotationPreservedDeg =
-                    rotationDeltaDegrees(_grabFrame.authority.objectNodeWorldAtGrab.rotate, _grabFrame.authority.desiredObjectWorldAtGrab.rotate);
-                out.normalAuthority = false;
-                out.authoredRotationAuthority = false;
-                out.hasGrabRelationInvariants = true;
-            }
-            if (out.hasHeldNodeWorld) {
-                out.heldNodeToDesiredObjectAtGrab =
-                    grab_transform_telemetry::measureHeldNodeVsDesiredObject(out.heldNodeWorld, out.desiredObjectWorldAtGrab);
-                out.heldNodeToRawDesiredObject =
-                    grab_transform_telemetry::measureHeldNodeVsDesiredObject(out.heldNodeWorld, out.currentRawDesiredObjectWorld);
-            }
-            if (out.hasHeldBodyWorld) {
-                out.heldBodyToRawDesiredBody =
-                    grab_transform_telemetry::measureTransformDelta(out.heldBodyWorld, out.currentRawDesiredBodyWorld);
-            }
-            out.bodyTargetNodeErr = grab_transform_telemetry::measureTransformDelta(
-                deriveNodeWorldFromBodyWorld(out.currentRawDesiredBodyWorld, _grabFrame.authority.bodyLocal),
-                out.currentRawDesiredObjectWorld);
-        }
-        if (out.hasHeldNodeWorld) {
-            out.heldRelativeHandTargetWorld = grab_transform_telemetry::computeHeldRelativeHandTarget(out.heldNodeWorld, _grabFrame.rawHandSpace);
-            out.heldRelativeHandTargetBasis = grab_transform_telemetry::makeOrientationBasis(out.heldRelativeHandTargetWorld);
-            out.hasHeldRelativeHandTarget = true;
-            out.rawToHeldRelativeHandTarget = grab_transform_telemetry::measureTransformDelta(out.rawHandWorld, out.heldRelativeHandTargetWorld);
-            out.rawToHeldRelativeHandTargetAxes = grab_transform_telemetry::axisAlignmentDots(out.rawHandWorld.rotate, out.heldRelativeHandTargetWorld.rotate);
-        }
-
-        GrabPivotDebugSnapshot pivot{};
-        if (getGrabPivotDebugSnapshot(world, pivot)) {
-            out.pivotAWorld = pivot.handPivotWorld;
-            out.pivotBWorld = pivot.objectPivotWorld;
-            const auto pivotDelta = grab_transform_telemetry::measurePointPair(pivot.handPivotWorld, pivot.objectPivotWorld);
-            out.pivotDeltaWorld = pivotDelta.delta;
-            out.pivotErrorGameUnits = pivotDelta.distance;
-            out.legacyPalmPivotAToRuntimePivotA =
-                grab_transform_telemetry::measurePointPair(out.legacyPalmPivotAWorld, out.pivotAWorld);
-        }
-
-        if (_activeConstraint.constraintData) {
-            auto* constraintData = static_cast<const char*>(_activeConstraint.constraintData);
-            auto* targetBRca = reinterpret_cast<const float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
-            auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
-            auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
-
-            // The ragdoll motor target is seeded and updated from the generated
-            // proxy local BODY relation. The proxy parent uses the generated
-            // collider column convention, so telemetry derives the local relation
-            // through that same boundary before comparing the atom bytes.
-            const RE::NiTransform constraintProxyWorld =
-                out.hasPalmAnchorGrabAuthority ? out.palmAnchorGrabAuthorityWorld : _grabFrame.authority.handBodyWorldAtGrab;
-            const RE::NiTransform desiredBodyWorldForConstraintTelemetry =
-                grab_frame_math::objectFromGeneratedProxyLocalSpace(constraintProxyWorld, _grabFrame.proxyAuthorityBodyHandSpace);
-            const RE::NiTransform desiredBodyTransformHandSpace =
-                grab_frame_math::objectInGeneratedProxyLocalSpace(constraintProxyWorld, desiredBodyWorldForConstraintTelemetry);
-            const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
-            const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
-            const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
-            const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
-
-            out.constraintTransformBLocalGame = RE::NiPoint3{
-                transformBTranslation[0] * havokToGameScale(),
-                transformBTranslation[1] * havokToGameScale(),
-                transformBTranslation[2] * havokToGameScale(),
-            };
-            out.desiredTransformBLocalGame =
-                grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformHandSpace, _grabFrame.authority.pivotAHandBodyLocalGame);
-            out.transformBLocalDelta = grab_transform_telemetry::measurePointPair(out.constraintTransformBLocalGame, out.desiredTransformBLocalGame);
-            out.targetColumnsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkColumns, desiredBodyToHandSpace.rotate);
-            out.targetToHiggsRelationDegrees = rotationDeltaDegrees(targetAsHkRows, desiredBodyToHandSpace.rotate);
-            out.targetColumnsToConstraintForwardDegrees = rotationDeltaDegrees(targetAsHkColumns, desiredBodyTransformHandSpace.rotate);
-            out.transformBFrozenDeltaDegrees = rotationDeltaDegrees(transformBAsHkColumns, desiredBodyToHandSpace.rotate);
-            out.ragdollMotorEnabled = *(constraintData + ATOM_RAGDOLL_MOT + 0x02) != 0;
-            if (_activeConstraint.angularMotor) {
-                out.angularMotorTau = _activeConstraint.angularMotor->tau;
-                out.angularMotorDamping = _activeConstraint.angularMotor->damping;
-                out.angularMotorMaxForce = (std::max)(std::fabs(_activeConstraint.angularMotor->minForce), std::fabs(_activeConstraint.angularMotor->maxForce));
-            }
-            if (_activeConstraint.linearMotor) {
-                out.linearMotorTau = _activeConstraint.linearMotor->tau;
-                out.linearMotorMaxForce = (std::max)(std::fabs(_activeConstraint.linearMotor->minForce), std::fabs(_activeConstraint.linearMotor->maxForce));
-            }
-            out.hasConstraintAngularTelemetry = true;
-        }
-
-        return true;
-    }
 }

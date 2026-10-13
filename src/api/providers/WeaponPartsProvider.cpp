@@ -1,4 +1,7 @@
 #include "SnapshotReads.h"
+#include <ROCK/WeaponPartsV1_7.h>
+#include "api/LooseWeaponStateService.h"
+#include "api/WeaponPartCollisionService.h"
 #include "WeaponPartsMarshalling.h"
 #include <ROCK/Discovery.h>
 #include "EventBoundary.h"
@@ -161,6 +164,55 @@ Status ROCK_CALL copyWeaponPartDriveApplicationResultsV1(std::uint64_t ownerToke
 }
 
 #include "WeaponPartsEndpoints.inl"
+Status ROCK_CALL setGrabPoints(OwnerToken owner,const v1_3::GrabPoint* points,std::uint32_t count) noexcept {
+    return invoke(owner,kInterfaceId,2,true,[&]() -> Status {
+        if(!count||count>v1_3::kMaxGrabPoints||!points)return Status::InvalidArgument;
+        for(std::uint32_t i=0;i<count;++i)if(const auto s=checkInput(points+i);s!=Status::Ok)return s;
+        provider::runtime::refreshSources();return provider::runtime::setWeaponPartGrabPoints(owner,{points,count});
+    });
+}
+Status ROCK_CALL clearGrabPoints(OwnerToken owner) noexcept {
+    return invoke(owner,kInterfaceId,2,true,[&]{return provider::runtime::clearWeaponPartGrabPoints(owner);});
+}
+Status ROCK_CALL setOperatingGrabPoints(OwnerToken owner,const v1_3::GrabPoint* points,std::uint32_t count) noexcept {
+    return invoke(owner,kInterfaceId,2,true,[&]() -> Status {
+        if(!count||count>v1_3::kMaxGrabPoints||!points)return Status::InvalidArgument;
+        for(std::uint32_t i=0;i<count;++i)if(const auto s=checkInput(points+i);s!=Status::Ok)return s;
+        provider::runtime::refreshSources();return provider::runtime::setWeaponPartGrabPoints(owner,{points,count},true);
+    });
+}
+Status ROCK_CALL setPinkyOperatingGrabPoints(OwnerToken owner,const v1_3::GrabPoint* points,std::uint32_t count) noexcept {
+    return invoke(owner,kInterfaceId,2,true,[&]() -> Status {
+        if(!count||count>v1_3::kMaxGrabPoints||!points)return Status::InvalidArgument;
+        for(std::uint32_t i=0;i<count;++i)if(const auto s=checkInput(points+i);s!=Status::Ok)return s;
+        provider::runtime::refreshSources();return provider::runtime::setWeaponPartGrabPoints(owner,{points,count},true,true);
+    });
+}
+Status ROCK_CALL setAnchoredOperatingGrabPoints(OwnerToken owner,const v1_3::GrabPoint* points,std::uint32_t count) noexcept {
+    return invoke(owner,kInterfaceId,2,true,[&]() -> Status {
+        if(!count||count>v1_3::kMaxGrabPoints||!points)return Status::InvalidArgument;
+        for(std::uint32_t i=0;i<count;++i)if(const auto s=checkInput(points+i);s!=Status::Ok)return s;
+        provider::runtime::refreshSources();return provider::runtime::setWeaponPartGrabPoints(owner,{points,count},true,true,true);
+    });
+}
+Status ROCK_CALL setCollisionSuppression(OwnerToken owner,const v1_2::CollisionSuppression* request) noexcept {
+    return invoke(owner,kInterfaceId,2,true,[&]() -> Status {
+        if(const auto status=checkInput(request);status!=Status::Ok)return status;
+        return weapon_part_collision::set(owner,*request);
+    });
+}
+Status ROCK_CALL clearCollisionSuppression(OwnerToken owner) noexcept {
+    return invoke(owner,kInterfaceId,2,true,[&]{return weapon_part_collision::clear(owner);});
+}
+Status ROCK_CALL setItemState(OwnerToken owner,const v1_7::ItemKey* key,const v1_7::ItemState* state) noexcept {
+    return invoke(owner,kInterfaceId,2,false,[&]{return key&&state?loose_weapon_state::set(owner,*key,*state):Status::InvalidArgument;});
+}
+Status ROCK_CALL moveItemState(OwnerToken owner,const v1_7::ItemKey* before,const v1_7::ItemKey* after) noexcept {
+    return invoke(owner,kInterfaceId,2,false,[&]{return before&&after?loose_weapon_state::move(owner,*before,*after):Status::InvalidArgument;});
+}
+Status ROCK_CALL clearItemStates(OwnerToken owner) noexcept {
+    return invoke(owner,kInterfaceId,2,false,[&]{return loose_weapon_state::clear(owner);});
+}
 }
 const ApiV1& table() noexcept {
     static const ApiV1 value{
@@ -185,4 +237,24 @@ const ApiV1& table() noexcept {
     };
     return value;
 }
+const v1_2::Api& tableV1_2() noexcept {
+    static const v1_2::Api value{table(),&setCollisionSuppression,&clearCollisionSuppression};return value;
+}
+const v1_3::Api& tableV1_3() noexcept {
+    static const v1_3::Api value{tableV1_2(),&setGrabPoints,&clearGrabPoints};return value;
+}
+const v1_4::Api& tableV1_4() noexcept {
+    static const v1_4::Api value{tableV1_3(),&setOperatingGrabPoints};return value;
+}
+const v1_5::Api& tableV1_5() noexcept {
+    static const v1_5::Api value{tableV1_4(),&setPinkyOperatingGrabPoints};return value;
+}
+
+const v1_6::Api& tableV1_6() noexcept {
+    static const v1_6::Api value{tableV1_5(),&setAnchoredOperatingGrabPoints};return value;
+}
+const v1_7::Api& tableV1_7() noexcept {
+    static const v1_7::Api value{tableV1_6(),&setItemState,&moveItemState,&clearItemStates};return value;
+}
+
 }

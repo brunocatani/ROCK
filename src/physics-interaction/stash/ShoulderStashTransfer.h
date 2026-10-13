@@ -20,6 +20,7 @@ namespace rock::shoulder_stash
         MissingPlayer,
         MissingBaseForm,
         ActivateRef,
+        ConsumerConversion,
     };
 
     struct TransferInput

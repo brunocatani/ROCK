@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/AuthoredPrimaryFiringGrip.h"
+#include "physics-interaction/weapon/HoldingGripRecords.h"
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
 
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
@@ -11,7 +12,6 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/MinigunFiringGripPolicy.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
-#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 
 #include "RE/NetImmerse/NiNode.h"
 #include "RE/NetImmerse/NiTransform.h"
@@ -192,7 +192,6 @@ namespace rock
         const AuthoredPrimaryFiringGripFrameInput& input,
         TwoHandedGrip& weaponAuthority)
     {
-        vanilla_weapon_alignment_telemetry::recordInput(input);
         _weaponFormId = input.weapon ? input.weapon->formID : 0;
         _reportPoseSuspension = _weaponFormId != 0 && input.weaponDrawn && input.weaponVisible &&
             !input.menuBlocking && !input.compatibilityBlocking && !input.nativeReloadAuthorityActive &&
@@ -314,8 +313,6 @@ namespace rock
         }
         auto authoredLookup = authored_weapon_grip_library::findResolvedVariant(input.weapon, variant, input.inPowerArmor);
         authored_weapon_grip_library::applyPipeDefaultOffset(authoredLookup);
-        vanilla_weapon_alignment_telemetry::recordAuthoredSelection(
-            input, variant, authoredLookup, modelDisplacement, compiledMinigunFiringSeat);
         if (authoredLookup.found) {
             authoredLookup.rightHandWeaponLocal = vanilla_weapon_grip_frame::translateGrip(authoredLookup.rightHandWeaponLocal, modelDisplacement);
             if (authoredLookup.hasSupportRelation) {
@@ -323,10 +320,11 @@ namespace rock
             }
         }
         const bool harvestedRelationAvailable = authoredLookup.found && authored_weapon_grip_library::isNativeIdleAuthority(authoredLookup.source);
+        const auto* customRight=holding_grips::find(input.weapon,input.weaponNode,false,input.weaponGenerationKey,input.inPowerArmor);
+        const auto* customLeft=holding_grips::find(input.weapon,input.weaponNode,true,input.weaponGenerationKey,input.inPowerArmor);
+        const RE::NiTransform nativeRightHandInWeapon = compiledMinigunFiringSeat?compiledMinigunFiringHandInWeapon:authoredLookup.rightHandWeaponLocal;
         const RE::NiTransform& selectedRightHandInWeapon =
-            compiledMinigunFiringSeat ?
-                compiledMinigunFiringHandInWeapon :
-                authoredLookup.rightHandWeaponLocal;
+            customRight?customRight->wrist:nativeRightHandInWeapon;
         const auto* rightFingerPose = harvestedRelationAvailable && authoredLookup.rightFiringFingerPose.complete() ? &authoredLookup.rightFiringFingerPose : nullptr;
         if (rightFingerPose && _mirroredFingerPoseCaptureSequence != authoredLookup.captureSequence) {
             _mirroredLeftFingerPose = {};
@@ -339,6 +337,11 @@ namespace rock
             }
         }
         const auto* leftFingerPose = rightFingerPose && _mirroredFingerPoseValid ? &_mirroredLeftFingerPose : nullptr;
+        weaponAuthority.setHoldingSource(rightFingerPose,authoredLookup.hasSupportRelation?&authoredLookup.supportHandWeaponLocal:nullptr,authoredLookup.hasSupportRelation?&authoredLookup.supportFingerPose:nullptr,input.inPowerArmor);
+        weaponAuthority.setHoldingGripInputs(nativeRightHandInWeapon,customLeft?&customLeft->wrist:nullptr,customRight!=nullptr);
+        if(customLeft)leftFingerPose=&customLeft->fingers;
+        if(customRight){authoredLookup.rightHandWeaponLocal=customRight->wrist;rightFingerPose=&customRight->fingers;}
+
 
         /*
          * Support-relation precedence. A native-idle support relation
@@ -418,13 +421,16 @@ namespace rock
                 supportCaptureStatus.invalidOrMissingFingerMask !=
                     _supportCaptureFailureMaskLogged) {
                 ROCK_LOG_WARN(Animation,
-                    "Authored support grip capture unavailable weaponKey=0x{:X} reason={} secondaryPass={} capture={} fingerMask=0x{:04X}",
+                    "Live authored support grip capture unavailable weaponKey=0x{:X} reason={} secondaryPass={} capture={} fingerMask=0x{:04X} libraryFound={} librarySupport={} stableSupportCurrent={}",
                     currentWeaponKey,
                     authored_weapon_grip_capture::authoredSupportGripCaptureFailureReasonName(
                         supportCaptureStatus.failureReason),
                     supportCaptureStatus.secondaryPassSequence,
                     supportCaptureStatus.captureSequence,
-                    supportCaptureStatus.invalidOrMissingFingerMask);
+                    supportCaptureStatus.invalidOrMissingFingerMask,
+                    authoredLookup.found, authoredLookup.hasSupportRelation,
+                    _stableAuthoredSupportGrip.valid && _stableAuthoredSupportGrip.weaponNodeIdentity == input.weaponNode &&
+                        _stableAuthoredSupportGrip.weaponOwnershipKey == input.weaponOwnershipKey);
                 _supportCaptureFailureReasonLogged = supportCaptureFailureReason;
                 _supportCaptureFailureMaskLogged =
                     supportCaptureStatus.invalidOrMissingFingerMask;
@@ -767,7 +773,7 @@ namespace rock
          * firing seat to the stable equipped identity. The authored support
          * relation remains independent and unchanged.
          */
-        const bool supportOnlyCarry = weaponAuthority.isPartCarryActive();
+        const bool supportOnlyCarry = weaponAuthority.isFiringGripDetached();
         if (input.rockFiringHandIsLeft || supportOnlyCarry || input.pendingLeftFiringGrip) {
             const bool canonicalReady =
                 input.runtimeInitialized &&
@@ -973,7 +979,8 @@ namespace rock
                     finiteTransform(currentAuthoredHandWorld);
             }
         }
-        if (alignmentResolved && compiledMinigunFiringSeat) {
+        if(alignmentResolved&&customRight){authoredPrimaryHandInWeapon=customRight->wrist;currentAuthoredHandWorld=transform_math::composeTransforms(liveWeaponWorld,authoredPrimaryHandInWeapon);}
+        else if (alignmentResolved && compiledMinigunFiringSeat) {
             authoredPrimaryHandInWeapon =
                 compiledMinigunFiringHandInWeapon;
             currentAuthoredHandWorld =
@@ -1052,11 +1059,6 @@ namespace rock
             endSession("position-only-alignment-invalid");
             return;
         }
-
-        vanilla_weapon_alignment_telemetry::recordSolve(
-            input.weapon ? input.weapon->formID : 0, resolvedCaptureSequence,
-            harvestedRelationAvailable ? "native-idle" : "live-equipped",
-            authoredPrimaryHandInWeapon, trackedHandWorld, solvedWeaponWorld);
 
         // Firearms retain controller aim; melee rotates the authored grip
         // onto the physical wrist plus the user's pitch. Both present the

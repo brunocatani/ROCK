@@ -29,6 +29,8 @@ namespace rock::weapon_transition_animation_acceleration
         using ClipGeneratorActivateFn = void (*)(void*, void*);
         using ClipGeneratorUpdateFn = void (*)(void*, void*, float);
         using ClipGeneratorDeactivateFn = void (*)(void*, void*);
+        using BlendUpdateFn = void (*)(void*, void*, float, void*);
+        BlendUpdateFn s_originalBlendUpdate{};
 
         /*
          * PAPER's passive ClipTelemetry and ROCK's former clip harvester
@@ -131,6 +133,15 @@ namespace rock::weapon_transition_animation_acceleration
         std::atomic<std::uintptr_t> s_encodedLease{ 0 };
         std::array<std::atomic<std::uintptr_t>, kMaxGraphSlots>
             s_targetCharacters{};
+        // Diagnostic address-only witnesses, never dereferenced after the
+        // callback. Per-effect admission avoids one graph's long transition
+        // suppressing evidence of a shorter transition in another graph.
+        std::array<std::atomic<std::uintptr_t>, 32> s_observedBlends{};
+        std::atomic<std::uintptr_t> s_firstPersonCharacter{};
+        std::atomic<bool> s_firearmPoseGenerated{};
+        std::array<std::atomic<std::uintptr_t>, kMaxTransitionClips> s_poseClips{};
+        using GenerateFn = void (*)(void*, void*, void*, void*, float);
+        GenerateFn s_originalGenerate{};
         std::atomic<std::uint32_t> s_targetCharacterCount{ 0 };
         std::array<std::atomic<std::uintptr_t>, kMaxTransitionClips>
             s_transitionClips{};
@@ -292,6 +303,10 @@ namespace rock::weapon_transition_animation_acceleration
             for (auto& character : s_targetCharacters) {
                 character.store(0, std::memory_order_relaxed);
             }
+            for (auto& blend : s_observedBlends) blend.store(0, std::memory_order_relaxed);
+            s_firstPersonCharacter.store(0, std::memory_order_relaxed);
+            s_firearmPoseGenerated.store(false, std::memory_order_relaxed);
+            for (auto& clip : s_poseClips) clip.store(0, std::memory_order_relaxed);
             for (auto& clip : s_transitionClips) {
                 clip.store(0, std::memory_order_relaxed);
             }
@@ -323,6 +338,9 @@ namespace rock::weapon_transition_animation_acceleration
             if (capacity == 0) {
                 return GraphTargetResult::MissingCharacters;
             }
+            std::uint32_t graphCount{};
+            if (!native_memory::tryReadField(reinterpret_cast<void*>(manager), 0x50, graphCount) ||
+                graphCount == 0 || graphCount > capacity) return GraphTargetResult::MissingCharacters;
 
             const auto storageAddress =
                 manager + kManagerGraphsStorageOffset;
@@ -343,7 +361,7 @@ namespace rock::weapon_transition_animation_acceleration
             std::array<std::uintptr_t, kMaxGraphSlots> characters{};
             std::uint32_t characterCount = 0;
             for (std::uint32_t index = 0;
-                 index < capacity && characterCount < characters.size();
+                 index < graphCount && characterCount < characters.size();
                  ++index) {
                 std::uintptr_t graph = 0;
                 std::uintptr_t graphVtable = 0;
@@ -368,6 +386,9 @@ namespace rock::weapon_transition_animation_acceleration
                     continue;
                 }
                 characters[characterCount++] = character;
+                // The native player graph pair is third-person then first-person,
+                // also used by NativeIdleGripPreharvest's graph selection.
+                if (index == 1) s_firstPersonCharacter.store(character, std::memory_order_relaxed);
             }
             if (characterCount == 0) {
                 return GraphTargetResult::MissingCharacters;
@@ -426,6 +447,24 @@ namespace rock::weapon_transition_animation_acceleration
                 s_encodedLease.load(std::memory_order_acquire) != lease) {
                 return;
             }
+            const auto direction = weapon_transition_animation_acceleration_policy::directionForTransitionState(
+                static_cast<std::uint32_t>(lease & kEncodedStateMask));
+            if (direction == Direction::Draw) {
+                // FO4VR hkbClipGenerator animationName is hkStringPtr +90,
+                // independently decoded by existing PAPER clip telemetry.
+                // A draw lease spans late native model replacement, so matching
+                // the character alone would also accelerate idle/fire/reload.
+                std::uintptr_t namePointer{};
+                std::array<char, 256> name{};
+                if (!native_memory::tryReadField(clipGenerator, 0x90, namePointer) ||
+                    !native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(namePointer & ~std::uintptr_t{1}), name.data(), name.size())) return;
+                const auto end = std::find(name.begin(), name.end(), '\0');
+                if (end == name.end() || !weapon_transition_animation_acceleration_policy::isDrawClip(
+                        std::string_view(name.data(), static_cast<std::size_t>(end-name.begin())))) return;
+                ROCK_LOG_SAMPLE_INFO(Weapon, 10,
+                    "Weapon draw clip admitted after native draw request clip={} name='{}' nativeState={}",
+                    clipGenerator, name.data(), f4vr::getNativeWeaponState(reinterpret_cast<RE::Actor*>(lease & ~kEncodedStateMask)));
+            }
             s_matchedActivations.fetch_add(1, std::memory_order_relaxed);
 
             const auto clip = reinterpret_cast<std::uintptr_t>(clipGenerator);
@@ -461,6 +500,12 @@ namespace rock::weapon_transition_animation_acceleration
             if (!clip ||
                 s_encodedLease.load(std::memory_order_acquire) == 0) {
                 return;
+            }
+            if (!s_firearmPoseGenerated.load(std::memory_order_acquire)) {
+                for (auto& slot : s_poseClips) {
+                    auto expected = clip;
+                    (void)slot.compare_exchange_strong(expected, 0, std::memory_order_acq_rel);
+                }
             }
             for (std::size_t index = 0;
                  index < s_transitionClips.size();
@@ -550,9 +595,27 @@ namespace rock::weapon_transition_animation_acceleration
                 return timestep;
             }
 
-            const float accelerated =
+            float accelerated =
                 weapon_transition_animation_acceleration_policy::
                     scaleTransitionTimestep(timestep);
+            if (direction == Direction::Draw) {
+                // Finish a loaded draw clip in its native update, crossing its
+                // own weaponDraw/00NextClip events rather than fabricating them.
+                // These read-only offsets are shared with verified PAPER clip
+                // telemetry. Before a binding is readable, retain the existing
+                // accelerated step and let the next native update resolve it.
+                void* wrapper{};
+                void* binding{};
+                void* animation{};
+                float duration{};
+                if (native_memory::tryReadField(clipGenerator,0xD0,wrapper) &&
+                    native_memory::tryReadField(wrapper,0x38,binding) &&
+                    native_memory::tryReadField(binding,0x18,animation) &&
+                    native_memory::tryReadField(animation,0x14,duration) &&
+                    std::isfinite(duration) && duration > 0.0f && duration <= 300.0f) {
+                    accelerated = (std::max)(accelerated,duration + timestep);
+                }
+            }
             if (!std::isfinite(accelerated)) {
                 return timestep;
             }
@@ -568,12 +631,236 @@ namespace rock::weapon_transition_animation_acceleration
             return accelerated;
         }
 
+        bool outgoingBranchHasDrawClip(void* context, void* root) noexcept
+        {
+            // Native 141F7A330 resolves serialized generators through the
+            // behavior's clone map. 14194DEC0 enumerates active blender children;
+            // 141A407F0 unwraps modifier/synchronized generators at +90.
+            // Bound the walk and retain no generator pointer across callbacks.
+            void* behavior{};
+            if (!native_memory::tryReadField(context, 8, behavior)) return false;
+            if (!behavior) {
+                void* character{};
+                if (!native_memory::tryReadField(context, 0, character) ||
+                    !native_memory::tryReadField(character, 0x80, behavior)) return false;
+            }
+            if (!behavior || !native_memory::pointerRangeLooksReadable(behavior, 0x120)) return false;
+            using ResolveClone = void* (*)(void*, void*);
+            const auto resolve = reinterpret_cast<ResolveClone>(REL::Offset(0x17BE290).address());
+            std::array<void*, 32> pending{}, visited{};
+            std::size_t count = 1, seen = 0;
+            pending[0] = root;
+            while (count && seen < visited.size()) {
+                auto* node = pending[--count];
+                if (!node || !native_memory::pointerRangeLooksReadable(node, 0x44)) return false;
+                node = resolve(behavior, node);
+                if (!node) return false;
+                if (std::find(visited.begin(), visited.begin() + seen, node) != visited.begin() + seen) continue;
+                visited[seen++] = node;
+                for (const auto& clip : s_transitionClips)
+                    if (clip.load(std::memory_order_acquire) == reinterpret_cast<std::uintptr_t>(node)) return true;
+                std::uint8_t kind{};
+                if (!native_memory::tryReadField(node, 0x43, kind)) return false;
+                if (kind == 2 || kind == 6) {
+                    void* child{};
+                    if (!native_memory::tryReadField(node, 0x90, child) || count == pending.size()) return false;
+                    pending[count++] = child;
+                } else if (kind == 3) {
+                    void* children{};
+                    void* enabled{};
+                    std::int32_t childCount{}, enabledCount{};
+                    if (!native_memory::tryReadField(node, 0xA0, children) ||
+                        !native_memory::tryReadField(node, 0xA8, childCount) ||
+                        !native_memory::tryReadField(node, 0xB0, enabled) ||
+                        !native_memory::tryReadField(node, 0xB8, enabledCount) ||
+                        childCount < 0 || childCount > 32 || enabledCount != childCount) return false;
+                    for (std::int32_t i = 0; i < childCount; ++i) {
+                        std::uint8_t active{};
+                        if (!native_memory::tryReadField(enabled, i * 2, active)) return false;
+                        if (!active) continue;
+                        void* childInfo{};
+                        void* child{};
+                        if (!native_memory::tryReadField(children, i * sizeof(void*), childInfo) ||
+                            !native_memory::tryReadField(childInfo, 0x30, child) || count == pending.size()) return false;
+                        if (child) pending[count++] = child;
+                    }
+                }
+            }
+            return false;
+        }
+
+        void traceBlend(void* blend, void* context, void* from, void* to,
+            float remaining, bool outgoingDraw) noexcept
+        {
+            if (!logger::isDebugEnabled()) return;
+            const auto address = reinterpret_cast<std::uintptr_t>(blend);
+            bool admitted = false;
+            for (auto& slot : s_observedBlends) {
+                auto expected = slot.load(std::memory_order_acquire);
+                if (expected == address) return;
+                if (expected == 0 && slot.compare_exchange_strong(expected, address, std::memory_order_acq_rel)) {
+                    admitted = true;
+                    break;
+                }
+                if (expected == address) return;
+            }
+            if (!admitted) return;
+
+            struct NodeEvidence
+            {
+                std::array<char, 96> name{};
+                std::uintptr_t vtable{};
+                std::uint8_t kind{};
+            };
+            const auto describe = [](const void* node) {
+                NodeEvidence evidence{};
+                std::uintptr_t name{};
+                (void)native_memory::tryReadField(node, 0, evidence.vtable);
+                (void)native_memory::tryReadField(node, 0x43, evidence.kind);
+                // hkbNode ctor 193D7D0 initializes hkStringPtr at +38;
+                // native subgraph installation 17762E0 reads the same name.
+                if (native_memory::tryReadField(node, 0x38, name) && name &&
+                    native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(name & ~std::uintptr_t{1}),
+                        evidence.name.data(), evidence.name.size())) {
+                    evidence.name.back() = '\0';
+                } else {
+                    evidence.name.fill('\0');
+                }
+                return evidence;
+            };
+            const auto source = describe(from);
+            const auto target = describe(to);
+            void* character{};
+            void* behavior{};
+            float elapsed{};
+            (void)native_memory::tryReadField(context, 0, character);
+            (void)native_memory::tryReadField(context, 8, behavior);
+            if (!behavior) (void)native_memory::tryReadField(character, 0x80, behavior);
+            (void)native_memory::tryReadField(blend, 0x134, elapsed);
+            const auto base = REL::Module::get().base();
+            ROCK_LOG_DEBUG(Weapon,
+                "Equip blend identity effect={} character={} behavior={} elapsed={:.6f} remaining={:.6f} outgoingDraw={} "
+                "from={} kind={} vtableRva={:#x} name='{}' to={} kind={} vtableRva={:#x} name='{}'",
+                blend, character, behavior, elapsed, remaining, outgoingDraw,
+                from, source.kind, source.vtable >= base ? source.vtable - base : 0, source.name.data(),
+                to, target.kind, target.vtable >= base ? target.vtable - base : 0, target.name.data());
+        }
+
+        bool admitInitialGraphHandoff(void* to) noexcept
+        {
+            // A behavior graph is a native node category, not an asset name.
+            // During initial equip evaluation, finish every incoming graph
+            // blend, including interrupted/nested transitions. Close this
+            // window at the first generated firearm pose so subsequent gameplay
+            // transitions retain native timing. Clip-level equip handling is
+            // separate and keeps its existing activation-scoped registration.
+            // The caller already verified Drawing/Drawn on the exact equip
+            // lease. Root-graph admission must not depend on clip filenames.
+            if (s_firearmPoseGenerated.load(std::memory_order_acquire)) return false;
+            std::uint8_t kind{};
+            return native_memory::tryReadField(to, 0x43, kind) && kind == 1;
+        }
+
+        void onBlendUpdate(void* blend, void* context, float timestep, void* syncOwner)
+        {
+            const auto lease = s_encodedLease.load(std::memory_order_acquire);
+            float remaining{};
+            void* from{};
+            void* to{};
+            std::uintptr_t vtable{};
+            bool complete = false;
+            bool firearmHandoff = false;
+            // Restrict to the verified concrete blending effect, in the exact
+            // leased player graph, with an actively registered outgoing equip
+            // clip or an initial behavior-graph handoff, independent of names.
+            // Other actors and ordinary
+            // reload/fire/locomotion transitions retain their original timestep.
+            if (lease && (lease & kEncodedStateMask) ==
+                    weapon_transition_animation_acceleration_policy::transitionState(Direction::Draw) &&
+                weapon_transition_animation_acceleration_policy::shouldAccelerateSample(true, Direction::Draw,
+                    f4vr::getNativeWeaponState(reinterpret_cast<RE::Actor*>(lease & ~kEncodedStateMask))) &&
+                std::isfinite(timestep) && timestep > 0.0f && contextMatchesPlayerGraph(context) &&
+                native_memory::tryReadField(blend, 0, vtable) && vtable == REL::Offset(0x2EE4F28).address() &&
+                native_memory::tryReadField(blend, 0x130, remaining) && std::isfinite(remaining) && remaining > 0.0f &&
+                native_memory::tryReadField(blend, 0x98, from) && native_memory::tryReadField(blend, 0xA0, to) && from && to && from != to) {
+                const bool outgoingDraw = outgoingBranchHasDrawClip(context, from);
+                traceBlend(blend, context, from, to, remaining, outgoingDraw);
+                firearmHandoff = admitInitialGraphHandoff(to);
+                if ((outgoingDraw || firearmHandoff) && s_encodedLease.load(std::memory_order_acquire) == lease) {
+                    timestep = (std::max)(timestep, remaining);
+                    complete = true;
+                }
+            }
+            // Native update owns its sync bookkeeping, elapsed/remaining clocks
+            // and later graph cleanup. Never deactivate/free a clip ourselves.
+            s_originalBlendUpdate(blend, context, timestep, syncOwner);
+            if (complete) {
+                float after{};
+                const bool readable = native_memory::tryReadField(blend, 0x130, after);
+                ROCK_LOG_SAMPLE_INFO(Weapon, 10,
+                    "Equip blend completed firearmHandoff={} from={} to={} remaining={:.6f}->{:.6f} readable={} timestep={:.6f}",
+                    firearmHandoff, from, to, remaining, after, readable, timestep);
+            }
+        }
+
+        void onGenerate(void* clip, void* context, void* children, void* output, float timeOffset)
+        {
+            s_originalGenerate(clip, context, children, output, timeOffset);
+            const auto lease = s_encodedLease.load(std::memory_order_acquire);
+            if (!lease || (lease & kEncodedStateMask) != 2 ||
+                s_firearmPoseGenerated.load(std::memory_order_acquire)) return;
+            bool activated = false;
+            for (auto& slot : s_poseClips) {
+                if (slot.load(std::memory_order_acquire) == reinterpret_cast<std::uintptr_t>(clip)) { activated = true; break; }
+            }
+            if (!activated) return;
+            std::uintptr_t character{}, name{};
+            void* wrapper{};
+            void* binding{};
+            void* animation{};
+            std::uint32_t blendHint{};
+            std::array<char, 256> path{};
+            if (!native_memory::tryReadField(context, 0, character) || !character ||
+                character != s_firstPersonCharacter.load(std::memory_order_acquire) ||
+                !native_memory::tryReadField(clip, 0xD0, wrapper) || !wrapper ||
+                !native_memory::tryReadField(wrapper, 0x38, binding) || !binding ||
+                !native_memory::tryReadField(binding, 0x18, animation) || !animation ||
+                !native_memory::tryReadField(binding, 0x50, blendHint) || blendHint != 0 ||
+                !native_memory::tryReadField(clip, 0x90, name) || !name ||
+                !native_memory::guardedCopyFromMemory(reinterpret_cast<void*>(name & ~std::uintptr_t{1}), path.data(), path.size())) return;
+            const auto end = std::find(path.begin(), path.end(), '\0');
+            if (end == path.end()) return;
+            std::string_view filename(path.data(), static_cast<std::size_t>(end - path.begin()));
+            const auto slash = filename.find_last_of("/\\");
+            if (slash != std::string_view::npos) filename.remove_prefix(slash + 1);
+            if (filename.size() < 3 || !native_weapon_animation_audio::equalName(filename.substr(0, 3), "WPN")) return;
+            if (s_encodedLease.load(std::memory_order_acquire) == lease &&
+                !s_firearmPoseGenerated.exchange(true, std::memory_order_acq_rel)) {
+                ROCK_LOG_DEBUG(Weapon, "Trigger equip first-person firearm pose generated character={:#x} clip='{}'", character, path.data());
+            }
+        }
+
         __declspec(noinline) void onClipGeneratorActivate(
             void* clipGenerator,
             void* context)
         {
             if (s_originalClipActivate) {
                 s_originalClipActivate(clipGenerator, context);
+            }
+            // Retain only address witnesses for clips newly activated by this
+            // exact lease; an outgoing gun's already-running idle is not proof.
+            const auto lease = s_encodedLease.load(std::memory_order_acquire);
+            std::uintptr_t character{};
+            if (lease && (lease & kEncodedStateMask) == 2 &&
+                !s_firearmPoseGenerated.load(std::memory_order_acquire) &&
+                native_memory::tryReadField(context, 0, character) && character &&
+                character == s_firstPersonCharacter.load(std::memory_order_acquire)) {
+                for (auto& slot : s_poseClips) {
+                    auto expected = std::uintptr_t{};
+                    const auto clip = reinterpret_cast<std::uintptr_t>(clipGenerator);
+                    if (slot.load(std::memory_order_acquire) == clip ||
+                        slot.compare_exchange_strong(expected, clip, std::memory_order_acq_rel)) break;
+                }
             }
             registerActivatedClip(clipGenerator, context);
         }
@@ -756,8 +1043,43 @@ namespace rock::weapon_transition_animation_acceleration
             ROCK_LOG_ERROR(
                 Init,
                 "Weapon transition clip acceleration disabled: all three lifecycle entry hooks are required");
+        } else {
+            constexpr std::array<std::uint8_t, 17> generatePrefix{
+                0x48,0x8B,0xC4,0x48,0x89,0x50,0x10,0x55,0x57,0x41,0x54,0x41,0x56,0x48,0x83,0xEC,0x78};
+            void* generateOriginal{};
+            if (entry_trampoline_hook::install("Trigger equip firearm pose generation", 0x192D9A0,
+                    generatePrefix.data(), generatePrefix.size(), reinterpret_cast<void*>(&onGenerate), generateOriginal)) {
+                s_originalGenerate = reinterpret_cast<GenerateFn>(generateOriginal);
+            } else {
+                ROCK_LOG_ERROR(Init, "Trigger equip firearm pose generation witness unavailable");
+            }
+            // Update wrapper 141F79FA0 tail-calls this common implementation
+            // with R9=self. Prefix ends before its first relative instruction.
+            constexpr std::array<std::uint8_t, 15> prefix{
+                0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x74,0x24,0x10,0x57,0x48,0x83,0xEC,0x40 };
+            constexpr std::array<std::uint8_t, 14> clonePrefix{
+                0x48,0x8B,0x89,0x18,0x01,0x00,0x00,0x48,0x85,0xC9,0x74,0x08,0x45,0x33 };
+            std::array<std::uint8_t, 14> actual{};
+            void* original{};
+            const bool verified = native_memory::guardedCopyFromMemory(
+                reinterpret_cast<const void*>(REL::Offset(0x17BE290).address()), actual.data(), actual.size()) && actual == clonePrefix;
+            if (verified && entry_trampoline_hook::install("Scoped outgoing equip blend completion", 0x1F7AD90,
+                    prefix.data(), prefix.size(), reinterpret_cast<void*>(&onBlendUpdate), original)) {
+                s_originalBlendUpdate = reinterpret_cast<BlendUpdateFn>(original);
+                ROCK_LOG_INFO(Init, "Outgoing equip blend completion installed for leased player draw clips");
+            } else {
+                ROCK_LOG_WARN(Init, "Outgoing equip blend completion unavailable; native blend timing retained");
+            }
         }
         return ready;
+    }
+
+    bool hasGeneratedFirearmPose(RE::PlayerCharacter* player, const Identity& identity) noexcept
+    {
+        return s_ownerThreadId.load(std::memory_order_acquire) == GetCurrentThreadId() &&
+            s_runtimeLease.active && s_runtimeLease.player == player && s_runtimeLease.identity == identity &&
+            s_runtimeLease.direction == Direction::Draw && s_encodedLease.load(std::memory_order_acquire) != 0 &&
+            s_firearmPoseGenerated.load(std::memory_order_acquire);
     }
 
     RequestResult request(const RequestInput& input) noexcept
@@ -899,7 +1221,7 @@ namespace rock::weapon_transition_animation_acceleration
         switch (action) {
         case weapon_transition_animation_acceleration_policy::
             LifecycleAction::Complete:
-            clearLease("native-complete", input.nativeWeaponState);
+            clearLease(s_runtimeLease.direction == Direction::Draw ? "draw-clip-window-complete" : "native-complete", input.nativeWeaponState);
             break;
         case weapon_transition_animation_acceleration_policy::
             LifecycleAction::Cancel: {

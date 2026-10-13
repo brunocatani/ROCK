@@ -45,6 +45,19 @@ namespace rock
             return;
         }
 
+        if (frik_hand_world_authority::weaponFilteringActive()) {
+            // Below grip/recoil authority: collision and recoil may replace
+            // this base later in the same frame, including with collision off.
+            if (!frik_visual_authority::publishHandWorld("ROCK_WeaponFiltering",
+                    handFromBool(false), physicalRightHandWorld, GRIP_HAND_POSE_PRIORITY - 1)) return;
+            _visuals.weaponFilteringHandAuthorityLive = true;
+            if (!applyWeaponVisualAuthority(weaponNode, requestedWeaponWorld, currentWeaponGenerationKey, false)) {
+                if (frik_visual_authority::clearHandWorld("ROCK_WeaponFiltering", handFromBool(false)))
+                    _visuals.weaponFilteringHandAuthorityLive = false;
+                return;
+            }
+        }
+
         // This source is identical whether the last collision residual was
         // zero, sub-threshold, or blocked by a wall. Later managed grip/return
         // publications may replace it as part of their existing ownership.
@@ -793,9 +806,9 @@ namespace rock
         const std::uint64_t effectiveGenerationKey = authorityGenerationKey != 0 ? authorityGenerationKey : _session.weaponGenerationKey;
         if (notifyVisualIntentObserver && _visuals.weaponIntentObserver) {
             RE::NiTransform driverWorld{};
-            const bool driverValid = intentSource == dynamic_weapon_collision_policy::VisualIntentSource::AuthoredPrimary ?
+            const bool driverValid = !isHandsFreeRetained() && (intentSource == dynamic_weapon_collision_policy::VisualIntentSource::AuthoredPrimary ?
                 tryGetAuthoredPrimaryTrackedFiringHandWorld(driverWorld) :
-                tryGetSolverHandTransform(weaponCarrierIsLeft(), driverWorld);
+                tryGetSolverHandTransform(weaponCarrierIsLeft(), driverWorld));
             _visuals.weaponIntentObserver(
                 _visuals.weaponIntentObserverContext,
                 weaponNode,
@@ -897,6 +910,11 @@ namespace rock
 
     void TwoHandedGrip::beginWeaponCollisionPresentationFrame()
     {
+        if (_visuals.weaponFilteringHandAuthorityLive) {
+            if (frik_visual_authority::clearHandWorld("ROCK_WeaponFiltering", handFromBool(false)))
+                _visuals.weaponFilteringHandAuthorityLive = false;
+            else ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Weapon filtering hand authority clear failed");
+        }
         // Scope reconstruction and canonical capture still need to know which
         // rendered roots are contaminated. This witness never selects between
         // a raw weapon-world input and the collision-free intent publisher.
@@ -947,7 +965,7 @@ namespace rock
         const RE::NiTransform requestedWeaponWorld = weaponNode->world;
         const auto attachedHands =
             dynamic_weapon_collision_policy::selectAttachedHands(
-                _session.state == TwoHandedState::PartCarry,
+                isFiringGripDetached(),
                 _session.state == TwoHandedState::Gripping ||
                     _session.state == TwoHandedState::PrimaryOnly,
                 isFiringHandLeft(),
@@ -998,9 +1016,9 @@ namespace rock
                     requestedHandWorld,
                     WEAPON_COLLISION_HAND_TAG,
                     WEAPON_COLLISION_HAND_PRIORITY - 1) ||
-                tryGetRootFlattenedHandBoneTransform(
-                    pulse.isLeft,
-                    requestedHandWorld);
+                (frik_hand_world_authority::weaponFilteringActive() ?
+                    frik_hand_world_authority::tryGetWeaponHandWorld(pulse.isLeft, requestedHandWorld) :
+                    tryGetRootFlattenedHandBoneTransform(pulse.isLeft, requestedHandWorld));
             pulse.targetWorld =
                 dynamic_weapon_collision_policy::reframeAttachedHand(
                     requestedWeaponWorld,
@@ -1104,7 +1122,10 @@ namespace rock
             &returningHand.lastApplied :
             liveHandWorld;
         const RE::NiTransform appliedFiringHandWorld =
-            resolveLockedHandVisualTarget(
+            // A loose-to-equipped transfer already owns a seated wrist. A new
+            // acquisition would first publish the unposed physical hand and
+            // then animate it back onto the grip, despite uninterrupted holding.
+            _firing.transferredPrimaryGrip.valid() ? firingHandWorld : resolveLockedHandVisualTarget(
                 firingHandWorld,
                 acquisitionStart,
                 dt,
@@ -1116,13 +1137,6 @@ namespace rock
                 handFromBool(isFiringHandLeft()),
                 appliedFiringHandWorld,
                 GRIP_HAND_POSE_PRIORITY);
-        recordLockedHandAuthorityAttempt(
-            isFiringHandLeft(),
-            LockedHandAuthorityRole::PrimaryGrip,
-            appliedFiringHandWorld,
-            liveHandWorld,
-            true,
-            applied);
         if (applied) {
             if (usesLeftFiringCarry()) {
                 _firing.leftHandWorldActive = true;
@@ -1156,7 +1170,7 @@ namespace rock
         const bool synchronizedDynamicAcquisition =
             dynamicSupportAcquisitionMatches(isLeft, grip);
         const RE::NiTransform appliedHandWorld =
-            synchronizedDynamicAcquisition ?
+            grip.transferredLooseGrip ? partGripHandWorld : synchronizedDynamicAcquisition ?
             resolveDynamicSupportAcquisitionHandTarget(
                 partGripHandWorld,
                 grip.visualLerp) :
@@ -1171,13 +1185,6 @@ namespace rock
                 handFromBool(isLeft),
                 appliedHandWorld,
                 GRIP_HAND_POSE_PRIORITY);
-        recordLockedHandAuthorityAttempt(
-            isLeft,
-            LockedHandAuthorityRole::SupportGrip,
-            appliedHandWorld,
-            liveHandWorld,
-            true,
-            applied);
         if (applied) {
             recordScopeHandAuthorityPublication(scope_safe_hand_frame_math::HandAuthorityRole::SupportGrip, isLeft);
             clearHandVisualReturn(isLeft, "part-grip-authority-acquired", false);
@@ -1211,32 +1218,10 @@ namespace rock
         }
 
         const bool supportHandIsLeft = isSupportHandLeft();
-        const bool leftCarryArmProbe =
-            g_rockConfig.rockDebugGrabFrameLogging &&
-            usesLeftFiringCarry() &&
-            applyPrimaryHand &&
-            applySupportHand &&
-            _firing.hasPrimaryHandWeaponLocal;
-        const LeftCarryArmSample armBeforePrimary =
-            leftCarryArmProbe ? sampleLeftCarryArm() : LeftCarryArmSample{};
-        const RE::NiTransform probeFiringHandWorld =
-            leftCarryArmProbe ?
-            weapon_visual_authority_math::weaponLocalFrameToWorld(weaponNode->world, _firing.primaryHandWeaponLocal) :
-            RE::NiTransform{};
         bool primaryApplied = true;
         bool supportApplied = true;
         if (applyPrimaryHand) {
             primaryApplied = applyFiringHandLockedVisual(weaponNode, dt, livePrimaryHandWorld);
-        }
-        if (leftCarryArmProbe) {
-            const LeftCarryArmSample armAfterPrimary = sampleLeftCarryArm();
-            ROCK_LOG_DEBUG(Weapon,
-                "LEFT_CARRY_ARM: frame={} applied={} target={} {} {}",
-                runtime_state::currentFrame().frameIndex,
-                primaryApplied ? 1 : 0,
-                formatLeftCarryArmFrame(probeFiringHandWorld),
-                formatLeftCarryArmSample("s0", armBeforePrimary),
-                formatLeftCarryArmSample("s1", armAfterPrimary));
         }
         if (applySupportHand) {
             supportApplied = applyPartGripLockedVisual(supportHandIsLeft, weaponNode, dt, liveSupportHandWorld);
@@ -1245,7 +1230,7 @@ namespace rock
             return true;
         }
 
-        ROCK_LOG_WARN(Weapon,
+        ROCK_LOG_SAMPLE_WARN(Weapon, 2000,
             "TwoHandedGrip: locked hand authority publication failed primary={} support={} "
             "firingHand={} supportHand={} state={} scopeMenu={} primaryFrame={} supportGrip={} supportFrame={}",
             primaryApplied ? "ok" : "failed",

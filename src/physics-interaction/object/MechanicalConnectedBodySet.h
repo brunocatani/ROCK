@@ -138,9 +138,9 @@ namespace rock::mechanical_connected_body_set
         } else if (result.driveDecision.mode == held_object_drive_policy::HeldBodySetDriveMode::FixedAttached) {
             result.kind = ScopeKind::FixedAttached;
             result.reason = result.driveDecision.reason;
-        } else if (result.targetPrefersMechanical && (targetKind == grab_target::Kind::DeadActorBody || result.acceptedBodyCount > 1 || result.uniqueMotionCount > 1)) {
+        } else if (result.targetPrefersMechanical && (targetKind == grab_target::Kind::ConnectedBody || result.acceptedBodyCount > 1 || result.uniqueMotionCount > 1)) {
             result.kind = ScopeKind::ArticulatedMechanical;
-            result.reason = targetKind == grab_target::Kind::DeadActorBody ? "dead-actor-mechanical-scope" : "mechanical-target-body-set";
+            result.reason = targetKind == grab_target::Kind::ConnectedBody ? "dead-actor-mechanical-scope" : "mechanical-target-body-set";
         } else if (result.driveDecision.mode == held_object_drive_policy::HeldBodySetDriveMode::ComplexArticulated) {
             result.kind = ScopeKind::ArticulatedMechanical;
             result.reason = result.driveDecision.reason;

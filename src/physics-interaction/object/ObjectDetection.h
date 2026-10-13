@@ -3,7 +3,7 @@
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
-#include "physics-interaction/actor/ActorEquipmentGrab.h"
+#include "api/NativeInteractionService.h"
 #include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/object/GrabTargetKind.h"
 
@@ -71,7 +71,7 @@ namespace rock
         // Only the exact ROCK-created grenade-mode reference may carry an
         // authored PROJECTILE-layer body through active-grab admission.
         bool allowProjectileLayerForExactTarget = false;
-        actor_equipment_grab::ActorEquipmentSelection actorEquipment{};
+        api::native_interaction::SelectionReply extensionSelection{};
         selection_query_policy::BodyLocalSelectionAnchor equipmentAnchor{};
         std::uintptr_t equipmentAnchorOwner = 0;
 
@@ -109,7 +109,7 @@ namespace rock
             forcedArrival = false;
             equippedWeaponTransfer = false;
             allowProjectileLayerForExactTarget = false;
-            actorEquipment = {};
+            extensionSelection = {};
             equipmentAnchor = {};
             equipmentAnchorOwner = 0;
         }
@@ -129,7 +129,7 @@ namespace rock
             return false;
         }
 
-        if (selection.targetKind == grab_target::Kind::ActorEquipment) {
+        if (selection.targetKind == grab_target::Kind::ExtractableItem) {
             // A skinned garment's origin can remain at the old actor position
             // after its visible mesh moves with the ragdoll. Use the same hit
             // point as acquisition, transported by its verified native body.
@@ -194,10 +194,10 @@ namespace rock
         }
 
         const bool accepted = hmdConeGate.acceptsHitPoint(anchorWorld, outDot);
-        if (!accepted && selection.targetKind == grab_target::Kind::ActorEquipment) {
+        if (!accepted && selection.targetKind == grab_target::Kind::ExtractableItem) {
             ROCK_LOG_SAMPLE_DEBUG(Hand, 2000,
-                "Actor equipment cone rejected live anchor: actor={:08X} item={:08X} body={} anchor=({:.2f},{:.2f},{:.2f}) hmd=({:.2f},{:.2f},{:.2f})",
-                selection.refr->GetFormID(), selection.actorEquipment.itemFormId, selection.bodyId.value,
+                "Extractable selection cone rejected live anchor: ref={:08X} owner={:016X} body={} anchor=({:.2f},{:.2f},{:.2f}) hmd=({:.2f},{:.2f},{:.2f})",
+                selection.refr->GetFormID(), selection.extensionSelection.owner, selection.bodyId.value,
                 anchorWorld.x, anchorWorld.y, anchorWorld.z,
                 hmdConeGate.hmdPositionWorld.x, hmdConeGate.hmdPositionWorld.y, hmdConeGate.hmdPositionWorld.z);
         }
@@ -214,8 +214,19 @@ namespace rock
         grab_target::Kind kind{ grab_target::Kind::None };
         const char* reason{ "none" };
         bool grabbable{ false };
-        actor_equipment_grab::ActorEquipmentSelection actorEquipment{};
+        api::native_interaction::SelectionReply extensionSelection{};
     };
+
+    inline api::native_interaction::SelectionQuery extensionSelectionQuery(RE::hknpWorld* world, const SelectedObject& selection)
+    {
+        api::native_interaction::SelectionQuery query{};
+        query.reference=reinterpret_cast<std::uintptr_t>(selection.refr);
+        query.world=reinterpret_cast<std::uintptr_t>(world);
+        query.hitNode=reinterpret_cast<std::uintptr_t>(selection.hitNode);
+        query.body=selection.bodyId.value;query.farSelection=selection.isFarSelection;query.hasHitPoint=selection.hasHitPoint;
+        query.hitPoint={selection.hitPointWorld.x,selection.hitPointWorld.y,selection.hitPointWorld.z};
+        return query;
+    }
 
     bool isGrabbable(RE::TESObjectREFR* ref, const OtherHandSelectionContext& otherHandContext = {});
     GrabTargetClassification classifySelectionGrabTarget(

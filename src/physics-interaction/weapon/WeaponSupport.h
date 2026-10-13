@@ -76,11 +76,6 @@ namespace rock::weapon_support_authority_policy
         return mode == WeaponSupportAuthorityMode::FullTwoHandedSolver;
     }
 
-    inline constexpr bool supportGripAppliesSupportHandAuthority(WeaponSupportAuthorityMode)
-    {
-        return true;
-    }
-
     /*
      * A close core support grip cannot safely steer the weapon because its two
      * controller anchors are nearly coincident, but it still represents a real
@@ -485,6 +480,7 @@ namespace rock::equipped_weapon_manual_ownership_policy
     [[nodiscard]] inline constexpr GripReleaseDebounceDecision debouncePrimaryGripRelease(
         GripReleaseDebounceState& state,
         bool physicallyHeld,
+        bool primaryOwned,
         std::uint8_t confirmFrames = kPrimaryReleaseConfirmFrames) noexcept
     {
         if (physicallyHeld) {
@@ -492,7 +488,9 @@ namespace rock::equipped_weapon_manual_ownership_policy
             return GripReleaseDebounceDecision{ .retained = true };
         }
 
-        if (confirmFrames == 0) {
+        // Debounce only an existing firing grip. Once detached, retaining an
+        // open hand for even one frame becomes a synthetic reattach squeeze.
+        if (!primaryOwned || confirmFrames == 0) {
             state = {};
             return GripReleaseDebounceDecision{ .releaseConfirmed = true };
         }
@@ -596,15 +594,6 @@ namespace rock::weapon_two_handed_grip_math
         const Vector handSeatCorrection = weaponSolverSub(targetGripPointWorld, currentGripPivotWorld);
         result.translate = weaponSolverSub(result.translate, handSeatCorrection);
         return result;
-    }
-
-    template <class Vector>
-    inline Vector virtualizeGripPointForTranslatedHandSeat(
-        const Vector& currentGripPivotWorld,
-        const Vector& targetGripPointWorld)
-    {
-        const Vector handSeatCorrection = weaponSolverSub(targetGripPointWorld, currentGripPivotWorld);
-        return weaponSolverSub(targetGripPointWorld, handSeatCorrection);
     }
 
     /*

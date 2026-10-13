@@ -8,6 +8,7 @@
 #include "physics-interaction/weapon/WeaponTypes.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
+#include <ROCK/NativeInteraction.h>
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/NetImmerse/NiPoint.h"
@@ -42,8 +43,14 @@ namespace rock::debug
         LeftGrabAuthorityProxy,
         RightGrabPivotSourceCollider,
         LeftGrabPivotSourceCollider,
-        Target
+        Target,
+        External
     };
+
+    inline constexpr bool isExternalBodyRole(BodyOverlayRole role)
+    {
+        return role == BodyOverlayRole::External;
+    }
 
     enum class AxisOverlayRole : std::uint8_t
     {
@@ -117,6 +124,10 @@ namespace rock::debug
 
     enum class MarkerOverlayRole : std::uint8_t
     {
+        GunstockBaseline,
+        GunstockWeapon,
+        GunstockSeat,
+        GunstockAim,
         RightGrabAnchor,
         LeftGrabAnchor,
         RightPalmNormal,
@@ -143,8 +154,6 @@ namespace rock::debug
         LeftGrabSurfacePoint,
         RightGrabSurfaceNormal,
         LeftGrabSurfaceNormal,
-        RightGrabContactPatchSample,
-        LeftGrabContactPatchSample,
         RightGrabForceTorqueTargetPivot,
         LeftGrabForceTorqueTargetPivot,
         RightGrabForceTorqueLivePivot,
@@ -193,8 +202,6 @@ namespace rock::debug
         LeftGrabPivotSourceBodyVisualLock,
         RightGrabPivotSourceCaptureMutation,
         LeftGrabPivotSourceCaptureMutation,
-        RightGrabPivotSourceContactPoint,
-        LeftGrabPivotSourceContactPoint,
         RightGrabSupportFramePivot,
         LeftGrabSupportFramePivot,
         RightGrabSupportFrameNormal,
@@ -232,22 +239,12 @@ namespace rock::debug
         NativeScopeCameraParent,
         NativeScopeSightBounds,
         NativeScopeMismatch,
-        NativeScopeShotSight,
-        NativeScopeShotMuzzle,
-        NativeScopeShotAim,
-        NativeScopeShotLaunch,
         RightWeaponPrimaryGrip,
         LeftWeaponSupportGrip,
         RightWeaponAuthorityMismatch,
         LeftWeaponAuthorityMismatch,
         RightRootFlattenedFingerSkeleton,
         LeftRootFlattenedFingerSkeleton,
-        TargetVisualOrigin,
-        TargetRawBodyOrigin,
-        TargetBodyTransformOrigin,
-        TargetMotionOrigin,
-        TargetBestOriginCandidate,
-        TargetOriginErrorLine,
         RightGrabHeldRelativeHandTargetError,
         LeftGrabHeldRelativeHandTargetError,
         RightGrabRockVisualError,
@@ -287,8 +284,14 @@ namespace rock::debug
     {
         RE::hknpBodyId bodyId{ 0x7FFF'FFFF };
         BodyOverlayRole role{ BodyOverlayRole::Target };
-        RE::NiTransform currentTarget{};
-        bool hasCurrentTarget{ false };
+        // Optional identity witnesses for external/native body IDs. Publication
+        // and post-solve readback reject a recycled source before drawing it.
+        std::uintptr_t expectedCollisionObject{ 0 };
+        std::uintptr_t expectedShape{ 0 };
+        char label[64]{};
+        float color[4]{1,1,1,1};
+        float labelOffsetY{};
+        std::uint32_t visualFlags{};
     };
 
     struct AxisOverlayEntry
@@ -354,7 +357,7 @@ namespace rock::debug
         std::array<BodyOverlayEntry,
             MAX_WEAPON_COLLISION_BODIES +
                 (hand_collider_semantics::kHandColliderBodyCountPerHand * 2) +
-                skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size() + 8>
+                skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size() + 8 + api::native_interaction::kMaxVisualBodies>
             entries{};
         std::array<AxisOverlayEntry, 96> axisEntries{};
         std::array<MarkerOverlayEntry, 512> markerEntries{};
@@ -376,7 +379,6 @@ namespace rock::debug
         bool drawSkeleton{ false };
         bool drawColoredLines{ false };
         bool drawText{ false };
-        bool drawColliderPhaseDiagnostics{ false };
     };
 
     void Install();

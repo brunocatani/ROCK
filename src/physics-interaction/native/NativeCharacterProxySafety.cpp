@@ -6,7 +6,6 @@
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokWorldLock.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/native/NativeWorldLifetimeDiagnostics.h"
 
 #include <REL/Relocation.h>
 #include <Windows.h>
@@ -367,10 +366,6 @@ namespace rock::native_character_proxy_safety
         }
         s_teardownCaller.store(REL::Offset(kDestructorReturnRva).address(),
             std::memory_order_release);
-
-        if (!native_world_lifetime_diagnostics::install()) {
-            return false;
-        }
 
         s_expectedFaultAddress.store(
             REL::Offset(offsets::kFault_BhkCharProxyController_BodyFieldRead).address(),

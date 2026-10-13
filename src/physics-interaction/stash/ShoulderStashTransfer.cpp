@@ -1,4 +1,5 @@
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
+#include "api/StashConversionService.h"
 
 #include "RE/Bethesda/BSExtraData.h"
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -26,6 +27,8 @@ namespace rock::shoulder_stash
             return "missing-player";
         case TransferReason::MissingBaseForm:
             return "missing-base-form";
+        case TransferReason::ConsumerConversion:
+            return "consumer-conversion";
         case TransferReason::ActivateRef:
             return "activate-ref";
         default:
@@ -75,6 +78,17 @@ namespace rock::shoulder_stash
         }
 
         result.attempted = true;
+        const auto conversion=stash_conversion::convert(result.formID,result.baseForm->formID);
+        if(conversion.decision!=api::stash_conversion::Decision::Pass) {
+            result.reason=TransferReason::ConsumerConversion;
+            result.success=conversion.decision==api::stash_conversion::Decision::Consumed;
+            if(result.success) {
+                result.count=static_cast<std::int32_t>(conversion.count);
+                result.baseForm=RE::TESForm::GetFormByID<RE::TESBoundObject>(conversion.inventoryForm);
+                result.untransferredRef.reset();
+            }
+            return result;
+        }
         // Collectibles such as magazines, notes, and holotapes need native activation
         // so their scripts, perk grants, and terminal/holotape behavior run normally.
         result.success = heldRef->ActivateRef(player, nullptr, result.count, false, false, false);

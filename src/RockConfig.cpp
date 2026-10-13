@@ -78,6 +78,9 @@ namespace rock
         lock.unlock(); // Subscribers may inspect the newly applied catalog.
         ROCK_LOG_INFO(Config, "ROCK configuration applied (revision={}, logLevel={} {})",
             configRevision(), rockLogLevel, logging_policy::logLevelName(rockLogLevel));
+        ROCK_LOG_INFO(Config, "Weapon recoil mode: {}",
+            rockEmergencyDisableRecoil ? "EMERGENCY DISABLED" :
+            rockImmersiveRecoil ? "Immersive Recoil" : "Native strength, physical firing hand");
         for (const auto& [key, subscriber] : _onConfigChangedSubscribers) subscriber(key);
         return true;
     }

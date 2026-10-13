@@ -1,4 +1,16 @@
 // Held placement operations are coordinated by the frame owner.
+    api::Status getHeldObjectPose(api::OwnerToken owner,api::Hand hand,api::grab::v1_3::HeldObjectPose& output) {
+        const auto access=s_physicsInteraction.borrow();const auto* pi=access.get();
+        return pi?pi->getHeldObjectPose(owner,hand,output):api::Status::NotReady;
+    }
+    api::Status setHeldObjectTarget(api::OwnerToken owner,const api::grab::v1_3::HeldObjectTarget& request) {
+        const auto access=s_physicsInteraction.borrow();
+        auto* pi=access.get();return pi?pi->setHeldObjectTarget(owner,request):api::Status::NotReady;
+    }
+    api::Status clearHeldObjectTarget(api::OwnerToken owner,api::Hand hand) {
+        const auto access=s_physicsInteraction.borrow();
+        auto* pi=access.get();return pi?pi->clearHeldObjectTarget(owner,hand):api::Status::Ok;
+    }
     api::Status getHeldPlacementState(api::grab::v1_1::HeldPlacementState& output) {
         const auto access=s_physicsInteraction.borrow();
         const auto* pi=access.get();

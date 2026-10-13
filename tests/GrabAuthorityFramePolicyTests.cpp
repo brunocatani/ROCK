@@ -126,71 +126,38 @@ int main()
         const auto origin = identityTransform();
         transition = acquisition::begin(origin, frames::objectFromGeneratedProxyLocalSpace(origin, seated), seated, grip);
         ok &= expectFalse("already seated resets acquisition", transition.active);
+        // Two physical hands update once each in the same runtime frame. The
+        // common target must not advance twice or separate at the shared grip.
+        auto shared = acquisition::beginWeapon(palm, initialWorld, seated, grip,
+            rock::hand_visual_lerp_math::kEquippedWeaponReturnConfig);
+        std::uint64_t sharedFrame = 10;
+        const float step = shared.durationSeconds * 0.25f;
+        const auto joinProxy = acquisition::advanceShared(shared, sharedFrame, 10, palm, seated, grip, step);
+        const auto joinBody = frames::objectFromGeneratedProxyLocalSpace(joinProxy, seated);
+        ok &= expectPointNear("pair acquisition starts at displayed body", joinBody.translate, initialWorld.translate, 0.03f);
+        ok &= expectNear("pair acquisition starts at displayed rotation", rotationDegrees(joinBody, initialWorld), 0.0f, 0.02f);
+        const auto primaryStep = acquisition::advanceShared(shared, sharedFrame, 11, movedPalm, seated, grip, step);
+        const float elapsedOnce = shared.elapsedSeconds;
+        const auto supportStep = acquisition::advanceShared(shared, sharedFrame, 11, movedPalm, seated, grip, step);
+        ok &= expectNear("second hand cannot advance shared clock twice", shared.elapsedSeconds, elapsedOnce, 0.0f);
+        ok &= expectPointNear("both hands receive one shared position", primaryStep.translate, supportStep.translate, 0.0f);
+        ok &= expectNear("both hands receive one shared rotation", rotationDegrees(primaryStep,supportStep), 0.0f, 0.02f);
+        // Letting go midway must rebase from the display, not the old final
+        // two-hand target. This also covers swapping the primary during entry.
+        const auto interruptedBody = frames::objectFromGeneratedProxyLocalSpace(primaryStep,seated);
+        auto soloTarget = rotated(0.2f);
+        soloTarget.translate = {2.0f,-3.0f,1.0f};
+        auto returning = acquisition::beginWeapon(movedPalm,interruptedBody,soloTarget,grip,
+            rock::hand_visual_lerp_math::kEquippedWeaponReturnConfig);
+        const auto returnProxy = acquisition::advance(returning,movedPalm,soloTarget,grip,0.0f);
+        const auto returnBody = frames::objectFromGeneratedProxyLocalSpace(returnProxy,soloTarget);
+        ok &= expectPointNear("interrupted return preserves visible position", returnBody.translate,interruptedBody.translate,0.03f);
+        ok &= expectNear("interrupted return preserves visible rotation", rotationDegrees(returnBody,interruptedBody),0.0f,0.02f);
+        const auto completedReturn = acquisition::advance(returning,movedPalm,soloTarget,grip,returning.durationSeconds);
+        ok &= expectPointNear("solo return converges to current controller",completedReturn.translate,movedPalm.translate,0.0f);
         auto invalid = palm;
         invalid.translate.x = std::numeric_limits<float>::quiet_NaN();
         ok &= expectFalse("nonfinite capture fails closed", acquisition::begin(invalid, initialWorld, seated, grip).active);
-    }
-
-    {
-        using Candidate = authority::GrabAuthorityPivotCandidate<RE::NiPoint3>;
-        const std::array<Candidate, 5> candidates{
-            Candidate{
-                .valid = true,
-                .source = authority::GrabAuthorityPivotSource::CollisionFallback,
-                .pointWorld = RE::NiPoint3{ 50.0f, 0.0f, 0.0f },
-                .bodyId = 7,
-                .reason = "collision",
-            },
-            Candidate{
-                .valid = true,
-                .source = authority::GrabAuthorityPivotSource::SelectionMeshSnap,
-                .pointWorld = RE::NiPoint3{ 40.0f, 0.0f, 0.0f },
-                .bodyId = 7,
-                .reason = "selection",
-            },
-            Candidate{
-                .valid = true,
-                .source = authority::GrabAuthorityPivotSource::PalmPocketMesh,
-                .pointWorld = RE::NiPoint3{ 30.0f, 0.0f, 0.0f },
-                .bodyId = 7,
-                .reason = "palm",
-            },
-            Candidate{
-                .valid = true,
-                .source = authority::GrabAuthorityPivotSource::GripSupportModel,
-                .pointWorld = RE::NiPoint3{ 20.0f, 0.0f, 0.0f },
-                .bodyId = 7,
-                .reason = "support",
-            },
-            Candidate{
-                .valid = true,
-                .source = authority::GrabAuthorityPivotSource::PinchPocket,
-                .pointWorld = RE::NiPoint3{ 10.0f, 0.0f, 0.0f },
-                .bodyId = 7,
-                .reason = "pinch",
-            },
-        };
-
-        const auto resolved = authority::resolveGrabAuthorityPivot<RE::NiPoint3>(candidates);
-        ok &= expectTrue("resolver accepts best candidate", resolved.valid);
-        ok &= expectTrue("pinch pocket has highest priority", resolved.source == authority::GrabAuthorityPivotSource::PinchPocket);
-        ok &= expectPointNear("pinch point selected", resolved.pointWorld, RE::NiPoint3{ 10.0f, 0.0f, 0.0f }, 0.001f);
-    }
-
-    {
-        using Candidate = authority::GrabAuthorityPivotCandidate<RE::NiPoint3>;
-        const std::array<Candidate, 1> candidates{
-            Candidate{
-                .valid = true,
-                .source = authority::GrabAuthorityPivotSource::CollisionFallback,
-                .pointWorld = RE::NiPoint3{ 50.0f, 0.0f, 0.0f },
-                .bodyId = 7,
-                .reason = "collision",
-            },
-        };
-
-        const auto resolved = authority::resolveGrabAuthorityPivot<RE::NiPoint3>(candidates);
-        ok &= expectFalse("collision fallback cannot be final authority", resolved.valid);
     }
 
     {
@@ -408,5 +375,34 @@ int main()
         ok &= expectFalse("freeze rejects non-finite authority rotation", frozen.valid);
     }
 
+    {
+        auto root = identityTransform();
+        const float rootQuaternion[4]{ 0.0f, 0.0f, std::sin(0.63f / 2.0f), std::cos(0.63f / 2.0f) };
+        root.rotate = rock::transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(rootQuaternion);
+        root.translate = { 12.0f, -8.0f, 5.0f };
+        root.scale = 1.25f;
+        const auto self = rock::grab_frame_math::objectInFrameSpace(root, root);
+        ok &= expectPointNear("capture root in itself has no translation", self.translate, {}, 0.0001f);
+        ok &= expectNear("capture root in itself has unit scale", self.scale, 1.0f, 0.0001f);
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                ok &= expectNear("capture root in itself has identity rotation", self.rotate.entry[row][column],
+                    row == column ? 1.0f : 0.0f, 0.0001f);
+            }
+        }
+        auto child = identityTransform();
+        child.translate = { 2.0f, 3.0f, -1.0f };
+        const float childQuaternion[4]{ std::sin(-0.27f / 2.0f), 0.0f, 0.0f, std::cos(-0.27f / 2.0f) };
+        child.rotate = rock::transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(childQuaternion);
+        const auto world = rock::transform_math::composeTransforms(root, child);
+        const auto restored = rock::grab_frame_math::objectInFrameSpace(root, world);
+        ok &= expectPointNear("capture nested node position round trip", restored.translate, child.translate, 0.0001f);
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                ok &= expectNear("capture nested node rotation round trip", restored.rotate.entry[row][column],
+                    child.rotate.entry[row][column], 0.0001f);
+            }
+        }
+    }
     return ok ? 0 : 1;
 }

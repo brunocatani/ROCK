@@ -145,9 +145,17 @@
         }
 
         const auto target = havok_runtime::snapshotBody(hknp, RE::hknpBodyId{targetBodyId});
+        api::native_interaction::SelectionQuery pushQuery{};
+        pushQuery.reference=reinterpret_cast<std::uintptr_t>(targetRef);
+        pushQuery.world=reinterpret_cast<std::uintptr_t>(hknp);pushQuery.body=targetBodyId;
+        const auto pushKind=native_interaction_service::classifyPush(pushQuery);
+        if(pushKind==api::native_interaction::PushKind::Blocked)return;
         const auto* base = targetRef->GetObjectReference();
-        const bool bodyContact = target.valid && ((base && base->Is(RE::ENUM_FORM_ID::kNPC_)) ||
-            grab_target::isDetachedGoreLayer(target.collisionFilterInfo & 0x7F));
+        // Native articulated targets must never fall into whole-reference loose
+        // object conversion when their owning extension is absent.
+        if(pushKind==api::native_interaction::PushKind::Unhandled&&((base&&base->Is(RE::ENUM_FORM_ID::kNPC_))||
+            (target.valid&&grab_target::isNativeDetachedBodyLayer(target.collisionFilterInfo&0x7F))))return;
+        const bool bodyContact=target.valid&&pushKind==api::native_interaction::PushKind::PointOnly;
         if (bodyContact) {
             if (!contact.hasPoint || !target.body ||
                 physics_body_classifier::motionTypeFromBodyFlags(target.body->flags) != physics_body_classifier::BodyMotionType::Dynamic) return;
@@ -572,7 +580,9 @@
         const bool bodyBIsLeftHeld = _leftHand.isHeldBodyId(bodyIdB);
         const bool heldContact = bodyAIsRightHeld || bodyBIsRightHeld || bodyAIsLeftHeld || bodyBIsLeftHeld;
         const bool generatedContact = bodyAIsDynamicHand || bodyBIsDynamicHand || bodyAIsDynamicWeapon || bodyBIsDynamicWeapon;
-        if (!generatedContact && !heldContact) return;
+        const bool looseCollisionContact=_looseWeaponCollision.watches(bodyIdA) || _looseWeaponCollision.watches(bodyIdB) ||
+            _objectRestCollision.watches(bodyIdA) || _objectRestCollision.watches(bodyIdB);
+        if (!generatedContact && !heldContact && !looseCollisionContact) return;
         // ID-only admission precedes native reads; accepted events retain all body checks.
         if (!havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdA }) ||
             !havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdB })) {
@@ -580,6 +590,21 @@
         }
         const bool solvedChildContact =
             manifoldPointCount > 0 && manifoldPointCount <= 4;
+        const bool equippedDropContact = _dynamicWeaponCollision.watchesEquippedDropRest(bodyIdA) ||
+            _dynamicWeaponCollision.watchesEquippedDropRest(bodyIdB);
+        if (solvedChildContact && (looseCollisionContact || equippedDropContact) && !heldContact &&
+            !::rock::provider::isExternalBodyId(bodyIdA) && !::rock::provider::isExternalBodyId(bodyIdB)) {
+            RE::NiPoint3 point{};
+            const float scale=havokToGameScale()/static_cast<float>(manifoldPointCount);
+            for (std::int32_t i=0;i<manifoldPointCount;++i) {
+                const auto* p=reinterpret_cast<const float*>(data+0x70+i*0x10);
+                point.x+=p[0]*scale; point.y+=p[1]*scale; point.z+=p[2]*scale;
+            }
+            const auto* normal=reinterpret_cast<const float*>(data+0x40);
+            _looseWeaponCollision.contact(world,bodyIdA,bodyIdB,point,{normal[0],normal[1],normal[2]});
+            _objectRestCollision.contact(world,bodyIdA,bodyIdB,point,{normal[0],normal[1],normal[2]});
+            _dynamicWeaponCollision.recordEquippedDropRestContact(world,bodyIdA,bodyIdB,point,{normal[0],normal[1],normal[2]});
+        }
         if (solvedChildContact && heldContact) {
             auto recordHeldPlacementContact = [&](Hand& hand, bool heldA, bool heldB) {
                 if (!hand.isHoldingAtomic() || heldA == heldB) return;
@@ -611,18 +636,18 @@
             native_impact_audio::observeManifold(world, bodyIdA, bodyIdB, shapeKeyA, shapeKeyB);
         }
         if (solvedChildContact && bodyAIsDynamicHand) {
+            storage_interaction::contact(world,bodyIdB,dynamicBodySourceA.isLeft);
             _dynamicHandCollision.recordDynamicBodyContactCallback(
                 dynamicBodySourceA,
-                bodyIdB,
                 bodyBIsDynamicHand &&
                     dynamicBodySourceA.isLeft !=
                         dynamicBodySourceB.isLeft,
                 bodyBIsDynamicWeapon);
         }
         if (solvedChildContact && bodyBIsDynamicHand) {
+            storage_interaction::contact(world,bodyIdA,dynamicBodySourceB.isLeft);
             _dynamicHandCollision.recordDynamicBodyContactCallback(
                 dynamicBodySourceB,
-                bodyIdA,
                 bodyAIsDynamicHand &&
                     dynamicBodySourceA.isLeft !=
                         dynamicBodySourceB.isLeft,
@@ -715,13 +740,22 @@
                     supportPointGame.z += point[2] * pointScale;
                 }
             }
+            RE::NiPoint3 targetNormal{};
+            if (solvedChildContact) {
+                // 1418028B0 copies the manifold normal to +0x40. Normals point
+                // B -> A; orient target -> weapon. Key-2 removal events leave
+                // this payload uninitialized and must not read it.
+                const auto* manifoldNormal=reinterpret_cast<const float*>(data+0x40);
+                const float sign=bodyAIsWeaponProxy?1.0f:-1.0f;
+                targetNormal={manifoldNormal[0]*sign,manifoldNormal[1]*sign,manifoldNormal[2]*sign};
+            }
             _dynamicWeaponCollision.recordObstacleManifoldProcessedCallback(
                 world,
                 proxyBodyId,
                 otherBodyId,
                 otherLayerRead,
                 otherLayer,
-                solvedChildContact ? &supportPointGame : nullptr);
+                solvedChildContact ? &supportPointGame : nullptr,targetNormal,solvedChildContact?static_cast<std::uint32_t>(manifoldPointCount):0);
         }
     }
 
@@ -1345,11 +1379,11 @@
          */
         const bool rightBodyPairSuppressed =
             (bodyAIsRight || bodyBIsRight) &&
-            (_suppression.rightDominantSuppressed.load(std::memory_order_acquire) ||
+            (weaponHandSuppressedFor(false, WeaponHandReason::Dominant) ||
                 _rightHand.hasContactEvidenceSuppressedAtomic());
         const bool leftBodyPairSuppressed =
             (bodyAIsLeft || bodyBIsLeft) &&
-            (_suppression.leftWeaponSupportSuppressed.load(std::memory_order_acquire) ||
+            (weaponHandSuppressedFor(true, WeaponHandReason::Grip) ||
                 _leftHand.hasContactEvidenceSuppressedAtomic());
         if (rightBodyPairSuppressed || leftBodyPairSuppressed) {
             ROCK_LOG_SAMPLE_DEBUG(Hand,

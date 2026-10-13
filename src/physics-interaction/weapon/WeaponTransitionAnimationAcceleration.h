@@ -109,5 +109,6 @@ namespace rock::weapon_transition_animation_acceleration
         const Identity& identity,
         weapon_transition_animation_acceleration_policy::Direction direction) noexcept;
     void service(const ServiceInput& input) noexcept;
+    [[nodiscard]] bool hasGeneratedFirearmPose(RE::PlayerCharacter* player, const Identity& identity) noexcept;
     void cancel(const char* reason) noexcept;
 }

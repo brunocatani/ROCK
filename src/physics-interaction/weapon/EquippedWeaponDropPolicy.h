@@ -9,6 +9,7 @@ namespace rock::equipped_weapon_drop_policy
         Off = 1,
         ToggleDrop = 2,
         AutoDrop = 3,
+        EquippedDrop = 4,
     };
 
     [[nodiscard]] inline constexpr Mode fromSetting(int value) noexcept
@@ -16,6 +17,7 @@ namespace rock::equipped_weapon_drop_policy
         switch (value) {
         case 2: return Mode::ToggleDrop;
         case 3: return Mode::AutoDrop;
+        case 4: return Mode::EquippedDrop;
         default: return Mode::Off;
         }
     }
@@ -26,6 +28,24 @@ namespace rock::equipped_weapon_drop_policy
         Right,
         Left,
     };
+
+    inline constexpr bool requiresAuthoredHandoffPose(Mode mode) noexcept
+    {
+        return mode == Mode::ToggleDrop || mode == Mode::AutoDrop;
+    }
+
+    enum class RetainedDropCommit { Released, PhysicsRefused, PresentationRefused };
+
+    // A physical release is provisional until presentation has relinquished
+    // the hands. Failure must restore held physics before reporting retention.
+    template<class Release, class Retain, class Restore>
+    RetainedDropCommit commitRetainedDrop(Release&& release, Retain&& retain, Restore&& restore)
+    {
+        if (!release()) return RetainedDropCommit::PhysicsRefused;
+        if (retain()) return RetainedDropCommit::Released;
+        restore();
+        return RetainedDropCommit::PresentationRefused;
+    }
 
     [[nodiscard]] inline constexpr bool captureOwnerCurrent(bool manual, bool sourceIsLeft,
         std::uint64_t confirmed, std::uint64_t sessionOwner, std::uint64_t generation, bool nativeCanonicalCurrent) noexcept

@@ -124,11 +124,6 @@ namespace rock::contact_signal_subscription_policy
         };
     }
 
-    inline constexpr bool shouldAcceptCallback(const ContactSignalSubscriptionSnapshot& current, std::uintptr_t callbackWorld)
-    {
-        return evaluateCallbackAcceptance(current, callbackWorld).accept;
-    }
-
     inline constexpr bool shouldRetainNativeSlotAfterDeactivation(const ContactSignalSubscriptionSnapshot& current)
     {
         return isActiveSubscription(current);

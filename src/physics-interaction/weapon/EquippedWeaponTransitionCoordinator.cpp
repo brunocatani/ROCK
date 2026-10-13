@@ -1,14 +1,18 @@
 #include "physics-interaction/weapon/EquippedWeaponTransitionCoordinator.h"
+#include "RockConfig.h"
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/weapon/EquippedWeaponVisualState.h"
 #include "physics-interaction/weapon/NativeEquippedWeaponAttach.h"
 #include "physics-interaction/weapon/NativeEquippedWeaponDraw.h"
+#include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
+#include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/Actor.h"
+#include "RE/Bethesda/TESBoundObjects.h"
 
 #include <algorithm>
 
@@ -231,7 +235,15 @@ namespace rock
         if (_bridge.isActive()) {
             _bridge.shutdown();
         }
-        const bool bridgeStarted = _bridge.begin(bridgeInput);
+        _bridgeDisabledForTest = source == Source::HeldTriggerEquip &&
+            g_rockConfig.rockDebugDisableTriggerEquipBridge;
+        auto handoffInput = bridgeInput;
+        handoffInput.handPoseOnly = _bridgeDisabledForTest;
+        const bool bridgeStarted = _bridge.begin(handoffInput);
+        if (_bridgeDisabledForTest) {
+            releasePendingNativeCull(true);
+            ROCK_LOG_INFO(Weapon, "Trigger equip visual bridge disabled for test form={:08X}; native presentation exposed, hand continuity retained", expected.formID);
+        }
         _heldBridgeStarted = bridgeStarted && _heldTransfer.active();
         _expectedIdentity = expected;
         _boundIdentity = {};
@@ -451,6 +463,10 @@ namespace rock
         }
         if (_heldTransfer.active() && _heldTransfer.gripAcquired && !_bridge.isHandPoseHandoffActive() &&
             _heldTransfer.matchesTarget(current.formID, current.instanceData) && _nativeRenderable) recordGripPresentation();
+        trigger_equip_readiness_trace::frame(visual, _bridge.isModelPresented(),
+            _pendingGrip.pending || (_heldTransfer.active() && !_heldTransfer.gripAcquired),
+            input.nativeWeaponAnimationActive, input.menuBlocking);
+        trigger_equip_readiness_trace::parts(visual.weaponRoot, 1, _bridge.isModelPresented());
         if (!_active) {
             return;
         }
@@ -552,6 +568,20 @@ namespace rock
         }
 
         const bool bridgeOwnsCull = _bridge.ownsNativeInstanceCull(visual.exactInstance);
+        bool nativePoseReady = true;
+        if (_source == Source::HeldTriggerEquip && !_policyState.nativeHandoffObserved && _bridge.hasVisualModel()) {
+            auto* equipped = f4vr::getEquippedWeaponItem();
+            auto* object = equipped ? equipped->item.object : nullptr;
+            if (object && object->formType == RE::ENUM_FORM_ID::kWEAP) {
+                auto* weapon = static_cast<RE::TESObjectWEAP*>(object);
+                auto* instance = equipped->item.instanceData.get();
+                auto* data = instance ? static_cast<RE::TESObjectWEAP::InstanceData*>(instance) : &weapon->weaponData;
+                if (data->type == RE::WEAPON_TYPE::kGun) {
+                    nativePoseReady = weapon_transition_animation_acceleration::hasGeneratedFirearmPose(
+                        f4vr::getPlayer(), {_boundIdentity.formID, _boundIdentity.instanceData, _boundIdentity.equipIndex});
+                }
+            }
+        }
         const auto presentationLocalAttemptsBeforeAdvance =
             _policyState.localVisibilityAttempts;
         const auto presentationAttachAttemptsBeforeAdvance =
@@ -572,6 +602,7 @@ namespace rock
                 .bridgeOwnsNativeInstanceCull = bridgeOwnsCull,
                 .gripHandoffPending = _pendingGrip.pending ||
                     (_heldTransfer.active() && !_heldTransfer.gripAcquired) || _bridge.isHandPoseHandoffActive(),
+                .nativePoseReady = nativePoseReady,
             });
 
         using NativeWeaponState =
@@ -611,6 +642,12 @@ namespace rock
 
         const auto applyDrawSubmissionOutcome =
             [this](const native_equipped_weapon_draw::Result& result) noexcept {
+                if (result.result == native_equipped_weapon_draw::SubmitResult::GraphPending) {
+                    // Loading is not a rejected draw. Service it next frame,
+                    // within the existing deadline, without the action retry delay.
+                    _policyState.nextDrawRequestAtSeconds = _drawRecoveryElapsedSeconds;
+                    if (_policyState.drawRequests) --_policyState.drawRequests;
+                }
                 if (result.result ==
                         native_equipped_weapon_draw::SubmitResult::
                             PartialActionRecovered &&
@@ -635,6 +672,7 @@ namespace rock
                     result.result ==
                         native_equipped_weapon_draw::SubmitResult::
                             RecoveryPreparationUnavailable ||
+                    result.result == native_equipped_weapon_draw::SubmitResult::GraphPreparationUnavailable ||
                     result.result ==
                         native_equipped_weapon_draw::SubmitResult::
                             PartialRecoveryUnavailable ||
@@ -652,7 +690,7 @@ namespace rock
                     .formID = _boundIdentity.formID,
                     .instanceData = _boundIdentity.instanceData,
                     .equipIndex = _boundIdentity.equipIndex,
-                });
+                }, _source == Source::HeldTriggerEquip);
             ROCK_LOG_INFO(Weapon,
                 "Equipped weapon transition draw recovery source={} formID={:08X} instance={:#x} request={} elapsed={:.3f}s state={}({})->{}({}) result={} evidenceSequence={} matchedActivations={} registeredUpdates={} activeClips={} updatedActiveClips={}",
                 sourceName(_source),
@@ -680,7 +718,7 @@ namespace rock
                         .formID = _boundIdentity.formID,
                         .instanceData = _boundIdentity.instanceData,
                         .equipIndex = _boundIdentity.equipIndex,
-                    });
+                    }, _source == Source::HeldTriggerEquip);
             ROCK_LOG_INFO(Weapon,
                 "Equipped weapon transition prepared draw recovery source={} formID={:08X} instance={:#x} request={} elapsed={:.3f}s state={}({})->{}({}) result={} evidenceSequence={} matchedActivations={} registeredUpdates={} activeClips={} updatedActiveClips={}",
                 sourceName(_source),
@@ -837,7 +875,7 @@ namespace rock
                 input.leftCarrySolvedWeaponWorldValid,
             .leftCarrySolvedWeaponWorld = input.leftCarrySolvedWeaponWorld,
         });
-        if (_heldTransfer.phase == held_weapon_transfer::Phase::AwaitGrip && !_bridge.isActive() &&
+        if (!_bridgeDisabledForTest && _heldTransfer.phase == held_weapon_transfer::Phase::AwaitGrip && !_bridge.isActive() &&
             visual.exactInstance && equipped_weapon_visual_state::isLocallyVisible(visual.exactInstance)) {
             // Native geometry may arrive after the model bridge has gone
             // (notably menu recovery). Hide only until actual hand acquisition.
@@ -855,8 +893,29 @@ namespace rock
         }
     }
 
+    void EquippedWeaponTransitionCoordinator::finalizeVisualPresentation()
+    {
+        trigger_equip_readiness_trace::renderedHands();
+        // Diagnose part movement even after the short visual bridge is gone.
+        // Re-resolve from the live current identity, never a retained node.
+        if (trigger_equip_readiness_trace::partCaptureActive()) {
+            const auto current = readCurrentIdentity();
+            if (current.valid()) {
+                const auto finalVisual = equipped_weapon_visual_state::observe(current.formID,
+                    _active ? _supersededNativeInstanceNode : 0, &_visualCache);
+                trigger_equip_readiness_trace::parts(finalVisual.weaponRoot, 2, _bridge.isModelPresented());
+            }
+        }
+        if (!_active || !_bridge.hasVisualModel() || !_bridge.isModelPresented() ||
+            !_boundIdentity.valid() || readCurrentIdentity() != _boundIdentity) return;
+        const auto visual = equipped_weapon_visual_state::observe(
+            _boundIdentity.formID, _supersededNativeInstanceNode, &_visualCache);
+        _bridge.finalizePresentationVisibility(visual);
+    }
+
     void EquippedWeaponTransitionCoordinator::shutdown()
     {
+        trigger_equip_readiness_trace::stop("shutdown");
         if (_heldTransfer.active()) traceHeldTransfer("lifecycle-ended");
         const auto sequence = _heldTransfer.sequence;
         _heldTransfer = { .sequence = sequence };
@@ -888,6 +947,7 @@ namespace rock
         resetDrawRecoveryClock(false);
         _observationInitialized = false;
         _active = false;
+        _bridgeDisabledForTest = false;
         _waitingForExpectedIdentity = false;
         _requestCurrentPending = false;
         _wasMenuBlocking = false;
@@ -899,6 +959,7 @@ namespace rock
 
     void EquippedWeaponTransitionCoordinator::abandonSceneGraph()
     {
+        trigger_equip_readiness_trace::stop("scene-abandoned");
         if (_heldTransfer.active()) traceHeldTransfer("lifecycle-ended");
         const auto sequence = _heldTransfer.sequence;
         _heldTransfer = { .sequence = sequence };
@@ -930,6 +991,7 @@ namespace rock
         resetDrawRecoveryClock(false);
         _observationInitialized = false;
         _active = false;
+        _bridgeDisabledForTest = false;
         _waitingForExpectedIdentity = false;
         _requestCurrentPending = false;
         _wasMenuBlocking = false;
@@ -1043,7 +1105,7 @@ namespace rock
                         .formID = _boundIdentity.formID,
                         .instanceData = _boundIdentity.instanceData,
                         .equipIndex = _boundIdentity.equipIndex,
-                    });
+                    }, _source == Source::HeldTriggerEquip);
             ROCK_LOG_INFO(Weapon,
                 "Equipped weapon transition initial held draw source={} formID={:08X} instance={:#x} state={}({})->{}({}) result={}",
                 sourceName(_source),
@@ -1109,6 +1171,7 @@ namespace rock
         _activeSeconds = 0.0f;
         resetDrawRecoveryClock(false);
         _active = false;
+        _bridgeDisabledForTest = false;
         _waitingForExpectedIdentity = false;
         _lateRecoveryWindowGranted = false;
         _drawExhaustionLogged = false;

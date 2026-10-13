@@ -4,34 +4,41 @@
 #include <ROCK/Hands.h>
 #include <ROCK/Collision.h>
 #include <ROCK/Grab.h>
-#include <ROCK/GrabV1_2.h>
+#include <ROCK/GrabV1_3.h>
 #include <ROCK/Touch.h>
+#include <ROCK/TouchV1_1.h>
 #include <ROCK/Weapon.h>
 #include <ROCK/WeaponV1_1.h>
-#include <ROCK/WeaponParts.h>
+#include <ROCK/WeaponPartsV1_7.h>
 #include <ROCK/Animation.h>
 #include <ROCK/Input.h>
 #include <ROCK/InputV1_1.h>
+#include <ROCK/InputV1_2.h>
+#include <ROCK/InputV1_5.h>
 #include <ROCK/References.h>
 #include <ROCK/PlayerController.h>
 #include <ROCK/Diagnostics.h>
 #include <ROCK/Configuration.h>
+#include <ROCK/NativeInteractionV1_1.h>
 
 namespace rock::api::core { const ApiV1& table() noexcept; }
 namespace rock::api::hands { const ApiV1& table() noexcept; }
 namespace rock::api::collision { const ApiV1& table() noexcept; }
-namespace rock::api::grab { const v1_2::Api& tableV1_2() noexcept; }
-namespace rock::api::touch { const ApiV1& table() noexcept; }
+namespace rock::api::grab { const v1_3::Api& tableV1_3() noexcept; }
+namespace rock::api::touch { const v1_1::Api& tableV1_1() noexcept; }
 namespace rock::api::weapon { const ApiV1& table() noexcept; }
 namespace rock::api::weapon { const v1_1::Api& tableV1_1() noexcept; }
-namespace rock::api::weaponparts { const ApiV1& table() noexcept; }
+namespace rock::api::weaponparts { const v1_7::Api& tableV1_7() noexcept; }
 namespace rock::api::animation { const ApiV1& table() noexcept; }
 namespace rock::api::input { const ApiV1& table() noexcept; }
 namespace rock::api::input { const v1_1::Api& tableV1_1() noexcept; }
+namespace rock::api::input { const v1_2::Api& tableV1_2() noexcept; }
+namespace rock::api::input { const v1_5::Api& tableV1_5() noexcept; }
 namespace rock::api::references { const ApiV1& table() noexcept; }
 namespace rock::api::playercontroller { const ApiV1& table() noexcept; }
 namespace rock::api::diagnostics { const ApiV1& table() noexcept; }
 namespace rock::api::configuration { const ApiV1& table() noexcept; }
+namespace rock::native_interaction_service { const api::native_interaction::ApiV1& table() noexcept; const api::native_interaction::v1_1::Api& tableV1_1() noexcept; }
 
 namespace rock::api::discovery {
 std::span<const RegisteredInterface> registeredInterfaces() noexcept {
@@ -39,16 +46,17 @@ std::span<const RegisteredInterface> registeredInterfaces() noexcept {
         registration(core::table(), core::kSupportedPermissions),
         registration(hands::table(), hands::kSupportedPermissions),
         registration(collision::table(), collision::kSupportedPermissions),
-        registration(grab::tableV1_2(), grab::kSupportedPermissions),
-        registration(touch::table(), touch::kSupportedPermissions),
+        registration(grab::tableV1_3(), grab::kSupportedPermissions),
+        registration(touch::tableV1_1(), touch::kSupportedPermissions),
         registration(weapon::tableV1_1(), weapon::kSupportedPermissions),
-        registration(weaponparts::table(), weaponparts::kSupportedPermissions),
+        registration(weaponparts::tableV1_7(), weaponparts::kSupportedPermissions),
         registration(animation::table(), animation::kSupportedPermissions),
-        registration(input::tableV1_1(), input::kSupportedPermissions),
+        registration(input::tableV1_5(), input::kSupportedPermissions),
         registration(references::table(), references::kSupportedPermissions),
         registration(playercontroller::table(), playercontroller::kSupportedPermissions),
         registration(diagnostics::table(), diagnostics::kSupportedPermissions),
         registration(configuration::table(), configuration::kSupportedPermissions),
+        registration(native_interaction_service::tableV1_1(), native_interaction::kSupportedPermissions),
     };
     return entries;
 }

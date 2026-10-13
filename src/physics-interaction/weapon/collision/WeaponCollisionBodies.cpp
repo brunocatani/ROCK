@@ -232,36 +232,6 @@ namespace rock
         ROCK_LOG_INFO(Weapon, "Weapon collision bodies destroyed count={}", activeDestroyed + inactiveDestroyed);
     }
 
-    void WeaponCollision::invalidateForScaleChange(RE::hknpWorld* world)
-    {
-        const bool hadWeaponBody = hasWeaponBody();
-        if (hadWeaponBody) {
-            ROCK_LOG_INFO(Weapon, "Generated weapon collision invalidated by physics scale change");
-            destroyWeaponBody(world);
-        } else {
-            clearAtomicBodyIds();
-            resetWeaponBodySetGeneration();
-            ROCK_LOG_DEBUG(Weapon, "Generated weapon collision scale invalidation had no active bodies");
-        }
-
-        _identity.cachedWeaponKey = 0;
-        _identity.cachedVisualKey = 0;
-        _identity.cachedIdentityKey = 0;
-        _identity.cachedOwnershipKey = 0;
-        _identity.cachedFormID = 0;
-        _identity.observedIdentityKey = 0;
-        _identity.observedOwnershipKey = 0;
-        _identity.observedFormID = 0;
-        _identity.observedInstanceContentKey = 0;
-        clearGeneratedSourceCompletenessTracking();
-        clearPendingWeaponVisualRebuild();
-        clearGeneratedSourceCache();
-        clearPendingGeneratedWeaponBuild(world, true);
-        resetVisualSourceUnavailableRetention();
-        _drive.rebuildRequested.store(false, std::memory_order_release);
-        _drive.failureCount.store(0, std::memory_order_release);
-    }
-
     void WeaponCollision::destroyWeaponBodyBank(WeaponBodyBank& bank, bool releaseShapeRef)
     {
         for (auto& instance : bank) {
@@ -320,13 +290,24 @@ namespace rock
             _bodies.retiredPayloads.size());
     }
 
+    void WeaponCollision::setEquippedDropActive(RE::hknpWorld* world, const bool active)
+    {
+        if (_equippedDropActive == active || !world || world != _cachedWorld) return;
+        auto mutation = _physicsCallbackGate ? _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
+        _equippedDropActive = active;
+        // In free flight the dynamic compound is the only physical weapon.
+        // Keep source hulls for mesh/part queries, without kinematic prop impulses.
+        setWeaponBodyBankCollisionEnabled(world, activeWeaponBodies(), !active);
+    }
+
     void WeaponCollision::setWeaponBodyBankCollisionEnabled(RE::hknpWorld* world, WeaponBodyBank& bank, bool enabled)
     {
         if (!world) {
             return;
         }
 
-        const std::uint32_t filterInfo = generatedWeaponCollisionFilterInfo(enabled);
+        const std::uint32_t filterInfo = generatedWeaponCollisionFilterInfo(enabled && !_equippedDropActive);
         for (auto& instance : bank) {
             if (instance.body.isValid()) {
                 body_collision::setFilterInfo(world, instance.body.getBodyId(), filterInfo);
@@ -500,7 +481,6 @@ namespace rock
         }
         _published.count.store(count, std::memory_order_release);
         endWeaponBodyPublication();
-        dumpEquippedWeaponOmodEvidence(bank, packageDriveNode);
     }
 
     void WeaponCollision::publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult)

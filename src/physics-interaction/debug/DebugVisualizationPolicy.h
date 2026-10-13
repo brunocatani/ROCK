@@ -6,7 +6,6 @@ namespace rock::debug_visualization_policy
     {
         bool colliderMaster{ false };
         bool targetColliders{ false };
-        bool colliderPhaseDiagnostics{ false };
         bool handColliders{ false };
         bool handBoneColliders{ false };
         bool bodyBoneColliders{ false };
@@ -29,7 +28,6 @@ namespace rock::debug_visualization_policy
         bool skeletonBoneLogging{ false };
         bool skeletonBoneTruncationLogging{ false };
         bool grabPocketNormal{ false };
-        bool grabContactPatch{ false };
         bool grabForceTorque{ false };
         bool grabForceTorqueText{ false };
         bool grabPivotSourceCollider{ false };
@@ -37,22 +35,16 @@ namespace rock::debug_visualization_policy
         bool grabSupportFrame{ false };
         bool handBoneContacts{ false };
         bool grabAuthorityProxy{ false };
-        bool grabTransformTelemetry{ false };
-        bool grabTransformTelemetryAxes{ false };
-        bool grabTransformTelemetryText{ false };
-        bool videoSyncMarker{ false };
         bool weaponAuthority{ false };
         bool looseWeaponGripZones{ false };
         bool authoredGripActivationZones{ false };
         bool nativeScopeActivation{ false };
-        bool worldOriginDiagnostics{ false };
     };
 
     struct State
     {
         bool colliderMaster{ false };
         bool targetColliders{ false };
-        bool colliderPhaseDiagnostics{ false };
         bool handColliders{ false };
         bool handBoneColliders{ false };
         bool bodyBoneColliders{ false };
@@ -77,22 +69,16 @@ namespace rock::debug_visualization_policy
         bool skeletonBoneLogging{ false };
         bool skeletonBoneTruncationLogging{ false };
         bool grabPocketNormal{ false };
-        bool grabContactPatch{ false };
         bool grabForceTorque{ false };
         bool grabForceTorqueText{ false };
         bool grabPivotSourceEvidence{ false };
         bool grabSupportFrame{ false };
         bool handBoneContacts{ false };
         bool grabAuthorityProxy{ false };
-        bool grabTransformTelemetry{ false };
-        bool grabTransformTelemetryAxes{ false };
-        bool grabTransformTelemetryText{ false };
-        bool videoSyncMarker{ false };
         bool weaponAuthority{ false };
         bool looseWeaponGripZones{ false };
         bool authoredGripActivationZones{ false };
         bool nativeScopeActivation{ false };
-        bool worldOriginDiagnostics{ false };
     };
 
     [[nodiscard]] constexpr State resolve(const Input& input)
@@ -101,13 +87,10 @@ namespace rock::debug_visualization_policy
         const bool forceTorque = input.grabForceTorque;
         const bool sweptArc = input.fingerSweptArc;
         const bool skeleton = input.skeletonBones;
-        const bool telemetry = input.grabTransformTelemetry;
 
         return {
             .colliderMaster = colliders,
             .targetColliders = colliders && input.targetColliders,
-            .colliderPhaseDiagnostics =
-                colliders && input.colliderPhaseDiagnostics,
             .handColliders = colliders && input.handColliders,
             .handBoneColliders = colliders && input.handBoneColliders,
             .bodyBoneColliders = colliders && input.bodyBoneColliders,
@@ -139,7 +122,6 @@ namespace rock::debug_visualization_policy
             .skeletonBoneTruncationLogging =
                 skeleton && input.skeletonBoneTruncationLogging,
             .grabPocketNormal = input.grabPocketNormal,
-            .grabContactPatch = input.grabContactPatch,
             .grabForceTorque = forceTorque,
             .grabForceTorqueText =
                 forceTorque && input.grabForceTorqueText,
@@ -148,18 +130,11 @@ namespace rock::debug_visualization_policy
             .grabSupportFrame = input.grabSupportFrame,
             .handBoneContacts = input.handBoneContacts,
             .grabAuthorityProxy = input.grabAuthorityProxy,
-            .grabTransformTelemetry = telemetry,
-            .grabTransformTelemetryAxes =
-                telemetry && input.grabTransformTelemetryAxes,
-            .grabTransformTelemetryText =
-                telemetry && input.grabTransformTelemetryText,
-            .videoSyncMarker = input.videoSyncMarker,
             .weaponAuthority = input.weaponAuthority,
             .looseWeaponGripZones = input.looseWeaponGripZones,
             .authoredGripActivationZones =
                 input.authoredGripActivationZones,
             .nativeScopeActivation = input.nativeScopeActivation,
-            .worldOriginDiagnostics = input.worldOriginDiagnostics,
         };
     }
 }

@@ -20,8 +20,8 @@
  * the seat ROCK itself computed before the user corrected it.
  *
  * Write-only by design: nothing in ROCK reads captures back, so there is no
- * parse() here. They are ground-truth records consumed by offline tooling and
- * by the pose-solver test harness.
+ * parse() here. They are runtime measurements consumed by offline tooling;
+ * capturing an existing pose does not establish that it is a good grip.
  *
  * SPACES. Every frame, point and normal is in one of exactly three spaces, and
  * the field name says which:
@@ -40,7 +40,10 @@
  */
 namespace rock::saved_grab_capture
 {
-    inline constexpr std::uint32_t kFormatVersion = 1;
+    // v2 corrects nodeInObjectRoot/bodyInObjectNode to ordinary Ni frame
+    // relations. v1 used a generated-proxy adapter for those two fields;
+    // historical captures must not blindly replay those incorrect relations.
+    inline constexpr std::uint32_t kFormatVersion = 2;
     inline constexpr std::size_t kFingerCount = 5;
     inline constexpr std::size_t kFingerJointValueCount = 15;
 

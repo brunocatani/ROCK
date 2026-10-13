@@ -1,7 +1,6 @@
 #include "physics-interaction/core/RockRuntimeState.h"
 
 #include "RockConfig.h"
-#include "physics-interaction/core/RockRuntimeStatePolicy.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/timing/RockGameTiming.h"
@@ -36,23 +35,24 @@ namespace rock::runtime_state
             bool gameStopped = false;
         };
         FrameMenuSample s_frameMenuSample{};
-        runtime_state_policy::PlayerSpaceTrackerState s_playerSpaceTracker{};
+        constexpr float kPlayerMovingThresholdGameUnits = 0.05f;
+        bool s_hasPreviousPlayerPosition = false;
+        RE::NiPoint3 s_previousPlayerPosition{};
         DirectSkeletonBoneReader s_skeletonReader;
         DirectSkeletonBoneSnapshot s_readinessBones;
 
-        [[nodiscard]] runtime_state_policy::Vec3 toPolicyVec(const RE::NiPoint3& value)
+        /*
+         * The hand/finger bone check only changes when FRIK rebuilds the
+         * skeleton, which replaces the flattened bone tree. A tree that already
+         * passed the check is accepted without re-reading its bones.
+         */
+        struct VerifiedSkeleton
         {
-            return runtime_state_policy::Vec3{
-                .x = value.x,
-                .y = value.y,
-                .z = value.z,
-            };
-        }
-
-        [[nodiscard]] RE::NiPoint3 fromPolicyVec(const runtime_state_policy::Vec3& value)
-        {
-            return RE::NiPoint3(value.x, value.y, value.z);
-        }
+            const void* root = nullptr;
+            const void* transforms = nullptr;
+            std::uint32_t transformCount = 0;
+        };
+        VerifiedSkeleton s_verifiedSkeleton{};
 
         [[nodiscard]] bool hasPlayer()
         {
@@ -113,7 +113,7 @@ namespace rock::runtime_state
         {
             PlayerSpaceFrame frame{};
             if (!hasPlayer()) {
-                s_playerSpaceTracker = {};
+                s_hasPreviousPlayerPosition = false;
                 return frame;
             }
 
@@ -125,60 +125,58 @@ namespace rock::runtime_state
                 frame.valid = true;
                 frame.source = "worldRoot";
                 frame.world = worldRoot->world;
+            } else {
+                s_hasPreviousPlayerPosition = false;
+                return frame;
             }
 
-            const auto decision = runtime_state_policy::updatePlayerSpaceTracker(
-                s_playerSpaceTracker,
-                runtime_state_policy::PlayerSpaceTrackerInput{
-                    .positionValid = frame.valid,
-                    .currentPosition = toPolicyVec(frame.world.translate),
-                });
-            frame.moving = decision.moving;
-            frame.deltaGameUnits = fromPolicyVec(decision.deltaGameUnits);
+            if (s_hasPreviousPlayerPosition) {
+                frame.deltaGameUnits = frame.world.translate - s_previousPlayerPosition;
+                frame.moving = frame.deltaGameUnits.Length() > kPlayerMovingThresholdGameUnits;
+            }
+            s_hasPreviousPlayerPosition = true;
+            s_previousPlayerPosition = frame.world.translate;
             return frame;
         }
 
         [[nodiscard]] bool sampleLocalSkeletonReady(RuntimeFrameSnapshot& snapshot)
         {
-            auto readinessInput = runtime_state_policy::SkeletonReadinessInput{
-                .playerAvailable = snapshot.playerAvailable,
-            };
-
             if (!snapshot.playerAvailable) {
                 s_skeletonReader.resetCache();
-                return runtime_state_policy::evaluateSkeletonReadiness(readinessInput);
+                s_verifiedSkeleton = {};
+                return false;
             }
 
-            auto* worldRoot = safeWorldRootNode();
-            auto* rootNode = safeRootNode(worldRoot);
+            auto* rootNode = safeRootNode(safeWorldRootNode());
             auto* flattenedTree = rootNode ? reinterpret_cast<f4vr::BSFlattenedBoneTree*>(rootNode) : nullptr;
-
             snapshot.localSkeletonRootAttached = rootNode && rootNode->parent;
-            readinessInput.rootNodeAvailable = worldRoot != nullptr && rootNode != nullptr;
-            readinessInput.rootParentAttached = snapshot.localSkeletonRootAttached;
-            readinessInput.flattenedTreeValid = flattenedTreeValid(flattenedTree);
-
-            if (!readinessInput.rootNodeAvailable || !readinessInput.rootParentAttached || !readinessInput.flattenedTreeValid) {
+            if (!snapshot.localSkeletonRootAttached || !flattenedTreeValid(flattenedTree)) {
                 s_skeletonReader.resetCache();
-                return runtime_state_policy::evaluateSkeletonReadiness(readinessInput);
+                s_verifiedSkeleton = {};
+                return false;
             }
 
-            auto& boneSnapshot = s_readinessBones;
+            const VerifiedSkeleton current{
+                .root = rootNode,
+                .transforms = flattenedTree->transforms,
+                .transformCount = static_cast<std::uint32_t>(flattenedTree->numTransforms),
+            };
+            if (current.root == s_verifiedSkeleton.root && current.transforms == s_verifiedSkeleton.transforms &&
+                current.transformCount == s_verifiedSkeleton.transformCount) {
+                snapshot.localSkeletonRequiredHandBonesReady = true;
+                return true;
+            }
+
             const bool captured = s_skeletonReader.capture(
                 skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                 skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
                 SkeletonBoneCaptureSpace::Rendered,
-                boneSnapshot);
-
-            const bool hasHands = captured && snapshotHasBone(boneSnapshot, "RArm_Hand") && snapshotHasBone(boneSnapshot, "LArm_Hand");
-            const bool handBonesReady =
-                hasHands &&
-                snapshotHasRequiredFingerBones(boneSnapshot);
-
+                s_readinessBones);
+            const bool handBonesReady = captured && snapshotHasBone(s_readinessBones, "RArm_Hand") &&
+                snapshotHasBone(s_readinessBones, "LArm_Hand") && snapshotHasRequiredFingerBones(s_readinessBones);
             snapshot.localSkeletonRequiredHandBonesReady = handBonesReady;
-            readinessInput.requiredHandBonesResolved = handBonesReady;
-
-            return runtime_state_policy::evaluateSkeletonReadiness(readinessInput);
+            s_verifiedSkeleton = handBonesReady ? current : VerifiedSkeleton{};
+            return handBonesReady;
         }
     }
 
@@ -195,7 +193,8 @@ namespace rock::runtime_state
     void resetTransientState()
     {
         game_timing::resetForNewSession();
-        s_playerSpaceTracker = {};
+        s_hasPreviousPlayerPosition = false;
+        s_verifiedSkeleton = {};
         s_skeletonReader.resetCache();
         s_readinessBones = {};
         s_snapshot = {};

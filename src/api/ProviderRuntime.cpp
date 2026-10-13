@@ -1,7 +1,11 @@
 #include "ProviderFrameThreadOwner.h"
+#include "LooseWeaponStateService.h"
+#include "NativeInteractionService.h"
 #include "providers/WeaponPartsMarshalling.h"
 #include "api/InterfaceNegotiation.h"
 #include "ProviderRuntimeServices.h"
+#include "physics-interaction/input/PhysicalReloadInput.h"
+#include "physics-interaction/input/SupportTriggerInput.h"
 #include "OwnerBindingPolicy.h"
 #include "EventStreams.h"
 #include "ROCKProviderApiInternal.h"
@@ -32,7 +36,6 @@
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/native/CharacterControllerRuntime.h"
 #include "physics-interaction/native/ReferenceInteraction.h"
-#include "physics-interaction/native/WeaponActionTrace.h"
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -288,7 +291,7 @@ namespace rock::provider::runtime
 
     struct ConsumerSlot
     {
-        std::array<InterfaceBinding, 13> interfaces{};
+        std::array<InterfaceBinding, 14> interfaces{};
         bool revoked{ false };
         bool pendingRevoke{ false };
         std::uint64_t token{ 0 };
@@ -429,6 +432,7 @@ namespace rock::provider::runtime
     };
 
     std::mutex s_weaponPartMutex;
+    weapon_part_points::Registry s_weaponPartGrabPoints;
     std::array<WeaponPartTargetSlot, ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1> s_weaponPartTargets{};
     std::array<WeaponPartDriveSlot, ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> s_weaponPartDrives{};
 
@@ -652,23 +656,6 @@ namespace rock::provider::runtime
             source.translate[0],
             source.translate[1],
             source.translate[2]);
-        target.scale = source.scale;
-        return target;
-    }
-
-    [[nodiscard]] RockProviderTransform toProviderTransform(
-        const RE::NiTransform& source)
-    {
-        RockProviderTransform target{};
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                target.rotate[row * 3 + column] =
-                    source.rotate.entry[row][column];
-            }
-        }
-        target.translate[0] = source.translate.x;
-        target.translate[1] = source.translate.y;
-        target.translate[2] = source.translate.z;
         target.scale = source.scale;
         return target;
     }
@@ -1059,6 +1046,7 @@ namespace rock::provider::runtime
 
     void clearWeaponPartTargetsForOwnerLocked(std::uint64_t ownerToken)
     {
+        s_weaponPartGrabPoints.clear(ownerToken);
         for (auto& slot : s_weaponPartTargets) {
             if (slot.active && slot.ownerToken == ownerToken) {
                 slot = {};
@@ -1584,6 +1572,10 @@ namespace rock::provider::runtime
 
     void clearOwnerStateAfterCallbackFault(const std::uint64_t ownerToken)
     {
+        native_interaction_service::clearOwner(ownerToken);
+        loose_weapon_state::clear(ownerToken);
+        physical_reload_input::clearOwner(ownerToken);
+        support_trigger_input::clearOwner(ownerToken);
         {
             std::scoped_lock lock(s_consumerMutex);
             if (auto* slot = findConsumerSlotLocked(ownerToken)) slot->revoked = true;
@@ -1856,8 +1848,35 @@ namespace rock::provider::runtime
         const auto permission = validateReadCapability(ownerToken, capability);
         if (permission != RockProviderResultV1::Ok) return permission;
         if (!onAnimationOwnerThread()) return RockProviderResultV1::WrongThread;
-        if (!apiIsProviderReady()) return RockProviderResultV1::NotReady;
-        return validateGenerationGuards(query->worldGeneration, query->skeletonGeneration, query->providerGeneration);
+        const bool ready = apiIsProviderReady();
+        const auto result = ready ? validateGenerationGuards(query->worldGeneration,
+            query->skeletonGeneration, query->providerGeneration) : RockProviderResultV1::NotReady;
+        if (result != RockProviderResultV1::Ok) {
+            // Animation-owner thread only. Preserve the query contract and log
+            // the actual rejecting authority, including during frame resets.
+            static std::uint64_t lastReportedFrame = 0;
+            static bool reported = false;
+            const auto frame = currentGameFrameIndex();
+            if (!reported || frame < lastReportedFrame || frame - lastReportedFrame >= 600) {
+                reported = true;
+                lastReportedFrame = frame;
+                RockProviderFrameSnapshot published{};
+                {
+                    std::scoped_lock lock(s_snapshotMutex);
+                    published = s_lastSnapshot;
+                }
+                logger::warn("ROCK reference query rejected owner={:016X} ref={:08X} capability={} result={} stage={} frame={} requested={}/{}/{} authorityAvailable={} authority={}/{}/{} published={}/{}/{} publishedFrame={}",
+                    ownerToken, query->referenceFormId, static_cast<unsigned>(capability), static_cast<unsigned>(result),
+                    ready ? "generation-guards" : "provider-readiness", frame,
+                    query->worldGeneration, query->skeletonGeneration, query->providerGeneration,
+                    s_generationStateAvailable.load(std::memory_order_acquire),
+                    s_currentWorldGeneration.load(std::memory_order_acquire),
+                    s_currentSkeletonGeneration.load(std::memory_order_acquire),
+                    s_currentProviderGeneration.load(std::memory_order_acquire),
+                    published.worldGeneration, published.skeletonGeneration, published.providerGeneration, published.frameIndex);
+            }
+        }
+        return result;
     }
 
 
@@ -2184,10 +2203,13 @@ namespace rock::provider
             return;
         }
         s_frameClock.beginFrame(frameIndex);
+        physical_reload_input::beginFrame(frameIndex);
+        support_trigger_input::beginFrame(frameIndex);
     }
 
     void setPhysicsInteractionInstance(rock::PhysicsInteraction* pi)
     {
+        if(!pi) { physical_reload_input::reset(); support_trigger_input::reset(); }
         s_physicsInteraction.publish(pi);
     }
 
@@ -2300,19 +2322,6 @@ namespace rock::provider
         for (auto& state : handInteractionStates) {
             state.frameIndex = snapshot.frameIndex;
         }
-
-        std::uint8_t traceHands = 0;
-        for (const auto& state : handInteractionStates) {
-            using Flag = RockProviderHandInteractionFlagV1;
-            const auto has = [&](Flag flag) { return (state.flags & static_cast<std::uint32_t>(flag)) != 0; };
-            const bool holding = state.phase == RockProviderHandInteractionPhaseV1::Holding;
-            const std::uint8_t bits = has(Flag::Valid) ? static_cast<std::uint8_t>(1 |
-                ((holding && has(Flag::TouchGrab) && has(Flag::FixedSurfaceLatch)) ? 2 : 0) |
-                ((holding && (has(Flag::LooseObject) || has(Flag::LooseWeapon))) ? 4 : 0) |
-                (has(Flag::FiringGrip) ? 8 : 0)) : 0;
-            traceHands |= static_cast<std::uint8_t>(bits << (state.hand == RockProviderHand::Left ? 4 : 0));
-        }
-        weapon_action_trace::publishHands(snapshot.frameIndex, traceHands);
 
         RockProviderEquippedWeaponStateV1 equippedWeaponState{};
         (void)pi.queryProviderEquippedWeaponStateV1(equippedWeaponState);
@@ -2465,6 +2474,11 @@ namespace rock::provider
             s_lastHandInteractionStates = handInteractionStates;
             s_lastEquippedWeaponState = equippedWeaponState;
         }
+
+        // Revalidate against this publication before consumers run. The earlier
+        // game-clock expiry check only has the previous weapon snapshot.
+        physical_reload_input::beginFrame(snapshot.frameIndex);
+        support_trigger_input::beginFrame(snapshot.frameIndex);
 
         if (hadPrevious && lifecycleChanged) {
             RockProviderEventV1 event{};
@@ -2806,6 +2820,7 @@ namespace rock::provider
                 }
             }
             s_weaponPartTargets = {};
+            s_weaponPartGrabPoints = {};
             s_weaponPartDrives = {};
         }
         {
@@ -3220,7 +3235,7 @@ namespace rock::provider
     std::uint32_t copyWeaponPartDriveTargetsV1(
         RockProviderWeaponPartDriveTargetV1* outTargets,
         std::uint32_t maxTargets,
-        std::uint64_t* outOwnerTokens)
+        std::uint64_t* outOwnerTokens,bool pruneExpired)
     {
         if (!outTargets || maxTargets == 0) {
             return 0;
@@ -3229,9 +3244,9 @@ namespace rock::provider
         const auto frameIndex = currentProviderFrameIndex();
         std::uint32_t copied = 0;
         std::scoped_lock lock(s_weaponPartMutex);
-        pruneExpiredWeaponPartDrivesLocked(frameIndex);
+        if(pruneExpired)pruneExpiredWeaponPartDrivesLocked(frameIndex);
         for (const auto& slot : s_weaponPartDrives) {
-            if (!slot.active) {
+            if (!slot.active || !provider_lease_policy::isActive(frameIndex,slot.expiresAfterFrame)) {
                 continue;
             }
             if (copied >= maxTargets) {
@@ -3330,7 +3345,7 @@ namespace rock::provider::runtime {
         using rock::api::Status;
         if (events::inSynchronousCallback()) return Status::Busy;
         const auto id=static_cast<std::uint32_t>(family);
-        if (!owner || id<1 || id>13) return Status::InvalidArgument;
+        if (!owner || id<1 || id>14) return Status::InvalidArgument;
         {
             std::scoped_lock lock(s_consumerMutex);
             const auto* slot=findConsumerSlotLocked(owner);
@@ -3345,7 +3360,7 @@ namespace rock::provider::runtime {
         using rock::api::Status;
         if (events::inSynchronousCallback()) return Status::Busy;
         const auto id=static_cast<std::uint32_t>(family);
-        if (id<1 || id>13) return Status::UnknownInterface;
+        if (id<1 || id>14) return Status::UnknownInterface;
         const auto* registration = api::discovery::findRegistration(api::discovery::registeredInterfaces(), family, major);
         if (!registration) return Status::UnsupportedMajor;
         const auto supported = registration->permissions;
@@ -3370,6 +3385,7 @@ namespace rock::provider::runtime {
         return {s.frameIndex,s.stateSequence,s.worldGeneration,s.skeletonGeneration,s.providerGeneration,s.collisionGeneration};
     }
     void revoke(std::uint64_t owner) { clearOwnerStateAfterCallbackFault(owner); }
+    bool onOwnerThread() noexcept { return onAnimationOwnerThread(); }
 }
 
 namespace rock::provider::runtime {

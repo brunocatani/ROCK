@@ -37,6 +37,13 @@ int main()
     assert(!completeBodyScan(true,65,65,0));
     assert(!completeBodyScan(true,5,4,0));
     assert(!completeBodyScan(true,1,1,1));
+    assert(completeBodyScan(true,3,3,1,1)); // Empty attachment wrapper, all three real bodies qualified.
+    assert(!completeBodyScan(true,3,3,1,0)); // Missing/unreadable owner is not positive emptiness.
+    assert(!completeBodyScan(true,3,3,2,1)); // One empty wrapper cannot hide another scan failure.
+    assert(!completeBodyScan(true,3,2,1,1)); // Every discovered body must still be accepted.
+    assert(!completeBodyScan(false,3,3,1,1));
+    assert(!completeBodyScan(true,0,0,1,1)); // All-empty scenes cannot retire a weapon.
+    assert(!completeBodyScan(true,3,3,0,1)); // Inconsistent accounting fails closed.
     using rock::physics_body_classifier::BodyMotionType;
     using rock::physics_body_classifier::BodyRejectReason;
     // Timberwolf: five driven bodies and one owned static part at motion 0.

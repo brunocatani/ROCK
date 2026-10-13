@@ -51,7 +51,6 @@ namespace rock::shoulder_stash
     struct RuntimeState
     {
         bool candidate = false;
-        bool confirmed = false;
         body_zone::BodyZoneKind zone = body_zone::BodyZoneKind::Unknown;
         EvidenceSource source = EvidenceSource::None;
         std::uint32_t shoulderBodyId = kInvalidBodyId;
@@ -64,7 +63,6 @@ namespace rock::shoulder_stash
         float sustainedMissSeconds = 0.0f;
         bool hasSustainedContactAnchor = false;
         bool hasSustainedPointGame = false;
-        float dwellSeconds = 0.0f;
         float nextCandidatePulseTimeSeconds = 0.0f;
         RE::NiPoint3 lastKinematicProbePointGame{};
         bool hasLastKinematicProbePoint = false;
@@ -104,14 +102,6 @@ namespace rock::shoulder_stash
         }
     }
 
-    [[nodiscard]] inline bool isBodyZoneEvidenceSource(EvidenceSource source) noexcept
-    {
-        return source == EvidenceSource::BodyZoneCollider ||
-               source == EvidenceSource::BodyZoneContact ||
-               source == EvidenceSource::BodyZoneSustainedContact ||
-               source == EvidenceSource::BodyZoneColliderAndContact;
-    }
-
     [[nodiscard]] inline bool sustainedContactMissWithinTolerance(float missSeconds, float maxMissSeconds) noexcept
     {
         return std::isfinite(maxMissSeconds) && maxMissSeconds >= 0.0f &&
@@ -130,11 +120,6 @@ namespace rock::shoulder_stash
         state.hasSustainedPointGame = false;
     }
 
-    [[nodiscard]] inline bool isHmdBackVolumeEvidenceSource(EvidenceSource source) noexcept
-    {
-        return source == EvidenceSource::HmdBackVolume;
-    }
-
     [[nodiscard]] inline bool hmdBackBehindGateAllows(float hmdForwardOffsetGameUnits, float minBehindGameUnits) noexcept
     {
         if (!std::isfinite(hmdForwardOffsetGameUnits)) {
@@ -146,42 +131,6 @@ namespace rock::shoulder_stash
         }
 
         return hmdForwardOffsetGameUnits <= -minBehindGameUnits;
-    }
-
-    [[nodiscard]] inline bool exceedsShoulderStashSpeedLimit(float speedGameUnitsPerSecond, float maxSpeedGameUnitsPerSecond) noexcept
-    {
-        return std::isfinite(speedGameUnitsPerSecond) &&
-               std::isfinite(maxSpeedGameUnitsPerSecond) &&
-               maxSpeedGameUnitsPerSecond > 0.0f &&
-               speedGameUnitsPerSecond > maxSpeedGameUnitsPerSecond;
-    }
-
-    [[nodiscard]] inline bool shoulderStashDwellIdentityMatches(
-        body_zone::BodyZoneKind previousZone,
-        EvidenceSource previousSource,
-        std::uint32_t previousShoulderBodyId,
-        body_zone::BodyZoneKind nextZone,
-        EvidenceSource nextSource,
-        std::uint32_t nextShoulderBodyId) noexcept
-    {
-        if (previousZone != nextZone) {
-            return false;
-        }
-
-        if (previousSource == nextSource && previousShoulderBodyId == nextShoulderBodyId) {
-            return true;
-        }
-
-        const bool previousHmd = isHmdBackVolumeEvidenceSource(previousSource);
-        const bool nextHmd = isHmdBackVolumeEvidenceSource(nextSource);
-        if (previousHmd != nextHmd) {
-            const auto bodySource = previousHmd ? nextSource : previousSource;
-            return isBodyZoneEvidenceSource(bodySource);
-        }
-
-        return isBodyZoneEvidenceSource(previousSource) &&
-               isBodyZoneEvidenceSource(nextSource) &&
-               previousShoulderBodyId == nextShoulderBodyId;
     }
 
     [[nodiscard]] inline bool finitePoint(const RE::NiPoint3& value) noexcept

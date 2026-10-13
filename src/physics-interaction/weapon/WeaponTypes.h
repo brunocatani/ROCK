@@ -13,6 +13,7 @@
 #include <string>
 
 #include "RE/NetImmerse/NiPoint.h"
+#include "RE/NetImmerse/NiTransform.h"
 
 namespace RE
 {
@@ -246,6 +247,17 @@ namespace rock
         std::uint32_t attachPointFormId{ 0 };
     };
 
+    struct WeaponGrabPointLocation {
+        std::uint64_t ownerToken{};
+        std::uint32_t groupId{};
+        std::uint64_t sourceKey{};
+        std::uint32_t pointId{};
+        RE::NiPoint3 pointInSource{};
+        bool anchorAtPoint{};
+        RE::NiPoint3 worldPoint{};
+        RE::NiTransform attachmentWorld{};
+    };
+
     struct WeaponInteractionContact
     {
         bool valid{ false };
@@ -268,6 +280,7 @@ namespace rock
         RE::NiAVObject* sourceRoot{ nullptr };
         std::uint64_t weaponGenerationKey{ 0 };
         float probeDistanceGame{ 0.0f };
+        WeaponGrabPointLocation grabPoint;
         std::uint32_t sequence{ 0 };
         WeaponInteractionAcquisitionSource acquisitionSource{ WeaponInteractionAcquisitionSource::None };
     };
@@ -298,6 +311,7 @@ namespace rock
         WeaponActionRole actionRole{ WeaponActionRole::None };
         WeaponGripPoseId gripPose{ WeaponGripPoseId::None };
         bool reloadActionAuthority{ false };
+        WeaponGrabPointLocation grabPoint;
         std::uint32_t bodyId{ 0x7FFF'FFFF };
         RE::NiAVObject* interactionRoot{ nullptr };
         RE::NiAVObject* sourceRoot{ nullptr };

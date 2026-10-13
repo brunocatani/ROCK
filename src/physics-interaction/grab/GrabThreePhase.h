@@ -27,7 +27,6 @@ namespace rock::grab_three_phase
         Idle,
         GravityPulling,
         NearConverging,
-        SeatedPivotReacquire,
         TouchHeld,
     };
 
@@ -40,8 +39,6 @@ namespace rock::grab_three_phase
             return "GravityPulling";
         case AcquisitionPhase::NearConverging:
             return "NearConverging";
-        case AcquisitionPhase::SeatedPivotReacquire:
-            return "SeatedPivotReacquire";
         case AcquisitionPhase::TouchHeld:
             return "TouchHeld";
         default:
@@ -352,18 +349,11 @@ namespace rock::grab_three_phase
         result.frontHemisphere = result.signedPalmDistanceGameUnits >= -behindTolerance;
 
         if (!result.frontHemisphere) {
-            /*
-             * A force-grab has already passed explicit target, distance, body,
-             * and hand-ownership validation. Bypass only this organic spatial
-             * rejection; front-side arrivals retain the normal phase classifier.
-             */
-            if (input.programmaticArrival) {
-                result.accepted = true;
-                result.phase = AcquisitionPhase::NearConverging;
-                result.reason = "programmaticArrivalBehindPalm";
-                return result;
-            }
-            result.reason = "behindPalm";
+            // An object behind the palm plane converges into the palm instead of
+            // refusing the grab.
+            result.accepted = true;
+            result.phase = AcquisitionPhase::NearConverging;
+            result.reason = input.programmaticArrival ? "programmaticArrivalBehindPalm" : "behindPalmConverging";
             return result;
         }
 
@@ -596,17 +586,4 @@ namespace rock::grab_three_phase
         return decision;
     }
 
-    inline RE::NiTransform makeBodyTargetWithLocalGripAtPocket(RE::NiTransform targetBodyWorld,
-        const RE::NiPoint3& gripCenterBodyLocal,
-        const RE::NiPoint3& pocketCenterWorld)
-    {
-        const RE::NiPoint3 gripOffsetWorld = transform_math::localVectorToWorld(targetBodyWorld, gripCenterBodyLocal);
-        targetBodyWorld.translate = pocketCenterWorld - gripOffsetWorld;
-        return targetBodyWorld;
-    }
-
-    inline RE::NiTransform deriveNodeTargetFromBodyTarget(const RE::NiTransform& targetBodyWorld, const RE::NiTransform& bodyLocal)
-    {
-        return transform_math::composeTransforms(targetBodyWorld, transform_math::invertTransform(bodyLocal));
-    }
 }

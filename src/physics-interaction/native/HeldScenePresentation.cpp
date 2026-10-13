@@ -1,6 +1,5 @@
 #include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
-#include "physics-interaction/telemetry/HeldRenderTrace.h"
 #include "physics-interaction/weapon/WeaponSceneTraversal.h"
 
 #include "physics-interaction/PhysicsLog.h"
@@ -505,8 +504,7 @@ namespace rock::held_scene_presentation
             const held_scene_presentation_policy::TimingDecision& timing,
             held_scene_presentation_policy::RejectReason reason) noexcept
         {
-            if (!g_rockConfig.rockDebugGrabFrameLogging &&
-                !g_rockConfig.rockDebugVerboseLogging) {
+            if (!g_rockConfig.rockDebugVerboseLogging) {
                 return;
             }
 
@@ -528,8 +526,7 @@ namespace rock::held_scene_presentation
             const held_scene_presentation_policy::TransformDecision& transform)
             noexcept
         {
-            if (!g_rockConfig.rockDebugGrabFrameLogging &&
-                !g_rockConfig.rockDebugVerboseLogging) {
+            if (!g_rockConfig.rockDebugVerboseLogging) {
                 return;
             }
 
@@ -582,8 +579,7 @@ namespace rock::held_scene_presentation
                 return;
             }
 
-            if (!g_rockConfig.rockDebugGrabFrameLogging &&
-                !g_rockConfig.rockDebugVerboseLogging) {
+            if (!g_rockConfig.rockDebugVerboseLogging) {
                 return;
             }
             auto& lastFrame = s_targetTransport[target.isLeft ? 1u : 0u].bodies[target.bodyIndex].lastLoggedFrame;
@@ -826,7 +822,6 @@ namespace rock::held_scene_presentation
 
     void clearHeldBodies(bool isLeft) noexcept
     {
-        held_render_trace::clearHand(isLeft);
         Registration empty{};
         publishHeldBodies(isLeft, empty);
     }
@@ -888,9 +883,7 @@ namespace rock::held_scene_presentation
         }
 
         if (rebased || !decision.apply) {
-            if (!rebased &&
-                (g_rockConfig.rockDebugGrabFrameLogging ||
-                    g_rockConfig.rockDebugVerboseLogging)) {
+            if (!rebased && g_rockConfig.rockDebugVerboseLogging) {
                 ROCK_LOG_SAMPLE_DEBUG(HeldScenePresentation,
                     1000,
                     "HELD_SCENE_TARGET rejected trace={} hand={} body={} reason={} targetStep={:.4f}gu/{:.3f}deg residual={:.4f}gu advance={:.4f}gu",
@@ -919,7 +912,7 @@ namespace rock::held_scene_presentation
         }
         const auto frameIndex = runtime_state::currentFrame().frameIndex;
         const bool firstAssembly = s_lastAssemblyLogTrace[handIndex] != traceId;
-        const bool logBodies = firstAssembly || ((g_rockConfig.rockDebugGrabFrameLogging || g_rockConfig.rockDebugVerboseLogging) &&
+        const bool logBodies = firstAssembly || (g_rockConfig.rockDebugVerboseLogging &&
             (s_lastAssemblyLogFrame[handIndex] == 0 || frameIndex - s_lastAssemblyLogFrame[handIndex] >= 90));
         if (logBodies) {
             s_lastAssemblyLogFrame[handIndex] = frameIndex;

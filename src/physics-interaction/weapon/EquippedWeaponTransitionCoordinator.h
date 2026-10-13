@@ -164,7 +164,7 @@ namespace rock
             const EquipVisualBridge::BeginInput& bridgeInput);
         void requestCurrentWeaponReconcile(Source source) noexcept;
         void update(const FrameInput& input);
-        void traceVisualPresentation(const char* phase) const { _bridge.tracePresentation(phase); }
+        void finalizeVisualPresentation();
         void shutdown();
         void abandonSceneGraph();
         [[nodiscard]] PublicSnapshot getPublicSnapshot() const noexcept;
@@ -229,6 +229,7 @@ namespace rock
         RE::NiPointer<RE::NiAVObject> _pendingNativeCull{};
         float _heldWaitSeconds{ 0.0f };
         bool _heldBridgeStarted{ false };
+        bool _bridgeDisabledForTest{ false };
         std::uint8_t _heldRecoveryAttempts{ 0 };
         bool _heldRecoveryHolsterRequested{ false };
         const char* _heldFailureReason{ nullptr };
