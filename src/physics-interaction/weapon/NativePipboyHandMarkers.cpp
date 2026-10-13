@@ -7,9 +7,13 @@
 #include "RE/Bethesda/BGSInventoryItem.h"
 #include "RE/Bethesda/BSExtraData.h"
 #include "RE/Bethesda/TESForms.h"
+#include "RE/Scaleform/GFx/GFx_Player.h"
 #include <REL/Relocation.h>
 #include <Windows.h>
+#include <algorithm>
 #include <array>
+#include <atomic>
+#include <cstring>
 #include <string>
 
 namespace rock::native_pipboy_hand_markers
@@ -17,34 +21,31 @@ namespace rock::native_pipboy_hand_markers
     namespace
     {
         // FO4VR 1.2.72, raw disassembly (ghidra_fo4vr):
-        // 140C21450 fills one Pip-Boy inventory entry (PipboyInventoryData,
-        //   sole caller 140C20E00): "text" from 1401AE5F0(item, stack->extra)
-        //   through 140C28B80(object, key 145ACB0A8, BSFixedStringCS), then
-        //   "equipState" from 140C1E9A0(item, stack) at 140C215BA.
+        // 140C21450 fills one Pip-Boy inventory entry object (sole caller
+        //   140C20E00). Its members reach Pipboy_InvPage.swf as the list
+        //   entry data, e.g. "text" through 140C28B80(object, key 145ACB0A8,
+        //   BSFixedStringCS) at 140C2152B.
         // 140C45F00, used by every member setter, first removes an existing
-        //   member of the same name (140C45870), so setting "text" again
-        //   replaces the entry's text.
+        //   member of the same name (140C45870), so re-setting replaces it.
+        // InvListEntry.SetEntryText (Pipboy_InvPage.swf, ABC bytecode) draws
+        //   the equipped square only as EquipIcon_mc.visible = equipState > 0
+        //   and tints it with the row's selection colour transform.
         constexpr std::uintptr_t kPopulate = 0xC21450;
-        constexpr std::uintptr_t kEquipState = 0xC1E9A0;
-        constexpr std::uintptr_t kDisplayName = 0x1AE5F0;
         constexpr std::uintptr_t kSetString = 0xC28B80;
         constexpr std::uintptr_t kMakeString = 0x1BC2050;
         constexpr std::uintptr_t kFreeString = 0x1BC20F0;
-        constexpr std::uintptr_t kTextKey = 0x5ACB0A8;
+        constexpr const char* kHandMember = "rockHand";
+        constexpr const char* kLetterName = "rockHandLetter";
 
         using Stack = RE::BGSInventoryItem::Stack;
         using Populate = void (*)(void*, RE::BGSInventoryItem*, Stack*, void*, void*, std::uint32_t);
-        using EquipState = std::uint32_t (*)(RE::BGSInventoryItem*, Stack*);
-        using DisplayName = const char* (*)(RE::BGSInventoryItem*, RE::ExtraDataList*);
         using SetString = void* (*)(void*, const void*, void*);
         using MakeString = void* (*)(void*, const char*);
         using FreeString = void (*)(void*);
+        using Value = RE::Scaleform::GFx::Value;
 
         Populate s_populate = nullptr;
-        EquipState s_equipState = nullptr;
-        // The stack whose equipped square is replaced during the populate
-        // call running on this thread (nested calls restore the outer one).
-        thread_local const Stack* t_marked = nullptr;
+        bool s_installed = false;
 
         template <std::size_t N>
         bool matches(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) noexcept
@@ -57,80 +58,233 @@ namespace rock::native_pipboy_hand_markers
         template <class T>
         T native(std::uintptr_t rva) noexcept { return reinterpret_cast<T>(REL::Offset(rva).address()); }
 
-        native_hand_equipment::WornHand handOf(RE::BGSInventoryItem* item, const Stack* stack) noexcept
+        int wornIndexOf(RE::BGSInventoryItem* item, const Stack* stack) noexcept
         {
-            if (!item || !stack || !stack->IsEquipped() || !item->object || !item->object->IsWeapon())
-                return native_hand_equipment::WornHand::None;
+            if (!stack || !stack->IsEquipped()) return -1;
             std::uintptr_t instance = 0;
             if (const auto* extra = stack->extra.get()) {
                 if (const auto* data = extra->GetByType<RE::ExtraInstanceData>())
                     instance = reinterpret_cast<std::uintptr_t>(data->data.get());
             }
-            return native_hand_equipment::wornWeaponHand(item->object->formID, instance);
+            return native_hand_equipment::wornWeaponIndex(item->object->formID, instance);
         }
 
-        std::uint32_t equipState(RE::BGSInventoryItem* item, Stack* stack)
+        // Interned member name, created once and kept for the process.
+        const void* handKey() noexcept
         {
-            return stack && stack == t_marked ? 0u : s_equipState(item, stack);
+            alignas(8) static std::array<std::byte, 8> key{};
+            static const bool made = (native<MakeString>(kMakeString)(key.data(), kHandMember), true);
+            (void)made;
+            return key.data();
         }
 
+        // Every weapon entry carries "rockHand": the equipment index wearing
+        // it ("0", "1") or empty, so a reused entry object never keeps an
+        // earlier one. The letter is resolved from the index every frame, so
+        // a hand move without re-equip shows at once. Name, sorting and
+        // equipState stay native.
         void populate(void* self, RE::BGSInventoryItem* item, Stack* stack, void* object, void* flags, std::uint32_t mode)
         {
-            auto hand = native_hand_equipment::WornHand::None;
-            try {
-                hand = handOf(item, stack);
-            } catch (...) {
-                OutputDebugStringA("ROCK: Pip-Boy hand marker lookup failed\n");
-            }
-            const auto* previous = t_marked;
-            t_marked = hand != native_hand_equipment::WornHand::None ? stack : nullptr;
             s_populate(self, item, stack, object, flags, mode);
-            t_marked = previous;
-            if (hand == native_hand_equipment::WornHand::None || !object) return;
+            if (!object || !item || !item->object || !item->object->IsWeapon()) return;
             try {
-                const char* name = native<DisplayName>(kDisplayName)(item, stack->extra.get());
-                std::string text = hand == native_hand_equipment::WornHand::Left ? "L  " : "R  ";
-                text += name ? name : "";
+                const auto index = wornIndexOf(item, stack);
+                const char* letter = index == 0 ? "0" : index == 1 ? "1" : "";
                 alignas(8) std::array<std::byte, 8> value{};
-                native<MakeString>(kMakeString)(value.data(), text.c_str());
-                native<SetString>(kSetString)(object, reinterpret_cast<const void*>(REL::Offset(kTextKey).address()), value.data());
+                native<MakeString>(kMakeString)(value.data(), letter);
+                native<SetString>(kSetString)(object, handKey(), value.data());
                 native<FreeString>(kFreeString)(value.data());
             } catch (...) {
-                OutputDebugStringA("ROCK: Pip-Boy hand marker text failed\n");
+                OutputDebugStringA("ROCK: Pip-Boy hand marker data failed\n");
             }
         }
+
+        // ---- Inventory list presentation (Pip-Boy movie thread) ----------
+        //
+        // Each visible InvListEntry's EquipIcon_mc gets one TextField child
+        // holding the hand letter; while the entry has a hand, the icon's
+        // own square children are hidden. The icon itself stays under the
+        // native script, so the letter shows exactly when the square would
+        // and takes the same selection tint. Nothing else in the row moves.
+
+        std::atomic<void*> s_attachedMovie{nullptr};
+        std::atomic<std::uint32_t> s_reports{0};
+
+        bool member(const Value& object, const char* name, Value& out) noexcept
+        {
+            return object.IsObject() && object.GetMember(name, &out);
+        }
+
+        std::string text(const Value& value)
+        {
+            return value.IsString() && value.GetString() ? value.GetString() : std::string{};
+        }
+
+        // The icon's square children: every display child except the letter.
+        void showSquare(Value& icon, bool visible)
+        {
+            Value count;
+            if (!member(icon, "numChildren", count) || !count.IsNumber()) return;
+            const auto n = static_cast<int>(count.GetNumber());
+            for (int i = 0; i < n && i < 16; ++i) {
+                Value child, name;
+                const Value index(static_cast<double>(i));
+                if (!icon.Invoke("getChildAt", &child, &index, 1) || !child.IsObject()) continue;
+                if (member(child, "name", name) && text(name) == kLetterName) continue;
+                child.SetMember("visible", Value(visible));
+            }
+        }
+
+        bool letterField(RE::Scaleform::GFx::Movie* movie, Value& entry, Value& icon, Value& out)
+        {
+            const Value name(kLetterName);
+            if (icon.Invoke("getChildByName", &out, &name, 1) && out.IsObject()) return true;
+            // First use on this row: size the letter to the square and copy
+            // the row's own font so it renders through the menu's font set.
+            Value bounds, field, format, embed, x, y, w, h;
+            if (!icon.Invoke("getBounds", &bounds, &icon, 1) || !member(bounds, "x", x) || !member(bounds, "y", y) ||
+                !member(bounds, "width", w) || !member(bounds, "height", h) || !x.IsNumber() || !h.IsNumber() ||
+                !member(entry, "textField", field) || !field.IsObject() || !field.Invoke("getTextFormat", &format) ||
+                !format.IsObject()) return false;
+            movie->CreateObject(&out, "flash.text.TextField");
+            if (!out.IsObject()) return false;
+            const double squareHeight = h.GetNumber();
+            format.SetMember("size", Value(std::max(8.0, squareHeight * 1.4)));
+            format.SetMember("bold", Value(true));
+            out.SetMember("name", Value(kLetterName));
+            if (member(field, "embedFonts", embed)) out.SetMember("embedFonts", embed);
+            out.SetMember("defaultTextFormat", format);
+            out.SetMember("selectable", Value(false));
+            out.SetMember("mouseEnabled", Value(false));
+            out.SetMember("autoSize", Value("left"));
+            out.SetMember("text", Value("R"));
+            Value fieldWidth, fieldHeight;
+            if (member(out, "width", fieldWidth) && member(out, "height", fieldHeight) && fieldWidth.IsNumber() && fieldHeight.IsNumber()) {
+                out.SetMember("x", Value(x.GetNumber() + w.GetNumber() * 0.5 - fieldWidth.GetNumber() * 0.5));
+                out.SetMember("y", Value(y.GetNumber() + squareHeight * 0.5 - fieldHeight.GetNumber() * 0.5));
+            }
+            if (!icon.Invoke("addChild", nullptr, &out, 1)) return false;
+            if (s_reports.fetch_add(1, std::memory_order_relaxed) < 2)
+                ROCK_LOG_INFO(Weapon, "Pip-Boy hand letter created square=({:.1f},{:.1f} {:.1f}x{:.1f}) letterSize={:.1f}",
+                    x.GetNumber(), y.GetNumber(), w.IsNumber() ? w.GetNumber() : 0.0, squareHeight, std::max(8.0, squareHeight * 1.4));
+            return true;
+        }
+
+        void updateList(RE::Scaleform::GFx::Movie* movie, Value& list)
+        {
+            Value entries, count;
+            if (!member(list, "entryList", entries) || !entries.IsObject() ||
+                !member(list, "uiNumListItems", count) || !count.IsNumber()) return;
+            const auto clips = static_cast<int>(count.GetNumber());
+            const auto size = entries.GetArraySize();
+            for (int c = 0; c < clips && c < 64; ++c) {
+                Value clip, visible, index, icon;
+                const Value clipIndex(static_cast<double>(c));
+                if (!list.Invoke("GetClipByIndex", &clip, &clipIndex, 1) || !clip.IsObject() ||
+                    !member(clip, "EquipIcon_mc", icon) || !icon.IsObject()) continue;
+                std::string hand;
+                if (member(clip, "visible", visible) && visible.IsBoolean() && visible.GetBoolean() &&
+                    member(clip, "itemIndex", index) && index.IsNumber() && index.GetNumber() >= 0 && index.GetNumber() < size) {
+                    Value data, marker;
+                    const auto key = std::to_string(static_cast<std::uint32_t>(index.GetNumber()));
+                    if (entries.GetMember(key.c_str(), &data) && member(data, kHandMember, marker)) {
+                        const auto slot = text(marker);
+                        const auto worn = slot == "0" ? native_hand_equipment::wornIndexHand(0) :
+                            slot == "1" ? native_hand_equipment::wornIndexHand(1) : native_hand_equipment::WornHand::None;
+                        hand = worn == native_hand_equipment::WornHand::Left ? "L" : worn == native_hand_equipment::WornHand::Right ? "R" : "";
+                    }
+                }
+                Value letter;
+                const Value name(kLetterName);
+                const bool exists = icon.Invoke("getChildByName", &letter, &name, 1) && letter.IsObject();
+                if (hand.empty()) {
+                    if (!exists) continue;
+                    letter.SetMember("visible", Value(false));
+                    showSquare(icon, true);
+                    continue;
+                }
+                if (!exists && !letterField(movie, clip, icon, letter)) continue;
+                Value current;
+                if (!member(letter, "text", current) || text(current) != hand) letter.SetMember("text", Value(hand.c_str()));
+                letter.SetMember("visible", Value(true));
+                showSquare(icon, false);
+            }
+        }
+
+        class FrameHandler final : public RE::Scaleform::GFx::FunctionHandler
+        {
+        public:
+            void Call(const Params& params) override
+            {
+                try {
+                    if (!params.movie) return;
+                    Value menu, pages, count;
+                    if (!params.movie->GetVariable(&menu, "root.Menu_mc") || !menu.IsObject() ||
+                        !member(menu, "PageA", pages) || !pages.IsObject()) return;
+                    const auto n = pages.GetArraySize();
+                    for (std::uint32_t i = 0; i < n && i < 8; ++i) {
+                        Value page, list, doll;
+                        const Value index(static_cast<double>(i));
+                        // The inventory page is the one with the paper doll.
+                        if (!menu.Invoke("GetPage", &page, &index, 1) || !page.IsObject() ||
+                            !member(page, "PaperDoll_mc", doll) || !doll.IsObject() || !member(page, "List_mc", list)) continue;
+                        updateList(params.movie, list);
+                        break;
+                    }
+                } catch (...) {
+                    OutputDebugStringA("ROCK: Pip-Boy hand letters failed\n");
+                }
+            }
+        };
+        // One reference is held for the process, so movies never free it.
+        FrameHandler* s_frameHandler = nullptr;
+    }
+
+    void attach(RE::Scaleform::GFx::Movie* movie) noexcept
+    {
+        if (!s_installed || !movie || s_attachedMovie.load(std::memory_order_acquire) == movie) return;
+        try {
+            // Scaleform's heap exists once a movie runs; created on first use.
+            if (!s_frameHandler) s_frameHandler = new FrameHandler();
+            Value menu, function;
+            if (!movie->GetVariable(&menu, "root.Menu_mc") || !menu.IsObject()) return;
+            movie->CreateFunction(&function, s_frameHandler);
+            const std::array<Value, 2> args{ Value("enterFrame"), function };
+            const bool added = function.IsObject() && menu.Invoke("addEventListener", nullptr, args.data(), args.size());
+            s_attachedMovie.store(movie, std::memory_order_release);
+            ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters attached movie={:#x} listener={}", reinterpret_cast<std::uintptr_t>(movie), added);
+        } catch (...) {
+            OutputDebugStringA("ROCK: Pip-Boy hand letter attach failed\n");
+        }
+    }
+
+    void detach(void* movie) noexcept
+    {
+        void* expected = movie;
+        (void)s_attachedMovie.compare_exchange_strong(expected, nullptr, std::memory_order_acq_rel);
     }
 
     bool install() noexcept
     {
         // Helpers called directly, and the populate body that proves they are
-        // the text path: the name call at 140C21519 and the "text" key LEA at
-        // 140C2152B (rel32 resolves to 145ACB0A8).
+        // the member path: the "text" key LEA at 140C2152B (rel32 resolves to
+        // 145ACB0A8) feeding the string setter call.
         const bool helpers =
-            matches(kDisplayName, std::to_array<std::uint8_t>({0x40,0x53,0x48,0x83,0xEC,0x20,0x48,0x8B,0x19})) &&
             matches(kSetString, std::to_array<std::uint8_t>({0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x6C,0x24,0x10})) &&
             matches(kMakeString, std::to_array<std::uint8_t>({0x40,0x53,0x48,0x83,0xEC,0x20,0x48,0x8B,0xD9})) &&
             matches(kFreeString, std::to_array<std::uint8_t>({0xE9,0xEB,0x07,0x00,0x00})) &&
-            matches(0xC21519, std::to_array<std::uint8_t>({0xE8,0xD2,0xD0,0x58,0xFF})) &&
-            matches(0xC2152B, std::to_array<std::uint8_t>({0x48,0x8D,0x15,0x76,0x9B,0xEA,0x04})) &&
-            matches(0xC215BA, std::to_array<std::uint8_t>({0xE8,0xE1,0xD3,0xFF,0xFF}));
+            matches(0xC2152B, std::to_array<std::uint8_t>({0x48,0x8D,0x15,0x76,0x9B,0xEA,0x04}));
         if (!helpers) {
             ROCK_LOG_WARN(Weapon, "Pip-Boy hand markers unavailable: native inventory entry layout differs");
             return false;
         }
-        constexpr auto equipStatePrefix = std::to_array<std::uint8_t>({
-            0x48,0x89,0x74,0x24,0x10,0x57,0x48,0x83,0xEC,0x50,0x48,0x8B,0xF2,0x48,0x8B,0xF9});
         constexpr auto populatePrefix = std::to_array<std::uint8_t>({
             0x48,0x89,0x5C,0x24,0x18,0x48,0x89,0x4C,0x24,0x08,0x55,0x56,0x57,0x41,0x54});
         void* original = nullptr;
-        if (!entry_trampoline_hook::install("Pip-Boy hand marker equip state", kEquipState, equipStatePrefix.data(),
-                equipStatePrefix.size(), reinterpret_cast<void*>(&equipState), original)) return false;
-        s_equipState = reinterpret_cast<EquipState>(original);
-        // The equip-state hook only acts inside a marked populate call, so it
-        // stays inert if the populate hook below cannot be installed.
         if (!entry_trampoline_hook::install("Pip-Boy hand marker entry", kPopulate, populatePrefix.data(),
                 populatePrefix.size(), reinterpret_cast<void*>(&populate), original)) return false;
         s_populate = reinterpret_cast<Populate>(original);
+        s_installed = true;
         ROCK_LOG_INFO(Weapon, "Pip-Boy hand markers installed");
         return true;
     }

@@ -609,14 +609,21 @@ namespace rock::native_hand_equipment
         return accepted;
     }
 
-    WornHand wornWeaponHand(std::uint32_t form, std::uintptr_t instance) noexcept
+    int wornWeaponIndex(std::uint32_t form, std::uintptr_t instance) noexcept
     {
-        if (!s_installed || !form) return WornHand::None;
+        if (!s_installed || !form) return -1;
+        const auto worn = wornWeapons(f4vr::getPlayer());
+        if (sameItem(worn[1].form, worn[1].instance, form, instance)) return 1;
+        return sameItem(worn[0].form, worn[0].instance, form, instance) ? 0 : -1;
+    }
+
+    WornHand wornIndexHand(int index) noexcept
+    {
+        if (!s_installed || (index != 0 && index != 1)) return WornHand::None;
         const auto worn = wornWeapons(f4vr::getPlayer());
         const auto hand = [](bool left) { return left ? WornHand::Left : WornHand::Right; };
-        if (sameItem(worn[1].form, worn[1].instance, form, instance))
-            return hand(resolveSecondaryHand(worn[1].form, worn[1].instance));
-        if (!sameItem(worn[0].form, worn[0].instance, form, instance)) return WornHand::None;
+        if (!worn[index].form) return WornHand::None;
+        if (index == 1) return hand(resolveSecondaryHand(worn[1].form, worn[1].instance));
         // Same hand rule as Pip-Boy allocation: a hand chosen in this menu
         // session counts before it is applied; a support-held primary shows
         // the support hand that holds it.
@@ -625,6 +632,11 @@ namespace rock::native_hand_equipment
         if (directed.sequence != s_directedApplied.load(std::memory_order_acquire) &&
             sameItem(directed.form, directed.instance, worn[0].form, worn[0].instance)) return hand(directed.left);
         return hand(routing.detached ? !routing.leftFiring : routing.leftFiring);
+    }
+
+    void directPrimaryHand(std::uint32_t form, std::uintptr_t instance, bool left) noexcept
+    {
+        publishDirectedPrimary(form, instance, left);
     }
 
     void noteDirectedPrimaryApplied(std::uint64_t sequence) noexcept

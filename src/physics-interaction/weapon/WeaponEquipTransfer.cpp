@@ -709,6 +709,53 @@ namespace rock::weapon_equip_transfer
         return !remaining.weapon;
     }
 
+    EquipResult promoteSecondaryToPrimary(const std::uint32_t formID, const std::uintptr_t instanceData) noexcept
+    {
+        EquipResult result{};
+        result.formID = formID;
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        auto* weapon = RE::TESForm::GetFormByID<RE::TESObjectWEAP>(formID);
+        if (!player || !player->inventoryList || !weapon) {
+            result.reason = !player ? EquipReason::MissingPlayer : !weapon ? EquipReason::MissingBaseForm : EquipReason::MissingInventoryList;
+            return result;
+        }
+        if (readEquippedWeaponSnapshot(0).weapon) {
+            result.reason = EquipReason::EquippedIdentityMismatch;
+            return result;
+        }
+        if (!unequipEquippedIndex(1, formID, instanceData)) {
+            result.reason = EquipReason::EquippedStackMismatch;
+            return result;
+        }
+        // The now unequipped stack holding this exact instance.
+        std::uint32_t stackIndex = weapon_inventory_stack_selection_policy::kMaximumObservedStacks;
+        {
+            const RE::BSAutoReadLock lock{player->inventoryList->rwLock};
+            std::size_t scanned = 0;
+            for (const auto& entry : player->inventoryList->data) {
+                if (++scanned > 16384 || entry.object != weapon) continue;
+                std::uint32_t index = 0;
+                for (auto* stack = entry.stackData.get(); stack && index < weapon_inventory_stack_selection_policy::kMaximumObservedStacks;
+                    stack = stack->nextStack.get(), ++index) {
+                    const RE::ExtraInstanceData* extra = stack->extra ? stack->extra->GetByType<RE::ExtraInstanceData>() : nullptr;
+                    if (stack->GetCount() && !stack->IsEquipped() &&
+                        reinterpret_cast<std::uintptr_t>(extra ? extra->data.get() : nullptr) == instanceData) {
+                        stackIndex = index;
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+        const auto selection = captureInventoryWeapon(formID, stackIndex);
+        if (!selection.stack) {
+            result.reason = EquipReason::InventoryStackNotFound;
+            ROCK_LOG_WARN(Weapon, "AKIMBO second weapon promotion lost its stack form={:08X} instance={:#x}", formID, instanceData);
+            return result;
+        }
+        return equipInventoryWeapon(selection);
+    }
+
     EquippedDropResult dropEquippedWeaponFromPlayer(const EquippedDropInput& input) noexcept
     {
         EquippedDropResult result{};

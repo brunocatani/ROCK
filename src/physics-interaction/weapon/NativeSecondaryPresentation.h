@@ -20,7 +20,8 @@ namespace rock::native_secondary_presentation
     void afterNativeArm(const RE::PlayerCharacter* player, bool secondaryPass) noexcept;
     void endFrame(bool skeletonUpdated) noexcept;
 
-    // This frame's placement of the second weapon, for a drop from its hand:
+    // The latest placement of the second weapon (this or the previous
+    // frame), for a drop from its hand:
     // the firing grip pose (authored seat and fingers, physical placement)
     // and the placed weapon world. `model` is the borrowed native model.
     struct DropPose

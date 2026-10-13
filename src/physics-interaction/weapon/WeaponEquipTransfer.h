@@ -168,5 +168,8 @@ namespace rock::weapon_equip_transfer
     // hand leaf; the weapon at the other index stays equipped. True when the
     // index is empty afterwards.
     [[nodiscard]] bool unequipEquippedIndex(std::uint32_t index, std::uint32_t formID, std::uintptr_t instanceData) noexcept;
+    // Moves the exact weapon worn at index 1 to the empty index 0 with the
+    // same action-free immediate equip as a held trigger equip. Frame thread.
+    [[nodiscard]] EquipResult promoteSecondaryToPrimary(std::uint32_t formID, std::uintptr_t instanceData) noexcept;
     [[nodiscard]] bool canRecoverHeldEquip() noexcept;
 }

@@ -429,6 +429,9 @@ namespace rock
         // Weapon Drop Mode for the second weapon (native index 1), released
         // from the hand that carries it. Frame thread.
         bool dropSecondaryWeaponToWorld(const PhysicsFrameContext& frame);
+        // After the primary leaves index 0: the second weapon becomes the
+        // primary in the hand that holds it. Frame thread.
+        void promoteSecondaryWeapon(RE::TESObjectWEAP* weapon, std::uintptr_t instance, bool left);
         std::uint32_t forceGrabHandBlockerMask(const Hand& hand, bool isLeft, bool handDisabled, bool includePendingCommit) const;
         bool equippedWeaponFiringHandForGrabIsLeft() const;
         bool canHandAcceptForceGrab(const Hand& hand, bool isLeft, bool handDisabled) const;

@@ -2,6 +2,7 @@
 #include "physics-interaction/native/BipodFrozenRetirement.h"
 #include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/weapon/BipodRetentionPolicy.h"
+#include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
 #include "physics-interaction/weapon/NativeSecondaryActions.h"
 
@@ -265,6 +266,10 @@ namespace rock
                 const auto dropVisualInWeapon = dropVisualModel ?
                     transform_math::composeTransforms(transform_math::invertTransform(releaseWeaponWorld),
                         dropVisualModel->world) : RE::NiTransform{};
+                // A second weapon outlives the primary: it is promoted to
+                // index 0 in its own hand below, so the player stays armed.
+                const auto secondary = native_hand_equipment::equippedViews()[1];
+                const bool secondaryLeft = secondary.weapon && native_hand_equipment::secondaryHandIsLeft();
                 _twoHandedGrip.prepareEquippedWeaponDropCommit();
                 const auto dropResult = weapon_equip_transfer::dropEquippedWeaponFromPlayer(weapon_equip_transfer::EquippedDropInput{
                     .dropLoc = releaseLoc,
@@ -284,6 +289,9 @@ namespace rock
                     transfer.request.retainOutgoing && !transfer.outgoingRemoved &&
                     transfer.request.previousForm == observedEquippedWeaponFormID && transfer.request.isLeft != transferIsLeft;
                 if (replacementDrop) _equipped.transition.recordOutgoingRemoval(dropResult.droppedFormID);
+                if (dropCommitted && dropResult.equippedSlotReleased && secondary.weapon) {
+                    promoteSecondaryWeapon(secondary.weapon, reinterpret_cast<std::uintptr_t>(secondary.instance), secondaryLeft);
+                }
                 if (dropCommitted) {
                     enforceNoBareFistState(true);
                     /*
@@ -365,6 +373,34 @@ namespace rock
             }
         }
         return transferCommitted;
+    }
+
+    void PhysicsInteraction::promoteSecondaryWeapon(RE::TESObjectWEAP* weapon, std::uintptr_t instance, bool left)
+    {
+        native_secondary_actions::suspend();
+        const auto formID = weapon->GetFormID();
+        const auto equipped = weapon_equip_transfer::promoteSecondaryToPrimary(formID, instance);
+        ROCK_LOG_INFO(Weapon, "AKIMBO second weapon promoted to primary form={:08X} hand={} success={} reason={} observed={:08X}",
+            formID, left ? "left" : "right", equipped.success, weapon_equip_transfer::equipReasonName(equipped.reason),
+            equipped.observedEquippedFormID);
+        if (!equipped.success) return;
+        // Same start as an inventory equip into that hand: its firing grip
+        // and the native draw/visual continuity of the new index-0 weapon.
+        native_hand_equipment::directPrimaryHand(formID, equipped.observedEquippedInstanceData, left);
+        auto& coordinator = _equipped.transition;
+        coordinator.pendingGrip() = {
+            .pending = true, .isLeft = left,
+            .targetWeaponFormID = formID,
+            .targetWeaponInstanceData = equipped.observedEquippedInstanceData,
+            .remainingSeconds = _equipped.handlingSettings.equipVisualBridgeTimeoutSeconds,
+            .source = equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource::InventoryEquip,
+        };
+        coordinator.beginHeldTransition({ .formID = formID, .instanceData = equipped.observedEquippedInstanceData },
+            EquippedWeaponTransitionCoordinator::Source::InventoryEquip, {
+                .weaponFormID = formID, .isLeftHand = left, .weapon = weapon,
+                .timeoutSeconds = _equipped.handlingSettings.equipVisualBridgeTimeoutSeconds,
+                .blendSeconds = _equipped.handlingSettings.equipVisualBridgeBlendSeconds,
+            });
     }
 
     bool PhysicsInteraction::dropSecondaryWeaponToWorld(const PhysicsFrameContext& frame)

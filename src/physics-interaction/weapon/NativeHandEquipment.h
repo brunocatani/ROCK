@@ -67,10 +67,16 @@ namespace rock::native_hand_equipment
     [[nodiscard]] bool equipIntoSecondary(RE::Actor* actor, RE::TESObjectWEAP* weapon, RE::TBO_InstanceData* instance,
         bool left, SecondaryEquipCall equip, void* context) noexcept;
 
-    // Pip-Boy display (UI thread): the physical hand holding this exact worn
-    // weapon item, or None when it is neither equipped weapon.
+    // Pip-Boy display (UI thread). wornWeaponIndex: the native equipment
+    // index (0 or 1) wearing this exact weapon item, or -1. wornIndexHand:
+    // the physical hand now holding the weapon in that index, or None.
     enum class WornHand : std::uint8_t { None, Right, Left };
-    [[nodiscard]] WornHand wornWeaponHand(std::uint32_t form, std::uintptr_t instance) noexcept;
+    [[nodiscard]] int wornWeaponIndex(std::uint32_t form, std::uintptr_t instance) noexcept;
+    [[nodiscard]] WornHand wornIndexHand(int index) noexcept;
+
+    // Frame owner: the item now at index 0 fires from `left`'s hand, as a
+    // Pip-Boy directed equip would (used when the second weapon is promoted).
+    void directPrimaryHand(std::uint32_t form, std::uintptr_t instance, bool left) noexcept;
 
     // Frame owner: the primary now fires from the directed hand. Until then a
     // later Pip-Boy press decides with the directed hand, not the old one.

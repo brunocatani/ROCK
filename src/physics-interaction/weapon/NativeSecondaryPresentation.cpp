@@ -601,7 +601,10 @@ namespace rock::native_secondary_presentation
 
     bool tryGetDropPose(DropPose& out) noexcept
     {
-        if (!onFrameThread() || !s_state.ready || s_state.frame != runtime_state::currentFrame().frameIndex ||
+        // Grab input runs before this frame's presentation update, so the
+        // placement shown last frame is the current one.
+        const auto frame = runtime_state::currentFrame().frameIndex;
+        if (!onFrameThread() || !s_state.ready || frame < s_state.frame || frame - s_state.frame > 1 ||
             !s_state.dropGrip.valid()) return false;
         const auto view = native_hand_equipment::equippedViews()[1];
         if (!matches(view)) return false;

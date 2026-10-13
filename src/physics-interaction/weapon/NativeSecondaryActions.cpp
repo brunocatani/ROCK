@@ -910,6 +910,44 @@ namespace rock::native_secondary_actions
         };
         PrimaryReloadWindow s_primaryReload{}; // Frame thread only.
 
+        // Which models a player graph's bones are bound to. FO4VR 1.2.72 raw
+        // disassembly of 1416A9570 (graph root setter): the bound root is a
+        // refcounted node at graph+0x388; the bone table is a BSTArray at
+        // graph+0x2A0 (data +0, size +0x10, 16-byte entries, node at +0),
+        // filled by name lookup under that root (141785010 -> 141C20840,
+        // sized by 1417901D0). Names shared by two weapon models can bind
+        // one weapon's bones to the other's nodes.
+        void reportGraphBinding(std::size_t index, RE::BShkbAnimationGraph* graph, const RE::NiAVObject* primary, const RE::NiAVObject* secondary)
+        {
+            RE::NiAVObject* root{};
+            const RE::NiAVObject* bone{};
+            std::uintptr_t bones{};
+            std::uint32_t count{};
+            if (!native_memory::tryReadField(graph, 0x388, root) || !native_memory::tryReadField(graph, 0x2A0, bones) ||
+                !native_memory::tryReadField(graph, 0x2B0, count)) {
+                ROCK_LOG_INFO(Animation, "AKIMBO primary reload trace binding graph={} unreadable", index);
+                return;
+            }
+            std::uint32_t inPrimary{}, inSecondary{}, other{}, missing{};
+            const char* secondaryBone = "";
+            const char* otherBone = "";
+            for (std::uint32_t i = 0; bones && i < count && i < 512; ++i) {
+                if (!native_memory::tryReadValue(reinterpret_cast<const RE::NiAVObject* const*>(bones + i * 0x10), bone) || !bone) { ++missing; continue; }
+                int owner = 0;
+                for (auto* node = bone; node && owner == 0; node = node->parent) {
+                    if (node == primary) owner = 1;
+                    else if (node == secondary) owner = 2;
+                }
+                if (owner == 1) ++inPrimary;
+                else if (owner == 2) { if (!inSecondary++) secondaryBone = bone->name.c_str() ? bone->name.c_str() : ""; }
+                else if (!other++) otherBone = bone->name.c_str() ? bone->name.c_str() : "";
+            }
+            ROCK_LOG_INFO(Animation,
+                "AKIMBO primary reload trace binding graph={} root={:#x} rootName='{}' bones={} inPrimaryModel={} inSecondaryModel={} elsewhere={} missing={} firstSecondaryBone='{}' firstElsewhereBone='{}'",
+                index, reinterpret_cast<std::uintptr_t>(root), root && root->name.c_str() ? root->name.c_str() : "", count,
+                inPrimary, inSecondary, other, missing, secondaryBone, otherBone);
+        }
+
         void endPrimaryReloadTrace()
         {
             auto& w=s_primaryReload;
@@ -961,6 +999,9 @@ namespace rock::native_secondary_actions
                     }
                 }
             }
+            const auto secondaryView=native_hand_equipment::equippedViews()[1];
+            for (std::size_t i=0;i<w.player.graphs.size();++i)
+                reportGraphBinding(i,w.player.graphs[i],view.root,secondaryView.root);
             ROCK_LOG_INFO(Animation,"AKIMBO primary reload trace begin weapon={:08X} playerManager={:#x} playerGraphs={} modelHolder={:#x} modelManager={:#x} modelGraphs={} modelSharedWithSecondary={} sampledNodes={}",
                 w.form,reinterpret_cast<std::uintptr_t>(w.playerManager.get()),w.player.graphs.size(),reinterpret_cast<std::uintptr_t>(holder),
                 reinterpret_cast<std::uintptr_t>(w.modelManager.get()),w.model.graphs.size(),sharedWithSecondary,w.nodes.size());
