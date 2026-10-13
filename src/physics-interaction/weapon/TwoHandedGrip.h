@@ -619,7 +619,6 @@ namespace rock
             const authored_weapon_grip_library::FiringFingerPose* rightFingerPose = nullptr,
             const authored_weapon_grip_library::FiringFingerPose* leftFingerPose = nullptr);
         void clearAuthoredPrimaryFiringGripCanonical(const char* reason);
-        void setHoldingSource(const authored_weapon_grip_library::FiringFingerPose* right,const RE::NiTransform* support,const authored_weapon_grip_library::FiringFingerPose* supportFingers,bool powerArmor);
         void setHoldingGripInputs(const RE::NiTransform& nativeRight,const RE::NiTransform* explicitLeft,bool rightCustom) { _holdingNativeRight=nativeRight;_holdingHasNative=rightCustom;_holdingHasLeft=explicitLeft!=nullptr;if(explicitLeft)_holdingLeft=*explicitLeft; }
 
         bool publishAuthoredPrimaryFiringGripFingerPose(bool isLeft);
@@ -857,8 +856,7 @@ namespace rock
         bool getDebugAuthoritySnapshot(TwoHandedGripDebugSnapshot& outSnapshot) const;
         const gunstock_debug::Sample& gunstockDebugSample() const { return _gunstockSample; }
         const gunstock_debug::Sample& gunstockGrabSample() const { return _gunstockGrabSample; }
-        const gunstock_debug::Recorder* gunstockRecorder() const { return _gunstockRecorder.get(); }
-        void beginGunstockDebug(RE::NiNode* weaponNode, float dt, std::uint64_t generation, std::uint64_t ownership, std::uint32_t form);
+        void beginGunstockDebug(std::uint32_t form);
         void finishGunstockDebug(RE::NiNode* weaponNode);
         void publishGunstockRenderDebug(RE::NiNode* weaponNode);
 
@@ -1031,7 +1029,6 @@ namespace rock
 
     private:
         gunstock_debug::Sample _gunstockSample{}, _gunstockGrabSample{};
-        std::unique_ptr<gunstock_debug::Recorder> _gunstockRecorder;
         std::uint64_t _gunstockMark{}, _gunstockLastGrip{};
         bool _gunstockWasSupporting{};
         struct FingerPoseSolveScratch;
@@ -1502,13 +1499,6 @@ namespace rock
         float _holdingMirrorPlaneX{};
         RE::NiTransform _holdingNativeRight{},_holdingLeft{};
         bool _holdingHasNative{false},_holdingHasLeft{false};
-        bool _aimCapturePending{},_aimCaptureLatched{},_aimReferenceValid{};
-        RE::NiPoint3 _aimReferenceTarget{};
-        std::uint64_t _aimReferenceGeneration{},_aimReferenceFrame{};
-        bool _holdingCapturePending{false},_holdingCaptureLatched{false};
-        bool _holdingSourcePowerArmor{false},_holdingHasSourceSupport{false},_holdingSourceRightValid{false};
-        RE::NiTransform _holdingSourceSupport{};
-        std::array<RE::NiTransform,15> _holdingSourceRightFingers{},_holdingSourceSupportFingers{};
         bool tryComputeMirroredLeftFiringHandWeaponLocal(
             RE::NiTransform& outHandWeaponLocal,
             bool* outUsedAuthoredCanonical = nullptr,

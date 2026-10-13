@@ -2275,12 +2275,10 @@
             using namespace gunstock_debug;
             const auto& sample=_twoHandedGrip.gunstockDebugSample();
             const float white[4]{1,1,1,1},cyan[4]{.1f,.95f,1,1},gold[4]{1,.8f,.1f,1},green[4]{.1f,1,.2f,1};
-            const auto* recorder=_twoHandedGrip.gunstockRecorder();
             const auto aimPanelAnchor=(sample.firingLeft?context.left:context.right).rawHandWorld.translate;
             char line[256]{};
-            std::snprintf(line,sizeof(line),"CONTROLLER AIM | firing=%s support=%s | capture=%llu %s | left trim yaw=%+.2f pitch=%+.2f",
-                sample.firingLeft?"LEFT":"RIGHT",sample.supportActive?"HELD":"FREE",
-                static_cast<unsigned long long>(recorder?recorder->aimWritten():0),recorder&&recorder->aimFailed()?"SAVE FAILED":"",sample.aimYawDegrees,sample.aimPitchDegrees);
+            std::snprintf(line,sizeof(line),"CONTROLLER AIM | firing=%s support=%s | left trim yaw=%+.2f pitch=%+.2f",
+                sample.firingLeft?"LEFT":"RIGHT",sample.supportActive?"HELD":"FREE",sample.aimYawDegrees,sample.aimPitchDegrees);
             addPanelLine(aimPanelAnchor,110,white,line);
             addPanelLine(aimPanelAnchor,130,white,"CYAN reference (59-degree basis) | GOLD configured | PURPLE damped | GREEN actual barrel");
             addPanelLine(aimPanelAnchor,150,white,"Reference formula is not physical ground truth. Point both controllers at the same target to compare.");
@@ -2296,12 +2294,6 @@
                     ray(left?LeftAimReference:RightAimReference,debug::MarkerOverlayRole::GunstockBaseline,300,left?"L REF":"R REF",cyan);
                     ray(left?LeftAimConfigured:RightAimConfigured,debug::MarkerOverlayRole::GunstockSeat,450,left?"L CONFIG":"R CONFIG",gold);
                     ray(left?LeftAimDamped:RightAimDamped,debug::MarkerOverlayRole::GunstockAim,550,left?"L DAMPED":"R DIRECT",white);
-                    const auto configured=left?LeftAimConfigured:RightAimConfigured;
-                    if(sample.aimReferenceValid&&sample.has(configured)){
-                        const auto& origin=sample.poses[configured].translate;
-                        const auto error=aimDirectionError(sample.poses[configured],RE::NiPoint3{sample.aimReferenceTarget[0]-origin.x,sample.aimReferenceTarget[1]-origin.y,sample.aimReferenceTarget[2]-origin.z});
-                        if(error.valid){std::snprintf(line,sizeof(line),"%s configured -> captured target: yaw %+.3f pitch %+.3f angle %.3f deg",left?"LEFT":"RIGHT",error.yaw,error.pitch,error.angle);addPanelLine(aimPanelAnchor,left?190.f:210.f,gold,line);}
-                    }
                 }
                 ray(WeaponRendered,debug::MarkerOverlayRole::GunstockWeapon,650,"ACTUAL BARREL",green);
                 const auto expected=sample.firingLeft?LeftAimDamped:RightAimDamped;
@@ -2309,10 +2301,6 @@
                     const auto error=aimError(sample.poses[expected],sample.poses[WeaponRendered]);
                     if(error.valid){std::snprintf(line,sizeof(line),"Predicted -> rendered: yaw %+.3f pitch %+.3f angle %.3f deg",error.yaw,error.pitch,error.angle);addPanelLine(aimPanelAnchor,170,green,line);}
                 }
-                if(sample.aimReferenceValid){
-                    const RE::NiPoint3 target{sample.aimReferenceTarget[0],sample.aimReferenceTarget[1],sample.aimReferenceTarget[2]};
-                    addMarkerPoint(debug::MarkerOverlayRole::GunstockSeat,target,3);addTextLine(target,gold,"RIGHT CAPTURE TARGET");
-                }else addPanelLine(aimPanelAnchor,190,gold,"Capture while holding RIGHT to set the comparison target; LEFT captures keep it.");
             }else addPanelLine(aimPanelAnchor,170,gold,"Waiting for current AfterWorldFinal weapon/controller sample");
         }
 
@@ -2323,14 +2311,10 @@
             const float cyan[4]{0.1f, 0.95f, 1.0f, 1.0f};
             const float gold[4]{1.0f, 0.8f, 0.1f, 1.0f};
             const float white[4]{1, 1, 1, 1};
-            const auto* recorder = _twoHandedGrip.gunstockRecorder();
             const auto gunstockPanelAnchor = (sample.firingLeft ? context.left : context.right).rawHandWorld.translate;
             char status[256]{};
-            std::snprintf(status, sizeof(status), "GUNSTOCK grab #%llu | %s | saved=%llu dropped=%llu | CYAN baseline GREEN weapon GOLD seats",
-                static_cast<unsigned long long>(grab.mark),
-                !recorder || recorder->failed() ? "SAVE FAILED" : "CAPTURING",
-                static_cast<unsigned long long>(recorder ? recorder->written() : 0),
-                static_cast<unsigned long long>(recorder ? recorder->dropped() : 0));
+            std::snprintf(status, sizeof(status), "GUNSTOCK grab #%llu | CYAN baseline GREEN weapon GOLD seats",
+                static_cast<unsigned long long>(grab.mark));
             addPanelLine(gunstockPanelAnchor, 0.0f, white, status);
             addPanelLine(gunstockPanelAnchor, 80.0f, white, !g_rockConfig.rockGunstockMode ? "Gunstock mode OFF" :
                 sample.gunstockAim ? "Gunstock mode ACTIVE | PURPLE virtual aiming anchors | zero angular offset" :

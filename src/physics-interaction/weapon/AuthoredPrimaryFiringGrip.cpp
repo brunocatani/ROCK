@@ -337,7 +337,6 @@ namespace rock
             }
         }
         const auto* leftFingerPose = rightFingerPose && _mirroredFingerPoseValid ? &_mirroredLeftFingerPose : nullptr;
-        weaponAuthority.setHoldingSource(rightFingerPose,authoredLookup.hasSupportRelation?&authoredLookup.supportHandWeaponLocal:nullptr,authoredLookup.hasSupportRelation?&authoredLookup.supportFingerPose:nullptr,input.inPowerArmor);
         weaponAuthority.setHoldingGripInputs(nativeRightHandInWeapon,customLeft?&customLeft->wrist:nullptr,customRight!=nullptr);
         if(customLeft)leftFingerPose=&customLeft->fingers;
         if(customRight){authoredLookup.rightHandWeaponLocal=customRight->wrist;rightFingerPose=&customRight->fingers;}

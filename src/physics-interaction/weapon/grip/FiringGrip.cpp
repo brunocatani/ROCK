@@ -20,11 +20,6 @@ namespace rock
         }
     }
 
-    void TwoHandedGrip::setHoldingSource(const authored_weapon_grip_library::FiringFingerPose* right,const RE::NiTransform* support,const authored_weapon_grip_library::FiringFingerPose* supportFingers,bool powerArmor) {
-            _holdingSourcePowerArmor=powerArmor;_holdingSourceRightValid=right&&right->complete();_holdingHasSourceSupport=support&&supportFingers;if(right)_holdingSourceRightFingers=right->localTransforms;
-            if(_holdingHasSourceSupport){_holdingSourceSupport=*support;_holdingSourceSupportFingers=supportFingers->localTransforms;}
-        }
-
     bool TwoHandedGrip::canBeginPrimaryOnlyGripForHand(const bool isLeft)
     {
         return !isLeft || leftFiringInfrastructureAvailable();
