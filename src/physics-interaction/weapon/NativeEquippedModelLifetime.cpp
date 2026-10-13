@@ -13,10 +13,12 @@
 #include <REL/Relocation.h>
 #include <Windows.h>
 #include <intrin.h>
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstring>
 #include <utility>
+#include <vector>
 
 namespace rock::native_equipped_model_lifetime
 {
@@ -52,7 +54,69 @@ namespace rock::native_equipped_model_lifetime
             std::array<ProtectedModel, 44> models{};
             std::size_t count = 0;
             std::uint32_t pruned = 0, rejected = 0, unreadable = 0;
+            // Ownership sets, built once before the native call. The native
+            // connection search visits every node of the biped tree; walking
+            // each node's parents with guarded (VirtualQuery) reads per
+            // protected model cost ~190 ms per replacement equip (runtime
+            // 12 Oct 22:34:33 and 22:35:43). Sorted for binary search.
+            // inside:    every node in a protected boundary's subtree.
+            // ancestors: every protected root and each of its ancestors.
+            std::vector<const void*> inside, ancestors;
+            bool insideComplete = true, ancestorsReadable = true;
         };
+
+        void collectSubtree(RE::NiAVObject* object, std::vector<const void*>& out, bool& complete,
+            std::uint32_t depth = 0)
+        {
+            if (!object || !complete) return;
+            if (depth >= 128 || out.size() >= 16384) {
+                complete = false;
+                return;
+            }
+            out.push_back(object);
+            if (auto* node = object->IsNode()) {
+                for (const auto& child : node->GetRuntimeData().children)
+                    if (child) collectSubtree(child.get(), out, complete, depth + 1);
+            }
+        }
+
+        // Same relation as native_model_ancestry::within(root, node) == Inside
+        // for every node at once: the root and the parents above it.
+        void collectAncestors(const void* root, std::vector<const void*>& out, bool& readable)
+        {
+            for (std::uint32_t depth = 0; root && depth < 128; ++depth) {
+                out.push_back(root);
+                const void* parent = nullptr;
+                if (!native_memory::tryReadField(root, 0x28, parent)) {
+                    readable = false;
+                    return;
+                }
+                root = parent;
+            }
+            if (root) readable = false; // Cycle or over-deep chain.
+        }
+
+        void buildOwnership(Retirement& context) noexcept
+        {
+            try {
+                for (std::size_t i = 0; i < context.count; ++i) {
+                    collectSubtree(context.models[i].boundary.get(), context.inside, context.insideComplete);
+                    collectAncestors(context.models[i].root.get(), context.ancestors, context.ancestorsReadable);
+                }
+                for (auto* set : { &context.inside, &context.ancestors }) {
+                    std::sort(set->begin(), set->end());
+                    set->erase(std::unique(set->begin(), set->end()), set->end());
+                }
+            } catch (...) {
+                // Allocation failure: no set can prove a node is outside.
+                context.insideComplete = context.ancestorsReadable = false;
+            }
+        }
+
+        bool contains(const std::vector<const void*>& set, const void* node) noexcept
+        {
+            return std::binary_search(set.begin(), set.end(), node);
+        }
         thread_local Retirement* s_retirement = nullptr;
         class Scope
         {
@@ -63,21 +127,20 @@ namespace rock::native_equipped_model_lifetime
             Retirement* _previous;
         };
 
+        // A node crosses ownership when it lies inside a protected boundary,
+        // or, for a delete, when it is a protected root or one of its
+        // ancestors. A set that could not be built completely cannot prove
+        // a node is outside, so it fails closed exactly as an unreadable
+        // parent walk did.
         bool crossesOwnership(RE::NiAVObject* node, bool deleting) noexcept
         {
             auto* context = s_retirement;
             if (!context || !node) return false;
-            for (std::size_t i = 0; i < context->count; ++i) {
-                const auto& model = context->models[i];
-                const auto relation = within(node, model.boundary.get());
-                const auto contains = deleting ? within(model.root.get(), node) : Relation::Outside;
-                if (relation == Relation::Unreadable || contains == Relation::Unreadable) {
-                    ++context->unreadable;
-                    return true;
-                }
-                if (relation == Relation::Inside || contains == Relation::Inside) return true;
+            if (!context->insideComplete || (deleting && !context->ancestorsReadable)) {
+                ++context->unreadable;
+                return true;
             }
-            return false;
+            return contains(context->inside, node) || (deleting && contains(context->ancestors, node));
         }
 
         std::uint32_t findConnection(RE::NiAVObject* root, void* query) noexcept
@@ -139,6 +202,7 @@ namespace rock::native_equipped_model_lifetime
                     protectedModel.form = weapon->formID;
                     protectedModel.shapesBefore = native_weapon_model_geometry::inspect(root).shapes;
                 }
+                if (context.count) buildOwnership(context);
             }
             const Scope scope(context.count ? &context : nullptr);
             s_retire(biped, record, deferred);
