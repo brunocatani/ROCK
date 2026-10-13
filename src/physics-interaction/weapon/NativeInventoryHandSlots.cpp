@@ -7,6 +7,7 @@
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESBoundObjects.h"
 #include <array>
+#include <atomic>
 #include <tuple>
 #include <type_traits>
 #include <Windows.h>
@@ -111,6 +112,23 @@ namespace rock::native_inventory_hand_slots
                 try {
                     ROCK_LOG_SAMPLE_INFO(Weapon,1000,"AKIMBO native primary construction form={:08X} authoredSlot={:08X} actualSlot={:08X}",
                         item->object->formID,slot->formID,selected->formID);
+                    // Wrist Pip-Boy left equips (runtime 12 Oct 22:34) reach
+                    // here with the authored slot although the execution
+                    // resolver selected the left leaf; the caller chain
+                    // names the path that drops it. Bounded per session.
+                    static std::atomic<std::uint32_t> traces{0};
+                    if (traces.fetch_add(1,std::memory_order_relaxed)<12) {
+                        void* frames[10]{};
+                        const auto count=CaptureStackBackTrace(1,10,frames,nullptr);
+                        const auto base=REL::Module::get().base();
+                        std::array<std::uintptr_t,10> rva{};
+                        for (USHORT i=0;i<count;++i) {
+                            const auto address=reinterpret_cast<std::uintptr_t>(frames[i]);
+                            rva[i]=address>=base && address-base<0x7000000?address-base:0;
+                        }
+                        ROCK_LOG_INFO(Weapon,"AKIMBO native primary construction callers form={:08X} rva={:#x} {:#x} {:#x} {:#x} {:#x} {:#x} {:#x} {:#x} {:#x} {:#x}",
+                            item->object->formID,rva[0],rva[1],rva[2],rva[3],rva[4],rva[5],rva[6],rva[7],rva[8],rva[9]);
+                    }
                 } catch (...) { OutputDebugStringA("ROCK: native inventory construction trace failed\n"); }
             }
             original<void(*)(void*,RE::Actor*,const Item*,const Slot*),0xE806B0>()(process,actor,item,selected);
