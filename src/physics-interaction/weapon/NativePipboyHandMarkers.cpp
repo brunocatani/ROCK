@@ -201,11 +201,23 @@ namespace rock::native_pipboy_hand_markers
             return true;
         }
 
+        // GetMember reaches only public AS3 traits: PipboyMenu.PageA/GetPage
+        // and BSScrollingList.uiNumListItems are private/protected (ABC trait
+        // namespaces), so the walk uses CurrentPage and numListItems.
+        const char* s_reportedStop = nullptr; // Movie thread only.
+        void stop(const char* step)
+        {
+            if (s_reportedStop == step) return;
+            s_reportedStop = step;
+            ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters stopped at {} after stage={}", step,
+                kStageNames[static_cast<int>(s_deepest)]);
+        }
+
         void updateList(RE::Scaleform::GFx::Movie* movie, Value& list)
         {
             Value entries, count;
-            if (!member(list, "entryList", entries) || !entries.IsObject() ||
-                !member(list, "uiNumListItems", count) || !isNumeric(count)) return;
+            if (!member(list, "entryList", entries) || !entries.IsObject()) return stop("entryList");
+            if (!member(list, "numListItems", count) || !isNumeric(count)) return stop("numListItems");
             const auto clips = static_cast<int>(numeric(count));
             const auto size = lengthOf(entries);
             reach(Stage::List, size, static_cast<std::uint32_t>(clips));
@@ -248,33 +260,17 @@ namespace rock::native_pipboy_hand_markers
             }
         }
 
-        void stop(const char* step)
-        {
-            if (s_deepest != Stage::None) return;
-            static const char* reported = nullptr; // Movie thread only.
-            if (reported == step) return;
-            reported = step;
-            ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters stopped before the menu: {}", step);
-        }
-
         void updateMovie(RE::Scaleform::GFx::Movie* movie)
         {
-            Value menu, pages;
+            Value menu, page, list, doll;
             if (!movie->GetVariable(&menu, "root.Menu_mc") || !menu.IsObject()) return stop("root.Menu_mc");
-            if (!member(menu, "PageA", pages) || !pages.IsObject()) return stop("PageA");
-            reach(Stage::Menu, lengthOf(pages));
-            // PageA is a Vector.<PipboyLoader>.
-            const auto n = lengthOf(pages);
-            for (std::uint32_t i = 0; i < n && i < 8; ++i) {
-                Value page, list, doll;
-                const Value index(static_cast<double>(i));
-                // The inventory page is the one with the paper doll.
-                if (!menu.Invoke("GetPage", &page, &index, 1) || !page.IsObject() ||
-                    !member(page, "PaperDoll_mc", doll) || !doll.IsObject() || !member(page, "List_mc", list)) continue;
-                reach(Stage::InventoryPage, i, n);
-                updateList(movie, list);
-                break;
-            }
+            reach(Stage::Menu);
+            if (!member(menu, "CurrentPage", page) || !page.IsObject()) return stop("CurrentPage");
+            // Only the inventory page has the paper doll; other tabs are skipped.
+            if (!member(page, "PaperDoll_mc", doll) || !doll.IsObject()) return;
+            if (!member(page, "List_mc", list) || !list.IsObject()) return stop("List_mc");
+            reach(Stage::InventoryPage);
+            updateList(movie, list);
         }
 
         // PipboyMenu::AdvanceMovie (vtable 142D58418 slot 4 = 140BA09D0; it
@@ -293,6 +289,7 @@ namespace rock::native_pipboy_hand_markers
             if (movie != s_lastMovie) {
                 s_lastMovie = movie;
                 s_deepest = Stage::None;
+                s_reportedStop = nullptr;
                 ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters first refresh movie={:#x} source={}",
                     reinterpret_cast<std::uintptr_t>(movie), source);
             }
