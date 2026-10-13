@@ -72,8 +72,6 @@ namespace rock::provider::runtime {
     RockProviderResultV1 ROCK_PROVIDER_CALL apiSetEquippedWeaponHandlingAuthorityV1(std::uint64_t ownerToken, const RockProviderEquippedWeaponHandlingRequestV1* request);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiClearEquippedWeaponHandlingAuthorityV1(std::uint64_t ownerToken);
     bool ROCK_PROVIDER_CALL apiGetEquippedWeaponHandlingStateV1(RockProviderEquippedWeaponHandlingStateV1* outState);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiPublishDebugOverlayV1(std::uint64_t ownerToken, const RockProviderDebugOverlayPublicationV1* publication);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearDebugOverlayV1(std::uint64_t ownerToken);
     bool ROCK_PROVIDER_CALL apiGetPresentedHandFrameV1(RockProviderHand hand, RockProviderHandFrameV1* outFrame);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiRegisterFrameCallbackForOwnerV1(std::uint64_t ownerToken, RockProviderFrameCallback callback, void* userData, std::uint64_t* outCallbackToken);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiUnregisterFrameCallbackForOwnerV1(std::uint64_t ownerToken, std::uint64_t callbackToken);
@@ -105,8 +103,6 @@ namespace rock::provider::runtime {
     RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyTouchGrabStatesForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken, RockProviderTouchGrabStateV1* outStates, std::uint32_t maxStates, std::uint32_t* outStateCount);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestTouchGrabYieldV1(std::uint64_t ownerToken, std::uint64_t scopeToken, std::uint64_t targetId, std::uint32_t targetGeneration);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryWorldRaycastV1(std::uint64_t ownerToken, const RockProviderWorldRaycastRequestV1* request, RockProviderWorldRaycastResultV1* outResult);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetColliderVisualizationOverrideV1(std::uint64_t ownerToken, const RockProviderColliderVisualizationRequestV1* request);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearColliderVisualizationOverrideV1(std::uint64_t ownerToken);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiGetLogicalInputActionStateV1(std::uint64_t ownerToken, RockProviderLogicalInputActionV1 action, RockProviderLogicalInputActionStateV1* outState);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiGetPlayerControllerStateV1(std::uint64_t ownerToken, std::uint32_t queryFlags, RockProviderPlayerControllerStateV1* outState);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestPlayerControllerJumpV1(std::uint64_t ownerToken, const RockProviderPlayerControllerJumpRequestV1* request);

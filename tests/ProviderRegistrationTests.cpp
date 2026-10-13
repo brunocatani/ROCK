@@ -23,8 +23,6 @@ namespace rock::provider::events {
     api::Status bind(api::OwnerToken,api::InterfaceId);
     void remove(api::OwnerToken);
 }
-namespace provider_debug_overlay {void clear(std::uint64_t){}}
-namespace provider_collider_visualization {void clear(std::uint64_t){}}
 namespace rock::physical_reload_input {void clearOwner(std::uint64_t){}}
 namespace rock::native_interaction_service {
     api::Status canUnregisterOwner(std::uint64_t){return api::Status::Ok;}

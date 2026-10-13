@@ -12,9 +12,6 @@ namespace rock::native_interaction_service::detail {
         Owner owner{};
         ni::Callbacks callbacks{};
         std::uint64_t obstacleLayers{};
-        std::array<ni::BodyVisual, ni::kMaxVisualBodies> bodies{};
-        std::uint32_t bodyCount{};
-        std::uint64_t visualFrame{};
     };
     struct BodySlot {
         Owner owner{};

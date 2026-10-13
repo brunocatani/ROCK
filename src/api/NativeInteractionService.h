@@ -19,10 +19,6 @@ namespace rock::native_interaction_service {
     void detach(PhysicsCallbackQuiescenceGate*);
     void update(const PhysicsFrameContext&);
     void preCollide(RE::hknpWorld*,const havok_physics_timing::PhysicsTimingSample&);
-    void render(const PhysicsFrameContext&);
-    void appendVisuals(debug::BodyOverlayFrame&);
-    bool hasVisuals();
-    bool hasVisualLabels();
     void clear(RE::hknpWorld*,void* bhkWorld);
     void clearOwner(Owner);
     api::Status canUnregisterOwner(Owner);

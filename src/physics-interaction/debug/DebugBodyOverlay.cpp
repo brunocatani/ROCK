@@ -179,9 +179,6 @@ namespace rock::debug
             DirectX::XMFLOAT3 worldAabbMax{};
             BodyOverlayRole role{ BodyOverlayRole::Target };
             std::uint32_t bodyId{ kInvalidBodyId };
-            std::uintptr_t expectedCollisionObject{ 0 };
-            std::uintptr_t expectedShape{ 0 };
-            float externalColor[4]{1,1,1,1};
             float detailUniformScale{ 1.0f };
             bool hasValidWorldAabb{ false };
             bool hasChildLocalMatrix{ false };
@@ -193,8 +190,6 @@ namespace rock::debug
             RE::hknpBodyId bodyId{ kInvalidBodyId };
             BodyOverlayRole role{ BodyOverlayRole::Target };
             bool useBodyArrayTransform{ false };
-            std::uintptr_t expectedCollisionObject{ 0 };
-            std::uintptr_t expectedShape{ 0 };
         };
 
         struct PhysicsPhaseCaptureRequest
@@ -261,7 +256,6 @@ namespace rock::debug
             std::vector<PublishedAxisEntry> axes;
             std::vector<MarkerOverlayEntry> markers;
             std::vector<SkeletonOverlayEntry> skeleton;
-            std::vector<ColoredLineOverlayEntry> coloredLines;
             std::vector<TextOverlayEntry> text;
             std::vector<CapturedShapeIdentity> capturedShapeIdentities;
             OverlayRenderSettings settings{};
@@ -275,7 +269,6 @@ namespace rock::debug
             bool drawAxes{ false };
             bool drawMarkers{ false };
             bool drawSkeleton{ false };
-            bool drawColoredLines{ false };
             bool drawText{ false };
         };
 
@@ -627,7 +620,7 @@ namespace rock::debug
              * BODY array transform, matching body-B authority, instead of the
              * generic live MOTION/COM frame used by non-target body readback.
              */
-            return role == BodyOverlayRole::Target || isExternalBodyRole(role) ?
+            return role == BodyOverlayRole::Target ?
                        BodyOverlayFrameSource::BodyArrayTransform :
                        BodyOverlayFrameSource::LiveMotionWhenAvailable;
         }
@@ -667,14 +660,6 @@ namespace rock::debug
             }
 
             return true;
-        }
-
-        bool matchesBodyWitness(RE::hknpWorld* world, RE::hknpBodyId id, std::uintptr_t collisionObject, std::uintptr_t shape)
-        {
-            if (!collisionObject && !shape) return true;
-            const auto live = havok_runtime::snapshotBodyIdentity(world, id);
-            return live.valid && reinterpret_cast<std::uintptr_t>(live.collisionObject) == collisionObject &&
-                reinterpret_cast<std::uintptr_t>(live.body->shape) == shape;
         }
 
         // Reads the body's motion-record world-space linear velocity (Havok
@@ -737,9 +722,7 @@ namespace rock::debug
                 destination.bodyId = RE::hknpBodyId{ source.bodyId };
                 destination.role = source.role;
                 destination.useBodyArrayTransform =
-                    source.role == BodyOverlayRole::Target || isExternalBodyRole(source.role);
-                destination.expectedCollisionObject = source.expectedCollisionObject;
-                destination.expectedShape = source.expectedShape;
+                    source.role == BodyOverlayRole::Target;
             }
             // Body axes can be enabled without collider shells. Capture their
             // physical frame too, sharing a request when the shell is present.
@@ -1168,7 +1151,7 @@ namespace rock::debug
                    role == BodyOverlayRole::RightGrabAuthorityProxy ||
                    role == BodyOverlayRole::LeftGrabAuthorityProxy ||
                    role == BodyOverlayRole::RightGrabPivotSourceCollider ||
-                   role == BodyOverlayRole::LeftGrabPivotSourceCollider || isExternalBodyRole(role);
+                   role == BodyOverlayRole::LeftGrabPivotSourceCollider;
         }
 
         OverlayRenderSettings captureOverlayRenderSettings()
@@ -1207,7 +1190,6 @@ namespace rock::debug
             frame.axes.clear();
             frame.markers.clear();
             frame.skeleton.clear();
-            frame.coloredLines.clear();
             frame.text.clear();
             frame.capturedShapeIdentities.clear();
             frame.settings = {};
@@ -1221,7 +1203,6 @@ namespace rock::debug
             frame.drawAxes = false;
             frame.drawMarkers = false;
             frame.drawSkeleton = false;
-            frame.drawColoredLines = false;
             frame.drawText = false;
         }
 
@@ -1291,63 +1272,6 @@ namespace rock::debug
             }
         }
 
-        bool readPrimitiveDimensions(std::uintptr_t shapeAddress, int& type, float& radius, float& length)
-        {
-            // Same primitive interpretation as captureShapeRecipeUnsafe; no
-            // authoring guesses, scene bounds or heap allocation for labels.
-            __try {
-                const auto* shape = reinterpret_cast<const RE::hknpShape*>(shapeAddress);
-                type = static_cast<int>(shape->GetType());
-                radius = shape->convexRadius * havokToGameScale();
-                if (!std::isfinite(radius) || radius < 0.0f) return false;
-                if (type == 3) {
-                    const auto* a = reinterpret_cast<const float*>(shapeAddress + 0x50);
-                    const auto* b = reinterpret_cast<const float*>(shapeAddress + 0x60);
-                    if (!finiteShapeVector3(a) || !finiteShapeVector3(b)) return false;
-                    const float x = b[0] - a[0], y = b[1] - a[1], z = b[2] - a[2];
-                    length = std::sqrt(x*x + y*y + z*z) * havokToGameScale() + 2.0f * radius;
-                    return std::isfinite(length);
-                }
-                return true;
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                return false;
-            }
-        }
-
-        void appendExternalShapeLabel(const BodyOverlayFrame& source, const BodyOverlayEntry& entry,
-            const BodyRenderInfo& body, PublishedOverlayFrame& destination)
-        {
-            if (!source.drawText || !isExternalBodyRole(entry.role) || !entry.label[0]) return;
-            TextOverlayEntry text{};
-            std::copy_n(entry.color, 4, text.color);
-            text.color[3] = 1.0f;
-            text.worldAnchored = true;
-            DirectX::XMFLOAT4X4 matrix{};
-            DirectX::XMStoreFloat4x4(&matrix, body.worldMatrix);
-            text.worldAnchor = {matrix._41, matrix._42, matrix._43};
-            text.x = 12.0f;
-            text.y = entry.labelOffsetY;
-            text.size = 1.0f;
-            int type = -1;
-            float radius = 0.0f, length = 0.0f;
-            if (!readPrimitiveDimensions(body.shapeAddress, type, radius, length)) {
-                std::snprintf(text.text, sizeof(text.text), "%s | shape unreadable", entry.label);
-            } else if (type == 2) {
-                std::snprintf(text.text, sizeof(text.text), "%s | sphere R %.2f", entry.label, radius);
-            } else if (type == 3) {
-                std::snprintf(text.text, sizeof(text.text), "%s | capsule R %.2f L %.2f", entry.label, radius, length);
-            } else {
-                DirectX::XMFLOAT3 low{}, high{};
-                if ((entry.visualFlags & static_cast<std::uint32_t>(api::native_interaction::VisualFlag::InactiveSource)) == 0 && captureBodyWorldAabb(source.world, entry.bodyId, low, high)) {
-                    std::snprintf(text.text, sizeof(text.text), "%s | type %d AABB %.1fx%.1fx%.1f", entry.label, type,
-                        high.x - low.x, high.y - low.y, high.z - low.z);
-                } else {
-                    std::snprintf(text.text, sizeof(text.text), "%s | type %d convex R %.2f (no active AABB)", entry.label, type, radius);
-                }
-            }
-            destination.text.push_back(text);
-        }
-
         bool buildPublishedFrame(const BodyOverlayFrame& source, PublishedOverlayFrame& destination)
         {
             resetPublishedFrame(destination);
@@ -1378,7 +1302,6 @@ namespace rock::debug
             destination.drawAxes = source.drawAxes;
             destination.drawMarkers = source.drawMarkers;
             destination.drawSkeleton = source.drawSkeleton;
-            destination.drawColoredLines = source.drawColoredLines;
             destination.drawText = source.drawText;
 
             const auto bodyCount = (std::min)(source.count, static_cast<std::uint32_t>(source.entries.size()));
@@ -1397,19 +1320,16 @@ namespace rock::debug
                 }
 
                 BodyRenderInfo body{};
-                if (!matchesBodyWitness(source.world, entry.bodyId, entry.expectedCollisionObject, entry.expectedShape) ||
-                    !extractBody(source.world, entry.bodyId, targetBodyOverlayFrameSource(entry.role), body)) {
+                if (!extractBody(source.world, entry.bodyId, targetBodyOverlayFrameSource(entry.role), body)) {
                     ++destination.bodyExtractFailures;
                     continue;
                 }
-                appendExternalShapeLabel(source, entry, body, destination);
-                const bool canReadWorldAabb = (entry.visualFlags & static_cast<std::uint32_t>(api::native_interaction::VisualFlag::InactiveSource)) == 0;
 
                 // Held-object presentation advances the complete solved pose.
                 // Use that same immutable frame for the ordinary collider shell,
                 // while phase diagnostics retain the unmodified physics sample.
                 RE::NiTransform presentedBody{};
-                const bool hasPresentation = !isExternalBodyRole(entry.role) && held_scene_presentation::tryGetPresentedBodyWorld(
+                const bool hasPresentation = held_scene_presentation::tryGetPresentedBodyWorld(
                     source.world, entry.bodyId.value, source.gameFrameIndex, presentedBody);
                 const auto displayedWorldMatrix = hasPresentation ?
                     niStoredBodyAxesToWorldMatrix(presentedBody) : body.worldMatrix;
@@ -1427,7 +1347,7 @@ namespace rock::debug
                     if (childCount > 0) {
                         DirectX::XMFLOAT3 aabbMin{};
                         DirectX::XMFLOAT3 aabbMax{};
-                        const bool aabbValid = canReadWorldAabb && captureBodyWorldAabb(
+                        const bool aabbValid = captureBodyWorldAabb(
                             source.world,
                             entry.bodyId,
                             aabbMin,
@@ -1455,9 +1375,6 @@ namespace rock::debug
                             // feeds this value back into extractBody, whose
                             // index guard rejects the serial bits.
                             published.bodyId = entry.bodyId.value;
-                            published.expectedCollisionObject = entry.expectedCollisionObject;
-                            published.expectedShape = entry.expectedShape;
-                            std::copy_n(entry.color,4,published.externalColor);
                             published.detailUniformScale =
                                 childIdentity.detailUniformScale;
                             published.hasValidWorldAabb = aabbValid;
@@ -1484,12 +1401,9 @@ namespace rock::debug
                 // the post-solve phase capture feeds this value back into
                 // extractBody, whose index guard rejects the serial bits.
                 published.bodyId = entry.bodyId.value;
-                published.expectedCollisionObject = entry.expectedCollisionObject;
-                published.expectedShape = entry.expectedShape;
-                std::copy_n(entry.color,4,published.externalColor);
                 published.detailUniformScale = shapeIdentity.detailUniformScale;
                 published.hasValidWorldAabb =
-                    canReadWorldAabb && captureBodyWorldAabb(source.world, entry.bodyId, published.worldAabbMin, published.worldAabbMax);
+                    captureBodyWorldAabb(source.world, entry.bodyId, published.worldAabbMin, published.worldAabbMax);
                 requestShapeBuildForFrame(destination, published.shapeKey, body.shapeAddress);
                 destination.bodies.push_back(std::move(published));
             }
@@ -1526,29 +1440,8 @@ namespace rock::debug
                 const auto count = (std::min)(source.skeletonCount, static_cast<std::uint32_t>(source.skeletonEntries.size()));
                 destination.skeleton.assign(source.skeletonEntries.begin(), source.skeletonEntries.begin() + count);
             }
-            if (source.drawColoredLines) {
-                const auto count = (std::min)(
-                    source.coloredLineCount,
-                    provider::ROCK_PROVIDER_MAX_DEBUG_OVERLAY_LINES_V1);
-                if (source.coloredLineEntries && count > 0) {
-                    destination.coloredLines.resize(count);
-                    for (std::uint32_t index = 0; index < count; ++index) {
-                        const auto& providerLine = source.coloredLineEntries[index];
-                        auto& line = destination.coloredLines[index];
-                        line.start = RE::NiPoint3(
-                            providerLine.startGame[0],
-                            providerLine.startGame[1],
-                            providerLine.startGame[2]);
-                        line.end = RE::NiPoint3(
-                            providerLine.endGame[0],
-                            providerLine.endGame[1],
-                            providerLine.endGame[2]);
-                        std::copy_n(providerLine.color, 4, line.color);
-                    }
-                }
-            }
             return !destination.bodies.empty() || !destination.axes.empty() || !destination.markers.empty() ||
-                   !destination.skeleton.empty() || !destination.coloredLines.empty() || !destination.text.empty();
+                   !destination.skeleton.empty() || !destination.text.empty();
         }
 
         void bodyColor(
@@ -1653,7 +1546,6 @@ namespace rock::debug
                 color[1] = 0.85f;
                 color[2] = 0.05f;
                 break;
-            case BodyOverlayRole::External: break;
             }
 
             if (decodeMode == debug_overlay_policy::ShapeDecodeMode::Proxy) {
@@ -2665,17 +2557,6 @@ namespace rock::debug
             }
         }
 
-        void collectColoredLineOverlays(debug_overlay_line_batch::LineBatch& batch, const PublishedOverlayFrame& frame)
-        {
-            if (!frame.drawColoredLines || frame.coloredLines.empty()) {
-                return;
-            }
-
-            for (const auto& entry : frame.coloredLines) {
-                appendDebugLine(batch, toVertex(entry.start), toVertex(entry.end), entry.color);
-            }
-        }
-
         // Text is drawn by RPS UI next to its world anchor in both eyes.
         // Screen-positioned text has no VR placement and is not drawn.
         void appendTexts(const PublishedOverlayFrame& frame, WorldDrawScratch& out, OverlayRuntimeStats& stats)
@@ -2857,15 +2738,7 @@ namespace rock::debug
                     static_assert(sizeof(stored) == sizeof(instance.transform));
                     std::memcpy(instance.transform, &stored, sizeof(instance.transform));
                     const auto drawnMode = shapeReady ? shape->decodeMode : debug_overlay_policy::ShapeDecodeMode::Proxy;
-                    bodyColor(
-                        entry.role,
-                        isExternalBodyRole(entry.role) && !shapeReady ?
-                            (cached.state == debug_overlay_shape::CacheState::Unsupported ?
-                                debug_overlay_policy::ShapeDecodeMode::Unsupported : debug_overlay_policy::ShapeDecodeMode::Proxy) :
-                            drawnMode,
-                        instance.color);
-                    if (isExternalBodyRole(entry.role) && shapeReady && drawnMode == debug_overlay_policy::ShapeDecodeMode::Detailed)
-                        std::copy_n(entry.externalColor, 4, instance.color);
+                    bodyColor(entry.role, drawnMode, instance.color);
                     instance.fill = rpsui::sdk::WorldFillV1::Wire;
                     if (!finiteValues(instance.transform, 16) || !finiteValues(instance.color, 4)) {
                         ++stats.bodyInvalidRejects;
@@ -2919,13 +2792,11 @@ namespace rock::debug
                 frame && frame->drawMarkers && !frame->markers.empty();
             const bool hasSkeletonToDraw =
                 frame && frame->drawSkeleton && !frame->skeleton.empty();
-            const bool hasColoredLinesToDraw = frame &&
-                frame->drawColoredLines && !frame->coloredLines.empty();
             const bool hasTextToDraw =
                 frame && frame->drawText && !frame->text.empty();
             const bool hasStandardOverlayToDraw =
                 hasBodiesToDraw || hasAxesToDraw || hasMarkersToDraw ||
-                hasSkeletonToDraw || hasColoredLinesToDraw || hasTextToDraw;
+                hasSkeletonToDraw || hasTextToDraw;
             if (!hasStandardOverlayToDraw && !hasGripZoneIndicatorsToDraw) {
                 return;
             }
@@ -2974,11 +2845,6 @@ namespace rock::debug
                 auto& lineBatch = scratch.lines;
                 lineBatch.beginFrame(
                     frame->settings.limits.maxLineVertices);
-                // Owner-published diagnostics are already hard-bounded by
-                // the provider API. Admit them first so an enabled addon
-                // view is not silently starved by unrelated
-                // high-cardinality probes.
-                collectColoredLineOverlays(lineBatch, *frame);
                 collectAxisOverlays(lineBatch, *frame, hasCompletedPhaseFrame ? &completedPhaseFrame : nullptr);
                 collectMarkerOverlays(lineBatch, *frame);
                 collectSkeletonOverlays(lineBatch, *frame);
@@ -3281,7 +3147,7 @@ namespace rock::debug
             destination.role = request.role;
 
             BodyRenderInfo body{};
-            if (!matchesBodyWitness(world, request.bodyId, request.expectedCollisionObject, request.expectedShape) || !extractBody(
+            if (!extractBody(
                     world,
                     request.bodyId,
                     request.useBodyArrayTransform ?

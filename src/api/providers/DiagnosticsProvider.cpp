@@ -1,31 +1,36 @@
-#include "DiagnosticsMarshalling.h"
+#include "CommonMarshalling.h"
+#include "physics-interaction/PhysicsLog.h"
 #include <ROCK/Discovery.h>
 #include "EventBoundary.h"
 
 namespace rock::api::diagnostics {
 namespace {
 using namespace boundary;
-Status ROCK_CALL publishDebugOverlayV1(std::uint64_t ownerToken, const DebugOverlayPublicationV1* publication) noexcept;
-Status ROCK_CALL clearDebugOverlayV1(std::uint64_t ownerToken) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        const auto result = provider::runtime::apiClearDebugOverlayV1(ownerToken);
-        return static_cast<Status>(result);
-    });
+// Retired in ROCK 1.0: ROCK draws nothing for other mods; they draw through
+// RPS UI Framework world drawing. The slots stay so getSample and copyEvents
+// keep binding until the Diagnostics major-2 rework deletes them (provider
+// API reset ledger, entry 2).
+Status retiredDrawing(std::atomic_bool& reported, const char* function) noexcept {
+    if (!reported.exchange(true, std::memory_order_relaxed)) {
+        ROCK_LOG_WARN(Api, "Diagnostics {} is retired in ROCK 1.0; draw through RPS UI Framework world drawing", function);
+    }
+    return Status::UnsupportedVersion;
 }
-Status ROCK_CALL setColliderVisualizationOverrideV1(std::uint64_t ownerToken, const ColliderVisualizationRequestV1* request) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        if (const auto s = checkInput(request); s != Status::Ok) return s;
-        provider::RockProviderColliderVisualizationRequestV1 native_request{};
-        convert(native_request, *request);
-        const auto result = provider::runtime::apiSetColliderVisualizationOverrideV1(ownerToken, &native_request);
-        return static_cast<Status>(result);
-    });
+Status ROCK_CALL publishDebugOverlayV1(std::uint64_t, const DebugOverlayPublicationV1*) noexcept {
+    static std::atomic_bool reported{ false };
+    return retiredDrawing(reported, "publishDebugOverlayV1");
 }
-Status ROCK_CALL clearColliderVisualizationOverrideV1(std::uint64_t ownerToken) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        const auto result = provider::runtime::apiClearColliderVisualizationOverrideV1(ownerToken);
-        return static_cast<Status>(result);
-    });
+Status ROCK_CALL clearDebugOverlayV1(std::uint64_t) noexcept {
+    static std::atomic_bool reported{ false };
+    return retiredDrawing(reported, "clearDebugOverlayV1");
+}
+Status ROCK_CALL setColliderVisualizationOverrideV1(std::uint64_t, const ColliderVisualizationRequestV1*) noexcept {
+    static std::atomic_bool reported{ false };
+    return retiredDrawing(reported, "setColliderVisualizationOverrideV1");
+}
+Status ROCK_CALL clearColliderVisualizationOverrideV1(std::uint64_t) noexcept {
+    static std::atomic_bool reported{ false };
+    return retiredDrawing(reported, "clearColliderVisualizationOverrideV1");
 }
 
 #include "DiagnosticsEndpoints.inl"

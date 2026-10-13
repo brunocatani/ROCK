@@ -166,8 +166,6 @@
             true);
         clearNativeAnimationRuntimePublicationForOwner(ownerToken);
         saved_grab_offset::clearDefaultGrabPosesForOwner(ownerToken);
-        provider_debug_overlay::clear(ownerToken);
-        provider_collider_visualization::clear(ownerToken);
 
         { const auto access=s_physicsInteraction.borrow(); if (auto* pi=access.get()) pi->releaseProviderPowerArmorGrabs(ownerToken); }
         return RockProviderResultV1::Ok;

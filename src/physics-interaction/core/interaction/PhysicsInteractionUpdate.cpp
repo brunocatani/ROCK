@@ -278,7 +278,6 @@ namespace rock
         // PublishFrame copies values before the render thread consumes them.
         _twoHandedGrip.publishGunstockRenderDebug(resolveEquippedWeaponInteractionNode());
         const auto context=buildFrameContext(bhk,hknp);
-        native_interaction_service::render(context);
         publishDebugBodyOverlay(context);
     }
 

@@ -5,38 +5,7 @@
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DebugOverlayPublish);
 
-        provider_collider_visualization::Snapshot colliderFocus{};
-        const bool hasColliderFocus = provider_collider_visualization::copySnapshot(colliderFocus);
-        const bool drawExternal = native_interaction_service::hasVisuals();
-        if (hasColliderFocus && !g_rockConfig.rockDebugDrawGunstock && !g_rockConfig.rockDebugDrawControllerAim && !drawExternal) {
-            debug::Install();
-            debug::BodyOverlayFrame focusedFrame{};
-            focusedFrame.world = context.hknpWorld;
-            focusedFrame.gameFrameIndex =
-                _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
-            focusedFrame.drawRockBodies = true;
-            focusedFrame.entries[0] = debug::BodyOverlayEntry{
-                RE::hknpBodyId{ colliderFocus.bodyId },
-                debug::BodyOverlayRole::FocusedWeaponPart
-            };
-            focusedFrame.count = 1;
-            debug::PublishFrame(focusedFrame);
-            return;
-        }
-
-
         auto* hknp = context.hknpWorld;
-        provider_debug_overlay::Snapshot* providerOverlay = nullptr;
-        if (provider_debug_overlay::hasContent()) {
-            // Lazily keep the aggregate buffer off the per-frame game stack.
-            // This aggregate scratch remains on ROCK's update-owner thread;
-            // copySnapshot synchronizes against publication and teardown.
-            static provider_debug_overlay::Snapshot s_providerOverlay{};
-            provider_debug_overlay::copySnapshot(s_providerOverlay);
-            providerOverlay = &s_providerOverlay;
-        }
-        const bool drawProviderOverlay = providerOverlay &&
-            (providerOverlay->lineCount > 0 || providerOverlay->textCount > 0);
         const auto skeletonBoneMode = skeleton_bone_debug_math::sanitizeDebugSkeletonBoneMode(g_rockConfig.rockDebugSkeletonBoneMode);
         const auto skeletonBoneSource = skeleton_bone_debug_math::sanitizeDebugSkeletonBoneSource(g_rockConfig.rockDebugSkeletonBoneSource);
         const auto visualization = debug_visualization_policy::resolve({
@@ -183,13 +152,13 @@
             drawHandColliders || drawHandBoneColliders ||
             drawBodyBoneColliders || drawDynamicHandColliders ||
             drawWeaponColliders || hasGrabbedWeaponPartCollider ||
-            drawDynamicWeaponColliders || drawExternal ||
+            drawDynamicWeaponColliders ||
             drawGrabAuthorityProxyCollider || drawGrabPivotSourceCollider;
         if (!drawAnyRockColliderBodies && !drawTargetColliders && !drawHandAxes && !drawGrabPivots && !drawFingerProbes &&
             !drawFingerSweptArc && !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal &&
             !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque &&
             !drawWeaponAuthorityDebug && !drawLooseWeaponGripZones && !drawNativeScopeActivation && !drawGrabSupportFrame &&
-            !drawDynamicHandColliders && !drawDynamicWeaponColliders && !drawAuthoredSupportGripDebug && !drawProviderOverlay && !drawGunstock && !drawControllerAim) {
+            !drawDynamicHandColliders && !drawDynamicWeaponColliders && !drawAuthoredSupportGripDebug && !drawGunstock && !drawControllerAim) {
             debug::ClearFrame();
             return;
         }
@@ -200,7 +169,7 @@
         frame.world = hknp;
         frame.gameFrameIndex =
             _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
-        frame.drawRockBodies = drawAnyRockColliderBodies || hasColliderFocus;
+        frame.drawRockBodies = drawAnyRockColliderBodies;
         frame.drawTargetBodies = drawTargetColliders;
         frame.drawAxes = drawHandAxes || drawGrabAuthorityProxy || drawGrabForceTorque || drawNativeScopeActivation ||
             drawWeaponAuthorityDebug || drawAuthoredSupportGripDebug || drawGunstock || drawControllerAim;
@@ -209,37 +178,11 @@
             drawWeaponAuthorityDebug || drawLooseWeaponGripZones || drawNativeScopeActivation || drawGrabSupportFrame || drawDynamicHandColliders ||
             drawAuthoredSupportGripDebug || drawGunstock || drawControllerAim;
         frame.drawSkeleton = drawSkeletonBones;
-        frame.drawColoredLines = providerOverlay && providerOverlay->lineCount > 0;
         frame.drawText = drawGrabForceTorqueText || drawFingerSweptArcText ||
             drawDynamicHandColliders || drawDynamicWeaponColliders || drawNativeScopeActivation ||
-            drawAuthoredSupportGripDebug || drawGrabAuthorityProxy ||
-            (providerOverlay && providerOverlay->textCount > 0) || drawGunstock || drawControllerAim ||
-            native_interaction_service::hasVisualLabels();
-        if (providerOverlay) {
-            frame.coloredLineEntries = providerOverlay->lines.data();
-            frame.coloredLineCount = providerOverlay->lineCount;
-        }
-        for (std::uint32_t index = 0;
-             providerOverlay && index < providerOverlay->textCount && frame.textCount < frame.textEntries.size();
-             ++index) {
-            const auto& source = providerOverlay->textEntries[index];
-            auto& destination = frame.textEntries[frame.textCount++];
-            std::snprintf(destination.text, sizeof(destination.text), "%s", source.text);
-            destination.x = source.x;
-            destination.y = source.y;
-            destination.size = source.textSize;
-            std::copy_n(source.color, 4, destination.color);
-            destination.worldAnchor = RE::NiPoint3(
-                source.worldAnchorGame[0],
-                source.worldAnchorGame[1],
-                source.worldAnchorGame[2]);
-            destination.worldAnchored =
-                (source.flags & static_cast<std::uint32_t>(
-                    provider::RockProviderDebugOverlayTextFlagV1::WorldAnchored)) != 0;
-        }
+            drawAuthoredSupportGripDebug || drawGrabAuthorityProxy || drawGunstock || drawControllerAim;
         const bool rightDisabled = context.right.disabled;
         const bool leftDisabled = context.left.disabled;
-        if (drawExternal) native_interaction_service::appendVisuals(frame);
 
         auto addBody = [&](RE::hknpBodyId bodyId, debug::BodyOverlayRole role) {
             if (bodyId.value == INVALID_BODY_ID) {
@@ -2374,7 +2317,6 @@
         }
 
         if (drawGunstock) {
-            if (hasColliderFocus) addBody(RE::hknpBodyId{colliderFocus.bodyId}, debug::BodyOverlayRole::FocusedWeaponPart);
             using namespace gunstock_debug;
             const auto& sample = _twoHandedGrip.gunstockDebugSample();
             const auto& grab = _twoHandedGrip.gunstockGrabSample();

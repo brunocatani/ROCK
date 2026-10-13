@@ -9,8 +9,6 @@
 #include "OwnerBindingPolicy.h"
 #include "EventStreams.h"
 #include "ROCKProviderApiInternal.h"
-#include "api/ProviderColliderVisualizationRuntime.h"
-#include "api/ProviderDebugOverlayRuntime.h"
 #include "api/ProviderLeasePolicy.h"
 #include "api/ProviderInstanceAccess.h"
 #include "api/ProviderFrameClock.h"
@@ -212,7 +210,6 @@ namespace rock::provider::runtime
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::HandVisualAuthority) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::NativeAnimationRuntimeProvider) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::EquippedWeaponHandlingAuthority) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::DebugOverlayPublication) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ProviderEvents) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::HandInteractionState) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ExternalBodyScopes) |
@@ -227,9 +224,7 @@ namespace rock::provider::runtime
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::WorldRaycasts) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::PlayerController) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::TargetDetails) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::PowerArmor) |
-        static_cast<std::uint32_t>(
-            RockProviderConsumerCapabilityV1::ColliderVisualizationOverride);
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::PowerArmor);
     constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame) |
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::FromPlayerInventory);
@@ -1636,8 +1631,6 @@ namespace rock::provider::runtime
             RockProviderHand::None,
             true);
         clearNativeAnimationRuntimePublicationForOwner(ownerToken);
-        provider_debug_overlay::clear(ownerToken);
-        provider_collider_visualization::clear(ownerToken);
         // Completed PA commands have already left the queue and scope registry.
         // Retire their hand attachments too, preserving the consumer's event
         // access and any manually attached peer hand.
@@ -2183,7 +2176,6 @@ namespace rock::provider::runtime
 #include "services/InputService.inl"
 #include "services/ReferencesService.inl"
 #include "services/PlayerControllerService.inl"
-#include "services/DiagnosticsService.inl"
 
 }
 
@@ -2264,49 +2256,6 @@ namespace rock::provider
             pruneExpiredOffhandReservationLocked(snapshot.frameIndex);
         }
         snapshot.offhandReservation = currentOffhandReservation();
-
-        provider_debug_overlay::PruneResult overlayPrune{};
-        provider_debug_overlay::prune(
-            snapshot.frameIndex,
-            snapshot.worldGeneration,
-            snapshot.skeletonGeneration,
-            snapshot.providerGeneration,
-            overlayPrune);
-        for (std::uint32_t index = 0; index < overlayPrune.count; ++index) {
-            publishAuthorityLostEvent(
-                overlayPrune.publishers[index].ownerToken,
-                RockProviderAuthorityKindV1::DebugOverlay,
-                static_cast<std::uint32_t>(
-                    overlayPrune.publishers[index].reason));
-        }
-
-        provider_collider_visualization::Invalidation
-            colliderVisualizationInvalidation{};
-        provider_collider_visualization::Snapshot
-            colliderVisualizationSnapshot{};
-        const bool colliderVisualizationActive =
-            provider_collider_visualization::copySnapshot(
-                colliderVisualizationSnapshot);
-        const bool colliderVisualizationBodyCurrent =
-            !colliderVisualizationActive ||
-            pi.isProviderWeaponBodyCurrentV1(
-                colliderVisualizationSnapshot.weaponGenerationKey,
-                colliderVisualizationSnapshot.bodyId);
-        provider_collider_visualization::prune(
-            snapshot.frameIndex,
-            snapshot.worldGeneration,
-            snapshot.skeletonGeneration,
-            snapshot.providerGeneration,
-            snapshot.weaponGenerationKey,
-            colliderVisualizationBodyCurrent,
-            colliderVisualizationInvalidation);
-        if (colliderVisualizationInvalidation.ownerToken != 0) {
-            publishAuthorityLostEvent(
-                colliderVisualizationInvalidation.ownerToken,
-                RockProviderAuthorityKindV1::ColliderVisualization,
-                static_cast<std::uint32_t>(
-                    colliderVisualizationInvalidation.reason));
-        }
 
         std::array<RockProviderWeaponPartGripStateV1, 2> partGripStates{};
         pi.fillProviderWeaponPartGripStates(partGripStates);
@@ -2860,15 +2809,6 @@ namespace rock::provider
                 s_equippedWeaponHandlingAuthority.ownerToken;
             s_equippedWeaponHandlingAuthority = {};
         }
-        provider_debug_overlay::PruneResult overlayLost{};
-        provider_debug_overlay::clearAll(
-            overlayLost,
-            RockProviderSuppressionInvalidationReasonV1::ProviderLost);
-        provider_collider_visualization::Invalidation
-            colliderVisualizationLost{};
-        provider_collider_visualization::clearAll(
-            colliderVisualizationLost,
-            RockProviderSuppressionInvalidationReasonV1::ProviderLost);
         {
             std::scoped_lock lock(s_offhandReservationMutex);
             clearOffhandReservationLocked(
@@ -2923,18 +2863,6 @@ namespace rock::provider
             publishAuthorityLostEvent(
                 equippedHandlingOwner,
                 RockProviderAuthorityKindV1::EquippedWeaponHandling,
-                providerLost);
-        }
-        for (std::uint32_t index = 0; index < overlayLost.count; ++index) {
-            publishAuthorityLostEvent(
-                overlayLost.publishers[index].ownerToken,
-                RockProviderAuthorityKindV1::DebugOverlay,
-                providerLost);
-        }
-        if (colliderVisualizationLost.ownerToken != 0) {
-            publishAuthorityLostEvent(
-                colliderVisualizationLost.ownerToken,
-                RockProviderAuthorityKindV1::ColliderVisualization,
                 providerLost);
         }
         s_generationStateAvailable.store(false, std::memory_order_release);

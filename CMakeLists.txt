@@ -854,22 +854,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKDebugOverlayLineBatchTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKDebugOverlayLineBatchTests)
 
-  add_executable(ROCKProviderDebugOverlayRuntimeTests
-    "${ROOT_DIR}/tests/ProviderDebugOverlayRuntimeTests.cpp"
-    "${SOURCE_DIR}/api/ProviderDebugOverlayRuntime.cpp"
-  )
-  target_compile_features(ROCKProviderDebugOverlayRuntimeTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKProviderDebugOverlayRuntimeTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKProviderDebugOverlayRuntimeTests)
-
-  add_executable(ROCKProviderColliderVisualizationRuntimeTests
-    "${ROOT_DIR}/tests/ProviderColliderVisualizationRuntimeTests.cpp"
-    "${SOURCE_DIR}/api/ProviderColliderVisualizationRuntime.cpp"
-  )
-  target_compile_features(ROCKProviderColliderVisualizationRuntimeTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKProviderColliderVisualizationRuntimeTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKProviderColliderVisualizationRuntimeTests)
-
   add_executable(ROCKModularEventStreamTests "${ROOT_DIR}/tests/ModularEventStreamTests.cpp")
   target_compile_features(ROCKModularEventStreamTests PRIVATE cxx_std_23)
   target_include_directories(ROCKModularEventStreamTests PRIVATE ${SOURCE_DIR})

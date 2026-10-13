@@ -110,7 +110,7 @@ namespace rock::native_interaction_service {
                 if(extension(owner))return Status::OwnerConflict;
                 if(callbacks->weaponUpdate&&service.driver)return Status::OwnerConflict;
                 for(auto& slot:service.extensions)if(!slot.owner) {
-                    slot.owner=owner;slot.callbacks=*callbacks;slot.obstacleLayers=0;slot.bodyCount=0;slot.visualFrame=0;
+                    slot.owner=owner;slot.callbacks=*callbacks;slot.obstacleLayers=0;
                     service.registeredOwners[&slot-service.extensions.data()].store(owner,std::memory_order_release);
                     service.faultedExtensions.fetch_and(~(1u<<static_cast<unsigned>(&slot-service.extensions.data())),std::memory_order_release);
                     if(callbacks->weaponUpdate)service.driver=owner;
@@ -183,23 +183,14 @@ namespace rock::native_interaction_service {
                 output->valid=1;return Status::Ok;
             });
         }
-        Status publishVisuals(Owner owner,const ni::BodyVisual* bodies,std::uint32_t count) noexcept {
-            return guarded(owner,[&] {
-                if(auto s=access(owner);s!=Status::Ok)return s;
-                if(current->frame.phase!=ni::Phase::Render)return Status::WrongThread;
-                if(count>ni::kMaxVisualBodies||(count&&!bodies))return Status::CapacityFull;
-                auto* slot=extension(owner);
-                std::uint32_t combined=count;
-                for(const auto& other:state().extensions)if(other.owner&&other.owner!=owner&&other.visualFrame==current->frame.sample.frameIndex)combined+=other.bodyCount;
-                if(combined>ni::kMaxVisualBodies)return Status::CapacityFull;
-                const auto colorValid=[](const float* color){for(int i=0;i<4;++i)if(!std::isfinite(color[i])||color[i]<0||color[i]>1)return false;return true;};
-                for(std::uint32_t i=0;i<count;++i)if(bodies[i].size!=sizeof(*bodies)||bodies[i].label[63]||!colorValid(bodies[i].color)||
-                    !std::isfinite(bodies[i].labelOffsetY)||(bodies[i].flags&~3u)||bodies[i].identity.body==ni::kInvalidBody||
-                    !bodies[i].identity.collisionObject||!bodies[i].identity.shape)return Status::InvalidArgument;
-                if(count)std::copy_n(bodies,count,slot->bodies.begin());
-                slot->bodyCount=count;slot->visualFrame=current->frame.sample.frameIndex;
-                return Status::Ok;
-            });
+        // Retired in ROCK 1.0: extensions draw through RPS UI Framework world
+        // drawing. The slot stays until the NativeInteraction major-2 rework
+        // (provider API reset ledger, entry 2); ROCK no longer calls render.
+        Status publishVisuals(Owner,const ni::BodyVisual*,std::uint32_t) noexcept {
+            static std::atomic_bool reported{false};
+            if(!reported.exchange(true,std::memory_order_relaxed))
+                ROCK_LOG_WARN(Physics,"NativeInteraction publishVisuals is retired in ROCK 1.0; draw through RPS UI Framework world drawing");
+            return Status::UnsupportedVersion;
         }
     }
     void initialize(PhysicsCallbackQuiescenceGate* gate,RetireWeapon retire,RefreshLayers refresh,void* context) {
@@ -230,18 +221,6 @@ namespace rock::native_interaction_service {
         const auto frame=stepFrame(world,timing);
         for(auto& slot:state().extensions)if(slot.owner&&slot.callbacks.preCollide)invoke(slot,frame,[&]{slot.callbacks.preCollide(&frame,slot.callbacks.context);});
     }
-    void render(const PhysicsFrameContext& context) {
-        auto& service=state();if(!service.rockGate)return;
-        auto rock=service.rockGate->pauseForMutation();auto mutation=service.gate.pauseForMutation();
-        const auto frame=makeFrame(context,ni::Phase::Render);
-        for(auto& slot:service.extensions)if(slot.owner) {
-            slot.bodyCount=0;
-            if(slot.callbacks.render)invoke(slot,frame,[&]{slot.callbacks.render(&frame,slot.callbacks.context);});
-        }
-    }
-    bool hasVisuals(){for(const auto& slot:state().extensions)if(slot.owner&&slot.bodyCount)return true;return false;}
-    bool hasVisualLabels(){for(const auto& slot:state().extensions)if(slot.owner)for(std::uint32_t i=0;i<slot.bodyCount;++i)
-        if(slot.bodies[i].label[0]&&(slot.bodies[i].flags&static_cast<unsigned>(ni::VisualFlag::Dimensions)))return true;return false;}
     std::uint64_t dynamicObstacleLayers(){return state().obstacleLayers.load(std::memory_order_acquire);}
     void clear(RE::hknpWorld* world,void* bhk) {
         auto& service=state();if(!service.rockGate)return;
@@ -251,7 +230,7 @@ namespace rock::native_interaction_service {
         auto frame=service.frame;frame.phase=ni::Phase::Retire;frame.world=reinterpret_cast<std::uintptr_t>(world);frame.bhkWorld=reinterpret_cast<std::uintptr_t>(bhk);
         for(auto& slot:service.extensions)if(slot.owner) {
             if(slot.callbacks.retire)invoke(slot,frame,[&]{slot.callbacks.retire(&frame,slot.callbacks.context);});
-            releaseResources(slot.owner,world,bhk);slot.obstacleLayers=0;slot.bodyCount=0;
+            releaseResources(slot.owner,world,bhk);slot.obstacleLayers=0;
         }
         service.command={};service.weaponBody=ni::kInvalidBody;combineMasks(world);service.frame={};
     }
@@ -274,7 +253,7 @@ namespace rock::native_interaction_service {
         if(!service.rockGate) {
             service.gate.pauseAndWait();releaseResources(owner,nullptr,nullptr);
             service.registeredOwners[slot-service.extensions.data()].store(0,std::memory_order_release);
-            slot->owner=0;slot->callbacks={};slot->obstacleLayers=0;slot->bodyCount=0;
+            slot->owner=0;slot->callbacks={};slot->obstacleLayers=0;
             if(service.driver==owner){service.driver=0;service.command={};service.weaponBody=ni::kInvalidBody;}
             combineMasks();return;
         }
@@ -287,7 +266,7 @@ namespace rock::native_interaction_service {
         auto frame=service.frame;frame.phase=ni::Phase::Retire;frame.world=reinterpret_cast<std::uintptr_t>(world);frame.bhkWorld=reinterpret_cast<std::uintptr_t>(bhk);
         if(slot->callbacks.retire)invoke(*slot,frame,[&]{slot->callbacks.retire(&frame,slot->callbacks.context);});
         releaseResources(owner,world,bhk);service.registeredOwners[slot-service.extensions.data()].store(0,std::memory_order_release);
-        slot->owner=0;slot->callbacks={};slot->obstacleLayers=0;slot->bodyCount=0;
+        slot->owner=0;slot->callbacks={};slot->obstacleLayers=0;
         if(service.driver==owner){service.driver=0;service.command={};service.weaponBody=ni::kInvalidBody;}
         combineMasks(world);
     }

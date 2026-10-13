@@ -42,13 +42,6 @@ namespace rock::provider {
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_VISUAL_AUTHORITY_LEASE_FRAMES_V1 = api::animation::kMaxHandVisualLeaseFrames;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_NATIVE_ANIMATION_RUNTIME_LEASE_FRAMES_V1 = api::animation::kMaxRuntimePublicationLeaseFrames;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EQUIPPED_WEAPON_HANDLING_LEASE_FRAMES_V1 = api::weapon::kMaxHandlingLeaseFrames;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_PUBLICATION_LEASE_FRAMES_V1 = api::diagnostics::kMaxLeaseFrames;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_PUBLISHERS_V1 = api::diagnostics::kMaxOverlayPublishers;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_LINES_PER_PUBLISHER_V1 = api::diagnostics::kMaxLinesPerPublisher;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_TEXT_PER_PUBLISHER_V1 = api::diagnostics::kMaxTextPerPublisher;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_LINES_V1 = api::diagnostics::kMaxCombinedLines;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_TEXT_V1 = api::diagnostics::kMaxCombinedText;
-    inline constexpr std::uint32_t ROCK_PROVIDER_DEBUG_OVERLAY_TEXT_CAPACITY_V1 = 128;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_COLLIDER_VISUALIZATION_OVERRIDE_LEASE_FRAMES_V1 = api::diagnostics::kMaxLeaseFrames;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_PROVIDER_EVENTS_V1 = 256;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_SCOPES_V1 = api::collision::kMaxExternalScopes;
@@ -356,6 +349,7 @@ namespace rock::provider {
         HandVisualAuthority = 1u << 10,
         NativeAnimationRuntimeProvider = 1u << 11,
         EquippedWeaponHandlingAuthority = 1u << 12,
+        // 1u << 13 retired in ROCK 1.0 (DebugOverlayPublication); never reuse.
         DebugOverlayPublication = 1u << 13,
         ProviderEvents = 1u << 14,
         HandInteractionState = 1u << 15,
@@ -369,6 +363,7 @@ namespace rock::provider {
         InputObservability = 1u << 23,
         TouchGrabTargets = 1u << 24,
         WorldRaycasts = 1u << 25,
+        // 1u << 26 retired in ROCK 1.0 (ColliderVisualizationOverride); never reuse.
         ColliderVisualizationOverride = 1u << 26,
         PlayerController = 1u << 27,
         TargetDetails = 1u << 28,
@@ -494,12 +489,6 @@ namespace rock::provider {
         None = 0,
         WorldTransform = 1u << 0,
         FingerLocalTransforms = 1u << 1,
-    };
-
-    enum class RockProviderDebugOverlayTextFlagV1 : std::uint32_t
-    {
-        None = 0,
-        WorldAnchored = 1u << 0,
     };
 
     enum class RockProviderWeaponEmitterKindV1 : std::uint32_t
@@ -832,9 +821,9 @@ namespace rock::provider {
         EquippedWeaponHandling = 5,
         OffhandReservation = 6,
         HandVisual = 7,
-        DebugOverlay = 8,
+        DebugOverlay = 8, // Retired in ROCK 1.0; never emitted, never reused.
         WeaponPartTargets = 9,
-        ColliderVisualization = 10,
+        ColliderVisualization = 10, // Retired in ROCK 1.0; never emitted, never reused.
     };
 
     enum class RockProviderEquippedWeaponTransitionSourceV1 : std::uint32_t
@@ -1802,31 +1791,6 @@ namespace rock::provider {
         std::uint32_t reserved[7]{};
     };
 
-    /*
-     * Temporarily replaces ROCK's complete debug-overlay presentation with one
-     * exact collider from the active equipped-weapon generation. The body ID
-     * must occur in ROCK's complete matching-generation weapon body catalog;
-     * it is not restricted to the compact weaponBodyIds frame-snapshot array.
-     * The optional partKind is descriptive metadata only; body identity
-     * remains the authoritative selection key. Refresh from ROCK's owner frame
-     * callback while focus is desired. Clearing or lease invalidation restores
-     * the unchanged config-driven overlay on the next frame.
-     */
-    struct RockProviderColliderVisualizationRequestV1
-    {
-        std::uint32_t size{
-            sizeof(RockProviderColliderVisualizationRequestV1)
-        };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint64_t weaponGenerationKey{ 0 };
-        std::uint32_t bodyId{ 0x7FFF'FFFF };
-        std::uint32_t partKind{ 0 };
-        std::uint32_t leaseFrames{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[6]{};
-    };
 
     /*
      * Authority is always a rolling bounded lease. leaseFrames must be nonzero,
@@ -2036,53 +2000,8 @@ namespace rock::provider {
         std::uint32_t reserved[6]{};
     };
 
-    /*
-     * Diagnostic-only colored geometry submitted to ROCK's single OpenVR/D3D
-     * overlay renderer. Consumer memory is copied during publish and is never
-     * retained. Publications are owner-scoped, bounded, game-thread-only, and
-     * retained. Every publication is a rolling bounded lease and is cleared on
-     * expiry, generation change, explicit clear, unregister, callback fault,
-     * or provider loss.
-     */
-    struct RockProviderDebugOverlayLineV1
-    {
-        std::uint32_t size{ sizeof(RockProviderDebugOverlayLineV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        float startGame[3]{};
-        float endGame[3]{};
-        float color[4]{ 1.0f, 1.0f, 1.0f, 1.0f };
-        std::uint32_t reserved[2]{};
-    };
 
-    struct RockProviderDebugOverlayTextV1
-    {
-        std::uint32_t size{ sizeof(RockProviderDebugOverlayTextV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint32_t flags{ 0 };
-        std::uint32_t reserved0{ 0 };
-        char text[ROCK_PROVIDER_DEBUG_OVERLAY_TEXT_CAPACITY_V1]{};
-        float x{ 18.0f };
-        float y{ 18.0f };
-        float textSize{ 2.0f };
-        float color[4]{ 0.90f, 1.0f, 0.95f, 0.92f };
-        float worldAnchorGame[3]{};
-        std::uint32_t reserved[4]{};
-    };
 
-    struct RockProviderDebugOverlayPublicationV1
-    {
-        std::uint32_t size{ sizeof(RockProviderDebugOverlayPublicationV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint32_t lineCount{ 0 };
-        std::uint32_t textCount{ 0 };
-        const RockProviderDebugOverlayLineV1* lines{ nullptr };
-        const RockProviderDebugOverlayTextV1* textEntries{ nullptr };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t leaseFrames{ 0 };
-        std::uint32_t reserved[4]{};
-    };
 
     /*
      * Detailed weapon evidence carries semantic body identity, local generated

@@ -4,11 +4,9 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "api/ProviderRuntimeTypes.h"
 #include "physics-interaction/weapon/WeaponTypes.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
-#include <ROCK/NativeInteraction.h>
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/NetImmerse/NiPoint.h"
@@ -43,14 +41,8 @@ namespace rock::debug
         LeftGrabAuthorityProxy,
         RightGrabPivotSourceCollider,
         LeftGrabPivotSourceCollider,
-        Target,
-        External
+        Target
     };
-
-    inline constexpr bool isExternalBodyRole(BodyOverlayRole role)
-    {
-        return role == BodyOverlayRole::External;
-    }
 
     enum class AxisOverlayRole : std::uint8_t
     {
@@ -284,14 +276,6 @@ namespace rock::debug
     {
         RE::hknpBodyId bodyId{ 0x7FFF'FFFF };
         BodyOverlayRole role{ BodyOverlayRole::Target };
-        // Optional identity witnesses for external/native body IDs. Publication
-        // and post-solve readback reject a recycled source before drawing it.
-        std::uintptr_t expectedCollisionObject{ 0 };
-        std::uintptr_t expectedShape{ 0 };
-        char label[64]{};
-        float color[4]{1,1,1,1};
-        float labelOffsetY{};
-        std::uint32_t visualFlags{};
     };
 
     struct AxisOverlayEntry
@@ -341,13 +325,6 @@ namespace rock::debug
         bool worldAnchored{ false };
     };
 
-    struct ColoredLineOverlayEntry
-    {
-        RE::NiPoint3 start{};
-        RE::NiPoint3 end{};
-        float color[4]{ 1.0f, 1.0f, 1.0f, 1.0f };
-    };
-
     struct BodyOverlayFrame
     {
         RE::hknpWorld* world{ nullptr };
@@ -355,27 +332,22 @@ namespace rock::debug
         std::array<BodyOverlayEntry,
             MAX_WEAPON_COLLISION_BODIES +
                 (hand_collider_semantics::kHandColliderBodyCountPerHand * 2) +
-                skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size() + 8 + api::native_interaction::kMaxVisualBodies>
+                skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size() + 8>
             entries{};
         std::array<AxisOverlayEntry, 96> axisEntries{};
         std::array<MarkerOverlayEntry, 512> markerEntries{};
         std::array<SkeletonOverlayEntry, skeleton_bone_debug_math::skeletonOverlayBudget()> skeletonEntries{};
-        // Borrowed only for the synchronous PublishFrame call, which copies
-        // the bounded prefix before returning.
-        const provider::RockProviderDebugOverlayLineV1* coloredLineEntries{ nullptr };
         std::array<TextOverlayEntry, 96> textEntries{};
         std::uint32_t count{ 0 };
         std::uint32_t axisCount{ 0 };
         std::uint32_t markerCount{ 0 };
         std::uint32_t skeletonCount{ 0 };
-        std::uint32_t coloredLineCount{ 0 };
         std::uint32_t textCount{ 0 };
         bool drawRockBodies{ false };
         bool drawTargetBodies{ false };
         bool drawAxes{ false };
         bool drawMarkers{ false };
         bool drawSkeleton{ false };
-        bool drawColoredLines{ false };
         bool drawText{ false };
     };
 
