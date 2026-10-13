@@ -68,6 +68,5 @@ const v1_7::Api& tableV1_7() noexcept {static const v1_7::Api value{tableV1_6(),
 namespace rock::api::animation { const Api& table() noexcept { static const Api value{}; return value; } }
 namespace rock::api::input { const Api& table() noexcept { static const Api value{}; return value; } }
 namespace rock::api::playercontroller { const Api& table() noexcept { static const Api value{}; return value; } }
-namespace rock::api::diagnostics { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
 namespace rock::api::configuration { const Api& table() noexcept { static const Api value{}; return value; } }
 namespace rock::native_interaction_service { const api::native_interaction::ApiV1& table() noexcept { static const api::native_interaction::ApiV1 value{};return value; } const api::native_interaction::v1_1::Api& tableV1_1() noexcept { static const api::native_interaction::v1_1::Api value{table()};return value; } }

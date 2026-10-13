@@ -6,7 +6,6 @@
 #include <ROCK/Storage.h>
 #include <ROCK/Configuration.h>
 #include <ROCK/Core.h>
-#include <ROCK/Diagnostics.h>
 #include <ROCK/Discovery.h>
 #include <ROCK/Grab.h>
 #include <ROCK/Hands.h>
@@ -502,72 +501,6 @@ static_assert(offsetof(rock::api::core::Event, providerGeneration) == 40);
 static_assert(offsetof(rock::api::core::Event, lifecycleFlags) == 44);
 static_assert(offsetof(rock::api::core::Event, reason) == 48);
 static_assert(offsetof(rock::api::core::Event, providerReady) == 52);
-static_assert(sizeof(rock::api::diagnostics::ColliderVisualizationRequestV1) == 64);
-static_assert(alignof(rock::api::diagnostics::ColliderVisualizationRequestV1) == 8);
-static_assert(offsetof(rock::api::diagnostics::ColliderVisualizationRequestV1, size) == 0);
-static_assert(offsetof(rock::api::diagnostics::ColliderVisualizationRequestV1, version) == 4);
-static_assert(offsetof(rock::api::diagnostics::ColliderVisualizationRequestV1, weaponGenerationKey) == 8);
-static_assert(offsetof(rock::api::diagnostics::ColliderVisualizationRequestV1, bodyId) == 16);
-static_assert(offsetof(rock::api::diagnostics::ColliderVisualizationRequestV1, partKind) == 20);
-static_assert(offsetof(rock::api::diagnostics::ColliderVisualizationRequestV1, leaseFrames) == 24);
-static_assert(offsetof(rock::api::diagnostics::ColliderVisualizationRequestV1, worldGeneration) == 28);
-static_assert(offsetof(rock::api::diagnostics::ColliderVisualizationRequestV1, skeletonGeneration) == 32);
-static_assert(offsetof(rock::api::diagnostics::ColliderVisualizationRequestV1, providerGeneration) == 36);
-static_assert(offsetof(rock::api::diagnostics::ColliderVisualizationRequestV1, reserved) == 40);
-static_assert(sizeof(rock::api::diagnostics::DebugOverlayLineV1) == 56);
-static_assert(alignof(rock::api::diagnostics::DebugOverlayLineV1) == 4);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayLineV1, size) == 0);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayLineV1, version) == 4);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayLineV1, startGame) == 8);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayLineV1, endGame) == 20);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayLineV1, color) == 32);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayLineV1, reserved) == 48);
-static_assert(sizeof(rock::api::diagnostics::DebugOverlayTextV1) == 200);
-static_assert(alignof(rock::api::diagnostics::DebugOverlayTextV1) == 4);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayTextV1, size) == 0);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayTextV1, version) == 4);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayTextV1, flags) == 8);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayTextV1, reserved0) == 12);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayTextV1, text) == 16);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayTextV1, x) == 144);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayTextV1, y) == 148);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayTextV1, textSize) == 152);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayTextV1, color) == 156);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayTextV1, worldAnchorGame) == 172);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayTextV1, reserved) == 184);
-static_assert(sizeof(rock::api::diagnostics::DebugOverlayPublicationV1) == 64);
-static_assert(alignof(rock::api::diagnostics::DebugOverlayPublicationV1) == 8);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayPublicationV1, size) == 0);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayPublicationV1, version) == 4);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayPublicationV1, lineCount) == 8);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayPublicationV1, textCount) == 12);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayPublicationV1, lines) == 16);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayPublicationV1, textEntries) == 24);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayPublicationV1, worldGeneration) == 32);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayPublicationV1, skeletonGeneration) == 36);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayPublicationV1, providerGeneration) == 40);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayPublicationV1, leaseFrames) == 44);
-static_assert(offsetof(rock::api::diagnostics::DebugOverlayPublicationV1, reserved) == 48);
-static_assert(sizeof(rock::api::diagnostics::EventV1) == 56);
-static_assert(alignof(rock::api::diagnostics::EventV1) == 8);
-static_assert(offsetof(rock::api::diagnostics::EventV1, size) == 0);
-static_assert(offsetof(rock::api::diagnostics::EventV1, kind) == 4);
-static_assert(offsetof(rock::api::diagnostics::EventV1, sequence) == 8);
-static_assert(offsetof(rock::api::diagnostics::EventV1, frameIndex) == 16);
-static_assert(offsetof(rock::api::diagnostics::EventV1, ownerToken) == 24);
-static_assert(offsetof(rock::api::diagnostics::EventV1, worldGeneration) == 32);
-static_assert(offsetof(rock::api::diagnostics::EventV1, skeletonGeneration) == 36);
-static_assert(offsetof(rock::api::diagnostics::EventV1, providerGeneration) == 40);
-static_assert(offsetof(rock::api::diagnostics::EventV1, authority) == 44);
-static_assert(offsetof(rock::api::diagnostics::EventV1, reason) == 48);
-static_assert(sizeof(rock::api::diagnostics::ApiV1) == 48);
-static_assert(alignof(rock::api::diagnostics::ApiV1) == 8);
-static_assert(offsetof(rock::api::diagnostics::ApiV1, publishDebugOverlayV1) == 0);
-static_assert(offsetof(rock::api::diagnostics::ApiV1, clearDebugOverlayV1) == 8);
-static_assert(offsetof(rock::api::diagnostics::ApiV1, setColliderVisualizationOverrideV1) == 16);
-static_assert(offsetof(rock::api::diagnostics::ApiV1, clearColliderVisualizationOverrideV1) == 24);
-static_assert(offsetof(rock::api::diagnostics::ApiV1, getSample) == 32);
-static_assert(offsetof(rock::api::diagnostics::ApiV1, copyEvents) == 40);
 static_assert(sizeof(rock::api::InterfaceDescriptorV1) == 40);
 static_assert(alignof(rock::api::InterfaceDescriptorV1) == 8);
 static_assert(offsetof(rock::api::InterfaceDescriptorV1, size) == 0);

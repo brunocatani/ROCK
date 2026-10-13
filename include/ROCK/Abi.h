@@ -81,6 +81,7 @@ namespace rock::api {
         WeaponParts=7, Animation=8, Input=9,
         // 10 (References) is retired: its queries are part of Grab. Never reuse.
         References=10,
+        // 12 (Diagnostics) is retired: other mods draw through RPS UI Framework. Never reuse.
         PlayerController=11, Diagnostics=12, Configuration=13, NativeInteraction=14, Storage=15
     };
     struct ReferenceKey {

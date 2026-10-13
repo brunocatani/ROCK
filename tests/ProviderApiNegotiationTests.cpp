@@ -153,7 +153,11 @@ int main() {
     verify(animation::table(),animation::kSupportedPermissions);
     verify(input::table(),input::kSupportedPermissions);
     verify(playercontroller::table(),playercontroller::kSupportedPermissions);
-    verify(diagnostics::table(),diagnostics::kSupportedPermissions);
+    {
+        // Diagnostics (12) is retired: other mods draw through RPS UI Framework.
+        const InterfaceDescriptorV1* retired{};
+        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::Diagnostics,1,0,8,&retired)!=Status::Ok && !retired);
+    }
     verify(configuration::table(),configuration::kSupportedPermissions);
     // The unchanged Weapon.h is the released 1.0 consumer. Discover its old
     // extent, bind the old major, and call it alongside an opted-in 1.1 caller.

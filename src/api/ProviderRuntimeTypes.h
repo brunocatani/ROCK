@@ -5,7 +5,6 @@
 #include <ROCK/Core.h>
 #include <ROCK/Animation.h>
 #include <ROCK/Collision.h>
-#include <ROCK/Diagnostics.h>
 #include <ROCK/Grab.h>
 #include <ROCK/Input.h>
 #include <ROCK/Touch.h>
@@ -40,7 +39,6 @@ namespace rock::provider {
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_VISUAL_AUTHORITY_LEASE_FRAMES_V1 = api::animation::kMaxHandVisualLeaseFrames;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_NATIVE_ANIMATION_RUNTIME_LEASE_FRAMES_V1 = api::animation::kMaxRuntimePublicationLeaseFrames;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EQUIPPED_WEAPON_HANDLING_LEASE_FRAMES_V1 = api::weapon::kMaxHandlingLeaseFrames;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_COLLIDER_VISUALIZATION_OVERRIDE_LEASE_FRAMES_V1 = api::diagnostics::kMaxLeaseFrames;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_PROVIDER_EVENTS_V1 = 256;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_HELD_BODIES_V1 = 8;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_COMPOSITION_ENTRIES_V1 = api::weapon::kMaxCompositionEntries;

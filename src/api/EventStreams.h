@@ -9,7 +9,6 @@
 #include <ROCK/WeaponParts.h>
 #include <ROCK/Animation.h>
 #include <ROCK/Input.h>
-#include <ROCK/Diagnostics.h>
 namespace rock::provider::events {
     api::Status bind(api::OwnerToken,api::InterfaceId);
     void remove(api::OwnerToken);
@@ -24,7 +23,6 @@ namespace rock::provider::events {
     api::Status copy(api::OwnerToken,std::uint64_t,api::weaponparts::EventV1*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::animation::Event*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::input::Event*,std::uint32_t,api::Stream&);
-    api::Status copy(api::OwnerToken,std::uint64_t,api::diagnostics::EventV1*,std::uint32_t,api::Stream&);
     bool inSynchronousCallback() noexcept;
     api::Status setGrabCallback(api::OwnerToken,api::grab::EventCallback,void*);
     void clearGrabCallback(api::OwnerToken);

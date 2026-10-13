@@ -27,7 +27,6 @@ namespace {
     OwnedEventStream<api::weaponparts::EventV1,api::weaponparts::kEventCapacityPerOwner,api::core::kMaxOwners> weaponpartsEvents;
     OwnedEventStream<api::animation::Event,api::animation::kEventCapacityPerOwner,api::core::kMaxOwners> animationEvents;
     OwnedEventStream<api::input::Event,api::input::kEventCapacityPerOwner,api::core::kMaxOwners> inputEvents;
-    OwnedEventStream<api::diagnostics::EventV1,api::diagnostics::kEventCapacityPerOwner,api::core::kMaxOwners> diagnosticsEvents;
     template<class Event> void stamp(Event& value,const api::Sample& sample) {
         value.frameIndex=sample.frameIndex; value.worldGeneration=sample.worldGeneration;
         value.skeletonGeneration=sample.skeletonGeneration; value.providerGeneration=sample.providerGeneration;
@@ -42,7 +41,6 @@ api::Status bind(api::OwnerToken owner,api::InterfaceId id) { switch(id) {
     case api::InterfaceId::WeaponParts: return weaponpartsEvents.bind(owner);
     case api::InterfaceId::Animation: return animationEvents.bind(owner);
     case api::InterfaceId::Input: return inputEvents.bind(owner);
-    case api::InterfaceId::Diagnostics: return diagnosticsEvents.bind(owner);
     default: return api::Status::Ok; } }
 void remove(api::OwnerToken owner) {
     clearGrabCallback(owner);
@@ -54,7 +52,6 @@ void remove(api::OwnerToken owner) {
     weaponpartsEvents.remove(owner);
     animationEvents.remove(owner);
     inputEvents.remove(owner);
-    diagnosticsEvents.remove(owner);
 }
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::core::Event* output,std::uint32_t capacity,api::Stream& state) { return coreEvents.copy(owner,after,output,capacity,state); }
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::collision::Event* output,std::uint32_t capacity,api::Stream& state) { return collisionEvents.copy(owner,after,output,capacity,state); }
@@ -64,7 +61,6 @@ api::Status copy(api::OwnerToken owner,std::uint64_t after,api::weapon::EventV1*
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::weaponparts::EventV1* output,std::uint32_t capacity,api::Stream& state) { return weaponpartsEvents.copy(owner,after,output,capacity,state); }
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::animation::Event* output,std::uint32_t capacity,api::Stream& state) { return animationEvents.copy(owner,after,output,capacity,state); }
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::input::Event* output,std::uint32_t capacity,api::Stream& state) { return inputEvents.copy(owner,after,output,capacity,state); }
-api::Status copy(api::OwnerToken owner,std::uint64_t after,api::diagnostics::EventV1* output,std::uint32_t capacity,api::Stream& state) { return diagnosticsEvents.copy(owner,after,output,capacity,state); }
 
 void publishGrab(const rock::GrabEventData& source,const api::Sample& sample) {
     api::grab::Event event{}; stamp(event,sample);
@@ -142,8 +138,6 @@ void publish(const RockProviderEventV1& source) {
         case RockProviderAuthorityKindV1::WeaponPartTargets: { api::weaponparts::EventV1 event{}; stamp(event,sample); event.kind=1; event.ownerToken=owner; event.authority=1; event.reason=source.result; weaponpartsEvents.publish(event,owner); break; }
         case RockProviderAuthorityKindV1::WeaponPartDrive: { api::weaponparts::EventV1 event{}; stamp(event,sample); event.kind=1; event.ownerToken=owner; event.authority=2; event.reason=source.result; weaponpartsEvents.publish(event,owner); break; }
         case RockProviderAuthorityKindV1::EquippedWeaponHandling: { api::weapon::EventV1 event{}; stamp(event,sample); event.kind=2; event.ownerToken=owner; event.authority=1; event.reason=source.result; weaponEvents.publish(event,owner); break; }
-        case RockProviderAuthorityKindV1::DebugOverlay: { api::diagnostics::EventV1 event{}; stamp(event,sample); event.kind=1; event.ownerToken=owner; event.authority=1; event.reason=source.result; diagnosticsEvents.publish(event,owner); break; }
-        case RockProviderAuthorityKindV1::ColliderVisualization: { api::diagnostics::EventV1 event{}; stamp(event,sample); event.kind=1; event.ownerToken=owner; event.authority=2; event.reason=source.result; diagnosticsEvents.publish(event,owner); break; }
         case RockProviderAuthorityKindV1::OffhandReservation: { api::grab::Event event{}; stamp(event,sample); event.kind=104; event.ownerToken=owner; event.failure=source.result; grabEvents.publish(event,owner); break; }
         default: { api::core::Event event{}; stamp(event,sample); event.kind=2; event.ownerToken=owner; event.reason=source.result; coreEvents.publish(event,owner); break; }
         }
