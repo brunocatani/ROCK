@@ -28,8 +28,14 @@ namespace rock::native_pipboy_hand_markers
         // "formID" is the entry's base form (TESForm+0x14 at 140C2147B).
         // InvListEntry.SetEntryText (Pipboy_InvPage.swf, ABC bytecode) draws
         //   the equipped square only as EquipIcon_mc.visible = equipState > 0
-        //   and tints it with the row's selection colour transform.
+        //   and sets EquipIcon_mc.transform.colorTransform to the row's
+        //   SelectedColorTransform (multipliers 1, offsets -255: black) or
+        //   UnselectedColorTransform (identity), both built in its <init>.
+        //   A white letter inside the icon therefore turns black on the
+        //   highlighted row and keeps the square's screen green otherwise.
         constexpr const char* kLetterName = "rockHandLetter";
+        constexpr double kLetterColor = 0xFFFFFF;
+        constexpr double kLetterScale = 2.0; // Letter font size per square height.
 
         using Value = RE::Scaleform::GFx::Value;
 
@@ -124,8 +130,12 @@ namespace rock::native_pipboy_hand_markers
             movie->CreateObject(&out, "flash.text.TextField");
             if (!out.IsObject()) return false;
             const double squareHeight = numeric(h);
-            format.SetMember("size", Value(std::max(8.0, squareHeight * 1.4)));
+            const double size = std::max(8.0, squareHeight * kLetterScale);
+            // The row's format carries the row's text colour, which is not
+            // the square's; the icon transform alone must decide the colour.
+            format.SetMember("size", Value(size));
             format.SetMember("bold", Value(true));
+            format.SetMember("color", Value(kLetterColor));
             out.SetMember("name", Value(kLetterName));
             if (member(field, "embedFonts", embed)) out.SetMember("embedFonts", embed);
             out.SetMember("defaultTextFormat", format);
@@ -141,7 +151,7 @@ namespace rock::native_pipboy_hand_markers
             if (!icon.Invoke("addChild", nullptr, &out, 1)) return false;
             if (s_reports.fetch_add(1, std::memory_order_relaxed) < 2)
                 ROCK_LOG_INFO(Weapon, "Pip-Boy hand letter created square=({:.1f},{:.1f} {:.1f}x{:.1f}) letterSize={:.1f}",
-                    numeric(x), numeric(y), isNumeric(w) ? numeric(w) : 0.0, squareHeight, std::max(8.0, squareHeight * 1.4));
+                    numeric(x), numeric(y), isNumeric(w) ? numeric(w) : 0.0, squareHeight, size);
             return true;
         }
 
@@ -149,7 +159,16 @@ namespace rock::native_pipboy_hand_markers
         // picks the equipment index; formID must match the weapon worn
         // there, so other equipped weapon-type items (grenades) get none.
         // Two identical weapons share a formID and still resolve by slot.
-        std::uint32_t s_rowReports = 0; // Movie thread only.
+        std::array<std::uint64_t, 8> s_reportedRows{}; // Movie thread only.
+        std::uint32_t s_rowReports = 0;
+        bool firstReport(std::uint32_t form, int slot)
+        {
+            const auto key = (static_cast<std::uint64_t>(form) << 8) | static_cast<std::uint64_t>(slot + 1);
+            for (std::uint32_t i = 0; i < s_rowReports; ++i) if (s_reportedRows[i] == key) return false;
+            if (s_rowReports >= s_reportedRows.size()) return false;
+            s_reportedRows[s_rowReports++] = key;
+            return true;
+        }
         native_hand_equipment::WornHand rowHand(const Value& data)
         {
             Value equip, form;
@@ -160,8 +179,7 @@ namespace rock::native_pipboy_hand_markers
             reach(Stage::EquippedRow);
             const auto formID = static_cast<std::uint32_t>(numeric(form));
             const auto hand = native_hand_equipment::wornRowHand(formID, slot);
-            if (s_rowReports < 6) {
-                ++s_rowReports;
+            if (firstReport(formID, slot)) {
                 ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters row form={:08X} equipState={} slot={} hand={}",
                     formID, state, slot, hand == native_hand_equipment::WornHand::Left ? "L" :
                         hand == native_hand_equipment::WornHand::Right ? "R" : "none");
