@@ -5,6 +5,7 @@
 #include <ROCK/GrabV1_1.h>
 #include <ROCK/GrabV1_3.h>
 #include <ROCK/Hands.h>
+#include <ROCK/PlayerController.h>
 #include "WeaponSourceCatalog.h"
 #include "WeaponPartGrabPoints.h"
 #include "ProviderRuntimeTypes.h"
@@ -105,8 +106,8 @@ namespace rock::provider::runtime {
     RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestTouchGrabYieldV1(std::uint64_t ownerToken, std::uint64_t scopeToken, std::uint64_t targetId, std::uint32_t targetGeneration);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryWorldRaycastV1(std::uint64_t ownerToken, const RockProviderWorldRaycastRequestV1* request, RockProviderWorldRaycastResultV1* outResult);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiGetLogicalInputActionStateV1(std::uint64_t ownerToken, RockProviderLogicalInputActionV1 action, RockProviderLogicalInputActionStateV1* outState);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetPlayerControllerStateV1(std::uint64_t ownerToken, std::uint32_t queryFlags, RockProviderPlayerControllerStateV1* outState);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestPlayerControllerJumpV1(std::uint64_t ownerToken, const RockProviderPlayerControllerJumpRequestV1* request);
+    api::Status apiGetPlayerControllerState(std::uint64_t ownerToken, api::playercontroller::PlayerControllerState& outState);
+    api::Status apiRequestPlayerControllerJump(std::uint64_t ownerToken, const api::playercontroller::PlayerControllerJumpRequest& request);
     bool ROCK_PROVIDER_CALL apiGetRawWandThumbstickV1(RockProviderHand hand, float* outX, float* outY);
     std::uint32_t ROCK_PROVIDER_CALL apiGetNativeInputContextV1();
     RockProviderResultV1 ROCK_PROVIDER_CALL apiGetHandTargetDetailsV1(std::uint64_t ownerToken, RockProviderHand hand, RockProviderHandTargetDetailsV1* outDetails);

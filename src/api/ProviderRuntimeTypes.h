@@ -1036,41 +1036,9 @@ namespace rock::provider {
         Jump = 1,
     };
 
-    enum class RockProviderPlayerControllerImplementationV1 : std::uint32_t
-    {
-        Unknown = 0,
-        Proxy = 1,
-        RigidBody = 2,
-    };
 
-    enum class RockProviderPlayerSupportStateV1 : std::uint32_t
-    {
-        Unsupported = 0,
-        Sliding = 1,
-        Supported = 2,
-    };
 
-    enum class RockProviderPlayerControllerStateFlagV1 : std::uint32_t
-    {
-        None = 0,
-        Valid = 1u << 0,
-        PositionValid = 1u << 1,
-        VelocityValid = 1u << 2,
-        ShapeValid = 1u << 3,
-        SupportNormalValid = 1u << 4,
-        Supported = 1u << 5,
-        Sliding = 1u << 6,
-        PenetrationChecked = 1u << 7,
-        Penetrating = 1u << 8,
-        Proxy = 1u << 9,
-        RigidBody = 1u << 10,
-    };
 
-    enum class RockProviderPlayerControllerQueryFlagV1 : std::uint32_t
-    {
-        None = 0,
-        CheckPenetration = 1u << 0,
-    };
 
     enum class RockProviderSuppressionInvalidationReasonV1 : std::uint32_t
     {
@@ -1634,43 +1602,7 @@ namespace rock::provider {
      * Penetrating are never reported; their absence proves no clearance.
      * No engine pointer or retained runtime identity crosses the ABI.
      */
-    struct RockProviderPlayerControllerStateV1
-    {
-        std::uint32_t size{ sizeof(RockProviderPlayerControllerStateV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint64_t frameIndex{ 0 };
-        std::uint32_t flags{ 0 };
-        RockProviderPlayerControllerImplementationV1 implementation{
-            RockProviderPlayerControllerImplementationV1::Unknown
-        };
-        RockProviderPlayerSupportStateV1 supportState{
-            RockProviderPlayerSupportStateV1::Unsupported
-        };
-        std::uint32_t reserved0{ 0 };
-        RockProviderPoint3 positionGame{};
-        RockProviderPoint3 velocityGame{};
-        RockProviderPoint3 supportNormalGame{};
-        float radiusGame{ 0.0f };
-        float heightGame{ 0.0f };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[4]{};
-    };
 
-    struct RockProviderPlayerControllerJumpRequestV1
-    {
-        std::uint32_t size{
-            sizeof(RockProviderPlayerControllerJumpRequestV1)
-        };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        float heightGameUnits{ 0.0f };
-        std::uint32_t reserved0{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[5]{};
-    };
 
     struct RockProviderBounds3
     {

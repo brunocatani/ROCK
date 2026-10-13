@@ -37,7 +37,7 @@ namespace rock::api::weaponparts { const v1_7::Api& tableV1_7() noexcept; }
 namespace rock::api::animation { const ApiV1& table() noexcept; }
 namespace rock::api::input { const v1_5::Api& tableV1_5() noexcept; const ApiV1& table() noexcept; const v1_1::Api& tableV1_1() noexcept; const v1_2::Api& tableV1_2() noexcept; const v1_3::Api& tableV1_3() noexcept; const v1_4::Api& tableV1_4() noexcept; }
 namespace rock::api::references { const ApiV1& table() noexcept; }
-namespace rock::api::playercontroller { const ApiV1& table() noexcept; }
+namespace rock::api::playercontroller { const Api& table() noexcept; }
 namespace rock::api::diagnostics { const ApiV1& table() noexcept; }
 namespace rock::api::configuration { const Api& table() noexcept; }
 extern "C" rock::api::Status ROCK_CALL ROCKAPI_QueryInterfaceV1(

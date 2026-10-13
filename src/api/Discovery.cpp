@@ -37,7 +37,7 @@ namespace rock::api::input { const v1_1::Api& tableV1_1() noexcept; }
 namespace rock::api::input { const v1_2::Api& tableV1_2() noexcept; }
 namespace rock::api::input { const v1_5::Api& tableV1_5() noexcept; }
 namespace rock::api::references { const ApiV1& table() noexcept; }
-namespace rock::api::playercontroller { const ApiV1& table() noexcept; }
+namespace rock::api::playercontroller { const Api& table() noexcept; }
 namespace rock::api::diagnostics { const ApiV1& table() noexcept; }
 namespace rock::api::configuration { const Api& table() noexcept; }
 namespace rock::native_interaction_service { const api::native_interaction::ApiV1& table() noexcept; const api::native_interaction::v1_1::Api& tableV1_1() noexcept; }
