@@ -28,7 +28,7 @@ namespace {
     OwnedEventStream<api::animation::EventV1,api::animation::kEventCapacityPerOwner,api::core::kMaxOwners> animationEvents;
     OwnedEventStream<api::input::EventV1,api::input::kEventCapacityPerOwner,api::core::kMaxOwners> inputEvents;
     OwnedEventStream<api::diagnostics::EventV1,api::diagnostics::kEventCapacityPerOwner,api::core::kMaxOwners> diagnosticsEvents;
-    template<class Event> void stamp(Event& value,const api::SampleV1& sample) {
+    template<class Event> void stamp(Event& value,const api::Sample& sample) {
         value.frameIndex=sample.frameIndex; value.worldGeneration=sample.worldGeneration;
         value.skeletonGeneration=sample.skeletonGeneration; value.providerGeneration=sample.providerGeneration;
     }
@@ -56,17 +56,17 @@ void remove(api::OwnerToken owner) {
     inputEvents.remove(owner);
     diagnosticsEvents.remove(owner);
 }
-api::Status copy(api::OwnerToken owner,std::uint64_t after,api::core::EventV1* output,std::uint32_t capacity,api::StreamV1& state) { return coreEvents.copy(owner,after,output,capacity,state); }
-api::Status copy(api::OwnerToken owner,std::uint64_t after,api::collision::EventV1* output,std::uint32_t capacity,api::StreamV1& state) { return collisionEvents.copy(owner,after,output,capacity,state); }
-api::Status copy(api::OwnerToken owner,std::uint64_t after,api::grab::EventV1* output,std::uint32_t capacity,api::StreamV1& state) { return grabEvents.copy(owner,after,output,capacity,state); }
-api::Status copy(api::OwnerToken owner,std::uint64_t after,api::touch::EventV1* output,std::uint32_t capacity,api::StreamV1& state) { return touchEvents.copy(owner,after,output,capacity,state); }
-api::Status copy(api::OwnerToken owner,std::uint64_t after,api::weapon::EventV1* output,std::uint32_t capacity,api::StreamV1& state) { return weaponEvents.copy(owner,after,output,capacity,state); }
-api::Status copy(api::OwnerToken owner,std::uint64_t after,api::weaponparts::EventV1* output,std::uint32_t capacity,api::StreamV1& state) { return weaponpartsEvents.copy(owner,after,output,capacity,state); }
-api::Status copy(api::OwnerToken owner,std::uint64_t after,api::animation::EventV1* output,std::uint32_t capacity,api::StreamV1& state) { return animationEvents.copy(owner,after,output,capacity,state); }
-api::Status copy(api::OwnerToken owner,std::uint64_t after,api::input::EventV1* output,std::uint32_t capacity,api::StreamV1& state) { return inputEvents.copy(owner,after,output,capacity,state); }
-api::Status copy(api::OwnerToken owner,std::uint64_t after,api::diagnostics::EventV1* output,std::uint32_t capacity,api::StreamV1& state) { return diagnosticsEvents.copy(owner,after,output,capacity,state); }
+api::Status copy(api::OwnerToken owner,std::uint64_t after,api::core::EventV1* output,std::uint32_t capacity,api::Stream& state) { return coreEvents.copy(owner,after,output,capacity,state); }
+api::Status copy(api::OwnerToken owner,std::uint64_t after,api::collision::EventV1* output,std::uint32_t capacity,api::Stream& state) { return collisionEvents.copy(owner,after,output,capacity,state); }
+api::Status copy(api::OwnerToken owner,std::uint64_t after,api::grab::EventV1* output,std::uint32_t capacity,api::Stream& state) { return grabEvents.copy(owner,after,output,capacity,state); }
+api::Status copy(api::OwnerToken owner,std::uint64_t after,api::touch::EventV1* output,std::uint32_t capacity,api::Stream& state) { return touchEvents.copy(owner,after,output,capacity,state); }
+api::Status copy(api::OwnerToken owner,std::uint64_t after,api::weapon::EventV1* output,std::uint32_t capacity,api::Stream& state) { return weaponEvents.copy(owner,after,output,capacity,state); }
+api::Status copy(api::OwnerToken owner,std::uint64_t after,api::weaponparts::EventV1* output,std::uint32_t capacity,api::Stream& state) { return weaponpartsEvents.copy(owner,after,output,capacity,state); }
+api::Status copy(api::OwnerToken owner,std::uint64_t after,api::animation::EventV1* output,std::uint32_t capacity,api::Stream& state) { return animationEvents.copy(owner,after,output,capacity,state); }
+api::Status copy(api::OwnerToken owner,std::uint64_t after,api::input::EventV1* output,std::uint32_t capacity,api::Stream& state) { return inputEvents.copy(owner,after,output,capacity,state); }
+api::Status copy(api::OwnerToken owner,std::uint64_t after,api::diagnostics::EventV1* output,std::uint32_t capacity,api::Stream& state) { return diagnosticsEvents.copy(owner,after,output,capacity,state); }
 
-void publishGrab(const rock::GrabEventData& source,const api::SampleV1& sample) {
+void publishGrab(const rock::GrabEventData& source,const api::Sample& sample) {
     api::grab::EventV1 event{}; stamp(event,sample);
     event.kind=static_cast<std::uint32_t>(source.type); event.hand=source.isLeft?api::Hand::Left:api::Hand::Right;
     event.formId=source.formID; event.primaryBodyId=source.primaryBodyId; event.secondaryBodyId=source.secondaryBodyId;
@@ -93,7 +93,7 @@ void publishGrab(const rock::GrabEventData& source,const api::SampleV1& sample) 
     }
     for (std::size_t i=0;i<faultCount;++i) { clearGrabCallback(faults[i]); runtime::deferRevoke(faults[i]); }
 }
-void publishPhysics(std::uint32_t kind,bool left,std::uint32_t form,std::uint32_t layer,const api::SampleV1& sample) {
+void publishPhysics(std::uint32_t kind,bool left,std::uint32_t form,std::uint32_t layer,const api::Sample& sample) {
     if (kind==100 || kind==101) {
         api::collision::EventV1 event{}; stamp(event,sample); event.kind=kind-99;
         event.hand=left?api::Hand::Left:api::Hand::Right; event.formId=form; event.collisionLayer=layer;
@@ -108,7 +108,7 @@ void publishPhysics(std::uint32_t kind,bool left,std::uint32_t form,std::uint32_
     }
 }
 void publish(const RockProviderEventV1& source) {
-    const api::SampleV1 sample{source.frameIndex,0,source.worldGeneration,source.skeletonGeneration,source.providerGeneration,0};
+    const api::Sample sample{source.frameIndex,0,source.worldGeneration,source.skeletonGeneration,source.providerGeneration,0};
     switch(source.kind) {
     case RockProviderEventKindV1::LifecycleChanged: {
         api::core::EventV1 event{}; stamp(event,sample); event.kind=1;

@@ -22,7 +22,7 @@ namespace rock::api::storage_interaction
     };
     struct ContactV1 {
         std::uint32_t size{sizeof(ContactV1)}, version{1};
-        SampleV1 sample{};
+        Sample sample{};
         std::uint64_t displayId{}, contactFrame{};
         std::uint32_t storedReference{}, valid{};
         Hand hand{Hand::None};

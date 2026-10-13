@@ -8,7 +8,7 @@ namespace rock::api::input::v1_2 {
     struct ReloadInputRequest {
         std::uint32_t size{sizeof(ReloadInputRequest)},weaponFormId{};
         std::uint64_t weaponGenerationKey{};
-        SampleV1 sample{};
+        Sample sample{};
         Hand hand{Hand::Left};
         std::uint32_t leaseFrames{2};
     };
@@ -16,7 +16,7 @@ namespace rock::api::input::v1_2 {
         std::uint32_t size{sizeof(ReloadInputState)},active{};
         OwnerToken owner{};
         std::uint64_t pressSequence{},releaseSequence{},expiresAfterFrame{};
-        SampleV1 sample{};
+        Sample sample{};
         Hand hand{Hand::None};
         std::uint32_t held{};
     };

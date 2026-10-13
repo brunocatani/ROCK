@@ -553,7 +553,7 @@ namespace rock
         void unsubscribeContactEvents(RE::hknpWorld* liveWorld);
 
         void dispatchPhysicsMessage(std::uint32_t msgType, bool isLeft, RE::TESObjectREFR* refr = nullptr, std::uint32_t formID = 0, std::uint32_t layer = 0);
-        api::SampleV1 providerEventSample() const;
+        api::Sample providerEventSample() const;
         void dispatchGrabEvent(GrabEventData eventData);
         void dispatchSimpleGrabEvent(
             GrabEventType type,

@@ -10,7 +10,7 @@ int main() {
     assert(stream.bind(3)==Status::CapacityFull);
     for (std::uint32_t i=0;i<9;++i) stream.publish({0,i},1);
     stream.publish({0,99},2);
-    Event output[3]{}; rock::api::StreamV1 state{};
+    Event output[3]{}; rock::api::Stream state{};
     assert(stream.copy(2,0,output,3,state)==Status::Ok);
     assert(state.lostCount==0 && state.copiedCount==1 && output[0].value==99);
     assert(stream.copy(1,0,output,1,state)==Status::Ok);

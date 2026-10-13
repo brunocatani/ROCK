@@ -1,7 +1,7 @@
 #pragma once
 #include "Boundary.h"
 namespace rock::api::boundary {
-    inline SampleV1 sampleFromSnapshot(const provider::RockProviderFrameSnapshot& frame) noexcept {
+    inline Sample sampleFromSnapshot(const provider::RockProviderFrameSnapshot& frame) noexcept {
         return {frame.frameIndex, frame.stateSequence, frame.worldGeneration,
             frame.skeletonGeneration, frame.providerGeneration, frame.collisionGeneration};
     }

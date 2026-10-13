@@ -104,8 +104,8 @@ namespace rock::api::diagnostics {
         Status(ROCK_CALL* setColliderVisualizationOverrideV1)(std::uint64_t ownerToken, const ColliderVisualizationRequestV1* request) noexcept;
         Status(ROCK_CALL* clearColliderVisualizationOverrideV1)(std::uint64_t ownerToken) noexcept;
         // Family-local publication identity; compare before combining readbacks.
-        Status(ROCK_CALL* getSample)(OwnerToken owner, SampleV1* outSample) noexcept;
-        Status(ROCK_CALL* copyEvents)(OwnerToken, std::uint64_t afterSequence, EventV1*, std::uint32_t capacity, StreamV1*) noexcept;
+        Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
+        Status(ROCK_CALL* copyEvents)(OwnerToken, std::uint64_t afterSequence, EventV1*, std::uint32_t capacity, Stream*) noexcept;
     };
 }
 

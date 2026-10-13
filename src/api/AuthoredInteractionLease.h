@@ -10,13 +10,13 @@ namespace rock::authored_interaction {
         api::OwnerToken owner{};
         std::uint64_t expires{};
         Request request{};
-        bool current(const api::SampleV1& now) const noexcept {
+        bool current(const api::Sample& now) const noexcept {
             const auto& s=request.sample;
             return owner && now.frameIndex<=expires && s.worldGeneration==now.worldGeneration &&
                 s.skeletonGeneration==now.skeletonGeneration && s.providerGeneration==now.providerGeneration &&
                 s.collisionGeneration==now.collisionGeneration;
         }
-        api::Status set(api::OwnerToken caller,const Request& next,const api::SampleV1& now) noexcept {
+        api::Status set(api::OwnerToken caller,const Request& next,const api::Sample& now) noexcept {
             if(!caller || next.size!=sizeof(Request) || next.version!=1 || next.reserved ||
                 (next.hand!=api::Hand::Right && next.hand!=api::Hand::Left) || !next.referenceFormId ||
                 !next.flags || (next.flags&~7u) || ((next.flags&attached)&&!(next.flags&reserve)) ||
@@ -27,7 +27,7 @@ namespace rock::authored_interaction {
             if(current(now)&&owner!=caller)return api::Status::OwnerConflict;
             *this=candidate;return api::Status::Ok;
         }
-        api::Status clear(api::OwnerToken caller,const api::SampleV1& now) noexcept {
+        api::Status clear(api::OwnerToken caller,const api::Sample& now) noexcept {
             if(current(now)&&owner!=caller)return api::Status::OwnerConflict;
             *this={};return api::Status::Ok;
         }

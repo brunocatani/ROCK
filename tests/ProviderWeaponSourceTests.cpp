@@ -10,7 +10,7 @@ namespace rock {
 namespace rock::provider::runtime {
     // The old event producer used this stale snapshot. The current one must not.
     std::uint64_t currentGameFrameIndex(){return eventClock.current();}
-    api::SampleV1 sample(){return {100,1,2,3,4,5};}
+    api::Sample sample(){return {100,1,2,3,4,5};}
     void deferRevoke(std::uint64_t){assert(false);}
 }
 namespace {
@@ -78,7 +78,7 @@ namespace {
         assert(provider::events::bind(77,api::InterfaceId::Core)==api::Status::Ok);
         assert(provider::events::bind(77,api::InterfaceId::Grab)==api::Status::Ok);
         pi->dispatchPhysicsMessage(104,false,nullptr,0,0);
-        api::core::EventV1 event{};api::StreamV1 stream{};
+        api::core::EventV1 event{};api::Stream stream{};
         assert(provider::events::copy(77,0,&event,1,stream)==api::Status::Ok && stream.copiedCount==1);
         assert(event.frameIndex==101 && event.worldGeneration==6 && event.skeletonGeneration==7 && event.providerGeneration==8);
         GrabEventData grab{};grab.type=GrabEventType::Released;RE::TESObjectREFR reference;grab.refr=&reference;

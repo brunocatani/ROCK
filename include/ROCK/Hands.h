@@ -61,7 +61,7 @@ namespace rock::api::hands {
         std::uint32_t reserved[5]{};
     };
 
-    struct HeadPoseV1 { std::uint32_t size{sizeof(HeadPoseV1)}; std::uint32_t valid{}; SampleV1 sample{}; Transform transform{}; float forwardWorld[3]{}; };
+    struct HeadPoseV1 { std::uint32_t size{sizeof(HeadPoseV1)}; std::uint32_t valid{}; Sample sample{}; Transform transform{}; float forwardWorld[3]{}; };
 
     // Roles identify the physical hands assigned to ROCK's firing/support roles
     // in this publication. They follow firing-hand transfers; they are not the
@@ -69,7 +69,7 @@ namespace rock::api::hands {
     struct RolesV1 {
         std::uint32_t size{sizeof(RolesV1)};
         std::uint32_t version{1};
-        SampleV1 sample{};
+        Sample sample{};
         Hand primary{Hand::None};
         Hand offhand{Hand::None};
     };
@@ -90,8 +90,8 @@ namespace rock::api::hands {
         Status(ROCK_CALL* getPresentedHandFrameV1)(OwnerToken ownerToken, Hand hand, HandFrameV1* outFrame) noexcept;
         Status(ROCK_CALL* getPresentedHandPoseV1)(std::uint64_t ownerToken, Hand hand, PresentedHandPoseV1* outPose) noexcept;
         // Family-local publication identity; compare before combining readbacks.
-        Status(ROCK_CALL* getSample)(OwnerToken owner, SampleV1* outSample) noexcept;
-        // Any-thread copies; payload and SampleV1 identify the same publication.
+        Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
+        // Any-thread copies; payload and Sample identify the same publication.
         Status(ROCK_CALL* getHeadPose)(OwnerToken, HeadPoseV1*) noexcept;
         Status(ROCK_CALL* getRoles)(OwnerToken, RolesV1*) noexcept;
     };

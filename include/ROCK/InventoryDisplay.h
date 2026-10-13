@@ -17,7 +17,7 @@ namespace rock::api::inventory_display
     };
     struct Contact {
         std::uint32_t size{sizeof(Contact)},version{1};
-        SampleV1 sample;
+        Sample sample;
         std::uint64_t displayId{},contactFrame{};
         weapon::v1_1::InventoryWeapon item;
         Hand hand{Hand::None};
@@ -25,14 +25,14 @@ namespace rock::api::inventory_display
     };
     struct GripRequest {
         std::uint32_t size{sizeof(GripRequest)},version{1};
-        SampleV1 sample;
+        Sample sample;
         std::uint64_t displayId{};
         Hand hand{Hand::None};
         GripRole role{GripRole::Nearest};
     };
     struct GripPose {
         std::uint32_t size{sizeof(GripPose)},version{1};
-        SampleV1 sample;
+        Sample sample;
         std::uint64_t displayId{},poseSequence{};
         weapon::v1_1::InventoryWeapon item;
         std::uint32_t valid{};

@@ -1,4 +1,4 @@
-Status ROCK_CALL getSample(OwnerToken owner, SampleV1* outSample) noexcept {
+Status ROCK_CALL getSample(OwnerToken owner, Sample* outSample) noexcept {
     return boundary::readSample(owner, kInterfaceId, outSample);
 }
 
@@ -48,6 +48,6 @@ Status ROCK_CALL bindInterface(OwnerToken owner, InterfaceId family, std::uint32
     catch (...) { return Status::InternalError; }
 }
 
-Status ROCK_CALL copyEvents(OwnerToken owner,std::uint64_t after,EventV1* events,std::uint32_t capacity,StreamV1* state) noexcept {
+Status ROCK_CALL copyEvents(OwnerToken owner,std::uint64_t after,EventV1* events,std::uint32_t capacity,Stream* state) noexcept {
     return boundary::copyEventStream(owner,kInterfaceId,after,events,capacity,kEventCapacityPerOwner,state);
 }

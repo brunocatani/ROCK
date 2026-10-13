@@ -9,7 +9,7 @@ namespace rock::api::grab::v1_3 {
         Hand hand{Hand::None};
         std::uint32_t referenceFormId{};
         std::uint32_t leaseFrames{2};
-        SampleV1 sample{};
+        Sample sample{};
         std::uint64_t gripSequence{};
         std::uint32_t connectedWeaponFormId{};
         std::uint32_t reserved{};
@@ -20,7 +20,7 @@ namespace rock::api::grab::v1_3 {
         std::uint32_t size{sizeof(HeldObjectPose)};
         Hand hand{Hand::None};
         std::uint32_t referenceFormId{},bodyId{0x7fffffffu};
-        SampleV1 sample{};
+        Sample sample{};
         std::uint64_t gripSequence{};
         Transform rootWorld{};
     };

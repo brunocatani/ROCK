@@ -228,7 +228,7 @@ namespace rock::api::grab {
         std::uint32_t version{ 1 };
         ReferenceKey target{};
         Hand hand{ Hand::None };
-        PowerArmorPointV1 point{};
+        PowerArmorPoint point{};
         float maxDistanceGame{ 0.0f };
     };
 
@@ -322,7 +322,7 @@ namespace rock::api::grab {
         std::uint32_t collisionLayer{ 0 };
         Point3 anchorGame{};
         Point3 normalGame{};
-        PowerArmorPointV1 powerArmorPoint{};
+        PowerArmorPoint powerArmorPoint{};
         std::uint32_t sourceTriangleIndex{ 0xFFFF'FFFFu };
         char collisionNodeName[64]{};
         char meshPartName[64]{};
@@ -367,9 +367,9 @@ namespace rock::api::grab {
         Status(ROCK_CALL* getHandTargetDetailsV1)(std::uint64_t ownerToken, Hand hand, HandTargetDetailsV1* outDetails) noexcept;
         Status(ROCK_CALL* requestPowerArmorGrabV1)(std::uint64_t ownerToken, const PowerArmorGrabRequestV1* request, std::uint64_t* outCommandId) noexcept;
         // Family-local publication identity; compare before combining readbacks.
-        Status(ROCK_CALL* getSample)(OwnerToken owner, SampleV1* outSample) noexcept;
+        Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
         Status(ROCK_CALL* requestInventoryGrab)(OwnerToken, const InventoryGrabRequestV1*, std::uint64_t* outCommandId) noexcept;
-        Status(ROCK_CALL* copyEvents)(OwnerToken, std::uint64_t afterSequence, EventV1*, std::uint32_t capacity, StreamV1*) noexcept;
+        Status(ROCK_CALL* copyEvents)(OwnerToken, std::uint64_t afterSequence, EventV1*, std::uint32_t capacity, Stream*) noexcept;
         // Synchronous producer-thread observation. ROCK calls are forbidden inside this callback.
         Status(ROCK_CALL* setEventCallback)(OwnerToken, EventCallbackV1, void*) noexcept;
         Status(ROCK_CALL* clearEventCallback)(OwnerToken) noexcept;

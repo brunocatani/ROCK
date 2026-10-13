@@ -156,9 +156,9 @@ namespace rock::api::core {
         Status(ROCK_CALL* registerFrameCallbackForOwnerV1)(std::uint64_t ownerToken, FrameCallbackV1 callback, void* userData, std::uint64_t* outCallbackToken) noexcept;
         Status(ROCK_CALL* unregisterFrameCallbackForOwnerV1)(std::uint64_t ownerToken, std::uint64_t callbackToken) noexcept;
         // Family-local publication identity; compare before combining readbacks.
-        Status(ROCK_CALL* getSample)(OwnerToken owner, SampleV1* outSample) noexcept;
+        Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
         Status(ROCK_CALL* bindInterface)(OwnerToken, InterfaceId, std::uint32_t exactMajor, std::uint32_t permissions) noexcept;
-        Status(ROCK_CALL* copyEvents)(OwnerToken, std::uint64_t afterSequence, EventV1*, std::uint32_t capacity, StreamV1*) noexcept;
+        Status(ROCK_CALL* copyEvents)(OwnerToken, std::uint64_t afterSequence, EventV1*, std::uint32_t capacity, Stream*) noexcept;
     };
 }
 

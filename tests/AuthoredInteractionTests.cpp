@@ -4,7 +4,7 @@
 #include <limits>
 int main() {
     using namespace rock;
-    api::SampleV1 now{};now.frameIndex=10;now.worldGeneration=1;now.skeletonGeneration=2;now.providerGeneration=3;now.collisionGeneration=4;
+    api::Sample now{};now.frameIndex=10;now.worldGeneration=1;now.skeletonGeneration=2;now.providerGeneration=3;now.collisionGeneration=4;
     authored_interaction::Request r{};r.sample=now;r.hand=api::Hand::Left;r.referenceFormId=100;r.flags=3;
     authored_interaction::Lease lease;
     assert(lease.set(7,r,now)==api::Status::Ok&&lease.current(now));

@@ -28,7 +28,7 @@ namespace rock::provider::runtime {
         *out = publication;
         return true;
     }
-    api::SampleV1 sample() {
+    api::Sample sample() {
         // A second read would observe a newer publication. The endpoint must
         // derive metadata from the payload it already copied, never this one.
         return {999,999,99,99,99,99};

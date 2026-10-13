@@ -456,8 +456,8 @@ namespace rock::api::weapon {
         Status(ROCK_CALL* copyWeaponCompositionEntriesV1)(std::uint64_t ownerToken, WeaponCompositionEntryV1* outEntries, std::uint32_t maxEntries, std::uint32_t* outEntryCount) noexcept;
         Status(ROCK_CALL* getSelectedAuthoredGripPoseV1)(std::uint64_t ownerToken, AuthoredGripPoseV1* outPose) noexcept;
         // Family-local publication identity; compare before combining readbacks.
-        Status(ROCK_CALL* getSample)(OwnerToken owner, SampleV1* outSample) noexcept;
-        Status(ROCK_CALL* copyEvents)(OwnerToken, std::uint64_t afterSequence, EventV1*, std::uint32_t capacity, StreamV1*) noexcept;
+        Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
+        Status(ROCK_CALL* copyEvents)(OwnerToken, std::uint64_t afterSequence, EventV1*, std::uint32_t capacity, Stream*) noexcept;
     };
 }
 

@@ -26,7 +26,7 @@ Status ROCK_CALL oldYield(OwnerToken owner,std::uint64_t scope,std::uint64_t tar
     return owner==77&&scope==5&&target==6&&generation==7?Status::Ok:Status::InvalidArgument;
 }
 authored_interaction::Lease authored;
-SampleV1 sample{};
+Sample sample{};
 Status ROCK_CALL setAuthored(OwnerToken owner,const v1_1::AuthoredHand* request) noexcept {return request?authored.set(owner,*request,sample):Status::InvalidArgument;}
 Status ROCK_CALL clearAuthored(OwnerToken owner,Hand) noexcept {return authored.clear(owner,sample);}
 }

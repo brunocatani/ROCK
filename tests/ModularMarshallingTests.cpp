@@ -55,8 +55,8 @@ int main() {
     target.points[1].point=provider::RockProviderPowerArmorPointV1::LeftArmorHand;
     for(auto& pointPose:target.points) {pointPose.valid=1;pointPose.world=nativePose;pointPose.frameLocal=nativePose;}
     api::references::PowerArmorTargetV1 publicTarget{};convert(publicTarget,target);
-    assert(publicTarget.points[0].point==api::PowerArmorPointV1::RightArmorHand);
-    assert(publicTarget.points[1].point==api::PowerArmorPointV1::LeftArmorHand);
+    assert(publicTarget.points[0].point==api::PowerArmorPoint::RightArmorHand);
+    assert(publicTarget.points[1].point==api::PowerArmorPoint::LeftArmorHand);
     provider::RockProviderPowerArmorTargetV1 returnedTarget{};convert(returnedTarget,publicTarget);
     for(std::size_t i=0;i<2;++i) {
         assert(returnedTarget.points[i].point==target.points[i].point && returnedTarget.points[i].valid==1);

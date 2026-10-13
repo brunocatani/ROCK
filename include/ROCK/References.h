@@ -37,7 +37,7 @@ namespace rock::api::references {
 
     struct PowerArmorPointPoseV1
     {
-        PowerArmorPointV1 point{};
+        PowerArmorPoint point{};
         std::uint32_t valid{ 0 };
         Transform world{};
         Transform frameLocal{};
@@ -84,7 +84,7 @@ namespace rock::api::references {
         Status(ROCK_CALL* queryReferenceInteractionV1)(std::uint64_t ownerToken, const ReferenceQueryV1* query, ReferenceInteractionV1* outState) noexcept;
         Status(ROCK_CALL* queryPowerArmorTargetV1)(std::uint64_t ownerToken, const ReferenceQueryV1* query, PowerArmorTargetV1* outTarget) noexcept;
         // Family-local publication identity; compare before combining readbacks.
-        Status(ROCK_CALL* getSample)(OwnerToken owner, SampleV1* outSample) noexcept;
+        Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
     };
 }
 

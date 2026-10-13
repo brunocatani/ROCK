@@ -5,7 +5,7 @@
 namespace rock::api::boundary {
     template<class Event> Status copyEventStream(OwnerToken owner, InterfaceId family,
         std::uint64_t after, Event* output, std::uint32_t capacity,
-        std::uint32_t maximum, StreamV1* state) noexcept {
+        std::uint32_t maximum, Stream* state) noexcept {
         if (!state) return Status::InvalidArgument;
         *state = {};
         if (capacity && !output) return Status::InvalidArgument;

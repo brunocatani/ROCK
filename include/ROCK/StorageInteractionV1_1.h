@@ -9,14 +9,14 @@ namespace rock::api::storage_interaction::v1_1
     enum class GripRole : std::uint32_t { Nearest, Firing, Support };
     struct GripRequest {
         std::uint32_t size{sizeof(GripRequest)},version{1};
-        SampleV1 sample{};
+        Sample sample{};
         std::uint64_t displayId{};
         Hand hand{Hand::None};
         GripRole role{GripRole::Nearest};
     };
     struct GripPose {
         std::uint32_t size{sizeof(GripPose)},version{1};
-        SampleV1 sample{};
+        Sample sample{};
         std::uint64_t displayId{},poseSequence{};
         std::uint32_t storedReference{},valid{};
         Hand hand{Hand::None};

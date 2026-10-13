@@ -13,7 +13,7 @@ namespace rock::api::grab::v1_1 {
     struct HeldPlacementState {
         std::uint32_t size{sizeof(HeldPlacementState)}, buttonAvailable{};
         std::uint64_t frameToken{};
-        SampleV1 sample{};
+        Sample sample{};
         HeldPlacementHand right{}, left{};
         std::uint32_t buttonHeld{}, buttonPressed{}, buttonAgeMilliseconds{}, reserved{};
         std::uint64_t lastRequestToken{};
@@ -24,7 +24,7 @@ namespace rock::api::grab::v1_1 {
     struct HeldPlacementIntent {
         std::uint32_t size{sizeof(HeldPlacementIntent)}, flags{};
         std::uint64_t frameToken{};
-        SampleV1 sample{};
+        Sample sample{};
         std::uint32_t formId{}, reserved{};
     };
     // Negotiate major 1/minor 1/sizeof(Api); Read for get, Write for submit/clear.

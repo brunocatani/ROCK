@@ -6,7 +6,7 @@ namespace rock::api::weaponparts::v1_2 {
     inline constexpr std::uint32_t kMajor=1,kMinor=2,kMaxCollisionSources=16;
     struct CollisionSuppression {
         std::uint32_t size{sizeof(CollisionSuppression)},leaseFrames{2};
-        SampleV1 sample{};
+        Sample sample{};
         std::uint64_t weaponGenerationKey{};
         std::uint32_t sourceCount{},reserved{};
         std::uint64_t sourceKeys[kMaxCollisionSources]{};

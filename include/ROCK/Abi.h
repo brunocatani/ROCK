@@ -60,7 +60,7 @@ namespace rock::api {
         float z{ 0.0f };
     };
 
-    enum class PowerArmorPointV1 : std::uint32_t
+    enum class PowerArmorPoint : std::uint32_t
     {
         None = 0,
         LeftArmorHand = 1,
@@ -88,7 +88,7 @@ namespace rock::api {
         std::uint32_t skeletonGeneration{};
         std::uint32_t providerGeneration{};
     };
-    struct SampleV1 {
+    struct Sample {
         std::uint64_t frameIndex{};
         std::uint64_t publicationSequence{};
         std::uint32_t worldGeneration{};
@@ -96,7 +96,7 @@ namespace rock::api {
         std::uint32_t providerGeneration{};
         std::uint32_t collisionGeneration{};
     };
-    struct StreamV1 {
+    struct Stream {
         std::uint64_t oldestSequence{};
         std::uint64_t latestSequence{};
         std::uint64_t nextSequence{};

@@ -3301,7 +3301,7 @@ namespace rock::provider::runtime {
         slot->interfaces[id-1]=binding;
         return Status::Ok;
     }
-    rock::api::SampleV1 sample() {
+    rock::api::Sample sample() {
         std::scoped_lock lock(s_snapshotMutex);
         const auto& s=s_lastSnapshot;
         return {s.frameIndex,s.stateSequence,s.worldGeneration,s.skeletonGeneration,s.providerGeneration,s.collisionGeneration};

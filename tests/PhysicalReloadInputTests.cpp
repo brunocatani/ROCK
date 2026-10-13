@@ -5,7 +5,7 @@
 #include "physics-interaction/input/NativeSecondaryTrigger.h"
 
 namespace {
-    rock::api::SampleV1 sample{10,1,1,2,3,4};
+    rock::api::Sample sample{10,1,1,2,3,4};
     rock::provider::RockProviderEquippedWeaponStateV1 weapon;
     rock::input_remap_runtime::RawButtonState raw{true};
     rock::provider::RockProviderHand primary=rock::provider::RockProviderHand::Left;
@@ -13,7 +13,7 @@ namespace {
 namespace rock::provider::runtime {
     RockProviderHand ROCK_PROVIDER_CALL apiGetPrimaryHandV1(){return ::primary;}
     std::uint64_t currentGameFrameIndex(){return ::sample.frameIndex;}
-    api::SampleV1 sample(){return ::sample;}
+    api::Sample sample(){return ::sample;}
     RockProviderResultV1 ROCK_PROVIDER_CALL apiGetEquippedWeaponStateV1(std::uint64_t,RockProviderEquippedWeaponStateV1* out){
         *out=::weapon;return RockProviderResultV1::Ok;
     }

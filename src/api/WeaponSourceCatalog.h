@@ -12,7 +12,7 @@ namespace rock::provider {
         char name[64]{};
     };
     struct WeaponSourcePose {
-        api::SampleV1 sample{};
+        api::Sample sample{};
         std::uint64_t weaponGenerationKey{};
         std::uint64_t sourceKey{};
         api::Transform sourceParentLocal{};

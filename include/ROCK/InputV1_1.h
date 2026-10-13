@@ -15,7 +15,7 @@ namespace rock::api::input::v1_1 {
         std::uint32_t flags{};
         std::uint32_t objectFormId{}; // Submitted candidate; zero while draining a spent click.
         std::uint32_t reserved{};
-        SampleV1 sample{};
+        Sample sample{};
     };
     // Negotiate Input major 1, minimum minor 1 and sizeof(Api), then bind Read.
     // Call on the ROCK frame thread. A reserved right-stick click belongs to

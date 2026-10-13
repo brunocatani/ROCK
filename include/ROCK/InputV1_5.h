@@ -8,7 +8,7 @@ namespace rock::api::input::v1_5 {
     struct SupportTriggerRequest {
         std::uint32_t size{sizeof(SupportTriggerRequest)}, weaponFormId{};
         std::uint64_t weaponGenerationKey{};
-        SampleV1 sample{};
+        Sample sample{};
         Hand hand{Hand::None};
         std::uint32_t leaseFrames{2};
     };
@@ -16,7 +16,7 @@ namespace rock::api::input::v1_5 {
         std::uint32_t size{sizeof(SupportTriggerState)}, active{};
         OwnerToken owner{};
         std::uint64_t pressSequence{}, expiresAfterFrame{};
-        SampleV1 sample{};
+        Sample sample{};
         Hand hand{Hand::None};
         std::uint32_t held{};
     };

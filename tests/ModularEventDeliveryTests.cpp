@@ -25,7 +25,7 @@ namespace rock::provider::runtime {
         if(status!=api::Status::Ok)return status;
         return requireThread && std::this_thread::get_id()!=ownerThread?api::Status::WrongThread:api::Status::Ok;
     }
-    api::SampleV1 sample() {return {20,30,1,2,3,4};}
+    api::Sample sample() {return {20,30,1,2,3,4};}
     void deferRevoke(std::uint64_t token) {assert(token==testOwner);revoked=true;revokeRequested=true;}
     void reportBoundaryFailure(std::uint64_t,api::InterfaceId) noexcept {assert(false);}
     RockProviderResultV1 apiRequestForceGrabV1(std::uint64_t,const RockProviderForceGrabRequestV1*,std::uint64_t*) {
@@ -94,7 +94,7 @@ int main() {
     change.data[0]=1; // A different target-kind value must never become the phase.
     change.data[1]=456;change.data[2]=0x55;
     provider::events::publish(change);
-    api::grab::EventV1 copied[4]{};api::StreamV1 stream{};
+    api::grab::EventV1 copied[4]{};api::Stream stream{};
     assert(api::grab::copyEvents(testOwner,0,copied,4,&stream)==Status::Ok && stream.copiedCount==1);
     assert(copied[0].phase==change.result && copied[0].phase!=change.data[0]);
     assert(copied[0].formId==123 && copied[0].primaryBodyId==456 && copied[0].flags==0x55);

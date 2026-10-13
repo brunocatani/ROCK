@@ -3,7 +3,7 @@
 #include <array>
 int main() {
     using namespace rock;using api::Status;
-    api::SampleV1 sample{100,4,1,2,3,4};
+    api::Sample sample{100,4,1,2,3,4};
     api::weaponparts::v1_2::CollisionSuppression request;request.sample=sample;
     request.weaponGenerationKey=40;request.sourceCount=2;request.sourceKeys[0]=11;request.sourceKeys[1]=12;
     weapon_part_collision::Lease lease;

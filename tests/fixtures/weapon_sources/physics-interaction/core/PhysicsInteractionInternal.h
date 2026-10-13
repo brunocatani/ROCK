@@ -35,7 +35,7 @@ namespace rock {
         api::Status queryProviderWeaponSourcePose(std::uint64_t,std::uint64_t,provider::WeaponSourcePose&)const;
         api::Status queryProviderWeaponSourcePath(std::uint64_t,std::uint64_t,std::uint64_t&,std::uint32_t&)const;
         api::Status collectProviderWeaponCollisionBodies(std::uint64_t,std::span<const std::uint64_t>,std::span<std::uint32_t>,std::uint32_t&)const;
-        api::SampleV1 providerEventSample()const;
+        api::Sample providerEventSample()const;
         void dispatchPhysicsMessage(std::uint32_t,bool,RE::TESObjectREFR*,std::uint32_t,std::uint32_t);
         void dispatchGrabEvent(GrabEventData);
     };

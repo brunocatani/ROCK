@@ -87,7 +87,7 @@ namespace rock::api::playercontroller {
         Status(ROCK_CALL* getPlayerControllerStateV1)(std::uint64_t ownerToken, PlayerControllerStateV1* outState) noexcept;
         Status(ROCK_CALL* requestPlayerControllerJumpV1)(std::uint64_t ownerToken, const PlayerControllerJumpRequestV1* request) noexcept;
         // Family-local publication identity; compare before combining readbacks.
-        Status(ROCK_CALL* getSample)(OwnerToken owner, SampleV1* outSample) noexcept;
+        Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
     };
 }
 

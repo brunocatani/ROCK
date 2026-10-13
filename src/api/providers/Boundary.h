@@ -22,7 +22,7 @@ namespace rock::api::boundary {
         if (status == Status::Ok) *value = {};
         return status;
     }
-    inline Status readSample(OwnerToken owner, InterfaceId family, SampleV1* output) noexcept {
+    inline Status readSample(OwnerToken owner, InterfaceId family, Sample* output) noexcept {
         if (!output) return Status::InvalidArgument;
         *output = {};
         return invoke(owner, family, 1, false, [&]() {

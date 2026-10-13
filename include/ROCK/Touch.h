@@ -176,8 +176,8 @@ namespace rock::api::touch {
         Status(ROCK_CALL* copyTouchGrabStatesForScopeV1)(std::uint64_t ownerToken, std::uint64_t scopeToken, TouchGrabStateV1* outStates, std::uint32_t maxStates, std::uint32_t* outStateCount) noexcept;
         Status(ROCK_CALL* requestTouchGrabYieldV1)(std::uint64_t ownerToken, std::uint64_t scopeToken, std::uint64_t targetId, std::uint32_t targetGeneration) noexcept;
         // Family-local publication identity; compare before combining readbacks.
-        Status(ROCK_CALL* getSample)(OwnerToken owner, SampleV1* outSample) noexcept;
-        Status(ROCK_CALL* copyEvents)(OwnerToken, std::uint64_t afterSequence, EventV1*, std::uint32_t capacity, StreamV1*) noexcept;
+        Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
+        Status(ROCK_CALL* copyEvents)(OwnerToken, std::uint64_t afterSequence, EventV1*, std::uint32_t capacity, Stream*) noexcept;
     };
 }
 

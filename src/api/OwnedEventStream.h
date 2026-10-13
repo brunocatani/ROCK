@@ -42,7 +42,7 @@ namespace rock::provider {
         void publish(Event event, api::OwnerToken recipient=0) {
             publish(event,recipient,[](api::OwnerToken,const Event&){});
         }
-        api::Status copy(api::OwnerToken owner,std::uint64_t after,Event* output,std::uint32_t capacity,api::StreamV1& state) const {
+        api::Status copy(api::OwnerToken owner,std::uint64_t after,Event* output,std::uint32_t capacity,api::Stream& state) const {
             state={};
             if (capacity>Capacity) return api::Status::CapacityFull;
             if (capacity && !output) return api::Status::InvalidArgument;

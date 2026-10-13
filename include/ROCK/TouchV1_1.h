@@ -9,7 +9,7 @@ namespace rock::api::touch::v1_1 {
     };
     struct AuthoredHand {
         std::uint32_t size{sizeof(AuthoredHand)}, version{1};
-        SampleV1 sample{};
+        Sample sample{};
         Hand hand{Hand::None};
         std::uint32_t flags{}, referenceFormId{}, leaseFrames{2};
         Point3 contactWorldGame{};

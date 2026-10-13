@@ -358,7 +358,7 @@ namespace rock::api::collision {
         std::uint32_t reserved[5]{};
     };
 
-    struct EnvironmentV1 { std::uint32_t size{sizeof(EnvironmentV1)}; std::uint32_t externalBodyCount{}; SampleV1 sample{}; float gameToHavokScale{}; float havokToGameScale{}; std::uint32_t physicsScaleRevision{}; std::uint32_t weaponBodyCount{}; std::uint64_t weaponGenerationKey{}; std::uint32_t weaponBodyIds[8]{}; };
+    struct EnvironmentV1 { std::uint32_t size{sizeof(EnvironmentV1)}; std::uint32_t externalBodyCount{}; Sample sample{}; float gameToHavokScale{}; float havokToGameScale{}; std::uint32_t physicsScaleRevision{}; std::uint32_t weaponBodyCount{}; std::uint64_t weaponGenerationKey{}; std::uint32_t weaponBodyIds[8]{}; };
 
     // Permission bits are local to this interface major. Discovery grants none.
     enum class PermissionV1 : std::uint32_t { Read=1, Write=2 };
@@ -391,10 +391,10 @@ namespace rock::api::collision {
         Status(ROCK_CALL* getHandCollisionAvailabilityV1)(std::uint64_t ownerToken, Hand hand, HandCollisionAvailabilityV1* outState) noexcept;
         Status(ROCK_CALL* queryWorldRaycastV1)(std::uint64_t ownerToken, const WorldRaycastRequestV1* request, WorldRaycastResultV1* outResult) noexcept;
         // Family-local publication identity; compare before combining readbacks.
-        Status(ROCK_CALL* getSample)(OwnerToken owner, SampleV1* outSample) noexcept;
-        // Any-thread copy; payload and SampleV1 identify the same publication.
+        Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
+        // Any-thread copy; payload and Sample identify the same publication.
         Status(ROCK_CALL* getEnvironment)(OwnerToken, EnvironmentV1*) noexcept;
-        Status(ROCK_CALL* copyEvents)(OwnerToken, std::uint64_t afterSequence, EventV1*, std::uint32_t capacity, StreamV1*) noexcept;
+        Status(ROCK_CALL* copyEvents)(OwnerToken, std::uint64_t afterSequence, EventV1*, std::uint32_t capacity, Stream*) noexcept;
     };
 }
 

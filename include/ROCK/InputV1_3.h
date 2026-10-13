@@ -8,7 +8,7 @@ namespace rock::api::input::v1_3 {
     struct ReloadGestureRequest {
         std::uint32_t size{sizeof(ReloadGestureRequest)},weaponFormId{};
         std::uint64_t weaponGenerationKey{};
-        SampleV1 sample{};
+        Sample sample{};
         Hand hand{Hand::Left};
         std::uint32_t leaseFrames{2},flags{};
     };
@@ -16,7 +16,7 @@ namespace rock::api::input::v1_3 {
         std::uint32_t size{sizeof(ReloadGestureState)},active{};
         OwnerToken owner{};
         std::uint64_t tapSequence{},expiresAfterFrame{};
-        SampleV1 sample{};
+        Sample sample{};
         Hand hand{Hand::None};
         std::uint32_t held{},scopeHeld{};
     };

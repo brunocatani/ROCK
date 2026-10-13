@@ -36,7 +36,7 @@ namespace rock::api::native_interaction {
     struct Frame {
         std::uint32_t size{sizeof(Frame)};
         Phase phase{Phase::Update};
-        SampleV1 sample{};
+        Sample sample{};
         std::uintptr_t world{}, bhkWorld{};
         Point3 hmdPosition{};
         float deltaSeconds{}, gameToHavok{}, havokToGame{};

@@ -341,7 +341,7 @@ namespace rock::api::weaponparts {
     struct SourcePoseV1 {
         std::uint32_t size{sizeof(SourcePoseV1)};
         std::uint32_t flags{};
-        SampleV1 sample{};
+        Sample sample{};
         std::uint64_t weaponGenerationKey{};
         std::uint64_t sourceKey{};
         Transform sourceParentLocal{};
@@ -367,9 +367,9 @@ namespace rock::api::weaponparts {
         Status(ROCK_CALL* copyWeaponPartPoseSnapshotV1)(std::uint64_t ownerToken, WeaponPartPoseV1* outParts, std::uint32_t maxParts, std::uint32_t* outPartCount) noexcept;
         Status(ROCK_CALL* copyWeaponPartDriveApplicationResultsV1)(std::uint64_t ownerToken, WeaponPartDriveApplicationResultV1* outResults, std::uint32_t maxResults, std::uint32_t* outResultCount) noexcept;
         // Family-local publication identity; compare before combining readbacks.
-        Status(ROCK_CALL* getSample)(OwnerToken owner, SampleV1* outSample) noexcept;
+        Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
         Status(ROCK_CALL* copySources)(OwnerToken, std::uint64_t weaponGenerationKey, SourceV1*, std::uint32_t capacity, std::uint32_t* copied, std::uint32_t* total) noexcept;
-        Status(ROCK_CALL* copyEvents)(OwnerToken, std::uint64_t afterSequence, EventV1*, std::uint32_t capacity, StreamV1*) noexcept;
+        Status(ROCK_CALL* copyEvents)(OwnerToken, std::uint64_t afterSequence, EventV1*, std::uint32_t capacity, Stream*) noexcept;
         Status(ROCK_CALL* querySourcePose)(OwnerToken, std::uint64_t weaponGenerationKey, std::uint64_t sourceKey, SourcePoseV1*) noexcept;
         // Added in minor 1. Resolves native hierarchy position without exposing a node address.
         Status(ROCK_CALL* querySourcePath)(OwnerToken, std::uint64_t weaponGenerationKey, std::uint64_t sourceKey, std::uint64_t* parentKey, std::uint32_t* childIndex) noexcept;

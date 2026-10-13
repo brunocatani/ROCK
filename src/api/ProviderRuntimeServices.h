@@ -115,7 +115,7 @@ namespace rock::provider::runtime {
     rock::api::Status authorize(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t permission, bool requireThread = true,
         OwnerAccess access = OwnerAccess::Existing);
     rock::api::Status bind(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t major, std::uint32_t permissions);
-    rock::api::SampleV1 sample();
+    rock::api::Sample sample();
     void revoke(std::uint64_t owner);
     void refreshSources(); // Once per WeaponParts batch before key conversion.
     std::uintptr_t resolveSourceKey(std::uint64_t generation, std::uint64_t key);

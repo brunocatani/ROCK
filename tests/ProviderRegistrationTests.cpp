@@ -120,7 +120,7 @@ int main(){
     rock::saved_grab_offset::HandOffset offset;
     assert(!rock::saved_grab_offset::defaults.load(100,true,offset));
     assert(rock::saved_grab_offset::defaults.load(101,true,offset));
-    rock::api::StreamV1 state{};
+    rock::api::Stream state{};
     assert(stream.copy(replacement.ownerToken,0,nullptr,0,state)==rock::api::Status::Ok);
     assert(stream.copy(owners[0].ownerToken,0,nullptr,0,state)==rock::api::Status::PermissionDenied);
     for(unsigned i=1;i<owners.size();++i)assert(stream.copy(owners[i].ownerToken,0,nullptr,0,state)==rock::api::Status::Ok);
