@@ -107,7 +107,7 @@ namespace rock::provider
     bool publishTouchGrabStateV1(
         std::uint64_t ownerToken,
         std::uint64_t scopeToken,
-        const RockProviderTouchGrabStateV1& state);
+        const ::rock::api::touch::TouchGrabState& state);
     void acknowledgeTouchGrabYieldV1(
         std::uint64_t ownerToken,
         std::uint64_t scopeToken,

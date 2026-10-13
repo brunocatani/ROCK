@@ -1,71 +1,67 @@
-#include "TouchMarshalling.h"
-#include "api/AuthoredInteractionService.h"
-#include <ROCK/Discovery.h>
+#include "Boundary.h"
 #include "EventBoundary.h"
+#include "api/AuthoredInteractionService.h"
+#include <ROCK/Touch.h>
 
 namespace rock::api::touch {
 namespace {
 using namespace boundary;
-Status ROCK_CALL setTouchGrabTargetsForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken, const TouchGrabTargetV1* targets, std::uint32_t targetCount) noexcept {
+Status ROCK_CALL setTouchGrabTargetsForScope(OwnerToken owner, std::uint64_t scopeToken, const TouchGrabTarget* targets, std::uint32_t targetCount) noexcept {
     if (targetCount > kMaxTargets) return Status::CapacityFull;
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        if (targetCount && !targets) return Status::InvalidArgument;
-        std::array<provider::RockProviderTouchGrabTargetV1, kMaxTargets> native_targets{};
-        for (std::uint32_t i=0; i<targetCount; ++i) {
-            if (const auto s = checkInput(targets+i); s != Status::Ok) return s;
-            convert(native_targets[i], targets[i]);
-        }
-        const auto result = provider::runtime::apiSetTouchGrabTargetsForScopeV1(ownerToken, scopeToken, native_targets.data(), targetCount);
-        return static_cast<Status>(result);
+    if (targetCount && !targets) return Status::InvalidArgument;
+    for (std::uint32_t i = 0; i < targetCount; ++i) {
+        if (const auto s = checkInput(targets + i); s != Status::Ok) return s;
+    }
+    return invoke(owner, kInterfaceId, 2, true, [&] {
+        return static_cast<Status>(provider::runtime::apiSetTouchGrabTargetsForScopeV1(owner, scopeToken, targets, targetCount));
     });
 }
-Status ROCK_CALL clearTouchGrabTargetsForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        const auto result = provider::runtime::apiClearTouchGrabTargetsForScopeV1(ownerToken, scopeToken);
-        return static_cast<Status>(result);
+Status ROCK_CALL clearTouchGrabTargetsForScope(OwnerToken owner, std::uint64_t scopeToken) noexcept {
+    return invoke(owner, kInterfaceId, 2, true, [&] {
+        return static_cast<Status>(provider::runtime::apiClearTouchGrabTargetsForScopeV1(owner, scopeToken));
     });
 }
-Status ROCK_CALL copyTouchGrabStatesForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken, TouchGrabStateV1* outStates, std::uint32_t maxStates, std::uint32_t* outStateCount) noexcept {
+Status ROCK_CALL copyTouchGrabStatesForScope(OwnerToken owner, std::uint64_t scopeToken, TouchGrabState* outStates, std::uint32_t maxStates, std::uint32_t* outStateCount) noexcept {
     if (maxStates > kMaxTargets) return Status::CapacityFull;
-    if (maxStates && !outStates) return Status::InvalidArgument;
-    for (std::uint32_t i=0;i<maxStates;++i) if (const auto status=checkOutput(outStates+i); status!=Status::Ok) return status;
-    if (!outStateCount) return Status::InvalidArgument;
-    *outStateCount = {};
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        std::array<provider::RockProviderTouchGrabStateV1, kMaxTargets> native_outStates{};
-        const auto result = provider::runtime::apiCopyTouchGrabStatesForScopeV1(ownerToken, scopeToken, native_outStates.data(), maxStates, outStateCount);
-        for (std::uint32_t i=0; i<std::min<std::uint32_t>(maxStates, *outStateCount); ++i) convert(outStates[i], native_outStates[i]);
-        return static_cast<Status>(result);
+    if ((maxStates && !outStates) || !outStateCount) return Status::InvalidArgument;
+    for (std::uint32_t i = 0; i < maxStates; ++i) {
+        if (const auto s = checkOutput(outStates + i); s != Status::Ok) return s;
+    }
+    *outStateCount = 0;
+    return invoke(owner, kInterfaceId, 1, true, [&] {
+        return static_cast<Status>(provider::runtime::apiCopyTouchGrabStatesForScopeV1(owner, scopeToken, outStates, maxStates, outStateCount));
     });
 }
-Status ROCK_CALL requestTouchGrabYieldV1(std::uint64_t ownerToken, std::uint64_t scopeToken, std::uint64_t targetId, std::uint32_t targetGeneration) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        const auto result = provider::runtime::apiRequestTouchGrabYieldV1(ownerToken, scopeToken, targetId, targetGeneration);
-        return static_cast<Status>(result);
+Status ROCK_CALL requestTouchGrabYield(OwnerToken owner, std::uint64_t scopeToken, std::uint64_t targetId, std::uint32_t targetGeneration) noexcept {
+    return invoke(owner, kInterfaceId, 2, true, [&] {
+        return static_cast<Status>(provider::runtime::apiRequestTouchGrabYieldV1(owner, scopeToken, targetId, targetGeneration));
     });
 }
-
-#include "TouchEndpoints.inl"
-Status ROCK_CALL setAuthoredHand(OwnerToken owner,const v1_1::AuthoredHand* request) noexcept {
-    if(const auto status=checkInput(request);status!=Status::Ok)return status;
-    return invoke(owner,kInterfaceId,2,true,[&]{return authored_interaction::set(owner,*request);});
+Status ROCK_CALL setAuthoredHand(OwnerToken owner, const AuthoredHand* request) noexcept {
+    if (const auto s = checkInput(request); s != Status::Ok) return s;
+    return invoke(owner, kInterfaceId, 2, true, [&] { return authored_interaction::set(owner, *request); });
 }
-Status ROCK_CALL clearAuthoredHand(OwnerToken owner,Hand hand) noexcept {
-    return invoke(owner,kInterfaceId,2,true,[&]{return authored_interaction::clear(owner,hand);});
+Status ROCK_CALL clearAuthoredHand(OwnerToken owner, Hand hand) noexcept {
+    return invoke(owner, kInterfaceId, 2, true, [&] { return authored_interaction::clear(owner, hand); });
+}
+Status ROCK_CALL getSample(OwnerToken owner, Sample* outSample) noexcept {
+    return readSample(owner, kInterfaceId, outSample);
+}
+Status ROCK_CALL copyEvents(OwnerToken owner, std::uint64_t after, Event* events, std::uint32_t capacity, Stream* stream) noexcept {
+    return copyEventStream(owner, kInterfaceId, after, events, capacity, kEventCapacityPerOwner, stream);
 }
 }
-const ApiV1& table() noexcept {
-    static const ApiV1 value{
-        &setTouchGrabTargetsForScopeV1,
-        &clearTouchGrabTargetsForScopeV1,
-        &copyTouchGrabStatesForScopeV1,
-        &requestTouchGrabYieldV1,
+const Api& table() noexcept {
+    static const Api value{
+        &setTouchGrabTargetsForScope,
+        &clearTouchGrabTargetsForScope,
+        &copyTouchGrabStatesForScope,
+        &requestTouchGrabYield,
+        &setAuthoredHand,
+        &clearAuthoredHand,
         &getSample,
         &copyEvents,
     };
     return value;
-}
-const v1_1::Api& tableV1_1() noexcept {
-    static const v1_1::Api value{table(),&setAuthoredHand,&clearAuthoredHand};return value;
 }
 }

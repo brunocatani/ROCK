@@ -100,9 +100,9 @@ namespace rock::provider::runtime {
     RockProviderResultV1 ROCK_PROVIDER_CALL apiReleaseOffhandReservationV1(std::uint64_t ownerToken);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiGetOffhandReservationStateV1(std::uint64_t ownerToken, RockProviderOffhandReservationStateV1* outState);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiClearNativeAnimationRuntimeV1(std::uint64_t ownerToken);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetTouchGrabTargetsForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken, const RockProviderTouchGrabTargetV1* targets, std::uint32_t targetCount);
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetTouchGrabTargetsForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken, const ::rock::api::touch::TouchGrabTarget* targets, std::uint32_t targetCount);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiClearTouchGrabTargetsForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyTouchGrabStatesForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken, RockProviderTouchGrabStateV1* outStates, std::uint32_t maxStates, std::uint32_t* outStateCount);
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyTouchGrabStatesForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken, ::rock::api::touch::TouchGrabState* outStates, std::uint32_t maxStates, std::uint32_t* outStateCount);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestTouchGrabYieldV1(std::uint64_t ownerToken, std::uint64_t scopeToken, std::uint64_t targetId, std::uint32_t targetGeneration);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryWorldRaycastV1(std::uint64_t ownerToken, const RockProviderWorldRaycastRequestV1* request, RockProviderWorldRaycastResultV1* outResult);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiGetLogicalInputActionStateV1(std::uint64_t ownerToken, RockProviderLogicalInputActionV1 action, RockProviderLogicalInputActionStateV1* outState);

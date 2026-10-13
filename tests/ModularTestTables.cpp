@@ -27,11 +27,13 @@ Status ROCK_CALL oldYield(OwnerToken owner,std::uint64_t scope,std::uint64_t tar
 }
 authored_interaction::Lease authored;
 Sample sample{};
-Status ROCK_CALL setAuthored(OwnerToken owner,const v1_1::AuthoredHand* request) noexcept {return request?authored.set(owner,*request,sample):Status::InvalidArgument;}
+Status ROCK_CALL setAuthored(OwnerToken owner,const AuthoredHand* request) noexcept {return request?authored.set(owner,*request,sample):Status::InvalidArgument;}
 Status ROCK_CALL clearAuthored(OwnerToken owner,Hand) noexcept {return authored.clear(owner,sample);}
 }
-const ApiV1& table() noexcept {static const ApiV1 value=[] {ApiV1 v{};v.requestTouchGrabYieldV1=&oldYield;return v;}();return value;}
-const v1_1::Api& tableV1_1() noexcept {static const v1_1::Api value{table(),&setAuthored,&clearAuthored};return value;}
+const Api& table() noexcept {
+    static const Api value=[] {Api v{};v.requestTouchGrabYield=&oldYield;v.setAuthoredHand=&setAuthored;v.clearAuthoredHand=&clearAuthored;return v;}();
+    return value;
+}
 }
 namespace rock::api::weapon {
 namespace {

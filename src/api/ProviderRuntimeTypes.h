@@ -125,89 +125,12 @@ namespace rock::provider {
         RawPoint = 2,
     };
 
-    /*
-     * Touch-grab targets are a separate opt-in authority from ROCK's ordinary
-     * loose-object grab. Limited mechanisms may name one live dynamic or
-     * keyframed body. FixedAnchor may additionally match a bounded collision
-     * layer/motion mask without changing that body's motion type; this is the
-     * hand-to-surface latch primitive used by climbing consumers.
-     */
-    enum class RockProviderTouchGrabKindV1 : std::uint32_t
-    {
-        FixedAnchor = 0,
-        LimitedHinge = 1,
-        LimitedPrismatic = 2,
-    };
 
-    enum class RockProviderTouchGrabTargetFlagV1 : std::uint32_t
-    {
-        None = 0,
-        AllowRightHand = 1u << 0,
-        AllowLeftHand = 1u << 1,
-        AllowTwoHands = 1u << 2,
-        LatchOnRelease = 1u << 3,
-        MatchAnyBody = 1u << 4,
-        MatchStaticMotion = 1u << 5,
-        MatchKeyframedMotion = 1u << 6,
-        MatchDynamicMotion = 1u << 7,
-        // Wildcard FixedAnchor only. Considered after explicit bodies, native
-        // authored points, close objects and ordinary wildcard registrations.
-        FallbackOnly = 1u << 8,
-        // Exclude native PA furniture and PA actors from this target's surface.
-        ExcludePowerArmor = 1u << 9,
-    };
 
-    enum class RockProviderTouchGrabPhaseV1 : std::uint32_t
-    {
-        Inactive = 0,
-        Armed = 1,
-        Held = 2,
-        Latched = 3,
-        Yielded = 4,
-        Invalidated = 5,
-    };
 
-    enum class RockProviderTouchGrabReleaseReasonV1 : std::uint32_t
-    {
-        None = 0,
-        GripReleased = 1,
-        OwnerYield = 2,
-        TargetRemoved = 3,
-        RegistrationExpired = 4,
-        GenerationChanged = 5,
-        WorldLost = 6,
-        TargetInvalid = 7,
-        HandUnavailable = 8,
-    };
 
-    enum class RockProviderTouchGrabStateFlagV1 : std::uint32_t
-    {
-        None = 0,
-        ContactPointValid = 1u << 0,
-        ContactNormalValid = 1u << 1,
-        CoordinateValid = 1u << 2,
-        FixedAnchor = 1u << 3,
-        OriginalMotionKeyframed = 1u << 4,
-        OriginalMotionDynamic = 1u << 5,
-        MeshSurfaceAnchor = 1u << 6,
-        MeshFingerPose = 1u << 7,
-        MeshCollisionFallback = 1u << 8,
-    };
 
-    enum class RockProviderSurfaceGripModeV1 : std::uint32_t
-    {
-        CollisionAnchor = 0,
-        MeshAnchor = 1,
-        CollisionFallback = 2,
-        AnimatedArmorBone = 3,
-    };
 
-    enum class RockProviderTouchGrabHandMaskV1 : std::uint32_t
-    {
-        None = 0,
-        Right = 1u << 0,
-        Left = 1u << 1,
-    };
 
     enum class RockProviderOffhandReservation : std::uint32_t
     {
@@ -1113,7 +1036,7 @@ namespace rock::provider {
 
     [[nodiscard]] inline constexpr bool hasTouchGrabTargetFlagV1(
         std::uint32_t flags,
-        RockProviderTouchGrabTargetFlagV1 flag)
+        ::rock::api::touch::TouchGrabTargetFlag flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
@@ -2027,8 +1950,8 @@ namespace rock::provider {
         std::uint32_t providerGeneration{ 0 };
         std::uint32_t collisionGeneration{ 0 };
         RockProviderPoint3 surfaceAnchorGame{};
-        RockProviderSurfaceGripModeV1 surfaceGripMode{
-            RockProviderSurfaceGripModeV1::CollisionAnchor
+        ::rock::api::touch::SurfaceGripMode surfaceGripMode{
+            ::rock::api::touch::SurfaceGripMode::CollisionAnchor
         };
     };
 
@@ -2422,68 +2345,7 @@ namespace rock::provider {
      * publish disjoint right/left wildcard descriptors when a consumer needs
      * two independent surfaces at once (for example, two-hand climbing).
      */
-    struct RockProviderTouchGrabTargetV1
-    {
-        std::uint32_t size{ sizeof(RockProviderTouchGrabTargetV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint64_t targetId{ 0 };
-        std::uint32_t targetGeneration{ 0 };
-        RockProviderTouchGrabKindV1 kind{
-            RockProviderTouchGrabKindV1::FixedAnchor
-        };
-        std::uint32_t flags{ 0 };
-        std::uint32_t bodyId{ 0x7FFF'FFFF };
-        std::uint32_t referenceFormId{ 0 };
-        std::uint32_t referenceNativeHandle{ 0 };
-        std::uint64_t allowedLayerMask{ 0 };
-        std::uint32_t leaseFrames{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        RockProviderPoint3 pivotWorldGame{};
-        RockProviderPoint3 axisWorldGame{};
-        float minimumCoordinate{ 0.0f };
-        float maximumCoordinate{ 1.0f };
-        float currentCoordinate{ 0.0f };
-        std::uint32_t reserved0{ 0 };
-        std::uint64_t reserved[3]{};
-    };
 
-    struct RockProviderTouchGrabStateV1
-    {
-        std::uint32_t size{ sizeof(RockProviderTouchGrabStateV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint64_t targetId{ 0 };
-        std::uint32_t targetGeneration{ 0 };
-        RockProviderTouchGrabKindV1 kind{
-            RockProviderTouchGrabKindV1::FixedAnchor
-        };
-        RockProviderTouchGrabPhaseV1 phase{
-            RockProviderTouchGrabPhaseV1::Inactive
-        };
-        RockProviderTouchGrabReleaseReasonV1 releaseReason{
-            RockProviderTouchGrabReleaseReasonV1::None
-        };
-        std::uint32_t bodyId{ 0x7FFF'FFFF };
-        std::uint32_t referenceFormId{ 0 };
-        std::uint32_t referenceNativeHandle{ 0 };
-        std::uint32_t activeHandMask{ 0 };
-        std::uint32_t flags{ 0 };
-        RockProviderSurfaceGripModeV1 surfaceGripMode{
-            RockProviderSurfaceGripModeV1::CollisionAnchor
-        };
-        float currentCoordinate{ 0.0f };
-        float coordinateVelocity{ 0.0f };
-        RockProviderPoint3 contactPointGame{};
-        RockProviderPoint3 contactNormalGame{};
-        std::uint64_t frameIndex{ 0 };
-        std::uint64_t sequence{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t collisionGeneration{ 0 };
-        std::uint64_t reserved[2]{};
-    };
 
 
     enum class RockProviderPowerArmorPointV1 : std::uint32_t

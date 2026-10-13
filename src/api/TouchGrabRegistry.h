@@ -27,7 +27,7 @@ namespace rock::provider
         bool yieldRequested{ false };
         std::uint64_t ownerToken{ 0 };
         std::uint64_t scopeToken{ 0 };
-        RockProviderTouchGrabTargetV1 target{};
+        ::rock::api::touch::TouchGrabTarget target{};
     };
 
     class TouchGrabRegistry
@@ -50,7 +50,7 @@ namespace rock::provider
         RegistrationResult setScope(
             const std::uint64_t ownerToken,
             const std::uint64_t scopeToken,
-            const RockProviderTouchGrabTargetV1* targets,
+            const ::rock::api::touch::TouchGrabTarget* targets,
             const std::uint32_t targetCount,
             const std::uint64_t frameIndex)
         {
@@ -188,9 +188,9 @@ namespace rock::provider
                 if (!slot.active ||
                     slot.yieldRequested ||
                     slot.state.phase ==
-                        RockProviderTouchGrabPhaseV1::Yielded ||
+                        ::rock::api::touch::TouchGrabPhase::Yielded ||
                     slot.state.phase ==
-                        RockProviderTouchGrabPhaseV1::Invalidated ||
+                        ::rock::api::touch::TouchGrabPhase::Invalidated ||
                     !generationsMatch(
                         slot.target,
                         worldGeneration,
@@ -203,7 +203,7 @@ namespace rock::provider
 
                 const bool wildcard = hasTouchGrabTargetFlagV1(
                     slot.target.flags,
-                    RockProviderTouchGrabTargetFlagV1::MatchAnyBody);
+                    ::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody);
                 if (!wildcard && slot.target.bodyId == bodyId) {
                     return makeMatch(slot, false);
                 }
@@ -212,8 +212,8 @@ namespace rock::provider
                     (slot.target.allowedLayerMask &
                         (std::uint64_t{ 1 } << collisionLayer)) != 0 &&
                     (!wildcardMatch.matched ||
-                        (hasTouchGrabTargetFlagV1(wildcardMatch.target.flags, RockProviderTouchGrabTargetFlagV1::FallbackOnly) &&
-                         !hasTouchGrabTargetFlagV1(slot.target.flags, RockProviderTouchGrabTargetFlagV1::FallbackOnly)))) {
+                        (hasTouchGrabTargetFlagV1(wildcardMatch.target.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) &&
+                         !hasTouchGrabTargetFlagV1(slot.target.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly)))) {
                     wildcardMatch = makeMatch(slot, true);
                 }
             }
@@ -250,7 +250,7 @@ namespace rock::provider
                     slot,
                     hasTouchGrabTargetFlagV1(
                         slot.target.flags,
-                        RockProviderTouchGrabTargetFlagV1::MatchAnyBody));
+                        ::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody));
                 return true;
             }
             return false;
@@ -259,7 +259,7 @@ namespace rock::provider
         bool publishState(
             const std::uint64_t ownerToken,
             const std::uint64_t scopeToken,
-            const RockProviderTouchGrabStateV1& state,
+            const ::rock::api::touch::TouchGrabState& state,
             const std::uint64_t frameIndex,
             bool* changed = nullptr)
         {
@@ -275,7 +275,7 @@ namespace rock::provider
 
                 if (changed) *changed = slot.state.phase!=state.phase || slot.state.releaseReason!=state.releaseReason || slot.state.activeHandMask!=state.activeHandMask;
                 slot.state = state;
-                slot.state.size = sizeof(RockProviderTouchGrabStateV1);
+                slot.state.size = sizeof(::rock::api::touch::TouchGrabState);
                 slot.state.version = ROCK_PROVIDER_API_VERSION;
                 slot.state.frameIndex = frameIndex;
                 slot.state.sequence = nextSequence();
@@ -327,7 +327,7 @@ namespace rock::provider
         std::uint32_t copyStates(
             const std::uint64_t ownerToken,
             const std::uint64_t scopeToken,
-            RockProviderTouchGrabStateV1* outStates,
+            ::rock::api::touch::TouchGrabState* outStates,
             const std::uint32_t maxStates,
             const std::uint64_t frameIndex)
         {
@@ -367,42 +367,42 @@ namespace rock::provider
             std::uint64_t ownerToken{ 0 };
             std::uint64_t scopeToken{ 0 };
             std::uint64_t expiresAfterFrame{ 0 };
-            RockProviderTouchGrabTargetV1 target{};
-            RockProviderTouchGrabStateV1 state{};
+            ::rock::api::touch::TouchGrabTarget target{};
+            ::rock::api::touch::TouchGrabState state{};
         };
 
         struct PreservedState
         {
             bool valid{ false };
             bool yieldRequested{ false };
-            RockProviderTouchGrabStateV1 state{};
+            ::rock::api::touch::TouchGrabState state{};
         };
 
         static constexpr std::uint32_t kHandFlags =
             static_cast<std::uint32_t>(
-                RockProviderTouchGrabTargetFlagV1::AllowRightHand) |
+                ::rock::api::touch::TouchGrabTargetFlag::AllowRightHand) |
             static_cast<std::uint32_t>(
-                RockProviderTouchGrabTargetFlagV1::AllowLeftHand);
+                ::rock::api::touch::TouchGrabTargetFlag::AllowLeftHand);
         static constexpr std::uint32_t kMotionFlags =
             static_cast<std::uint32_t>(
-                RockProviderTouchGrabTargetFlagV1::MatchStaticMotion) |
+                ::rock::api::touch::TouchGrabTargetFlag::MatchStaticMotion) |
             static_cast<std::uint32_t>(
-                RockProviderTouchGrabTargetFlagV1::MatchKeyframedMotion) |
+                ::rock::api::touch::TouchGrabTargetFlag::MatchKeyframedMotion) |
             static_cast<std::uint32_t>(
-                RockProviderTouchGrabTargetFlagV1::MatchDynamicMotion);
+                ::rock::api::touch::TouchGrabTargetFlag::MatchDynamicMotion);
         static constexpr std::uint32_t kKnownFlags =
             kHandFlags |
             kMotionFlags |
-            static_cast<std::uint32_t>(RockProviderTouchGrabTargetFlagV1::FallbackOnly) |
-            static_cast<std::uint32_t>(RockProviderTouchGrabTargetFlagV1::ExcludePowerArmor) |
+            static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) |
+            static_cast<std::uint32_t>(::rock::api::touch::TouchGrabTargetFlag::ExcludePowerArmor) |
             static_cast<std::uint32_t>(
-                RockProviderTouchGrabTargetFlagV1::AllowTwoHands) |
+                ::rock::api::touch::TouchGrabTargetFlag::AllowTwoHands) |
             static_cast<std::uint32_t>(
-                RockProviderTouchGrabTargetFlagV1::LatchOnRelease) |
+                ::rock::api::touch::TouchGrabTargetFlag::LatchOnRelease) |
             static_cast<std::uint32_t>(
-                RockProviderTouchGrabTargetFlagV1::MatchAnyBody);
+                ::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody);
 
-        static bool finitePoint(const RockProviderPoint3& point)
+        static bool finitePoint(const api::Point3& point)
         {
             return std::isfinite(point.x) &&
                    std::isfinite(point.y) &&
@@ -410,9 +410,9 @@ namespace rock::provider
         }
 
         static bool validateTarget(
-            const RockProviderTouchGrabTargetV1& target)
+            const ::rock::api::touch::TouchGrabTarget& target)
         {
-            if (target.size != sizeof(RockProviderTouchGrabTargetV1) ||
+            if (target.size != sizeof(::rock::api::touch::TouchGrabTarget) ||
                 target.version != ROCK_PROVIDER_API_VERSION ||
                 target.targetId == 0 ||
                 target.targetGeneration == 0 ||
@@ -428,25 +428,25 @@ namespace rock::provider
 
             const bool wildcard = hasTouchGrabTargetFlagV1(
                 target.flags,
-                RockProviderTouchGrabTargetFlagV1::MatchAnyBody);
-            if (hasTouchGrabTargetFlagV1(target.flags, RockProviderTouchGrabTargetFlagV1::FallbackOnly) &&
-                (!wildcard || target.kind != RockProviderTouchGrabKindV1::FixedAnchor)) return false;
-            if (target.kind == RockProviderTouchGrabKindV1::FixedAnchor) {
+                ::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody);
+            if (hasTouchGrabTargetFlagV1(target.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) &&
+                (!wildcard || target.kind != ::rock::api::touch::TouchGrabKind::FixedAnchor)) return false;
+            if (target.kind == ::rock::api::touch::TouchGrabKind::FixedAnchor) {
                 if (wildcard) {
                     return target.bodyId == kInvalidBodyId &&
                            target.allowedLayerMask != 0;
                 }
                 return target.bodyId != kInvalidBodyId;
             }
-            if (target.kind != RockProviderTouchGrabKindV1::LimitedHinge &&
+            if (target.kind != ::rock::api::touch::TouchGrabKind::LimitedHinge &&
                 target.kind !=
-                    RockProviderTouchGrabKindV1::LimitedPrismatic) {
+                    ::rock::api::touch::TouchGrabKind::LimitedPrismatic) {
                 return false;
             }
             if (wildcard || target.bodyId == kInvalidBodyId ||
                 (target.flags &
                     static_cast<std::uint32_t>(
-                        RockProviderTouchGrabTargetFlagV1::
+                        ::rock::api::touch::TouchGrabTargetFlag::
                             MatchStaticMotion)) != 0 ||
                 !finitePoint(target.pivotWorldGame) ||
                 !finitePoint(target.axisWorldGame) ||
@@ -468,7 +468,7 @@ namespace rock::provider
         }
 
         static bool validateInput(
-            const RockProviderTouchGrabTargetV1* targets,
+            const ::rock::api::touch::TouchGrabTarget* targets,
             const std::uint32_t targetCount)
         {
             for (std::uint32_t index = 0; index < targetCount; ++index) {
@@ -487,8 +487,8 @@ namespace rock::provider
         }
 
         static bool sameTargetIdentity(
-            const RockProviderTouchGrabTargetV1& left,
-            const RockProviderTouchGrabTargetV1& right)
+            const ::rock::api::touch::TouchGrabTarget& left,
+            const ::rock::api::touch::TouchGrabTarget& right)
         {
             return left.targetId == right.targetId &&
                    left.targetGeneration == right.targetGeneration &&
@@ -497,30 +497,30 @@ namespace rock::provider
         }
 
         static bool targetsConflict(
-            const RockProviderTouchGrabTargetV1& left,
-            const RockProviderTouchGrabTargetV1& right)
+            const ::rock::api::touch::TouchGrabTarget& left,
+            const ::rock::api::touch::TouchGrabTarget& right)
         {
             const bool leftWildcard = hasTouchGrabTargetFlagV1(
                 left.flags,
-                RockProviderTouchGrabTargetFlagV1::MatchAnyBody);
+                ::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody);
             const bool rightWildcard = hasTouchGrabTargetFlagV1(
                 right.flags,
-                RockProviderTouchGrabTargetFlagV1::MatchAnyBody);
+                ::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody);
             if (!leftWildcard && !rightWildcard) {
                 return left.bodyId == right.bodyId;
             }
             if (leftWildcard != rightWildcard) {
                 return false;
             }
-            if (hasTouchGrabTargetFlagV1(left.flags, RockProviderTouchGrabTargetFlagV1::FallbackOnly) !=
-                hasTouchGrabTargetFlagV1(right.flags, RockProviderTouchGrabTargetFlagV1::FallbackOnly)) return false;
+            if (hasTouchGrabTargetFlagV1(left.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) !=
+                hasTouchGrabTargetFlagV1(right.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly)) return false;
             return (left.allowedLayerMask & right.allowedLayerMask) != 0 &&
                    (left.flags & right.flags & kHandFlags) != 0 &&
                    (left.flags & right.flags & kMotionFlags) != 0;
         }
 
         static bool generationsMatch(
-            const RockProviderTouchGrabTargetV1& target,
+            const ::rock::api::touch::TouchGrabTarget& target,
             const std::uint32_t worldGeneration,
             const std::uint32_t skeletonGeneration,
             const std::uint32_t providerGeneration)
@@ -534,39 +534,39 @@ namespace rock::provider
         }
 
         static bool handMatches(
-            const RockProviderTouchGrabTargetV1& target,
+            const ::rock::api::touch::TouchGrabTarget& target,
             const RockProviderHand hand)
         {
             if (hand == RockProviderHand::Right) {
                 return hasTouchGrabTargetFlagV1(
                     target.flags,
-                    RockProviderTouchGrabTargetFlagV1::AllowRightHand);
+                    ::rock::api::touch::TouchGrabTargetFlag::AllowRightHand);
             }
             if (hand == RockProviderHand::Left) {
                 return hasTouchGrabTargetFlagV1(
                     target.flags,
-                    RockProviderTouchGrabTargetFlagV1::AllowLeftHand);
+                    ::rock::api::touch::TouchGrabTargetFlag::AllowLeftHand);
             }
             return false;
         }
 
         static bool motionMatches(
-            const RockProviderTouchGrabTargetV1& target,
+            const ::rock::api::touch::TouchGrabTarget& target,
             const TouchGrabMotionClassV1 motionClass)
         {
             switch (motionClass) {
             case TouchGrabMotionClassV1::Static:
                 return hasTouchGrabTargetFlagV1(
                     target.flags,
-                    RockProviderTouchGrabTargetFlagV1::MatchStaticMotion);
+                    ::rock::api::touch::TouchGrabTargetFlag::MatchStaticMotion);
             case TouchGrabMotionClassV1::Keyframed:
                 return hasTouchGrabTargetFlagV1(
                     target.flags,
-                    RockProviderTouchGrabTargetFlagV1::MatchKeyframedMotion);
+                    ::rock::api::touch::TouchGrabTargetFlag::MatchKeyframedMotion);
             case TouchGrabMotionClassV1::Dynamic:
                 return hasTouchGrabTargetFlagV1(
                     target.flags,
-                    RockProviderTouchGrabTargetFlagV1::MatchDynamicMotion);
+                    ::rock::api::touch::TouchGrabTargetFlag::MatchDynamicMotion);
             case TouchGrabMotionClassV1::Other:
             default:
                 return false;
@@ -587,15 +587,15 @@ namespace rock::provider
             return match;
         }
 
-        static RockProviderTouchGrabStateV1 makeArmedState(
-            const RockProviderTouchGrabTargetV1& target,
+        static ::rock::api::touch::TouchGrabState makeArmedState(
+            const ::rock::api::touch::TouchGrabTarget& target,
             const std::uint64_t frameIndex)
         {
-            RockProviderTouchGrabStateV1 state{};
+            ::rock::api::touch::TouchGrabState state{};
             state.targetId = target.targetId;
             state.targetGeneration = target.targetGeneration;
             state.kind = target.kind;
-            state.phase = RockProviderTouchGrabPhaseV1::Armed;
+            state.phase = ::rock::api::touch::TouchGrabPhase::Armed;
             state.bodyId = target.bodyId;
             state.referenceFormId = target.referenceFormId;
             state.referenceNativeHandle =
@@ -606,13 +606,13 @@ namespace rock::provider
             state.providerGeneration = target.providerGeneration;
             state.frameIndex = frameIndex;
             if (target.kind ==
-                RockProviderTouchGrabKindV1::FixedAnchor) {
+                ::rock::api::touch::TouchGrabKind::FixedAnchor) {
                 state.currentCoordinate = 0.0f;
                 state.flags |= static_cast<std::uint32_t>(
-                    RockProviderTouchGrabStateFlagV1::FixedAnchor);
+                    ::rock::api::touch::TouchGrabStateFlag::FixedAnchor);
             } else {
                 state.flags |= static_cast<std::uint32_t>(
-                    RockProviderTouchGrabStateFlagV1::CoordinateValid);
+                    ::rock::api::touch::TouchGrabStateFlag::CoordinateValid);
             }
             return state;
         }

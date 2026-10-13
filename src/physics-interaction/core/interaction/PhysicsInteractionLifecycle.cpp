@@ -154,7 +154,7 @@ namespace rock
         _touchGrabRuntime.releaseAll(
             currentBhkWorld,
             currentHknpWorld,
-            provider::RockProviderTouchGrabReleaseReasonV1::
+            ::rock::api::touch::TouchGrabReleaseReason::
                 GenerationChanged,
             collisionGeneration);
         // Close callback entry and drain any native step already traversing
@@ -597,7 +597,7 @@ namespace rock
             _touchGrabRuntime.releaseAll(
                 _lifecycle.cachedBhkWorld,
                 hknp,
-                provider::RockProviderTouchGrabReleaseReasonV1::
+                ::rock::api::touch::TouchGrabReleaseReason::
                     GenerationChanged,
                 _lifecycle.collisionGenerationAtomic.load(
                     std::memory_order_acquire));
@@ -627,7 +627,7 @@ namespace rock
         } else {
             _dynamicWorldCarCollision.abandon();
             _touchGrabRuntime.abandonAll(
-                provider::RockProviderTouchGrabReleaseReasonV1::
+                ::rock::api::touch::TouchGrabReleaseReason::
                     WorldLost);
             unsubscribeContactEvents(nullptr);
             ROCK_LOG_INFO(Init, "World stale or null — skipping Havok body destruction");
@@ -843,7 +843,7 @@ namespace rock
         _touchGrabRuntime.releaseAll(
             typedBhkWorld,
             hknpWorld,
-            provider::RockProviderTouchGrabReleaseReasonV1::
+            ::rock::api::touch::TouchGrabReleaseReason::
                 GenerationChanged,
             _lifecycle.collisionGenerationAtomic.load(
                 std::memory_order_acquire));

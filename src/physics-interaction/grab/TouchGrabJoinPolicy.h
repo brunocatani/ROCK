@@ -7,14 +7,14 @@
 namespace rock::touch_grab_join_policy
 {
     [[nodiscard]] inline constexpr std::uint32_t flag(
-        const provider::RockProviderTouchGrabTargetFlagV1 value) noexcept
+        const ::rock::api::touch::TouchGrabTargetFlag value) noexcept
     {
         return static_cast<std::uint32_t>(value);
     }
 
     [[nodiscard]] inline constexpr bool hasFlag(
-        const provider::RockProviderTouchGrabTargetV1& target,
-        const provider::RockProviderTouchGrabTargetFlagV1 value) noexcept
+        const ::rock::api::touch::TouchGrabTarget& target,
+        const ::rock::api::touch::TouchGrabTargetFlag value) noexcept
     {
         return (target.flags & flag(value)) != 0;
     }
@@ -27,14 +27,14 @@ namespace rock::touch_grab_join_policy
     [[nodiscard]] inline constexpr bool canJoinSameBody(
         const std::uint64_t activeOwnerToken,
         const std::uint64_t activeScopeToken,
-        const provider::RockProviderTouchGrabTargetV1& activeTarget,
+        const ::rock::api::touch::TouchGrabTarget& activeTarget,
         const std::uint64_t candidateOwnerToken,
         const std::uint64_t candidateScopeToken,
-        const provider::RockProviderTouchGrabTargetV1& candidateTarget)
+        const ::rock::api::touch::TouchGrabTarget& candidateTarget)
         noexcept
     {
-        using Flag = provider::RockProviderTouchGrabTargetFlagV1;
-        using Kind = provider::RockProviderTouchGrabKindV1;
+        using Flag = ::rock::api::touch::TouchGrabTargetFlag;
+        using Kind = ::rock::api::touch::TouchGrabKind;
 
         constexpr std::uint32_t handPermissionMask =
             flag(Flag::AllowRightHand) |

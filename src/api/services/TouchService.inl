@@ -4,7 +4,7 @@
     apiSetTouchGrabTargetsForScopeV1(
         const std::uint64_t ownerToken,
         const std::uint64_t scopeToken,
-        const RockProviderTouchGrabTargetV1* targets,
+        const ::rock::api::touch::TouchGrabTarget* targets,
         const std::uint32_t targetCount)
     {
         if (ownerToken == 0 || scopeToken == 0 ||
@@ -14,7 +14,7 @@
         }
         for (std::uint32_t index = 0; index < targetCount; ++index) {
             if (targets[index].size !=
-                sizeof(RockProviderTouchGrabTargetV1)) {
+                sizeof(::rock::api::touch::TouchGrabTarget)) {
                 return RockProviderResultV1::InvalidSize;
             }
             if (targets[index].version == 0 ||
@@ -81,7 +81,7 @@
     apiCopyTouchGrabStatesForScopeV1(
         const std::uint64_t ownerToken,
         const std::uint64_t scopeToken,
-        RockProviderTouchGrabStateV1* outStates,
+        ::rock::api::touch::TouchGrabState* outStates,
         const std::uint32_t maxStates,
         std::uint32_t* outStateCount)
     {

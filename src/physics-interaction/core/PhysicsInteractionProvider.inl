@@ -800,15 +800,13 @@
                 state.primaryBodyId = touchGrabReport.bodyId;
                 state.targetKind =
                     touchGrabReport.kind ==
-                            ::rock::provider::
-                                RockProviderTouchGrabKindV1::FixedAnchor ?
+                            ::rock::api::touch::TouchGrabKind::FixedAnchor ?
                     TargetKind::WorldSurface :
                     TargetKind::DynamicProp;
                 state.flags |= static_cast<std::uint32_t>(
                     Flag::TouchGrab);
                 if (touchGrabReport.kind ==
-                    ::rock::provider::
-                        RockProviderTouchGrabKindV1::FixedAnchor) {
+                    ::rock::api::touch::TouchGrabKind::FixedAnchor) {
                     state.flags |= static_cast<std::uint32_t>(
                         Flag::FixedSurfaceLatch);
                 }
@@ -828,13 +826,12 @@
                         Flag::SurfaceAnchorValid);
                 }
                 if (touchGrabReport.surfaceGripMode ==
-                    ::rock::provider::RockProviderSurfaceGripModeV1::
+                    ::rock::api::touch::SurfaceGripMode::
                         MeshAnchor) {
                     state.flags |= static_cast<std::uint32_t>(
                         Flag::MeshSurfaceAnchor);
                 } else if (touchGrabReport.surfaceGripMode ==
-                           ::rock::provider::
-                               RockProviderSurfaceGripModeV1::
+                           ::rock::api::touch::SurfaceGripMode::
                                    CollisionFallback) {
                     state.flags |= static_cast<std::uint32_t>(
                         Flag::MeshCollisionFallback);

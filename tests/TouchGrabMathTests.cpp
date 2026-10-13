@@ -10,25 +10,25 @@ namespace
     using namespace rock::provider;
 
     constexpr std::uint32_t flag(
-        const RockProviderTouchGrabTargetFlagV1 value)
+        const ::rock::api::touch::TouchGrabTargetFlag value)
     {
         return static_cast<std::uint32_t>(value);
     }
 
-    RockProviderTouchGrabTargetV1 targetForHand(
+    ::rock::api::touch::TouchGrabTarget targetForHand(
         const std::uint64_t targetId,
-        const RockProviderTouchGrabTargetFlagV1 hand)
+        const ::rock::api::touch::TouchGrabTargetFlag hand)
     {
-        RockProviderTouchGrabTargetV1 target{};
+        ::rock::api::touch::TouchGrabTarget target{};
         target.targetId = targetId;
         target.targetGeneration = 7;
-        target.kind = RockProviderTouchGrabKindV1::FixedAnchor;
+        target.kind = ::rock::api::touch::TouchGrabKind::FixedAnchor;
         target.flags =
             flag(hand) |
-            flag(RockProviderTouchGrabTargetFlagV1::AllowTwoHands) |
-            flag(RockProviderTouchGrabTargetFlagV1::MatchAnyBody) |
-            flag(RockProviderTouchGrabTargetFlagV1::MatchStaticMotion) |
-            flag(RockProviderTouchGrabTargetFlagV1::MatchKeyframedMotion);
+            flag(::rock::api::touch::TouchGrabTargetFlag::AllowTwoHands) |
+            flag(::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody) |
+            flag(::rock::api::touch::TouchGrabTargetFlag::MatchStaticMotion) |
+            flag(::rock::api::touch::TouchGrabTargetFlag::MatchKeyframedMotion);
         target.allowedLayerMask = std::uint64_t{ 1 } << 1;
         target.leaseFrames = 4;
         target.worldGeneration = 2;
@@ -72,20 +72,20 @@ int main()
     using rock::touch_grab_join_policy::canJoinSameBody;
     auto right = targetForHand(
         100,
-        RockProviderTouchGrabTargetFlagV1::AllowRightHand);
+        ::rock::api::touch::TouchGrabTargetFlag::AllowRightHand);
     auto left = targetForHand(
         101,
-        RockProviderTouchGrabTargetFlagV1::AllowLeftHand);
+        ::rock::api::touch::TouchGrabTargetFlag::AllowLeftHand);
     assert(canJoinSameBody(10, 20, right, 10, 20, left));
     assert(!canJoinSameBody(10, 20, right, 11, 20, left));
     assert(!canJoinSameBody(10, 20, right, 10, 21, left));
 
     left.flags &= ~flag(
-        RockProviderTouchGrabTargetFlagV1::AllowTwoHands);
+        ::rock::api::touch::TouchGrabTargetFlag::AllowTwoHands);
     assert(!canJoinSameBody(10, 20, right, 10, 20, left));
     left = targetForHand(
         101,
-        RockProviderTouchGrabTargetFlagV1::AllowLeftHand);
+        ::rock::api::touch::TouchGrabTargetFlag::AllowLeftHand);
     ++left.targetGeneration;
     assert(!canJoinSameBody(10, 20, right, 10, 20, left));
     --left.targetGeneration;

@@ -218,7 +218,7 @@ namespace rock
                     result.targetFormId = surface.referenceFormId;
                     result.targetBodyId = surface.bodyId;
                     _touchGrabRuntime.releaseHand(isLeft, frame.bhkWorld, frame.hknpWorld,
-                        RockProviderTouchGrabReleaseReasonV1::HandUnavailable,
+                        ::rock::api::touch::TouchGrabReleaseReason::HandUnavailable,
                         _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire));
                     clearProviderReleaseInputState();
                     complete(RockProviderInteractionCommandStateV1::Succeeded, RockProviderInteractionFailureV1::None);
@@ -353,7 +353,7 @@ namespace rock
                 clearProviderReleaseInputState();
                 if (!complete(RockProviderInteractionCommandStateV1::Succeeded, RockProviderInteractionFailureV1::None)) {
                     _touchGrabRuntime.releaseHand(isLeft, frame.bhkWorld, frame.hknpWorld,
-                        RockProviderTouchGrabReleaseReasonV1::OwnerYield,
+                        ::rock::api::touch::TouchGrabReleaseReason::OwnerYield,
                         _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire));
                 }
                 continue;

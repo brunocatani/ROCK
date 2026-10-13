@@ -11,27 +11,27 @@ namespace
     using namespace rock::provider;
 
     constexpr std::uint32_t flag(
-        const RockProviderTouchGrabTargetFlagV1 value)
+        const ::rock::api::touch::TouchGrabTargetFlag value)
     {
         return static_cast<std::uint32_t>(value);
     }
 
-    RockProviderTouchGrabTargetV1 hinge(
+    ::rock::api::touch::TouchGrabTarget hinge(
         const std::uint64_t targetId,
         const std::uint32_t bodyId,
         const std::uint32_t targetGeneration = 1)
     {
-        RockProviderTouchGrabTargetV1 target{};
+        ::rock::api::touch::TouchGrabTarget target{};
         target.targetId = targetId;
         target.targetGeneration = targetGeneration;
-        target.kind = RockProviderTouchGrabKindV1::LimitedHinge;
+        target.kind = ::rock::api::touch::TouchGrabKind::LimitedHinge;
         target.flags =
-            flag(RockProviderTouchGrabTargetFlagV1::AllowRightHand) |
-            flag(RockProviderTouchGrabTargetFlagV1::AllowLeftHand) |
-            flag(RockProviderTouchGrabTargetFlagV1::AllowTwoHands) |
-            flag(RockProviderTouchGrabTargetFlagV1::LatchOnRelease) |
-            flag(RockProviderTouchGrabTargetFlagV1::MatchKeyframedMotion) |
-            flag(RockProviderTouchGrabTargetFlagV1::MatchDynamicMotion);
+            flag(::rock::api::touch::TouchGrabTargetFlag::AllowRightHand) |
+            flag(::rock::api::touch::TouchGrabTargetFlag::AllowLeftHand) |
+            flag(::rock::api::touch::TouchGrabTargetFlag::AllowTwoHands) |
+            flag(::rock::api::touch::TouchGrabTargetFlag::LatchOnRelease) |
+            flag(::rock::api::touch::TouchGrabTargetFlag::MatchKeyframedMotion) |
+            flag(::rock::api::touch::TouchGrabTargetFlag::MatchDynamicMotion);
         target.bodyId = bodyId;
         target.referenceFormId = 0x1234;
         target.referenceNativeHandle = 0x5678;
@@ -47,20 +47,20 @@ namespace
         return target;
     }
 
-    RockProviderTouchGrabTargetV1 wildcardAnchor(
+    ::rock::api::touch::TouchGrabTarget wildcardAnchor(
         const std::uint64_t targetId,
         const std::uint64_t layerMask)
     {
-        RockProviderTouchGrabTargetV1 target{};
+        ::rock::api::touch::TouchGrabTarget target{};
         target.targetId = targetId;
         target.targetGeneration = 1;
-        target.kind = RockProviderTouchGrabKindV1::FixedAnchor;
+        target.kind = ::rock::api::touch::TouchGrabKind::FixedAnchor;
         target.flags =
-            flag(RockProviderTouchGrabTargetFlagV1::AllowRightHand) |
-            flag(RockProviderTouchGrabTargetFlagV1::AllowLeftHand) |
-            flag(RockProviderTouchGrabTargetFlagV1::MatchAnyBody) |
-            flag(RockProviderTouchGrabTargetFlagV1::MatchStaticMotion) |
-            flag(RockProviderTouchGrabTargetFlagV1::MatchKeyframedMotion);
+            flag(::rock::api::touch::TouchGrabTargetFlag::AllowRightHand) |
+            flag(::rock::api::touch::TouchGrabTargetFlag::AllowLeftHand) |
+            flag(::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody) |
+            flag(::rock::api::touch::TouchGrabTargetFlag::MatchStaticMotion) |
+            flag(::rock::api::touch::TouchGrabTargetFlag::MatchKeyframedMotion);
         target.allowedLayerMask = layerMask;
         target.leaseFrames = 2;
         target.worldGeneration = 11;
@@ -139,7 +139,7 @@ namespace
 
         auto invalidHinge = hinge(3, 102);
         invalidHinge.flags |=
-            flag(RockProviderTouchGrabTargetFlagV1::MatchStaticMotion);
+            flag(::rock::api::touch::TouchGrabTargetFlag::MatchStaticMotion);
         assert(registry->setScope(
                    owner,
                    0xB003,
@@ -185,21 +185,21 @@ namespace
                    1,
                    100) == TouchGrabRegistry::RegistrationResult::Ok);
 
-        std::array<RockProviderTouchGrabStateV1, 1> states{};
+        std::array<::rock::api::touch::TouchGrabState, 1> states{};
         assert(registry->copyStates(
                    owner,
                    scope,
                    states.data(),
                    static_cast<std::uint32_t>(states.size()),
                    100) == 1);
-        assert(states[0].phase == RockProviderTouchGrabPhaseV1::Armed);
+        assert(states[0].phase == ::rock::api::touch::TouchGrabPhase::Armed);
         assert(states[0].currentCoordinate == 0.25f);
 
-        RockProviderTouchGrabStateV1 held{};
+        ::rock::api::touch::TouchGrabState held{};
         held.targetId = target.targetId;
         held.targetGeneration = target.targetGeneration;
         held.kind = target.kind;
-        held.phase = RockProviderTouchGrabPhaseV1::Held;
+        held.phase = ::rock::api::touch::TouchGrabPhase::Held;
         held.bodyId = target.bodyId;
         held.currentCoordinate = 0.5f;
         held.activeHandMask = 1;
@@ -250,7 +250,7 @@ namespace
                    states.data(),
                    static_cast<std::uint32_t>(states.size()),
                    102) == 1);
-        assert(states[0].phase == RockProviderTouchGrabPhaseV1::Held);
+        assert(states[0].phase == ::rock::api::touch::TouchGrabPhase::Held);
         assert(states[0].currentCoordinate == 0.5f);
         assert(states[0].sequence != 0);
 
@@ -271,9 +271,9 @@ namespace
             current));
         assert(!current.yieldRequested);
 
-        RockProviderTouchGrabStateV1 invalidated = held;
+        ::rock::api::touch::TouchGrabState invalidated = held;
         invalidated.phase =
-            RockProviderTouchGrabPhaseV1::Invalidated;
+            ::rock::api::touch::TouchGrabPhase::Invalidated;
         assert(registry->publishState(
             owner,
             scope,
@@ -315,7 +315,7 @@ namespace
                    1,
                    1) == TouchGrabRegistry::RegistrationResult::Ok);
 
-        std::array<RockProviderTouchGrabTargetV1, 2> invalidBatch{
+        std::array<::rock::api::touch::TouchGrabTarget, 2> invalidBatch{
             hinge(21, 301),
             hinge(22, 301),
         };
@@ -348,13 +348,13 @@ namespace
         auto right = wildcardAnchor(30, std::uint64_t{ 1 } << 5);
         auto left = wildcardAnchor(31, std::uint64_t{ 1 } << 5);
         right.flags &= ~flag(
-            RockProviderTouchGrabTargetFlagV1::AllowLeftHand);
+            ::rock::api::touch::TouchGrabTargetFlag::AllowLeftHand);
         left.flags &= ~flag(
-            RockProviderTouchGrabTargetFlagV1::AllowRightHand);
+            ::rock::api::touch::TouchGrabTargetFlag::AllowRightHand);
         right.flags |= flag(
-            RockProviderTouchGrabTargetFlagV1::AllowTwoHands);
+            ::rock::api::touch::TouchGrabTargetFlag::AllowTwoHands);
         left.flags |= flag(
-            RockProviderTouchGrabTargetFlagV1::AllowTwoHands);
+            ::rock::api::touch::TouchGrabTargetFlag::AllowTwoHands);
         const std::array targets{ right, left };
 
         assert(registry->setScope(
@@ -393,8 +393,8 @@ void testFallbackPriority()
     using namespace rock::provider;
     auto registry = std::make_unique<TouchGrabRegistry>();
     auto climbing = wildcardAnchor(50, 1ull << 2);
-    climbing.flags |= flag(RockProviderTouchGrabTargetFlagV1::FallbackOnly) |
-        flag(RockProviderTouchGrabTargetFlagV1::ExcludePowerArmor);
+    climbing.flags |= flag(::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) |
+        flag(::rock::api::touch::TouchGrabTargetFlag::ExcludePowerArmor);
     auto ordinary = wildcardAnchor(51, 1ull << 2);
     auto exact = hinge(52, 100);
     const auto resolve = [&]() { return registry->resolve(100, 2, TouchGrabMotionClassV1::Keyframed,
@@ -410,7 +410,7 @@ void testFallbackPriority()
     assert(registry->setScope(2, 2, &ordinary, 1, 40) == TouchGrabRegistry::RegistrationResult::Ok);
     assert(registry->setScope(1, 1, &climbing, 1, 40) == TouchGrabRegistry::RegistrationResult::Ok);
     assert(resolve().target.targetId == 51);
-    exact.flags |= flag(RockProviderTouchGrabTargetFlagV1::FallbackOnly);
+    exact.flags |= flag(::rock::api::touch::TouchGrabTargetFlag::FallbackOnly);
     assert(registry->setScope(3, 3, &exact, 1, 40) != TouchGrabRegistry::RegistrationResult::Ok);
 }
 

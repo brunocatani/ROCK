@@ -3236,7 +3236,7 @@ namespace rock::provider
             outMatch);
     }
 
-    bool publishTouchGrabStateV1(std::uint64_t ownerToken,std::uint64_t scopeToken,const RockProviderTouchGrabStateV1& state) {
+    bool publishTouchGrabStateV1(std::uint64_t ownerToken,std::uint64_t scopeToken,const ::rock::api::touch::TouchGrabState& state) {
         bool changed=false; bool accepted=false;
         const auto frame=currentGameFrameIndex();
         {

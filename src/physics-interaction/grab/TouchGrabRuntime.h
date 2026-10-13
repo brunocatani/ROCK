@@ -54,11 +54,11 @@ namespace rock
             bool globalSurface = false;
             bool commandOwned = false;
             bool hasSurfaceAnchor = false;
-            provider::RockProviderTouchGrabKindV1 kind{
-                provider::RockProviderTouchGrabKindV1::FixedAnchor
+            ::rock::api::touch::TouchGrabKind kind{
+                ::rock::api::touch::TouchGrabKind::FixedAnchor
             };
-            provider::RockProviderSurfaceGripModeV1 surfaceGripMode{
-                provider::RockProviderSurfaceGripModeV1::CollisionAnchor
+            ::rock::api::touch::SurfaceGripMode surfaceGripMode{
+                ::rock::api::touch::SurfaceGripMode::CollisionAnchor
             };
             std::uint32_t bodyId = 0x7FFF'FFFFu;
             std::uint32_t referenceFormId = 0;
@@ -193,20 +193,20 @@ namespace rock
             bool isLeft,
             RE::bhkWorld* bhkWorld,
             RE::hknpWorld* hknpWorld,
-            provider::RockProviderTouchGrabReleaseReasonV1 reason,
+            ::rock::api::touch::TouchGrabReleaseReason reason,
             std::uint32_t collisionGeneration);
 
         void releaseAll(
             RE::bhkWorld* bhkWorld,
             RE::hknpWorld* hknpWorld,
-            provider::RockProviderTouchGrabReleaseReasonV1 reason,
+            ::rock::api::touch::TouchGrabReleaseReason reason,
             std::uint32_t collisionGeneration);
 
         // World loss means native world teardown owns constraints already.
         // This path releases only ROCK wrapper references and never dereferences
         // the no-longer-authoritative target body.
         void abandonAll(
-            provider::RockProviderTouchGrabReleaseReasonV1 reason) noexcept;
+            ::rock::api::touch::TouchGrabReleaseReason reason) noexcept;
 
     private:
         static constexpr std::uint32_t kInvalidId = 0x7FFF'FFFFu;
@@ -224,8 +224,8 @@ namespace rock
             bool hasContactNormal = false;
             bool surfaceLatch = false;
             bool contactRelativeToTarget = false;
-            provider::RockProviderSurfaceGripModeV1 surfaceGripMode{
-                provider::RockProviderSurfaceGripModeV1::CollisionAnchor
+            ::rock::api::touch::SurfaceGripMode surfaceGripMode{
+                ::rock::api::touch::SurfaceGripMode::CollisionAnchor
             };
             RE::NiPoint3 contactPointGame{};
             RE::NiPoint3 contactNormalGame{};
@@ -243,7 +243,7 @@ namespace rock
             bool globalSurface = false;
             std::uint64_t ownerToken = 0;
             std::uint64_t scopeToken = 0;
-            provider::RockProviderTouchGrabTargetV1 target{};
+            ::rock::api::touch::TouchGrabTarget target{};
             std::uint32_t bodyId = kInvalidId;
             provider::TouchGrabMotionClassV1 originalMotionClass{
                 provider::TouchGrabMotionClassV1::Other
@@ -289,13 +289,13 @@ namespace rock
             ActiveTarget& active,
             RE::bhkWorld* bhkWorld,
             RE::hknpWorld* world,
-            provider::RockProviderTouchGrabReleaseReasonV1 reason,
+            ::rock::api::touch::TouchGrabReleaseReason reason,
             std::uint32_t collisionGeneration,
             bool restoreTarget);
         void publishState(
             ActiveTarget& active,
-            provider::RockProviderTouchGrabPhaseV1 phase,
-            provider::RockProviderTouchGrabReleaseReasonV1 reason,
+            ::rock::api::touch::TouchGrabPhase phase,
+            ::rock::api::touch::TouchGrabReleaseReason reason,
             float coordinateVelocity,
             std::uint32_t collisionGeneration);
 

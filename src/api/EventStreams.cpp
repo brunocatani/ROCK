@@ -22,7 +22,7 @@ namespace {
     OwnedEventStream<api::core::EventV1,api::core::kEventCapacityPerOwner,api::core::kMaxOwners> coreEvents;
     OwnedEventStream<api::collision::EventV1,api::collision::kEventCapacityPerOwner,api::core::kMaxOwners> collisionEvents;
     OwnedEventStream<api::grab::EventV1,api::grab::kEventCapacityPerOwner,api::core::kMaxOwners> grabEvents;
-    OwnedEventStream<api::touch::EventV1,api::touch::kEventCapacityPerOwner,api::core::kMaxOwners> touchEvents;
+    OwnedEventStream<api::touch::Event,api::touch::kEventCapacityPerOwner,api::core::kMaxOwners> touchEvents;
     OwnedEventStream<api::weapon::EventV1,api::weapon::kEventCapacityPerOwner,api::core::kMaxOwners> weaponEvents;
     OwnedEventStream<api::weaponparts::EventV1,api::weaponparts::kEventCapacityPerOwner,api::core::kMaxOwners> weaponpartsEvents;
     OwnedEventStream<api::animation::EventV1,api::animation::kEventCapacityPerOwner,api::core::kMaxOwners> animationEvents;
@@ -59,7 +59,7 @@ void remove(api::OwnerToken owner) {
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::core::EventV1* output,std::uint32_t capacity,api::Stream& state) { return coreEvents.copy(owner,after,output,capacity,state); }
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::collision::EventV1* output,std::uint32_t capacity,api::Stream& state) { return collisionEvents.copy(owner,after,output,capacity,state); }
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::grab::EventV1* output,std::uint32_t capacity,api::Stream& state) { return grabEvents.copy(owner,after,output,capacity,state); }
-api::Status copy(api::OwnerToken owner,std::uint64_t after,api::touch::EventV1* output,std::uint32_t capacity,api::Stream& state) { return touchEvents.copy(owner,after,output,capacity,state); }
+api::Status copy(api::OwnerToken owner,std::uint64_t after,api::touch::Event* output,std::uint32_t capacity,api::Stream& state) { return touchEvents.copy(owner,after,output,capacity,state); }
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::weapon::EventV1* output,std::uint32_t capacity,api::Stream& state) { return weaponEvents.copy(owner,after,output,capacity,state); }
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::weaponparts::EventV1* output,std::uint32_t capacity,api::Stream& state) { return weaponpartsEvents.copy(owner,after,output,capacity,state); }
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::animation::EventV1* output,std::uint32_t capacity,api::Stream& state) { return animationEvents.copy(owner,after,output,capacity,state); }
@@ -165,8 +165,8 @@ void clearGrabCallback(api::OwnerToken owner) {
     for (auto& slot:callbacks) if (slot.owner==owner) slot={};
 }
 
-void publishTouch(std::uint64_t owner,std::uint64_t scope,const RockProviderTouchGrabStateV1& state,std::uint64_t frame) {
-    api::touch::EventV1 event{};
+void publishTouch(std::uint64_t owner,std::uint64_t scope,const ::rock::api::touch::TouchGrabState& state,std::uint64_t frame) {
+    api::touch::Event event{};
     stamp(event,{frame,0,state.worldGeneration,state.skeletonGeneration,state.providerGeneration,state.collisionGeneration});
     event.kind=1; event.ownerToken=owner; event.scopeToken=scope; event.targetId=state.targetId;
     event.targetGeneration=state.targetGeneration; event.phase=static_cast<std::uint32_t>(state.phase);

@@ -1,10 +1,10 @@
 #pragma once
-#include <ROCK/TouchV1_1.h>
+#include <ROCK/Touch.h>
 #include <array>
 #include <cmath>
 
 namespace rock::authored_interaction {
-    using Request=api::touch::v1_1::AuthoredHand;
+    using Request=api::touch::AuthoredHand;
     inline constexpr std::uint32_t indicator=1, reserve=2, attached=4;
     struct Lease {
         api::OwnerToken owner{};
@@ -17,7 +17,7 @@ namespace rock::authored_interaction {
                 s.collisionGeneration==now.collisionGeneration;
         }
         api::Status set(api::OwnerToken caller,const Request& next,const api::Sample& now) noexcept {
-            if(!caller || next.size!=sizeof(Request) || next.version!=1 || next.reserved ||
+            if(!caller || next.size!=sizeof(Request) || next.version!=1 ||
                 (next.hand!=api::Hand::Right && next.hand!=api::Hand::Left) || !next.referenceFormId ||
                 !next.flags || (next.flags&~7u) || ((next.flags&attached)&&!(next.flags&reserve)) ||
                 next.leaseFrames<1 || next.leaseFrames>3 ||

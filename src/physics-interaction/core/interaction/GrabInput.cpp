@@ -649,7 +649,7 @@ namespace rock
                 isLeft,
                 frame.bhkWorld,
                 frame.hknpWorld,
-                provider::RockProviderTouchGrabReleaseReasonV1::
+                ::rock::api::touch::TouchGrabReleaseReason::
                     HandUnavailable,
                 collisionGeneration);
             cancelPeerHeldJoinRetry("hand-input-disabled", false);
@@ -727,7 +727,7 @@ namespace rock
                     isLeft,
                     frame.bhkWorld,
                     frame.hknpWorld,
-                    provider::RockProviderTouchGrabReleaseReasonV1::
+                    ::rock::api::touch::TouchGrabReleaseReason::
                         HandUnavailable,
                     collisionGeneration);
             }
@@ -817,7 +817,7 @@ namespace rock
                     isLeft,
                     frame.bhkWorld,
                     frame.hknpWorld,
-                    provider::RockProviderTouchGrabReleaseReasonV1::
+                    ::rock::api::touch::TouchGrabReleaseReason::
                         GripReleased,
                     collisionGeneration);
             }
@@ -983,7 +983,7 @@ namespace rock
                         isLeft,
                         touchGrabReport) &&
                     touchGrabReport.kind ==
-                        provider::RockProviderTouchGrabKindV1::
+                        ::rock::api::touch::TouchGrabKind::
                             FixedAnchor) {
                     (void)_feedbackHaptics.queue(
                         isLeft ?
@@ -2727,7 +2727,7 @@ namespace rock
             _touchGrabRuntime.releaseAll(
                 frame.bhkWorld,
                 frame.hknpWorld,
-                provider::RockProviderTouchGrabReleaseReasonV1::
+                ::rock::api::touch::TouchGrabReleaseReason::
                     HandUnavailable,
                 _lifecycle.collisionGenerationAtomic.load(
                     std::memory_order_acquire));
@@ -2781,7 +2781,7 @@ namespace rock
             _touchGrabRuntime.releaseAll(
                 frame.bhkWorld,
                 frame.hknpWorld,
-                provider::RockProviderTouchGrabReleaseReasonV1::
+                ::rock::api::touch::TouchGrabReleaseReason::
                     HandUnavailable,
                 collisionGeneration);
         }

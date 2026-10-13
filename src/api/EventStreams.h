@@ -19,7 +19,7 @@ namespace rock::provider::events {
     api::Status copy(api::OwnerToken,std::uint64_t,api::core::EventV1*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::collision::EventV1*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::grab::EventV1*,std::uint32_t,api::Stream&);
-    api::Status copy(api::OwnerToken,std::uint64_t,api::touch::EventV1*,std::uint32_t,api::Stream&);
+    api::Status copy(api::OwnerToken,std::uint64_t,api::touch::Event*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::weapon::EventV1*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::weaponparts::EventV1*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::animation::EventV1*,std::uint32_t,api::Stream&);
@@ -28,5 +28,5 @@ namespace rock::provider::events {
     bool inSynchronousCallback() noexcept;
     api::Status setGrabCallback(api::OwnerToken,api::grab::EventCallbackV1,void*);
     void clearGrabCallback(api::OwnerToken);
-    void publishTouch(std::uint64_t owner,std::uint64_t scope,const RockProviderTouchGrabStateV1&,std::uint64_t frame);
+    void publishTouch(std::uint64_t owner,std::uint64_t scope,const ::rock::api::touch::TouchGrabState&,std::uint64_t frame);
 }

@@ -102,24 +102,17 @@ int main() {
         assert(newApi->clearHeldPlacementIntent(77)==Status::Ok);
         assert(oldApi->cancelInteractionCommandV1(77,9)==Status::Ok);
     }
-    verify(touch::tableV1_1(),touch::kSupportedPermissions);
+    verify(touch::table(),touch::kSupportedPermissions);
     {
-        const InterfaceDescriptorV1 *oldTouch{},*newTouch{};
-        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::Touch,1,0,sizeof(touch::ApiV1),&oldTouch)==Status::Ok);
-        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::Touch,1,1,sizeof(touch::v1_1::Api),&newTouch)==Status::Ok);
-        assert(oldTouch==newTouch&&oldTouch->requiredCoreMinor==0);
-        const auto* authored=static_cast<const touch::v1_1::Api*>(newTouch->table);
-        const auto* legacy=static_cast<const touch::ApiV1*>(oldTouch->table);
-        assert(legacy->requestTouchGrabYieldV1(77,5,6,7)==Status::Ok);
-        touch::v1_1::AuthoredHand request{};request.hand=Hand::Right;request.referenceFormId=42;request.flags=3;
-        assert(authored->setAuthoredHand(78,&request)==Status::Ok);
-        assert(authored->setAuthoredHand(79,&request)==Status::OwnerConflict);
-        assert(legacy->requestTouchGrabYieldV1(77,5,6,7)==Status::Ok);
-        assert(authored->clearAuthoredHand(79,Hand::Right)==Status::OwnerConflict);
-        assert(authored->clearAuthoredHand(78,Hand::Right)==Status::Ok);
-        const std::array oldOnly{discovery::RegisteredInterface{
-            {sizeof(InterfaceDescriptorV1),InterfaceId::Touch,1,0,sizeof(touch::ApiV1),1,0,0,&touch::table()},touch::kSupportedPermissions}};
-        assert(discovery::query(oldOnly,InterfaceId::Touch,1,1,sizeof(touch::v1_1::Api),&newTouch)==Status::UnsupportedMinor);
+        const InterfaceDescriptorV1* current{};
+        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::Touch,2,0,sizeof(touch::Api),&current)==Status::Ok);
+        const auto* api=static_cast<const touch::Api*>(current->table);
+        assert(api->requestTouchGrabYield(77,5,6,7)==Status::Ok);
+        touch::AuthoredHand request{};request.hand=Hand::Right;request.referenceFormId=42;request.flags=3;
+        assert(api->setAuthoredHand(78,&request)==Status::Ok);
+        assert(api->setAuthoredHand(79,&request)==Status::OwnerConflict);
+        assert(api->clearAuthoredHand(79,Hand::Right)==Status::OwnerConflict);
+        assert(api->clearAuthoredHand(78,Hand::Right)==Status::Ok);
     }
     verify(weapon::tableV1_1(),weapon::kSupportedPermissions);
     verify(weaponparts::tableV1_7(),weaponparts::kSupportedPermissions);

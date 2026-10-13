@@ -366,7 +366,7 @@ namespace rock
                     pulse.isLeft,
                     touchGrabReport) &&
                 touchGrabReport.kind ==
-                    provider::RockProviderTouchGrabKindV1::FixedAnchor;
+                    ::rock::api::touch::TouchGrabKind::FixedAnchor;
             if (surfaceGrabOwnsFeedback) {
                 continue;
             }

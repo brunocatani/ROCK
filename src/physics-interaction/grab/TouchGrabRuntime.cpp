@@ -55,7 +55,7 @@ namespace rock
             const RE::hkVector4f&);
 
         [[nodiscard]] RE::NiPoint3 toNiPoint(
-            const provider::RockProviderPoint3& point)
+            const api::Point3& point)
         {
             return { point.x, point.y, point.z };
         }
@@ -79,10 +79,10 @@ namespace rock
                    std::isfinite(point.z);
         }
 
-        bool referenceAllowedByTarget(const provider::RockProviderTouchGrabTargetV1& target,
+        bool referenceAllowedByTarget(const ::rock::api::touch::TouchGrabTarget& target,
             RE::hknpWorld* world, std::uint32_t bodyId, std::uint32_t layer)
         {
-            using Flag = provider::RockProviderTouchGrabTargetFlagV1;
+            using Flag = ::rock::api::touch::TouchGrabTargetFlag;
             if (!provider::hasTouchGrabTargetFlagV1(target.flags, Flag::ExcludePowerArmor)) return true;
             auto* ref = reference_interaction::resolveBody(world, bodyId);
             // Reference-less terrain remains eligible. ANIMSTATIC can be a PA
@@ -279,21 +279,21 @@ namespace rock
             }
         }
 
-        [[nodiscard]] provider::RockProviderTouchGrabTargetV1
+        [[nodiscard]] ::rock::api::touch::TouchGrabTarget
         makeGlobalSurfaceTarget(
             const std::uint32_t bodyId,
             const std::uint32_t worldGeneration,
             const std::uint32_t skeletonGeneration,
             const std::uint32_t providerGeneration)
         {
-            using Flag = provider::RockProviderTouchGrabTargetFlagV1;
-            provider::RockProviderTouchGrabTargetV1 target{};
+            using Flag = ::rock::api::touch::TouchGrabTargetFlag;
+            ::rock::api::touch::TouchGrabTarget target{};
             target.targetId =
                 global_surface_grab_policy::targetIdForBody(bodyId);
             target.targetGeneration =
                 global_surface_grab_policy::kTargetGeneration;
             target.kind =
-                provider::RockProviderTouchGrabKindV1::FixedAnchor;
+                ::rock::api::touch::TouchGrabKind::FixedAnchor;
             target.flags =
                 static_cast<std::uint32_t>(Flag::AllowRightHand) |
                 static_cast<std::uint32_t>(Flag::AllowLeftHand) |
@@ -312,8 +312,8 @@ namespace rock
         }
 
         [[nodiscard]] bool sameRuntimeContract(
-            const provider::RockProviderTouchGrabTargetV1& left,
-            const provider::RockProviderTouchGrabTargetV1& right)
+            const ::rock::api::touch::TouchGrabTarget& left,
+            const ::rock::api::touch::TouchGrabTarget& right)
         {
             const bool commonContractMatches =
                 left.targetId == right.targetId &&
@@ -332,7 +332,7 @@ namespace rock
                     right.providerGeneration;
             if (!commonContractMatches ||
                 left.kind ==
-                    provider::RockProviderTouchGrabKindV1::
+                    ::rock::api::touch::TouchGrabKind::
                         FixedAnchor) {
                 return commonContractMatches;
             }
@@ -869,7 +869,7 @@ namespace rock
         if (providerMatched &&
             (!referenceAllowedByTarget(match.target, hknpWorld, bodyId.value, layer) ||
              (authoredPowerArmor && provider::hasTouchGrabTargetFlagV1(match.target.flags,
-                 provider::RockProviderTouchGrabTargetFlagV1::FallbackOnly)))) {
+                 ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly)))) {
             providerMatched = false;
             match = {};
         }
@@ -916,7 +916,7 @@ namespace rock
         }
         const bool fixedAnchor =
             match.target.kind ==
-            provider::RockProviderTouchGrabKindV1::FixedAnchor;
+            ::rock::api::touch::TouchGrabKind::FixedAnchor;
         if (motionClass == provider::TouchGrabMotionClassV1::Other &&
             !global_surface_grab_policy::canFollowUnclassifiedMotion(
                 !providerMatched,
@@ -936,7 +936,7 @@ namespace rock
             return false;
         }
         if (providerMatched && match.wildcard &&
-            (provider::hasTouchGrabTargetFlagV1(match.target.flags, provider::RockProviderTouchGrabTargetFlagV1::FallbackOnly) !=
+            (provider::hasTouchGrabTargetFlagV1(match.target.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) !=
              (targetClass == TargetClass::Fallback))) {
             _lastAttemptReport.failure = AttemptFailure::TargetClassMismatch;
             return false;
@@ -1009,11 +1009,11 @@ namespace rock
             if (active->bodyId != bodyId.value ||
                 !provider::hasTouchGrabTargetFlagV1(
                     active->target.flags,
-                    provider::RockProviderTouchGrabTargetFlagV1::
+                    ::rock::api::touch::TouchGrabTargetFlag::
                         AllowTwoHands) ||
                 !provider::hasTouchGrabTargetFlagV1(
                     match.target.flags,
-                    provider::RockProviderTouchGrabTargetFlagV1::
+                    ::rock::api::touch::TouchGrabTargetFlag::
                         AllowTwoHands)) {
                 _lastAttemptReport.failure = AttemptFailure::TargetConflict;
                 return false;
@@ -1045,8 +1045,8 @@ namespace rock
             }
             publishState(
                 *active,
-                provider::RockProviderTouchGrabPhaseV1::Held,
-                provider::RockProviderTouchGrabReleaseReasonV1::None,
+                ::rock::api::touch::TouchGrabPhase::Held,
+                ::rock::api::touch::TouchGrabReleaseReason::None,
                 0.0f,
                 collisionGeneration);
             return true;
@@ -1073,7 +1073,7 @@ namespace rock
             nullptr;
         active->initialCoordinate =
             match.target.kind ==
-                provider::RockProviderTouchGrabKindV1::
+                ::rock::api::touch::TouchGrabKind::
                     FixedAnchor ?
             0.0f :
             match.target.currentCoordinate;
@@ -1091,13 +1091,13 @@ namespace rock
             _physicsCallbackGate->pauseForMutation() :
             PhysicsCallbackQuiescenceGate::MutationLease{};
         if (match.target.kind !=
-                provider::RockProviderTouchGrabKindV1::FixedAnchor &&
+                ::rock::api::touch::TouchGrabKind::FixedAnchor &&
             !createMechanism(*active, bhkWorld, hknpWorld)) {
             releaseTarget(
                 *active,
                 bhkWorld,
                 hknpWorld,
-                provider::RockProviderTouchGrabReleaseReasonV1::
+                ::rock::api::touch::TouchGrabReleaseReason::
                     TargetInvalid,
                 collisionGeneration,
                 true);
@@ -1115,7 +1115,7 @@ namespace rock
                 *active,
                 bhkWorld,
                 hknpWorld,
-                provider::RockProviderTouchGrabReleaseReasonV1::
+                ::rock::api::touch::TouchGrabReleaseReason::
                     TargetInvalid,
                 collisionGeneration,
                 true);
@@ -1126,8 +1126,8 @@ namespace rock
 
         publishState(
             *active,
-            provider::RockProviderTouchGrabPhaseV1::Held,
-            provider::RockProviderTouchGrabReleaseReasonV1::None,
+            ::rock::api::touch::TouchGrabPhase::Held,
+            ::rock::api::touch::TouchGrabReleaseReason::None,
             0.0f,
             collisionGeneration);
         ROCK_LOG_INFO(
@@ -1164,7 +1164,7 @@ namespace rock
 
         touch_grab_math::Vector3 witness{};
         if (active.target.kind ==
-                provider::RockProviderTouchGrabKindV1::LimitedHinge) {
+                ::rock::api::touch::TouchGrabKind::LimitedHinge) {
             if (!touch_grab_math::makePerpendicularWitness(
                     toMathPoint(active.axisWorld),
                     witness)) {
@@ -1238,7 +1238,7 @@ namespace rock
             active.target.maximumCoordinate -
             active.initialCoordinate;
         if (active.target.kind ==
-            provider::RockProviderTouchGrabKindV1::LimitedHinge) {
+            ::rock::api::touch::TouchGrabKind::LimitedHinge) {
             active.mechanismConstraintId =
                 createLimitedHingeConstraint(
                     world,
@@ -1251,7 +1251,7 @@ namespace rock
                     minimumRelative,
                     maximumRelative);
         } else if (active.target.kind ==
-                   provider::RockProviderTouchGrabKindV1::
+                   ::rock::api::touch::TouchGrabKind::
                        LimitedPrismatic) {
             active.mechanismConstraintId =
                 createPrismaticConstraint(
@@ -1297,7 +1297,7 @@ namespace rock
             (activeHands != 0 &&
                 !provider::hasTouchGrabTargetFlagV1(
                     active.target.flags,
-                    provider::RockProviderTouchGrabTargetFlagV1::
+                    ::rock::api::touch::TouchGrabTargetFlag::
                         AllowTwoHands))) {
             return false;
         }
@@ -1338,9 +1338,9 @@ namespace rock
         float shellToMeshDistanceGameUnits = 0.0f;
         SurfaceMeshAcquisition meshAcquisition{};
         auto surfaceGripMode =
-            provider::RockProviderSurfaceGripModeV1::CollisionAnchor;
+            ::rock::api::touch::SurfaceGripMode::CollisionAnchor;
         if (active.target.kind ==
-            provider::RockProviderTouchGrabKindV1::FixedAnchor) {
+            ::rock::api::touch::TouchGrabKind::FixedAnchor) {
             if (contactSource != ContactSource::DynamicSurface ||
                 !_dynamicHandCollision) {
                 return false;
@@ -1385,7 +1385,7 @@ namespace rock
                 _lastAttemptReport.surfaceMeshFailure =
                     static_cast<std::uint8_t>(meshAcquisition.failure);
                 surfaceGripMode =
-                    provider::RockProviderSurfaceGripModeV1::
+                    ::rock::api::touch::SurfaceGripMode::
                         CollisionFallback;
             }
             DynamicHandCollisionRuntime::SurfaceLatchFailure latchFailure{};
@@ -1420,7 +1420,7 @@ namespace rock
                 _dynamicHandCollision->
                     isSurfaceLatchMeshAuthoritative(isLeft)) {
                 surfaceGripMode =
-                    provider::RockProviderSurfaceGripModeV1::MeshAnchor;
+                    ::rock::api::touch::SurfaceGripMode::MeshAnchor;
                 contactPoint =
                     meshAcquisition.presentation.meshAnchorWorld;
                 contactNormal =
@@ -1476,7 +1476,7 @@ namespace rock
         std::copy(std::begin(meshAcquisition.partName), std::end(meshAcquisition.partName), std::begin(attachment->meshPartName));
         if (powerArmorPoint != provider::RockProviderPowerArmorPointV1::None) {
             attachment->hasContactNormal = false;
-            attachment->surfaceGripMode = provider::RockProviderSurfaceGripModeV1::AnimatedArmorBone;
+            attachment->surfaceGripMode = ::rock::api::touch::SurfaceGripMode::AnimatedArmorBone;
         }
         RE::NiTransform targetWorld{};
         if ((hasContactPoint || hasContactNormal) &&
@@ -1534,7 +1534,7 @@ namespace rock
             bhkWorld != _activeBhkWorld ||
             hknpWorld != _activeHknpWorld) {
             abandonAll(
-                provider::RockProviderTouchGrabReleaseReasonV1::
+                ::rock::api::touch::TouchGrabReleaseReason::
                     WorldLost);
             return;
         }
@@ -1544,7 +1544,7 @@ namespace rock
             releaseAll(
                 bhkWorld,
                 hknpWorld,
-                provider::RockProviderTouchGrabReleaseReasonV1::
+                ::rock::api::touch::TouchGrabReleaseReason::
                     GenerationChanged,
                 collisionGeneration);
             return;
@@ -1561,7 +1561,7 @@ namespace rock
                      (hand.powerArmorPoint != provider::RockProviderPowerArmorPointV1::None &&
                       (!_dynamicHandCollision || !_dynamicHandCollision->isSurfaceLatchActive(isLeft))))) {
                     releaseHand(isLeft, bhkWorld, hknpWorld,
-                        provider::RockProviderTouchGrabReleaseReasonV1::OwnerYield, collisionGeneration);
+                        ::rock::api::touch::TouchGrabReleaseReason::OwnerYield, collisionGeneration);
                     break;
                 }
             }
@@ -1582,7 +1582,7 @@ namespace rock
                         active,
                         bhkWorld,
                         hknpWorld,
-                        provider::RockProviderTouchGrabReleaseReasonV1::
+                        ::rock::api::touch::TouchGrabReleaseReason::
                             TargetRemoved,
                         collisionGeneration,
                         true);
@@ -1606,7 +1606,7 @@ namespace rock
                         active,
                         bhkWorld,
                         hknpWorld,
-                        provider::RockProviderTouchGrabReleaseReasonV1::
+                        ::rock::api::touch::TouchGrabReleaseReason::
                             TargetRemoved,
                         collisionGeneration,
                         true);
@@ -1620,7 +1620,7 @@ namespace rock
                         active,
                         bhkWorld,
                         hknpWorld,
-                        provider::RockProviderTouchGrabReleaseReasonV1::
+                        ::rock::api::touch::TouchGrabReleaseReason::
                             OwnerYield,
                         collisionGeneration,
                         true);
@@ -1636,7 +1636,7 @@ namespace rock
                         active,
                         bhkWorld,
                         hknpWorld,
-                        provider::RockProviderTouchGrabReleaseReasonV1::
+                        ::rock::api::touch::TouchGrabReleaseReason::
                             TargetInvalid,
                         collisionGeneration,
                         true);
@@ -1651,7 +1651,7 @@ namespace rock
                 bodySnapshot.collisionObject !=
                     active.collisionIdentity ||
                 (active.target.kind !=
-                        provider::RockProviderTouchGrabKindV1::
+                        ::rock::api::touch::TouchGrabKind::
                             FixedAnchor &&
                     (bodySnapshot.collisionObject !=
                             active.collisionObject ||
@@ -1665,7 +1665,7 @@ namespace rock
                     active,
                     bhkWorld,
                     hknpWorld,
-                    provider::RockProviderTouchGrabReleaseReasonV1::
+                    ::rock::api::touch::TouchGrabReleaseReason::
                         TargetInvalid,
                     collisionGeneration,
                     bodySnapshot.valid);
@@ -1677,20 +1677,20 @@ namespace rock
                 auto structuralMutation = _physicsCallbackGate ? _physicsCallbackGate->pauseForMutation() :
                     PhysicsCallbackQuiescenceGate::MutationLease{};
                 releaseTarget(active, bhkWorld, hknpWorld,
-                    provider::RockProviderTouchGrabReleaseReasonV1::TargetInvalid, collisionGeneration, true);
+                    ::rock::api::touch::TouchGrabReleaseReason::TargetInvalid, collisionGeneration, true);
                 continue;
             }
             if (!active.globalSurface && provider::hasTouchGrabTargetFlagV1(active.target.flags,
-                    provider::RockProviderTouchGrabTargetFlagV1::FallbackOnly)) {
+                    ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly)) {
                 for (const bool isLeft : {false, true}) {
                     if (!active.active || findTargetForHand(isLeft) != &active) continue;
                     provider::TouchGrabTargetMatchV1 preferred{};
                     if (provider::resolveTouchGrabTargetV1(active.bodyId, bodySnapshot.collisionFilterInfo & 0x7Fu,
                             active.originalMotionClass, isLeft ? provider::RockProviderHand::Left : provider::RockProviderHand::Right,
                             worldGeneration, skeletonGeneration, providerGeneration, preferred) &&
-                        !provider::hasTouchGrabTargetFlagV1(preferred.target.flags, provider::RockProviderTouchGrabTargetFlagV1::FallbackOnly)) {
+                        !provider::hasTouchGrabTargetFlagV1(preferred.target.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly)) {
                         releaseHand(isLeft, bhkWorld, hknpWorld,
-                            provider::RockProviderTouchGrabReleaseReasonV1::OwnerYield, collisionGeneration);
+                            ::rock::api::touch::TouchGrabReleaseReason::OwnerYield, collisionGeneration);
                     }
                 }
                 if (!active.active) continue;
@@ -1731,7 +1731,7 @@ namespace rock
             }
 
             if (active.target.kind ==
-                    provider::RockProviderTouchGrabKindV1::FixedAnchor) {
+                    ::rock::api::touch::TouchGrabKind::FixedAnchor) {
                 const bool latchMissing = std::any_of(
                     active.hands.begin(),
                     active.hands.end(),
@@ -1749,7 +1749,7 @@ namespace rock
                         active,
                         bhkWorld,
                         hknpWorld,
-                        provider::RockProviderTouchGrabReleaseReasonV1::
+                        ::rock::api::touch::TouchGrabReleaseReason::
                             TargetInvalid,
                         collisionGeneration,
                         true);
@@ -1759,7 +1759,7 @@ namespace rock
 
             const float coordinate =
                 active.target.kind ==
-                    provider::RockProviderTouchGrabKindV1::
+                    ::rock::api::touch::TouchGrabKind::
                         FixedAnchor ?
                 0.0f :
                 std::clamp(
@@ -1774,7 +1774,7 @@ namespace rock
                 0.0f;
             active.lastCoordinate = coordinate;
             if (active.target.kind !=
-                provider::RockProviderTouchGrabKindV1::
+                ::rock::api::touch::TouchGrabKind::
                     FixedAnchor) {
                 havok_runtime::activateBody(
                     hknpWorld,
@@ -1782,8 +1782,8 @@ namespace rock
             }
             publishState(
                 active,
-                provider::RockProviderTouchGrabPhaseV1::Held,
-                provider::RockProviderTouchGrabReleaseReasonV1::None,
+                ::rock::api::touch::TouchGrabPhase::Held,
+                ::rock::api::touch::TouchGrabReleaseReason::None,
                 coordinateVelocity,
                 collisionGeneration);
         }
@@ -1794,7 +1794,7 @@ namespace rock
         RE::hknpWorld* world) const
     {
         if (active.target.kind ==
-            provider::RockProviderTouchGrabKindV1::FixedAnchor) {
+            ::rock::api::touch::TouchGrabKind::FixedAnchor) {
             return 0.0f;
         }
         RE::NiTransform currentBodyWorld{};
@@ -1805,7 +1805,7 @@ namespace rock
             return active.lastCoordinate;
         }
         if (active.target.kind ==
-            provider::RockProviderTouchGrabKindV1::LimitedPrismatic) {
+            ::rock::api::touch::TouchGrabKind::LimitedPrismatic) {
             return touch_grab_math::prismaticCoordinate(
                 active.initialCoordinate,
                 toMathPoint(active.initialBodyWorld.translate),
@@ -1833,20 +1833,20 @@ namespace rock
             }
             mask |= static_cast<std::uint32_t>(
                 hand.isLeft ?
-                provider::RockProviderTouchGrabHandMaskV1::Left :
-                provider::RockProviderTouchGrabHandMaskV1::Right);
+                ::rock::api::touch::TouchGrabHandMask::Left :
+                ::rock::api::touch::TouchGrabHandMask::Right);
         }
         return mask;
     }
 
     void TouchGrabRuntime::publishState(
         ActiveTarget& active,
-        const provider::RockProviderTouchGrabPhaseV1 phase,
-        const provider::RockProviderTouchGrabReleaseReasonV1 reason,
+        const ::rock::api::touch::TouchGrabPhase phase,
+        const ::rock::api::touch::TouchGrabReleaseReason reason,
         const float coordinateVelocity,
         const std::uint32_t collisionGeneration)
     {
-        provider::RockProviderTouchGrabStateV1 state{};
+        ::rock::api::touch::TouchGrabState state{};
         state.targetId = active.target.targetId;
         state.targetGeneration =
             active.target.targetGeneration;
@@ -1861,7 +1861,7 @@ namespace rock
         state.activeHandMask = activeHandMask(active);
         state.currentCoordinate =
             active.target.kind ==
-                provider::RockProviderTouchGrabKindV1::
+                ::rock::api::touch::TouchGrabKind::
                     FixedAnchor ?
             0.0f :
             std::clamp(
@@ -1878,24 +1878,24 @@ namespace rock
         state.collisionGeneration = collisionGeneration;
 
         if (active.target.kind ==
-            provider::RockProviderTouchGrabKindV1::FixedAnchor) {
+            ::rock::api::touch::TouchGrabKind::FixedAnchor) {
             state.flags |= static_cast<std::uint32_t>(
-                provider::RockProviderTouchGrabStateFlagV1::
+                ::rock::api::touch::TouchGrabStateFlag::
                     FixedAnchor);
         } else {
             state.flags |= static_cast<std::uint32_t>(
-                provider::RockProviderTouchGrabStateFlagV1::
+                ::rock::api::touch::TouchGrabStateFlag::
                     CoordinateValid);
         }
         if (active.originalMotionClass ==
             provider::TouchGrabMotionClassV1::Keyframed) {
             state.flags |= static_cast<std::uint32_t>(
-                provider::RockProviderTouchGrabStateFlagV1::
+                ::rock::api::touch::TouchGrabStateFlag::
                     OriginalMotionKeyframed);
         } else if (active.originalMotionClass ==
                    provider::TouchGrabMotionClassV1::Dynamic) {
             state.flags |= static_cast<std::uint32_t>(
-                provider::RockProviderTouchGrabStateFlagV1::
+                ::rock::api::touch::TouchGrabStateFlag::
                     OriginalMotionDynamic);
         }
         for (const auto& hand : active.hands) {
@@ -1904,15 +1904,15 @@ namespace rock
             }
             state.surfaceGripMode = hand.surfaceGripMode;
             if (hand.surfaceGripMode ==
-                provider::RockProviderSurfaceGripModeV1::MeshAnchor) {
+                ::rock::api::touch::SurfaceGripMode::MeshAnchor) {
                 state.flags |= static_cast<std::uint32_t>(
-                    provider::RockProviderTouchGrabStateFlagV1::
+                    ::rock::api::touch::TouchGrabStateFlag::
                         MeshSurfaceAnchor);
             } else if (hand.surfaceGripMode ==
-                       provider::RockProviderSurfaceGripModeV1::
+                       ::rock::api::touch::SurfaceGripMode::
                            CollisionFallback) {
                 state.flags |= static_cast<std::uint32_t>(
-                    provider::RockProviderTouchGrabStateFlagV1::
+                    ::rock::api::touch::TouchGrabStateFlag::
                         MeshCollisionFallback);
             }
             // Fixed anchors use an authored climbing pose, so they do not
@@ -1924,7 +1924,7 @@ namespace rock
                     hand.contactPointGame.z
                 };
                 state.flags |= static_cast<std::uint32_t>(
-                    provider::RockProviderTouchGrabStateFlagV1::
+                    ::rock::api::touch::TouchGrabStateFlag::
                         ContactPointValid);
             }
             if (hand.hasContactNormal) {
@@ -1934,7 +1934,7 @@ namespace rock
                     hand.contactNormalGame.z
                 };
                 state.flags |= static_cast<std::uint32_t>(
-                    provider::RockProviderTouchGrabStateFlagV1::
+                    ::rock::api::touch::TouchGrabStateFlag::
                         ContactNormalValid);
             }
             break;
@@ -1958,7 +1958,7 @@ namespace rock
             for (const auto& hand : target->hands) {
                 if (hand.active && hand.isLeft == isLeft && hand.commandOwnerToken == ownerToken) {
                     releaseHand(isLeft, bhkWorld, hknpWorld,
-                        provider::RockProviderTouchGrabReleaseReasonV1::OwnerYield,
+                        ::rock::api::touch::TouchGrabReleaseReason::OwnerYield,
                         collisionGeneration);
                     break;
                 }
@@ -1970,7 +1970,7 @@ namespace rock
         const bool isLeft,
         RE::bhkWorld* bhkWorld,
         RE::hknpWorld* hknpWorld,
-        const provider::RockProviderTouchGrabReleaseReasonV1 reason,
+        const ::rock::api::touch::TouchGrabReleaseReason reason,
         const std::uint32_t collisionGeneration)
     {
         auto* active = findTargetForHand(isLeft);
@@ -1981,7 +1981,7 @@ namespace rock
             bhkWorld != _activeBhkWorld ||
             hknpWorld != _activeHknpWorld) {
             abandonAll(
-                provider::RockProviderTouchGrabReleaseReasonV1::
+                ::rock::api::touch::TouchGrabReleaseReason::
                     WorldLost);
             return;
         }
@@ -2005,7 +2005,7 @@ namespace rock
         if (activeHandMask(*active) != 0) {
             active->lastCoordinate =
                 active->target.kind ==
-                    provider::RockProviderTouchGrabKindV1::
+                    ::rock::api::touch::TouchGrabKind::
                         FixedAnchor ?
                 0.0f :
                 std::clamp(
@@ -2014,8 +2014,8 @@ namespace rock
                     active->target.maximumCoordinate);
             publishState(
                 *active,
-                provider::RockProviderTouchGrabPhaseV1::Held,
-                provider::RockProviderTouchGrabReleaseReasonV1::None,
+                ::rock::api::touch::TouchGrabPhase::Held,
+                ::rock::api::touch::TouchGrabReleaseReason::None,
                 0.0f,
                 collisionGeneration);
             return;
@@ -2032,7 +2032,7 @@ namespace rock
     void TouchGrabRuntime::releaseAll(
         RE::bhkWorld* bhkWorld,
         RE::hknpWorld* hknpWorld,
-        const provider::RockProviderTouchGrabReleaseReasonV1 reason,
+        const ::rock::api::touch::TouchGrabReleaseReason reason,
         const std::uint32_t collisionGeneration)
     {
         const bool anyActive = std::any_of(
@@ -2048,7 +2048,7 @@ namespace rock
             bhkWorld != _activeBhkWorld ||
             hknpWorld != _activeHknpWorld) {
             abandonAll(
-                provider::RockProviderTouchGrabReleaseReasonV1::
+                ::rock::api::touch::TouchGrabReleaseReason::
                     WorldLost);
             return;
         }
@@ -2072,7 +2072,7 @@ namespace rock
         ActiveTarget& active,
         RE::bhkWorld* bhkWorld,
         RE::hknpWorld* world,
-        const provider::RockProviderTouchGrabReleaseReasonV1 reason,
+        const ::rock::api::touch::TouchGrabReleaseReason reason,
         const std::uint32_t collisionGeneration,
         const bool restoreTarget)
     {
@@ -2081,7 +2081,7 @@ namespace rock
         }
         if (world &&
             active.target.kind !=
-                provider::RockProviderTouchGrabKindV1::
+                ::rock::api::touch::TouchGrabKind::
                     FixedAnchor) {
             active.lastCoordinate = std::clamp(
                 sampleCoordinate(active, world),
@@ -2101,7 +2101,7 @@ namespace rock
 
         if (restoreTarget && world &&
             active.target.kind !=
-                provider::RockProviderTouchGrabKindV1::
+                ::rock::api::touch::TouchGrabKind::
                     FixedAnchor &&
             active.collisionObject &&
             active.bodyId != kInvalidId) {
@@ -2137,29 +2137,29 @@ namespace rock
             }
         }
 
-        provider::RockProviderTouchGrabPhaseV1 phase =
-            provider::RockProviderTouchGrabPhaseV1::Invalidated;
+        ::rock::api::touch::TouchGrabPhase phase =
+            ::rock::api::touch::TouchGrabPhase::Invalidated;
         if (!active.globalSurface &&
             reason ==
-            provider::RockProviderTouchGrabReleaseReasonV1::
+            ::rock::api::touch::TouchGrabReleaseReason::
                 OwnerYield) {
             phase =
-                provider::RockProviderTouchGrabPhaseV1::Yielded;
+                ::rock::api::touch::TouchGrabPhase::Yielded;
         } else if (
             reason ==
-            provider::RockProviderTouchGrabReleaseReasonV1::
+            ::rock::api::touch::TouchGrabReleaseReason::
                 GripReleased) {
             const bool latch =
                 active.target.kind !=
-                    provider::RockProviderTouchGrabKindV1::
+                    ::rock::api::touch::TouchGrabKind::
                         FixedAnchor &&
                 provider::hasTouchGrabTargetFlagV1(
                     active.target.flags,
-                    provider::RockProviderTouchGrabTargetFlagV1::
+                    ::rock::api::touch::TouchGrabTargetFlag::
                         LatchOnRelease);
             phase = latch ?
-                provider::RockProviderTouchGrabPhaseV1::Latched :
-                provider::RockProviderTouchGrabPhaseV1::Armed;
+                ::rock::api::touch::TouchGrabPhase::Latched :
+                ::rock::api::touch::TouchGrabPhase::Armed;
         }
         publishState(
             active,
@@ -2169,7 +2169,7 @@ namespace rock
             collisionGeneration);
         if (!active.globalSurface &&
             reason ==
-            provider::RockProviderTouchGrabReleaseReasonV1::
+            ::rock::api::touch::TouchGrabReleaseReason::
                 OwnerYield) {
             provider::acknowledgeTouchGrabYieldV1(
                 active.ownerToken,
@@ -2204,7 +2204,7 @@ namespace rock
     }
 
     void TouchGrabRuntime::abandonAll(
-        const provider::RockProviderTouchGrabReleaseReasonV1 reason) noexcept
+        const ::rock::api::touch::TouchGrabReleaseReason reason) noexcept
     {
         for (auto& active : _targets) {
             if (!active.active) {
@@ -2223,7 +2223,7 @@ namespace rock
             }
             publishState(
                 active,
-                provider::RockProviderTouchGrabPhaseV1::
+                ::rock::api::touch::TouchGrabPhase::
                     Invalidated,
                 reason,
                 0.0f,

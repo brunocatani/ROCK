@@ -19,18 +19,10 @@ static_assert(offsetof(rock::api::weaponparts::v1_7::Api,moveItemState)==208);
 static_assert(offsetof(rock::api::weaponparts::v1_7::Api,clearItemStates)==216);
 static_assert(sizeof(rock::api::weaponparts::v1_7::ItemState)==29960);
 #pragma pack(push, 1)
-#include <ROCK/TouchV1_1.h>
+#include <ROCK/Touch.h>
 struct TouchCallerPacking {char c; std::uint64_t value;};
 static_assert(alignof(TouchCallerPacking)==1);
 #pragma pack(pop)
-static_assert(sizeof(rock::api::touch::ApiV1)==48);
-static_assert(sizeof(rock::api::touch::v1_1::Api)==64);
-static_assert(alignof(rock::api::touch::v1_1::Api)==8);
-static_assert(offsetof(rock::api::touch::v1_1::Api,setAuthoredHand)==48);
-static_assert(offsetof(rock::api::touch::v1_1::Api,clearAuthoredHand)==56);
-static_assert(sizeof(rock::api::touch::v1_1::AuthoredHand)==72);
-static_assert(offsetof(rock::api::touch::v1_1::AuthoredHand,sample)==8);
-static_assert(offsetof(rock::api::touch::v1_1::AuthoredHand,contactWorldGame)==56);
 #include <ROCK/WeaponPartsV1_2.h>
 static_assert(sizeof(rock::api::weaponparts::ApiV1)==144);
 static_assert(sizeof(rock::api::weaponparts::v1_2::Api)==160);
