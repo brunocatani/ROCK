@@ -310,6 +310,7 @@ namespace rock::native_secondary_presentation
         {
             native_secondary_actions::suspend();
             s_state.ready = false;
+            s_state.dropGrip = {};
             s_state.traceFrame = false;
             clearClaims();
             restoreBody(view);
@@ -601,12 +602,18 @@ namespace rock::native_secondary_presentation
 
     const char* tryGetDropPose(DropPose& out) noexcept
     {
-        // Grab input runs before this frame's presentation update, so this is
-        // the placement shown last frame; endFrame releases a placement that
-        // was not updated, so a ready state is never older than that.
+        // Grab input runs after beginFrame clears `ready` and before this
+        // frame's update sets it, so the drop uses the last completed
+        // placement. waitFor and release clear it; it must be at most one
+        // frame old.
         if (!onFrameThread()) return "not-frame-thread";
-        if (!s_state.ready) return "presentation-not-ready";
         const auto& grip = s_state.dropGrip;
+        if (grip.role == loose_weapon_authored_grab_policy::Role::None) return "no-completed-placement";
+        const auto frame = runtime_state::currentFrame().frameIndex;
+        if (frame < s_state.frame || frame - s_state.frame > 1) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "AKIMBO second weapon drop placement age frame={} placed={}", frame, s_state.frame);
+            return "placement-stale";
+        }
         if (grip.role == loose_weapon_authored_grab_policy::Role::None || !grip.weaponFormId) return "grip-unset";
         if (grip.fingerMask != 0x7FFFu) return "fingers-incomplete";
         if (!grip.valid()) return "grip-transform-invalid";

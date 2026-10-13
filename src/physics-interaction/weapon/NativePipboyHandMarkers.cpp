@@ -107,10 +107,9 @@ namespace rock::native_pipboy_hand_markers
         // native script, so the letter shows exactly when the square would
         // and takes the same selection tint. Nothing else in the row moves.
 
-        std::atomic<void*> s_attachedMovie{nullptr};
         std::atomic<std::uint32_t> s_reports{0};
 
-        // Deepest point the per-frame walk reached in the attached movie,
+        // Deepest point the per-frame walk reached in the current movie,
         // logged once per new depth so a stop in the chain names itself.
         enum class Stage : std::uint8_t { None, Menu, InventoryPage, List, VisibleRow, RowData, HandMember, HandResolved, LetterShown };
         constexpr const char* kStageNames[]{ "none", "menu", "inventory-page", "list", "visible-row", "row-data",
@@ -238,61 +237,52 @@ namespace rock::native_pipboy_hand_markers
             }
         }
 
-        class FrameHandler final : public RE::Scaleform::GFx::FunctionHandler
+        void updateMovie(RE::Scaleform::GFx::Movie* movie)
         {
-        public:
-            void Call(const Params& params) override
-            {
-                try {
-                    if (!params.movie) return;
-                    Value menu, pages;
-                    if (!params.movie->GetVariable(&menu, "root.Menu_mc") || !menu.IsObject() ||
-                        !member(menu, "PageA", pages) || !pages.IsObject()) return;
-                    reach(Stage::Menu);
-                    // PageA is a Vector.<PipboyLoader>.
-                    const auto n = lengthOf(pages);
-                    for (std::uint32_t i = 0; i < n && i < 8; ++i) {
-                        Value page, list, doll;
-                        const Value index(static_cast<double>(i));
-                        // The inventory page is the one with the paper doll.
-                        if (!menu.Invoke("GetPage", &page, &index, 1) || !page.IsObject() ||
-                            !member(page, "PaperDoll_mc", doll) || !doll.IsObject() || !member(page, "List_mc", list)) continue;
-                        reach(Stage::InventoryPage, i, n);
-                        updateList(params.movie, list);
-                        break;
-                    }
-                } catch (...) {
-                    OutputDebugStringA("ROCK: Pip-Boy hand letters failed\n");
-                }
+            Value menu, pages;
+            if (!movie->GetVariable(&menu, "root.Menu_mc") || !menu.IsObject() ||
+                !member(menu, "PageA", pages) || !pages.IsObject()) return;
+            reach(Stage::Menu);
+            // PageA is a Vector.<PipboyLoader>.
+            const auto n = lengthOf(pages);
+            for (std::uint32_t i = 0; i < n && i < 8; ++i) {
+                Value page, list, doll;
+                const Value index(static_cast<double>(i));
+                // The inventory page is the one with the paper doll.
+                if (!menu.Invoke("GetPage", &page, &index, 1) || !page.IsObject() ||
+                    !member(page, "PaperDoll_mc", doll) || !doll.IsObject() || !member(page, "List_mc", list)) continue;
+                reach(Stage::InventoryPage, i, n);
+                updateList(movie, list);
+                break;
             }
-        };
-        // One reference is held for the process, so movies never free it.
-        FrameHandler* s_frameHandler = nullptr;
-    }
-
-    void attach(RE::Scaleform::GFx::Movie* movie) noexcept
-    {
-        if (!s_installed || !movie || s_attachedMovie.load(std::memory_order_acquire) == movie) return;
-        try {
-            // Scaleform's heap exists once a movie runs; created on first use.
-            if (!s_frameHandler) s_frameHandler = new FrameHandler();
-            Value menu, function;
-            if (!movie->GetVariable(&menu, "root.Menu_mc") || !menu.IsObject()) return;
-            movie->CreateFunction(&function, s_frameHandler);
-            const std::array<Value, 2> args{ Value("enterFrame"), function };
-            const bool added = function.IsObject() && menu.Invoke("addEventListener", nullptr, args.data(), args.size());
-            s_attachedMovie.store(movie, std::memory_order_release);
-            s_deepest = Stage::None;
-            ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters attached movie={:#x} listener={}", reinterpret_cast<std::uintptr_t>(movie), added);
-        } catch (...) {
-            OutputDebugStringA("ROCK: Pip-Boy hand letter attach failed\n");
         }
-    }
 
-    void detach(void* movie) noexcept
-    {
-        void* expected = movie;
-        (void)s_attachedMovie.compare_exchange_strong(expected, nullptr, std::memory_order_acq_rel);
+        // PipboyMenu::AdvanceMovie (vtable 142D58418 slot 4 = 140BA09D0; it
+        // ends in IMenu::AdvanceMovie 142198D40, which advances the movie
+        // held at menu+0x40). The letters are refreshed on the movie's own
+        // thread right after its frame scripts ran.
+        constexpr std::uintptr_t kAdvanceSlot = 0x2D58438;
+        constexpr std::uintptr_t kAdvanceOriginal = 0xBA09D0;
+        constexpr std::ptrdiff_t kMenuMovieOffset = 0x40;
+        using Advance = void (*)(void*, float, std::uint64_t);
+        Advance s_advance = nullptr;
+        void* s_lastMovie = nullptr; // Movie thread only.
+
+        void advanceMovie(void* menu, float delta, std::uint64_t time)
+        {
+            s_advance(menu, delta, time);
+            try {
+                RE::Scaleform::GFx::Movie* movie = nullptr;
+                if (!native_memory::tryReadField(menu, kMenuMovieOffset, movie) || !movie) return;
+                if (movie != s_lastMovie) {
+                    s_lastMovie = movie;
+                    s_deepest = Stage::None;
+                }
+                updateMovie(movie);
+            } catch (...) {
+                OutputDebugStringA("ROCK: Pip-Boy hand letters failed\n");
+            }
+        }
     }
 
     bool install() noexcept
@@ -315,6 +305,16 @@ namespace rock::native_pipboy_hand_markers
         if (!entry_trampoline_hook::install("Pip-Boy hand marker entry", kPopulate, populatePrefix.data(),
                 populatePrefix.size(), reinterpret_cast<void*>(&populate), original)) return false;
         s_populate = reinterpret_cast<Populate>(original);
+        std::uintptr_t current = 0;
+        const auto slot = REL::Offset(kAdvanceSlot).address();
+        if (!native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(slot), current) ||
+            current != REL::Offset(kAdvanceOriginal).address() ||
+            !matches(0xBA0A95, std::to_array<std::uint8_t>({0xE8,0xA6,0x82,0x5F,0x01}))) {
+            ROCK_LOG_WARN(Weapon, "Pip-Boy hand letters unavailable: PipboyMenu advance slot differs");
+            return false;
+        }
+        s_advance = reinterpret_cast<Advance>(current);
+        REL::safe_write(slot, reinterpret_cast<std::uintptr_t>(&advanceMovie));
         s_installed = true;
         ROCK_LOG_INFO(Weapon, "Pip-Boy hand markers installed");
         return true;
