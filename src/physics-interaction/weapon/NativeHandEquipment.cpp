@@ -609,20 +609,13 @@ namespace rock::native_hand_equipment
         return accepted;
     }
 
-    int wornWeaponIndex(std::uint32_t form, std::uintptr_t instance) noexcept
+    WornHand wornRowHand(std::uint32_t form, int slot) noexcept
     {
-        if (!s_installed || !form) return -1;
-        const auto worn = wornWeapons(f4vr::getPlayer());
-        if (sameItem(worn[1].form, worn[1].instance, form, instance)) return 1;
-        return sameItem(worn[0].form, worn[0].instance, form, instance) ? 0 : -1;
-    }
-
-    WornHand wornIndexHand(int index) noexcept
-    {
-        if (!s_installed || (index != 0 && index != 1)) return WornHand::None;
+        if (!s_installed || !form || (slot != 0 && slot != 1)) return WornHand::None;
         const auto worn = wornWeapons(f4vr::getPlayer());
         const auto hand = [](bool left) { return left ? WornHand::Left : WornHand::Right; };
-        if (!worn[index].form) return WornHand::None;
+        const int index = worn[slot].form == form ? slot : worn[1 - slot].form == form ? 1 - slot : -1;
+        if (index < 0) return WornHand::None;
         if (index == 1) return hand(resolveSecondaryHand(worn[1].form, worn[1].instance));
         // Same hand rule as Pip-Boy allocation: a hand chosen in this menu
         // session counts before it is applied; a support-held primary shows

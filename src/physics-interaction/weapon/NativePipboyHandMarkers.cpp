@@ -1,19 +1,14 @@
 #include "physics-interaction/weapon/NativePipboyHandMarkers.h"
 
 #include "physics-interaction/weapon/NativeHandEquipment.h"
-#include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/PhysicsLog.h"
-#include "RE/Bethesda/BGSInventoryItem.h"
-#include "RE/Bethesda/BSExtraData.h"
-#include "RE/Bethesda/TESForms.h"
 #include "RE/Scaleform/GFx/GFx_Player.h"
 #include <REL/Relocation.h>
 #include <Windows.h>
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <cstring>
 #include <string>
 
 namespace rock::native_pipboy_hand_markers
@@ -21,32 +16,24 @@ namespace rock::native_pipboy_hand_markers
     namespace
     {
         // FO4VR 1.2.72, raw disassembly (ghidra_fo4vr):
-        // 140C21450 fills one Pip-Boy inventory entry object (sole caller
-        //   140C20E00). Its members reach Pipboy_InvPage.swf as the list
-        //   entry data, e.g. "text" through 140C28B80(object, key 145ACB0A8,
-        //   BSFixedStringCS) at 140C2152B.
-        // 140C45F00, used by every member setter, first removes an existing
-        //   member of the same name (140C45870), so re-setting replaces it.
+        // 140C21450 fills one Pip-Boy inventory entry. Members it sets reach
+        //   the AS3 entry, but an extra member added there does not (runtime
+        //   12 Oct 22:24), so the hand is read from native members only.
+        // 140C1E9A0 computes "equipState". For a weapon (form type 0x2B) it
+        //   counts the stack's equip-slot bits (flags +0x24 & 7): one bit
+        //   without bit 0 gives 2 (140C1EA7C), bit 0 gives 3 or 4
+        //   (140C1EAB7/140C1EAC3), several bits give 4 (140C1EA70).
+        //   Equipment index 1 sets a non-zero slot bit, so 2 is index 1 and
+        //   3/4 is index 0.
+        // "formID" is the entry's base form (TESForm+0x14 at 140C2147B).
         // InvListEntry.SetEntryText (Pipboy_InvPage.swf, ABC bytecode) draws
         //   the equipped square only as EquipIcon_mc.visible = equipState > 0
         //   and tints it with the row's selection colour transform.
-        constexpr std::uintptr_t kPopulate = 0xC21450;
-        constexpr std::uintptr_t kSetString = 0xC28B80;
-        constexpr std::uintptr_t kMakeString = 0x1BC2050;
-        constexpr std::uintptr_t kFreeString = 0x1BC20F0;
-        constexpr const char* kHandMember = "rockHand";
         constexpr const char* kLetterName = "rockHandLetter";
 
-        using Stack = RE::BGSInventoryItem::Stack;
-        using Populate = void (*)(void*, RE::BGSInventoryItem*, Stack*, void*, void*, std::uint32_t);
-        using SetString = void* (*)(void*, const void*, void*);
-        using MakeString = void* (*)(void*, const char*);
-        using FreeString = void (*)(void*);
         using Value = RE::Scaleform::GFx::Value;
 
-        Populate s_populate = nullptr;
         bool s_installed = false;
-        std::atomic<std::uint32_t> s_populateReports{0};
 
         template <std::size_t N>
         bool matches(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) noexcept
@@ -54,53 +41,6 @@ namespace rock::native_pipboy_hand_markers
             std::array<std::uint8_t, N> actual{};
             return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Offset(rva).address()),
                 actual.data(), actual.size()) && actual == expected;
-        }
-
-        template <class T>
-        T native(std::uintptr_t rva) noexcept { return reinterpret_cast<T>(REL::Offset(rva).address()); }
-
-        int wornIndexOf(RE::BGSInventoryItem* item, const Stack* stack) noexcept
-        {
-            if (!stack || !stack->IsEquipped()) return -1;
-            std::uintptr_t instance = 0;
-            if (const auto* extra = stack->extra.get()) {
-                if (const auto* data = extra->GetByType<RE::ExtraInstanceData>())
-                    instance = reinterpret_cast<std::uintptr_t>(data->data.get());
-            }
-            return native_hand_equipment::wornWeaponIndex(item->object->formID, instance);
-        }
-
-        // Interned member name, created once and kept for the process.
-        const void* handKey() noexcept
-        {
-            alignas(8) static std::array<std::byte, 8> key{};
-            static const bool made = (native<MakeString>(kMakeString)(key.data(), kHandMember), true);
-            (void)made;
-            return key.data();
-        }
-
-        // Every weapon entry carries "rockHand": the equipment index wearing
-        // it ("0", "1") or empty, so a reused entry object never keeps an
-        // earlier one. The letter is resolved from the index every frame, so
-        // a hand move without re-equip shows at once. Name, sorting and
-        // equipState stay native.
-        void populate(void* self, RE::BGSInventoryItem* item, Stack* stack, void* object, void* flags, std::uint32_t mode)
-        {
-            s_populate(self, item, stack, object, flags, mode);
-            if (!object || !item || !item->object || !item->object->IsWeapon()) return;
-            try {
-                const auto index = wornIndexOf(item, stack);
-                const char* letter = index == 0 ? "0" : index == 1 ? "1" : "";
-                if (stack && stack->IsEquipped() && s_populateReports.fetch_add(1, std::memory_order_relaxed) < 16)
-                    ROCK_LOG_INFO(Weapon, "Pip-Boy hand marker populate form={:08X} mode={} wornIndex={} object={:#x}",
-                        item->object->formID, mode, index, reinterpret_cast<std::uintptr_t>(object));
-                alignas(8) std::array<std::byte, 8> value{};
-                native<MakeString>(kMakeString)(value.data(), letter);
-                native<SetString>(kSetString)(object, handKey(), value.data());
-                native<FreeString>(kFreeString)(value.data());
-            } catch (...) {
-                OutputDebugStringA("ROCK: Pip-Boy hand marker data failed\n");
-            }
         }
 
         // ---- Inventory list presentation (Pip-Boy movie thread) ----------
@@ -115,9 +55,9 @@ namespace rock::native_pipboy_hand_markers
 
         // Deepest point the per-frame walk reached in the current movie,
         // logged once per new depth so a stop in the chain names itself.
-        enum class Stage : std::uint8_t { None, Menu, InventoryPage, List, VisibleRow, RowData, HandMember, HandResolved, LetterShown };
-        constexpr const char* kStageNames[]{ "none", "menu", "inventory-page", "list", "visible-row", "row-data",
-            "hand-member", "hand-resolved", "letter-shown" };
+        enum class Stage : std::uint8_t { None, Menu, InventoryPage, List, VisibleRow, EquippedRow, HandResolved, LetterShown };
+        constexpr const char* kStageNames[]{ "none", "menu", "inventory-page", "list", "visible-row", "equipped-row",
+            "hand-resolved", "letter-shown" };
         Stage s_deepest = Stage::None; // Movie thread only.
         void reach(Stage stage, std::uint32_t a = 0, std::uint32_t b = 0)
         {
@@ -205,19 +145,28 @@ namespace rock::native_pipboy_hand_markers
             return true;
         }
 
-        // Equipped rows, once each per movie (bounded): whether the populate
-        // member reached the AS3 entry, and in which form.
+        // An equipped weapon row's hand. The native slot from equipState
+        // picks the equipment index; formID must match the weapon worn
+        // there, so other equipped weapon-type items (grenades) get none.
+        // Two identical weapons share a formID and still resolve by slot.
         std::uint32_t s_rowReports = 0; // Movie thread only.
-        void reportEquippedRow(const Value& data)
+        native_hand_equipment::WornHand rowHand(const Value& data)
         {
-            Value equip, marker, name;
-            if (s_rowReports >= 6 || !member(data, "equipState", equip) || !isNumeric(equip) || numeric(equip) <= 0) return;
-            ++s_rowReports;
-            const bool has = data.HasMember(kHandMember);
-            const bool got = has && member(data, kHandMember, marker);
-            (void)member(data, "text", name);
-            ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters equipped row text='{}' equipState={} hasMarker={} markerType={} marker='{}'",
-                text(name), numeric(equip), has, got ? static_cast<int>(marker.GetType()) : -1, got ? text(marker) : std::string{});
+            Value equip, form;
+            if (!member(data, "equipState", equip) || !isNumeric(equip)) return native_hand_equipment::WornHand::None;
+            const auto state = static_cast<int>(numeric(equip));
+            const int slot = state == 2 ? 1 : state == 3 || state == 4 ? 0 : -1;
+            if (slot < 0 || !member(data, "formID", form) || !isNumeric(form)) return native_hand_equipment::WornHand::None;
+            reach(Stage::EquippedRow);
+            const auto formID = static_cast<std::uint32_t>(numeric(form));
+            const auto hand = native_hand_equipment::wornRowHand(formID, slot);
+            if (s_rowReports < 6) {
+                ++s_rowReports;
+                ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters row form={:08X} equipState={} slot={} hand={}",
+                    formID, state, slot, hand == native_hand_equipment::WornHand::Left ? "L" :
+                        hand == native_hand_equipment::WornHand::Right ? "R" : "none");
+            }
+            return hand;
         }
 
         // GetMember reaches only public AS3 traits: PipboyMenu.PageA/GetPage
@@ -249,17 +198,10 @@ namespace rock::native_pipboy_hand_markers
                 if (member(clip, "visible", visible) && visible.IsBoolean() && visible.GetBoolean() &&
                     member(clip, "itemIndex", index) && isNumeric(index) && numeric(index) >= 0 && numeric(index) < size) {
                     reach(Stage::VisibleRow, static_cast<std::uint32_t>(c));
-                    Value data, marker;
+                    Value data;
                     const auto key = std::to_string(static_cast<std::uint32_t>(numeric(index)));
                     if (entries.GetMember(key.c_str(), &data) && data.IsObject()) {
-                        reach(Stage::RowData);
-                        reportEquippedRow(data);
-                    }
-                    if (data.IsObject() && member(data, kHandMember, marker)) {
-                        const auto slot = text(marker);
-                        if (!slot.empty()) reach(Stage::HandMember);
-                        const auto worn = slot == "0" ? native_hand_equipment::wornIndexHand(0) :
-                            slot == "1" ? native_hand_equipment::wornIndexHand(1) : native_hand_equipment::WornHand::None;
+                        const auto worn = rowHand(data);
                         hand = worn == native_hand_equipment::WornHand::Left ? "L" : worn == native_hand_equipment::WornHand::Right ? "R" : "";
                         if (!hand.empty()) reach(Stage::HandResolved);
                     }
@@ -345,24 +287,6 @@ namespace rock::native_pipboy_hand_markers
 
     bool install() noexcept
     {
-        // Helpers called directly, and the populate body that proves they are
-        // the member path: the "text" key LEA at 140C2152B (rel32 resolves to
-        // 145ACB0A8) feeding the string setter call.
-        const bool helpers =
-            matches(kSetString, std::to_array<std::uint8_t>({0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x6C,0x24,0x10})) &&
-            matches(kMakeString, std::to_array<std::uint8_t>({0x40,0x53,0x48,0x83,0xEC,0x20,0x48,0x8B,0xD9})) &&
-            matches(kFreeString, std::to_array<std::uint8_t>({0xE9,0xEB,0x07,0x00,0x00})) &&
-            matches(0xC2152B, std::to_array<std::uint8_t>({0x48,0x8D,0x15,0x76,0x9B,0xEA,0x04}));
-        if (!helpers) {
-            ROCK_LOG_WARN(Weapon, "Pip-Boy hand markers unavailable: native inventory entry layout differs");
-            return false;
-        }
-        constexpr auto populatePrefix = std::to_array<std::uint8_t>({
-            0x48,0x89,0x5C,0x24,0x18,0x48,0x89,0x4C,0x24,0x08,0x55,0x56,0x57,0x41,0x54});
-        void* original = nullptr;
-        if (!entry_trampoline_hook::install("Pip-Boy hand marker entry", kPopulate, populatePrefix.data(),
-                populatePrefix.size(), reinterpret_cast<void*>(&populate), original)) return false;
-        s_populate = reinterpret_cast<Populate>(original);
         std::uintptr_t current = 0;
         const auto slot = REL::Offset(kAdvanceSlot).address();
         if (!native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(slot), current) ||
