@@ -43,7 +43,6 @@
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
-#include "physics-interaction/weapon/NativeSecondaryActions.h"
 #include "physics-interaction/weapon/scope/NativeScopeData.h"
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -1128,7 +1127,6 @@ namespace
             }
 
             destroyPhysicsInteraction();
-            native_secondary_actions::noteGameLoaded();
 
             if (s_frikAvailable) {
                 rock::LooseMolotovVisual::prepareResources();

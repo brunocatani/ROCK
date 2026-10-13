@@ -1444,10 +1444,12 @@ namespace rock::input_remap_runtime
                 return false;
             }
 
-            return nativeActionDispatcher(
+            const bool dispatched = nativeActionDispatcher(
                 dispatcherObject,
                 kNativeReloadActionId,
                 kNativeActionPriorityQueue);
+            if (dispatched) native_secondary_actions::tracePrimaryReload();
+            return dispatched;
         }
 
         /*

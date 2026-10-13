@@ -7,7 +7,6 @@
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/NativeNiNodeFactory.h"
-#include "physics-interaction/native/NativeTriggerEquipGraph.h"
 #include "physics-interaction/weapon/recoil/RecoilMath.h"
 #include "physics-interaction/weapon/WeaponInstanceClassification.h"
 #include "physics-interaction/weapon/HoldingGripAdapter.h"
@@ -18,6 +17,7 @@
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "rock_support/Fo4VrRuntime.h"
+#include "RE/Bethesda/BSAnimationGraph.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/BGSDefaultObjectManager.h"
@@ -404,6 +404,8 @@ namespace rock::native_secondary_actions
             }
             return accepted;
         }
+        bool tracingPrimaryReload() noexcept;
+        bool primaryReloadTraceLine() noexcept;
         RE::TESForm* selectIdle(RE::TESForm* candidate,void* conditions,void* history)
         {
             // Trace the native decision tree without changing its conditions,
@@ -418,6 +420,9 @@ namespace rock::native_secondary_actions
             }
             auto* result=s_selectIdle(candidate,conditions,history);
             if (query) { query->selected=result?result->formID:0; query->queryEnd=context->queryCount; }
+            else if (!context && tracingPrimaryReload() && primaryReloadTraceLine())
+                ROCK_LOG_INFO(Animation,"AKIMBO primary reload trace idle candidate={:08X} selected={:08X}",
+                    candidate?candidate->formID:0,result?result->formID:0);
             return result;
         }
         bool installVariableQueryTrace()
@@ -835,42 +840,150 @@ namespace rock::native_secondary_actions
 
     namespace
     {
-        // A save restored with a gun in each hand leaves the primary's native
-        // weapon subgraph without its reload animations until the primary is
-        // re-equipped. Re-equip re-requests the subgraph while index one is a
-        // readable gun, so ED93E0 yields the primary's keywords alone. After a
-        // load, run that same native request/commit (E8D090/E15B50) once both
-        // hands are ready. An already correct subgraph makes the request a
-        // no-op; the log records whether new handles were staged.
-        bool s_primaryGraphAfterLoad{};
-        std::uint32_t s_primaryGraphAfterLoadFrames{};
-        bool s_primaryGraphAfterLoadStaged{};
-        void primaryGraphAfterLoad()
+        // Diagnostic for the restored-save report: the primary (index 0)
+        // reloads without animation until it is re-equipped. One window per
+        // dispatched primary reload records which of three stages is silent:
+        // the native idle choice, the player graph's events, and the primary
+        // model's own graph events and node motion.
+        constexpr std::uint64_t kPrimaryReloadTraceMs=3000;
+        constexpr std::uint32_t kPrimaryReloadTraceLines=48;
+        std::atomic<std::uint64_t> s_primaryReloadTraceUntil{0}; // Input writer, frame/idle readers.
+        std::atomic<std::uint32_t> s_primaryReloadTraceLines{0};
+        bool tracingPrimaryReload() noexcept
         {
-            if (!s_primaryGraphAfterLoad) return;
-            constexpr std::uint32_t kMaxFrames=600;
+            return GetTickCount64()<s_primaryReloadTraceUntil.load(std::memory_order_acquire);
+        }
+        bool primaryReloadTraceLine() noexcept
+        {
+            return s_primaryReloadTraceLines.fetch_add(1,std::memory_order_relaxed)<kPrimaryReloadTraceLines;
+        }
+        using EventSource=RE::BSTEventSource<RE::BSAnimationGraphEvent>;
+        EventSource* graphEvents(RE::BShkbAnimationGraph* graph) noexcept
+        {
+            // Same verified layout as NativeEquippedActionGraph (graph+0x68).
+            return reinterpret_cast<EventSource*>(reinterpret_cast<std::byte*>(graph)+0x68);
+        }
+        struct PrimaryReloadTrace final : RE::BSTEventSink<RE::BSAnimationGraphEvent>
+        {
+            const char* label{};
+            // The window's ManagerRef keeps the manager alive. Graphs are
+            // compared by address only and unregistered only while the
+            // manager still holds them.
+            RE::BSAnimationGraphManager* manager{};
+            std::vector<RE::BShkbAnimationGraph*> graphs;
+            std::uint32_t events{};
+            void attach(RE::BSAnimationGraphManager* owner,const char* name)
+            {
+                label=name; manager=owner;
+                if (!manager) return;
+                for (const auto& graph:manager->graph) if (graph) {
+                    graphs.push_back(graph.get());
+                    graphEvents(graph.get())->RegisterSink(this);
+                }
+            }
+            void detach()
+            {
+                if (manager) for (const auto& graph:manager->graph)
+                    if (graph && std::find(graphs.begin(),graphs.end(),graph.get())!=graphs.end())
+                        graphEvents(graph.get())->UnregisterSink(this);
+                graphs.clear(); manager=nullptr;
+            }
+            RE::BSEventNotifyControl ProcessEvent(const RE::BSAnimationGraphEvent& event,EventSource*) override
+            {
+                ++events;
+                if (primaryReloadTraceLine())
+                    ROCK_LOG_INFO(Animation,"AKIMBO primary reload trace graph={} event='{}' payload='{}'",
+                        label,event.tag.c_str()?event.tag.c_str():"",event.payload.c_str()?event.payload.c_str():"");
+                return RE::BSEventNotifyControl::kContinue;
+            }
+        };
+        struct PrimaryReloadWindow
+        {
+            bool active{};
+            std::uint32_t form{};
+            ManagerRef playerManager,modelManager;
+            PrimaryReloadTrace player,model;
+            std::vector<RE::NiPointer<RE::NiAVObject>> nodes;
+            std::vector<RE::NiPoint3> initial;
+            float maxMotion{};
+            std::size_t maxNode{};
+        };
+        PrimaryReloadWindow s_primaryReload{}; // Frame thread only.
+
+        void endPrimaryReloadTrace()
+        {
+            auto& w=s_primaryReload;
+            if (!w.active) return;
+            w.player.detach(); w.model.detach();
+            const char* node=w.maxNode<w.nodes.size() && w.nodes[w.maxNode] && w.nodes[w.maxNode]->name.c_str()?
+                w.nodes[w.maxNode]->name.c_str():"<none>";
+            ROCK_LOG_INFO(Animation,"AKIMBO primary reload trace end weapon={:08X} playerEvents={} modelEvents={} sampledNodes={} maxNodeMotion={:.4f} node='{}'",
+                w.form,w.player.events,w.model.events,w.nodes.size(),w.maxMotion,node);
+            w=PrimaryReloadWindow{};
+        }
+
+        void beginPrimaryReloadTrace()
+        {
+            auto& w=s_primaryReload;
             auto* player=f4vr::getPlayer();
-            const auto result=native_trigger_equip_graph::prepare(player,&s_primaryGraphAfterLoadStaged);
-            ++s_primaryGraphAfterLoadFrames;
-            const bool done=result!=native_trigger_equip_graph::Result::Pending || s_primaryGraphAfterLoadFrames>=kMaxFrames;
-            if (!done) return;
-            s_primaryGraphAfterLoad=false;
-            const char* outcome=result==native_trigger_equip_graph::Result::Ready?"ready":
-                result==native_trigger_equip_graph::Result::Pending?"pending-timeout":"unavailable";
-            // staged=true: the restored subgraph differed from the primary's
-            // own (the load-time request was wrong); false: it was already right.
-            if (result==native_trigger_equip_graph::Result::Ready) ROCK_LOG_INFO(Animation,"AKIMBO primary graph refreshed after load outcome={} staged={} frames={}",
-                outcome,s_primaryGraphAfterLoadStaged,s_primaryGraphAfterLoadFrames);
-            else ROCK_LOG_WARN(Animation,"AKIMBO primary graph refreshed after load outcome={} staged={} frames={}",
-                outcome,s_primaryGraphAfterLoadStaged,s_primaryGraphAfterLoadFrames);
+            const auto view=native_hand_equipment::equippedViews()[0];
+            if (!player || !view.weapon) return;
+            w.active=true;
+            w.form=view.weapon->formID;
+            (void)s_getManager(static_cast<RE::IAnimationGraphManagerHolder*>(player),&w.playerManager);
+            w.player.attach(w.playerManager.get(),"player");
+            // The primary model's own graph, read from its biped record the
+            // same way the secondary model graph is isolated.
+            const auto slot=native<std::uint32_t(*)(RE::Actor*,RE::TESBoundObject*,std::uint32_t)>(0x1CAFC0)(player,view.weapon,0);
+            const auto* biped=native_hand_equipment::playerBiped(true);
+            void* holder{};
+            std::uintptr_t vtable{};
+            if (biped && slot<44 && native_memory::tryReadField(static_cast<const std::byte*>(biped)+slot*0x58,0x50,holder) && holder &&
+                native_memory::tryReadField(holder,0,vtable) && vtable==REL::Offset(0x2D3A8D8).address())
+                native<bool(*)(void*,ManagerRef*)>(0x812EA0)(holder,&w.modelManager);
+            w.model.attach(w.modelManager.get(),"primary-model");
+            auto& s=state();
+            const bool sharedWithSecondary=w.modelManager &&
+                (w.modelManager==s.modelManagers[0] || w.modelManager==s.modelManagers[1]);
+            // Up to 32 named descendant nodes of the primary first-person model.
+            if (view.root) {
+                std::vector<RE::NiAVObject*> pending{view.root};
+                for (std::size_t i=0;i<pending.size() && pending.size()<256 && w.nodes.size()<32;++i) {
+                    auto* node=pending[i]->IsNode();
+                    if (!node) continue;
+                    for (const auto& child:node->GetRuntimeData().children) {
+                        if (!child) continue;
+                        pending.push_back(child.get());
+                        if (child->IsNode() && w.nodes.size()<32) {
+                            w.nodes.emplace_back(child.get());
+                            w.initial.push_back(child->local.translate);
+                        }
+                    }
+                }
+            }
+            ROCK_LOG_INFO(Animation,"AKIMBO primary reload trace begin weapon={:08X} playerManager={:#x} playerGraphs={} modelHolder={:#x} modelManager={:#x} modelGraphs={} modelSharedWithSecondary={} sampledNodes={}",
+                w.form,reinterpret_cast<std::uintptr_t>(w.playerManager.get()),w.player.graphs.size(),reinterpret_cast<std::uintptr_t>(holder),
+                reinterpret_cast<std::uintptr_t>(w.modelManager.get()),w.model.graphs.size(),sharedWithSecondary,w.nodes.size());
+        }
+
+        void tracePrimaryReloadFrame()
+        {
+            auto& w=s_primaryReload;
+            if (!tracingPrimaryReload()) { endPrimaryReloadTrace(); return; }
+            if (!w.active) beginPrimaryReloadTrace();
+            for (std::size_t i=0;i<w.nodes.size();++i) {
+                if (!w.nodes[i]) continue;
+                const auto d=w.nodes[i]->local.translate-w.initial[i];
+                const float motion=std::sqrt(d.x*d.x+d.y*d.y+d.z*d.z);
+                if (motion>w.maxMotion) { w.maxMotion=motion; w.maxNode=i; }
+            }
         }
     }
 
-    void noteGameLoaded() noexcept
+    void tracePrimaryReload() noexcept
     {
-        s_primaryGraphAfterLoad=true;
-        s_primaryGraphAfterLoadFrames=0;
-        s_primaryGraphAfterLoadStaged=false;
+        s_primaryReloadTraceLines.store(0,std::memory_order_relaxed);
+        s_primaryReloadTraceUntil.store(GetTickCount64()+kPrimaryReloadTraceMs,std::memory_order_release);
     }
 
     bool install() noexcept
@@ -965,6 +1078,7 @@ namespace rock::native_secondary_actions
         try {
             const auto& frame=runtime_state::currentFrame();
             if (s.frame==frame.frameIndex) return;
+            tracePrimaryReloadFrame();
             s.frame=frame.frameIndex;
             const auto view=native_hand_equipment::equippedViews()[1];
             const bool handLeft=native_hand_equipment::secondaryHandIsLeft();
@@ -1086,7 +1200,6 @@ namespace rock::native_secondary_actions
                     if (dispatch(s,action)) { attackState(s,15); s.trigger.accepted(true); }
                 }
             }
-            primaryGraphAfterLoad();
             s.graph->update(dt);
             if (!s.graph->place(attachment->world) || s.graph->eventOverflow()) {
                 cancel(s); s.bindings.restore(); releaseModelGraphs(s,true); s.failed=true; s.ready=false;

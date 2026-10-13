@@ -57,4 +57,7 @@ namespace rock::native_hand_equipment
         std::uint64_t sequence = 0; // 0: none since load.
     };
     [[nodiscard]] DirectedEquip lastDirectedPrimaryEquip() noexcept;
+    // Frame owner: the primary now fires from the directed hand. Until then a
+    // later Pip-Boy press decides with the directed hand, not the old one.
+    void noteDirectedPrimaryApplied(std::uint64_t sequence) noexcept;
 }

@@ -62,6 +62,7 @@ namespace rock::native_hand_equipment
         std::atomic<std::uintptr_t> s_directedInstance{0};
         std::atomic<bool> s_directedLeft{false};
         std::atomic<std::uint64_t> s_directedSequence{0};
+        std::atomic<std::uint64_t> s_directedApplied{0}; // Frame writer, UI reader.
 
         void publishDirectedPrimary(std::uint32_t form, std::uintptr_t instance, bool left) noexcept
         {
@@ -392,10 +393,16 @@ namespace rock::native_hand_equipment
                 const auto worn = wornWeapons(actor);
                 const auto routing = input_remap_runtime::publishedWeaponTriggerRouting();
                 const bool secondaryLeft = worn[1].form && resolveSecondaryHand(worn[1].form, worn[1].instance);
+                // A hand chosen earlier in this Pip-Boy session is applied only
+                // once the menu closes; decide with it until then.
+                const auto directed = lastDirectedPrimaryEquip();
+                const bool directedPending = directed.sequence != s_directedApplied.load(std::memory_order_acquire) &&
+                    sameItem(directed.form, directed.instance, worn[0].form, worn[0].instance);
+                const bool primaryLeft = directedPending ? directed.left : routing.leftFiring;
                 // A support-held (detached) primary has no firing hand.
                 const auto fires = [&](std::uint32_t index) {
                     if (!worn[index].form) return false;
-                    return index == 0 ? !routing.detached && routing.leftFiring == actingLeft : secondaryLeft == actingLeft;
+                    return index == 0 ? (directedPending || !routing.detached) && primaryLeft == actingLeft : secondaryLeft == actingLeft;
                 };
                 const int actingIndex = fires(0) ? 0 : fires(1) ? 1 : -1;
                 const auto wears = [&](int index) {
@@ -568,6 +575,11 @@ namespace rock::native_hand_equipment
         result.instance = s_directedInstance.load(std::memory_order_relaxed);
         result.left = s_directedLeft.load(std::memory_order_relaxed);
         return result;
+    }
+
+    void noteDirectedPrimaryApplied(std::uint64_t sequence) noexcept
+    {
+        s_directedApplied.store(sequence, std::memory_order_release);
     }
 
     bool hasSecondaryGun() noexcept
