@@ -1,6 +1,5 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
 #include "physics-interaction/weapon/DynamicWeaponCollision.h"
-#include "physics-interaction/weapon/EquippedDropPickupPolicy.h"
 #include <chrono>
 
 // Part-carry sessions: baseline construction, transition, per-frame update, and part-carry weapon authority solve.
@@ -22,33 +21,19 @@ namespace rock
         if (!_surfaceSupportRuntime || !_session.weaponNode ||
             !_surfaceSupportRuntime->tryGetLatchedSurfacePose(
                 _session.weaponNode, _session.weaponGenerationKey, pose)) return false;
-        return retainHandsFree(pose, TwoHandedState::SurfaceSupported, releaseBoth);
+        return retainHandsFree(pose, releaseBoth);
     }
 
-    bool TwoHandedGrip::retainEquippedDrop(const RE::NiTransform& pose)
-    {
-        // Validate the complete presentation tree before releasing any hand
-        // authority. A rejected tree keeps the original grip transaction intact.
-        if (!_session.weaponNode) return false;
-        const auto previous = _session.weaponNode->world;
-        if (!moveWeaponPresentationRigidly(_session.weaponNode, pose)) return false;
-        if (retainHandsFree(pose, TwoHandedState::EquippedDrop, true)) return true;
-        if (!moveWeaponPresentationRigidly(_session.weaponNode, previous)) {
-            ROCK_LOG_ERROR(Weapon, "Equipped drop presentation recovery failed generation={:016X}", _session.weaponGenerationKey);
-        }
-        return false;
-    }
-
-    bool TwoHandedGrip::retainHandsFree(const RE::NiTransform& pose, const TwoHandedState state, const bool releaseBoth)
+    bool TwoHandedGrip::retainHandsFree(const RE::NiTransform& pose, const bool releaseBoth)
     {
         const auto started = std::chrono::steady_clock::now();
         if (!_session.weaponNode || !isFiniteTransform(pose) || !blockFrikPrimaryWeaponPose()) return false;
-        const char* reason = state == TwoHandedState::EquippedDrop ? "equipped-drop" : "bipod-hands-free";
+        const char* reason = "bipod-hands-free";
 
         const bool firingGripReleased = isFiringGripOccupied();
         if (firingGripReleased) beginHandVisualReturn(isFiringHandLeft(), reason);
         // The retained pose owns the weapon, never an invented hand grip.
-        // Surface retention may keep operating AttachOnly grips; a drop releases both hands.
+        // Surface retention may keep operating AttachOnly grips unless both release.
         for (const bool left : { false, true }) {
             if (partGrip(left).active && (releaseBoth || !partGrip(left).attachOnly))
                 releasePartGrip(left, reason, true);
@@ -68,7 +53,7 @@ namespace rock
         _firing.primaryReleaseDebounce = {};
         _retainedWeaponWorld = pose;
         const auto previousState = _session.state;
-        _session.state = state;
+        _session.state = TwoHandedState::SurfaceSupported;
         recordFiringGripDetachedHaptic();
         const bool renderedValid = _visuals.hasLastRenderedWeaponWorld;
         const float poseDelta = renderedValid ? dynamic_weapon_collision_policy::translationDeltaGameUnits(
@@ -85,9 +70,6 @@ namespace rock
 
     bool TwoHandedGrip::publishHandsFreeWeaponPose(RE::NiNode* weaponNode, const float dt)
     {
-        if (isEquippedDrop() && _surfaceSupportRuntime) {
-            (void)_surfaceSupportRuntime->tryGetEquippedDropPose(weaponNode, _session.weaponGenerationKey, _retainedWeaponWorld);
-        }
         if (!isHandsFreeRetained() || weaponNode != _session.weaponNode ||
             !applyWeaponVisualAuthority(weaponNode, _retainedWeaponWorld)) return false;
         _lastSolvedWeaponTransform = _retainedWeaponWorld;
@@ -331,7 +313,6 @@ namespace rock
 
     bool TwoHandedGrip::republishPartCarryWeaponTransform(RE::NiNode* weaponNode)
     {
-        if (isEquippedDrop()) return publishHandsFreeWeaponPose(weaponNode, 0.0f);
         if (!isFiringGripDetached() || !_hasSolvedWeaponTransform || !weaponNode) {
             return false;
         }
@@ -415,31 +396,25 @@ namespace rock
             _session.equippedWeaponOwnershipKey,
             _handlingSettings.firingGripReattachRadiusGameUnits, reattachInput);
         for (const FiringGripReattachCandidate& candidate : reattachCandidates) {
-            const bool directCatch = equipped_drop_pickup_policy::canBypassGripZone(isEquippedDrop(),
-                candidate.isLeft ? frameInput.leftEquippedDropCatch : frameInput.rightEquippedDropCatch);
             if (candidate.isLeft != firingHandIsLeft &&
                 (!_handlingSettings.ambidextrousHandoffEnabled ||
                     !canBeginPrimaryOnlyGripForHand(candidate.isLeft))) {
                 continue;
             }
-            if ((!candidate.eligible && !directCatch) || partGrip(candidate.isLeft).active) {
+            if (!candidate.eligible || partGrip(candidate.isLeft).active) {
                 continue;
             }
             firing_grip_reattach_zone_policy::ZoneResult reattachZone{};
-            if (!directCatch && (!reattachInputValid || !tryEvaluateFiringGripZoneForHand(
+            if (!reattachInputValid || !tryEvaluateFiringGripZoneForHand(
                     candidate.isLeft,
                     reattachInput,
-                    reattachZone))) {
+                    reattachZone)) {
                 continue;
             }
             _firing.reattachDebugSnapshot.hands[candidate.isLeft ? 0u : 1u]
                 .gripHeld = candidate.gripHeld;
-            /*
-             * Ordinary station reattachment stays inside its cylinders.
-             * Only a selected free-weapon catch may bypass them; the pickup
-             * owner already qualified reach, visibility, input and hand availability.
-             */
-            const bool reattachRequested = directCatch || weapon_two_handed_grip_math::shouldReattachFiringGripOnGrab(
+            // Station reattachment stays inside its cylinders.
+            const bool reattachRequested = weapon_two_handed_grip_math::shouldReattachFiringGripOnGrab(
                 candidate.gripHeld,
                 reattachZone.inside);
             if (!_firing.reattachHoverInsideZone &&
@@ -457,17 +432,12 @@ namespace rock
                     weaponNode,
                     *candidate.contact,
                     authoredProviderAuthorityActive,
-                    authoredAttachOnlyAuthorityActive, directCatch);
-            if (directCatch && !reattached) {
-                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Equipped drop catch not ready: hand={} generation={:016X} canonicalGeneration={:016X} provider={} attachOnly={}",
-                    candidate.isLeft ? "left" : "right", currentWeaponGenerationKey,
-                    _firing.rightCanonicalGenerationKey, authoredProviderAuthorityActive, authoredAttachOnlyAuthorityActive);
-            }
+                    authoredAttachOnlyAuthorityActive);
             if (reattached) {
                 ROCK_LOG_INFO(Weapon,
                     "TwoHandedGrip: firing-grip reattach hand={} source={} inside={} side={} along={:.2f} perp={:.2f} reach={:.2f} radius={:.2f}",
                     candidate.isLeft ? "left" : "right",
-                    directCatch ? "equipped-drop-catch" : "grip-zone",
+                    "grip-zone",
                     reattachZone.inside ? "yes" : "no",
                     firing_grip_reattach_zone_policy::sideName(reattachZone.side),
                     reattachZone.alongAxisGameUnits,

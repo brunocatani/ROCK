@@ -590,9 +590,7 @@
         }
         const bool solvedChildContact =
             manifoldPointCount > 0 && manifoldPointCount <= 4;
-        const bool equippedDropContact = _dynamicWeaponCollision.watchesEquippedDropRest(bodyIdA) ||
-            _dynamicWeaponCollision.watchesEquippedDropRest(bodyIdB);
-        if (solvedChildContact && (looseCollisionContact || equippedDropContact) && !heldContact &&
+        if (solvedChildContact && looseCollisionContact && !heldContact &&
             !::rock::provider::isExternalBodyId(bodyIdA) && !::rock::provider::isExternalBodyId(bodyIdB)) {
             RE::NiPoint3 point{};
             const float scale=havokToGameScale()/static_cast<float>(manifoldPointCount);
@@ -603,7 +601,6 @@
             const auto* normal=reinterpret_cast<const float*>(data+0x40);
             _looseWeaponCollision.contact(world,bodyIdA,bodyIdB,point,{normal[0],normal[1],normal[2]});
             _objectRestCollision.contact(world,bodyIdA,bodyIdB,point,{normal[0],normal[1],normal[2]});
-            _dynamicWeaponCollision.recordEquippedDropRestContact(world,bodyIdA,bodyIdB,point,{normal[0],normal[1],normal[2]});
         }
         if (solvedChildContact && heldContact) {
             auto recordHeldPlacementContact = [&](Hand& hand, bool heldA, bool heldB) {

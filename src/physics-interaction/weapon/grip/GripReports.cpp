@@ -227,25 +227,19 @@ namespace rock
             (allCarriersReleased && _session.state == TwoHandedState::Gripping ? true : _session.state == TwoHandedState::PartCarry ?
                 solvePartCarryWeaponAuthority(_session.weaponNode, dt) :
                 (!usesLeftFiringCarry() || solveLeftFiringWeaponCarry(_session.weaponNode, dt)));
-        // EquippedDrop keeps the same body and inventory item. It needs a
-        // current manual owner and a finite release pose, not the authored
-        // wrist/finger packet required to grab a newly materialized world item.
-        const bool requiresHandoff = equipped_weapon_drop_policy::requiresAuthoredHandoffPose(mode);
-        const bool captureReady = releasePoseReady && (requiresHandoff ? captureDropGripPose(isLeft, pose) :
-            (isManualOwnershipActive() && _recoil.weaponEvidence.formID != 0 &&
-                equipped_weapon_drop_policy::captureOwnerCurrent(true, isLeft,
-                    _confirmedEquippedOwnershipKey, _session.equippedWeaponOwnershipKey,
-                    _session.weaponGenerationKey, false) && isFiniteTransform(weaponNode->world)));
+        // Both drop modes hand a newly materialized world item to the
+        // releasing hand's grab path, which needs the authored grip packet.
+        const bool captureReady = releasePoseReady && captureDropGripPose(isLeft, pose);
         if (sourceHand == equipped_weapon_drop_policy::SourceHand::None || !captureReady) {
             recordGripReleaseRetained(isLeft, "auto-drop-pose-occupancy-or-zone-unavailable");
             if (allCarriersReleased) recordGripReleaseRetained(!isLeft, "simultaneous-drop-pose-unavailable");
             _firing.primaryReleaseIntent.pending = false;
             _firing.primaryReleaseDebounce = {};
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
-                "Auto drop retained: hand={} bothCarriers={} authoredPose={} freeFiringStationHovered={} generation={:016X} mode={} requiresHandoff={} releasePoseReady={}",
+                "Auto drop retained: hand={} bothCarriers={} authoredPose={} freeFiringStationHovered={} generation={:016X} mode={} releasePoseReady={}",
                 isLeft ? "left" : "right", occupied.left.carriesWeapon() && occupied.right.carriesWeapon(),
                 pose.valid(), _firing.reattachHoverInsideZone, _session.weaponGenerationKey,
-                static_cast<unsigned>(mode), requiresHandoff, releasePoseReady);
+                static_cast<unsigned>(mode), releasePoseReady);
             return false;
         }
 
@@ -284,9 +278,6 @@ namespace rock
             _firing.primaryReleaseDebounce = {};
             return;
         }
-        // The retained state already released the hands, and must keep its
-        // pose blockers until regrab, native retirement or lifecycle teardown.
-        if (isEquippedDrop()) return;
         recordFiringGripDetachedHaptic();
         clearWeaponVisualReturn("equipped-weapon-drop", true, true);
         transitionToInactive(false);

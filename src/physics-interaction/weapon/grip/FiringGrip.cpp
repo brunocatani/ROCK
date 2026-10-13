@@ -687,21 +687,19 @@ namespace rock
         RE::NiNode* weaponNode,
         const WeaponInteractionContact& handWeaponContact,
         const bool authoredProviderAuthorityActive,
-        const bool authoredAttachOnlyAuthorityActive,
-        const bool equippedDropCatch)
+        const bool authoredAttachOnlyAuthorityActive)
     {
         const bool coreAuthoredStation = !authoredProviderAuthorityActive && !authoredAttachOnlyAuthorityActive;
         if (!weaponNode || weaponNode != _session.weaponNode ||
             (!coreAuthoredStation && (!handWeaponContact.valid ||
                 !weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(
                     handWeaponContact.weaponGenerationKey, _session.weaponGenerationKey)))) return false;
-        const bool directCatch = equippedDropCatch && isEquippedDrop();
         if (coreAuthoredStation) {
             firing_grip_reattach_zone_policy::ZoneInput zoneInput{};
             firing_grip_reattach_zone_policy::ZoneResult zone{};
-            if (!directCatch && (!tryBuildFiringGripZoneInput(weaponNode, _session.weaponGenerationKey,
+            if (!tryBuildFiringGripZoneInput(weaponNode, _session.weaponGenerationKey,
                     _session.equippedWeaponOwnershipKey, _handlingSettings.firingGripReattachRadiusGameUnits, zoneInput) ||
-                !tryEvaluateFiringGripZoneForHand(handIsLeft, zoneInput, zone) || !zone.inside)) return false;
+                !tryEvaluateFiringGripZoneForHand(handIsLeft, zoneInput, zone) || !zone.inside) return false;
             provider::RockProviderWeaponPartTargetQueryV1 query{};
             query.weaponGenerationKey = _session.weaponGenerationKey;
             query.bodyId = weapon_part_runtime::kInvalidBodyId;
@@ -733,8 +731,8 @@ namespace rock
                     .authoredCanonicalAvailable =
                         authoredProbeCanonicalAvailable,
                 });
-        if (coreAuthoredStation && !useAuthoredProbeCanonical && !directCatch) return false;
-        if (!useAuthoredProbeCanonical && !directCatch &&
+        if (coreAuthoredStation && !useAuthoredProbeCanonical) return false;
+        if (!useAuthoredProbeCanonical &&
             !firingGripContactMatchesCapturedGrip(
                 weaponNode,
                 handWeaponContact,
@@ -782,10 +780,8 @@ namespace rock
                 "authored-canonical" :
                 "native-canonical";
         }
-        if ((handIsLeft || directCatch) && !usedCanonicalHold) {
-            // A selected pickup must seat a canonical grip, not capture the
-            // arbitrary distance between the free hand and the dropped weapon.
-            // Left carry also requires the generation-bound native aim frame.
+        if (handIsLeft && !usedCanonicalHold) {
+            // Left carry requires the generation-bound native aim frame.
             return false;
         }
         if (!usedCanonicalHold) {

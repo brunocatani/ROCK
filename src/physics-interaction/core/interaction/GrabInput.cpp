@@ -2675,7 +2675,6 @@ namespace rock
         bool isLeft,
         const GrabInputHandContext& context)
     {
-        if (_equippedDropPickup.consumed[isLeft ? 1u : 0u]) return;
         GrabInputHandPrelude prelude{};
         if (!prepareGrabInputHand(frame, hand, isLeft, context, prelude)) {
             return;

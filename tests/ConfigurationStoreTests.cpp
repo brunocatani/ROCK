@@ -456,7 +456,7 @@ int main(int argc, char** argv)
         }
         require(!store.setValue(Group::Consumer, "ImmersiveWeapons", "bAutoDrop", "true"),
             "removed auto-drop boolean must not remain writable");
-        for (const auto* mode : { "1", "2", "3", "4" }) {
+        for (const auto* mode : { "1", "2", "3" }) {
             require(store.setValue(Group::Consumer, "ImmersiveWeapons", "iWeaponDropMode", mode),
                 "weapon drop mode write failed");
             require(store.load(false), "weapon drop mode reload failed");
@@ -468,7 +468,7 @@ int main(int argc, char** argv)
             require(dropConfig.rockWeaponGrabMode == 1,
                 "weapon drop mode must not change the grip release gesture");
         }
-        for (const auto* invalid : { "-1", "0", "5", "invalid" }) {
+        for (const auto* invalid : { "-1", "0", "4", "invalid" }) {
             CSimpleIniA dropValues;
             dropValues.SetValue("ImmersiveWeapons", "iWeaponDropMode", invalid);
             require(rock::RockConfig::parseValues(dropValues).rockWeaponDropMode == 2,
@@ -476,22 +476,6 @@ int main(int argc, char** argv)
         }
         require(store.setValue(Group::Consumer, "ImmersiveWeapons", "iWeaponDropMode", "2"),
             "weapon drop mode reset failed");
-        require(find(store, "fEquippedDropRadiusMeters").group == Group::Consumer,
-            "equipped drop radius must be a consumer setting");
-        {
-            CSimpleIniA radius;
-            radius.SetValue("ImmersiveWeapons", "fEquippedDropRadiusMeters", "12.5");
-            radius.SetValue("ImmersiveWeapons", "fBipodHandsFreeRadiusMeters", "3.0");
-            const auto value = rock::RockConfig::parseValues(radius);
-            require(value.rockEquippedDropRadiusMeters == 12.5f && value.rockBipodHandsFreeRadiusMeters == 3.0f,
-                "equipped drop and bipod radii must remain independent without an arbitrary upper clamp");
-            for (const auto* invalid : { "0", "-1", "nan", "inf" }) {
-                radius.SetValue("ImmersiveWeapons", "fEquippedDropRadiusMeters", invalid);
-                const auto rejected = rock::RockConfig::parseValues(radius);
-                require(rejected.rockEquippedDropRadiusMeters == 2.0f && rejected.rockBipodHandsFreeRadiusMeters == 3.0f,
-                    "invalid equipped drop radius must restore its default without changing bipod");
-            }
-        }
         require(store.load(false), "weapon drop mode reset reload failed");
         require(store.setValue(Group::Consumer, "AmbidextrousFiring", "fLeftFiringGripOffsetYGameUnits", "0.25"),
             "left firing relative placement write failed");

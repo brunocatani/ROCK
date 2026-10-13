@@ -20,7 +20,7 @@ namespace rock::weapon_release_collision_lease
     {
         using namespace collision_layer_policy;
         return expected.valid() && expected == live &&
-            (weaponLayer == ROCK_LAYER_DYNAMIC_WEAPON_PROXY || weaponLayer == ROCK_LAYER_EQUIPPED_DROP_PROXY) &&
+            weaponLayer == ROCK_LAYER_DYNAMIC_WEAPON_PROXY &&
             isDynamicHandInteractionLayer(otherLayer);
     }
     class State

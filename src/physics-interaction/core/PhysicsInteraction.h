@@ -455,9 +455,6 @@ namespace rock
         bool dropEquippedWeaponToWorld(const PhysicsFrameContext& frame,
             const EquippedWeaponManualDropRequest& request, equipped_weapon_drop_policy::Mode mode);
         bool retireHandsFreeWeapon(const PhysicsFrameContext& frame, RE::NiNode* weaponNode);
-        std::array<bool, 2> updateEquippedDropPickup(const PhysicsFrameContext& frame, RE::NiNode* weapon,
-            std::uint64_t generation, const EquippedWeaponPrimaryGripInput& right,
-            const EquippedWeaponPrimaryGripInput& left, bool rightAvailable, bool leftAvailable);
         void updateEquippedWeaponDropVisuals(const PhysicsFrameContext& frame);
         void finishEquippedWeaponHandPoseHandoff();
         void serviceEquippedWeaponNativeTransaction(
@@ -995,15 +992,6 @@ namespace rock
         ContactEvidenceState _contacts;
         WeaponContactWitnessPair _weaponContact;
         EquippedWeaponFrameState _equipped;
-        struct EquippedDropPickupState {
-            std::uintptr_t world{};
-            std::uint64_t generation{};
-            std::uint32_t body{ 0x7FFF'FFFFu };
-            int hand{ -1 }; // Right=0, left=1; only one acquisition owner.
-            bool pulling{};
-            bool waitingForRelease{};
-            std::array<bool, 2> consumed{};
-        } _equippedDropPickup;
         InventoryWeaponEquipRuntime _inventoryEquip;
         EquippedWeaponDropState _drop;
         EquippedWeaponDropVisual _bipodRetirementVisual;

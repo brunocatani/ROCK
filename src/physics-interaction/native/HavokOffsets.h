@@ -358,8 +358,6 @@ namespace rock::offsets
     constexpr std::uintptr_t kFunc_QueueEquippedWeaponAttach = 0xDAB8F0;
     constexpr std::uintptr_t kData_EquippedWeaponAttachManager = 0x5B279E0;
 
-    constexpr std::uintptr_t kFunc_SetBodyMotionProperties = 0x153B2F0;
-
     constexpr std::uintptr_t kFunc_MotionPropertiesLibrary_AddEntry = 0x1767A70;
 
     constexpr std::uintptr_t kData_ConvexPolytopeVtable = 0x2C9A108;

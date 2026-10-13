@@ -103,9 +103,7 @@ namespace rock::collision_layer_policy
      * pairs are suppressed by the native counted pair filter instead.
      */
     inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY = 52;
-    // One equipped item in free flight. Unlike the held solver proxy, this
-    // dynamic body exchanges impulses with ordinary loose props and weapons.
-    inline constexpr std::uint32_t ROCK_LAYER_EQUIPPED_DROP_PROXY = 53;
+    // Layer 53 is unused; no ROCK body is created on it.
     // Opt-in stored weapon displays. The simulation filter further restricts
     // these pairs to the exact empty-hand bodies published by their owner.
     inline constexpr std::uint32_t ROCK_LAYER_STORED_DISPLAY = 54;
@@ -127,7 +125,7 @@ namespace rock::collision_layer_policy
         return layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON ||
                layer == ROCK_LAYER_BODY || layer == ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY ||
                layer == ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY || layer == ROCK_LAYER_DYNAMIC_WEAPON_PROXY ||
-               layer == ROCK_LAYER_EQUIPPED_DROP_PROXY || layer == ROCK_LAYER_STORED_DISPLAY ||
+               layer == ROCK_LAYER_STORED_DISPLAY ||
                layer == ROCK_LAYER_PASSIVE_OBSTACLE;
     }
 
@@ -554,7 +552,6 @@ namespace rock::collision_layer_policy
             isLeft ? ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY :
                      ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
         mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
-        mask = withLayer(mask, ROCK_LAYER_EQUIPPED_DROP_PROXY);
         mask = withLayer(mask, ROCK_LAYER_STORED_DISPLAY);
         // The simulation-pair filter admits only fixed world WEAP bodies on
         // this shared native row. Dynamic and actor-owned weapons stay excluded.
@@ -577,18 +574,6 @@ namespace rock::collision_layer_policy
         mask = withLayer(mask, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY);
         mask = withLayer(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
         mask |= extensionObstacleLayers & kOptionalObstacleLayers;
-        return mask;
-    }
-
-    inline constexpr std::uint64_t buildRockEquippedDropExpectedMask(std::uint64_t extensionObstacleLayers = 0)
-    {
-        auto mask = buildRockDynamicWeaponProxyExpectedMask(extensionObstacleLayers);
-        mask = withoutLayer(mask, ROCK_LAYER_PASSIVE_OBSTACLE);
-        for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
-            if (isDynamicPropInteractionLayer(layer)) mask = withLayer(mask, layer);
-        }
-        mask = withLayer(mask, FO4_LAYER_PROPS);
-        // No layer-44 twins, player body, character controller or projectiles.
         return mask;
     }
 
@@ -629,7 +614,6 @@ namespace rock::collision_layer_policy
         mask = withLayer(mask, ROCK_LAYER_DYNAMIC_HAND_PROXY);
         mask = withLayer(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
         mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
-        mask = withLayer(mask, ROCK_LAYER_EQUIPPED_DROP_PROXY);
         mask = withLayer(mask, FO4_LAYER_CHARCONTROLLER);
         return mask;
     }
@@ -698,7 +682,6 @@ namespace rock::collision_layer_policy
         applyRockDynamicHandProxyLayerPolicies(matrix, extensionObstacleLayers, retiredWeaponHandCollision);
         applyRockDynamicWeaponProxyLayerPolicy(matrix, extensionObstacleLayers);
         applyRockDynamicWorldCarLayerPolicies(matrix);
-        applyLayerExpectedMask(matrix, ROCK_LAYER_EQUIPPED_DROP_PROXY, buildRockEquippedDropExpectedMask(extensionObstacleLayers));
         applyLayerExpectedMask(matrix, ROCK_LAYER_STORED_DISPLAY,
             (std::uint64_t{1}<<ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY) | (std::uint64_t{1}<<ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY));
         applyLayerExpectedMask(matrix, ROCK_LAYER_PASSIVE_OBSTACLE, maskEnablesLayer(extensionObstacleLayers, ROCK_LAYER_PASSIVE_OBSTACLE) ?

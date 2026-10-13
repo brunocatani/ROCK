@@ -738,8 +738,6 @@
                     return "PrimaryOnly";
                 case TwoHandedState::SurfaceSupported:
                     return "SurfaceSupported";
-                case TwoHandedState::EquippedDrop:
-                    return "EquippedDrop";
                 }
                 return "Unknown";
             };

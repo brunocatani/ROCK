@@ -695,7 +695,6 @@ namespace rock
 
         case TwoHandedState::PartCarry:
         case TwoHandedState::SurfaceSupported:
-        case TwoHandedState::EquippedDrop:
             if (!_session.weaponNode) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing part-carry authority because active weapon source root is unavailable");
                 transitionToInactive(false);

@@ -347,8 +347,6 @@ namespace rock
                     }
                 }
             }
-            _weaponCollision.setEquippedDropActive(hknp,
-                _twoHandedGrip.isEquippedDrop() && _dynamicWeaponCollision.equippedDropActive());
             _weaponCollision.update(hknp, weaponNode, frame.deltaSeconds, runtime.weaponDrawn);
             const auto weaponClassification = _weaponCollision.getEquippedWeaponClassification();
             recoilWeapon = {
@@ -1316,10 +1314,6 @@ namespace rock
                 input_remap_runtime::isManualScopeActivationRequested();
             const bool pairedGripPending = _equipped.transition.pendingGrip().pairedGrips.valid() ||
                 _equipped.transition.pendingGrip().supportGrip.validCarry();
-            const auto dropCatch = updateEquippedDropPickup(frame, weaponNode, currentWeaponGenerationKey,
-                {rightPhysicalGripState.held, rightPhysicalGripState.pressed, rightPhysicalGripState.released},
-                {leftPhysicalGripState.held, leftPhysicalGripState.pressed, leftPhysicalGripState.released},
-                rightHandAvailableForAcquisition, leftHandAvailableForAcquisition);
             const EquippedWeaponGripFrameInput gripFrameInput{
                 .leftGripHeld = !pairedGripPending && leftGripHeld,
                 .rightGripHeld = !pairedGripPending && rightGripHeld,
@@ -1329,8 +1323,6 @@ namespace rock
                 .rightHandAvailableForAcquisition = rightHandAvailableForAcquisition,
                 .leftReattachEligible = leftReattachEligible,
                 .rightReattachEligible = rightReattachEligible,
-                .leftEquippedDropCatch = dropCatch[1],
-                .rightEquippedDropCatch = dropCatch[0],
                 .scopeMenuOpen = runtime.localScopeMenuOpen,
                 .manualScopeActivationRequested = manualScopeActivationRequested,
                 .nativeScopeRequestStateValid = nativeScopeRequestStateValid,
@@ -1611,7 +1603,7 @@ namespace rock
             };
             input_remap_runtime::setEquippedWeaponFiringGripInputActive(
                 input_remap_policy::shouldUseEquippedWeaponFiringGripInput(updatedFiringGripInputGate));
-            input_remap_runtime::setEquippedWeaponPrimaryDetached(_twoHandedGrip.isFiringGripDetached(), _twoHandedGrip.isEquippedDrop());
+            input_remap_runtime::setEquippedWeaponPrimaryDetached(_twoHandedGrip.isFiringGripDetached());
             /*
              * Left-hand fire publication: while the LEFT hand occupies the
              * firing grip, the OpenVR-level trigger remap presents the left
@@ -1669,8 +1661,7 @@ namespace rock
                     currentWeaponGenerationKey,
                     _weaponCollision,
                     surfaceSupportPrimaryValid ? &surfaceSupportPrimaryGripLocal : nullptr,
-                    _twoHandedGrip.isSurfaceSupported(), _twoHandedGrip.isEquippedDrop());
-            _weaponCollision.setEquippedDropActive(hknp, _dynamicWeaponCollision.equippedDropActive());
+                    _twoHandedGrip.isSurfaceSupported());
             if (_dynamicWeaponCollision.compoundSourcesUnavailable()) {
                 _weaponCollision.requestRebuildForReplacedSources();
             }

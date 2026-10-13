@@ -191,7 +191,7 @@ int main()
     for (auto layer : { FO4_LAYER_STATIC, FO4_LAYER_ANIMSTATIC, FO4_LAYER_CLUTTER,
             FO4_LAYER_CLUTTER_LARGE, FO4_LAYER_PROPS, ROCK_LAYER_HAND, ROCK_LAYER_WEAPON,
             ROCK_LAYER_BODY, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY,
-            ROCK_LAYER_DYNAMIC_WEAPON_PROXY, ROCK_LAYER_EQUIPPED_DROP_PROXY, ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER }) {
+            ROCK_LAYER_DYNAMIC_WEAPON_PROXY, ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER }) {
         ok &= expect("native player does not duplicate scenery or generated-tool contact",
             suppressPhysicalPair(true, false, FO4_LAYER_BIPED, layer));
         ok &= expect("physical filtering is symmetric",

@@ -325,12 +325,6 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid fBipodHandsFreeRadiusMeters={} -- using 2.0", rockBipodHandsFreeRadiusMeters);
             rockBipodHandsFreeRadiusMeters = 2.0f;
         }
-        rockEquippedDropRadiusMeters = static_cast<float>(ini.GetDoubleValue(
-            IMMERSIVE_WEAPONS_SECTION, "fEquippedDropRadiusMeters", rockEquippedDropRadiusMeters));
-        if (!std::isfinite(rockEquippedDropRadiusMeters) || rockEquippedDropRadiusMeters <= 0.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fEquippedDropRadiusMeters={} -- using 2.0", rockEquippedDropRadiusMeters);
-            rockEquippedDropRadiusMeters = 2.0f;
-        }
         rockLaserRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fLaserRecoilPercent",
             rockLaserRecoilPercent, 100.0f, 0.0f, 300.0f);
         rockPistolOneHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fPistolOneHandRecoilPercent",
@@ -365,7 +359,7 @@ namespace rock
                 rockFiringGripDetachPosePreservationEnabled);
         rockWeaponDropMode = static_cast<int>(ini.GetLongValue(
             IMMERSIVE_WEAPONS_SECTION, "iWeaponDropMode", rockWeaponDropMode));
-        if (rockWeaponDropMode < 1 || rockWeaponDropMode > 4) {
+        if (rockWeaponDropMode < 1 || rockWeaponDropMode > 3) {
             ROCK_LOG_WARN(Config, "Invalid iWeaponDropMode={} -- using 2", rockWeaponDropMode);
             rockWeaponDropMode = 2;
         }

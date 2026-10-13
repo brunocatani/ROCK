@@ -487,7 +487,6 @@ namespace rock
             native_interaction_service::clear(currentHknp, currentBhk);
             if (currentBhk && currentBhk == _lifecycle.cachedBhkWorld &&
                 currentHknp && currentHknp == _lifecycle.cachedHknpWorld) {
-                _weaponCollision.setEquippedDropActive(currentHknp, false);
                 _dynamicWeaponCollision.retireAll(currentBhk, preserveSurfaceSupport);
             } else {
                 _dynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
@@ -550,7 +549,6 @@ namespace rock
         }
 
         if (runtime.localMenuBlocking) {
-            _equippedDropPickup = {};
             retireDynamicWeaponForInterruptedFrame(true);
             _equipped.menuReconcilePending = true;
             auto* bhkMenu = getPlayerBhkWorld();
@@ -841,7 +839,7 @@ namespace rock
             _forceGrab.pendingCommits[1].active ? leftPendingTargetPtr.get() : nullptr);
         const auto farHmdConeGate = makeFarSelectionHmdConeGate(frame);
 
-        if (_forceGrab.pendingCommits[0].active || _equippedDropPickup.consumed[0]) {
+        if (_forceGrab.pendingCommits[0].active) {
             if (_rightHand.hasSelection()) {
                 _rightHand.clearSelectionState(false);
             }
@@ -859,7 +857,7 @@ namespace rock
                 leftHandContext);
         }
 
-        if (_forceGrab.pendingCommits[1].active || _equippedDropPickup.consumed[1]) {
+        if (_forceGrab.pendingCommits[1].active) {
             if (_leftHand.hasSelection()) {
                 _leftHand.clearSelectionState(false);
             }

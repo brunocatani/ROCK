@@ -40,7 +40,6 @@ namespace rock
 
     void WeaponCollision::shutdown()
     {
-        _equippedDropActive = false;
         _identity.classificationValid = false;
         if (hasWeaponBody()) {
             ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown destroying generated bodies from cached context");
@@ -77,7 +76,6 @@ namespace rock
 
     void WeaponCollision::abandonHavokStateAfterWorldLoss()
     {
-        _equippedDropActive = false;
         _identity.classificationValid = false;
         auto structuralMutation = _physicsCallbackGate ?
             _physicsCallbackGate->pauseForMutation() :

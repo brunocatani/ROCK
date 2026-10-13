@@ -1,8 +1,6 @@
 #include "RE/Havok/hknpCollisionQueryCollector.h"
 #include "RE/NetImmerse/NiAVObject.h"
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
-#include "physics-interaction/weapon/EquippedDropMotionProfile.h"
-#include "physics-interaction/weapon/EquippedDropPickupPolicy.h"
 #include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/collision/ImpactAudioPolicy.h"
@@ -17,43 +15,6 @@
 namespace
 {
     constexpr float kEpsilon = 0.001f;
-
-    bool equippedDropMotionProfileChecks()
-    {
-        using namespace rock::equipped_drop_motion_profile;
-        bool ok = true;
-        const auto check = [&ok](bool value, const char* message) {
-            if (!value) { std::printf("equipped drop motion profile: %s\n", message); ok = false; }
-        };
-        for (const std::uint16_t original : { std::uint16_t{1}, std::uint16_t{2}, std::uint16_t{7} }) {
-            Lease lease;
-            auto live = original;
-            int writes = 0;
-            const auto write = [&](std::uint16_t value) { ++writes; live = value; return true; };
-            check(lease.acquire(original, write) && live == kGravityEnabled && lease.saved() == original,
-                "release selects native gravity and preserves the exact held profile");
-            check(!lease.acquire(live, write) && writes == 1 && lease.saved() == original,
-                "repeated release cannot overwrite the restoration target");
-            check(!lease.restore([](std::uint16_t) { return false; }) && lease.active() && lease.saved() == original,
-                "failed native restore keeps ownership until body retirement or successful restore");
-            check(lease.restore(write) && !lease.active() && live == original && writes == 2,
-                "regrab restores the original profile, including custom profiles");
-            check(lease.restore(write) && writes == 2, "duplicate restore cannot mutate native state");
-            check(lease.acquire(original, write), "the same body can be released again after regrab");
-            const auto writesBeforeWorldLoss = writes;
-            lease.reset();
-            check(!lease.active() && lease.restore(write) && writes == writesBeforeWorldLoss,
-                "world loss abandons the lease without writing to a recycled native body");
-        }
-        Lease rejected;
-        int attempts = 0;
-        const auto fail = [&](std::uint16_t) { ++attempts; return false; };
-        check(!rejected.acquire(0, fail) && !rejected.acquire(kInvalid, fail) && attempts == 0,
-            "invalid or static profiles cannot start a release");
-        check(!rejected.acquire(2, fail) && !rejected.active() && attempts == 1,
-            "a rejected native switch cannot publish free-flight ownership");
-        return ok;
-    }
 
     bool expectNear(const char* label, float actual, float expected, float epsilon = kEpsilon)
     {
@@ -176,22 +137,7 @@ int main()
     static_assert(!muteShellPair(ROCK_LAYER_DYNAMIC_WEAPON_PROXY, FO4_LAYER_STATIC));
     static_assert(!muteShellPair(ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, FO4_LAYER_STATIC));
     using namespace rock::dynamic_weapon_collision_policy;
-    bool ok = vatsTimeScaleChecks() & equippedDropMotionProfileChecks();
-    {
-        using namespace rock::equipped_drop_pickup_policy;
-        const RE::NiPoint3 origin{1000.0f, -2000.0f, 600.0f}, direction{0.0f, 2.0f, 0.0f};
-        const auto hit = rayAdmission(origin, direction, RE::NiPoint3{1010.0f, -1800.0f, 600.0f}, 350.0f, 21.0f);
-        ok &= hit.valid;
-        ok &= expectNear("retained pull normalizes the hand ray", hit.along, 200.0f);
-        ok &= expectNear("retained pull measures lateral reach", hit.lateral, 10.0f);
-        ok &= !rayAdmission(origin, direction, RE::NiPoint3{1000.0f, -2100.0f, 600.0f}, 350.0f, 21.0f).valid;
-        ok &= !rayAdmission(origin, direction, RE::NiPoint3{1000.0f, -1600.0f, 600.0f}, 350.0f, 21.0f).valid;
-        ok &= !rayAdmission(origin, direction, RE::NiPoint3{1022.0f, -1800.0f, 600.0f}, 350.0f, 21.0f).valid;
-        ok &= !rayAdmission(origin, RE::NiPoint3{}, origin, 350.0f, 21.0f).valid;
-        static_assert(canBypassGripZone(true, true));
-        static_assert(!canBypassGripZone(false, true)); // Held and bipod states retain the published grip rules.
-        static_assert(!canBypassGripZone(true, false)); // No selected catch cannot bypass a firing station.
-    }
+    bool ok = vatsTimeScaleChecks();
 
     const auto freeRecovery = resolveContactMotorRecovery(0.8f, 1.0f, 0.03f, 0.01f, 0.03f, false);
     ok &= expectNear("free aim preserves damping", freeRecovery.damping, 0.8f);
@@ -304,28 +250,17 @@ int main()
     constexpr auto dynamicWeaponMask = rock::collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
     {
         using namespace rock::collision_layer_policy;
-        const auto freeMask = buildRockEquippedDropExpectedMask();
-        for (const auto layer : { FO4_LAYER_STATIC, FO4_LAYER_GROUND, FO4_LAYER_CLUTTER, FO4_LAYER_PROPS,
-                 FO4_LAYER_WEAPON, FO4_LAYER_CLUTTER_LARGE, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY,
-                 ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY }) {
-            ok &= maskEnablesLayer(freeMask, layer);
-        }
-        for (const auto layer : { ROCK_LAYER_WEAPON, ROCK_LAYER_HAND, ROCK_LAYER_BODY,
-                 ROCK_LAYER_DYNAMIC_WEAPON_PROXY, FO4_LAYER_CHARCONTROLLER, FO4_LAYER_PROJECTILE,
-                 ROCK_LAYER_EQUIPPED_DROP_PROXY }) {
-            ok &= !maskEnablesLayer(freeMask, layer);
-        }
-        ok &= isRockGeneratedColliderLayer(ROCK_LAYER_EQUIPPED_DROP_PROXY);
-        ok &= isRockOwnedMatrixLayer(ROCK_LAYER_EQUIPPED_DROP_PROXY);
+        constexpr std::uint32_t kUnusedLayer = 53;
+        ok &= !isRockGeneratedColliderLayer(kUnusedLayer);
         for (const auto npc : { std::uint64_t{0}, kOptionalObstacleLayers }) {
             std::array<std::uint64_t, FO4_LAYER_MATRIX_ADDRESSABLE_COUNT> matrix{};
             applyRockGeneratedLayerPolicies(matrix.data(), true, false, false, npc, true);
             const auto first = matrix;
             applyRockGeneratedLayerPolicies(matrix.data(), true, false, false, npc, true);
             ok &= matrix == first; // Registration/watchdog must not oscillate.
+            // No generated row collides with the unused layer.
             for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
-                ok &= layerPairSymmetricMatches(matrix.data(), ROCK_LAYER_EQUIPPED_DROP_PROXY,
-                    layer, maskEnablesLayer(buildRockEquippedDropExpectedMask(npc), layer));
+                ok &= !maskEnablesLayer(matrix[layer], kUnusedLayer);
             }
             ok &= matrix[ROCK_LAYER_DYNAMIC_WEAPON_PROXY] == buildRockDynamicWeaponProxyExpectedMask(npc);
             ok &= matrix[ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY] == buildRockDynamicHandProxyExpectedMask(false, npc, true);

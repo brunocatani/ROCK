@@ -1,8 +1,6 @@
 #pragma once
 
 #include "physics-interaction/weapon/WeaponPhysicsTimeScale.h"
-#include "physics-interaction/weapon/EquippedDropMotionProfile.h"
-#include "physics-interaction/weapon/LooseWeaponCollisionPolicy.h"
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
@@ -116,26 +114,6 @@ namespace rock
         bool surfaceRetirementRequested() const { return _surfaceSupport.retirementRequested; }
         bool tryGetSurfaceAnchor(RE::NiPoint3& anchor) const;
 
-        // Game-thread transitions under callback quiescence. The same dynamic
-        // compound survives release and regrab; its native inventory item stays equipped.
-        bool beginEquippedDrop(const PhysicsFrameContext& frame, RE::NiNode* weapon,
-            std::uint64_t generation, RE::NiTransform& pose);
-        bool restoreEquippedHold(const PhysicsFrameContext& frame, const char* reason);
-        bool tryGetEquippedDropPose(RE::NiNode* weapon, std::uint64_t generation, RE::NiTransform& pose) const;
-        bool equippedDropActive() const { return _equippedDrop; }
-        bool equippedDropRestReady() const { return _equippedDrop && !_equippedDropPull.active && _equippedDropRest.ready(); }
-        bool watchesEquippedDropRest(std::uint32_t body) const {
-            return body != 0x7FFF'FFFFu && _dropRestBodyAtomic.load(std::memory_order_acquire) == body;
-        }
-        void recordEquippedDropRestContact(RE::hknpWorld* world, std::uint32_t a, std::uint32_t b,
-            const RE::NiPoint3& pointGame, const RE::NiPoint3& normal) noexcept;
-        enum class DropPullProgress { Unavailable, Flying, Arrived, Expired };
-        bool startEquippedDropPull(const PhysicsFrameContext& frame, const RE::NiPoint3& gripWeaponLocal,
-            const RE::NiPoint3& handWorld);
-        DropPullProgress updateEquippedDropPull(const PhysicsFrameContext& frame, const RE::NiPoint3& handWorld);
-        void cancelEquippedDropPull();
-        bool equippedDropPullActive() const { return _equippedDropPull.active; }
-
         // Game-frame observation, published through the provider snapshot.
         [[nodiscard]] bool surfaceSupportReservesInput(std::uintptr_t weaponNode, std::uint64_t generation) const noexcept
         {
@@ -174,7 +152,7 @@ namespace rock
             RE::NiNode* weaponNode,
             std::uint64_t weaponGenerationKey,
             const WeaponCollision& weaponCollision,
-            const RE::NiPoint3* primaryGripWeaponLocal, bool handsFree = false, bool equippedDrop = false);
+            const RE::NiPoint3* primaryGripWeaponLocal, bool handsFree = false);
         // This frame's compound snapshot found a generated source the weapon root no longer contains.
         [[nodiscard]] bool compoundSourcesUnavailable() const { return _compoundSourcesUnavailable; }
 
@@ -281,8 +259,6 @@ namespace rock
             const RE::NiPoint3& pivotWeaponLocal, const RE::NiTransform& weaponWorld);
         void updateSurfaceSupport(const PhysicsFrameContext& frame,
             const RE::NiPoint3* primaryGripWeaponLocal, bool handsFree);
-        void updateEquippedDropRest(const PhysicsFrameContext& frame);
-        void resetEquippedDropRestWatch(bool active);
         bool ensureProxyBody(
             const PhysicsFrameContext& frame,
             const WeaponCollision& weaponCollision,
@@ -333,35 +309,6 @@ namespace rock
         RE::NiPoint3 _authorityPivotWeaponLocal{};
         std::size_t _createdCompoundPointCount{ 0 };
         bool _created{ false };
-        // Mutated only while callbacks are quiescent, read by the game thread
-        // and the pre-collide/post-solve callbacks belonging to this body.
-        bool _equippedDrop{ false };
-        equipped_drop_motion_profile::Lease _equippedDropMotionProfile;
-        bool _equippedDropGravitySamplePending{ false };
-        // The game thread owns dwell/anchor state. Native contact workers use
-        // only the atomic watch identity and publish a bounded value witness.
-        // Epoch changes reject in-flight contacts after release/regrab/teardown;
-        // contact callbacks are independent of the generated-body step gate.
-        loose_weapon_collision_policy::AnchoredRest<RE::NiTransform> _equippedDropRest;
-        struct DropRestSupport {
-            std::uintptr_t world{}, surfaceCollision{};
-            std::uint64_t generation{};
-            std::uint32_t weaponBody{}, surfaceBody{};
-            RE::NiTransform weaponPose{}, surfacePose{};
-            bool valid{};
-        };
-        std::atomic_flag _dropRestSupportBusy = ATOMIC_FLAG_INIT;
-        DropRestSupport _dropRestSupport{};
-        std::atomic<RE::hknpWorld*> _dropRestWorldAtomic{ nullptr };
-        std::atomic<std::uint32_t> _dropRestBodyAtomic{ 0x7FFF'FFFFu };
-        std::atomic<std::uint64_t> _dropRestEpochAtomic{ 1 };
-        // Game-thread pull owner; physics uses the native velocity set under
-        // callback quiescence, exactly as ordinary loose-object pulls do.
-        struct DropPullState {
-            bool active{}, hasTarget{};
-            RE::NiPoint3 gripWeaponLocal{}, previousTargetHavok{};
-            float elapsed{}, duration{};
-        } _equippedDropPull;
         bool _droveThisSubstep{ false };
         bool _physicsRequestedTargetValid{ false };
         bool _physicsDriveTeleported{ false };

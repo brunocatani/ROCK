@@ -72,7 +72,6 @@ namespace rock
         PartCarry,
         PrimaryOnly,
         SurfaceSupported,
-        EquippedDrop,
     };
 
     struct EquippedWeaponPrimaryGripInput
@@ -104,8 +103,6 @@ namespace rock
         bool rightHandAvailableForAcquisition{ false };
         bool leftReattachEligible{ false };
         bool rightReattachEligible{ false };
-        bool leftEquippedDropCatch{ false };
-        bool rightEquippedDropCatch{ false };
         // Menu-open state and renderer-request state are deliberately separate.
         // FO4VR may keep WSScope presentation alive outside an active sight;
         // the renderer request is the authority for actual scope entry/exit.
@@ -716,11 +713,9 @@ namespace rock
         bool isPartCarryActive() const { return _session.state == TwoHandedState::PartCarry; }
 
         bool isSurfaceSupported() const { return _session.state == TwoHandedState::SurfaceSupported; }
-        bool isEquippedDrop() const { return _session.state == TwoHandedState::EquippedDrop; }
-        bool isHandsFreeRetained() const { return isSurfaceSupported() || isEquippedDrop(); }
+        bool isHandsFreeRetained() const { return isSurfaceSupported(); }
         bool isFiringGripDetached() const { return isPartCarryActive() || isHandsFreeRetained(); }
-        bool retainEquippedDrop(const RE::NiTransform& pose);
-        bool retainHandsFree(const RE::NiTransform& pose, TwoHandedState state, bool releaseBoth);
+        bool retainHandsFree(const RE::NiTransform& pose, bool releaseBoth);
         bool canRetainOnSurface() const;
         bool retainOnSurface(bool releaseBoth);
         bool publishHandsFreeWeaponPose(RE::NiNode* weaponNode, float dt);
@@ -1591,8 +1586,7 @@ namespace rock
             RE::NiNode* weaponNode,
             const WeaponInteractionContact& handWeaponContact,
             bool authoredProviderAuthorityActive,
-            bool authoredAttachOnlyAuthorityActive,
-            bool equippedDropCatch = false);
+            bool authoredAttachOnlyAuthorityActive);
 
         bool tryResolveAuthoredFiringHandCanonicalForProbe(
             bool handIsLeft,

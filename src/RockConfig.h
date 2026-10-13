@@ -101,7 +101,6 @@ namespace rock
         bool rockFiringGripDetachPosePreservationEnabled = true;
         // 1: keep held; 2: held loose weapon; 3: native drop; 4: equipped physics drop.
         int rockWeaponDropMode = 2;
-        float rockEquippedDropRadiusMeters = 2.0f;
         // 1: toggle both grips; 2: toggle firing only; 3: hold both grips.
         int rockWeaponGrabMode = 1;
         // Allow dynamic support grabs beyond authored grips. False preserves
