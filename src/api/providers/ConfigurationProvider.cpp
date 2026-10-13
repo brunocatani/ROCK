@@ -6,8 +6,8 @@
 
 namespace rock::api::configuration {
 namespace {
-    struct VisitContext { VisitorV1 visitor; void* user; bool fault{}; };
-    bool invokeVisitor(VisitorV1 visitor, const SettingV1* setting, void* user) {
+    struct VisitContext { Visitor visitor; void* user; bool fault{}; };
+    bool invokeVisitor(Visitor visitor, const Setting* setting, void* user) {
 #if defined(_MSC_VER)
         __try { visitor(setting,user); return true; }
         __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
@@ -18,7 +18,7 @@ namespace {
     void visitSetting(const configuration_api::SettingV1* value, void* opaque) noexcept {
         auto& context=*static_cast<VisitContext*>(opaque);
         if (context.fault) return;
-        const SettingV1 setting{value->section,value->key,value->value,value->defaultValue,
+        const Setting setting{value->section,value->key,value->value,value->defaultValue,
             value->category,value->description,static_cast<ValueType>(value->type),value->overridden};
         provider::borrowed_callback::Scope callbackScope;
         try { context.fault=!invokeVisitor(context.visitor,&setting,context.user); }
@@ -31,7 +31,7 @@ namespace {
             *value=g_rockConfig.configRevision(); return Status::Ok;
         });
     }
-    Status ROCK_CALL visit(OwnerToken owner, Group group, VisitorV1 visitor, void* user) noexcept {
+    Status ROCK_CALL visit(OwnerToken owner, Group group, Visitor visitor, void* user) noexcept {
         if (!visitor) return Status::InvalidArgument;
         // Configuration tasks are not FRIK animation callbacks. RockConfig
         // serializes catalog access; borrowed visitors still forbid reentry.
@@ -57,7 +57,7 @@ namespace {
         });
     }
 }
-const ApiV1& table() noexcept {
-    static const ApiV1 value{revision,visit,setValue}; return value;
+const Api& table() noexcept {
+    static const Api value{revision,visit,setValue}; return value;
 }
 }

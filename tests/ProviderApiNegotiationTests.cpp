@@ -46,6 +46,12 @@ int main() {
         assert(!descriptor);
         assert(ROCKAPI_QueryInterfaceV1(Table::interfaceId,Table::majorVersion,0,sizeof(Table)+1,&descriptor)==Status::TableTooSmall);
         assert(!descriptor);
+        if constexpr (Table::majorVersion>1) {
+            // A major-1 consumer is refused cleanly, never handed the major-2 table.
+            descriptor=reinterpret_cast<const InterfaceDescriptorV1*>(&table);
+            assert(ROCKAPI_QueryInterfaceV1(Table::interfaceId,1,0,8,&descriptor)==Status::UnsupportedMajor);
+            assert(!descriptor);
+        }
     };
     verify(core::table(),core::kSupportedPermissions);
     verify(rock::native_interaction_service::tableV1_1(),native_interaction::kSupportedPermissions);
@@ -59,11 +65,6 @@ int main() {
         assert(oldTable->publishVisuals==rock::native_interaction_service::table().publishVisuals);
     }
     verify(hands::table(),hands::kSupportedPermissions);
-    {
-        // A major-1 Hands consumer is refused cleanly, never handed the major-2 table.
-        const InterfaceDescriptorV1* refused=&descriptors[0].descriptor;
-        assert(ROCKAPI_QueryInterfaceV1(hands::kInterfaceId,1,0,48,&refused)==Status::UnsupportedMajor && !refused);
-    }
     verify(collision::table(),collision::kSupportedPermissions);
     verify(grab::tableV1_3(),grab::kSupportedPermissions);
     {

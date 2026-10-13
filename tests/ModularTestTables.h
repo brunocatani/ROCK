@@ -39,7 +39,7 @@ namespace rock::api::input { const v1_5::Api& tableV1_5() noexcept; const ApiV1&
 namespace rock::api::references { const ApiV1& table() noexcept; }
 namespace rock::api::playercontroller { const ApiV1& table() noexcept; }
 namespace rock::api::diagnostics { const ApiV1& table() noexcept; }
-namespace rock::api::configuration { const ApiV1& table() noexcept; }
+namespace rock::api::configuration { const Api& table() noexcept; }
 extern "C" rock::api::Status ROCK_CALL ROCKAPI_QueryInterfaceV1(
     rock::api::InterfaceId,std::uint32_t,std::uint32_t,std::uint32_t,
     const rock::api::InterfaceDescriptorV1**) noexcept;
