@@ -124,7 +124,8 @@ namespace rock::provider {
         None = 0,
         ReportHandContacts = 1u << 0,
         ReportAllSourceKinds = 1u << 1,
-        SuppressRockDynamicPush = 1u << 2,
+        // 1u << 2 was SuppressRockDynamicPush, removed with ROCK's push
+        // assist; never reuse the bit.
     };
 
     enum class RockProviderExternalSourceKind : std::uint32_t

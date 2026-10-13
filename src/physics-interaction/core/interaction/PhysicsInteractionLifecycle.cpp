@@ -476,8 +476,7 @@ namespace rock
         _diagnostics.deltaLogCounter = 0;
         _diagnostics.contactLogCounter = 0;
         _contacts.bodyRuntime.reset();
-        _contacts.dynamicPushElapsedSeconds = 0.0f;
-        _contacts.dynamicPushCooldownUntil.clear();
+        _contacts.hapticClockSeconds = 0.0f;
         _grabEvents.heldImpactHapticCooldownUntil.clear();
         _grabEvents.frameCounter = 0;
         _grabInput.shoulderStashStates = {};
@@ -510,9 +509,8 @@ namespace rock
         _equipped.defaultEquipObservedOwnershipKey = 0;
         equipped_weapon_handling_runtime::reset();
         abandonWeaponHandSuppression();
-        _contacts.rightPush.clear();
-        _contacts.leftPush.clear();
-        _contacts.weaponPush.clear();
+        _contacts.rightTouch.clear();
+        _contacts.leftTouch.clear();
         _contacts.lastHeldImpactPairRight.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
         _contacts.lastHeldImpactPairLeft.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
         _contacts.handActivity.reset();
@@ -689,7 +687,6 @@ namespace rock
         _handColliderBoneSnapshot = {};
         _finalPoseBoneReader.resetCache();
         _finalPoseBoneSnapshot = {};
-        _contacts.dynamicPushCooldownUntil.clear();
         _grabEvents.heldImpactHapticCooldownUntil.clear();
         _grabEvents.frameCounter = 0;
         _grabInput.mouthConsumeStates = {};
@@ -706,9 +703,8 @@ namespace rock
         _grabInput.bareFistGuardState = {};
         _lifecycle.bodyBoneColliderCreateRetryFrames = 0;
         _lifecycle.handColliderCreateRetryFrames = 0;
-        _contacts.rightPush.clear();
-        _contacts.leftPush.clear();
-        _contacts.weaponPush.clear();
+        _contacts.rightTouch.clear();
+        _contacts.leftTouch.clear();
         _contacts.lastHeldImpactPairRight.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
         _contacts.lastHeldImpactPairLeft.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
         _contacts.handActivity.reset();

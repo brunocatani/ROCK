@@ -1,5 +1,5 @@
 /*
- * Contact routing is kept as a separate core fragment because it bridges the native hknp contact signal, hand semantic state, weapon contacts, and push assist. Keeping it in the PhysicsInteraction translation unit preserves the existing anonymous-namespace helpers while making the frame loop readable.
+ * Contact routing is kept as a separate core fragment because it bridges the native hknp contact signal, hand semantic and touch state, and weapon contacts. Keeping it in the PhysicsInteraction translation unit preserves the existing anonymous-namespace helpers while making the frame loop readable.
  */
     void PhysicsInteraction::resolveContacts(const PhysicsFrameContext& frame)
     {
@@ -7,15 +7,13 @@
 
         auto* bhk = frame.bhkWorld;
         auto* hknp = frame.hknpWorld;
-        auto consumePush = [&](push_assist::ContactChannel& channel, const char* name, Hand* hand, bool weapon) {
-            push_assist::Contact contact{};
-            if (!channel.consume(contact) || contact.world != reinterpret_cast<std::uintptr_t>(hknp)) return;
-            if (hand) resolveAndLogContact(name, bhk, hknp, RE::hknpBodyId{contact.target});
-            applyDynamicPushAssist(name, bhk, hknp, contact.source, contact.target, weapon, hand, contact);
+        auto consumeTouch = [&](hand_touch::TouchChannel& channel, const char* name) {
+            hand_touch::Touch touch{};
+            if (!channel.consume(touch) || touch.world != reinterpret_cast<std::uintptr_t>(hknp)) return;
+            resolveAndLogContact(name, bhk, hknp, RE::hknpBodyId{touch.target});
         };
-        consumePush(_contacts.rightPush, "Right", &_rightHand, false);
-        consumePush(_contacts.leftPush, "Left", &_leftHand, false);
-        consumePush(_contacts.weaponPush, "Weapon", nullptr, true);
+        consumeTouch(_contacts.rightTouch, "Right");
+        consumeTouch(_contacts.leftTouch, "Left");
 
         auto readBodyMass = [](RE::hknpWorld* world, std::uint32_t bodyId) {
             if (!world || bodyId == 0xFFFFFFFF || bodyId == object_physics_body_set::INVALID_BODY_ID) {
@@ -73,184 +71,6 @@
         processHeldImpact(_rightHand, false, _contacts.lastHeldImpactPairRight);
         processHeldImpact(_leftHand, true, _contacts.lastHeldImpactPairLeft);
     }
-    void PhysicsInteraction::applyDynamicPushAssist(const char* sourceName,
-        RE::bhkWorld* bhk,
-        RE::hknpWorld* hknp,
-        std::uint32_t sourceBodyId,
-            std::uint32_t targetBodyId,
-        bool sourceIsWeapon,
-        const Hand* sourceHand,
-        const push_assist::Contact& contact)
-    {
-        if (!bhk || !hknp || sourceBodyId == 0xFFFFFFFF || targetBodyId == 0xFFFFFFFF ||
-            sourceBodyId == object_physics_body_set::INVALID_BODY_ID || targetBodyId == object_physics_body_set::INVALID_BODY_ID || sourceBodyId == targetBodyId) {
-            return;
-        }
-        if (::rock::provider::isExternalBodyDynamicPushSuppressed(targetBodyId)) {
-            ROCK_LOG_SAMPLE_DEBUG(Hand,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "{} dynamic push skipped: target body {} is registered as external suppressing ROCK dynamic push",
-                sourceName,
-                targetBodyId);
-            return;
-        }
-        if (held_object_body_set_policy::containsAnyBody(_rightHand.getHeldBodyIds(), _leftHand.getHeldBodyIds(), targetBodyId)) {
-            ROCK_LOG_SAMPLE_DEBUG(Hand,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "{} dynamic push skipped: target body {} is owned by an active held grab",
-                sourceName,
-                targetBodyId);
-            return;
-        }
-
-        auto* targetRef = resolveBodyToRef(bhk, hknp, RE::hknpBodyId{ targetBodyId });
-        if (!targetRef || targetRef->IsDeleted() || targetRef->IsDisabled()) {
-            ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds, "{} dynamic push skipped: target body {} has no valid ref", sourceName, targetBodyId);
-            return;
-        }
-        if (isPendingForceGrabTarget(targetRef)) {
-            ROCK_LOG_SAMPLE_DEBUG(Hand,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "{} dynamic push skipped: target body {} belongs to an in-flight force-grab transaction",
-                sourceName,
-                targetBodyId);
-            return;
-        }
-
-        // Eligibility does not depend on the target's body-tree scan. Reject
-        // cooling-down/stationary contacts before enumerating that tree, using
-        // the same impulse policy for ordinary objects and point pushes.
-        const auto* sourceMotion = havok_runtime::getBodyMotion(hknp, RE::hknpBodyId{ sourceBodyId });
-        if (!sourceMotion) {
-            return;
-        }
-        const RE::NiPoint3 sourceVelocityHavok{ sourceMotion->linearVelocity.x, sourceMotion->linearVelocity.y, sourceMotion->linearVelocity.z };
-        const std::uint64_t cooldownKey = (static_cast<std::uint64_t>(sourceBodyId) << 32) | targetBodyId;
-        const auto cooldown = _contacts.dynamicPushCooldownUntil.find(cooldownKey);
-        const float cooldownRemaining = cooldown == _contacts.dynamicPushCooldownUntil.end() ? 0.0f :
-            (std::max)(0.0f, cooldown->second - _contacts.dynamicPushElapsedSeconds);
-        const auto push = push_assist::computePushImpulse(push_assist::PushAssistInput<RE::NiPoint3>{
-            .enabled = g_rockConfig.rockDynamicPushAssistEnabled,
-            .sourceVelocity = sourceVelocityHavok,
-            .minSpeed = g_rockConfig.rockDynamicPushMinSpeed,
-            .maxImpulse = g_rockConfig.rockDynamicPushMaxImpulse,
-            .layerMultiplier = 1.0f,
-            .cooldownRemainingSeconds = cooldownRemaining,
-        });
-        if (!push.apply) {
-            ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
-                "{} dynamic push skipped before body scan: reason={} sourceBody={} targetBody={}",
-                sourceName, pushAssistSkipReasonName(push.skipReason), sourceBodyId, targetBodyId);
-            return;
-        }
-
-        const auto target = havok_runtime::snapshotBody(hknp, RE::hknpBodyId{targetBodyId});
-        api::native_interaction::SelectionQuery pushQuery{};
-        pushQuery.reference=reinterpret_cast<std::uintptr_t>(targetRef);
-        pushQuery.world=reinterpret_cast<std::uintptr_t>(hknp);pushQuery.body=targetBodyId;
-        const auto pushKind=native_interaction_service::classifyPush(pushQuery);
-        if(pushKind==api::native_interaction::PushKind::Blocked)return;
-        const auto* base = targetRef->GetObjectReference();
-        // Native articulated targets must never fall into whole-reference loose
-        // object conversion when their owning extension is absent.
-        if(pushKind==api::native_interaction::PushKind::Unhandled&&((base&&base->Is(RE::ENUM_FORM_ID::kNPC_))||
-            (target.valid&&grab_target::isNativeDetachedBodyLayer(target.collisionFilterInfo&0x7F))))return;
-        const bool bodyContact=target.valid&&pushKind==api::native_interaction::PushKind::PointOnly;
-        if (bodyContact) {
-            if (!contact.hasPoint || !target.body ||
-                physics_body_classifier::motionTypeFromBodyFlags(target.body->flags) != physics_body_classifier::BodyMotionType::Dynamic) return;
-            const bool applied = push_assist::applyPointImpulse(hknp, targetBodyId, contact.owner, push.impulse,
-                RE::NiPoint3{contact.point[0], contact.point[1], contact.point[2]});
-            if (applied) _contacts.dynamicPushCooldownUntil[cooldownKey] = _contacts.dynamicPushElapsedSeconds +
-                (std::max)(0.0f, g_rockConfig.rockDynamicPushCooldownSeconds);
-            ROCK_LOG_SAMPLE_INFO(Hand, 2000, "{} body point push: source={} target={} owner=0x{:X} applied={} pointHk=({:.3f},{:.3f},{:.3f})",
-                sourceName, sourceBodyId, targetBodyId, contact.owner, applied, contact.point[0], contact.point[1], contact.point[2]);
-            return;
-        }
-
-        object_physics_body_set::BodySetScanOptions scanOptions{};
-        scanOptions.mode = physics_body_classifier::InteractionMode::PassivePush;
-        scanOptions.rightHandBodyId = _rightHand.getCollisionBodyId().value;
-        scanOptions.leftHandBodyId = _leftHand.getCollisionBodyId().value;
-        scanOptions.sourceBodyId = sourceBodyId;
-        scanOptions.sourceWeaponBodyId = sourceIsWeapon ? sourceBodyId : object_physics_body_set::INVALID_BODY_ID;
-        scanOptions.maxDepth = g_rockConfig.rockObjectPhysicsTreeMaxDepth;
-        if (!sourceIsWeapon && sourceHand) {
-            scanOptions.heldBySameHand = &sourceHand->getHeldBodyIds();
-        }
-
-        const auto bodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhk, hknp, targetRef, scanOptions);
-        const auto* targetRecord = bodySet.findRecord(targetBodyId);
-        if (!targetRecord) {
-            ROCK_LOG_SAMPLE_DEBUG(Hand,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "{} dynamic push skipped: target body {} not found in ref tree formID={:08X} visitedNodes={} collisionObjects={}",
-                sourceName,
-                targetBodyId,
-                targetRef->GetFormID(),
-                bodySet.diagnostics.visitedNodes,
-                bodySet.diagnostics.collisionObjects);
-            return;
-        }
-        if (!targetRecord->accepted) {
-            ROCK_LOG_SAMPLE_DEBUG(Hand,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "{} dynamic push skipped: target body {} rejected reason={} layer={} motionId={} motionType={}",
-                sourceName,
-                targetBodyId,
-                physics_body_classifier::rejectReasonName(targetRecord->rejectReason),
-                targetRecord->collisionLayer,
-                targetRecord->motionId,
-                static_cast<int>(targetRecord->motionType));
-            return;
-        }
-        if (!sourceIsWeapon && collision_layer_policy::isActorOrBipedLayer(targetRecord->collisionLayer)) {
-            ROCK_LOG_SAMPLE_DEBUG(Hand,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "{} dynamic push actor/ragdoll accepted: sourceBody={} targetBody={} layer={} motionId={} motionType={}",
-                sourceName,
-                sourceBodyId,
-                targetBodyId,
-                targetRecord->collisionLayer,
-                targetRecord->motionId,
-                static_cast<int>(targetRecord->motionType));
-        }
-
-        std::uint32_t appliedCount = 0;
-        const auto uniqueMotionCount = bodySet.forEachUniqueAcceptedMotion([&](const auto& record) {
-            physics_recursive_wrappers::activateBody(hknp, record.bodyId);
-            if (push_assist::applyLinearImpulse(record.collisionObject, push.impulse)) ++appliedCount;
-        });
-        if (uniqueMotionCount == 0) {
-            ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds,
-                "{} dynamic push skipped: accepted target body {} produced no unique motion bodies", sourceName, targetBodyId);
-            return;
-        }
-
-        if (appliedCount > 0) {
-            _contacts.dynamicPushCooldownUntil[cooldownKey] =
-                _contacts.dynamicPushElapsedSeconds + (std::max)(0.0f, g_rockConfig.rockDynamicPushCooldownSeconds);
-            if (logger::isDebugEnabled()) {
-                auto* baseObj = targetRef->GetObjectReference();
-                auto objName = baseObj ? RE::TESFullName::GetFullName(*baseObj, false) : std::string_view{};
-                const std::string nameStr = objName.empty() ? std::string("(unnamed)") : std::string(objName);
-                ROCK_LOG_SAMPLE_DEBUG(Hand,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "{} dynamic push applied: '{}' formID={:08X} targetBody={} layer={} acceptedBodies={} uniqueMotions={} impulse=({:.3f},{:.3f},{:.3f})",
-                    sourceName,
-                    nameStr,
-                    targetRef->GetFormID(),
-                    targetBodyId,
-                    targetRecord->collisionLayer,
-                    bodySet.acceptedCount(),
-                    appliedCount,
-                    push.impulse.x,
-                    push.impulse.y,
-                    push.impulse.z);
-            }
-        }
-    }
-
     void PhysicsInteraction::resolveAndLogContact(const char* handName, RE::bhkWorld* bhk, RE::hknpWorld* hknp, RE::hknpBodyId bodyId)
     {
         if (!bhk || !hknp)
@@ -1437,19 +1257,13 @@
             publishExternalContact(contactRoute.sourceBodyId, contactRoute.targetBodyId, contactRoute.providerSourceKind, contactRoute.providerSourceHand, routeHandMetadata);
         }
 
-        auto publishPushContact = [&](push_assist::ContactChannel& channel, std::uint32_t source) {
-            push_assist::Contact contact{};
-            contact.source = source;
-            contact.target = contactRoute.targetBodyId;
-            contact.world = reinterpret_cast<std::uintptr_t>(world);
-            contact.owner = reinterpret_cast<std::uintptr_t>(havok_runtime::getCollisionObjectFromBody(world, RE::hknpBodyId{contact.target}));
-            contact.hasPoint = ensureRawContactPoint();
-            if (contact.hasPoint) std::copy_n(rawContactPoint.contactPointHavok, 3, contact.point.begin());
-            channel.publish(contact);
+        auto publishTouch = [&](hand_touch::TouchChannel& channel, std::uint32_t source) {
+            channel.publish(hand_touch::Touch{
+                .source = source,
+                .target = contactRoute.targetBodyId,
+                .world = reinterpret_cast<std::uintptr_t>(world),
+            });
         };
-        if (contactRoute.driveWeaponDynamicPush) {
-            publishPushContact(_contacts.weaponPush, contactRoute.sourceBodyId);
-        }
 
         auto publishWeaponContactFromPhysics = [&](bool isLeft, const WeaponInteractionContact& weaponContact, std::uint32_t bodyId) {
             auto& partKind = isLeft ? _weaponContact.left.partKind : _weaponContact.right.partKind;
@@ -1544,13 +1358,13 @@
 
         if (handSource->isLeft) {
             _leftHand.recordSemanticContact(handSource->metadata, contactRoute.targetBodyId, semanticContactPoint, semanticContactNormal);
-            if (contactRoute.driveHandDynamicPush) {
-                publishPushContact(_contacts.leftPush, handSource->metadata.bodyId);
+            if (contactRoute.recordHandTouch) {
+                publishTouch(_contacts.leftTouch, handSource->metadata.bodyId);
             }
         } else {
             _rightHand.recordSemanticContact(handSource->metadata, contactRoute.targetBodyId, semanticContactPoint, semanticContactNormal);
-            if (contactRoute.driveHandDynamicPush) {
-                publishPushContact(_contacts.rightPush, handSource->metadata.bodyId);
+            if (contactRoute.recordHandTouch) {
+                publishTouch(_contacts.rightTouch, handSource->metadata.bodyId);
             }
         }
 

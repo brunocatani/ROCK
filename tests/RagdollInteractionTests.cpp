@@ -1,7 +1,7 @@
 #include "physics-interaction/grab/SkinnedSurfaceMath.h"
 #include "physics-interaction/grab/SegmentVisibilityPolicy.h"
 #include "physics-interaction/object/RagdollComponentPolicy.h"
-#include "physics-interaction/collision/PushContact.h"
+#include "physics-interaction/collision/HandTouchChannel.h"
 
 #include <cmath>
 #include <cstdio>
@@ -98,16 +98,15 @@ int main()
     component = ragdoll::connectedComponent(bodies,joints,30);
     ok &= check(component.valid && !component.fixedAttached && !component.included[5], "deleted slot is not a connection");
 
-    push_assist::ContactChannel channel;
-    push_assist::Contact contact{}, sample{};
-    ok &= check(!channel.consume(sample), "no phantom initial push");
-    contact = {1,20,100,200,{3,4,5},true};
-    ok &= check(channel.publish(contact) && channel.consume(sample), "contact handed off");
-    ok &= check(sample.source==1 && sample.target==20 && sample.owner==200 && sample.point[1]==4 && sample.hasPoint,
-        "push retains exact body identity and point");
-    ok &= check(!channel.consume(sample), "contact consumed only once");
-    channel.publish(contact); channel.clear();
-    ok &= check(!channel.consume(sample), "world reset discards queued contact");
+    hand_touch::TouchChannel channel;
+    hand_touch::Touch touch{}, sample{};
+    ok &= check(!channel.consume(sample), "no phantom initial touch");
+    touch = {1,20,100};
+    ok &= check(channel.publish(touch) && channel.consume(sample), "touch handed off");
+    ok &= check(sample.source==1 && sample.target==20 && sample.world==100, "touch retains exact body identity");
+    ok &= check(!channel.consume(sample), "touch consumed only once");
+    channel.publish(touch); channel.clear();
+    ok &= check(!channel.consume(sample), "world reset discards queued touch");
     std::barrier start{2};
     std::atomic<bool> finished{false};
     std::atomic<bool> observed{false};
@@ -116,7 +115,7 @@ int main()
         // Keep publishing until the consumer participates; do not let a fast
         // producer turn this into a passing test with no reads.
         for (std::uint32_t n=1; n<10000 || !observed.load(); ++n) {
-            channel.publish({n,n+1,n+2,n+3,{float(n),float(n+1),float(n+2)},true});
+            channel.publish({n,n+1,std::uintptr_t{n}+2});
         }
         finished.store(true);
     });
@@ -126,12 +125,11 @@ int main()
     while (!finished.load()) {
         if (channel.consume(sample)) {
             ++reads;
-            coherent = coherent && sample.target==sample.source+1 && sample.owner==sample.source+3 &&
-                sample.point[0]==float(sample.source) && sample.point[2]==float(sample.source+2);
+            coherent = coherent && sample.target==sample.source+1 && sample.world==std::uintptr_t{sample.source}+2;
             observed.store(true);
         }
     }
     writer.join();
-    ok &= check(reads > 0 && coherent, "concurrent publication never mixes another limb with a contact point");
+    ok &= check(reads > 0 && coherent, "concurrent publication never mixes identities from two touches");
     return ok ? 0 : 1;
 }

@@ -90,7 +90,6 @@
 #include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
-#include "physics-interaction/collision/PushAssist.h"
 #include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
@@ -1082,23 +1081,6 @@ namespace rock
                 break;
             }
             return RockProviderBodyContactTargetKind::Unknown;
-        }
-
-        inline const char* pushAssistSkipReasonName(push_assist::PushAssistSkipReason reason)
-        {
-            switch (reason) {
-            case push_assist::PushAssistSkipReason::None:
-                return "none";
-            case push_assist::PushAssistSkipReason::Disabled:
-                return "disabled";
-            case push_assist::PushAssistSkipReason::Cooldown:
-                return "cooldown";
-            case push_assist::PushAssistSkipReason::BelowMinSpeed:
-                return "below-min-speed";
-            case push_assist::PushAssistSkipReason::InvalidImpulse:
-                return "invalid-impulse";
-            }
-            return "unknown";
         }
 
         inline RE::EquippedWeaponData* getValidatedEquippedWeaponData()

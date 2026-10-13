@@ -5,7 +5,7 @@
 #include "physics-interaction/grenade/LooseMolotovVisual.h"
 
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
-#include "physics-interaction/collision/PushContact.h"
+#include "physics-interaction/collision/HandTouchChannel.h"
 
 #include <array>
 #include <atomic>
@@ -493,15 +493,6 @@ namespace rock
 
         void resolveAndLogContact(const char* handName, RE::bhkWorld* bhk, RE::hknpWorld* hknp, RE::hknpBodyId bodyId);
 
-        void applyDynamicPushAssist(const char* sourceName,
-            RE::bhkWorld* bhk,
-            RE::hknpWorld* hknp,
-            std::uint32_t sourceBodyId,
-            std::uint32_t targetBodyId,
-            bool sourceIsWeapon,
-            const Hand* sourceHand,
-            const push_assist::Contact& contact);
-
         void publishDebugBodyOverlay(const PhysicsFrameContext& frame);
 
         void clearLeftWeaponContact();
@@ -808,11 +799,11 @@ namespace rock
             contact_activity_tracker::ContactActivityTracker handActivity;
             body_contact_runtime::BodyContactRuntime bodyRuntime;
             generated_body_contact_registry::Registry<kGeneratedBodyContactRegistryCapacity> generatedBodyRegistry;
-            push_assist::ContactChannel rightPush, leftPush, weaponPush;
+            hand_touch::TouchChannel rightTouch, leftTouch;
             std::atomic<std::uint64_t> lastHeldImpactPairRight{ INVALID_HELD_IMPACT_PAIR };
             std::atomic<std::uint64_t> lastHeldImpactPairLeft{ INVALID_HELD_IMPACT_PAIR };
-            float dynamicPushElapsedSeconds = 0.0f;
-            std::unordered_map<std::uint64_t, float> dynamicPushCooldownUntil;
+            // Monotonic game-frame clock for haptic pulse and cooldown schedules.
+            float hapticClockSeconds = 0.0f;
         };
 
         struct WeaponContactWitnessPair

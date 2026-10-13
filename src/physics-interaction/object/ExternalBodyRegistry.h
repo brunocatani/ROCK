@@ -169,15 +169,6 @@ namespace rock
             return findBody(bodyId) != nullptr;
         }
 
-        [[nodiscard]] bool suppressesRockDynamicPush(
-            const std::uint32_t bodyId) const
-        {
-            const auto* body = findBody(bodyId);
-            return body && hasPolicy(
-                body->registration,
-                ::rock::provider::RockProviderExternalBodyContactPolicy::SuppressRockDynamicPush);
-        }
-
         [[nodiscard]] bool tryGetBody(
             const std::uint32_t bodyId,
             ::rock::provider::RockProviderExternalBodyRegistration& outBody) const

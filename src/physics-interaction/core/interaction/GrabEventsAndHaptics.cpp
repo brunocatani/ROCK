@@ -13,7 +13,7 @@ namespace rock
         }
 
         for (auto it = _grabEvents.heldImpactHapticCooldownUntil.begin(); it != _grabEvents.heldImpactHapticCooldownUntil.end();) {
-            if (it->second <= _contacts.dynamicPushElapsedSeconds) {
+            if (it->second <= _contacts.hapticClockSeconds) {
                 it = _grabEvents.heldImpactHapticCooldownUntil.erase(it);
             } else {
                 ++it;
@@ -117,7 +117,7 @@ namespace rock
                 (static_cast<std::uint64_t>(eventData.primaryBodyId) << 32) |
                 static_cast<std::uint64_t>(eventData.secondaryBodyId);
             if (const auto it = _grabEvents.heldImpactHapticCooldownUntil.find(cooldownKey);
-                it != _grabEvents.heldImpactHapticCooldownUntil.end() && it->second > _contacts.dynamicPushElapsedSeconds) {
+                it != _grabEvents.heldImpactHapticCooldownUntil.end() && it->second > _contacts.hapticClockSeconds) {
                 return;
             }
 
@@ -140,7 +140,7 @@ namespace rock
             }
 
             _grabEvents.heldImpactHapticCooldownUntil[cooldownKey] =
-                _contacts.dynamicPushElapsedSeconds + (std::max)(0.0f, g_rockConfig.rockHeldImpactHapticCooldownSeconds);
+                _contacts.hapticClockSeconds + (std::max)(0.0f, g_rockConfig.rockHeldImpactHapticCooldownSeconds);
             queueHaptic(eventData.isLeft, g_rockConfig.rockHeldImpactHapticDurationSeconds, intensity);
             return;
         }

@@ -2507,7 +2507,7 @@ namespace rock
                 !g_rockConfig.rockShoulderStashHapticsEnabled) {
                 return;
             }
-            const bool pulseDue = _contacts.dynamicPushElapsedSeconds >=
+            const bool pulseDue = _contacts.hapticClockSeconds >=
                 detectorState.nextCandidatePulseTimeSeconds;
             if (!decision.enteredCandidate &&
                 !decision.changedCandidate && !pulseDue) {
@@ -2527,7 +2527,7 @@ namespace rock
                             rockShoulderStashCandidateHapticIntensity,
                     }));
             detectorState.nextCandidatePulseTimeSeconds =
-                _contacts.dynamicPushElapsedSeconds +
+                _contacts.hapticClockSeconds +
                 (std::max)(0.02f,
                     g_rockConfig.
                         rockShoulderStashCandidateHapticIntervalSeconds);

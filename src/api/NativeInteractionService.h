@@ -41,7 +41,6 @@ namespace rock::native_interaction_service {
     bool validateSelection(const api::native_interaction::SelectionQuery&,const api::native_interaction::SelectionReply&);
     api::native_interaction::ProximityResult proximityTarget(std::uintptr_t reference,float radiusGame);
     std::uint32_t impactEffect(std::uintptr_t source,std::uintptr_t target,float damage);
-    api::native_interaction::PushKind classifyPush(const api::native_interaction::SelectionQuery&);
     api::Status extract(const api::native_interaction::SelectionQuery&,
         const api::native_interaction::SelectionReply&,api::native_interaction::ExtractedReference&);
 }

@@ -2166,7 +2166,7 @@ namespace rock
                 }
                 if (hand.getState() == HandState::ConsumeCandidate) {
                     consumeCandidateActive = true;
-                    const bool pulseDue = _contacts.dynamicPushElapsedSeconds >= mouthConsumeState.nextCandidatePulseTimeSeconds;
+                    const bool pulseDue = _contacts.hapticClockSeconds >= mouthConsumeState.nextCandidatePulseTimeSeconds;
                     if (consumeDecision.enteredCandidate || consumeDecision.changedCandidate || pulseDue) {
                         dispatchMouthConsumeEvent(
                             GrabEventType::ConsumeCandidate,
@@ -2175,7 +2175,7 @@ namespace rock
                             hand.getSavedObjectState().bodyId.value,
                             consumeDecision);
                         mouthConsumeState.nextCandidatePulseTimeSeconds =
-                            _contacts.dynamicPushElapsedSeconds + (std::max)(0.02f, g_rockConfig.rockMouthConsumeCandidateHapticIntervalSeconds);
+                            _contacts.hapticClockSeconds + (std::max)(0.02f, g_rockConfig.rockMouthConsumeCandidateHapticIntervalSeconds);
                     }
                 }
             } else {
@@ -2219,7 +2219,7 @@ namespace rock
                     hand.beginStashCandidate();
                 }
                 if (hand.getState() == HandState::StashCandidate) {
-                    const bool pulseDue = _contacts.dynamicPushElapsedSeconds >= shoulderStashState.nextCandidatePulseTimeSeconds;
+                    const bool pulseDue = _contacts.hapticClockSeconds >= shoulderStashState.nextCandidatePulseTimeSeconds;
                     if (stashDecision.enteredCandidate || stashDecision.changedCandidate || pulseDue) {
                         dispatchShoulderStashEvent(
                             GrabEventType::StashCandidate,
@@ -2228,7 +2228,7 @@ namespace rock
                             hand.getSavedObjectState().bodyId.value,
                             stashDecision);
                         shoulderStashState.nextCandidatePulseTimeSeconds =
-                            _contacts.dynamicPushElapsedSeconds + (std::max)(0.02f, g_rockConfig.rockShoulderStashCandidateHapticIntervalSeconds);
+                            _contacts.hapticClockSeconds + (std::max)(0.02f, g_rockConfig.rockShoulderStashCandidateHapticIntervalSeconds);
                     }
                 }
             } else {

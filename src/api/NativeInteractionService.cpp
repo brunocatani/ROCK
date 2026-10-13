@@ -396,17 +396,6 @@ namespace rock::native_interaction_service {
         }
         return 0;
     }
-    ni::PushKind classifyPush(const ni::SelectionQuery& query) {
-        auto& service=state();if(!service.rockGate)return ni::PushKind::Unhandled;
-        auto rock=service.rockGate->pauseForMutation();auto mutation=service.gate.pauseForMutation();
-        auto frame=service.frame;frame.phase=ni::Phase::Selection;frame.world=query.world;
-        for(auto& slot:service.extensions)if(slot.owner&&slot.callbacks.classifyPush) {
-            auto result=ni::PushKind::Blocked;
-            if(!invoke(slot,frame,[&]{result=slot.callbacks.classifyPush(&query,slot.callbacks.context);}))return ni::PushKind::Blocked;
-            if(result!=ni::PushKind::Unhandled)return result;
-        }
-        return ni::PushKind::Unhandled;
-    }
     const ni::ApiV1& table() noexcept {
         static const ni::ApiV1 api{&registerExtension,&unregisterExtension,&readBody,&resolveCollisionBody,&resolveBodyReference,&queryNodeRelation,
             &createBody,&retireBody,&placeBody,&driveBody,&setBodyFilter,&activateWeapon,&createSlider,&setSliderLimits,&destroySlider,

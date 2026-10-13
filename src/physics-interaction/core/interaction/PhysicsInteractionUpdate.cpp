@@ -585,16 +585,7 @@ namespace rock
          */
         _frame.deltaTime = runtime.deltaSeconds;
         enforceNativeGrabHapticRuntimeSuppression();
-        _contacts.dynamicPushElapsedSeconds += _frame.deltaTime;
-        if (_contacts.dynamicPushCooldownUntil.size() > 512) {
-            for (auto it = _contacts.dynamicPushCooldownUntil.begin(); it != _contacts.dynamicPushCooldownUntil.end();) {
-                if (it->second <= _contacts.dynamicPushElapsedSeconds) {
-                    it = _contacts.dynamicPushCooldownUntil.erase(it);
-                } else {
-                    ++it;
-                }
-            }
-        }
+        _contacts.hapticClockSeconds += _frame.deltaTime;
 
         if (!runtime.localSkeletonReady) {
             if (_lifecycle.initialized) {

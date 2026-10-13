@@ -74,8 +74,8 @@ namespace rock::contact_pipeline_policy
         bool recordHandSemanticContact = false;
         bool recordBodyContact = false;
         bool drivesWeaponSupportContact = false;
-        bool driveHandDynamicPush = false;
-        bool driveWeaponDynamicPush = false;
+        // A hand touched a non-world object: drives the hand touch state.
+        bool recordHandTouch = false;
         ::rock::provider::RockProviderExternalSourceKind providerSourceKind{ ::rock::provider::RockProviderExternalSourceKind::Unknown };
         ::rock::provider::RockProviderHand providerSourceHand{ ::rock::provider::RockProviderHand::None };
     };
@@ -177,7 +177,7 @@ namespace rock::contact_pipeline_policy
         return ::rock::provider::RockProviderExternalSourceKind::Unknown;
     }
 
-    inline constexpr bool canDriveDynamicPush(ContactEndpointKind targetKind)
+    inline constexpr bool isTouchTarget(ContactEndpointKind targetKind)
     {
         return targetKind != ContactEndpointKind::Unknown && targetKind != ContactEndpointKind::WorldSurface && targetKind != ContactEndpointKind::QueryOnly &&
                !isRockSource(targetKind);
@@ -320,8 +320,7 @@ namespace rock::contact_pipeline_policy
             result.providerSourceKind = providerSourceKindFor(rock.kind);
             result.providerSourceHand = providerHandFor(rock.kind);
             result.recordHandSemanticContact = isHand(rock.kind);
-            result.driveHandDynamicPush = isHand(rock.kind) && canDriveDynamicPush(other.kind);
-            result.driveWeaponDynamicPush = rock.kind == ContactEndpointKind::Weapon && canDriveDynamicPush(other.kind);
+            result.recordHandTouch = isHand(rock.kind) && isTouchTarget(other.kind);
             return result;
         }
 
@@ -339,14 +338,12 @@ namespace rock::contact_pipeline_policy
         if (isHand(rock.kind)) {
             auto result = makeClassification(ContactRoute::HandPassivePush, rock, other);
             result.recordHandSemanticContact = true;
-            result.driveHandDynamicPush = canDriveDynamicPush(other.kind);
+            result.recordHandTouch = isTouchTarget(other.kind);
             return result;
         }
 
         if (rock.kind == ContactEndpointKind::Weapon) {
-            auto result = makeClassification(ContactRoute::WeaponPassivePush, rock, other);
-            result.driveWeaponDynamicPush = canDriveDynamicPush(other.kind);
-            return result;
+            return makeClassification(ContactRoute::WeaponPassivePush, rock, other);
         }
 
         if (isHeldObject(rock.kind)) {

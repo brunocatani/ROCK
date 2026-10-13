@@ -46,7 +46,6 @@ namespace rock::provider
     void dispatchFrameCallbacks(rock::PhysicsInteraction& pi);
     void clearExternalBodiesForProviderLoss();
     bool isExternalBodyId(std::uint32_t bodyId);
-    bool isExternalBodyDynamicPushSuppressed(std::uint32_t bodyId);
     bool recordExternalHandContact(
         bool isLeft,
         std::uint32_t handBodyId,

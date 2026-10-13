@@ -294,10 +294,6 @@ namespace rock
         float rockHandBoneColliderMaxAngularVelocity = 800.0f;
 
         int rockObjectPhysicsTreeMaxDepth = 12;
-        bool rockDynamicPushAssistEnabled = true;
-        float rockDynamicPushMinSpeed = 0.35f;
-        float rockDynamicPushMaxImpulse = 2.0f;
-        float rockDynamicPushCooldownSeconds = 0.08f;
 
         float rockGrabLinearTau = 0.1f;
         float rockGrabLinearDamping = 0.8f;
