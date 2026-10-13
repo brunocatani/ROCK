@@ -185,18 +185,10 @@ option(POST_BUILD_COPY_PLUGIN "Copy ROCK.dll and ROCK.pdb to configured mod root
 set(COPY_PLUGIN_BASE_PATH "" CACHE STRING "Semicolon-separated mod roots that contain F4SE/Plugins.")
 option(ROCK_PACKAGE_RELEASE "Package Release builds into a .7z archive after ROCK is built." ON)
 option(BUILD_ROCK_TESTS "Build ROCK focused regression tests" OFF)
-set(RPS_SDK_ROOT "" CACHE PATH "Path to the independent RPS_SDK repository.")
-
-if(RPS_SDK_ROOT STREQUAL "")
-  get_filename_component(
-    RPS_SDK_ROOT
-    "${ROOT_DIR}/../RPS_SDK"
-    ABSOLUTE
-  )
-  set(RPS_SDK_ROOT "${RPS_SDK_ROOT}" CACHE PATH "Path to the independent RPS_SDK repository." FORCE)
-endif()
-set(ROCK_PUBLIC_SDK_DIR "${RPS_SDK_ROOT}/SDK/ROCK")
-include_directories("${ROCK_PUBLIC_SDK_DIR}/include")
+# ROCK publishes its provider API from include/ROCK, the only copy of those
+# headers. Consumers add this include directory; there is no SDK copy.
+set(ROCK_PUBLIC_INCLUDE_DIR "${ROOT_DIR}/include")
+include_directories("${ROCK_PUBLIC_INCLUDE_DIR}")
 # RPS UI Framework publishes its own headers; ROCK binds it at runtime and works
 # without it (world drawing and UI input cooperation are then unavailable).
 set(RPSUI_INCLUDE_DIR "${WORKSPACE_ROOT}/../ui_mods/RPS_UI_Framework/SDK/include" CACHE PATH
@@ -206,25 +198,10 @@ if(NOT EXISTS "${RPSUI_INCLUDE_DIR}/RPSUIWorldDrawApi.h")
 endif()
 target_include_directories(${PROJECT_NAME} PRIVATE "${RPSUI_INCLUDE_DIR}")
 
-if(BUILD_ROCK_TESTS OR ROCK_PACKAGE_RELEASE)
-  foreach(ROCK_REQUIRED_SDK_PATH IN ITEMS
-      "${RPS_SDK_ROOT}/CMakeLists.txt"
-      "${RPS_SDK_ROOT}/tests/RockSdkContractTests.ps1"
-      "${ROCK_PUBLIC_SDK_DIR}/include/ROCK/Discovery.h"
-      "${ROCK_PUBLIC_SDK_DIR}/include/ROCK/Client.h"
-      "${ROCK_PUBLIC_SDK_DIR}/examples/CMakeLists.txt")
-    if(NOT EXISTS "${ROCK_REQUIRED_SDK_PATH}")
-      message(FATAL_ERROR
-        ">> Independent RPS_SDK is incomplete at '${RPS_SDK_ROOT}'; missing '${ROCK_REQUIRED_SDK_PATH}'.")
-    endif()
-  endforeach()
-  message(">>> Using independent ROCK SDK from: '${ROCK_PUBLIC_SDK_DIR}'")
-endif()
-
 include("${ROOT_DIR}/cmake/VerifyDistributionInputs.cmake")
 get_target_property(ROCK_BUILD_INPUTS ${PROJECT_NAME} SOURCES)
 rock_verify_distribution_inputs(
-  TREES "${ROOT_DIR}/data/mod" "${ROCK_PUBLIC_SDK_DIR}"
+  TREES "${ROOT_DIR}/data/mod" "${ROCK_PUBLIC_INCLUDE_DIR}"
   FILES ${ROCK_BUILD_INPUTS})
 
 if(POST_BUILD_COPY_PLUGIN)
@@ -267,7 +244,6 @@ if(ROCK_PACKAGE_RELEASE)
             -DPROJECT_FRIENDLY_NAME=${FRIENDLY_NAME}
             -DPROJECT_VERSION=${PROJECT_VERSION}
             -DROOT_DIR=${ROOT_DIR}
-            "-DRPS_SDK_ROOT=${RPS_SDK_ROOT}"
             -DBUILD_DIR=${BUILD_DIR}
             -DTARGET_FILE="$<TARGET_FILE:${PROJECT_NAME}>"
             -DTARGET_PDB_FILE="$<TARGET_PDB_FILE:${PROJECT_NAME}>"
@@ -293,10 +269,6 @@ if(BUILD_ROCK_TESTS)
 
   enable_testing()
 
-  add_subdirectory(
-    "${ROCK_PUBLIC_SDK_DIR}/examples"
-    "${BUILD_DIR}/sdk-examples"
-  )
 
   # Aggregate build target for every registered policy test. add_rock_test
   # attaches each test executable as a dependency, so the full-suite runner
@@ -305,6 +277,32 @@ if(BUILD_ROCK_TESTS)
   add_custom_target(ROCKPolicyTestBinaries)
 
   include("${ROOT_DIR}/cmake/RockTestRegistration.cmake")
+
+  # Public headers: each compiles alone inside a packed caller with only the
+  # public include directory, published records and tables keep their layout,
+  # and the one consumer example builds.
+  file(GLOB ROCK_PUBLIC_HEADERS CONFIGURE_DEPENDS "${ROCK_PUBLIC_INCLUDE_DIR}/ROCK/*.h")
+  set(ROCK_PUBLIC_HEADER_SOURCES "${BUILD_DIR}/public-header-tests/Main.cpp")
+  file(CONFIGURE OUTPUT "${BUILD_DIR}/public-header-tests/Main.cpp" CONTENT "int main() { return 0; }\n")
+  foreach(ROCK_PUBLIC_HEADER IN LISTS ROCK_PUBLIC_HEADERS)
+    get_filename_component(ROCK_PUBLIC_HEADER_NAME "${ROCK_PUBLIC_HEADER}" NAME_WE)
+    set(ROCK_PUBLIC_HEADER_SOURCE "${BUILD_DIR}/public-header-tests/${ROCK_PUBLIC_HEADER_NAME}.cpp")
+    file(CONFIGURE OUTPUT "${ROCK_PUBLIC_HEADER_SOURCE}"
+      CONTENT "#pragma pack(push, 1)\n#include <ROCK/${ROCK_PUBLIC_HEADER_NAME}.h>\n#pragma pack(pop)\n")
+    list(APPEND ROCK_PUBLIC_HEADER_SOURCES "${ROCK_PUBLIC_HEADER_SOURCE}")
+  endforeach()
+  add_executable(ROCKPublicHeaderTests ${ROCK_PUBLIC_HEADER_SOURCES} "${ROOT_DIR}/tests/ConsumerExample.cpp")
+  set_target_properties(ROCKPublicHeaderTests PROPERTIES INCLUDE_DIRECTORIES "${ROCK_PUBLIC_INCLUDE_DIR}")
+  target_compile_features(ROCKPublicHeaderTests PRIVATE cxx_std_20)
+  add_rock_test(ROCKPublicHeaderTests)
+  add_executable(ROCKPublicAbiLayoutTests "${ROOT_DIR}/tests/ModularAbiLayoutTests.cpp")
+  set_target_properties(ROCKPublicAbiLayoutTests PROPERTIES INCLUDE_DIRECTORIES "${ROCK_PUBLIC_INCLUDE_DIR};${ROOT_DIR}/tests")
+  target_compile_features(ROCKPublicAbiLayoutTests PRIVATE cxx_std_20)
+  add_rock_test(ROCKPublicAbiLayoutTests)
+  add_executable(ROCKNativeInteractionAbiTests "${ROOT_DIR}/tests/NativeInteractionAbiTests.cpp")
+  set_target_properties(ROCKNativeInteractionAbiTests PROPERTIES INCLUDE_DIRECTORIES "${ROCK_PUBLIC_INCLUDE_DIR}")
+  target_compile_features(ROCKNativeInteractionAbiTests PRIVATE cxx_std_20)
+  add_rock_test(ROCKNativeInteractionAbiTests)
 
   add_executable(ROCKSupportTriggerInputTests
     "${ROOT_DIR}/tests/SupportTriggerInputTests.cpp"
@@ -866,7 +864,7 @@ if(BUILD_ROCK_TESTS)
     "${ROOT_DIR}/tests/ProviderApiAbiTests.cpp"
   )
   target_compile_features(ROCKProviderApiAbiTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKProviderApiAbiTests PRIVATE ${SOURCE_DIR} "${RPS_SDK_ROOT}/tests")
+  target_include_directories(ROCKProviderApiAbiTests PRIVATE ${SOURCE_DIR} "${ROOT_DIR}/tests")
   add_rock_test(ROCKProviderApiAbiTests)
   add_executable(ROCKLooseWeaponStatePathTests "${ROOT_DIR}/tests/LooseWeaponStatePathTests.cpp")
   target_compile_features(ROCKLooseWeaponStatePathTests PRIVATE cxx_std_23)
@@ -1024,19 +1022,6 @@ if(BUILD_ROCK_TESTS)
 
   find_program(ROCK_POWERSHELL_EXECUTABLE NAMES pwsh powershell)
   if(ROCK_POWERSHELL_EXECUTABLE)
-    add_test(
-      NAME RpsSdkRockContractTests
-      COMMAND "${ROCK_POWERSHELL_EXECUTABLE}"
-              -NoProfile
-              -ExecutionPolicy Bypass
-              -File "${RPS_SDK_ROOT}/tests/RockSdkContractTests.ps1"
-              -Root "${RPS_SDK_ROOT}"
-    )
-    set_tests_properties(
-      RpsSdkRockContractTests
-      PROPERTIES LABELS "sdk" TIMEOUT 60
-    )
-
     file(GLOB ROCK_SOURCE_BOUNDARY_TESTS CONFIGURE_DEPENDS "${ROOT_DIR}/tests/*SourceTests.ps1")
     foreach(ROCK_SOURCE_BOUNDARY_TEST IN LISTS ROCK_SOURCE_BOUNDARY_TESTS)
       get_filename_component(ROCK_SOURCE_BOUNDARY_TEST_NAME "${ROCK_SOURCE_BOUNDARY_TEST}" NAME_WE)
@@ -1053,7 +1038,6 @@ if(BUILD_ROCK_TESTS)
         PROPERTIES
           LABELS "source-boundary"
           TIMEOUT 60
-          ENVIRONMENT "RPS_SDK_ROOT=${RPS_SDK_ROOT}"
       )
     endforeach()
   else()
