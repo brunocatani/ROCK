@@ -66,6 +66,7 @@ int main() {
     }
     verify(hands::table(),hands::kSupportedPermissions);
     verify(collision::table(),collision::kSupportedPermissions);
+    verify(storage::table(),storage::kSupportedPermissions);
     verify(grab::table(),grab::kSupportedPermissions);
     {
         const auto& api=grab::table();

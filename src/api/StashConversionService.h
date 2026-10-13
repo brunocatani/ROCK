@@ -1,5 +1,7 @@
 #pragma once
-#include <ROCK/StashConversion.h>
+#include <ROCK/Storage.h>
 namespace rock::stash_conversion {
-api::stash_conversion::Result convert(std::uint32_t reference,std::uint32_t base) noexcept;
+// Storage registerStashConverter.
+api::Status ROCK_CALL registerConverter(api::OwnerToken owner,api::storage::StashConverter converter,void* userData) noexcept;
+api::storage::StashResult convert(std::uint32_t reference,std::uint32_t base) noexcept;
 }

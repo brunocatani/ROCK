@@ -5,6 +5,7 @@
 namespace rock::api::core { const Api& table() noexcept { static const Api value{}; return value; } }
 namespace rock::api::hands { const Api& table() noexcept { static const Api value{}; return value; } }
 namespace rock::api::collision { const Api& table() noexcept { static const Api value{}; return value; } }
+namespace rock::api::storage { const Api& table() noexcept { static const Api value{}; return value; } }
 namespace rock::api::grab {
 namespace {
 saved_grab_offset::DefaultGrabPoseRegistry poses;

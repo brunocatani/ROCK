@@ -2126,17 +2126,6 @@ namespace rock::native_idle_grip_preharvest
         for (auto& warm : state.warm) releaseWarmResources(state, warm);
     }
 
-    void observeStoredDisplay(RE::NiPointer<RE::TESObjectREFR> candidate,RE::NiAVObject* displayRoot) noexcept
-    {
-        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::NativeIdleGripHarvest);
-        auto& state=runtime();
-        if(!claimOrValidateThread(state) || !advanceAndCanStart(state) || !candidate || !displayRoot) return;
-        auto description=describeLooseCandidate(candidate.get(),displayRoot);
-        if(!shouldStartCandidate(state,description,displayRoot)) return;
-        ROCK_LOG_INFO(Animation,"Preparing authored grip for stored display: ref={:08X} weapon={:08X}",description.referenceFormId,description.weaponFormId);
-        startJob(state,std::move(description));
-    }
-
     void observeInventoryDisplay(RE::TESObjectWEAP* weapon,RE::NiAVObject* root,RE::TBO_InstanceData* instance) noexcept
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::NativeIdleGripHarvest);

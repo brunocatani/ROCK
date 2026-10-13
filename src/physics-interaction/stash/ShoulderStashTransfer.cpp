@@ -79,12 +79,12 @@ namespace rock::shoulder_stash
 
         result.attempted = true;
         const auto conversion=stash_conversion::convert(result.formID,result.baseForm->formID);
-        if(conversion.decision!=api::stash_conversion::Decision::Pass) {
+        if(conversion.decision!=api::storage::StashDecision::Pass) {
             result.reason=TransferReason::ConsumerConversion;
-            result.success=conversion.decision==api::stash_conversion::Decision::Consumed;
+            result.success=conversion.decision==api::storage::StashDecision::Consumed;
             if(result.success) {
                 result.count=static_cast<std::int32_t>(conversion.count);
-                result.baseForm=RE::TESForm::GetFormByID<RE::TESBoundObject>(conversion.inventoryForm);
+                result.baseForm=RE::TESForm::GetFormByID<RE::TESBoundObject>(conversion.inventoryFormId);
                 result.untransferredRef.reset();
             }
             return result;

@@ -18,6 +18,7 @@
 #include <ROCK/PlayerController.h>
 #include <ROCK/Diagnostics.h>
 #include <ROCK/Configuration.h>
+#include <ROCK/Storage.h>
 namespace rock::api::core { const Api& table() noexcept; }
 namespace rock::api::hands { const Api& table() noexcept; }
 namespace rock::api::collision { const Api& table() noexcept; }
@@ -31,6 +32,7 @@ namespace rock::api::input { const Api& table() noexcept; }
 namespace rock::api::playercontroller { const Api& table() noexcept; }
 namespace rock::api::diagnostics { const ApiV1& table() noexcept; }
 namespace rock::api::configuration { const Api& table() noexcept; }
+namespace rock::api::storage { const Api& table() noexcept; }
 extern "C" rock::api::Status ROCK_CALL ROCKAPI_QueryInterfaceV1(
     rock::api::InterfaceId,std::uint32_t,std::uint32_t,std::uint32_t,
     const rock::api::InterfaceDescriptorV1**) noexcept;

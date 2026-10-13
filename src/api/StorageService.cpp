@@ -1,8 +1,8 @@
 #include "api/StorageService.h"
 #include "api/StorageSceneLookup.h"
+#include "api/StorageInteractionService.h"
+#include "api/StashConversionService.h"
 #include <ROCK/Storage.h>
-#include <ROCK/StorageFeedback.h>
-#include <ROCK/StorageDisplay.h>
 #include <cstring>
 #include "physics-interaction/hand/HandSelection.h"
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -24,9 +24,9 @@ namespace rock::storage_service
         namespace collision = collision_suppression_registry;
         struct Claim {
             std::uint64_t owner{}, token{}, deadline{};
-            std::uint32_t reference{}, weapon{};
+            std::uint32_t reference{};
             RE::ObjectRefHandle handle{};
-            bool stored{}, pinned{};
+            bool stored{};
         };
         struct Contact {
             std::uint64_t owner{}, grab{}, deadline{};
@@ -34,11 +34,11 @@ namespace rock::storage_service
         };
         // Access is confined to the established ROCK frame owner. No plugin
         // pointer or consumer callback is retained by these services.
-        std::array<Claim, contract::kMaximumClaims> claims;
+        std::array<Claim, contract::kMaxClaims> claims;
         std::array<Contact, 2> contacts;
         struct Feedback {
             api::OwnerToken owner{};
-            api::storage_feedback::CandidateV1 request;
+            contract::Candidate request;
             std::uint64_t deadline{}, retry{};
             RE::NiPointer<RE::TESObjectREFR> reference;
             VatsSelectionHighlight highlight;
@@ -51,7 +51,7 @@ namespace rock::storage_service
         }
         struct Display {
             api::OwnerToken owner{};
-            api::storage_display::SelectionV1 request;
+            contract::Selection request;
             std::uint64_t deadline{}, retry{};
             RE::NiPointer<RE::TESObjectREFR> parent;
             RE::NiPointer<RE::NiAVObject> node;
@@ -64,11 +64,8 @@ namespace rock::storage_service
         std::uint64_t nextToken{1};
         collision::SuppressionLeaseSet<128> bodies{collision::CollisionSuppressionOwner::ConsumerStorage};
 
-        bool pin(std::uint32_t reference, std::uint32_t weapon, bool enabled) noexcept
-        { (void)reference; (void)weapon; (void)enabled; return true; }
-
         api::Status authorize(api::OwnerToken owner, unsigned permission = 2)
-        { return provider::runtime::authorize(owner, api::InterfaceId::Grab, permission, true); }
+        { return provider::runtime::authorize(owner, api::InterfaceId::Storage, permission, true); }
         PhysicsInteraction* interaction()
         { return PhysicsInteraction::s_instance.load(std::memory_order_acquire); }
         bool held(PhysicsInteraction& physics, std::uint32_t reference)
@@ -77,7 +74,7 @@ namespace rock::storage_service
                 if (hand->isHolding() && hand->getHeldRef() && hand->getHeldRef()->formID == reference) return true;
             return false;
         }
-        api::Status validate(const contract::TargetV1* request, RE::NiPointer<RE::TESObjectREFR>& ref,
+        api::Status validate(const contract::Target* request, RE::NiPointer<RE::TESObjectREFR>& ref,
             provider::RockProviderFrameSnapshot& frame)
         {
             if (!request) return api::Status::InvalidArgument;
@@ -94,7 +91,7 @@ namespace rock::storage_service
                 return api::Status::TargetUnavailable;
             ref.reset(value); return api::Status::Ok;
         }
-        api::Status claim(api::OwnerToken owner, const contract::TargetV1* request, std::uint64_t* token) noexcept
+        api::Status claim(api::OwnerToken owner, const contract::Target* request, std::uint64_t* token) noexcept
         {
             if (token) *token = 0;
             if (!token) return api::Status::InvalidArgument;
@@ -115,12 +112,12 @@ namespace rock::storage_service
                     if (!entry.handle.get() || (!entry.stored && entry.deadline < frame.frameIndex) || authorize(entry.owner) != api::Status::Ok) entry = {};
                     else {
                         if (entry.owner != owner) return api::Status::OwnerConflict;
-                        entry.deadline = frame.frameIndex + 120; *token = entry.token; return api::Status::Ok;
+                        entry.deadline = frame.frameIndex + contract::kClaimReservationFrames; *token = entry.token; return api::Status::Ok;
                     }
                 }
                 if (!nextToken || nextToken == UINT64_MAX) return api::Status::CapacityFull;
                 for (auto& entry : claims) if (!entry.token) {
-                    entry = {owner, nextToken++, frame.frameIndex + 120, ref->formID, 0, ref->GetHandle()};
+                    entry = {owner, nextToken++, frame.frameIndex + contract::kClaimReservationFrames, ref->formID, ref->GetHandle()};
                     *token = entry.token; return api::Status::Ok;
                 }
                 return api::Status::CapacityFull;
@@ -138,10 +135,8 @@ namespace rock::storage_service
                     if (!ref || ref->IsDeleted()) return api::Status::TargetUnavailable;
                     if (held(*physics, entry.reference)) return api::Status::ObjectAlreadyOwned;
                     if (physics->storageHandoffPending(entry.reference)) return api::Status::Busy;
-                    auto* form = ref->GetObjectReference(); if (!form) return api::Status::TargetUnavailable;
-                    entry.weapon = form->As<RE::TESObjectWEAP>() ? form->formID : 0;
-                    if (entry.weapon && !pin(entry.reference, entry.weapon, true)) return api::Status::CapacityFull;
-                    entry.pinned = entry.weapon != 0; entry.stored = true;
+                    if (!ref->GetObjectReference()) return api::Status::TargetUnavailable;
+                    entry.stored = true;
                     return api::Status::Ok;
                 }
                 return api::Status::RequestNotFound;
@@ -152,7 +147,6 @@ namespace rock::storage_service
             try {
                 const auto status = authorize(owner, 0); if (status != api::Status::Ok) return status;
                 for (auto& entry : claims) if (token && entry.token == token && entry.owner == owner) {
-                    if (entry.pinned && !pin(entry.reference, entry.weapon, false)) return api::Status::Busy;
                     entry = {}; return api::Status::Ok;
                 }
                 return api::Status::RequestNotFound;
@@ -170,7 +164,7 @@ namespace rock::storage_service
                 return api::Status::Ok;
             } catch (...) { return api::Status::InternalError; }
         }
-        api::Status suppressContacts(api::OwnerToken owner, const contract::TargetV1* request) noexcept
+        api::Status suppressContacts(api::OwnerToken owner, const contract::Target* request) noexcept
         {
             try {
                 auto status = authorize(owner); if (status != api::Status::Ok) return status;
@@ -192,13 +186,13 @@ namespace rock::storage_service
                 return api::Status::Ok;
             } catch (...) { return api::Status::InternalError; }
         }
-        api::Status extractEquipped(api::OwnerToken owner, const contract::EquippedExtractionV1* request, std::uint32_t* reference) noexcept
+        api::Status extractEquipped(api::OwnerToken owner, const contract::EquippedExtraction* request, std::uint32_t* reference) noexcept
         {
             if (reference) *reference = 0;
             if (!request || !reference) return api::Status::InvalidArgument;
             if (request->size != sizeof(*request)) return api::Status::InvalidSize;
             if (request->version != 1) return api::Status::UnsupportedVersion;
-            if (request->reserved || !request->weapon || (request->hand != api::Hand::Left && request->hand != api::Hand::Right)) return api::Status::InvalidArgument;
+            if (!request->weaponFormId || (request->hand != api::Hand::Left && request->hand != api::Hand::Right)) return api::Status::InvalidArgument;
             try {
                 const auto status = authorize(owner); if (status != api::Status::Ok) return status;
                 provider::RockProviderFrameSnapshot frame;
@@ -206,7 +200,7 @@ namespace rock::storage_service
                 if (frame.worldGeneration != request->worldGeneration || frame.skeletonGeneration != request->skeletonGeneration ||
                     frame.providerGeneration != request->providerGeneration) return api::Status::GenerationMismatch;
                 auto* physics = interaction();
-                return physics ? physics->extractEquippedForStorage(request->hand == api::Hand::Left, request->weapon, *reference) : api::Status::NotReady;
+                return physics ? physics->extractEquippedForStorage(request->hand == api::Hand::Left, request->weaponFormId, *reference) : api::Status::NotReady;
             } catch (...) { return api::Status::InternalError; }
         }
         api::Status draw(api::OwnerToken owner, const api::grab::ForceGrabRequest* request, std::uint64_t* command) noexcept
@@ -234,7 +228,7 @@ namespace rock::storage_service
             auto& hand=request.hand==api::Hand::Left?physics.getLeftHand():physics.getRightHand();
             return hand.isHolding() && hand.getHeldRef()==value.reference.get() ? value.reference->Get3D() : nullptr;
         }
-        api::Status setCandidate(api::OwnerToken owner,const api::storage_feedback::CandidateV1* request) noexcept {
+        api::Status setCandidate(api::OwnerToken owner,const contract::Candidate* request) noexcept {
             if (!request) return api::Status::InvalidArgument;
             if (request->size!=sizeof(*request)) return api::Status::InvalidSize;
             if (request->version!=1) return api::Status::UnsupportedVersion;
@@ -295,7 +289,7 @@ namespace rock::storage_service
             auto* node=storage_scene_lookup::find(root,RE::BSFixedString(request.nodeName));
             return node && node!=root ? node : nullptr;
         }
-        api::Status setDisplay(api::OwnerToken owner,const api::storage_display::SelectionV1* request) noexcept
+        api::Status setSelection(api::OwnerToken owner,const contract::Selection* request) noexcept
         {
             if (!request) return api::Status::InvalidArgument;
             if (request->size!=sizeof(*request)) return api::Status::InvalidSize;
@@ -331,7 +325,7 @@ namespace rock::storage_service
                 return api::Status::Ok;
             } catch(...) { return api::Status::InternalError; }
         }
-        api::Status clearDisplay(api::OwnerToken owner,api::Hand hand) noexcept
+        api::Status clearSelection(api::OwnerToken owner,api::Hand hand) noexcept
         {
             if(hand!=api::Hand::Left && hand!=api::Hand::Right) return api::Status::InvalidArgument;
             try {
@@ -349,12 +343,6 @@ namespace rock::storage_service
                 return api::Status::Ok;
             } catch (...) { return api::Status::InternalError; }
         }
-    }
-    bool ownsStored(std::uint64_t owner,std::uint32_t reference)
-    {
-        return std::any_of(claims.begin(),claims.end(),[&](const auto& entry) {
-            return entry.owner==owner && entry.reference==reference && entry.stored && bool(entry.handle.get());
-        });
     }
     bool allowsGrab(std::uint32_t reference, std::uint64_t owner)
     {
@@ -417,24 +405,31 @@ namespace rock::storage_service
         for (auto& entry : claims) if (!entry.stored) entry = {};
     }
 }
-extern "C" __declspec(dllexport) const rock::api::storage_feedback::ApiV1* ROCK_CALL ROCK_StorageFeedback_QueryV1(
-    std::uint32_t major,std::uint32_t bytes) noexcept
-{
-    static const rock::api::storage_feedback::ApiV1 table{sizeof(table),1,rock::storage_service::setCandidate,rock::storage_service::clearCandidate};
-    return major==1 && bytes==sizeof(table)?&table:nullptr;
+namespace rock::api::storage {
+const Api& table() noexcept {
+    namespace claims = ::rock::storage_service;
+    namespace displays = ::rock::storage_interaction;
+    static const Api value{
+        &claims::claim,
+        &claims::commit,
+        &claims::release,
+        &claims::claimant,
+        &claims::suppressContacts,
+        &claims::clearContacts,
+        &claims::extractEquipped,
+        &claims::draw,
+        &claims::setCandidate,
+        &claims::clearCandidate,
+        &claims::setSelection,
+        &claims::clearSelection,
+        &displays::setDisplay,
+        &displays::clearDisplay,
+        &displays::getDisplayContact,
+        &displays::getAuthoredGrip,
+        &displays::setShoulderRouting,
+        &displays::clearDisplaysAndRouting,
+        &::rock::stash_conversion::registerConverter,
+    };
+    return value;
 }
-extern "C" __declspec(dllexport) const rock::api::storage::ApiV1* ROCK_CALL ROCK_Storage_QueryV1(
-    std::uint32_t major, std::uint32_t bytes) noexcept
-{
-    using namespace rock;
-    static const api::storage::ApiV1 api{sizeof(api::storage::ApiV1),1,
-        storage_service::claim, storage_service::commit, storage_service::release,
-        storage_service::claimant, storage_service::suppressContacts, storage_service::clearContacts, storage_service::extractEquipped, storage_service::draw};
-    return major == 1 && bytes == sizeof(api) ? &api : nullptr;
-}
-extern "C" __declspec(dllexport) const rock::api::storage_display::ApiV1* ROCK_CALL ROCK_StorageDisplay_QueryV1(
-    std::uint32_t major,std::uint32_t bytes) noexcept
-{
-    static const rock::api::storage_display::ApiV1 table{sizeof(table),1,rock::storage_service::setDisplay,rock::storage_service::clearDisplay};
-    return major==1 && bytes==sizeof(table)?&table:nullptr;
 }

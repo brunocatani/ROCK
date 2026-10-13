@@ -26,10 +26,6 @@ namespace rock::native_idle_grip_preharvest
     // These are off-screen animation resources, never equipment or firing state.
     [[nodiscard]] bool isSubgraphWarm(std::uint64_t handle) noexcept;
     void clearHeldWarmups() noexcept;
-    // Stored references are disabled and need not have their own loaded 3D.
-    // Identify the exact item from its handle and the frame-borrowed visible
-    // display. The existing one-slot probe owns/copies everything it retains.
-    void observeStoredDisplay(RE::NiPointer<RE::TESObjectREFR> candidate,RE::NiAVObject* displayRoot) noexcept;
     // Inventory-owned display: retain the exact instance data, but identify
     // authored poses in the display model's same local variant domain.
     void observeInventoryDisplay(RE::TESObjectWEAP*,RE::NiAVObject*,RE::TBO_InstanceData*) noexcept;

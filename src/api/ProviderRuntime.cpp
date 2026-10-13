@@ -282,9 +282,12 @@ namespace rock::provider::runtime
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceName);
     constexpr std::uint32_t kProviderInvalidBodyId = 0x7FFF'FFFFu;
 
+    // Interface IDs are 1-based; Storage is the highest.
+    constexpr std::uint32_t kInterfaceSlotCount = static_cast<std::uint32_t>(rock::api::InterfaceId::Storage);
+
     struct ConsumerSlot
     {
-        std::array<InterfaceBinding, 14> interfaces{};
+        std::array<InterfaceBinding, kInterfaceSlotCount> interfaces{};
         bool revoked{ false };
         bool pendingRevoke{ false };
         std::uint64_t token{ 0 };
@@ -3220,7 +3223,7 @@ namespace rock::provider::runtime {
         using rock::api::Status;
         if (events::inSynchronousCallback()) return Status::Busy;
         const auto id=static_cast<std::uint32_t>(family);
-        if (!owner || id<1 || id>14) return Status::InvalidArgument;
+        if (!owner || id<1 || id>kInterfaceSlotCount) return Status::InvalidArgument;
         {
             std::scoped_lock lock(s_consumerMutex);
             const auto* slot=findConsumerSlotLocked(owner);
@@ -3235,7 +3238,7 @@ namespace rock::provider::runtime {
         using rock::api::Status;
         if (events::inSynchronousCallback()) return Status::Busy;
         const auto id=static_cast<std::uint32_t>(family);
-        if (id<1 || id>14) return Status::UnknownInterface;
+        if (id<1 || id>kInterfaceSlotCount) return Status::UnknownInterface;
         const auto* registration = api::discovery::findRegistration(api::discovery::registeredInterfaces(), family, major);
         if (!registration) return Status::UnsupportedMajor;
         const auto supported = registration->permissions;
