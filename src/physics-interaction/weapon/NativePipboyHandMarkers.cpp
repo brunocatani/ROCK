@@ -122,12 +122,23 @@ namespace rock::native_pipboy_hand_markers
             ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters reached stage={} a={} b={}", kStageNames[static_cast<int>(stage)], a, b);
         }
 
+        // AS3 int and uint members arrive as Int/UInt values, not Number.
+        bool isNumeric(const Value& value)
+        {
+            return value.IsNumber() || value.IsInt() || value.IsUInt();
+        }
+        double numeric(const Value& value)
+        {
+            return value.IsNumber() ? value.GetNumber() : value.IsInt() ? static_cast<double>(value.GetInt()) :
+                value.IsUInt() ? static_cast<double>(value.GetUInt()) : 0.0;
+        }
+
         // AS3 Array or Vector length; GFx's array size does not cover Vectors.
         std::uint32_t lengthOf(const Value& value)
         {
             Value length;
-            return value.IsObject() && value.GetMember("length", &length) && length.IsNumber() && length.GetNumber() > 0 ?
-                static_cast<std::uint32_t>(length.GetNumber()) : 0u;
+            return value.IsObject() && value.GetMember("length", &length) && isNumeric(length) && numeric(length) > 0 ?
+                static_cast<std::uint32_t>(numeric(length)) : 0u;
         }
 
         bool member(const Value& object, const char* name, Value& out) noexcept
@@ -144,8 +155,8 @@ namespace rock::native_pipboy_hand_markers
         void showSquare(Value& icon, bool visible)
         {
             Value count;
-            if (!member(icon, "numChildren", count) || !count.IsNumber()) return;
-            const auto n = static_cast<int>(count.GetNumber());
+            if (!member(icon, "numChildren", count) || !isNumeric(count)) return;
+            const auto n = static_cast<int>(numeric(count));
             for (int i = 0; i < n && i < 16; ++i) {
                 Value child, name;
                 const Value index(static_cast<double>(i));
@@ -163,12 +174,12 @@ namespace rock::native_pipboy_hand_markers
             // the row's own font so it renders through the menu's font set.
             Value bounds, field, format, embed, x, y, w, h;
             if (!icon.Invoke("getBounds", &bounds, &icon, 1) || !member(bounds, "x", x) || !member(bounds, "y", y) ||
-                !member(bounds, "width", w) || !member(bounds, "height", h) || !x.IsNumber() || !h.IsNumber() ||
+                !member(bounds, "width", w) || !member(bounds, "height", h) || !isNumeric(x) || !isNumeric(h) ||
                 !member(entry, "textField", field) || !field.IsObject() || !field.Invoke("getTextFormat", &format) ||
                 !format.IsObject()) return false;
             movie->CreateObject(&out, "flash.text.TextField");
             if (!out.IsObject()) return false;
-            const double squareHeight = h.GetNumber();
+            const double squareHeight = numeric(h);
             format.SetMember("size", Value(std::max(8.0, squareHeight * 1.4)));
             format.SetMember("bold", Value(true));
             out.SetMember("name", Value(kLetterName));
@@ -179,14 +190,14 @@ namespace rock::native_pipboy_hand_markers
             out.SetMember("autoSize", Value("left"));
             out.SetMember("text", Value("R"));
             Value fieldWidth, fieldHeight;
-            if (member(out, "width", fieldWidth) && member(out, "height", fieldHeight) && fieldWidth.IsNumber() && fieldHeight.IsNumber()) {
-                out.SetMember("x", Value(x.GetNumber() + w.GetNumber() * 0.5 - fieldWidth.GetNumber() * 0.5));
-                out.SetMember("y", Value(y.GetNumber() + squareHeight * 0.5 - fieldHeight.GetNumber() * 0.5));
+            if (member(out, "width", fieldWidth) && member(out, "height", fieldHeight) && isNumeric(fieldWidth) && isNumeric(fieldHeight)) {
+                out.SetMember("x", Value(numeric(x) + numeric(w) * 0.5 - numeric(fieldWidth) * 0.5));
+                out.SetMember("y", Value(numeric(y) + squareHeight * 0.5 - numeric(fieldHeight) * 0.5));
             }
             if (!icon.Invoke("addChild", nullptr, &out, 1)) return false;
             if (s_reports.fetch_add(1, std::memory_order_relaxed) < 2)
                 ROCK_LOG_INFO(Weapon, "Pip-Boy hand letter created square=({:.1f},{:.1f} {:.1f}x{:.1f}) letterSize={:.1f}",
-                    x.GetNumber(), y.GetNumber(), w.IsNumber() ? w.GetNumber() : 0.0, squareHeight, std::max(8.0, squareHeight * 1.4));
+                    numeric(x), numeric(y), isNumeric(w) ? numeric(w) : 0.0, squareHeight, std::max(8.0, squareHeight * 1.4));
             return true;
         }
 
@@ -194,8 +205,8 @@ namespace rock::native_pipboy_hand_markers
         {
             Value entries, count;
             if (!member(list, "entryList", entries) || !entries.IsObject() ||
-                !member(list, "uiNumListItems", count) || !count.IsNumber()) return;
-            const auto clips = static_cast<int>(count.GetNumber());
+                !member(list, "uiNumListItems", count) || !isNumeric(count)) return;
+            const auto clips = static_cast<int>(numeric(count));
             const auto size = lengthOf(entries);
             reach(Stage::List, size, static_cast<std::uint32_t>(clips));
             for (int c = 0; c < clips && c < 64; ++c) {
@@ -205,10 +216,10 @@ namespace rock::native_pipboy_hand_markers
                     !member(clip, "EquipIcon_mc", icon) || !icon.IsObject()) continue;
                 std::string hand;
                 if (member(clip, "visible", visible) && visible.IsBoolean() && visible.GetBoolean() &&
-                    member(clip, "itemIndex", index) && index.IsNumber() && index.GetNumber() >= 0 && index.GetNumber() < size) {
+                    member(clip, "itemIndex", index) && isNumeric(index) && numeric(index) >= 0 && numeric(index) < size) {
                     reach(Stage::VisibleRow, static_cast<std::uint32_t>(c));
                     Value data, marker;
-                    const auto key = std::to_string(static_cast<std::uint32_t>(index.GetNumber()));
+                    const auto key = std::to_string(static_cast<std::uint32_t>(numeric(index)));
                     if (entries.GetMember(key.c_str(), &data) && data.IsObject()) reach(Stage::RowData);
                     if (data.IsObject() && member(data, kHandMember, marker)) {
                         const auto slot = text(marker);
@@ -237,12 +248,21 @@ namespace rock::native_pipboy_hand_markers
             }
         }
 
+        void stop(const char* step)
+        {
+            if (s_deepest != Stage::None) return;
+            static const char* reported = nullptr; // Movie thread only.
+            if (reported == step) return;
+            reported = step;
+            ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters stopped before the menu: {}", step);
+        }
+
         void updateMovie(RE::Scaleform::GFx::Movie* movie)
         {
             Value menu, pages;
-            if (!movie->GetVariable(&menu, "root.Menu_mc") || !menu.IsObject() ||
-                !member(menu, "PageA", pages) || !pages.IsObject()) return;
-            reach(Stage::Menu);
+            if (!movie->GetVariable(&menu, "root.Menu_mc") || !menu.IsObject()) return stop("root.Menu_mc");
+            if (!member(menu, "PageA", pages) || !pages.IsObject()) return stop("PageA");
+            reach(Stage::Menu, lengthOf(pages));
             // PageA is a Vector.<PipboyLoader>.
             const auto n = lengthOf(pages);
             for (std::uint32_t i = 0; i < n && i < 8; ++i) {
@@ -268,20 +288,38 @@ namespace rock::native_pipboy_hand_markers
         Advance s_advance = nullptr;
         void* s_lastMovie = nullptr; // Movie thread only.
 
+        void refresh(RE::Scaleform::GFx::Movie* movie, const char* source)
+        {
+            if (movie != s_lastMovie) {
+                s_lastMovie = movie;
+                s_deepest = Stage::None;
+                ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters first refresh movie={:#x} source={}",
+                    reinterpret_cast<std::uintptr_t>(movie), source);
+            }
+            updateMovie(movie);
+        }
+
         void advanceMovie(void* menu, float delta, std::uint64_t time)
         {
             s_advance(menu, delta, time);
             try {
                 RE::Scaleform::GFx::Movie* movie = nullptr;
                 if (!native_memory::tryReadField(menu, kMenuMovieOffset, movie) || !movie) return;
-                if (movie != s_lastMovie) {
-                    s_lastMovie = movie;
-                    s_deepest = Stage::None;
-                }
-                updateMovie(movie);
+                refresh(movie, "advance");
             } catch (...) {
                 OutputDebugStringA("ROCK: Pip-Boy hand letters failed\n");
             }
+        }
+    }
+
+    void onPipboyCodeCall(void* menu) noexcept
+    {
+        if (!s_installed) return;
+        try {
+            RE::Scaleform::GFx::Movie* movie = nullptr;
+            if (native_memory::tryReadField(menu, kMenuMovieOffset, movie) && movie) refresh(movie, "code-call");
+        } catch (...) {
+            OutputDebugStringA("ROCK: Pip-Boy hand letters failed\n");
         }
     }
 

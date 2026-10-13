@@ -1,6 +1,7 @@
 #include "physics-interaction/input/NativePipboyHandInput.h"
 
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/weapon/NativePipboyHandMarkers.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "RE/Bethesda/InputEvent.h"
 #include "RE/Bethesda/UIMessage.h"
@@ -247,6 +248,7 @@ namespace rock::native_pipboy_hand_input
 
         void flashCall(void* menu, const RE::Scaleform::GFx::FunctionHandler::Params& params) noexcept
         {
+            native_pipboy_hand_markers::onPipboyCodeCall(menu);
             if (reinterpret_cast<std::uintptr_t>(params.userData) == 12) {
                 trace("inventory-callback", s_origin, menu, params.argCount);
                 if (s_origin.hand == Hand::None) {
