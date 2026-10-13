@@ -237,32 +237,32 @@ namespace rock::provider::runtime
         static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::RequireMatchingTarget) |
         static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::UseVelocityHavok);
     constexpr std::uint32_t kImplementedHandInputSuppressionFlagsV1 =
-        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord) |
-        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput) |
-        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressNativeVats) |
-        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressNativeVans) |
-        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressGrenadeQuickDraw) |
-        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::ReserveTriggerGripChord) |
-        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::ReserveButtonChord);
+        static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressConfigModeChord) |
+        static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressOpenVrGameInput) |
+        static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressNativeVats) |
+        static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressNativeVans) |
+        static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressGrenadeQuickDraw) |
+        static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::ReserveTriggerGripChord) |
+        static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::ReserveButtonChord);
     std::uint32_t effectiveHandInputSuppressionFlags(RockProviderHand hand, std::uint32_t flags, std::uint64_t leftChord, std::uint64_t rightChord)
     {
-        const auto reservation = static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::ReserveTriggerGripChord);
+        const auto reservation = static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::ReserveTriggerGripChord);
         const bool reserved = (flags & reservation) != 0;
         flags &= ~reservation;
         if (reserved && rock::input_remap_runtime::isTriggerGripChordHeld(hand == RockProviderHand::Left)) {
-            flags |= static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord) |
-                static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput);
+            flags |= static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressConfigModeChord) |
+                static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressOpenVrGameInput);
         }
-        const auto generic = static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::ReserveButtonChord);
+        const auto generic = static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::ReserveButtonChord);
         const bool chordReserved = (flags & generic) != 0;
         flags &= ~generic;
         if (chordReserved && (leftChord || rightChord) &&
             rock::input_remap_runtime::areRawButtonsHeld(true, leftChord) &&
             rock::input_remap_runtime::areRawButtonsHeld(false, rightChord)) {
-            flags |= static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord) |
-                static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput) |
-                static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressNativeVats) |
-                static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressNativeVans);
+            flags |= static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressConfigModeChord) |
+                static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressOpenVrGameInput) |
+                static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressNativeVats) |
+                static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressNativeVans);
         }
         return flags;
     }
@@ -335,8 +335,8 @@ namespace rock::provider::runtime
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
-        RockProviderSuppressionInvalidationReasonV1 lastInvalidationReason{
-            RockProviderSuppressionInvalidationReasonV1::None
+        ::rock::api::input::SuppressionInvalidationReason lastInvalidationReason{
+            ::rock::api::input::SuppressionInvalidationReason::None
         };
         std::uint64_t lastInvalidatedFrame{ 0 };
     };
@@ -738,8 +738,8 @@ namespace rock::provider::runtime
                 RockProviderAuthorityKindV1::HandVisual,
                 static_cast<std::uint32_t>(
                     generationChanged ?
-                        RockProviderSuppressionInvalidationReasonV1::GenerationChanged :
-                        RockProviderSuppressionInvalidationReasonV1::Expired));
+                        ::rock::api::input::SuppressionInvalidationReason::GenerationChanged :
+                        ::rock::api::input::SuppressionInvalidationReason::Expired));
         }
     }
 
@@ -791,8 +791,8 @@ namespace rock::provider::runtime
                 RockProviderAuthorityKindV1::EquippedWeaponHandling,
                 static_cast<std::uint32_t>(
                     generationChanged ?
-                        RockProviderSuppressionInvalidationReasonV1::GenerationChanged :
-                        RockProviderSuppressionInvalidationReasonV1::Expired));
+                        ::rock::api::input::SuppressionInvalidationReason::GenerationChanged :
+                        ::rock::api::input::SuppressionInvalidationReason::Expired));
             s_equippedWeaponHandlingAuthority = {};
         }
     }
@@ -860,7 +860,7 @@ namespace rock::provider::runtime
     }
 
     void clearOffhandReservationLocked(
-        const RockProviderSuppressionInvalidationReasonV1 reason)
+        const ::rock::api::input::SuppressionInvalidationReason reason)
     {
         const auto ownerToken = s_offhandReservationSlot.ownerToken;
         s_offhandReservationSlot = {};
@@ -888,8 +888,8 @@ namespace rock::provider::runtime
                 s_offhandReservationSlot.expiresAfterFrame)) {
             clearOffhandReservationLocked(
                 generationChanged ?
-                    RockProviderSuppressionInvalidationReasonV1::GenerationChanged :
-                    RockProviderSuppressionInvalidationReasonV1::Expired);
+                    ::rock::api::input::SuppressionInvalidationReason::GenerationChanged :
+                    ::rock::api::input::SuppressionInvalidationReason::Expired);
         }
     }
 
@@ -917,8 +917,8 @@ namespace rock::provider::runtime
                 RockProviderAuthorityKindV1::NativeAnimationRuntime,
                 static_cast<std::uint32_t>(
                     generationChanged ?
-                        RockProviderSuppressionInvalidationReasonV1::GenerationChanged :
-                        RockProviderSuppressionInvalidationReasonV1::Expired));
+                        ::rock::api::input::SuppressionInvalidationReason::GenerationChanged :
+                        ::rock::api::input::SuppressionInvalidationReason::Expired));
         }
     }
 
@@ -936,8 +936,8 @@ namespace rock::provider::runtime
                     frameIndex,
                     slot.expiresAfterFrame)) {
                 const auto reason = generationChanged ?
-                    RockProviderSuppressionInvalidationReasonV1::GenerationChanged :
-                    RockProviderSuppressionInvalidationReasonV1::Expired;
+                    ::rock::api::input::SuppressionInvalidationReason::GenerationChanged :
+                    ::rock::api::input::SuppressionInvalidationReason::Expired;
                 publishAuthorityLostEvent(
                     slot.ownerToken,
                     RockProviderAuthorityKindV1::HandInputSuppression,
@@ -953,8 +953,8 @@ namespace rock::provider::runtime
     void clearHandInputSuppressionsForOwnerLocked(
         std::uint64_t ownerToken,
         RockProviderHand hand,
-        RockProviderSuppressionInvalidationReasonV1 reason =
-            RockProviderSuppressionInvalidationReasonV1::ExplicitClear)
+        ::rock::api::input::SuppressionInvalidationReason reason =
+            ::rock::api::input::SuppressionInvalidationReason::ExplicitClear)
     {
         for (auto& slot : s_handInputSuppressions) {
             if (!slot.active || slot.ownerToken != ownerToken) {
@@ -1003,8 +1003,8 @@ namespace rock::provider::runtime
                     RockProviderAuthorityKindV1::NativeAnimation,
                     static_cast<std::uint32_t>(
                         generationChanged ?
-                            RockProviderSuppressionInvalidationReasonV1::GenerationChanged :
-                            RockProviderSuppressionInvalidationReasonV1::Expired));
+                            ::rock::api::input::SuppressionInvalidationReason::GenerationChanged :
+                            ::rock::api::input::SuppressionInvalidationReason::Expired));
                 slot = {};
                 changed = true;
             }
@@ -1057,7 +1057,7 @@ namespace rock::provider::runtime
                     slot.ownerToken,
                     RockProviderAuthorityKindV1::WeaponPartDrive,
                     static_cast<std::uint32_t>(
-                        RockProviderSuppressionInvalidationReasonV1::Expired));
+                        ::rock::api::input::SuppressionInvalidationReason::Expired));
                 slot = {};
             }
         }
@@ -1582,7 +1582,7 @@ namespace rock::provider::runtime
             clearHandInputSuppressionsForOwnerLocked(
                 ownerToken,
                 RockProviderHand::None,
-                RockProviderSuppressionInvalidationReasonV1::CallbackFault);
+                ::rock::api::input::SuppressionInvalidationReason::CallbackFault);
             clearWeaponPartTargetsForOwnerLocked(ownerToken);
             clearWeaponPartDrivesForOwnerLocked(ownerToken);
             clearNativeAnimationAuthorityForOwnerLocked(ownerToken);
@@ -1600,7 +1600,7 @@ namespace rock::provider::runtime
             std::scoped_lock lock(s_offhandReservationMutex);
             if (s_offhandReservationSlot.ownerToken == ownerToken) {
                 clearOffhandReservationLocked(
-                    RockProviderSuppressionInvalidationReasonV1::CallbackFault);
+                    ::rock::api::input::SuppressionInvalidationReason::CallbackFault);
             }
         }
         {
@@ -1633,7 +1633,7 @@ namespace rock::provider::runtime
             ownerToken,
             RockProviderAuthorityKindV1::Unknown,
             static_cast<std::uint32_t>(
-                RockProviderSuppressionInvalidationReasonV1::CallbackFault));
+                ::rock::api::input::SuppressionInvalidationReason::CallbackFault));
     }
 
 
@@ -2735,7 +2735,7 @@ namespace rock::provider
                 slot.active = false;
                 slot.flags = 0;
                 slot.lastInvalidationReason =
-                    RockProviderSuppressionInvalidationReasonV1::ProviderLost;
+                    ::rock::api::input::SuppressionInvalidationReason::ProviderLost;
                 slot.lastInvalidatedFrame = currentProviderFrameIndex();
             }
         }
@@ -2801,11 +2801,11 @@ namespace rock::provider
         {
             std::scoped_lock lock(s_offhandReservationMutex);
             clearOffhandReservationLocked(
-                RockProviderSuppressionInvalidationReasonV1::ProviderLost);
+                ::rock::api::input::SuppressionInvalidationReason::ProviderLost);
         }
 
         constexpr auto providerLost = static_cast<std::uint32_t>(
-            RockProviderSuppressionInvalidationReasonV1::ProviderLost);
+            ::rock::api::input::SuppressionInvalidationReason::ProviderLost);
         for (std::uint32_t index = 0;
              index < suppressionOwnerCount;
              ++index) {

@@ -23,7 +23,7 @@ namespace rock::provider::events {
     api::Status copy(api::OwnerToken,std::uint64_t,api::weapon::EventV1*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::weaponparts::EventV1*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::animation::Event*,std::uint32_t,api::Stream&);
-    api::Status copy(api::OwnerToken,std::uint64_t,api::input::EventV1*,std::uint32_t,api::Stream&);
+    api::Status copy(api::OwnerToken,std::uint64_t,api::input::Event*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::diagnostics::EventV1*,std::uint32_t,api::Stream&);
     bool inSynchronousCallback() noexcept;
     api::Status setGrabCallback(api::OwnerToken,api::grab::EventCallbackV1,void*);

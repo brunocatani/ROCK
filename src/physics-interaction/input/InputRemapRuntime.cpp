@@ -587,7 +587,7 @@ namespace rock::input_remap_runtime
                 provider::RockProviderHand::Left : provider::RockProviderHand::Right;
             return s_providerOpenVrGameInputSuppressed[controllerIndex(hand)].load(std::memory_order_acquire) ||
                 provider::hasHandInputSuppressionFlagV1(provider::currentHandInputSuppressionFlagsV1(physicalHand),
-                    provider::RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput);
+                    ::rock::api::input::HandInputSuppressionFlag::SuppressOpenVrGameInput);
         }
 
         [[nodiscard]] bool isAnyProviderOpenVrGameInputSuppressed()
@@ -621,8 +621,8 @@ namespace rock::input_remap_runtime
             const bool eligible = s_bareFistAdmissionUntil.load(std::memory_order_acquire) != 0 &&
                 s_gameplayInputAllowed.load(std::memory_order_acquire) && !isInputBlockingMenuActive() &&
                 (currentProviderHandInputSuppressionFlagsAtDispatch() &
-                    (static_cast<std::uint32_t>(provider::RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord) |
-                     static_cast<std::uint32_t>(provider::RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput))) == 0;
+                    (static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressConfigModeChord) |
+                     static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressOpenVrGameInput))) == 0;
             auto cycle = s_bareFistCycle.load(std::memory_order_acquire);
             const auto next = bare_fist_gesture::observe(
                 cycle, eligible, buttons, interrupted);
@@ -642,7 +642,7 @@ namespace rock::input_remap_runtime
 
             return provider::hasHandInputSuppressionFlagV1(
                 currentProviderHandInputSuppressionFlagsAtDispatch(),
-                provider::RockProviderHandInputSuppressionFlagV1::
+                ::rock::api::input::HandInputSuppressionFlag::
                     SuppressOpenVrGameInput);
         }
 
@@ -1994,7 +1994,7 @@ namespace rock::input_remap_runtime
                 isAnyProviderOpenVrGameInputSuppressed() ||
                 provider::hasHandInputSuppressionFlagV1(
                     flags,
-                    provider::RockProviderHandInputSuppressionFlagV1::
+                    ::rock::api::input::HandInputSuppressionFlag::
                         SuppressOpenVrGameInput);
             const float holdSeconds =
                 readNativeVansHoldThresholdSeconds();
@@ -2013,8 +2013,7 @@ namespace rock::input_remap_runtime
                             g_rockConfig.rockSuppressNativeVats ||
                             provider::hasHandInputSuppressionFlagV1(
                                 flags,
-                                provider::
-                                    RockProviderHandInputSuppressionFlagV1::
+                                ::rock::api::input::HandInputSuppressionFlag::
                                         SuppressNativeVats),
                         .suppressVans = true,
                         .reserveHoldGesture = true,
@@ -2050,7 +2049,7 @@ namespace rock::input_remap_runtime
             return s_gameplayInputAllowed.load(std::memory_order_acquire) &&
                 !isInputBlockingMenuActive() &&
                 !provider::hasHandInputSuppressionFlagV1(flags,
-                    provider::RockProviderHandInputSuppressionFlagV1::SuppressGrenadeQuickDraw) &&
+                    ::rock::api::input::HandInputSuppressionFlag::SuppressGrenadeQuickDraw) &&
                 !isAnyProviderOpenVrGameInputSuppressedAtDispatch();
         }
 
@@ -2577,7 +2576,7 @@ namespace rock::input_remap_runtime
     std::uint32_t uiInputSuppressionFlags(bool isLeft) noexcept
     {
         if (uiCapturedButtons(isLeft) == 0) return 0;
-        using Flag = provider::RockProviderHandInputSuppressionFlagV1;
+        using Flag = ::rock::api::input::HandInputSuppressionFlag;
         return static_cast<std::uint32_t>(Flag::SuppressConfigModeChord) |
             static_cast<std::uint32_t>(Flag::SuppressOpenVrGameInput) |
             static_cast<std::uint32_t>(Flag::SuppressNativeVats) |

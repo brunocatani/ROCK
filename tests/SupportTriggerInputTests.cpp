@@ -25,10 +25,10 @@ int main() {
     for (bool left : {true,false}) {
         control::reset();control::gameMask(true,0);control::gameMask(false,0);
         ::grip.flags=1|2|(left?0:4);raw={true,true};
-        input::v1_5::SupportTriggerRequest request;
+        input::SupportTriggerRequest request;
         request.weaponFormId=123;request.weaponGenerationKey=456;request.sample=sample;request.hand=left?Hand::Left:Hand::Right;
         assert(control::set(1,request)==Status::Ok);
-        input::v1_5::SupportTriggerState state;control::read(state);auto before=state.pressSequence;
+        input::SupportTriggerState state;control::read(state);auto before=state.pressSequence;
         assert(control::gameMask(left,trigger|gripButton)==trigger && control::gameMask(!left,trigger)==0);
         assert(control::set(2,request)==Status::Busy && control::clear(2)==Status::Busy);
         auto tick=[&]{++sample.frameIndex;request.sample=sample;assert(control::set(1,request)==Status::Ok);control::beginFrame(sample.frameIndex);control::read(state);};

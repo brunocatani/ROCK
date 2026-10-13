@@ -1,6 +1,6 @@
 // Private Input service operations. Included after shared owner/lifecycle helpers.
 
-    api::Status getPlacementClickState(api::input::v1_1::PlacementClickState& output)
+    api::Status getPlacementClickState(api::input::PlacementClickState& output)
     {
         const auto access=s_physicsInteraction.borrow();
         const auto* pi=access.get();
@@ -11,18 +11,19 @@
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiSetHandInputSuppressionV1(
         std::uint64_t ownerToken,
-        const RockProviderHandInputSuppressionRequestV1* request)
+        const ::rock::api::input::HandInputSuppressionRequest* request)
     {
         if (!request || ownerToken == 0) {
             return RockProviderResultV1::InvalidArgument;
         }
-        if (request->size != sizeof(RockProviderHandInputSuppressionRequestV1)) {
+        if (request->size != sizeof(::rock::api::input::HandInputSuppressionRequest)) {
             return RockProviderResultV1::InvalidSize;
         }
         if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
             return RockProviderResultV1::UnsupportedVersion;
         }
-        if (request->hand != RockProviderHand::Right && request->hand != RockProviderHand::Left) {
+        const auto requestHand = static_cast<RockProviderHand>(request->hand);
+        if (requestHand != RockProviderHand::Right && requestHand != RockProviderHand::Left) {
             return RockProviderResultV1::HandUnavailable;
         }
         if (request->flags == 0 || (request->flags & ~kImplementedHandInputSuppressionFlagsV1) != 0) {
@@ -32,12 +33,12 @@
             return RockProviderResultV1::InvalidArgument;
         }
 
-        const auto leftChord = (static_cast<std::uint64_t>(request->chordButtonsHigh[0]) << 32) | request->chordButtonsLow[0];
-        const auto rightChord = (static_cast<std::uint64_t>(request->chordButtonsHigh[1]) << 32) | request->chordButtonsLow[1];
+        const auto leftChord = request->chordButtons[0];
+        const auto rightChord = request->chordButtons[1];
         constexpr auto allowedButtons = (1ull << 1) | (1ull << 2) | (1ull << 7) | (1ull << 32) | (1ull << 33);
-        if (hasHandInputSuppressionFlagV1(request->flags, RockProviderHandInputSuppressionFlagV1::ReserveButtonChord) &&
+        if (hasHandInputSuppressionFlagV1(request->flags, ::rock::api::input::HandInputSuppressionFlag::ReserveButtonChord) &&
             (((leftChord | rightChord) & ~allowedButtons) != 0 ||
-             !(request->hand == RockProviderHand::Left ? leftChord : rightChord))) {
+             !(requestHand == RockProviderHand::Left ? leftChord : rightChord))) {
             return RockProviderResultV1::InvalidArgument;
         }
 
@@ -64,7 +65,7 @@
 
         pruneExpiredHandInputSuppressionsLocked(frameIndex);
         for (auto& slot : s_handInputSuppressions) {
-            if (slot.active && slot.ownerToken == ownerToken && slot.hand == request->hand) {
+            if (slot.active && slot.ownerToken == ownerToken && slot.hand == requestHand) {
                 slot.flags = request->flags;
                 slot.leftChord = leftChord; slot.rightChord = rightChord;
                 slot.expiresAfterFrame = expiresAfterFrame;
@@ -72,7 +73,7 @@
                 slot.skeletonGeneration = request->skeletonGeneration;
                 slot.providerGeneration = request->providerGeneration;
                 slot.lastInvalidationReason =
-                    RockProviderSuppressionInvalidationReasonV1::None;
+                    ::rock::api::input::SuppressionInvalidationReason::None;
                 slot.lastInvalidatedFrame = 0;
                 return RockProviderResultV1::Ok;
             }
@@ -83,7 +84,7 @@
                 slot = HandInputSuppressionSlot{
                     .active = true,
                     .ownerToken = ownerToken,
-                    .hand = request->hand,
+                    .hand = requestHand,
                     .flags = request->flags,
                     .leftChord = leftChord, .rightChord = rightChord,
                     .expiresAfterFrame = expiresAfterFrame,
@@ -91,7 +92,7 @@
                     .skeletonGeneration = request->skeletonGeneration,
                     .providerGeneration = request->providerGeneration,
                     .lastInvalidationReason =
-                        RockProviderSuppressionInvalidationReasonV1::None,
+                        ::rock::api::input::SuppressionInvalidationReason::None,
                     .lastInvalidatedFrame = 0,
                 };
                 return RockProviderResultV1::Ok;
@@ -122,10 +123,10 @@
         return RockProviderResultV1::Ok;
     }
 
-    bool ROCK_PROVIDER_CALL apiGetRawWandButtonStateV1(RockProviderHand hand, std::uint32_t buttonId, RockProviderRawWandButtonStateV1* outState)
+    bool ROCK_PROVIDER_CALL apiGetRawWandButtonStateV1(RockProviderHand hand, std::uint32_t buttonId, ::rock::api::input::RawWandButtonState* outState)
     {
         provider_state_policy::clearQueryOutput(outState);
-        if (!outState || outState->size != sizeof(RockProviderRawWandButtonStateV1)) {
+        if (!outState || outState->size != sizeof(::rock::api::input::RawWandButtonState)) {
             return false;
         }
         if (hand != RockProviderHand::Left && hand != RockProviderHand::Right) {
@@ -138,14 +139,12 @@
         // Level state only by design: ROCK consumes its press/release edge queues internally each frame, so exposing them would race consumers.
         const auto raw = rock::input_remap_runtime::peekRawButtonState(hand == RockProviderHand::Left, static_cast<int>(buttonId));
         *outState = {};
-        outState->size = sizeof(RockProviderRawWandButtonStateV1);
-        outState->version = ROCK_PROVIDER_API_VERSION;
         outState->available = raw.available ? 1u : 0u;
         outState->held = raw.held ? 1u : 0u;
         outState->sampleSequence = raw.sampleSequence;
         outState->sampleAgeMilliseconds = raw.sampleAgeMilliseconds;
         outState->availabilityReason =
-            static_cast<RockProviderInputAvailabilityReasonV1>(
+            static_cast<::rock::api::input::InputAvailabilityReason>(
                 raw.availabilityReason);
         return true;
     }
@@ -158,14 +157,14 @@
     RockProviderResultV1 ROCK_PROVIDER_CALL apiGetHandInputSuppressionStateV1(
         const std::uint64_t ownerToken,
         const RockProviderHand hand,
-        RockProviderHandInputSuppressionStateV1* outState)
+        ::rock::api::input::HandInputSuppressionState* outState)
     {
         provider_state_policy::clearQueryOutput(outState);
         if (ownerToken == 0 || !outState ||
             (hand != RockProviderHand::Right && hand != RockProviderHand::Left)) {
             return RockProviderResultV1::InvalidArgument;
         }
-        if (outState->size < sizeof(RockProviderHandInputSuppressionStateV1)) {
+        if (outState->size < sizeof(::rock::api::input::HandInputSuppressionState)) {
             return RockProviderResultV1::InvalidSize;
         }
         const auto frameIndex = currentProviderFrameIndex();
@@ -179,11 +178,11 @@
         pruneExpiredHandInputSuppressionsLocked(frameIndex);
 
         *outState = {};
-        outState->frameIndex = frameIndex;
-        outState->hand = hand;
+        outState->leaseFrameIndex = frameIndex;
+        outState->hand = static_cast<api::Hand>(hand);
         if (rock::input_remap_runtime::ownsBareFistInput()) {
             outState->effectiveFlags = static_cast<std::uint32_t>(
-                RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord);
+                ::rock::api::input::HandInputSuppressionFlag::SuppressConfigModeChord);
         }
         for (const auto& slot : s_handInputSuppressions) {
             if (slot.hand != hand) {
@@ -204,7 +203,7 @@
                         frameIndex,
                         slot.expiresAfterFrame);
             } else if (outState->lastInvalidationReason ==
-                       RockProviderSuppressionInvalidationReasonV1::None) {
+                       ::rock::api::input::SuppressionInvalidationReason::None) {
                 outState->lastInvalidationReason =
                     slot.lastInvalidationReason;
             }
@@ -212,9 +211,7 @@
         {
             std::scoped_lock snapshotLock(s_snapshotMutex);
             if (s_hasSnapshot) {
-                outState->worldGeneration = s_lastSnapshot.worldGeneration;
-                outState->skeletonGeneration = s_lastSnapshot.skeletonGeneration;
-                outState->providerGeneration = s_lastSnapshot.providerGeneration;
+                outState->sample = toCoreSnapshot(s_lastSnapshot).sample;
             }
         }
         return RockProviderResultV1::Ok;
@@ -222,21 +219,17 @@
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiGetLogicalInputActionStateV1(
         const std::uint64_t ownerToken,
-        const RockProviderLogicalInputActionV1 action,
-        RockProviderLogicalInputActionStateV1* outState)
+        const ::rock::api::input::LogicalInputAction action,
+        ::rock::api::input::LogicalInputActionState* outState)
     {
         provider_state_policy::clearQueryOutput(outState);
         if (ownerToken == 0 || !outState) {
             return RockProviderResultV1::InvalidArgument;
         }
-        if (outState->size < sizeof(RockProviderLogicalInputActionStateV1)) {
+        if (outState->size < sizeof(::rock::api::input::LogicalInputActionState)) {
             return RockProviderResultV1::InvalidSize;
         }
-        if (outState->version == 0 ||
-            outState->version > ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV1::UnsupportedVersion;
-        }
-        if (action != RockProviderLogicalInputActionV1::Jump) {
+        if (action != ::rock::api::input::LogicalInputAction::Jump) {
             return RockProviderResultV1::InvalidArgument;
         }
         if (!onAnimationOwnerThread()) {
@@ -264,15 +257,12 @@
         outState->available = input.available ? 1u : 0u;
         outState->held = input.held ? 1u : 0u;
         outState->availabilityReason =
-            static_cast<RockProviderInputAvailabilityReasonV1>(
+            static_cast<::rock::api::input::InputAvailabilityReason>(
                 input.availabilityReason);
         outState->sampleSequence = input.sampleSequence;
         outState->pressSequence = input.pressSequence;
         outState->sampleAgeMilliseconds = input.sampleAgeMilliseconds;
-        outState->frameIndex = snapshot.frameIndex;
-        outState->worldGeneration = snapshot.worldGeneration;
-        outState->skeletonGeneration = snapshot.skeletonGeneration;
-        outState->providerGeneration = snapshot.providerGeneration;
+        outState->sample = toCoreSnapshot(snapshot).sample;
         return RockProviderResultV1::Ok;
     }
 
@@ -287,7 +277,7 @@
     std::uint32_t ROCK_PROVIDER_CALL apiGetNativeInputContextV1()
     {
         try {
-            using Flag = RockProviderNativeInputContextFlagV1;
+            using Flag = ::rock::api::input::NativeInputContextFlag;
             if (!rock::input_remap_runtime::isInputRemapHookInstalled()) return 0;
             auto flags = static_cast<std::uint32_t>(Flag::Available);
             if (rock::input_remap_runtime::isMenuInputActive())

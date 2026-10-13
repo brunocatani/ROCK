@@ -1,158 +1,122 @@
-#include "InputMarshalling.h"
-#include <ROCK/Discovery.h>
-#include <ROCK/InputV1_1.h>
-#include <ROCK/InputV1_2.h>
-#include <ROCK/InputV1_3.h>
-#include <ROCK/InputV1_4.h>
-#include <ROCK/InputV1_5.h>
-#include "physics-interaction/input/SupportTriggerInput.h"
-#include "physics-interaction/input/PhysicalReloadInput.h"
+#include "Boundary.h"
 #include "EventBoundary.h"
+#include <ROCK/Input.h>
+#include "physics-interaction/input/PhysicalReloadInput.h"
+#include "physics-interaction/input/SupportTriggerInput.h"
 
 namespace rock::api::input {
 namespace {
 using namespace boundary;
-Status ROCK_CALL setHandInputSuppressionV1(std::uint64_t ownerToken, const HandInputSuppressionRequestV1* request) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        if (const auto s = checkInput(request); s != Status::Ok) return s;
-        provider::RockProviderHandInputSuppressionRequestV1 native_request{};
-        convert(native_request, *request);
-        const auto result = provider::runtime::apiSetHandInputSuppressionV1(ownerToken, &native_request);
-        return static_cast<Status>(result);
+bool validHand(Hand hand) noexcept { return hand == Hand::Right || hand == Hand::Left; }
+Status ROCK_CALL setHandInputSuppression(OwnerToken owner, const HandInputSuppressionRequest* request) noexcept {
+    if (const auto s = checkInput(request); s != Status::Ok) return s;
+    return invoke(owner, kInterfaceId, 2, true, [&] {
+        return static_cast<Status>(provider::runtime::apiSetHandInputSuppressionV1(owner, request));
     });
 }
-Status ROCK_CALL clearHandInputSuppressionV1(std::uint64_t ownerToken, Hand hand) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        const auto result = provider::runtime::apiClearHandInputSuppressionV1(ownerToken, static_cast<provider::RockProviderHand>(hand));
-        return static_cast<Status>(result);
+Status ROCK_CALL clearHandInputSuppression(OwnerToken owner, Hand hand) noexcept {
+    return invoke(owner, kInterfaceId, 2, true, [&] {
+        return static_cast<Status>(provider::runtime::apiClearHandInputSuppressionV1(owner, static_cast<provider::RockProviderHand>(hand)));
     });
 }
-Status ROCK_CALL getRawWandButtonStateV1(OwnerToken ownerToken, Hand hand, std::uint32_t buttonId, RawWandButtonStateV1* outState) noexcept {
+Status ROCK_CALL getHandInputSuppressionState(OwnerToken owner, Hand hand, HandInputSuppressionState* outState) noexcept {
     if (const auto s = checkOutput(outState); s != Status::Ok) return s;
-    if (hand!=Hand::Right && hand!=Hand::Left) return Status::InvalidArgument;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        provider::RockProviderRawWandButtonStateV1 native_outState{};
-        const auto result = provider::runtime::apiGetRawWandButtonStateV1(static_cast<provider::RockProviderHand>(hand), buttonId, &native_outState);
-        convert(*outState, native_outState);
-        return result ? Status::Ok : Status::NotReady;
+    if (!validHand(hand)) return Status::InvalidArgument;
+    return invoke(owner, kInterfaceId, 1, true, [&] {
+        return static_cast<Status>(provider::runtime::apiGetHandInputSuppressionStateV1(owner, static_cast<provider::RockProviderHand>(hand), outState));
     });
 }
-Status ROCK_CALL isNativePipboyInputSuppressedV1(OwnerToken ownerToken, std::uint32_t* outValue) noexcept {
+Status ROCK_CALL getRawWandButtonState(OwnerToken owner, Hand hand, std::uint32_t buttonId, RawWandButtonState* outState) noexcept {
+    if (const auto s = checkOutput(outState); s != Status::Ok) return s;
+    if (!validHand(hand)) return Status::InvalidArgument;
+    return invoke(owner, kInterfaceId, 1, true, [&] {
+        return provider::runtime::apiGetRawWandButtonStateV1(static_cast<provider::RockProviderHand>(hand), buttonId, outState) ? Status::Ok : Status::NotReady;
+    });
+}
+Status ROCK_CALL getRawWandThumbstick(OwnerToken owner, Hand hand, float* outX, float* outY) noexcept {
+    if (!outX || !outY) return Status::InvalidArgument;
+    *outX = 0.0f;
+    *outY = 0.0f;
+    if (!validHand(hand)) return Status::InvalidArgument;
+    return invoke(owner, kInterfaceId, 1, true, [&] {
+        return provider::runtime::apiGetRawWandThumbstickV1(static_cast<provider::RockProviderHand>(hand), outX, outY) ? Status::Ok : Status::NotReady;
+    });
+}
+Status ROCK_CALL isNativePipboyInputSuppressed(OwnerToken owner, std::uint32_t* outValue) noexcept {
     if (!outValue) return Status::InvalidArgument;
-    *outValue = {};
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        *outValue = static_cast<std::uint32_t>(provider::runtime::apiIsNativePipboyInputSuppressedV1());
+    *outValue = 0;
+    return invoke(owner, kInterfaceId, 1, true, [&] {
+        *outValue = provider::runtime::apiIsNativePipboyInputSuppressedV1() ? 1u : 0u;
         return Status::Ok;
     });
 }
-Status ROCK_CALL getHandInputSuppressionStateV1(std::uint64_t ownerToken, Hand hand, HandInputSuppressionStateV1* outState) noexcept {
-    if (const auto s = checkOutput(outState); s != Status::Ok) return s;
-    if (hand!=Hand::Right && hand!=Hand::Left) return Status::InvalidArgument;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        provider::RockProviderHandInputSuppressionStateV1 native_outState{};
-        const auto result = provider::runtime::apiGetHandInputSuppressionStateV1(ownerToken, static_cast<provider::RockProviderHand>(hand), &native_outState);
-        convert(*outState, native_outState);
-        return static_cast<Status>(result);
-    });
-}
-Status ROCK_CALL getLogicalInputActionStateV1(std::uint64_t ownerToken, LogicalInputActionV1 action, LogicalInputActionStateV1* outState) noexcept {
-    if (const auto s = checkOutput(outState); s != Status::Ok) return s;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        provider::RockProviderLogicalInputActionStateV1 native_outState{};
-        const auto result = provider::runtime::apiGetLogicalInputActionStateV1(ownerToken, static_cast<provider::RockProviderLogicalInputActionV1>(action), &native_outState);
-        convert(*outState, native_outState);
-        return static_cast<Status>(result);
-    });
-}
-Status ROCK_CALL getRawWandThumbstickV1(OwnerToken ownerToken, Hand hand, float* outX, float* outY) noexcept {
-    if (!outX) return Status::InvalidArgument;
-    *outX = {};
-    if (!outY) return Status::InvalidArgument;
-    *outY = {};
-    if (hand!=Hand::Right && hand!=Hand::Left) return Status::InvalidArgument;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        const auto result = provider::runtime::apiGetRawWandThumbstickV1(static_cast<provider::RockProviderHand>(hand), outX, outY);
-        return result ? Status::Ok : Status::NotReady;
-    });
-}
-Status ROCK_CALL getNativeInputContextV1(OwnerToken ownerToken, std::uint32_t* outValue) noexcept {
+Status ROCK_CALL getNativeInputContext(OwnerToken owner, std::uint32_t* outValue) noexcept {
     if (!outValue) return Status::InvalidArgument;
-    *outValue = {};
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        *outValue = static_cast<std::uint32_t>(provider::runtime::apiGetNativeInputContextV1());
+    *outValue = 0;
+    return invoke(owner, kInterfaceId, 1, true, [&] {
+        *outValue = provider::runtime::apiGetNativeInputContextV1();
         return Status::Ok;
     });
 }
-
-#include "InputEndpoints.inl"
-Status ROCK_CALL getPlacementClickState(OwnerToken owner, v1_1::PlacementClickState* out) noexcept {
-    if (!out) return Status::InvalidArgument;
-    if (out->size!=sizeof(*out)) return Status::InvalidSize;
-    *out={};
-    return invoke(owner,kInterfaceId,1,true,[&] { return provider::runtime::getPlacementClickState(*out); });
+Status ROCK_CALL getLogicalInputActionState(OwnerToken owner, LogicalInputAction action, LogicalInputActionState* outState) noexcept {
+    if (const auto s = checkOutput(outState); s != Status::Ok) return s;
+    return invoke(owner, kInterfaceId, 1, true, [&] {
+        return static_cast<Status>(provider::runtime::apiGetLogicalInputActionStateV1(owner, action, outState));
+    });
 }
-Status ROCK_CALL setReloadInput(OwnerToken owner,const v1_2::ReloadInputRequest* request) noexcept {
-    if(const auto status=checkInput(request);status!=Status::Ok)return status;
-    return invoke(owner,kInterfaceId,2,true,[&]{return physical_reload_input::set(owner,*request);},provider::OwnerAccess::Active);
+Status ROCK_CALL getPlacementClickState(OwnerToken owner, PlacementClickState* outState) noexcept {
+    if (const auto s = checkOutput(outState); s != Status::Ok) return s;
+    return invoke(owner, kInterfaceId, 1, true, [&] { return provider::runtime::getPlacementClickState(*outState); });
 }
-Status ROCK_CALL clearReloadInput(OwnerToken owner) noexcept {
-    return invoke(owner,kInterfaceId,2,true,[&]{return physical_reload_input::clear(owner);});
+Status ROCK_CALL setReloadGesture(OwnerToken owner, const ReloadGestureRequest* request) noexcept {
+    if (const auto s = checkInput(request); s != Status::Ok) return s;
+    return invoke(owner, kInterfaceId, 2, true, [&] { return physical_reload_input::set(owner, *request); }, provider::OwnerAccess::Active);
 }
-Status ROCK_CALL getReloadInput(OwnerToken owner,v1_2::ReloadInputState* output) noexcept {
-    if(const auto status=checkOutput(output);status!=Status::Ok)return status;
-    return invoke(owner,kInterfaceId,1,true,[&]{return physical_reload_input::read(*output);});
+Status ROCK_CALL clearReloadGesture(OwnerToken owner) noexcept {
+    return invoke(owner, kInterfaceId, 2, true, [&] { return physical_reload_input::clear(owner); });
 }
-Status ROCK_CALL setReloadGesture(OwnerToken owner,const v1_3::ReloadGestureRequest* request) noexcept {
-    if(const auto status=checkInput(request);status!=Status::Ok)return status;
-    return invoke(owner,kInterfaceId,2,true,[&]{return physical_reload_input::setGesture(owner,*request);},provider::OwnerAccess::Active);
+Status ROCK_CALL getReloadGesture(OwnerToken owner, ReloadGestureState* outState) noexcept {
+    if (const auto s = checkOutput(outState); s != Status::Ok) return s;
+    return invoke(owner, kInterfaceId, 1, true, [&] { return physical_reload_input::read(*outState); });
 }
-Status ROCK_CALL getReloadGesture(OwnerToken owner,v1_3::ReloadGestureState* output) noexcept {
-    if(const auto status=checkOutput(output);status!=Status::Ok)return status;
-    return invoke(owner,kInterfaceId,1,true,[&]{return physical_reload_input::readGesture(*output);});
-}
-Status ROCK_CALL setSupportTrigger(OwnerToken owner, const v1_5::SupportTriggerRequest* request) noexcept {
-    if (const auto status=checkInput(request); status!=Status::Ok) return status;
-    return invoke(owner,kInterfaceId,2,true,[&]{return support_trigger_input::set(owner,*request);},provider::OwnerAccess::Active);
+Status ROCK_CALL setSupportTrigger(OwnerToken owner, const SupportTriggerRequest* request) noexcept {
+    if (const auto s = checkInput(request); s != Status::Ok) return s;
+    return invoke(owner, kInterfaceId, 2, true, [&] { return support_trigger_input::set(owner, *request); }, provider::OwnerAccess::Active);
 }
 Status ROCK_CALL clearSupportTrigger(OwnerToken owner) noexcept {
-    return invoke(owner,kInterfaceId,2,true,[&]{return support_trigger_input::clear(owner);});
+    return invoke(owner, kInterfaceId, 2, true, [&] { return support_trigger_input::clear(owner); });
 }
-Status ROCK_CALL getSupportTrigger(OwnerToken owner, v1_5::SupportTriggerState* output) noexcept {
-    if (const auto status=checkOutput(output); status!=Status::Ok) return status;
-    return invoke(owner,kInterfaceId,1,true,[&]{return support_trigger_input::read(*output);});
+Status ROCK_CALL getSupportTrigger(OwnerToken owner, SupportTriggerState* outState) noexcept {
+    if (const auto s = checkOutput(outState); s != Status::Ok) return s;
+    return invoke(owner, kInterfaceId, 1, true, [&] { return support_trigger_input::read(*outState); });
 }
-Status ROCK_CALL setGameplayReloadGesture(OwnerToken owner,const v1_3::ReloadGestureRequest* request) noexcept {
-    if(const auto status=checkInput(request);status!=Status::Ok)return status;
-    return invoke(owner,kInterfaceId,2,true,[&]{return physical_reload_input::setGameplayGesture(owner,*request);},provider::OwnerAccess::Active);
+Status ROCK_CALL getSample(OwnerToken owner, Sample* outSample) noexcept {
+    return readSample(owner, kInterfaceId, outSample);
+}
+Status ROCK_CALL copyEvents(OwnerToken owner, std::uint64_t after, Event* events, std::uint32_t capacity, Stream* stream) noexcept {
+    return copyEventStream(owner, kInterfaceId, after, events, capacity, kEventCapacityPerOwner, stream);
 }
 }
-const v1_1::Api& tableV1_1() noexcept {
-    static const v1_1::Api value{{
-        &setHandInputSuppressionV1,
-        &clearHandInputSuppressionV1,
-        &getRawWandButtonStateV1,
-        &isNativePipboyInputSuppressedV1,
-        &getHandInputSuppressionStateV1,
-        &getLogicalInputActionStateV1,
-        &getRawWandThumbstickV1,
-        &getNativeInputContextV1,
+const Api& table() noexcept {
+    static const Api value{
+        &setHandInputSuppression,
+        &clearHandInputSuppression,
+        &getHandInputSuppressionState,
+        &getRawWandButtonState,
+        &getRawWandThumbstick,
+        &isNativePipboyInputSuppressed,
+        &getNativeInputContext,
+        &getLogicalInputActionState,
+        &getPlacementClickState,
+        &setReloadGesture,
+        &clearReloadGesture,
+        &getReloadGesture,
+        &setSupportTrigger,
+        &clearSupportTrigger,
+        &getSupportTrigger,
         &getSample,
         &copyEvents,
-    }, &getPlacementClickState};
+    };
     return value;
 }
-const ApiV1& table() noexcept { return tableV1_1().v1; }
-const v1_2::Api& tableV1_2() noexcept {
-    static const v1_2::Api value{tableV1_1(),&setReloadInput,&clearReloadInput,&getReloadInput};return value;
-}
-const v1_3::Api& tableV1_3() noexcept {
-    static const v1_3::Api value{tableV1_2(),&setReloadGesture,&clearReloadInput,&getReloadGesture};return value;
-}
-const v1_4::Api& tableV1_4() noexcept {
-    static const v1_4::Api value{tableV1_3(),&setGameplayReloadGesture};return value;
-}
-const v1_5::Api& tableV1_5() noexcept {
-    static const v1_5::Api value{tableV1_4(),&setSupportTrigger,&clearSupportTrigger,&getSupportTrigger}; return value;
-}
-
 }

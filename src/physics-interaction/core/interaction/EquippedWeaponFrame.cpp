@@ -19,7 +19,7 @@ namespace rock
                 button = {};
                 return;
             }
-            using Flag = provider::RockProviderHandInputSuppressionFlagV1;
+            using Flag = ::rock::api::input::HandInputSuppressionFlag;
             const auto flags = provider::currentHandInputSuppressionFlagsV1(
                 isLeft ? provider::RockProviderHand::Left : provider::RockProviderHand::Right);
             const bool press = provider::hasHandInputSuppressionFlagV1(flags, Flag::SuppressNormalGrabPress);

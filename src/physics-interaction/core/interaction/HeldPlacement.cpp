@@ -198,12 +198,12 @@ void PhysicsInteraction::beginHeldPlacementFrame()
         (void)input_remap_runtime::consumeRawButtonState(false,32);
 }
 
-void PhysicsInteraction::queryPlacementClickState(api::input::v1_1::PlacementClickState& out) const
+void PhysicsInteraction::queryPlacementClickState(api::input::PlacementClickState& out) const
 {
     out={}; out.sample=provider::runtime::sample();
     if (!_placementActiveOwner ||
         provider::runtime::authorize(_placementActiveOwner,api::grab::kInterfaceId,2,true)!=api::Status::Ok) return;
-    if (_placementClickReserved) out.flags=static_cast<std::uint32_t>(api::input::v1_1::PlacementClickFlag::InputReserved);
+    if (_placementClickReserved) out.flags=static_cast<std::uint32_t>(api::input::PlacementClickFlag::InputReserved);
     out.objectFormId=_placementCandidate;
 }
 

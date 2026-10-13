@@ -31,8 +31,8 @@ namespace rock
             if (state != HandState::Idle && state != HandState::SelectedClose && state != HandState::SelectedFar)
                 return "hand-state";
             const auto physicalHand = left ? provider::RockProviderHand::Left : provider::RockProviderHand::Right;
-            constexpr auto inputMask = static_cast<std::uint32_t>(provider::RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord) |
-                static_cast<std::uint32_t>(provider::RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput);
+            constexpr auto inputMask = static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressConfigModeChord) |
+                static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressOpenVrGameInput);
             if ((provider::currentHandInputSuppressionFlagsV1(physicalHand) & inputMask) != 0) return "provider-suppression";
             // Immersive Flashlight publishes this tag while actually carrying
             // its mesh. Both active and overridden tags still own the object.

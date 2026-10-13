@@ -13,9 +13,6 @@
 #include <ROCK/WeaponPartsV1_7.h>
 #include <ROCK/Animation.h>
 #include <ROCK/Input.h>
-#include <ROCK/InputV1_1.h>
-#include <ROCK/InputV1_2.h>
-#include <ROCK/InputV1_5.h>
 #include <ROCK/References.h>
 #include <ROCK/PlayerController.h>
 #include <ROCK/Diagnostics.h>
@@ -31,10 +28,7 @@ namespace rock::api::weapon { const ApiV1& table() noexcept; }
 namespace rock::api::weapon { const v1_1::Api& tableV1_1() noexcept; }
 namespace rock::api::weaponparts { const v1_7::Api& tableV1_7() noexcept; }
 namespace rock::api::animation { const Api& table() noexcept; }
-namespace rock::api::input { const ApiV1& table() noexcept; }
-namespace rock::api::input { const v1_1::Api& tableV1_1() noexcept; }
-namespace rock::api::input { const v1_2::Api& tableV1_2() noexcept; }
-namespace rock::api::input { const v1_5::Api& tableV1_5() noexcept; }
+namespace rock::api::input { const Api& table() noexcept; }
 namespace rock::api::references { const ApiV1& table() noexcept; }
 namespace rock::api::playercontroller { const Api& table() noexcept; }
 namespace rock::api::diagnostics { const ApiV1& table() noexcept; }
@@ -52,7 +46,7 @@ std::span<const RegisteredInterface> registeredInterfaces() noexcept {
         registration(weapon::tableV1_1(), weapon::kSupportedPermissions),
         registration(weaponparts::tableV1_7(), weaponparts::kSupportedPermissions),
         registration(animation::table(), animation::kSupportedPermissions),
-        registration(input::tableV1_5(), input::kSupportedPermissions),
+        registration(input::table(), input::kSupportedPermissions),
         registration(references::table(), references::kSupportedPermissions),
         registration(playercontroller::table(), playercontroller::kSupportedPermissions),
         registration(diagnostics::table(), diagnostics::kSupportedPermissions),

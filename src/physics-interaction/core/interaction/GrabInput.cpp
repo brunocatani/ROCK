@@ -491,20 +491,20 @@ namespace rock
         const bool heldWeaponAtFrameStart = hand.isHoldingLooseWeapon();
         const auto providerHand = isLeft ? provider::RockProviderHand::Left : provider::RockProviderHand::Right;
         const std::uint32_t providerInputSuppressionFlags = provider::currentHandInputSuppressionFlagsV1(providerHand);
-        auto providerSuppresses = [&](provider::RockProviderHandInputSuppressionFlagV1 flag) {
+        auto providerSuppresses = [&](::rock::api::input::HandInputSuppressionFlag flag) {
             return provider::hasHandInputSuppressionFlagV1(providerInputSuppressionFlags, flag);
         };
         const bool authoredGrabReserved = authored_interaction::reserves(isLeft);
         const bool providerSuppressesNormalGrabPress = authoredGrabReserved ||
-            providerSuppresses(provider::RockProviderHandInputSuppressionFlagV1::SuppressNormalGrabPress);
+            providerSuppresses(::rock::api::input::HandInputSuppressionFlag::SuppressNormalGrabPress);
         const bool providerSuppressesGrabRelease =
-            providerSuppresses(provider::RockProviderHandInputSuppressionFlagV1::SuppressGrabRelease);
+            providerSuppresses(::rock::api::input::HandInputSuppressionFlag::SuppressGrabRelease);
         const bool providerSuppressesHeldWeaponTriggerEquip =
-            providerSuppresses(provider::RockProviderHandInputSuppressionFlagV1::SuppressHeldWeaponTriggerEquip);
+            providerSuppresses(::rock::api::input::HandInputSuppressionFlag::SuppressHeldWeaponTriggerEquip);
         const bool providerSuppressesGameplayCandidates = authoredGrabReserved ||
-            providerSuppresses(provider::RockProviderHandInputSuppressionFlagV1::SuppressGameplayCandidates);
+            providerSuppresses(::rock::api::input::HandInputSuppressionFlag::SuppressGameplayCandidates);
         const bool providerSuppressesOpenVrGameInput =
-            providerSuppresses(provider::RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput);
+            providerSuppresses(::rock::api::input::HandInputSuppressionFlag::SuppressOpenVrGameInput);
         input_remap_runtime::setProviderOpenVrGameInputSuppressed(isLeft, providerSuppressesOpenVrGameInput);
         auto cancelPeerHeldJoinRetry = [&](const char* reason, bool logCancellation) {
             if (!peerHeldJoinRetryState.active) {
@@ -2696,7 +2696,7 @@ namespace rock
             const auto& input = isLeft ? frame.left : frame.right;
             const bool releaseSuppressed = provider::hasHandInputSuppressionFlagV1(
                 provider::currentHandInputSuppressionFlagsV1(isLeft ? provider::RockProviderHand::Left : provider::RockProviderHand::Right),
-                provider::RockProviderHandInputSuppressionFlagV1::SuppressGrabRelease);
+                ::rock::api::input::HandInputSuppressionFlag::SuppressGrabRelease);
             if (!runtime_state::isLocalSkeletonReady() || !frame.worldReady || frame.menuBlocked ||
                     input.disabled || !input.hasGestureVelocity || !physicsWritesAllowedForWorld(frame.hknpWorld) ||
                     (!releaseSuppressed && !readGrabButtonHeld(isLeft, input_remap_policy::kGrabButtonId))) {

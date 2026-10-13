@@ -23,7 +23,7 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/grab/GrabEvent.h"
 #include "physics-interaction/grab/HeldPlacementPolicy.h"
-#include <ROCK/InputV1_1.h>
+#include <ROCK/Input.h>
 #include <ROCK/GrabV1_1.h>
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/grab/TouchGrabRuntime.h"
@@ -170,7 +170,7 @@ namespace rock
         void shutdown(::rock::provider::RockProviderLifecycleReason reason = ::rock::provider::RockProviderLifecycleReason::Shutdown);
 
         bool isInitialized() const { return _lifecycle.initialized; }
-        void queryPlacementClickState(api::input::v1_1::PlacementClickState& out) const;
+        void queryPlacementClickState(api::input::PlacementClickState& out) const;
         api::Status queryHeldPlacementState(api::grab::v1_1::HeldPlacementState& out) const;
         api::Status submitHeldPlacementIntent(api::OwnerToken owner, const api::grab::v1_1::HeldPlacementIntent& intent);
         void clearHeldPlacementIntent(api::OwnerToken owner);

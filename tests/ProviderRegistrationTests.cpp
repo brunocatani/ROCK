@@ -62,12 +62,12 @@ namespace rock::provider::runtime {
     Consumer* findConsumerSlotLocked(std::uint64_t owner){for(auto& s:s_consumers)if(s.token==owner)return &s;return nullptr;}
     RockProviderResultV1 validateRegisteredOwnerCapabilityLocked(std::uint64_t owner,RockProviderConsumerCapabilityV1){return findConsumerSlotLocked(owner)?RockProviderResultV1::Ok:RockProviderResultV1::OwnerNotRegistered;}
     void clearInteractionCommandsForOwnerLocked(std::uint64_t,RockProviderInteractionFailureV1){}
-    void clearHandInputSuppressionsForOwnerLocked(std::uint64_t,RockProviderHand,RockProviderSuppressionInvalidationReasonV1){}
+    void clearHandInputSuppressionsForOwnerLocked(std::uint64_t,RockProviderHand,::rock::api::input::SuppressionInvalidationReason){}
     void clearWeaponPartTargetsForOwnerLocked(std::uint64_t){}
     void clearWeaponPartDrivesForOwnerLocked(std::uint64_t){}
     void clearNativeAnimationAuthorityForOwnerLocked(std::uint64_t){}
     void clearEquippedWeaponHandlingAuthorityForOwnerLocked(std::uint64_t){}
-    void clearOffhandReservationLocked(RockProviderSuppressionInvalidationReasonV1){}
+    void clearOffhandReservationLocked(::rock::api::input::SuppressionInvalidationReason){}
     void clearAnimationPhaseCallbacksForOwnerLocked(std::uint64_t){}
     bool clearHandVisualAuthorityForOwner(std::uint64_t,RockProviderHand,bool){return true;}
     void clearNativeAnimationRuntimePublicationForOwner(std::uint64_t){}

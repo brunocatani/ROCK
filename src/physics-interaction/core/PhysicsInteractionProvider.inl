@@ -882,7 +882,7 @@
                     state.hand);
             if (input_remap_runtime::ownsBareFistInput()) {
                 state.effectiveInputSuppressionFlags |= static_cast<std::uint32_t>(
-                    ::rock::provider::RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord);
+                    ::rock::api::input::HandInputSuppressionFlag::SuppressConfigModeChord);
             }
             if (state.effectiveInputSuppressionFlags != 0) {
                 state.flags |= static_cast<std::uint32_t>(

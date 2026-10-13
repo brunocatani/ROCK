@@ -64,71 +64,23 @@ int main(){
     ::weapon.weaponFormId=123;::weapon.weaponGenerationKey=456;
     ::weapon.flags=static_cast<std::uint32_t>(weapon::EquippedWeaponStateFlagV1::Valid)|
         static_cast<std::uint32_t>(weapon::EquippedWeaponStateFlagV1::WeaponDrawn);
-    input::v1_2::ReloadInputRequest request;
-    request.weaponFormId=123;request.weaponGenerationKey=456;request.sample=sample;
-    input::v1_2::ReloadInputState state;
     constexpr auto x=1ull<<7;
-    assert(control::set(1,request)==Status::Ok);
-    assert(control::gameMask(true,x)==x && control::gameMask(false,x)==0);
-    assert(control::set(2,request)==Status::Busy);
-    assert(control::clear(2)==Status::Busy);
-    assert(control::observe(true,{true,true,true,false}));
-    control::read(state);const auto first=state.pressSequence;
-    assert(first!=0 && state.held);
-    assert(control::set(1,request)==Status::Ok);
-    control::read(state);assert(state.pressSequence==first);
-    // Expiration drains both native raw input and ROCK's delayed gesture.
-    sample.frameIndex=13;control::beginFrame(13);
-    control::read(state);assert(!state.active);
-    assert(control::gameMask(true,x)==x);
-    assert(control::observe(true,{true,true,false,false}));
-    assert(control::gameMask(true,0)==0);
-    assert(control::observe(true,{true,false,false,true}));
-    assert(!control::observe(true,{true}));
-    // Acquiring a held button never fabricates a new press.
-    request.sample=sample;raw={true,true};
-    assert(control::set(1,request)==Status::Ok);
-    control::observe(true,{true,true,true,false});
-    control::read(state);assert(state.pressSequence==first);
-    control::observe(true,{true,false,false,true});
-    control::observe(true,{true,true,true,false});
-    control::read(state);assert(state.pressSequence==first+1);
-    // Blocking menus/tracking loss require release before a new gesture.
-    control::observe(true,{});
-    control::observe(true,{true,true,true,false});
-    control::read(state);assert(state.pressSequence==first+1);
-    control::observe(true,{true,false,false,true});
-    ++sample.worldGeneration;control::beginFrame(sample.frameIndex);
-    control::read(state);assert(!state.active);
-    assert(control::set(1,request)==Status::GenerationMismatch);
-    request.sample=sample;raw={true};
-    assert(control::set(1,request)==Status::Ok);
-    control::clearOwner(2);control::read(state);assert(state.active);
-    control::clearOwner(1);control::read(state);assert(!state.active);
-    raw={};assert(control::set(1,request)==Status::Ok);
-    control::reset();
-    assert(control::gameMask(true,x)==x);
-    assert(control::gameMask(true,0)==0);
-    assert(control::observe(true,{true,false,false,true}));
-    assert(!control::observe(true,{true}));
-    ::weapon.flags=0;assert(control::set(1,request)==Status::GenerationMismatch);
-    request.leaseFrames=121;assert(control::set(1,request)==Status::InvalidArgument);
-    request.leaseFrames=2;request.hand=Hand::None;assert(control::set(1,request)==Status::InvalidArgument);
-    request.hand=Hand::Left;request.sample.frameIndex=99;assert(control::set(1,request)==Status::GenerationMismatch);
-    // Production Input 1.3 lease and the same tap/hold policy used by runtime.
+    // The production reload gesture lease and the same tap/hold policy used
+    // by runtime, without and with gameplay priority.
     // Test both physical firing hands; an empty chamber only gates the trigger.
     for(bool gameplayPriority:{false,true}) for(bool left:{true,false}) {
-        const auto acquire=gameplayPriority?control::setGameplayGesture:control::setGesture;
+        const auto priority=gameplayPriority?static_cast<std::uint32_t>(input::ReloadGestureFlag::GameplayPriority):0u;
+        const auto acquire=[&](OwnerToken owner,input::ReloadGestureRequest value){value.flags|=priority;return control::set(owner,value);};
         control::reset();raw={true};
         ::primary=left?provider::RockProviderHand::Left:provider::RockProviderHand::Right;
         ::weapon.flags=1|512;
-        input::v1_3::ReloadGestureRequest gesture;gesture.hand=left?Hand::Left:Hand::Right;
+        input::ReloadGestureRequest gesture;gesture.hand=left?Hand::Left:Hand::Right;
         gesture.weaponFormId=123;gesture.weaponGenerationKey=456;gesture.sample=sample;gesture.flags=1;
         assert(acquire(1,gesture)==Status::Ok);
-        control::read(state);assert(!state.active&&!state.owner); // never present shared scope routing as legacy exclusive capture
-        assert(control::set(2,request)==Status::GenerationMismatch); // stale legacy sample
-        input::v1_3::ReloadGestureState observed;
-        control::readGesture(observed);auto before=observed.tapSequence;
+        // One owner at a time.
+        assert(acquire(2,gesture)==Status::Busy&&control::clear(2)==Status::Busy);
+        input::ReloadGestureState observed;
+        control::read(observed);auto before=observed.tapSequence;
         manual_scope_input_policy::RuntimeState scope;
         const auto update=[&](input_remap_runtime::RawButtonState button,float dt=.01f,bool nativeTarget=false) {
             ++sample.frameIndex;gesture.sample=sample;assert(acquire(1,gesture)==Status::Ok);
@@ -140,7 +92,7 @@ int main(){
             (left?in.leftButton:in.rightButton)={button.available,button.held,button.pressed,button.released};
             const auto decision=manual_scope_input_policy::update(scope,in);
             assert(control::routeGesture(left,decision.dispatchReload,decision.scopeRequested));
-            control::readGesture(observed);return decision;
+            control::read(observed);return decision;
         };
         update({true});assert(control::fireBlocked(left));
         const auto mask=control::gameMask(left,x|(1ull<<33));assert(mask==((gameplayPriority?0:x)|(1ull<<33)));
@@ -186,7 +138,7 @@ int main(){
         // Switching acquisition modes mid-hold cannot inherit a reload tap.
         if(gameplayPriority) {
             update({true,true,true});raw={true,true};
-            assert(control::setGesture(1,gesture)==Status::Ok&&!control::nativeActivationPriority(left));
+            assert(control::set(1,gesture)==Status::Ok&&!control::nativeActivationPriority(left));
             assert(control::takeGestureChange()&&control::gameMask(left,x)==x);
             update({true,true});update({true,false,false,true});update({true});raw={true};
             assert(observed.tapSequence==before);
@@ -194,13 +146,25 @@ int main(){
         }
         // Lease expiry requires a fresh physical release.
         update({true,true,true});sample.frameIndex+=3;control::beginFrame(sample.frameIndex);
-        control::readGesture(observed);assert(!observed.active&&control::takeGestureChange());
+        control::read(observed);assert(!observed.active&&control::takeGestureChange());
+        assert(control::gameMask(left,x)==x); // The held Accept stays drained from the game.
         assert(control::observe(left,{true,true}));assert(control::observe(left,{true,false,false,true}));
         control::gameMask(left,0);raw={true};gesture.sample=sample;
         assert(acquire(1,gesture)==Status::Ok);
         ::primary=left?provider::RockProviderHand::Right:provider::RockProviderHand::Left;
-        control::beginFrame(sample.frameIndex);control::readGesture(observed);assert(!observed.active);
+        control::beginFrame(sample.frameIndex);control::read(observed);assert(!observed.active);
         assert(acquire(1,gesture)==Status::HandUnavailable);
         control::reset();control::gameMask(left,0);control::observe(left,{true});
+    }
+    // A world change ends a live lease, and a request on the stale sample is refused.
+    {
+        control::reset();raw={true};::primary=provider::RockProviderHand::Left;
+        input::ReloadGestureRequest gesture;gesture.hand=Hand::Left;
+        gesture.weaponFormId=123;gesture.weaponGenerationKey=456;gesture.sample=sample;
+        assert(control::set(1,gesture)==Status::Ok);
+        ++sample.worldGeneration;control::beginFrame(sample.frameIndex);
+        input::ReloadGestureState observed;control::read(observed);assert(!observed.active);
+        assert(control::set(1,gesture)==Status::GenerationMismatch);
+        control::reset();control::gameMask(true,0);
     }
 }

@@ -1,7 +1,7 @@
 #pragma once
 #include <ROCK/WeaponParts.h>
 #include <ROCK/WeaponV1_1.h>
-#include <ROCK/InputV1_1.h>
+#include <ROCK/Input.h>
 #include <ROCK/GrabV1_1.h>
 #include <ROCK/GrabV1_3.h>
 #include <ROCK/Animation.h>
@@ -43,7 +43,7 @@ namespace rock::provider::runtime {
     api::Status getHeldPlacementState(api::grab::v1_1::HeldPlacementState& output);
     api::Status submitHeldPlacementIntent(api::OwnerToken owner, const api::grab::v1_1::HeldPlacementIntent& request);
     api::Status clearHeldPlacementIntent(api::OwnerToken owner);
-    api::Status getPlacementClickState(api::input::v1_1::PlacementClickState& output);
+    api::Status getPlacementClickState(api::input::PlacementClickState& output);
     api::Status captureInventoryWeapon(std::uint64_t owner, std::uint32_t form, std::uint32_t stack,
         api::weapon::v1_1::InventoryWeapon& output);
     api::Status requestInventoryEquip(std::uint64_t owner, const api::weapon::v1_1::EquipRequest& request, std::uint64_t& command);
@@ -68,7 +68,7 @@ namespace rock::provider::runtime {
     RockProviderResultV1 ROCK_PROVIDER_CALL apiGetInteractionCommandResultV1(std::uint64_t ownerToken, std::uint64_t commandId, RockProviderInteractionCommandResultV1* outResult);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestForceReleaseV1(std::uint64_t ownerToken, const RockProviderForceReleaseRequestV1* request, std::uint64_t* outCommandId);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestThrownDropV1(std::uint64_t ownerToken, const RockProviderThrownDropRequestV1* request, std::uint64_t* outCommandId);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetHandInputSuppressionV1(std::uint64_t ownerToken, const RockProviderHandInputSuppressionRequestV1* request);
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetHandInputSuppressionV1(std::uint64_t ownerToken, const ::rock::api::input::HandInputSuppressionRequest* request);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiClearHandInputSuppressionV1(std::uint64_t ownerToken, RockProviderHand hand);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiSetWeaponPartTargetsV1(std::uint64_t ownerToken, const RockProviderWeaponPartTargetV1* targets, std::uint32_t targetCount);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiClearWeaponPartTargetsV1(std::uint64_t ownerToken);
@@ -76,7 +76,7 @@ namespace rock::provider::runtime {
     RockProviderResultV1 ROCK_PROVIDER_CALL apiClearWeaponPartDriveTargetsV1(std::uint64_t ownerToken);
     bool ROCK_PROVIDER_CALL apiQueryEquippedWeaponClassificationV1(RockProviderWeaponClassificationV1* outResult);
     bool ROCK_PROVIDER_CALL apiGetWeaponPartGripStateV1(RockProviderHand hand, api::weaponparts::WeaponPartGripStateV1* outState);
-    bool ROCK_PROVIDER_CALL apiGetRawWandButtonStateV1(RockProviderHand hand, std::uint32_t buttonId, RockProviderRawWandButtonStateV1* outState);
+    bool ROCK_PROVIDER_CALL apiGetRawWandButtonStateV1(RockProviderHand hand, std::uint32_t buttonId, ::rock::api::input::RawWandButtonState* outState);
     bool ROCK_PROVIDER_CALL apiIsNativePipboyInputSuppressedV1();
     std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEmitterCountV1();
     std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEmittersV1(RockProviderWeaponEmitterV1* outEmitters, std::uint32_t maxEmitters);
@@ -113,7 +113,7 @@ namespace rock::provider::runtime {
     RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyPlayerColliderDescriptorsV1(std::uint64_t ownerToken, RockProviderPlayerColliderDescriptorV1* outDescriptors, std::uint32_t maxDescriptors, std::uint32_t* outDescriptorCount);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiGetHandCollisionAvailabilityV1(std::uint64_t ownerToken, RockProviderHand hand, RockProviderHandCollisionAvailabilityV1* outState);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiCancelInteractionCommandV1(std::uint64_t ownerToken, std::uint64_t commandId);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetHandInputSuppressionStateV1(std::uint64_t ownerToken, RockProviderHand hand, RockProviderHandInputSuppressionStateV1* outState);
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetHandInputSuppressionStateV1(std::uint64_t ownerToken, RockProviderHand hand, ::rock::api::input::HandInputSuppressionState* outState);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiAcquireOffhandReservationV1(std::uint64_t ownerToken, const RockProviderOffhandReservationRequestV1* request);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiRenewOffhandReservationV1(std::uint64_t ownerToken, const RockProviderOffhandReservationRequestV1* request);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiReleaseOffhandReservationV1(std::uint64_t ownerToken);
@@ -124,7 +124,7 @@ namespace rock::provider::runtime {
     RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyTouchGrabStatesForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken, ::rock::api::touch::TouchGrabState* outStates, std::uint32_t maxStates, std::uint32_t* outStateCount);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestTouchGrabYieldV1(std::uint64_t ownerToken, std::uint64_t scopeToken, std::uint64_t targetId, std::uint32_t targetGeneration);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryWorldRaycastV1(std::uint64_t ownerToken, const RockProviderWorldRaycastRequestV1* request, RockProviderWorldRaycastResultV1* outResult);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetLogicalInputActionStateV1(std::uint64_t ownerToken, RockProviderLogicalInputActionV1 action, RockProviderLogicalInputActionStateV1* outState);
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetLogicalInputActionStateV1(std::uint64_t ownerToken, ::rock::api::input::LogicalInputAction action, ::rock::api::input::LogicalInputActionState* outState);
     api::Status apiGetPlayerControllerState(std::uint64_t ownerToken, api::playercontroller::PlayerControllerState& outState);
     api::Status apiRequestPlayerControllerJump(std::uint64_t ownerToken, const api::playercontroller::PlayerControllerJumpRequest& request);
     bool ROCK_PROVIDER_CALL apiGetRawWandThumbstickV1(RockProviderHand hand, float* outX, float* outY);

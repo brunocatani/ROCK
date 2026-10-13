@@ -173,48 +173,7 @@ int main() {
         assert(rock::provider::bindInterface(newBinding,1,3,weaponparts::kSupportedPermissions)==Status::Ok);
     }
     verify(animation::table(),animation::kSupportedPermissions);
-    verify(input::tableV1_5(),input::kSupportedPermissions);
-    {
-        const InterfaceDescriptorV1* oldInput{};
-        const InterfaceDescriptorV1* newInput{};
-        assert(ROCKAPI_QueryInterfaceV1(input::kInterfaceId,1,0,sizeof(input::ApiV1),&oldInput)==Status::Ok);
-        assert(ROCKAPI_QueryInterfaceV1(input::kInterfaceId,1,1,sizeof(input::v1_1::Api),&newInput)==Status::Ok);
-        assert(oldInput->table==newInput->table && oldInput->requiredCoreMinor==0);
-        const InterfaceDescriptorV1* physicalInput{};
-        assert(ROCKAPI_QueryInterfaceV1(input::kInterfaceId,1,2,sizeof(input::v1_2::Api),&physicalInput)==Status::Ok);
-        assert(physicalInput==oldInput && physicalInput->requiredCoreMinor==0);
-        const InterfaceDescriptorV1* gestureInput{};
-        assert(ROCKAPI_QueryInterfaceV1(input::kInterfaceId,1,3,sizeof(input::v1_3::Api),&gestureInput)==Status::Ok);
-        assert(gestureInput==oldInput&&gestureInput->requiredCoreMinor==0);
-        const InterfaceDescriptorV1* gameplayInput{};
-        assert(ROCKAPI_QueryInterfaceV1(input::kInterfaceId,1,4,sizeof(input::v1_4::Api),&gameplayInput)==Status::Ok);
-        assert(gameplayInput==oldInput&&gameplayInput->requiredCoreMinor==0);
-        rock::provider::InterfaceBinding oldInputBinding{},newInputBinding{},gameplayBinding{};
-        assert(rock::provider::bindInterface(oldInputBinding,1,1,input::kSupportedPermissions)==Status::Ok);
-        assert(rock::provider::bindInterface(newInputBinding,1,3,input::kSupportedPermissions)==Status::Ok);
-        assert(rock::provider::bindInterface(gameplayBinding,gameplayInput->major,3,input::kSupportedPermissions)==Status::Ok);
-        const std::array priorInput{discovery::RegisteredInterface{
-            {40,InterfaceId::Input,1,1,sizeof(input::v1_1::Api),1,0,0,&input::tableV1_1()},3}};
-        assert(discovery::query(priorInput,InterfaceId::Input,1,2,sizeof(input::v1_2::Api),&result)==Status::UnsupportedMinor);
-        const std::array exclusiveInput{discovery::RegisteredInterface{
-            {40,InterfaceId::Input,1,2,sizeof(input::v1_2::Api),1,0,0,&input::tableV1_2()},3}};
-        assert(discovery::query(exclusiveInput,InterfaceId::Input,1,3,sizeof(input::v1_3::Api),&result)==Status::UnsupportedMinor);
-        const std::array oldGesture{discovery::RegisteredInterface{
-            {40,InterfaceId::Input,1,3,sizeof(input::v1_3::Api),1,0,0,&input::tableV1_3()},3}};
-        assert(discovery::query(oldGesture,InterfaceId::Input,1,4,sizeof(input::v1_4::Api),&result)==Status::UnsupportedMinor);
-        const InterfaceDescriptorV1* supportInput{};
-        assert(ROCKAPI_QueryInterfaceV1(input::kInterfaceId,1,5,sizeof(input::v1_5::Api),&supportInput)==Status::Ok);
-        assert(supportInput==oldInput && supportInput->requiredCoreMinor==0);
-        const std::array oldGameplay{discovery::RegisteredInterface{
-            {40,InterfaceId::Input,1,4,sizeof(input::v1_4::Api),1,0,0,&input::tableV1_4()},3}};
-        assert(discovery::query(oldGameplay,InterfaceId::Input,1,5,sizeof(input::v1_5::Api),&result)==Status::UnsupportedMinor);
-        const auto* oldCalls=static_cast<const input::ApiV1*>(oldInput->table);
-        assert(oldCalls->clearHandInputSuppressionV1(77,Hand::Left)==Status::Ok);
-        input::v1_1::PlacementClickState state;
-        assert(static_cast<const input::v1_1::Api*>(newInput->table)->getPlacementClickState(77,&state)==Status::Ok);
-        assert(state.flags==static_cast<std::uint32_t>(input::v1_1::PlacementClickFlag::InputReserved));
-        assert(oldCalls->clearHandInputSuppressionV1(77,Hand::Left)==Status::Ok);
-    }
+    verify(input::table(),input::kSupportedPermissions);
     verify(references::table(),references::kSupportedPermissions);
     verify(playercontroller::table(),playercontroller::kSupportedPermissions);
     verify(diagnostics::table(),diagnostics::kSupportedPermissions);

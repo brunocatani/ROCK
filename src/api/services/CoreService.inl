@@ -123,7 +123,7 @@
             clearHandInputSuppressionsForOwnerLocked(
                 ownerToken,
                 RockProviderHand::None,
-                RockProviderSuppressionInvalidationReasonV1::OwnerUnregistered);
+                ::rock::api::input::SuppressionInvalidationReason::OwnerUnregistered);
             clearWeaponPartTargetsForOwnerLocked(ownerToken);
             clearWeaponPartDrivesForOwnerLocked(ownerToken);
             clearNativeAnimationAuthorityForOwnerLocked(ownerToken);
@@ -143,7 +143,7 @@
             std::scoped_lock lock(s_offhandReservationMutex);
             if (s_offhandReservationSlot.ownerToken == ownerToken) {
                 clearOffhandReservationLocked(
-                    RockProviderSuppressionInvalidationReasonV1::OwnerUnregistered);
+                    ::rock::api::input::SuppressionInvalidationReason::OwnerUnregistered);
             }
         }
 

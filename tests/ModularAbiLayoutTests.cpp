@@ -31,12 +31,6 @@ static_assert(offsetof(rock::api::weaponparts::v1_2::Api,clearCollisionSuppressi
 static_assert(sizeof(rock::api::weaponparts::v1_2::CollisionSuppression)==184);
 static_assert(offsetof(rock::api::weaponparts::v1_2::CollisionSuppression,sample)==8);
 static_assert(offsetof(rock::api::weaponparts::v1_2::CollisionSuppression,sourceKeys)==56);
-#include <ROCK/InputV1_1.h>
-static_assert(sizeof(rock::api::input::ApiV1)==80);
-static_assert(sizeof(rock::api::input::v1_1::Api)==88);
-static_assert(offsetof(rock::api::input::v1_1::Api,getPlacementClickState)==80);
-static_assert(sizeof(rock::api::input::v1_1::PlacementClickState)==48);
-static_assert(offsetof(rock::api::input::v1_1::PlacementClickState,sample)==16);
 #include <ROCK/GrabV1_1.h>
 static_assert(sizeof(rock::api::grab::ApiV1)==136);
 static_assert(sizeof(rock::api::grab::v1_1::Api)==160);

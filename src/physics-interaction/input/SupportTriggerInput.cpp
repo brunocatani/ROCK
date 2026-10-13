@@ -9,8 +9,8 @@ namespace {
     // Mutable lease state belongs to the ROCK frame thread. The mutex also
     // serializes provider shutdown; controller hooks consume only these masks.
     std::mutex mutex;
-    api::input::v1_5::SupportTriggerRequest request;
-    api::input::v1_5::SupportTriggerState state;
+    api::input::SupportTriggerRequest request;
+    api::input::SupportTriggerState state;
     std::atomic_uint32_t activeMask{}, drainMask{};
     bool armed{};
     constexpr std::uint32_t bit(api::Hand hand) { return hand == api::Hand::Left ? 1u : 2u; }
@@ -18,7 +18,7 @@ namespace {
         drainMask.fetch_or(activeMask.exchange(0, std::memory_order_acq_rel), std::memory_order_release);
         state.active = 0; state.owner = 0; state.held = 0; state.hand = api::Hand::None; armed = false;
     }
-    bool current(api::OwnerToken owner, const api::input::v1_5::SupportTriggerRequest& value) {
+    bool current(api::OwnerToken owner, const api::input::SupportTriggerRequest& value) {
         provider::RockProviderEquippedWeaponStateV1 equipped;
         provider::RockProviderEquippedWeaponGripStateV1 grip;
         const auto sample = provider::runtime::sample();
@@ -37,9 +37,9 @@ namespace {
             sample.providerGeneration == value.sample.providerGeneration;
     }
 }
-api::Status set(api::OwnerToken owner, const api::input::v1_5::SupportTriggerRequest& value) {
+api::Status set(api::OwnerToken owner, const api::input::SupportTriggerRequest& value) {
     using api::Status;
-    if (!owner || !value.weaponFormId || !value.weaponGenerationKey || !value.leaseFrames || value.leaseFrames > 120 ||
+    if (!owner || !value.weaponFormId || !value.weaponGenerationKey || !value.leaseFrames || value.leaseFrames > api::input::kMaxWeaponInputLeaseFrames ||
         (value.hand != api::Hand::Left && value.hand != api::Hand::Right)) return Status::InvalidArgument;
     const auto frame = provider::runtime::currentGameFrameIndex();
     if (value.sample.frameIndex > frame || frame - value.sample.frameIndex > 1) return Status::GenerationMismatch;
@@ -62,7 +62,7 @@ api::Status clear(api::OwnerToken owner) {
     if (state.active && state.owner != owner) return api::Status::Busy;
     retire(); return api::Status::Ok;
 }
-api::Status read(api::input::v1_5::SupportTriggerState& out) {
+api::Status read(api::input::SupportTriggerState& out) {
     std::scoped_lock lock(mutex); out = state; out.sample = provider::runtime::sample(); return api::Status::Ok;
 }
 void clearOwner(api::OwnerToken owner) { std::scoped_lock lock(mutex); if (state.owner == owner) retire(); }

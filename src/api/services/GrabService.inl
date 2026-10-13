@@ -293,7 +293,7 @@
             return RockProviderResultV1::OwnerConflict;
         }
         clearOffhandReservationLocked(
-            RockProviderSuppressionInvalidationReasonV1::ExplicitClear);
+            ::rock::api::input::SuppressionInvalidationReason::ExplicitClear);
         return RockProviderResultV1::Ok;
     }
 

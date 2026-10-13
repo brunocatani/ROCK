@@ -452,46 +452,6 @@ namespace rock::provider {
         UseVelocityHavok = 1u << 2,
     };
 
-    enum class RockProviderHandInputSuppressionFlagV1 : std::uint32_t
-    {
-        None = 0,
-        SuppressNormalGrabPress = 1u << 0,
-        SuppressGrabRelease = 1u << 1,
-        SuppressHeldWeaponTriggerEquip = 1u << 2,
-        SuppressGameplayCandidates = 1u << 3,
-        SuppressOpenVrGameInput = 1u << 4,
-        /*
-         * The native primary-wand Pause binding has two independent actions:
-         * ordinary VATS opens on release, while V.A.N.S. starts from held
-         * samples after Bethesda's threshold. These flags suppress only their
-         * named phase. Set both to consume the complete gesture. The action is
-         * a single primary-wand path, so ROCK aggregates these two flags across
-         * active right- and left-hand suppression leases.
-         */
-        SuppressNativeVats = 1u << 5,
-        SuppressNativeVans = 1u << 6,
-        // Grenade mode is enabled without a claim. A ready UI consumer renews
-        // this flag (on either hand) to disable Pip-Boy-equipped B-hold draw.
-        // Remove the flag or clear the lease to enable it again; expiry,
-        // unregister and lifecycle loss also restore it. Other owners retain
-        // their claims. Never renew merely because the consumer DLL loaded.
-        // This flag alone leaves native taps, OpenVR input and grabs unchanged.
-        SuppressGrenadeQuickDraw = 1u << 7,
-        // Reserve this hand's trigger+grip chord. Alone, either button remains
-        // native. When both raw buttons are held, ROCK applies ConfigModeChord
-        // and OpenVrGameInput suppression before returning input to the game.
-        // Renew only while the consumer can accept a new chord. After capture,
-        // also request unconditional suppression through both physical releases.
-        ReserveTriggerGripChord = 1u << 8,
-        // General physical button/chord reservation. Uses the two masks in the
-        // request; suppression applies only while every specified button is down.
-        ReserveButtonChord = 1u << 9,
-        SuppressConfigModeChord =
-            static_cast<std::uint32_t>(SuppressNormalGrabPress) |
-            static_cast<std::uint32_t>(SuppressGrabRelease) |
-            static_cast<std::uint32_t>(SuppressHeldWeaponTriggerEquip) |
-            static_cast<std::uint32_t>(SuppressGameplayCandidates),
-    };
 
     enum class RockProviderWeaponPartGrabModeV1 : std::uint32_t
     {
@@ -901,34 +861,12 @@ namespace rock::provider {
         CollisionSuppressed = 1u << 13,
     };
 
-    enum class RockProviderInputAvailabilityReasonV1 : std::uint32_t
-    {
-        Available = 0,
-        HookNotSampled = 1,
-        BlockingMenu = 2,
-        ReleaseToRearm = 3,
-        InvalidButton = 4,
-    };
-
-    enum class RockProviderLogicalInputActionV1 : std::uint32_t
-    {
-        Jump = 1,
-    };
 
 
 
 
 
-    enum class RockProviderSuppressionInvalidationReasonV1 : std::uint32_t
-    {
-        None = 0,
-        Expired = 1,
-        GenerationChanged = 2,
-        OwnerUnregistered = 3,
-        ProviderLost = 4,
-        ExplicitClear = 5,
-        CallbackFault = 6,
-    };
+
 
     enum class RockProviderCommandStageV1 : std::uint32_t
     {
@@ -979,7 +917,7 @@ namespace rock::provider {
 
     [[nodiscard]] inline constexpr bool hasHandInputSuppressionFlagV1(
         std::uint32_t flags,
-        RockProviderHandInputSuppressionFlagV1 flag)
+        ::rock::api::input::HandInputSuppressionFlag flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
@@ -1117,55 +1055,8 @@ namespace rock::provider {
         std::uint32_t reserved{ 0 };
     };
 
-    struct RockProviderHandInputSuppressionRequestV1
-    {
-        std::uint32_t size{ sizeof(RockProviderHandInputSuppressionRequestV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        RockProviderHand hand{ RockProviderHand::None };
-        std::uint32_t flags{ 0 };
-        std::uint32_t leaseFrames{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        // Physical left/right OpenVR button masks, split to preserve V1 alignment.
-        // Used only with ReserveButtonChord. Renew unconditional flags after
-        // capture until every member is released; expiry/clear restores input.
-        std::uint32_t chordButtonsLow[2]{};
-        std::uint32_t chordButtonsHigh[2]{};
-        std::uint32_t reserved[4]{};
-    };
 
-    /*
-     * Raw OpenVR wand button state as sampled by ROCK's controller-state hook
-     * (feature bit RawWandButtonState). Level state only: press/release edge
-     * tracking is deliberately not exposed because ROCK consumes its edge
-     * queues internally every frame (grab and trigger-equip logic); consumers
-     * derive their own edges from held transitions. available reads 0 until
-     * the hook has sampled that wand; held reads 0 while a game-stopping menu
-     * owns input, with the same release-to-rearm gating ROCK applies to its
-     * own gameplay reads. This state stays readable while ROCK suppresses the
-     * matching native game action (e.g. the pipboy trigger) - that is the
-     * point: the game action is silenced, the physical button is not.
-     */
-    enum class RockProviderNativeInputContextFlagV1 : std::uint32_t
-    {
-        Available = 1u << 0,
-        MenuActive = 1u << 1,
-        PrimaryActivationTarget = 1u << 2,
-    };
 
-    struct RockProviderRawWandButtonStateV1
-    {
-        std::uint32_t size{ sizeof(RockProviderRawWandButtonStateV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint32_t available{ 0 };
-        std::uint32_t held{ 0 };
-        std::uint64_t sampleSequence{ 0 };
-        std::uint32_t sampleAgeMilliseconds{ 0 };
-        RockProviderInputAvailabilityReasonV1 availabilityReason{
-            RockProviderInputAvailabilityReasonV1::HookNotSampled
-        };
-    };
 
     struct RockProviderWeaponPartTargetV1
     {
@@ -1448,32 +1339,6 @@ namespace rock::provider {
         float z{ 0.0f };
     };
 
-    /*
-     * Semantic input observed at the native gameplay handler. pressSequence
-     * changes only on a new press and lets consumers detect the configured
-     * logical Jump action without guessing an OpenVR axis or button mapping.
-     */
-    struct RockProviderLogicalInputActionStateV1
-    {
-        std::uint32_t size{ sizeof(RockProviderLogicalInputActionStateV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        RockProviderLogicalInputActionV1 action{
-            RockProviderLogicalInputActionV1::Jump
-        };
-        std::uint32_t available{ 0 };
-        std::uint32_t held{ 0 };
-        RockProviderInputAvailabilityReasonV1 availabilityReason{
-            RockProviderInputAvailabilityReasonV1::HookNotSampled
-        };
-        std::uint64_t sampleSequence{ 0 };
-        std::uint64_t pressSequence{ 0 };
-        std::uint64_t frameIndex{ 0 };
-        std::uint32_t sampleAgeMilliseconds{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[4]{};
-    };
 
     /*
      * Frame-local value snapshot of FO4VR's native player character controller.
@@ -2141,25 +2006,6 @@ namespace rock::provider {
         std::uint32_t filterKnownBodyCount{ 0 };
     };
 
-    struct RockProviderHandInputSuppressionStateV1
-    {
-        std::uint32_t size{ sizeof(RockProviderHandInputSuppressionStateV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint64_t frameIndex{ 0 };
-        RockProviderHand hand{ RockProviderHand::None };
-        std::uint32_t callerFlags{ 0 };
-        std::uint32_t effectiveFlags{ 0 };
-        std::uint32_t callerLeaseActive{ 0 };
-        std::uint64_t callerExpiresAfterFrame{ 0 };
-        std::uint32_t callerRemainingFrames{ 0 };
-        RockProviderSuppressionInvalidationReasonV1 lastInvalidationReason{
-            RockProviderSuppressionInvalidationReasonV1::None
-        };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[5]{};
-    };
 
     struct RockProviderOffhandReservationRequestV1
     {

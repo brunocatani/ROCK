@@ -72,21 +72,7 @@ Status ROCK_CALL itemMove(OwnerToken owner,const v1_7::ItemKey* before,const v1_
 const v1_7::Api& tableV1_7() noexcept {static const v1_7::Api value{tableV1_6(),&itemState,&itemMove,&oldClear};return value;}
 }
 namespace rock::api::animation { const Api& table() noexcept { static const Api value{}; return value; } }
-namespace rock::api::input {
-namespace {
-Status ROCK_CALL oldClear(OwnerToken owner,Hand hand) noexcept { return owner==77 && hand==Hand::Left ? Status::Ok : Status::InvalidArgument; }
-Status ROCK_CALL placement(OwnerToken owner,v1_1::PlacementClickState* out) noexcept {
-    if(owner!=77 || !out) return Status::InvalidArgument;
-    *out={};out->flags=static_cast<std::uint32_t>(v1_1::PlacementClickFlag::InputReserved);return Status::Ok;
-}
-}
-const v1_1::Api& tableV1_1() noexcept { static const v1_1::Api value{{nullptr,&oldClear},&placement}; return value; }
-const v1_2::Api& tableV1_2() noexcept { static const v1_2::Api value{tableV1_1()}; return value; }
-const v1_3::Api& tableV1_3() noexcept { static const v1_3::Api value{tableV1_2()}; return value; }
-const v1_4::Api& tableV1_4() noexcept { static const v1_4::Api value{tableV1_3()}; return value; }
-const v1_5::Api& tableV1_5() noexcept { static const v1_5::Api value{tableV1_4()}; return value; }
-const ApiV1& table() noexcept { return tableV1_1().v1; }
-}
+namespace rock::api::input { const Api& table() noexcept { static const Api value{}; return value; } }
 namespace rock::api::references { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
 namespace rock::api::playercontroller { const Api& table() noexcept { static const Api value{}; return value; } }
 namespace rock::api::diagnostics { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
