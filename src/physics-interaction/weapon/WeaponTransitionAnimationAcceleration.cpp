@@ -109,6 +109,12 @@ namespace rock::weapon_transition_animation_acceleration
              */
             std::chrono::steady_clock::time_point requestedAt{};
             std::uint64_t sequence{ 0 };
+            // The player's graph manager can be unavailable on the request
+            // frame (trigger equip from Sheathed, runtime 12 Oct 22:16:42).
+            // The lease is then held inert (no encoded lease, so animation
+            // callbacks ignore it) and service retries the graph each frame
+            // until it is published or the lease's watchdog ends it.
+            std::uintptr_t pendingEncodedLease{ 0 };
             bool active{ false };
         };
 
@@ -973,7 +979,7 @@ namespace rock::weapon_transition_animation_acceleration
             ++s_resolveFailureLogs;
             ROCK_LOG_WARN(
                 Weapon,
-                "Weapon transition clip acceleration not armed direction={} formID={:08X} instance={:#x}: {}",
+                "Weapon transition clip acceleration graph not ready direction={} formID={:08X} instance={:#x}: {}; retrying each frame",
                 direction == Direction::Draw ? "draw" : "sheathe",
                 identity.formID,
                 identity.instanceData,
@@ -1114,16 +1120,6 @@ namespace rock::weapon_transition_animation_acceleration
 
         const auto graphTargets =
             publishPlayerGraphCharacters(input.player);
-        if (graphTargets != GraphTargetResult::Ready) {
-            logGraphTargetFailure(
-                graphTargets,
-                input.identity,
-                input.direction);
-            return graphTargets == GraphTargetResult::MissingManager ?
-                RequestResult::MissingGraphManager :
-                RequestResult::MissingGraphCharacters;
-        }
-
         resetDiagnostics();
         s_runtimeLease = RuntimeLease{
             .player = input.player,
@@ -1133,6 +1129,16 @@ namespace rock::weapon_transition_animation_acceleration
             .sequence = ++s_nextSequence,
             .active = true,
         };
+        if (graphTargets != GraphTargetResult::Ready) {
+            logGraphTargetFailure(
+                graphTargets,
+                input.identity,
+                input.direction);
+            s_runtimeLease.pendingEncodedLease = encodedLease;
+            return graphTargets == GraphTargetResult::MissingManager ?
+                RequestResult::MissingGraphManager :
+                RequestResult::MissingGraphCharacters;
+        }
         s_encodedLease.store(encodedLease, std::memory_order_release);
         ROCK_LOG_INFO(
             Weapon,
@@ -1204,6 +1210,15 @@ namespace rock::weapon_transition_animation_acceleration
         if (!claimOrValidateOwnerThread()) {
             s_encodedLease.store(0, std::memory_order_release);
             return;
+        }
+        if (s_runtimeLease.pendingEncodedLease && input.player == s_runtimeLease.player &&
+            publishPlayerGraphCharacters(input.player) == GraphTargetResult::Ready) {
+            s_encodedLease.store(s_runtimeLease.pendingEncodedLease, std::memory_order_release);
+            s_runtimeLease.pendingEncodedLease = 0;
+            ROCK_LOG_INFO(Weapon,
+                "Weapon transition clip acceleration armed after graph became ready sequence={} formID={:08X} waitMs={:.1f} characters={}",
+                s_runtimeLease.sequence, s_runtimeLease.identity.formID, elapsedSeconds() * 1000.0f,
+                s_targetCharacterCount.load(std::memory_order_acquire));
         }
 
         const bool identityMatches =
