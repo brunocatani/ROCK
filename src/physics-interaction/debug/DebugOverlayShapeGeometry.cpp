@@ -450,7 +450,7 @@ namespace rock::debug_overlay_shape
         });
     }
 
-    std::size_t approximateGpuBytes(const MeshData& mesh) noexcept
+    std::size_t approximateMeshBytes(const MeshData& mesh) noexcept
     {
         return mesh.vertices.size() * sizeof(Vertex) + mesh.indices.size() * sizeof(std::uint16_t);
     }

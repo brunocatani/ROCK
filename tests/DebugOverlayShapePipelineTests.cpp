@@ -65,7 +65,7 @@ int main()
     limits.maxQueuedJobs = 2;
     limits.maxCompletedJobs = 2;
     limits.maxCacheEntries = 2;
-    limits.maxGpuBytes = 1024 * 1024;
+    limits.maxBytes = 1024 * 1024;
 
     const ShapeKey firstKey{ 0x1000, 0xA1 };
     const auto first = pipeline.reserve(firstKey, limits);

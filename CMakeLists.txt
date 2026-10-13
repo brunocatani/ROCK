@@ -124,9 +124,6 @@ target_link_libraries(${PROJECT_NAME}
     CommonLibF4::CommonLibF4
     nlohmann_json::nlohmann_json
     ROCK::OpenVR
-    d3d11.lib
-    dxgi.lib
-    d3dcompiler.lib
 )
 
 find_package(spdlog CONFIG REQUIRED)
@@ -200,7 +197,14 @@ if(RPS_SDK_ROOT STREQUAL "")
 endif()
 set(ROCK_PUBLIC_SDK_DIR "${RPS_SDK_ROOT}/SDK/ROCK")
 include_directories("${ROCK_PUBLIC_SDK_DIR}/include")
-target_include_directories(${PROJECT_NAME} PRIVATE "${RPS_SDK_ROOT}/SDK/UI/include")
+# RPS UI Framework publishes its own headers; ROCK binds it at runtime and works
+# without it (world drawing and UI input cooperation are then unavailable).
+set(RPSUI_INCLUDE_DIR "${WORKSPACE_ROOT}/../ui_mods/RPS_UI_Framework/SDK/include" CACHE PATH
+  "RPS UI Framework public header directory.")
+if(NOT EXISTS "${RPSUI_INCLUDE_DIR}/RPSUIWorldDrawApi.h")
+  message(FATAL_ERROR ">> RPS UI Framework headers not found at '${RPSUI_INCLUDE_DIR}'; set RPSUI_INCLUDE_DIR.")
+endif()
+target_include_directories(${PROJECT_NAME} PRIVATE "${RPSUI_INCLUDE_DIR}")
 
 if(BUILD_ROCK_TESTS OR ROCK_PACKAGE_RELEASE)
   foreach(ROCK_REQUIRED_SDK_PATH IN ITEMS
@@ -1025,16 +1029,7 @@ if(BUILD_ROCK_TESTS)
   )
   target_compile_features(ROCKDebugOverlayShapePipelineTests PRIVATE cxx_std_23)
   target_include_directories(ROCKDebugOverlayShapePipelineTests PRIVATE ${SOURCE_DIR})
-  target_link_libraries(ROCKDebugOverlayShapePipelineTests PRIVATE d3d11.lib)
   add_rock_test(ROCKDebugOverlayShapePipelineTests)
-
-  add_executable(ROCKDebugOverlayShaderCompileTests
-    "${ROOT_DIR}/tests/DebugOverlayShaderCompileTests.cpp"
-  )
-  target_compile_features(ROCKDebugOverlayShaderCompileTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKDebugOverlayShaderCompileTests PRIVATE ${SOURCE_DIR})
-  target_link_libraries(ROCKDebugOverlayShaderCompileTests PRIVATE d3dcompiler.lib)
-  add_rock_test(ROCKDebugOverlayShaderCompileTests)
 
   add_executable(ROCKWeaponSceneTraversalTests "${ROOT_DIR}/tests/WeaponSceneTraversalTests.cpp")
   target_compile_features(ROCKWeaponSceneTraversalTests PRIVATE cxx_std_23)

@@ -4,9 +4,6 @@
 #include <cstdint>
 #include <memory>
 
-#include <d3d11.h>
-#include <wrl/client.h>
-
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/debug/DebugOverlayShapeGeometry.h"
 
@@ -36,18 +33,40 @@ namespace rock::debug_overlay_shape
         std::uint32_t maxQueuedJobs{ debug_overlay_runtime::kDefaultMaxShapeQueuedJobs };
         std::uint32_t maxCompletedJobs{ debug_overlay_runtime::kDefaultMaxShapeCompletedJobs };
         std::uint32_t maxCacheEntries{ debug_overlay_policy::kDefaultShapeCacheBudget };
-        std::size_t maxGpuBytes{ debug_overlay_runtime::kDefaultMaxShapeCacheBytes };
+        std::size_t maxBytes{ debug_overlay_runtime::kDefaultMaxShapeCacheBytes };
     };
 
-    struct GpuShape
+    // Hands finished meshes to the display host (RPS UI world drawing) and
+    // takes them back. Both run on the host's frame-callback thread or, for
+    // release, wherever the last cache reference drops.
+    struct MeshSink
     {
-        Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer;
-        Microsoft::WRL::ComPtr<ID3D11Buffer> indexBuffer;
+        bool (*registerMesh)(std::uint64_t meshId, const MeshData& mesh) noexcept{ nullptr };
+        void (*releaseMesh)(std::uint64_t meshId) noexcept{ nullptr };
+    };
+
+    // A mesh registered with the display host. Releasing the last reference
+    // releases the host copy, so eviction and invalidation free it.
+    struct RegisteredShape
+    {
+        RegisteredShape() = default;
+        RegisteredShape(const RegisteredShape&) = delete;
+        RegisteredShape& operator=(const RegisteredShape&) = delete;
+        ~RegisteredShape()
+        {
+            if (release && meshId != 0) release(meshId);
+        }
+
+        std::uint64_t meshId{ 0 };
+        void (*release)(std::uint64_t meshId) noexcept{ nullptr };
         std::uint32_t indexCount{ 0 };
         debug_overlay_policy::ShapeDecodeMode decodeMode{ debug_overlay_policy::ShapeDecodeMode::Detailed };
         int shapeType{ -1 };
         std::size_t approximateBytes{ 0 };
     };
+
+    // Ids below this value are reserved for meshes the overlay registers itself.
+    inline constexpr std::uint64_t kFirstPipelineMeshId = 0x100;
 
     struct ShapeReservation
     {
@@ -66,7 +85,7 @@ namespace rock::debug_overlay_shape
     struct LookupResult
     {
         CacheState state{ CacheState::Missing };
-        std::shared_ptr<const GpuShape> shape;
+        std::shared_ptr<const RegisteredShape> shape;
     };
 
     struct UploadResult
@@ -88,7 +107,7 @@ namespace rock::debug_overlay_shape
         std::size_t queuedJobs{ 0 };
         std::size_t activeJobs{ 0 };
         std::size_t completedJobs{ 0 };
-        std::size_t approximateGpuBytes{ 0 };
+        std::size_t approximateBytes{ 0 };
         std::uint64_t generation{ 0 };
         std::uint64_t evictions{ 0 };
         std::uint64_t staleResultDrops{ 0 };
@@ -115,7 +134,7 @@ namespace rock::debug_overlay_shape
 
         [[nodiscard]] LookupResult lookup(const ShapeKey& key);
         [[nodiscard]] UploadResult processCompletedUploads(
-            ID3D11Device* device, std::uint32_t maxUploads, const PipelineLimits& limits);
+            const MeshSink& sink, std::uint32_t maxUploads, const PipelineLimits& limits);
         [[nodiscard]] PipelineStats stats() const noexcept;
 
     private:

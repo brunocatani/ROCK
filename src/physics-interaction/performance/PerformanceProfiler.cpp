@@ -54,7 +54,6 @@ namespace rock::performance_profiler
         struct Settings
         {
             std::atomic<bool> enabled{ false };
-            std::atomic<bool> overlayText{ false };
             std::atomic<std::uint32_t> logIntervalFrames{ 300 };
             std::atomic<std::uint32_t> warmupFrames{ 120 };
             std::atomic<std::uint64_t> frameIndex{ 0 };
@@ -74,9 +73,6 @@ namespace rock::performance_profiler
         thread_local std::uint32_t t_memoryQuerySequence = 0;
         LARGE_INTEGER s_frequency{};
         std::atomic<bool> s_frequencyReady{ false };
-        std::mutex s_overlayMutex;
-        OverlayLines s_overlayLines{};
-        std::uint32_t s_overlayLineCount = 0;
 
         constexpr std::uint32_t sanitizeIntervalFrames(int value) noexcept
         {
@@ -504,13 +500,6 @@ namespace rock::performance_profiler
             }
         }
 
-        void clearOverlayLines() noexcept
-        {
-            std::scoped_lock lock(s_overlayMutex);
-            s_overlayLines = {};
-            s_overlayLineCount = 0;
-        }
-
         void atomicMax(std::atomic<std::uint64_t>& target, std::uint64_t value) noexcept
         {
             auto current = target.load(std::memory_order_relaxed);
@@ -927,35 +916,6 @@ namespace rock::performance_profiler
             return snapshot;
         }
 
-        void publishOverlayLines(const std::array<ScopeSnapshot, static_cast<std::size_t>(Scope::Count)>& snapshot, std::uint64_t frames) noexcept
-        {
-            std::scoped_lock lock(s_overlayMutex);
-            s_overlayLines = {};
-            s_overlayLineCount = 0;
-
-            auto addLine = [&](const char* format, auto&&... args) {
-                if (s_overlayLineCount >= s_overlayLines.size()) {
-                    return;
-                }
-                auto& line = s_overlayLines[s_overlayLineCount++];
-                std::snprintf(line.data(), line.size(), format, std::forward<decltype(args)>(args)...);
-                line.back() = '\0';
-            };
-
-            addLine("ROCK PERF %lluf", static_cast<unsigned long long>(frames));
-            for (const auto& item : snapshot) {
-                if (!item.hasData() || s_overlayLineCount >= s_overlayLines.size()) {
-                    continue;
-                }
-                addLine("%s avg %.3f max %.3f n %llu e %llu",
-                    scopeName(item.scope),
-                    item.avgMs(),
-                    item.maxMs(),
-                    static_cast<unsigned long long>(item.samples),
-                    static_cast<unsigned long long>(item.events));
-            }
-        }
-
         void queueSnapshot(const std::array<ScopeSnapshot, static_cast<std::size_t>(Scope::Count)>& snapshot,
             const std::array<CounterSnapshot, static_cast<std::size_t>(Counter::Count)>& counterSnapshot,
             const std::array<ValueSnapshot, static_cast<std::size_t>(ValueMetric::Count)>& valueSnapshot,
@@ -974,7 +934,7 @@ namespace rock::performance_profiler
         }
     }
 
-    void refreshSettings(bool enabled, int logIntervalFrames, int warmupFrames, bool overlayTextEnabled) noexcept
+    void refreshSettings(bool enabled, int logIntervalFrames, int warmupFrames) noexcept
     {
         const auto sanitizedInterval = sanitizeIntervalFrames(logIntervalFrames);
         const auto sanitizedWarmup = sanitizeWarmupFrames(warmupFrames);
@@ -989,14 +949,12 @@ namespace rock::performance_profiler
 
         s_settings.logIntervalFrames.store(sanitizedInterval, std::memory_order_release);
         s_settings.warmupFrames.store(sanitizedWarmup, std::memory_order_release);
-        s_settings.overlayText.store(overlayTextEnabled, std::memory_order_release);
 
         if (!enabled) {
             if (wasEnabled) {
                 clearAccumulators();
                 clearCounterAccumulators();
                 clearValueAccumulators();
-                clearOverlayLines();
                 s_settings.frameIndex.store(0, std::memory_order_release);
                 s_settings.intervalStartFrame.store(0, std::memory_order_release);
             }
@@ -1008,7 +966,6 @@ namespace rock::performance_profiler
             s_settings.enabled.store(false, std::memory_order_release);
             clearCounterAccumulators();
             clearValueAccumulators();
-            clearOverlayLines();
             return;
         }
 
@@ -1018,7 +975,6 @@ namespace rock::performance_profiler
             clearAccumulators();
             clearCounterAccumulators();
             clearValueAccumulators();
-            clearOverlayLines();
             s_settings.frameIndex.store(0, std::memory_order_release);
             s_settings.intervalStartFrame.store(0, std::memory_order_release);
         }
@@ -1065,9 +1021,6 @@ namespace rock::performance_profiler
         const auto counterSnapshot = takeCounterSnapshot();
         const auto valueSnapshot = takeValueSnapshot();
         const auto frames = frame - intervalStart;
-        if (s_settings.overlayText.load(std::memory_order_acquire)) {
-            publishOverlayLines(snapshot, frames);
-        }
         queueSnapshot(snapshot, counterSnapshot, valueSnapshot, frames);
     }
 
@@ -1109,23 +1062,6 @@ namespace rock::performance_profiler
         slot.total.fetch_add(value, std::memory_order_relaxed);
         slot.samples.fetch_add(1, std::memory_order_relaxed);
         atomicMax(slot.max, value);
-    }
-
-    bool overlayTextEnabled() noexcept
-    {
-        return s_settings.enabled.load(std::memory_order_acquire) && s_settings.overlayText.load(std::memory_order_acquire);
-    }
-
-    std::uint32_t copyOverlayLines(OverlayLines& outLines) noexcept
-    {
-        outLines = {};
-        if (!overlayTextEnabled()) {
-            return 0;
-        }
-
-        std::scoped_lock lock(s_overlayMutex);
-        outLines = s_overlayLines;
-        return s_overlayLineCount;
     }
 
     MemoryQuerySample beginMemoryQuery() noexcept

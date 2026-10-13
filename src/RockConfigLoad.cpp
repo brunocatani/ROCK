@@ -285,7 +285,6 @@ namespace rock
             std::clamp(static_cast<int>(ini.GetLongValue(DEBUG_SECTION, "iPerformanceProfilerLogIntervalFrames", rockPerformanceProfilerLogIntervalFrames)), 30, 54000);
         rockPerformanceProfilerWarmupFrames =
             std::clamp(static_cast<int>(ini.GetLongValue(DEBUG_SECTION, "iPerformanceProfilerWarmupFrames", rockPerformanceProfilerWarmupFrames)), 0, 54000);
-        rockPerformanceProfilerOverlayText = ini.GetBoolValue(DEBUG_SECTION, "bPerformanceProfilerOverlayText", rockPerformanceProfilerOverlayText);
 
         rockHavokTimingFixEnabled = ini.GetBoolValue(SECTION, "bHavokTimingFixEnabled", rockHavokTimingFixEnabled);
         rockVatsPhysicsFixes = ini.GetBoolValue(SECTION, "bVatsPhysicsFixes", rockVatsPhysicsFixes);
@@ -760,7 +759,6 @@ namespace rock
         rockDebugMaxShapeCacheBytes = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxShapeCacheBytes", rockDebugMaxShapeCacheBytes));
         rockDebugMaxBodyInstances = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxBodyInstances", rockDebugMaxBodyInstances));
         rockDebugMaxLineVertices = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxLineVertices", rockDebugMaxLineVertices));
-        rockDebugMaxTextVertices = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxTextVertices", rockDebugMaxTextVertices));
         debug_overlay_runtime::RequestedLimits requestedOverlayLimits{};
         requestedOverlayLimits.maxShapeCapturesPerFrame = rockDebugMaxShapeCapturesPerFrame;
         requestedOverlayLimits.maxConvexSupportVertices = rockDebugMaxConvexSupportVertices;
@@ -773,7 +771,6 @@ namespace rock
         requestedOverlayLimits.maxShapeCacheBytes = rockDebugMaxShapeCacheBytes;
         requestedOverlayLimits.maxBodyInstances = rockDebugMaxBodyInstances;
         requestedOverlayLimits.maxLineVertices = rockDebugMaxLineVertices;
-        requestedOverlayLimits.maxTextVertices = rockDebugMaxTextVertices;
         const auto overlayLimits = debug_overlay_runtime::sanitize(requestedOverlayLimits);
         rockDebugMaxShapeCapturesPerFrame = static_cast<int>(overlayLimits.maxShapeCapturesPerFrame);
         rockDebugMaxConvexSupportVertices = static_cast<int>(overlayLimits.maxConvexSupportVertices);
@@ -786,7 +783,6 @@ namespace rock
         rockDebugMaxShapeCacheBytes = static_cast<int>(overlayLimits.maxShapeCacheBytes);
         rockDebugMaxBodyInstances = static_cast<int>(overlayLimits.maxBodyInstances);
         rockDebugMaxLineVertices = static_cast<int>(overlayLimits.maxLineVertices);
-        rockDebugMaxTextVertices = static_cast<int>(overlayLimits.maxTextVertices);
         rockDebugUseBoundsForHeavyConvex = ini.GetBoolValue(SECTION, "bDebugUseBoundsForHeavyConvex", rockDebugUseBoundsForHeavyConvex);
         rockDebugVerboseLogging = ini.GetBoolValue(SECTION, "bDebugVerboseLogging", rockDebugVerboseLogging);
         rockDebugShowRootFlattenedFingerSkeletonMarkers =

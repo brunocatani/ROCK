@@ -69,7 +69,6 @@ namespace rock
         bool rockPerformanceProfilerEnabled = false;
         int rockPerformanceProfilerLogIntervalFrames = 300;
         int rockPerformanceProfilerWarmupFrames = 120;
-        bool rockPerformanceProfilerOverlayText = false;
 
         // Optional fixed injector grips and body-contact consumption.
         bool rockImmersiveAidEnabled = true;
@@ -245,7 +244,6 @@ namespace rock
         int rockDebugMaxShapeCacheBytes = static_cast<int>(debug_overlay_runtime::kDefaultMaxShapeCacheBytes);
         int rockDebugMaxBodyInstances = static_cast<int>(debug_overlay_runtime::kDefaultMaxBodyInstances);
         int rockDebugMaxLineVertices = static_cast<int>(debug_overlay_policy::kDefaultLineVertexBudget);
-        int rockDebugMaxTextVertices = static_cast<int>(debug_overlay_runtime::kDefaultMaxTextVertices);
         bool rockDebugUseBoundsForHeavyConvex = true;
         bool rockDebugVerboseLogging = false;
         bool rockDebugShowRootFlattenedFingerSkeletonMarkers = false;

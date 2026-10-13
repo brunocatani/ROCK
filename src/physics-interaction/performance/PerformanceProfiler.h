@@ -240,11 +240,7 @@ namespace rock::performance_profiler
         Count
     };
 
-    inline constexpr std::size_t kOverlayMaxLines = 8;
-    inline constexpr std::size_t kOverlayLineLength = 128;
-    using OverlayLines = std::array<std::array<char, kOverlayLineLength>, kOverlayMaxLines>;
-
-    void refreshSettings(bool enabled, int logIntervalFrames, int warmupFrames, bool overlayTextEnabled) noexcept;
+    void refreshSettings(bool enabled, int logIntervalFrames, int warmupFrames) noexcept;
     bool enabled() noexcept;
     void beginFrame() noexcept;
     void endFrame() noexcept;
@@ -255,8 +251,6 @@ namespace rock::performance_profiler
     enum class ContactStage : std::uint8_t;
     // Diagnostic values only; ownership and collision decisions stay with callers.
     void observeContactPair(ContactPair pair, ContactStage stage) noexcept;
-    bool overlayTextEnabled() noexcept;
-    std::uint32_t copyOverlayLines(OverlayLines& outLines) noexcept;
 
     enum class MemoryQueryKind : std::uint8_t { Read, Write, Execute };
 

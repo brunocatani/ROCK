@@ -16,23 +16,16 @@
 #include <utility>
 #include <vector>
 
-#include <d3d11.h>
-#include <d3dcompiler.h>
-#include <wrl/client.h>
-
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
 #include "physics-interaction/native/HavokWorldLock.h"
 #include "physics-interaction/debug/DebugOverlayFrameAdmission.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
-#include "physics-interaction/debug/DebugOverlayGpuTimer.h"
 #include "physics-interaction/debug/DebugOverlayLineBatch.h"
 #include "physics-interaction/debug/DebugOverlayPolicy.h"
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/debug/DebugOverlayShapeGeometry.h"
 #include "physics-interaction/debug/DebugOverlayShapePipeline.h"
-#include "physics-interaction/debug/DebugOverlayShaders.h"
-#include "physics-interaction/debug/DebugWorldTextGeometry.h"
 #include "rock_support/ImmutableSnapshotPool.h"
 #include "physics-interaction/debug/DebugOverlayStats.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
@@ -40,17 +33,17 @@
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/GripZoneIndicators.h"
+#include "physics-interaction/visual/WorldDrawClient.h"
 #include "physics-interaction/visual/WorldOverlayRenderer.h"
 #include "RockConfig.h"
+#include "RPSUIWorldDrawApi.h"
 
-#include "RE/Bethesda/BSGraphics.h"
 #include "RE/Havok/hknpMotion.h"
 #include "RE/Havok/hknpShape.h"
 #include "RE/Havok/hknpWorld.h"
 
 #include <F4SE/F4SE.h>
 #include <REL/Relocation.h>
-#include "rock_support/VRControllers.h"
 #include <windows.h>
 
 #include "physics-interaction/debug/DebugMath.h"
@@ -84,61 +77,67 @@ namespace rock::debug
         constexpr std::size_t kBodySourceCapacity = std::tuple_size_v<decltype(BodyOverlayFrame{}.entries)>;
         constexpr std::size_t kBodyInstanceCapacity = kBodySourceCapacity;
         static_assert(kBodySourceCapacity == debug_overlay_runtime::kMaxBodyInstances);
-        static_assert(grip_zone_indicators::Frame::kCapacity <= kBodyInstanceCapacity);
+        static_assert(grip_zone_indicators::Frame::kCapacity <= rpsui::sdk::RPSUI_WORLD_DRAW_MAX_SPHERES);
+        static_assert(kBodyInstanceCapacity <= rpsui::sdk::RPSUI_WORLD_DRAW_MAX_MESH_INSTANCES);
+        static_assert(debug_overlay_policy::kMaxLineVertexBudget / 2 <= rpsui::sdk::RPSUI_WORLD_DRAW_MAX_LINES);
         constexpr std::uint64_t kCanonicalSphereGeometryFingerprint = 0x5350'4845'5245'0001ull;
-        constexpr DWORD kPageExecuteReadWrite = 0x00000040u;
-        constexpr UINT kMaxShaderClassInstances = 256;
-        constexpr UINT kSavedVertexBufferSlots = 2;
+        // Host mesh ids below the shape pipeline's range belong to the overlay.
+        constexpr std::uint64_t kAabbProxyMeshId = 1;
+        static_assert(kAabbProxyMeshId < debug_overlay_shape::kFirstPipelineMeshId);
 
         using Vertex = debug_overlay_shape::Vertex;
         using MeshData = debug_overlay_shape::MeshData;
         using ShapeKey = debug_overlay_shape::ShapeKey;
-        using GpuShape = debug_overlay_shape::GpuShape;
+        using RegisteredShape = debug_overlay_shape::RegisteredShape;
 
-        struct ColoredVertex
-        {
-            float x{ 0.0f };
-            float y{ 0.0f };
-            float z{ 0.0f };
-            float color[4]{ 1.0f, 1.0f, 1.0f, 1.0f };
-        };
-        static_assert(sizeof(ColoredVertex) == 28);
-
-        struct alignas(16) BodyInstanceData
-        {
-            DirectX::XMFLOAT4X4 model{};
-            float color[4]{ 1.0f, 1.0f, 1.0f, 0.85f };
-        };
-        static_assert(sizeof(BodyInstanceData) == 80);
-        static_assert(alignof(BodyInstanceData) == 16);
-
-        struct BodyDrawItem
-        {
-            std::shared_ptr<const GpuShape> shapeOwner;
-            const GpuShape* shape{ nullptr };
-            BodyInstanceData instance{};
-        };
-
-        struct RenderScratch
+        // Frame-callback scratch for one composed publication; capacity is kept
+        // between frames.
+        struct WorldDrawScratch
         {
             debug_overlay_line_batch::LineBatch lines;
-            std::vector<BodyDrawItem> bodies;
-            std::vector<ColoredVertex> textVertices;
+            std::vector<rpsui::sdk::WorldSphereV1> spheres;
+            std::vector<rpsui::sdk::WorldLineV1> worldLines;
+            std::vector<rpsui::sdk::WorldTextV1> texts;
+            std::vector<rpsui::sdk::WorldMeshInstanceV1> instances;
+            // Keeps each drawn cache entry, and so its host mesh, alive until
+            // the publication naming it has been submitted.
+            std::vector<std::shared_ptr<const RegisteredShape>> heldShapes;
+            std::vector<float> meshPositions;
+            std::vector<std::uint32_t> meshIndices;
+            bool prepared{ false };
 
             bool prepare()
             {
+                if (prepared) {
+                    return true;
+                }
                 try {
                     if (!lines.prepare(debug_overlay_policy::kMaxLineVertexBudget)) {
                         return false;
                     }
-                    bodies.reserve(kBodyInstanceCapacity);
-                    textVertices.reserve(debug_overlay_runtime::kMaxTextVertices);
+                    spheres.reserve(rpsui::sdk::RPSUI_WORLD_DRAW_MAX_SPHERES);
+                    worldLines.reserve(rpsui::sdk::RPSUI_WORLD_DRAW_MAX_LINES);
+                    texts.reserve(rpsui::sdk::RPSUI_WORLD_DRAW_MAX_TEXTS);
+                    instances.reserve(kBodyInstanceCapacity);
+                    heldShapes.reserve(kBodyInstanceCapacity);
                 } catch (...) {
                     return false;
                 }
+                prepared = true;
                 return true;
             }
+
+            void clear() noexcept
+            {
+                spheres.clear();
+                worldLines.clear();
+                texts.clear();
+                instances.clear();
+                heldShapes.clear();
+            }
         };
+
+        WorldDrawScratch& worldDrawScratch() noexcept;
 
         struct BodyRenderInfo
         {
@@ -158,7 +157,6 @@ namespace rock::debug
             std::uint64_t shapeDecodeSettingsKey{ 0 };
             debug_overlay_shape::PipelineLimits pipelineLimits{};
             bool useBoundsForHeavyConvex{ false };
-            bool duplicateTextPerEye{ true };
             bool verboseLogging{ false };
         };
 
@@ -289,116 +287,10 @@ namespace rock::debug
 
         using OverlayRuntimeStats = debug_overlay_stats::RuntimeStats;
 
-        struct alignas(16) PerFrameVSData
-        {
-            DirectX::XMMATRIX matProjView[2];
-            DirectX::XMFLOAT4 posAdjust[2];
-        };
-
-        struct SavedState
-        {
-            ID3D11VertexShader* vs = nullptr;
-            ID3D11PixelShader* ps = nullptr;
-            ID3D11GeometryShader* gs = nullptr;
-            ID3D11HullShader* hs = nullptr;
-            ID3D11DomainShader* ds = nullptr;
-            ID3D11ClassInstance* vsInstances[kMaxShaderClassInstances] = {};
-            ID3D11ClassInstance* psInstances[kMaxShaderClassInstances] = {};
-            ID3D11ClassInstance* gsInstances[kMaxShaderClassInstances] = {};
-            ID3D11ClassInstance* hsInstances[kMaxShaderClassInstances] = {};
-            ID3D11ClassInstance* dsInstances[kMaxShaderClassInstances] = {};
-            UINT vsInstanceCount = 0;
-            UINT psInstanceCount = 0;
-            UINT gsInstanceCount = 0;
-            UINT hsInstanceCount = 0;
-            UINT dsInstanceCount = 0;
-            ID3D11Buffer* vsCBs[2] = {};
-            ID3D11InputLayout* inputLayout = nullptr;
-            D3D11_PRIMITIVE_TOPOLOGY topology = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
-            ID3D11RasterizerState* rasterizerState = nullptr;
-            ID3D11DepthStencilState* depthStencilState = nullptr;
-            UINT stencilRef = 0;
-            ID3D11BlendState* blendState = nullptr;
-            FLOAT blendFactor[4] = {};
-            UINT sampleMask = 0;
-            ID3D11RenderTargetView* rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
-            ID3D11DepthStencilView* dsv = nullptr;
-            D3D11_VIEWPORT viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE] = {};
-            UINT numViewports = 0;
-            ID3D11Buffer* vertexBuffers[kSavedVertexBufferSlots] = {};
-            UINT vbStrides[kSavedVertexBufferSlots] = {};
-            UINT vbOffsets[kSavedVertexBufferSlots] = {};
-            ID3D11Buffer* indexBuffer = nullptr;
-            DXGI_FORMAT ibFormat = DXGI_FORMAT_UNKNOWN;
-            UINT ibOffset = 0;
-        };
-
-        struct D3DResources
-        {
-            Microsoft::WRL::ComPtr<ID3D11Device> device;
-            Microsoft::WRL::ComPtr<ID3D11VertexShader> bodyVertexShader;
-            Microsoft::WRL::ComPtr<ID3D11VertexShader> stereoColorVertexShader;
-            Microsoft::WRL::ComPtr<ID3D11VertexShader> screenTextVertexShader;
-            Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader;
-            Microsoft::WRL::ComPtr<ID3D11InputLayout> bodyInputLayout;
-            Microsoft::WRL::ComPtr<ID3D11InputLayout> coloredInputLayout;
-            Microsoft::WRL::ComPtr<ID3D11Buffer> cameraCB;
-            Microsoft::WRL::ComPtr<ID3D11Buffer> bodyInstanceVB;
-            Microsoft::WRL::ComPtr<ID3D11Buffer> axisLineVB;
-            Microsoft::WRL::ComPtr<ID3D11Buffer> textVB;
-            Microsoft::WRL::ComPtr<ID3D11RasterizerState> wireRasterizer;
-            Microsoft::WRL::ComPtr<ID3D11RasterizerState> solidRasterizer;
-            Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthStencil;
-            Microsoft::WRL::ComPtr<ID3D11BlendState> blendState;
-            GpuShape aabbProxy;
-            GpuShape gripZoneIndicatorSphere;
-            std::unique_ptr<RenderScratch> scratch;
-            debug_overlay_gpu_timer::TimestampQueryRing gpuTimer;
-
-            [[nodiscard]] bool ready() const noexcept
-            {
-                return device && bodyVertexShader && stereoColorVertexShader && screenTextVertexShader && pixelShader && bodyInputLayout && coloredInputLayout &&
-                       cameraCB && bodyInstanceVB && axisLineVB && textVB && scratch &&
-                       wireRasterizer && solidRasterizer && depthStencil && blendState &&
-                       aabbProxy.vertexBuffer && aabbProxy.indexBuffer && aabbProxy.indexCount > 0 &&
-                       gripZoneIndicatorSphere.vertexBuffer &&
-                       gripZoneIndicatorSphere.indexBuffer &&
-                       gripZoneIndicatorSphere.indexCount > 0;
-            }
-        };
-
-        class RenderPassGuard
-        {
-        public:
-            RenderPassGuard(ID3D11DeviceContext* context, ID3D11RenderTargetView* renderTarget, UINT width, UINT height) noexcept;
-            RenderPassGuard(const RenderPassGuard&) = delete;
-            RenderPassGuard& operator=(const RenderPassGuard&) = delete;
-            ~RenderPassGuard() noexcept;
-
-            [[nodiscard]] bool active() const noexcept { return _active; }
-
-        private:
-            void restore() noexcept;
-
-            ID3D11DeviceContext* _context{ nullptr };
-            SavedState _saved{};
-            bool _active{ false };
-        };
-
-        struct CachedRenderTargetView
-        {
-            ID3D11Texture2D* texture = nullptr;
-            D3D11_TEXTURE2D_DESC desc{};
-            Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtv;
-        };
-
         constexpr std::size_t kPublishedFramePoolCapacity = 4;
         static immutable_snapshot::SnapshotPool<PublishedOverlayFrame, kPublishedFramePoolCapacity> s_framePool{};
         static std::atomic<std::shared_ptr<const PublishedOverlayFrame>> s_publishedFrame{};
         static std::atomic<bool> s_standardFrameEnabled{ false };
-        static std::atomic<bool> s_initialized{ false };
-        static std::atomic<bool> s_submitHookInstalled{ false };
-        static bool s_installAttemptedWithoutDevice = false;
         static std::uintptr_t s_previousWorld = 0;
         static std::uint64_t s_previousShapeDecodeSettingsKey = 0;
         static std::uint32_t s_overlayStatsLogCounter = 0;
@@ -430,30 +322,21 @@ namespace rock::debug
         };
         static PhaseCaptureDiagnostics s_phaseCaptureDiagnostics{};
 
-        static D3DResources s_d3d{};
-        static std::atomic_flag s_renderPassActive = ATOMIC_FLAG_INIT;
         static debug_overlay_frame_admission::FrameAdmission s_frameAdmission{};
         static std::atomic<bool> s_overlayExceptionReported{ false };
-        static std::atomic<bool> s_cameraUploadFailureReported{ false };
-        static std::atomic<bool> s_bodyInstanceUploadFailureReported{ false };
-        static std::atomic<bool> s_lineUploadFailureReported{ false };
-        static std::atomic<bool> s_textUploadFailureReported{ false };
-        static std::atomic<bool> s_gripZoneIndicatorUploadFailureReported{ false };
-        static std::atomic<bool> s_submitInstallFailureReported{ false };
         static std::atomic<bool> s_snapshotPoolExhaustionReported{ false };
         static std::atomic<bool> s_shapeWorkerInitFailureReported{ false };
-        static std::atomic<bool> s_gpuTimerInitFailureReported{ false };
-        static CachedRenderTargetView s_submittedTextureRtv{};
+        // Frame-callback thread only.
+        static bool s_scratchFailureReported = false;
+        static bool s_submitFailureReported = false;
+        static bool s_screenTextSkipReported = false;
+        static bool s_aabbProxyRegistered = false;
 
         debug_overlay_shape::ShapePipeline& shapePipeline()
         {
             static debug_overlay_shape::ShapePipeline pipeline;
             return pipeline;
         }
-
-        using VRSubmit_t = vr::EVRCompositorError(__thiscall*)(vr::IVRCompositor*, vr::EVREye, const vr::Texture_t*, const vr::VRTextureBounds_t*, vr::EVRSubmitFlags);
-        static std::atomic<VRSubmit_t> s_originalVRSubmit{ nullptr };
-        static void** s_vrCompositorVTable = nullptr;
 
         Vertex toVertex(const RE::NiPoint3& value) { return Vertex{ value.x, value.y, value.z }; }
 
@@ -973,39 +856,6 @@ namespace rock::debug
             return true;
         }
 
-        bool createStaticGpuShape(ID3D11Device* device, const MeshData& mesh, GpuShape& output)
-        {
-            if (!device || !mesh.valid || mesh.vertices.empty() || mesh.indices.empty()) {
-                return false;
-            }
-
-            D3D11_BUFFER_DESC vertexDesc{};
-            vertexDesc.Usage = D3D11_USAGE_DEFAULT;
-            vertexDesc.ByteWidth = static_cast<UINT>(sizeof(Vertex) * mesh.vertices.size());
-            vertexDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-            D3D11_SUBRESOURCE_DATA vertexData{};
-            vertexData.pSysMem = mesh.vertices.data();
-            if (FAILED(device->CreateBuffer(&vertexDesc, &vertexData, output.vertexBuffer.GetAddressOf()))) {
-                return false;
-            }
-
-            D3D11_BUFFER_DESC indexDesc{};
-            indexDesc.Usage = D3D11_USAGE_DEFAULT;
-            indexDesc.ByteWidth = static_cast<UINT>(sizeof(std::uint16_t) * mesh.indices.size());
-            indexDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-            D3D11_SUBRESOURCE_DATA indexData{};
-            indexData.pSysMem = mesh.indices.data();
-            if (FAILED(device->CreateBuffer(&indexDesc, &indexData, output.indexBuffer.GetAddressOf()))) {
-                output.vertexBuffer.Reset();
-                return false;
-            }
-
-            output.indexCount = static_cast<std::uint32_t>(mesh.indices.size());
-            output.decodeMode = debug_overlay_policy::ShapeDecodeMode::Proxy;
-            output.approximateBytes = debug_overlay_shape::approximateGpuBytes(mesh);
-            return true;
-        }
-
         bool finiteShapeVector3(const float* values)
         {
             return values && std::isfinite(values[0]) && std::isfinite(values[1]) && std::isfinite(values[2]);
@@ -1336,7 +1186,6 @@ namespace rock::debug
             requested.maxShapeCacheBytes = g_rockConfig.rockDebugMaxShapeCacheBytes;
             requested.maxBodyInstances = g_rockConfig.rockDebugMaxBodyInstances;
             requested.maxLineVertices = g_rockConfig.rockDebugMaxLineVertices;
-            requested.maxTextVertices = g_rockConfig.rockDebugMaxTextVertices;
             settings.limits = debug_overlay_runtime::sanitize(requested);
             settings.useBoundsForHeavyConvex = g_rockConfig.rockDebugUseBoundsForHeavyConvex;
             settings.shapeDecodeSettingsKey = debug_overlay_policy::makeShapeDecodeSettingsKey(
@@ -1347,8 +1196,7 @@ namespace rock::debug
             settings.pipelineLimits.maxQueuedJobs = settings.limits.maxShapeQueuedJobs;
             settings.pipelineLimits.maxCompletedJobs = settings.limits.maxShapeCompletedJobs;
             settings.pipelineLimits.maxCacheEntries = settings.limits.maxShapeCacheEntries;
-            settings.pipelineLimits.maxGpuBytes = settings.limits.maxShapeCacheBytes;
-            settings.duplicateTextPerEye = true;
+            settings.pipelineLimits.maxBytes = settings.limits.maxShapeCacheBytes;
             settings.verboseLogging = g_rockConfig.rockDebugVerboseLogging;
             return settings;
         }
@@ -1701,677 +1549,6 @@ namespace rock::debug
             }
             return !destination.bodies.empty() || !destination.axes.empty() || !destination.markers.empty() ||
                    !destination.skeleton.empty() || !destination.coloredLines.empty() || !destination.text.empty();
-        }
-
-        template <class T>
-        void releaseSavedComReference(T*& value) noexcept
-        {
-            if (value) {
-                value->Release();
-                value = nullptr;
-            }
-        }
-
-        template <std::size_t N>
-        void releaseSavedClassInstances(ID3D11ClassInstance* (&instances)[N], UINT count) noexcept
-        {
-            const UINT boundedCount = (std::min)(count, static_cast<UINT>(N));
-            for (UINT i = 0; i < boundedCount; ++i) {
-                releaseSavedComReference(instances[i]);
-            }
-        }
-
-        void releaseSavedState(SavedState& saved) noexcept
-        {
-            releaseSavedComReference(saved.vs);
-            releaseSavedComReference(saved.ps);
-            releaseSavedComReference(saved.gs);
-            releaseSavedComReference(saved.hs);
-            releaseSavedComReference(saved.ds);
-            releaseSavedClassInstances(saved.vsInstances, saved.vsInstanceCount);
-            releaseSavedClassInstances(saved.psInstances, saved.psInstanceCount);
-            releaseSavedClassInstances(saved.gsInstances, saved.gsInstanceCount);
-            releaseSavedClassInstances(saved.hsInstances, saved.hsInstanceCount);
-            releaseSavedClassInstances(saved.dsInstances, saved.dsInstanceCount);
-            for (auto*& cb : saved.vsCBs) {
-                releaseSavedComReference(cb);
-            }
-            releaseSavedComReference(saved.inputLayout);
-            releaseSavedComReference(saved.rasterizerState);
-            releaseSavedComReference(saved.depthStencilState);
-            releaseSavedComReference(saved.blendState);
-            for (auto*& rtv : saved.rtvs) {
-                releaseSavedComReference(rtv);
-            }
-            releaseSavedComReference(saved.dsv);
-            for (auto*& vertexBuffer : saved.vertexBuffers) {
-                releaseSavedComReference(vertexBuffer);
-            }
-            releaseSavedComReference(saved.indexBuffer);
-            saved = SavedState{};
-        }
-
-        // FO4VR stereo state layout. The +0x2590/+0x25A0 pair is the CURRENT-frame left/right
-        // eye-origin adjustment; the engine's own per-frame stereo constant-buffer upload copies
-        // +0x2590/+0x25A0/+0x25B0/+0x25C0 as one four-slot family, with +0x25B0/+0x25C0 holding
-        // the PREVIOUS-frame origins for temporal reprojection. Reading +0x25C0 as the right-eye
-        // origin lags one frame of room translation and stutters under stick locomotion.
-        constexpr std::uintptr_t kVrRuntimeRootRva = 0x6235AC8;
-        constexpr std::uintptr_t kRootStereoSlot0OriginOffset = 0x2590;
-        constexpr std::uintptr_t kRootStereoSlot1OriginOffset = 0x25A0;
-        constexpr std::uintptr_t kRootStereoRecordsDataOffset = 0x25D0;
-        constexpr std::uintptr_t kStereoRecordStride = 0x210;
-        constexpr std::uintptr_t kStereoRecordCompositeOffset = 0xD0;
-        constexpr std::uintptr_t kStereoSlot0CompositeOffset = kStereoRecordCompositeOffset;
-        constexpr std::uintptr_t kStereoSlot1CompositeOffset = kStereoRecordStride + kStereoRecordCompositeOffset;
-        constexpr std::size_t kStereoRecordsReadSize = kStereoSlot1CompositeOffset + sizeof(DirectX::XMFLOAT4X4);
-        constexpr float kStereoMaximumReasonableMagnitude = 1.0e8f;
-
-        static_assert(kRootStereoSlot1OriginOffset - kRootStereoSlot0OriginOffset == 0x10);
-        static_assert(kRootStereoRecordsDataOffset - kRootStereoSlot0OriginOffset == 0x40);
-        static_assert(kStereoSlot1CompositeOffset == 0x2E0);
-
-        // One contiguous read of the root stereo fields starting at +0x2590.
-        struct RootStereoFields
-        {
-            float slot0Origin[4]{};
-            float slot1Origin[4]{};
-            std::byte reserved[0x20]{};
-            std::uintptr_t recordsData = 0;
-        };
-
-        static_assert(offsetof(RootStereoFields, slot1Origin) == 0x10);
-        static_assert(offsetof(RootStereoFields, recordsData) == 0x40);
-        static_assert(sizeof(RootStereoFields) == 0x48);
-
-        enum class StereoCaptureStage : std::uint8_t
-        {
-            None,
-            RelocationResolved,
-            RuntimeRootRead,
-            RootStereoStateRead,
-            StereoRecordsRead,
-            Validated,
-        };
-
-        constexpr const char* stereoStageName(StereoCaptureStage stage) noexcept
-        {
-            switch (stage) {
-            case StereoCaptureStage::None:
-                return "none";
-            case StereoCaptureStage::RelocationResolved:
-                return "relocation-resolved";
-            case StereoCaptureStage::RuntimeRootRead:
-                return "runtime-root-read";
-            case StereoCaptureStage::RootStereoStateRead:
-                return "root-stereo-state-read";
-            case StereoCaptureStage::StereoRecordsRead:
-                return "stereo-records-read";
-            case StereoCaptureStage::Validated:
-                return "validated";
-            }
-            return "unknown";
-        }
-
-        std::atomic<StereoCaptureStage> s_stereoLastStage{ StereoCaptureStage::None };
-        std::atomic<bool> s_stereoLastCaptureSucceeded{ true };
-        std::atomic<std::int64_t> s_stereoLastFailureLogMilliseconds{ 0 };
-
-        [[nodiscard]] bool isStereoPlausiblePointer(std::uintptr_t address) noexcept
-        {
-            constexpr std::uintptr_t kMinimumUserAddress = 0x10000;
-            constexpr std::uintptr_t kMaximumUserAddress = 0x00007FFFFFFFFFFF;
-            return address >= kMinimumUserAddress && address <= kMaximumUserAddress && (address % alignof(void*)) == 0;
-        }
-
-        // ReadProcessMemory instead of raw dereference: the engine owns these pointers and can
-        // retire them between frames; a stale pointer must degrade into a skipped overlay frame,
-        // never a crash inside the compositor submit hook.
-        [[nodiscard]] bool readStereoMemory(std::uintptr_t address, void* destination, std::size_t size, DWORD& error) noexcept
-        {
-            if (!isStereoPlausiblePointer(address) || !destination || size == 0 || address > (std::numeric_limits<std::uintptr_t>::max)() - size) {
-                error = ERROR_INVALID_ADDRESS;
-                return false;
-            }
-
-            SIZE_T bytesRead = 0;
-            if (!ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void*>(address), destination, size, &bytesRead) || bytesRead != size) {
-                error = GetLastError();
-                if (error == ERROR_SUCCESS) {
-                    error = ERROR_PARTIAL_COPY;
-                }
-                return false;
-            }
-            error = ERROR_SUCCESS;
-            return true;
-        }
-
-        [[nodiscard]] bool validateStereoVector3(const float* value) noexcept
-        {
-            if (!value) {
-                return false;
-            }
-            for (std::size_t index = 0; index < 3; ++index) {
-                if (!std::isfinite(value[index]) || std::fabs(value[index]) > kStereoMaximumReasonableMagnitude) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        [[nodiscard]] bool validateStereoMatrix(const DirectX::XMFLOAT4X4& matrix) noexcept
-        {
-            const auto* values = reinterpret_cast<const float*>(&matrix);
-            bool hasNonZeroElement = false;
-            for (std::size_t index = 0; index < 16; ++index) {
-                if (!std::isfinite(values[index]) || std::fabs(values[index]) > kStereoMaximumReasonableMagnitude) {
-                    return false;
-                }
-                hasNonZeroElement = hasNonZeroElement || std::fabs(values[index]) > 1.0e-7f;
-            }
-            return hasNonZeroElement;
-        }
-
-        void reportStereoCaptureFailure(StereoCaptureStage deepestStage, DWORD error) noexcept
-        {
-            const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-            const auto previousStage = s_stereoLastStage.exchange(deepestStage, std::memory_order_relaxed);
-            const auto previousLog = s_stereoLastFailureLogMilliseconds.load(std::memory_order_relaxed);
-            const bool stageChanged = previousStage != deepestStage;
-            const bool intervalElapsed = now - previousLog >= 5000;
-            s_stereoLastCaptureSucceeded.store(false, std::memory_order_relaxed);
-            if (stageChanged || intervalElapsed) {
-                s_stereoLastFailureLogMilliseconds.store(now, std::memory_order_relaxed);
-                ROCK_LOG_WARN(Hand, "Debug overlay stereo snapshot unavailable; deepest stage='{}', Win32 error={}. Overlay frame skipped.",
-                    stereoStageName(deepestStage), error);
-            }
-        }
-
-        void reportStereoCaptureSuccess() noexcept
-        {
-            const bool previouslySucceeded = s_stereoLastCaptureSucceeded.exchange(true, std::memory_order_relaxed);
-            s_stereoLastStage.store(StereoCaptureStage::Validated, std::memory_order_relaxed);
-            if (!previouslySucceeded) {
-                ROCK_LOG_INFO(Hand, "Debug overlay stereo snapshot recovered and validated.");
-            }
-        }
-
-        // Shared root-stereo read for the overlay camera and the diagnostic origin
-        // accessor. On failure returns false with the deepest stage reached and the
-        // Win32 error; callers decide whether to feed the stereo health telemetry.
-        bool readRootStereoFields(RootStereoFields& outFields, StereoCaptureStage& deepestStage, DWORD& readError)
-        {
-            deepestStage = StereoCaptureStage::None;
-            readError = ERROR_SUCCESS;
-
-            static REL::Relocation<std::uintptr_t> rootAddress{ REL::Offset(kVrRuntimeRootRva) };
-            const std::uintptr_t relocationAddress = rootAddress.address();
-            if (!isStereoPlausiblePointer(relocationAddress)) {
-                readError = ERROR_INVALID_ADDRESS;
-                return false;
-            }
-            deepestStage = StereoCaptureStage::RelocationResolved;
-
-            std::uintptr_t runtimeRoot = 0;
-            if (!readStereoMemory(relocationAddress, &runtimeRoot, sizeof(runtimeRoot), readError) || !isStereoPlausiblePointer(runtimeRoot)) {
-                if (readError == ERROR_SUCCESS) {
-                    readError = ERROR_INVALID_ADDRESS;
-                }
-                return false;
-            }
-            deepestStage = StereoCaptureStage::RuntimeRootRead;
-
-            if (!readStereoMemory(runtimeRoot + kRootStereoSlot0OriginOffset, &outFields, sizeof(outFields), readError)) {
-                return false;
-            }
-            deepestStage = StereoCaptureStage::RootStereoStateRead;
-            return true;
-        }
-
-        bool getEyeViewProjMatrices(DirectX::XMMATRIX& outEye0, DirectX::XMMATRIX& outEye1, DirectX::XMFLOAT4& outAdjust0, DirectX::XMFLOAT4& outAdjust1)
-        {
-            StereoCaptureStage deepestStage = StereoCaptureStage::None;
-            DWORD readError = ERROR_SUCCESS;
-
-            RootStereoFields rootFields{};
-            if (!readRootStereoFields(rootFields, deepestStage, readError)) {
-                reportStereoCaptureFailure(deepestStage, readError);
-                return false;
-            }
-            if (!isStereoPlausiblePointer(rootFields.recordsData)) {
-                reportStereoCaptureFailure(deepestStage, ERROR_INVALID_ADDRESS);
-                return false;
-            }
-
-            std::array<std::byte, kStereoRecordsReadSize> records{};
-            if (!readStereoMemory(rootFields.recordsData, records.data(), records.size(), readError)) {
-                reportStereoCaptureFailure(deepestStage, readError);
-                return false;
-            }
-            deepestStage = StereoCaptureStage::StereoRecordsRead;
-
-            DirectX::XMFLOAT4X4 composite0{};
-            DirectX::XMFLOAT4X4 composite1{};
-            std::memcpy(&composite0, records.data() + kStereoSlot0CompositeOffset, sizeof(composite0));
-            std::memcpy(&composite1, records.data() + kStereoSlot1CompositeOffset, sizeof(composite1));
-
-            if (!validateStereoVector3(rootFields.slot0Origin) || !validateStereoVector3(rootFields.slot1Origin) ||
-                !validateStereoMatrix(composite0) || !validateStereoMatrix(composite1)) {
-                reportStereoCaptureFailure(deepestStage, ERROR_INVALID_DATA);
-                return false;
-            }
-
-            outEye0 = DirectX::XMLoadFloat4x4(&composite0);
-            outEye1 = DirectX::XMLoadFloat4x4(&composite1);
-            outAdjust0 = DirectX::XMFLOAT4(rootFields.slot0Origin[0], rootFields.slot0Origin[1], rootFields.slot0Origin[2], 0.0f);
-            outAdjust1 = DirectX::XMFLOAT4(rootFields.slot1Origin[0], rootFields.slot1Origin[1], rootFields.slot1Origin[2], 0.0f);
-            reportStereoCaptureSuccess();
-            return true;
-        }
-
-        bool initializeD3D(ID3D11Device* device)
-        {
-            if (!device) {
-                return false;
-            }
-
-            D3DResources resources{};
-            resources.device = device;
-
-            Microsoft::WRL::ComPtr<ID3DBlob> vsBlob;
-            Microsoft::WRL::ComPtr<ID3DBlob> psBlob;
-            Microsoft::WRL::ComPtr<ID3DBlob> errorBlob;
-            HRESULT hr = D3DCompile(
-                debug_overlay_shaders::kInstancedBodyVertex,
-                sizeof(debug_overlay_shaders::kInstancedBodyVertex) - 1,
-                "ROCKDebugBodyVS",
-                nullptr,
-                nullptr,
-                "main",
-                "vs_5_0",
-                D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR,
-                0,
-                vsBlob.GetAddressOf(),
-                errorBlob.GetAddressOf());
-            if (FAILED(hr)) {
-                if (errorBlob) {
-                    ROCK_LOG_ERROR(Hand, "Debug overlay vertex shader compile failed: {}", static_cast<const char*>(errorBlob->GetBufferPointer()));
-                }
-                return false;
-            }
-
-            hr = device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, resources.bodyVertexShader.GetAddressOf());
-            if (FAILED(hr)) {
-                return false;
-            }
-
-            const D3D11_INPUT_ELEMENT_DESC bodyLayoutDesc[] = {
-                { "POS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-                { "IROW", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0, D3D11_INPUT_PER_INSTANCE_DATA, 2 },
-                { "IROW", 1, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 16, D3D11_INPUT_PER_INSTANCE_DATA, 2 },
-                { "IROW", 2, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 32, D3D11_INPUT_PER_INSTANCE_DATA, 2 },
-                { "IROW", 3, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 48, D3D11_INPUT_PER_INSTANCE_DATA, 2 },
-                { "ICOLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 64, D3D11_INPUT_PER_INSTANCE_DATA, 2 },
-            };
-            hr = device->CreateInputLayout(bodyLayoutDesc, static_cast<UINT>(std::size(bodyLayoutDesc)), vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), resources.bodyInputLayout.GetAddressOf());
-            if (FAILED(hr)) {
-                return false;
-            }
-
-            vsBlob.Reset();
-            errorBlob.Reset();
-            hr = D3DCompile(
-                debug_overlay_shaders::kStereoColorVertex,
-                sizeof(debug_overlay_shaders::kStereoColorVertex) - 1,
-                "ROCKDebugColorVS",
-                nullptr,
-                nullptr,
-                "main",
-                "vs_5_0",
-                D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR,
-                0,
-                vsBlob.GetAddressOf(),
-                errorBlob.GetAddressOf());
-            if (FAILED(hr)) {
-                if (errorBlob) {
-                    ROCK_LOG_ERROR(Hand, "Debug overlay color vertex shader compile failed: {}", static_cast<const char*>(errorBlob->GetBufferPointer()));
-                }
-                return false;
-            }
-
-            hr = device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, resources.stereoColorVertexShader.GetAddressOf());
-            if (FAILED(hr)) {
-                return false;
-            }
-
-            const D3D11_INPUT_ELEMENT_DESC coloredLayoutDesc[] = {
-                { "POS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-                { "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-            };
-            hr = device->CreateInputLayout(coloredLayoutDesc, static_cast<UINT>(std::size(coloredLayoutDesc)), vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), resources.coloredInputLayout.GetAddressOf());
-            if (FAILED(hr)) {
-                return false;
-            }
-
-            vsBlob.Reset();
-            errorBlob.Reset();
-            hr = D3DCompile(
-                debug_overlay_shaders::kScreenTextVertex,
-                sizeof(debug_overlay_shaders::kScreenTextVertex) - 1,
-                "ROCKDebugTextVS",
-                nullptr,
-                nullptr,
-                "main",
-                "vs_5_0",
-                D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR,
-                0,
-                vsBlob.GetAddressOf(),
-                errorBlob.GetAddressOf());
-            if (FAILED(hr)) {
-                if (errorBlob) {
-                    ROCK_LOG_ERROR(Hand, "Debug overlay text vertex shader compile failed: {}", static_cast<const char*>(errorBlob->GetBufferPointer()));
-                }
-                return false;
-            }
-
-            hr = device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, resources.screenTextVertexShader.GetAddressOf());
-            if (FAILED(hr)) {
-                return false;
-            }
-
-            errorBlob.Reset();
-            hr = D3DCompile(
-                debug_overlay_shaders::kPixel,
-                sizeof(debug_overlay_shaders::kPixel) - 1,
-                "ROCKDebugBodyPS",
-                nullptr,
-                nullptr,
-                "main",
-                "ps_5_0",
-                D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR,
-                0,
-                psBlob.GetAddressOf(),
-                errorBlob.GetAddressOf());
-            if (FAILED(hr)) {
-                if (errorBlob) {
-                    ROCK_LOG_ERROR(Hand, "Debug overlay pixel shader compile failed: {}", static_cast<const char*>(errorBlob->GetBufferPointer()));
-                }
-                return false;
-            }
-
-            hr = device->CreatePixelShader(psBlob->GetBufferPointer(), psBlob->GetBufferSize(), nullptr, resources.pixelShader.GetAddressOf());
-            if (FAILED(hr)) {
-                return false;
-            }
-
-            D3D11_BUFFER_DESC cameraDesc{};
-            cameraDesc.Usage = D3D11_USAGE_DYNAMIC;
-            cameraDesc.ByteWidth = sizeof(PerFrameVSData);
-            cameraDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-            cameraDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-            if (FAILED(device->CreateBuffer(&cameraDesc, nullptr, resources.cameraCB.GetAddressOf()))) {
-                return false;
-            }
-
-            D3D11_BUFFER_DESC instanceDesc{};
-            instanceDesc.Usage = D3D11_USAGE_DYNAMIC;
-            instanceDesc.ByteWidth = static_cast<UINT>(sizeof(BodyInstanceData) * kBodyInstanceCapacity);
-            instanceDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-            instanceDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-            if (FAILED(device->CreateBuffer(&instanceDesc, nullptr, resources.bodyInstanceVB.GetAddressOf()))) {
-                return false;
-            }
-
-            D3D11_BUFFER_DESC axisLineDesc{};
-            axisLineDesc.Usage = D3D11_USAGE_DYNAMIC;
-            axisLineDesc.ByteWidth = sizeof(ColoredVertex) * debug_overlay_policy::kMaxLineVertexBudget;
-            axisLineDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-            axisLineDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-            if (FAILED(device->CreateBuffer(&axisLineDesc, nullptr, resources.axisLineVB.GetAddressOf()))) {
-                return false;
-            }
-
-            D3D11_BUFFER_DESC textDesc{};
-            textDesc.Usage = D3D11_USAGE_DYNAMIC;
-            textDesc.ByteWidth = sizeof(ColoredVertex) * debug_overlay_runtime::kMaxTextVertices;
-            textDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-            textDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-            if (FAILED(device->CreateBuffer(&textDesc, nullptr, resources.textVB.GetAddressOf()))) {
-                return false;
-            }
-
-            try {
-                resources.scratch = std::make_unique<RenderScratch>();
-            } catch (...) {
-                return false;
-            }
-            if (!resources.scratch->prepare()) {
-                return false;
-            }
-
-            D3D11_RASTERIZER_DESC rasterDesc{};
-            rasterDesc.FillMode = D3D11_FILL_WIREFRAME;
-            rasterDesc.CullMode = D3D11_CULL_NONE;
-            rasterDesc.FrontCounterClockwise = TRUE;
-            rasterDesc.DepthClipEnable = TRUE;
-            if (FAILED(device->CreateRasterizerState(&rasterDesc, resources.wireRasterizer.GetAddressOf()))) {
-                return false;
-            }
-
-            rasterDesc.FillMode = D3D11_FILL_SOLID;
-            if (FAILED(device->CreateRasterizerState(&rasterDesc, resources.solidRasterizer.GetAddressOf()))) {
-                return false;
-            }
-
-            D3D11_DEPTH_STENCIL_DESC depthDesc{};
-            depthDesc.DepthEnable = FALSE;
-            depthDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
-            depthDesc.DepthFunc = D3D11_COMPARISON_ALWAYS;
-            if (FAILED(device->CreateDepthStencilState(&depthDesc, resources.depthStencil.GetAddressOf()))) {
-                return false;
-            }
-
-            D3D11_BLEND_DESC blendDesc{};
-            blendDesc.RenderTarget[0].BlendEnable = TRUE;
-            blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
-            blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
-            blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-            blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-            blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
-            blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
-            blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-            if (FAILED(device->CreateBlendState(&blendDesc, resources.blendState.GetAddressOf()))) {
-                return false;
-            }
-
-            if (!createStaticGpuShape(device, debug_overlay_shape::makeUnitBoxMesh(), resources.aabbProxy)) {
-                return false;
-            }
-
-            debug_overlay_shape::ShapeRecipe gripIndicatorRecipe{};
-            gripIndicatorRecipe.kind =
-                debug_overlay_shape::ShapeRecipe::Kind::Sphere;
-            gripIndicatorRecipe.settings.havokToGameScale = 1.0f;
-            gripIndicatorRecipe.convexRadius = 1.0f;
-            gripIndicatorRecipe.canonicalUnitSphere = true;
-            gripIndicatorRecipe.valid = true;
-            const auto gripIndicatorShape =
-                debug_overlay_shape::buildMeshFromRecipe(
-                    gripIndicatorRecipe);
-            if (!createStaticGpuShape(
-                    device,
-                    gripIndicatorShape.mesh,
-                    resources.gripZoneIndicatorSphere)) {
-                return false;
-            }
-
-            if (!resources.ready()) {
-                return false;
-            }
-
-            if (resources.gpuTimer.initialize(device)) {
-                s_gpuTimerInitFailureReported.store(false, std::memory_order_relaxed);
-            } else if (!s_gpuTimerInitFailureReported.exchange(true, std::memory_order_relaxed)) {
-                ROCK_LOG_WARN(Hand, "Debug overlay: GPU timestamp queries unavailable; rendering will continue without GPU timing");
-            }
-
-            s_d3d = std::move(resources);
-            return true;
-        }
-
-        ID3D11Device* getDevice()
-        {
-            auto* renderer = RE::BSGraphics::RendererData::GetSingleton();
-            return renderer ? reinterpret_cast<ID3D11Device*>(renderer->device) : nullptr;
-        }
-
-        ID3D11DeviceContext* getContext()
-        {
-            auto* renderer = RE::BSGraphics::RendererData::GetSingleton();
-            return renderer ? reinterpret_cast<ID3D11DeviceContext*>(renderer->context) : nullptr;
-        }
-
-        bool sameSubmittedTextureDesc(const D3D11_TEXTURE2D_DESC& lhs, const D3D11_TEXTURE2D_DESC& rhs)
-        {
-            return lhs.Width == rhs.Width && lhs.Height == rhs.Height && lhs.MipLevels == rhs.MipLevels && lhs.ArraySize == rhs.ArraySize && lhs.Format == rhs.Format &&
-                lhs.SampleDesc.Count == rhs.SampleDesc.Count && lhs.SampleDesc.Quality == rhs.SampleDesc.Quality;
-        }
-
-        void clearSubmittedTextureRtvCache()
-        {
-            s_submittedTextureRtv.rtv.Reset();
-            s_submittedTextureRtv.texture = nullptr;
-            s_submittedTextureRtv.desc = D3D11_TEXTURE2D_DESC{};
-        }
-
-        ID3D11RenderTargetView* getSubmittedTextureRtv(ID3D11Device* device, ID3D11Texture2D* texture, const D3D11_TEXTURE2D_DESC& desc, OverlayRuntimeStats& stats)
-        {
-            if (s_submittedTextureRtv.texture == texture && s_submittedTextureRtv.rtv && sameSubmittedTextureDesc(s_submittedTextureRtv.desc, desc)) {
-                ++stats.rtvCacheHits;
-                return s_submittedTextureRtv.rtv.Get();
-            }
-
-            clearSubmittedTextureRtvCache();
-            Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtv;
-            if (FAILED(device->CreateRenderTargetView(texture, nullptr, rtv.GetAddressOf())) || !rtv) {
-                return nullptr;
-            }
-
-            ++stats.rtvCacheMisses;
-            s_submittedTextureRtv.texture = texture;
-            s_submittedTextureRtv.desc = desc;
-            s_submittedTextureRtv.rtv = std::move(rtv);
-            return s_submittedTextureRtv.rtv.Get();
-        }
-
-        RenderPassGuard::RenderPassGuard(ID3D11DeviceContext* context, ID3D11RenderTargetView* renderTarget, UINT width, UINT height) noexcept
-            : _context(context)
-        {
-            if (!context || !renderTarget || width == 0 || height == 0 || !s_d3d.ready() || s_renderPassActive.test_and_set(std::memory_order_acquire)) {
-                _context = nullptr;
-                return;
-            }
-
-            _active = true;
-            _saved.vsInstanceCount = kMaxShaderClassInstances;
-            _saved.psInstanceCount = kMaxShaderClassInstances;
-            _saved.gsInstanceCount = kMaxShaderClassInstances;
-            _saved.hsInstanceCount = kMaxShaderClassInstances;
-            _saved.dsInstanceCount = kMaxShaderClassInstances;
-            context->VSGetShader(&_saved.vs, _saved.vsInstances, &_saved.vsInstanceCount);
-            context->PSGetShader(&_saved.ps, _saved.psInstances, &_saved.psInstanceCount);
-            context->GSGetShader(&_saved.gs, _saved.gsInstances, &_saved.gsInstanceCount);
-            context->HSGetShader(&_saved.hs, _saved.hsInstances, &_saved.hsInstanceCount);
-            context->DSGetShader(&_saved.ds, _saved.dsInstances, &_saved.dsInstanceCount);
-            context->VSGetConstantBuffers(0, static_cast<UINT>(std::size(_saved.vsCBs)), _saved.vsCBs);
-            context->IAGetInputLayout(&_saved.inputLayout);
-            context->IAGetPrimitiveTopology(&_saved.topology);
-            context->RSGetState(&_saved.rasterizerState);
-            context->OMGetDepthStencilState(&_saved.depthStencilState, &_saved.stencilRef);
-            context->OMGetBlendState(&_saved.blendState, _saved.blendFactor, &_saved.sampleMask);
-            context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, _saved.rtvs, &_saved.dsv);
-            _saved.numViewports = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
-            context->RSGetViewports(&_saved.numViewports, _saved.viewports);
-            context->IAGetVertexBuffers(0, 2, _saved.vertexBuffers, _saved.vbStrides, _saved.vbOffsets);
-            context->IAGetIndexBuffer(&_saved.indexBuffer, &_saved.ibFormat, &_saved.ibOffset);
-
-            context->OMSetRenderTargets(1, &renderTarget, nullptr);
-            D3D11_VIEWPORT viewport{};
-            viewport.Width = static_cast<float>(width);
-            viewport.Height = static_cast<float>(height);
-            viewport.MinDepth = 0.0f;
-            viewport.MaxDepth = 1.0f;
-            context->RSSetViewports(1, &viewport);
-            context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            context->IASetInputLayout(s_d3d.bodyInputLayout.Get());
-            context->VSSetShader(s_d3d.bodyVertexShader.Get(), nullptr, 0);
-            context->PSSetShader(s_d3d.pixelShader.Get(), nullptr, 0);
-            context->GSSetShader(nullptr, nullptr, 0);
-            context->HSSetShader(nullptr, nullptr, 0);
-            context->DSSetShader(nullptr, nullptr, 0);
-            context->RSSetState(s_d3d.wireRasterizer.Get());
-            FLOAT blendFactor[4] = {};
-            context->OMSetBlendState(s_d3d.blendState.Get(), blendFactor, 0xFFFFFFFF);
-            context->OMSetDepthStencilState(s_d3d.depthStencil.Get(), 0);
-        }
-
-        RenderPassGuard::~RenderPassGuard() noexcept
-        {
-            restore();
-        }
-
-        void RenderPassGuard::restore() noexcept
-        {
-            if (!_active || !_context) {
-                return;
-            }
-
-            _context->VSSetShader(_saved.vs, _saved.vsInstances, _saved.vsInstanceCount);
-            _context->PSSetShader(_saved.ps, _saved.psInstances, _saved.psInstanceCount);
-            _context->GSSetShader(_saved.gs, _saved.gsInstances, _saved.gsInstanceCount);
-            _context->HSSetShader(_saved.hs, _saved.hsInstances, _saved.hsInstanceCount);
-            _context->DSSetShader(_saved.ds, _saved.dsInstances, _saved.dsInstanceCount);
-            _context->VSSetConstantBuffers(0, static_cast<UINT>(std::size(_saved.vsCBs)), _saved.vsCBs);
-            _context->IASetInputLayout(_saved.inputLayout);
-            _context->IASetPrimitiveTopology(_saved.topology);
-            _context->RSSetState(_saved.rasterizerState);
-            _context->OMSetDepthStencilState(_saved.depthStencilState, _saved.stencilRef);
-            _context->OMSetBlendState(_saved.blendState, _saved.blendFactor, _saved.sampleMask);
-            _context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, _saved.rtvs, _saved.dsv);
-            _context->RSSetViewports(_saved.numViewports, _saved.viewports);
-            _context->IASetVertexBuffers(0, 2, _saved.vertexBuffers, _saved.vbStrides, _saved.vbOffsets);
-            _context->IASetIndexBuffer(_saved.indexBuffer, _saved.ibFormat, _saved.ibOffset);
-            releaseSavedState(_saved);
-
-            _active = false;
-            _context = nullptr;
-            s_renderPassActive.clear(std::memory_order_release);
-        }
-
-        bool uploadCamera(ID3D11DeviceContext* context, const DirectX::XMMATRIX& eye0, const DirectX::XMMATRIX& eye1, const DirectX::XMFLOAT4& adjust0,
-            const DirectX::XMFLOAT4& adjust1)
-        {
-            if (!context || !s_d3d.cameraCB) {
-                return false;
-            }
-
-            D3D11_MAPPED_SUBRESOURCE mapped{};
-            if (FAILED(context->Map(s_d3d.cameraCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)) || !mapped.pData) {
-                if (!s_cameraUploadFailureReported.exchange(true, std::memory_order_relaxed)) {
-                    ROCK_LOG_WARN(Hand, "Debug overlay: camera constant-buffer map failed; frame skipped");
-                }
-                return false;
-            }
-
-            auto* data = static_cast<PerFrameVSData*>(mapped.pData);
-            data->matProjView[0] = eye0;
-            data->matProjView[1] = eye1;
-            data->posAdjust[0] = adjust0;
-            data->posAdjust[1] = adjust1;
-            context->Unmap(s_d3d.cameraCB.Get(), 0);
-            ID3D11Buffer* cameraCB = s_d3d.cameraCB.Get();
-            context->VSSetConstantBuffers(0, 1, &cameraCB);
-            return true;
         }
 
         void bodyColor(
@@ -3323,58 +2500,45 @@ namespace rock::debug
             batch.addPointMarker(toLineVec(toVertex(position)), size, toLineColor(color));
         }
 
-        void drawLineBatch(ID3D11DeviceContext* context, const debug_overlay_line_batch::LineBatch& batch, OverlayRuntimeStats& stats)
+        bool finiteValues(const float* values, std::size_t count) noexcept
+        {
+            for (std::size_t index = 0; index < count; ++index) {
+                if (!std::isfinite(values[index])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // RPS UI rejects a whole publication for one non-finite record, so each
+        // record is checked here and skipped alone.
+        void emitLineBatch(const debug_overlay_line_batch::LineBatch& batch, WorldDrawScratch& out, OverlayRuntimeStats& stats)
         {
             stats.lineVertices += static_cast<std::uint32_t>(batch.vertexCount());
             stats.lineLogicalLines += static_cast<std::uint32_t>(batch.lineCount());
             stats.lineBudgetRejects += static_cast<std::uint32_t>(batch.rejectedLineCount());
-
-            if (batch.empty() || !s_d3d.axisLineVB || !s_d3d.stereoColorVertexShader || !s_d3d.coloredInputLayout) {
-                return;
-            }
-
-            D3D11_MAPPED_SUBRESOURCE mapped{};
-            if (FAILED(context->Map(s_d3d.axisLineVB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)) || !mapped.pData) {
-                ++stats.lineMapFailures;
-                if (!s_lineUploadFailureReported.exchange(true, std::memory_order_relaxed)) {
-                    ROCK_LOG_WARN(Hand, "Debug overlay: colored line vertex-buffer map failed; line batch skipped");
-                }
-                return;
-            }
-
-            auto* vertices = static_cast<ColoredVertex*>(mapped.pData);
-            std::size_t vertexIndex = 0;
             for (const auto& segment : batch.segments()) {
-                const ColoredVertex start{
-                    segment.start.x,
-                    segment.start.y,
-                    segment.start.z,
-                    { segment.color.r, segment.color.g, segment.color.b, segment.color.a }
-                };
-                const ColoredVertex end{
-                    segment.end.x,
-                    segment.end.y,
-                    segment.end.z,
-                    { segment.color.r, segment.color.g, segment.color.b, segment.color.a }
-                };
-                vertices[vertexIndex++] = start;
-                vertices[vertexIndex++] = end;
+                rpsui::sdk::WorldLineV1 line{};
+                line.start[0] = segment.start.x;
+                line.start[1] = segment.start.y;
+                line.start[2] = segment.start.z;
+                line.end[0] = segment.end.x;
+                line.end[1] = segment.end.y;
+                line.end[2] = segment.end.z;
+                line.color[0] = segment.color.r;
+                line.color[1] = segment.color.g;
+                line.color[2] = segment.color.b;
+                line.color[3] = segment.color.a;
+                if (!finiteValues(line.start, 3) || !finiteValues(line.end, 3) || !finiteValues(line.color, 4)) {
+                    ++stats.lineInvalidRejects;
+                    continue;
+                }
+                if (out.worldLines.size() >= rpsui::sdk::RPSUI_WORLD_DRAW_MAX_LINES) {
+                    ++stats.lineBudgetRejects;
+                    continue;
+                }
+                out.worldLines.push_back(line);
             }
-            context->Unmap(s_d3d.axisLineVB.Get(), 0);
-
-            context->IASetInputLayout(s_d3d.coloredInputLayout.Get());
-            context->VSSetShader(s_d3d.stereoColorVertexShader.Get(), nullptr, 0);
-            context->PSSetShader(s_d3d.pixelShader.Get(), nullptr, 0);
-            context->RSSetState(s_d3d.wireRasterizer.Get());
-            context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
-
-            constexpr UINT stride = sizeof(ColoredVertex);
-            constexpr UINT offset = 0;
-            ID3D11Buffer* vertexBuffer = s_d3d.axisLineVB.Get();
-            context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
-            context->IASetIndexBuffer(nullptr, DXGI_FORMAT_UNKNOWN, 0);
-            context->DrawInstanced(static_cast<UINT>(batch.vertexCount()), 2, 0, 0);
-            ++stats.lineDrawCalls;
         }
 
         void appendAxisTripod(debug_overlay_line_batch::LineBatch& batch, const Vertex& origin, const Vertex& xEnd, const Vertex& yEnd, const Vertex& zEnd, AxisOverlayRole role)
@@ -3501,286 +2665,6 @@ namespace rock::debug
             }
         }
 
-        std::array<std::uint8_t, 7> glyphRows(char ch)
-        {
-            if (ch >= 'a' && ch <= 'z') {
-                ch = static_cast<char>(ch - 'a' + 'A');
-            }
-
-            switch (ch) {
-            case '0':
-                return { 0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E };
-            case '1':
-                return { 0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E };
-            case '2':
-                return { 0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F };
-            case '3':
-                return { 0x1E, 0x01, 0x01, 0x0E, 0x01, 0x01, 0x1E };
-            case '4':
-                return { 0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02 };
-            case '5':
-                return { 0x1F, 0x10, 0x10, 0x1E, 0x01, 0x01, 0x1E };
-            case '6':
-                return { 0x0E, 0x10, 0x10, 0x1E, 0x11, 0x11, 0x0E };
-            case '7':
-                return { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08 };
-            case '8':
-                return { 0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E };
-            case '9':
-                return { 0x0E, 0x11, 0x11, 0x0F, 0x01, 0x01, 0x0E };
-            case 'A':
-                return { 0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 };
-            case 'B':
-                return { 0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E };
-            case 'C':
-                return { 0x0F, 0x10, 0x10, 0x10, 0x10, 0x10, 0x0F };
-            case 'D':
-                return { 0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E };
-            case 'E':
-                return { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F };
-            case 'F':
-                return { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10 };
-            case 'G':
-                return { 0x0F, 0x10, 0x10, 0x13, 0x11, 0x11, 0x0F };
-            case 'H':
-                return { 0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 };
-            case 'I':
-                return { 0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E };
-            case 'J':
-                return { 0x01, 0x01, 0x01, 0x01, 0x11, 0x11, 0x0E };
-            case 'K':
-                return { 0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11 };
-            case 'L':
-                return { 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F };
-            case 'M':
-                return { 0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11 };
-            case 'N':
-                return { 0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11 };
-            case 'O':
-                return { 0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E };
-            case 'P':
-                return { 0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10 };
-            case 'Q':
-                return { 0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D };
-            case 'R':
-                return { 0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11 };
-            case 'S':
-                return { 0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E };
-            case 'T':
-                return { 0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04 };
-            case 'U':
-                return { 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E };
-            case 'V':
-                return { 0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04 };
-            case 'W':
-                return { 0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0A };
-            case 'X':
-                return { 0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11 };
-            case 'Y':
-                return { 0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04 };
-            case 'Z':
-                return { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F };
-            case '-':
-                return { 0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00 };
-            case '+':
-                return { 0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00 };
-            case '=':
-                return { 0x00, 0x00, 0x1F, 0x00, 0x1F, 0x00, 0x00 };
-            case '.':
-                return { 0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C };
-            case ',':
-                return { 0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x08 };
-            case ':':
-                return { 0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x0C, 0x00 };
-            case '/':
-                return { 0x01, 0x01, 0x02, 0x04, 0x08, 0x10, 0x10 };
-            case '(':
-                return { 0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02 };
-            case ')':
-                return { 0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08 };
-            default:
-                return { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-            }
-        }
-
-        bool appendTextQuad(
-            std::vector<ColoredVertex>& vertices,
-            float x,
-            float y,
-            float size,
-            float textureWidth,
-            float textureHeight,
-            const float color[4],
-            std::uint32_t maxVertices,
-            std::uint32_t& rejectedVertices)
-        {
-            if (vertices.size() + 6 > maxVertices) {
-                rejectedVertices += 6;
-                return false;
-            }
-
-            const auto toClip = [&](float px, float py) {
-                return Vertex{ (px / textureWidth) * 2.0f - 1.0f, 1.0f - (py / textureHeight) * 2.0f, 0.0f };
-            };
-
-            const auto colored = [&](const Vertex& position) {
-                return ColoredVertex{ position.x, position.y, position.z, { color[0], color[1], color[2], color[3] } };
-            };
-            const ColoredVertex a = colored(toClip(x, y));
-            const ColoredVertex b = colored(toClip(x + size, y));
-            const ColoredVertex c = colored(toClip(x + size, y + size));
-            const ColoredVertex d = colored(toClip(x, y + size));
-            vertices.push_back(a);
-            vertices.push_back(b);
-            vertices.push_back(c);
-            vertices.push_back(a);
-            vertices.push_back(c);
-            vertices.push_back(d);
-            return true;
-        }
-
-        void appendWorldTextGlyphs(std::vector<ColoredVertex>& vertices, const TextOverlayEntry& entry,
-            std::uint32_t maxVertices, std::uint32_t& rejectedVertices)
-        {
-            if (!debug_world_text_geometry::validBasis(entry.worldAnchor, entry.worldRight, entry.worldDown, entry.size)) {
-                rejectedVertices += 6;
-                return;
-            }
-            for (std::size_t i = 0; i < sizeof(entry.text) && entry.text[i] != '\0'; ++i) {
-                const auto rows = glyphRows(entry.text[i]);
-                for (std::size_t row = 0; row < rows.size(); ++row) {
-                    for (unsigned column = 0; column < 5; ++column) {
-                        if ((rows[row] & (1u << (4u - column))) == 0) continue;
-                        if (vertices.size() + 6 > maxVertices) { rejectedVertices += 6; return; }
-                        const auto quad = debug_world_text_geometry::pixelCorners(entry.worldAnchor, entry.worldRight, entry.worldDown,
-                            entry.x + (static_cast<float>(i) * 6 + column) * entry.size,
-                            entry.y + static_cast<float>(row) * entry.size, entry.size);
-                        for (const unsigned corner : { 0u, 1u, 2u, 0u, 2u, 3u }) {
-                            const auto& p = quad[corner];
-                            vertices.push_back({ p.x, p.y, p.z, { entry.color[0], entry.color[1], entry.color[2], entry.color[3] } });
-                        }
-                    }
-                }
-            }
-        }
-
-        float textPixelWidth(const TextOverlayEntry& entry)
-        {
-            std::size_t length = 0;
-            while (length < sizeof(entry.text) && entry.text[length] != '\0') {
-                ++length;
-            }
-            return static_cast<float>(length) * 6.0f * (std::max)(1.0f, entry.size);
-        }
-
-        bool projectWorldAnchorToScreen(const RE::NiPoint3& anchor,
-            const DirectX::XMMATRIX& eyeViewProj,
-            const DirectX::XMFLOAT4& adjust,
-            std::uint32_t eyeIndex,
-            float textureWidth,
-            float textureHeight,
-            float& outX,
-            float& outY)
-        {
-            DirectX::XMFLOAT4 clip{};
-            const DirectX::XMVECTOR world = DirectX::XMVectorSet(anchor.x - adjust.x, anchor.y - adjust.y, anchor.z - adjust.z, 1.0f);
-            DirectX::XMStoreFloat4(&clip, DirectX::XMVector4Transform(world, eyeViewProj));
-            if (!std::isfinite(clip.x) || !std::isfinite(clip.y) || !std::isfinite(clip.w) || std::fabs(clip.w) < 1.0e-5f) {
-                return false;
-            }
-
-            const float invW = 1.0f / clip.w;
-            const float ndcX = clip.x * invW;
-            const float ndcY = clip.y * invW;
-            if (clip.w < 0.0f || ndcX < -2.0f || ndcX > 2.0f || ndcY < -2.0f || ndcY > 2.0f) {
-                return false;
-            }
-
-            const float halfWidth = textureWidth * 0.5f;
-            const float eyeMinX = eyeIndex == 0 ? 0.0f : halfWidth;
-            outX = eyeMinX + (ndcX * 0.5f + 0.5f) * halfWidth;
-            outY = (-ndcY * 0.5f + 0.5f) * textureHeight;
-            return true;
-        }
-
-        void appendTextGlyphs(
-            std::vector<ColoredVertex>& vertices,
-            const TextOverlayEntry& entry,
-            float baseX,
-            float baseY,
-            float maxX,
-            float textureWidth,
-            float textureHeight,
-            std::uint32_t maxVertices,
-            std::uint32_t& rejectedVertices)
-        {
-            constexpr float kGlyphColumns = 5.0f;
-            constexpr float kGlyphAdvanceColumns = 6.0f;
-            const float pixel = (std::max)(1.0f, entry.size);
-            float cursorX = baseX;
-            const float cursorY = baseY;
-            for (std::size_t i = 0; i < sizeof(entry.text) && entry.text[i] != '\0'; ++i) {
-                const auto rows = glyphRows(entry.text[i]);
-                for (std::size_t row = 0; row < rows.size(); ++row) {
-                    for (std::uint8_t col = 0; col < static_cast<std::uint8_t>(kGlyphColumns); ++col) {
-                        const std::uint8_t bit = static_cast<std::uint8_t>(1u << (4u - col));
-                        if ((rows[row] & bit) != 0) {
-                            (void)appendTextQuad(
-                                vertices,
-                                cursorX + static_cast<float>(col) * pixel,
-                                cursorY + static_cast<float>(row) * pixel,
-                                pixel,
-                                textureWidth,
-                                textureHeight,
-                                entry.color,
-                                maxVertices,
-                                rejectedVertices);
-                        }
-                    }
-                }
-                cursorX += kGlyphAdvanceColumns * pixel;
-                if (cursorX >= maxX || cursorX >= textureWidth - 8.0f) {
-                    break;
-                }
-            }
-        }
-
-        void appendWorldAnchoredTextGlyphs(std::vector<ColoredVertex>& vertices,
-            const TextOverlayEntry& entry,
-            const DirectX::XMMATRIX& eye0,
-            const DirectX::XMMATRIX& eye1,
-            const DirectX::XMFLOAT4& adjust0,
-            const DirectX::XMFLOAT4& adjust1,
-            float textureWidth,
-            float textureHeight,
-            bool duplicatePerEye,
-            std::uint32_t maxVertices,
-            std::uint32_t& rejectedVertices)
-        {
-            const float halfWidth = textureWidth * 0.5f;
-            const float approximateWidth = textPixelWidth(entry);
-            auto appendEye = [&](std::uint32_t eyeIndex, const DirectX::XMMATRIX& eye, const DirectX::XMFLOAT4& adjust) {
-                float projectedX = 0.0f;
-                float projectedY = 0.0f;
-                if (!projectWorldAnchorToScreen(entry.worldAnchor, eye, adjust, eyeIndex, textureWidth, textureHeight, projectedX, projectedY)) {
-                    return;
-                }
-
-                const float eyeMinX = eyeIndex == 0 ? 0.0f : halfWidth;
-                const float eyeMaxX = eyeMinX + halfWidth;
-                const float minX = eyeMinX + 24.0f;
-                const float maxX = (std::max)(minX, eyeMaxX - approximateWidth - 24.0f);
-                const float baseX = std::clamp(projectedX + entry.x, minX, maxX);
-                const float baseY = std::clamp(projectedY + entry.y, 24.0f, (std::max)(24.0f, textureHeight - 64.0f));
-                appendTextGlyphs(vertices, entry, baseX, baseY, eyeMaxX - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
-            };
-
-            appendEye(0, eye0, adjust0);
-            if (duplicatePerEye) {
-                appendEye(1, eye1, adjust1);
-            }
-        }
-
         void collectColoredLineOverlays(debug_overlay_line_batch::LineBatch& batch, const PublishedOverlayFrame& frame)
         {
             if (!frame.drawColoredLines || frame.coloredLines.empty()) {
@@ -3792,202 +2676,108 @@ namespace rock::debug
             }
         }
 
-        void drawTextOverlays(ID3D11DeviceContext* context,
-            float textureWidth,
-            float textureHeight,
-            const PublishedOverlayFrame& frame,
-            const DirectX::XMMATRIX& eye0,
-            const DirectX::XMMATRIX& eye1,
-            const DirectX::XMFLOAT4& adjust0,
-            const DirectX::XMFLOAT4& adjust1,
-            OverlayRuntimeStats& stats)
+        // Text is drawn by RPS UI next to its world anchor in both eyes.
+        // Screen-positioned text has no VR placement and is not drawn.
+        void appendTexts(const PublishedOverlayFrame& frame, WorldDrawScratch& out, OverlayRuntimeStats& stats)
         {
-            if (!s_d3d.textVB || !s_d3d.screenTextVertexShader || !s_d3d.coloredInputLayout || !s_d3d.scratch ||
-                textureWidth <= 0.0f || textureHeight <= 0.0f) {
+            if (!frame.drawText) {
                 return;
             }
-
-            if (!frame.drawText || frame.text.empty()) {
-                return;
-            }
-
-            const bool duplicatePerEye = frame.settings.duplicateTextPerEye;
-            const float eyeWidth = duplicatePerEye ? textureWidth * 0.5f : textureWidth;
-            auto& vertices = s_d3d.scratch->textVertices;
-            vertices.clear();
-            std::uint32_t rejectedVertices = 0;
-            const auto maxVertices = frame.settings.limits.maxTextVertices;
-            // World glyphs occupy one prefix of the existing bounded buffer.
-            // The stereo shader projects the same vertices once for each eye.
-            if (s_d3d.stereoColorVertexShader) {
-                for (const auto& entry : frame.text) {
-                    if (entry.worldSpaceGlyphs) appendWorldTextGlyphs(vertices, entry, maxVertices, rejectedVertices);
-                }
-            }
-            const auto worldVertexCount = static_cast<UINT>(vertices.size());
             for (const auto& entry : frame.text) {
-                if (entry.worldSpaceGlyphs) continue;
-                const std::uint32_t rejectedBefore = rejectedVertices;
-                if (entry.worldAnchored) {
-                    appendWorldAnchoredTextGlyphs(
-                        vertices, entry, eye0, eye1, adjust0, adjust1, textureWidth, textureHeight, duplicatePerEye, maxVertices, rejectedVertices);
-                } else {
-                    appendTextGlyphs(vertices, entry, entry.x, entry.y, eyeWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
-                    if (duplicatePerEye) {
-                        appendTextGlyphs(
-                            vertices, entry, entry.x + eyeWidth, entry.y, textureWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
-                    }
+                if (!entry.worldAnchored) {
+                    ++stats.screenTextSkips;
+                    continue;
                 }
-                if (rejectedVertices != rejectedBefore) {
-                    ++stats.textVertexTruncations;
+                rpsui::sdk::WorldTextV1 text{};
+                static_assert(sizeof(text.text) == sizeof(entry.text));
+                std::memcpy(text.text, entry.text, sizeof(text.text));
+                text.text[sizeof(text.text) - 1] = '\0';
+                text.anchor[0] = entry.worldAnchor.x;
+                text.anchor[1] = entry.worldAnchor.y;
+                text.anchor[2] = entry.worldAnchor.z;
+                text.offsetPixels[0] = entry.x;
+                text.offsetPixels[1] = entry.y;
+                text.pixelSize = (std::max)(1.0f, entry.size);
+                std::copy_n(entry.color, 4, text.color);
+                if (!finiteValues(text.anchor, 3) || !finiteValues(text.offsetPixels, 2) || !finiteValues(text.color, 4)) {
+                    ++stats.textInvalidRejects;
+                    continue;
                 }
-            }
-
-            stats.textRejectedVertices += rejectedVertices;
-            if (vertices.empty()) {
-                return;
-            }
-
-            D3D11_MAPPED_SUBRESOURCE mapped{};
-            if (FAILED(context->Map(s_d3d.textVB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)) || !mapped.pData) {
-                ++stats.textMapFailures;
-                if (!s_textUploadFailureReported.exchange(true, std::memory_order_relaxed)) {
-                    ROCK_LOG_WARN(Hand, "Debug overlay: aggregate colored text vertex-buffer map failed; text batch skipped");
+                if (out.texts.size() >= rpsui::sdk::RPSUI_WORLD_DRAW_MAX_TEXTS) {
+                    ++stats.textTruncations;
+                    continue;
                 }
-                return;
+                out.texts.push_back(text);
             }
-            std::memcpy(mapped.pData, vertices.data(), vertices.size() * sizeof(ColoredVertex));
-            context->Unmap(s_d3d.textVB.Get(), 0);
-
-            context->IASetInputLayout(s_d3d.coloredInputLayout.Get());
-            context->VSSetShader(s_d3d.screenTextVertexShader.Get(), nullptr, 0);
-            context->PSSetShader(s_d3d.pixelShader.Get(), nullptr, 0);
-            context->RSSetState(s_d3d.solidRasterizer.Get());
-            context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-            constexpr UINT stride = sizeof(ColoredVertex);
-            constexpr UINT offset = 0;
-            ID3D11Buffer* vertexBuffer = s_d3d.textVB.Get();
-            context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
-            context->IASetIndexBuffer(nullptr, DXGI_FORMAT_UNKNOWN, 0);
-            if (worldVertexCount > 0) {
-                context->VSSetShader(s_d3d.stereoColorVertexShader.Get(), nullptr, 0);
-                context->DrawInstanced(worldVertexCount, 2, 0, 0);
-                ++stats.textDrawCalls;
-            }
-            const auto screenVertexCount = static_cast<UINT>(vertices.size()) - worldVertexCount;
-            if (screenVertexCount > 0) {
-                context->VSSetShader(s_d3d.screenTextVertexShader.Get(), nullptr, 0);
-                context->Draw(screenVertexCount, worldVertexCount);
-                ++stats.textDrawCalls;
-            }
-            stats.textVertices += static_cast<std::uint32_t>(vertices.size());
         }
 
-        void drawGripZoneIndicatorBatch(
-            ID3D11DeviceContext* context,
-            const grip_zone_indicators::Frame& frame)
+        // Gameplay markers: solid white unit spheres scaled to the marker size.
+        void appendGripZoneIndicators(const grip_zone_indicators::Frame& frame, WorldDrawScratch& out)
         {
             const std::uint32_t count = (std::min)(
                 frame.count,
                 static_cast<std::uint32_t>(frame.positions.size()));
-            if (!context || count == 0 ||
-                !std::isfinite(frame.diameterGameUnits) ||
-                frame.diameterGameUnits <= 0.0f ||
-                !s_d3d.bodyInstanceVB || !s_d3d.bodyInputLayout ||
-                !s_d3d.bodyVertexShader || !s_d3d.pixelShader ||
-                !s_d3d.solidRasterizer ||
-                !s_d3d.gripZoneIndicatorSphere.vertexBuffer ||
-                !s_d3d.gripZoneIndicatorSphere.indexBuffer ||
-                s_d3d.gripZoneIndicatorSphere.indexCount == 0) {
+            if (count == 0 || !std::isfinite(frame.diameterGameUnits) || frame.diameterGameUnits <= 0.0f) {
                 return;
             }
-
-            D3D11_MAPPED_SUBRESOURCE mapped{};
-            if (FAILED(context->Map(
-                    s_d3d.bodyInstanceVB.Get(),
-                    0,
-                    D3D11_MAP_WRITE_DISCARD,
-                    0,
-                    &mapped)) ||
-                !mapped.pData) {
-                if (!s_gripZoneIndicatorUploadFailureReported.exchange(
-                        true,
-                        std::memory_order_relaxed)) {
-                    ROCK_LOG_WARN(
-                        Hand,
-                        "Debug overlay: grip-zone indicator instance-buffer map failed; marker batch skipped");
-                }
-                return;
-            }
-
             const float radius = frame.diameterGameUnits * 0.5f;
-            auto* instances = static_cast<BodyInstanceData*>(mapped.pData);
             for (std::uint32_t index = 0; index < count; ++index) {
                 const auto& position = frame.positions[index];
-                const auto model =
-                    DirectX::XMMatrixScaling(radius, radius, radius) *
-                    DirectX::XMMatrixTranslation(
-                        position.x,
-                        position.y,
-                        position.z);
-                DirectX::XMStoreFloat4x4(&instances[index].model, model);
-                instances[index].color[0] = 1.0f;
-                instances[index].color[1] = 1.0f;
-                instances[index].color[2] = 1.0f;
-                instances[index].color[3] = 1.0f;
+                rpsui::sdk::WorldSphereV1 sphere{};
+                sphere.center[0] = position.x;
+                sphere.center[1] = position.y;
+                sphere.center[2] = position.z;
+                sphere.radius = radius;
+                std::fill_n(sphere.color, 4, 1.0f);
+                sphere.fill = rpsui::sdk::WorldFillV1::Solid;
+                if (finiteValues(sphere.center, 3)) {
+                    out.spheres.push_back(sphere);
+                }
             }
-            context->Unmap(s_d3d.bodyInstanceVB.Get(), 0);
-            s_gripZoneIndicatorUploadFailureReported.store(
-                false,
-                std::memory_order_relaxed);
-
-            context->IASetInputLayout(s_d3d.bodyInputLayout.Get());
-            context->VSSetShader(s_d3d.bodyVertexShader.Get(), nullptr, 0);
-            context->PSSetShader(s_d3d.pixelShader.Get(), nullptr, 0);
-            context->RSSetState(s_d3d.solidRasterizer.Get());
-            context->IASetPrimitiveTopology(
-                D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-            ID3D11Buffer* vertexBuffers[2] = {
-                s_d3d.gripZoneIndicatorSphere.vertexBuffer.Get(),
-                s_d3d.bodyInstanceVB.Get()
-            };
-            const UINT strides[2] = {
-                sizeof(Vertex),
-                sizeof(BodyInstanceData)
-            };
-            constexpr UINT offsets[2] = { 0, 0 };
-            context->IASetVertexBuffers(
-                0,
-                2,
-                vertexBuffers,
-                strides,
-                offsets);
-            context->IASetIndexBuffer(
-                s_d3d.gripZoneIndicatorSphere.indexBuffer.Get(),
-                DXGI_FORMAT_R16_UINT,
-                0);
-            context->DrawIndexedInstanced(
-                s_d3d.gripZoneIndicatorSphere.indexCount,
-                count * 2,
-                0,
-                0,
-                0);
         }
 
-        void drawBodyBatch(
-            ID3D11DeviceContext* context,
-            const PublishedOverlayFrame& frame,
-            const CompletedBodyPhaseFrame* completedPhaseFrame,
-            OverlayRuntimeStats& stats)
+        // Frame-callback thread. Copies one finished mesh into RPS UI.
+        bool registerMeshData(std::uint64_t meshId, const MeshData& mesh) noexcept
         {
-            if (!context || !s_d3d.bodyInstanceVB || !s_d3d.bodyInputLayout || !s_d3d.bodyVertexShader || !s_d3d.scratch) {
+            auto& scratch = worldDrawScratch();
+            try {
+                scratch.meshPositions.clear();
+                scratch.meshPositions.reserve(mesh.vertices.size() * 3);
+                for (const auto& vertex : mesh.vertices) {
+                    scratch.meshPositions.insert(scratch.meshPositions.end(), { vertex.x, vertex.y, vertex.z });
+                }
+                scratch.meshIndices.assign(mesh.indices.begin(), mesh.indices.end());
+            } catch (...) {
+                return false;
+            }
+            return world_draw_client::registerMesh(meshId, scratch.meshPositions.data(),
+                static_cast<std::uint32_t>(mesh.vertices.size()), scratch.meshIndices.data(),
+                static_cast<std::uint32_t>(scratch.meshIndices.size()));
+        }
+
+        // Any thread: the shape cache drops entries on the game thread too.
+        void releaseMeshData(std::uint64_t meshId) noexcept
+        {
+            world_draw_client::releaseMesh(meshId);
+        }
+
+        constexpr debug_overlay_shape::MeshSink kMeshSink{ &registerMeshData, &releaseMeshData };
+
+        void ensureAabbProxyRegistered()
+        {
+            if (s_aabbProxyRegistered) {
                 return;
             }
+            static const MeshData box = debug_overlay_shape::makeUnitBoxMesh();
+            s_aabbProxyRegistered = registerMeshData(kAabbProxyMeshId, box);
+        }
 
-            auto& draws = s_d3d.scratch->bodies;
-            draws.clear();
+        void appendBodies(
+            const PublishedOverlayFrame& frame,
+            const CompletedBodyPhaseFrame* completedPhaseFrame,
+            WorldDrawScratch& out,
+            OverlayRuntimeStats& stats)
+        {
             const std::size_t baseEntryLimit = frame.settings.limits.maxBodyInstances;
             const std::size_t renderInstanceLimit = (std::min)(
                 kBodyInstanceCapacity,
@@ -4002,13 +2792,13 @@ namespace rock::debug
                 ++admittedBaseEntries;
 
                 const auto cached = shapePipeline().lookup(entry.shapeKey);
-                const GpuShape* gpuShape = nullptr;
+                const RegisteredShape* shape = nullptr;
                 bool shapeReady = false;
                 if (cached.state == debug_overlay_shape::CacheState::Ready && cached.shape && cached.shape->indexCount > 0) {
-                    gpuShape = cached.shape.get();
+                    shape = cached.shape.get();
                     shapeReady = true;
                     ++stats.shapeCacheHits;
-                    if (gpuShape->decodeMode == debug_overlay_policy::ShapeDecodeMode::Proxy) {
+                    if (shape->decodeMode == debug_overlay_policy::ShapeDecodeMode::Proxy) {
                         ++stats.shapeProxyFallbacks;
                     }
                 } else {
@@ -4019,7 +2809,9 @@ namespace rock::debug
                         }
                         continue;
                     }
-                    gpuShape = &s_d3d.aabbProxy;
+                    if (!s_aabbProxyRegistered) {
+                        continue;
+                    }
                     ++stats.shapeProxyFallbacks;
                     if (cached.state == debug_overlay_shape::CacheState::Unsupported) {
                         ++stats.unsupportedShapeProxies;
@@ -4027,12 +2819,9 @@ namespace rock::debug
                         ++stats.shapePendingProxies;
                     }
                 }
-                if (!gpuShape || !gpuShape->vertexBuffer || !gpuShape->indexBuffer || gpuShape->indexCount == 0) {
-                    continue;
-                }
 
                 const auto appendInstance = [&](DirectX::XMMATRIX model) {
-                    if (draws.size() >= renderInstanceLimit) {
+                    if (out.instances.size() >= renderInstanceLimit) {
                         ++stats.bodyInstanceRejects;
                         return;
                     }
@@ -4061,22 +2850,32 @@ namespace rock::debug
                         model = worldAabbMatrix(entry) * inversePhysics * model;
                     }
 
-                    BodyDrawItem draw{};
-                    if (shapeReady) {
-                        draw.shapeOwner = cached.shape;
-                    }
-                    draw.shape = gpuShape;
-                    DirectX::XMStoreFloat4x4(&draw.instance.model, model);
+                    rpsui::sdk::WorldMeshInstanceV1 instance{};
+                    instance.meshId = shapeReady ? shape->meshId : kAabbProxyMeshId;
+                    DirectX::XMFLOAT4X4 stored{};
+                    DirectX::XMStoreFloat4x4(&stored, model);
+                    static_assert(sizeof(stored) == sizeof(instance.transform));
+                    std::memcpy(instance.transform, &stored, sizeof(instance.transform));
+                    const auto drawnMode = shapeReady ? shape->decodeMode : debug_overlay_policy::ShapeDecodeMode::Proxy;
                     bodyColor(
                         entry.role,
                         isExternalBodyRole(entry.role) && !shapeReady ?
                             (cached.state == debug_overlay_shape::CacheState::Unsupported ?
                                 debug_overlay_policy::ShapeDecodeMode::Unsupported : debug_overlay_policy::ShapeDecodeMode::Proxy) :
-                            gpuShape->decodeMode,
-                        draw.instance.color);
-                    if(isExternalBodyRole(entry.role)&&shapeReady&&gpuShape->decodeMode==debug_overlay_policy::ShapeDecodeMode::Detailed)
-                        std::copy_n(entry.externalColor,4,draw.instance.color);
-                    draws.push_back(std::move(draw));
+                            drawnMode,
+                        instance.color);
+                    if (isExternalBodyRole(entry.role) && shapeReady && drawnMode == debug_overlay_policy::ShapeDecodeMode::Detailed)
+                        std::copy_n(entry.externalColor, 4, instance.color);
+                    instance.fill = rpsui::sdk::WorldFillV1::Wire;
+                    if (!finiteValues(instance.transform, 16) || !finiteValues(instance.color, 4)) {
+                        ++stats.bodyInvalidRejects;
+                        return;
+                    }
+                    if (shapeReady) {
+                        out.heldShapes.push_back(cached.shape);
+                    }
+                    out.instances.push_back(instance);
+                    ++stats.bodiesDrawn;
                 };
 
                 auto displayedWorld = entry.worldMatrix;
@@ -4087,54 +2886,9 @@ namespace rock::debug
                 }
                 appendInstance(displayedWorld);
             }
-            if (draws.empty()) {
-                return;
-            }
-
-            D3D11_MAPPED_SUBRESOURCE mapped{};
-            if (FAILED(context->Map(s_d3d.bodyInstanceVB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)) || !mapped.pData) {
-                if (!s_bodyInstanceUploadFailureReported.exchange(true, std::memory_order_relaxed)) {
-                    ROCK_LOG_WARN(Hand, "Debug overlay: body instance-buffer map failed; body batch skipped");
-                }
-                return;
-            }
-            auto* instances = static_cast<BodyInstanceData*>(mapped.pData);
-            for (std::size_t index = 0; index < draws.size(); ++index) {
-                instances[index] = draws[index].instance;
-            }
-            context->Unmap(s_d3d.bodyInstanceVB.Get(), 0);
-            ++stats.bodyInstanceMaps;
-
-            context->IASetInputLayout(s_d3d.bodyInputLayout.Get());
-            context->VSSetShader(s_d3d.bodyVertexShader.Get(), nullptr, 0);
-            context->PSSetShader(s_d3d.pixelShader.Get(), nullptr, 0);
-            context->RSSetState(s_d3d.wireRasterizer.Get());
-            context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-            std::size_t runStart = 0;
-            while (runStart < draws.size()) {
-                std::size_t runEnd = runStart + 1;
-                while (runEnd < draws.size() && draws[runEnd].shape == draws[runStart].shape) {
-                    ++runEnd;
-                }
-
-                const auto* shape = draws[runStart].shape;
-                ID3D11Buffer* vertexBuffers[2] = { shape->vertexBuffer.Get(), s_d3d.bodyInstanceVB.Get() };
-                const UINT strides[2] = { sizeof(Vertex), sizeof(BodyInstanceData) };
-                const UINT offsets[2] = { 0, static_cast<UINT>(runStart * sizeof(BodyInstanceData)) };
-                context->IASetVertexBuffers(0, 2, vertexBuffers, strides, offsets);
-                context->IASetIndexBuffer(shape->indexBuffer.Get(), DXGI_FORMAT_R16_UINT, 0);
-
-                const UINT runLength = static_cast<UINT>(runEnd - runStart);
-                context->DrawIndexedInstanced(shape->indexCount, runLength * 2, 0, 0, 0);
-                stats.bodiesDrawn += runLength;
-                ++stats.bodyMeshBinds;
-                ++stats.bodyDrawCalls;
-                runStart = runEnd;
-            }
         }
 
-        void drawOverlayToSubmittedTexture(const vr::Texture_t* texture)
+        void composeWorldDrawFrameUnsafe()
         {
             performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DebugOverlayRender);
 
@@ -4148,7 +2902,8 @@ namespace rock::debug
                 return;
             }
 
-            CompletedBodyPhaseFrame completedPhaseFrame{};
+            // Frame-callback thread only; too large for the host's render stack.
+            static CompletedBodyPhaseFrame completedPhaseFrame{};
             const bool hasCompletedPhaseFrame =
                 frame &&
                 tryCopyCompletedBodyPhaseFrame(
@@ -4175,16 +2930,15 @@ namespace rock::debug
                 return;
             }
 
-            auto* device = getDevice();
-            auto* context = getContext();
-            if (!device || !context || !s_initialized.load(std::memory_order_acquire) || s_d3d.device.Get() != device || !texture || !texture->handle ||
-                texture->eType != vr::TextureType_DirectX) {
+            auto& scratch = worldDrawScratch();
+            if (!scratch.prepare()) {
+                if (!s_scratchFailureReported) {
+                    s_scratchFailureReported = true;
+                    ROCK_LOG_WARN(Hand, "Debug overlay: world-draw scratch allocation failed; drawing skipped");
+                }
                 return;
             }
-
-            auto* submittedTexture = reinterpret_cast<ID3D11Texture2D*>(texture->handle);
-            D3D11_TEXTURE2D_DESC textureDesc{};
-            submittedTexture->GetDesc(&textureDesc);
+            scratch.clear();
 
             OverlayRuntimeStats stats{};
             if (frame) {
@@ -4193,93 +2947,91 @@ namespace rock::debug
                 stats.shapeCaptureDeferrals = frame->shapeCaptureDeferrals;
                 const auto uploadResult =
                     shapePipeline().processCompletedUploads(
-                        device,
+                        kMeshSink,
                         frame->settings.limits.maxShapeUploadsPerFrame,
                         frame->settings.pipelineLimits);
                 stats.shapeUploadsProcessed = uploadResult.processed;
                 stats.shapeUploadsCompleted = uploadResult.uploaded;
                 stats.shapeUploadFailures = uploadResult.failed;
             }
-            ID3D11RenderTargetView* rtv = getSubmittedTextureRtv(device, submittedTexture, textureDesc, stats);
-            if (!rtv) {
-                return;
+
+            if (hasBodiesToDraw) {
+                ensureAabbProxyRegistered();
+                appendBodies(
+                    *frame,
+                    hasCompletedPhaseFrame ?
+                        &completedPhaseFrame :
+                        nullptr,
+                    scratch,
+                    stats);
             }
 
-            DirectX::XMMATRIX eye0;
-            DirectX::XMMATRIX eye1;
-            DirectX::XMFLOAT4 adjust0;
-            DirectX::XMFLOAT4 adjust1;
-            if (!getEyeViewProjMatrices(eye0, eye1, adjust0, adjust1)) {
-                return;
+            if (hasGripZoneIndicatorsToDraw) {
+                appendGripZoneIndicators(*gripZoneIndicatorFrame, scratch);
             }
 
-            RenderPassGuard renderPass(context, rtv, textureDesc.Width, textureDesc.Height);
-            if (!renderPass.active() || !uploadCamera(context, eye0, eye1, adjust0, adjust1)) {
-                return;
+            if (frame) {
+                auto& lineBatch = scratch.lines;
+                lineBatch.beginFrame(
+                    frame->settings.limits.maxLineVertices);
+                // Owner-published diagnostics are already hard-bounded by
+                // the provider API. Admit them first so an enabled addon
+                // view is not silently starved by unrelated
+                // high-cardinality probes.
+                collectColoredLineOverlays(lineBatch, *frame);
+                collectAxisOverlays(lineBatch, *frame, hasCompletedPhaseFrame ? &completedPhaseFrame : nullptr);
+                collectMarkerOverlays(lineBatch, *frame);
+                collectSkeletonOverlays(lineBatch, *frame);
+                emitLineBatch(lineBatch, scratch, stats);
+                appendTexts(*frame, scratch, stats);
             }
 
-            {
-                [[maybe_unused]] auto gpuTimerScope = s_d3d.gpuTimer.begin(context);
-                if (hasBodiesToDraw) {
-                    drawBodyBatch(
-                        context,
-                        *frame,
-                        hasCompletedPhaseFrame ?
-                            &completedPhaseFrame :
-                            nullptr,
-                        stats);
+            // One frame: the next drawn frame either receives a fresh
+            // composition or shows nothing, as when ROCK drew directly.
+            rpsui::sdk::WorldDrawPublicationV1 publication{};
+            publication.leaseFrames = 1;
+            publication.sphereCount = static_cast<std::uint32_t>(scratch.spheres.size());
+            publication.lineCount = static_cast<std::uint32_t>(scratch.worldLines.size());
+            publication.textCount = static_cast<std::uint32_t>(scratch.texts.size());
+            publication.meshInstanceCount = static_cast<std::uint32_t>(scratch.instances.size());
+            publication.spheres = scratch.spheres.data();
+            publication.lines = scratch.worldLines.data();
+            publication.texts = scratch.texts.data();
+            publication.meshInstances = scratch.instances.data();
+            const bool submitted = world_draw_client::submit(publication);
+            scratch.heldShapes.clear();
+            if (!submitted) {
+                if (!s_submitFailureReported) {
+                    s_submitFailureReported = true;
+                    ROCK_LOG_WARN(Hand, "Debug overlay: RPS UI refused the world-draw publication; frame not drawn");
                 }
-
-                if (hasGripZoneIndicatorsToDraw) {
-                    drawGripZoneIndicatorBatch(
-                        context,
-                        *gripZoneIndicatorFrame);
-                }
-
-                if (frame) {
-                    auto& lineBatch = s_d3d.scratch->lines;
-                    lineBatch.beginFrame(
-                        frame->settings.limits.maxLineVertices);
-                    // Owner-published diagnostics are already hard-bounded by
-                    // the provider API. Admit them first so an enabled addon
-                    // view is not silently starved by unrelated
-                    // high-cardinality probes.
-                    collectColoredLineOverlays(lineBatch, *frame);
-                    collectAxisOverlays(lineBatch, *frame, hasCompletedPhaseFrame ? &completedPhaseFrame : nullptr);
-                    collectMarkerOverlays(lineBatch, *frame);
-                    collectSkeletonOverlays(lineBatch, *frame);
-                    drawLineBatch(context, lineBatch, stats);
-                    drawTextOverlays(
-                        context,
-                        static_cast<float>(textureDesc.Width),
-                        static_cast<float>(textureDesc.Height),
-                        *frame,
-                        eye0,
-                        eye1,
-                        adjust0,
-                        adjust1,
-                        stats);
-                }
+            } else {
+                s_submitFailureReported = false;
+            }
+            if (stats.screenTextSkips > 0 && !s_screenTextSkipReported) {
+                s_screenTextSkipReported = true;
+                ROCK_LOG_WARN(Hand, "Debug overlay: text without a world anchor has no VR placement and is not drawn");
             }
 
             if (frame && frame->settings.verboseLogging &&
                 ++s_overlayStatsLogCounter >= 90) {
                 s_overlayStatsLogCounter = 0;
                 const auto pipelineStats = shapePipeline().stats();
-                const auto gpuStats = s_d3d.gpuTimer.stats();
                 const auto admissionStats = s_frameAdmission.stats();
                 ROCK_LOG_DEBUG(Hand,
-                    "Debug overlay frame: entries={} drawn={} bodyBinds={} bodyDraws={} bodyMaps={} bodyRejects={} axes={} markers={} skeleton={} text={} cacheHits={} cacheMisses={} shapeCaptures={} captureDefers={} captureCap={} uploads={}/{} uploadFails={} proxies={} pendingProxy={} unsupportedProxy={} unsupportedSkip={} cache(ready/pending/unsupported/total/bytes)={}/{}/{}/{}/{} jobs(reserved/queued/active/completed)={}/{}/{}/{} evictions={} staleDrops={} completedDrops={} bodyReadFails={} lineVerts={} lineLines={} lineDraws={} lineRejects={} lineMapFails={} textVerts={} textDraws={} textTrunc={} textRejectVerts={} textMapFails={} rtvHits={} rtvMisses={} limits(convex/compound/depth/queue/completed/uploads/cacheEntries/cacheBytes/bodies/lines/text)={}/{}/{}/{}/{}/{}/{}/{}/{}/{}/{}",
+                    "Debug overlay frame: entries={} drawn={} bodyRejects={} bodyInvalid={} axes={} markers={} skeleton={} text={}/{} textTrunc={} textInvalid={} screenTextSkips={} cacheHits={} cacheMisses={} shapeCaptures={} captureDefers={} captureCap={} registrations={}/{} registrationFails={} proxies={} pendingProxy={} unsupportedProxy={} unsupportedSkip={} cache(ready/pending/unsupported/total/bytes)={}/{}/{}/{}/{} jobs(reserved/queued/active/completed)={}/{}/{}/{} evictions={} staleDrops={} completedDrops={} bodyReadFails={} lineVerts={} lineLines={} lineRejects={} lineInvalid={} limits(convex/compound/depth/queue/completed/uploads/cacheEntries/cacheBytes/bodies/lines)={}/{}/{}/{}/{}/{}/{}/{}/{}/{}",
                     stats.bodyEntries,
                     stats.bodiesDrawn,
-                    stats.bodyMeshBinds,
-                    stats.bodyDrawCalls,
-                    stats.bodyInstanceMaps,
                     stats.bodyInstanceRejects,
+                    stats.bodyInvalidRejects,
                     frame->axes.size(),
                     frame->markers.size(),
                     frame->skeleton.size(),
+                    scratch.texts.size(),
                     frame->text.size(),
+                    stats.textTruncations,
+                    stats.textInvalidRejects,
+                    stats.screenTextSkips,
                     stats.shapeCacheHits,
                     stats.shapeCacheMisses,
                     stats.shapeCaptures,
@@ -4296,7 +3048,7 @@ namespace rock::debug
                     pipelineStats.pending,
                     pipelineStats.unsupported,
                     pipelineStats.entries,
-                    pipelineStats.approximateGpuBytes,
+                    pipelineStats.approximateBytes,
                     pipelineStats.reservedJobs,
                     pipelineStats.queuedJobs,
                     pipelineStats.activeJobs,
@@ -4307,16 +3059,8 @@ namespace rock::debug
                     stats.bodyExtractFailures,
                     stats.lineVertices,
                     stats.lineLogicalLines,
-                    stats.lineDrawCalls,
                     stats.lineBudgetRejects,
-                    stats.lineMapFailures,
-                    stats.textVertices,
-                    stats.textDrawCalls,
-                    stats.textVertexTruncations,
-                    stats.textRejectedVertices,
-                    stats.textMapFailures,
-                    stats.rtvCacheHits,
-                    stats.rtvCacheMisses,
+                    stats.lineInvalidRejects,
                     frame->settings.limits.maxConvexSupportVertices,
                     frame->settings.limits.maxCompoundChildren,
                     frame->settings.limits.maxCompoundDepth,
@@ -4326,18 +3070,9 @@ namespace rock::debug
                     frame->settings.limits.maxShapeCacheEntries,
                     frame->settings.limits.maxShapeCacheBytes,
                     frame->settings.limits.maxBodyInstances,
-                    frame->settings.limits.maxLineVertices,
-                    frame->settings.limits.maxTextVertices);
+                    frame->settings.limits.maxLineVertices);
                 ROCK_LOG_DEBUG(Hand,
-                    "Debug overlay timing/admission: gpuUs(latest/average)={:.2f}/{:.2f} gpu(issued/completed/pendingPolls/skipped/disjoint/failed)={}/{}/{}/{}/{}/{} admission(published/acquired/active/noPublication/duplicate/serialRace)={}/{}/{}/{}/{}/{}",
-                    gpuStats.latestMicroseconds,
-                    gpuStats.averageMicroseconds,
-                    gpuStats.issuedSamples,
-                    gpuStats.completedSamples,
-                    gpuStats.pendingPolls,
-                    gpuStats.skippedBegins,
-                    gpuStats.disjointSamples,
-                    gpuStats.failedPolls,
+                    "Debug overlay admission: published={} acquired={} active={} noPublication={} duplicate={} serialRace={}",
                     admissionStats.publishedSerial,
                     admissionStats.acquiredFrames,
                     admissionStats.activeSkips,
@@ -4385,115 +3120,42 @@ namespace rock::debug
             }
         }
 
-        void reportSubmitInstallFailureOnce(const char* detail) noexcept
+        // RPS UI frame callback (render thread). Draws at most once per ROCK
+        // publication, like the former direct renderer: a frame with no fresh
+        // publication shows nothing rather than repeating stale poses.
+        void composeWorldDrawFrame() noexcept
         {
-            if (s_submitInstallFailureReported.exchange(true, std::memory_order_relaxed)) {
+            if (!s_standardFrameEnabled.load(std::memory_order_acquire) && !grip_zone_indicators::Snapshot()) {
                 return;
             }
-
-            ROCK_LOG_WARN(Hand, "Debug body overlay: {}; Submit hook installation will retry", detail);
+            auto admission = s_frameAdmission.tryAcquire();
+            if (!admission) {
+                return;
+            }
+            try {
+                composeWorldDrawFrameUnsafe();
+            } catch (const std::exception& exception) {
+                reportOverlayExceptionOnce(exception.what());
+            } catch (...) {
+                reportOverlayExceptionOnce("non-standard exception");
+            }
         }
 
-        vr::EVRCompositorError VRSubmitHook(vr::IVRCompositor* compositor, vr::EVREye eye, const vr::Texture_t* texture, const vr::VRTextureBounds_t* bounds,
-            vr::EVRSubmitFlags flags) noexcept
+        WorldDrawScratch& worldDrawScratch() noexcept
         {
-            if (eye == vr::Eye_Left &&
-                (s_standardFrameEnabled.load(std::memory_order_acquire) || grip_zone_indicators::Snapshot())) {
-                auto admission = s_frameAdmission.tryAcquire();
-                if (admission) {
-                    try {
-                        drawOverlayToSubmittedTexture(texture);
-                    } catch (const std::exception& exception) {
-                        reportOverlayExceptionOnce(exception.what());
-                    } catch (...) {
-                        reportOverlayExceptionOnce("non-standard exception");
-                    }
-                }
-            }
-
-            const auto originalSubmit = s_originalVRSubmit.load(std::memory_order_acquire);
-            return originalSubmit ? originalSubmit(compositor, eye, texture, bounds, flags) : vr::VRCompositorError_RequestFailed;
-        }
-
-        bool installSubmitHook()
-        {
-            if (s_submitHookInstalled.load(std::memory_order_acquire)) {
-                return true;
-            }
-
-            auto* compositor = vr::VRCompositor();
-            if (!compositor) {
-                reportSubmitInstallFailureOnce("VRCompositor unavailable");
-                return false;
-            }
-
-            auto*** objectVTable = reinterpret_cast<void***>(compositor);
-            if (!objectVTable || !*objectVTable) {
-                reportSubmitInstallFailureOnce("VRCompositor vtable unavailable");
-                return false;
-            }
-            s_vrCompositorVTable = *objectVTable;
-            constexpr std::size_t kSubmitVTableIndex = 5;
-
-            DWORD oldProtect = 0;
-            if (!VirtualProtect(&s_vrCompositorVTable[kSubmitVTableIndex], sizeof(void*), kPageExecuteReadWrite, &oldProtect)) {
-                reportSubmitInstallFailureOnce("VRCompositor vtable protection change failed");
-                return false;
-            }
-
-            const auto originalSubmit = reinterpret_cast<VRSubmit_t>(s_vrCompositorVTable[kSubmitVTableIndex]);
-            if (!originalSubmit || originalSubmit == &VRSubmitHook) {
-                DWORD ignoredProtect = 0;
-                VirtualProtect(&s_vrCompositorVTable[kSubmitVTableIndex], sizeof(void*), oldProtect, &ignoredProtect);
-                reportSubmitInstallFailureOnce("original OpenVR Submit target is invalid");
-                return false;
-            }
-
-            s_originalVRSubmit.store(originalSubmit, std::memory_order_release);
-            s_vrCompositorVTable[kSubmitVTableIndex] = reinterpret_cast<void*>(&VRSubmitHook);
-            DWORD ignoredProtect = 0;
-            if (!VirtualProtect(&s_vrCompositorVTable[kSubmitVTableIndex], sizeof(void*), oldProtect, &ignoredProtect)) {
-                ROCK_LOG_ERROR(Hand, "Debug body overlay: failed to restore OpenVR Submit vtable protection after hook install");
-            }
-
-            s_submitHookInstalled.store(true, std::memory_order_release);
-            s_submitInstallFailureReported.store(false, std::memory_order_relaxed);
-            ROCK_LOG_INFO(Hand, "Debug body overlay: OpenVR Submit hook installed");
-            return true;
+            static auto* scratch = new WorldDrawScratch();
+            return *scratch;
         }
     }
 
     bool EnsureWorldOverlayInstalled()
     {
-        if (s_initialized.load(std::memory_order_acquire)) {
-            return installSubmitHook();
-        }
-
-        auto* device = getDevice();
-        if (!device) {
-            if (!s_installAttemptedWithoutDevice) {
-                s_installAttemptedWithoutDevice = true;
-                ROCK_LOG_WARN(Hand, "Debug body overlay: D3D11 device unavailable; install will retry on frame update");
-            }
-            return false;
-        }
-
-        if (!initializeD3D(device)) {
-            ROCK_LOG_ERROR(Hand, "Debug body overlay: D3D initialization failed");
-            return false;
-        }
-        s_initialized.store(true, std::memory_order_release);
-        return installSubmitHook();
+        return world_draw_client::ensureBound(&composeWorldDrawFrame);
     }
 
     void Install()
     {
         (void)world_overlay_renderer::EnsureInstalled();
-    }
-
-    bool IsInstalled()
-    {
-        return s_initialized.load(std::memory_order_acquire) && s_submitHookInstalled.load(std::memory_order_acquire);
     }
 
     void PublishFrame(const BodyOverlayFrame& frame)
@@ -4662,20 +3324,6 @@ namespace rock::debug
         shapePipeline().shutdown();
     }
 
-    bool TryGetCurrentStereoOrigin(RE::NiPoint3& outOrigin)
-    {
-        StereoCaptureStage deepestStage = StereoCaptureStage::None;
-        DWORD readError = ERROR_SUCCESS;
-        RootStereoFields rootFields{};
-        if (!readRootStereoFields(rootFields, deepestStage, readError) || !validateStereoVector3(rootFields.slot0Origin)) {
-            return false;
-        }
-
-        outOrigin.x = rootFields.slot0Origin[0];
-        outOrigin.y = rootFields.slot0Origin[1];
-        outOrigin.z = rootFields.slot0Origin[2];
-        return true;
-    }
 }
 
 namespace rock::world_overlay_renderer

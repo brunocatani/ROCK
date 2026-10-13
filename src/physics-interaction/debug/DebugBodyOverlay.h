@@ -335,12 +335,10 @@ namespace rock::debug
         float y{ 18.0f };
         float size{ 2.0f };
         float color[4]{ 0.90f, 1.0f, 0.95f, 0.92f };
+        // Drawn by RPS UI beside the anchor, offset by x/y pixels. Text without
+        // a world anchor has no VR placement and is not drawn.
         RE::NiPoint3 worldAnchor{};
         bool worldAnchored{ false };
-        // World-space bitmap glyphs use size/x/y in game units. Both eyes
-        // project the same quad vertices through the stereo geometry shader.
-        RE::NiPoint3 worldRight{}, worldDown{};
-        bool worldSpaceGlyphs{ false };
     };
 
     struct ColoredLineOverlayEntry
@@ -381,8 +379,8 @@ namespace rock::debug
         bool drawText{ false };
     };
 
+    // Binds RPS UI world drawing when it is loaded; ROCK draws nothing without it.
     void Install();
-    bool IsInstalled();
     void PublishFrame(const BodyOverlayFrame& frame);
     // Physics-step-thread callback. Captures only bounded body matrices for the
     // final substep. The implementation is non-blocking and does no allocation,
@@ -395,11 +393,7 @@ namespace rock::debug
     // Clears diagnostics only. Gameplay marker lifetime is owned separately.
     void ClearFrame();
     void ClearShapeCache();
-    // Stops and joins the owned CPU shape worker without uninstalling the
-    // process-scoped OpenVR hook or D3D resources. PublishFrame restarts it.
+    // Stops and joins the owned CPU shape worker; the RPS UI binding stays.
+    // PublishFrame restarts it.
     void ShutdownShapePipeline();
-    // Current-frame left-eye stereo origin (game world units) from the same
-    // fail-closed engine read the overlay camera uses. Diagnostic sampling only;
-    // returns false without touching the overlay's stereo health telemetry.
-    bool TryGetCurrentStereoOrigin(RE::NiPoint3& outOrigin);
 }

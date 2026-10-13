@@ -129,7 +129,6 @@
         const bool drawGrabSupportFrame = visualization.grabSupportFrame;
         const bool drawHandBoneContacts = visualization.handBoneContacts;
         const bool drawGrabAuthorityProxy = visualization.grabAuthorityProxy;
-        const bool drawPerformanceProfilerOverlay = performance_profiler::overlayTextEnabled();
         const bool drawWeaponAuthorityDebug =
             _twoHandedGrip.isGripping() && visualization.weaponAuthority;
         const bool drawGunstock = g_rockConfig.rockDebugDrawGunstock;
@@ -188,7 +187,7 @@
             drawGrabAuthorityProxyCollider || drawGrabPivotSourceCollider;
         if (!drawAnyRockColliderBodies && !drawTargetColliders && !drawHandAxes && !drawGrabPivots && !drawFingerProbes &&
             !drawFingerSweptArc && !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal &&
-            !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawPerformanceProfilerOverlay &&
+            !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque &&
             !drawWeaponAuthorityDebug && !drawLooseWeaponGripZones && !drawNativeScopeActivation && !drawGrabSupportFrame &&
             !drawDynamicHandColliders && !drawDynamicWeaponColliders && !drawAuthoredSupportGripDebug && !drawProviderOverlay && !drawGunstock && !drawControllerAim) {
             debug::ClearFrame();
@@ -211,7 +210,7 @@
             drawAuthoredSupportGripDebug || drawGunstock || drawControllerAim;
         frame.drawSkeleton = drawSkeletonBones;
         frame.drawColoredLines = providerOverlay && providerOverlay->lineCount > 0;
-        frame.drawText = drawGrabForceTorqueText || drawFingerSweptArcText || drawPerformanceProfilerOverlay ||
+        frame.drawText = drawGrabForceTorqueText || drawFingerSweptArcText ||
             drawDynamicHandColliders || drawDynamicWeaponColliders || drawNativeScopeActivation ||
             drawAuthoredSupportGripDebug || drawGrabAuthorityProxy ||
             (providerOverlay && providerOverlay->textCount > 0) || drawGunstock || drawControllerAim ||
@@ -350,33 +349,24 @@
             addTextLineSized(worldAnchor, 3.0f, color, format, std::forward<decltype(args)>(args)...);
         };
 
-        auto addScreenTextLine = [&](float x, float y, const float color[4], const char* text) {
+        // Multi-line diagnostic panels sit beside the object they describe;
+        // pixelY stacks each line below the anchor's projected position. A
+        // panel with no object to stand beside is not drawn (no head-locked or
+        // screen-corner placement in VR).
+        auto addPanelLine = [&](const RE::NiPoint3& anchor, float pixelY, const float color[4], const char* text) {
             if (!frame.drawText || !text || frame.textCount >= frame.textEntries.size()) {
                 return;
             }
 
             auto& entry = frame.textEntries[frame.textCount++];
-            entry.x = x;
-            entry.y = y;
+            entry.x = 24.0f;
+            entry.y = pixelY;
             entry.size = 2.0f;
-            entry.color[0] = color[0];
-            entry.color[1] = color[1];
-            entry.color[2] = color[2];
-            entry.color[3] = color[3];
-            entry.worldAnchored = false;
+            std::copy_n(color, 4, entry.color);
+            entry.worldAnchor = anchor;
+            entry.worldAnchored = true;
             std::snprintf(entry.text, sizeof(entry.text), "%s", text);
         };
-
-        if (frame.drawRockBodies || frame.drawTargetBodies) {
-            const float phaseLegendColor[4]{ 1.0f, 1.0f, 1.0f, 0.96f };
-            char phaseLegend[128]{};
-            std::snprintf(
-                phaseLegend,
-                sizeof(phaseLegend),
-                "COLLIDER PHASE frame=%llu  TARGET=YELLOW(103%%)  PRE=MAGENTA(101.5%%)  POST=CYAN(100%%)",
-                static_cast<unsigned long long>(frame.gameFrameIndex));
-            addScreenTextLine(18.0f, 60.0f, phaseLegendColor, phaseLegend);
-        }
 
         auto tryResolveBodyPosition = [&](std::uint32_t bodyId, RE::NiPoint3& outPosition) {
             if (!hknp || bodyId == INVALID_CONTACT_BODY_ID || bodyId == INVALID_BODY_ID) {
@@ -414,19 +404,6 @@
             const RE::NiPoint3 delta = lhs - rhs;
             return std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
         };
-
-        if (drawPerformanceProfilerOverlay) {
-            performance_profiler::OverlayLines profilerLines{};
-            const auto profilerLineCount = performance_profiler::copyOverlayLines(profilerLines);
-            const float profilerColor[4]{ 0.70f, 1.0f, 0.82f, 0.92f };
-            if (profilerLineCount == 0) {
-                addScreenTextLine(18.0f, 18.0f, profilerColor, "ROCK PERF warming");
-            } else {
-                for (std::uint32_t i = 0; i < profilerLineCount && i < profilerLines.size(); ++i) {
-                    addScreenTextLine(18.0f, 18.0f + (14.0f * static_cast<float>(i)), profilerColor, profilerLines[i].data());
-                }
-            }
-        }
 
         if (drawNativeScopeActivation) {
             constexpr float kScopeAxisGuideLengthGameUnits = 80.0f;
@@ -767,14 +744,17 @@
                 return "unknown";
             };
             const float panelColor[4]{ 0.96f, 0.98f, 1.0f, 0.98f };
-            constexpr float panelX = 520.0f;
-            float panelY = 18.0f;
+            const bool scopePanelAnchorValid = sightGeometryValid || resolvedAnchorValid || liveCameraValid;
+            const RE::NiPoint3 scopePanelAnchor = sightGeometryValid ? sightAnchorWorld :
+                (resolvedAnchorValid ? resolvedAnchorWorld : liveCameraWorld.translate);
+            const auto addScopePanelLine = [&](float pixelY, const char* text) {
+                if (scopePanelAnchorValid) addPanelLine(scopePanelAnchor, pixelY, panelColor, text);
+            };
+            float panelY = 0.0f;
             char panelLine[384]{};
-            addScreenTextLine(panelX, panelY, panelColor,
-                "NATIVE SCOPE: RED=stored live GREEN=exact preview/write ORANGE=immediate YELLOW=pre-write BLUE=parent/local CYAN=HMD");
+            addScopePanelLine(panelY, "NATIVE SCOPE: RED=stored live GREEN=exact preview/write ORANGE=immediate YELLOW=pre-write BLUE=parent/local CYAN=HMD");
             panelY += 14.0f;
-            addScreenTextLine(panelX, panelY, panelColor,
-                "GREEN tripod + long +X aim + short +Z up stay visible with ScopeMenu closed; activation samples HMD/weapon +Y.");
+            addScopePanelLine(panelY, "GREEN tripod + long +X aim + short +Z up stay visible with ScopeMenu closed; activation samples HMD/weapon +Y.");
             panelY += 14.0f;
 
             std::snprintf(panelLine, sizeof(panelLine),
@@ -792,7 +772,7 @@
                             (rockTargetValid ?
                                     "anchor-only" :
                                     "none")));
-            addScreenTextLine(panelX, panelY, panelColor, panelLine);
+            addScopePanelLine(panelY, panelLine);
             panelY += 14.0f;
 
             std::snprintf(panelLine, sizeof(panelLine),
@@ -803,7 +783,7 @@
                 sightSnapshot.anchorWeaponLocal.x,
                 sightSnapshot.anchorWeaponLocal.y,
                 sightSnapshot.anchorWeaponLocal.z);
-            addScreenTextLine(panelX, panelY, panelColor, panelLine);
+            addScopePanelLine(panelY, panelLine);
             panelY += 14.0f;
             std::snprintf(panelLine, sizeof(panelLine),
                 "resolved valid=%s source=%s anchorLocal=(%.2f,%.2f,%.2f)",
@@ -812,7 +792,7 @@
                 resolvedAnchorSnapshot.anchorWeaponLocal.x,
                 resolvedAnchorSnapshot.anchorWeaponLocal.y,
                 resolvedAnchorSnapshot.anchorWeaponLocal.z);
-            addScreenTextLine(panelX, panelY, panelColor, panelLine);
+            addScopePanelLine(panelY, panelLine);
             panelY += 14.0f;
             std::snprintf(panelLine, sizeof(panelLine),
                 "fallback tune: force=%s offset=(%.2f,%.2f,%.2f) rotation[pitch,yaw,roll]=(%.2f,%.2f,%.2f)",
@@ -823,7 +803,7 @@
                 g_rockConfig.rockNativeScopeFiringGripFallbackPitchDegrees,
                 g_rockConfig.rockNativeScopeFiringGripFallbackYawDegrees,
                 g_rockConfig.rockNativeScopeFiringGripFallbackRollDegrees);
-            addScreenTextLine(panelX, panelY, panelColor, panelLine);
+            addScopePanelLine(panelY, panelLine);
             panelY += 14.0f;
             std::snprintf(panelLine, sizeof(panelLine),
                 "preview: %s source=%s generation=%016llX scopeMenuIndependent=yes",
@@ -831,18 +811,18 @@
                 scopeAnchorSourceName(targetPreviewSnapshot.anchorSource),
                 static_cast<unsigned long long>(
                     targetPreviewSnapshot.weaponGenerationKey));
-            addScreenTextLine(panelX, panelY, panelColor, panelLine);
+            addScopePanelLine(panelY, panelLine);
             panelY += 14.0f;
             std::snprintf(panelLine, sizeof(panelLine),
                 "generation: published=%016llX sight=%016llX",
                 static_cast<unsigned long long>(publishedWeaponGeneration),
                 static_cast<unsigned long long>(sightSnapshot.weaponGenerationKey));
-            addScreenTextLine(panelX, panelY, panelColor, panelLine);
+            addScopePanelLine(panelY, panelLine);
             panelY += 14.0f;
 
             if (writeSnapshot.applySequence == 0) {
                 std::snprintf(panelLine, sizeof(panelLine), "write: never observed (no resolved-anchor camera write has applied while this diagnostic was enabled)");
-                addScreenTextLine(panelX, panelY, panelColor, panelLine);
+                addScopePanelLine(panelY, panelLine);
                 panelY += 14.0f;
             } else {
                 std::snprintf(panelLine, sizeof(panelLine),
@@ -851,7 +831,7 @@
                     writeSnapshot.framesSinceApply,
                     scopeWriteSourceName(writeSnapshot.writeSource),
                     static_cast<unsigned long long>(writeSnapshot.weaponGenerationKey));
-                addScreenTextLine(panelX, panelY, panelColor, panelLine);
+                addScopePanelLine(panelY, panelLine);
                 panelY += 14.0f;
                 std::snprintf(panelLine, sizeof(panelLine),
                     "stages: capture=%s target=%s applied=%s readback=%s anchorSource=%s",
@@ -860,12 +840,12 @@
                     writeSnapshot.writeApplied ? "yes" : "no",
                     writeSnapshot.immediateReadbackValid ? "yes" : "no",
                     scopeAnchorSourceName(writeSnapshot.anchorSource));
-                addScreenTextLine(panelX, panelY, panelColor, panelLine);
+                addScopePanelLine(panelY, panelLine);
                 panelY += 14.0f;
             }
 
             if (activationSnapshot.publicationSequence == 0) {
-                addScreenTextLine(panelX, panelY, panelColor, "scope input: no button/renderer sample observed");
+                addScopePanelLine(panelY, "scope input: no button/renderer sample observed");
                 panelY += 14.0f;
             } else {
                 std::snprintf(panelLine, sizeof(panelLine), "scope input seq=%llu button=%s renderer=%s/%s anchor=%s generation=%016llX",
@@ -875,7 +855,7 @@
                     activationSnapshot.rendererActive ? "active" : "inactive",
                     scopeAnchorSourceName(activationSnapshot.anchorSource),
                     static_cast<unsigned long long>(activationSnapshot.weaponGenerationKey));
-                addScreenTextLine(panelX, panelY, panelColor, panelLine);
+                addScopePanelLine(panelY, panelLine);
                 panelY += 14.0f;
             }
 
@@ -891,7 +871,7 @@
                 hmdToTarget,
                 liveToTarget,
                 storedToComposed);
-            addScreenTextLine(panelX, panelY, panelColor, panelLine);
+            addScopePanelLine(panelY, panelLine);
             panelY += 14.0f;
 
             const RE::NiPoint3 livePosition = liveCameraValid ? liveCameraWorld.translate : RE::NiPoint3{};
@@ -907,7 +887,7 @@
                 sightAnchorWorld.x,
                 sightAnchorWorld.y,
                 sightAnchorWorld.z);
-            addScreenTextLine(panelX, panelY, panelColor, panelLine);
+            addScopePanelLine(panelY, panelLine);
         }
 
         if (frame.drawAxes) {
@@ -1696,7 +1676,7 @@
             addFingerSweptArcDebug(_rightHand);
             addFingerSweptArcDebug(_leftHand);
             if (drawFingerSweptArcText && !anySweepCapture && (_rightHand.isHolding() || _leftHand.isHolding())) {
-                addScreenTextLine(20.0f, 20.0f, kSweepMissTextColor, "SWEPT ARC: no captured regular solve; release and grab again (pinch is intentionally excluded)");
+                addPanelLine((_rightHand.isHolding() ? context.right : context.left).grabAnchorWorld, 0.0f, kSweepMissTextColor, "SWEPT ARC: no captured regular solve; release and grab again (pinch is intentionally excluded)");
             }
         }
 
@@ -2353,13 +2333,14 @@
             const auto& sample=_twoHandedGrip.gunstockDebugSample();
             const float white[4]{1,1,1,1},cyan[4]{.1f,.95f,1,1},gold[4]{1,.8f,.1f,1},green[4]{.1f,1,.2f,1};
             const auto* recorder=_twoHandedGrip.gunstockRecorder();
+            const auto aimPanelAnchor=(sample.firingLeft?context.left:context.right).rawHandWorld.translate;
             char line[256]{};
             std::snprintf(line,sizeof(line),"CONTROLLER AIM | firing=%s support=%s | capture=%llu %s | left trim yaw=%+.2f pitch=%+.2f",
                 sample.firingLeft?"LEFT":"RIGHT",sample.supportActive?"HELD":"FREE",
                 static_cast<unsigned long long>(recorder?recorder->aimWritten():0),recorder&&recorder->aimFailed()?"SAVE FAILED":"",sample.aimYawDegrees,sample.aimPitchDegrees);
-            addScreenTextLine(18,230,white,line);
-            addScreenTextLine(18,250,white,"CYAN reference (59-degree basis) | GOLD configured | PURPLE damped | GREEN actual barrel");
-            addScreenTextLine(18,270,white,"Reference formula is not physical ground truth. Point both controllers at the same target to compare.");
+            addPanelLine(aimPanelAnchor,110,white,line);
+            addPanelLine(aimPanelAnchor,130,white,"CYAN reference (59-degree basis) | GOLD configured | PURPLE damped | GREEN actual barrel");
+            addPanelLine(aimPanelAnchor,150,white,"Reference formula is not physical ground truth. Point both controllers at the same target to compare.");
             if(sample.frame==runtime_state::currentFrame().frameIndex&&sample.phase==2){
                 const auto ray=[&](Pose id,debug::MarkerOverlayRole role,float length,const char* label,const float color[4]){
                     if(!sample.has(id))return;
@@ -2376,20 +2357,20 @@
                     if(sample.aimReferenceValid&&sample.has(configured)){
                         const auto& origin=sample.poses[configured].translate;
                         const auto error=aimDirectionError(sample.poses[configured],RE::NiPoint3{sample.aimReferenceTarget[0]-origin.x,sample.aimReferenceTarget[1]-origin.y,sample.aimReferenceTarget[2]-origin.z});
-                        if(error.valid){std::snprintf(line,sizeof(line),"%s configured -> captured target: yaw %+.3f pitch %+.3f angle %.3f deg",left?"LEFT":"RIGHT",error.yaw,error.pitch,error.angle);addScreenTextLine(18,left?310.f:330.f,gold,line);}
+                        if(error.valid){std::snprintf(line,sizeof(line),"%s configured -> captured target: yaw %+.3f pitch %+.3f angle %.3f deg",left?"LEFT":"RIGHT",error.yaw,error.pitch,error.angle);addPanelLine(aimPanelAnchor,left?190.f:210.f,gold,line);}
                     }
                 }
                 ray(WeaponRendered,debug::MarkerOverlayRole::GunstockWeapon,650,"ACTUAL BARREL",green);
                 const auto expected=sample.firingLeft?LeftAimDamped:RightAimDamped;
                 if(sample.has(expected)&&sample.has(WeaponRendered)){
                     const auto error=aimError(sample.poses[expected],sample.poses[WeaponRendered]);
-                    if(error.valid){std::snprintf(line,sizeof(line),"Predicted -> rendered: yaw %+.3f pitch %+.3f angle %.3f deg",error.yaw,error.pitch,error.angle);addScreenTextLine(18,290,green,line);}
+                    if(error.valid){std::snprintf(line,sizeof(line),"Predicted -> rendered: yaw %+.3f pitch %+.3f angle %.3f deg",error.yaw,error.pitch,error.angle);addPanelLine(aimPanelAnchor,170,green,line);}
                 }
                 if(sample.aimReferenceValid){
                     const RE::NiPoint3 target{sample.aimReferenceTarget[0],sample.aimReferenceTarget[1],sample.aimReferenceTarget[2]};
                     addMarkerPoint(debug::MarkerOverlayRole::GunstockSeat,target,3);addTextLine(target,gold,"RIGHT CAPTURE TARGET");
-                }else addScreenTextLine(18,310,gold,"Capture while holding RIGHT to set the comparison target; LEFT captures keep it.");
-            }else addScreenTextLine(18,290,gold,"Waiting for current AfterWorldFinal weapon/controller sample");
+                }else addPanelLine(aimPanelAnchor,190,gold,"Capture while holding RIGHT to set the comparison target; LEFT captures keep it.");
+            }else addPanelLine(aimPanelAnchor,170,gold,"Waiting for current AfterWorldFinal weapon/controller sample");
         }
 
         if (drawGunstock) {
@@ -2401,14 +2382,15 @@
             const float gold[4]{1.0f, 0.8f, 0.1f, 1.0f};
             const float white[4]{1, 1, 1, 1};
             const auto* recorder = _twoHandedGrip.gunstockRecorder();
+            const auto gunstockPanelAnchor = (sample.firingLeft ? context.left : context.right).rawHandWorld.translate;
             char status[256]{};
             std::snprintf(status, sizeof(status), "GUNSTOCK grab #%llu | %s | saved=%llu dropped=%llu | CYAN baseline GREEN weapon GOLD seats",
                 static_cast<unsigned long long>(grab.mark),
                 !recorder || recorder->failed() ? "SAVE FAILED" : "CAPTURING",
                 static_cast<unsigned long long>(recorder ? recorder->written() : 0),
                 static_cast<unsigned long long>(recorder ? recorder->dropped() : 0));
-            addScreenTextLine(18, 120, white, status);
-            addScreenTextLine(18, 200, white, !g_rockConfig.rockGunstockMode ? "Gunstock mode OFF" :
+            addPanelLine(gunstockPanelAnchor, 0.0f, white, status);
+            addPanelLine(gunstockPanelAnchor, 80.0f, white, !g_rockConfig.rockGunstockMode ? "Gunstock mode OFF" :
                 sample.gunstockAim ? "Gunstock mode ACTIVE | PURPLE virtual aiming anchors | zero angular offset" :
                 "Gunstock mode ON | waiting for eligible firearm support grip");
             const auto relativeText = [&](const Sample& value, const char* label, float y) {
@@ -2421,7 +2403,7 @@
                 std::snprintf(line, sizeof(line), "%s frame=%llu weapon=%08X support=(%.3f, %.3f, %.3f)gu in firing controller | relative rotation %.2f deg",
                     label, static_cast<unsigned long long>(value.frame), value.form,
                     relative.translate.x, relative.translate.y, relative.translate.z, rotation * 57.2957795f);
-                addScreenTextLine(18, y, cyan, line);
+                addPanelLine(gunstockPanelAnchor, y - 120.0f, cyan, line);
             };
             if (grab.mark) relativeText(grab, "AT GRAB", 160);
             if (sample.frame == runtime_state::currentFrame().frameIndex) {
@@ -2466,11 +2448,11 @@
                         char line[160]{};
                         std::snprintf(line, sizeof(line), "Baseline / weapon angle %.3f deg | support=%s | weapon=AfterWorldFinal", angle,
                             sample.supportActive ? "GRABBED" : "FREE");
-                        addScreenTextLine(18, 180, gold, line);
+                        addPanelLine(gunstockPanelAnchor, 60.0f, gold, line);
                     }
                 }
             } else {
-                addScreenTextLine(18, 140, gold, "Waiting for current weapon tracking; previous markers hidden");
+                addPanelLine(gunstockPanelAnchor, 20.0f, gold, "Waiting for current weapon tracking; previous markers hidden");
             }
         }
 
@@ -2709,9 +2691,9 @@
             addGrabAuthorityProxyClock(_leftHand, context.left.rawHandWorld);
 
             const float proxyClockLegendColor[4]{ 1.0f, 1.0f, 1.0f, 0.98f };
-            addScreenTextLine(
-                18.0f,
-                76.0f,
+            addPanelLine(
+                context.right.disabled ? context.left.rawHandWorld.translate : context.right.rawHandWorld.translate,
+                -40.0f,
                 proxyClockLegendColor,
                 "GRAB PROXY CLOCK  QUEUED=YELLOW  APPLIED=ORANGE  PRE=MAGENTA  POST=CYAN");
         }
@@ -2833,10 +2815,10 @@
                         snapshot.contactActive ? "YES" : "NO",
                         snapshot.translationCorrectionGameUnits,
                         snapshot.rotationCorrectionDegrees);
-                    addScreenTextLine(20.0f, 90.0f, proxyColor, panelLine);
                     RE::NiPoint3 labelAnchor =
                         snapshot.requestedWeaponWorld.translate;
                     labelAnchor.z += 8.0f;
+                    addPanelLine(labelAnchor, -16.0f, proxyColor, panelLine);
                     addTextLineSized(
                         labelAnchor,
                         2.0f,
@@ -2884,9 +2866,9 @@
                         snapshot.physicsSnapshotContactActive ? "Y" : "N",
                         snapshot.physicsSnapshotTeleported ? "Y" : "N");
                 } else {
-                    addScreenTextLine(
-                        20.0f,
-                        90.0f,
+                    addPanelLine(
+                        context.right.rawHandWorld.translate,
+                        -16.0f,
                         proxyColor,
                         "DWC COMPOUND INACTIVE (enable dynamic collision + equip drawn weapon)");
                 }

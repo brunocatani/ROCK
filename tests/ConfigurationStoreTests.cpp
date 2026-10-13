@@ -138,11 +138,11 @@ namespace
             "global reset of repeated keys failed");
         require(!fs::exists(store.path(Group::Developer)), "reset did not delete an empty developer file");
         // This is the production profiler's formerly ignored placement.
-        write(Group::Developer, "[PhysicsInteraction]\nbPerformanceProfilerEnabled=true\niPerformanceProfilerLogIntervalFrames=300\niPerformanceProfilerWarmupFrames=120\nbPerformanceProfilerOverlayText=false\n");
+        write(Group::Developer, "[PhysicsInteraction]\nbPerformanceProfilerEnabled=true\niPerformanceProfilerLogIntervalFrames=300\niPerformanceProfilerWarmupFrames=120\n");
         require(store.load(false), "production-layout profiler reload failed");
         const auto profiler = runtime();
         require(profiler.rockPerformanceProfilerEnabled && profiler.rockPerformanceProfilerLogIntervalFrames == 300 &&
-                profiler.rockPerformanceProfilerWarmupFrames == 120 && !profiler.rockPerformanceProfilerOverlayText,
+                profiler.rockPerformanceProfilerWarmupFrames == 120,
             "the real misplaced profiler configuration still does not activate");
     }
 

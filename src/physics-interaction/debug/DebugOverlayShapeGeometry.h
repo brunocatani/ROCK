@@ -104,5 +104,5 @@ namespace rock::debug_overlay_shape
 
     [[nodiscard]] BuiltShape buildMeshFromRecipe(const ShapeRecipe& recipe);
     [[nodiscard]] MeshData makeUnitBoxMesh();
-    [[nodiscard]] std::size_t approximateGpuBytes(const MeshData& mesh) noexcept;
+    [[nodiscard]] std::size_t approximateMeshBytes(const MeshData& mesh) noexcept;
 }

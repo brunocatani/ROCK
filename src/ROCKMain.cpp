@@ -749,8 +749,7 @@ namespace
         performance_profiler::refreshSettings(
             g_rockConfig.rockPerformanceProfilerEnabled,
             g_rockConfig.rockPerformanceProfilerLogIntervalFrames,
-            g_rockConfig.rockPerformanceProfilerWarmupFrames,
-            g_rockConfig.rockPerformanceProfilerOverlayText);
+            g_rockConfig.rockPerformanceProfilerWarmupFrames);
         performance_profiler::beginFrame();
         performance_profiler::ScopedTimer frameBeginTimer(performance_profiler::Scope::FrameBeginPreparation);
         if (s_physicsInteraction) s_physicsInteraction->discardUnfinishedFramePose();
