@@ -2011,18 +2011,19 @@ namespace rock::provider {
     {
         std::uint32_t size{ sizeof(RockProviderOffhandReservationRequestV1) };
         std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        RockProviderHand hand{ RockProviderHand::None };
         RockProviderOffhandReservation reservation{ RockProviderOffhandReservation::Normal };
         std::uint32_t leaseFrames{ 0 };
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[7]{};
     };
 
     struct RockProviderOffhandReservationStateV1
     {
         std::uint32_t size{ sizeof(RockProviderOffhandReservationStateV1) };
         std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        RockProviderHand hand{ RockProviderHand::None };
         RockProviderOffhandReservation reservation{ RockProviderOffhandReservation::Normal };
         std::uint32_t active{ 0 };
         std::uint64_t ownerToken{ 0 };

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ROCK/GrabV1_2.h>
+#include <ROCK/Grab.h>
 #include <cstdint>
 #include <string>
 
@@ -59,7 +59,7 @@ namespace rock::saved_grab_offset
     // Copied addon defaults use the existing cache mutex. Public set/clear and
     // native lookup run on the frame owner; fault cleanup may revoke an owner.
     // No file writes. User-saved offsets are checked before this lookup.
-    api::Status setDefaultGrabPoses(api::OwnerToken owner, const api::grab::v1_2::DefaultGrabPoses& request);
+    api::Status setDefaultGrabPoses(api::OwnerToken owner, const api::grab::DefaultGrabPoses& request);
     api::Status clearDefaultGrabPoses(api::OwnerToken owner, std::uint32_t baseFormId);
     void clearDefaultGrabPosesForOwner(api::OwnerToken owner);
     bool loadDefaultGrabPose(std::uint32_t baseFormId, bool left, HandOffset& out);

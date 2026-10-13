@@ -66,41 +66,18 @@ int main() {
     }
     verify(hands::table(),hands::kSupportedPermissions);
     verify(collision::table(),collision::kSupportedPermissions);
-    verify(grab::tableV1_3(),grab::kSupportedPermissions);
+    verify(grab::table(),grab::kSupportedPermissions);
     {
-        const InterfaceDescriptorV1 *oldGrab{}, *newGrab{};
-        assert(ROCKAPI_QueryInterfaceV1(grab::kInterfaceId,1,0,sizeof(grab::ApiV1),&oldGrab)==Status::Ok);
-        assert(ROCKAPI_QueryInterfaceV1(grab::kInterfaceId,1,1,sizeof(grab::v1_1::Api),&newGrab)==Status::Ok);
-        assert(oldGrab==newGrab && oldGrab->requiredCoreMinor==0);
-        const InterfaceDescriptorV1* defaults{};
-        assert(ROCKAPI_QueryInterfaceV1(grab::kInterfaceId,1,2,sizeof(grab::v1_2::Api),&defaults)==Status::Ok);
-        assert(defaults==oldGrab && defaults->requiredCoreMinor==0);
-        const InterfaceDescriptorV1* guided{};
-        assert(ROCKAPI_QueryInterfaceV1(grab::kInterfaceId,1,3,sizeof(grab::v1_3::Api),&guided)==Status::Ok);
-        assert(guided==oldGrab && guided->requiredCoreMinor==0);
-        const auto* defaultsApi=static_cast<const grab::v1_2::Api*>(defaults->table);
-        grab::v1_2::DefaultGrabPoses poses;
+        const auto& api=grab::table();
+        grab::DefaultGrabPoses poses;
         poses.baseFormId=100; poses.left.flags=poses.right.flags=1;
-        assert(defaultsApi->setDefaultGrabPoses(78,&poses)==Status::Ok);
-        assert(defaultsApi->setDefaultGrabPoses(79,&poses)==Status::OwnerConflict);
-        assert(defaultsApi->clearDefaultGrabPoses(79,100)==Status::OwnerConflict);
-        assert(defaultsApi->clearDefaultGrabPoses(78,100)==Status::Ok);
-        rock::provider::InterfaceBinding oldGrabBinding{},newGrabBinding{};
-        assert(rock::provider::bindInterface(oldGrabBinding,1,3,grab::kSupportedPermissions)==Status::Ok);
-        assert(rock::provider::bindInterface(newGrabBinding,1,3,grab::kSupportedPermissions)==Status::Ok);
-        const std::array priorGrab{discovery::RegisteredInterface{
-            {40,InterfaceId::Grab,1,1,sizeof(grab::v1_1::Api),1,0,0,&defaultsApi->v1_1},3}};
-        assert(discovery::query(priorGrab,InterfaceId::Grab,1,2,sizeof(grab::v1_2::Api),&result)==Status::UnsupportedMinor);
-        assert(!result);
-        const auto* oldApi=static_cast<const grab::ApiV1*>(oldGrab->table);
-        const auto* newApi=static_cast<const grab::v1_1::Api*>(newGrab->table);
-        assert(oldApi->cancelInteractionCommandV1(77,9)==Status::Ok);
-        grab::v1_1::HeldPlacementState state;
-        assert(newApi->getHeldPlacementState(77,&state)==Status::Ok && state.frameToken==42);
-        grab::v1_1::HeldPlacementIntent request;request.frameToken=state.frameToken;
-        assert(newApi->submitHeldPlacementIntent(77,&request)==Status::RequestQueued);
-        assert(newApi->clearHeldPlacementIntent(77)==Status::Ok);
-        assert(oldApi->cancelInteractionCommandV1(77,9)==Status::Ok);
+        assert(api.setDefaultGrabPoses(78,&poses)==Status::Ok);
+        assert(api.setDefaultGrabPoses(79,&poses)==Status::OwnerConflict);
+        assert(api.clearDefaultGrabPoses(79,100)==Status::OwnerConflict);
+        assert(api.clearDefaultGrabPoses(78,100)==Status::Ok);
+        // References (10) is retired; its queries are part of Grab.
+        const InterfaceDescriptorV1* retired{};
+        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::References,1,0,8,&retired)!=Status::Ok && !retired);
     }
     verify(touch::table(),touch::kSupportedPermissions);
     {
@@ -174,7 +151,6 @@ int main() {
     }
     verify(animation::table(),animation::kSupportedPermissions);
     verify(input::table(),input::kSupportedPermissions);
-    verify(references::table(),references::kSupportedPermissions);
     verify(playercontroller::table(),playercontroller::kSupportedPermissions);
     verify(diagnostics::table(),diagnostics::kSupportedPermissions);
     verify(configuration::table(),configuration::kSupportedPermissions);

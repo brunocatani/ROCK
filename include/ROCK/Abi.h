@@ -78,7 +78,9 @@ namespace rock::api {
     using OwnerToken = std::uint64_t;
     enum class InterfaceId : std::uint32_t {
         Core=1, Hands=2, Collision=3, Grab=4, Touch=5, Weapon=6,
-        WeaponParts=7, Animation=8, Input=9, References=10,
+        WeaponParts=7, Animation=8, Input=9,
+        // 10 (References) is retired: its queries are part of Grab. Never reuse.
+        References=10,
         PlayerController=11, Diagnostics=12, Configuration=13, NativeInteraction=14
     };
     struct ReferenceKey {

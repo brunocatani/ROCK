@@ -24,7 +24,7 @@
 #include "physics-interaction/grab/GrabEvent.h"
 #include "physics-interaction/grab/HeldPlacementPolicy.h"
 #include <ROCK/Input.h>
-#include <ROCK/GrabV1_1.h>
+#include <ROCK/Grab.h>
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/grab/TouchGrabRuntime.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
@@ -171,12 +171,12 @@ namespace rock
 
         bool isInitialized() const { return _lifecycle.initialized; }
         void queryPlacementClickState(api::input::PlacementClickState& out) const;
-        api::Status queryHeldPlacementState(api::grab::v1_1::HeldPlacementState& out) const;
-        api::Status submitHeldPlacementIntent(api::OwnerToken owner, const api::grab::v1_1::HeldPlacementIntent& intent);
+        api::Status queryHeldPlacementState(api::grab::HeldPlacementState& out) const;
+        api::Status submitHeldPlacementIntent(api::OwnerToken owner, const api::grab::HeldPlacementIntent& intent);
         void clearHeldPlacementIntent(api::OwnerToken owner);
-        api::Status setHeldObjectTarget(api::OwnerToken,const api::grab::v1_3::HeldObjectTarget&);
+        api::Status setHeldObjectTarget(api::OwnerToken,const api::grab::HeldObjectTarget&);
         api::Status clearHeldObjectTarget(api::OwnerToken,api::Hand);
-        api::Status getHeldObjectPose(api::OwnerToken,api::Hand,api::grab::v1_3::HeldObjectPose&) const;
+        api::Status getHeldObjectPose(api::OwnerToken,api::Hand,api::grab::HeldObjectPose&) const;
         bool isProviderReady() const
         {
             return _lifecycle.initialized.load(std::memory_order_acquire) &&
@@ -1038,11 +1038,11 @@ namespace rock
         LooseWeaponCollision _objectRestCollision; // independent capacity; native magazine shapes stay intact
         object_rest_service::Requests _objectRestRequests;
         EjectionContactRequests _ejectionContacts;
-        api::grab::v1_1::HeldPlacementIntent _placementIntent{};
+        api::grab::HeldPlacementIntent _placementIntent{};
         held_placement_policy::FrameLease _placementLease;
         api::OwnerToken _placementActiveOwner{}, _placementPendingOwner{};
         std::uint64_t _placementLastRequestToken{};
-        api::grab::v1_1::PlacementResult _placementLastResult{};
+        api::grab::PlacementResult _placementLastResult{};
         std::uint32_t _placementCandidate{}, _placementRequestedForm{}, _placementPendingForm{}, _placementLastRequestForm{};
         bool _placementClickReserved{};
         float _placementScriptWait{};

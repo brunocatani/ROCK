@@ -56,7 +56,8 @@ namespace rock::provider
         std::uint32_t worldGeneration,
         std::uint32_t skeletonGeneration,
         std::uint32_t providerGeneration);
-    RockProviderOffhandReservation currentOffhandReservation();
+    // The reservation on hand, or Normal when that hand is not reserved.
+    RockProviderOffhandReservation currentHandReservation(RockProviderHand hand);
     void setEquippedWeaponFiringHandIsLeft(bool isLeft);
     bool getEquippedWeaponHandlingAuthorityV1(
         RockProviderEquippedWeaponHandlingRequestV1& outRequest);

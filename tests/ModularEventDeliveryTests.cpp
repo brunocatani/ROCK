@@ -1,5 +1,7 @@
 #include "api/providers/EventBoundary.h"
-#include "api/providers/GrabMarshalling.h"
+#include <ROCK/Grab.h>
+#include "physics-interaction/grab/SavedGrabOffsetStore.h"
+#include <cstring>
 #include "api/OwnerBindingPolicy.h"
 #include <cassert>
 #include <future>
@@ -15,7 +17,7 @@ namespace {
     bool snapshotReady=true;
 }
 // Native runtime ownership is the fixture boundary. The production access
-// policy, exported Grab endpoint bodies and event dispatcher are exercised.
+// policy, the published Grab table and event dispatcher are exercised.
 namespace rock::provider::runtime {
     api::Status authorize(std::uint64_t token,api::InterfaceId family,std::uint32_t permission,bool requireThread,OwnerAccess access) {
         if(events::inSynchronousCallback())return api::Status::Busy;
@@ -42,19 +44,58 @@ namespace rock::provider::runtime {
         state->worldGeneration=1;state->skeletonGeneration=2;state->providerGeneration=3;
         return RockProviderResultV1::Ok;
     }
+    RockProviderResultV1 apiGetHandTargetDetailsV1(std::uint64_t owner,RockProviderHand hand,RockProviderHandTargetDetailsV1* details) {
+        const auto result=apiGetHandInteractionStateV1(owner,hand,&details->handState);
+        details->handState.releaseSequence=45;details->handState.reservedTargetIdentity=789;
+        details->reference.referenceFormId=123;details->reference.referenceNativeHandle=987;
+        std::strcpy(details->meshPartName,"Lid");
+        return result;
+    }
+    RockProviderResultV1 apiRequestPowerArmorGrabV1(std::uint64_t,const RockProviderPowerArmorGrabRequestV1* request,std::uint64_t* command) {
+        assert(request->target.referenceFormId==123 && request->target.referenceNativeHandle==987);
+        assert(request->target.providerGeneration==3 && request->point==RockProviderPowerArmorPointV1::LeftArmorHand);
+        *command=7;return RockProviderResultV1::RequestQueued;
+    }
+    RockProviderResultV1 apiQueryPowerArmorTargetV1(std::uint64_t,const RockProviderReferenceQueryV1* query,RockProviderPowerArmorTargetV1* target) {
+        assert(query->referenceFormId==123 && query->furnitureMarkerIndex==2);
+        target->actorFormId=55;target->frameReference.referenceFormId=124;
+        target->points[1].point=RockProviderPowerArmorPointV1::LeftArmorHand;target->points[1].valid=1;
+        target->points[1].world.translate[0]=9;
+        return RockProviderResultV1::Ok;
+    }
+    // Grab calls this test does not reach.
+    RockProviderResultV1 apiGetInteractionCommandResultV1(std::uint64_t,std::uint64_t,RockProviderInteractionCommandResultV1*) {assert(false);return RockProviderResultV1::NotReady;}
+    RockProviderResultV1 apiRequestForceReleaseV1(std::uint64_t,const RockProviderForceReleaseRequestV1*,std::uint64_t*) {assert(false);return RockProviderResultV1::NotReady;}
+    RockProviderResultV1 apiRequestThrownDropV1(std::uint64_t,const RockProviderThrownDropRequestV1*,std::uint64_t*) {assert(false);return RockProviderResultV1::NotReady;}
+    RockProviderResultV1 apiCancelInteractionCommandV1(std::uint64_t,std::uint64_t) {assert(false);return RockProviderResultV1::NotReady;}
+    RockProviderResultV1 apiAcquireOffhandReservationV1(std::uint64_t,const RockProviderOffhandReservationRequestV1*) {assert(false);return RockProviderResultV1::NotReady;}
+    RockProviderResultV1 apiRenewOffhandReservationV1(std::uint64_t,const RockProviderOffhandReservationRequestV1*) {assert(false);return RockProviderResultV1::NotReady;}
+    RockProviderResultV1 apiReleaseOffhandReservationV1(std::uint64_t) {assert(false);return RockProviderResultV1::NotReady;}
+    RockProviderResultV1 apiGetOffhandReservationStateV1(std::uint64_t,RockProviderOffhandReservationStateV1*) {assert(false);return RockProviderResultV1::NotReady;}
+    RockProviderResultV1 apiQueryReferenceInteractionV1(std::uint64_t,const RockProviderReferenceQueryV1*,RockProviderReferenceInteractionV1*) {assert(false);return RockProviderResultV1::NotReady;}
+    api::Status getHeldPlacementState(api::grab::HeldPlacementState&) {assert(false);return api::Status::NotReady;}
+    api::Status submitHeldPlacementIntent(api::OwnerToken,const api::grab::HeldPlacementIntent&) {assert(false);return api::Status::NotReady;}
+    api::Status clearHeldPlacementIntent(api::OwnerToken) {assert(false);return api::Status::NotReady;}
+    api::Status setHeldObjectTarget(api::OwnerToken,const api::grab::HeldObjectTarget&) {assert(false);return api::Status::NotReady;}
+    api::Status clearHeldObjectTarget(api::OwnerToken,api::Hand) {assert(false);return api::Status::NotReady;}
+    api::Status getHeldObjectPose(api::OwnerToken,api::Hand,api::grab::HeldObjectPose&) {assert(false);return api::Status::NotReady;}
 }
-namespace rock::api::grab {
-    using namespace boundary;
-    #include "api/providers/GrabEndpoints.inl"
+namespace rock::saved_grab_offset {
+    api::Status setDefaultGrabPoses(api::OwnerToken,const api::grab::DefaultGrabPoses&) {assert(false);return api::Status::NotReady;}
+    api::Status clearDefaultGrabPoses(api::OwnerToken,std::uint32_t) {assert(false);return api::Status::NotReady;}
+}
+namespace rock::api::grab { const Api& table() noexcept; }
+namespace {
+    const rock::api::grab::Api& grabApi=rock::api::grab::table();
 }
 namespace {
-    void ROCK_CALL listener(const rock::api::grab::EventV1* event,void*) {
+    void ROCK_CALL listener(const rock::api::grab::Event* event,void*) {
         ++deliveries;
         assert(event->hand==rock::api::Hand::Left && event->velocityGame[0]==11);
-        reentry=rock::api::grab::clearEventCallback(testOwner);
+        reentry=grabApi.clearEventCallback(testOwner);
     }
-    void ROCK_CALL peerListener(const rock::api::grab::EventV1*,void*) {++peerDeliveries;}
-    void ROCK_CALL failingListener(const rock::api::grab::EventV1*,void*) {throw 42;}
+    void ROCK_CALL peerListener(const rock::api::grab::Event*,void*) {++peerDeliveries;}
+    void ROCK_CALL failingListener(const rock::api::grab::Event*,void*) {throw 42;}
 }
 int main() {
     using namespace rock;
@@ -62,24 +103,39 @@ int main() {
     // The exported read must work from an F4SE task without admitting writes.
     binding.permissions=3;
     auto task=std::async(std::launch::async,[] {
-        api::grab::HandInteractionStateV1 state{};
+        api::grab::HandInteractionState state{};
         for(const auto hand:{api::Hand::Left,api::Hand::Right}) {
-            assert(api::grab::getHandInteractionStateV1(testOwner,hand,&state)==Status::Ok);
-            assert(state.hand==hand && state.phase==api::grab::HandInteractionPhaseV1::Holding);
-            assert(state.flags&static_cast<std::uint32_t>(api::grab::HandInteractionFlagV1::LooseWeapon));
+            assert(grabApi.getHandInteractionState(testOwner,hand,&state)==Status::Ok);
+            assert(state.hand==hand && state.phase==api::grab::HandInteractionPhase::Holding);
+            assert(state.flags&static_cast<std::uint32_t>(api::grab::HandInteractionFlag::LooseWeapon));
             assert(state.targetFormId==123 && state.frameIndex==20 && state.providerGeneration==3);
         }
-        assert(api::grab::getHandInteractionStateV1(999,api::Hand::Left,&state)==Status::OwnerNotRegistered);
+        assert(grabApi.getHandInteractionState(999,api::Hand::Left,&state)==Status::OwnerNotRegistered);
         assert(state.flags==0 && state.targetFormId==0);
-        api::grab::InventoryGrabRequestV1 request{};std::uint64_t command=99;
-        assert(api::grab::requestInventoryGrab(testOwner,&request,&command)==Status::WrongThread);
+        api::grab::InventoryGrabRequest request{};std::uint64_t command=99;
+        assert(grabApi.requestInventoryGrab(testOwner,&request,&command)==Status::WrongThread);
         assert(command==0);
     });
     task.get();
+    {
+        // Values cross the Grab boundary field for field.
+        api::grab::HandTargetDetails details{};
+        assert(grabApi.getHandTargetDetails(testOwner,api::Hand::Right,&details)==Status::Ok);
+        assert(details.referenceFormId==123 && details.referenceNativeHandle==987 && std::strcmp(details.meshPartName,"Lid")==0);
+        assert(details.handState.releaseSequence==45 && details.handState.reservedTargetIdentity==789 && details.handState.hand==api::Hand::Right);
+        api::grab::PowerArmorGrabRequest grab{};grab.target={123,987,1,2,3};grab.hand=api::Hand::Left;
+        grab.point=api::PowerArmorPoint::LeftArmorHand;std::uint64_t command=0;
+        assert(grabApi.requestPowerArmorGrab(testOwner,&grab,&command)==Status::RequestQueued && command==7);
+        api::grab::ReferenceQuery query{};query.referenceFormId=123;query.furnitureMarkerIndex=2;
+        api::grab::PowerArmorTarget target{};
+        assert(grabApi.queryPowerArmorTarget(testOwner,&query,&target)==Status::Ok);
+        assert(target.actorFormId==55 && target.frameReference.referenceFormId==124);
+        assert(target.points[1].point==api::PowerArmorPoint::LeftArmorHand && target.points[1].valid==1 && target.points[1].world.translate[0]==9);
+    }
     snapshotReady=false;
-    api::grab::HandInteractionStateV1 unavailable{};
+    api::grab::HandInteractionState unavailable{};
     unavailable.flags=0xFFFFFFFF;
-    assert(api::grab::getHandInteractionStateV1(testOwner,api::Hand::Left,&unavailable)==Status::NotReady);
+    assert(grabApi.getHandInteractionState(testOwner,api::Hand::Left,&unavailable)==Status::NotReady);
     assert(unavailable.flags==0);
     snapshotReady=true;
     binding.permissions=1;
@@ -94,35 +150,35 @@ int main() {
     change.data[0]=1; // A different target-kind value must never become the phase.
     change.data[1]=456;change.data[2]=0x55;
     provider::events::publish(change);
-    api::grab::EventV1 copied[4]{};api::Stream stream{};
-    assert(api::grab::copyEvents(testOwner,0,copied,4,&stream)==Status::Ok && stream.copiedCount==1);
+    api::grab::Event copied[4]{};api::Stream stream{};
+    assert(grabApi.copyEvents(testOwner,0,copied,4,&stream)==Status::Ok && stream.copiedCount==1);
     assert(copied[0].phase==change.result && copied[0].phase!=change.data[0]);
     assert(copied[0].formId==123 && copied[0].primaryBodyId==456 && copied[0].flags==0x55);
     assert(copied[0].frameIndex==20 && copied[0].worldGeneration==1 && copied[0].subjectSequence==99);
 
-    assert(api::grab::setEventCallback(testOwner,listener,nullptr)==Status::Ok);
-    assert(api::grab::setEventCallback(peerOwner,peerListener,nullptr)==Status::Ok);
+    assert(grabApi.setEventCallback(testOwner,listener,nullptr)==Status::Ok);
+    assert(grabApi.setEventCallback(peerOwner,peerListener,nullptr)==Status::Ok);
     GrabEventData released{};released.type=GrabEventType::Released;released.isLeft=true;
     released.formID=123;released.velocityGame[0]=11;released.velocityGame[1]=-22;released.velocityGame[2]=33;
     provider::events::publishGrab(released,{21,30,1,2,3,4});
     assert(deliveries==1 && peerDeliveries==1 && reentry==Status::Busy);
-    assert(api::grab::copyEvents(testOwner,1,copied,4,&stream)==Status::Ok && stream.copiedCount==1);
-    assert(copied[0].kind==static_cast<unsigned>(api::grab::EventKindV1::Released));
+    assert(grabApi.copyEvents(testOwner,1,copied,4,&stream)==Status::Ok && stream.copiedCount==1);
+    assert(copied[0].kind==static_cast<unsigned>(api::grab::EventKind::Released));
     assert(copied[0].velocityGame[0]==11 && copied[0].velocityGame[1]==-22 && copied[0].velocityGame[2]==33);
 
-    assert(api::grab::setEventCallback(testOwner,failingListener,nullptr)==Status::Ok);
+    assert(grabApi.setEventCallback(testOwner,failingListener,nullptr)==Status::Ok);
     provider::events::publishGrab(released,{22,30,1,2,3,4});
     assert(revokeRequested && revoked && peerDeliveries==2);
-    assert(api::grab::setEventCallback(testOwner,listener,nullptr)==Status::OwnerRevoked);
-    assert(api::grab::copyEvents(testOwner,0,copied,4,&stream)==Status::Ok && stream.copiedCount==3);
-    assert(api::grab::clearEventCallback(testOwner)==Status::Ok); // Read/cleanup survives revocation.
+    assert(grabApi.setEventCallback(testOwner,listener,nullptr)==Status::OwnerRevoked);
+    assert(grabApi.copyEvents(testOwner,0,copied,4,&stream)==Status::Ok && stream.copiedCount==3);
+    assert(grabApi.clearEventCallback(testOwner)==Status::Ok); // Read/cleanup survives revocation.
     provider::events::publishGrab(released,{23,30,1,2,3,4});
     assert(deliveries==1 && peerDeliveries==3);
     assert(provider::authorizeBinding(binding,true,2)==Status::OwnerRevoked);
     assert(provider::authorizeBinding(binding,false,2)==Status::PermissionDenied);
     binding.permissions=0;revoked=false;
-    assert(api::grab::setEventCallback(testOwner,listener,nullptr)==Status::PermissionDenied);
-    assert(api::grab::setEventCallback(99,listener,nullptr)==Status::OwnerNotRegistered);
-    assert(api::grab::setEventCallback(testOwner,nullptr,nullptr)==Status::InvalidArgument);
+    assert(grabApi.setEventCallback(testOwner,listener,nullptr)==Status::PermissionDenied);
+    assert(grabApi.setEventCallback(99,listener,nullptr)==Status::OwnerNotRegistered);
+    assert(grabApi.setEventCallback(testOwner,nullptr,nullptr)==Status::InvalidArgument);
     provider::events::remove(testOwner);provider::events::remove(peerOwner);
 }

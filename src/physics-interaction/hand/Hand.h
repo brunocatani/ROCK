@@ -437,7 +437,7 @@ namespace rock
         // Frame-local view of the cached mesh, paired with its live physics transform.
         bool getHeldBodyContactMesh(RE::hknpWorld* world, std::span<const GrabLocalTriangle>& triangles, RE::NiTransform& meshWorld, const HeldContactMeshCache*& cache) const;
         std::uint64_t heldGrabIdentity() const { return isHolding() ? _grabFrame.traceId : 0; }
-        api::Status setHeldObjectTarget(api::OwnerToken,const api::grab::v1_3::HeldObjectTarget&,std::span<const std::uint32_t> weaponBodies);
+        api::Status setHeldObjectTarget(api::OwnerToken,const api::grab::HeldObjectTarget&,std::span<const std::uint32_t> weaponBodies);
         api::Status clearHeldObjectTarget(api::OwnerToken);
         bool readHeldObjectRoot(RE::hknpWorld*,RE::NiTransform&) const;
         void flushConsumerObjectPairs(RE::hknpWorld*);

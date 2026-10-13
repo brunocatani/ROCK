@@ -118,7 +118,7 @@ namespace rock::saved_grab_offset
                 ROCK_LOG_INFO(Config, "Loaded {} saved grab offset(s) ({} unreadable)", _cache.size(), failedCount);
             }
 
-            api::Status setDefaults(api::OwnerToken owner, const api::grab::v1_2::DefaultGrabPoses& request)
+            api::Status setDefaults(api::OwnerToken owner, const api::grab::DefaultGrabPoses& request)
             {
                 std::lock_guard lock(_mutex);
                 return _defaults.set(owner, request);
@@ -326,7 +326,7 @@ namespace rock::saved_grab_offset
         return ref;
     }
 
-    api::Status setDefaultGrabPoses(api::OwnerToken owner, const api::grab::v1_2::DefaultGrabPoses& request)
+    api::Status setDefaultGrabPoses(api::OwnerToken owner, const api::grab::DefaultGrabPoses& request)
     {
         auto* form = RE::TESForm::GetFormByID(request.baseFormId);
         if (!form || !form->As<RE::TESBoundObject>()) return api::Status::TargetInvalid;

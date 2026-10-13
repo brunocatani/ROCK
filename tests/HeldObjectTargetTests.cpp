@@ -2,7 +2,7 @@
 #include <cassert>
 int main() {
     using namespace rock;using api::Status;
-    held_object_target::Lease lease;api::grab::v1_3::HeldObjectTarget request;
+    held_object_target::Lease lease;api::grab::HeldObjectTarget request;
     request.rootWorld.translate[0]=13;
     assert(lease.set(1,55,100,request)==Status::Ok);
     assert(lease.current(55,102)&&!lease.current(55,103)&&!lease.current(56,100));

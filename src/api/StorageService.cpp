@@ -209,7 +209,7 @@ namespace rock::storage_service
                 return physics ? physics->extractEquippedForStorage(request->hand == api::Hand::Left, request->weapon, *reference) : api::Status::NotReady;
             } catch (...) { return api::Status::InternalError; }
         }
-        api::Status draw(api::OwnerToken owner, const api::grab::ForceGrabRequestV1* request, std::uint64_t* command) noexcept
+        api::Status draw(api::OwnerToken owner, const api::grab::ForceGrabRequest* request, std::uint64_t* command) noexcept
         {
             if (command) *command = 0;
             if (!request || !command) return api::Status::InvalidArgument;
@@ -224,7 +224,6 @@ namespace rock::storage_service
                 native.worldGeneration = request->worldGeneration; native.skeletonGeneration = request->skeletonGeneration;
                 native.providerGeneration = request->providerGeneration; native.maxDistanceGame = request->maxDistanceGame;
                 std::copy_n(request->preferredGrabPointGame, 3, native.preferredGrabPointGame);
-                std::copy_n(request->reserved, 5, native.reserved);
                 return static_cast<api::Status>(provider::runtime::apiRequestForceGrabV1(owner, &native, command));
             } catch (...) { return api::Status::InternalError; }
         }
@@ -286,7 +285,7 @@ namespace rock::storage_service
             if (hand.isHolding() || !other.isHolding() || other.getHeldRef()!=value.parent.get()) return nullptr;
             provider::RockProviderHandInteractionStateV1 state{};
             if (provider::runtime::apiGetHandInteractionStateV1(value.owner,static_cast<provider::RockProviderHand>(request.hand),&state)!=provider::RockProviderResultV1::Ok) return nullptr;
-            using Flag=api::grab::HandInteractionFlagV1;
+            using Flag=api::grab::HandInteractionFlag;
             constexpr unsigned occupied=unsigned(Flag::FiringGrip)|unsigned(Flag::PartGrip)|unsigned(Flag::PartCarry)|unsigned(Flag::TouchGrab)|unsigned(Flag::NativeWeaponCarry)|unsigned(Flag::RockGripActive)|unsigned(Flag::TransitionSuppressed);
             if (!(state.flags & unsigned(Flag::Valid)) || state.heldBodyCount || (state.flags & occupied)) return nullptr;
             if (!std::any_of(claims.begin(),claims.end(),[&](const auto& entry) {

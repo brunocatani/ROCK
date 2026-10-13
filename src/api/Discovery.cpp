@@ -6,14 +6,12 @@
 #include <ROCK/Hands.h>
 #include <ROCK/Collision.h>
 #include <ROCK/Grab.h>
-#include <ROCK/GrabV1_3.h>
 #include <ROCK/Touch.h>
 #include <ROCK/Weapon.h>
 #include <ROCK/WeaponV1_1.h>
 #include <ROCK/WeaponPartsV1_7.h>
 #include <ROCK/Animation.h>
 #include <ROCK/Input.h>
-#include <ROCK/References.h>
 #include <ROCK/PlayerController.h>
 #include <ROCK/Diagnostics.h>
 #include <ROCK/Configuration.h>
@@ -22,14 +20,13 @@
 namespace rock::api::core { const Api& table() noexcept; }
 namespace rock::api::hands { const Api& table() noexcept; }
 namespace rock::api::collision { const ApiV1& table() noexcept; }
-namespace rock::api::grab { const v1_3::Api& tableV1_3() noexcept; }
+namespace rock::api::grab { const Api& table() noexcept; }
 namespace rock::api::touch { const Api& table() noexcept; }
 namespace rock::api::weapon { const ApiV1& table() noexcept; }
 namespace rock::api::weapon { const v1_1::Api& tableV1_1() noexcept; }
 namespace rock::api::weaponparts { const v1_7::Api& tableV1_7() noexcept; }
 namespace rock::api::animation { const Api& table() noexcept; }
 namespace rock::api::input { const Api& table() noexcept; }
-namespace rock::api::references { const ApiV1& table() noexcept; }
 namespace rock::api::playercontroller { const Api& table() noexcept; }
 namespace rock::api::diagnostics { const ApiV1& table() noexcept; }
 namespace rock::api::configuration { const Api& table() noexcept; }
@@ -41,13 +38,12 @@ std::span<const RegisteredInterface> registeredInterfaces() noexcept {
         registration(core::table(), core::kSupportedPermissions),
         registration(hands::table(), hands::kSupportedPermissions),
         registration(collision::table(), collision::kSupportedPermissions),
-        registration(grab::tableV1_3(), grab::kSupportedPermissions),
+        registration(grab::table(), grab::kSupportedPermissions),
         registration(touch::table(), touch::kSupportedPermissions),
         registration(weapon::tableV1_1(), weapon::kSupportedPermissions),
         registration(weaponparts::tableV1_7(), weaponparts::kSupportedPermissions),
         registration(animation::table(), animation::kSupportedPermissions),
         registration(input::table(), input::kSupportedPermissions),
-        registration(references::table(), references::kSupportedPermissions),
         registration(playercontroller::table(), playercontroller::kSupportedPermissions),
         registration(diagnostics::table(), diagnostics::kSupportedPermissions),
         registration(configuration::table(), configuration::kSupportedPermissions),

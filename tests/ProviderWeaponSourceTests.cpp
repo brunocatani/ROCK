@@ -82,7 +82,7 @@ namespace {
         assert(provider::events::copy(77,0,&event,1,stream)==api::Status::Ok && stream.copiedCount==1);
         assert(event.frameIndex==101 && event.worldGeneration==6 && event.skeletonGeneration==7 && event.providerGeneration==8);
         GrabEventData grab{};grab.type=GrabEventType::Released;RE::TESObjectREFR reference;grab.refr=&reference;
-        pi->dispatchGrabEvent(grab);api::grab::EventV1 released{};
+        pi->dispatchGrabEvent(grab);api::grab::Event released{};
         assert(pi->hapticsHandled);
         assert(provider::events::copy(77,0,&released,1,stream)==api::Status::Ok && stream.copiedCount==1);
         assert(released.frameIndex==101 && released.worldGeneration==6 && released.skeletonGeneration==7 && released.providerGeneration==8 && released.formId==123);

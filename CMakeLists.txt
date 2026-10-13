@@ -926,7 +926,8 @@ if(BUILD_ROCK_TESTS)
 
   add_executable(ROCKModularEventDeliveryTests
     "${ROOT_DIR}/tests/ModularEventDeliveryTests.cpp"
-    "${SOURCE_DIR}/api/EventStreams.cpp")
+    "${SOURCE_DIR}/api/EventStreams.cpp"
+    "${SOURCE_DIR}/api/providers/GrabProvider.cpp")
   target_compile_features(ROCKModularEventDeliveryTests PRIVATE cxx_std_23)
   target_include_directories(ROCKModularEventDeliveryTests PRIVATE ${SOURCE_DIR})
   target_compile_definitions(ROCKModularEventDeliveryTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)

@@ -7,10 +7,10 @@
 #include "ProviderRuntimeServices.h"
 namespace rock::provider::events {
 namespace {
-    struct Callback { api::OwnerToken owner{}; api::grab::EventCallbackV1 function{}; void* user{}; };
+    struct Callback { api::OwnerToken owner{}; api::grab::EventCallback function{}; void* user{}; };
     std::array<Callback,64> callbacks{};
     std::shared_mutex callbackMutex;
-    bool invokeGrabCallback(const Callback& slot,const api::grab::EventV1& event) {
+    bool invokeGrabCallback(const Callback& slot,const api::grab::Event& event) {
 #if defined(_MSC_VER)
         __try { slot.function(&event,slot.user); return true; }
         __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
@@ -21,7 +21,7 @@ namespace {
 
     OwnedEventStream<api::core::Event,api::core::kEventCapacityPerOwner,api::core::kMaxOwners> coreEvents;
     OwnedEventStream<api::collision::EventV1,api::collision::kEventCapacityPerOwner,api::core::kMaxOwners> collisionEvents;
-    OwnedEventStream<api::grab::EventV1,api::grab::kEventCapacityPerOwner,api::core::kMaxOwners> grabEvents;
+    OwnedEventStream<api::grab::Event,api::grab::kEventCapacityPerOwner,api::core::kMaxOwners> grabEvents;
     OwnedEventStream<api::touch::Event,api::touch::kEventCapacityPerOwner,api::core::kMaxOwners> touchEvents;
     OwnedEventStream<api::weapon::EventV1,api::weapon::kEventCapacityPerOwner,api::core::kMaxOwners> weaponEvents;
     OwnedEventStream<api::weaponparts::EventV1,api::weaponparts::kEventCapacityPerOwner,api::core::kMaxOwners> weaponpartsEvents;
@@ -58,7 +58,7 @@ void remove(api::OwnerToken owner) {
 }
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::core::Event* output,std::uint32_t capacity,api::Stream& state) { return coreEvents.copy(owner,after,output,capacity,state); }
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::collision::EventV1* output,std::uint32_t capacity,api::Stream& state) { return collisionEvents.copy(owner,after,output,capacity,state); }
-api::Status copy(api::OwnerToken owner,std::uint64_t after,api::grab::EventV1* output,std::uint32_t capacity,api::Stream& state) { return grabEvents.copy(owner,after,output,capacity,state); }
+api::Status copy(api::OwnerToken owner,std::uint64_t after,api::grab::Event* output,std::uint32_t capacity,api::Stream& state) { return grabEvents.copy(owner,after,output,capacity,state); }
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::touch::Event* output,std::uint32_t capacity,api::Stream& state) { return touchEvents.copy(owner,after,output,capacity,state); }
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::weapon::EventV1* output,std::uint32_t capacity,api::Stream& state) { return weaponEvents.copy(owner,after,output,capacity,state); }
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::weaponparts::EventV1* output,std::uint32_t capacity,api::Stream& state) { return weaponpartsEvents.copy(owner,after,output,capacity,state); }
@@ -67,20 +67,20 @@ api::Status copy(api::OwnerToken owner,std::uint64_t after,api::input::Event* ou
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::diagnostics::EventV1* output,std::uint32_t capacity,api::Stream& state) { return diagnosticsEvents.copy(owner,after,output,capacity,state); }
 
 void publishGrab(const rock::GrabEventData& source,const api::Sample& sample) {
-    api::grab::EventV1 event{}; stamp(event,sample);
+    api::grab::Event event{}; stamp(event,sample);
     event.kind=static_cast<std::uint32_t>(source.type); event.hand=source.isLeft?api::Hand::Left:api::Hand::Right;
     event.formId=source.formID; event.primaryBodyId=source.primaryBodyId; event.secondaryBodyId=source.secondaryBodyId;
     event.collisionLayer=source.collisionLayer; event.flags=source.flags; event.sourceKind=static_cast<std::uint32_t>(source.sourceKind);
     std::copy_n(source.positionGame,3,event.positionGame); std::copy_n(source.velocityGame,3,event.velocityGame);
     event.mass=source.mass; event.speedGameUnitsPerSecond=source.speedGameUnitsPerSecond; event.intensityHint=source.intensityHint;
-    struct Delivery { api::OwnerToken owner{}; api::grab::EventV1 event{}; };
+    struct Delivery { api::OwnerToken owner{}; api::grab::Event event{}; };
     std::array<Delivery,64> deliveries{};
     std::size_t count=0;
     std::array<api::OwnerToken,64> faults{};
     std::size_t faultCount=0;
     {
         std::shared_lock lock(callbackMutex);
-        grabEvents.publish(event,0,[&](api::OwnerToken owner,const api::grab::EventV1& value) {
+        grabEvents.publish(event,0,[&](api::OwnerToken owner,const api::grab::Event& value) {
             for (const auto& slot:callbacks) if (slot.owner==owner) { deliveries[count++]={owner,value}; break; }
         });
         for (std::size_t i=0;i<count;++i) for (const auto& slot:callbacks) if (slot.owner==deliveries[i].owner && slot.function) {
@@ -99,7 +99,7 @@ void publishPhysics(std::uint32_t kind,bool left,std::uint32_t form,std::uint32_
         event.hand=left?api::Hand::Left:api::Hand::Right; event.formId=form; event.collisionLayer=layer;
         collisionEvents.publish(event);
     } else if (kind==102 || kind==103) {
-        api::grab::EventV1 event{}; stamp(event,sample); event.kind=kind;
+        api::grab::Event event{}; stamp(event,sample); event.kind=kind;
         event.hand=left?api::Hand::Left:api::Hand::Right; event.formId=form; event.collisionLayer=layer;
         grabEvents.publish(event);
     } else if (kind==104 || kind==105) {
@@ -116,12 +116,12 @@ void publish(const RockProviderEventV1& source) {
         coreEvents.publish(event); break;
     }
     case RockProviderEventKindV1::GrabStateChanged: {
-        api::grab::EventV1 event{}; stamp(event,sample); event.kind=100; event.hand=static_cast<api::Hand>(source.hand);
+        api::grab::Event event{}; stamp(event,sample); event.kind=100; event.hand=static_cast<api::Hand>(source.hand);
         event.formId=source.formId; event.subjectSequence=source.subjectSequence; event.phase=source.result;
         event.primaryBodyId=source.data[1]; event.flags=source.data[2]; grabEvents.publish(event); break;
     }
     case RockProviderEventKindV1::InteractionCommandTerminal: {
-        api::grab::EventV1 event{}; stamp(event,sample); event.kind=101; event.hand=static_cast<api::Hand>(source.hand);
+        api::grab::Event event{}; stamp(event,sample); event.kind=101; event.hand=static_cast<api::Hand>(source.hand);
         event.ownerToken=source.ownerToken; event.subjectSequence=source.subjectSequence; event.commandState=source.result;
         event.formId=source.formId; event.commandKind=source.data[0]; event.failure=source.data[1];
         grabEvents.publish(event,source.ownerToken); break;
@@ -144,7 +144,7 @@ void publish(const RockProviderEventV1& source) {
         case RockProviderAuthorityKindV1::EquippedWeaponHandling: { api::weapon::EventV1 event{}; stamp(event,sample); event.kind=2; event.ownerToken=owner; event.authority=1; event.reason=source.result; weaponEvents.publish(event,owner); break; }
         case RockProviderAuthorityKindV1::DebugOverlay: { api::diagnostics::EventV1 event{}; stamp(event,sample); event.kind=1; event.ownerToken=owner; event.authority=1; event.reason=source.result; diagnosticsEvents.publish(event,owner); break; }
         case RockProviderAuthorityKindV1::ColliderVisualization: { api::diagnostics::EventV1 event{}; stamp(event,sample); event.kind=1; event.ownerToken=owner; event.authority=2; event.reason=source.result; diagnosticsEvents.publish(event,owner); break; }
-        case RockProviderAuthorityKindV1::OffhandReservation: { api::grab::EventV1 event{}; stamp(event,sample); event.kind=104; event.ownerToken=owner; event.failure=source.result; grabEvents.publish(event,owner); break; }
+        case RockProviderAuthorityKindV1::OffhandReservation: { api::grab::Event event{}; stamp(event,sample); event.kind=104; event.ownerToken=owner; event.failure=source.result; grabEvents.publish(event,owner); break; }
         default: { api::core::Event event{}; stamp(event,sample); event.kind=2; event.ownerToken=owner; event.reason=source.result; coreEvents.publish(event,owner); break; }
         }
         break;
@@ -154,7 +154,7 @@ void publish(const RockProviderEventV1& source) {
 }
 
 bool inSynchronousCallback() noexcept { return borrowed_callback::active; }
-api::Status setGrabCallback(api::OwnerToken owner,api::grab::EventCallbackV1 function,void* user) {
+api::Status setGrabCallback(api::OwnerToken owner,api::grab::EventCallback function,void* user) {
     std::unique_lock lock(callbackMutex);
     for (auto& slot:callbacks) if (slot.owner==owner) { slot={owner,function,user}; return api::Status::Ok; }
     for (auto& slot:callbacks) if (!slot.owner) { slot={owner,function,user}; return api::Status::Ok; }

@@ -2,8 +2,8 @@
 #include <ROCK/WeaponParts.h>
 #include <ROCK/WeaponV1_1.h>
 #include <ROCK/Input.h>
-#include <ROCK/GrabV1_1.h>
-#include <ROCK/GrabV1_3.h>
+#include <ROCK/Grab.h>
+#include <ROCK/Grab.h>
 #include <ROCK/Animation.h>
 #include <ROCK/Core.h>
 #include <ROCK/Hands.h>
@@ -37,11 +37,11 @@ namespace rock::provider::runtime {
     api::Status clearWeaponPartGrabPoints(api::OwnerToken);
     bool hasOperatingGrabPoints(std::uint64_t generation);
     std::size_t copyWeaponPartPointSelection(std::span<weapon_part_runtime::Target>,std::span<weapon_part_points::OwnedPoint>,std::size_t& pointCount);
-    api::Status setHeldObjectTarget(api::OwnerToken,const api::grab::v1_3::HeldObjectTarget&);
+    api::Status setHeldObjectTarget(api::OwnerToken,const api::grab::HeldObjectTarget&);
     api::Status clearHeldObjectTarget(api::OwnerToken,api::Hand);
-    api::Status getHeldObjectPose(api::OwnerToken,api::Hand,api::grab::v1_3::HeldObjectPose&);
-    api::Status getHeldPlacementState(api::grab::v1_1::HeldPlacementState& output);
-    api::Status submitHeldPlacementIntent(api::OwnerToken owner, const api::grab::v1_1::HeldPlacementIntent& request);
+    api::Status getHeldObjectPose(api::OwnerToken,api::Hand,api::grab::HeldObjectPose&);
+    api::Status getHeldPlacementState(api::grab::HeldPlacementState& output);
+    api::Status submitHeldPlacementIntent(api::OwnerToken owner, const api::grab::HeldPlacementIntent& request);
     api::Status clearHeldPlacementIntent(api::OwnerToken owner);
     api::Status getPlacementClickState(api::input::PlacementClickState& output);
     api::Status captureInventoryWeapon(std::uint64_t owner, std::uint32_t form, std::uint32_t stack,

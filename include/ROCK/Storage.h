@@ -52,10 +52,10 @@ namespace rock::api::storage
         // while Busy until ROCK's native placement handoff has ended. V2
         // returns UnsupportedVersion: its firearms already are loose items.
         Status (ROCK_CALL* extractEquipped)(OwnerToken, const EquippedExtractionV1*, std::uint32_t* reference) noexcept;
-        // Same command/result protocol as Grab V1. V2 firearm delivery also
+        // Same command/result protocol as Grab. V2 firearm delivery also
         // prepares its authored firing grip; NotReady means retry on a later
         // frame before any command has been admitted. Ordinary items use Grab.
-        Status (ROCK_CALL* draw)(OwnerToken, const grab::ForceGrabRequestV1*, std::uint64_t* command) noexcept;
+        Status (ROCK_CALL* draw)(OwnerToken, const grab::ForceGrabRequest*, std::uint64_t* command) noexcept;
     };
     using Query = const ApiV1* (ROCK_CALL*)(std::uint32_t major, std::uint32_t bytes) noexcept;
     static_assert(sizeof(TargetV1) == 40 && sizeof(EquippedExtractionV1) == 32 && sizeof(ApiV1) == 72);

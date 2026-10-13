@@ -8911,7 +8911,7 @@ namespace rock
         return isFiniteNiTransform(root);
     }
 
-    api::Status Hand::setHeldObjectTarget(api::OwnerToken owner,const api::grab::v1_3::HeldObjectTarget& request,std::span<const std::uint32_t> weaponBodies)
+    api::Status Hand::setHeldObjectTarget(api::OwnerToken owner,const api::grab::HeldObjectTarget& request,std::span<const std::uint32_t> weaponBodies)
     {
         if(!isHolding()||!getHeldRef()||getHeldRef()->GetFormID()!=request.referenceFormId)return api::Status::HandUnavailable;
         if(_savedObjectState.targetKind!=grab_target::Kind::LooseObject||_heldObjectIsLooseWeapon||

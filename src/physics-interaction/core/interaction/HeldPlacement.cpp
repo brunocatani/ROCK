@@ -9,7 +9,7 @@
 #include "RE/Havok/hknpBody.h"
 
 namespace rock {
-api::Status PhysicsInteraction::getHeldObjectPose(api::OwnerToken owner,api::Hand which,api::grab::v1_3::HeldObjectPose& out) const
+api::Status PhysicsInteraction::getHeldObjectPose(api::OwnerToken owner,api::Hand which,api::grab::HeldObjectPose& out) const
 {
     out={};
     if(which!=api::Hand::Left&&which!=api::Hand::Right)return api::Status::InvalidArgument;
@@ -28,7 +28,7 @@ api::Status PhysicsInteraction::getHeldObjectPose(api::OwnerToken owner,api::Han
     out.rootWorld.translate[0]=root.translate.x;out.rootWorld.translate[1]=root.translate.y;out.rootWorld.translate[2]=root.translate.z;out.rootWorld.scale=root.scale;
     return api::Status::Ok;
 }
-api::Status PhysicsInteraction::setHeldObjectTarget(api::OwnerToken owner,const api::grab::v1_3::HeldObjectTarget& request)
+api::Status PhysicsInteraction::setHeldObjectTarget(api::OwnerToken owner,const api::grab::HeldObjectTarget& request)
 {
     const auto sample=provider::runtime::sample();
     if(request.hand!=api::Hand::Left&&request.hand!=api::Hand::Right)return api::Status::InvalidArgument;
@@ -42,7 +42,7 @@ api::Status PhysicsInteraction::setHeldObjectTarget(api::OwnerToken owner,const 
     if(observed.targetFormId!=request.referenceFormId||!(observed.flags&(1u<<3)))return api::Status::HandUnavailable;
     if(!request.gripSequence||observed.gripSequence!=request.gripSequence)return api::Status::GenerationMismatch;
     const auto weapon=_weaponCollision.getWeaponBodySnapshotAtomic();
-    if(request.reserved||bool(request.connectedWeaponFormId)!=bool(request.connectedWeaponGeneration))return api::Status::InvalidArgument;
+    if(bool(request.connectedWeaponFormId)!=bool(request.connectedWeaponGeneration))return api::Status::InvalidArgument;
     if(request.connectedWeaponFormId&&(request.connectedWeaponFormId!=currentEquippedWeaponFormId()||
         request.connectedWeaponGeneration!=weapon.generationKey||weapon.count==0||weapon.count>weapon.bodyIds.size()))return api::Status::TargetUnavailable;
     return (request.hand==api::Hand::Left?_leftHand:_rightHand).setHeldObjectTarget(owner,request,
@@ -53,7 +53,7 @@ api::Status PhysicsInteraction::clearHeldObjectTarget(api::OwnerToken owner,api:
     if(hand!=api::Hand::Left&&hand!=api::Hand::Right)return api::Status::InvalidArgument;
     return (hand==api::Hand::Left?_leftHand:_rightHand).clearHeldObjectTarget(owner);
 }
-api::Status PhysicsInteraction::queryHeldPlacementState(api::grab::v1_1::HeldPlacementState& out) const
+api::Status PhysicsInteraction::queryHeldPlacementState(api::grab::HeldPlacementState& out) const
 {
     out={};
     const auto& frame=runtime_state::currentFrame();
@@ -68,7 +68,7 @@ api::Status PhysicsInteraction::queryHeldPlacementState(api::grab::v1_1::HeldPla
     out.lastRequestToken=_placementLastRequestToken;
     out.lastResult=_placementLastResult;
     out.lastRequestFormId=_placementLastRequestForm;
-    using Flag=api::grab::v1_1::HeldPlacementFlag;
+    using Flag=api::grab::HeldPlacementFlag;
     {
         havok_world_lock::ScopedWorldReadLock lock(world);
         for (const bool left : {false,true}) {
@@ -100,21 +100,21 @@ api::Status PhysicsInteraction::queryHeldPlacementState(api::grab::v1_1::HeldPla
 std::uint32_t PhysicsInteraction::heldPlacementCandidate(RE::hknpWorld* world) const
 {
     if (world!=_lifecycle.cachedHknpWorld) return 0;
-    api::grab::v1_1::HeldPlacementState state;
+    api::grab::HeldPlacementState state;
     if (queryHeldPlacementState(state)!=api::Status::Ok) return 0;
     const auto id=held_placement_policy::singleObject(state.right.formId,state.left.formId);
     if (!id) return 0;
-    using Flag=api::grab::v1_1::HeldPlacementFlag;
+    using Flag=api::grab::HeldPlacementFlag;
     for (const auto& hand : {state.right,state.left})
         if (hand.formId && !(hand.flags&static_cast<std::uint32_t>(Flag::LooseObject))) return 0;
     return ((state.right.flags|state.left.flags)&static_cast<std::uint32_t>(Flag::FixedSurfaceContact)) ? id : 0;
 }
 
-api::Status PhysicsInteraction::submitHeldPlacementIntent(api::OwnerToken owner,const api::grab::v1_1::HeldPlacementIntent& intent)
+api::Status PhysicsInteraction::submitHeldPlacementIntent(api::OwnerToken owner,const api::grab::HeldPlacementIntent& intent)
 {
-    using Flag=api::grab::v1_1::PlacementIntentFlag;
+    using Flag=api::grab::PlacementIntentFlag;
     const auto sample=provider::runtime::sample();
-    if (intent.reserved || (intent.flags&~3u) ||
+    if ((intent.flags&~3u) ||
         ((intent.flags&static_cast<std::uint32_t>(Flag::Anchor)) &&
          (!(intent.flags&static_cast<std::uint32_t>(Flag::ReserveClick)) || !intent.formId))) return api::Status::InvalidArgument;
     if (intent.sample.frameIndex!=sample.frameIndex ||
@@ -141,7 +141,7 @@ void PhysicsInteraction::clearHeldPlacementIntent(api::OwnerToken owner)
     }
     if (_placementPendingForm && _placementPendingOwner==owner) {
         _placementPendingOwner=0; _placementPendingForm=0;
-        _placementLastResult=api::grab::v1_1::PlacementResult::Rejected;
+        _placementLastResult=api::grab::PlacementResult::Rejected;
     }
 }
 
@@ -152,7 +152,7 @@ void PhysicsInteraction::resetHeldPlacement()
     _placementPendingForm=0; _placementRequestedForm=0;
     _placementCandidate=0; _placementClickReserved=false;
     _placementLastRequestToken=0; _placementLastRequestForm=0;
-    _placementScriptWait=0.0f; _placementLastResult=api::grab::v1_1::PlacementResult::None;
+    _placementScriptWait=0.0f; _placementLastResult=api::grab::PlacementResult::None;
 }
 
 void PhysicsInteraction::beginHeldPlacementFrame()
@@ -170,13 +170,13 @@ void PhysicsInteraction::beginHeldPlacementFrame()
         intent.sample.providerGeneration!=sample.providerGeneration ||
         intent.sample.collisionGeneration!=sample.collisionGeneration ||
         provider::runtime::authorize(owner,api::grab::kInterfaceId,2,true)!=api::Status::Ok) {
-        if (_placementPendingForm) _placementLastResult=api::grab::v1_1::PlacementResult::Rejected;
+        if (_placementPendingForm) _placementLastResult=api::grab::PlacementResult::Rejected;
         _placementPendingForm=0; _placementPendingOwner=0;
         return;
     }
-    using Flag=api::grab::v1_1::PlacementIntentFlag;
+    using Flag=api::grab::PlacementIntentFlag;
     if (_placementPendingForm && _placementPendingOwner!=owner) {
-        _placementLastResult=api::grab::v1_1::PlacementResult::Rejected;
+        _placementLastResult=api::grab::PlacementResult::Rejected;
         _placementPendingForm=0; _placementPendingOwner=0;
     }
     _placementActiveOwner=owner;
@@ -189,7 +189,7 @@ void PhysicsInteraction::beginHeldPlacementFrame()
             _placementLastRequestForm=intent.formId;
             // If this update exits before commit, the caller still receives a
             // terminal result instead of waiting forever for a consumed token.
-            _placementLastResult=api::grab::v1_1::PlacementResult::Rejected;
+            _placementLastResult=api::grab::PlacementResult::Rejected;
         }
     }
     // A submitted lease observes this click before bipod. An unreserved click
@@ -216,7 +216,7 @@ void PhysicsInteraction::commitHeldPlacement(const PhysicsFrameContext& frame)
     }
     const auto requested=_placementPendingForm;
     if (!requested) return;
-    _placementLastResult=api::grab::v1_1::PlacementResult::Rejected;
+    _placementLastResult=api::grab::PlacementResult::Rejected;
     if (!_placementActiveOwner || _placementPendingOwner!=_placementActiveOwner ||
         provider::runtime::authorize(_placementActiveOwner,api::grab::kInterfaceId,2,true)!=api::Status::Ok ||
         requested!=_placementCandidate || frame.menuBlocked || !frame.worldReady || !physicsWritesAllowedForWorld(frame.hknpWorld) ||
@@ -239,10 +239,10 @@ void PhysicsInteraction::commitHeldPlacement(const PhysicsFrameContext& frame)
     const auto prepared=native_object_placement::prepareLoadScript(ref,starting);
     if (prepared==native_object_placement::ScriptPreparation::Rejected) { _placementPendingForm=0; return; }
     if (prepared==native_object_placement::ScriptPreparation::Pending) {
-        _placementLastResult=api::grab::v1_1::PlacementResult::Pending;
+        _placementLastResult=api::grab::PlacementResult::Pending;
         _placementScriptWait+=std::clamp(frame.deltaSeconds,0.0f,0.1f);
         if (_placementScriptWait>=2.0f) {
-            _placementLastResult=api::grab::v1_1::PlacementResult::Rejected;
+            _placementLastResult=api::grab::PlacementResult::Rejected;
             ROCK_LOG_WARN(Hand,"Held placement rejected ref={:08X} stage=load-script-timeout; grab retained",requested);
             _placementPendingForm=0;
         }
@@ -342,7 +342,7 @@ void PhysicsInteraction::commitHeldPlacement(const PhysicsFrameContext& frame)
     const bool anchored=collisionRestored && native_object_placement::anchor(ref,frame.hknpWorld,pose,
         std::span<const std::uint32_t>{bodies.data(),count});
     _placementCandidate=0;
-    _placementLastResult=anchored ? api::grab::v1_1::PlacementResult::Anchored : api::grab::v1_1::PlacementResult::Rejected;
+    _placementLastResult=anchored ? api::grab::PlacementResult::Anchored : api::grab::PlacementResult::Rejected;
     ROCK_LOG_INFO(Hand,"Held placement ref={:08X} anchored={} bodies={} position=({:.3f},{:.3f},{:.3f}) save=native",
         requested,anchored,count,pose.translate.x,pose.translate.y,pose.translate.z);
     for (const bool left : { false,true }) {

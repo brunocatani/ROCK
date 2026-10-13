@@ -1,9 +1,9 @@
 // Held placement operations are coordinated by the frame owner.
-    api::Status getHeldObjectPose(api::OwnerToken owner,api::Hand hand,api::grab::v1_3::HeldObjectPose& output) {
+    api::Status getHeldObjectPose(api::OwnerToken owner,api::Hand hand,api::grab::HeldObjectPose& output) {
         const auto access=s_physicsInteraction.borrow();const auto* pi=access.get();
         return pi?pi->getHeldObjectPose(owner,hand,output):api::Status::NotReady;
     }
-    api::Status setHeldObjectTarget(api::OwnerToken owner,const api::grab::v1_3::HeldObjectTarget& request) {
+    api::Status setHeldObjectTarget(api::OwnerToken owner,const api::grab::HeldObjectTarget& request) {
         const auto access=s_physicsInteraction.borrow();
         auto* pi=access.get();return pi?pi->setHeldObjectTarget(owner,request):api::Status::NotReady;
     }
@@ -11,12 +11,12 @@
         const auto access=s_physicsInteraction.borrow();
         auto* pi=access.get();return pi?pi->clearHeldObjectTarget(owner,hand):api::Status::Ok;
     }
-    api::Status getHeldPlacementState(api::grab::v1_1::HeldPlacementState& output) {
+    api::Status getHeldPlacementState(api::grab::HeldPlacementState& output) {
         const auto access=s_physicsInteraction.borrow();
         const auto* pi=access.get();
         return pi ? pi->queryHeldPlacementState(output) : api::Status::NotReady;
     }
-    api::Status submitHeldPlacementIntent(api::OwnerToken owner, const api::grab::v1_1::HeldPlacementIntent& request) {
+    api::Status submitHeldPlacementIntent(api::OwnerToken owner, const api::grab::HeldPlacementIntent& request) {
         const auto access=s_physicsInteraction.borrow();
         auto* pi=access.get();
         return pi ? pi->submitHeldPlacementIntent(owner,request) : api::Status::NotReady;
@@ -318,6 +318,7 @@
         }
         pruneExpiredOffhandReservationLocked(frameIndex);
         *outState = {};
+        outState->hand = s_offhandReservationSlot.hand;
         outState->reservation = s_offhandReservationSlot.reservation;
         outState->active = s_offhandReservationSlot.ownerToken != 0 ? 1u : 0u;
         outState->ownerToken = s_offhandReservationSlot.ownerToken;

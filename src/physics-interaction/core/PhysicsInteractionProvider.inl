@@ -107,7 +107,7 @@
             if (_rightHand.isTouching()) outSnapshot.rightHandState |= static_cast<std::uint32_t>(Flag::Touching);
             if (_leftHand.isTouching()) outSnapshot.leftHandState |= static_cast<std::uint32_t>(Flag::Touching);
         }
-        outSnapshot.offhandReservation = ::rock::provider::currentOffhandReservation();
+        outSnapshot.offhandReservation = ::rock::provider::currentHandReservation(outSnapshot.offhandHand);
     }
 
     bool PhysicsInteraction::isProviderWeaponBodyCurrentV1(

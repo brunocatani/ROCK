@@ -101,7 +101,7 @@ int main(){
         const auto name="Owner"+std::to_string(i);std::memcpy(registration.modName,name.c_str(),name.size()+1);
         assert(apiRegisterConsumerV1(&registration,&owners[i])==RockProviderResultV1::Ok);
     }
-    rock::api::grab::v1_2::DefaultGrabPoses pose;
+    rock::api::grab::DefaultGrabPoses pose;
     pose.baseFormId=100;pose.left.flags=1;
     assert(rock::saved_grab_offset::defaults.set(owners[0].ownerToken,pose)==rock::api::Status::Ok);
     pose.baseFormId=101;

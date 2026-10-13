@@ -1,5 +1,5 @@
 #pragma once
-#include <ROCK/GrabV1_2.h>
+#include <ROCK/Grab.h>
 #include "SavedGrabOffsetFormat.h"
 #include <algorithm>
 #include <array>
@@ -13,8 +13,8 @@ namespace rock::saved_grab_offset
     {
     public:
         static constexpr std::size_t capacity = 64;
-        using Request = api::grab::v1_2::DefaultGrabPoses;
-        using Pose = api::grab::v1_2::DefaultHandPose;
+        using Request = api::grab::DefaultGrabPoses;
+        using Pose = api::grab::DefaultHandPose;
 
         api::Status set(api::OwnerToken owner, const Request& request) noexcept
         {

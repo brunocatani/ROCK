@@ -31,30 +31,6 @@ static_assert(offsetof(rock::api::weaponparts::v1_2::Api,clearCollisionSuppressi
 static_assert(sizeof(rock::api::weaponparts::v1_2::CollisionSuppression)==184);
 static_assert(offsetof(rock::api::weaponparts::v1_2::CollisionSuppression,sample)==8);
 static_assert(offsetof(rock::api::weaponparts::v1_2::CollisionSuppression,sourceKeys)==56);
-#include <ROCK/GrabV1_1.h>
-static_assert(sizeof(rock::api::grab::ApiV1)==136);
-static_assert(sizeof(rock::api::grab::v1_1::Api)==160);
-static_assert(offsetof(rock::api::grab::v1_1::Api,getHeldPlacementState)==136);
-static_assert(sizeof(rock::api::grab::v1_1::HeldPlacementState)==96);
-static_assert(sizeof(rock::api::grab::v1_1::HeldPlacementIntent)==56);
-#include <ROCK/GrabV1_2.h>
-#include <ROCK/GrabV1_3.h>
-static_assert(sizeof(rock::api::grab::v1_3::Api)==200);
-static_assert(offsetof(rock::api::grab::v1_3::Api,v1_2)==0);
-static_assert(offsetof(rock::api::grab::v1_3::Api,setHeldObjectTarget)==176);
-static_assert(offsetof(rock::api::grab::v1_3::Api,clearHeldObjectTarget)==184);
-static_assert(offsetof(rock::api::grab::v1_3::Api,getHeldObjectPose)==192);
-static_assert(sizeof(rock::api::grab::v1_3::HeldObjectPose)==112);
-static_assert(sizeof(rock::api::grab::v1_3::HeldObjectTarget)==128);
-static_assert(offsetof(rock::api::grab::v1_3::HeldObjectTarget,rootWorld)==72);
-static_assert(sizeof(rock::api::grab::v1_2::Api)==176);
-static_assert(offsetof(rock::api::grab::v1_2::Api,v1_1)==0);
-static_assert(offsetof(rock::api::grab::v1_2::Api,setDefaultGrabPoses)==160);
-static_assert(offsetof(rock::api::grab::v1_2::Api,clearDefaultGrabPoses)==168);
-static_assert(sizeof(rock::api::grab::v1_2::DefaultHandPose)==132);
-static_assert(sizeof(rock::api::grab::v1_2::DefaultGrabPoses)==272);
-static_assert(offsetof(rock::api::grab::v1_2::DefaultGrabPoses,right)==8);
-static_assert(offsetof(rock::api::grab::v1_2::DefaultGrabPoses,left)==140);
 #include <ROCK/Storage.h>
 static_assert(sizeof(rock::api::storage::ApiV1) == 72);
 static_assert(offsetof(rock::api::storage::ApiV1, claim) == 8);

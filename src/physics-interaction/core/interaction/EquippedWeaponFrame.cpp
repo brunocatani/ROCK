@@ -816,7 +816,8 @@ namespace rock
              * the provider part whitelist alone so PAPER reload sessions still
              * constrain which parts the free hand may take.
              */
-            const auto offhandReservation = offhand_interaction_reservation::fromProvider(::rock::provider::currentOffhandReservation());
+            const auto offhandReservation = offhand_interaction_reservation::fromProvider(::rock::provider::currentHandReservation(
+                supportHandIsLeft ? ::rock::provider::RockProviderHand::Left : ::rock::provider::RockProviderHand::Right));
             if (!offhand_interaction_reservation::allowsSupportGrip(offhandReservation)) {
                 (supportHandIsLeft ? providerInteractionState : rightHandInteractionState).supportGripAllowed = false;
             }

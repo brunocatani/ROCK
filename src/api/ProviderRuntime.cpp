@@ -173,6 +173,7 @@ namespace rock::provider::runtime
     struct OffhandReservationSlot
     {
         std::uint64_t ownerToken{ 0 };
+        RockProviderHand hand{ RockProviderHand::None };
         RockProviderOffhandReservation reservation{
             RockProviderOffhandReservation::Normal
         };
@@ -186,6 +187,9 @@ namespace rock::provider::runtime
     OffhandReservationSlot s_offhandReservationSlot{};
     std::atomic<std::uint64_t> s_offhandReservationOwner{ 0 };
     std::atomic<std::uint64_t> s_offhandReservationExpiry{ 0 };
+    std::atomic<std::uint32_t> s_offhandReservationHand{
+        static_cast<std::uint32_t>(RockProviderHand::None)
+    };
     std::atomic<std::uint32_t> s_offhandReservation{
         static_cast<std::uint32_t>(RockProviderOffhandReservation::Normal)
     };
@@ -853,6 +857,9 @@ namespace rock::provider::runtime
             std::memory_order_release);
         s_offhandReservation.store(
             static_cast<std::uint32_t>(slot.reservation),
+            std::memory_order_release);
+        s_offhandReservationHand.store(
+            static_cast<std::uint32_t>(slot.hand),
             std::memory_order_release);
         s_offhandReservationExpiry.store(
             slot.expiresAfterFrame,
@@ -1917,6 +1924,10 @@ namespace rock::provider::runtime
         if (!validOffhandReservationRequest(*request)) {
             return RockProviderResultV1::InvalidArgument;
         }
+        // One weapon today: only the primary weapon's offhand can be reserved.
+        if (request->hand != apiGetOffhandHandV1()) {
+            return RockProviderResultV1::HandUnavailable;
+        }
         const auto generationResult = validateGenerationGuards(
             request->worldGeneration,
             request->skeletonGeneration,
@@ -1947,6 +1958,7 @@ namespace rock::provider::runtime
             ROCK_PROVIDER_MAX_OFFHAND_RESERVATION_LEASE_FRAMES_V1);
         s_offhandReservationSlot = OffhandReservationSlot{
             .ownerToken = ownerToken,
+            .hand = request->hand,
             .reservation = request->reservation,
             .expiresAfterFrame = provider_lease_policy::exclusiveExpiryFrame(
                 frameIndex,
@@ -2244,7 +2256,7 @@ namespace rock::provider
             std::scoped_lock lock(s_offhandReservationMutex);
             pruneExpiredOffhandReservationLocked(snapshot.frameIndex);
         }
-        snapshot.offhandReservation = currentOffhandReservation();
+        snapshot.offhandReservation = currentHandReservation(snapshot.offhandHand);
 
         std::array<RockProviderWeaponPartGripStateV1, 2> partGripStates{};
         pi.fillProviderWeaponPartGripStates(partGripStates);
@@ -2969,8 +2981,11 @@ namespace rock::provider
             providerGeneration);
     }
 
-    RockProviderOffhandReservation currentOffhandReservation()
+    RockProviderOffhandReservation currentHandReservation(const RockProviderHand hand)
     {
+        if (static_cast<RockProviderHand>(s_offhandReservationHand.load(std::memory_order_acquire)) != hand) {
+            return RockProviderOffhandReservation::Normal;
+        }
         const auto expiry =
             s_offhandReservationExpiry.load(std::memory_order_acquire);
         if (expiry != 0 && !provider_lease_policy::isActive(
