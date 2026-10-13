@@ -4,14 +4,11 @@
 #pragma pack(push, 8)
 namespace rock::api::core {
     inline constexpr InterfaceId kInterfaceId = InterfaceId::Core;
-    inline constexpr std::uint32_t kMajor = 1;
+    inline constexpr std::uint32_t kMajor = 2;
     inline constexpr std::uint32_t kMinor = 0;
     inline constexpr std::uint32_t kMaxOwners = 64;
     inline constexpr std::uint32_t kMaxFrameCallbacks = 16;
-    inline constexpr std::uint32_t kMaxPhaseCallbacks = 16;
     inline constexpr std::uint32_t kEventCapacityPerOwner = 256;
-
-
 
     enum class LifecycleFlag : std::uint32_t
     {
@@ -47,90 +44,53 @@ namespace rock::api::core {
         Shutdown = 15,
     };
 
-    enum class AnimationPhaseV1 : std::uint32_t
+    // modName: nonempty UTF-8, NUL-terminated within the array.
+    struct Registration
     {
-        BeforeRock = 1,
-        AfterRock = 2,
-        Complete = 3,
-        NativeGraphOutput = 4,
-        // Final readback after FRIK's world final, once per skeleton frame.
-        // Observation only: publish control/animation writes in the earlier
-        // phases. Complete retains its existing control-completion meaning.
-        Presented = 5,
-    };
-
-    enum class AnimationPhaseContextFlagV1 : std::uint32_t
-    {
-        None = 0,
-        RockEnabled = 1u << 0,
-        ProviderReady = 1u << 1,
-        SkeletonReady = 1u << 2,
-        MenuBlocking = 1u << 3,
-        ConfigBlocking = 1u << 4,
-        VisualWritesAllowed = 1u << 5,
-    };
-
-
-
-    struct RegistrationV1
-    {
-        std::uint32_t size{ sizeof(RegistrationV1) };
+        std::uint32_t size{ sizeof(Registration) };
         std::uint32_t version{ 1 };
         char modName[64]{};
-        std::uint32_t reserved[7]{};
     };
 
-    struct OwnerV1
+    struct Owner
     {
-        std::uint32_t size{ sizeof(OwnerV1) };
+        std::uint32_t size{ sizeof(Owner) };
         std::uint32_t version{ 1 };
-        std::uint64_t ownerToken{ 0 };
+        OwnerToken ownerToken{ 0 };
         std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[6]{};
     };
 
-    struct SnapshotV1
+    // ROCK's lifecycle state for one publication. The readiness fields are the
+    // provider's own view this frame; lifecycleFlags (LifecycleFlag) is the
+    // lifecycle state machine, which can lag them during transitions.
+    struct Snapshot
     {
-        std::uint32_t size{ sizeof(SnapshotV1) };
+        std::uint32_t size{ sizeof(Snapshot) };
         std::uint32_t version{ 1 };
-        std::uint64_t frameIndex{ 0 };
+        Sample sample{};
+        std::uint32_t lifecycleFlags{ 0 };
+        LifecycleReason lastLifecycleReason{ LifecycleReason::None };
         std::uint32_t frikSkeletonReady{ 0 };
         std::uint32_t menuBlocking{ 0 };
         std::uint32_t configBlocking{ 0 };
         std::uint32_t providerReady{ 0 };
-        std::uint32_t lifecycleFlags{ 0 };
-        LifecycleReason lastLifecycleReason{ LifecycleReason::None };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
         std::uint32_t stableFrameCount{ 0 };
         float deltaSeconds{ 0.0f };
-        std::uint64_t stateSequence{ 0 };
     };
 
-    struct AnimationPhaseContextV1
-    {
-        std::uint32_t size{ sizeof(AnimationPhaseContextV1) };
-        std::uint32_t version{ 1 };
-        AnimationPhaseV1 phase{ AnimationPhaseV1::BeforeRock };
-        std::uint32_t flags{ 0 };
-        std::uint64_t frameIndex{ 0 };
-        float deltaSeconds{ 0.0f };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[7]{};
-    };
-
-    using FrameCallbackV1 = void(ROCK_CALL*)(const SnapshotV1*, void*);
-    using PhaseCallbackV1 = void(ROCK_CALL*)(const AnimationPhaseContextV1*, void*);
+    // Game thread, once per ROCK publication. The snapshot is borrowed for the
+    // call. Unregister stops future calls but does not wait for one already
+    // started; callback and userData must stay valid through it. A faulting
+    // callback revokes everything its owner holds.
+    using FrameCallback = void(ROCK_CALL*)(const Snapshot*, void*);
 
     // Permission bits are local to this interface major. Discovery grants none.
-    enum class PermissionV1 : std::uint32_t { Read=1, Callbacks=4 };
+    enum class Permission : std::uint32_t { Read = 1, Callbacks = 4 };
     inline constexpr std::uint32_t kSupportedPermissions = 5;
 
-    struct EventV1 {
-        std::uint32_t size{sizeof(EventV1)};
+    struct Event
+    {
+        std::uint32_t size{ sizeof(Event) };
         std::uint32_t kind{};
         std::uint64_t sequence{};
         std::uint64_t frameIndex{};
@@ -138,27 +98,37 @@ namespace rock::api::core {
         std::uint32_t worldGeneration{};
         std::uint32_t skeletonGeneration{};
         std::uint32_t providerGeneration{};
-        std::uint32_t lifecycleFlags{}; std::uint32_t reason{}; std::uint32_t providerReady{};
+        std::uint32_t lifecycleFlags{};
+        std::uint32_t reason{};
+        std::uint32_t providerReady{};
     };
-    enum class EventKindV1 : std::uint32_t { Lifecycle=1, OwnerRevoked=2, PhysicsInitialized=3, PhysicsShutdown=4 };
+    enum class EventKind : std::uint32_t { Lifecycle = 1, OwnerRevoked = 2, PhysicsInitialized = 3, PhysicsShutdown = 4 };
 
-    struct ApiV1 {
-        static constexpr InterfaceId interfaceId=kInterfaceId;
-        static constexpr std::uint32_t majorVersion=kMajor;
-        static constexpr std::uint32_t minorVersion=kMinor;
-        Status(ROCK_CALL* getModVersion)(OwnerToken ownerToken, const char** outValue) noexcept;
-        Status(ROCK_CALL* isProviderReady)(OwnerToken ownerToken, std::uint32_t* outValue) noexcept;
-        Status(ROCK_CALL* getFrameSnapshot)(OwnerToken ownerToken, SnapshotV1* outSnapshot) noexcept;
-        Status(ROCK_CALL* registerConsumerV1)(const RegistrationV1* registration, OwnerV1* outHandle) noexcept;
-        Status(ROCK_CALL* unregisterConsumerV1)(std::uint64_t ownerToken) noexcept;
-        Status(ROCK_CALL* registerAnimationPhaseCallbackV1)(std::uint64_t ownerToken, PhaseCallbackV1 callback, void* userData, std::uint64_t* outCallbackToken) noexcept;
-        Status(ROCK_CALL* unregisterAnimationPhaseCallbackV1)(std::uint64_t ownerToken, std::uint64_t callbackToken) noexcept;
-        Status(ROCK_CALL* registerFrameCallbackForOwnerV1)(std::uint64_t ownerToken, FrameCallbackV1 callback, void* userData, std::uint64_t* outCallbackToken) noexcept;
-        Status(ROCK_CALL* unregisterFrameCallbackForOwnerV1)(std::uint64_t ownerToken, std::uint64_t callbackToken) noexcept;
-        // Family-local publication identity; compare before combining readbacks.
+    struct Api
+    {
+        static constexpr InterfaceId interfaceId = kInterfaceId;
+        static constexpr std::uint32_t majorVersion = kMajor;
+        static constexpr std::uint32_t minorVersion = kMinor;
+        // Any thread (Read). outValue stays valid for the process lifetime.
+        Status(ROCK_CALL* getModVersion)(OwnerToken owner, const char** outValue) noexcept;
+        Status(ROCK_CALL* isProviderReady)(OwnerToken owner, std::uint32_t* outValue) noexcept;
+        // Any thread (Read). The latest publication's lifecycle state.
+        Status(ROCK_CALL* getSnapshot)(OwnerToken owner, Snapshot* outSnapshot) noexcept;
+        // Any thread outside a ROCK callback. One owner per mod name; a name
+        // already registered is refused with OwnerConflict.
+        Status(ROCK_CALL* registerConsumer)(const Registration* registration, Owner* outOwner) noexcept;
+        // Game thread. Releases every resource and callback of the owner.
+        Status(ROCK_CALL* unregisterConsumer)(OwnerToken owner) noexcept;
+        // Game thread (Callbacks).
+        Status(ROCK_CALL* registerFrameCallback)(OwnerToken owner, FrameCallback callback, void* userData, std::uint64_t* outCallbackToken) noexcept;
+        Status(ROCK_CALL* unregisterFrameCallback)(OwnerToken owner, std::uint64_t callbackToken) noexcept;
+        // Binds an interface major discovered through ROCKAPI_QueryInterfaceV1
+        // to the owner with the requested permission bits.
+        Status(ROCK_CALL* bindInterface)(OwnerToken owner, InterfaceId interfaceId, std::uint32_t exactMajor, std::uint32_t permissions) noexcept;
+        // Any thread. Identity of the current publication.
         Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
-        Status(ROCK_CALL* bindInterface)(OwnerToken, InterfaceId, std::uint32_t exactMajor, std::uint32_t permissions) noexcept;
-        Status(ROCK_CALL* copyEvents)(OwnerToken, std::uint64_t afterSequence, EventV1*, std::uint32_t capacity, Stream*) noexcept;
+        // Any thread. Copies lifecycle and owner events after afterSequence.
+        Status(ROCK_CALL* copyEvents)(OwnerToken owner, std::uint64_t afterSequence, Event* outEvents, std::uint32_t capacity, Stream* outStream) noexcept;
     };
 }
 

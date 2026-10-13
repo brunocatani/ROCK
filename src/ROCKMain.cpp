@@ -707,7 +707,7 @@ namespace
 
         rock::provider::refreshNativeAnimationAuthorityLeasesV1();
         rock::provider::dispatchAnimationPhaseCallbacksV1(
-            rock::provider::RockProviderAnimationPhaseV1::BeforeRock,
+            ::rock::api::animation::AnimationPhase::BeforeRock,
             frameTiming);
 
         if (withSkeletonPhysics) {
@@ -721,10 +721,10 @@ namespace
         native_scope_data::reportDiagnostics();
 
         rock::provider::dispatchAnimationPhaseCallbacksV1(
-            rock::provider::RockProviderAnimationPhaseV1::AfterRock,
+            ::rock::api::animation::AnimationPhase::AfterRock,
             frameTiming);
         rock::provider::dispatchAnimationPhaseCallbacksV1(
-            rock::provider::RockProviderAnimationPhaseV1::Complete,
+            ::rock::api::animation::AnimationPhase::Complete,
             frameTiming);
         // Every claim of this frame is published; FRIK re-solves the claimed
         // hands when the phase returns, before the read-only render snapshot.
@@ -847,7 +847,7 @@ namespace
             s_physicsInteraction->captureProviderPresentedHandPoses();
             s_physicsInteraction->finalizeFramePose();
             rock::provider::dispatchAnimationPhaseCallbacksV1(
-                rock::provider::RockProviderAnimationPhaseV1::Presented,
+                ::rock::api::animation::AnimationPhase::Presented,
                 game_timing::currentFrameTiming());
             if (!s_physicsInteraction) return;
             s_physicsInteraction->finalizeEquipVisualBridgePresentation();

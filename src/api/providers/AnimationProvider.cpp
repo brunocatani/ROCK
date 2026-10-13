@@ -1,76 +1,78 @@
-#include "AnimationMarshalling.h"
-#include <ROCK/Discovery.h>
+#include "Boundary.h"
 #include "EventBoundary.h"
+#include <ROCK/Animation.h>
 
 namespace rock::api::animation {
 namespace {
 using namespace boundary;
-Status ROCK_CALL setNativeAnimationAuthorityV1(std::uint64_t ownerToken, const NativeAnimationAuthorityRequestV1* request) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        if (const auto s = checkInput(request); s != Status::Ok) return s;
-        provider::RockProviderNativeAnimationAuthorityRequestV1 native_request{};
-        convert(native_request, *request);
-        const auto result = provider::runtime::apiSetNativeAnimationAuthorityV1(ownerToken, &native_request);
-        return static_cast<Status>(result);
+Status ROCK_CALL setNativeAnimationAuthority(OwnerToken owner, const NativeAnimationAuthorityRequest* request) noexcept {
+    if (const auto s = checkInput(request); s != Status::Ok) return s;
+    return invoke(owner, kInterfaceId, 2, true, [&] {
+        return static_cast<Status>(provider::runtime::apiSetNativeAnimationAuthorityV1(owner, request));
     });
 }
-Status ROCK_CALL clearNativeAnimationAuthorityV1(std::uint64_t ownerToken) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        const auto result = provider::runtime::apiClearNativeAnimationAuthorityV1(ownerToken);
-        return static_cast<Status>(result);
+Status ROCK_CALL clearNativeAnimationAuthority(OwnerToken owner) noexcept {
+    return invoke(owner, kInterfaceId, 2, true, [&] {
+        return static_cast<Status>(provider::runtime::apiClearNativeAnimationAuthorityV1(owner));
     });
 }
-Status ROCK_CALL getNativeAnimationAuthorityStateV1(OwnerToken ownerToken, NativeAnimationAuthorityStateV1* outState) noexcept {
+Status ROCK_CALL getNativeAnimationAuthorityState(OwnerToken owner, NativeAnimationAuthorityState* outState) noexcept {
     if (const auto s = checkOutput(outState); s != Status::Ok) return s;
-    return invoke(ownerToken, kInterfaceId, 1, true, [&]() -> Status {
-        provider::RockProviderNativeAnimationAuthorityStateV1 native_outState{};
-        const auto result = provider::runtime::apiGetNativeAnimationAuthorityStateV1(&native_outState);
-        convert(*outState, native_outState);
-        return result ? Status::Ok : Status::NotReady;
+    return invoke(owner, kInterfaceId, 1, true, [&] {
+        return provider::runtime::apiGetNativeAnimationAuthorityStateV1(outState) ? Status::Ok : Status::NotReady;
     });
 }
-Status ROCK_CALL setHandVisualAuthorityV1(std::uint64_t ownerToken, const HandVisualAuthorityRequestV1* request) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        if (const auto s = checkInput(request); s != Status::Ok) return s;
-        provider::RockProviderHandVisualAuthorityRequestV1 native_request{};
-        convert(native_request, *request);
-        const auto result = provider::runtime::apiSetHandVisualAuthorityV1(ownerToken, &native_request);
-        return static_cast<Status>(result);
+Status ROCK_CALL setHandVisualAuthority(OwnerToken owner, const HandVisualAuthorityRequest* request) noexcept {
+    if (const auto s = checkInput(request); s != Status::Ok) return s;
+    return invoke(owner, kInterfaceId, 2, true, [&] {
+        return static_cast<Status>(provider::runtime::apiSetHandVisualAuthorityV1(owner, request));
     });
 }
-Status ROCK_CALL clearHandVisualAuthorityV1(std::uint64_t ownerToken, Hand hand) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        const auto result = provider::runtime::apiClearHandVisualAuthorityV1(ownerToken, static_cast<provider::RockProviderHand>(hand));
-        return static_cast<Status>(result);
+Status ROCK_CALL clearHandVisualAuthority(OwnerToken owner, Hand hand) noexcept {
+    return invoke(owner, kInterfaceId, 2, true, [&] {
+        return static_cast<Status>(provider::runtime::apiClearHandVisualAuthorityV1(owner, static_cast<provider::RockProviderHand>(hand)));
     });
 }
-Status ROCK_CALL publishNativeAnimationRuntimeV1(std::uint64_t ownerToken, const NativeAnimationRuntimePublicationV1* publication) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        if (const auto s = checkInput(publication); s != Status::Ok) return s;
-        provider::RockProviderNativeAnimationRuntimePublicationV1 native_publication{};
-        convert(native_publication, *publication);
-        const auto result = provider::runtime::apiPublishNativeAnimationRuntimeV1(ownerToken, &native_publication);
-        return static_cast<Status>(result);
+Status ROCK_CALL publishNativeAnimationRuntime(OwnerToken owner, const NativeAnimationRuntimePublication* publication) noexcept {
+    if (const auto s = checkInput(publication); s != Status::Ok) return s;
+    return invoke(owner, kInterfaceId, 2, true, [&] {
+        return static_cast<Status>(provider::runtime::apiPublishNativeAnimationRuntimeV1(owner, publication));
     });
 }
-Status ROCK_CALL clearNativeAnimationRuntimeV1(std::uint64_t ownerToken) noexcept {
-    return invoke(ownerToken, kInterfaceId, 2, true, [&]() -> Status {
-        const auto result = provider::runtime::apiClearNativeAnimationRuntimeV1(ownerToken);
-        return static_cast<Status>(result);
+Status ROCK_CALL clearNativeAnimationRuntime(OwnerToken owner) noexcept {
+    return invoke(owner, kInterfaceId, 2, true, [&] {
+        return static_cast<Status>(provider::runtime::apiClearNativeAnimationRuntimeV1(owner));
     });
 }
-
-#include "AnimationEndpoints.inl"
+Status ROCK_CALL registerAnimationPhaseCallback(OwnerToken owner, PhaseCallback callback, void* userData, std::uint64_t* outCallbackToken) noexcept {
+    if (outCallbackToken) *outCallbackToken = 0;
+    return invoke(owner, kInterfaceId, 4, true, [&] {
+        return static_cast<Status>(provider::runtime::apiRegisterAnimationPhaseCallbackV1(owner, callback, userData, outCallbackToken));
+    });
 }
-const ApiV1& table() noexcept {
-    static const ApiV1 value{
-        &setNativeAnimationAuthorityV1,
-        &clearNativeAnimationAuthorityV1,
-        &getNativeAnimationAuthorityStateV1,
-        &setHandVisualAuthorityV1,
-        &clearHandVisualAuthorityV1,
-        &publishNativeAnimationRuntimeV1,
-        &clearNativeAnimationRuntimeV1,
+Status ROCK_CALL unregisterAnimationPhaseCallback(OwnerToken owner, std::uint64_t callbackToken) noexcept {
+    return invoke(owner, kInterfaceId, 4, true, [&] {
+        return static_cast<Status>(provider::runtime::apiUnregisterAnimationPhaseCallbackV1(owner, callbackToken));
+    });
+}
+Status ROCK_CALL getSample(OwnerToken owner, Sample* outSample) noexcept {
+    return readSample(owner, kInterfaceId, outSample);
+}
+Status ROCK_CALL copyEvents(OwnerToken owner, std::uint64_t after, Event* events, std::uint32_t capacity, Stream* stream) noexcept {
+    return copyEventStream(owner, kInterfaceId, after, events, capacity, kEventCapacityPerOwner, stream);
+}
+}
+const Api& table() noexcept {
+    static const Api value{
+        &setNativeAnimationAuthority,
+        &clearNativeAnimationAuthority,
+        &getNativeAnimationAuthorityState,
+        &setHandVisualAuthority,
+        &clearHandVisualAuthority,
+        &publishNativeAnimationRuntime,
+        &clearNativeAnimationRuntime,
+        &registerAnimationPhaseCallback,
+        &unregisterAnimationPhaseCallback,
         &getSample,
         &copyEvents,
     };

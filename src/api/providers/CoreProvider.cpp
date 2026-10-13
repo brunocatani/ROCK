@@ -1,57 +1,90 @@
-#include "CoreMarshalling.h"
-#include <ROCK/Discovery.h>
+#include "Boundary.h"
 #include "EventBoundary.h"
+#include <ROCK/Core.h>
+#include <cstring>
 
 namespace rock::api::core {
 namespace {
 using namespace boundary;
-Status ROCK_CALL getModVersion(OwnerToken ownerToken, const char** outValue) noexcept {
+Status ROCK_CALL getModVersion(OwnerToken owner, const char** outValue) noexcept {
     if (!outValue) return Status::InvalidArgument;
     *outValue = nullptr;
-    return invoke(ownerToken, kInterfaceId, 1, false, [&]() {
+    return invoke(owner, kInterfaceId, 1, false, [&] {
         *outValue = provider::runtime::apiGetModVersion();
         return Status::Ok;
     });
 }
-Status ROCK_CALL isProviderReady(OwnerToken ownerToken, std::uint32_t* outValue) noexcept {
+Status ROCK_CALL isProviderReady(OwnerToken owner, std::uint32_t* outValue) noexcept {
     if (!outValue) return Status::InvalidArgument;
-    *outValue = {};
-    return invoke(ownerToken, kInterfaceId, 1, false, [&]() -> Status {
-        *outValue = static_cast<std::uint32_t>(provider::runtime::apiIsProviderReady());
+    *outValue = 0;
+    return invoke(owner, kInterfaceId, 1, false, [&] {
+        *outValue = provider::runtime::apiIsProviderReady() ? 1u : 0u;
         return Status::Ok;
     });
 }
-Status ROCK_CALL getFrameSnapshot(OwnerToken ownerToken, SnapshotV1* outSnapshot) noexcept {
+Status ROCK_CALL getSnapshot(OwnerToken owner, Snapshot* outSnapshot) noexcept {
     if (const auto s = checkOutput(outSnapshot); s != Status::Ok) return s;
-    return invoke(ownerToken, kInterfaceId, 1, false, [&]() -> Status {
-        provider::RockProviderFrameSnapshot native_outSnapshot{};
-        const auto result = provider::runtime::apiGetFrameSnapshot(&native_outSnapshot);
-        convert(*outSnapshot, native_outSnapshot);
-        return result ? Status::Ok : Status::NotReady;
+    return invoke(owner, kInterfaceId, 1, false, [&] {
+        provider::RockProviderFrameSnapshot snapshot{};
+        if (!provider::runtime::apiGetFrameSnapshot(&snapshot)) return Status::NotReady;
+        *outSnapshot = provider::runtime::toCoreSnapshot(snapshot);
+        return Status::Ok;
     });
 }
-Status ROCK_CALL registerConsumerV1(const RegistrationV1* registration, OwnerV1* outHandle) noexcept;
-Status ROCK_CALL unregisterConsumerV1(std::uint64_t ownerToken) noexcept;
-Status ROCK_CALL registerAnimationPhaseCallbackV1(std::uint64_t ownerToken, PhaseCallbackV1 callback, void* userData, std::uint64_t* outCallbackToken) noexcept;
-Status ROCK_CALL unregisterAnimationPhaseCallbackV1(std::uint64_t ownerToken, std::uint64_t callbackToken) noexcept;
-Status ROCK_CALL registerFrameCallbackForOwnerV1(std::uint64_t ownerToken, FrameCallbackV1 callback, void* userData, std::uint64_t* outCallbackToken) noexcept;
-Status ROCK_CALL unregisterFrameCallbackForOwnerV1(std::uint64_t ownerToken, std::uint64_t callbackToken) noexcept;
-
-#include "CoreEndpoints.inl"
+Status ROCK_CALL registerConsumer(const Registration* registration, Owner* outOwner) noexcept {
+    if (provider::events::inSynchronousCallback()) return Status::Busy;
+    if (const auto s = checkInput(registration); s != Status::Ok) return s;
+    if (const auto s = checkOutput(outOwner); s != Status::Ok) return s;
+    try {
+        provider::RockProviderConsumerRegistrationV1 request{};
+        static_assert(sizeof(request.modName) == sizeof(registration->modName));
+        std::memcpy(request.modName, registration->modName, sizeof(request.modName));
+        request.requestedCapabilities = 0xFFFFFFFFu;
+        provider::RockProviderConsumerHandleV1 handle{};
+        const auto status = provider::runtime::apiRegisterConsumerV1(&request, &handle);
+        outOwner->ownerToken = handle.ownerToken;
+        outOwner->providerGeneration = handle.providerGeneration;
+        return static_cast<Status>(status);
+    } catch (...) { return Status::InternalError; }
 }
-const ApiV1& table() noexcept {
-    static const ApiV1 value{
+Status ROCK_CALL unregisterConsumer(OwnerToken owner) noexcept {
+    return invoke(owner, kInterfaceId, 0, true, [&] {
+        return static_cast<Status>(provider::runtime::apiUnregisterConsumerV1(owner));
+    });
+}
+Status ROCK_CALL registerFrameCallback(OwnerToken owner, FrameCallback callback, void* userData, std::uint64_t* outCallbackToken) noexcept {
+    if (outCallbackToken) *outCallbackToken = 0;
+    return invoke(owner, kInterfaceId, 4, true, [&] {
+        return static_cast<Status>(provider::runtime::apiRegisterFrameCallbackForOwnerV1(owner, callback, userData, outCallbackToken));
+    });
+}
+Status ROCK_CALL unregisterFrameCallback(OwnerToken owner, std::uint64_t callbackToken) noexcept {
+    return invoke(owner, kInterfaceId, 4, true, [&] {
+        return static_cast<Status>(provider::runtime::apiUnregisterFrameCallbackForOwnerV1(owner, callbackToken));
+    });
+}
+Status ROCK_CALL bindInterface(OwnerToken owner, InterfaceId family, std::uint32_t major, std::uint32_t permissions) noexcept {
+    try { return provider::runtime::bind(owner, family, major, permissions); }
+    catch (...) { return Status::InternalError; }
+}
+Status ROCK_CALL getSample(OwnerToken owner, Sample* outSample) noexcept {
+    return readSample(owner, kInterfaceId, outSample);
+}
+Status ROCK_CALL copyEvents(OwnerToken owner, std::uint64_t after, Event* events, std::uint32_t capacity, Stream* stream) noexcept {
+    return copyEventStream(owner, kInterfaceId, after, events, capacity, kEventCapacityPerOwner, stream);
+}
+}
+const Api& table() noexcept {
+    static const Api value{
         &getModVersion,
         &isProviderReady,
-        &getFrameSnapshot,
-        &registerConsumerV1,
-        &unregisterConsumerV1,
-        &registerAnimationPhaseCallbackV1,
-        &unregisterAnimationPhaseCallbackV1,
-        &registerFrameCallbackForOwnerV1,
-        &unregisterFrameCallbackForOwnerV1,
-        &getSample,
+        &getSnapshot,
+        &registerConsumer,
+        &unregisterConsumer,
+        &registerFrameCallback,
+        &unregisterFrameCallback,
         &bindInterface,
+        &getSample,
         &copyEvents,
     };
     return value;

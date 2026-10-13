@@ -4,6 +4,8 @@
 #include <ROCK/InputV1_1.h>
 #include <ROCK/GrabV1_1.h>
 #include <ROCK/GrabV1_3.h>
+#include <ROCK/Animation.h>
+#include <ROCK/Core.h>
 #include <ROCK/Hands.h>
 #include <ROCK/PlayerController.h>
 #include "WeaponSourceCatalog.h"
@@ -13,6 +15,23 @@
 
 namespace rock::weapon_part_runtime {struct Target;}
 namespace rock::provider::runtime {
+    // The public Core snapshot of one internal publication; getSnapshot and
+    // frame callbacks deliver the same values.
+    inline api::core::Snapshot toCoreSnapshot(const RockProviderFrameSnapshot& snapshot) noexcept
+    {
+        api::core::Snapshot result{};
+        result.sample = { snapshot.frameIndex, snapshot.stateSequence, snapshot.worldGeneration,
+            snapshot.skeletonGeneration, snapshot.providerGeneration, snapshot.collisionGeneration };
+        result.lifecycleFlags = snapshot.lifecycleFlags;
+        result.lastLifecycleReason = static_cast<api::core::LifecycleReason>(snapshot.lastLifecycleReason);
+        result.frikSkeletonReady = snapshot.frikSkeletonReady;
+        result.menuBlocking = snapshot.menuBlocking;
+        result.configBlocking = snapshot.configBlocking;
+        result.providerReady = snapshot.providerReady;
+        result.stableFrameCount = snapshot.stableFrameCount;
+        result.deltaSeconds = snapshot.deltaSeconds;
+        return result;
+    }
     bool onOwnerThread() noexcept;
     api::Status setWeaponPartGrabPoints(api::OwnerToken,std::span<const api::weaponparts::v1_3::GrabPoint>,bool operating=false,bool pinky=false,bool anchored=false);
     api::Status clearWeaponPartGrabPoints(api::OwnerToken);
@@ -61,15 +80,15 @@ namespace rock::provider::runtime {
     bool ROCK_PROVIDER_CALL apiIsNativePipboyInputSuppressedV1();
     std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEmitterCountV1();
     std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEmittersV1(RockProviderWeaponEmitterV1* outEmitters, std::uint32_t maxEmitters);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetNativeAnimationAuthorityV1(std::uint64_t ownerToken, const RockProviderNativeAnimationAuthorityRequestV1* request);
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetNativeAnimationAuthorityV1(std::uint64_t ownerToken, const ::rock::api::animation::NativeAnimationAuthorityRequest* request);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiClearNativeAnimationAuthorityV1(std::uint64_t ownerToken);
-    bool ROCK_PROVIDER_CALL apiGetNativeAnimationAuthorityStateV1(RockProviderNativeAnimationAuthorityStateV1* outState);
+    bool ROCK_PROVIDER_CALL apiGetNativeAnimationAuthorityStateV1(::rock::api::animation::NativeAnimationAuthorityState* outState);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiRegisterAnimationPhaseCallbackV1(std::uint64_t ownerToken, RockProviderAnimationPhaseCallbackV1 callback, void* userData, std::uint64_t* outCallbackToken);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiUnregisterAnimationPhaseCallbackV1(std::uint64_t ownerToken, std::uint64_t callbackToken);
     bool ROCK_PROVIDER_CALL apiGetEquippedWeaponGripStateV1(std::uint64_t ownerToken, RockProviderEquippedWeaponGripStateV1* outState);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetHandVisualAuthorityV1(std::uint64_t ownerToken, const RockProviderHandVisualAuthorityRequestV1* request);
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetHandVisualAuthorityV1(std::uint64_t ownerToken, const ::rock::api::animation::HandVisualAuthorityRequest* request);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiClearHandVisualAuthorityV1(std::uint64_t ownerToken, RockProviderHand hand);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiPublishNativeAnimationRuntimeV1(std::uint64_t ownerToken, const RockProviderNativeAnimationRuntimePublicationV1* publication);
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiPublishNativeAnimationRuntimeV1(std::uint64_t ownerToken, const ::rock::api::animation::NativeAnimationRuntimePublication* publication);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiSetEquippedWeaponHandlingAuthorityV1(std::uint64_t ownerToken, const RockProviderEquippedWeaponHandlingRequestV1* request);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiClearEquippedWeaponHandlingAuthorityV1(std::uint64_t ownerToken);
     bool ROCK_PROVIDER_CALL apiGetEquippedWeaponHandlingStateV1(RockProviderEquippedWeaponHandlingStateV1* outState);

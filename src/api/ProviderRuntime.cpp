@@ -69,19 +69,19 @@ namespace rock::provider::runtime
     static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartGripKindV1::AttachOnly) ==
                   static_cast<std::uint32_t>(weapon_part_grip_report_policy::HandGripKind::AttachOnly));
     static_assert(static_cast<std::uint32_t>(
-                      RockProviderNativeAnimationAuthorityFlagV1::Arms) ==
+                      ::rock::api::animation::NativeAnimationAuthorityFlag::Arms) ==
                   (1u << 0));
     static_assert(static_cast<std::uint32_t>(
-                      RockProviderNativeAnimationAuthorityFlagV1::Hands) ==
+                      ::rock::api::animation::NativeAnimationAuthorityFlag::Hands) ==
                   (1u << 1));
     static_assert(static_cast<std::uint32_t>(
-                      RockProviderNativeAnimationAuthorityFlagV1::Weapon) ==
+                      ::rock::api::animation::NativeAnimationAuthorityFlag::Weapon) ==
                   (1u << 2));
     static_assert(static_cast<std::uint32_t>(
-                      RockProviderNativeAnimationAuthorityFlagV1::ReloadPose) ==
+                      ::rock::api::animation::NativeAnimationAuthorityFlag::ReloadPose) ==
                   ((1u << 0) | (1u << 1) | (1u << 2)));
     static_assert(static_cast<std::uint32_t>(
-                      RockProviderNativeAnimationAuthorityStatusFlagV1::CaptureFault) ==
+                      ::rock::api::animation::NativeAnimationAuthorityStatusFlag::CaptureFault) ==
                   (1u << 6));
     static_assert(static_cast<std::uint32_t>(RockProviderWeaponClassificationSourceV1::Keyword) ==
                   static_cast<std::uint32_t>(WeaponClassificationSource::Keyword));
@@ -395,7 +395,7 @@ namespace rock::provider::runtime
 
     std::mutex s_nativeAnimationRuntimePublicationMutex;
     std::uint64_t s_nativeAnimationRuntimeProviderOwner{ 0 };
-    RockProviderNativeAnimationRuntimePublicationV1
+    ::rock::api::animation::NativeAnimationRuntimePublication
         s_nativeAnimationRuntimePublication{};
     bool s_hasNativeAnimationRuntimePublication{ false };
     std::uint64_t s_nativeAnimationRuntimeExpiresAfterFrame{ 0 };
@@ -494,20 +494,7 @@ namespace rock::provider::runtime
         const RockProviderFrameSnapshot* snapshot,
         void* userData)
     {
-        rock::api::core::SnapshotV1 converted{};
-        converted.frameIndex = snapshot->frameIndex;
-        converted.frikSkeletonReady = snapshot->frikSkeletonReady;
-        converted.menuBlocking = snapshot->menuBlocking;
-        converted.configBlocking = snapshot->configBlocking;
-        converted.providerReady = snapshot->providerReady;
-        converted.lifecycleFlags = snapshot->lifecycleFlags;
-        converted.lastLifecycleReason = static_cast<rock::api::core::LifecycleReason>(snapshot->lastLifecycleReason);
-        converted.worldGeneration = snapshot->worldGeneration;
-        converted.skeletonGeneration = snapshot->skeletonGeneration;
-        converted.providerGeneration = snapshot->providerGeneration;
-        converted.stableFrameCount = snapshot->stableFrameCount;
-        converted.deltaSeconds = snapshot->deltaSeconds;
-        converted.stateSequence = snapshot->stateSequence;
+        const auto converted = toCoreSnapshot(*snapshot);
         FrameCallbackInvocationResult result{};
         if (!callback) {
             return result;
@@ -533,15 +520,14 @@ namespace rock::provider::runtime
         const RockProviderAnimationPhaseContextV1* context,
         void* userData)
     {
-        rock::api::core::AnimationPhaseContextV1 converted{};
-        converted.phase = static_cast<rock::api::core::AnimationPhaseV1>(context->phase);
+        rock::api::animation::AnimationPhaseContext converted{};
+        converted.phase = static_cast<rock::api::animation::AnimationPhase>(context->phase);
         converted.flags = context->flags;
         converted.frameIndex = context->frameIndex;
         converted.deltaSeconds = context->deltaSeconds;
         converted.worldGeneration = context->worldGeneration;
         converted.skeletonGeneration = context->skeletonGeneration;
         converted.providerGeneration = context->providerGeneration;
-        std::copy_n(context->reserved, std::size(converted.reserved), converted.reserved);
         if (!callback) {
             return true;
         }
@@ -617,7 +603,9 @@ namespace rock::provider::runtime
         return slot && hasConsumerCapabilityV1(slot->grantedCapabilities, capability);
     }
 
-    [[nodiscard]] bool finiteProviderTransform(const RockProviderTransform& transform)
+    // Transform is a provider or public API transform: rotate[9], translate[3], scale.
+    template <class Transform>
+    [[nodiscard]] bool finiteProviderTransform(const Transform& transform)
     {
         for (const float value : transform.rotate) {
             if (!std::isfinite(value)) {
@@ -639,7 +627,8 @@ namespace rock::provider::runtime
                std::isfinite(point.z);
     }
 
-    [[nodiscard]] RE::NiTransform toNiTransform(const RockProviderTransform& source)
+    template <class Transform>
+    [[nodiscard]] RE::NiTransform toNiTransform(const Transform& source)
     {
         RE::NiTransform target{};
         for (int row = 0; row < 3; ++row) {
@@ -690,9 +679,9 @@ namespace rock::provider::runtime
 
         const auto hand = toVisualHand(slot.hand);
         const auto worldFlag =
-            static_cast<std::uint32_t>(RockProviderHandVisualAuthorityFlagV1::WorldTransform);
+            static_cast<std::uint32_t>(::rock::api::animation::HandVisualAuthorityFlag::WorldTransform);
         const auto fingerFlag =
-            static_cast<std::uint32_t>(RockProviderHandVisualAuthorityFlagV1::FingerLocalTransforms);
+            static_cast<std::uint32_t>(::rock::api::animation::HandVisualAuthorityFlag::FingerLocalTransforms);
         bool cleared = true;
         if ((slot.publishedFlags & fingerFlag) != 0) {
             cleared = frik_visual_authority::clearHandPose(slot.tag, hand) && cleared;
@@ -2557,7 +2546,7 @@ namespace rock::provider
     }
 
     void dispatchAnimationPhaseCallbacksV1(
-        const RockProviderAnimationPhaseV1 phase,
+        const ::rock::api::animation::AnimationPhase phase,
         const game_frame_timing_policy::GameFrameTiming& timing)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::ProviderAnimationDispatch);
@@ -2569,15 +2558,15 @@ namespace rock::provider
             return;
         }
 
-        const bool previousReadbackPhase = std::exchange(s_presentedReadbackPhase, phase == RockProviderAnimationPhaseV1::Presented);
+        const bool previousReadbackPhase = std::exchange(s_presentedReadbackPhase, phase == ::rock::api::animation::AnimationPhase::Presented);
         const auto restoreReadbackPhase = F4SE::stl::scope_exit([previousReadbackPhase] {
             s_presentedReadbackPhase = previousReadbackPhase;
         });
         drainDeferredRevocations();
         const auto phaseFrameIndex = s_frameClock.beginPhase(
-            static_cast<api::core::AnimationPhaseV1>(phase), timing.sequence);
+            static_cast<api::animation::AnimationPhase>(phase), timing.sequence);
         s_activeAnimationPhaseFrameIndex.store(phaseFrameIndex, std::memory_order_release);
-        const bool startingAnimationFrame = phase == RockProviderAnimationPhaseV1::BeforeRock;
+        const bool startingAnimationFrame = phase == ::rock::api::animation::AnimationPhase::BeforeRock;
 
         if (startingAnimationFrame) {
             std::scoped_lock lock(s_handVisualAuthorityMutex);
@@ -2598,28 +2587,28 @@ namespace rock::provider
 
         const auto& runtime = runtime_state::currentFrame();
         context.flags |= static_cast<std::uint32_t>(
-            RockProviderAnimationPhaseContextFlagV1::RockEnabled);
+            ::rock::api::animation::AnimationPhaseContextFlag::RockEnabled);
         if (apiIsProviderReady()) {
             context.flags |= static_cast<std::uint32_t>(
-                RockProviderAnimationPhaseContextFlagV1::ProviderReady);
+                ::rock::api::animation::AnimationPhaseContextFlag::ProviderReady);
         }
         if (runtime.localSkeletonReady) {
             context.flags |= static_cast<std::uint32_t>(
-                RockProviderAnimationPhaseContextFlagV1::SkeletonReady);
+                ::rock::api::animation::AnimationPhaseContextFlag::SkeletonReady);
         }
         if (runtime.localMenuBlocking) {
             context.flags |= static_cast<std::uint32_t>(
-                RockProviderAnimationPhaseContextFlagV1::MenuBlocking);
+                ::rock::api::animation::AnimationPhaseContextFlag::MenuBlocking);
         }
         if (runtime.compatibilityConfigBlocking) {
             context.flags |= static_cast<std::uint32_t>(
-                RockProviderAnimationPhaseContextFlagV1::ConfigBlocking);
+                ::rock::api::animation::AnimationPhaseContextFlag::ConfigBlocking);
         }
         if (!s_presentedReadbackPhase && runtime.visualAuthorityAvailable && runtime.localSkeletonReady &&
             !runtime.localMenuBlocking &&
             !runtime.compatibilityConfigBlocking) {
             context.flags |= static_cast<std::uint32_t>(
-                RockProviderAnimationPhaseContextFlagV1::VisualWritesAllowed);
+                ::rock::api::animation::AnimationPhaseContextFlag::VisualWritesAllowed);
         }
         {
             std::scoped_lock lock(s_snapshotMutex);
@@ -2663,7 +2652,7 @@ namespace rock::provider
             clearOwnerStateAfterCallbackFault(slot.ownerToken);
         }
 
-        if (phase == RockProviderAnimationPhaseV1::Complete || phase == RockProviderAnimationPhaseV1::Presented) {
+        if (phase == ::rock::api::animation::AnimationPhase::Complete || phase == ::rock::api::animation::AnimationPhase::Presented) {
             s_activeAnimationPhaseFrameIndex.store(0, std::memory_order_release);
         }
     }

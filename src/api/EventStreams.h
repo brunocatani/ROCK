@@ -16,13 +16,13 @@ namespace rock::provider::events {
     void publish(const RockProviderEventV1&);
     void publishGrab(const rock::GrabEventData&, const api::Sample&);
     void publishPhysics(std::uint32_t kind,bool left,std::uint32_t form,std::uint32_t layer,const api::Sample&);
-    api::Status copy(api::OwnerToken,std::uint64_t,api::core::EventV1*,std::uint32_t,api::Stream&);
+    api::Status copy(api::OwnerToken,std::uint64_t,api::core::Event*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::collision::EventV1*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::grab::EventV1*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::touch::Event*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::weapon::EventV1*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::weaponparts::EventV1*,std::uint32_t,api::Stream&);
-    api::Status copy(api::OwnerToken,std::uint64_t,api::animation::EventV1*,std::uint32_t,api::Stream&);
+    api::Status copy(api::OwnerToken,std::uint64_t,api::animation::Event*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::input::EventV1*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::diagnostics::EventV1*,std::uint32_t,api::Stream&);
     bool inSynchronousCallback() noexcept;

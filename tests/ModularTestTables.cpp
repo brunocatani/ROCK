@@ -2,7 +2,7 @@
 #include "ModularTestTables.h"
 #include "api/AuthoredInteractionLease.h"
 #include "physics-interaction/grab/DefaultGrabPoseRegistry.h"
-namespace rock::api::core { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
+namespace rock::api::core { const Api& table() noexcept { static const Api value{}; return value; } }
 namespace rock::api::hands { const Api& table() noexcept { static const Api value{}; return value; } }
 namespace rock::api::collision { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
 namespace rock::api::grab {
@@ -71,7 +71,7 @@ Status ROCK_CALL itemState(OwnerToken owner,const v1_7::ItemKey* key,const v1_7:
 Status ROCK_CALL itemMove(OwnerToken owner,const v1_7::ItemKey* before,const v1_7::ItemKey* after) noexcept {return owner==80&&before&&after?Status::Ok:Status::InvalidArgument;}
 const v1_7::Api& tableV1_7() noexcept {static const v1_7::Api value{tableV1_6(),&itemState,&itemMove,&oldClear};return value;}
 }
-namespace rock::api::animation { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
+namespace rock::api::animation { const Api& table() noexcept { static const Api value{}; return value; } }
 namespace rock::api::input {
 namespace {
 Status ROCK_CALL oldClear(OwnerToken owner,Hand hand) noexcept { return owner==77 && hand==Hand::Left ? Status::Ok : Status::InvalidArgument; }

@@ -38,7 +38,7 @@ namespace rock::provider {
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_DRIVE_LEASE_FRAMES_V1 = api::weaponparts::kMaxDriveLeaseFrames;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EMITTERS_V1 = api::weapon::kMaxEmitters;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_NATIVE_ANIMATION_AUTHORITY_LEASE_FRAMES_V1 = api::animation::kMaxNativeAuthorityLeaseFrames;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_ANIMATION_PHASE_CALLBACKS_V1 = api::core::kMaxPhaseCallbacks;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_ANIMATION_PHASE_CALLBACKS_V1 = api::animation::kMaxPhaseCallbacks;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_VISUAL_AUTHORITY_LEASE_FRAMES_V1 = api::animation::kMaxHandVisualLeaseFrames;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_NATIVE_ANIMATION_RUNTIME_LEASE_FRAMES_V1 = api::animation::kMaxRuntimePublicationLeaseFrames;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EQUIPPED_WEAPON_HANDLING_LEASE_FRAMES_V1 = api::weapon::kMaxHandlingLeaseFrames;
@@ -294,47 +294,9 @@ namespace rock::provider {
      * descendants; Weapon covers only Weapon and WeaponLeft. The character
      * root, COM, torso, head, and legs remain owned by the live VR body.
      */
-    enum class RockProviderNativeAnimationAuthorityFlagV1 : std::uint32_t
-    {
-        None = 0,
-        Arms = 1u << 0,
-        Hands = 1u << 1,
-        Weapon = 1u << 2,
-        ReloadPose = (1u << 0) | (1u << 1) | (1u << 2),
-    };
 
-    enum class RockProviderNativeAnimationAuthorityStatusFlagV1 : std::uint32_t
-    {
-        None = 0,
-        HookInstalled = 1u << 0,
-        RuntimeEnabled = 1u << 1,
-        CaptureValid = 1u << 2,
-        LocalReloadTestLeaseActive = 1u << 3,
-        HookInstallFailed = 1u << 4,
-        ThreadMismatch = 1u << 5,
-        CaptureFault = 1u << 6,
-        RuntimeProviderAvailable = 1u << 7,
-    };
 
-    enum class RockProviderAnimationPhaseV1 : std::uint32_t
-    {
-        BeforeRock = 1,
-        AfterRock = 2,
-        Complete = 3,
-        NativeGraphOutput = 4,
-        Presented = 5,
-    };
 
-    enum class RockProviderAnimationPhaseContextFlagV1 : std::uint32_t
-    {
-        None = 0,
-        RockEnabled = 1u << 0,
-        ProviderReady = 1u << 1,
-        SkeletonReady = 1u << 2,
-        MenuBlocking = 1u << 3,
-        ConfigBlocking = 1u << 4,
-        VisualWritesAllowed = 1u << 5,
-    };
 
     enum class RockProviderEquippedWeaponGripStateFlagV1 : std::uint32_t
     {
@@ -396,12 +358,6 @@ namespace rock::provider {
         WeaponPresent = 1u << 7,
     };
 
-    enum class RockProviderHandVisualAuthorityFlagV1 : std::uint32_t
-    {
-        None = 0,
-        WorldTransform = 1u << 0,
-        FingerLocalTransforms = 1u << 1,
-    };
 
     enum class RockProviderWeaponEmitterKindV1 : std::uint32_t
     {
@@ -1610,56 +1566,13 @@ namespace rock::provider {
     };
 
 
-    /*
-     * Authority is always a rolling bounded lease. leaseFrames must be nonzero,
-     * is bounded by
-     * ROCK_PROVIDER_MAX_NATIVE_ANIMATION_AUTHORITY_LEASE_FRAMES_V1 and should
-     * be refreshed by a consumer that wants rolling temporary authority.
-     * Generation guards follow the same optional-zero contract as the other
-     * V1 request surfaces.
-     */
-    struct RockProviderNativeAnimationAuthorityRequestV1
-    {
-        std::uint32_t size{ sizeof(RockProviderNativeAnimationAuthorityRequestV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint32_t flags{ 0 };
-        std::uint32_t leaseFrames{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[9]{};
-    };
 
-    struct RockProviderNativeAnimationAuthorityStateV1
-    {
-        std::uint32_t size{ sizeof(RockProviderNativeAnimationAuthorityStateV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint32_t activeFlags{ 0 };
-        std::uint32_t statusFlags{ 0 };
-        std::uint32_t activeOwnerCount{ 0 };
-        std::uint32_t capturedTransformCount{ 0 };
-        std::uint64_t captureSequence{ 0 };
-        std::uint32_t reserved[8]{};
-    };
 
-    /*
-     * Owner-bound main-thread animation phases expose stable capture and
-     * presentation boundaries without exposing ROCK's native detours.
-     * NativeGraphOutput runs at the byte-validated player graph-output entry,
-     * before downstream native scene and hFRIK presentation writers; callbacks
-     * at that phase may capture data but must not mutate the engine graph.
-     * BeforeRock runs before ROCK mutates weapon/hand presentation, AfterRock
-     * runs after the interaction update, and Complete closes the frame after
-     * all visual writers. Unregister prevents future dispatch copies but does
-     * not wait for an already copied invocation; callback and userData storage
-     * must remain alive through that invocation. Faulting callbacks revoke all
-     * stateful resources and callbacks owned by that consumer.
-     */
     struct RockProviderAnimationPhaseContextV1
     {
         std::uint32_t size{ sizeof(RockProviderAnimationPhaseContextV1) };
         std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        RockProviderAnimationPhaseV1 phase{ RockProviderAnimationPhaseV1::BeforeRock };
+        ::rock::api::animation::AnimationPhase phase{ ::rock::api::animation::AnimationPhase::BeforeRock };
         std::uint32_t flags{ 0 };
         std::uint64_t frameIndex{ 0 };
         float deltaSeconds{ 0.0f };
@@ -1772,51 +1685,7 @@ namespace rock::provider {
         std::uint64_t reserved[3]{};
     };
 
-    /*
-     * A consumer publishes one hand world target and/or an exact 15-bone
-     * finger-local pose through ROCK's FRIK authority bridge. Set/clear only
-     * from ROCK's animation/frame callbacks on the game thread; wrong-thread
-     * writes are rejected. ROCK derives a unique tag from ownerToken. Every
-     * publication is a rolling bounded lease with generation guards and is
-     * cleared on expiry, generation change, explicit clear, consumer
-     * unregister, provider loss, or callback fault.
-     */
-    struct RockProviderHandVisualAuthorityRequestV1
-    {
-        std::uint32_t size{ sizeof(RockProviderHandVisualAuthorityRequestV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        RockProviderHand hand{ RockProviderHand::None };
-        std::uint32_t flags{ 0 };
-        std::int32_t priority{ 0 };
-        std::uint16_t fingerLocalTransformMask{ 0 };
-        std::uint16_t reserved0{ 0 };
-        RockProviderTransform worldTransform{};
-        RockProviderTransform fingerLocalTransforms[15]{};
-        std::uint32_t leaseFrames{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[4]{};
-    };
 
-    /*
-     * The addon that actually executes native animation authority publishes
-     * capture health here. ROCK remains the V1 lease coordinator and folds
-     * this status into getNativeAnimationAuthorityStateV1.
-     */
-    struct RockProviderNativeAnimationRuntimePublicationV1
-    {
-        std::uint32_t size{ sizeof(RockProviderNativeAnimationRuntimePublicationV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint32_t statusFlags{ 0 };
-        std::uint32_t capturedTransformCount{ 0 };
-        std::uint64_t captureSequence{ 0 };
-        std::uint32_t leaseFrames{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[6]{};
-    };
 
 
 
@@ -2453,6 +2322,6 @@ namespace rock::provider {
     };
 
 
-using RockProviderFrameCallback = rock::api::core::FrameCallbackV1;
-using RockProviderAnimationPhaseCallbackV1 = rock::api::core::PhaseCallbackV1;
+using RockProviderFrameCallback = rock::api::core::FrameCallback;
+using RockProviderAnimationPhaseCallbackV1 = rock::api::animation::PhaseCallback;
 }

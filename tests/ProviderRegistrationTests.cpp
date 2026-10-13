@@ -74,7 +74,7 @@ namespace rock::provider::runtime {
     #include "api/services/CoreService.inl"
 }
 namespace {
-    rock::provider::OwnedEventStream<rock::api::core::EventV1> stream;
+    rock::provider::OwnedEventStream<rock::api::core::Event> stream;
     std::latch removalEntered{1},allowRemoval{1},registrationStarted{1};
     bool pauseRemoval=false;
 }

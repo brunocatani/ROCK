@@ -22,7 +22,7 @@
 #include <ROCK/Configuration.h>
 #include <ROCK/NativeInteractionV1_1.h>
 
-namespace rock::api::core { const ApiV1& table() noexcept; }
+namespace rock::api::core { const Api& table() noexcept; }
 namespace rock::api::hands { const Api& table() noexcept; }
 namespace rock::api::collision { const ApiV1& table() noexcept; }
 namespace rock::api::grab { const v1_3::Api& tableV1_3() noexcept; }
@@ -30,7 +30,7 @@ namespace rock::api::touch { const Api& table() noexcept; }
 namespace rock::api::weapon { const ApiV1& table() noexcept; }
 namespace rock::api::weapon { const v1_1::Api& tableV1_1() noexcept; }
 namespace rock::api::weaponparts { const v1_7::Api& tableV1_7() noexcept; }
-namespace rock::api::animation { const ApiV1& table() noexcept; }
+namespace rock::api::animation { const Api& table() noexcept; }
 namespace rock::api::input { const ApiV1& table() noexcept; }
 namespace rock::api::input { const v1_1::Api& tableV1_1() noexcept; }
 namespace rock::api::input { const v1_2::Api& tableV1_2() noexcept; }

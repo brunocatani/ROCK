@@ -647,7 +647,7 @@ namespace rock::authored_weapon_grip_capture
                 // authority before the local authored-grip capture decides
                 // whether it must yield for this exact graph sample.
                 provider::dispatchAnimationPhaseCallbacksV1(
-                    provider::RockProviderAnimationPhaseV1::NativeGraphOutput,
+                    ::rock::api::animation::AnimationPhase::NativeGraphOutput,
                     makeGraphOutputPhaseTiming());
                 captureAuthoredSupportGraphPose();
             } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -660,7 +660,7 @@ namespace rock::authored_weapon_grip_capture
             }
 #else
             provider::dispatchAnimationPhaseCallbacksV1(
-                provider::RockProviderAnimationPhaseV1::NativeGraphOutput,
+                ::rock::api::animation::AnimationPhase::NativeGraphOutput,
                 makeGraphOutputPhaseTiming());
             captureAuthoredSupportGraphPose();
 #endif

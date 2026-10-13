@@ -11,7 +11,7 @@
 #include <map>
 #include <thread>
 
-namespace rock::api::configuration { const ApiV1& table() noexcept; }
+namespace rock::api::configuration { const Api& table() noexcept; }
 namespace {
     using rock::api::Status;
     namespace config = rock::api::configuration;
@@ -20,7 +20,7 @@ namespace {
     rock::provider::InterfaceBinding binding{1,3};
     bool revoked{};
     using Catalog = std::map<std::string,std::string>;
-    void ROCK_CALL collect(const config::SettingV1* setting, void* context) {
+    void ROCK_CALL collect(const config::Setting* setting, void* context) {
         static_cast<Catalog*>(context)->emplace(setting->key,setting->value);
     }
     Catalog catalog(config::Group group) {
@@ -130,7 +130,7 @@ int main() {
     // Reload must return without waiting and apply after the visitor finishes.
     struct Borrow { std::latch entered{1},finish{1};bool first=true; } borrow;
     auto reader=std::async(std::launch::async,[&] {
-        return api.visit(42,config::Group::Consumer,+[](const config::SettingV1* value,void* opaque) {
+        return api.visit(42,config::Group::Consumer,+[](const config::Setting* value,void* opaque) {
             auto& b=*static_cast<Borrow*>(opaque);
             if(!b.first)return;
             b.first=false;
@@ -163,6 +163,6 @@ int main() {
     binding.permissions=1;
     assert(set(config::Group::Consumer,"Logging","iLogLevel","2")==Status::PermissionDenied);
     binding.permissions=3;
-    assert(api.visit(42,config::Group::Consumer,+[](const config::SettingV1*,void*) {throw 1;},nullptr)==Status::OwnerRevoked);
+    assert(api.visit(42,config::Group::Consumer,+[](const config::Setting*,void*) {throw 1;},nullptr)==Status::OwnerRevoked);
     assert(revoked && set(config::Group::Consumer,"Logging","iLogLevel","2")==Status::OwnerRevoked);
 }

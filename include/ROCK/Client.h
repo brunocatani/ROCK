@@ -8,7 +8,7 @@ namespace rock::api {
     // feature tables beyond Core. Pass the query export resolved from ROCK.dll.
     class Client {
         QueryInterfaceV1 _query{};
-        const core::ApiV1* _core{};
+        const core::Api* _core{};
         OwnerToken _owner{};
     public:
         Client()=default;
@@ -19,20 +19,20 @@ namespace rock::api {
         Status connect(QueryInterfaceV1 query,const char* name) noexcept {
             if (_owner) return Status::Busy;
             if (!query || !name) return Status::InvalidArgument;
-            core::RegistrationV1 registration{};
+            core::Registration registration{};
             std::size_t length=0;
             while (length<sizeof(registration.modName) && name[length]) ++length;
             if (!length || length==sizeof(registration.modName)) return Status::InvalidArgument;
             std::memcpy(registration.modName,name,length);
             const InterfaceDescriptorV1* descriptor{};
-            auto status=query(core::kInterfaceId,1,0,sizeof(core::ApiV1),&descriptor);
+            auto status=query(core::kInterfaceId,core::kMajor,core::kMinor,sizeof(core::Api),&descriptor);
             if (status!=Status::Ok) return status;
             if (!descriptor || descriptor->size!=sizeof(InterfaceDescriptorV1) ||
-                descriptor->interfaceId!=core::kInterfaceId || descriptor->major!=1 ||
-                descriptor->tableByteSize<sizeof(core::ApiV1) || !descriptor->table) return Status::InvalidSize;
-            const auto* coreApi=static_cast<const core::ApiV1*>(descriptor->table);
-            core::OwnerV1 owner{};
-            status=coreApi->registerConsumerV1(&registration,&owner);
+                descriptor->interfaceId!=core::kInterfaceId || descriptor->major!=core::kMajor ||
+                descriptor->tableByteSize<sizeof(core::Api) || !descriptor->table) return Status::InvalidSize;
+            const auto* coreApi=static_cast<const core::Api*>(descriptor->table);
+            core::Owner owner{};
+            status=coreApi->registerConsumer(&registration,&owner);
             if (status!=Status::Ok) return status;
             _query=query; _core=coreApi; _owner=owner.ownerToken;
             return Status::Ok;
@@ -53,13 +53,13 @@ namespace rock::api {
         }
         Status close() noexcept {
             if (!_owner) return Status::Ok;
-            const auto status=_core->unregisterConsumerV1(_owner);
+            const auto status=_core->unregisterConsumer(_owner);
             if (status==Status::Ok || status==Status::OwnerNotRegistered) {
                 _owner=0; _core=nullptr; _query=nullptr;
             }
             return status;
         }
         [[nodiscard]] OwnerToken owner() const noexcept { return _owner; }
-        [[nodiscard]] const core::ApiV1* core() const noexcept { return _core; }
+        [[nodiscard]] const core::Api* core() const noexcept { return _core; }
     };
 }

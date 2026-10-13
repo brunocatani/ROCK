@@ -70,7 +70,7 @@
             slot = {};
             slot.token = nextConsumerToken();
             slot.grantedCapabilities = grantedCapabilities;
-            slot.interfaces[0] = {1,1};
+            slot.interfaces[0] = {rock::api::core::kMajor, 1};
             const auto eventStatus=events::bind(slot.token, rock::api::InterfaceId::Core);
             if (eventStatus!=rock::api::Status::Ok) {
                 slot={};

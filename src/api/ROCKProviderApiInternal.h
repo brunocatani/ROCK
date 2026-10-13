@@ -73,7 +73,7 @@ namespace rock::provider
      * consumer guards for non-positive deltas before integrating.
      */
     void dispatchAnimationPhaseCallbacksV1(
-        RockProviderAnimationPhaseV1 phase,
+        ::rock::api::animation::AnimationPhase phase,
         const game_frame_timing_policy::GameFrameTiming& timing);
     bool resolveWeaponPartTargetV1(
         const RockProviderWeaponPartTargetQueryV1& query,

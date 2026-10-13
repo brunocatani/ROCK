@@ -2,7 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
-#include <ROCK/Core.h>
+#include <ROCK/Animation.h>
 
 namespace rock::provider
 {
@@ -11,13 +11,13 @@ namespace rock::provider
     class ProviderFrameClock
     {
     public:
-        std::uint64_t beginPhase(api::core::AnimationPhaseV1 phase, std::uint64_t gameFrame) noexcept
+        std::uint64_t beginPhase(api::animation::AnimationPhase phase, std::uint64_t gameFrame) noexcept
         {
             // Native graph observations can occur between Complete and BeforeRock.
             // BeforeRock repeats the measured frame established at FRIK FrameBegin;
             // native graph observations never advance the clock or retire leases.
-            if (phase == api::core::AnimationPhaseV1::BeforeRock) beginFrame(gameFrame);
-            return phase == api::core::AnimationPhaseV1::NativeGraphOutput ? gameFrame : current();
+            if (phase == api::animation::AnimationPhase::BeforeRock) beginFrame(gameFrame);
+            return phase == api::animation::AnimationPhase::NativeGraphOutput ? gameFrame : current();
         }
 
         void beginFrame(std::uint64_t gameFrame) noexcept

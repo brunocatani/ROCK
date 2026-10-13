@@ -2,18 +2,18 @@
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiSetNativeAnimationAuthorityV1(
         std::uint64_t ownerToken,
-        const RockProviderNativeAnimationAuthorityRequestV1* request)
+        const ::rock::api::animation::NativeAnimationAuthorityRequest* request)
     {
         if (!request || ownerToken == 0) {
             return RockProviderResultV1::InvalidArgument;
         }
-        if (request->size != sizeof(RockProviderNativeAnimationAuthorityRequestV1)) {
+        if (request->size != sizeof(::rock::api::animation::NativeAnimationAuthorityRequest)) {
             return RockProviderResultV1::InvalidSize;
         }
         if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
             return RockProviderResultV1::UnsupportedVersion;
         }
-        constexpr auto implementedFlags = static_cast<std::uint32_t>(RockProviderNativeAnimationAuthorityFlagV1::ReloadPose);
+        constexpr auto implementedFlags = static_cast<std::uint32_t>(::rock::api::animation::NativeAnimationAuthorityFlag::ReloadPose);
         if (request->flags == 0 ||
             (request->flags & ~implementedFlags) != 0 ||
             request->leaseFrames == 0) {
@@ -93,14 +93,14 @@
     }
 
     bool ROCK_PROVIDER_CALL apiGetNativeAnimationAuthorityStateV1(
-        RockProviderNativeAnimationAuthorityStateV1* outState)
+        ::rock::api::animation::NativeAnimationAuthorityState* outState)
     {
         provider_state_policy::clearQueryOutput(outState);
-        if (!outState || outState->size != sizeof(RockProviderNativeAnimationAuthorityStateV1)) {
+        if (!outState || outState->size != sizeof(::rock::api::animation::NativeAnimationAuthorityState)) {
             return false;
         }
 
-        RockProviderNativeAnimationRuntimePublicationV1 publication{};
+        ::rock::api::animation::NativeAnimationRuntimePublication publication{};
         bool hasRuntimeProvider = false;
         {
             std::scoped_lock lock(s_nativeAnimationRuntimePublicationMutex);
@@ -112,13 +112,13 @@
             }
         }
         *outState = {};
-        outState->size = sizeof(RockProviderNativeAnimationAuthorityStateV1);
+        outState->size = sizeof(::rock::api::animation::NativeAnimationAuthorityState);
         outState->version = ROCK_PROVIDER_API_VERSION;
         outState->activeFlags = s_nativeAnimationAuthorityFlags.load(std::memory_order_acquire);
         outState->statusFlags = hasRuntimeProvider ?
             publication.statusFlags |
                 static_cast<std::uint32_t>(
-                    RockProviderNativeAnimationAuthorityStatusFlagV1::RuntimeProviderAvailable) :
+                    ::rock::api::animation::NativeAnimationAuthorityStatusFlag::RuntimeProviderAvailable) :
             0;
         outState->activeOwnerCount = s_nativeAnimationAuthorityOwnerCount.load(std::memory_order_acquire);
         outState->capturedTransformCount = hasRuntimeProvider ?
@@ -130,7 +130,7 @@
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiSetHandVisualAuthorityV1(
         const std::uint64_t ownerToken,
-        const RockProviderHandVisualAuthorityRequestV1* request)
+        const ::rock::api::animation::HandVisualAuthorityRequest* request)
     {
         if (!request || ownerToken == 0) {
             return RockProviderResultV1::InvalidArgument;
@@ -141,21 +141,22 @@
         if (s_presentedReadbackPhase) {
             return RockProviderResultV1::NotReady;
         }
-        if (request->size != sizeof(RockProviderHandVisualAuthorityRequestV1)) {
+        if (request->size != sizeof(::rock::api::animation::HandVisualAuthorityRequest)) {
             return RockProviderResultV1::InvalidSize;
         }
         if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
             return RockProviderResultV1::UnsupportedVersion;
         }
-        if (request->hand != RockProviderHand::Right &&
-            request->hand != RockProviderHand::Left) {
+        const auto requestHand = static_cast<RockProviderHand>(request->hand);
+        if (requestHand != RockProviderHand::Right &&
+            requestHand != RockProviderHand::Left) {
             return RockProviderResultV1::InvalidArgument;
         }
 
         constexpr std::uint32_t worldFlag =
-            static_cast<std::uint32_t>(RockProviderHandVisualAuthorityFlagV1::WorldTransform);
+            static_cast<std::uint32_t>(::rock::api::animation::HandVisualAuthorityFlag::WorldTransform);
         constexpr std::uint32_t fingerFlag =
-            static_cast<std::uint32_t>(RockProviderHandVisualAuthorityFlagV1::FingerLocalTransforms);
+            static_cast<std::uint32_t>(::rock::api::animation::HandVisualAuthorityFlag::FingerLocalTransforms);
         constexpr std::uint32_t implementedFlags = worldFlag | fingerFlag;
         if (request->flags == 0 || (request->flags & ~implementedFlags) != 0 ||
             request->priority < -10000 || request->priority > 10000 ||
@@ -173,7 +174,7 @@
                 return RockProviderResultV1::InvalidArgument;
             }
             for (std::size_t index = 0; index < 15; ++index) {
-                const auto bit = static_cast<std::uint16_t>(1u << index);
+                const auto bit = 1u << index;
                 if ((request->fingerLocalTransformMask & bit) != 0 &&
                     !finiteProviderTransform(request->fingerLocalTransforms[index])) {
                     return RockProviderResultV1::InvalidArgument;
@@ -204,7 +205,7 @@
         }
 
         std::scoped_lock lock(s_handVisualAuthorityMutex);
-        auto* slot = findHandVisualAuthoritySlotLocked(ownerToken, request->hand);
+        auto* slot = findHandVisualAuthoritySlotLocked(ownerToken, requestHand);
         if (!slot) {
             return RockProviderResultV1::CapacityFull;
         }
@@ -214,7 +215,7 @@
         }
         if (slot->ownerToken == 0) {
             slot->ownerToken = ownerToken;
-            slot->hand = request->hand;
+            slot->hand = requestHand;
             const int length = std::snprintf(
                 slot->tag,
                 sizeof(slot->tag),
@@ -226,13 +227,13 @@
             }
         }
 
-        const auto hand = toVisualHand(request->hand);
+        const auto hand = toVisualHand(requestHand);
         bool published = true;
         if ((request->flags & fingerFlag) != 0) {
             frik_visual_authority::FingerLocalTransformOverride fingerLocals{};
             fingerLocals.enabledMask = request->fingerLocalTransformMask;
             for (std::size_t index = 0; index < 15; ++index) {
-                const auto bit = static_cast<std::uint16_t>(1u << index);
+                const auto bit = 1u << index;
                 if ((fingerLocals.enabledMask & bit) != 0) {
                     fingerLocals.localTransforms[index] =
                         toNiTransform(request->fingerLocalTransforms[index]);
@@ -305,13 +306,13 @@
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiPublishNativeAnimationRuntimeV1(
         const std::uint64_t ownerToken,
-        const RockProviderNativeAnimationRuntimePublicationV1* publication)
+        const ::rock::api::animation::NativeAnimationRuntimePublication* publication)
     {
         if (!publication || ownerToken == 0) {
             return RockProviderResultV1::InvalidArgument;
         }
         if (publication->size !=
-            sizeof(RockProviderNativeAnimationRuntimePublicationV1)) {
+            sizeof(::rock::api::animation::NativeAnimationRuntimePublication)) {
             return RockProviderResultV1::InvalidSize;
         }
         if (publication->version == 0 ||
@@ -319,13 +320,13 @@
             return RockProviderResultV1::UnsupportedVersion;
         }
         constexpr std::uint32_t implementedStatusFlags =
-            static_cast<std::uint32_t>(RockProviderNativeAnimationAuthorityStatusFlagV1::HookInstalled) |
-            static_cast<std::uint32_t>(RockProviderNativeAnimationAuthorityStatusFlagV1::RuntimeEnabled) |
-            static_cast<std::uint32_t>(RockProviderNativeAnimationAuthorityStatusFlagV1::CaptureValid) |
-            static_cast<std::uint32_t>(RockProviderNativeAnimationAuthorityStatusFlagV1::LocalReloadTestLeaseActive) |
-            static_cast<std::uint32_t>(RockProviderNativeAnimationAuthorityStatusFlagV1::HookInstallFailed) |
-            static_cast<std::uint32_t>(RockProviderNativeAnimationAuthorityStatusFlagV1::ThreadMismatch) |
-            static_cast<std::uint32_t>(RockProviderNativeAnimationAuthorityStatusFlagV1::CaptureFault);
+            static_cast<std::uint32_t>(::rock::api::animation::NativeAnimationAuthorityStatusFlag::HookInstalled) |
+            static_cast<std::uint32_t>(::rock::api::animation::NativeAnimationAuthorityStatusFlag::RuntimeEnabled) |
+            static_cast<std::uint32_t>(::rock::api::animation::NativeAnimationAuthorityStatusFlag::CaptureValid) |
+            static_cast<std::uint32_t>(::rock::api::animation::NativeAnimationAuthorityStatusFlag::LocalReloadTestLeaseActive) |
+            static_cast<std::uint32_t>(::rock::api::animation::NativeAnimationAuthorityStatusFlag::HookInstallFailed) |
+            static_cast<std::uint32_t>(::rock::api::animation::NativeAnimationAuthorityStatusFlag::ThreadMismatch) |
+            static_cast<std::uint32_t>(::rock::api::animation::NativeAnimationAuthorityStatusFlag::CaptureFault);
         if ((publication->statusFlags & ~implementedStatusFlags) != 0) {
             return RockProviderResultV1::InvalidArgument;
         }
@@ -357,7 +358,7 @@
         s_nativeAnimationRuntimeProviderOwner = ownerToken;
         s_nativeAnimationRuntimePublication = *publication;
         s_nativeAnimationRuntimePublication.size =
-            sizeof(RockProviderNativeAnimationRuntimePublicationV1);
+            sizeof(::rock::api::animation::NativeAnimationRuntimePublication);
         s_nativeAnimationRuntimePublication.version = ROCK_PROVIDER_API_VERSION;
         const auto leaseFrames = provider_lease_policy::clampLeaseFrames(
             publication->leaseFrames,

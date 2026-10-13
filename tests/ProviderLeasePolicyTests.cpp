@@ -55,7 +55,7 @@ int main()
 
     // Native graph output observes the last measured timing between game-loop
     // entries. It cannot preempt BeforeRock or consume a one-frame drive.
-    using Phase=rock::api::core::AnimationPhaseV1;
+    using Phase=rock::api::animation::AnimationPhase;
     rock::provider::ProviderFrameClock phases;
     assert(phases.beginPhase(Phase::NativeGraphOutput,0)==0);
     assert(phases.current()==0 && phases.leaseBoundary()==0);

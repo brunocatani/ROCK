@@ -1,4 +1,3 @@
-#include "api/providers/AnimationMarshalling.h"
 #include "api/providers/CollisionMarshalling.h"
 #include "api/providers/ReferencesMarshalling.h"
 #include <cassert>
@@ -35,17 +34,6 @@ int main() {
     api::collision::WorldRaycastRequestV1 ray{};ray.startGame={100,-20,30};ray.directionGame={1,2,3};
     provider::RockProviderWorldRaycastRequestV1 nativeRay{};convert(nativeRay,ray);
     samePoint(ray.startGame,nativeRay.startGame);samePoint(ray.directionGame,nativeRay.directionGame);
-    api::animation::HandVisualAuthorityRequestV1 visual{};visual.worldTransform=publicPose;
-    visual.fingerLocalTransformMask=0x7fff;
-    for(std::size_t i=0;i<std::size(visual.fingerLocalTransforms);++i) {
-        visual.fingerLocalTransforms[i]=publicPose;
-        visual.fingerLocalTransforms[i].translate[0]+=static_cast<float>(i);
-    }
-    provider::RockProviderHandVisualAuthorityRequestV1 nativeVisual{};convert(nativeVisual,visual);
-    samePose(visual.worldTransform,nativeVisual.worldTransform);
-    for(std::size_t i=0;i<15;++i)samePose(visual.fingerLocalTransforms[i],nativeVisual.fingerLocalTransforms[i]);
-    api::animation::HandVisualAuthorityRequestV1 returnedVisual{};convert(returnedVisual,nativeVisual);
-    for(std::size_t i=0;i<15;++i)samePose(visual.fingerLocalTransforms[i],returnedVisual.fingerLocalTransforms[i]);
 
     provider::RockProviderPowerArmorTargetV1 target{};
     target.points[0].point=provider::RockProviderPowerArmorPointV1::RightArmorHand;
