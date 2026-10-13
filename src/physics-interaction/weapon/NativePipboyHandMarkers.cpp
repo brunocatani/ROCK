@@ -46,6 +46,7 @@ namespace rock::native_pipboy_hand_markers
 
         Populate s_populate = nullptr;
         bool s_installed = false;
+        std::atomic<std::uint32_t> s_populateReports{0};
 
         template <std::size_t N>
         bool matches(std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) noexcept
@@ -90,6 +91,9 @@ namespace rock::native_pipboy_hand_markers
             try {
                 const auto index = wornIndexOf(item, stack);
                 const char* letter = index == 0 ? "0" : index == 1 ? "1" : "";
+                if (stack && stack->IsEquipped() && s_populateReports.fetch_add(1, std::memory_order_relaxed) < 16)
+                    ROCK_LOG_INFO(Weapon, "Pip-Boy hand marker populate form={:08X} mode={} wornIndex={} object={:#x}",
+                        item->object->formID, mode, index, reinterpret_cast<std::uintptr_t>(object));
                 alignas(8) std::array<std::byte, 8> value{};
                 native<MakeString>(kMakeString)(value.data(), letter);
                 native<SetString>(kSetString)(object, handKey(), value.data());
@@ -201,6 +205,21 @@ namespace rock::native_pipboy_hand_markers
             return true;
         }
 
+        // Equipped rows, once each per movie (bounded): whether the populate
+        // member reached the AS3 entry, and in which form.
+        std::uint32_t s_rowReports = 0; // Movie thread only.
+        void reportEquippedRow(const Value& data)
+        {
+            Value equip, marker, name;
+            if (s_rowReports >= 6 || !member(data, "equipState", equip) || !isNumeric(equip) || numeric(equip) <= 0) return;
+            ++s_rowReports;
+            const bool has = data.HasMember(kHandMember);
+            const bool got = has && member(data, kHandMember, marker);
+            (void)member(data, "text", name);
+            ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters equipped row text='{}' equipState={} hasMarker={} markerType={} marker='{}'",
+                text(name), numeric(equip), has, got ? static_cast<int>(marker.GetType()) : -1, got ? text(marker) : std::string{});
+        }
+
         // GetMember reaches only public AS3 traits: PipboyMenu.PageA/GetPage
         // and BSScrollingList.uiNumListItems are private/protected (ABC trait
         // namespaces), so the walk uses CurrentPage and numListItems.
@@ -232,7 +251,10 @@ namespace rock::native_pipboy_hand_markers
                     reach(Stage::VisibleRow, static_cast<std::uint32_t>(c));
                     Value data, marker;
                     const auto key = std::to_string(static_cast<std::uint32_t>(numeric(index)));
-                    if (entries.GetMember(key.c_str(), &data) && data.IsObject()) reach(Stage::RowData);
+                    if (entries.GetMember(key.c_str(), &data) && data.IsObject()) {
+                        reach(Stage::RowData);
+                        reportEquippedRow(data);
+                    }
                     if (data.IsObject() && member(data, kHandMember, marker)) {
                         const auto slot = text(marker);
                         if (!slot.empty()) reach(Stage::HandMember);
@@ -290,6 +312,7 @@ namespace rock::native_pipboy_hand_markers
                 s_lastMovie = movie;
                 s_deepest = Stage::None;
                 s_reportedStop = nullptr;
+                s_rowReports = 0;
                 ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters first refresh movie={:#x} source={}",
                     reinterpret_cast<std::uintptr_t>(movie), source);
             }
