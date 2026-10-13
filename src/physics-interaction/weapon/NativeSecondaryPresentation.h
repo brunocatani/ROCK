@@ -1,5 +1,8 @@
 #pragma once
 
+#include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
+#include "RE/NetImmerse/NiAVObject.h"
+
 namespace RE { class PlayerCharacter; class NiNode; }
 
 namespace rock::native_secondary_presentation
@@ -16,4 +19,16 @@ namespace rock::native_secondary_presentation
     [[nodiscard]] bool beforeNativeArm(const RE::PlayerCharacter* player, const RE::NiNode* weapon, const RE::NiNode* offset) noexcept;
     void afterNativeArm(const RE::PlayerCharacter* player, bool secondaryPass) noexcept;
     void endFrame(bool skeletonUpdated) noexcept;
+
+    // This frame's placement of the second weapon, for a drop from its hand:
+    // the firing grip pose (authored seat and fingers, physical placement)
+    // and the placed weapon world. `model` is the borrowed native model.
+    struct DropPose
+    {
+        bool left = true;
+        AuthoredWeaponGripPose pose{};
+        RE::NiTransform weaponWorld{};
+        RE::NiAVObject* model = nullptr;
+    };
+    [[nodiscard]] bool tryGetDropPose(DropPose& out) noexcept;
 }

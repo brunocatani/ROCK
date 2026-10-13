@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
+#include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "physics-interaction/weapon/EquipPickupScope.h"
 #include "physics-interaction/weapon/NativeInventoryHandSlots.h"
@@ -256,12 +257,13 @@ namespace rock::weapon_equip_transfer
 
         EquipResult equipSelectedStack(RE::PlayerCharacter* player, RE::ActorEquipManager* equipManager,
             const InventoryWeaponStack& stack, held_weapon_instant_transition::RequestReason reason,
-            EquipResult result) noexcept
+            EquipResult result, const bool secondary = false, const bool secondaryLeft = false) noexcept
         {
             result.stackID = stack.stackID;
             result.requestedInstanceData = reinterpret_cast<std::uintptr_t>(
                 stack.instanceData.get());
             RE::BGSObjectInstance objectInstance(result.weapon, stack.instanceData.get());
+            const std::uint32_t index = secondary ? 1u : 0u;
             /*
              * The native wrapper owns one immediate manager call and suppresses
              * only the verified sheathe/draw action submissions made inside that
@@ -269,16 +271,32 @@ namespace rock::weapon_equip_transfer
              * validation failure and would escape the scoped interceptor, so it is
              * deliberately unsupported here.
              */
-            result.instantTransition =
-                held_weapon_instant_transition::equipImmediatelyWithoutActions(
-                    held_weapon_instant_transition::ImmediateEquipInput{
-                        .manager = equipManager,
-                        .player = player,
-                        .object = &objectInstance,
-                        .stackID = stack.stackID,
-                        .equipSlot = stack.equipSlot,
-                        .reason = reason,
-                    });
+            struct ImmediateEquip
+            {
+                held_weapon_instant_transition::ImmediateEquipInput input;
+                held_weapon_instant_transition::ImmediateEquipResult result{};
+            } immediate{ .input = {
+                .manager = equipManager,
+                .player = player,
+                .object = &objectInstance,
+                .stackID = stack.stackID,
+                .equipSlot = stack.equipSlot,
+                .reason = reason,
+            } };
+            if (secondary) {
+                // The second weapon is constructed on the LeftHand leaf
+                // (index 1) in the acting hand; the primary stays equipped.
+                (void)native_hand_equipment::equipIntoSecondary(player, result.weapon, stack.instanceData.get(), secondaryLeft,
+                    [](const RE::BGSEquipSlot* slot, void* context) {
+                        auto& call = *static_cast<ImmediateEquip*>(context);
+                        call.input.equipSlot = slot;
+                        call.result = held_weapon_instant_transition::equipImmediatelyWithoutActions(call.input);
+                        return call.result.managerAccepted;
+                    }, &immediate);
+            } else {
+                immediate.result = held_weapon_instant_transition::equipImmediatelyWithoutActions(immediate.input);
+            }
+            result.instantTransition = immediate.result;
             result.usedImmediateEquip = result.instantTransition.managerAccepted;
             if (!result.instantTransition.managerAccepted) {
                 result.reason = result.instantTransition.code ==
@@ -292,7 +310,7 @@ namespace rock::weapon_equip_transfer
                 return result;
             }
 
-            const auto equippedAfter = readEquippedWeaponSnapshot();
+            const auto equippedAfter = readEquippedWeaponSnapshot(index);
             result.observedEquippedFormID = equippedAfter.weapon ? equippedAfter.weapon->GetFormID() : 0;
             result.observedEquippedInstanceData = reinterpret_cast<std::uintptr_t>(
                 equippedAfter.instanceData);
@@ -307,7 +325,8 @@ namespace rock::weapon_equip_transfer
             const auto equippedStack = findEquippedWeaponStack(
                 player,
                 result.weapon,
-                stack.instanceData.get());
+                stack.instanceData.get(),
+                index);
             result.matchedEquippedStack = equippedStack.found &&
                 weapon_inventory_stack_selection_policy::matchesEquippedStack(
                     { stack.stackAddress, reinterpret_cast<std::uintptr_t>(stack.instanceData.get()), stack.count },
@@ -561,7 +580,8 @@ namespace rock::weapon_equip_transfer
 
         result.matchedInstanceData = expectedInstanceData &&
             stack.instanceData.get() == expectedInstanceData.get();
-        result = equipSelectedStack(player, equipManager, stack, input.transitionReason, std::move(result));
+        result = equipSelectedStack(player, equipManager, stack, input.transitionReason, std::move(result),
+            input.secondary, input.secondaryLeft);
         return result;
     }
 
@@ -699,7 +719,7 @@ namespace rock::weapon_equip_transfer
             return result;
         }
 
-        const auto equipped = readEquippedWeaponSnapshot();
+        const auto equipped = readEquippedWeaponSnapshot(input.index);
         result.weapon = equipped.weapon;
         result.formID = equipped.weapon ? equipped.weapon->GetFormID() : 0;
         if (!equipped.weapon) {
@@ -712,7 +732,7 @@ namespace rock::weapon_equip_transfer
             return result;
         }
 
-        const auto stack = findEquippedWeaponStack(player, equipped.weapon, equipped.instanceData);
+        const auto stack = findEquippedWeaponStack(player, equipped.weapon, equipped.instanceData, input.index);
         if (!stack.found || stack.count == 0) {
             result.reason = DropReason::InventoryStackNotFound;
             return result;
@@ -746,7 +766,7 @@ namespace rock::weapon_equip_transfer
             return result;
         }
         result.handle = player->RemoveItem(removeData);
-        const auto equippedAfterDrop = readEquippedWeaponSnapshot();
+        const auto equippedAfterDrop = readEquippedWeaponSnapshot(input.index);
         bool duplicateUnequipAccepted = false;
         if (result.handle && equippedAfterDrop.weapon == equipped.weapon) {
             // RemoveItem (1403E1C80/1403E1DC7) skips unequip for a partial
@@ -755,7 +775,7 @@ namespace rock::weapon_equip_transfer
             // extra data. Then resolve only the surviving equipped copy;
             // never reuse the pre-removal stack index for this second call.
             const auto remainingStack = findEquippedWeaponStack(
-                player, equippedAfterDrop.weapon, equippedAfterDrop.instanceData);
+                player, equippedAfterDrop.weapon, equippedAfterDrop.instanceData, input.index);
             // Native removal can move equipped flags to an equivalent stack
             // with different instance data. The selector's sole-equipped-stack
             // witness is sufficient for unequip; this copy is never dropped.
@@ -766,7 +786,7 @@ namespace rock::weapon_equip_transfer
                     remainingStack.equipSlot, remainingStack.stackID, false, true, false, true, nullptr);
             }
         }
-        const auto equippedAfterRelease = readEquippedWeaponSnapshot();
+        const auto equippedAfterRelease = readEquippedWeaponSnapshot(input.index);
         result.equippedSlotReleased = !equippedAfterRelease.weapon;
         ROCK_LOG_INFO(Weapon,
             "Equipped detach native removal: weapon={:08X} stack={} countBefore={} previousRestoreCleared=yes afterRemoval={:08X} duplicateUnequipAccepted={} remainingEquipped={:08X} handleValid={}",

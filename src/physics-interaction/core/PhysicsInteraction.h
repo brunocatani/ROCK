@@ -426,6 +426,9 @@ namespace rock
         void processProviderInventoryEquip(const PhysicsFrameContext& frame);
         void clearProviderInventoryEquip();
         bool retainEquippedWeaponForReplacement(const PhysicsFrameContext& frame, bool equipIsLeft);
+        // Weapon Drop Mode for the second weapon (native index 1), released
+        // from the hand that carries it. Frame thread.
+        bool dropSecondaryWeaponToWorld(const PhysicsFrameContext& frame);
         std::uint32_t forceGrabHandBlockerMask(const Hand& hand, bool isLeft, bool handDisabled, bool includePendingCommit) const;
         bool equippedWeaponFiringHandForGrabIsLeft() const;
         bool canHandAcceptForceGrab(const Hand& hand, bool isLeft, bool handDisabled) const;

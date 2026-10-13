@@ -48,6 +48,8 @@ namespace rock::native_secondary_presentation
             // Physical hand of the index-1 weapon this frame, and the hand
             // whose FRIK publications are currently claimed.
             bool left = true, claimedLeft = true;
+            // Firing grip of this frame's placement, for a drop.
+            AuthoredWeaponGripPose dropGrip{};
             bool geometryChecked = false, geometryReady = false, bodyWasVisible = false;
             bool traceFrame = false;
             std::uint64_t frame = 0;
@@ -492,6 +494,17 @@ namespace rock::native_secondary_presentation
             }
             s_state.targetWorld = target;
             s_state.controllerWorld = wand->world;
+            s_state.dropGrip = AuthoredWeaponGripPose{
+                .role = loose_weapon_authored_grab_policy::Role::Firing,
+                .handWeaponLocal = seat,
+                // The controller-to-weapon placement the player sees now.
+                .placementHandWeaponLocal = transform_math::composeTransforms(
+                    transform_math::invertTransform(target), physicalHand),
+                .fingerLocals = fingers.localTransforms,
+                .weaponFormId = s_state.form,
+                .fingerMask = fingers.enabledMask,
+                .isLeft = left,
+            };
             s_state.frame = frame.frameIndex;
             s_state.ready = true;
             s_state.traceFrame = s_state.samples == 0 && s_state.tracedFrames < 4;
@@ -584,6 +597,21 @@ namespace rock::native_secondary_presentation
         (void)writeTarget(true);
         tracePlacement("native-exit-after-repair");
         traceGeometry("native-exit-after-repair");
+    }
+
+    bool tryGetDropPose(DropPose& out) noexcept
+    {
+        if (!onFrameThread() || !s_state.ready || s_state.frame != runtime_state::currentFrame().frameIndex ||
+            !s_state.dropGrip.valid()) return false;
+        const auto view = native_hand_equipment::equippedViews()[1];
+        if (!matches(view)) return false;
+        out = DropPose{
+            .left = s_state.left,
+            .pose = s_state.dropGrip,
+            .weaponWorld = s_state.targetWorld,
+            .model = view.root,
+        };
+        return true;
     }
 
     void endFrame(bool skeletonUpdated) noexcept

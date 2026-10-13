@@ -68,6 +68,10 @@ namespace rock::weapon_equip_transfer
         held_weapon_instant_transition::RequestReason transitionReason{
             held_weapon_instant_transition::RequestReason::SameHandTrigger
         };
+        // Equip into native index 1 for this physical hand; the primary stays
+        // equipped. Otherwise the item replaces the primary (index 0).
+        bool secondary{ false };
+        bool secondaryLeft{ false };
     };
 
     struct EquipResult
@@ -118,6 +122,8 @@ namespace rock::weapon_equip_transfer
         RE::NiPoint3 dropRot{};
         bool hasDropLoc{ false };
         bool hasDropRot{ false };
+        // Native equipment index of the weapon to drop (0 primary, 1 second).
+        std::uint32_t index{ 0 };
     };
 
     struct EquippedDropResult

@@ -5,6 +5,8 @@
 
 namespace RE
 {
+    class Actor;
+    class BGSEquipSlot;
     class TESObjectWEAP;
     class TBO_InstanceData;
     class NiAVObject;
@@ -57,6 +59,14 @@ namespace rock::native_hand_equipment
         std::uint64_t sequence = 0; // 0: none since load.
     };
     [[nodiscard]] DirectedEquip lastDirectedPrimaryEquip() noexcept;
+    // Equips one exact inventory item into native index 1 for the physical
+    // hand `left`: `equip` performs the caller's native equip call with the
+    // LeftHand leaf it receives, inside the same execution-slot scope as a
+    // Pip-Boy equip. Synchronous; true when `equip` reported acceptance.
+    using SecondaryEquipCall = bool (*)(const RE::BGSEquipSlot* slot, void* context);
+    [[nodiscard]] bool equipIntoSecondary(RE::Actor* actor, RE::TESObjectWEAP* weapon, RE::TBO_InstanceData* instance,
+        bool left, SecondaryEquipCall equip, void* context) noexcept;
+
     // Pip-Boy display (UI thread): the physical hand holding this exact worn
     // weapon item, or None when it is neither equipped weapon.
     enum class WornHand : std::uint8_t { None, Right, Left };

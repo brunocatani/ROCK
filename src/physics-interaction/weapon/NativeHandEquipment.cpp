@@ -577,6 +577,38 @@ namespace rock::native_hand_equipment
         return result;
     }
 
+    bool equipIntoSecondary(RE::Actor* actor, RE::TESObjectWEAP* weapon, RE::TBO_InstanceData* instance,
+        bool left, SecondaryEquipCall equip, void* context) noexcept
+    {
+        auto* player = f4vr::getPlayer();
+        if (!s_installed || !actor || actor != player || !weapon || !equip) return false;
+        bool accepted = false;
+        try {
+            Slots slots{};
+            if (!resolveSlots(actor, slots)) {
+                ROCK_LOG_WARN(Weapon, "AKIMBO second weapon equip refused: native player hand-slot layout unavailable");
+                return false;
+            }
+            if (!leftBipedAvailable(player, weapon)) return false;
+            canonicalizeRestoredPrimary(actor, slots);
+            const native_inventory_hand_slots::Scope inventoryOwner(actor);
+            ExecutionContext execution{actor, weapon, slots.left, instance};
+            execution.eligible = true;
+            const ScopedValue executionScope{s_execution, &execution};
+            accepted = equip(slots.left, context);
+            if (accepted) {
+                native_equipped_model_lifetime::noteEquipmentChange();
+                recordSecondaryHand(weapon->formID, reinterpret_cast<std::uintptr_t>(instance), left);
+            }
+            const auto sequence = s_transaction.fetch_add(1, std::memory_order_release) + 1;
+            ROCK_LOG_INFO(Weapon, "AKIMBO second weapon equip request={} hand={} weapon={:08X} instance={:#x} accepted={} executionSelected={}",
+                sequence, left ? "left" : "right", weapon->formID, reinterpret_cast<std::uintptr_t>(instance), accepted, execution.consumed);
+        } catch (...) {
+            OutputDebugStringA("ROCK: second weapon equip diagnostic failed\n");
+        }
+        return accepted;
+    }
+
     WornHand wornWeaponHand(std::uint32_t form, std::uintptr_t instance) noexcept
     {
         if (!s_installed || !form) return WornHand::None;

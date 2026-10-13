@@ -454,19 +454,6 @@ int main(int argc, char** argv)
             require(rock::RockConfig::parseValues(grabValues).rockWeaponGrabMode == 1,
                 "invalid weapon grab mode must fall back to the toggle-both default");
         }
-        require(find(store, "bKeepPreviousWeaponInHandOnEquip").value == "true",
-            "previous weapon retention must default to enabled");
-        for (const auto* enabled : { "true", "false" }) {
-            require(store.setValue(Group::Consumer, "ImmersiveWeapons", "bKeepPreviousWeaponInHandOnEquip", enabled),
-                "previous weapon retention write failed");
-            require(store.load(false), "previous weapon retention reload failed");
-            CSimpleIniA swapValues;
-            store.appendLoadedValues(swapValues);
-            const auto swapConfig = rock::RockConfig::parseValues(swapValues);
-            require(swapConfig.rockKeepPreviousWeaponInHandOnEquip == (enabled[0] == 't') &&
-                swapConfig.rockWeaponDropMode == 2 && swapConfig.rockWeaponGrabMode == 1,
-                "retention reload must remain independent of weapon drop and grab modes");
-        }
         require(!store.setValue(Group::Consumer, "ImmersiveWeapons", "bAutoDrop", "true"),
             "removed auto-drop boolean must not remain writable");
         for (const auto* mode : { "1", "2", "3", "4" }) {

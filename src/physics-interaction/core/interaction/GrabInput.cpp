@@ -1,6 +1,7 @@
 #include "api/AuthoredInteractionService.h"
 #include "api/StorageService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
 #include "physics-interaction/consume/ImmersiveAid.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
@@ -711,6 +712,16 @@ namespace rock
             grab_input_intent_policy::reset(inputIntentState);
             cancelPeerHeldJoinRetry("normal-grab-suppressed", true);
             clearGameplayCandidatesForHand(hand, isLeft);
+            if (offhandWeaponOccupiesHand) {
+                // The second weapon is carried only by its firing grip, which
+                // follows Weapon Grab Mode like the primary's: a press releases
+                // it in the toggle modes, press-and-release in hold mode.
+                // Releasing that last carrying grip applies Weapon Drop Mode.
+                const auto press = consumeHandGrabInput(false);
+                const bool release = _equipped.handlingSettings.weaponGrabMode ==
+                    equipped_weapon_toggle_grab_policy::Mode::HoldBoth ? press.released : press.pressed;
+                if (release && !hand.isHolding()) (void)dropSecondaryWeaponToWorld(frame);
+            }
             if (_touchGrabRuntime.isHandActive(isLeft)) {
                 _touchGrabRuntime.releaseHand(
                     isLeft,
@@ -1653,6 +1664,50 @@ namespace rock
 
                 bool equipIsLeft = isLeft;
                 const bool supportEquipRequested = triggeredByInput && !peerHoldingSameObject && hand.isHoldingAuthoredSupportGrip();
+                // Several weapons may be equipped at once. A gun equipped from
+                // this hand while the primary is in use and index 1 is free
+                // becomes the second weapon in this hand; the primary stays
+                // equipped, held where it is.
+                const auto* heldBase = heldRefForGameplay ? heldRefForGameplay->GetObjectReference() : nullptr;
+                const bool heldGun = heldBase && heldBase->IsWeapon() &&
+                    static_cast<const RE::TESObjectWEAP*>(heldBase)->weaponData.type == RE::WEAPON_TYPE::kGun;
+                if (!peerHoldingSameObject && !supportEquipRequested && heldGun &&
+                    currentEquippedWeaponOccupiesHand() && !native_hand_equipment::hasSecondaryGun()) {
+                    auto* heldRef = hand.getHeldRef();
+                    if (!heldRef) return false;
+                    if (!held_weapon_equip_state_policy::canBeginEquip(nativeStateBeforeEquip)) return true;
+                    const std::uint32_t heldFormID = heldRef->GetFormID();
+                    const std::uint32_t bodyId = hand.getSavedObjectState().bodyId.value;
+                    hand.stopSelectionHighlight();
+                    hand.captureHeldReleaseMotion(hknp, (isLeft ? frame.left : frame.right).rawHandWorld, frame.timing);
+                    auto releaseContext = makeGrabReleaseContext(hand, isLeft);
+                    releaseContext.disposition = GrabReleaseDisposition::PendingInventoryTransfer;
+                    releaseContext.reason = "held-weapon-second-equip";
+                    auto releaseOutcome = hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
+                    if (!releaseOutcome.released) return true;
+                    releaseObject(heldRef, claimOwnerForHand(isLeft));
+                    const auto equipResult = weapon_equip_transfer::transferHeldWeaponToPlayerAndEquip(weapon_equip_transfer::EquipInput{
+                        .heldRef = releaseOutcome.takeRetainedReference(),
+                        .transitionReason = transitionReason,
+                        .secondary = true,
+                        .secondaryLeft = isLeft,
+                    });
+                    auto* postEquipRef = equipResult.untransferredRef.get();
+                    dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, postEquipRef, heldFormID, 0);
+                    if (!equipResult.success && !equipResult.transferredToInventory) {
+                        hand.applyReleaseVelocitySnapshot(hknp, releaseOutcome.velocity);
+                    }
+                    dispatchHeldObjectEventByFormID(GrabEventType::Released, postEquipRef, heldFormID, bodyId, isLeft);
+                    ROCK_LOG_INFO(Hand,
+                        "{} hand {} held weapon equip as second weapon formID={:08X} weapon={:08X} success={} transferred={} committed={} reason={} observedEquipped={:08X} primary={:08X}",
+                        hand.handName(), logAction ? logAction : "requested", heldFormID, equipResult.formID,
+                        equipResult.success, equipResult.transferredToInventory, equipResult.committed,
+                        weapon_equip_transfer::equipReasonName(equipResult.reason), equipResult.observedEquippedFormID,
+                        currentEquippedWeaponFormId());
+                    input_remap_runtime::setHandHeldWeapon(isLeft, false);
+                    clearGameplayCandidatesForHand(hand, isLeft);
+                    return true;
+                }
                 if (supportEquipRequested &&
                     (!resolveEquippedWeaponDetachDecision(_equipped.handlingSettings).primaryDetachEnabled ||
                         !frik_visual_authority::canBlockPrimaryHandWeaponPose() ||
@@ -1848,17 +1903,12 @@ namespace rock
                     transition.cancelHeldRequest("incoming-grip-arrangement-changed", held_weapon_transfer::Outcome::Cancelled);
                     return true;
                 }
-                const bool continuingTransfer = transition.heldTransfer().wantsEquip(equipIsLeft,
-                    heldRef ? heldRef->GetFormID() : 0u, equipHand.heldGrabIdentity());
-                const bool retainOutgoing = continuingTransfer ? transition.heldTransfer().request.retainOutgoing :
-                    triggeredByInput && g_rockConfig.rockKeepPreviousWeaponInHandOnEquip &&
-                        !peerHoldingSameObject && currentEquippedWeaponOccupiesHand();
                 if (!transition.heldTransfer().wantsEquip(equipIsLeft, heldRef ? heldRef->GetFormID() : 0u, equipHand.heldGrabIdentity())) {
                     if (!transition.beginHeldRequest({
                         .reference = heldRef ? heldRef->GetFormID() : 0u,
                         .grab = equipHand.heldGrabIdentity(), .world = context.worldGeneration,
                         .skeleton = context.skeletonGeneration, .isLeft = equipIsLeft,
-                        .role = transferRole, .retainOutgoing = retainOutgoing,
+                        .role = transferRole,
                         .previousForm = previousEquippedWeaponFormID,
                         .previousInstance = reinterpret_cast<std::uintptr_t>(currentEquippedWeaponInstanceData(currentEquippedWeaponForm())),
                     })) return false;
@@ -1870,14 +1920,6 @@ namespace rock
                     // refreshTransferHand already advanced this exact held item
                     // once; do not integrate it a second time below.
                     return true;
-                }
-                if (retainOutgoing && !transition.heldTransfer().outgoingRemoved) {
-                    if (!retainEquippedWeaponForReplacement(frame, equipIsLeft)) return true;
-                    if (!held_weapon_equip_state_policy::canBeginEquip(f4vr::getNativeWeaponState(player))) {
-                        // The accepted transfer owns this wait. Its original
-                        // reference keeps updating; no short trigger replay owns it.
-                        return true;
-                    }
                 }
                 equipHand.stopSelectionHighlight();
                 std::uint32_t heldFormID = heldRef ? heldRef->GetFormID() : 0u;

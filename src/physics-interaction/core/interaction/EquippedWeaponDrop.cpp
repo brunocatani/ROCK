@@ -2,6 +2,8 @@
 #include "physics-interaction/native/BipodFrozenRetirement.h"
 #include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/weapon/BipodRetentionPolicy.h"
+#include "physics-interaction/weapon/NativeSecondaryPresentation.h"
+#include "physics-interaction/weapon/NativeSecondaryActions.h"
 
 // Shared native placement for equipped-to-loose Toggle Drop and Auto Drop.
 
@@ -363,6 +365,93 @@ namespace rock
             }
         }
         return transferCommitted;
+    }
+
+    bool PhysicsInteraction::dropSecondaryWeaponToWorld(const PhysicsFrameContext& frame)
+    {
+        using equipped_weapon_drop_policy::Mode;
+        const auto mode = equipped_weapon_drop_policy::fromSetting(g_rockConfig.rockWeaponDropMode);
+        if (!frame.worldReady || !frame.hknpWorld || frame.menuBlocked || mode == Mode::Off) return false;
+        if (mode == Mode::EquippedDrop) {
+            // Equipped Drop keeps a falling weapon equipped through the
+            // primary's generated collision; the second weapon has none.
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "AKIMBO second weapon kept: Equipped Drop is not available for the second weapon");
+            return false;
+        }
+        native_secondary_presentation::DropPose drop{};
+        if (!native_secondary_presentation::tryGetDropPose(drop)) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "AKIMBO second weapon drop retained: placement or grip pose not ready");
+            return false;
+        }
+        const bool left = drop.left;
+        const auto handIndex = left ? 1u : 0u;
+        Hand& hand = left ? _leftHand : _rightHand;
+        const auto& handInput = left ? frame.left : frame.right;
+        const auto sourceHand = left ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right;
+        // The hand carrying the second weapon is blocked for ordinary grabs by
+        // that weapon itself; any other blocker refuses the handoff.
+        const auto otherBlockers = forceGrabHandBlockerMask(hand, left, handInput.disabled, true) &
+            ~(static_cast<std::uint32_t>(force_grab_policy::HandBlocker::EquippedWeapon) |
+                static_cast<std::uint32_t>(force_grab_policy::HandBlocker::OffhandWeapon));
+        if (otherBlockers != 0 || !hasAvailableEquippedWeaponDropHandoff() || _forceGrab.pendingCommits[handIndex].active) {
+            ROCK_LOG_WARN(Weapon, "AKIMBO second weapon drop blocked: hand={} blockers={:#x} handoffCapacity={} pendingCommit={}",
+                left ? "left" : "right", otherBlockers, hasAvailableEquippedWeaponDropHandoff(), _forceGrab.pendingCommits[handIndex].active);
+            f4vr::showNotification("ROCK: Cannot drop weapon - hand or transfer queue is busy.");
+            return false;
+        }
+        const bool toggleDrop = mode == Mode::ToggleDrop;
+        RE::NiPointer<RE::NiAVObject> dropVisualModel(toggleDrop ? drop.model : nullptr);
+        const auto dropVisualInWeapon = dropVisualModel ?
+            transform_math::composeTransforms(transform_math::invertTransform(drop.weaponWorld), dropVisualModel->world) : RE::NiTransform{};
+        // The second graph retires with its model; stop its actions first.
+        native_secondary_actions::suspend();
+        const auto dropResult = weapon_equip_transfer::dropEquippedWeaponFromPlayer(weapon_equip_transfer::EquippedDropInput{
+            .dropLoc = drop.weaponWorld.translate,
+            .dropRot = transform_math::matrixToReferenceEulerRadians<RE::NiMatrix3, RE::NiPoint3>(drop.weaponWorld.rotate),
+            .hasDropLoc = true,
+            .hasDropRot = true,
+            .index = 1,
+        });
+        const bool committed = equipped_weapon_drop_policy::physicalDropCommitted(
+            equipped_weapon_drop_policy::PhysicalDropCommitInput{
+                .dropSucceeded = dropResult.success,
+                .droppedReferenceUnavailable = dropResult.reason == weapon_equip_transfer::DropReason::DroppedReferenceUnavailable,
+            });
+        if (committed && dropResult.handle) {
+            _forceGrab.pendingCommits[handIndex] = PendingForceGrabCommit{
+                .active = true,
+                .isLeft = left,
+                .phase = dropResult.equippedSlotReleased ?
+                    PendingForceGrabCommitPhase::WaitingForNativePlacement :
+                    PendingForceGrabCommitPhase::EquippedSlotReleaseFailed,
+                .targetHandle = dropResult.handle,
+                .inventoryTransfer = true,
+                .weaponTransferSequence = 0,
+                .equippedWeaponDropMode = mode,
+                .weaponGripPose = drop.pose,
+                .maxDistanceGame = 96.0f,
+            };
+            if (toggleDrop) {
+                _forceGrab.retainedWeaponGrabs[handIndex] = {
+                    .inputState = transferred_weapon_grab_policy::State::AwaitInitialRelease,
+                };
+            }
+            if (dropResult.equippedSlotReleased) {
+                if (toggleDrop) {
+                    _drop.visuals[handIndex].begin(std::move(dropVisualModel), dropVisualInWeapon, drop.pose, dropResult.droppedFormID);
+                }
+                armEquippedWeaponNativeHandoff(dropResult.handle, dropResult.droppedFormID, sourceHand,
+                    WeaponCollision::ReleaseGeometrySnapshot{ .hasCapturedWeaponWorld = true, .capturedWeaponWorld = drop.weaponWorld });
+            }
+            // The releasing hand stops colliding briefly with what it let go of.
+            setWeaponHandSuppression(frame.hknpWorld, left, WeaponHandReason::Drop, true);
+            setWeaponHandSuppression(frame.hknpWorld, left, WeaponHandReason::Drop, false,
+                g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds);
+        }
+        ROCK_LOG_INFO(Weapon, "AKIMBO second weapon drop mode={} hand={} formID={:08X} dropped={:08X} committed={} slotReleased={} reason={}",
+            static_cast<int>(mode), left ? "left" : "right", dropResult.formID, dropResult.droppedFormID, committed,
+            dropResult.equippedSlotReleased, weapon_equip_transfer::dropReasonName(dropResult.reason));
+        return committed;
     }
 
     void PhysicsInteraction::updateEquippedWeaponDropVisuals(const PhysicsFrameContext& frame)
