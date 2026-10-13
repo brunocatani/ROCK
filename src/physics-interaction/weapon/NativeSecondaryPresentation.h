@@ -37,4 +37,19 @@ namespace rock::native_secondary_presentation
     // The index-1 model this frame placed in its hand (borrowed, frame
     // owner only), or null before this frame's placement or without one.
     [[nodiscard]] RE::NiAVObject* presentedModel() noexcept;
+
+    // The collision-free world pose of presentedModel() this frame: the
+    // rendered pose with this frame's collision correction removed. This is
+    // the second weapon's dynamic-proxy intent.
+    [[nodiscard]] bool tryGetModelIntentWorld(RE::NiTransform& out) noexcept;
+
+    /*
+     * Weapon collision correction for the second weapon, called once per
+     * placement on the frame thread with the model's collision-free world pose.
+     * Returns true with the resolved pose to present; the gun and the hand
+     * holding it then move together by that correction.
+     */
+    using CollisionResolver = bool (*)(void* context, const RE::NiTransform& modelIntentWorld,
+        RE::NiTransform& resolvedModelWorld);
+    void setCollisionResolver(void* context, CollisionResolver resolver) noexcept;
 }

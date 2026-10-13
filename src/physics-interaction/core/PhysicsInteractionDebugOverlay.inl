@@ -2815,6 +2815,9 @@
                 addBody(
                     _dynamicWeaponCollision.proxyBodyIdForDebug(),
                     debug::BodyOverlayRole::DynamicWeaponProxy);
+                addBody(
+                    _secondaryDynamicWeaponCollision.proxyBodyIdForDebug(),
+                    debug::BodyOverlayRole::DynamicWeaponProxy);
 
                 DynamicWeaponCollisionRuntime::DebugSnapshot snapshot{};
                 constexpr float proxyColor[4]{ 1.0f, 0.24f, 0.08f, 0.96f };

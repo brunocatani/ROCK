@@ -250,7 +250,7 @@ int main()
     constexpr auto dynamicWeaponMask = rock::collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
     {
         using namespace rock::collision_layer_policy;
-        constexpr std::uint32_t kUnusedLayer = 56;
+        constexpr std::uint32_t kUnusedLayer = 57;
         ok &= !isRockGeneratedColliderLayer(kUnusedLayer);
         for (const auto npc : { std::uint64_t{0}, kOptionalObstacleLayers }) {
             std::array<std::uint64_t, FO4_LAYER_MATRIX_ADDRESSABLE_COUNT> matrix{};
@@ -271,6 +271,14 @@ int main()
                      ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, ROCK_LAYER_DYNAMIC_WEAPON_PROXY,
                      FO4_LAYER_CHARCONTROLLER })
                 ok &= layerPairSymmetricMatches(matrix.data(), ROCK_LAYER_SECONDARY_WEAPON, excluded, false);
+            // Second weapon proxy: the two held guns stop against each other.
+            ok &= matrix[ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY] == buildRockSecondaryDynamicWeaponProxyExpectedMask(npc);
+            for (const auto included : { ROCK_LAYER_DYNAMIC_WEAPON_PROXY, FO4_LAYER_STATIC,
+                     ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY })
+                ok &= layerPairSymmetricMatches(matrix.data(), ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY, included, true);
+            for (const auto excluded : { ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY, ROCK_LAYER_WEAPON, ROCK_LAYER_SECONDARY_WEAPON,
+                     ROCK_LAYER_HAND, ROCK_LAYER_BODY, FO4_LAYER_CLUTTER, FO4_LAYER_CHARCONTROLLER })
+                ok &= layerPairSymmetricMatches(matrix.data(), ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY, excluded, false);
             ok &= matrix[ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY] == buildRockDynamicHandProxyExpectedMask(false, npc, true);
             ok &= matrix[ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY] == buildRockDynamicHandProxyExpectedMask(true, npc, true);
         }

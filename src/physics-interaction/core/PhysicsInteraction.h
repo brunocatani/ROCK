@@ -375,6 +375,12 @@ namespace rock
         static void onCustomGrabAuthorityBetweenStep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         static void onCustomGrabAuthorityAfterSolve(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
 
+        // Second weapon dynamic proxy: frame-thread correction for the
+        // presentation, and the final-pose drive after it placed the model.
+        static bool resolveSecondaryWeaponCollision(void* context, const RE::NiTransform& modelIntentWorld,
+            RE::NiTransform& resolvedModelWorld);
+        void finalizeSecondaryWeaponCollisionPose(const PhysicsFrameContext& frame, RE::hknpWorld* world, bool weaponDrawn);
+
         void updateSelection(const PhysicsFrameContext& frame);
         struct EquippedWeaponFrameResult;
         EquippedWeaponFrameResult updateEquippedWeaponFrame(const PhysicsFrameContext& frame, RE::bhkWorld* bhk, RE::hknpWorld* hknp);
@@ -1031,6 +1037,10 @@ namespace rock
         // posed in finalizeFramePose, after its hand placement is final.
         WeaponCollision _secondaryWeaponCollision;
         DynamicWeaponCollisionRuntime _dynamicWeaponCollision;
+        // Second weapon's dynamic proxy (layer 56): driven in finalizeFramePose
+        // from the presented model's collision-free pose; its post-solve
+        // correction is applied by native_secondary_presentation.
+        DynamicWeaponCollisionRuntime _secondaryDynamicWeaponCollision;
         PhysicsStepDriveCoordinator _generatedBodyStepDrive;
         LooseWeaponCollision _looseWeaponCollision;
         LooseWeaponCollision _objectRestCollision; // independent capacity; native magazine shapes stay intact

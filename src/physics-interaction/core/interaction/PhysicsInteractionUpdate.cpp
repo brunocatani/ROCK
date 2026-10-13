@@ -100,6 +100,7 @@ namespace rock
         _leftHand.invalidateCollisionPose(world);
         _dynamicHandCollision.retireAll(bhk);
         _dynamicWeaponCollision.retireAll(bhk);
+        _secondaryDynamicWeaponCollision.retireAll(bhk);
         ROCK_LOG_SAMPLE_WARN(Physics, 1000, "Collision pose publication interrupted frame={}; old collider targets invalidated", pending);
     }
 
@@ -140,18 +141,7 @@ namespace rock
                     runtime.frameIndex, bodyPoseValid, handPoseValid);
             }
             _dynamicHandCollision.finalizePose(frame, _rightHand, _leftHand, _bodyBoneColliders);
-            {
-                // The second weapon's model is placed in its hand by
-                // native_secondary_presentation through AfterWorldFinal, so
-                // its colliders are built and posed here, after that placement.
-                performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponCollisionTransforms);
-                auto* secondaryModel = native_secondary_presentation::presentedModel();
-                _secondaryWeaponCollision.update(world, secondaryModel, frame.deltaSeconds,
-                    runtime.weaponDrawn && native_hand_equipment::hasSecondaryGun());
-                if (secondaryModel) {
-                    _secondaryWeaponCollision.updateBodiesFromCurrentSourceTransforms(world, secondaryModel, frame.deltaSeconds, nullptr, 0);
-                }
-            }
+            finalizeSecondaryWeaponCollisionPose(frame, world, runtime.weaponDrawn);
             if (auto* weapon = resolveEquippedWeaponInteractionNode()) {
                 performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponCollisionTransforms);
                 _weaponCollision.updateBodiesFromCurrentSourceTransforms(world, weapon, frame.deltaSeconds, nullptr, 0);
@@ -161,6 +151,55 @@ namespace rock
         }
         _frame.poseFrameIndex = 0;
         _generatedBodyStepDrive.registerForNextStep(bhk, world);
+    }
+
+    bool PhysicsInteraction::resolveSecondaryWeaponCollision(void* context,
+        const RE::NiTransform& modelIntentWorld, RE::NiTransform& resolvedModelWorld)
+    {
+        resolvedModelWorld = modelIntentWorld;
+        auto* self = static_cast<PhysicsInteraction*>(context);
+        if (!self || !self->_lifecycle.initialized.load(std::memory_order_acquire)) return false;
+        auto* bhk = self->getPlayerBhkWorld();
+        auto* world = bhk ? getHknpWorld(bhk) : nullptr;
+        if (!world || bhk != self->_lifecycle.cachedBhkWorld || world != self->_lifecycle.cachedHknpWorld) return false;
+        return self->_secondaryDynamicWeaponCollision.resolvePresentedIntent(world, modelIntentWorld, resolvedModelWorld);
+    }
+
+    void PhysicsInteraction::finalizeSecondaryWeaponCollisionPose(const PhysicsFrameContext& frame,
+        RE::hknpWorld* world, bool weaponDrawn)
+    {
+        /*
+         * native_secondary_presentation places the second weapon through
+         * AfterWorldFinal, so its colliders are built and posed here, after
+         * that placement. The keyframed hulls (53) follow the presented gun;
+         * the dynamic proxy (56) is driven toward the collision-free intent,
+         * and its blocked deviation is what the presentation applies next frame.
+         */
+        performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponCollisionTransforms);
+        auto* model = native_secondary_presentation::presentedModel();
+        const bool enabled = weaponDrawn && native_hand_equipment::hasSecondaryGun();
+        _secondaryWeaponCollision.update(world, model, frame.deltaSeconds, enabled);
+
+        auto* modelNode = model ? model->IsNode() : nullptr;
+        RE::NiTransform intent{};
+        const bool hasIntent = modelNode && native_secondary_presentation::tryGetModelIntentWorld(intent);
+        const auto generation = _secondaryWeaponCollision.getCurrentWeaponGenerationKey();
+        _secondaryDynamicWeaponCollision.beginFrame(frame.timing.sequence, world, frame.bhkWorld, modelNode, generation,
+            dynamic_weapon_collision_policy::kDynamicCompoundEnabled && enabled && hasIntent && !frame.menuBlocked);
+        if (hasIntent) {
+            _secondaryDynamicWeaponCollision.captureIntent(modelNode, intent, generation);
+        }
+        // Retires the proxy itself when this frame has no current intent.
+        (void)_secondaryDynamicWeaponCollision.finishFrame(frame, true, modelNode, generation, _secondaryWeaponCollision, nullptr);
+        if (_secondaryDynamicWeaponCollision.compoundSourcesUnavailable()) {
+            _secondaryWeaponCollision.requestRebuildForReplacedSources();
+        }
+        if (model) {
+            _secondaryWeaponCollision.updateBodiesFromCurrentSourceTransforms(world, model, frame.deltaSeconds, nullptr, 0);
+        }
+        if (modelNode) {
+            _secondaryDynamicWeaponCollision.finalizeCompoundPose(_secondaryWeaponCollision, modelNode, frame, generation);
+        }
     }
 
 
@@ -313,7 +352,9 @@ namespace rock
                 weaponHandSuppressedFor(true, WeaponHandReason::Grip),
             _dynamicWeaponCollision.proxyBodyIdForDebug().value,
             _rightHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(false),
-            _leftHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(true));
+            _leftHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(true),
+            _secondaryDynamicWeaponCollision.proxyBodyIdForDebug().value,
+            native_hand_equipment::secondaryHandIsLeft());
         const auto dynamicHandHapticEvents = _dynamicHandCollision.consumeHapticEvents();
         for (const auto& pulse : dynamicHandHapticEvents.hands) {
             if (!pulse.fire) {
@@ -501,8 +542,10 @@ namespace rock
             if (currentBhk && currentBhk == _lifecycle.cachedBhkWorld &&
                 currentHknp && currentHknp == _lifecycle.cachedHknpWorld) {
                 _dynamicWeaponCollision.retireAll(currentBhk, preserveSurfaceSupport);
+                _secondaryDynamicWeaponCollision.retireAll(currentBhk);
             } else {
                 _dynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
+                _secondaryDynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
             }
         };
         refreshEquippedWeaponHandlingSettings();
@@ -749,6 +792,7 @@ namespace rock
         _weaponCollision.flushPendingPhysicsDrive(world, timing);
         _secondaryWeaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicWeaponCollision.flushPendingPhysicsDrive(world, timing);
+        _secondaryDynamicWeaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicHandCollision.flushPendingPhysicsDrive(world, timing);
         storage_interaction::flush(world,timing);
         _rightHand.flushConsumerObjectPairs(world);
@@ -796,6 +840,7 @@ namespace rock
             world,
             completedSolveSequence,
             timing);
+        _secondaryDynamicWeaponCollision.samplePostSolve(world, completedSolveSequence, timing);
         _dynamicHandCollision.samplePostSolveDeviations(world, timing);
         const auto gameFrameIndex = _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
         debug::CapturePostSolveBodyPhases(

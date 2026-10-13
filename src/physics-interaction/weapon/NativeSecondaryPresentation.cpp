@@ -43,6 +43,10 @@ namespace rock::native_secondary_presentation
             std::uint32_t form = 0;
             RE::NiTransform originalLocal{}, targetWorld{};
             RE::NiTransform controllerWorld{};
+            // World-space collision correction applied to this frame's
+            // placement (resolved model * inverse(intended model)).
+            RE::NiTransform collisionDelta{};
+            bool collisionCorrected = false;
             float modelScale = 1.0f;
             bool ownsLocal = false, claimed = false, ready = false;
             // Physical hand of the index-1 weapon this frame, and the hand
@@ -61,6 +65,9 @@ namespace rock::native_secondary_presentation
         State s_state{}; // FRIK frame thread; native callbacks validate the same thread.
         std::atomic<DWORD> s_thread{0};
         bool s_updatedThisFrame = false;
+        // Registered by the physics module's init/shutdown on the game thread.
+        void* s_resolverContext = nullptr;
+        CollisionResolver s_resolver = nullptr;
 
         bool onFrameThread() noexcept
         {
@@ -475,6 +482,23 @@ namespace rock::native_secondary_presentation
                 return;
             }
             native_secondary_actions::applyRecoil(target,hand,wand->world);
+            // The controller-relative grip excludes collision correction.
+            const auto intentTarget = target;
+            s_state.collisionCorrected = false;
+            if (s_resolver && view.root && usable(view.root->world)) {
+                // The model rides the attachment rigidly, so its intent is the
+                // attachment intent carried through their current relation.
+                const auto modelIntent = transform_math::composeTransforms(target,
+                    transform_math::composeTransforms(transform_math::invertTransform(attachment->world), view.root->world));
+                RE::NiTransform modelResolved{};
+                if (usable(modelIntent) && s_resolver(s_resolverContext, modelIntent, modelResolved) && usable(modelResolved)) {
+                    const auto delta = transform_math::composeTransforms(modelResolved, transform_math::invertTransform(modelIntent));
+                    target = transform_math::composeTransforms(delta, target);
+                    hand = transform_math::composeTransforms(delta, hand);
+                    s_state.collisionDelta = delta;
+                    s_state.collisionCorrected = true;
+                }
+            }
             frik_visual_authority::FingerLocalTransformOverride fingerOverride{};
             fingerOverride.enabledMask = fingers.enabledMask;
             std::copy(fingers.localTransforms.begin(), fingers.localTransforms.end(), fingerOverride.localTransforms);
@@ -500,7 +524,7 @@ namespace rock::native_secondary_presentation
                 .handWeaponLocal = seat,
                 // The controller-to-weapon placement the player sees now.
                 .placementHandWeaponLocal = transform_math::composeTransforms(
-                    transform_math::invertTransform(target), physicalHand),
+                    transform_math::invertTransform(intentTarget), physicalHand),
                 .fingerLocals = fingers.localTransforms,
                 .weaponFormId = s_state.form,
                 .fingerMask = fingers.enabledMask,
@@ -633,6 +657,22 @@ namespace rock::native_secondary_presentation
         if (!onFrameThread() || !s_state.ready) return nullptr;
         const auto view = native_hand_equipment::equippedViews()[1];
         return matches(view) ? view.root : nullptr;
+    }
+
+    bool tryGetModelIntentWorld(RE::NiTransform& out) noexcept
+    {
+        auto* model = presentedModel();
+        if (!model || !usable(model->world)) return false;
+        out = s_state.collisionCorrected ?
+            transform_math::composeTransforms(transform_math::invertTransform(s_state.collisionDelta), model->world) :
+            model->world;
+        return usable(out);
+    }
+
+    void setCollisionResolver(void* context, CollisionResolver resolver) noexcept
+    {
+        s_resolverContext = resolver ? context : nullptr;
+        s_resolver = resolver;
     }
 
     void endFrame(bool skeletonUpdated) noexcept

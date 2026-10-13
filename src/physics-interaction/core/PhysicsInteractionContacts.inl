@@ -571,9 +571,11 @@
                 shapeKeyB,
                 dynamicBodySourceB);
         const bool bodyAIsDynamicWeapon =
-            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
+            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA) ||
+            _secondaryDynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
         const bool bodyBIsDynamicWeapon =
-            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
+            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB) ||
+            _secondaryDynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
         const bool bodyAIsRightHeld = _rightHand.isHeldBodyId(bodyIdA);
         const bool bodyBIsRightHeld = _rightHand.isHeldBodyId(bodyIdB);
         const bool bodyAIsLeftHeld = _leftHand.isHeldBodyId(bodyIdA);
@@ -711,48 +713,52 @@
                 &normalGame);
         }
 
-        const bool bodyAIsWeaponProxy =
-            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
-        const bool bodyBIsWeaponProxy =
-            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
-        if (bodyAIsWeaponProxy != bodyBIsWeaponProxy) {
-            const auto proxyBodyId = bodyAIsWeaponProxy ? bodyIdA : bodyIdB;
-            const auto otherBodyId = bodyAIsWeaponProxy ? bodyIdB : bodyIdA;
-            std::uint32_t otherFilterInfo = 0;
-            const bool otherLayerRead = havok_runtime::tryReadFilterInfo(
-                world,
-                RE::hknpBodyId{ otherBodyId },
-                otherFilterInfo);
-            const auto otherLayer =
-                otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
-            RE::NiPoint3 supportPointGame{};
-            if (solvedChildContact) {
-                // The same recurring manifold positions used by surface hands
-                // above qualify weapon support while a contact is at rest.
-                const float pointScale = havokToGameScale() / static_cast<float>(manifoldPointCount);
-                for (std::int32_t index = 0; index < manifoldPointCount; ++index) {
-                    const auto* point = reinterpret_cast<const float*>(data + 0x70 + index * 0x10);
-                    supportPointGame.x += point[0] * pointScale;
-                    supportPointGame.y += point[1] * pointScale;
-                    supportPointGame.z += point[2] * pointScale;
+        // Each held weapon's proxy routes its own side; a gun-on-gun pair
+        // reaches both, each seeing the other proxy as its obstacle.
+        for (auto* proxyRuntime : { &_dynamicWeaponCollision, &_secondaryDynamicWeaponCollision }) {
+            const bool bodyAIsWeaponProxy =
+                proxyRuntime->isProxyBodyIdAtomic(bodyIdA);
+            const bool bodyBIsWeaponProxy =
+                proxyRuntime->isProxyBodyIdAtomic(bodyIdB);
+            if (bodyAIsWeaponProxy != bodyBIsWeaponProxy) {
+                const auto proxyBodyId = bodyAIsWeaponProxy ? bodyIdA : bodyIdB;
+                const auto otherBodyId = bodyAIsWeaponProxy ? bodyIdB : bodyIdA;
+                std::uint32_t otherFilterInfo = 0;
+                const bool otherLayerRead = havok_runtime::tryReadFilterInfo(
+                    world,
+                    RE::hknpBodyId{ otherBodyId },
+                    otherFilterInfo);
+                const auto otherLayer =
+                    otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+                RE::NiPoint3 supportPointGame{};
+                if (solvedChildContact) {
+                    // The same recurring manifold positions used by surface hands
+                    // above qualify weapon support while a contact is at rest.
+                    const float pointScale = havokToGameScale() / static_cast<float>(manifoldPointCount);
+                    for (std::int32_t index = 0; index < manifoldPointCount; ++index) {
+                        const auto* point = reinterpret_cast<const float*>(data + 0x70 + index * 0x10);
+                        supportPointGame.x += point[0] * pointScale;
+                        supportPointGame.y += point[1] * pointScale;
+                        supportPointGame.z += point[2] * pointScale;
+                    }
                 }
+                RE::NiPoint3 targetNormal{};
+                if (solvedChildContact) {
+                    // 1418028B0 copies the manifold normal to +0x40. Normals point
+                    // B -> A; orient target -> weapon. Key-2 removal events leave
+                    // this payload uninitialized and must not read it.
+                    const auto* manifoldNormal=reinterpret_cast<const float*>(data+0x40);
+                    const float sign=bodyAIsWeaponProxy?1.0f:-1.0f;
+                    targetNormal={manifoldNormal[0]*sign,manifoldNormal[1]*sign,manifoldNormal[2]*sign};
+                }
+                proxyRuntime->recordObstacleManifoldProcessedCallback(
+                    world,
+                    proxyBodyId,
+                    otherBodyId,
+                    otherLayerRead,
+                    otherLayer,
+                    solvedChildContact ? &supportPointGame : nullptr,targetNormal,solvedChildContact?static_cast<std::uint32_t>(manifoldPointCount):0);
             }
-            RE::NiPoint3 targetNormal{};
-            if (solvedChildContact) {
-                // 1418028B0 copies the manifold normal to +0x40. Normals point
-                // B -> A; orient target -> weapon. Key-2 removal events leave
-                // this payload uninitialized and must not read it.
-                const auto* manifoldNormal=reinterpret_cast<const float*>(data+0x40);
-                const float sign=bodyAIsWeaponProxy?1.0f:-1.0f;
-                targetNormal={manifoldNormal[0]*sign,manifoldNormal[1]*sign,manifoldNormal[2]*sign};
-            }
-            _dynamicWeaponCollision.recordObstacleManifoldProcessedCallback(
-                world,
-                proxyBodyId,
-                otherBodyId,
-                otherLayerRead,
-                otherLayer,
-                solvedChildContact ? &supportPointGame : nullptr,targetNormal,solvedChildContact?static_cast<std::uint32_t>(manifoldPointCount):0);
         }
     }
 
@@ -799,9 +805,11 @@
          * the experimental matrix policy controls whether those pairs collide.
          */
         const bool bodyAIsDynamicWeaponProxy =
-            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
+            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA) ||
+            _secondaryDynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
         const bool bodyBIsDynamicWeaponProxy =
-            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
+            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB) ||
+            _secondaryDynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
 
         const auto rightId = _rightHand.getCollisionBodyId().value;
         const auto leftId = _leftHand.getCollisionBodyId().value;
@@ -949,11 +957,15 @@
             !havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdB })) {
             return;
         }
-        if (bodyAIsDynamicWeaponProxy != bodyBIsDynamicWeaponProxy) {
+        for (auto* proxyRuntime : { &_dynamicWeaponCollision, &_secondaryDynamicWeaponCollision }) {
+            const bool proxyIsA = proxyRuntime->isProxyBodyIdAtomic(bodyIdA);
+            if (proxyIsA == proxyRuntime->isProxyBodyIdAtomic(bodyIdB)) {
+                continue;
+            }
             const std::uint32_t proxyBodyId =
-                bodyAIsDynamicWeaponProxy ? bodyIdA : bodyIdB;
+                proxyIsA ? bodyIdA : bodyIdB;
             const std::uint32_t otherBodyId =
-                bodyAIsDynamicWeaponProxy ? bodyIdB : bodyIdA;
+                proxyIsA ? bodyIdB : bodyIdA;
             std::uint32_t otherFilterInfo = 0;
             const bool otherLayerRead = havok_runtime::tryReadFilterInfo(
                 world,
@@ -965,13 +977,13 @@
                 otherLayerRead &&
                 collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(otherLayer) &&
                 ensureRawContactPoint();
-            _dynamicWeaponCollision.recordObstacleContactCallback(
+            proxyRuntime->recordObstacleContactCallback(
                 world,
                 proxyBodyId,
                 otherBodyId,
                 otherLayerRead,
                 otherLayer,
-                bodyAIsDynamicWeaponProxy,
+                proxyIsA,
                 rawContactPointValid ? &rawContactPoint : nullptr);
         }
 

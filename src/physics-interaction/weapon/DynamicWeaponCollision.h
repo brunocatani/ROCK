@@ -107,6 +107,29 @@ namespace rock
 
         void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _physicsCallbackGate = gate; }
 
+        /*
+         * Proxy of the second equipped weapon (layer 56). Its pose intent comes
+         * from native_secondary_presentation, not the two-handed grip. It owns
+         * no surface support and is not the weapon published to native
+         * interaction extensions; those stay with the primary proxy.
+         */
+        void configureSecondaryWeapon() noexcept { _secondary = true; }
+        [[nodiscard]] bool isSecondaryWeapon() const noexcept { return _secondary; }
+
+        // Collision-free intent of this frame's weapon root (between beginFrame
+        // and finishFrame). Same contract as observeWeaponVisualIntent.
+        void captureIntent(RE::NiNode* weaponNode, const RE::NiTransform& requestedWeaponWorld,
+            std::uint64_t weaponGenerationKey)
+        {
+            captureVisualIntent(weaponNode, requestedWeaponWorld, weaponGenerationKey, nullptr);
+        }
+
+        // Game thread. Applies the latest post-solve deviation of the existing
+        // proxy to `intent`. False, with `resolved = intent`, when no current
+        // sample exists for this world and proxy.
+        [[nodiscard]] bool resolvePresentedIntent(const RE::hknpWorld* world, const RE::NiTransform& intent,
+            RE::NiTransform& resolved) const;
+
         // Game frame only, before early returns, so clicks cannot replay later.
         void updateSurfaceSupportInput(bool placementOwnsClick = false);
 
@@ -278,7 +301,11 @@ namespace rock
         bool readContactDiagnosticSnapshot(ContactDiagnosticSnapshot& outSnapshot) const;
         static void storeAtomicTransform(AtomicTransform& target, const RE::NiTransform& value);
         static RE::NiTransform loadAtomicTransform(const AtomicTransform& source);
+        // Native interaction extensions control and observe the primary only.
+        [[nodiscard]] bool externallyControlled() const;
+        [[nodiscard]] const char* ownerName() const noexcept { return _secondary ? "Second-weapon" : "Primary"; }
 
+        bool _secondary{ false };
         PhysicsCallbackQuiescenceGate* _physicsCallbackGate{ nullptr };
         BethesdaPhysicsBody _body{};
         BethesdaPhysicsBody _authorityProxy{};

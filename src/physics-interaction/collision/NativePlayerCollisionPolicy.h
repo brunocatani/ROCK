@@ -71,7 +71,8 @@ namespace rock::native_player_collision
                layer == ROCK_LAYER_BODY || layer == ROCK_LAYER_DYNAMIC_HAND_PROXY ||
                layer == ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY ||
                layer == ROCK_LAYER_DYNAMIC_WEAPON_PROXY ||
-               layer == ROCK_LAYER_SECONDARY_WEAPON;
+               layer == ROCK_LAYER_SECONDARY_WEAPON ||
+               layer == ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY;
     }
 
     inline constexpr bool suppressPhysicalPair(bool playerA, bool playerB,

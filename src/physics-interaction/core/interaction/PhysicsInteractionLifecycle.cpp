@@ -7,6 +7,7 @@
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
 #include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
+#include "physics-interaction/weapon/NativeSecondaryPresentation.h"
 
 // PhysicsInteraction lifecycle: construction, init/shutdown, skeleton and provider lifecycle notes, generated-body lifecycle, collision layer registration, hand/body collision creation, and world accessors. Includes the provider API surface (PhysicsInteractionProvider.inl).
 
@@ -36,6 +37,9 @@ namespace rock
         _secondaryWeaponCollision.configureSecondaryWeapon();
         _secondaryWeaponCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _dynamicWeaponCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
+        _secondaryDynamicWeaponCollision.configureSecondaryWeapon();
+        _secondaryDynamicWeaponCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
+        native_secondary_presentation::setCollisionResolver(this, &PhysicsInteraction::resolveSecondaryWeaponCollision);
         native_interaction_service::initialize(generatedBodyCallbackGate,
             [](void* context,void* bhk){static_cast<PhysicsInteraction*>(context)->_dynamicWeaponCollision.retireAll(bhk);},
             [](void* context,RE::hknpWorld* world){static_cast<PhysicsInteraction*>(context)->registerCollisionLayer(world);},this);
@@ -62,6 +66,7 @@ namespace rock
     PhysicsInteraction::~PhysicsInteraction()
     {
         s_instance.store(nullptr, std::memory_order_release);
+        native_secondary_presentation::setCollisionResolver(nullptr, nullptr);
 
         _equipped.authoredPrimaryFiringGrip.reset("physics-destroyed", _twoHandedGrip);
 
@@ -176,9 +181,11 @@ namespace rock
         if (generatedWorldStillLive) {
             _dynamicHandCollision.retireAll(_lifecycle.generatedBodiesBhkWorld);
             _dynamicWeaponCollision.retireAll(_lifecycle.generatedBodiesBhkWorld);
+            _secondaryDynamicWeaponCollision.retireAll(_lifecycle.generatedBodiesBhkWorld);
         } else {
             _dynamicHandCollision.reset();
             _dynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
+            _secondaryDynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
         }
         _lifecycle.generatedBodiesBhkWorld = nullptr;
         _lifecycle.generatedBodiesHknpWorld = nullptr;
@@ -614,6 +621,7 @@ namespace rock
                     releaseObject(r, PhysicsObjectClaimOwner::LeftHand);
             }
             _dynamicWeaponCollision.retireAll(_lifecycle.cachedBhkWorld);
+            _secondaryDynamicWeaponCollision.retireAll(_lifecycle.cachedBhkWorld);
             _weaponCollision.destroyWeaponBody(hknp);
             _secondaryWeaponCollision.destroyWeaponBody(hknp);
             destroyBodyBoneCollisions(_lifecycle.cachedBhkWorld);
@@ -628,6 +636,7 @@ namespace rock
             _rightHand.abandonHavokStateAfterWorldLoss();
             _leftHand.abandonHavokStateAfterWorldLoss();
             _dynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
+            _secondaryDynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
             _weaponCollision.abandonHavokStateAfterWorldLoss();
             _secondaryWeaponCollision.abandonHavokStateAfterWorldLoss();
             native_idle_grip_preharvest::clearHeldWarmups();
@@ -764,6 +773,7 @@ namespace rock
         }
         if (extensionPairsChanged) {
             _dynamicWeaponCollision.refreshCollisionFilter(world);
+            _secondaryDynamicWeaponCollision.refreshCollisionFilter(world);
         }
         if (retiredWeaponPairsChanged) {
             ROCK_LOG_INFO(Config, "Retired weapon hand collision: requested={} active={} pairFilter={}",

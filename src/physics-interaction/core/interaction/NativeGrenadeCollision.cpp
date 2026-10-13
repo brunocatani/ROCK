@@ -31,7 +31,7 @@ namespace rock
     {
         // Game thread under the existing callback mutation gate. Body IDs are
         // collected afresh; the shared registry verifies identity on restore.
-        std::array<std::uint32_t, kGeneratedBodyContactRegistryCapacity + MAX_WEAPON_COLLISION_BODIES + 3> desired{};
+        std::array<std::uint32_t, kGeneratedBodyContactRegistryCapacity + MAX_WEAPON_COLLISION_BODIES + 4> desired{};
         std::size_t count = 0;
         bool complete = true;
         const auto append = [&](std::uint32_t id) {
@@ -65,6 +65,7 @@ namespace rock
                  static_cast<std::uint32_t>(MAX_WEAPON_COLLISION_BODIES)); ++i)
             append(_secondaryWeaponCollision.getWeaponBodyIdAtomic(i));
         append(_dynamicWeaponCollision.proxyBodyIdForDebug().value);
+        append(_secondaryDynamicWeaponCollision.proxyBodyIdForDebug().value);
 
         auto& leases = _suppression.nativeGrenadeLeases;
         const bool restorePending = leases.delayedRestorePending();

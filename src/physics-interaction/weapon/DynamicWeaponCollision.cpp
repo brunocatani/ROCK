@@ -30,6 +30,9 @@ namespace rock
     {
         constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFFu;
         constexpr std::uint32_t kDynamicWeaponCollisionGroup = 0x000Du;
+        // Each independently driven proxy owns its group, as the two dynamic
+        // hands do (0x0C/0x0E).
+        constexpr std::uint32_t kSecondaryDynamicWeaponCollisionGroup = 0x000Fu;
         // FO4VR 141551F00 installs the contact-impulse creator at bundle+18;
         // 14154BB41..14154BB51 registers it for body flag 0x80, and its
         // 1418012D0 solver callback emits key-3 events consumed by native audio.
@@ -125,9 +128,16 @@ namespace rock
             return true;
         }
 
-        std::uint32_t dynamicWeaponProxyFilterInfo()
+        std::uint32_t dynamicWeaponProxyLayer(const bool secondary)
         {
-            return (kDynamicWeaponCollisionGroup << 16) | collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY;
+            return secondary ? collision_layer_policy::ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY :
+                               collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY;
+        }
+
+        std::uint32_t dynamicWeaponProxyFilterInfo(const bool secondary)
+        {
+            return ((secondary ? kSecondaryDynamicWeaponCollisionGroup : kDynamicWeaponCollisionGroup) << 16) |
+                   dynamicWeaponProxyLayer(secondary);
         }
 
         float scaleFiniteValue(const float value, const float multiplier)
@@ -547,9 +557,9 @@ namespace rock
         }
 
         result.proxyActive = true;
-        updateSurfaceSupport(frame, primaryGripWeaponLocal, handsFree);
+        if (!_secondary) updateSurfaceSupport(frame, primaryGripWeaponLocal, handsFree);
         if (!_authorityConstraint.isValid() || _rebuildRequestedAtomic.load(std::memory_order_acquire)) return result;
-        if (!native_interaction_service::updateWeapon(frame, weaponCollision, weaponNode, _body,
+        if (!_secondary && !native_interaction_service::updateWeapon(frame, weaponCollision, weaponNode, _body,
                 _createdCenterWeaponLocal, weaponGenerationKey,
                 _frameRequestedWeaponWorld, _surfaceSupport.ownsPose(), primaryGripWeaponLocal)) {
             retireAll(frame.bhkWorld);
@@ -684,7 +694,7 @@ namespace rock
             snapshot.liveProxyBodyWorld,
             _createdCenterWeaponLocal,
             snapshot.weaponScale);
-        const RE::NiTransform resolvedWeaponWorld = native_interaction_service::weaponControlled() ? native_interaction_service::weaponPresentation() :
+        const RE::NiTransform resolvedWeaponWorld = externallyControlled() ? native_interaction_service::weaponPresentation() :
             dynamic_weapon_collision_policy::resolveCurrentIntentFromSample(
             snapshot.requestedProxyBodyWorld,
             snapshot.liveProxyBodyWorld,
@@ -738,6 +748,40 @@ namespace rock
         logPipelineStage("publish-requested");
 
         return result;
+    }
+
+    bool DynamicWeaponCollisionRuntime::externallyControlled() const
+    {
+        return !_secondary && native_interaction_service::weaponControlled();
+    }
+
+    bool DynamicWeaponCollisionRuntime::resolvePresentedIntent(const RE::hknpWorld* world,
+        const RE::NiTransform& intent, RE::NiTransform& resolved) const
+    {
+        resolved = intent;
+        if (!_created || !world || _createdWorld != world || !_body.isValid() ||
+            !dynamic_weapon_collision_policy::isFiniteTransform(intent)) {
+            return false;
+        }
+        PhysicsSnapshot snapshot{};
+        if (!readPhysicsSnapshot(snapshot) || !snapshot.valid || snapshot.teleported ||
+            snapshot.world != reinterpret_cast<std::uintptr_t>(world) ||
+            snapshot.bodyId != _body.getBodyId().value ||
+            snapshot.generationKey != _createdGenerationKey) {
+            return false;
+        }
+        const auto candidate = dynamic_weapon_collision_policy::resolveCurrentIntentFromSample(
+            snapshot.requestedProxyBodyWorld,
+            snapshot.liveProxyBodyWorld,
+            _createdCenterWeaponLocal,
+            snapshot.weaponScale,
+            intent);
+        if (!dynamic_weapon_collision_policy::isFiniteTransform(candidate) ||
+            !dynamic_weapon_collision_policy::evaluateVisualCorrection(intent, candidate).apply) {
+            return false;
+        }
+        resolved = candidate;
+        return true;
     }
 
     void DynamicWeaponCollisionRuntime::finalizeCompoundPose(const WeaponCollision& weaponCollision,
@@ -971,10 +1015,10 @@ namespace rock
                 frame.hknpWorld,
                 frame.bhkWorld,
                 shape,
-                dynamicWeaponProxyFilterInfo(),
+                dynamicWeaponProxyFilterInfo(_secondary),
                 generatedMaterial,
                 BethesdaMotionType::Dynamic,
-                "ROCK_DynamicWeaponCompound",
+                _secondary ? "ROCK_SecondaryDynamicWeaponCompound" : "ROCK_DynamicWeaponCompound",
                 kTrackedDynamicBodyCreationOptions)) {
             ROCK_LOG_ERROR(
                 Weapon,
@@ -1067,7 +1111,7 @@ namespace rock
             grab_authority_proxy::noContactFilterInfo(),
             generatedMaterial,
             BethesdaMotionType::Keyframed,
-            "ROCK_WeaponGripAuthorityProxy");
+            _secondary ? "ROCK_SecondaryWeaponGripAuthorityProxy" : "ROCK_WeaponGripAuthorityProxy");
         havok_ref_count::release(authorityShape);
         if (!authorityCreated) {
             ROCK_LOG_ERROR(Weapon, "Dynamic weapon grip authority creation failed: anchor body unavailable contactBody={}", proxyBodyId.value);
@@ -1131,7 +1175,8 @@ namespace rock
 
         ROCK_LOG_INFO(
             Weapon,
-            "Dynamic weapon grip-constrained compound created: contactBody={} authorityBody={} constraint={} generation={:016X} children={} points={} soundMaterial=0x{:08X} taggedChildren={}/{} authority=grip center=({:.2f},{:.2f},{:.2f}) envelopeHalf=({:.2f},{:.2f},{:.2f}) scale={:.3f} mass={:.2f} forces=({:.1f},{:.1f}) inertiaPadding={:.2f} layer={}",
+            "{} dynamic weapon grip-constrained compound created: contactBody={} authorityBody={} constraint={} generation={:016X} children={} points={} soundMaterial=0x{:08X} taggedChildren={}/{} authority=grip center=({:.2f},{:.2f},{:.2f}) envelopeHalf=({:.2f},{:.2f},{:.2f}) scale={:.3f} mass={:.2f} forces=({:.1f},{:.1f}) inertiaPadding={:.2f} layer={}",
+            ownerName(),
             _body.getBodyId().value,
             _authorityProxy.getBodyId().value,
             _authorityConstraint.constraintId,
@@ -1152,7 +1197,7 @@ namespace rock
             motorTuning.linearMaxForce,
             motorTuning.angularMaxForce,
             inertiaEnvelopePadding,
-            collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
+            dynamicWeaponProxyLayer(_secondary));
         return true;
     }
 
@@ -1190,7 +1235,7 @@ namespace rock
         }
         _handlingScale = timeScale;
 
-        if (!native_interaction_service::preCollideWeapon(world, timing)) {
+        if (!_secondary && !native_interaction_service::preCollideWeapon(world, timing)) {
             _droveThisSubstep = false;
             clearPublishedPhysicsSnapshot();
             return;
@@ -1226,7 +1271,7 @@ namespace rock
             _authorityConstraint,
             motorTuning,
             _authorityConstraint.motorBodyProperties,
-            _contactRetentionSeconds > 0.0f || native_interaction_service::weaponControlled(),
+            _contactRetentionSeconds > 0.0f || externallyControlled(),
             timeScale)) {
             if (_authorityConstraint.linearMotor)
                 _authorityConstraint.linearMotor->minForce = _authorityConstraint.linearMotor->maxForce = 0.0f;
@@ -1265,7 +1310,7 @@ namespace rock
                     liveContactBodyWorld,
                     _physicsRequestedTarget) :
                 0.0f;
-            const auto gripRecovery = hasLiveContactBody && !native_interaction_service::weaponControlled() ?
+            const auto gripRecovery = hasLiveContactBody && !externallyControlled() ?
                 dynamic_weapon_collision_policy::evaluateGripRecovery(
                     liveContactBodyWorld,
                     _physicsRequestedAuthorityTarget,
@@ -1304,7 +1349,7 @@ namespace rock
                             std::memory_order_relaxed));
                     return;
                 }
-            } else if (!native_interaction_service::weaponControlled()) {
+            } else if (!externallyControlled()) {
                 const auto dwell = dynamic_weapon_collision_policy::advanceDivergenceDwell(
                     _divergenceDwellSeconds,
                     requestedGapGameUnits,
@@ -1560,10 +1605,12 @@ namespace rock
         }
         _obstacleCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
         _processedManifoldCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
-        if (contactPointGame && collision_layer_policy::isWorldSurfaceLayer(otherLayer)) {
+        if (!_secondary && contactPointGame && collision_layer_policy::isWorldSurfaceLayer(otherLayer)) {
             recordSurfaceSupportContact(world, otherBodyId, *contactPointGame);
         }
-        if (contactPointGame) {
+        // The second gun is not a NativeInteraction target; its proxy stays
+        // out of the published weapon-contact stream.
+        if (!_secondary && contactPointGame && !collision_layer_policy::isDynamicWeaponProxyLayer(otherLayer)) {
             native_interaction_service::weaponContact(world, proxyBodyId, otherBodyId, otherLayer, *contactPointGame, targetNormalGame, pointCount);
         }
         _contactWorldAtomic.store(reinterpret_cast<std::uintptr_t>(world), std::memory_order_relaxed);
@@ -1583,7 +1630,7 @@ namespace rock
             bhkWorld &&
             bhkWorld == _createdBhkWorld;
         if (liveOwnerMatches) {
-            native_interaction_service::retireWeapon(_createdWorld, bhkWorld);
+            if (!_secondary) native_interaction_service::retireWeapon(_createdWorld, bhkWorld);
             destroyGrabConstraint(_createdWorld, _authorityConstraint);
             if (_body.isValid()) {
                 _body.retireDeferred(bhkWorld);
@@ -1592,7 +1639,7 @@ namespace rock
                 _authorityProxy.retireDeferred(bhkWorld);
             }
         } else {
-            native_interaction_service::retireWeapon(nullptr, nullptr);
+            if (!_secondary) native_interaction_service::retireWeapon(nullptr, nullptr);
             destroyGrabConstraint(nullptr, _authorityConstraint);
             if (_created && (_body.isValid() || _authorityProxy.isValid())) {
                 ROCK_LOG_WARN(
@@ -1609,7 +1656,8 @@ namespace rock
         if (bodyId != kInvalidBodyId && liveOwnerMatches) {
             ROCK_LOG_INFO(
                 Weapon,
-                "Dynamic weapon grip-constrained compound retired: contactBody={} authorityBody={} constraint={}",
+                "{} dynamic weapon grip-constrained compound retired: contactBody={} authorityBody={} constraint={}",
+                ownerName(),
                 bodyId,
                 authorityBodyId,
                 constraintId);
@@ -1701,7 +1749,7 @@ namespace rock
         const auto bodyId = _bodyIdAtomic.exchange(kInvalidBodyId, std::memory_order_acq_rel);
         const auto authorityBodyId = _authorityProxy.isValid() ? _authorityProxy.getBodyId().value : kInvalidBodyId;
         const auto constraintId = _authorityConstraint.constraintId;
-        native_interaction_service::retireWeapon(nullptr, nullptr);
+        if (!_secondary) native_interaction_service::retireWeapon(nullptr, nullptr);
         destroyGrabConstraint(nullptr, _authorityConstraint);
         _body.reset();
         _authorityProxy.reset();
