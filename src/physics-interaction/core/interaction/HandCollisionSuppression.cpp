@@ -290,8 +290,7 @@ namespace rock
             _leftHand.isHeldBodyId(bodyId) ||
             _weaponCollision.isWeaponBodyIdAtomic(bodyId) ||
             _secondaryWeaponCollision.isWeaponBodyIdAtomic(bodyId) ||
-            _bodyBoneColliders.isColliderBodyIdAtomic(bodyId) ||
-            ::rock::provider::isExternalBodyId(bodyId)) {
+            _bodyBoneColliders.isColliderBodyIdAtomic(bodyId)) {
             return false;
         }
 

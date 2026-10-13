@@ -192,7 +192,7 @@ namespace
         rock::provider::dispatchFrameCallbacks(*s_physicsInteraction);
 
         rock::provider::setPhysicsInteractionInstance(nullptr);
-        rock::provider::clearExternalBodiesForProviderLoss();
+        rock::provider::clearProviderStateForProviderLoss();
         s_physicsPublished = false;
 
         delete s_physicsInteraction;

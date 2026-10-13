@@ -24,6 +24,7 @@ namespace rock::api::grab {
         Valid = 1u << 3,
     };
 
+    // 5 (External) is retired with external body registration; never reuse.
     enum class BodyContactTargetKind : std::uint32_t
     {
         Unknown = 0,
@@ -31,7 +32,6 @@ namespace rock::api::grab {
         Weapon = 2,
         HeldObject = 3,
         Body = 4,
-        External = 5,
         WorldSurface = 6,
         DynamicProp = 7,
         Actor = 8,

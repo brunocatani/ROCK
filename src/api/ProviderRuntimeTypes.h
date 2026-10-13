@@ -24,8 +24,6 @@ namespace rock::provider {
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1 = api::weaponparts::kMaxEvidenceDetails;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_POINTS_PER_DETAIL_V1 = api::weaponparts::kMaxEvidencePoints;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EVIDENCE_NAME = 64;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_BODIES_V1 = api::collision::kMaxExternalBodies;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_CONTACTS_V1 = api::collision::kMaxExternalContacts;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_BODY_CONTACTS_V1 = api::collision::kMaxBodyContacts;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_FRAME_CALLBACKS_V1 = api::core::kMaxFrameCallbacks;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_CONSUMERS_V1 = api::core::kMaxOwners;
@@ -44,7 +42,6 @@ namespace rock::provider {
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EQUIPPED_WEAPON_HANDLING_LEASE_FRAMES_V1 = api::weapon::kMaxHandlingLeaseFrames;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_COLLIDER_VISUALIZATION_OVERRIDE_LEASE_FRAMES_V1 = api::diagnostics::kMaxLeaseFrames;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_PROVIDER_EVENTS_V1 = 256;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_SCOPES_V1 = api::collision::kMaxExternalScopes;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_HELD_BODIES_V1 = 8;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_COMPOSITION_ENTRIES_V1 = api::weapon::kMaxCompositionEntries;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_SEMANTIC_HAND_CONTACTS_V1 = api::collision::kMaxSemanticContacts;
@@ -91,39 +88,9 @@ namespace rock::provider {
     };
 
 
-    enum class RockProviderExternalBodyRole : std::uint32_t
-    {
-        Unknown = 0,
-        ReloadMobile = 1,
-        ReloadSocket = 2,
-        ReloadAction = 3,
-        ReloadVisualProxy = 4,
-        ActorRagdollBone = 100,
-    };
 
-    enum class RockProviderExternalBodyContactPolicy : std::uint32_t
-    {
-        None = 0,
-        ReportHandContacts = 1u << 0,
-        ReportAllSourceKinds = 1u << 1,
-        // 1u << 2 was SuppressRockDynamicPush, removed with ROCK's push
-        // assist; never reuse the bit.
-    };
 
-    enum class RockProviderExternalSourceKind : std::uint32_t
-    {
-        Unknown = 0,
-        Hand = 1,
-        Weapon = 2,
-        HeldObject = 3,
-    };
 
-    enum class RockProviderExternalContactQuality : std::uint32_t
-    {
-        BodyPairOnly = 0,
-        AggregateImpulse = 1,
-        RawPoint = 2,
-    };
 
 
 
@@ -181,7 +148,6 @@ namespace rock::provider {
         Weapon = 2,
         HeldObject = 3,
         Body = 4,
-        External = 5,
         WorldSurface = 6,
         DynamicProp = 7,
         Actor = 8,
@@ -249,8 +215,6 @@ namespace rock::provider {
     {
         None = 0,
         FrameSnapshots = 1u << 0,
-        ExternalBodies = 1u << 1,
-        ExternalContacts = 1u << 2,
         OffhandReservation = 1u << 3,
         InteractionCommands = 1u << 4,
         HandInputSuppression = 1u << 5,
@@ -265,7 +229,6 @@ namespace rock::provider {
         DebugOverlayPublication = 1u << 13,
         ProviderEvents = 1u << 14,
         HandInteractionState = 1u << 15,
-        ExternalBodyScopes = 1u << 16,
         WeaponPartObservability = 1u << 17,
         WeaponComposition = 1u << 18,
         PoseReadback = 1u << 19,
@@ -706,24 +669,7 @@ namespace rock::provider {
         BipodInputReserved = 1u << 12,
     };
 
-    enum class RockProviderExternalContactFlagV1 : std::uint32_t
-    {
-        None = 0,
-        SourceVelocityValid = 1u << 0,
-        ContactPointValid = 1u << 1,
-        ContactNormalValid = 1u << 2,
-        ContactPointMeasured = 1u << 3,
-        ContactPointEstimated = 1u << 4,
-        CollisionAvailable = 1u << 5,
-        TransitionSuppressed = 1u << 6,
-    };
 
-    enum class RockProviderExternalContactStreamFlagV1 : std::uint32_t
-    {
-        None = 0,
-        GapBeforeFirstCopied = 1u << 0,
-        RingOverwroteRecords = 1u << 1,
-    };
 
     enum class RockProviderWeaponPartDriveApplicationV1 : std::uint32_t
     {
@@ -1262,7 +1208,6 @@ namespace rock::provider {
         std::uint32_t rightHandState{ 0 };
         std::uint32_t leftHandState{ 0 };
         RockProviderOffhandReservation offhandReservation{ RockProviderOffhandReservation::Normal };
-        std::uint32_t externalBodyCount{ 0 };
         float gameToHavokScale{ 0.0f };
         float havokToGameScale{ 0.0f };
         std::uint32_t physicsScaleRevision{ 0 };
@@ -1616,45 +1561,7 @@ namespace rock::provider {
         std::uint32_t reserved[8]{};
     };
 
-    struct RockProviderExternalBodyRegistration
-    {
-        std::uint32_t size{ sizeof(RockProviderExternalBodyRegistration) };
-        std::uint32_t bodyId{ 0x7FFF'FFFF };
-        std::uint64_t ownerToken{ 0 };
-        std::uint32_t generation{ 0 };
-        RockProviderExternalBodyRole role{ RockProviderExternalBodyRole::Unknown };
-        RockProviderExternalBodyContactPolicy contactPolicy{ RockProviderExternalBodyContactPolicy::None };
-        RockProviderHand ownerHand{ RockProviderHand::None };
-    };
 
-    struct RockProviderExternalContactV1
-    {
-        std::uint32_t size{ sizeof(RockProviderExternalContactV1) };
-        std::uint32_t sourceBodyId{ 0x7FFF'FFFF };
-        std::uint32_t targetExternalBodyId{ 0x7FFF'FFFF };
-        std::uint32_t generation{ 0 };
-        std::uint64_t ownerToken{ 0 };
-        std::uint64_t sequence{ 0 };
-        std::uint64_t frameIndex{ 0 };
-        RockProviderExternalSourceKind sourceKind{ RockProviderExternalSourceKind::Unknown };
-        RockProviderHand sourceHand{ RockProviderHand::None };
-        RockProviderExternalBodyRole targetRole{ RockProviderExternalBodyRole::Unknown };
-        RockProviderExternalContactQuality quality{ RockProviderExternalContactQuality::BodyPairOnly };
-        float sourceVelocityHavok[4]{};
-        float contactPointHavok[4]{};
-        float contactNormalHavok[4]{};
-        // Sum of Bethesda contact point weights at contact-signal +0x30; this is not an impulse magnitude.
-        union
-        {
-            float contactPointWeightSum{ 0.0f };
-            float aggregateImpulseMagnitude;
-        };
-        std::uint32_t sourcePartKind{ 0 };
-        std::uint32_t sourceRole{ 0 };
-        std::uint32_t sourceSubRole{ 0 };
-        std::uint32_t flags{ 0 };
-        std::uint32_t collisionGeneration{ 0 };
-    };
 
     struct RockProviderHandInteractionStateV1
     {
@@ -1751,50 +1658,7 @@ namespace rock::provider {
         std::uint32_t reserved[4]{};
     };
 
-    struct RockProviderExternalContactRecordV1
-    {
-        std::uint32_t size{ sizeof(RockProviderExternalContactRecordV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint64_t parentOwnerToken{ 0 };
-        std::uint64_t scopeToken{ 0 };
-        std::uint64_t sequence{ 0 };
-        std::uint64_t frameIndex{ 0 };
-        std::uint32_t sourceBodyId{ 0x7FFF'FFFF };
-        std::uint32_t targetExternalBodyId{ 0x7FFF'FFFF };
-        std::uint32_t bodyGeneration{ 0 };
-        RockProviderExternalSourceKind sourceKind{ RockProviderExternalSourceKind::Unknown };
-        RockProviderHand sourceHand{ RockProviderHand::None };
-        RockProviderExternalBodyRole targetRole{ RockProviderExternalBodyRole::Unknown };
-        RockProviderExternalContactQuality quality{ RockProviderExternalContactQuality::BodyPairOnly };
-        std::uint32_t flags{ 0 };
-        float sourceVelocityHavok[3]{};
-        float contactPointHavok[3]{};
-        float contactNormalHavok[3]{};
-        float contactPointWeightSum{ 0.0f };
-        std::uint32_t sourcePartKind{ 0 };
-        std::uint32_t sourceRole{ 0 };
-        std::uint32_t sourceSubRole{ 0 };
-        std::uint32_t collisionGeneration{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[3]{};
-    };
 
-    struct RockProviderExternalContactStreamStateV1
-    {
-        std::uint32_t size{ sizeof(RockProviderExternalContactStreamStateV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        // The sequence domain survives provider loss and scope replacement.
-        // Retained evidence is cleared on loss; cursors need not be rewound.
-        std::uint64_t oldestRetainedSequence{ 0 };
-        std::uint64_t latestEmittedSequence{ 0 };
-        std::uint64_t firstCopiedSequence{ 0 };
-        std::uint64_t lastCopiedSequence{ 0 };
-        std::uint64_t overwrittenCount{ 0 };
-        std::uint32_t copiedCount{ 0 };
-        std::uint32_t flags{ 0 };
-    };
 
     struct RockProviderWeaponPartResolutionQueryV1
     {

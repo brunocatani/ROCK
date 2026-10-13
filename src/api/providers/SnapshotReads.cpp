@@ -1,5 +1,4 @@
 #include "SnapshotReads.h"
-#include "CollisionMarshalling.h"
 #include "WeaponMarshalling.h"
 #include "WeaponPartsMarshalling.h"
 
@@ -46,13 +45,12 @@ Status ROCK_CALL getRoles(OwnerToken owner, Roles* result) noexcept {
 
 namespace rock::api::collision {
 using namespace boundary;
-Status ROCK_CALL getEnvironment(OwnerToken owner, EnvironmentV1* result) noexcept {
+Status ROCK_CALL getEnvironment(OwnerToken owner, Environment* result) noexcept {
     if (const auto s=checkOutput(result); s!=Status::Ok) return s;
     return invoke(owner, kInterfaceId, 1, false, [&]() {
         provider::RockProviderFrameSnapshot frame{};
         if (!provider::runtime::apiGetFrameSnapshot(&frame)) return Status::NotReady;
         result->sample=sampleFromSnapshot(frame);
-        result->externalBodyCount=frame.externalBodyCount;
         result->gameToHavokScale=frame.gameToHavokScale;
         result->havokToGameScale=frame.havokToGameScale;
         result->physicsScaleRevision=frame.physicsScaleRevision;

@@ -93,7 +93,7 @@ void PhysicsInteraction::updateEjectionContacts(const PhysicsFrameContext& frame
     if(applied)service.hadPairs=count!=0&&weaponCount!=0;
     if(applied&&weaponCount)for(std::size_t i=0;i<prepared.size();++i)if(prepared[i]&&!service.entries[i].active) {
         auto& entry=service.entries[i];entry.active=true;entry.age=0;
-        ROCK_LOG_INFO(Weapon,"Ejection contact lease active ref={:08X} weapon={:08X} duration=1s backend=simulation hands={} handBodies={}",entry.request.reference.referenceFormId,entry.request.weaponForm,entry.hands,entry.hands?handCount:0);
+        ROCK_LOG_INFO(Weapon,"Ejection contact lease active ref={:08X} weapon={:08X} duration=1s backend=simulation hands={} handBodies={}",entry.request.reference.referenceFormId,entry.request.weaponFormId,entry.hands,entry.hands?handCount:0);
     }
     if(count&&!applied)ROCK_LOG_SAMPLE_WARN(Weapon,2000,"Ejection simulation publication pending magazines={} weaponBodies={} hook={}",count,weaponCount,native_player_collision::installed());
 }

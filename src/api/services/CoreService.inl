@@ -131,10 +131,6 @@
         }
 
         {
-            std::scoped_lock lock(s_externalBodyMutex);
-            s_externalBodies.clearOwner(ownerToken);
-        }
-        {
             std::scoped_lock lock(s_touchGrabMutex);
             s_touchGrabTargets.clearOwner(ownerToken);
         }

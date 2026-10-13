@@ -19,7 +19,7 @@
 
 namespace rock::api::core { const Api& table() noexcept; }
 namespace rock::api::hands { const Api& table() noexcept; }
-namespace rock::api::collision { const ApiV1& table() noexcept; }
+namespace rock::api::collision { const Api& table() noexcept; }
 namespace rock::api::grab { const Api& table() noexcept; }
 namespace rock::api::touch { const Api& table() noexcept; }
 namespace rock::api::weapon { const ApiV1& table() noexcept; }

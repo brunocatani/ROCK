@@ -5,6 +5,7 @@
 #include <ROCK/Grab.h>
 #include <ROCK/Grab.h>
 #include <ROCK/Animation.h>
+#include <ROCK/Collision.h>
 #include <ROCK/Core.h>
 #include <ROCK/Hands.h>
 #include <ROCK/PlayerController.h>
@@ -43,6 +44,12 @@ namespace rock::provider::runtime {
     api::Status getHeldPlacementState(api::grab::HeldPlacementState& output);
     api::Status submitHeldPlacementIntent(api::OwnerToken owner, const api::grab::HeldPlacementIntent& request);
     api::Status clearHeldPlacementIntent(api::OwnerToken owner);
+    // Collision ejection clearance and object rest (EjectionContactsService.cpp,
+    // ObjectRestService.cpp); game thread, caller already authorized.
+    api::Status requestEjectionClearance(api::OwnerToken owner, const api::collision::EjectionClearanceRequest& request);
+    api::Status cancelEjectionClearance(api::OwnerToken owner, std::uint32_t referenceFormId);
+    api::Status watchObjectRest(api::OwnerToken owner, const api::collision::ObjectRestRequest& request, api::collision::ObjectRestState& state);
+    api::Status cancelObjectRest(api::OwnerToken owner, std::uint32_t referenceFormId);
     api::Status getPlacementClickState(api::input::PlacementClickState& output);
     api::Status captureInventoryWeapon(std::uint64_t owner, std::uint32_t form, std::uint32_t stack,
         api::weapon::v1_1::InventoryWeapon& output);
@@ -54,7 +61,6 @@ namespace rock::provider::runtime {
     bool ROCK_PROVIDER_CALL apiIsProviderReady();
     bool ROCK_PROVIDER_CALL apiGetFrameSnapshot(RockProviderFrameSnapshot* outSnapshot);
     bool ROCK_PROVIDER_CALL apiQueryWeaponContactAtPoint(const RockProviderWeaponContactQuery* query, RockProviderWeaponContactResult* outResult);
-    void ROCK_PROVIDER_CALL apiClearExternalBodies(std::uint64_t ownerToken);
     std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEvidenceDetailCountV1();
     std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEvidenceDetailsV1(RockProviderWeaponEvidenceDetailV1* outDetails, std::uint32_t maxDetails);
     std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEvidenceDetailPointCountV1(std::uint32_t bodyId);
@@ -99,9 +105,6 @@ namespace rock::provider::runtime {
     RockProviderResultV1 ROCK_PROVIDER_CALL apiUnregisterFrameCallbackForOwnerV1(std::uint64_t ownerToken, std::uint64_t callbackToken);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiGetHandInteractionStateV1(std::uint64_t ownerToken, RockProviderHand hand, RockProviderHandInteractionStateV1* outState);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiGetEquippedWeaponStateV1(std::uint64_t ownerToken, RockProviderEquippedWeaponStateV1* outState);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiRegisterExternalBodiesForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken, const RockProviderExternalBodyRegistration* bodies, std::uint32_t bodyCount);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearExternalBodiesForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken);
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyExternalContactsSinceV1(std::uint64_t ownerToken, std::uint64_t scopeToken, std::uint64_t afterSequence, RockProviderExternalContactRecordV1* outContacts, std::uint32_t maxContacts, RockProviderExternalContactStreamStateV1* outStreamState);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryWeaponPartTargetResolutionV1(std::uint64_t ownerToken, const RockProviderWeaponPartResolutionQueryV1* query, RockProviderWeaponPartResolutionResultV1* outResolution);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyWeaponPartPoseSnapshotV1(std::uint64_t ownerToken, RockProviderWeaponPartPoseV1* outParts, std::uint32_t maxParts, std::uint32_t* outPartCount);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyWeaponPartDriveApplicationResultsV1(std::uint64_t ownerToken, RockProviderWeaponPartDriveApplicationResultV1* outResults, std::uint32_t maxResults, std::uint32_t* outResultCount);

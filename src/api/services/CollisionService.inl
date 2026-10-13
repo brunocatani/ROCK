@@ -1,19 +1,5 @@
 // Private Collision service operations. Included after shared owner/lifecycle helpers.
 
-    void ROCK_PROVIDER_CALL apiClearExternalBodies(std::uint64_t ownerToken)
-    {
-        if (ownerToken == 0) {
-            return;
-        }
-        std::scoped_lock lock(s_consumerMutex, s_externalBodyMutex);
-        if (!consumerHasCapabilityLocked(
-                ownerToken,
-                RockProviderConsumerCapabilityV1::ExternalBodies)) {
-            return;
-        }
-        s_externalBodies.clearOwner(ownerToken);
-    }
-
     std::uint32_t ROCK_PROVIDER_CALL apiGetBodyContactSnapshotV1(
         RockProviderBodyContactV1* outContacts,
         std::uint32_t maxContacts)
@@ -25,95 +11,6 @@
         }
 
         return pi->copyProviderBodyContacts(outContacts, maxContacts);
-    }
-
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiRegisterExternalBodiesForScopeV1(
-        const std::uint64_t ownerToken,
-        const std::uint64_t scopeToken,
-        const RockProviderExternalBodyRegistration* bodies,
-        const std::uint32_t bodyCount)
-    {
-        if (ownerToken == 0 || scopeToken == 0 ||
-            (bodyCount != 0 && !bodies)) {
-            return RockProviderResultV1::InvalidArgument;
-        }
-        std::scoped_lock lock(s_consumerMutex, s_externalBodyMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::ExternalBodyScopes);
-        if (ownerResult != RockProviderResultV1::Ok) {
-            return ownerResult;
-        }
-        switch (s_externalBodies.registerBodiesForScopeDetailed(
-            ownerToken,
-            scopeToken,
-            bodies,
-            bodyCount)) {
-        case ExternalBodyRegistry::RegistrationResult::Ok:
-            return RockProviderResultV1::Ok;
-        case ExternalBodyRegistry::RegistrationResult::CapacityFull:
-            return RockProviderResultV1::CapacityFull;
-        case ExternalBodyRegistry::RegistrationResult::OwnerConflict:
-            return RockProviderResultV1::OwnerConflict;
-        case ExternalBodyRegistry::RegistrationResult::InvalidArgument:
-        default:
-            return RockProviderResultV1::InvalidArgument;
-        }
-    }
-
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearExternalBodiesForScopeV1(
-        const std::uint64_t ownerToken,
-        const std::uint64_t scopeToken)
-    {
-        if (ownerToken == 0 || scopeToken == 0) {
-            return RockProviderResultV1::InvalidArgument;
-        }
-        std::scoped_lock lock(s_consumerMutex, s_externalBodyMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::ExternalBodyScopes);
-        if (ownerResult != RockProviderResultV1::Ok) {
-            return ownerResult;
-        }
-        return s_externalBodies.clearScope(ownerToken, scopeToken) ?
-            RockProviderResultV1::Ok :
-            RockProviderResultV1::TargetUnavailable;
-    }
-
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyExternalContactsSinceV1(
-        const std::uint64_t ownerToken,
-        const std::uint64_t scopeToken,
-        const std::uint64_t afterSequence,
-        RockProviderExternalContactRecordV1* outContacts,
-        const std::uint32_t maxContacts,
-        RockProviderExternalContactStreamStateV1* outStreamState)
-    {
-        provider_state_policy::clearQueryOutput(outStreamState);
-        if (ownerToken == 0 || !outStreamState ||
-            outStreamState->size < sizeof(RockProviderExternalContactStreamStateV1) ||
-            (maxContacts != 0 && !outContacts)) {
-            return RockProviderResultV1::InvalidArgument;
-        }
-        std::scoped_lock lock(s_consumerMutex, s_externalBodyMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::ExternalBodyScopes);
-        if (ownerResult != RockProviderResultV1::Ok) {
-            return ownerResult;
-        }
-        if (!consumerHasCapabilityLocked(
-                ownerToken,
-                RockProviderConsumerCapabilityV1::ExternalContacts)) {
-            return RockProviderResultV1::PermissionDenied;
-        }
-        (void)s_externalBodies.copyContactsSinceV1(
-            ownerToken,
-            scopeToken,
-            afterSequence,
-            outContacts,
-            maxContacts,
-            *outStreamState);
-        return RockProviderResultV1::Ok;
     }
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiCopySemanticHandContactsV1(

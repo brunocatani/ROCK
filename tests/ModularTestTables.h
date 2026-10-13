@@ -20,7 +20,7 @@
 #include <ROCK/Configuration.h>
 namespace rock::api::core { const Api& table() noexcept; }
 namespace rock::api::hands { const Api& table() noexcept; }
-namespace rock::api::collision { const ApiV1& table() noexcept; }
+namespace rock::api::collision { const Api& table() noexcept; }
 namespace rock::api::grab { const Api& table() noexcept; }
 namespace rock::api::touch { const Api& table() noexcept; }
 namespace rock::api::weapon { const ApiV1& table() noexcept; const v1_1::Api& tableV1_1() noexcept; }

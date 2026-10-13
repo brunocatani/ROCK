@@ -69,14 +69,14 @@ int main()
     publication.primaryHand=provider::RockProviderHand::Right;
     publication.offhandHand=provider::RockProviderHand::Left;
     publication.enrichmentFlags=6;publication.hmdTransform.translate[0]=12;
-    publication.hmdForwardWorld[2]=1;publication.externalBodyCount=13;
+    publication.hmdForwardWorld[2]=1;
     publication.gameToHavokScale=0.014f;publication.havokToGameScale=71;
     publication.weaponGenerationKey=456;publication.weaponBodyCount=1;publication.weaponBodyIds[0]=14;
     auto task=std::async(std::launch::async,[] {
         assert(std::this_thread::get_id()!=frameThread);
         api::hands::HeadPose head{};
         api::hands::Roles roles{};
-        api::collision::EnvironmentV1 environment{};
+        api::collision::Environment environment{};
         assert(api::hands::getHeadPose(42,&head)==Status::Ok && head.flags==3 && head.transform.translate[0]==12);
         assert(api::hands::getRoles(42,&roles)==Status::Ok && roles.offhand==api::Hand::Left);
         assert(api::collision::getEnvironment(42,&environment)==Status::Ok && environment.weaponBodyIds[0]==14);

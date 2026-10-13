@@ -1067,8 +1067,6 @@ namespace rock
                 return RockProviderBodyContactTargetKind::HeldObject;
             case ContactEndpointKind::Body:
                 return RockProviderBodyContactTargetKind::Body;
-            case ContactEndpointKind::External:
-                return RockProviderBodyContactTargetKind::External;
             case ContactEndpointKind::WorldSurface:
                 return RockProviderBodyContactTargetKind::WorldSurface;
             case ContactEndpointKind::DynamicProp:

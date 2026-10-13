@@ -40,8 +40,8 @@ namespace rock::provider::runtime {
     std::array<Consumer,64> s_consumers{};
     std::mutex s_consumerMutex,s_snapshotMutex,s_interactionCommandMutex,s_handInputSuppressionMutex,
         s_weaponPartMutex,s_nativeAnimationAuthorityMutex,s_equippedWeaponHandlingAuthorityMutex,
-        s_externalBodyMutex,s_touchGrabMutex,s_offhandReservationMutex,s_callbackMutex,s_animationPhaseCallbackMutex;
-    struct Resource {void clearOwner(std::uint64_t){}} s_externalBodies,s_touchGrabTargets;
+        s_touchGrabMutex,s_offhandReservationMutex,s_callbackMutex,s_animationPhaseCallbackMutex;
+    struct Resource {void clearOwner(std::uint64_t){}} s_touchGrabTargets;
     struct Reservation {std::uint64_t ownerToken{};} s_offhandReservationSlot;
     struct CallbackSlot {std::uint64_t token{},ownerToken{};RockProviderFrameCallback callback{};void* userData{};};
     struct AnimationPhaseCallbackSlot {std::uint64_t token{},ownerToken{};RockProviderAnimationPhaseCallbackV1 callback{};void* userData{};};

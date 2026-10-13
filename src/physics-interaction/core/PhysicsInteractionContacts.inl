@@ -412,8 +412,7 @@
         }
         const bool solvedChildContact =
             manifoldPointCount > 0 && manifoldPointCount <= 4;
-        if (solvedChildContact && looseCollisionContact && !heldContact &&
-            !::rock::provider::isExternalBodyId(bodyIdA) && !::rock::provider::isExternalBodyId(bodyIdB)) {
+        if (solvedChildContact && looseCollisionContact && !heldContact) {
             RE::NiPoint3 point{};
             const float scale=havokToGameScale()/static_cast<float>(manifoldPointCount);
             for (std::int32_t i=0;i<manifoldPointCount;++i) {
@@ -429,8 +428,7 @@
                 if (!hand.isHoldingAtomic() || heldA == heldB) return;
                 const auto held = heldA ? bodyIdA : bodyIdB;
                 const auto other = heldA ? bodyIdB : bodyIdA;
-                if (_rightHand.isHeldBodyId(other) || _leftHand.isHeldBodyId(other) ||
-                    ::rock::provider::isExternalBodyId(other)) return;
+                if (_rightHand.isHeldBodyId(other) || _leftHand.isHeldBodyId(other)) return;
                 const auto surface = havok_runtime::snapshotBodyIdentity(world,RE::hknpBodyId{other});
                 if (!surface.valid || !surface.body || !surface.body->shape) return;
                 const auto layer = surface.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
@@ -849,9 +847,6 @@
             return;
         }
 
-        const bool bodyAIsExternal = ::rock::provider::isExternalBodyId(bodyIdA);
-        const bool bodyBIsExternal = ::rock::provider::isExternalBodyId(bodyIdB);
-
         auto readBodyFilterInfo = [world](std::uint32_t bodyId) {
             std::uint32_t filterInfo = 0;
             if (world && havok_runtime::tryReadFilterInfo(world, RE::hknpBodyId{ bodyId }, filterInfo)) {
@@ -869,7 +864,7 @@
         const std::uint32_t bodyALayer = filterInfoToLayer(bodyAFilterInfo);
         const std::uint32_t bodyBLayer = filterInfoToLayer(bodyBFilterInfo);
 
-        auto makeEndpoint = [&](std::uint32_t bodyId, std::uint32_t layer, bool isRightHand, bool isLeftHand, bool isWeapon, bool isRightHeld, bool isLeftHeld, bool isBody, bool isExternal) {
+        auto makeEndpoint = [&](std::uint32_t bodyId, std::uint32_t layer, bool isRightHand, bool isLeftHand, bool isWeapon, bool isRightHeld, bool isLeftHeld, bool isBody) {
             using contact_pipeline_policy::ContactEndpoint;
             using contact_pipeline_policy::ContactEndpointKind;
 
@@ -888,16 +883,14 @@
                 endpoint.kind = ContactEndpointKind::LeftHeldObject;
             } else if (isBody) {
                 endpoint.kind = ContactEndpointKind::Body;
-            } else if (isExternal) {
-                endpoint.kind = ContactEndpointKind::External;
             } else {
                 endpoint.kind = contact_pipeline_policy::classifyNonRockLayer(layer);
             }
             return endpoint;
         };
 
-        const auto endpointA = makeEndpoint(bodyIdA, bodyALayer, bodyAIsRight, bodyAIsLeft, bodyAIsWeapon, bodyAIsRightHeld, bodyAIsLeftHeld, bodyAIsBody, bodyAIsExternal);
-        const auto endpointB = makeEndpoint(bodyIdB, bodyBLayer, bodyBIsRight, bodyBIsLeft, bodyBIsWeapon, bodyBIsRightHeld, bodyBIsLeftHeld, bodyBIsBody, bodyBIsExternal);
+        const auto endpointA = makeEndpoint(bodyIdA, bodyALayer, bodyAIsRight, bodyAIsLeft, bodyAIsWeapon, bodyAIsRightHeld, bodyAIsLeftHeld, bodyAIsBody);
+        const auto endpointB = makeEndpoint(bodyIdB, bodyBLayer, bodyBIsRight, bodyBIsLeft, bodyBIsWeapon, bodyBIsRightHeld, bodyBIsLeftHeld, bodyBIsBody);
         const auto contactRoute = contact_pipeline_policy::classifyContact(endpointA, endpointB);
 
         auto handSourceFor = [&](std::uint32_t bodyId) -> const HandContactSource* {
@@ -934,159 +927,6 @@
                 return &bodyBWeapon;
             }
             return nullptr;
-        };
-
-        auto fillSourceVelocity = [&](std::uint32_t sourceBodyId,
-                                      ::rock::provider::RockProviderExternalSourceKind sourceKind,
-                                      const HandColliderBodyMetadata* handMetadata,
-                                      ::rock::provider::RockProviderExternalContactV1& contact) -> bool {
-            if (handMetadata && handMetadata->valid && handMetadata->hasSampledLinearVelocityHavok &&
-                havok_runtime::isFinite3(handMetadata->sampledLinearVelocityHavok)) {
-                std::copy_n(handMetadata->sampledLinearVelocityHavok, 4, contact.sourceVelocityHavok);
-                return true;
-            }
-
-            if (sourceKind == ::rock::provider::RockProviderExternalSourceKind::Weapon) {
-                const auto* weaponSource = weaponSourceFor(sourceBodyId);
-                if (weaponSource && weaponSource->valid && weaponSource->hasSampledVelocity &&
-                    havok_runtime::isFinite3(weaponSource->sampledVelocityHavok)) {
-                    std::copy_n(weaponSource->sampledVelocityHavok, 4, contact.sourceVelocityHavok);
-                    return true;
-                }
-            }
-
-            if (!world || sourceBodyId == INVALID_CONTACT_BODY_ID) {
-                return false;
-            }
-
-            auto* motion = havok_runtime::getBodyMotion(world, RE::hknpBodyId{ sourceBodyId });
-            if (!motion) {
-                return false;
-            }
-
-            contact.sourceVelocityHavok[0] = motion->linearVelocity.x;
-            contact.sourceVelocityHavok[1] = motion->linearVelocity.y;
-            contact.sourceVelocityHavok[2] = motion->linearVelocity.z;
-            return havok_runtime::isFinite3(contact.sourceVelocityHavok);
-        };
-
-        auto tryFillAggregateContactPoint = [world](std::uint32_t sourceBodyId,
-                                                    std::uint32_t externalBodyId,
-                                                    ::rock::provider::RockProviderExternalContactV1& contact) {
-            if (!world || sourceBodyId == INVALID_CONTACT_BODY_ID || externalBodyId == INVALID_CONTACT_BODY_ID) {
-                return false;
-            }
-
-            RE::NiTransform sourceTransform{};
-            RE::NiTransform targetTransform{};
-            if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ sourceBodyId }, sourceTransform) ||
-                !havok_runtime::tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ externalBodyId }, targetTransform)) {
-                return false;
-            }
-
-            if (!std::isfinite(sourceTransform.translate.x) || !std::isfinite(sourceTransform.translate.y) || !std::isfinite(sourceTransform.translate.z) ||
-                !std::isfinite(targetTransform.translate.x) || !std::isfinite(targetTransform.translate.y) || !std::isfinite(targetTransform.translate.z)) {
-                return false;
-            }
-
-            const float scale = gameToHavokScale();
-            contact.contactPointHavok[0] = targetTransform.translate.x * scale;
-            contact.contactPointHavok[1] = targetTransform.translate.y * scale;
-            contact.contactPointHavok[2] = targetTransform.translate.z * scale;
-            contact.contactPointHavok[3] = 0.0f;
-
-            const float dx = (targetTransform.translate.x - sourceTransform.translate.x) * scale;
-            const float dy = (targetTransform.translate.y - sourceTransform.translate.y) * scale;
-            const float dz = (targetTransform.translate.z - sourceTransform.translate.z) * scale;
-            const float lenSq = dx * dx + dy * dy + dz * dz;
-            if (std::isfinite(lenSq) && lenSq > 0.000001f) {
-                const float invLen = 1.0f / std::sqrt(lenSq);
-                contact.contactNormalHavok[0] = dx * invLen;
-                contact.contactNormalHavok[1] = dy * invLen;
-                contact.contactNormalHavok[2] = dz * invLen;
-                contact.flags |= static_cast<std::uint32_t>(
-                    ::rock::provider::RockProviderExternalContactFlagV1::ContactNormalValid);
-            }
-
-            contact.contactPointWeightSum = 0.0f;
-            contact.quality = ::rock::provider::RockProviderExternalContactQuality::AggregateImpulse;
-            contact.flags |=
-                static_cast<std::uint32_t>(
-                    ::rock::provider::RockProviderExternalContactFlagV1::ContactPointValid) |
-                static_cast<std::uint32_t>(
-                    ::rock::provider::RockProviderExternalContactFlagV1::ContactPointEstimated);
-            return true;
-        };
-
-        auto publishExternalContact = [&](std::uint32_t sourceBodyId,
-                                          std::uint32_t externalBodyId,
-                                          ::rock::provider::RockProviderExternalSourceKind sourceKind,
-                                          ::rock::provider::RockProviderHand sourceHand,
-                                          const HandColliderBodyMetadata* handMetadata = nullptr) {
-            if (sourceBodyId == INVALID_CONTACT_BODY_ID || externalBodyId == INVALID_CONTACT_BODY_ID || sourceBodyId == externalBodyId) {
-                return;
-            }
-
-            ::rock::provider::RockProviderExternalContactV1 contact{};
-            contact.sourceBodyId = sourceBodyId;
-            contact.targetExternalBodyId = externalBodyId;
-            contact.sourceKind = sourceKind;
-            contact.sourceHand = sourceHand;
-            contact.quality = ::rock::provider::RockProviderExternalContactQuality::BodyPairOnly;
-            contact.frameIndex =
-                _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
-            contact.collisionGeneration =
-                _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire);
-            if (fillSourceVelocity(sourceBodyId, sourceKind, handMetadata, contact)) {
-                contact.flags |= static_cast<std::uint32_t>(
-                    ::rock::provider::RockProviderExternalContactFlagV1::SourceVelocityValid);
-            }
-
-            if (ensureRawContactPoint()) {
-                contact.quality = ::rock::provider::RockProviderExternalContactQuality::RawPoint;
-                contact.contactPointWeightSum = rawContactPoint.contactPointWeightSum;
-                std::copy_n(rawContactPoint.contactPointHavok, 4, contact.contactPointHavok);
-                std::copy_n(rawContactPoint.contactNormalHavok, 4, contact.contactNormalHavok);
-                contact.flags |=
-                    static_cast<std::uint32_t>(
-                        ::rock::provider::RockProviderExternalContactFlagV1::ContactPointValid) |
-                    static_cast<std::uint32_t>(
-                        ::rock::provider::RockProviderExternalContactFlagV1::ContactNormalValid) |
-                    static_cast<std::uint32_t>(
-                        ::rock::provider::RockProviderExternalContactFlagV1::ContactPointMeasured);
-            } else {
-                tryFillAggregateContactPoint(sourceBodyId, externalBodyId, contact);
-            }
-
-            if (handMetadata && handMetadata->valid) {
-                contact.sourceRole = static_cast<std::uint32_t>(handMetadata->role);
-                contact.sourcePartKind = static_cast<std::uint32_t>(handMetadata->finger);
-                contact.sourceSubRole = static_cast<std::uint32_t>(handMetadata->segment);
-            } else if (sourceKind == ::rock::provider::RockProviderExternalSourceKind::Weapon) {
-                if (const auto* weaponSource = weaponSourceFor(sourceBodyId); weaponSource && weaponSource->valid) {
-                    contact.sourcePartKind = static_cast<std::uint32_t>(weaponSource->contact.partKind);
-                    contact.sourceRole = static_cast<std::uint32_t>(weaponSource->contact.reloadRole);
-                    contact.sourceSubRole = static_cast<std::uint32_t>(weaponSource->contact.supportGripRole);
-                }
-            }
-
-            const bool transitionSuppressed =
-                _dynamicHandCollision.isTransitionCollisionSuppressedAtomic();
-            if (transitionSuppressed) {
-                contact.flags |= static_cast<std::uint32_t>(
-                    ::rock::provider::RockProviderExternalContactFlagV1::TransitionSuppressed);
-            } else if ((_lifecycle.flagsAtomic.load(std::memory_order_acquire) &
-                            static_cast<std::uint32_t>(
-                                ::rock::provider::RockProviderLifecycleFlag::PhysicsWriteAllowed)) != 0) {
-                contact.flags |= static_cast<std::uint32_t>(
-                    ::rock::provider::RockProviderExternalContactFlagV1::CollisionAvailable);
-            }
-
-            ::rock::provider::recordExternalContact(
-                contact,
-                _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire),
-                _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire),
-                _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire));
         };
 
         auto recordBodyContactEvidence = [&]() {
@@ -1153,7 +993,6 @@
                     .otherIsRightPalmBody = other == rightId,
                     .otherIsLeftPalmBody = other == leftId,
                     .otherIsBodyCollider = otherIsA ? bodyAIsBody : bodyBIsBody,
-                    .otherIsExternalProvider = ::rock::provider::isExternalBodyId(other),
                 });
             if (decision.sameHeldObject) {
                 ROCK_LOG_SAMPLE_DEBUG(Hand,
@@ -1251,10 +1090,6 @@
         if (contact_pipeline_policy::isHand(contactRoute.source.kind)) {
             const auto* handSource = handSourceFor(contactRoute.sourceBodyId);
             routeHandMetadata = handSource && handSource->valid ? &handSource->metadata : nullptr;
-        }
-
-        if (contactRoute.publishExternalContact) {
-            publishExternalContact(contactRoute.sourceBodyId, contactRoute.targetBodyId, contactRoute.providerSourceKind, contactRoute.providerSourceHand, routeHandMetadata);
         }
 
         auto publishTouch = [&](hand_touch::TouchChannel& channel, std::uint32_t source) {

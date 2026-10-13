@@ -954,13 +954,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKProviderHandItemClientTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKProviderHandItemClientTests)
 
-  add_executable(ROCKProviderExternalBodyRegistryTests
-    "${ROOT_DIR}/tests/ProviderExternalBodyRegistryTests.cpp"
-  )
-  target_compile_features(ROCKProviderExternalBodyRegistryTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKProviderExternalBodyRegistryTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKProviderExternalBodyRegistryTests)
-
   add_executable(ROCKProviderTouchGrabRegistryTests
     "${ROOT_DIR}/tests/ProviderTouchGrabRegistryTests.cpp"
   )

@@ -1,13 +1,11 @@
 #include "api/EjectionContactRequests.h"
-#include <ROCK/EjectionContactsV2.h>
+#include <ROCK/Collision.h>
 #include <cassert>
 #include "physics-interaction/native/MagazineEjectionSnapshot.h"
 int main() {
     using namespace rock;using namespace api;
     EjectionContactRequests requests;
-    static_assert(sizeof(ejection_contacts::ApiV1)==24&&sizeof(ejection_contacts::RequestV1)==48);
-    static_assert(sizeof(ejection_contacts::v2::Api)==24);
-    ejection_contacts::RequestV1 target;target.reference={41,88,2,3,4};target.weaponGenerationKey=99;target.weaponForm=7;target.expectedBase=8;
+    collision::EjectionClearanceRequest target;target.reference={41,88,2,3,4};target.weaponGenerationKey=99;target.weaponFormId=7;target.expectedBase=8;
     assert(requests.request(1,target)==Status::RequestQueued);
     requests.entries[0].waiting=.7f;
     assert(requests.request(1,target)==Status::RequestQueued&&requests.entries[0].waiting==.7f);
@@ -45,11 +43,12 @@ int main() {
     // V1 and V2 coexist: hand exclusions belong only to opted-in magazines.
     requests={};target.reference.referenceFormId=41;
     assert(requests.request(1,target)==Status::RequestQueued&&!requests.entries[0].hands);
-    target.reference.referenceFormId=42;
-    assert(requests.request(2,target,true)==Status::RequestQueued&&requests.entries[1].hands);
+    target.reference.referenceFormId=42;auto withHands=target;
+    withHands.flags=static_cast<std::uint32_t>(collision::EjectionClearanceFlag::IncludeHands);
+    assert(requests.request(2,withHands)==Status::RequestQueued&&requests.entries[1].hands);
     requests.entries[1].active=true;requests.entries[1].age=.75f;
-    assert(requests.request(2,target,true)==Status::Ok&&requests.entries[1].age==.75f);
-    assert(requests.request(2,target,false)==Status::GenerationMismatch);
+    assert(requests.request(2,withHands)==Status::Ok&&requests.entries[1].age==.75f);
+    assert(requests.request(2,target)==Status::GenerationMismatch);
     contacts.world=123;contacts.magazines[0]=magazine;contacts.magazineCount=1;
     contacts.weapons[0]=weapon;contacts.weaponCount=1;
     const BodyIdentity hand{400,9,7000,8000},legacyMagazine{101,10,9000,10000};

@@ -17,7 +17,7 @@ namespace rock::provider::events {
     void publishGrab(const rock::GrabEventData&, const api::Sample&);
     void publishPhysics(std::uint32_t kind,bool left,std::uint32_t form,std::uint32_t layer,const api::Sample&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::core::Event*,std::uint32_t,api::Stream&);
-    api::Status copy(api::OwnerToken,std::uint64_t,api::collision::EventV1*,std::uint32_t,api::Stream&);
+    api::Status copy(api::OwnerToken,std::uint64_t,api::collision::Event*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::grab::Event*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::touch::Event*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::weapon::EventV1*,std::uint32_t,api::Stream&);

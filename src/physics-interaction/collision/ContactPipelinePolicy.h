@@ -11,7 +11,7 @@ namespace rock::contact_pipeline_policy
      * Contact handling is split into capture, classification, and routing so
      * ROCK can keep Havok event decoding narrow while giving every consumer a
      * stable semantic contract. ROCK first decides whether a body pair belongs
-     * to hand, weapon, held-object, or external contact handling, then routes
+     * to hand, weapon, held-object or body contact handling, then routes
      * haptics, semantic state, and ignored-contact behavior through separate
      * FO4VR hknp policy outputs.
      */
@@ -29,7 +29,6 @@ namespace rock::contact_pipeline_policy
         RightHeldObject,
         LeftHeldObject,
         Body,
-        External,
         WorldSurface,
         DynamicProp,
         Actor,
@@ -42,9 +41,6 @@ namespace rock::contact_pipeline_policy
     enum class ContactRoute : std::uint32_t
     {
         Ignore = 0,
-        HandExternal,
-        WeaponExternal,
-        HeldObjectExternal,
         HandWeapon,
         HandWorldSurface,
         WeaponWorldSurface,
@@ -70,14 +66,11 @@ namespace rock::contact_pipeline_policy
         ContactEndpoint target{};
         std::uint32_t sourceBodyId = kInvalidContactBodyId;
         std::uint32_t targetBodyId = kInvalidContactBodyId;
-        bool publishExternalContact = false;
         bool recordHandSemanticContact = false;
         bool recordBodyContact = false;
         bool drivesWeaponSupportContact = false;
         // A hand touched a non-world object: drives the hand touch state.
         bool recordHandTouch = false;
-        ::rock::provider::RockProviderExternalSourceKind providerSourceKind{ ::rock::provider::RockProviderExternalSourceKind::Unknown };
-        ::rock::provider::RockProviderHand providerSourceHand{ ::rock::provider::RockProviderHand::None };
     };
 
     inline constexpr bool isValidBodyId(std::uint32_t bodyId)
@@ -132,11 +125,6 @@ namespace rock::contact_pipeline_policy
         return isHand(kind) || kind == ContactEndpointKind::Weapon || isHeldObject(kind) || isBody(kind);
     }
 
-    inline constexpr bool isExternal(ContactEndpointKind kind)
-    {
-        return kind == ContactEndpointKind::External;
-    }
-
     inline constexpr bool isWorldSurface(ContactEndpointKind kind)
     {
         return kind == ContactEndpointKind::WorldSurface;
@@ -150,31 +138,6 @@ namespace rock::contact_pipeline_policy
     inline constexpr bool isLeftOwned(ContactEndpointKind kind)
     {
         return kind == ContactEndpointKind::LeftHand || kind == ContactEndpointKind::LeftHeldObject;
-    }
-
-    inline constexpr ::rock::provider::RockProviderHand providerHandFor(ContactEndpointKind kind)
-    {
-        if (isLeftOwned(kind)) {
-            return ::rock::provider::RockProviderHand::Left;
-        }
-        if (isRightOwned(kind)) {
-            return ::rock::provider::RockProviderHand::Right;
-        }
-        return ::rock::provider::RockProviderHand::None;
-    }
-
-    inline constexpr ::rock::provider::RockProviderExternalSourceKind providerSourceKindFor(ContactEndpointKind kind)
-    {
-        if (isHand(kind)) {
-            return ::rock::provider::RockProviderExternalSourceKind::Hand;
-        }
-        if (kind == ContactEndpointKind::Weapon) {
-            return ::rock::provider::RockProviderExternalSourceKind::Weapon;
-        }
-        if (isHeldObject(kind)) {
-            return ::rock::provider::RockProviderExternalSourceKind::HeldObject;
-        }
-        return ::rock::provider::RockProviderExternalSourceKind::Unknown;
     }
 
     inline constexpr bool isTouchTarget(ContactEndpointKind targetKind)
@@ -208,12 +171,6 @@ namespace rock::contact_pipeline_policy
         switch (route) {
         case ContactRoute::Ignore:
             return "Ignore";
-        case ContactRoute::HandExternal:
-            return "HandExternal";
-        case ContactRoute::WeaponExternal:
-            return "WeaponExternal";
-        case ContactRoute::HeldObjectExternal:
-            return "HeldObjectExternal";
         case ContactRoute::HandWeapon:
             return "HandWeapon";
         case ContactRoute::HandWorldSurface:
@@ -305,22 +262,6 @@ namespace rock::contact_pipeline_policy
         if (isBody(rock.kind)) {
             auto result = makeClassification(ContactRoute::BodyContact, rock, other);
             result.recordBodyContact = true;
-            return result;
-        }
-
-        if (isExternal(other.kind)) {
-            auto result = makeClassification(
-                isHand(rock.kind)         ? ContactRoute::HandExternal :
-                rock.kind == ContactEndpointKind::Weapon ? ContactRoute::WeaponExternal :
-                isHeldObject(rock.kind)   ? ContactRoute::HeldObjectExternal :
-                                            ContactRoute::UnknownRockContact,
-                rock,
-                other);
-            result.publishExternalContact = result.route != ContactRoute::UnknownRockContact;
-            result.providerSourceKind = providerSourceKindFor(rock.kind);
-            result.providerSourceHand = providerHandFor(rock.kind);
-            result.recordHandSemanticContact = isHand(rock.kind);
-            result.recordHandTouch = isHand(rock.kind) && isTouchTarget(other.kind);
             return result;
         }
 

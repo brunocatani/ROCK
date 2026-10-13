@@ -197,7 +197,6 @@ namespace rock::held_object_contact_policy
         bool otherIsRightPalmBody = false;
         bool otherIsLeftPalmBody = false;
         bool otherIsBodyCollider = false;
-        bool otherIsExternalProvider = false;
     };
 
     struct HeldExternalContactDecision
@@ -226,9 +225,6 @@ namespace rock::held_object_contact_policy
         }
         if (input.otherIsBodyCollider) {
             return HeldExternalContactDecision{ .reason = "body-collider-endpoint" };
-        }
-        if (input.otherIsExternalProvider) {
-            return HeldExternalContactDecision{ .reason = "external-provider-endpoint" };
         }
         return HeldExternalContactDecision{
             .notify = true,

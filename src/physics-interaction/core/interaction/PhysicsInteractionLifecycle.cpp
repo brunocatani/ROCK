@@ -669,7 +669,7 @@ namespace rock
         _drop.nativeHandoffs = {};
         markGeneratedBodiesInvalidated();
         collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
-        ::rock::provider::clearExternalBodiesForProviderLoss();
+        ::rock::provider::clearProviderStateForProviderLoss();
         clearLeftWeaponContact();
         clearRightWeaponContact();
         releaseAllObjects();

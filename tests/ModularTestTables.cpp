@@ -4,7 +4,7 @@
 #include "physics-interaction/grab/DefaultGrabPoseRegistry.h"
 namespace rock::api::core { const Api& table() noexcept { static const Api value{}; return value; } }
 namespace rock::api::hands { const Api& table() noexcept { static const Api value{}; return value; } }
-namespace rock::api::collision { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
+namespace rock::api::collision { const Api& table() noexcept { static const Api value{}; return value; } }
 namespace rock::api::grab {
 namespace {
 saved_grab_offset::DefaultGrabPoseRegistry poses;

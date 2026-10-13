@@ -25,7 +25,6 @@
 #include <mutex>
 #include <string_view>
 
-#include "physics-interaction/object/ExternalBodyRegistry.h"
 #include "physics-interaction/api/InteractionCommandQueue.h"
 #include "physics-interaction/api/InteractionCommandPolicy.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
@@ -165,8 +164,6 @@ namespace rock::provider::runtime
     std::array<RockProviderHandInteractionStateV1, 2> s_lastHandInteractionStates{};
     RockProviderEquippedWeaponStateV1 s_lastEquippedWeaponState{};
 
-    std::mutex s_externalBodyMutex;
-    ExternalBodyRegistry s_externalBodies{};
     std::mutex s_touchGrabMutex;
     TouchGrabRegistry s_touchGrabTargets{};
 
@@ -202,8 +199,6 @@ namespace rock::provider::runtime
     constexpr std::uint64_t kRockIssuedOwnerTokenSequenceMask = 0x0FFF'FFFF'FFFF'FFFFull;
     constexpr std::uint32_t kImplementedConsumerCapabilitiesV1 =
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::FrameSnapshots) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ExternalBodies) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ExternalContacts) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::OffhandReservation) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::InteractionCommands) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::HandInputSuppression) |
@@ -216,7 +211,6 @@ namespace rock::provider::runtime
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::EquippedWeaponHandlingAuthority) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ProviderEvents) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::HandInteractionState) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ExternalBodyScopes) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::WeaponPartObservability) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::WeaponComposition) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::PoseReadback) |
@@ -1596,10 +1590,6 @@ namespace rock::provider::runtime
             clearEquippedWeaponHandlingAuthorityForOwnerLocked(ownerToken);
         }
         {
-            std::scoped_lock lock(s_externalBodyMutex);
-            s_externalBodies.clearOwner(ownerToken);
-        }
-        {
             std::scoped_lock lock(s_touchGrabMutex);
             s_touchGrabTargets.clearOwner(ownerToken);
         }
@@ -2213,7 +2203,6 @@ namespace rock::provider
         RockProviderFrameSnapshot snapshot{};
         snapshot.frameIndex = s_frameClock.publishFrame();
         pi.fillProviderFrameSnapshot(snapshot);
-        snapshot.externalBodyCount = currentExternalBodyCount();
         pi.refreshProviderWeaponSources();
 
         // These atomics are the allocation-free generation authority used by
@@ -2669,7 +2658,7 @@ namespace rock::provider
         }
     }
 
-    void clearExternalBodiesForProviderLoss()
+    void clearProviderStateForProviderLoss()
     {
         {
             std::scoped_lock lock(s_snapshotMutex);
@@ -2723,10 +2712,6 @@ namespace rock::provider
         std::uint64_t nativeRuntimeOwner = 0;
         std::uint64_t equippedHandlingOwner = 0;
 
-        {
-            std::scoped_lock lock(s_externalBodyMutex);
-            s_externalBodies.clearAll();
-        }
         {
             std::scoped_lock lock(s_touchGrabMutex);
             s_touchGrabTargets.clearAll();
@@ -2951,36 +2936,6 @@ namespace rock::provider
         s_forceGrabReservations.clear();
     }
 
-    bool isExternalBodyId(std::uint32_t bodyId)
-    {
-        std::scoped_lock lock(s_externalBodyMutex);
-        return s_externalBodies.containsBody(bodyId);
-    }
-
-    bool recordExternalHandContact(bool isLeft, std::uint32_t handBodyId, std::uint32_t externalBodyId, std::uint64_t frameIndex)
-    {
-        std::scoped_lock lock(s_externalBodyMutex);
-        if (!s_externalBodies.containsBody(externalBodyId)) {
-            return false;
-        }
-        s_externalBodies.recordHandContact(isLeft, handBodyId, externalBodyId, frameIndex);
-        return true;
-    }
-
-    bool recordExternalContact(
-        const RockProviderExternalContactV1& contact,
-        const std::uint32_t worldGeneration,
-        const std::uint32_t skeletonGeneration,
-        const std::uint32_t providerGeneration)
-    {
-        std::scoped_lock lock(s_externalBodyMutex);
-        return s_externalBodies.recordContactV1(
-            contact,
-            worldGeneration,
-            skeletonGeneration,
-            providerGeneration);
-    }
-
     RockProviderOffhandReservation currentHandReservation(const RockProviderHand hand)
     {
         if (static_cast<RockProviderHand>(s_offhandReservationHand.load(std::memory_order_acquire)) != hand) {
@@ -3186,12 +3141,6 @@ namespace rock::provider
             ++copied;
         }
         return copied;
-    }
-
-    std::uint32_t currentExternalBodyCount()
-    {
-        std::scoped_lock lock(s_externalBodyMutex);
-        return s_externalBodies.bodyCount();
     }
 
     bool resolveTouchGrabTargetV1(

@@ -20,7 +20,7 @@ namespace {
     }
 
     OwnedEventStream<api::core::Event,api::core::kEventCapacityPerOwner,api::core::kMaxOwners> coreEvents;
-    OwnedEventStream<api::collision::EventV1,api::collision::kEventCapacityPerOwner,api::core::kMaxOwners> collisionEvents;
+    OwnedEventStream<api::collision::Event,api::collision::kEventCapacityPerOwner,api::core::kMaxOwners> collisionEvents;
     OwnedEventStream<api::grab::Event,api::grab::kEventCapacityPerOwner,api::core::kMaxOwners> grabEvents;
     OwnedEventStream<api::touch::Event,api::touch::kEventCapacityPerOwner,api::core::kMaxOwners> touchEvents;
     OwnedEventStream<api::weapon::EventV1,api::weapon::kEventCapacityPerOwner,api::core::kMaxOwners> weaponEvents;
@@ -57,7 +57,7 @@ void remove(api::OwnerToken owner) {
     diagnosticsEvents.remove(owner);
 }
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::core::Event* output,std::uint32_t capacity,api::Stream& state) { return coreEvents.copy(owner,after,output,capacity,state); }
-api::Status copy(api::OwnerToken owner,std::uint64_t after,api::collision::EventV1* output,std::uint32_t capacity,api::Stream& state) { return collisionEvents.copy(owner,after,output,capacity,state); }
+api::Status copy(api::OwnerToken owner,std::uint64_t after,api::collision::Event* output,std::uint32_t capacity,api::Stream& state) { return collisionEvents.copy(owner,after,output,capacity,state); }
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::grab::Event* output,std::uint32_t capacity,api::Stream& state) { return grabEvents.copy(owner,after,output,capacity,state); }
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::touch::Event* output,std::uint32_t capacity,api::Stream& state) { return touchEvents.copy(owner,after,output,capacity,state); }
 api::Status copy(api::OwnerToken owner,std::uint64_t after,api::weapon::EventV1* output,std::uint32_t capacity,api::Stream& state) { return weaponEvents.copy(owner,after,output,capacity,state); }
@@ -95,7 +95,7 @@ void publishGrab(const rock::GrabEventData& source,const api::Sample& sample) {
 }
 void publishPhysics(std::uint32_t kind,bool left,std::uint32_t form,std::uint32_t layer,const api::Sample& sample) {
     if (kind==100 || kind==101) {
-        api::collision::EventV1 event{}; stamp(event,sample); event.kind=kind-99;
+        api::collision::Event event{}; stamp(event,sample); event.kind=kind-99;
         event.hand=left?api::Hand::Left:api::Hand::Right; event.formId=form; event.collisionLayer=layer;
         collisionEvents.publish(event);
     } else if (kind==102 || kind==103) {

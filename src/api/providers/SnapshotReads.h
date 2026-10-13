@@ -13,7 +13,7 @@ namespace rock::api::hands {
     Status ROCK_CALL getRoles(OwnerToken, Roles*) noexcept;
 }
 namespace rock::api::collision {
-    Status ROCK_CALL getEnvironment(OwnerToken, EnvironmentV1*) noexcept;
+    Status ROCK_CALL getEnvironment(OwnerToken, Environment*) noexcept;
 }
 namespace rock::api::weapon {
     Status ROCK_CALL getEquippedWeaponStateV1(OwnerToken, EquippedWeaponStateV1*) noexcept;

@@ -32,7 +32,7 @@ void PhysicsInteraction::updateObjectRest(const PhysicsFrameContext& frame) {
         }
         if(ref==right || ref==left) {
             _objectRestCollision.releaseReference(ref,frame.hknpWorld,gate);
-            entry.state=api::object_rest::State::Waiting;entry.status=api::Status::RequestQueued;continue;
+            entry.state=api::collision::ObjectRestState::Waiting;entry.status=api::Status::RequestQueued;continue;
         }
     }
     // Reuse precisely the weapon support witness, anchored rest interval,
@@ -42,13 +42,13 @@ void PhysicsInteraction::updateObjectRest(const PhysicsFrameContext& frame) {
     // slot. Otherwise admission can overwrite that slot's _rested receipt.
     for(auto& entry:_objectRestRequests.entries)if(entry.owner&&!entry.cancelled&&
         _objectRestCollision.takeNativeRestCompletion(entry.request.reference.referenceFormId)) {
-        entry.state=api::object_rest::State::Resting;entry.status=api::Status::Ok;
+        entry.state=api::collision::ObjectRestState::Resting;entry.status=api::Status::Ok;
         ROCK_LOG_INFO(Weapon,"Object rest completed ref={:08X}; physics ownership released, native placement retained",entry.request.reference.referenceFormId);
     }
     for(auto& entry:_objectRestRequests.entries)if(entry.owner && !entry.cancelled) {
         auto* ref=RE::TESForm::GetFormByID<RE::TESObjectREFR>(entry.request.reference.referenceFormId);
         if(!ref || ref==right || ref==left)continue;
-        if(entry.state==api::object_rest::State::Resting || (entry.status!=api::Status::Ok && entry.status!=api::Status::RequestQueued))continue;
+        if(entry.state==api::collision::ObjectRestState::Resting || (entry.status!=api::Status::Ok && entry.status!=api::Status::RequestQueued))continue;
         using Result=LooseWeaponCollision::NativeRest;
         Result result;
         try {result=_objectRestCollision.watchNative(ref,frame,gate);}
@@ -58,7 +58,7 @@ void PhysicsInteraction::updateObjectRest(const PhysicsFrameContext& frame) {
         }
         if(result==Result::CapacityFull)continue;
         if(result==Result::Unavailable){entry.status=api::Status::TargetUnavailable;continue;}
-        entry.state=result==Result::Resting?api::object_rest::State::Resting:api::object_rest::State::Watching;
+        entry.state=result==Result::Resting?api::collision::ObjectRestState::Resting:api::collision::ObjectRestState::Watching;
         entry.status=api::Status::Ok;
     }
 }

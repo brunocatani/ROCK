@@ -44,18 +44,8 @@ namespace rock::provider
     void beginGameFrame(std::uint64_t frameIndex) noexcept;
     void setPhysicsInteractionInstance(rock::PhysicsInteraction* pi);
     void dispatchFrameCallbacks(rock::PhysicsInteraction& pi);
-    void clearExternalBodiesForProviderLoss();
-    bool isExternalBodyId(std::uint32_t bodyId);
-    bool recordExternalHandContact(
-        bool isLeft,
-        std::uint32_t handBodyId,
-        std::uint32_t externalBodyId,
-        std::uint64_t frameIndex);
-    bool recordExternalContact(
-        const RockProviderExternalContactV1& contact,
-        std::uint32_t worldGeneration,
-        std::uint32_t skeletonGeneration,
-        std::uint32_t providerGeneration);
+    // Invalidates live reads and releases every lease after provider loss.
+    void clearProviderStateForProviderLoss();
     // The reservation on hand, or Normal when that hand is not reserved.
     RockProviderOffhandReservation currentHandReservation(RockProviderHand hand);
     void setEquippedWeaponFiringHandIsLeft(bool isLeft);
@@ -86,7 +76,6 @@ namespace rock::provider
         RockProviderWeaponPartDriveTargetV1* outTargets,
         std::uint32_t maxTargets,
         std::uint64_t* outOwnerTokens = nullptr,bool pruneExpired = true);
-    std::uint32_t currentExternalBodyCount();
     bool resolveTouchGrabTargetV1(
         std::uint32_t bodyId,
         std::uint32_t collisionLayer,
