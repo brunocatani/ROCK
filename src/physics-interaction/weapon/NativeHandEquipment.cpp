@@ -577,6 +577,13 @@ namespace rock::native_hand_equipment
         return result;
     }
 
+    bool secondaryEquipInProgress(const RE::Actor* actor) noexcept
+    {
+        const auto* execution = s_execution;
+        return execution && actor && execution->actor == actor && execution->slot &&
+            execution->slot->formID == 0x13F43;
+    }
+
     bool equipIntoSecondary(RE::Actor* actor, RE::TESObjectWEAP* weapon, RE::TBO_InstanceData* instance,
         bool left, SecondaryEquipCall equip, void* context) noexcept
     {

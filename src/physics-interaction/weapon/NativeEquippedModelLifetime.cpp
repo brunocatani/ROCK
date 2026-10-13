@@ -227,9 +227,26 @@ namespace rock::native_equipped_model_lifetime
             return native_memory::tryReadField(process, 8, middle) && middle &&
                 native_memory::tryReadField(middle, 0x4A0, flags);
         }
+        // 140DCF5E0 (called by the equip executor 140E72DA0 at 140E73280 for
+        // a hand slot) hides the actor's weapons with reason 2 until the
+        // native draw cleanup clears it (~190 ms, runtime 12 Oct 22:16:13).
+        // For ROCK's equip into index 1 that hide only blanks the unchanged
+        // primary for a frame and delays the second gun, which ROCK presents
+        // itself once its model is complete; it is skipped for that equip.
+        constexpr std::uintptr_t kEquipHideReturn = 0xDCF669;
+        constexpr std::uint32_t kEquipHideReason = 2;
+        std::atomic<std::uint32_t> s_skippedHides{0};
+
         bool cull(void* process, RE::Actor* actor, bool hidden, std::uint32_t reason) noexcept
         {
             const auto caller = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
+            if (s_installed && hidden && reason == kEquipHideReason && actor && actor == f4vr::getPlayer() &&
+                caller == REL::Offset(kEquipHideReturn).address() &&
+                native_hand_equipment::secondaryEquipInProgress(actor)) {
+                if (s_skippedHides.fetch_add(1, std::memory_order_relaxed) < 8)
+                    ROCK_LOG_INFO(Weapon, "AKIMBO native equip hide skipped for the second-weapon equip; both guns stay visible");
+                return false;
+            }
             std::uint8_t before = 0xFF, after = 0xFF;
             const bool trace = s_installed && actor && actor == f4vr::getPlayer() &&
                 s_cullLogs.fetch_add(1, std::memory_order_relaxed) < 128;

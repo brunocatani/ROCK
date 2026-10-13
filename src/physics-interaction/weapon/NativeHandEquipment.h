@@ -67,6 +67,10 @@ namespace rock::native_hand_equipment
     [[nodiscard]] bool equipIntoSecondary(RE::Actor* actor, RE::TESObjectWEAP* weapon, RE::TBO_InstanceData* instance,
         bool left, SecondaryEquipCall equip, void* context) noexcept;
 
+    // True on the thread running one of ROCK's synchronous native equips
+    // into equipment index 1 (LeftHand leaf) for `actor`.
+    [[nodiscard]] bool secondaryEquipInProgress(const RE::Actor* actor) noexcept;
+
     // Pip-Boy display (UI thread): the physical hand holding the weapon of
     // base form `form` in the row's native slot (0 or 1). The other index
     // is used only when the slot wears a different form; None when neither
