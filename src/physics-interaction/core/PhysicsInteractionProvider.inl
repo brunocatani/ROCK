@@ -1337,14 +1337,14 @@
         return true;
     }
 
-    bool PhysicsInteraction::queryProviderPresentedHandPoseV1(
-        const ::rock::provider::RockProviderHand hand,
-        ::rock::provider::RockProviderPresentedHandPoseV1& outPose,
+    bool PhysicsInteraction::queryProviderPresentedHandPose(
+        const ::rock::api::Hand hand,
+        ::rock::api::hands::PresentedHandPose& outPose,
         ::rock::provider::RockProviderFrameSnapshot* outMetadata) const
     {
         outPose = {};
-        if (hand != provider::RockProviderHand::Left && hand != provider::RockProviderHand::Right) return false;
-        const auto& captured = _providerDrives.presentedPoses[hand == provider::RockProviderHand::Left ? 1u : 0u];
+        if (hand != api::Hand::Left && hand != api::Hand::Right) return false;
+        const auto& captured = _providerDrives.presentedPoses[hand == api::Hand::Left ? 1u : 0u];
         if (!frik_visual_authority::isSkeletonReadyHint() || captured.frameIndex == 0 ||
             captured.worldGeneration != _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire) ||
             captured.skeletonGeneration != _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire) ||
@@ -1356,7 +1356,7 @@
 
     void PhysicsInteraction::captureProviderPresentedHandPoses()
     {
-        using Flag = ::rock::provider::RockProviderPresentedHandPoseFlagV1;
+        using Flag = ::rock::api::hands::PresentedHandPoseFlag;
         _providerDrives.presentedPoses = {};
         _providerDrives.presentedMetadata = {};
         _finalPoseBoneSnapshot.valid = false;
@@ -1380,7 +1380,7 @@
             auto& outPose = _providerDrives.presentedPoses[isLeft ? 1u : 0u];
             const auto* wrist = bones.find(isLeft ? "LArm_Hand" : "RArm_Hand");
             if (!wrist || !finiteNiTransform(wrist->world)) continue;
-            outPose.hand = isLeft ? provider::RockProviderHand::Left : provider::RockProviderHand::Right;
+            outPose.hand = isLeft ? api::Hand::Left : api::Hand::Right;
             outPose.flags =
                 static_cast<std::uint32_t>(Flag::Valid) |
                 static_cast<std::uint32_t>(Flag::HandWorldValid);
@@ -1413,8 +1413,7 @@
                         fillProviderTransform(
                             local,
                             outPose.fingerLocalTransforms[poseIndex]);
-                        outPose.fingerLocalTransformMask |=
-                            static_cast<std::uint16_t>(1u << poseIndex);
+                        outPose.fingerLocalTransformMask |= 1u << poseIndex;
                     }
                 }
                 if (outPose.fingerLocalTransformMask != 0) {

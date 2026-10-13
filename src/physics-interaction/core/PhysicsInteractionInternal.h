@@ -888,7 +888,9 @@ namespace rock
                 f4vr::getNativeWeaponState(f4vr::getPlayer()));
         }
 
-        inline void fillProviderTransform(const RE::NiTransform& source, ::rock::provider::RockProviderTransform& target)
+        // Target is a provider or public API transform: rotate[9], translate[3], scale.
+        template <class Target>
+        inline void fillProviderTransform(const RE::NiTransform& source, Target& target)
         {
             for (int row = 0; row < 3; ++row) {
                 for (int column = 0; column < 3; ++column) {

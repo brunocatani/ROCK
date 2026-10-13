@@ -1,153 +1,119 @@
 // Private Hands service operations. Included after shared owner/lifecycle helpers.
+// They fill provider API major-2 Hands records directly; the endpoint has
+// already validated and cleared each output record.
 
-    bool ROCK_PROVIDER_CALL apiGetHandFrameV1(RockProviderHand hand, RockProviderHandFrameV1* outFrame)
+    inline api::Sample handsSample(const RockProviderFrameSnapshot& snapshot) noexcept
     {
-        provider_state_policy::clearQueryOutput(outFrame, 112);
+        return { snapshot.frameIndex, snapshot.stateSequence, snapshot.worldGeneration,
+            snapshot.skeletonGeneration, snapshot.providerGeneration, snapshot.collisionGeneration };
+    }
+
+    inline void copyHandsTransform(const RockProviderTransform& source, api::Transform& target) noexcept
+    {
+        std::copy_n(source.rotate, 9, target.rotate);
+        std::copy_n(source.translate, 3, target.translate);
+        target.scale = source.scale;
+    }
+
+    inline bool finiteHandsTransform(const api::Transform& value) noexcept
+    {
+        for (const float component : value.rotate) {
+            if (!std::isfinite(component)) return false;
+        }
+        for (const float component : value.translate) {
+            if (!std::isfinite(component)) return false;
+        }
+        return std::isfinite(value.scale);
+    }
+
+    api::Status apiGetHandFrame(const api::Hand hand, api::hands::HandFrame& outFrame)
+    {
         /*
          * Hand frames expose ROCK's hand authority as a value snapshot instead
-         * of a NiNode lookup. Consumers need the same primary/offhand mapping,
-         * body id, and root-flattened transform that ROCK drives each frame,
-         * while ROCK deliberately does not promise a live scene node for that
-         * authority surface.
+         * of a NiNode lookup: the root-flattened transform ROCK drives each
+         * frame, without promising a live scene node for it.
          */
-        if (!outFrame || outFrame->size < 112) {
-            return false;
+        if (hand != api::Hand::Right && hand != api::Hand::Left) {
+            return api::Status::InvalidArgument;
         }
-        const auto requestedSize = outFrame->size;
-
-        if (hand != RockProviderHand::Right && hand != RockProviderHand::Left) {
-            return false;
-        }
-
         RockProviderFrameSnapshot snapshot{};
         {
             std::scoped_lock lock(s_snapshotMutex);
             if (!s_hasSnapshot) {
-                return false;
+                return api::Status::NotReady;
             }
             snapshot = s_lastSnapshot;
         }
 
-        const auto transformFlag = hand == RockProviderHand::Left ?
+        const bool isLeft = hand == api::Hand::Left;
+        const auto transformFlag = isLeft ?
             RockProviderFrameEnrichmentFlagV1::LeftHandTransformValid :
             RockProviderFrameEnrichmentFlagV1::RightHandTransformValid;
         if (!apiIsProviderReady() || snapshot.providerReady == 0 ||
             !(snapshot.enrichmentFlags & static_cast<std::uint32_t>(transformFlag))) {
-            return false;
+            return api::Status::NotReady;
         }
 
-        const bool isLeft = hand == RockProviderHand::Left;
-        RockProviderHandFrameV1 frame{};
-        frame.hand = hand;
-        frame.flags = static_cast<std::uint32_t>(RockProviderHandFrameFlagV1::Valid) |
-                      static_cast<std::uint32_t>(RockProviderHandFrameFlagV1::RootFlattenedAuthority);
-        if (isLeft) {
-            frame.flags |= static_cast<std::uint32_t>(RockProviderHandFrameFlagV1::Left);
-        }
-        if (hand == snapshot.primaryHand) {
-            frame.flags |= static_cast<std::uint32_t>(RockProviderHandFrameFlagV1::Primary);
-        }
-        if (hand == snapshot.offhandHand) {
-            frame.flags |= static_cast<std::uint32_t>(RockProviderHandFrameFlagV1::Offhand);
-        }
-
-        frame.transform = isLeft ? snapshot.leftHandTransform : snapshot.rightHandTransform;
-        frame.bodyId = isLeft ? snapshot.leftHandBodyId : snapshot.rightHandBodyId;
-        frame.state = isLeft ? snapshot.leftHandState : snapshot.rightHandState;
-        frame.frameIndex = snapshot.frameIndex;
-        frame.worldGeneration = snapshot.worldGeneration;
-        frame.skeletonGeneration = snapshot.skeletonGeneration;
-        frame.providerGeneration = snapshot.providerGeneration;
-        frame.collisionGeneration = snapshot.collisionGeneration;
-        frame.stateSequence = snapshot.stateSequence;
-        const auto copySize = (std::min<std::size_t>)(
-            requestedSize,
-            sizeof(frame));
-        std::memcpy(outFrame, &frame, copySize);
-        outFrame->size = static_cast<std::uint32_t>(copySize);
-        return true;
+        using Flag = api::hands::HandFrameFlag;
+        outFrame.hand = hand;
+        outFrame.flags = static_cast<std::uint32_t>(Flag::Valid) |
+                         static_cast<std::uint32_t>(Flag::RootFlattenedAuthority) |
+                         (isLeft ? static_cast<std::uint32_t>(Flag::Left) : 0u);
+        copyHandsTransform(isLeft ? snapshot.leftHandTransform : snapshot.rightHandTransform, outFrame.transform);
+        outFrame.sample = handsSample(snapshot);
+        return api::Status::Ok;
     }
 
-    bool ROCK_PROVIDER_CALL apiGetPresentedHandFrameV1(
-        const RockProviderHand hand,
-        RockProviderHandFrameV1* outFrame)
+    api::Status apiGetPresentedHandFrame(const api::Hand hand, api::hands::HandFrame& outFrame)
     {
-        provider_state_policy::clearQueryOutput(outFrame, 112);
-        if (!outFrame ||
-            outFrame->size < 112 ||
-            (hand != RockProviderHand::Right &&
-                hand != RockProviderHand::Left) ||
-            !onAnimationOwnerThread() ||
-            !apiIsProviderReady() ||
+        if (hand != api::Hand::Right && hand != api::Hand::Left) {
+            return api::Status::InvalidArgument;
+        }
+        if (!onAnimationOwnerThread()) {
+            return api::Status::WrongThread;
+        }
+        if (!apiIsProviderReady() ||
             !frik_visual_authority::isAvailable() ||
             !frik_visual_authority::isSkeletonReadyHint()) {
-            return false;
+            return api::Status::NotReady;
         }
 
         const auto access = s_physicsInteraction.borrow();
         auto* pi = access.get();
-        RockProviderPresentedHandPoseV1 pose{};
+        api::hands::PresentedHandPose pose{};
         RockProviderFrameSnapshot snapshot{};
-        if (!pi || !pi->isInitialized() || !pi->queryProviderPresentedHandPoseV1(hand, pose, &snapshot)) {
-            return false;
-        }
-        const auto& providerTransform = pose.handWorld;
-        if (!finiteProviderTransform(providerTransform)) {
-            return false;
+        if (!pi || !pi->isInitialized() || !pi->queryProviderPresentedHandPose(hand, pose, &snapshot) ||
+            !finiteHandsTransform(pose.handWorld)) {
+            return api::Status::NotReady;
         }
 
-        const auto requestedSize = outFrame->size;
-        RockProviderHandFrameV1 frame{};
-        frame.hand = hand;
-        frame.flags = static_cast<std::uint32_t>(
-                          RockProviderHandFrameFlagV1::Valid) |
-                      static_cast<std::uint32_t>(
-                          RockProviderHandFrameFlagV1::PresentedVisual);
-        if (hand == RockProviderHand::Left) {
-            frame.flags |= static_cast<std::uint32_t>(
-                RockProviderHandFrameFlagV1::Left);
-        }
-        if (hand == snapshot.primaryHand) {
-            frame.flags |= static_cast<std::uint32_t>(
-                RockProviderHandFrameFlagV1::Primary);
-        }
-        if (hand == snapshot.offhandHand) {
-            frame.flags |= static_cast<std::uint32_t>(
-                RockProviderHandFrameFlagV1::Offhand);
-        }
-        frame.transform = providerTransform;
-        frame.state = hand == RockProviderHand::Left ? snapshot.leftHandState : snapshot.rightHandState;
-        frame.bodyId = hand == RockProviderHand::Left ? snapshot.leftHandBodyId : snapshot.rightHandBodyId;
-        frame.frameIndex = pose.frameIndex;
-        frame.worldGeneration = pose.worldGeneration;
-        frame.skeletonGeneration = pose.skeletonGeneration;
-        frame.providerGeneration = pose.providerGeneration;
-        frame.collisionGeneration = snapshot.collisionGeneration;
-        frame.stateSequence = snapshot.stateSequence;
-        const auto copySize = (std::min<std::size_t>)(
-            requestedSize,
-            sizeof(frame));
-        std::memcpy(outFrame, &frame, copySize);
-        outFrame->size = static_cast<std::uint32_t>(copySize);
-        return true;
+        // The presentation keeps its own frame and generations; the control
+        // publication frozen with that capture supplies the state sequence.
+        using Flag = api::hands::HandFrameFlag;
+        outFrame.hand = hand;
+        outFrame.flags = static_cast<std::uint32_t>(Flag::Valid) |
+                         static_cast<std::uint32_t>(Flag::PresentedVisual) |
+                         (hand == api::Hand::Left ? static_cast<std::uint32_t>(Flag::Left) : 0u);
+        outFrame.transform = pose.handWorld;
+        outFrame.sample = { pose.frameIndex, snapshot.stateSequence, pose.worldGeneration,
+            pose.skeletonGeneration, pose.providerGeneration, snapshot.collisionGeneration };
+        return api::Status::Ok;
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetPresentedHandPoseV1(
+    api::Status apiGetPresentedHandPose(
         const std::uint64_t ownerToken,
-        const RockProviderHand hand,
-        RockProviderPresentedHandPoseV1* outPose)
+        const api::Hand hand,
+        api::hands::PresentedHandPose& outPose)
     {
-        if (hand != RockProviderHand::Right && hand != RockProviderHand::Left) {
-            provider_state_policy::clearQueryOutput(outPose);
-            return RockProviderResultV1::HandUnavailable;
+        if (hand != api::Hand::Right && hand != api::Hand::Left) {
+            return api::Status::HandUnavailable;
         }
-        const auto result = queryPhysicsInteractionValueV1(
+        return static_cast<api::Status>(queryPhysicsInteractionValueV1(
             ownerToken,
             RockProviderConsumerCapabilityV1::PoseReadback,
-            outPose,
-            [hand](PhysicsInteraction& pi, RockProviderPresentedHandPoseV1& pose) {
-                return pi.queryProviderPresentedHandPoseV1(hand, pose);
+            &outPose,
+            [hand](PhysicsInteraction& pi, api::hands::PresentedHandPose& pose) {
+                return pi.queryProviderPresentedHandPose(hand, pose);
             },
-            true);
-        return result;
+            true));
     }

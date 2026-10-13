@@ -1,36 +1,36 @@
 #include "SnapshotReads.h"
-#include "HandsMarshalling.h"
 #include "CollisionMarshalling.h"
 #include "WeaponMarshalling.h"
 #include "WeaponPartsMarshalling.h"
 
 namespace rock::api::hands {
 using namespace boundary;
-Status ROCK_CALL getHandFrameV1(OwnerToken ownerToken, Hand hand, HandFrameV1* outFrame) noexcept {
+Status ROCK_CALL getHandFrame(OwnerToken owner, Hand hand, HandFrame* outFrame) noexcept {
     if (const auto s = checkOutput(outFrame); s != Status::Ok) return s;
     if (hand!=Hand::Right && hand!=Hand::Left) return Status::InvalidArgument;
-    return invoke(ownerToken, kInterfaceId, 1, false, [&]() -> Status {
-        provider::RockProviderHandFrameV1 native_outFrame{};
-        const auto result = provider::runtime::apiGetHandFrameV1(static_cast<provider::RockProviderHand>(hand), &native_outFrame);
-        convert(*outFrame, native_outFrame);
-        return result ? Status::Ok : Status::NotReady;
+    return invoke(owner, kInterfaceId, 1, false, [&] {
+        return provider::runtime::apiGetHandFrame(hand, *outFrame);
     });
 }
 
-Status ROCK_CALL getHeadPose(OwnerToken owner, HeadPoseV1* result) noexcept {
+Status ROCK_CALL getHeadPose(OwnerToken owner, HeadPose* result) noexcept {
     if (const auto s=checkOutput(result); s!=Status::Ok) return s;
     return invoke(owner, kInterfaceId, 1, false, [&]() {
         provider::RockProviderFrameSnapshot frame{};
         if (!provider::runtime::apiGetFrameSnapshot(&frame)) return Status::NotReady;
         result->sample = sampleFromSnapshot(frame);
-        result->valid = (frame.enrichmentFlags >> 1) & 3u;
+        using RockFlag = provider::RockProviderFrameEnrichmentFlagV1;
+        if (frame.enrichmentFlags & static_cast<std::uint32_t>(RockFlag::HmdTransformValid))
+            result->flags |= static_cast<std::uint32_t>(HeadPoseFlag::TransformValid);
+        if (frame.enrichmentFlags & static_cast<std::uint32_t>(RockFlag::HmdForwardValid))
+            result->flags |= static_cast<std::uint32_t>(HeadPoseFlag::ForwardValid);
         convert(result->transform, frame.hmdTransform);
         std::copy_n(frame.hmdForwardWorld, 3, result->forwardWorld);
         return Status::Ok;
     });
 }
 
-Status ROCK_CALL getRoles(OwnerToken owner, RolesV1* result) noexcept {
+Status ROCK_CALL getRoles(OwnerToken owner, Roles* result) noexcept {
     if (const auto status=checkOutput(result); status!=Status::Ok) return status;
     return invoke(owner, kInterfaceId, 1, false, [&]() {
         provider::RockProviderFrameSnapshot frame{};

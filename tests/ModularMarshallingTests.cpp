@@ -1,6 +1,5 @@
 #include "api/providers/AnimationMarshalling.h"
 #include "api/providers/CollisionMarshalling.h"
-#include "api/providers/HandsMarshalling.h"
 #include "api/providers/ReferencesMarshalling.h"
 #include <cassert>
 #include <iterator>
@@ -33,8 +32,6 @@ int main() {
     samePoint(bounds.min,returnedBounds.min);samePoint(bounds.max,returnedBounds.max);
 
     // Cover nested reads and writes used by separate feature providers.
-    provider::RockProviderHandFrameV1 hand{};hand.transform=nativePose;
-    api::hands::HandFrameV1 publicHand{};convert(publicHand,hand);samePose(hand.transform,publicHand.transform);
     api::collision::WorldRaycastRequestV1 ray{};ray.startGame={100,-20,30};ray.directionGame={1,2,3};
     provider::RockProviderWorldRaycastRequestV1 nativeRay{};convert(nativeRay,ray);
     samePoint(ray.startGame,nativeRay.startGame);samePoint(ray.directionGame,nativeRay.directionGame);

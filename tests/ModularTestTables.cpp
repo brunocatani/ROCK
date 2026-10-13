@@ -3,7 +3,7 @@
 #include "api/AuthoredInteractionLease.h"
 #include "physics-interaction/grab/DefaultGrabPoseRegistry.h"
 namespace rock::api::core { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
-namespace rock::api::hands { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
+namespace rock::api::hands { const Api& table() noexcept { static const Api value{}; return value; } }
 namespace rock::api::collision { const ApiV1& table() noexcept { static const ApiV1 value{}; return value; } }
 namespace rock::api::grab {
 namespace {

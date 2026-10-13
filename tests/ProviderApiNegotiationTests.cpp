@@ -59,6 +59,11 @@ int main() {
         assert(oldTable->publishVisuals==rock::native_interaction_service::table().publishVisuals);
     }
     verify(hands::table(),hands::kSupportedPermissions);
+    {
+        // A major-1 Hands consumer is refused cleanly, never handed the major-2 table.
+        const InterfaceDescriptorV1* refused=&descriptors[0].descriptor;
+        assert(ROCKAPI_QueryInterfaceV1(hands::kInterfaceId,1,0,48,&refused)==Status::UnsupportedMajor && !refused);
+    }
     verify(collision::table(),collision::kSupportedPermissions);
     verify(grab::tableV1_3(),grab::kSupportedPermissions);
     {

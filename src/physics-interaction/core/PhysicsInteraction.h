@@ -7,6 +7,7 @@
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/collision/HandTouchChannel.h"
 
+#include <ROCK/Hands.h>
 #include <array>
 #include <atomic>
 #include <mutex>
@@ -282,9 +283,9 @@ namespace rock
             std::uint32_t maxEntries) const;
         bool queryProviderSelectedAuthoredGripPoseV1(
             ::rock::provider::RockProviderAuthoredGripPoseV1& outPose) const;
-        bool queryProviderPresentedHandPoseV1(
-            ::rock::provider::RockProviderHand hand,
-            ::rock::provider::RockProviderPresentedHandPoseV1& outPose,
+        bool queryProviderPresentedHandPose(
+            ::rock::api::Hand hand,
+            ::rock::api::hands::PresentedHandPose& outPose,
             ::rock::provider::RockProviderFrameSnapshot* outMetadata = nullptr) const;
         std::uint32_t copyProviderSemanticHandContactsV1(
             ::rock::provider::RockProviderHand hand,
@@ -919,7 +920,7 @@ namespace rock
                 results{};
             std::uint32_t resultCount{ 0 };
             SkeletonBoneNameIndex presentedPoseNames{};
-            std::array<::rock::provider::RockProviderPresentedHandPoseV1, 2> presentedPoses{};
+            std::array<::rock::api::hands::PresentedHandPose, 2> presentedPoses{};
             ::rock::provider::RockProviderFrameSnapshot presentedMetadata{};
         };
 

@@ -1,5 +1,5 @@
 #include "api/providers/GrabMarshalling.h"
-#include "api/providers/HandsMarshalling.h"
+#include <ROCK/Hands.h>
 #include <cassert>
 int main() {
     using namespace rock;
@@ -20,9 +20,7 @@ int main() {
     provider::RockProviderPowerArmorGrabRequestV1 native{};
     api::boundary::convert(native,request);
     assert(native.target.referenceNativeHandle==987 && native.target.providerGeneration==3);
-    provider::RockProviderHandFrameV1 frame{}; frame.flags=0xFFFFFFFF;
-    api::hands::HandFrameV1 pose{}; api::boundary::convert(pose,frame);
-    assert((pose.flags & ((1u<<2)|(1u<<3)))==0);
+    api::hands::HandFrame pose{};
     pose.size=sizeof(pose)-1;
     assert(api::boundary::checkOutput(&pose)==api::Status::InvalidSize && pose.size==sizeof(pose)-1);
 }

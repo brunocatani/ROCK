@@ -909,6 +909,7 @@ if(BUILD_ROCK_TESTS)
   )
   target_compile_features(ROCKProviderApiNegotiationTests PRIVATE cxx_std_23)
   target_include_directories(ROCKProviderApiNegotiationTests PRIVATE ${SOURCE_DIR})
+  target_compile_definitions(ROCKProviderApiNegotiationTests PRIVATE ROCK_POLICY_TEST_NO_RUNTIME_LOGGER)
   add_rock_test(ROCKProviderApiNegotiationTests)
 
   add_executable(ROCKModularMarshallingTests "${ROOT_DIR}/tests/ModularMarshallingTests.cpp")

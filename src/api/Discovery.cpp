@@ -1,5 +1,7 @@
 #include "InterfaceNegotiation.h"
+#include "physics-interaction/PhysicsLog.h"
 #include <array>
+#include <atomic>
 #include <ROCK/Core.h>
 #include <ROCK/Hands.h>
 #include <ROCK/Collision.h>
@@ -22,7 +24,7 @@
 #include <ROCK/NativeInteractionV1_1.h>
 
 namespace rock::api::core { const ApiV1& table() noexcept; }
-namespace rock::api::hands { const ApiV1& table() noexcept; }
+namespace rock::api::hands { const Api& table() noexcept; }
 namespace rock::api::collision { const ApiV1& table() noexcept; }
 namespace rock::api::grab { const v1_3::Api& tableV1_3() noexcept; }
 namespace rock::api::touch { const v1_1::Api& tableV1_1() noexcept; }
@@ -62,9 +64,29 @@ std::span<const RegisteredInterface> registeredInterfaces() noexcept {
 }
 }
 
+namespace {
+    // An outdated consumer usually retries discovery; each refused
+    // (interface, major) pair is logged once.
+    std::array<std::atomic<std::uint32_t>, 32> s_refusedMajors{};
+
+    void logRefusedMajor(rock::api::InterfaceId id, std::uint32_t major) noexcept {
+        const auto index = static_cast<std::uint32_t>(id);
+        if (index >= s_refusedMajors.size() || major >= 32) return;
+        const auto bit = 1u << major;
+        if (s_refusedMajors[index].fetch_or(bit, std::memory_order_relaxed) & bit) return;
+        try {
+            ROCK_LOG_WARN(Api, "Discovery refused interface {} major {}; this ROCK serves only its current provider majors, so the consumer must be updated",
+                index, major);
+        } catch (...) {
+        }
+    }
+}
+
 extern "C" __declspec(dllexport) rock::api::Status ROCK_CALL ROCKAPI_QueryInterfaceV1(
     rock::api::InterfaceId id, std::uint32_t exactMajor, std::uint32_t minimumMinor,
     std::uint32_t minimumTableBytes, const rock::api::InterfaceDescriptorV1** output) noexcept {
-    return rock::api::discovery::query(rock::api::discovery::registeredInterfaces(),
+    const auto status = rock::api::discovery::query(rock::api::discovery::registeredInterfaces(),
         id, exactMajor, minimumMinor, minimumTableBytes, output);
+    if (status == rock::api::Status::UnsupportedMajor) logRefusedMajor(id, exactMajor);
+    return status;
 }

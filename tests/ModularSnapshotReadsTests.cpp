@@ -33,11 +33,11 @@ namespace rock::provider::runtime {
         // derive metadata from the payload it already copied, never this one.
         return {999,999,99,99,99,99};
     }
-    bool ROCK_PROVIDER_CALL apiGetHandFrameV1(RockProviderHand hand, RockProviderHandFrameV1* out) {
-        if (!available) return false;
-        out->hand=hand;out->flags=1;out->frameIndex=100;out->worldGeneration=7;
-        out->transform.translate[0]=12;
-        return true;
+    api::Status apiGetHandFrame(api::Hand hand, api::hands::HandFrame& out) {
+        if (!available) return Status::NotReady;
+        out.hand=hand;out.flags=1;out.sample.frameIndex=100;out.sample.worldGeneration=7;
+        out.transform.translate[0]=12;
+        return Status::Ok;
     }
     RockProviderResultV1 ROCK_PROVIDER_CALL apiGetEquippedWeaponStateV1(std::uint64_t, RockProviderEquippedWeaponStateV1* out) {
         if (!available) return RockProviderResultV1::NotReady;
@@ -74,10 +74,10 @@ int main()
     publication.weaponGenerationKey=456;publication.weaponBodyCount=1;publication.weaponBodyIds[0]=14;
     auto task=std::async(std::launch::async,[] {
         assert(std::this_thread::get_id()!=frameThread);
-        api::hands::HeadPoseV1 head{};
-        api::hands::RolesV1 roles{};
+        api::hands::HeadPose head{};
+        api::hands::Roles roles{};
         api::collision::EnvironmentV1 environment{};
-        assert(api::hands::getHeadPose(42,&head)==Status::Ok && head.valid==3 && head.transform.translate[0]==12);
+        assert(api::hands::getHeadPose(42,&head)==Status::Ok && head.flags==3 && head.transform.translate[0]==12);
         assert(api::hands::getRoles(42,&roles)==Status::Ok && roles.offhand==api::Hand::Left);
         assert(api::collision::getEnvironment(42,&environment)==Status::Ok && environment.weaponBodyIds[0]==14);
         for(const auto& sample:{head.sample,roles.sample,environment.sample}) {
@@ -87,9 +87,9 @@ int main()
         api::weapon::EquippedWeaponStateV1 weapon{};
         assert(api::weapon::getEquippedWeaponStateV1(42,&weapon)==Status::Ok && weapon.weaponFormId==123 && weapon.frameIndex==100);
         for(const auto hand:{api::Hand::Right,api::Hand::Left}) {
-            api::hands::HandFrameV1 frame{};
+            api::hands::HandFrame frame{};
             api::weaponparts::WeaponPartGripStateV1 grip{};
-            assert(api::hands::getHandFrameV1(42,hand,&frame)==Status::Ok && frame.hand==hand && frame.frameIndex==100);
+            assert(api::hands::getHandFrame(42,hand,&frame)==Status::Ok && frame.hand==hand && frame.sample.frameIndex==100);
             assert(api::weaponparts::getWeaponPartGripStateV1(42,hand,&grip)==Status::Ok && grip.hand==hand && grip.sourceKey==789);
         }
         assert(api::hands::getRoles(99,&roles)==Status::OwnerNotRegistered && roles.sample.frameIndex==0);
@@ -97,7 +97,7 @@ int main()
         assert(api::collision::getEnvironment(42,&environment)==Status::PermissionDenied && environment.weaponBodyCount==0);
         permissions=1;
         available=false;
-        assert(api::hands::getHeadPose(42,&head)==Status::NotReady && head.valid==0);
+        assert(api::hands::getHeadPose(42,&head)==Status::NotReady && head.flags==0);
         assert(api::weapon::getEquippedWeaponStateV1(42,&weapon)==Status::NotReady && weapon.weaponFormId==0);
         api::weaponparts::WeaponPartGripStateV1 grip{};grip.active=1;
         assert(api::weaponparts::getWeaponPartGripStateV1(42,api::Hand::Left,&grip)==Status::NotReady && grip.active==0);

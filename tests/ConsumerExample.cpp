@@ -4,7 +4,7 @@
 namespace modular_example {
     class HandObserver {
         rock::api::Client _client;
-        const rock::api::hands::ApiV1* _hands{};
+        const rock::api::hands::Api* _hands{};
     public:
         rock::api::Status connect(rock::api::QueryInterfaceV1 query) {
             auto status=_client.connect(query,"Example hand observer");
@@ -13,9 +13,9 @@ namespace modular_example {
             if (status!=rock::api::Status::Ok) (void)_client.close();
             return status;
         }
-        bool sampleRightHand(rock::api::hands::HandFrameV1& output) {
+        bool sampleRightHand(rock::api::hands::HandFrame& output) {
             output={};
-            return _hands && _hands->getHandFrameV1(_client.owner(),rock::api::Hand::Right,&output)==rock::api::Status::Ok;
+            return _hands && _hands->getHandFrame(_client.owner(),rock::api::Hand::Right,&output)==rock::api::Status::Ok;
         }
         rock::api::Status close() {
             const auto status=_client.close();

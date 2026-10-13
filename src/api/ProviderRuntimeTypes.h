@@ -90,17 +90,6 @@ namespace rock::provider {
         Valid = 1u << 3,
     };
 
-    enum class RockProviderHandFrameFlagV1 : std::uint32_t
-    {
-        None = 0,
-        Valid = 1u << 0,
-        Left = 1u << 1,
-        Primary = 1u << 2,
-        Offhand = 1u << 3,
-        HasSceneNode = 1u << 4,
-        RootFlattenedAuthority = 1u << 5,
-        PresentedVisual = 1u << 6,
-    };
 
     enum class RockProviderExternalBodyRole : std::uint32_t
     {
@@ -975,14 +964,6 @@ namespace rock::provider {
         LeftFingersValid = 1u << 4,
     };
 
-    enum class RockProviderPresentedHandPoseFlagV1 : std::uint32_t
-    {
-        None = 0,
-        Valid = 1u << 0,
-        HandWorldValid = 1u << 1,
-        FingerLocalsValid = 1u << 2,
-        RootFlattenedReadback = 1u << 3,
-    };
 
     enum class RockProviderSemanticHandContactFlagV1 : std::uint32_t
     {
@@ -1565,24 +1546,6 @@ namespace rock::provider {
         std::uint64_t equippedWeaponTransitionSequence{ 0 };
     };
 
-    struct RockProviderHandFrameV1
-    {
-        std::uint32_t size{ sizeof(RockProviderHandFrameV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        RockProviderHand hand{ RockProviderHand::None };
-        std::uint32_t flags{ 0 };
-        std::uintptr_t node{ 0 };
-        RockProviderTransform transform{};
-        std::uint32_t bodyId{ 0x7FFF'FFFF };
-        std::uint32_t state{ 0 };
-        std::uint32_t reserved[7]{};
-        std::uint64_t frameIndex{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t collisionGeneration{ 0 };
-        std::uint64_t stateSequence{ 0 };
-    };
 
     struct RockProviderWeaponContactQuery
     {
@@ -2386,23 +2349,6 @@ namespace rock::provider {
         std::uint32_t reserved[5]{};
     };
 
-    struct RockProviderPresentedHandPoseV1
-    {
-        std::uint32_t size{ sizeof(RockProviderPresentedHandPoseV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint64_t frameIndex{ 0 };
-        RockProviderHand hand{ RockProviderHand::None };
-        std::uint32_t flags{ 0 };
-        RockProviderTransform handWorld{};
-        std::uint16_t fingerLocalTransformMask{ 0 };
-        std::uint16_t reserved0{ 0 };
-        RockProviderTransform fingerLocalTransforms[15]{};
-        std::uint64_t presentationSequence{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[5]{};
-    };
 
     struct RockProviderSemanticHandContactV1
     {

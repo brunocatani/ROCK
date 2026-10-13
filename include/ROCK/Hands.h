@@ -4,22 +4,22 @@
 #pragma pack(push, 8)
 namespace rock::api::hands {
     inline constexpr InterfaceId kInterfaceId = InterfaceId::Hands;
-    inline constexpr std::uint32_t kMajor = 1;
-    inline constexpr std::uint32_t kMinor = 1;
+    inline constexpr std::uint32_t kMajor = 2;
+    inline constexpr std::uint32_t kMinor = 0;
     inline constexpr std::uint32_t kFingerLocalTransformCount = 15;
 
-
-    enum class HandFrameFlagV1 : std::uint32_t
+    // Bits 2 (primary role), 3 (offhand role) and 4 (scene node) are retired;
+    // never reuse them.
+    enum class HandFrameFlag : std::uint32_t
     {
         None = 0,
         Valid = 1u << 0,
         Left = 1u << 1,
-        HasSceneNode = 1u << 4,
         RootFlattenedAuthority = 1u << 5,
         PresentedVisual = 1u << 6,
     };
 
-    enum class PresentedHandPoseFlagV1 : std::uint32_t
+    enum class PresentedHandPoseFlag : std::uint32_t
     {
         None = 0,
         Valid = 1u << 0,
@@ -28,72 +28,89 @@ namespace rock::api::hands {
         RootFlattenedReadback = 1u << 3,
     };
 
-    struct HandFrameV1
+    // One hand's world transform. getHandFrame copies ROCK's control
+    // publication; getPresentedHandFrame copies the last completed
+    // presentation joined to the control publication captured with it.
+    struct HandFrame
     {
-        std::uint32_t size{ sizeof(HandFrameV1) };
+        std::uint32_t size{ sizeof(HandFrame) };
         std::uint32_t version{ 1 };
         Hand hand{ Hand::None };
         std::uint32_t flags{ 0 };
         Transform transform{};
-        std::uint32_t reserved[7]{};
-        std::uint64_t frameIndex{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint64_t stateSequence{ 0 };
+        Sample sample{};
     };
 
-    struct PresentedHandPoseV1
+    // The rendered wrist and the 15 finger joints (thumb, index, middle, ring,
+    // pinky; three joints each), each local to its parent joint. Bit N of
+    // fingerLocalTransformMask marks fingerLocalTransforms[N] as captured.
+    struct PresentedHandPose
     {
-        std::uint32_t size{ sizeof(PresentedHandPoseV1) };
+        std::uint32_t size{ sizeof(PresentedHandPose) };
         std::uint32_t version{ 1 };
-        std::uint64_t frameIndex{ 0 };
         Hand hand{ Hand::None };
         std::uint32_t flags{ 0 };
         Transform handWorld{};
-        std::uint16_t fingerLocalTransformMask{ 0 };
-        std::uint16_t reserved0{ 0 };
-        Transform fingerLocalTransforms[15]{};
+        std::uint32_t fingerLocalTransformMask{ 0 };
+        Transform fingerLocalTransforms[kFingerLocalTransformCount]{};
+        std::uint64_t frameIndex{ 0 };
         std::uint64_t presentationSequence{ 0 };
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[5]{};
     };
 
-    struct HeadPoseV1 { std::uint32_t size{sizeof(HeadPoseV1)}; std::uint32_t valid{}; Sample sample{}; Transform transform{}; float forwardWorld[3]{}; };
+    enum class HeadPoseFlag : std::uint32_t
+    {
+        None = 0,
+        TransformValid = 1u << 0,
+        ForwardValid = 1u << 1,
+    };
 
-    // Roles identify the physical hands assigned to ROCK's firing/support roles
-    // in this publication. They follow firing-hand transfers; they are not the
-    // player's configured dominant hand. Left/Right identities never change.
-    struct RolesV1 {
-        std::uint32_t size{sizeof(RolesV1)};
-        std::uint32_t version{1};
+    struct HeadPose
+    {
+        std::uint32_t size{ sizeof(HeadPose) };
+        std::uint32_t version{ 1 };
         Sample sample{};
-        Hand primary{Hand::None};
-        Hand offhand{Hand::None};
+        std::uint32_t flags{ 0 };
+        Transform transform{};
+        float forwardWorld[3]{};
+    };
+
+    // The physical hands assigned to ROCK's firing (primary) and support
+    // (offhand) roles in this publication. They follow firing-hand transfers;
+    // they are not the player's configured dominant hand.
+    struct Roles
+    {
+        std::uint32_t size{ sizeof(Roles) };
+        std::uint32_t version{ 1 };
+        Sample sample{};
+        Hand primary{ Hand::None };
+        Hand offhand{ Hand::None };
     };
 
     // Permission bits are local to this interface major. Discovery grants none.
-    enum class PermissionV1 : std::uint32_t { Read=1 };
+    enum class Permission : std::uint32_t { Read = 1 };
     inline constexpr std::uint32_t kSupportedPermissions = 1;
 
-    struct ApiV1 {
-        static constexpr InterfaceId interfaceId=kInterfaceId;
-        static constexpr std::uint32_t majorVersion=kMajor;
-        static constexpr std::uint32_t minorVersion=kMinor;
-        // Any-thread copied control snapshot. Check Status, flags and generations.
-        Status(ROCK_CALL* getHandFrameV1)(OwnerToken ownerToken, Hand hand, HandFrameV1* outFrame) noexcept;
-        // Last completed presentation, with its capture frame/generations.
-        // Early phases may return the preceding frame; before the first final
-        // capture, readback is unavailable. Presented supplies same-frame data.
-        Status(ROCK_CALL* getPresentedHandFrameV1)(OwnerToken ownerToken, Hand hand, HandFrameV1* outFrame) noexcept;
-        Status(ROCK_CALL* getPresentedHandPoseV1)(std::uint64_t ownerToken, Hand hand, PresentedHandPoseV1* outPose) noexcept;
-        // Family-local publication identity; compare before combining readbacks.
+    struct Api
+    {
+        static constexpr InterfaceId interfaceId = kInterfaceId;
+        static constexpr std::uint32_t majorVersion = kMajor;
+        static constexpr std::uint32_t minorVersion = kMinor;
+        // Any thread. Copied control publication; check flags and sample.
+        Status(ROCK_CALL* getHandFrame)(OwnerToken owner, Hand hand, HandFrame* outFrame) noexcept;
+        // Game thread. Last completed presentation with its own frame and
+        // generations. Early phases may return the preceding frame; before the
+        // first completed capture the result is NotReady.
+        Status(ROCK_CALL* getPresentedHandFrame)(OwnerToken owner, Hand hand, HandFrame* outFrame) noexcept;
+        Status(ROCK_CALL* getPresentedHandPose)(OwnerToken owner, Hand hand, PresentedHandPose* outPose) noexcept;
+        // Any thread. Copied control publication.
+        Status(ROCK_CALL* getHeadPose)(OwnerToken owner, HeadPose* outPose) noexcept;
+        Status(ROCK_CALL* getRoles)(OwnerToken owner, Roles* outRoles) noexcept;
+        // Any thread. Identity of the current publication; compare it with a
+        // record's sample before combining readbacks.
         Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
-        // Any-thread copies; payload and Sample identify the same publication.
-        Status(ROCK_CALL* getHeadPose)(OwnerToken, HeadPoseV1*) noexcept;
-        Status(ROCK_CALL* getRoles)(OwnerToken, RolesV1*) noexcept;
     };
 }
 
