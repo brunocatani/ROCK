@@ -110,6 +110,27 @@ namespace rock::native_pipboy_hand_markers
         std::atomic<void*> s_attachedMovie{nullptr};
         std::atomic<std::uint32_t> s_reports{0};
 
+        // Deepest point the per-frame walk reached in the attached movie,
+        // logged once per new depth so a stop in the chain names itself.
+        enum class Stage : std::uint8_t { None, Menu, InventoryPage, List, VisibleRow, RowData, HandMember, HandResolved, LetterShown };
+        constexpr const char* kStageNames[]{ "none", "menu", "inventory-page", "list", "visible-row", "row-data",
+            "hand-member", "hand-resolved", "letter-shown" };
+        Stage s_deepest = Stage::None; // Movie thread only.
+        void reach(Stage stage, std::uint32_t a = 0, std::uint32_t b = 0)
+        {
+            if (stage <= s_deepest) return;
+            s_deepest = stage;
+            ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters reached stage={} a={} b={}", kStageNames[static_cast<int>(stage)], a, b);
+        }
+
+        // AS3 Array or Vector length; GFx's array size does not cover Vectors.
+        std::uint32_t lengthOf(const Value& value)
+        {
+            Value length;
+            return value.IsObject() && value.GetMember("length", &length) && length.IsNumber() && length.GetNumber() > 0 ?
+                static_cast<std::uint32_t>(length.GetNumber()) : 0u;
+        }
+
         bool member(const Value& object, const char* name, Value& out) noexcept
         {
             return object.IsObject() && object.GetMember(name, &out);
@@ -176,7 +197,8 @@ namespace rock::native_pipboy_hand_markers
             if (!member(list, "entryList", entries) || !entries.IsObject() ||
                 !member(list, "uiNumListItems", count) || !count.IsNumber()) return;
             const auto clips = static_cast<int>(count.GetNumber());
-            const auto size = entries.GetArraySize();
+            const auto size = lengthOf(entries);
+            reach(Stage::List, size, static_cast<std::uint32_t>(clips));
             for (int c = 0; c < clips && c < 64; ++c) {
                 Value clip, visible, index, icon;
                 const Value clipIndex(static_cast<double>(c));
@@ -185,13 +207,17 @@ namespace rock::native_pipboy_hand_markers
                 std::string hand;
                 if (member(clip, "visible", visible) && visible.IsBoolean() && visible.GetBoolean() &&
                     member(clip, "itemIndex", index) && index.IsNumber() && index.GetNumber() >= 0 && index.GetNumber() < size) {
+                    reach(Stage::VisibleRow, static_cast<std::uint32_t>(c));
                     Value data, marker;
                     const auto key = std::to_string(static_cast<std::uint32_t>(index.GetNumber()));
-                    if (entries.GetMember(key.c_str(), &data) && member(data, kHandMember, marker)) {
+                    if (entries.GetMember(key.c_str(), &data) && data.IsObject()) reach(Stage::RowData);
+                    if (data.IsObject() && member(data, kHandMember, marker)) {
                         const auto slot = text(marker);
+                        if (!slot.empty()) reach(Stage::HandMember);
                         const auto worn = slot == "0" ? native_hand_equipment::wornIndexHand(0) :
                             slot == "1" ? native_hand_equipment::wornIndexHand(1) : native_hand_equipment::WornHand::None;
                         hand = worn == native_hand_equipment::WornHand::Left ? "L" : worn == native_hand_equipment::WornHand::Right ? "R" : "";
+                        if (!hand.empty()) reach(Stage::HandResolved);
                     }
                 }
                 Value letter;
@@ -208,6 +234,7 @@ namespace rock::native_pipboy_hand_markers
                 if (!member(letter, "text", current) || text(current) != hand) letter.SetMember("text", Value(hand.c_str()));
                 letter.SetMember("visible", Value(true));
                 showSquare(icon, false);
+                reach(Stage::LetterShown);
             }
         }
 
@@ -218,16 +245,19 @@ namespace rock::native_pipboy_hand_markers
             {
                 try {
                     if (!params.movie) return;
-                    Value menu, pages, count;
+                    Value menu, pages;
                     if (!params.movie->GetVariable(&menu, "root.Menu_mc") || !menu.IsObject() ||
                         !member(menu, "PageA", pages) || !pages.IsObject()) return;
-                    const auto n = pages.GetArraySize();
+                    reach(Stage::Menu);
+                    // PageA is a Vector.<PipboyLoader>.
+                    const auto n = lengthOf(pages);
                     for (std::uint32_t i = 0; i < n && i < 8; ++i) {
                         Value page, list, doll;
                         const Value index(static_cast<double>(i));
                         // The inventory page is the one with the paper doll.
                         if (!menu.Invoke("GetPage", &page, &index, 1) || !page.IsObject() ||
                             !member(page, "PaperDoll_mc", doll) || !doll.IsObject() || !member(page, "List_mc", list)) continue;
+                        reach(Stage::InventoryPage, i, n);
                         updateList(params.movie, list);
                         break;
                     }
@@ -252,6 +282,7 @@ namespace rock::native_pipboy_hand_markers
             const std::array<Value, 2> args{ Value("enterFrame"), function };
             const bool added = function.IsObject() && menu.Invoke("addEventListener", nullptr, args.data(), args.size());
             s_attachedMovie.store(movie, std::memory_order_release);
+            s_deepest = Stage::None;
             ROCK_LOG_INFO(Weapon, "Pip-Boy hand letters attached movie={:#x} listener={}", reinterpret_cast<std::uintptr_t>(movie), added);
         } catch (...) {
             OutputDebugStringA("ROCK: Pip-Boy hand letter attach failed\n");

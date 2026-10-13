@@ -360,8 +360,8 @@ namespace rock
         const auto mode = equipped_weapon_drop_policy::fromSetting(g_rockConfig.rockWeaponDropMode);
         if (!frame.worldReady || !frame.hknpWorld || frame.menuBlocked || mode == Mode::Off) return false;
         native_secondary_presentation::DropPose drop{};
-        if (!native_secondary_presentation::tryGetDropPose(drop)) {
-            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "AKIMBO second weapon drop retained: placement or grip pose not ready");
+        if (const char* refused = native_secondary_presentation::tryGetDropPose(drop)) {
+            ROCK_LOG_WARN(Weapon, "AKIMBO second weapon drop retained: {}", refused);
             return false;
         }
         const bool left = drop.left;

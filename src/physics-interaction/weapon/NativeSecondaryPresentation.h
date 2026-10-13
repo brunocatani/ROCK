@@ -31,5 +31,6 @@ namespace rock::native_secondary_presentation
         RE::NiTransform weaponWorld{};
         RE::NiAVObject* model = nullptr;
     };
-    [[nodiscard]] bool tryGetDropPose(DropPose& out) noexcept;
+    // Null when `out` is valid; otherwise the reason it is not.
+    [[nodiscard]] const char* tryGetDropPose(DropPose& out) noexcept;
 }

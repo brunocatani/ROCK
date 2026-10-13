@@ -599,22 +599,26 @@ namespace rock::native_secondary_presentation
         traceGeometry("native-exit-after-repair");
     }
 
-    bool tryGetDropPose(DropPose& out) noexcept
+    const char* tryGetDropPose(DropPose& out) noexcept
     {
-        // Grab input runs before this frame's presentation update, so the
-        // placement shown last frame is the current one.
-        const auto frame = runtime_state::currentFrame().frameIndex;
-        if (!onFrameThread() || !s_state.ready || frame < s_state.frame || frame - s_state.frame > 1 ||
-            !s_state.dropGrip.valid()) return false;
+        // Grab input runs before this frame's presentation update, so this is
+        // the placement shown last frame; endFrame releases a placement that
+        // was not updated, so a ready state is never older than that.
+        if (!onFrameThread()) return "not-frame-thread";
+        if (!s_state.ready) return "presentation-not-ready";
+        const auto& grip = s_state.dropGrip;
+        if (grip.role == loose_weapon_authored_grab_policy::Role::None || !grip.weaponFormId) return "grip-unset";
+        if (grip.fingerMask != 0x7FFFu) return "fingers-incomplete";
+        if (!grip.valid()) return "grip-transform-invalid";
         const auto view = native_hand_equipment::equippedViews()[1];
-        if (!matches(view)) return false;
+        if (!matches(view)) return "equipped-item-changed";
         out = DropPose{
             .left = s_state.left,
             .pose = s_state.dropGrip,
             .weaponWorld = s_state.targetWorld,
             .model = view.root,
         };
-        return true;
+        return nullptr;
     }
 
     void endFrame(bool skeletonUpdated) noexcept
