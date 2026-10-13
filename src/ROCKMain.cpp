@@ -42,6 +42,7 @@
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
+#include "physics-interaction/weapon/NativePipboyHandMarkers.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
 #include "physics-interaction/weapon/scope/NativeScopeData.h"
 #include "rock_support/Fo4VrRuntime.h"
@@ -1250,6 +1251,8 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
 
     if (!rock::native_hand_equipment::install()) {
         logger::error("ROCK: Hand-directed native Pip-Boy equipment unavailable.");
+    } else if (!rock::native_pipboy_hand_markers::install()) {
+        logger::warn("ROCK: Pip-Boy R/L hand markers unavailable; native equipped squares remain.");
     }
 
     logger::info("ROCK: Install native scope data hooks...");

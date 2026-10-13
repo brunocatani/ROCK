@@ -577,6 +577,24 @@ namespace rock::native_hand_equipment
         return result;
     }
 
+    WornHand wornWeaponHand(std::uint32_t form, std::uintptr_t instance) noexcept
+    {
+        if (!s_installed || !form) return WornHand::None;
+        const auto worn = wornWeapons(f4vr::getPlayer());
+        const auto hand = [](bool left) { return left ? WornHand::Left : WornHand::Right; };
+        if (sameItem(worn[1].form, worn[1].instance, form, instance))
+            return hand(resolveSecondaryHand(worn[1].form, worn[1].instance));
+        if (!sameItem(worn[0].form, worn[0].instance, form, instance)) return WornHand::None;
+        // Same hand rule as Pip-Boy allocation: a hand chosen in this menu
+        // session counts before it is applied; a support-held primary shows
+        // the support hand that holds it.
+        const auto routing = input_remap_runtime::publishedWeaponTriggerRouting();
+        const auto directed = lastDirectedPrimaryEquip();
+        if (directed.sequence != s_directedApplied.load(std::memory_order_acquire) &&
+            sameItem(directed.form, directed.instance, worn[0].form, worn[0].instance)) return hand(directed.left);
+        return hand(routing.detached ? !routing.leftFiring : routing.leftFiring);
+    }
+
     void noteDirectedPrimaryApplied(std::uint64_t sequence) noexcept
     {
         s_directedApplied.store(sequence, std::memory_order_release);

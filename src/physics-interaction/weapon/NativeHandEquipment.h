@@ -57,6 +57,11 @@ namespace rock::native_hand_equipment
         std::uint64_t sequence = 0; // 0: none since load.
     };
     [[nodiscard]] DirectedEquip lastDirectedPrimaryEquip() noexcept;
+    // Pip-Boy display (UI thread): the physical hand holding this exact worn
+    // weapon item, or None when it is neither equipped weapon.
+    enum class WornHand : std::uint8_t { None, Right, Left };
+    [[nodiscard]] WornHand wornWeaponHand(std::uint32_t form, std::uintptr_t instance) noexcept;
+
     // Frame owner: the primary now fires from the directed hand. Until then a
     // later Pip-Boy press decides with the directed hand, not the old one.
     void noteDirectedPrimaryApplied(std::uint64_t sequence) noexcept;
