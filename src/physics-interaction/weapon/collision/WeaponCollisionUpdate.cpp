@@ -178,7 +178,7 @@ namespace rock
 
         if (!weaponDrawn) {
             if (hasWeaponBody()) {
-                ROCK_LOG_INFO(Weapon, "Weapon no longer drawn - destroying generated weapon bodies");
+                ROCK_LOG_INFO(Weapon, "{} Weapon no longer drawn - destroying generated weapon bodies", collisionOwnerName());
                 destroyWeaponBody(world);
             }
             clearCurrentWeaponState();
@@ -193,7 +193,7 @@ namespace rock
             getEquippedWeaponIdentityKey(&observedIdentityKey, &observedOwnershipKey, nullptr, &observedFormID, &observedInstanceContentKey);
         if (observedKey == 0) {
             if (hasWeaponBody()) {
-                ROCK_LOG_INFO(Weapon, "Weapon identity unavailable - destroying generated weapon bodies");
+                ROCK_LOG_INFO(Weapon, "{} Weapon identity unavailable - destroying generated weapon bodies", collisionOwnerName());
                 destroyWeaponBody(world);
             }
             clearCurrentWeaponState();
@@ -625,7 +625,7 @@ namespace rock
                 performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildQueued);
 
                 ROCK_LOG_INFO(Weapon,
-                    "Generated weapon collision staged create queued cachedKey={:016X} observedKey={:016X} sources={} replacingExisting={} driveRebuild={} workbenchExit={} cachedSources={} batch={}",
+                    "{} Generated weapon collision staged create queued cachedKey={:016X} observedKey={:016X} sources={} replacingExisting={} driveRebuild={} workbenchExit={} cachedSources={} batch={}", collisionOwnerName(),
                     _identity.cachedWeaponKey,
                     observedKey,
                     generatedCount,

@@ -1027,6 +1027,9 @@ namespace rock
         std::uint64_t _powerArmorCandidateFrame = 0;
         BodyBoneColliderSet _bodyBoneColliders;
         WeaponCollision _weaponCollision;
+        // Second equipped weapon (equipment index 1), layer 53. Built and
+        // posed in finalizeFramePose, after its hand placement is final.
+        WeaponCollision _secondaryWeaponCollision;
         DynamicWeaponCollisionRuntime _dynamicWeaponCollision;
         PhysicsStepDriveCoordinator _generatedBodyStepDrive;
         LooseWeaponCollision _looseWeaponCollision;

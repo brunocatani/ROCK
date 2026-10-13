@@ -52,6 +52,7 @@ namespace rock
 {
 
     inline constexpr std::uint32_t ROCK_WEAPON_LAYER = 44;
+    inline constexpr std::uint32_t ROCK_SECONDARY_WEAPON_LAYER = 53;
 
     struct WeaponVisualKeyStats
     {
@@ -73,6 +74,20 @@ namespace rock
         WeaponCollision();
 
         void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _physicsCallbackGate = gate; }
+
+        /*
+         * Makes this instance the second equipped weapon's collider set
+         * (native equipment index 1). It reads that index's equipped item,
+         * extracts only the model root it is given (never the primary's player
+         * nodes), creates its hulls on layer 53 and publishes nothing to
+         * process-wide consumers. Call once, before init().
+         */
+        void configureSecondaryWeapon() noexcept
+        {
+            _equipIndex = 1;
+            _layer = ROCK_SECONDARY_WEAPON_LAYER;
+        }
+        [[nodiscard]] bool isSecondaryWeapon() const noexcept { return _equipIndex != 0; }
 
         struct WeaponBodySnapshot
         {
@@ -814,6 +829,11 @@ namespace rock
         PhysicsCallbackQuiescenceGate* _physicsCallbackGate{ nullptr };
         RE::hknpWorld* _cachedWorld{ nullptr };
         void* _cachedBhkWorld{ nullptr };
+        // Native equipment index and Havok layer; see configureSecondaryWeapon.
+        std::uint32_t _equipIndex{ 0 };
+        std::uint32_t _layer{ ROCK_WEAPON_LAYER };
+        [[nodiscard]] bool usesPlayerWeaponRoots() const noexcept { return _equipIndex == 0; }
+        [[nodiscard]] const char* collisionOwnerName() const noexcept { return _equipIndex ? "Second-weapon" : "Primary"; }
 
     };
 

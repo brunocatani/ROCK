@@ -6,6 +6,7 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
+#include "physics-interaction/weapon/NativeSecondaryPresentation.h"
 
 // Per-frame orchestration: update(), interaction frame finalization, hand transform sampling, physics substep callbacks, held-mass slowdown, and the frame/debug-overlay implementation includes.
 
@@ -139,6 +140,18 @@ namespace rock
                     runtime.frameIndex, bodyPoseValid, handPoseValid);
             }
             _dynamicHandCollision.finalizePose(frame, _rightHand, _leftHand, _bodyBoneColliders);
+            {
+                // The second weapon's model is placed in its hand by
+                // native_secondary_presentation through AfterWorldFinal, so
+                // its colliders are built and posed here, after that placement.
+                performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponCollisionTransforms);
+                auto* secondaryModel = native_secondary_presentation::presentedModel();
+                _secondaryWeaponCollision.update(world, secondaryModel, frame.deltaSeconds,
+                    runtime.weaponDrawn && native_hand_equipment::hasSecondaryGun());
+                if (secondaryModel) {
+                    _secondaryWeaponCollision.updateBodiesFromCurrentSourceTransforms(world, secondaryModel, frame.deltaSeconds, nullptr, 0);
+                }
+            }
             if (auto* weapon = resolveEquippedWeaponInteractionNode()) {
                 performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponCollisionTransforms);
                 _weaponCollision.updateBodiesFromCurrentSourceTransforms(world, weapon, frame.deltaSeconds, nullptr, 0);
@@ -734,6 +747,7 @@ namespace rock
         _leftHand.flushPendingCollisionPhysicsDrive(world, timing);
         _bodyBoneColliders.flushPendingPhysicsDrive(world, timing);
         _weaponCollision.flushPendingPhysicsDrive(world, timing);
+        _secondaryWeaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicWeaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicHandCollision.flushPendingPhysicsDrive(world, timing);
         storage_interaction::flush(world,timing);
@@ -794,6 +808,7 @@ namespace rock
         logPalmClockSampleForHand("physics-after-solve", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         serviceRetiredGrabConstraintPayloads();
         _weaponCollision.serviceRetiredWeaponBodies(world);
+        _secondaryWeaponCollision.serviceRetiredWeaponBodies(world);
         // Neutralizes hand/body and grab-authority wrappers removed on the main
         // thread after the broadphase grace, while retaining their addresses for
         // native late readers. All generated body owners share this post-solve

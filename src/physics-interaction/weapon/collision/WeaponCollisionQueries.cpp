@@ -960,7 +960,7 @@ namespace rock
          * the main thread; ~a dozen form lookups.
          */
         const auto omodByAttachPointFormId =
-            readEquippedOmodsByAttachPointFormId(&outComposition);
+            readEquippedOmodsByAttachPointFormId(&outComposition, _equipIndex);
         outComposition.weaponGenerationKey = _identity.cachedBodySetKey;
         outComposition.weaponFormId = _identity.cachedFormID;
 
@@ -1055,13 +1055,14 @@ namespace rock
         std::uint64_t weaponGenerationKey,
         std::uint64_t rootSetKey) const
     {
-        const auto omodByAttachPointFormId = readEquippedOmodsByAttachPointFormId();
+        const auto omodByAttachPointFormId = readEquippedOmodsByAttachPointFormId(nullptr, _equipIndex);
         auto snapshot = collectWeaponEmitterSnapshot(
             weaponNode,
             omodByAttachPointFormId,
             equippedWeaponKey,
             weaponGenerationKey,
-            rootSetKey);
+            rootSetKey,
+            usesPlayerWeaponRoots());
 
         ROCK_LOG_DEBUG(Weapon,
             "Weapon emitter snapshot discovered generation={:016X} emitters={} roots={:016X}",
@@ -1080,7 +1081,7 @@ namespace rock
             return;
         }
 
-        const std::uint64_t rootSetKey = makeWeaponEmitterRootSetKey(weaponNode);
+        const std::uint64_t rootSetKey = makeWeaponEmitterRootSetKey(weaponNode, usesPlayerWeaponRoots());
         WeaponEmitterSnapshot snapshot{};
         {
             std::scoped_lock lock(_evidence.mutex);
@@ -1097,7 +1098,7 @@ namespace rock
         }
         std::array<RE::NiAVObject*, 4> roots{};
         std::size_t rootCount = 0;
-        visitGeneratedWeaponMeshRootCandidates(weaponNode, [&](const WeaponMeshRootCandidate& candidate) {
+        visitGeneratedWeaponMeshRootCandidates(weaponNode, usesPlayerWeaponRoots(), [&](const WeaponMeshRootCandidate& candidate) {
             roots[rootCount++] = candidate.root;
         });
         bool pathsValid = !discoveryRequired;

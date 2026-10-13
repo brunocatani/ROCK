@@ -437,7 +437,7 @@ namespace rock
 
         if (replacingExisting) {
             ROCK_LOG_INFO(Weapon,
-                "Replacing generated weapon collision bodies cachedKey={:016X} observedKey={:016X} sources={} replacementBodies={} driveRebuild={} staged=yes",
+                "{} Replacing generated weapon collision bodies cachedKey={:016X} observedKey={:016X} sources={} replacementBodies={} driveRebuild={} staged=yes", collisionOwnerName(),
                 _identity.cachedWeaponKey,
                 equippedKey,
                 sourceCount,
@@ -448,7 +448,7 @@ namespace rock
             _bodies.usingReplacementBank = !_bodies.usingReplacementBank;
         } else {
             ROCK_LOG_INFO(Weapon,
-                "Created generated weapon collision bodies key={:016X} sources={} bodies={} visualRoots={} visibleTriShapes={} staged=yes",
+                "{} Created generated weapon collision bodies key={:016X} sources={} bodies={} visualRoots={} visibleTriShapes={} staged=yes", collisionOwnerName(),
                 equippedKey,
                 sourceCount,
                 createdCount,
@@ -542,7 +542,7 @@ namespace rock
     weapon_generation_identity_policy::EquippedWeaponGenerationIdentity WeaponCollision::getEquippedWeaponClassification() const
     {
         const auto frame = runtime_state::currentFrame().frameIndex;
-        const auto* item = f4vr::getEquippedWeaponItem();
+        const auto* item = f4vr::getEquippedWeaponItem(_equipIndex);
         const auto* data = item && item->data ? static_cast<RE::EquippedWeaponData*>(item->data.get()) : nullptr;
         const auto& cached = _identity.frameClassification;
         if (!_identity.classificationValid || frame == 0 || _identity.classificationFrame != frame ||
@@ -552,7 +552,7 @@ namespace rock
             cached.equippedObjectAddress != reinterpret_cast<std::uintptr_t>(data ? data->fireNode : nullptr) ||
             _drive.workbenchExitRebuildRequested.load(std::memory_order_acquire)) {
             performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponIdentityRead);
-            _identity.frameClassification = readEquippedWeaponGenerationIdentity();
+            _identity.frameClassification = readEquippedWeaponGenerationIdentity(_equipIndex);
             _identity.classificationFrame = frame;
             _identity.classificationValid = true;
         }
@@ -564,7 +564,7 @@ namespace rock
         std::uint64_t visualKey = 0;
         if (weaponNode) {
             visualKey = weapon_visual_composition_policy::kWeaponVisualCompositionOffset;
-            const auto candidates = makeGeneratedWeaponMeshRootCandidates(weaponNode);
+            const auto candidates = makeGeneratedWeaponMeshRootCandidates(weaponNode, usesPlayerWeaponRoots());
             for (const auto& candidate : candidates) {
                 if (!candidate.root) {
                     continue;
@@ -612,7 +612,8 @@ namespace rock
         }
 
         const auto candidates = looseOnly ?
-            std::vector<WeaponMeshRootCandidate>{{weaponNode, "loose-reference"}} : makeGeneratedWeaponMeshRootCandidates(weaponNode);
+            std::vector<WeaponMeshRootCandidate>{{weaponNode, "loose-reference"}} :
+            makeGeneratedWeaponMeshRootCandidates(weaponNode, usesPlayerWeaponRoots());
         std::vector<RE::NiPointer<RE::NiAVObject>> candidateOwners;
         candidateOwners.reserve(candidates.size());
         for (const auto& candidate : candidates) { candidateOwners.emplace_back(candidate.root); }
@@ -711,7 +712,7 @@ namespace rock
          * root fallbacks are explicitly rejected by ownerRootStructural.
          */
         if (!looseOnly) {
-            const auto omodByAttachPointFormId = readEquippedOmodsByAttachPointFormId();
+            const auto omodByAttachPointFormId = readEquippedOmodsByAttachPointFormId(nullptr, _equipIndex);
             std::unordered_set<std::uint32_t> nativeScopeOverlayOmods;
             nativeScopeOverlayOmods.reserve(omodByAttachPointFormId.size());
             for (const auto& [attachPointFormId, omodFormId] : omodByAttachPointFormId) {
@@ -726,7 +727,8 @@ namespace rock
                 omodByAttachPointFormId,
                 equippedWeaponKey,
                 equippedWeaponKey,
-                makeWeaponEmitterRootSetKey(weaponNode));
+                makeWeaponEmitterRootSetKey(weaponNode, usesPlayerWeaponRoots()),
+                usesPlayerWeaponRoots());
             for (auto& source : outSources) {
                 std::uint32_t sourceOmodFormId = 0;
                 if (source.semantic.attachPointFormId != 0) {
@@ -985,7 +987,7 @@ namespace rock
             source.indices = it->second;
         }
 
-        assignCollisionSoundMaterials(packageDriveRoot, outSources);
+        assignCollisionSoundMaterials(packageDriveRoot, outSources, _equipIndex);
 
         for (std::size_t i = 0; i < outSources.size(); ++i) {
             const auto& source = outSources[i];
@@ -1447,7 +1449,7 @@ namespace rock
         std::size_t nextSourceIndex = 0;
         const auto createdCount = createGeneratedWeaponBodiesInBankSlice(world, sources, bank, options, nextSourceIndex, MAX_WEAPON_BODIES);
         if (createdCount > 0) {
-            ROCK_LOG_INFO(Weapon, "Generated weapon mesh collision created {}/{} hull bodies", createdCount, sources.size());
+            ROCK_LOG_INFO(Weapon, "{} Generated weapon mesh collision created {}/{} hull bodies", collisionOwnerName(), createdCount, sources.size());
         }
         return createdCount;
     }
@@ -1538,7 +1540,7 @@ namespace rock
         std::size_t createdThisFrame = 0;
         std::size_t attemptedThisFrame = 0;
         static_assert(weapon_gap_decomposition::kMaxChildren <= GENERATED_WEAPON_BODY_CREATION_BATCH);
-        const std::uint32_t filterInfo = generatedWeaponCollisionFilterInfo(options.collisionEnabledOnCreate);
+        const std::uint32_t filterInfo = generatedWeaponCollisionFilterInfo(options.collisionEnabledOnCreate, _layer);
 
 
         while (nextSourceIndex < sources.size() && createdCount < MAX_WEAPON_BODIES && attemptedThisFrame < maxSourceAttemptsThisFrame) {
@@ -1635,11 +1637,11 @@ namespace rock
             initializeGeneratedKeyframedBodyDriveState(instance.driveState, initialTransform);
 
             ROCK_LOG_DEBUG(Weapon,
-                "Generated weapon mesh collision body created: meshIndex={} bodyId={} source='{}' driveRoot='{}' sourceRoot='{}' partKind={} supportRole={} reloadRole={} points={} children={} soundMaterial=0x{:08X} center=({:.2f},{:.2f},{:.2f}) layer=44",
+                "Generated weapon mesh collision body created: meshIndex={} bodyId={} source='{}' driveRoot='{}' sourceRoot='{}' partKind={} supportRole={} reloadRole={} points={} children={} soundMaterial=0x{:08X} center=({:.2f},{:.2f},{:.2f}) layer={}",
                 createdCount, instance.body.getBodyId().value, source.sourceName, safeNodeName(source.driveRoot), safeNodeName(source.sourceRoot), static_cast<int>(source.semantic.partKind),
                 static_cast<int>(source.semantic.supportGripRole), static_cast<int>(source.semantic.reloadRole), source.geometry->localPointsGame.size(),
                 source.geometry->childLocalPointCloudsGame.size(), source.collisionSoundMaterialId,
-                source.localCenterGame.x, source.localCenterGame.y, source.localCenterGame.z);
+                source.localCenterGame.x, source.localCenterGame.y, source.localCenterGame.z, _layer);
             ++createdCount;
             ++createdThisFrame;
         }

@@ -628,6 +628,13 @@ namespace rock::native_secondary_presentation
         return nullptr;
     }
 
+    RE::NiAVObject* presentedModel() noexcept
+    {
+        if (!onFrameThread() || !s_state.ready) return nullptr;
+        const auto view = native_hand_equipment::equippedViews()[1];
+        return matches(view) ? view.root : nullptr;
+    }
+
     void endFrame(bool skeletonUpdated) noexcept
     {
         if (onFrameThread() && (!skeletonUpdated || !s_updatedThisFrame)) release();

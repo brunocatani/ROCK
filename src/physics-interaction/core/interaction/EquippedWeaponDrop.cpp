@@ -398,6 +398,9 @@ namespace rock
                 .dropSucceeded = dropResult.success,
                 .droppedReferenceUnavailable = dropResult.reason == weapon_equip_transfer::DropReason::DroppedReferenceUnavailable,
             });
+        // The dropped native weapon appears at the last layer-53 pose; retire
+        // those hulls in this transaction, as the primary drop does with 44.
+        if (committed) _secondaryWeaponCollision.destroyWeaponBody(frame.hknpWorld);
         if (committed && dropResult.handle) {
             _forceGrab.pendingCommits[handIndex] = PendingForceGrabCommit{
                 .active = true,

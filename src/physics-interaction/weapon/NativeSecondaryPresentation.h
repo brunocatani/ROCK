@@ -33,4 +33,8 @@ namespace rock::native_secondary_presentation
     };
     // Null when `out` is valid; otherwise the reason it is not.
     [[nodiscard]] const char* tryGetDropPose(DropPose& out) noexcept;
+
+    // The index-1 model this frame placed in its hand (borrowed, frame
+    // owner only), or null before this frame's placement or without one.
+    [[nodiscard]] RE::NiAVObject* presentedModel() noexcept;
 }

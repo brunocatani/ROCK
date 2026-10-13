@@ -34,6 +34,9 @@ namespace rock::contact_pipeline_policy
         DynamicProp,
         Actor,
         QueryOnly,
+        // Layer-53 hulls of the second equipped weapon. Not a contact source:
+        // they produce no hand, provider, push or support evidence.
+        SecondaryWeapon,
     };
 
     enum class ContactRoute : std::uint32_t
@@ -194,6 +197,9 @@ namespace rock::contact_pipeline_policy
         if (collision_layer_policy::isQueryOnlyLayer(layer)) {
             return ContactEndpointKind::QueryOnly;
         }
+        if (layer == collision_layer_policy::ROCK_LAYER_SECONDARY_WEAPON) {
+            return ContactEndpointKind::SecondaryWeapon;
+        }
         return ContactEndpointKind::Unknown;
     }
 
@@ -290,6 +296,11 @@ namespace rock::contact_pipeline_policy
 
         const ContactEndpoint rock = aRock ? a : b;
         const ContactEndpoint other = aRock ? b : a;
+
+        // Only the primary's hulls (44) reach the second weapon's row (53).
+        if (other.kind == ContactEndpointKind::SecondaryWeapon) {
+            return makeClassification(ContactRoute::RockInternal, rock, other);
+        }
 
         if (isBody(rock.kind)) {
             auto result = makeClassification(ContactRoute::BodyContact, rock, other);

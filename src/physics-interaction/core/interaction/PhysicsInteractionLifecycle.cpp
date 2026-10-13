@@ -33,6 +33,8 @@ namespace rock
         _bodyBoneColliders.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _dynamicHandCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _weaponCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
+        _secondaryWeaponCollision.configureSecondaryWeapon();
+        _secondaryWeaponCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _dynamicWeaponCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
         native_interaction_service::initialize(generatedBodyCallbackGate,
             [](void* context,void* bhk){static_cast<PhysicsInteraction*>(context)->_dynamicWeaponCollision.retireAll(bhk);},
@@ -450,6 +452,7 @@ namespace rock
         subscribeContactEvents(hknp);
 
         _weaponCollision.init(hknp, bhk);
+        _secondaryWeaponCollision.init(hknp, bhk);
         ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
 
         ROCK_LOG_INFO(Init, "hFRIK off-hand weapon gripping disabled; ROCK is the sole off-hand weapon authority");
@@ -612,6 +615,7 @@ namespace rock
             }
             _dynamicWeaponCollision.retireAll(_lifecycle.cachedBhkWorld);
             _weaponCollision.destroyWeaponBody(hknp);
+            _secondaryWeaponCollision.destroyWeaponBody(hknp);
             destroyBodyBoneCollisions(_lifecycle.cachedBhkWorld);
             destroyHandCollisions(_lifecycle.cachedBhkWorld);
         } else {
@@ -625,6 +629,7 @@ namespace rock
             _leftHand.abandonHavokStateAfterWorldLoss();
             _dynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
             _weaponCollision.abandonHavokStateAfterWorldLoss();
+            _secondaryWeaponCollision.abandonHavokStateAfterWorldLoss();
             native_idle_grip_preharvest::clearHeldWarmups();
             _equipped.transition.abandonSceneGraph();
             _bodyBoneColliders.reset();
@@ -649,6 +654,7 @@ namespace rock
         native_idle_grip_preharvest::clearHeldWarmups();
         _equipped.transition.shutdown();
         _weaponCollision.shutdown();
+        _secondaryWeaponCollision.shutdown();
         _providerSources.clear();
         _bodyBoneColliders.reset();
         _generatedBodyStepDrive.reset();

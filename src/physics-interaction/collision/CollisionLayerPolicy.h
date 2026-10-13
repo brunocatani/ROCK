@@ -103,7 +103,15 @@ namespace rock::collision_layer_policy
      * pairs are suppressed by the native counted pair filter instead.
      */
     inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY = 52;
-    // Layer 53 is unused; no ROCK body is created on it.
+    /*
+     * Generated hulls of the second equipped weapon (native equipment index
+     * 1). Same world contract as layer 44, plus contact with the primary's
+     * hulls for weapon-on-weapon collision. Hands (43) are excluded: with two
+     * guns equipped both hands hold one, and the holding hand must not touch
+     * its own gun. The player's body colliders (47) and dynamic proxies are
+     * excluded as well; this row only produces contacts and pushes props.
+     */
+    inline constexpr std::uint32_t ROCK_LAYER_SECONDARY_WEAPON = 53;
     // Opt-in stored weapon displays. The simulation filter further restricts
     // these pairs to the exact empty-hand bodies published by their owner.
     inline constexpr std::uint32_t ROCK_LAYER_STORED_DISPLAY = 54;
@@ -125,13 +133,14 @@ namespace rock::collision_layer_policy
         return layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON ||
                layer == ROCK_LAYER_BODY || layer == ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY ||
                layer == ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY || layer == ROCK_LAYER_DYNAMIC_WEAPON_PROXY ||
-               layer == ROCK_LAYER_STORED_DISPLAY ||
+               layer == ROCK_LAYER_SECONDARY_WEAPON || layer == ROCK_LAYER_STORED_DISPLAY ||
                layer == ROCK_LAYER_PASSIVE_OBSTACLE;
     }
 
     inline constexpr bool isRockOwnedReusableLayer(std::uint32_t layer)
     {
-        return layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON || layer == ROCK_LAYER_BODY;
+        return layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON || layer == ROCK_LAYER_BODY ||
+               layer == ROCK_LAYER_SECONDARY_WEAPON;
     }
 
     /*
@@ -458,6 +467,14 @@ namespace rock::collision_layer_policy
         return mask;
     }
 
+    inline constexpr std::uint64_t buildRockSecondaryWeaponExpectedMask(bool blocksProjectiles, bool blocksSpells)
+    {
+        std::uint64_t mask = buildRockWeaponExpectedMask(blocksProjectiles, blocksSpells, false);
+        mask = withoutLayer(mask, ROCK_LAYER_HAND);
+        mask = withLayer(mask, ROCK_LAYER_WEAPON);
+        return mask;
+    }
+
     inline constexpr std::uint64_t buildRockBodyExpectedMask()
     {
         // Generated body colliders always retain static and animstatic contact.
@@ -677,6 +694,10 @@ namespace rock::collision_layer_policy
         applyLayerExpectedMask(matrix,
             ROCK_LAYER_WEAPON,
             buildRockWeaponExpectedMask(weaponBlocksProjectiles, weaponBlocksSpells, true));
+        // After the 44 row (row writes are symmetric): restores 44<->53.
+        applyLayerExpectedMask(matrix,
+            ROCK_LAYER_SECONDARY_WEAPON,
+            buildRockSecondaryWeaponExpectedMask(weaponBlocksProjectiles, weaponBlocksSpells));
         applyRockReloadLayerPolicy(matrix, weaponBlocksProjectiles, weaponBlocksSpells, handStaticWorld);
         applyRockBodyLayerPolicy(matrix);
         applyRockDynamicHandProxyLayerPolicies(matrix, extensionObstacleLayers, retiredWeaponHandCollision);

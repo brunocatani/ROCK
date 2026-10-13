@@ -1061,6 +1061,7 @@ namespace rock
             case ContactEndpointKind::LeftHand:
                 return RockProviderBodyContactTargetKind::Hand;
             case ContactEndpointKind::Weapon:
+            case ContactEndpointKind::SecondaryWeapon:
                 return RockProviderBodyContactTargetKind::Weapon;
             case ContactEndpointKind::RightHeldObject:
             case ContactEndpointKind::LeftHeldObject:

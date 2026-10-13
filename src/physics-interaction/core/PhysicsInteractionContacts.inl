@@ -1461,6 +1461,13 @@
             bodyIdAtomic.store(bodyId, std::memory_order_release);
         };
 
+        if (contactRoute.route == contact_pipeline_policy::ContactRoute::RockInternal &&
+            contactRoute.target.kind == contact_pipeline_policy::ContactEndpointKind::SecondaryWeapon) {
+            ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "AKIMBO weapon-on-weapon contact primaryBody={} secondaryBody={}",
+                contactRoute.sourceBodyId, contactRoute.targetBodyId);
+            return;
+        }
+
         if (!isRight && !isLeft) {
             return;
         }

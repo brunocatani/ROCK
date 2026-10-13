@@ -2974,6 +2974,16 @@
                         RE::hknpBodyId{ weaponSnapshot.bodyIds[i] },
                         debug::BodyOverlayRole::Weapon);
                 }
+                // The second equipped weapon's layer-53 hulls, same role.
+                const auto secondarySnapshot =
+                    _secondaryWeaponCollision.getWeaponBodySnapshotAtomic();
+                for (std::uint32_t i = 0;
+                     i < secondarySnapshot.count && i < maximumWeaponBodies;
+                     ++i) {
+                    addBody(
+                        RE::hknpBodyId{ secondarySnapshot.bodyIds[i] },
+                        debug::BodyOverlayRole::Weapon);
+                }
             }
         }
 

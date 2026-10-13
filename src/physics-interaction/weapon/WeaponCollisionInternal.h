@@ -910,10 +910,11 @@ namespace rock
         [[nodiscard]] inline CollisionSoundMaterialEvidence
         equippedWeaponWorldModelCollisionSoundMaterial(
             std::string& outModelPath,
-            CollisionSoundMaterialDiagnostics& diagnostics)
+            CollisionSoundMaterialDiagnostics& diagnostics,
+            std::uint32_t equipIndex)
         {
             outModelPath.clear();
-            auto* equippedItem = f4vr::getEquippedWeaponItem();
+            auto* equippedItem = f4vr::getEquippedWeaponItem(equipIndex);
             auto* weaponForm = equippedItem ? equippedItem->item.object : nullptr;
             auto* weapon = weaponForm ? weaponForm->As<RE::TESObjectWEAP>() : nullptr;
             if (!weapon) {
@@ -985,7 +986,8 @@ namespace rock
         template <class SourceRange>
         void assignCollisionSoundMaterials(
             RE::NiAVObject* assembledWeaponRoot,
-            SourceRange& sources)
+            SourceRange& sources,
+            std::uint32_t equipIndex)
         {
             CollisionSoundMaterialCache materialCache;
             materialCache.reserve(64);
@@ -1025,7 +1027,8 @@ namespace rock
             if (needsFallback) {
                 fallback = equippedWeaponWorldModelCollisionSoundMaterial(
                     worldModelPath,
-                    diagnostics);
+                    diagnostics,
+                    equipIndex);
                 if (fallback.valid()) {
                     fallbackSource = "world-model";
                 } else if (!fallback.blocksFallback) {
@@ -1157,14 +1160,14 @@ namespace rock
         };
 
         inline std::unordered_map<std::uint32_t, std::uint32_t> readEquippedOmodsByAttachPointFormId(
-            WeaponCollision::WeaponCompositionSnapshot* outComposition = nullptr)
+            WeaponCollision::WeaponCompositionSnapshot* outComposition, std::uint32_t equipIndex)
         {
             std::unordered_map<std::uint32_t, std::uint32_t> result;
             if (outComposition) {
                 *outComposition = {};
             }
             auto* player = f4vr::getPlayer();
-            auto* equipData = f4vr::getEquippedWeaponItem();
+            auto* equipData = f4vr::getEquippedWeaponItem(equipIndex);
             auto* weaponForm = equipData ? equipData->item.object : nullptr;
             auto* instanceData = equipData ? equipData->item.instanceData.get() : nullptr;
             const RE::BGSObjectInstanceExtra* objectInstanceExtra =
@@ -1225,11 +1228,12 @@ namespace rock
             return false;
         }
 
-        [[nodiscard]] inline EquippedManualScopeTarget resolveEquippedManualScopeTarget(RE::NiAVObject* assembledWeaponRoot)
+        [[nodiscard]] inline EquippedManualScopeTarget resolveEquippedManualScopeTarget(RE::NiAVObject* assembledWeaponRoot,
+            std::uint32_t equipIndex)
         {
             EquippedManualScopeTarget target{};
             auto* player = f4vr::getPlayer();
-            auto* equipData = f4vr::getEquippedWeaponItem();
+            auto* equipData = f4vr::getEquippedWeaponItem(equipIndex);
             auto* weaponForm = equipData ? equipData->item.object : nullptr;
             auto* equippedInstanceData = equipData ? equipData->item.instanceData.get() : nullptr;
             const RE::BGSObjectInstanceExtra* objectInstanceExtra =
@@ -1368,12 +1372,13 @@ namespace rock
             return key;
         }
 
-        inline weapon_generation_identity_policy::EquippedWeaponGenerationIdentity readEquippedWeaponGenerationIdentity()
+        inline weapon_generation_identity_policy::EquippedWeaponGenerationIdentity readEquippedWeaponGenerationIdentity(
+            std::uint32_t equipIndex)
         {
             weapon_generation_identity_policy::EquippedWeaponGenerationIdentity identity{};
 
             auto* player = f4vr::getPlayer();
-            auto* equipData = f4vr::getEquippedWeaponItem();
+            auto* equipData = f4vr::getEquippedWeaponItem(equipIndex);
             auto* weaponForm = equipData ? equipData->item.object : nullptr;
             auto* instanceData = equipData ? equipData->item.instanceData.get() : nullptr;
             if (!weaponForm || weaponForm->formType != RE::ENUM_FORM_ID::kWEAP) {
@@ -1583,7 +1588,10 @@ namespace rock
             candidates.push_back(WeaponMeshRootCandidate{ root, label });
         }
 
-        inline std::vector<WeaponMeshRootCandidate> makeGeneratedWeaponMeshRootCandidates(RE::NiAVObject* updateWeaponNode)
+        // includePlayerRoots is false for the second weapon: the player's
+        // Weapon/primary nodes hold the primary gun, never index 1's model.
+        inline std::vector<WeaponMeshRootCandidate> makeGeneratedWeaponMeshRootCandidates(RE::NiAVObject* updateWeaponNode,
+            bool includePlayerRoots)
         {
             /*
              * Weapon mesh collision has to be rooted on the visual weapon tree, not
@@ -1594,11 +1602,12 @@ namespace rock
             std::vector<WeaponMeshRootCandidate> candidates;
             candidates.reserve(6);
 
-            addUniqueWeaponMeshRootCandidate(candidates, f4vr::getWeaponNode(), "firstPersonSkeleton:Weapon");
-
-            if (auto* playerNodes = f4vr::getPlayerNodes()) {
-                addUniqueWeaponMeshRootCandidate(candidates, playerNodes->primaryWeapontoWeaponNode, "PlayerNodes.primaryWeapontoWeaponNode");
-                addUniqueWeaponMeshRootCandidate(candidates, playerNodes->primaryWeaponOffsetNOde, "PlayerNodes.primaryWeaponOffsetNode");
+            if (includePlayerRoots) {
+                addUniqueWeaponMeshRootCandidate(candidates, f4vr::getWeaponNode(), "firstPersonSkeleton:Weapon");
+                if (auto* playerNodes = f4vr::getPlayerNodes()) {
+                    addUniqueWeaponMeshRootCandidate(candidates, playerNodes->primaryWeapontoWeaponNode, "PlayerNodes.primaryWeapontoWeaponNode");
+                    addUniqueWeaponMeshRootCandidate(candidates, playerNodes->primaryWeaponOffsetNOde, "PlayerNodes.primaryWeaponOffsetNode");
+                }
             }
 
             addUniqueWeaponMeshRootCandidate(candidates, updateWeaponNode, "updateWeaponNode");
@@ -1606,7 +1615,7 @@ namespace rock
         }
 
         template <class Visitor>
-        void visitGeneratedWeaponMeshRootCandidates(RE::NiAVObject* updateWeaponNode, Visitor&& visitor)
+        void visitGeneratedWeaponMeshRootCandidates(RE::NiAVObject* updateWeaponNode, bool includePlayerRoots, Visitor&& visitor)
         {
             std::array<WeaponMeshRootCandidate, 4> candidates{};
             std::size_t count = 0;
@@ -1624,10 +1633,12 @@ namespace rock
                 }
             };
 
-            addUnique(f4vr::getWeaponNode(), "firstPersonSkeleton:Weapon");
-            if (auto* playerNodes = f4vr::getPlayerNodes()) {
-                addUnique(playerNodes->primaryWeapontoWeaponNode, "PlayerNodes.primaryWeapontoWeaponNode");
-                addUnique(playerNodes->primaryWeaponOffsetNOde, "PlayerNodes.primaryWeaponOffsetNode");
+            if (includePlayerRoots) {
+                addUnique(f4vr::getWeaponNode(), "firstPersonSkeleton:Weapon");
+                if (auto* playerNodes = f4vr::getPlayerNodes()) {
+                    addUnique(playerNodes->primaryWeapontoWeaponNode, "PlayerNodes.primaryWeapontoWeaponNode");
+                    addUnique(playerNodes->primaryWeaponOffsetNOde, "PlayerNodes.primaryWeaponOffsetNode");
+                }
             }
             addUnique(updateWeaponNode, "updateWeaponNode");
 
@@ -1636,10 +1647,10 @@ namespace rock
             }
         }
 
-        inline std::uint64_t makeWeaponEmitterRootSetKey(RE::NiAVObject* updateWeaponNode)
+        inline std::uint64_t makeWeaponEmitterRootSetKey(RE::NiAVObject* updateWeaponNode, bool includePlayerRoots)
         {
             std::uint64_t key = weapon_visual_composition_policy::kWeaponVisualCompositionOffset;
-            visitGeneratedWeaponMeshRootCandidates(updateWeaponNode, [&](const WeaponMeshRootCandidate& candidate) {
+            visitGeneratedWeaponMeshRootCandidates(updateWeaponNode, includePlayerRoots, [&](const WeaponMeshRootCandidate& candidate) {
                 mixWeaponVisualKey(key, reinterpret_cast<std::uintptr_t>(candidate.root));
             });
             return key;
@@ -2145,7 +2156,8 @@ namespace rock
             const std::unordered_map<std::uint32_t, std::uint32_t>& omodByAttachPointFormId,
             std::uint64_t equippedWeaponKey,
             std::uint64_t weaponGenerationKey,
-            std::uint64_t rootSetKey)
+            std::uint64_t rootSetKey,
+            bool includePlayerRoots)
         {
             WeaponEmitterSnapshot snapshot{};
             if (!weaponNode || equippedWeaponKey == 0 || weaponGenerationKey == 0) {
@@ -2156,7 +2168,7 @@ namespace rock
             snapshot.equippedWeaponKey = equippedWeaponKey;
             snapshot.rootSetKey = rootSetKey;
             snapshot.weaponRootAddress = reinterpret_cast<std::uintptr_t>(weaponNode);
-            visitGeneratedWeaponMeshRootCandidates(weaponNode, [&](const WeaponMeshRootCandidate& candidate) {
+            visitGeneratedWeaponMeshRootCandidates(weaponNode, includePlayerRoots, [&](const WeaponMeshRootCandidate& candidate) {
                 std::uint32_t visitedNodes = 0;
                 collectWeaponEmittersRecursive(
                     candidate.root,
@@ -2209,9 +2221,12 @@ namespace rock
             }
         }
 
-        inline std::uint32_t generatedWeaponCollisionFilterInfo(bool collisionEnabled)
+        static_assert(ROCK_WEAPON_LAYER == collision_layer_policy::ROCK_LAYER_WEAPON);
+        static_assert(ROCK_SECONDARY_WEAPON_LAYER == collision_layer_policy::ROCK_LAYER_SECONDARY_WEAPON);
+
+        inline std::uint32_t generatedWeaponCollisionFilterInfo(bool collisionEnabled, std::uint32_t layer)
         {
-            const std::uint32_t baseFilterInfo = (0x000B << 16) | (ROCK_WEAPON_LAYER & 0x7F);
+            const std::uint32_t baseFilterInfo = (0x000B << 16) | (layer & 0x7F);
             return collisionEnabled ? baseFilterInfo : (baseFilterInfo | collision_suppression_registry::kSuppressionNoCollideBit);
         }
 

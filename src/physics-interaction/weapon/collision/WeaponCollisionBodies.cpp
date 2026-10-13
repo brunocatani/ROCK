@@ -100,7 +100,7 @@ namespace rock
         _sources.detachedExclusionGroups.clear();
 
         ROCK_LOG_INFO(Weapon,
-            "Retired generated weapon bodies before scene transition reason={} bodies={} cached(identity/ownership/form)=({:016X}/{:016X}/{:08X}) observed(identity/ownership/form)=({:016X}/{:016X}/{:08X})",
+            "{} Retired generated weapon bodies before scene transition reason={} bodies={} cached(identity/ownership/form)=({:016X}/{:016X}/{:08X}) observed(identity/ownership/form)=({:016X}/{:016X}/{:08X})", collisionOwnerName(),
             reason ? reason : "unknown",
             retiredBodyCount,
             _identity.cachedIdentityKey,
@@ -229,7 +229,7 @@ namespace rock
         _drive.rebuildRequested.store(false, std::memory_order_release);
         _drive.failureCount.store(0, std::memory_order_release);
 
-        ROCK_LOG_INFO(Weapon, "Weapon collision bodies destroyed count={}", activeDestroyed + inactiveDestroyed);
+        ROCK_LOG_INFO(Weapon, "{} Weapon collision bodies destroyed count={}", collisionOwnerName(), activeDestroyed + inactiveDestroyed);
     }
 
     void WeaponCollision::destroyWeaponBodyBank(WeaponBodyBank& bank, bool releaseShapeRef)
@@ -296,7 +296,7 @@ namespace rock
             return;
         }
 
-        const std::uint32_t filterInfo = generatedWeaponCollisionFilterInfo(enabled);
+        const std::uint32_t filterInfo = generatedWeaponCollisionFilterInfo(enabled, _layer);
         for (auto& instance : bank) {
             if (instance.body.isValid()) {
                 body_collision::setFilterInfo(world, instance.body.getBodyId(), filterInfo);
@@ -344,6 +344,9 @@ namespace rock
     {
         const std::uint64_t version = _published.version.load(std::memory_order_relaxed);
         _published.version.store((version | 1ull) + 1ull, std::memory_order_release);
+        if (isSecondaryWeapon()) {
+            return; // Shell casing grace tracks the primary's hulls only.
+        }
         const auto snapshot = getWeaponBodySnapshotAtomic();
         shell_casing_grace::publishWeapon(_identity.cachedFormID, snapshot.generationKey,
             std::span(snapshot.bodyIds).first(snapshot.count));
@@ -425,7 +428,7 @@ namespace rock
             _identity.cachedOwnershipKey,
             _identity.cachedFormID,
             evidenceSnapshot);
-        const auto manualScopeTarget = resolveEquippedManualScopeTarget(packageDriveNode);
+        const auto manualScopeTarget = resolveEquippedManualScopeTarget(packageDriveNode, _equipIndex);
         nativeScopeSightAnchorSnapshot.scopeWeaponIdentity = manualScopeTarget.weaponIdentity;
         nativeScopeSightAnchorSnapshot.scopeInstanceIdentity = manualScopeTarget.instanceIdentity;
         nativeScopeSightAnchorSnapshot.scopeEligible = manualScopeTarget.scopeEligible;
