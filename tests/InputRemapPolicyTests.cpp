@@ -1102,6 +1102,30 @@ static bool testVanillaScopeMode()
     return ok;
 }
 
+bool testSlotRouting()
+{
+    using rock::weapon_trigger_routing::Snapshot;
+    bool ok = true;
+    Snapshot routing{};
+    routing.leftFiring = true;
+    routing.slotOneEquipped = true;
+    routing.slotOneLeft = false;
+    routing.slotOneDrawn = true;
+    const auto copy = Snapshot::unpack(routing.pack());
+    ok &= expectTrue("routing round-trips slot 1's hand and drawn state",
+        copy.slotOneEquipped && !copy.slotOneLeft && copy.slotOneDrawn && copy.leftFiring);
+    ok &= expectTrue("slot 1's drawn hand owns its trigger", copy.slotOneOwnsTrigger(false));
+    ok &= expectFalse("slot 1 never owns the other hand's trigger", copy.slotOneOwnsTrigger(true));
+    ok &= expectTrue("slot 0 reloads with its firing hand", copy.slotZeroReloadsWith(true));
+    ok &= expectFalse("slot 0 never reloads with the other hand", copy.slotZeroReloadsWith(false));
+    routing.slotOneDrawn = false;
+    ok &= expectFalse("a sheathed slot 1 leaves the trigger to the game", routing.slotOneOwnsTrigger(false));
+    routing.detached = true;
+    ok &= expectFalse("support-held slot 0 has no reload hand",
+        routing.slotZeroReloadsWith(true) || routing.slotZeroReloadsWith(false));
+    return ok;
+}
+
 int main()
 {
     bool ok = true;
@@ -1113,6 +1137,7 @@ int main()
     ok &= expectFalse("empty hands cannot match an empty target", isHeldLooseWeaponTarget(0,0,0));
     ok &= expectFalse("held weapon cannot take native use priority", shouldPrioritizeNativeActivation(ActivateTarget::HeldLooseWeapon,false));
     ok &= testInputRouting();
+    ok &= testSlotRouting();
     ok &= testNativeVats();
     ok &= testPipboyGestures();
     ok &= testManualScope();

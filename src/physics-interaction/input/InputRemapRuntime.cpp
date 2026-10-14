@@ -243,10 +243,6 @@ namespace rock::input_remap_runtime
 
         std::array<ControllerTracker, 2> s_controllers;
         std::atomic<bool> s_gameplayInputAllowed{ false };
-        // Frame writer, input/OpenVR readers. Bit 0: the second equipped weapon
-        // owns its hand's trigger (drawn). Bit 1: that hand is the left. The
-        // hand bit is kept while not owned so the reload button still routes.
-        std::atomic<std::uint8_t> s_secondaryTrigger{ 2 };
         std::atomic<bool> s_bothHandsHoldWeapons{ false }; // Frame thread -> input dispatch.
         std::atomic<bool> s_weaponDrawn{ false };
         std::atomic<bool> s_realMeleeWeaponEquipped{ false };
@@ -257,14 +253,9 @@ namespace rock::input_remap_runtime
         {
             return weapon_trigger_routing::Snapshot::unpack(s_weaponRouting.load(std::memory_order_acquire));
         }
-        [[nodiscard]] bool secondaryTriggerLeft() noexcept
-        {
-            return (s_secondaryTrigger.load(std::memory_order_acquire) & 2u) != 0;
-        }
         [[nodiscard]] bool secondaryOwnsTrigger(input_remap_policy::Hand hand) noexcept
         {
-            const auto bits = s_secondaryTrigger.load(std::memory_order_acquire);
-            return (bits & 1u) && ((bits & 2u) != 0) == (hand == input_remap_policy::Hand::Left);
+            return weaponRouting().slotOneOwnsTrigger(hand == input_remap_policy::Hand::Left);
         }
         std::array<std::atomic<bool>, 2> s_handInteractionEngaged{};
         std::array<std::atomic<std::uint32_t>, 2> s_heldObjectFormId{};
@@ -1366,8 +1357,9 @@ namespace rock::input_remap_runtime
              */
             const bool primaryHandEvent = eventMatched && isPrimaryWandInputEvent(event);
             constexpr bool primaryHandIsLeft = false;
-            const bool firingHandIsLeft = weaponRouting().leftFiring;
-            const bool firingHandIsPrimaryHand = firingHandIsLeft == primaryHandIsLeft;
+            const auto routing = weaponRouting();
+            const bool firingHandIsLeft = routing.leftFiring;
+            const bool firingHandIsPrimaryHand = routing.slotZeroReloadsWith(primaryHandIsLeft);
             const bool route = input_remap_policy::shouldRouteFiringHandActivateReload(input_remap_policy::NativeActivateReloadInput{
                 .remapEnabled = true,
                 .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
@@ -1397,14 +1389,14 @@ namespace rock::input_remap_runtime
             const bool eventMatched = isActivateReloadEvent(event);
             const bool primaryHandEvent = eventMatched && isPrimaryWandInputEvent(event);
             constexpr bool primaryHandIsLeft = false;
-            const bool firingHandIsLeft = weaponRouting().leftFiring;
+            const auto routing = weaponRouting();
             return input_remap_policy::shouldDeferFiringHandActivateForManualScope(input_remap_policy::ManualScopeActivateInput{
                 .rawInputCaptureAvailable = s_hooksInstalled.load(std::memory_order_acquire),
                 .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
                 .menuInputActive = isInputBlockingMenuActive(),
                 .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
                 .primaryHandEvent = primaryHandEvent,
-                .firingHandIsPrimaryHand = firingHandIsLeft == primaryHandIsLeft,
+                .firingHandIsPrimaryHand = routing.slotZeroReloadsWith(primaryHandIsLeft),
                 .eventMatched = eventMatched,
             });
         }
@@ -2828,9 +2820,11 @@ namespace rock::input_remap_runtime
         }
     }
 
-    void setSecondaryEquippedTrigger(bool owned, bool left) noexcept
+    void setSlotOneTrigger(bool equipped, bool drawn, bool left) noexcept
     {
-        s_secondaryTrigger.store(static_cast<std::uint8_t>((owned ? 1u : 0u) | (left ? 2u : 0u)), std::memory_order_release);
+        s_pendingWeaponRouting.slotOneEquipped = equipped;
+        s_pendingWeaponRouting.slotOneDrawn = drawn;
+        s_pendingWeaponRouting.slotOneLeft = left;
     }
 
     weapon_trigger_routing::Snapshot publishedWeaponTriggerRouting() noexcept
@@ -2917,19 +2911,24 @@ namespace rock::input_remap_runtime
             blockManualScopeInputUntilRelease();
             return;
         }
-        if (native_hand_equipment::hasSecondaryGun()) {
-            auto& secondaryAccept = secondaryTriggerLeft() ? leftAcceptState : rightAcceptState;
-            if (secondaryAccept.available && secondaryAccept.pressed &&
+        const auto routing = weaponRouting();
+        if (routing.slotOneEquipped) {
+            auto& slotOneAccept = routing.slotOneLeft ? leftAcceptState : rightAcceptState;
+            if (slotOneAccept.available && slotOneAccept.pressed &&
                 s_gameplayInputAllowed.load(std::memory_order_acquire) &&
                 s_weaponDrawn.load(std::memory_order_acquire) && !isInputBlockingMenuActive())
                 (void)native_secondary_actions::requestReload();
-            // This hand holds the second equipped firearm. Its X/A press must
-            // not become a primary reload or a physical-reload gesture.
-            secondaryAccept={};
+            // This hand holds slot 1's firing grip. Its X/A press must not
+            // become a slot-0 reload or a physical-reload gesture.
+            slotOneAccept={};
         }
         if(physical_reload_input::observe(true,leftAcceptState))leftAcceptState={};
         if(physical_reload_input::observe(false,rightAcceptState))rightAcceptState={};
-        const bool firingHandIsLeft = weaponRouting().leftFiring;
+        const bool firingHandIsLeft = routing.leftFiring;
+        if (routing.detached) {
+            // Support-held slot 0 has no firing hand and does not reload.
+            (firingHandIsLeft ? leftAcceptState : rightAcceptState) = {};
+        }
         const bool physicalGesture = physical_reload_input::gestureActive(firingHandIsLeft);
         const bool gameplayAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire);
         const bool menuActive = isInputBlockingMenuActive();

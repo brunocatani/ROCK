@@ -1125,7 +1125,7 @@ namespace rock::native_secondary_actions
             const bool handLeft=native_hand_equipment::secondaryHandIsLeft();
             s_handLeft.store(handLeft,std::memory_order_relaxed);
             s_drawn.store(view.weapon && frame.weaponDrawn,std::memory_order_relaxed);
-            input_remap_runtime::setSecondaryEquippedTrigger(view.weapon && frame.weaponDrawn,handLeft);
+            input_remap_runtime::setSlotOneTrigger(view.weapon != nullptr, view.weapon && frame.weaponDrawn, handLeft);
             if (s.graph && !same(s,view)) { cancel(s); s.ready=false; s.retiring=true; }
             if (s.retiring) {
                 if (!s.graph->canDestroy()) return;
