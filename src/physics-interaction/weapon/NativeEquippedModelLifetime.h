@@ -8,6 +8,9 @@ namespace rock::native_equipped_model_lifetime
     // Main FRIK frame only. Completes a pending, drawn inventory handoff once
     // native hide ownership has ended; never clears an active native hide lease.
     void updateVisibility() noexcept;
+    // Diagnostic: the player's native weapon hide-owner flags (0xFF when
+    // unreadable).
+    [[nodiscard]] std::uint8_t playerWeaponCullFlagsForTrace() noexcept;
 
     /*
      * Open while ROCK removes one of two worn weapons. The equip executor's

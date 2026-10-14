@@ -18,6 +18,8 @@ namespace rock
     public:
         // Transition seam diagnostic only.
         [[nodiscard]] const EquipVisualBridge& bridgeForTrace() const noexcept { return _bridge; }
+        [[nodiscard]] const RE::NiAVObject* pendingNativeCullForTrace() const noexcept { return _pendingNativeCull.get(); }
+        [[nodiscard]] std::uint8_t heldTransferPhaseForTrace() const noexcept { return static_cast<std::uint8_t>(_heldTransfer.phase); }
         struct PendingGrip
         {
             weapon_grip_transfer::Pair pairedGrips{};

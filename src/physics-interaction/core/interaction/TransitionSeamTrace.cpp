@@ -2,6 +2,7 @@
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
+#include "physics-interaction/weapon/NativeEquippedModelLifetime.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/native/NativeMemory.h"
 
@@ -70,6 +71,17 @@ namespace rock
                 if (node->GetAppCulled()) return false;
             }
             return node == nullptr;
+        }
+
+        // Diagnostic: the nearest culled node at or above `node`, with its
+        // depth above it; "none" when the whole path renders.
+        struct CulledAt { const char* name = "none"; int depth = -1; };
+        CulledAt firstCulled(const RE::NiAVObject* node)
+        {
+            for (int depth = 0; node && depth < 48; ++depth, node = node->parent) {
+                if (node->GetAppCulled()) return { node->name.c_str() ? node->name.c_str() : "<unnamed>", depth };
+            }
+            return {};
         }
 
         float distance(const RE::NiPoint3& a, const RE::NiPoint3& b)
@@ -252,6 +264,24 @@ namespace rock
                     "SEAM switch frame={} hand={} {}->{} inHand before C=({:.2f},{:.2f},{:.2f}) F=({:.2f},{:.2f},{:.2f}) now C=({:.2f},{:.2f},{:.2f}) F=({:.2f},{:.2f},{:.2f})",
                     s_seam.frame, h ? "left" : "right", seamSourceName(base.source), seamSourceName(hands[h].source),
                     bc.x, bc.y, bc.z, bt.x, bt.y, bt.z, nc.x, nc.y, nc.z, nt.x, nt.y, nt.z);
+            }
+            // Who hides a weapon this frame: the first culled node above each
+            // slot's root, FRIK's Weapon node, ROCK's pending native cull,
+            // the held-transfer phase and the native hide-owner flags.
+            {
+                const auto views = native_hand_equipment::equippedViews();
+                const auto c0 = firstCulled(views[0].root);
+                const auto c1 = firstCulled(views[1].root);
+                const auto* weaponNode = f4vr::getWeaponNode();
+                const auto* pending = _equipped.transition.pendingNativeCullForTrace();
+                ROCK_LOG_INFO(Weapon,
+                    "SEAM cull frame={} slot0Root={:#x} slot0Culled='{}'@{} slot1Root={:#x} slot1Culled='{}'@{} frikWeaponNodeCulled={} rockPendingCull={:#x} pendingIsSlot0={} heldPhase={} nativeCullFlags={:#x}",
+                    s_seam.frame, reinterpret_cast<std::uintptr_t>(views[0].root), c0.name, c0.depth,
+                    reinterpret_cast<std::uintptr_t>(views[1].root), c1.name, c1.depth,
+                    weaponNode ? (weaponNode->GetAppCulled() ? "yes" : "no") : "missing",
+                    reinterpret_cast<std::uintptr_t>(pending), pending && pending == views[0].root,
+                    _equipped.transition.heldTransferPhaseForTrace(),
+                    native_equipped_model_lifetime::playerWeaponCullFlagsForTrace());
             }
             s_seam.hands = hands;
         } catch (...) {
