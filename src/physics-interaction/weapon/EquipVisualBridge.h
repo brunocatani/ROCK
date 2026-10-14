@@ -247,6 +247,8 @@ namespace rock
         bool _handPoseBlockEngaged = false;
         bool _nativeCarrierTraceLogged = false;
         bool _nativeCarrierWasUsable = false;
+        // Equipped-source frames traced (diagnostic, bounded).
+        std::uint32_t _equippedSourceTraceFrames = 0;
         bool _active = false;
     };
 }

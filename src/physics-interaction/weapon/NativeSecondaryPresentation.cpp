@@ -432,6 +432,10 @@ namespace rock::native_secondary_presentation
             }
             if (equipped_weapon_visual_state::isLocallyVisible(view.root))
                 equipped_weapon_visual_state::setLocallyVisible(view.root, false);
+            // Its body (third-person) gun, which releasing the placement
+            // shows again in the body's left hand. FRIK hides the primary's.
+            if (view.bodyRoot && view.bodyRoot != view.root && equipped_weapon_visual_state::isLocallyVisible(view.bodyRoot))
+                equipped_weapon_visual_state::setLocallyVisible(view.bodyRoot, false);
         }
 
         struct UnplacedStep

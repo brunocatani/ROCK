@@ -3,6 +3,7 @@
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 #include "physics-interaction/PhysicsLog.h"
@@ -127,6 +128,35 @@ namespace rock
          * moment the queued ref delete runs. The bridge is visual-only, so
          * drop them all before re-entering the scene graph.
          */
+        /*
+         * An equipped model's descendants are posed by rigid world transport
+         * and native animation output, which write worlds without matching
+         * locals. Rebuild every descendant local from the worlds it renders
+         * at, so recomputing the subtree from its root cannot move it.
+         * Returns the largest translation the subtree would have moved.
+         */
+        float bakeSubtreeLocals(RE::NiAVObject* root, bool apply)
+        {
+            float drift = 0.0f;
+            std::array<RE::NiAVObject*, 256> pending{ root };
+            std::size_t count = 1;
+            for (std::size_t i = 0; i < count; ++i) {
+                auto* node = pending[i]->IsNode();
+                if (!node) continue;
+                for (const auto& childPointer : node->GetRuntimeData().children) {
+                    auto* child = childPointer.get();
+                    if (!child || count >= pending.size()) continue;
+                    pending[count++] = child;
+                    if (!isFiniteTransform(child->world) || !isFiniteTransform(node->world)) continue;
+                    const auto fromLocal = transform_math::composeTransforms(node->world, child->local);
+                    const auto d = fromLocal.translate - child->world.translate;
+                    drift = (std::max)(drift, std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z));
+                    if (apply) child->local = weapon_visual_authority_math::worldTargetToParentLocal(node->world, child->world);
+                }
+            }
+            return drift;
+        }
+
         void clearCollisionObjectsRecursive(RE::NiAVObject* node, int& budget)
         {
             if (!node || budget <= 0) {
@@ -293,7 +323,13 @@ namespace rock
             return false;
         }
 
+        if (input.equippedModelSource) {
+            const float drift = bakeSubtreeLocals(model, true);
+            ROCK_LOG_INFO(Weapon, "EquipVisualBridge equipped source baked formID={:08X} localDrift={:.3f}gu parented={}",
+                input.weaponFormID, drift, model->parent != nullptr);
+        }
         _model = input.worldModel;
+        _equippedSourceTraceFrames = 0;
         _lastPresentedInDriver = _modelInHandLocal;
         _lastPresentedInDriverValid = true;
         _poseAuditSamples = 0;
@@ -565,6 +601,13 @@ namespace rock
         _elapsedSeconds += frameSeconds;
 
         auto* model = _model.get();
+        if (model && _equippedModelSource && _equippedSourceTraceFrames < 10) {
+            ++_equippedSourceTraceFrames;
+            const auto& root = model->world.translate;
+            ROCK_LOG_INFO(Weapon, "EquipVisualBridge equipped source frame={} parented={} attached={} root=({:.2f},{:.2f},{:.2f}) localDrift={:.3f}gu",
+                _equippedSourceTraceFrames, model->parent && !_parent, _parent != nullptr, root.x, root.y, root.z,
+                bakeSubtreeLocals(model, false));
+        }
         if (model && !_parent) {
             /*
              * A promoted equipped model stays on screen under its old biped

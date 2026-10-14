@@ -19,7 +19,8 @@ namespace rock
      *
      * Model roots of different sources are not registered to each other, so
      * the visible gun is measured by its geometry: the mean of its shapes'
-     * centres (C; a skinned shape by its bones, others by world bound) and the
+     * centres (C; a skinned shape by its bones, others by world transform
+     * and model bound) and the
      * shape centre farthest from it (F, the tip, along
      * the gun). Per frame it logs how far C and F moved in the world and in
      * the hand's frame, and where they sit in the hand against the last frame
@@ -116,10 +117,12 @@ namespace rock
                     if (used) centers[shapes++] = sum * (1.0f / static_cast<float>(used));
                     continue;
                 }
-                const auto& bound = object->worldBound;
-                if (std::isfinite(bound.center.x) && std::isfinite(bound.center.y) && std::isfinite(bound.center.z) &&
-                    bound.fRadius > 0.0f)
-                    centers[shapes++] = bound.center;
+                // A rigid shape is drawn at its world transform; its world
+                // bound is refreshed later in the frame and can lag.
+                if (geometry) {
+                    const auto point = transform_math::localPointToWorld(object->world, geometry->GetRuntimeData().modelBound.center);
+                    if (std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z)) centers[shapes++] = point;
+                }
             }
             if (!shapes) return false;
             center = {};
