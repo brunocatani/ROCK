@@ -6,7 +6,8 @@
 #include "physics-interaction/input/PhysicalReloadInput.h"
 #include "physics-interaction/input/SupportTriggerInput.h"
 #include "OwnerBindingPolicy.h"
-#include "EventStreams.h"
+#include "BorrowedCallbackContext.h"
+#include "GrabEventCallbacks.h"
 #include "ProviderRuntime.h"
 #include "api/ProviderLeasePolicy.h"
 #include "api/ProviderInstanceAccess.h"
@@ -411,24 +412,6 @@ namespace rock::provider::runtime
         std::uint32_t worldGeneration,
         std::uint32_t skeletonGeneration,
         std::uint32_t providerGeneration);
-    // An authority whose loss is reported to its owner, each through one
-    // family's event stream.
-    enum class LostAuthority : std::uint32_t
-    {
-        Owner,
-        HandInputSuppression,
-        WeaponPartTargets,
-        WeaponPartDrive,
-        NativeAnimation,
-        NativeAnimationRuntime,
-        HandVisual,
-        WeaponHandling,
-        HandReservation,
-    };
-    void publishAuthorityLostEvent(
-        std::uint64_t ownerToken,
-        LostAuthority authority,
-        std::uint32_t reason);
 
 
 
@@ -704,15 +687,7 @@ namespace rock::provider::runtime
                 continue;
             }
 
-            const auto ownerToken = slot.ownerToken;
             (void)clearHandVisualAuthoritySlotLocked(slot, true);
-            publishAuthorityLostEvent(
-                ownerToken,
-                LostAuthority::HandVisual,
-                static_cast<std::uint32_t>(
-                    generationChanged ?
-                        ::rock::api::input::SuppressionInvalidationReason::GenerationChanged :
-                        ::rock::api::input::SuppressionInvalidationReason::Expired));
         }
     }
 
@@ -759,13 +734,6 @@ namespace rock::provider::runtime
             !provider_lease_policy::isActive(
                 frameIndex,
                 s_equippedWeaponHandlingAuthority.expiresAfterFrame)) {
-            publishAuthorityLostEvent(
-                s_equippedWeaponHandlingAuthority.ownerToken,
-                LostAuthority::WeaponHandling,
-                static_cast<std::uint32_t>(
-                    generationChanged ?
-                        ::rock::api::input::SuppressionInvalidationReason::GenerationChanged :
-                        ::rock::api::input::SuppressionInvalidationReason::Expired));
             s_equippedWeaponHandlingAuthority = {};
         }
     }
@@ -778,97 +746,6 @@ namespace rock::provider::runtime
     std::uint64_t currentProviderFrameIndex()
     {
         return s_frameClock.leaseBoundary();
-    }
-
-    // Runtime events carry the game frame and the current generations.
-    template <class Event>
-    [[nodiscard]] Event stampedEvent(const std::uint32_t kind, const std::uint64_t ownerToken = 0)
-    {
-        Event event{};
-        event.kind = kind;
-        event.ownerToken = ownerToken;
-        event.frameIndex = currentGameFrameIndex();
-        if (s_generationStateAvailable.load(std::memory_order_acquire)) {
-            event.worldGeneration = s_currentWorldGeneration.load(std::memory_order_acquire);
-            event.skeletonGeneration = s_currentSkeletonGeneration.load(std::memory_order_acquire);
-            event.providerGeneration = s_currentProviderGeneration.load(std::memory_order_acquire);
-        }
-        return event;
-    }
-
-    void publishAuthorityLostEvent(
-        const std::uint64_t ownerToken,
-        const LostAuthority authority,
-        const std::uint32_t reason)
-    {
-        // Animation authority codes: 1 native animation, 2 hand visual, 3 the
-        // native animation runtime. WeaponParts: 1 part targets, 2 part drives.
-        switch (authority) {
-        case LostAuthority::NativeAnimation:
-        case LostAuthority::HandVisual:
-        case LostAuthority::NativeAnimationRuntime: {
-            auto event = stampedEvent<api::animation::Event>(
-                static_cast<std::uint32_t>(api::animation::EventKind::AuthorityLost), ownerToken);
-            event.authority = authority == LostAuthority::NativeAnimation ? 1u :
-                authority == LostAuthority::HandVisual ? 2u : 3u;
-            event.reason = reason;
-            events::publish(event, ownerToken);
-            return;
-        }
-        case LostAuthority::HandInputSuppression: {
-            auto event = stampedEvent<api::input::Event>(
-                static_cast<std::uint32_t>(api::input::EventKind::AuthorityLost), ownerToken);
-            event.authority = 1;
-            event.reason = reason;
-            events::publish(event, ownerToken);
-            return;
-        }
-        case LostAuthority::WeaponPartTargets:
-        case LostAuthority::WeaponPartDrive: {
-            auto event = stampedEvent<api::weaponparts::Event>(
-                static_cast<std::uint32_t>(api::weaponparts::EventKind::AuthorityLost), ownerToken);
-            event.authority = authority == LostAuthority::WeaponPartTargets ? 1u : 2u;
-            event.reason = reason;
-            events::publish(event, ownerToken);
-            return;
-        }
-        case LostAuthority::WeaponHandling: {
-            auto event = stampedEvent<api::weapon::Event>(
-                static_cast<std::uint32_t>(api::weapon::EventKind::AuthorityLost), ownerToken);
-            event.authority = 1;
-            event.reason = reason;
-            events::publish(event, ownerToken);
-            return;
-        }
-        case LostAuthority::HandReservation: {
-            auto event = stampedEvent<api::grab::Event>(
-                static_cast<std::uint32_t>(api::grab::EventKind::ReservationLost), ownerToken);
-            event.failure = reason;
-            events::publish(event, ownerToken);
-            return;
-        }
-        case LostAuthority::Owner:
-        default: {
-            auto event = stampedEvent<api::core::Event>(
-                static_cast<std::uint32_t>(api::core::EventKind::OwnerRevoked), ownerToken);
-            event.reason = reason;
-            events::publish(event, ownerToken);
-            return;
-        }
-        }
-    }
-
-    void publishCommandCompletedEvent(const api::grab::InteractionCommandResult& result)
-    {
-        auto event = stampedEvent<api::grab::Event>(
-            static_cast<std::uint32_t>(api::grab::EventKind::CommandCompleted), result.ownerToken);
-        event.hand = result.hand;
-        event.subjectSequence = result.commandId;
-        event.commandState = static_cast<std::uint32_t>(result.state);
-        event.formId = result.targetFormId;
-        event.commandKind = static_cast<std::uint32_t>(result.kind);
-        event.failure = static_cast<std::uint32_t>(result.failure);
-        events::publish(event, result.ownerToken);
     }
 
     void publishOffhandReservationLocked(const OffhandReservationSlot& slot)
@@ -887,18 +764,10 @@ namespace rock::provider::runtime
             std::memory_order_release);
     }
 
-    void clearOffhandReservationLocked(
-        const ::rock::api::input::SuppressionInvalidationReason reason)
+    void clearOffhandReservationLocked()
     {
-        const auto ownerToken = s_offhandReservationSlot.ownerToken;
         s_offhandReservationSlot = {};
         publishOffhandReservationLocked(s_offhandReservationSlot);
-        if (ownerToken != 0) {
-            publishAuthorityLostEvent(
-                ownerToken,
-                LostAuthority::HandReservation,
-                static_cast<std::uint32_t>(reason));
-        }
     }
 
     void pruneExpiredOffhandReservationLocked(const std::uint64_t frameIndex)
@@ -906,18 +775,14 @@ namespace rock::provider::runtime
         if (s_offhandReservationSlot.ownerToken == 0) {
             return;
         }
-        const bool generationChanged = generationGuardsStale(
-            s_offhandReservationSlot.worldGeneration,
-            s_offhandReservationSlot.skeletonGeneration,
-            s_offhandReservationSlot.providerGeneration);
-        if (generationChanged ||
+        if (generationGuardsStale(
+                s_offhandReservationSlot.worldGeneration,
+                s_offhandReservationSlot.skeletonGeneration,
+                s_offhandReservationSlot.providerGeneration) ||
             !provider_lease_policy::isActive(
                 frameIndex,
                 s_offhandReservationSlot.expiresAfterFrame)) {
-            clearOffhandReservationLocked(
-                generationChanged ?
-                    ::rock::api::input::SuppressionInvalidationReason::GenerationChanged :
-                    ::rock::api::input::SuppressionInvalidationReason::Expired);
+            clearOffhandReservationLocked();
         }
     }
 
@@ -935,18 +800,10 @@ namespace rock::provider::runtime
             !provider_lease_policy::isActive(
                 frameIndex,
                 s_nativeAnimationRuntimeExpiresAfterFrame)) {
-            const auto ownerToken = s_nativeAnimationRuntimeProviderOwner;
             s_nativeAnimationRuntimeProviderOwner = 0;
             s_nativeAnimationRuntimePublication = {};
             s_nativeAnimationRuntimeExpiresAfterFrame = 0;
             s_hasNativeAnimationRuntimePublication = false;
-            publishAuthorityLostEvent(
-                ownerToken,
-                LostAuthority::NativeAnimationRuntime,
-                static_cast<std::uint32_t>(
-                    generationChanged ?
-                        ::rock::api::input::SuppressionInvalidationReason::GenerationChanged :
-                        ::rock::api::input::SuppressionInvalidationReason::Expired));
         }
     }
 
@@ -966,10 +823,6 @@ namespace rock::provider::runtime
                 const auto reason = generationChanged ?
                     ::rock::api::input::SuppressionInvalidationReason::GenerationChanged :
                     ::rock::api::input::SuppressionInvalidationReason::Expired;
-                publishAuthorityLostEvent(
-                    slot.ownerToken,
-                    LostAuthority::HandInputSuppression,
-                    static_cast<std::uint32_t>(reason));
                 slot.active = false;
                 slot.flags = 0;
                 slot.lastInvalidationReason = reason;
@@ -1026,13 +879,6 @@ namespace rock::provider::runtime
             if (generationChanged || !provider_lease_policy::isActive(
                     frameIndex,
                     slot.expiresAtFrame)) {
-                publishAuthorityLostEvent(
-                    slot.ownerToken,
-                    LostAuthority::NativeAnimation,
-                    static_cast<std::uint32_t>(
-                        generationChanged ?
-                            ::rock::api::input::SuppressionInvalidationReason::GenerationChanged :
-                            ::rock::api::input::SuppressionInvalidationReason::Expired));
                 slot = {};
                 changed = true;
             }
@@ -1081,11 +927,6 @@ namespace rock::provider::runtime
             if (slot.active && !provider_lease_policy::isActive(
                     frameIndex,
                     slot.expiresAfterFrame)) {
-                publishAuthorityLostEvent(
-                    slot.ownerToken,
-                    LostAuthority::WeaponPartDrive,
-                    static_cast<std::uint32_t>(
-                        ::rock::api::input::SuppressionInvalidationReason::Expired));
                 slot = {};
             }
         }
@@ -1446,17 +1287,10 @@ namespace rock::provider::runtime
     {
         for (auto& slot : s_interactionResults) {
             if (slot.active && slot.result.ownerToken == result.ownerToken && slot.result.commandId == result.commandId) {
-                const bool wasTerminal =
-                    interaction_command_policy::isTerminal(slot.result.state);
-                const auto merged = interaction_command_policy::mergeResultHistory(
+                slot.result = interaction_command_policy::mergeResultHistory(
                     slot.result,
                     result,
                     currentGameFrameIndex());
-                slot.result = merged;
-                if (!wasTerminal &&
-                    interaction_command_policy::isTerminal(merged.state)) {
-                    publishCommandCompletedEvent(merged);
-                }
                 return;
             }
         }
@@ -1493,9 +1327,6 @@ namespace rock::provider::runtime
                 .active = true,
                 .result = storedResult,
             };
-            if (interaction_command_policy::isTerminal(storedResult.state)) {
-                publishCommandCompletedEvent(storedResult);
-            }
             s_nextInteractionResultSlot = (index + 1) % s_interactionResults.size();
             return;
         }
@@ -1548,7 +1379,7 @@ namespace rock::provider::runtime
             return;
         }
         saved_grab_offset::clearDefaultGrabPosesForOwner(ownerToken);
-        events::clearGrabCallback(ownerToken);
+        grab_callbacks::clear(ownerToken);
         {
             std::scoped_lock lock(
                 s_interactionCommandMutex,
@@ -1575,8 +1406,7 @@ namespace rock::provider::runtime
         {
             std::scoped_lock lock(s_offhandReservationMutex);
             if (s_offhandReservationSlot.ownerToken == ownerToken) {
-                clearOffhandReservationLocked(
-                    ::rock::api::input::SuppressionInvalidationReason::CallbackFault);
+                clearOffhandReservationLocked();
             }
         }
         {
@@ -1605,11 +1435,6 @@ namespace rock::provider::runtime
                 pi->releaseProviderPowerArmorGrabs(ownerToken);
             }
         }
-        publishAuthorityLostEvent(
-            ownerToken,
-            LostAuthority::Owner,
-            static_cast<std::uint32_t>(
-                ::rock::api::input::SuppressionInvalidationReason::CallbackFault));
     }
 
 
@@ -2224,7 +2049,6 @@ namespace rock::provider
 
         bool hadPrevious = false;
         bool lifecycleChanged = false;
-        bool equippedTerminalChanged = false;
         std::array<bool, 2> handChanged{};
 
         {
@@ -2326,10 +2150,6 @@ namespace rock::provider
 
             equippedWeaponState.sample.publicationSequence = snapshot.stateSequence;
             equippedWeaponState.sample.collisionGeneration = snapshot.collisionGeneration;
-            equippedTerminalChanged = hadPrevious &&
-                equippedWeaponState.terminalSequence != 0 &&
-                equippedWeaponState.terminalSequence !=
-                    previousEquipped.terminalSequence;
             s_lastSnapshot = snapshot;
             s_hasSnapshot = true;
             s_lastPartGripStates = partGripStates;
@@ -2341,50 +2161,6 @@ namespace rock::provider
         // game-clock expiry check only has the previous weapon snapshot.
         physical_reload_input::beginFrame(snapshot.frameIndex);
         support_trigger_input::beginFrame(snapshot.frameIndex);
-
-        if (hadPrevious && lifecycleChanged) {
-            auto event = stampedEvent<api::core::Event>(
-                static_cast<std::uint32_t>(api::core::EventKind::Lifecycle));
-            event.reason = static_cast<std::uint32_t>(snapshot.lastLifecycleReason);
-            event.lifecycleFlags = snapshot.lifecycleFlags;
-            event.providerReady = snapshot.providerReady;
-            events::publish(event);
-        }
-        if (hadPrevious) {
-            for (std::size_t index = 0;
-                 index < handInteractionStates.size();
-                 ++index) {
-                if (!handChanged[index]) {
-                    continue;
-                }
-                const auto& state = handInteractionStates[index];
-                auto event = stampedEvent<api::grab::Event>(
-                    static_cast<std::uint32_t>(api::grab::EventKind::HandStateChanged));
-                event.hand = state.hand;
-                event.formId = state.targetFormId;
-                event.phase = static_cast<std::uint32_t>(state.phase);
-                event.subjectSequence = state.stateSequence;
-                event.primaryBodyId = state.primaryBodyId;
-                event.flags = state.flags;
-                events::publish(event);
-            }
-        }
-        if (equippedTerminalChanged) {
-            // Slot 0: ROCK keeps one weapon's transition state.
-            auto event = stampedEvent<api::weapon::Event>(
-                static_cast<std::uint32_t>(api::weapon::EventKind::TransitionCompleted));
-            event.weaponGenerationKey =
-                equippedWeaponState.terminalWeaponFormId == equippedWeaponState.weaponFormId ?
-                    equippedWeaponState.weaponGenerationKey : 0;
-            event.formId = equippedWeaponState.terminalWeaponFormId;
-            event.terminalResult = static_cast<std::uint32_t>(
-                equippedWeaponState.terminalResult);
-            event.transitionSequence = equippedWeaponState.terminalSequence;
-            event.source = static_cast<std::uint32_t>(
-                equippedWeaponState.terminalSource);
-            event.flags = equippedWeaponState.flags;
-            events::publish(event);
-        }
 
         for (std::size_t index = 0; index < s_callbacks.size(); ++index) {
             CallbackSlot slot{};
@@ -2591,40 +2367,6 @@ namespace rock::provider
             s_lastPartGripStates = {};
             s_lastEquippedWeaponState.flags = 0;
         }
-        std::array<std::uint64_t, api::core::kMaxOwners>
-            suppressionOwners{};
-        std::array<std::uint64_t, api::core::kMaxOwners>
-            targetOwners{};
-        std::array<std::uint64_t, api::core::kMaxOwners>
-            driveOwners{};
-        std::array<std::uint64_t, api::core::kMaxOwners>
-            nativeAnimationOwners{};
-        std::array<std::uint64_t, api::core::kMaxOwners>
-            handVisualOwners{};
-        std::uint32_t suppressionOwnerCount = 0;
-        std::uint32_t targetOwnerCount = 0;
-        std::uint32_t driveOwnerCount = 0;
-        std::uint32_t nativeAnimationOwnerCount = 0;
-        std::uint32_t handVisualOwnerCount = 0;
-        const auto addUniqueOwner = [](
-                                        auto& owners,
-                                        std::uint32_t& count,
-                                        const std::uint64_t ownerToken) {
-            if (ownerToken == 0) {
-                return;
-            }
-            for (std::uint32_t index = 0; index < count; ++index) {
-                if (owners[index] == ownerToken) {
-                    return;
-                }
-            }
-            if (count < owners.size()) {
-                owners[count++] = ownerToken;
-            }
-        };
-        std::uint64_t nativeRuntimeOwner = 0;
-        std::uint64_t equippedHandlingOwner = 0;
-
         {
             std::scoped_lock lock(s_touchGrabMutex);
             s_touchGrabTargets.clearAll();
@@ -2636,12 +2378,6 @@ namespace rock::provider
                 if (slot.ownerToken == 0) {
                     continue;
                 }
-                if (slot.active) {
-                    addUniqueOwner(
-                        suppressionOwners,
-                        suppressionOwnerCount,
-                        slot.ownerToken);
-                }
                 slot.active = false;
                 slot.flags = 0;
                 slot.lastInvalidationReason =
@@ -2651,52 +2387,23 @@ namespace rock::provider
         }
         {
             std::scoped_lock lock(s_weaponPartMutex);
-            for (const auto& slot : s_weaponPartTargets) {
-                if (slot.active) {
-                    addUniqueOwner(
-                        targetOwners,
-                        targetOwnerCount,
-                        slot.ownerToken);
-                }
-            }
-            for (const auto& slot : s_weaponPartDrives) {
-                if (slot.active) {
-                    addUniqueOwner(
-                        driveOwners,
-                        driveOwnerCount,
-                        slot.ownerToken);
-                }
-            }
             s_weaponPartTargets = {};
             s_weaponPartGrabPoints = {};
             s_weaponPartDrives = {};
         }
         {
             std::scoped_lock lock(s_nativeAnimationAuthorityMutex);
-            for (const auto& slot : s_nativeAnimationAuthoritySlots) {
-                if (slot.active) {
-                    addUniqueOwner(
-                        nativeAnimationOwners,
-                        nativeAnimationOwnerCount,
-                        slot.ownerToken);
-                }
-            }
             s_nativeAnimationAuthoritySlots = {};
             publishNativeAnimationAuthorityAggregateLocked();
         }
         {
             std::scoped_lock lock(s_handVisualAuthorityMutex);
             for (auto& slot : s_handVisualAuthoritySlots) {
-                addUniqueOwner(
-                    handVisualOwners,
-                    handVisualOwnerCount,
-                    slot.ownerToken);
                 (void)clearHandVisualAuthoritySlotLocked(slot, true);
             }
         }
         {
             std::scoped_lock lock(s_nativeAnimationRuntimePublicationMutex);
-            nativeRuntimeOwner = s_nativeAnimationRuntimeProviderOwner;
             s_nativeAnimationRuntimeProviderOwner = 0;
             s_nativeAnimationRuntimePublication = {};
             s_nativeAnimationRuntimeExpiresAfterFrame = 0;
@@ -2704,66 +2411,13 @@ namespace rock::provider
         }
         {
             std::scoped_lock lock(s_equippedWeaponHandlingAuthorityMutex);
-            equippedHandlingOwner =
-                s_equippedWeaponHandlingAuthority.ownerToken;
             s_equippedWeaponHandlingAuthority = {};
         }
         {
             std::scoped_lock lock(s_offhandReservationMutex);
-            clearOffhandReservationLocked(
-                ::rock::api::input::SuppressionInvalidationReason::ProviderLost);
+            clearOffhandReservationLocked();
         }
 
-        constexpr auto providerLost = static_cast<std::uint32_t>(
-            ::rock::api::input::SuppressionInvalidationReason::ProviderLost);
-        for (std::uint32_t index = 0;
-             index < suppressionOwnerCount;
-             ++index) {
-            publishAuthorityLostEvent(
-                suppressionOwners[index],
-                LostAuthority::HandInputSuppression,
-                providerLost);
-        }
-        for (std::uint32_t index = 0; index < targetOwnerCount; ++index) {
-            publishAuthorityLostEvent(
-                targetOwners[index],
-                LostAuthority::WeaponPartTargets,
-                providerLost);
-        }
-        for (std::uint32_t index = 0; index < driveOwnerCount; ++index) {
-            publishAuthorityLostEvent(
-                driveOwners[index],
-                LostAuthority::WeaponPartDrive,
-                providerLost);
-        }
-        for (std::uint32_t index = 0;
-             index < nativeAnimationOwnerCount;
-             ++index) {
-            publishAuthorityLostEvent(
-                nativeAnimationOwners[index],
-                LostAuthority::NativeAnimation,
-                providerLost);
-        }
-        for (std::uint32_t index = 0;
-             index < handVisualOwnerCount;
-             ++index) {
-            publishAuthorityLostEvent(
-                handVisualOwners[index],
-                LostAuthority::HandVisual,
-                providerLost);
-        }
-        if (nativeRuntimeOwner != 0) {
-            publishAuthorityLostEvent(
-                nativeRuntimeOwner,
-                LostAuthority::NativeAnimationRuntime,
-                providerLost);
-        }
-        if (equippedHandlingOwner != 0) {
-            publishAuthorityLostEvent(
-                equippedHandlingOwner,
-                LostAuthority::WeaponHandling,
-                providerLost);
-        }
         s_generationStateAvailable.store(false, std::memory_order_release);
         s_currentWorldGeneration.store(0, std::memory_order_release);
         s_currentSkeletonGeneration.store(0, std::memory_order_release);
@@ -3096,14 +2750,8 @@ namespace rock::provider
     }
 
     bool publishTouchGrabState(std::uint64_t ownerToken,std::uint64_t scopeToken,const ::rock::api::touch::TouchGrabState& state) {
-        bool changed=false; bool accepted=false;
-        const auto frame=currentGameFrameIndex();
-        {
-            std::scoped_lock lock(s_touchGrabMutex);
-            accepted=s_touchGrabTargets.publishState(ownerToken,scopeToken,state,frame,&changed);
-        }
-        if (accepted && changed) events::publishTouch(ownerToken,scopeToken,state,frame);
-        return accepted;
+        std::scoped_lock lock(s_touchGrabMutex);
+        return s_touchGrabTargets.publishState(ownerToken,scopeToken,state,currentGameFrameIndex());
     }
 
     void acknowledgeTouchGrabYield(
@@ -3124,7 +2772,7 @@ namespace rock::provider
 namespace rock::provider::runtime {
     rock::api::Status authorize(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t permission, bool requireThread, OwnerAccess access) {
         using rock::api::Status;
-        if (events::inSynchronousCallback()) return Status::Busy;
+        if (borrowed_callback::active) return Status::Busy;
         const auto id=static_cast<std::uint32_t>(family);
         if (!owner || id<1 || id>kInterfaceSlotCount) return Status::InvalidArgument;
         {
@@ -3139,7 +2787,7 @@ namespace rock::provider::runtime {
     }
     rock::api::Status bind(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t major, std::uint32_t permissions) {
         using rock::api::Status;
-        if (events::inSynchronousCallback()) return Status::Busy;
+        if (borrowed_callback::active) return Status::Busy;
         const auto id=static_cast<std::uint32_t>(family);
         if (id<1 || id>kInterfaceSlotCount) return Status::UnknownInterface;
         const auto* registration = api::discovery::findRegistration(api::discovery::registeredInterfaces(), family, major);
@@ -3153,10 +2801,6 @@ namespace rock::provider::runtime {
         auto binding=slot->interfaces[id-1];
         const auto status=bindInterface(binding,major,permissions,supported);
         if (status!=Status::Ok) return status;
-        if (permissions & 1) {
-            const auto eventStatus=events::bind(owner,family);
-            if (eventStatus!=Status::Ok) return eventStatus;
-        }
         slot->interfaces[id-1]=binding;
         return Status::Ok;
     }

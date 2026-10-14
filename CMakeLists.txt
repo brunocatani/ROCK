@@ -851,11 +851,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKDebugOverlayLineBatchTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKDebugOverlayLineBatchTests)
 
-  add_executable(ROCKModularEventStreamTests "${ROOT_DIR}/tests/ModularEventStreamTests.cpp")
-  target_compile_features(ROCKModularEventStreamTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKModularEventStreamTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKModularEventStreamTests)
-
   add_executable(ROCKModularExportsTests "${ROOT_DIR}/tests/ModularExportsTests.cpp")
   target_compile_features(ROCKModularExportsTests PRIVATE cxx_std_23)
   target_compile_options(ROCKModularExportsTests PRIVATE /UNDEBUG)
@@ -921,7 +916,7 @@ if(BUILD_ROCK_TESTS)
 
   add_executable(ROCKModularEventDeliveryTests
     "${ROOT_DIR}/tests/ModularEventDeliveryTests.cpp"
-    "${SOURCE_DIR}/api/EventStreams.cpp"
+    "${SOURCE_DIR}/api/GrabEventCallbacks.cpp"
     "${SOURCE_DIR}/api/providers/GrabProvider.cpp")
   target_compile_features(ROCKModularEventDeliveryTests PRIVATE cxx_std_23)
   target_include_directories(ROCKModularEventDeliveryTests PRIVATE ${SOURCE_DIR})
@@ -954,7 +949,7 @@ if(BUILD_ROCK_TESTS)
   add_executable(ROCKProviderWeaponSourceTests
     "${ROOT_DIR}/tests/ProviderWeaponSourceTests.cpp"
     "${SOURCE_DIR}/physics-interaction/core/interaction/ProviderWeaponSources.cpp"
-    "${SOURCE_DIR}/api/EventStreams.cpp")
+    "${SOURCE_DIR}/api/GrabEventCallbacks.cpp")
   target_compile_features(ROCKProviderWeaponSourceTests PRIVATE cxx_std_23)
   target_include_directories(ROCKProviderWeaponSourceTests PRIVATE "${ROOT_DIR}/tests/fixtures/weapon_sources" ${SOURCE_DIR})
   target_compile_definitions(ROCKProviderWeaponSourceTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)

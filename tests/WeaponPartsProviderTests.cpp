@@ -74,9 +74,6 @@ namespace rock::loose_weapon_state {
     api::Status move(api::OwnerToken, const contract::ItemKey&, const contract::ItemKey&) { return api::Status::Ok; }
     api::Status clear(api::OwnerToken) { return api::Status::Ok; }
 }
-namespace rock::provider::events {
-    api::Status copy(api::OwnerToken, std::uint64_t, api::weaponparts::Event*, std::uint32_t, api::Stream&) { return api::Status::Ok; }
-}
 namespace rock::api::weaponparts {
     Status ROCK_CALL getGripState(OwnerToken, Hand, GripState*) noexcept { return Status::Ok; }
 }

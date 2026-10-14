@@ -104,14 +104,6 @@ namespace rock::api {
         std::uint32_t providerGeneration{};
         std::uint32_t collisionGeneration{};
     };
-    struct Stream {
-        std::uint64_t oldestSequence{};
-        std::uint64_t latestSequence{};
-        std::uint64_t nextSequence{};
-        std::uint64_t lostCount{};
-        std::uint32_t copiedCount{};
-        std::uint32_t remainingCount{};
-    };
     static_assert(sizeof(void*) == 8, "ROCK requires a 64-bit consumer");
     static_assert(sizeof(Hand) == 4 && sizeof(Status) == 4);
 

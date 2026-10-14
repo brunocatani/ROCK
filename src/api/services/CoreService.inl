@@ -47,11 +47,6 @@
             slot = {};
             slot.token = nextConsumerToken();
             slot.interfaces[0] = {rock::api::core::kMajor, 1};
-            const auto eventStatus = events::bind(slot.token, rock::api::InterfaceId::Core);
-            if (eventStatus != rock::api::Status::Ok) {
-                slot = {};
-                return eventStatus;
-            }
             slot.providerGeneration = providerGeneration;
             std::memcpy(slot.modName, registration.modName, modNameLength);
             outOwner.ownerToken = slot.token;
@@ -86,9 +81,9 @@
             if (!slot) {
                 return api::Status::OwnerNotRegistered;
             }
-            // Registration can run concurrently. Retire all event slots before
-            // this owner slot becomes available to another registration.
-            events::remove(ownerToken);
+            // Registration can run concurrently. Retire the Grab event callback
+            // before this owner slot becomes available to another registration.
+            grab_callbacks::clear(ownerToken);
             *slot = {};
             clearInteractionCommandsForOwnerLocked(ownerToken, api::grab::InteractionFailure::OwnerNotRegistered);
             clearHandInputSuppressionsForOwnerLocked(
@@ -109,8 +104,7 @@
         {
             std::scoped_lock lock(s_offhandReservationMutex);
             if (s_offhandReservationSlot.ownerToken == ownerToken) {
-                clearOffhandReservationLocked(
-                    ::rock::api::input::SuppressionInvalidationReason::OwnerUnregistered);
+                clearOffhandReservationLocked();
             }
         }
 

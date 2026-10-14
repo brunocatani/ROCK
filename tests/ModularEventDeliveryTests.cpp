@@ -1,4 +1,5 @@
-#include "api/providers/EventBoundary.h"
+#include "api/GrabEventCallbacks.h"
+#include "api/BorrowedCallbackContext.h"
 #include <ROCK/Grab.h>
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include <cstring>
@@ -20,7 +21,7 @@ namespace {
 // policy, the published Grab table and event dispatcher are exercised.
 namespace rock::provider::runtime {
     api::Status authorize(std::uint64_t token,api::InterfaceId family,std::uint32_t permission,bool requireThread,OwnerAccess access) {
-        if(events::inSynchronousCallback())return api::Status::Busy;
+        if(borrowed_callback::active)return api::Status::Busy;
         if(token!=testOwner && token!=peerOwner)return api::Status::OwnerNotRegistered;
         if(family!=api::InterfaceId::Grab)return api::Status::PermissionDenied;
         const auto status=authorizeBinding(binding,token==testOwner && revoked,permission,access);
@@ -92,6 +93,7 @@ namespace {
     void ROCK_CALL listener(const rock::api::grab::Event* event,void*) {
         ++deliveries;
         assert(event->hand==rock::api::Hand::Left && event->velocityGame[0]==11);
+        assert(event->frameIndex==21 && event->worldGeneration==1 && event->providerGeneration==3);
         reentry=grabApi.clearEventCallback(testOwner);
     }
     void ROCK_CALL peerListener(const rock::api::grab::Event*,void*) {++peerDeliveries;}
@@ -139,39 +141,19 @@ int main() {
     assert(unavailable.flags==0);
     snapshotReady=true;
     binding.permissions=1;
-    provider::events::bind(testOwner,api::InterfaceId::Grab);
-    provider::events::bind(peerOwner,api::InterfaceId::Grab);
-    api::grab::Event change{};
-    change.kind=static_cast<unsigned>(api::grab::EventKind::HandStateChanged);
-    change.frameIndex=20;change.worldGeneration=1;change.skeletonGeneration=2;change.providerGeneration=3;
-    change.hand=api::Hand::Left;change.formId=123;
-    change.subjectSequence=99;
-    change.phase=static_cast<unsigned>(api::grab::HandInteractionPhase::Holding);
-    change.primaryBodyId=456;change.flags=0x55;
-    provider::events::publish(change);
-    api::grab::Event copied[4]{};api::Stream stream{};
-    assert(grabApi.copyEvents(testOwner,0,copied,4,&stream)==Status::Ok && stream.copiedCount==1);
-    assert(copied[0].phase==change.phase);
-    assert(copied[0].formId==123 && copied[0].primaryBodyId==456 && copied[0].flags==0x55);
-    assert(copied[0].frameIndex==20 && copied[0].worldGeneration==1 && copied[0].subjectSequence==99);
-
     assert(grabApi.setEventCallback(testOwner,listener,nullptr)==Status::Ok);
     assert(grabApi.setEventCallback(peerOwner,peerListener,nullptr)==Status::Ok);
     GrabEventData released{};released.type=GrabEventType::Released;released.isLeft=true;
     released.formID=123;released.velocityGame[0]=11;released.velocityGame[1]=-22;released.velocityGame[2]=33;
-    provider::events::publishGrab(released,{21,30,1,2,3,4});
+    provider::grab_callbacks::deliver(released,{21,30,1,2,3,4});
     assert(deliveries==1 && peerDeliveries==1 && reentry==Status::Busy);
-    assert(grabApi.copyEvents(testOwner,1,copied,4,&stream)==Status::Ok && stream.copiedCount==1);
-    assert(copied[0].kind==static_cast<unsigned>(api::grab::EventKind::Released));
-    assert(copied[0].velocityGame[0]==11 && copied[0].velocityGame[1]==-22 && copied[0].velocityGame[2]==33);
 
     assert(grabApi.setEventCallback(testOwner,failingListener,nullptr)==Status::Ok);
-    provider::events::publishGrab(released,{22,30,1,2,3,4});
+    provider::grab_callbacks::deliver(released,{22,30,1,2,3,4});
     assert(revokeRequested && revoked && peerDeliveries==2);
     assert(grabApi.setEventCallback(testOwner,listener,nullptr)==Status::OwnerRevoked);
-    assert(grabApi.copyEvents(testOwner,0,copied,4,&stream)==Status::Ok && stream.copiedCount==3);
-    assert(grabApi.clearEventCallback(testOwner)==Status::Ok); // Read/cleanup survives revocation.
-    provider::events::publishGrab(released,{23,30,1,2,3,4});
+    assert(grabApi.clearEventCallback(testOwner)==Status::Ok); // Cleanup survives revocation.
+    provider::grab_callbacks::deliver(released,{23,30,1,2,3,4});
     assert(deliveries==1 && peerDeliveries==3);
     assert(provider::authorizeBinding(binding,true,2)==Status::OwnerRevoked);
     assert(provider::authorizeBinding(binding,false,2)==Status::PermissionDenied);
@@ -179,5 +161,5 @@ int main() {
     assert(grabApi.setEventCallback(testOwner,listener,nullptr)==Status::PermissionDenied);
     assert(grabApi.setEventCallback(99,listener,nullptr)==Status::OwnerNotRegistered);
     assert(grabApi.setEventCallback(testOwner,nullptr,nullptr)==Status::InvalidArgument);
-    provider::events::remove(testOwner);provider::events::remove(peerOwner);
+    provider::grab_callbacks::clear(testOwner);provider::grab_callbacks::clear(peerOwner);
 }

@@ -8,7 +8,6 @@ namespace rock::api::core {
     inline constexpr std::uint32_t kMinor = 0;
     inline constexpr std::uint32_t kMaxOwners = 64;
     inline constexpr std::uint32_t kMaxFrameCallbacks = 16;
-    inline constexpr std::uint32_t kEventCapacityPerOwner = 256;
 
     enum class LifecycleFlag : std::uint32_t
     {
@@ -88,22 +87,6 @@ namespace rock::api::core {
     enum class Permission : std::uint32_t { Read = 1, Callbacks = 4 };
     inline constexpr std::uint32_t kSupportedPermissions = 5;
 
-    struct Event
-    {
-        std::uint32_t size{ sizeof(Event) };
-        std::uint32_t kind{};
-        std::uint64_t sequence{};
-        std::uint64_t frameIndex{};
-        std::uint64_t ownerToken{};
-        std::uint32_t worldGeneration{};
-        std::uint32_t skeletonGeneration{};
-        std::uint32_t providerGeneration{};
-        std::uint32_t lifecycleFlags{};
-        std::uint32_t reason{};
-        std::uint32_t providerReady{};
-    };
-    enum class EventKind : std::uint32_t { Lifecycle = 1, OwnerRevoked = 2, PhysicsInitialized = 3, PhysicsShutdown = 4 };
-
     struct Api
     {
         static constexpr InterfaceId interfaceId = kInterfaceId;
@@ -127,8 +110,6 @@ namespace rock::api::core {
         Status(ROCK_CALL* bindInterface)(OwnerToken owner, InterfaceId interfaceId, std::uint32_t exactMajor, std::uint32_t permissions) noexcept;
         // Any thread. Identity of the current publication.
         Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
-        // Any thread. Copies lifecycle and owner events after afterSequence.
-        Status(ROCK_CALL* copyEvents)(OwnerToken owner, std::uint64_t afterSequence, Event* outEvents, std::uint32_t capacity, Stream* outStream) noexcept;
     };
 }
 

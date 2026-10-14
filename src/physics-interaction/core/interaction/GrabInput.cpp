@@ -367,7 +367,6 @@ namespace rock
         const char* reason)
     {
         auto* heldRef = hand.getHeldRef();
-        const auto heldFormID = heldRef ? heldRef->GetFormID() : 0u;
         auto releaseContext = makeGrabReleaseContext(hand, isLeft);
         releaseContext.reason = reason ? reason : "normal-grab-suppressed";
         hand.releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Delayed, releaseContext);
@@ -378,7 +377,6 @@ namespace rock
             "{} hand: released held object because normal grab input is suppressed ({})",
             hand.handName(),
             reason ? reason : "unknown");
-        dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, heldRef, heldFormID, 0);
         dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, heldRef);
     }
 
@@ -413,7 +411,6 @@ namespace rock
             ROCK_LOG_WARN(Hand, "Held update ended grab without an input release: hand={} ref={:08X}",
                 isLeft ? "left" : "right", heldFormID);
             releaseObject(heldRef, claimOwnerForHand(isLeft));
-            dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, heldRef, heldFormID, 0);
             dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, heldRef);
             clearGameplayCandidatesForHand(hand, isLeft);
         }
@@ -1435,7 +1432,6 @@ namespace rock
                 }
                 auto* heldRef = hand.getHeldRef();
                 claimObject(heldRef, claimOwnerForHand(isLeft));
-                dispatchPhysicsMessage(kPhysMsg_OnGrab, isLeft, heldRef, heldRef ? heldRef->GetFormID() : 0, 0);
                 dispatchGrabCommittedEvent(isLeft, heldRef, hand.getSavedObjectState().bodyId.value, hknp);
                 if (grabbedFromPullCatchCommit) {
                     dispatchSimpleGrabEvent(GrabEventType::PullCatchSucceeded, isLeft, heldRef, hand.getSavedObjectState().bodyId.value);
@@ -1693,7 +1689,6 @@ namespace rock
                         .secondaryLeft = isLeft,
                     });
                     auto* postEquipRef = equipResult.untransferredRef.get();
-                    dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, postEquipRef, heldFormID, 0);
                     if (!equipResult.success && !equipResult.transferredToInventory) {
                         hand.applyReleaseVelocitySnapshot(hknp, releaseOutcome.velocity);
                     }
@@ -1804,7 +1799,6 @@ namespace rock
                         ROCK_LOG_WARN(Hand, "Held equip cancelled by current-frame hold validation: hand={} ref={:08X}",
                             left ? "left" : "right", reference->GetFormID());
                         releaseObject(reference.get(), claimOwnerForHand(left));
-                        dispatchPhysicsMessage(kPhysMsg_OnRelease, left, reference.get(), reference->GetFormID(), 0);
                         dispatchSimpleGrabEvent(GrabEventType::Released, left, reference.get());
                         clearGameplayCandidatesForHand(carryingHand, left);
                     }
@@ -2013,13 +2007,11 @@ namespace rock
                 }
 
                 auto* postEquipRef = equipResult.untransferredRef.get();
-                dispatchPhysicsMessage(kPhysMsg_OnRelease, equipIsLeft, postEquipRef, heldFormID, 0);
                 if (!equipResult.success && !equipResult.transferredToInventory) {
                     equipHand.applyReleaseVelocitySnapshot(hknp, releaseOutcome.velocity);
                 }
                 dispatchHeldObjectEventByFormID(GrabEventType::Released, postEquipRef, heldFormID, primaryBodyId, equipIsLeft);
                 if (peerHoldingSameObject) {
-                    dispatchPhysicsMessage(kPhysMsg_OnRelease, !equipIsLeft, postEquipRef, heldFormID, 0);
                     dispatchHeldObjectEventByFormID(GrabEventType::Released, postEquipRef, heldFormID, supportBodyId, !equipIsLeft);
                 }
                 const bool physicalCarryPendingArmed =
@@ -2273,7 +2265,6 @@ namespace rock
                     const bool failedBeforeOwnershipTransfer =
                         !consumeResult.attempted || consumeResult.reason == mouth_consume::ConsumeReason::ActivateRefFailed;
                     auto* postConsumeRef = consumeResult.untransferredRef.get();
-                    dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, postConsumeRef, heldFormID, 0);
                     if (consumeResult.success) {
                         dispatchMouthConsumeEvent(GrabEventType::Consumed, nullptr, heldFormID, primaryBodyId, consumeDecision);
                     } else {
@@ -2321,7 +2312,6 @@ namespace rock
                     }
 
                     auto* postTransferRef = transferResult.untransferredRef.get();
-                    dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, postTransferRef, heldFormID, 0);
                     if (transferResult.success) {
                         dispatchShoulderStashEvent(GrabEventType::Stashed, nullptr, heldFormID, primaryBodyId, stashDecision);
                         showShoulderStashCollectedNotification(transferResult, heldFormID);
@@ -2346,7 +2336,6 @@ namespace rock
                 hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Delayed, makeGrabReleaseContext(hand, isLeft));
                 if (heldRef)
                     releaseObject(heldRef, claimOwnerForHand(isLeft));
-                dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, heldRef, heldFormID, 0);
                 dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, heldRef);
                 clearGameplayCandidatesForHand(hand, isLeft);
             } else {

@@ -257,8 +257,7 @@
             s_offhandReservationSlot.ownerToken != ownerToken) {
             return api::Status::OwnerConflict;
         }
-        clearOffhandReservationLocked(
-            ::rock::api::input::SuppressionInvalidationReason::ExplicitClear);
+        clearOffhandReservationLocked();
         return api::Status::Ok;
     }
 

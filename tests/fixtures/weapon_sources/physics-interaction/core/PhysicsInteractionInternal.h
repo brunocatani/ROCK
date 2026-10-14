@@ -1,6 +1,6 @@
 #pragma once
 #include "api/WeaponSourceCatalogRuntime.h"
-#include "api/EventStreams.h"
+#include "api/GrabEventCallbacks.h"
 #include "physics-interaction/weapon/WeaponHierarchy.h"
 #include <span>
 namespace rock {
@@ -36,7 +36,6 @@ namespace rock {
         api::Status queryProviderWeaponSourcePath(std::uint64_t,std::uint64_t,std::uint64_t&,std::uint32_t&)const;
         api::Status collectProviderWeaponCollisionBodies(std::uint64_t,std::span<const std::uint64_t>,std::span<std::uint32_t>,std::uint32_t&)const;
         api::Sample providerEventSample()const;
-        void dispatchPhysicsMessage(std::uint32_t,bool,RE::TESObjectREFR*,std::uint32_t,std::uint32_t);
         void dispatchGrabEvent(GrabEventData);
     };
 }

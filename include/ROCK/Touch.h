@@ -9,7 +9,6 @@ namespace rock::api::touch {
     inline constexpr std::uint32_t kMaxTargets = 256;
     inline constexpr std::uint32_t kMaxScopes = 64;
     inline constexpr std::uint32_t kMaxLeaseFrames = 120;
-    inline constexpr std::uint32_t kEventCapacityPerOwner = 256;
 
     /*
      * A touch-grab target turns a body or surface into something a hand can
@@ -183,25 +182,6 @@ namespace rock::api::touch {
     enum class Permission : std::uint32_t { Read = 1, Write = 2 };
     inline constexpr std::uint32_t kSupportedPermissions = 3;
 
-    struct Event
-    {
-        std::uint32_t size{ sizeof(Event) };
-        std::uint32_t kind{};
-        std::uint64_t sequence{};
-        std::uint64_t frameIndex{};
-        std::uint64_t ownerToken{};
-        std::uint32_t worldGeneration{};
-        std::uint32_t skeletonGeneration{};
-        std::uint32_t providerGeneration{};
-        std::uint64_t scopeToken{};
-        std::uint64_t targetId{};
-        std::uint32_t targetGeneration{};
-        std::uint32_t phase{};
-        std::uint32_t releaseReason{};
-        std::uint32_t activeHandMask{};
-    };
-    enum class EventKind : std::uint32_t { StateChanged = 1 };
-
     struct Api
     {
         static constexpr InterfaceId interfaceId = kInterfaceId;
@@ -218,8 +198,6 @@ namespace rock::api::touch {
         Status(ROCK_CALL* clearAuthoredHand)(OwnerToken owner, Hand hand) noexcept;
         // Any thread. Identity of the current publication.
         Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
-        // Any thread. Copies state-change events after afterSequence.
-        Status(ROCK_CALL* copyEvents)(OwnerToken owner, std::uint64_t afterSequence, Event* outEvents, std::uint32_t capacity, Stream* outStream) noexcept;
     };
 }
 

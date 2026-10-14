@@ -13,7 +13,6 @@ namespace rock::api::weapon {
     inline constexpr std::uint32_t kMaxCompositionEntries = 64;
     inline constexpr std::uint32_t kMaxHandlingLeaseFrames = 120;
     inline constexpr std::uint32_t kFingerLocalTransformCount = 15;
-    inline constexpr std::uint32_t kEventCapacityPerOwner = 256;
 
     // ------------------------------------------------------------------
     // Weapon state
@@ -538,32 +537,6 @@ namespace rock::api::weapon {
     enum class Permission : std::uint32_t { Read = 1, Write = 2 };
     inline constexpr std::uint32_t kSupportedPermissions = 3;
 
-    // TransitionCompleted: a slot finished an equip transition (formId,
-    // transitionSequence, source, terminalResult, flags). AuthorityLost: the
-    // owner's handling authority ended (reason).
-    struct Event
-    {
-        std::uint32_t size{ sizeof(Event) };
-        std::uint32_t kind{};
-        std::uint64_t sequence{};
-        std::uint64_t frameIndex{};
-        std::uint64_t ownerToken{};
-        std::uint32_t worldGeneration{};
-        std::uint32_t skeletonGeneration{};
-        std::uint32_t providerGeneration{};
-        std::uint32_t weaponSlot{};
-        Hand hand{ Hand::None };
-        std::uint32_t formId{};
-        std::uint64_t weaponGenerationKey{};
-        std::uint64_t transitionSequence{};
-        std::uint32_t source{};
-        std::uint32_t terminalResult{};
-        std::uint32_t flags{};
-        std::uint32_t authority{};
-        std::uint32_t reason{};
-    };
-    enum class EventKind : std::uint32_t { TransitionCompleted = 1, AuthorityLost = 2 };
-
     /*
      * Per-weapon calls take weaponSlot < kMaxWeaponSlots (InvalidArgument
      * otherwise). A slot ROCK does not publish yet returns TargetUnavailable.
@@ -609,7 +582,6 @@ namespace rock::api::weapon {
         Status(ROCK_CALL* isEquipPickup)(OwnerToken owner, std::uint32_t referenceFormId, std::uint32_t count, std::uint32_t* outMatches) noexcept;
         // Any thread.
         Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
-        Status(ROCK_CALL* copyEvents)(OwnerToken owner, std::uint64_t afterSequence, Event* outEvents, std::uint32_t capacity, Stream* outStream) noexcept;
     };
 }
 #pragma pack(pop)

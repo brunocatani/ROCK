@@ -10,7 +10,6 @@ namespace rock::api::grab {
     inline constexpr std::uint32_t kMaxQueuedCommands = 32;
     inline constexpr std::uint32_t kMaxCommandResults = 64;
     inline constexpr std::uint32_t kMaxReservationLeaseFrames = 120;
-    inline constexpr std::uint32_t kEventCapacityPerOwner = 256;
     inline constexpr std::uint32_t kPowerArmorPointCount = 2;
     inline constexpr float kMaxPowerArmorGrabDistanceGame = 32.0f;
     inline constexpr std::uint32_t kNoBody = 0x7FFF'FFFF;
@@ -562,13 +561,13 @@ namespace rock::api::grab {
     enum class Permission : std::uint32_t { Read = 1, Write = 2 };
     inline constexpr std::uint32_t kSupportedPermissions = 3;
 
+    // One grab event, passed to the event callback as it happens. Follow
+    // lasting state through HandInteractionState and its sequences.
     struct Event
     {
         std::uint32_t size{ sizeof(Event) };
         std::uint32_t kind{};
-        std::uint64_t sequence{};
         std::uint64_t frameIndex{};
-        std::uint64_t ownerToken{};
         std::uint32_t worldGeneration{};
         std::uint32_t skeletonGeneration{};
         std::uint32_t providerGeneration{};
@@ -579,11 +578,6 @@ namespace rock::api::grab {
         std::uint32_t collisionLayer{};
         std::uint32_t flags{};
         std::uint32_t sourceKind{};
-        std::uint64_t subjectSequence{};
-        std::uint32_t commandKind{};
-        std::uint32_t commandState{};
-        std::uint32_t failure{};
-        std::uint32_t phase{};
         float positionGame[3]{};
         float velocityGame[3]{};
         float mass{};
@@ -596,8 +590,7 @@ namespace rock::api::grab {
         GrabCommitted = 6, HeldImpact = 7, Released = 8, TwoHandStarted = 9, TwoHandStopped = 10,
         StashCandidate = 11, ConsumeCandidate = 12, Stashed = 13, Consumed = 14, LootStarted = 15,
         LootCompleted = 16, SelectionUnlocked = 17,
-        HandStateChanged = 100, CommandCompleted = 101, GrabNotification = 102, ReleaseNotification = 103,
-        ReservationLost = 104,
+        // 100-104 are retired; never reuse them.
     };
 
     // Synchronous observation on the producing thread. Calling ROCK inside
@@ -649,8 +642,6 @@ namespace rock::api::grab {
         Status(ROCK_CALL* clearEventCallback)(OwnerToken owner) noexcept;
         // Any thread. Identity of the current publication.
         Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
-        // Any thread. Copies events after afterSequence.
-        Status(ROCK_CALL* copyEvents)(OwnerToken owner, std::uint64_t afterSequence, Event* outEvents, std::uint32_t capacity, Stream* outStream) noexcept;
     };
 }
 

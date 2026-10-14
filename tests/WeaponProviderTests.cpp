@@ -67,9 +67,6 @@ namespace rock::provider::runtime {
     api::Status getInventoryEquipResult(std::uint64_t, std::uint64_t, api::weapon::EquipResult&) { return api::Status::Ok; }
     api::Status cancelInventoryEquip(std::uint64_t, std::uint64_t) { return api::Status::Ok; }
 }
-namespace rock::provider::events {
-    api::Status copy(api::OwnerToken, std::uint64_t, api::weapon::Event*, std::uint32_t, api::Stream&) { return api::Status::Ok; }
-}
 
 int main() {
     using namespace rock::api;

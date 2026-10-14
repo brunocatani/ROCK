@@ -96,7 +96,6 @@
             bool isLeft = (std::string_view(handName) == "Left");
             auto& hand = isLeft ? _leftHand : _rightHand;
             hand.setTouchState(ref, ref->GetFormID(), layer);
-            dispatchPhysicsMessage(kPhysMsg_OnTouch, isLeft, ref, ref->GetFormID(), layer);
         } else {
             ROCK_LOG_DEBUG(Hand, "{} hand touched body={} layer={} (unresolved)", handName, bodyId.value, layer);
         }

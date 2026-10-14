@@ -71,25 +71,22 @@ namespace {
         child(cursor,"TooDeep");pi->refreshProviderWeaponSources();assert(pi->_providerSources.overflow);
         root->data.children.clear();pi->refreshProviderWeaponSources();assert(!pi->_providerSources.overflow && pi->_providerSources.count==1);
     }
+    rock::api::grab::Event delivered{};
+    void ROCK_CALL capture(const rock::api::grab::Event* event,void*){delivered=*event;}
     void eventTests() {
         using namespace rock;
         auto pi=std::make_unique<PhysicsInteraction>();
         eventClock.beginFrame(101);pi->_frame.palmClockGameFrameIndex=0; // Initialization precedes the first physics update.
-        assert(provider::events::bind(77,api::InterfaceId::Core)==api::Status::Ok);
-        assert(provider::events::bind(77,api::InterfaceId::Grab)==api::Status::Ok);
-        pi->dispatchPhysicsMessage(104,false,nullptr,0,0);
-        api::core::Event event{};api::Stream stream{};
-        assert(provider::events::copy(77,0,&event,1,stream)==api::Status::Ok && stream.copiedCount==1);
-        assert(event.frameIndex==101 && event.worldGeneration==6 && event.skeletonGeneration==7 && event.providerGeneration==8);
+        assert(provider::grab_callbacks::set(77,capture,nullptr)==api::Status::Ok);
         GrabEventData grab{};grab.type=GrabEventType::Released;RE::TESObjectREFR reference;grab.refr=&reference;
-        pi->dispatchGrabEvent(grab);api::grab::Event released{};
+        pi->dispatchGrabEvent(grab);
         assert(pi->hapticsHandled);
-        assert(provider::events::copy(77,0,&released,1,stream)==api::Status::Ok && stream.copiedCount==1);
-        assert(released.frameIndex==101 && released.worldGeneration==6 && released.skeletonGeneration==7 && released.providerGeneration==8 && released.formId==123);
+        assert(delivered.kind==static_cast<std::uint32_t>(GrabEventType::Released) && delivered.formId==123);
+        assert(delivered.frameIndex==101 && delivered.worldGeneration==6 && delivered.skeletonGeneration==7 && delivered.providerGeneration==8);
         eventClock.beginFrame(102);pi->_frame.palmClockGameFrameIndex=102;pi->_lifecycle.worldGenerationAtomic=10;
-        pi->dispatchPhysicsMessage(105,false,nullptr,0,0);
-        assert(provider::events::copy(77,1,&event,1,stream)==api::Status::Ok && event.frameIndex==102 && event.worldGeneration==10);
-        provider::events::remove(77);
+        pi->dispatchGrabEvent(grab);
+        assert(delivered.frameIndex==102 && delivered.worldGeneration==10);
+        provider::grab_callbacks::clear(77);
     }
 }
 int main(){sourceTests();boundsTests();eventTests();}

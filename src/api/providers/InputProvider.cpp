@@ -1,5 +1,4 @@
 #include "Boundary.h"
-#include "EventBoundary.h"
 #include <ROCK/Input.h>
 #include "physics-interaction/input/PhysicalReloadInput.h"
 #include "physics-interaction/input/SupportTriggerInput.h"
@@ -95,9 +94,6 @@ Status ROCK_CALL getSupportTrigger(OwnerToken owner, SupportTriggerState* outSta
 Status ROCK_CALL getSample(OwnerToken owner, Sample* outSample) noexcept {
     return readSample(owner, kInterfaceId, outSample);
 }
-Status ROCK_CALL copyEvents(OwnerToken owner, std::uint64_t after, Event* events, std::uint32_t capacity, Stream* stream) noexcept {
-    return copyEventStream(owner, kInterfaceId, after, events, capacity, kEventCapacityPerOwner, stream);
-}
 }
 const Api& table() noexcept {
     static const Api value{
@@ -117,7 +113,6 @@ const Api& table() noexcept {
         &clearSupportTrigger,
         &getSupportTrigger,
         &getSample,
-        &copyEvents,
     };
     return value;
 }

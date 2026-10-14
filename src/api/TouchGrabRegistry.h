@@ -267,10 +267,8 @@ namespace rock::provider
             const std::uint64_t ownerToken,
             const std::uint64_t scopeToken,
             const ::rock::api::touch::TouchGrabState& state,
-            const std::uint64_t frameIndex,
-            bool* changed = nullptr)
+            const std::uint64_t frameIndex)
         {
-            if (changed) *changed=false;
             for (auto& slot : _slots) {
                 if (!slot.active ||
                     slot.ownerToken != ownerToken ||
@@ -280,7 +278,6 @@ namespace rock::provider
                     continue;
                 }
 
-                if (changed) *changed = slot.state.phase!=state.phase || slot.state.releaseReason!=state.releaseReason || slot.state.activeHandMask!=state.activeHandMask;
                 slot.state = state;
                 slot.state.frameIndex = frameIndex;
                 slot.state.sequence = nextSequence();

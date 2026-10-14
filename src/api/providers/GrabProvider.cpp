@@ -1,5 +1,5 @@
+#include "api/GrabEventCallbacks.h"
 #include "Boundary.h"
-#include "EventBoundary.h"
 #include <ROCK/Grab.h>
 #include "physics-interaction/api/InteractionCommandQueue.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
@@ -133,16 +133,13 @@ Status ROCK_CALL queryPowerArmorTarget(OwnerToken owner, const ReferenceQuery* q
 }
 Status ROCK_CALL setEventCallback(OwnerToken owner, EventCallback callback, void* userData) noexcept {
     if (!callback) return Status::InvalidArgument;
-    return invoke(owner, kInterfaceId, 1, true, [&] { return p::events::setGrabCallback(owner, callback, userData); }, p::OwnerAccess::Active);
+    return invoke(owner, kInterfaceId, 1, true, [&] { return p::grab_callbacks::set(owner, callback, userData); }, p::OwnerAccess::Active);
 }
 Status ROCK_CALL clearEventCallback(OwnerToken owner) noexcept {
-    return invoke(owner, kInterfaceId, 1, true, [&] { p::events::clearGrabCallback(owner); return Status::Ok; });
+    return invoke(owner, kInterfaceId, 1, true, [&] { p::grab_callbacks::clear(owner); return Status::Ok; });
 }
 Status ROCK_CALL getSample(OwnerToken owner, Sample* outSample) noexcept {
     return readSample(owner, kInterfaceId, outSample);
-}
-Status ROCK_CALL copyEvents(OwnerToken owner, std::uint64_t after, Event* events, std::uint32_t capacity, Stream* stream) noexcept {
-    return copyEventStream(owner, kInterfaceId, after, events, capacity, kEventCapacityPerOwner, stream);
 }
 }
 const Api& table() noexcept {
@@ -173,7 +170,6 @@ const Api& table() noexcept {
         &setEventCallback,
         &clearEventCallback,
         &getSample,
-        &copyEvents,
     };
     return value;
 }

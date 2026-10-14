@@ -520,7 +520,6 @@ namespace rock
         markGeneratedBodiesRebuilt(bhk, hknp);
         observeLifecycleFrame(bhk, hknp, api::core::LifecycleReason::GeneratedBodiesRebuilt);
 
-        dispatchPhysicsMessage(kPhysMsg_OnPhysicsInit, false);
 
         ROCK_LOG_INFO(Init, "ROCK physics module initialized — bhkWorld={}, hknpWorld={}, R_body={}, L_body={}", static_cast<const void*>(bhk), static_cast<const void*>(hknp),
             _rightHand.getCollisionBodyId().value, _leftHand.getCollisionBodyId().value);
@@ -569,7 +568,6 @@ namespace rock
         // still executing or eligible to enter its ROCK callback.
         _generatedBodyStepDrive.reset();
 
-        dispatchPhysicsMessage(kPhysMsg_OnPhysicsShutdown, false);
 
         ROCK_LOG_INFO(Init, "Shutting down ROCK physics module...");
         restoreHeldMassMovementSlowdown("shutdown");

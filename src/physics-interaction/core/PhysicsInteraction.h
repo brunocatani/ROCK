@@ -87,17 +87,6 @@ namespace rock::provider_state_policy
 namespace rock
 {
 
-    enum PhysicsMessageType : std::uint32_t
-    {
-        kPhysMsg_OnTouch = 100,
-        kPhysMsg_OnTouchEnd = 101,
-        kPhysMsg_OnGrab = 102,
-        kPhysMsg_OnRelease = 103,
-        kPhysMsg_OnPhysicsInit = 104,
-        kPhysMsg_OnPhysicsShutdown = 105,
-        kPhysMsg_OnGrabEvent = 200,
-    };
-
     enum class PhysicsObjectClaimOwner : std::uint8_t
     {
         External = 0,
@@ -562,7 +551,6 @@ namespace rock
         void subscribeContactEvents(RE::hknpWorld* world);
         void unsubscribeContactEvents(RE::hknpWorld* liveWorld);
 
-        void dispatchPhysicsMessage(std::uint32_t msgType, bool isLeft, RE::TESObjectREFR* refr = nullptr, std::uint32_t formID = 0, std::uint32_t layer = 0);
         api::Sample providerEventSample() const;
         void dispatchGrabEvent(GrabEventData eventData);
         void dispatchSimpleGrabEvent(

@@ -465,7 +465,6 @@ namespace rock
                 commit.isLeft ? "left" : "right", heldRef->GetFormID(), retained.grabIdentity,
                 static_cast<unsigned>(retained.inputState));
             claimObject(heldRef, claimOwnerForHand(commit.isLeft));
-            dispatchPhysicsMessage(kPhysMsg_OnGrab, commit.isLeft, heldRef, heldRef ? heldRef->GetFormID() : 0, 0);
             dispatchGrabCommittedEvent(commit.isLeft, heldRef, primaryBodyId, frame.hknpWorld);
             input_remap_runtime::setHandHeldWeapon(commit.isLeft, (commit.isLeft ? _leftHand : _rightHand).isHoldingLooseWeapon());
 
@@ -593,7 +592,7 @@ namespace rock
                 pendingImpactBodyId,
                 pendingImpactOtherBodyId);
 
-        auto releaseHandIfHolding = [&](Hand& hand, bool isLeft, RE::TESObjectREFR* ref, std::uint32_t formID) {
+        auto releaseHandIfHolding = [&](Hand& hand, bool isLeft, RE::TESObjectREFR* ref) {
             if (!ref || !hand.isHolding() || hand.getHeldRef() != ref) {
                 return;
             }
@@ -601,7 +600,6 @@ namespace rock
             const auto releaseContext = makeGrabReleaseContext(hand, isLeft);
             static_cast<void>(hand.releaseGrabbedObject(frame.hknpWorld, GrabReleaseCollisionRestoreMode::Immediate, releaseContext));
             releaseObject(ref, claimOwnerForHand(isLeft));
-            dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, ref, formID, 0);
             dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, ref);
         };
 
@@ -611,8 +609,8 @@ namespace rock
                                          const char* reason,
                                          std::uint32_t triggerActorFormID = 0) {
             const std::uint32_t formID = ref ? ref->GetFormID() : fuse.refFormID;
-            releaseHandIfHolding(_rightHand, false, ref, formID);
-            releaseHandIfHolding(_leftHand, true, ref, formID);
+            releaseHandIfHolding(_rightHand, false, ref);
+            releaseHandIfHolding(_leftHand, true, ref);
 
             // The detonation attempt ends this armed state even if creation
             // fails. Retire its visual before the source 3D can be deleted.

@@ -1,5 +1,4 @@
 #include "Boundary.h"
-#include "EventBoundary.h"
 #include "physics-interaction/weapon/EquipPickupScope.h"
 #include <ROCK/Weapon.h>
 
@@ -130,9 +129,6 @@ Status ROCK_CALL isEquipPickup(OwnerToken owner, std::uint32_t referenceFormId, 
 Status ROCK_CALL getSample(OwnerToken owner, Sample* outSample) noexcept {
     return readSample(owner, kInterfaceId, outSample);
 }
-Status ROCK_CALL copyEvents(OwnerToken owner, std::uint64_t after, Event* events, std::uint32_t capacity, Stream* stream) noexcept {
-    return copyEventStream(owner, kInterfaceId, after, events, capacity, kEventCapacityPerOwner, stream);
-}
 }
 const Api& table() noexcept {
     static const Api value{
@@ -153,7 +149,6 @@ const Api& table() noexcept {
         &cancelInventoryEquip,
         &isEquipPickup,
         &getSample,
-        &copyEvents,
     };
     return value;
 }

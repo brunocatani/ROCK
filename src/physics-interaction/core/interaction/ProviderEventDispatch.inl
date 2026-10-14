@@ -8,16 +8,8 @@ api::Sample PhysicsInteraction::providerEventSample() const {
         _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire)};
 }
 
-    void PhysicsInteraction::dispatchPhysicsMessage(std::uint32_t msgType, bool isLeft, RE::TESObjectREFR*, std::uint32_t formID, std::uint32_t layer)
-    {
-        const auto sample=providerEventSample();
-        provider::events::publishPhysics(msgType,isLeft,formID,layer,sample);
-    }
-
     void PhysicsInteraction::dispatchGrabEvent(GrabEventData eventData)
     {
-        eventData.size = sizeof(GrabEventData);
-        eventData.version = ROCK_GRAB_EVENT_VERSION;
         if (eventData.refr && eventData.formID == 0) {
             eventData.formID = eventData.refr->GetFormID();
         }
@@ -26,5 +18,5 @@ api::Sample PhysicsInteraction::providerEventSample() const {
         handleGrabEventHaptics(eventData);
 
         const auto sample=providerEventSample();
-        provider::events::publishGrab(eventData,sample);
+        provider::grab_callbacks::deliver(eventData,sample);
     }

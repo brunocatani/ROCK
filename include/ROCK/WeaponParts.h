@@ -19,7 +19,6 @@ namespace rock::api::weaponparts {
     inline constexpr std::uint32_t kMaxCollisionSources = 16;
     inline constexpr std::uint32_t kMaxGrabPoints = 32;
     inline constexpr std::uint32_t kMaxItemParts = 96;
-    inline constexpr std::uint32_t kEventCapacityPerOwner = 256;
     inline constexpr std::uint32_t kNoBody = 0x7FFF'FFFF;
 
     // ------------------------------------------------------------------
@@ -456,23 +455,6 @@ namespace rock::api::weaponparts {
     enum class Permission : std::uint32_t { Read = 1, Write = 2 };
     inline constexpr std::uint32_t kSupportedPermissions = 3;
 
-    // AuthorityLost: the owner's part targets or drives were withdrawn (reason).
-    struct Event
-    {
-        std::uint32_t size{ sizeof(Event) };
-        std::uint32_t kind{};
-        std::uint64_t sequence{};
-        std::uint64_t frameIndex{};
-        std::uint64_t ownerToken{};
-        std::uint32_t worldGeneration{};
-        std::uint32_t skeletonGeneration{};
-        std::uint32_t providerGeneration{};
-        std::uint32_t weaponSlot{};
-        std::uint32_t authority{};
-        std::uint32_t reason{};
-    };
-    enum class EventKind : std::uint32_t { AuthorityLost = 1 };
-
     /*
      * Per-weapon calls take weaponSlot < kMaxWeaponSlots (InvalidArgument
      * otherwise). A slot ROCK does not publish yet returns TargetUnavailable;
@@ -518,7 +500,6 @@ namespace rock::api::weaponparts {
         Status(ROCK_CALL* clearItemStates)(OwnerToken owner) noexcept;
         // Any thread.
         Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
-        Status(ROCK_CALL* copyEvents)(OwnerToken owner, std::uint64_t afterSequence, Event* outEvents, std::uint32_t capacity, Stream* outStream) noexcept;
     };
 }
 #pragma pack(pop)

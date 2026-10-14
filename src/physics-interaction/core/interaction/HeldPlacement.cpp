@@ -347,7 +347,6 @@ void PhysicsInteraction::commitHeldPlacement(const PhysicsFrameContext& frame)
         requested,anchored,count,pose.translate.x,pose.translate.y,pose.translate.z);
     for (const bool left : { false,true }) {
         if (!released[left ? 1u : 0u]) continue;
-        dispatchPhysicsMessage(kPhysMsg_OnRelease,left,ref,requested,0);
         dispatchSimpleGrabEvent(GrabEventType::Released,left,ref);
     }
 }

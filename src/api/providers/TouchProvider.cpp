@@ -1,5 +1,4 @@
 #include "Boundary.h"
-#include "EventBoundary.h"
 #include "api/AuthoredInteractionService.h"
 #include <ROCK/Touch.h>
 
@@ -47,9 +46,6 @@ Status ROCK_CALL clearAuthoredHand(OwnerToken owner, Hand hand) noexcept {
 Status ROCK_CALL getSample(OwnerToken owner, Sample* outSample) noexcept {
     return readSample(owner, kInterfaceId, outSample);
 }
-Status ROCK_CALL copyEvents(OwnerToken owner, std::uint64_t after, Event* events, std::uint32_t capacity, Stream* stream) noexcept {
-    return copyEventStream(owner, kInterfaceId, after, events, capacity, kEventCapacityPerOwner, stream);
-}
 }
 const Api& table() noexcept {
     static const Api value{
@@ -60,7 +56,6 @@ const Api& table() noexcept {
         &setAuthoredHand,
         &clearAuthoredHand,
         &getSample,
-        &copyEvents,
     };
     return value;
 }

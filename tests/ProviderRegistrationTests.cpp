@@ -1,6 +1,6 @@
 #include "api/ProviderRuntimeServices.h"
 #include "api/ProviderStatePolicy.h"
-#include "api/OwnedEventStream.h"
+#include "api/GrabEventCallbacks.h"
 #include <ROCK/Core.h>
 #include "physics-interaction/grab/DefaultGrabPoseRegistry.h"
 #include <algorithm>
@@ -66,24 +66,21 @@ namespace rock::provider::runtime {
     void clearWeaponPartDrivesForOwnerLocked(std::uint64_t){}
     void clearNativeAnimationAuthorityForOwnerLocked(std::uint64_t){}
     void clearEquippedWeaponHandlingAuthorityForOwnerLocked(std::uint64_t){}
-    void clearOffhandReservationLocked(::rock::api::input::SuppressionInvalidationReason){}
+    void clearOffhandReservationLocked(){}
     void clearAnimationPhaseCallbacksForOwnerLocked(std::uint64_t){}
     bool clearHandVisualAuthorityForOwner(std::uint64_t,rock::api::Hand,bool){return true;}
     void clearNativeAnimationRuntimePublicationForOwner(std::uint64_t){}
     #include "api/services/CoreService.inl"
 }
 namespace {
-    rock::provider::OwnedEventStream<rock::api::core::Event> stream;
     std::latch removalEntered{1},allowRemoval{1},registrationStarted{1};
     bool pauseRemoval=false;
 }
-namespace rock::provider::events {
-    rock::api::Status bind(rock::api::OwnerToken owner,rock::api::InterfaceId){return stream.bind(owner);}
-    void remove(rock::api::OwnerToken owner){
-        // Owner capacity must remain reserved until every event slot is retired.
+namespace rock::provider::grab_callbacks {
+    void clear(rock::api::OwnerToken owner){
+        // Owner capacity must remain reserved until its callback is retired.
         assert(runtime::findConsumerSlotLocked(owner)!=nullptr);
         if(pauseRemoval){removalEntered.count_down();allowRemoval.wait();}
-        stream.remove(owner);
     }
 }
 int main(){
@@ -119,16 +116,8 @@ int main(){
     rock::saved_grab_offset::HandOffset offset;
     assert(!rock::saved_grab_offset::defaults.load(100,true,offset));
     assert(rock::saved_grab_offset::defaults.load(101,true,offset));
-    rock::api::Stream state{};
-    assert(stream.copy(replacement.ownerToken,0,nullptr,0,state)==rock::api::Status::Ok);
-    assert(stream.copy(owners[0].ownerToken,0,nullptr,0,state)==rock::api::Status::PermissionDenied);
-    for(unsigned i=1;i<owners.size();++i)assert(stream.copy(owners[i].ownerToken,0,nullptr,0,state)==rock::api::Status::Ok);
     pauseRemoval=false;
     assert(unregisterOwner(replacement.ownerToken)==rock::api::Status::Ok);
     for(unsigned i=1;i<owners.size();++i)assert(unregisterOwner(owners[i].ownerToken)==rock::api::Status::Ok);
-    // If event admission fails, registration must not leak its reserved owner.
-    for(unsigned i=0;i<64;++i)assert(stream.bind(1000+i)==rock::api::Status::Ok);
-    rock::api::core::Registration registration{};std::strcpy(registration.modName,"NoEventCapacity");
-    assert(registerOwner(registration,replacement)==rock::api::Status::CapacityFull);
     for(const auto& owner:s_consumers)assert(owner.token==0);
 }

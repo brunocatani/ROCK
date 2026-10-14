@@ -12,7 +12,6 @@ namespace rock::api::collision {
     inline constexpr std::uint32_t kMaxRaycastsPerOwnerPerFrame = 8;
     inline constexpr std::uint32_t kMaxEjectionClearances = 8;
     inline constexpr std::uint32_t kMaxObjectRestWatches = 16;
-    inline constexpr std::uint32_t kEventCapacityPerOwner = 256;
     inline constexpr float kMaxRaycastDistanceGame = 8192.0f;
     inline constexpr std::uint32_t kNoBody = 0x7FFF'FFFF;
 
@@ -345,22 +344,6 @@ namespace rock::api::collision {
     enum class Permission : std::uint32_t { Read = 1, Write = 2 };
     inline constexpr std::uint32_t kSupportedPermissions = 3;
 
-    struct Event
-    {
-        std::uint32_t size{ sizeof(Event) };
-        std::uint32_t kind{};
-        std::uint64_t sequence{};
-        std::uint64_t frameIndex{};
-        std::uint64_t ownerToken{};
-        std::uint32_t worldGeneration{};
-        std::uint32_t skeletonGeneration{};
-        std::uint32_t providerGeneration{};
-        Hand hand{ Hand::None };
-        std::uint32_t formId{};
-        std::uint32_t collisionLayer{};
-    };
-    enum class EventKind : std::uint32_t { Touch = 1, TouchEnd = 2 };
-
     struct Api
     {
         static constexpr InterfaceId interfaceId = kInterfaceId;
@@ -383,8 +366,6 @@ namespace rock::api::collision {
         Status(ROCK_CALL* cancelObjectRest)(OwnerToken owner, std::uint32_t referenceFormId) noexcept;
         // Any thread. Identity of the current publication.
         Status(ROCK_CALL* getSample)(OwnerToken owner, Sample* outSample) noexcept;
-        // Any thread. Copies hand touch events after afterSequence.
-        Status(ROCK_CALL* copyEvents)(OwnerToken owner, std::uint64_t afterSequence, Event* outEvents, std::uint32_t capacity, Stream* outStream) noexcept;
     };
 }
 

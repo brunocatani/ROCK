@@ -1,4 +1,4 @@
-#include "api/EventStreams.h"
+#include "api/GrabEventCallbacks.h"
 #include "api/AuthoredInteractionService.h"
 #include "api/ProviderRuntimeServices.h"
 #include "api/StorageService.h"
@@ -381,8 +381,6 @@ namespace rock
 
         resolveContacts(frame);
 
-        bool wasTouchingR = _rightHand.isTouching();
-        bool wasTouchingL = _leftHand.isTouching();
         const float measuredFrameDeltaSeconds =
             frame.timing.valid ? frame.timing.deltaSeconds : 0.0f;
         _rightHand.tickTouchState(measuredFrameDeltaSeconds);
@@ -390,12 +388,6 @@ namespace rock
         _rightHand.tickSemanticContactState(measuredFrameDeltaSeconds);
         _leftHand.tickSemanticContactState(measuredFrameDeltaSeconds);
         _contacts.handActivity.advanceFrame(measuredFrameDeltaSeconds);
-        if (wasTouchingR && !_rightHand.isTouching()) {
-            dispatchPhysicsMessage(kPhysMsg_OnTouchEnd, false, _rightHand.getLastTouchedRef(), _rightHand.getLastTouchedFormID(), _rightHand.getLastTouchedLayer());
-        }
-        if (wasTouchingL && !_leftHand.isTouching()) {
-            dispatchPhysicsMessage(kPhysMsg_OnTouchEnd, true, _leftHand.getLastTouchedRef(), _leftHand.getLastTouchedFormID(), _leftHand.getLastTouchedLayer());
-        }
 
         /*
          * Bounded timing telemetry: one rate-limited line that explains the

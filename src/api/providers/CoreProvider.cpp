@@ -1,5 +1,5 @@
+#include "api/BorrowedCallbackContext.h"
 #include "Boundary.h"
-#include "EventBoundary.h"
 #include <ROCK/Core.h>
 
 namespace rock::api::core {
@@ -31,7 +31,7 @@ Status ROCK_CALL getSnapshot(OwnerToken owner, Snapshot* outSnapshot) noexcept {
     });
 }
 Status ROCK_CALL registerConsumer(const Registration* registration, Owner* outOwner) noexcept {
-    if (provider::events::inSynchronousCallback()) return Status::Busy;
+    if (provider::borrowed_callback::active) return Status::Busy;
     if (const auto s = checkInput(registration); s != Status::Ok) return s;
     if (const auto s = checkOutput(outOwner); s != Status::Ok) return s;
     try { return provider::runtime::registerOwner(*registration, *outOwner); }
@@ -60,9 +60,6 @@ Status ROCK_CALL bindInterface(OwnerToken owner, InterfaceId family, std::uint32
 Status ROCK_CALL getSample(OwnerToken owner, Sample* outSample) noexcept {
     return readSample(owner, kInterfaceId, outSample);
 }
-Status ROCK_CALL copyEvents(OwnerToken owner, std::uint64_t after, Event* events, std::uint32_t capacity, Stream* stream) noexcept {
-    return copyEventStream(owner, kInterfaceId, after, events, capacity, kEventCapacityPerOwner, stream);
-}
 }
 const Api& table() noexcept {
     static const Api value{
@@ -75,7 +72,6 @@ const Api& table() noexcept {
         &unregisterFrameCallback,
         &bindInterface,
         &getSample,
-        &copyEvents,
     };
     return value;
 }

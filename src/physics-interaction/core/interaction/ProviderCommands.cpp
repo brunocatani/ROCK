@@ -304,7 +304,6 @@ namespace rock
                 if (applyRequestedVelocity && releaseContext.finalObjectRelease) {
                     hand.applyReleaseVelocitySnapshot(frame.hknpWorld, requestedVelocity);
                 }
-                dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, heldRef, heldFormId, 0);
                 dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, heldRef);
                 clearProviderReleaseInputState();
                 complete(api::grab::InteractionCommandState::Succeeded, api::grab::InteractionFailure::None);
