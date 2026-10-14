@@ -7,8 +7,6 @@ int main(){
  Pose right;right.r={0,-1,0,1,0,0,0,0,1};right.t={2,7,-3};right.s=1.2f;
  Pose br; br.r={1,0,0,0,0,-1,0,1,0};Pose bl;bl.r={0,0,1,0,1,0,-1,0,0};
  V palm{6,-2,.2f},leftPalm{6,-2,-.2f};const auto grip=point(right,palm);
- const auto left=leftFiring(right,br,bl,grip);assert(valid(left));near(point(inverse(left),grip),leftPalm);
- auto expected=reflected(compose(br,inverse(right)),0);auto actual=compose(bl,inverse(left));for(int i=0;i<9;++i)assert(std::abs(expected.r[i]-actual.r[i])<.0001f);
  auto f=finger(finger(right));near(f.t,right.t);for(int i=0;i<9;++i)assert(f.r[i]==right.r[i]);assert(f.s==right.s);
 
  // A thumb/finger contact expressed through the mirrored wrist and local

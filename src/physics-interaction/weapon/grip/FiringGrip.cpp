@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/NativeSecondaryPose.h"
 #include "physics-interaction/weapon/WeaponGripCalibration.h"
 #include "physics-interaction/weapon/HoldingGripAdapter.h"
 #include "physics-interaction/weapon/WeaponGripSeat.h"
@@ -1134,6 +1135,17 @@ namespace rock
             weapon_aim_basis::tryResolveWorld(nodes->primaryWandNode->world, weaponScale, outWorld);
     }
 
+    bool TwoHandedGrip::tryGetLeftWeaponAimWorld(const float weaponScale, RE::NiTransform& outWorld)
+    {
+        outWorld = {};
+        RE::NiTransform wand{};
+        if (!frik_hand_world_authority::tryGetWeaponWandWorld(true, wand)) return false;
+        const auto& handling = equipped_weapon_handling_runtime::current();
+        return weapon_aim_basis::tryResolveWorld(wand, weaponScale,
+            native_secondary_pose::firingWeaponInWand(true, handling.leftFiringAimYawDegrees, handling.leftFiringAimPitchDegrees),
+            outWorld);
+    }
+
     bool TwoHandedGrip::tryGetMeleeWeaponAimWorld(const bool isLeft,
         const RE::NiTransform& physicalHandWorld,
         const RE::NiTransform& authoredHandWeaponLocal,
@@ -1509,124 +1521,6 @@ namespace rock
         outRightHandWeaponLocal = holding_grip_math::toNative(
             holding_grip_math::mirroredHandSeat(holding_grip_math::fromNative(leftHandWeaponLocal),mirrorPlaneX));
         return isFiniteTransform(outRightHandWeaponLocal);
-    }
-
-    bool TwoHandedGrip::tryBuildMirroredLeftFiringHandWeaponLocal(
-        const RE::NiTransform& canonicalRightHandWeaponLocal,
-        const RE::NiPoint3& firingGripWeaponLocal,
-        const RE::NiTransform& rightHandWorld,
-        const RE::NiTransform& leftHandWorld,
-        RE::NiTransform& outHandWeaponLocal,
-        const bool logDiagnostic,
-        const bool applyGripCalibration)
-    {
-        const auto& handlingSettings =
-            equipped_weapon_handling_runtime::current();
-        if (!isFiniteTransform(canonicalRightHandWeaponLocal) ||
-            !std::isfinite(firingGripWeaponLocal.x) ||
-            !std::isfinite(firingGripWeaponLocal.y) ||
-            !std::isfinite(firingGripWeaponLocal.z)) {
-            return false;
-        }
-
-        /*
-         * WAND-CONJUGATION MIRROR. The aim requirement is controller-
-         * relative: the tuned right-hand offsets align the barrel with the
-         * RIGHT controller's forward, so the mirrored hold must align it
-         * with the LEFT controller's forward with the lateral components
-         * negated ("2 degrees left of the right wand" becomes "2 degrees
-         * right of the left wand"). Left/right WAND device frames are the
-         * physically exact mirror pair; the hand BONE conventions are not
-         * mirrors (previous semantic-palm and bone-anchor mirrors both left
-         * a residual yaw/side bias in-game). Conjugating the canonical hold
-         * through the wand pair cancels every per-hand bone convention
-         * inside the live-sampled bone-in-wand transforms:
-         *
-         *   weaponInLeftWand = Msag o weaponInRightWand o Mside
-         *
-         * with two reflections keeping the result a proper rotation: Msag
-         * mirrors across the wand's sagittal plane (wand-local X lateral -
-         * same axis family as the weapon frame the wand chain parents) and
-         * Mside across the weapon's own side plane (+Y barrel, +X side),
-         * which maps the grip from the weapon's right flank to its left.
-         * Effect on the tuned offsets: yaw and roll negate, pitch and
-         * fore/aft/vertical placement are preserved.
-         *
-         * The native first-person arm sync drags each hand bone to its wand
-         * with a fixed per-hand map, so bone-in-wand is constant and
-         * sampling it at takeover time is exact.
-         */
-        auto* playerNodes = f4vr::getPlayerNodes();
-        if (!playerNodes) {
-            return false;
-        }
-        // Ambidextrous stands down in game-left-handed mode, so primary is
-        // always the physical RIGHT wand here.
-        RE::NiNode* rightWand = playerNodes->primaryWandNode;
-        RE::NiNode* leftWand = playerNodes->SecondaryWandNode;
-        if (!rightWand || !leftWand ||
-            !isFiniteTransform(rightWand->world) || !isFiniteTransform(leftWand->world)) {
-            return false;
-        }
-
-        const RE::NiTransform boneInRightWand =
-            transform_math::composeTransforms(transform_math::invertTransform(rightWand->world), rightHandWorld);
-        const RE::NiTransform boneInLeftWand =
-            transform_math::composeTransforms(transform_math::invertTransform(leftWand->world), leftHandWorld);
-        // A hand bone rides its wand at wrist range; a large offset means a
-        // stale or foreign frame - fail closed to the live-capture fallback.
-        constexpr float kMaxBoneToWandDistance = 30.0f;
-        const auto transformOffsetLength = [](const RE::NiTransform& transform) {
-            return std::sqrt(dot(transform.translate, transform.translate));
-        };
-        if (!isFiniteTransform(boneInRightWand) || !isFiniteTransform(boneInLeftWand) ||
-            transformOffsetLength(boneInRightWand) > kMaxBoneToWandDistance ||
-            transformOffsetLength(boneInLeftWand) > kMaxBoneToWandDistance) {
-            return false;
-        }
-
-        const RE::NiTransform weaponInRightWand = transform_math::composeTransforms(
-            boneInRightWand, transform_math::invertTransform(canonicalRightHandWeaponLocal));
-        RE::NiTransform weaponInLeftWand =
-            conjugateAcrossLateralMirror(weaponInRightWand);
-
-        // Loose-model callers retain their controller-owned placement contract.
-        // Equipped authored contact is handled by weapon_grip_seat::leftFiringSeat.
-        weaponInLeftWand = transform_math::composeTransforms(
-            makeLeftFiringWandAimTrim(handlingSettings), weaponInLeftWand);
-
-        using namespace holding_grip_math;
-        const V offset{handlingSettings.leftFiringAimOffsetXGameUnits,handlingSettings.leftFiringAimOffsetYGameUnits,handlingSettings.leftFiringAimOffsetZGameUnits};
-        const Pose trim=fromNative(makeLeftFiringWandAimTrim(handlingSettings));
-        const auto mirroredHandWeaponLocal=toNative(leftFiring(fromNative(canonicalRightHandWeaponLocal),fromNative(boneInRightWand),fromNative(boneInLeftWand),V{firingGripWeaponLocal.x,firingGripWeaponLocal.y,firingGripWeaponLocal.z},offset,trim));
-        if(!isFiniteTransform(mirroredHandWeaponLocal))return false;
-
-        // Takeover-event diagnostic: barrel (+Y weapon) direction in each
-        // wand frame. A correct mirror negates x and preserves y/z; a wand
-        // axis-convention mismatch shows up here as a different component
-        // flipping.
-        if (logDiagnostic) {
-            const RE::NiPoint3 barrelInRightWand =
-                sub(transform_math::localPointToWorld(weaponInRightWand, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }), weaponInRightWand.translate);
-            const RE::NiPoint3 barrelInLeftWand =
-                sub(transform_math::localPointToWorld(weaponInLeftWand, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }), weaponInLeftWand.translate);
-            ROCK_LOG_INFO(Weapon,
-                "TwoHandedGrip: wand-conjugated left hand seat trim={} barrelInRightWand=({:.3f},{:.3f},{:.3f}) barrelInLeftWand=({:.3f},{:.3f},{:.3f}) boneWandDist=({:.2f},{:.2f})",
-                "loose-hold",
-                barrelInRightWand.x,
-                barrelInRightWand.y,
-                barrelInRightWand.z,
-                barrelInLeftWand.x,
-                barrelInLeftWand.y,
-                barrelInLeftWand.z,
-                transformOffsetLength(boneInRightWand),
-                transformOffsetLength(boneInLeftWand));
-        }
-
-        outHandWeaponLocal = applyGripCalibration ?
-            weapon_grip_calibration::shiftedHand(mirroredHandWeaponLocal,
-                g_rockConfig.rockLeftFiringGripOffsetGameUnits, true) : mirroredHandWeaponLocal;
-        return true;
     }
 
     weapon_support_authority_policy::FiringGripPromotionResult TwoHandedGrip::tryPromoteSupportGripToFiringGrip(

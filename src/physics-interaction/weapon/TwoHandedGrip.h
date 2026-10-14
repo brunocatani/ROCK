@@ -569,6 +569,9 @@ namespace rock
          * presented hand back as solver input.
          */
         static bool tryGetRightWeaponAimWorld(float weaponScale, RE::NiTransform& outWorld);
+        // The left firing aim: ROCK's controller basis mirrored laterally,
+        // with the left aim trim, on the left equipped-weapon wand.
+        static bool tryGetLeftWeaponAimWorld(float weaponScale, RE::NiTransform& outWorld);
         static bool tryGetMeleeWeaponAimWorld(bool isLeft,
             const RE::NiTransform& physicalHandWorld,
             const RE::NiTransform& authoredHandWeaponLocal,
@@ -960,15 +963,6 @@ namespace rock
             RE::NiPoint3& outSide,
             RE::NiPoint3& outDown,
             RE::NiPoint3& outReference);
-
-        static bool tryBuildMirroredLeftFiringHandWeaponLocal(
-            const RE::NiTransform& canonicalRightHandWeaponLocal,
-            const RE::NiPoint3& firingGripWeaponLocal,
-            const RE::NiTransform& rightHandWorld,
-            const RE::NiTransform& leftHandWorld,
-            RE::NiTransform& outHandWeaponLocal,
-            bool logDiagnostic = false,
-            bool applyGripCalibration = true);
 
         /*
          * Publishes the left-firing canonical carry pose (firing hand o

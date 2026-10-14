@@ -41,13 +41,5 @@ inline Pose mirroredHandSeat(Pose right, float planeX = 0) {
     }
     return right;
 }
-inline Pose leftFiring(const Pose& right,const Pose& rightBoneInWand,const Pose& leftBoneInWand,V grip,V offset={},Pose trim={}){
-    const auto wr=compose(rightBoneInWand,inverse(right));
-    const auto wl=compose(trim,reflected(wr,0));
-    auto result=inverse(compose(inverse(leftBoneInWand),wl));
-    auto target=point(inverse(right),grip);target[2]=-target[2];target=add(target,offset);
-    auto weapon=inverse(result);weapon.t=sub(target,rotate(weapon,V{grip[0]*weapon.s,grip[1]*weapon.s,grip[2]*weapon.s}));
-    return inverse(weapon);
-}
 inline bool valid(const Pose& p){if(!std::isfinite(p.s)||p.s<=.0001f)return false;for(auto x:p.t)if(!std::isfinite(x))return false;for(auto x:p.r)if(!std::isfinite(x))return false;for(int i=0;i<3;++i)for(int j=0;j<3;++j){float dot=0;for(int k=0;k<3;++k)dot+=p.r[i*3+k]*p.r[j*3+k];if(std::abs(dot-(i==j?1.f:0.f))>.002f)return false;}const auto& m=p.r;return std::abs(m[0]*(m[4]*m[8]-m[5]*m[7])-m[1]*(m[3]*m[8]-m[5]*m[6])+m[2]*(m[3]*m[7]-m[4]*m[6])-1)<.002f;}
 }

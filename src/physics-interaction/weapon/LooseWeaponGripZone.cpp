@@ -3,8 +3,11 @@
 #include "physics-interaction/weapon/PipeFiringGripPolicy.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <span>
+#include <vector>
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
@@ -16,6 +19,9 @@
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
+#include "physics-interaction/weapon/WeaponGripSeat.h"
+#include "physics-interaction/weapon/HoldingGripMath.h"
+#include "physics-interaction/grab/MeshGrab.h"
 
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/BSExtraData.h"
@@ -85,6 +91,65 @@ namespace rock::loose_weapon_grip_zone
 
 
         std::size_t handIndex(const bool isLeft) { return isLeft ? 0u : 1u; }
+
+        /*
+         * The loose model's geometry mirror plane, by the rule equipped
+         * weapons use (WeaponCollision::holdingMirrorPlaneX): the weighted
+         * median of each mesh's bounds in weapon space. Measured once per
+         * model and kept for the few most recent models.
+         */
+        float looseMirrorPlaneX(const RE::TESObjectWEAP* weapon, RE::NiAVObject* root)
+        {
+            struct Entry
+            {
+                const RE::NiAVObject* root{ nullptr };
+                std::uint32_t formId{ 0 };
+                float planeX{ 0.0f };
+            };
+            static std::array<Entry, 4> s_entries{};
+            static std::size_t s_next{ 0 };
+            const auto formId = weapon ? weapon->formID : 0u;
+            for (const auto& entry : s_entries) {
+                if (entry.root == root && entry.formId == formId) return entry.planeX;
+            }
+
+            constexpr std::size_t kMaxMeshes = 64;
+            std::array<holding_grip_math::PlaneEvidence, kMaxMeshes> evidence{};
+            std::size_t count = 0;
+            std::vector<TriangleData> triangles;
+            const auto rootWorld = root->world;
+            const auto visit = [&](auto&& self, RE::NiAVObject* node, int depth) -> void {
+                if (!node || depth <= 0 || count == evidence.size() || (node->flags.flags & 1)) return;
+                if (node->IsTriShape()) {
+                    triangles.clear();
+                    extractAllTriangles(node, triangles, 1);
+                    if (triangles.empty()) return;
+                    holding_grip_math::V low{}, high{};
+                    bool first = true;
+                    for (const auto& triangle : triangles) {
+                        for (const auto& vertex : { triangle.v0, triangle.v1, triangle.v2 }) {
+                            const auto local = transform_math::worldPointToLocal(rootWorld, vertex);
+                            const holding_grip_math::V point{ local.x, local.y, local.z };
+                            for (int axis = 0; axis < 3; ++axis) {
+                                low[axis] = first ? point[axis] : (std::min)(low[axis], point[axis]);
+                                high[axis] = first ? point[axis] : (std::max)(high[axis], point[axis]);
+                            }
+                            first = false;
+                        }
+                    }
+                    evidence[count++] = holding_grip_math::planeEvidence(low, high);
+                    return;
+                }
+                if (auto* children = node->IsNode()) {
+                    for (auto& child : children->GetRuntimeData().children) self(self, child.get(), depth - 1);
+                }
+            };
+            visit(visit, root, 10);
+            const float planeX = count ? holding_grip_math::geometryPlane(std::span(evidence.data(), count)) : 0.0f;
+            s_entries[s_next] = { root, formId, planeX };
+            s_next = (s_next + 1) % s_entries.size();
+            return planeX;
+        }
 
 
 
@@ -267,24 +332,42 @@ namespace rock::loose_weapon_grip_zone
                             leftValid ? tracked_hand_isolation_policy::rotationDegrees(leftHandWorld, firstPersonLeft) : -1.0f,
                             leftValid ? tracked_hand_isolation_policy::translationGameUnits(leftHandWorld, firstPersonLeft) : -1.0f);
                     }
-                    state.hasFiringHandWeaponLocal = TwoHandedGrip::tryBuildMirroredLeftFiringHandWeaponLocal(
-                        canonicalHandWeaponLocal,
-                        state.gripWeaponLocal,
-                        canonicalHandWorld,
-                        leftHandWorld,
-                        state.firingHandWeaponLocal);
-                    state.hasLoosePlacementHandWeaponLocal =
-                        TwoHandedGrip::tryBuildMirroredLeftFiringHandWeaponLocal(
-                            canonicalPlacementHandWeaponLocal,
-                            state.gripWeaponLocal,
-                            canonicalHandWorld,
-                            leftHandWorld,
-                            state.loosePlacementHandWeaponLocal, false, false);
-                    if (state.hasFiringHandWeaponLocal && state.hasLoosePlacementHandWeaponLocal) {
-                        // Shift both relations in authored wrist axes while
-                        // preserving the controller's independent orientation.
-                        state.loosePlacementHandWeaponLocal.translate += weapon_grip_calibration::offsetInWeapon(
-                            state.firingHandWeaponLocal, g_rockConfig.rockLeftFiringGripOffsetGameUnits, true);
+                    /*
+                     * The left hand holds a loose weapon exactly as it holds
+                     * an equipped one: the right seat mirrored across the
+                     * model's geometry plane plus the left firing grip
+                     * offset, aimed by the mirrored controller basis with the
+                     * left aim trim, and placed so the seat's palm lands on
+                     * the left palm shifted by the left aim offset.
+                     */
+                    RE::NiTransform leftSeat{};
+                    RE::NiTransform leftAimWorld{};
+                    if (weapon_grip_seat::leftFiringSeat(canonicalHandWeaponLocal,
+                            looseMirrorPlaneX(weapon, looseRoot), leftSeat) &&
+                        (meleeWeapon ?
+                            TwoHandedGrip::tryGetMeleeWeaponAimWorld(true, leftHandWorld, leftSeat, looseRoot->world.scale, leftAimWorld) :
+                            TwoHandedGrip::tryGetLeftWeaponAimWorld(looseRoot->world.scale, leftAimWorld))) {
+                        const auto& handling = equipped_weapon_handling_runtime::current();
+                        const RE::NiPoint3 leftGripWeaponLocal = computeGrabPalmPointWorldFromHandBasis(leftSeat, true);
+                        RE::NiPoint3 leftGripInHand = transform_math::localPointToWorld(
+                            transform_math::invertTransform(leftSeat), leftGripWeaponLocal);
+                        leftGripInHand.x += handling.leftFiringAimOffsetXGameUnits;
+                        leftGripInHand.y += handling.leftFiringAimOffsetYGameUnits;
+                        leftGripInHand.z += handling.leftFiringAimOffsetZGameUnits;
+                        const RE::NiTransform leftWeaponWorld =
+                            authored_weapon_grip_capture_policy::resolveAuthoredPrimaryWeaponWorldPositionOnly(
+                                leftAimWorld, leftGripWeaponLocal, transform_math::localPointToWorld(leftHandWorld, leftGripInHand),
+                                [](const RE::NiTransform& transform, const RE::NiPoint3& point) {
+                                    return transform_math::localPointToWorld(transform, point);
+                                });
+                        state.gripWeaponLocal = leftGripWeaponLocal;
+                        state.gripWorld = transform_math::localPointToWorld(looseRoot->world, leftGripWeaponLocal);
+                        state.firingHandWeaponLocal = leftSeat;
+                        state.loosePlacementHandWeaponLocal = transform_math::composeTransforms(
+                            transform_math::invertTransform(leftWeaponWorld), leftHandWorld);
+                        state.hasFiringHandWeaponLocal = isUsableWorldTransform(state.firingHandWeaponLocal) &&
+                            isFinitePoint(state.gripWorld);
+                        state.hasLoosePlacementHandWeaponLocal = isUsableWorldTransform(state.loosePlacementHandWeaponLocal);
                     }
                     if (outTestedHandWorld) {
                         *outTestedHandWorld = leftHandWorld;
