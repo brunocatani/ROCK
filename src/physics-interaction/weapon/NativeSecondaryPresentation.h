@@ -39,8 +39,8 @@ namespace rock::native_secondary_presentation
     [[nodiscard]] RE::NiAVObject* presentedModel() noexcept;
 
     // The collision-free world pose of presentedModel() this frame: the
-    // rendered pose with this frame's collision correction removed. This is
-    // the second weapon's dynamic-proxy intent.
+    // controller placement before collision correction. This is the second
+    // weapon's dynamic-proxy intent.
     [[nodiscard]] bool tryGetModelIntentWorld(RE::NiTransform& out) noexcept;
 
     /*

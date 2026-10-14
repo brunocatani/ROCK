@@ -549,13 +549,6 @@ namespace rock
             weaponGenerationKey == _frameGenerationKey &&
             !frame.menuBlocked;
         if (!frameMatches || !ensureProxyBody(frame, weaponCollision, _frameRequestedWeaponWorld)) {
-            if (_created && _secondary && logger::internal::shouldEmitSample("akimbo-flicker-proxy-retire", 250)) {
-                ROCK_LOG_INFO(Weapon,
-                    "AKIMBO flicker proxy retire frame={} frameMatches={} accepting={} intent={} writes={} worldReady={} world={} bhk={} node={} generation={} menu={}",
-                    frame.timing.sequence, frameMatches, _frameAcceptingIntent, _frameHasIntent, physicsWritesAllowed,
-                    frame.worldReady, frame.hknpWorld == _frameWorld, frame.bhkWorld == _frameBhkWorld,
-                    weaponNode == _frameWeaponNode, weaponGenerationKey == _frameGenerationKey, frame.menuBlocked);
-            }
             if (_created) {
                 retireAll(frame.bhkWorld, frame.menuBlocked);
             }

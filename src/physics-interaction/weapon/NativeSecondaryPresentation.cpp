@@ -45,10 +45,8 @@ namespace rock::native_secondary_presentation
             std::uint32_t form = 0;
             RE::NiTransform originalLocal{}, targetWorld{};
             RE::NiTransform controllerWorld{};
-            // World-space collision correction applied to this frame's
-            // placement (resolved model * inverse(intended model)).
-            RE::NiTransform collisionDelta{};
-            bool collisionCorrected = false;
+            // This frame's collision-free model pose: the dynamic proxy's intent.
+            RE::NiTransform modelIntentWorld{};
             float modelScale = 1.0f;
             bool ownsLocal = false, claimed = false, ready = false;
             // Physical hand of the index-1 weapon this frame, and the hand
@@ -61,9 +59,6 @@ namespace rock::native_secondary_presentation
             std::uint64_t frame = 0;
             std::uint32_t samples = 0, nativeRepairs = 0;
             std::uint32_t traceNativePass = 0, tracedFrames = 0;
-            // Bounded flicker diagnostics: collision-corrected frames traced
-            // through every phase, and attachment-rejection details.
-            std::uint32_t correctionTraces = 0, attachmentRejections = 0;
             float maxOverwriteDistance = 0, maxOverwriteAngle = 0;
             std::string_view reason{};
         };
@@ -86,13 +81,19 @@ namespace rock::native_secondary_presentation
             return holding_grip_math::valid(holding_grip_math::fromNative(transform));
         }
 
-        void logQuality(const char* stage, const char* label, const RE::NiTransform& pose) noexcept
+        // The model's pose in the attachment, composed from the authored
+        // locals between them. Rendered world matrices carry native float
+        // skew; inverting them at world coordinates does not stay rigid.
+        bool modelInAttachment(const RE::NiAVObject* attachment, const RE::NiAVObject* model, RE::NiTransform& out) noexcept
         {
-            const auto quality = native_secondary_pose_transport::inspect(pose);
-            ROCK_LOG_INFO(Weapon,
-                "AKIMBO flicker {} {}: usable={} finite={} scale={:.6f} determinant={:.6f} orthogonalityError={:.6f} T=({:.3f},{:.3f},{:.3f})",
-                stage, label, usable(pose), quality.finite, pose.scale, quality.determinant, quality.orthogonalityError,
-                pose.translate.x, pose.translate.y, pose.translate.z);
+            auto relation = transform_math::makeIdentityTransform<RE::NiTransform>();
+            const RE::NiAVObject* node = model;
+            for (unsigned depth = 0; node && node != attachment && depth < 48; ++depth, node = node->parent) {
+                relation = transform_math::composeTransforms(node->local, relation);
+            }
+            if (!node || node != attachment || !usable(relation)) return false;
+            out = relation;
+            return true;
         }
 
         bool matches(const native_hand_equipment::EquippedView& view) noexcept
@@ -432,18 +433,6 @@ namespace rock::native_secondary_presentation
             }
             auto* attachment = currentAttachment(view);
             if (!attachment || !attachment->parent || !usable(attachment->world) || !usable(attachment->local)) {
-                if (s_state.attachmentRejections < 6 || logger::internal::shouldEmitSample("akimbo-flicker-attachment", 1000)) {
-                    ++s_state.attachmentRejections;
-                    ROCK_LOG_INFO(Weapon,
-                        "AKIMBO flicker attachment rejected frame={} matches={} attachmentId={:#x} found={} parent={} ownsLocal={} lastCorrected={}",
-                        frame.frameIndex, matches(view), s_state.attachment, attachment != nullptr,
-                        attachment && attachment->parent, s_state.ownsLocal, s_state.collisionCorrected);
-                    if (attachment) {
-                        logQuality("attachment-rejected", "world", attachment->world);
-                        logQuality("attachment-rejected", "local", attachment->local);
-                        if (attachment->parent) logQuality("attachment-rejected", "parent-world", attachment->parent->world);
-                    }
-                }
                 waitFor(view, "native-equipped-attachment");
                 return;
             }
@@ -508,34 +497,28 @@ namespace rock::native_secondary_presentation
             native_secondary_actions::applyRecoil(target,hand,wandWorld);
             // The controller-relative grip excludes collision correction.
             const auto intentTarget = target;
-            s_state.collisionCorrected = false;
-            if (s_resolver && view.root && usable(view.root->world)) {
-                // The model rides the attachment rigidly, so its intent is the
-                // attachment intent carried through their current relation.
-                const auto modelIntent = transform_math::composeTransforms(target,
-                    transform_math::composeTransforms(transform_math::invertTransform(attachment->world), view.root->world));
-                RE::NiTransform modelResolved{};
-                const bool resolved = usable(modelIntent) && s_resolver(s_resolverContext, modelIntent, modelResolved);
-                if (resolved && (s_state.correctionTraces < 3 || logger::internal::shouldEmitSample("akimbo-flicker-correction", 1000))) {
-                    const auto correction = transform_math::composeTransforms(modelResolved, transform_math::invertTransform(modelIntent));
-                    const auto& d = correction.translate;
-                    float trace = 0;
-                    for (int i = 0; i < 3; ++i) trace += correction.rotate.entry[i][i];
-                    ROCK_LOG_INFO(Weapon,
-                        "AKIMBO flicker correction frame={} translation={:.3f}gu rotation={:.3f}deg",
-                        frame.frameIndex, std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z),
-                        std::acos(std::clamp((trace - 1.0f) * 0.5f, -1.0f, 1.0f)) * 57.2957795f);
-                    logQuality("correction", "model-intent", modelIntent);
-                    logQuality("correction", "model-resolved", modelResolved);
-                    logQuality("correction", "delta", correction);
-                }
-                if (resolved && usable(modelResolved)) {
-                    const auto delta = transform_math::composeTransforms(modelResolved, transform_math::invertTransform(modelIntent));
-                    target = transform_math::composeTransforms(delta, target);
-                    hand = transform_math::composeTransforms(delta, hand);
-                    s_state.collisionDelta = delta;
-                    s_state.collisionCorrected = true;
-                }
+            RE::NiTransform modelRelation{};
+            if (!view.root || !modelInAttachment(attachment, view.root, modelRelation)) {
+                waitFor(view, "model-attachment-relation");
+                return;
+            }
+            s_state.modelIntentWorld = transform_math::composeTransforms(target, modelRelation);
+            RE::NiTransform modelResolved{};
+            if (s_resolver && s_resolver(s_resolverContext, s_state.modelIntentWorld, modelResolved) && usable(modelResolved)) {
+                /*
+                 * Apply the collision residual in model space, where it is a
+                 * small rigid transform: target * relation * residual *
+                 * inverse(relation). A world-space delta (resolved * inverse
+                 * of intent) is built tens of thousands of units from the
+                 * origin and skews the placement past the rigid limit. The hand
+                 * keeps its pose relative to the weapon.
+                 */
+                const auto residual = transform_math::composeTransforms(
+                    transform_math::invertTransform(s_state.modelIntentWorld), modelResolved);
+                const auto handInWeapon = transform_math::composeTransforms(transform_math::invertTransform(target), hand);
+                target = transform_math::composeTransforms(target, transform_math::composeTransforms(modelRelation,
+                    transform_math::composeTransforms(residual, transform_math::invertTransform(modelRelation))));
+                hand = transform_math::composeTransforms(target, handInWeapon);
             }
             frik_visual_authority::FingerLocalTransformOverride fingerOverride{};
             fingerOverride.enabledMask = fingers.enabledMask;
@@ -572,10 +555,6 @@ namespace rock::native_secondary_presentation
             s_state.ready = true;
             s_state.traceFrame = s_state.samples == 0 && s_state.tracedFrames < 4;
             if (s_state.traceFrame) ++s_state.tracedFrames;
-            if (!s_state.traceFrame && s_state.collisionCorrected && s_state.correctionTraces < 3) {
-                ++s_state.correctionTraces;
-                s_state.traceFrame = true;
-            }
             s_state.traceNativePass = 0;
             tracePlacement("solve-before");
             if (s_state.traceFrame) {
@@ -703,11 +682,8 @@ namespace rock::native_secondary_presentation
 
     bool tryGetModelIntentWorld(RE::NiTransform& out) noexcept
     {
-        auto* model = presentedModel();
-        if (!model || !usable(model->world)) return false;
-        out = s_state.collisionCorrected ?
-            transform_math::composeTransforms(transform_math::invertTransform(s_state.collisionDelta), model->world) :
-            model->world;
+        if (!presentedModel()) return false;
+        out = s_state.modelIntentWorld;
         return usable(out);
     }
 
