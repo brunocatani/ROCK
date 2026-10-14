@@ -43,7 +43,7 @@ int main()
     ok &= check(!eligibleBodyZone(Zone::LeftHand, true) && !eligibleBodyZone(Zone::RightHand, false), "holding hand excluded");
     ok &= check(eligibleBodyZone(Zone::RightHand, true) && eligibleBodyZone(Zone::LeftHand, false), "opposite hand allowed");
     ok &= check(eligibleBodyZone(Zone::LeftForearmLower, true) && eligibleBodyZone(Zone::RightForearmLower, false), "suppressed forearm remains observable");
-    ok &= check(eligibleBodyZone(Zone::Chest, true) && eligibleBodyZone(Zone::LeftThigh, false), "torso and legs allowed");
+    ok &= check(eligibleBodyZone(Zone::Chest, true) && eligibleBodyZone(Zone::Pelvis, false), "torso allowed");
     ok &= check(!eligibleBodyZone(Zone::Unknown, false), "unknown body zone rejected");
 
     for (const int hz : { 30, 60, 72, 90, 120, 144 }) {

@@ -2827,10 +2827,6 @@
                     switch (role) {
                     case BoneColliderRole::TorsoSegment:
                         return debug::BodyOverlayRole::BodyTorsoSegment;
-                    case BoneColliderRole::FootSegment:
-                        return debug::BodyOverlayRole::BodyFootSegment;
-                    case BoneColliderRole::LegSegment:
-                        return debug::BodyOverlayRole::BodyLegSegment;
                     case BoneColliderRole::UpperArmSegment:
                     case BoneColliderRole::ForearmSegment:
                     case BoneColliderRole::HandSegment:

@@ -18,7 +18,7 @@ namespace rock::debug_overlay_runtime
     inline constexpr std::size_t kDefaultMaxShapeCacheBytes = 64u * 1024u * 1024u;
     inline constexpr std::size_t kMinShapeCacheBytes = 1u * 1024u * 1024u;
     inline constexpr std::size_t kMaxShapeCacheBytes = 512u * 1024u * 1024u;
-    inline constexpr std::uint32_t kMaxBodyInstances = 171;
+    inline constexpr std::uint32_t kMaxBodyInstances = 163;
     inline constexpr std::uint32_t kDefaultMaxBodyInstances = kMaxBodyInstances;
 
     struct RequestedLimits

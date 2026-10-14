@@ -138,8 +138,9 @@ int main()
     config.rockHighlightEnabled = false;
     assert(collider_tuning::prepareHand(config, false).signature == defaults.signature);
     assert(collider_tuning::prepareBody(config, false).signature == standardDefaults.signature);
-    config.rockBodyBoneLegAndFootCollidersEnabled = true;
+    config.rockBodyBoneColliderTorsoRadiusScale = 1.5f;
     assert(collider_tuning::prepareBody(config, false).signature != standardDefaults.signature);
+    config.rockBodyBoneColliderTorsoRadiusScale = RockConfigValues{}.rockBodyBoneColliderTorsoRadiusScale;
     config.rockHandPalmColliderDimensionScaleOverrides = "PalmAnchor=1,1,1";
     assert(collider_tuning::prepareHand(config, false).signature != defaults.signature);
     config.rockHandPalmColliderDimensionScaleOverrides = RockConfigValues{}.rockHandPalmColliderDimensionScaleOverrides;

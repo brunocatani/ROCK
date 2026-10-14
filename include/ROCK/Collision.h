@@ -40,14 +40,7 @@ namespace rock::api::collision {
         RightForearmUpper = 13,
         RightForearmLower = 14,
         RightHand = 15,
-        LeftHip = 16,
-        LeftThigh = 17,
-        LeftCalf = 18,
-        LeftFoot = 19,
-        RightHip = 20,
-        RightThigh = 21,
-        RightCalf = 22,
-        RightFoot = 23,
+        // 16-23 were the retired leg and foot zones; never reuse them.
     };
 
     // 5 (External) is retired with external body registration; never reuse.

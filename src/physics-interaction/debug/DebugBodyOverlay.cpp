@@ -1144,7 +1144,6 @@ namespace rock::debug
             return role == BodyOverlayRole::RightHand || role == BodyOverlayRole::LeftHand ||
                    role == BodyOverlayRole::RightHandSegment || role == BodyOverlayRole::LeftHandSegment ||
                    role == BodyOverlayRole::BodyTorsoSegment || role == BodyOverlayRole::BodyArmSegment ||
-                   role == BodyOverlayRole::BodyLegSegment || role == BodyOverlayRole::BodyFootSegment ||
                    role == BodyOverlayRole::Weapon ||
                    role == BodyOverlayRole::DynamicWeaponProxy ||
                    role == BodyOverlayRole::FocusedWeaponPart ||
@@ -1486,18 +1485,6 @@ namespace rock::debug
                 color[0] = 0.55f;
                 color[1] = 0.95f;
                 color[2] = 0.85f;
-                color[3] = 0.48f;
-                break;
-            case BodyOverlayRole::BodyLegSegment:
-                color[0] = 0.90f;
-                color[1] = 0.95f;
-                color[2] = 0.35f;
-                color[3] = 0.48f;
-                break;
-            case BodyOverlayRole::BodyFootSegment:
-                color[0] = 0.85f;
-                color[1] = 0.70f;
-                color[2] = 1.0f;
                 color[3] = 0.48f;
                 break;
             case BodyOverlayRole::Weapon:

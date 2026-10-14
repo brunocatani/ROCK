@@ -32,8 +32,6 @@ namespace rock::debug
         LeftHandSegment,
         BodyTorsoSegment,
         BodyArmSegment,
-        BodyLegSegment,
-        BodyFootSegment,
         Weapon,
         DynamicWeaponProxy,
         FocusedWeaponPart,

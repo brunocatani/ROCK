@@ -36,14 +36,6 @@ namespace rock
                                   skeleton_bone_debug_math::kStandardBodyColliderDescriptors;
         }
 
-        bool bodyColliderRoleEnabled(BoneColliderRole role)
-        {
-            if (role == BoneColliderRole::LegSegment || role == BoneColliderRole::FootSegment) {
-                return g_rockConfig.rockBodyBoneLegAndFootCollidersEnabled;
-            }
-            return true;
-        }
-
         const char* roleName(BoneColliderRole role)
         {
             switch (role) {
@@ -57,10 +49,6 @@ namespace rock
                 return "Finger";
             case BoneColliderRole::TorsoSegment:
                 return "Torso";
-            case BoneColliderRole::LegSegment:
-                return "Leg";
-            case BoneColliderRole::FootSegment:
-                return "Foot";
             }
             return "Unknown";
         }
@@ -83,16 +71,6 @@ namespace rock
                 limits.maxLength = inPowerArmor ? 68.0f : 46.0f;
                 limits.maxRadius = inPowerArmor ? 18.0f : 11.0f;
                 limits.maxLongAxisExtent = inPowerArmor ? 100.0f : 66.0f;
-                return limits;
-            case BoneColliderRole::LegSegment:
-                limits.maxLength = inPowerArmor ? 88.0f : 62.0f;
-                limits.maxRadius = inPowerArmor ? 20.0f : 13.0f;
-                limits.maxLongAxisExtent = inPowerArmor ? 125.0f : 86.0f;
-                return limits;
-            case BoneColliderRole::FootSegment:
-                limits.maxLength = inPowerArmor ? 58.0f : 38.0f;
-                limits.maxRadius = inPowerArmor ? 15.0f : 9.0f;
-                limits.maxLongAxisExtent = inPowerArmor ? 85.0f : 55.0f;
                 return limits;
             }
 
@@ -461,10 +439,6 @@ namespace rock
         std::size_t createdCount = 0;
         for (std::uint32_t descriptorIndex = 0; descriptorIndex < descriptors.size(); ++descriptorIndex) {
             const auto& descriptor = descriptors[descriptorIndex];
-            if (!bodyColliderRoleEnabled(descriptor.role)) {
-                continue;
-            }
-
             DescriptorFrameResult frame{};
             if (!makeDescriptorFrame(bonesByName, descriptor, snapshot.inPowerArmor, _tuning.descriptors[descriptorIndex], frame)) {
                 ROCK_LOG_WARN(Body,
@@ -520,10 +494,9 @@ namespace rock
         publishAtomicBodyIds(snapshot.inPowerArmor);
 
         ROCK_LOG_INFO(Body,
-            "Body bone colliders created: bodies={} descriptors={} legsAndFeet={} sourceSkeleton={} tree={} powerArmor={}",
+            "Body bone colliders created: bodies={} descriptors={} sourceSkeleton={} tree={} powerArmor={}",
             createdCount,
             descriptors.size(),
-            g_rockConfig.rockBodyBoneLegAndFootCollidersEnabled ? "enabled" : "disabled",
             reinterpret_cast<std::uintptr_t>(_cachedSkeleton),
             reinterpret_cast<std::uintptr_t>(_cachedBoneTree),
             _cachedPowerArmor ? "yes" : "no");

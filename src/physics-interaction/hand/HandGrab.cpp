@@ -3380,10 +3380,6 @@ namespace rock
                 return "FingerSegment";
             case BoneColliderRole::TorsoSegment:
                 return "TorsoSegment";
-            case BoneColliderRole::LegSegment:
-                return "LegSegment";
-            case BoneColliderRole::FootSegment:
-                return "FootSegment";
             }
             return "Unknown";
         };

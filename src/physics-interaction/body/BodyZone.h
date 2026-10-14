@@ -36,14 +36,7 @@ namespace rock::body_zone
         RightForearmUpper = 13,
         RightForearmLower = 14,
         RightHand = 15,
-        LeftHip = 16,
-        LeftThigh = 17,
-        LeftCalf = 18,
-        LeftFoot = 19,
-        RightHip = 20,
-        RightThigh = 21,
-        RightCalf = 22,
-        RightFoot = 23,
+        // 16-23 were the retired leg and foot zones; never reuse them.
     };
 
     inline constexpr std::string_view bodyZoneName(BodyZoneKind zone)
@@ -79,22 +72,6 @@ namespace rock::body_zone
             return "RightForearmLower";
         case BodyZoneKind::RightHand:
             return "RightHand";
-        case BodyZoneKind::LeftHip:
-            return "LeftHip";
-        case BodyZoneKind::LeftThigh:
-            return "LeftThigh";
-        case BodyZoneKind::LeftCalf:
-            return "LeftCalf";
-        case BodyZoneKind::LeftFoot:
-            return "LeftFoot";
-        case BodyZoneKind::RightHip:
-            return "RightHip";
-        case BodyZoneKind::RightThigh:
-            return "RightThigh";
-        case BodyZoneKind::RightCalf:
-            return "RightCalf";
-        case BodyZoneKind::RightFoot:
-            return "RightFoot";
         case BodyZoneKind::Unknown:
             break;
         }

@@ -254,10 +254,6 @@ namespace rock::collider_tuning
             case BoneColliderRole::ForearmSegment:
             case BoneColliderRole::HandSegment:
                 return sanitizeBodyColliderScale(config.rockBodyBoneColliderArmRadiusScale);
-            case BoneColliderRole::LegSegment:
-                return sanitizeBodyColliderScale(config.rockBodyBoneColliderLegRadiusScale);
-            case BoneColliderRole::FootSegment:
-                return sanitizeBodyColliderScale(config.rockBodyBoneColliderFootRadiusScale);
             case BoneColliderRole::FingerSegment:
                 return sanitizeBodyColliderScale(config.rockBodyBoneColliderArmRadiusScale);
             }
@@ -273,10 +269,6 @@ namespace rock::collider_tuning
             case BoneColliderRole::ForearmSegment:
             case BoneColliderRole::HandSegment:
                 return sanitizeBodyColliderScale(config.rockBodyBoneColliderArmLengthScale);
-            case BoneColliderRole::LegSegment:
-                return sanitizeBodyColliderScale(config.rockBodyBoneColliderLegLengthScale);
-            case BoneColliderRole::FootSegment:
-                return sanitizeBodyColliderScale(config.rockBodyBoneColliderFootLengthScale);
             case BoneColliderRole::FingerSegment:
                 return sanitizeBodyColliderScale(config.rockBodyBoneColliderArmLengthScale);
             }
@@ -573,18 +565,13 @@ namespace rock::collider_tuning
         std::uint64_t bodyColliderTuningSignature(const RockConfigValues& config, bool inPowerArmor)
         {
             std::uint64_t signature = inPowerArmor ? 0x5041'524D'4F52ull : 0x5354'414E'4444ull;
-            mixBodyColliderSignature(signature, config.rockBodyBoneLegAndFootCollidersEnabled ? 1.0f : 0.0f);
             mixBodyColliderSignature(signature, profileRadiusScale(config, inPowerArmor));
             mixBodyColliderSignature(signature, profileLengthScale(config, inPowerArmor));
             mixBodyColliderSignature(signature, profileConvexRadiusScale(config, inPowerArmor));
             mixBodyColliderSignature(signature, config.rockBodyBoneColliderTorsoRadiusScale);
             mixBodyColliderSignature(signature, config.rockBodyBoneColliderArmRadiusScale);
-            mixBodyColliderSignature(signature, config.rockBodyBoneColliderLegRadiusScale);
-            mixBodyColliderSignature(signature, config.rockBodyBoneColliderFootRadiusScale);
             mixBodyColliderSignature(signature, config.rockBodyBoneColliderTorsoLengthScale);
             mixBodyColliderSignature(signature, config.rockBodyBoneColliderArmLengthScale);
-            mixBodyColliderSignature(signature, config.rockBodyBoneColliderLegLengthScale);
-            mixBodyColliderSignature(signature, config.rockBodyBoneColliderFootLengthScale);
             mixBodyColliderSignatureString(signature, config.rockBodyBoneColliderZoneScaleOverrides);
             mixBodyColliderSignatureString(signature, config.rockBodyBoneColliderRadiusScaleOverrides);
             return signature;

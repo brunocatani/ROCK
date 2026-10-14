@@ -261,7 +261,6 @@ namespace rock
         std::string rockDebugSkeletonAxisBoneFilter = "";
 
         bool rockBodyBoneCollidersEnabled = true;
-        bool rockBodyBoneLegAndFootCollidersEnabled = false;
         float rockBodyBoneColliderStandardRadiusScale = 1.0f;
         float rockBodyBoneColliderStandardLengthScale = 1.0f;
         float rockBodyBoneColliderStandardConvexRadiusScale = 1.0f;
@@ -270,12 +269,8 @@ namespace rock
         float rockBodyBoneColliderPowerArmorConvexRadiusScale = 1.0f;
         float rockBodyBoneColliderTorsoRadiusScale = 1.0f;
         float rockBodyBoneColliderArmRadiusScale = 1.0f;
-        float rockBodyBoneColliderLegRadiusScale = 1.0f;
-        float rockBodyBoneColliderFootRadiusScale = 1.0f;
         float rockBodyBoneColliderTorsoLengthScale = 1.0f;
         float rockBodyBoneColliderArmLengthScale = 1.0f;
-        float rockBodyBoneColliderLegLengthScale = 1.0f;
-        float rockBodyBoneColliderFootLengthScale = 1.0f;
         std::string rockBodyBoneColliderZoneScaleOverrides = "";
         std::string rockBodyBoneColliderRadiusScaleOverrides = "";
         bool rockHandCollisionStaticWorldEnabled = true;
