@@ -5,15 +5,7 @@
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::ContactResolve);
 
-        auto* bhk = frame.bhkWorld;
         auto* hknp = frame.hknpWorld;
-        auto consumeTouch = [&](hand_touch::TouchChannel& channel, const char* name) {
-            hand_touch::Touch touch{};
-            if (!channel.consume(touch) || touch.world != reinterpret_cast<std::uintptr_t>(hknp)) return;
-            resolveAndLogContact(name, bhk, hknp, RE::hknpBodyId{touch.target});
-        };
-        consumeTouch(_contacts.rightTouch, "Right");
-        consumeTouch(_contacts.leftTouch, "Left");
 
         auto readBodyMass = [](RE::hknpWorld* world, std::uint32_t bodyId) {
             if (!world || bodyId == 0xFFFFFFFF || bodyId == object_physics_body_set::INVALID_BODY_ID) {
@@ -71,36 +63,6 @@
         processHeldImpact(_rightHand, false, _contacts.lastHeldImpactPairRight);
         processHeldImpact(_leftHand, true, _contacts.lastHeldImpactPairLeft);
     }
-    void PhysicsInteraction::resolveAndLogContact(const char* handName, RE::bhkWorld* bhk, RE::hknpWorld* hknp, RE::hknpBodyId bodyId)
-    {
-        if (!bhk || !hknp)
-            return;
-
-        std::uint32_t filterInfo = 0;
-        if (!havok_runtime::tryReadFilterInfo(hknp, bodyId, filterInfo)) {
-            return;
-        }
-        auto layer = filterInfo & 0x7F;
-
-        auto* ref = resolveBodyToRef(bhk, hknp, bodyId);
-        if (ref) {
-            if (logger::isDebugEnabled()) {
-                auto* baseObj = ref->GetObjectReference();
-                const char* typeName = baseObj ? baseObj->GetFormTypeString() : "???";
-                auto objName = baseObj ? RE::TESFullName::GetFullName(*baseObj, false) : std::string_view{};
-                const std::string nameStr = objName.empty() ? std::string("(unnamed)") : std::string(objName);
-
-                ROCK_LOG_DEBUG(Hand, "{} hand touched [{}] '{}' formID={:08X} body={} layer={}", handName, typeName, nameStr, ref->GetFormID(), bodyId.value, layer);
-            }
-
-            bool isLeft = (std::string_view(handName) == "Left");
-            auto& hand = isLeft ? _leftHand : _rightHand;
-            hand.setTouchState(ref->GetFormID());
-        } else {
-            ROCK_LOG_DEBUG(Hand, "{} hand touched body={} layer={} (unresolved)", handName, bodyId.value, layer);
-        }
-    }
-
     void PhysicsInteraction::subscribeContactEvents(RE::hknpWorld* world)
     {
         if (!world) {
@@ -1072,14 +1034,6 @@
             routeHandMetadata = handSource && handSource->valid ? &handSource->metadata : nullptr;
         }
 
-        auto publishTouch = [&](hand_touch::TouchChannel& channel, std::uint32_t source) {
-            channel.publish(hand_touch::Touch{
-                .source = source,
-                .target = contactRoute.targetBodyId,
-                .world = reinterpret_cast<std::uintptr_t>(world),
-            });
-        };
-
         auto publishWeaponContactFromPhysics = [&](bool isLeft, const WeaponInteractionContact& weaponContact, std::uint32_t bodyId) {
             auto& partKind = isLeft ? _weaponContact.left.partKind : _weaponContact.right.partKind;
             auto& reloadRole = isLeft ? _weaponContact.left.reloadRole : _weaponContact.right.reloadRole;
@@ -1158,17 +1112,9 @@
             }
         }
 
-        if (handSource->isLeft) {
-            _leftHand.recordSemanticContact(handSource->metadata, contactRoute.targetBodyId, semanticContactPoint, semanticContactNormal);
-            if (contactRoute.recordHandTouch) {
-                publishTouch(_contacts.leftTouch, handSource->metadata.bodyId);
-            }
-        } else {
-            _rightHand.recordSemanticContact(handSource->metadata, contactRoute.targetBodyId, semanticContactPoint, semanticContactNormal);
-            if (contactRoute.recordHandTouch) {
-                publishTouch(_contacts.rightTouch, handSource->metadata.bodyId);
-            }
-        }
+        auto& contactHand = handSource->isLeft ? _leftHand : _rightHand;
+        contactHand.recordSemanticContact(handSource->metadata, contactRoute.targetBodyId, semanticContactPoint, semanticContactNormal,
+            contactRoute.recordHandTouch);
 
         int logCount = _diagnostics.contactLogCounter.fetch_add(1, std::memory_order_relaxed);
         if (logCount % 30 == 0) {

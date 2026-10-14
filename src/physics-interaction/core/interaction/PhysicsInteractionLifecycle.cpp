@@ -490,8 +490,8 @@ namespace rock
         _equipped.defaultEquipObservedOwnershipKey = 0;
         equipped_weapon_handling_runtime::reset();
         abandonWeaponHandSuppression();
-        _contacts.rightTouch.clear();
-        _contacts.leftTouch.clear();
+        _rightHand.clearTouch();
+        _leftHand.clearTouch();
         _contacts.lastHeldImpactPairRight.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
         _contacts.lastHeldImpactPairLeft.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
 
@@ -681,8 +681,8 @@ namespace rock
         _grabInput.bareFistGuardState = {};
         _lifecycle.bodyBoneColliderCreateRetryFrames = 0;
         _lifecycle.handColliderCreateRetryFrames = 0;
-        _contacts.rightTouch.clear();
-        _contacts.leftTouch.clear();
+        _rightHand.clearTouch();
+        _leftHand.clearTouch();
         _contacts.lastHeldImpactPairRight.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
         _contacts.lastHeldImpactPairLeft.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
         _contacts.bodyRuntime.reset();

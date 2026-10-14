@@ -407,17 +407,25 @@ namespace rock
             };
         }
 
-        // Touch recency is an elapsed contract (the historical 5-frame window
-        // at the 90 Hz tuning baseline), rate-independent in seconds.
+        /*
+         * The hand's latest contact, by any part, with a touch target (a
+         * non-world, non-ROCK object). It lives beside the per-part semantic
+         * slots and is written in the same locked write, so a part that also
+         * touches a wall cannot hide the object. It feeds the API Touching
+         * phase. Recency is the historical 5-frame window at the 90 Hz tuning
+         * baseline, in seconds on the shared contact clock.
+         */
         static constexpr float kTouchActiveWindowSeconds = 5.0f / 90.0f;
-        bool isTouching() const { return _contactClock.seconds() - _touchStampSeconds < kTouchActiveWindowSeconds; }
-        std::uint32_t getLastTouchedFormID() const { return _lastTouchedFormID; }
-
-        void setTouchState(std::uint32_t formID)
+        // The touched body while the touch is recent, else kInvalidBodyId.
+        std::uint32_t getTouchedBodyId() const
         {
-            _lastTouchedFormID = formID;
-            _touchStampSeconds = _contactClock.seconds();
+            const double stamp = _touchStampSeconds.load(std::memory_order_acquire);
+            if (_contactClock.seconds() - stamp >= kTouchActiveWindowSeconds) {
+                return hand_semantic_contact_state::kInvalidBodyId;
+            }
+            return _touchBodyId.load(std::memory_order_acquire);
         }
+        void clearTouch();
 
         bool isHolding() const { return isHoldingState(_state); }
         bool isHoldingLooseWeapon() const { return isHolding() && _heldObjectIsLooseWeapon; }
@@ -676,8 +684,9 @@ namespace rock
         }
         void recordSemanticContact(const HandColliderBodyMetadata& metadata,
             std::uint32_t otherBodyId,
-            const hand_semantic_contact_state::SemanticContactVector* contactPointGame = nullptr,
-            const hand_semantic_contact_state::SemanticContactVector* contactNormalGame = nullptr);
+            const hand_semantic_contact_state::SemanticContactVector* contactPointGame,
+            const hand_semantic_contact_state::SemanticContactVector* contactNormalGame,
+            bool touchTarget);
         void clearSemanticContactEvidence();
         bool getFreshSemanticContactForRole(
             hand_collider_semantics::HandColliderRole role,
@@ -1036,8 +1045,6 @@ namespace rock
         int _deselectCooldown = 0;
         RE::TESObjectREFR* _lastDeselectedRef = nullptr;
 
-        std::uint32_t _lastTouchedFormID = 0;
-        double _touchStampSeconds = -1.0e9;
 
         std::atomic<int> _heldBodyContactFrame{ 100 };
         held_placement_policy::SurfaceContactState _heldSurfaceContact;
@@ -1059,6 +1066,8 @@ namespace rock
             _heldLooseWeaponBodyCollisionSuppression{
                 collision_suppression_registry::CollisionSuppressionOwner::HeldLooseWeaponBody };
         std::mutex _semanticContactWriteMutex;
+        std::atomic<std::uint32_t> _touchBodyId{ hand_semantic_contact_state::kInvalidBodyId };
+        std::atomic<double> _touchStampSeconds{ -1.0e9 };
         std::array<std::atomic<double>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetSeconds{};
         std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetValid{};
         std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetRole{};

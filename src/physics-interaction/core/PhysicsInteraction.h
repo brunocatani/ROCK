@@ -7,7 +7,6 @@
 #include "physics-interaction/grenade/LooseMolotovVisual.h"
 
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
-#include "physics-interaction/collision/HandTouchChannel.h"
 
 #include <ROCK/Hands.h>
 #include <array>
@@ -490,8 +489,6 @@ namespace rock
 
         void resolveContacts(const PhysicsFrameContext& frame);
 
-        void resolveAndLogContact(const char* handName, RE::bhkWorld* bhk, RE::hknpWorld* hknp, RE::hknpBodyId bodyId);
-
         void publishDebugBodyOverlay(const PhysicsFrameContext& frame);
 
         void clearLeftWeaponContact();
@@ -797,7 +794,6 @@ namespace rock
             contact_clock::ContactClock clock;
             body_contact_runtime::BodyContactRuntime bodyRuntime;
             generated_body_contact_registry::Registry<kGeneratedBodyContactRegistryCapacity> generatedBodyRegistry;
-            hand_touch::TouchChannel rightTouch, leftTouch;
             std::atomic<std::uint64_t> lastHeldImpactPairRight{ INVALID_HELD_IMPACT_PAIR };
             std::atomic<std::uint64_t> lastHeldImpactPairLeft{ INVALID_HELD_IMPACT_PAIR };
             // Monotonic game-frame clock for haptic pulse and cooldown schedules.

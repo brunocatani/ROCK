@@ -242,10 +242,10 @@ namespace rock
         _selectionHoldSeconds = 0.0f;
         _deselectCooldown = 0;
         _lastDeselectedRef = nullptr;
-        _lastTouchedFormID = 0;
-        _touchStampSeconds = kSemanticContactNeverStampSeconds;
         {
             std::scoped_lock writeLock(_semanticContactWriteMutex);
+            _touchBodyId.store(hand_semantic_contact_state::kInvalidBodyId, std::memory_order_release);
+            _touchStampSeconds.store(kSemanticContactNeverStampSeconds, std::memory_order_release);
             for (std::size_t i = 0; i < hand_semantic_contact_state::kMaxSemanticContactRecords; ++i) {
                 _semanticContactSetValid[i].store(0, std::memory_order_release);
                 _semanticContactSetRole[i].store(static_cast<std::uint32_t>(hand_collider_semantics::HandColliderRole::PalmAnchor), std::memory_order_release);
@@ -1786,7 +1786,8 @@ namespace rock
     void Hand::recordSemanticContact(const HandColliderBodyMetadata& metadata,
         std::uint32_t otherBodyId,
         const hand_semantic_contact_state::SemanticContactVector* contactPointGame,
-        const hand_semantic_contact_state::SemanticContactVector* contactNormalGame)
+        const hand_semantic_contact_state::SemanticContactVector* contactNormalGame,
+        bool touchTarget)
     {
         if (!metadata.valid || metadata.bodyId == hand_semantic_contact_state::kInvalidBodyId || otherBodyId == hand_semantic_contact_state::kInvalidBodyId) {
             return;
@@ -1854,6 +1855,18 @@ namespace rock
         _semanticContactSetHasNormalGame[slot].store(hasContactNormalGame ? 1u : 0u, std::memory_order_release);
         _semanticContactSetSequence[slot].store(slotSequence + 1, std::memory_order_release);
         _semanticContactSetValid[slot].store(1, std::memory_order_release);
+
+        if (touchTarget) {
+            _touchBodyId.store(otherBodyId, std::memory_order_release);
+            _touchStampSeconds.store(_contactClock.seconds(), std::memory_order_release);
+        }
+    }
+
+    void Hand::clearTouch()
+    {
+        std::scoped_lock writeLock(_semanticContactWriteMutex);
+        _touchBodyId.store(hand_semantic_contact_state::kInvalidBodyId, std::memory_order_release);
+        _touchStampSeconds.store(kSemanticContactNeverStampSeconds, std::memory_order_release);
     }
 
     void Hand::clearSemanticContactEvidence()
@@ -1865,6 +1878,8 @@ namespace rock
          * expiry so stale hand-body evidence cannot seed the next grab frame.
          */
         std::scoped_lock writeLock(_semanticContactWriteMutex);
+        _touchBodyId.store(hand_semantic_contact_state::kInvalidBodyId, std::memory_order_release);
+        _touchStampSeconds.store(kSemanticContactNeverStampSeconds, std::memory_order_release);
         for (std::size_t i = 0; i < hand_semantic_contact_state::kMaxSemanticContactRecords; ++i) {
             _semanticContactSetValid[i].store(0, std::memory_order_release);
             _semanticContactSetHandBodyId[i].store(hand_semantic_contact_state::kInvalidBodyId, std::memory_order_release);

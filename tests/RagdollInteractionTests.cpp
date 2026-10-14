@@ -1,13 +1,10 @@
 #include "physics-interaction/grab/SkinnedSurfaceMath.h"
 #include "physics-interaction/grab/SegmentVisibilityPolicy.h"
 #include "physics-interaction/object/RagdollComponentPolicy.h"
-#include "physics-interaction/collision/HandTouchChannel.h"
 
 #include <cmath>
 #include <cstdio>
 #include <limits>
-#include <thread>
-#include <barrier>
 
 namespace
 {
@@ -98,38 +95,5 @@ int main()
     component = ragdoll::connectedComponent(bodies,joints,30);
     ok &= check(component.valid && !component.fixedAttached && !component.included[5], "deleted slot is not a connection");
 
-    hand_touch::TouchChannel channel;
-    hand_touch::Touch touch{}, sample{};
-    ok &= check(!channel.consume(sample), "no phantom initial touch");
-    touch = {1,20,100};
-    ok &= check(channel.publish(touch) && channel.consume(sample), "touch handed off");
-    ok &= check(sample.source==1 && sample.target==20 && sample.world==100, "touch retains exact body identity");
-    ok &= check(!channel.consume(sample), "touch consumed only once");
-    channel.publish(touch); channel.clear();
-    ok &= check(!channel.consume(sample), "world reset discards queued touch");
-    std::barrier start{2};
-    std::atomic<bool> finished{false};
-    std::atomic<bool> observed{false};
-    std::thread writer([&] {
-        start.arrive_and_wait();
-        // Keep publishing until the consumer participates; do not let a fast
-        // producer turn this into a passing test with no reads.
-        for (std::uint32_t n=1; n<10000 || !observed.load(); ++n) {
-            channel.publish({n,n+1,std::uintptr_t{n}+2});
-        }
-        finished.store(true);
-    });
-    start.arrive_and_wait();
-    std::size_t reads = 0;
-    bool coherent = true;
-    while (!finished.load()) {
-        if (channel.consume(sample)) {
-            ++reads;
-            coherent = coherent && sample.target==sample.source+1 && sample.world==std::uintptr_t{sample.source}+2;
-            observed.store(true);
-        }
-    }
-    writer.join();
-    ok &= check(reads > 0 && coherent, "concurrent publication never mixes identities from two touches");
     return ok ? 0 : 1;
 }

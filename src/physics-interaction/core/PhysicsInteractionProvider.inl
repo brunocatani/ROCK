@@ -686,6 +686,18 @@
         std::array<api::weaponparts::GripState, 2> grips{};
         if (stateAvailable) fillProviderWeaponPartGripStates(grips);
 
+        // The touched object's form, or 0 when the hand is not touching or the
+        // body no longer resolves to a reference.
+        auto touchedFormId = [&](const Hand& hand) -> std::uint32_t {
+            const std::uint32_t bodyId = hand.getTouchedBodyId();
+            if (bodyId == hand_semantic_contact_state::kInvalidBodyId ||
+                !_lifecycle.cachedBhkWorld || !_lifecycle.cachedHknpWorld) {
+                return 0;
+            }
+            auto* ref = resolveBodyToRef(_lifecycle.cachedBhkWorld, _lifecycle.cachedHknpWorld, RE::hknpBodyId{ bodyId });
+            return ref ? ref->GetFormID() : 0;
+        };
+
         for (const bool isLeft : { false, true }) {
             const Hand& hand = isLeft ? _leftHand : _rightHand;
             auto& state = outStates[isLeft ? 1u : 0u];
@@ -706,8 +718,9 @@
             state.phase = touchGrabActive ?
                 Phase::Holding :
                 phaseForState(hand.getState());
+            const std::uint32_t touchedForm = touchedFormId(hand);
             if (!touchGrabActive &&
-                state.phase == Phase::Idle && hand.isTouching()) {
+                state.phase == Phase::Idle && touchedForm != 0) {
                 state.phase = Phase::Touching;
             }
             state.flags = static_cast<std::uint32_t>(Flag::Valid);
@@ -781,8 +794,8 @@
                     state.flags |= static_cast<std::uint32_t>(
                         Flag::LooseObject);
                 }
-            } else if (hand.isTouching()) {
-                state.targetFormId = hand.getLastTouchedFormID();
+            } else if (touchedForm != 0) {
+                state.targetFormId = touchedForm;
                 state.targetKind = TargetKind::DynamicProp;
             }
 
