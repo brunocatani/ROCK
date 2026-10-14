@@ -7,6 +7,7 @@
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
+#include "physics-interaction/weapon/NativeSecondaryPoseTransport.h"
 
 // Per-frame orchestration: update(), interaction frame finalization, hand transform sampling, physics substep callbacks, held-mass slowdown, and the frame/debug-overlay implementation includes.
 
@@ -184,6 +185,13 @@ namespace rock
         auto* modelNode = model ? model->IsNode() : nullptr;
         RE::NiTransform intent{};
         const bool hasIntent = modelNode && native_secondary_presentation::tryGetModelIntentWorld(intent);
+        if (enabled && !hasIntent && logger::internal::shouldEmitSample("akimbo-flicker-intent", 250)) {
+            const auto quality = model ? native_secondary_pose_transport::inspect(model->world) : native_secondary_pose_transport::Quality{};
+            ROCK_LOG_INFO(Weapon,
+                "AKIMBO flicker no proxy intent frame={} presented={} node={} finite={} scale={:.6f} determinant={:.6f} orthogonalityError={:.6f}",
+                frame.timing.sequence, model != nullptr, modelNode != nullptr, quality.finite,
+                model ? model->world.scale : 0.0f, quality.determinant, quality.orthogonalityError);
+        }
         const auto generation = _secondaryWeaponCollision.getCurrentWeaponGenerationKey();
         _secondaryDynamicWeaponCollision.beginFrame(frame.timing.sequence, world, frame.bhkWorld, modelNode, generation,
             dynamic_weapon_collision_policy::kDynamicCompoundEnabled && enabled && hasIntent && !frame.menuBlocked);

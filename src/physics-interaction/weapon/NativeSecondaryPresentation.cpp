@@ -61,6 +61,9 @@ namespace rock::native_secondary_presentation
             std::uint64_t frame = 0;
             std::uint32_t samples = 0, nativeRepairs = 0;
             std::uint32_t traceNativePass = 0, tracedFrames = 0;
+            // Bounded flicker diagnostics: collision-corrected frames traced
+            // through every phase, and attachment-rejection details.
+            std::uint32_t correctionTraces = 0, attachmentRejections = 0;
             float maxOverwriteDistance = 0, maxOverwriteAngle = 0;
             std::string_view reason{};
         };
@@ -81,6 +84,15 @@ namespace rock::native_secondary_presentation
         bool usable(const RE::NiTransform& transform) noexcept
         {
             return holding_grip_math::valid(holding_grip_math::fromNative(transform));
+        }
+
+        void logQuality(const char* stage, const char* label, const RE::NiTransform& pose) noexcept
+        {
+            const auto quality = native_secondary_pose_transport::inspect(pose);
+            ROCK_LOG_INFO(Weapon,
+                "AKIMBO flicker {} {}: usable={} finite={} scale={:.6f} determinant={:.6f} orthogonalityError={:.6f} T=({:.3f},{:.3f},{:.3f})",
+                stage, label, usable(pose), quality.finite, pose.scale, quality.determinant, quality.orthogonalityError,
+                pose.translate.x, pose.translate.y, pose.translate.z);
         }
 
         bool matches(const native_hand_equipment::EquippedView& view) noexcept
@@ -420,6 +432,18 @@ namespace rock::native_secondary_presentation
             }
             auto* attachment = currentAttachment(view);
             if (!attachment || !attachment->parent || !usable(attachment->world) || !usable(attachment->local)) {
+                if (s_state.attachmentRejections < 6 || logger::internal::shouldEmitSample("akimbo-flicker-attachment", 1000)) {
+                    ++s_state.attachmentRejections;
+                    ROCK_LOG_INFO(Weapon,
+                        "AKIMBO flicker attachment rejected frame={} matches={} attachmentId={:#x} found={} parent={} ownsLocal={} lastCorrected={}",
+                        frame.frameIndex, matches(view), s_state.attachment, attachment != nullptr,
+                        attachment && attachment->parent, s_state.ownsLocal, s_state.collisionCorrected);
+                    if (attachment) {
+                        logQuality("attachment-rejected", "world", attachment->world);
+                        logQuality("attachment-rejected", "local", attachment->local);
+                        if (attachment->parent) logQuality("attachment-rejected", "parent-world", attachment->parent->world);
+                    }
+                }
                 waitFor(view, "native-equipped-attachment");
                 return;
             }
@@ -491,7 +515,21 @@ namespace rock::native_secondary_presentation
                 const auto modelIntent = transform_math::composeTransforms(target,
                     transform_math::composeTransforms(transform_math::invertTransform(attachment->world), view.root->world));
                 RE::NiTransform modelResolved{};
-                if (usable(modelIntent) && s_resolver(s_resolverContext, modelIntent, modelResolved) && usable(modelResolved)) {
+                const bool resolved = usable(modelIntent) && s_resolver(s_resolverContext, modelIntent, modelResolved);
+                if (resolved && (s_state.correctionTraces < 3 || logger::internal::shouldEmitSample("akimbo-flicker-correction", 1000))) {
+                    const auto correction = transform_math::composeTransforms(modelResolved, transform_math::invertTransform(modelIntent));
+                    const auto& d = correction.translate;
+                    float trace = 0;
+                    for (int i = 0; i < 3; ++i) trace += correction.rotate.entry[i][i];
+                    ROCK_LOG_INFO(Weapon,
+                        "AKIMBO flicker correction frame={} translation={:.3f}gu rotation={:.3f}deg",
+                        frame.frameIndex, std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z),
+                        std::acos(std::clamp((trace - 1.0f) * 0.5f, -1.0f, 1.0f)) * 57.2957795f);
+                    logQuality("correction", "model-intent", modelIntent);
+                    logQuality("correction", "model-resolved", modelResolved);
+                    logQuality("correction", "delta", correction);
+                }
+                if (resolved && usable(modelResolved)) {
                     const auto delta = transform_math::composeTransforms(modelResolved, transform_math::invertTransform(modelIntent));
                     target = transform_math::composeTransforms(delta, target);
                     hand = transform_math::composeTransforms(delta, hand);
@@ -534,6 +572,10 @@ namespace rock::native_secondary_presentation
             s_state.ready = true;
             s_state.traceFrame = s_state.samples == 0 && s_state.tracedFrames < 4;
             if (s_state.traceFrame) ++s_state.tracedFrames;
+            if (!s_state.traceFrame && s_state.collisionCorrected && s_state.correctionTraces < 3) {
+                ++s_state.correctionTraces;
+                s_state.traceFrame = true;
+            }
             s_state.traceNativePass = 0;
             tracePlacement("solve-before");
             if (s_state.traceFrame) {
