@@ -44,8 +44,8 @@ Upgrading from older versions: bToggleGrab and bAutoDrop are replaced by
 iWeaponGrabMode and iWeaponDropMode. The default is iWeaponGrabMode=1
 (toggle both grips) and iWeaponDropMode=2 (Toggle Drop).
 Toggle Drop preserves the former retained-in-hand Auto Drop behavior.
-Keeping the previous weapon in the other hand when equipping another is now
-enabled by default through bKeepPreviousWeaponInHandOnEquip=true.
+Equipping a weapon into a free hand keeps the weapon the other hand holds;
+two weapons can be equipped at once.
 Existing configured values are preserved. Keep SavedGrabOffsets when updating; automatic authored
 grip JSON persistence has been removed in favor of session discovery.
 NPC collisions, experimental blade penetration and NPC collider visualization
