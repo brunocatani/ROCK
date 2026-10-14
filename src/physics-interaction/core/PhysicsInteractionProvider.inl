@@ -469,14 +469,6 @@
         return _lifecycle.initialized.load(std::memory_order_acquire);
     }
 
-    std::uint32_t PhysicsInteraction::getProviderWeaponEvidenceDetailCountV1() const
-    {
-        return (std::min)(
-            static_cast<std::uint32_t>(
-                _weaponCollision.getProfileEvidenceDescriptors().size()),
-            ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1);
-    }
-
     std::uint32_t PhysicsInteraction::copyProviderWeaponEvidenceDetailsV1(
         ::rock::provider::RockProviderWeaponEvidenceDetailV1* outDetails,
         std::uint32_t maxDetails) const
@@ -517,17 +509,6 @@
         }
 
         return count;
-    }
-
-    std::uint32_t PhysicsInteraction::getProviderWeaponEvidenceDetailPointCountV1(std::uint32_t bodyId) const
-    {
-        const auto evidence = _weaponCollision.getProfileEvidenceDescriptors();
-        const auto* descriptor = evidence.find(bodyId);
-        if (!descriptor) {
-            return 0;
-        }
-
-        return descriptor->pointCount;
     }
 
     std::uint32_t PhysicsInteraction::copyProviderWeaponEvidenceDetailPointsV1(

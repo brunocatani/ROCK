@@ -21,10 +21,7 @@ namespace rock::provider {
     // Evidence describes the complete classified weapon-part catalog and is
     // independent from the compact body array embedded in frame snapshots.
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1 = api::weaponparts::kMaxEvidenceDetails;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_POINTS_PER_DETAIL_V1 = api::weaponparts::kMaxEvidencePoints;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EVIDENCE_NAME = 64;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_BODY_CONTACTS_V1 = api::collision::kMaxBodyContacts;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_FRAME_CALLBACKS_V1 = api::core::kMaxFrameCallbacks;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_CONSUMERS_V1 = api::core::kMaxOwners;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1 = api::grab::kMaxQueuedCommands;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_COMPLETED_INTERACTION_COMMANDS_V1 = api::grab::kMaxCommandResults;
@@ -39,12 +36,7 @@ namespace rock::provider {
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_VISUAL_AUTHORITY_LEASE_FRAMES_V1 = api::animation::kMaxHandVisualLeaseFrames;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_NATIVE_ANIMATION_RUNTIME_LEASE_FRAMES_V1 = api::animation::kMaxRuntimePublicationLeaseFrames;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EQUIPPED_WEAPON_HANDLING_LEASE_FRAMES_V1 = api::weapon::kMaxHandlingLeaseFrames;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_PROVIDER_EVENTS_V1 = 256;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_HELD_BODIES_V1 = 8;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_COMPOSITION_ENTRIES_V1 = api::weapon::kMaxCompositionEntries;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_SEMANTIC_HAND_CONTACTS_V1 = api::collision::kMaxSemanticContacts;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_PLAYER_COLLIDER_DESCRIPTORS_V1 = api::collision::kMaxColliderDescriptors;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_POSES_V1 = api::weaponparts::kMaxPoses;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_DRIVE_RESULTS_V1 = api::weaponparts::kMaxDrives;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_OFFHAND_RESERVATION_LEASE_FRAMES_V1 = api::grab::kMaxReservationLeaseFrames;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGETS_V1 = api::touch::kMaxTargets;
@@ -490,52 +482,6 @@ namespace rock::provider {
         EquipSlot = 3,
     };
 
-    /*
-     * One bit per Fallout4.esm WeaponType* keyword found through the equipped
-     * weapon's effective instance keyword form. Installed OMOD keyword changes
-     * are already applied by the engine. A bitmask preserves valid combinations
-     * such as CombatShotgun's Rifle and Shotgun keywords.
-     */
-    enum class RockProviderWeaponKeywordFlagV1 : std::uint64_t
-    {
-        None = 0,
-        Pistol = 1ull << 0,
-        Rifle = 1ull << 1,
-        Shotgun = 1ull << 2,
-        AssaultRifle = 1ull << 3,
-        Sniper = 1ull << 4,
-        GaussRifle = 1ull << 5,
-        LaserMusket = 1ull << 6,
-        HeavyGun = 1ull << 7,
-        HandToHand = 1ull << 8,
-        Melee1H = 1ull << 9,
-        Melee2H = 1ull << 10,
-        Unarmed = 1ull << 11,
-        Minigun = 1ull << 12,
-        Fatman = 1ull << 13,
-        MissileLauncher = 1ull << 14,
-        GatlingLaser = 1ull << 15,
-        Flamer = 1ull << 16,
-        Cryolater = 1ull << 17,
-        JunkJet = 1ull << 18,
-        RailwayRifle = 1ull << 19,
-        Broadsider = 1ull << 20,
-        Syringer = 1ull << 21,
-        FlareGun = 1ull << 22,
-        GammaGun = 1ull << 23,
-        AlienBlaster = 1ull << 24,
-        Ripper = 1ull << 25,
-        Shishkebab = 1ull << 26,
-        Laser = 1ull << 27,
-        Plasma = 1ull << 28,
-        Ballistic = 1ull << 29,
-        Thrown = 1ull << 30,
-        Grenade = 1ull << 31,
-        Mine = 1ull << 32,
-        Explosive = 1ull << 33,
-        Automatic = 1ull << 34,
-    };
-
 
     enum class RockProviderHandInteractionPhaseV1 : std::uint32_t
     {
@@ -591,13 +537,6 @@ namespace rock::provider {
         AuthorityLost = 3,
         InteractionCommandTerminal = 4,
         GrabStateChanged = 5,
-    };
-
-    enum class RockProviderEventStreamFlagV1 : std::uint32_t
-    {
-        None = 0,
-        GapBeforeFirstCopied = 1u << 0,
-        RingOverwroteRecords = 1u << 1,
     };
 
     enum class RockProviderAuthorityKindV1 : std::uint32_t
@@ -718,15 +657,6 @@ namespace rock::provider {
         WeaponDataEvidence = 1u << 2,
         EquipSlotEvidence = 1u << 3,
         GenerationBound = 1u << 4,
-    };
-
-    enum class RockProviderWeaponCompositionFlagV1 : std::uint32_t
-    {
-        None = 0,
-        Active = 1u << 0,
-        Disabled = 1u << 1,
-        AttachPointResolved = 1u << 2,
-        SemanticEvidenceMatched = 1u << 3,
     };
 
     enum class RockProviderAuthoredGripSourceV1 : std::uint32_t
@@ -864,11 +794,6 @@ namespace rock::provider {
         ::rock::api::input::HandInputSuppressionFlag flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
-    }
-
-    [[nodiscard]] inline constexpr bool hasWeaponKeywordFlagV1(std::uint64_t flags, RockProviderWeaponKeywordFlagV1 flag)
-    {
-        return (flags & static_cast<std::uint64_t>(flag)) != 0;
     }
 
 
@@ -1259,7 +1184,7 @@ namespace rock::provider {
      * from. Consumers that only need the coarse handling bucket can read
      * sizeClass directly; consumers that need finer distinctions (e.g. a future
      * reload/scope mod picking a shotgun- or minigun-specific behavior) can
-     * inspect keywordFlags with hasWeaponKeywordFlagV1. When no conclusive
+     * inspect keywordFlags (api::weapon::KeywordFlag). When no conclusive
      * authored signal exists, valid is zero and sizeClass is not authoritative.
      */
     struct RockProviderWeaponClassificationV1
@@ -1466,33 +1391,6 @@ namespace rock::provider {
         std::uint32_t reserved[9]{};
     };
 
-    /*
-     * Requests that ROCK assign the currently equipped weapon's firing grip
-     * to one exact physical hand. This does not select or equip an arbitrary
-     * inventory stack: weaponFormId and weaponGenerationKey are optional-zero
-     * identity guards for the weapon that is already equipped. The caller
-     * must own the active equipped-weapon handling lease with firing-grip
-     * ownership. Explicit right and left assignments have the same authority
-     * requirement; AmbidextrousHandoff governs in-world role swaps, not this
-     * direct assignment. Call only on ROCK's animation owner thread.
-     * RequestQueued means the canonical
-     * native-right or persistent-left carry is armed but not yet settled;
-     * observe getEquippedWeaponHandlingStateV1 for the effective hand.
-     */
-    struct RockProviderEquippedWeaponHandRequestV1
-    {
-        std::uint32_t size{ sizeof(RockProviderEquippedWeaponHandRequestV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        RockProviderHand hand{ RockProviderHand::None };
-        std::uint32_t flags{ 0 };
-        std::uint32_t weaponFormId{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint64_t weaponGenerationKey{ 0 };
-        std::uint64_t reserved[3]{};
-    };
-
 
 
 
@@ -1611,19 +1509,6 @@ namespace rock::provider {
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
         std::uint32_t data[5]{};
-    };
-
-    struct RockProviderEventStreamStateV1
-    {
-        std::uint32_t size{ sizeof(RockProviderEventStreamStateV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint64_t oldestRetainedSequence{ 0 };
-        std::uint64_t latestEmittedSequence{ 0 };
-        std::uint64_t firstCopiedSequence{ 0 };
-        std::uint64_t lastCopiedSequence{ 0 };
-        std::uint32_t copiedCount{ 0 };
-        std::uint32_t flags{ 0 };
-        std::uint64_t overwrittenCount{ 0 };
     };
 
     struct RockProviderEquippedWeaponStateV1

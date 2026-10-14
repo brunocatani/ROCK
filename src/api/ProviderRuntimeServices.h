@@ -62,9 +62,7 @@ namespace rock::provider::runtime {
     bool ROCK_PROVIDER_CALL apiIsProviderReady();
     bool ROCK_PROVIDER_CALL apiGetFrameSnapshot(RockProviderFrameSnapshot* outSnapshot);
     bool ROCK_PROVIDER_CALL apiQueryWeaponContactAtPoint(const RockProviderWeaponContactQuery* query, RockProviderWeaponContactResult* outResult);
-    std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEvidenceDetailCountV1();
     std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEvidenceDetailsV1(RockProviderWeaponEvidenceDetailV1* outDetails, std::uint32_t maxDetails);
-    std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEvidenceDetailPointCountV1(std::uint32_t bodyId);
     std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEvidenceDetailPointsV1(std::uint32_t bodyId, RockProviderPoint3* outPoints, std::uint32_t maxPoints);
     std::uint32_t ROCK_PROVIDER_CALL apiGetBodyContactSnapshotV1(RockProviderBodyContactV1* outContacts, std::uint32_t maxContacts);
     RockProviderHand ROCK_PROVIDER_CALL apiGetPrimaryHandV1();

@@ -226,11 +226,9 @@ namespace rock
         bool queryProviderWeaponContactAtPoint(
             const ::rock::provider::RockProviderWeaponContactQuery& query,
             ::rock::provider::RockProviderWeaponContactResult& outResult) const;
-        std::uint32_t getProviderWeaponEvidenceDetailCountV1() const;
         std::uint32_t copyProviderWeaponEvidenceDetailsV1(
             ::rock::provider::RockProviderWeaponEvidenceDetailV1* outDetails,
             std::uint32_t maxDetails) const;
-        std::uint32_t getProviderWeaponEvidenceDetailPointCountV1(std::uint32_t bodyId) const;
         std::uint32_t copyProviderWeaponEvidenceDetailPointsV1(
             std::uint32_t bodyId,
             ::rock::provider::RockProviderPoint3* outPoints,

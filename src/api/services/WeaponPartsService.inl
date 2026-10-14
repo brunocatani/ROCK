@@ -20,17 +20,6 @@
         return pi->queryProviderWeaponContactAtPoint(*query, *outResult);
     }
 
-    std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEvidenceDetailCountV1()
-    {
-        const auto instanceAccess = s_physicsInteraction.borrow();
-        auto* pi = instanceAccess.get();
-        if (!pi || !pi->isInitialized()) {
-            return 0;
-        }
-
-        return pi->getProviderWeaponEvidenceDetailCountV1();
-    }
-
     std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEvidenceDetailsV1(
         RockProviderWeaponEvidenceDetailV1* outDetails,
         std::uint32_t maxDetails)
@@ -42,17 +31,6 @@
         }
 
         return pi->copyProviderWeaponEvidenceDetailsV1(outDetails, maxDetails);
-    }
-
-    std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEvidenceDetailPointCountV1(std::uint32_t bodyId)
-    {
-        const auto instanceAccess = s_physicsInteraction.borrow();
-        auto* pi = instanceAccess.get();
-        if (!pi || !pi->isInitialized()) {
-            return 0;
-        }
-
-        return pi->getProviderWeaponEvidenceDetailPointCountV1(bodyId);
     }
 
     std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEvidenceDetailPointsV1(
