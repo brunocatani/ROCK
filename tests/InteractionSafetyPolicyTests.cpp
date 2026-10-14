@@ -142,12 +142,12 @@ int main()
     ok &= expectFalse("queued state is non-terminal", isTerminal(rock::api::grab::InteractionCommandState::Queued));
     ok &= expectTrue("rejected state is terminal", isTerminal(rock::api::grab::InteractionCommandState::Rejected));
 
-    RockProviderInteractionCommandResultV1 accepted{};
+    rock::api::grab::InteractionCommandResult accepted{};
     accepted.state = rock::api::grab::InteractionCommandState::Queued;
     accepted.stage = rock::api::grab::CommandStage::Committed;
     accepted.acceptedFrame = 17;
     accepted.committedFrame = 19;
-    RockProviderInteractionCommandResultV1 completed{};
+    rock::api::grab::InteractionCommandResult completed{};
     completed.state = rock::api::grab::InteractionCommandState::Succeeded;
     completed.stage = rock::api::grab::CommandStage::Queued;
     completed.acceptedFrame = 23;

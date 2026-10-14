@@ -180,12 +180,12 @@ namespace rock::storage_interaction
         {
             unsigned mask{};
             for(unsigned h=0;h<2;++h) {
-                provider::RockProviderHandInteractionStateV1 state;
+                api::grab::HandInteractionState state;
                 const auto hand=h?api::Hand::Left:api::Hand::Right;
                 using Flag=api::grab::HandInteractionFlag;
                 using Phase=api::grab::HandInteractionPhase;
                 constexpr unsigned occupied=unsigned(Flag::FiringGrip)|unsigned(Flag::PartGrip)|unsigned(Flag::PartCarry)|unsigned(Flag::TouchGrab)|unsigned(Flag::NativeWeaponCarry)|unsigned(Flag::RockGripActive)|unsigned(Flag::TransitionSuppressed);
-                if(provider::runtime::apiGetHandInteractionStateV1(owner,hand,&state)==api::Status::Ok &&
+                if(provider::runtime::getHandInteractionState(owner, hand, state)==api::Status::Ok &&
                     (state.flags & unsigned(Flag::Valid)) && !(state.flags & occupied) && !state.heldBodyCount &&
                     (state.phase==Phase::Idle || state.phase==Phase::Touching || state.phase==Phase::Selecting))
                     mask|=1u<<h;

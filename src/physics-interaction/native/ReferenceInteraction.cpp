@@ -80,14 +80,14 @@ namespace rock::reference_interaction
         return resolveNode(node);
     }
 
-    RE::TESObjectREFR* resolveQuery(const provider::RockProviderReferenceQueryV1& query)
+    RE::TESObjectREFR* resolveQuery(const api::grab::ReferenceQuery& query)
     {
         auto* ref = RE::TESForm::GetFormByID<RE::TESObjectREFR>(query.referenceFormId);
         if (!ref || (query.referenceNativeHandle != 0 && ref->GetHandle().native_handle() != query.referenceNativeHandle)) return nullptr;
         return ref;
     }
 
-    bool describe(RE::TESObjectREFR* ref, provider::RockProviderReferenceInteractionV1& out, const std::int32_t markerIndex)
+    bool describe(RE::TESObjectREFR* ref, api::grab::ReferenceInteraction& out, const std::int32_t markerIndex)
     {
         out = {};
         if (!ref || !ref->GetObjectReference()) return false;
@@ -169,7 +169,7 @@ namespace rock::reference_interaction
         return true;
     }
 
-    bool describePowerArmor(RE::TESObjectREFR* ref, provider::RockProviderPowerArmorTargetV1& out, const std::int32_t markerIndex)
+    bool describePowerArmor(RE::TESObjectREFR* ref, api::grab::PowerArmorTarget& out, const std::int32_t markerIndex)
     {
         out = {};
         if (!describe(ref, out.touchedReference, markerIndex)) return false;

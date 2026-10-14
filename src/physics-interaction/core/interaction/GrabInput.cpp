@@ -2733,7 +2733,7 @@ namespace rock
                     std::memory_order_acquire));
             _rightHand.cancelGrabVisualReturn("skeleton-not-ready");
             _leftHand.cancelGrabVisualReturn("skeleton-not-ready");
-            provider::clearInteractionCommandsForProviderLossV1(api::grab::InteractionFailure::ProviderNotReady);
+            provider::clearInteractionCommandsForProviderLoss(api::grab::InteractionFailure::ProviderNotReady);
             clearProviderInventoryEquip();
             clearPendingForceGrabCommits();
             input_remap_runtime::setHandHeldWeapon(false, false);

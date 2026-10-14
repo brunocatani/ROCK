@@ -17,12 +17,12 @@ namespace rock
          */
         pruneInactiveProviderForceGrabCommits();
 
-        QueuedInteractionCommandV1 command{};
+        QueuedInteractionCommand command{};
         std::uint32_t processed = 0;
-        while (processed++ < ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1 && provider::dequeueInteractionCommandV1(command)) {
+        while (processed++ < ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1 && provider::dequeueInteractionCommand(command)) {
             pruneInactiveProviderForceGrabCommits();
             if (command.kind == api::grab::InteractionCommandKind::ForceGrab &&
-                !provider::isInteractionCommandActiveV1(command.ownerToken, command.commandId)) {
+                !provider::isInteractionCommandActive(command.ownerToken, command.commandId)) {
                 continue;
             }
             auto requestHand = [&]() {
@@ -98,9 +98,7 @@ namespace rock
                 }
             }();
 
-            RockProviderInteractionCommandResultV1 result{};
-            result.size = sizeof(RockProviderInteractionCommandResultV1);
-            result.version = ROCK_PROVIDER_API_VERSION;
+            api::grab::InteractionCommandResult result{};
             result.ownerToken = command.ownerToken;
             result.commandId = command.commandId;
             result.kind = command.kind;
@@ -117,7 +115,7 @@ namespace rock
             auto complete = [&](api::grab::InteractionCommandState state, api::grab::InteractionFailure failure) {
                 result.state = state;
                 result.failure = failure;
-                return provider::completeInteractionCommandV1(result);
+                return provider::completeInteractionCommand(result);
             };
 
             const bool isForceGrabCommand = command.kind == api::grab::InteractionCommandKind::ForceGrab;
@@ -150,7 +148,7 @@ namespace rock
             }
 
             const bool inventoryTransfer = isForceGrabCommand &&
-                (command.forceGrab.flags & static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::FromPlayerInventory)) != 0;
+                (command.forceGrab.flags & provider::kForceGrabFromPlayerInventory) != 0;
             if (isForceGrabCommand && !inventoryTransfer && !storage_service::allowsGrab(requestTargetFormId, command.ownerToken)) {
                 complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::TargetUnavailable);
                 continue;
@@ -328,10 +326,10 @@ namespace rock
             }
 
             if (command.powerArmorPoint != api::PowerArmorPoint::None) {
-                RockProviderReferenceQueryV1 query{};
+                api::grab::ReferenceQuery query{};
                 query.referenceFormId = command.forceGrab.targetFormId;
                 query.referenceNativeHandle = command.powerArmorReferenceNativeHandle;
-                RockProviderPowerArmorTargetV1 target{};
+                api::grab::PowerArmorTarget target{};
                 RE::NiTransform presented{};
                 if (frame.menuBlocked || !reference_interaction::describePowerArmor(reference_interaction::resolveQuery(query), target) ||
                     target.frameReference.referenceFormId == 0 || !_dynamicHandCollision.getLastPresentedHandWorld(isLeft, presented)) {
@@ -428,7 +426,7 @@ namespace rock
             }
 
             const bool hasSourcePointOverride =
-                (command.forceGrab.flags & static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame)) != 0;
+                (command.forceGrab.flags & static_cast<std::uint32_t>(api::grab::ForceGrabFlag::UsePreferredGrabPointGame)) != 0;
 
             commit = PendingForceGrabCommit{
                 .active = true,

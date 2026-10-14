@@ -91,7 +91,7 @@ namespace rock
             bool known = false;
             if (reference_interaction::isPowerArmorFurniture(ref, &known) || !known) return false;
             if (ref->As<RE::Actor>()) {
-                provider::RockProviderPowerArmorTargetV1 armor{};
+                api::grab::PowerArmorTarget armor{};
                 if (!reference_interaction::describePowerArmor(ref, armor)) return false;
                 const auto classified = static_cast<std::uint32_t>(api::grab::TargetDetailFlag::PowerArmorClassification);
                 const auto actor = static_cast<std::uint32_t>(api::grab::TargetDetailFlag::PowerArmorActor);
@@ -1347,7 +1347,7 @@ namespace rock
             }
             bool meshPresentationAvailable = false;
             if (powerArmorPoint != api::PowerArmorPoint::None) {
-                provider::RockProviderReferenceQueryV1 query{};
+                api::grab::ReferenceQuery query{};
                 query.referenceFormId = active.target.referenceFormId;
                 query.referenceNativeHandle = active.target.referenceNativeHandle;
                 auto* ref = reference_interaction::resolveQuery(query);
@@ -1706,7 +1706,7 @@ namespace rock
                         continue;
                     }
                     if (hand.powerArmorPoint != api::PowerArmorPoint::None) {
-                        provider::RockProviderReferenceQueryV1 query{};
+                        api::grab::ReferenceQuery query{};
                         query.referenceFormId = active.target.referenceFormId;
                         query.referenceNativeHandle = active.target.referenceNativeHandle;
                         RE::NiTransform pose{};

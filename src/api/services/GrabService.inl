@@ -29,70 +29,50 @@
 
 // Private Grab service operations. Included after shared owner/lifecycle helpers.
 
-    api::Status apiRequestForceGrabV1(
+    api::Status requestForceGrab(
         std::uint64_t ownerToken,
-        const RockProviderForceGrabRequestV1* request,
-        std::uint64_t* outCommandId)
+        const api::grab::ForceGrabRequest& request,
+        std::uint64_t& outCommandId)
     {
-        if (!request || !outCommandId || ownerToken == 0) {
+        outCommandId = 0;
+        if (ownerToken == 0) {
             return api::Status::InvalidArgument;
         }
-        *outCommandId = 0;
-
-        if (request->size != sizeof(RockProviderForceGrabRequestV1)) {
-            return api::Status::InvalidSize;
-        }
-        if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
-            return api::Status::UnsupportedVersion;
-        }
-        const bool fromInventory = (request->flags & static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::FromPlayerInventory)) != 0;
-        if (fromInventory ? request->hand != api::Hand::None :
-            (request->hand != api::Hand::Right && request->hand != api::Hand::Left)) {
+        const bool fromInventory = (request.flags & kForceGrabFromPlayerInventory) != 0;
+        if (fromInventory ? request.hand != api::Hand::None :
+            (request.hand != api::Hand::Right && request.hand != api::Hand::Left)) {
             return api::Status::HandUnavailable;
         }
-        if (fromInventory && (request->flags != static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::FromPlayerInventory) ||
-            request->targetBodyId != 0x7FFF'FFFF || request->maxDistanceGame != 0.0f)) {
+        if (fromInventory && (request.flags != kForceGrabFromPlayerInventory ||
+            request.targetBodyId != 0x7FFF'FFFF || request.maxDistanceGame != 0.0f)) {
             return api::Status::InvalidArgument;
         }
-        if (request->targetFormId == 0 || (request->flags & ~kImplementedForceGrabFlagsV1) != 0) {
+        if (request.targetFormId == 0 || (request.flags & ~kImplementedForceGrabFlagsV1) != 0) {
             return api::Status::InvalidArgument;
         }
-        if (!std::isfinite(request->maxDistanceGame)) {
+        if (!std::isfinite(request.maxDistanceGame)) {
             return api::Status::InvalidArgument;
         }
-        if ((request->flags & static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame)) != 0 &&
-            !isFiniteVector3(request->preferredGrabPointGame)) {
+        if ((request.flags & static_cast<std::uint32_t>(api::grab::ForceGrabFlag::UsePreferredGrabPointGame)) != 0 &&
+            !isFiniteVector3(request.preferredGrabPointGame)) {
             return api::Status::InvalidArgument;
         }
 
-        QueuedInteractionCommandV1 command{};
+        QueuedInteractionCommand command{};
         command.ownerToken = ownerToken;
         command.kind = api::grab::InteractionCommandKind::ForceGrab;
-        command.forceGrab = *request;
-        return enqueueInteractionCommand(command, outCommandId);
+        command.forceGrab = request;
+        return enqueueInteractionCommand(command, &outCommandId);
     }
 
-    api::Status apiGetInteractionCommandResultV1(
+    api::Status getInteractionCommandResult(
         std::uint64_t ownerToken,
         std::uint64_t commandId,
-        RockProviderInteractionCommandResultV1* outResult)
+        api::grab::InteractionCommandResult& outResult)
     {
-        if (!outResult || ownerToken == 0 || commandId == 0) {
+        if (ownerToken == 0 || commandId == 0) {
             return api::Status::InvalidArgument;
         }
-        const auto requestedSize = outResult->size;
-        if (requestedSize <
-            ROCK_PROVIDER_INTERACTION_COMMAND_RESULT_V1_PREFIX_SIZE) {
-            return api::Status::InvalidSize;
-        }
-        const auto copyResult = [outResult, requestedSize](
-                                    RockProviderInteractionCommandResultV1 result) {
-            const auto copySize = (std::min<std::size_t>)(
-                requestedSize,
-                sizeof(result));
-            result.size = static_cast<std::uint32_t>(copySize);
-            std::memcpy(outResult, &result, copySize);
-        };
 
         std::scoped_lock lock(s_consumerMutex, s_interactionCommandMutex);
         const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
@@ -102,17 +82,17 @@
 
         for (const auto& slot : s_interactionResults) {
             if (slot.active && slot.result.ownerToken == ownerToken && slot.result.commandId == commandId) {
-                copyResult(slot.result);
+                outResult = slot.result;
                 return api::Status::Ok;
             }
         }
 
         for (const auto& slot : s_interactionCommands) {
             if (slot.active && slot.command.ownerToken == ownerToken && slot.command.commandId == commandId) {
-                copyResult(makeCommandResult(
+                outResult = makeCommandResult(
                     slot.command,
                     api::grab::InteractionCommandState::Queued,
-                    api::grab::InteractionFailure::None));
+                    api::grab::InteractionFailure::None);
                 return api::Status::Ok;
             }
         }
@@ -120,94 +100,83 @@
         return api::Status::RequestNotFound;
     }
 
-    api::Status apiRequestForceReleaseV1(
-        std::uint64_t ownerToken,
-        const RockProviderForceReleaseRequestV1* request,
-        std::uint64_t* outCommandId)
+    // Force release and thrown drop share one request shape and its checks.
+    template <class Request>
+    api::Status validateReleaseRequest(const Request& request, std::uint32_t implementedFlags,
+        std::uint32_t requireMatchingTarget, std::uint32_t useVelocity)
     {
-        if (!request || !outCommandId || ownerToken == 0) {
-            return api::Status::InvalidArgument;
-        }
-        *outCommandId = 0;
-
-        if (request->size != sizeof(RockProviderForceReleaseRequestV1)) {
-            return api::Status::InvalidSize;
-        }
-        if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
-            return api::Status::UnsupportedVersion;
-        }
-        if (request->hand != api::Hand::Right && request->hand != api::Hand::Left) {
+        if (request.hand != api::Hand::Right && request.hand != api::Hand::Left) {
             return api::Status::HandUnavailable;
         }
-        if ((request->flags & ~kImplementedForceReleaseFlagsV1) != 0) {
+        if ((request.flags & ~implementedFlags) != 0) {
             return api::Status::InvalidArgument;
         }
-        if ((request->flags & static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::RequireMatchingTarget)) != 0 &&
-            !hasInteractionTargetIdentity(request->targetFormId, request->targetBodyId)) {
+        if ((request.flags & requireMatchingTarget) != 0 &&
+            !hasInteractionTargetIdentity(request.targetFormId, request.targetBodyId)) {
             return api::Status::InvalidArgument;
         }
-        if ((request->flags & static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::UseVelocityHavok)) != 0 &&
-            (!isFiniteVector3(request->linearVelocityHavok) || !isFiniteVector3(request->angularVelocityRadiansPerSecond))) {
+        if ((request.flags & useVelocity) != 0 &&
+            (!isFiniteVector3(request.linearVelocityHavok) || !isFiniteVector3(request.angularVelocityRadiansPerSecond))) {
             return api::Status::InvalidArgument;
+        }
+        return api::Status::Ok;
+    }
+
+    api::Status requestForceRelease(
+        std::uint64_t ownerToken,
+        const api::grab::ForceReleaseRequest& request,
+        std::uint64_t& outCommandId)
+    {
+        outCommandId = 0;
+        if (ownerToken == 0) {
+            return api::Status::InvalidArgument;
+        }
+        using Flag = api::grab::ForceReleaseFlag;
+        if (const auto status = validateReleaseRequest(request, kImplementedForceReleaseFlagsV1,
+                static_cast<std::uint32_t>(Flag::RequireMatchingTarget), static_cast<std::uint32_t>(Flag::UseVelocityHavok));
+            status != api::Status::Ok) {
+            return status;
         }
 
-        QueuedInteractionCommandV1 command{};
+        QueuedInteractionCommand command{};
         command.ownerToken = ownerToken;
         command.kind = api::grab::InteractionCommandKind::ForceRelease;
-        command.forceRelease = *request;
-        return enqueueInteractionCommand(command, outCommandId);
+        command.forceRelease = request;
+        return enqueueInteractionCommand(command, &outCommandId);
     }
 
-    api::Status apiRequestThrownDropV1(
+    api::Status requestThrownDrop(
         std::uint64_t ownerToken,
-        const RockProviderThrownDropRequestV1* request,
-        std::uint64_t* outCommandId)
+        const api::grab::ThrownDropRequest& request,
+        std::uint64_t& outCommandId)
     {
-        if (!request || !outCommandId || ownerToken == 0) {
+        outCommandId = 0;
+        if (ownerToken == 0) {
             return api::Status::InvalidArgument;
         }
-        *outCommandId = 0;
-
-        if (request->size != sizeof(RockProviderThrownDropRequestV1)) {
-            return api::Status::InvalidSize;
-        }
-        if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
-            return api::Status::UnsupportedVersion;
-        }
-        if (request->hand != api::Hand::Right && request->hand != api::Hand::Left) {
-            return api::Status::HandUnavailable;
-        }
-        if ((request->flags & ~kImplementedThrownDropFlagsV1) != 0) {
-            return api::Status::InvalidArgument;
-        }
-        if ((request->flags & static_cast<std::uint32_t>(api::grab::ThrownDropFlag::RequireMatchingTarget)) != 0 &&
-            !hasInteractionTargetIdentity(request->targetFormId, request->targetBodyId)) {
-            return api::Status::InvalidArgument;
-        }
-        if ((request->flags & static_cast<std::uint32_t>(api::grab::ThrownDropFlag::UseVelocityHavok)) != 0 &&
-            (!isFiniteVector3(request->linearVelocityHavok) || !isFiniteVector3(request->angularVelocityRadiansPerSecond))) {
-            return api::Status::InvalidArgument;
+        using Flag = api::grab::ThrownDropFlag;
+        if (const auto status = validateReleaseRequest(request, kImplementedThrownDropFlagsV1,
+                static_cast<std::uint32_t>(Flag::RequireMatchingTarget), static_cast<std::uint32_t>(Flag::UseVelocityHavok));
+            status != api::Status::Ok) {
+            return status;
         }
 
-        QueuedInteractionCommandV1 command{};
+        QueuedInteractionCommand command{};
         command.ownerToken = ownerToken;
         command.kind = api::grab::InteractionCommandKind::ThrownDrop;
-        command.thrownDrop = *request;
-        return enqueueInteractionCommand(command, outCommandId);
+        command.thrownDrop = request;
+        return enqueueInteractionCommand(command, &outCommandId);
     }
 
-    api::Status apiGetHandInteractionStateV1(
+    api::Status getHandInteractionState(
         const std::uint64_t ownerToken,
         const api::Hand hand,
-        RockProviderHandInteractionStateV1* outState)
+        api::grab::HandInteractionState& outState)
     {
-        provider_state_policy::clearQueryOutput(outState);
-        if (!outState || ownerToken == 0 ||
+        outState = {};
+        if (ownerToken == 0 ||
             (hand != api::Hand::Right && hand != api::Hand::Left)) {
             return api::Status::InvalidArgument;
-        }
-        if (outState->size < sizeof(RockProviderHandInteractionStateV1)) {
-            return api::Status::InvalidSize;
         }
         const auto ownerResult = validateRegisteredOwner(ownerToken);
         if (ownerResult != api::Status::Ok) {
@@ -217,12 +186,12 @@
         if (!apiIsProviderReady() || !s_hasSnapshot || s_lastSnapshot.providerReady == 0) {
             return api::Status::NotReady;
         }
-        *outState = s_lastHandInteractionStates[
+        outState = s_lastHandInteractionStates[
             hand == api::Hand::Left ? 1u : 0u];
         return api::Status::Ok;
     }
 
-    api::Status apiCancelInteractionCommandV1(
+    api::Status cancelInteractionCommand(
         const std::uint64_t ownerToken,
         const std::uint64_t commandId)
     {
@@ -258,21 +227,21 @@
         return api::Status::RequestNotFound;
     }
 
-    api::Status apiAcquireOffhandReservationV1(
+    api::Status acquireHandReservation(
         const std::uint64_t ownerToken,
-        const RockProviderOffhandReservationRequestV1* request)
+        const api::grab::HandReservationRequest& request)
     {
-        return setOffhandReservationLeaseV1(ownerToken, request, false);
+        return setHandReservationLease(ownerToken, request, false);
     }
 
-    api::Status apiRenewOffhandReservationV1(
+    api::Status renewHandReservation(
         const std::uint64_t ownerToken,
-        const RockProviderOffhandReservationRequestV1* request)
+        const api::grab::HandReservationRequest& request)
     {
-        return setOffhandReservationLeaseV1(ownerToken, request, true);
+        return setHandReservationLease(ownerToken, request, true);
     }
 
-    api::Status apiReleaseOffhandReservationV1(
+    api::Status releaseHandReservation(
         const std::uint64_t ownerToken)
     {
         if (ownerToken == 0) {
@@ -293,16 +262,13 @@
         return api::Status::Ok;
     }
 
-    api::Status apiGetOffhandReservationStateV1(
+    api::Status getHandReservationState(
         const std::uint64_t ownerToken,
-        RockProviderOffhandReservationStateV1* outState)
+        api::grab::HandReservationState& outState)
     {
-        provider_state_policy::clearQueryOutput(outState);
-        if (ownerToken == 0 || !outState) {
+        outState = {};
+        if (ownerToken == 0) {
             return api::Status::InvalidArgument;
-        }
-        if (outState->size < sizeof(RockProviderOffhandReservationStateV1)) {
-            return api::Status::InvalidSize;
         }
         const auto frameIndex = currentProviderFrameIndex();
         std::scoped_lock lock(s_consumerMutex, s_offhandReservationMutex);
@@ -311,40 +277,37 @@
             return ownerResult;
         }
         pruneExpiredOffhandReservationLocked(frameIndex);
-        *outState = {};
-        outState->hand = s_offhandReservationSlot.hand;
-        outState->reservation = s_offhandReservationSlot.reservation;
-        outState->active = s_offhandReservationSlot.ownerToken != 0 ? 1u : 0u;
-        outState->ownerToken = s_offhandReservationSlot.ownerToken;
-        outState->expiresAfterFrame =
+        outState.hand = s_offhandReservationSlot.hand;
+        outState.reservation = s_offhandReservationSlot.reservation;
+        outState.active = s_offhandReservationSlot.ownerToken != 0 ? 1u : 0u;
+        outState.ownerToken = s_offhandReservationSlot.ownerToken;
+        outState.expiresAfterFrame =
             s_offhandReservationSlot.expiresAfterFrame;
-        outState->remainingFrames = provider_lease_policy::remainingFrames(
+        outState.remainingFrames = provider_lease_policy::remainingFrames(
             frameIndex,
-            outState->expiresAfterFrame);
+            outState.expiresAfterFrame);
         {
             std::scoped_lock snapshotLock(s_snapshotMutex);
             if (s_hasSnapshot) {
-                outState->worldGeneration = s_lastSnapshot.worldGeneration;
-                outState->skeletonGeneration =
+                outState.worldGeneration = s_lastSnapshot.worldGeneration;
+                outState.skeletonGeneration =
                     s_lastSnapshot.skeletonGeneration;
-                outState->providerGeneration =
+                outState.providerGeneration =
                     s_lastSnapshot.providerGeneration;
             }
         }
         return api::Status::Ok;
     }
 
-    api::Status apiGetHandTargetDetailsV1(std::uint64_t ownerToken,
-        api::Hand hand, RockProviderHandTargetDetailsV1* out)
+    api::Status getHandTargetDetails(std::uint64_t ownerToken,
+        api::Hand hand, api::grab::HandTargetDetails& out)
     {
-        provider_state_policy::clearQueryOutput(out);
-        if (!out || (hand != api::Hand::Left && hand != api::Hand::Right)) return api::Status::InvalidArgument;
-        if (out->size != sizeof(*out)) return api::Status::InvalidSize;
-        if (out->version != ROCK_PROVIDER_API_VERSION) return api::Status::UnsupportedVersion;
+        out = {};
+        if (hand != api::Hand::Left && hand != api::Hand::Right) return api::Status::InvalidArgument;
         const auto permission = validateRegisteredOwner(ownerToken);
         if (permission != api::Status::Ok) return permission;
         if (!onAnimationOwnerThread()) return api::Status::WrongThread;
-        RockProviderHandInteractionStateV1 handState{};
+        HandInteractionPublication handState{};
         {
             std::scoped_lock lock(s_snapshotMutex);
             if (!s_hasSnapshot || !s_lastSnapshot.providerReady) return api::Status::NotReady;
@@ -353,35 +316,32 @@
         const auto instanceAccess = s_physicsInteraction.borrow();
         auto* pi = instanceAccess.get();
         if (!pi || !pi->isProviderReady()) return api::Status::NotReady;
-        pi->getProviderHandTargetDetailsV1(handState, *out);
-        out->reference.frameIndex = out->handState.frameIndex;
+        pi->getProviderHandTargetDetails(handState, out);
         return api::Status::Ok;
     }
 
-    api::Status apiRequestPowerArmorGrabV1(std::uint64_t ownerToken,
-        const RockProviderPowerArmorGrabRequestV1* request, std::uint64_t* outCommandId)
+    api::Status requestPowerArmorGrab(std::uint64_t ownerToken,
+        const api::grab::PowerArmorGrabRequest& request, std::uint64_t& outCommandId)
     {
-        if (outCommandId) *outCommandId = 0;
-        if (!request || !outCommandId || !ownerToken) return api::Status::InvalidArgument;
-        if (request->size != sizeof(*request) || request->target.size != sizeof(request->target)) return api::Status::InvalidSize;
-        if (request->version != ROCK_PROVIDER_API_VERSION || request->target.version != ROCK_PROVIDER_API_VERSION) return api::Status::UnsupportedVersion;
-        if ((request->hand != api::Hand::Left && request->hand != api::Hand::Right) ||
-            !rock::reference_interaction::pointName(request->point) || !request->target.referenceFormId ||
-            !request->target.worldGeneration || !request->target.skeletonGeneration || !request->target.providerGeneration ||
-            !std::isfinite(request->maxDistanceGame) || request->maxDistanceGame < 0 || request->maxDistanceGame > 32) return api::Status::InvalidArgument;
+        outCommandId = 0;
+        if (!ownerToken) return api::Status::InvalidArgument;
+        if ((request.hand != api::Hand::Left && request.hand != api::Hand::Right) ||
+            !rock::reference_interaction::pointName(request.point) || !request.target.referenceFormId ||
+            !request.target.worldGeneration || !request.target.skeletonGeneration || !request.target.providerGeneration ||
+            !std::isfinite(request.maxDistanceGame) || request.maxDistanceGame < 0 || request.maxDistanceGame > 32) return api::Status::InvalidArgument;
         const auto permission = validateRegisteredOwner(ownerToken);
         if (permission != api::Status::Ok) return permission;
-        QueuedInteractionCommandV1 command{};
+        QueuedInteractionCommand command{};
         command.kind = api::grab::InteractionCommandKind::ForceGrab;
         command.ownerToken = ownerToken;
-        command.powerArmorPoint = request->point;
-        command.powerArmorReferenceNativeHandle = request->target.referenceNativeHandle;
+        command.powerArmorPoint = request.point;
+        command.powerArmorReferenceNativeHandle = request.target.referenceNativeHandle;
         auto& grab = command.forceGrab;
-        grab.hand = request->hand;
-        grab.targetFormId = request->target.referenceFormId;
-        grab.worldGeneration = request->target.worldGeneration;
-        grab.skeletonGeneration = request->target.skeletonGeneration;
-        grab.providerGeneration = request->target.providerGeneration;
-        grab.maxDistanceGame = request->maxDistanceGame;
-        return enqueueInteractionCommand(command, outCommandId);
+        grab.hand = request.hand;
+        grab.targetFormId = request.target.referenceFormId;
+        grab.worldGeneration = request.target.worldGeneration;
+        grab.skeletonGeneration = request.target.skeletonGeneration;
+        grab.providerGeneration = request.target.providerGeneration;
+        grab.maxDistanceGame = request.maxDistanceGame;
+        return enqueueInteractionCommand(command, &outCommandId);
     }

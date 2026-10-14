@@ -82,10 +82,6 @@ namespace rock::provider::runtime {
     api::Status clearHandlingAuthority(std::uint64_t ownerToken);
     api::Status registerOwner(const api::core::Registration& registration, api::core::Owner& outOwner);
     api::Status unregisterOwner(std::uint64_t ownerToken);
-    api::Status apiRequestForceGrabV1(std::uint64_t ownerToken, const RockProviderForceGrabRequestV1* request, std::uint64_t* outCommandId);
-    api::Status apiGetInteractionCommandResultV1(std::uint64_t ownerToken, std::uint64_t commandId, RockProviderInteractionCommandResultV1* outResult);
-    api::Status apiRequestForceReleaseV1(std::uint64_t ownerToken, const RockProviderForceReleaseRequestV1* request, std::uint64_t* outCommandId);
-    api::Status apiRequestThrownDropV1(std::uint64_t ownerToken, const RockProviderThrownDropRequestV1* request, std::uint64_t* outCommandId);
     api::Status apiSetHandInputSuppressionV1(std::uint64_t ownerToken, const ::rock::api::input::HandInputSuppressionRequest* request);
     api::Status apiClearHandInputSuppressionV1(std::uint64_t ownerToken, api::Hand hand);
     bool apiGetRawWandButtonStateV1(api::Hand hand, std::uint32_t buttonId, ::rock::api::input::RawWandButtonState* outState);
@@ -103,16 +99,10 @@ namespace rock::provider::runtime {
     api::Status apiGetPresentedHandPose(std::uint64_t ownerToken, api::Hand hand, api::hands::PresentedHandPose& outPose);
     api::Status registerFrameCallback(std::uint64_t ownerToken, api::core::FrameCallback callback, void* userData, std::uint64_t* outCallbackToken);
     api::Status unregisterFrameCallback(std::uint64_t ownerToken, std::uint64_t callbackToken);
-    api::Status apiGetHandInteractionStateV1(std::uint64_t ownerToken, api::Hand hand, RockProviderHandInteractionStateV1* outState);
     api::Status copySemanticHandContacts(api::Hand hand, std::uint32_t maxFramesSinceContact, api::collision::SemanticHandContact* outContacts, std::uint32_t capacity, std::uint32_t& outCount);
     api::Status copyPlayerColliderDescriptors(api::collision::PlayerColliderDescriptor* outDescriptors, std::uint32_t capacity, std::uint32_t& outCount);
     api::Status getHandCollisionAvailability(api::Hand hand, api::collision::HandCollisionAvailability& outState);
-    api::Status apiCancelInteractionCommandV1(std::uint64_t ownerToken, std::uint64_t commandId);
     api::Status apiGetHandInputSuppressionStateV1(std::uint64_t ownerToken, api::Hand hand, ::rock::api::input::HandInputSuppressionState* outState);
-    api::Status apiAcquireOffhandReservationV1(std::uint64_t ownerToken, const RockProviderOffhandReservationRequestV1* request);
-    api::Status apiRenewOffhandReservationV1(std::uint64_t ownerToken, const RockProviderOffhandReservationRequestV1* request);
-    api::Status apiReleaseOffhandReservationV1(std::uint64_t ownerToken);
-    api::Status apiGetOffhandReservationStateV1(std::uint64_t ownerToken, RockProviderOffhandReservationStateV1* outState);
     api::Status apiClearNativeAnimationRuntimeV1(std::uint64_t ownerToken);
     api::Status apiSetTouchGrabTargetsForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken, const ::rock::api::touch::TouchGrabTarget* targets, std::uint32_t targetCount);
     api::Status apiClearTouchGrabTargetsForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken);
@@ -124,15 +114,27 @@ namespace rock::provider::runtime {
     api::Status apiRequestPlayerControllerJump(std::uint64_t ownerToken, const api::playercontroller::PlayerControllerJumpRequest& request);
     bool apiGetRawWandThumbstickV1(api::Hand hand, float* outX, float* outY);
     std::uint32_t apiGetNativeInputContextV1();
-    api::Status apiGetHandTargetDetailsV1(std::uint64_t ownerToken, api::Hand hand, RockProviderHandTargetDetailsV1* outDetails);
-    api::Status apiQueryReferenceInteractionV1(std::uint64_t ownerToken, const RockProviderReferenceQueryV1* query, RockProviderReferenceInteractionV1* outState);
-    api::Status apiQueryPowerArmorTargetV1(std::uint64_t ownerToken, const RockProviderReferenceQueryV1* query, RockProviderPowerArmorTargetV1* outTarget);
-    api::Status apiRequestPowerArmorGrabV1(std::uint64_t ownerToken, const RockProviderPowerArmorGrabRequestV1* request, std::uint64_t* outCommandId);
     rock::api::Status authorize(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t permission, bool requireThread = true,
         OwnerAccess access = OwnerAccess::Existing);
     rock::api::Status bind(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t major, std::uint32_t permissions);
     rock::api::Sample sample();
     void revoke(std::uint64_t owner);
+    // Grab: interaction commands, hand state and reservations.
+    api::Status requestForceGrab(std::uint64_t ownerToken, const api::grab::ForceGrabRequest& request, std::uint64_t& outCommandId);
+    api::Status requestForceRelease(std::uint64_t ownerToken, const api::grab::ForceReleaseRequest& request, std::uint64_t& outCommandId);
+    api::Status requestThrownDrop(std::uint64_t ownerToken, const api::grab::ThrownDropRequest& request, std::uint64_t& outCommandId);
+    api::Status requestPowerArmorGrab(std::uint64_t ownerToken, const api::grab::PowerArmorGrabRequest& request, std::uint64_t& outCommandId);
+    api::Status getInteractionCommandResult(std::uint64_t ownerToken, std::uint64_t commandId, api::grab::InteractionCommandResult& outResult);
+    api::Status cancelInteractionCommand(std::uint64_t ownerToken, std::uint64_t commandId);
+    // The hand's state at the last publication.
+    api::Status getHandInteractionState(std::uint64_t ownerToken, api::Hand hand, api::grab::HandInteractionState& outState);
+    api::Status getHandTargetDetails(std::uint64_t ownerToken, api::Hand hand, api::grab::HandTargetDetails& outDetails);
+    api::Status acquireHandReservation(std::uint64_t ownerToken, const api::grab::HandReservationRequest& request);
+    api::Status renewHandReservation(std::uint64_t ownerToken, const api::grab::HandReservationRequest& request);
+    api::Status releaseHandReservation(std::uint64_t ownerToken);
+    api::Status getHandReservationState(std::uint64_t ownerToken, api::grab::HandReservationState& outState);
+    api::Status queryReferenceInteraction(std::uint64_t ownerToken, const api::grab::ReferenceQuery& query, api::grab::ReferenceInteraction& outInteraction);
+    api::Status queryPowerArmorTarget(std::uint64_t ownerToken, const api::grab::ReferenceQuery& query, api::grab::PowerArmorTarget& outTarget);
     void refreshSources(); // Once per WeaponParts batch before key conversion.
     // Weapon slot 0's parts. Records carry opaque source keys; targets and
     // drives arrive with their keys already resolved to live nodes.

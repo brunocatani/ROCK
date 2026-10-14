@@ -696,7 +696,7 @@ namespace rock
         candidate.targetBodyIdentity = targetSnapshot.body;
         candidate.targetCollisionIdentity = targetSnapshot.collisionObject;
         if (presentation && presentation->animatedReferenceFormId != 0) {
-            provider::RockProviderReferenceQueryV1 query{};
+            api::grab::ReferenceQuery query{};
             query.referenceFormId = presentation->animatedReferenceFormId;
             query.referenceNativeHandle = presentation->animatedReferenceNativeHandle;
             auto* ref = reference_interaction::resolveQuery(query);
@@ -2032,7 +2032,7 @@ namespace rock
                 bool animatedTargetValid = true;
                 RE::NiTransform animatedWorld{};
                 if (latch.animatedReferenceFormId != 0) {
-                    provider::RockProviderReferenceQueryV1 query{};
+                    api::grab::ReferenceQuery query{};
                     query.referenceFormId = latch.animatedReferenceFormId;
                     query.referenceNativeHandle = latch.animatedReferenceNativeHandle;
                     auto* ref = reference_interaction::resolveQuery(query);

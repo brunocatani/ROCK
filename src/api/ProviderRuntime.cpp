@@ -160,7 +160,7 @@ namespace rock::provider::runtime
     std::atomic<std::uint32_t> s_currentProviderGeneration{ 0 };
     // Published together with the frame snapshot; indexed [right, left].
     std::array<api::weaponparts::GripState, 2> s_lastPartGripStates{};
-    std::array<RockProviderHandInteractionStateV1, 2> s_lastHandInteractionStates{};
+    std::array<provider::HandInteractionPublication, 2> s_lastHandInteractionStates{};
     api::weapon::WeaponState s_lastEquippedWeaponState{};
 
     std::mutex s_touchGrabMutex;
@@ -197,8 +197,8 @@ namespace rock::provider::runtime
     constexpr std::uint64_t kRockIssuedOwnerTokenNamespace = 0xA000'0000'0000'0000ull;
     constexpr std::uint64_t kRockIssuedOwnerTokenSequenceMask = 0x0FFF'FFFF'FFFF'FFFFull;
     constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
-        static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame) |
-        static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::FromPlayerInventory);
+        static_cast<std::uint32_t>(api::grab::ForceGrabFlag::UsePreferredGrabPointGame) |
+        provider::kForceGrabFromPlayerInventory;
     constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
         static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::ImmediateCollisionRestore) |
         static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::RequireMatchingTarget) |
@@ -277,13 +277,13 @@ namespace rock::provider::runtime
     struct InteractionCommandSlot
     {
         bool active{ false };
-        QueuedInteractionCommandV1 command{};
+        QueuedInteractionCommand command{};
     };
 
     struct InteractionCommandResultSlot
     {
         bool active{ false };
-        RockProviderInteractionCommandResultV1 result{};
+        api::grab::InteractionCommandResult result{};
     };
 
     std::mutex s_interactionCommandMutex;
@@ -502,30 +502,22 @@ namespace rock::provider::runtime
 
     bool invokeAnimationPhaseCallbackSafely(
         api::animation::PhaseCallback callback,
-        const RockProviderAnimationPhaseContextV1* context,
+        const api::animation::AnimationPhaseContext* context,
         void* userData)
     {
-        rock::api::animation::AnimationPhaseContext converted{};
-        converted.phase = static_cast<rock::api::animation::AnimationPhase>(context->phase);
-        converted.flags = context->flags;
-        converted.frameIndex = context->frameIndex;
-        converted.deltaSeconds = context->deltaSeconds;
-        converted.worldGeneration = context->worldGeneration;
-        converted.skeletonGeneration = context->skeletonGeneration;
-        converted.providerGeneration = context->providerGeneration;
         if (!callback) {
             return true;
         }
 
 #if defined(_MSC_VER)
         __try {
-            callback(&converted, userData);
+            callback(context, userData);
             return true;
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             return false;
         }
 #else
-        callback(&converted, userData);
+        callback(context, userData);
         return true;
 #endif
     }
@@ -864,7 +856,7 @@ namespace rock::provider::runtime
         }
     }
 
-    void publishCommandCompletedEvent(const RockProviderInteractionCommandResultV1& result)
+    void publishCommandCompletedEvent(const api::grab::InteractionCommandResult& result)
     {
         auto event = stampedEvent<api::grab::Event>(
             static_cast<std::uint32_t>(api::grab::EventKind::CommandCompleted), result.ownerToken);
@@ -1336,7 +1328,7 @@ namespace rock::provider::runtime
         return id;
     }
 
-    api::Hand commandHand(const QueuedInteractionCommandV1& command)
+    api::Hand commandHand(const QueuedInteractionCommand& command)
     {
         switch (command.kind) {
         case api::grab::InteractionCommandKind::ForceGrab:
@@ -1350,7 +1342,7 @@ namespace rock::provider::runtime
         }
     }
 
-    std::uint32_t commandTargetFormId(const QueuedInteractionCommandV1& command)
+    std::uint32_t commandTargetFormId(const QueuedInteractionCommand& command)
     {
         switch (command.kind) {
         case api::grab::InteractionCommandKind::ForceGrab:
@@ -1364,7 +1356,7 @@ namespace rock::provider::runtime
         }
     }
 
-    std::uint32_t commandTargetBodyId(const QueuedInteractionCommandV1& command)
+    std::uint32_t commandTargetBodyId(const QueuedInteractionCommand& command)
     {
         switch (command.kind) {
         case api::grab::InteractionCommandKind::ForceGrab:
@@ -1378,7 +1370,7 @@ namespace rock::provider::runtime
         }
     }
 
-    std::uint32_t commandWorldGeneration(const QueuedInteractionCommandV1& command)
+    std::uint32_t commandWorldGeneration(const QueuedInteractionCommand& command)
     {
         switch (command.kind) {
         case api::grab::InteractionCommandKind::ForceGrab:
@@ -1392,7 +1384,7 @@ namespace rock::provider::runtime
         }
     }
 
-    std::uint32_t commandSkeletonGeneration(const QueuedInteractionCommandV1& command)
+    std::uint32_t commandSkeletonGeneration(const QueuedInteractionCommand& command)
     {
         switch (command.kind) {
         case api::grab::InteractionCommandKind::ForceGrab:
@@ -1406,7 +1398,7 @@ namespace rock::provider::runtime
         }
     }
 
-    std::uint32_t commandProviderGeneration(const QueuedInteractionCommandV1& command)
+    std::uint32_t commandProviderGeneration(const QueuedInteractionCommand& command)
     {
         switch (command.kind) {
         case api::grab::InteractionCommandKind::ForceGrab:
@@ -1420,14 +1412,12 @@ namespace rock::provider::runtime
         }
     }
 
-    RockProviderInteractionCommandResultV1 makeCommandResult(
-        const QueuedInteractionCommandV1& command,
+    api::grab::InteractionCommandResult makeCommandResult(
+        const QueuedInteractionCommand& command,
         api::grab::InteractionCommandState state,
         api::grab::InteractionFailure failure)
     {
-        RockProviderInteractionCommandResultV1 result{};
-        result.size = sizeof(RockProviderInteractionCommandResultV1);
-        result.version = ROCK_PROVIDER_API_VERSION;
+        api::grab::InteractionCommandResult result{};
         result.ownerToken = command.ownerToken;
         result.commandId = command.commandId;
         result.kind = command.kind;
@@ -1450,7 +1440,7 @@ namespace rock::provider::runtime
         return result;
     }
 
-    void storeInteractionResultLocked(const RockProviderInteractionCommandResultV1& result)
+    void storeInteractionResultLocked(const api::grab::InteractionCommandResult& result)
     {
         for (auto& slot : s_interactionResults) {
             if (slot.active && slot.result.ownerToken == result.ownerToken && slot.result.commandId == result.commandId) {
@@ -1510,7 +1500,7 @@ namespace rock::provider::runtime
     }
 
     void completeInteractionCommandLocked(
-        const QueuedInteractionCommandV1& command,
+        const QueuedInteractionCommand& command,
         api::grab::InteractionCommandState state,
         api::grab::InteractionFailure failure)
     {
@@ -1708,7 +1698,7 @@ namespace rock::provider::runtime
         return api::Status::Ok;
     }
 
-    api::Status enqueueInteractionCommand(QueuedInteractionCommandV1 command, std::uint64_t* outCommandId)
+    api::Status enqueueInteractionCommand(QueuedInteractionCommand command, std::uint64_t* outCommandId)
     {
         if (!outCommandId) {
             return api::Status::InvalidArgument;
@@ -1802,17 +1792,15 @@ namespace rock::provider::runtime
 
 
     api::Status validateTargetQuery(std::uint64_t ownerToken,
-        const RockProviderReferenceQueryV1* query)
+        const api::grab::ReferenceQuery& query)
     {
-        if (!query || !ownerToken || !query->referenceFormId || query->furnitureMarkerIndex < 0) return api::Status::InvalidArgument;
-        if (query->size != sizeof(*query)) return api::Status::InvalidSize;
-        if (query->version != ROCK_PROVIDER_API_VERSION) return api::Status::UnsupportedVersion;
+        if (!ownerToken || !query.referenceFormId || query.furnitureMarkerIndex < 0) return api::Status::InvalidArgument;
         const auto permission = validateRegisteredOwner(ownerToken);
         if (permission != api::Status::Ok) return permission;
         if (!onAnimationOwnerThread()) return api::Status::WrongThread;
         const bool ready = apiIsProviderReady();
-        const auto result = ready ? validateGenerationGuards(query->worldGeneration,
-            query->skeletonGeneration, query->providerGeneration) : api::Status::NotReady;
+        const auto result = ready ? validateGenerationGuards(query.worldGeneration,
+            query.skeletonGeneration, query.providerGeneration) : api::Status::NotReady;
         if (result != api::Status::Ok) {
             // Animation-owner thread only. Preserve the query contract and log
             // the actual rejecting authority, including during frame resets.
@@ -1828,9 +1816,9 @@ namespace rock::provider::runtime
                     published = s_lastSnapshot;
                 }
                 logger::warn("ROCK reference query rejected owner={:016X} ref={:08X} result={} stage={} frame={} requested={}/{}/{} authorityAvailable={} authority={}/{}/{} published={}/{}/{} publishedFrame={}",
-                    ownerToken, query->referenceFormId, static_cast<unsigned>(result),
+                    ownerToken, query.referenceFormId, static_cast<unsigned>(result),
                     ready ? "generation-guards" : "provider-readiness", frame,
-                    query->worldGeneration, query->skeletonGeneration, query->providerGeneration,
+                    query.worldGeneration, query.skeletonGeneration, query.providerGeneration,
                     s_generationStateAvailable.load(std::memory_order_acquire),
                     s_currentWorldGeneration.load(std::memory_order_acquire),
                     s_currentSkeletonGeneration.load(std::memory_order_acquire),
@@ -1869,42 +1857,33 @@ namespace rock::provider::runtime
 
 
     [[nodiscard]] bool validOffhandReservationRequest(
-        const RockProviderOffhandReservationRequestV1& request)
+        const api::grab::HandReservationRequest& request)
     {
-        return request.size == sizeof(RockProviderOffhandReservationRequestV1) &&
-               request.version != 0 &&
-               request.version <= ROCK_PROVIDER_API_VERSION &&
-               request.reservation != api::grab::HandReservationKind::Normal &&
+        return request.reservation != api::grab::HandReservationKind::Normal &&
                (request.reservation == api::grab::HandReservationKind::ReloadReserved ||
                    request.reservation == api::grab::HandReservationKind::ReloadPoseOverride) &&
                request.leaseFrames != 0;
     }
 
-    api::Status setOffhandReservationLeaseV1(
+    api::Status setHandReservationLease(
         const std::uint64_t ownerToken,
-        const RockProviderOffhandReservationRequestV1* request,
+        const api::grab::HandReservationRequest& request,
         const bool requireExisting)
     {
-        if (ownerToken == 0 || !request) {
+        if (ownerToken == 0) {
             return api::Status::InvalidArgument;
         }
-        if (request->size != sizeof(RockProviderOffhandReservationRequestV1)) {
-            return api::Status::InvalidSize;
-        }
-        if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
-            return api::Status::UnsupportedVersion;
-        }
-        if (!validOffhandReservationRequest(*request)) {
+        if (!validOffhandReservationRequest(request)) {
             return api::Status::InvalidArgument;
         }
         // One weapon today: only the primary weapon's offhand can be reserved.
-        if (request->hand != offhandHand()) {
+        if (request.hand != offhandHand()) {
             return api::Status::HandUnavailable;
         }
         const auto generationResult = validateGenerationGuards(
-            request->worldGeneration,
-            request->skeletonGeneration,
-            request->providerGeneration);
+            request.worldGeneration,
+            request.skeletonGeneration,
+            request.providerGeneration);
         if (generationResult != api::Status::Ok) {
             return generationResult;
         }
@@ -1925,18 +1904,18 @@ namespace rock::provider::runtime
             return api::Status::OwnerConflict;
         }
         const auto leaseFrames = provider_lease_policy::clampLeaseFrames(
-            request->leaseFrames,
+            request.leaseFrames,
             ROCK_PROVIDER_MAX_OFFHAND_RESERVATION_LEASE_FRAMES_V1);
         s_offhandReservationSlot = OffhandReservationSlot{
             .ownerToken = ownerToken,
-            .hand = request->hand,
-            .reservation = request->reservation,
+            .hand = request.hand,
+            .reservation = request.reservation,
             .expiresAfterFrame = provider_lease_policy::exclusiveExpiryFrame(
                 frameIndex,
                 leaseFrames),
-            .worldGeneration = request->worldGeneration,
-            .skeletonGeneration = request->skeletonGeneration,
-            .providerGeneration = request->providerGeneration,
+            .worldGeneration = request.worldGeneration,
+            .skeletonGeneration = request.skeletonGeneration,
+            .providerGeneration = request.providerGeneration,
         };
         publishOffhandReservationLocked(s_offhandReservationSlot);
         return api::Status::Ok;
@@ -1968,8 +1947,8 @@ namespace rock::provider::runtime
     }
 
     [[nodiscard]] bool sameHeldBodies(
-        const RockProviderHandInteractionStateV1& left,
-        const RockProviderHandInteractionStateV1& right) noexcept
+        const provider::HandInteractionPublication& left,
+        const provider::HandInteractionPublication& right) noexcept
     {
         if (left.heldBodyCount != right.heldBodyCount) {
             return false;
@@ -1983,8 +1962,8 @@ namespace rock::provider::runtime
     }
 
     [[nodiscard]] bool sameHandTarget(
-        const RockProviderHandInteractionStateV1& left,
-        const RockProviderHandInteractionStateV1& right) noexcept
+        const provider::HandInteractionPublication& left,
+        const provider::HandInteractionPublication& right) noexcept
     {
         return left.targetKind == right.targetKind &&
                left.reservedTargetIdentity ==
@@ -1995,14 +1974,14 @@ namespace rock::provider::runtime
     }
 
     [[nodiscard]] bool handGripActive(
-        const RockProviderHandInteractionStateV1& state) noexcept
+        const provider::HandInteractionPublication& state) noexcept
     {
         return provider_state_policy::handHolding(state);
     }
 
     [[nodiscard]] bool sameHandGrip(
-        const RockProviderHandInteractionStateV1& left,
-        const RockProviderHandInteractionStateV1& right) noexcept
+        const provider::HandInteractionPublication& left,
+        const provider::HandInteractionPublication& right) noexcept
     {
         constexpr std::uint32_t gripFlags =
             static_cast<std::uint32_t>(
@@ -2027,8 +2006,8 @@ namespace rock::provider::runtime
     }
 
     [[nodiscard]] bool sameHandInteractionPayload(
-        const RockProviderHandInteractionStateV1& left,
-        const RockProviderHandInteractionStateV1& right) noexcept
+        const provider::HandInteractionPublication& left,
+        const provider::HandInteractionPublication& right) noexcept
     {
         return left.hand == right.hand &&
                left.phase == right.phase &&
@@ -2045,14 +2024,14 @@ namespace rock::provider::runtime
     }
 
     void assignHandInteractionSequences(
-        RockProviderHandInteractionStateV1& current,
-        const RockProviderHandInteractionStateV1& previous,
+        provider::HandInteractionPublication& current,
+        const provider::HandInteractionPublication& previous,
         const bool hasPrevious)
     {
         if (!hasPrevious) {
             current.stateSequence = 1;
             current.targetSequence =
-                sameHandTarget(current, RockProviderHandInteractionStateV1{}) ?
+                sameHandTarget(current, provider::HandInteractionPublication{}) ?
                     0 :
                     1;
             current.gripSequence = handGripActive(current) ? 1 : 0;
@@ -2233,7 +2212,7 @@ namespace rock::provider
         std::array<api::weaponparts::GripState, 2> partGripStates{};
         pi.fillProviderWeaponPartGripStates(partGripStates);
 
-        std::array<RockProviderHandInteractionStateV1, 2>
+        std::array<provider::HandInteractionPublication, 2>
             handInteractionStates{};
         pi.fillProviderHandInteractionStates(handInteractionStates);
         for (auto& state : handInteractionStates) {
@@ -2513,7 +2492,7 @@ namespace rock::provider
             pruneHandVisualAuthorityLocked(currentProviderFrameIndex());
         }
 
-        RockProviderAnimationPhaseContextV1 context{};
+        api::animation::AnimationPhaseContext context{};
         context.phase = phase;
         context.frameIndex = phaseFrameIndex;
         /*
@@ -2522,8 +2501,6 @@ namespace rock::provider
          * elapsed time instead of a fabricated nominal-rate value.
          */
         context.deltaSeconds = timing.valid ? timing.deltaSeconds : 0.0f;
-        context.activeNativeAnimationAuthorityFlags =
-            s_nativeAnimationAuthorityFlags.load(std::memory_order_acquire);
 
         const auto& runtime = runtime_state::currentFrame();
         context.flags |= static_cast<std::uint32_t>(
@@ -2653,7 +2630,7 @@ namespace rock::provider
             std::scoped_lock lock(s_touchGrabMutex);
             s_touchGrabTargets.clearAll();
         }
-        clearInteractionCommandsForProviderLossV1(api::grab::InteractionFailure::ProviderNotReady);
+        clearInteractionCommandsForProviderLoss(api::grab::InteractionFailure::ProviderNotReady);
         {
             std::scoped_lock lock(s_handInputSuppressionMutex);
             for (auto& slot : s_handInputSuppressions) {
@@ -2794,7 +2771,7 @@ namespace rock::provider
         s_currentProviderGeneration.store(0, std::memory_order_release);
     }
 
-    bool dequeueInteractionCommandV1(QueuedInteractionCommandV1& outCommand)
+    bool dequeueInteractionCommand(QueuedInteractionCommand& outCommand)
     {
         std::scoped_lock lock(s_interactionCommandMutex);
         InteractionCommandSlot* oldestSlot = nullptr;
@@ -2822,7 +2799,7 @@ namespace rock::provider
         return false;
     }
 
-    bool isInteractionCommandActiveV1(std::uint64_t ownerToken, std::uint64_t commandId)
+    bool isInteractionCommandActive(std::uint64_t ownerToken, std::uint64_t commandId)
     {
         if (ownerToken == 0 || commandId == 0) {
             return false;
@@ -2835,7 +2812,7 @@ namespace rock::provider
         return s_forceGrabReservations.matches(ownerToken, commandId);
     }
 
-    bool completeInteractionCommandV1(const RockProviderInteractionCommandResultV1& result)
+    bool completeInteractionCommand(const api::grab::InteractionCommandResult& result)
     {
         std::scoped_lock lock(s_interactionCommandMutex);
         if (result.kind == api::grab::InteractionCommandKind::ForceGrab &&
@@ -2849,7 +2826,7 @@ namespace rock::provider
         return true;
     }
 
-    void clearInteractionCommandsForProviderLossV1(api::grab::InteractionFailure failure)
+    void clearInteractionCommandsForProviderLoss(api::grab::InteractionFailure failure)
     {
         std::scoped_lock lock(s_interactionCommandMutex);
         /*
@@ -2926,7 +2903,7 @@ namespace rock::provider
                    requiredFlags) == requiredFlags;
     }
 
-    void markInteractionCommandStageV1(
+    void markInteractionCommandStage(
         const std::uint64_t ownerToken,
         const std::uint64_t commandId,
         const api::grab::CommandStage stage)

@@ -15,8 +15,8 @@ api::Status PhysicsInteraction::getHeldObjectPose(api::OwnerToken owner,api::Han
     if(which!=api::Hand::Left&&which!=api::Hand::Right)return api::Status::InvalidArgument;
     auto* world=_lifecycle.cachedHknpWorld;
     if(!isProviderReady()||!world||!physicsWritesAllowedForWorld(world))return api::Status::NotReady;
-    provider::RockProviderHandInteractionStateV1 observed;
-    const auto status=provider::runtime::apiGetHandInteractionStateV1(owner,static_cast<api::Hand>(which),&observed);
+    api::grab::HandInteractionState observed;
+    const auto status=provider::runtime::getHandInteractionState(owner, static_cast<api::Hand>(which), observed);
     if(status!=api::Status::Ok)return static_cast<api::Status>(status);
     const auto& hand=which==api::Hand::Left?_leftHand:_rightHand;
     if(!hand.isHolding()||!hand.getHeldRef()||hand.getHeldRef()->GetFormID()!=observed.targetFormId)return api::Status::HandUnavailable;
@@ -36,8 +36,8 @@ api::Status PhysicsInteraction::setHeldObjectTarget(api::OwnerToken owner,const 
     if(request.sample.frameIndex>sample.frameIndex||sample.frameIndex-request.sample.frameIndex>1||
         request.sample.worldGeneration!=sample.worldGeneration||request.sample.skeletonGeneration!=sample.skeletonGeneration||
         request.sample.providerGeneration!=sample.providerGeneration||request.sample.collisionGeneration!=sample.collisionGeneration)return api::Status::GenerationMismatch;
-    provider::RockProviderHandInteractionStateV1 observed;
-    const auto result=provider::runtime::apiGetHandInteractionStateV1(owner,static_cast<api::Hand>(request.hand),&observed);
+    api::grab::HandInteractionState observed;
+    const auto result=provider::runtime::getHandInteractionState(owner, static_cast<api::Hand>(request.hand), observed);
     if(result!=api::Status::Ok)return static_cast<api::Status>(result);
     if(observed.targetFormId!=request.referenceFormId||!(observed.flags&(1u<<3)))return api::Status::HandUnavailable;
     if(!request.gripSequence||observed.gripSequence!=request.gripSequence)return api::Status::GenerationMismatch;

@@ -38,10 +38,10 @@ namespace rock
         _forceGrab.retainedWeaponGrabs = {};
         for (auto& commit : _forceGrab.pendingCommits) {
             if (!commit.active) continue;
-            if (provider::isInteractionCommandActiveV1(commit.providerResultTemplate.ownerToken,commit.providerResultTemplate.commandId)) {
+            if (provider::isInteractionCommandActive(commit.providerResultTemplate.ownerToken,commit.providerResultTemplate.commandId)) {
                 commit.providerResultTemplate.state = api::grab::InteractionCommandState::Cancelled;
                 commit.providerResultTemplate.failure = api::grab::InteractionFailure::ProviderNotReady;
-                provider::completeInteractionCommandV1(commit.providerResultTemplate);
+                provider::completeInteractionCommand(commit.providerResultTemplate);
             }
             rollbackInventoryTransfer(commit, "pending-grabs-cleared");
             if (commit.weaponTransferSequence) _equipped.transition.recordOutgoingResult(commit.weaponTransferSequence, false);
@@ -166,7 +166,7 @@ namespace rock
     {
         for (auto& commit : _forceGrab.pendingCommits) {
             if (commit.active && !commit.internallyOwned() &&
-                !provider::isInteractionCommandActiveV1(
+                !provider::isInteractionCommandActive(
                     commit.providerResultTemplate.ownerToken,
                     commit.providerResultTemplate.commandId)) {
                 rollbackInventoryTransfer(commit, "provider-command-pruned");
@@ -240,7 +240,7 @@ namespace rock
                 commit.providerResultTemplate.state = api::grab::InteractionCommandState::Rejected;
                 commit.providerResultTemplate.failure = providerFailure;
                 if (!commit.internallyOwned()) {
-                    provider::completeInteractionCommandV1(commit.providerResultTemplate);
+                    provider::completeInteractionCommand(commit.providerResultTemplate);
                 }
                 if (commit.isEquippedWeaponTransfer()) {
                     _drop.visuals[commit.isLeft ? 1u : 0u].release(reason);
@@ -257,7 +257,7 @@ namespace rock
                 commit = {};
             };
 
-            if (!commit.internallyOwned() && !provider::isInteractionCommandActiveV1(
+            if (!commit.internallyOwned() && !provider::isInteractionCommandActive(
                     commit.providerResultTemplate.ownerToken,
                     commit.providerResultTemplate.commandId)) {
                 ROCK_LOG_INFO(Hand,
@@ -432,7 +432,7 @@ namespace rock
             commit.providerResultTemplate.targetBodyId = primaryBodyId;
             commit.providerResultTemplate.state = api::grab::InteractionCommandState::Succeeded;
             commit.providerResultTemplate.failure = api::grab::InteractionFailure::None;
-            if (!commit.internallyOwned() && !provider::completeInteractionCommandV1(commit.providerResultTemplate)) {
+            if (!commit.internallyOwned() && !provider::completeInteractionCommand(commit.providerResultTemplate)) {
                 /*
                  * Owner/provider loss can race the final main-thread
                  * commit. Do not publish or retain a grab whose command

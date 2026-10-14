@@ -30,49 +30,49 @@ namespace rock::provider::runtime {
     api::Sample sample() {return {20,30,1,2,3,4};}
     void deferRevoke(std::uint64_t token) {assert(token==testOwner);revoked=true;revokeRequested=true;}
     void reportBoundaryFailure(std::uint64_t,api::InterfaceId) noexcept {assert(false);}
-    api::Status apiRequestForceGrabV1(std::uint64_t,const RockProviderForceGrabRequestV1*,std::uint64_t*) {
+    api::Status requestForceGrab(std::uint64_t,const api::grab::ForceGrabRequest&,std::uint64_t&) {
         assert(false);return api::Status::NotReady;
     }
-    api::Status apiGetHandInteractionStateV1(std::uint64_t,api::Hand hand,RockProviderHandInteractionStateV1* state) {
+    api::Status getHandInteractionState(std::uint64_t,api::Hand hand,api::grab::HandInteractionState& state) {
         if(!snapshotReady)return api::Status::NotReady;
-        state->hand=hand;
-        state->flags=static_cast<std::uint32_t>(api::grab::HandInteractionFlag::Valid)|
+        state.hand=hand;
+        state.flags=static_cast<std::uint32_t>(api::grab::HandInteractionFlag::Valid)|
             static_cast<std::uint32_t>(api::grab::HandInteractionFlag::LooseWeapon);
-        state->phase=api::grab::HandInteractionPhase::Holding;
-        state->targetFormId=123;
-        state->frameIndex=20;
-        state->worldGeneration=1;state->skeletonGeneration=2;state->providerGeneration=3;
+        state.phase=api::grab::HandInteractionPhase::Holding;
+        state.targetFormId=123;
+        state.frameIndex=20;
+        state.worldGeneration=1;state.skeletonGeneration=2;state.providerGeneration=3;
         return api::Status::Ok;
     }
-    api::Status apiGetHandTargetDetailsV1(std::uint64_t owner,api::Hand hand,RockProviderHandTargetDetailsV1* details) {
-        const auto result=apiGetHandInteractionStateV1(owner,hand,&details->handState);
-        details->handState.releaseSequence=45;details->handState.reservedTargetIdentity=789;
-        details->reference.referenceFormId=123;details->reference.referenceNativeHandle=987;
-        std::strcpy(details->meshPartName,"Lid");
+    api::Status getHandTargetDetails(std::uint64_t owner,api::Hand hand,api::grab::HandTargetDetails& details) {
+        const auto result=getHandInteractionState(owner,hand,details.handState);
+        details.handState.releaseSequence=45;details.handState.reservedTargetIdentity=789;
+        details.referenceFormId=123;details.referenceNativeHandle=987;
+        std::strcpy(details.meshPartName,"Lid");
         return result;
     }
-    api::Status apiRequestPowerArmorGrabV1(std::uint64_t,const RockProviderPowerArmorGrabRequestV1* request,std::uint64_t* command) {
-        assert(request->target.referenceFormId==123 && request->target.referenceNativeHandle==987);
-        assert(request->target.providerGeneration==3 && request->point==api::PowerArmorPoint::LeftArmorHand);
-        *command=7;return api::Status::RequestQueued;
+    api::Status requestPowerArmorGrab(std::uint64_t,const api::grab::PowerArmorGrabRequest& request,std::uint64_t& command) {
+        assert(request.target.referenceFormId==123 && request.target.referenceNativeHandle==987);
+        assert(request.target.providerGeneration==3 && request.point==api::PowerArmorPoint::LeftArmorHand);
+        command=7;return api::Status::RequestQueued;
     }
-    api::Status apiQueryPowerArmorTargetV1(std::uint64_t,const RockProviderReferenceQueryV1* query,RockProviderPowerArmorTargetV1* target) {
-        assert(query->referenceFormId==123 && query->furnitureMarkerIndex==2);
-        target->actorFormId=55;target->frameReference.referenceFormId=124;
-        target->points[1].point=api::PowerArmorPoint::LeftArmorHand;target->points[1].valid=1;
-        target->points[1].world.translate[0]=9;
+    api::Status queryPowerArmorTarget(std::uint64_t,const api::grab::ReferenceQuery& query,api::grab::PowerArmorTarget& target) {
+        assert(query.referenceFormId==123 && query.furnitureMarkerIndex==2);
+        target.actorFormId=55;target.frameReference.referenceFormId=124;
+        target.points[1].point=api::PowerArmorPoint::LeftArmorHand;target.points[1].valid=1;
+        target.points[1].world.translate[0]=9;
         return api::Status::Ok;
     }
     // Grab calls this test does not reach.
-    api::Status apiGetInteractionCommandResultV1(std::uint64_t,std::uint64_t,RockProviderInteractionCommandResultV1*) {assert(false);return api::Status::NotReady;}
-    api::Status apiRequestForceReleaseV1(std::uint64_t,const RockProviderForceReleaseRequestV1*,std::uint64_t*) {assert(false);return api::Status::NotReady;}
-    api::Status apiRequestThrownDropV1(std::uint64_t,const RockProviderThrownDropRequestV1*,std::uint64_t*) {assert(false);return api::Status::NotReady;}
-    api::Status apiCancelInteractionCommandV1(std::uint64_t,std::uint64_t) {assert(false);return api::Status::NotReady;}
-    api::Status apiAcquireOffhandReservationV1(std::uint64_t,const RockProviderOffhandReservationRequestV1*) {assert(false);return api::Status::NotReady;}
-    api::Status apiRenewOffhandReservationV1(std::uint64_t,const RockProviderOffhandReservationRequestV1*) {assert(false);return api::Status::NotReady;}
-    api::Status apiReleaseOffhandReservationV1(std::uint64_t) {assert(false);return api::Status::NotReady;}
-    api::Status apiGetOffhandReservationStateV1(std::uint64_t,RockProviderOffhandReservationStateV1*) {assert(false);return api::Status::NotReady;}
-    api::Status apiQueryReferenceInteractionV1(std::uint64_t,const RockProviderReferenceQueryV1*,RockProviderReferenceInteractionV1*) {assert(false);return api::Status::NotReady;}
+    api::Status getInteractionCommandResult(std::uint64_t,std::uint64_t,api::grab::InteractionCommandResult&) {assert(false);return api::Status::NotReady;}
+    api::Status requestForceRelease(std::uint64_t,const api::grab::ForceReleaseRequest&,std::uint64_t&) {assert(false);return api::Status::NotReady;}
+    api::Status requestThrownDrop(std::uint64_t,const api::grab::ThrownDropRequest&,std::uint64_t&) {assert(false);return api::Status::NotReady;}
+    api::Status cancelInteractionCommand(std::uint64_t,std::uint64_t) {assert(false);return api::Status::NotReady;}
+    api::Status acquireHandReservation(std::uint64_t,const api::grab::HandReservationRequest&) {assert(false);return api::Status::NotReady;}
+    api::Status renewHandReservation(std::uint64_t,const api::grab::HandReservationRequest&) {assert(false);return api::Status::NotReady;}
+    api::Status releaseHandReservation(std::uint64_t) {assert(false);return api::Status::NotReady;}
+    api::Status getHandReservationState(std::uint64_t,api::grab::HandReservationState&) {assert(false);return api::Status::NotReady;}
+    api::Status queryReferenceInteraction(std::uint64_t,const api::grab::ReferenceQuery&,api::grab::ReferenceInteraction&) {assert(false);return api::Status::NotReady;}
     api::Status getHeldPlacementState(api::grab::HeldPlacementState&) {assert(false);return api::Status::NotReady;}
     api::Status submitHeldPlacementIntent(api::OwnerToken,const api::grab::HeldPlacementIntent&) {assert(false);return api::Status::NotReady;}
     api::Status clearHeldPlacementIntent(api::OwnerToken) {assert(false);return api::Status::NotReady;}

@@ -102,9 +102,8 @@ namespace rock::storage_service
                 status = validate(request, ref, frame); if (status != api::Status::Ok) return status;
                 if (request->hand != api::Hand::None) {
                     auto& hand = request->hand == api::Hand::Left ? physics->getLeftHand() : physics->getRightHand();
-                    provider::RockProviderHandInteractionStateV1 published{};
-                    status = static_cast<api::Status>(provider::runtime::apiGetHandInteractionStateV1(owner,
-                        static_cast<api::Hand>(request->hand), &published));
+                    api::grab::HandInteractionState published{};
+                    status = provider::runtime::getHandInteractionState(owner, static_cast<api::Hand>(request->hand), published);
                     if (status != api::Status::Ok || published.gripSequence != request->gripSequence ||
                         !hand.isHolding() || hand.getHeldRef() != ref.get()) return api::Status::TargetUnavailable;
                 } else if (held(*physics, ref->formID)) return api::Status::ObjectAlreadyOwned;
@@ -174,9 +173,8 @@ namespace rock::storage_service
                 if (request->hand == api::Hand::None) return api::Status::InvalidArgument;
                 const unsigned index = request->hand == api::Hand::Left ? 1 : 0;
                 auto& hand = index ? physics->getLeftHand() : physics->getRightHand();
-                provider::RockProviderHandInteractionStateV1 published{};
-                status = static_cast<api::Status>(provider::runtime::apiGetHandInteractionStateV1(owner,
-                    static_cast<api::Hand>(request->hand), &published));
+                api::grab::HandInteractionState published{};
+                status = provider::runtime::getHandInteractionState(owner, static_cast<api::Hand>(request->hand), published);
                 if (status != api::Status::Ok || published.gripSequence != request->gripSequence ||
                     !hand.isHolding() || hand.getHeldRef() != ref.get()) return api::Status::TargetUnavailable;
                 if (hand.getHeldBodyIds().empty() || hand.getHeldBodyIds().size() > 64) return api::Status::CapacityFull;
@@ -212,13 +210,13 @@ namespace rock::storage_service
             try {
                 const auto access = authorize(owner); if (access != api::Status::Ok) return access;
                 
-                provider::RockProviderForceGrabRequestV1 native{};
+                api::grab::ForceGrabRequest native{};
                 native.hand = static_cast<api::Hand>(request->hand);
                 native.flags = request->flags; native.targetFormId = request->targetFormId; native.targetBodyId = request->targetBodyId;
                 native.worldGeneration = request->worldGeneration; native.skeletonGeneration = request->skeletonGeneration;
                 native.providerGeneration = request->providerGeneration; native.maxDistanceGame = request->maxDistanceGame;
                 std::copy_n(request->preferredGrabPointGame, 3, native.preferredGrabPointGame);
-                return static_cast<api::Status>(provider::runtime::apiRequestForceGrabV1(owner, &native, command));
+                return provider::runtime::requestForceGrab(owner, native, *command);
             } catch (...) { return api::Status::InternalError; }
         }
         RE::NiAVObject* feedbackNode(Feedback& value, PhysicsInteraction& physics) {
@@ -238,8 +236,8 @@ namespace rock::storage_service
                 auto* physics=interaction(); provider::Publication frame;
                 if(!physics || !provider::runtime::copyPublication(frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
                 if(request->worldGeneration!=frame.worldGeneration || request->skeletonGeneration!=frame.skeletonGeneration || request->providerGeneration!=frame.providerGeneration) return api::Status::GenerationMismatch;
-                provider::RockProviderHandInteractionStateV1 hand{};
-                if(provider::runtime::apiGetHandInteractionStateV1(owner,static_cast<api::Hand>(request->hand),&hand)!=api::Status::Ok ||
+                api::grab::HandInteractionState hand{};
+                if(provider::runtime::getHandInteractionState(owner, static_cast<api::Hand>(request->hand), hand)!=api::Status::Ok ||
                     hand.gripSequence!=request->gripSequence) return api::Status::TargetUnavailable;
                 auto& value=feedback[request->hand==api::Hand::Left?1:0];
                 if(value.owner && value.owner!=owner && value.deadline>=frame.frameIndex) return api::Status::OwnerConflict;
@@ -277,8 +275,8 @@ namespace rock::storage_service
             auto& hand=request.hand==api::Hand::Left?physics.getLeftHand():physics.getRightHand();
             auto& other=request.hand==api::Hand::Left?physics.getRightHand():physics.getLeftHand();
             if (hand.isHolding() || !other.isHolding() || other.getHeldRef()!=value.parent.get()) return nullptr;
-            provider::RockProviderHandInteractionStateV1 state{};
-            if (provider::runtime::apiGetHandInteractionStateV1(value.owner,static_cast<api::Hand>(request.hand),&state)!=api::Status::Ok) return nullptr;
+            api::grab::HandInteractionState state{};
+            if (provider::runtime::getHandInteractionState(value.owner, static_cast<api::Hand>(request.hand), state)!=api::Status::Ok) return nullptr;
             using Flag=api::grab::HandInteractionFlag;
             constexpr unsigned occupied=unsigned(Flag::FiringGrip)|unsigned(Flag::PartGrip)|unsigned(Flag::PartCarry)|unsigned(Flag::TouchGrab)|unsigned(Flag::NativeWeaponCarry)|unsigned(Flag::RockGripActive)|unsigned(Flag::TransitionSuppressed);
             if (!(state.flags & unsigned(Flag::Valid)) || state.heldBodyCount || (state.flags & occupied)) return nullptr;

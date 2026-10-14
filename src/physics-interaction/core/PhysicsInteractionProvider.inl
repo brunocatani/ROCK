@@ -586,9 +586,9 @@
             _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire));
     }
 
-    bool PhysicsInteraction::getProviderHandTargetDetailsV1(
-        const ::rock::provider::RockProviderHandInteractionStateV1& handState,
-        ::rock::provider::RockProviderHandTargetDetailsV1& out) const
+    bool PhysicsInteraction::getProviderHandTargetDetails(
+        const provider::HandInteractionPublication& handState,
+        api::grab::HandTargetDetails& out) const
     {
         using Flag = api::grab::TargetDetailFlag;
         out = {};
@@ -621,15 +621,16 @@
         }
         if (!ref && out.handState.targetFormId != 0)
             ref = RE::TESForm::GetFormByID<RE::TESObjectREFR>(out.handState.targetFormId);
-        if (reference_interaction::describe(ref, out.reference)) {
+        if (api::grab::ReferenceInteraction reference{}; reference_interaction::describe(ref, reference)) {
             out.flags |= static_cast<std::uint32_t>(Flag::Reference);
-            out.reference.worldGeneration = out.handState.worldGeneration;
+            out.referenceFormId = reference.referenceFormId;
+            out.referenceNativeHandle = reference.referenceNativeHandle;
         }
         return true;
     }
 
     void PhysicsInteraction::fillProviderHandInteractionStates(
-        std::array<::rock::provider::RockProviderHandInteractionStateV1, 2>& outStates) const
+        std::array<provider::HandInteractionPublication, 2>& outStates) const
     {
         using Phase =
             api::grab::HandInteractionPhase;

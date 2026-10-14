@@ -1,5 +1,6 @@
 #pragma once
 
+#include "api/HandInteractionPublication.h"
 #include "api/ProviderRuntimeTypes.h"
 
 #include <algorithm>
@@ -62,7 +63,7 @@ namespace rock::provider_state_policy
             state.supportHand = handling.firingHand == api::Hand::Left ? api::Hand::Right : api::Hand::Left;
     }
 
-    [[nodiscard]] constexpr bool handHolding(const RockProviderHandInteractionStateV1& state) noexcept
+    [[nodiscard]] constexpr bool handHolding(const provider::HandInteractionPublication& state) noexcept
     {
         using Flag = api::grab::HandInteractionFlag;
         using Phase = api::grab::HandInteractionPhase;
@@ -74,7 +75,7 @@ namespace rock::provider_state_policy
     // Detailed captured grips remain ROCK-owned. Generic hand occupancy also
     // includes native equipped carry; stale selection metadata must not leak
     // into that occupied hand and masquerade as a held loose reference.
-    inline void applyWeaponOccupancy(RockProviderHandInteractionStateV1& state,
+    inline void applyWeaponOccupancy(provider::HandInteractionPublication& state,
         const WeaponHandling& handling,
         const api::weaponparts::GripState& grip) noexcept
     {

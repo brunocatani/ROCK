@@ -15,9 +15,9 @@ namespace rock::provider::interaction_command_policy
                state == api::grab::InteractionCommandState::Cancelled;
     }
 
-    [[nodiscard]] inline constexpr RockProviderInteractionCommandResultV1 mergeResultHistory(
-        const RockProviderInteractionCommandResultV1& existing,
-        const RockProviderInteractionCommandResultV1& update,
+    [[nodiscard]] inline constexpr api::grab::InteractionCommandResult mergeResultHistory(
+        const api::grab::InteractionCommandResult& existing,
+        const api::grab::InteractionCommandResult& update,
         const std::uint64_t currentFrame) noexcept
     {
         auto merged = update;

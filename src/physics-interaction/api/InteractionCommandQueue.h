@@ -1,23 +1,28 @@
 #pragma once
 
-#include "api/ProviderRuntimeTypes.h"
+#include <ROCK/Grab.h>
 
 namespace rock::provider
 {
-    struct QueuedInteractionCommandV1
+    // ROCK-internal force-grab flag: an inventory grab reaches the queue as a
+    // force grab that first drops one owned item. A consumer's
+    // ForceGrabRequest can never carry it.
+    inline constexpr std::uint32_t kForceGrabFromPlayerInventory = 1u << 1;
+
+    struct QueuedInteractionCommand
     {
         std::uint64_t ownerToken{ 0 };
         std::uint64_t commandId{ 0 };
         api::grab::InteractionCommandKind kind{ api::grab::InteractionCommandKind::Unknown };
-        RockProviderForceGrabRequestV1 forceGrab{};
+        api::grab::ForceGrabRequest forceGrab{};
         api::PowerArmorPoint powerArmorPoint{};
         std::uint32_t powerArmorReferenceNativeHandle = 0;
-        RockProviderForceReleaseRequestV1 forceRelease{};
-        RockProviderThrownDropRequestV1 thrownDrop{};
+        api::grab::ForceReleaseRequest forceRelease{};
+        api::grab::ThrownDropRequest thrownDrop{};
     };
 
-    [[nodiscard]] bool dequeueInteractionCommandV1(QueuedInteractionCommandV1& outCommand);
-    [[nodiscard]] bool isInteractionCommandActiveV1(std::uint64_t ownerToken, std::uint64_t commandId);
-    bool completeInteractionCommandV1(const RockProviderInteractionCommandResultV1& result);
-    void clearInteractionCommandsForProviderLossV1(api::grab::InteractionFailure failure);
+    [[nodiscard]] bool dequeueInteractionCommand(QueuedInteractionCommand& outCommand);
+    [[nodiscard]] bool isInteractionCommandActive(std::uint64_t ownerToken, std::uint64_t commandId);
+    bool completeInteractionCommand(const api::grab::InteractionCommandResult& result);
+    void clearInteractionCommandsForProviderLoss(api::grab::InteractionFailure failure);
 }

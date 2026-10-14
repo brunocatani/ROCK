@@ -1,4 +1,5 @@
 #pragma once
+#include "api/HandInteractionPublication.h"
 #include "api/ObjectRestRequests.h"
 #include "api/EjectionContactRequests.h"
 #include "api/WeaponPartRequests.h"
@@ -247,9 +248,9 @@ namespace rock
             const api::collision::WorldRaycastRequest& request,
             api::collision::WorldRaycastResult& outResult) const;
         void releaseProviderPowerArmorGrabs(std::uint64_t ownerToken);
-        bool getProviderHandTargetDetailsV1(
-            const ::rock::provider::RockProviderHandInteractionStateV1& handState,
-            ::rock::provider::RockProviderHandTargetDetailsV1& outDetails) const;
+        bool getProviderHandTargetDetails(
+            const provider::HandInteractionPublication& handState,
+            api::grab::HandTargetDetails& outDetails) const;
         std::uint32_t copyProviderBodyContacts(
             api::collision::BodyContact* outContacts,
             std::uint32_t maxContacts) const;
@@ -261,7 +262,7 @@ namespace rock
         void fillProviderWeaponPartGripStates(
             std::array<api::weaponparts::GripState, 2>& outStates) const;
         void fillProviderHandInteractionStates(
-            std::array<::rock::provider::RockProviderHandInteractionStateV1, 2>& outStates) const;
+            std::array<provider::HandInteractionPublication, 2>& outStates) const;
         bool queryProviderWeaponState(
             api::weapon::WeaponState& outState) const;
         api::Status captureProviderInventoryWeapon(std::uint32_t form, std::uint32_t stack,

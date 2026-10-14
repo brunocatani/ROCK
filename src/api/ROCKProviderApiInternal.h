@@ -78,7 +78,7 @@ namespace rock::provider
         std::uint64_t scopeToken,
         std::uint64_t targetId,
         std::uint32_t targetGeneration);
-    void markInteractionCommandStageV1(
+    void markInteractionCommandStage(
         std::uint64_t ownerToken,
         std::uint64_t commandId,
         api::grab::CommandStage stage);

@@ -59,7 +59,7 @@ namespace rock
 
         // ProviderForceGrabCommand bookkeeping: pre-filled with request identity;
         // only .state/.failure/.targetBodyId are mutated when the commit resolves.
-        provider::RockProviderInteractionCommandResultV1 providerResultTemplate{};
+        api::grab::InteractionCommandResult providerResultTemplate{};
 
         [[nodiscard]] bool isEquippedWeaponTransfer() const noexcept
         {

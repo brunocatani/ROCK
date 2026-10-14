@@ -15,7 +15,6 @@
 // Private runtime representation; never installed or returned across the DLL boundary.
 namespace rock::provider {
     inline constexpr std::uint32_t ROCK_PROVIDER_API_VERSION = 1;
-    inline constexpr std::uint32_t ROCK_PROVIDER_INTERACTION_COMMAND_RESULT_V1_PREFIX_SIZE = 112;
     // Evidence describes the complete classified weapon-part catalog and is
     // independent from the compact body array embedded in frame snapshots.
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1 = api::weaponparts::kMaxEvidenceDetails;
@@ -82,19 +81,6 @@ namespace rock::provider {
 
 
 
-    enum class RockProviderForceGrabFlagV1 : std::uint32_t
-    {
-        None = 0,
-        UsePreferredGrabPointGame = 1u << 0,
-        // targetFormId is an owned ALCH/throwable base form, not a world REFR.
-        // Requires hand=None and no other flags. Transfers exactly one item to
-        // a free hand, without using or equipping it. Throwables prefer ROCK's
-        // configured default hand; other inventory items prefer the right.
-        // Query InventoryForceGrab support first. Failure before the drop leaves
-        // inventory unchanged; failed attachment attempts return the exact drop.
-        FromPlayerInventory = 1u << 1,
-    };
-
 
 
 
@@ -145,83 +131,6 @@ namespace rock::provider {
      * result targetRefr is zero. New V1 structures use value identity instead.
      */
 
-    struct RockProviderForceGrabRequestV1
-    {
-        std::uint32_t size{ sizeof(RockProviderForceGrabRequestV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        api::Hand hand{ api::Hand::None };
-        std::uint32_t flags{ 0 };
-        std::uintptr_t targetRefr{ 0 };
-        std::uint32_t targetFormId{ 0 };
-        std::uint32_t targetBodyId{ 0x7FFF'FFFF };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        float maxDistanceGame{ 0.0f };
-        float preferredGrabPointGame[3]{};
-        std::uint32_t reserved[5]{};
-    };
-
-    struct RockProviderForceReleaseRequestV1
-    {
-        std::uint32_t size{ sizeof(RockProviderForceReleaseRequestV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        api::Hand hand{ api::Hand::None };
-        std::uint32_t flags{ 0 };
-        std::uintptr_t targetRefr{ 0 };
-        std::uint32_t targetFormId{ 0 };
-        std::uint32_t targetBodyId{ 0x7FFF'FFFF };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        float linearVelocityHavok[3]{};
-        float angularVelocityRadiansPerSecond[3]{};
-        std::uint32_t reserved[1]{};
-    };
-
-    struct RockProviderThrownDropRequestV1
-    {
-        std::uint32_t size{ sizeof(RockProviderThrownDropRequestV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        api::Hand hand{ api::Hand::None };
-        std::uint32_t flags{ 0 };
-        std::uintptr_t targetRefr{ 0 };
-        std::uint32_t targetFormId{ 0 };
-        std::uint32_t targetBodyId{ 0x7FFF'FFFF };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved0{ 0 };
-        float linearVelocityHavok[3]{};
-        float angularVelocityRadiansPerSecond[3]{};
-        std::uint32_t reserved[6]{};
-    };
-
-    struct RockProviderInteractionCommandResultV1
-    {
-        std::uint32_t size{ sizeof(RockProviderInteractionCommandResultV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint64_t ownerToken{ 0 };
-        std::uint64_t commandId{ 0 };
-        api::grab::InteractionCommandKind kind{ api::grab::InteractionCommandKind::Unknown };
-        api::grab::InteractionCommandState state{ api::grab::InteractionCommandState::Unknown };
-        api::grab::InteractionFailure failure{ api::grab::InteractionFailure::None };
-        api::Hand hand{ api::Hand::None };
-        std::uintptr_t targetRefr{ 0 };
-        std::uint32_t targetFormId{ 0 };
-        std::uint32_t targetBodyId{ 0x7FFF'FFFF };
-        std::uint64_t frameIndex{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        api::grab::CommandStage stage{ api::grab::CommandStage::Unknown };
-        api::grab::InteractionFailure failureStage{ api::grab::InteractionFailure::None };
-        std::uint64_t acceptedFrame{ 0 };
-        std::uint64_t committedFrame{ 0 };
-        std::uint64_t appliedFrame{ 0 };
-        std::uint32_t reserved{ 0 };
-    };
-
 
 
 
@@ -238,20 +147,6 @@ namespace rock::provider {
 
 
 
-    struct RockProviderAnimationPhaseContextV1
-    {
-        std::uint32_t size{ sizeof(RockProviderAnimationPhaseContextV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        ::rock::api::animation::AnimationPhase phase{ ::rock::api::animation::AnimationPhase::BeforeRock };
-        std::uint32_t flags{ 0 };
-        std::uint64_t frameIndex{ 0 };
-        float deltaSeconds{ 0.0f };
-        std::uint32_t activeNativeAnimationAuthorityFlags{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[7]{};
-    };
 
 
 
@@ -260,70 +155,8 @@ namespace rock::provider {
 
 
 
-    struct RockProviderHandInteractionStateV1
-    {
-        std::uint32_t size{ sizeof(RockProviderHandInteractionStateV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint64_t frameIndex{ 0 };
-        api::Hand hand{ api::Hand::None };
-        api::grab::HandInteractionPhase phase{ api::grab::HandInteractionPhase::Idle };
-        api::grab::BodyContactTargetKind targetKind{ api::grab::BodyContactTargetKind::Unknown };
-        std::uint32_t flags{ 0 };
-        // TouchGrab: zero-extended referenceNativeHandle. Weapon: generation
-        // key. Interpret only with targetKind; zero means unavailable.
-        std::uint64_t reservedTargetIdentity{ 0 };
-        std::uint32_t targetFormId{ 0 };
-        // For TouchGrab, always identifies the target, including global world surfaces.
-        std::uint32_t primaryBodyId{ 0x7FFF'FFFF };
-        std::uint32_t heldBodyCount{ 0 };
-        std::uint32_t heldBodyIds[ROCK_PROVIDER_MAX_HAND_HELD_BODIES_V1]{};
-        std::uint32_t effectiveInputSuppressionFlags{ 0 };
-        std::uint32_t collisionAvailabilityFlags{ 0 };
-        std::uint64_t stateSequence{ 0 };
-        std::uint64_t targetSequence{ 0 };
-        std::uint64_t gripSequence{ 0 };
-        std::uint64_t releaseSequence{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t collisionGeneration{ 0 };
-        api::Point3 surfaceAnchorGame{};
-        ::rock::api::touch::SurfaceGripMode surfaceGripMode{
-            ::rock::api::touch::SurfaceGripMode::CollisionAnchor
-        };
-    };
 
 
-
-
-
-    struct RockProviderOffhandReservationRequestV1
-    {
-        std::uint32_t size{ sizeof(RockProviderOffhandReservationRequestV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        api::Hand hand{ api::Hand::None };
-        api::grab::HandReservationKind reservation{ api::grab::HandReservationKind::Normal };
-        std::uint32_t leaseFrames{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-    };
-
-    struct RockProviderOffhandReservationStateV1
-    {
-        std::uint32_t size{ sizeof(RockProviderOffhandReservationStateV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        api::Hand hand{ api::Hand::None };
-        api::grab::HandReservationKind reservation{ api::grab::HandReservationKind::Normal };
-        std::uint32_t active{ 0 };
-        std::uint64_t ownerToken{ 0 };
-        std::uint64_t expiresAfterFrame{ 0 };
-        std::uint32_t remainingFrames{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[6]{};
-    };
 
     /*
      * Publications are copied into ROCK's bounded registry and replace one
@@ -356,86 +189,5 @@ namespace rock::provider {
 
     // Availability is independent of boolean values. Node names are descriptive,
     // not globally unique part IDs. All transforms use game units.
-    struct RockProviderReferenceQueryV1
-    {
-        std::uint32_t size{ sizeof(RockProviderReferenceQueryV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint32_t referenceFormId{ 0 };
-        // Optional additional identity check; zero means unspecified.
-        std::uint32_t referenceNativeHandle{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        // Native furniture use is indexed. Zero is marker 0, not "any marker".
-        std::int32_t furnitureMarkerIndex{ 0 };
-    };
-
-    struct RockProviderReferenceInteractionV1
-    {
-        std::uint32_t size{ sizeof(RockProviderReferenceInteractionV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint32_t flags{ 0 };
-        std::uint32_t referenceFormId{ 0 };
-        std::uint32_t referenceNativeHandle{ 0 };
-        std::uint32_t baseFormId{ 0 };
-        std::uint32_t baseFormType{ 0 };
-        std::uint32_t activationBlocked{ 0 };
-        api::grab::NativeOpenState openState{};
-        std::uint32_t furnitureInUse{ 0 };
-        std::uint32_t furnitureInUseIncludingReservations{ 0 };
-        std::int32_t furnitureMarkerIndex{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint64_t frameIndex{ 0 };
-    };
-
-    struct RockProviderHandTargetDetailsV1
-    {
-        std::uint32_t size{ sizeof(RockProviderHandTargetDetailsV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        RockProviderHandInteractionStateV1 handState{};
-        RockProviderReferenceInteractionV1 reference{};
-        std::uint32_t flags{ 0 };
-        std::uint32_t collisionLayer{ 0 };
-        api::Point3 anchorGame{};
-        api::Point3 normalGame{};
-        api::PowerArmorPoint powerArmorPoint{};
-        std::uint32_t sourceTriangleIndex{ 0xFFFF'FFFFu };
-        char collisionNodeName[64]{};
-        char meshPartName[64]{};
-    };
-
-    struct RockProviderPowerArmorPointPoseV1
-    {
-        api::PowerArmorPoint point{};
-        // Animated armor-bone origin, not a sampled human palm pose.
-        std::uint32_t valid{ 0 };
-        api::Transform world{};
-        api::Transform frameLocal{};
-    };
-
-    struct RockProviderPowerArmorTargetV1
-    {
-        std::uint32_t size{ sizeof(RockProviderPowerArmorTargetV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        RockProviderReferenceInteractionV1 touchedReference{};
-        RockProviderReferenceInteractionV1 frameReference{};
-        std::uint32_t flags{ 0 };
-        // Nonzero only when the queried reference is a verified PA actor.
-        // Furniture reservations do not imply a wearer.
-        std::uint32_t actorFormId{ 0 };
-        RockProviderPowerArmorPointPoseV1 points[2]{};
-    };
-
-    struct RockProviderPowerArmorGrabRequestV1
-    {
-        std::uint32_t size{ sizeof(RockProviderPowerArmorGrabRequestV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        RockProviderReferenceQueryV1 target{};
-        api::Hand hand{ api::Hand::None };
-        api::PowerArmorPoint point{};
-        // Zero uses the native proximity radius. Maximum 32 game units.
-        float maxDistanceGame{ 0.0f };
-    };
-
 
 }
