@@ -933,6 +933,15 @@ if(BUILD_ROCK_TESTS)
   target_compile_definitions(ROCKModularEventDeliveryTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   add_rock_test(ROCKModularEventDeliveryTests)
 
+  add_executable(ROCKWeaponProviderTests
+    "${ROOT_DIR}/tests/WeaponProviderTests.cpp"
+    "${SOURCE_DIR}/api/providers/WeaponProvider.cpp")
+  target_compile_features(ROCKWeaponProviderTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWeaponProviderTests PRIVATE ${SOURCE_DIR})
+  target_compile_definitions(ROCKWeaponProviderTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(ROCKWeaponProviderTests PRIVATE /UNDEBUG)
+  add_rock_test(ROCKWeaponProviderTests)
+
   add_executable(ROCKProviderRegistrationTests "${ROOT_DIR}/tests/ProviderRegistrationTests.cpp")
   target_compile_features(ROCKProviderRegistrationTests PRIVATE cxx_std_23)
   target_include_directories(ROCKProviderRegistrationTests PRIVATE ${SOURCE_DIR})

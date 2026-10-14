@@ -1,9 +1,9 @@
 #pragma once
-#include <ROCK/WeaponV1_1.h>
+#include <ROCK/Weapon.h>
 
 namespace rock::inventory_weapon_equip_policy {
     using api::Status;
-    using api::weapon::v1_1::InventoryWeapon;
+    using api::weapon::InventoryWeapon;
     [[nodiscard]] constexpr Status validateCapture(const InventoryWeapon& requested, const InventoryWeapon& current) noexcept {
         if (!requested.worldGeneration || !requested.skeletonGeneration || !requested.providerGeneration ||
             requested.frameIndex != current.frameIndex || requested.worldGeneration != current.worldGeneration ||

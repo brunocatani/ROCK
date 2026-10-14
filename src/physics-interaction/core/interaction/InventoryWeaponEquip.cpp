@@ -4,7 +4,7 @@
 
 namespace rock {
     namespace {
-        namespace equip_api = api::weapon::v1_1;
+        namespace equip_api = api::weapon;
         using Failure = equip_api::EquipFailure;
         using State = equip_api::EquipState;
         using Flag = equip_api::EquipResultFlag;
@@ -36,7 +36,7 @@ namespace rock {
     {
         command = 0;
         if (request.hand != api::Hand::Right && request.hand != api::Hand::Left) return api::Status::InvalidArgument;
-        if (request.item.size != sizeof(request.item) || request.item.reserved || !request.item.stackKey || !request.item.count)
+        if (request.item.size != sizeof(request.item) || request.item.version != 1 || !request.item.stackKey || !request.item.count)
             return api::Status::InvalidArgument;
         if (_inventoryEquip.active() || _equipped.transition.heldTransfer().active()) return api::Status::Busy;
         equip_api::InventoryWeapon current{};
@@ -54,7 +54,7 @@ namespace rock {
         pending.selection = std::move(selection);
         command = pending.nextCommandId++;
         if (!command) command = pending.nextCommandId++;
-        pending.result = {.state = State::Queued, .commandId = command, .hand = request.hand,
+        pending.result = {.commandId = command, .state = State::Queued, .hand = request.hand,
             .incomingFormId = current.baseFormId, .worldGeneration = current.worldGeneration,
             .skeletonGeneration = current.skeletonGeneration, .providerGeneration = current.providerGeneration};
         return api::Status::RequestQueued;

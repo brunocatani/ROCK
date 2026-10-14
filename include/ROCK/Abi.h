@@ -14,6 +14,11 @@ namespace rock::api {
         Left = 2,
     };
 
+    // A weapon slot is the native equipment index: 0 is the first equipped
+    // weapon, 1 the second. Which hand fires or supports a weapon is data in
+    // its slot's state, never implied by the slot.
+    inline constexpr std::uint32_t kMaxWeaponSlots = 2;
+
     enum class Status : std::uint32_t
     {
         Ok = 0,

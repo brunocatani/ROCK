@@ -261,11 +261,11 @@ namespace rock
         bool queryProviderEquippedWeaponStateV1(
             ::rock::provider::RockProviderEquippedWeaponStateV1& outState) const;
         api::Status captureProviderInventoryWeapon(std::uint32_t form, std::uint32_t stack,
-            api::weapon::v1_1::InventoryWeapon& output) const;
+            api::weapon::InventoryWeapon& output) const;
         api::Status requestProviderInventoryEquip(api::OwnerToken owner,
-            const api::weapon::v1_1::EquipRequest& request, std::uint64_t& command);
+            const api::weapon::EquipRequest& request, std::uint64_t& command);
         api::Status getProviderInventoryEquipResult(api::OwnerToken owner, std::uint64_t command,
-            api::weapon::v1_1::EquipResult& output) const;
+            api::weapon::EquipResult& output) const;
         api::Status cancelProviderInventoryEquip(api::OwnerToken owner, std::uint64_t command);
         std::uint32_t copyProviderWeaponPartPosesV1(
             ::rock::provider::RockProviderWeaponPartPoseV1* outParts,

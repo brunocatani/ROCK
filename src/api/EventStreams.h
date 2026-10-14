@@ -19,7 +19,7 @@ namespace rock::provider::events {
     api::Status copy(api::OwnerToken,std::uint64_t,api::collision::Event*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::grab::Event*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::touch::Event*,std::uint32_t,api::Stream&);
-    api::Status copy(api::OwnerToken,std::uint64_t,api::weapon::EventV1*,std::uint32_t,api::Stream&);
+    api::Status copy(api::OwnerToken,std::uint64_t,api::weapon::Event*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::weaponparts::EventV1*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::animation::Event*,std::uint32_t,api::Stream&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::input::Event*,std::uint32_t,api::Stream&);

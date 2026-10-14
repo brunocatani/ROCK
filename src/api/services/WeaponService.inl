@@ -189,6 +189,20 @@
         return RockProviderResultV1::Ok;
     }
 
+    api::Status getHandlingAuthority(api::weapon::HandlingAuthority& output)
+    {
+        const auto frameIndex = currentProviderFrameIndex();
+        std::scoped_lock lock(s_equippedWeaponHandlingAuthorityMutex);
+        pruneExpiredEquippedWeaponHandlingAuthorityLocked(frameIndex);
+        if (s_equippedWeaponHandlingAuthority.active) {
+            output.active = 1;
+            output.features = s_equippedWeaponHandlingAuthority.request.flags;
+            output.owner = s_equippedWeaponHandlingAuthority.ownerToken;
+            output.expiresAfterFrame = s_equippedWeaponHandlingAuthority.expiresAfterFrame;
+        }
+        return api::Status::Ok;
+    }
+
     bool ROCK_PROVIDER_CALL apiGetEquippedWeaponHandlingStateV1(
         RockProviderEquippedWeaponHandlingStateV1* outState)
     {

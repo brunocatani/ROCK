@@ -1,7 +1,7 @@
 #pragma once
 #include "Abi.h"
 #include "Grab.h"
-#include "WeaponV1_1.h"
+#include "Weapon.h"
 
 // Physical storage for holster, backpack and stash mods: claims on stored
 // references, held-item contact suppression, highlights, inventory-item
@@ -105,7 +105,7 @@ namespace rock::api::storage
         std::uint32_t size{ sizeof(Display) };
         std::uint32_t version{ 1 };
         std::uint64_t displayId{ 0 };
-        weapon::v1_1::InventoryWeapon item{};
+        weapon::InventoryWeapon item{};
         std::uint32_t parentReference{ 0 };
         std::uint32_t leaseFrames{ 3 };
         std::uint32_t flags{ 0 };
@@ -120,7 +120,7 @@ namespace rock::api::storage
         Sample sample{};
         std::uint64_t displayId{ 0 };
         std::uint64_t contactFrame{ 0 };
-        weapon::v1_1::InventoryWeapon item{};
+        weapon::InventoryWeapon item{};
         Hand hand{ Hand::None };
         std::uint32_t valid{ 0 };
     };
@@ -158,7 +158,7 @@ namespace rock::api::storage
         Sample sample{};
         std::uint64_t displayId{ 0 };
         std::uint64_t poseSequence{ 0 };
-        weapon::v1_1::InventoryWeapon item{};
+        weapon::InventoryWeapon item{};
         std::uint32_t valid{ 0 };
         Hand hand{ Hand::None };
         GripRole role{ GripRole::Nearest };

@@ -84,8 +84,6 @@ int main()
             assert(sample.frameIndex==100 && sample.publicationSequence==101);
             assert(sample.worldGeneration==7 && sample.skeletonGeneration==8 && sample.providerGeneration==9 && sample.collisionGeneration==10);
         }
-        api::weapon::EquippedWeaponStateV1 weapon{};
-        assert(api::weapon::getEquippedWeaponStateV1(42,&weapon)==Status::Ok && weapon.weaponFormId==123 && weapon.frameIndex==100);
         for(const auto hand:{api::Hand::Right,api::Hand::Left}) {
             api::hands::HandFrame frame{};
             api::weaponparts::WeaponPartGripStateV1 grip{};
@@ -98,7 +96,6 @@ int main()
         permissions=1;
         available=false;
         assert(api::hands::getHeadPose(42,&head)==Status::NotReady && head.flags==0);
-        assert(api::weapon::getEquippedWeaponStateV1(42,&weapon)==Status::NotReady && weapon.weaponFormId==0);
         api::weaponparts::WeaponPartGripStateV1 grip{};grip.active=1;
         assert(api::weaponparts::getWeaponPartGripStateV1(42,api::Hand::Left,&grip)==Status::NotReady && grip.active==0);
     });

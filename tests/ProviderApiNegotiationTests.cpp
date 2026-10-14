@@ -92,7 +92,7 @@ int main() {
         assert(api->clearAuthoredHand(79,Hand::Right)==Status::OwnerConflict);
         assert(api->clearAuthoredHand(78,Hand::Right)==Status::Ok);
     }
-    verify(weapon::tableV1_1(),weapon::kSupportedPermissions);
+    verify(weapon::table(),weapon::kSupportedPermissions);
     verify(weaponparts::tableV1_7(),weaponparts::kSupportedPermissions);
     {
         const InterfaceDescriptorV1 *oldParts{},*newParts{};
@@ -159,33 +159,9 @@ int main() {
         assert(ROCKAPI_QueryInterfaceV1(InterfaceId::Diagnostics,1,0,8,&retired)!=Status::Ok && !retired);
     }
     verify(configuration::table(),configuration::kSupportedPermissions);
-    // The unchanged Weapon.h is the released 1.0 consumer. Discover its old
-    // extent, bind the old major, and call it alongside an opted-in 1.1 caller.
+    // Weapon major 1 and its 1.1 minor are refused.
     const InterfaceDescriptorV1* oldWeapon{};
-    const InterfaceDescriptorV1* newWeapon{};
-    assert(ROCKAPI_QueryInterfaceV1(InterfaceId::Weapon, 1, 0, sizeof(weapon::ApiV1), &oldWeapon) == Status::Ok);
-    assert(ROCKAPI_QueryInterfaceV1(InterfaceId::Weapon, 1, 1, sizeof(weapon::v1_1::Api), &newWeapon) == Status::Ok);
-    assert(oldWeapon == newWeapon && oldWeapon->minor == 1 && oldWeapon->requiredCoreMinor == 0);
-    const auto* oldApi = static_cast<const weapon::ApiV1*>(oldWeapon->table);
-    const auto* newApi = static_cast<const weapon::v1_1::Api*>(newWeapon->table);
-    assert(oldApi == &newApi->v1 && oldApi->getPrimaryHandV1 == newApi->v1.getPrimaryHandV1);
-    Hand primary{};
-    assert(oldApi->getPrimaryHandV1(77, &primary) == Status::Ok && primary == Hand::Left);
-    for (const auto hand : {Hand::Left, Hand::Right}) {
-        weapon::v1_1::EquipRequest request{};
-        request.hand = hand;
-        std::uint64_t command{};
-        assert(newApi->requestInventoryEquip(77, &request, &command) == Status::RequestQueued);
-        assert(command == (hand == Hand::Left ? 101 : 102));
-        assert(oldApi->getPrimaryHandV1(77, &primary) == Status::Ok);
-    }
-    rock::provider::InterfaceBinding oldBinding{}, newBinding{};
-    assert(rock::provider::bindInterface(oldBinding, 1, 1, weapon::kSupportedPermissions) == Status::Ok);
-    assert(rock::provider::bindInterface(newBinding, 1, 3, weapon::kSupportedPermissions) == Status::Ok);
-    const std::array oldOnly{discovery::RegisteredInterface{
-        {40, InterfaceId::Weapon, 1, 0, sizeof(weapon::ApiV1), 1, 0, 0, oldApi}, 3}};
-    assert(discovery::query(oldOnly, InterfaceId::Weapon, 1, 1, sizeof(weapon::v1_1::Api), &result) == Status::UnsupportedMinor);
-    assert(!result);
+    assert(ROCKAPI_QueryInterfaceV1(InterfaceId::Weapon, 1, 0, 8, &oldWeapon) == Status::UnsupportedMajor && !oldWeapon);
     rock::provider::InterfaceBinding collision{},grabbing{};
     assert(rock::provider::bindInterface(collision,2,1,3)==Status::Ok);
     assert(rock::provider::bindInterface(grabbing,1,3,3)==Status::Ok);

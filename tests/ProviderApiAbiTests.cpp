@@ -17,7 +17,6 @@ static_assert([] {
 int main() {
     using namespace rock::equip_pickup;
     auto check=[](bool value){if(!value) std::abort();};
-    check(query(1,0,16) && !query(1,1,16) && !query(2,0,16) && !query(1,0,8) && !query(1,0,24));
     check(!matches(100,1));
     {
         Scope outer(100,1); check(matches(100,1) && !matches(101,1) && !matches(100,2));

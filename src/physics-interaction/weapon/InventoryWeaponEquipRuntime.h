@@ -1,5 +1,5 @@
 #pragma once
-#include <ROCK/WeaponV1_1.h>
+#include <ROCK/Weapon.h>
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
 #include <array>
 
@@ -9,11 +9,11 @@ namespace rock {
     struct InventoryWeaponEquipRuntime {
         struct Completed {
             api::OwnerToken owner{};
-            api::weapon::v1_1::EquipResult result{};
+            api::weapon::EquipResult result{};
         };
         api::OwnerToken owner{};
-        api::weapon::v1_1::EquipRequest request{};
-        api::weapon::v1_1::EquipResult result{};
+        api::weapon::EquipRequest request{};
+        api::weapon::EquipResult result{};
         weapon_equip_transfer::InventorySelection selection{};
         std::uint64_t nextCommandId{1};
         std::uintptr_t previousNativeNode{}; // Comparison only; never dereferenced.
@@ -22,7 +22,7 @@ namespace rock {
         std::size_t nextCompleted{};
 
         [[nodiscard]] bool active() const noexcept { return owner != 0; }
-        void finish(api::weapon::v1_1::EquipState state, api::weapon::v1_1::EquipFailure failure) noexcept {
+        void finish(api::weapon::EquipState state, api::weapon::EquipFailure failure) noexcept {
             result.state = state;
             result.failure = failure;
             completed[nextCompleted++ % completed.size()] = {owner, result};

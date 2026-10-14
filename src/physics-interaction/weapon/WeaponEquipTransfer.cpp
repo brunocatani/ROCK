@@ -861,5 +861,3 @@ namespace rock::weapon_equip_transfer
 
 }
 
-extern "C" __declspec(dllexport) const rock::api::equip_pickup::Api* ROCK_CALL ROCK_EquipPickup_QueryV1(std::uint32_t major,std::uint32_t minor,std::uint32_t bytes) noexcept
-{ return rock::equip_pickup::query(major,minor,bytes); }

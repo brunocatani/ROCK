@@ -62,8 +62,8 @@ int main(){
     using namespace api;
     namespace control=physical_reload_input;
     ::weapon.weaponFormId=123;::weapon.weaponGenerationKey=456;
-    ::weapon.flags=static_cast<std::uint32_t>(weapon::EquippedWeaponStateFlagV1::Valid)|
-        static_cast<std::uint32_t>(weapon::EquippedWeaponStateFlagV1::WeaponDrawn);
+    ::weapon.flags=static_cast<std::uint32_t>(provider::RockProviderEquippedWeaponStateFlagV1::Valid)|
+        static_cast<std::uint32_t>(provider::RockProviderEquippedWeaponStateFlagV1::WeaponDrawn);
     constexpr auto x=1ull<<7;
     // The production reload gesture lease and the same tap/hold policy used
     // by runtime, without and with gameplay priority.

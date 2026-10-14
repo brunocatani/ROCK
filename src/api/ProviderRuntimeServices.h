@@ -1,6 +1,6 @@
 #pragma once
 #include <ROCK/WeaponParts.h>
-#include <ROCK/WeaponV1_1.h>
+#include <ROCK/Weapon.h>
 #include <ROCK/Input.h>
 #include <ROCK/Grab.h>
 #include <ROCK/Grab.h>
@@ -52,9 +52,10 @@ namespace rock::provider::runtime {
     api::Status cancelObjectRest(api::OwnerToken owner, std::uint32_t referenceFormId);
     api::Status getPlacementClickState(api::input::PlacementClickState& output);
     api::Status captureInventoryWeapon(std::uint64_t owner, std::uint32_t form, std::uint32_t stack,
-        api::weapon::v1_1::InventoryWeapon& output);
-    api::Status requestInventoryEquip(std::uint64_t owner, const api::weapon::v1_1::EquipRequest& request, std::uint64_t& command);
-    api::Status getInventoryEquipResult(std::uint64_t owner, std::uint64_t command, api::weapon::v1_1::EquipResult& output);
+        api::weapon::InventoryWeapon& output);
+    api::Status getHandlingAuthority(api::weapon::HandlingAuthority& output);
+    api::Status requestInventoryEquip(std::uint64_t owner, const api::weapon::EquipRequest& request, std::uint64_t& command);
+    api::Status getInventoryEquipResult(std::uint64_t owner, std::uint64_t command, api::weapon::EquipResult& output);
     api::Status cancelInventoryEquip(std::uint64_t owner, std::uint64_t command);
     std::uint64_t currentGameFrameIndex(); // Atomic game clock, including pre-publication lifecycle events.
     const char* ROCK_PROVIDER_CALL apiGetModVersion();

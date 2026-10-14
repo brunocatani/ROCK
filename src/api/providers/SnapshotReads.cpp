@@ -1,5 +1,4 @@
 #include "SnapshotReads.h"
-#include "WeaponMarshalling.h"
 #include "WeaponPartsMarshalling.h"
 
 namespace rock::api::hands {
@@ -58,20 +57,6 @@ Status ROCK_CALL getEnvironment(OwnerToken owner, Environment* result) noexcept 
         result->weaponBodyCount=frame.weaponBodyCount;
         std::copy_n(frame.weaponBodyIds,8,result->weaponBodyIds);
         return Status::Ok;
-    });
-}
-
-}
-
-namespace rock::api::weapon {
-using namespace boundary;
-Status ROCK_CALL getEquippedWeaponStateV1(std::uint64_t ownerToken, EquippedWeaponStateV1* outState) noexcept {
-    if (const auto s = checkOutput(outState); s != Status::Ok) return s;
-    return invoke(ownerToken, kInterfaceId, 1, false, [&]() -> Status {
-        provider::RockProviderEquippedWeaponStateV1 native_outState{};
-        const auto result = provider::runtime::apiGetEquippedWeaponStateV1(ownerToken, &native_outState);
-        convert(*outState, native_outState);
-        return static_cast<Status>(result);
     });
 }
 

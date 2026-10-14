@@ -65,9 +65,9 @@ namespace rock::storage_interaction
         { return provider::runtime::authorize(owner,api::InterfaceId::Storage,permissions,true); }
         bool collides(const contract::Display& display)
         { return !(display.flags & static_cast<std::uint32_t>(contract::DisplayFlag::NoCollision)); }
-        bool inventoryCurrent(const api::weapon::v1_1::InventoryWeapon& expected,PhysicsInteraction& physics)
+        bool inventoryCurrent(const api::weapon::InventoryWeapon& expected,PhysicsInteraction& physics)
         {
-            api::weapon::v1_1::InventoryWeapon current;
+            api::weapon::InventoryWeapon current;
             return physics.captureProviderInventoryWeapon(expected.baseFormId,expected.stackIndex,current)==api::Status::Ok &&
                 expected.stackKey==current.stackKey && expected.instanceKey==current.instanceKey && expected.count==current.count &&
                 expected.worldGeneration==current.worldGeneration && expected.skeletonGeneration==current.skeletonGeneration &&
@@ -207,7 +207,7 @@ namespace rock::storage_interaction
         if(request->size!=sizeof(*request) || request->item.size!=sizeof(request->item)) return api::Status::InvalidSize;
         if(request->version!=1) return api::Status::UnsupportedVersion;
         if(!request->displayId || !request->parentReference || !request->item.baseFormId || !request->item.stackKey ||
-            !request->item.count || request->item.reserved || (request->flags&~knownFlags) || !policy::validLease(request->leaseFrames) ||
+            !request->item.count || request->item.version!=1 || (request->flags&~knownFlags) || !policy::validLease(request->leaseFrames) ||
             !request->nodeName[0] || !std::memchr(request->nodeName,0,sizeof(request->nodeName))) return api::Status::InvalidArgument;
         const auto access=authorize(owner); if(access!=api::Status::Ok) return access;
         provider::RockProviderFrameSnapshot frame;

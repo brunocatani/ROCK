@@ -1,8 +1,8 @@
 #pragma pack(push,1)
 #include <ROCK/Storage.h>
-static_assert(sizeof(rock::api::storage::Api)==152 && sizeof(rock::api::storage::Display)==152);
-#include <ROCK/EquipPickup.h>
-static_assert(sizeof(rock::api::equip_pickup::Api)==16 && alignof(rock::api::equip_pickup::Api)==8);
+static_assert(sizeof(rock::api::storage::Api)==152 && sizeof(rock::api::storage::Display)==160);
+#include <ROCK/Weapon.h>
+static_assert(sizeof(rock::api::weapon::Api)==144 && sizeof(rock::api::weapon::WeaponState)==112);
 struct StorageCallerPacking { char c; std::uint64_t value; };
 static_assert(alignof(StorageCallerPacking)==1);
 #pragma pack(pop)
