@@ -163,6 +163,7 @@ namespace rock::provider::runtime
     std::array<api::weaponparts::GripState, 2> s_lastPartGripStates{};
     std::array<provider::HandInteractionPublication, 2> s_lastHandInteractionStates{};
     api::weapon::WeaponState s_lastEquippedWeaponState{};
+    api::weapon::WeaponState s_lastSlotOneWeaponState{};
 
     std::mutex s_touchGrabMutex;
     TouchGrabRegistry s_touchGrabTargets{};
@@ -2046,6 +2047,9 @@ namespace rock::provider
         api::weapon::WeaponState equippedWeaponState{};
         (void)pi.queryProviderWeaponState(equippedWeaponState);
         equippedWeaponState.sample.frameIndex = snapshot.frameIndex;
+        api::weapon::WeaponState slotOneWeaponState{};
+        pi.queryProviderSlotOneWeaponState(slotOneWeaponState);
+        slotOneWeaponState.sample.frameIndex = snapshot.frameIndex;
 
         bool hadPrevious = false;
         bool lifecycleChanged = false;
@@ -2057,6 +2061,7 @@ namespace rock::provider
             const auto previousSnapshot = s_lastSnapshot;
             const auto previousHands = s_lastHandInteractionStates;
             const auto previousEquipped = s_lastEquippedWeaponState;
+            const auto previousSlotOne = s_lastSlotOneWeaponState;
 
             for (std::size_t index = 0;
                  index < handInteractionStates.size();
@@ -2126,7 +2131,10 @@ namespace rock::provider
                 !sameWeaponPayload(snapshot, previousSnapshot) ||
                 !sameEquippedWeaponPayload(
                     equippedWeaponState,
-                    previousEquipped);
+                    previousEquipped) ||
+                !sameEquippedWeaponPayload(slotOneWeaponState, previousSlotOne) ||
+                slotOneWeaponState.firingHand != previousSlotOne.firingHand ||
+                slotOneWeaponState.handlingFlags != previousSlotOne.handlingFlags;
             const bool transitionChanged = !hadPrevious ||
                 equippedWeaponState.transitionSequence !=
                     previousEquipped.transitionSequence ||
@@ -2155,6 +2163,9 @@ namespace rock::provider
             s_lastPartGripStates = partGripStates;
             s_lastHandInteractionStates = handInteractionStates;
             s_lastEquippedWeaponState = equippedWeaponState;
+            slotOneWeaponState.sample.publicationSequence = snapshot.stateSequence;
+            slotOneWeaponState.sample.collisionGeneration = snapshot.collisionGeneration;
+            s_lastSlotOneWeaponState = slotOneWeaponState;
         }
 
         // Revalidate against this publication before consumers run. The earlier
@@ -2366,6 +2377,7 @@ namespace rock::provider
             for (auto& state : s_lastHandInteractionStates) state.flags = 0;
             s_lastPartGripStates = {};
             s_lastEquippedWeaponState.flags = 0;
+            s_lastSlotOneWeaponState.flags = 0;
         }
         {
             std::scoped_lock lock(s_touchGrabMutex);

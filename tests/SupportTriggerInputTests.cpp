@@ -13,7 +13,7 @@ namespace {
 namespace rock::provider::runtime {
     std::uint64_t currentGameFrameIndex(){return ::sample.frameIndex;}
     api::Sample sample(){return ::sample;}
-    api::Status copyPublishedWeaponState(api::weapon::WeaponState& out){out=::weapon;return api::Status::Ok;}
+    api::Status copyPublishedWeaponState(api::weapon::WeaponState& out, std::uint32_t){out=::weapon;return api::Status::Ok;}
     api::Status getWeaponGrip(api::weapon::Grip& out){out=::grip;return api::Status::Ok;}
     bool queryWeaponHandling(provider_state_policy::WeaponHandling& out){
         out={};out.weaponPresent=true;out.twoHandGrip=true;out.firingHand=::firingLeft?api::Hand::Left:api::Hand::Right;return true;

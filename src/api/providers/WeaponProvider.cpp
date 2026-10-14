@@ -24,9 +24,10 @@ Status ROCK_CALL getWeaponState(OwnerToken owner, std::uint32_t slot, WeaponStat
     if (const auto s = checkWeaponSlot(slot); s != Status::Ok) return s;
     outState->weaponSlot = slot;
     return invoke(owner, kInterfaceId, 1, true, [&] {
-        if (!weaponSlotPublished(slot)) return Status::TargetUnavailable;
-        if (const auto s = p::runtime::copyPublishedWeaponState(*outState); s != Status::Ok) return s;
+        // Every slot publishes its state; slot 1's hands are in the record.
+        if (const auto s = p::runtime::copyPublishedWeaponState(*outState, slot); s != Status::Ok) return s;
         outState->weaponSlot = slot;
+        if (slot != 0) return Status::Ok;
         ::rock::provider_state_policy::WeaponHandling handling{};
         if (p::runtime::queryWeaponHandling(handling)) ::rock::provider_state_policy::applyHandling(*outState, handling);
         return Status::Ok;

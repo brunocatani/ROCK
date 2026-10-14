@@ -311,8 +311,10 @@ namespace rock
     {
         // Slot 1's equipment view is a guarded native read, so the frame owner
         // samples it rather than every roster query.
-        const bool equipped = native_hand_equipment::hasSecondaryGun();
+        const auto* weapon = native_hand_equipment::equippedViews()[1].weapon;
+        const bool equipped = weapon != nullptr;
         _equippedSlotOne = {
+            .formId = equipped ? weapon->formID : 0u,
             .equipped = equipped,
             .holdsHand = equipped &&
                 fo4vr_actor_state_policy::equippedWeaponOccupiesHand(true, f4vr::getNativeWeaponState(f4vr::getPlayer())),

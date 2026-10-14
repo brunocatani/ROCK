@@ -146,13 +146,13 @@
         return pi && pi->isInitialized() && pi->queryProviderWeaponHandling(outHandling);
     }
 
-    api::Status copyPublishedWeaponState(api::weapon::WeaponState& outState)
+    api::Status copyPublishedWeaponState(api::weapon::WeaponState& outState, std::uint32_t weaponSlot)
     {
         std::scoped_lock lock(s_snapshotMutex);
         if (!s_hasSnapshot) {
             return api::Status::NotReady;
         }
-        outState = s_lastEquippedWeaponState;
+        outState = weaponSlot == 1 ? s_lastSlotOneWeaponState : s_lastEquippedWeaponState;
         return api::Status::Ok;
     }
 

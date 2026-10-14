@@ -14,7 +14,7 @@ namespace rock::provider::runtime {
     rock::api::Hand primaryHand(){return ::primary;}
     std::uint64_t currentGameFrameIndex(){return ::sample.frameIndex;}
     rock::api::Sample sample(){return ::sample;}
-    rock::api::Status copyPublishedWeaponState(rock::api::weapon::WeaponState& out){
+    rock::api::Status copyPublishedWeaponState(rock::api::weapon::WeaponState& out, std::uint32_t){
         out=::weapon;return rock::api::Status::Ok;
     }
 }

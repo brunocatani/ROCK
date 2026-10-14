@@ -945,6 +945,37 @@
                transition.terminalSequence != 0;
     }
 
+    // Slot 1 (ROCK's private graph): identity, drawn state and the hand that
+    // holds its firing grip. Frame thread, after its presentation.
+    void PhysicsInteraction::queryProviderSlotOneWeaponState(
+        api::weapon::WeaponState& outState) const
+    {
+        using Flag = api::weapon::WeaponStateFlag;
+        outState = {};
+        outState.weaponSlot = 1;
+        const auto& slotOne = _equippedSlotOne;
+        const auto& frame = runtime_state::currentFrame();
+        const auto setFlag = [&outState](const Flag flag, const bool enabled) {
+            if (enabled) outState.flags |= static_cast<std::uint32_t>(flag);
+        };
+        setFlag(Flag::Valid, _lifecycle.initialized.load(std::memory_order_acquire) &&
+            frame.visualAuthorityAvailable && frame.localSkeletonReady);
+        outState.weaponFormId = slotOne.formId;
+        setFlag(Flag::WeaponEquipped, slotOne.equipped);
+        setFlag(Flag::WeaponDrawn, slotOne.equipped && frame.weaponDrawn);
+        setFlag(Flag::WeaponPresent, slotOne.equipped && native_secondary_presentation::presentedModel() != nullptr);
+        if (slotOne.equipped) {
+            outState.firingHand = slotOne.hand == equipped_weapon_roster::Hand::Left ? api::Hand::Left : api::Hand::Right;
+            outState.weaponGenerationKey = _secondaryWeaponCollision.getCurrentWeaponGenerationKey();
+        }
+        if (slotOne.holdsHand) {
+            outState.handlingFlags |= static_cast<std::uint32_t>(api::weapon::HandlingStateFlag::FiringGripHeld);
+        }
+        outState.sample.worldGeneration = _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
+        outState.sample.skeletonGeneration = _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
+        outState.sample.providerGeneration = _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
+    }
+
     std::uint32_t PhysicsInteraction::copyProviderWeaponPartPoses(
         api::weaponparts::PartPose* outParts,
         const std::uint32_t maxParts) const

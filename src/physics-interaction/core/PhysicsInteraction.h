@@ -263,6 +263,8 @@ namespace rock
             std::array<provider::HandInteractionPublication, 2>& outStates) const;
         bool queryProviderWeaponState(
             api::weapon::WeaponState& outState) const;
+        void queryProviderSlotOneWeaponState(
+            api::weapon::WeaponState& outState) const;
         api::Status captureProviderInventoryWeapon(std::uint32_t form, std::uint32_t stack,
             api::weapon::InventoryWeapon& output) const;
         api::Status requestProviderInventoryEquip(api::OwnerToken owner,

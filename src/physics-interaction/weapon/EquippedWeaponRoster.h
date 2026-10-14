@@ -57,6 +57,7 @@ namespace rock::equipped_weapon_roster
 
     struct SlotOneFacts
     {
+        std::uint32_t formId{ 0 };
         bool equipped{ false };
         // Equipped and not terminally sheathed.
         bool holdsHand{ false };

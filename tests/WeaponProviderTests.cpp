@@ -25,7 +25,13 @@ namespace rock::provider::runtime {
     }
     api::Sample sample() { return {20, 30, 1, 2, 3, 4}; }
     void reportBoundaryFailure(std::uint64_t, api::InterfaceId) noexcept { assert(false); }
-    api::Status copyPublishedWeaponState(api::weapon::WeaponState& out) {
+    api::Status copyPublishedWeaponState(api::weapon::WeaponState& out, std::uint32_t slot) {
+        if (slot == 1) {
+            out = {};
+            out.weaponFormId = 789;
+            out.firingHand = api::Hand::Left;
+            return api::Status::Ok;
+        }
         out.sample = {19, 30, 7, 8, 9, 4};
         out.flags = static_cast<std::uint32_t>(api::weapon::WeaponStateFlag::Valid);
         out.weaponFormId = 123; out.weaponGenerationKey = 456; out.transitionSequence = 3;
@@ -76,7 +82,9 @@ int main() {
     // Slots: only equip index 0 is published; slot 1 is valid but unavailable.
     WeaponState state;
     assert(api.getWeaponState(testOwner, kMaxWeaponSlots, &state) == Status::InvalidArgument);
-    assert(api.getWeaponState(testOwner, 1, &state) == Status::TargetUnavailable && state.weaponSlot == 1 && state.weaponFormId == 0);
+    // Slot 1 publishes its own state and hand; slot 0's handling is not applied to it.
+    assert(api.getWeaponState(testOwner, 1, &state) == Status::Ok && state.weaponSlot == 1 && state.weaponFormId == 789 &&
+        state.firingHand == Hand::Left && state.supportHand == Hand::None);
     Grip grip;
     assert(api.getGrip(testOwner, 1, &grip) == Status::TargetUnavailable);
 

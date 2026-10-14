@@ -69,7 +69,8 @@ namespace rock::provider::runtime {
     api::Hand primaryHand();
     api::Hand offhandHand();
     // Weapon slot 0. The publication's state, then the live reads (game thread).
-    api::Status copyPublishedWeaponState(api::weapon::WeaponState& outState);
+    // Slot 0 unless weaponSlot names slot 1.
+    api::Status copyPublishedWeaponState(api::weapon::WeaponState& outState, std::uint32_t weaponSlot = 0);
     bool queryWeaponHandling(provider_state_policy::WeaponHandling& outHandling);
     api::Status getWeaponGrip(api::weapon::Grip& outGrip);
     api::Status getWeaponClassification(api::weapon::Classification& outClassification);
