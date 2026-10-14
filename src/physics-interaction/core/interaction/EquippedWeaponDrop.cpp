@@ -68,7 +68,7 @@ namespace rock
         reference = 0;
         if (!isProviderReady() || !_lifecycle.cachedBhkWorld || !_lifecycle.cachedHknpWorld || currentEquippedWeaponFormId() != weapon)
             return api::Status::TargetUnavailable;
-        const auto occupancy = _twoHandedGrip.getGripOccupancy();
+        const auto occupancy = equippedWeaponRoster().slotZeroGrips();
         const bool carries = left ? occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon();
         const bool otherCarries = left ? occupancy.right.carriesWeapon() : occupancy.left.carriesWeapon();
         if (!carries || otherCarries || (left ? _leftHand : _rightHand).isHolding() || _forceGrab.pendingCommits[left ? 1 : 0].active)
@@ -93,7 +93,7 @@ namespace rock
     RE::NiAVObject* PhysicsInteraction::storageEquippedVisual(bool left, std::uint32_t expectedBase) const
     {
         if (currentEquippedWeaponFormId() != expectedBase) return nullptr;
-        const auto occupancy = _twoHandedGrip.getGripOccupancy();
+        const auto occupancy = equippedWeaponRoster().slotZeroGrips();
         if (!(left ? occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon())) return nullptr;
         return resolveEquippedWeaponInteractionNode();
     }
@@ -113,7 +113,7 @@ namespace rock
         auto& transition = _equipped.transition;
         const auto previousForm = currentEquippedWeaponFormId();
         const bool retainedIsLeft = !equipIsLeft;
-        const auto occupancy = _twoHandedGrip.getGripOccupancy();
+        const auto occupancy = equippedWeaponRoster().slotZeroGrips();
         const bool retainedHandCarries = retainedIsLeft ?
             occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon();
         const bool receivingHandCarries = equipIsLeft ?

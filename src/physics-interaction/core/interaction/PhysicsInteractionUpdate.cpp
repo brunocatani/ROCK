@@ -328,14 +328,13 @@ namespace rock
             rightHandWeaponAuthorityActive || rightPartGripActive ||
                 weaponHandSuppressedFor(false, WeaponHandReason::Grip),
             leftSupportGripActive ||
-                (_twoHandedGrip.isFiringHandLeft() &&
-                    _twoHandedGrip.isFiringGripOccupied()) ||
+                equippedWeaponRoster().slotZeroGrips(true).firingGripActive ||
                 weaponHandSuppressedFor(true, WeaponHandReason::Grip),
             _dynamicWeaponCollision.proxyBodyIdForDebug().value,
             _rightHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(false),
             _leftHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(true),
             _secondaryDynamicWeaponCollision.proxyBodyIdForDebug().value,
-            native_hand_equipment::secondaryHandIsLeft());
+            _equippedSlotOne.hand == equipped_weapon_roster::Hand::Left);
         const auto dynamicHandHapticEvents = _dynamicHandCollision.consumeHapticEvents();
         for (const auto& pulse : dynamicHandHapticEvents.hands) {
             if (!pulse.fire) {
@@ -519,11 +518,9 @@ namespace rock
         };
         refreshEquippedWeaponHandlingSettings();
         // Sampled before any early return so input-thread grenade gating never
-        // reads a stale pairing. Index 1 is in whichever hand holds it.
-        _offhandWeaponOccupiesHand = native_hand_equipment::hasSecondaryGun() &&
-            fo4vr_actor_state_policy::equippedWeaponOccupiesHand(true, f4vr::getNativeWeaponState(f4vr::getPlayer()));
-        _offhandWeaponHandLeft = !_offhandWeaponOccupiesHand || native_hand_equipment::secondaryHandIsLeft();
-        input_remap_runtime::setBothHandsHoldWeapons(_offhandWeaponOccupiesHand && currentEquippedWeaponOccupiesHand());
+        // reads a stale pairing.
+        sampleEquippedSlotOne();
+        input_remap_runtime::setBothHandsHoldWeapons(equippedWeaponRoster().bothHandsHoldWeapons());
         if (!runtime.visualAuthorityAvailable) {
             retireDynamicWeaponForInterruptedFrame();
             restoreHeldMassMovementSlowdown("frik-unavailable");
@@ -656,9 +653,7 @@ namespace rock
         const bool forceBareFistRecheck = _equipped.menuReconcilePending;
         if (_equipped.menuReconcilePending && !_equipped.transition.pendingGrip().menuResume &&
             !_equipped.gripResumePending && !_equipped.transition.heldTransfer().active()) {
-            const bool firingHandIsLeft =
-                _twoHandedGrip.isFiringGripOccupied() &&
-                _twoHandedGrip.isFiringHandLeft();
+            const bool firingHandIsLeft = equippedWeaponRoster().slotZeroGrips(true).firingGripActive;
             const auto detachDecision =
                 resolveEquippedWeaponDetachDecision(
                     _equipped.handlingSettings);

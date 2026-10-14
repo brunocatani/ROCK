@@ -178,9 +178,10 @@ namespace rock {
                 finish(State::Failed, Failure::EquippedWeaponChanged);
                 return;
             }
-            const auto occupancy = _twoHandedGrip.getGripOccupancy();
+            const auto roster = equippedWeaponRoster();
+            const auto occupancy = roster.slotZeroGrips();
             const auto destination = inventory_weapon_equip_policy::destination(left, false,
-                occupancy.right.carriesWeapon(), occupancy.left.carriesWeapon(), currentEquippedWeaponOccupiesHand());
+                occupancy.right.carriesWeapon(), occupancy.left.carriesWeapon(), roster.facts().slot0.holdsHand);
             // An occupied equipped weapon must have exactly the other carrier;
             // never let ordinary native replacement consume a held weapon.
             if (destination == inventory_weapon_equip_policy::Destination::Unavailable) {

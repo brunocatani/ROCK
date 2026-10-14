@@ -13,7 +13,7 @@ namespace rock
         if (_equipped.transition.getPublicSnapshot().active) return "weapon-transition";
         if (_equipped.transition.pendingGrip().pending) return "pending-grip";
         if (provider::currentNativeAnimationAuthorityFlags() != 0) return "native-animation-owner";
-        const auto grips = _twoHandedGrip.getGripOccupancy();
+        const auto grips = equippedWeaponRoster().slotZeroGrips();
         if (grips.left.weaponEngaged() || grips.right.weaponEngaged()) return "weapon-hand-occupied";
         const auto* frik = frik_visual_authority::api();
         if (!frik || !frik->getHandPoseSetTagState) return "frik-pose-api";

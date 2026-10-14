@@ -71,25 +71,6 @@ namespace rock
         clearLooseGrenadeImpactWatches();
     }
 
-    bool PhysicsInteraction::equippedWeaponFiringHandForGrabIsLeft() const
-    {
-        const auto& pending = _equipped.transition.pendingGrip();
-        const bool currentIsLeft = _twoHandedGrip.isFiringHandLeft();
-        if (!pending.pending) return currentIsLeft;
-        auto* weapon = currentEquippedWeaponForm();
-        return equipped_weapon_transition_policy::resolveFiringHandIsLeft(
-            currentIsLeft, weapon ? weapon->GetFormID() : 0u,
-            reinterpret_cast<std::uintptr_t>(currentEquippedWeaponInstanceData(weapon)),
-            {
-                .pending = pending.pending,
-                .isLeft = pending.supportGrip.validCarry() ? !pending.isLeft : pending.isLeft,
-                .formID = pending.targetWeaponFormID,
-                .instanceData = pending.targetWeaponInstanceData,
-                .previousFormID = pending.previousWeaponFormID,
-                .previousInstanceData = pending.previousWeaponInstanceData,
-            });
-    }
-
     std::uint32_t PhysicsInteraction::forceGrabHandBlockerMask(
         const Hand& hand,
         bool isLeft,
@@ -101,15 +82,7 @@ namespace rock
             state == HandState::Idle || state == HandState::SelectedClose || state == HandState::SelectedFar;
         // Equip data remains authoritative while menus temporarily hide or
         // detach the weapon's 3D node.
-        const bool equippedWeaponPresent = currentEquippedWeaponOccupiesHand();
-        const bool equippedWeaponOccupiesHand = (_equipped.transition.pendingGrip().pairedGrips.valid() || _equipped.transition.pendingGrip().secondSupportGrip.validCarry()) ||
-            (_equipped.transition.pendingGrip().supportGrip.validCarry() ? isLeft == _equipped.transition.pendingGrip().isLeft :
-            force_grab_policy::equippedWeaponOccupiesHand(
-            isLeft,
-            equippedWeaponPresent,
-            _twoHandedGrip.isFiringGripDetached(),
-            equippedWeaponFiringHandForGrabIsLeft(),
-            _twoHandedGrip.isHandPartGripping(isLeft)));
+        const auto roster = equippedWeaponRoster();
 
         return force_grab_policy::blockerMask(force_grab_policy::HandAvailabilityInput{
             .disabled = handDisabled,
@@ -118,8 +91,8 @@ namespace rock
             .activePullCatch = hand.hasActivePullCatchIntent(),
             .extractionHandoff = hand.hasPendingExtractedItemHandoff(),
             .pendingForceGrab = includePendingCommit && _forceGrab.pendingCommits[isLeft ? 1u : 0u].active,
-            .equippedWeaponOccupiesHand = equippedWeaponOccupiesHand,
-            .offhandWeaponOccupiesHand = offhandWeaponOccupies(isLeft),
+            .equippedWeaponOccupiesHand = roster.slotZeroHolds(isLeft),
+            .offhandWeaponOccupiesHand = roster.slotOneHolds(isLeft),
             .touchGrabActive = _touchGrabRuntime.isHandActive(isLeft),
             .inputReserved = input_remap_runtime::ownsBareFistInput(),
         });

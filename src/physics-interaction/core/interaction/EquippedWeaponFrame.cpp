@@ -307,14 +307,70 @@ namespace rock
         TwoHandedGripUpdateResult gripUpdateResult{};
     };
 
+    void PhysicsInteraction::sampleEquippedSlotOne()
+    {
+        // Slot 1's equipment view is a guarded native read, so the frame owner
+        // samples it rather than every roster query.
+        const bool equipped = native_hand_equipment::hasSecondaryGun();
+        _equippedSlotOne = {
+            .equipped = equipped,
+            .holdsHand = equipped &&
+                fo4vr_actor_state_policy::equippedWeaponOccupiesHand(true, f4vr::getNativeWeaponState(f4vr::getPlayer())),
+            .hand = equipped ? equipped_weapon_roster::handFor(native_hand_equipment::secondaryHandIsLeft()) :
+                               equipped_weapon_roster::Hand::None,
+        };
+    }
+
+    equipped_weapon_roster::Roster PhysicsInteraction::equippedWeaponRoster() const
+    {
+        using equipped_weapon_roster::handFor;
+        const auto& pending = _equipped.transition.pendingGrip();
+        const bool sessionFiringLeft = _twoHandedGrip.isFiringHandLeft();
+        bool firingLeft = sessionFiringLeft;
+        if (pending.pending) {
+            auto* weapon = currentEquippedWeaponForm();
+            firingLeft = equipped_weapon_transition_policy::resolveFiringHandIsLeft(
+                sessionFiringLeft, weapon ? weapon->GetFormID() : 0u,
+                reinterpret_cast<std::uintptr_t>(currentEquippedWeaponInstanceData(weapon)),
+                {
+                    .pending = pending.pending,
+                    .isLeft = pending.supportGrip.validCarry() ? !pending.isLeft : pending.isLeft,
+                    .formID = pending.targetWeaponFormID,
+                    .instanceData = pending.targetWeaponInstanceData,
+                    .previousFormID = pending.previousWeaponFormID,
+                    .previousInstanceData = pending.previousWeaponInstanceData,
+                });
+        }
+        const auto grips = _twoHandedGrip.getGripOccupancy();
+        equipped_weapon_roster::Facts facts{};
+        facts.slot0 = {
+            .holdsHand = currentEquippedWeaponOccupiesHand(),
+            .sessionFiringHand = handFor(sessionFiringLeft),
+            .firingHand = handFor(firingLeft),
+            .firingGripConfirmed = _twoHandedGrip.isFiringGripOccupied(),
+            .firingGripDetached = _twoHandedGrip.isFiringGripDetached(),
+            .partGrips = { {
+                { .active = grips.right.partGripActive, .attachOnly = grips.right.partGripAttachOnly },
+                { .active = grips.left.partGripActive, .attachOnly = grips.left.partGripAttachOnly },
+            } },
+        };
+        facts.slot1 = _equippedSlotOne;
+        facts.pending = {
+            .bothHands = pending.pairedGrips.valid() || pending.secondSupportGrip.validCarry(),
+            .supportHand = pending.supportGrip.validCarry() ? handFor(pending.isLeft) : equipped_weapon_roster::Hand::None,
+        };
+        return equipped_weapon_roster::Roster(facts);
+    }
+
     PhysicsInteraction::EquippedWeaponFramePreparation PhysicsInteraction::beginEquippedWeaponFrame(
         const PhysicsFrameContext& frame,
         RE::hknpWorld* hknp)
     {
         EquippedWeaponFramePreparation prepared{};
-        prepared.secondaryEquipped = native_hand_equipment::hasSecondaryGun();
-        prepared.secondaryLeft = prepared.secondaryEquipped && native_hand_equipment::secondaryHandIsLeft();
-        prepared.secondaryRight = prepared.secondaryEquipped && !prepared.secondaryLeft;
+        sampleEquippedSlotOne();
+        prepared.secondaryEquipped = _equippedSlotOne.equipped;
+        prepared.secondaryLeft = _equippedSlotOne.hand == equipped_weapon_roster::Hand::Left;
+        prepared.secondaryRight = _equippedSlotOne.hand == equipped_weapon_roster::Hand::Right;
 
         // The second weapon's hand cannot also hold the primary, by its firing
         // grip or a part grip. In the right hand it also ends ROCK's right
@@ -381,7 +437,7 @@ namespace rock
         }
         prepared.rightHandWeaponAuthorityActive = rightHandWeaponAuthorityActive;
 
-        const EquippedWeaponGripOccupancy occupancy = _twoHandedGrip.getGripOccupancy();
+        const auto occupancy = equippedWeaponRoster().slotZeroGrips();
         prepared.leftSupportGripActive = occupancy.left.partGripActive;
         prepared.rightPartGripActive = occupancy.right.partGripActive;
         setWeaponHandSuppression(hknp, false, WeaponHandReason::Dominant, prepared.rightHandWeaponAuthorityActive);
@@ -829,13 +885,13 @@ namespace rock
         }
         rearmResumedGripHold(true, leftPhysicalGripState);
         rearmResumedGripHold(false, rightPhysicalGripState);
-        w.providerGripOccupancy = _twoHandedGrip.getGripOccupancy();
+        w.providerGripOccupancy = equippedWeaponRoster().slotZeroGrips();
         maskProviderWeaponGrabInput(true, w.providerGripOccupancy.left.weaponEngaged(), leftPhysicalGripState);
         maskProviderWeaponGrabInput(false, w.providerGripOccupancy.right.weaponEngaged(), rightPhysicalGripState);
 
         const auto holsterSnapshot = w.inputBlockingMenuActive || w.frame.menuBlocked ?
             virtual_holsters::Snapshot{} : virtual_holsters::readSnapshot();
-        const auto holsterOccupancy = _twoHandedGrip.getGripOccupancy();
+        const auto holsterOccupancy = equippedWeaponRoster().slotZeroGrips();
         const auto advanceHolsterInput = [&](const bool isLeft, const GrabButtonState& button) {
             const auto handIndex = equipped_weapon_toggle_grab_policy::handIndex(isLeft);
             const auto& occupancy = isLeft ? holsterOccupancy.left : holsterOccupancy.right;
@@ -847,7 +903,7 @@ namespace rock
                     .ownershipKey = w.currentEquippedWeaponOwnershipKey,
                     .grabButtonId = input_remap_policy::kGrabButtonId,
                     .isLeft = isLeft,
-                    .weaponEngaged = occupancy.firingGripActive || _twoHandedGrip.isHandPartCarryGripping(isLeft),
+                    .weaponEngaged = occupancy.carriesWeapon(),
                     .toggleGrab = toggleGrab,
                     .held = button.held,
                     .pressed = button.pressed,
@@ -1827,14 +1883,14 @@ namespace rock
         if (_equipped.partIndicatorFrame == gameFrameIndex &&
             _equipped.partIndicatorGeneration == currentWeaponGenerationKey) {
             auto candidateBodyIds = _equipped.partIndicatorBodyIds;
-            const auto occupancy = _twoHandedGrip.getGripOccupancy();
+            const auto roster = equippedWeaponRoster();
+            const auto& slotZero = roster.facts().slot0;
             for (const bool isLeft : { true, false }) {
                 const auto& hand = isLeft ? _leftHand : _rightHand;
-                const auto& grip = isLeft ? occupancy.left : occupancy.right;
                 if (hand.isHolding() || _touchGrabRuntime.isHandActive(isLeft) ||
-                    grip.weaponEngaged() ||
-                    (isLeft == _twoHandedGrip.isFiringHandLeft() &&
-                        !_twoHandedGrip.isFiringGripDetached())) {
+                    roster.slotZeroGrips(isLeft).weaponEngaged() ||
+                    (slotZero.sessionFiringHand == equipped_weapon_roster::handFor(isLeft) &&
+                        !slotZero.firingGripDetached)) {
                     candidateBodyIds[isLeft ? 0u : 1u] = weapon_part_runtime::kInvalidBodyId;
                 }
             }
@@ -2393,7 +2449,7 @@ namespace rock
             input_remap_runtime::isRawButtonPhysicallyHeld(
                 false,
                 input_remap_policy::kGrabButtonId);
-        const auto providerGripOccupancy = _twoHandedGrip.getGripOccupancy();
+        const auto providerGripOccupancy = equippedWeaponRoster().slotZeroGrips();
         maskProviderWeaponGrabInput(true, providerGripOccupancy.left.weaponEngaged(), leftPhysicalGrip);
         maskProviderWeaponGrabInput(false, providerGripOccupancy.right.weaponEngaged(), rightPhysicalGrip);
         const std::uint64_t shoulderOwnershipKey =
@@ -2503,9 +2559,7 @@ namespace rock
                     !_forceGrab.pendingCommits[handIndex].active &&
                     !hand.hasActivePullCatchIntent() &&
                     !hand.hasPendingExtractedItemHandoff() &&
-                    !_twoHandedGrip.isHandPartGripping(isLeft) &&
-                    !(_twoHandedGrip.isFiringGripOccupied() &&
-                        _twoHandedGrip.isFiringHandLeft() == isLeft);
+                    !equippedWeaponRoster().slotZeroGrips(isLeft).weaponEngaged();
                 const bool handAllowedByHandlingMode =
                     roleNeutralFiringGripOwnership || !isLeft;
                 const bool handCanOwnFiringGrip =

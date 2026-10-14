@@ -400,6 +400,11 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKNiReferenceOwnershipTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKNiReferenceOwnershipTests)
 
+  add_executable(ROCKEquippedWeaponRosterTests "${ROOT_DIR}/tests/EquippedWeaponRosterTests.cpp")
+  target_compile_features(ROCKEquippedWeaponRosterTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKEquippedWeaponRosterTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKEquippedWeaponRosterTests)
+
   add_executable(ROCKFo4VrActorStatePolicyTests
     "${ROOT_DIR}/tests/Fo4VrActorStatePolicyTests.cpp"
   )

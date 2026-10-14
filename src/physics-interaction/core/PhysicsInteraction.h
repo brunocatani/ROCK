@@ -39,6 +39,7 @@
 #include "physics-interaction/core/ForceGrabPolicy.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
 #include "physics-interaction/weapon/WeaponPartDrivePose.h"
+#include "physics-interaction/weapon/EquippedWeaponRoster.h"
 #include "physics-interaction/core/PhysicsLifecycleState.h"
 #include "physics-interaction/feedback/FeedbackHaptics.h"
 #include "physics-interaction/input/GrabInputIntentPolicy.h"
@@ -470,7 +471,8 @@ namespace rock
         // primary in the hand that holds it. Frame thread.
         void promoteSecondaryWeapon(RE::TESObjectWEAP* weapon, std::uintptr_t instance, bool left);
         std::uint32_t forceGrabHandBlockerMask(const Hand& hand, bool isLeft, bool handDisabled, bool includePendingCommit) const;
-        bool equippedWeaponFiringHandForGrabIsLeft() const;
+        void sampleEquippedSlotOne();
+        equipped_weapon_roster::Roster equippedWeaponRoster() const;
         bool canHandAcceptForceGrab(const Hand& hand, bool isLeft, bool handDisabled) const;
         bool handHoldsLooseGrenade(const Hand& hand) const;
         bool hasActiveLooseGrenadeCommit() const;
@@ -1086,15 +1088,9 @@ namespace rock
         std::uint32_t _placementCandidate{}, _placementRequestedForm{}, _placementPendingForm{}, _placementLastRequestForm{};
         bool _placementClickReserved{};
         float _placementScriptWait{};
-        // Frame-thread sample: a drawn second weapon (native equipment index
-        // 1) occupies the physical hand holding it for every grab,
-        // force-grab, touch-grab, transfer and grenade gate this frame.
-        bool _offhandWeaponOccupiesHand{};
-        bool _offhandWeaponHandLeft{ true };
-        [[nodiscard]] bool offhandWeaponOccupies(bool isLeft) const noexcept
-        {
-            return _offhandWeaponOccupiesHand && isLeft == _offhandWeaponHandLeft;
-        }
+        // Slot 1's native equipment, sampled by the frame owner
+        // (sampleEquippedSlotOne) for every roster query this frame.
+        equipped_weapon_roster::SlotOneFacts _equippedSlotOne{};
         TwoHandedGrip _twoHandedGrip;
         DynamicHandCollisionRuntime _dynamicHandCollision{ _contacts.clock };
         feedback_haptics::FeedbackHaptics _feedbackHaptics;

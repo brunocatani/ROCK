@@ -665,22 +665,6 @@ namespace rock::weapon_two_handed_grip_math
         return !gripCarries || (!releaseRequiresNewHold && (peerGripCarries || lastGripReleaseDropEnabled));
     }
 
-    /*
-     * Normal (world) grab gating per hand ROLE, not per physical hand. The
-     * firing hand is blocked while an equipped weapon exists unless it is
-     * detached and free in part-carry; the support hand is blocked only while
-     * its own weapon part grip is active. Roles follow the runtime firing
-     * hand (TwoHandedGrip::isFiringHandLeft()).
-     */
-    inline bool canProcessNormalGrabInput(bool handIsFiringHand, bool weaponEquipped, bool handPartGripActive, bool handDetachedFree)
-    {
-        if (!handIsFiringHand) {
-            return !handPartGripActive;
-        }
-
-        return !weaponEquipped || handDetachedFree;
-    }
-
     struct FiringGripReattachInput
     {
         bool partCarryActive{ false };

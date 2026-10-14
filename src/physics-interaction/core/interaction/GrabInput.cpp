@@ -333,7 +333,7 @@ namespace rock
             isLeft,
             hand.isHolding() ||
                 _touchGrabRuntime.isHandActive(isLeft) ||
-                _twoHandedGrip.isHandPartGripping(isLeft) ||
+                equippedWeaponRoster().slotZeroGrips(isLeft).partGripActive ||
                 pendingEquippedGripOwnership);
         input_remap_runtime::setHeldObjectFormId(isLeft, heldRef ? heldRef->GetFormID() : 0u, hand.isHoldingLooseWeapon());
     }
@@ -667,22 +667,14 @@ namespace rock
 
         const bool heldWeaponEquipTriggerPressedEdge =
             !providerSuppressesHeldWeaponTriggerEquip && readHeldWeaponEquipTriggerPressedEdge(isLeft);
-        const bool firingHandIsLeft = equippedWeaponFiringHandForGrabIsLeft();
+        // The skeleton's Weapon node/drawn flag can outlive unequip. The
+        // roster uses the same item authority as force grab, asked for each
+        // hand after any earlier hand's equip/transfer.
+        const auto roster = equippedWeaponRoster();
+        const bool firingHandIsLeft = roster.facts().slot0.firingHand == equipped_weapon_roster::Hand::Left;
         const bool handIsFiringHand = isLeft == firingHandIsLeft;
-        // The skeleton's Weapon node/drawn flag can outlive unequip. Use the
-        // same item authority as force grab, sampled for each hand after any
-        // earlier hand's equip/transfer instead of caching scene occupancy.
-        const bool equippedWeaponPresent = currentEquippedWeaponOccupiesHand();
-        const bool supportTransferPending = _equipped.transition.pendingGrip().supportGrip.validCarry();
-        const bool offhandWeaponOccupiesHand = offhandWeaponOccupies(isLeft);
-        if (offhandWeaponOccupiesHand ||
-            (_equipped.transition.pendingGrip().pairedGrips.valid() || _equipped.transition.pendingGrip().secondSupportGrip.validCarry()) ||
-            (supportTransferPending ? isLeft == _equipped.transition.pendingGrip().isLeft :
-            !weapon_two_handed_grip_math::canProcessNormalGrabInput(
-                handIsFiringHand,
-                equippedWeaponPresent,
-                _twoHandedGrip.isHandPartGripping(isLeft),
-                _twoHandedGrip.isFiringGripDetached() && !_twoHandedGrip.isHandPartGripping(isLeft)))) {
+        const bool offhandWeaponOccupiesHand = roster.slotOneHolds(isLeft);
+        if (offhandWeaponOccupiesHand || roster.slotZeroHolds(isLeft)) {
             grab_input_intent_policy::reset(inputIntentState);
             cancelPeerHeldJoinRetry("normal-grab-suppressed", true);
             clearGameplayCandidatesForHand(hand, isLeft);
@@ -1643,8 +1635,13 @@ namespace rock
                 const auto* heldBase = heldRefForGameplay ? heldRefForGameplay->GetObjectReference() : nullptr;
                 const bool heldGun = heldBase && heldBase->IsWeapon() &&
                     static_cast<const RE::TESObjectWEAP*>(heldBase)->weaponData.type == RE::WEAPON_TYPE::kGun;
+                if (heldGun) {
+                    // The other hand may have equipped slot 1 earlier this frame.
+                    sampleEquippedSlotOne();
+                }
+                const auto slotRoster = equippedWeaponRoster();
                 if (!peerHoldingSameObject && !supportEquipRequested && heldGun &&
-                    currentEquippedWeaponOccupiesHand() && !native_hand_equipment::hasSecondaryGun()) {
+                    slotRoster.facts().slot0.holdsHand && !slotRoster.facts().slot1.equipped) {
                     auto* heldRef = hand.getHeldRef();
                     if (!heldRef) return false;
                     if (!held_weapon_equip_state_policy::canBeginEquip(nativeStateBeforeEquip)) return true;
