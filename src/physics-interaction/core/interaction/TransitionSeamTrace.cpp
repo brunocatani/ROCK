@@ -3,9 +3,11 @@
 #include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
+#include "physics-interaction/native/NativeMemory.h"
 
 #include <array>
 #include <cmath>
+#include <cstddef>
 
 namespace rock
 {
@@ -17,7 +19,8 @@ namespace rock
      *
      * Model roots of different sources are not registered to each other, so
      * the visible gun is measured by its geometry: the mean of its shapes'
-     * world bound centres (C) and the shape centre farthest from it (F, the tip, along
+     * centres (C; a skinned shape by its bones, others by world bound) and the
+     * shape centre farthest from it (F, the tip, along
      * the gun). Per frame it logs how far C and F moved in the world and in
      * the hand's frame, and where they sit in the hand against the last frame
      * before the transition. A gap is a frame with no visible weapon; a
@@ -87,6 +90,30 @@ namespace rock
                     for (const auto& child : node->children) {
                         if (child && count < pending.size()) pending[count++] = child.get();
                     }
+                    continue;
+                }
+                // A skinned shape is drawn from its skin's bone worlds, which
+                // can belong to another skeleton; its world bound need not
+                // follow them. Use the mean of those bones.
+                auto* geometry = const_cast<RE::NiAVObject*>(object)->IsGeometry();
+                if (!geometry) geometry = const_cast<RE::NiAVObject*>(object)->IsTriShape();
+                const auto* skin = geometry ? geometry->GetRuntimeData().skinInstance.get() : nullptr;
+                const RE::NiTransform** boneWorlds = nullptr;
+                std::uint32_t boneCount = 0;
+                if (skin && native_memory::tryReadField(skin, 0x28, boneWorlds) && boneWorlds &&
+                    native_memory::tryReadField(skin, 0x38, boneCount) && boneCount > 0 && boneCount <= 768) {
+                    RE::NiPoint3 sum{};
+                    std::uint32_t used = 0;
+                    for (std::uint32_t b = 0; b < boneCount; ++b) {
+                        const RE::NiTransform* world = nullptr;
+                        if (!native_memory::tryReadField(boneWorlds, static_cast<std::ptrdiff_t>(b * sizeof(void*)), world) || !world) continue;
+                        RE::NiPoint3 point{};
+                        if (!native_memory::tryReadField(world, offsetof(RE::NiTransform, translate), point) ||
+                            !std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) continue;
+                        sum += point;
+                        ++used;
+                    }
+                    if (used) centers[shapes++] = sum * (1.0f / static_cast<float>(used));
                     continue;
                 }
                 const auto& bound = object->worldBound;

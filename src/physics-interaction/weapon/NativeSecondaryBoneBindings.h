@@ -130,9 +130,13 @@ namespace rock::native_secondary_actions
          * bone worlds, not from the model's own nodes, and that skeleton
          * stays where it was last placed. Each model node takes the world it
          * renders at now (the bone's for a bound node), as a local under its
-         * parent, before the skins return to the model's own nodes. The model
-         * keeps its look and follows its root from this frame on. Its authored
-         * rest locals are not restored; the model leaves the actor.
+         * parent. Each skin keeps its private clone, with every bound slot
+         * re-pointed from the skeleton bone to the model node that bone
+         * drove: the original instance can read a flattened bone tree that
+         * nothing poses any more. A skin with a slot no model node owns
+         * returns to its original instance. The model keeps its look and
+         * follows its root from this frame on; it leaves the actor, so its
+         * authored rest locals are not restored.
          */
         bool releaseKeepingPose() noexcept
         {
@@ -153,10 +157,26 @@ namespace rock::native_secondary_actions
                     weapon_visual_authority_math::invertSceneTransform(worlds[node.parentIndex]),worlds[i]);
                 node.actual->world=worlds[i];
             }
+            std::size_t kept=0,returned=0;
             for (auto& skin:_skins) {
                 auto& current=skin.geometry->GetRuntimeData().skinInstance;
-                if (current.get()==skin.instance.get()) current=skin.original;
+                if (current.get()!=skin.instance.get()) continue;
+                RE::NiAVObject** nodes{}; const RE::NiTransform** boneWorlds{}; std::uint32_t count{};
+                bool owned=arrays(skin.instance.get(),nodes,boneWorlds,count);
+                std::vector<RE::NiAVObject*> owners(skin.slots.size(),nullptr);
+                for (std::size_t j=0;owned && j<skin.slots.size();++j) {
+                    const auto owner=std::find_if(_nodes.begin(),_nodes.end(),[&](const Node& node) { return node.target==skin.slots[j].target; });
+                    owners[j]=owner!=_nodes.end()?owner->actual.get():nullptr;
+                    owned=owners[j] && skin.slots[j].index<count;
+                }
+                if (!owned) { current=skin.original; ++returned; continue; }
+                for (std::size_t j=0;j<skin.slots.size();++j) {
+                    nodes[skin.slots[j].index]=owners[j]; boneWorlds[skin.slots[j].index]=&owners[j]->world;
+                }
+                ++kept;
             }
+            ROCK_LOG_INFO(Animation,"AKIMBO bone binding handed to model nodes skins={} rebound={} original={} nodes={}",
+                _skins.size(),kept,returned,_nodes.size());
             _skins.clear(); _nodes.clear();
             _sampleFrame=UINT64_MAX; _nextReport=0; _nextBoneReport=0; _sampleFrames=_movingSamples=0;
             _nativeTravel=_nativeRotation=_nativeScale=_overwrite=0; _movingName={};

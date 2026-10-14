@@ -17,6 +17,7 @@
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
+#include "physics-interaction/weapon/WeaponAuthority.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock
@@ -565,7 +566,22 @@ namespace rock
 
         auto* model = _model.get();
         if (model && !_parent) {
-            if (model->parent) {
+            /*
+             * A promoted equipped model stays on screen under its old biped
+             * parent until the unequip orphans it, and nothing else moves it
+             * there. Hold it at the captured hand pose through its local, so
+             * it follows the hand from the first frame; that parent is
+             * never re-parented or otherwise changed.
+             */
+            if (model->parent && _equippedModelSource) {
+                RE::NiTransform wand{};
+                if (frik_hand_world_authority::tryGetHandlingWandWorld(_isLeftHand, wand) &&
+                    isFiniteTransform(model->parent->world)) {
+                    const auto desired = transform_math::composeTransforms(wand, _modelInHandLocal);
+                    model->local = weapon_visual_authority_math::worldTargetToParentLocal(model->parent->world, desired);
+                    f4vr::updateDown(model, true);
+                    rememberPresentedPose();
+                }
             }
             /*
              * Before ActivateRef's removal has completed, the retained graph
@@ -667,7 +683,9 @@ namespace rock
             bool haveBlendTarget = false;
             // Support-only equips retain the captured wand-to-model relation;
             // the authored wrist controls hand presentation, never weapon aim.
-            if (!_supportOnly && !_capturedGrips.valid() && _hasFiringHandWeaponLocal) {
+            // An equipped source already sits exactly as it was rendered; the
+            // loose-weapon grip registration does not describe its root.
+            if (!_supportOnly && !_equippedModelSource && !_capturedGrips.valid() && _hasFiringHandWeaponLocal) {
                 if (_hasPhysicalHandInWandLocal) {
                     const RE::NiTransform physicalHandWorld =
                         transform_math::composeTransforms(

@@ -393,6 +393,52 @@ namespace rock::native_secondary_presentation
             ~IncomingStep() { stepIncoming(); }
         };
 
+        /*
+         * The second weapon's native index-1 pose (its biped attach, a rotated
+         * draw/carry pose) is never shown. On a frame ROCK does not place it
+         * (a menu, the weapon put away, an unavailable provider or placement)
+         * its model is culled, as the primary is natively in those states, and
+         * it shows again on the frame ROCK places it. A model that left the
+         * equipment belongs to native teardown and is never touched.
+         */
+        struct Unplaced
+        {
+            std::uintptr_t root = 0;
+            bool wasVisible = false;
+        };
+        Unplaced s_unplaced{};
+
+        void syncUnplacedVisibility() noexcept
+        {
+            const auto view = native_hand_equipment::equippedViews()[1];
+            const auto identity = reinterpret_cast<std::uintptr_t>(view.root);
+            if (s_unplaced.root && s_unplaced.root != identity) s_unplaced = {};
+            if (!view.weapon || !view.root) return;
+            const bool placed = s_state.ready && s_state.frame == runtime_state::currentFrame().frameIndex;
+            if (placed) {
+                if (s_unplaced.root == identity) {
+                    equipped_weapon_visual_state::setLocallyVisible(view.root, s_unplaced.wasVisible);
+                    s_unplaced = {};
+                }
+                return;
+            }
+            if (s_unplaced.root != identity) {
+                // The incoming bridge's own cull is not a native hide.
+                s_unplaced.root = identity;
+                s_unplaced.wasVisible = equipped_weapon_visual_state::isLocallyVisible(view.root) ||
+                    s_incoming.culledRoot == identity;
+                ROCK_LOG_INFO(Weapon, "AKIMBO second weapon hidden while unplaced weapon={:08X} reason={}",
+                    view.weapon->formID, s_state.reason.empty() ? std::string_view("released") : s_state.reason);
+            }
+            if (equipped_weapon_visual_state::isLocallyVisible(view.root))
+                equipped_weapon_visual_state::setLocallyVisible(view.root, false);
+        }
+
+        struct UnplacedStep
+        {
+            ~UnplacedStep() { syncUnplacedVisibility(); }
+        };
+
         void restoreBody(const native_hand_equipment::EquippedView& view) noexcept
         {
             // A removed model is the native teardown owner's responsibility.
@@ -499,6 +545,8 @@ namespace rock::native_secondary_presentation
     void update() noexcept
     {
         if (!onFrameThread()) return;
+        // Runs last, after the incoming bridge's step.
+        const UnplacedStep unplaced;
         const IncomingStep incoming;
         s_updatedThisFrame = true;
         native_equipped_model_lifetime::updateVisibility();
