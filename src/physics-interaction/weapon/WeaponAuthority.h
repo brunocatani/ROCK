@@ -20,13 +20,13 @@ namespace rock::weapon_authority_lifecycle_policy
     inline bool isWeaponContactGenerationCurrent(std::uint64_t contactGenerationKey, std::uint64_t currentGenerationKey)
     {
         /*
-         * Zero means the older path could not report a source generation. Treat
-         * it as usable so legacy non-generated contacts do not get dropped, but
-         * reject explicit mismatches because that is the melee/modded-weapon
-         * failure mode: a contact from one generated source tree drives a grip
-         * solve on another weapon tree after a swap or root change.
+         * A contact or grip belongs to exactly one weapon generation. Zero is
+         * no weapon identity at all and is never current. A mismatch is the
+         * melee/modded-weapon failure mode: a contact from one generated source
+         * tree driving a grip solve on another weapon tree after a swap or root
+         * change.
          */
-        return contactGenerationKey == 0 || currentGenerationKey == 0 || contactGenerationKey == currentGenerationKey;
+        return contactGenerationKey != 0 && contactGenerationKey == currentGenerationKey;
     }
 
 }
