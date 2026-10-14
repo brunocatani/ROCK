@@ -695,11 +695,11 @@ namespace rock
             if (!tryBuildFiringGripZoneInput(weaponNode, _session.weaponGenerationKey,
                     _session.equippedWeaponOwnershipKey, _handlingSettings.firingGripReattachRadiusGameUnits, zoneInput) ||
                 !tryEvaluateFiringGripZoneForHand(handIsLeft, zoneInput, zone) || !zone.inside) return false;
-            provider::RockProviderWeaponPartTargetQueryV1 query{};
+            provider::PartQuery query{};
             query.weaponGenerationKey = _session.weaponGenerationKey;
             query.bodyId = weapon_part_runtime::kInvalidBodyId;
-            provider::RockProviderWeaponPartTargetResolutionV1 resolution{};
-            (void)provider::resolveWeaponPartTargetV1(query, resolution);
+            weapon_part_runtime::Resolution resolution{};
+            (void)provider::resolveWeaponPartTarget(query, resolution);
             if (resolution.whitelistActive) return false;
         }
 

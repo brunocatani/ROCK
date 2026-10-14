@@ -238,21 +238,21 @@ namespace rock::provider::runtime
         return flags;
     }
     constexpr std::uint32_t kWeaponPartTargetMatcherFlagsV1 =
-        static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchBodyId) |
-        static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceRoot) |
-        static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceName) |
-        static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchPartKind) |
-        static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchReloadRole) |
-        static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSupportRole) |
-        static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSocketRole) |
-        static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchActionRole);
+        static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchBodyId) |
+        static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceKey) |
+        static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceName) |
+        static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchPartKind) |
+        static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchReloadRole) |
+        static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSupportRole) |
+        static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSocketRole) |
+        static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchActionRole);
     constexpr std::uint32_t kImplementedWeaponPartTargetFlagsV1 =
         kWeaponPartTargetMatcherFlagsV1 |
-        static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::NonExclusive);
+        static_cast<std::uint32_t>(api::weaponparts::TargetFlag::NonExclusive);
     constexpr std::uint32_t kImplementedWeaponPartDriveMatcherFlagsV1 =
-        static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchBodyId) |
-        static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceRoot) |
-        static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceName);
+        static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchBodyId) |
+        static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceKey) |
+        static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceName);
     constexpr std::uint32_t kProviderInvalidBodyId = 0x7FFF'FFFFu;
 
     // Interface IDs are 1-based; Storage is the highest.
@@ -388,7 +388,7 @@ namespace rock::provider::runtime
     {
         bool active{ false };
         std::uint64_t ownerToken{ 0 };
-        RockProviderWeaponPartTargetV1 target{};
+        PartTarget target{};
     };
 
     struct WeaponPartDriveSlot
@@ -396,7 +396,7 @@ namespace rock::provider::runtime
         bool active{ false };
         std::uint64_t ownerToken{ 0 };
         std::uint64_t expiresAfterFrame{ 0 };
-        RockProviderWeaponPartDriveTargetV1 target{};
+        PartDrive target{};
     };
 
     std::mutex s_weaponPartMutex;
@@ -1104,13 +1104,13 @@ namespace rock::provider::runtime
         if ((flags & ~kImplementedWeaponPartTargetFlagsV1) != 0 || (flags & kWeaponPartTargetMatcherFlagsV1) == 0) {
             return false;
         }
-        if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchBodyId)) != 0 && bodyId == kProviderInvalidBodyId) {
+        if ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchBodyId)) != 0 && bodyId == kProviderInvalidBodyId) {
             return false;
         }
-        if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceRoot)) != 0 && sourceRoot == 0) {
+        if ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceKey)) != 0 && sourceRoot == 0) {
             return false;
         }
-        if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceName)) != 0 &&
+        if ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceName)) != 0 &&
             boundedStringLength(sourceName, ROCK_PROVIDER_MAX_EVIDENCE_NAME) == 0) {
             return false;
         }
@@ -1122,19 +1122,19 @@ namespace rock::provider::runtime
         if ((flags & ~kImplementedWeaponPartDriveMatcherFlagsV1) != 0 || (flags & kImplementedWeaponPartDriveMatcherFlagsV1) == 0) {
             return false;
         }
-        if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchBodyId)) != 0 && bodyId == kProviderInvalidBodyId) {
+        if ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchBodyId)) != 0 && bodyId == kProviderInvalidBodyId) {
             return false;
         }
-        if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceRoot)) != 0 && sourceRoot == 0) {
+        if ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceKey)) != 0 && sourceRoot == 0) {
             return false;
         }
-        if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceName)) != 0 &&
+        if ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceName)) != 0 &&
             boundedStringLength(sourceName, ROCK_PROVIDER_MAX_EVIDENCE_NAME) == 0) {
             return false;
         }
-        return ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceRoot)) != 0 && sourceRoot != 0) ||
-               ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchBodyId)) != 0 && bodyId != kProviderInvalidBodyId) ||
-               ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceName)) != 0 &&
+        return ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceKey)) != 0 && sourceRoot != 0) ||
+               ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchBodyId)) != 0 && bodyId != kProviderInvalidBodyId) ||
+               ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceName)) != 0 &&
                    boundedStringLength(sourceName, ROCK_PROVIDER_MAX_EVIDENCE_NAME) != 0);
     }
 
@@ -1163,26 +1163,26 @@ namespace rock::provider::runtime
         return value <= static_cast<std::uint32_t>(WeaponActionRole::Latch);
     }
 
-    bool hasValidWeaponPartTargetSemantics(const RockProviderWeaponPartTargetV1& target)
+    bool hasValidWeaponPartTargetSemantics(const api::weaponparts::Target& target)
     {
         const auto flags = target.flags;
-        if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchPartKind)) != 0 &&
+        if ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchPartKind)) != 0 &&
             !isValidWeaponPartKindValue(target.partKind)) {
             return false;
         }
-        if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchReloadRole)) != 0 &&
+        if ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchReloadRole)) != 0 &&
             !isValidWeaponReloadRoleValue(target.reloadRole)) {
             return false;
         }
-        if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSupportRole)) != 0 &&
+        if ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSupportRole)) != 0 &&
             !isValidWeaponSupportRoleValue(target.supportRole)) {
             return false;
         }
-        if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSocketRole)) != 0 &&
+        if ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSocketRole)) != 0 &&
             !isValidWeaponSocketRoleValue(target.socketRole)) {
             return false;
         }
-        if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchActionRole)) != 0 &&
+        if ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchActionRole)) != 0 &&
             !isValidWeaponActionRoleValue(target.actionRole)) {
             return false;
         }
@@ -1247,19 +1247,6 @@ namespace rock::provider::runtime
         case api::weaponparts::GrabMode::None:
         default:
             return weapon_part_runtime::GrabMode::None;
-        }
-    }
-
-    api::weaponparts::GrabMode fromRuntimeGrabMode(weapon_part_runtime::GrabMode mode)
-    {
-        switch (mode) {
-        case weapon_part_runtime::GrabMode::FullTwoHandAuthority:
-            return api::weaponparts::GrabMode::FullTwoHandAuthority;
-        case weapon_part_runtime::GrabMode::AttachOnly:
-            return api::weaponparts::GrabMode::AttachOnly;
-        case weapon_part_runtime::GrabMode::None:
-        default:
-            return api::weaponparts::GrabMode::None;
         }
     }
 
@@ -2241,13 +2228,10 @@ namespace rock::provider
         }
         snapshot.handReservation = currentHandReservation(snapshot.offhandHand);
 
-        std::array<RockProviderWeaponPartGripStateV1, 2> partGripStates{};
+        // Source keys resolve while this frame owns the live catalog; task
+        // readers copy the published values without touching scene nodes.
+        std::array<api::weaponparts::GripState, 2> partGripStates{};
         pi.fillProviderWeaponPartGripStates(partGripStates);
-        // Resolve opaque source keys while the live catalog is owned by this
-        // frame. Task readers copy these values without touching scene nodes.
-        std::array<api::weaponparts::GripState, 2> publicPartGripStates{};
-        for (std::size_t index = 0; index < partGripStates.size(); ++index)
-            publicPartGripStates[index] = runtime::publicGripState(partGripStates[index]);
 
         std::array<RockProviderHandInteractionStateV1, 2>
             handInteractionStates{};
@@ -2370,7 +2354,7 @@ namespace rock::provider
                     previousEquipped.terminalSequence;
             s_lastSnapshot = snapshot;
             s_hasSnapshot = true;
-            s_lastPartGripStates = publicPartGripStates;
+            s_lastPartGripStates = partGripStates;
             s_lastHandInteractionStates = handInteractionStates;
             s_lastEquippedWeaponState = equippedWeaponState;
         }
@@ -3034,40 +3018,33 @@ namespace rock::provider
         return count;
     }
 
-    bool resolveWeaponPartTargetV1(
-        const RockProviderWeaponPartTargetQueryV1& query,
-        RockProviderWeaponPartTargetResolutionV1& outResolution)
+    bool resolveWeaponPartTarget(
+        const provider::PartQuery& query,
+        weapon_part_runtime::Resolution& outResolution)
     {
-        outResolution = {};
-        std::array<weapon_part_runtime::Target, ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1> runtimeTargets{};
+        std::array<weapon_part_runtime::Target, api::weaponparts::kMaxTargets> runtimeTargets{};
         const auto targetCount = copyWeaponPartTargets(runtimeTargets);
 
         const weapon_part_runtime::Contact contact{
             .weaponGenerationKey = query.weaponGenerationKey,
             .bodyId = query.bodyId,
             .sourceRoot = query.sourceRoot,
-            .sourceName = std::string_view(query.sourceName, boundedStringLength(query.sourceName, ROCK_PROVIDER_MAX_EVIDENCE_NAME)),
+            .sourceName = std::string_view(query.sourceName, boundedStringLength(query.sourceName, std::size(query.sourceName))),
             .partKind = static_cast<WeaponPartKind>(query.partKind),
             .reloadRole = static_cast<WeaponReloadRole>(query.reloadRole),
             .supportRole = static_cast<WeaponSupportGripRole>(query.supportRole),
             .socketRole = static_cast<WeaponSocketRole>(query.socketRole),
             .actionRole = static_cast<WeaponActionRole>(query.actionRole),
         };
-        const auto resolution = weapon_part_runtime::resolveTarget(
+        outResolution = weapon_part_runtime::resolveTarget(
             std::span(runtimeTargets).first(targetCount), contact);
-        outResolution.whitelistActive = resolution.whitelistActive ? 1u : 0u;
-        outResolution.matched = resolution.matched ? 1u : 0u;
-        outResolution.grabMode = fromRuntimeGrabMode(resolution.grabMode);
-        outResolution.groupId = resolution.groupId;
-        outResolution.ownerToken = resolution.ownerToken;
-        outResolution.priority = resolution.priority;
         // Non-exclusive targets can match without raising whitelistActive, so
         // a resolution is meaningful whenever either signal is set.
-        return resolution.whitelistActive || resolution.matched;
+        return outResolution.whitelistActive || outResolution.matched;
     }
 
-    std::uint32_t copyWeaponPartDriveTargetsV1(
-        RockProviderWeaponPartDriveTargetV1* outTargets,
+    std::uint32_t copyWeaponPartDrives(
+        PartDrive* outTargets,
         std::uint32_t maxTargets,
         std::uint64_t* outOwnerTokens,bool pruneExpired)
     {

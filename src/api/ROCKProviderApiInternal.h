@@ -2,6 +2,7 @@
 
 #include "api/ProviderRuntimeTypes.h"
 #include "api/TouchGrabRegistry.h"
+#include "api/WeaponPartRequests.h"
 #include "physics-interaction/timing/GameFrameTimingPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
 
@@ -13,32 +14,6 @@ namespace rock
 namespace rock::provider
 {
     bool isPowerArmorGrabOwnerRegisteredV1(std::uint64_t ownerToken);
-    struct RockProviderWeaponPartTargetQueryV1
-    {
-        std::uint64_t weaponGenerationKey{ 0 };
-        std::uint32_t bodyId{ 0x7FFF'FFFF };
-        std::uint32_t partKind{ 0 };
-        std::uint32_t reloadRole{ 0 };
-        std::uint32_t supportRole{ 0 };
-        std::uint32_t socketRole{ 0 };
-        std::uint32_t actionRole{ 0 };
-        std::uintptr_t sourceRoot{ 0 };
-        char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
-    };
-
-    struct RockProviderWeaponPartTargetResolutionV1
-    {
-        std::uint32_t whitelistActive{ 0 };
-        std::uint32_t matched{ 0 };
-        api::weaponparts::GrabMode grabMode{
-            api::weaponparts::GrabMode::None
-        };
-        std::uint32_t groupId{ 0 };
-        std::uint32_t priority{ 0 };
-        std::uint32_t reserved{ 0 };
-        std::uint64_t ownerToken{ 0 };
-    };
-
     // FRIK 2.3 FrameBegin precedes provider initialization and BeforeRock.
     // Advance event timestamps here without retiring publication-bound leases.
     void beginGameFrame(std::uint64_t frameIndex) noexcept;
@@ -66,14 +41,14 @@ namespace rock::provider
     void dispatchAnimationPhaseCallbacksV1(
         ::rock::api::animation::AnimationPhase phase,
         const game_frame_timing_policy::GameFrameTiming& timing);
-    bool resolveWeaponPartTargetV1(
-        const RockProviderWeaponPartTargetQueryV1& query,
-        RockProviderWeaponPartTargetResolutionV1& outResolution);
+    bool resolveWeaponPartTarget(
+        const provider::PartQuery& query,
+        weapon_part_runtime::Resolution& outResolution);
     bool hasWeaponPartTargetsForGeneration(std::uint64_t weaponGenerationKey);
     // Value snapshot for main-thread grip markers; never retains provider pointers.
     std::size_t copyWeaponPartTargets(std::span<weapon_part_runtime::Target> outTargets);
-    std::uint32_t copyWeaponPartDriveTargetsV1(
-        RockProviderWeaponPartDriveTargetV1* outTargets,
+    std::uint32_t copyWeaponPartDrives(
+        PartDrive* outTargets,
         std::uint32_t maxTargets,
         std::uint64_t* outOwnerTokens = nullptr,bool pruneExpired = true);
     bool resolveTouchGrabTargetV1(

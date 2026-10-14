@@ -28,36 +28,37 @@ namespace rock::provider::runtime {
     void refreshSources() {}
     // Source keys map to fake node values key+1000 on generation 456.
     std::uintptr_t resolveSourceKey(std::uint64_t generation, std::uint64_t key) { return generation == 456 && key ? key + 1000 : 0; }
-    std::uint64_t sourceKey(std::uint64_t generation, std::uintptr_t node) { return generation == 456 && node > 1000 ? node - 1000 : 0; }
-    std::uint64_t sourceKeyForBody(std::uint64_t, std::uint32_t body) { return body + 500; }
     std::uintptr_t resolveSourceName(std::uint64_t generation, const char* name) { return generation == 456 && !std::strcmp(name, "Bolt") ? 1077 : 0; }
-    bool apiQueryWeaponContactAtPoint(const RockProviderWeaponContactQuery* query, RockProviderWeaponContactResult* out) {
-        assert(query->pointGame[2] == 3 && query->radiusGame == 4);
-        out->valid = 1; out->bodyId = 9; out->weaponGenerationKey = 456; out->sourceRoot = 1011; out->interactionRoot = 1012;
+    bool queryWeaponContact(const api::weaponparts::ContactQuery& query, api::weaponparts::ContactResult& out) {
+        assert(query.pointGame.z == 3 && query.radiusGame == 4);
+        out.valid = 1; out.bodyId = 9; out.weaponGenerationKey = 456; out.sourceKey = 11; out.interactionKey = 12;
         return true;
     }
-    std::uint32_t apiCopyWeaponEvidenceDetailsV1(RockProviderWeaponEvidenceDetailV1* out, std::uint32_t capacity) {
+    std::uint32_t copyWeaponEvidenceDetails(api::weaponparts::EvidenceDetail* out, std::uint32_t capacity) {
         const auto copied = (std::min)(capacity, evidenceCount);
-        for (std::uint32_t i = 0; i < copied; ++i) { out[i].bodyId = 10 + i; out[i].weaponGenerationKey = 456; out[i].sourceRoot = 1020 + i; }
+        for (std::uint32_t i = 0; i < copied; ++i) { out[i].bodyId = 10 + i; out[i].weaponGenerationKey = 456; out[i].sourceKey = 20 + i; }
         return copied;
     }
-    std::uint32_t apiCopyWeaponEvidenceDetailPointsV1(std::uint32_t, api::Point3* out, std::uint32_t capacity) {
+    std::uint32_t copyWeaponEvidencePoints(std::uint32_t, api::Point3* out, std::uint32_t capacity) {
         for (std::uint32_t i = 0; i < (std::min)(capacity, 3u); ++i) out[i].x = static_cast<float>(i);
         return (std::min)(capacity, 3u);
     }
-    api::Status apiSetWeaponPartTargetsV1(std::uint64_t, const RockProviderWeaponPartTargetV1* targets, std::uint32_t count) {
-        ++targetWrites; lastTargetCount = count;
-        if (count) assert(targets[0].sourceRoot == 1077 && targets[0].groupId == 7);
+    api::Status setWeaponPartTargets(std::uint64_t, std::span<const PartTarget> targets) {
+        ++targetWrites; lastTargetCount = static_cast<std::uint32_t>(targets.size());
+        // The name selector arrives resolved to its node, selected by key.
+        if (!targets.empty()) assert(targets[0].sourceRoot == 1077 && targets[0].groupId == 7 &&
+            targets[0].flags == static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceKey));
         return api::Status::Ok;
     }
-    api::Status apiClearWeaponPartTargetsV1(std::uint64_t) { ++targetWrites; return api::Status::Ok; }
-    api::Status apiSetWeaponPartDriveTargetsV1(std::uint64_t, const RockProviderWeaponPartDriveTargetV1*, std::uint32_t) { return api::Status::Ok; }
-    api::Status apiClearWeaponPartDriveTargetsV1(std::uint64_t) { return api::Status::Ok; }
-    api::Status apiQueryWeaponPartTargetResolutionV1(std::uint64_t, const RockProviderWeaponPartResolutionQueryV1*, RockProviderWeaponPartResolutionResultV1* out) {
-        out->matched = 1; out->winningOwnerToken = testOwner; out->grabMode = api::weaponparts::GrabMode::AttachOnly; return api::Status::Ok;
+    api::Status clearWeaponPartTargets(std::uint64_t) { ++targetWrites; return api::Status::Ok; }
+    api::Status setWeaponPartDrives(std::uint64_t, std::span<const PartDrive>) { return api::Status::Ok; }
+    api::Status clearWeaponPartDrives(std::uint64_t) { return api::Status::Ok; }
+    api::Status queryWeaponPartTargetResolution(const provider::PartQuery& query, api::weaponparts::ResolutionResult& out) {
+        assert(query.sourceRoot == 1005);
+        out.matched = 1; out.winningOwner = testOwner; out.grabMode = api::weaponparts::GrabMode::AttachOnly; return api::Status::Ok;
     }
-    api::Status apiCopyWeaponPartPoseSnapshotV1(std::uint64_t, RockProviderWeaponPartPoseV1*, std::uint32_t, std::uint32_t* count) { *count = 0; return api::Status::Ok; }
-    api::Status apiCopyWeaponPartDriveApplicationResultsV1(std::uint64_t, RockProviderWeaponPartDriveApplicationResultV1*, std::uint32_t, std::uint32_t* count) { *count = 0; return api::Status::Ok; }
+    api::Status copyWeaponPartPoses(api::weaponparts::PartPose*, std::uint32_t, std::uint32_t& count) { count = 0; return api::Status::Ok; }
+    api::Status copyWeaponPartDriveResults(std::uint64_t, api::weaponparts::DriveResult*, std::uint32_t, std::uint32_t& count) { count = 0; return api::Status::Ok; }
     api::Status copySources(std::uint64_t, std::uint32_t, WeaponSourceRecord*, std::uint32_t, std::uint32_t& chunk, std::uint32_t& total) { chunk = 0; total = 0; return api::Status::Ok; }
     api::Status querySourcePose(std::uint64_t, std::uint64_t, WeaponSourcePose&) { return api::Status::TargetUnavailable; }
     api::Status querySourcePath(std::uint64_t, std::uint64_t, std::uint64_t&, std::uint32_t&) { return api::Status::TargetUnavailable; }
@@ -121,9 +122,12 @@ int main() {
     assert(api.setPartTargets(testOwner, 0, &target, kMaxTargets + 1) == Status::CapacityFull);
 
     ResolutionQuery resolution;
+    resolution.weaponGenerationKey = 456; resolution.sourceKey = 5;
     ResolutionResult resolved;
     assert(api.queryTargetResolution(testOwner, 0, &resolution, &resolved) == Status::Ok && resolved.matched == 1 &&
            resolved.winningOwner == testOwner && resolved.grabMode == GrabMode::AttachOnly);
+    resolution.weaponGenerationKey = 455; // A key of another generation never resolves.
+    assert(api.queryTargetResolution(testOwner, 0, &resolution, &resolved) == Status::GenerationMismatch);
 
     // One grab-point form; the count is checked before ROCK sees it.
     GrabPoint grab[2];

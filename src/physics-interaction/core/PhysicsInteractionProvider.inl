@@ -186,7 +186,7 @@
         return true;
     }
     void PhysicsInteraction::fillProviderWeaponPartGripStates(
-        std::array<::rock::provider::RockProviderWeaponPartGripStateV1, 2>& outStates) const
+        std::array<api::weaponparts::GripState, 2>& outStates) const
     {
         // Indexed [right, left] to match the getter's hand mapping. Published
         // after the grip update each frame, so consumers always read this
@@ -211,10 +211,10 @@
             outState.supportRole = report.supportRole;
             outState.socketRole = report.socketRole;
             outState.actionRole = report.actionRole;
-            outState.sourceRoot = report.sourceRoot;
-            outState.providerOwnerToken = report.providerOwnerToken;
-            outState.providerGroupId = report.providerGroupId;
-            outState.providerGrabMode = report.providerGrabMode;
+            outState.sourceKey = providerWeaponSourceKey(report.weaponGenerationKey, report.sourceRoot);
+            outState.targetOwner = report.providerOwnerToken;
+            outState.targetGroupId = report.providerGroupId;
+            outState.targetGrabMode = static_cast<api::weaponparts::GrabMode>(report.providerGrabMode);
             outState.hasHandPartLocal = report.hasHandPartLocal ? 1u : 0u;
             outState.handPartLocalSpace = report.handPartLocalIsSourceLocal ?
                 api::weaponparts::GripLocalSpace::PartSourceLocal :
@@ -230,8 +230,8 @@
     }
 
     bool PhysicsInteraction::queryProviderWeaponContactAtPoint(
-        const ::rock::provider::RockProviderWeaponContactQuery& query,
-        ::rock::provider::RockProviderWeaponContactResult& outResult) const
+        const api::weaponparts::ContactQuery& query,
+        api::weaponparts::ContactResult& outResult) const
     {
         outResult = {};
         auto* weaponNode = resolveEquippedWeaponInteractionNode();
@@ -240,7 +240,7 @@
         }
 
         WeaponInteractionContact contact{};
-        const RE::NiPoint3 point{ query.pointGame[0], query.pointGame[1], query.pointGame[2] };
+        const RE::NiPoint3 point{ query.pointGame.x, query.pointGame.y, query.pointGame.z };
         if (!_weaponCollision.tryFindInteractionContactNearPoint(weaponNode, point, query.radiusGame, contact)) {
             return false;
         }
@@ -252,8 +252,10 @@
         outResult.supportRole = static_cast<std::uint32_t>(contact.supportGripRole);
         outResult.socketRole = static_cast<std::uint32_t>(contact.socketRole);
         outResult.actionRole = static_cast<std::uint32_t>(contact.actionRole);
-        outResult.interactionRoot = reinterpret_cast<std::uintptr_t>(contact.interactionRoot);
-        outResult.sourceRoot = reinterpret_cast<std::uintptr_t>(contact.sourceRoot);
+        outResult.interactionKey = providerWeaponSourceKey(
+            contact.weaponGenerationKey, reinterpret_cast<std::uintptr_t>(contact.interactionRoot));
+        outResult.sourceKey = providerWeaponSourceKey(
+            contact.weaponGenerationKey, reinterpret_cast<std::uintptr_t>(contact.sourceRoot));
         outResult.weaponGenerationKey = contact.weaponGenerationKey;
         outResult.probeDistanceGame = contact.probeDistanceGame;
         return contact.valid;
@@ -415,8 +417,8 @@
         return true;
     }
 
-    std::uint32_t PhysicsInteraction::copyProviderWeaponEvidenceDetailsV1(
-        ::rock::provider::RockProviderWeaponEvidenceDetailV1* outDetails,
+    std::uint32_t PhysicsInteraction::copyProviderWeaponEvidenceDetails(
+        api::weaponparts::EvidenceDetail* outDetails,
         std::uint32_t maxDetails) const
     {
         if (!outDetails || maxDetails == 0) {
@@ -427,13 +429,12 @@
         const std::uint32_t count = (std::min)(
             (std::min)(
                 maxDetails,
-                ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1),
+                api::weaponparts::kMaxEvidenceDetails),
             static_cast<std::uint32_t>(descriptors.size()));
         for (std::uint32_t i = 0; i < count; ++i) {
             const auto& descriptor = descriptors[i];
             auto& out = outDetails[i];
             out = {};
-            out.size = sizeof(::rock::provider::RockProviderWeaponEvidenceDetailV1);
             out.bodyId = descriptor.bodyId;
             out.partKind = static_cast<std::uint32_t>(descriptor.semantic.partKind);
             out.reloadRole = static_cast<std::uint32_t>(descriptor.semantic.reloadRole);
@@ -441,8 +442,8 @@
             out.socketRole = static_cast<std::uint32_t>(descriptor.semantic.socketRole);
             out.actionRole = static_cast<std::uint32_t>(descriptor.semantic.actionRole);
             out.fallbackGripPose = static_cast<std::uint32_t>(descriptor.semantic.fallbackGripPose);
-            out.interactionRoot = descriptor.geometryRootAddress;
-            out.sourceRoot = descriptor.sourceRootAddress;
+            out.interactionKey = providerWeaponSourceKey(descriptor.weaponGenerationKey, descriptor.geometryRootAddress);
+            out.sourceKey = providerWeaponSourceKey(descriptor.weaponGenerationKey, descriptor.sourceRootAddress);
             out.weaponGenerationKey = descriptor.weaponGenerationKey;
             out.localBoundsGame.min = makeProviderPoint(descriptor.localBoundsGame.min);
             out.localBoundsGame.max = makeProviderPoint(descriptor.localBoundsGame.max);
@@ -457,7 +458,7 @@
         return count;
     }
 
-    std::uint32_t PhysicsInteraction::copyProviderWeaponEvidenceDetailPointsV1(
+    std::uint32_t PhysicsInteraction::copyProviderWeaponEvidencePoints(
         std::uint32_t bodyId,
         api::Point3* outPoints,
         std::uint32_t maxPoints) const
@@ -681,7 +682,7 @@
         const bool primaryIsLeft = _twoHandedGrip.isFiringHandLeft();
         ::rock::provider_state_policy::WeaponHandling handling{};
         const bool stateAvailable = queryProviderWeaponHandling(handling);
-        std::array<::rock::provider::RockProviderWeaponPartGripStateV1, 2> grips{};
+        std::array<api::weaponparts::GripState, 2> grips{};
         if (stateAvailable) fillProviderWeaponPartGripStates(grips);
 
         for (const bool isLeft : { false, true }) {
@@ -936,8 +937,8 @@
                transition.terminalSequence != 0;
     }
 
-    std::uint32_t PhysicsInteraction::copyProviderWeaponPartPosesV1(
-        ::rock::provider::RockProviderWeaponPartPoseV1* outParts,
+    std::uint32_t PhysicsInteraction::copyProviderWeaponPartPoses(
+        api::weaponparts::PartPose* outParts,
         const std::uint32_t maxParts) const
     {
         if (!outParts || maxParts == 0) {
@@ -966,6 +967,7 @@
             out.frameIndex =
                 _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
             out.weaponGenerationKey = descriptor.weaponGenerationKey;
+            out.sourceKey = providerWeaponSourceKey(descriptor.weaponGenerationKey, descriptor.sourceRootAddress);
             out.bodyId = descriptor.bodyId;
             out.partKind = static_cast<std::uint32_t>(
                 descriptor.semantic.partKind);
@@ -1008,9 +1010,9 @@
         return count;
     }
 
-    std::uint32_t PhysicsInteraction::copyProviderWeaponPartDriveResultsV1(
+    std::uint32_t PhysicsInteraction::copyProviderWeaponPartDriveResults(
         const std::uint64_t ownerToken,
-        ::rock::provider::RockProviderWeaponPartDriveApplicationResultV1* outResults,
+        api::weaponparts::DriveResult* outResults,
         const std::uint32_t maxResults) const
     {
         if (ownerToken == 0 || !outResults || maxResults == 0) {
@@ -1023,7 +1025,7 @@
                 _providerDrives.results.size()));
         for (std::uint32_t i = 0; i < count && copied < maxResults; ++i) {
             const auto& result = _providerDrives.results[i];
-            if (result.ownerToken == ownerToken) {
+            if (result.owner == ownerToken) {
                 outResults[copied++] = result;
             }
         }

@@ -710,11 +710,11 @@ namespace rock
 
         // Authored cones can admit a hand without a collision contact. Such
         // admission must still respect a provider's exclusive part whitelist.
-        provider::RockProviderWeaponPartTargetQueryV1 query{};
+        provider::PartQuery query{};
         query.weaponGenerationKey = generation;
         query.bodyId = weapon_part_runtime::kInvalidBodyId;
-        provider::RockProviderWeaponPartTargetResolutionV1 resolution{};
-        (void)provider::resolveWeaponPartTargetV1(query, resolution);
+        weapon_part_runtime::Resolution resolution{};
+        (void)provider::resolveWeaponPartTarget(query, resolution);
         return resolution.whitelistActive == 0;
     }
 
@@ -1569,7 +1569,7 @@ namespace rock
             return false;
         }
 
-        ::rock::provider::RockProviderWeaponPartTargetQueryV1 query{};
+        provider::PartQuery query{};
         query.weaponGenerationKey = grip.providerPartAuthority.weaponGenerationKey;
         query.bodyId = grip.providerPartAuthority.bodyId;
         query.partKind = grip.providerPartAuthority.partKind;
@@ -1581,8 +1581,8 @@ namespace rock
         std::memcpy(query.sourceName, grip.providerPartAuthority.sourceName.data(), grip.providerPartAuthority.sourceName.size());
         query.sourceName[sizeof(query.sourceName) - 1] = '\0';
 
-        ::rock::provider::RockProviderWeaponPartTargetResolutionV1 resolution{};
-        if (!::rock::provider::resolveWeaponPartTargetV1(query, resolution)) {
+        weapon_part_runtime::Resolution resolution{};
+        if (!::rock::provider::resolveWeaponPartTarget(query, resolution)) {
             return false;
         }
         return resolution.matched != 0 &&
@@ -1613,7 +1613,7 @@ namespace rock
             return false;
         }
 
-        ::rock::provider::RockProviderWeaponPartTargetQueryV1 query{};
+        provider::PartQuery query{};
         query.weaponGenerationKey = grip.weaponGenerationKey;
         query.bodyId = grip.contactBodyId;
         query.partKind = static_cast<std::uint32_t>(grip.partKind);
@@ -1625,8 +1625,8 @@ namespace rock
         std::memcpy(query.sourceName, grip.sourceName.data(), grip.sourceName.size());
         query.sourceName[sizeof(query.sourceName) - 1] = '\0';
 
-        ::rock::provider::RockProviderWeaponPartTargetResolutionV1 resolution{};
-        return ::rock::provider::resolveWeaponPartTargetV1(query, resolution) && resolution.matched != 0;
+        weapon_part_runtime::Resolution resolution{};
+        return ::rock::provider::resolveWeaponPartTarget(query, resolution) && resolution.matched != 0;
     }
 
     bool TwoHandedGrip::tryRebindPartGripToCurrentGeneration(

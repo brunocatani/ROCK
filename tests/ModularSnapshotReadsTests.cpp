@@ -39,7 +39,8 @@ namespace rock::provider::runtime {
         out.transform.translate[0]=12;
         return Status::Ok;
     }
-    bool apiGetWeaponPartGripStateV1(api::Hand hand, api::weaponparts::GripState* out) {
+    bool copyPartGripState(api::Hand hand, api::weaponparts::GripState& grip) {
+        auto* out=&grip;
         if (!available) return false;
         out->hand=static_cast<api::Hand>(hand);out->active=1;out->sourceKey=789;out->weaponGenerationKey=456;
         return true;

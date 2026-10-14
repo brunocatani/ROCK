@@ -403,12 +403,12 @@ namespace rock
             tryEvaluateFiringGripZoneForHand(supportHandIsLeft, handoffInput, handoffZone);
         // A station without a collision contact must still obey a provider's
         // exclusive part whitelist for this weapon generation.
-        provider::RockProviderWeaponPartTargetResolutionV1 handoffPartResolution{};
+        weapon_part_runtime::Resolution handoffPartResolution{};
         if (handoffZoneEvaluated && handoffZone.inside) {
-            provider::RockProviderWeaponPartTargetQueryV1 handoffPartQuery{};
+            provider::PartQuery handoffPartQuery{};
             handoffPartQuery.weaponGenerationKey = currentWeaponGenerationKey;
             handoffPartQuery.bodyId = weapon_part_runtime::kInvalidBodyId;
-            (void)provider::resolveWeaponPartTargetV1(handoffPartQuery, handoffPartResolution);
+            (void)provider::resolveWeaponPartTarget(handoffPartQuery, handoffPartResolution);
         }
         const bool handoffAcquisitionAvailable =
             supportHandAvailableForAcquisition && handoffZoneEvaluated && !partGrip(supportHandIsLeft).active &&

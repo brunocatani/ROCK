@@ -76,7 +76,7 @@ namespace rock::provider_state_policy
     // into that occupied hand and masquerade as a held loose reference.
     inline void applyWeaponOccupancy(RockProviderHandInteractionStateV1& state,
         const WeaponHandling& handling,
-        const RockProviderWeaponPartGripStateV1& grip) noexcept
+        const api::weaponparts::GripState& grip) noexcept
     {
         using Flag = api::grab::HandInteractionFlag;
         if (!(state.flags & static_cast<std::uint32_t>(Flag::Valid)) || !handling.weaponPresent) return;

@@ -995,11 +995,11 @@ namespace rock
             target[targetSize - 1] = '\0';
         }
 
-        inline ::rock::provider::RockProviderWeaponPartTargetQueryV1 makeProviderWeaponPartTargetQuery(
+        inline provider::PartQuery makeProviderWeaponPartTargetQuery(
             const WeaponInteractionContact& contact,
             const WeaponCollision& weaponCollision)
         {
-            ::rock::provider::RockProviderWeaponPartTargetQueryV1 query{};
+            provider::PartQuery query{};
             query.weaponGenerationKey = contact.weaponGenerationKey;
             query.bodyId = contact.bodyId;
             query.partKind = static_cast<std::uint32_t>(contact.partKind);
@@ -1019,8 +1019,8 @@ namespace rock
         }
 
         inline WeaponProviderPartAuthority makeWeaponProviderPartAuthority(
-            const ::rock::provider::RockProviderWeaponPartTargetQueryV1& query,
-            const ::rock::provider::RockProviderWeaponPartTargetResolutionV1& resolution)
+            const provider::PartQuery& query,
+            const weapon_part_runtime::Resolution& resolution)
         {
             WeaponProviderPartAuthority authority{};
             authority.active = resolution.matched != 0;

@@ -457,7 +457,7 @@ namespace rock
 
     RE::NiAVObject* PhysicsInteraction::resolveProviderWeaponPartDriveNode(
         RE::NiNode* weaponNode,std::uint64_t currentWeaponGenerationKey,
-        const ::rock::provider::RockProviderWeaponPartDriveTargetV1& drive,
+        const provider::PartDrive& drive,
         const WeaponEvidenceSnapshot& evidenceDescriptors) const
     {
         if (drive.weaponGenerationKey != 0 && drive.weaponGenerationKey != currentWeaponGenerationKey) {
@@ -476,14 +476,14 @@ namespace rock
             return true;
         };
 
-        if ((drive.flags & static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchSourceRoot)) != 0 && drive.sourceRoot != 0) {
+        if ((drive.flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceKey)) != 0 && drive.sourceRoot != 0) {
             auto* node = reinterpret_cast<RE::NiAVObject*>(drive.sourceRoot);
             if (!acceptResolvedNode(node)) {
                 return nullptr;
             }
         }
 
-        if ((drive.flags & static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchBodyId)) != 0 && drive.bodyId != INVALID_CONTACT_BODY_ID) {
+        if ((drive.flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchBodyId)) != 0 && drive.bodyId != INVALID_CONTACT_BODY_ID) {
             const auto* descriptor = evidenceDescriptors.find(drive.bodyId);
             if (descriptor && descriptor->sourceRootAddress != 0 &&
                 descriptor->weaponGenerationKey == currentWeaponGenerationKey &&
@@ -494,7 +494,7 @@ namespace rock
         }
 
         const auto sourceName = providerFixedStringView(drive.sourceName, ::rock::provider::ROCK_PROVIDER_MAX_EVIDENCE_NAME);
-        if ((drive.flags & static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchSourceName)) != 0 && !sourceName.empty()) {
+        if ((drive.flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceName)) != 0 && !sourceName.empty()) {
             RE::NiAVObject* matchedSourceNode = nullptr;
             for (const auto& descriptor : evidenceDescriptors) {
                 if (!descriptor.valid || descriptor.weaponGenerationKey != currentWeaponGenerationKey || descriptor.sourceName != sourceName) {
@@ -517,8 +517,8 @@ namespace rock
     weapon_drive_pose::NativeFrame PhysicsInteraction::captureProviderPartQueryPose(RE::NiNode* weaponNode,std::uint64_t generation) const
     {
         weapon_drive_pose::NativeFrame result(weaponNode,weaponNode->world);
-        std::array<provider::RockProviderWeaponPartDriveTargetV1,provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> drives{};
-        const auto count=provider::copyWeaponPartDriveTargetsV1(drives.data(),static_cast<unsigned>(drives.size()),nullptr,false);
+        std::array<provider::PartDrive,provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> drives{};
+        const auto count=provider::copyWeaponPartDrives(drives.data(),static_cast<unsigned>(drives.size()),nullptr,false);
         const auto evidence=_weaponCollision.getProfileEvidenceDescriptors();
         std::array<RE::NiAVObject*,provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> slots{};
         if(_providerDrives.generationKey==generation)for(std::size_t i=0;i<slots.size();++i)slots[i]=_providerDrives.nodeStates[i].node;
@@ -559,11 +559,11 @@ namespace rock
             state.activeThisFrame = false;
         }
 
-        std::array<::rock::provider::RockProviderWeaponPartDriveTargetV1, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> driveTargets{};
+        std::array<provider::PartDrive, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> driveTargets{};
         std::array<std::uint64_t,
             ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1>
             driveOwners{};
-        const std::uint32_t driveCount = ::rock::provider::copyWeaponPartDriveTargetsV1(
+        const std::uint32_t driveCount = ::rock::provider::copyWeaponPartDrives(
             driveTargets.data(),
             static_cast<std::uint32_t>(driveTargets.size()),
             driveOwners.data());
@@ -614,7 +614,7 @@ namespace rock
 
         auto markDrivenNode = [&](
                                   RE::NiAVObject* node,
-                                  const ::rock::provider::RockProviderWeaponPartDriveApplicationResultV1& result) {
+                                  const api::weaponparts::DriveResult& result) {
             if (!node) {
                 return false;
             }
@@ -624,7 +624,7 @@ namespace rock
             for (auto& state : _providerDrives.nodeStates) {
                 if (state.node == node) {
                     state.activeThisFrame = true;
-                    state.ownerToken = result.ownerToken;
+                    state.ownerToken = result.owner;
                     state.bodyId = result.bodyId;
                     state.groupId = result.groupId;
                     state.priority = result.priority;
@@ -639,7 +639,7 @@ namespace rock
                 if (!state.node) {
                     state.node = node;
                     state.baselineLocal = node->local;
-                    state.ownerToken = result.ownerToken;
+                    state.ownerToken = result.owner;
                     state.bodyId = result.bodyId;
                     state.groupId = result.groupId;
                     state.priority = result.priority;
@@ -662,7 +662,7 @@ namespace rock
             applicationResult = {};
             applicationResult.frameIndex =
                 _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
-            applicationResult.ownerToken = driveOwners[i];
+            applicationResult.owner = driveOwners[i];
             applicationResult.weaponGenerationKey =
                 currentWeaponGenerationKey;
             applicationResult.bodyId = drive.bodyId;
@@ -781,7 +781,7 @@ namespace rock
                     result.frameIndex =
                         _frame.palmClockGameFrameIndex.load(
                             std::memory_order_acquire);
-                    result.ownerToken = state.ownerToken;
+                    result.owner = state.ownerToken;
                     result.weaponGenerationKey =
                         currentWeaponGenerationKey;
                     result.bodyId = state.bodyId;

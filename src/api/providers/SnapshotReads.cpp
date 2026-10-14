@@ -66,8 +66,7 @@ Status ROCK_CALL getGripState(OwnerToken ownerToken, Hand hand, GripState* outSt
     if (const auto s = checkOutput(outState); s != Status::Ok) return s;
     if (hand!=Hand::Right && hand!=Hand::Left) return Status::InvalidArgument;
     return invoke(ownerToken, kInterfaceId, 1, false, [&]() -> Status {
-        const auto result = provider::runtime::apiGetWeaponPartGripStateV1(static_cast<api::Hand>(hand), outState);
-        return result ? Status::Ok : Status::NotReady;
+        return provider::runtime::copyPartGripState(hand, *outState) ? Status::Ok : Status::NotReady;
     });
 }
 

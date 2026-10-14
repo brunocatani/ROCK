@@ -96,27 +96,6 @@ namespace rock::provider {
     };
 
 
-    enum class RockProviderWeaponPartTargetFlagV1 : std::uint32_t
-    {
-        None = 0,
-        MatchBodyId = 1u << 0,
-        MatchSourceRoot = 1u << 1,
-        MatchSourceName = 1u << 2,
-        MatchPartKind = 1u << 3,
-        MatchReloadRole = 1u << 4,
-        MatchSupportRole = 1u << 5,
-        MatchSocketRole = 1u << 6,
-        MatchActionRole = 1u << 7,
-        /*
-         * Non-exclusive target (feature bit WeaponPartTargetNonExclusive):
-         * grants its grab mode on match without activating whitelist gating,
-         * so unmatched parts keep their normal grip behavior. Omit the flag
-         * for reload-session semantics where every unmatched part grip is
-         * rejected while the whitelist is active.
-         */
-        NonExclusive = 1u << 8,
-    };
-
 
 
 
@@ -246,117 +225,6 @@ namespace rock::provider {
 
 
 
-    struct RockProviderWeaponPartTargetV1
-    {
-        std::uint32_t size{ sizeof(RockProviderWeaponPartTargetV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint32_t flags{ 0 };
-        api::weaponparts::GrabMode grabMode{ api::weaponparts::GrabMode::None };
-        std::uint64_t weaponGenerationKey{ 0 };
-        std::uintptr_t sourceRoot{ 0 };
-        std::uint32_t bodyId{ 0x7FFF'FFFF };
-        std::uint32_t partKind{ 0 };
-        std::uint32_t reloadRole{ 0 };
-        std::uint32_t supportRole{ 0 };
-        std::uint32_t socketRole{ 0 };
-        std::uint32_t actionRole{ 0 };
-        std::uint32_t groupId{ 0 };
-        std::uint32_t priority{ 0 };
-        char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
-        std::uint32_t reserved[8]{};
-    };
-
-    struct RockProviderWeaponPartDriveTargetV1
-    {
-        std::uint32_t size{ sizeof(RockProviderWeaponPartDriveTargetV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint32_t flags{ 0 };
-        api::weaponparts::DriveSpace driveSpace{ api::weaponparts::DriveSpace::WeaponRootLocal };
-        std::uint64_t weaponGenerationKey{ 0 };
-        std::uintptr_t sourceRoot{ 0 };
-        std::uint32_t bodyId{ 0x7FFF'FFFF };
-        std::uint32_t groupId{ 0 };
-        std::uint32_t priority{ 0 };
-        std::uint32_t leaseFrames{ 1 };
-        api::Transform targetTransform{};
-        char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
-        std::uint32_t reserved[7]{};
-    };
-
-    /*
-     * Per-hand grip report: which weapon part (if any) the hand is attached
-     * to this frame. Polled; gripSequence increases on every fresh capture so
-     * consumers detect re-grabs without frame callbacks. sourceRoot is a
-     * non-owning engine pointer valid only while weaponGenerationKey matches
-     * the frame snapshot. handPartLocal is the hand frame captured at grip
-     * start in handPartLocalSpace; composing it with the part's current world
-     * transform yields the glued hand target, so a consumer driving the part
-     * via setWeaponPartDriveTargetsV1 can also derive controller-to-part
-     * displacement from it.
-     */
-    struct RockProviderWeaponPartGripStateV1
-    {
-        // Captured ROCK grip details only. Native carry can occupy the hand
-        // while active is zero; use getHandInteractionStateV1 for occupancy.
-        std::uint32_t size{ sizeof(RockProviderWeaponPartGripStateV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        api::Hand hand{ api::Hand::None };
-        api::weaponparts::GripKind gripKind{ api::weaponparts::GripKind::None };
-        std::uint32_t active{ 0 };
-        std::uint32_t attachOnly{ 0 };
-        std::uint64_t gripSequence{ 0 };
-        std::uint64_t weaponGenerationKey{ 0 };
-        std::uint32_t bodyId{ 0x7FFF'FFFF };
-        std::uint32_t partKind{ 0 };
-        std::uint32_t reloadRole{ 0 };
-        std::uint32_t supportRole{ 0 };
-        std::uint32_t socketRole{ 0 };
-        std::uint32_t actionRole{ 0 };
-        std::uintptr_t sourceRoot{ 0 };
-        std::uint64_t providerOwnerToken{ 0 };
-        std::uint32_t providerGroupId{ 0 };
-        std::uint32_t providerGrabMode{ 0 };
-        std::uint32_t hasHandPartLocal{ 0 };
-        api::weaponparts::GripLocalSpace handPartLocalSpace{ api::weaponparts::GripLocalSpace::WeaponRootLocal };
-        api::Transform handPartLocal{};
-        char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
-        // Record-authored identity of the gripped part; see the evidence
-        // detail struct for field semantics (WeaponPartRecordIdentity bit).
-        std::uint32_t omodFormId{ 0 };
-        std::uint32_t attachPointFormId{ 0 };
-        std::uint32_t classificationSource{ 0 };
-        // Exact ROCK grip provenance. Nonzero only when the active support
-        // grip was acquired from the current authored support-pose capture.
-        std::uint32_t authoredSupportGrip{ 0 };
-        std::uint32_t reserved[5]{};
-    };
-
-
-    struct RockProviderWeaponContactQuery
-    {
-        std::uint32_t size{ sizeof(RockProviderWeaponContactQuery) };
-        float pointGame[3]{};
-        float radiusGame{ 0.0f };
-        std::uint32_t flags{ 0 };
-        std::uint32_t reserved[2]{};
-    };
-
-    struct RockProviderWeaponContactResult
-    {
-        std::uint32_t size{ sizeof(RockProviderWeaponContactResult) };
-        std::uint32_t valid{ 0 };
-        std::uint32_t bodyId{ 0x7FFF'FFFF };
-        std::uint32_t partKind{ 0 };
-        std::uint32_t reloadRole{ 0 };
-        std::uint32_t supportRole{ 0 };
-        std::uint32_t socketRole{ 0 };
-        std::uint32_t actionRole{ 0 };
-        std::uintptr_t interactionRoot{ 0 };
-        std::uintptr_t sourceRoot{ 0 };
-        std::uint64_t weaponGenerationKey{ 0 };
-        float probeDistanceGame{ 0.0f };
-        std::uint32_t reserved{ 0 };
-    };
 
 
     /*
@@ -389,41 +257,6 @@ namespace rock::provider {
 
 
 
-
-    /*
-     * Detailed weapon evidence carries semantic body identity, local generated
-     * bounds, and total point count without making the fixed function table own
-     * variable-length buffers. Callers fetch the local mesh point cloud through
-     * the body-id keyed copy function below.
-     */
-    struct RockProviderWeaponEvidenceDetailV1
-    {
-        std::uint32_t size{ sizeof(RockProviderWeaponEvidenceDetailV1) };
-        std::uint32_t bodyId{ 0x7FFF'FFFF };
-        std::uint32_t partKind{ 0 };
-        std::uint32_t reloadRole{ 0 };
-        std::uint32_t supportRole{ 0 };
-        std::uint32_t socketRole{ 0 };
-        std::uint32_t actionRole{ 0 };
-        std::uint32_t fallbackGripPose{ 0 };
-        std::uintptr_t interactionRoot{ 0 };
-        std::uintptr_t sourceRoot{ 0 };
-        std::uint64_t weaponGenerationKey{ 0 };
-        api::Bounds3 localBoundsGame{};
-        std::uint32_t pointCount{ 0 };
-        char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
-        /*
-         * Record-authored identity (feature bit WeaponPartRecordIdentity;
-         * fields were reserved zeros before it). omodFormId is the installed
-         * OMOD occupying this part's slot (0 when unpaired); attachPointFormId
-         * is the vanilla attach-point keyword of that slot; classification-
-         * Source is api::weaponparts::ClassificationSource.
-         */
-        std::uint32_t omodFormId{ 0 };
-        std::uint32_t attachPointFormId{ 0 };
-        std::uint32_t classificationSource{ 0 };
-        std::uint32_t reserved[6]{};
-    };
 
 
 
@@ -461,75 +294,6 @@ namespace rock::provider {
     };
 
 
-
-    struct RockProviderWeaponPartResolutionQueryV1
-    {
-        std::uint32_t size{ sizeof(RockProviderWeaponPartResolutionQueryV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint64_t weaponGenerationKey{ 0 };
-        std::uint32_t bodyId{ 0x7FFF'FFFF };
-        std::uint32_t partKind{ 0 };
-        std::uint32_t reloadRole{ 0 };
-        std::uint32_t supportRole{ 0 };
-        std::uint32_t socketRole{ 0 };
-        std::uint32_t actionRole{ 0 };
-        std::uintptr_t sourceRoot{ 0 };
-        char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
-        std::uint32_t reserved[4]{};
-    };
-
-    struct RockProviderWeaponPartResolutionResultV1
-    {
-        std::uint32_t size{ sizeof(RockProviderWeaponPartResolutionResultV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint32_t whitelistActive{ 0 };
-        std::uint32_t matched{ 0 };
-        api::weaponparts::GrabMode grabMode{ api::weaponparts::GrabMode::None };
-        std::uint32_t groupId{ 0 };
-        std::uint32_t priority{ 0 };
-        std::uint32_t reserved0{ 0 };
-        std::uint64_t winningOwnerToken{ 0 };
-        std::uint64_t weaponGenerationKey{ 0 };
-        std::uint64_t frameIndex{ 0 };
-        std::uint32_t reserved[4]{};
-    };
-
-    struct RockProviderWeaponPartPoseV1
-    {
-        std::uint32_t size{ sizeof(RockProviderWeaponPartPoseV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint64_t frameIndex{ 0 };
-        std::uint64_t weaponGenerationKey{ 0 };
-        std::uint32_t bodyId{ 0x7FFF'FFFF };
-        std::uint32_t partKind{ 0 };
-        std::uint32_t omodFormId{ 0 };
-        std::uint32_t attachPointFormId{ 0 };
-        std::uint32_t flags{ 0 };
-        // api::weaponparts::ActionRole for this semantic source.
-        std::uint32_t actionRole{ 0 };
-        api::Transform sourceParentLocal{};
-        api::Transform weaponRootLocal{};
-        char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
-        std::uint32_t reserved[4]{};
-    };
-
-    struct RockProviderWeaponPartDriveApplicationResultV1
-    {
-        std::uint32_t size{ sizeof(RockProviderWeaponPartDriveApplicationResultV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint64_t frameIndex{ 0 };
-        std::uint64_t ownerToken{ 0 };
-        std::uint64_t weaponGenerationKey{ 0 };
-        std::uint32_t bodyId{ 0x7FFF'FFFF };
-        std::uint32_t groupId{ 0 };
-        std::uint32_t priority{ 0 };
-        api::weaponparts::DriveApplication result{
-            api::weaponparts::DriveApplication::Unknown
-        };
-        api::Transform appliedSourceParentLocal{};
-        char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
-        std::uint32_t reserved[4]{};
-    };
 
 
 

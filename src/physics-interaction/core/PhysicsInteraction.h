@@ -1,6 +1,7 @@
 #pragma once
 #include "api/ObjectRestRequests.h"
 #include "api/EjectionContactRequests.h"
+#include "api/WeaponPartRequests.h"
 
 #include "physics-interaction/grenade/LooseMolotovVisual.h"
 
@@ -229,12 +230,12 @@ namespace rock
             std::uint64_t weaponGenerationKey,
             std::uint32_t bodyId) const;
         bool queryProviderWeaponContactAtPoint(
-            const ::rock::provider::RockProviderWeaponContactQuery& query,
-            ::rock::provider::RockProviderWeaponContactResult& outResult) const;
-        std::uint32_t copyProviderWeaponEvidenceDetailsV1(
-            ::rock::provider::RockProviderWeaponEvidenceDetailV1* outDetails,
+            const api::weaponparts::ContactQuery& query,
+            api::weaponparts::ContactResult& outResult) const;
+        std::uint32_t copyProviderWeaponEvidenceDetails(
+            api::weaponparts::EvidenceDetail* outDetails,
             std::uint32_t maxDetails) const;
-        std::uint32_t copyProviderWeaponEvidenceDetailPointsV1(
+        std::uint32_t copyProviderWeaponEvidencePoints(
             std::uint32_t bodyId,
             api::Point3* outPoints,
             std::uint32_t maxPoints) const;
@@ -258,7 +259,7 @@ namespace rock
         bool queryProviderWeaponHandling(
             ::rock::provider_state_policy::WeaponHandling& outState) const;
         void fillProviderWeaponPartGripStates(
-            std::array<::rock::provider::RockProviderWeaponPartGripStateV1, 2>& outStates) const;
+            std::array<api::weaponparts::GripState, 2>& outStates) const;
         void fillProviderHandInteractionStates(
             std::array<::rock::provider::RockProviderHandInteractionStateV1, 2>& outStates) const;
         bool queryProviderWeaponState(
@@ -270,12 +271,12 @@ namespace rock
         api::Status getProviderInventoryEquipResult(api::OwnerToken owner, std::uint64_t command,
             api::weapon::EquipResult& output) const;
         api::Status cancelProviderInventoryEquip(api::OwnerToken owner, std::uint64_t command);
-        std::uint32_t copyProviderWeaponPartPosesV1(
-            ::rock::provider::RockProviderWeaponPartPoseV1* outParts,
+        std::uint32_t copyProviderWeaponPartPoses(
+            api::weaponparts::PartPose* outParts,
             std::uint32_t maxParts) const;
-        std::uint32_t copyProviderWeaponPartDriveResultsV1(
+        std::uint32_t copyProviderWeaponPartDriveResults(
             std::uint64_t ownerToken,
-            ::rock::provider::RockProviderWeaponPartDriveApplicationResultV1* outResults,
+            api::weaponparts::DriveResult* outResults,
             std::uint32_t maxResults) const;
         bool queryProviderScopeSightState(
             api::weapon::ScopeSightState& outState) const;
@@ -480,7 +481,7 @@ namespace rock
         [[nodiscard]] const char* bareFistHandBlockReason(const PhysicsFrameContext& frame) const;
 
         RE::NiAVObject* resolveProviderWeaponPartDriveNode(RE::NiNode*,std::uint64_t,
-            const ::rock::provider::RockProviderWeaponPartDriveTargetV1&,const WeaponEvidenceSnapshot&) const;
+            const provider::PartDrive&,const WeaponEvidenceSnapshot&) const;
         weapon_drive_pose::NativeFrame captureProviderPartQueryPose(RE::NiNode*,std::uint64_t) const;
         std::size_t applyProviderWeaponPartDrives(
             RE::NiNode* weaponNode,
@@ -918,7 +919,7 @@ namespace rock
         {
             std::array<ProviderWeaponPartDriveNodeState, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> nodeStates{};
             std::uint64_t generationKey{ 0 };
-            std::array<::rock::provider::RockProviderWeaponPartDriveApplicationResultV1,
+            std::array<api::weaponparts::DriveResult,
                 ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVE_RESULTS_V1>
                 results{};
             std::uint32_t resultCount{ 0 };

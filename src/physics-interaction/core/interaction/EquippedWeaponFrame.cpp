@@ -784,10 +784,10 @@ namespace rock
 
             WeaponInteractionRuntimeState providerInteractionState{};
 
-            ::rock::provider::RockProviderWeaponPartTargetResolutionV1 weaponPartResolution{};
+            weapon_part_runtime::Resolution weaponPartResolution{};
             const auto weaponPartQuery = makeProviderWeaponPartTargetQuery(leftWeaponContact, _weaponCollision);
             const bool weaponPartResolved = leftWeaponContact.valid &&
-                ::rock::provider::resolveWeaponPartTargetV1(weaponPartQuery, weaponPartResolution);
+                ::rock::provider::resolveWeaponPartTarget(weaponPartQuery, weaponPartResolution);
             const bool weaponPartWhitelistActive = weaponPartResolved && weaponPartResolution.whitelistActive != 0;
             const bool weaponPartMatched = weaponPartResolved && weaponPartResolution.matched != 0;
             if (weaponPartWhitelistActive && !weaponPartMatched) {
@@ -797,10 +797,10 @@ namespace rock
             }
 
             WeaponInteractionRuntimeState rightHandInteractionState{};
-            ::rock::provider::RockProviderWeaponPartTargetResolutionV1 rightWeaponPartResolution{};
+            weapon_part_runtime::Resolution rightWeaponPartResolution{};
             const auto rightWeaponPartQuery = makeProviderWeaponPartTargetQuery(rightWeaponContact, _weaponCollision);
             const bool rightWeaponPartResolved = rightWeaponContact.valid &&
-                ::rock::provider::resolveWeaponPartTargetV1(rightWeaponPartQuery, rightWeaponPartResolution);
+                ::rock::provider::resolveWeaponPartTarget(rightWeaponPartQuery, rightWeaponPartResolution);
             const bool rightWeaponPartWhitelistActive = rightWeaponPartResolved && rightWeaponPartResolution.whitelistActive != 0;
             const bool rightWeaponPartMatched = rightWeaponPartResolved && rightWeaponPartResolution.matched != 0;
             if (rightWeaponPartWhitelistActive && !rightWeaponPartMatched) {
@@ -846,10 +846,10 @@ namespace rock
             const bool supportWeaponPartMatched = supportHandIsLeft ? weaponPartMatched : rightWeaponPartMatched;
             const auto& supportWeaponPartResolution = supportHandIsLeft ? weaponPartResolution : rightWeaponPartResolution;
             if (supportWeaponPartMatched) {
-                if (supportWeaponPartResolution.grabMode == api::weaponparts::GrabMode::FullTwoHandAuthority) {
+                if (supportWeaponPartResolution.grabMode == weapon_part_runtime::GrabMode::FullTwoHandAuthority) {
                     supportAuthorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
                     supportAuthorityProviderOverride = true;
-                } else if (supportWeaponPartResolution.grabMode == api::weaponparts::GrabMode::AttachOnly) {
+                } else if (supportWeaponPartResolution.grabMode == weapon_part_runtime::GrabMode::AttachOnly) {
                     supportAuthorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport;
                     supportAuthorityProviderOverride = true;
                 }
