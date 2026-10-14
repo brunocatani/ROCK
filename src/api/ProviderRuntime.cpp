@@ -161,7 +161,7 @@ namespace rock::provider::runtime
     // Published together with the frame snapshot; indexed [right, left].
     std::array<api::weaponparts::GripState, 2> s_lastPartGripStates{};
     std::array<RockProviderHandInteractionStateV1, 2> s_lastHandInteractionStates{};
-    RockProviderEquippedWeaponStateV1 s_lastEquippedWeaponState{};
+    api::weapon::WeaponState s_lastEquippedWeaponState{};
 
     std::mutex s_touchGrabMutex;
     TouchGrabRegistry s_touchGrabTargets{};
@@ -378,7 +378,7 @@ namespace rock::provider::runtime
         bool active{ false };
         std::uint64_t ownerToken{ 0 };
         std::uint64_t expiresAfterFrame{ 0 };
-        RockProviderEquippedWeaponHandlingRequestV1 request{};
+        api::weapon::HandlingRequest request{};
     };
 
     std::mutex s_equippedWeaponHandlingAuthorityMutex;
@@ -1786,8 +1786,8 @@ namespace rock::provider::runtime
 
 
 
-    [[nodiscard]] bool equippedWeaponHandlingRequestValuesValid(
-        const RockProviderEquippedWeaponHandlingRequestV1& request)
+    [[nodiscard]] bool handlingRequestValuesValid(
+        const api::weapon::HandlingRequest& request)
     {
         const auto inRange = [](const float value, const float minimum, const float maximum) {
             return std::isfinite(value) && value >= minimum && value <= maximum;
@@ -1801,7 +1801,6 @@ namespace rock::provider::runtime
                inRange(request.firingGripAttachHapticIntensity, 0.0f, 1.0f) &&
                inRange(request.firingGripDetachHapticIntensity, 0.0f, 1.0f) &&
                inRange(request.supportGripHapticIntensity, 0.0f, 1.0f) &&
-               inRange(request.firingGripPromotionRadiusGameUnits, 0.25f, 30.0f) &&
                inRange(request.leftFiringAimYawDegrees, -30.0f, 30.0f) &&
                inRange(request.leftFiringAimPitchDegrees, -30.0f, 30.0f) &&
                inRange(request.leftFiringAimOffsetGameUnits[0], -15.0f, 15.0f) &&
@@ -1912,7 +1911,7 @@ namespace rock::provider::runtime
             return api::Status::InvalidArgument;
         }
         // One weapon today: only the primary weapon's offhand can be reserved.
-        if (request->hand != apiGetOffhandHandV1()) {
+        if (request->hand != offhandHand()) {
             return api::Status::HandUnavailable;
         }
         const auto generationResult = validateGenerationGuards(
@@ -2131,8 +2130,8 @@ namespace rock::provider::runtime
     }
 
     [[nodiscard]] bool sameEquippedWeaponPayload(
-        const RockProviderEquippedWeaponStateV1& left,
-        const RockProviderEquippedWeaponStateV1& right) noexcept
+        const api::weapon::WeaponState& left,
+        const api::weapon::WeaponState& right) noexcept
     {
         return left.flags == right.flags &&
                left.weaponFormId == right.weaponFormId &&
@@ -2144,9 +2143,9 @@ namespace rock::provider::runtime
                left.transitionWeaponFormId == right.transitionWeaponFormId &&
                left.terminalWeaponFormId == right.terminalWeaponFormId &&
                left.terminalSource == right.terminalSource &&
-               left.worldGeneration == right.worldGeneration &&
-               left.skeletonGeneration == right.skeletonGeneration &&
-               left.providerGeneration == right.providerGeneration;
+               left.sample.worldGeneration == right.sample.worldGeneration &&
+               left.sample.skeletonGeneration == right.sample.skeletonGeneration &&
+               left.sample.providerGeneration == right.sample.providerGeneration;
     }
 
 
@@ -2257,9 +2256,9 @@ namespace rock::provider
             state.frameIndex = snapshot.frameIndex;
         }
 
-        RockProviderEquippedWeaponStateV1 equippedWeaponState{};
-        (void)pi.queryProviderEquippedWeaponStateV1(equippedWeaponState);
-        equippedWeaponState.frameIndex = snapshot.frameIndex;
+        api::weapon::WeaponState equippedWeaponState{};
+        (void)pi.queryProviderWeaponState(equippedWeaponState);
+        equippedWeaponState.sample.frameIndex = snapshot.frameIndex;
 
         bool hadPrevious = false;
         bool lifecycleChanged = false;
@@ -2363,6 +2362,8 @@ namespace rock::provider
                         advanceSequence(previousSnapshot.stateSequence) :
                         previousSnapshot.stateSequence);
 
+            equippedWeaponState.sample.publicationSequence = snapshot.stateSequence;
+            equippedWeaponState.sample.collisionGeneration = snapshot.collisionGeneration;
             equippedTerminalChanged = hadPrevious &&
                 equippedWeaponState.terminalSequence != 0 &&
                 equippedWeaponState.terminalSequence !=
@@ -2908,8 +2909,8 @@ namespace rock::provider
         s_equippedWeaponFiringHandIsLeft.store(isLeft, std::memory_order_release);
     }
 
-    bool getEquippedWeaponHandlingAuthorityV1(
-        RockProviderEquippedWeaponHandlingRequestV1& outRequest)
+    bool getHandlingAuthorityRequest(
+        api::weapon::HandlingRequest& outRequest)
     {
         outRequest = {};
         const auto frameIndex = currentProviderFrameIndex();
@@ -2922,7 +2923,7 @@ namespace rock::provider
         return true;
     }
 
-    bool ownsEquippedWeaponHandlingAuthorityV1(
+    bool ownsHandlingAuthority(
         const std::uint64_t ownerToken,
         const std::uint32_t requiredFlags)
     {
@@ -2937,7 +2938,7 @@ namespace rock::provider
         return s_equippedWeaponHandlingAuthority.active &&
                s_equippedWeaponHandlingAuthority.ownerToken ==
                    ownerToken &&
-               (s_equippedWeaponHandlingAuthority.request.flags &
+               (s_equippedWeaponHandlingAuthority.request.features &
                    requiredFlags) == requiredFlags;
     }
 

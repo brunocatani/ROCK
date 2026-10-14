@@ -1,4 +1,4 @@
-// Released provider contract: RockProviderEquippedWeaponHandlingRequestV1.
+// Provider contract: weapon::HandlingRequest.
 // An addon handling lease must keep the observable meaning of each flag and
 // tuning field it publishes, and must not switch off ROCK-owned behavior it
 // never requested (shoulder stash, toggle grab, authored-only support).
@@ -84,9 +84,9 @@ int main()
     auto fixedOnlyBaseline = stashOnlyBaseline;
     fixedOnlyBaseline.equippedWeaponShoulderStashEnabled = false;
 
-    rock::provider::RockProviderEquippedWeaponHandlingRequestV1 externalWeaponHandling{};
-    externalWeaponHandling.flags = static_cast<std::uint32_t>(
-        rock::provider::RockProviderEquippedWeaponHandlingFlagV1::FiringGripOwnership);
+    rock::api::weapon::HandlingRequest externalWeaponHandling{};
+    externalWeaponHandling.features = static_cast<std::uint32_t>(
+        rock::api::weapon::HandlingFeature::FiringGripOwnership);
     externalWeaponHandling.firingGripProximitySupportRadiusGameUnits = 8.0f;
     auto externalHandling = rock::makeEquippedWeaponHandlingSettings(
         coreWeaponHandlingBaseline,
@@ -115,12 +115,11 @@ int main()
     ok &= expectNear("external authority preserves ROCK's radius without an override",
         externalHandling.firingGripProximitySupportRadiusGameUnits,
         7.0f);
-    externalWeaponHandling.flags |=
+    externalWeaponHandling.features |=
         static_cast<std::uint32_t>(
-            rock::provider::RockProviderEquippedWeaponHandlingFlagV1::AmbidextrousHandoff) |
+            rock::api::weapon::HandlingFeature::AmbidextrousHandoff) |
         static_cast<std::uint32_t>(
-            rock::provider::RockProviderEquippedWeaponHandlingFlagV1::FiringGripProximitySupport);
-    externalWeaponHandling.firingGripPromotionRadiusGameUnits = 9.0f;
+            rock::api::weapon::HandlingFeature::FiringGripProximitySupport);
     externalWeaponHandling.leftFiringAimYawDegrees = -4.0f;
     externalHandling = rock::makeEquippedWeaponHandlingSettings(
         coreWeaponHandlingBaseline,
@@ -130,7 +129,7 @@ int main()
     ok &= expectNear("an active owner supplies proximity tuning",
         externalHandling.firingGripProximitySupportRadiusGameUnits,
         8.0f);
-    ok &= expectNear("legacy promotion tuning cannot change the shared station reach",
+    ok &= expectNear("an active owner supplies the station reach",
         externalHandling.firingGripReattachRadiusGameUnits,
         externalWeaponHandling.firingGripReattachRadiusGameUnits);
     ok &= expectNear("an active owner supplies left firing aim tuning",
@@ -142,28 +141,26 @@ int main()
             coreWeaponHandling,
             externalHandling));
 
-    rock::provider::RockProviderEquippedWeaponHandlingRequestV1 legacyStashRequest{};
-    legacyStashRequest.flags =
+    rock::api::weapon::HandlingRequest detachRequest{};
+    detachRequest.features =
         static_cast<std::uint32_t>(
-            rock::provider::RockProviderEquippedWeaponHandlingFlagV1::FiringGripOwnership) |
+            rock::api::weapon::HandlingFeature::FiringGripOwnership) |
         static_cast<std::uint32_t>(
-            rock::provider::RockProviderEquippedWeaponHandlingFlagV1::PrimaryDetach) |
-        static_cast<std::uint32_t>(
-            rock::provider::RockProviderEquippedWeaponHandlingFlagV1::EquippedWeaponShoulderStash);
-    legacyStashRequest.firingGripReattachRadiusGameUnits = 9.0f;
-    legacyStashRequest.weaponGripHapticDurationSeconds = 0.20f;
-    legacyStashRequest.firingGripAttachHapticIntensity = 0.40f;
-    legacyStashRequest.firingGripDetachHapticIntensity = 0.50f;
-    const auto legacyStashHandling = rock::makeEquippedWeaponHandlingSettings(
+            rock::api::weapon::HandlingFeature::PrimaryDetach);
+    detachRequest.firingGripReattachRadiusGameUnits = 9.0f;
+    detachRequest.weaponGripHapticDurationSeconds = 0.20f;
+    detachRequest.firingGripAttachHapticIntensity = 0.40f;
+    detachRequest.firingGripDetachHapticIntensity = 0.50f;
+    const auto detachHandling = rock::makeEquippedWeaponHandlingSettings(
         fixedOnlyBaseline,
-        &legacyStashRequest);
-    ok &= expectFalse("legacy provider stash bit cannot enable ROCK shoulder stash",
-        legacyStashHandling.equippedWeaponShoulderStashEnabled);
-    ok &= expectTrue("legacy provider detach remains available to its other handling paths",
-        legacyStashHandling.primaryDetachEnabled);
+        &detachRequest);
+    ok &= expectFalse("a provider detach lease cannot enable ROCK shoulder stash",
+        detachHandling.equippedWeaponShoulderStashEnabled);
+    ok &= expectTrue("provider detach remains available to its other handling paths",
+        detachHandling.primaryDetachEnabled);
     const auto providerDetach =
         rock::resolveEquippedWeaponDetachDecision(
-            legacyStashHandling);
+            detachHandling);
     ok &= expectEqual("provider PrimaryDetach retains firing-role authority",
         providerDetach.authority,
         rock::immersive_weapon_policy::DetachAuthority::ExternalProvider);

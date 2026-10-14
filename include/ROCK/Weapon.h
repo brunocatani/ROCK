@@ -430,7 +430,6 @@ namespace rock::api::weapon {
         float firingGripAttachHapticIntensity{ 0.85f };
         float firingGripDetachHapticIntensity{ 0.30f };
         float supportGripHapticIntensity{ 0.50f };
-        float firingGripPromotionRadiusGameUnits{ 5.0f };
         float leftFiringAimYawDegrees{ 0.0f };
         float leftFiringAimPitchDegrees{ 0.0f };
         float leftFiringAimOffsetGameUnits[3]{};

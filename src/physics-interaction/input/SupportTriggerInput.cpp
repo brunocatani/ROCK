@@ -19,18 +19,20 @@ namespace {
         state.active = 0; state.owner = 0; state.held = 0; state.hand = api::Hand::None; state.weaponSlot = 0; armed = false;
     }
     bool current(api::OwnerToken owner, const api::input::SupportTriggerRequest& value) {
-        provider::RockProviderEquippedWeaponStateV1 equipped;
-        provider::RockProviderEquippedWeaponGripStateV1 grip;
+        api::weapon::WeaponState equipped;
+        api::weapon::Grip grip;
+        provider_state_policy::WeaponHandling handling;
         const auto sample = provider::runtime::sample();
         constexpr auto drawn = static_cast<std::uint32_t>(api::weapon::WeaponStateFlag::WeaponDrawn);
         constexpr auto valid = static_cast<std::uint32_t>(api::weapon::WeaponStateFlag::Valid);
-        using G = provider::RockProviderEquippedWeaponGripStateFlagV1;
-        if (provider::runtime::apiGetEquippedWeaponStateV1(owner, &equipped) != api::Status::Ok ||
+        if (provider::runtime::copyPublishedWeaponState(equipped) != api::Status::Ok ||
             (equipped.flags & (drawn | valid)) != (drawn | valid) ||
-            !provider::runtime::apiGetEquippedWeaponGripStateV1(owner, &grip)) return false;
-        const auto required = static_cast<std::uint32_t>(G::Valid) | static_cast<std::uint32_t>(G::TwoHandGripActive);
-        const auto support = (grip.flags & static_cast<std::uint32_t>(G::FiringHandLeft)) ? api::Hand::Right : api::Hand::Left;
-        return (grip.flags & required) == required && support == value.hand &&
+            provider::runtime::getWeaponGrip(grip) != api::Status::Ok ||
+            !provider::runtime::queryWeaponHandling(handling)) return false;
+        // The trigger lease belongs to the hand on the weapon's support grip.
+        provider_state_policy::applyHandling(equipped, handling);
+        return (grip.flags & static_cast<std::uint32_t>(api::weapon::GripFlag::Valid)) != 0 &&
+            equipped.supportHand == value.hand &&
             equipped.weaponFormId == value.weaponFormId && equipped.weaponGenerationKey == value.weaponGenerationKey &&
             grip.weaponGenerationKey == value.weaponGenerationKey &&
             sample.worldGeneration == value.sample.worldGeneration && sample.skeletonGeneration == value.sample.skeletonGeneration &&

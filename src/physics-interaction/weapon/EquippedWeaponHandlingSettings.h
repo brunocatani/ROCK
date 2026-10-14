@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/ProviderRuntimeTypes.h"
+#include <ROCK/Weapon.h>
 #include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
 #include "physics-interaction/weapon/immersive/ImmersiveWeaponPolicy.h"
 
@@ -69,7 +69,7 @@ namespace rock
     [[nodiscard]] inline EquippedWeaponHandlingSettings
     makeEquippedWeaponHandlingSettings(
         const RockEquippedWeaponHandlingBaseline& rockBaseline,
-        const provider::RockProviderEquippedWeaponHandlingRequestV1* request)
+        const api::weapon::HandlingRequest* request)
     {
         EquippedWeaponHandlingSettings settings{};
         settings.firingGripOwnershipEnabled =
@@ -121,11 +121,8 @@ namespace rock
             return settings;
         }
 
-        const auto enabled = [request](
-                                 const provider::RockProviderEquippedWeaponHandlingFlagV1 flag) {
-            return provider::hasEquippedWeaponHandlingFlagV1(
-                request->flags,
-                flag);
+        const auto enabled = [request](const api::weapon::HandlingFeature feature) {
+            return (request->features & static_cast<std::uint32_t>(feature)) != 0;
         };
         settings.externalAuthorityActive = true;
         // Shoulder sheath/retrieval is a ROCK-owned capability. An addon may
@@ -133,26 +130,21 @@ namespace rock
         // configured native shoulder path.
         settings.firingGripOwnershipEnabled =
             settings.firingGripOwnershipEnabled || enabled(
-                provider::RockProviderEquippedWeaponHandlingFlagV1::FiringGripOwnership);
+                api::weapon::HandlingFeature::FiringGripOwnership);
         settings.primaryDetachEnabled =
             settings.primaryDetachEnabled || enabled(
-                provider::RockProviderEquippedWeaponHandlingFlagV1::PrimaryDetach);
+                api::weapon::HandlingFeature::PrimaryDetach);
         settings.ambidextrousHandoffEnabled = enabled(
-            provider::RockProviderEquippedWeaponHandlingFlagV1::AmbidextrousHandoff);
+            api::weapon::HandlingFeature::AmbidextrousHandoff);
         settings.gripZoneEquipEnabled = enabled(
-            provider::RockProviderEquippedWeaponHandlingFlagV1::GripZoneEquip);
+            api::weapon::HandlingFeature::GripZoneEquip);
         settings.gripZoneHoverHapticsEnabled = enabled(
-            provider::RockProviderEquippedWeaponHandlingFlagV1::GripZoneHoverHaptics);
-        // RockProviderEquippedWeaponHandlingFlagV1::PipboyTriggerHandEquip
-        // remains an accepted ABI flag but no longer maps to any behavior:
-        // the Pip-Boy hand-equip mode was removed. Physical handoff,
-        // trigger/grip-zone equip, shoulder retrieval and ROCK's default equip
-        // hand are independent of that retired flag.
+            api::weapon::HandlingFeature::GripZoneHoverHaptics);
         settings.gripZoneEquipRadiusGameUnits = request->gripZoneEquipRadiusGameUnits;
         settings.gripZoneEquipSettleSeconds = request->gripZoneEquipSettleSeconds;
         settings.firingGripReattachRadiusGameUnits = request->firingGripReattachRadiusGameUnits;
         settings.gripZoneHoverHapticIntensity = request->gripZoneHoverHapticIntensity;
-        if (enabled(provider::RockProviderEquippedWeaponHandlingFlagV1::FiringGripProximitySupport)) {
+        if (enabled(api::weapon::HandlingFeature::FiringGripProximitySupport)) {
             settings.firingGripProximitySupportRadiusGameUnits =
                 request->firingGripProximitySupportRadiusGameUnits;
         }

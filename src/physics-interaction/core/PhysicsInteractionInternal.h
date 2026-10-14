@@ -1051,34 +1051,34 @@ namespace rock
             return api::Point3{ .x = point.x, .y = point.y, .z = point.z };
         }
 
-        inline api::grab::BodyContactTargetKind providerBodyContactTargetKind(contact_pipeline_policy::ContactEndpointKind kind)
+        inline api::collision::BodyContactTargetKind providerBodyContactTargetKind(contact_pipeline_policy::ContactEndpointKind kind)
         {
             using contact_pipeline_policy::ContactEndpointKind;
-            using api::grab::BodyContactTargetKind;
+            using api::collision::BodyContactTargetKind;
             switch (kind) {
             case ContactEndpointKind::RightHand:
             case ContactEndpointKind::LeftHand:
-                return api::grab::BodyContactTargetKind::Hand;
+                return api::collision::BodyContactTargetKind::Hand;
             case ContactEndpointKind::Weapon:
             case ContactEndpointKind::SecondaryWeapon:
-                return api::grab::BodyContactTargetKind::Weapon;
+                return api::collision::BodyContactTargetKind::Weapon;
             case ContactEndpointKind::RightHeldObject:
             case ContactEndpointKind::LeftHeldObject:
-                return api::grab::BodyContactTargetKind::HeldObject;
+                return api::collision::BodyContactTargetKind::HeldObject;
             case ContactEndpointKind::Body:
-                return api::grab::BodyContactTargetKind::Body;
+                return api::collision::BodyContactTargetKind::Body;
             case ContactEndpointKind::WorldSurface:
-                return api::grab::BodyContactTargetKind::WorldSurface;
+                return api::collision::BodyContactTargetKind::WorldSurface;
             case ContactEndpointKind::DynamicProp:
-                return api::grab::BodyContactTargetKind::DynamicProp;
+                return api::collision::BodyContactTargetKind::DynamicProp;
             case ContactEndpointKind::Actor:
-                return api::grab::BodyContactTargetKind::Actor;
+                return api::collision::BodyContactTargetKind::Actor;
             case ContactEndpointKind::QueryOnly:
-                return api::grab::BodyContactTargetKind::QueryOnly;
+                return api::collision::BodyContactTargetKind::QueryOnly;
             case ContactEndpointKind::Unknown:
                 break;
             }
-            return api::grab::BodyContactTargetKind::Unknown;
+            return api::collision::BodyContactTargetKind::Unknown;
         }
 
         inline RE::EquippedWeaponData* getValidatedEquippedWeaponData()

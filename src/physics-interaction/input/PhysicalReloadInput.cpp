@@ -29,8 +29,8 @@ namespace {
         activeMask.store(0,std::memory_order_release);state.active=false;state.owner=0;state.held=false;armed=false;scopeHeld=false;
     }
     bool current() {
-        provider::RockProviderEquippedWeaponStateV1 weapon;
-        const auto result=provider::runtime::apiGetEquippedWeaponStateV1(state.owner,&weapon);
+        api::weapon::WeaponState weapon;
+        const auto result=provider::runtime::copyPublishedWeaponState(weapon);
         const auto sample=provider::runtime::sample();
         constexpr auto drawn=static_cast<std::uint32_t>(api::weapon::WeaponStateFlag::WeaponDrawn);
         constexpr auto valid=static_cast<std::uint32_t>(api::weapon::WeaponStateFlag::Valid);
@@ -44,7 +44,7 @@ api::Status set(api::OwnerToken owner,const api::input::ReloadGestureRequest& va
     constexpr auto blockFireFlag=static_cast<std::uint32_t>(Flag::BlockFire),priorityFlag=static_cast<std::uint32_t>(Flag::GameplayPriority);
     if(!owner||!value.weaponFormId||!value.weaponGenerationKey||!value.leaseFrames||value.leaseFrames>api::input::kMaxWeaponInputLeaseFrames||
         (value.hand!=Hand::Left&&value.hand!=Hand::Right)||(value.flags&~(blockFireFlag|priorityFlag)))return Status::InvalidArgument;
-    if(static_cast<Hand>(provider::runtime::apiGetPrimaryHandV1())!=value.hand)return Status::HandUnavailable;
+    if(static_cast<Hand>(provider::runtime::primaryHand())!=value.hand)return Status::HandUnavailable;
     const auto now=provider::runtime::currentGameFrameIndex();
     if(value.sample.frameIndex>now||now-value.sample.frameIndex>1)return Status::GenerationMismatch;
     const bool gameplayPriority=(value.flags&priorityFlag)!=0;
@@ -102,7 +102,7 @@ void reset(){std::scoped_lock lock(mutex);retire();}
 void beginFrame(std::uint64_t frame) {
     std::scoped_lock lock(mutex);
     if(state.active&&(frame>state.expiresAfterFrame||!current()||
-        static_cast<api::Hand>(provider::runtime::apiGetPrimaryHandV1())!=state.hand))retire();
+        static_cast<api::Hand>(provider::runtime::primaryHand())!=state.hand))retire();
 }
 bool observe(bool left,const input_remap_runtime::RawButtonState& raw) {
     std::scoped_lock lock(mutex);

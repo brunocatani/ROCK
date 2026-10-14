@@ -109,9 +109,9 @@
         return false;
     }
 
-    bool PhysicsInteraction::queryProviderWorldRaycastV1(
-        const ::rock::provider::RockProviderWorldRaycastRequestV1& request,
-        ::rock::provider::RockProviderWorldRaycastResultV1& outResult) const
+    bool PhysicsInteraction::queryProviderWorldRaycast(
+        const api::collision::WorldRaycastRequest& request,
+        api::collision::WorldRaycastResult& outResult) const
     {
         const RE::NiPoint3 start{
             request.startGame.x,
@@ -259,7 +259,7 @@
         return contact.valid;
     }
 
-    bool PhysicsInteraction::queryProviderEquippedWeaponClassificationV1(::rock::provider::RockProviderWeaponClassificationV1& outResult) const
+    bool PhysicsInteraction::queryProviderWeaponClassification(api::weapon::Classification& outResult) const
     {
         outResult = {};
         const auto identity = _weaponCollision.getEquippedWeaponClassification();
@@ -267,7 +267,7 @@
                 identity.classificationResolved ?
             1u :
             0u;
-        outResult.formId = identity.formID;
+        outResult.weaponFormId = identity.formID;
         outResult.keywordFlags = identity.keywordFlags;
         outResult.sizeClass = static_cast<api::weapon::SizeClass>(identity.sizeClass);
         outResult.source = static_cast<api::weapon::ClassificationSource>(identity.classificationSource);
@@ -309,10 +309,10 @@
         return identity.hasEquippedWeapon;
     }
 
-    bool PhysicsInteraction::queryProviderEquippedWeaponGripStateV1(
-        ::rock::provider::RockProviderEquippedWeaponGripStateV1& outState) const
+    bool PhysicsInteraction::queryProviderWeaponGrip(
+        api::weapon::Grip& outState) const
     {
-        using Flag = ::rock::provider::RockProviderEquippedWeaponGripStateFlagV1;
+        using Flag = api::weapon::GripFlag;
 
         outState = {};
         auto* weaponNode = resolveEquippedWeaponInteractionNode();
@@ -321,16 +321,9 @@
         }
 
         outState.flags = static_cast<std::uint32_t>(Flag::Valid);
-        outState.weaponNode = reinterpret_cast<std::uintptr_t>(weaponNode);
         outState.weaponFormId = currentEquippedWeaponFormId();
         outState.weaponGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey();
 
-        if (_twoHandedGrip.getState() == TwoHandedState::Gripping) {
-            outState.flags |= static_cast<std::uint32_t>(Flag::TwoHandGripActive);
-        }
-        if (_twoHandedGrip.isFiringHandLeft()) {
-            outState.flags |= static_cast<std::uint32_t>(Flag::FiringHandLeft);
-        }
         if (_twoHandedGrip.ownsWeaponTransform()) {
             outState.flags |= static_cast<std::uint32_t>(Flag::WeaponTransformOwned);
         }
@@ -391,21 +384,14 @@
         return true;
     }
 
-    bool PhysicsInteraction::queryProviderEquippedWeaponHandlingStateV1(
-        ::rock::provider::RockProviderEquippedWeaponHandlingStateV1& outState) const
+    bool PhysicsInteraction::queryProviderWeaponHandling(
+        ::rock::provider_state_policy::WeaponHandling& outState) const
     {
-        using RuntimeFlag =
-            ::rock::provider::RockProviderEquippedWeaponHandlingRuntimeFlagV1;
-
         outState = {};
         if (!_lifecycle.initialized.load(std::memory_order_acquire) ||
             !runtime_state::currentFrame().visualAuthorityAvailable ||
             !runtime_state::currentFrame().localSkeletonReady) return false;
-        // The fixed-hand configuration mode was removed; the native right
-        // hand is the only default carrier. The ABI field remains.
-        outState.fixedFiringHand =
-            api::Hand::Right;
-        outState.currentFiringHand = _twoHandedGrip.isFiringHandLeft() ?
+        outState.firingHand = _twoHandedGrip.isFiringHandLeft() ?
             api::Hand::Left :
             api::Hand::Right;
         outState.weaponGenerationKey =
@@ -413,35 +399,20 @@
         outState.weaponFormId = currentEquippedWeaponFormId();
         if (outState.weaponFormId == 0 || outState.weaponFormId !=
             _weaponCollision.getCurrentObservedEquippedWeaponFormID()) outState.weaponGenerationKey = 0;
-
-        const auto setFlag = [&outState](const RuntimeFlag flag) {
-            outState.runtimeFlags |= static_cast<std::uint32_t>(flag);
-        };
-        // RuntimeFlag::FixedHandLeft is never reported: the fixed-hand
-        // configuration mode was removed with the ABI value retained.
-        if (_twoHandedGrip.isFiringHandLeft()) {
-            setFlag(RuntimeFlag::FiringHandLeft);
-        }
-        if (TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true)) {
-            setFlag(RuntimeFlag::LeftFiringInfrastructureAvailable);
-        }
-        if (_twoHandedGrip.isManualOwnershipActive()) {
-            setFlag(RuntimeFlag::ManualOwnershipActive);
-        }
-        if (_twoHandedGrip.isPartCarryActive()) {
-            setFlag(RuntimeFlag::PartCarryActive);
-        }
+        outState.leftFiringAvailable = TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true);
+        outState.manualOwnership = _twoHandedGrip.isManualOwnershipActive();
+        outState.partCarry = _twoHandedGrip.isPartCarryActive();
+        outState.twoHandGrip = _twoHandedGrip.getState() == TwoHandedState::Gripping;
         if (currentEquippedWeaponOccupiesHand() && resolveEquippedWeaponInteractionNode()) {
-            setFlag(RuntimeFlag::WeaponPresent);
+            outState.weaponPresent = true;
             // Inventory/holster equips can remain in Inactive or Touching:
             // the native right hand still occupies the firing grip. The
             // internal occupancy predicate counts explicit ROCK grips only;
             // PartCarry is the state that actually vacates the firing grip.
-            if (provider_state_policy::firingGripOccupied(true, _twoHandedGrip.isPartCarryActive(), _twoHandedGrip.isHandsFreeRetained())) {
-                setFlag(RuntimeFlag::FiringGripOccupied);
-            }
+            outState.firingGripOccupied = provider_state_policy::firingGripOccupied(
+                true, outState.partCarry, _twoHandedGrip.isHandsFreeRetained());
         }
-        return _lifecycle.initialized.load(std::memory_order_acquire);
+        return true;
     }
 
     std::uint32_t PhysicsInteraction::copyProviderWeaponEvidenceDetailsV1(
@@ -509,21 +480,21 @@
         return copied;
     }
 
-    std::uint32_t PhysicsInteraction::getProviderWeaponEmitterCountV1() const
+    std::uint32_t PhysicsInteraction::getProviderWeaponEmitterCount() const
     {
         const auto snapshot = _weaponCollision.getWeaponEmitterSnapshot();
         return static_cast<std::uint32_t>((std::min)(snapshot.count, snapshot.emitters.size()));
     }
 
-    std::uint32_t PhysicsInteraction::copyProviderWeaponEmittersV1(
-        ::rock::provider::RockProviderWeaponEmitterV1* outEmitters,
+    std::uint32_t PhysicsInteraction::copyProviderWeaponEmitters(
+        api::weapon::Emitter* outEmitters,
         std::uint32_t maxEmitters) const
     {
         if (!outEmitters || maxEmitters == 0) {
             return 0;
         }
 
-        static_assert(MAX_WEAPON_EMITTERS == ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_EMITTERS_V1);
+        static_assert(MAX_WEAPON_EMITTERS == api::weapon::kMaxEmitters);
         const auto snapshot = _weaponCollision.getWeaponEmitterSnapshot();
         const std::uint32_t count = (std::min)(maxEmitters,
             static_cast<std::uint32_t>((std::min)(snapshot.count, snapshot.emitters.size())));
@@ -531,8 +502,6 @@
             const auto& descriptor = snapshot.emitters[i];
             auto& out = outEmitters[i];
             out = {};
-            out.size = sizeof(::rock::provider::RockProviderWeaponEmitterV1);
-            out.version = ::rock::provider::ROCK_PROVIDER_API_VERSION;
             out.kind = static_cast<api::weapon::EmitterKind>(descriptor.kind);
             out.source = static_cast<api::weapon::EmitterSource>(descriptor.source);
             out.flags = static_cast<std::uint32_t>(api::weapon::EmitterFlag::TransformValid) |
@@ -571,7 +540,7 @@
     }
 
     std::uint32_t PhysicsInteraction::copyProviderBodyContacts(
-        ::rock::provider::RockProviderBodyContactV1* outContacts,
+        api::collision::BodyContact* outContacts,
         std::uint32_t maxContacts) const
     {
         if (!outContacts || maxContacts == 0) {
@@ -585,8 +554,6 @@
             const auto& record = records[i];
             auto& out = outContacts[i];
             out = {};
-            out.size = sizeof(::rock::provider::RockProviderBodyContactV1);
-            out.version = ::rock::provider::ROCK_PROVIDER_API_VERSION;
             out.frameIndex = record.frame;
             out.bodyId = record.bodyId;
             out.targetBodyId = record.targetBodyId;
@@ -712,8 +679,8 @@
         const auto collisionGeneration =
             _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire);
         const bool primaryIsLeft = _twoHandedGrip.isFiringHandLeft();
-        ::rock::provider::RockProviderEquippedWeaponHandlingStateV1 handling{};
-        const bool stateAvailable = queryProviderEquippedWeaponHandlingStateV1(handling);
+        ::rock::provider_state_policy::WeaponHandling handling{};
+        const bool stateAvailable = queryProviderWeaponHandling(handling);
         std::array<::rock::provider::RockProviderWeaponPartGripStateV1, 2> grips{};
         if (stateAvailable) fillProviderWeaponPartGripStates(grips);
 
@@ -844,9 +811,9 @@
                 state.flags |= static_cast<std::uint32_t>(
                     Flag::InputSuppressed);
             }
-            ::rock::provider::RockProviderHandCollisionAvailabilityV1
+            api::collision::HandCollisionAvailability
                 collisionState{};
-            if (queryProviderHandCollisionAvailabilityV1(
+            if (queryProviderHandCollisionAvailability(
                     state.hand,
                     collisionState)) {
                 state.collisionAvailabilityFlags = collisionState.flags;
@@ -883,8 +850,8 @@
         }
     }
 
-    bool PhysicsInteraction::queryProviderEquippedWeaponStateV1(
-        ::rock::provider::RockProviderEquippedWeaponStateV1& outState) const
+    bool PhysicsInteraction::queryProviderWeaponState(
+        api::weapon::WeaponState& outState) const
     {
         using Flag =
             api::weapon::WeaponStateFlag;
@@ -958,11 +925,11 @@
             (outState.flags & static_cast<std::uint32_t>(Flag::Valid)) &&
             _dynamicWeaponCollision.surfaceSupportReservesInput(
                 reinterpret_cast<std::uintptr_t>(resolveEquippedWeaponInteractionNode()), outState.weaponGenerationKey));
-        outState.worldGeneration =
+        outState.sample.worldGeneration =
             _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
-        outState.skeletonGeneration =
+        outState.sample.skeletonGeneration =
             _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
-        outState.providerGeneration =
+        outState.sample.providerGeneration =
             _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         return (outState.flags & static_cast<std::uint32_t>(Flag::Valid)) != 0 ||
                transition.transitionSequence != 0 ||
@@ -1063,8 +1030,8 @@
         return copied;
     }
 
-    bool PhysicsInteraction::queryProviderScopeSightStateV1(
-        ::rock::provider::RockProviderScopeSightStateV1& outState) const
+    bool PhysicsInteraction::queryProviderScopeSightState(
+        api::weapon::ScopeSightState& outState) const
     {
         using Flag = api::weapon::ScopeSightFlag;
         outState = {};
@@ -1132,7 +1099,7 @@
         }
         const auto activation =
             _twoHandedGrip.getNativeScopeActivationDebugSnapshot();
-        outState.publicationSequence = activation.publicationSequence;
+        outState.sample.publicationSequence = activation.publicationSequence;
         const bool active = activation.rendererStateValid ?
                                 activation.rendererActive :
                                 menuOpen;
@@ -1163,22 +1130,22 @@
         }
         const auto composition =
             _weaponCollision.getWeaponCompositionSnapshot();
-        if (outState.publicationSequence == 0) {
-            outState.publicationSequence = composition.publicationSequence;
+        if (outState.sample.publicationSequence == 0) {
+            outState.sample.publicationSequence = composition.publicationSequence;
         }
-        outState.frameIndex =
+        outState.sample.frameIndex =
             _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
-        outState.worldGeneration =
+        outState.sample.worldGeneration =
             _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
-        outState.skeletonGeneration =
+        outState.sample.skeletonGeneration =
             _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
-        outState.providerGeneration =
+        outState.sample.providerGeneration =
             _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         return true;
     }
 
-    bool PhysicsInteraction::queryProviderWeaponCompositionStateV1(
-        ::rock::provider::RockProviderWeaponCompositionStateV1& outState) const
+    bool PhysicsInteraction::queryProviderWeaponCompositionState(
+        api::weapon::CompositionState& outState) const
     {
         outState = {};
         const auto snapshot =
@@ -1196,8 +1163,8 @@
         return true;
     }
 
-    std::uint32_t PhysicsInteraction::copyProviderWeaponCompositionEntriesV1(
-        ::rock::provider::RockProviderWeaponCompositionEntryV1* outEntries,
+    std::uint32_t PhysicsInteraction::copyProviderWeaponCompositionEntries(
+        api::weapon::CompositionEntry* outEntries,
         const std::uint32_t maxEntries) const
     {
         if (!outEntries || maxEntries == 0) {
@@ -1223,8 +1190,8 @@
         return count;
     }
 
-    bool PhysicsInteraction::queryProviderSelectedAuthoredGripPoseV1(
-        ::rock::provider::RockProviderAuthoredGripPoseV1& outPose) const
+    bool PhysicsInteraction::queryProviderAuthoredGripPose(
+        api::weapon::AuthoredGripPose& outPose) const
     {
         using Flag = api::weapon::AuthoredGripPoseFlag;
         outPose = {};
@@ -1386,10 +1353,10 @@
         }
     }
 
-    std::uint32_t PhysicsInteraction::copyProviderSemanticHandContactsV1(
+    std::uint32_t PhysicsInteraction::copyProviderSemanticHandContacts(
         const api::Hand handValue,
         const std::uint32_t maxFramesSinceContact,
-        ::rock::provider::RockProviderSemanticHandContactV1* outContacts,
+        api::collision::SemanticHandContact* outContacts,
         const std::uint32_t maxContacts) const
     {
         if (!outContacts || maxContacts == 0) {
@@ -1400,9 +1367,9 @@
         const bool isLeft =
             handValue == api::Hand::Left;
         const Hand& hand = isLeft ? _leftHand : _rightHand;
-        ::rock::provider::RockProviderHandCollisionAvailabilityV1
+        api::collision::HandCollisionAvailability
             availability{};
-        (void)queryProviderHandCollisionAvailabilityV1(
+        (void)queryProviderHandCollisionAvailability(
             handValue,
             availability);
         const bool collisionAvailable =
@@ -1492,8 +1459,8 @@
         return copied;
     }
 
-    std::uint32_t PhysicsInteraction::copyProviderPlayerColliderDescriptorsV1(
-        ::rock::provider::RockProviderPlayerColliderDescriptorV1* outDescriptors,
+    std::uint32_t PhysicsInteraction::copyProviderPlayerColliderDescriptors(
+        api::collision::PlayerColliderDescriptor* outDescriptors,
         const std::uint32_t maxDescriptors) const
     {
         if (!outDescriptors || maxDescriptors == 0) {
@@ -1593,9 +1560,9 @@
         return copied;
     }
 
-    bool PhysicsInteraction::queryProviderHandCollisionAvailabilityV1(
+    bool PhysicsInteraction::queryProviderHandCollisionAvailability(
         const api::Hand handValue,
-        ::rock::provider::RockProviderHandCollisionAvailabilityV1& outState) const
+        api::collision::HandCollisionAvailability& outState) const
     {
         using Flag =
             api::collision::HandCollisionAvailabilityFlag;
@@ -1674,10 +1641,10 @@
                 outState.flags |= static_cast<std::uint32_t>(
                     Flag::DynamicWeaponPairSuppressed);
             }
-            outState.reserved[0] = handTelemetry.otherHandContactMask;
-            outState.reserved[1] = handTelemetry.weaponContactMask;
-            outState.reserved[2] = handTelemetry.dynamicInteractionLayer;
-            outState.reserved[3] =
+            outState.otherHandContactSlots = handTelemetry.otherHandContactMask;
+            outState.weaponContactSlots = handTelemetry.weaponContactMask;
+            outState.dynamicCollisionLayer = handTelemetry.dynamicInteractionLayer;
+            outState.pairSuppressionLeaseCount =
                 handTelemetry.suppressedWeaponPairCount;
         }
         outState.worldGeneration =

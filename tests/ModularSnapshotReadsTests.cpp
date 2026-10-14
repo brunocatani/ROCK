@@ -39,11 +39,6 @@ namespace rock::provider::runtime {
         out.transform.translate[0]=12;
         return Status::Ok;
     }
-    api::Status apiGetEquippedWeaponStateV1(std::uint64_t, RockProviderEquippedWeaponStateV1* out) {
-        if (!available) return api::Status::NotReady;
-        out->weaponFormId=123;out->weaponGenerationKey=456;out->frameIndex=100;
-        return api::Status::Ok;
-    }
     bool apiGetWeaponPartGripStateV1(api::Hand hand, api::weaponparts::GripState* out) {
         if (!available) return false;
         out->hand=static_cast<api::Hand>(hand);out->active=1;out->sourceKey=789;out->weaponGenerationKey=456;

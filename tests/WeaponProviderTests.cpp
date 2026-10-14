@@ -25,45 +25,42 @@ namespace rock::provider::runtime {
     }
     api::Sample sample() { return {20, 30, 1, 2, 3, 4}; }
     void reportBoundaryFailure(std::uint64_t, api::InterfaceId) noexcept { assert(false); }
-    api::Status apiGetEquippedWeaponStateV1(std::uint64_t, RockProviderEquippedWeaponStateV1* out) {
-        out->frameIndex = 19; out->worldGeneration = 7; out->skeletonGeneration = 8; out->providerGeneration = 9;
-        out->flags = static_cast<std::uint32_t>(api::weapon::WeaponStateFlag::Valid);
-        out->weaponFormId = 123; out->weaponGenerationKey = 456; out->transitionSequence = 3;
+    api::Status copyPublishedWeaponState(api::weapon::WeaponState& out) {
+        out.sample = {19, 30, 7, 8, 9, 4};
+        out.flags = static_cast<std::uint32_t>(api::weapon::WeaponStateFlag::Valid);
+        out.weaponFormId = 123; out.weaponGenerationKey = 456; out.transitionSequence = 3;
         return api::Status::Ok;
     }
-    bool apiGetEquippedWeaponHandlingStateV1(RockProviderEquippedWeaponHandlingStateV1* out) {
-        using F = RockProviderEquippedWeaponHandlingRuntimeFlagV1;
-        out->currentFiringHand = firingLeft ? api::Hand::Left : api::Hand::Right;
-        out->runtimeFlags = static_cast<std::uint32_t>(F::FiringGripOccupied) | static_cast<std::uint32_t>(F::PartCarryActive) |
-            static_cast<std::uint32_t>(F::AuthorityActive) | (weaponPresent ? static_cast<std::uint32_t>(F::WeaponPresent) : 0u);
+    bool queryWeaponHandling(provider_state_policy::WeaponHandling& out) {
+        out = {};
+        out.weaponPresent = weaponPresent; out.firingGripOccupied = true; out.partCarry = true; out.twoHandGrip = twoHand;
+        out.firingHand = firingLeft ? api::Hand::Left : api::Hand::Right;
         return true;
     }
-    bool apiGetEquippedWeaponGripStateV1(std::uint64_t, RockProviderEquippedWeaponGripStateV1* out) {
-        using G = RockProviderEquippedWeaponGripStateFlagV1;
-        out->flags = static_cast<std::uint32_t>(G::Valid) | static_cast<std::uint32_t>(G::MuzzleWorldValid) |
-            (twoHand ? static_cast<std::uint32_t>(G::TwoHandGripActive) : 0u) | (firingLeft ? static_cast<std::uint32_t>(G::FiringHandLeft) : 0u);
-        out->weaponFormId = 123; out->muzzleOriginGame = {1, 2, 3};
-        return true;
+    api::Status getWeaponGrip(api::weapon::Grip& out) {
+        out.flags = static_cast<std::uint32_t>(api::weapon::GripFlag::Valid) | static_cast<std::uint32_t>(api::weapon::GripFlag::MuzzleWorldValid);
+        out.weaponFormId = 123; out.muzzleOriginGame = {1, 2, 3};
+        return api::Status::Ok;
     }
-    bool apiQueryEquippedWeaponClassificationV1(RockProviderWeaponClassificationV1* out) { out->valid = 1; out->formId = 123; return true; }
-    std::uint32_t apiGetWeaponEmitterCountV1() { return emitterCount; }
-    std::uint32_t apiCopyWeaponEmittersV1(RockProviderWeaponEmitterV1* out, std::uint32_t capacity) {
+    api::Status getWeaponClassification(api::weapon::Classification& out) { out.valid = 1; out.weaponFormId = 123; return api::Status::Ok; }
+    std::uint32_t weaponEmitterCount() { return emitterCount; }
+    std::uint32_t copyWeaponEmitters(api::weapon::Emitter* out, std::uint32_t capacity) {
         const auto copied = (std::min)(capacity, emitterCount);
         for (std::uint32_t i = 0; i < copied; ++i) out[i].omodFormId = 100 + i;
         return copied;
     }
-    api::Status apiSetEquippedWeaponHandlingAuthorityV1(std::uint64_t, const RockProviderEquippedWeaponHandlingRequestV1* request) {
-        assert(request->flags == 3 && request->leaseFrames == 10 && request->leftFiringAimOffsetGameUnits[2] == 4);
+    api::Status setHandlingAuthority(std::uint64_t, const api::weapon::HandlingRequest& request) {
+        assert(request.features == 3 && request.leaseFrames == 10 && request.leftFiringAimOffsetGameUnits[2] == 4);
         ++handlingRequests;
         return api::Status::Ok;
     }
-    api::Status apiClearEquippedWeaponHandlingAuthorityV1(std::uint64_t) { return api::Status::Ok; }
-    api::Status apiGetScopeSightStateV1(std::uint64_t, RockProviderScopeSightStateV1*) { return api::Status::Ok; }
-    api::Status apiGetWeaponCompositionStateV1(std::uint64_t, RockProviderWeaponCompositionStateV1*) { return api::Status::Ok; }
-    api::Status apiCopyWeaponCompositionEntriesV1(std::uint64_t, RockProviderWeaponCompositionEntryV1*, std::uint32_t, std::uint32_t* count) {
-        *count = 0; return api::Status::Ok;
+    api::Status clearHandlingAuthority(std::uint64_t) { return api::Status::Ok; }
+    api::Status getScopeSightState(api::weapon::ScopeSightState&) { return api::Status::Ok; }
+    api::Status getWeaponCompositionState(api::weapon::CompositionState&) { return api::Status::Ok; }
+    api::Status copyWeaponCompositionEntries(api::weapon::CompositionEntry*, std::uint32_t, std::uint32_t& count) {
+        count = 0; return api::Status::Ok;
     }
-    api::Status apiGetSelectedAuthoredGripPoseV1(std::uint64_t, RockProviderAuthoredGripPoseV1*) { return api::Status::Ok; }
+    api::Status getAuthoredGripPose(api::weapon::AuthoredGripPose&) { return api::Status::Ok; }
     api::Status getHandlingAuthority(api::weapon::HandlingAuthority& out) { out.active = 1; out.owner = testOwner; return api::Status::Ok; }
     api::Status captureInventoryWeapon(std::uint64_t, std::uint32_t, std::uint32_t, api::weapon::InventoryWeapon&) { return api::Status::Ok; }
     api::Status requestInventoryEquip(std::uint64_t, const api::weapon::EquipRequest&, std::uint64_t& command) { command = 9; return api::Status::RequestQueued; }
@@ -101,9 +98,7 @@ int main() {
            state.handlingFlags == 0 && state.weaponFormId == 123);
     weaponPresent = true; firingLeft = true; twoHand = true;
 
-    // The retired grip bits never reach a consumer.
     assert(api.getGrip(testOwner, 0, &grip) == Status::Ok && grip.weaponSlot == 0 && grip.muzzleOriginGame.z == 3);
-    assert(grip.flags == (static_cast<std::uint32_t>(GripFlag::Valid) | static_cast<std::uint32_t>(GripFlag::MuzzleWorldValid)));
 
     // Emitters: one call reports the full count and copies what fits.
     Emitter emitters[2];

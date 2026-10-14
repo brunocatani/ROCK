@@ -1,138 +1,87 @@
 // Private Collision service operations. Included after shared owner/lifecycle helpers.
+// They fill provider API major-2 Collision records directly; the endpoint has
+// already authorized the owner and validated the caller's records.
 
-    std::uint32_t apiGetBodyContactSnapshotV1(
-        RockProviderBodyContactV1* outContacts,
-        std::uint32_t maxContacts)
+    std::uint32_t copyBodyContacts(
+        api::collision::BodyContact* outContacts,
+        const std::uint32_t capacity)
     {
         const auto instanceAccess = s_physicsInteraction.borrow();
         auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return 0;
         }
-
-        return pi->copyProviderBodyContacts(outContacts, maxContacts);
+        return pi->copyProviderBodyContacts(outContacts, capacity);
     }
 
-    api::Status apiCopySemanticHandContactsV1(
-        const std::uint64_t ownerToken,
+    api::Status copySemanticHandContacts(
         const api::Hand hand,
         const std::uint32_t maxFramesSinceContact,
-        RockProviderSemanticHandContactV1* outContacts,
-        const std::uint32_t maxContacts,
-        std::uint32_t* outContactCount)
+        api::collision::SemanticHandContact* outContacts,
+        const std::uint32_t capacity,
+        std::uint32_t& outCount)
     {
-        if (outContactCount) *outContactCount = 0;
-        if (ownerToken == 0 || !outContactCount ||
-            (hand != api::Hand::Right && hand != api::Hand::Left) ||
-            (maxContacts != 0 && !outContacts)) {
-            return api::Status::InvalidArgument;
-        }
-        const auto ownerResult = validateRegisteredOwner(ownerToken);
-        if (ownerResult != api::Status::Ok) {
-            return ownerResult;
-        }
-        if (!onAnimationOwnerThread()) {
-            return api::Status::WrongThread;
-        }
         const auto instanceAccess = s_physicsInteraction.borrow();
         auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return api::Status::NotReady;
         }
-        *outContactCount = pi->copyProviderSemanticHandContactsV1(
-            hand,
-            maxFramesSinceContact,
-            outContacts,
-            maxContacts);
+        outCount = pi->copyProviderSemanticHandContacts(hand, maxFramesSinceContact, outContacts, capacity);
         return api::Status::Ok;
     }
 
-    api::Status apiCopyPlayerColliderDescriptorsV1(
-        const std::uint64_t ownerToken,
-        RockProviderPlayerColliderDescriptorV1* outDescriptors,
-        const std::uint32_t maxDescriptors,
-        std::uint32_t* outDescriptorCount)
+    api::Status copyPlayerColliderDescriptors(
+        api::collision::PlayerColliderDescriptor* outDescriptors,
+        const std::uint32_t capacity,
+        std::uint32_t& outCount)
     {
-        if (outDescriptorCount) *outDescriptorCount = 0;
-        if (ownerToken == 0 || !outDescriptorCount ||
-            (maxDescriptors != 0 && !outDescriptors)) {
-            return api::Status::InvalidArgument;
-        }
-        const auto ownerResult = validateRegisteredOwner(ownerToken);
-        if (ownerResult != api::Status::Ok) {
-            return ownerResult;
-        }
-        if (!onAnimationOwnerThread()) {
-            return api::Status::WrongThread;
-        }
         const auto instanceAccess = s_physicsInteraction.borrow();
         auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
             return api::Status::NotReady;
         }
-        *outDescriptorCount = pi->copyProviderPlayerColliderDescriptorsV1(
-            outDescriptors,
-            maxDescriptors);
+        outCount = pi->copyProviderPlayerColliderDescriptors(outDescriptors, capacity);
         return api::Status::Ok;
     }
 
-    api::Status apiGetHandCollisionAvailabilityV1(
-        const std::uint64_t ownerToken,
+    api::Status getHandCollisionAvailability(
         const api::Hand hand,
-        RockProviderHandCollisionAvailabilityV1* outState)
+        api::collision::HandCollisionAvailability& outState)
     {
-        if (hand != api::Hand::Right && hand != api::Hand::Left) {
-            provider_state_policy::clearQueryOutput(outState);
-            return api::Status::HandUnavailable;
+        const auto instanceAccess = s_physicsInteraction.borrow();
+        auto* pi = instanceAccess.get();
+        if (!pi || !pi->isInitialized()) {
+            return api::Status::NotReady;
         }
-        return queryPhysicsInteractionValue(ownerToken,
-            outState,
-            [hand](PhysicsInteraction& pi, RockProviderHandCollisionAvailabilityV1& state) {
-                return pi.queryProviderHandCollisionAvailabilityV1(hand, state);
-            },
-            true);
+        return pi->queryProviderHandCollisionAvailability(hand, outState) ?
+            api::Status::Ok :
+            api::Status::TargetUnavailable;
     }
 
-    api::Status apiQueryWorldRaycastV1(
+    api::Status queryWorldRaycast(
         const std::uint64_t ownerToken,
-        const RockProviderWorldRaycastRequestV1* request,
-        RockProviderWorldRaycastResultV1* outResult)
+        const api::collision::WorldRaycastRequest& request,
+        api::collision::WorldRaycastResult& outResult)
     {
-        provider_state_policy::clearQueryOutput(outResult);
-        if (ownerToken == 0 || !request || !outResult) {
-            return api::Status::InvalidArgument;
-        }
-        if (request->size != sizeof(RockProviderWorldRaycastRequestV1) ||
-            outResult->size != sizeof(RockProviderWorldRaycastResultV1)) {
-            return api::Status::InvalidSize;
-        }
-        if (request->version != ROCK_PROVIDER_API_VERSION ||
-            outResult->version != ROCK_PROVIDER_API_VERSION) {
-            return api::Status::UnsupportedVersion;
-        }
-        if (!finiteProviderPoint(request->startGame) ||
-            !finiteProviderPoint(request->directionGame) ||
-            !std::isfinite(request->maxDistanceGame) ||
-            request->maxDistanceGame <= 0.0f ||
-            request->maxDistanceGame >
-                ROCK_PROVIDER_MAX_WORLD_RAYCAST_DISTANCE_GAME_V1) {
+        if (!finiteProviderPoint(request.startGame) ||
+            !finiteProviderPoint(request.directionGame) ||
+            !std::isfinite(request.maxDistanceGame) ||
+            request.maxDistanceGame <= 0.0f ||
+            request.maxDistanceGame > api::collision::kMaxRaycastDistanceGame) {
             return api::Status::InvalidArgument;
         }
         const float directionLengthSquared =
-            request->directionGame.x * request->directionGame.x +
-            request->directionGame.y * request->directionGame.y +
-            request->directionGame.z * request->directionGame.z;
+            request.directionGame.x * request.directionGame.x +
+            request.directionGame.y * request.directionGame.y +
+            request.directionGame.z * request.directionGame.z;
         if (!std::isfinite(directionLengthSquared) ||
             directionLengthSquared <= 1.0e-8f) {
             return api::Status::InvalidArgument;
         }
-        if (!onAnimationOwnerThread()) {
-            return api::Status::WrongThread;
-        }
         const auto generationResult = validateGenerationGuards(
-            request->worldGeneration,
-            request->skeletonGeneration,
-            request->providerGeneration);
+            request.worldGeneration,
+            request.skeletonGeneration,
+            request.providerGeneration);
         if (generationResult != api::Status::Ok) {
             return generationResult;
         }
@@ -146,6 +95,7 @@
             return api::Status::NotReady;
         }
 
+        // Each owner gets a bounded number of casts per game frame.
         const auto frameIndex = currentGameFrameIndex();
         {
             std::scoped_lock lock(s_consumerMutex);
@@ -157,16 +107,14 @@
                 slot->worldRaycastFrameIndex = frameIndex;
                 slot->worldRaycastCount = 0;
             }
-            if (slot->worldRaycastCount >=
-                ROCK_PROVIDER_MAX_WORLD_RAYCASTS_PER_OWNER_PER_FRAME_V1) {
+            if (slot->worldRaycastCount >= api::collision::kMaxRaycastsPerOwnerPerFrame) {
                 return api::Status::CapacityFull;
             }
             ++slot->worldRaycastCount;
         }
 
-        *outResult = {};
-        outResult->frameIndex = frameIndex;
-        if (!pi->queryProviderWorldRaycastV1(*request, *outResult)) {
+        outResult.frameIndex = frameIndex;
+        if (!pi->queryProviderWorldRaycast(request, outResult)) {
             return api::Status::WorldNotReady;
         }
         return api::Status::Ok;

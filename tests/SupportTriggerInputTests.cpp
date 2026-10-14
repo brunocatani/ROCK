@@ -5,15 +5,19 @@
 
 namespace {
     rock::api::Sample sample{10,1,1,2,3,4};
-    rock::provider::RockProviderEquippedWeaponStateV1 weapon;
-    rock::provider::RockProviderEquippedWeaponGripStateV1 grip;
+    rock::api::weapon::WeaponState weapon;
+    rock::api::weapon::Grip grip;
+    bool firingLeft{};
     rock::input_remap_runtime::RawButtonState raw{true};
 }
 namespace rock::provider::runtime {
     std::uint64_t currentGameFrameIndex(){return ::sample.frameIndex;}
     api::Sample sample(){return ::sample;}
-    api::Status apiGetEquippedWeaponStateV1(std::uint64_t,RockProviderEquippedWeaponStateV1* out){*out=::weapon;return api::Status::Ok;}
-    bool apiGetEquippedWeaponGripStateV1(std::uint64_t,RockProviderEquippedWeaponGripStateV1* out){*out=::grip;return true;}
+    api::Status copyPublishedWeaponState(api::weapon::WeaponState& out){out=::weapon;return api::Status::Ok;}
+    api::Status getWeaponGrip(api::weapon::Grip& out){out=::grip;return api::Status::Ok;}
+    bool queryWeaponHandling(provider_state_policy::WeaponHandling& out){
+        out={};out.weaponPresent=true;out.twoHandGrip=true;out.firingHand=::firingLeft?api::Hand::Left:api::Hand::Right;return true;
+    }
 }
 namespace rock::input_remap_runtime { RawButtonState peekRawButtonState(bool,int){return ::raw;} }
 int main() {
@@ -24,7 +28,7 @@ int main() {
     ::grip.weaponGenerationKey=456;
     for (bool left : {true,false}) {
         control::reset();control::gameMask(true,0);control::gameMask(false,0);
-        ::grip.flags=1|2|(left?0:4);raw={true,true};
+        ::grip.flags=1;::firingLeft=!left;raw={true,true};
         input::SupportTriggerRequest request;
         request.weaponFormId=123;request.weaponGenerationKey=456;request.sample=sample;request.hand=left?Hand::Left:Hand::Right;
         assert(control::set(1,request)==Status::Ok);
@@ -38,9 +42,9 @@ int main() {
         raw={};tick();raw={true,true};tick();assert(state.pressSequence==before); // UI/lost input
         raw={true,false};tick();raw={true,true};tick();assert(state.pressSequence==++before);
         control::clear(1);assert(control::gameMask(left,trigger)==trigger);assert(control::gameMask(left,0)==0);
-        assert(control::set(1,request)==Status::Ok);::grip.flags^=4;
+        assert(control::set(1,request)==Status::Ok);::firingLeft=!::firingLeft;
         control::beginFrame(sample.frameIndex);control::read(state);assert(!state.active); // handoff cancels and drains
-        assert(control::gameMask(left,trigger)==trigger);control::gameMask(left,0);::grip.flags^=4;
+        assert(control::gameMask(left,trigger)==trigger);control::gameMask(left,0);::firingLeft=!::firingLeft;
         raw={true,false};assert(control::set(1,request)==Status::Ok);
         sample.frameIndex+=3;control::beginFrame(sample.frameIndex);control::read(state);assert(!state.active);
         assert(control::set(1,request)==Status::GenerationMismatch);request.sample=sample;

@@ -6,16 +6,16 @@
 
 namespace {
     rock::api::Sample sample{10,1,1,2,3,4};
-    rock::provider::RockProviderEquippedWeaponStateV1 weapon;
+    rock::api::weapon::WeaponState weapon;
     rock::input_remap_runtime::RawButtonState raw{true};
     rock::api::Hand primary=rock::api::Hand::Left;
 }
 namespace rock::provider::runtime {
-    rock::api::Hand apiGetPrimaryHandV1(){return ::primary;}
+    rock::api::Hand primaryHand(){return ::primary;}
     std::uint64_t currentGameFrameIndex(){return ::sample.frameIndex;}
     rock::api::Sample sample(){return ::sample;}
-    rock::api::Status apiGetEquippedWeaponStateV1(std::uint64_t,RockProviderEquippedWeaponStateV1* out){
-        *out=::weapon;return rock::api::Status::Ok;
+    rock::api::Status copyPublishedWeaponState(rock::api::weapon::WeaponState& out){
+        out=::weapon;return rock::api::Status::Ok;
     }
 }
 namespace rock::input_remap_runtime {

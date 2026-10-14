@@ -49,9 +49,9 @@ namespace rock::provider
     // The reservation on hand, or Normal when that hand is not reserved.
     api::grab::HandReservationKind currentHandReservation(api::Hand hand);
     void setEquippedWeaponFiringHandIsLeft(bool isLeft);
-    bool getEquippedWeaponHandlingAuthorityV1(
-        RockProviderEquippedWeaponHandlingRequestV1& outRequest);
-    bool ownsEquippedWeaponHandlingAuthorityV1(
+    bool getHandlingAuthorityRequest(
+        api::weapon::HandlingRequest& outRequest);
+    bool ownsHandlingAuthority(
         std::uint64_t ownerToken,
         std::uint32_t requiredFlags);
     std::uint32_t currentHandInputSuppressionFlagsV1(api::Hand hand);

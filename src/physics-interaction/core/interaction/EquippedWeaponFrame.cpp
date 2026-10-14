@@ -2152,9 +2152,9 @@ namespace rock
         // changing the user's configuration on reloads or new game sessions.
         const bool virtualHolstersLoaded = virtual_holsters::isLoaded();
 
-        ::rock::provider::RockProviderEquippedWeaponHandlingRequestV1 request{};
+        api::weapon::HandlingRequest request{};
         const bool externalAuthorityActive =
-            ::rock::provider::getEquippedWeaponHandlingAuthorityV1(request);
+            ::rock::provider::getHandlingAuthorityRequest(request);
         const auto weaponClassification = _weaponCollision.getEquippedWeaponClassification();
         const RockEquippedWeaponHandlingBaseline rockBaseline{
             .leftHandedModeEnabled = g_rockConfig.rockLeftHandedMode,

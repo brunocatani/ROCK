@@ -73,6 +73,11 @@ namespace RE
     class TESObjectREFR;
 }
 
+namespace rock::provider_state_policy
+{
+    struct WeaponHandling;
+}
+
 namespace rock
 {
 
@@ -233,31 +238,31 @@ namespace rock
             std::uint32_t bodyId,
             api::Point3* outPoints,
             std::uint32_t maxPoints) const;
-        std::uint32_t getProviderWeaponEmitterCountV1() const;
-        std::uint32_t copyProviderWeaponEmittersV1(
-            ::rock::provider::RockProviderWeaponEmitterV1* outEmitters,
+        std::uint32_t getProviderWeaponEmitterCount() const;
+        std::uint32_t copyProviderWeaponEmitters(
+            api::weapon::Emitter* outEmitters,
             std::uint32_t maxEmitters) const;
-        bool queryProviderWorldRaycastV1(
-            const ::rock::provider::RockProviderWorldRaycastRequestV1& request,
-            ::rock::provider::RockProviderWorldRaycastResultV1& outResult) const;
+        bool queryProviderWorldRaycast(
+            const api::collision::WorldRaycastRequest& request,
+            api::collision::WorldRaycastResult& outResult) const;
         void releaseProviderPowerArmorGrabs(std::uint64_t ownerToken);
         bool getProviderHandTargetDetailsV1(
             const ::rock::provider::RockProviderHandInteractionStateV1& handState,
             ::rock::provider::RockProviderHandTargetDetailsV1& outDetails) const;
         std::uint32_t copyProviderBodyContacts(
-            ::rock::provider::RockProviderBodyContactV1* outContacts,
+            api::collision::BodyContact* outContacts,
             std::uint32_t maxContacts) const;
-        bool queryProviderEquippedWeaponClassificationV1(::rock::provider::RockProviderWeaponClassificationV1& outResult) const;
-        bool queryProviderEquippedWeaponGripStateV1(
-            ::rock::provider::RockProviderEquippedWeaponGripStateV1& outState) const;
-        bool queryProviderEquippedWeaponHandlingStateV1(
-            ::rock::provider::RockProviderEquippedWeaponHandlingStateV1& outState) const;
+        bool queryProviderWeaponClassification(api::weapon::Classification& outResult) const;
+        bool queryProviderWeaponGrip(
+            api::weapon::Grip& outState) const;
+        bool queryProviderWeaponHandling(
+            ::rock::provider_state_policy::WeaponHandling& outState) const;
         void fillProviderWeaponPartGripStates(
             std::array<::rock::provider::RockProviderWeaponPartGripStateV1, 2>& outStates) const;
         void fillProviderHandInteractionStates(
             std::array<::rock::provider::RockProviderHandInteractionStateV1, 2>& outStates) const;
-        bool queryProviderEquippedWeaponStateV1(
-            ::rock::provider::RockProviderEquippedWeaponStateV1& outState) const;
+        bool queryProviderWeaponState(
+            api::weapon::WeaponState& outState) const;
         api::Status captureProviderInventoryWeapon(std::uint32_t form, std::uint32_t stack,
             api::weapon::InventoryWeapon& output) const;
         api::Status requestProviderInventoryEquip(api::OwnerToken owner,
@@ -272,30 +277,30 @@ namespace rock
             std::uint64_t ownerToken,
             ::rock::provider::RockProviderWeaponPartDriveApplicationResultV1* outResults,
             std::uint32_t maxResults) const;
-        bool queryProviderScopeSightStateV1(
-            ::rock::provider::RockProviderScopeSightStateV1& outState) const;
-        bool queryProviderWeaponCompositionStateV1(
-            ::rock::provider::RockProviderWeaponCompositionStateV1& outState) const;
-        std::uint32_t copyProviderWeaponCompositionEntriesV1(
-            ::rock::provider::RockProviderWeaponCompositionEntryV1* outEntries,
+        bool queryProviderScopeSightState(
+            api::weapon::ScopeSightState& outState) const;
+        bool queryProviderWeaponCompositionState(
+            api::weapon::CompositionState& outState) const;
+        std::uint32_t copyProviderWeaponCompositionEntries(
+            api::weapon::CompositionEntry* outEntries,
             std::uint32_t maxEntries) const;
-        bool queryProviderSelectedAuthoredGripPoseV1(
-            ::rock::provider::RockProviderAuthoredGripPoseV1& outPose) const;
+        bool queryProviderAuthoredGripPose(
+            api::weapon::AuthoredGripPose& outPose) const;
         bool queryProviderPresentedHandPose(
             ::rock::api::Hand hand,
             ::rock::api::hands::PresentedHandPose& outPose,
             ::rock::provider::Publication* outMetadata = nullptr) const;
-        std::uint32_t copyProviderSemanticHandContactsV1(
+        std::uint32_t copyProviderSemanticHandContacts(
             api::Hand hand,
             std::uint32_t maxFramesSinceContact,
-            ::rock::provider::RockProviderSemanticHandContactV1* outContacts,
+            api::collision::SemanticHandContact* outContacts,
             std::uint32_t maxContacts) const;
-        std::uint32_t copyProviderPlayerColliderDescriptorsV1(
-            ::rock::provider::RockProviderPlayerColliderDescriptorV1* outDescriptors,
+        std::uint32_t copyProviderPlayerColliderDescriptors(
+            api::collision::PlayerColliderDescriptor* outDescriptors,
             std::uint32_t maxDescriptors) const;
-        bool queryProviderHandCollisionAvailabilityV1(
+        bool queryProviderHandCollisionAvailability(
             api::Hand hand,
-            ::rock::provider::RockProviderHandCollisionAvailabilityV1& outState) const;
+            api::collision::HandCollisionAvailability& outState) const;
 
         /*
          * Resolve this frame's hand bone cache and isolated controller hands.
