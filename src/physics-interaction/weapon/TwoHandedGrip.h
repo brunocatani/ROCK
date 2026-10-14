@@ -763,8 +763,6 @@ namespace rock
                    _session.state == TwoHandedState::PrimaryOnly || isHandsFreeRetained();
         }
 
-        bool isTouching() const { return _session.state == TwoHandedState::Touching; }
-
         bool isFiringHandLeft() const { return _session.firingHandIsLeft; }
 
         /*
@@ -815,8 +813,6 @@ namespace rock
         }
 
         TwoHandedState getState() const { return _session.state; }
-
-        weapon_support_authority_policy::WeaponSupportAuthorityMode getAuthorityMode() const { return _session.authorityMode; }
 
         bool ownsWeaponTransform() const;
 

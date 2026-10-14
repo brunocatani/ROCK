@@ -17,18 +17,6 @@
 
 namespace rock::weapon_authority_lifecycle_policy
 {
-    /*
-     * Game-stopping menus and world interruptions must make every ROCK-owned
-     * authority yield before returning to the game. ROCK keeps FRIK weapon
-     * authority, input blocking, and left-hand collision suppression in separate
-     * systems, so the interruption decision is centralized here to keep all
-     * three lifetimes in lockstep.
-     */
-    inline bool shouldClearWeaponAuthorityForUpdateInterruption(bool menuOpen, bool rockDisabled, bool skeletonUnavailable)
-    {
-        return menuOpen || rockDisabled || skeletonUnavailable;
-    }
-
     inline bool isWeaponContactGenerationCurrent(std::uint64_t contactGenerationKey, std::uint64_t currentGenerationKey)
     {
         /*

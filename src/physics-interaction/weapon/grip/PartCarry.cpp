@@ -228,27 +228,21 @@ namespace rock
             return true;
         }
 
+        /*
+         * The carrying hand keeps the weapon exactly where it was rendered:
+         * its raw driver is calibrated against the last rendered two-hand
+         * pose, and later driver motion moves the weapon from there. Without
+         * that calibration the detach waits and retries next frame, like the
+         * authored support carry handoff.
+         */
         const bool carryHandIsLeft = isSupportHandLeft();
-        const bool integratedImmersiveDetach =
-            _handlingSettings.detachAuthority ==
-                immersive_weapon_policy::DetachAuthority::
-                    IntegratedImmersive;
-        const bool posePreservationRequested =
-            integratedImmersiveDetach &&
-            _handlingSettings.preserveWeaponPoseOnDetach;
-        bool poseHandoffReady = false;
-        const char* poseHandoffReason =
-            integratedImmersiveDetach ?
-                "config-disabled" :
-                "not-integrated-immersive";
         SupportInputBaselineState partCarryBaseline{};
-
-        if (posePreservationRequested) {
-            poseHandoffReady =
-                tryBuildPartCarryInputBaseline(
-                    carryHandIsLeft,
-                    partCarryBaseline,
-                    poseHandoffReason);
+        const char* poseHandoffFailure = nullptr;
+        if (!tryBuildPartCarryInputBaseline(carryHandIsLeft, partCarryBaseline, poseHandoffFailure)) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                "TwoHandedGrip: primary detach deferred; carry pose calibration unavailable hand={} reason={}",
+                carryHandIsLeft ? "left" : "right", poseHandoffFailure);
+            return false;
         }
 
         if (!blockFrikPrimaryWeaponPose()) {
@@ -274,40 +268,20 @@ namespace rock
         WeaponPartGrip& carryGrip = partGrip(carryHandIsLeft);
         carryGrip.visualLerp = {};
         lockPartGripToWeaponRoot(carryHandIsLeft);
-        if (poseHandoffReady) {
-            carryGrip.supportInputBaseline = partCarryBaseline;
-        } else if (posePreservationRequested) {
-            ROCK_LOG_WARN(
-                Weapon,
-                "TwoHandedGrip: integrated detach pose handoff unavailable; using legacy part-carry relation hand={} reason={}",
-                carryHandIsLeft ? "left" : "right",
-                poseHandoffReason);
-        }
+        carryGrip.supportInputBaseline = partCarryBaseline;
         _support.rotationBlend = 1.0f;
         _partCarry.pivotIsLeft = carryHandIsLeft;
         _partCarry.detachAuthority = _handlingSettings.detachAuthority;
         _partCarry.gripSeparationWorld = 0.0f;
-        // The calibrated pose handoff yields a zero residual and no blend;
-        // the legacy relation eases from the rendered two-hand pose instead
-        // of jumping to the support hand's captured relation.
-        armWeaponPoseHandoffBlend("primary-detach-part-carry");
+        // The calibrated baseline already reproduces the last rendered pose;
+        // an earlier transition blend must not offset it.
+        clearWeaponPoseHandoffBlend("primary-detach-part-carry", true);
         _session.state = TwoHandedState::PartCarry;
         recordFiringGripDetachedHaptic();
-        if (poseHandoffReady) {
-            ROCK_LOG_INFO(
-                Weapon,
-                "TwoHandedGrip: firing hand detached; part grips own equipped weapon authority source={} poseHandoff=driver-calibrated driver={}-raw gripTarget=authored poseSource=last-rendered",
-                immersive_weapon_policy::authorityName(
-                    _handlingSettings.detachAuthority),
-                carryHandIsLeft ? "left" : "right");
-        } else {
-            ROCK_LOG_INFO(
-                Weapon,
-                "TwoHandedGrip: firing hand detached; part grips own equipped weapon authority source={} poseHandoff=legacy reason={}",
-                immersive_weapon_policy::authorityName(
-                    _handlingSettings.detachAuthority),
-                poseHandoffReason);
-        }
+        ROCK_LOG_INFO(Weapon,
+            "TwoHandedGrip: firing hand detached; part grips own equipped weapon authority source={} driver={}-raw poseSource=last-rendered",
+            immersive_weapon_policy::authorityName(_handlingSettings.detachAuthority),
+            carryHandIsLeft ? "left" : "right");
         return true;
     }
 

@@ -59,21 +59,17 @@ namespace rock::native_scope_sight_anchor_policy
      * compatibility origin for those assets, with a weapon-local offset that
      * can be tuned without changing the stable hand/weapon relation.
      *
-     * Generated geometry remains authoritative unless the user explicitly
-     * forces the fallback for a collider that is present but semantically
-     * wrong. A forced fallback with no current firing grip fails closed.
+     * Generated geometry remains authoritative whenever it is valid.
      */
     template <class Point>
     [[nodiscard]] inline ResolvedAnchor<Point> resolve(
-        const bool forceFiringGripFallback,
         const bool generatedSightValid,
         const Point& generatedSightWeaponLocal,
         const bool firingGripValid,
         const Point& firingGripWeaponLocal,
         const Point& firingGripOffsetWeaponLocal) noexcept
     {
-        if (!forceFiringGripFallback &&
-            generatedSightValid &&
+        if (generatedSightValid &&
             isFinitePoint(generatedSightWeaponLocal)) {
             return ResolvedAnchor<Point>{
                 .weaponLocal = generatedSightWeaponLocal,

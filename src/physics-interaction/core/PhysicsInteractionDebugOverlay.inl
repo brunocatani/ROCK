@@ -738,8 +738,7 @@
             addScopePanelLine(panelY, panelLine);
             panelY += 14.0f;
             std::snprintf(panelLine, sizeof(panelLine),
-                "fallback tune: force=%s offset=(%.2f,%.2f,%.2f) rotation[pitch,yaw,roll]=(%.2f,%.2f,%.2f)",
-                g_rockConfig.rockNativeScopeForceFiringGripFallback ? "yes" : "no",
+                "fallback tune: offset=(%.2f,%.2f,%.2f) rotation[pitch,yaw,roll]=(%.2f,%.2f,%.2f)",
                 g_rockConfig.rockNativeScopeFiringGripFallbackOffsetXGameUnits,
                 g_rockConfig.rockNativeScopeFiringGripFallbackOffsetYGameUnits,
                 g_rockConfig.rockNativeScopeFiringGripFallbackOffsetZGameUnits,

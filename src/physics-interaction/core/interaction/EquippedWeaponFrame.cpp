@@ -1359,9 +1359,6 @@ namespace rock
                 primaryDetachFeatureAvailable ?
                 firingGripDecision.authority :
                 immersive_weapon_policy::DetachAuthority::None;
-            effectiveHandlingSettings.preserveWeaponPoseOnDetach =
-                primaryDetachFeatureAvailable &&
-                firingGripDecision.preserveWeaponPoseOnDetach;
             effectiveHandlingSettings.firingGripReattachRadiusGameUnits =
                 firingGripDecision.reattachRadiusGameUnits;
             effectiveHandlingSettings.weaponGripHapticDurationSeconds =
@@ -2151,6 +2148,12 @@ namespace rock
         // plugin. Cache module presence for this process without polling or
         // changing the user's configuration on reloads or new game sessions.
         const bool virtualHolstersLoaded = virtual_holsters::isLoaded();
+        // Virtual Holsters owns weapon stowing when it is loaded.
+        if (virtualHolstersLoaded && g_rockConfig.rockEquippedWeaponShoulderStashEnabled &&
+            !_equipped.virtualHolstersStashOverrideLogged) {
+            _equipped.virtualHolstersStashOverrideLogged = true;
+            ROCK_LOG_INFO(Weapon, "Virtual Holsters is loaded; equipped-weapon shoulder stash is off and Virtual Holsters stows weapons");
+        }
 
         api::weapon::HandlingRequest request{};
         const bool externalAuthorityActive =
@@ -2176,9 +2179,6 @@ namespace rock
                 .firingGripDetachEnabled =
                     g_rockConfig.
                         rockDetachEitherHand,
-                .firingGripDetachPosePreservationEnabled =
-                    g_rockConfig.
-                        rockFiringGripDetachPosePreservationEnabled,
                 .firingGripReattachRadiusGameUnits =
                     g_rockConfig.
                         rockFiringGripReattachRadiusGameUnits,

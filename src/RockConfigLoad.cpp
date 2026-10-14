@@ -351,11 +351,6 @@ namespace rock
             IMMERSIVE_WEAPONS_SECTION,
             "bDetachEitherHand",
             rockDetachEitherHand);
-        rockFiringGripDetachPosePreservationEnabled =
-            ini.GetBoolValue(
-                IMMERSIVE_WEAPONS_SECTION,
-                "bFiringGripDetachPosePreservationEnabled",
-                rockFiringGripDetachPosePreservationEnabled);
         rockWeaponDropMode = static_cast<int>(ini.GetLongValue(
             IMMERSIVE_WEAPONS_SECTION, "iWeaponDropMode", rockWeaponDropMode));
         if (rockWeaponDropMode < 1 || rockWeaponDropMode > 3) {
@@ -588,11 +583,6 @@ namespace rock
             0.30f,
             0.05f,
             2.0f);
-        rockNativeScopeForceFiringGripFallback =
-            ini.GetBoolValue(
-                NATIVE_SCOPES_SECTION,
-                "bNativeScopeForceFiringGripFallback",
-                rockNativeScopeForceFiringGripFallback);
         rockNativeScopeFiringGripFallbackOffsetXGameUnits = readClampedFloat(ini,
             NATIVE_SCOPES_SECTION,
             "fNativeScopeFiringGripFallbackOffsetXGameUnits",

@@ -97,7 +97,6 @@ namespace rock
         // release, part-carry, reattach and haptic contract follows whichever
         // physical hand currently occupies the firing grip.
         bool rockDetachEitherHand = true;
-        bool rockFiringGripDetachPosePreservationEnabled = true;
         // 1: keep held; 2: held loose weapon; 3: native drop; 4: equipped physics drop.
         int rockWeaponDropMode = 2;
         // 1: toggle both grips; 2: toggle firing only; 3: hold both grips.
@@ -163,7 +162,6 @@ namespace rock
         // explicitly forced for an incorrectly accepted optic collider.
         // Position and rotation are relative to the firing-grip palm seat in
         // equipped Weapon axes; rotation follows native camera calibration.
-        bool rockNativeScopeForceFiringGripFallback = false;
         float rockNativeScopeFiringGripFallbackOffsetXGameUnits = 0.0f;
         float rockNativeScopeFiringGripFallbackOffsetYGameUnits = 0.0f;
         float rockNativeScopeFiringGripFallbackOffsetZGameUnits = 10.0f;

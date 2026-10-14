@@ -57,7 +57,6 @@ int main()
         .lastGripReleaseDropEnabled = false,
         .immersiveWeapon = {
             .firingGripDetachEnabled = true,
-            .firingGripDetachPosePreservationEnabled = true,
             .firingGripReattachRadiusGameUnits = 4.0f,
             .firingGripHapticDurationSeconds = 0.11f,
             .firingGripAttachHapticIntensity = 0.81f,
@@ -164,12 +163,8 @@ int main()
     ok &= expectEqual("provider PrimaryDetach retains firing-role authority",
         providerDetach.authority,
         rock::immersive_weapon_policy::DetachAuthority::ExternalProvider);
-    ok &= expectFalse("provider detach does not inherit integrated pose preservation",
-        providerDetach.preserveWeaponPoseOnDetach);
     ok &= expectTrue("provider PrimaryDetach remains all-firing-hand capable",
         providerDetach.primaryDetachEnabled);
-    ok &= expectFalse("provider PrimaryDetach does not inherit integrated pose preservation",
-        providerDetach.preserveWeaponPoseOnDetach);
     ok &= expectNear("provider PrimaryDetach owns reattach tuning",
         providerDetach.reattachRadiusGameUnits,
         9.0f);

@@ -818,6 +818,7 @@ namespace rock
             AuthoredPrimaryFiringGripRuntime authoredPrimaryFiringGrip;
             EquippedWeaponHandlingSettings handlingSettings{};
             bool handlingModeInitialized{ false };
+            bool virtualHolstersStashOverrideLogged{ false };
             bool handlingModeReconcilePending{ false };
             bool menuReconcilePending = false;
             std::uint64_t defaultEquipObservedOwnershipKey{ 0 };
