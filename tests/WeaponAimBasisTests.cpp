@@ -389,6 +389,28 @@ int main()
         const auto movedPart = weapon_visual_authority_math::applyPresentationWorldDelta(delta, evaluatedPart);
         const auto retainedRelation = transform_math::composeTransforms(transform_math::invertTransform(target), movedPart);
         ok &= expect("rigid presentation retains native evaluated descendant pose", samePose(relation, retainedRelation));
+
+        // Rendered parents drift from orthonormal (0.00083 measured on the
+        // second weapon's attachment parent). Transport and local resolution
+        // must use the exact inverse: the transpose doubled that drift into
+        // the moved model on every pass.
+        auto skewedParent = placedParent;
+        skewedParent.rotate.entry[0][1] += 0.0008f;
+        skewedParent.rotate.entry[2][0] -= 0.0006f;
+        const auto skewedLocal = weapon_visual_authority_math::worldTargetToParentLocal(skewedParent, target);
+        const auto recomposed = transform_math::composeTransforms(skewedParent, skewedLocal);
+        ok &= expect("skewed parent local recomposes the exact target",
+            weaponSolverLength(recomposed.translate - target.translate) < 0.002f &&
+                transform_math::storedRotationOrthonormalityError(recomposed.rotate) < 1.0e-5);
+        auto modelLocal = transform_math::makeIdentityTransform<RE::NiTransform>();
+        modelLocal.translate = RE::NiPoint3{ 2.0f, -1.0f, 0.5f };
+        const auto skewedModel = transform_math::composeTransforms(skewedParent, modelLocal);
+        const auto skewedDelta = weapon_visual_authority_math::makePresentationWorldDelta(skewedParent, target);
+        const auto movedModel = weapon_visual_authority_math::applyPresentationWorldDelta(skewedDelta, skewedModel);
+        const auto expectedModel = transform_math::composeTransforms(target, modelLocal);
+        ok &= expect("rigid transport from a skewed root keeps the model rigid",
+            weaponSolverLength(movedModel.translate - expectedModel.translate) < 0.002f &&
+                transform_math::storedRotationOrthonormalityError(movedModel.rotate) < 1.0e-5);
     }
 
     // A generated proxy pocket is intentionally distinct from the authored

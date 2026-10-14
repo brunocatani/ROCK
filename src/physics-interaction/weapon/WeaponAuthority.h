@@ -112,10 +112,50 @@ namespace rock::weapon_visual_authority_math
         return role == LockedHandRole::Support;
     }
 
+    /*
+     * Exact inverse of a scene world, so composeTransforms(world, inverse) is
+     * the identity. Rendered bone worlds drift ~1e-3 from orthonormal; the
+     * transpose in transform_math::invertTransform is not their inverse and
+     * folds that drift into every frame built from it, doubling it on each
+     * pass (second weapon model: 0.00083 parent drift became 0.0036). A
+     * singular basis yields a non-finite result.
+     */
+    template <class Transform>
+    [[nodiscard]] inline Transform invertSceneTransform(const Transform& transform)
+    {
+        const auto& m = transform.rotate.entry;
+        const double a = m[0][0], b = m[0][1], c = m[0][2];
+        const double d = m[1][0], e = m[1][1], f = m[1][2];
+        const double g = m[2][0], h = m[2][1], i = m[2][2];
+        const double determinant = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+        const double inverse[3][3] = {
+            { (e * i - f * h) / determinant, (c * h - b * i) / determinant, (b * f - c * e) / determinant },
+            { (f * g - d * i) / determinant, (a * i - c * g) / determinant, (c * d - a * f) / determinant },
+            { (d * h - e * g) / determinant, (b * g - a * h) / determinant, (a * e - b * d) / determinant },
+        };
+        const double scale = static_cast<double>(transform.scale);
+        const double origin[3] = { transform.translate.x, transform.translate.y, transform.translate.z };
+        double translate[3]{};
+        auto result = transform_math::makeIdentityTransform<Transform>();
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                result.rotate.entry[row][column] = static_cast<float>(inverse[row][column]);
+                // compose applies a child translation through the stored
+                // basis transposed; solve world.t + B^T * x * s = 0.
+                translate[column] -= inverse[row][column] * origin[row] / scale;
+            }
+        }
+        result.translate.x = static_cast<float>(translate[0]);
+        result.translate.y = static_cast<float>(translate[1]);
+        result.translate.z = static_cast<float>(translate[2]);
+        result.scale = static_cast<float>(1.0 / scale);
+        return result;
+    }
+
     template <class Transform>
     inline Transform worldTargetToParentLocal(const Transform& parentWorld, const Transform& targetWorld)
     {
-        return transform_math::composeTransforms(transform_math::invertTransform(parentWorld), targetWorld);
+        return transform_math::composeTransforms(invertSceneTransform(parentWorld), targetWorld);
     }
 
     template <class Transform>
@@ -137,7 +177,7 @@ namespace rock::weapon_visual_authority_math
          */
         return transform_math::composeTransforms(
             newWeaponWorld,
-            transform_math::invertTransform(oldWeaponWorld));
+            invertSceneTransform(oldWeaponWorld));
     }
 
     template <class Transform>
