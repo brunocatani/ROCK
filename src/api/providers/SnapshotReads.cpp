@@ -54,9 +54,10 @@ Status ROCK_CALL getEnvironment(OwnerToken owner, Environment* result) noexcept 
         result->gameToHavokScale=frame.gameToHavokScale;
         result->havokToGameScale=frame.havokToGameScale;
         result->physicsScaleRevision=frame.physicsScaleRevision;
-        result->weaponGenerationKey=frame.weaponGenerationKey;
-        result->weaponBodyCount=frame.weaponBodyCount;
-        std::copy_n(frame.weaponBodyIds,8,result->weaponBodyIds);
+        auto& weapon=result->weapons[0];
+        weapon.weaponGenerationKey=frame.weaponGenerationKey;
+        weapon.bodyCount=frame.weaponBodyCount;
+        std::copy_n(frame.weaponBodyIds,std::size(weapon.bodyIds),weapon.bodyIds);
         return Status::Ok;
     });
 }

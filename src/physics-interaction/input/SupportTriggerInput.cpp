@@ -16,7 +16,7 @@ namespace {
     constexpr std::uint32_t bit(api::Hand hand) { return hand == api::Hand::Left ? 1u : 2u; }
     void retire() {
         drainMask.fetch_or(activeMask.exchange(0, std::memory_order_acq_rel), std::memory_order_release);
-        state.active = 0; state.owner = 0; state.held = 0; state.hand = api::Hand::None; armed = false;
+        state.active = 0; state.owner = 0; state.held = 0; state.hand = api::Hand::None; state.weaponSlot = 0; armed = false;
     }
     bool current(api::OwnerToken owner, const api::input::SupportTriggerRequest& value) {
         provider::RockProviderEquippedWeaponStateV1 equipped;
@@ -52,7 +52,7 @@ api::Status set(api::OwnerToken owner, const api::input::SupportTriggerRequest& 
         armed = raw.available && !raw.held;
         state.held = raw.available && raw.held;
     }
-    request = value; state.owner = owner; state.hand = value.hand; state.active = 1;
+    request = value; state.owner = owner; state.hand = value.hand; state.weaponSlot = value.weaponSlot; state.active = 1;
     state.expiresAfterFrame = frame + value.leaseFrames; state.sample = provider::runtime::sample();
     activeMask.store(bit(value.hand), std::memory_order_release);
     return Status::Ok;

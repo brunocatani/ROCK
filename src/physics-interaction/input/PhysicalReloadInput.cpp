@@ -72,7 +72,7 @@ api::Status set(api::OwnerToken owner,const api::input::ReloadGestureRequest& va
 }
 api::Status read(api::input::ReloadGestureState& out) {
     std::scoped_lock lock(mutex);out={};out.sample=provider::runtime::sample();out.tapSequence=tapSequence;
-    if(state.active){out.active=1;out.owner=state.owner;out.hand=state.hand;out.held=state.held;out.scopeHeld=scopeHeld;out.expiresAfterFrame=state.expiresAfterFrame;}
+    if(state.active){out.active=1;out.owner=state.owner;out.hand=state.hand;out.weaponSlot=request.weaponSlot;out.held=state.held;out.scopeHeld=scopeHeld;out.expiresAfterFrame=state.expiresAfterFrame;}
     return api::Status::Ok;
 }
 bool gestureActive(bool left) {

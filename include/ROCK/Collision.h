@@ -263,8 +263,16 @@ namespace rock::api::collision {
     // Environment
     // ------------------------------------------------------------------
 
-    // Physics scale and the primary weapon's generated bodies for the
-    // publication named by sample.
+    // The generated bodies of one weapon slot (bodyCount 0 without one).
+    struct WeaponBodies
+    {
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t bodyCount{ 0 };
+        std::uint32_t bodyIds[8]{};
+    };
+
+    // Physics scale and each weapon slot's generated bodies for the
+    // publication named by sample. Only slot 0 is published yet.
     struct Environment
     {
         std::uint32_t size{ sizeof(Environment) };
@@ -273,9 +281,7 @@ namespace rock::api::collision {
         float gameToHavokScale{ 0.0f };
         float havokToGameScale{ 0.0f };
         std::uint32_t physicsScaleRevision{ 0 };
-        std::uint32_t weaponBodyCount{ 0 };
-        std::uint64_t weaponGenerationKey{ 0 };
-        std::uint32_t weaponBodyIds[8]{};
+        WeaponBodies weapons[kMaxWeaponSlots]{};
     };
 
     // ------------------------------------------------------------------
@@ -291,10 +297,10 @@ namespace rock::api::collision {
     /*
      * For one second after the reference's bodies become available (up to
      * 1.5 s waiting for them to load), the reference does not collide with
-     * the primary weapon, nor with the hands under IncludeHands. World and
-     * other objects still collide; ray queries and grabbing are unaffected.
-     * reference names the object; expectedBase its base form; weaponFormId and
-     * weaponGenerationKey the primary weapon. Repeating the same request
+     * the weapon in weaponSlot, nor with the hands under IncludeHands. World
+     * and other objects still collide; ray queries and grabbing are
+     * unaffected. reference names the object; expectedBase its base form;
+     * weaponFormId and weaponGenerationKey witness the slot's weapon. Repeating the same request
      * observes it and never extends the deadline: RequestQueued while waiting,
      * Ok once active or completed. At most kMaxEjectionClearances references;
      * owner, generation or weapon changes revoke a clearance.
@@ -306,6 +312,7 @@ namespace rock::api::collision {
         ReferenceKey reference{};
         std::uint32_t expectedBase{ 0 };
         std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t weaponSlot{ 0 };
         std::uint32_t weaponFormId{ 0 };
         std::uint32_t flags{ 0 };
     };

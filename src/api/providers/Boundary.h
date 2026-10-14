@@ -3,6 +3,15 @@
 #include <algorithm>
 #include <array>
 namespace rock::api::boundary {
+    // A weapon slot is the native equipment index. ROCK publishes slot 0 only
+    // until the runtime keeps per-slot weapon state; slot 1 is valid but
+    // TargetUnavailable.
+    inline Status checkWeaponSlot(std::uint32_t slot) noexcept { return slot < kMaxWeaponSlots ? Status::Ok : Status::InvalidArgument; }
+    inline bool weaponSlotPublished(std::uint32_t slot) noexcept { return slot == 0; }
+    inline Status requireWeaponSlot(std::uint32_t slot) noexcept {
+        if (const auto s = checkWeaponSlot(slot); s != Status::Ok) return s;
+        return weaponSlotPublished(slot) ? Status::Ok : Status::TargetUnavailable;
+    }
     template<class F> Status invoke(OwnerToken owner, InterfaceId family, std::uint32_t permission, bool gameThread, F&& operation,
         provider::OwnerAccess access = provider::OwnerAccess::Existing) noexcept {
         try {

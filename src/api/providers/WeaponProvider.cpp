@@ -11,10 +11,6 @@ namespace {
 using namespace boundary;
 namespace p = provider;
 
-// ROCK publishes only the first equipped weapon (equip index 0) until the
-// runtime keeps state per slot; slot 1 is valid but not yet published.
-Status checkSlot(std::uint32_t slot) noexcept { return slot < kMaxWeaponSlots ? Status::Ok : Status::InvalidArgument; }
-bool published(std::uint32_t slot) noexcept { return slot == 0; }
 
 template <class Record>
 Status checkOutputs(Record* records, std::uint32_t capacity, std::uint32_t maxCapacity, std::uint32_t* outCount) noexcept {
@@ -31,10 +27,10 @@ Hand otherHand(Hand hand) noexcept { return hand == Hand::Left ? Hand::Right : H
 
 Status ROCK_CALL getWeaponState(OwnerToken owner, std::uint32_t slot, WeaponState* outState) noexcept {
     if (const auto s = checkOutput(outState); s != Status::Ok) return s;
-    if (const auto s = checkSlot(slot); s != Status::Ok) return s;
+    if (const auto s = checkWeaponSlot(slot); s != Status::Ok) return s;
     outState->weaponSlot = slot;
     return invoke(owner, kInterfaceId, 1, true, [&] {
-        if (!published(slot)) return Status::TargetUnavailable;
+        if (!weaponSlotPublished(slot)) return Status::TargetUnavailable;
         p::RockProviderEquippedWeaponStateV1 equipped{};
         const auto status = static_cast<Status>(p::runtime::apiGetEquippedWeaponStateV1(owner, &equipped));
         if (status != Status::Ok) return status;
@@ -77,10 +73,10 @@ Status ROCK_CALL getWeaponState(OwnerToken owner, std::uint32_t slot, WeaponStat
 
 Status ROCK_CALL getGrip(OwnerToken owner, std::uint32_t slot, Grip* outGrip) noexcept {
     if (const auto s = checkOutput(outGrip); s != Status::Ok) return s;
-    if (const auto s = checkSlot(slot); s != Status::Ok) return s;
+    if (const auto s = checkWeaponSlot(slot); s != Status::Ok) return s;
     outGrip->weaponSlot = slot;
     return invoke(owner, kInterfaceId, 1, true, [&] {
-        if (!published(slot)) return Status::TargetUnavailable;
+        if (!weaponSlotPublished(slot)) return Status::TargetUnavailable;
         p::RockProviderEquippedWeaponGripStateV1 in{};
         if (!p::runtime::apiGetEquippedWeaponGripStateV1(owner, &in)) return Status::NotReady;
         using G = p::RockProviderEquippedWeaponGripStateFlagV1;
@@ -99,10 +95,10 @@ Status ROCK_CALL getGrip(OwnerToken owner, std::uint32_t slot, Grip* outGrip) no
 
 Status ROCK_CALL getClassification(OwnerToken owner, std::uint32_t slot, Classification* outClassification) noexcept {
     if (const auto s = checkOutput(outClassification); s != Status::Ok) return s;
-    if (const auto s = checkSlot(slot); s != Status::Ok) return s;
+    if (const auto s = checkWeaponSlot(slot); s != Status::Ok) return s;
     outClassification->weaponSlot = slot;
     return invoke(owner, kInterfaceId, 1, true, [&] {
-        if (!published(slot)) return Status::TargetUnavailable;
+        if (!weaponSlotPublished(slot)) return Status::TargetUnavailable;
         p::RockProviderWeaponClassificationV1 in{};
         const bool ok = p::runtime::apiQueryEquippedWeaponClassificationV1(&in);
         outClassification->valid = in.valid;
@@ -119,9 +115,9 @@ Status ROCK_CALL getClassification(OwnerToken owner, std::uint32_t slot, Classif
 
 Status ROCK_CALL copyEmitters(OwnerToken owner, std::uint32_t slot, Emitter* outEmitters, std::uint32_t capacity, std::uint32_t* outCount) noexcept {
     if (const auto s = checkOutputs(outEmitters, capacity, kMaxEmitters, outCount); s != Status::Ok) return s;
-    if (const auto s = checkSlot(slot); s != Status::Ok) return s;
+    if (const auto s = checkWeaponSlot(slot); s != Status::Ok) return s;
     return invoke(owner, kInterfaceId, 1, true, [&] {
-        if (!published(slot)) return Status::TargetUnavailable;
+        if (!weaponSlotPublished(slot)) return Status::TargetUnavailable;
         std::array<p::RockProviderWeaponEmitterV1, kMaxEmitters> native{};
         *outCount = p::runtime::apiGetWeaponEmitterCountV1();
         const auto copied = p::runtime::apiCopyWeaponEmittersV1(native.data(), capacity);
@@ -147,10 +143,10 @@ Status ROCK_CALL copyEmitters(OwnerToken owner, std::uint32_t slot, Emitter* out
 
 Status ROCK_CALL getCompositionState(OwnerToken owner, std::uint32_t slot, CompositionState* outState) noexcept {
     if (const auto s = checkOutput(outState); s != Status::Ok) return s;
-    if (const auto s = checkSlot(slot); s != Status::Ok) return s;
+    if (const auto s = checkWeaponSlot(slot); s != Status::Ok) return s;
     outState->weaponSlot = slot;
     return invoke(owner, kInterfaceId, 1, true, [&] {
-        if (!published(slot)) return Status::TargetUnavailable;
+        if (!weaponSlotPublished(slot)) return Status::TargetUnavailable;
         p::RockProviderWeaponCompositionStateV1 in{};
         const auto status = static_cast<Status>(p::runtime::apiGetWeaponCompositionStateV1(owner, &in));
         outState->weaponFormId = in.weaponFormId;
@@ -166,9 +162,9 @@ Status ROCK_CALL getCompositionState(OwnerToken owner, std::uint32_t slot, Compo
 
 Status ROCK_CALL copyCompositionEntries(OwnerToken owner, std::uint32_t slot, CompositionEntry* outEntries, std::uint32_t capacity, std::uint32_t* outCount) noexcept {
     if (const auto s = checkOutputs(outEntries, capacity, kMaxCompositionEntries, outCount); s != Status::Ok) return s;
-    if (const auto s = checkSlot(slot); s != Status::Ok) return s;
+    if (const auto s = checkWeaponSlot(slot); s != Status::Ok) return s;
     return invoke(owner, kInterfaceId, 1, true, [&] {
-        if (!published(slot)) return Status::TargetUnavailable;
+        if (!weaponSlotPublished(slot)) return Status::TargetUnavailable;
         std::array<p::RockProviderWeaponCompositionEntryV1, kMaxCompositionEntries> native{};
         const auto status = static_cast<Status>(p::runtime::apiCopyWeaponCompositionEntriesV1(owner, native.data(), capacity, outCount));
         for (std::uint32_t i = 0; i < (std::min)(capacity, *outCount); ++i) {
@@ -186,10 +182,10 @@ Status ROCK_CALL copyCompositionEntries(OwnerToken owner, std::uint32_t slot, Co
 
 Status ROCK_CALL getAuthoredGripPose(OwnerToken owner, std::uint32_t slot, AuthoredGripPose* outPose) noexcept {
     if (const auto s = checkOutput(outPose); s != Status::Ok) return s;
-    if (const auto s = checkSlot(slot); s != Status::Ok) return s;
+    if (const auto s = checkWeaponSlot(slot); s != Status::Ok) return s;
     outPose->weaponSlot = slot;
     return invoke(owner, kInterfaceId, 1, true, [&] {
-        if (!published(slot)) return Status::TargetUnavailable;
+        if (!weaponSlotPublished(slot)) return Status::TargetUnavailable;
         p::RockProviderAuthoredGripPoseV1 in{};
         const auto status = static_cast<Status>(p::runtime::apiGetSelectedAuthoredGripPoseV1(owner, &in));
         outPose->weaponFormId = in.weaponFormId;
@@ -215,10 +211,10 @@ Status ROCK_CALL getAuthoredGripPose(OwnerToken owner, std::uint32_t slot, Autho
 
 Status ROCK_CALL getScopeSightState(OwnerToken owner, std::uint32_t slot, ScopeSightState* outState) noexcept {
     if (const auto s = checkOutput(outState); s != Status::Ok) return s;
-    if (const auto s = checkSlot(slot); s != Status::Ok) return s;
+    if (const auto s = checkWeaponSlot(slot); s != Status::Ok) return s;
     outState->weaponSlot = slot;
     return invoke(owner, kInterfaceId, 1, true, [&] {
-        if (!published(slot)) return Status::TargetUnavailable;
+        if (!weaponSlotPublished(slot)) return Status::TargetUnavailable;
         p::RockProviderScopeSightStateV1 in{};
         const auto status = static_cast<Status>(p::runtime::apiGetScopeSightStateV1(owner, &in));
         outState->sample = p::runtime::sample();

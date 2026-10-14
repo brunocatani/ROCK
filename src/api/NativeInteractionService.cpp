@@ -1,4 +1,5 @@
 #include "NativeInteractionState.h"
+#include "providers/Boundary.h"
 #include "RockConfig.h"
 #include "ProviderRuntimeServices.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
@@ -84,11 +85,6 @@ namespace rock::native_interaction_service {
         bool hasWeaponConstraintState() {
             return state().excludedTarget!=ni::kInvalidBody;
         }
-        // Weapon calls address a slot; ROCK drives slot 0 only until the
-        // runtime keeps per-slot weapon state.
-        Status weaponSlot(std::uint32_t slot) {
-            return slot>=api::kMaxWeaponSlots?Status::InvalidArgument:slot==0?Status::Ok:Status::TargetUnavailable;
-        }
         Status registerExtension(Owner owner,const ni::Callbacks* callbacks) noexcept {
             return guarded(owner,[&] {
                 if(!callbacks)return Status::InvalidArgument;
@@ -143,7 +139,7 @@ namespace rock::native_interaction_service {
                     output[i]={};
                 }
                 if(auto s=access(owner);s!=Status::Ok)return s;
-                if(auto s=weaponSlot(slot);s!=Status::Ok)return s;
+                if(auto s=api::boundary::requireWeaponSlot(slot);s!=Status::Ok)return s;
                 const auto& service=state();
                 if(service.driver!=owner||!service.collision||current->frame.phase!=ni::Phase::WeaponUpdate)return Status::WrongThread;
                 std::uint32_t total=0;
@@ -169,7 +165,7 @@ namespace rock::native_interaction_service {
                 if(output->version!=1)return Status::UnsupportedVersion;
                 *output={};
                 if(auto s=access(owner);s!=Status::Ok)return s;
-                if(auto s=weaponSlot(slot);s!=Status::Ok)return s;
+                if(auto s=api::boundary::requireWeaponSlot(slot);s!=Status::Ok)return s;
                 const auto& service=state();
                 if(service.driver!=owner||!service.collision||!service.weaponNode||current->frame.phase!=ni::Phase::WeaponUpdate)return Status::WrongThread;
                 if(!finite(toApi(service.weaponNode->world)))return Status::TargetInvalid;

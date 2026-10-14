@@ -70,6 +70,7 @@ Status ROCK_CALL getPlacementClickState(OwnerToken owner, PlacementClickState* o
 }
 Status ROCK_CALL setReloadGesture(OwnerToken owner, const ReloadGestureRequest* request) noexcept {
     if (const auto s = checkInput(request); s != Status::Ok) return s;
+    if (const auto s = requireWeaponSlot(request->weaponSlot); s != Status::Ok) return s;
     return invoke(owner, kInterfaceId, 2, true, [&] { return physical_reload_input::set(owner, *request); }, provider::OwnerAccess::Active);
 }
 Status ROCK_CALL clearReloadGesture(OwnerToken owner) noexcept {
@@ -81,6 +82,7 @@ Status ROCK_CALL getReloadGesture(OwnerToken owner, ReloadGestureState* outState
 }
 Status ROCK_CALL setSupportTrigger(OwnerToken owner, const SupportTriggerRequest* request) noexcept {
     if (const auto s = checkInput(request); s != Status::Ok) return s;
+    if (const auto s = requireWeaponSlot(request->weaponSlot); s != Status::Ok) return s;
     return invoke(owner, kInterfaceId, 2, true, [&] { return support_trigger_input::set(owner, *request); }, provider::OwnerAccess::Active);
 }
 Status ROCK_CALL clearSupportTrigger(OwnerToken owner) noexcept {

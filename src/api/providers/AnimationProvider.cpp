@@ -7,6 +7,9 @@ namespace {
 using namespace boundary;
 Status ROCK_CALL setNativeAnimationAuthority(OwnerToken owner, const NativeAnimationAuthorityRequest* request) noexcept {
     if (const auto s = checkInput(request); s != Status::Ok) return s;
+    if (const auto s = checkWeaponSlot(request->weaponSlot); s != Status::Ok) return s;
+    if ((request->flags & static_cast<std::uint32_t>(NativeAnimationAuthorityFlag::Weapon)) && !weaponSlotPublished(request->weaponSlot))
+        return Status::TargetUnavailable;
     return invoke(owner, kInterfaceId, 2, true, [&] {
         return static_cast<Status>(provider::runtime::apiSetNativeAnimationAuthorityV1(owner, request));
     });

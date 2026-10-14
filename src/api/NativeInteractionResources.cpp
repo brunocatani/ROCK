@@ -1,4 +1,5 @@
 #include "NativeInteractionState.h"
+#include "providers/Boundary.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
@@ -52,12 +53,10 @@ namespace rock::native_interaction_service::detail {
             ni::BodyIdentity live{};
             return world()&&liveIdentity(expected.body,live)&&live==expected;
         }
-        // Weapon calls address a slot; ROCK drives slot 0 only until the
-        // runtime keeps per-slot weapon state.
         Status weaponSlot(Owner owner,std::uint32_t slot) {
-            if(slot>=api::kMaxWeaponSlots)return Status::InvalidArgument;
+            if(auto s=api::boundary::checkWeaponSlot(slot);s!=Status::Ok)return s;
             if(state().driver!=owner)return Status::OwnerConflict;
-            return slot==0?Status::Ok:Status::TargetUnavailable;
+            return api::boundary::requireWeaponSlot(slot);
         }
     }
     Status activateWeapon(Owner owner,std::uint32_t slot) noexcept {

@@ -319,15 +319,15 @@ namespace rock::api::grab {
     enum class HandReservationKind : std::uint32_t
     {
         Normal = 0,
-        // The hand may not take a support grip on the primary weapon.
+        // The hand may not take a support grip on the reserved weapon.
         ReloadReserved = 1,
         ReloadPoseOverride = 2,
     };
 
     /*
      * One owner reserves one hand at a time. The reserved hand must be the
-     * offhand of the primary weapon (HandUnavailable otherwise); while the
-     * roles change, the reservation applies only while its hand is that
+     * offhand of the weapon in weaponSlot (HandUnavailable otherwise); while
+     * the roles change, the reservation applies only while its hand is that
      * offhand. The lease runs 1 to kMaxReservationLeaseFrames frames from
      * acquire or renew. Expiry, generation changes and owner loss end it with
      * an Event of kind ReservationLost.
@@ -336,6 +336,7 @@ namespace rock::api::grab {
     {
         std::uint32_t size{ sizeof(HandReservationRequest) };
         std::uint32_t version{ 1 };
+        std::uint32_t weaponSlot{ 0 };
         Hand hand{ Hand::None };
         HandReservationKind reservation{ HandReservationKind::Normal };
         std::uint32_t leaseFrames{ 0 };
@@ -357,6 +358,7 @@ namespace rock::api::grab {
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
+        std::uint32_t weaponSlot{ 0 };
     };
 
     // ------------------------------------------------------------------
@@ -465,8 +467,9 @@ namespace rock::api::grab {
      * Release, a new grab, owner loss or expiry return the hand to ordinary
      * grabbing. Two-handed, fixed and loose-firearm holds are refused.
      * connectedWeaponFormId plus connectedWeaponGeneration, when nonzero, name
-     * the primary weapon: while renewed only its collision pairs with this
-     * object are suppressed (insertion into a socket); zero both to restore.
+     * the weapon in connectedWeaponSlot: while renewed only its collision
+     * pairs with this object are suppressed (insertion into a socket); zero
+     * both to restore.
      */
     struct HeldObjectTarget
     {
@@ -475,11 +478,12 @@ namespace rock::api::grab {
         Hand hand{ Hand::None };
         std::uint32_t referenceFormId{ 0 };
         std::uint32_t leaseFrames{ 2 };
+        std::uint32_t connectedWeaponSlot{ 0 };
         std::uint32_t connectedWeaponFormId{ 0 };
+        Transform rootWorld{};
         Sample sample{};
         std::uint64_t gripSequence{ 0 };
         std::uint64_t connectedWeaponGeneration{ 0 };
-        Transform rootWorld{};
     };
 
     // The solved rigid body pose reconstructed at the reference root, without

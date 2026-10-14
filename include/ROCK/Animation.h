@@ -99,6 +99,8 @@ namespace rock::api::animation {
         std::uint32_t size{ sizeof(NativeAnimationAuthorityRequest) };
         std::uint32_t version{ 1 };
         std::uint32_t flags{ 0 };
+        // The weapon whose presentation the Weapon flag covers.
+        std::uint32_t weaponSlot{ 0 };
         std::uint32_t leaseFrames{ 0 };
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
@@ -110,6 +112,8 @@ namespace rock::api::animation {
         std::uint32_t size{ sizeof(NativeAnimationAuthorityState) };
         std::uint32_t version{ 1 };
         std::uint32_t activeFlags{ 0 };
+        // Bit N: weapon slot N's presentation is under Weapon authority.
+        std::uint32_t weaponSlotMask{ 0 };
         std::uint32_t statusFlags{ 0 };
         std::uint32_t activeOwnerCount{ 0 };
         std::uint32_t capturedTransformCount{ 0 };

@@ -115,6 +115,10 @@
         outState->size = sizeof(::rock::api::animation::NativeAnimationAuthorityState);
         outState->version = ROCK_PROVIDER_API_VERSION;
         outState->activeFlags = s_nativeAnimationAuthorityFlags.load(std::memory_order_acquire);
+        // Only slot 0's presentation can be under authority until the runtime
+        // keeps per-slot weapon state.
+        outState->weaponSlotMask =
+            (outState->activeFlags & static_cast<std::uint32_t>(::rock::api::animation::NativeAnimationAuthorityFlag::Weapon)) ? 1u : 0u;
         outState->statusFlags = hasRuntimeProvider ?
             publication.statusFlags |
                 static_cast<std::uint32_t>(

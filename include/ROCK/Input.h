@@ -151,9 +151,9 @@ namespace rock::api::input {
     };
 
     /*
-     * Reload gesture lease on the equipped weapon's firing hand. One owner at
-     * a time; the request names the current weapon (form, generation key) and
-     * sample (current or previous frame). ROCK classifies the Accept button
+     * Reload gesture lease on the firing hand of the weapon in weaponSlot. One
+     * owner at a time; the request names that weapon (slot, form, generation
+     * key) and the sample (current or previous frame). ROCK classifies the Accept button
      * (X left, A right) with fManualScopeHoldSeconds: a short release adds one
      * to tapSequence; a hold stays ROCK scope input and never becomes a tap.
      * Menus, input loss, hand changes and changing the lease (including its
@@ -164,9 +164,10 @@ namespace rock::api::input {
     {
         std::uint32_t size{ sizeof(ReloadGestureRequest) };
         std::uint32_t version{ 1 };
+        std::uint32_t weaponSlot{ 0 };
+        std::uint32_t weaponFormId{ 0 };
         std::uint64_t weaponGenerationKey{ 0 };
         Sample sample{};
-        std::uint32_t weaponFormId{ 0 };
         Hand hand{ Hand::None };
         std::uint32_t leaseFrames{ 2 };
         std::uint32_t flags{ 0 };
@@ -184,11 +185,12 @@ namespace rock::api::input {
         Hand hand{ Hand::None };
         std::uint32_t held{ 0 };
         std::uint32_t scopeHeld{ 0 };
+        std::uint32_t weaponSlot{ 0 };
     };
 
     /*
-     * Support-trigger lease: the physical trigger of the supporting hand of an
-     * active two-hand grip. Suppresses only that trigger's game button, axis
+     * Support-trigger lease: the physical trigger of the supporting hand of the
+     * active two-hand grip on the weapon in weaponSlot. Suppresses only that trigger's game button, axis
      * and native action. A new claim or unavailable input requires a release
      * before a fresh press; pressSequence is monotonic across leases, so read
      * a baseline after acquiring. Clearing, expiry, hand changes and owner
@@ -199,9 +201,10 @@ namespace rock::api::input {
     {
         std::uint32_t size{ sizeof(SupportTriggerRequest) };
         std::uint32_t version{ 1 };
+        std::uint32_t weaponSlot{ 0 };
+        std::uint32_t weaponFormId{ 0 };
         std::uint64_t weaponGenerationKey{ 0 };
         Sample sample{};
-        std::uint32_t weaponFormId{ 0 };
         Hand hand{ Hand::None };
         std::uint32_t leaseFrames{ 2 };
     };
@@ -217,6 +220,7 @@ namespace rock::api::input {
         std::uint32_t active{ 0 };
         Hand hand{ Hand::None };
         std::uint32_t held{ 0 };
+        std::uint32_t weaponSlot{ 0 };
     };
 
     // Permission bits are local to this interface major. Discovery grants none.

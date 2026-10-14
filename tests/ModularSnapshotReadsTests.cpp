@@ -79,7 +79,7 @@ int main()
         api::collision::Environment environment{};
         assert(api::hands::getHeadPose(42,&head)==Status::Ok && head.flags==3 && head.transform.translate[0]==12);
         assert(api::hands::getRoles(42,&roles)==Status::Ok && roles.offhand==api::Hand::Left);
-        assert(api::collision::getEnvironment(42,&environment)==Status::Ok && environment.weaponBodyIds[0]==14);
+        assert(api::collision::getEnvironment(42,&environment)==Status::Ok && environment.weapons[0].bodyIds[0]==14 && environment.weapons[0].weaponGenerationKey==456 && environment.weapons[1].bodyCount==0);
         for(const auto& sample:{head.sample,roles.sample,environment.sample}) {
             assert(sample.frameIndex==100 && sample.publicationSequence==101);
             assert(sample.worldGeneration==7 && sample.skeletonGeneration==8 && sample.providerGeneration==9 && sample.collisionGeneration==10);
@@ -92,7 +92,7 @@ int main()
         }
         assert(api::hands::getRoles(99,&roles)==Status::OwnerNotRegistered && roles.sample.frameIndex==0);
         permissions=0;
-        assert(api::collision::getEnvironment(42,&environment)==Status::PermissionDenied && environment.weaponBodyCount==0);
+        assert(api::collision::getEnvironment(42,&environment)==Status::PermissionDenied && environment.weapons[0].bodyCount==0);
         permissions=1;
         available=false;
         assert(api::hands::getHeadPose(42,&head)==Status::NotReady && head.flags==0);

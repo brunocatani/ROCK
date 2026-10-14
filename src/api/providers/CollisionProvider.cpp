@@ -173,6 +173,7 @@ Status ROCK_CALL queryWorldRaycast(OwnerToken owner, const WorldRaycastRequest* 
 }
 Status ROCK_CALL requestEjectionClearance(OwnerToken owner, const EjectionClearanceRequest* request) noexcept {
     if (const auto s = checkInput(request); s != Status::Ok) return s;
+    if (const auto s = requireWeaponSlot(request->weaponSlot); s != Status::Ok) return s;
     return invoke(owner, kInterfaceId, 2, true, [&] { return p::runtime::requestEjectionClearance(owner, *request); });
 }
 Status ROCK_CALL cancelEjectionClearance(OwnerToken owner, std::uint32_t referenceFormId) noexcept {

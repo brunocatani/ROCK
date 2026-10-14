@@ -255,6 +255,7 @@ Status ROCK_CALL getHandTargetDetails(OwnerToken owner, Hand hand, HandTargetDet
 }
 Status ROCK_CALL acquireHandReservation(OwnerToken owner, const HandReservationRequest* request) noexcept {
     if (const auto s = checkInput(request); s != Status::Ok) return s;
+    if (const auto s = requireWeaponSlot(request->weaponSlot); s != Status::Ok) return s;
     return invoke(owner, kInterfaceId, 2, true, [&] {
         const auto native = toProvider(*request);
         return static_cast<Status>(p::runtime::apiAcquireOffhandReservationV1(owner, &native));
@@ -262,6 +263,7 @@ Status ROCK_CALL acquireHandReservation(OwnerToken owner, const HandReservationR
 }
 Status ROCK_CALL renewHandReservation(OwnerToken owner, const HandReservationRequest* request) noexcept {
     if (const auto s = checkInput(request); s != Status::Ok) return s;
+    if (const auto s = requireWeaponSlot(request->weaponSlot); s != Status::Ok) return s;
     return invoke(owner, kInterfaceId, 2, true, [&] {
         const auto native = toProvider(*request);
         return static_cast<Status>(p::runtime::apiRenewOffhandReservationV1(owner, &native));
@@ -301,6 +303,9 @@ Status ROCK_CALL clearDefaultGrabPoses(OwnerToken owner, std::uint32_t baseFormI
 }
 Status ROCK_CALL setHeldObjectTarget(OwnerToken owner, const HeldObjectTarget* target) noexcept {
     if (const auto s = checkInput(target); s != Status::Ok) return s;
+    if (const auto s = checkWeaponSlot(target->connectedWeaponSlot); s != Status::Ok) return s;
+    if ((target->connectedWeaponFormId || target->connectedWeaponGeneration) && !weaponSlotPublished(target->connectedWeaponSlot))
+        return Status::TargetUnavailable;
     return invoke(owner, kInterfaceId, 2, true, [&] { return p::runtime::setHeldObjectTarget(owner, *target); });
 }
 Status ROCK_CALL clearHeldObjectTarget(OwnerToken owner, Hand hand) noexcept {
