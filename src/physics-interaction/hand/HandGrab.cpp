@@ -78,9 +78,6 @@
 #include <string_view>
 #include <utility>
 #include <xmmintrin.h>
-#include "physics-interaction/weapon/TwoHandedGrip.h"
-#include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
-#include "physics-interaction/visual/FrikHandWorldAuthority.h"
 
 namespace rock
 {
@@ -9361,17 +9358,6 @@ namespace rock
                 RE::NiTransform targetVisualHandWorld =
                     hand_visual_lerp_math::buildHeldObjectRelativeHandWorld(heldVisualNodeWorld, _grabFrame.rawHandSpace);
                 targetVisualHandWorld.scale = handWorldTransform.scale;
-                if (weaponVisual && logger::internal::shouldEmitSample(_isLeft ? "slot-rotation-loose-left" : "slot-rotation-loose-right", 500)) {
-                    RE::NiTransform aim{}, weaponHand{};
-                    const bool aimed = _isLeft ? TwoHandedGrip::tryGetLeftWeaponAimWorld(heldVisualNodeWorld.scale, aim) :
-                                                 TwoHandedGrip::tryGetRightWeaponAimWorld(heldVisualNodeWorld.scale, aim);
-                    const bool tracked = frik_hand_world_authority::tryGetWeaponHandWorld(_isLeft, weaponHand);
-                    ROCK_LOG_INFO(Weapon, "SLOT ROTATION loose left={} weaponVsControllerAim={:.3f}deg handVsTracked={:.3f}deg/{:.3f}gu handVsInput={:.3f}deg",
-                        _isLeft, aimed ? dynamic_weapon_collision_policy::rotationDeltaDegrees(heldVisualNodeWorld, aim) : -1.0f,
-                        tracked ? dynamic_weapon_collision_policy::rotationDeltaDegrees(targetVisualHandWorld, weaponHand) : -1.0f,
-                        tracked ? dynamic_weapon_collision_policy::translationDeltaGameUnits(targetVisualHandWorld, weaponHand) : -1.0f,
-                        dynamic_weapon_collision_policy::rotationDeltaDegrees(targetVisualHandWorld, handWorldTransform));
-                }
 
                 RE::NiTransform nextVisualHandWorld = targetVisualHandWorld;
                 const bool smoothVisualHand = !preserveTransferredHand && hand_visual_lerp_math::shouldSmoothHeldObjectRelativeHand(

@@ -9,7 +9,6 @@
 #include "physics-interaction/weapon/WeaponInstanceClassification.h"
 #include "physics-interaction/weapon/WeaponAimBasis.h"
 #include "physics-interaction/weapon/NativeSecondaryPose.h"
-#include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/NativeSecondaryPoseTransport.h"
 #include "physics-interaction/weapon/WeaponScenePresentation.h"
 #include "physics-interaction/weapon/NativeWeaponModelGeometry.h"
@@ -538,14 +537,6 @@ namespace rock::native_secondary_presentation
             if (!frik_visual_authority::publishHandWorld(kTag, frikHand(left), hand, kPriority)) {
                 waitFor(view, "hand-world-provider");
                 return;
-            }
-            if (logger::internal::shouldEmitSample("slot-rotation-hand-1", 1000)) {
-                RE::NiTransform controllerAim{};
-                const bool aimed = weapon_aim_basis::tryResolveWorld(wandWorld, s_state.modelScale, weaponInWand, controllerAim);
-                ROCK_LOG_INFO(Weapon, "SLOT ROTATION hand slot=1 left={} weaponVsControllerAim={:.3f}deg handVsTracked={:.3f}deg/{:.3f}gu",
-                    left, aimed ? dynamic_weapon_collision_policy::rotationDeltaDegrees(target, controllerAim) : -1.0f,
-                    dynamic_weapon_collision_policy::rotationDeltaDegrees(hand, physicalHand),
-                    dynamic_weapon_collision_policy::translationDeltaGameUnits(hand, physicalHand));
             }
             s_state.targetWorld = target;
             s_state.controllerWorld = wandWorld;
