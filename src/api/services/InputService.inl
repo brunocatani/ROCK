@@ -58,7 +58,7 @@
             provider_lease_policy::exclusiveExpiryFrame(frameIndex, leaseFrames);
 
         std::scoped_lock lock(s_consumerMutex, s_handInputSuppressionMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::HandInputSuppression);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -114,7 +114,7 @@
         }
 
         std::scoped_lock lock(s_consumerMutex, s_handInputSuppressionMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::HandInputSuppression);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -169,9 +169,7 @@
         }
         const auto frameIndex = currentProviderFrameIndex();
         std::scoped_lock lock(s_consumerMutex, s_handInputSuppressionMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::InputObservability);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -211,7 +209,7 @@
         {
             std::scoped_lock snapshotLock(s_snapshotMutex);
             if (s_hasSnapshot) {
-                outState->sample = toCoreSnapshot(s_lastSnapshot).sample;
+                outState->sample = s_lastSnapshot.sample();
             }
         }
         return api::Status::Ok;
@@ -235,14 +233,12 @@
         if (!onAnimationOwnerThread()) {
             return api::Status::WrongThread;
         }
-        const auto ownerResult = validateReadCapability(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::InputObservability);
+        const auto ownerResult = validateRegisteredOwner(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
 
-        RockProviderFrameSnapshot snapshot{};
+        Publication snapshot{};
         {
             std::scoped_lock lock(s_snapshotMutex);
             if (!s_hasSnapshot) {
@@ -262,7 +258,7 @@
         outState->sampleSequence = input.sampleSequence;
         outState->pressSequence = input.pressSequence;
         outState->sampleAgeMilliseconds = input.sampleAgeMilliseconds;
-        outState->sample = toCoreSnapshot(snapshot).sample;
+        outState->sample = snapshot.sample();
         return api::Status::Ok;
     }
 

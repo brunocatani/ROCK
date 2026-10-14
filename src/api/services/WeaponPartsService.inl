@@ -60,7 +60,7 @@
         }
 
         std::scoped_lock lock(s_consumerMutex, s_weaponPartMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::WeaponPartInteraction);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -112,7 +112,7 @@
         }
 
         std::scoped_lock lock(s_consumerMutex, s_weaponPartMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::WeaponPartInteraction);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -134,7 +134,7 @@
 
         const auto frameIndex = currentProviderFrameIndex();
         std::scoped_lock lock(s_consumerMutex, s_weaponPartMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::WeaponPartInteraction);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -195,7 +195,7 @@
         }
 
         std::scoped_lock lock(s_consumerMutex, s_weaponPartMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::WeaponPartInteraction);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -267,9 +267,7 @@
             outResolution->size < sizeof(RockProviderWeaponPartResolutionResultV1)) {
             return api::Status::InvalidSize;
         }
-        const auto ownerResult = validateReadCapability(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::WeaponPartObservability);
+        const auto ownerResult = validateRegisteredOwner(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -312,9 +310,7 @@
             (maxParts != 0 && !outParts)) {
             return api::Status::InvalidArgument;
         }
-        const auto ownerResult = validateReadCapability(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::WeaponPartObservability);
+        const auto ownerResult = validateRegisteredOwner(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -343,9 +339,7 @@
             (maxResults != 0 && !outResults)) {
             return api::Status::InvalidArgument;
         }
-        const auto ownerResult = validateReadCapability(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::WeaponPartObservability);
+        const auto ownerResult = validateRegisteredOwner(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }

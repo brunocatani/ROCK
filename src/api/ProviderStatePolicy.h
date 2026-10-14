@@ -35,19 +35,6 @@ namespace rock::provider_state_policy
                state.phase == Phase::ConsumeCandidate;
     }
 
-    [[nodiscard]] constexpr std::uint32_t handStateFlags(
-        const RockProviderHandInteractionStateV1& state, bool physicsDisabled) noexcept
-    {
-        using Flag = api::grab::HandStateFlag;
-        std::uint32_t flags = physicsDisabled ? static_cast<std::uint32_t>(Flag::PhysicsDisabled) : 0;
-        if (!(state.flags & static_cast<std::uint32_t>(api::grab::HandInteractionFlag::Valid))) return flags;
-        flags |= static_cast<std::uint32_t>(Flag::Valid);
-        if (handHolding(state)) flags |= static_cast<std::uint32_t>(Flag::Holding);
-        if (state.phase == api::grab::HandInteractionPhase::Touching)
-            flags |= static_cast<std::uint32_t>(Flag::Touching);
-        return flags;
-    }
-
     // Detailed captured grips remain ROCK-owned. Generic hand occupancy also
     // includes native equipped carry; stale selection metadata must not leak
     // into that occupied hand and masquerade as a held loose reference.

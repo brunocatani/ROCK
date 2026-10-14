@@ -40,9 +40,7 @@
             boundedLeaseFrames);
 
         std::scoped_lock lock(s_consumerMutex, s_nativeAnimationAuthorityMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::NativeAnimationAuthority);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -82,9 +80,7 @@
         }
 
         std::scoped_lock lock(s_consumerMutex, s_nativeAnimationAuthorityMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::NativeAnimationAuthority);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -196,9 +192,7 @@
 
         {
             std::scoped_lock lock(s_consumerMutex);
-            const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
-                ownerToken,
-                RockProviderConsumerCapabilityV1::HandVisualAuthority);
+            const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
             if (ownerResult != api::Status::Ok) {
                 return ownerResult;
             }
@@ -295,9 +289,7 @@
         }
         {
             std::scoped_lock lock(s_consumerMutex);
-            const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
-                ownerToken,
-                RockProviderConsumerCapabilityV1::HandVisualAuthority);
+            const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
             if (ownerResult != api::Status::Ok) {
                 return ownerResult;
             }
@@ -348,9 +340,7 @@
         std::scoped_lock lock(
             s_consumerMutex,
             s_nativeAnimationRuntimePublicationMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::NativeAnimationRuntimeProvider);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -385,9 +375,7 @@
         std::scoped_lock lock(
             s_consumerMutex,
             s_nativeAnimationRuntimePublicationMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::NativeAnimationRuntimeProvider);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }

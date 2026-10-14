@@ -9,9 +9,7 @@
         if (!onAnimationOwnerThread()) {
             return api::Status::WrongThread;
         }
-        const auto ownerResult = validateReadCapability(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::PlayerController);
+        const auto ownerResult = validateRegisteredOwner(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return static_cast<api::Status>(ownerResult);
         }
@@ -19,7 +17,7 @@
             return api::Status::NotReady;
         }
 
-        RockProviderFrameSnapshot snapshot{};
+        Publication snapshot{};
         {
             std::scoped_lock lock(s_snapshotMutex);
             if (!s_hasSnapshot || !hasLifecycleFlag(
@@ -97,9 +95,7 @@
         if (!onAnimationOwnerThread()) {
             return api::Status::WrongThread;
         }
-        const auto ownerResult = validateReadCapability(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::PlayerController);
+        const auto ownerResult = validateRegisteredOwner(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return static_cast<api::Status>(ownerResult);
         }

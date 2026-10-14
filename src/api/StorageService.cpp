@@ -75,13 +75,13 @@ namespace rock::storage_service
             return false;
         }
         api::Status validate(const contract::Target* request, RE::NiPointer<RE::TESObjectREFR>& ref,
-            provider::RockProviderFrameSnapshot& frame)
+            provider::Publication& frame)
         {
             if (!request) return api::Status::InvalidArgument;
             if (request->size != sizeof(*request)) return api::Status::InvalidSize;
             if (request->version != 1) return api::Status::UnsupportedVersion;
             if (!request->reference.referenceFormId || unsigned(request->hand) > unsigned(api::Hand::Left)) return api::Status::InvalidArgument;
-            if (!provider::runtime::apiGetFrameSnapshot(&frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
+            if (!provider::runtime::copyPublication(frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
             if (frame.worldGeneration != request->reference.worldGeneration || frame.skeletonGeneration != request->reference.skeletonGeneration ||
                 frame.providerGeneration != request->reference.providerGeneration) return api::Status::GenerationMismatch;
             auto* value = RE::TESForm::GetFormByID<RE::TESObjectREFR>(request->reference.referenceFormId);
@@ -98,7 +98,7 @@ namespace rock::storage_service
             try {
                 auto status = authorize(owner); if (status != api::Status::Ok) return status;
                 auto* physics = interaction(); if (!physics) return api::Status::NotReady;
-                RE::NiPointer<RE::TESObjectREFR> ref; provider::RockProviderFrameSnapshot frame;
+                RE::NiPointer<RE::TESObjectREFR> ref; provider::Publication frame;
                 status = validate(request, ref, frame); if (status != api::Status::Ok) return status;
                 if (request->hand != api::Hand::None) {
                     auto& hand = request->hand == api::Hand::Left ? physics->getLeftHand() : physics->getRightHand();
@@ -169,7 +169,7 @@ namespace rock::storage_service
             try {
                 auto status = authorize(owner); if (status != api::Status::Ok) return status;
                 auto* physics = interaction(); if (!physics) return api::Status::NotReady;
-                RE::NiPointer<RE::TESObjectREFR> ref; provider::RockProviderFrameSnapshot frame;
+                RE::NiPointer<RE::TESObjectREFR> ref; provider::Publication frame;
                 status = validate(request, ref, frame); if (status != api::Status::Ok) return status;
                 if (request->hand == api::Hand::None) return api::Status::InvalidArgument;
                 const unsigned index = request->hand == api::Hand::Left ? 1 : 0;
@@ -195,8 +195,8 @@ namespace rock::storage_service
             if (!request->weaponFormId || (request->hand != api::Hand::Left && request->hand != api::Hand::Right)) return api::Status::InvalidArgument;
             try {
                 const auto status = authorize(owner); if (status != api::Status::Ok) return status;
-                provider::RockProviderFrameSnapshot frame;
-                if (!provider::runtime::apiGetFrameSnapshot(&frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
+                provider::Publication frame;
+                if (!provider::runtime::copyPublication(frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
                 if (frame.worldGeneration != request->worldGeneration || frame.skeletonGeneration != request->skeletonGeneration ||
                     frame.providerGeneration != request->providerGeneration) return api::Status::GenerationMismatch;
                 auto* physics = interaction();
@@ -235,8 +235,8 @@ namespace rock::storage_service
             if ((request->hand!=api::Hand::Left && request->hand!=api::Hand::Right) || !request->expectedBase) return api::Status::InvalidArgument;
             try {
                 const auto access=authorize(owner); if(access!=api::Status::Ok) return access;
-                auto* physics=interaction(); provider::RockProviderFrameSnapshot frame;
-                if(!physics || !provider::runtime::apiGetFrameSnapshot(&frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
+                auto* physics=interaction(); provider::Publication frame;
+                if(!physics || !provider::runtime::copyPublication(frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
                 if(request->worldGeneration!=frame.worldGeneration || request->skeletonGeneration!=frame.skeletonGeneration || request->providerGeneration!=frame.providerGeneration) return api::Status::GenerationMismatch;
                 provider::RockProviderHandInteractionStateV1 hand{};
                 if(provider::runtime::apiGetHandInteractionStateV1(owner,static_cast<api::Hand>(request->hand),&hand)!=api::Status::Ok ||
@@ -299,8 +299,8 @@ namespace rock::storage_service
                 !std::memchr(request->nodeName,0,sizeof(request->nodeName))) return api::Status::InvalidArgument;
             try {
                 const auto access=authorize(owner); if(access!=api::Status::Ok) return access;
-                auto* physics=interaction(); provider::RockProviderFrameSnapshot frame;
-                if(!physics || !provider::runtime::apiGetFrameSnapshot(&frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
+                auto* physics=interaction(); provider::Publication frame;
+                if(!physics || !provider::runtime::copyPublication(frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
                 if(request->worldGeneration!=frame.worldGeneration || request->skeletonGeneration!=frame.skeletonGeneration || request->providerGeneration!=frame.providerGeneration) return api::Status::GenerationMismatch;
                 auto& value=displays[request->hand==api::Hand::Left?1:0];
                 if(value.owner && value.owner!=owner && value.deadline>=frame.frameIndex) return api::Status::OwnerConflict;

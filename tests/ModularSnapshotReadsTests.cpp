@@ -10,7 +10,7 @@ namespace {
     const auto frameThread = std::this_thread::get_id();
     bool available = true;
     std::uint32_t permissions = 1;
-    rock::provider::RockProviderFrameSnapshot publication{};
+    rock::provider::Publication publication{};
 }
 
 // Engine services are the fixture boundary. The production endpoint bodies,
@@ -23,9 +23,9 @@ namespace rock::provider::runtime {
         return requireThread && std::this_thread::get_id() != frameThread ? Status::WrongThread : Status::Ok;
     }
     void reportBoundaryFailure(std::uint64_t, api::InterfaceId) noexcept { assert(false); }
-    bool apiGetFrameSnapshot(RockProviderFrameSnapshot* out) {
+    bool copyPublication(Publication& out) {
         if (!available) return false;
-        *out = publication;
+        out = publication;
         return true;
     }
     api::Sample sample() {
@@ -68,10 +68,10 @@ int main()
     publication.providerGeneration=9;publication.collisionGeneration=10;
     publication.primaryHand=api::Hand::Right;
     publication.offhandHand=api::Hand::Left;
-    publication.enrichmentFlags=6;publication.hmdTransform.translate[0]=12;
+    publication.flags=3;publication.hmdTransform.translate[0]=12;
     publication.hmdForwardWorld[2]=1;
     publication.gameToHavokScale=0.014f;publication.havokToGameScale=71;
-    publication.weaponGenerationKey=456;publication.weaponBodyCount=1;publication.weaponBodyIds[0]=14;
+    publication.weapon.weaponGenerationKey=456;publication.weapon.bodyCount=1;publication.weapon.bodyIds[0]=14;
     auto task=std::async(std::launch::async,[] {
         assert(std::this_thread::get_id()!=frameThread);
         api::hands::HeadPose head{};

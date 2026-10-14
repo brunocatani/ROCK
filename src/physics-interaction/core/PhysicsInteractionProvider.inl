@@ -1,15 +1,13 @@
 /*
  * Provider snapshot and query glue is split from lifecycle/update orchestration because it exposes ROCK state to external consumers without owning physics behavior. It stays in this translation unit to preserve helper visibility and public API behavior.
  */
-    void PhysicsInteraction::fillProviderFrameSnapshot(::rock::provider::RockProviderFrameSnapshot& outSnapshot) const
+    void PhysicsInteraction::fillProviderFrameSnapshot(::rock::provider::Publication& outSnapshot) const
     {
         const auto& runtime = runtime_state::currentFrame();
         outSnapshot.providerReady = isProviderReady() ? 1u : 0u;
         outSnapshot.frikSkeletonReady = runtime.localSkeletonReady ? 1u : 0u;
         outSnapshot.menuBlocking = runtime.localMenuBlocking ? 1u : 0u;
         outSnapshot.configBlocking = runtime.compatibilityConfigBlocking ? 1u : 0u;
-        outSnapshot.bhkWorld = reinterpret_cast<std::uintptr_t>(_lifecycle.cachedBhkWorld);
-        outSnapshot.hknpWorld = reinterpret_cast<std::uintptr_t>(_lifecycle.cachedHknpWorld);
         outSnapshot.gameToHavokScale = physics_scale::gameToHavok();
         outSnapshot.havokToGameScale = physics_scale::havokToGame();
         outSnapshot.physicsScaleRevision = physics_scale::revision();
@@ -26,18 +24,14 @@
          * unmeasurable frame publishes zero instead of a fabricated rate.
          */
         outSnapshot.deltaSeconds = runtime.timing.valid ? runtime.timing.deltaSeconds : 0.0f;
-        if (runtime.timing.valid) {
-            outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
-                ::rock::provider::RockProviderFrameEnrichmentFlagV1::DeltaSecondsValid);
-        }
         if (auto* playerNodes = f4vr::getPlayerNodes();
             playerNodes && playerNodes->HmdNode &&
             finiteNiTransform(playerNodes->HmdNode->world)) {
             fillProviderTransform(
                 playerNodes->HmdNode->world,
                 outSnapshot.hmdTransform);
-            outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
-                ::rock::provider::RockProviderFrameEnrichmentFlagV1::HmdTransformValid);
+            outSnapshot.flags |= static_cast<std::uint32_t>(
+                ::rock::provider::PublicationFlag::HmdTransformValid);
             const auto rawForward =
                 playerNodes->HmdNode->world.rotate.Transpose() *
                 RE::NiPoint3(0.0f, 1.0f, 0.0f);
@@ -48,8 +42,8 @@
                 outSnapshot.hmdForwardWorld[0] = normalizedForward.x;
                 outSnapshot.hmdForwardWorld[1] = normalizedForward.y;
                 outSnapshot.hmdForwardWorld[2] = normalizedForward.z;
-                outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
-                    ::rock::provider::RockProviderFrameEnrichmentFlagV1::HmdForwardValid);
+                outSnapshot.flags |= static_cast<std::uint32_t>(
+                    ::rock::provider::PublicationFlag::HmdForwardValid);
             }
         }
         outSnapshot.primaryHand = _twoHandedGrip.isFiringHandLeft() ?
@@ -59,28 +53,19 @@
             outSnapshot.primaryHand == api::Hand::Left ?
                 api::Hand::Right :
                 api::Hand::Left;
-        outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
-            ::rock::provider::RockProviderFrameEnrichmentFlagV1::CoherentHandRoles);
         outSnapshot.collisionGeneration =
             _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire);
-        outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
-            ::rock::provider::RockProviderFrameEnrichmentFlagV1::CollisionGenerationValid);
-        outSnapshot.equippedWeaponTransitionSequence =
-            _equipped.transition.getPublicSnapshot().transitionSequence;
-        outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
-            ::rock::provider::RockProviderFrameEnrichmentFlagV1::EquippedTransitionSequenceValid);
 
-        auto* weaponNode = resolveEquippedWeaponInteractionNode();
-        outSnapshot.weaponNode = reinterpret_cast<std::uintptr_t>(weaponNode);
         outSnapshot.weaponFormId = currentEquippedWeaponFormId();
-        for (auto& bodyId : outSnapshot.weaponBodyIds) {
-            bodyId = 0x7FFF'FFFF;
+        auto& weapon = outSnapshot.weapon;
+        for (auto& bodyId : weapon.bodyIds) {
+            bodyId = api::grab::kNoBody;
         }
         const auto weaponSnapshot = _weaponCollision.getWeaponBodySnapshotAtomic();
-        outSnapshot.weaponGenerationKey = weaponSnapshot.generationKey;
-        outSnapshot.weaponBodyCount = (std::min)(weaponSnapshot.count, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_BODIES);
-        for (std::uint32_t i = 0; i < outSnapshot.weaponBodyCount; ++i) {
-            outSnapshot.weaponBodyIds[i] = weaponSnapshot.bodyIds[i];
+        weapon.weaponGenerationKey = weaponSnapshot.generationKey;
+        weapon.bodyCount = (std::min)(weaponSnapshot.count, static_cast<std::uint32_t>(std::size(weapon.bodyIds)));
+        for (std::uint32_t i = 0; i < weapon.bodyCount; ++i) {
+            weapon.bodyIds[i] = weaponSnapshot.bodyIds[i];
         }
 
         // Providers get the controller hand ROCK interacts with, not the
@@ -88,26 +73,16 @@
         RE::NiTransform providerHandWorld{};
         if (outSnapshot.providerReady && runtime.localSkeletonReady && _handBoneCache.isReady() && frik_hand_world_authority::tryGetRawHandWorld(false, providerHandWorld) && finiteNiTransform(providerHandWorld)) {
             fillProviderTransform(providerHandWorld, outSnapshot.rightHandTransform);
-            outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
-                ::rock::provider::RockProviderFrameEnrichmentFlagV1::RightHandTransformValid);
+            outSnapshot.flags |= static_cast<std::uint32_t>(
+                ::rock::provider::PublicationFlag::RightHandTransformValid);
         }
         if (outSnapshot.providerReady && runtime.localSkeletonReady && _handBoneCache.isReady() && frik_hand_world_authority::tryGetRawHandWorld(true, providerHandWorld) && finiteNiTransform(providerHandWorld)) {
             fillProviderTransform(providerHandWorld, outSnapshot.leftHandTransform);
-            outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
-                ::rock::provider::RockProviderFrameEnrichmentFlagV1::LeftHandTransformValid);
+            outSnapshot.flags |= static_cast<std::uint32_t>(
+                ::rock::provider::PublicationFlag::LeftHandTransformValid);
         }
 
-        outSnapshot.rightHandBodyId = _rightHand.getCollisionBodyId().value;
-        outSnapshot.leftHandBodyId = _leftHand.getCollisionBodyId().value;
-        // Hand state is filled from the normalized interaction publication
-        // in dispatchFrameCallbacks, alongside its sequences and events.
-        // Contact is independent of occupancy: a holding hand may also touch.
-        if (outSnapshot.providerReady && runtime.localSkeletonReady) {
-            using Flag = api::grab::HandStateFlag;
-            if (_rightHand.isTouching()) outSnapshot.rightHandState |= static_cast<std::uint32_t>(Flag::Touching);
-            if (_leftHand.isTouching()) outSnapshot.leftHandState |= static_cast<std::uint32_t>(Flag::Touching);
-        }
-        outSnapshot.offhandReservation = ::rock::provider::currentHandReservation(outSnapshot.offhandHand);
+        outSnapshot.handReservation = ::rock::provider::currentHandReservation(outSnapshot.offhandHand);
     }
 
     bool PhysicsInteraction::isProviderWeaponBodyCurrentV1(
@@ -1318,7 +1293,7 @@
     bool PhysicsInteraction::queryProviderPresentedHandPose(
         const ::rock::api::Hand hand,
         ::rock::api::hands::PresentedHandPose& outPose,
-        ::rock::provider::RockProviderFrameSnapshot* outMetadata) const
+        ::rock::provider::Publication* outMetadata) const
     {
         outPose = {};
         if (hand != api::Hand::Left && hand != api::Hand::Right) return false;
@@ -1352,7 +1327,7 @@
         const auto bones = _providerDrives.presentedPoseNames.bind(skeleton);
         // Freeze the control publication paired with this capture. An early
         // query next frame must not join an old pose to new interaction state.
-        if (!provider::runtime::apiGetFrameSnapshot(&_providerDrives.presentedMetadata) ||
+        if (!provider::runtime::copyPublication(_providerDrives.presentedMetadata) ||
             _providerDrives.presentedMetadata.frameIndex != runtime_state::currentFrame().frameIndex) return;
         for (const bool isLeft : { false, true }) {
             auto& outPose = _providerDrives.presentedPoses[isLeft ? 1u : 0u];

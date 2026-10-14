@@ -10,13 +10,12 @@
 #include <ROCK/Touch.h>
 #include <ROCK/Weapon.h>
 #include <ROCK/WeaponParts.h>
+#include "ProviderPublication.h"
 
 // Private runtime representation; never installed or returned across the DLL boundary.
 namespace rock::provider {
     inline constexpr std::uint32_t ROCK_PROVIDER_API_VERSION = 1;
-    inline constexpr std::uint32_t ROCK_PROVIDER_FRAME_SNAPSHOT_V1_SIZE = 256;
     inline constexpr std::uint32_t ROCK_PROVIDER_INTERACTION_COMMAND_RESULT_V1_PREFIX_SIZE = 112;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_BODIES = 8;
     // Evidence describes the complete classified weapon-part catalog and is
     // independent from the compact body array embedded in frame snapshots.
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1 = api::weaponparts::kMaxEvidenceDetails;
@@ -69,40 +68,6 @@ namespace rock::provider {
 
 
 
-
-    enum class RockProviderConsumerCapabilityV1 : std::uint32_t
-    {
-        None = 0,
-        FrameSnapshots = 1u << 0,
-        OffhandReservation = 1u << 3,
-        InteractionCommands = 1u << 4,
-        HandInputSuppression = 1u << 5,
-        WeaponPartInteraction = 1u << 6,
-        NativeAnimationAuthority = 1u << 7,
-        AnimationPhases = 1u << 8,
-        EquippedWeaponGripState = 1u << 9,
-        HandVisualAuthority = 1u << 10,
-        NativeAnimationRuntimeProvider = 1u << 11,
-        EquippedWeaponHandlingAuthority = 1u << 12,
-        // 1u << 13 retired in ROCK 1.0 (DebugOverlayPublication); never reuse.
-        DebugOverlayPublication = 1u << 13,
-        ProviderEvents = 1u << 14,
-        HandInteractionState = 1u << 15,
-        WeaponPartObservability = 1u << 17,
-        WeaponComposition = 1u << 18,
-        PoseReadback = 1u << 19,
-        SemanticHandContacts = 1u << 20,
-        PlayerColliderDescriptors = 1u << 21,
-        ScopeSightState = 1u << 22,
-        InputObservability = 1u << 23,
-        TouchGrabTargets = 1u << 24,
-        WorldRaycasts = 1u << 25,
-        // 1u << 26 retired in ROCK 1.0 (ColliderVisualizationOverride); never reuse.
-        ColliderVisualizationOverride = 1u << 26,
-        PlayerController = 1u << 27,
-        TargetDetails = 1u << 28,
-        PowerArmor = 1u << 29,
-    };
 
 
 
@@ -217,30 +182,6 @@ namespace rock::provider {
     };
 
 
-    enum class RockProviderEventKindV1 : std::uint32_t
-    {
-        Unknown = 0,
-        LifecycleChanged = 1,
-        EquippedWeaponTransitionTerminal = 2,
-        AuthorityLost = 3,
-        InteractionCommandTerminal = 4,
-        GrabStateChanged = 5,
-    };
-
-    enum class RockProviderAuthorityKindV1 : std::uint32_t
-    {
-        Unknown = 0,
-        HandInputSuppression = 1,
-        WeaponPartDrive = 2,
-        NativeAnimation = 3,
-        NativeAnimationRuntime = 4,
-        EquippedWeaponHandling = 5,
-        OffhandReservation = 6,
-        HandVisual = 7,
-        DebugOverlay = 8, // Retired in ROCK 1.0; never emitted, never reused.
-        WeaponPartTargets = 9,
-        ColliderVisualization = 10, // Retired in ROCK 1.0; never emitted, never reused.
-    };
 
 
 
@@ -250,42 +191,10 @@ namespace rock::provider {
 
 
 
-
-
-    enum class RockProviderFrameEnrichmentFlagV1 : std::uint32_t
-    {
-        None = 0,
-        DeltaSecondsValid = 1u << 0,
-        HmdTransformValid = 1u << 1,
-        HmdForwardValid = 1u << 2,
-        CoherentHandRoles = 1u << 3,
-        StateSequenceValid = 1u << 4,
-        CollisionGenerationValid = 1u << 5,
-        EquippedTransitionSequenceValid = 1u << 6,
-        RightHandTransformValid = 1u << 7,
-        LeftHandTransformValid = 1u << 8,
-    };
-
-    enum class RockProviderFrameStateChangeFlagV1 : std::uint32_t
-    {
-        None = 0,
-        Lifecycle = 1u << 0,
-        RightHand = 1u << 1,
-        LeftHand = 1u << 2,
-        Weapon = 1u << 3,
-        EquippedTransition = 1u << 4,
-        Collision = 1u << 5,
-        HandRoles = 1u << 6,
-    };
 
     [[nodiscard]] inline constexpr bool hasLifecycleFlag(std::uint32_t flags, api::core::LifecycleFlag flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
-    }
-
-    [[nodiscard]] inline constexpr bool hasConsumerCapabilityV1(std::uint32_t capabilities, RockProviderConsumerCapabilityV1 capability)
-    {
-        return (capabilities & static_cast<std::uint32_t>(capability)) != 0;
     }
 
 
@@ -311,25 +220,6 @@ namespace rock::provider {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
 
-
-    struct RockProviderConsumerRegistrationV1
-    {
-        std::uint32_t size{ sizeof(RockProviderConsumerRegistrationV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        char modName[64]{};
-        std::uint32_t requestedCapabilities{ 0 };
-        std::uint32_t reserved[7]{};
-    };
-
-    struct RockProviderConsumerHandleV1
-    {
-        std::uint32_t size{ sizeof(RockProviderConsumerHandleV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint64_t ownerToken{ 0 };
-        std::uint32_t grantedCapabilities{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[6]{};
-    };
 
 
     /*
@@ -510,55 +400,6 @@ namespace rock::provider {
         // grip was acquired from the current authored support-pose capture.
         std::uint32_t authoredSupportGrip{ 0 };
         std::uint32_t reserved[5]{};
-    };
-
-    /*
-     * bhkWorld, hknpWorld, and weaponNode are legacy V1 witnesses governed by
-     * the pointer rule above. All other appended enrichment is copied value
-     * state and remains interpretable after the callback returns.
-     */
-    struct RockProviderFrameSnapshot
-    {
-        std::uint32_t size{ sizeof(RockProviderFrameSnapshot) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint64_t frameIndex{ 0 };
-        std::uintptr_t bhkWorld{ 0 };
-        std::uintptr_t hknpWorld{ 0 };
-        std::uint32_t frikSkeletonReady{ 0 };
-        std::uint32_t menuBlocking{ 0 };
-        std::uint32_t configBlocking{ 0 };
-        std::uint32_t providerReady{ 0 };
-        std::uintptr_t weaponNode{ 0 };
-        std::uint32_t weaponFormId{ 0 };
-        std::uint32_t weaponBodyCount{ 0 };
-        std::uint64_t weaponGenerationKey{ 0 };
-        api::Transform rightHandTransform{};
-        api::Transform leftHandTransform{};
-        std::uint32_t rightHandBodyId{ 0x7FFF'FFFF };
-        std::uint32_t leftHandBodyId{ 0x7FFF'FFFF };
-        std::uint32_t weaponBodyIds[ROCK_PROVIDER_MAX_WEAPON_BODIES]{};
-        std::uint32_t rightHandState{ 0 };
-        std::uint32_t leftHandState{ 0 };
-        api::grab::HandReservationKind offhandReservation{ api::grab::HandReservationKind::Normal };
-        float gameToHavokScale{ 0.0f };
-        float havokToGameScale{ 0.0f };
-        std::uint32_t physicsScaleRevision{ 0 };
-        std::uint32_t lifecycleFlags{ 0 };
-        api::core::LifecycleReason lastLifecycleReason{ api::core::LifecycleReason::None };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t stableFrameCount{ 0 };
-        float deltaSeconds{ 0.0f };
-        std::uint32_t enrichmentFlags{ 0 };
-        api::Transform hmdTransform{};
-        float hmdForwardWorld[3]{};
-        api::Hand primaryHand{ api::Hand::Right };
-        api::Hand offhandHand{ api::Hand::Left };
-        std::uint64_t stateSequence{ 0 };
-        std::uint32_t stateChangeMask{ 0 };
-        std::uint32_t collisionGeneration{ 0 };
-        std::uint64_t equippedWeaponTransitionSequence{ 0 };
     };
 
 
@@ -877,25 +718,6 @@ namespace rock::provider {
         ::rock::api::touch::SurfaceGripMode surfaceGripMode{
             ::rock::api::touch::SurfaceGripMode::CollisionAnchor
         };
-    };
-
-    struct RockProviderEventV1
-    {
-        std::uint32_t size{ sizeof(RockProviderEventV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint64_t sequence{ 0 };
-        std::uint64_t frameIndex{ 0 };
-        RockProviderEventKindV1 kind{ RockProviderEventKindV1::Unknown };
-        api::Hand hand{ api::Hand::None };
-        std::uint64_t ownerToken{ 0 };
-        std::uint64_t weaponGenerationKey{ 0 };
-        std::uint32_t formId{ 0 };
-        std::uint32_t result{ 0 };
-        std::uint64_t subjectSequence{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint32_t data[5]{};
     };
 
     struct RockProviderEquippedWeaponStateV1
@@ -1282,6 +1104,4 @@ namespace rock::provider {
     };
 
 
-using RockProviderFrameCallback = rock::api::core::FrameCallback;
-using RockProviderAnimationPhaseCallbackV1 = rock::api::animation::PhaseCallback;
 }

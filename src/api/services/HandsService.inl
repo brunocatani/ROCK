@@ -2,19 +2,6 @@
 // They fill provider API major-2 Hands records directly; the endpoint has
 // already validated and cleared each output record.
 
-    inline api::Sample handsSample(const RockProviderFrameSnapshot& snapshot) noexcept
-    {
-        return { snapshot.frameIndex, snapshot.stateSequence, snapshot.worldGeneration,
-            snapshot.skeletonGeneration, snapshot.providerGeneration, snapshot.collisionGeneration };
-    }
-
-    inline void copyHandsTransform(const api::Transform& source, api::Transform& target) noexcept
-    {
-        std::copy_n(source.rotate, 9, target.rotate);
-        std::copy_n(source.translate, 3, target.translate);
-        target.scale = source.scale;
-    }
-
     inline bool finiteHandsTransform(const api::Transform& value) noexcept
     {
         for (const float component : value.rotate) {
@@ -36,7 +23,7 @@
         if (hand != api::Hand::Right && hand != api::Hand::Left) {
             return api::Status::InvalidArgument;
         }
-        RockProviderFrameSnapshot snapshot{};
+        Publication snapshot{};
         {
             std::scoped_lock lock(s_snapshotMutex);
             if (!s_hasSnapshot) {
@@ -47,10 +34,10 @@
 
         const bool isLeft = hand == api::Hand::Left;
         const auto transformFlag = isLeft ?
-            RockProviderFrameEnrichmentFlagV1::LeftHandTransformValid :
-            RockProviderFrameEnrichmentFlagV1::RightHandTransformValid;
+            ::rock::provider::PublicationFlag::LeftHandTransformValid :
+            ::rock::provider::PublicationFlag::RightHandTransformValid;
         if (!apiIsProviderReady() || snapshot.providerReady == 0 ||
-            !(snapshot.enrichmentFlags & static_cast<std::uint32_t>(transformFlag))) {
+            !snapshot.has(transformFlag)) {
             return api::Status::NotReady;
         }
 
@@ -59,8 +46,8 @@
         outFrame.flags = static_cast<std::uint32_t>(Flag::Valid) |
                          static_cast<std::uint32_t>(Flag::RootFlattenedAuthority) |
                          (isLeft ? static_cast<std::uint32_t>(Flag::Left) : 0u);
-        copyHandsTransform(isLeft ? snapshot.leftHandTransform : snapshot.rightHandTransform, outFrame.transform);
-        outFrame.sample = handsSample(snapshot);
+        outFrame.transform = isLeft ? snapshot.leftHandTransform : snapshot.rightHandTransform;
+        outFrame.sample = snapshot.sample();
         return api::Status::Ok;
     }
 
@@ -81,7 +68,7 @@
         const auto access = s_physicsInteraction.borrow();
         auto* pi = access.get();
         api::hands::PresentedHandPose pose{};
-        RockProviderFrameSnapshot snapshot{};
+        Publication snapshot{};
         if (!pi || !pi->isInitialized() || !pi->queryProviderPresentedHandPose(hand, pose, &snapshot) ||
             !finiteHandsTransform(pose.handWorld)) {
             return api::Status::NotReady;
@@ -108,9 +95,7 @@
         if (hand != api::Hand::Right && hand != api::Hand::Left) {
             return api::Status::HandUnavailable;
         }
-        return static_cast<api::Status>(queryPhysicsInteractionValueV1(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::PoseReadback,
+        return static_cast<api::Status>(queryPhysicsInteractionValue(ownerToken,
             &outPose,
             [hand](PhysicsInteraction& pi, api::hands::PresentedHandPose& pose) {
                 return pi.queryProviderPresentedHandPose(hand, pose);

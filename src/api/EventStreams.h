@@ -1,5 +1,4 @@
 #pragma once
-#include "ProviderRuntimeTypes.h"
 #include "physics-interaction/grab/GrabEvent.h"
 #include <ROCK/Core.h>
 #include <ROCK/Collision.h>
@@ -12,7 +11,13 @@
 namespace rock::provider::events {
     api::Status bind(api::OwnerToken,api::InterfaceId);
     void remove(api::OwnerToken);
-    void publish(const RockProviderEventV1&);
+    // Each family's event, stamped by the caller; recipient 0 reaches every bound owner.
+    void publish(const api::core::Event&, api::OwnerToken recipient = 0);
+    void publish(const api::grab::Event&, api::OwnerToken recipient = 0);
+    void publish(const api::weapon::Event&, api::OwnerToken recipient = 0);
+    void publish(const api::weaponparts::Event&, api::OwnerToken recipient = 0);
+    void publish(const api::animation::Event&, api::OwnerToken recipient = 0);
+    void publish(const api::input::Event&, api::OwnerToken recipient = 0);
     void publishGrab(const rock::GrabEventData&, const api::Sample&);
     void publishPhysics(std::uint32_t kind,bool left,std::uint32_t form,std::uint32_t layer,const api::Sample&);
     api::Status copy(api::OwnerToken,std::uint64_t,api::core::Event*,std::uint32_t,api::Stream&);

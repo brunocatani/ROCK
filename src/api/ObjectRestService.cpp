@@ -8,8 +8,8 @@ namespace rock::provider::runtime {
 api::Status watchObjectRest(api::OwnerToken owner, const api::collision::ObjectRestRequest& request, api::collision::ObjectRestState& state) {
     state = api::collision::ObjectRestState::Waiting;
     if (!request.reference.referenceFormId || !request.expectedBase) return api::Status::InvalidArgument;
-    RockProviderFrameSnapshot frame;
-    if (!apiGetFrameSnapshot(&frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
+    Publication frame;
+    if (!copyPublication(frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
     if (frame.worldGeneration != request.reference.worldGeneration || frame.skeletonGeneration != request.reference.skeletonGeneration ||
         frame.providerGeneration != request.reference.providerGeneration) return api::Status::GenerationMismatch;
     auto* ref = RE::TESForm::GetFormByID<RE::TESObjectREFR>(request.reference.referenceFormId);

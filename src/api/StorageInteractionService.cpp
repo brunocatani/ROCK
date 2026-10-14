@@ -73,7 +73,7 @@ namespace rock::storage_interaction
                 expected.worldGeneration==current.worldGeneration && expected.skeletonGeneration==current.skeletonGeneration &&
                 expected.providerGeneration==current.providerGeneration;
         }
-        bool sameGeneration(const auto& request,const provider::RockProviderFrameSnapshot& frame)
+        bool sameGeneration(const auto& request,const provider::Publication& frame)
         { return request.worldGeneration==frame.worldGeneration && request.skeletonGeneration==frame.skeletonGeneration && request.providerGeneration==frame.providerGeneration; }
         void retire(Display& value,RE::hknpWorld* world)
         {
@@ -210,9 +210,9 @@ namespace rock::storage_interaction
             !request->item.count || request->item.version!=1 || (request->flags&~knownFlags) || !policy::validLease(request->leaseFrames) ||
             !request->nodeName[0] || !std::memchr(request->nodeName,0,sizeof(request->nodeName))) return api::Status::InvalidArgument;
         const auto access=authorize(owner); if(access!=api::Status::Ok) return access;
-        provider::RockProviderFrameSnapshot frame;
+        provider::Publication frame;
         auto* physics=PhysicsInteraction::s_instance.load(std::memory_order_acquire);
-        if(!physics || !provider::runtime::apiGetFrameSnapshot(&frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
+        if(!physics || !provider::runtime::copyPublication(frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
         if(!sameGeneration(request->item,frame)) return api::Status::GenerationMismatch;
         if(request->item.frameIndex!=frame.frameIndex || !inventoryCurrent(request->item,*physics)) return api::Status::TargetUnavailable;
         Display* slot{};
@@ -244,9 +244,9 @@ namespace rock::storage_interaction
         if(result->version!=1) return api::Status::UnsupportedVersion;
         *result={}; result->hand=hand;
         const auto access=authorize(owner,1); if(access!=api::Status::Ok) return access;
-        provider::RockProviderFrameSnapshot frame;
+        provider::Publication frame;
         auto* physics=PhysicsInteraction::s_instance.load(std::memory_order_acquire);
-        if(!physics || !provider::runtime::apiGetFrameSnapshot(&frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
+        if(!physics || !provider::runtime::copyPublication(frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
         result->sample={frame.frameIndex,frame.stateSequence,frame.worldGeneration,frame.skeletonGeneration,frame.providerGeneration,frame.collisionGeneration};
         if(!policy::allowsHand(freeHands(owner),hand==api::Hand::Left)) return api::Status::Ok;
         for(const auto& entry:service.displays) if(entry.owner==owner && !entry.expired && !entry.rebuild &&
@@ -269,9 +269,9 @@ namespace rock::storage_interaction
         if(!request->displayId || (request->hand!=api::Hand::Left && request->hand!=api::Hand::Right) ||
             unsigned(request->role)>unsigned(Role::Support)) return api::Status::InvalidArgument;
         const auto access=authorize(owner,1); if(access!=api::Status::Ok) return access;
-        provider::RockProviderFrameSnapshot frame;
+        provider::Publication frame;
         auto* physics=PhysicsInteraction::s_instance.load(std::memory_order_acquire);
-        if(!physics || !provider::runtime::apiGetFrameSnapshot(&frame) || !frame.providerReady || frame.menuBlocking || request->sample.frameIndex!=frame.frameIndex) return api::Status::NotReady;
+        if(!physics || !provider::runtime::copyPublication(frame) || !frame.providerReady || frame.menuBlocking || request->sample.frameIndex!=frame.frameIndex) return api::Status::NotReady;
         if(!sameGeneration(request->sample,frame)) return api::Status::GenerationMismatch;
         auto found=std::find_if(service.displays.begin(),service.displays.end(),[&](const auto& entry) {
             return entry.owner==owner && entry.request.displayId==request->displayId && !entry.expired && entry.deadline>=frame.frameIndex && sameGeneration(entry.request.item,frame);
@@ -329,8 +329,8 @@ namespace rock::storage_interaction
         if(request->version!=1) return api::Status::UnsupportedVersion;
         if(!policy::validRouting(request->handMask,request->leaseFrames)) return api::Status::InvalidArgument;
         const auto access=authorize(owner); if(access!=api::Status::Ok) return access;
-        provider::RockProviderFrameSnapshot frame;
-        if(!provider::runtime::apiGetFrameSnapshot(&frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
+        provider::Publication frame;
+        if(!provider::runtime::copyPublication(frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
         if(!sameGeneration(*request,frame)) return api::Status::GenerationMismatch;
         Routing* slot{};
         for(auto& entry:service.routes) {
@@ -352,8 +352,8 @@ namespace rock::storage_interaction
     }
     bool blocksShoulder(bool left)
     {
-        provider::RockProviderFrameSnapshot frame;
-        if(!provider::runtime::apiGetFrameSnapshot(&frame)) return false;
+        provider::Publication frame;
+        if(!provider::runtime::copyPublication(frame)) return false;
         for(auto& route:service.routes) if(route.owner) {
             if(route.deadline<frame.frameIndex || !sameGeneration(route.request,frame) || authorize(route.owner,0)!=api::Status::Ok) { route={}; continue; }
             if(policy::allowsHand(route.request.handMask,left)) return true;
@@ -364,8 +364,8 @@ namespace rock::storage_interaction
     {
         if(!service.active.load(std::memory_order_acquire)) return;
         if(!frame.worldReady || frame.menuBlocked || !native_player_collision::installed()) { shutdown(frame.hknpWorld); return; }
-        provider::RockProviderFrameSnapshot current;
-        if(!provider::runtime::apiGetFrameSnapshot(&current)) return;
+        provider::Publication current;
+        if(!provider::runtime::copyPublication(current)) return;
         auto driveMutation=driveGate.pauseForMutation();
         auto mutation=service.callbacks.pauseForMutation();
         if(service.world && service.world!=frame.hknpWorld) for(auto& entry:service.displays) { retire(entry,nullptr); entry.owner=0; }

@@ -103,49 +103,12 @@ void publishPhysics(std::uint32_t kind,bool left,std::uint32_t form,std::uint32_
         coreEvents.publish(event);
     }
 }
-void publish(const RockProviderEventV1& source) {
-    const api::Sample sample{source.frameIndex,0,source.worldGeneration,source.skeletonGeneration,source.providerGeneration,0};
-    switch(source.kind) {
-    case RockProviderEventKindV1::LifecycleChanged: {
-        api::core::Event event{}; stamp(event,sample); event.kind=1;
-        event.lifecycleFlags=source.data[0]; event.providerReady=source.data[1]; event.reason=source.result;
-        coreEvents.publish(event); break;
-    }
-    case RockProviderEventKindV1::GrabStateChanged: {
-        api::grab::Event event{}; stamp(event,sample); event.kind=100; event.hand=static_cast<api::Hand>(source.hand);
-        event.formId=source.formId; event.subjectSequence=source.subjectSequence; event.phase=source.result;
-        event.primaryBodyId=source.data[1]; event.flags=source.data[2]; grabEvents.publish(event); break;
-    }
-    case RockProviderEventKindV1::InteractionCommandTerminal: {
-        api::grab::Event event{}; stamp(event,sample); event.kind=101; event.hand=static_cast<api::Hand>(source.hand);
-        event.ownerToken=source.ownerToken; event.subjectSequence=source.subjectSequence; event.commandState=source.result;
-        event.formId=source.formId; event.commandKind=source.data[0]; event.failure=source.data[1];
-        grabEvents.publish(event,source.ownerToken); break;
-    }
-    case RockProviderEventKindV1::EquippedWeaponTransitionTerminal: {
-        api::weapon::Event event{}; stamp(event,sample); event.kind=1; event.hand=static_cast<api::Hand>(source.hand);
-        event.formId=source.formId; event.weaponGenerationKey=source.weaponGenerationKey; event.transitionSequence=source.subjectSequence;
-        event.terminalResult=source.result; event.source=source.data[0]; event.flags=source.data[1]; weaponEvents.publish(event); break;
-    }
-    case RockProviderEventKindV1::AuthorityLost: {
-        const auto authority=static_cast<RockProviderAuthorityKindV1>(source.data[0]);
-        const auto owner=source.ownerToken;
-        switch(authority) {
-        case RockProviderAuthorityKindV1::NativeAnimation: { api::animation::Event event{}; stamp(event,sample); event.kind=1; event.ownerToken=owner; event.authority=1; event.reason=source.result; animationEvents.publish(event,owner); break; }
-        case RockProviderAuthorityKindV1::HandVisual: { api::animation::Event event{}; stamp(event,sample); event.kind=1; event.ownerToken=owner; event.authority=2; event.reason=source.result; animationEvents.publish(event,owner); break; }
-        case RockProviderAuthorityKindV1::NativeAnimationRuntime: { api::animation::Event event{}; stamp(event,sample); event.kind=1; event.ownerToken=owner; event.authority=3; event.reason=source.result; animationEvents.publish(event,owner); break; }
-        case RockProviderAuthorityKindV1::HandInputSuppression: { api::input::Event event{}; stamp(event,sample); event.kind=1; event.ownerToken=owner; event.authority=1; event.reason=source.result; inputEvents.publish(event,owner); break; }
-        case RockProviderAuthorityKindV1::WeaponPartTargets: { api::weaponparts::Event event{}; stamp(event,sample); event.kind=1; event.ownerToken=owner; event.authority=1; event.reason=source.result; weaponpartsEvents.publish(event,owner); break; }
-        case RockProviderAuthorityKindV1::WeaponPartDrive: { api::weaponparts::Event event{}; stamp(event,sample); event.kind=1; event.ownerToken=owner; event.authority=2; event.reason=source.result; weaponpartsEvents.publish(event,owner); break; }
-        case RockProviderAuthorityKindV1::EquippedWeaponHandling: { api::weapon::Event event{}; stamp(event,sample); event.kind=2; event.ownerToken=owner; event.authority=1; event.reason=source.result; weaponEvents.publish(event,owner); break; }
-        case RockProviderAuthorityKindV1::OffhandReservation: { api::grab::Event event{}; stamp(event,sample); event.kind=104; event.ownerToken=owner; event.failure=source.result; grabEvents.publish(event,owner); break; }
-        default: { api::core::Event event{}; stamp(event,sample); event.kind=2; event.ownerToken=owner; event.reason=source.result; coreEvents.publish(event,owner); break; }
-        }
-        break;
-    }
-    default: break;
-    }
-}
+void publish(const api::core::Event& event,api::OwnerToken recipient) { coreEvents.publish(event,recipient); }
+void publish(const api::grab::Event& event,api::OwnerToken recipient) { grabEvents.publish(event,recipient); }
+void publish(const api::weapon::Event& event,api::OwnerToken recipient) { weaponEvents.publish(event,recipient); }
+void publish(const api::weaponparts::Event& event,api::OwnerToken recipient) { weaponpartsEvents.publish(event,recipient); }
+void publish(const api::animation::Event& event,api::OwnerToken recipient) { animationEvents.publish(event,recipient); }
+void publish(const api::input::Event& event,api::OwnerToken recipient) { inputEvents.publish(event,recipient); }
 
 bool inSynchronousCallback() noexcept { return borrowed_callback::active; }
 api::Status setGrabCallback(api::OwnerToken owner,api::grab::EventCallback function,void* user) {

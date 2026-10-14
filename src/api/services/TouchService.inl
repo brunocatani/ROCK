@@ -32,9 +32,7 @@
 
         std::scoped_lock lock(s_consumerMutex, s_touchGrabMutex);
         const auto ownerResult =
-            validateRegisteredOwnerCapabilityLocked(
-                ownerToken,
-                RockProviderConsumerCapabilityV1::TouchGrabTargets);
+            validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -66,9 +64,7 @@
         }
         std::scoped_lock lock(s_consumerMutex, s_touchGrabMutex);
         const auto ownerResult =
-            validateRegisteredOwnerCapabilityLocked(
-                ownerToken,
-                RockProviderConsumerCapabilityV1::TouchGrabTargets);
+            validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -92,9 +88,7 @@
         }
         std::scoped_lock lock(s_consumerMutex, s_touchGrabMutex);
         const auto ownerResult =
-            validateRegisteredOwnerCapabilityLocked(
-                ownerToken,
-                RockProviderConsumerCapabilityV1::TouchGrabTargets);
+            validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -120,9 +114,7 @@
         }
         std::scoped_lock lock(s_consumerMutex, s_touchGrabMutex);
         const auto ownerResult =
-            validateRegisteredOwnerCapabilityLocked(
-                ownerToken,
-                RockProviderConsumerCapabilityV1::TouchGrabTargets);
+            validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }

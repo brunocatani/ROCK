@@ -141,18 +141,17 @@ int main() {
     binding.permissions=1;
     provider::events::bind(testOwner,api::InterfaceId::Grab);
     provider::events::bind(peerOwner,api::InterfaceId::Grab);
-    provider::RockProviderEventV1 change{};
-    change.kind=provider::RockProviderEventKindV1::GrabStateChanged;
+    api::grab::Event change{};
+    change.kind=static_cast<unsigned>(api::grab::EventKind::HandStateChanged);
     change.frameIndex=20;change.worldGeneration=1;change.skeletonGeneration=2;change.providerGeneration=3;
     change.hand=api::Hand::Left;change.formId=123;
     change.subjectSequence=99;
-    change.result=static_cast<unsigned>(api::grab::HandInteractionPhase::Holding);
-    change.data[0]=1; // A different target-kind value must never become the phase.
-    change.data[1]=456;change.data[2]=0x55;
+    change.phase=static_cast<unsigned>(api::grab::HandInteractionPhase::Holding);
+    change.primaryBodyId=456;change.flags=0x55;
     provider::events::publish(change);
     api::grab::Event copied[4]{};api::Stream stream{};
     assert(grabApi.copyEvents(testOwner,0,copied,4,&stream)==Status::Ok && stream.copiedCount==1);
-    assert(copied[0].phase==change.result && copied[0].phase!=change.data[0]);
+    assert(copied[0].phase==change.phase);
     assert(copied[0].formId==123 && copied[0].primaryBodyId==456 && copied[0].flags==0x55);
     assert(copied[0].frameIndex==20 && copied[0].worldGeneration==1 && copied[0].subjectSequence==99);
 

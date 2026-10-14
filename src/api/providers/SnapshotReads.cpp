@@ -1,6 +1,5 @@
 #include "SnapshotReads.h"
 #include "Boundary.h"
-#include "CommonMarshalling.h"
 
 namespace rock::api::hands {
 using namespace boundary;
@@ -15,13 +14,13 @@ Status ROCK_CALL getHandFrame(OwnerToken owner, Hand hand, HandFrame* outFrame) 
 Status ROCK_CALL getHeadPose(OwnerToken owner, HeadPose* result) noexcept {
     if (const auto s=checkOutput(result); s!=Status::Ok) return s;
     return invoke(owner, kInterfaceId, 1, false, [&]() {
-        provider::RockProviderFrameSnapshot frame{};
-        if (!provider::runtime::apiGetFrameSnapshot(&frame)) return Status::NotReady;
-        result->sample = sampleFromSnapshot(frame);
-        using RockFlag = provider::RockProviderFrameEnrichmentFlagV1;
-        if (frame.enrichmentFlags & static_cast<std::uint32_t>(RockFlag::HmdTransformValid))
+        provider::Publication frame{};
+        if (!provider::runtime::copyPublication(frame)) return Status::NotReady;
+        result->sample = frame.sample();
+        using RockFlag = provider::PublicationFlag;
+        if (frame.has(RockFlag::HmdTransformValid))
             result->flags |= static_cast<std::uint32_t>(HeadPoseFlag::TransformValid);
-        if (frame.enrichmentFlags & static_cast<std::uint32_t>(RockFlag::HmdForwardValid))
+        if (frame.has(RockFlag::HmdForwardValid))
             result->flags |= static_cast<std::uint32_t>(HeadPoseFlag::ForwardValid);
         result->transform = frame.hmdTransform;
         std::copy_n(frame.hmdForwardWorld, 3, result->forwardWorld);
@@ -32,9 +31,9 @@ Status ROCK_CALL getHeadPose(OwnerToken owner, HeadPose* result) noexcept {
 Status ROCK_CALL getRoles(OwnerToken owner, Roles* result) noexcept {
     if (const auto status=checkOutput(result); status!=Status::Ok) return status;
     return invoke(owner, kInterfaceId, 1, false, [&]() {
-        provider::RockProviderFrameSnapshot frame{};
-        if (!provider::runtime::apiGetFrameSnapshot(&frame)) return Status::NotReady;
-        result->sample=sampleFromSnapshot(frame);
+        provider::Publication frame{};
+        if (!provider::runtime::copyPublication(frame)) return Status::NotReady;
+        result->sample=frame.sample();
         result->primary=static_cast<Hand>(frame.primaryHand);
         result->offhand=static_cast<Hand>(frame.offhandHand);
         return Status::Ok;
@@ -48,16 +47,13 @@ using namespace boundary;
 Status ROCK_CALL getEnvironment(OwnerToken owner, Environment* result) noexcept {
     if (const auto s=checkOutput(result); s!=Status::Ok) return s;
     return invoke(owner, kInterfaceId, 1, false, [&]() {
-        provider::RockProviderFrameSnapshot frame{};
-        if (!provider::runtime::apiGetFrameSnapshot(&frame)) return Status::NotReady;
-        result->sample=sampleFromSnapshot(frame);
+        provider::Publication frame{};
+        if (!provider::runtime::copyPublication(frame)) return Status::NotReady;
+        result->sample=frame.sample();
         result->gameToHavokScale=frame.gameToHavokScale;
         result->havokToGameScale=frame.havokToGameScale;
         result->physicsScaleRevision=frame.physicsScaleRevision;
-        auto& weapon=result->weapons[0];
-        weapon.weaponGenerationKey=frame.weaponGenerationKey;
-        weapon.bodyCount=frame.weaponBodyCount;
-        std::copy_n(frame.weaponBodyIds,std::size(weapon.bodyIds),weapon.bodyIds);
+        result->weapons[0]=frame.weapon;
         return Status::Ok;
     });
 }

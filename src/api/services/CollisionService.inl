@@ -27,9 +27,7 @@
             (maxContacts != 0 && !outContacts)) {
             return api::Status::InvalidArgument;
         }
-        const auto ownerResult = validateReadCapability(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::SemanticHandContacts);
+        const auto ownerResult = validateRegisteredOwner(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -60,9 +58,7 @@
             (maxDescriptors != 0 && !outDescriptors)) {
             return api::Status::InvalidArgument;
         }
-        const auto ownerResult = validateReadCapability(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::PlayerColliderDescriptors);
+        const auto ownerResult = validateRegisteredOwner(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -89,9 +85,7 @@
             provider_state_policy::clearQueryOutput(outState);
             return api::Status::HandUnavailable;
         }
-        return queryPhysicsInteractionValueV1(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::PlayerColliderDescriptors,
+        return queryPhysicsInteractionValue(ownerToken,
             outState,
             [hand](PhysicsInteraction& pi, RockProviderHandCollisionAvailabilityV1& state) {
                 return pi.queryProviderHandCollisionAvailabilityV1(hand, state);
@@ -158,11 +152,6 @@
             auto* slot = findConsumerSlotLocked(ownerToken);
             if (!slot) {
                 return api::Status::OwnerNotRegistered;
-            }
-            if (!hasConsumerCapabilityV1(
-                    slot->grantedCapabilities,
-                    RockProviderConsumerCapabilityV1::WorldRaycasts)) {
-                return api::Status::PermissionDenied;
             }
             if (slot->worldRaycastFrameIndex != frameIndex) {
                 slot->worldRaycastFrameIndex = frameIndex;

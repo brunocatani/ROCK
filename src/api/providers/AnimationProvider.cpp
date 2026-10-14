@@ -50,12 +50,12 @@ Status ROCK_CALL clearNativeAnimationRuntime(OwnerToken owner) noexcept {
 Status ROCK_CALL registerAnimationPhaseCallback(OwnerToken owner, PhaseCallback callback, void* userData, std::uint64_t* outCallbackToken) noexcept {
     if (outCallbackToken) *outCallbackToken = 0;
     return invoke(owner, kInterfaceId, 4, true, [&] {
-        return static_cast<Status>(provider::runtime::apiRegisterAnimationPhaseCallbackV1(owner, callback, userData, outCallbackToken));
+        return static_cast<Status>(provider::runtime::registerAnimationPhaseCallback(owner, callback, userData, outCallbackToken));
     });
 }
 Status ROCK_CALL unregisterAnimationPhaseCallback(OwnerToken owner, std::uint64_t callbackToken) noexcept {
     return invoke(owner, kInterfaceId, 4, true, [&] {
-        return static_cast<Status>(provider::runtime::apiUnregisterAnimationPhaseCallbackV1(owner, callbackToken));
+        return static_cast<Status>(provider::runtime::unregisterAnimationPhaseCallback(owner, callbackToken));
     });
 }
 Status ROCK_CALL getSample(OwnerToken owner, Sample* outSample) noexcept {

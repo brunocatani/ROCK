@@ -15,15 +15,6 @@ namespace rock::api::grab {
     inline constexpr float kMaxPowerArmorGrabDistanceGame = 32.0f;
     inline constexpr std::uint32_t kNoBody = 0x7FFF'FFFF;
 
-    enum class HandStateFlag : std::uint32_t
-    {
-        None = 0,
-        Touching = 1u << 0,
-        Holding = 1u << 1,
-        PhysicsDisabled = 1u << 2,
-        Valid = 1u << 3,
-    };
-
     // 5 (External) is retired with external body registration; never reuse.
     enum class BodyContactTargetKind : std::uint32_t
     {

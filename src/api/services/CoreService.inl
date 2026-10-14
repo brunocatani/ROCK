@@ -12,52 +12,29 @@
         return pi && pi->isProviderReady();
     }
 
-    bool apiGetFrameSnapshot(RockProviderFrameSnapshot* outSnapshot)
+    bool copyPublication(Publication& outPublication)
     {
-        provider_state_policy::clearQueryOutput(outSnapshot, ROCK_PROVIDER_FRAME_SNAPSHOT_V1_SIZE);
-        if (!outSnapshot || outSnapshot->size < ROCK_PROVIDER_FRAME_SNAPSHOT_V1_SIZE) {
-            return false;
-        }
-
-        const auto requestedSize = outSnapshot->size;
         std::scoped_lock lock(s_snapshotMutex);
         if (!s_hasSnapshot) {
             return false;
         }
-
-        const auto copySize = (std::min<std::size_t>)(requestedSize, sizeof(RockProviderFrameSnapshot));
-        std::memcpy(outSnapshot, &s_lastSnapshot, copySize);
-        outSnapshot->size = static_cast<std::uint32_t>(copySize);
+        outPublication = s_lastSnapshot;
         return true;
     }
 
-    api::Status apiRegisterConsumerV1(
-        const RockProviderConsumerRegistrationV1* registration,
-        RockProviderConsumerHandleV1* outHandle)
+    api::Status registerOwner(
+        const api::core::Registration& registration,
+        api::core::Owner& outOwner)
     {
-        if (!registration || !outHandle) {
+        const auto modNameLength = boundedStringLength(registration.modName, sizeof(registration.modName));
+        if (modNameLength == 0 || modNameLength >= sizeof(registration.modName)) {
             return api::Status::InvalidArgument;
         }
-
-        if (registration->size != sizeof(RockProviderConsumerRegistrationV1) || outHandle->size != sizeof(RockProviderConsumerHandleV1)) {
-            return api::Status::InvalidSize;
-        }
-
-        if (registration->version == 0 || registration->version > ROCK_PROVIDER_API_VERSION) {
-            return api::Status::UnsupportedVersion;
-        }
-
-        const auto modNameLength = boundedStringLength(registration->modName, sizeof(registration->modName));
-        if (modNameLength == 0 || modNameLength >= sizeof(registration->modName)) {
-            return api::Status::InvalidArgument;
-        }
-
-        const auto grantedCapabilities = registration->requestedCapabilities & kImplementedConsumerCapabilitiesV1;
         const auto providerGeneration = currentProviderGenerationForRegistration();
 
         std::scoped_lock lock(s_consumerMutex);
         for (const auto& slot : s_consumers) {
-            if (modNameEquals(slot, registration->modName, modNameLength)) {
+            if (modNameEquals(slot, registration.modName, modNameLength)) {
                 return api::Status::OwnerConflict;
             }
         }
@@ -69,29 +46,23 @@
 
             slot = {};
             slot.token = nextConsumerToken();
-            slot.grantedCapabilities = grantedCapabilities;
             slot.interfaces[0] = {rock::api::core::kMajor, 1};
-            const auto eventStatus=events::bind(slot.token, rock::api::InterfaceId::Core);
-            if (eventStatus!=rock::api::Status::Ok) {
-                slot={};
-                return static_cast<api::Status>(eventStatus);
+            const auto eventStatus = events::bind(slot.token, rock::api::InterfaceId::Core);
+            if (eventStatus != rock::api::Status::Ok) {
+                slot = {};
+                return eventStatus;
             }
             slot.providerGeneration = providerGeneration;
-            std::memcpy(slot.modName, registration->modName, modNameLength);
-
-            *outHandle = {};
-            outHandle->size = sizeof(RockProviderConsumerHandleV1);
-            outHandle->version = ROCK_PROVIDER_API_VERSION;
-            outHandle->ownerToken = slot.token;
-            outHandle->grantedCapabilities = slot.grantedCapabilities;
-            outHandle->providerGeneration = slot.providerGeneration;
+            std::memcpy(slot.modName, registration.modName, modNameLength);
+            outOwner.ownerToken = slot.token;
+            outOwner.providerGeneration = slot.providerGeneration;
             return api::Status::Ok;
         }
 
         return api::Status::CapacityFull;
     }
 
-    api::Status apiUnregisterConsumerV1(std::uint64_t ownerToken)
+    api::Status unregisterOwner(std::uint64_t ownerToken)
     {
         if(const auto status=native_interaction_service::canUnregisterOwner(ownerToken);status!=rock::api::Status::Ok)
             return static_cast<api::Status>(status);
@@ -167,9 +138,9 @@
         return api::Status::Ok;
     }
 
-    api::Status apiRegisterAnimationPhaseCallbackV1(
+    api::Status registerAnimationPhaseCallback(
         const std::uint64_t ownerToken,
-        RockProviderAnimationPhaseCallbackV1 callback,
+        api::animation::PhaseCallback callback,
         void* userData,
         std::uint64_t* outCallbackToken)
     {
@@ -179,9 +150,7 @@
         *outCallbackToken = 0;
 
         std::scoped_lock lock(s_consumerMutex, s_animationPhaseCallbackMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::AnimationPhases);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -217,7 +186,7 @@
         return api::Status::Ok;
     }
 
-    api::Status apiUnregisterAnimationPhaseCallbackV1(
+    api::Status unregisterAnimationPhaseCallback(
         const std::uint64_t ownerToken,
         const std::uint64_t callbackToken)
     {
@@ -226,9 +195,7 @@
         }
 
         std::scoped_lock lock(s_consumerMutex, s_animationPhaseCallbackMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::AnimationPhases);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -241,9 +208,9 @@
         return api::Status::TargetUnavailable;
     }
 
-    api::Status apiRegisterFrameCallbackForOwnerV1(
+    api::Status registerFrameCallback(
         const std::uint64_t ownerToken,
-        RockProviderFrameCallback callback,
+        api::core::FrameCallback callback,
         void* userData,
         std::uint64_t* outCallbackToken)
     {
@@ -253,9 +220,7 @@
         *outCallbackToken = 0;
 
         std::scoped_lock lock(s_consumerMutex, s_callbackMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::FrameSnapshots);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -282,7 +247,7 @@
         return api::Status::CapacityFull;
     }
 
-    api::Status apiUnregisterFrameCallbackForOwnerV1(
+    api::Status unregisterFrameCallback(
         const std::uint64_t ownerToken,
         const std::uint64_t callbackToken)
     {
@@ -290,9 +255,7 @@
             return api::Status::InvalidArgument;
         }
         std::scoped_lock lock(s_consumerMutex, s_callbackMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::FrameSnapshots);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }

@@ -15,9 +15,9 @@ namespace rock::frik_visual_authority {
 namespace rock::provider {
     struct PhysicsInteraction {
         api::hands::PresentedHandPose captured{};
-        RockProviderFrameSnapshot metadata{};
+        Publication metadata{};
         bool isInitialized() const { return true; }
-        bool queryProviderPresentedHandPose(api::Hand hand, api::hands::PresentedHandPose& out, RockProviderFrameSnapshot* frame = nullptr) {
+        bool queryProviderPresentedHandPose(api::Hand hand, api::hands::PresentedHandPose& out, Publication* frame = nullptr) {
             if (!captured.frameIndex || hand != captured.hand) return false;
             out = captured;
             if (frame) *frame = metadata;
@@ -28,13 +28,13 @@ namespace rock::provider {
     struct InstanceAccess { Access borrow() const { return {}; } } s_physicsInteraction;
     std::mutex s_snapshotMutex;
     bool s_hasSnapshot = true;
-    RockProviderFrameSnapshot s_lastSnapshot{};
+    Publication s_lastSnapshot{};
     bool ownerThread = true;
     bool onAnimationOwnerThread() { return ownerThread; }
     bool apiIsProviderReady() { return frik_visual_authority::ready; }
     template<class Output, class Query>
-    api::Status queryPhysicsInteractionValueV1(std::uint64_t owner,
-        RockProviderConsumerCapabilityV1, Output* output, Query query, bool) {
+    api::Status queryPhysicsInteractionValue(std::uint64_t owner,
+        Output* output, Query query, bool) {
         provider_state_policy::clearQueryOutput(output);
         if (!owner || !output) return api::Status::InvalidArgument;
         if (!ownerThread) return api::Status::WrongThread;

@@ -9,10 +9,10 @@ api::Status requestEjectionClearance(api::OwnerToken owner, const api::collision
     constexpr auto knownFlags = static_cast<std::uint32_t>(api::collision::EjectionClearanceFlag::IncludeHands);
     if (!request.reference.referenceFormId || !request.expectedBase || !request.weaponFormId || !request.weaponGenerationKey ||
         (request.flags & ~knownFlags)) return api::Status::InvalidArgument;
-    RockProviderFrameSnapshot frame;
-    if (!apiGetFrameSnapshot(&frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
+    Publication frame;
+    if (!copyPublication(frame) || !frame.providerReady || frame.menuBlocking) return api::Status::NotReady;
     if (frame.worldGeneration != request.reference.worldGeneration || frame.skeletonGeneration != request.reference.skeletonGeneration ||
-        frame.providerGeneration != request.reference.providerGeneration || frame.weaponGenerationKey != request.weaponGenerationKey ||
+        frame.providerGeneration != request.reference.providerGeneration || frame.weapon.weaponGenerationKey != request.weaponGenerationKey ||
         frame.weaponFormId != request.weaponFormId) return api::Status::GenerationMismatch;
     auto* ref = RE::TESForm::GetFormByID<RE::TESObjectREFR>(request.reference.referenceFormId);
     if (!ref || ref->GetFormType() != RE::ENUM_FORM_ID::kREFR || ref->IsDeleted() || ref->IsDisabled()) return api::Status::TargetUnavailable;

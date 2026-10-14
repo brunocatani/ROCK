@@ -1,7 +1,6 @@
 #include "ProviderFrameThreadOwner.h"
 #include "LooseWeaponStateService.h"
 #include "NativeInteractionService.h"
-#include "providers/CommonMarshalling.h"
 #include "api/InterfaceNegotiation.h"
 #include "ProviderRuntimeServices.h"
 #include "physics-interaction/input/PhysicalReloadInput.h"
@@ -142,7 +141,7 @@ namespace rock::provider::runtime
     {
         std::uint64_t token{ 0 };
         std::uint64_t ownerToken{ 0 };
-        RockProviderFrameCallback callback{ nullptr };
+        api::core::FrameCallback callback{ nullptr };
         void* userData{ nullptr };
     };
 
@@ -153,7 +152,7 @@ namespace rock::provider::runtime
     std::array<CallbackSlot, 16> s_callbacks{};
 
     std::mutex s_snapshotMutex;
-    RockProviderFrameSnapshot s_lastSnapshot{};
+    Publication s_lastSnapshot{};
     bool s_hasSnapshot{ false };
     std::atomic<bool> s_generationStateAvailable{ false };
     std::atomic<std::uint32_t> s_currentWorldGeneration{ 0 };
@@ -197,32 +196,6 @@ namespace rock::provider::runtime
 
     constexpr std::uint64_t kRockIssuedOwnerTokenNamespace = 0xA000'0000'0000'0000ull;
     constexpr std::uint64_t kRockIssuedOwnerTokenSequenceMask = 0x0FFF'FFFF'FFFF'FFFFull;
-    constexpr std::uint32_t kImplementedConsumerCapabilitiesV1 =
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::FrameSnapshots) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::OffhandReservation) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::InteractionCommands) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::HandInputSuppression) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::WeaponPartInteraction) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::NativeAnimationAuthority) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::AnimationPhases) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::EquippedWeaponGripState) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::HandVisualAuthority) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::NativeAnimationRuntimeProvider) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::EquippedWeaponHandlingAuthority) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ProviderEvents) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::HandInteractionState) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::WeaponPartObservability) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::WeaponComposition) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::PoseReadback) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::SemanticHandContacts) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::PlayerColliderDescriptors) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ScopeSightState) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::InputObservability) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::TouchGrabTargets) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::WorldRaycasts) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::PlayerController) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::TargetDetails) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::PowerArmor);
     constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame) |
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::FromPlayerInventory);
@@ -291,7 +264,6 @@ namespace rock::provider::runtime
         bool revoked{ false };
         bool pendingRevoke{ false };
         std::uint64_t token{ 0 };
-        std::uint32_t grantedCapabilities{ 0 };
         std::uint32_t providerGeneration{ 0 };
         std::uint64_t worldRaycastFrameIndex{ 0 };
         std::uint32_t worldRaycastCount{ 0 };
@@ -365,7 +337,7 @@ namespace rock::provider::runtime
     {
         std::uint64_t token{ 0 };
         std::uint64_t ownerToken{ 0 };
-        RockProviderAnimationPhaseCallbackV1 callback{ nullptr };
+        api::animation::PhaseCallback callback{ nullptr };
         void* userData{ nullptr };
     };
 
@@ -432,16 +404,28 @@ namespace rock::provider::runtime
     std::array<WeaponPartTargetSlot, ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1> s_weaponPartTargets{};
     std::array<WeaponPartDriveSlot, ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> s_weaponPartDrives{};
 
-    api::Status validateRegisteredOwnerCapabilityLocked(
-        std::uint64_t ownerToken,
-        RockProviderConsumerCapabilityV1 capability);
+    api::Status validateRegisteredOwnerLocked(std::uint64_t ownerToken);
     [[nodiscard]] bool generationGuardsStale(
         std::uint32_t worldGeneration,
         std::uint32_t skeletonGeneration,
         std::uint32_t providerGeneration);
+    // An authority whose loss is reported to its owner, each through one
+    // family's event stream.
+    enum class LostAuthority : std::uint32_t
+    {
+        Owner,
+        HandInputSuppression,
+        WeaponPartTargets,
+        WeaponPartDrive,
+        NativeAnimation,
+        NativeAnimationRuntime,
+        HandVisual,
+        WeaponHandling,
+        HandReservation,
+    };
     void publishAuthorityLostEvent(
         std::uint64_t ownerToken,
-        RockProviderAuthorityKindV1 authorityKind,
+        LostAuthority authority,
         std::uint32_t reason);
 
 
@@ -491,8 +475,8 @@ namespace rock::provider::runtime
 #endif
 
     FrameCallbackInvocationResult invokeFrameCallbackSafely(
-        RockProviderFrameCallback callback,
-        const RockProviderFrameSnapshot* snapshot,
+        api::core::FrameCallback callback,
+        const Publication* snapshot,
         void* userData)
     {
         const auto converted = toCoreSnapshot(*snapshot);
@@ -517,7 +501,7 @@ namespace rock::provider::runtime
 
 
     bool invokeAnimationPhaseCallbackSafely(
-        RockProviderAnimationPhaseCallbackV1 callback,
+        api::animation::PhaseCallback callback,
         const RockProviderAnimationPhaseContextV1* context,
         void* userData)
     {
@@ -596,12 +580,6 @@ namespace rock::provider::runtime
             }
         }
         return nullptr;
-    }
-
-    bool consumerHasCapabilityLocked(std::uint64_t ownerToken, RockProviderConsumerCapabilityV1 capability)
-    {
-        const auto* slot = findConsumerSlotLocked(ownerToken);
-        return slot && hasConsumerCapabilityV1(slot->grantedCapabilities, capability);
     }
 
     // Transform is a provider or public API transform: rotate[9], translate[3], scale.
@@ -736,7 +714,7 @@ namespace rock::provider::runtime
             (void)clearHandVisualAuthoritySlotLocked(slot, true);
             publishAuthorityLostEvent(
                 ownerToken,
-                RockProviderAuthorityKindV1::HandVisual,
+                LostAuthority::HandVisual,
                 static_cast<std::uint32_t>(
                     generationChanged ?
                         ::rock::api::input::SuppressionInvalidationReason::GenerationChanged :
@@ -789,7 +767,7 @@ namespace rock::provider::runtime
                 s_equippedWeaponHandlingAuthority.expiresAfterFrame)) {
             publishAuthorityLostEvent(
                 s_equippedWeaponHandlingAuthority.ownerToken,
-                RockProviderAuthorityKindV1::EquippedWeaponHandling,
+                LostAuthority::WeaponHandling,
                 static_cast<std::uint32_t>(
                     generationChanged ?
                         ::rock::api::input::SuppressionInvalidationReason::GenerationChanged :
@@ -808,43 +786,95 @@ namespace rock::provider::runtime
         return s_frameClock.leaseBoundary();
     }
 
-    void publishProviderEvent(RockProviderEventV1 event)
+    // Runtime events carry the game frame and the current generations.
+    template <class Event>
+    [[nodiscard]] Event stampedEvent(const std::uint32_t kind, const std::uint64_t ownerToken = 0)
     {
-        event.size = sizeof(RockProviderEventV1);
-        event.version = ROCK_PROVIDER_API_VERSION;
-        if (event.frameIndex == 0) {
-            event.frameIndex = currentGameFrameIndex();
-        }
+        Event event{};
+        event.kind = kind;
+        event.ownerToken = ownerToken;
+        event.frameIndex = currentGameFrameIndex();
         if (s_generationStateAvailable.load(std::memory_order_acquire)) {
-            if (event.worldGeneration == 0) {
-                event.worldGeneration = s_currentWorldGeneration.load(
-                    std::memory_order_acquire);
-            }
-            if (event.skeletonGeneration == 0) {
-                event.skeletonGeneration = s_currentSkeletonGeneration.load(
-                    std::memory_order_acquire);
-            }
-            if (event.providerGeneration == 0) {
-                event.providerGeneration = s_currentProviderGeneration.load(
-                    std::memory_order_acquire);
-            }
+            event.worldGeneration = s_currentWorldGeneration.load(std::memory_order_acquire);
+            event.skeletonGeneration = s_currentSkeletonGeneration.load(std::memory_order_acquire);
+            event.providerGeneration = s_currentProviderGeneration.load(std::memory_order_acquire);
         }
-
-        events::publish(event);
+        return event;
     }
-
 
     void publishAuthorityLostEvent(
         const std::uint64_t ownerToken,
-        const RockProviderAuthorityKindV1 authorityKind,
+        const LostAuthority authority,
         const std::uint32_t reason)
     {
-        RockProviderEventV1 event{};
-        event.kind = RockProviderEventKindV1::AuthorityLost;
-        event.ownerToken = ownerToken;
-        event.result = reason;
-        event.data[0] = static_cast<std::uint32_t>(authorityKind);
-        publishProviderEvent(event);
+        // Animation authority codes: 1 native animation, 2 hand visual, 3 the
+        // native animation runtime. WeaponParts: 1 part targets, 2 part drives.
+        switch (authority) {
+        case LostAuthority::NativeAnimation:
+        case LostAuthority::HandVisual:
+        case LostAuthority::NativeAnimationRuntime: {
+            auto event = stampedEvent<api::animation::Event>(
+                static_cast<std::uint32_t>(api::animation::EventKind::AuthorityLost), ownerToken);
+            event.authority = authority == LostAuthority::NativeAnimation ? 1u :
+                authority == LostAuthority::HandVisual ? 2u : 3u;
+            event.reason = reason;
+            events::publish(event, ownerToken);
+            return;
+        }
+        case LostAuthority::HandInputSuppression: {
+            auto event = stampedEvent<api::input::Event>(
+                static_cast<std::uint32_t>(api::input::EventKind::AuthorityLost), ownerToken);
+            event.authority = 1;
+            event.reason = reason;
+            events::publish(event, ownerToken);
+            return;
+        }
+        case LostAuthority::WeaponPartTargets:
+        case LostAuthority::WeaponPartDrive: {
+            auto event = stampedEvent<api::weaponparts::Event>(
+                static_cast<std::uint32_t>(api::weaponparts::EventKind::AuthorityLost), ownerToken);
+            event.authority = authority == LostAuthority::WeaponPartTargets ? 1u : 2u;
+            event.reason = reason;
+            events::publish(event, ownerToken);
+            return;
+        }
+        case LostAuthority::WeaponHandling: {
+            auto event = stampedEvent<api::weapon::Event>(
+                static_cast<std::uint32_t>(api::weapon::EventKind::AuthorityLost), ownerToken);
+            event.authority = 1;
+            event.reason = reason;
+            events::publish(event, ownerToken);
+            return;
+        }
+        case LostAuthority::HandReservation: {
+            auto event = stampedEvent<api::grab::Event>(
+                static_cast<std::uint32_t>(api::grab::EventKind::ReservationLost), ownerToken);
+            event.failure = reason;
+            events::publish(event, ownerToken);
+            return;
+        }
+        case LostAuthority::Owner:
+        default: {
+            auto event = stampedEvent<api::core::Event>(
+                static_cast<std::uint32_t>(api::core::EventKind::OwnerRevoked), ownerToken);
+            event.reason = reason;
+            events::publish(event, ownerToken);
+            return;
+        }
+        }
+    }
+
+    void publishCommandCompletedEvent(const RockProviderInteractionCommandResultV1& result)
+    {
+        auto event = stampedEvent<api::grab::Event>(
+            static_cast<std::uint32_t>(api::grab::EventKind::CommandCompleted), result.ownerToken);
+        event.hand = result.hand;
+        event.subjectSequence = result.commandId;
+        event.commandState = static_cast<std::uint32_t>(result.state);
+        event.formId = result.targetFormId;
+        event.commandKind = static_cast<std::uint32_t>(result.kind);
+        event.failure = static_cast<std::uint32_t>(result.failure);
+        events::publish(event, result.ownerToken);
     }
 
     void publishOffhandReservationLocked(const OffhandReservationSlot& slot)
@@ -872,7 +902,7 @@ namespace rock::provider::runtime
         if (ownerToken != 0) {
             publishAuthorityLostEvent(
                 ownerToken,
-                RockProviderAuthorityKindV1::OffhandReservation,
+                LostAuthority::HandReservation,
                 static_cast<std::uint32_t>(reason));
         }
     }
@@ -918,7 +948,7 @@ namespace rock::provider::runtime
             s_hasNativeAnimationRuntimePublication = false;
             publishAuthorityLostEvent(
                 ownerToken,
-                RockProviderAuthorityKindV1::NativeAnimationRuntime,
+                LostAuthority::NativeAnimationRuntime,
                 static_cast<std::uint32_t>(
                     generationChanged ?
                         ::rock::api::input::SuppressionInvalidationReason::GenerationChanged :
@@ -944,7 +974,7 @@ namespace rock::provider::runtime
                     ::rock::api::input::SuppressionInvalidationReason::Expired;
                 publishAuthorityLostEvent(
                     slot.ownerToken,
-                    RockProviderAuthorityKindV1::HandInputSuppression,
+                    LostAuthority::HandInputSuppression,
                     static_cast<std::uint32_t>(reason));
                 slot.active = false;
                 slot.flags = 0;
@@ -1004,7 +1034,7 @@ namespace rock::provider::runtime
                     slot.expiresAtFrame)) {
                 publishAuthorityLostEvent(
                     slot.ownerToken,
-                    RockProviderAuthorityKindV1::NativeAnimation,
+                    LostAuthority::NativeAnimation,
                     static_cast<std::uint32_t>(
                         generationChanged ?
                             ::rock::api::input::SuppressionInvalidationReason::GenerationChanged :
@@ -1059,7 +1089,7 @@ namespace rock::provider::runtime
                     slot.expiresAfterFrame)) {
                 publishAuthorityLostEvent(
                     slot.ownerToken,
-                    RockProviderAuthorityKindV1::WeaponPartDrive,
+                    LostAuthority::WeaponPartDrive,
                     static_cast<std::uint32_t>(
                         ::rock::api::input::SuppressionInvalidationReason::Expired));
                 slot = {};
@@ -1259,26 +1289,12 @@ namespace rock::provider::runtime
         return target;
     }
 
-    api::Status validateRegisteredOwnerCapabilityLocked(
-        std::uint64_t ownerToken,
-        RockProviderConsumerCapabilityV1 capability)
+    api::Status validateRegisteredOwnerLocked(std::uint64_t ownerToken)
     {
         if (ownerToken == 0) {
             return api::Status::InvalidArgument;
         }
-
-        if (!findConsumerSlotLocked(ownerToken)) {
-            return api::Status::OwnerNotRegistered;
-        }
-        if (!consumerHasCapabilityLocked(ownerToken, capability)) {
-            return api::Status::PermissionDenied;
-        }
-        return api::Status::Ok;
-    }
-
-    api::Status validateInteractionCommandOwnerLocked(std::uint64_t ownerToken)
-    {
-        return validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::InteractionCommands);
+        return findConsumerSlotLocked(ownerToken) ? api::Status::Ok : api::Status::OwnerNotRegistered;
     }
 
     api::Status validateGenerationGuards(
@@ -1460,17 +1476,7 @@ namespace rock::provider::runtime
                 slot.result = merged;
                 if (!wasTerminal &&
                     interaction_command_policy::isTerminal(merged.state)) {
-                    RockProviderEventV1 event{};
-                    event.kind =
-                        RockProviderEventKindV1::InteractionCommandTerminal;
-                    event.ownerToken = merged.ownerToken;
-                    event.hand = merged.hand;
-                    event.subjectSequence = merged.commandId;
-                    event.result = static_cast<std::uint32_t>(merged.state);
-                    event.data[0] = static_cast<std::uint32_t>(merged.kind);
-                    event.data[1] = static_cast<std::uint32_t>(merged.failure);
-                    event.formId = merged.targetFormId;
-                    publishProviderEvent(event);
+                    publishCommandCompletedEvent(merged);
                 }
                 return;
             }
@@ -1509,16 +1515,7 @@ namespace rock::provider::runtime
                 .result = storedResult,
             };
             if (interaction_command_policy::isTerminal(storedResult.state)) {
-                RockProviderEventV1 event{};
-                event.kind = RockProviderEventKindV1::InteractionCommandTerminal;
-                event.ownerToken = storedResult.ownerToken;
-                event.hand = storedResult.hand;
-                event.subjectSequence = storedResult.commandId;
-                event.result = static_cast<std::uint32_t>(storedResult.state);
-                event.data[0] = static_cast<std::uint32_t>(storedResult.kind);
-                event.data[1] = static_cast<std::uint32_t>(storedResult.failure);
-                event.formId = storedResult.targetFormId;
-                publishProviderEvent(event);
+                publishCommandCompletedEvent(storedResult);
             }
             s_nextInteractionResultSlot = (index + 1) % s_interactionResults.size();
             return;
@@ -1631,7 +1628,7 @@ namespace rock::provider::runtime
         }
         publishAuthorityLostEvent(
             ownerToken,
-            RockProviderAuthorityKindV1::Unknown,
+            LostAuthority::Owner,
             static_cast<std::uint32_t>(
                 ::rock::api::input::SuppressionInvalidationReason::CallbackFault));
     }
@@ -1642,12 +1639,10 @@ namespace rock::provider::runtime
 
 
 
-    api::Status validateReadCapability(
-        const std::uint64_t ownerToken,
-        const RockProviderConsumerCapabilityV1 capability)
+    api::Status validateRegisteredOwner(const std::uint64_t ownerToken)
     {
         std::scoped_lock lock(s_consumerMutex);
-        return validateRegisteredOwnerCapabilityLocked(ownerToken, capability);
+        return validateRegisteredOwnerLocked(ownerToken);
     }
 
 
@@ -1668,9 +1663,8 @@ namespace rock::provider::runtime
 
 
     template <class Output, class Query>
-    api::Status queryPhysicsInteractionValueV1(
+    api::Status queryPhysicsInteractionValue(
         const std::uint64_t ownerToken,
-        const RockProviderConsumerCapabilityV1 capability,
         Output* output,
         Query&& query,
         const bool requireAnimationThread = false)
@@ -1682,7 +1676,7 @@ namespace rock::provider::runtime
         if (output->size < sizeof(Output)) {
             return api::Status::InvalidSize;
         }
-        const auto ownerResult = validateReadCapability(ownerToken, capability);
+        const auto ownerResult = validateRegisteredOwner(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -1740,7 +1734,7 @@ namespace rock::provider::runtime
         }
 
         std::scoped_lock lock(s_consumerMutex, s_interactionCommandMutex);
-        const auto ownerResult = validateInteractionCommandOwnerLocked(command.ownerToken);
+        const auto ownerResult = validateRegisteredOwnerLocked(command.ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -1822,12 +1816,12 @@ namespace rock::provider::runtime
 
 
     api::Status validateTargetQuery(std::uint64_t ownerToken,
-        const RockProviderReferenceQueryV1* query, RockProviderConsumerCapabilityV1 capability)
+        const RockProviderReferenceQueryV1* query)
     {
         if (!query || !ownerToken || !query->referenceFormId || query->furnitureMarkerIndex < 0) return api::Status::InvalidArgument;
         if (query->size != sizeof(*query)) return api::Status::InvalidSize;
         if (query->version != ROCK_PROVIDER_API_VERSION) return api::Status::UnsupportedVersion;
-        const auto permission = validateReadCapability(ownerToken, capability);
+        const auto permission = validateRegisteredOwner(ownerToken);
         if (permission != api::Status::Ok) return permission;
         if (!onAnimationOwnerThread()) return api::Status::WrongThread;
         const bool ready = apiIsProviderReady();
@@ -1842,13 +1836,13 @@ namespace rock::provider::runtime
             if (!reported || frame < lastReportedFrame || frame - lastReportedFrame >= 600) {
                 reported = true;
                 lastReportedFrame = frame;
-                RockProviderFrameSnapshot published{};
+                Publication published{};
                 {
                     std::scoped_lock lock(s_snapshotMutex);
                     published = s_lastSnapshot;
                 }
-                logger::warn("ROCK reference query rejected owner={:016X} ref={:08X} capability={} result={} stage={} frame={} requested={}/{}/{} authorityAvailable={} authority={}/{}/{} published={}/{}/{} publishedFrame={}",
-                    ownerToken, query->referenceFormId, static_cast<unsigned>(capability), static_cast<unsigned>(result),
+                logger::warn("ROCK reference query rejected owner={:016X} ref={:08X} result={} stage={} frame={} requested={}/{}/{} authorityAvailable={} authority={}/{}/{} published={}/{}/{} publishedFrame={}",
+                    ownerToken, query->referenceFormId, static_cast<unsigned>(result),
                     ready ? "generation-guards" : "provider-readiness", frame,
                     query->worldGeneration, query->skeletonGeneration, query->providerGeneration,
                     s_generationStateAvailable.load(std::memory_order_acquire),
@@ -1931,9 +1925,7 @@ namespace rock::provider::runtime
 
         const auto frameIndex = currentProviderFrameIndex();
         std::scoped_lock lock(s_consumerMutex, s_offhandReservationMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::OffhandReservation);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -2106,8 +2098,8 @@ namespace rock::provider::runtime
     }
 
     [[nodiscard]] bool sameLifecyclePayload(
-        const RockProviderFrameSnapshot& left,
-        const RockProviderFrameSnapshot& right) noexcept
+        const Publication& left,
+        const Publication& right) noexcept
     {
         return left.frikSkeletonReady == right.frikSkeletonReady &&
                left.menuBlocking == right.menuBlocking &&
@@ -2122,16 +2114,16 @@ namespace rock::provider::runtime
     }
 
     [[nodiscard]] bool sameWeaponPayload(
-        const RockProviderFrameSnapshot& left,
-        const RockProviderFrameSnapshot& right) noexcept
+        const Publication& left,
+        const Publication& right) noexcept
     {
         if (left.weaponFormId != right.weaponFormId ||
-            left.weaponGenerationKey != right.weaponGenerationKey ||
-            left.weaponBodyCount != right.weaponBodyCount) {
+            left.weapon.weaponGenerationKey != right.weapon.weaponGenerationKey ||
+            left.weapon.bodyCount != right.weapon.bodyCount) {
             return false;
         }
-        for (std::uint32_t index = 0; index < left.weaponBodyCount; ++index) {
-            if (left.weaponBodyIds[index] != right.weaponBodyIds[index]) {
+        for (std::uint32_t index = 0; index < left.weapon.bodyCount; ++index) {
+            if (left.weapon.bodyIds[index] != right.weapon.bodyIds[index]) {
                 return false;
             }
         }
@@ -2203,7 +2195,7 @@ namespace rock::provider
     {
         drainDeferredRevocations();
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::ProviderFrameDispatch);
-        RockProviderFrameSnapshot snapshot{};
+        Publication snapshot{};
         snapshot.frameIndex = s_frameClock.publishFrame();
         pi.fillProviderFrameSnapshot(snapshot);
         pi.refreshProviderWeaponSources();
@@ -2248,7 +2240,7 @@ namespace rock::provider
             std::scoped_lock lock(s_offhandReservationMutex);
             pruneExpiredOffhandReservationLocked(snapshot.frameIndex);
         }
-        snapshot.offhandReservation = currentHandReservation(snapshot.offhandHand);
+        snapshot.handReservation = currentHandReservation(snapshot.offhandHand);
 
         std::array<RockProviderWeaponPartGripStateV1, 2> partGripStates{};
         pi.fillProviderWeaponPartGripStates(partGripStates);
@@ -2361,55 +2353,20 @@ namespace rock::provider
             const bool handRolesChanged = !hadPrevious ||
                 snapshot.primaryHand != previousSnapshot.primaryHand ||
                 snapshot.offhandHand != previousSnapshot.offhandHand ||
-                snapshot.offhandReservation !=
-                    previousSnapshot.offhandReservation;
-
-            if (lifecycleChanged) {
-                snapshot.stateChangeMask |= static_cast<std::uint32_t>(
-                    RockProviderFrameStateChangeFlagV1::Lifecycle);
-            }
-            if (handChanged[0]) {
-                snapshot.stateChangeMask |= static_cast<std::uint32_t>(
-                    RockProviderFrameStateChangeFlagV1::RightHand);
-            }
-            if (handChanged[1]) {
-                snapshot.stateChangeMask |= static_cast<std::uint32_t>(
-                    RockProviderFrameStateChangeFlagV1::LeftHand);
-            }
-            if (weaponChanged) {
-                snapshot.stateChangeMask |= static_cast<std::uint32_t>(
-                    RockProviderFrameStateChangeFlagV1::Weapon);
-            }
-            if (transitionChanged) {
-                snapshot.stateChangeMask |= static_cast<std::uint32_t>(
-                    RockProviderFrameStateChangeFlagV1::EquippedTransition);
-            }
-            if (collisionChanged) {
-                snapshot.stateChangeMask |= static_cast<std::uint32_t>(
-                    RockProviderFrameStateChangeFlagV1::Collision);
-            }
-            if (handRolesChanged) {
-                snapshot.stateChangeMask |= static_cast<std::uint32_t>(
-                    RockProviderFrameStateChangeFlagV1::HandRoles);
-            }
+                snapshot.handReservation !=
+                    previousSnapshot.handReservation;
+            const bool stateChanged = lifecycleChanged || handChanged[0] || handChanged[1] ||
+                weaponChanged || transitionChanged || collisionChanged || handRolesChanged;
             snapshot.stateSequence = !hadPrevious ?
                 1 :
-                (snapshot.stateChangeMask != 0 ?
+                (stateChanged ?
                         advanceSequence(previousSnapshot.stateSequence) :
                         previousSnapshot.stateSequence);
-            snapshot.enrichmentFlags |= static_cast<std::uint32_t>(
-                RockProviderFrameEnrichmentFlagV1::StateSequenceValid);
-            snapshot.equippedWeaponTransitionSequence =
-                equippedWeaponState.transitionSequence;
 
             equippedTerminalChanged = hadPrevious &&
                 equippedWeaponState.terminalSequence != 0 &&
                 equippedWeaponState.terminalSequence !=
                     previousEquipped.terminalSequence;
-            snapshot.rightHandState |= provider_state_policy::handStateFlags(handInteractionStates[0],
-                PhysicsInteraction::s_rightHandDisabled.load(std::memory_order_acquire));
-            snapshot.leftHandState |= provider_state_policy::handStateFlags(handInteractionStates[1],
-                PhysicsInteraction::s_leftHandDisabled.load(std::memory_order_acquire));
             s_lastSnapshot = snapshot;
             s_hasSnapshot = true;
             s_lastPartGripStates = publicPartGripStates;
@@ -2423,15 +2380,12 @@ namespace rock::provider
         support_trigger_input::beginFrame(snapshot.frameIndex);
 
         if (hadPrevious && lifecycleChanged) {
-            RockProviderEventV1 event{};
-            event.kind = RockProviderEventKindV1::LifecycleChanged;
-            event.result = static_cast<std::uint32_t>(
-                snapshot.lastLifecycleReason);
-            event.subjectSequence = snapshot.stateSequence;
-            event.data[0] = snapshot.lifecycleFlags;
-            event.data[1] = snapshot.providerReady;
-            event.data[2] = snapshot.stateChangeMask;
-            publishProviderEvent(event);
+            auto event = stampedEvent<api::core::Event>(
+                static_cast<std::uint32_t>(api::core::EventKind::Lifecycle));
+            event.reason = static_cast<std::uint32_t>(snapshot.lastLifecycleReason);
+            event.lifecycleFlags = snapshot.lifecycleFlags;
+            event.providerReady = snapshot.providerReady;
+            events::publish(event);
         }
         if (hadPrevious) {
             for (std::size_t index = 0;
@@ -2441,35 +2395,32 @@ namespace rock::provider
                     continue;
                 }
                 const auto& state = handInteractionStates[index];
-                RockProviderEventV1 event{};
-                event.kind = RockProviderEventKindV1::GrabStateChanged;
+                auto event = stampedEvent<api::grab::Event>(
+                    static_cast<std::uint32_t>(api::grab::EventKind::HandStateChanged));
                 event.hand = state.hand;
                 event.formId = state.targetFormId;
-                event.result = static_cast<std::uint32_t>(state.phase);
+                event.phase = static_cast<std::uint32_t>(state.phase);
                 event.subjectSequence = state.stateSequence;
-                event.data[0] = static_cast<std::uint32_t>(
-                    state.targetKind);
-                event.data[1] = state.primaryBodyId;
-                event.data[2] = state.flags;
-                publishProviderEvent(event);
+                event.primaryBodyId = state.primaryBodyId;
+                event.flags = state.flags;
+                events::publish(event);
             }
         }
         if (equippedTerminalChanged) {
-            RockProviderEventV1 event{};
-            event.kind =
-                RockProviderEventKindV1::EquippedWeaponTransitionTerminal;
+            // Slot 0: ROCK keeps one weapon's transition state.
+            auto event = stampedEvent<api::weapon::Event>(
+                static_cast<std::uint32_t>(api::weapon::EventKind::TransitionCompleted));
             event.weaponGenerationKey =
                 equippedWeaponState.terminalWeaponFormId == equippedWeaponState.weaponFormId ?
                     equippedWeaponState.weaponGenerationKey : 0;
             event.formId = equippedWeaponState.terminalWeaponFormId;
-            event.result = static_cast<std::uint32_t>(
+            event.terminalResult = static_cast<std::uint32_t>(
                 equippedWeaponState.terminalResult);
-            event.subjectSequence =
-                equippedWeaponState.terminalSequence;
-            event.data[0] = static_cast<std::uint32_t>(
+            event.transitionSequence = equippedWeaponState.terminalSequence;
+            event.source = static_cast<std::uint32_t>(
                 equippedWeaponState.terminalSource);
-            event.data[1] = equippedWeaponState.flags;
-            publishProviderEvent(event);
+            event.flags = equippedWeaponState.flags;
+            events::publish(event);
         }
 
         for (std::size_t index = 0; index < s_callbacks.size(); ++index) {
@@ -2672,11 +2623,9 @@ namespace rock::provider
                 static_cast<std::uint32_t>(api::core::LifecycleFlag::GeneratedBodiesValid) |
                 static_cast<std::uint32_t>(api::core::LifecycleFlag::PhysicsWriteAllowed) |
                 static_cast<std::uint32_t>(api::core::LifecycleFlag::VisualWriteAllowed));
-            s_lastSnapshot.enrichmentFlags &= ~(
-                static_cast<std::uint32_t>(RockProviderFrameEnrichmentFlagV1::RightHandTransformValid) |
-                static_cast<std::uint32_t>(RockProviderFrameEnrichmentFlagV1::LeftHandTransformValid));
-            s_lastSnapshot.rightHandState = 0;
-            s_lastSnapshot.leftHandState = 0;
+            s_lastSnapshot.flags &= ~(
+                static_cast<std::uint32_t>(::rock::provider::PublicationFlag::RightHandTransformValid) |
+                static_cast<std::uint32_t>(::rock::provider::PublicationFlag::LeftHandTransformValid));
             for (auto& state : s_lastHandInteractionStates) state.flags = 0;
             s_lastPartGripStates = {};
             s_lastEquippedWeaponState.flags = 0;
@@ -2811,19 +2760,19 @@ namespace rock::provider
              ++index) {
             publishAuthorityLostEvent(
                 suppressionOwners[index],
-                RockProviderAuthorityKindV1::HandInputSuppression,
+                LostAuthority::HandInputSuppression,
                 providerLost);
         }
         for (std::uint32_t index = 0; index < targetOwnerCount; ++index) {
             publishAuthorityLostEvent(
                 targetOwners[index],
-                RockProviderAuthorityKindV1::WeaponPartTargets,
+                LostAuthority::WeaponPartTargets,
                 providerLost);
         }
         for (std::uint32_t index = 0; index < driveOwnerCount; ++index) {
             publishAuthorityLostEvent(
                 driveOwners[index],
-                RockProviderAuthorityKindV1::WeaponPartDrive,
+                LostAuthority::WeaponPartDrive,
                 providerLost);
         }
         for (std::uint32_t index = 0;
@@ -2831,7 +2780,7 @@ namespace rock::provider
              ++index) {
             publishAuthorityLostEvent(
                 nativeAnimationOwners[index],
-                RockProviderAuthorityKindV1::NativeAnimation,
+                LostAuthority::NativeAnimation,
                 providerLost);
         }
         for (std::uint32_t index = 0;
@@ -2839,19 +2788,19 @@ namespace rock::provider
              ++index) {
             publishAuthorityLostEvent(
                 handVisualOwners[index],
-                RockProviderAuthorityKindV1::HandVisual,
+                LostAuthority::HandVisual,
                 providerLost);
         }
         if (nativeRuntimeOwner != 0) {
             publishAuthorityLostEvent(
                 nativeRuntimeOwner,
-                RockProviderAuthorityKindV1::NativeAnimationRuntime,
+                LostAuthority::NativeAnimationRuntime,
                 providerLost);
         }
         if (equippedHandlingOwner != 0) {
             publishAuthorityLostEvent(
                 equippedHandlingOwner,
-                RockProviderAuthorityKindV1::EquippedWeaponHandling,
+                LostAuthority::WeaponHandling,
                 providerLost);
         }
         s_generationStateAvailable.store(false, std::memory_order_release);
@@ -3259,8 +3208,7 @@ namespace rock::provider::runtime {
     }
     rock::api::Sample sample() {
         std::scoped_lock lock(s_snapshotMutex);
-        const auto& s=s_lastSnapshot;
-        return {s.frameIndex,s.stateSequence,s.worldGeneration,s.skeletonGeneration,s.providerGeneration,s.collisionGeneration};
+        return s_lastSnapshot.sample();
     }
     void revoke(std::uint64_t owner) { clearOwnerStateAfterCallbackFault(owner); }
     bool onOwnerThread() noexcept { return onAnimationOwnerThread(); }

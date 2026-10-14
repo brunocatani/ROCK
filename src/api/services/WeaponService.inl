@@ -64,14 +64,6 @@
         if (!onAnimationOwnerThread()) {
             return false;
         }
-        {
-            std::scoped_lock lock(s_consumerMutex);
-            if (!consumerHasCapabilityLocked(
-                    ownerToken,
-                    RockProviderConsumerCapabilityV1::EquippedWeaponGripState)) {
-                return false;
-            }
-        }
 
         const auto instanceAccess = s_physicsInteraction.borrow();
         auto* pi = instanceAccess.get();
@@ -136,9 +128,7 @@
         std::scoped_lock lock(
             s_consumerMutex,
             s_equippedWeaponHandlingAuthorityMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::EquippedWeaponHandlingAuthority);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -175,9 +165,7 @@
         std::scoped_lock lock(
             s_consumerMutex,
             s_equippedWeaponHandlingAuthorityMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::EquippedWeaponHandlingAuthority);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -245,9 +233,7 @@
         if (outState->size < sizeof(RockProviderEquippedWeaponStateV1)) {
             return api::Status::InvalidSize;
         }
-        const auto ownerResult = validateReadCapability(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::FrameSnapshots);
+        const auto ownerResult = validateRegisteredOwner(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -263,9 +249,7 @@
         const std::uint64_t ownerToken,
         RockProviderScopeSightStateV1* outState)
     {
-        return queryPhysicsInteractionValueV1(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::ScopeSightState,
+        return queryPhysicsInteractionValue(ownerToken,
             outState,
             [](PhysicsInteraction& pi, RockProviderScopeSightStateV1& state) {
                 return pi.queryProviderScopeSightStateV1(state);
@@ -277,9 +261,7 @@
         const std::uint64_t ownerToken,
         RockProviderWeaponCompositionStateV1* outState)
     {
-        return queryPhysicsInteractionValueV1(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::WeaponComposition,
+        return queryPhysicsInteractionValue(ownerToken,
             outState,
             [](PhysicsInteraction& pi, RockProviderWeaponCompositionStateV1& state) {
                 return pi.queryProviderWeaponCompositionStateV1(state);
@@ -297,9 +279,7 @@
             (maxEntries != 0 && !outEntries)) {
             return api::Status::InvalidArgument;
         }
-        const auto ownerResult = validateReadCapability(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::WeaponComposition);
+        const auto ownerResult = validateRegisteredOwner(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -318,9 +298,7 @@
         const std::uint64_t ownerToken,
         RockProviderAuthoredGripPoseV1* outPose)
     {
-        return queryPhysicsInteractionValueV1(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::PoseReadback,
+        return queryPhysicsInteractionValue(ownerToken,
             outPose,
             [](PhysicsInteraction& pi, RockProviderAuthoredGripPoseV1& pose) {
                 return pi.queryProviderSelectedAuthoredGripPoseV1(pose);

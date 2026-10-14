@@ -219,7 +219,7 @@ namespace rock
         std::uint64_t providerWeaponSourceKeyForBody(std::uint64_t generation, std::uint32_t body) const;
         api::Status copyProviderWeaponSources(std::uint64_t generation,std::uint32_t offset, provider::WeaponSourceRecord*, std::uint32_t capacity, std::uint32_t& copied, std::uint32_t& total) const;
         std::uintptr_t resolveProviderWeaponSourceName(std::uint64_t generation, const char* name) const;
-        void fillProviderFrameSnapshot(::rock::provider::RockProviderFrameSnapshot& outSnapshot) const;
+        void fillProviderFrameSnapshot(::rock::provider::Publication& outSnapshot) const;
         bool isProviderWeaponBodyCurrentV1(
             std::uint64_t weaponGenerationKey,
             std::uint32_t bodyId) const;
@@ -284,7 +284,7 @@ namespace rock
         bool queryProviderPresentedHandPose(
             ::rock::api::Hand hand,
             ::rock::api::hands::PresentedHandPose& outPose,
-            ::rock::provider::RockProviderFrameSnapshot* outMetadata = nullptr) const;
+            ::rock::provider::Publication* outMetadata = nullptr) const;
         std::uint32_t copyProviderSemanticHandContactsV1(
             api::Hand hand,
             std::uint32_t maxFramesSinceContact,
@@ -919,7 +919,7 @@ namespace rock
             std::uint32_t resultCount{ 0 };
             SkeletonBoneNameIndex presentedPoseNames{};
             std::array<::rock::api::hands::PresentedHandPose, 2> presentedPoses{};
-            ::rock::provider::RockProviderFrameSnapshot presentedMetadata{};
+            ::rock::provider::Publication presentedMetadata{};
         };
 
         // State owned by the HandCollisionSuppression module: per-hand

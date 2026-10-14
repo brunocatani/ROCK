@@ -95,7 +95,7 @@
         };
 
         std::scoped_lock lock(s_consumerMutex, s_interactionCommandMutex);
-        const auto ownerResult = validateInteractionCommandOwnerLocked(ownerToken);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -209,9 +209,7 @@
         if (outState->size < sizeof(RockProviderHandInteractionStateV1)) {
             return api::Status::InvalidSize;
         }
-        const auto ownerResult = validateReadCapability(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::HandInteractionState);
+        const auto ownerResult = validateRegisteredOwner(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -232,7 +230,7 @@
             return api::Status::InvalidArgument;
         }
         std::scoped_lock lock(s_consumerMutex, s_interactionCommandMutex);
-        const auto ownerResult = validateInteractionCommandOwnerLocked(ownerToken);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -281,9 +279,7 @@
             return api::Status::InvalidArgument;
         }
         std::scoped_lock lock(s_consumerMutex, s_offhandReservationMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::OffhandReservation);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -310,9 +306,7 @@
         }
         const auto frameIndex = currentProviderFrameIndex();
         std::scoped_lock lock(s_consumerMutex, s_offhandReservationMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
-            ownerToken,
-            RockProviderConsumerCapabilityV1::OffhandReservation);
+        const auto ownerResult = validateRegisteredOwnerLocked(ownerToken);
         if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
@@ -347,7 +341,7 @@
         if (!out || (hand != api::Hand::Left && hand != api::Hand::Right)) return api::Status::InvalidArgument;
         if (out->size != sizeof(*out)) return api::Status::InvalidSize;
         if (out->version != ROCK_PROVIDER_API_VERSION) return api::Status::UnsupportedVersion;
-        const auto permission = validateReadCapability(ownerToken, RockProviderConsumerCapabilityV1::TargetDetails);
+        const auto permission = validateRegisteredOwner(ownerToken);
         if (permission != api::Status::Ok) return permission;
         if (!onAnimationOwnerThread()) return api::Status::WrongThread;
         RockProviderHandInteractionStateV1 handState{};
@@ -375,7 +369,7 @@
             !rock::reference_interaction::pointName(request->point) || !request->target.referenceFormId ||
             !request->target.worldGeneration || !request->target.skeletonGeneration || !request->target.providerGeneration ||
             !std::isfinite(request->maxDistanceGame) || request->maxDistanceGame < 0 || request->maxDistanceGame > 32) return api::Status::InvalidArgument;
-        const auto permission = validateReadCapability(ownerToken, RockProviderConsumerCapabilityV1::PowerArmor);
+        const auto permission = validateRegisteredOwner(ownerToken);
         if (permission != api::Status::Ok) return permission;
         QueuedInteractionCommandV1 command{};
         command.kind = api::grab::InteractionCommandKind::ForceGrab;

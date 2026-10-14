@@ -7,7 +7,7 @@
         if (!out) return api::Status::InvalidArgument;
         if (out->size != sizeof(*out)) return api::Status::InvalidSize;
         if (out->version != ROCK_PROVIDER_API_VERSION) return api::Status::UnsupportedVersion;
-        const auto valid = validateTargetQuery(ownerToken, query, RockProviderConsumerCapabilityV1::TargetDetails);
+        const auto valid = validateTargetQuery(ownerToken, query);
         if (valid != api::Status::Ok) return valid;
         if (!rock::reference_interaction::describe(rock::reference_interaction::resolveQuery(*query), *out, query->furnitureMarkerIndex)) return api::Status::TargetUnavailable;
         out->frameIndex = currentGameFrameIndex();
@@ -22,7 +22,7 @@
         if (!out) return api::Status::InvalidArgument;
         if (out->size != sizeof(*out)) return api::Status::InvalidSize;
         if (out->version != ROCK_PROVIDER_API_VERSION) return api::Status::UnsupportedVersion;
-        const auto valid = validateTargetQuery(ownerToken, query, RockProviderConsumerCapabilityV1::PowerArmor);
+        const auto valid = validateTargetQuery(ownerToken, query);
         if (valid != api::Status::Ok) return valid;
         if (!rock::reference_interaction::describePowerArmor(rock::reference_interaction::resolveQuery(*query), *out, query->furnitureMarkerIndex)) return api::Status::TargetUnavailable;
         out->touchedReference.frameIndex = out->frameReference.frameIndex = currentGameFrameIndex();
