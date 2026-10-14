@@ -87,6 +87,12 @@ namespace rock
             // Preserve hand continuity without attaching a visual model or
             // hiding the native weapon (bridge-off latency tests).
             bool handPoseOnly = false;
+            // worldModel is another equipped first-person model (a promoted
+            // second weapon), not a loose 3D. Its root is not registered to
+            // the native Weapon node, so it neither follows the left carry
+            // nor the equipped solve: it stays glued to the hand at its
+            // captured pose until the native handoff.
+            bool equippedModelSource = false;
         };
 
         struct UpdateInput
@@ -235,6 +241,7 @@ namespace rock
         bool _isLeftHand = false;
         bool _modelPresented = false;
         bool _handPoseOnly = false;
+        bool _equippedModelSource = false;
         bool _culledNativeInstanceWasVisible = false;
         bool _handPoseHandoffActive = false;
         bool _handPoseBlockEngaged = false;

@@ -348,9 +348,13 @@ namespace rock::native_secondary_presentation
                 RE::NiTransform wand{};
                 if (!worldRoot || !frik_hand_world_authority::tryGetHandlingWandWorld(in.left, wand))
                     return endIncoming("hand-unavailable");
-                // ActivateRef already orphaned it; never take a live scene node.
+                // Until ActivateRef's deferred removal orphans it, the loose
+                // reference still renders it; never take a live scene node.
+                if (!in.parent && model->parent) {
+                    ++in.frames;
+                    return;
+                }
                 if (!in.parent) {
-                    if (model->parent) return endIncoming("model-still-parented");
                     model->name = RE::BSFixedString("ROCK_IncomingSecondBridge");
                     equipped_weapon_visual_state::setLocallyVisible(model, true);
                     worldRoot->AttachChild(model, true);

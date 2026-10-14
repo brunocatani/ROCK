@@ -46,6 +46,8 @@ namespace rock
         {
             const char* event = nullptr;
             std::array<SeamHand, 2> hands{}; // right, left
+            // The pre-transition weapon-in-hand pose, per hand.
+            std::array<SeamHand, 2> baseline{};
             std::uint32_t framesLeft = 0, frame = 0;
             float elapsedMs = 0.0f;
         };
@@ -97,6 +99,7 @@ namespace rock
             // A transition inside an open window keeps its baseline.
             if (!s_seam.framesLeft) {
                 s_seam.hands = observeSeamHands(_equipped.transition.bridgeForTrace(), _twoHandedGrip.isFiringHandLeft());
+                s_seam.baseline = s_seam.hands;
                 s_seam.frame = 0;
                 s_seam.elapsedMs = 0.0f;
             }
@@ -119,6 +122,20 @@ namespace rock
             const auto hands = observeSeamHands(_equipped.transition.bridgeForTrace(), _twoHandedGrip.isFiringHandLeft());
             std::array<float, 2> weaponMove{ -1.0f, -1.0f }, weaponTurn{ -1.0f, -1.0f }, handMove{ -1.0f, -1.0f }, handTurn{ -1.0f, -1.0f };
             std::array<bool, 2> switched{};
+            // How far the visible weapon sits, in its hand, from where the
+            // weapon in that hand sat before the transition (-1: no pair).
+            std::array<float, 2> inHandMove{ -1.0f, -1.0f }, inHandTurn{ -1.0f, -1.0f };
+            for (std::size_t h = 0; h < hands.size(); ++h) {
+                const auto& base = s_seam.baseline[h];
+                if (base.weapon && base.handValid && hands[h].weapon && hands[h].handValid) {
+                    const auto before = transform_math::composeTransforms(
+                        weapon_visual_authority_math::invertSceneTransform(base.handWorld), base.weaponWorld);
+                    const auto now = transform_math::composeTransforms(
+                        weapon_visual_authority_math::invertSceneTransform(hands[h].handWorld), hands[h].weaponWorld);
+                    inHandMove[h] = dynamic_weapon_collision_policy::translationDeltaGameUnits(before, now);
+                    inHandTurn[h] = dynamic_weapon_collision_policy::rotationDeltaDegrees(before, now);
+                }
+            }
             for (std::size_t h = 0; h < hands.size(); ++h) {
                 const auto& previous = s_seam.hands[h];
                 const auto& now = hands[h];
@@ -133,11 +150,13 @@ namespace rock
                 }
             }
             ROCK_LOG_INFO(Weapon,
-                "SEAM frame={} event={} ms={:.1f} R[{} n={} switch={} weapon={:.2f}gu/{:.2f}deg hand={:.2f}gu/{:.2f}deg] "
-                "L[{} n={} switch={} weapon={:.2f}gu/{:.2f}deg hand={:.2f}gu/{:.2f}deg] nativeState={}",
+                "SEAM frame={} event={} ms={:.1f} R[{} n={} switch={} weapon={:.2f}gu/{:.2f}deg hand={:.2f}gu/{:.2f}deg inHandVsBefore={:.2f}gu/{:.2f}deg] "
+                "L[{} n={} switch={} weapon={:.2f}gu/{:.2f}deg hand={:.2f}gu/{:.2f}deg inHandVsBefore={:.2f}gu/{:.2f}deg] nativeState={}",
                 s_seam.frame, s_seam.event ? s_seam.event : "?", s_seam.elapsedMs,
                 seamSourceName(hands[0].source), hands[0].visibleCount, switched[0], weaponMove[0], weaponTurn[0], handMove[0], handTurn[0],
+                inHandMove[0], inHandTurn[0],
                 seamSourceName(hands[1].source), hands[1].visibleCount, switched[1], weaponMove[1], weaponTurn[1], handMove[1], handTurn[1],
+                inHandMove[1], inHandTurn[1],
                 f4vr::getNativeWeaponState(f4vr::getPlayer()));
             s_seam.hands = hands;
         } catch (...) {

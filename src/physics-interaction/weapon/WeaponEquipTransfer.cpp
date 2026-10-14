@@ -1,5 +1,6 @@
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
+#include "physics-interaction/weapon/NativeEquippedModelLifetime.h"
 #include "physics-interaction/native/TriggerEquipReadinessTrace.h"
 #include "physics-interaction/weapon/EquipPickupScope.h"
 #include "physics-interaction/weapon/NativeInventoryHandSlots.h"
@@ -21,6 +22,7 @@
 #include <REL/Relocation.h>
 
 #include <array>
+#include <optional>
 #include <utility>
 
 namespace rock::weapon_equip_transfer
@@ -812,7 +814,12 @@ namespace rock::weapon_equip_transfer
             result.reason = DropReason::PreviousWeaponRestoreResetUnavailable;
             return result;
         }
-        result.handle = player->RemoveItem(removeData);
+        {
+            // The other index's weapon stays; keep it rendered through removal.
+            std::optional<native_equipped_model_lifetime::SurvivorVisibleScope> survivor;
+            if (input.index <= 1 && readEquippedWeaponSnapshot(1 - input.index).weapon) survivor.emplace();
+            result.handle = player->RemoveItem(removeData);
+        }
         const auto equippedAfterDrop = readEquippedWeaponSnapshot(input.index);
         bool duplicateUnequipAccepted = false;
         if (result.handle && equippedAfterDrop.weapon == equipped.weapon) {

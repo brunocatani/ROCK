@@ -86,6 +86,10 @@ namespace rock::native_secondary_actions
             std::uint64_t frame{};
             DWORD thread{};
             bool retiring{},failed{},ready{},reload{},reloading{};
+            // The private graph's equip draw, run at the primary's draw
+            // acceleration until weaponDraw admits attacks.
+            bool drawing{};
+            float drawSeconds{};
             native_secondary_trigger::Intent trigger;
             std::uint32_t actions{},events{},shots{};
             std::uint32_t inputMask{UINT32_MAX},inputTraces{};
@@ -117,6 +121,11 @@ namespace rock::native_secondary_actions
             ++window.suppressed;
             return false;
         }
+        // The primary's draw clips run at this multiplier
+        // (WeaponTransitionAnimationAcceleration).
+        constexpr float kDrawAcceleration=100.0f;
+        // Backstop only, logged: a graph without weaponDraw stops accelerating.
+        constexpr float kDrawBackstopSeconds=1.0f;
         State& state()
         {
             // No engine calls during DLL static destruction. Native I/O may
@@ -770,6 +779,9 @@ namespace rock::native_secondary_actions
         {
             Graph::Events events;
             const auto count=s.graph->takeEvents(events);
+            // Every event of an accelerated draw update arrives in one batch;
+            // its sounds stay silent like the primary's accelerated draw.
+            const bool acceleratedDraw=s.drawing;
             for (std::size_t i=0;i<count;++i) {
                 if (!same(s,native_hand_equipment::equippedViews()[1])) return;
                 const auto& event=events[i];
@@ -800,7 +812,12 @@ namespace rock::native_secondary_actions
                     continue;
                 }
                 if (event.tag==RE::BSFixedString("attackStop")) { attackState(s,0); continue; }
-                if (!effects) continue;
+                if (event.tag==RE::BSFixedString("weaponDraw") && s.drawing) {
+                    s.drawing=false;
+                    ROCK_LOG_INFO(Animation,"AKIMBO private draw complete form={:08X} seconds={:.3f}",s.item.object->formID,s.drawSeconds);
+                    continue;
+                }
+                if (!effects || acceleratedDraw) continue;
                 if (s.audio.event(f4vr::getPlayer(),s.model.get(),event.tag,event.payload,s.frame)) continue;
                 if (event.tag==RE::BSFixedString("weaponFire")) {
                     const auto views=native_hand_equipment::equippedViews();
@@ -1187,7 +1204,7 @@ namespace rock::native_secondary_actions
                 s.bindings.restore();
                 s.graph.reset(); s.model.reset(); s.item=RE::BGSObjectInstance{nullptr,nullptr};
                 s.recoilNode.reset(); s.kick={}; s.kickActive=false; s.recoilFrame=UINT64_MAX;
-                s.retiring=false; s.failed=false; s.reloading=false; s.rootsTraced=false;
+                s.retiring=false; s.failed=false; s.reloading=false; s.rootsTraced=false; s.drawing=false; s.drawSeconds=0;
             }
             if (!attachment || !view.weapon || !view.root || frame.localMenuBlocking || !frame.weaponDrawn || !frame.visualAuthorityAvailable) { cancel(s); return; }
             const auto trigger=input_remap_runtime::peekRawButtonState(handLeft,input_remap_policy::kOpenVrSteamVrTriggerButtonId);
@@ -1245,6 +1262,8 @@ namespace rock::native_secondary_actions
                     ROCK_LOG_ERROR(Animation,"AKIMBO private graph rejected native force-equip form={:08X}",view.weapon->formID);
                     return;
                 }
+                s.drawing=true;
+                s.drawSeconds=0;
                 s.graph->update(0.0f);
                 drain(s,false);
                 const bool placed=s.graph->place(attachment->world);
@@ -1295,7 +1314,15 @@ namespace rock::native_secondary_actions
                     if (dispatch(s,action)) { attackState(s,15); s.trigger.accepted(true); }
                 }
             }
-            s.graph->update(dt);
+            if (s.drawing) {
+                s.drawSeconds+=dt;
+                if (s.drawSeconds>kDrawBackstopSeconds) {
+                    s.drawing=false;
+                    ROCK_LOG_WARN(Animation,"AKIMBO private draw ended by its {:.1f}s backstop without weaponDraw form={:08X}",
+                        kDrawBackstopSeconds,view.weapon->formID);
+                }
+            }
+            s.graph->update(s.drawing ? dt*kDrawAcceleration : dt);
             if (!s.graph->place(attachment->world) || s.graph->eventOverflow()) {
                 cancel(s); s.bindings.restore(); releaseModelGraphs(s,true); s.failed=true; s.ready=false;
                 ROCK_LOG_ERROR(Animation,"AKIMBO secondary graph stopped: invalid pose or event overflow form={:08X}",view.weapon->formID);

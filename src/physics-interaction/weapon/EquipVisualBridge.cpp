@@ -310,6 +310,7 @@ namespace rock
                 input.timeoutSeconds);
         _presentationLeaseStartedAt = std::chrono::steady_clock::now();
         _handPoseOnly = input.handPoseOnly;
+        _equippedModelSource = input.equippedModelSource;
         _modelPresented = !_handPoseOnly;
         _followEquippedPose = false;
         _nativeCarrierTraceLogged = false;
@@ -585,7 +586,7 @@ namespace rock
         // Once equipped hands own the pose, only the final equipped weapon
         // solve may move their still-visible bridge. This early frame phase
         // contains the native one-hand glue, before the two-hand solve.
-        if (_followEquippedPose) return;
+        if (_followEquippedPose && !_equippedModelSource) return;
         if (model && _parent) {
             auto* worldRoot = f4vr::getWorldRootNode();
             auto* handNode = resolveHandWandNode(_isLeftHand);
@@ -612,7 +613,9 @@ namespace rock
              */
             RE::NiTransform nativeCarrierWorld{};
             bool nativePositionOnlyCarrierAvailable = false;
-            if (_isLeftHand) {
+            if (_equippedModelSource) {
+                nativePositionOnlyCarrierAvailable = false;
+            } else if (_isLeftHand) {
                 nativePositionOnlyCarrierAvailable =
                     input.leftCarrySolvedWeaponWorldValid &&
                     isFiniteTransform(input.leftCarrySolvedWeaponWorld);
@@ -869,7 +872,7 @@ namespace rock
 
     void EquipVisualBridge::synchronizeEquippedPresentation(RE::NiNode* weaponNode)
     {
-        if (!_active || !_modelPresented || !_model || !_followEquippedPose) return;
+        if (!_active || !_modelPresented || !_model || !_followEquippedPose || _equippedModelSource) return;
         // Native pickup still owns a parented world model until its detach.
         if (!_parent) return;
         RE::NiPoint3 equippedTranslation{};

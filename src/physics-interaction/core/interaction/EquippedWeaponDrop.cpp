@@ -178,6 +178,7 @@ namespace rock
                 const auto secondary = native_hand_equipment::equippedViews()[1];
                 const bool secondaryLeft = secondary.weapon && native_hand_equipment::secondaryHandIsLeft();
                 _twoHandedGrip.prepareEquippedWeaponDropCommit();
+                armTransitionSeamTrace("first-drop");
                 const auto dropResult = weapon_equip_transfer::dropEquippedWeaponFromPlayer(weapon_equip_transfer::EquippedDropInput{
                     .dropLoc = releaseLoc,
                     .dropRot = releaseRot,
@@ -238,7 +239,6 @@ namespace rock
                     }
                 }
                 if (dropCommitted) {
-                    armTransitionSeamTrace("first-drop");
                     ROCK_LOG_INFO(Weapon,
                         "Equipped weapon drop queued mode={} formID={:08X} dropped={:08X} reference={} sourceHand={} dropLoc=({:.1f},{:.1f},{:.1f}) lever={:.1f}gu stack={} instanceMatch={}",
                         static_cast<int>(mode),
@@ -327,6 +327,7 @@ namespace rock
                 .weapon = weapon,
                 .timeoutSeconds = _equipped.handlingSettings.equipVisualBridgeTimeoutSeconds,
                 .blendSeconds = _equipped.handlingSettings.equipVisualBridgeBlendSeconds,
+                .equippedModelSource = true,
             });
     }
 
@@ -361,6 +362,7 @@ namespace rock
         const auto dropVisualInWeapon = dropVisualModel ?
             transform_math::composeTransforms(transform_math::invertTransform(drop.weaponWorld), dropVisualModel->world) : RE::NiTransform{};
         // The second graph retires with its model; stop its actions first.
+        armTransitionSeamTrace("second-drop");
         native_secondary_actions::suspend();
         const auto dropResult = weapon_equip_transfer::dropEquippedWeaponFromPlayer(weapon_equip_transfer::EquippedDropInput{
             .dropLoc = drop.weaponWorld.translate,
@@ -411,7 +413,6 @@ namespace rock
             setWeaponHandSuppression(frame.hknpWorld, left, WeaponHandReason::Drop, false,
                 g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds);
         }
-        if (committed) armTransitionSeamTrace("second-drop");
         ROCK_LOG_INFO(Weapon, "AKIMBO second weapon drop mode={} hand={} formID={:08X} dropped={:08X} committed={} slotReleased={} reason={}",
             static_cast<int>(mode), left ? "left" : "right", dropResult.formID, dropResult.droppedFormID, committed,
             dropResult.equippedSlotReleased, weapon_equip_transfer::dropReasonName(dropResult.reason));

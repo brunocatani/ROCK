@@ -248,6 +248,7 @@ namespace rock::native_equipped_model_lifetime
         constexpr std::uintptr_t kEquipHideReturn = 0xDCF669;
         constexpr std::uint32_t kEquipHideReason = 2;
         std::atomic<std::uint32_t> s_skippedHides{0};
+        thread_local std::uint32_t t_survivorScopes = 0;
 
         bool cull(void* process, RE::Actor* actor, bool hidden, std::uint32_t reason) noexcept
         {
@@ -256,10 +257,10 @@ namespace rock::native_equipped_model_lifetime
                 caller == REL::Offset(kEquipHideReturn).address()) {
                 const bool secondEquip = native_hand_equipment::secondaryEquipInProgress(actor);
                 const auto views = native_hand_equipment::equippedViews();
-                if (secondEquip || (views[0].weapon && views[1].weapon)) {
+                if (secondEquip || t_survivorScopes || (views[0].weapon && views[1].weapon)) {
                     if (s_skippedHides.fetch_add(1, std::memory_order_relaxed) < 8)
                         ROCK_LOG_INFO(Weapon, "AKIMBO native equip hide skipped reason={}; the other weapon stays visible",
-                            secondEquip ? "second-weapon-equip" : "one-of-two-changes");
+                            secondEquip ? "second-weapon-equip" : t_survivorScopes ? "one-of-two-removal" : "one-of-two-changes");
                     return false;
                 }
             }
@@ -351,6 +352,9 @@ namespace rock::native_equipped_model_lifetime
             ROCK_LOG_INFO(Weapon, "AKIMBO inventory visibility completed revision={} restoredPathNodes={} nativeCullFlags=0", revision, restored);
         } catch (...) { OutputDebugStringA("ROCK: equipped visibility handoff failed\n"); }
     }
+
+    SurvivorVisibleScope::SurvivorVisibleScope() noexcept { ++t_survivorScopes; }
+    SurvivorVisibleScope::~SurvivorVisibleScope() { --t_survivorScopes; }
 
     bool install() noexcept
     {
