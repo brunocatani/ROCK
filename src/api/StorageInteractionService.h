@@ -10,7 +10,10 @@ namespace rock::storage_interaction
     void flush(RE::hknpWorld*,const havok_physics_timing::PhysicsTimingSample&);
     void shutdown(RE::hknpWorld* validWorld);
     bool blocksShoulder(bool isLeft);
-    bool allowsPair(RE::hknpWorld*,std::uint32_t a,std::uint32_t b) noexcept;
+    // Pair-filter callback. filtersPairs is checked once per batch; the
+    // layers come from the pass's single read (kUnknownLayer if unreadable).
+    bool filtersPairs() noexcept;
+    bool allowsPair(RE::hknpWorld*,std::uint32_t a,std::uint32_t layerA,std::uint32_t b,std::uint32_t layerB) noexcept;
     void contact(RE::hknpWorld*,std::uint32_t otherBody,bool isLeft) noexcept;
     // Storage displays and shoulder routing.
     api::Status ROCK_CALL setDisplay(api::OwnerToken,const api::storage::Display*) noexcept;

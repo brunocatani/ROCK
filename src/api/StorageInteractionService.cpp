@@ -498,15 +498,13 @@ namespace rock::storage_interaction
         service.routes={}; service.world=nullptr; service.bhk=nullptr; service.hands={};
         service.active=false;
     }
-    bool allowsPair(RE::hknpWorld* world,std::uint32_t a,std::uint32_t b) noexcept
+    bool filtersPairs() noexcept { return service.active.load(std::memory_order_acquire); }
+    bool allowsPair(RE::hknpWorld* world,std::uint32_t a,std::uint32_t layerA,std::uint32_t b,std::uint32_t layerB) noexcept
     {
-        if(!service.active.load(std::memory_order_acquire)) return true;
-        std::uint32_t af{},bf{};
-        const bool haveA=havok_runtime::tryReadFilterInfo(world,{a},af),haveB=havok_runtime::tryReadFilterInfo(world,{b},bf);
         constexpr auto layer=collision_layer_policy::ROCK_LAYER_STORED_DISPLAY;
-        const bool aDisplay=haveA && (af & 0x7F)==layer,bDisplay=haveB && (bf & 0x7F)==layer;
+        const bool aDisplay=layerA==layer,bDisplay=layerB==layer;
         if(!aDisplay && !bDisplay) return true;
-        if(!haveA || !haveB) return false;
+        if(layerA==collision_layer_policy::kUnknownLayer || layerB==collision_layer_policy::kUnknownLayer) return false;
         auto lease=service.callbacks.tryEnterCallback();
         if(!lease || world!=service.world || aDisplay==bDisplay) return false;
         const auto id=aDisplay?a:b,peer=aDisplay?b:a;

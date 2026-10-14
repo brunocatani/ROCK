@@ -15,6 +15,9 @@ namespace rock::collision_layer_policy
      */
     inline constexpr std::uint32_t FO4_LAYER_UNIDENTIFIED = 0;
     inline constexpr std::uint32_t FO4_LAYER_FILTER_MASK = 0x7F;
+    // A layer value for a body whose filter info could not be read; it never
+    // matches a real layer.
+    inline constexpr std::uint32_t kUnknownLayer = 0xFFFF'FFFFu;
     inline constexpr std::uint32_t FO4_LAYER_STATIC = 1;
     inline constexpr std::uint32_t FO4_LAYER_ANIMSTATIC = 2;
     inline constexpr std::uint32_t FO4_LAYER_TRANSPARENT = 3;

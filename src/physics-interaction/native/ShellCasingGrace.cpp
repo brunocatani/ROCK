@@ -409,13 +409,15 @@ namespace rock::shell_casing_grace
         }
     }
 
-    int filterPairs(RE::hknpWorld* world, native_player_collision::BodyPair* pairs, int count) noexcept
+    bool filtersPairsIn(RE::hknpWorld* world) noexcept
     {
-        if (!pairs || count <= 0 || world != s_world.load() || !s_active.load()) return count;
-        const auto kept = native_player_collision::filterPhysicalPairs(pairs, count, [&](const auto& pair) {
-            return suppress(world, pair.bodyA, pair.bodyB) || suppress(world, pair.bodyB, pair.bodyA);
-        });
-        s_suppressed.fetch_add(count - kept, std::memory_order_relaxed);
-        return kept;
+        return world && world == s_world.load() && s_active.load();
+    }
+
+    bool suppressesPair(RE::hknpWorld* world, std::uint32_t bodyA, std::uint32_t bodyB) noexcept
+    {
+        if (!suppress(world, bodyA, bodyB) && !suppress(world, bodyB, bodyA)) return false;
+        s_suppressed.fetch_add(1, std::memory_order_relaxed);
+        return true;
     }
 }

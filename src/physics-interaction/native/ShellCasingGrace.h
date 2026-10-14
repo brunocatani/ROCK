@@ -27,6 +27,8 @@ namespace rock::shell_casing_grace
         const havok_physics_timing::PhysicsTimingSample& timing) noexcept;
     void afterSolve(RE::hknpWorld* world,
         const havok_physics_timing::PhysicsTimingSample& timing) noexcept;
-    int filterPairs(RE::hknpWorld* world,
-        native_player_collision::BodyPair* pairs, int count) noexcept;
+    // Pair-filter callback. filtersPairsIn is checked once per batch;
+    // suppressesPair rejects (and counts) a casing/weapon pair inside its grace.
+    bool filtersPairsIn(RE::hknpWorld* world) noexcept;
+    bool suppressesPair(RE::hknpWorld* world, std::uint32_t bodyA, std::uint32_t bodyB) noexcept;
 }
