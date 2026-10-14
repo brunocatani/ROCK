@@ -1,7 +1,7 @@
 #pragma once
 
 #include "api/ProviderLeasePolicy.h"
-#include "api/ProviderRuntimeTypes.h"
+#include <ROCK/Touch.h>
 
 #include <algorithm>
 #include <array>
@@ -12,7 +12,14 @@
 
 namespace rock::provider
 {
-    enum class TouchGrabMotionClassV1 : std::uint32_t
+    [[nodiscard]] inline constexpr bool hasTouchGrabTargetFlag(
+        std::uint32_t flags,
+        ::rock::api::touch::TouchGrabTargetFlag flag)
+    {
+        return (flags & static_cast<std::uint32_t>(flag)) != 0;
+    }
+
+    enum class TouchGrabMotionClass : std::uint32_t
     {
         Static = 0,
         Keyframed = 1,
@@ -20,7 +27,7 @@ namespace rock::provider
         Other = 3,
     };
 
-    struct TouchGrabTargetMatchV1
+    struct TouchGrabTargetMatch
     {
         bool matched{ false };
         bool wildcard{ false };
@@ -42,9 +49,9 @@ namespace rock::provider
         };
 
         static constexpr std::size_t kMaximumTargets =
-            ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGETS_V1;
+            api::touch::kMaxTargets;
         static constexpr std::size_t kMaximumScopes =
-            ROCK_PROVIDER_MAX_TOUCH_GRAB_SCOPES_V1;
+            api::touch::kMaxScopes;
         static constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFFu;
 
         RegistrationResult setScope(
@@ -127,7 +134,7 @@ namespace rock::provider
                 slot->target.leaseFrames =
                     provider_lease_policy::clampLeaseFrames(
                         targets[index].leaseFrames,
-                        ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGET_LEASE_FRAMES_V1);
+                        api::touch::kMaxLeaseFrames);
                 slot->expiresAfterFrame =
                     provider_lease_policy::exclusiveExpiryFrame(
                         frameIndex,
@@ -172,10 +179,10 @@ namespace rock::provider
             _slots = {};
         }
 
-        [[nodiscard]] TouchGrabTargetMatchV1 resolve(
+        [[nodiscard]] TouchGrabTargetMatch resolve(
             const std::uint32_t bodyId,
             const std::uint32_t collisionLayer,
-            const TouchGrabMotionClassV1 motionClass,
+            const TouchGrabMotionClass motionClass,
             const api::Hand hand,
             const std::uint32_t worldGeneration,
             const std::uint32_t skeletonGeneration,
@@ -183,7 +190,7 @@ namespace rock::provider
             const std::uint64_t frameIndex)
         {
             pruneExpired(frameIndex);
-            TouchGrabTargetMatchV1 wildcardMatch{};
+            TouchGrabTargetMatch wildcardMatch{};
             for (const auto& slot : _slots) {
                 if (!slot.active ||
                     slot.yieldRequested ||
@@ -201,7 +208,7 @@ namespace rock::provider
                     continue;
                 }
 
-                const bool wildcard = hasTouchGrabTargetFlagV1(
+                const bool wildcard = hasTouchGrabTargetFlag(
                     slot.target.flags,
                     ::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody);
                 if (!wildcard && slot.target.bodyId == bodyId) {
@@ -212,8 +219,8 @@ namespace rock::provider
                     (slot.target.allowedLayerMask &
                         (std::uint64_t{ 1 } << collisionLayer)) != 0 &&
                     (!wildcardMatch.matched ||
-                        (hasTouchGrabTargetFlagV1(wildcardMatch.target.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) &&
-                         !hasTouchGrabTargetFlagV1(slot.target.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly)))) {
+                        (hasTouchGrabTargetFlag(wildcardMatch.target.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) &&
+                         !hasTouchGrabTargetFlag(slot.target.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly)))) {
                     wildcardMatch = makeMatch(slot, true);
                 }
             }
@@ -229,7 +236,7 @@ namespace rock::provider
             const std::uint32_t skeletonGeneration,
             const std::uint32_t providerGeneration,
             const std::uint64_t frameIndex,
-            TouchGrabTargetMatchV1& outMatch)
+            TouchGrabTargetMatch& outMatch)
         {
             outMatch = {};
             pruneExpired(frameIndex);
@@ -248,7 +255,7 @@ namespace rock::provider
                 }
                 outMatch = makeMatch(
                     slot,
-                    hasTouchGrabTargetFlagV1(
+                    hasTouchGrabTargetFlag(
                         slot.target.flags,
                         ::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody));
                 return true;
@@ -275,8 +282,6 @@ namespace rock::provider
 
                 if (changed) *changed = slot.state.phase!=state.phase || slot.state.releaseReason!=state.releaseReason || slot.state.activeHandMask!=state.activeHandMask;
                 slot.state = state;
-                slot.state.size = sizeof(::rock::api::touch::TouchGrabState);
-                slot.state.version = ROCK_PROVIDER_API_VERSION;
                 slot.state.frameIndex = frameIndex;
                 slot.state.sequence = nextSequence();
                 return true;
@@ -412,9 +417,7 @@ namespace rock::provider
         static bool validateTarget(
             const ::rock::api::touch::TouchGrabTarget& target)
         {
-            if (target.size != sizeof(::rock::api::touch::TouchGrabTarget) ||
-                target.version != ROCK_PROVIDER_API_VERSION ||
-                target.targetId == 0 ||
+            if (target.targetId == 0 ||
                 target.targetGeneration == 0 ||
                 target.leaseFrames == 0 ||
                 target.worldGeneration == 0 ||
@@ -426,10 +429,10 @@ namespace rock::provider
                 return false;
             }
 
-            const bool wildcard = hasTouchGrabTargetFlagV1(
+            const bool wildcard = hasTouchGrabTargetFlag(
                 target.flags,
                 ::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody);
-            if (hasTouchGrabTargetFlagV1(target.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) &&
+            if (hasTouchGrabTargetFlag(target.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) &&
                 (!wildcard || target.kind != ::rock::api::touch::TouchGrabKind::FixedAnchor)) return false;
             if (target.kind == ::rock::api::touch::TouchGrabKind::FixedAnchor) {
                 if (wildcard) {
@@ -500,10 +503,10 @@ namespace rock::provider
             const ::rock::api::touch::TouchGrabTarget& left,
             const ::rock::api::touch::TouchGrabTarget& right)
         {
-            const bool leftWildcard = hasTouchGrabTargetFlagV1(
+            const bool leftWildcard = hasTouchGrabTargetFlag(
                 left.flags,
                 ::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody);
-            const bool rightWildcard = hasTouchGrabTargetFlagV1(
+            const bool rightWildcard = hasTouchGrabTargetFlag(
                 right.flags,
                 ::rock::api::touch::TouchGrabTargetFlag::MatchAnyBody);
             if (!leftWildcard && !rightWildcard) {
@@ -512,8 +515,8 @@ namespace rock::provider
             if (leftWildcard != rightWildcard) {
                 return false;
             }
-            if (hasTouchGrabTargetFlagV1(left.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) !=
-                hasTouchGrabTargetFlagV1(right.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly)) return false;
+            if (hasTouchGrabTargetFlag(left.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) !=
+                hasTouchGrabTargetFlag(right.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly)) return false;
             return (left.allowedLayerMask & right.allowedLayerMask) != 0 &&
                    (left.flags & right.flags & kHandFlags) != 0 &&
                    (left.flags & right.flags & kMotionFlags) != 0;
@@ -538,12 +541,12 @@ namespace rock::provider
             const api::Hand hand)
         {
             if (hand == api::Hand::Right) {
-                return hasTouchGrabTargetFlagV1(
+                return hasTouchGrabTargetFlag(
                     target.flags,
                     ::rock::api::touch::TouchGrabTargetFlag::AllowRightHand);
             }
             if (hand == api::Hand::Left) {
-                return hasTouchGrabTargetFlagV1(
+                return hasTouchGrabTargetFlag(
                     target.flags,
                     ::rock::api::touch::TouchGrabTargetFlag::AllowLeftHand);
             }
@@ -552,32 +555,32 @@ namespace rock::provider
 
         static bool motionMatches(
             const ::rock::api::touch::TouchGrabTarget& target,
-            const TouchGrabMotionClassV1 motionClass)
+            const TouchGrabMotionClass motionClass)
         {
             switch (motionClass) {
-            case TouchGrabMotionClassV1::Static:
-                return hasTouchGrabTargetFlagV1(
+            case TouchGrabMotionClass::Static:
+                return hasTouchGrabTargetFlag(
                     target.flags,
                     ::rock::api::touch::TouchGrabTargetFlag::MatchStaticMotion);
-            case TouchGrabMotionClassV1::Keyframed:
-                return hasTouchGrabTargetFlagV1(
+            case TouchGrabMotionClass::Keyframed:
+                return hasTouchGrabTargetFlag(
                     target.flags,
                     ::rock::api::touch::TouchGrabTargetFlag::MatchKeyframedMotion);
-            case TouchGrabMotionClassV1::Dynamic:
-                return hasTouchGrabTargetFlagV1(
+            case TouchGrabMotionClass::Dynamic:
+                return hasTouchGrabTargetFlag(
                     target.flags,
                     ::rock::api::touch::TouchGrabTargetFlag::MatchDynamicMotion);
-            case TouchGrabMotionClassV1::Other:
+            case TouchGrabMotionClass::Other:
             default:
                 return false;
             }
         }
 
-        static TouchGrabTargetMatchV1 makeMatch(
+        static TouchGrabTargetMatch makeMatch(
             const Slot& slot,
             const bool wildcard)
         {
-            TouchGrabTargetMatchV1 match{};
+            TouchGrabTargetMatch match{};
             match.matched = true;
             match.wildcard = wildcard;
             match.yieldRequested = slot.yieldRequested;

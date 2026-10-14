@@ -490,9 +490,9 @@ namespace rock
         }
         const bool heldWeaponAtFrameStart = hand.isHoldingLooseWeapon();
         const auto providerHand = isLeft ? api::Hand::Left : api::Hand::Right;
-        const std::uint32_t providerInputSuppressionFlags = provider::currentHandInputSuppressionFlagsV1(providerHand);
+        const std::uint32_t providerInputSuppressionFlags = provider::currentHandInputSuppressionFlags(providerHand);
         auto providerSuppresses = [&](::rock::api::input::HandInputSuppressionFlag flag) {
-            return provider::hasHandInputSuppressionFlagV1(providerInputSuppressionFlags, flag);
+            return provider::hasHandInputSuppressionFlag(providerInputSuppressionFlags, flag);
         };
         const bool authoredGrabReserved = authored_interaction::reserves(isLeft);
         const bool providerSuppressesNormalGrabPress = authoredGrabReserved ||
@@ -2694,8 +2694,8 @@ namespace rock
             auto& hand = isLeft ? _leftHand : _rightHand;
             if (hand.getState() != HandState::SelectionLocked) continue;
             const auto& input = isLeft ? frame.left : frame.right;
-            const bool releaseSuppressed = provider::hasHandInputSuppressionFlagV1(
-                provider::currentHandInputSuppressionFlagsV1(isLeft ? api::Hand::Left : api::Hand::Right),
+            const bool releaseSuppressed = provider::hasHandInputSuppressionFlag(
+                provider::currentHandInputSuppressionFlags(isLeft ? api::Hand::Left : api::Hand::Right),
                 ::rock::api::input::HandInputSuppressionFlag::SuppressGrabRelease);
             if (!runtime_state::isLocalSkeletonReady() || !frame.worldReady || frame.menuBlocked ||
                     input.disabled || !input.hasGestureVelocity || !physicsWritesAllowedForWorld(frame.hknpWorld) ||

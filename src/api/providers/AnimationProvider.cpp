@@ -11,40 +11,40 @@ Status ROCK_CALL setNativeAnimationAuthority(OwnerToken owner, const NativeAnima
     if ((request->flags & static_cast<std::uint32_t>(NativeAnimationAuthorityFlag::Weapon)) && !weaponSlotPublished(request->weaponSlot))
         return Status::TargetUnavailable;
     return invoke(owner, kInterfaceId, 2, true, [&] {
-        return static_cast<Status>(provider::runtime::apiSetNativeAnimationAuthorityV1(owner, request));
+        return provider::runtime::setNativeAnimationAuthority(owner, *request);
     });
 }
 Status ROCK_CALL clearNativeAnimationAuthority(OwnerToken owner) noexcept {
     return invoke(owner, kInterfaceId, 2, true, [&] {
-        return static_cast<Status>(provider::runtime::apiClearNativeAnimationAuthorityV1(owner));
+        return provider::runtime::clearNativeAnimationAuthority(owner);
     });
 }
 Status ROCK_CALL getNativeAnimationAuthorityState(OwnerToken owner, NativeAnimationAuthorityState* outState) noexcept {
     if (const auto s = checkOutput(outState); s != Status::Ok) return s;
     return invoke(owner, kInterfaceId, 1, true, [&] {
-        return provider::runtime::apiGetNativeAnimationAuthorityStateV1(outState) ? Status::Ok : Status::NotReady;
+        return provider::runtime::getNativeAnimationAuthorityState(*outState) ? Status::Ok : Status::NotReady;
     });
 }
 Status ROCK_CALL setHandVisualAuthority(OwnerToken owner, const HandVisualAuthorityRequest* request) noexcept {
     if (const auto s = checkInput(request); s != Status::Ok) return s;
     return invoke(owner, kInterfaceId, 2, true, [&] {
-        return static_cast<Status>(provider::runtime::apiSetHandVisualAuthorityV1(owner, request));
+        return provider::runtime::setHandVisualAuthority(owner, *request);
     });
 }
 Status ROCK_CALL clearHandVisualAuthority(OwnerToken owner, Hand hand) noexcept {
     return invoke(owner, kInterfaceId, 2, true, [&] {
-        return static_cast<Status>(provider::runtime::apiClearHandVisualAuthorityV1(owner, static_cast<api::Hand>(hand)));
+        return provider::runtime::clearHandVisualAuthority(owner, hand);
     });
 }
 Status ROCK_CALL publishNativeAnimationRuntime(OwnerToken owner, const NativeAnimationRuntimePublication* publication) noexcept {
     if (const auto s = checkInput(publication); s != Status::Ok) return s;
     return invoke(owner, kInterfaceId, 2, true, [&] {
-        return static_cast<Status>(provider::runtime::apiPublishNativeAnimationRuntimeV1(owner, publication));
+        return provider::runtime::publishNativeAnimationRuntime(owner, *publication);
     });
 }
 Status ROCK_CALL clearNativeAnimationRuntime(OwnerToken owner) noexcept {
     return invoke(owner, kInterfaceId, 2, true, [&] {
-        return static_cast<Status>(provider::runtime::apiClearNativeAnimationRuntimeV1(owner));
+        return provider::runtime::clearNativeAnimationRuntime(owner);
     });
 }
 Status ROCK_CALL registerAnimationPhaseCallback(OwnerToken owner, PhaseCallback callback, void* userData, std::uint64_t* outCallbackToken) noexcept {

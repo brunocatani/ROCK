@@ -83,7 +83,7 @@ namespace rock
             RE::hknpWorld* world, std::uint32_t bodyId, std::uint32_t layer)
         {
             using Flag = ::rock::api::touch::TouchGrabTargetFlag;
-            if (!provider::hasTouchGrabTargetFlagV1(target.flags, Flag::ExcludePowerArmor)) return true;
+            if (!provider::hasTouchGrabTargetFlag(target.flags, Flag::ExcludePowerArmor)) return true;
             auto* ref = reference_interaction::resolveBody(world, bodyId);
             // Reference-less terrain remains eligible. ANIMSTATIC can be a PA
             // frame, so an unresolved identity on that layer cannot pass this filter.
@@ -259,23 +259,23 @@ namespace rock
             return true;
         }
 
-        [[nodiscard]] provider::TouchGrabMotionClassV1 classifyMotion(
+        [[nodiscard]] provider::TouchGrabMotionClass classifyMotion(
             const havok_runtime::BodyIdentitySnapshot& snapshot)
         {
             if (!snapshot.valid || !snapshot.body) {
-                return provider::TouchGrabMotionClassV1::Other;
+                return provider::TouchGrabMotionClass::Other;
             }
             if (snapshot.motionIndex == 0 ||
                 (snapshot.body->flags & 0x1u) != 0) {
-                return provider::TouchGrabMotionClassV1::Static;
+                return provider::TouchGrabMotionClass::Static;
             }
             switch (snapshot.body->motionPropertiesId & 0xFFu) {
             case 1:
-                return provider::TouchGrabMotionClassV1::Dynamic;
+                return provider::TouchGrabMotionClass::Dynamic;
             case 2:
-                return provider::TouchGrabMotionClassV1::Keyframed;
+                return provider::TouchGrabMotionClass::Keyframed;
             default:
-                return provider::TouchGrabMotionClassV1::Other;
+                return provider::TouchGrabMotionClass::Other;
             }
         }
 
@@ -779,7 +779,7 @@ namespace rock
         active.target = {};
         active.bodyId = kInvalidId;
         active.originalMotionClass =
-            provider::TouchGrabMotionClassV1::Other;
+            provider::TouchGrabMotionClass::Other;
         active.collisionIdentity = nullptr;
         active.collisionObject = nullptr;
         active.mechanismConstraintId = kInvalidId;
@@ -848,7 +848,7 @@ namespace rock
             targetOnBody->originalMotionClass :
             motionClass;
 
-        provider::TouchGrabTargetMatchV1 match{};
+        provider::TouchGrabTargetMatch match{};
         const auto providerHand =
             isLeft ?
             api::Hand::Left :
@@ -856,7 +856,7 @@ namespace rock
         const std::uint32_t layer =
             snapshot.collisionFilterInfo & 0x7Fu;
         bool providerMatched =
-            provider::resolveTouchGrabTargetV1(
+            provider::resolveTouchGrabTarget(
                 bodyId.value,
                 layer,
                 eligibilityMotionClass,
@@ -868,7 +868,7 @@ namespace rock
         const bool authoredPowerArmor = powerArmorPoint != api::PowerArmorPoint::None;
         if (providerMatched &&
             (!referenceAllowedByTarget(match.target, hknpWorld, bodyId.value, layer) ||
-             (authoredPowerArmor && provider::hasTouchGrabTargetFlagV1(match.target.flags,
+             (authoredPowerArmor && provider::hasTouchGrabTargetFlag(match.target.flags,
                  ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly)))) {
             providerMatched = false;
             match = {};
@@ -917,7 +917,7 @@ namespace rock
         const bool fixedAnchor =
             match.target.kind ==
             ::rock::api::touch::TouchGrabKind::FixedAnchor;
-        if (motionClass == provider::TouchGrabMotionClassV1::Other &&
+        if (motionClass == provider::TouchGrabMotionClass::Other &&
             !global_surface_grab_policy::canFollowUnclassifiedMotion(
                 !providerMatched,
                 fixedAnchor)) {
@@ -936,7 +936,7 @@ namespace rock
             return false;
         }
         if (providerMatched && match.wildcard &&
-            (provider::hasTouchGrabTargetFlagV1(match.target.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) !=
+            (provider::hasTouchGrabTargetFlag(match.target.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly) !=
              (targetClass == TargetClass::Fallback))) {
             _lastAttemptReport.failure = AttemptFailure::TargetClassMismatch;
             return false;
@@ -974,10 +974,10 @@ namespace rock
             match.target.targetGeneration);
         bool joinedCompatibleTarget = false;
         if (targetOnBody && active != targetOnBody) {
-            provider::TouchGrabTargetMatchV1 activeRegistration{};
+            provider::TouchGrabTargetMatch activeRegistration{};
             const bool activeRegistrationCurrent =
                 !targetOnBody->globalSurface &&
-                provider::currentTouchGrabTargetV1(
+                provider::currentTouchGrabTarget(
                     targetOnBody->ownerToken,
                     targetOnBody->scopeToken,
                     targetOnBody->target.targetId,
@@ -1007,11 +1007,11 @@ namespace rock
         }
         if (active) {
             if (active->bodyId != bodyId.value ||
-                !provider::hasTouchGrabTargetFlagV1(
+                !provider::hasTouchGrabTargetFlag(
                     active->target.flags,
                     ::rock::api::touch::TouchGrabTargetFlag::
                         AllowTwoHands) ||
-                !provider::hasTouchGrabTargetFlagV1(
+                !provider::hasTouchGrabTargetFlag(
                     match.target.flags,
                     ::rock::api::touch::TouchGrabTargetFlag::
                         AllowTwoHands)) {
@@ -1151,7 +1151,7 @@ namespace rock
     {
         if (!bhkWorld || !world || !active.collisionObject ||
             active.originalMotionClass ==
-                provider::TouchGrabMotionClassV1::Static ||
+                provider::TouchGrabMotionClass::Static ||
             active.bodyId == kInvalidId) {
             return false;
         }
@@ -1208,7 +1208,7 @@ namespace rock
         }
 
         if (active.originalMotionClass ==
-            provider::TouchGrabMotionClassV1::Keyframed) {
+            provider::TouchGrabMotionClass::Keyframed) {
             active.collisionObject->SetMotionType(
                 RE::hknpMotionPropertiesId::Preset::DYNAMIC);
         }
@@ -1219,7 +1219,7 @@ namespace rock
             dynamicSnapshot.collisionObject !=
                 active.collisionObject ||
             classifyMotion(dynamicSnapshot) !=
-                provider::TouchGrabMotionClassV1::Dynamic) {
+                provider::TouchGrabMotionClass::Dynamic) {
             return false;
         }
 
@@ -1295,7 +1295,7 @@ namespace rock
         }
         if (!attachment ||
             (activeHands != 0 &&
-                !provider::hasTouchGrabTargetFlagV1(
+                !provider::hasTouchGrabTargetFlag(
                     active.target.flags,
                     ::rock::api::touch::TouchGrabTargetFlag::
                         AllowTwoHands))) {
@@ -1557,7 +1557,7 @@ namespace rock
             if (!target) continue;
             for (const auto& hand : target->hands) {
                 if (hand.active && hand.isLeft == isLeft &&
-                    ((hand.commandOwnerToken != 0 && !provider::isPowerArmorGrabOwnerRegisteredV1(hand.commandOwnerToken)) ||
+                    ((hand.commandOwnerToken != 0 && !provider::isPowerArmorGrabOwnerRegistered(hand.commandOwnerToken)) ||
                      (hand.powerArmorPoint != api::PowerArmorPoint::None &&
                       (!_dynamicHandCollision || !_dynamicHandCollision->isSurfaceLatchActive(isLeft))))) {
                     releaseHand(isLeft, bhkWorld, hknpWorld,
@@ -1589,8 +1589,8 @@ namespace rock
                     continue;
                 }
             } else {
-                provider::TouchGrabTargetMatchV1 current{};
-                if (!provider::currentTouchGrabTargetV1(
+                provider::TouchGrabTargetMatch current{};
+                if (!provider::currentTouchGrabTarget(
                         active.ownerToken,
                         active.scopeToken,
                         active.target.targetId,
@@ -1656,7 +1656,7 @@ namespace rock
                     (bodySnapshot.collisionObject !=
                             active.collisionObject ||
                         classifyMotion(bodySnapshot) !=
-                            provider::TouchGrabMotionClassV1::
+                            provider::TouchGrabMotionClass::
                                 Dynamic))) {
                 auto structuralMutation = _physicsCallbackGate ?
                     _physicsCallbackGate->pauseForMutation() :
@@ -1680,15 +1680,15 @@ namespace rock
                     ::rock::api::touch::TouchGrabReleaseReason::TargetInvalid, collisionGeneration, true);
                 continue;
             }
-            if (!active.globalSurface && provider::hasTouchGrabTargetFlagV1(active.target.flags,
+            if (!active.globalSurface && provider::hasTouchGrabTargetFlag(active.target.flags,
                     ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly)) {
                 for (const bool isLeft : {false, true}) {
                     if (!active.active || findTargetForHand(isLeft) != &active) continue;
-                    provider::TouchGrabTargetMatchV1 preferred{};
-                    if (provider::resolveTouchGrabTargetV1(active.bodyId, bodySnapshot.collisionFilterInfo & 0x7Fu,
+                    provider::TouchGrabTargetMatch preferred{};
+                    if (provider::resolveTouchGrabTarget(active.bodyId, bodySnapshot.collisionFilterInfo & 0x7Fu,
                             active.originalMotionClass, isLeft ? api::Hand::Left : api::Hand::Right,
                             worldGeneration, skeletonGeneration, providerGeneration, preferred) &&
-                        !provider::hasTouchGrabTargetFlagV1(preferred.target.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly)) {
+                        !provider::hasTouchGrabTargetFlag(preferred.target.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly)) {
                         releaseHand(isLeft, bhkWorld, hknpWorld,
                             ::rock::api::touch::TouchGrabReleaseReason::OwnerYield, collisionGeneration);
                     }
@@ -1888,12 +1888,12 @@ namespace rock
                     CoordinateValid);
         }
         if (active.originalMotionClass ==
-            provider::TouchGrabMotionClassV1::Keyframed) {
+            provider::TouchGrabMotionClass::Keyframed) {
             state.flags |= static_cast<std::uint32_t>(
                 ::rock::api::touch::TouchGrabStateFlag::
                     OriginalMotionKeyframed);
         } else if (active.originalMotionClass ==
-                   provider::TouchGrabMotionClassV1::Dynamic) {
+                   provider::TouchGrabMotionClass::Dynamic) {
             state.flags |= static_cast<std::uint32_t>(
                 ::rock::api::touch::TouchGrabStateFlag::
                     OriginalMotionDynamic);
@@ -1940,7 +1940,7 @@ namespace rock
             break;
         }
         if (!active.globalSurface) {
-            provider::publishTouchGrabStateV1(
+            provider::publishTouchGrabState(
                 active.ownerToken,
                 active.scopeToken,
                 state);
@@ -2115,13 +2115,13 @@ namespace rock
                 active.collisionObject->SetLinearVelocity(zero);
                 active.collisionObject->SetAngularVelocity(zero);
                 if (active.originalMotionClass ==
-                    provider::TouchGrabMotionClassV1::Keyframed) {
+                    provider::TouchGrabMotionClass::Keyframed) {
                     active.collisionObject->SetMotionType(
                         RE::hknpMotionPropertiesId::Preset::
                             KEYFRAMED);
                 } else if (
                     active.originalMotionClass ==
-                    provider::TouchGrabMotionClassV1::Dynamic) {
+                    provider::TouchGrabMotionClass::Dynamic) {
                     active.collisionObject->SetMotionType(
                         RE::hknpMotionPropertiesId::Preset::
                             DYNAMIC);
@@ -2153,7 +2153,7 @@ namespace rock
                 active.target.kind !=
                     ::rock::api::touch::TouchGrabKind::
                         FixedAnchor &&
-                provider::hasTouchGrabTargetFlagV1(
+                provider::hasTouchGrabTargetFlag(
                     active.target.flags,
                     ::rock::api::touch::TouchGrabTargetFlag::
                         LatchOnRelease);
@@ -2171,7 +2171,7 @@ namespace rock
             reason ==
             ::rock::api::touch::TouchGrabReleaseReason::
                 OwnerYield) {
-            provider::acknowledgeTouchGrabYieldV1(
+            provider::acknowledgeTouchGrabYield(
                 active.ownerToken,
                 active.scopeToken,
                 active.target.targetId,

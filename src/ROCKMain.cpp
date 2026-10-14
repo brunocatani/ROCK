@@ -13,7 +13,7 @@
 #include "RockConfig.h"
 #include "physics-interaction/native/BipodFrozenRetirement.h"
 #include "rock_support/GameIniOverrides.h"
-#include "api/ROCKProviderApiInternal.h"
+#include "api/ProviderRuntime.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
@@ -705,8 +705,8 @@ namespace
 
         performance_profiler::ScopedTimer profilerTick(performance_profiler::Scope::FrameUpdate);
 
-        rock::provider::refreshNativeAnimationAuthorityLeasesV1();
-        rock::provider::dispatchAnimationPhaseCallbacksV1(
+        rock::provider::refreshNativeAnimationAuthorityLeases();
+        rock::provider::dispatchAnimationPhaseCallbacks(
             ::rock::api::animation::AnimationPhase::BeforeRock,
             frameTiming);
 
@@ -720,10 +720,10 @@ namespace
         native_scope_data::restoreNativeHousing();
         native_scope_data::reportDiagnostics();
 
-        rock::provider::dispatchAnimationPhaseCallbacksV1(
+        rock::provider::dispatchAnimationPhaseCallbacks(
             ::rock::api::animation::AnimationPhase::AfterRock,
             frameTiming);
-        rock::provider::dispatchAnimationPhaseCallbacksV1(
+        rock::provider::dispatchAnimationPhaseCallbacks(
             ::rock::api::animation::AnimationPhase::Complete,
             frameTiming);
         // Every claim of this frame is published; FRIK re-solves the claimed
@@ -846,7 +846,7 @@ namespace
             s_physicsInteraction->captureRenderedHands();
             s_physicsInteraction->captureProviderPresentedHandPoses();
             s_physicsInteraction->finalizeFramePose();
-            rock::provider::dispatchAnimationPhaseCallbacksV1(
+            rock::provider::dispatchAnimationPhaseCallbacks(
                 ::rock::api::animation::AnimationPhase::Presented,
                 game_timing::currentFrameTiming());
             if (!s_physicsInteraction) return;

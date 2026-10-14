@@ -1,7 +1,7 @@
 #include "physics-interaction/weapon/HoldingGripMath.h"
 #include "physics-interaction/weapon/WeaponCollisionInternal.h"
 #include "api/ProviderRuntimeServices.h"
-#include "api/ROCKProviderApiInternal.h"
+#include "api/ProviderRuntime.h"
 
 // Read-side snapshots and queries: bounds, compound geometry, contacts, support-grip evidence views, surface probes, profile evidence, and emitters.
 
@@ -1287,7 +1287,7 @@ namespace rock
             }
             std::array<weapon_part_points::OwnedPoint,weapon_part_points::kCapacity> rules{};
             std::size_t ruleCount{};
-            std::array<weapon_part_runtime::Target,provider::ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1> targets{};
+            std::array<weapon_part_runtime::Target,api::weaponparts::kMaxTargets> targets{};
             const auto targetCount=provider::runtime::copyWeaponPartPointSelection(targets,rules,ruleCount);
             for(std::size_t p=0;p<ruleCount;++p) {
                 if(rules[p].point.weaponGenerationKey!=currentGeneration)continue;

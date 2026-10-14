@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/ProviderRuntimeTypes.h"
+#include <ROCK/Touch.h>
 
 #include <cstdint>
 

@@ -20,10 +20,10 @@ namespace rock
                 return;
             }
             using Flag = ::rock::api::input::HandInputSuppressionFlag;
-            const auto flags = provider::currentHandInputSuppressionFlagsV1(
+            const auto flags = provider::currentHandInputSuppressionFlags(
                 isLeft ? api::Hand::Left : api::Hand::Right);
-            const bool press = provider::hasHandInputSuppressionFlagV1(flags, Flag::SuppressNormalGrabPress);
-            const bool release = provider::hasHandInputSuppressionFlagV1(flags, Flag::SuppressGrabRelease);
+            const bool press = provider::hasHandInputSuppressionFlag(flags, Flag::SuppressNormalGrabPress);
+            const bool release = provider::hasHandInputSuppressionFlag(flags, Flag::SuppressGrabRelease);
             if (!press && !release) return;
             const auto filtered = input_remap_policy::suppressGrabInput(
                 {.grabHeld = button.held, .grabPressed = button.pressed, .grabReleased = button.released},
@@ -190,7 +190,7 @@ namespace rock
                     !runtime.compatibilityConfigBlocking,
             });
         const bool nativeWeaponAnimationActive =
-            provider::currentNativeAnimationAuthorityFlagsV1() != 0 ||
+            provider::currentNativeAnimationAuthorityFlags() != 0 ||
             nativeGunState ==
                 static_cast<std::uint32_t>(RE::GUN_STATE::kReloading);
         RE::NiTransform leftCarrySolvedWeaponWorld{};
@@ -1179,7 +1179,7 @@ namespace rock
                 _equipped.transition.pendingGrip() = {};
             }
 
-            std::array<const RE::NiAVObject*, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> drivenSourceNodes{};
+            std::array<const RE::NiAVObject*, api::weaponparts::kMaxDrives> drivenSourceNodes{};
             std::size_t drivenSourceNodeCount = 0;
             if (weaponNode) {
                 drivenSourceNodeCount = applyProviderWeaponPartDrives(
@@ -1904,7 +1904,7 @@ namespace rock
             if (candidateBodyIds[0] != weapon_part_runtime::kInvalidBodyId ||
                 candidateBodyIds[1] != weapon_part_runtime::kInvalidBodyId) {
                 std::array<weapon_part_runtime::Target,
-                    provider::ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1> partTargets{};
+                    api::weaponparts::kMaxTargets> partTargets{};
                 const auto targetCount = provider::copyWeaponPartTargets(partTargets);
                 overlayFrame.count += static_cast<std::uint32_t>(
                     _weaponCollision.collectAttachOnlyGripIndicators(weaponNode,
@@ -1950,7 +1950,7 @@ namespace rock
             weaponGenerationKey != 0 &&
             weaponOwnershipKey != 0 &&
             _weaponCollision.getCurrentObservedEquippedWeaponFormID() == equippedWeapon->formID;
-        const auto nativeAuthorityFlags = provider::currentNativeAnimationAuthorityFlagsV1();
+        const auto nativeAuthorityFlags = provider::currentNativeAnimationAuthorityFlags();
         if (!equippedGenerationMatchesForm || !weaponNode->parent || !f4vr::isNodeVisible(weaponNode) ||
             (nativeAuthorityFlags & authored_weapon_grip_capture_policy::kWeapon) != 0) {
             return;
@@ -1989,7 +1989,7 @@ namespace rock
         auto* player = f4vr::getPlayer();
         if (!player || !_lifecycle.initialized.load(std::memory_order_acquire) || !runtime.visualAuthorityAvailable ||
             !runtime.localSkeletonReady || runtime.localMenuBlocking || runtime.compatibilityConfigBlocking ||
-            provider::currentNativeAnimationAuthorityFlagsV1() != 0 ||
+            provider::currentNativeAnimationAuthorityFlags() != 0 ||
             f4vr::getNativeGunState(player) == static_cast<std::uint32_t>(RE::GUN_STATE::kReloading)) return;
         _equipped.transition.finalizeVisualPresentation();
     }
@@ -2006,7 +2006,7 @@ namespace rock
             leftHandHoldingObject,
             rightHandHoldingObject);
         const auto nativeAuthorityFlags =
-            provider::currentNativeAnimationAuthorityFlagsV1();
+            provider::currentNativeAnimationAuthorityFlags();
         auto* equippedWeapon = currentEquippedWeaponForm();
         const auto weaponClassification =
             _weaponCollision.getEquippedWeaponClassification();

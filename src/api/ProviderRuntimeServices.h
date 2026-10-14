@@ -10,7 +10,8 @@
 #include <ROCK/PlayerController.h>
 #include "WeaponSourceCatalog.h"
 #include "WeaponPartGrabPoints.h"
-#include "ProviderRuntimeTypes.h"
+#include "ProviderPublication.h"
+#include <ROCK/Touch.h>
 #include "ProviderStatePolicy.h"
 #include "WeaponPartRequests.h"
 #include "OwnerBindingPolicy.h"
@@ -82,18 +83,18 @@ namespace rock::provider::runtime {
     api::Status clearHandlingAuthority(std::uint64_t ownerToken);
     api::Status registerOwner(const api::core::Registration& registration, api::core::Owner& outOwner);
     api::Status unregisterOwner(std::uint64_t ownerToken);
-    api::Status apiSetHandInputSuppressionV1(std::uint64_t ownerToken, const ::rock::api::input::HandInputSuppressionRequest* request);
-    api::Status apiClearHandInputSuppressionV1(std::uint64_t ownerToken, api::Hand hand);
-    bool apiGetRawWandButtonStateV1(api::Hand hand, std::uint32_t buttonId, ::rock::api::input::RawWandButtonState* outState);
-    bool apiIsNativePipboyInputSuppressedV1();
-    api::Status apiSetNativeAnimationAuthorityV1(std::uint64_t ownerToken, const ::rock::api::animation::NativeAnimationAuthorityRequest* request);
-    api::Status apiClearNativeAnimationAuthorityV1(std::uint64_t ownerToken);
-    bool apiGetNativeAnimationAuthorityStateV1(::rock::api::animation::NativeAnimationAuthorityState* outState);
+    api::Status setHandInputSuppression(std::uint64_t ownerToken, const api::input::HandInputSuppressionRequest& request);
+    api::Status clearHandInputSuppression(std::uint64_t ownerToken, api::Hand hand);
+    bool getRawWandButtonState(api::Hand hand, std::uint32_t buttonId, api::input::RawWandButtonState& outState);
+    bool isNativePipboyInputSuppressed();
+    api::Status setNativeAnimationAuthority(std::uint64_t ownerToken, const api::animation::NativeAnimationAuthorityRequest& request);
+    api::Status clearNativeAnimationAuthority(std::uint64_t ownerToken);
+    bool getNativeAnimationAuthorityState(api::animation::NativeAnimationAuthorityState& outState);
     api::Status registerAnimationPhaseCallback(std::uint64_t ownerToken, api::animation::PhaseCallback callback, void* userData, std::uint64_t* outCallbackToken);
     api::Status unregisterAnimationPhaseCallback(std::uint64_t ownerToken, std::uint64_t callbackToken);
-    api::Status apiSetHandVisualAuthorityV1(std::uint64_t ownerToken, const ::rock::api::animation::HandVisualAuthorityRequest* request);
-    api::Status apiClearHandVisualAuthorityV1(std::uint64_t ownerToken, api::Hand hand);
-    api::Status apiPublishNativeAnimationRuntimeV1(std::uint64_t ownerToken, const ::rock::api::animation::NativeAnimationRuntimePublication* publication);
+    api::Status setHandVisualAuthority(std::uint64_t ownerToken, const api::animation::HandVisualAuthorityRequest& request);
+    api::Status clearHandVisualAuthority(std::uint64_t ownerToken, api::Hand hand);
+    api::Status publishNativeAnimationRuntime(std::uint64_t ownerToken, const api::animation::NativeAnimationRuntimePublication& publication);
     api::Status apiGetHandFrame(api::Hand hand, api::hands::HandFrame& outFrame);
     api::Status apiGetPresentedHandFrame(api::Hand hand, api::hands::HandFrame& outFrame);
     api::Status apiGetPresentedHandPose(std::uint64_t ownerToken, api::Hand hand, api::hands::PresentedHandPose& outPose);
@@ -102,18 +103,18 @@ namespace rock::provider::runtime {
     api::Status copySemanticHandContacts(api::Hand hand, std::uint32_t maxFramesSinceContact, api::collision::SemanticHandContact* outContacts, std::uint32_t capacity, std::uint32_t& outCount);
     api::Status copyPlayerColliderDescriptors(api::collision::PlayerColliderDescriptor* outDescriptors, std::uint32_t capacity, std::uint32_t& outCount);
     api::Status getHandCollisionAvailability(api::Hand hand, api::collision::HandCollisionAvailability& outState);
-    api::Status apiGetHandInputSuppressionStateV1(std::uint64_t ownerToken, api::Hand hand, ::rock::api::input::HandInputSuppressionState* outState);
-    api::Status apiClearNativeAnimationRuntimeV1(std::uint64_t ownerToken);
-    api::Status apiSetTouchGrabTargetsForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken, const ::rock::api::touch::TouchGrabTarget* targets, std::uint32_t targetCount);
-    api::Status apiClearTouchGrabTargetsForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken);
-    api::Status apiCopyTouchGrabStatesForScopeV1(std::uint64_t ownerToken, std::uint64_t scopeToken, ::rock::api::touch::TouchGrabState* outStates, std::uint32_t maxStates, std::uint32_t* outStateCount);
-    api::Status apiRequestTouchGrabYieldV1(std::uint64_t ownerToken, std::uint64_t scopeToken, std::uint64_t targetId, std::uint32_t targetGeneration);
+    api::Status getHandInputSuppressionState(std::uint64_t ownerToken, api::Hand hand, api::input::HandInputSuppressionState& outState);
+    api::Status clearNativeAnimationRuntime(std::uint64_t ownerToken);
+    api::Status setTouchGrabTargetsForScope(std::uint64_t ownerToken, std::uint64_t scopeToken, const api::touch::TouchGrabTarget* targets, std::uint32_t targetCount);
+    api::Status clearTouchGrabTargetsForScope(std::uint64_t ownerToken, std::uint64_t scopeToken);
+    api::Status copyTouchGrabStatesForScope(std::uint64_t ownerToken, std::uint64_t scopeToken, api::touch::TouchGrabState* outStates, std::uint32_t capacity, std::uint32_t& outCount);
+    api::Status requestTouchGrabYield(std::uint64_t ownerToken, std::uint64_t scopeToken, std::uint64_t targetId, std::uint32_t targetGeneration);
     api::Status queryWorldRaycast(std::uint64_t ownerToken, const api::collision::WorldRaycastRequest& request, api::collision::WorldRaycastResult& outResult);
-    api::Status apiGetLogicalInputActionStateV1(std::uint64_t ownerToken, ::rock::api::input::LogicalInputAction action, ::rock::api::input::LogicalInputActionState* outState);
+    api::Status getLogicalInputActionState(std::uint64_t ownerToken, api::input::LogicalInputAction action, api::input::LogicalInputActionState& outState);
     api::Status apiGetPlayerControllerState(std::uint64_t ownerToken, api::playercontroller::PlayerControllerState& outState);
     api::Status apiRequestPlayerControllerJump(std::uint64_t ownerToken, const api::playercontroller::PlayerControllerJumpRequest& request);
-    bool apiGetRawWandThumbstickV1(api::Hand hand, float* outX, float* outY);
-    std::uint32_t apiGetNativeInputContextV1();
+    bool getRawWandThumbstick(api::Hand hand, float& outX, float& outY);
+    std::uint32_t getNativeInputContext();
     rock::api::Status authorize(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t permission, bool requireThread = true,
         OwnerAccess access = OwnerAccess::Existing);
     rock::api::Status bind(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t major, std::uint32_t permissions);

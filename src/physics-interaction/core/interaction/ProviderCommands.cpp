@@ -19,7 +19,7 @@ namespace rock
 
         QueuedInteractionCommand command{};
         std::uint32_t processed = 0;
-        while (processed++ < ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1 && provider::dequeueInteractionCommand(command)) {
+        while (processed++ < api::grab::kMaxQueuedCommands && provider::dequeueInteractionCommand(command)) {
             pruneInactiveProviderForceGrabCommits();
             if (command.kind == api::grab::InteractionCommandKind::ForceGrab &&
                 !provider::isInteractionCommandActive(command.ownerToken, command.commandId)) {
@@ -491,7 +491,7 @@ namespace rock
             }
         }
 
-        const auto sourceName = providerFixedStringView(drive.sourceName, ::rock::provider::ROCK_PROVIDER_MAX_EVIDENCE_NAME);
+        const auto sourceName = providerFixedStringView(drive.sourceName, weapon_part_runtime::kMaxSourceName);
         if ((drive.flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceName)) != 0 && !sourceName.empty()) {
             RE::NiAVObject* matchedSourceNode = nullptr;
             for (const auto& descriptor : evidenceDescriptors) {
@@ -515,10 +515,10 @@ namespace rock
     weapon_drive_pose::NativeFrame PhysicsInteraction::captureProviderPartQueryPose(RE::NiNode* weaponNode,std::uint64_t generation) const
     {
         weapon_drive_pose::NativeFrame result(weaponNode,weaponNode->world);
-        std::array<provider::PartDrive,provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> drives{};
+        std::array<provider::PartDrive,api::weaponparts::kMaxDrives> drives{};
         const auto count=provider::copyWeaponPartDrives(drives.data(),static_cast<unsigned>(drives.size()),nullptr,false);
         const auto evidence=_weaponCollision.getProfileEvidenceDescriptors();
-        std::array<RE::NiAVObject*,provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> slots{};
+        std::array<RE::NiAVObject*,api::weaponparts::kMaxDrives> slots{};
         if(_providerDrives.generationKey==generation)for(std::size_t i=0;i<slots.size();++i)slots[i]=_providerDrives.nodeStates[i].node;
         for(unsigned i=0;i<count;++i)if(auto* node=resolveProviderWeaponPartDriveNode(weaponNode,generation,drives[i],evidence)){
             auto slot=std::find(slots.begin(),slots.end(),node);
@@ -538,7 +538,7 @@ namespace rock
         RE::NiNode* weaponNode,
         std::uint64_t currentWeaponGenerationKey,
         const PhysicsFrameContext& frame,
-        std::array<const RE::NiAVObject*, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1>& outDrivenSourceNodes)
+        std::array<const RE::NiAVObject*, api::weaponparts::kMaxDrives>& outDrivenSourceNodes)
     {
         outDrivenSourceNodes = {};
         _providerDrives.resultCount = 0;
@@ -557,9 +557,9 @@ namespace rock
             state.activeThisFrame = false;
         }
 
-        std::array<provider::PartDrive, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> driveTargets{};
+        std::array<provider::PartDrive, api::weaponparts::kMaxDrives> driveTargets{};
         std::array<std::uint64_t,
-            ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1>
+            api::weaponparts::kMaxDrives>
             driveOwners{};
         const std::uint32_t driveCount = ::rock::provider::copyWeaponPartDrives(
             driveTargets.data(),
@@ -577,7 +577,7 @@ namespace rock
             std::uint32_t resultIndex{ 0 };
         };
 
-        std::array<AppliedNode, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> appliedNodes{};
+        std::array<AppliedNode, api::weaponparts::kMaxDrives> appliedNodes{};
         std::size_t appliedNodeCount = 0;
         const auto evidenceDescriptors = _weaponCollision.getProfileEvidenceDescriptors();
 

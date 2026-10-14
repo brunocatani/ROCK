@@ -7,7 +7,7 @@
 
 
 #include "api/ProviderStatePolicy.h"
-#include "api/ROCKProviderApiInternal.h"
+#include "api/ProviderRuntime.h"
 
 #include <algorithm>
 #include <array>
@@ -1035,7 +1035,7 @@ namespace rock
             authority.actionRole = query.actionRole;
             authority.groupId = resolution.groupId;
             authority.grabMode = static_cast<std::uint32_t>(resolution.grabMode);
-            static_assert(WeaponProviderPartAuthority{}.sourceName.size() == ::rock::provider::ROCK_PROVIDER_MAX_EVIDENCE_NAME);
+            static_assert(WeaponProviderPartAuthority{}.sourceName.size() == weapon_part_runtime::kMaxSourceName);
             std::memcpy(authority.sourceName.data(), query.sourceName, authority.sourceName.size());
             authority.sourceName[authority.sourceName.size() - 1] = '\0';
             return authority;

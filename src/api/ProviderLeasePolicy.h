@@ -5,6 +5,15 @@
 
 namespace rock::provider_lease_policy
 {
+    /*
+     * Every provider lease uses one exclusive expiry fence on the game-frame
+     * clock. A publication made at frame F with leaseFrames N is active while
+     * currentFrame < F + N and expires at F + N. Zero is invalid; values above
+     * the family limit are clamped. A refresh replaces the prior expiry and
+     * generations. Fences use the most recent provider snapshot frame and
+     * retire at the next publication boundary, after ROCK consumes that
+     * update's drives.
+     */
     [[nodiscard]] inline constexpr std::uint32_t clampLeaseFrames(
         const std::uint32_t requestedFrames,
         const std::uint32_t maximumFrames)

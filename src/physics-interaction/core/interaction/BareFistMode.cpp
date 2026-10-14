@@ -12,7 +12,7 @@ namespace rock
         if (frame.left.disabled || frame.right.disabled) return "hand-disabled";
         if (_equipped.transition.getPublicSnapshot().active) return "weapon-transition";
         if (_equipped.transition.pendingGrip().pending) return "pending-grip";
-        if (provider::currentNativeAnimationAuthorityFlagsV1() != 0) return "native-animation-owner";
+        if (provider::currentNativeAnimationAuthorityFlags() != 0) return "native-animation-owner";
         const auto grips = _twoHandedGrip.getGripOccupancy();
         if (grips.left.weaponEngaged() || grips.right.weaponEngaged()) return "weapon-hand-occupied";
         const auto* frik = frik_visual_authority::api();
@@ -33,7 +33,7 @@ namespace rock
             const auto physicalHand = left ? api::Hand::Left : api::Hand::Right;
             constexpr auto inputMask = static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressConfigModeChord) |
                 static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressOpenVrGameInput);
-            if ((provider::currentHandInputSuppressionFlagsV1(physicalHand) & inputMask) != 0) return "provider-suppression";
+            if ((provider::currentHandInputSuppressionFlags(physicalHand) & inputMask) != 0) return "provider-suppression";
             // Immersive Flashlight publishes this tag while actually carrying
             // its mesh. Both active and overridden tags still own the object.
             const auto frikHand = left ? frik_visual_authority::Hand::Left : frik_visual_authority::Hand::Right;

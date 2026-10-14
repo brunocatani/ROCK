@@ -41,7 +41,7 @@ void update(PhysicsInteraction& physics,const PhysicsFrameContext& frame) {
     const auto sample=provider::runtime::sample();
     if(!frame.worldReady||frame.menuBlocked||!lease.current(sample)||
         provider::runtime::authorize(lease.owner,api::InterfaceId::WeaponParts,2,true)!=api::Status::Ok||
-        std::any_of(selected.begin(),selected.begin()+selectedCount,[&](auto id){return !physics.isProviderWeaponBodyCurrentV1(lease.request.weaponGenerationKey,id);}))lease={};
+        std::any_of(selected.begin(),selected.begin()+selectedCount,[&](auto id){return !physics.isProviderWeaponBodyCurrent(lease.request.weaponGenerationKey,id);}))lease={};
     if(!lease.owner)selectedCount=0;
     if(!frame.worldReady)return;
     bodies.releaseWhere(frame.hknpWorld,"consumer-weapon-part-clear",

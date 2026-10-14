@@ -1,26 +1,15 @@
 #pragma once
 
 #include "api/HandInteractionPublication.h"
-#include "api/ProviderRuntimeTypes.h"
+#include <ROCK/Collision.h>
+#include <ROCK/Weapon.h>
+#include <ROCK/WeaponParts.h>
 
 #include <algorithm>
-#include <cstring>
 
 namespace rock::provider_state_policy
 {
     using namespace rock::provider;
-
-    // Clear reusable output on failure without writing beyond a caller's ABI
-    // prefix or changing the size/version that the entrypoint must validate.
-    template <class T>
-    void clearQueryOutput(T* output, std::uint32_t minimumSize = sizeof(T)) noexcept
-    {
-        if (!output || output->size < minimumSize) return;
-        T empty{};
-        empty.size = output->size;
-        if constexpr (requires { empty.version; }) empty.version = output->version;
-        std::memcpy(output, &empty, (std::min<std::size_t>)(output->size, sizeof(T)));
-    }
 
     [[nodiscard]] constexpr bool firingGripOccupied(bool weaponPresent, bool partCarry, bool surfaceSupported = false) noexcept
     {
@@ -93,7 +82,7 @@ namespace rock::provider_state_policy
         state.reservedTargetIdentity = handling.weaponGenerationKey;
         state.primaryBodyId = grip.active ? grip.bodyId : 0x7FFF'FFFF;
         state.heldBodyCount = 0;
-        std::fill_n(state.heldBodyIds, ROCK_PROVIDER_MAX_HAND_HELD_BODIES_V1, 0u);
+        std::fill(std::begin(state.heldBodyIds), std::end(state.heldBodyIds), 0u);
         if (grip.active) state.flags |= static_cast<std::uint32_t>(Flag::RockGripActive);
         if (firing) {
             state.flags |= static_cast<std::uint32_t>(Flag::FiringGrip);

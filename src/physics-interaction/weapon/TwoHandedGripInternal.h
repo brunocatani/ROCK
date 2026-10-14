@@ -4,7 +4,7 @@
 
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 
-#include "api/ROCKProviderApiInternal.h"
+#include "api/ProviderRuntime.h"
 #include "physics-interaction/native/SceneRelation.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/hand/HandSkeleton.h"

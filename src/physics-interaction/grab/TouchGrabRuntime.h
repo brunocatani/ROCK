@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/ROCKProviderApiInternal.h"
+#include "api/ProviderRuntime.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
@@ -126,8 +126,8 @@ namespace rock
             AttemptFailure failure{ AttemptFailure::NoCandidates };
             TargetClass targetClass{ TargetClass::Explicit };
             ContactSource contactSource{ ContactSource::SemanticHand };
-            provider::TouchGrabMotionClassV1 motionClass{
-                provider::TouchGrabMotionClassV1::Other
+            provider::TouchGrabMotionClass motionClass{
+                provider::TouchGrabMotionClass::Other
             };
             std::uint32_t bodyId = 0x7FFF'FFFFu;
             std::uint32_t collisionLayer = 0xFFFF'FFFFu;
@@ -245,8 +245,8 @@ namespace rock
             std::uint64_t scopeToken = 0;
             ::rock::api::touch::TouchGrabTarget target{};
             std::uint32_t bodyId = kInvalidId;
-            provider::TouchGrabMotionClassV1 originalMotionClass{
-                provider::TouchGrabMotionClassV1::Other
+            provider::TouchGrabMotionClass originalMotionClass{
+                provider::TouchGrabMotionClass::Other
             };
             RE::NiCollisionObject* collisionIdentity = nullptr;
             RE::bhkNPCollisionObject* collisionObject = nullptr;

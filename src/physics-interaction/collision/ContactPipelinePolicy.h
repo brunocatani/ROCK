@@ -1,7 +1,6 @@
 #pragma once
 
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
-#include "api/ProviderRuntimeTypes.h"
 
 #include <cstdint>
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/ProviderRuntimeTypes.h"
+#include <ROCK/Grab.h>
 
 #include "physics-interaction/hand/DynamicHandCollisionFeedbackPolicy.h"
 #include "physics-interaction/hand/WeaponReleaseCollisionLease.h"

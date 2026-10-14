@@ -19,7 +19,7 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
     frame.worldReady = bhk && hknp;
     frame.menuBlocked = runtime_state::isPhysicsMenuBlocked();
     const auto animationAuthorityFlags =
-        rock::provider::currentNativeAnimationAuthorityFlagsV1();
+        rock::provider::currentNativeAnimationAuthorityFlags();
     frame.reloadBoundaryActive =
         (animationAuthorityFlags &
             (authored_weapon_grip_capture_policy::kArms |

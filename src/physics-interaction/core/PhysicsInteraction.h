@@ -62,7 +62,11 @@
 #include "physics-interaction/weapon/LooseWeaponCollision.h"
 #include "physics-interaction/weapon/BareFistGuardPolicy.h"
 #include "physics-interaction/input/BareFistGesturePolicy.h"
-#include "api/ProviderRuntimeTypes.h"
+#include "api/ProviderPublication.h"
+#include <ROCK/Animation.h>
+#include <ROCK/Touch.h>
+#include <ROCK/Weapon.h>
+#include <ROCK/WeaponParts.h>
 #include "api/WeaponSourceCatalogRuntime.h"
 
 namespace RE
@@ -227,7 +231,7 @@ namespace rock
         api::Status copyProviderWeaponSources(std::uint64_t generation,std::uint32_t offset, provider::WeaponSourceRecord*, std::uint32_t capacity, std::uint32_t& copied, std::uint32_t& total) const;
         std::uintptr_t resolveProviderWeaponSourceName(std::uint64_t generation, const char* name) const;
         void fillProviderFrameSnapshot(::rock::provider::Publication& outSnapshot) const;
-        bool isProviderWeaponBodyCurrentV1(
+        bool isProviderWeaponBodyCurrent(
             std::uint64_t weaponGenerationKey,
             std::uint32_t bodyId) const;
         bool queryProviderWeaponContactAtPoint(
@@ -488,7 +492,7 @@ namespace rock
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
             const PhysicsFrameContext& frame,
-            std::array<const RE::NiAVObject*, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1>& outDrivenSourceNodes);
+            std::array<const RE::NiAVObject*, api::weaponparts::kMaxDrives>& outDrivenSourceNodes);
 
         void restoreExpiredProviderWeaponPartDriveNodes(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
 
@@ -729,7 +733,7 @@ namespace rock
             std::uint32_t bodyId{ 0x7FFF'FFFFu };
             std::uint32_t groupId{ 0 };
             std::uint32_t priority{ 0 };
-            std::array<char, ::rock::provider::ROCK_PROVIDER_MAX_EVIDENCE_NAME>
+            std::array<char, weapon_part_runtime::kMaxSourceName>
                 sourceName{};
             bool activeThisFrame{ false };
         };
@@ -918,10 +922,10 @@ namespace rock
         // surface (PhysicsInteractionProvider.inl).
         struct ProviderDriveState
         {
-            std::array<ProviderWeaponPartDriveNodeState, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> nodeStates{};
+            std::array<ProviderWeaponPartDriveNodeState, api::weaponparts::kMaxDrives> nodeStates{};
             std::uint64_t generationKey{ 0 };
             std::array<api::weaponparts::DriveResult,
-                ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVE_RESULTS_V1>
+                api::weaponparts::kMaxDrives>
                 results{};
             std::uint32_t resultCount{ 0 };
             SkeletonBoneNameIndex presentedPoseNames{};

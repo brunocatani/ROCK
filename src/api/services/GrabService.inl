@@ -47,7 +47,7 @@
             request.targetBodyId != 0x7FFF'FFFF || request.maxDistanceGame != 0.0f)) {
             return api::Status::InvalidArgument;
         }
-        if (request.targetFormId == 0 || (request.flags & ~kImplementedForceGrabFlagsV1) != 0) {
+        if (request.targetFormId == 0 || (request.flags & ~kImplementedForceGrabFlags) != 0) {
             return api::Status::InvalidArgument;
         }
         if (!std::isfinite(request.maxDistanceGame)) {
@@ -132,7 +132,7 @@
             return api::Status::InvalidArgument;
         }
         using Flag = api::grab::ForceReleaseFlag;
-        if (const auto status = validateReleaseRequest(request, kImplementedForceReleaseFlagsV1,
+        if (const auto status = validateReleaseRequest(request, kImplementedForceReleaseFlags,
                 static_cast<std::uint32_t>(Flag::RequireMatchingTarget), static_cast<std::uint32_t>(Flag::UseVelocityHavok));
             status != api::Status::Ok) {
             return status;
@@ -155,7 +155,7 @@
             return api::Status::InvalidArgument;
         }
         using Flag = api::grab::ThrownDropFlag;
-        if (const auto status = validateReleaseRequest(request, kImplementedThrownDropFlagsV1,
+        if (const auto status = validateReleaseRequest(request, kImplementedThrownDropFlags,
                 static_cast<std::uint32_t>(Flag::RequireMatchingTarget), static_cast<std::uint32_t>(Flag::UseVelocityHavok));
             status != api::Status::Ok) {
             return status;

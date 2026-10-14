@@ -133,7 +133,7 @@
                 _twoHandedGrip.getHandGripReport(isLeft, report);
                 if (!report.active ||
                     report.bodyId == INVALID_BODY_ID ||
-                    !isProviderWeaponBodyCurrentV1(
+                    !isProviderWeaponBodyCurrent(
                         report.weaponGenerationKey,
                         report.bodyId) ||
                     isGrabbedWeaponPartColliderBody(report.bodyId) ||

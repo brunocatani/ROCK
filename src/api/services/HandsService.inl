@@ -96,7 +96,7 @@
             return api::Status::HandUnavailable;
         }
         return static_cast<api::Status>(queryPhysicsInteractionValue(ownerToken,
-            &outPose,
+            outPose,
             [hand](PhysicsInteraction& pi, api::hands::PresentedHandPose& pose) {
                 return pi.queryProviderPresentedHandPose(hand, pose);
             },

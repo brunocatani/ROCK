@@ -7,7 +7,7 @@
 #include "physics-interaction/input/SupportTriggerInput.h"
 #include "OwnerBindingPolicy.h"
 #include "EventStreams.h"
-#include "ROCKProviderApiInternal.h"
+#include "ProviderRuntime.h"
 #include "api/ProviderLeasePolicy.h"
 #include "api/ProviderInstanceAccess.h"
 #include "api/ProviderFrameClock.h"
@@ -196,18 +196,18 @@ namespace rock::provider::runtime
 
     constexpr std::uint64_t kRockIssuedOwnerTokenNamespace = 0xA000'0000'0000'0000ull;
     constexpr std::uint64_t kRockIssuedOwnerTokenSequenceMask = 0x0FFF'FFFF'FFFF'FFFFull;
-    constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
+    constexpr std::uint32_t kImplementedForceGrabFlags =
         static_cast<std::uint32_t>(api::grab::ForceGrabFlag::UsePreferredGrabPointGame) |
         provider::kForceGrabFromPlayerInventory;
-    constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
+    constexpr std::uint32_t kImplementedForceReleaseFlags =
         static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::ImmediateCollisionRestore) |
         static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::RequireMatchingTarget) |
         static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::UseVelocityHavok);
-    constexpr std::uint32_t kImplementedThrownDropFlagsV1 =
+    constexpr std::uint32_t kImplementedThrownDropFlags =
         static_cast<std::uint32_t>(api::grab::ThrownDropFlag::ImmediateCollisionRestore) |
         static_cast<std::uint32_t>(api::grab::ThrownDropFlag::RequireMatchingTarget) |
         static_cast<std::uint32_t>(api::grab::ThrownDropFlag::UseVelocityHavok);
-    constexpr std::uint32_t kImplementedHandInputSuppressionFlagsV1 =
+    constexpr std::uint32_t kImplementedHandInputSuppressionFlags =
         static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressConfigModeChord) |
         static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressOpenVrGameInput) |
         static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressNativeVats) |
@@ -237,7 +237,7 @@ namespace rock::provider::runtime
         }
         return flags;
     }
-    constexpr std::uint32_t kWeaponPartTargetMatcherFlagsV1 =
+    constexpr std::uint32_t kWeaponPartTargetMatcherFlags =
         static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchBodyId) |
         static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceKey) |
         static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceName) |
@@ -246,14 +246,16 @@ namespace rock::provider::runtime
         static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSupportRole) |
         static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSocketRole) |
         static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchActionRole);
-    constexpr std::uint32_t kImplementedWeaponPartTargetFlagsV1 =
-        kWeaponPartTargetMatcherFlagsV1 |
+    constexpr std::uint32_t kImplementedWeaponPartTargetFlags =
+        kWeaponPartTargetMatcherFlags |
         static_cast<std::uint32_t>(api::weaponparts::TargetFlag::NonExclusive);
-    constexpr std::uint32_t kImplementedWeaponPartDriveMatcherFlagsV1 =
+    constexpr std::uint32_t kImplementedWeaponPartDriveMatcherFlags =
         static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchBodyId) |
         static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceKey) |
         static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceName);
     constexpr std::uint32_t kProviderInvalidBodyId = 0x7FFF'FFFFu;
+    // One bit per finger local transform; a hand visual request carries 15.
+    constexpr std::uint16_t kAllFingerLocalTransforms = 0x7FFFu;
 
     // Interface IDs are 1-based; Storage is the highest.
     constexpr std::uint32_t kInterfaceSlotCount = static_cast<std::uint32_t>(rock::api::InterfaceId::Storage);
@@ -271,7 +273,7 @@ namespace rock::provider::runtime
     };
 
     std::mutex s_consumerMutex;
-    std::array<ConsumerSlot, ROCK_PROVIDER_MAX_CONSUMERS_V1> s_consumers{};
+    std::array<ConsumerSlot, api::core::kMaxOwners> s_consumers{};
     std::atomic<std::uint64_t> s_nextConsumerTokenSequence{ 1 };
 
     struct InteractionCommandSlot
@@ -287,10 +289,10 @@ namespace rock::provider::runtime
     };
 
     std::mutex s_interactionCommandMutex;
-    std::array<InteractionCommandSlot, ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1> s_interactionCommands{};
-    std::array<InteractionCommandResultSlot, ROCK_PROVIDER_MAX_COMPLETED_INTERACTION_COMMANDS_V1> s_interactionResults{};
+    std::array<InteractionCommandSlot, api::grab::kMaxQueuedCommands> s_interactionCommands{};
+    std::array<InteractionCommandResultSlot, api::grab::kMaxCommandResults> s_interactionResults{};
     static_assert(
-        ROCK_PROVIDER_MAX_COMPLETED_INTERACTION_COMMANDS_V1 >= ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1 + 3,
+        api::grab::kMaxCommandResults >= api::grab::kMaxQueuedCommands + 3,
         "Result history must retain the full queue, both deferred force-grab slots, and one dequeued command.");
     std::size_t s_nextInteractionResultSlot{ 0 };
     std::atomic<std::uint64_t> s_nextInteractionCommandId{ 1 };
@@ -315,7 +317,7 @@ namespace rock::provider::runtime
     };
 
     std::mutex s_handInputSuppressionMutex;
-    std::array<HandInputSuppressionSlot, ROCK_PROVIDER_MAX_HAND_INPUT_SUPPRESSIONS_V1> s_handInputSuppressions{};
+    std::array<HandInputSuppressionSlot, api::input::kMaxSuppressions> s_handInputSuppressions{};
 
     struct NativeAnimationAuthoritySlot
     {
@@ -329,7 +331,7 @@ namespace rock::provider::runtime
     };
 
     std::mutex s_nativeAnimationAuthorityMutex;
-    std::array<NativeAnimationAuthoritySlot, ROCK_PROVIDER_MAX_CONSUMERS_V1> s_nativeAnimationAuthoritySlots{};
+    std::array<NativeAnimationAuthoritySlot, api::core::kMaxOwners> s_nativeAnimationAuthoritySlots{};
     std::atomic<std::uint32_t> s_nativeAnimationAuthorityFlags{ 0 };
     std::atomic<std::uint32_t> s_nativeAnimationAuthorityOwnerCount{ 0 };
 
@@ -342,7 +344,7 @@ namespace rock::provider::runtime
     };
 
     std::mutex s_animationPhaseCallbackMutex;
-    std::array<AnimationPhaseCallbackSlot, ROCK_PROVIDER_MAX_ANIMATION_PHASE_CALLBACKS_V1>
+    std::array<AnimationPhaseCallbackSlot, api::animation::kMaxPhaseCallbacks>
         s_animationPhaseCallbacks{};
     std::atomic<std::uint64_t> s_nextAnimationPhaseCallbackToken{ 1 };
     std::atomic<std::uint64_t> s_activeAnimationPhaseFrameIndex{ 0 };
@@ -363,7 +365,7 @@ namespace rock::provider::runtime
     };
 
     std::mutex s_handVisualAuthorityMutex;
-    std::array<HandVisualAuthoritySlot, ROCK_PROVIDER_MAX_CONSUMERS_V1 * 2>
+    std::array<HandVisualAuthoritySlot, api::core::kMaxOwners * 2>
         s_handVisualAuthoritySlots{};
 
     std::mutex s_nativeAnimationRuntimePublicationMutex;
@@ -401,8 +403,8 @@ namespace rock::provider::runtime
 
     std::mutex s_weaponPartMutex;
     weapon_part_points::Registry s_weaponPartGrabPoints;
-    std::array<WeaponPartTargetSlot, ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1> s_weaponPartTargets{};
-    std::array<WeaponPartDriveSlot, ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> s_weaponPartDrives{};
+    std::array<WeaponPartTargetSlot, api::weaponparts::kMaxTargets> s_weaponPartTargets{};
+    std::array<WeaponPartDriveSlot, api::weaponparts::kMaxDrives> s_weaponPartDrives{};
 
     api::Status validateRegisteredOwnerLocked(std::uint64_t ownerToken);
     [[nodiscard]] bool generationGuardsStale(
@@ -1093,7 +1095,7 @@ namespace rock::provider::runtime
     {
         // NonExclusive is a semantics flag, not a matcher: at least one match
         // flag must still be present for the target to select anything.
-        if ((flags & ~kImplementedWeaponPartTargetFlagsV1) != 0 || (flags & kWeaponPartTargetMatcherFlagsV1) == 0) {
+        if ((flags & ~kImplementedWeaponPartTargetFlags) != 0 || (flags & kWeaponPartTargetMatcherFlags) == 0) {
             return false;
         }
         if ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchBodyId)) != 0 && bodyId == kProviderInvalidBodyId) {
@@ -1103,7 +1105,7 @@ namespace rock::provider::runtime
             return false;
         }
         if ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceName)) != 0 &&
-            boundedStringLength(sourceName, ROCK_PROVIDER_MAX_EVIDENCE_NAME) == 0) {
+            boundedStringLength(sourceName, weapon_part_runtime::kMaxSourceName) == 0) {
             return false;
         }
         return true;
@@ -1111,7 +1113,7 @@ namespace rock::provider::runtime
 
     bool hasConcreteWeaponPartDriveMatcher(std::uint32_t flags, std::uint32_t bodyId, std::uintptr_t sourceRoot, const char* sourceName)
     {
-        if ((flags & ~kImplementedWeaponPartDriveMatcherFlagsV1) != 0 || (flags & kImplementedWeaponPartDriveMatcherFlagsV1) == 0) {
+        if ((flags & ~kImplementedWeaponPartDriveMatcherFlags) != 0 || (flags & kImplementedWeaponPartDriveMatcherFlags) == 0) {
             return false;
         }
         if ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchBodyId)) != 0 && bodyId == kProviderInvalidBodyId) {
@@ -1121,13 +1123,13 @@ namespace rock::provider::runtime
             return false;
         }
         if ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceName)) != 0 &&
-            boundedStringLength(sourceName, ROCK_PROVIDER_MAX_EVIDENCE_NAME) == 0) {
+            boundedStringLength(sourceName, weapon_part_runtime::kMaxSourceName) == 0) {
             return false;
         }
         return ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceKey)) != 0 && sourceRoot != 0) ||
                ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchBodyId)) != 0 && bodyId != kProviderInvalidBodyId) ||
                ((flags & static_cast<std::uint32_t>(api::weaponparts::TargetFlag::MatchSourceName)) != 0 &&
-                   boundedStringLength(sourceName, ROCK_PROVIDER_MAX_EVIDENCE_NAME) != 0);
+                   boundedStringLength(sourceName, weapon_part_runtime::kMaxSourceName) != 0);
     }
 
     bool isValidWeaponPartKindValue(std::uint32_t value)
@@ -1642,16 +1644,13 @@ namespace rock::provider::runtime
     template <class Output, class Query>
     api::Status queryPhysicsInteractionValue(
         const std::uint64_t ownerToken,
-        Output* output,
+        Output& output,
         Query&& query,
         const bool requireAnimationThread = false)
     {
-        provider_state_policy::clearQueryOutput(output);
-        if (ownerToken == 0 || !output) {
+        output = {};
+        if (ownerToken == 0) {
             return api::Status::InvalidArgument;
-        }
-        if (output->size < sizeof(Output)) {
-            return api::Status::InvalidSize;
         }
         const auto ownerResult = validateRegisteredOwner(ownerToken);
         if (ownerResult != api::Status::Ok) {
@@ -1665,7 +1664,7 @@ namespace rock::provider::runtime
         if (!pi || !pi->isInitialized()) {
             return api::Status::NotReady;
         }
-        return query(*pi, *output) ?
+        return query(*pi, output) ?
             api::Status::Ok :
             api::Status::TargetUnavailable;
     }
@@ -1905,7 +1904,7 @@ namespace rock::provider::runtime
         }
         const auto leaseFrames = provider_lease_policy::clampLeaseFrames(
             request.leaseFrames,
-            ROCK_PROVIDER_MAX_OFFHAND_RESERVATION_LEASE_FRAMES_V1);
+            api::grab::kMaxReservationLeaseFrames);
         s_offhandReservationSlot = OffhandReservationSlot{
             .ownerToken = ownerToken,
             .hand = request.hand,
@@ -2133,7 +2132,7 @@ namespace rock::provider::runtime
 namespace rock::provider
 {
     using namespace runtime;
-    bool isPowerArmorGrabOwnerRegisteredV1(const std::uint64_t ownerToken)
+    bool isPowerArmorGrabOwnerRegistered(const std::uint64_t ownerToken)
     {
         return authorize(ownerToken,rock::api::InterfaceId::Grab,2,false)==rock::api::Status::Ok;
     }
@@ -2464,7 +2463,7 @@ namespace rock::provider
         }
     }
 
-    void dispatchAnimationPhaseCallbacksV1(
+    void dispatchAnimationPhaseCallbacks(
         const ::rock::api::animation::AnimationPhase phase,
         const game_frame_timing_policy::GameFrameTiming& timing)
     {
@@ -2592,15 +2591,15 @@ namespace rock::provider
             s_lastPartGripStates = {};
             s_lastEquippedWeaponState.flags = 0;
         }
-        std::array<std::uint64_t, ROCK_PROVIDER_MAX_CONSUMERS_V1>
+        std::array<std::uint64_t, api::core::kMaxOwners>
             suppressionOwners{};
-        std::array<std::uint64_t, ROCK_PROVIDER_MAX_CONSUMERS_V1>
+        std::array<std::uint64_t, api::core::kMaxOwners>
             targetOwners{};
-        std::array<std::uint64_t, ROCK_PROVIDER_MAX_CONSUMERS_V1>
+        std::array<std::uint64_t, api::core::kMaxOwners>
             driveOwners{};
-        std::array<std::uint64_t, ROCK_PROVIDER_MAX_CONSUMERS_V1>
+        std::array<std::uint64_t, api::core::kMaxOwners>
             nativeAnimationOwners{};
-        std::array<std::uint64_t, ROCK_PROVIDER_MAX_CONSUMERS_V1>
+        std::array<std::uint64_t, api::core::kMaxOwners>
             handVisualOwners{};
         std::uint32_t suppressionOwnerCount = 0;
         std::uint32_t targetOwnerCount = 0;
@@ -2934,7 +2933,7 @@ namespace rock::provider
         }
     }
 
-    std::uint32_t currentHandInputSuppressionFlagsV1(api::Hand hand)
+    std::uint32_t currentHandInputSuppressionFlags(api::Hand hand)
     {
         if (hand != api::Hand::Right && hand != api::Hand::Left) {
             return 0;
@@ -2952,12 +2951,12 @@ namespace rock::provider
         return flags;
     }
 
-    std::uint32_t currentNativeAnimationAuthorityFlagsV1()
+    std::uint32_t currentNativeAnimationAuthorityFlags()
     {
         return s_nativeAnimationAuthorityFlags.load(std::memory_order_acquire);
     }
 
-    void refreshNativeAnimationAuthorityLeasesV1()
+    void refreshNativeAnimationAuthorityLeases()
     {
         const auto frameIndex = currentProviderFrameIndex();
         std::scoped_lock lock(s_nativeAnimationAuthorityMutex);
@@ -3041,7 +3040,7 @@ namespace rock::provider
                 break;
             }
             outTargets[copied] = slot.target;
-            outTargets[copied].sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME - 1] = '\0';
+            outTargets[copied].sourceName[weapon_part_runtime::kMaxSourceName - 1] = '\0';
             if (outOwnerTokens) {
                 outOwnerTokens[copied] = slot.ownerToken;
             }
@@ -3050,15 +3049,15 @@ namespace rock::provider
         return copied;
     }
 
-    bool resolveTouchGrabTargetV1(
+    bool resolveTouchGrabTarget(
         const std::uint32_t bodyId,
         const std::uint32_t collisionLayer,
-        const TouchGrabMotionClassV1 motionClass,
+        const TouchGrabMotionClass motionClass,
         const api::Hand hand,
         const std::uint32_t worldGeneration,
         const std::uint32_t skeletonGeneration,
         const std::uint32_t providerGeneration,
-        TouchGrabTargetMatchV1& outMatch)
+        TouchGrabTargetMatch& outMatch)
     {
         std::scoped_lock lock(s_touchGrabMutex);
         outMatch = s_touchGrabTargets.resolve(
@@ -3073,7 +3072,7 @@ namespace rock::provider
         return outMatch.matched;
     }
 
-    bool currentTouchGrabTargetV1(
+    bool currentTouchGrabTarget(
         const std::uint64_t ownerToken,
         const std::uint64_t scopeToken,
         const std::uint64_t targetId,
@@ -3081,7 +3080,7 @@ namespace rock::provider
         const std::uint32_t worldGeneration,
         const std::uint32_t skeletonGeneration,
         const std::uint32_t providerGeneration,
-        TouchGrabTargetMatchV1& outMatch)
+        TouchGrabTargetMatch& outMatch)
     {
         std::scoped_lock lock(s_touchGrabMutex);
         return s_touchGrabTargets.currentTarget(
@@ -3096,7 +3095,7 @@ namespace rock::provider
             outMatch);
     }
 
-    bool publishTouchGrabStateV1(std::uint64_t ownerToken,std::uint64_t scopeToken,const ::rock::api::touch::TouchGrabState& state) {
+    bool publishTouchGrabState(std::uint64_t ownerToken,std::uint64_t scopeToken,const ::rock::api::touch::TouchGrabState& state) {
         bool changed=false; bool accepted=false;
         const auto frame=currentGameFrameIndex();
         {
@@ -3107,7 +3106,7 @@ namespace rock::provider
         return accepted;
     }
 
-    void acknowledgeTouchGrabYieldV1(
+    void acknowledgeTouchGrabYield(
         const std::uint64_t ownerToken,
         const std::uint64_t scopeToken,
         const std::uint64_t targetId,

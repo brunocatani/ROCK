@@ -1,7 +1,7 @@
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/weapon/NativeSecondaryPresentation.h"
 
-#include "api/ROCKProviderApiInternal.h"
+#include "api/ProviderRuntime.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/timing/RockGameTiming.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
@@ -106,7 +106,7 @@ namespace rock::authored_weapon_grip_capture
 
         [[nodiscard]] bool nativeAnimationAuthorityActive()
         {
-            return provider::currentNativeAnimationAuthorityFlagsV1() != 0;
+            return provider::currentNativeAnimationAuthorityFlags() != 0;
         }
 
         [[nodiscard]] bool validTree(const BoneTree* tree)
@@ -646,7 +646,7 @@ namespace rock::authored_weapon_grip_capture
                 // Animation addons capture first and may publish their ROCK V1
                 // authority before the local authored-grip capture decides
                 // whether it must yield for this exact graph sample.
-                provider::dispatchAnimationPhaseCallbacksV1(
+                provider::dispatchAnimationPhaseCallbacks(
                     ::rock::api::animation::AnimationPhase::NativeGraphOutput,
                     makeGraphOutputPhaseTiming());
                 captureAuthoredSupportGraphPose();
@@ -659,7 +659,7 @@ namespace rock::authored_weapon_grip_capture
                     AuthoredSupportGripCaptureFailureReason::CaptureFault);
             }
 #else
-            provider::dispatchAnimationPhaseCallbacksV1(
+            provider::dispatchAnimationPhaseCallbacks(
                 ::rock::api::animation::AnimationPhase::NativeGraphOutput,
                 makeGraphOutputPhaseTiming());
             captureAuthoredSupportGraphPose();

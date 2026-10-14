@@ -8,6 +8,11 @@
 
 namespace rock::provider
 {
+    [[nodiscard]] inline constexpr bool hasLifecycleFlag(std::uint32_t flags, api::core::LifecycleFlag flag)
+    {
+        return (flags & static_cast<std::uint32_t>(flag)) != 0;
+    }
+
     // Optional values one publication carries.
     enum class PublicationFlag : std::uint32_t
     {

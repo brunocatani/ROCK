@@ -13,12 +13,12 @@ Status ROCK_CALL setTouchGrabTargetsForScope(OwnerToken owner, std::uint64_t sco
         if (const auto s = checkInput(targets + i); s != Status::Ok) return s;
     }
     return invoke(owner, kInterfaceId, 2, true, [&] {
-        return static_cast<Status>(provider::runtime::apiSetTouchGrabTargetsForScopeV1(owner, scopeToken, targets, targetCount));
+        return provider::runtime::setTouchGrabTargetsForScope(owner, scopeToken, targets, targetCount);
     });
 }
 Status ROCK_CALL clearTouchGrabTargetsForScope(OwnerToken owner, std::uint64_t scopeToken) noexcept {
     return invoke(owner, kInterfaceId, 2, true, [&] {
-        return static_cast<Status>(provider::runtime::apiClearTouchGrabTargetsForScopeV1(owner, scopeToken));
+        return provider::runtime::clearTouchGrabTargetsForScope(owner, scopeToken);
     });
 }
 Status ROCK_CALL copyTouchGrabStatesForScope(OwnerToken owner, std::uint64_t scopeToken, TouchGrabState* outStates, std::uint32_t maxStates, std::uint32_t* outStateCount) noexcept {
@@ -29,12 +29,12 @@ Status ROCK_CALL copyTouchGrabStatesForScope(OwnerToken owner, std::uint64_t sco
     }
     *outStateCount = 0;
     return invoke(owner, kInterfaceId, 1, true, [&] {
-        return static_cast<Status>(provider::runtime::apiCopyTouchGrabStatesForScopeV1(owner, scopeToken, outStates, maxStates, outStateCount));
+        return provider::runtime::copyTouchGrabStatesForScope(owner, scopeToken, outStates, maxStates, *outStateCount);
     });
 }
 Status ROCK_CALL requestTouchGrabYield(OwnerToken owner, std::uint64_t scopeToken, std::uint64_t targetId, std::uint32_t targetGeneration) noexcept {
     return invoke(owner, kInterfaceId, 2, true, [&] {
-        return static_cast<Status>(provider::runtime::apiRequestTouchGrabYieldV1(owner, scopeToken, targetId, targetGeneration));
+        return provider::runtime::requestTouchGrabYield(owner, scopeToken, targetId, targetGeneration);
     });
 }
 Status ROCK_CALL setAuthoredHand(OwnerToken owner, const AuthoredHand* request) noexcept {

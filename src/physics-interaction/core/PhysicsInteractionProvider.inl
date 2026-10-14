@@ -85,7 +85,7 @@
         outSnapshot.handReservation = ::rock::provider::currentHandReservation(outSnapshot.offhandHand);
     }
 
-    bool PhysicsInteraction::isProviderWeaponBodyCurrentV1(
+    bool PhysicsInteraction::isProviderWeaponBodyCurrent(
         const std::uint64_t weaponGenerationKey,
         const std::uint32_t bodyId) const
     {
@@ -789,8 +789,7 @@
             const auto& heldBodies = hand.getHeldBodyIds();
             state.heldBodyCount = static_cast<std::uint32_t>((std::min)(
                 heldBodies.size(),
-                static_cast<std::size_t>(
-                    ::rock::provider::ROCK_PROVIDER_MAX_HAND_HELD_BODIES_V1)));
+                std::size(state.heldBodyIds)));
             for (std::uint32_t i = 0; i < state.heldBodyCount; ++i) {
                 state.heldBodyIds[i] = heldBodies[i];
             }
@@ -803,7 +802,7 @@
                 state, handling, grips[isLeft ? 1u : 0u]);
 
             state.effectiveInputSuppressionFlags =
-                ::rock::provider::currentHandInputSuppressionFlagsV1(
+                ::rock::provider::currentHandInputSuppressionFlags(
                     state.hand);
             if (input_remap_runtime::ownsBareFistInput()) {
                 state.effectiveInputSuppressionFlags |= static_cast<std::uint32_t>(

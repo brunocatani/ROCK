@@ -7,8 +7,6 @@
 
 namespace
 {
-    using namespace rock::provider;
-
     constexpr std::uint32_t flag(
         const ::rock::api::touch::TouchGrabTargetFlag value)
     {

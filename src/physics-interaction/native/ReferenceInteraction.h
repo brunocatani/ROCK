@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/ProviderRuntimeTypes.h"
+#include <ROCK/Grab.h>
 #include "RE/Bethesda/TESObjectREFRs.h"
 #include "RE/NetImmerse/NiTransform.h"
 

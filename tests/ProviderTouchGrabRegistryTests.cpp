@@ -95,7 +95,7 @@ namespace
         auto match = registry->resolve(
             100,
             5,
-            TouchGrabMotionClassV1::Keyframed,
+            TouchGrabMotionClass::Keyframed,
             rock::api::Hand::Right,
             11,
             12,
@@ -110,7 +110,7 @@ namespace
         match = registry->resolve(
             101,
             5,
-            TouchGrabMotionClassV1::Static,
+            TouchGrabMotionClass::Static,
             rock::api::Hand::Left,
             11,
             12,
@@ -129,7 +129,7 @@ namespace
         match = registry->resolve(
             101,
             6,
-            TouchGrabMotionClassV1::Static,
+            TouchGrabMotionClass::Static,
             rock::api::Hand::Left,
             11,
             12,
@@ -222,7 +222,7 @@ namespace
         const auto resolved = registry->resolve(
             target.bodyId,
             0,
-            TouchGrabMotionClassV1::Dynamic,
+            TouchGrabMotionClass::Dynamic,
             rock::api::Hand::Right,
             11,
             12,
@@ -230,7 +230,7 @@ namespace
             102);
         assert(!resolved.matched);
 
-        TouchGrabTargetMatchV1 current{};
+        TouchGrabTargetMatch current{};
         assert(registry->currentTarget(
             owner,
             scope,
@@ -282,7 +282,7 @@ namespace
         assert(!registry->resolve(
             target.bodyId,
             0,
-            TouchGrabMotionClassV1::Dynamic,
+            TouchGrabMotionClass::Dynamic,
             rock::api::Hand::Right,
             11,
             12,
@@ -330,7 +330,7 @@ namespace
         const auto match = registry->resolve(
             300,
             0,
-            TouchGrabMotionClassV1::Dynamic,
+            TouchGrabMotionClass::Dynamic,
             rock::api::Hand::Right,
             11,
             12,
@@ -366,7 +366,7 @@ namespace
         const auto rightMatch = registry->resolve(
             500,
             5,
-            TouchGrabMotionClassV1::Static,
+            TouchGrabMotionClass::Static,
             rock::api::Hand::Right,
             11,
             12,
@@ -375,7 +375,7 @@ namespace
         const auto leftMatch = registry->resolve(
             500,
             5,
-            TouchGrabMotionClassV1::Static,
+            TouchGrabMotionClass::Static,
             rock::api::Hand::Left,
             11,
             12,
@@ -397,7 +397,7 @@ void testFallbackPriority()
         flag(::rock::api::touch::TouchGrabTargetFlag::ExcludePowerArmor);
     auto ordinary = wildcardAnchor(51, 1ull << 2);
     auto exact = hinge(52, 100);
-    const auto resolve = [&]() { return registry->resolve(100, 2, TouchGrabMotionClassV1::Keyframed,
+    const auto resolve = [&]() { return registry->resolve(100, 2, TouchGrabMotionClass::Keyframed,
         rock::api::Hand::Right, 11, 12, 13, 40); };
     assert(registry->setScope(1, 1, &climbing, 1, 40) == TouchGrabRegistry::RegistrationResult::Ok);
     assert(resolve().target.targetId == 50);

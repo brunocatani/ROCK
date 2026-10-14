@@ -19,7 +19,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "RockConfig.h"
 
-#include "api/ROCKProviderApiInternal.h"
+#include "api/ProviderRuntime.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 
 #include "rock_support/Fo4VrRuntime.h"
@@ -586,7 +586,7 @@ namespace rock::input_remap_runtime
             const auto physicalHand = hand == input_remap_policy::Hand::Left ?
                 api::Hand::Left : api::Hand::Right;
             return s_providerOpenVrGameInputSuppressed[controllerIndex(hand)].load(std::memory_order_acquire) ||
-                provider::hasHandInputSuppressionFlagV1(provider::currentHandInputSuppressionFlagsV1(physicalHand),
+                provider::hasHandInputSuppressionFlag(provider::currentHandInputSuppressionFlags(physicalHand),
                     ::rock::api::input::HandInputSuppressionFlag::SuppressOpenVrGameInput);
         }
 
@@ -599,9 +599,9 @@ namespace rock::input_remap_runtime
 
         [[nodiscard]] std::uint32_t currentProviderHandInputSuppressionFlagsAtDispatch()
         {
-            return provider::currentHandInputSuppressionFlagsV1(
+            return provider::currentHandInputSuppressionFlags(
                        api::Hand::Right) |
-                   provider::currentHandInputSuppressionFlagsV1(
+                   provider::currentHandInputSuppressionFlags(
                        api::Hand::Left);
         }
 
@@ -640,7 +640,7 @@ namespace rock::input_remap_runtime
                 return true;
             }
 
-            return provider::hasHandInputSuppressionFlagV1(
+            return provider::hasHandInputSuppressionFlag(
                 currentProviderHandInputSuppressionFlagsAtDispatch(),
                 ::rock::api::input::HandInputSuppressionFlag::
                     SuppressOpenVrGameInput);
@@ -1992,7 +1992,7 @@ namespace rock::input_remap_runtime
                 currentProviderHandInputSuppressionFlagsAtDispatch();
             const bool suppressAll =
                 isAnyProviderOpenVrGameInputSuppressed() ||
-                provider::hasHandInputSuppressionFlagV1(
+                provider::hasHandInputSuppressionFlag(
                     flags,
                     ::rock::api::input::HandInputSuppressionFlag::
                         SuppressOpenVrGameInput);
@@ -2011,7 +2011,7 @@ namespace rock::input_remap_runtime
                         .holdSeconds = holdSeconds,
                         .suppressVats =
                             g_rockConfig.rockSuppressNativeVats ||
-                            provider::hasHandInputSuppressionFlagV1(
+                            provider::hasHandInputSuppressionFlag(
                                 flags,
                                 ::rock::api::input::HandInputSuppressionFlag::
                                         SuppressNativeVats),
@@ -2048,7 +2048,7 @@ namespace rock::input_remap_runtime
             const auto flags = currentProviderHandInputSuppressionFlagsAtDispatch();
             return s_gameplayInputAllowed.load(std::memory_order_acquire) &&
                 !isInputBlockingMenuActive() &&
-                !provider::hasHandInputSuppressionFlagV1(flags,
+                !provider::hasHandInputSuppressionFlag(flags,
                     ::rock::api::input::HandInputSuppressionFlag::SuppressGrenadeQuickDraw) &&
                 !isAnyProviderOpenVrGameInputSuppressedAtDispatch();
         }
@@ -2902,7 +2902,7 @@ namespace rock::input_remap_runtime
          *
          * The accumulator's menu rearm guarantees a menu-accept press (A/X
          * confirms UI selections) cannot replay as a reload on menu exit.
-         * Provider API consumers are unaffected: apiGetRawWandButtonStateV1
+         * Provider API consumers are unaffected: getRawWandButtonState
          * exposes level state only, by design. Frame-thread only.
          */
         auto leftAcceptState = consumeRawButtonState(true, input_remap_policy::kOpenVrAcceptButtonId);

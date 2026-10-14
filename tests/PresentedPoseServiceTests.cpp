@@ -1,5 +1,6 @@
 // Exercise the production service boundary with a completed-pose owner and
 // a separately advancing control snapshot. No live engine is needed.
+#include "api/ProviderPublication.h"
 #include "api/ProviderStatePolicy.h"
 #include <ROCK/Hands.h>
 #include <algorithm>
@@ -34,12 +35,12 @@ namespace rock::provider {
     bool apiIsProviderReady() { return frik_visual_authority::ready; }
     template<class Output, class Query>
     api::Status queryPhysicsInteractionValue(std::uint64_t owner,
-        Output* output, Query query, bool) {
-        provider_state_policy::clearQueryOutput(output);
-        if (!owner || !output) return api::Status::InvalidArgument;
+        Output& output, Query query, bool) {
+        output = {};
+        if (!owner) return api::Status::InvalidArgument;
         if (!ownerThread) return api::Status::WrongThread;
         if (!apiIsProviderReady()) return api::Status::NotReady;
-        return query(instance, *output) ? api::Status::Ok : api::Status::TargetUnavailable;
+        return query(instance, output) ? api::Status::Ok : api::Status::TargetUnavailable;
     }
 #include "api/services/HandsService.inl"
 }
