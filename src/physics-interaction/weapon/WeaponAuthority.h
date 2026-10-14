@@ -463,6 +463,37 @@ namespace rock::left_firing_position_only_math
         return result;
     }
 
+    // The player's left firing aim trim in wand space: yaw, then pitch.
+    template <class Transform>
+    [[nodiscard]] inline Transform leftAimTrim(const float yawDegrees, const float pitchDegrees)
+    {
+        constexpr float kDegreesToRadians = 0.017453292519943295769f;
+        const float yawRadians = yawDegrees * kDegreesToRadians;
+        const float pitchRadians = pitchDegrees * kDegreesToRadians;
+
+        Transform yawTrim = transform_math::makeIdentityTransform<Transform>();
+        if (yawRadians != 0.0f) {
+            const float cosine = std::cos(yawRadians);
+            const float sine = std::sin(yawRadians);
+            yawTrim.rotate.entry[0][0] = cosine;
+            yawTrim.rotate.entry[0][1] = -sine;
+            yawTrim.rotate.entry[1][0] = sine;
+            yawTrim.rotate.entry[1][1] = cosine;
+        }
+
+        Transform pitchTrim = transform_math::makeIdentityTransform<Transform>();
+        if (pitchRadians != 0.0f) {
+            const float cosine = std::cos(pitchRadians);
+            const float sine = std::sin(pitchRadians);
+            pitchTrim.rotate.entry[1][1] = cosine;
+            pitchTrim.rotate.entry[1][2] = sine;
+            pitchTrim.rotate.entry[2][1] = -sine;
+            pitchTrim.rotate.entry[2][2] = cosine;
+        }
+
+        return transform_math::composeTransforms(yawTrim, pitchTrim);
+    }
+
     /*
      * Weapon geometry uses +Y as muzzle-forward and +X as its lateral axis.
      * Conjugating the right weapon-in-wand orientation by the X reflection

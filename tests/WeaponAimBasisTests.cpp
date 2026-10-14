@@ -298,7 +298,8 @@ int main()
         const RE::NiPoint3 palm{ 6.0f, -2.0f, 0.2f };
         for (const float scale : { 0.865347f, 1.0f, 1.2f }) {
             RE::NiTransform weapon{}, hand{};
-            ok &= expect("secondary pose resolves", native_secondary_pose::solve(controller, physical, leftSeat, palm, scale, weapon, hand));
+            ok &= expect("secondary pose resolves", native_secondary_pose::solve(controller, physical, leftSeat, palm, scale,
+                weapon_aim_basis::weaponInController(), {}, weapon, hand));
             ok &= expect("secondary firing seat pins the physical palm at every model scale",
                 weaponSolverLength(transform_math::localPointToWorld(hand, palm) - transform_math::localPointToWorld(physical, palm)) < 0.001f);
             ok &= expect("mirrored seat and rendered gun retain proper rotations",
@@ -310,7 +311,7 @@ int main()
             RE::NiTransform movedWeapon{}, movedHand{};
             ok &= expect("moving controllers resolve independently", native_secondary_pose::solve(
                 transform_math::composeTransforms(motion, controller), transform_math::composeTransforms(motion, physical),
-                leftSeat, palm, scale, movedWeapon, movedHand));
+                leftSeat, palm, scale, weapon_aim_basis::weaponInController(), {}, movedWeapon, movedHand));
             ok &= expect("secondary solve follows player motion without a frozen world pose",
                 samePose(movedWeapon, transform_math::composeTransforms(motion, weapon)) &&
                 samePose(movedHand, transform_math::composeTransforms(motion, hand)));
@@ -324,7 +325,30 @@ int main()
         invalidSeat.scale = 0;
         RE::NiTransform rejectedWeapon{}, rejectedHand{};
         ok &= expect("invalid authored pose fails before a scene write", !native_secondary_pose::solve(
-            controller, physical, invalidSeat, palm, 1, rejectedWeapon, rejectedHand));
+            controller, physical, invalidSeat, palm, 1, weapon_aim_basis::weaponInController(), {}, rejectedWeapon, rejectedHand));
+    }
+
+    // Slot 1 aims like slot 0 in the same hand: the right hand holds the
+    // controller basis; the left mirrors it and applies the left aim trim.
+    {
+        const auto basis = weapon_aim_basis::weaponInController();
+        ok &= expect("slot 1 right aim is the controller basis",
+            samePose(native_secondary_pose::firingWeaponInWand(false, 12.0f, -7.0f), basis));
+        const auto expectedLeft = transform_math::composeTransforms(
+            left_firing_position_only_math::leftAimTrim<RE::NiTransform>(12.0f, -7.0f),
+            left_firing_position_only_math::mirrorRightWeaponInWandOrientation(basis));
+        ok &= expect("slot 1 left aim is slot 0's trimmed mirror",
+            samePose(native_secondary_pose::firingWeaponInWand(true, 12.0f, -7.0f), expectedLeft));
+        const RE::NiPoint3 palm{ 6.0f, -2.0f, 0.2f };
+        const RE::NiPoint3 offset{ 0.5f, -1.0f, 0.25f };
+        auto seat = transform_math::makeIdentityTransform<RE::NiTransform>();
+        seat.translate = { 0.8f, -0.7f, -2.6f };
+        const auto physical = transform_math::makeIdentityTransform<RE::NiTransform>();
+        RE::NiTransform weapon{}, hand{};
+        ok &= expect("left grip offset solve resolves", native_secondary_pose::solve(physical, physical, seat, palm, 1.0f,
+            expectedLeft, offset, weapon, hand));
+        ok &= expect("the left grip offset moves the seated palm to the shifted hand target",
+            weaponSolverLength(transform_math::localPointToWorld(hand, palm) - transform_math::localPointToWorld(physical, palm + offset)) < 0.001f);
     }
 
     // Captured 2026-10-12 frame 3452: the primary native arm pass leaves the

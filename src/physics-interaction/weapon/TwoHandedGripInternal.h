@@ -292,38 +292,8 @@ namespace rock
         inline RE::NiTransform makeLeftFiringWandAimTrim(
             const EquippedWeaponHandlingSettings& handlingSettings)
         {
-            constexpr float kDegreesToRadians =
-                0.017453292519943295769f;
-            const float yawRadians =
-                handlingSettings.leftFiringAimYawDegrees *
-                kDegreesToRadians;
-            const float pitchRadians =
-                handlingSettings.leftFiringAimPitchDegrees *
-                kDegreesToRadians;
-
-            RE::NiTransform yawTrim =
-                transform_math::makeIdentityTransform<RE::NiTransform>();
-            if (yawRadians != 0.0f) {
-                const float cosine = std::cos(yawRadians);
-                const float sine = std::sin(yawRadians);
-                yawTrim.rotate.entry[0][0] = cosine;
-                yawTrim.rotate.entry[0][1] = -sine;
-                yawTrim.rotate.entry[1][0] = sine;
-                yawTrim.rotate.entry[1][1] = cosine;
-            }
-
-            RE::NiTransform pitchTrim =
-                transform_math::makeIdentityTransform<RE::NiTransform>();
-            if (pitchRadians != 0.0f) {
-                const float cosine = std::cos(pitchRadians);
-                const float sine = std::sin(pitchRadians);
-                pitchTrim.rotate.entry[1][1] = cosine;
-                pitchTrim.rotate.entry[1][2] = sine;
-                pitchTrim.rotate.entry[2][1] = -sine;
-                pitchTrim.rotate.entry[2][2] = cosine;
-            }
-
-            return transform_math::composeTransforms(yawTrim, pitchTrim);
+            return left_firing_position_only_math::leftAimTrim<RE::NiTransform>(
+                handlingSettings.leftFiringAimYawDegrees, handlingSettings.leftFiringAimPitchDegrees);
         }
 
         using weapon_scene_presentation::restoreWeaponRootPreservingPresentedDescendants;

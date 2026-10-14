@@ -45,6 +45,7 @@ namespace rock::weapon_aim_basis
     [[nodiscard]] inline bool tryResolveWorld(
         const RE::NiTransform& controllerWorld,
         const float weaponScale,
+        const RE::NiTransform& weaponInWand,
         RE::NiTransform& result) noexcept
     {
         result = {};
@@ -62,9 +63,17 @@ namespace rock::weapon_aim_basis
                 }
             }
         }
-        result = transform_math::composeTransforms(controllerWorld, weaponInController());
+        result = transform_math::composeTransforms(controllerWorld, weaponInWand);
         result.scale = weaponScale;
         return true;
+    }
+
+    [[nodiscard]] inline bool tryResolveWorld(
+        const RE::NiTransform& controllerWorld,
+        const float weaponScale,
+        RE::NiTransform& result) noexcept
+    {
+        return tryResolveWorld(controllerWorld, weaponScale, weaponInController(), result);
     }
 
     // Melee models have no shared barrel axis. Preserve the authored wrist

@@ -5,6 +5,7 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/HoldingGripRecords.h"
 #include "physics-interaction/weapon/WeaponGripSeat.h"
+#include "physics-interaction/weapon/EquippedWeaponHandlingRuntime.h"
 #include "physics-interaction/weapon/WeaponInstanceClassification.h"
 #include "physics-interaction/weapon/WeaponAimBasis.h"
 #include "physics-interaction/weapon/NativeSecondaryPose.h"
@@ -454,23 +455,33 @@ namespace rock::native_secondary_presentation
             }
             const RE::NiTransform& seat = firingSeat.handWeaponLocal;
             const auto& fingers = firingSeat.fingers;
-            RE::NiTransform physicalHand{};
-            const auto* nodes = f4vr::getPlayerNodes();
-            auto* wand = nodes ? (left ? nodes->SecondaryWandNode : nodes->primaryWandNode) : nullptr;
-            if (!usable(seat) || !wand ||
+            // The first weapon's firing inputs and aim: ROCK's equipped-weapon
+            // wand and hand (filtered when weapon filtering is active), its
+            // controller basis, and for the left hand the mirrored basis, the
+            // left aim trim and the left firing grip offset.
+            RE::NiTransform physicalHand{}, wandWorld{};
+            if (!usable(seat) ||
                 !frik_hand_world_authority::hasCalibratedRawHandFrame(left) ||
-                !frik_hand_world_authority::tryGetRawHandWorld(left, physicalHand) || !usable(physicalHand)) {
+                !frik_hand_world_authority::tryGetWeaponWandWorld(left, wandWorld) || !usable(wandWorld) ||
+                !frik_hand_world_authority::tryGetWeaponHandWorld(left, physicalHand) || !usable(physicalHand)) {
                 waitFor(view, "tracked-hand");
                 return;
             }
+            const auto& handling = equipped_weapon_handling_runtime::current();
+            const auto weaponInWand = native_secondary_pose::firingWeaponInWand(
+                left, handling.leftFiringAimYawDegrees, handling.leftFiringAimPitchDegrees);
+            const RE::NiPoint3 handTargetOffset = left ?
+                RE::NiPoint3{ handling.leftFiringAimOffsetXGameUnits, handling.leftFiringAimOffsetYGameUnits,
+                    handling.leftFiringAimOffsetZGameUnits } :
+                RE::NiPoint3{};
             RE::NiTransform target{}, hand{};
             const auto palm = palm_point::handLocal(left);
-            if (!native_secondary_pose::solve(wand->world, physicalHand, seat,
-                    palm, s_state.modelScale, target, hand)) {
+            if (!native_secondary_pose::solve(wandWorld, physicalHand, seat,
+                    palm, s_state.modelScale, weaponInWand, handTargetOffset, target, hand)) {
                 waitFor(view, "invalid-placement");
                 return;
             }
-            native_secondary_actions::applyRecoil(target,hand,wand->world);
+            native_secondary_actions::applyRecoil(target,hand,wandWorld);
             // The controller-relative grip excludes collision correction.
             const auto intentTarget = target;
             s_state.collisionCorrected = false;
@@ -507,7 +518,7 @@ namespace rock::native_secondary_presentation
                 return;
             }
             s_state.targetWorld = target;
-            s_state.controllerWorld = wand->world;
+            s_state.controllerWorld = wandWorld;
             s_state.dropGrip = AuthoredWeaponGripPose{
                 .role = loose_weapon_authored_grab_policy::Role::Firing,
                 .handWeaponLocal = seat,
