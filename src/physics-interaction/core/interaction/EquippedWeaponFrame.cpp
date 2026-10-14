@@ -231,6 +231,21 @@ namespace rock
                         leftCarrySolvedWeaponWorld),
                 .leftCarrySolvedWeaponWorld = leftCarrySolvedWeaponWorld,
             });
+        // Seam diagnostic: every transition the coordinator binds (menu and
+        // workbench exits, native and inventory equips). Held equips arm it
+        // at their own call sites.
+        static std::uint64_t s_seamTransitionSequence = 0;
+        const auto transition = _equipped.transition.getPublicSnapshot();
+        if (transition.transitionSequence != s_seamTransitionSequence) {
+            s_seamTransitionSequence = transition.transitionSequence;
+            using Source = EquippedWeaponTransitionCoordinator::Source;
+            switch (transition.source) {
+            case Source::MenuExit: armTransitionSeamTrace("menu-exit"); break;
+            case Source::WorkbenchExit: armTransitionSeamTrace("workbench-exit"); break;
+            case Source::ObservedEquip: armTransitionSeamTrace("observed-equip"); break;
+            default: break;
+            }
+        }
     }
 
     /*

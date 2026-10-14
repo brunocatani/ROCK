@@ -200,6 +200,7 @@ namespace rock {
                 }
                 result.flags |= bit(Flag::IncomingEquipAccepted);
                 result.weaponSlot = 1;
+                armTransitionSeamTrace("inventory-equip-slot1");
                 pending.selection = {};
                 sampleEquippedSlotOne();
                 finish(State::Succeeded, Failure::None);
