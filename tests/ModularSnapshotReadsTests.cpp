@@ -68,14 +68,19 @@ int main()
     publication.hmdForwardWorld[2]=1;
     publication.gameToHavokScale=0.014f;publication.havokToGameScale=71;
     publication.weapon.weaponGenerationKey=456;publication.weapon.bodyCount=1;publication.weapon.bodyIds[0]=14;
+    publication.slotOneWeapon.weaponGenerationKey=457;publication.slotOneWeapon.bodyCount=1;publication.slotOneWeapon.bodyIds[0]=15;
+    publication.handRoles[0]={0,api::hands::HandRole::Firing};
+    publication.handRoles[1]={1,api::hands::HandRole::Firing};
     auto task=std::async(std::launch::async,[] {
         assert(std::this_thread::get_id()!=frameThread);
         api::hands::HeadPose head{};
         api::hands::Roles roles{};
         api::collision::Environment environment{};
         assert(api::hands::getHeadPose(42,&head)==Status::Ok && head.flags==3 && head.transform.translate[0]==12);
-        assert(api::hands::getRoles(42,&roles)==Status::Ok && roles.offhand==api::Hand::Left);
-        assert(api::collision::getEnvironment(42,&environment)==Status::Ok && environment.weapons[0].bodyIds[0]==14 && environment.weapons[0].weaponGenerationKey==456 && environment.weapons[1].bodyCount==0);
+        assert(api::hands::getRoles(42,&roles)==Status::Ok && roles.right.weaponSlot==0 && roles.right.role==api::hands::HandRole::Firing &&
+            roles.left.weaponSlot==1 && roles.left.role==api::hands::HandRole::Firing);
+        assert(api::collision::getEnvironment(42,&environment)==Status::Ok && environment.weapons[0].bodyIds[0]==14 && environment.weapons[0].weaponGenerationKey==456 &&
+            environment.weapons[1].bodyCount==1 && environment.weapons[1].bodyIds[0]==15 && environment.weapons[1].weaponGenerationKey==457);
         for(const auto& sample:{head.sample,roles.sample,environment.sample}) {
             assert(sample.frameIndex==100 && sample.publicationSequence==101);
             assert(sample.worldGeneration==7 && sample.skeletonGeneration==8 && sample.providerGeneration==9 && sample.collisionGeneration==10);

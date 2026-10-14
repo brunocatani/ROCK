@@ -77,16 +77,35 @@ namespace rock::api::hands {
         float forwardWorld[3]{};
     };
 
-    // The physical hands assigned to ROCK's firing (primary) and support
-    // (offhand) roles in this publication. They follow firing-hand transfers;
-    // they are not the player's configured dominant hand.
+    inline constexpr std::uint32_t kNoWeaponSlot = 0xFFFFFFFFu;
+
+    // A hand's grip on an equipped weapon. Firing: that weapon's firing grip.
+    // Support: any other grip of that weapon (its support grip or another
+    // part grip). None: no equipped-weapon grip.
+    enum class HandRole : std::uint32_t
+    {
+        None = 0,
+        Firing = 1,
+        Support = 2,
+    };
+
+    struct HandWeaponRole
+    {
+        // The weapon slot whose grip the hand holds; kNoWeaponSlot for None.
+        std::uint32_t weaponSlot{ kNoWeaponSlot };
+        HandRole role{ HandRole::None };
+    };
+
+    // What each physical hand holds of the equipped weapons in this
+    // publication. A hand holds at most one grip of one weapon. Roles follow
+    // grip transfers; they are not the player's configured default hand.
     struct Roles
     {
         std::uint32_t size{ sizeof(Roles) };
         std::uint32_t version{ 1 };
         Sample sample{};
-        Hand primary{ Hand::None };
-        Hand offhand{ Hand::None };
+        HandWeaponRole right{};
+        HandWeaponRole left{};
     };
 
     // Permission bits are local to this interface major. Discovery grants none.

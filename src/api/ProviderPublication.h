@@ -3,6 +3,7 @@
 #include <ROCK/Collision.h>
 #include <ROCK/Core.h>
 #include <ROCK/Grab.h>
+#include <ROCK/Hands.h>
 
 #include <cstdint>
 
@@ -48,9 +49,13 @@ namespace rock::provider
         float gameToHavokScale{ 0.0f };
         float havokToGameScale{ 0.0f };
         std::uint32_t physicsScaleRevision{ 0 };
-        // Weapon slot 0, the one weapon ROCK keeps state for.
+        // Weapon slot 0's identity and generated bodies.
         std::uint32_t weaponFormId{ 0 };
         api::collision::WeaponBodies weapon{};
+        // Weapon slot 1's generated bodies.
+        api::collision::WeaponBodies slotOneWeapon{};
+        // Indexed by hand: [0] right, [1] left.
+        api::hands::HandWeaponRole handRoles[2]{};
         // The controller hands ROCK interacts with, not the rendered bones.
         api::Transform rightHandTransform{};
         api::Transform leftHandTransform{};

@@ -58,14 +58,29 @@
 
         outSnapshot.weaponFormId = currentEquippedWeaponFormId();
         auto& weapon = outSnapshot.weapon;
-        for (auto& bodyId : weapon.bodyIds) {
-            bodyId = api::grab::kNoBody;
-        }
-        const auto weaponSnapshot = _weaponCollision.getWeaponBodySnapshotAtomic();
-        weapon.weaponGenerationKey = weaponSnapshot.generationKey;
-        weapon.bodyCount = (std::min)(weaponSnapshot.count, static_cast<std::uint32_t>(std::size(weapon.bodyIds)));
-        for (std::uint32_t i = 0; i < weapon.bodyCount; ++i) {
-            weapon.bodyIds[i] = weaponSnapshot.bodyIds[i];
+        const auto publishBodies = [](const WeaponCollision& collision, api::collision::WeaponBodies& out) {
+            for (auto& bodyId : out.bodyIds) bodyId = api::grab::kNoBody;
+            const auto snapshot = collision.getWeaponBodySnapshotAtomic();
+            out.weaponGenerationKey = snapshot.generationKey;
+            out.bodyCount = (std::min)(snapshot.count, static_cast<std::uint32_t>(std::size(out.bodyIds)));
+            for (std::uint32_t i = 0; i < out.bodyCount; ++i) out.bodyIds[i] = snapshot.bodyIds[i];
+        };
+        publishBodies(_weaponCollision, weapon);
+        publishBodies(_secondaryWeaponCollision, outSnapshot.slotOneWeapon);
+
+        // Each hand's equipped-weapon grip, from the roster: slot 0's
+        // confirmed firing grip or part grips, slot 1's firing grip.
+        const auto roster = equippedWeaponRoster();
+        for (const bool isLeft : { false, true }) {
+            auto& role = outSnapshot.handRoles[isLeft ? 1 : 0];
+            const auto slotZero = roster.slotZeroGrips(isLeft);
+            if (slotZero.firingGripActive) {
+                role = { 0, api::hands::HandRole::Firing };
+            } else if (slotZero.partGripActive) {
+                role = { 0, api::hands::HandRole::Support };
+            } else if (roster.slotOneHolds(isLeft)) {
+                role = { 1, api::hands::HandRole::Firing };
+            }
         }
 
         // Providers get the controller hand ROCK interacts with, not the

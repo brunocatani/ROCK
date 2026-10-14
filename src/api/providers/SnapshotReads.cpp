@@ -34,8 +34,8 @@ Status ROCK_CALL getRoles(OwnerToken owner, Roles* result) noexcept {
         provider::Publication frame{};
         if (!provider::runtime::copyPublication(frame)) return Status::NotReady;
         result->sample=frame.sample();
-        result->primary=static_cast<Hand>(frame.primaryHand);
-        result->offhand=static_cast<Hand>(frame.offhandHand);
+        result->right=frame.handRoles[0];
+        result->left=frame.handRoles[1];
         return Status::Ok;
     });
 }
@@ -54,6 +54,7 @@ Status ROCK_CALL getEnvironment(OwnerToken owner, Environment* result) noexcept 
         result->havokToGameScale=frame.havokToGameScale;
         result->physicsScaleRevision=frame.physicsScaleRevision;
         result->weapons[0]=frame.weapon;
+        result->weapons[1]=frame.slotOneWeapon;
         return Status::Ok;
     });
 }

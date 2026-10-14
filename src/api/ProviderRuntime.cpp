@@ -1903,17 +1903,37 @@ namespace rock::provider::runtime
                left.providerGeneration == right.providerGeneration;
     }
 
+    [[nodiscard]] bool sameWeaponBodies(
+        const api::collision::WeaponBodies& left,
+        const api::collision::WeaponBodies& right) noexcept
+    {
+        if (left.weaponGenerationKey != right.weaponGenerationKey || left.bodyCount != right.bodyCount) {
+            return false;
+        }
+        for (std::uint32_t index = 0; index < left.bodyCount; ++index) {
+            if (left.bodyIds[index] != right.bodyIds[index]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     [[nodiscard]] bool sameWeaponPayload(
         const Publication& left,
         const Publication& right) noexcept
     {
-        if (left.weaponFormId != right.weaponFormId ||
-            left.weapon.weaponGenerationKey != right.weapon.weaponGenerationKey ||
-            left.weapon.bodyCount != right.weapon.bodyCount) {
-            return false;
-        }
-        for (std::uint32_t index = 0; index < left.weapon.bodyCount; ++index) {
-            if (left.weapon.bodyIds[index] != right.weapon.bodyIds[index]) {
+        return left.weaponFormId == right.weaponFormId &&
+            sameWeaponBodies(left.weapon, right.weapon) &&
+            sameWeaponBodies(left.slotOneWeapon, right.slotOneWeapon);
+    }
+
+    [[nodiscard]] bool sameHandRoles(
+        const Publication& left,
+        const Publication& right) noexcept
+    {
+        for (std::size_t index = 0; index < std::size(left.handRoles); ++index) {
+            if (left.handRoles[index].weaponSlot != right.handRoles[index].weaponSlot ||
+                left.handRoles[index].role != right.handRoles[index].role) {
                 return false;
             }
         }
@@ -2146,6 +2166,7 @@ namespace rock::provider
             const bool handRolesChanged = !hadPrevious ||
                 snapshot.primaryHand != previousSnapshot.primaryHand ||
                 snapshot.offhandHand != previousSnapshot.offhandHand ||
+                !sameHandRoles(snapshot, previousSnapshot) ||
                 snapshot.handReservation !=
                     previousSnapshot.handReservation;
             const bool stateChanged = lifecycleChanged || handChanged[0] || handChanged[1] ||
