@@ -8,7 +8,7 @@
 #include <ROCK/Grab.h>
 #include <ROCK/Touch.h>
 #include <ROCK/Weapon.h>
-#include <ROCK/WeaponPartsV1_7.h>
+#include <ROCK/WeaponParts.h>
 #include <ROCK/Animation.h>
 #include <ROCK/Input.h>
 #include <ROCK/PlayerController.h>
@@ -22,7 +22,7 @@ namespace rock::api::collision { const Api& table() noexcept; }
 namespace rock::api::grab { const Api& table() noexcept; }
 namespace rock::api::touch { const Api& table() noexcept; }
 namespace rock::api::weapon { const Api& table() noexcept; }
-namespace rock::api::weaponparts { const v1_7::Api& tableV1_7() noexcept; }
+namespace rock::api::weaponparts { const Api& table() noexcept; }
 namespace rock::api::animation { const Api& table() noexcept; }
 namespace rock::api::input { const Api& table() noexcept; }
 namespace rock::api::playercontroller { const Api& table() noexcept; }
@@ -39,7 +39,7 @@ std::span<const RegisteredInterface> registeredInterfaces() noexcept {
         registration(grab::table(), grab::kSupportedPermissions),
         registration(touch::table(), touch::kSupportedPermissions),
         registration(weapon::table(), weapon::kSupportedPermissions),
-        registration(weaponparts::tableV1_7(), weaponparts::kSupportedPermissions),
+        registration(weaponparts::table(), weaponparts::kSupportedPermissions),
         registration(animation::table(), animation::kSupportedPermissions),
         registration(input::table(), input::kSupportedPermissions),
         registration(playercontroller::table(), playercontroller::kSupportedPermissions),

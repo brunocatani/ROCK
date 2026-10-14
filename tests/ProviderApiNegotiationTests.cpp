@@ -93,63 +93,7 @@ int main() {
         assert(api->clearAuthoredHand(78,Hand::Right)==Status::Ok);
     }
     verify(weapon::table(),weapon::kSupportedPermissions);
-    verify(weaponparts::tableV1_7(),weaponparts::kSupportedPermissions);
-    {
-        const InterfaceDescriptorV1 *oldParts{},*newParts{};
-        for(const auto minor:{0u,1u}) {
-            assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,1,minor,sizeof(weaponparts::ApiV1),&oldParts)==Status::Ok);
-            assert(oldParts->requiredCoreMinor==0);
-            assert(static_cast<const weaponparts::ApiV1*>(oldParts->table)->clearWeaponPartTargetsV1(77)==Status::Ok);
-        }
-        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,1,2,sizeof(weaponparts::v1_2::Api),&newParts)==Status::Ok&&newParts==oldParts);
-        const auto* api=static_cast<const weaponparts::v1_2::Api*>(newParts->table);
-        weaponparts::v1_2::CollisionSuppression suppression;
-        assert(api->setCollisionSuppression(78,&suppression)==Status::Ok);
-        assert(api->clearCollisionSuppression(78)==Status::Ok);
-        assert(api->v1.clearWeaponPartTargetsV1(77)==Status::Ok);
-        const InterfaceDescriptorV1* pointed{};
-        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,1,3,sizeof(weaponparts::v1_3::Api),&pointed)==Status::Ok&&pointed==newParts);
-        const auto* points=static_cast<const weaponparts::v1_3::Api*>(pointed->table);weaponparts::v1_3::GrabPoint point;
-        assert(points->setGrabPoints(79,&point,1)==Status::Ok);
-        assert(points->v1_2.clearCollisionSuppression(78)==Status::Ok&&points->v1_2.v1.clearWeaponPartTargetsV1(77)==Status::Ok);
-        const InterfaceDescriptorV1* operating{};
-        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,1,4,sizeof(weaponparts::v1_4::Api),&operating)==Status::Ok&&operating==pointed);
-        const auto* operatingPoints=static_cast<const weaponparts::v1_4::Api*>(operating->table);
-        assert(operatingPoints->setOperatingGrabPoints(79,&point,1)==Status::Ok);
-        assert(operatingPoints->v1_3.setGrabPoints(79,&point,1)==Status::Ok&&operatingPoints->v1_3.clearGrabPoints(77)==Status::Ok);
-        const InterfaceDescriptorV1* pinky{};
-        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,1,5,sizeof(weaponparts::v1_5::Api),&pinky)==Status::Ok&&pinky==operating);
-        const auto* pinkyPoints=static_cast<const weaponparts::v1_5::Api*>(pinky->table);
-        assert(pinkyPoints->setPinkyOperatingGrabPoints(79,&point,1)==Status::Ok);
-        assert(pinkyPoints->v1_4.setOperatingGrabPoints(79,&point,1)==Status::Ok);
-        const std::array previousOperating{discovery::RegisteredInterface{{40,InterfaceId::WeaponParts,1,4,sizeof(weaponparts::v1_4::Api),1,0,0,&pinkyPoints->v1_4},3}};
-        assert(discovery::query(previousOperating,InterfaceId::WeaponParts,1,5,sizeof(*pinkyPoints),&result)==Status::UnsupportedMinor);
-        const InterfaceDescriptorV1* anchored{};
-        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,1,6,sizeof(weaponparts::v1_6::Api),&anchored)==Status::Ok&&anchored==pinky);
-        const auto* anchoredPoints=static_cast<const weaponparts::v1_6::Api*>(anchored->table);
-        assert(anchoredPoints->setAnchoredOperatingGrabPoints(79,&point,1)==Status::Ok);
-        assert(anchoredPoints->v1_5.setPinkyOperatingGrabPoints(79,&point,1)==Status::Ok);
-        const std::array previousPinky{discovery::RegisteredInterface{{40,InterfaceId::WeaponParts,1,5,sizeof(*pinkyPoints),1,0,0,pinkyPoints},3}};
-        assert(discovery::query(previousPinky,InterfaceId::WeaponParts,1,6,sizeof(*anchoredPoints),&result)==Status::UnsupportedMinor);
-        const InterfaceDescriptorV1* itemDescriptor{};
-        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,1,7,sizeof(weaponparts::v1_7::Api),&itemDescriptor)==Status::Ok&&itemDescriptor==anchored);
-        const auto* items=static_cast<const weaponparts::v1_7::Api*>(itemDescriptor->table);
-        weaponparts::v1_7::ItemKey itemKey{123,0x14,7},worldKey{123,0xff001000,0};
-        weaponparts::v1_7::ItemState itemState;
-        assert(items->setItemState(80,&itemKey,&itemState)==Status::Ok);
-        assert(items->moveItemState(80,&itemKey,&worldKey)==Status::Ok);
-        assert(anchoredPoints->setAnchoredOperatingGrabPoints(79,&point,1)==Status::Ok);
-        assert(items->v1_6.v1_5.v1_4.v1_3.v1_2.v1.clearWeaponPartTargetsV1(77)==Status::Ok);
-        const std::array previousItems{discovery::RegisteredInterface{{40,InterfaceId::WeaponParts,1,6,sizeof(*anchoredPoints),1,0,0,anchoredPoints},3}};
-        assert(discovery::query(previousItems,InterfaceId::WeaponParts,1,7,sizeof(*items),&result)==Status::UnsupportedMinor);
-        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,1,8,sizeof(*items),&result)==Status::UnsupportedMinor);
-        assert(ROCKAPI_QueryInterfaceV1(InterfaceId::WeaponParts,2,0,sizeof(*points),&result)==Status::UnsupportedMajor);
-        const std::array previous{discovery::RegisteredInterface{{40,InterfaceId::WeaponParts,1,1,sizeof(weaponparts::ApiV1),1,0,0,&api->v1},3}};
-        assert(discovery::query(previous,InterfaceId::WeaponParts,1,2,sizeof(*api),&result)==Status::UnsupportedMinor);
-        rock::provider::InterfaceBinding oldBinding{},newBinding{};
-        assert(rock::provider::bindInterface(oldBinding,1,3,weaponparts::kSupportedPermissions)==Status::Ok);
-        assert(rock::provider::bindInterface(newBinding,1,3,weaponparts::kSupportedPermissions)==Status::Ok);
-    }
+    verify(weaponparts::table(),weaponparts::kSupportedPermissions);
     verify(animation::table(),animation::kSupportedPermissions);
     verify(input::table(),input::kSupportedPermissions);
     verify(playercontroller::table(),playercontroller::kSupportedPermissions);

@@ -1,7 +1,7 @@
 #include "ProviderFrameThreadOwner.h"
 #include "LooseWeaponStateService.h"
 #include "NativeInteractionService.h"
-#include "providers/WeaponPartsMarshalling.h"
+#include "providers/CommonMarshalling.h"
 #include "api/InterfaceNegotiation.h"
 #include "ProviderRuntimeServices.h"
 #include "physics-interaction/input/PhysicalReloadInput.h"
@@ -160,7 +160,7 @@ namespace rock::provider::runtime
     std::atomic<std::uint32_t> s_currentSkeletonGeneration{ 0 };
     std::atomic<std::uint32_t> s_currentProviderGeneration{ 0 };
     // Published together with the frame snapshot; indexed [right, left].
-    std::array<api::weaponparts::WeaponPartGripStateV1, 2> s_lastPartGripStates{};
+    std::array<api::weaponparts::GripState, 2> s_lastPartGripStates{};
     std::array<RockProviderHandInteractionStateV1, 2> s_lastHandInteractionStates{};
     RockProviderEquippedWeaponStateV1 s_lastEquippedWeaponState{};
 
@@ -2254,9 +2254,9 @@ namespace rock::provider
         pi.fillProviderWeaponPartGripStates(partGripStates);
         // Resolve opaque source keys while the live catalog is owned by this
         // frame. Task readers copy these values without touching scene nodes.
-        std::array<api::weaponparts::WeaponPartGripStateV1, 2> publicPartGripStates{};
+        std::array<api::weaponparts::GripState, 2> publicPartGripStates{};
         for (std::size_t index = 0; index < partGripStates.size(); ++index)
-            api::boundary::convert(publicPartGripStates[index], partGripStates[index]);
+            publicPartGripStates[index] = runtime::publicGripState(partGripStates[index]);
 
         std::array<RockProviderHandInteractionStateV1, 2>
             handInteractionStates{};

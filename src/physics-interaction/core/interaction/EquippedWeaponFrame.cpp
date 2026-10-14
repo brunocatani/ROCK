@@ -677,7 +677,7 @@ namespace rock
                 performance_profiler::addCounter(performance_profiler::Counter::WeaponProbeFramesEnabled);
                 WeaponCollision::InteractionQueryBatch interactionQueries;
                 std::optional<weapon_drive_pose::NativeFrame> operatingPose;
-                if(provider::runtime::hasOperatingGrabPoints(currentWeaponGenerationKey))operatingPose.emplace(captureProviderPartQueryPose(weaponNode,currentWeaponGenerationKey));
+                if(provider::runtime::hasGrabPoints(currentWeaponGenerationKey))operatingPose.emplace(captureProviderPartQueryPose(weaponNode,currentWeaponGenerationKey));
                 consumeWeaponContactForHand(
                     true, frame.left, true, leftWeaponContact, interactionQueries,operatingPose?&*operatingPose:nullptr);
                 const bool rightWeaponContactProbeAllowed =

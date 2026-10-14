@@ -17,7 +17,7 @@ namespace {
     collision::SuppressionLeaseSet<MAX_WEAPON_COLLISION_BODIES> bodies{collision::CollisionSuppressionOwner::ConsumerWeaponPart};
     RE::hknpWorld* trackedWorld{}; // Identity only; never dereferenced after world loss.
 }
-api::Status set(api::OwnerToken owner,const api::weaponparts::v1_2::CollisionSuppression& request) {
+api::Status set(api::OwnerToken owner,const api::weaponparts::CollisionSuppression& request) {
     const auto sample=provider::runtime::sample();
     auto next=lease;
     if(const auto status=next.set(owner,request,sample);status!=api::Status::Ok)return status;

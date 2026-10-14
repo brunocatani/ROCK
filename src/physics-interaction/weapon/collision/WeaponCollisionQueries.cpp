@@ -1295,16 +1295,15 @@ namespace rock
                 auto* source=reinterpret_cast<RE::NiAVObject*>(provider::runtime::resolveSourceKey(currentGeneration,rules[p].point.sourceKey));
                 RE::NiTransform world{};
                 if(!source||!f4vr::isNodeVisible(source))continue;
-                if(candidate.rule.operating){if(!operatingPose||!operatingPose->world(source,world))continue;}
-                else if(!tryResolveDescendantWorldTransform(weaponNode,rootWorld,source,world))continue;
-                const auto* v=rules[p].point.pointInSource;const auto position=transform_math::localPointToWorld(world,RE::NiPoint3{v[0],v[1],v[2]});candidate.world={position.x,position.y,position.z};
+                // Points follow the currently driven pose of their source.
+                if(!operatingPose||!operatingPose->world(source,world))continue;
+                const RE::NiPoint3 local{rules[p].point.pointInSource.x,rules[p].point.pointInSource.y,rules[p].point.pointInSource.z};
+                const auto position=transform_math::localPointToWorld(world,local);candidate.world={position.x,position.y,position.z};
                 candidate.validWorld=weapon_interaction_query::finitePoint(position);
-                if(candidate.rule.operating){
-                    RE::NiTransform native{};const bool valid=tryResolveDescendantWorldTransform(weaponNode,rootWorld,source,native);
-                    const auto rest=valid?transform_math::localPointToWorld(native,RE::NiPoint3{v[0],v[1],v[2]}):RE::NiPoint3{};
-                    ROCK_LOG_SAMPLE_INFO(Weapon,1500,"OperatingGrabPose source={} point={} drives={} native=({:.2f},{:.2f},{:.2f}) driven=({:.2f},{:.2f},{:.2f}) valid={}",
-                        rules[p].point.sourceKey,rules[p].point.pointId,operatingPose->size(),rest.x,rest.y,rest.z,position.x,position.y,position.z,candidate.validWorld);
-                }
+                RE::NiTransform native{};const bool valid=tryResolveDescendantWorldTransform(weaponNode,rootWorld,source,native);
+                const auto rest=valid?transform_math::localPointToWorld(native,local):RE::NiPoint3{};
+                ROCK_LOG_SAMPLE_INFO(Weapon,1500,"OperatingGrabPose source={} point={} drives={} native=({:.2f},{:.2f},{:.2f}) driven=({:.2f},{:.2f},{:.2f}) valid={}",
+                    rules[p].point.sourceKey,rules[p].point.pointId,operatingPose->size(),rest.x,rest.y,rest.z,position.x,position.y,position.z,candidate.validWorld);
             }
             for(std::size_t i=0;batch.pointCount&&i<batch.count;++i) {
                 const auto& instance=*batch.instances[i];
@@ -1318,9 +1317,7 @@ namespace rock
                     auto& candidate=batch.points[p];
                     if(candidate.rule.owner!=resolution.ownerToken||candidate.rule.point.groupId!=resolution.groupId)continue;
                     batch.pointRestricted[i]=true;
-                    if(!candidate.rule.anchored) {
-                        weapon_part_points::offerPart(candidate,i,0,instance.body.getBodyId().value);
-                    } else if(candidate.validWorld && operatingPose) {
+                    if(candidate.validWorld && operatingPose) {
                         RE::NiTransform driven{};weapon_interaction_query::Part part;
                         if(!operatingPose->world(instance.sourceNode,driven) ||
                             !weapon_interaction_query::prepare(instance.geometry->mesh->sourceLocalTrianglesGame,
@@ -1338,8 +1335,11 @@ namespace rock
         }
 
         weapon_interaction_query::Selection selection;
-        const auto pointSelection=weapon_part_points::nearest(std::span(batch.points).first(batch.pointCount),hand,
-            {probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z},probeRadiusGame,extraProbes,operatingOnly,pinkyProbes);
+        // Grab points take part only in operating queries; ordinary queries
+        // still exclude their groups' parts (pointRestricted).
+        const auto pointSelection=operatingOnly?weapon_part_points::nearest(std::span(batch.points).first(batch.pointCount),hand,
+            {probeWorldPoint.x,probeWorldPoint.y,probeWorldPoint.z},probeRadiusGame,extraProbes,pinkyProbes):
+            weapon_part_points::Selection{batch.pointCount,0};
         const auto picked=pointSelection.point;
         const bool handMask=hand==api::Hand::Left||hand==api::Hand::Right;
         if(picked<batch.pointCount){selection.part=batch.points[picked].part;selection.rank.distanceSquaredGame=pointSelection.distanceSquared;}
@@ -1394,13 +1394,11 @@ namespace rock
         outContact.probeDistanceGame = std::sqrt(bestRank.distanceSquaredGame);
         if(picked<batch.pointCount) {
             const auto& point=batch.points[picked].rule.point;
-            outContact.grabPoint={batch.points[picked].rule.owner,point.groupId,point.sourceKey,point.pointId,{point.pointInSource[0],point.pointInSource[1],point.pointInSource[2]}};
-            if(batch.points[picked].rule.anchored) {
-                auto& anchor=outContact.grabPoint;const auto& world=batch.points[picked].world;
-                anchor.anchorAtPoint=true;anchor.worldPoint={world[0],world[1],world[2]};
-                if(!operatingPose||!operatingPose->world(bestInstance->sourceNode,anchor.attachmentWorld)) {
-                    outContact={};return false;
-                }
+            outContact.grabPoint={batch.points[picked].rule.owner,point.groupId,point.sourceKey,point.pointId,{point.pointInSource.x,point.pointInSource.y,point.pointInSource.z}};
+            auto& anchor=outContact.grabPoint;const auto& world=batch.points[picked].world;
+            anchor.anchorAtPoint=true;anchor.worldPoint={world[0],world[1],world[2]};
+            if(!operatingPose||!operatingPose->world(bestInstance->sourceNode,anchor.attachmentWorld)) {
+                outContact={};return false;
             }
         }
         return true;

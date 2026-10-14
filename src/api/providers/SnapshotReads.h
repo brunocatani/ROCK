@@ -16,5 +16,5 @@ namespace rock::api::collision {
     Status ROCK_CALL getEnvironment(OwnerToken, Environment*) noexcept;
 }
 namespace rock::api::weaponparts {
-    Status ROCK_CALL getWeaponPartGripStateV1(OwnerToken, Hand, WeaponPartGripStateV1*) noexcept;
+    Status ROCK_CALL getGripState(OwnerToken, Hand, GripState*) noexcept;
 }

@@ -44,7 +44,7 @@ namespace rock::provider::runtime {
         out->weaponFormId=123;out->weaponGenerationKey=456;out->frameIndex=100;
         return RockProviderResultV1::Ok;
     }
-    bool ROCK_PROVIDER_CALL apiGetWeaponPartGripStateV1(RockProviderHand hand, api::weaponparts::WeaponPartGripStateV1* out) {
+    bool ROCK_PROVIDER_CALL apiGetWeaponPartGripStateV1(RockProviderHand hand, api::weaponparts::GripState* out) {
         if (!available) return false;
         out->hand=static_cast<api::Hand>(hand);out->active=1;out->sourceKey=789;out->weaponGenerationKey=456;
         return true;
@@ -86,9 +86,9 @@ int main()
         }
         for(const auto hand:{api::Hand::Right,api::Hand::Left}) {
             api::hands::HandFrame frame{};
-            api::weaponparts::WeaponPartGripStateV1 grip{};
+            api::weaponparts::GripState grip{};
             assert(api::hands::getHandFrame(42,hand,&frame)==Status::Ok && frame.hand==hand && frame.sample.frameIndex==100);
-            assert(api::weaponparts::getWeaponPartGripStateV1(42,hand,&grip)==Status::Ok && grip.hand==hand && grip.sourceKey==789);
+            assert(api::weaponparts::getGripState(42,hand,&grip)==Status::Ok && grip.hand==hand && grip.sourceKey==789);
         }
         assert(api::hands::getRoles(99,&roles)==Status::OwnerNotRegistered && roles.sample.frameIndex==0);
         permissions=0;
@@ -96,8 +96,8 @@ int main()
         permissions=1;
         available=false;
         assert(api::hands::getHeadPose(42,&head)==Status::NotReady && head.flags==0);
-        api::weaponparts::WeaponPartGripStateV1 grip{};grip.active=1;
-        assert(api::weaponparts::getWeaponPartGripStateV1(42,api::Hand::Left,&grip)==Status::NotReady && grip.active==0);
+        api::weaponparts::GripState grip{};grip.active=1;
+        assert(api::weaponparts::getGripState(42,api::Hand::Left,&grip)==Status::NotReady && grip.active==0);
     });
     task.get();
 }

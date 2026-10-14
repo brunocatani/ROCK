@@ -1,5 +1,6 @@
 #include "SnapshotReads.h"
-#include "WeaponPartsMarshalling.h"
+#include "Boundary.h"
+#include "CommonMarshalling.h"
 
 namespace rock::api::hands {
 using namespace boundary;
@@ -64,7 +65,7 @@ Status ROCK_CALL getEnvironment(OwnerToken owner, Environment* result) noexcept 
 
 namespace rock::api::weaponparts {
 using namespace boundary;
-Status ROCK_CALL getWeaponPartGripStateV1(OwnerToken ownerToken, Hand hand, WeaponPartGripStateV1* outState) noexcept {
+Status ROCK_CALL getGripState(OwnerToken ownerToken, Hand hand, GripState* outState) noexcept {
     if (const auto s = checkOutput(outState); s != Status::Ok) return s;
     if (hand!=Hand::Right && hand!=Hand::Left) return Status::InvalidArgument;
     return invoke(ownerToken, kInterfaceId, 1, false, [&]() -> Status {

@@ -34,9 +34,9 @@ namespace rock::provider::runtime {
         return result;
     }
     bool onOwnerThread() noexcept;
-    api::Status setWeaponPartGrabPoints(api::OwnerToken,std::span<const api::weaponparts::v1_3::GrabPoint>,bool operating=false,bool pinky=false,bool anchored=false);
+    api::Status setWeaponPartGrabPoints(api::OwnerToken,std::span<const api::weaponparts::GrabPoint>);
     api::Status clearWeaponPartGrabPoints(api::OwnerToken);
-    bool hasOperatingGrabPoints(std::uint64_t generation);
+    bool hasGrabPoints(std::uint64_t generation);
     std::size_t copyWeaponPartPointSelection(std::span<weapon_part_runtime::Target>,std::span<weapon_part_points::OwnedPoint>,std::size_t& pointCount);
     api::Status setHeldObjectTarget(api::OwnerToken,const api::grab::HeldObjectTarget&);
     api::Status clearHeldObjectTarget(api::OwnerToken,api::Hand);
@@ -82,7 +82,8 @@ namespace rock::provider::runtime {
     RockProviderResultV1 ROCK_PROVIDER_CALL apiSetWeaponPartDriveTargetsV1(std::uint64_t ownerToken, const RockProviderWeaponPartDriveTargetV1* targets, std::uint32_t targetCount);
     RockProviderResultV1 ROCK_PROVIDER_CALL apiClearWeaponPartDriveTargetsV1(std::uint64_t ownerToken);
     bool ROCK_PROVIDER_CALL apiQueryEquippedWeaponClassificationV1(RockProviderWeaponClassificationV1* outResult);
-    bool ROCK_PROVIDER_CALL apiGetWeaponPartGripStateV1(RockProviderHand hand, api::weaponparts::WeaponPartGripStateV1* outState);
+    bool ROCK_PROVIDER_CALL apiGetWeaponPartGripStateV1(RockProviderHand hand, api::weaponparts::GripState* outState);
+    api::weaponparts::GripState publicGripState(const RockProviderWeaponPartGripStateV1& grip);
     bool ROCK_PROVIDER_CALL apiGetRawWandButtonStateV1(RockProviderHand hand, std::uint32_t buttonId, ::rock::api::input::RawWandButtonState* outState);
     bool ROCK_PROVIDER_CALL apiIsNativePipboyInputSuppressedV1();
     std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEmitterCountV1();

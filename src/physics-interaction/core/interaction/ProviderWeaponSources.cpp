@@ -107,7 +107,7 @@ api::Status PhysicsInteraction::collectProviderWeaponCollisionBodies(std::uint64
     if(generation!=_weaponCollision.getCurrentWeaponGenerationKey())return api::Status::GenerationMismatch;
     // Resolve and pin-check the live catalog first. No request retains a native
     // node pointer; only body IDs qualified by this weapon generation survive.
-    std::array<const RE::NiAVObject*,api::weaponparts::v1_2::kMaxCollisionSources> roots{};
+    std::array<const RE::NiAVObject*,api::weaponparts::kMaxCollisionSources> roots{};
     if(sources.empty()||sources.size()>roots.size())return api::Status::InvalidArgument;
     for(std::size_t i=0;i<sources.size();++i) {
         roots[i]=reinterpret_cast<const RE::NiAVObject*>(resolveProviderWeaponSource(generation,sources[i]));

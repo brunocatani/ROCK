@@ -225,10 +225,43 @@
         return RockProviderResultV1::Ok;
     }
 
-    bool ROCK_PROVIDER_CALL apiGetWeaponPartGripStateV1(RockProviderHand hand, api::weaponparts::WeaponPartGripStateV1* outState)
+    // Resolves the opaque source key while the frame owner holds the live
+    // catalog; task readers copy the published value.
+    api::weaponparts::GripState publicGripState(const RockProviderWeaponPartGripStateV1& in)
+    {
+        api::weaponparts::GripState out{};
+        out.hand = static_cast<api::Hand>(in.hand);
+        out.gripKind = static_cast<api::weaponparts::GripKind>(in.gripKind);
+        out.active = in.active;
+        out.attachOnly = in.attachOnly;
+        out.gripSequence = in.gripSequence;
+        out.weaponGenerationKey = in.weaponGenerationKey;
+        out.weaponSlot = 0;
+        out.bodyId = in.bodyId;
+        out.partKind = in.partKind;
+        out.reloadRole = in.reloadRole;
+        out.supportRole = in.supportRole;
+        out.socketRole = in.socketRole;
+        out.actionRole = in.actionRole;
+        out.omodFormId = in.omodFormId;
+        out.sourceKey = sourceKey(in.weaponGenerationKey, in.sourceRoot);
+        out.targetOwner = in.providerOwnerToken;
+        out.targetGroupId = in.providerGroupId;
+        out.targetGrabMode = static_cast<api::weaponparts::GrabMode>(in.providerGrabMode);
+        out.attachPointFormId = in.attachPointFormId;
+        out.classificationSource = in.classificationSource;
+        out.authoredSupportGrip = in.authoredSupportGrip;
+        out.hasHandPartLocal = in.hasHandPartLocal;
+        out.handPartLocalSpace = static_cast<api::weaponparts::GripLocalSpace>(in.handPartLocalSpace);
+        api::boundary::convert(out.handPartLocal, in.handPartLocal);
+        std::copy_n(in.sourceName, std::size(out.sourceName), out.sourceName);
+        return out;
+    }
+
+    bool ROCK_PROVIDER_CALL apiGetWeaponPartGripStateV1(RockProviderHand hand, api::weaponparts::GripState* outState)
     {
         provider_state_policy::clearQueryOutput(outState);
-        if (!outState || outState->size != sizeof(api::weaponparts::WeaponPartGripStateV1)) {
+        if (!outState || outState->size != sizeof(api::weaponparts::GripState)) {
             return false;
         }
         if (hand != RockProviderHand::Right && hand != RockProviderHand::Left) {
@@ -353,7 +386,7 @@
         return RockProviderResultV1::Ok;
     }
 
-    api::Status setWeaponPartGrabPoints(api::OwnerToken owner,std::span<const api::weaponparts::v1_3::GrabPoint> points,bool operating,bool pinky,bool anchored) {
+    api::Status setWeaponPartGrabPoints(api::OwnerToken owner,std::span<const api::weaponparts::GrabPoint> points) {
         for(const auto& p:points)if(!resolveSourceKey(p.weaponGenerationKey,p.sourceKey))return api::Status::GenerationMismatch;
         std::scoped_lock lock(s_weaponPartMutex);
         return s_weaponPartGrabPoints.replace(owner,points,[&](const auto& p){
@@ -361,13 +394,13 @@
                 return s.active&&s.ownerToken==owner&&s.target.groupId==p.groupId&&s.target.weaponGenerationKey==p.weaponGenerationKey&&
                     s.target.grabMode==RockProviderWeaponPartGrabModeV1::AttachOnly;
             });
-        },operating,pinky,anchored);
+        });
     }
     api::Status clearWeaponPartGrabPoints(api::OwnerToken owner) {
         std::scoped_lock lock(s_weaponPartMutex);s_weaponPartGrabPoints.clear(owner);return api::Status::Ok;
     }
-    bool hasOperatingGrabPoints(std::uint64_t generation) {
-        std::scoped_lock lock(s_weaponPartMutex);return s_weaponPartGrabPoints.operatingFor(generation);
+    bool hasGrabPoints(std::uint64_t generation) {
+        std::scoped_lock lock(s_weaponPartMutex);return s_weaponPartGrabPoints.any(generation);
     }
     std::size_t copyWeaponPartPointSelection(std::span<weapon_part_runtime::Target> targets,std::span<weapon_part_points::OwnedPoint> points,std::size_t& pointCount) {
         std::scoped_lock lock(s_weaponPartMutex);pointCount=s_weaponPartGrabPoints.copy(points);std::size_t count=0;

@@ -1,9 +1,9 @@
 #pragma once
-#include <ROCK/WeaponPartsV1_7.h>
+#include <ROCK/WeaponParts.h>
 #include <span>
 namespace RE { class TESObjectREFR; class NiAVObject; }
 namespace rock::loose_weapon_state {
-    namespace contract=api::weaponparts::v1_7;
+    namespace contract=api::weaponparts;
     bool install() noexcept;
     api::Status set(api::OwnerToken,const contract::ItemKey&,const contract::ItemState&);
     api::Status move(api::OwnerToken,const contract::ItemKey&,const contract::ItemKey&);

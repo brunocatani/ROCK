@@ -29,7 +29,7 @@ namespace {
     Set3D original{};
     bool valid(const contract::ItemKey& key) {return key.weapon&&key.owner&&key.unique<=65535;}
     bool valid(const contract::ItemState& state) {
-        if(state.size!=sizeof(state)||!state.count||state.count>contract::kMaxItemParts)return false;
+        if(state.size!=sizeof(state)||state.version!=1||!state.count||state.count>contract::kMaxItemParts)return false;
         for(std::uint32_t i=0;i<state.count;++i) {
             const auto& p=state.parts[i];
             if(!p.path[0]||!std::memchr(p.path,0,sizeof(p.path))||p.hidden>1||!std::isfinite(p.local.scale)||p.local.scale<0)return false;

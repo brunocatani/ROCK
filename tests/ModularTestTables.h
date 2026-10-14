@@ -9,8 +9,6 @@
 #include <ROCK/Touch.h>
 #include <ROCK/Weapon.h>
 #include <ROCK/WeaponParts.h>
-#include <ROCK/WeaponPartsV1_2.h>
-#include <ROCK/WeaponPartsV1_7.h>
 #include <ROCK/Animation.h>
 #include <ROCK/Input.h>
 #include <ROCK/Input.h>
@@ -23,8 +21,7 @@ namespace rock::api::collision { const Api& table() noexcept; }
 namespace rock::api::grab { const Api& table() noexcept; }
 namespace rock::api::touch { const Api& table() noexcept; }
 namespace rock::api::weapon { const Api& table() noexcept; }
-namespace rock::api::weaponparts { const ApiV1& table() noexcept; const v1_2::Api& tableV1_2() noexcept; const v1_3::Api& tableV1_3() noexcept; const v1_4::Api& tableV1_4() noexcept; const v1_5::Api& tableV1_5() noexcept; const v1_6::Api& tableV1_6() noexcept; }
-namespace rock::api::weaponparts { const v1_7::Api& tableV1_7() noexcept; }
+namespace rock::api::weaponparts { const Api& table() noexcept; }
 namespace rock::api::animation { const Api& table() noexcept; }
 namespace rock::api::input { const Api& table() noexcept; }
 namespace rock::api::playercontroller { const Api& table() noexcept; }
