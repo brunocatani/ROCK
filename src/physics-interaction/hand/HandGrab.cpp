@@ -3911,15 +3911,10 @@ namespace rock
     }
 
     bool Hand::resolveGrabAuthorityProxyFrame(RE::hknpWorld* world,
-        const RE::NiTransform& rawHandWorld,
-        const RE::NiTransform* fallbackPalmAnchorWorld,
         RE::NiTransform& outProxyWorld,
         const char*& outSource,
         Hand::GrabAuthorityProxyFramePolicy policy) const
     {
-        (void)rawHandWorld;
-        (void)fallbackPalmAnchorWorld;
-
         auto isFiniteProxyFrameInput = [](const RE::NiTransform& transform) {
             bool rotationFinite = true;
             for (std::uint32_t row = 0; row < 3; ++row) {
@@ -4928,8 +4923,6 @@ namespace rock
         outPreparation.proxyFrameWorldAtGrab = outPreparation.handBodyWorldAtGrab;
         if (!resolveGrabAuthorityProxyFrame(
                 world,
-                handWorldTransform,
-                &outPreparation.handBodyWorldAtGrab,
                 outPreparation.proxyFrameWorldAtGrab,
                 outPreparation.proxyFrameSourceAtGrab,
                 GrabAuthorityProxyFramePolicy::LivePalmOnly)) {
@@ -9057,7 +9050,7 @@ namespace rock
         finishOldPair(*peer, _grabFrame.traceId);
         RE::NiTransform peerProxy{};
         const char* peerSource = "unavailable";
-        if (!peer->resolveGrabAuthorityProxyFrame(world, *peerHandWorld, nullptr, peerProxy,
+        if (!peer->resolveGrabAuthorityProxyFrame(world, peerProxy,
                 peerSource, GrabAuthorityProxyFramePolicy::PreferQueuedPalmTarget) ||
             !frik_hand_world_authority::filterHeldProxyWorld(peer->_isLeft, peerProxy)) {
             ROCK_LOG_WARN(Hand, "Loose two-hand pivot missing peer palm source={}", peerSource);
@@ -9231,8 +9224,6 @@ namespace rock
         update.proxyAuthorityWorld = handWorldTransform;
         update.hasProxyAuthorityFrame = resolveGrabAuthorityProxyFrame(
             world,
-            handWorldTransform,
-            nullptr,
             update.proxyAuthorityWorld,
             update.proxyAuthoritySource,
             GrabAuthorityProxyFramePolicy::PreferQueuedPalmTarget);

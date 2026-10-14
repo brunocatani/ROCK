@@ -511,7 +511,6 @@ namespace rock
     object_physics_body_set::BodySetScanOptions Hand::makeActiveGrabBodyScanOptions(const SelectedObject& selection) const
     {
         object_physics_body_set::BodySetScanOptions scanOptions{};
-        scanOptions.mode = physics_body_classifier::InteractionMode::ActiveGrab;
         scanOptions.rightHandBodyId = _isLeft ? INVALID_BODY_ID : _handBody.getBodyId().value;
         scanOptions.leftHandBodyId = _isLeft ? _handBody.getBodyId().value : INVALID_BODY_ID;
         scanOptions.sourceBodyId = _handBody.getBodyId().value;
@@ -1052,7 +1051,6 @@ namespace rock
         }
 
         object_physics_body_set::BodySetScanOptions scanOptions{};
-        scanOptions.mode = physics_body_classifier::InteractionMode::ActiveGrab;
         scanOptions.rightHandBodyId = _isLeft ? INVALID_BODY_ID : _handBody.getBodyId().value;
         scanOptions.leftHandBodyId = _isLeft ? _handBody.getBodyId().value : INVALID_BODY_ID;
         scanOptions.sourceBodyId = _handBody.getBodyId().value;
@@ -1144,7 +1142,6 @@ namespace rock
         }
 
         object_physics_body_set::BodySetScanOptions scanOptions{};
-        scanOptions.mode = physics_body_classifier::InteractionMode::ActiveGrab;
         scanOptions.rightHandBodyId = _isLeft ? INVALID_BODY_ID : _handBody.getBodyId().value;
         scanOptions.leftHandBodyId = _isLeft ? _handBody.getBodyId().value : INVALID_BODY_ID;
         scanOptions.sourceBodyId = _handBody.getBodyId().value;
@@ -1741,7 +1738,7 @@ namespace rock
         return true;
     }
 
-    bool Hand::getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const
+    bool Hand::getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, GrabAuthorityProxyDebugSnapshot& out) const
     {
         /*
          * Offset tuning needs the proxy-local seat point before a grab creates
@@ -1749,7 +1746,6 @@ namespace rock
          * generated palm authority frame used by active proxy readback.
          */
         out = {};
-        (void)rawHandWorld;
 
         LivePalmAnchorReference palmReference{};
         if (!tryResolveLivePalmAnchorReference(world, palmReference) ||
@@ -2064,12 +2060,6 @@ namespace rock
         return false;
     }
 
-    hand_semantic_contact_state::SemanticContactCollection Hand::collectFreshSemanticContacts(
-        const std::uint32_t maxFramesSinceContact) const
-    {
-        return collectSemanticContactsFiltered(maxFramesSinceContact, -1.0f);
-    }
-
     hand_semantic_contact_state::SemanticContactCollection Hand::collectFreshSemanticContactsWithinSeconds(
         const float maxAgeSeconds) const
     {
@@ -2168,40 +2158,6 @@ namespace rock
             }
         }
         return matching;
-    }
-
-    bool Hand::tryGetHandColliderMetadataForRole(hand_collider_semantics::HandColliderRole role, HandColliderBodyMetadata& outMetadata) const
-    {
-        outMetadata = {};
-        const auto count = getHandColliderBodyCount();
-        for (std::uint32_t i = 0; i < count; ++i) {
-            const std::uint32_t bodyId = getHandColliderBodyIdAtomic(i);
-            if (bodyId == hand_collider_semantics::kInvalidBodyId) {
-                continue;
-            }
-            HandColliderBodyMetadata metadata{};
-            if (!tryGetHandColliderMetadataAtIndex(i, bodyId, metadata) || !metadata.valid) {
-                continue;
-            }
-            if (metadata.role == role) {
-                outMetadata = metadata;
-                return true;
-            }
-        }
-        return false;
-    }
-
-    bool Hand::isFingerTouching(hand_collider_semantics::HandFinger finger) const
-    {
-        hand_semantic_contact_state::SemanticContactRecord contact{};
-        return getLastSemanticContact(contact) && contact.framesSinceContact < 5 && contact.finger == finger;
-    }
-
-    bool Hand::isFingerTipTouching(hand_collider_semantics::HandFinger finger) const
-    {
-        hand_semantic_contact_state::SemanticContactRecord contact{};
-        return getLastSemanticContact(contact) && contact.framesSinceContact < 5 && contact.finger == finger &&
-               contact.segment == hand_collider_semantics::HandFingerSegment::Tip;
     }
 
     bool Hand::lockFarSelection()

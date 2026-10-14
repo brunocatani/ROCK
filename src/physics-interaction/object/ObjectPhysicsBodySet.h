@@ -177,7 +177,6 @@ namespace rock::object_physics_body_set
 
     struct BodySetScanOptions
     {
-        physics_body_classifier::InteractionMode mode = physics_body_classifier::InteractionMode::ActiveGrab;
         std::uint32_t rightHandBodyId = INVALID_BODY_ID;
         std::uint32_t leftHandBodyId = INVALID_BODY_ID;
         std::uint32_t sourceWeaponBodyId = INVALID_BODY_ID;

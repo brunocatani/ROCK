@@ -247,7 +247,7 @@ namespace rock::object_physics_body_set
             input.isPlayerBody = record.resolvedRef == RE::PlayerCharacter::GetSingleton();
             input.allowProjectileLayerForExactTarget = options.allowProjectileLayerForExactTarget;
 
-            const auto classification = physics_body_classifier::classifyBody(input, options.mode);
+            const auto classification = physics_body_classifier::classifyBody(input);
             record.accepted = classification.accepted;
             record.rejectReason = classification.reason;
             if (!record.accepted) {
@@ -256,7 +256,7 @@ namespace rock::object_physics_body_set
                     ROCK_LOG_SAMPLE_DEBUG(Hand,
                         g_rockConfig.rockLogSampleMilliseconds,
                         "BODY reject: formID={:08X} resolvedFormID={:08X} body={} reason={} targetKind={} layer={} filter=0x{:08X} "
-                        "motionId={} motionProps={} motionType={} bodyFlags=0x{:08X} refKnown={} seeded={} ownerNode='{}' mode={}",
+                        "motionId={} motionProps={} motionType={} bodyFlags=0x{:08X} refKnown={} seeded={} ownerNode='{}'",
                         context.rootRef ? context.rootRef->GetFormID() : 0,
                         record.resolvedRef ? record.resolvedRef->GetFormID() : 0,
                         record.bodyId,
@@ -270,8 +270,7 @@ namespace rock::object_physics_body_set
                         record.bodyFlags,
                         record.refResolutionKnown ? "yes" : "no",
                         record.seeded ? "yes" : "no",
-                        nodeName(record.owningNode),
-                        options.mode == physics_body_classifier::InteractionMode::ActiveGrab ? "active-grab" : "passive-push");
+                        nodeName(record.owningNode));
                 }
             }
 

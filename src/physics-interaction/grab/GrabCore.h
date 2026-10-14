@@ -208,7 +208,6 @@ namespace rock::active_grab_body_lifecycle
         switch (reason) {
         case BodyRejectReason::None:
         case BodyRejectReason::StaticMotion:
-        case BodyRejectReason::KeyframedPassive:
         case BodyRejectReason::NotDynamicAfterActivePrep:
             return true;
         default:

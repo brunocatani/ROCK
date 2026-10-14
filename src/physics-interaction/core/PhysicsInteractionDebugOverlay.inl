@@ -884,7 +884,7 @@
                 const auto& handInput = isLeft ? context.left : context.right;
                 const auto& hand = isLeft ? _leftHand : _rightHand;
                 GrabAuthorityProxyDebugSnapshot snapshot{};
-                if (!hand.getGrabAuthorityProxyDebugSnapshot(hknp, handInput.rawHandWorld, snapshot)) {
+                if (!hand.getGrabAuthorityProxyDebugSnapshot(hknp, snapshot)) {
                     return;
                 }
                 const RE::NiTransform pocketBasisWorld =
@@ -1171,9 +1171,8 @@
                 }
 
                 const bool isLeft = hand.isLeft();
-                const RE::NiTransform& rawHandWorld = isLeft ? context.left.rawHandWorld : context.right.rawHandWorld;
                 GrabForceTorqueDebugSnapshot snapshot{};
-                if (!hand.getGrabForceTorqueDebugSnapshot(hknp, rawHandWorld, snapshot)) {
+                if (!hand.getGrabForceTorqueDebugSnapshot(hknp, snapshot)) {
                     return;
                 }
 

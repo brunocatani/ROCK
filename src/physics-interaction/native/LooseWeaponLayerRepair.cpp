@@ -80,7 +80,6 @@ namespace rock::loose_weapon_layer_repair
         {
             using namespace object_physics_body_set;
             BodySetScanOptions options{};
-            options.mode = physics_body_classifier::InteractionMode::ActiveGrab;
             options.requireSameResolvedRef = true;
             options.allowUnresolvedRefBodies = false;
             options.maxDepth = 32;

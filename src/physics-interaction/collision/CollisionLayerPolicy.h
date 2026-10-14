@@ -59,14 +59,6 @@ namespace rock::collision_layer_policy
      */
     inline constexpr std::uint32_t ROCK_LAYER_BODY = 47;
     /*
-     * Reload mobile ammo bodies need to collide with equipped weapon socket
-     * bodies. Layer 45 is native SPELLEXPLOSION, so the reviewed split is:
-     * mobile reload ammo uses the ROCK hand/tool layer 43, weapon-owned sockets
-     * and action bodies use the ROCK weapon/tool layer 44, and role/owner
-     * metadata distinguishes reload contacts from real hands and weapon hulls.
-     */
-    inline constexpr std::uint32_t ROCK_LAYER_RELOAD = ROCK_LAYER_HAND;
-    /*
      * Dynamic hand proxy bodies live on their own extended row so they collide
      * with static world-surface layers and explicitly tagged car bodies, plus
      * layer 33 when experimental NPC dynamic collisions are enabled.
@@ -76,9 +68,7 @@ namespace rock::collision_layer_policy
      * gameplay contact evidence. A separate bounded callback channel may use
      * its palm/fingertip pairs for provider-scoped fixed-surface latches.
      */
-    inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_HAND_PROXY = 48;
-    inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY =
-        ROCK_LAYER_DYNAMIC_HAND_PROXY;
+    inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY = 48;
     /*
      * ExplodableCar movable statics temporarily move onto one of these rows
      * while a close hand selection owns them. Keeping separate rows preserves
@@ -360,11 +350,6 @@ namespace rock::collision_layer_policy
         return layer == FO4_LAYER_ITEMPICK || layer == FO4_LAYER_LINEOFSIGHT || layer == FO4_LAYER_PATHPICK || layer == FO4_LAYER_CAMERASPHERE;
     }
 
-    inline constexpr bool isPassivePushInteractionLayer(std::uint32_t layer)
-    {
-        return isDynamicPropInteractionLayer(layer) || isActorOrBipedLayer(layer);
-    }
-
     inline constexpr bool isMatrixAddressableLayer(std::uint32_t layer)
     {
         return layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT;
@@ -401,13 +386,6 @@ namespace rock::collision_layer_policy
         return (FO4_LAYER_VANILLA_CONFIGURED_COUNT >= 64) ? ~0ULL : ((1ULL << FO4_LAYER_VANILLA_CONFIGURED_COUNT) - 1ULL);
     }
 
-    inline constexpr std::uint64_t allConfiguredLayerBits() { return allVanillaConfiguredLayerBits(); }
-
-    inline constexpr std::uint64_t allMatrixAddressableLayerBits()
-    {
-        return ~0ULL;
-    }
-
     inline constexpr std::uint64_t withoutLayer(std::uint64_t mask, std::uint32_t layer) { return mask & ~layerBitOrZero(layer); }
 
     inline constexpr std::uint64_t withLayer(std::uint64_t mask, std::uint32_t layer) { return mask | layerBitOrZero(layer); }
@@ -418,7 +396,7 @@ namespace rock::collision_layer_policy
         return bit != 0 && (mask & bit) != 0;
     }
 
-    inline constexpr std::uint64_t buildRockHandExpectedMask(bool includeWeaponLayer, bool includeStaticWorld = true)
+    inline constexpr std::uint64_t buildRockHandExpectedMask(bool includeStaticWorld)
     {
         /*
          * ROCK's generated hand and weapon tool bodies use real keyframed Havok
@@ -428,7 +406,7 @@ namespace rock::collision_layer_policy
          * layers stay excluded so the generated palm and finger set does not
          * become its own solver noise source.
          */
-        std::uint64_t mask = allConfiguredLayerBits();
+        std::uint64_t mask = allVanillaConfiguredLayerBits();
         mask = withoutLayer(mask, FO4_LAYER_UNIDENTIFIED);
         if (!includeStaticWorld) {
             mask = withoutLayer(mask, FO4_LAYER_STATIC);
@@ -445,16 +423,15 @@ namespace rock::collision_layer_policy
         mask = withoutLayer(mask, FO4_LAYER_LINEOFSIGHT);
         mask = withoutLayer(mask, FO4_LAYER_PATHPICK);
         mask = withoutLayer(mask, FO4_LAYER_CHARCONTROLLER);
-        if (includeWeaponLayer) {
-            mask = withLayer(mask, ROCK_LAYER_WEAPON);
-        }
+        // Weapon hulls (44): support, part and socket contact need them.
+        mask = withLayer(mask, ROCK_LAYER_WEAPON);
         return mask;
     }
 
     inline constexpr std::uint64_t buildRockWeaponExpectedMask(bool blocksProjectiles, bool blocksSpells, bool includeBodyLayer = false)
     {
         // Static and animstatic world collision are mandatory for generated weapons.
-        std::uint64_t mask = allConfiguredLayerBits();
+        std::uint64_t mask = allVanillaConfiguredLayerBits();
         mask = withoutLayer(mask, FO4_LAYER_UNIDENTIFIED);
         mask = withoutLayer(mask, FO4_LAYER_NONCOLLIDABLE);
         mask = withoutLayer(mask, FO4_LAYER_CHARCONTROLLER);
@@ -506,15 +483,6 @@ namespace rock::collision_layer_policy
         return mask;
     }
 
-    inline constexpr std::uint64_t buildRockReloadExpectedMask(bool blocksProjectiles, bool blocksSpells, bool includeStaticWorld = true)
-    {
-        if constexpr (ROCK_LAYER_RELOAD == ROCK_LAYER_HAND) {
-            return buildRockHandExpectedMask(true, includeStaticWorld);
-        } else {
-            return buildRockWeaponExpectedMask(blocksProjectiles, blocksSpells);
-        }
-    }
-
     inline void applyLayerExpectedMask(std::uint64_t* matrix, std::uint32_t layer, std::uint64_t expectedMask)
     {
         if (!matrix || !isMatrixAddressableLayer(layer)) {
@@ -552,14 +520,9 @@ namespace rock::collision_layer_policy
         return true;
     }
 
-    inline void applyRockHandLayerPolicy(std::uint64_t* matrix, bool includeWeaponLayer, bool includeStaticWorld = true)
+    inline void applyRockHandLayerPolicy(std::uint64_t* matrix, bool includeStaticWorld)
     {
-        applyLayerExpectedMask(matrix, ROCK_LAYER_HAND, buildRockHandExpectedMask(includeWeaponLayer, includeStaticWorld));
-    }
-
-    inline void applyRockReloadLayerPolicy(std::uint64_t* matrix, bool blocksProjectiles, bool blocksSpells, bool includeStaticWorld = true)
-    {
-        applyLayerExpectedMask(matrix, ROCK_LAYER_RELOAD, buildRockReloadExpectedMask(blocksProjectiles, blocksSpells, includeStaticWorld));
+        applyLayerExpectedMask(matrix, ROCK_LAYER_HAND, buildRockHandExpectedMask(includeStaticWorld));
     }
 
     inline void applyRockBodyLayerPolicy(std::uint64_t* matrix)
@@ -632,16 +595,16 @@ namespace rock::collision_layer_policy
         /*
          * The source clutter rows have already been touched symmetrically by
          * ROCK's generated hand/weapon/body policies. Preserve only vanilla
-         * row semantics here; inheriting those generated bits makes body/leg
-         * colliders push cars and causes the collision watchdog to oscillate.
+         * row semantics here; inheriting those generated bits would make the
+         * body colliders push cars.
          */
-        std::uint64_t mask = nativeSourceMask & allConfiguredLayerBits();
+        std::uint64_t mask = nativeSourceMask & allVanillaConfiguredLayerBits();
         mask = withoutLayer(mask, ROCK_LAYER_HAND);
         mask = withoutLayer(mask, ROCK_LAYER_WEAPON);
         mask = withoutLayer(mask, ROCK_LAYER_BODY);
         mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER);
         mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER);
-        mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_HAND_PROXY);
+        mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY);
         mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
         mask = withoutLayer(mask, ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY);
         mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
@@ -656,7 +619,7 @@ namespace rock::collision_layer_policy
             mask = withLayer(mask, peerCarLayer);
         }
 
-        mask = withLayer(mask, ROCK_LAYER_DYNAMIC_HAND_PROXY);
+        mask = withLayer(mask, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY);
         mask = withLayer(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
         mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
         mask = withLayer(mask, ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY);
@@ -723,7 +686,7 @@ namespace rock::collision_layer_policy
          * row and body row to be normalized together instead of depending on a
          * later standalone body-policy call to repair symmetry.
          */
-        applyRockHandLayerPolicy(matrix, true, handStaticWorld);
+        applyRockHandLayerPolicy(matrix, handStaticWorld);
         applyLayerExpectedMask(matrix,
             ROCK_LAYER_WEAPON,
             buildRockWeaponExpectedMask(weaponBlocksProjectiles, weaponBlocksSpells, true));
@@ -731,7 +694,6 @@ namespace rock::collision_layer_policy
         applyLayerExpectedMask(matrix,
             ROCK_LAYER_SECONDARY_WEAPON,
             buildRockSecondaryWeaponExpectedMask(weaponBlocksProjectiles, weaponBlocksSpells));
-        applyRockReloadLayerPolicy(matrix, weaponBlocksProjectiles, weaponBlocksSpells, handStaticWorld);
         applyRockBodyLayerPolicy(matrix);
         applyRockDynamicHandProxyLayerPolicies(matrix, extensionObstacleLayers, retiredWeaponHandCollision);
         applyRockDynamicWeaponProxyLayerPolicy(matrix, extensionObstacleLayers);

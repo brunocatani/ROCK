@@ -23,7 +23,6 @@ namespace rock
         [[nodiscard]] object_physics_body_set::BodySetScanOptions makeCarBodyScanOptions(std::uint32_t seedBodyId)
         {
             object_physics_body_set::BodySetScanOptions options{};
-            options.mode = physics_body_classifier::InteractionMode::ActiveGrab;
             options.seedBodyId = seedBodyId;
             options.targetKind = grab_target::Kind::DynamicMovableStatic;
             options.requireSameResolvedRef = true;

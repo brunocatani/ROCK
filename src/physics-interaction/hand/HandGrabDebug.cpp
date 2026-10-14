@@ -226,7 +226,7 @@ namespace rock
         return out.hasNormal || out.hasSupportAxis || out.hasBinormal || out.hasPivotTriangle;
     }
 
-    bool Hand::getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabForceTorqueDebugSnapshot& out) const
+    bool Hand::getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, GrabForceTorqueDebugSnapshot& out) const
     {
         /*
          * This view is intentionally built from the same BODY-local pivot and
@@ -250,8 +250,6 @@ namespace rock
         const char* proxySource = "none";
         bool proxyFrameOk = resolveGrabAuthorityProxyFrame(
             world,
-            rawHandWorld,
-            nullptr,
             proxyWorld,
             proxySource,
             GrabAuthorityProxyFramePolicy::LivePalmOnly);

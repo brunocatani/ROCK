@@ -659,7 +659,6 @@ namespace rock
         }
 
         object_physics_body_set::BodySetScanOptions scanOptions{};
-        scanOptions.mode = physics_body_classifier::InteractionMode::ActiveGrab;
         scanOptions.targetKind = grab_target::Kind::LooseObject;
         scanOptions.requireSameResolvedRef = true;
         scanOptions.allowUnresolvedRefBodies = true;

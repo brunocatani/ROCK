@@ -443,14 +443,14 @@ namespace rock
         void flushConsumerObjectPairs(RE::hknpWorld*);
         bool getGrabPivotDebugSnapshot(RE::hknpWorld* world, GrabPivotDebugSnapshot& out) const;
         bool getGrabPocketNormalDebugSnapshot(RE::hknpWorld* world, GrabPocketNormalDebugSnapshot& out) const;
-        bool getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const;
+        bool getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, GrabAuthorityProxyDebugSnapshot& out) const;
         // Non-const: takes _grabAuthorityProxyMutex to copy queued/applied clocks.
         bool tryGetGrabAuthorityProxyClockDebugSnapshot(RE::hknpWorld* world, GrabAuthorityProxyClockDebugSnapshot& out);
         // Non-const: takes _grabAuthorityProxyMutex to snapshot the applied pair.
         bool tryGetGrabOverlayPointProbeSample(RE::hknpWorld* world, GrabOverlayPointProbeSample& out);
         bool getGrabPresentationNodeDebugSnapshot(GrabPresentationNodeDebugSnapshot& out) const;
         bool getGrabSupportFrameDebugSnapshot(RE::hknpWorld* world, GrabSupportFrameDebugSnapshot& out) const;
-        bool getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabForceTorqueDebugSnapshot& out) const;
+        bool getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, GrabForceTorqueDebugSnapshot& out) const;
         bool getGrabFingerSweepDebugSnapshot(grab_finger_pose_runtime::FingerSweepDebugSnapshot& out) const
         {
             if (!_hasGrabFingerSweepDebug || !_grabFingerSweepDebugCapture.valid) {
@@ -703,15 +703,10 @@ namespace rock
             hand_collider_semantics::HandColliderRole role,
             std::uint32_t maxFramesSinceContact,
             hand_semantic_contact_state::SemanticContactRecord& outContact) const;
-        hand_semantic_contact_state::SemanticContactCollection collectFreshSemanticContacts(
-            std::uint32_t maxFramesSinceContact) const;
         // Rate-independent freshness for internal gameplay windows.
         hand_semantic_contact_state::SemanticContactCollection collectFreshSemanticContactsWithinSeconds(
             float maxAgeSeconds) const;
         hand_semantic_contact_state::SemanticContactCollection collectFreshSemanticContactsForBodyWithinSeconds(std::uint32_t targetBodyId, float maxAgeSeconds) const;
-        bool isFingerTouching(hand_collider_semantics::HandFinger finger) const;
-        bool isFingerTipTouching(hand_collider_semantics::HandFinger finger) const;
-        bool tryGetHandColliderMetadataForRole(hand_collider_semantics::HandColliderRole role, HandColliderBodyMetadata& outMetadata) const;
 
         bool createCollision(RE::hknpWorld* world, void* bhkWorld, const RE::NiTransform& rollAuthorityWorld);
 
@@ -900,8 +895,6 @@ namespace rock
             PreferQueuedPalmTarget
         };
         bool resolveGrabAuthorityProxyFrame(RE::hknpWorld* world,
-            const RE::NiTransform& rawHandWorld,
-            const RE::NiTransform* fallbackPalmAnchorWorld,
             RE::NiTransform& outProxyWorld,
             const char*& outSource,
             GrabAuthorityProxyFramePolicy policy = GrabAuthorityProxyFramePolicy::LivePalmOnly) const;

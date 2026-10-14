@@ -16,12 +16,6 @@ namespace rock::physics_body_classifier
         Other,
     };
 
-    enum class InteractionMode : std::uint8_t
-    {
-        PassivePush,
-        ActiveGrab,
-    };
-
     enum class BodyRejectReason : std::uint8_t
     {
         None,
@@ -38,7 +32,6 @@ namespace rock::physics_body_classifier
         NonCollidableLayer,
         UnsupportedLayer,
         StaticMotion,
-        KeyframedPassive,
         NotDynamicAfterActivePrep,
     };
 
@@ -97,8 +90,6 @@ namespace rock::physics_body_classifier
             return "unsupported-layer";
         case BodyRejectReason::StaticMotion:
             return "static-motion";
-        case BodyRejectReason::KeyframedPassive:
-            return "keyframed-passive";
         case BodyRejectReason::NotDynamicAfterActivePrep:
             return "not-dynamic-after-active-prep";
         }
@@ -144,7 +135,7 @@ namespace rock::physics_body_classifier
         }
     }
 
-    inline constexpr BodyClassificationResult classifyBody(const BodyClassificationInput& input, InteractionMode mode)
+    inline constexpr BodyClassificationResult classifyBody(const BodyClassificationInput& input)
     {
         if (input.bodyId == 0x7FFF'FFFF) {
             return reject(BodyRejectReason::InvalidBodyId);
@@ -174,11 +165,9 @@ namespace rock::physics_body_classifier
             return reject(BodyRejectReason::CharacterController);
         }
         const bool activeDetachedGoreLayer =
-            mode == InteractionMode::ActiveGrab &&
             input.targetKind == grab_target::Kind::DetachedBody &&
             grab_target::isNativeDetachedBodyLayer(input.layer);
         const bool activeDynamicMovableStatic =
-            mode == InteractionMode::ActiveGrab &&
             input.targetKind == grab_target::Kind::DynamicMovableStatic;
         /*
          * Some pickup refs, including consumables, keep the native PROPS layer
@@ -188,40 +177,31 @@ namespace rock::physics_body_classifier
          * still fail closed unless prep produced a dynamic body.
          */
         const bool activeLoosePickupLayer =
-            mode == InteractionMode::ActiveGrab &&
             input.targetKind == grab_target::Kind::LooseObject &&
             input.layer == collision_layer_policy::FO4_LAYER_PROPS;
         const bool activeExactThrowableProjectileLayer =
-            mode == InteractionMode::ActiveGrab &&
             input.targetKind == grab_target::Kind::LooseObject &&
             input.allowProjectileLayerForExactTarget &&
             input.layer == collision_layer_policy::FO4_LAYER_PROJECTILE;
         const bool activeDeadActorBody =
-            mode == InteractionMode::ActiveGrab &&
             input.targetKind == grab_target::Kind::ConnectedBody &&
             collision_layer_policy::isActorOrBipedLayer(input.layer);
-        if (mode != InteractionMode::PassivePush && collision_layer_policy::isActorOrBipedLayer(input.layer) && !activeDetachedGoreLayer && !activeDynamicMovableStatic && !activeDeadActorBody) {
+        if (collision_layer_policy::isActorOrBipedLayer(input.layer) && !activeDetachedGoreLayer && !activeDynamicMovableStatic && !activeDeadActorBody) {
             return reject(BodyRejectReason::ActorLayer);
         }
         if (input.layer == collision_layer_policy::FO4_LAYER_NONCOLLIDABLE) {
             return reject(BodyRejectReason::NonCollidableLayer);
         }
         const bool interactionLayer =
-            mode == InteractionMode::PassivePush ? collision_layer_policy::isPassivePushInteractionLayer(input.layer) :
-                                                   (collision_layer_policy::isDynamicPropInteractionLayer(input.layer) || activeDetachedGoreLayer || activeDynamicMovableStatic || activeLoosePickupLayer || activeExactThrowableProjectileLayer || activeDeadActorBody);
+            collision_layer_policy::isDynamicPropInteractionLayer(input.layer) || activeDetachedGoreLayer || activeDynamicMovableStatic ||
+            activeLoosePickupLayer || activeExactThrowableProjectileLayer || activeDeadActorBody;
         if (!interactionLayer) {
             return reject(BodyRejectReason::UnsupportedLayer);
         }
         if (input.motionType == BodyMotionType::Static) {
             return reject(BodyRejectReason::StaticMotion);
         }
-        if (mode == InteractionMode::PassivePush && input.motionType == BodyMotionType::Keyframed) {
-            return reject(BodyRejectReason::KeyframedPassive);
-        }
-        if (mode == InteractionMode::ActiveGrab && input.motionType != BodyMotionType::Dynamic) {
-            return reject(BodyRejectReason::NotDynamicAfterActivePrep);
-        }
-        if (mode == InteractionMode::PassivePush && input.motionType != BodyMotionType::Dynamic) {
+        if (input.motionType != BodyMotionType::Dynamic) {
             return reject(BodyRejectReason::NotDynamicAfterActivePrep);
         }
         return accept();

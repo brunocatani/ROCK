@@ -18,14 +18,14 @@ int main()
     captured.layer = captured.filterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
     captured.bodyFlags = 0x00041082;
     captured.motionType = motionTypeFromBodyFlags(captured.bodyFlags);
-    assert(classifyBody(captured, InteractionMode::ActiveGrab).reason == BodyRejectReason::UnsupportedLayer);
+    assert(classifyBody(captured).reason == BodyRejectReason::UnsupportedLayer);
     assert(grab_interaction_policy::evaluateLooseObjectSelectionCandidate("WEAP", true, 6, true, captured.layer).blocked);
 
     const auto fixed = correctedFilter(captured.filterInfo, captured.bodyFlags, captured.motionId, true);
     assert(fixed && *fixed == 0x00230005);
     captured.filterInfo = *fixed;
     captured.layer = *fixed & collision_layer_policy::FO4_LAYER_FILTER_MASK;
-    assert(classifyBody(captured, InteractionMode::ActiveGrab).accepted);
+    assert(classifyBody(captured).accepted);
     assert(!grab_interaction_policy::evaluateLooseObjectSelectionCandidate("WEAP", true, 6, true, captured.layer).blocked);
     // A repeat initializer performs no further filter mutation.
     assert(!correctedFilter(*fixed, captured.bodyFlags, captured.motionId, true));

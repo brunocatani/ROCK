@@ -734,9 +734,8 @@ namespace rock
 
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_HAND, matrix[collision_layer_policy::ROCK_LAYER_HAND]);
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_WEAPON, matrix[collision_layer_policy::ROCK_LAYER_WEAPON]);
-        ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_RELOAD, matrix[collision_layer_policy::ROCK_LAYER_RELOAD]);
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_BODY, matrix[collision_layer_policy::ROCK_LAYER_BODY]);
-        ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY, matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY]);
+        ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY]);
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY, matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY]);
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY, matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY]);
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER, matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER]);
@@ -782,13 +781,11 @@ namespace rock
         };
 
         ROCK_LOG_INFO(Config,
-            "Registered ROCK collision layers: hand={} mask=0x{:016X}, weapon={} mask=0x{:016X}, reload={} mask=0x{:016X}, body={} mask=0x{:016X}, handStaticWorld={}, projectiles={}, spells={}, extensionObstacleLayers=0x{:016X}",
+            "Registered ROCK collision layers: hand={} mask=0x{:016X}, weapon={} mask=0x{:016X}, body={} mask=0x{:016X}, handStaticWorld={}, projectiles={}, spells={}, extensionObstacleLayers=0x{:016X}",
             collision_layer_policy::ROCK_LAYER_HAND,
             matrix[collision_layer_policy::ROCK_LAYER_HAND],
             collision_layer_policy::ROCK_LAYER_WEAPON,
             matrix[collision_layer_policy::ROCK_LAYER_WEAPON],
-            collision_layer_policy::ROCK_LAYER_RELOAD,
-            matrix[collision_layer_policy::ROCK_LAYER_RELOAD],
             collision_layer_policy::ROCK_LAYER_BODY,
             matrix[collision_layer_policy::ROCK_LAYER_BODY],
             _layers.handStaticWorld ? "enabled" : "disabled",

@@ -951,16 +951,18 @@ namespace rock
                             }
                             return false;
                         };
+                    // The dynamic hand is what touches the surface; the
+                    // keyframed contacts only cover what it does not.
                     if (tryContacts(
-                            contacts,
+                            surfaceContacts,
                             TouchGrabRuntime::ContactSource::
-                                SemanticHand)) {
+                                DynamicSurface)) {
                         return true;
                     }
                     return tryContacts(
-                        surfaceContacts,
+                        contacts,
                         TouchGrabRuntime::ContactSource::
-                            DynamicSurface);
+                            SemanticHand);
                 };
             const bool touchGrabAcquired =
                 tryTargetClass(
