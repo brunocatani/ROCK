@@ -4,6 +4,8 @@
 #include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/HoldingGripRecords.h"
+#include "physics-interaction/weapon/WeaponGripSeat.h"
+#include "physics-interaction/weapon/WeaponInstanceClassification.h"
 #include "physics-interaction/weapon/WeaponAimBasis.h"
 #include "physics-interaction/weapon/NativeSecondaryPose.h"
 #include "physics-interaction/weapon/NativeSecondaryPoseTransport.h"
@@ -12,8 +14,7 @@
 #include "physics-interaction/weapon/NativeEquippedModelLifetime.h"
 #include "physics-interaction/weapon/NativeSecondaryActions.h"
 #include "physics-interaction/weapon/EquippedWeaponVisualState.h"
-#include "physics-interaction/weapon/WeaponGripCalibration.h"
-#include "physics-interaction/hand/HandFingerMirrorMath.h"
+#include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/native/NativeMemory.h"
@@ -68,6 +69,7 @@ namespace rock::native_secondary_presentation
         // Registered by the physics module's init/shutdown on the game thread.
         void* s_resolverContext = nullptr;
         CollisionResolver s_resolver = nullptr;
+        float s_mirrorPlaneX = 0.0f;
 
         bool onFrameThread() noexcept
         {
@@ -436,35 +438,22 @@ namespace rock::native_secondary_presentation
             if (s_state.claimed && s_state.claimedLeft != left) clearClaims();
             s_state.left = left;
             const bool powerArmor = f4vr::isInPowerArmor();
-            const auto authored = authored_weapon_grip_library::find(view.weapon, attachment, powerArmor);
+            // The same seat as the first weapon in the same hand.
+            const auto nativeSeat = weapon_grip_seat::resolveNative({
+                .weapon = view.weapon,
+                .weaponRoot = attachment,
+                .variant = authored_weapon_grip_library::identifyWeaponVariant(attachment),
+                .keywordFlags = weapon_instance_classification::computeWeaponKeywordFlags(view.weapon, view.instance),
+                .inPowerArmor = powerArmor,
+            });
             const auto* handOverride = holding_grips::find(view.weapon, attachment, left, view.data, powerArmor);
-            RE::NiTransform seat{};
-            authored_weapon_grip_library::FiringFingerPose fingers{};
-            if (handOverride) {
-                seat = handOverride->wrist;
-                fingers = handOverride->fingers;
-            } else {
-                if (!authored.found || !authored_weapon_grip_library::isNativeIdleAuthority(authored.source) ||
-                    !authored.rightFiringFingerPose.complete()) {
-                    waitFor(view, "own-authored-firing-grip");
-                    return;
-                }
-                if (left) {
-                    seat = holding_grip_math::toNative(holding_grip_math::mirroredHandSeat(
-                        holding_grip_math::fromNative(authored.rightHandWeaponLocal)));
-                    if (!hand_finger_mirror_math::mirrorFingerLocalsAcrossHands<RE::NiTransform>(
-                            authored.rightFiringFingerPose.localTransforms, fingers.localTransforms)) {
-                        waitFor(view, "finger-pose");
-                        return;
-                    }
-                    fingers.enabledMask = authored.rightFiringFingerPose.enabledMask;
-                } else {
-                    // The right hand uses the native idle seat as captured.
-                    seat = authored.rightHandWeaponLocal;
-                    fingers = authored.rightFiringFingerPose;
-                }
+            weapon_grip_seat::FiringSeat firingSeat{};
+            if (!weapon_grip_seat::firingSeat(nativeSeat, handOverride, left, s_mirrorPlaneX, firingSeat)) {
+                waitFor(view, nativeSeat.modelRegistered ? "own-authored-firing-grip" : "native-model-frame");
+                return;
             }
-            if (left) seat = weapon_grip_calibration::shiftedHand(seat, g_rockConfig.rockLeftFiringGripOffsetGameUnits, true);
+            const RE::NiTransform& seat = firingSeat.handWeaponLocal;
+            const auto& fingers = firingSeat.fingers;
             RE::NiTransform physicalHand{};
             const auto* nodes = f4vr::getPlayerNodes();
             auto* wand = nodes ? (left ? nodes->SecondaryWandNode : nodes->primaryWandNode) : nullptr;
@@ -552,7 +541,7 @@ namespace rock::native_secondary_presentation
                 ROCK_LOG_INFO(Weapon,
                     "AKIMBO secondary presentation ready weapon={:08X} hand={} model={:#x} attachment={:#x} attachmentName='{}' instance={:#x} data={:#x} grip={} capture={} handInWeapon=({:.3f},{:.3f},{:.3f})",
                     s_state.form, left ? "left" : "right", s_state.root, s_state.attachment, attachment->name.c_str() ? attachment->name.c_str() : "<unnamed>", s_state.instance, s_state.data,
-                    handOverride ? "authored-hand-override" : left ? "own-native-idle-mirrored" : "own-native-idle", authored.captureSequence,
+                    handOverride ? "authored-hand-override" : left ? "own-native-idle-mirrored" : "own-native-idle", nativeSeat.lookup.captureSequence,
                     seat.translate.x, seat.translate.y, seat.translate.z);
             }
             if (++s_state.samples == 120) {
@@ -667,6 +656,11 @@ namespace rock::native_secondary_presentation
             transform_math::composeTransforms(transform_math::invertTransform(s_state.collisionDelta), model->world) :
             model->world;
         return usable(out);
+    }
+
+    void setMirrorPlaneX(float planeX) noexcept
+    {
+        s_mirrorPlaneX = planeX;
     }
 
     void setCollisionResolver(void* context, CollisionResolver resolver) noexcept

@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
 #include "physics-interaction/weapon/WeaponGripCalibration.h"
 #include "physics-interaction/weapon/HoldingGripAdapter.h"
+#include "physics-interaction/weapon/WeaponGripSeat.h"
 
 #include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
 #include "physics-interaction/weapon/WeaponAimBasis.h"
@@ -9,17 +10,6 @@
 
 namespace rock
 {
-    namespace {
-        bool buildEquippedLeftFiringSeat(const RE::NiTransform& right, RE::NiTransform& left, float planeX) {
-            const auto source = holding_grip_math::fromNative(right);
-            if (!holding_grip_math::valid(source)) return false;
-            left = weapon_grip_calibration::shiftedHand(
-                holding_grip_math::toNative(holding_grip_math::mirroredHandSeat(source,planeX)),
-                g_rockConfig.rockLeftFiringGripOffsetGameUnits, true);
-            return true;
-        }
-    }
-
     bool TwoHandedGrip::canBeginPrimaryOnlyGripForHand(const bool isLeft)
     {
         return !isLeft || leftFiringInfrastructureAvailable();
@@ -68,9 +58,9 @@ namespace rock
         }
 
         if(_holdingHasLeft){outFiringHandWeaponLocal=_holdingLeft;outFiringGripWeaponLocal=computeGrabPalmPointWorldFromHandBasis(_holdingLeft,true);return true;}
-        if (!buildEquippedLeftFiringSeat(
+        if (!weapon_grip_seat::leftFiringSeat(
                 _holdingHasNative ? _holdingNativeRight : _firing.rightCanonicalHandWeaponLocal,
-                outFiringHandWeaponLocal, _holdingMirrorPlaneX)) {
+                _holdingMirrorPlaneX, outFiringHandWeaponLocal)) {
             return reject("mirrored-firing-frame-unavailable");
         }
         outFiringGripWeaponLocal = computeGrabPalmPointWorldFromHandBasis(outFiringHandWeaponLocal, true);
@@ -1483,9 +1473,9 @@ namespace rock
         }
 
         if(_holdingHasLeft){outHandWeaponLocal=_holdingLeft;if(outUsedAuthoredCanonical)*outUsedAuthoredCanonical=true;return true;}
-        const bool mirrored = buildEquippedLeftFiringSeat(
+        const bool mirrored = weapon_grip_seat::leftFiringSeat(
             _holdingHasNative ? _holdingNativeRight : _firing.rightCanonicalHandWeaponLocal,
-            outHandWeaponLocal, _holdingMirrorPlaneX);
+            _holdingMirrorPlaneX, outHandWeaponLocal);
         if (!mirrored) {
             return false;
         }
@@ -1601,7 +1591,7 @@ namespace rock
             conjugateAcrossLateralMirror(weaponInRightWand);
 
         // Loose-model callers retain their controller-owned placement contract.
-        // Equipped authored contact is handled by buildEquippedLeftFiringSeat.
+        // Equipped authored contact is handled by weapon_grip_seat::leftFiringSeat.
         weaponInLeftWand = transform_math::composeTransforms(
             makeLeftFiringWandAimTrim(handlingSettings), weaponInLeftWand);
 

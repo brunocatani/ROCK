@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/AuthoredPrimaryFiringGrip.h"
+#include "physics-interaction/weapon/WeaponGripSeat.h"
 #include "physics-interaction/weapon/HoldingGripRecords.h"
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
 
@@ -10,7 +11,6 @@
 #include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
-#include "physics-interaction/weapon/MinigunFiringGripPolicy.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 
 #include "RE/NetImmerse/NiNode.h"
@@ -75,55 +75,6 @@ namespace rock
                    std::isfinite(transform.translate.z) &&
                    std::isfinite(transform.scale) &&
                    std::abs(transform.scale) > 0.000001f;
-        }
-
-        [[nodiscard]] bool tryResolveCompiledMinigunFiringHandInWeapon(
-            const bool inPowerArmor,
-            RE::NiTransform& outHandInWeapon)
-        {
-            const auto& source =
-                minigun_firing_grip_policy::weaponInFiringHand(
-                    inPowerArmor);
-            RE::NiTransform weaponInHand{};
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    weaponInHand.rotate.entry[row][column] =
-                        source.rotation[static_cast<std::size_t>(
-                            row * 3 + column)];
-                }
-            }
-            weaponInHand.translate = {
-                source.translation[0],
-                source.translation[1],
-                source.translation[2],
-            };
-            weaponInHand.scale = source.scale;
-            if (!finiteTransform(weaponInHand)) {
-                outHandInWeapon = {};
-                return false;
-            }
-
-            // hFRIK authored Weapon-in-Hand. ROCK's firing canonical stores
-            // the inverse Hand-in-Weapon relation.
-            outHandInWeapon =
-                transform_math::invertTransform(weaponInHand);
-            return finiteTransform(outHandInWeapon);
-        }
-
-        // Exact skeleton mirror of the authored right finger locals; the
-        // bone order and therefore the mask are identical on both hands.
-        [[nodiscard]] bool buildMirroredLeftFingerPose(const authored_weapon_grip_library::FiringFingerPose& rightPose, authored_weapon_grip_library::FiringFingerPose& outLeftPose)
-        {
-            outLeftPose = {};
-            if (!rightPose.complete() ||
-                !hand_finger_mirror_math::mirrorFingerLocalsAcrossHands<RE::NiTransform>(
-                    std::span<const RE::NiTransform>(rightPose.localTransforms),
-                    std::span<RE::NiTransform>(outLeftPose.localTransforms))) {
-                outLeftPose = {};
-                return false;
-            }
-            outLeftPose.enabledMask = rightPose.enabledMask;
-            return true;
         }
     }
 
@@ -247,13 +198,6 @@ namespace rock
 
         const std::uint64_t currentWeaponKey =
             input.weaponNode ? input.weaponOwnershipKey : 0;
-        RE::NiTransform compiledMinigunFiringHandInWeapon{};
-        const bool compiledMinigunFiringSeat =
-            minigun_firing_grip_policy::usesCompiledFiringSeat(
-                input.weaponKeywordFlags) &&
-            tryResolveCompiledMinigunFiringHandInWeapon(
-                input.inPowerArmor,
-                compiledMinigunFiringHandInWeapon);
         if (input.weaponNode != _weaponNodeIdentity ||
             currentWeaponKey != _weaponOwnershipKey) {
             weaponAuthority.clearAuthoredPrimaryFiringGripCanonical(
@@ -302,33 +246,34 @@ namespace rock
             input.weaponNode,
             input.weaponInstanceContentKey,
             input.weaponInstanceContentKnown);
-        RE::NiPoint3 modelDisplacement{};
-        if (!vanilla_weapon_grip_frame::resolveModelTranslation(
-                input.weapon ? input.weapon->formID : 0, input.weaponNode, modelDisplacement)) {
+        const auto nativeSeat = weapon_grip_seat::resolveNative({
+            .weapon = input.weapon,
+            .weaponRoot = input.weaponNode,
+            .variant = variant,
+            .keywordFlags = input.weaponKeywordFlags,
+            .inPowerArmor = input.inPowerArmor,
+        });
+        if (!nativeSeat.modelRegistered) {
             weaponAuthority.clearAuthoredPrimaryFiringGripCanonical("invalid-model-registration");
             weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             clearStableAuthoredSupportGripSnapshot();
             endSession("invalid-model-registration");
             return;
         }
-        auto authoredLookup = authored_weapon_grip_library::findResolvedVariant(input.weapon, variant, input.inPowerArmor);
-        authored_weapon_grip_library::applyPipeDefaultOffset(authoredLookup);
-        if (authoredLookup.found) {
-            authoredLookup.rightHandWeaponLocal = vanilla_weapon_grip_frame::translateGrip(authoredLookup.rightHandWeaponLocal, modelDisplacement);
-            if (authoredLookup.hasSupportRelation) {
-                authoredLookup.supportHandWeaponLocal = vanilla_weapon_grip_frame::translateGrip(authoredLookup.supportHandWeaponLocal, modelDisplacement);
-            }
-        }
-        const bool harvestedRelationAvailable = authoredLookup.found && authored_weapon_grip_library::isNativeIdleAuthority(authoredLookup.source);
+        auto authoredLookup = nativeSeat.lookup;
+        const RE::NiPoint3& modelDisplacement = nativeSeat.modelDisplacement;
+        const bool compiledMinigunFiringSeat = nativeSeat.compiledMinigun;
+        const RE::NiTransform& compiledMinigunFiringHandInWeapon = nativeSeat.rightHandWeaponLocal;
+        const bool harvestedRelationAvailable = nativeSeat.harvested();
         const auto* customRight=holding_grips::find(input.weapon,input.weaponNode,false,input.weaponGenerationKey,input.inPowerArmor);
         const auto* customLeft=holding_grips::find(input.weapon,input.weaponNode,true,input.weaponGenerationKey,input.inPowerArmor);
-        const RE::NiTransform nativeRightHandInWeapon = compiledMinigunFiringSeat?compiledMinigunFiringHandInWeapon:authoredLookup.rightHandWeaponLocal;
+        const RE::NiTransform nativeRightHandInWeapon = nativeSeat.rightHandWeaponLocal;
         const RE::NiTransform& selectedRightHandInWeapon =
             customRight?customRight->wrist:nativeRightHandInWeapon;
         const auto* rightFingerPose = harvestedRelationAvailable && authoredLookup.rightFiringFingerPose.complete() ? &authoredLookup.rightFiringFingerPose : nullptr;
         if (rightFingerPose && _mirroredFingerPoseCaptureSequence != authoredLookup.captureSequence) {
             _mirroredLeftFingerPose = {};
-            _mirroredFingerPoseValid = buildMirroredLeftFingerPose(*rightFingerPose, _mirroredLeftFingerPose);
+            _mirroredFingerPoseValid = weapon_grip_seat::mirrorFingerPose(*rightFingerPose, _mirroredLeftFingerPose);
             _mirroredFingerPoseCaptureSequence = authoredLookup.captureSequence;
             if (!_mirroredFingerPoseValid && !_fingerMirrorFailureLogged) {
                 ROCK_LOG_WARN(Animation, "Authored primary firing grip could not mirror exact native-idle finger pose for left firing weaponKey=0x{:X} capture={}",

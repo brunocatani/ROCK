@@ -179,6 +179,7 @@ namespace rock
         auto* model = native_secondary_presentation::presentedModel();
         const bool enabled = weaponDrawn && native_hand_equipment::hasSecondaryGun();
         _secondaryWeaponCollision.update(world, model, frame.deltaSeconds, enabled);
+        native_secondary_presentation::setMirrorPlaneX(_secondaryWeaponCollision.holdingMirrorPlaneX());
 
         auto* modelNode = model ? model->IsNode() : nullptr;
         RE::NiTransform intent{};

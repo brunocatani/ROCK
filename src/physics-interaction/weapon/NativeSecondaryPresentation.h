@@ -49,6 +49,10 @@ namespace rock::native_secondary_presentation
      * Returns true with the resolved pose to present; the gun and the hand
      * holding it then move together by that correction.
      */
+    // The second weapon's geometry mirror plane, from its generated
+    // collision (0 until generated). The left seat mirrors across it.
+    void setMirrorPlaneX(float planeX) noexcept;
+
     using CollisionResolver = bool (*)(void* context, const RE::NiTransform& modelIntentWorld,
         RE::NiTransform& resolvedModelWorld);
     void setCollisionResolver(void* context, CollisionResolver resolver) noexcept;
