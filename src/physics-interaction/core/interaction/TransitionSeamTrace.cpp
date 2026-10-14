@@ -17,8 +17,8 @@ namespace rock
      *
      * Model roots of different sources are not registered to each other, so
      * the visible gun is measured by its geometry: the mean of its shapes'
-     * world bound centres (C) and the shape centre farthest from it (F, along
-     * the gun). Per frame it logs how tip C and F moved in the world and in
+     * world bound centres (C) and the shape centre farthest from it (F, the tip, along
+     * the gun). Per frame it logs how far C and F moved in the world and in
      * the hand's frame, and where they sit in the hand against the last frame
      * before the transition. A gap is a frame with no visible weapon; a
      * duplicate is a count above one; a visible pop is a geometry step.
