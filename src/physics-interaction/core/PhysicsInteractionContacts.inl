@@ -413,6 +413,19 @@
         if (solvedChildContact) {
             native_impact_audio::observeManifold(world, bodyIdA, bodyIdB, shapeKeyA, shapeKeyB);
         }
+        for (const bool second : { false, true }) {
+            const auto& proxy = second ? _secondaryDynamicWeaponCollision : _dynamicWeaponCollision;
+            const bool proxyA = proxy.isProxyBodyIdAtomic(bodyIdA);
+            const bool proxyB = proxy.isProxyBodyIdAtomic(bodyIdB);
+            if (!solvedChildContact || proxyA == proxyB ||
+                !logger::internal::shouldEmitSample(second ? "slot-rotation-manifold-1" : "slot-rotation-manifold-0", 250)) continue;
+            const auto other = proxyA ? bodyIdB : bodyIdA;
+            const auto identity = havok_runtime::snapshotBodyIdentity(world, RE::hknpBodyId{ other });
+            ROCK_LOG_INFO(Weapon, "SLOT ROTATION manifold slot={} other={} layer={} handProxy={} points={}",
+                second ? 1 : 0, other,
+                identity.valid ? (identity.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK) : 9999u,
+                proxyA ? bodyBIsDynamicHand : bodyAIsDynamicHand, manifoldPointCount);
+        }
         if (solvedChildContact && bodyAIsDynamicHand) {
             storage_interaction::contact(world,bodyIdB,dynamicBodySourceA.isLeft);
             _dynamicHandCollision.recordDynamicBodyContactCallback(
