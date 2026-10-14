@@ -3363,25 +3363,8 @@ namespace rock
             if (metadata.side != otherSide) {
                 return false;
             }
-            return metadata.role == skeleton_bone_debug_math::BoneColliderRole::ForearmSegment ||
-                   metadata.role == skeleton_bone_debug_math::BoneColliderRole::HandSegment;
-        };
-
-        auto roleName = [](skeleton_bone_debug_math::BoneColliderRole role) {
-            using skeleton_bone_debug_math::BoneColliderRole;
-            switch (role) {
-            case BoneColliderRole::UpperArmSegment:
-                return "UpperArmSegment";
-            case BoneColliderRole::ForearmSegment:
-                return "ForearmSegment";
-            case BoneColliderRole::HandSegment:
-                return "HandSegment";
-            case BoneColliderRole::FingerSegment:
-                return "FingerSegment";
-            case BoneColliderRole::TorsoSegment:
-                return "TorsoSegment";
-            }
-            return "Unknown";
+            return metadata.role == body_collider::Role::ForearmSegment ||
+                   metadata.role == body_collider::Role::HandSegment;
         };
 
         auto suppressBody = [&](std::uint32_t bodyId) {
@@ -3400,7 +3383,7 @@ namespace rock
                     "{} hand: held loose weapon body suppression set full; bodyId={} role={} zone={} side={} left active",
                     handName(),
                     bodyId,
-                    roleName(metadata.role),
+                    body_collider::roleName(metadata.role),
                     body_zone::bodyZoneName(metadata.zone),
                     body_zone::bodyZoneSideName(metadata.side));
                 return;
@@ -3416,7 +3399,7 @@ namespace rock
                     "{} hand: held loose weapon body collision lease acquired bodyId={} role={} zone={} side={} filter=0x{:08X}->0x{:08X} wasDisabledBefore={} leases={}",
                     handName(),
                     bodyId,
-                    roleName(metadata.role),
+                    body_collider::roleName(metadata.role),
                     body_zone::bodyZoneName(metadata.zone),
                     body_zone::bodyZoneSideName(metadata.side),
                     registryResult.filterBefore,

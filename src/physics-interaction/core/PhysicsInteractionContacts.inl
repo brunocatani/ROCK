@@ -665,7 +665,7 @@
 
             metadata.valid = true;
             metadata.inPowerArmor = hasFlag(classification.flags, kFlagPowerArmor);
-            metadata.role = static_cast<skeleton_bone_debug_math::BoneColliderRole>(classification.role);
+            metadata.role = static_cast<body_collider::Role>(classification.role);
             metadata.zone = static_cast<body_zone::BodyZoneKind>(classification.zone);
             metadata.side = static_cast<body_zone::BodyZoneSide>(classification.side);
             metadata.bodyId = classification.bodyId;

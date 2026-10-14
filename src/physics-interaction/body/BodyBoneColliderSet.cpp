@@ -22,52 +22,34 @@ namespace rock
 {
     namespace
     {
-        using skeleton_bone_debug_math::BoneColliderDescriptor;
-        using skeleton_bone_debug_math::BoneColliderRole;
 
         constexpr std::uint32_t kBodyFilterInfo = (0x000B << 16) | (collision_layer_policy::ROCK_LAYER_BODY & 0x7F);
 
-        using BodyDescriptorArray = std::array<BoneColliderDescriptor, kBodyBoneColliderBodyCount>;
+        using BodyDescriptorArray = std::array<body_collider::Descriptor, kBodyBoneColliderBodyCount>;
         using SnapshotBoneLookup = SkeletonBoneNameIndex::View;
 
         const BodyDescriptorArray& bodyDescriptorsForPowerArmor(bool inPowerArmor)
         {
-            return inPowerArmor ? skeleton_bone_debug_math::kPowerArmorBodyColliderDescriptors :
-                                  skeleton_bone_debug_math::kStandardBodyColliderDescriptors;
+            return inPowerArmor ? body_collider::kPowerArmorDescriptors :
+                                  body_collider::kStandardDescriptors;
         }
 
-        const char* roleName(BoneColliderRole role)
-        {
-            switch (role) {
-            case BoneColliderRole::UpperArmSegment:
-                return "UpperArm";
-            case BoneColliderRole::ForearmSegment:
-                return "Forearm";
-            case BoneColliderRole::HandSegment:
-                return "Hand";
-            case BoneColliderRole::FingerSegment:
-                return "Finger";
-            case BoneColliderRole::TorsoSegment:
-                return "Torso";
-            }
-            return "Unknown";
-        }
+        using body_collider::roleName;
 
-        hand_bone_collider_geometry_math::ColliderDimensionLimits bodyRoleDimensionLimits(BoneColliderRole role, bool inPowerArmor)
+        hand_bone_collider_geometry_math::ColliderDimensionLimits bodyRoleDimensionLimits(body_collider::Role role, bool inPowerArmor)
         {
             hand_bone_collider_geometry_math::ColliderDimensionLimits limits{};
             limits.maxConvexRadius = inPowerArmor ? 2.5f : 1.75f;
 
             switch (role) {
-            case BoneColliderRole::TorsoSegment:
+            case body_collider::Role::TorsoSegment:
                 limits.maxLength = inPowerArmor ? 70.0f : 50.0f;
                 limits.maxRadius = inPowerArmor ? 24.0f : 16.0f;
                 limits.maxLongAxisExtent = inPowerArmor ? 115.0f : 80.0f;
                 return limits;
-            case BoneColliderRole::UpperArmSegment:
-            case BoneColliderRole::ForearmSegment:
-            case BoneColliderRole::HandSegment:
-            case BoneColliderRole::FingerSegment:
+            case body_collider::Role::UpperArmSegment:
+            case body_collider::Role::ForearmSegment:
+            case body_collider::Role::HandSegment:
                 limits.maxLength = inPowerArmor ? 68.0f : 46.0f;
                 limits.maxRadius = inPowerArmor ? 18.0f : 11.0f;
                 limits.maxLongAxisExtent = inPowerArmor ? 100.0f : 66.0f;
@@ -77,7 +59,7 @@ namespace rock
             return limits;
         }
 
-        bool descriptorFrameDimensionsValid(const BodyBoneColliderSet::DescriptorFrameResult& frame, BoneColliderRole role, bool inPowerArmor)
+        bool descriptorFrameDimensionsValid(const BodyBoneColliderSet::DescriptorFrameResult& frame, body_collider::Role role, bool inPowerArmor)
         {
             return frame.valid &&
                    hand_bone_collider_geometry_math::colliderDimensionsWithinLimits(
@@ -97,16 +79,12 @@ namespace rock
 
         bool makeDescriptorFrame(
             const SnapshotBoneLookup& bonesByName,
-            const BoneColliderDescriptor& descriptor,
+            const body_collider::Descriptor& descriptor,
             bool inPowerArmor,
             const collider_tuning::BodyDescriptor& tuning,
             BodyBoneColliderSet::DescriptorFrameResult& outFrame)
         {
             outFrame = {};
-            if (!descriptor.enabled || descriptor.endpointMode != skeleton_bone_debug_math::BoneColliderEndpointMode::ChildBone) {
-                return false;
-            }
-
             hand_bone_collider_geometry_math::BoneColliderFrameInput<RE::NiTransform, RE::NiPoint3> input{};
             input.radius = tuning.radius;
             input.convexRadius = tuning.convexRadius;
@@ -116,7 +94,7 @@ namespace rock
                 return false;
             }
 
-            skeleton_bone_debug_math::applyColliderEndpointRange(descriptor, input.start.translate, input.end.translate);
+            body_collider::applyEndpointRange(descriptor, input.start.translate, input.end.translate);
             const auto frame = hand_bone_collider_geometry_math::buildSegmentColliderFrame(input);
             if (!frame.valid) {
                 return false;
@@ -164,7 +142,7 @@ namespace rock
 
         std::array<BodyBoneColliderSet::DescriptorFrameResult, kForearmMergeSourceCount>* forearmMergeSourcesForDescriptor(
             ForearmTwinMergeSources& sources,
-            const BoneColliderDescriptor& descriptor,
+            const body_collider::Descriptor& descriptor,
             std::size_t& outSourceIndex)
         {
             auto* sideSources = descriptor.side == body_zone::BodyZoneSide::Left ? &sources.left :
@@ -173,7 +151,7 @@ namespace rock
                 return nullptr;
             }
 
-            if (descriptor.role == BoneColliderRole::ForearmSegment) {
+            if (descriptor.role == body_collider::Role::ForearmSegment) {
                 switch (descriptor.zone) {
                 case body_zone::BodyZoneKind::LeftForearmUpper:
                 case body_zone::BodyZoneKind::RightForearmUpper:
@@ -188,7 +166,7 @@ namespace rock
                 }
             }
 
-            if (descriptor.role == BoneColliderRole::HandSegment &&
+            if (descriptor.role == body_collider::Role::HandSegment &&
                 (descriptor.zone == body_zone::BodyZoneKind::LeftHand ||
                     descriptor.zone == body_zone::BodyZoneKind::RightHand)) {
                 outSourceIndex = kWristMergeSource;
@@ -199,7 +177,7 @@ namespace rock
 
         void collectForearmTwinMergeSource(
             ForearmTwinMergeSources& sources,
-            const BoneColliderDescriptor& descriptor,
+            const body_collider::Descriptor& descriptor,
             const BodyBoneColliderSet::DescriptorFrameResult& frame)
         {
             std::size_t sourceIndex = 0;
@@ -241,7 +219,7 @@ namespace rock
             mergedFrame.length = sources[0].length + sources[1].length + sources[2].length;
             mergedFrame.radius = input.radius;
             mergedFrame.convexRadius = input.convexRadius;
-            if (!descriptorFrameDimensionsValid(mergedFrame, BoneColliderRole::ForearmSegment, inPowerArmor)) {
+            if (!descriptorFrameDimensionsValid(mergedFrame, body_collider::Role::ForearmSegment, inPowerArmor)) {
                 return;
             }
 
@@ -349,7 +327,7 @@ namespace rock
     bool BodyBoneColliderSet::createBodyForDescriptor(
         RE::hknpWorld* world,
         void* bhkWorld,
-        const BoneColliderDescriptor& descriptor,
+        const body_collider::Descriptor& descriptor,
         std::uint32_t descriptorIndex,
         const DescriptorFrameResult& frame,
         BodyInstance& instance)
@@ -375,7 +353,7 @@ namespace rock
         instance.ownsShapeRef = true;
         clearGeneratedKeyframedBodyDriveState(instance.driveState);
 
-        const std::string name = std::string("ROCK_Body_") + roleName(descriptor.role) + "_" + std::to_string(descriptorIndex);
+        const std::string name = std::string("ROCK_Body_") + std::string(roleName(descriptor.role)) + "_" + std::to_string(descriptorIndex);
         if (!instance.body.create(world, bhkWorld, shape, kBodyFilterInfo, havok_material_registry::registerGeneratedBodyMaterial(world), BethesdaMotionType::Keyframed, name.c_str())) {
             shapeRemoveRef(shape);
             clearInstance(instance, false);
@@ -726,7 +704,7 @@ namespace rock
 
         instance.body.reset();
         instance.shape = nullptr;
-        instance.role = BoneColliderRole::TorsoSegment;
+        instance.role = body_collider::Role::TorsoSegment;
         instance.zone = body_zone::BodyZoneKind::Unknown;
         instance.side = body_zone::BodyZoneSide::Center;
         instance.descriptorIndex = 0;
@@ -763,7 +741,7 @@ namespace rock
         _bodyCountAtomic.store(0, std::memory_order_release);
         for (std::size_t i = 0; i < _bodyIdsAtomic.size(); ++i) {
             _bodyIdsAtomic[i].store(kInvalidBodyBoneColliderBodyId, std::memory_order_release);
-            _rolesAtomic[i].store(static_cast<std::uint32_t>(BoneColliderRole::TorsoSegment), std::memory_order_release);
+            _rolesAtomic[i].store(static_cast<std::uint32_t>(body_collider::Role::TorsoSegment), std::memory_order_release);
             _zonesAtomic[i].store(static_cast<std::uint32_t>(body_zone::BodyZoneKind::Unknown), std::memory_order_release);
             _sidesAtomic[i].store(static_cast<std::uint32_t>(body_zone::BodyZoneSide::Center), std::memory_order_release);
             _descriptorIndicesAtomic[i].store(0, std::memory_order_release);
@@ -808,8 +786,8 @@ namespace rock
                 continue;
             }
 
-            const auto role = static_cast<BoneColliderRole>(_rolesAtomic[i].load(std::memory_order_acquire));
-            if (role != BoneColliderRole::ForearmSegment && role != BoneColliderRole::HandSegment) {
+            const auto role = static_cast<body_collider::Role>(_rolesAtomic[i].load(std::memory_order_acquire));
+            if (role != body_collider::Role::ForearmSegment && role != body_collider::Role::HandSegment) {
                 continue;
             }
 
@@ -822,16 +800,6 @@ namespace rock
     {
         BodyBoneColliderMetadata metadata{};
         return tryGetBodyMetadataAtomic(bodyId, metadata);
-    }
-
-    bool BodyBoneColliderSet::tryGetBodyRoleAtomic(std::uint32_t bodyId, BoneColliderRole& outRole) const
-    {
-        BodyBoneColliderMetadata metadata{};
-        if (!tryGetBodyMetadataAtomic(bodyId, metadata)) {
-            return false;
-        }
-        outRole = metadata.role;
-        return true;
     }
 
     bool BodyBoneColliderSet::tryGetBodyMetadataAtomic(std::uint32_t bodyId, BodyBoneColliderMetadata& outMetadata) const
@@ -863,7 +831,7 @@ namespace rock
         outMetadata.valid = true;
         outMetadata.inPowerArmor = _powerArmorAtomic[i].load(std::memory_order_acquire) != 0;
         outMetadata.bodyId = bodyId;
-        outMetadata.role = static_cast<BoneColliderRole>(_rolesAtomic[i].load(std::memory_order_acquire));
+        outMetadata.role = static_cast<body_collider::Role>(_rolesAtomic[i].load(std::memory_order_acquire));
         outMetadata.zone = static_cast<body_zone::BodyZoneKind>(_zonesAtomic[i].load(std::memory_order_acquire));
         outMetadata.side = static_cast<body_zone::BodyZoneSide>(_sidesAtomic[i].load(std::memory_order_acquire));
         outMetadata.descriptorIndex = _descriptorIndicesAtomic[i].load(std::memory_order_acquire);

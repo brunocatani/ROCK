@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/body/BodyColliderDescriptors.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "RE/NetImmerse/NiPoint.h"
 
@@ -38,7 +39,7 @@ namespace rock::collider_tuning
     struct BodyProfile
     {
         std::uint64_t signature = 0;
-        std::array<BodyDescriptor, skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size()> descriptors{};
+        std::array<BodyDescriptor, body_collider::kStandardDescriptors.size()> descriptors{};
     };
 
     // Pure value preparation. Owners call these only when config revision or

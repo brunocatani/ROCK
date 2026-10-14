@@ -436,7 +436,6 @@ namespace rock
             ROCK_LOG_WARN(Init, "Body bone colliders were not available during init; runtime update will retry");
         }
 
-        _contacts.bodyRuntime.reset();
         subscribeContactEvents(hknp);
 
         _weaponCollision.init(hknp, bhk);
@@ -449,7 +448,6 @@ namespace rock
             captureHandColliderBones();
             _rightHand.updateCollisionTransform(hknp, getInteractionHandTransform(false), 0.011f, _handColliderBoneSnapshot);
             _leftHand.updateCollisionTransform(hknp, getInteractionHandTransform(true), 0.011f, _handColliderBoneSnapshot);
-            _bodyBoneColliders.update(hknp, 0.011f);
             ROCK_LOG_INFO(Init, "Initial bone-derived hand collider transforms updated");
         }
 

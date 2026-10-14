@@ -5,6 +5,7 @@
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
+#include "physics-interaction/body/BodyColliderDescriptors.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/HeldPlacementPolicy.h"
@@ -71,7 +72,7 @@ namespace rock
     inline constexpr std::size_t kGrabCollisionSuppressionBodyCountPerHand =
         hand_collider_semantics::kHandColliderBodyCountPerHand + kGrabCollisionSuppressionArmBodyCountPerHand;
     inline constexpr std::size_t kHeldLooseWeaponBodyCollisionSuppressionCapacity =
-        skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size() * 2u;
+        body_collider::kStandardDescriptors.size() * 2u;
 
     struct GrabPivotDebugSnapshot
     {

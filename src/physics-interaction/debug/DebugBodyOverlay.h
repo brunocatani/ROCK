@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "physics-interaction/weapon/WeaponTypes.h"
+#include "physics-interaction/body/BodyColliderDescriptors.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
 
@@ -330,7 +331,7 @@ namespace rock::debug
         std::array<BodyOverlayEntry,
             MAX_WEAPON_COLLISION_BODIES +
                 (hand_collider_semantics::kHandColliderBodyCountPerHand * 2) +
-                skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size() + 8>
+                body_collider::kStandardDescriptors.size() + 8>
             entries{};
         std::array<AxisOverlayEntry, 96> axisEntries{};
         std::array<MarkerOverlayEntry, 512> markerEntries{};

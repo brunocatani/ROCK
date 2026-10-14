@@ -106,15 +106,15 @@ int main()
     const auto standardDefaults = collider_tuning::prepareBody(config, false);
     const auto armorDefaults = collider_tuning::prepareBody(config, true);
     for (std::size_t i = 0; i < standardDefaults.descriptors.size(); ++i) {
-        near(standardDefaults.descriptors[i].radius, skeleton_bone_debug_math::kStandardBodyColliderDescriptors[i].radiusGameUnits);
-        near(armorDefaults.descriptors[i].radius, skeleton_bone_debug_math::kPowerArmorBodyColliderDescriptors[i].radiusGameUnits);
+        near(standardDefaults.descriptors[i].radius, body_collider::kStandardDescriptors[i].radiusGameUnits);
+        near(armorDefaults.descriptors[i].radius, body_collider::kPowerArmorDescriptors[i].radiusGameUnits);
         near(standardDefaults.descriptors[i].lengthScale, 1.0f);
     }
-    const auto chestIt = std::find_if(skeleton_bone_debug_math::kStandardBodyColliderDescriptors.begin(),
-        skeleton_bone_debug_math::kStandardBodyColliderDescriptors.end(),
+    const auto chestIt = std::find_if(body_collider::kStandardDescriptors.begin(),
+        body_collider::kStandardDescriptors.end(),
         [](const auto& descriptor) { return descriptor.zone == body_zone::BodyZoneKind::Chest; });
-    assert(chestIt != skeleton_bone_debug_math::kStandardBodyColliderDescriptors.end());
-    const auto chest = static_cast<std::size_t>(chestIt - skeleton_bone_debug_math::kStandardBodyColliderDescriptors.begin());
+    assert(chestIt != body_collider::kStandardDescriptors.end());
+    const auto chest = static_cast<std::size_t>(chestIt - body_collider::kStandardDescriptors.begin());
     config.rockBodyBoneColliderZoneScaleOverrides =
         "Chest=2,3,4;PowerArmor.Chest=4,5,6;PowerArmor.Chest=7,7,7;Chest=1,1,1";
     config.rockBodyBoneColliderRadiusScaleOverrides =

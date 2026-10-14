@@ -235,8 +235,6 @@ namespace rock::collider_tuning
     }
     namespace body_detail
     {
-        using skeleton_bone_debug_math::BoneColliderDescriptor;
-        using skeleton_bone_debug_math::BoneColliderRole;
         float sanitizeBodyColliderScale(float value)
         {
             if (!std::isfinite(value)) {
@@ -245,31 +243,27 @@ namespace rock::collider_tuning
             return std::clamp(value, 0.05f, 8.0f);
         }
 
-        float roleRadiusScale(const RockConfigValues& config, BoneColliderRole role)
+        float roleRadiusScale(const RockConfigValues& config, body_collider::Role role)
         {
             switch (role) {
-            case BoneColliderRole::TorsoSegment:
+            case body_collider::Role::TorsoSegment:
                 return sanitizeBodyColliderScale(config.rockBodyBoneColliderTorsoRadiusScale);
-            case BoneColliderRole::UpperArmSegment:
-            case BoneColliderRole::ForearmSegment:
-            case BoneColliderRole::HandSegment:
-                return sanitizeBodyColliderScale(config.rockBodyBoneColliderArmRadiusScale);
-            case BoneColliderRole::FingerSegment:
+            case body_collider::Role::UpperArmSegment:
+            case body_collider::Role::ForearmSegment:
+            case body_collider::Role::HandSegment:
                 return sanitizeBodyColliderScale(config.rockBodyBoneColliderArmRadiusScale);
             }
             return 1.0f;
         }
 
-        float roleLengthScale(const RockConfigValues& config, BoneColliderRole role)
+        float roleLengthScale(const RockConfigValues& config, body_collider::Role role)
         {
             switch (role) {
-            case BoneColliderRole::TorsoSegment:
+            case body_collider::Role::TorsoSegment:
                 return sanitizeBodyColliderScale(config.rockBodyBoneColliderTorsoLengthScale);
-            case BoneColliderRole::UpperArmSegment:
-            case BoneColliderRole::ForearmSegment:
-            case BoneColliderRole::HandSegment:
-                return sanitizeBodyColliderScale(config.rockBodyBoneColliderArmLengthScale);
-            case BoneColliderRole::FingerSegment:
+            case body_collider::Role::UpperArmSegment:
+            case body_collider::Role::ForearmSegment:
+            case body_collider::Role::HandSegment:
                 return sanitizeBodyColliderScale(config.rockBodyBoneColliderArmLengthScale);
             }
             return 1.0f;
@@ -475,7 +469,7 @@ namespace rock::collider_tuning
             ProfileBonePair = 4,
         };
 
-        bool bonePairOverrideKeyMatches(std::string_view key, const BoneColliderDescriptor& descriptor)
+        bool bonePairOverrideKeyMatches(std::string_view key, const body_collider::Descriptor& descriptor)
         {
             key = trimZoneOverrideToken(key);
             const auto arrow = key.find("->");
@@ -490,7 +484,7 @@ namespace rock::collider_tuning
             return equalsAsciiInsensitive(start, descriptor.startBone) && equalsAsciiInsensitive(end, descriptor.endBone);
         }
 
-        BodyRadiusOverrideMatch bodyRadiusOverrideKeyMatch(std::string_view key, const BoneColliderDescriptor& descriptor, bool inPowerArmor)
+        BodyRadiusOverrideMatch bodyRadiusOverrideKeyMatch(std::string_view key, const body_collider::Descriptor& descriptor, bool inPowerArmor)
         {
             key = trimZoneOverrideToken(key);
             const auto dot = key.find('.');
@@ -513,7 +507,7 @@ namespace rock::collider_tuning
             return BodyRadiusOverrideMatch::None;
         }
 
-        float bodyRadiusScaleOverride(const RockConfigValues& config, const BoneColliderDescriptor& descriptor, bool inPowerArmor)
+        float bodyRadiusScaleOverride(const RockConfigValues& config, const body_collider::Descriptor& descriptor, bool inPowerArmor)
         {
             if (config.rockBodyBoneColliderRadiusScaleOverrides.empty()) {
                 return 1.0f;
@@ -597,8 +591,8 @@ namespace rock::collider_tuning
         using namespace body_detail;
         BodyProfile result{};
         result.signature = bodyColliderTuningSignature(config, powerArmor);
-        const auto& descriptors = powerArmor ? skeleton_bone_debug_math::kPowerArmorBodyColliderDescriptors :
-            skeleton_bone_debug_math::kStandardBodyColliderDescriptors;
+        const auto& descriptors = powerArmor ? body_collider::kPowerArmorDescriptors :
+            body_collider::kStandardDescriptors;
         for (std::size_t i = 0; i < descriptors.size(); ++i) {
             const auto& descriptor = descriptors[i];
             const auto zoneOverride = bodyZoneTuningOverride(config, descriptor.zone, powerArmor);

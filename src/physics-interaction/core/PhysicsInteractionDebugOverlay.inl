@@ -2823,15 +2823,13 @@
             }
 
             if (drawBodyBoneColliders) {
-                auto bodyOverlayRoleFor = [](skeleton_bone_debug_math::BoneColliderRole role) {
-                    using skeleton_bone_debug_math::BoneColliderRole;
+                auto bodyOverlayRoleFor = [](body_collider::Role role) {
                     switch (role) {
-                    case BoneColliderRole::TorsoSegment:
+                    case body_collider::Role::TorsoSegment:
                         return debug::BodyOverlayRole::BodyTorsoSegment;
-                    case BoneColliderRole::UpperArmSegment:
-                    case BoneColliderRole::ForearmSegment:
-                    case BoneColliderRole::HandSegment:
-                    case BoneColliderRole::FingerSegment:
+                    case body_collider::Role::UpperArmSegment:
+                    case body_collider::Role::ForearmSegment:
+                    case body_collider::Role::HandSegment:
                         return debug::BodyOverlayRole::BodyArmSegment;
                     }
                     return debug::BodyOverlayRole::BodyTorsoSegment;

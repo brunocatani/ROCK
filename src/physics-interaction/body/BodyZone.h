@@ -90,8 +90,4 @@ namespace rock::body_zone
         }
         return "Center";
     }
-
-    inline constexpr bool isLeftSide(BodyZoneSide side) { return side == BodyZoneSide::Left; }
-    inline constexpr bool isRightSide(BodyZoneSide side) { return side == BodyZoneSide::Right; }
-    inline constexpr bool isCentered(BodyZoneSide side) { return side == BodyZoneSide::Center; }
 }

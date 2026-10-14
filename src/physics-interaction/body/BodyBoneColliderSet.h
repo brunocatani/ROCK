@@ -1,5 +1,6 @@
 #pragma once
 
+#include "physics-interaction/body/BodyColliderDescriptors.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/hand/DynamicHandTwinTargets.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
@@ -24,7 +25,7 @@
 
 namespace rock
 {
-    inline constexpr std::size_t kBodyBoneColliderBodyCount = skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size();
+    inline constexpr std::size_t kBodyBoneColliderBodyCount = body_collider::kStandardDescriptors.size();
     inline constexpr std::uint32_t kInvalidBodyBoneColliderBodyId = 0x7FFF'FFFFu;
     inline constexpr std::size_t kBodyBoneGrabSuppressionArmBodyCountPerSide = 3;
 
@@ -32,7 +33,7 @@ namespace rock
     {
         bool valid = false;
         bool inPowerArmor = false;
-        skeleton_bone_debug_math::BoneColliderRole role = skeleton_bone_debug_math::BoneColliderRole::TorsoSegment;
+        body_collider::Role role = body_collider::Role::TorsoSegment;
         body_zone::BodyZoneKind zone = body_zone::BodyZoneKind::Unknown;
         body_zone::BodyZoneSide side = body_zone::BodyZoneSide::Center;
         std::uint32_t bodyId = kInvalidBodyBoneColliderBodyId;
@@ -72,7 +73,6 @@ namespace rock
         bool isColliderBodyIdAtomic(std::uint32_t bodyId) const;
         bool tryGetBodyMetadataAtomic(std::uint32_t bodyId, BodyBoneColliderMetadata& outMetadata) const;
         bool tryGetBodyMetadataAtIndexAtomic(std::uint32_t index, std::uint32_t bodyId, BodyBoneColliderMetadata& outMetadata) const;
-        bool tryGetBodyRoleAtomic(std::uint32_t bodyId, skeleton_bone_debug_math::BoneColliderRole& outRole) const;
         // Main-thread debug publication only. Returns the exact pending target
         // that the next generated-body physics callback will consume.
         bool isRebuildPendingAtomic() const { return _driveRebuildRequested.load(std::memory_order_acquire); }
@@ -84,7 +84,7 @@ namespace rock
         {
             BethesdaPhysicsBody body;
             const RE::hknpShape* shape = nullptr;
-            skeleton_bone_debug_math::BoneColliderRole role = skeleton_bone_debug_math::BoneColliderRole::TorsoSegment;
+            body_collider::Role role = body_collider::Role::TorsoSegment;
             body_zone::BodyZoneKind zone = body_zone::BodyZoneKind::Unknown;
             body_zone::BodyZoneSide side = body_zone::BodyZoneSide::Center;
             std::uint32_t descriptorIndex = 0;
@@ -101,7 +101,7 @@ namespace rock
         bool createBodyForDescriptor(
             RE::hknpWorld* world,
             void* bhkWorld,
-            const skeleton_bone_debug_math::BoneColliderDescriptor& descriptor,
+            const body_collider::Descriptor& descriptor,
             std::uint32_t descriptorIndex,
             const DescriptorFrameResult& frame,
             BodyInstance& instance);

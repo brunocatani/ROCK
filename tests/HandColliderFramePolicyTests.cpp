@@ -1,6 +1,7 @@
 #include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/body/BodyColliderDescriptors.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 
 #include "RE/NetImmerse/NiMatrix3.h"
@@ -136,15 +137,15 @@ int main()
     bool ok = true;
 
     {
-        namespace skeleton = rock::skeleton_bone_debug_math;
+        namespace body = rock::body_collider;
         namespace geometry = rock::hand_bone_collider_geometry_math;
         // Armor-session geometry: ForeArm1/2 coincide, ForeArm3 is 10 gu
         // farther along the arm, and the wrist span is 16.96 gu. Resolve the
         // production descriptors against that rig so zero-length dependencies
         // cannot silently remove a forearm target and the whole dynamic hand.
         for (const bool armor : { false, true }) {
-            const auto& descriptors = armor ? skeleton::kPowerArmorBodyColliderDescriptors :
-                                              skeleton::kStandardBodyColliderDescriptors;
+            const auto& descriptors = armor ? body::kPowerArmorDescriptors :
+                                              body::kStandardDescriptors;
             for (const std::size_t first : { 7u, 12u }) {
                 const std::string prefix = first == 7 ? "LArm_" : "RArm_";
                 const std::array<std::string, 4> names{
@@ -171,7 +172,7 @@ int main()
                     ok &= expectNear("forearm endpoints resolve", resolved ? 1.0f : 0.0f, 1.0f);
                     input.radius = descriptor.radiusGameUnits;
                     input.convexRadius = descriptor.convexRadiusGameUnits;
-                    skeleton::applyColliderEndpointRange(descriptor, input.start.translate, input.end.translate);
+                    body::applyEndpointRange(descriptor, input.start.translate, input.end.translate);
                     const auto frame = geometry::buildSegmentColliderFrame(input);
                     ok &= expectNear("every forearm merge source remains valid",
                         frame.valid && geometry::colliderDimensionsWithinLimits(
@@ -183,7 +184,7 @@ int main()
                     totalLength += frame.length;
 
                     input.end.translate = input.start.translate;
-                    skeleton::applyColliderEndpointRange(descriptor, input.start.translate, input.end.translate);
+                    body::applyEndpointRange(descriptor, input.start.translate, input.end.translate);
                     const auto collapsed = geometry::buildSegmentColliderFrame(input);
                     ok &= expectNear("collapsed live arm still fails closed", collapsed.valid ? 1.0f : 0.0f, 0.0f);
                 }
