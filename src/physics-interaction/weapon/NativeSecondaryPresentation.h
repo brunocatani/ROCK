@@ -1,5 +1,11 @@
 #pragma once
 
+#include "RE/NetImmerse/NiSmartPointer.h"
+#include "RE/NetImmerse/NiAVObject.h"
+
+#include <array>
+#include <cstdint>
+
 #include "physics-interaction/weapon/AuthoredWeaponGripPose.h"
 #include "RE/NetImmerse/NiAVObject.h"
 
@@ -35,6 +41,20 @@ namespace rock::native_secondary_presentation
     };
     // Null when `out` is valid; otherwise the reason it is not.
     [[nodiscard]] const char* tryGetDropPose(DropPose& out) noexcept;
+
+    /*
+     * A loose weapon equipped into index 1 loses its 3D inside ActivateRef;
+     * the equipped model is placed here no earlier than the next frame, and
+     * a first-ever weapon waits for its idle harvest. Keeps the loose model
+     * in the hand, with the hand and fingers the loose grab presented, until
+     * this presentation places the equipped model; the swap is one frame.
+     * Frame owner only. Takes the reference retained before ActivateRef.
+     */
+    void bridgeIncoming(RE::NiPointer<RE::NiAVObject> model, std::uint32_t weaponFormID, bool left,
+        const RE::NiTransform& handInModel, const std::array<RE::NiTransform, 15>& fingerLocals,
+        std::uint16_t fingerMask) noexcept;
+    // Transition seam diagnostic: the incoming bridge's model, or null.
+    [[nodiscard]] const RE::NiAVObject* incomingModelForTrace(bool& left) noexcept;
 
     // The index-1 model this frame placed in its hand (borrowed, frame
     // owner only), or null before this frame's placement or without one.

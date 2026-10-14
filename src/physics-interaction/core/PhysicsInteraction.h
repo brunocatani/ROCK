@@ -136,6 +136,10 @@ namespace rock
         void normalizeWeaponPresentationScaleAfterFrikWeaponPass();
         void synchronizeEquipVisualBridgeAfterFrikWeaponPass();
         void finalizeEquipVisualBridgePresentation();
+        // Equip/drop seamlessness diagnostic (TransitionSeamTrace.cpp): a
+        // transition arms it; AfterWorldFinal samples the rendered frame.
+        void armTransitionSeamTrace(const char* event) noexcept;
+        void sampleTransitionSeam() noexcept;
 
         [[nodiscard]] bool tryGetManualScopePresentationTarget(
             std::uint64_t& outWeaponGenerationKey,

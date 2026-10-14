@@ -247,6 +247,7 @@ namespace rock {
             .remainingSeconds = _equipped.handlingSettings.equipVisualBridgeTimeoutSeconds,
             .source = equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource::InventoryEquip,
         };
+        armTransitionSeamTrace("inventory-equip");
         coordinator.beginHeldTransition({
             .formID = equipped.weapon->GetFormID(), .instanceData = equipped.observedEquippedInstanceData,
             .previousFormID = equipped.previousEquippedFormID, .previousInstanceData = equipped.previousEquippedInstanceData,

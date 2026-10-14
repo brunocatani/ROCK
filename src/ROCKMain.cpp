@@ -852,6 +852,7 @@ namespace
                 game_timing::currentFrameTiming());
             if (!s_physicsInteraction) return;
             s_physicsInteraction->finalizeEquipVisualBridgePresentation();
+            s_physicsInteraction->sampleTransitionSeam();
             s_physicsInteraction->publishGripZoneIndicatorRenderFrame(runtime_state::currentFrame().frameIndex);
             s_physicsInteraction->publishAmmoCounters();
             s_physicsInteraction->publishDebugRenderFrame();

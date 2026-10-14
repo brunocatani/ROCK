@@ -147,6 +147,9 @@ namespace rock
         [[nodiscard]] bool presentationLeaseWouldExpire(float deltaSeconds) const noexcept;
         [[nodiscard]] bool hasVisualModel() const noexcept { return _model != nullptr && !_handPoseOnly; }
         [[nodiscard]] bool isModelPresented() const noexcept { return _modelPresented; }
+        // Transition seam diagnostic only.
+        [[nodiscard]] const RE::NiAVObject* traceModel() const noexcept { return _model.get(); }
+        [[nodiscard]] bool isLeftHandForTrace() const noexcept { return _isLeftHand; }
         [[nodiscard]] bool ownsNativeInstanceCull(const RE::NiAVObject* node) const noexcept;
         [[nodiscard]] bool isHandPoseHandoffActive() const noexcept { return _handPoseHandoffActive; }
         [[nodiscard]] bool handPoseHandoffIsLeft() const noexcept { return _isLeftHand; }

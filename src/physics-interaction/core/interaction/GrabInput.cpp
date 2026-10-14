@@ -1,6 +1,7 @@
 #include "api/AuthoredInteractionService.h"
 #include "api/StorageService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/weapon/NativeSecondaryPresentation.h"
 #include "physics-interaction/weapon/EquipSlotAllocationPolicy.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
@@ -1653,6 +1654,18 @@ namespace rock
                     if (!held_weapon_equip_state_policy::canBeginEquip(nativeStateBeforeEquip)) return true;
                     const std::uint32_t heldFormID = heldRef->GetFormID();
                     const std::uint32_t bodyId = hand.getSavedObjectState().bodyId.value;
+                    // The hand and fingers the loose grab presents now, in its
+                    // model, before release clears them: the incoming bridge
+                    // keeps both until the equipped model is placed.
+                    weapon_grip_transfer::HandGrip incomingGrip{};
+                    RE::NiTransform incomingHandWorld{};
+                    auto* incomingModel = heldRef->Get3D();
+                    const bool incomingPose = incomingModel && hand.captureWeaponGripTransfer(incomingGrip) &&
+                        frik_hand_world_authority::tryGetPublishedHandWorld(isLeft, incomingHandWorld);
+                    if (incomingPose) {
+                        incomingGrip.handWeaponLocal = transform_math::composeTransforms(
+                            weapon_visual_authority_math::invertSceneTransform(incomingModel->world), incomingHandWorld);
+                    }
                     hand.stopSelectionHighlight();
                     hand.captureHeldReleaseMotion(hknp, (isLeft ? frame.left : frame.right).rawHandWorld, frame.timing);
                     auto releaseContext = makeGrabReleaseContext(hand, isLeft);
@@ -1670,6 +1683,12 @@ namespace rock
                     auto* postEquipRef = equipResult.untransferredRef.get();
                     if (!equipResult.success && !equipResult.transferredToInventory) {
                         hand.applyReleaseVelocitySnapshot(hknp, releaseOutcome.velocity);
+                    }
+                    if (equipResult.success) armTransitionSeamTrace("second-trigger-equip");
+                    if (equipResult.success && equipResult.weapon && incomingPose && incomingGrip.valid()) {
+                        native_secondary_presentation::bridgeIncoming(equipResult.detachedWorldModel,
+                            equipResult.weapon->GetFormID(), isLeft, incomingGrip.handWeaponLocal,
+                            incomingGrip.fingerLocals, incomingGrip.fingerMask);
                     }
                     dispatchHeldObjectEventByFormID(GrabEventType::Released, postEquipRef, heldFormID, bodyId, isLeft);
                     ROCK_LOG_INFO(Hand,
@@ -1976,6 +1995,7 @@ namespace rock
                         .timeoutSeconds = _equipped.handlingSettings.equipVisualBridgeTimeoutSeconds,
                         .blendSeconds = _equipped.handlingSettings.equipVisualBridgeBlendSeconds,
                     });
+                    armTransitionSeamTrace(triggeredByInput ? "trigger-equip" : "grip-zone-equip");
                     if (equipBridgeStarted && _equipped.transition.hasCapturedHandPoseHandoff()) {
                         equipHand.cancelGrabVisualReturn("equip-pose-handoff");
                         if (pairedGrips.valid()) supportHand.cancelGrabVisualReturn("paired-equip-pose-handoff");

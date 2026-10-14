@@ -238,6 +238,7 @@ namespace rock
                     }
                 }
                 if (dropCommitted) {
+                    armTransitionSeamTrace("first-drop");
                     ROCK_LOG_INFO(Weapon,
                         "Equipped weapon drop queued mode={} formID={:08X} dropped={:08X} reference={} sourceHand={} dropLoc=({:.1f},{:.1f},{:.1f}) lever={:.1f}gu stack={} instanceMatch={}",
                         static_cast<int>(mode),
@@ -299,6 +300,7 @@ namespace rock
         } else {
             ROCK_LOG_WARN(Weapon, "AKIMBO promotion without outgoing model form={:08X}: {}", weapon->GetFormID(), unpresented);
         }
+        armTransitionSeamTrace("promotion");
         native_secondary_actions::suspend();
         const auto formID = weapon->GetFormID();
         const auto equipped = weapon_equip_transfer::promoteSecondaryToPrimary(formID, instance);
@@ -409,6 +411,7 @@ namespace rock
             setWeaponHandSuppression(frame.hknpWorld, left, WeaponHandReason::Drop, false,
                 g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds);
         }
+        if (committed) armTransitionSeamTrace("second-drop");
         ROCK_LOG_INFO(Weapon, "AKIMBO second weapon drop mode={} hand={} formID={:08X} dropped={:08X} committed={} slotReleased={} reason={}",
             static_cast<int>(mode), left ? "left" : "right", dropResult.formID, dropResult.droppedFormID, committed,
             dropResult.equippedSlotReleased, weapon_equip_transfer::dropReasonName(dropResult.reason));

@@ -17,6 +17,7 @@
 #include "physics-interaction/weapon/EquippedWeaponVisualState.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
+#include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/grab/SkinnedBoneOwner.h"
@@ -286,6 +287,108 @@ namespace rock::native_secondary_presentation
             s_state.claimed = false;
         }
 
+        // The loose model kept in the hand across an index-1 equip.
+        struct Incoming
+        {
+            RE::NiPointer<RE::NiAVObject> model;
+            RE::NiPointer<RE::NiNode> parent;
+            RE::NiTransform modelInWand{}, handInModel{};
+            std::array<RE::NiTransform, 15> fingers{};
+            std::uint16_t fingerMask = 0;
+            std::uint32_t form = 0, frames = 0;
+            // The equipped model hidden while the loose one stands in for it.
+            std::uintptr_t culledRoot = 0;
+            float seconds = 0;
+            bool left = false;
+        };
+        Incoming s_incoming{};
+        // Backstop only: a weapon that is never placed must not keep a
+        // visual-only model. Logged whenever it ends a bridge.
+        constexpr float kIncomingMaxSeconds = 3.0f;
+
+        void endIncoming(const char* reason) noexcept
+        {
+            auto& in = s_incoming;
+            if (!in.model) return;
+            if (in.parent && in.model->parent == in.parent.get()) {
+                RE::NiPointer<RE::NiAVObject> detached;
+                in.parent->DetachChild(in.model.get(), detached);
+            }
+            // Unhide only the still-current equipped model hidden here.
+            const auto view = native_hand_equipment::equippedViews()[1];
+            if (in.culledRoot && reinterpret_cast<std::uintptr_t>(view.root) == in.culledRoot)
+                equipped_weapon_visual_state::setLocallyVisible(view.root, true);
+            const bool backstop = std::string_view(reason) == "backstop";
+            if (backstop) {
+                ROCK_LOG_WARN(Weapon, "AKIMBO incoming bridge ended by its {:.1f}s backstop form={:08X} frames={} presentation='{}'",
+                    kIncomingMaxSeconds, in.form, in.frames, s_state.reason);
+            } else {
+                ROCK_LOG_INFO(Weapon, "AKIMBO incoming bridge ended reason={} form={:08X} frames={} seconds={:.3f}",
+                    reason, in.form, in.frames, in.seconds);
+            }
+            in = {};
+        }
+
+        // Runs after this frame's placement decision, on every update path.
+        void stepIncoming() noexcept
+        {
+            auto& in = s_incoming;
+            if (!in.model) return;
+            try {
+                const auto& frame = runtime_state::currentFrame();
+                const auto view = native_hand_equipment::equippedViews()[1];
+                if (!frame.visualAuthorityAvailable || !frame.localSkeletonReady || frame.localMenuBlocking ||
+                    frame.compatibilityConfigBlocking) return endIncoming("presentation-unavailable");
+                if (!view.weapon || view.weapon->formID != in.form) return endIncoming("equip-absent");
+                if (s_state.ready && s_state.form == in.form) return endIncoming("placed");
+                in.seconds += (std::max)(0.0f, frame.deltaSeconds);
+                if (in.seconds > kIncomingMaxSeconds) return endIncoming("backstop");
+                auto* model = in.model.get();
+                auto* worldRoot = f4vr::getWorldRootNode();
+                RE::NiTransform wand{};
+                if (!worldRoot || !frik_hand_world_authority::tryGetHandlingWandWorld(in.left, wand))
+                    return endIncoming("hand-unavailable");
+                // ActivateRef already orphaned it; never take a live scene node.
+                if (!in.parent) {
+                    if (model->parent) return endIncoming("model-still-parented");
+                    model->name = RE::BSFixedString("ROCK_IncomingSecondBridge");
+                    equipped_weapon_visual_state::setLocallyVisible(model, true);
+                    worldRoot->AttachChild(model, true);
+                    in.parent.reset(worldRoot);
+                } else if (model->parent != in.parent.get()) {
+                    return endIncoming("parent-changed");
+                }
+                const auto world = transform_math::composeTransforms(wand, in.modelInWand);
+                model->local = transform_math::composeTransforms(
+                    weapon_visual_authority_math::invertSceneTransform(worldRoot->world), world);
+                f4vr::updateTransformsDown(model, true);
+                // The inventory visibility handoff may re-show it; hide every frame.
+                if (view.root && equipped_weapon_visual_state::isLocallyVisible(view.root)) {
+                    equipped_weapon_visual_state::setLocallyVisible(view.root, false);
+                    in.culledRoot = reinterpret_cast<std::uintptr_t>(view.root);
+                }
+                frik_visual_authority::FingerLocalTransformOverride fingers{};
+                fingers.enabledMask = in.fingerMask;
+                std::copy(in.fingers.begin(), in.fingers.end(), fingers.localTransforms);
+                s_state.claimed = true;
+                s_state.claimedLeft = in.left;
+                if (!frik_visual_authority::setAuthoredFingerPose(kTag, frikHand(in.left), fingers, kPriority) ||
+                    !frik_visual_authority::publishHandWorld(kTag, frikHand(in.left),
+                        transform_math::composeTransforms(world, in.handInModel), kPriority)) {
+                    return endIncoming("hand-provider-refused");
+                }
+                ++in.frames;
+            } catch (...) {
+                OutputDebugStringA("ROCK: incoming second-weapon bridge failed\n");
+                in = {};
+            }
+        }
+
+        struct IncomingStep
+        {
+            ~IncomingStep() { stepIncoming(); }
+        };
+
         void restoreBody(const native_hand_equipment::EquippedView& view) noexcept
         {
             // A removed model is the native teardown owner's responsibility.
@@ -392,6 +495,7 @@ namespace rock::native_secondary_presentation
     void update() noexcept
     {
         if (!onFrameThread()) return;
+        const IncomingStep incoming;
         s_updatedThisFrame = true;
         native_equipped_model_lifetime::updateVisibility();
         try {
@@ -673,6 +777,37 @@ namespace rock::native_secondary_presentation
             .model = view.root,
         };
         return nullptr;
+    }
+
+    void bridgeIncoming(RE::NiPointer<RE::NiAVObject> model, std::uint32_t weaponFormID, bool left,
+        const RE::NiTransform& handInModel, const std::array<RE::NiTransform, 15>& fingerLocals,
+        std::uint16_t fingerMask) noexcept
+    {
+        if (!onFrameThread()) return;
+        endIncoming("superseded");
+        RE::NiTransform wand{};
+        if (!model || !weaponFormID || !usable(model->world) || !usable(handInModel) ||
+            !frik_hand_world_authority::tryGetHandlingWandWorld(left, wand)) {
+            ROCK_LOG_WARN(Weapon, "AKIMBO incoming bridge unavailable form={:08X} model={}", weaponFormID, model != nullptr);
+            return;
+        }
+        s_incoming = Incoming{
+            .model = std::move(model),
+            .handInModel = handInModel,
+            .fingers = fingerLocals,
+            .fingerMask = fingerMask,
+            .form = weaponFormID,
+            .left = left,
+        };
+        s_incoming.modelInWand = transform_math::composeTransforms(
+            weapon_visual_authority_math::invertSceneTransform(wand), s_incoming.model->world);
+        ROCK_LOG_INFO(Weapon, "AKIMBO incoming bridge begin form={:08X} hand={}", weaponFormID, left ? "left" : "right");
+    }
+
+    const RE::NiAVObject* incomingModelForTrace(bool& left) noexcept
+    {
+        left = s_incoming.left;
+        return onFrameThread() && s_incoming.parent ? s_incoming.model.get() : nullptr;
     }
 
     RE::NiAVObject* presentedModel() noexcept

@@ -16,6 +16,8 @@ namespace rock
     class EquippedWeaponTransitionCoordinator
     {
     public:
+        // Transition seam diagnostic only.
+        [[nodiscard]] const EquipVisualBridge& bridgeForTrace() const noexcept { return _bridge; }
         struct PendingGrip
         {
             weapon_grip_transfer::Pair pairedGrips{};
