@@ -922,7 +922,6 @@ namespace rock
             const auto surfaceContacts =
                 _dynamicHandCollision.collectFreshSurfaceContacts(
                     isLeft,
-                    0xFFFF'FFFFu,
                     kTouchGrabContactFreshnessSeconds);
             const auto tryTargetClass =
                 [&](const TouchGrabRuntime::TargetClass
@@ -2192,7 +2191,7 @@ namespace rock
                         .bodyColliders = &_bodyBoneColliders,
                         .bodyContacts = &_contacts.bodyRuntime,
                         .heldBodyIds = &hand.getHeldBodyIds(),
-                        .contactElapsedSeconds = _contacts.handActivity.currentElapsedSeconds(),
+                        .contactElapsedSeconds = _contacts.clock.seconds(),
                         .isLeftHand = isLeft,
                         .probe = makeShoulderStashObjectProbe(hknp, hand, handInput),
                         .hmdProbe = makeShoulderStashHmdProbe(handInput),

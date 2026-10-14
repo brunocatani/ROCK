@@ -96,13 +96,6 @@ namespace rock
             std::array<std::uint32_t, MAX_WEAPON_COLLISION_BODIES> bodyIds{};
         };
 
-        struct WeaponContactState
-        {
-            WeaponInteractionContact contact{};
-            bool hasSampledVelocity{ false };
-            std::array<float, 4> sampledVelocityHavok{};
-        };
-
         struct ReleaseGeometrySnapshot
         {
             float leverGameUnits{ 0.0f };
@@ -297,7 +290,7 @@ namespace rock
 
         WeaponBodySnapshot getWeaponBodySnapshotAtomic() const;
         // Copies one coherent publication; callers consume it immediately.
-        std::size_t copyWeaponContactStatesAtomic(std::span<WeaponContactState> outStates) const;
+        std::size_t copyWeaponContactsAtomic(std::span<WeaponInteractionContact> outContacts) const;
         // Main-thread presentation query; the output contains current positions only.
         std::size_t collectAttachOnlyGripIndicators(
             const RE::NiAVObject* currentWeaponRoot,
@@ -311,8 +304,6 @@ namespace rock
         bool isWeaponBodyIdAtomic(std::uint32_t bodyId) const;
 
         bool tryGetWeaponContactAtomic(std::uint32_t bodyId, WeaponInteractionContact& outContact) const;
-
-        bool tryGetWeaponBodySampledVelocityAtomic(std::uint32_t bodyId, float* outVelocityHavok) const;
 
         bool tryGetWeaponContactDebugInfo(std::uint32_t bodyId, WeaponInteractionDebugInfo& outInfo) const;
 
@@ -488,7 +479,6 @@ namespace rock
             WeaponPartClassification semantic{};
             bool ownsShapeRef{ false };
             GeneratedKeyframedBodyDriveState driveState{};
-            std::uint32_t publicationIndex{ INVALID_BODY_ID };
         };
 
         struct RetiredWeaponBodyPayload
@@ -606,7 +596,6 @@ namespace rock
             std::uint64_t rootSetKey) const;
         void updateWeaponEmitterSnapshot(RE::NiAVObject* weaponNode, std::uint64_t equippedWeaponKey);
         void clearWeaponEmitterSnapshot();
-        void publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult);
 
         std::size_t findGeneratedWeaponShapeSources(
             RE::NiAVObject* weaponNode,
@@ -750,10 +739,6 @@ namespace rock
             std::array<std::atomic<std::uintptr_t>, MAX_WEAPON_BODIES> interactionRoots;
             std::array<std::atomic<std::uintptr_t>, MAX_WEAPON_BODIES> sourceRoots;
             std::array<std::atomic<std::uint64_t>, MAX_WEAPON_BODIES> generationKeys;
-            std::array<std::atomic<float>, MAX_WEAPON_BODIES> sampledVelocityHavokX;
-            std::array<std::atomic<float>, MAX_WEAPON_BODIES> sampledVelocityHavokY;
-            std::array<std::atomic<float>, MAX_WEAPON_BODIES> sampledVelocityHavokZ;
-            std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> sampledVelocityValid;
             std::atomic<std::uint32_t> count{ 0 };
             std::atomic<std::uint64_t> setKey{ 0 };
             std::atomic<std::uint64_t> version{ 0 };

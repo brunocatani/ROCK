@@ -5,7 +5,6 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <cmath>
 
 namespace rock::generated_body_contact_registry
 {
@@ -22,8 +21,7 @@ namespace rock::generated_body_contact_registry
     };
 
     inline constexpr std::uint32_t kFlagPrimaryAnchor = 1u << 0;
-    inline constexpr std::uint32_t kFlagSampledVelocity = 1u << 1;
-    inline constexpr std::uint32_t kFlagPowerArmor = 1u << 2;
+    inline constexpr std::uint32_t kFlagPowerArmor = 1u << 1;
 
     struct Entry
     {
@@ -40,9 +38,6 @@ namespace rock::generated_body_contact_registry
         std::uint32_t side = 0;
         std::uint32_t flags = 0;
         std::uint64_t generationKey = 0;
-        float sampledVelocityHavokX = 0.0f;
-        float sampledVelocityHavokY = 0.0f;
-        float sampledVelocityHavokZ = 0.0f;
         float lengthGameUnits = 0.0f;
         float radiusGameUnits = 0.0f;
     };
@@ -60,14 +55,6 @@ namespace rock::generated_body_contact_registry
     [[nodiscard]] inline constexpr bool hasFlag(std::uint32_t flags, std::uint32_t flag) noexcept
     {
         return (flags & flag) != 0;
-    }
-
-    [[nodiscard]] inline bool hasFiniteSampledVelocity(const Entry& entry) noexcept
-    {
-        return hasFlag(entry.flags, kFlagSampledVelocity) &&
-               std::isfinite(entry.sampledVelocityHavokX) &&
-               std::isfinite(entry.sampledVelocityHavokY) &&
-               std::isfinite(entry.sampledVelocityHavokZ);
     }
 
     template <std::size_t Capacity>
@@ -135,7 +122,7 @@ namespace rock::generated_body_contact_registry
             endPublication();
         }
 
-        [[nodiscard]] bool tryClassify(std::uint32_t bodyId, Classification& outClassification) const noexcept
+        bool tryClassify(std::uint32_t bodyId, Classification& outClassification) const noexcept
         {
             outClassification = {};
             if (!isValidBodyId(bodyId)) {
@@ -206,9 +193,6 @@ namespace rock::generated_body_contact_registry
             std::atomic<std::uint32_t> side{ 0 };
             std::atomic<std::uint32_t> flags{ 0 };
             std::atomic<std::uint64_t> generationKey{ 0 };
-            std::atomic<float> sampledVelocityHavokX{ 0.0f };
-            std::atomic<float> sampledVelocityHavokY{ 0.0f };
-            std::atomic<float> sampledVelocityHavokZ{ 0.0f };
             std::atomic<float> lengthGameUnits{ 0.0f };
             std::atomic<float> radiusGameUnits{ 0.0f };
         };
@@ -239,9 +223,6 @@ namespace rock::generated_body_contact_registry
             slot.side.store(entry.side, std::memory_order_release);
             slot.flags.store(entry.flags, std::memory_order_release);
             slot.generationKey.store(entry.generationKey, std::memory_order_release);
-            slot.sampledVelocityHavokX.store(entry.sampledVelocityHavokX, std::memory_order_release);
-            slot.sampledVelocityHavokY.store(entry.sampledVelocityHavokY, std::memory_order_release);
-            slot.sampledVelocityHavokZ.store(entry.sampledVelocityHavokZ, std::memory_order_release);
             slot.lengthGameUnits.store(entry.lengthGameUnits, std::memory_order_release);
             slot.radiusGameUnits.store(entry.radiusGameUnits, std::memory_order_release);
             slot.bodyId.store(entry.bodyId, std::memory_order_release);
@@ -263,9 +244,6 @@ namespace rock::generated_body_contact_registry
             classification.side = slot.side.load(std::memory_order_acquire);
             classification.flags = slot.flags.load(std::memory_order_acquire);
             classification.generationKey = slot.generationKey.load(std::memory_order_acquire);
-            classification.sampledVelocityHavokX = slot.sampledVelocityHavokX.load(std::memory_order_acquire);
-            classification.sampledVelocityHavokY = slot.sampledVelocityHavokY.load(std::memory_order_acquire);
-            classification.sampledVelocityHavokZ = slot.sampledVelocityHavokZ.load(std::memory_order_acquire);
             classification.lengthGameUnits = slot.lengthGameUnits.load(std::memory_order_acquire);
             classification.radiusGameUnits = slot.radiusGameUnits.load(std::memory_order_acquire);
             return classification;

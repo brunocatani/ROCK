@@ -95,7 +95,7 @@
 
             bool isLeft = (std::string_view(handName) == "Left");
             auto& hand = isLeft ? _leftHand : _rightHand;
-            hand.setTouchState(ref, ref->GetFormID(), layer);
+            hand.setTouchState(ref->GetFormID());
         } else {
             ROCK_LOG_DEBUG(Hand, "{} hand touched body={} layer={} (unresolved)", handName, bodyId.value, layer);
         }
@@ -633,7 +633,6 @@
 
         using generated_body_contact_registry::Classification;
         using generated_body_contact_registry::GeneratedBodyKind;
-        using generated_body_contact_registry::hasFiniteSampledVelocity;
         using generated_body_contact_registry::hasFlag;
         using generated_body_contact_registry::kFlagPowerArmor;
         using generated_body_contact_registry::kFlagPrimaryAnchor;
@@ -650,16 +649,12 @@
         {
             bool valid = false;
             WeaponInteractionContact contact{};
-            bool hasSampledVelocity = false;
-            float sampledVelocityHavok[4]{};
         };
 
         Classification bodyAClassification{};
         Classification bodyBClassification{};
-        const bool bodyAClassified = _contacts.generatedBodyRegistry.tryClassify(bodyIdA, bodyAClassification);
-        const bool bodyBClassified = _contacts.generatedBodyRegistry.tryClassify(bodyIdB, bodyBClassification);
-        (void)bodyAClassified;
-        (void)bodyBClassified;
+        _contacts.generatedBodyRegistry.tryClassify(bodyIdA, bodyAClassification);
+        _contacts.generatedBodyRegistry.tryClassify(bodyIdB, bodyBClassification);
 
         auto classifyHandBody = [](const Classification& classification) {
             HandContactSource source{};
@@ -678,13 +673,6 @@
             source.metadata.role = static_cast<hand_collider_semantics::HandColliderRole>(classification.role);
             source.metadata.finger = static_cast<hand_collider_semantics::HandFinger>(classification.partKind);
             source.metadata.segment = static_cast<hand_collider_semantics::HandFingerSegment>(classification.subRole);
-            if (hasFiniteSampledVelocity(classification)) {
-                source.metadata.hasSampledLinearVelocityHavok = true;
-                source.metadata.sampledLinearVelocityHavok[0] = classification.sampledVelocityHavokX;
-                source.metadata.sampledLinearVelocityHavok[1] = classification.sampledVelocityHavokY;
-                source.metadata.sampledLinearVelocityHavok[2] = classification.sampledVelocityHavokZ;
-                source.metadata.sampledLinearVelocityHavok[3] = 0.0f;
-            }
             return source;
         };
 
@@ -704,13 +692,6 @@
             source.contact.actionRole = static_cast<WeaponActionRole>(classification.actionRole);
             source.contact.fallbackGripPose = static_cast<WeaponGripPoseId>(classification.gripPose);
             source.contact.weaponGenerationKey = classification.generationKey;
-            if (hasFiniteSampledVelocity(classification)) {
-                source.hasSampledVelocity = true;
-                source.sampledVelocityHavok[0] = classification.sampledVelocityHavokX;
-                source.sampledVelocityHavok[1] = classification.sampledVelocityHavokY;
-                source.sampledVelocityHavok[2] = classification.sampledVelocityHavokZ;
-                source.sampledVelocityHavok[3] = 0.0f;
-            }
             return source;
         };
 
@@ -940,7 +921,7 @@
 
             body_contact_runtime::BodyContactRecord record{};
             record.frame = _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
-            record.elapsedSeconds = _contacts.handActivity.currentElapsedSeconds();
+            record.elapsedSeconds = _contacts.clock.seconds();
             record.bodyId = contactRoute.sourceBodyId;
             record.targetBodyId = contactRoute.targetBodyId;
             record.bodyLayer = contactRoute.source.layer;
@@ -1145,19 +1126,6 @@
         const auto* handSource = contactRoute.recordHandSemanticContact ? handSourceFor(contactRoute.sourceBodyId) : nullptr;
         if (!handSource || !handSource->valid) {
             return;
-        }
-
-        const auto contactActivity = _contacts.handActivity.registerHandContact(handSource->isLeft, handSource->metadata.bodyId, contactRoute.targetBodyId);
-        if (contactActivity.newlyActive && g_rockConfig.rockDebugVerboseLogging) {
-            ROCK_LOG_DEBUG(Hand,
-                "ContactActivity: {} {} body={} target={} frame={} inserted={} evictedStale={}",
-                handSource->isLeft ? "Left" : "Right",
-                hand_collider_semantics::roleName(handSource->metadata.role),
-                handSource->metadata.bodyId,
-                contactRoute.targetBodyId,
-                contactActivity.frame,
-                contactActivity.inserted ? "yes" : "no",
-                contactActivity.evictedStale ? "yes" : "no");
         }
 
         hand_semantic_contact_state::SemanticContactVector semanticContactPointGame{};

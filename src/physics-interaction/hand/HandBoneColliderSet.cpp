@@ -736,10 +736,8 @@ namespace rock
     {
         if (!_created || !world || world != _cachedWorld) return;
         invalidateGeneratedColliderPose(world, palmAnchorBody, _palmAnchorDriveState);
-        publishSampledVelocityAtomic(_palmAnchorPublicationIndex, {});
         for (auto& instance : _bodies) {
             invalidateGeneratedColliderPose(world, instance.body, instance.driveState);
-            publishSampledVelocityAtomic(instance.publicationIndex, {});
         }
         _hasLatestPalmAnchorTarget = false;
         _dynamicTwinTargets = {};
@@ -779,13 +777,12 @@ namespace rock
             _latestPalmAnchorTarget = anchorFrame.transform;
             _hasLatestPalmAnchorTarget = true;
             publishTwinSlot(twinTargets.palm, anchorFrame);
-            if (publishTargets) queueBodyTarget(palmAnchorBody, anchorFrame.transform, deltaTime, _palmAnchorDriveState, _palmAnchorPublicationIndex);
+            if (publishTargets) queueBodyTarget(palmAnchorBody, anchorFrame.transform, deltaTime, _palmAnchorDriveState);
         } else {
             complete = false;
             _hasLatestPalmAnchorTarget = false;
             if (publishTargets) {
                 invalidateGeneratedColliderPose(_cachedWorld, palmAnchorBody, _palmAnchorDriveState);
-                publishSampledVelocityAtomic(_palmAnchorPublicationIndex, {});
             }
         }
 
@@ -817,12 +814,11 @@ namespace rock
                     published.convexRadius = frame.convexRadius;
                     published.palmHalfExtents = instance.palmHalfExtents;
                 }
-                if (publishTargets) queueBodyTarget(instance.body, frame.transform, deltaTime, instance.driveState, instance.publicationIndex);
+                if (publishTargets) queueBodyTarget(instance.body, frame.transform, deltaTime, instance.driveState);
             } else {
                 complete = false;
                 if (publishTargets) {
                     invalidateGeneratedColliderPose(_cachedWorld, instance.body, instance.driveState);
-                    publishSampledVelocityAtomic(instance.publicationIndex, {});
                 }
             }
         }
@@ -875,14 +871,13 @@ namespace rock
         }
     }
 
-    void HandBoneColliderSet::queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target, float sourceDeltaSeconds, GeneratedKeyframedBodyDriveState& driveState, std::uint32_t publicationIndex)
+    void HandBoneColliderSet::queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target, float sourceDeltaSeconds, GeneratedKeyframedBodyDriveState& driveState)
     {
         if (!body.isValid()) {
             return;
         }
 
-        const auto queueResult = queueGeneratedKeyframedBodyTarget(driveState, target, sourceDeltaSeconds, 1000.0f);
-        publishSampledVelocityAtomic(publicationIndex, queueResult);
+        queueGeneratedKeyframedBodyTarget(driveState, target, sourceDeltaSeconds, 1000.0f);
         restoreGeneratedColliderPoseAfterDrive(_cachedWorld, body, driveState);
     }
 
@@ -937,15 +932,10 @@ namespace rock
         instance.ownsShapeRef = false;
         instance.palmHalfExtents = {};
         clearGeneratedKeyframedBodyDriveState(instance.driveState);
-        instance.publicationIndex = kInvalidPublicationIndex;
     }
 
     void HandBoneColliderSet::clearAtomicBodyIds()
     {
-        _palmAnchorPublicationIndex = kInvalidPublicationIndex;
-        for (auto& instance : _bodies) {
-            instance.publicationIndex = kInvalidPublicationIndex;
-        }
         _bodyCountAtomic.store(0, std::memory_order_release);
         for (std::size_t i = 0; i < _bodyIdsAtomic.size(); ++i) {
             _bodyIdsAtomic[i].store(hand_collider_semantics::kInvalidBodyId, std::memory_order_release);
@@ -953,31 +943,7 @@ namespace rock
             _fingersAtomic[i].store(static_cast<std::uint32_t>(HandFinger::None), std::memory_order_release);
             _segmentsAtomic[i].store(static_cast<std::uint32_t>(HandFingerSegment::None), std::memory_order_release);
             _primaryAnchorAtomic[i].store(0, std::memory_order_release);
-            _sampledVelocityValidAtomic[i].store(0, std::memory_order_release);
-            _sampledVelocityHavokXAtomic[i].store(0.0f, std::memory_order_release);
-            _sampledVelocityHavokYAtomic[i].store(0.0f, std::memory_order_release);
-            _sampledVelocityHavokZAtomic[i].store(0.0f, std::memory_order_release);
         }
-    }
-
-    void HandBoneColliderSet::publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult)
-    {
-        if (publicationIndex >= _bodyIdsAtomic.size() || publicationIndex >= _bodyCountAtomic.load(std::memory_order_acquire)) {
-            return;
-        }
-
-        if (!queueResult.sampledVelocityValid) {
-            _sampledVelocityValidAtomic[publicationIndex].store(0, std::memory_order_release);
-            _sampledVelocityHavokXAtomic[publicationIndex].store(0.0f, std::memory_order_release);
-            _sampledVelocityHavokYAtomic[publicationIndex].store(0.0f, std::memory_order_release);
-            _sampledVelocityHavokZAtomic[publicationIndex].store(0.0f, std::memory_order_release);
-            return;
-        }
-
-        _sampledVelocityHavokXAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.x, std::memory_order_release);
-        _sampledVelocityHavokYAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.y, std::memory_order_release);
-        _sampledVelocityHavokZAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.z, std::memory_order_release);
-        _sampledVelocityValidAtomic[publicationIndex].store(1, std::memory_order_release);
     }
 
     void HandBoneColliderSet::publishAtomicBodyIds(const BethesdaPhysicsBody& palmAnchorBody, bool isLeft)
@@ -985,7 +951,6 @@ namespace rock
         clearAtomicBodyIds();
         std::uint32_t count = 0;
         if (palmAnchorBody.isValid()) {
-            _palmAnchorPublicationIndex = count;
             _rolesAtomic[count].store(static_cast<std::uint32_t>(HandColliderRole::PalmAnchor), std::memory_order_release);
             _fingersAtomic[count].store(static_cast<std::uint32_t>(HandFinger::None), std::memory_order_release);
             _segmentsAtomic[count].store(static_cast<std::uint32_t>(HandFingerSegment::None), std::memory_order_release);
@@ -996,10 +961,8 @@ namespace rock
 
         for (auto& instance : _bodies) {
             if (!instance.body.isValid() || count >= _bodyIdsAtomic.size()) {
-                instance.publicationIndex = kInvalidPublicationIndex;
                 continue;
             }
-            instance.publicationIndex = count;
             const auto role = instance.role;
             _rolesAtomic[count].store(static_cast<std::uint32_t>(role), std::memory_order_release);
             _fingersAtomic[count].store(static_cast<std::uint32_t>(hand_collider_semantics::fingerForRole(role)), std::memory_order_release);
@@ -1068,18 +1031,6 @@ namespace rock
         outMetadata.finger = static_cast<HandFinger>(_fingersAtomic[i].load(std::memory_order_acquire));
         outMetadata.segment = static_cast<HandFingerSegment>(_segmentsAtomic[i].load(std::memory_order_acquire));
         outMetadata.primaryPalmAnchor = _primaryAnchorAtomic[i].load(std::memory_order_acquire) != 0;
-        if (_sampledVelocityValidAtomic[i].load(std::memory_order_acquire) != 0) {
-            const float vx = _sampledVelocityHavokXAtomic[i].load(std::memory_order_acquire);
-            const float vy = _sampledVelocityHavokYAtomic[i].load(std::memory_order_acquire);
-            const float vz = _sampledVelocityHavokZAtomic[i].load(std::memory_order_acquire);
-            if (std::isfinite(vx) && std::isfinite(vy) && std::isfinite(vz)) {
-                outMetadata.hasSampledLinearVelocityHavok = true;
-                outMetadata.sampledLinearVelocityHavok[0] = vx;
-                outMetadata.sampledLinearVelocityHavok[1] = vy;
-                outMetadata.sampledLinearVelocityHavok[2] = vz;
-                outMetadata.sampledLinearVelocityHavok[3] = 0.0f;
-            }
-        }
         return true;
     }
 }

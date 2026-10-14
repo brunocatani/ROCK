@@ -33,7 +33,7 @@
 #include "physics-interaction/hand/DynamicHandCollision.h"
 #include "physics-interaction/object/DynamicWorldCarCollision.h"
 #include "physics-interaction/contact/GeneratedBodyContactRegistry.h"
-#include "physics-interaction/collision/ContactActivityTracker.h"
+#include "physics-interaction/contact/ContactClock.h"
 #include "physics-interaction/consume/MouthConsumeDetector.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/core/PendingForceGrabCommit.h"
@@ -786,15 +786,15 @@ namespace rock
         };
 
         // State owned by the contact callback (PhysicsInteractionContacts.inl):
-        // event registration witnesses, contact trackers, last-contact
-        // witnesses, and the dynamic-push clock.
+        // event registration witnesses, the shared contact clock, contact
+        // stores and last-contact witnesses.
         struct ContactEvidenceState
         {
             std::atomic<RE::hknpWorld*> eventWorld{ nullptr };
             std::atomic<void*> eventSignal{ nullptr };
             std::atomic<RE::hknpWorld*> manifoldEventWorld{ nullptr };
             std::atomic<void*> manifoldEventSignal{ nullptr };
-            contact_activity_tracker::ContactActivityTracker handActivity;
+            contact_clock::ContactClock clock;
             body_contact_runtime::BodyContactRuntime bodyRuntime;
             generated_body_contact_registry::Registry<kGeneratedBodyContactRegistryCapacity> generatedBodyRegistry;
             hand_touch::TouchChannel rightTouch, leftTouch;
@@ -1014,8 +1014,8 @@ namespace rock
         // Last native recoil kick the FRIK recoil controller saw; a change
         // marks a frame whose rendered hand carries a composed kick.
         std::uint64_t _observedNativeRecoilKickSequence = 0;
-        Hand _rightHand{ false };
-        Hand _leftHand{ true };
+        Hand _rightHand{ false, _contacts.clock };
+        Hand _leftHand{ true, _contacts.clock };
         TouchGrabRuntime _touchGrabRuntime;
         std::array<TouchGrabRuntime::PowerArmorCandidate, 2> _powerArmorCandidates{};
         std::array<TouchGrabRuntime::PowerArmorProbeDiagnostics, 2> _powerArmorProbeDiagnostics{};
@@ -1053,7 +1053,7 @@ namespace rock
             return _offhandWeaponOccupiesHand && isLeft == _offhandWeaponHandLeft;
         }
         TwoHandedGrip _twoHandedGrip;
-        DynamicHandCollisionRuntime _dynamicHandCollision;
+        DynamicHandCollisionRuntime _dynamicHandCollision{ _contacts.clock };
         DynamicWorldCarCollisionRuntime _dynamicWorldCarCollision;
         feedback_haptics::FeedbackHaptics _feedbackHaptics;
     };

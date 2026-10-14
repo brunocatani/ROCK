@@ -388,14 +388,6 @@ namespace rock
                 gameToHavokScale(),
                 state.sampledLinearVelocityHavok);
         }
-        result.sampledVelocityValid = state.hasSampledLinearVelocityHavok &&
-                                      std::isfinite(state.sampledLinearVelocityHavok.x) &&
-                                      std::isfinite(state.sampledLinearVelocityHavok.y) &&
-                                      std::isfinite(state.sampledLinearVelocityHavok.z);
-        if (result.sampledVelocityValid) {
-            result.sampledLinearVelocityHavok = state.sampledLinearVelocityHavok;
-        }
-
         if (!state.hasPreviousTarget) {
             state.previousTarget = target;
             state.hasPreviousTarget = true;

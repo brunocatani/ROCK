@@ -273,47 +273,6 @@ namespace rock::hand_semantic_contact_state
         return result;
     }
 
-    class SemanticContactSet
-    {
-    public:
-        void record(const SemanticContactRecord& record)
-        {
-            if (!record.valid) {
-                return;
-            }
-            auto stored = record;
-            stored.framesSinceContact = 0;
-            stored.secondsSinceContact = 0.0f;
-            _records[semanticContactSlotForRole(stored.role)] = stored;
-        }
-
-        /*
-         * Advance both clocks once per game frame: the frame counter always
-         * counts publications; the seconds clock accumulates only measured
-         * game time (pass zero for an invalid or unmeasurable frame so
-         * freshness never advances by fabricated time).
-         */
-        void advance(float validDeltaSeconds)
-        {
-            const float delta =
-                std::isfinite(validDeltaSeconds) && validDeltaSeconds > 0.0f ? validDeltaSeconds : 0.0f;
-            for (auto& record : _records) {
-                if (!record.valid) {
-                    continue;
-                }
-                if (record.framesSinceContact < 0xFFFF'FFFFu) {
-                    ++record.framesSinceContact;
-                }
-                if (record.secondsSinceContact < kSemanticContactNeverSeconds) {
-                    record.secondsSinceContact += delta;
-                }
-            }
-        }
-
-    private:
-        std::array<SemanticContactRecord, kMaxSemanticContactRecords> _records{};
-    };
-
     struct SemanticPivotCandidateDecision
     {
         bool accept = false;

@@ -30,8 +30,6 @@ namespace rock
         hand_collider_semantics::HandFinger finger = hand_collider_semantics::HandFinger::None;
         hand_collider_semantics::HandFingerSegment segment = hand_collider_semantics::HandFingerSegment::None;
         std::uint32_t bodyId = hand_collider_semantics::kInvalidBodyId;
-        bool hasSampledLinearVelocityHavok = false;
-        float sampledLinearVelocityHavok[4]{};
     };
 
     class HandBoneColliderSet
@@ -105,7 +103,6 @@ namespace rock
 
     private:
         static constexpr std::size_t MAX_SEGMENT_BODIES = hand_collider_semantics::kHandSegmentColliderBodyCountPerHand;
-        static constexpr std::uint32_t kInvalidPublicationIndex = 0xFFFF'FFFFu;
 
         struct BodyInstance
         {
@@ -115,7 +112,6 @@ namespace rock
             bool ownsShapeRef = false;
             RE::NiPoint3 palmHalfExtents{};
             GeneratedKeyframedBodyDriveState driveState{};
-            std::uint32_t publicationIndex = kInvalidPublicationIndex;
         };
 
         struct BoneFrameLookup
@@ -153,11 +149,10 @@ namespace rock
         RE::hknpShape* buildShapeForRole(const RoleFrameResult& frame, hand_collider_semantics::HandColliderRole role,
             RE::NiPoint3* outPalmHalfExtents = nullptr) const;
         bool createBodyForRole(RE::hknpWorld* world, void* bhkWorld, bool isLeft, hand_collider_semantics::HandColliderRole role, const RoleFrameResult& frame, BodyInstance& instance);
-        void queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target, float sourceDeltaSeconds, GeneratedKeyframedBodyDriveState& driveState, std::uint32_t publicationIndex);
+        void queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target, float sourceDeltaSeconds, GeneratedKeyframedBodyDriveState& driveState);
         void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex);
         void clearInstance(BodyInstance& instance, bool releaseShapeRef);
         void publishAtomicBodyIds(const BethesdaPhysicsBody& palmAnchorBody, bool isLeft);
-        void publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult);
         void clearAtomicBodyIds();
 
         DirectSkeletonBoneReader _reader;
@@ -187,7 +182,6 @@ namespace rock
         std::atomic<std::uint32_t> _isLeftAtomic{ 0 };
         std::atomic<bool> _driveRebuildRequested{ false };
         std::atomic<std::uint32_t> _driveFailureCount{ 0 };
-        std::uint32_t _palmAnchorPublicationIndex = kInvalidPublicationIndex;
         bool _created = false;
         std::uint64_t _dynamicTwinGeometryGeneration = 0;
         int _updateLogCounter = 0;
@@ -197,10 +191,6 @@ namespace rock
         std::array<std::atomic<std::uint32_t>, hand_collider_semantics::kHandColliderBodyCountPerHand> _fingersAtomic{};
         std::array<std::atomic<std::uint32_t>, hand_collider_semantics::kHandColliderBodyCountPerHand> _segmentsAtomic{};
         std::array<std::atomic<std::uint32_t>, hand_collider_semantics::kHandColliderBodyCountPerHand> _primaryAnchorAtomic{};
-        std::array<std::atomic<float>, hand_collider_semantics::kHandColliderBodyCountPerHand> _sampledVelocityHavokXAtomic{};
-        std::array<std::atomic<float>, hand_collider_semantics::kHandColliderBodyCountPerHand> _sampledVelocityHavokYAtomic{};
-        std::array<std::atomic<float>, hand_collider_semantics::kHandColliderBodyCountPerHand> _sampledVelocityHavokZAtomic{};
-        std::array<std::atomic<std::uint32_t>, hand_collider_semantics::kHandColliderBodyCountPerHand> _sampledVelocityValidAtomic{};
         std::atomic<std::uint32_t> _bodyCountAtomic{ 0 };
     };
 }

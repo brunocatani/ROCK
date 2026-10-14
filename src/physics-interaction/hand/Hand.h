@@ -21,6 +21,7 @@
 #include "physics-interaction/grab/TimedReleaseVelocityHistory.h"
 #include "physics-interaction/grab/SavedGrabCaptureFormat.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
+#include "physics-interaction/contact/ContactClock.h"
 #include "physics-interaction/hand/HandBoneColliderSet.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/hand/HandInteractionStateMachine.h"
@@ -326,7 +327,7 @@ namespace rock
             TimedOut,
         };
 
-        explicit Hand(bool isLeft) : _isLeft(isLeft) {}
+        Hand(bool isLeft, const contact_clock::ContactClock& contactClock) : _isLeft(isLeft), _contactClock(contactClock) {}
 
         bool isLeft() const { return _isLeft; }
         HandState getState() const { return _state; }
@@ -409,17 +410,13 @@ namespace rock
         // Touch recency is an elapsed contract (the historical 5-frame window
         // at the 90 Hz tuning baseline), rate-independent in seconds.
         static constexpr float kTouchActiveWindowSeconds = 5.0f / 90.0f;
-        bool isTouching() const { return _secondsSinceTouch < kTouchActiveWindowSeconds; }
-        RE::TESObjectREFR* getLastTouchedRef() const { return _lastTouchedRef; }
+        bool isTouching() const { return _contactClock.seconds() - _touchStampSeconds < kTouchActiveWindowSeconds; }
         std::uint32_t getLastTouchedFormID() const { return _lastTouchedFormID; }
-        std::uint32_t getLastTouchedLayer() const { return _lastTouchedLayer; }
 
-        void setTouchState(RE::TESObjectREFR* refr, std::uint32_t formID, std::uint32_t layer)
+        void setTouchState(std::uint32_t formID)
         {
-            _lastTouchedRef = refr;
             _lastTouchedFormID = formID;
-            _lastTouchedLayer = layer;
-            _secondsSinceTouch = 0.0f;
+            _touchStampSeconds = _contactClock.seconds();
         }
 
         bool isHolding() const { return isHoldingState(_state); }
@@ -603,15 +600,6 @@ namespace rock
         void clearPullCatchIntent(const char* reason = "cleared");
         void clearSelectionState(bool rememberDeselect);
 
-        // Advance by measured game time only (zero holds touch recency).
-        void tickTouchState(float validDeltaSeconds)
-        {
-            if (std::isfinite(validDeltaSeconds) && validDeltaSeconds > 0.0f &&
-                _secondsSinceTouch < 100.0f) {
-                _secondsSinceTouch += validDeltaSeconds;
-            }
-        }
-
         void updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& closeSelectionDirection,
             const RE::NiPoint3& farSelectionDirection, const RE::NiPoint3& pinchOrigin, const RE::NiPoint3& pinchDirection, bool hasPinchOrigin,
             const FarSelectionHmdConeGate& farHmdConeGate, float deltaTime, const OtherHandSelectionContext& otherHandContext);
@@ -691,14 +679,6 @@ namespace rock
             const hand_semantic_contact_state::SemanticContactVector* contactPointGame = nullptr,
             const hand_semantic_contact_state::SemanticContactVector* contactNormalGame = nullptr);
         void clearSemanticContactEvidence();
-        /*
-         * Advance both semantic-contact clocks once per game frame: the frame
-         * counter always counts publications (provider V1 and frame-count
-         * gates consume it); the seconds clock accumulates only measured game
-         * time, so pass zero for an invalid or unmeasurable frame.
-         */
-        void tickSemanticContactState(float validDeltaSeconds);
-        bool getLastSemanticContact(hand_semantic_contact_state::SemanticContactRecord& outContact) const;
         bool getFreshSemanticContactForRole(
             hand_collider_semantics::HandColliderRole role,
             std::uint32_t maxFramesSinceContact,
@@ -1029,6 +1009,7 @@ namespace rock
         bool pullCatchIntentMatchesSelection() const;
 
         bool _isLeft;
+        const contact_clock::ContactClock& _contactClock;
         HandState _state = HandState::Idle;
         HandState _prevState = HandState::Idle;
         std::atomic<HandState> _stateAtomic{ HandState::Idle };
@@ -1055,10 +1036,8 @@ namespace rock
         int _deselectCooldown = 0;
         RE::TESObjectREFR* _lastDeselectedRef = nullptr;
 
-        RE::TESObjectREFR* _lastTouchedRef = nullptr;
         std::uint32_t _lastTouchedFormID = 0;
-        std::uint32_t _lastTouchedLayer = 0;
-        float _secondsSinceTouch = 100.0f;
+        double _touchStampSeconds = -1.0e9;
 
         std::atomic<int> _heldBodyContactFrame{ 100 };
         held_placement_policy::SurfaceContactState _heldSurfaceContact;
@@ -1079,31 +1058,7 @@ namespace rock
         collision_suppression_registry::SuppressionLeaseSet<kHeldLooseWeaponBodyCollisionSuppressionCapacity>
             _heldLooseWeaponBodyCollisionSuppression{
                 collision_suppression_registry::CollisionSuppressionOwner::HeldLooseWeaponBody };
-        std::atomic<std::uint32_t> _semanticContactFrameCounter{ 0 };
-        std::atomic<std::uint32_t> _semanticContactValid{ 0 };
-        std::atomic<std::uint32_t> _semanticContactSequence{ 0 };
-        std::atomic<std::uint32_t> _semanticContactRole{ static_cast<std::uint32_t>(hand_collider_semantics::HandColliderRole::PalmAnchor) };
-        std::atomic<std::uint32_t> _semanticContactFinger{ static_cast<std::uint32_t>(hand_collider_semantics::HandFinger::None) };
-        std::atomic<std::uint32_t> _semanticContactSegment{ static_cast<std::uint32_t>(hand_collider_semantics::HandFingerSegment::None) };
-        std::atomic<std::uint32_t> _semanticContactHandBodyId{ hand_semantic_contact_state::kInvalidBodyId };
-        std::atomic<std::uint32_t> _semanticContactOtherBodyId{ hand_semantic_contact_state::kInvalidBodyId };
-        std::atomic<std::uint32_t> _semanticContactFrames{ 0xFFFF'FFFFu };
-        std::atomic<std::uint32_t> _semanticContactHasPointGame{ 0 };
-        std::atomic<std::uint32_t> _semanticContactHasNormalGame{ 0 };
-        std::atomic<float> _semanticContactPointGameX{ 0.0f };
-        std::atomic<float> _semanticContactPointGameY{ 0.0f };
-        std::atomic<float> _semanticContactPointGameZ{ 0.0f };
-        std::atomic<float> _semanticContactNormalGameX{ 0.0f };
-        std::atomic<float> _semanticContactNormalGameY{ 0.0f };
-        std::atomic<float> _semanticContactNormalGameZ{ 0.0f };
-        hand_semantic_contact_state::SemanticContactCollection collectSemanticContactsFiltered(
-            std::uint32_t maxFramesSinceContact,
-            float maxAgeSeconds) const;
-
         std::mutex _semanticContactWriteMutex;
-        // Seconds clock beside the frame counter: physics-thread producers
-        // stamp the current elapsed value; game-frame consumers compute age.
-        std::atomic<double> _semanticContactElapsedSeconds{ 0.0 };
         std::array<std::atomic<double>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetSeconds{};
         std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetValid{};
         std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetRole{};

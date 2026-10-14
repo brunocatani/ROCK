@@ -502,7 +502,7 @@ namespace rock
         return contact;
     }
 
-    std::size_t WeaponCollision::copyWeaponContactStatesAtomic(std::span<WeaponContactState> outStates) const
+    std::size_t WeaponCollision::copyWeaponContactsAtomic(std::span<WeaponInteractionContact> outContacts) const
     {
         for (int attempt = 0; attempt < 4; ++attempt) {
             const auto startVersion = _published.version.load(std::memory_order_acquire);
@@ -511,22 +511,11 @@ namespace rock
             }
             const auto count = (std::min)(_published.count.load(std::memory_order_acquire),
                 static_cast<std::uint32_t>(MAX_WEAPON_BODIES));
-            if (count > outStates.size()) {
+            if (count > outContacts.size()) {
                 return 0;
             }
             for (std::uint32_t i = 0; i < count; ++i) {
-                auto& state = outStates[i];
-                state = {};
-                state.contact = readPublishedContact(i);
-                if (_published.sampledVelocityValid[i].load(std::memory_order_acquire) != 0) {
-                    const float vx = _published.sampledVelocityHavokX[i].load(std::memory_order_acquire);
-                    const float vy = _published.sampledVelocityHavokY[i].load(std::memory_order_acquire);
-                    const float vz = _published.sampledVelocityHavokZ[i].load(std::memory_order_acquire);
-                    if (std::isfinite(vx) && std::isfinite(vy) && std::isfinite(vz)) {
-                        state.hasSampledVelocity = true;
-                        state.sampledVelocityHavok = { vx, vy, vz, 0.0f };
-                    }
-                }
+                outContacts[i] = readPublishedContact(i);
             }
             const auto endVersion = _published.version.load(std::memory_order_acquire);
             if (startVersion == endVersion && (endVersion & 1u) == 0) {
@@ -534,60 +523,6 @@ namespace rock
             }
         }
         return 0;
-    }
-
-    bool WeaponCollision::tryGetWeaponBodySampledVelocityAtomic(std::uint32_t bodyId, float* outVelocityHavok) const
-    {
-        if (!outVelocityHavok) {
-            return false;
-        }
-        outVelocityHavok[0] = 0.0f;
-        outVelocityHavok[1] = 0.0f;
-        outVelocityHavok[2] = 0.0f;
-        outVelocityHavok[3] = 0.0f;
-        if (bodyId == INVALID_BODY_ID) {
-            return false;
-        }
-
-        for (int attempt = 0; attempt < 4; ++attempt) {
-            const std::uint64_t startVersion = _published.version.load(std::memory_order_acquire);
-            if ((startVersion & 1u) != 0) {
-                continue;
-            }
-
-            float vx = 0.0f;
-            float vy = 0.0f;
-            float vz = 0.0f;
-            bool found = false;
-            const std::uint32_t count = (std::min)(_published.count.load(std::memory_order_acquire), static_cast<std::uint32_t>(MAX_WEAPON_BODIES));
-            for (std::uint32_t i = 0; i < count; ++i) {
-                if (_published.ids[i].load(std::memory_order_acquire) != bodyId ||
-                    _published.sampledVelocityValid[i].load(std::memory_order_acquire) == 0) {
-                    continue;
-                }
-
-                vx = _published.sampledVelocityHavokX[i].load(std::memory_order_acquire);
-                vy = _published.sampledVelocityHavokY[i].load(std::memory_order_acquire);
-                vz = _published.sampledVelocityHavokZ[i].load(std::memory_order_acquire);
-                found = true;
-                break;
-            }
-
-            const std::uint64_t endVersion = _published.version.load(std::memory_order_acquire);
-            if (startVersion != endVersion || (endVersion & 1u) != 0) {
-                continue;
-            }
-            if (!found || !std::isfinite(vx) || !std::isfinite(vy) || !std::isfinite(vz)) {
-                return false;
-            }
-
-            outVelocityHavok[0] = vx;
-            outVelocityHavok[1] = vy;
-            outVelocityHavok[2] = vz;
-            return true;
-        }
-
-        return false;
     }
 
     bool WeaponCollision::tryGetWeaponContactDebugInfo(std::uint32_t bodyId, WeaponInteractionDebugInfo& outInfo) const

@@ -383,11 +383,7 @@ namespace rock
 
         const float measuredFrameDeltaSeconds =
             frame.timing.valid ? frame.timing.deltaSeconds : 0.0f;
-        _rightHand.tickTouchState(measuredFrameDeltaSeconds);
-        _leftHand.tickTouchState(measuredFrameDeltaSeconds);
-        _rightHand.tickSemanticContactState(measuredFrameDeltaSeconds);
-        _leftHand.tickSemanticContactState(measuredFrameDeltaSeconds);
-        _contacts.handActivity.advanceFrame(measuredFrameDeltaSeconds);
+        _contacts.clock.advance(measuredFrameDeltaSeconds);
 
         /*
          * Bounded timing telemetry: one rate-limited line that explains the

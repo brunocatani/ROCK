@@ -533,8 +533,6 @@ namespace rock
     struct GeneratedKeyframedBodyDriveQueueResult
     {
         bool queued = false;
-        bool sampledVelocityValid = false;
-        RE::NiPoint3 sampledLinearVelocityHavok{};
         std::uint64_t queuedSequence = 0;
     };
 

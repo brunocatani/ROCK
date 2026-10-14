@@ -1678,23 +1678,25 @@
         }
 
         if (drawHandBoneContacts) {
+            // Every hand part with a contact in the last few frames (the
+            // historical 5-frame window at the 90 Hz tuning baseline).
+            constexpr float kSemanticContactDebugSeconds = 5.0f / 90.0f;
             auto addSemanticContactDebug = [&](const Hand& hand) {
-                hand_semantic_contact_state::SemanticContactRecord contact{};
-                if (!hand.getLastSemanticContact(contact) || contact.framesSinceContact >= 5) {
-                    return;
-                }
-
-                RE::NiTransform sourceWorld{};
-                if (!tryResolveLiveBodyWorldTransform(hknp, RE::hknpBodyId{ contact.handBodyId }, sourceWorld)) {
-                    return;
-                }
-
-                RE::NiTransform targetWorld{};
-                const bool hasTarget = tryResolveLiveBodyWorldTransform(hknp, RE::hknpBodyId{ contact.otherBodyId }, targetWorld);
+                const auto contacts = hand.collectFreshSemanticContactsWithinSeconds(kSemanticContactDebugSeconds);
                 const auto role = hand.isLeft() ? debug::MarkerOverlayRole::LeftHandBoneContact : debug::MarkerOverlayRole::RightHandBoneContact;
-                addMarkerPoint(role, sourceWorld.translate, 2.8f);
-                if (hasTarget) {
-                    addMarkerLine(role, sourceWorld.translate, targetWorld.translate);
+                for (std::size_t i = 0; i < contacts.count; ++i) {
+                    const auto& contact = contacts.records[i];
+                    RE::NiTransform sourceWorld{};
+                    if (!tryResolveLiveBodyWorldTransform(hknp, RE::hknpBodyId{ contact.handBodyId }, sourceWorld)) {
+                        continue;
+                    }
+
+                    RE::NiTransform targetWorld{};
+                    const bool hasTarget = tryResolveLiveBodyWorldTransform(hknp, RE::hknpBodyId{ contact.otherBodyId }, targetWorld);
+                    addMarkerPoint(role, sourceWorld.translate, 2.8f);
+                    if (hasTarget) {
+                        addMarkerLine(role, sourceWorld.translate, targetWorld.translate);
+                    }
                 }
             };
 

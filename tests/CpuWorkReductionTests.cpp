@@ -24,7 +24,7 @@ namespace
                 if (frame % 4 == 0) entries[i].bodyId = random() % 25;
                 entries[i].kind = i % 7 == 0 ? GeneratedBodyKind::Unknown : GeneratedBodyKind::Weapon;
                 entries[i].generationKey = frame;
-                entries[i].sampledVelocityHavokX = static_cast<float>(frame + i);
+                entries[i].lengthGameUnits = static_cast<float>(frame + i);
             }
             registry.publish(entries.data(), count);
             std::map<std::uint32_t, std::vector<const Entry*>> expected;
@@ -40,7 +40,7 @@ namespace
                 if (valid) {
                     ++unique;
                     assert(found.generationKey == frame);
-                    assert(found.sampledVelocityHavokX == it->second.front()->sampledVelocityHavokX);
+                    assert(found.lengthGameUnits == it->second.front()->lengthGameUnits);
                 }
             }
             assert(registry.count() == unique);

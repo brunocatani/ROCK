@@ -64,6 +64,8 @@ namespace rock
     class DynamicHandCollisionRuntime
     {
     public:
+        explicit DynamicHandCollisionRuntime(const contact_clock::ContactClock& contactClock) noexcept : _surfaceContacts(contactClock) {}
+
         static constexpr std::size_t kPalmSlot = dynamic_hand_collision_telemetry::kPalmSlot;
         static constexpr std::size_t kFirstForearmSlot = dynamic_hand_collision_telemetry::kFirstForearmSlot;
         static constexpr std::size_t kBodiesPerHand = dynamic_hand_collision_telemetry::kBodiesPerHand;
@@ -156,8 +158,7 @@ namespace rock
             const hand_semantic_contact_state::SemanticContactVector* contactNormalGame = nullptr) noexcept;
         [[nodiscard]] hand_semantic_contact_state::SemanticContactCollection collectFreshSurfaceContacts(
             bool isLeft,
-            std::uint32_t maximumAgeFrames,
-            float maximumAgeSeconds = -1.0f) const noexcept;
+            float maximumAgeSeconds) const noexcept;
 
         enum class SurfaceLatchFailure : std::uint8_t
         {
@@ -440,7 +441,7 @@ namespace rock
             float deltaSeconds);
 
         std::array<HandSlots, 2> _hands{};
-        dynamic_hand_surface_contact_state::State _surfaceContacts{};
+        dynamic_hand_surface_contact_state::State _surfaceContacts;
         std::atomic<std::uint64_t> _surfaceImpulsePairSequenceAtomic{ 0 };
         std::atomic<std::uint64_t> _surfaceProcessedPairSequenceAtomic{ 0 };
         std::atomic<std::uint64_t> _surfaceEligiblePairSequenceAtomic{ 0 };

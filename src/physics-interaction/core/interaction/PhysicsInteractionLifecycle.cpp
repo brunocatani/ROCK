@@ -218,7 +218,6 @@ namespace rock
         using generated_body_contact_registry::GeneratedBodyKind;
         using generated_body_contact_registry::kFlagPowerArmor;
         using generated_body_contact_registry::kFlagPrimaryAnchor;
-        using generated_body_contact_registry::kFlagSampledVelocity;
 
         std::array<Entry, kGeneratedBodyContactRegistryCapacity> entries{};
         std::size_t entryCount = 0;
@@ -247,15 +246,6 @@ namespace rock
                 if (metadata.primaryPalmAnchor) {
                     entry.flags |= kFlagPrimaryAnchor;
                 }
-                if (metadata.hasSampledLinearVelocityHavok &&
-                    std::isfinite(metadata.sampledLinearVelocityHavok[0]) &&
-                    std::isfinite(metadata.sampledLinearVelocityHavok[1]) &&
-                    std::isfinite(metadata.sampledLinearVelocityHavok[2])) {
-                    entry.flags |= kFlagSampledVelocity;
-                    entry.sampledVelocityHavokX = metadata.sampledLinearVelocityHavok[0];
-                    entry.sampledVelocityHavokY = metadata.sampledLinearVelocityHavok[1];
-                    entry.sampledVelocityHavokZ = metadata.sampledLinearVelocityHavok[2];
-                }
                 addEntry(entry);
             }
         };
@@ -263,11 +253,10 @@ namespace rock
         addHandEntries(_rightHand, false);
         addHandEntries(_leftHand, true);
 
-        std::array<WeaponCollision::WeaponContactState, MAX_WEAPON_COLLISION_BODIES> weaponStates{};
-        const auto weaponCount = _weaponCollision.copyWeaponContactStatesAtomic(weaponStates);
+        std::array<WeaponInteractionContact, MAX_WEAPON_COLLISION_BODIES> weaponContacts{};
+        const auto weaponCount = _weaponCollision.copyWeaponContactsAtomic(weaponContacts);
         for (std::size_t i = 0; i < weaponCount; ++i) {
-            const auto& state = weaponStates[i];
-            const auto& contact = state.contact;
+            const auto& contact = weaponContacts[i];
             if (!contact.valid) {
                 continue;
             }
@@ -282,13 +271,6 @@ namespace rock
             entry.actionRole = static_cast<std::uint32_t>(contact.actionRole);
             entry.gripPose = static_cast<std::uint32_t>(contact.fallbackGripPose);
             entry.generationKey = contact.weaponGenerationKey;
-
-            if (state.hasSampledVelocity) {
-                entry.flags |= kFlagSampledVelocity;
-                entry.sampledVelocityHavokX = state.sampledVelocityHavok[0];
-                entry.sampledVelocityHavokY = state.sampledVelocityHavok[1];
-                entry.sampledVelocityHavokZ = state.sampledVelocityHavok[2];
-            }
             addEntry(entry);
         }
 
@@ -454,7 +436,6 @@ namespace rock
             ROCK_LOG_WARN(Init, "Body bone colliders were not available during init; runtime update will retry");
         }
 
-        _contacts.handActivity.reset();
         _contacts.bodyRuntime.reset();
         subscribeContactEvents(hknp);
 
@@ -513,7 +494,6 @@ namespace rock
         _contacts.leftTouch.clear();
         _contacts.lastHeldImpactPairRight.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
         _contacts.lastHeldImpactPairLeft.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
-        _contacts.handActivity.reset();
 
         _lifecycle.initialized = true;
         observeLifecycleFrame(bhk, hknp, api::core::LifecycleReason::None);
@@ -705,7 +685,6 @@ namespace rock
         _contacts.leftTouch.clear();
         _contacts.lastHeldImpactPairRight.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
         _contacts.lastHeldImpactPairLeft.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
-        _contacts.handActivity.reset();
         _contacts.bodyRuntime.reset();
         abandonWeaponHandSuppression();
         _suppression.nativePlayerRefreshFrames = 0;

@@ -51,10 +51,6 @@ int main()
         entries[0].partKind = 7;
         entries[0].role = 2;
         entries[0].subRole = 5;
-        entries[0].flags = kFlagSampledVelocity;
-        entries[0].sampledVelocityHavokX = 1.0f;
-        entries[0].sampledVelocityHavokY = 2.0f;
-        entries[0].sampledVelocityHavokZ = 3.0f;
 
         entries[1].bodyId = 100;
         entries[1].kind = GeneratedBodyKind::RightHand;
@@ -83,7 +79,6 @@ int main()
         ok &= expectTrue("weapon classified", registry.tryClassify(300, weapon));
         ok &= expectEqual("weapon kind", weapon.kind, GeneratedBodyKind::Weapon);
         ok &= expectEqual("weapon part", weapon.partKind, static_cast<std::uint32_t>(7));
-        ok &= expectTrue("weapon sampled velocity valid", hasFiniteSampledVelocity(weapon));
 
         Classification body{};
         ok &= expectTrue("body classified", registry.tryClassify(200, body));

@@ -331,7 +331,6 @@ namespace rock
         instance.semantic = {};
         instance.ownsShapeRef = false;
         clearGeneratedKeyframedBodyDriveState(instance.driveState);
-        instance.publicationIndex = INVALID_BODY_ID;
     }
 
     void WeaponCollision::beginWeaponBodyPublication()
@@ -387,18 +386,6 @@ namespace rock
         for (auto& value : _published.generationKeys) {
             value.store(0, std::memory_order_release);
         }
-        for (auto& value : _published.sampledVelocityHavokX) {
-            value.store(0.0f, std::memory_order_release);
-        }
-        for (auto& value : _published.sampledVelocityHavokY) {
-            value.store(0.0f, std::memory_order_release);
-        }
-        for (auto& value : _published.sampledVelocityHavokZ) {
-            value.store(0.0f, std::memory_order_release);
-        }
-        for (auto& value : _published.sampledVelocityValid) {
-            value.store(0, std::memory_order_release);
-        }
         {
             std::scoped_lock lock(_evidence.mutex);
             _evidence.profileDescriptors.reset();
@@ -443,9 +430,6 @@ namespace rock
         for (auto& id : _published.ids) {
             id.store(INVALID_BODY_ID, std::memory_order_release);
         }
-        for (auto& value : _published.sampledVelocityValid) {
-            value.store(0, std::memory_order_release);
-        }
         _published.setKey.store(_identity.cachedBodySetKey, std::memory_order_release);
         {
             std::scoped_lock lock(_evidence.mutex);
@@ -455,7 +439,6 @@ namespace rock
         }
         for (auto& instance : bank) {
             if (instance.body.isValid() && count < MAX_WEAPON_BODIES) {
-                instance.publicationIndex = count;
                 _published.partKinds[count].store(static_cast<std::uint32_t>(instance.semantic.partKind), std::memory_order_release);
                 _published.reloadRoles[count].store(static_cast<std::uint32_t>(instance.semantic.reloadRole), std::memory_order_release);
                 _published.supportRoles[count].store(static_cast<std::uint32_t>(instance.semantic.supportGripRole), std::memory_order_release);
@@ -467,32 +450,10 @@ namespace rock
                 _published.generationKeys[count].store(_identity.cachedBodySetKey, std::memory_order_release);
                 _published.ids[count].store(instance.body.getBodyId().value, std::memory_order_release);
                 ++count;
-            } else {
-                instance.publicationIndex = INVALID_BODY_ID;
             }
         }
         _published.count.store(count, std::memory_order_release);
         endWeaponBodyPublication();
-    }
-
-    void WeaponCollision::publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult)
-    {
-        if (publicationIndex >= MAX_WEAPON_BODIES || publicationIndex >= _published.count.load(std::memory_order_acquire)) {
-            return;
-        }
-
-        if (!queueResult.sampledVelocityValid) {
-            _published.sampledVelocityValid[publicationIndex].store(0, std::memory_order_release);
-            _published.sampledVelocityHavokX[publicationIndex].store(0.0f, std::memory_order_release);
-            _published.sampledVelocityHavokY[publicationIndex].store(0.0f, std::memory_order_release);
-            _published.sampledVelocityHavokZ[publicationIndex].store(0.0f, std::memory_order_release);
-            return;
-        }
-
-        _published.sampledVelocityHavokX[publicationIndex].store(queueResult.sampledLinearVelocityHavok.x, std::memory_order_release);
-        _published.sampledVelocityHavokY[publicationIndex].store(queueResult.sampledLinearVelocityHavok.y, std::memory_order_release);
-        _published.sampledVelocityHavokZ[publicationIndex].store(queueResult.sampledLinearVelocityHavok.z, std::memory_order_release);
-        _published.sampledVelocityValid[publicationIndex].store(1, std::memory_order_release);
     }
 
     void WeaponCollision::queueBodyTarget(WeaponBodyInstance& instance, const RE::NiTransform& weaponTransform, float sourceDeltaSeconds)
@@ -501,8 +462,7 @@ namespace rock
             return;
         }
 
-        const auto queueResult = queueGeneratedKeyframedBodyTarget(instance.driveState, weaponTransform, sourceDeltaSeconds, 1000.0f);
-        publishSampledVelocityAtomic(instance.publicationIndex, queueResult);
+        queueGeneratedKeyframedBodyTarget(instance.driveState, weaponTransform, sourceDeltaSeconds, 1000.0f);
     }
 
     void WeaponCollision::serviceRetiredWeaponBodies(
