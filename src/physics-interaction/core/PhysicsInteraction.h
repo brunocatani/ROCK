@@ -40,6 +40,7 @@
 #include "physics-interaction/core/PhysicsFrameContext.h"
 #include "physics-interaction/weapon/WeaponPartDrivePose.h"
 #include "physics-interaction/weapon/EquippedWeaponRoster.h"
+#include "physics-interaction/visual/AmmoCounterPose.h"
 #include "physics-interaction/core/PhysicsLifecycleState.h"
 #include "physics-interaction/feedback/FeedbackHaptics.h"
 #include "physics-interaction/input/GrabInputIntentPolicy.h"
@@ -1069,6 +1070,8 @@ namespace rock
         std::array<TouchGrabRuntime::PowerArmorCandidate, 2> _powerArmorCandidates{};
         std::array<TouchGrabRuntime::PowerArmorProbeDiagnostics, 2> _powerArmorProbeDiagnostics{};
         std::uint64_t _powerArmorCandidateFrame = 0;
+        // Ammo counters: each firing hand's palm in its weapon's space.
+        std::array<ammo_counter_pose::WeaponAnchor, 2> _ammoCounterAnchors{};
         BodyBoneColliderSet _bodyBoneColliders;
         WeaponCollision _weaponCollision;
         // Second equipped weapon (equipment index 1), layer 53. Built and

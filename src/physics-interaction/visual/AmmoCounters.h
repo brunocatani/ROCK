@@ -6,9 +6,9 @@
 #include <cstdint>
 
 /*
- * ROCK's ammo counters: one per firing weapon, on the back of the hand that
- * holds its firing grip, drawn as RPS UI number overlays (loaded rounds and
- * reserve). RPS UI is optional; without it nothing is drawn here and the
+ * ROCK's ammo counters: one per firing weapon, on the palm side of the hand
+ * that holds its firing grip, drawn as RPS UI number overlays (loaded rounds
+ * and reserve). RPS UI is optional; without it nothing is drawn here and the
  * vanilla counter stays.
  */
 namespace rock::ammo_counters
