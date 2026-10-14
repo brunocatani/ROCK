@@ -85,6 +85,11 @@ namespace rock::provider_state_policy
 
 namespace rock
 {
+    namespace physics_interaction_internal
+    {
+        struct GrabButtonState;
+    }
+
 
     enum class PhysicsObjectClaimOwner : std::uint8_t
     {
@@ -380,8 +385,37 @@ namespace rock
         void finalizeSecondaryWeaponCollisionPose(const PhysicsFrameContext& frame, RE::hknpWorld* world, bool weaponDrawn);
 
         void updateSelection(const PhysicsFrameContext& frame);
+        // The equipped-weapon frame (EquippedWeaponFrame.cpp): the pipeline
+        // calls beginEquippedWeaponFrame before the collider update and
+        // updateEquippedWeaponFrame after it, which runs the stages below.
+        struct EquippedWeaponFramePreparation;
+        struct EquippedWeaponFrameWork;
         struct EquippedWeaponFrameResult;
-        EquippedWeaponFrameResult updateEquippedWeaponFrame(const PhysicsFrameContext& frame, RE::bhkWorld* bhk, RE::hknpWorld* hknp);
+        using GrabButtonState = physics_interaction_internal::GrabButtonState;
+        EquippedWeaponFramePreparation beginEquippedWeaponFrame(const PhysicsFrameContext& frame, RE::hknpWorld* hknp);
+        EquippedWeaponFrameResult updateEquippedWeaponFrame(const PhysicsFrameContext& frame, RE::bhkWorld* bhk, RE::hknpWorld* hknp,
+            const EquippedWeaponFramePreparation& prepared);
+        void observeEquippedWeapon(EquippedWeaponFrameWork& w);
+        void routeEquippedWeaponPrimaryHand(EquippedWeaponFrameWork& w);
+        void resolveEquippedWeaponFiringHand(EquippedWeaponFrameWork& w);
+        void probeEquippedWeaponContacts(EquippedWeaponFrameWork& w);
+        void readEquippedWeaponGripButtons(EquippedWeaponFrameWork& w);
+        void resolveEquippedWeaponPartAuthority(EquippedWeaponFrameWork& w);
+        void startEquippedWeaponGrips(EquippedWeaponFrameWork& w);
+        void updateEquippedWeaponGrips(EquippedWeaponFrameWork& w);
+        void queueEquippedWeaponGripHaptics();
+        void commitEquippedWeaponSheathAndDrop(EquippedWeaponFrameWork& w);
+        EquippedWeaponFrameResult publishEquippedWeaponGripOwnership(EquippedWeaponFrameWork& w);
+        void finishDynamicWeaponCollision(EquippedWeaponFrameWork& w);
+        void publishWeaponInteractionContact(bool isLeft, WeaponInteractionContact& contact);
+        void consumeWeaponContactForHand(RE::NiNode* weaponNode, bool isLeft, const HandFrameInput& handInput, bool probeAllowed,
+            WeaponInteractionContact& outContact, WeaponCollision::InteractionQueryBatch& interactionQueries,
+            const weapon_drive_pose::NativeFrame* operatingPose);
+        void rearmResumedGripHold(bool isLeft, GrabButtonState& button);
+        void maskHolsterGripInput(const EquippedWeaponFrameWork& w, bool isLeft, GrabButtonState& button) const;
+        void maskShoulderGestureGripInput(const EquippedWeaponFrameWork& w, bool isLeft, GrabButtonState& button) const;
+        const GrabButtonState& readPrimaryGrabState(EquippedWeaponFrameWork& w);
+        void consumeToggleAcquisitionPress(bool isLeft, bool acquired);
         void finalizeInteractionFrame(const PhysicsFrameContext& frame,
             RE::hknpWorld* hknp,
             const EquippedWeaponFrameResult& equippedWeaponFrame);

@@ -692,7 +692,19 @@ namespace rock
         }
 
 
-        const auto equippedWeaponFrame = updateEquippedWeaponFrame(frame, bhk, hknp);
+        // The hands that own the equipped weapon are leased before the
+        // colliders update, so recreated hand bodies are re-leased before
+        // the next physics step.
+        const auto equippedWeaponPreparation = beginEquippedWeaponFrame(frame, hknp);
+        updateHandCollisions(frame);
+        const auto frameIndex = runtime_state::currentFrame().frameIndex;
+        logPalmClockSampleForHand("game-after-hand-collider-prepare", _rightHand, hknp,
+            frame.right.disabled ? nullptr : &frame.right.rawHandWorld, frameIndex, frame.deltaSeconds, nullptr);
+        logPalmClockSampleForHand("game-after-hand-collider-prepare", _leftHand, hknp,
+            frame.left.disabled ? nullptr : &frame.left.rawHandWorld, frameIndex, frame.deltaSeconds, nullptr);
+        updateBodyBoneCollisions(frame);
+        updateNativePlayerCollisionFilter(bhk, hknp, frame.deltaSeconds);
+        const auto equippedWeaponFrame = updateEquippedWeaponFrame(frame, bhk, hknp, equippedWeaponPreparation);
         finalizeInteractionFrame(frame, hknp, equippedWeaponFrame);
         if (input_remap_runtime::ownsBareFistInput()) {
             if (const auto* reason = bareFistHandBlockReason(frame)) cancelBareFistMode(reason);

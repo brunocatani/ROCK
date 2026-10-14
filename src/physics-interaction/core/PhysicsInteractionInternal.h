@@ -1169,6 +1169,23 @@ namespace rock
     // they did inside the original anonymous namespace.
     using namespace physics_interaction_internal;
 
+    struct PhysicsInteraction::EquippedWeaponFramePreparation
+    {
+        // The equipped weapon's interaction node, valid for this frame only.
+        RE::NiNode* weaponNode = nullptr;
+        bool secondaryEquipped = false;
+        bool secondaryLeft = false;
+        bool secondaryRight = false;
+        bool leftHandAvailableForAcquisition = false;
+        bool rightHandAvailableForAcquisition = false;
+        bool rightHandWeaponEquipped = false;
+        bool retainedWeaponCollisionActive = false;
+        // Leases taken before the collider update.
+        bool rightHandWeaponAuthorityActive = false;
+        bool leftSupportGripActive = false;
+        bool rightPartGripActive = false;
+    };
+
     struct PhysicsInteraction::EquippedWeaponFrameResult
     {
         bool rightHandWeaponAuthorityActive = false;
