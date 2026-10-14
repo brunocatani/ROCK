@@ -912,11 +912,6 @@ if(BUILD_ROCK_TESTS)
   target_compile_definitions(ROCKProviderApiNegotiationTests PRIVATE ROCK_POLICY_TEST_NO_RUNTIME_LOGGER)
   add_rock_test(ROCKProviderApiNegotiationTests)
 
-  add_executable(ROCKModularMarshallingTests "${ROOT_DIR}/tests/ModularMarshallingTests.cpp")
-  target_compile_features(ROCKModularMarshallingTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKModularMarshallingTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKModularMarshallingTests)
-
   add_executable(ROCKModularSnapshotReadsTests
     "${ROOT_DIR}/tests/ModularSnapshotReadsTests.cpp"
     "${SOURCE_DIR}/api/providers/SnapshotReads.cpp")

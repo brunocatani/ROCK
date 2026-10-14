@@ -28,8 +28,8 @@ void fill(SemanticHandContact& out, const p::RockProviderSemanticHandContactV1& 
     out.contactState = static_cast<SemanticContactState>(in.contactState);
     out.framesSinceContact = in.framesSinceContact;
     out.contactSequence = in.contactSequence;
-    convert(out.contactPointGame, in.contactPointGame);
-    convert(out.contactNormalGame, in.contactNormalGame);
+    out.contactPointGame = in.contactPointGame;
+    out.contactNormalGame = in.contactNormalGame;
     out.collisionGeneration = in.collisionGeneration;
 }
 void fill(PlayerColliderDescriptor& out, const p::RockProviderPlayerColliderDescriptorV1& in) noexcept {
@@ -44,7 +44,7 @@ void fill(PlayerColliderDescriptor& out, const p::RockProviderPlayerColliderDesc
     out.flags = in.flags;
     out.lengthGameUnits = in.lengthGameUnits;
     out.radiusGameUnits = in.radiusGameUnits;
-    convert(out.transform, in.transform);
+    out.transform = in.transform;
     out.collisionGeneration = in.collisionGeneration;
 }
 void fill(BodyContact& out, const p::RockProviderBodyContactV1& in) noexcept {
@@ -65,7 +65,7 @@ void fill(BodyContact& out, const p::RockProviderBodyContactV1& in) noexcept {
     out.inPowerArmor = in.inPowerArmor;
     out.targetInPowerArmor = in.targetInPowerArmor;
     out.hasContactPointGame = in.hasContactPointGame;
-    convert(out.contactPointGame, in.contactPointGame);
+    out.contactPointGame = in.contactPointGame;
 }
 void fill(HandCollisionAvailability& out, const p::RockProviderHandCollisionAvailabilityV1& in) noexcept {
     out.frameIndex = in.frameIndex;
@@ -91,8 +91,8 @@ void fill(WorldRaycastResult& out, const p::RockProviderWorldRaycastResultV1& in
     out.flags = in.flags;
     out.hitFraction = in.hitFraction;
     out.hitDistanceGame = in.hitDistanceGame;
-    convert(out.hitPointGame, in.hitPointGame);
-    convert(out.hitNormalGame, in.hitNormalGame);
+    out.hitPointGame = in.hitPointGame;
+    out.hitNormalGame = in.hitNormalGame;
     out.frameIndex = in.frameIndex;
     out.worldGeneration = in.worldGeneration;
     out.skeletonGeneration = in.skeletonGeneration;
@@ -100,8 +100,8 @@ void fill(WorldRaycastResult& out, const p::RockProviderWorldRaycastResultV1& in
 }
 p::RockProviderWorldRaycastRequestV1 toProvider(const WorldRaycastRequest& in) noexcept {
     p::RockProviderWorldRaycastRequestV1 out{};
-    convert(out.startGame, in.startGame);
-    convert(out.directionGame, in.directionGame);
+    out.startGame = in.startGame;
+    out.directionGame = in.directionGame;
     out.maxDistanceGame = in.maxDistanceGame;
     out.worldGeneration = in.worldGeneration;
     out.skeletonGeneration = in.skeletonGeneration;
@@ -127,7 +127,7 @@ Status ROCK_CALL copySemanticHandContacts(OwnerToken owner, Hand hand, std::uint
     return invoke(owner, kInterfaceId, 1, true, [&] {
         std::array<p::RockProviderSemanticHandContactV1, kMaxSemanticContacts> native{};
         const auto status = static_cast<Status>(p::runtime::apiCopySemanticHandContactsV1(
-            owner, static_cast<p::RockProviderHand>(hand), maxFramesSinceContact, native.data(), capacity, outCount));
+            owner, static_cast<api::Hand>(hand), maxFramesSinceContact, native.data(), capacity, outCount));
         for (std::uint32_t i = 0; i < (std::min)(capacity, *outCount); ++i) fill(outContacts[i], native[i]);
         return status;
     });
@@ -155,7 +155,7 @@ Status ROCK_CALL getHandCollisionAvailability(OwnerToken owner, Hand hand, HandC
     if (!validHand(hand)) return Status::InvalidArgument;
     return invoke(owner, kInterfaceId, 1, true, [&] {
         p::RockProviderHandCollisionAvailabilityV1 native{};
-        const auto status = static_cast<Status>(p::runtime::apiGetHandCollisionAvailabilityV1(owner, static_cast<p::RockProviderHand>(hand), &native));
+        const auto status = static_cast<Status>(p::runtime::apiGetHandCollisionAvailabilityV1(owner, static_cast<api::Hand>(hand), &native));
         fill(*outState, native);
         return status;
     });

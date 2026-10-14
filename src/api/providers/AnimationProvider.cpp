@@ -33,7 +33,7 @@ Status ROCK_CALL setHandVisualAuthority(OwnerToken owner, const HandVisualAuthor
 }
 Status ROCK_CALL clearHandVisualAuthority(OwnerToken owner, Hand hand) noexcept {
     return invoke(owner, kInterfaceId, 2, true, [&] {
-        return static_cast<Status>(provider::runtime::apiClearHandVisualAuthorityV1(owner, static_cast<provider::RockProviderHand>(hand)));
+        return static_cast<Status>(provider::runtime::apiClearHandVisualAuthorityV1(owner, static_cast<api::Hand>(hand)));
     });
 }
 Status ROCK_CALL publishNativeAnimationRuntime(OwnerToken owner, const NativeAnimationRuntimePublication* publication) noexcept {

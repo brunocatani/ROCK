@@ -21,7 +21,7 @@ namespace rock
             }
             using Flag = ::rock::api::input::HandInputSuppressionFlag;
             const auto flags = provider::currentHandInputSuppressionFlagsV1(
-                isLeft ? provider::RockProviderHand::Left : provider::RockProviderHand::Right);
+                isLeft ? api::Hand::Left : api::Hand::Right);
             const bool press = provider::hasHandInputSuppressionFlagV1(flags, Flag::SuppressNormalGrabPress);
             const bool release = provider::hasHandInputSuppressionFlagV1(flags, Flag::SuppressGrabRelease);
             if (!press && !release) return;
@@ -817,7 +817,7 @@ namespace rock
              * constrain which parts the free hand may take.
              */
             const auto offhandReservation = offhand_interaction_reservation::fromProvider(::rock::provider::currentHandReservation(
-                supportHandIsLeft ? ::rock::provider::RockProviderHand::Left : ::rock::provider::RockProviderHand::Right));
+                supportHandIsLeft ? api::Hand::Left : api::Hand::Right));
             if (!offhand_interaction_reservation::allowsSupportGrip(offhandReservation)) {
                 (supportHandIsLeft ? providerInteractionState : rightHandInteractionState).supportGripAllowed = false;
             }
@@ -846,10 +846,10 @@ namespace rock
             const bool supportWeaponPartMatched = supportHandIsLeft ? weaponPartMatched : rightWeaponPartMatched;
             const auto& supportWeaponPartResolution = supportHandIsLeft ? weaponPartResolution : rightWeaponPartResolution;
             if (supportWeaponPartMatched) {
-                if (supportWeaponPartResolution.grabMode == ::rock::provider::RockProviderWeaponPartGrabModeV1::FullTwoHandAuthority) {
+                if (supportWeaponPartResolution.grabMode == api::weaponparts::GrabMode::FullTwoHandAuthority) {
                     supportAuthorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
                     supportAuthorityProviderOverride = true;
-                } else if (supportWeaponPartResolution.grabMode == ::rock::provider::RockProviderWeaponPartGrabModeV1::AttachOnly) {
+                } else if (supportWeaponPartResolution.grabMode == api::weaponparts::GrabMode::AttachOnly) {
                     supportAuthorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport;
                     supportAuthorityProviderOverride = true;
                 }

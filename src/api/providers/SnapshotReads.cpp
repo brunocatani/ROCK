@@ -23,7 +23,7 @@ Status ROCK_CALL getHeadPose(OwnerToken owner, HeadPose* result) noexcept {
             result->flags |= static_cast<std::uint32_t>(HeadPoseFlag::TransformValid);
         if (frame.enrichmentFlags & static_cast<std::uint32_t>(RockFlag::HmdForwardValid))
             result->flags |= static_cast<std::uint32_t>(HeadPoseFlag::ForwardValid);
-        convert(result->transform, frame.hmdTransform);
+        result->transform = frame.hmdTransform;
         std::copy_n(frame.hmdForwardWorld, 3, result->forwardWorld);
         return Status::Ok;
     });
@@ -70,7 +70,7 @@ Status ROCK_CALL getGripState(OwnerToken ownerToken, Hand hand, GripState* outSt
     if (const auto s = checkOutput(outState); s != Status::Ok) return s;
     if (hand!=Hand::Right && hand!=Hand::Left) return Status::InvalidArgument;
     return invoke(ownerToken, kInterfaceId, 1, false, [&]() -> Status {
-        const auto result = provider::runtime::apiGetWeaponPartGripStateV1(static_cast<provider::RockProviderHand>(hand), outState);
+        const auto result = provider::runtime::apiGetWeaponPartGripStateV1(static_cast<api::Hand>(hand), outState);
         return result ? Status::Ok : Status::NotReady;
     });
 }

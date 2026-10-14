@@ -8,11 +8,11 @@
 
 namespace rock::provider::interaction_command_policy
 {
-    [[nodiscard]] inline constexpr bool isTerminal(RockProviderInteractionCommandStateV1 state) noexcept
+    [[nodiscard]] inline constexpr bool isTerminal(api::grab::InteractionCommandState state) noexcept
     {
-        return state == RockProviderInteractionCommandStateV1::Succeeded ||
-               state == RockProviderInteractionCommandStateV1::Rejected ||
-               state == RockProviderInteractionCommandStateV1::Cancelled;
+        return state == api::grab::InteractionCommandState::Succeeded ||
+               state == api::grab::InteractionCommandState::Rejected ||
+               state == api::grab::InteractionCommandState::Cancelled;
     }
 
     [[nodiscard]] inline constexpr RockProviderInteractionCommandResultV1 mergeResultHistory(
@@ -33,15 +33,15 @@ namespace rock::provider::interaction_command_policy
         }
 
         if (isTerminal(merged.state)) {
-            merged.stage = RockProviderCommandStageV1::Terminal;
+            merged.stage = api::grab::CommandStage::Terminal;
             if (merged.frameIndex == 0) {
                 merged.frameIndex = currentFrame;
             }
-            if (merged.state == RockProviderInteractionCommandStateV1::Succeeded &&
+            if (merged.state == api::grab::InteractionCommandState::Succeeded &&
                 merged.appliedFrame == 0) {
                 merged.appliedFrame = merged.frameIndex;
             }
-            if (merged.failureStage == RockProviderInteractionFailureV1::None) {
+            if (merged.failureStage == api::grab::InteractionFailure::None) {
                 merged.failureStage = merged.failure;
             }
         }
@@ -57,20 +57,20 @@ namespace rock::provider::interaction_command_policy
     class ForceGrabReservations
     {
     public:
-        [[nodiscard]] bool isReserved(RockProviderHand hand) const noexcept
+        [[nodiscard]] bool isReserved(api::Hand hand) const noexcept
         {
-            if (hand == RockProviderHand::None) {
+            if (hand == api::Hand::None) {
                 return _slots[0].commandId != 0 || _slots[1].commandId != 0;
             }
             const auto index = handIndex(hand);
             return index < _slots.size() && _slots[index].commandId != 0;
         }
 
-        [[nodiscard]] bool reserve(RockProviderHand hand, std::uint64_t ownerToken, std::uint64_t commandId) noexcept
+        [[nodiscard]] bool reserve(api::Hand hand, std::uint64_t ownerToken, std::uint64_t commandId) noexcept
         {
             // Auto-hand inventory draws reserve both queue slots until ROCK
             // chooses a physically free hand. No other request can overtake it.
-            if (hand == RockProviderHand::None) {
+            if (hand == api::Hand::None) {
                 if (ownerToken == 0 || commandId == 0 || isReserved(hand)) {
                     return false;
                 }
@@ -116,9 +116,9 @@ namespace rock::provider::interaction_command_policy
         void clear() noexcept { _slots = {}; }
 
     private:
-        [[nodiscard]] static constexpr std::size_t handIndex(RockProviderHand hand) noexcept
+        [[nodiscard]] static constexpr std::size_t handIndex(api::Hand hand) noexcept
         {
-            return hand == RockProviderHand::Right ? 0u : hand == RockProviderHand::Left ? 1u : 2u;
+            return hand == api::Hand::Right ? 0u : hand == api::Hand::Left ? 1u : 2u;
         }
 
         std::array<ForceGrabReservation, 2> _slots{};

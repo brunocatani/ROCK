@@ -12,7 +12,7 @@ namespace p = provider;
 
 // ROCK's runtime keeps its own command, hand-state and reference records; the
 // conversions below are the only place they meet the public major-2 records.
-p::RockProviderHand toProvider(Hand hand) noexcept { return static_cast<p::RockProviderHand>(hand); }
+api::Hand toProvider(Hand hand) noexcept { return static_cast<api::Hand>(hand); }
 bool validHand(Hand hand) noexcept { return hand == Hand::Right || hand == Hand::Left; }
 
 p::RockProviderForceGrabRequestV1 toProvider(const ForceGrabRequest& in) noexcept {
@@ -60,7 +60,7 @@ p::RockProviderReferenceQueryV1 toProvider(const ReferenceQuery& in) noexcept {
 p::RockProviderOffhandReservationRequestV1 toProvider(const HandReservationRequest& in) noexcept {
     p::RockProviderOffhandReservationRequestV1 out{};
     out.hand = toProvider(in.hand);
-    out.reservation = static_cast<p::RockProviderOffhandReservation>(in.reservation);
+    out.reservation = static_cast<api::grab::HandReservationKind>(in.reservation);
     out.leaseFrames = in.leaseFrames;
     out.worldGeneration = in.worldGeneration;
     out.skeletonGeneration = in.skeletonGeneration;
@@ -106,7 +106,7 @@ void fill(HandInteractionState& out, const p::RockProviderHandInteractionStateV1
     out.skeletonGeneration = in.skeletonGeneration;
     out.providerGeneration = in.providerGeneration;
     out.collisionGeneration = in.collisionGeneration;
-    convert(out.surfaceAnchorGame, in.surfaceAnchorGame);
+    out.surfaceAnchorGame = in.surfaceAnchorGame;
     out.surfaceGripMode = static_cast<touch::SurfaceGripMode>(in.surfaceGripMode);
 }
 void fill(ReferenceInteraction& out, const p::RockProviderReferenceInteractionV1& in) noexcept {
@@ -129,8 +129,8 @@ void fill(HandTargetDetails& out, const p::RockProviderHandTargetDetailsV1& in) 
     out.referenceNativeHandle = in.reference.referenceNativeHandle;
     out.flags = in.flags;
     out.collisionLayer = in.collisionLayer;
-    convert(out.anchorGame, in.anchorGame);
-    convert(out.normalGame, in.normalGame);
+    out.anchorGame = in.anchorGame;
+    out.normalGame = in.normalGame;
     out.powerArmorPoint = static_cast<PowerArmorPoint>(in.powerArmorPoint);
     out.sourceTriangleIndex = in.sourceTriangleIndex;
     std::copy_n(in.collisionNodeName, std::size(out.collisionNodeName), out.collisionNodeName);
@@ -155,8 +155,8 @@ void fill(PowerArmorTarget& out, const p::RockProviderPowerArmorTargetV1& in) no
     for (std::size_t i = 0; i < std::size(out.points); ++i) {
         out.points[i].point = static_cast<PowerArmorPoint>(in.points[i].point);
         out.points[i].valid = in.points[i].valid;
-        convert(out.points[i].world, in.points[i].world);
-        convert(out.points[i].frameLocal, in.points[i].frameLocal);
+        out.points[i].world = in.points[i].world;
+        out.points[i].frameLocal = in.points[i].frameLocal;
     }
 }
 
@@ -198,7 +198,7 @@ Status ROCK_CALL requestPowerArmorGrab(OwnerToken owner, const PowerArmorGrabReq
         p::RockProviderPowerArmorGrabRequestV1 native{};
         native.target = toProvider(request->target);
         native.hand = toProvider(request->hand);
-        native.point = static_cast<p::RockProviderPowerArmorPointV1>(request->point);
+        native.point = static_cast<api::PowerArmorPoint>(request->point);
         native.maxDistanceGame = request->maxDistanceGame;
         return static_cast<Status>(p::runtime::apiRequestPowerArmorGrabV1(owner, &native, outCommandId));
     });

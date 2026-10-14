@@ -1,6 +1,6 @@
 // Private Collision service operations. Included after shared owner/lifecycle helpers.
 
-    std::uint32_t ROCK_PROVIDER_CALL apiGetBodyContactSnapshotV1(
+    std::uint32_t apiGetBodyContactSnapshotV1(
         RockProviderBodyContactV1* outContacts,
         std::uint32_t maxContacts)
     {
@@ -13,9 +13,9 @@
         return pi->copyProviderBodyContacts(outContacts, maxContacts);
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopySemanticHandContactsV1(
+    api::Status apiCopySemanticHandContactsV1(
         const std::uint64_t ownerToken,
-        const RockProviderHand hand,
+        const api::Hand hand,
         const std::uint32_t maxFramesSinceContact,
         RockProviderSemanticHandContactV1* outContacts,
         const std::uint32_t maxContacts,
@@ -23,33 +23,33 @@
     {
         if (outContactCount) *outContactCount = 0;
         if (ownerToken == 0 || !outContactCount ||
-            (hand != RockProviderHand::Right && hand != RockProviderHand::Left) ||
+            (hand != api::Hand::Right && hand != api::Hand::Left) ||
             (maxContacts != 0 && !outContacts)) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         const auto ownerResult = validateReadCapability(
             ownerToken,
             RockProviderConsumerCapabilityV1::SemanticHandContacts);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
         if (!onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
+            return api::Status::WrongThread;
         }
         const auto instanceAccess = s_physicsInteraction.borrow();
         auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
-            return RockProviderResultV1::NotReady;
+            return api::Status::NotReady;
         }
         *outContactCount = pi->copyProviderSemanticHandContactsV1(
             hand,
             maxFramesSinceContact,
             outContacts,
             maxContacts);
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyPlayerColliderDescriptorsV1(
+    api::Status apiCopyPlayerColliderDescriptorsV1(
         const std::uint64_t ownerToken,
         RockProviderPlayerColliderDescriptorV1* outDescriptors,
         const std::uint32_t maxDescriptors,
@@ -58,36 +58,36 @@
         if (outDescriptorCount) *outDescriptorCount = 0;
         if (ownerToken == 0 || !outDescriptorCount ||
             (maxDescriptors != 0 && !outDescriptors)) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         const auto ownerResult = validateReadCapability(
             ownerToken,
             RockProviderConsumerCapabilityV1::PlayerColliderDescriptors);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
         if (!onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
+            return api::Status::WrongThread;
         }
         const auto instanceAccess = s_physicsInteraction.borrow();
         auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
-            return RockProviderResultV1::NotReady;
+            return api::Status::NotReady;
         }
         *outDescriptorCount = pi->copyProviderPlayerColliderDescriptorsV1(
             outDescriptors,
             maxDescriptors);
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetHandCollisionAvailabilityV1(
+    api::Status apiGetHandCollisionAvailabilityV1(
         const std::uint64_t ownerToken,
-        const RockProviderHand hand,
+        const api::Hand hand,
         RockProviderHandCollisionAvailabilityV1* outState)
     {
-        if (hand != RockProviderHand::Right && hand != RockProviderHand::Left) {
+        if (hand != api::Hand::Right && hand != api::Hand::Left) {
             provider_state_policy::clearQueryOutput(outState);
-            return RockProviderResultV1::HandUnavailable;
+            return api::Status::HandUnavailable;
         }
         return queryPhysicsInteractionValueV1(
             ownerToken,
@@ -99,22 +99,22 @@
             true);
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryWorldRaycastV1(
+    api::Status apiQueryWorldRaycastV1(
         const std::uint64_t ownerToken,
         const RockProviderWorldRaycastRequestV1* request,
         RockProviderWorldRaycastResultV1* outResult)
     {
         provider_state_policy::clearQueryOutput(outResult);
         if (ownerToken == 0 || !request || !outResult) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         if (request->size != sizeof(RockProviderWorldRaycastRequestV1) ||
             outResult->size != sizeof(RockProviderWorldRaycastResultV1)) {
-            return RockProviderResultV1::InvalidSize;
+            return api::Status::InvalidSize;
         }
         if (request->version != ROCK_PROVIDER_API_VERSION ||
             outResult->version != ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV1::UnsupportedVersion;
+            return api::Status::UnsupportedVersion;
         }
         if (!finiteProviderPoint(request->startGame) ||
             !finiteProviderPoint(request->directionGame) ||
@@ -122,7 +122,7 @@
             request->maxDistanceGame <= 0.0f ||
             request->maxDistanceGame >
                 ROCK_PROVIDER_MAX_WORLD_RAYCAST_DISTANCE_GAME_V1) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         const float directionLengthSquared =
             request->directionGame.x * request->directionGame.x +
@@ -130,26 +130,26 @@
             request->directionGame.z * request->directionGame.z;
         if (!std::isfinite(directionLengthSquared) ||
             directionLengthSquared <= 1.0e-8f) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         if (!onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
+            return api::Status::WrongThread;
         }
         const auto generationResult = validateGenerationGuards(
             request->worldGeneration,
             request->skeletonGeneration,
             request->providerGeneration);
-        if (generationResult != RockProviderResultV1::Ok) {
+        if (generationResult != api::Status::Ok) {
             return generationResult;
         }
         if (!apiIsProviderReady()) {
-            return RockProviderResultV1::NotReady;
+            return api::Status::NotReady;
         }
 
         const auto instanceAccess = s_physicsInteraction.borrow();
         auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
-            return RockProviderResultV1::NotReady;
+            return api::Status::NotReady;
         }
 
         const auto frameIndex = currentGameFrameIndex();
@@ -157,12 +157,12 @@
             std::scoped_lock lock(s_consumerMutex);
             auto* slot = findConsumerSlotLocked(ownerToken);
             if (!slot) {
-                return RockProviderResultV1::OwnerNotRegistered;
+                return api::Status::OwnerNotRegistered;
             }
             if (!hasConsumerCapabilityV1(
                     slot->grantedCapabilities,
                     RockProviderConsumerCapabilityV1::WorldRaycasts)) {
-                return RockProviderResultV1::PermissionDenied;
+                return api::Status::PermissionDenied;
             }
             if (slot->worldRaycastFrameIndex != frameIndex) {
                 slot->worldRaycastFrameIndex = frameIndex;
@@ -170,7 +170,7 @@
             }
             if (slot->worldRaycastCount >=
                 ROCK_PROVIDER_MAX_WORLD_RAYCASTS_PER_OWNER_PER_FRAME_V1) {
-                return RockProviderResultV1::CapacityFull;
+                return api::Status::CapacityFull;
             }
             ++slot->worldRaycastCount;
         }
@@ -178,7 +178,7 @@
         *outResult = {};
         outResult->frameIndex = frameIndex;
         if (!pi->queryProviderWorldRaycastV1(*request, *outResult)) {
-            return RockProviderResultV1::WorldNotReady;
+            return api::Status::WorldNotReady;
         }
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }

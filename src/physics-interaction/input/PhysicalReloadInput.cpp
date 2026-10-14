@@ -32,9 +32,9 @@ namespace {
         provider::RockProviderEquippedWeaponStateV1 weapon;
         const auto result=provider::runtime::apiGetEquippedWeaponStateV1(state.owner,&weapon);
         const auto sample=provider::runtime::sample();
-        constexpr auto drawn=static_cast<std::uint32_t>(provider::RockProviderEquippedWeaponStateFlagV1::WeaponDrawn);
-        constexpr auto valid=static_cast<std::uint32_t>(provider::RockProviderEquippedWeaponStateFlagV1::Valid);
-        return result==provider::RockProviderResultV1::Ok&&(weapon.flags&(drawn|valid))==(drawn|valid)&&weapon.weaponFormId==request.weaponFormId&&
+        constexpr auto drawn=static_cast<std::uint32_t>(api::weapon::WeaponStateFlag::WeaponDrawn);
+        constexpr auto valid=static_cast<std::uint32_t>(api::weapon::WeaponStateFlag::Valid);
+        return result==api::Status::Ok&&(weapon.flags&(drawn|valid))==(drawn|valid)&&weapon.weaponFormId==request.weaponFormId&&
             weapon.weaponGenerationKey==request.weaponGenerationKey&&sample.worldGeneration==request.sample.worldGeneration&&
             sample.skeletonGeneration==request.sample.skeletonGeneration&&sample.providerGeneration==request.sample.providerGeneration;
     }

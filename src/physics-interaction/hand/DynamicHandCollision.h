@@ -178,7 +178,7 @@ namespace rock
             bool valid = false;
             std::uint32_t animatedReferenceFormId = 0;
             std::uint32_t animatedReferenceNativeHandle = 0;
-            provider::RockProviderPowerArmorPointV1 animatedPoint{};
+            api::PowerArmorPoint animatedPoint{};
         };
 
         /*
@@ -323,7 +323,7 @@ namespace rock
                 bool active = false;
                 std::uint32_t animatedReferenceFormId = 0;
                 std::uint32_t animatedReferenceNativeHandle = 0;
-                provider::RockProviderPowerArmorPointV1 animatedPoint{};
+                api::PowerArmorPoint animatedPoint{};
                 RE::NiAVObject* animatedRootIdentity = nullptr;
                 std::uint32_t targetBodyId =
                     hand_semantic_contact_state::kInvalidBodyId;

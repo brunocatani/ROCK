@@ -93,8 +93,8 @@ namespace rock
             if (ref->As<RE::Actor>()) {
                 provider::RockProviderPowerArmorTargetV1 armor{};
                 if (!reference_interaction::describePowerArmor(ref, armor)) return false;
-                const auto classified = static_cast<std::uint32_t>(provider::RockProviderTargetDetailFlagV1::PowerArmorClassification);
-                const auto actor = static_cast<std::uint32_t>(provider::RockProviderTargetDetailFlagV1::PowerArmorActor);
+                const auto classified = static_cast<std::uint32_t>(api::grab::TargetDetailFlag::PowerArmorClassification);
+                const auto actor = static_cast<std::uint32_t>(api::grab::TargetDetailFlag::PowerArmorActor);
                 return (armor.flags & classified) != 0 && (armor.flags & actor) == 0;
             }
             return true;
@@ -587,7 +587,7 @@ namespace rock
 
     TouchGrabRuntime::PowerArmorCandidate TouchGrabRuntime::findPowerArmorCandidate(
         RE::hknpWorld* world, const RE::NiPoint3& handPosition,
-        const std::uint32_t frameFormId, const provider::RockProviderPowerArmorPointV1 requestedPoint,
+        const std::uint32_t frameFormId, const api::PowerArmorPoint requestedPoint,
         const float radius, PowerArmorProbeDiagnostics* diagnostics) const
     {
         PowerArmorProbeDiagnostics ignored{};
@@ -624,9 +624,9 @@ namespace rock
             if (armorCount++ == 8) break;
             ++probe.armorReferences;
             probe.stage = (std::max)(probe.stage, 3u);
-            for (const auto point : {provider::RockProviderPowerArmorPointV1::LeftArmorHand,
-                                    provider::RockProviderPowerArmorPointV1::RightArmorHand}) {
-                if (requestedPoint != provider::RockProviderPowerArmorPointV1::None && point != requestedPoint) continue;
+            for (const auto point : {api::PowerArmorPoint::LeftArmorHand,
+                                    api::PowerArmorPoint::RightArmorHand}) {
+                if (requestedPoint != api::PowerArmorPoint::None && point != requestedPoint) continue;
                 RE::NiTransform pose{};
                 if (!reference_interaction::pointTransform(ref, point, pose)) continue;
                 ++probe.bones;
@@ -804,7 +804,7 @@ namespace rock
         const TargetClass targetClass,
         const ContactSource contactSource,
         const bool closeObjectCandidate,
-        const provider::RockProviderPowerArmorPointV1 powerArmorPoint)
+        const api::PowerArmorPoint powerArmorPoint)
     {
         _lastAttemptReport = {
             .failure = AttemptFailure::InvalidInput,
@@ -851,8 +851,8 @@ namespace rock
         provider::TouchGrabTargetMatchV1 match{};
         const auto providerHand =
             isLeft ?
-            provider::RockProviderHand::Left :
-            provider::RockProviderHand::Right;
+            api::Hand::Left :
+            api::Hand::Right;
         const std::uint32_t layer =
             snapshot.collisionFilterInfo & 0x7Fu;
         bool providerMatched =
@@ -865,7 +865,7 @@ namespace rock
                 skeletonGeneration,
                 providerGeneration,
                 match);
-        const bool authoredPowerArmor = powerArmorPoint != provider::RockProviderPowerArmorPointV1::None;
+        const bool authoredPowerArmor = powerArmorPoint != api::PowerArmorPoint::None;
         if (providerMatched &&
             (!referenceAllowedByTarget(match.target, hknpWorld, bodyId.value, layer) ||
              (authoredPowerArmor && provider::hasTouchGrabTargetFlagV1(match.target.flags,
@@ -1279,7 +1279,7 @@ namespace rock
         const hand_semantic_contact_state::SemanticContactRecord& contact,
         RE::hknpWorld* world,
         const ContactSource contactSource,
-        const provider::RockProviderPowerArmorPointV1 powerArmorPoint)
+        const api::PowerArmorPoint powerArmorPoint)
     {
         HandAttachment* attachment = nullptr;
         std::size_t activeHands = 0;
@@ -1346,7 +1346,7 @@ namespace rock
                 return false;
             }
             bool meshPresentationAvailable = false;
-            if (powerArmorPoint != provider::RockProviderPowerArmorPointV1::None) {
+            if (powerArmorPoint != api::PowerArmorPoint::None) {
                 provider::RockProviderReferenceQueryV1 query{};
                 query.referenceFormId = active.target.referenceFormId;
                 query.referenceNativeHandle = active.target.referenceNativeHandle;
@@ -1474,7 +1474,7 @@ namespace rock
         attachment->powerArmorPoint = powerArmorPoint;
         attachment->sourceTriangleIndex = meshAcquisition.triangleIndex;
         std::copy(std::begin(meshAcquisition.partName), std::end(meshAcquisition.partName), std::begin(attachment->meshPartName));
-        if (powerArmorPoint != provider::RockProviderPowerArmorPointV1::None) {
+        if (powerArmorPoint != api::PowerArmorPoint::None) {
             attachment->hasContactNormal = false;
             attachment->surfaceGripMode = ::rock::api::touch::SurfaceGripMode::AnimatedArmorBone;
         }
@@ -1558,7 +1558,7 @@ namespace rock
             for (const auto& hand : target->hands) {
                 if (hand.active && hand.isLeft == isLeft &&
                     ((hand.commandOwnerToken != 0 && !provider::isPowerArmorGrabOwnerRegisteredV1(hand.commandOwnerToken)) ||
-                     (hand.powerArmorPoint != provider::RockProviderPowerArmorPointV1::None &&
+                     (hand.powerArmorPoint != api::PowerArmorPoint::None &&
                       (!_dynamicHandCollision || !_dynamicHandCollision->isSurfaceLatchActive(isLeft))))) {
                     releaseHand(isLeft, bhkWorld, hknpWorld,
                         ::rock::api::touch::TouchGrabReleaseReason::OwnerYield, collisionGeneration);
@@ -1572,7 +1572,7 @@ namespace rock
             }
             if (active.globalSurface) {
                 const bool hasPowerArmorGrip = std::any_of(active.hands.begin(), active.hands.end(), [](const HandAttachment& hand) {
-                    return hand.active && hand.powerArmorPoint != provider::RockProviderPowerArmorPointV1::None;
+                    return hand.active && hand.powerArmorPoint != api::PowerArmorPoint::None;
                 });
                 if (!_globalSurfaceGrabEnabled && !hasPowerArmorGrip) {
                     auto structuralMutation = _physicsCallbackGate ?
@@ -1686,7 +1686,7 @@ namespace rock
                     if (!active.active || findTargetForHand(isLeft) != &active) continue;
                     provider::TouchGrabTargetMatchV1 preferred{};
                     if (provider::resolveTouchGrabTargetV1(active.bodyId, bodySnapshot.collisionFilterInfo & 0x7Fu,
-                            active.originalMotionClass, isLeft ? provider::RockProviderHand::Left : provider::RockProviderHand::Right,
+                            active.originalMotionClass, isLeft ? api::Hand::Left : api::Hand::Right,
                             worldGeneration, skeletonGeneration, providerGeneration, preferred) &&
                         !provider::hasTouchGrabTargetFlagV1(preferred.target.flags, ::rock::api::touch::TouchGrabTargetFlag::FallbackOnly)) {
                         releaseHand(isLeft, bhkWorld, hknpWorld,
@@ -1705,7 +1705,7 @@ namespace rock
                     if (!hand.active || !hand.contactRelativeToTarget) {
                         continue;
                     }
-                    if (hand.powerArmorPoint != provider::RockProviderPowerArmorPointV1::None) {
+                    if (hand.powerArmorPoint != api::PowerArmorPoint::None) {
                         provider::RockProviderReferenceQueryV1 query{};
                         query.referenceFormId = active.target.referenceFormId;
                         query.referenceNativeHandle = active.target.referenceNativeHandle;

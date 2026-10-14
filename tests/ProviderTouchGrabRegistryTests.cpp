@@ -96,7 +96,7 @@ namespace
             100,
             5,
             TouchGrabMotionClassV1::Keyframed,
-            RockProviderHand::Right,
+            rock::api::Hand::Right,
             11,
             12,
             13,
@@ -111,7 +111,7 @@ namespace
             101,
             5,
             TouchGrabMotionClassV1::Static,
-            RockProviderHand::Left,
+            rock::api::Hand::Left,
             11,
             12,
             13,
@@ -130,7 +130,7 @@ namespace
             101,
             6,
             TouchGrabMotionClassV1::Static,
-            RockProviderHand::Left,
+            rock::api::Hand::Left,
             11,
             12,
             13,
@@ -223,7 +223,7 @@ namespace
             target.bodyId,
             0,
             TouchGrabMotionClassV1::Dynamic,
-            RockProviderHand::Right,
+            rock::api::Hand::Right,
             11,
             12,
             13,
@@ -283,7 +283,7 @@ namespace
             target.bodyId,
             0,
             TouchGrabMotionClassV1::Dynamic,
-            RockProviderHand::Right,
+            rock::api::Hand::Right,
             11,
             12,
             13,
@@ -331,7 +331,7 @@ namespace
             300,
             0,
             TouchGrabMotionClassV1::Dynamic,
-            RockProviderHand::Right,
+            rock::api::Hand::Right,
             11,
             12,
             13,
@@ -367,7 +367,7 @@ namespace
             500,
             5,
             TouchGrabMotionClassV1::Static,
-            RockProviderHand::Right,
+            rock::api::Hand::Right,
             11,
             12,
             13,
@@ -376,7 +376,7 @@ namespace
             500,
             5,
             TouchGrabMotionClassV1::Static,
-            RockProviderHand::Left,
+            rock::api::Hand::Left,
             11,
             12,
             13,
@@ -398,7 +398,7 @@ void testFallbackPriority()
     auto ordinary = wildcardAnchor(51, 1ull << 2);
     auto exact = hinge(52, 100);
     const auto resolve = [&]() { return registry->resolve(100, 2, TouchGrabMotionClassV1::Keyframed,
-        RockProviderHand::Right, 11, 12, 13, 40); };
+        rock::api::Hand::Right, 11, 12, 13, 40); };
     assert(registry->setScope(1, 1, &climbing, 1, 40) == TouchGrabRegistry::RegistrationResult::Ok);
     assert(resolve().target.targetId == 50);
     // A late higher-priority wildcard is admitted even when climbing registered first.

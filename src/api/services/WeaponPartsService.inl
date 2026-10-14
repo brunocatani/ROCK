@@ -1,6 +1,6 @@
 // Private WeaponParts service operations. Included after shared owner/lifecycle helpers.
 
-    bool ROCK_PROVIDER_CALL apiQueryWeaponContactAtPoint(
+    bool apiQueryWeaponContactAtPoint(
         const RockProviderWeaponContactQuery* query,
         RockProviderWeaponContactResult* outResult)
     {
@@ -20,7 +20,7 @@
         return pi->queryProviderWeaponContactAtPoint(*query, *outResult);
     }
 
-    std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEvidenceDetailsV1(
+    std::uint32_t apiCopyWeaponEvidenceDetailsV1(
         RockProviderWeaponEvidenceDetailV1* outDetails,
         std::uint32_t maxDetails)
     {
@@ -33,9 +33,9 @@
         return pi->copyProviderWeaponEvidenceDetailsV1(outDetails, maxDetails);
     }
 
-    std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEvidenceDetailPointsV1(
+    std::uint32_t apiCopyWeaponEvidenceDetailPointsV1(
         std::uint32_t bodyId,
-        RockProviderPoint3* outPoints,
+        api::Point3* outPoints,
         std::uint32_t maxPoints)
     {
         const auto instanceAccess = s_physicsInteraction.borrow();
@@ -47,41 +47,41 @@
         return pi->copyProviderWeaponEvidenceDetailPointsV1(bodyId, outPoints, maxPoints);
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetWeaponPartTargetsV1(
+    api::Status apiSetWeaponPartTargetsV1(
         std::uint64_t ownerToken,
         const RockProviderWeaponPartTargetV1* targets,
         std::uint32_t targetCount)
     {
         if (ownerToken == 0 || (targetCount > 0 && !targets)) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         if (targetCount > ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1) {
-            return RockProviderResultV1::CapacityFull;
+            return api::Status::CapacityFull;
         }
 
         std::scoped_lock lock(s_consumerMutex, s_weaponPartMutex);
         const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::WeaponPartInteraction);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
 
         for (std::uint32_t i = 0; i < targetCount; ++i) {
             const auto& target = targets[i];
             if (target.size != sizeof(RockProviderWeaponPartTargetV1)) {
-                return RockProviderResultV1::InvalidSize;
+                return api::Status::InvalidSize;
             }
             if (target.version == 0 || target.version > ROCK_PROVIDER_API_VERSION) {
-                return RockProviderResultV1::UnsupportedVersion;
+                return api::Status::UnsupportedVersion;
             }
             if (!isValidWeaponPartGrabMode(target.grabMode) ||
                 !hasValidWeaponPartMatcher(target.flags, target.bodyId, target.sourceRoot, target.sourceName) ||
                 !hasValidWeaponPartTargetSemantics(target)) {
-                return RockProviderResultV1::InvalidArgument;
+                return api::Status::InvalidArgument;
             }
         }
 
         if (targetCount > availableWeaponPartTargetSlotsForOwnerLocked(ownerToken)) {
-            return RockProviderResultV1::CapacityFull;
+            return api::Status::CapacityFull;
         }
 
         clearWeaponPartTargetsForOwnerLocked(ownerToken);
@@ -99,65 +99,65 @@
             }
             if (!stored) {
                 clearWeaponPartTargetsForOwnerLocked(ownerToken);
-                return RockProviderResultV1::CapacityFull;
+                return api::Status::CapacityFull;
             }
         }
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearWeaponPartTargetsV1(std::uint64_t ownerToken)
+    api::Status apiClearWeaponPartTargetsV1(std::uint64_t ownerToken)
     {
         if (ownerToken == 0) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
 
         std::scoped_lock lock(s_consumerMutex, s_weaponPartMutex);
         const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::WeaponPartInteraction);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
         clearWeaponPartTargetsForOwnerLocked(ownerToken);
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetWeaponPartDriveTargetsV1(
+    api::Status apiSetWeaponPartDriveTargetsV1(
         std::uint64_t ownerToken,
         const RockProviderWeaponPartDriveTargetV1* targets,
         std::uint32_t targetCount)
     {
         if (ownerToken == 0 || (targetCount > 0 && !targets)) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         if (targetCount > ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1) {
-            return RockProviderResultV1::CapacityFull;
+            return api::Status::CapacityFull;
         }
 
         const auto frameIndex = currentProviderFrameIndex();
         std::scoped_lock lock(s_consumerMutex, s_weaponPartMutex);
         const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::WeaponPartInteraction);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
 
         for (std::uint32_t i = 0; i < targetCount; ++i) {
             const auto& target = targets[i];
             if (target.size != sizeof(RockProviderWeaponPartDriveTargetV1)) {
-                return RockProviderResultV1::InvalidSize;
+                return api::Status::InvalidSize;
             }
             if (target.version == 0 || target.version > ROCK_PROVIDER_API_VERSION) {
-                return RockProviderResultV1::UnsupportedVersion;
+                return api::Status::UnsupportedVersion;
             }
             if (!isValidWeaponPartDriveSpace(target.driveSpace) ||
                 target.leaseFrames == 0 ||
                 !isFiniteProviderTransform(target.targetTransform) ||
                 !hasConcreteWeaponPartDriveMatcher(target.flags, target.bodyId, target.sourceRoot, target.sourceName)) {
-                return RockProviderResultV1::InvalidArgument;
+                return api::Status::InvalidArgument;
             }
         }
 
         pruneExpiredWeaponPartDrivesLocked(frameIndex);
         if (targetCount > availableWeaponPartDriveSlotsForOwnerLocked(ownerToken)) {
-            return RockProviderResultV1::CapacityFull;
+            return api::Status::CapacityFull;
         }
         clearWeaponPartDrivesForOwnerLocked(ownerToken);
         for (std::uint32_t i = 0; i < targetCount; ++i) {
@@ -182,25 +182,25 @@
             }
             if (!stored) {
                 clearWeaponPartDrivesForOwnerLocked(ownerToken);
-                return RockProviderResultV1::CapacityFull;
+                return api::Status::CapacityFull;
             }
         }
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearWeaponPartDriveTargetsV1(std::uint64_t ownerToken)
+    api::Status apiClearWeaponPartDriveTargetsV1(std::uint64_t ownerToken)
     {
         if (ownerToken == 0) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
 
         std::scoped_lock lock(s_consumerMutex, s_weaponPartMutex);
         const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::WeaponPartInteraction);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
         clearWeaponPartDrivesForOwnerLocked(ownerToken);
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
     // Resolves the opaque source key while the frame owner holds the live
@@ -231,18 +231,18 @@
         out.authoredSupportGrip = in.authoredSupportGrip;
         out.hasHandPartLocal = in.hasHandPartLocal;
         out.handPartLocalSpace = static_cast<api::weaponparts::GripLocalSpace>(in.handPartLocalSpace);
-        api::boundary::convert(out.handPartLocal, in.handPartLocal);
+        out.handPartLocal = in.handPartLocal;
         std::copy_n(in.sourceName, std::size(out.sourceName), out.sourceName);
         return out;
     }
 
-    bool ROCK_PROVIDER_CALL apiGetWeaponPartGripStateV1(RockProviderHand hand, api::weaponparts::GripState* outState)
+    bool apiGetWeaponPartGripStateV1(api::Hand hand, api::weaponparts::GripState* outState)
     {
         provider_state_policy::clearQueryOutput(outState);
         if (!outState || outState->size != sizeof(api::weaponparts::GripState)) {
             return false;
         }
-        if (hand != RockProviderHand::Right && hand != RockProviderHand::Left) {
+        if (hand != api::Hand::Right && hand != api::Hand::Left) {
             return false;
         }
 
@@ -250,27 +250,27 @@
         if (!apiIsProviderReady() || !s_hasSnapshot || s_lastSnapshot.providerReady == 0) {
             return false;
         }
-        *outState = s_lastPartGripStates[hand == RockProviderHand::Left ? 1u : 0u];
+        *outState = s_lastPartGripStates[hand == api::Hand::Left ? 1u : 0u];
         return true;
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryWeaponPartTargetResolutionV1(
+    api::Status apiQueryWeaponPartTargetResolutionV1(
         const std::uint64_t ownerToken,
         const RockProviderWeaponPartResolutionQueryV1* query,
         RockProviderWeaponPartResolutionResultV1* outResolution)
     {
         provider_state_policy::clearQueryOutput(outResolution);
         if (ownerToken == 0 || !query || !outResolution) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         if (query->size < sizeof(RockProviderWeaponPartResolutionQueryV1) ||
             outResolution->size < sizeof(RockProviderWeaponPartResolutionResultV1)) {
-            return RockProviderResultV1::InvalidSize;
+            return api::Status::InvalidSize;
         }
         const auto ownerResult = validateReadCapability(
             ownerToken,
             RockProviderConsumerCapabilityV1::WeaponPartObservability);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
 
@@ -298,10 +298,10 @@
         outResolution->winningOwnerToken = resolution.ownerToken;
         outResolution->weaponGenerationKey = query->weaponGenerationKey;
         outResolution->frameIndex = currentGameFrameIndex();
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyWeaponPartPoseSnapshotV1(
+    api::Status apiCopyWeaponPartPoseSnapshotV1(
         const std::uint64_t ownerToken,
         RockProviderWeaponPartPoseV1* outParts,
         const std::uint32_t maxParts,
@@ -310,29 +310,29 @@
         if (outPartCount) *outPartCount = 0;
         if (ownerToken == 0 || !outPartCount ||
             (maxParts != 0 && !outParts)) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         const auto ownerResult = validateReadCapability(
             ownerToken,
             RockProviderConsumerCapabilityV1::WeaponPartObservability);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
         if (!onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
+            return api::Status::WrongThread;
         }
         const auto instanceAccess = s_physicsInteraction.borrow();
         auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
-            return RockProviderResultV1::NotReady;
+            return api::Status::NotReady;
         }
         *outPartCount = pi->copyProviderWeaponPartPosesV1(
             outParts,
             maxParts);
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyWeaponPartDriveApplicationResultsV1(
+    api::Status apiCopyWeaponPartDriveApplicationResultsV1(
         const std::uint64_t ownerToken,
         RockProviderWeaponPartDriveApplicationResultV1* outResults,
         const std::uint32_t maxResults,
@@ -341,27 +341,27 @@
         if (outResultCount) *outResultCount = 0;
         if (ownerToken == 0 || !outResultCount ||
             (maxResults != 0 && !outResults)) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         const auto ownerResult = validateReadCapability(
             ownerToken,
             RockProviderConsumerCapabilityV1::WeaponPartObservability);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
         if (!onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
+            return api::Status::WrongThread;
         }
         const auto instanceAccess = s_physicsInteraction.borrow();
         auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
-            return RockProviderResultV1::NotReady;
+            return api::Status::NotReady;
         }
         *outResultCount = pi->copyProviderWeaponPartDriveResultsV1(
             ownerToken,
             outResults,
             maxResults);
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
     api::Status setWeaponPartGrabPoints(api::OwnerToken owner,std::span<const api::weaponparts::GrabPoint> points) {
@@ -370,7 +370,7 @@
         return s_weaponPartGrabPoints.replace(owner,points,[&](const auto& p){
             return std::any_of(s_weaponPartTargets.begin(),s_weaponPartTargets.end(),[&](const auto& s){
                 return s.active&&s.ownerToken==owner&&s.target.groupId==p.groupId&&s.target.weaponGenerationKey==p.weaponGenerationKey&&
-                    s.target.grabMode==RockProviderWeaponPartGrabModeV1::AttachOnly;
+                    s.target.grabMode==api::weaponparts::GrabMode::AttachOnly;
             });
         });
     }

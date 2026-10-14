@@ -142,7 +142,7 @@ namespace
         }
     }
 
-    void destroyPhysicsInteraction(rock::provider::RockProviderLifecycleReason reason);
+    void destroyPhysicsInteraction(api::core::LifecycleReason reason);
     void reconcileNativeScopeGeometryOwnership();
 
     void ensurePhysicsInteractionForReadySkeleton(const runtime_state::RuntimeFrameSnapshot& runtime)
@@ -163,7 +163,7 @@ namespace
 
         if (s_physicsInteraction) {
             logger::info("ROCK: Recreating PhysicsInteraction for the new FRIK skeleton.");
-            destroyPhysicsInteraction(rock::provider::RockProviderLifecycleReason::SkeletonReady);
+            destroyPhysicsInteraction(api::core::LifecycleReason::SkeletonReady);
         }
 
         createPhysicsInteraction();
@@ -171,7 +171,7 @@ namespace
     }
 
     void destroyPhysicsInteraction(
-        rock::provider::RockProviderLifecycleReason reason = rock::provider::RockProviderLifecycleReason::ProviderLost)
+        api::core::LifecycleReason reason = api::core::LifecycleReason::ProviderLost)
     {
         if (!s_physicsInteraction) {
             return;
@@ -180,8 +180,8 @@ namespace
         logger::info("ROCK: Destroying PhysicsInteraction (skeleton released)...");
 
         s_equippedWeaponContinuity =
-            reason == rock::provider::RockProviderLifecycleReason::SkeletonDestroying ||
-                reason == rock::provider::RockProviderLifecycleReason::SkeletonReady ?
+            reason == api::core::LifecycleReason::SkeletonDestroying ||
+                reason == api::core::LifecycleReason::SkeletonReady ?
             s_physicsInteraction->equippedWeaponContinuity() : EquippedWeaponTransitionCoordinator::PendingGrip{};
 
         PhysicsInteraction::s_hooksEnabled.store(false, std::memory_order_release);
@@ -972,9 +972,9 @@ namespace
             if (s_physicsInteraction) {
                 s_physicsInteraction->noteSkeletonLifecycle(
                     s_skeletonGeneration.load(std::memory_order_acquire),
-                    rock::provider::RockProviderLifecycleReason::SkeletonDestroying);
+                    api::core::LifecycleReason::SkeletonDestroying);
             }
-            destroyPhysicsInteraction(rock::provider::RockProviderLifecycleReason::SkeletonDestroying);
+            destroyPhysicsInteraction(api::core::LifecycleReason::SkeletonDestroying);
             // FRIK runs no skeleton phase without a skeleton: drop the input state now.
             clearUnavailableRuntimeInputState();
             break;
@@ -1015,7 +1015,7 @@ namespace
             if (s_physicsInteraction) {
                 s_physicsInteraction->noteProviderLifecycle(
                     providerGeneration,
-                    rock::provider::RockProviderLifecycleReason::GameLoaded);
+                    api::core::LifecycleReason::GameLoaded);
             }
 
             /*
@@ -1123,7 +1123,7 @@ namespace
             if (s_physicsInteraction) {
                 s_physicsInteraction->noteProviderLifecycle(
                     providerGeneration,
-                    rock::provider::RockProviderLifecycleReason::ProviderLost);
+                    api::core::LifecycleReason::ProviderLost);
             }
 
             destroyPhysicsInteraction();

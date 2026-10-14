@@ -30,7 +30,7 @@ namespace rock
             if (_touchGrabRuntime.isHandActive(left)) return "touch-grab";
             if (state != HandState::Idle && state != HandState::SelectedClose && state != HandState::SelectedFar)
                 return "hand-state";
-            const auto physicalHand = left ? provider::RockProviderHand::Left : provider::RockProviderHand::Right;
+            const auto physicalHand = left ? api::Hand::Left : api::Hand::Right;
             constexpr auto inputMask = static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressConfigModeChord) |
                 static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressOpenVrGameInput);
             if ((provider::currentHandInputSuppressionFlagsV1(physicalHand) & inputMask) != 0) return "provider-suppression";

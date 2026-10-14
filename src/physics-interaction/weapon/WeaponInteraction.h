@@ -122,14 +122,14 @@ namespace rock
 
     namespace offhand_interaction_reservation
     {
-        inline OffhandInteractionReservation fromProvider(::rock::provider::RockProviderOffhandReservation reservation)
+        inline OffhandInteractionReservation fromProvider(api::grab::HandReservationKind reservation)
         {
             switch (reservation) {
-            case ::rock::provider::RockProviderOffhandReservation::ReloadReserved:
+            case api::grab::HandReservationKind::ReloadReserved:
                 return OffhandInteractionReservation::ReloadReserved;
-            case ::rock::provider::RockProviderOffhandReservation::ReloadPoseOverride:
+            case api::grab::HandReservationKind::ReloadPoseOverride:
                 return OffhandInteractionReservation::ReloadPoseOverride;
-            case ::rock::provider::RockProviderOffhandReservation::Normal:
+            case api::grab::HandReservationKind::Normal:
             default:
                 return OffhandInteractionReservation::Normal;
             }

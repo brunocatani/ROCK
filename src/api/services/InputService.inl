@@ -9,28 +9,28 @@
         return api::Status::Ok;
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetHandInputSuppressionV1(
+    api::Status apiSetHandInputSuppressionV1(
         std::uint64_t ownerToken,
         const ::rock::api::input::HandInputSuppressionRequest* request)
     {
         if (!request || ownerToken == 0) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         if (request->size != sizeof(::rock::api::input::HandInputSuppressionRequest)) {
-            return RockProviderResultV1::InvalidSize;
+            return api::Status::InvalidSize;
         }
         if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV1::UnsupportedVersion;
+            return api::Status::UnsupportedVersion;
         }
-        const auto requestHand = static_cast<RockProviderHand>(request->hand);
-        if (requestHand != RockProviderHand::Right && requestHand != RockProviderHand::Left) {
-            return RockProviderResultV1::HandUnavailable;
+        const auto requestHand = static_cast<api::Hand>(request->hand);
+        if (requestHand != api::Hand::Right && requestHand != api::Hand::Left) {
+            return api::Status::HandUnavailable;
         }
         if (request->flags == 0 || (request->flags & ~kImplementedHandInputSuppressionFlagsV1) != 0) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         if (request->leaseFrames == 0) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
 
         const auto leftChord = request->chordButtons[0];
@@ -38,15 +38,15 @@
         constexpr auto allowedButtons = (1ull << 1) | (1ull << 2) | (1ull << 7) | (1ull << 32) | (1ull << 33);
         if (hasHandInputSuppressionFlagV1(request->flags, ::rock::api::input::HandInputSuppressionFlag::ReserveButtonChord) &&
             (((leftChord | rightChord) & ~allowedButtons) != 0 ||
-             !(requestHand == RockProviderHand::Left ? leftChord : rightChord))) {
-            return RockProviderResultV1::InvalidArgument;
+             !(requestHand == api::Hand::Left ? leftChord : rightChord))) {
+            return api::Status::InvalidArgument;
         }
 
         const auto generationResult = validateGenerationGuards(
             request->worldGeneration,
             request->skeletonGeneration,
             request->providerGeneration);
-        if (generationResult != RockProviderResultV1::Ok) {
+        if (generationResult != api::Status::Ok) {
             return generationResult;
         }
 
@@ -59,7 +59,7 @@
 
         std::scoped_lock lock(s_consumerMutex, s_handInputSuppressionMutex);
         const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::HandInputSuppression);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
 
@@ -75,7 +75,7 @@
                 slot.lastInvalidationReason =
                     ::rock::api::input::SuppressionInvalidationReason::None;
                 slot.lastInvalidatedFrame = 0;
-                return RockProviderResultV1::Ok;
+                return api::Status::Ok;
             }
         }
 
@@ -95,41 +95,41 @@
                         ::rock::api::input::SuppressionInvalidationReason::None,
                     .lastInvalidatedFrame = 0,
                 };
-                return RockProviderResultV1::Ok;
+                return api::Status::Ok;
             }
         }
 
-        return RockProviderResultV1::CapacityFull;
+        return api::Status::CapacityFull;
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearHandInputSuppressionV1(
+    api::Status apiClearHandInputSuppressionV1(
         std::uint64_t ownerToken,
-        RockProviderHand hand)
+        api::Hand hand)
     {
         if (ownerToken == 0) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
-        if (hand != RockProviderHand::None && hand != RockProviderHand::Right && hand != RockProviderHand::Left) {
-            return RockProviderResultV1::HandUnavailable;
+        if (hand != api::Hand::None && hand != api::Hand::Right && hand != api::Hand::Left) {
+            return api::Status::HandUnavailable;
         }
 
         std::scoped_lock lock(s_consumerMutex, s_handInputSuppressionMutex);
         const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::HandInputSuppression);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
 
         clearHandInputSuppressionsForOwnerLocked(ownerToken, hand);
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
-    bool ROCK_PROVIDER_CALL apiGetRawWandButtonStateV1(RockProviderHand hand, std::uint32_t buttonId, ::rock::api::input::RawWandButtonState* outState)
+    bool apiGetRawWandButtonStateV1(api::Hand hand, std::uint32_t buttonId, ::rock::api::input::RawWandButtonState* outState)
     {
         provider_state_policy::clearQueryOutput(outState);
         if (!outState || outState->size != sizeof(::rock::api::input::RawWandButtonState)) {
             return false;
         }
-        if (hand != RockProviderHand::Left && hand != RockProviderHand::Right) {
+        if (hand != api::Hand::Left && hand != api::Hand::Right) {
             return false;
         }
         if (!rock::input_remap_policy::isValidButtonId(static_cast<int>(buttonId))) {
@@ -137,7 +137,7 @@
         }
 
         // Level state only by design: ROCK consumes its press/release edge queues internally each frame, so exposing them would race consumers.
-        const auto raw = rock::input_remap_runtime::peekRawButtonState(hand == RockProviderHand::Left, static_cast<int>(buttonId));
+        const auto raw = rock::input_remap_runtime::peekRawButtonState(hand == api::Hand::Left, static_cast<int>(buttonId));
         *outState = {};
         outState->available = raw.available ? 1u : 0u;
         outState->held = raw.held ? 1u : 0u;
@@ -149,30 +149,30 @@
         return true;
     }
 
-    bool ROCK_PROVIDER_CALL apiIsNativePipboyInputSuppressedV1()
+    bool apiIsNativePipboyInputSuppressedV1()
     {
         return rock::input_remap_runtime::isNativePipboyInputSuppressionActive();
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetHandInputSuppressionStateV1(
+    api::Status apiGetHandInputSuppressionStateV1(
         const std::uint64_t ownerToken,
-        const RockProviderHand hand,
+        const api::Hand hand,
         ::rock::api::input::HandInputSuppressionState* outState)
     {
         provider_state_policy::clearQueryOutput(outState);
         if (ownerToken == 0 || !outState ||
-            (hand != RockProviderHand::Right && hand != RockProviderHand::Left)) {
-            return RockProviderResultV1::InvalidArgument;
+            (hand != api::Hand::Right && hand != api::Hand::Left)) {
+            return api::Status::InvalidArgument;
         }
         if (outState->size < sizeof(::rock::api::input::HandInputSuppressionState)) {
-            return RockProviderResultV1::InvalidSize;
+            return api::Status::InvalidSize;
         }
         const auto frameIndex = currentProviderFrameIndex();
         std::scoped_lock lock(s_consumerMutex, s_handInputSuppressionMutex);
         const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
             ownerToken,
             RockProviderConsumerCapabilityV1::InputObservability);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
         pruneExpiredHandInputSuppressionsLocked(frameIndex);
@@ -214,31 +214,31 @@
                 outState->sample = toCoreSnapshot(s_lastSnapshot).sample;
             }
         }
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetLogicalInputActionStateV1(
+    api::Status apiGetLogicalInputActionStateV1(
         const std::uint64_t ownerToken,
         const ::rock::api::input::LogicalInputAction action,
         ::rock::api::input::LogicalInputActionState* outState)
     {
         provider_state_policy::clearQueryOutput(outState);
         if (ownerToken == 0 || !outState) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         if (outState->size < sizeof(::rock::api::input::LogicalInputActionState)) {
-            return RockProviderResultV1::InvalidSize;
+            return api::Status::InvalidSize;
         }
         if (action != ::rock::api::input::LogicalInputAction::Jump) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         if (!onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
+            return api::Status::WrongThread;
         }
         const auto ownerResult = validateReadCapability(
             ownerToken,
             RockProviderConsumerCapabilityV1::InputObservability);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
 
@@ -246,7 +246,7 @@
         {
             std::scoped_lock lock(s_snapshotMutex);
             if (!s_hasSnapshot) {
-                return RockProviderResultV1::NotReady;
+                return api::Status::NotReady;
             }
             snapshot = s_lastSnapshot;
         }
@@ -263,18 +263,18 @@
         outState->pressSequence = input.pressSequence;
         outState->sampleAgeMilliseconds = input.sampleAgeMilliseconds;
         outState->sample = toCoreSnapshot(snapshot).sample;
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
-    bool ROCK_PROVIDER_CALL apiGetRawWandThumbstickV1(RockProviderHand hand, float* outX, float* outY)
+    bool apiGetRawWandThumbstickV1(api::Hand hand, float* outX, float* outY)
     {
         if (outX) *outX = 0.0f;
         if (outY) *outY = 0.0f;
-        if (!outX || !outY || (hand != RockProviderHand::Left && hand != RockProviderHand::Right)) return false;
-        return rock::input_remap_runtime::peekRawThumbstick(hand == RockProviderHand::Left, *outX, *outY);
+        if (!outX || !outY || (hand != api::Hand::Left && hand != api::Hand::Right)) return false;
+        return rock::input_remap_runtime::peekRawThumbstick(hand == api::Hand::Left, *outX, *outY);
     }
 
-    std::uint32_t ROCK_PROVIDER_CALL apiGetNativeInputContextV1()
+    std::uint32_t apiGetNativeInputContextV1()
     {
         try {
             using Flag = ::rock::api::input::NativeInputContextFlag;

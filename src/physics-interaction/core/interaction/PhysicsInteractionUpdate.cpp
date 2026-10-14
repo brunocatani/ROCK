@@ -617,7 +617,7 @@ namespace rock
             } else {
                 _dynamicWorldCarCollision.abandon();
             }
-            observeLifecycleFrame(bhkMenu, hknpMenu, ::rock::provider::RockProviderLifecycleReason::MenuBlocked);
+            observeLifecycleFrame(bhkMenu, hknpMenu, api::core::LifecycleReason::MenuBlocked);
             interruptInteractionFrame("menu-blocked");
             return;
         }
@@ -652,7 +652,7 @@ namespace rock
             native_interaction_service::clear(nullptr, nullptr);
             _dynamicWorldCarCollision.abandon();
             _lifecycle.cachedHknpWorld = nullptr;
-            observeLifecycleFrame(bhk, nullptr, ::rock::provider::RockProviderLifecycleReason::WorldUnavailable);
+            observeLifecycleFrame(bhk, nullptr, api::core::LifecycleReason::WorldUnavailable);
             _equipped.gripResumePending = _equipped.continuityGrip.pending;
             interruptInteractionFrame("world-unavailable");
             return;
@@ -663,7 +663,7 @@ namespace rock
         const auto frame = buildFrameContext(bhk, hknp);
         _frame.palmClockGameFrameIndex.store(runtime.frameIndex, std::memory_order_release);
         _frame.palmClockGameDeltaSeconds.store(frame.deltaSeconds, std::memory_order_release);
-        observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::None);
+        observeLifecycleFrame(bhk, hknp, api::core::LifecycleReason::None);
 
         if (!physicsWritesAllowedForWorld(hknp)) {
             native_interaction_service::clear(hknp, bhk);

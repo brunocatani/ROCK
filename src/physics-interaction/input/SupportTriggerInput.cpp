@@ -22,10 +22,10 @@ namespace {
         provider::RockProviderEquippedWeaponStateV1 equipped;
         provider::RockProviderEquippedWeaponGripStateV1 grip;
         const auto sample = provider::runtime::sample();
-        constexpr auto drawn = static_cast<std::uint32_t>(provider::RockProviderEquippedWeaponStateFlagV1::WeaponDrawn);
-        constexpr auto valid = static_cast<std::uint32_t>(provider::RockProviderEquippedWeaponStateFlagV1::Valid);
+        constexpr auto drawn = static_cast<std::uint32_t>(api::weapon::WeaponStateFlag::WeaponDrawn);
+        constexpr auto valid = static_cast<std::uint32_t>(api::weapon::WeaponStateFlag::Valid);
         using G = provider::RockProviderEquippedWeaponGripStateFlagV1;
-        if (provider::runtime::apiGetEquippedWeaponStateV1(owner, &equipped) != provider::RockProviderResultV1::Ok ||
+        if (provider::runtime::apiGetEquippedWeaponStateV1(owner, &equipped) != api::Status::Ok ||
             (equipped.flags & (drawn | valid)) != (drawn | valid) ||
             !provider::runtime::apiGetEquippedWeaponGripStateV1(owner, &grip)) return false;
         const auto required = static_cast<std::uint32_t>(G::Valid) | static_cast<std::uint32_t>(G::TwoHandGripActive);

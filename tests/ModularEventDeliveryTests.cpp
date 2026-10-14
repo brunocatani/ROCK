@@ -30,49 +30,49 @@ namespace rock::provider::runtime {
     api::Sample sample() {return {20,30,1,2,3,4};}
     void deferRevoke(std::uint64_t token) {assert(token==testOwner);revoked=true;revokeRequested=true;}
     void reportBoundaryFailure(std::uint64_t,api::InterfaceId) noexcept {assert(false);}
-    RockProviderResultV1 apiRequestForceGrabV1(std::uint64_t,const RockProviderForceGrabRequestV1*,std::uint64_t*) {
-        assert(false);return RockProviderResultV1::NotReady;
+    api::Status apiRequestForceGrabV1(std::uint64_t,const RockProviderForceGrabRequestV1*,std::uint64_t*) {
+        assert(false);return api::Status::NotReady;
     }
-    RockProviderResultV1 apiGetHandInteractionStateV1(std::uint64_t,RockProviderHand hand,RockProviderHandInteractionStateV1* state) {
-        if(!snapshotReady)return RockProviderResultV1::NotReady;
+    api::Status apiGetHandInteractionStateV1(std::uint64_t,api::Hand hand,RockProviderHandInteractionStateV1* state) {
+        if(!snapshotReady)return api::Status::NotReady;
         state->hand=hand;
-        state->flags=static_cast<std::uint32_t>(RockProviderHandInteractionFlagV1::Valid)|
-            static_cast<std::uint32_t>(RockProviderHandInteractionFlagV1::LooseWeapon);
-        state->phase=RockProviderHandInteractionPhaseV1::Holding;
+        state->flags=static_cast<std::uint32_t>(api::grab::HandInteractionFlag::Valid)|
+            static_cast<std::uint32_t>(api::grab::HandInteractionFlag::LooseWeapon);
+        state->phase=api::grab::HandInteractionPhase::Holding;
         state->targetFormId=123;
         state->frameIndex=20;
         state->worldGeneration=1;state->skeletonGeneration=2;state->providerGeneration=3;
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
-    RockProviderResultV1 apiGetHandTargetDetailsV1(std::uint64_t owner,RockProviderHand hand,RockProviderHandTargetDetailsV1* details) {
+    api::Status apiGetHandTargetDetailsV1(std::uint64_t owner,api::Hand hand,RockProviderHandTargetDetailsV1* details) {
         const auto result=apiGetHandInteractionStateV1(owner,hand,&details->handState);
         details->handState.releaseSequence=45;details->handState.reservedTargetIdentity=789;
         details->reference.referenceFormId=123;details->reference.referenceNativeHandle=987;
         std::strcpy(details->meshPartName,"Lid");
         return result;
     }
-    RockProviderResultV1 apiRequestPowerArmorGrabV1(std::uint64_t,const RockProviderPowerArmorGrabRequestV1* request,std::uint64_t* command) {
+    api::Status apiRequestPowerArmorGrabV1(std::uint64_t,const RockProviderPowerArmorGrabRequestV1* request,std::uint64_t* command) {
         assert(request->target.referenceFormId==123 && request->target.referenceNativeHandle==987);
-        assert(request->target.providerGeneration==3 && request->point==RockProviderPowerArmorPointV1::LeftArmorHand);
-        *command=7;return RockProviderResultV1::RequestQueued;
+        assert(request->target.providerGeneration==3 && request->point==api::PowerArmorPoint::LeftArmorHand);
+        *command=7;return api::Status::RequestQueued;
     }
-    RockProviderResultV1 apiQueryPowerArmorTargetV1(std::uint64_t,const RockProviderReferenceQueryV1* query,RockProviderPowerArmorTargetV1* target) {
+    api::Status apiQueryPowerArmorTargetV1(std::uint64_t,const RockProviderReferenceQueryV1* query,RockProviderPowerArmorTargetV1* target) {
         assert(query->referenceFormId==123 && query->furnitureMarkerIndex==2);
         target->actorFormId=55;target->frameReference.referenceFormId=124;
-        target->points[1].point=RockProviderPowerArmorPointV1::LeftArmorHand;target->points[1].valid=1;
+        target->points[1].point=api::PowerArmorPoint::LeftArmorHand;target->points[1].valid=1;
         target->points[1].world.translate[0]=9;
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
     // Grab calls this test does not reach.
-    RockProviderResultV1 apiGetInteractionCommandResultV1(std::uint64_t,std::uint64_t,RockProviderInteractionCommandResultV1*) {assert(false);return RockProviderResultV1::NotReady;}
-    RockProviderResultV1 apiRequestForceReleaseV1(std::uint64_t,const RockProviderForceReleaseRequestV1*,std::uint64_t*) {assert(false);return RockProviderResultV1::NotReady;}
-    RockProviderResultV1 apiRequestThrownDropV1(std::uint64_t,const RockProviderThrownDropRequestV1*,std::uint64_t*) {assert(false);return RockProviderResultV1::NotReady;}
-    RockProviderResultV1 apiCancelInteractionCommandV1(std::uint64_t,std::uint64_t) {assert(false);return RockProviderResultV1::NotReady;}
-    RockProviderResultV1 apiAcquireOffhandReservationV1(std::uint64_t,const RockProviderOffhandReservationRequestV1*) {assert(false);return RockProviderResultV1::NotReady;}
-    RockProviderResultV1 apiRenewOffhandReservationV1(std::uint64_t,const RockProviderOffhandReservationRequestV1*) {assert(false);return RockProviderResultV1::NotReady;}
-    RockProviderResultV1 apiReleaseOffhandReservationV1(std::uint64_t) {assert(false);return RockProviderResultV1::NotReady;}
-    RockProviderResultV1 apiGetOffhandReservationStateV1(std::uint64_t,RockProviderOffhandReservationStateV1*) {assert(false);return RockProviderResultV1::NotReady;}
-    RockProviderResultV1 apiQueryReferenceInteractionV1(std::uint64_t,const RockProviderReferenceQueryV1*,RockProviderReferenceInteractionV1*) {assert(false);return RockProviderResultV1::NotReady;}
+    api::Status apiGetInteractionCommandResultV1(std::uint64_t,std::uint64_t,RockProviderInteractionCommandResultV1*) {assert(false);return api::Status::NotReady;}
+    api::Status apiRequestForceReleaseV1(std::uint64_t,const RockProviderForceReleaseRequestV1*,std::uint64_t*) {assert(false);return api::Status::NotReady;}
+    api::Status apiRequestThrownDropV1(std::uint64_t,const RockProviderThrownDropRequestV1*,std::uint64_t*) {assert(false);return api::Status::NotReady;}
+    api::Status apiCancelInteractionCommandV1(std::uint64_t,std::uint64_t) {assert(false);return api::Status::NotReady;}
+    api::Status apiAcquireOffhandReservationV1(std::uint64_t,const RockProviderOffhandReservationRequestV1*) {assert(false);return api::Status::NotReady;}
+    api::Status apiRenewOffhandReservationV1(std::uint64_t,const RockProviderOffhandReservationRequestV1*) {assert(false);return api::Status::NotReady;}
+    api::Status apiReleaseOffhandReservationV1(std::uint64_t) {assert(false);return api::Status::NotReady;}
+    api::Status apiGetOffhandReservationStateV1(std::uint64_t,RockProviderOffhandReservationStateV1*) {assert(false);return api::Status::NotReady;}
+    api::Status apiQueryReferenceInteractionV1(std::uint64_t,const RockProviderReferenceQueryV1*,RockProviderReferenceInteractionV1*) {assert(false);return api::Status::NotReady;}
     api::Status getHeldPlacementState(api::grab::HeldPlacementState&) {assert(false);return api::Status::NotReady;}
     api::Status submitHeldPlacementIntent(api::OwnerToken,const api::grab::HeldPlacementIntent&) {assert(false);return api::Status::NotReady;}
     api::Status clearHeldPlacementIntent(api::OwnerToken) {assert(false);return api::Status::NotReady;}
@@ -144,9 +144,9 @@ int main() {
     provider::RockProviderEventV1 change{};
     change.kind=provider::RockProviderEventKindV1::GrabStateChanged;
     change.frameIndex=20;change.worldGeneration=1;change.skeletonGeneration=2;change.providerGeneration=3;
-    change.hand=provider::RockProviderHand::Left;change.formId=123;
+    change.hand=api::Hand::Left;change.formId=123;
     change.subjectSequence=99;
-    change.result=static_cast<unsigned>(provider::RockProviderHandInteractionPhaseV1::Holding);
+    change.result=static_cast<unsigned>(api::grab::HandInteractionPhase::Holding);
     change.data[0]=1; // A different target-kind value must never become the phase.
     change.data[1]=456;change.data[2]=0x55;
     provider::events::publish(change);

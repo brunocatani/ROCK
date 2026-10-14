@@ -12,7 +12,7 @@ namespace rock::reference_interaction
 {
     namespace
     {
-        using Flag = provider::RockProviderTargetDetailFlagV1;
+        using Flag = api::grab::TargetDetailFlag;
         constexpr std::uint32_t bit(Flag f) { return static_cast<std::uint32_t>(f); }
 
         template <class Fn, std::size_t N>
@@ -55,7 +55,7 @@ namespace rock::reference_interaction
             return true;
         }
 
-        void copyTransform(const RE::NiTransform& t, provider::RockProviderTransform& out)
+        void copyTransform(const RE::NiTransform& t, api::Transform& out)
         {
             for (std::size_t r = 0; r < 3; ++r)
                 for (std::size_t c = 0; c < 3; ++c) out.rotate[r * 3 + c] = t.rotate.entry[r][c];
@@ -105,7 +105,7 @@ namespace rock::reference_interaction
         if (!hasExtraList(ref)) return true;
         if (open) {
             const auto state = open(ref);
-            if (state <= 4) { out.openState = static_cast<provider::RockProviderNativeOpenStateV1>(state); out.flags |= bit(Flag::OpenState); }
+            if (state <= 4) { out.openState = static_cast<api::grab::NativeOpenState>(state); out.flags |= bit(Flag::OpenState); }
         }
         if (blocked) { out.activationBlocked = blocked(ref); out.flags |= bit(Flag::ActivationBlocked); }
         if (used && (out.baseFormType == 0x2A || out.baseFormType == 0x37)) {
@@ -127,11 +127,11 @@ namespace rock::reference_interaction
         return check && base && static_cast<std::uint32_t>(base->GetFormType()) == 0x2A && check(base);
     }
 
-    const char* pointName(provider::RockProviderPowerArmorPointV1 point) noexcept
+    const char* pointName(api::PowerArmorPoint point) noexcept
     {
         switch (point) {
-        case provider::RockProviderPowerArmorPointV1::LeftArmorHand: return "LArm_Hand";
-        case provider::RockProviderPowerArmorPointV1::RightArmorHand: return "RArm_Hand";
+        case api::PowerArmorPoint::LeftArmorHand: return "LArm_Hand";
+        case api::PowerArmorPoint::RightArmorHand: return "RArm_Hand";
         default: return nullptr;
         }
     }
@@ -156,7 +156,7 @@ namespace rock::reference_interaction
         return nullptr;
     }
 
-    bool pointTransform(RE::TESObjectREFR* frame, provider::RockProviderPowerArmorPointV1 point,
+    bool pointTransform(RE::TESObjectREFR* frame, api::PowerArmorPoint point,
         RE::NiTransform& outWorld, RE::NiTransform* outLocal)
     {
         if (!frame || frame->IsDisabled() || frame->IsDeleted()) return false;
@@ -200,7 +200,7 @@ namespace rock::reference_interaction
         describe(frame, out.frameReference, markerIndex);
         for (std::uint32_t i = 0; i < 2; ++i) {
             auto& pose = out.points[i];
-            pose.point = static_cast<provider::RockProviderPowerArmorPointV1>(i + 1);
+            pose.point = static_cast<api::PowerArmorPoint>(i + 1);
             RE::NiTransform world{}, local{};
             if (pointTransform(frame, pose.point, world, &local)) {
                 pose.valid = 1; copyTransform(world, pose.world); copyTransform(local, pose.frameLocal);

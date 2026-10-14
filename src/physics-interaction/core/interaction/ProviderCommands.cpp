@@ -21,29 +21,29 @@ namespace rock
         std::uint32_t processed = 0;
         while (processed++ < ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1 && provider::dequeueInteractionCommandV1(command)) {
             pruneInactiveProviderForceGrabCommits();
-            if (command.kind == RockProviderInteractionCommandKindV1::ForceGrab &&
+            if (command.kind == api::grab::InteractionCommandKind::ForceGrab &&
                 !provider::isInteractionCommandActiveV1(command.ownerToken, command.commandId)) {
                 continue;
             }
             auto requestHand = [&]() {
                 switch (command.kind) {
-                case RockProviderInteractionCommandKindV1::ForceGrab:
+                case api::grab::InteractionCommandKind::ForceGrab:
                     return command.forceGrab.hand;
-                case RockProviderInteractionCommandKindV1::ForceRelease:
+                case api::grab::InteractionCommandKind::ForceRelease:
                     return command.forceRelease.hand;
-                case RockProviderInteractionCommandKindV1::ThrownDrop:
+                case api::grab::InteractionCommandKind::ThrownDrop:
                     return command.thrownDrop.hand;
                 default:
-                    return RockProviderHand::None;
+                    return api::Hand::None;
                 }
             }();
             const auto requestTargetFormId = [&]() -> std::uint32_t {
                 switch (command.kind) {
-                case RockProviderInteractionCommandKindV1::ForceGrab:
+                case api::grab::InteractionCommandKind::ForceGrab:
                     return command.forceGrab.targetFormId;
-                case RockProviderInteractionCommandKindV1::ForceRelease:
+                case api::grab::InteractionCommandKind::ForceRelease:
                     return command.forceRelease.targetFormId;
-                case RockProviderInteractionCommandKindV1::ThrownDrop:
+                case api::grab::InteractionCommandKind::ThrownDrop:
                     return command.thrownDrop.targetFormId;
                 default:
                     return 0;
@@ -51,11 +51,11 @@ namespace rock
             }();
             const auto requestTargetBodyId = [&]() -> std::uint32_t {
                 switch (command.kind) {
-                case RockProviderInteractionCommandKindV1::ForceGrab:
+                case api::grab::InteractionCommandKind::ForceGrab:
                     return command.forceGrab.targetBodyId;
-                case RockProviderInteractionCommandKindV1::ForceRelease:
+                case api::grab::InteractionCommandKind::ForceRelease:
                     return command.forceRelease.targetBodyId;
-                case RockProviderInteractionCommandKindV1::ThrownDrop:
+                case api::grab::InteractionCommandKind::ThrownDrop:
                     return command.thrownDrop.targetBodyId;
                 default:
                     return INVALID_BODY_ID;
@@ -63,11 +63,11 @@ namespace rock
             }();
             const auto requestWorldGeneration = [&]() -> std::uint32_t {
                 switch (command.kind) {
-                case RockProviderInteractionCommandKindV1::ForceGrab:
+                case api::grab::InteractionCommandKind::ForceGrab:
                     return command.forceGrab.worldGeneration;
-                case RockProviderInteractionCommandKindV1::ForceRelease:
+                case api::grab::InteractionCommandKind::ForceRelease:
                     return command.forceRelease.worldGeneration;
-                case RockProviderInteractionCommandKindV1::ThrownDrop:
+                case api::grab::InteractionCommandKind::ThrownDrop:
                     return command.thrownDrop.worldGeneration;
                 default:
                     return 0;
@@ -75,11 +75,11 @@ namespace rock
             }();
             const auto requestSkeletonGeneration = [&]() -> std::uint32_t {
                 switch (command.kind) {
-                case RockProviderInteractionCommandKindV1::ForceGrab:
+                case api::grab::InteractionCommandKind::ForceGrab:
                     return command.forceGrab.skeletonGeneration;
-                case RockProviderInteractionCommandKindV1::ForceRelease:
+                case api::grab::InteractionCommandKind::ForceRelease:
                     return command.forceRelease.skeletonGeneration;
-                case RockProviderInteractionCommandKindV1::ThrownDrop:
+                case api::grab::InteractionCommandKind::ThrownDrop:
                     return command.thrownDrop.skeletonGeneration;
                 default:
                     return 0;
@@ -87,11 +87,11 @@ namespace rock
             }();
             const auto requestProviderGeneration = [&]() -> std::uint32_t {
                 switch (command.kind) {
-                case RockProviderInteractionCommandKindV1::ForceGrab:
+                case api::grab::InteractionCommandKind::ForceGrab:
                     return command.forceGrab.providerGeneration;
-                case RockProviderInteractionCommandKindV1::ForceRelease:
+                case api::grab::InteractionCommandKind::ForceRelease:
                     return command.forceRelease.providerGeneration;
-                case RockProviderInteractionCommandKindV1::ThrownDrop:
+                case api::grab::InteractionCommandKind::ThrownDrop:
                     return command.thrownDrop.providerGeneration;
                 default:
                     return 0;
@@ -104,8 +104,8 @@ namespace rock
             result.ownerToken = command.ownerToken;
             result.commandId = command.commandId;
             result.kind = command.kind;
-            result.state = RockProviderInteractionCommandStateV1::Rejected;
-            result.failure = RockProviderInteractionFailureV1::InvalidRequest;
+            result.state = api::grab::InteractionCommandState::Rejected;
+            result.failure = api::grab::InteractionFailure::InvalidRequest;
             result.hand = requestHand;
             result.targetFormId = requestTargetFormId;
             result.targetBodyId = requestTargetBodyId;
@@ -114,45 +114,45 @@ namespace rock
             result.skeletonGeneration = _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
             result.providerGeneration = _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
 
-            auto complete = [&](RockProviderInteractionCommandStateV1 state, RockProviderInteractionFailureV1 failure) {
+            auto complete = [&](api::grab::InteractionCommandState state, api::grab::InteractionFailure failure) {
                 result.state = state;
                 result.failure = failure;
                 return provider::completeInteractionCommandV1(result);
             };
 
-            const bool isForceGrabCommand = command.kind == RockProviderInteractionCommandKindV1::ForceGrab;
-            const bool isForceReleaseCommand = command.kind == RockProviderInteractionCommandKindV1::ForceRelease;
-            const bool isThrownDropCommand = command.kind == RockProviderInteractionCommandKindV1::ThrownDrop;
+            const bool isForceGrabCommand = command.kind == api::grab::InteractionCommandKind::ForceGrab;
+            const bool isForceReleaseCommand = command.kind == api::grab::InteractionCommandKind::ForceRelease;
+            const bool isThrownDropCommand = command.kind == api::grab::InteractionCommandKind::ThrownDrop;
             if (!isForceGrabCommand && !isForceReleaseCommand && !isThrownDropCommand) {
-                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::InvalidRequest);
+                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::InvalidRequest);
                 continue;
             }
 
             if (!frame.worldReady || !frame.bhkWorld || !frame.hknpWorld) {
-                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::ProviderNotReady);
+                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::ProviderNotReady);
                 continue;
             }
             if (!physicsWritesAllowedForWorld(frame.hknpWorld)) {
-                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::PhysicsWritesBlocked);
+                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::PhysicsWritesBlocked);
                 continue;
             }
             if (requestWorldGeneration != 0 && requestWorldGeneration != result.worldGeneration) {
-                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::StaleWorldGeneration);
+                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::StaleWorldGeneration);
                 continue;
             }
             if (requestSkeletonGeneration != 0 && requestSkeletonGeneration != result.skeletonGeneration) {
-                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::StaleSkeletonGeneration);
+                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::StaleSkeletonGeneration);
                 continue;
             }
             if (requestProviderGeneration != 0 && requestProviderGeneration != result.providerGeneration) {
-                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::StaleProviderGeneration);
+                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::StaleProviderGeneration);
                 continue;
             }
 
             const bool inventoryTransfer = isForceGrabCommand &&
                 (command.forceGrab.flags & static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::FromPlayerInventory)) != 0;
             if (isForceGrabCommand && !inventoryTransfer && !storage_service::allowsGrab(requestTargetFormId, command.ownerToken)) {
-                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
+                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::TargetUnavailable);
                 continue;
             }
             const bool inventoryThrowable = inventoryTransfer && loose_grenade_runtime::isThrowableWeapon(
@@ -164,15 +164,15 @@ namespace rock
                     false, rightFree, leftFree, inventoryThrowable && g_rockConfig.rockLeftHandedMode);
                 if (!rightFree && !leftFree) {
                     f4vr::showNotification("ROCK: Cannot take item - neither hand is free.");
-                    complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandBusy);
+                    complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::HandBusy);
                     continue;
                 }
-                requestHand = choice.hand == force_grab_policy::HandChoice::Right ? RockProviderHand::Right : RockProviderHand::Left;
+                requestHand = choice.hand == force_grab_policy::HandChoice::Right ? api::Hand::Right : api::Hand::Left;
                 result.hand = requestHand;
             }
-            const bool isLeft = requestHand == RockProviderHand::Left;
-            if (requestHand != RockProviderHand::Left && requestHand != RockProviderHand::Right) {
-                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandInvalid);
+            const bool isLeft = requestHand == api::Hand::Left;
+            if (requestHand != api::Hand::Left && requestHand != api::Hand::Right) {
+                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::HandInvalid);
                 continue;
             }
             Hand& hand = isLeft ? _leftHand : _rightHand;
@@ -208,11 +208,11 @@ namespace rock
                 TouchGrabRuntime::HandReport surface{};
                 if (isForceReleaseCommand && _touchGrabRuntime.getHandReport(isLeft, surface) && surface.globalSurface) {
                     if (!heldObjectMatchesRequest(surface.referenceFormId, surface.bodyId)) {
-                        complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HeldObjectMismatch);
+                        complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::HeldObjectMismatch);
                         continue;
                     }
-                    if ((command.forceRelease.flags & static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::UseVelocityHavok)) != 0) {
-                        complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::InvalidRequest);
+                    if ((command.forceRelease.flags & static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::UseVelocityHavok)) != 0) {
+                        complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::InvalidRequest);
                         continue;
                     }
                     result.targetFormId = surface.referenceFormId;
@@ -221,11 +221,11 @@ namespace rock
                         ::rock::api::touch::TouchGrabReleaseReason::HandUnavailable,
                         _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire));
                     clearProviderReleaseInputState();
-                    complete(RockProviderInteractionCommandStateV1::Succeeded, RockProviderInteractionFailureV1::None);
+                    complete(api::grab::InteractionCommandState::Succeeded, api::grab::InteractionFailure::None);
                     continue;
                 }
                 if (!hand.isHolding()) {
-                    complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandNotHolding);
+                    complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::HandNotHolding);
                     continue;
                 }
 
@@ -235,21 +235,21 @@ namespace rock
                 result.targetFormId = heldFormId;
                 result.targetBodyId = primaryBodyId;
                 if (!heldObjectMatchesRequest(heldFormId, primaryBodyId)) {
-                    complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HeldObjectMismatch);
+                    complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::HeldObjectMismatch);
                     continue;
                 }
 
                 const Hand& peer = isLeft ? _rightHand : _leftHand;
                 if (isThrownDropCommand && heldRef && peer.isHolding() && peer.getHeldRef() == heldRef) {
-                    complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandBusy);
+                    complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::HandBusy);
                     continue;
                 }
 
                 GrabReleaseOutcome::VelocitySnapshot requestedVelocity{};
                 const bool forceReleaseUsesVelocity = isForceReleaseCommand &&
-                    (command.forceRelease.flags & static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::UseVelocityHavok)) != 0;
+                    (command.forceRelease.flags & static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::UseVelocityHavok)) != 0;
                 const bool thrownDropUsesVelocity = isThrownDropCommand &&
-                    (command.thrownDrop.flags & static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::UseVelocityHavok)) != 0;
+                    (command.thrownDrop.flags & static_cast<std::uint32_t>(api::grab::ThrownDropFlag::UseVelocityHavok)) != 0;
                 const bool applyRequestedVelocity = forceReleaseUsesVelocity || thrownDropUsesVelocity;
                 if (applyRequestedVelocity) {
                     const float* linearVelocityHavok = forceReleaseUsesVelocity ?
@@ -286,8 +286,8 @@ namespace rock
 
                 const std::uint32_t flags = isThrownDropCommand ? command.thrownDrop.flags : command.forceRelease.flags;
                 const bool immediateCollisionRestore = isThrownDropCommand ?
-                    (flags & static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::ImmediateCollisionRestore)) != 0 :
-                    (flags & static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::ImmediateCollisionRestore)) != 0;
+                    (flags & static_cast<std::uint32_t>(api::grab::ThrownDropFlag::ImmediateCollisionRestore)) != 0 :
+                    (flags & static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::ImmediateCollisionRestore)) != 0;
                 auto releaseContext = makeGrabReleaseContext(hand, isLeft);
                 releaseContext.disposition = GrabReleaseDisposition::PhysicalDrop;
                 releaseContext.applyCapturedReleaseVelocity = isThrownDropCommand && !applyRequestedVelocity;
@@ -296,7 +296,7 @@ namespace rock
                     immediateCollisionRestore ? GrabReleaseCollisionRestoreMode::Immediate : GrabReleaseCollisionRestoreMode::Delayed,
                     releaseContext);
                 if (!releaseOutcome.released) {
-                    complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandNotHolding);
+                    complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::HandNotHolding);
                     continue;
                 }
 
@@ -309,25 +309,25 @@ namespace rock
                 dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, heldRef, heldFormId, 0);
                 dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, heldRef);
                 clearProviderReleaseInputState();
-                complete(RockProviderInteractionCommandStateV1::Succeeded, RockProviderInteractionFailureV1::None);
+                complete(api::grab::InteractionCommandState::Succeeded, api::grab::InteractionFailure::None);
                 continue;
             }
 
             if (handInput.disabled) {
-                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandDisabled);
+                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::HandDisabled);
                 continue;
             }
             if (forceGrabHandBlockerMask(hand, isLeft, false, true) != 0) {
-                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandBusy);
+                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::HandBusy);
                 continue;
             }
 
             if (command.forceGrab.targetFormId == 0) {
-                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::InvalidRequest);
+                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::InvalidRequest);
                 continue;
             }
 
-            if (command.powerArmorPoint != RockProviderPowerArmorPointV1::None) {
+            if (command.powerArmorPoint != api::PowerArmorPoint::None) {
                 RockProviderReferenceQueryV1 query{};
                 query.referenceFormId = command.forceGrab.targetFormId;
                 query.referenceNativeHandle = command.powerArmorReferenceNativeHandle;
@@ -335,7 +335,7 @@ namespace rock
                 RE::NiTransform presented{};
                 if (frame.menuBlocked || !reference_interaction::describePowerArmor(reference_interaction::resolveQuery(query), target) ||
                     target.frameReference.referenceFormId == 0 || !_dynamicHandCollision.getLastPresentedHandWorld(isLeft, presented)) {
-                    complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
+                    complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::TargetUnavailable);
                     continue;
                 }
                 const auto candidate = _touchGrabRuntime.findPowerArmorCandidate(frame.hknpWorld, presented.translate,
@@ -344,14 +344,14 @@ namespace rock
                 if (!candidate.valid || !_touchGrabRuntime.tryAcquirePowerArmor(isLeft, candidate, frame.bhkWorld,
                     frame.hknpWorld, result.worldGeneration, result.skeletonGeneration, result.providerGeneration,
                     _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire), command.ownerToken)) {
-                    complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
+                    complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::TargetUnavailable);
                     continue;
                 }
                 result.targetFormId = candidate.referenceFormId;
                 result.targetBodyId = candidate.bodyId;
                 if (hand.hasSelection()) hand.clearSelectionState(false);
                 clearProviderReleaseInputState();
-                if (!complete(RockProviderInteractionCommandStateV1::Succeeded, RockProviderInteractionFailureV1::None)) {
+                if (!complete(api::grab::InteractionCommandState::Succeeded, api::grab::InteractionFailure::None)) {
                     _touchGrabRuntime.releaseHand(isLeft, frame.bhkWorld, frame.hknpWorld,
                         ::rock::api::touch::TouchGrabReleaseReason::OwnerYield,
                         _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire));
@@ -362,7 +362,7 @@ namespace rock
             if (inventoryTransfer) {
                 if (inventoryThrowable && (handHoldsLooseGrenade(_rightHand) || handHoldsLooseGrenade(_leftHand) || hasActiveLooseGrenadeCommit())) {
                     f4vr::showNotification("ROCK: A throwable is already held or attaching.");
-                    complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetAlreadyOwned);
+                    complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::TargetAlreadyOwned);
                     continue;
                 }
                 RE::NiPoint3 dropLocation = handInput.grabAnchorWorld;
@@ -371,7 +371,7 @@ namespace rock
                 if (!drop.success) {
                     ROCK_LOG_WARN(Hand, "Inventory handoff rejected: item={:08X} reason={}", command.forceGrab.targetFormId, drop.reason);
                     f4vr::showNotification("ROCK: This inventory item could not be taken.");
-                    complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
+                    complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::TargetUnavailable);
                     continue;
                 }
                 result.targetFormId = drop.droppedRef ? drop.droppedRef->GetFormID() : 0;
@@ -388,27 +388,27 @@ namespace rock
                 };
                 // Keep the pending transfer even if cancellation won the race:
                 // the normal prune path owns rollback of this exact handle.
-                complete(RockProviderInteractionCommandStateV1::Queued, RockProviderInteractionFailureV1::None);
+                complete(api::grab::InteractionCommandState::Queued, api::grab::InteractionFailure::None);
                 ROCK_LOG_INFO(Hand, "Inventory handoff queued: item={:08X} command={} hand={}", command.forceGrab.targetFormId, command.commandId, isLeft ? "left" : "right");
                 continue;
             }
 
             auto* targetRef = RE::TESForm::GetFormByID<RE::TESObjectREFR>(command.forceGrab.targetFormId);
             if (!targetRef) {
-                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetMissing);
+                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::TargetMissing);
                 continue;
             }
             result.targetFormId = targetRef->GetFormID();
             if (targetRef->IsDeleted() || targetRef->IsDisabled()) {
-                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
+                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::TargetUnavailable);
                 continue;
             }
             if (command.forceGrab.targetFormId != 0 && targetRef->GetFormID() != command.forceGrab.targetFormId) {
-                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
+                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::TargetUnavailable);
                 continue;
             }
             if (physicsModOwnsObject(targetRef)) {
-                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetAlreadyOwned);
+                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::TargetAlreadyOwned);
                 continue;
             }
 
@@ -417,13 +417,13 @@ namespace rock
                 (handHoldsLooseGrenade(_rightHand) ||
                     handHoldsLooseGrenade(_leftHand) ||
                     hasActiveLooseGrenadeCommit())) {
-                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandBusy);
+                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::HandBusy);
                 continue;
             }
 
             auto& commit = _forceGrab.pendingCommits[isLeft ? 1u : 0u];
             if (commit.active) {
-                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandBusy);
+                complete(api::grab::InteractionCommandState::Rejected, api::grab::InteractionFailure::HandBusy);
                 continue;
             }
 
@@ -448,7 +448,7 @@ namespace rock
                     RE::NiPoint3{},
                 .providerResultTemplate = result,
             };
-            if (!complete(RockProviderInteractionCommandStateV1::Queued, RockProviderInteractionFailureV1::None)) {
+            if (!complete(api::grab::InteractionCommandState::Queued, api::grab::InteractionFailure::None)) {
                 commit = {};
                 continue;
             }
@@ -526,7 +526,7 @@ namespace rock
             auto slot=std::find(slots.begin(),slots.end(),node);
             if(slot==slots.end())slot=std::find(slots.begin(),slots.end(),nullptr);
             if(slot!=slots.end()&&result.apply(node,providerTransformToNi(drives[i].targetTransform),
-                drives[i].driveSpace==provider::RockProviderWeaponPartDriveSpaceV1::WeaponRootLocal,drives[i].priority))*slot=node;
+                drives[i].driveSpace==api::weaponparts::DriveSpace::WeaponRootLocal,drives[i].priority))*slot=node;
         }
         // The writer restores expired/revoked nodes after active drives. Their
         // old driven locals may still be present if native animation left them alone.
@@ -596,7 +596,7 @@ namespace rock
                 }
                 _providerDrives.results[
                     appliedNodes[i].resultIndex].result =
-                    ::rock::provider::RockProviderWeaponPartDriveApplicationV1::LostPriority;
+                    api::weaponparts::DriveApplication::LostPriority;
                 appliedNodes[i].priority = priority;
                 appliedNodes[i].resultIndex = resultIndex;
                 return true;
@@ -677,47 +677,47 @@ namespace rock
             if (drive.weaponGenerationKey != 0 &&
                 drive.weaponGenerationKey != currentWeaponGenerationKey) {
                 applicationResult.result =
-                    ::rock::provider::RockProviderWeaponPartDriveApplicationV1::StaleGeneration;
+                    api::weaponparts::DriveApplication::StaleGeneration;
                 continue;
             }
             auto* sourceNode = resolveProviderWeaponPartDriveNode(weaponNode,currentWeaponGenerationKey,drive,evidenceDescriptors);
             if (!sourceNode) {
                 applicationResult.result =
-                    ::rock::provider::RockProviderWeaponPartDriveApplicationV1::Unresolved;
+                    api::weaponparts::DriveApplication::Unresolved;
                 continue;
             }
             if (!sourceNode->parent) {
                 applicationResult.result =
-                    ::rock::provider::RockProviderWeaponPartDriveApplicationV1::MissingParent;
+                    api::weaponparts::DriveApplication::MissingParent;
                 continue;
             }
             const RE::NiTransform requestedLocal = providerTransformToNi(drive.targetTransform);
             if (!finiteNiTransform(requestedLocal)) {
                 applicationResult.result =
-                    ::rock::provider::RockProviderWeaponPartDriveApplicationV1::InvalidTransform;
+                    api::weaponparts::DriveApplication::InvalidTransform;
                 continue;
             }
 
             RE::NiTransform desiredWorld{};
             switch (drive.driveSpace) {
-            case ::rock::provider::RockProviderWeaponPartDriveSpaceV1::SourceParentLocal:
+            case api::weaponparts::DriveSpace::SourceParentLocal:
                 desiredWorld = transform_math::composeTransforms(sourceNode->parent->world, requestedLocal);
                 break;
-            case ::rock::provider::RockProviderWeaponPartDriveSpaceV1::WeaponRootLocal:
+            case api::weaponparts::DriveSpace::WeaponRootLocal:
             default:
                 desiredWorld = transform_math::composeTransforms(weaponNode->world, requestedLocal);
                 break;
             }
             if (!finiteNiTransform(desiredWorld)) {
                 applicationResult.result =
-                    ::rock::provider::RockProviderWeaponPartDriveApplicationV1::InvalidTransform;
+                    api::weaponparts::DriveApplication::InvalidTransform;
                 continue;
             }
 
             const RE::NiTransform requestedNodeLocal = transform_math::composeTransforms(transform_math::invertTransform(sourceNode->parent->world), desiredWorld);
             if (!finiteNiTransform(requestedNodeLocal)) {
                 applicationResult.result =
-                    ::rock::provider::RockProviderWeaponPartDriveApplicationV1::InvalidTransform;
+                    api::weaponparts::DriveApplication::InvalidTransform;
                 continue;
             }
             if (!shouldApplyPriority(
@@ -725,18 +725,18 @@ namespace rock
                     drive.priority,
                     _providerDrives.resultCount - 1)) {
                 applicationResult.result =
-                    ::rock::provider::RockProviderWeaponPartDriveApplicationV1::LostPriority;
+                    api::weaponparts::DriveApplication::LostPriority;
                 continue;
             }
             if (!markDrivenNode(sourceNode, applicationResult)) {
                 applicationResult.result =
-                    ::rock::provider::RockProviderWeaponPartDriveApplicationV1::CapacityRejected;
+                    api::weaponparts::DriveApplication::CapacityRejected;
                 continue;
             }
             sourceNode->local = requestedNodeLocal;
             f4vr::updateTransformsDown(sourceNode, true);
             applicationResult.result =
-                ::rock::provider::RockProviderWeaponPartDriveApplicationV1::Applied;
+                api::weaponparts::DriveApplication::Applied;
             fillProviderTransform(
                 requestedNodeLocal,
                 applicationResult.appliedSourceParentLocal);
@@ -788,7 +788,7 @@ namespace rock
                     result.groupId = state.groupId;
                     result.priority = state.priority;
                     result.result =
-                        ::rock::provider::RockProviderWeaponPartDriveApplicationV1::Restored;
+                        api::weaponparts::DriveApplication::Restored;
                     fillProviderTransform(
                         state.baselineLocal,
                         result.appliedSourceParentLocal);

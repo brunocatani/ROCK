@@ -28,8 +28,8 @@ namespace rock::provider_state_policy
 
     [[nodiscard]] constexpr bool handHolding(const RockProviderHandInteractionStateV1& state) noexcept
     {
-        using Flag = RockProviderHandInteractionFlagV1;
-        using Phase = RockProviderHandInteractionPhaseV1;
+        using Flag = api::grab::HandInteractionFlag;
+        using Phase = api::grab::HandInteractionPhase;
         if (!(state.flags & static_cast<std::uint32_t>(Flag::Valid))) return false;
         return state.phase == Phase::Holding || state.phase == Phase::StashCandidate ||
                state.phase == Phase::ConsumeCandidate;
@@ -38,12 +38,12 @@ namespace rock::provider_state_policy
     [[nodiscard]] constexpr std::uint32_t handStateFlags(
         const RockProviderHandInteractionStateV1& state, bool physicsDisabled) noexcept
     {
-        using Flag = RockProviderHandStateFlag;
+        using Flag = api::grab::HandStateFlag;
         std::uint32_t flags = physicsDisabled ? static_cast<std::uint32_t>(Flag::PhysicsDisabled) : 0;
-        if (!(state.flags & static_cast<std::uint32_t>(RockProviderHandInteractionFlagV1::Valid))) return flags;
+        if (!(state.flags & static_cast<std::uint32_t>(api::grab::HandInteractionFlag::Valid))) return flags;
         flags |= static_cast<std::uint32_t>(Flag::Valid);
         if (handHolding(state)) flags |= static_cast<std::uint32_t>(Flag::Holding);
-        if (state.phase == RockProviderHandInteractionPhaseV1::Touching)
+        if (state.phase == api::grab::HandInteractionPhase::Touching)
             flags |= static_cast<std::uint32_t>(Flag::Touching);
         return flags;
     }
@@ -55,7 +55,7 @@ namespace rock::provider_state_policy
         const RockProviderEquippedWeaponHandlingStateV1& handling,
         const RockProviderWeaponPartGripStateV1& grip) noexcept
     {
-        using Flag = RockProviderHandInteractionFlagV1;
+        using Flag = api::grab::HandInteractionFlag;
         using Runtime = RockProviderEquippedWeaponHandlingRuntimeFlagV1;
         if (!(state.flags & static_cast<std::uint32_t>(Flag::Valid)) ||
             !(handling.runtimeFlags & static_cast<std::uint32_t>(Runtime::WeaponPresent))) return;
@@ -63,11 +63,11 @@ namespace rock::provider_state_policy
             (handling.runtimeFlags & static_cast<std::uint32_t>(Runtime::FiringGripOccupied));
         if (!firing && !grip.active) return;
 
-        state.phase = RockProviderHandInteractionPhaseV1::Holding;
+        state.phase = api::grab::HandInteractionPhase::Holding;
         state.flags &= ~(static_cast<std::uint32_t>(Flag::LooseObject) |
                          static_cast<std::uint32_t>(Flag::LooseWeapon) |
                          static_cast<std::uint32_t>(Flag::HeldBodyListTruncated));
-        state.targetKind = RockProviderBodyContactTargetKind::Weapon;
+        state.targetKind = api::grab::BodyContactTargetKind::Weapon;
         state.targetFormId = handling.weaponFormId;
         state.reservedTargetIdentity = handling.weaponGenerationKey;
         state.primaryBodyId = grip.active ? grip.bodyId : 0x7FFF'FFFF;
@@ -77,7 +77,7 @@ namespace rock::provider_state_policy
         if (firing) {
             state.flags |= static_cast<std::uint32_t>(Flag::FiringGrip);
             if (!grip.active) state.flags |= static_cast<std::uint32_t>(Flag::NativeWeaponCarry);
-        } else if (grip.gripKind == RockProviderWeaponPartGripKindV1::PartCarry) {
+        } else if (grip.gripKind == api::weaponparts::GripKind::PartCarry) {
             state.flags |= static_cast<std::uint32_t>(Flag::PartCarry);
         } else {
             state.flags |= static_cast<std::uint32_t>(Flag::PartGrip);
@@ -88,7 +88,7 @@ namespace rock::provider_state_policy
     [[nodiscard]] constexpr std::uint32_t colliderFlags(
         bool lifecycleAllowed, bool filterKnown, bool suppressed) noexcept
     {
-        using Flag = RockProviderPlayerColliderFlagV1;
+        using Flag = api::collision::PlayerColliderFlag;
         std::uint32_t flags = static_cast<std::uint32_t>(Flag::Valid);
         if (lifecycleAllowed) flags |= static_cast<std::uint32_t>(Flag::LifecycleAllowed);
         if (filterKnown) flags |= static_cast<std::uint32_t>(Flag::FilterKnown);

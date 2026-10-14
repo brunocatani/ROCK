@@ -79,7 +79,7 @@ namespace rock
 
     /*
      * Records the authored runtime signal that produced a WeaponSizeClass
-     * decision. Values are aligned with RockProviderWeaponClassificationSourceV1.
+     * decision. Values are aligned with api::weapon::ClassificationSource.
      */
     enum class WeaponClassificationSource : std::uint8_t
     {

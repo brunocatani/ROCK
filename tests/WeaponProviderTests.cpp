@@ -25,45 +25,45 @@ namespace rock::provider::runtime {
     }
     api::Sample sample() { return {20, 30, 1, 2, 3, 4}; }
     void reportBoundaryFailure(std::uint64_t, api::InterfaceId) noexcept { assert(false); }
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetEquippedWeaponStateV1(std::uint64_t, RockProviderEquippedWeaponStateV1* out) {
+    api::Status apiGetEquippedWeaponStateV1(std::uint64_t, RockProviderEquippedWeaponStateV1* out) {
         out->frameIndex = 19; out->worldGeneration = 7; out->skeletonGeneration = 8; out->providerGeneration = 9;
-        out->flags = static_cast<std::uint32_t>(RockProviderEquippedWeaponStateFlagV1::Valid);
+        out->flags = static_cast<std::uint32_t>(api::weapon::WeaponStateFlag::Valid);
         out->weaponFormId = 123; out->weaponGenerationKey = 456; out->transitionSequence = 3;
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
-    bool ROCK_PROVIDER_CALL apiGetEquippedWeaponHandlingStateV1(RockProviderEquippedWeaponHandlingStateV1* out) {
+    bool apiGetEquippedWeaponHandlingStateV1(RockProviderEquippedWeaponHandlingStateV1* out) {
         using F = RockProviderEquippedWeaponHandlingRuntimeFlagV1;
-        out->currentFiringHand = firingLeft ? RockProviderHand::Left : RockProviderHand::Right;
+        out->currentFiringHand = firingLeft ? api::Hand::Left : api::Hand::Right;
         out->runtimeFlags = static_cast<std::uint32_t>(F::FiringGripOccupied) | static_cast<std::uint32_t>(F::PartCarryActive) |
             static_cast<std::uint32_t>(F::AuthorityActive) | (weaponPresent ? static_cast<std::uint32_t>(F::WeaponPresent) : 0u);
         return true;
     }
-    bool ROCK_PROVIDER_CALL apiGetEquippedWeaponGripStateV1(std::uint64_t, RockProviderEquippedWeaponGripStateV1* out) {
+    bool apiGetEquippedWeaponGripStateV1(std::uint64_t, RockProviderEquippedWeaponGripStateV1* out) {
         using G = RockProviderEquippedWeaponGripStateFlagV1;
         out->flags = static_cast<std::uint32_t>(G::Valid) | static_cast<std::uint32_t>(G::MuzzleWorldValid) |
             (twoHand ? static_cast<std::uint32_t>(G::TwoHandGripActive) : 0u) | (firingLeft ? static_cast<std::uint32_t>(G::FiringHandLeft) : 0u);
         out->weaponFormId = 123; out->muzzleOriginGame = {1, 2, 3};
         return true;
     }
-    bool ROCK_PROVIDER_CALL apiQueryEquippedWeaponClassificationV1(RockProviderWeaponClassificationV1* out) { out->valid = 1; out->formId = 123; return true; }
-    std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEmitterCountV1() { return emitterCount; }
-    std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEmittersV1(RockProviderWeaponEmitterV1* out, std::uint32_t capacity) {
+    bool apiQueryEquippedWeaponClassificationV1(RockProviderWeaponClassificationV1* out) { out->valid = 1; out->formId = 123; return true; }
+    std::uint32_t apiGetWeaponEmitterCountV1() { return emitterCount; }
+    std::uint32_t apiCopyWeaponEmittersV1(RockProviderWeaponEmitterV1* out, std::uint32_t capacity) {
         const auto copied = (std::min)(capacity, emitterCount);
         for (std::uint32_t i = 0; i < copied; ++i) out[i].omodFormId = 100 + i;
         return copied;
     }
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetEquippedWeaponHandlingAuthorityV1(std::uint64_t, const RockProviderEquippedWeaponHandlingRequestV1* request) {
+    api::Status apiSetEquippedWeaponHandlingAuthorityV1(std::uint64_t, const RockProviderEquippedWeaponHandlingRequestV1* request) {
         assert(request->flags == 3 && request->leaseFrames == 10 && request->leftFiringAimOffsetGameUnits[2] == 4);
         ++handlingRequests;
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearEquippedWeaponHandlingAuthorityV1(std::uint64_t) { return RockProviderResultV1::Ok; }
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetScopeSightStateV1(std::uint64_t, RockProviderScopeSightStateV1*) { return RockProviderResultV1::Ok; }
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetWeaponCompositionStateV1(std::uint64_t, RockProviderWeaponCompositionStateV1*) { return RockProviderResultV1::Ok; }
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyWeaponCompositionEntriesV1(std::uint64_t, RockProviderWeaponCompositionEntryV1*, std::uint32_t, std::uint32_t* count) {
-        *count = 0; return RockProviderResultV1::Ok;
+    api::Status apiClearEquippedWeaponHandlingAuthorityV1(std::uint64_t) { return api::Status::Ok; }
+    api::Status apiGetScopeSightStateV1(std::uint64_t, RockProviderScopeSightStateV1*) { return api::Status::Ok; }
+    api::Status apiGetWeaponCompositionStateV1(std::uint64_t, RockProviderWeaponCompositionStateV1*) { return api::Status::Ok; }
+    api::Status apiCopyWeaponCompositionEntriesV1(std::uint64_t, RockProviderWeaponCompositionEntryV1*, std::uint32_t, std::uint32_t* count) {
+        *count = 0; return api::Status::Ok;
     }
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetSelectedAuthoredGripPoseV1(std::uint64_t, RockProviderAuthoredGripPoseV1*) { return RockProviderResultV1::Ok; }
+    api::Status apiGetSelectedAuthoredGripPoseV1(std::uint64_t, RockProviderAuthoredGripPoseV1*) { return api::Status::Ok; }
     api::Status getHandlingAuthority(api::weapon::HandlingAuthority& out) { out.active = 1; out.owner = testOwner; return api::Status::Ok; }
     api::Status captureInventoryWeapon(std::uint64_t, std::uint32_t, std::uint32_t, api::weapon::InventoryWeapon&) { return api::Status::Ok; }
     api::Status requestInventoryEquip(std::uint64_t, const api::weapon::EquipRequest&, std::uint64_t& command) { command = 9; return api::Status::RequestQueued; }

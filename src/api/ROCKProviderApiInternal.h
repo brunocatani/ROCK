@@ -30,8 +30,8 @@ namespace rock::provider
     {
         std::uint32_t whitelistActive{ 0 };
         std::uint32_t matched{ 0 };
-        RockProviderWeaponPartGrabModeV1 grabMode{
-            RockProviderWeaponPartGrabModeV1::None
+        api::weaponparts::GrabMode grabMode{
+            api::weaponparts::GrabMode::None
         };
         std::uint32_t groupId{ 0 };
         std::uint32_t priority{ 0 };
@@ -47,14 +47,14 @@ namespace rock::provider
     // Invalidates live reads and releases every lease after provider loss.
     void clearProviderStateForProviderLoss();
     // The reservation on hand, or Normal when that hand is not reserved.
-    RockProviderOffhandReservation currentHandReservation(RockProviderHand hand);
+    api::grab::HandReservationKind currentHandReservation(api::Hand hand);
     void setEquippedWeaponFiringHandIsLeft(bool isLeft);
     bool getEquippedWeaponHandlingAuthorityV1(
         RockProviderEquippedWeaponHandlingRequestV1& outRequest);
     bool ownsEquippedWeaponHandlingAuthorityV1(
         std::uint64_t ownerToken,
         std::uint32_t requiredFlags);
-    std::uint32_t currentHandInputSuppressionFlagsV1(RockProviderHand hand);
+    std::uint32_t currentHandInputSuppressionFlagsV1(api::Hand hand);
     std::uint32_t currentNativeAnimationAuthorityFlagsV1();
     void refreshNativeAnimationAuthorityLeasesV1();
     /*
@@ -80,7 +80,7 @@ namespace rock::provider
         std::uint32_t bodyId,
         std::uint32_t collisionLayer,
         TouchGrabMotionClassV1 motionClass,
-        RockProviderHand hand,
+        api::Hand hand,
         std::uint32_t worldGeneration,
         std::uint32_t skeletonGeneration,
         std::uint32_t providerGeneration,
@@ -106,5 +106,5 @@ namespace rock::provider
     void markInteractionCommandStageV1(
         std::uint64_t ownerToken,
         std::uint64_t commandId,
-        RockProviderCommandStageV1 stage);
+        api::grab::CommandStage stage);
 }

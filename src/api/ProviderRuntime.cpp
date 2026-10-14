@@ -51,21 +51,21 @@ namespace rock::provider::runtime
     using namespace rock::provider;
     using namespace rock;
 
-    static_assert(static_cast<std::uint32_t>(RockProviderBodyZoneKind::LeftShoulder) ==
+    static_assert(static_cast<std::uint32_t>(api::collision::BodyZoneKind::LeftShoulder) ==
                   static_cast<std::uint32_t>(body_zone::BodyZoneKind::LeftShoulder));
-    static_assert(static_cast<std::uint32_t>(RockProviderBodyZoneKind::RightShoulder) ==
+    static_assert(static_cast<std::uint32_t>(api::collision::BodyZoneKind::RightShoulder) ==
                   static_cast<std::uint32_t>(body_zone::BodyZoneKind::RightShoulder));
-    static_assert(static_cast<std::uint32_t>(RockProviderBodyZoneSide::Left) ==
+    static_assert(static_cast<std::uint32_t>(api::collision::BodyZoneSide::Left) ==
                   static_cast<std::uint32_t>(body_zone::BodyZoneSide::Left));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartGripKindV1::FiringGrip) ==
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::GripKind::FiringGrip) ==
                   static_cast<std::uint32_t>(weapon_part_grip_report_policy::HandGripKind::FiringGrip));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartGripKindV1::SupportFullAuthority) ==
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::GripKind::SupportFullAuthority) ==
                   static_cast<std::uint32_t>(weapon_part_grip_report_policy::HandGripKind::SupportFullAuthority));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartGripKindV1::SupportVisualOnly) ==
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::GripKind::SupportVisualOnly) ==
                   static_cast<std::uint32_t>(weapon_part_grip_report_policy::HandGripKind::SupportVisualOnly));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartGripKindV1::PartCarry) ==
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::GripKind::PartCarry) ==
                   static_cast<std::uint32_t>(weapon_part_grip_report_policy::HandGripKind::PartCarry));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartGripKindV1::AttachOnly) ==
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::GripKind::AttachOnly) ==
                   static_cast<std::uint32_t>(weapon_part_grip_report_policy::HandGripKind::AttachOnly));
     static_assert(static_cast<std::uint32_t>(
                       ::rock::api::animation::NativeAnimationAuthorityFlag::Arms) ==
@@ -82,61 +82,61 @@ namespace rock::provider::runtime
     static_assert(static_cast<std::uint32_t>(
                       ::rock::api::animation::NativeAnimationAuthorityStatusFlag::CaptureFault) ==
                   (1u << 6));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponClassificationSourceV1::Keyword) ==
+    static_assert(static_cast<std::uint32_t>(api::weapon::ClassificationSource::Keyword) ==
                   static_cast<std::uint32_t>(WeaponClassificationSource::Keyword));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponClassificationSourceV1::WeaponData) ==
+    static_assert(static_cast<std::uint32_t>(api::weapon::ClassificationSource::WeaponData) ==
                   static_cast<std::uint32_t>(WeaponClassificationSource::WeaponData));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponClassificationSourceV1::EquipSlot) ==
+    static_assert(static_cast<std::uint32_t>(api::weapon::ClassificationSource::EquipSlot) ==
                   static_cast<std::uint32_t>(WeaponClassificationSource::EquipSlot));
     // Public V1 part-kind / action-role values are a wire contract for
     // external consumers (PAPER_Toolkit); pin every enumerator to the internal
     // classification enums so a reorder breaks this build, not a consumer.
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Receiver) == static_cast<std::uint32_t>(WeaponPartKind::Receiver));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Barrel) == static_cast<std::uint32_t>(WeaponPartKind::Barrel));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Handguard) == static_cast<std::uint32_t>(WeaponPartKind::Handguard));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Foregrip) == static_cast<std::uint32_t>(WeaponPartKind::Foregrip));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Pump) == static_cast<std::uint32_t>(WeaponPartKind::Pump));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Stock) == static_cast<std::uint32_t>(WeaponPartKind::Stock));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Grip) == static_cast<std::uint32_t>(WeaponPartKind::Grip));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Magazine) == static_cast<std::uint32_t>(WeaponPartKind::Magazine));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Magwell) == static_cast<std::uint32_t>(WeaponPartKind::Magwell));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Bolt) == static_cast<std::uint32_t>(WeaponPartKind::Bolt));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Slide) == static_cast<std::uint32_t>(WeaponPartKind::Slide));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::ChargingHandle) == static_cast<std::uint32_t>(WeaponPartKind::ChargingHandle));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::BreakAction) == static_cast<std::uint32_t>(WeaponPartKind::BreakAction));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Cylinder) == static_cast<std::uint32_t>(WeaponPartKind::Cylinder));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Chamber) == static_cast<std::uint32_t>(WeaponPartKind::Chamber));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Shell) == static_cast<std::uint32_t>(WeaponPartKind::Shell));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Round) == static_cast<std::uint32_t>(WeaponPartKind::Round));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::LaserCell) == static_cast<std::uint32_t>(WeaponPartKind::LaserCell));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Lever) == static_cast<std::uint32_t>(WeaponPartKind::Lever));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Sight) == static_cast<std::uint32_t>(WeaponPartKind::Sight));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Accessory) == static_cast<std::uint32_t>(WeaponPartKind::Accessory));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::CosmeticAmmo) == static_cast<std::uint32_t>(WeaponPartKind::CosmeticAmmo));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Other) == static_cast<std::uint32_t>(WeaponPartKind::Other));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::LaserSight) == static_cast<std::uint32_t>(WeaponPartKind::LaserSight));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Flashlight) == static_cast<std::uint32_t>(WeaponPartKind::Flashlight));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::LaserFlashlightCombo) == static_cast<std::uint32_t>(WeaponPartKind::LaserFlashlightCombo));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Scope) == static_cast<std::uint32_t>(WeaponPartKind::Scope));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::MuzzleDevice) == static_cast<std::uint32_t>(WeaponPartKind::MuzzleDevice));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Bipod) == static_cast<std::uint32_t>(WeaponPartKind::Bipod));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartClassificationSourceV1::NameToken) ==
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Receiver) == static_cast<std::uint32_t>(WeaponPartKind::Receiver));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Barrel) == static_cast<std::uint32_t>(WeaponPartKind::Barrel));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Handguard) == static_cast<std::uint32_t>(WeaponPartKind::Handguard));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Foregrip) == static_cast<std::uint32_t>(WeaponPartKind::Foregrip));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Pump) == static_cast<std::uint32_t>(WeaponPartKind::Pump));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Stock) == static_cast<std::uint32_t>(WeaponPartKind::Stock));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Grip) == static_cast<std::uint32_t>(WeaponPartKind::Grip));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Magazine) == static_cast<std::uint32_t>(WeaponPartKind::Magazine));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Magwell) == static_cast<std::uint32_t>(WeaponPartKind::Magwell));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Bolt) == static_cast<std::uint32_t>(WeaponPartKind::Bolt));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Slide) == static_cast<std::uint32_t>(WeaponPartKind::Slide));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::ChargingHandle) == static_cast<std::uint32_t>(WeaponPartKind::ChargingHandle));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::BreakAction) == static_cast<std::uint32_t>(WeaponPartKind::BreakAction));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Cylinder) == static_cast<std::uint32_t>(WeaponPartKind::Cylinder));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Chamber) == static_cast<std::uint32_t>(WeaponPartKind::Chamber));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Shell) == static_cast<std::uint32_t>(WeaponPartKind::Shell));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Round) == static_cast<std::uint32_t>(WeaponPartKind::Round));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::LaserCell) == static_cast<std::uint32_t>(WeaponPartKind::LaserCell));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Lever) == static_cast<std::uint32_t>(WeaponPartKind::Lever));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Sight) == static_cast<std::uint32_t>(WeaponPartKind::Sight));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Accessory) == static_cast<std::uint32_t>(WeaponPartKind::Accessory));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::CosmeticAmmo) == static_cast<std::uint32_t>(WeaponPartKind::CosmeticAmmo));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Other) == static_cast<std::uint32_t>(WeaponPartKind::Other));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::LaserSight) == static_cast<std::uint32_t>(WeaponPartKind::LaserSight));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Flashlight) == static_cast<std::uint32_t>(WeaponPartKind::Flashlight));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::LaserFlashlightCombo) == static_cast<std::uint32_t>(WeaponPartKind::LaserFlashlightCombo));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Scope) == static_cast<std::uint32_t>(WeaponPartKind::Scope));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::MuzzleDevice) == static_cast<std::uint32_t>(WeaponPartKind::MuzzleDevice));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::PartKind::Bipod) == static_cast<std::uint32_t>(WeaponPartKind::Bipod));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::ClassificationSource::NameToken) ==
                   static_cast<std::uint32_t>(WeaponPartClassificationSource::NameToken));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartClassificationSourceV1::SlotAnchor) ==
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::ClassificationSource::SlotAnchor) ==
                   static_cast<std::uint32_t>(WeaponPartClassificationSource::SlotAnchor));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartClassificationSourceV1::RigAnchor) ==
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::ClassificationSource::RigAnchor) ==
                   static_cast<std::uint32_t>(WeaponPartClassificationSource::RigAnchor));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartClassificationSourceV1::AttachmentEvidence) ==
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::ClassificationSource::AttachmentEvidence) ==
                   static_cast<std::uint32_t>(WeaponPartClassificationSource::AttachmentEvidence));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponActionRoleV1::None) == static_cast<std::uint32_t>(WeaponActionRole::None));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponActionRoleV1::Bolt) == static_cast<std::uint32_t>(WeaponActionRole::Bolt));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponActionRoleV1::Slide) == static_cast<std::uint32_t>(WeaponActionRole::Slide));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponActionRoleV1::ChargingHandle) == static_cast<std::uint32_t>(WeaponActionRole::ChargingHandle));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponActionRoleV1::Pump) == static_cast<std::uint32_t>(WeaponActionRole::Pump));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponActionRoleV1::BreakAction) == static_cast<std::uint32_t>(WeaponActionRole::BreakAction));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponActionRoleV1::Cylinder) == static_cast<std::uint32_t>(WeaponActionRole::Cylinder));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponActionRoleV1::Lever) == static_cast<std::uint32_t>(WeaponActionRole::Lever));
-    static_assert(static_cast<std::uint32_t>(RockProviderWeaponActionRoleV1::Latch) == static_cast<std::uint32_t>(WeaponActionRole::Latch));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::ActionRole::None) == static_cast<std::uint32_t>(WeaponActionRole::None));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::ActionRole::Bolt) == static_cast<std::uint32_t>(WeaponActionRole::Bolt));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::ActionRole::Slide) == static_cast<std::uint32_t>(WeaponActionRole::Slide));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::ActionRole::ChargingHandle) == static_cast<std::uint32_t>(WeaponActionRole::ChargingHandle));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::ActionRole::Pump) == static_cast<std::uint32_t>(WeaponActionRole::Pump));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::ActionRole::BreakAction) == static_cast<std::uint32_t>(WeaponActionRole::BreakAction));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::ActionRole::Cylinder) == static_cast<std::uint32_t>(WeaponActionRole::Cylinder));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::ActionRole::Lever) == static_cast<std::uint32_t>(WeaponActionRole::Lever));
+    static_assert(static_cast<std::uint32_t>(api::weaponparts::ActionRole::Latch) == static_cast<std::uint32_t>(WeaponActionRole::Latch));
 
     struct CallbackSlot
     {
@@ -170,9 +170,9 @@ namespace rock::provider::runtime
     struct OffhandReservationSlot
     {
         std::uint64_t ownerToken{ 0 };
-        RockProviderHand hand{ RockProviderHand::None };
-        RockProviderOffhandReservation reservation{
-            RockProviderOffhandReservation::Normal
+        api::Hand hand{ api::Hand::None };
+        api::grab::HandReservationKind reservation{
+            api::grab::HandReservationKind::Normal
         };
         std::uint64_t expiresAfterFrame{ 0 };
         std::uint32_t worldGeneration{ 0 };
@@ -185,10 +185,10 @@ namespace rock::provider::runtime
     std::atomic<std::uint64_t> s_offhandReservationOwner{ 0 };
     std::atomic<std::uint64_t> s_offhandReservationExpiry{ 0 };
     std::atomic<std::uint32_t> s_offhandReservationHand{
-        static_cast<std::uint32_t>(RockProviderHand::None)
+        static_cast<std::uint32_t>(api::Hand::None)
     };
     std::atomic<std::uint32_t> s_offhandReservation{
-        static_cast<std::uint32_t>(RockProviderOffhandReservation::Normal)
+        static_cast<std::uint32_t>(api::grab::HandReservationKind::Normal)
     };
 
     // ROCK's runtime firing hand (left-hand fire); published each frame by
@@ -227,13 +227,13 @@ namespace rock::provider::runtime
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame) |
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::FromPlayerInventory);
     constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
-        static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::ImmediateCollisionRestore) |
-        static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::RequireMatchingTarget) |
-        static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::UseVelocityHavok);
+        static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::ImmediateCollisionRestore) |
+        static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::RequireMatchingTarget) |
+        static_cast<std::uint32_t>(api::grab::ForceReleaseFlag::UseVelocityHavok);
     constexpr std::uint32_t kImplementedThrownDropFlagsV1 =
-        static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::ImmediateCollisionRestore) |
-        static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::RequireMatchingTarget) |
-        static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::UseVelocityHavok);
+        static_cast<std::uint32_t>(api::grab::ThrownDropFlag::ImmediateCollisionRestore) |
+        static_cast<std::uint32_t>(api::grab::ThrownDropFlag::RequireMatchingTarget) |
+        static_cast<std::uint32_t>(api::grab::ThrownDropFlag::UseVelocityHavok);
     constexpr std::uint32_t kImplementedHandInputSuppressionFlagsV1 =
         static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressConfigModeChord) |
         static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressOpenVrGameInput) |
@@ -242,12 +242,12 @@ namespace rock::provider::runtime
         static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressGrenadeQuickDraw) |
         static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::ReserveTriggerGripChord) |
         static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::ReserveButtonChord);
-    std::uint32_t effectiveHandInputSuppressionFlags(RockProviderHand hand, std::uint32_t flags, std::uint64_t leftChord, std::uint64_t rightChord)
+    std::uint32_t effectiveHandInputSuppressionFlags(api::Hand hand, std::uint32_t flags, std::uint64_t leftChord, std::uint64_t rightChord)
     {
         const auto reservation = static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::ReserveTriggerGripChord);
         const bool reserved = (flags & reservation) != 0;
         flags &= ~reservation;
-        if (reserved && rock::input_remap_runtime::isTriggerGripChordHeld(hand == RockProviderHand::Left)) {
+        if (reserved && rock::input_remap_runtime::isTriggerGripChordHeld(hand == api::Hand::Left)) {
             flags |= static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressConfigModeChord) |
                 static_cast<std::uint32_t>(::rock::api::input::HandInputSuppressionFlag::SuppressOpenVrGameInput);
         }
@@ -329,7 +329,7 @@ namespace rock::provider::runtime
     {
         bool active{ false };
         std::uint64_t ownerToken{ 0 };
-        RockProviderHand hand{ RockProviderHand::None };
+        api::Hand hand{ api::Hand::None };
         std::uint32_t flags{ 0 };
         std::uint64_t leftChord{ 0 }, rightChord{ 0 };
         std::uint64_t expiresAfterFrame{ 0 };
@@ -381,7 +381,7 @@ namespace rock::provider::runtime
     struct HandVisualAuthoritySlot
     {
         std::uint64_t ownerToken{ 0 };
-        RockProviderHand hand{ RockProviderHand::None };
+        api::Hand hand{ api::Hand::None };
         std::uint32_t publishedFlags{ 0 };
         std::uint64_t expiresAfterFrame{ 0 };
         std::uint32_t worldGeneration{ 0 };
@@ -432,7 +432,7 @@ namespace rock::provider::runtime
     std::array<WeaponPartTargetSlot, ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1> s_weaponPartTargets{};
     std::array<WeaponPartDriveSlot, ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> s_weaponPartDrives{};
 
-    RockProviderResultV1 validateRegisteredOwnerCapabilityLocked(
+    api::Status validateRegisteredOwnerCapabilityLocked(
         std::uint64_t ownerToken,
         RockProviderConsumerCapabilityV1 capability);
     [[nodiscard]] bool generationGuardsStale(
@@ -621,7 +621,7 @@ namespace rock::provider::runtime
     }
 
     [[nodiscard]] bool finiteProviderPoint(
-        const RockProviderPoint3& point)
+        const api::Point3& point)
     {
         return std::isfinite(point.x) &&
                std::isfinite(point.y) &&
@@ -646,9 +646,9 @@ namespace rock::provider::runtime
     }
 
     [[nodiscard]] constexpr frik_visual_authority::Hand toVisualHand(
-        const RockProviderHand hand)
+        const api::Hand hand)
     {
-        return hand == RockProviderHand::Left ?
+        return hand == api::Hand::Left ?
             frik_visual_authority::Hand::Left :
             frik_visual_authority::Hand::Right;
     }
@@ -656,7 +656,7 @@ namespace rock::provider::runtime
 
     [[nodiscard]] HandVisualAuthoritySlot* findHandVisualAuthoritySlotLocked(
         const std::uint64_t ownerToken,
-        const RockProviderHand hand)
+        const api::Hand hand)
     {
         HandVisualAuthoritySlot* available = nullptr;
         for (auto& slot : s_handVisualAuthoritySlots) {
@@ -700,14 +700,14 @@ namespace rock::provider::runtime
 
     [[nodiscard]] bool clearHandVisualAuthorityForOwner(
         const std::uint64_t ownerToken,
-        const RockProviderHand hand,
+        const api::Hand hand,
         const bool releaseSlots)
     {
         bool cleared = true;
         std::scoped_lock lock(s_handVisualAuthorityMutex);
         for (auto& slot : s_handVisualAuthoritySlots) {
             if (slot.ownerToken != ownerToken ||
-                (hand != RockProviderHand::None && slot.hand != hand)) {
+                (hand != api::Hand::None && slot.hand != hand)) {
                 continue;
             }
             cleared = clearHandVisualAuthoritySlotLocked(slot, releaseSlots) &&
@@ -956,7 +956,7 @@ namespace rock::provider::runtime
 
     void clearHandInputSuppressionsForOwnerLocked(
         std::uint64_t ownerToken,
-        RockProviderHand hand,
+        api::Hand hand,
         ::rock::api::input::SuppressionInvalidationReason reason =
             ::rock::api::input::SuppressionInvalidationReason::ExplicitClear)
     {
@@ -964,7 +964,7 @@ namespace rock::provider::runtime
             if (!slot.active || slot.ownerToken != ownerToken) {
                 continue;
             }
-            if (hand == RockProviderHand::None || slot.hand == hand) {
+            if (hand == api::Hand::None || slot.hand == hand) {
                 slot.active = false;
                 slot.flags = 0;
                 slot.lastInvalidationReason = reason;
@@ -1181,19 +1181,19 @@ namespace rock::provider::runtime
         return available;
     }
 
-    bool isValidWeaponPartGrabMode(RockProviderWeaponPartGrabModeV1 mode)
+    bool isValidWeaponPartGrabMode(api::weaponparts::GrabMode mode)
     {
-        return mode == RockProviderWeaponPartGrabModeV1::FullTwoHandAuthority ||
-               mode == RockProviderWeaponPartGrabModeV1::AttachOnly;
+        return mode == api::weaponparts::GrabMode::FullTwoHandAuthority ||
+               mode == api::weaponparts::GrabMode::AttachOnly;
     }
 
-    bool isValidWeaponPartDriveSpace(RockProviderWeaponPartDriveSpaceV1 space)
+    bool isValidWeaponPartDriveSpace(api::weaponparts::DriveSpace space)
     {
-        return space == RockProviderWeaponPartDriveSpaceV1::WeaponRootLocal ||
-               space == RockProviderWeaponPartDriveSpaceV1::SourceParentLocal;
+        return space == api::weaponparts::DriveSpace::WeaponRootLocal ||
+               space == api::weaponparts::DriveSpace::SourceParentLocal;
     }
 
-    bool isFiniteProviderTransform(const RockProviderTransform& transform)
+    bool isFiniteProviderTransform(const api::Transform& transform)
     {
         for (float value : transform.rotate) {
             if (!std::isfinite(value)) {
@@ -1207,29 +1207,29 @@ namespace rock::provider::runtime
                std::abs(transform.scale) > 0.0001f;
     }
 
-    weapon_part_runtime::GrabMode toRuntimeGrabMode(RockProviderWeaponPartGrabModeV1 mode)
+    weapon_part_runtime::GrabMode toRuntimeGrabMode(api::weaponparts::GrabMode mode)
     {
         switch (mode) {
-        case RockProviderWeaponPartGrabModeV1::FullTwoHandAuthority:
+        case api::weaponparts::GrabMode::FullTwoHandAuthority:
             return weapon_part_runtime::GrabMode::FullTwoHandAuthority;
-        case RockProviderWeaponPartGrabModeV1::AttachOnly:
+        case api::weaponparts::GrabMode::AttachOnly:
             return weapon_part_runtime::GrabMode::AttachOnly;
-        case RockProviderWeaponPartGrabModeV1::None:
+        case api::weaponparts::GrabMode::None:
         default:
             return weapon_part_runtime::GrabMode::None;
         }
     }
 
-    RockProviderWeaponPartGrabModeV1 fromRuntimeGrabMode(weapon_part_runtime::GrabMode mode)
+    api::weaponparts::GrabMode fromRuntimeGrabMode(weapon_part_runtime::GrabMode mode)
     {
         switch (mode) {
         case weapon_part_runtime::GrabMode::FullTwoHandAuthority:
-            return RockProviderWeaponPartGrabModeV1::FullTwoHandAuthority;
+            return api::weaponparts::GrabMode::FullTwoHandAuthority;
         case weapon_part_runtime::GrabMode::AttachOnly:
-            return RockProviderWeaponPartGrabModeV1::AttachOnly;
+            return api::weaponparts::GrabMode::AttachOnly;
         case weapon_part_runtime::GrabMode::None:
         default:
-            return RockProviderWeaponPartGrabModeV1::None;
+            return api::weaponparts::GrabMode::None;
         }
     }
 
@@ -1259,56 +1259,56 @@ namespace rock::provider::runtime
         return target;
     }
 
-    RockProviderResultV1 validateRegisteredOwnerCapabilityLocked(
+    api::Status validateRegisteredOwnerCapabilityLocked(
         std::uint64_t ownerToken,
         RockProviderConsumerCapabilityV1 capability)
     {
         if (ownerToken == 0) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
 
         if (!findConsumerSlotLocked(ownerToken)) {
-            return RockProviderResultV1::OwnerNotRegistered;
+            return api::Status::OwnerNotRegistered;
         }
         if (!consumerHasCapabilityLocked(ownerToken, capability)) {
-            return RockProviderResultV1::PermissionDenied;
+            return api::Status::PermissionDenied;
         }
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
-    RockProviderResultV1 validateInteractionCommandOwnerLocked(std::uint64_t ownerToken)
+    api::Status validateInteractionCommandOwnerLocked(std::uint64_t ownerToken)
     {
         return validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::InteractionCommands);
     }
 
-    RockProviderResultV1 validateGenerationGuards(
+    api::Status validateGenerationGuards(
         std::uint32_t worldGeneration,
         std::uint32_t skeletonGeneration,
         std::uint32_t providerGeneration)
     {
         if (worldGeneration == 0 && skeletonGeneration == 0 && providerGeneration == 0) {
-            return RockProviderResultV1::Ok;
+            return api::Status::Ok;
         }
 
         if (!s_generationStateAvailable.load(std::memory_order_acquire)) {
-            return RockProviderResultV1::NotReady;
+            return api::Status::NotReady;
         }
         if (worldGeneration != 0 &&
             worldGeneration != s_currentWorldGeneration.load(
                 std::memory_order_acquire)) {
-            return RockProviderResultV1::WorldNotReady;
+            return api::Status::WorldNotReady;
         }
         if (skeletonGeneration != 0 &&
             skeletonGeneration != s_currentSkeletonGeneration.load(
                 std::memory_order_acquire)) {
-            return RockProviderResultV1::NotReady;
+            return api::Status::NotReady;
         }
         if (providerGeneration != 0 &&
             providerGeneration != s_currentProviderGeneration.load(
                 std::memory_order_acquire)) {
-            return RockProviderResultV1::NotReady;
+            return api::Status::NotReady;
         }
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
     std::uint32_t currentProviderGenerationForRegistration()
@@ -1333,28 +1333,28 @@ namespace rock::provider::runtime
         return id;
     }
 
-    RockProviderHand commandHand(const QueuedInteractionCommandV1& command)
+    api::Hand commandHand(const QueuedInteractionCommandV1& command)
     {
         switch (command.kind) {
-        case RockProviderInteractionCommandKindV1::ForceGrab:
+        case api::grab::InteractionCommandKind::ForceGrab:
             return command.forceGrab.hand;
-        case RockProviderInteractionCommandKindV1::ForceRelease:
+        case api::grab::InteractionCommandKind::ForceRelease:
             return command.forceRelease.hand;
-        case RockProviderInteractionCommandKindV1::ThrownDrop:
+        case api::grab::InteractionCommandKind::ThrownDrop:
             return command.thrownDrop.hand;
         default:
-            return RockProviderHand::None;
+            return api::Hand::None;
         }
     }
 
     std::uint32_t commandTargetFormId(const QueuedInteractionCommandV1& command)
     {
         switch (command.kind) {
-        case RockProviderInteractionCommandKindV1::ForceGrab:
+        case api::grab::InteractionCommandKind::ForceGrab:
             return command.forceGrab.targetFormId;
-        case RockProviderInteractionCommandKindV1::ForceRelease:
+        case api::grab::InteractionCommandKind::ForceRelease:
             return command.forceRelease.targetFormId;
-        case RockProviderInteractionCommandKindV1::ThrownDrop:
+        case api::grab::InteractionCommandKind::ThrownDrop:
             return command.thrownDrop.targetFormId;
         default:
             return 0;
@@ -1364,11 +1364,11 @@ namespace rock::provider::runtime
     std::uint32_t commandTargetBodyId(const QueuedInteractionCommandV1& command)
     {
         switch (command.kind) {
-        case RockProviderInteractionCommandKindV1::ForceGrab:
+        case api::grab::InteractionCommandKind::ForceGrab:
             return command.forceGrab.targetBodyId;
-        case RockProviderInteractionCommandKindV1::ForceRelease:
+        case api::grab::InteractionCommandKind::ForceRelease:
             return command.forceRelease.targetBodyId;
-        case RockProviderInteractionCommandKindV1::ThrownDrop:
+        case api::grab::InteractionCommandKind::ThrownDrop:
             return command.thrownDrop.targetBodyId;
         default:
             return kProviderInvalidBodyId;
@@ -1378,11 +1378,11 @@ namespace rock::provider::runtime
     std::uint32_t commandWorldGeneration(const QueuedInteractionCommandV1& command)
     {
         switch (command.kind) {
-        case RockProviderInteractionCommandKindV1::ForceGrab:
+        case api::grab::InteractionCommandKind::ForceGrab:
             return command.forceGrab.worldGeneration;
-        case RockProviderInteractionCommandKindV1::ForceRelease:
+        case api::grab::InteractionCommandKind::ForceRelease:
             return command.forceRelease.worldGeneration;
-        case RockProviderInteractionCommandKindV1::ThrownDrop:
+        case api::grab::InteractionCommandKind::ThrownDrop:
             return command.thrownDrop.worldGeneration;
         default:
             return 0;
@@ -1392,11 +1392,11 @@ namespace rock::provider::runtime
     std::uint32_t commandSkeletonGeneration(const QueuedInteractionCommandV1& command)
     {
         switch (command.kind) {
-        case RockProviderInteractionCommandKindV1::ForceGrab:
+        case api::grab::InteractionCommandKind::ForceGrab:
             return command.forceGrab.skeletonGeneration;
-        case RockProviderInteractionCommandKindV1::ForceRelease:
+        case api::grab::InteractionCommandKind::ForceRelease:
             return command.forceRelease.skeletonGeneration;
-        case RockProviderInteractionCommandKindV1::ThrownDrop:
+        case api::grab::InteractionCommandKind::ThrownDrop:
             return command.thrownDrop.skeletonGeneration;
         default:
             return 0;
@@ -1406,11 +1406,11 @@ namespace rock::provider::runtime
     std::uint32_t commandProviderGeneration(const QueuedInteractionCommandV1& command)
     {
         switch (command.kind) {
-        case RockProviderInteractionCommandKindV1::ForceGrab:
+        case api::grab::InteractionCommandKind::ForceGrab:
             return command.forceGrab.providerGeneration;
-        case RockProviderInteractionCommandKindV1::ForceRelease:
+        case api::grab::InteractionCommandKind::ForceRelease:
             return command.forceRelease.providerGeneration;
-        case RockProviderInteractionCommandKindV1::ThrownDrop:
+        case api::grab::InteractionCommandKind::ThrownDrop:
             return command.thrownDrop.providerGeneration;
         default:
             return 0;
@@ -1419,8 +1419,8 @@ namespace rock::provider::runtime
 
     RockProviderInteractionCommandResultV1 makeCommandResult(
         const QueuedInteractionCommandV1& command,
-        RockProviderInteractionCommandStateV1 state,
-        RockProviderInteractionFailureV1 failure)
+        api::grab::InteractionCommandState state,
+        api::grab::InteractionFailure failure)
     {
         RockProviderInteractionCommandResultV1 result{};
         result.size = sizeof(RockProviderInteractionCommandResultV1);
@@ -1437,11 +1437,11 @@ namespace rock::provider::runtime
         result.skeletonGeneration = commandSkeletonGeneration(command);
         result.providerGeneration = commandProviderGeneration(command);
         result.stage = interaction_command_policy::isTerminal(state) ?
-            RockProviderCommandStageV1::Terminal :
-            RockProviderCommandStageV1::Queued;
+            api::grab::CommandStage::Terminal :
+            api::grab::CommandStage::Queued;
         result.failureStage = failure;
         result.acceptedFrame = currentGameFrameIndex();
-        if (result.stage == RockProviderCommandStageV1::Terminal) {
+        if (result.stage == api::grab::CommandStage::Terminal) {
             result.frameIndex = result.acceptedFrame;
         }
         return result;
@@ -1490,17 +1490,17 @@ namespace rock::provider::runtime
             }
             auto storedResult = result;
             if (interaction_command_policy::isTerminal(storedResult.state)) {
-                storedResult.stage = RockProviderCommandStageV1::Terminal;
+                storedResult.stage = api::grab::CommandStage::Terminal;
                 if (storedResult.frameIndex == 0) {
                     storedResult.frameIndex = currentGameFrameIndex();
                 }
                 if (storedResult.state ==
-                        RockProviderInteractionCommandStateV1::Succeeded &&
+                        api::grab::InteractionCommandState::Succeeded &&
                     storedResult.appliedFrame == 0) {
                     storedResult.appliedFrame = storedResult.frameIndex;
                 }
                 if (storedResult.failureStage ==
-                    RockProviderInteractionFailureV1::None) {
+                    api::grab::InteractionFailure::None) {
                     storedResult.failureStage = storedResult.failure;
                 }
             }
@@ -1527,8 +1527,8 @@ namespace rock::provider::runtime
 
     void completeInteractionCommandLocked(
         const QueuedInteractionCommandV1& command,
-        RockProviderInteractionCommandStateV1 state,
-        RockProviderInteractionFailureV1 failure)
+        api::grab::InteractionCommandState state,
+        api::grab::InteractionFailure failure)
     {
         const auto result = makeCommandResult(command, state, failure);
         storeInteractionResultLocked(result);
@@ -1537,7 +1537,7 @@ namespace rock::provider::runtime
         }
     }
 
-    void clearInteractionCommandsForOwnerLocked(std::uint64_t ownerToken, RockProviderInteractionFailureV1 failure)
+    void clearInteractionCommandsForOwnerLocked(std::uint64_t ownerToken, api::grab::InteractionFailure failure)
     {
         if (ownerToken == 0) {
             return;
@@ -1545,7 +1545,7 @@ namespace rock::provider::runtime
 
         for (auto& slot : s_interactionCommands) {
             if (slot.active && slot.command.ownerToken == ownerToken) {
-                completeInteractionCommandLocked(slot.command, RockProviderInteractionCommandStateV1::Cancelled, failure);
+                completeInteractionCommandLocked(slot.command, api::grab::InteractionCommandState::Cancelled, failure);
                 slot = {};
             }
         }
@@ -1582,10 +1582,10 @@ namespace rock::provider::runtime
                 s_equippedWeaponHandlingAuthorityMutex);
             clearInteractionCommandsForOwnerLocked(
                 ownerToken,
-                RockProviderInteractionFailureV1::InvalidRequest);
+                api::grab::InteractionFailure::InvalidRequest);
             clearHandInputSuppressionsForOwnerLocked(
                 ownerToken,
-                RockProviderHand::None,
+                api::Hand::None,
                 ::rock::api::input::SuppressionInvalidationReason::CallbackFault);
             clearWeaponPartTargetsForOwnerLocked(ownerToken);
             clearWeaponPartDrivesForOwnerLocked(ownerToken);
@@ -1617,7 +1617,7 @@ namespace rock::provider::runtime
         }
         (void)clearHandVisualAuthorityForOwner(
             ownerToken,
-            RockProviderHand::None,
+            api::Hand::None,
             true);
         clearNativeAnimationRuntimePublicationForOwner(ownerToken);
         // Completed PA commands have already left the queue and scope registry.
@@ -1642,7 +1642,7 @@ namespace rock::provider::runtime
 
 
 
-    RockProviderResultV1 validateReadCapability(
+    api::Status validateReadCapability(
         const std::uint64_t ownerToken,
         const RockProviderConsumerCapabilityV1 capability)
     {
@@ -1659,7 +1659,7 @@ namespace rock::provider::runtime
         return validateGenerationGuards(
                    worldGeneration,
                    skeletonGeneration,
-                   providerGeneration) != RockProviderResultV1::Ok;
+                   providerGeneration) != api::Status::Ok;
     }
 
 
@@ -1668,7 +1668,7 @@ namespace rock::provider::runtime
 
 
     template <class Output, class Query>
-    RockProviderResultV1 queryPhysicsInteractionValueV1(
+    api::Status queryPhysicsInteractionValueV1(
         const std::uint64_t ownerToken,
         const RockProviderConsumerCapabilityV1 capability,
         Output* output,
@@ -1677,26 +1677,26 @@ namespace rock::provider::runtime
     {
         provider_state_policy::clearQueryOutput(output);
         if (ownerToken == 0 || !output) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         if (output->size < sizeof(Output)) {
-            return RockProviderResultV1::InvalidSize;
+            return api::Status::InvalidSize;
         }
         const auto ownerResult = validateReadCapability(ownerToken, capability);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
         if (requireAnimationThread && !onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
+            return api::Status::WrongThread;
         }
         const auto instanceAccess = s_physicsInteraction.borrow();
         auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
-            return RockProviderResultV1::NotReady;
+            return api::Status::NotReady;
         }
         return query(*pi, *output) ?
-            RockProviderResultV1::Ok :
-            RockProviderResultV1::TargetUnavailable;
+            api::Status::Ok :
+            api::Status::TargetUnavailable;
     }
 
 
@@ -1717,57 +1717,57 @@ namespace rock::provider::runtime
         return std::isfinite(values[0]) && std::isfinite(values[1]) && std::isfinite(values[2]);
     }
 
-    RockProviderResultV1 validateInteractionCommandProviderReady()
+    api::Status validateInteractionCommandProviderReady()
     {
         const auto instanceAccess = s_physicsInteraction.borrow();
         auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
-            return RockProviderResultV1::NotReady;
+            return api::Status::NotReady;
         }
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
-    RockProviderResultV1 enqueueInteractionCommand(QueuedInteractionCommandV1 command, std::uint64_t* outCommandId)
+    api::Status enqueueInteractionCommand(QueuedInteractionCommandV1 command, std::uint64_t* outCommandId)
     {
         if (!outCommandId) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         *outCommandId = 0;
 
         const auto providerReadyResult = validateInteractionCommandProviderReady();
-        if (providerReadyResult != RockProviderResultV1::Ok) {
+        if (providerReadyResult != api::Status::Ok) {
             return providerReadyResult;
         }
 
         std::scoped_lock lock(s_consumerMutex, s_interactionCommandMutex);
         const auto ownerResult = validateInteractionCommandOwnerLocked(command.ownerToken);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
 
-        if (command.kind == RockProviderInteractionCommandKindV1::ForceGrab &&
+        if (command.kind == api::grab::InteractionCommandKind::ForceGrab &&
             s_forceGrabReservations.isReserved(command.forceGrab.hand)) {
-            return RockProviderResultV1::HandBusy;
+            return api::Status::HandBusy;
         }
 
         for (auto& slot : s_interactionCommands) {
             if (!slot.active) {
                 command.commandId = nextInteractionCommandId();
-                if (command.kind == RockProviderInteractionCommandKindV1::ForceGrab &&
+                if (command.kind == api::grab::InteractionCommandKind::ForceGrab &&
                     !s_forceGrabReservations.reserve(command.forceGrab.hand, command.ownerToken, command.commandId)) {
-                    return RockProviderResultV1::HandBusy;
+                    return api::Status::HandBusy;
                 }
                 slot = InteractionCommandSlot{
                     .active = true,
                     .command = command,
                 };
                 *outCommandId = command.commandId;
-                storeInteractionResultLocked(makeCommandResult(command, RockProviderInteractionCommandStateV1::Queued, RockProviderInteractionFailureV1::None));
-                return RockProviderResultV1::RequestQueued;
+                storeInteractionResultLocked(makeCommandResult(command, api::grab::InteractionCommandState::Queued, api::grab::InteractionFailure::None));
+                return api::Status::RequestQueued;
             }
         }
 
-        return RockProviderResultV1::CapacityFull;
+        return api::Status::CapacityFull;
     }
 
 
@@ -1821,19 +1821,19 @@ namespace rock::provider::runtime
 
 
 
-    RockProviderResultV1 validateTargetQuery(std::uint64_t ownerToken,
+    api::Status validateTargetQuery(std::uint64_t ownerToken,
         const RockProviderReferenceQueryV1* query, RockProviderConsumerCapabilityV1 capability)
     {
-        if (!query || !ownerToken || !query->referenceFormId || query->furnitureMarkerIndex < 0) return RockProviderResultV1::InvalidArgument;
-        if (query->size != sizeof(*query)) return RockProviderResultV1::InvalidSize;
-        if (query->version != ROCK_PROVIDER_API_VERSION) return RockProviderResultV1::UnsupportedVersion;
+        if (!query || !ownerToken || !query->referenceFormId || query->furnitureMarkerIndex < 0) return api::Status::InvalidArgument;
+        if (query->size != sizeof(*query)) return api::Status::InvalidSize;
+        if (query->version != ROCK_PROVIDER_API_VERSION) return api::Status::UnsupportedVersion;
         const auto permission = validateReadCapability(ownerToken, capability);
-        if (permission != RockProviderResultV1::Ok) return permission;
-        if (!onAnimationOwnerThread()) return RockProviderResultV1::WrongThread;
+        if (permission != api::Status::Ok) return permission;
+        if (!onAnimationOwnerThread()) return api::Status::WrongThread;
         const bool ready = apiIsProviderReady();
         const auto result = ready ? validateGenerationGuards(query->worldGeneration,
-            query->skeletonGeneration, query->providerGeneration) : RockProviderResultV1::NotReady;
-        if (result != RockProviderResultV1::Ok) {
+            query->skeletonGeneration, query->providerGeneration) : api::Status::NotReady;
+        if (result != api::Status::Ok) {
             // Animation-owner thread only. Preserve the query contract and log
             // the actual rejecting authority, including during frame resets.
             static std::uint64_t lastReportedFrame = 0;
@@ -1894,38 +1894,38 @@ namespace rock::provider::runtime
         return request.size == sizeof(RockProviderOffhandReservationRequestV1) &&
                request.version != 0 &&
                request.version <= ROCK_PROVIDER_API_VERSION &&
-               request.reservation != RockProviderOffhandReservation::Normal &&
-               (request.reservation == RockProviderOffhandReservation::ReloadReserved ||
-                   request.reservation == RockProviderOffhandReservation::ReloadPoseOverride) &&
+               request.reservation != api::grab::HandReservationKind::Normal &&
+               (request.reservation == api::grab::HandReservationKind::ReloadReserved ||
+                   request.reservation == api::grab::HandReservationKind::ReloadPoseOverride) &&
                request.leaseFrames != 0;
     }
 
-    RockProviderResultV1 setOffhandReservationLeaseV1(
+    api::Status setOffhandReservationLeaseV1(
         const std::uint64_t ownerToken,
         const RockProviderOffhandReservationRequestV1* request,
         const bool requireExisting)
     {
         if (ownerToken == 0 || !request) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         if (request->size != sizeof(RockProviderOffhandReservationRequestV1)) {
-            return RockProviderResultV1::InvalidSize;
+            return api::Status::InvalidSize;
         }
         if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV1::UnsupportedVersion;
+            return api::Status::UnsupportedVersion;
         }
         if (!validOffhandReservationRequest(*request)) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         // One weapon today: only the primary weapon's offhand can be reserved.
         if (request->hand != apiGetOffhandHandV1()) {
-            return RockProviderResultV1::HandUnavailable;
+            return api::Status::HandUnavailable;
         }
         const auto generationResult = validateGenerationGuards(
             request->worldGeneration,
             request->skeletonGeneration,
             request->providerGeneration);
-        if (generationResult != RockProviderResultV1::Ok) {
+        if (generationResult != api::Status::Ok) {
             return generationResult;
         }
 
@@ -1934,17 +1934,17 @@ namespace rock::provider::runtime
         const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
             ownerToken,
             RockProviderConsumerCapabilityV1::OffhandReservation);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
         pruneExpiredOffhandReservationLocked(frameIndex);
         if (requireExisting &&
             s_offhandReservationSlot.ownerToken != ownerToken) {
-            return RockProviderResultV1::TargetUnavailable;
+            return api::Status::TargetUnavailable;
         }
         if (s_offhandReservationSlot.ownerToken != 0 &&
             s_offhandReservationSlot.ownerToken != ownerToken) {
-            return RockProviderResultV1::OwnerConflict;
+            return api::Status::OwnerConflict;
         }
         const auto leaseFrames = provider_lease_policy::clampLeaseFrames(
             request->leaseFrames,
@@ -1961,7 +1961,7 @@ namespace rock::provider::runtime
             .providerGeneration = request->providerGeneration,
         };
         publishOffhandReservationLocked(s_offhandReservationSlot);
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
 
@@ -1969,10 +1969,10 @@ namespace rock::provider::runtime
 
 
 
-    [[nodiscard]] RockProviderPoint3 toProviderPoint(
+    [[nodiscard]] api::Point3 toProviderPoint(
         const RE::NiPoint3& point) noexcept
     {
-        return RockProviderPoint3{ point.x, point.y, point.z };
+        return api::Point3{ point.x, point.y, point.z };
     }
 
 
@@ -2028,21 +2028,21 @@ namespace rock::provider::runtime
     {
         constexpr std::uint32_t gripFlags =
             static_cast<std::uint32_t>(
-                RockProviderHandInteractionFlagV1::FiringGrip) |
+                api::grab::HandInteractionFlag::FiringGrip) |
             static_cast<std::uint32_t>(
-                RockProviderHandInteractionFlagV1::PartGrip) |
+                api::grab::HandInteractionFlag::PartGrip) |
             static_cast<std::uint32_t>(
-                RockProviderHandInteractionFlagV1::PartCarry) |
+                api::grab::HandInteractionFlag::PartCarry) |
             static_cast<std::uint32_t>(
-                RockProviderHandInteractionFlagV1::LooseObject) |
+                api::grab::HandInteractionFlag::LooseObject) |
             static_cast<std::uint32_t>(
-                RockProviderHandInteractionFlagV1::LooseWeapon) |
+                api::grab::HandInteractionFlag::LooseWeapon) |
             static_cast<std::uint32_t>(
-                RockProviderHandInteractionFlagV1::TouchGrab) |
+                api::grab::HandInteractionFlag::TouchGrab) |
             static_cast<std::uint32_t>(
-                RockProviderHandInteractionFlagV1::FixedSurfaceLatch) |
+                api::grab::HandInteractionFlag::FixedSurfaceLatch) |
             static_cast<std::uint32_t>(
-                RockProviderHandInteractionFlagV1::GlobalSurfaceLatch);
+                api::grab::HandInteractionFlag::GlobalSurfaceLatch);
         return handGripActive(left) == handGripActive(right) &&
                (left.flags & gripFlags) == (right.flags & gripFlags) &&
                sameHandTarget(left, right);
@@ -2088,7 +2088,7 @@ namespace rock::provider::runtime
         current.targetSequence = sameHandTarget(current, previous) ?
             previous.targetSequence :
             advanceSequence(previous.targetSequence);
-        if (!(current.flags & static_cast<std::uint32_t>(RockProviderHandInteractionFlagV1::Valid))) {
+        if (!(current.flags & static_cast<std::uint32_t>(api::grab::HandInteractionFlag::Valid))) {
             // Loss of observation is not a measured release.
             current.gripSequence = previous.gripSequence;
             current.releaseSequence = previous.releaseSequence;
@@ -2287,13 +2287,13 @@ namespace rock::provider
                 auto& currentHand = handInteractionStates[index];
                 const auto& previousHand = previousHands[index];
                 if (hadPrevious &&
-                    (currentHand.flags & static_cast<std::uint32_t>(RockProviderHandInteractionFlagV1::Valid)) &&
+                    (currentHand.flags & static_cast<std::uint32_t>(api::grab::HandInteractionFlag::Valid)) &&
                     handGripActive(previousHand) &&
                     !handGripActive(currentHand) &&
                     currentHand.phase ==
-                        RockProviderHandInteractionPhaseV1::Idle) {
+                        api::grab::HandInteractionPhase::Idle) {
                     currentHand.phase =
-                        RockProviderHandInteractionPhaseV1::Releasing;
+                        api::grab::HandInteractionPhase::Releasing;
                     currentHand.targetKind = previousHand.targetKind;
                     currentHand.reservedTargetIdentity =
                         previousHand.reservedTargetIdentity;
@@ -2301,24 +2301,24 @@ namespace rock::provider
                     currentHand.primaryBodyId = previousHand.primaryBodyId;
                     constexpr std::uint32_t touchGrabClassificationFlags =
                         static_cast<std::uint32_t>(
-                            RockProviderHandInteractionFlagV1::TouchGrab) |
+                            api::grab::HandInteractionFlag::TouchGrab) |
                         static_cast<std::uint32_t>(
-                            RockProviderHandInteractionFlagV1::
+                            api::grab::HandInteractionFlag::
                                 FixedSurfaceLatch) |
                         static_cast<std::uint32_t>(
-                            RockProviderHandInteractionFlagV1::
+                            api::grab::HandInteractionFlag::
                                 GlobalSurfaceLatch) |
                         static_cast<std::uint32_t>(
-                            RockProviderHandInteractionFlagV1::
+                            api::grab::HandInteractionFlag::
                                 SurfaceAnchorValid) |
                         static_cast<std::uint32_t>(
-                            RockProviderHandInteractionFlagV1::
+                            api::grab::HandInteractionFlag::
                                 MeshSurfaceAnchor) |
                         static_cast<std::uint32_t>(
-                            RockProviderHandInteractionFlagV1::
+                            api::grab::HandInteractionFlag::
                                 MeshFingerPose) |
                         static_cast<std::uint32_t>(
-                            RockProviderHandInteractionFlagV1::
+                            api::grab::HandInteractionFlag::
                                 MeshCollisionFallback);
                     currentHand.flags |=
                         previousHand.flags &
@@ -2668,10 +2668,10 @@ namespace rock::provider
             // Preserve lifecycle/terminal history, invalidate all live reads.
             s_lastSnapshot.providerReady = 0;
             s_lastSnapshot.lifecycleFlags &= ~(
-                static_cast<std::uint32_t>(RockProviderLifecycleFlag::ProviderReady) |
-                static_cast<std::uint32_t>(RockProviderLifecycleFlag::GeneratedBodiesValid) |
-                static_cast<std::uint32_t>(RockProviderLifecycleFlag::PhysicsWriteAllowed) |
-                static_cast<std::uint32_t>(RockProviderLifecycleFlag::VisualWriteAllowed));
+                static_cast<std::uint32_t>(api::core::LifecycleFlag::ProviderReady) |
+                static_cast<std::uint32_t>(api::core::LifecycleFlag::GeneratedBodiesValid) |
+                static_cast<std::uint32_t>(api::core::LifecycleFlag::PhysicsWriteAllowed) |
+                static_cast<std::uint32_t>(api::core::LifecycleFlag::VisualWriteAllowed));
             s_lastSnapshot.enrichmentFlags &= ~(
                 static_cast<std::uint32_t>(RockProviderFrameEnrichmentFlagV1::RightHandTransformValid) |
                 static_cast<std::uint32_t>(RockProviderFrameEnrichmentFlagV1::LeftHandTransformValid));
@@ -2719,7 +2719,7 @@ namespace rock::provider
             std::scoped_lock lock(s_touchGrabMutex);
             s_touchGrabTargets.clearAll();
         }
-        clearInteractionCommandsForProviderLossV1(RockProviderInteractionFailureV1::ProviderNotReady);
+        clearInteractionCommandsForProviderLossV1(api::grab::InteractionFailure::ProviderNotReady);
         {
             std::scoped_lock lock(s_handInputSuppressionMutex);
             for (auto& slot : s_handInputSuppressions) {
@@ -2878,7 +2878,7 @@ namespace rock::provider
                     resultSlot.result.ownerToken == outCommand.ownerToken &&
                     resultSlot.result.commandId == outCommand.commandId) {
                     resultSlot.result.stage =
-                        RockProviderCommandStageV1::Committed;
+                        api::grab::CommandStage::Committed;
                     resultSlot.result.committedFrame = currentGameFrameIndex();
                     break;
                 }
@@ -2904,7 +2904,7 @@ namespace rock::provider
     bool completeInteractionCommandV1(const RockProviderInteractionCommandResultV1& result)
     {
         std::scoped_lock lock(s_interactionCommandMutex);
-        if (result.kind == RockProviderInteractionCommandKindV1::ForceGrab &&
+        if (result.kind == api::grab::InteractionCommandKind::ForceGrab &&
             !s_forceGrabReservations.matches(result.ownerToken, result.commandId)) {
             return false;
         }
@@ -2915,7 +2915,7 @@ namespace rock::provider
         return true;
     }
 
-    void clearInteractionCommandsForProviderLossV1(RockProviderInteractionFailureV1 failure)
+    void clearInteractionCommandsForProviderLossV1(api::grab::InteractionFailure failure)
     {
         std::scoped_lock lock(s_interactionCommandMutex);
         /*
@@ -2924,13 +2924,13 @@ namespace rock::provider
          * queue so consumers never observe an immortal command.
          */
         for (auto& slot : s_interactionResults) {
-            if (slot.active && slot.result.state == RockProviderInteractionCommandStateV1::Queued) {
+            if (slot.active && slot.result.state == api::grab::InteractionCommandState::Queued) {
                 auto terminal = slot.result;
                 terminal.state =
-                    RockProviderInteractionCommandStateV1::Cancelled;
+                    api::grab::InteractionCommandState::Cancelled;
                 terminal.failure = failure;
                 terminal.failureStage = failure;
-                terminal.stage = RockProviderCommandStageV1::Terminal;
+                terminal.stage = api::grab::CommandStage::Terminal;
                 terminal.frameIndex = currentGameFrameIndex();
                 storeInteractionResultLocked(terminal);
             }
@@ -2939,19 +2939,19 @@ namespace rock::provider
         s_forceGrabReservations.clear();
     }
 
-    RockProviderOffhandReservation currentHandReservation(const RockProviderHand hand)
+    api::grab::HandReservationKind currentHandReservation(const api::Hand hand)
     {
-        if (static_cast<RockProviderHand>(s_offhandReservationHand.load(std::memory_order_acquire)) != hand) {
-            return RockProviderOffhandReservation::Normal;
+        if (static_cast<api::Hand>(s_offhandReservationHand.load(std::memory_order_acquire)) != hand) {
+            return api::grab::HandReservationKind::Normal;
         }
         const auto expiry =
             s_offhandReservationExpiry.load(std::memory_order_acquire);
         if (expiry != 0 && !provider_lease_policy::isActive(
                 currentProviderFrameIndex(),
                 expiry)) {
-            return RockProviderOffhandReservation::Normal;
+            return api::grab::HandReservationKind::Normal;
         }
-        return static_cast<RockProviderOffhandReservation>(s_offhandReservation.load(std::memory_order_acquire));
+        return static_cast<api::grab::HandReservationKind>(s_offhandReservation.load(std::memory_order_acquire));
     }
 
     void setEquippedWeaponFiringHandIsLeft(const bool isLeft)
@@ -2995,11 +2995,11 @@ namespace rock::provider
     void markInteractionCommandStageV1(
         const std::uint64_t ownerToken,
         const std::uint64_t commandId,
-        const RockProviderCommandStageV1 stage)
+        const api::grab::CommandStage stage)
     {
         if (ownerToken == 0 || commandId == 0 ||
-            stage == RockProviderCommandStageV1::Unknown ||
-            stage == RockProviderCommandStageV1::Terminal) {
+            stage == api::grab::CommandStage::Unknown ||
+            stage == api::grab::CommandStage::Terminal) {
             return;
         }
         std::scoped_lock lock(s_interactionCommandMutex);
@@ -3011,11 +3011,11 @@ namespace rock::provider
             }
             slot.result.stage = stage;
             const auto frameIndex = currentGameFrameIndex();
-            if (stage == RockProviderCommandStageV1::Committed &&
+            if (stage == api::grab::CommandStage::Committed &&
                 slot.result.committedFrame == 0) {
                 slot.result.committedFrame = frameIndex;
             }
-            if (stage == RockProviderCommandStageV1::Applied &&
+            if (stage == api::grab::CommandStage::Applied &&
                 slot.result.appliedFrame == 0) {
                 slot.result.appliedFrame = frameIndex;
             }
@@ -3023,14 +3023,14 @@ namespace rock::provider
         }
     }
 
-    std::uint32_t currentHandInputSuppressionFlagsV1(RockProviderHand hand)
+    std::uint32_t currentHandInputSuppressionFlagsV1(api::Hand hand)
     {
-        if (hand != RockProviderHand::Right && hand != RockProviderHand::Left) {
+        if (hand != api::Hand::Right && hand != api::Hand::Left) {
             return 0;
         }
 
         const auto frameIndex = currentProviderFrameIndex();
-        std::uint32_t flags = input_remap_runtime::uiInputSuppressionFlags(hand == RockProviderHand::Left);
+        std::uint32_t flags = input_remap_runtime::uiInputSuppressionFlags(hand == api::Hand::Left);
         std::scoped_lock lock(s_handInputSuppressionMutex);
         pruneExpiredHandInputSuppressionsLocked(frameIndex);
         for (const auto& slot : s_handInputSuppressions) {
@@ -3150,7 +3150,7 @@ namespace rock::provider
         const std::uint32_t bodyId,
         const std::uint32_t collisionLayer,
         const TouchGrabMotionClassV1 motionClass,
-        const RockProviderHand hand,
+        const api::Hand hand,
         const std::uint32_t worldGeneration,
         const std::uint32_t skeletonGeneration,
         const std::uint32_t providerGeneration,

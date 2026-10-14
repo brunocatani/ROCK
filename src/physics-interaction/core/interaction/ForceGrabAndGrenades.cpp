@@ -39,8 +39,8 @@ namespace rock
         for (auto& commit : _forceGrab.pendingCommits) {
             if (!commit.active) continue;
             if (provider::isInteractionCommandActiveV1(commit.providerResultTemplate.ownerToken,commit.providerResultTemplate.commandId)) {
-                commit.providerResultTemplate.state = provider::RockProviderInteractionCommandStateV1::Cancelled;
-                commit.providerResultTemplate.failure = provider::RockProviderInteractionFailureV1::ProviderNotReady;
+                commit.providerResultTemplate.state = api::grab::InteractionCommandState::Cancelled;
+                commit.providerResultTemplate.failure = api::grab::InteractionFailure::ProviderNotReady;
                 provider::completeInteractionCommandV1(commit.providerResultTemplate);
             }
             rollbackInventoryTransfer(commit, "pending-grabs-cleared");
@@ -229,7 +229,7 @@ namespace rock
             const auto& handInput = commit.isLeft ? frame.left : frame.right;
 
             auto abandon = [&](const char* reason,
-                               provider::RockProviderInteractionFailureV1 providerFailure,
+                               api::grab::InteractionFailure providerFailure,
                                RE::TESObjectREFR* target) {
                 ROCK_LOG_WARN(Hand,
                     "Pending force-grab commit abandoned ({}): hand={} ref={:08X} root={} phase={} elapsed={:.3f}s limit={:.3f}s blockers={:X} preferredBody={} selectionBody={} maxDistance={:.2f} sourceOverride={}",
@@ -237,7 +237,7 @@ namespace rock
                     target && target->Get3D(), static_cast<unsigned>(commit.phase), commit.elapsedTotalSeconds, commit.maxTotalSeconds,
                     forceGrabHandBlockerMask(hand, commit.isLeft, handInput.disabled, false), commit.preferredBodyId,
                     hand.getSelection().bodyId.value, commit.maxDistanceGame, commit.hasSourcePointOverride);
-                commit.providerResultTemplate.state = provider::RockProviderInteractionCommandStateV1::Rejected;
+                commit.providerResultTemplate.state = api::grab::InteractionCommandState::Rejected;
                 commit.providerResultTemplate.failure = providerFailure;
                 if (!commit.internallyOwned()) {
                     provider::completeInteractionCommandV1(commit.providerResultTemplate);
@@ -276,30 +276,30 @@ namespace rock
             auto* targetRef = targetRefPtr.get();
             if (!targetRef) {
                 if (timedOut) {
-                    abandon("target ref did not resolve", provider::RockProviderInteractionFailureV1::TargetUnavailable, nullptr);
+                    abandon("target ref did not resolve", api::grab::InteractionFailure::TargetUnavailable, nullptr);
                 }
                 continue;
             }
             if (targetRef->IsDeleted() || targetRef->IsDisabled()) {
-                abandon("target ref disappeared", provider::RockProviderInteractionFailureV1::TargetUnavailable, targetRef);
+                abandon("target ref disappeared", api::grab::InteractionFailure::TargetUnavailable, targetRef);
                 continue;
             }
             if (!commit.internallyOwned() && !storage_service::allowsGrab(targetRef->formID, commit.providerResultTemplate.ownerToken)) {
-                abandon("target reserved by item storage", provider::RockProviderInteractionFailureV1::TargetUnavailable, targetRef);
+                abandon("target reserved by item storage", api::grab::InteractionFailure::TargetUnavailable, targetRef);
                 continue;
             }
 
             if (commit.phase == PendingForceGrabCommitPhase::EquippedSlotReleaseFailed) {
-                abandon("equipped weapon slot was not released", provider::RockProviderInteractionFailureV1::HandBusy, targetRef);
+                abandon("equipped weapon slot was not released", api::grab::InteractionFailure::HandBusy, targetRef);
                 continue;
             }
             if (commit.phase == PendingForceGrabCommitPhase::NativePlacementFailed) {
-                abandon("native weapon placement failed", provider::RockProviderInteractionFailureV1::TargetUnavailable, targetRef);
+                abandon("native weapon placement failed", api::grab::InteractionFailure::TargetUnavailable, targetRef);
                 continue;
             }
             if (commit.phase == PendingForceGrabCommitPhase::WaitingForNativePlacement) {
                 if (timedOut) {
-                    abandon("native weapon placement timed out", provider::RockProviderInteractionFailureV1::TargetUnavailable, targetRef);
+                    abandon("native weapon placement timed out", api::grab::InteractionFailure::TargetUnavailable, targetRef);
                 }
                 continue;
             }
@@ -322,7 +322,7 @@ namespace rock
             }
             if (!canHandAcceptForceGrab(hand, commit.isLeft, handInput.disabled)) {
                 if (timedOut) {
-                    abandon("hand busy", provider::RockProviderInteractionFailureV1::HandBusy, targetRef);
+                    abandon("hand busy", api::grab::InteractionFailure::HandBusy, targetRef);
                 }
                 continue;
             }
@@ -351,7 +351,7 @@ namespace rock
                     commit.isEquippedWeaponTransfer())) {
                 commit.phase = PendingForceGrabCommitPhase::WaitingForSettle;
                 if (timedOut) {
-                    abandon("failed to resolve physics body", provider::RockProviderInteractionFailureV1::TargetBodyMissing, targetRef);
+                    abandon("failed to resolve physics body", api::grab::InteractionFailure::TargetBodyMissing, targetRef);
                 }
                 continue;
             }
@@ -360,7 +360,7 @@ namespace rock
                 hand.clearSelectionState(false);
                 commit.phase = PendingForceGrabCommitPhase::WaitingForSettle;
                 if (timedOut) {
-                    abandon("selection did not retain exact target", provider::RockProviderInteractionFailureV1::TargetUnavailable, targetRef);
+                    abandon("selection did not retain exact target", api::grab::InteractionFailure::TargetUnavailable, targetRef);
                 }
                 continue;
             }
@@ -370,7 +370,7 @@ namespace rock
 
                 commit.providerResultTemplate.targetBodyId = resolvedBodyId;
 
-                abandon("resolved body does not match requested body", provider::RockProviderInteractionFailureV1::TargetBodyMissing, targetRef);
+                abandon("resolved body does not match requested body", api::grab::InteractionFailure::TargetBodyMissing, targetRef);
                 continue;
             }
 
@@ -398,7 +398,7 @@ namespace rock
                 hand.clearSelectionState(false);
                 commit.phase = PendingForceGrabCommitPhase::WaitingForSettle;
                 if (timedOut) {
-                    abandon("failed to commit grab", provider::RockProviderInteractionFailureV1::TargetUnavailable, targetRef);
+                    abandon("failed to commit grab", api::grab::InteractionFailure::TargetUnavailable, targetRef);
                 }
                 continue;
             }
@@ -411,7 +411,7 @@ namespace rock
                     frame.hknpWorld,
                     GrabReleaseCollisionRestoreMode::Immediate,
                     makeGrabReleaseContext(hand, commit.isLeft));
-                abandon("grab postcondition did not match exact target", provider::RockProviderInteractionFailureV1::TargetUnavailable, targetRef);
+                abandon("grab postcondition did not match exact target", api::grab::InteractionFailure::TargetUnavailable, targetRef);
                 continue;
             }
 
@@ -424,14 +424,14 @@ namespace rock
                     commit.isLeft ? &_rightHand : &_leftHand,
                     &(commit.isLeft ? frame.right : frame.left).rawHandWorld);
                 if (!hand.isHolding() || hand.getHeldRef() != targetRef) {
-                    abandon("first held update rejected the transfer", provider::RockProviderInteractionFailureV1::TargetUnavailable, targetRef);
+                    abandon("first held update rejected the transfer", api::grab::InteractionFailure::TargetUnavailable, targetRef);
                     continue;
                 }
             }
 
             commit.providerResultTemplate.targetBodyId = primaryBodyId;
-            commit.providerResultTemplate.state = provider::RockProviderInteractionCommandStateV1::Succeeded;
-            commit.providerResultTemplate.failure = provider::RockProviderInteractionFailureV1::None;
+            commit.providerResultTemplate.state = api::grab::InteractionCommandState::Succeeded;
+            commit.providerResultTemplate.failure = api::grab::InteractionFailure::None;
             if (!commit.internallyOwned() && !provider::completeInteractionCommandV1(commit.providerResultTemplate)) {
                 /*
                  * Owner/provider loss can race the final main-thread

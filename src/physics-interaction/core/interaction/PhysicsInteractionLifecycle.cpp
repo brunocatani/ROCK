@@ -77,7 +77,7 @@ namespace rock
         ROCK_LOG_INFO(Init, "ROCK Physics Module — destroyed");
     }
 
-    void PhysicsInteraction::noteSkeletonLifecycle(std::uint32_t skeletonGeneration, ::rock::provider::RockProviderLifecycleReason reason)
+    void PhysicsInteraction::noteSkeletonLifecycle(std::uint32_t skeletonGeneration, api::core::LifecycleReason reason)
     {
         auto* bhk = getPlayerBhkWorld();
         auto* world = bhk && bhk == _lifecycle.cachedBhkWorld ? getHknpWorld(bhk) : nullptr;
@@ -86,9 +86,9 @@ namespace rock
         physics_lifecycle::noteGeneration(_lifecycle.state.skeletonGeneration, skeletonGeneration, _lifecycle.state, reason);
         physics_lifecycle::noteReason(_lifecycle.state, reason);
         markGeneratedBodiesInvalidated();
-        _lifecycle.state.flags &= ~static_cast<std::uint32_t>(::rock::provider::RockProviderLifecycleFlag::PhysicsWriteAllowed);
-        _lifecycle.state.flags &= ~static_cast<std::uint32_t>(::rock::provider::RockProviderLifecycleFlag::GeneratedBodiesValid);
-        _lifecycle.state.flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderLifecycleFlag::LoadingOrWorldTransition);
+        _lifecycle.state.flags &= ~static_cast<std::uint32_t>(api::core::LifecycleFlag::PhysicsWriteAllowed);
+        _lifecycle.state.flags &= ~static_cast<std::uint32_t>(api::core::LifecycleFlag::GeneratedBodiesValid);
+        _lifecycle.state.flags |= static_cast<std::uint32_t>(api::core::LifecycleFlag::LoadingOrWorldTransition);
         _lifecycle.flagsAtomic.store(_lifecycle.state.flags, std::memory_order_release);
         _lifecycle.skeletonGenerationAtomic.store(_lifecycle.state.skeletonGeneration, std::memory_order_release);
         _lifecycle.stableFrameCountAtomic.store(_lifecycle.state.stableFrameCount, std::memory_order_release);
@@ -96,13 +96,13 @@ namespace rock
         _lifecycle.hknpWorldAtomic.store(nullptr, std::memory_order_release);
     }
 
-    void PhysicsInteraction::noteProviderLifecycle(std::uint32_t providerGeneration, ::rock::provider::RockProviderLifecycleReason reason)
+    void PhysicsInteraction::noteProviderLifecycle(std::uint32_t providerGeneration, api::core::LifecycleReason reason)
     {
         _equipped.authoredPrimaryFiringGrip.reset("provider-lifecycle", _twoHandedGrip);
         physics_lifecycle::noteGeneration(_lifecycle.state.providerGeneration, providerGeneration, _lifecycle.state, reason);
         physics_lifecycle::noteReason(_lifecycle.state, reason);
         markGeneratedBodiesInvalidated();
-        _lifecycle.state.flags &= ~static_cast<std::uint32_t>(::rock::provider::RockProviderLifecycleFlag::PhysicsWriteAllowed);
+        _lifecycle.state.flags &= ~static_cast<std::uint32_t>(api::core::LifecycleFlag::PhysicsWriteAllowed);
         _lifecycle.flagsAtomic.store(_lifecycle.state.flags, std::memory_order_release);
         _lifecycle.providerGenerationAtomic.store(_lifecycle.state.providerGeneration, std::memory_order_release);
         _lifecycle.stableFrameCountAtomic.store(_lifecycle.state.stableFrameCount, std::memory_order_release);
@@ -189,8 +189,8 @@ namespace rock
         }
         _lifecycle.generatedBodiesBhkWorld = nullptr;
         _lifecycle.generatedBodiesHknpWorld = nullptr;
-        _lifecycle.state.flags &= ~static_cast<std::uint32_t>(::rock::provider::RockProviderLifecycleFlag::GeneratedBodiesValid);
-        _lifecycle.state.flags &= ~static_cast<std::uint32_t>(::rock::provider::RockProviderLifecycleFlag::PhysicsWriteAllowed);
+        _lifecycle.state.flags &= ~static_cast<std::uint32_t>(api::core::LifecycleFlag::GeneratedBodiesValid);
+        _lifecycle.state.flags &= ~static_cast<std::uint32_t>(api::core::LifecycleFlag::PhysicsWriteAllowed);
         _lifecycle.flagsAtomic.store(_lifecycle.state.flags, std::memory_order_release);
         _lifecycle.stableFrameCountAtomic.store(_lifecycle.state.stableFrameCount, std::memory_order_release);
         _lifecycle.hknpWorldAtomic.store(nullptr, std::memory_order_release);
@@ -318,7 +318,7 @@ namespace rock
         _contacts.generatedBodyRegistry.publish(entries.data(), entryCount);
     }
 
-    void PhysicsInteraction::observeLifecycleFrame(RE::bhkWorld* bhk, RE::hknpWorld* hknp, ::rock::provider::RockProviderLifecycleReason reasonHint)
+    void PhysicsInteraction::observeLifecycleFrame(RE::bhkWorld* bhk, RE::hknpWorld* hknp, api::core::LifecycleReason reasonHint)
     {
         const auto& runtime = runtime_state::currentFrame();
         physics_lifecycle::FrameInputs inputs{};
@@ -351,7 +351,7 @@ namespace rock
 
         return ::rock::provider::hasLifecycleFlag(
             _lifecycle.flagsAtomic.load(std::memory_order_acquire),
-            ::rock::provider::RockProviderLifecycleFlag::PhysicsWriteAllowed);
+            api::core::LifecycleFlag::PhysicsWriteAllowed);
     }
 
 #include "physics-interaction/core/PhysicsInteractionProvider.inl"
@@ -516,9 +516,9 @@ namespace rock
         _contacts.handActivity.reset();
 
         _lifecycle.initialized = true;
-        observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::None);
+        observeLifecycleFrame(bhk, hknp, api::core::LifecycleReason::None);
         markGeneratedBodiesRebuilt(bhk, hknp);
-        observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::GeneratedBodiesRebuilt);
+        observeLifecycleFrame(bhk, hknp, api::core::LifecycleReason::GeneratedBodiesRebuilt);
 
         dispatchPhysicsMessage(kPhysMsg_OnPhysicsInit, false);
 
@@ -526,13 +526,13 @@ namespace rock
             _rightHand.getCollisionBodyId().value, _leftHand.getCollisionBodyId().value);
     }
 
-    void PhysicsInteraction::shutdown(::rock::provider::RockProviderLifecycleReason reason)
+    void PhysicsInteraction::shutdown(api::core::LifecycleReason reason)
     {
         resetHeldPlacement();
-        if (reason == provider::RockProviderLifecycleReason::GameLoaded ||
-            reason == provider::RockProviderLifecycleReason::WorldChanged ||
-            reason == provider::RockProviderLifecycleReason::WorldUnavailable ||
-            reason == provider::RockProviderLifecycleReason::Shutdown)
+        if (reason == api::core::LifecycleReason::GameLoaded ||
+            reason == api::core::LifecycleReason::WorldChanged ||
+            reason == api::core::LifecycleReason::WorldUnavailable ||
+            reason == api::core::LifecycleReason::Shutdown)
             bipod_frozen_retirement::cancelForWorldLoss();
         _bipodRetirementVisual.release("physics-shutdown");
         _bipodRetirementHandle = {};

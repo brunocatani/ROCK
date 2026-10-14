@@ -1,20 +1,20 @@
 // Private Weapon service operations. Included after shared owner/lifecycle helpers.
 
-    RockProviderHand ROCK_PROVIDER_CALL apiGetPrimaryHandV1()
+    api::Hand apiGetPrimaryHandV1()
     {
         // ROCK's firing role is the only primary/offhand authority. Native
         // Fallout/FRIK handedness never changes ROCK controller identity.
         const bool primaryIsLeft =
             s_equippedWeaponFiringHandIsLeft.load(std::memory_order_acquire);
-        return primaryIsLeft ? RockProviderHand::Left : RockProviderHand::Right;
+        return primaryIsLeft ? api::Hand::Left : api::Hand::Right;
     }
 
-    RockProviderHand ROCK_PROVIDER_CALL apiGetOffhandHandV1()
+    api::Hand apiGetOffhandHandV1()
     {
-        return apiGetPrimaryHandV1() == RockProviderHand::Left ? RockProviderHand::Right : RockProviderHand::Left;
+        return apiGetPrimaryHandV1() == api::Hand::Left ? api::Hand::Right : api::Hand::Left;
     }
 
-    bool ROCK_PROVIDER_CALL apiQueryEquippedWeaponClassificationV1(RockProviderWeaponClassificationV1* outResult)
+    bool apiQueryEquippedWeaponClassificationV1(RockProviderWeaponClassificationV1* outResult)
     {
         provider_state_policy::clearQueryOutput(outResult);
         if (!outResult || outResult->size != sizeof(RockProviderWeaponClassificationV1)) {
@@ -30,7 +30,7 @@
         return pi->queryProviderEquippedWeaponClassificationV1(*outResult);
     }
 
-    std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEmitterCountV1()
+    std::uint32_t apiGetWeaponEmitterCountV1()
     {
         const auto instanceAccess = s_physicsInteraction.borrow();
         auto* pi = instanceAccess.get();
@@ -40,7 +40,7 @@
         return pi->getProviderWeaponEmitterCountV1();
     }
 
-    std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEmittersV1(
+    std::uint32_t apiCopyWeaponEmittersV1(
         RockProviderWeaponEmitterV1* outEmitters,
         std::uint32_t maxEmitters)
     {
@@ -52,7 +52,7 @@
         return pi->copyProviderWeaponEmittersV1(outEmitters, maxEmitters);
     }
 
-    bool ROCK_PROVIDER_CALL apiGetEquippedWeaponGripStateV1(
+    bool apiGetEquippedWeaponGripStateV1(
         const std::uint64_t ownerToken,
         RockProviderEquippedWeaponGripStateV1* outState)
     {
@@ -79,18 +79,18 @@
                pi->queryProviderEquippedWeaponGripStateV1(*outState);
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetEquippedWeaponHandlingAuthorityV1(
+    api::Status apiSetEquippedWeaponHandlingAuthorityV1(
         const std::uint64_t ownerToken,
         const RockProviderEquippedWeaponHandlingRequestV1* request)
     {
         if (ownerToken == 0 || !request) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         if (request->size != sizeof(RockProviderEquippedWeaponHandlingRequestV1)) {
-            return RockProviderResultV1::InvalidSize;
+            return api::Status::InvalidSize;
         }
         if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV1::UnsupportedVersion;
+            return api::Status::UnsupportedVersion;
         }
         constexpr std::uint32_t implementedFlags =
             static_cast<std::uint32_t>(RockProviderEquippedWeaponHandlingFlagV1::FiringGripOwnership) |
@@ -122,13 +122,13 @@
             ((request->flags & shoulderStashFlag) != 0 &&
                 (request->flags & primaryDetachFlag) == 0) ||
             !equippedWeaponHandlingRequestValuesValid(*request)) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         const auto generationResult = validateGenerationGuards(
             request->worldGeneration,
             request->skeletonGeneration,
             request->providerGeneration);
-        if (generationResult != RockProviderResultV1::Ok) {
+        if (generationResult != api::Status::Ok) {
             return generationResult;
         }
 
@@ -139,13 +139,13 @@
         const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
             ownerToken,
             RockProviderConsumerCapabilityV1::EquippedWeaponHandlingAuthority);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
         pruneExpiredEquippedWeaponHandlingAuthorityLocked(frameIndex);
         if (s_equippedWeaponHandlingAuthority.active &&
             s_equippedWeaponHandlingAuthority.ownerToken != ownerToken) {
-            return RockProviderResultV1::OwnerConflict;
+            return api::Status::OwnerConflict;
         }
 
         const auto leaseFrames = provider_lease_policy::clampLeaseFrames(
@@ -163,14 +163,14 @@
         s_equippedWeaponHandlingAuthority.request.version =
             ROCK_PROVIDER_API_VERSION;
         s_equippedWeaponHandlingAuthority.request.leaseFrames = leaseFrames;
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearEquippedWeaponHandlingAuthorityV1(
+    api::Status apiClearEquippedWeaponHandlingAuthorityV1(
         const std::uint64_t ownerToken)
     {
         if (ownerToken == 0) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         std::scoped_lock lock(
             s_consumerMutex,
@@ -178,15 +178,15 @@
         const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
             ownerToken,
             RockProviderConsumerCapabilityV1::EquippedWeaponHandlingAuthority);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
         if (s_equippedWeaponHandlingAuthority.active &&
             s_equippedWeaponHandlingAuthority.ownerToken != ownerToken) {
-            return RockProviderResultV1::OwnerConflict;
+            return api::Status::OwnerConflict;
         }
         clearEquippedWeaponHandlingAuthorityForOwnerLocked(ownerToken);
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
     api::Status getHandlingAuthority(api::weapon::HandlingAuthority& output)
@@ -203,7 +203,7 @@
         return api::Status::Ok;
     }
 
-    bool ROCK_PROVIDER_CALL apiGetEquippedWeaponHandlingStateV1(
+    bool apiGetEquippedWeaponHandlingStateV1(
         RockProviderEquippedWeaponHandlingStateV1* outState)
     {
         provider_state_policy::clearQueryOutput(outState);
@@ -234,32 +234,32 @@
         return true;
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetEquippedWeaponStateV1(
+    api::Status apiGetEquippedWeaponStateV1(
         const std::uint64_t ownerToken,
         RockProviderEquippedWeaponStateV1* outState)
     {
         provider_state_policy::clearQueryOutput(outState);
         if (ownerToken == 0 || !outState) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         if (outState->size < sizeof(RockProviderEquippedWeaponStateV1)) {
-            return RockProviderResultV1::InvalidSize;
+            return api::Status::InvalidSize;
         }
         const auto ownerResult = validateReadCapability(
             ownerToken,
             RockProviderConsumerCapabilityV1::FrameSnapshots);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
         std::scoped_lock lock(s_snapshotMutex);
         if (!s_hasSnapshot) {
-            return RockProviderResultV1::NotReady;
+            return api::Status::NotReady;
         }
         *outState = s_lastEquippedWeaponState;
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetScopeSightStateV1(
+    api::Status apiGetScopeSightStateV1(
         const std::uint64_t ownerToken,
         RockProviderScopeSightStateV1* outState)
     {
@@ -273,7 +273,7 @@
             true);
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetWeaponCompositionStateV1(
+    api::Status apiGetWeaponCompositionStateV1(
         const std::uint64_t ownerToken,
         RockProviderWeaponCompositionStateV1* outState)
     {
@@ -286,7 +286,7 @@
             });
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyWeaponCompositionEntriesV1(
+    api::Status apiCopyWeaponCompositionEntriesV1(
         const std::uint64_t ownerToken,
         RockProviderWeaponCompositionEntryV1* outEntries,
         const std::uint32_t maxEntries,
@@ -295,26 +295,26 @@
         if (outEntryCount) *outEntryCount = 0;
         if (ownerToken == 0 || !outEntryCount ||
             (maxEntries != 0 && !outEntries)) {
-            return RockProviderResultV1::InvalidArgument;
+            return api::Status::InvalidArgument;
         }
         const auto ownerResult = validateReadCapability(
             ownerToken,
             RockProviderConsumerCapabilityV1::WeaponComposition);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return ownerResult;
         }
         const auto instanceAccess = s_physicsInteraction.borrow();
         auto* pi = instanceAccess.get();
         if (!pi || !pi->isInitialized()) {
-            return RockProviderResultV1::NotReady;
+            return api::Status::NotReady;
         }
         *outEntryCount = pi->copyProviderWeaponCompositionEntriesV1(
             outEntries,
             maxEntries);
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetSelectedAuthoredGripPoseV1(
+    api::Status apiGetSelectedAuthoredGripPoseV1(
         const std::uint64_t ownerToken,
         RockProviderAuthoredGripPoseV1* outPose)
     {

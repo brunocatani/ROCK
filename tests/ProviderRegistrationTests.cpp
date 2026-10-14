@@ -16,16 +16,16 @@
 
 namespace rock::saved_grab_offset {
     DefaultGrabPoseRegistry defaults;
-    void clearDefaultGrabPosesForOwner(api::OwnerToken owner) { defaults.clearOwner(owner); }
+    void clearDefaultGrabPosesForOwner(rock::api::OwnerToken owner) { defaults.clearOwner(owner); }
 }
 namespace Version {constexpr std::string_view NAME="test";}
 namespace rock::provider::events {
-    api::Status bind(api::OwnerToken,api::InterfaceId);
-    void remove(api::OwnerToken);
+    rock::api::Status bind(rock::api::OwnerToken,rock::api::InterfaceId);
+    void remove(rock::api::OwnerToken);
 }
 namespace rock::physical_reload_input {void clearOwner(std::uint64_t){}}
 namespace rock::native_interaction_service {
-    api::Status canUnregisterOwner(std::uint64_t){return api::Status::Ok;}
+    rock::api::Status canUnregisterOwner(std::uint64_t){return rock::api::Status::Ok;}
     void clearOwner(std::uint64_t){}
 }
 namespace rock::loose_weapon_state {void clear(std::uint64_t){}}
@@ -60,16 +60,16 @@ namespace rock::provider::runtime {
     std::size_t boundedStringLength(const char* text,std::size_t max){std::size_t n=0;while(n<max && text[n])++n;return n;}
     bool modNameEquals(const Consumer& slot,const char* name,std::size_t n){return slot.token && std::strlen(slot.modName)==n && std::memcmp(slot.modName,name,n)==0;}
     Consumer* findConsumerSlotLocked(std::uint64_t owner){for(auto& s:s_consumers)if(s.token==owner)return &s;return nullptr;}
-    RockProviderResultV1 validateRegisteredOwnerCapabilityLocked(std::uint64_t owner,RockProviderConsumerCapabilityV1){return findConsumerSlotLocked(owner)?RockProviderResultV1::Ok:RockProviderResultV1::OwnerNotRegistered;}
-    void clearInteractionCommandsForOwnerLocked(std::uint64_t,RockProviderInteractionFailureV1){}
-    void clearHandInputSuppressionsForOwnerLocked(std::uint64_t,RockProviderHand,::rock::api::input::SuppressionInvalidationReason){}
+    rock::api::Status validateRegisteredOwnerCapabilityLocked(std::uint64_t owner,RockProviderConsumerCapabilityV1){return findConsumerSlotLocked(owner)?rock::api::Status::Ok:api::Status::OwnerNotRegistered;}
+    void clearInteractionCommandsForOwnerLocked(std::uint64_t,rock::api::grab::InteractionFailure){}
+    void clearHandInputSuppressionsForOwnerLocked(std::uint64_t,rock::api::Hand,::rock::api::input::SuppressionInvalidationReason){}
     void clearWeaponPartTargetsForOwnerLocked(std::uint64_t){}
     void clearWeaponPartDrivesForOwnerLocked(std::uint64_t){}
     void clearNativeAnimationAuthorityForOwnerLocked(std::uint64_t){}
     void clearEquippedWeaponHandlingAuthorityForOwnerLocked(std::uint64_t){}
     void clearOffhandReservationLocked(::rock::api::input::SuppressionInvalidationReason){}
     void clearAnimationPhaseCallbacksForOwnerLocked(std::uint64_t){}
-    bool clearHandVisualAuthorityForOwner(std::uint64_t,RockProviderHand,bool){return true;}
+    bool clearHandVisualAuthorityForOwner(std::uint64_t,rock::api::Hand,bool){return true;}
     void clearNativeAnimationRuntimePublicationForOwner(std::uint64_t){}
     #include "api/services/CoreService.inl"
 }
@@ -79,8 +79,8 @@ namespace {
     bool pauseRemoval=false;
 }
 namespace rock::provider::events {
-    api::Status bind(api::OwnerToken owner,api::InterfaceId){return stream.bind(owner);}
-    void remove(api::OwnerToken owner){
+    rock::api::Status bind(rock::api::OwnerToken owner,rock::api::InterfaceId){return stream.bind(owner);}
+    void remove(rock::api::OwnerToken owner){
         // Owner capacity must remain reserved until every event slot is retired.
         assert(runtime::findConsumerSlotLocked(owner)!=nullptr);
         if(pauseRemoval){removalEntered.count_down();allowRemoval.wait();}
@@ -99,7 +99,7 @@ int main(){
     for(unsigned i=0;i<owners.size();++i){
         RockProviderConsumerRegistrationV1 registration{};
         const auto name="Owner"+std::to_string(i);std::memcpy(registration.modName,name.c_str(),name.size()+1);
-        assert(apiRegisterConsumerV1(&registration,&owners[i])==RockProviderResultV1::Ok);
+        assert(apiRegisterConsumerV1(&registration,&owners[i])==rock::api::Status::Ok);
     }
     rock::api::grab::DefaultGrabPoses pose;
     pose.baseFormId=100;pose.left.flags=1;
@@ -115,7 +115,7 @@ int main(){
         registrationStarted.count_down();return apiRegisterConsumerV1(&registration,&replacement);
     });
     registrationStarted.wait();allowRemoval.count_down();
-    assert(retire.get()==RockProviderResultV1::Ok && registerNext.get()==RockProviderResultV1::Ok);
+    assert(retire.get()==rock::api::Status::Ok && registerNext.get()==rock::api::Status::Ok);
     assert(replacement.ownerToken!=owners[0].ownerToken);
     rock::saved_grab_offset::HandOffset offset;
     assert(!rock::saved_grab_offset::defaults.load(100,true,offset));
@@ -125,11 +125,11 @@ int main(){
     assert(stream.copy(owners[0].ownerToken,0,nullptr,0,state)==rock::api::Status::PermissionDenied);
     for(unsigned i=1;i<owners.size();++i)assert(stream.copy(owners[i].ownerToken,0,nullptr,0,state)==rock::api::Status::Ok);
     pauseRemoval=false;
-    assert(apiUnregisterConsumerV1(replacement.ownerToken)==RockProviderResultV1::Ok);
-    for(unsigned i=1;i<owners.size();++i)assert(apiUnregisterConsumerV1(owners[i].ownerToken)==RockProviderResultV1::Ok);
+    assert(apiUnregisterConsumerV1(replacement.ownerToken)==rock::api::Status::Ok);
+    for(unsigned i=1;i<owners.size();++i)assert(apiUnregisterConsumerV1(owners[i].ownerToken)==rock::api::Status::Ok);
     // If event admission fails, registration must not leak its reserved owner.
     for(unsigned i=0;i<64;++i)assert(stream.bind(1000+i)==rock::api::Status::Ok);
     RockProviderConsumerRegistrationV1 registration{};std::strcpy(registration.modName,"NoEventCapacity");
-    assert(apiRegisterConsumerV1(&registration,&replacement)==RockProviderResultV1::CapacityFull);
+    assert(apiRegisterConsumerV1(&registration,&replacement)==rock::api::Status::CapacityFull);
     for(const auto& owner:s_consumers)assert(owner.token==0);
 }

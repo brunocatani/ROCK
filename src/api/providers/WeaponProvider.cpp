@@ -84,11 +84,11 @@ Status ROCK_CALL getGrip(OwnerToken owner, std::uint32_t slot, Grip* outGrip) no
         outGrip->flags = in.flags & ~retired;
         outGrip->weaponFormId = in.weaponFormId;
         outGrip->weaponGenerationKey = in.weaponGenerationKey;
-        convert(outGrip->weaponWorld, in.weaponWorld);
-        convert(outGrip->rightHandInWeapon, in.rightHandInWeapon);
-        convert(outGrip->leftHandInWeapon, in.leftHandInWeapon);
-        convert(outGrip->muzzleOriginGame, in.muzzleOriginGame);
-        convert(outGrip->muzzleDirectionGame, in.muzzleDirectionGame);
+        outGrip->weaponWorld = in.weaponWorld;
+        outGrip->rightHandInWeapon = in.rightHandInWeapon;
+        outGrip->leftHandInWeapon = in.leftHandInWeapon;
+        outGrip->muzzleOriginGame = in.muzzleOriginGame;
+        outGrip->muzzleDirectionGame = in.muzzleDirectionGame;
         return Status::Ok;
     });
 }
@@ -133,8 +133,8 @@ Status ROCK_CALL copyEmitters(OwnerToken owner, std::uint32_t slot, Emitter* out
             out.omodFormId = in.omodFormId;
             out.attachPointFormId = in.attachPointFormId;
             out.weaponGenerationKey = in.weaponGenerationKey;
-            convert(out.weaponLocalTransform, in.weaponLocalTransform);
-            convert(out.forwardWeaponLocal, in.forwardWeaponLocal);
+            out.weaponLocalTransform = in.weaponLocalTransform;
+            out.forwardWeaponLocal = in.forwardWeaponLocal;
             std::copy_n(in.sourceName, std::size(out.sourceName), out.sourceName);
         }
         return Status::Ok;
@@ -196,11 +196,11 @@ Status ROCK_CALL getAuthoredGripPose(OwnerToken owner, std::uint32_t slot, Autho
         outPose->flags = in.flags;
         outPose->rightFingerLocalTransformMask = in.rightFingerLocalTransformMask;
         outPose->leftFingerLocalTransformMask = in.leftFingerLocalTransformMask;
-        convert(outPose->rightHandInWeapon, in.rightHandInWeapon);
-        convert(outPose->leftHandInWeapon, in.leftHandInWeapon);
+        outPose->rightHandInWeapon = in.rightHandInWeapon;
+        outPose->leftHandInWeapon = in.leftHandInWeapon;
         for (std::uint32_t i = 0; i < kFingerLocalTransformCount; ++i) {
-            convert(outPose->rightFingerLocalTransforms[i], in.rightFingerLocalTransforms[i]);
-            convert(outPose->leftFingerLocalTransforms[i], in.leftFingerLocalTransforms[i]);
+            outPose->rightFingerLocalTransforms[i] = in.rightFingerLocalTransforms[i];
+            outPose->leftFingerLocalTransforms[i] = in.leftFingerLocalTransforms[i];
         }
         outPose->worldGeneration = in.worldGeneration;
         outPose->skeletonGeneration = in.skeletonGeneration;
@@ -228,8 +228,8 @@ Status ROCK_CALL getScopeSightState(OwnerToken owner, std::uint32_t slot, ScopeS
         outState->weaponFormId = in.weaponFormId;
         outState->activationSource = static_cast<ScopeActivationSource>(in.activationSource);
         outState->nativeScopeOverlayIndex = in.nativeScopeOverlayIndex;
-        convert(outState->anchorWeaponLocal, in.anchorWeaponLocal);
-        convert(outState->sightBoundsWeaponLocal, in.sightBoundsWeaponLocal);
+        outState->anchorWeaponLocal = in.anchorWeaponLocal;
+        outState->sightBoundsWeaponLocal = in.sightBoundsWeaponLocal;
         outState->sightBodyCount = in.sightBodyCount;
         outState->sightBodyId = in.sightBodyId;
         outState->omodFormId = in.omodFormId;

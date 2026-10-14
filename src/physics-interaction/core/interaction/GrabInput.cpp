@@ -489,7 +489,7 @@ namespace rock
             return false;
         }
         const bool heldWeaponAtFrameStart = hand.isHoldingLooseWeapon();
-        const auto providerHand = isLeft ? provider::RockProviderHand::Left : provider::RockProviderHand::Right;
+        const auto providerHand = isLeft ? api::Hand::Left : api::Hand::Right;
         const std::uint32_t providerInputSuppressionFlags = provider::currentHandInputSuppressionFlagsV1(providerHand);
         auto providerSuppresses = [&](::rock::api::input::HandInputSuppressionFlag flag) {
             return provider::hasHandInputSuppressionFlagV1(providerInputSuppressionFlags, flag);
@@ -2695,7 +2695,7 @@ namespace rock
             if (hand.getState() != HandState::SelectionLocked) continue;
             const auto& input = isLeft ? frame.left : frame.right;
             const bool releaseSuppressed = provider::hasHandInputSuppressionFlagV1(
-                provider::currentHandInputSuppressionFlagsV1(isLeft ? provider::RockProviderHand::Left : provider::RockProviderHand::Right),
+                provider::currentHandInputSuppressionFlagsV1(isLeft ? api::Hand::Left : api::Hand::Right),
                 ::rock::api::input::HandInputSuppressionFlag::SuppressGrabRelease);
             if (!runtime_state::isLocalSkeletonReady() || !frame.worldReady || frame.menuBlocked ||
                     input.disabled || !input.hasGestureVelocity || !physicsWritesAllowedForWorld(frame.hknpWorld) ||
@@ -2733,7 +2733,7 @@ namespace rock
                     std::memory_order_acquire));
             _rightHand.cancelGrabVisualReturn("skeleton-not-ready");
             _leftHand.cancelGrabVisualReturn("skeleton-not-ready");
-            provider::clearInteractionCommandsForProviderLossV1(provider::RockProviderInteractionFailureV1::ProviderNotReady);
+            provider::clearInteractionCommandsForProviderLossV1(api::grab::InteractionFailure::ProviderNotReady);
             clearProviderInventoryEquip();
             clearPendingForceGrabCommits();
             input_remap_runtime::setHandHeldWeapon(false, false);

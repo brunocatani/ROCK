@@ -33,13 +33,13 @@ namespace rock::provider {
     bool onAnimationOwnerThread() { return ownerThread; }
     bool apiIsProviderReady() { return frik_visual_authority::ready; }
     template<class Output, class Query>
-    RockProviderResultV1 queryPhysicsInteractionValueV1(std::uint64_t owner,
+    api::Status queryPhysicsInteractionValueV1(std::uint64_t owner,
         RockProviderConsumerCapabilityV1, Output* output, Query query, bool) {
         provider_state_policy::clearQueryOutput(output);
-        if (!owner || !output) return RockProviderResultV1::InvalidArgument;
-        if (!ownerThread) return RockProviderResultV1::WrongThread;
-        if (!apiIsProviderReady()) return RockProviderResultV1::NotReady;
-        return query(instance, *output) ? RockProviderResultV1::Ok : RockProviderResultV1::TargetUnavailable;
+        if (!owner || !output) return api::Status::InvalidArgument;
+        if (!ownerThread) return api::Status::WrongThread;
+        if (!apiIsProviderReady()) return api::Status::NotReady;
+        return query(instance, *output) ? api::Status::Ok : api::Status::TargetUnavailable;
     }
 #include "api/services/HandsService.inl"
 }

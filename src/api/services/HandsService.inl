@@ -8,7 +8,7 @@
             snapshot.skeletonGeneration, snapshot.providerGeneration, snapshot.collisionGeneration };
     }
 
-    inline void copyHandsTransform(const RockProviderTransform& source, api::Transform& target) noexcept
+    inline void copyHandsTransform(const api::Transform& source, api::Transform& target) noexcept
     {
         std::copy_n(source.rotate, 9, target.rotate);
         std::copy_n(source.translate, 3, target.translate);

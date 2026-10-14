@@ -66,7 +66,7 @@ namespace rock
             RE::NiPoint3 surfaceAnchorGame{};
             bool hasNormal = false;
             RE::NiPoint3 normalGame{};
-            provider::RockProviderPowerArmorPointV1 powerArmorPoint{};
+            api::PowerArmorPoint powerArmorPoint{};
             std::uint32_t sourceTriangleIndex = 0xFFFF'FFFFu;
             char meshPartName[64]{};
         };
@@ -77,7 +77,7 @@ namespace rock
             std::uint32_t referenceFormId = 0;
             std::uint32_t referenceNativeHandle = 0;
             std::uint32_t bodyId = 0x7FFF'FFFFu;
-            provider::RockProviderPowerArmorPointV1 point{};
+            api::PowerArmorPoint point{};
             RE::NiPoint3 positionGame{};
         };
         static constexpr float kPowerArmorProximityRadiusGame = 8.0f;
@@ -94,7 +94,7 @@ namespace rock
         };
         PowerArmorCandidate findPowerArmorCandidate(RE::hknpWorld* world,
             const RE::NiPoint3& handPosition, std::uint32_t frameFormId = 0,
-            provider::RockProviderPowerArmorPointV1 point = {},
+            api::PowerArmorPoint point = {},
             float radius = kPowerArmorProximityRadiusGame,
             PowerArmorProbeDiagnostics* diagnostics = nullptr) const;
         bool tryAcquirePowerArmor(bool isLeft, const PowerArmorCandidate& candidate,
@@ -174,7 +174,7 @@ namespace rock
             TargetClass targetClass,
             ContactSource contactSource,
             bool closeObjectCandidate,
-            provider::RockProviderPowerArmorPointV1 powerArmorPoint = {});
+            api::PowerArmorPoint powerArmorPoint = {});
 
         void service(
             RE::bhkWorld* bhkWorld,
@@ -232,7 +232,7 @@ namespace rock
             RE::NiPoint3 contactPointInTargetBody{};
             RE::NiPoint3 contactNormalInTargetBody{};
             float shellToMeshDistanceGameUnits = 0.0f;
-            provider::RockProviderPowerArmorPointV1 powerArmorPoint{};
+            api::PowerArmorPoint powerArmorPoint{};
             std::uint32_t sourceTriangleIndex = 0xFFFF'FFFFu;
             char meshPartName[64]{};
         };
@@ -279,7 +279,7 @@ namespace rock
             const hand_semantic_contact_state::SemanticContactRecord& contact,
             RE::hknpWorld* world,
             ContactSource contactSource,
-            provider::RockProviderPowerArmorPointV1 powerArmorPoint = {});
+            api::PowerArmorPoint powerArmorPoint = {});
         [[nodiscard]] bool createMechanism(
             ActiveTarget& active,
             RE::bhkWorld* bhkWorld,

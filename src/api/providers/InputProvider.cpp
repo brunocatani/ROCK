@@ -16,21 +16,21 @@ Status ROCK_CALL setHandInputSuppression(OwnerToken owner, const HandInputSuppre
 }
 Status ROCK_CALL clearHandInputSuppression(OwnerToken owner, Hand hand) noexcept {
     return invoke(owner, kInterfaceId, 2, true, [&] {
-        return static_cast<Status>(provider::runtime::apiClearHandInputSuppressionV1(owner, static_cast<provider::RockProviderHand>(hand)));
+        return static_cast<Status>(provider::runtime::apiClearHandInputSuppressionV1(owner, static_cast<api::Hand>(hand)));
     });
 }
 Status ROCK_CALL getHandInputSuppressionState(OwnerToken owner, Hand hand, HandInputSuppressionState* outState) noexcept {
     if (const auto s = checkOutput(outState); s != Status::Ok) return s;
     if (!validHand(hand)) return Status::InvalidArgument;
     return invoke(owner, kInterfaceId, 1, true, [&] {
-        return static_cast<Status>(provider::runtime::apiGetHandInputSuppressionStateV1(owner, static_cast<provider::RockProviderHand>(hand), outState));
+        return static_cast<Status>(provider::runtime::apiGetHandInputSuppressionStateV1(owner, static_cast<api::Hand>(hand), outState));
     });
 }
 Status ROCK_CALL getRawWandButtonState(OwnerToken owner, Hand hand, std::uint32_t buttonId, RawWandButtonState* outState) noexcept {
     if (const auto s = checkOutput(outState); s != Status::Ok) return s;
     if (!validHand(hand)) return Status::InvalidArgument;
     return invoke(owner, kInterfaceId, 1, true, [&] {
-        return provider::runtime::apiGetRawWandButtonStateV1(static_cast<provider::RockProviderHand>(hand), buttonId, outState) ? Status::Ok : Status::NotReady;
+        return provider::runtime::apiGetRawWandButtonStateV1(static_cast<api::Hand>(hand), buttonId, outState) ? Status::Ok : Status::NotReady;
     });
 }
 Status ROCK_CALL getRawWandThumbstick(OwnerToken owner, Hand hand, float* outX, float* outY) noexcept {
@@ -39,7 +39,7 @@ Status ROCK_CALL getRawWandThumbstick(OwnerToken owner, Hand hand, float* outX, 
     *outY = 0.0f;
     if (!validHand(hand)) return Status::InvalidArgument;
     return invoke(owner, kInterfaceId, 1, true, [&] {
-        return provider::runtime::apiGetRawWandThumbstickV1(static_cast<provider::RockProviderHand>(hand), outX, outY) ? Status::Ok : Status::NotReady;
+        return provider::runtime::apiGetRawWandThumbstickV1(static_cast<api::Hand>(hand), outX, outY) ? Status::Ok : Status::NotReady;
     });
 }
 Status ROCK_CALL isNativePipboyInputSuppressed(OwnerToken owner, std::uint32_t* outValue) noexcept {

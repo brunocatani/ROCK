@@ -12,8 +12,8 @@ namespace {
 namespace rock::provider::runtime {
     std::uint64_t currentGameFrameIndex(){return ::sample.frameIndex;}
     api::Sample sample(){return ::sample;}
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetEquippedWeaponStateV1(std::uint64_t,RockProviderEquippedWeaponStateV1* out){*out=::weapon;return RockProviderResultV1::Ok;}
-    bool ROCK_PROVIDER_CALL apiGetEquippedWeaponGripStateV1(std::uint64_t,RockProviderEquippedWeaponGripStateV1* out){*out=::grip;return true;}
+    api::Status apiGetEquippedWeaponStateV1(std::uint64_t,RockProviderEquippedWeaponStateV1* out){*out=::weapon;return api::Status::Ok;}
+    bool apiGetEquippedWeaponGripStateV1(std::uint64_t,RockProviderEquippedWeaponGripStateV1* out){*out=::grip;return true;}
 }
 namespace rock::input_remap_runtime { RawButtonState peekRawButtonState(bool,int){return ::raw;} }
 int main() {

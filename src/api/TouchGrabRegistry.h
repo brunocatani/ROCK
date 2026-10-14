@@ -176,7 +176,7 @@ namespace rock::provider
             const std::uint32_t bodyId,
             const std::uint32_t collisionLayer,
             const TouchGrabMotionClassV1 motionClass,
-            const RockProviderHand hand,
+            const api::Hand hand,
             const std::uint32_t worldGeneration,
             const std::uint32_t skeletonGeneration,
             const std::uint32_t providerGeneration,
@@ -535,14 +535,14 @@ namespace rock::provider
 
         static bool handMatches(
             const ::rock::api::touch::TouchGrabTarget& target,
-            const RockProviderHand hand)
+            const api::Hand hand)
         {
-            if (hand == RockProviderHand::Right) {
+            if (hand == api::Hand::Right) {
                 return hasTouchGrabTargetFlagV1(
                     target.flags,
                     ::rock::api::touch::TouchGrabTargetFlag::AllowRightHand);
             }
-            if (hand == RockProviderHand::Left) {
+            if (hand == api::Hand::Left) {
                 return hasTouchGrabTargetFlagV1(
                     target.flags,
                     ::rock::api::touch::TouchGrabTargetFlag::AllowLeftHand);

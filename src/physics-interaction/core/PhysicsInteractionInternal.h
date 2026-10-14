@@ -903,7 +903,7 @@ namespace rock
             target.scale = source.scale;
         }
 
-        inline RE::NiTransform providerTransformToNi(const ::rock::provider::RockProviderTransform& source)
+        inline RE::NiTransform providerTransformToNi(const api::Transform& source)
         {
             RE::NiTransform result{};
             for (int row = 0; row < 3; ++row) {
@@ -1041,44 +1041,44 @@ namespace rock
             return authority;
         }
 
-        inline ::rock::provider::RockProviderPoint3 makeProviderPoint(const WeaponEvidencePoint3& point)
+        inline api::Point3 makeProviderPoint(const WeaponEvidencePoint3& point)
         {
-            return ::rock::provider::RockProviderPoint3{ .x = point.x, .y = point.y, .z = point.z };
+            return api::Point3{ .x = point.x, .y = point.y, .z = point.z };
         }
 
-        inline ::rock::provider::RockProviderPoint3 makeProviderPoint(const RE::NiPoint3& point)
+        inline api::Point3 makeProviderPoint(const RE::NiPoint3& point)
         {
-            return ::rock::provider::RockProviderPoint3{ .x = point.x, .y = point.y, .z = point.z };
+            return api::Point3{ .x = point.x, .y = point.y, .z = point.z };
         }
 
-        inline ::rock::provider::RockProviderBodyContactTargetKind providerBodyContactTargetKind(contact_pipeline_policy::ContactEndpointKind kind)
+        inline api::grab::BodyContactTargetKind providerBodyContactTargetKind(contact_pipeline_policy::ContactEndpointKind kind)
         {
             using contact_pipeline_policy::ContactEndpointKind;
-            using ::rock::provider::RockProviderBodyContactTargetKind;
+            using api::grab::BodyContactTargetKind;
             switch (kind) {
             case ContactEndpointKind::RightHand:
             case ContactEndpointKind::LeftHand:
-                return RockProviderBodyContactTargetKind::Hand;
+                return api::grab::BodyContactTargetKind::Hand;
             case ContactEndpointKind::Weapon:
             case ContactEndpointKind::SecondaryWeapon:
-                return RockProviderBodyContactTargetKind::Weapon;
+                return api::grab::BodyContactTargetKind::Weapon;
             case ContactEndpointKind::RightHeldObject:
             case ContactEndpointKind::LeftHeldObject:
-                return RockProviderBodyContactTargetKind::HeldObject;
+                return api::grab::BodyContactTargetKind::HeldObject;
             case ContactEndpointKind::Body:
-                return RockProviderBodyContactTargetKind::Body;
+                return api::grab::BodyContactTargetKind::Body;
             case ContactEndpointKind::WorldSurface:
-                return RockProviderBodyContactTargetKind::WorldSurface;
+                return api::grab::BodyContactTargetKind::WorldSurface;
             case ContactEndpointKind::DynamicProp:
-                return RockProviderBodyContactTargetKind::DynamicProp;
+                return api::grab::BodyContactTargetKind::DynamicProp;
             case ContactEndpointKind::Actor:
-                return RockProviderBodyContactTargetKind::Actor;
+                return api::grab::BodyContactTargetKind::Actor;
             case ContactEndpointKind::QueryOnly:
-                return RockProviderBodyContactTargetKind::QueryOnly;
+                return api::grab::BodyContactTargetKind::QueryOnly;
             case ContactEndpointKind::Unknown:
                 break;
             }
-            return RockProviderBodyContactTargetKind::Unknown;
+            return api::grab::BodyContactTargetKind::Unknown;
         }
 
         inline RE::EquippedWeaponData* getValidatedEquippedWeaponData()

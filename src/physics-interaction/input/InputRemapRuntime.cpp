@@ -584,7 +584,7 @@ namespace rock::input_remap_runtime
         {
             if (isInputBlockingMenuActive()) return false;
             const auto physicalHand = hand == input_remap_policy::Hand::Left ?
-                provider::RockProviderHand::Left : provider::RockProviderHand::Right;
+                api::Hand::Left : api::Hand::Right;
             return s_providerOpenVrGameInputSuppressed[controllerIndex(hand)].load(std::memory_order_acquire) ||
                 provider::hasHandInputSuppressionFlagV1(provider::currentHandInputSuppressionFlagsV1(physicalHand),
                     ::rock::api::input::HandInputSuppressionFlag::SuppressOpenVrGameInput);
@@ -600,9 +600,9 @@ namespace rock::input_remap_runtime
         [[nodiscard]] std::uint32_t currentProviderHandInputSuppressionFlagsAtDispatch()
         {
             return provider::currentHandInputSuppressionFlagsV1(
-                       provider::RockProviderHand::Right) |
+                       api::Hand::Right) |
                    provider::currentHandInputSuppressionFlagsV1(
-                       provider::RockProviderHand::Left);
+                       api::Hand::Left);
         }
 
         [[nodiscard]] bare_fist_gesture::Buttons readBareFistButtons()

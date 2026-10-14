@@ -31,33 +31,33 @@ namespace rock::provider::runtime {
     std::uint64_t sourceKey(std::uint64_t generation, std::uintptr_t node) { return generation == 456 && node > 1000 ? node - 1000 : 0; }
     std::uint64_t sourceKeyForBody(std::uint64_t, std::uint32_t body) { return body + 500; }
     std::uintptr_t resolveSourceName(std::uint64_t generation, const char* name) { return generation == 456 && !std::strcmp(name, "Bolt") ? 1077 : 0; }
-    bool ROCK_PROVIDER_CALL apiQueryWeaponContactAtPoint(const RockProviderWeaponContactQuery* query, RockProviderWeaponContactResult* out) {
+    bool apiQueryWeaponContactAtPoint(const RockProviderWeaponContactQuery* query, RockProviderWeaponContactResult* out) {
         assert(query->pointGame[2] == 3 && query->radiusGame == 4);
         out->valid = 1; out->bodyId = 9; out->weaponGenerationKey = 456; out->sourceRoot = 1011; out->interactionRoot = 1012;
         return true;
     }
-    std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEvidenceDetailsV1(RockProviderWeaponEvidenceDetailV1* out, std::uint32_t capacity) {
+    std::uint32_t apiCopyWeaponEvidenceDetailsV1(RockProviderWeaponEvidenceDetailV1* out, std::uint32_t capacity) {
         const auto copied = (std::min)(capacity, evidenceCount);
         for (std::uint32_t i = 0; i < copied; ++i) { out[i].bodyId = 10 + i; out[i].weaponGenerationKey = 456; out[i].sourceRoot = 1020 + i; }
         return copied;
     }
-    std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEvidenceDetailPointsV1(std::uint32_t, RockProviderPoint3* out, std::uint32_t capacity) {
+    std::uint32_t apiCopyWeaponEvidenceDetailPointsV1(std::uint32_t, api::Point3* out, std::uint32_t capacity) {
         for (std::uint32_t i = 0; i < (std::min)(capacity, 3u); ++i) out[i].x = static_cast<float>(i);
         return (std::min)(capacity, 3u);
     }
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetWeaponPartTargetsV1(std::uint64_t, const RockProviderWeaponPartTargetV1* targets, std::uint32_t count) {
+    api::Status apiSetWeaponPartTargetsV1(std::uint64_t, const RockProviderWeaponPartTargetV1* targets, std::uint32_t count) {
         ++targetWrites; lastTargetCount = count;
         if (count) assert(targets[0].sourceRoot == 1077 && targets[0].groupId == 7);
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearWeaponPartTargetsV1(std::uint64_t) { ++targetWrites; return RockProviderResultV1::Ok; }
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetWeaponPartDriveTargetsV1(std::uint64_t, const RockProviderWeaponPartDriveTargetV1*, std::uint32_t) { return RockProviderResultV1::Ok; }
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearWeaponPartDriveTargetsV1(std::uint64_t) { return RockProviderResultV1::Ok; }
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryWeaponPartTargetResolutionV1(std::uint64_t, const RockProviderWeaponPartResolutionQueryV1*, RockProviderWeaponPartResolutionResultV1* out) {
-        out->matched = 1; out->winningOwnerToken = testOwner; out->grabMode = RockProviderWeaponPartGrabModeV1::AttachOnly; return RockProviderResultV1::Ok;
+    api::Status apiClearWeaponPartTargetsV1(std::uint64_t) { ++targetWrites; return api::Status::Ok; }
+    api::Status apiSetWeaponPartDriveTargetsV1(std::uint64_t, const RockProviderWeaponPartDriveTargetV1*, std::uint32_t) { return api::Status::Ok; }
+    api::Status apiClearWeaponPartDriveTargetsV1(std::uint64_t) { return api::Status::Ok; }
+    api::Status apiQueryWeaponPartTargetResolutionV1(std::uint64_t, const RockProviderWeaponPartResolutionQueryV1*, RockProviderWeaponPartResolutionResultV1* out) {
+        out->matched = 1; out->winningOwnerToken = testOwner; out->grabMode = api::weaponparts::GrabMode::AttachOnly; return api::Status::Ok;
     }
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyWeaponPartPoseSnapshotV1(std::uint64_t, RockProviderWeaponPartPoseV1*, std::uint32_t, std::uint32_t* count) { *count = 0; return RockProviderResultV1::Ok; }
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyWeaponPartDriveApplicationResultsV1(std::uint64_t, RockProviderWeaponPartDriveApplicationResultV1*, std::uint32_t, std::uint32_t* count) { *count = 0; return RockProviderResultV1::Ok; }
+    api::Status apiCopyWeaponPartPoseSnapshotV1(std::uint64_t, RockProviderWeaponPartPoseV1*, std::uint32_t, std::uint32_t* count) { *count = 0; return api::Status::Ok; }
+    api::Status apiCopyWeaponPartDriveApplicationResultsV1(std::uint64_t, RockProviderWeaponPartDriveApplicationResultV1*, std::uint32_t, std::uint32_t* count) { *count = 0; return api::Status::Ok; }
     api::Status copySources(std::uint64_t, std::uint32_t, WeaponSourceRecord*, std::uint32_t, std::uint32_t& chunk, std::uint32_t& total) { chunk = 0; total = 0; return api::Status::Ok; }
     api::Status querySourcePose(std::uint64_t, std::uint64_t, WeaponSourcePose&) { return api::Status::TargetUnavailable; }
     api::Status querySourcePath(std::uint64_t, std::uint64_t, std::uint64_t&, std::uint32_t&) { return api::Status::TargetUnavailable; }

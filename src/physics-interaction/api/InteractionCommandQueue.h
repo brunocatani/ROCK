@@ -8,9 +8,9 @@ namespace rock::provider
     {
         std::uint64_t ownerToken{ 0 };
         std::uint64_t commandId{ 0 };
-        RockProviderInteractionCommandKindV1 kind{ RockProviderInteractionCommandKindV1::Unknown };
+        api::grab::InteractionCommandKind kind{ api::grab::InteractionCommandKind::Unknown };
         RockProviderForceGrabRequestV1 forceGrab{};
-        RockProviderPowerArmorPointV1 powerArmorPoint{};
+        api::PowerArmorPoint powerArmorPoint{};
         std::uint32_t powerArmorReferenceNativeHandle = 0;
         RockProviderForceReleaseRequestV1 forceRelease{};
         RockProviderThrownDropRequestV1 thrownDrop{};
@@ -19,5 +19,5 @@ namespace rock::provider
     [[nodiscard]] bool dequeueInteractionCommandV1(QueuedInteractionCommandV1& outCommand);
     [[nodiscard]] bool isInteractionCommandActiveV1(std::uint64_t ownerToken, std::uint64_t commandId);
     bool completeInteractionCommandV1(const RockProviderInteractionCommandResultV1& result);
-    void clearInteractionCommandsForProviderLossV1(RockProviderInteractionFailureV1 failure);
+    void clearInteractionCommandsForProviderLossV1(api::grab::InteractionFailure failure);
 }

@@ -23,7 +23,7 @@ namespace rock::provider::runtime {
         return requireThread && std::this_thread::get_id() != frameThread ? Status::WrongThread : Status::Ok;
     }
     void reportBoundaryFailure(std::uint64_t, api::InterfaceId) noexcept { assert(false); }
-    bool ROCK_PROVIDER_CALL apiGetFrameSnapshot(RockProviderFrameSnapshot* out) {
+    bool apiGetFrameSnapshot(RockProviderFrameSnapshot* out) {
         if (!available) return false;
         *out = publication;
         return true;
@@ -39,12 +39,12 @@ namespace rock::provider::runtime {
         out.transform.translate[0]=12;
         return Status::Ok;
     }
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetEquippedWeaponStateV1(std::uint64_t, RockProviderEquippedWeaponStateV1* out) {
-        if (!available) return RockProviderResultV1::NotReady;
+    api::Status apiGetEquippedWeaponStateV1(std::uint64_t, RockProviderEquippedWeaponStateV1* out) {
+        if (!available) return api::Status::NotReady;
         out->weaponFormId=123;out->weaponGenerationKey=456;out->frameIndex=100;
-        return RockProviderResultV1::Ok;
+        return api::Status::Ok;
     }
-    bool ROCK_PROVIDER_CALL apiGetWeaponPartGripStateV1(RockProviderHand hand, api::weaponparts::GripState* out) {
+    bool apiGetWeaponPartGripStateV1(api::Hand hand, api::weaponparts::GripState* out) {
         if (!available) return false;
         out->hand=static_cast<api::Hand>(hand);out->active=1;out->sourceKey=789;out->weaponGenerationKey=456;
         return true;
@@ -66,8 +66,8 @@ int main()
     publication.frameIndex=100;publication.stateSequence=101;
     publication.worldGeneration=7;publication.skeletonGeneration=8;
     publication.providerGeneration=9;publication.collisionGeneration=10;
-    publication.primaryHand=provider::RockProviderHand::Right;
-    publication.offhandHand=provider::RockProviderHand::Left;
+    publication.primaryHand=api::Hand::Right;
+    publication.offhandHand=api::Hand::Left;
     publication.enrichmentFlags=6;publication.hmdTransform.translate[0]=12;
     publication.hmdForwardWorld[2]=1;
     publication.gameToHavokScale=0.014f;publication.havokToGameScale=71;

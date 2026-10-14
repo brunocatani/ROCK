@@ -12,7 +12,7 @@
         const auto ownerResult = validateReadCapability(
             ownerToken,
             RockProviderConsumerCapabilityV1::PlayerController);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return static_cast<api::Status>(ownerResult);
         }
         if (!apiIsProviderReady()) {
@@ -24,7 +24,7 @@
             std::scoped_lock lock(s_snapshotMutex);
             if (!s_hasSnapshot || !hasLifecycleFlag(
                     s_lastSnapshot.lifecycleFlags,
-                    RockProviderLifecycleFlag::ProviderReady)) {
+                    api::core::LifecycleFlag::ProviderReady)) {
                 return api::Status::NotReady;
             }
             snapshot = s_lastSnapshot;
@@ -100,14 +100,14 @@
         const auto ownerResult = validateReadCapability(
             ownerToken,
             RockProviderConsumerCapabilityV1::PlayerController);
-        if (ownerResult != RockProviderResultV1::Ok) {
+        if (ownerResult != api::Status::Ok) {
             return static_cast<api::Status>(ownerResult);
         }
         const auto generationResult = validateGenerationGuards(
             request.worldGeneration,
             request.skeletonGeneration,
             request.providerGeneration);
-        if (generationResult != RockProviderResultV1::Ok) {
+        if (generationResult != api::Status::Ok) {
             return static_cast<api::Status>(generationResult);
         }
         if (!apiIsProviderReady()) {
@@ -118,10 +118,10 @@
             std::scoped_lock lock(s_snapshotMutex);
             if (!s_hasSnapshot || !hasLifecycleFlag(
                     s_lastSnapshot.lifecycleFlags,
-                    RockProviderLifecycleFlag::ProviderReady) ||
+                    api::core::LifecycleFlag::ProviderReady) ||
                 !hasLifecycleFlag(
                     s_lastSnapshot.lifecycleFlags,
-                    RockProviderLifecycleFlag::PhysicsWriteAllowed)) {
+                    api::core::LifecycleFlag::PhysicsWriteAllowed)) {
                 return api::Status::NotReady;
             }
         }

@@ -69,7 +69,7 @@ p::RockProviderWeaponPartDriveTargetV1 toProvider(const DriveTarget& in) {
     out.groupId = in.groupId;
     out.priority = in.priority;
     out.leaseFrames = in.leaseFrames;
-    convert(out.targetTransform, in.targetTransform);
+    out.targetTransform = in.targetTransform;
     std::copy_n(in.sourceName, std::size(out.sourceName), out.sourceName);
     return out;
 }
@@ -111,7 +111,7 @@ void fill(EvidenceDetail& out, const p::RockProviderWeaponEvidenceDetailV1& in) 
     out.interactionKey = p::runtime::sourceKey(in.weaponGenerationKey, in.interactionRoot);
     out.sourceKey = p::runtime::sourceKey(in.weaponGenerationKey, in.sourceRoot);
     out.weaponGenerationKey = in.weaponGenerationKey;
-    convert(out.localBoundsGame, in.localBoundsGame);
+    out.localBoundsGame = in.localBoundsGame;
     out.omodFormId = in.omodFormId;
     out.attachPointFormId = in.attachPointFormId;
     out.classificationSource = in.classificationSource;
@@ -127,8 +127,8 @@ void fill(PartPose& out, const p::RockProviderWeaponPartPoseV1& in) {
     out.attachPointFormId = in.attachPointFormId;
     out.flags = in.flags;
     out.actionRole = in.actionRole;
-    convert(out.sourceParentLocal, in.sourceParentLocal);
-    convert(out.weaponRootLocal, in.weaponRootLocal);
+    out.sourceParentLocal = in.sourceParentLocal;
+    out.weaponRootLocal = in.weaponRootLocal;
     std::copy_n(in.sourceName, std::size(out.sourceName), out.sourceName);
 }
 void fill(DriveResult& out, const p::RockProviderWeaponPartDriveApplicationResultV1& in) {
@@ -139,7 +139,7 @@ void fill(DriveResult& out, const p::RockProviderWeaponPartDriveApplicationResul
     out.groupId = in.groupId;
     out.priority = in.priority;
     out.result = static_cast<DriveApplication>(in.result);
-    convert(out.appliedSourceParentLocal, in.appliedSourceParentLocal);
+    out.appliedSourceParentLocal = in.appliedSourceParentLocal;
     std::copy_n(in.sourceName, std::size(out.sourceName), out.sourceName);
 }
 
@@ -180,9 +180,9 @@ Status ROCK_CALL copyEvidencePoints(OwnerToken owner, std::uint32_t slot, std::u
     if (const auto s = checkWeaponSlot(slot); s != Status::Ok) return s;
     return invoke(owner, kInterfaceId, 1, true, [&] {
         if (!weaponSlotPublished(slot)) return Status::TargetUnavailable;
-        std::array<p::RockProviderPoint3, kMaxEvidencePoints> native{};
+        std::array<api::Point3, kMaxEvidencePoints> native{};
         *outCount = p::runtime::apiCopyWeaponEvidenceDetailPointsV1(bodyId, native.data(), kMaxEvidencePoints);
-        for (std::uint32_t i = 0; i < (std::min)(capacity, *outCount); ++i) convert(outPoints[i], native[i]);
+        for (std::uint32_t i = 0; i < (std::min)(capacity, *outCount); ++i) outPoints[i] = native[i];
         return Status::Ok;
     });
 }

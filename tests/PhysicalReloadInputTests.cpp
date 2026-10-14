@@ -8,14 +8,14 @@ namespace {
     rock::api::Sample sample{10,1,1,2,3,4};
     rock::provider::RockProviderEquippedWeaponStateV1 weapon;
     rock::input_remap_runtime::RawButtonState raw{true};
-    rock::provider::RockProviderHand primary=rock::provider::RockProviderHand::Left;
+    rock::api::Hand primary=rock::api::Hand::Left;
 }
 namespace rock::provider::runtime {
-    RockProviderHand ROCK_PROVIDER_CALL apiGetPrimaryHandV1(){return ::primary;}
+    rock::api::Hand apiGetPrimaryHandV1(){return ::primary;}
     std::uint64_t currentGameFrameIndex(){return ::sample.frameIndex;}
-    api::Sample sample(){return ::sample;}
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetEquippedWeaponStateV1(std::uint64_t,RockProviderEquippedWeaponStateV1* out){
-        *out=::weapon;return RockProviderResultV1::Ok;
+    rock::api::Sample sample(){return ::sample;}
+    rock::api::Status apiGetEquippedWeaponStateV1(std::uint64_t,RockProviderEquippedWeaponStateV1* out){
+        *out=::weapon;return rock::api::Status::Ok;
     }
 }
 namespace rock::input_remap_runtime {
@@ -62,8 +62,8 @@ int main(){
     using namespace api;
     namespace control=physical_reload_input;
     ::weapon.weaponFormId=123;::weapon.weaponGenerationKey=456;
-    ::weapon.flags=static_cast<std::uint32_t>(provider::RockProviderEquippedWeaponStateFlagV1::Valid)|
-        static_cast<std::uint32_t>(provider::RockProviderEquippedWeaponStateFlagV1::WeaponDrawn);
+    ::weapon.flags=static_cast<std::uint32_t>(rock::api::weapon::WeaponStateFlag::Valid)|
+        static_cast<std::uint32_t>(rock::api::weapon::WeaponStateFlag::WeaponDrawn);
     constexpr auto x=1ull<<7;
     // The production reload gesture lease and the same tap/hold policy used
     // by runtime, without and with gameplay priority.
@@ -72,7 +72,7 @@ int main(){
         const auto priority=gameplayPriority?static_cast<std::uint32_t>(input::ReloadGestureFlag::GameplayPriority):0u;
         const auto acquire=[&](OwnerToken owner,input::ReloadGestureRequest value){value.flags|=priority;return control::set(owner,value);};
         control::reset();raw={true};
-        ::primary=left?provider::RockProviderHand::Left:provider::RockProviderHand::Right;
+        ::primary=left?rock::api::Hand::Left:api::Hand::Right;
         ::weapon.flags=1|512;
         input::ReloadGestureRequest gesture;gesture.hand=left?Hand::Left:Hand::Right;
         gesture.weaponFormId=123;gesture.weaponGenerationKey=456;gesture.sample=sample;gesture.flags=1;
@@ -151,14 +151,14 @@ int main(){
         assert(control::observe(left,{true,true}));assert(control::observe(left,{true,false,false,true}));
         control::gameMask(left,0);raw={true};gesture.sample=sample;
         assert(acquire(1,gesture)==Status::Ok);
-        ::primary=left?provider::RockProviderHand::Right:provider::RockProviderHand::Left;
+        ::primary=left?rock::api::Hand::Right:api::Hand::Left;
         control::beginFrame(sample.frameIndex);control::read(observed);assert(!observed.active);
         assert(acquire(1,gesture)==Status::HandUnavailable);
         control::reset();control::gameMask(left,0);control::observe(left,{true});
     }
     // A world change ends a live lease, and a request on the stale sample is refused.
     {
-        control::reset();raw={true};::primary=provider::RockProviderHand::Left;
+        control::reset();raw={true};::primary=rock::api::Hand::Left;
         input::ReloadGestureRequest gesture;gesture.hand=Hand::Left;
         gesture.weaponFormId=123;gesture.weaponGenerationKey=456;gesture.sample=sample;
         assert(control::set(1,gesture)==Status::Ok);

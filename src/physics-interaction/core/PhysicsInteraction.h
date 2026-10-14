@@ -167,7 +167,7 @@ namespace rock
         // failures clear the tagged hand authority deterministically.
         void updateAuthoredPrimaryFiringGrip();
 
-        void shutdown(::rock::provider::RockProviderLifecycleReason reason = ::rock::provider::RockProviderLifecycleReason::Shutdown);
+        void shutdown(api::core::LifecycleReason reason = api::core::LifecycleReason::Shutdown);
 
         bool isInitialized() const { return _lifecycle.initialized; }
         void queryPlacementClickState(api::input::PlacementClickState& out) const;
@@ -182,12 +182,12 @@ namespace rock
             return _lifecycle.initialized.load(std::memory_order_acquire) &&
                 ::rock::provider::hasLifecycleFlag(
                     _lifecycle.flagsAtomic.load(std::memory_order_acquire),
-                    ::rock::provider::RockProviderLifecycleFlag::ProviderReady);
+                    api::core::LifecycleFlag::ProviderReady);
         }
         void requestWeaponCollisionRebuildAfterWorkbenchExit(const char* sourceMenuName);
         void requestWeaponCollisionRefresh() { _weaponCollision.requestExternalVisualRebuild(); }
-        void noteSkeletonLifecycle(std::uint32_t skeletonGeneration, ::rock::provider::RockProviderLifecycleReason reason);
-        void noteProviderLifecycle(std::uint32_t providerGeneration, ::rock::provider::RockProviderLifecycleReason reason);
+        void noteSkeletonLifecycle(std::uint32_t skeletonGeneration, api::core::LifecycleReason reason);
+        void noteProviderLifecycle(std::uint32_t providerGeneration, api::core::LifecycleReason reason);
 
         bool physicsModOwnsObject(RE::TESObjectREFR* ref) const;
         bool physicsModOwnsObject(RE::TESObjectREFR* ref, PhysicsObjectClaimOwner owner) const;
@@ -231,7 +231,7 @@ namespace rock
             std::uint32_t maxDetails) const;
         std::uint32_t copyProviderWeaponEvidenceDetailPointsV1(
             std::uint32_t bodyId,
-            ::rock::provider::RockProviderPoint3* outPoints,
+            api::Point3* outPoints,
             std::uint32_t maxPoints) const;
         std::uint32_t getProviderWeaponEmitterCountV1() const;
         std::uint32_t copyProviderWeaponEmittersV1(
@@ -286,7 +286,7 @@ namespace rock
             ::rock::api::hands::PresentedHandPose& outPose,
             ::rock::provider::RockProviderFrameSnapshot* outMetadata = nullptr) const;
         std::uint32_t copyProviderSemanticHandContactsV1(
-            ::rock::provider::RockProviderHand hand,
+            api::Hand hand,
             std::uint32_t maxFramesSinceContact,
             ::rock::provider::RockProviderSemanticHandContactV1* outContacts,
             std::uint32_t maxContacts) const;
@@ -294,7 +294,7 @@ namespace rock
             ::rock::provider::RockProviderPlayerColliderDescriptorV1* outDescriptors,
             std::uint32_t maxDescriptors) const;
         bool queryProviderHandCollisionAvailabilityV1(
-            ::rock::provider::RockProviderHand hand,
+            api::Hand hand,
             ::rock::provider::RockProviderHandCollisionAvailabilityV1& outState) const;
 
         /*
@@ -341,7 +341,7 @@ namespace rock
         void markGeneratedBodiesInvalidated();
         void clearGeneratedBodyContactRegistry();
         void refreshGeneratedBodyContactRegistry();
-        void observeLifecycleFrame(RE::bhkWorld* bhk, RE::hknpWorld* hknp, ::rock::provider::RockProviderLifecycleReason reasonHint);
+        void observeLifecycleFrame(RE::bhkWorld* bhk, RE::hknpWorld* hknp, api::core::LifecycleReason reasonHint);
         bool physicsWritesAllowedForWorld(RE::hknpWorld* world) const;
         void interruptInteractionFrame(const char* reason);
 
@@ -760,7 +760,7 @@ namespace rock
             std::atomic<bool> initialized{ false };
             physics_lifecycle::RuntimeState state{};
             std::atomic<std::uint32_t> flagsAtomic{ 0 };
-            std::atomic<std::uint32_t> lastReasonAtomic{ static_cast<std::uint32_t>(::rock::provider::RockProviderLifecycleReason::None) };
+            std::atomic<std::uint32_t> lastReasonAtomic{ static_cast<std::uint32_t>(api::core::LifecycleReason::None) };
             std::atomic<std::uint32_t> worldGenerationAtomic{ 1 };
             std::atomic<std::uint32_t> skeletonGenerationAtomic{ 1 };
             std::atomic<std::uint32_t> providerGenerationAtomic{ 1 };
