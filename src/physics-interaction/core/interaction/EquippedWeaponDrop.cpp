@@ -108,51 +108,6 @@ namespace rock
         return false;
     }
 
-    bool PhysicsInteraction::retainEquippedWeaponForReplacement(const PhysicsFrameContext& frame, bool equipIsLeft)
-    {
-        auto& transition = _equipped.transition;
-        const auto previousForm = currentEquippedWeaponFormId();
-        const bool retainedIsLeft = !equipIsLeft;
-        const auto occupancy = equippedWeaponRoster().slotZeroGrips();
-        const bool retainedHandCarries = retainedIsLeft ?
-            occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon();
-        const bool receivingHandCarries = equipIsLeft ?
-            occupancy.left.carriesWeapon() : occupancy.right.carriesWeapon();
-        const auto sourceHand = retainedIsLeft ?
-            equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right;
-        if (!retainedHandCarries || receivingHandCarries ||
-            !_twoHandedGrip.requestEquippedWeaponDrop("trigger-equip-retention", sourceHand,
-                equipped_weapon_drop_policy::Mode::ToggleDrop, frame.deltaSeconds)) {
-            ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
-                "Trigger equip retained both weapons: previous={:08X} hand={} carry={} receivingCarry={} drop pose unavailable",
-                previousForm, retainedIsLeft ? "left" : "right",
-                retainedHandCarries, receivingHandCarries);
-            transition.cancelHeldRequest("outgoing-carrier-unavailable");
-            return false;
-        }
-        const auto dropRequest = _twoHandedGrip.consumeEquippedWeaponDropRequest();
-        // Keep the old scene alive through cleanup of its grip authorities.
-        RE::NiPointer<RE::NiNode> transferSourceNode(resolveEquippedWeaponInteractionNode());
-        const bool dropped = dropEquippedWeaponToWorld(frame, dropRequest,
-            equipped_weapon_drop_policy::Mode::ToggleDrop);
-        _twoHandedGrip.completeEquippedWeaponDrop(dropRequest, dropped);
-        if (dropped) {
-            _equipped.transition.pendingGrip() = {};
-            clearEquippedWeaponFiringGripInputState();
-        }
-        const auto& retainedTransfer = _forceGrab.pendingCommits[retainedIsLeft ? 1u : 0u];
-        if (!dropped || !retainedTransfer.active ||
-            retainedTransfer.phase != PendingForceGrabCommitPhase::WaitingForNativePlacement) {
-            transition.cancelHeldRequest("outgoing-transfer-rejected");
-            return false;
-        }
-        ROCK_LOG_INFO(Weapon,
-            "Trigger equip keeping previous weapon in hand: previous={:08X} retainedHand={} incoming={:08X} equipHand={}",
-            previousForm, retainedIsLeft ? "left" : "right",
-            transition.heldTransfer().request.reference, equipIsLeft ? "left" : "right");
-        return true;
-    }
-
     bool PhysicsInteraction::dropEquippedWeaponToWorld(const PhysicsFrameContext& frame,
         const EquippedWeaponManualDropRequest& request, equipped_weapon_drop_policy::Mode mode)
     {
@@ -235,11 +190,6 @@ namespace rock
                             dropResult.reason == weapon_equip_transfer::DropReason::DroppedReferenceUnavailable,
                     });
                 transferCommitted = dropCommitted;
-                const auto& transfer = _equipped.transition.heldTransfer();
-                const bool replacementDrop = dropCommitted && transfer.phase == held_weapon_transfer::Phase::AwaitEquip &&
-                    transfer.request.retainOutgoing && !transfer.outgoingRemoved &&
-                    transfer.request.previousForm == observedEquippedWeaponFormID && transfer.request.isLeft != transferIsLeft;
-                if (replacementDrop) _equipped.transition.recordOutgoingRemoval(dropResult.droppedFormID);
                 if (dropCommitted && dropResult.equippedSlotReleased && secondary.weapon) {
                     promoteSecondaryWeapon(secondary.weapon, reinterpret_cast<std::uintptr_t>(secondary.instance), secondaryLeft);
                 }
@@ -264,7 +214,6 @@ namespace rock
                             PendingForceGrabCommitPhase::EquippedSlotReleaseFailed,
                         .targetHandle = dropResult.handle,
                         .inventoryTransfer = true,
-                        .weaponTransferSequence = replacementDrop ? transfer.sequence : 0,
                         .equippedWeaponDropMode = mode,
                         .weaponGripPose = request.pose,
                         .maxDistanceGame = 96.0f,
@@ -414,7 +363,6 @@ namespace rock
                     PendingForceGrabCommitPhase::EquippedSlotReleaseFailed,
                 .targetHandle = dropResult.handle,
                 .inventoryTransfer = true,
-                .weaponTransferSequence = 0,
                 .equippedWeaponDropMode = mode,
                 .weaponGripPose = drop.pose,
                 .maxDistanceGame = 96.0f,

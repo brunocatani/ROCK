@@ -498,7 +498,7 @@ namespace rock::api::weapon {
         HandBusy = 4,
         InventoryChanged = 5,
         InfrastructureUnavailable = 6,
-        OutgoingTransferFailed = 7,
+        // 7 (OutgoingTransferFailed) is retired. Never reuse.
         NativeEquipFailed = 8,
         GripOrPresentationFailed = 9,
         CancelledBeforeCommit = 10,
@@ -506,10 +506,9 @@ namespace rock::api::weapon {
         MenuBlocked = 12,
     };
 
+    // Bits 0 and 1 (outgoing removed/retained) are retired. Never reuse.
     enum class EquipResultFlag : std::uint32_t
     {
-        OutgoingRemoved = 1u << 0,
-        OutgoingRetained = 1u << 1,
         IncomingEquipAccepted = 1u << 2,
         IncomingGripAcquired = 1u << 3,
         IncomingPresented = 1u << 4,
@@ -527,7 +526,8 @@ namespace rock::api::weapon {
         Hand hand{ Hand::None };
         std::uint32_t incomingFormId{ 0 };
         std::uint32_t outgoingFormId{ 0 };
-        std::uint32_t outgoingReferenceFormId{ 0 };
+        // The weapon slot the incoming weapon was equipped into.
+        std::uint32_t weaponSlot{ 0 };
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };

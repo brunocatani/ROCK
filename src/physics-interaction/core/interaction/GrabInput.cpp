@@ -1,6 +1,7 @@
 #include "api/AuthoredInteractionService.h"
 #include "api/StorageService.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/weapon/EquipSlotAllocationPolicy.h"
 #include "physics-interaction/weapon/NativeHandEquipment.h"
 #include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
 #include "physics-interaction/consume/ImmersiveAid.h"
@@ -41,7 +42,6 @@ namespace rock
 
     void PhysicsInteraction::enforceNoBareFistState(bool forceRecheck)
     {
-        if (_equipped.transition.heldTransfer().ownsEmptySlot(currentEquippedWeaponFormId())) return;
         if (input_remap_runtime::isBareFistDrawPermitted() && currentEquippedWeaponFormId() == 0) return;
         auto* player = RE::PlayerCharacter::GetSingleton();
         auto* legacyPlayer = f4vr::getPlayer();
@@ -1640,8 +1640,14 @@ namespace rock
                     sampleEquippedSlotOne();
                 }
                 const auto slotRoster = equippedWeaponRoster();
-                if (!peerHoldingSameObject && !supportEquipRequested && heldGun &&
-                    slotRoster.facts().slot0.holdsHand && !slotRoster.facts().slot1.equipped) {
+                const auto& slotZero = slotRoster.facts().slot0;
+                const auto& slotOne = slotRoster.facts().slot1;
+                const auto slotDecision = equip_slot_allocation::decide(equipped_weapon_roster::handFor(isLeft), { {
+                    { .worn = slotZero.holdsHand,
+                        .firingHand = slotZero.firingGripDetached ? equipped_weapon_roster::Hand::None : slotZero.firingHand },
+                    { .worn = slotOne.equipped, .firingHand = slotOne.hand },
+                } });
+                if (!peerHoldingSameObject && !supportEquipRequested && heldGun && slotDecision.slot == 1) {
                     auto* heldRef = hand.getHeldRef();
                     if (!heldRef) return false;
                     if (!held_weapon_equip_state_policy::canBeginEquip(nativeStateBeforeEquip)) return true;

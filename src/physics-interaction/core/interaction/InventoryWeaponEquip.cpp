@@ -1,6 +1,7 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "api/ProviderRuntimeServices.h"
 #include "physics-interaction/weapon/InventoryWeaponEquipPolicy.h"
+#include "physics-interaction/weapon/EquipSlotAllocationPolicy.h"
 
 namespace rock {
     namespace {
@@ -82,7 +83,7 @@ namespace rock {
         if (!_inventoryEquip.active() || _inventoryEquip.owner != owner || _inventoryEquip.result.commandId != command)
             return api::Status::RequestNotFound;
         const auto& transfer = _equipped.transition.heldTransfer();
-        if (_inventoryEquip.result.transferSequence && (transfer.outgoingRemoved || transfer.inventoryCommitted))
+        if (_inventoryEquip.result.transferSequence && transfer.inventoryCommitted)
             return api::Status::AlreadyCommitted;
         _inventoryEquip.cancelRequested = true;
         return api::Status::Ok;
@@ -120,23 +121,18 @@ namespace rock {
         }
         const auto& transfer = *observedTransfer;
         if (started) {
-            if (transfer.outgoingRemoved) result.flags |= bit(Flag::OutgoingRemoved);
-            if (transfer.outgoingSucceeded) result.flags |= bit(Flag::OutgoingRetained);
             if (transfer.gripAcquired) result.flags |= bit(Flag::IncomingGripAcquired);
             if (transfer.presentationAcquired) result.flags |= bit(Flag::IncomingPresented);
-            result.outgoingReferenceFormId = transfer.outgoingReference;
             if (transfer.phase == held_weapon_transfer::Phase::Terminal) {
                 const bool succeeded = transfer.outcome == held_weapon_transfer::Outcome::Completed;
                 const bool cancelled = transfer.outcome == held_weapon_transfer::Outcome::Cancelled;
-                const auto failure = result.failure != Failure::None ? result.failure :
-                    transfer.outgoingRemoved && !transfer.outgoingSucceeded ? Failure::OutgoingTransferFailed :
-                    Failure::GripOrPresentationFailed;
+                const auto failure = result.failure != Failure::None ? result.failure : Failure::GripOrPresentationFailed;
                 finish(succeeded ? State::Succeeded : cancelled ? State::Cancelled : State::Failed,
                     succeeded ? Failure::None : failure);
                 return;
             }
         }
-        const bool committed = started && (transfer.outgoingRemoved || transfer.inventoryCommitted);
+        const bool committed = started && transfer.inventoryCommitted;
         const bool ownerLost = provider::runtime::authorize(pending.owner, api::InterfaceId::Weapon, 2, true,
             provider::OwnerAccess::Active) != api::Status::Ok;
         if (!committed && (pending.cancelRequested || ownerLost || frame.menuBlocked)) {
@@ -178,14 +174,35 @@ namespace rock {
                 finish(State::Failed, Failure::EquippedWeaponChanged);
                 return;
             }
+            // The destination hand is free (checked above). The weapon lands
+            // in the slot the shared equip rule picks; a weapon the other
+            // hand holds stays equipped.
             const auto roster = equippedWeaponRoster();
-            const auto occupancy = roster.slotZeroGrips();
-            const auto destination = inventory_weapon_equip_policy::destination(left, false,
-                occupancy.right.carriesWeapon(), occupancy.left.carriesWeapon(), roster.facts().slot0.holdsHand);
-            // An occupied equipped weapon must have exactly the other carrier;
-            // never let ordinary native replacement consume a held weapon.
-            if (destination == inventory_weapon_equip_policy::Destination::Unavailable) {
-                finish(State::Failed, Failure::HandBusy);
+            const auto& slotZero = roster.facts().slot0;
+            const auto& slotOne = roster.facts().slot1;
+            const auto decision = equip_slot_allocation::decide(equipped_weapon_roster::handFor(left), { {
+                { .worn = slotZero.holdsHand,
+                    .firingHand = slotZero.firingGripDetached ? equipped_weapon_roster::Hand::None : slotZero.firingHand },
+                { .worn = slotOne.equipped, .firingHand = slotOne.hand },
+            } });
+            if (decision.slot == 1) {
+                // Slot 1 is ROCK's private graph; its presentation takes the
+                // weapon into this hand once the native model exists.
+                if (slotOne.equipped) {
+                    finish(State::Failed, Failure::HandBusy);
+                    return;
+                }
+                if (!held_weapon_equip_state_policy::canBeginEquip(f4vr::getNativeWeaponState(player))) return;
+                const auto equipped = weapon_equip_transfer::equipInventoryWeapon(pending.selection, true, left);
+                if (!equipped.success) {
+                    finish(State::Failed, Failure::NativeEquipFailed);
+                    return;
+                }
+                result.flags |= bit(Flag::IncomingEquipAccepted);
+                result.weaponSlot = 1;
+                pending.selection = {};
+                sampleEquippedSlotOne();
+                finish(State::Succeeded, Failure::None);
                 return;
             }
             const auto previousForm = currentEquippedWeaponFormId();
@@ -193,7 +210,7 @@ namespace rock {
             pending.previousNativeNode = previousForm ? reinterpret_cast<std::uintptr_t>(
                 equipped_weapon_visual_state::observe(previousForm).exactInstance) : 0;
             if (!coordinator.beginHeldRequest({.world = result.worldGeneration, .skeleton = result.skeletonGeneration,
-                    .isLeft = left, .retainOutgoing = destination == inventory_weapon_equip_policy::Destination::RetainOtherHand,
+                    .isLeft = left,
                     .previousForm = previousForm,
                     .previousInstance = previousInstance, .inventorySource = true})) {
                 finish(State::Failed, Failure::InfrastructureUnavailable);
@@ -208,18 +225,8 @@ namespace rock {
             reject(Failure::InventoryChanged, "inventory-selection-changed");
             return;
         }
-        if (transfer.request.retainOutgoing && !transfer.outgoingRemoved) {
-            if (!retainEquippedWeaponForReplacement(frame, left)) {
-                result.failure = Failure::OutgoingTransferFailed;
-                return;
-            }
-            result.flags |= bit(Flag::OutgoingRemoved);
-            result.outgoingReferenceFormId = transfer.outgoingReference;
-            if (!held_weapon_equip_state_policy::canBeginEquip(f4vr::getNativeWeaponState(player))) return;
-        }
-        // The outgoing drop may change stack indices, including another copy of
-        // the same base weapon. equipInventoryWeapon resolves the retained exact
-        // stack again and never substitutes another instance.
+        // equipInventoryWeapon resolves the retained exact stack again and
+        // never substitutes another instance.
         const auto equipped = weapon_equip_transfer::equipInventoryWeapon(pending.selection);
         if (equipped.instantTransition.managerAccepted) {
             coordinator.recordInventoryCommit(equipped.weapon ? equipped.weapon->GetFormID() : 0,

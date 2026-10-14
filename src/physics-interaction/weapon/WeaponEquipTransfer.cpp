@@ -613,7 +613,7 @@ namespace rock::weapon_equip_transfer
         return findSelectedInventoryStack(selection).found;
     }
 
-    EquipResult equipInventoryWeapon(const InventorySelection& selection) noexcept
+    EquipResult equipInventoryWeapon(const InventorySelection& selection, const bool slotOne, const bool slotOneLeft) noexcept
     {
         EquipResult result{};
         auto* player = RE::PlayerCharacter::GetSingleton();
@@ -631,7 +631,7 @@ namespace rock::weapon_equip_transfer
         result.attempted = true;
         result.matchedInstanceData = stack.instanceData.get() == selection.instance.get();
         result = equipSelectedStack(player, manager, stack,
-            held_weapon_instant_transition::RequestReason::InventoryEquip, std::move(result));
+            held_weapon_instant_transition::RequestReason::InventoryEquip, std::move(result), slotOne, slotOneLeft);
         if (result.success) result.reason = EquipReason::InventoryInstantEquip;
         return result;
     }

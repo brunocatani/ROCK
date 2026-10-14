@@ -44,7 +44,6 @@ namespace rock
                 provider::completeInteractionCommand(commit.providerResultTemplate);
             }
             rollbackInventoryTransfer(commit, "pending-grabs-cleared");
-            if (commit.weaponTransferSequence) _equipped.transition.recordOutgoingResult(commit.weaponTransferSequence, false);
             commit = {};
         }
     }
@@ -59,7 +58,6 @@ namespace rock
                 if (handoff.active && handoff.handle == commit.targetHandle) handoff = {};
             }
             rollbackInventoryTransfer(commit, "blocking-menu");
-            if (commit.weaponTransferSequence) _equipped.transition.recordOutgoingResult(commit.weaponTransferSequence, false);
             _forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u] = {};
             commit = {};
         }
@@ -226,7 +224,6 @@ namespace rock
                     _forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u] = {};
                 }
                 rollbackInventoryTransfer(commit, reason);
-                if (commit.weaponTransferSequence) _equipped.transition.recordOutgoingResult(commit.weaponTransferSequence, false);
                 commit = {};
             };
 
@@ -440,7 +437,6 @@ namespace rock
             input_remap_runtime::setHandHeldWeapon(commit.isLeft, (commit.isLeft ? _leftHand : _rightHand).isHoldingLooseWeapon());
 
             _forceGrab.committedThisFrame[commit.isLeft ? 1u : 0u] = true;
-            if (commit.weaponTransferSequence) _equipped.transition.recordOutgoingResult(commit.weaponTransferSequence, true);
             commit = {};
         }
     }

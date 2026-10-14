@@ -18,7 +18,6 @@ namespace rock::held_weapon_transfer
         std::uint32_t skeleton{ 0 };
         bool isLeft{ false };
         Role role{ Role::Firing };
-        bool retainOutgoing{ false };
         std::uint32_t previousForm{ 0 };
         std::uintptr_t previousInstance{ 0 };
         bool inventorySource{ false };
@@ -36,10 +35,6 @@ namespace rock::held_weapon_transfer
         std::uintptr_t targetInstance{ 0 };
         std::uintptr_t observedInstance{ 0 };
         bool identityBound{ false };
-        std::uint32_t outgoingReference{ 0 };
-        bool outgoingPending{ false };
-        bool outgoingRemoved{ false };
-        bool outgoingSucceeded{ false };
         bool inventoryCommitted{ false };
         bool gripAcquired{ false };
         bool presentationAcquired{ false };
@@ -63,10 +58,6 @@ namespace rock::held_weapon_transfer
         [[nodiscard]] constexpr bool blocksFire() const noexcept
         {
             return phase == Phase::AwaitEquip || phase == Phase::AwaitGrip || phase == Phase::Recovering;
-        }
-        [[nodiscard]] constexpr bool ownsEmptySlot(std::uint32_t form) const noexcept
-        {
-            return phase == Phase::AwaitEquip && request.retainOutgoing && outgoingRemoved && form == 0;
         }
     };
 
@@ -103,7 +94,7 @@ namespace rock::held_weapon_transfer
     [[nodiscard]] inline constexpr bool equippedSourceCurrent(const State& state, std::uint32_t form, std::uintptr_t instance) noexcept
     {
         if (state.phase != Phase::AwaitEquip) return true;
-        return state.outgoingRemoved ? form == 0 : form == state.request.previousForm && instance == state.request.previousInstance;
+        return form == state.request.previousForm && instance == state.request.previousInstance;
     }
 
     inline constexpr bool admit(State& state, const Request& request) noexcept
@@ -140,18 +131,9 @@ namespace rock::held_weapon_transfer
 
     inline constexpr void finishIfReady(State& state) noexcept
     {
-        if (state.phase != Phase::Completing || state.outgoingPending) return;
+        if (state.phase != Phase::Completing) return;
         if (state.outcome == Outcome::Completed && (!state.gripAcquired || !state.presentationAcquired)) return;
         state.phase = Phase::Terminal;
-    }
-
-    inline constexpr bool outgoingRemoved(State& state, std::uint32_t reference) noexcept
-    {
-        if (state.phase != Phase::AwaitEquip || !state.request.retainOutgoing || state.outgoingRemoved) return false;
-        state.outgoingRemoved = true;
-        state.outgoingPending = true;
-        state.outgoingReference = reference;
-        return true;
     }
 
     inline constexpr bool inventoryCommitted(State& state, std::uint32_t form, std::uintptr_t instance) noexcept
@@ -172,18 +154,6 @@ namespace rock::held_weapon_transfer
         // Failed grip restoration must never unequip it as compensation.
         state.phase = state.inventoryCommitted && !state.restoringEquippedGrip ? Phase::Recovering : Phase::Completing;
         finishIfReady(state);
-    }
-
-    inline constexpr bool outgoingFinished(State& state, std::uint64_t sequence, bool succeeded) noexcept
-    {
-        if (!state.active() || sequence != state.sequence || !state.outgoingPending) return false;
-        state.outgoingPending = false;
-        state.outgoingSucceeded = succeeded;
-        // An outgoing rollback must not undo a successfully acquired incoming
-        // weapon. The adapter reports its exact disposition independently.
-        if (!succeeded && state.outcome != Outcome::Cancelled) state.outcome = Outcome::Failed;
-        finishIfReady(state);
-        return true;
     }
 
     inline constexpr bool acquireGrip(State& state, std::uint32_t form, std::uintptr_t instance, bool left, Role role) noexcept

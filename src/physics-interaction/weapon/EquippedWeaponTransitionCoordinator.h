@@ -144,8 +144,6 @@ namespace rock
         }
         bool beginHeldRequest(const held_weapon_transfer::Request& request);
         void cancelHeldRequest(const char* reason, held_weapon_transfer::Outcome outcome = held_weapon_transfer::Outcome::Failed);
-        void recordOutgoingRemoval(std::uint32_t reference);
-        void recordOutgoingResult(std::uint64_t sequence, bool succeeded);
         void recordInventoryCommit(std::uint32_t form, std::uintptr_t instance, bool accepted, std::uintptr_t observedInstance);
         void recordGripAcquired(std::uint32_t form, std::uintptr_t instance, bool left, held_weapon_transfer::Role role);
         void recordGripPresentation();

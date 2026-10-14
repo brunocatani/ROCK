@@ -1144,7 +1144,7 @@ static_assert(offsetof(rock::api::weapon::EquipResult, flags) == 32);
 static_assert(offsetof(rock::api::weapon::EquipResult, hand) == 36);
 static_assert(offsetof(rock::api::weapon::EquipResult, incomingFormId) == 40);
 static_assert(offsetof(rock::api::weapon::EquipResult, outgoingFormId) == 44);
-static_assert(offsetof(rock::api::weapon::EquipResult, outgoingReferenceFormId) == 48);
+static_assert(offsetof(rock::api::weapon::EquipResult, weaponSlot) == 48);
 static_assert(offsetof(rock::api::weapon::EquipResult, worldGeneration) == 52);
 static_assert(offsetof(rock::api::weapon::EquipResult, skeletonGeneration) == 56);
 static_assert(offsetof(rock::api::weapon::EquipResult, providerGeneration) == 60);

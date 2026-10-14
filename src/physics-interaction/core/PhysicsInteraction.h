@@ -463,7 +463,6 @@ namespace rock
         void processProviderInteractionCommands(const PhysicsFrameContext& frame);
         void processProviderInventoryEquip(const PhysicsFrameContext& frame);
         void clearProviderInventoryEquip();
-        bool retainEquippedWeaponForReplacement(const PhysicsFrameContext& frame, bool equipIsLeft);
         // Weapon Drop Mode for the second weapon (native index 1), released
         // from the hand that carries it. Frame thread.
         bool dropSecondaryWeaponToWorld(const PhysicsFrameContext& frame);

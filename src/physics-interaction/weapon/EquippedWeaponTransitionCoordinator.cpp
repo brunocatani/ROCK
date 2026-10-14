@@ -47,10 +47,10 @@ namespace rock
     void EquippedWeaponTransitionCoordinator::traceHeldTransfer(const char* event) const
     {
         const auto& t = _heldTransfer;
-        ROCK_LOG_INFO(Weapon, "Weapon transfer seq={} event={} phase={} outcome={} incoming={:08X}/{} hand={} role={} outgoing={:08X} pending={} target={:08X}/{:#x} inventory={} grip={} presentation={} reason={}",
+        ROCK_LOG_INFO(Weapon, "Weapon transfer seq={} event={} phase={} outcome={} incoming={:08X}/{} hand={} role={} target={:08X}/{:#x} inventory={} grip={} presentation={} reason={}",
             t.sequence, event, static_cast<unsigned>(t.phase), static_cast<unsigned>(t.outcome),
             t.request.reference, t.request.grab, t.request.isLeft ? "left" : "right", static_cast<unsigned>(t.request.role),
-            t.outgoingReference, t.outgoingPending, t.targetForm, t.targetInstance,
+            t.targetForm, t.targetInstance,
             t.inventoryCommitted, t.gripAcquired, t.presentationAcquired, _heldFailureReason ? _heldFailureReason : "none");
     }
 
@@ -78,16 +78,6 @@ namespace rock
         if (_heldTransfer.restoringEquippedGrip) releasePendingNativeCull(true);
         traceHeldTransfer("cancelled");
         input_remap_runtime::setWeaponTransferPending(_heldTransfer.blocksFire());
-    }
-
-    void EquippedWeaponTransitionCoordinator::recordOutgoingRemoval(std::uint32_t reference)
-    {
-        if (held_weapon_transfer::outgoingRemoved(_heldTransfer, reference)) traceHeldTransfer("outgoing-removed");
-    }
-
-    void EquippedWeaponTransitionCoordinator::recordOutgoingResult(std::uint64_t sequence, bool succeeded)
-    {
-        if (held_weapon_transfer::outgoingFinished(_heldTransfer, sequence, succeeded)) traceHeldTransfer(succeeded ? "outgoing-complete" : "outgoing-recovered-or-failed");
     }
 
     void EquippedWeaponTransitionCoordinator::recordInventoryCommit(std::uint32_t form, std::uintptr_t instance,

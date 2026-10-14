@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/NativeHandEquipment.h"
+#include "physics-interaction/weapon/EquipSlotAllocationPolicy.h"
 #include "physics-interaction/weapon/NativeExecutionSlotStub.h"
 #include "physics-interaction/weapon/NativeSecondaryModelConstruction.h"
 #include "physics-interaction/weapon/NativeEquippedModelLifetime.h"
@@ -399,17 +400,19 @@ namespace rock::native_hand_equipment
                 const bool directedPending = directed.sequence != s_directedApplied.load(std::memory_order_acquire) &&
                     sameItem(directed.form, directed.instance, worn[0].form, worn[0].instance);
                 const bool primaryLeft = directedPending ? directed.left : routing.leftFiring;
-                // A support-held (detached) primary has no firing hand.
-                const auto fires = [&](std::uint32_t index) {
-                    if (!worn[index].form) return false;
-                    return index == 0 ? (directedPending || !routing.detached) && primaryLeft == actingLeft : secondaryLeft == actingLeft;
-                };
-                const int actingIndex = fires(0) ? 0 : fires(1) ? 1 : -1;
-                const auto wears = [&](int index) {
-                    return index >= 0 && sameItem(worn[index].form, worn[index].instance, formID, instance);
-                };
-                const int wornIndex = wears(actingIndex) ? actingIndex : wears(0) ? 0 : wears(1) ? 1 : -1;
-                if (wornIndex >= 0 && wornIndex != actingIndex) {
+                namespace allocation = equip_slot_allocation;
+                const auto handOf = [](bool left) { return left ? allocation::Hand::Left : allocation::Hand::Right; };
+                const auto wears = [&](std::uint32_t index) { return sameItem(worn[index].form, worn[index].instance, formID, instance); };
+                const auto decision = allocation::decide(handOf(actingLeft), { {
+                    // A support-held (detached) slot 0 has no firing hand.
+                    { .worn = worn[0].form != 0,
+                        .firingHand = directedPending || !routing.detached ? handOf(primaryLeft) : allocation::Hand::None,
+                        .requestedItem = wears(0) },
+                    { .worn = worn[1].form != 0, .firingHand = handOf(secondaryLeft), .requestedItem = wears(1) },
+                } });
+                if (decision.action == allocation::Action::MoveFiringGrip) {
+                    const int wornIndex = static_cast<int>(decision.slot);
+                    const int actingIndex = decision.displacedSlot;
                     // Cross-hand press: the item moves to the pressing hand
                     // without a re-equip. A weapon whose firing grip that hand
                     // held returns to inventory.
@@ -427,12 +430,8 @@ namespace rock::native_hand_equipment
                         sequence, origin.sequence, handName(hand), formID, wornIndex, actingIndex, displaced);
                     return displaced;
                 }
-                // Same hand on its own item toggles it; otherwise replace the
-                // weapon this hand fires, else fill the first free index, else
-                // replace a support-held primary.
-                const std::uint32_t index = wornIndex >= 0 ? static_cast<std::uint32_t>(wornIndex) :
-                    actingIndex >= 0 ? static_cast<std::uint32_t>(actingIndex) :
-                    !worn[0].form ? 0u : !worn[1].form ? 1u : routing.detached ? 0u : 1u;
+                const std::uint32_t index = decision.slot;
+                const bool toggles = wears(index);
                 if (index == 1 && !leftBipedAvailable(player, static_cast<RE::TESObjectWEAP*>(object))) return false;
                 if (index == 1) canonicalizeRestoredPrimary(actor, slots);
                 const auto* selected = index == 0 ? slots.right : slots.left;
@@ -442,15 +441,15 @@ namespace rock::native_hand_equipment
                 const bool affectsPair = index == 1 || worn[1].form != 0;
                 accepted = s_useItem(manager, actor, handle, stack, selected, toggle, force);
                 if (accepted && affectsPair) native_equipped_model_lifetime::noteEquipmentChange();
-                if (accepted && wornIndex < 0) {
+                if (accepted && !toggles) {
                     if (index == 0) publishDirectedPrimary(formID, instance, actingLeft);
                     else recordSecondaryHand(formID, instance, actingLeft);
                 }
                 // Native return means request accepted, not model/graph ready.
                 const auto sequence = s_transaction.fetch_add(1, std::memory_order_release) + 1;
                 ROCK_LOG_INFO(Weapon,
-                    "AKIMBO equip request={} inputToken={} hand={} weapon={:08X} handle={:08X} stack={} index={} actingIndex={} toggleOff={} requestedSlot={:08X} accepted={} executionSelected={} nativeInventory=true",
-                    sequence, origin.sequence, handName(hand), formID, inventoryHandle, stack, index, actingIndex, wornIndex >= 0,
+                    "AKIMBO equip request={} inputToken={} hand={} weapon={:08X} handle={:08X} stack={} index={} toggleOff={} requestedSlot={:08X} accepted={} executionSelected={} nativeInventory=true",
+                    sequence, origin.sequence, handName(hand), formID, inventoryHandle, stack, index, toggles,
                     selected->formID, accepted, execution.consumed);
                 return accepted;
             } catch (...) {

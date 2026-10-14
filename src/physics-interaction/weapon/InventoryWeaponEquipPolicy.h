@@ -14,11 +14,4 @@ namespace rock::inventory_weapon_equip_policy {
             requested.instanceKey != current.instanceKey || requested.count != current.count) return Status::TargetUnavailable;
         return Status::Ok;
     }
-    enum class Destination { Unavailable, ReplaceUncarried, RetainOtherHand };
-    [[nodiscard]] constexpr Destination destination(bool left, bool destinationBusy,
-        bool rightCarries, bool leftCarries, bool equippedOccupiesHand) noexcept {
-        if (destinationBusy || (left ? leftCarries : rightCarries)) return Destination::Unavailable;
-        if (left ? rightCarries : leftCarries) return Destination::RetainOtherHand;
-        return equippedOccupiesHand ? Destination::Unavailable : Destination::ReplaceUncarried;
-    }
 }
