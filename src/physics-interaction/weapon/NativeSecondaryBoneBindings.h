@@ -3,6 +3,7 @@
 #include "physics-interaction/weapon/NativeEquippedActionGraph.h"
 #include "physics-interaction/grab/SkinnedBoneOwner.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponScenePresentation.h"
 #include "physics-interaction/weapon/NativeSecondaryPoseTransport.h"
 #include "physics-interaction/weapon/NativePresentedPoseHistory.h"
@@ -122,6 +123,44 @@ namespace rock::native_secondary_actions
             _skins.clear(); _nodes.clear();
             _sampleFrame=UINT64_MAX; _nextReport=0; _nextBoneReport=0; _sampleFrames=_movingSamples=0;
             _nativeTravel=_nativeRotation=_nativeScale=_overwrite=0; _movingName={};
+        }
+        /*
+         * Hands the model over to a carrier that moves only its root (the
+         * promotion bridge). Bound skins render from the private skeleton's
+         * bone worlds, not from the model's own nodes, and that skeleton
+         * stays where it was last placed. Each model node takes the world it
+         * renders at now (the bone's for a bound node), as a local under its
+         * parent, before the skins return to the model's own nodes. The model
+         * keeps its look and follows its root from this frame on. Its authored
+         * rest locals are not restored; the model leaves the actor.
+         */
+        bool releaseKeepingPose() noexcept
+        {
+            if (_nodes.empty()) { restore(); return false; }
+            std::vector<RE::NiTransform> worlds(_nodes.size());
+            worlds[0]=_nodes[0].actual->world;
+            bool usable=weapon_scene_presentation::isFiniteTransform(worlds[0]);
+            for (std::size_t i=1;usable && i<_nodes.size();++i) {
+                auto& node=_nodes[i];
+                if (node.actual->parent!=_nodes[node.parentIndex].actual.get()) usable=false;
+                worlds[i]=node.target?node.target->world:node.actual->world;
+                usable=usable && weapon_scene_presentation::isFiniteTransform(worlds[i]);
+            }
+            if (!usable) { restore(); return false; }
+            for (std::size_t i=1;i<_nodes.size();++i) {
+                auto& node=_nodes[i];
+                node.actual->local=transform_math::composeTransforms(
+                    weapon_visual_authority_math::invertSceneTransform(worlds[node.parentIndex]),worlds[i]);
+                node.actual->world=worlds[i];
+            }
+            for (auto& skin:_skins) {
+                auto& current=skin.geometry->GetRuntimeData().skinInstance;
+                if (current.get()==skin.instance.get()) current=skin.original;
+            }
+            _skins.clear(); _nodes.clear();
+            _sampleFrame=UINT64_MAX; _nextReport=0; _nextBoneReport=0; _sampleFrames=_movingSamples=0;
+            _nativeTravel=_nativeRotation=_nativeScale=_overwrite=0; _movingName={};
+            return true;
         }
         bool bind(RE::NiAVObject* root,native_equipped_action_graph::Graph& graph)
         {

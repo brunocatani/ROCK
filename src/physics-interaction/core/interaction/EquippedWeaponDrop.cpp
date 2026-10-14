@@ -301,6 +301,7 @@ namespace rock
             ROCK_LOG_WARN(Weapon, "AKIMBO promotion without outgoing model form={:08X}: {}", weapon->GetFormID(), unpresented);
         }
         armTransitionSeamTrace("promotion");
+        native_secondary_actions::handOffModelPose();
         native_secondary_actions::suspend();
         const auto formID = weapon->GetFormID();
         const auto equipped = weapon_equip_transfer::promoteSecondaryToPrimary(formID, instance);

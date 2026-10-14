@@ -16,6 +16,10 @@ namespace rock::native_secondary_actions
     void present(RE::NiNode* attachment) noexcept;
     void carryPresentation(const RE::NiTransform& previous,const RE::NiTransform& target) noexcept;
     void suspend() noexcept;
+    // Promotion: the index-1 model leaves the private skeleton at its
+    // rendered pose, for a carrier that moves only its root, and the private
+    // graph retires.
+    void handOffModelPose() noexcept;
     // Diagnostic: traces the next 3 s of a dispatched primary (index 0)
     // reload, which a restored two-weapon save plays without animation.
     void tracePrimaryReload() noexcept;

@@ -213,6 +213,16 @@ namespace rock
                 seamSourceName(hands[1].source), hands[1].visibleCount, m[1].switched, m[1].worldC, m[1].worldF,
                 m[1].handC, m[1].handF, m[1].baseC, m[1].baseF, m[1].handMove, m[1].handTurn,
                 f4vr::getNativeWeaponState(f4vr::getPlayer()));
+            for (std::size_t h = 0; h < hands.size(); ++h) {
+                const auto& base = s_seam.baseline[h];
+                if (!m[h].switched || !comparable(base, hands[h])) continue;
+                const auto bc = inHand(base, base.center), bt = inHand(base, base.tip);
+                const auto nc = inHand(hands[h], hands[h].center), nt = inHand(hands[h], hands[h].tip);
+                ROCK_LOG_INFO(Weapon,
+                    "SEAM switch frame={} hand={} {}->{} inHand before C=({:.2f},{:.2f},{:.2f}) F=({:.2f},{:.2f},{:.2f}) now C=({:.2f},{:.2f},{:.2f}) F=({:.2f},{:.2f},{:.2f})",
+                    s_seam.frame, h ? "left" : "right", seamSourceName(base.source), seamSourceName(hands[h].source),
+                    bc.x, bc.y, bc.z, bt.x, bt.y, bt.z, nc.x, nc.y, nc.z, nt.x, nt.y, nt.z);
+            }
             s_seam.hands = hands;
         } catch (...) {
             s_seam = {};

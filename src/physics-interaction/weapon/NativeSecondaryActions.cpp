@@ -1362,6 +1362,22 @@ namespace rock::native_secondary_actions
             try { cancel(s); update(nullptr,0.0f); } catch (...) { (void)s.trigger.cancel(); }
         }
     }
+    void handOffModelPose() noexcept
+    {
+        if (!s_installed) return;
+        auto& s=state();
+        if (s.thread!=GetCurrentThreadId() || !s.graph) return;
+        try {
+            cancel(s);
+            const bool kept=s.bindings.releaseKeepingPose();
+            s.ready=false; s.retiring=true;
+            ROCK_LOG_INFO(Animation,"AKIMBO private skeleton handed off form={:08X} poseKept={}",
+                s.item.object?s.item.object->formID:0,kept);
+        } catch (...) {
+            s.bindings.restore(); (void)s.trigger.cancel();
+            s.ready=false; s.retiring=true;
+        }
+    }
     bool requestReload() noexcept
     {
         if (!s_installed) return false;
