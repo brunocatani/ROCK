@@ -3,7 +3,6 @@
 #include <ROCK/Grab.h>
 
 #include "physics-interaction/hand/DynamicHandCollisionFeedbackPolicy.h"
-#include "physics-interaction/hand/WeaponReleaseCollisionLease.h"
 #include "physics-interaction/hand/DynamicHandSurfaceContactState.h"
 #include "physics-interaction/hand/DynamicHandCollisionTelemetry.h"
 #include "physics-interaction/hand/DynamicHandTwinTargets.h"
@@ -71,10 +70,6 @@ namespace rock
         static constexpr std::size_t kBodiesPerHand = dynamic_hand_collision_telemetry::kBodiesPerHand;
 
         void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _physicsCallbackGate = gate; }
-        // Main-thread grant. Only the two hand-compound/weapon pairs are leased;
-        // both hands retain their collision with the world and other objects.
-        bool leaseReleasedWeapon(RE::hknpWorld* world, std::uint32_t weaponBody, float seconds);
-        void cancelReleasedWeaponLease(RE::hknpWorld* liveWorld);
 
         void updateFrame(const PhysicsFrameContext& frame,
             bool physicsWritesAllowed,
@@ -466,6 +461,5 @@ namespace rock
         std::array<std::atomic<std::uint32_t>, 2>
             _suppressedWeaponPairCountAtomic{};
         HavokPairCollisionLeaseSet _weaponPairLeases{};
-        weapon_release_collision_lease::State _releasedWeaponLease;
     };
 }

@@ -33,6 +33,7 @@
 #include "physics-interaction/object/DynamicWorldCarCollision.h"
 #include "physics-interaction/contact/GeneratedBodyContactRegistry.h"
 #include "physics-interaction/contact/ContactClock.h"
+#include "physics-interaction/native/NativePlayerCollisionFilter.h"
 #include "physics-interaction/consume/MouthConsumeDetector.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/core/PendingForceGrabCommit.h"
@@ -359,7 +360,7 @@ namespace rock
 
         void updateBodyBoneCollisions(const PhysicsFrameContext& frame);
 
-        void updateNativePlayerCollisionFilter(RE::bhkWorld* bhk, RE::hknpWorld* hknp);
+        void updateNativePlayerCollisionFilter(RE::bhkWorld* bhk, RE::hknpWorld* hknp, float deltaSeconds);
 
         void clearNativePlayerCollisionFilter(RE::hknpWorld* hknp);
 
@@ -534,6 +535,7 @@ namespace rock
         void setWeaponHandSuppression(RE::hknpWorld* world, bool isLeft, WeaponHandReason reason, bool active, float restoreDelaySeconds = 0.0f);
         void clearWeaponHandSuppression(RE::hknpWorld* world, bool isLeft);
         void abandonWeaponHandSuppression();
+        void publishWeaponHandExclusion(RE::hknpWorld* world);
         void updateWeaponHandSuppression(RE::hknpWorld* world, float deltaSeconds);
         void refreshWeaponHandSuppression(RE::hknpWorld* world, bool isLeft);
         [[nodiscard]] bool weaponHandSuppressedFor(bool isLeft, WeaponHandReason reason) const
@@ -917,24 +919,25 @@ namespace rock
             ::rock::provider::Publication presentedMetadata{};
         };
 
-        // State owned by the HandCollisionSuppression module: per-hand
-        // suppression flags and lease sets, and native player body
-        // suppression.
+        // State owned by the HandCollisionSuppression module: grenade lease
+        // set, per-hand weapon-ownership reasons and their hand/weapon pair
+        // exclusion, and native player body suppression.
         struct HandSuppressionState
         {
             collision_suppression_registry::SuppressionLeaseSet<kGeneratedBodyContactRegistryCapacity + 3>
                 nativeGrenadeLeases{ collision_suppression_registry::CollisionSuppressionOwner::NativeGrenadeThrow };
             struct WeaponHand
             {
-                collision_suppression_registry::SuppressionLeaseSet<kGrabCollisionSuppressionBodyCountPerHand>
-                    leases{ collision_suppression_registry::CollisionSuppressionOwner::WeaponHand };
+                // Bodies whose pairs with weapon bodies are excluded now.
+                std::array<native_player_collision::WeaponHandBody, kGrabCollisionSuppressionBodyCountPerHand> bodies{};
+                std::size_t bodyCount = 0;
                 std::uint8_t active = 0;     // reasons requested now
                 std::uint8_t lingering = 0;  // released reasons waiting out restoreSeconds
                 float restoreSeconds = 0.0f;
                 std::atomic<std::uint8_t> published{ 0 };  // active | lingering, for contact callbacks
             };
             std::array<WeaponHand, 2> weaponHands{};
-            std::uint32_t nativePlayerRefreshFrames = 0;
+            float nativePlayerRefreshSeconds = 0.0f;
             bool nativePlayerOverflowLogged = false;
         };
 

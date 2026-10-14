@@ -23,8 +23,6 @@ namespace rock::collision_suppression_registry
             switch (owner) {
             case CollisionSuppressionOwner::Grab:
                 return "Grab";
-            case CollisionSuppressionOwner::WeaponHand:
-                return "WeaponHand";
             case CollisionSuppressionOwner::HeldLooseWeaponBody:
                 return "HeldLooseWeaponBody";
             case CollisionSuppressionOwner::NativeGrenadeThrow:
@@ -145,16 +143,12 @@ namespace rock::collision_suppression_registry
             }
 
             result.valid = true;
-            result.ownerAlreadyHeld = true;
             result.wasNoCollideBeforeSuppression = entry->wasNoCollideBeforeSuppression;
             result.activeLeaseCount = leaseCount(entry->ownerMask);
             result.filterBefore = currentFilter;
             result.filterAfter = refreshedFilter;
             result.filterChanged = refreshedFilter != currentFilter;
             result.leaseIdentityValid = true;
-            result.leaseMotionIndex = snapshot.motionIndex;
-            result.leaseCollisionObject = snapshot.collisionObject;
-            result.leaseOwnerNode = snapshot.ownerNode;
             return result;
         }
 
@@ -171,7 +165,6 @@ namespace rock::collision_suppression_registry
         if (!entry) {
             RuntimeEntry newEntry{};
             captureBodyIdentity(newEntry, world, bodyId, snapshot.motionIndex, snapshot.collisionObject, snapshot.ownerNode);
-            newEntry.originalFilter = currentFilter;
             newEntry.wasNoCollideBeforeSuppression = (currentFilter & kSuppressionNoCollideBit) != 0;
             newEntry.ownerMask = ownerMask;
             _entries.push_back(newEntry);
@@ -193,9 +186,6 @@ namespace rock::collision_suppression_registry
         result.wasNoCollideBeforeSuppression = entry->wasNoCollideBeforeSuppression;
         result.activeLeaseCount = leaseCount(entry->ownerMask);
         result.leaseIdentityValid = true;
-        result.leaseMotionIndex = snapshot.motionIndex;
-        result.leaseCollisionObject = snapshot.collisionObject;
-        result.leaseOwnerNode = snapshot.ownerNode;
 
         if (result.firstLeaseForBody || result.filterChanged) {
             ROCK_LOG_DEBUG(Hand,
@@ -248,7 +238,6 @@ namespace rock::collision_suppression_registry
             auto* oldCollisionObject = entry->collisionObject;
             const auto originalOwnerMask = entry->ownerMask;
             result.valid = true;
-            result.staleLeaseDiscarded = true;
             result.bodyFullyReleased = true;
             result.wasNoCollideBeforeSuppression = entry->wasNoCollideBeforeSuppression;
             result.activeLeaseCount = 0;
@@ -286,16 +275,12 @@ namespace rock::collision_suppression_registry
         }
 
         result.valid = true;
-        result.ownerAlreadyHeld = true;
         result.wasNoCollideBeforeSuppression = entry->wasNoCollideBeforeSuppression;
         result.activeLeaseCount = leaseCount(entry->ownerMask);
         result.filterBefore = currentFilter;
         result.filterAfter = refreshedFilter;
         result.filterChanged = refreshedFilter != currentFilter;
         result.leaseIdentityValid = true;
-        result.leaseMotionIndex = snapshot.motionIndex;
-        result.leaseCollisionObject = snapshot.collisionObject;
-        result.leaseOwnerNode = snapshot.ownerNode;
         return result;
     }
 
@@ -304,7 +289,9 @@ namespace rock::collision_suppression_registry
         RuntimeSuppressionResult result{};
         result.bodyId = bodyId;
         if (!world) {
-            result.readFailed = hasLease(bodyId, owner);
+            result.readFailed = std::any_of(_entries.begin(), _entries.end(), [&](const RuntimeEntry& entry) {
+                return entry.bodyId == bodyId && (entry.ownerMask & ownerBit(owner)) != 0;
+            });
             return result;
         }
 
@@ -317,7 +304,6 @@ namespace rock::collision_suppression_registry
         if (!snapshot.valid) {
             const auto originalOwnerMask = entry->ownerMask;
             result.valid = true;
-            result.staleLeaseDiscarded = true;
             result.bodyFullyReleased = true;
             result.wasNoCollideBeforeSuppression = entry->wasNoCollideBeforeSuppression;
             result.activeLeaseCount = 0;
@@ -337,7 +323,6 @@ namespace rock::collision_suppression_registry
             auto* oldCollisionObject = entry->collisionObject;
             const auto originalOwnerMask = entry->ownerMask;
             result.valid = true;
-            result.staleLeaseDiscarded = true;
             result.bodyFullyReleased = true;
             result.wasNoCollideBeforeSuppression = entry->wasNoCollideBeforeSuppression;
             result.activeLeaseCount = 0;
@@ -414,27 +399,10 @@ namespace rock::collision_suppression_registry
         return result;
     }
 
-    void CollisionSuppressionRegistry::releaseOwner(RE::hknpWorld* world, CollisionSuppressionOwner owner, const char* context)
+    bool CollisionSuppressionRegistry::hasLease(RE::hknpWorld* world, std::uint32_t bodyId, CollisionSuppressionOwner owner) const
     {
-        std::vector<std::uint32_t> bodyIds;
-        bodyIds.reserve(_entries.size());
-        for (const auto& entry : _entries) {
-            if ((entry.ownerMask & ownerBit(owner)) != 0) {
-                bodyIds.push_back(entry.bodyId);
-            }
-        }
-
-        for (const auto bodyId : bodyIds) {
-            release(world, bodyId, owner, context);
-        }
-    }
-
-    bool CollisionSuppressionRegistry::hasLease(std::uint32_t bodyId, CollisionSuppressionOwner owner) const
-    {
-        const auto it = std::find_if(_entries.begin(), _entries.end(), [&](const RuntimeEntry& entry) {
-            return entry.bodyId == bodyId && (entry.ownerMask & ownerBit(owner)) != 0;
-        });
-        return it != _entries.end();
+        const auto* entry = find(world, bodyId);
+        return entry && (entry->ownerMask & ownerBit(owner)) != 0;
     }
 
     void CollisionSuppressionRegistry::clear() { _entries.clear(); }

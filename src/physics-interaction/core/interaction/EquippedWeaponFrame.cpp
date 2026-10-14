@@ -332,7 +332,7 @@ namespace rock
             frame.deltaSeconds,
             nullptr);
         updateBodyBoneCollisions(frame);
-        updateNativePlayerCollisionFilter(bhk, hknp);
+        updateNativePlayerCollisionFilter(bhk, hknp, frame.deltaSeconds);
 
         {
             performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponCollision);

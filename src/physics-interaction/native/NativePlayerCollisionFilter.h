@@ -1,7 +1,6 @@
 #pragma once
 
 #include "physics-interaction/collision/NativePlayerCollisionPolicy.h"
-#include "physics-interaction/hand/WeaponReleaseCollisionLease.h"
 
 #include <cstddef>
 #include <span>
@@ -40,11 +39,18 @@ namespace rock::native_player_collision
     // A null liveWorld clears ownership after world loss without native calls.
     void clearToolContactExclusion(RE::hknpWorld* liveWorld);
 
-    // DynamicHandCollision owns the timer on the game thread. Publish before
-    // detaching, clear on expiry/invalidation; simulation workers read only a
-    // quiesced identity. Does not require an optional constraint pair filter.
-    bool publishWeaponRelease(RE::hknpWorld* world, weapon_release_collision_lease::Identity weapon);
-    void clearWeaponRelease(RE::hknpWorld* liveWorld);
+    // Keyframed hand (and arm) bodies of hands that own the equipped weapon.
+    // Only their pairs with weapon bodies are removed (suppressWeaponHandContact);
+    // publication changes rebuild the affected bodies' caches. A null world
+    // clears ownership without native calls.
+    struct WeaponHandBody
+    {
+        std::uint32_t bodyId{ 0x7FFF'FFFFu };
+        bool includeLooseWeapons{ false };
+        bool operator==(const WeaponHandBody&) const = default;
+    };
+    inline constexpr std::size_t kMaximumWeaponHandBodies = 64;
+    void publishWeaponHands(RE::hknpWorld* world, std::span<const WeaponHandBody> bodies);
 
     // EjectionContacts owns these exact magazine/equipped-weapon sets. Single
     // game-thread publisher under the world write lock; empty sets restore pairs.

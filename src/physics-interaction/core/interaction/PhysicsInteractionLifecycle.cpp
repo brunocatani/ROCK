@@ -619,7 +619,7 @@ namespace rock
             _equipped.transition.abandonSceneGraph();
             _bodyBoneColliders.reset();
             abandonWeaponHandSuppression();
-            _suppression.nativePlayerRefreshFrames = 0;
+            _suppression.nativePlayerRefreshSeconds = 0.0f;
             _suppression.nativePlayerOverflowLogged = false;
             collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
         }
@@ -687,7 +687,7 @@ namespace rock
         _contacts.lastHeldImpactPairLeft.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
         _contacts.bodyRuntime.reset();
         abandonWeaponHandSuppression();
-        _suppression.nativePlayerRefreshFrames = 0;
+        _suppression.nativePlayerRefreshSeconds = 0.0f;
         _suppression.nativePlayerOverflowLogged = false;
 
         native_player_collision::abandon();

@@ -86,6 +86,21 @@ namespace rock::native_player_collision
                        (playerB && layerA == collision_layer_policy::FO4_LAYER_WEAPON)));
     }
 
+    /*
+     * A hand that owns the equipped weapon (firing hand, part or support grip,
+     * or just after it dropped the weapon) must not become a second physical
+     * owner of that weapon. Only its pairs with weapon bodies are removed:
+     * ROCK weapon hulls and dynamic weapon proxies, plus native-layer weapons
+     * right after a drop, when the dropped weapon is a native world body.
+     * Props, world and body contacts are kept.
+     */
+    inline constexpr bool suppressWeaponHandContact(std::uint32_t otherLayer, bool includeLooseWeapons)
+    {
+        using namespace collision_layer_policy;
+        return otherLayer == ROCK_LAYER_WEAPON || otherLayer == ROCK_LAYER_DYNAMIC_WEAPON_PROXY ||
+               (includeLooseWeapons && otherLayer == FO4_LAYER_WEAPON);
+    }
+
     inline constexpr bool isNativeWeaponSelfContactCandidate(std::uint32_t layerA, std::uint32_t layerB)
     {
         using namespace collision_layer_policy;

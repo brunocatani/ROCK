@@ -319,14 +319,14 @@ namespace rock
         if (!world || !body.isValid()) return false;
         using namespace collision_suppression_registry;
         auto& registry = globalCollisionSuppressionRegistry();
-        if (registry.hasLease(body.getBodyId().value, CollisionSuppressionOwner::InvalidFinalPose)) {
+        if (registry.hasLease(world, body.getBodyId().value, CollisionSuppressionOwner::InvalidFinalPose)) {
             const auto* liveBody = havok_runtime::getBody(world, body.getBodyId());
             if (!liveBody || !body.getCollisionObject() ||
                 havok_runtime::getCollisionObjectFromBody(liveBody) != body.getCollisionObject()) return false;
             (void)registry.release(world, body.getBodyId().value,
                 CollisionSuppressionOwner::InvalidFinalPose, "final-pose-restored-or-retired");
         }
-        return !registry.hasLease(body.getBodyId().value, CollisionSuppressionOwner::InvalidFinalPose);
+        return !registry.hasLease(world, body.getBodyId().value, CollisionSuppressionOwner::InvalidFinalPose);
     }
 
     void restoreGeneratedColliderPoseAfterDrive(RE::hknpWorld* world, BethesdaPhysicsBody& body, GeneratedKeyframedBodyDriveState& state)

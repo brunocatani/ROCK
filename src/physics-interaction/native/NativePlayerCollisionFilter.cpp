@@ -42,14 +42,19 @@ namespace rock::native_player_collision
         PhysicsCallbackQuiescenceGate s_gate;
         Snapshot s_snapshot;
         Snapshot s_authoredHands; // Same game publisher and callback gate.
+        struct WeaponHandSnapshot
+        {
+            RE::hknpWorld* world{ nullptr };
+            std::array<WeaponHandBody, kMaximumWeaponHandBodies> bodies{};
+            std::size_t count{ 0 };
+        };
+        WeaponHandSnapshot s_weaponHands; // Same game publisher and callback gate.
+        std::atomic<std::uint64_t> s_weaponHandRejectedPairs{ 0 };
         // Independent game-thread publisher and physics-worker read gate.
         // Player-body refresh must never bypass an active blade exception;
         // only blade publication pauses this gate and rebuilds its two bodies.
         PhysicsCallbackQuiescenceGate s_toolContactGate;
         ToolContactExclusion s_toolContactPair;
-        PhysicsCallbackQuiescenceGate s_weaponReleaseGate;
-        weapon_release_collision_lease::Identity s_releasedWeapon;
-        std::atomic<std::uint64_t> s_weaponReleaseRejectedPairs{ 0 };
         PhysicsCallbackQuiescenceGate s_magazineEjectionGate;
         MagazineEjectionSnapshot s_magazineEjection;
         std::atomic<std::uint64_t> s_magazineEjectionRejected{ 0 };
@@ -228,24 +233,6 @@ namespace rock::native_player_collision
                 identity(a), identity(b), reads.layerA(), reads.layerB());
         }
 
-        weapon_release_collision_lease::Identity releaseIdentity(RE::hknpWorld* world, std::uint32_t id)
-        {
-            const auto body = havok_runtime::snapshotBodyIdentity(world, { id });
-            return { reinterpret_cast<std::uintptr_t>(world),
-                body.valid ? reinterpret_cast<std::uintptr_t>(body.collisionObject) : 0, id };
-        }
-
-        bool suppressReleasedWeaponPair(RE::hknpWorld* world, const BodyPair& pair, PairReads& reads) noexcept
-        {
-            if (pair.bodyA != s_releasedWeapon.body && pair.bodyB != s_releasedWeapon.body) return false;
-            const bool weaponIsA = pair.bodyA == s_releasedWeapon.body;
-            const auto weaponLayer = weaponIsA ? reads.layerA() : reads.layerB();
-            const auto otherLayer = weaponIsA ? reads.layerB() : reads.layerA();
-            return weaponLayer != collision_layer_policy::kUnknownLayer && otherLayer != collision_layer_policy::kUnknownLayer &&
-                weapon_release_collision_lease::suppressesHandPair(s_releasedWeapon,
-                    releaseIdentity(world, s_releasedWeapon.body), weaponLayer, otherLayer);
-        }
-
         bool suppressMagazineEjectionPair(RE::hknpWorld* world, const BodyPair& pair, PairReads& reads) noexcept
         {
             if(!s_magazineEjection.containsPair(pair.bodyA,pair.bodyB))return false;
@@ -303,6 +290,33 @@ namespace rock::native_player_collision
             const auto& other = a ? reads.b() : reads.a();
             return hand.valid && other.valid && suppressAuthoredHandWorldPair(a ? *a : *b,
                 identity(hand), other.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK);
+        }
+
+        const WeaponHandBody* findWeaponHandBody(std::uint32_t id) noexcept
+        {
+            const auto end = s_weaponHands.bodies.begin() + s_weaponHands.count;
+            const auto found = std::lower_bound(s_weaponHands.bodies.begin(), end, id,
+                [](const WeaponHandBody& body, std::uint32_t candidate) { return body.bodyId < candidate; });
+            return found != end && found->bodyId == id ? &*found : nullptr;
+        }
+
+        bool suppressWeaponHandPair(const BodyPair& pair, PairReads& reads) noexcept
+        {
+            const auto* a = findWeaponHandBody(pair.bodyA);
+            const auto* b = findWeaponHandBody(pair.bodyB);
+            if (!a == !b) return false;
+            const auto otherLayer = a ? reads.layerB() : reads.layerA();
+            return otherLayer != collision_layer_policy::kUnknownLayer &&
+                suppressWeaponHandContact(otherLayer, (a ? a : b)->includeLooseWeapons);
+        }
+
+        void rebuildBodyIfLive(RE::hknpWorld* world, std::uint32_t bodyId)
+        {
+            static REL::Relocation<RebuildBodyCaches> rebuild{
+                REL::Offset(offsets::kFunc_RebuildBodyCollisionCaches) };
+            if (world && havok_runtime::snapshotBodyIdentity(world, RE::hknpBodyId{ bodyId }).valid) {
+                rebuild(world, bodyId);
+            }
         }
 
         struct PlayerPairCounts
@@ -377,17 +391,16 @@ namespace rock::native_player_collision
             const bool shellGrace = shell_casing_grace::filtersPairsIn(world);
             auto toolLease = s_toolContactGate.tryEnterCallback();
             const bool toolContact = toolLease && worldAddress == s_toolContactPair.world;
-            auto releaseLease = s_weaponReleaseGate.tryEnterCallback();
-            const bool weaponRelease = releaseLease && worldAddress == s_releasedWeapon.world;
             auto magazineLease = s_magazineEjectionGate.tryEnterCallback();
             const bool magazineEjection = magazineLease && s_magazineEjection.world == worldAddress;
             const bool retiredWeapon = retiredWeaponHandPairsEnabled(world);
             const bool storage = storage_interaction::filtersPairs();
             auto lease = s_gate.tryEnterCallback();
             const bool authoredHands = lease && world == s_authoredHands.world && s_authoredHands.count != 0;
+            const bool weaponHands = lease && world == s_weaponHands.world && s_weaponHands.count != 0;
             const bool playerBodies = lease && world == s_snapshot.world && s_snapshot.count != 0;
-            if (!shellGrace && !toolContact && !weaponRelease && !magazineEjection && !retiredWeapon && !storage &&
-                !authoredHands && !playerBodies) {
+            if (!shellGrace && !toolContact && !magazineEjection && !retiredWeapon && !storage &&
+                !authoredHands && !weaponHands && !playerBodies) {
                 profilePairs(world, pairs, nativeAdmitted, performance_profiler::ContactStage::SimulationKept,
                     performance_profiler::ValueMetric::SimulationPairsKept);
                 return nativeAdmitted;
@@ -396,26 +409,26 @@ namespace rock::native_player_collision
             WeaponOwnerBatch weaponOwners;
             PlayerPairCounts playerCounts;
             std::uint64_t toolRejected = 0;
-            std::uint64_t releaseRejected = 0;
             std::uint64_t magazineRejected = 0;
             std::uint64_t authoredRejected = 0;
+            std::uint64_t weaponHandRejected = 0;
             std::uint64_t playerRemoved = 0;
             const int kept = filterPhysicalPairs(pairs, nativeAdmitted, [&](const BodyPair& pair) {
                 PairReads reads(world, pair);
                 if (shellGrace && shell_casing_grace::suppressesPair(world, pair.bodyA, pair.bodyB)) return true;
                 if (toolContact && suppressToolContactPair(world, pair, reads)) { ++toolRejected; return true; }
-                if (weaponRelease && suppressReleasedWeaponPair(world, pair, reads)) { ++releaseRejected; return true; }
                 if (magazineEjection && suppressMagazineEjectionPair(world, pair, reads)) { ++magazineRejected; return true; }
                 if (retiredWeapon && suppressRetiredWeaponHandPair(reads)) return true;
                 if (storage && !storage_interaction::allowsPair(world, pair.bodyA, reads.layerA(), pair.bodyB, reads.layerB())) return true;
                 if (authoredHands && suppressAuthoredHandPair(pair, reads)) { ++authoredRejected; return true; }
+                if (weaponHands && suppressWeaponHandPair(pair, reads)) { ++weaponHandRejected; return true; }
                 if (playerBodies && suppressPlayerPair(world, pair, reads, weaponOwners, playerCounts)) { ++playerRemoved; return true; }
                 return false;
             });
             if (toolRejected) s_toolContactRejectedPairs.fetch_add(toolRejected, std::memory_order_relaxed);
-            if (releaseRejected) s_weaponReleaseRejectedPairs.fetch_add(releaseRejected, std::memory_order_relaxed);
             if (magazineRejected) s_magazineEjectionRejected.fetch_add(magazineRejected, std::memory_order_relaxed);
             if (authoredRejected) s_authoredRejectedPairs.fetch_add(authoredRejected, std::memory_order_relaxed);
+            if (weaponHandRejected) s_weaponHandRejectedPairs.fetch_add(weaponHandRejected, std::memory_order_relaxed);
             if (playerRemoved) s_removedPairs.fetch_add(playerRemoved, std::memory_order_relaxed);
             if (playerCounts.preserved) s_preservedPlayerPairs.fetch_add(playerCounts.preserved, std::memory_order_relaxed);
             if (playerCounts.stale) s_staleIdentities.fetch_add(playerCounts.stale, std::memory_order_relaxed);
@@ -435,14 +448,6 @@ namespace rock::native_player_collision
                 // routine; no body filter bits or query filters are changed.
                 rebuild(world, body.bodyId);
             }
-        }
-
-        void invalidateReleasedWeapon(RE::hknpWorld* world, weapon_release_collision_lease::Identity weapon)
-        {
-            if (!world || !weapon.valid() || releaseIdentity(world, weapon.body) != weapon) return;
-            static REL::Relocation<RebuildBodyCaches> rebuild{
-                REL::Offset(offsets::kFunc_RebuildBodyCollisionCaches) };
-            rebuild(world, weapon.body);
         }
 
         void invalidatePublishedBodies(const Snapshot& before, const Snapshot& after)
@@ -607,10 +612,10 @@ namespace rock::native_player_collision
         s_gate.pauseAndWait();
         s_snapshot = {};
         s_authoredHands = {};
+        s_weaponHands = {};
         s_toolContactGate.pauseAndWait();
         s_toolContactPair = {};
         s_toolContactRejectedPairs.store(0, std::memory_order_relaxed);
-        clearWeaponRelease(nullptr);
         clearMagazineEjection(nullptr);
     }
 
@@ -665,43 +670,46 @@ namespace rock::native_player_collision
         return true;
     }
 
-    bool publishWeaponRelease(RE::hknpWorld* world, weapon_release_collision_lease::Identity weapon)
+    void publishWeaponHands(RE::hknpWorld* world, std::span<const WeaponHandBody> bodies)
     {
-        std::uint32_t filter{};
-        if (!s_installed || !world || !weapon.valid() || releaseIdentity(world, weapon.body) != weapon ||
-            !havok_runtime::tryReadFilterInfo(world, { weapon.body }, filter) ||
-            !weapon_release_collision_lease::suppressesHandPair(weapon, weapon,
-                filter & collision_layer_policy::FO4_LAYER_FILTER_MASK,
-                collision_layer_policy::ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY)) {
-            ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
-                "Equipped drop collision lease rejected: stage=simulation-publication installed={} body={} object=0x{:X} filter=0x{:X}",
-                s_installed, weapon.body, weapon.collisionObject, filter);
-            return false;
+        WeaponHandSnapshot next{};
+        if (s_installed && world) {
+            next.world = world;
+            next.count = (std::min)(bodies.size(), next.bodies.size());
+            std::copy_n(bodies.begin(), next.count, next.bodies.begin());
+            std::sort(next.bodies.begin(), next.bodies.begin() + next.count,
+                [](const WeaponHandBody& a, const WeaponHandBody& b) { return a.bodyId < b.bodyId; });
         }
-        const auto previous = s_releasedWeapon;
-        if (previous == weapon) return true;
+        const auto previous = s_weaponHands; // Only this game thread writes it.
+        if (previous.world == next.world && previous.count == next.count &&
+            std::equal(next.bodies.begin(), next.bodies.begin() + next.count, previous.bodies.begin())) return;
         {
-            auto mutation = s_weaponReleaseGate.pauseForMutation();
-            s_releasedWeapon = weapon;
-            s_weaponReleaseRejectedPairs.store(0, std::memory_order_relaxed);
+            auto mutation = s_gate.pauseForMutation();
+            s_weaponHands = next;
         }
-        s_weaponReleaseGate.resumeCallbacks();
-        // Invalidate after publication, outside the read gate. Both acquisition
-        // and expiry rebuild the weapon's pairs without changing body filters.
-        invalidateReleasedWeapon(world, previous);
-        invalidateReleasedWeapon(world, weapon);
-        return true;
-    }
-
-    void clearWeaponRelease(RE::hknpWorld* liveWorld)
-    {
-        const auto previous = s_releasedWeapon;
-        if (!previous.valid()) return;
-        s_weaponReleaseGate.pauseAndWait();
-        s_releasedWeapon = {};
-        const auto rejected = s_weaponReleaseRejectedPairs.exchange(0, std::memory_order_relaxed);
-        invalidateReleasedWeapon(liveWorld, previous);
-        ROCK_LOG_INFO(Weapon, "Equipped drop collision lease cleared: body={} rejectedPairs={}", previous.body, rejected);
+        s_gate.resumeCallbacks();
+        // Rebuild every body whose exclusion changed, after publication and
+        // outside the read gate, so pairs already formed with the weapon drop
+        // and pairs excluded until now form again.
+        if (world) {
+            auto findIn = [](const WeaponHandSnapshot& snapshot, std::uint32_t id) -> const WeaponHandBody* {
+                for (std::size_t i = 0; i < snapshot.count; ++i) {
+                    if (snapshot.bodies[i].bodyId == id) return &snapshot.bodies[i];
+                }
+                return nullptr;
+            };
+            if (previous.world == world) {
+                for (std::size_t i = 0; i < previous.count; ++i) {
+                    const auto* now = findIn(next, previous.bodies[i].bodyId);
+                    if (!now || *now != previous.bodies[i]) rebuildBodyIfLive(world, previous.bodies[i].bodyId);
+                }
+            }
+            for (std::size_t i = 0; i < next.count; ++i) {
+                if (!(previous.world == world && findIn(previous, next.bodies[i].bodyId))) rebuildBodyIfLive(world, next.bodies[i].bodyId);
+            }
+        }
+        ROCK_LOG_DEBUG(Hand, "Weapon-owned hand pair exclusion: bodies={} world={:p} previousRejectedPairs={}",
+            next.count, static_cast<void*>(next.world), s_weaponHandRejectedPairs.exchange(0, std::memory_order_relaxed));
     }
 
     bool publishToolContactExclusion(RE::hknpWorld* world, std::uint32_t weaponBody, std::uint32_t targetBody)

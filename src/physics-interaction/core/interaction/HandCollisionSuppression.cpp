@@ -77,10 +77,12 @@ namespace rock
     /*
      * While a hand owns the equipped weapon (dominant firing hand, a part or
      * support grip, or the moment after it drops the weapon), its generated
-     * collider bodies are switched to no-collide so they cannot become a
-     * second physical owner of the weapon or feed stale touch contacts.
-     * One lease set per hand serves every reason; the hand is restored when
-     * no reason remains and any requested restore delay has elapsed.
+     * collider bodies (and arm bodies after a drop) stop colliding with weapon
+     * bodies only, so they cannot become a second physical owner of the
+     * weapon. Everything else keeps colliding. The native simulation pair
+     * filter removes those pairs (suppressWeaponHandContact); contact evidence
+     * from the owning hand is gated separately. The exclusion ends when no
+     * reason remains and any requested restore delay has elapsed.
      */
     void PhysicsInteraction::setWeaponHandSuppression(
         RE::hknpWorld* world, bool isLeft, WeaponHandReason reason, bool active, float restoreDelaySeconds)
@@ -112,12 +114,13 @@ namespace rock
     void PhysicsInteraction::abandonWeaponHandSuppression()
     {
         for (auto& state : _suppression.weaponHands) {
-            state.leases.clearTracking();
+            state.bodyCount = 0;
             state.active = 0;
             state.lingering = 0;
             state.restoreSeconds = 0.0f;
             state.published.store(0, std::memory_order_release);
         }
+        native_player_collision::publishWeaponHands(nullptr, {});
     }
 
     void PhysicsInteraction::updateWeaponHandSuppression(RE::hknpWorld* world, float deltaSeconds)
@@ -140,43 +143,44 @@ namespace rock
         auto& state = _suppression.weaponHands[isLeft ? 1 : 0];
         const std::uint8_t reasons = state.active | state.lingering;
         state.published.store(reasons, std::memory_order_release);
-        // Without a world the leases are kept until it can be restored.
-        if (!world) {
-            return;
-        }
 
-        if (reasons == 0) {
-            if (!state.leases.empty() && !state.leases.releaseAll(world, "weapon-hand", [](std::uint32_t, const auto&) {})) {
-                ROCK_LOG_WARN(Weapon, "{} hand weapon collision restore deferred; leases preserved", isLeft ? "Left" : "Right");
+        // Recreated hand bodies get new IDs, so the set is rebuilt each time.
+        state.bodyCount = 0;
+        if (reasons != 0) {
+            const bool dropped = (reasons & static_cast<std::uint8_t>(WeaponHandReason::Drop)) != 0;
+            Hand& hand = isLeft ? _leftHand : _rightHand;
+            std::array<std::uint32_t, kGrabCollisionSuppressionBodyCountPerHand> bodies{};
+            std::size_t count = 0;
+            const std::uint32_t colliderCount = hand.getHandColliderBodyCount();
+            if (colliderCount > 0) {
+                for (std::uint32_t i = 0; i < colliderCount && count < bodies.size(); ++i) {
+                    bodies[count++] = hand.getHandColliderBodyIdAtomic(i);
+                }
+            } else if (hand.hasCollisionBody()) {
+                bodies[count++] = hand.getCollisionBodyId().value;
             }
-            return;
+            if (dropped && count < bodies.size()) {
+                count += _bodyBoneColliders.copyGrabSuppressionArmBodyIdsAtomic(isLeft, bodies.data() + count, bodies.size() - count);
+            }
+            for (const auto bodyId : std::span(bodies).first(count)) {
+                if (bodyId != INVALID_CONTACT_BODY_ID) {
+                    state.bodies[state.bodyCount++] = { .bodyId = bodyId, .includeLooseWeapons = dropped };
+                }
+            }
         }
+        publishWeaponHandExclusion(world);
+    }
 
-        Hand& hand = isLeft ? _leftHand : _rightHand;
-        std::array<std::uint32_t, kGrabCollisionSuppressionBodyCountPerHand> bodies{};
+    void PhysicsInteraction::publishWeaponHandExclusion(RE::hknpWorld* world)
+    {
+        std::array<native_player_collision::WeaponHandBody, native_player_collision::kMaximumWeaponHandBodies> bodies{};
         std::size_t count = 0;
-        const std::uint32_t colliderCount = hand.getHandColliderBodyCount();
-        if (colliderCount > 0) {
-            for (std::uint32_t i = 0; i < colliderCount && count < bodies.size(); ++i) {
-                bodies[count++] = hand.getHandColliderBodyIdAtomic(i);
-            }
-        } else if (hand.hasCollisionBody()) {
-            bodies[count++] = hand.getCollisionBodyId().value;
-        }
-        if ((reasons & static_cast<std::uint8_t>(WeaponHandReason::Drop)) != 0 && count < bodies.size()) {
-            count += _bodyBoneColliders.copyGrabSuppressionArmBodyIdsAtomic(isLeft, bodies.data() + count, bodies.size() - count);
-        }
-
-        // Recreated hand bodies get new IDs: drop leases on IDs that are gone.
-        const auto current = std::span(bodies).first(count);
-        state.leases.releaseWhere(world, "weapon-hand-stale",
-            [&](std::uint32_t bodyId) { return std::find(current.begin(), current.end(), bodyId) == current.end(); },
-            [](std::uint32_t, const auto&) {});
-        for (const auto bodyId : current) {
-            if (bodyId != INVALID_CONTACT_BODY_ID && !state.leases.contains(bodyId)) {
-                (void)state.leases.acquire(world, bodyId, "weapon-hand");
+        for (const auto& state : _suppression.weaponHands) {
+            for (std::size_t i = 0; i < state.bodyCount && count < bodies.size(); ++i) {
+                bodies[count++] = state.bodies[i];
             }
         }
+        native_player_collision::publishWeaponHands(world, std::span(bodies).first(count));
     }
 
     void PhysicsInteraction::captureHandColliderBones()
@@ -333,10 +337,10 @@ namespace rock
     void PhysicsInteraction::clearNativePlayerCollisionFilter(RE::hknpWorld* hknp)
     {
         native_player_collision::publish(hknp, {});
-        _suppression.nativePlayerRefreshFrames = 0;
+        _suppression.nativePlayerRefreshSeconds = 0.0f;
     }
 
-    void PhysicsInteraction::updateNativePlayerCollisionFilter(RE::bhkWorld* bhk, RE::hknpWorld* hknp)
+    void PhysicsInteraction::updateNativePlayerCollisionFilter(RE::bhkWorld* bhk, RE::hknpWorld* hknp, float deltaSeconds)
     {
         if (!g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled) {
             clearNativePlayerCollisionFilter(hknp);
@@ -348,11 +352,16 @@ namespace rock
             return;
         }
 
-        if (_suppression.nativePlayerRefreshFrames > 0) {
-            --_suppression.nativePlayerRefreshFrames;
+        // Rescan the player's bodies every 30/90 s (the historical 30-frame
+        // cadence at the 90 Hz tuning baseline), rate-independent in seconds.
+        constexpr float kNativePlayerRefreshSeconds = 30.0f / 90.0f;
+        if (_suppression.nativePlayerRefreshSeconds > 0.0f) {
+            if (std::isfinite(deltaSeconds) && deltaSeconds > 0.0f) {
+                _suppression.nativePlayerRefreshSeconds -= deltaSeconds;
+            }
             return;
         }
-        _suppression.nativePlayerRefreshFrames = 30;
+        _suppression.nativePlayerRefreshSeconds = kNativePlayerRefreshSeconds;
 
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::NativePlayerRefresh);
         auto cacheMutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
