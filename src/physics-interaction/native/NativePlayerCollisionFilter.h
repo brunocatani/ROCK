@@ -52,6 +52,20 @@ namespace rock::native_player_collision
     inline constexpr std::size_t kMaximumWeaponHandBodies = 64;
     void publishWeaponHands(RE::hknpWorld* world, std::span<const WeaponHandBody> bodies);
 
+    // Body colliders and the held bodies they must not touch, each with a
+    // hand mask (suppressHeldExclusionContact). Publication changes rebuild
+    // the affected bodies' caches. A null world clears both sets.
+    struct HeldExclusionBody
+    {
+        std::uint32_t bodyId{ 0x7FFF'FFFFu };
+        std::uint8_t handMask{ 0 };
+        bool operator==(const HeldExclusionBody&) const = default;
+    };
+    inline constexpr std::size_t kMaximumHeldExclusionColliders = 32;
+    inline constexpr std::size_t kMaximumHeldExclusionHeldBodies = 128;
+    void publishHeldExclusions(RE::hknpWorld* world, std::span<const HeldExclusionBody> colliders,
+        std::span<const HeldExclusionBody> held);
+
     // Bodies of explodable cars a hand holds. The car-row pair rule treats
     // them as held objects (suppressCarRowContact); publication changes
     // rebuild the affected bodies' caches. A null world clears the set.

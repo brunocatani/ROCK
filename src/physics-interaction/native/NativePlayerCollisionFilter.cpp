@@ -57,6 +57,15 @@ namespace rock::native_player_collision
             std::size_t count{ 0 };
         };
         HeldCarSnapshot s_heldCars; // Same game publisher and callback gate.
+        struct HeldExclusionSnapshot
+        {
+            RE::hknpWorld* world{ nullptr };
+            std::array<HeldExclusionBody, kMaximumHeldExclusionColliders> colliders{};
+            std::size_t colliderCount{ 0 };
+            std::array<HeldExclusionBody, kMaximumHeldExclusionHeldBodies> held{};
+            std::size_t heldCount{ 0 };
+        };
+        HeldExclusionSnapshot s_heldExclusions; // Same game publisher and callback gate.
         std::atomic<std::uint64_t> s_weaponHandRejectedPairs{ 0 };
         // Independent game-thread publisher and physics-worker read gate.
         // Player-body refresh must never bypass an active blade exception;
@@ -385,6 +394,25 @@ namespace rock::native_player_collision
             }
         }
 
+        template <std::size_t N>
+        std::uint8_t heldExclusionMask(const std::array<HeldExclusionBody, N>& bodies, std::size_t count, std::uint32_t id) noexcept
+        {
+            const auto end = bodies.begin() + count;
+            const auto found = std::lower_bound(bodies.begin(), end, id,
+                [](const HeldExclusionBody& body, std::uint32_t candidate) { return body.bodyId < candidate; });
+            return found != end && found->bodyId == id ? found->handMask : 0;
+        }
+
+        bool suppressHeldExclusionPair(const BodyPair& pair) noexcept
+        {
+            const auto& set = s_heldExclusions;
+            const auto colliderA = heldExclusionMask(set.colliders, set.colliderCount, pair.bodyA);
+            const auto colliderB = heldExclusionMask(set.colliders, set.colliderCount, pair.bodyB);
+            if (!colliderA && !colliderB) return false;
+            return suppressHeldExclusionContact(colliderA, heldExclusionMask(set.held, set.heldCount, pair.bodyA),
+                colliderB, heldExclusionMask(set.held, set.heldCount, pair.bodyB));
+        }
+
         bool isHeldCarBody(std::uint32_t id) noexcept
         {
             const auto end = s_heldCars.bodies.begin() + s_heldCars.count;
@@ -479,6 +507,8 @@ namespace rock::native_player_collision
             const bool authoredHands = lease && world == s_authoredHands.world && s_authoredHands.count != 0;
             const bool weaponHands = lease && world == s_weaponHands.world && s_weaponHands.count != 0;
             const bool heldCars = lease && world == s_heldCars.world && s_heldCars.count != 0;
+            const bool heldExclusions = lease && world == s_heldExclusions.world &&
+                s_heldExclusions.colliderCount != 0 && s_heldExclusions.heldCount != 0;
             const bool playerBodies = lease && world == s_snapshot.world && s_snapshot.count != 0;
 
             // The car-row rule is always armed: it decides every pair of
@@ -501,6 +531,7 @@ namespace rock::native_player_collision
                 if (storage && !storage_interaction::allowsPair(world, pair.bodyA, reads.layerA(), pair.bodyB, reads.layerB())) return true;
                 if (authoredHands && suppressAuthoredHandPair(pair, reads)) { ++authoredRejected; return true; }
                 if (weaponHands && suppressWeaponHandPair(pair, reads)) { ++weaponHandRejected; return true; }
+                if (heldExclusions && suppressHeldExclusionPair(pair)) return true;
                 if (playerBodies && suppressPlayerPair(world, pair, reads, weaponOwners, playerCounts)) { ++playerRemoved; return true; }
                 return false;
             });
@@ -693,6 +724,7 @@ namespace rock::native_player_collision
         s_authoredHands = {};
         s_weaponHands = {};
         s_heldCars = {};
+        s_heldExclusions = {};
         s_toolContactGate.pauseAndWait();
         s_toolContactPair = {};
         s_toolContactRejectedPairs.store(0, std::memory_order_relaxed);
@@ -772,6 +804,41 @@ namespace rock::native_player_collision
             std::span(next.bodies).first(next.count), [](const WeaponHandBody& body) { return body.bodyId; });
         ROCK_LOG_DEBUG(Hand, "Weapon-owned hand pair exclusion: bodies={} world={:p} previousRejectedPairs={}",
             next.count, static_cast<void*>(next.world), s_weaponHandRejectedPairs.exchange(0, std::memory_order_relaxed));
+    }
+
+    void publishHeldExclusions(RE::hknpWorld* world, std::span<const HeldExclusionBody> colliders,
+        std::span<const HeldExclusionBody> held)
+    {
+        HeldExclusionSnapshot next{};
+        if (s_installed && world) {
+            auto fill = [](auto& out, std::size_t& outCount, std::span<const HeldExclusionBody> in) {
+                outCount = (std::min)(in.size(), out.size());
+                std::copy_n(in.begin(), outCount, out.begin());
+                std::sort(out.begin(), out.begin() + outCount,
+                    [](const HeldExclusionBody& a, const HeldExclusionBody& b) { return a.bodyId < b.bodyId; });
+            };
+            next.world = world;
+            fill(next.colliders, next.colliderCount, colliders);
+            fill(next.held, next.heldCount, held);
+        }
+        const auto previous = s_heldExclusions; // Only this game thread writes it.
+        const auto same = [](const auto& a, std::size_t aCount, const auto& b, std::size_t bCount) {
+            return aCount == bCount && std::equal(a.begin(), a.begin() + aCount, b.begin());
+        };
+        if (previous.world == next.world && same(previous.colliders, previous.colliderCount, next.colliders, next.colliderCount) &&
+            same(previous.held, previous.heldCount, next.held, next.heldCount)) return;
+        {
+            auto mutation = s_gate.pauseForMutation();
+            s_heldExclusions = next;
+        }
+        s_gate.resumeCallbacks();
+        const auto idOf = [](const HeldExclusionBody& body) { return body.bodyId; };
+        rebuildChangedBodies<HeldExclusionBody>(world, previous.world, std::span(previous.colliders).first(previous.colliderCount),
+            std::span(next.colliders).first(next.colliderCount), idOf);
+        rebuildChangedBodies<HeldExclusionBody>(world, previous.world, std::span(previous.held).first(previous.heldCount),
+            std::span(next.held).first(next.heldCount), idOf);
+        ROCK_LOG_DEBUG(Hand, "Held object arm exclusion: colliders={} heldBodies={} world={:p}",
+            next.colliderCount, next.heldCount, static_cast<void*>(next.world));
     }
 
     void publishHeldCars(RE::hknpWorld* world, std::span<const std::uint32_t> bodies)

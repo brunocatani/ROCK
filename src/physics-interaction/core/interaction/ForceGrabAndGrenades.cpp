@@ -390,7 +390,6 @@ namespace rock
                 g_rockConfig.rockGrabConstraintMaxForce,
                 g_rockConfig.rockGrabLinearProportionalRecovery,
                 g_rockConfig.rockGrabLinearConstantRecovery,
-                &_bodyBoneColliders,
                 sharedContext,
                 commit.isEquippedWeaponTransfer() ? &commit.weaponGripPose : nullptr) == GrabAttemptResult::Grabbed;
             if (!grabbed) {
@@ -419,7 +418,7 @@ namespace rock
                 // the new owner must drive and present now before the bridge exits.
                 hand.updateHeldObject(frame.hknpWorld, handInput.rawHandWorld, frame.deltaSeconds,
                     g_rockConfig.rockGrabForceFadeInTime, g_rockConfig.rockGrabTauMin,
-                    &_bodyBoneColliders, makeGrabReleaseContext(hand, commit.isLeft),
+                    makeGrabReleaseContext(hand, commit.isLeft),
                     commit.isLeft ? &_rightHand : &_leftHand,
                     &(commit.isLeft ? frame.right : frame.left).rawHandWorld);
                 if (!hand.isHolding() || hand.getHeldRef() != targetRef) {

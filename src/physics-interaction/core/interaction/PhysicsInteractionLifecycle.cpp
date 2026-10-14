@@ -683,6 +683,7 @@ namespace rock
         _contacts.lastHeldImpactPairLeft.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
         _contacts.bodyRuntime.reset();
         abandonWeaponHandSuppression();
+        _suppression.heldBodyExclusions = {};
         _suppression.nativePlayerRefreshSeconds = 0.0f;
         _suppression.nativePlayerOverflowLogged = false;
 

@@ -5,7 +5,6 @@
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
-#include "physics-interaction/body/BodyColliderDescriptors.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/HeldPlacementPolicy.h"
@@ -71,8 +70,6 @@ namespace rock
     inline constexpr std::size_t kGrabCollisionSuppressionArmBodyCountPerHand = 3;
     inline constexpr std::size_t kGrabCollisionSuppressionBodyCountPerHand =
         hand_collider_semantics::kHandColliderBodyCountPerHand + kGrabCollisionSuppressionArmBodyCountPerHand;
-    inline constexpr std::size_t kHeldLooseWeaponBodyCollisionSuppressionCapacity =
-        body_collider::kStandardDescriptors.size() * 2u;
 
     struct GrabPivotDebugSnapshot
     {
@@ -342,12 +339,9 @@ namespace rock
 
     private:
         void collectBodyIdsRecursive(RE::NiAVObject* node, int maxDepth = 10);
-        void suppressHandCollisionForGrab(RE::hknpWorld* world, const BodyBoneColliderSet* bodyBoneColliders);
+        void suppressHandCollisionForGrab(RE::hknpWorld* world);
         void restoreHandCollisionAfterGrab(RE::hknpWorld* world);
         void clearGrabHandCollisionSuppressionState();
-        void suppressBodyCollisionForHeldLooseWeapon(RE::hknpWorld* world, const BodyBoneColliderSet* bodyBoneColliders);
-        void restoreBodyCollisionAfterHeldLooseWeapon(RE::hknpWorld* world);
-        void clearHeldLooseWeaponBodyCollisionSuppressionState();
         void clearPullRuntimeState(bool restorePreparedObject = true, const char* context = "clear-pull-runtime");
         void clearPullPrepTracking();
         void restorePullPrepIfActive(const char* context);
@@ -430,6 +424,8 @@ namespace rock
 
         bool isHolding() const { return isHoldingState(_state); }
         bool isHoldingLooseWeapon() const { return isHolding() && _heldObjectIsLooseWeapon; }
+        // The hand colliders stay leased after a release until this ends.
+        bool isGrabHandCollisionRestorePending() const { return _grabHandCollisionSuppression.delayedRestorePending(); }
         bool isHoldingAuthoredSupportGrip() const { return isHoldingLooseWeapon() && _grabFrame.authoredLooseWeaponSupportGrip; }
         bool isHoldingFiringGrip() const { return isHoldingLooseWeapon() && _grabFrame.syntheticLooseWeaponPrimaryAttach && !_grabFrame.authoredLooseWeaponSupportGrip; }
         bool heldWeaponGunstockAim() const { return isHoldingFiringGrip() && _grabFrame.looseObjectSharedPeerTrace != 0 && _looseSharedGunstockAim; }
@@ -510,7 +506,6 @@ namespace rock
             float maxForce,
             float proportionalRecovery,
             float constantRecovery,
-            const BodyBoneColliderSet* bodyBoneColliders,
             const GrabSharedObjectContext& sharedContext = {},
             const AuthoredWeaponGripPose* transferPose = nullptr);
 
@@ -537,7 +532,6 @@ namespace rock
             float deltaTime,
             float forceFadeInTime,
             float tauMin,
-            const BodyBoneColliderSet* bodyBoneColliders,
             const GrabReleaseContext& releaseContext = {},
             Hand* peerHand = nullptr,
             const RE::NiTransform* peerHandWorld = nullptr);
@@ -1063,9 +1057,6 @@ namespace rock
         collision_suppression_registry::SuppressionLeaseSet<kGrabCollisionSuppressionBodyCountPerHand>
             _grabHandCollisionSuppression{
                 collision_suppression_registry::CollisionSuppressionOwner::Grab };
-        collision_suppression_registry::SuppressionLeaseSet<kHeldLooseWeaponBodyCollisionSuppressionCapacity>
-            _heldLooseWeaponBodyCollisionSuppression{
-                collision_suppression_registry::CollisionSuppressionOwner::HeldLooseWeaponBody };
         std::mutex _semanticContactWriteMutex;
         std::atomic<std::uint32_t> _touchBodyId{ hand_semantic_contact_state::kInvalidBodyId };
         std::atomic<double> _touchStampSeconds{ -1.0e9 };

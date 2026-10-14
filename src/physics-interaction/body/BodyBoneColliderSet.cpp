@@ -732,11 +732,9 @@ namespace rock
     std::uint32_t BodyBoneColliderSet::copyGrabSuppressionArmBodyIdsAtomic(bool isLeft, std::uint32_t* outBodyIds, std::size_t maxBodyIds) const
     {
         /*
-         * A normal object grab owns the collision pocket around the driving hand.
-         * The generated hand colliders cover palm/fingers; body colliders own the
-         * adjacent root-flattened forearm and wrist/hand chain. Returning this
-         * side-local arm chain lets held-object grabs suppress self-collision at
-         * the wrist without changing the separate two-handed weapon suppression path.
+         * The side's forearm and wrist body colliders, adjacent to the generated
+         * hand colliders. A hand that just dropped the equipped weapon excludes
+         * them from the weapon together with its hand colliders.
          */
         if (!outBodyIds || maxBodyIds == 0) {
             return 0;

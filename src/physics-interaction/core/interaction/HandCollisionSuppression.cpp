@@ -194,6 +194,78 @@ namespace rock
         native_player_collision::publishHeldCars(world, std::span(bodies).first(count));
     }
 
+    /*
+     * A held object must not solve against the arm holding it: the holding
+     * side's forearm and wrist body colliders, and for a loose weapon every
+     * body collider except the other arm's forearm and wrist, which may
+     * support it. Only those pairs are removed; the body keeps colliding with
+     * everything else. After release the forearm and wrist exclusion lasts as
+     * long as the hand colliders' delayed restore, against the last held
+     * bodies.
+     */
+    void PhysicsInteraction::publishHeldBodyExclusion(RE::hknpWorld* world)
+    {
+        using native_player_collision::HeldExclusionBody;
+        std::array<HeldExclusionBody, native_player_collision::kMaximumHeldExclusionColliders> colliders{};
+        std::array<HeldExclusionBody, native_player_collision::kMaximumHeldExclusionHeldBodies> held{};
+        std::size_t colliderCount = 0;
+        std::size_t heldCount = 0;
+        auto add = [](auto& bodies, std::size_t& count, std::uint32_t bodyId, std::uint8_t bit) {
+            for (std::size_t i = 0; i < count; ++i) {
+                if (bodies[i].bodyId == bodyId) {
+                    bodies[i].handMask |= bit;
+                    return;
+                }
+            }
+            if (count < bodies.size()) {
+                bodies[count++] = { .bodyId = bodyId, .handMask = bit };
+            }
+        };
+
+        for (const bool isLeft : { false, true }) {
+            const Hand& hand = isLeft ? _leftHand : _rightHand;
+            auto& state = _suppression.heldBodyExclusions[isLeft ? 1 : 0];
+            if (hand.isHolding()) {
+                const auto& ids = hand.getHeldBodyIds();
+                state.heldCount = (std::min)(ids.size(), state.heldBodies.size());
+                std::copy_n(ids.begin(), state.heldCount, state.heldBodies.begin());
+                state.looseWeapon = hand.isHoldingLooseWeapon();
+            } else if (hand.isGrabHandCollisionRestorePending()) {
+                state.looseWeapon = false;
+            } else {
+                state = {};
+            }
+            if (state.heldCount == 0) {
+                continue;
+            }
+
+            const std::uint8_t bit = isLeft ? 2 : 1;
+            const auto ownSide = isLeft ? body_zone::BodyZoneSide::Left : body_zone::BodyZoneSide::Right;
+            const std::uint32_t bodyCount = _bodyBoneColliders.getBodyCount();
+            for (std::uint32_t i = 0; i < bodyCount; ++i) {
+                const auto bodyId = _bodyBoneColliders.getBodyIdAtomic(i);
+                BodyBoneColliderMetadata metadata{};
+                if (!_bodyBoneColliders.tryGetBodyMetadataAtIndexAtomic(i, bodyId, metadata) || !metadata.valid) {
+                    continue;
+                }
+                const bool armSegment = metadata.role == body_collider::Role::ForearmSegment ||
+                    metadata.role == body_collider::Role::HandSegment;
+                const bool holdingArm = armSegment && metadata.side == ownSide;
+                const bool supportArm = armSegment && !holdingArm && metadata.side != body_zone::BodyZoneSide::Center;
+                if (holdingArm || (state.looseWeapon && !supportArm)) {
+                    add(colliders, colliderCount, bodyId, bit);
+                }
+            }
+            for (std::size_t i = 0; i < state.heldCount; ++i) {
+                if (state.heldBodies[i] != INVALID_BODY_ID) {
+                    add(held, heldCount, state.heldBodies[i], bit);
+                }
+            }
+        }
+        native_player_collision::publishHeldExclusions(world, std::span(colliders).first(colliderCount),
+            std::span(held).first(heldCount));
+    }
+
     void PhysicsInteraction::publishWeaponHandExclusion(RE::hknpWorld* world)
     {
         std::array<native_player_collision::WeaponHandBody, native_player_collision::kMaximumWeaponHandBodies> bodies{};

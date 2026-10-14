@@ -134,6 +134,19 @@ namespace rock::native_player_collision
     }
 
     /*
+     * A held object must not solve against the arm holding it. Each body
+     * carries a hand mask (bit 0 right, bit 1 left): as a body collider, the
+     * hands whose held object it must not touch; as a held body, the hands
+     * holding it. A pair is removed when either side's collider mask meets
+     * the other side's held mask.
+     */
+    inline constexpr bool suppressHeldExclusionContact(
+        std::uint8_t colliderMaskA, std::uint8_t heldMaskA, std::uint8_t colliderMaskB, std::uint8_t heldMaskB)
+    {
+        return (colliderMaskA & heldMaskB) != 0 || (colliderMaskB & heldMaskA) != 0;
+    }
+
+    /*
      * A hand that owns the equipped weapon (firing hand, part or support grip,
      * or just after it dropped the weapon) must not become a second physical
      * owner of that weapon. Only its pairs with weapon bodies are removed:

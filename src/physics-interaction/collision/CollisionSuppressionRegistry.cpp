@@ -23,8 +23,6 @@ namespace rock::collision_suppression_registry
             switch (owner) {
             case CollisionSuppressionOwner::Grab:
                 return "Grab";
-            case CollisionSuppressionOwner::HeldLooseWeaponBody:
-                return "HeldLooseWeaponBody";
             case CollisionSuppressionOwner::NativeGrenadeThrow:
                 return "NativeGrenadeThrow";
             case CollisionSuppressionOwner::InvalidFinalPose:

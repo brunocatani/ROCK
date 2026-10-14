@@ -3242,20 +3242,13 @@ namespace rock
         _grabHandCollisionSuppression.clearTracking();
     }
 
-    void Hand::clearHeldLooseWeaponBodyCollisionSuppressionState()
-    {
-        _heldLooseWeaponBodyCollisionSuppression.clearTracking();
-    }
-
-    void Hand::suppressHandCollisionForGrab(RE::hknpWorld* world, const BodyBoneColliderSet* bodyBoneColliders)
+    void Hand::suppressHandCollisionForGrab(RE::hknpWorld* world)
     {
         /*
-         * Normal held-object grabs suppress the grabbing hand's immediate collision
-         * authority while the object is constrained to that hand. The generated
-         * hand suite covers palm/fingers, and BodyBoneColliderSet owns the adjacent
-         * same-side forearm/wrist chain. Leasing both sets prevents held objects
-         * from solving against their own driving arm without touching the separate
-         * two-handed equipped-weapon suppression path.
+         * Held-object grabs suppress the grabbing hand's generated colliders
+         * (palm and fingers) while the object is constrained to that hand. The
+         * adjacent forearm and wrist body colliders lose only their pairs with
+         * the held bodies (PhysicsInteraction::publishHeldBodyExclusion).
          */
         _grabHandCollisionSuppression.cancelDelayedRestore();
 
@@ -3303,15 +3296,6 @@ namespace rock
         } else {
             suppressBody(_handBody.getBodyId().value, "held-grab-hand-anchor");
         }
-
-        if (bodyBoneColliders) {
-            std::array<std::uint32_t, kGrabCollisionSuppressionArmBodyCountPerHand> armBodyIds{};
-            const auto armBodyCount =
-                bodyBoneColliders->copyGrabSuppressionArmBodyIdsAtomic(_isLeft, armBodyIds.data(), armBodyIds.size());
-            for (std::uint32_t i = 0; i < armBodyCount && i < armBodyIds.size(); ++i) {
-                suppressBody(armBodyIds[i], "held-grab-arm-chain");
-            }
-        }
     }
 
     void Hand::restoreHandCollisionAfterGrab(RE::hknpWorld* world)
@@ -3350,110 +3334,6 @@ namespace rock
             return;
         }
         clearGrabHandCollisionSuppressionState();
-    }
-
-    void Hand::suppressBodyCollisionForHeldLooseWeapon(RE::hknpWorld* world, const BodyBoneColliderSet* bodyBoneColliders)
-    {
-        if (!world || !bodyBoneColliders || !bodyBoneColliders->hasBodies()) {
-            return;
-        }
-
-        auto keepBodyColliderEnabled = [&](const BodyBoneColliderMetadata& metadata) {
-            const auto otherSide = _isLeft ? body_zone::BodyZoneSide::Right : body_zone::BodyZoneSide::Left;
-            if (metadata.side != otherSide) {
-                return false;
-            }
-            return metadata.role == body_collider::Role::ForearmSegment ||
-                   metadata.role == body_collider::Role::HandSegment;
-        };
-
-        auto suppressBody = [&](std::uint32_t bodyId) {
-            if (bodyId == INVALID_BODY_ID) {
-                return;
-            }
-
-            BodyBoneColliderMetadata metadata{};
-            if (!bodyBoneColliders->tryGetBodyMetadataAtomic(bodyId, metadata) || keepBodyColliderEnabled(metadata)) {
-                return;
-            }
-
-            if (!_heldLooseWeaponBodyCollisionSuppression.contains(bodyId) &&
-                _heldLooseWeaponBodyCollisionSuppression.full()) {
-                ROCK_LOG_WARN(Hand,
-                    "{} hand: held loose weapon body suppression set full; bodyId={} role={} zone={} side={} left active",
-                    handName(),
-                    bodyId,
-                    body_collider::roleName(metadata.role),
-                    body_zone::bodyZoneName(metadata.zone),
-                    body_zone::bodyZoneSideName(metadata.side));
-                return;
-            }
-
-            const auto registryResult = _heldLooseWeaponBodyCollisionSuppression.acquire(
-                world,
-                bodyId,
-                "held-loose-weapon-body");
-
-            if (registryResult.valid && (registryResult.filterChanged || registryResult.firstLeaseForBody)) {
-                ROCK_LOG_DEBUG(Hand,
-                    "{} hand: held loose weapon body collision lease acquired bodyId={} role={} zone={} side={} filter=0x{:08X}->0x{:08X} wasDisabledBefore={} leases={}",
-                    handName(),
-                    bodyId,
-                    body_collider::roleName(metadata.role),
-                    body_zone::bodyZoneName(metadata.zone),
-                    body_zone::bodyZoneSideName(metadata.side),
-                    registryResult.filterBefore,
-                    registryResult.filterAfter,
-                    registryResult.wasNoCollideBeforeSuppression ? "yes" : "no",
-                    registryResult.activeLeaseCount);
-            }
-        };
-
-        const std::uint32_t bodyCount = bodyBoneColliders->getBodyCount();
-        for (std::uint32_t i = 0; i < bodyCount; ++i) {
-            suppressBody(bodyBoneColliders->getBodyIdAtomic(i));
-        }
-    }
-
-    void Hand::restoreBodyCollisionAfterHeldLooseWeapon(RE::hknpWorld* world)
-    {
-        if (_heldLooseWeaponBodyCollisionSuppression.empty()) {
-            return;
-        }
-
-        if (!world) {
-            ROCK_LOG_WARN(Hand,
-                "{} hand: cannot restore held loose weapon body collision yet (world={}); preserving suppression state",
-                handName(),
-                static_cast<const void*>(world));
-            return;
-        }
-
-        const bool restored = _heldLooseWeaponBodyCollisionSuppression.releaseAll(
-            world,
-            "held-loose-weapon-body",
-            [this](
-                std::uint32_t bodyId,
-                const collision_suppression_registry::RuntimeSuppressionResult& releaseResult) {
-                if (releaseResult.readFailed) {
-                    return;
-                }
-                ROCK_LOG_DEBUG(Hand,
-                    "{} hand: held loose weapon body collision lease released bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={} fullyReleased={}",
-                    handName(),
-                    bodyId,
-                    releaseResult.filterBefore,
-                    releaseResult.filterAfter,
-                    releaseResult.wasNoCollideBeforeSuppression ? "yes" : "no",
-                    releaseResult.bodyFullyReleased ? "yes" : "no");
-            });
-
-        if (!restored) {
-            ROCK_LOG_WARN(Hand, "{} hand: held loose weapon body collision restore deferred; suppression leases preserved", handName());
-            return;
-        }
-
-        clearHeldLooseWeaponBodyCollisionSuppressionState();
     }
 
     void Hand::updateDelayedGrabHandCollisionRestore(RE::hknpWorld* world, float deltaTime)
@@ -7208,7 +7088,6 @@ namespace rock
         const GrabBodyFrameCapture* bodyFrame = nullptr;
         const GrabSurfaceEvidence* surface = nullptr;
         RE::hknpBodyId objectBodyId{};
-        const BodyBoneColliderSet* bodyBoneColliders = nullptr;
         const GrabSharedObjectContext* sharedContext = nullptr;
         bool joiningPeerHeldObject = false;
         bool looseWeaponGrab = false;
@@ -7229,7 +7108,6 @@ namespace rock
         const auto& grabPivotAWorld = bodyFrame.grabPivotAWorld;
         const auto& grabGripPoint = surface.gripPoint;
         const auto objectBodyId = input.objectBodyId;
-        const auto* bodyBoneColliders = input.bodyBoneColliders;
         const auto& sharedContext = *input.sharedContext;
         const bool joiningPeerHeldObject = input.joiningPeerHeldObject;
         const bool looseWeaponGrab = input.looseWeaponGrab;
@@ -7327,7 +7205,7 @@ namespace rock
                     grabActivation.failedActivationCount);
             }
 
-            suppressHandCollisionForGrab(world, bodyBoneColliders);
+            suppressHandCollisionForGrab(world);
 
             // Native ragdoll inertia belongs to its joints/solver.
             if (!grab_target::requiresNativeBodyOwnership(sel.targetKind)) {
@@ -7354,7 +7232,6 @@ namespace rock
         const GrabSurfaceEvidence* surface = nullptr;
         RE::bhkWorld* bhkWorld = nullptr;
         RE::hknpBodyId objectBodyId{};
-        const BodyBoneColliderSet* bodyBoneColliders = nullptr;
         active_grab_body_lifecycle::BodyLifecycleSnapshot* activeLifecycle = nullptr;
         const saved_grab_offset::HandOffset* savedGrabOffset = nullptr;
         bool hasSavedGrabOffset = false;
@@ -7496,7 +7373,6 @@ namespace rock
         const auto& surface = *input.surface;
         auto* bhkWorld = input.bhkWorld;
         const auto objectBodyId = input.objectBodyId;
-        const auto* bodyBoneColliders = input.bodyBoneColliders;
         auto& activeLifecycle = *input.activeLifecycle;
         const auto& savedGrabOffset = *input.savedGrabOffset;
         const bool hasSavedGrabOffset = input.hasSavedGrabOffset;
@@ -7661,7 +7537,6 @@ namespace rock
                 }
                 input.rollback.rollback();
                 restoreHandCollisionAfterGrab(world);
-                restoreBodyCollisionAfterHeldLooseWeapon(world);
                 _savedObjectState.clear();
                 _heldBodyIds.clear();
                 _heldDriveDecision = {};
@@ -7674,9 +7549,6 @@ namespace rock
             _ragdollGrabSurface.reset(grab_target::requiresNativeBodyOwnership(sel.targetKind) ? input.surface->surfaceHit.sourceShape : nullptr);
             _ragdollGrabTriangle = input.surface->surfaceHit.sourceTriangleIndex;
             _heldObjectIsLooseWeapon = looseWeaponGrab;
-            if (_heldObjectIsLooseWeapon) {
-                suppressBodyCollisionForHeldLooseWeapon(world, bodyBoneColliders);
-            }
             const auto massSummaryAtGrab = readHeldBodyMassSummary(
                 world,
                 _savedObjectState.bodyId,
@@ -7904,7 +7776,6 @@ namespace rock
         float maxForce,
         float proportionalRecovery,
         float constantRecovery,
-        const BodyBoneColliderSet* bodyBoneColliders,
         const GrabSharedObjectContext& sharedContext,
         const AuthoredWeaponGripPose* transferPose)
     {
@@ -8586,7 +8457,6 @@ namespace rock
                 .bodyFrame = &bodyFrameCapture,
                 .surface = &surfaceEvidence,
                 .objectBodyId = objectBodyId,
-                .bodyBoneColliders = bodyBoneColliders,
                 .sharedContext = &sharedContext,
                 .joiningPeerHeldObject = joiningPeerHeldObject,
                 .looseWeaponGrab = looseWeaponGrab,
@@ -8607,7 +8477,6 @@ namespace rock
             .surface = &surfaceEvidence,
             .bhkWorld = bhkWorld,
             .objectBodyId = objectBodyId,
-            .bodyBoneColliders = bodyBoneColliders,
             .activeLifecycle = &activeLifecycle,
             .savedGrabOffset = &savedGrabOffset,
             .hasSavedGrabOffset = hasSavedGrabOffset,
@@ -9930,7 +9799,6 @@ namespace rock
         float deltaTime,
         float forceFadeInTime,
         float tauMin,
-        const BodyBoneColliderSet* bodyBoneColliders,
         const GrabReleaseContext& releaseContext,
         Hand* peerHand,
         const RE::NiTransform* peerHandWorld)
@@ -9949,10 +9817,7 @@ namespace rock
         }
 
 
-        suppressHandCollisionForGrab(world, bodyBoneColliders);
-        if (_heldObjectIsLooseWeapon) {
-            suppressBodyCollisionForHeldLooseWeapon(world, bodyBoneColliders);
-        }
+        suppressHandCollisionForGrab(world);
 
         _grabStartTime += held_object_physics_math::finitePositiveOrZero(deltaTime);
 
@@ -10555,7 +10420,6 @@ namespace rock
         const bool delayRestore = collisionRestoreMode == GrabReleaseCollisionRestoreMode::Delayed &&
                                   _grabHandCollisionSuppression.beginDelayedRestore(
                                       g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds);
-        restoreBodyCollisionAfterHeldLooseWeapon(world);
         if (delayRestore) {
             ROCK_LOG_DEBUG(Hand,
                 "{} hand: grab hand collision restore delayed bodies={} firstBodyId={} seconds={:.3f}",

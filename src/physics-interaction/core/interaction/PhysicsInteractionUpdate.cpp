@@ -310,6 +310,7 @@ namespace rock
         updateObjectRest(frame);
         commitHeldPlacement(frame);
         publishHeldCarExclusion(frame.hknpWorld);
+        publishHeldBodyExclusion(frame.hknpWorld);
         updateHeldMassMovementSlowdown(hknp, frame.deltaSeconds);
         synchronizeContactEvidenceOwnership(rightHandWeaponAuthorityActive, leftSupportGripActive, rightPartGripActive);
 

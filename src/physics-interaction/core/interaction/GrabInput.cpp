@@ -380,7 +380,6 @@ namespace rock
             frame.deltaSeconds,
             g_rockConfig.rockGrabForceFadeInTime,
             g_rockConfig.rockGrabTauMin,
-            &_bodyBoneColliders,
             makeGrabReleaseContext(hand, isLeft),
             isLeft ? &_rightHand : &_leftHand,
             &(isLeft ? frame.right : frame.left).rawHandWorld);
@@ -1373,7 +1372,6 @@ namespace rock
                 g_rockConfig.rockGrabConstraintMaxForce,
                 g_rockConfig.rockGrabLinearProportionalRecovery,
                 g_rockConfig.rockGrabLinearConstantRecovery,
-                &_bodyBoneColliders,
                 sharedContext);
 
             const bool grabbed = grabResult == GrabAttemptResult::Grabbed;
@@ -1770,7 +1768,7 @@ namespace rock
                     if (!reference || !carryingHand.isHolding()) return false;
                     carryingHand.updateHeldObject(hknp, (left ? frame.left : frame.right).rawHandWorld,
                         frame.deltaSeconds, g_rockConfig.rockGrabForceFadeInTime, g_rockConfig.rockGrabTauMin,
-                        &_bodyBoneColliders, makeGrabReleaseContext(carryingHand, left),
+                        makeGrabReleaseContext(carryingHand, left),
                         left ? &_rightHand : &_leftHand, &(left ? frame.right : frame.left).rawHandWorld);
                     if (carryingHand.isHolding() && carryingHand.getHeldRef() == reference.get()) return true;
                     if (!carryingHand.isHolding()) {

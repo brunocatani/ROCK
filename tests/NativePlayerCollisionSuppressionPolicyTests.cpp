@@ -397,5 +397,12 @@ int main()
             !suppressCarRowContact(CarRowPairKind::Keyframed, true, true));
     }
 
+    // Held-object arm exclusion: only a collider of the holding hand against
+    // that hand's held body, in either order.
+    ok &= expect("holding arm against its held body", suppressHeldExclusionContact(1, 0, 0, 1) && suppressHeldExclusionContact(0, 2, 2, 0));
+    ok &= expect("other hand's held body is kept", !suppressHeldExclusionContact(1, 0, 0, 2));
+    ok &= expect("collider shared by both hands", suppressHeldExclusionContact(3, 0, 0, 2));
+    ok &= expect("two colliders or two held bodies are kept", !suppressHeldExclusionContact(1, 0, 1, 0) && !suppressHeldExclusionContact(0, 1, 0, 1));
+
     return ok ? 0 : 1;
 }

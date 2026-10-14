@@ -535,6 +535,7 @@ namespace rock
         void abandonWeaponHandSuppression();
         void publishWeaponHandExclusion(RE::hknpWorld* world);
         void publishHeldCarExclusion(RE::hknpWorld* world);
+        void publishHeldBodyExclusion(RE::hknpWorld* world);
         void updateWeaponHandSuppression(RE::hknpWorld* world, float deltaSeconds);
         void refreshWeaponHandSuppression(RE::hknpWorld* world, bool isLeft);
         [[nodiscard]] bool weaponHandSuppressedFor(bool isLeft, WeaponHandReason reason) const
@@ -936,6 +937,15 @@ namespace rock
                 std::atomic<std::uint8_t> published{ 0 };  // active | lingering, for contact callbacks
             };
             std::array<WeaponHand, 2> weaponHands{};
+            // The held bodies each hand's arm must not touch: refreshed while
+            // holding, kept through the hand colliders' delayed restore.
+            struct HeldBodyExclusion
+            {
+                std::array<std::uint32_t, 64> heldBodies{};
+                std::size_t heldCount = 0;
+                bool looseWeapon = false;
+            };
+            std::array<HeldBodyExclusion, 2> heldBodyExclusions{};
             float nativePlayerRefreshSeconds = 0.0f;
             bool nativePlayerOverflowLogged = false;
         };
