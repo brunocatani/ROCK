@@ -404,5 +404,25 @@ int main()
     ok &= expect("collider shared by both hands", suppressHeldExclusionContact(3, 0, 0, 2));
     ok &= expect("two colliders or two held bodies are kept", !suppressHeldExclusionContact(1, 0, 1, 0) && !suppressHeldExclusionContact(0, 1, 0, 1));
 
+    // Weapon-owning hands drop pairs only with the weapon they own.
+    {
+        using namespace rock::collision_layer_policy;
+        ok &= expect("first weapon owner drops its hulls and proxy",
+            suppressWeaponHandContact(ROCK_LAYER_WEAPON, true, false, false) &&
+            suppressWeaponHandContact(ROCK_LAYER_DYNAMIC_WEAPON_PROXY, true, false, false));
+        ok &= expect("first weapon owner keeps the second weapon",
+            !suppressWeaponHandContact(ROCK_LAYER_SECONDARY_WEAPON, true, false, false) &&
+            !suppressWeaponHandContact(ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY, true, false, false));
+        ok &= expect("second weapon owner drops its hulls and proxy",
+            suppressWeaponHandContact(ROCK_LAYER_SECONDARY_WEAPON, false, true, false) &&
+            suppressWeaponHandContact(ROCK_LAYER_SECONDARY_DYNAMIC_WEAPON_PROXY, false, true, false));
+        ok &= expect("second weapon owner keeps the first weapon",
+            !suppressWeaponHandContact(ROCK_LAYER_WEAPON, false, true, false) &&
+            !suppressWeaponHandContact(ROCK_LAYER_DYNAMIC_WEAPON_PROXY, false, true, false));
+        ok &= expect("native weapons only after a drop",
+            suppressWeaponHandContact(FO4_LAYER_WEAPON, true, false, true) &&
+            !suppressWeaponHandContact(FO4_LAYER_WEAPON, true, true, false));
+    }
+
     return ok ? 0 : 1;
 }

@@ -39,13 +39,15 @@ namespace rock::native_player_collision
     // A null liveWorld clears ownership after world loss without native calls.
     void clearToolContactExclusion(RE::hknpWorld* liveWorld);
 
-    // Keyframed hand (and arm) bodies of hands that own the equipped weapon.
-    // Only their pairs with weapon bodies are removed (suppressWeaponHandContact);
+    // Keyframed hand (and arm) bodies of hands that own an equipped weapon.
+    // Only their pairs with that weapon's bodies are removed (suppressWeaponHandContact);
     // publication changes rebuild the affected bodies' caches. A null world
     // clears ownership without native calls.
     struct WeaponHandBody
     {
         std::uint32_t bodyId{ 0x7FFF'FFFFu };
+        bool firstWeapon{ false };
+        bool secondWeapon{ false };
         bool includeLooseWeapons{ false };
         bool operator==(const WeaponHandBody&) const = default;
     };

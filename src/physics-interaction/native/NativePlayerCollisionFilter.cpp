@@ -356,8 +356,9 @@ namespace rock::native_player_collision
             const auto* b = findWeaponHandBody(pair.bodyB);
             if (!a == !b) return false;
             const auto otherLayer = a ? reads.layerB() : reads.layerA();
+            const auto& hand = a ? *a : *b;
             return otherLayer != collision_layer_policy::kUnknownLayer &&
-                suppressWeaponHandContact(otherLayer, (a ? a : b)->includeLooseWeapons);
+                suppressWeaponHandContact(otherLayer, hand.firstWeapon, hand.secondWeapon, hand.includeLooseWeapons);
         }
 
         void rebuildBodyIfLive(RE::hknpWorld* world, std::uint32_t bodyId)

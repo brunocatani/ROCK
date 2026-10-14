@@ -12,7 +12,6 @@
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
-#include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 
 #include "RE/NetImmerse/NiNode.h"
 #include "RE/NetImmerse/NiTransform.h"
@@ -1018,12 +1017,6 @@ namespace rock
             return;
         }
 
-        if (logger::internal::shouldEmitSample("slot-rotation-hand-0", 1000)) {
-            ROCK_LOG_INFO(Weapon, "SLOT ROTATION hand slot=0 left=false weaponVsControllerAim={:.3f}deg handVsTracked={:.3f}deg/{:.3f}gu",
-                dynamic_weapon_collision_policy::rotationDeltaDegrees(solvedWeaponWorld, liveWeaponWorld),
-                dynamic_weapon_collision_policy::rotationDeltaDegrees(solvedFiringHandWorld, trackedHandWorld),
-                dynamic_weapon_collision_policy::translationDeltaGameUnits(solvedFiringHandWorld, trackedHandWorld));
-        }
         if (!weaponAuthority.applyAuthoredPrimaryGripWeaponAlignment(
                 input.weaponNode,
                 solvedWeaponWorld,

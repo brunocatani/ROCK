@@ -570,6 +570,7 @@ namespace rock
             Dominant = 1u << 0,  // right hand owns the equipped weapon's aim
             Grip = 1u << 1,      // support, part or left firing grip
             Drop = 1u << 2,      // hand (and arm) just released the weapon
+            SecondWeapon = 1u << 3, // hand holds the second weapon (equip slot 1)
         };
         void setWeaponHandSuppression(RE::hknpWorld* world, bool isLeft, WeaponHandReason reason, bool active, float restoreDelaySeconds = 0.0f);
         void clearWeaponHandSuppression(RE::hknpWorld* world, bool isLeft);

@@ -75,11 +75,12 @@ namespace rock
     }
 
     /*
-     * While a hand owns the equipped weapon (dominant firing hand, a part or
-     * support grip, or the moment after it drops the weapon), its generated
-     * collider bodies (and arm bodies after a drop) stop colliding with weapon
-     * bodies only, so they cannot become a second physical owner of the
-     * weapon. Everything else keeps colliding. The native simulation pair
+     * While a hand owns an equipped weapon (dominant firing hand, a part or
+     * support grip, the moment after it drops the weapon, or the second
+     * weapon it holds), its generated collider bodies (and arm bodies after a
+     * drop) stop colliding with that weapon's bodies only, so they cannot
+     * become a second physical owner of it. Everything else, including the
+     * other weapon, keeps colliding. The native simulation pair
      * filter removes those pairs (suppressWeaponHandContact); contact evidence
      * from the owning hand is gated separately. The exclusion ends when no
      * reason remains and any requested restore delay has elapsed.
@@ -148,6 +149,9 @@ namespace rock
         state.bodyCount = 0;
         if (reasons != 0) {
             const bool dropped = (reasons & static_cast<std::uint8_t>(WeaponHandReason::Drop)) != 0;
+            constexpr auto secondWeaponBit = static_cast<std::uint8_t>(WeaponHandReason::SecondWeapon);
+            const bool secondWeapon = (reasons & secondWeaponBit) != 0;
+            const bool firstWeapon = (reasons & static_cast<std::uint8_t>(~secondWeaponBit)) != 0;
             Hand& hand = isLeft ? _leftHand : _rightHand;
             std::array<std::uint32_t, kGrabCollisionSuppressionBodyCountPerHand> bodies{};
             std::size_t count = 0;
@@ -164,7 +168,12 @@ namespace rock
             }
             for (const auto bodyId : std::span(bodies).first(count)) {
                 if (bodyId != INVALID_CONTACT_BODY_ID) {
-                    state.bodies[state.bodyCount++] = { .bodyId = bodyId, .includeLooseWeapons = dropped };
+                    state.bodies[state.bodyCount++] = {
+                        .bodyId = bodyId,
+                        .firstWeapon = firstWeapon,
+                        .secondWeapon = secondWeapon,
+                        .includeLooseWeapons = dropped,
+                    };
                 }
             }
         }

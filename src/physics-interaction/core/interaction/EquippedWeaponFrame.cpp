@@ -373,6 +373,13 @@ namespace rock
         prepared.secondaryEquipped = _equippedSlotOne.equipped;
         prepared.secondaryLeft = _equippedSlotOne.hand == equipped_weapon_roster::Hand::Left;
         prepared.secondaryRight = _equippedSlotOne.hand == equipped_weapon_roster::Hand::Right;
+        // The hand holding the second weapon must not push that weapon's
+        // dynamic proxy; its colliders drop only the second weapon's pairs.
+        for (const bool isLeft : { false, true }) {
+            setWeaponHandSuppression(hknp, isLeft, WeaponHandReason::SecondWeapon,
+                _equippedSlotOne.holdsHand && _equippedSlotOne.hand == equipped_weapon_roster::handFor(isLeft),
+                g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds);
+        }
 
         // The second weapon's hand cannot also hold the primary, by its firing
         // grip or a part grip. In the right hand it also ends ROCK's right

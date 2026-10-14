@@ -711,11 +711,6 @@ namespace rock
         const auto correction = dynamic_weapon_collision_policy::evaluateVisualCorrection(_frameRequestedWeaponWorld, resolvedWeaponWorld);
         result.translationCorrectionGameUnits = correction.translationGameUnits;
         result.rotationCorrectionDegrees = correction.rotationDegrees;
-        if (logger::internal::shouldEmitSample(_secondary ? "slot-rotation-residual-1" : "slot-rotation-residual-0", 1000)) {
-            ROCK_LOG_INFO(Weapon, "SLOT ROTATION residual slot={} translation={:.3f}gu rotation={:.3f}deg contact={} other={} layer={}",
-                _secondary ? 1 : 0, correction.translationGameUnits, correction.rotationDegrees,
-                snapshot.contactActive, snapshot.otherBodyId, snapshot.otherLayer);
-        }
         if (debugEnabled) {
             _debugSnapshot.contactActive = true;
             _debugSnapshot.otherBodyId = snapshot.otherBodyId;
