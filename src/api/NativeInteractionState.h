@@ -4,7 +4,6 @@
 #include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
 #include <array>
 #include <atomic>
-#include <memory>
 
 namespace rock::native_interaction_service::detail {
     namespace ni = api::native_interaction;
@@ -12,24 +11,6 @@ namespace rock::native_interaction_service::detail {
         Owner owner{};
         ni::Callbacks callbacks{};
         std::uint64_t obstacleLayers{};
-    };
-    struct BodySlot {
-        Owner owner{};
-        std::uint32_t serial{};
-        BethesdaPhysicsBody body;
-        RE::hknpWorld* world{};
-        void* bhk{};
-        std::array<char,48> name{};
-        ni::PoseBasis poseBasis{ni::PoseBasis::NiRows};
-        bool privateAnchor{};
-    };
-    struct HavokReferenceDeleter { void operator()(void*) const noexcept; };
-    struct SliderSlot {
-        Owner owner{};
-        std::uint32_t serial{}, id{ni::kInvalidBody};
-        std::unique_ptr<void,HavokReferenceDeleter> data;
-        RE::hknpWorld* world{};
-        ni::Resource anchor{};
     };
     struct State {
         // Single game owner mutates registrations/resources while callbacks are
@@ -41,8 +22,6 @@ namespace rock::native_interaction_service::detail {
         void* retireContext{};
         std::array<Extension, ni::kMaxExtensions> extensions{};
         std::array<std::atomic<Owner>,ni::kMaxExtensions> registeredOwners{};
-        std::array<BodySlot, ni::kMaxBodies> bodies{};
-        std::array<SliderSlot, 32> sliders{};
         std::atomic<std::uint64_t> obstacleLayers{};
         std::atomic<std::uint32_t> faultedExtensions{};
         std::array<std::atomic<Owner>,ni::kMaxExtensions> pendingRemoval{};
@@ -55,7 +34,6 @@ namespace rock::native_interaction_service::detail {
         const WeaponCollision* collision{}; // only during WeaponUpdate
         RE::NiNode* weaponNode{}; // only during WeaponUpdate
         std::uint64_t generation{};
-        std::uint32_t nextSerial{1};
     };
     State& state();
     struct CallContext { Owner owner{}; ni::Frame frame{}; };
@@ -75,29 +53,14 @@ namespace rock::native_interaction_service::detail {
             return api::Status::InternalError;
         }
     }
-    api::Status readBody(Owner,std::uint32_t,ni::BodySnapshot*) noexcept;
-    api::Status resolveCollisionBody(Owner,std::uintptr_t,std::uint32_t*) noexcept;
-    api::Status resolveBodyReference(Owner,std::uint32_t,std::uintptr_t*) noexcept;
-    api::Status queryNodeRelation(Owner,std::uintptr_t,std::uintptr_t,ni::NodeRelation,std::uint32_t,std::uint32_t*) noexcept;
-    api::Status createBody(Owner,const ni::BodyCreate*,ni::Resource*,std::uint32_t*) noexcept;
-    api::Status retireBody(Owner,ni::Resource) noexcept;
-    api::Status placeBody(Owner,ni::Resource,const api::Transform*) noexcept;
-    api::Status driveBody(Owner,ni::Resource,const api::Transform*,float) noexcept;
-    api::Status setBodyFilter(Owner,ni::Resource,std::uint32_t) noexcept;
-    api::Status activateWeapon(Owner) noexcept;
-    api::Status createSlider(Owner,const ni::SliderCreate*,ni::Resource*) noexcept;
-    api::Status setSliderLimits(Owner,ni::Resource,float,float) noexcept;
-    api::Status destroySlider(Owner,ni::Resource) noexcept;
-    api::Status setWeaponContactExclusion(Owner,const ni::BodyIdentity*) noexcept;
-    api::Status clearWeaponContactExclusion(Owner) noexcept;
-    api::Status hasWeaponContactExclusion(Owner,const ni::BodyIdentity*,std::uint32_t*) noexcept;
-    void releaseResources(Owner,RE::hknpWorld*,void*);
-    void releaseWeaponResources(Owner,RE::hknpWorld*,void*);
+    api::Status activateWeapon(Owner,std::uint32_t) noexcept;
+    api::Status setWeaponContactExclusion(Owner,std::uint32_t,const ni::BodyIdentity*) noexcept;
+    api::Status clearWeaponContactExclusion(Owner,std::uint32_t) noexcept;
+    api::Status hasWeaponContactExclusion(Owner,std::uint32_t,const ni::BodyIdentity*,std::uint32_t*) noexcept;
+    void releaseWeaponResources(Owner,RE::hknpWorld*);
     RE::NiTransform fromApi(const api::Transform&);
     api::Transform toApi(const RE::NiTransform&);
     RE::NiPoint3 fromApi(const api::Point3&);
     api::Point3 toApi(const RE::NiPoint3&);
     bool finite(const api::Transform&);
-    bool matches(RE::hknpWorld*,const ni::BodyIdentity&);
-    Extension* extension(Owner);
 }

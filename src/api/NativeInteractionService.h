@@ -1,5 +1,5 @@
 #pragma once
-#include <ROCK/NativeInteractionV1_1.h>
+#include <ROCK/NativeInteraction.h>
 #include "physics-interaction/native/HavokPhysicsTiming.h"
 #include "RE/NetImmerse/NiTransform.h"
 

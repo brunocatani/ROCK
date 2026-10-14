@@ -13,7 +13,7 @@
 #include <ROCK/Input.h>
 #include <ROCK/PlayerController.h>
 #include <ROCK/Configuration.h>
-#include <ROCK/NativeInteractionV1_1.h>
+#include <ROCK/NativeInteraction.h>
 #include <ROCK/Storage.h>
 
 namespace rock::api::core { const Api& table() noexcept; }
@@ -28,7 +28,7 @@ namespace rock::api::input { const Api& table() noexcept; }
 namespace rock::api::playercontroller { const Api& table() noexcept; }
 namespace rock::api::configuration { const Api& table() noexcept; }
 namespace rock::api::storage { const Api& table() noexcept; }
-namespace rock::native_interaction_service { const api::native_interaction::ApiV1& table() noexcept; const api::native_interaction::v1_1::Api& tableV1_1() noexcept; }
+namespace rock::native_interaction_service { const api::native_interaction::Api& table() noexcept; }
 
 namespace rock::api::discovery {
 std::span<const RegisteredInterface> registeredInterfaces() noexcept {
@@ -44,7 +44,7 @@ std::span<const RegisteredInterface> registeredInterfaces() noexcept {
         registration(input::table(), input::kSupportedPermissions),
         registration(playercontroller::table(), playercontroller::kSupportedPermissions),
         registration(configuration::table(), configuration::kSupportedPermissions),
-        registration(native_interaction_service::tableV1_1(), native_interaction::kSupportedPermissions),
+        registration(native_interaction_service::table(), native_interaction::kSupportedPermissions),
         registration(storage::table(), storage::kSupportedPermissions),
     };
     return entries;

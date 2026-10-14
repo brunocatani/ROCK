@@ -33,7 +33,6 @@ namespace rock::native_interaction_service {
     }
     using namespace detail;
     namespace {
-        thread_local const ni::v1_1::ContactDetails* contactDetails=nullptr;
         ni::Frame makeFrame(const PhysicsFrameContext& context,ni::Phase phase) {
             ni::Frame result{};result.phase=phase;result.sample=provider::runtime::sample();
             result.sample.frameIndex=provider::runtime::currentGameFrameIndex();
@@ -83,23 +82,18 @@ namespace rock::native_interaction_service {
             if(previous!=mask&&world&&state().refreshLayers)state().refreshLayers(state().retireContext,world);
         }
         bool hasWeaponConstraintState() {
-            const auto& service=state();
-            if(service.excludedTarget!=ni::kInvalidBody)return true;
-            for(const auto& slider:service.sliders)if(service.driver&&slider.owner==service.driver)return true;
-            return false;
+            return state().excludedTarget!=ni::kInvalidBody;
         }
-        Status readContactDetails(Owner owner,ni::v1_1::ContactDetails* output) noexcept {
-            return guarded(owner,[&] {
-                if(!output||output->size!=sizeof(*output))return Status::InvalidSize;
-                *output={};
-                if(auto status=access(owner);status!=Status::Ok)return status;
-                if(current->frame.phase!=ni::Phase::WeaponContact||!contactDetails)return Status::WrongThread;
-                *output=*contactDetails;return output->valid?Status::Ok:Status::NotReady;
-            });
+        // Weapon calls address a slot; ROCK drives slot 0 only until the
+        // runtime keeps per-slot weapon state.
+        Status weaponSlot(std::uint32_t slot) {
+            return slot>=api::kMaxWeaponSlots?Status::InvalidArgument:slot==0?Status::Ok:Status::TargetUnavailable;
         }
         Status registerExtension(Owner owner,const ni::Callbacks* callbacks) noexcept {
             return guarded(owner,[&] {
-                if(!callbacks||callbacks->size!=sizeof(*callbacks)||callbacks->version!=1)return Status::InvalidSize;
+                if(!callbacks)return Status::InvalidArgument;
+                if(callbacks->size!=sizeof(*callbacks))return Status::InvalidSize;
+                if(callbacks->version!=1)return Status::UnsupportedVersion;
                 if(current)return Status::Busy;
                 if(callbacks->weaponUpdate&&(!callbacks->weaponRetire||!callbacks->weaponPreCollide))return Status::InvalidArgument;
                 if(callbacks->extractSelection&&(!callbacks->classifySelection||!callbacks->validateSelection))return Status::InvalidArgument;
@@ -138,26 +132,44 @@ namespace rock::native_interaction_service {
                 extension(owner)->obstacleLayers=mask;combineMasks(reinterpret_cast<RE::hknpWorld*>(current->frame.world));return Status::Ok;
             });
         }
-        Status copyWeaponSources(Owner owner,ni::WeaponSource* output,std::uint32_t capacity,std::uint32_t* copied) noexcept {
+        Status copyWeaponSources(Owner owner,std::uint32_t slot,ni::WeaponSource* output,std::uint32_t capacity,std::uint32_t* count) noexcept {
             return guarded(owner,[&] {
-                if(!copied||(capacity&&!output)||capacity>ni::kMaxWeaponSources)return Status::InvalidArgument;*copied=0;
+                if(!count)return Status::InvalidArgument;*count=0;
+                if(capacity>ni::kMaxWeaponSources)return Status::CapacityFull;
+                if(capacity&&!output)return Status::InvalidArgument;
+                for(std::uint32_t i=0;i<capacity;++i) {
+                    if(output[i].size!=sizeof(output[i]))return Status::InvalidSize;
+                    if(output[i].version!=1)return Status::UnsupportedVersion;
+                    output[i]={};
+                }
                 if(auto s=access(owner);s!=Status::Ok)return s;
+                if(auto s=weaponSlot(slot);s!=Status::Ok)return s;
                 const auto& service=state();
                 if(service.driver!=owner||!service.collision||current->frame.phase!=ni::Phase::WeaponUpdate)return Status::WrongThread;
-                const auto sources=service.collision->getProfileEvidenceDescriptors();
-                if(sources.size()>capacity)return Status::CapacityFull;
-                for(const auto& source:sources)if(source.valid&&source.weaponGenerationKey==service.generation) {
-                    auto& value=output[(*copied)++];value={};value.body=source.bodyId;value.generation=source.weaponGenerationKey;
-                    if(source.sourceName.size()>=sizeof(value.name)){*copied=0;return Status::TargetInvalid;}
-                    std::snprintf(value.name,sizeof(value.name),"%s",source.sourceName.c_str());
+                std::uint32_t total=0;
+                for(const auto& source:service.collision->getProfileEvidenceDescriptors()) {
+                    if(!source.valid||source.weaponGenerationKey!=service.generation)continue;
+                    if(source.sourceName.size()>=sizeof(ni::WeaponSource::name)) {
+                        for(std::uint32_t i=0;i<capacity;++i)output[i]={};
+                        return Status::TargetInvalid;
+                    }
+                    if(total<capacity) {
+                        auto& value=output[total];value.body=source.bodyId;value.generation=source.weaponGenerationKey;
+                        std::snprintf(value.name,sizeof(value.name),"%s",source.sourceName.c_str());
+                    }
+                    ++total;
                 }
-                return Status::Ok;
+                *count=total;return Status::Ok;
             });
         }
-        Status getSourceGeometry(Owner owner,std::uint32_t body,const api::Point3* direction,ni::SourceGeometry* output) noexcept {
+        Status getSourceGeometry(Owner owner,std::uint32_t slot,std::uint32_t body,const api::Point3* direction,ni::SourceGeometry* output) noexcept {
             return guarded(owner,[&] {
-                if(!output||output->size!=sizeof(*output))return Status::InvalidSize;*output={};
+                if(!output)return Status::InvalidArgument;
+                if(output->size!=sizeof(*output))return Status::InvalidSize;
+                if(output->version!=1)return Status::UnsupportedVersion;
+                *output={};
                 if(auto s=access(owner);s!=Status::Ok)return s;
+                if(auto s=weaponSlot(slot);s!=Status::Ok)return s;
                 const auto& service=state();
                 if(service.driver!=owner||!service.collision||!service.weaponNode||current->frame.phase!=ni::Phase::WeaponUpdate)return Status::WrongThread;
                 if(!finite(toApi(service.weaponNode->world)))return Status::TargetInvalid;
@@ -182,15 +194,6 @@ namespace rock::native_interaction_service {
                 }
                 output->valid=1;return Status::Ok;
             });
-        }
-        // Retired in ROCK 1.0: extensions draw through RPS UI Framework world
-        // drawing. The slot stays until the NativeInteraction major-2 rework
-        // (provider API reset ledger, entry 2); ROCK no longer calls render.
-        Status publishVisuals(Owner,const ni::BodyVisual*,std::uint32_t) noexcept {
-            static std::atomic_bool reported{false};
-            if(!reported.exchange(true,std::memory_order_relaxed))
-                ROCK_LOG_WARN(Physics,"NativeInteraction publishVisuals is retired in ROCK 1.0; draw through RPS UI Framework world drawing");
-            return Status::UnsupportedVersion;
         }
     }
     void initialize(PhysicsCallbackQuiescenceGate* gate,RetireWeapon retire,RefreshLayers refresh,void* context) {
@@ -230,7 +233,7 @@ namespace rock::native_interaction_service {
         auto frame=service.frame;frame.phase=ni::Phase::Retire;frame.world=reinterpret_cast<std::uintptr_t>(world);frame.bhkWorld=reinterpret_cast<std::uintptr_t>(bhk);
         for(auto& slot:service.extensions)if(slot.owner) {
             if(slot.callbacks.retire)invoke(slot,frame,[&]{slot.callbacks.retire(&frame,slot.callbacks.context);});
-            releaseResources(slot.owner,world,bhk);slot.obstacleLayers=0;
+            releaseWeaponResources(slot.owner,world);slot.obstacleLayers=0;
         }
         service.command={};service.weaponBody=ni::kInvalidBody;combineMasks(world);service.frame={};
     }
@@ -251,7 +254,7 @@ namespace rock::native_interaction_service {
         }
         auto* slot=extension(owner);if(!slot)return;
         if(!service.rockGate) {
-            service.gate.pauseAndWait();releaseResources(owner,nullptr,nullptr);
+            service.gate.pauseAndWait();releaseWeaponResources(owner,nullptr);
             service.registeredOwners[slot-service.extensions.data()].store(0,std::memory_order_release);
             slot->owner=0;slot->callbacks={};slot->obstacleLayers=0;
             if(service.driver==owner){service.driver=0;service.command={};service.weaponBody=ni::kInvalidBody;}
@@ -265,7 +268,7 @@ namespace rock::native_interaction_service {
         if(service.driver==owner&&(service.command.result==ni::DriveResult::Controlled||hasWeaponConstraintState())&&service.retireWeapon)service.retireWeapon(service.retireContext,bhk);
         auto frame=service.frame;frame.phase=ni::Phase::Retire;frame.world=reinterpret_cast<std::uintptr_t>(world);frame.bhkWorld=reinterpret_cast<std::uintptr_t>(bhk);
         if(slot->callbacks.retire)invoke(*slot,frame,[&]{slot->callbacks.retire(&frame,slot->callbacks.context);});
-        releaseResources(owner,world,bhk);service.registeredOwners[slot-service.extensions.data()].store(0,std::memory_order_release);
+        releaseWeaponResources(owner,world);service.registeredOwners[slot-service.extensions.data()].store(0,std::memory_order_release);
         slot->owner=0;slot->callbacks={};slot->obstacleLayers=0;
         if(service.driver==owner){service.driver=0;service.command={};service.weaponBody=ni::kInvalidBody;}
         combineMasks(world);
@@ -274,7 +277,7 @@ namespace rock::native_interaction_service {
         const RE::NiPoint3& center,std::uint64_t generation,RE::NiTransform& requested,bool support,const RE::NiPoint3* grip) {
         auto& service=state();auto* slot=extension(service.driver);if(!slot||!slot->callbacks.weaponUpdate)return true;
         auto rock=service.rockGate->pauseForMutation();auto mutation=service.gate.pauseForMutation();
-        ni::WeaponFrame frame{};frame.frame=makeFrame(context,ni::Phase::WeaponUpdate);frame.body=body.getBodyId().value;
+        ni::WeaponFrame frame{};frame.frame=makeFrame(context,ni::Phase::WeaponUpdate);frame.weaponSlot=0;frame.body=body.getBodyId().value;
         const auto composition=collision.getWeaponCompositionSnapshot();
         frame.generation=generation;frame.form=composition.weaponGenerationKey==generation?composition.weaponFormId:0;frame.supportOwnsPose=support;
         frame.requestedWeapon=toApi(requested);frame.centerWeaponLocal=toApi(center);frame.primaryGripValid=grip!=nullptr;if(grip)frame.primaryGripLocal=toApi(*grip);
@@ -283,7 +286,7 @@ namespace rock::native_interaction_service {
         ni::WeaponCommand command{};command.requestedWeapon=frame.requestedWeapon;command.presentation=frame.requestedWeapon;
         const bool ok=invoke(*slot,frame.frame,[&]{slot->callbacks.weaponUpdate(&frame,&command,slot->callbacks.context);});
         service.collision=nullptr;service.weaponNode=nullptr;
-        if(!ok||disabled(*slot)||command.size!=sizeof(command)||(command.result!=ni::DriveResult::Unchanged&&command.result!=ni::DriveResult::Controlled)||
+        if(!ok||disabled(*slot)||command.size!=sizeof(command)||command.version!=1||(command.result!=ni::DriveResult::Unchanged&&command.result!=ni::DriveResult::Controlled)||
             (command.result==ni::DriveResult::Unchanged&&hasWeaponConstraintState())||
             (command.result==ni::DriveResult::Controlled&&(!finite(command.requestedWeapon)||!finite(command.presentation))))return false;
         service.command=command;
@@ -297,31 +300,27 @@ namespace rock::native_interaction_service {
         if(reinterpret_cast<std::uintptr_t>(world)!=state().frame.world)return !weaponControlled();
         auto* slot=extension(state().driver);if(!slot||!slot->callbacks.weaponPreCollide)return true;
         const auto frame=stepFrame(world,timing);std::uint32_t result=0;
-        return invoke(*slot,frame,[&]{result=slot->callbacks.weaponPreCollide(&frame,slot->callbacks.context);})&&result!=0;
+        return invoke(*slot,frame,[&]{result=slot->callbacks.weaponPreCollide(&frame,0,slot->callbacks.context);})&&result!=0;
     }
     void weaponContact(RE::hknpWorld* world,std::uint32_t weapon,std::uint32_t target,std::uint32_t layer,const RE::NiPoint3& point,const RE::NiPoint3& normal,std::uint32_t pointCount) {
         auto lease=state().gate.tryEnterCallback();if(!lease)return;
         auto* slot=extension(state().driver);if(!slot||!slot->callbacks.weaponContact||state().weaponBody!=weapon||state().frame.world!=reinterpret_cast<std::uintptr_t>(world))return;
-        ni::Contact contact{};contact.frame=state().frame;contact.frame.phase=ni::Phase::WeaponContact;
-        contact.weapon=weapon;contact.target=target;contact.targetLayer=layer;contact.pointWorld=toApi(point);
-        ni::v1_1::ContactDetails details{};details.pointCount=pointCount;
+        ni::Contact contact{};contact.frame=state().frame;contact.frame.phase=ni::Phase::WeaponContact;contact.weaponSlot=0;
+        contact.weapon=weapon;contact.target=target;contact.targetLayer=layer;contact.pointWorld=toApi(point);contact.pointCount=pointCount;
         const float length=normal.x*normal.x+normal.y*normal.y+normal.z*normal.z;
         if(pointCount>0&&pointCount<=4&&std::isfinite(length)&&length>0.000001f) {
             const float inverse=1.0f/std::sqrt(length);
-            details.valid=1;details.normalWorld={normal.x*inverse,normal.y*inverse,normal.z*inverse};
+            contact.normalValid=1;contact.normalWorld={normal.x*inverse,normal.y*inverse,normal.z*inverse};
         }
-        const auto* previous=contactDetails;contactDetails=&details;
         invoke(*slot,contact.frame,[&]{slot->callbacks.weaponContact(&contact,slot->callbacks.context);});
-        contactDetails=previous;
     }
     void retireWeapon(RE::hknpWorld* world,void* bhk) {
         auto& service=state();auto* slot=extension(service.driver);if(!slot||!service.rockGate)return;
         auto rock=service.rockGate->pauseForMutation();auto mutation=service.gate.pauseForMutation();
         auto frame=service.frame;frame.phase=ni::Phase::WeaponRetire;frame.world=reinterpret_cast<std::uintptr_t>(world);frame.bhkWorld=reinterpret_cast<std::uintptr_t>(bhk);
-        if(slot->callbacks.weaponRetire)invoke(*slot,frame,[&]{slot->callbacks.weaponRetire(&frame,slot->callbacks.context);});
+        if(slot->callbacks.weaponRetire)invoke(*slot,frame,[&]{slot->callbacks.weaponRetire(&frame,0,slot->callbacks.context);});
         // The parent retires its tool body immediately after this returns.
-        // Consumer failure cannot leave a borrowed native constraint attached.
-        releaseWeaponResources(slot->owner,world,bhk);
+        releaseWeaponResources(slot->owner,world);
         service.command={};service.weaponBody=ni::kInvalidBody;
     }
     ni::SelectionReply classify(const ni::SelectionQuery& query) {
@@ -331,7 +330,7 @@ namespace rock::native_interaction_service {
         for(auto& slot:service.extensions)if(slot.owner&&slot.callbacks.classifySelection) {
             ni::SelectionReply candidate{};
             if(!invoke(slot,frame,[&]{slot.callbacks.classifySelection(&query,&candidate,slot.callbacks.context);}))continue;
-            if(candidate.size==sizeof(candidate)&&candidate.kind!=ni::SelectionKind::Unhandled&&
+            if(candidate.size==sizeof(candidate)&&candidate.version==1&&candidate.kind!=ni::SelectionKind::Unhandled&&
                 static_cast<unsigned>(candidate.kind)<=static_cast<unsigned>(ni::SelectionKind::ExtractableItem)&&candidate.reason[63]==0){candidate.owner=slot.owner;return candidate;}
         }
         return result;
@@ -348,7 +347,7 @@ namespace rock::native_interaction_service {
         auto rock=service.rockGate->pauseForMutation();auto mutation=service.gate.pauseForMutation();
         auto frame=service.frame;frame.phase=ni::Phase::Extraction;frame.world=query.world;Status status=Status::InternalError;
         if(!invoke(*slot,frame,[&]{status=slot->callbacks.extractSelection(&query,&selection,&result,slot->callbacks.context);}))return Status::InternalError;
-        if(status==Status::Ok&&(result.size!=sizeof(result)||!result.nativeHandle||!result.referenceForm||!result.itemForm))return Status::TargetInvalid;
+        if(status==Status::Ok&&(result.size!=sizeof(result)||result.version!=1||!result.nativeHandle||!result.referenceForm||!result.itemForm))return Status::TargetInvalid;
         return status;
     }
     ni::ProximityResult proximityTarget(std::uintptr_t reference,float radiusGame) {
@@ -358,7 +357,7 @@ namespace rock::native_interaction_service {
         ni::ProximityQuery query{};query.reference=reference;query.radiusGame=radiusGame;
         for(auto& slot:service.extensions)if(slot.owner&&slot.callbacks.proximityTarget) {
             ni::ProximityResult candidate{};
-            if(invoke(slot,frame,[&]{slot.callbacks.proximityTarget(&query,&candidate,slot.callbacks.context);})&&candidate.size==sizeof(candidate)&&candidate.handled)return candidate;
+            if(invoke(slot,frame,[&]{slot.callbacks.proximityTarget(&query,&candidate,slot.callbacks.context);})&&candidate.size==sizeof(candidate)&&candidate.version==1&&candidate.handled)return candidate;
         }
         return result;
     }
@@ -370,19 +369,14 @@ namespace rock::native_interaction_service {
         for(auto& slot:service.extensions)if(slot.owner&&slot.callbacks.impactEffect) {
             ni::ImpactResult candidate{};
             if(!invoke(slot,frame,[&]{slot.callbacks.impactEffect(&query,&candidate,slot.callbacks.context);}))return 0;
-            if(candidate.size!=sizeof(candidate))return 0;
+            if(candidate.size!=sizeof(candidate)||candidate.version!=1)return 0;
             if(candidate.handled)return candidate.targetForm;
         }
         return 0;
     }
-    const ni::ApiV1& table() noexcept {
-        static const ni::ApiV1 api{&registerExtension,&unregisterExtension,&readBody,&resolveCollisionBody,&resolveBodyReference,&queryNodeRelation,
-            &createBody,&retireBody,&placeBody,&driveBody,&setBodyFilter,&activateWeapon,&createSlider,&setSliderLimits,&destroySlider,
-            &setWeaponContactExclusion,&clearWeaponContactExclusion,&hasWeaponContactExclusion,&setDynamicObstacleLayers,
-            &copyWeaponSources,&getSourceGeometry,&publishVisuals};
+    const ni::Api& table() noexcept {
+        static const ni::Api api{&registerExtension,&unregisterExtension,&setDynamicObstacleLayers,&activateWeapon,
+            &setWeaponContactExclusion,&clearWeaponContactExclusion,&hasWeaponContactExclusion,&copyWeaponSources,&getSourceGeometry};
         return api;
-    }
-    const ni::v1_1::Api& tableV1_1() noexcept {
-        static const ni::v1_1::Api value{table(),&readContactDetails};return value;
     }
 }
