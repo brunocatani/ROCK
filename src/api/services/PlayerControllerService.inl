@@ -2,7 +2,7 @@
 // They fill provider API major-2 PlayerController records directly; the
 // endpoint has already validated the caller's records.
 
-    api::Status apiGetPlayerControllerState(
+    api::Status getPlayerControllerState(
         const std::uint64_t ownerToken,
         api::playercontroller::PlayerControllerState& outState)
     {
@@ -13,7 +13,7 @@
         if (ownerResult != api::Status::Ok) {
             return static_cast<api::Status>(ownerResult);
         }
-        if (!apiIsProviderReady()) {
+        if (!isProviderReady()) {
             return api::Status::NotReady;
         }
 
@@ -80,7 +80,7 @@
         return api::Status::Ok;
     }
 
-    api::Status apiRequestPlayerControllerJump(
+    api::Status requestPlayerControllerJump(
         const std::uint64_t ownerToken,
         const api::playercontroller::PlayerControllerJumpRequest& request)
     {
@@ -106,7 +106,7 @@
         if (generationResult != api::Status::Ok) {
             return static_cast<api::Status>(generationResult);
         }
-        if (!apiIsProviderReady()) {
+        if (!isProviderReady()) {
             return api::Status::NotReady;
         }
 

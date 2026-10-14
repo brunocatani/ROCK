@@ -31,7 +31,7 @@
         if (generationResult != api::Status::Ok) {
             return generationResult;
         }
-        if (!apiIsProviderReady()) {
+        if (!isProviderReady()) {
             return api::Status::NotReady;
         }
 

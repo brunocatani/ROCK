@@ -60,8 +60,8 @@ namespace rock::provider::runtime {
     api::Status getInventoryEquipResult(std::uint64_t owner, std::uint64_t command, api::weapon::EquipResult& output);
     api::Status cancelInventoryEquip(std::uint64_t owner, std::uint64_t command);
     std::uint64_t currentGameFrameIndex(); // Atomic game clock, including pre-publication lifecycle events.
-    const char* apiGetModVersion();
-    bool apiIsProviderReady();
+    const char* getModVersion();
+    bool isProviderReady();
     // Copies the latest publication; false before the first one.
     bool copyPublication(Publication& outPublication);
     std::uint32_t copyBodyContacts(api::collision::BodyContact* outContacts, std::uint32_t capacity);
@@ -95,9 +95,9 @@ namespace rock::provider::runtime {
     api::Status setHandVisualAuthority(std::uint64_t ownerToken, const api::animation::HandVisualAuthorityRequest& request);
     api::Status clearHandVisualAuthority(std::uint64_t ownerToken, api::Hand hand);
     api::Status publishNativeAnimationRuntime(std::uint64_t ownerToken, const api::animation::NativeAnimationRuntimePublication& publication);
-    api::Status apiGetHandFrame(api::Hand hand, api::hands::HandFrame& outFrame);
-    api::Status apiGetPresentedHandFrame(api::Hand hand, api::hands::HandFrame& outFrame);
-    api::Status apiGetPresentedHandPose(std::uint64_t ownerToken, api::Hand hand, api::hands::PresentedHandPose& outPose);
+    api::Status getHandFrame(api::Hand hand, api::hands::HandFrame& outFrame);
+    api::Status getPresentedHandFrame(api::Hand hand, api::hands::HandFrame& outFrame);
+    api::Status getPresentedHandPose(std::uint64_t ownerToken, api::Hand hand, api::hands::PresentedHandPose& outPose);
     api::Status registerFrameCallback(std::uint64_t ownerToken, api::core::FrameCallback callback, void* userData, std::uint64_t* outCallbackToken);
     api::Status unregisterFrameCallback(std::uint64_t ownerToken, std::uint64_t callbackToken);
     api::Status copySemanticHandContacts(api::Hand hand, std::uint32_t maxFramesSinceContact, api::collision::SemanticHandContact* outContacts, std::uint32_t capacity, std::uint32_t& outCount);
@@ -111,8 +111,8 @@ namespace rock::provider::runtime {
     api::Status requestTouchGrabYield(std::uint64_t ownerToken, std::uint64_t scopeToken, std::uint64_t targetId, std::uint32_t targetGeneration);
     api::Status queryWorldRaycast(std::uint64_t ownerToken, const api::collision::WorldRaycastRequest& request, api::collision::WorldRaycastResult& outResult);
     api::Status getLogicalInputActionState(std::uint64_t ownerToken, api::input::LogicalInputAction action, api::input::LogicalInputActionState& outState);
-    api::Status apiGetPlayerControllerState(std::uint64_t ownerToken, api::playercontroller::PlayerControllerState& outState);
-    api::Status apiRequestPlayerControllerJump(std::uint64_t ownerToken, const api::playercontroller::PlayerControllerJumpRequest& request);
+    api::Status getPlayerControllerState(std::uint64_t ownerToken, api::playercontroller::PlayerControllerState& outState);
+    api::Status requestPlayerControllerJump(std::uint64_t ownerToken, const api::playercontroller::PlayerControllerJumpRequest& request);
     bool getRawWandThumbstick(api::Hand hand, float& outX, float& outY);
     std::uint32_t getNativeInputContext();
     rock::api::Status authorize(std::uint64_t owner, rock::api::InterfaceId family, std::uint32_t permission, bool requireThread = true,

@@ -183,7 +183,7 @@
             return ownerResult;
         }
         std::scoped_lock lock(s_snapshotMutex);
-        if (!apiIsProviderReady() || !s_hasSnapshot || s_lastSnapshot.providerReady == 0) {
+        if (!isProviderReady() || !s_hasSnapshot || s_lastSnapshot.providerReady == 0) {
             return api::Status::NotReady;
         }
         outState = s_lastHandInteractionStates[

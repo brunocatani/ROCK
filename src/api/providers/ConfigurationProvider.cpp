@@ -15,11 +15,9 @@ namespace {
         visitor(setting,user); return true;
 #endif
     }
-    void visitSetting(const configuration_api::SettingV1* value, void* opaque) noexcept {
+    void visitSetting(const Setting& setting, void* opaque) noexcept {
         auto& context=*static_cast<VisitContext*>(opaque);
         if (context.fault) return;
-        const Setting setting{value->section,value->key,value->value,value->defaultValue,
-            value->category,value->description,static_cast<ValueType>(value->type),value->overridden};
         provider::borrowed_callback::Scope callbackScope;
         try { context.fault=!invokeVisitor(context.visitor,&setting,context.user); }
         catch (...) { context.fault=true; }
@@ -37,7 +35,7 @@ namespace {
         // serializes catalog access; borrowed visitors still forbid reentry.
         return boundary::invoke(owner,kInterfaceId,1,false,[&]() {
             VisitContext context{visitor,user};
-            const bool available=g_rockConfig.visitSettings(static_cast<configuration_api::Group>(group),visitSetting,&context);
+            const bool available=g_rockConfig.visitSettings(group,visitSetting,&context);
             if (context.fault) { provider::runtime::revoke(owner); return Status::OwnerRevoked; }
             return available?Status::Ok:Status::NotReady;
         });
@@ -48,7 +46,7 @@ namespace {
         if ((capacity && !error) || !section || !key || !value) return Status::InvalidArgument;
         return boundary::invoke(owner,kInterfaceId,2,false,[&]() {
             std::string message;
-            const bool saved=g_rockConfig.persistSetting(static_cast<configuration_api::Group>(group),section,key,value,message);
+            const bool saved=g_rockConfig.persistSetting(group,section,key,value,message);
             if (error && capacity) {
                 const auto count=std::min(message.size(),static_cast<std::size_t>(capacity-1));
                 std::copy_n(message.data(),count,error); error[count]='\0';

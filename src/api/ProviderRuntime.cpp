@@ -1797,7 +1797,7 @@ namespace rock::provider::runtime
         const auto permission = validateRegisteredOwner(ownerToken);
         if (permission != api::Status::Ok) return permission;
         if (!onAnimationOwnerThread()) return api::Status::WrongThread;
-        const bool ready = apiIsProviderReady();
+        const bool ready = isProviderReady();
         const auto result = ready ? validateGenerationGuards(query.worldGeneration,
             query.skeletonGeneration, query.providerGeneration) : api::Status::NotReady;
         if (result != api::Status::Ok) {
@@ -2504,7 +2504,7 @@ namespace rock::provider
         const auto& runtime = runtime_state::currentFrame();
         context.flags |= static_cast<std::uint32_t>(
             ::rock::api::animation::AnimationPhaseContextFlag::RockEnabled);
-        if (apiIsProviderReady()) {
+        if (isProviderReady()) {
             context.flags |= static_cast<std::uint32_t>(
                 ::rock::api::animation::AnimationPhaseContextFlag::ProviderReady);
         }

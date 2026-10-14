@@ -7,7 +7,7 @@ Status ROCK_CALL getHandFrame(OwnerToken owner, Hand hand, HandFrame* outFrame) 
     if (const auto s = checkOutput(outFrame); s != Status::Ok) return s;
     if (hand!=Hand::Right && hand!=Hand::Left) return Status::InvalidArgument;
     return invoke(owner, kInterfaceId, 1, false, [&] {
-        return provider::runtime::apiGetHandFrame(hand, *outFrame);
+        return provider::runtime::getHandFrame(hand, *outFrame);
     });
 }
 

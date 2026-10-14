@@ -1,11 +1,11 @@
 // Private Core service operations. Included after shared owner/lifecycle helpers.
 
-    const char* apiGetModVersion()
+    const char* getModVersion()
     {
         return Version::NAME.data();
     }
 
-    bool apiIsProviderReady()
+    bool isProviderReady()
     {
         const auto instanceAccess = s_physicsInteraction.borrow();
         auto* pi = instanceAccess.get();

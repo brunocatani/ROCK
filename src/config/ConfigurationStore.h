@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/ConfigurationRuntimeTypes.h"
+#include <ROCK/Configuration.h>
 #include <SimpleIni.h>
 #include <filesystem>
 #include <span>
@@ -10,8 +10,8 @@
 
 namespace rock::config
 {
-    using configuration_api::Group;
-    using configuration_api::ValueType;
+    using api::configuration::Group;
+    using api::configuration::ValueType;
 
     [[nodiscard]] Group settingGroup(std::string_view section, std::string_view key) noexcept;
 

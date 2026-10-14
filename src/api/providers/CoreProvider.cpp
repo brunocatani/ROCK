@@ -9,7 +9,7 @@ Status ROCK_CALL getModVersion(OwnerToken owner, const char** outValue) noexcept
     if (!outValue) return Status::InvalidArgument;
     *outValue = nullptr;
     return invoke(owner, kInterfaceId, 1, false, [&] {
-        *outValue = provider::runtime::apiGetModVersion();
+        *outValue = provider::runtime::getModVersion();
         return Status::Ok;
     });
 }
@@ -17,7 +17,7 @@ Status ROCK_CALL isProviderReady(OwnerToken owner, std::uint32_t* outValue) noex
     if (!outValue) return Status::InvalidArgument;
     *outValue = 0;
     return invoke(owner, kInterfaceId, 1, false, [&] {
-        *outValue = provider::runtime::apiIsProviderReady() ? 1u : 0u;
+        *outValue = provider::runtime::isProviderReady() ? 1u : 0u;
         return Status::Ok;
     });
 }

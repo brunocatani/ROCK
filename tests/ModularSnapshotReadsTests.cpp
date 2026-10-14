@@ -33,7 +33,7 @@ namespace rock::provider::runtime {
         // derive metadata from the payload it already copied, never this one.
         return {999,999,99,99,99,99};
     }
-    api::Status apiGetHandFrame(api::Hand hand, api::hands::HandFrame& out) {
+    api::Status getHandFrame(api::Hand hand, api::hands::HandFrame& out) {
         if (!available) return Status::NotReady;
         out.hand=hand;out.flags=1;out.sample.frameIndex=100;out.sample.worldGeneration=7;
         out.transform.translate[0]=12;

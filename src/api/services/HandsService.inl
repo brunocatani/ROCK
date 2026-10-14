@@ -13,7 +13,7 @@
         return std::isfinite(value.scale);
     }
 
-    api::Status apiGetHandFrame(const api::Hand hand, api::hands::HandFrame& outFrame)
+    api::Status getHandFrame(const api::Hand hand, api::hands::HandFrame& outFrame)
     {
         /*
          * Hand frames expose ROCK's hand authority as a value snapshot instead
@@ -36,7 +36,7 @@
         const auto transformFlag = isLeft ?
             ::rock::provider::PublicationFlag::LeftHandTransformValid :
             ::rock::provider::PublicationFlag::RightHandTransformValid;
-        if (!apiIsProviderReady() || snapshot.providerReady == 0 ||
+        if (!isProviderReady() || snapshot.providerReady == 0 ||
             !snapshot.has(transformFlag)) {
             return api::Status::NotReady;
         }
@@ -51,7 +51,7 @@
         return api::Status::Ok;
     }
 
-    api::Status apiGetPresentedHandFrame(const api::Hand hand, api::hands::HandFrame& outFrame)
+    api::Status getPresentedHandFrame(const api::Hand hand, api::hands::HandFrame& outFrame)
     {
         if (hand != api::Hand::Right && hand != api::Hand::Left) {
             return api::Status::InvalidArgument;
@@ -59,7 +59,7 @@
         if (!onAnimationOwnerThread()) {
             return api::Status::WrongThread;
         }
-        if (!apiIsProviderReady() ||
+        if (!isProviderReady() ||
             !frik_visual_authority::isAvailable() ||
             !frik_visual_authority::isSkeletonReadyHint()) {
             return api::Status::NotReady;
@@ -87,7 +87,7 @@
         return api::Status::Ok;
     }
 
-    api::Status apiGetPresentedHandPose(
+    api::Status getPresentedHandPose(
         const std::uint64_t ownerToken,
         const api::Hand hand,
         api::hands::PresentedHandPose& outPose)

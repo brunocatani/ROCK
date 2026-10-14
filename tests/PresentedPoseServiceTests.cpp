@@ -32,14 +32,14 @@ namespace rock::provider {
     Publication s_lastSnapshot{};
     bool ownerThread = true;
     bool onAnimationOwnerThread() { return ownerThread; }
-    bool apiIsProviderReady() { return frik_visual_authority::ready; }
+    bool isProviderReady() { return frik_visual_authority::ready; }
     template<class Output, class Query>
     api::Status queryPhysicsInteractionValue(std::uint64_t owner,
         Output& output, Query query, bool) {
         output = {};
         if (!owner) return api::Status::InvalidArgument;
         if (!ownerThread) return api::Status::WrongThread;
-        if (!apiIsProviderReady()) return api::Status::NotReady;
+        if (!isProviderReady()) return api::Status::NotReady;
         return query(instance, output) ? api::Status::Ok : api::Status::TargetUnavailable;
     }
 #include "api/services/HandsService.inl"
@@ -55,8 +55,8 @@ int main()
     s_lastSnapshot.providerReady = 1;
     rock::api::hands::PresentedHandPose pose{};
     rock::api::hands::HandFrame frame{};
-    assert(apiGetPresentedHandPose(1, Hand::Right, pose) == Status::TargetUnavailable);
-    assert(apiGetPresentedHandFrame(Hand::Right, frame) == Status::NotReady);
+    assert(getPresentedHandPose(1, Hand::Right, pose) == Status::TargetUnavailable);
+    assert(getPresentedHandFrame(Hand::Right, frame) == Status::NotReady);
 
     instance.captured.hand = Hand::Right;
     instance.captured.frameIndex = 10;
@@ -74,10 +74,10 @@ int main()
     s_lastSnapshot.frameIndex = 11;
     s_lastSnapshot.stateSequence = 43;
     s_lastSnapshot.collisionGeneration = 8;
-    assert(apiGetPresentedHandPose(1, Hand::Right, pose) == Status::Ok);
+    assert(getPresentedHandPose(1, Hand::Right, pose) == Status::Ok);
     assert(pose.frameIndex == 10 && pose.presentationSequence == 10 && pose.handWorld.translate[0] == 100);
     assert(pose.fingerLocalTransforms[0].translate[0] == 5);
-    assert(apiGetPresentedHandFrame(Hand::Right, frame) == Status::Ok);
+    assert(getPresentedHandFrame(Hand::Right, frame) == Status::Ok);
     assert(frame.sample.frameIndex == 10 && frame.sample.skeletonGeneration == 3 && frame.transform.translate[0] == 100);
     assert(frame.sample.publicationSequence == 42 && frame.sample.collisionGeneration == 7);
     assert((frame.flags & static_cast<std::uint32_t>(Flag::PresentedVisual)) != 0);
@@ -86,21 +86,21 @@ int main()
     instance.captured.frameIndex = instance.captured.presentationSequence = 11;
     instance.captured.handWorld.translate[0] = 200;
     instance.metadata = s_lastSnapshot;
-    assert(apiGetPresentedHandPose(1, Hand::Right, pose) == Status::Ok);
+    assert(getPresentedHandPose(1, Hand::Right, pose) == Status::Ok);
     assert(pose.frameIndex == 11 && pose.presentationSequence == 11 && pose.handWorld.translate[0] == 200);
     frame = {};
-    assert(apiGetPresentedHandFrame(Hand::Right, frame) == Status::Ok);
+    assert(getPresentedHandFrame(Hand::Right, frame) == Status::Ok);
     assert(frame.sample.frameIndex == 11 && frame.sample.publicationSequence == 43 && frame.sample.collisionGeneration == 8);
     frame = {};
-    assert(apiGetPresentedHandFrame(Hand::Left, frame) == Status::NotReady && frame.flags == 0);
+    assert(getPresentedHandFrame(Hand::Left, frame) == Status::NotReady && frame.flags == 0);
     instance.captured.handWorld.scale = std::nanf("");
-    assert(apiGetPresentedHandFrame(Hand::Right, frame) == Status::NotReady && frame.flags == 0);
+    assert(getPresentedHandFrame(Hand::Right, frame) == Status::NotReady && frame.flags == 0);
     instance.captured.handWorld.scale = 1.0f;
     ownerThread = false;
-    assert(apiGetPresentedHandFrame(Hand::Right, frame) == Status::WrongThread && frame.flags == 0);
+    assert(getPresentedHandFrame(Hand::Right, frame) == Status::WrongThread && frame.flags == 0);
     ownerThread = true;
     rock::frik_visual_authority::ready = false;
-    assert(apiGetPresentedHandFrame(Hand::Right, frame) == Status::NotReady);
-    assert(apiGetPresentedHandPose(1, Hand::Right, pose) == Status::NotReady);
-    assert(apiGetPresentedHandPose(1, Hand::None, pose) == Status::HandUnavailable);
+    assert(getPresentedHandFrame(Hand::Right, frame) == Status::NotReady);
+    assert(getPresentedHandPose(1, Hand::Right, pose) == Status::NotReady);
+    assert(getPresentedHandPose(1, Hand::None, pose) == Status::HandUnavailable);
 }

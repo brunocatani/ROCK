@@ -183,7 +183,7 @@
         }
 
         std::scoped_lock lock(s_snapshotMutex);
-        if (!apiIsProviderReady() || !s_hasSnapshot || s_lastSnapshot.providerReady == 0) {
+        if (!isProviderReady() || !s_hasSnapshot || s_lastSnapshot.providerReady == 0) {
             return false;
         }
         outState = s_lastPartGripStates[hand == api::Hand::Left ? 1u : 0u];

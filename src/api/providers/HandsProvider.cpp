@@ -8,14 +8,14 @@ Status ROCK_CALL getPresentedHandFrame(OwnerToken owner, Hand hand, HandFrame* o
     if (const auto s = checkOutput(outFrame); s != Status::Ok) return s;
     if (hand != Hand::Right && hand != Hand::Left) return Status::InvalidArgument;
     return invoke(owner, kInterfaceId, 1, true, [&] {
-        return provider::runtime::apiGetPresentedHandFrame(hand, *outFrame);
+        return provider::runtime::getPresentedHandFrame(hand, *outFrame);
     });
 }
 Status ROCK_CALL getPresentedHandPose(OwnerToken owner, Hand hand, PresentedHandPose* outPose) noexcept {
     if (const auto s = checkOutput(outPose); s != Status::Ok) return s;
     if (hand != Hand::Right && hand != Hand::Left) return Status::InvalidArgument;
     return invoke(owner, kInterfaceId, 1, true, [&] {
-        return provider::runtime::apiGetPresentedHandPose(owner, hand, *outPose);
+        return provider::runtime::getPresentedHandPose(owner, hand, *outPose);
     });
 }
 Status ROCK_CALL getSample(OwnerToken owner, Sample* outSample) noexcept {

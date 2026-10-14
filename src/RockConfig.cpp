@@ -8,7 +8,7 @@
 
 namespace
 {
-    using rock::configuration_api::Group;
+    using rock::api::configuration::Group;
 
     std::filesystem::path resolveConfigDirectory()
     {
@@ -104,19 +104,19 @@ namespace rock
         return _store ? _store->directory() : resolveConfigDirectory();
     }
 
-    bool RockConfig::visitSettings(Group group, configuration_api::VisitorV1 visitor, void* context) const
+    bool RockConfig::visitSettings(Group group, SettingVisitor visitor, void* context) const
     {
         std::scoped_lock lock(_storeMutex);
         if (!_store || !visitor || configRevision() == 0) return false;
         if (group != Group::Consumer && group != Group::Developer) return false;
         for (const auto& setting : _store->settings()) {
             if (setting.group != group) continue;
-            const configuration_api::SettingV1 record{
+            const api::configuration::Setting record{
                 setting.section.c_str(), setting.key.c_str(), setting.value.c_str(),
                 setting.defaultValue.c_str(), setting.category.c_str(), setting.description.c_str(),
                 setting.type, config::ConfigurationStore::isDefault(setting, setting.value) ? 0u : 1u,
             };
-            visitor(&record, context);
+            visitor(record, context);
         }
         return true;
     }
