@@ -955,9 +955,23 @@
             _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         outState.sample.providerGeneration =
             _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
+        fillProviderWeaponAmmo(outState);
         return (outState.flags & static_cast<std::uint32_t>(Flag::Valid)) != 0 ||
                transition.transitionSequence != 0 ||
                transition.terminalSequence != 0;
+    }
+
+    // The slot's ammo counter, read for its own equipment index. Game thread.
+    void PhysicsInteraction::fillProviderWeaponAmmo(api::weapon::WeaponState& state)
+    {
+        if (state.weaponFormId == 0) return;
+        equipped_ammo::Facts facts{};
+        if (!native_secondary_actions::readAmmo(state.weaponSlot, facts)) return;
+        const auto counts = equipped_ammo::resolve(facts);
+        if (!counts.known) return;
+        state.flags |= static_cast<std::uint32_t>(api::weapon::WeaponStateFlag::AmmoKnown);
+        state.loadedRounds = counts.loaded;
+        state.reserveRounds = counts.reserve;
     }
 
     // Slot 1 (ROCK's private graph): identity, drawn state and the hand that
@@ -989,6 +1003,7 @@
         outState.sample.worldGeneration = _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
         outState.sample.skeletonGeneration = _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         outState.sample.providerGeneration = _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
+        fillProviderWeaponAmmo(outState);
     }
 
     std::uint32_t PhysicsInteraction::copyProviderWeaponPartPoses(

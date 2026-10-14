@@ -1027,6 +1027,42 @@ namespace rock::native_secondary_actions
         s_primaryReloadTraceUntil.store(GetTickCount64()+kPrimaryReloadTraceMs,std::memory_order_release);
     }
 
+    bool readAmmo(const std::uint32_t index, equipped_ammo::Facts& out) noexcept
+    {
+        out = {};
+        auto* player = s_installed && index < 2 ? f4vr::getPlayer() : nullptr;
+        if (!player || !player->currentProcess) return false;
+        // The producer's helpers: indexed item (E50DA0), indexed ammo (E05BA0),
+        // indexed loaded rounds (EC48C0, which its DDF690 forwards to),
+        // inventory count (3E3750) and the special ammo forms (2F30E0).
+        const auto itemAt = native<RE::BGSObjectInstance*(*)(RE::Actor*,RE::BGSObjectInstance*,std::uint32_t)>(0xE50DA0);
+        const auto ammoAt = native<RE::TESAmmo*(*)(RE::Actor*,std::uint32_t)>(0xE05BA0);
+        const auto loadedAt = native<std::uint32_t(*)(void*,std::uint32_t)>(0xEC48C0);
+        const auto inventoryCount = native<int(*)(RE::TESObjectREFR*,RE::TESBoundObject*)>(0x3E3750);
+        const auto countsAsLoaded = native<bool(*)(const RE::TESAmmo*)>(0x2F30E0);
+        RE::BGSObjectInstance item{ nullptr, nullptr };
+        itemAt(player, &item, index);
+        if (!item.object || !item.object->IsWeapon()) return true;
+        // Type on the base form; flags and capacity on the instance.
+        const auto* weapon = static_cast<const RE::TESObjectWEAP*>(item.object);
+        if (static_cast<std::uint8_t>(weapon->weaponData.type.underlying()) < 7) return true;
+        const auto* data = item.instanceData ?
+            static_cast<const RE::TESObjectWEAP::InstanceData*>(item.instanceData.get()) : &weapon->weaponData;
+        out.weapon = true;
+        out.notPlayable = data->flags.all(RE::WEAPON_FLAGS::kNotPlayable);
+        auto* ammo = ammoAt(player, index);
+        if (!ammo) return true;
+        out.hasAmmo = true;
+        out.loaded = loadedAt(player->currentProcess, index);
+        out.charge = ammo->data.health;
+        out.countAsLoaded = countsAsLoaded(ammo);
+        out.nonPlayableAmmo = (ammo->data.flags & 0x2) != 0;
+        out.capacity = data->ammoCapacity;
+        if (!out.countAsLoaded && !out.nonPlayableAmmo) out.inventoryCount = inventoryCount(player, ammo);
+        if (out.charge == 0 && ammoAt(player, 1 - index) == ammo) out.otherLoadedSameAmmo = loadedAt(player->currentProcess, 1 - index);
+        return true;
+    }
+
     bool install() noexcept
     {
         if (s_installed) return true;
@@ -1056,6 +1092,7 @@ namespace rock::native_secondary_actions
             !matches(0x3E3750,std::to_array<std::uint8_t>({0x40,0x53,0x48,0x83,0xEC,0x20,0x48,0x8B,0xDA})) ||
             !matches(0xE4EF20,std::to_array<std::uint8_t>({0x48,0x89,0x5C,0x24,0x08,0x57,0x48,0x83,0xEC,0x20})) ||
             !matches(0xE05BA0,std::to_array<std::uint8_t>({0x48,0x83,0xEC,0x28,0x48,0x8B,0x89,0,3,0,0})) ||
+            !matches(0x2F30E0,std::to_array<std::uint8_t>({0x48,0x85,0xC9,0x74,0x15,0x48,0x3B,0x0D})) ||
             !matches(0x81FBF0,std::to_array<std::uint8_t>({0x48,0x83,0xEC,0x48,0x4C,0x89,0x4C,0x24,0x20,0x4D,0x8B,0xC8,0x44,0x8B,0xC2})) ||
             !matches(0xE51910,std::to_array<std::uint8_t>({0x89,0x54,0x24,0x10,0x53,0x55,0x56,0x57,0x41,0x56}))) return false;
         void* original{};

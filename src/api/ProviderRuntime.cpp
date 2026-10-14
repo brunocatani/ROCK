@@ -1954,6 +1954,8 @@ namespace rock::provider::runtime
                left.transitionWeaponFormId == right.transitionWeaponFormId &&
                left.terminalWeaponFormId == right.terminalWeaponFormId &&
                left.terminalSource == right.terminalSource &&
+               left.loadedRounds == right.loadedRounds &&
+               left.reserveRounds == right.reserveRounds &&
                left.sample.worldGeneration == right.sample.worldGeneration &&
                left.sample.skeletonGeneration == right.sample.skeletonGeneration &&
                left.sample.providerGeneration == right.sample.providerGeneration;

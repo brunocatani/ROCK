@@ -1,5 +1,9 @@
 #pragma once
 
+#include "physics-interaction/weapon/EquippedAmmoPolicy.h"
+
+#include <cstdint>
+
 namespace RE { class NiNode; class NiTransform; }
 namespace rock::native_secondary_actions
 {
@@ -17,4 +21,7 @@ namespace rock::native_secondary_actions
     // Uses the secondary item's native recoil and the existing physical-hand
     // recoil math. Does not change FRIK's primary recoil sample or ownership.
     void applyRecoil(RE::NiTransform& weapon, RE::NiTransform& hand, const RE::NiTransform& controller) noexcept;
+    // The native ammo facts of equipment index 0 or 1 (EquippedAmmoPolicy.h),
+    // read with the HUD producer's helpers. Game thread; false before install.
+    bool readAmmo(std::uint32_t index, equipped_ammo::Facts& out) noexcept;
 }

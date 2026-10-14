@@ -2,7 +2,7 @@
 #include <ROCK/Storage.h>
 static_assert(sizeof(rock::api::storage::Api)==152 && sizeof(rock::api::storage::Display)==160);
 #include <ROCK/Weapon.h>
-static_assert(sizeof(rock::api::weapon::Api)==136 && sizeof(rock::api::weapon::WeaponState)==112);
+static_assert(sizeof(rock::api::weapon::Api)==136 && sizeof(rock::api::weapon::WeaponState)==120);
 struct StorageCallerPacking { char c; std::uint64_t value; };
 static_assert(alignof(StorageCallerPacking)==1);
 #pragma pack(pop)

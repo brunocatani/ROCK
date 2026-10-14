@@ -408,6 +408,10 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKEquipSlotAllocationPolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKEquipSlotAllocationPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKEquipSlotAllocationPolicyTests)
+  add_executable(ROCKEquippedAmmoPolicyTests "${ROOT_DIR}/tests/EquippedAmmoPolicyTests.cpp")
+  target_compile_features(ROCKEquippedAmmoPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKEquippedAmmoPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKEquippedAmmoPolicyTests)
 
   add_executable(ROCKFo4VrActorStatePolicyTests
     "${ROOT_DIR}/tests/Fo4VrActorStatePolicyTests.cpp"

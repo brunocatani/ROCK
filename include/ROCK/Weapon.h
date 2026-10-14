@@ -34,6 +34,8 @@ namespace rock::api::weapon {
         PresentationKnown = 1u << 10,
         WeaponEquipped = 1u << 11,
         BipodInputReserved = 1u << 12,
+        // loadedRounds and reserveRounds hold the weapon's ammo counter.
+        AmmoKnown = 1u << 13,
     };
 
     enum class HandlingStateFlag : std::uint32_t
@@ -100,6 +102,10 @@ namespace rock::api::weapon {
         TransitionSource terminalSource{ TransitionSource::Unknown };
         std::uint32_t transitionWeaponFormId{ 0 };
         std::uint32_t terminalWeaponFormId{ 0 };
+        // The native counter's rule for this slot; reserve excludes rounds
+        // loaded in the other slot's weapon. Valid with AmmoKnown.
+        std::uint32_t loadedRounds{ 0 };
+        std::uint32_t reserveRounds{ 0 };
     };
 
     // ------------------------------------------------------------------
