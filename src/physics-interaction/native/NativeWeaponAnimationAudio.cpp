@@ -8,6 +8,7 @@
 #include <REL/Relocation.h>
 #include <Windows.h>
 #include <array>
+#include <atomic>
 #include <cstring>
 #include <stdexcept>
 #include <utility>
@@ -75,6 +76,8 @@ namespace rock::native_weapon_animation_audio
             }
         }
 
+        std::atomic<std::uint32_t> s_cullEventLogs{0};
+
         void filterCopiedEvents(void* destination)
         {
             if (!t_playerGraph) return;
@@ -104,7 +107,20 @@ namespace rock::native_weapon_animation_audio
                 if (!native_memory::tryReadValue(queue.events + index, event) || event.id >= nameCount) continue;
                 const auto* nameSlot = static_cast<const char*>(names) + event.id * sizeof(std::uintptr_t);
                 std::array<char, 32> tag{};
-                if (!copyText(fixedStringText(nameSlot), tag) || !isSoundStart(tag.data())) continue;
+                if (!copyText(fixedStringText(nameSlot), tag)) continue;
+                // Diagnostic: which player clip culls/unculls the weapons
+                // (first gun hidden ~500 ms after a menu exit, 14 Oct 20:56).
+                if (std::strstr(tag.data(), "ullWeapons") && s_cullEventLogs.fetch_add(1, std::memory_order_relaxed) < 256) {
+                    std::uintptr_t senderVtable{}, senderPath{};
+                    std::array<char, 260> senderClip{};
+                    const bool named = event.sender && native_memory::tryReadField(event.sender, 0, senderVtable) &&
+                        senderVtable == REL::Offset(0x2E0FB38).address() &&
+                        native_memory::tryReadField(event.sender, 0x90, senderPath) &&
+                        copyText(reinterpret_cast<const char*>(senderPath & ~std::uintptr_t{1}), senderClip);
+                    ROCK_LOG_INFO(Weapon, "Player weapon cull event tag={} clip={} nativeState={}", tag.data(),
+                        named ? senderClip.data() : "<unnamed>", f4vr::getNativeWeaponState(f4vr::getPlayer()));
+                }
+                if (!isSoundStart(tag.data())) continue;
 
                 std::uintptr_t vtable{}, path{};
                 std::array<char, 260> clip{};
