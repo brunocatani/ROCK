@@ -129,13 +129,12 @@ namespace rock
          * drop them all before re-entering the scene graph.
          */
         /*
-         * An equipped model's descendants are posed by rigid world transport
-         * and native animation output, which write worlds without matching
-         * locals. Rebuild every descendant local from the worlds it renders
-         * at, so recomputing the subtree from its root cannot move it.
-         * Returns the largest translation the subtree would have moved.
+         * Diagnostic: the largest translation recomputing an equipped
+         * model's subtree from its locals would move a descendant. Rigid
+         * world transport and native animation output write worlds without
+         * matching locals; the promotion handoff bakes them.
          */
-        float bakeSubtreeLocals(RE::NiAVObject* root, bool apply)
+        float subtreeLocalDrift(RE::NiAVObject* root)
         {
             float drift = 0.0f;
             std::array<RE::NiAVObject*, 256> pending{ root };
@@ -151,7 +150,6 @@ namespace rock
                     const auto fromLocal = transform_math::composeTransforms(node->world, child->local);
                     const auto d = fromLocal.translate - child->world.translate;
                     drift = (std::max)(drift, std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z));
-                    if (apply) child->local = weapon_visual_authority_math::worldTargetToParentLocal(node->world, child->world);
                 }
             }
             return drift;
@@ -323,11 +321,6 @@ namespace rock
             return false;
         }
 
-        if (input.equippedModelSource) {
-            const float drift = bakeSubtreeLocals(model, true);
-            ROCK_LOG_INFO(Weapon, "EquipVisualBridge equipped source baked formID={:08X} localDrift={:.3f}gu parented={}",
-                input.weaponFormID, drift, model->parent != nullptr);
-        }
         _model = input.worldModel;
         _equippedSourceTraceFrames = 0;
         _lastPresentedInDriver = _modelInHandLocal;
@@ -606,7 +599,7 @@ namespace rock
             const auto& root = model->world.translate;
             ROCK_LOG_INFO(Weapon, "EquipVisualBridge equipped source frame={} parented={} attached={} root=({:.2f},{:.2f},{:.2f}) localDrift={:.3f}gu",
                 _equippedSourceTraceFrames, model->parent && !_parent, _parent != nullptr, root.x, root.y, root.z,
-                bakeSubtreeLocals(model, false));
+                subtreeLocalDrift(model));
         }
         if (model && !_parent) {
             /*

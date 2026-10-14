@@ -126,14 +126,15 @@ namespace rock::native_secondary_actions
         }
         /*
          * Hands the model over to a carrier that moves only its root (the
-         * promotion bridge). Bound skins render from the private skeleton's
-         * bone worlds, not from the model's own nodes, and that skeleton
-         * stays where it was last placed. Each model node takes the world it
-         * renders at now (the bone's for a bound node), as a local under its
-         * parent. Each skin keeps its private clone, with every bound slot
-         * re-pointed from the skeleton bone to the model node that bone
-         * drove: the original instance can read a flattened bone tree that
-         * nothing poses any more. A skin with a slot no model node owns
+         * promotion bridge). present() writes each model node's world from
+         * the private skeleton's locals under the model's own root, and rigid
+         * shapes render from those worlds; the skeleton's bone worlds sit
+         * under a root placed at the attachment and differ from them in the
+         * left hand. Each model node takes its presented world as a local
+         * under its parent. Each skin keeps its private clone, with every
+         * bound slot re-pointed from the skeleton bone to the model node that
+         * bone drove: the original instance can read a flattened bone tree
+         * that nothing poses any more. A skin with a slot no model node owns
          * returns to its original instance. The model keeps its look and
          * follows its root from this frame on; it leaves the actor, so its
          * authored rest locals are not restored.
@@ -147,7 +148,7 @@ namespace rock::native_secondary_actions
             for (std::size_t i=1;usable && i<_nodes.size();++i) {
                 auto& node=_nodes[i];
                 if (node.actual->parent!=_nodes[node.parentIndex].actual.get()) usable=false;
-                worlds[i]=node.target?node.target->world:node.actual->world;
+                worlds[i]=node.actual->world;
                 usable=usable && weapon_scene_presentation::isFiniteTransform(worlds[i]);
             }
             if (!usable) { restore(); return false; }
