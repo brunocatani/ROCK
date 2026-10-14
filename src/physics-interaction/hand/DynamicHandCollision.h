@@ -80,11 +80,7 @@ namespace rock
             bool leftHandWeaponOwned,
             std::uint32_t dynamicWeaponBodyId,
             bool rightVisualReturnActive,
-            bool leftVisualReturnActive,
-            // The second weapon's proxy and the hand holding it; that exact
-            // pair is suppressed like the primary's owned pairs.
-            std::uint32_t secondaryDynamicWeaponBodyId = hand_semantic_contact_state::kInvalidBodyId,
-            bool secondaryWeaponHandIsLeft = true);
+            bool leftVisualReturnActive);
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void finalizePose(const PhysicsFrameContext& frame, const Hand& rightHand,
             const Hand& leftHand, const BodyBoneColliderSet& bodyBoneColliders);
@@ -453,10 +449,6 @@ namespace rock
             hand_semantic_contact_state::kInvalidBodyId
         };
         std::array<std::atomic<bool>, 2> _weaponOwnedAtomic{};
-        std::atomic<std::uint32_t> _desiredSecondaryWeaponBodyIdAtomic{
-            hand_semantic_contact_state::kInvalidBodyId
-        };
-        std::atomic<bool> _secondaryWeaponHandIsLeftAtomic{ true };
         std::atomic<bool> _pairFilterReadyAtomic{ false };
         std::array<std::atomic<std::uint32_t>, 2>
             _suppressedWeaponPairCountAtomic{};

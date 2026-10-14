@@ -1808,9 +1808,6 @@ namespace rock
         _desiredWeaponBodyIdAtomic.store(
             hand_semantic_contact_state::kInvalidBodyId,
             std::memory_order_release);
-        _desiredSecondaryWeaponBodyIdAtomic.store(
-            hand_semantic_contact_state::kInvalidBodyId,
-            std::memory_order_release);
         _pairFilterReadyAtomic.store(false, std::memory_order_release);
         for (std::size_t hand = 0; hand < _hands.size(); ++hand) {
             _weaponOwnedAtomic[hand].store(false, std::memory_order_release);
@@ -1839,9 +1836,7 @@ namespace rock
         bool leftHandWeaponOwned,
         std::uint32_t dynamicWeaponBodyId,
         bool rightVisualReturnActive,
-        bool leftVisualReturnActive,
-        std::uint32_t secondaryDynamicWeaponBodyId,
-        bool secondaryWeaponHandIsLeft)
+        bool leftVisualReturnActive)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DynamicHandCollisionFrame);
 
@@ -1864,8 +1859,6 @@ namespace rock
         telemetry.hands[1].isLeft = true;
 
         _desiredWeaponBodyIdAtomic.store(dynamicWeaponBodyId, std::memory_order_release);
-        _secondaryWeaponHandIsLeftAtomic.store(secondaryWeaponHandIsLeft, std::memory_order_release);
-        _desiredSecondaryWeaponBodyIdAtomic.store(secondaryDynamicWeaponBodyId, std::memory_order_release);
         _weaponOwnedAtomic[0].store(
             rightHandWeaponOwned,
             std::memory_order_release);
@@ -2461,22 +2454,6 @@ namespace rock
                         .ownerGroup = static_cast<std::uint8_t>(hand),
                     };
                 }
-            }
-        }
-        const std::uint32_t secondaryWeaponBodyId =
-            _desiredSecondaryWeaponBodyIdAtomic.load(std::memory_order_acquire);
-        if (world &&
-            secondaryWeaponBodyId != hand_semantic_contact_state::kInvalidBodyId) {
-            const std::size_t hand = _secondaryWeaponHandIsLeftAtomic.load(std::memory_order_acquire) ? 1 : 0;
-            const std::uint32_t handBodyId =
-                _hands[hand].bodies[0].bodyIdAtomic.load(std::memory_order_acquire);
-            if (handBodyId != hand_semantic_contact_state::kInvalidBodyId &&
-                desiredPairCount < desiredPairs.size()) {
-                desiredPairs[desiredPairCount++] = {
-                    .bodyA = handBodyId,
-                    .bodyB = secondaryWeaponBodyId,
-                    .ownerGroup = static_cast<std::uint8_t>(hand),
-                };
             }
         }
         const auto pairResult = _weaponPairLeases.reconcile(

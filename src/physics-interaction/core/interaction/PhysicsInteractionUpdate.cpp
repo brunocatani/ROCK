@@ -319,6 +319,8 @@ namespace rock
          * Dynamic hand collision runs after normal grab input so the final
          * grab, pull, support-grip, or weapon owner for this frame can gate its
          * lower-priority visual authority without delaying proxy tracking.
+         * A hand that holds either equipped weapon owns it: its dynamic proxy
+         * stops colliding, so it never pushes the weapon's proxy.
          */
         _dynamicHandCollision.updateFrame(
             frame,
@@ -327,15 +329,15 @@ namespace rock
             _leftHand,
             _bodyBoneColliders,
             rightHandWeaponAuthorityActive || rightPartGripActive ||
-                weaponHandSuppressedFor(false, WeaponHandReason::Grip),
+                weaponHandSuppressedFor(false, WeaponHandReason::Grip) ||
+                weaponHandSuppressedFor(false, WeaponHandReason::SecondWeapon),
             leftSupportGripActive ||
                 equippedWeaponRoster().slotZeroGrips(true).firingGripActive ||
-                weaponHandSuppressedFor(true, WeaponHandReason::Grip),
+                weaponHandSuppressedFor(true, WeaponHandReason::Grip) ||
+                weaponHandSuppressedFor(true, WeaponHandReason::SecondWeapon),
             _dynamicWeaponCollision.proxyBodyIdForDebug().value,
             _rightHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(false),
-            _leftHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(true),
-            _secondaryDynamicWeaponCollision.proxyBodyIdForDebug().value,
-            _equippedSlotOne.hand == equipped_weapon_roster::Hand::Left);
+            _leftHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(true));
         const auto dynamicHandHapticEvents = _dynamicHandCollision.consumeHapticEvents();
         for (const auto& pulse : dynamicHandHapticEvents.hands) {
             if (!pulse.fire) {
