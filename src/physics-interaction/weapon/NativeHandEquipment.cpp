@@ -292,9 +292,9 @@ namespace rock::native_hand_equipment
         {
             // Every equip made while installed is constructed on its hand leaf
             // (native_inventory_hand_slots). A saved game instead restores the
-            // primary's EquippedItem with its authored BothHands/EitherHand
-            // slot; the reconstruction path rebuilds data only when the item
-            // changed. That multi-hand slot contains the left leaf, so a left
+            // primary's EquippedItem with its authored multi-hand slot
+            // (heldOnRightLeaf); the reconstruction path rebuilds data only when
+            // the item changed. That slot contains the left leaf, so a left
             // equip's native conflict pass would unequip the primary. Re-seat
             // it on the right leaf, the slot its construction would have used.
             auto* middle = actor && actor->currentProcess ? actor->currentProcess->middleHigh : nullptr;
@@ -303,7 +303,7 @@ namespace rock::native_hand_equipment
             for (auto& entry : middle->equippedItems) {
                 if (entry.equipIndex.index != 0 || !entry.equipSlot || !entry.item.object || !entry.item.object->IsWeapon()) continue;
                 const auto slot = entry.equipSlot->formID;
-                if (slot != 0x13F44 && slot != 0x13F45) continue;
+                if (!native_inventory_hand_slots::heldOnRightLeaf(entry.equipSlot)) continue;
                 const auto* data = entry.item.instanceData ?
                     static_cast<const RE::TESObjectWEAP::InstanceData*>(entry.item.instanceData.get()) :
                     &static_cast<const RE::TESObjectWEAP*>(entry.item.object)->weaponData;

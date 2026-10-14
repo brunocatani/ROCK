@@ -6,6 +6,7 @@
 #include "rock_support/Fo4VrRuntime.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESBoundObjects.h"
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <tuple>
@@ -103,8 +104,7 @@ namespace rock::native_inventory_hand_slots
         {
             const Scope scope(actor);
             const Slot* selected=slot;
-            if (s_installed && t_player && firearm(item) && slot &&
-                (slot->formID==0x13F44 || slot->formID==0x13F45)) {
+            if (s_installed && t_player && firearm(item) && heldOnRightLeaf(slot)) {
                 // This is the native construction boundary, including save
                 // reconstruction. Preserve the real item and native ammo/data
                 // constructor; canonicalize only the primary ownership leaf.
@@ -193,6 +193,21 @@ namespace rock::native_inventory_hand_slots
         std::memcpy(&destination,bytes.data()+6,8);
         const auto expected=reinterpret_cast<std::uintptr_t>(&scoped<0xE70280,Owner::ActorSecond,bool,void*,RE::Actor*,const Item*,std::int32_t,const Slot*,std::uint32_t,bool,bool,bool,bool,void*>);
         return std::memcmp(bytes.data(),jump.data(),jump.size())==0 && destination==expected;
+    }
+
+    bool heldOnRightLeaf(const RE::BGSEquipSlot* slot) noexcept
+    {
+        const auto* right = hand(0);
+        if (!slot || !right || slot == right || slot == hand(1)) return false;
+        // parentSlots (BSTArray: data 0x20, size 0x30), read as in
+        // native_hand_equipment::hasHandChildren.
+        std::uint32_t count = 0;
+        const void* storage = nullptr;
+        std::array<const RE::BGSEquipSlot*, 8> entries{};
+        if (!native_memory::tryReadField(slot, 0x30, count) || count == 0 || count > entries.size() ||
+            !native_memory::tryReadField(slot, 0x20, storage) || !storage ||
+            !native_memory::guardedCopyFromMemory(storage, entries.data(), count * sizeof(entries[0]))) return false;
+        return std::find(entries.begin(), entries.begin() + count, right) != entries.begin() + count;
     }
 
     bool install() noexcept
