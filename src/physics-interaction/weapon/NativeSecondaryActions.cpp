@@ -389,9 +389,21 @@ namespace rock::native_secondary_actions
                 // answers (verified: 18:48 reloads selected 000BDDA6 with
                 // isReloading from the actor; without this, nothing selects).
                 // Weapon variables still come from this hand's graph first.
-                t_actorVariableLookup=true;
-                accepted=native<bool(*)(void*,Key,Value*)>(Rva)(holder,key,output);
-                t_actorVariableLookup=false;
+                // isReloading itself is this hand's reload, not the player
+                // graph's: that one is the first weapon's, and refused this
+                // hand's reload until the first weapon's had ended.
+                if constexpr (!std::is_integral_v<Key>) {
+                    static const RE::BSFixedString isReloading{ "isReloading" };
+                    if (key && *key==isReloading && output) {
+                        *output=static_cast<Value>(t_context->state->reloading);
+                        accepted=true;
+                    }
+                }
+                if (!accepted) {
+                    t_actorVariableLookup=true;
+                    accepted=native<bool(*)(void*,Key,Value*)>(Rva)(holder,key,output);
+                    t_actorVariableLookup=false;
+                }
                 actorState=accepted;
             }
             if (player && t_context->queryCount<t_context->queries.size()) {
