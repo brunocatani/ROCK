@@ -149,6 +149,8 @@ namespace rock
         // committed, immediately before the frame's later VR render submit.
         void publishGripZoneIndicatorRenderFrame(
             std::uint64_t gameFrameIndex);
+        // AfterWorldFinal: ROCK's ammo counters on the firing hands.
+        void publishAmmoCounters();
 
         // Observes and repairs native equipped-weapon presentation before any
         // weapon-relative ROCK authority reads the first-person graph.

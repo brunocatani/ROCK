@@ -17,6 +17,7 @@
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
+#include "physics-interaction/visual/AmmoCounters.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/debug/DebugBodyOverlay.h"
 #include "physics-interaction/visual/GripZoneIndicators.h"
@@ -852,7 +853,10 @@ namespace
             if (!s_physicsInteraction) return;
             s_physicsInteraction->finalizeEquipVisualBridgePresentation();
             s_physicsInteraction->publishGripZoneIndicatorRenderFrame(runtime_state::currentFrame().frameIndex);
+            s_physicsInteraction->publishAmmoCounters();
             s_physicsInteraction->publishDebugRenderFrame();
+        } else {
+            ammo_counters::hide();
         }
     }
 
